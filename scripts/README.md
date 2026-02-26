@@ -2,3 +2,5 @@
 
 - `meta-check.ps1`: one-command readiness check for this repository.
 - `docs-check.ps1`: verifies required top-level docs exist.
+- `run-smoke.ps1`: executes the smoke VBA sample through the CLI.
+- `run-conformance.ps1`: runs MVP conformance corpus and checks against golden expectations.

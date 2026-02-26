@@ -24,4 +24,5 @@ OxVBA is part of the broader DNA Calc program and aligns with Foundation doctrin
 ```powershell
 ./scripts/meta-check.ps1 -Fast
 ./scripts/run-smoke.ps1
+./scripts/run-conformance.ps1
 ```

@@ -58,4 +58,18 @@ mod tests {
             ]
         );
     }
+
+    #[test]
+    fn reject_undeclared_variable() {
+        let source = "Sub Main()\nx = 1\nEnd Sub";
+        let err = compile(source).expect_err("typecheck should fail");
+        assert!(err.to_string().contains("undeclared variable"));
+    }
+
+    #[test]
+    fn reject_unsupported_statement() {
+        let source = "Sub Main()\nDim x\nx = y + 1\nEnd Sub";
+        let err = compile(source).expect_err("typecheck should fail");
+        assert!(err.to_string().contains("unsupported statement"));
+    }
 }
