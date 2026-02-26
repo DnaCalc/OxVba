@@ -11,3 +11,7 @@ oxvba-compiler.workspace = true
 oxvba-runtime.workspace = true
 oxvba-com.workspace = true
 thiserror.workspace = true
+
+[features]
+default = []
+mach_broadword_dispatch = []

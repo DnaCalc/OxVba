@@ -11,3 +11,6 @@ The VM crate provides:
 - Register-window frame model.
 - Spill/fill semantics and bounds checks.
 - Opcode dispatch and error-state machine behavior.
+
+## Feature flags
+- `mach_broadword_dispatch` (crate: `oxvba-vm`): enables broadword dispatch optimization path when promoted.

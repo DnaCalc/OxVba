@@ -12,3 +12,7 @@ oxvba-ir.workspace = true
 oxvba-runtime.workspace = true
 thiserror.workspace = true
 rkyv.workspace = true
+
+[features]
+default = []
+mach_zero_copy_bytecode = []

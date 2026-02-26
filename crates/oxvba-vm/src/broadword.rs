@@ -1,6 +1,15 @@
 pub fn contains_opcode_word(_word: u64, _opcode: u8) -> bool {
     // Placeholder for SWAR/broadword decoder path.
-    false
+    #[cfg(feature = "mach_broadword_dispatch")]
+    {
+        // Feature-flagged fast path placeholder.
+        return false;
+    }
+
+    #[cfg(not(feature = "mach_broadword_dispatch"))]
+    {
+        false
+    }
 }
 
 #[allow(unexpected_cfgs)]

@@ -22,3 +22,6 @@
 - Added CI Windows conformance lane executing `meta-check`, smoke run, and MVP conformance script.
 - Added Lean formal scaffold files (`VarType`, `Coerce`, `Arithmetic`, `RefCount`) and toolchain metadata.
 - Added initial `#[cfg(kani)]` proof placeholders in runtime/VM modules.
+- Added feature-flag scaffolding for risky performance paths:
+  - `mach_broadword_dispatch` in VM
+  - `mach_zero_copy_bytecode` in compiler

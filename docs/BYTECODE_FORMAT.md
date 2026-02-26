@@ -19,3 +19,6 @@ This is an MVP representation to support early vertical-slice execution and test
 - Explicit opcode enum and operand encoding.
 - Register-window aware calling convention.
 - rkyv-serializable stable binary layout for mmap/zero-copy loading.
+
+## Feature flags
+- `mach_zero_copy_bytecode` (crate: `oxvba-compiler`): enables zero-copy bytecode loading optimization path when implemented.
