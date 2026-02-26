@@ -1,2 +1,4 @@
 file,status,slots
+option_explicit_error.bas,error,
+option_explicit_ok.bas,ok,3
 smoke.bas,ok,15

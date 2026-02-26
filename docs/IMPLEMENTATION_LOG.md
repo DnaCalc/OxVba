@@ -30,3 +30,4 @@
   - implicit declaration allowed otherwise
 - Added host/CLI slot snapshot flow (`SLOTS:` output with `--dump-slots`).
 - Upgraded conformance script to compare both status and slot snapshots.
+- Expanded conformance corpus with `Option Explicit` pass/fail fixtures.

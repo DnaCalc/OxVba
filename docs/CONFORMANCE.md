@@ -7,6 +7,11 @@ Defines the current conformance loop for OxVBA MVP execution.
 - `conformance/tests/*.bas` — executable input corpus.
 - `conformance/golden/*.csv` — expected outcomes.
 
+Current corpus includes:
+- MVP arithmetic smoke path.
+- `Option Explicit` success case.
+- `Option Explicit` undeclared-variable failure case.
+
 ## Commands
 ```powershell
 ./scripts/run-smoke.ps1
