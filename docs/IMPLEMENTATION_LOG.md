@@ -20,3 +20,5 @@
 - Added MVP conformance runner (`scripts/run-conformance.ps1`) with golden-status comparison.
 - Added compiler regression tests for undeclared variables and unsupported statements.
 - Added CI Windows conformance lane executing `meta-check`, smoke run, and MVP conformance script.
+- Added Lean formal scaffold files (`VarType`, `Coerce`, `Arithmetic`, `RefCount`) and toolchain metadata.
+- Added initial `#[cfg(kani)]` proof placeholders in runtime/VM modules.

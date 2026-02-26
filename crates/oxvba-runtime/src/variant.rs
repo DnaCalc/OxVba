@@ -167,3 +167,17 @@ mod tests {
         assert_eq!(v.as_inline_ascii().as_deref(), Some("A1"));
     }
 }
+
+#[allow(unexpected_cfgs)]
+#[cfg(kani)]
+mod kani_proofs {
+    use super::Variant;
+
+    #[kani::proof]
+    fn sso_threshold_proof() {
+        let short = Variant::from_inline_ascii("12345678901234");
+        let long = Variant::from_inline_ascii("123456789012345");
+        assert!(short.is_some());
+        assert!(long.is_none());
+    }
+}
