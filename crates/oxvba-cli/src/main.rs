@@ -8,15 +8,37 @@ fn main() {
     };
 
     let engine = Engine::new(config);
-    let source = load_source_from_args().unwrap_or_else(|| "Sub Main()\nEnd Sub".to_string());
+    let args = parse_run_args();
+    let source = args
+        .as_ref()
+        .map(|a| a.source.clone())
+        .unwrap_or_else(|| "Sub Main()\nEnd Sub".to_string());
 
-    if let Err(err) = engine.execute_source(&source) {
-        eprintln!("oxvba: execution failed: {err}");
-        std::process::exit(1);
+    match engine.execute_source_with_snapshot(&source) {
+        Ok(slots) => {
+            if args.as_ref().map(|a| a.dump_slots).unwrap_or(false) {
+                let payload = slots
+                    .iter()
+                    .map(ToString::to_string)
+                    .collect::<Vec<_>>()
+                    .join(",");
+                println!("SLOTS:{payload}");
+            }
+        }
+        Err(err) => {
+            eprintln!("oxvba: execution failed: {err}");
+            std::process::exit(1);
+        }
     }
 }
 
-fn load_source_from_args() -> Option<String> {
+#[derive(Debug, Clone)]
+struct RunArgs {
+    source: String,
+    dump_slots: bool,
+}
+
+fn parse_run_args() -> Option<RunArgs> {
     let mut args = env::args().skip(1);
     let cmd = args.next()?;
     if cmd != "run" {
@@ -24,5 +46,7 @@ fn load_source_from_args() -> Option<String> {
     }
 
     let path = args.next()?;
-    fs::read_to_string(path).ok()
+    let source = fs::read_to_string(path).ok()?;
+    let dump_slots = args.any(|a| a == "--dump-slots");
+    Some(RunArgs { source, dump_slots })
 }

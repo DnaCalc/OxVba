@@ -1,5 +1,6 @@
 param(
-    [switch]$Fast
+    [switch]$Fast,
+    [switch]$Conformance
 )
 
 $ErrorActionPreference = "Stop"
@@ -20,6 +21,11 @@ cargo test --workspace
 if (-not $Fast) {
     Write-Host "[oxvba] cargo check"
     cargo check --workspace
+}
+
+if ($Conformance) {
+    Write-Host "[oxvba] conformance"
+    & "$PSScriptRoot/run-conformance.ps1"
 }
 
 Write-Host "[oxvba] meta check complete"

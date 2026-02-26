@@ -1,6 +1,6 @@
 use oxvba_compiler::compile;
 use oxvba_jit::JitEngine;
-use oxvba_vm::execute;
+use oxvba_vm::execute_and_snapshot;
 use std::collections::HashMap;
 
 #[derive(Debug, Clone, Default)]
@@ -34,13 +34,18 @@ impl Engine {
     }
 
     pub fn execute_source(&self, source: &str) -> Result<(), String> {
+        let _ = self.execute_source_with_snapshot(source)?;
+        Ok(())
+    }
+
+    pub fn execute_source_with_snapshot(&self, source: &str) -> Result<Vec<i32>, String> {
         let bytecode = compile(source).map_err(|e| e.to_string())?;
 
         if self.config.enable_jit {
             let _ = self.jit.compile_function("main");
         }
 
-        execute(&bytecode)
+        execute_and_snapshot(&bytecode)
     }
 }
 
@@ -59,5 +64,19 @@ mod tests {
 
         let result = engine.execute_source("Sub Main()\nEnd Sub");
         assert!(result.is_ok());
+    }
+
+    #[test]
+    fn execute_source_returns_slot_snapshot() {
+        let engine = Engine::new(HostConfig {
+            enable_jit: false,
+            root_object_name: Some("Application".to_string()),
+        });
+
+        let source = "Sub Main()\nDim x\nx = 10\nx = x + 5\nEnd Sub";
+        let snapshot = engine
+            .execute_source_with_snapshot(source)
+            .expect("execution should succeed");
+        assert_eq!(snapshot, vec![15]);
     }
 }
