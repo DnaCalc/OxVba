@@ -31,3 +31,19 @@ jobs:
           test -f OPERATIONS.md
           test -f MACH1000_PLAN.md
           test -f README.md
+
+  windows-conformance:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+      - name: Meta check (fast)
+        shell: pwsh
+        run: ./scripts/meta-check.ps1 -Fast
+      - name: Smoke run
+        shell: pwsh
+        run: ./scripts/run-smoke.ps1
+      - name: MVP conformance run
+        shell: pwsh
+        run: ./scripts/run-conformance.ps1

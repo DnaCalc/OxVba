@@ -19,3 +19,4 @@
 - Added explicit AutoRun continuation rule to `AGENTS.md` and `docs/AUTORUN_STATE.md`.
 - Added MVP conformance runner (`scripts/run-conformance.ps1`) with golden-status comparison.
 - Added compiler regression tests for undeclared variables and unsupported statements.
+- Added CI Windows conformance lane executing `meta-check`, smoke run, and MVP conformance script.
