@@ -1,0 +1,11 @@
+suggestion_id,source_file,source_section,summary,target_doc,target_section,priority
+RF001,docs/MACH1000_PLAN_REFINEMENT_20260226.md,Clarifications from Product Direction,Clarify scope for Forms runtime initial focus and host-aware loading requirement,MACH1000_PLAN.md,1.3 Scope,P0
+RF002,docs/MACH1000_PLAN_REFINEMENT_20260226.md,Proposal Set,Add early end-to-end MVP vertical slice before full optimization complexity,MACH1000_PLAN.md,8 Implementation Sequencing,P0
+RF003,docs/MACH1000_PLAN_REFINEMENT_20260226.md,Proposal Set,Feature-flag high-risk performance paths until correctness gates are green,MACH1000_PLAN.md,8.2 Execution Rules / 8.5 Phase Plan,P0
+RF004,docs/MACH1000_PLAN_REFINEMENT_20260226.md,Proposal Set,Make milestones quantitative with explicit measurable gates,MACH1000_PLAN.md,8.1 / 8.5,P0
+RF005,docs/MACH1000_PLAN_REFINEMENT_20260226.md,Proposal Set,Introduce formal risk register with triggers and mitigation,MACH1000_PLAN.md,8.4 Risk Register,P1
+RF006,docs/MACH1000_PLAN_REFINEMENT_20260226.md,Proposal Set,Clarify AOT split between backend capability and CLI packaging,MACH1000_PLAN.md,8.5 Phase 9 and Phase 10,P1
+RF007,docs/MACH1000_PLAN_REFINEMENT_20260226.md,Proposal Set,Add compatibility matrix gate model as iterative mechanism,MACH1000_PLAN.md,8.3 Compatibility Matrix Gates,P1
+RF008,docs/MACH1000_PLAN_REFINEMENT_20260226.md,Proposal Set,Add phase metadata fields for owner duration dependencies parallelizable tracks,MACH1000_PLAN.md,8.1 / 8.5,P1
+RF009,docs/MACH1000_PLAN_REFINEMENT_20260226.md,Proposal Set,Align sequencing language with Foundation recalc and evidence discipline,MACH1000_PLAN.md,8 intro / 8.2,P1
+RF010,docs/MACH1000_PLAN_REFINEMENT_20260226.md,Proposal Set,Update synthesis provenance and structure references to include refinement run,MACH1000_PLAN.md,Synthesis Provenance / 7.1,P2

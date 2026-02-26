@@ -1,0 +1,13 @@
+field,value
+run_id,20260226-mach1000-synthesis
+date,2026-02-26
+owner,@govert/Claude Opus 4.6
+status,complete
+suggestions_total,18
+suggestions_accepted,13
+suggestions_adapted,3
+suggestions_deferred,2
+suggestions_rejected,0
+input_plan_hash,7b6e4adcf1d46f8fa1943af68866d06d2c7efe0dacfea9e08a3d9108c60f2197
+input_brainstorm_hash,a1159bc6f76b252f08541d160ea0d3df615e2eea767b88961df68909819842fd
+output_file,MACH1000_PLAN.md

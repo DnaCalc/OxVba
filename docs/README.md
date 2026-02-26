@@ -1,0 +1,23 @@
+# OxVba Documentation
+
+## Authoritative Documents
+
+| Document | Location | Description |
+|---|---|---|
+| **MACH-1000 Plan** | [`MACH1000_PLAN.md`](../MACH1000_PLAN.md) | The definitive OxVba project plan. Charter, architecture, formal approach, testing strategy, implementation sequencing. |
+
+## Synthesis Records
+
+| Record | Location | Description |
+|---|---|---|
+| Synthesis process | [`synthesis/README.md`](../synthesis/README.md) | How synthesis runs work |
+| MACH-1000 synthesis | [`synthesis/runs/20260226-mach1000-synthesis/`](../synthesis/runs/20260226-mach1000-synthesis/README.md) | Decision log and report for the synthesis that produced the MACH-1000 plan |
+
+## Archive
+
+Superseded planning documents retained for provenance:
+
+| Document | Date | Status |
+|---|---|---|
+| [PLAN v1](archive/PLAN_v1_20260226.md) | 2026-02-26 | Superseded by MACH-1000 Plan |
+| [MACH-1000 Brainstorm](archive/BRAINSTORM_MACH1000_20260226.md) | 2026-02-26 | Consumed by synthesis into MACH-1000 Plan |

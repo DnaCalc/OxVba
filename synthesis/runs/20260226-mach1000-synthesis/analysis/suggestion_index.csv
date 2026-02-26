@@ -1,0 +1,19 @@
+suggestion_id,source_file,source_section,summary,target_doc,target_section,priority
+MK001,BRAINSTORM.md,Optimizing the Variant,16-byte (128-bit) tagged Variant layout replacing 24-byte repr(C) layout; 4 variants per cache line,PLAN.md,2.3 Key Types: Variant,P0
+MK002,BRAINSTORM.md,Optimizing the Variant,NaN-boxing analysis — confirmed infeasible for Decimal; 128-bit scheme is correct answer,PLAN.md,2.3 Key Types: Variant,P1
+MK003,BRAINSTORM.md,Optimizing the Variant,Small-string optimization (SSO) — inline strings up to 14 bytes in Variant payload,PLAN.md,2.3 Key Types: Variant,P1
+MK004,BRAINSTORM.md,Finger trees,Finger trees for green tree child storage — O(1) ends / O(log n) concat-split,PLAN.md,2.2 / 6.1 Parser,P2
+MK005,BRAINSTORM.md,Combinator rewriting,Combinator-based AST rewriting — pure functional transforms with parallel speculative rewrites to fixpoint,PLAN.md,2.2 Compilation Pipeline,P1
+MK006,BRAINSTORM.md,MLIR Architecture,Multi-level IR with dialect ladder: vba.hl → vba.ml → scf/cfg → backends,PLAN.md,2.2 Compilation Pipeline,P0
+MK007,BRAINSTORM.md,Modelling unstructured control flow,On Error Resume Next modeled as guarded-region in high-level IR with delayed lowering,PLAN.md,2.7 Error Handling,P0
+MK008,BRAINSTORM.md,Broadword algorithms,SWAR broadword instruction decoding — O(1) per 64-bit block opcode scanning,PLAN.md,6.2 / VM interpreter,P1
+MK009,BRAINSTORM.md,MMIX sliding register window,Replace pure stack VM with MMIX-inspired register-window VM — sliding register file with spill/fill,PLAN.md,2.2 / 6.2 Bytecode Design,P0
+MK010,BRAINSTORM.md,Boundary-tag allocation,Boundary-tag memory allocator for BStr/SafeArray — O(1) coalescing for long-running workloads,PLAN.md,2.4 Memory Management,P1
+MK011,BRAINSTORM.md,Zero-copy bytecode loading,rkyv-based zero-copy bytecode loading via mmap — near-zero startup latency,PLAN.md,6.2 Bytecode / Compiler,P1
+MK012,BRAINSTORM.md,Formal verification,Verus for deductive verification of coercion matrices — prove no panics / correct overflow,PLAN.md,3 Formal Approach,P2
+MK013,BRAINSTORM.md,Formal verification,Creusot for separation-logic reasoning on lowering pass semantic preservation,PLAN.md,3 Formal Approach,P2
+MK014,BRAINSTORM.md,Formal verification,Kani bounded model checking for unsafe Rust — broadword masks / union loads / register bounds,PLAN.md,3 Formal Approach,P1
+MK015,BRAINSTORM.md,Lossless syntax trees,Enhanced Red/Green tree with position-independent green nodes using relative-width-only storage,PLAN.md,6.1 Parser Choice,P1
+MK016,BRAINSTORM.md,Executive critique,Variant layout cache ceiling — 24-byte layout causes false-sharing and degraded spatial locality,PLAN.md,2.3 Key Types: Variant,P0
+MK017,BRAINSTORM.md,Executive critique,Memory management latency-spike ceiling — cycle detection introduces non-deterministic pauses,PLAN.md,2.4 Memory Management,P1
+MK018,BRAINSTORM.md,Executive critique,IR ceiling — premature semantic loss when lowering AST directly to stack VM or Cranelift,PLAN.md,2.2 Compilation Pipeline,P0

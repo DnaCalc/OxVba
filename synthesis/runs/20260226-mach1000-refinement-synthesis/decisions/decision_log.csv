@@ -1,0 +1,11 @@
+suggestion_id,action,rationale,change_ref,owner,status
+RF001,accept,"Clarifies scope ambiguity without changing core doctrine; matches product direction that forms runtime is in initial focus and host-awareness is required.",MACH1000_PLAN.md:1.3/6.4,@govert/Codex,applied
+RF002,accept,"Early vertical slice de-risks architecture by validating end-to-end semantics before full optimization complexity.",MACH1000_PLAN.md:8.5 Phase 3,@govert/Codex,applied
+RF003,accept,"Flag-gating risky performance features protects correctness-first value ordering and allows controlled promotion.",MACH1000_PLAN.md:8.2/8.5 Phase 11,@govert/Codex,applied
+RF004,accept,"Quantitative gates improve planning determinism and operational readiness claims.",MACH1000_PLAN.md:8.1/8.5,@govert/Codex,applied
+RF005,accept,"Formal risk register makes mitigation explicit and auditable throughout implementation.",MACH1000_PLAN.md:8.4,@govert/Codex,applied
+RF006,accept,"Separating backend AOT capability from CLI packaging removes phase overlap ambiguity.",MACH1000_PLAN.md:8.5 Phase 9/10,@govert/Codex,applied
+RF007,adapt,"Compatibility matrix is added as a progressive gate model rather than a fixed full matrix upfront, aligning with iterative evidence growth.",MACH1000_PLAN.md:8.3,@govert/Codex,applied
+RF008,accept,"Per-phase metadata fields improve execution tracking and parallelization planning.",MACH1000_PLAN.md:8.1/8.5,@govert/Codex,applied
+RF009,adapt,"Foundation recalc alignment is reflected as sequencing rules and evidence language, without importing full Foundation pack taxonomy into OxVBA docs.",MACH1000_PLAN.md:8 intro/8.2,@govert/Codex,applied
+RF010,accept,"Provenance and structure updates keep synthesis history explicit and current.",MACH1000_PLAN.md:Synthesis Provenance/7.1,@govert/Codex,applied

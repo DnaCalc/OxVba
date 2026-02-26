@@ -1,0 +1,14 @@
+field,value
+run_id,20260226-mach1000-refinement-synthesis
+date,2026-02-26
+owner,@govert/Codex GPT-5
+status,complete
+suggestions_total,10
+suggestions_accepted,8
+suggestions_adapted,2
+suggestions_deferred,0
+suggestions_rejected,0
+input_plan_hash,3e217ddb72505dbc7d1fea2f0ecf20e0845bbb894ccff08ef723fe0be2e63c2f
+input_refinement_hash,894ebd8b111653dc8521ddc9aa0d33cdf60bfa8d8bfab2979c2333da80526d15
+output_file,MACH1000_PLAN.md
+output_plan_hash,4fef225f2355f0ce48276bead31958e7df5317c8012fa9a4dc6443343d237f5e
