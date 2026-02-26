@@ -1,0 +1,34 @@
+[workspace]
+members = [
+    "crates/oxvba-syntax",
+    "crates/oxvba-ir",
+    "crates/oxvba-runtime",
+    "crates/oxvba-compiler",
+    "crates/oxvba-vm",
+    "crates/oxvba-jit",
+    "crates/oxvba-com",
+    "crates/oxvba-host",
+    "crates/oxvba-cli",
+]
+resolver = "2"
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+authors = ["DNA Kode"]
+repository = "https://github.com/DnaCalc/OxVba"
+
+[workspace.dependencies]
+oxvba-syntax = { path = "crates/oxvba-syntax" }
+oxvba-ir = { path = "crates/oxvba-ir" }
+oxvba-runtime = { path = "crates/oxvba-runtime" }
+oxvba-compiler = { path = "crates/oxvba-compiler" }
+oxvba-vm = { path = "crates/oxvba-vm" }
+oxvba-jit = { path = "crates/oxvba-jit" }
+oxvba-com = { path = "crates/oxvba-com" }
+oxvba-host = { path = "crates/oxvba-host" }
+rkyv = "0.8"
+thiserror = "2"
+proptest = "1"
+serde = { version = "1", features = ["derive"] }

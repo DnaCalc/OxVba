@@ -1,0 +1,14 @@
+[package]
+name = "oxvba-compiler"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+
+[dependencies]
+oxvba-syntax.workspace = true
+oxvba-ir.workspace = true
+oxvba-runtime.workspace = true
+thiserror.workspace = true
+rkyv.workspace = true
