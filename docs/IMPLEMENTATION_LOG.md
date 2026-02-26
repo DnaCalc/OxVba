@@ -14,3 +14,6 @@
 - Hardened scripts so native command failures stop the pipeline.
 - Added architecture companion docs (`ARCHITECTURE`, `IR_DESIGN`, `BYTECODE_FORMAT`, `VM_ARCHITECTURE`).
 - Added smoke execution assets and script (`conformance/tests/smoke.bas`, `scripts/run-smoke.ps1`).
+- Added MVP bytecode instruction model (`LoadConstI32`, `AddConstI32`, `Halt`) and VM execution semantics.
+- Extended compiler pipeline with basic symbol resolution/type checks for `Dim` + integer assignments.
+- Added explicit AutoRun continuation rule to `AGENTS.md` and `docs/AUTORUN_STATE.md`.

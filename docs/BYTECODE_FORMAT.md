@@ -5,9 +5,15 @@ Draft v0 (scaffold).
 
 ## Representation
 `oxvba-compiler::Bytecode` currently stores:
-- `instructions: Vec<String>`
+- `instructions: Vec<Instruction>`
+- `slot_count: usize`
 
-This is a temporary representation to support early vertical-slice execution and tests.
+Current `Instruction` variants:
+- `LoadConstI32 { slot, value }`
+- `AddConstI32 { slot, value }`
+- `Halt`
+
+This is an MVP representation to support early vertical-slice execution and tests.
 
 ## Planned evolution
 - Explicit opcode enum and operand encoding.

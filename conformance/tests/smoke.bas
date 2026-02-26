@@ -1,3 +1,5 @@
 Sub Main()
-    ' Smoke test placeholder for early vertical-slice execution.
+    Dim x
+    x = 10
+    x = x + 5
 End Sub

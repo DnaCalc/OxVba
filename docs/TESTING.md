@@ -9,6 +9,7 @@
 - Runtime: Variant payload, coercion, arithmetic unit tests.
 - IR: lowering consistency tests.
 - Compiler/Host: compile+execute smoke tests.
+- VM: bytecode execution test for load/add/halt flow.
 
 ## Next additions
 - Conformance corpus execution with golden files.
