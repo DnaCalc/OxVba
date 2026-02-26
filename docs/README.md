@@ -5,6 +5,10 @@
 | Document | Location | Description |
 |---|---|---|
 | **MACH-1000 Plan** | [`MACH1000_PLAN.md`](../MACH1000_PLAN.md) | The definitive OxVba project plan. Charter, architecture, formal approach, testing strategy, implementation sequencing. |
+| Implementation Log | [`IMPLEMENTATION_LOG.md`](IMPLEMENTATION_LOG.md) | Rolling execution log for implementation progress. |
+| Building | [`BUILDING.md`](BUILDING.md) | Build and local verification instructions. |
+| Contributing | [`CONTRIBUTING.md`](CONTRIBUTING.md) | Contribution workflow and compatibility evidence expectations. |
+| Testing | [`TESTING.md`](TESTING.md) | Test lanes, current coverage, and next testing milestones. |
 
 ## Synthesis Records
 

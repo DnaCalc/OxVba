@@ -1,0 +1,4 @@
+lhs,rhs,op,result
+Integer,Integer,+,Long
+Long,Long,+,Long-or-Double
+Long,Double,+,Double

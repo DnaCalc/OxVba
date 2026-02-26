@@ -12,3 +12,18 @@ pub mod opt_mir;
 pub use cfg::CfgIr;
 pub use hir::VbaHir;
 pub use mir::VbaMir;
+
+#[cfg(test)]
+mod tests {
+    use crate::{VbaHir, lower_hir_to_mir, lower_mir_to_cfg};
+
+    #[test]
+    fn lowering_pipeline_preserves_sequence() {
+        let hir = VbaHir {
+            procedures: vec!["ProcA".to_string(), "ProcB".to_string()],
+        };
+        let mir = lower_hir_to_mir::lower(&hir);
+        let cfg = lower_mir_to_cfg::lower(&mir);
+        assert_eq!(cfg.nodes, hir.procedures);
+    }
+}

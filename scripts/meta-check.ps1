@@ -3,6 +3,7 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+$PSNativeCommandUseErrorActionPreference = $true
 
 Write-Host "[oxvba] docs-check"
 & "$PSScriptRoot/docs-check.ps1"

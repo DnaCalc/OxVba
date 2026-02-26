@@ -9,6 +9,12 @@ pub struct SyntaxTree {
     pub root: GreenNode,
 }
 
+impl SyntaxTree {
+    pub fn to_source(&self) -> &str {
+        &self.source
+    }
+}
+
 #[derive(Debug, Error)]
 pub enum ParseError {
     #[error("input is empty")]
@@ -38,6 +44,7 @@ mod tests {
         let source = "Sub Main()\nEnd Sub";
         let tree = parse(source).expect("parser should accept non-empty source");
         assert_eq!(tree.source, source);
+        assert_eq!(tree.to_source(), source);
         assert!(tree.root.width > 0);
     }
 

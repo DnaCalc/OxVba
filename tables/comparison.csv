@@ -1,0 +1,4 @@
+lhs,rhs,op,behavior
+String,String,=,OptionCompare-dependent
+Null,Any,=,Null-propagates
+Nothing,Object,Is,reference-identity

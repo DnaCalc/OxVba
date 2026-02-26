@@ -1,6 +1,7 @@
 use oxvba_compiler::compile;
 use oxvba_jit::JitEngine;
 use oxvba_vm::execute;
+use std::collections::HashMap;
 
 #[derive(Debug, Clone, Default)]
 pub struct HostConfig {
@@ -12,6 +13,7 @@ pub struct HostConfig {
 pub struct Engine {
     config: HostConfig,
     jit: JitEngine,
+    root_objects: HashMap<String, String>,
 }
 
 impl Engine {
@@ -19,7 +21,16 @@ impl Engine {
         Self {
             config,
             jit: JitEngine,
+            root_objects: HashMap::new(),
         }
+    }
+
+    pub fn register_root_object(&mut self, name: impl Into<String>, type_name: impl Into<String>) {
+        self.root_objects.insert(name.into(), type_name.into());
+    }
+
+    pub fn has_root_object(&self, name: &str) -> bool {
+        self.root_objects.contains_key(name)
     }
 
     pub fn execute_source(&self, source: &str) -> Result<(), String> {
@@ -39,10 +50,12 @@ mod tests {
 
     #[test]
     fn execute_source_with_default_vm_path() {
-        let engine = Engine::new(HostConfig {
+        let mut engine = Engine::new(HostConfig {
             enable_jit: false,
             root_object_name: Some("Application".to_string()),
         });
+        engine.register_root_object("Application", "Host.Application");
+        assert!(engine.has_root_object("Application"));
 
         let result = engine.execute_source("Sub Main()\nEnd Sub");
         assert!(result.is_ok());

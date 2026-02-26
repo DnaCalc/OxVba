@@ -1,0 +1,6 @@
+source,target,result
+Integer,Long,ok
+Integer,Double,ok
+Long,Double,ok
+Boolean,Long,ok
+Long,String,ok-inline
