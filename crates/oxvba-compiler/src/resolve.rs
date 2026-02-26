@@ -8,11 +8,13 @@ pub enum BoundOp {
 #[derive(Debug, Clone)]
 pub struct BoundModule {
     pub source: String,
+    pub option_explicit: bool,
     pub declarations: Vec<String>,
     pub ops: Vec<BoundOp>,
 }
 
 pub fn resolve_symbols(source: &str) -> BoundModule {
+    let mut option_explicit = false;
     let mut declarations: Vec<String> = Vec::new();
     let mut ops: Vec<BoundOp> = Vec::new();
 
@@ -23,7 +25,12 @@ pub fn resolve_symbols(source: &str) -> BoundModule {
         }
 
         let lower = line.to_ascii_lowercase();
-        if lower.starts_with("sub ") || lower == "end sub" || lower == "option explicit" {
+        if lower.starts_with("sub ") || lower == "end sub" {
+            continue;
+        }
+
+        if lower == "option explicit" {
+            option_explicit = true;
             continue;
         }
 
@@ -68,6 +75,7 @@ pub fn resolve_symbols(source: &str) -> BoundModule {
 
     BoundModule {
         source: source.to_string(),
+        option_explicit,
         declarations,
         ops,
     }

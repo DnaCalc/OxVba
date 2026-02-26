@@ -60,8 +60,8 @@ mod tests {
     }
 
     #[test]
-    fn reject_undeclared_variable() {
-        let source = "Sub Main()\nx = 1\nEnd Sub";
+    fn undeclared_variable_with_option_explicit_is_rejected() {
+        let source = "Option Explicit\nSub Main()\nx = 1\nEnd Sub";
         let err = compile(source).expect_err("typecheck should fail");
         assert!(err.to_string().contains("undeclared variable"));
     }
@@ -71,5 +71,12 @@ mod tests {
         let source = "Sub Main()\nDim x\nx = y + 1\nEnd Sub";
         let err = compile(source).expect_err("typecheck should fail");
         assert!(err.to_string().contains("unsupported statement"));
+    }
+
+    #[test]
+    fn undeclared_variable_without_option_explicit_is_accepted() {
+        let source = "Sub Main()\nx = 1\nx = x + 1\nEnd Sub";
+        let out = compile(source).expect("implicit declaration should compile");
+        assert_eq!(out.slot_count, 1);
     }
 }

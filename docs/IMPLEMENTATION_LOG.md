@@ -25,3 +25,6 @@
 - Added feature-flag scaffolding for risky performance paths:
   - `mach_broadword_dispatch` in VM
   - `mach_zero_copy_bytecode` in compiler
+- Added `Option Explicit` handling in compiler MVP typecheck:
+  - undeclared variables rejected under `Option Explicit`
+  - implicit declaration allowed otherwise
