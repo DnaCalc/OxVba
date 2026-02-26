@@ -19,3 +19,9 @@ OxVBA is a full-fidelity VBA 7 runtime engine in Rust, built for compatibility, 
 
 ## Context
 OxVBA is part of the broader DNA Calc program and aligns with Foundation doctrine, while remaining an independent project with its own charter and operations model.
+
+## Quick Verification
+```powershell
+./scripts/meta-check.ps1 -Fast
+./scripts/run-smoke.ps1
+```

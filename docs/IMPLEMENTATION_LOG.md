@@ -12,3 +12,5 @@
 - Added IR lowering consistency tests (HIR -> MIR -> CFG).
 - Added host root-object registration API scaffolding.
 - Hardened scripts so native command failures stop the pipeline.
+- Added architecture companion docs (`ARCHITECTURE`, `IR_DESIGN`, `BYTECODE_FORMAT`, `VM_ARCHITECTURE`).
+- Added smoke execution assets and script (`conformance/tests/smoke.bas`, `scripts/run-smoke.ps1`).

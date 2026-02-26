@@ -9,6 +9,10 @@
 | Building | [`BUILDING.md`](BUILDING.md) | Build and local verification instructions. |
 | Contributing | [`CONTRIBUTING.md`](CONTRIBUTING.md) | Contribution workflow and compatibility evidence expectations. |
 | Testing | [`TESTING.md`](TESTING.md) | Test lanes, current coverage, and next testing milestones. |
+| Architecture | [`ARCHITECTURE.md`](ARCHITECTURE.md) | Current architecture snapshot and near-term evolution notes. |
+| IR Design | [`IR_DESIGN.md`](IR_DESIGN.md) | Multi-level IR status and next implementation targets. |
+| Bytecode Format | [`BYTECODE_FORMAT.md`](BYTECODE_FORMAT.md) | Bytecode representation status and planned evolution. |
+| VM Architecture | [`VM_ARCHITECTURE.md`](VM_ARCHITECTURE.md) | VM implementation status and next milestones. |
 
 ## Synthesis Records
 
