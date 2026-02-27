@@ -286,6 +286,7 @@ Gate:
 4. Update matrix required cells for profile scope.
 5. Update divergence/evidence records.
 6. Run `meta-check -Fast -Conformance -Matrix` plus formal lane.
+   - For long Kani profiles, run formal as an async step using `scripts/run-formal-kani-async.ps1` (`Start`/`Status`/`Tail`/`Wait`).
 7. Commit/push and generate status tour.
 
 ## Parallelization Template (Per Profile)

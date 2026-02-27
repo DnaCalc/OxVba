@@ -659,6 +659,8 @@ mod tests {
         assert!(text.contains("cargo install kani-verifier --locked"));
         assert!(text.contains("cargo kani setup"));
         assert!(repo_path("scripts/run-formal-kani-wsl.ps1").exists());
+        assert!(repo_path("scripts/run-formal-kani-async.ps1").exists());
+        assert!(repo_path("scripts/async-task-runner.ps1").exists());
     }
 
     #[test]

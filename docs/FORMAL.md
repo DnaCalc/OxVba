@@ -27,4 +27,5 @@ Profile-scoped formal obligations may also run as deterministic, reduced-domain 
 - Optional strict mode: `./scripts/run-formal.ps1 -RequireKani` or `OXVBA_REQUIRE_KANI=1`
 - Kani setup helper: `./scripts/setup-kani.ps1` (`-Install` to bootstrap locally)
 - Windows+WSL strict helper: `./scripts/run-formal-kani-wsl.ps1` (runs Kani obligations inside WSL while keeping report paths in this repo)
+- Async strict helper for long profile runs: `./scripts/run-formal-kani-async.ps1` (`Start`/`Status`/`Tail`/`Wait`/`Stop`)
 - Current install note: native Windows Kani install may fail in this environment; use WSL path above for strict Kani runs.

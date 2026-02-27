@@ -5,7 +5,16 @@
 - Full lane: `./scripts/meta-check.ps1`
 - Matrix lane: `./scripts/meta-check.ps1 -Fast -Matrix`
 - Formal lane (non-blocking): `./scripts/meta-check.ps1 -Fast -Formal`
+- Formal lane (strict Kani via WSL): `./scripts/run-formal-kani-wsl.ps1 -ProfileScope mvp-formal-foundation-v3`
 - Combined ladder lane: `./scripts/meta-check.ps1 -Fast -Conformance -Matrix -Formal`
+
+## Async long-running formal steps
+For long Kani runs in profile execution, use:
+- Start: `./scripts/run-formal-kani-async.ps1 -Action Start -Name v3-kani -ProfileScope mvp-formal-foundation-v3`
+- Status: `./scripts/run-formal-kani-async.ps1 -Action Status -Name v3-kani`
+- Tail logs: `./scripts/run-formal-kani-async.ps1 -Action Tail -Name v3-kani`
+- Wait for completion: `./scripts/run-formal-kani-async.ps1 -Action Wait -Name v3-kani`
+- Stop: `./scripts/run-formal-kani-async.ps1 -Action Stop -Name v3-kani`
 
 ## Current coverage
 - Syntax: lexer/parser smoke and error tests.

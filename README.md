@@ -40,3 +40,4 @@ Optional:
 - Kani is currently not installable via `cargo install kani-verifier --locked` on native Windows in this environment due Unix-only APIs in the installer path.
 - Kani is supported through WSL (Ubuntu) on this machine.
 - Use `./scripts/run-formal-kani-wsl.ps1` to run strict formal obligations (`-RequireKani`) from Windows by executing Kani commands in WSL.
+- For long Kani/profile runs, use `./scripts/run-formal-kani-async.ps1` to manage async execution (`Start`/`Status`/`Tail`/`Wait`/`Stop`).

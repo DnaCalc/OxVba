@@ -163,3 +163,7 @@
   - Added `-UseWslKani` mode to `scripts/run-formal.ps1` so Kani obligations can execute via WSL when native Windows `cargo-kani` is unavailable.
   - Added convenience wrapper `scripts/run-formal-kani-wsl.ps1` for strict WSL-backed formal runs.
   - Added Kani install/tooling note in root `README.md` and updated `docs/FORMAL.md`.
+- Async formal execution update:
+  - Added `scripts/run-formal-kani-async.ps1` with `Start/Status/Tail/Wait/Stop` actions for long-running profile/Kani steps.
+  - Added `scripts/async-task-runner.ps1` to persist async exit status and completion timestamps.
+  - Updated profile execution/testing docs to include async formal run pattern.

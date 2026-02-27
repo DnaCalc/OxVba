@@ -44,6 +44,7 @@ Minimum expectations before merge:
 Recommended routine:
 - Fast local lane: `cargo test` for impacted crates.
 - Full lane (CI): formatter/lints/tests plus heavier checks.
+- For long-running Kani/profile formal steps, prefer async execution with repo scripts and log/state tracking, then merge results back into formal evidence artifacts.
 
 ## 7. Documentation and Synthesis
 Use synthesis runs when changing plan-level direction or resolving multiple proposal inputs.

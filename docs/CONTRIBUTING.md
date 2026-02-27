@@ -4,6 +4,7 @@
 1. Read `CHARTER.md`, `OPERATIONS.md`, and relevant sections of `MACH1000_PLAN.md`.
 2. Implement changes with tests.
 3. Run `./scripts/meta-check.ps1`.
+   - For long Kani/profile formal runs, use `./scripts/run-formal-kani-async.ps1` and attach status/log artifacts.
 4. Update docs for any behavior/plan changes.
 5. Open PR with clear scope and evidence notes.
 
