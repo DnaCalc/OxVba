@@ -3,7 +3,7 @@
 ## Why This Exists
 `mvp-int32-core-v1` is stabilized, but MACH1000 needs an execution queue that scales beyond incremental feature work.
 
-This document defines the **next 20 concrete profile steps** and explicitly prioritizes formal verification earlier in the ladder.
+This document defines the **next 25 concrete profile steps** and explicitly prioritizes formal verification earlier in the ladder.
 
 ## Replan Delta (Formal-First Revision)
 Compared to the previous ladder version:
@@ -19,9 +19,9 @@ There is no theoretical upper bound (full VBA parity and performance optimizatio
 Concrete planning horizon in this document:
 
 - Previously completed profile at planning time: `v1`
-- Planned profiles in this ladder: `v2` through `v21`
-- Total concrete future steps here: **20**
-- Execution status now: **completed through `v21`**.
+- Planned profiles in this ladder: `v2` through `v26`
+- Total concrete future steps here: **25**
+- Execution status now: **completed through `v26`**.
 
 ## Naming Convention
 - `mvp-<capability>-vN`
@@ -58,9 +58,9 @@ Target progression across this ladder:
 - v2-v4: establish repeatable `F1` cadence.
 - v5-v11: mixed `F1/F2` on semantics-critical behavior.
 - v12-v18: sustained `F2` with selective `F3`.
-- v19-v21: `F3` mandatory for optimizer/JIT/perf graduation.
+- v19-v26: `F3` mandatory for optimizer/JIT/perf graduation.
 
-## 20-Profile Ladder (v2-v21)
+## 25-Profile Ladder (v2-v26)
 
 ### v2 — `mvp-controlflow-v2` (F1)
 Scope:
@@ -238,6 +238,46 @@ Formal obligations:
 Gate:
 - measurable benchmark gain with zero new semantic divergences and no failing formal obligations.
 
+### v22 — `mvp-jit-loops-v22` (F3)
+Scope:
+- enable CLIF execution for loop backedges in the supported subset.
+Formal obligations:
+- VM-vs-JIT equivalence checks for `For` and `Do` loop patterns.
+Gate:
+- loop conformance parity green on required VM/JIT cells.
+
+### v23 — `mvp-formal-strict-kani-v23` (F3)
+Scope:
+- activate strict formal lane option for Kani-backed obligations.
+Formal obligations:
+- enforce `-RequireKani` behavior and optional CI Kani lane wiring.
+Gate:
+- strict formal mode path is reproducible and documented.
+
+### v24 — `mvp-jit-calls-v24` (F3)
+Scope:
+- support JIT execution of static call subset while preserving fallback for unsupported runtime features.
+Formal obligations:
+- VM-vs-JIT parity checks for call-flow subset.
+Gate:
+- call conformance/parity cases green.
+
+### v25 — `mvp-optimizer-pack2-v25` (F3)
+Scope:
+- expand optimizer with safe branch/select folding and straight-line cleanup.
+Formal obligations:
+- parity checks between optimized and non-optimized bytecode on representative cases.
+Gate:
+- optimizer parity and conformance remain green.
+
+### v26 — `mvp-perf-shape-v26` (F3)
+Scope:
+- stabilize profile defaults, evidence paths, and benchmark flow on `v26`.
+Formal obligations:
+- profile-default/script/evidence consistency checks.
+Gate:
+- `v26` matrix gate pass + formal report updated + benchmark artifact generated.
+
 ## Execution Rhythm Per Profile
 
 1. Implement pass-pack deltas.
@@ -262,7 +302,7 @@ Merge order:
 3. E lands formal obligations.
 4. D finalizes gates/docs from observed outcomes.
 
-## Global Quantitative Targets Across v2-v21
+## Global Quantitative Targets Across v2-v26
 
 1. Corpus growth: minimum +10 conformance cases per profile.
 2. Formal growth: minimum +3 formal obligations per profile from v3 onward.

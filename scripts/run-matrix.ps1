@@ -1,6 +1,6 @@
 param(
-    [string]$ProfileScope = "mvp-perf-stabilization-v21",
-    [string]$OutputDir = "docs/evidence/profiles/v21",
+    [string]$ProfileScope = "mvp-perf-shape-v26",
+    [string]$OutputDir = "docs/evidence/profiles/v26",
     [string]$OutputCsv = "",
     [string]$SummaryPath = ""
 )

@@ -12,7 +12,16 @@ fn optimize_stmt_list(stmts: Vec<BoundStmt>) -> Vec<BoundStmt> {
     let mut out = Vec::new();
     for stmt in stmts {
         match stmt {
-            BoundStmt::Assign { target, expr } => {
+            BoundStmt::Assign { target, mut expr } => {
+                if let Some(BoundStmt::Assign {
+                    target: prev_target,
+                    expr: BoundExpr::IntConst(value),
+                }) = out.last()
+                    && matches!(&expr, BoundExpr::Var(var) if var == prev_target)
+                {
+                    expr = BoundExpr::IntConst(*value);
+                }
+
                 let is_noop = matches!(
                     &expr,
                     BoundExpr::AddConst { var, delta } if *delta == 0 && var == &target
@@ -23,6 +32,17 @@ fn optimize_stmt_list(stmts: Vec<BoundStmt>) -> Vec<BoundStmt> {
                     &expr,
                     BoundExpr::Var(var) if var == &target
                 );
+
+                if let Some(BoundStmt::Assign {
+                    target: prev_target,
+                    ..
+                }) = out.last()
+                    && prev_target == &target
+                    && !expr_uses_var(&expr, &target)
+                {
+                    out.pop();
+                }
+
                 if !is_noop {
                     out.push(BoundStmt::Assign { target, expr });
                 }
@@ -115,6 +135,15 @@ fn eval_const_expr(expr: &BoundExpr) -> Option<i32> {
     match expr {
         BoundExpr::IntConst(v) => Some(*v),
         _ => None,
+    }
+}
+
+fn expr_uses_var(expr: &BoundExpr, var: &str) -> bool {
+    match expr {
+        BoundExpr::Var(name) => name == var,
+        BoundExpr::AddConst { var: name, .. } => name == var,
+        BoundExpr::SubConst { var: name, .. } => name == var,
+        BoundExpr::IntConst(_) => false,
     }
 }
 
@@ -230,5 +259,32 @@ mod tests {
             }
         }
         assert!(saw_loop);
+    }
+
+    #[test]
+    fn formal_v19_consecutive_dead_store_is_eliminated() {
+        let module = resolve_symbols("Sub Main()\nDim x\nx = 1\nx = 2\nEnd Sub");
+        let optimized = optimize_module(module);
+        let assigns = optimized
+            .body
+            .iter()
+            .filter(|stmt| matches!(stmt, BoundStmt::Assign { .. }))
+            .count();
+        assert_eq!(assigns, 1);
+    }
+
+    #[test]
+    fn formal_v19_immediate_const_copy_is_propagated() {
+        let module = resolve_symbols("Sub Main()\nDim x\nDim y\nx = 7\ny = x\nEnd Sub");
+        let optimized = optimize_module(module);
+        assert!(optimized.body.iter().any(|stmt| {
+            matches!(
+                stmt,
+                BoundStmt::Assign {
+                    target,
+                    expr: crate::resolve::BoundExpr::IntConst(7)
+                } if target == "y"
+            )
+        }));
     }
 }

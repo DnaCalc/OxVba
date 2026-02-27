@@ -53,9 +53,8 @@ mod tests {
     }
 
     #[test]
-    fn clif_execution_matches_vm_for_acyclic_control_flow_subset() {
-        let source =
-            "Sub Main()\nDim x\nx = 1\nIf x = 1 Then\nx = x + 3\nElse\nx = x + 9\nEnd If\nEnd Sub";
+    fn clif_execution_matches_vm_for_loop_control_flow_subset() {
+        let source = "Sub Main()\nDim x\nDim i\nx = 0\nFor i = 1 To 3\nx = x + 1\nNext i\nEnd Sub";
         let bytecode = oxvba_compiler::compile(source).expect("compile should succeed");
         assert!(cranelift::supports_bytecode(&bytecode));
 
@@ -67,9 +66,16 @@ mod tests {
     }
 
     #[test]
-    fn falls_back_for_loop_backedge_subset() {
-        let source = "Sub Main()\nDim x\nDim i\nx = 0\nFor i = 1 To 3\nx = x + 1\nNext i\nEnd Sub";
+    fn clif_execution_matches_vm_for_call_subset() {
+        let source =
+            "Sub Main()\nDim x\nx = 1\nCall AddTwo\nEnd Sub\nSub AddTwo()\nx = x + 2\nEnd Sub";
         let bytecode = oxvba_compiler::compile(source).expect("compile should succeed");
-        assert!(!cranelift::supports_bytecode(&bytecode));
+        assert!(cranelift::supports_bytecode(&bytecode));
+
+        let vm = oxvba_vm::execute_and_snapshot(&bytecode).expect("vm should execute");
+        let jit = JitEngine
+            .execute_and_snapshot(&bytecode)
+            .expect("jit should execute");
+        assert_eq!(jit, vm);
     }
 }

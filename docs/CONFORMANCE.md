@@ -43,7 +43,7 @@ At MVP stage, conformance compares:
 As runtime semantics mature, this will expand to richer structured outputs (error state and object lifecycle signals).
 
 ## Declared Profile Scope (Current Gate)
-- Profile id: `mvp-perf-stabilization-v21`
+- Profile id: `mvp-perf-shape-v26`
 - Platform: Windows x64
 - Backends: `vm`, `jit` (JIT toggle path with VM-equivalent semantics)
 - Required matrix cells:
@@ -51,5 +51,5 @@ As runtime semantics mature, this will expand to richer structured outputs (erro
   - `windows/x64/jit`
 
 Current profile gate is evaluated by `./scripts/run-matrix.ps1`, which writes:
-- `docs/evidence/profiles/v21/matrix_latest.csv`
-- `docs/evidence/profiles/v21/gate_report.md`
+- `docs/evidence/profiles/v26/matrix_latest.csv`
+- `docs/evidence/profiles/v26/gate_report.md`

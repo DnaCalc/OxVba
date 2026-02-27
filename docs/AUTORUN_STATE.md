@@ -6,7 +6,7 @@ Rule: The end of any cycle means continue immediately into the next cycle; do no
 Reply condition: only report back when `v26` gate is passed, or when all remaining progress is blocked by documented blockers.
 
 Current checkpoint:
-- Current stabilized scope is `mvp-perf-stabilization-v21`; active AutoRun target is extended to `v26`.
+- Current stabilized scope is `mvp-perf-shape-v26`; active AutoRun target gate is `v26`.
 - Evidence artifacts are tracked under `docs/evidence/profiles/`, `docs/evidence/formal/`, and `docs/evidence/divergences/`.
 
 Resume protocol:

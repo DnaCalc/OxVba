@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::convert::TryFrom;
 
 use cranelift_codegen::ir::condcodes::IntCC;
@@ -7,6 +8,12 @@ use cranelift_jit::{JITBuilder, JITModule};
 use cranelift_module::{Linkage, Module};
 use oxvba_compiler::{Bytecode, Instruction};
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum SegmentTerminal {
+    Halt,
+    Return,
+}
+
 fn slot_offset(slot: usize) -> Result<i32, String> {
     let slot_i32 = i32::try_from(slot).map_err(|_| format!("slot index out of range: {slot}"))?;
     slot_i32
@@ -14,7 +21,7 @@ fn slot_offset(slot: usize) -> Result<i32, String> {
         .ok_or_else(|| format!("slot offset overflow: {slot}"))
 }
 
-fn supports_instruction(instruction: &Instruction) -> bool {
+fn supports_core_instruction(instruction: &Instruction) -> bool {
     matches!(
         instruction,
         Instruction::LoadConstI32 { .. }
@@ -37,23 +44,19 @@ fn supports_instruction(instruction: &Instruction) -> bool {
     )
 }
 
-pub fn supports_bytecode(bytecode: &Bytecode) -> bool {
+fn supports_core(bytecode: &Bytecode) -> bool {
     let len = bytecode.instructions.len();
     if len == 0 {
         return true;
     }
 
-    for (pc, instruction) in bytecode.instructions.iter().enumerate() {
-        if !supports_instruction(instruction) {
+    for instruction in &bytecode.instructions {
+        if !supports_core_instruction(instruction) {
             return false;
         }
         match instruction {
             Instruction::Jump { target_pc } | Instruction::JumpIfZero { target_pc, .. } => {
                 if *target_pc > len {
-                    return false;
-                }
-                // Keep current CLIF subset acyclic until loop/backedge handling is stabilized.
-                if *target_pc < pc {
                     return false;
                 }
             }
@@ -63,8 +66,151 @@ pub fn supports_bytecode(bytecode: &Bytecode) -> bool {
     true
 }
 
+fn find_first_halt(instructions: &[Instruction]) -> Option<usize> {
+    instructions
+        .iter()
+        .position(|inst| matches!(inst, Instruction::Halt))
+}
+
+fn find_first_return(instructions: &[Instruction], start_pc: usize) -> Option<usize> {
+    let tail = instructions.get(start_pc..)?;
+    let rel = tail
+        .iter()
+        .position(|inst| matches!(inst, Instruction::Return))?;
+    Some(start_pc + rel)
+}
+
+fn inline_segment(
+    instructions: &[Instruction],
+    start_pc: usize,
+    end_pc: usize,
+    terminal: SegmentTerminal,
+    call_stack: &mut Vec<usize>,
+) -> Result<Vec<Instruction>, String> {
+    if end_pc >= instructions.len() || start_pc > end_pc {
+        return Err("invalid bytecode segment bounds".to_string());
+    }
+
+    match (terminal, &instructions[end_pc]) {
+        (SegmentTerminal::Halt, Instruction::Halt) => {}
+        (SegmentTerminal::Return, Instruction::Return) => {}
+        _ => return Err("segment terminal marker mismatch".to_string()),
+    }
+
+    if call_stack.contains(&start_pc) {
+        return Err(format!(
+            "recursive call is not supported by cranelift jit subset (pc={start_pc})"
+        ));
+    }
+    call_stack.push(start_pc);
+
+    let mut out = Vec::new();
+    let mut mapping: HashMap<usize, usize> = HashMap::new();
+    let mut jump_patches: Vec<(usize, usize)> = Vec::new();
+
+    for old_pc in start_pc..=end_pc {
+        mapping.insert(old_pc, out.len());
+        let inst = &instructions[old_pc];
+
+        if old_pc == end_pc {
+            if terminal == SegmentTerminal::Halt {
+                out.push(Instruction::Halt);
+            }
+            continue;
+        }
+
+        match inst {
+            Instruction::CallProc { target_pc } => {
+                let proc_end = find_first_return(instructions, *target_pc).ok_or_else(|| {
+                    format!("cannot locate callee return for call target {target_pc}")
+                })?;
+                let nested = inline_segment(
+                    instructions,
+                    *target_pc,
+                    proc_end,
+                    SegmentTerminal::Return,
+                    call_stack,
+                )?;
+                out.extend(nested);
+            }
+            Instruction::Jump { target_pc } => {
+                let patch_idx = out.len();
+                out.push(Instruction::Jump { target_pc: 0 });
+                jump_patches.push((patch_idx, *target_pc));
+            }
+            Instruction::JumpIfZero {
+                cond_slot,
+                target_pc,
+            } => {
+                let patch_idx = out.len();
+                out.push(Instruction::JumpIfZero {
+                    cond_slot: *cond_slot,
+                    target_pc: 0,
+                });
+                jump_patches.push((patch_idx, *target_pc));
+            }
+            Instruction::Return | Instruction::Halt => {
+                return Err("unexpected terminal inside inlined segment".to_string());
+            }
+            other => out.push(other.clone()),
+        }
+    }
+
+    let segment_exit = out.len();
+    let end_plus_one = end_pc.checked_add(1);
+    for (patch_idx, old_target) in jump_patches {
+        let new_target = if let Some(mapped) = mapping.get(&old_target) {
+            *mapped
+        } else if end_plus_one == Some(old_target) {
+            segment_exit
+        } else {
+            return Err(format!(
+                "cross-segment jump is not supported by cranelift jit subset (target={old_target})"
+            ));
+        };
+
+        match &mut out[patch_idx] {
+            Instruction::Jump { target_pc } => *target_pc = new_target,
+            Instruction::JumpIfZero { target_pc, .. } => *target_pc = new_target,
+            _ => return Err("invalid jump patch target".to_string()),
+        }
+    }
+
+    call_stack.pop();
+    Ok(out)
+}
+
+fn inline_bytecode(bytecode: &Bytecode) -> Result<Bytecode, String> {
+    let Some(main_end) = find_first_halt(&bytecode.instructions) else {
+        return Err("bytecode entry procedure missing halt".to_string());
+    };
+
+    let mut call_stack = Vec::new();
+    let instructions = inline_segment(
+        &bytecode.instructions,
+        0,
+        main_end,
+        SegmentTerminal::Halt,
+        &mut call_stack,
+    )?;
+
+    Ok(Bytecode {
+        instructions,
+        slot_count: bytecode.slot_count,
+        user_slot_count: bytecode.user_slot_count,
+    })
+}
+
+pub fn supports_bytecode(bytecode: &Bytecode) -> bool {
+    let Ok(inlined) = inline_bytecode(bytecode) else {
+        return false;
+    };
+    supports_core(&inlined)
+}
+
 pub fn execute_bytecode(bytecode: &Bytecode) -> Result<Vec<i32>, String> {
-    if !supports_bytecode(bytecode) {
+    let inlined = inline_bytecode(bytecode)?;
+    if !supports_core(&inlined) {
         return Err("unsupported bytecode for cranelift execution".to_string());
     }
 
@@ -92,8 +238,8 @@ pub fn execute_bytecode(bytecode: &Bytecode) -> Result<Vec<i32>, String> {
     builder.append_block_params_for_function_params(entry_block);
     let exit_block = builder.create_block();
 
-    let mut pc_blocks = Vec::with_capacity(bytecode.instructions.len());
-    for _ in 0..bytecode.instructions.len() {
+    let mut pc_blocks = Vec::with_capacity(inlined.instructions.len());
+    for _ in 0..inlined.instructions.len() {
         pc_blocks.push(builder.create_block());
     }
 
@@ -108,7 +254,7 @@ pub fn execute_bytecode(bytecode: &Bytecode) -> Result<Vec<i32>, String> {
         builder.ins().jump(exit_block, &[]);
     }
 
-    for (pc, instruction) in bytecode.instructions.iter().enumerate() {
+    for (pc, instruction) in inlined.instructions.iter().enumerate() {
         builder.switch_to_block(pc_blocks[pc]);
         let slots_ptr = builder.use_var(slots_var);
 
@@ -300,7 +446,7 @@ pub fn execute_bytecode(bytecode: &Bytecode) -> Result<Vec<i32>, String> {
     type JitFn = unsafe extern "C" fn(*mut i32) -> i32;
     let jit_fn: JitFn = unsafe { std::mem::transmute(code_ptr) };
 
-    let total_slots = bytecode.slot_count.max(bytecode.user_slot_count);
+    let total_slots = inlined.slot_count.max(inlined.user_slot_count);
     let storage_len = total_slots.max(1);
     let mut storage = vec![0_i32; storage_len];
     let rc = unsafe { jit_fn(storage.as_mut_ptr()) };
@@ -308,5 +454,5 @@ pub fn execute_bytecode(bytecode: &Bytecode) -> Result<Vec<i32>, String> {
         return Err(format!("jit returned non-zero status: {rc}"));
     }
 
-    Ok(storage[..bytecode.user_slot_count].to_vec())
+    Ok(storage[..inlined.user_slot_count].to_vec())
 }

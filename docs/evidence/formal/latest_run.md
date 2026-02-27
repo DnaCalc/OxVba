@@ -1,7 +1,7 @@
 # Formal Run Report
 
-- Timestamp (UTC): 2026-02-27T15:17:24Z
-- Profile scope: mvp-perf-stabilization-v21
+- Timestamp (UTC): 2026-02-27T15:59:53Z
+- Profile scope: mvp-perf-shape-v26
 - Overall mode: non-blocking
 - Kani required: false
 - cargo-kani: unavailable
@@ -65,3 +65,18 @@
 | FO-V21-001 | v21 | no | pass | cargo test -p oxvba-host formal_v21_opt_toggle_parity | crates/oxvba-host/src/engine.rs |  |
 | FO-V21-002 | v21 | no | pass | cargo test -p oxvba-host formal_v21_jit_vm_guardrail_equivalence | crates/oxvba-host/src/engine.rs |  |
 | FO-V21-003 | v21 | no | pass | cargo test -p oxvba-host formal_v21_benchmark_script_exists | crates/oxvba-host/src/engine.rs |  |
+| FO-V22-001 | v22 | no | pass | cargo test -p oxvba-host formal_v22_jit_vm_equivalence_for_loop_backedge | crates/oxvba-host/src/engine.rs |  |
+| FO-V22-002 | v22 | no | pass | cargo test -p oxvba-host formal_v22_jit_vm_equivalence_do_loop_backedge | crates/oxvba-host/src/engine.rs |  |
+| FO-V22-003 | v22 | no | pass | cargo test -p oxvba-host formal_v22_cranelift_supports_loop_subset | crates/oxvba-host/src/engine.rs |  |
+| FO-V23-001 | v23 | no | pass | cargo test -p oxvba-host formal_v23_formal_runner_has_require_kani_switch | crates/oxvba-host/src/engine.rs |  |
+| FO-V23-002 | v23 | no | pass | cargo test -p oxvba-host formal_v23_setup_kani_script_documents_bootstrap | crates/oxvba-host/src/engine.rs |  |
+| FO-V23-003 | v23 | no | pass | cargo test -p oxvba-host formal_v23_ci_supports_optional_kani_job | crates/oxvba-host/src/engine.rs |  |
+| FO-V24-001 | v24 | no | pass | cargo test -p oxvba-host formal_v24_jit_vm_equivalence_call_subset | crates/oxvba-host/src/engine.rs |  |
+| FO-V24-002 | v24 | no | pass | cargo test -p oxvba-host formal_v24_cranelift_supports_call_subset | crates/oxvba-host/src/engine.rs |  |
+| FO-V24-003 | v24 | no | pass | cargo test -p oxvba-host formal_v24_jit_falls_back_for_error_state_subset | crates/oxvba-host/src/engine.rs |  |
+| FO-V25-001 | v25 | no | pass | cargo test -p oxvba-host formal_v25_optimizer_parity_on_constant_if_fold | crates/oxvba-host/src/engine.rs |  |
+| FO-V25-002 | v25 | no | pass | cargo test -p oxvba-host formal_v25_optimizer_parity_on_select_case_fold | crates/oxvba-host/src/engine.rs |  |
+| FO-V25-003 | v25 | no | pass | cargo test -p oxvba-host formal_v25_optimizer_parity_on_dead_store_reduction | crates/oxvba-host/src/engine.rs |  |
+| FO-V26-001 | v26 | no | pass | cargo test -p oxvba-host formal_v26_script_defaults_target_v26_profile_scope | crates/oxvba-host/src/engine.rs |  |
+| FO-V26-002 | v26 | no | pass | cargo test -p oxvba-host formal_v26_benchmark_default_targets_v26_artifact | crates/oxvba-host/src/engine.rs |  |
+| FO-V26-003 | v26 | no | pass | cargo test -p oxvba-host formal_v26_profile_status_document_exists | crates/oxvba-host/src/engine.rs |  |

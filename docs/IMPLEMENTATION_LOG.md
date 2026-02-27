@@ -151,3 +151,11 @@
   - Added JIT subset/fallback/parity tests in `oxvba-jit`.
   - Expanded optimizer rules with safe branch/select folding and additional no-op elimination while preserving loop side-effect semantics.
   - Added new optimizer formal obligations (`FO-V19-004`, `FO-V19-005`) and refreshed formal/matrix evidence artifacts.
+- Extended profile ladder through `v26` (MACH1000 run set):
+  - v22 `mvp-jit-loop-closure-v22`: enabled Cranelift loop/backedge support and executable loop parity checks.
+  - v23 `mvp-formal-strict-kani-v23`: promoted strict formal/Kani wiring checks and setup/CI verification obligations.
+  - v24 `mvp-jit-call-closure-v24`: added `CallProc`/`Return` inlining support for Cranelift JIT subset with parity/fallback tests.
+  - v25 `mvp-optimizer-pack2-v25`: expanded optimizer rules (immediate const copy propagation and consecutive dead-store reduction) while preserving loop semantics.
+  - v26 `mvp-perf-shape-v26`: moved matrix/formal/bench defaults and phase gate artifacts to `docs/evidence/profiles/v26/`.
+  - Added formal obligations `FO-V22-001..003`, `FO-V23-001..003`, `FO-V24-001..003`, `FO-V25-001..003`, `FO-V26-001..003`.
+  - Added profile/workset status docs for `v22..v26` and updated ladder/provenance references.

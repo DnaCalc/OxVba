@@ -34,6 +34,11 @@
 | Profile v19 Status | [`PROFILE_STATUS_V19.md`](PROFILE_STATUS_V19.md) | Current gate status contract for `mvp-ir-optimizer-v19`. |
 | Profile v20 Status | [`PROFILE_STATUS_V20.md`](PROFILE_STATUS_V20.md) | Current gate status contract for `mvp-jit-exec-v20`. |
 | Profile v21 Status | [`PROFILE_STATUS_V21.md`](PROFILE_STATUS_V21.md) | Current gate status contract for `mvp-perf-stabilization-v21`. |
+| Profile v22 Status | [`PROFILE_STATUS_V22.md`](PROFILE_STATUS_V22.md) | Current gate status contract for `mvp-jit-loops-v22`. |
+| Profile v23 Status | [`PROFILE_STATUS_V23.md`](PROFILE_STATUS_V23.md) | Current gate status contract for `mvp-formal-strict-kani-v23`. |
+| Profile v24 Status | [`PROFILE_STATUS_V24.md`](PROFILE_STATUS_V24.md) | Current gate status contract for `mvp-jit-calls-v24`. |
+| Profile v25 Status | [`PROFILE_STATUS_V25.md`](PROFILE_STATUS_V25.md) | Current gate status contract for `mvp-optimizer-pack2-v25`. |
+| Profile v26 Status | [`PROFILE_STATUS_V26.md`](PROFILE_STATUS_V26.md) | Current gate status contract for `mvp-perf-shape-v26`. |
 | Phase 12 Status | [`PHASE12_STATUS.md`](PHASE12_STATUS.md) | Declared profile scope and final conformance/stabilization gate artifacts. |
 | Work Set Plan (v2) | [`worksets/WORKSET_2026-02-27_CONTROLFLOW_V2.md`](worksets/WORKSET_2026-02-27_CONTROLFLOW_V2.md) | Detailed execution-grade plan for control-flow expansion beyond `mvp-int32-core-v1`. |
 | Work Set Plan (v3) | [`worksets/WORKSET_2026-02-27_FORMAL_FOUNDATION_V3.md`](worksets/WORKSET_2026-02-27_FORMAL_FOUNDATION_V3.md) | Formal infrastructure work set for manifest-driven obligations and reporting. |
@@ -55,7 +60,12 @@
 | Work Set Plan (v19) | [`worksets/WORKSET_2026-02-27_IR_OPTIMIZER_V19.md`](worksets/WORKSET_2026-02-27_IR_OPTIMIZER_V19.md) | IR optimizer correctness/parity work set. |
 | Work Set Plan (v20) | [`worksets/WORKSET_2026-02-27_JIT_EXEC_V20.md`](worksets/WORKSET_2026-02-27_JIT_EXEC_V20.md) | JIT execution parity work set. |
 | Work Set Plan (v21) | [`worksets/WORKSET_2026-02-27_PERF_STABILIZATION_V21.md`](worksets/WORKSET_2026-02-27_PERF_STABILIZATION_V21.md) | Performance guardrail and benchmark evidence work set. |
-| Profile Ladder | [`worksets/PROFILE_LADDER_2026-02-27_MACH1000.md`](worksets/PROFILE_LADDER_2026-02-27_MACH1000.md) | MACH1000-scale 20-step forward profile roadmap (`v2`..`v21`). |
+| Work Set Plan (v22) | [`worksets/WORKSET_2026-02-27_JIT_LOOPS_V22.md`](worksets/WORKSET_2026-02-27_JIT_LOOPS_V22.md) | JIT loop/backedge parity work set. |
+| Work Set Plan (v23) | [`worksets/WORKSET_2026-02-27_FORMAL_STRICT_KANI_V23.md`](worksets/WORKSET_2026-02-27_FORMAL_STRICT_KANI_V23.md) | Strict formal/Kani activation work set. |
+| Work Set Plan (v24) | [`worksets/WORKSET_2026-02-27_JIT_CALLS_V24.md`](worksets/WORKSET_2026-02-27_JIT_CALLS_V24.md) | JIT call subset parity work set. |
+| Work Set Plan (v25) | [`worksets/WORKSET_2026-02-27_OPTIMIZER_PACK2_V25.md`](worksets/WORKSET_2026-02-27_OPTIMIZER_PACK2_V25.md) | Optimizer pack2 correctness/parity work set. |
+| Work Set Plan (v26) | [`worksets/WORKSET_2026-02-27_PERF_SHAPE_V26.md`](worksets/WORKSET_2026-02-27_PERF_SHAPE_V26.md) | Perf-shape stabilization and v26 closure work set. |
+| Profile Ladder | [`worksets/PROFILE_LADDER_2026-02-27_MACH1000.md`](worksets/PROFILE_LADDER_2026-02-27_MACH1000.md) | MACH1000 profile roadmap and execution history. |
 | Status Tours | [`status-tours/`](status-tours/) | Date-stamped orientation/showcase docs for implemented project state. |
 | Formal | [`FORMAL.md`](FORMAL.md) | Lean/Kani formal scaffold status and structure. |
 

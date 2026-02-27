@@ -601,6 +601,180 @@ mod tests {
     }
 
     #[test]
+    fn formal_v22_jit_vm_equivalence_for_loop_backedge() {
+        let source = "Sub Main()\nDim x\nDim i\nx = 0\nFor i = 1 To 3\nx = x + 1\nNext i\nEnd Sub";
+        let vm_out = Engine::new(HostConfig {
+            enable_jit: false,
+            root_object_name: None,
+        })
+        .execute_source_with_snapshot(source)
+        .expect("vm execution should succeed");
+        let jit_out = Engine::new(HostConfig {
+            enable_jit: true,
+            root_object_name: None,
+        })
+        .execute_source_with_snapshot(source)
+        .expect("jit execution should succeed");
+        assert_eq!(vm_out, jit_out);
+    }
+
+    #[test]
+    fn formal_v22_jit_vm_equivalence_do_loop_backedge() {
+        let source = "Sub Main()\nDim x\nx = 0\nDo While x < 3\nx = x + 1\nLoop\nEnd Sub";
+        let vm_out = Engine::new(HostConfig {
+            enable_jit: false,
+            root_object_name: None,
+        })
+        .execute_source_with_snapshot(source)
+        .expect("vm execution should succeed");
+        let jit_out = Engine::new(HostConfig {
+            enable_jit: true,
+            root_object_name: None,
+        })
+        .execute_source_with_snapshot(source)
+        .expect("jit execution should succeed");
+        assert_eq!(vm_out, jit_out);
+    }
+
+    #[test]
+    fn formal_v22_cranelift_supports_loop_subset() {
+        let source = "Sub Main()\nDim x\nDim i\nx = 0\nFor i = 1 To 3\nx = x + 1\nNext i\nEnd Sub";
+        let bytecode = oxvba_compiler::compile(source).expect("compile should succeed");
+        assert!(oxvba_jit::cranelift::supports_bytecode(&bytecode));
+    }
+
+    #[test]
+    fn formal_v23_formal_runner_has_require_kani_switch() {
+        let text = std::fs::read_to_string(repo_path("scripts/run-formal.ps1"))
+            .expect("run-formal script exists");
+        assert!(text.contains("[switch]$RequireKani"));
+        assert!(text.contains("OXVBA_REQUIRE_KANI"));
+    }
+
+    #[test]
+    fn formal_v23_setup_kani_script_documents_bootstrap() {
+        let text =
+            std::fs::read_to_string(repo_path("scripts/setup-kani.ps1")).expect("script exists");
+        assert!(text.contains("cargo install kani-verifier --locked"));
+        assert!(text.contains("cargo kani setup"));
+    }
+
+    #[test]
+    fn formal_v23_ci_supports_optional_kani_job() {
+        let text = std::fs::read_to_string(repo_path(".github/workflows/ci.yml"))
+            .expect("ci workflow exists");
+        assert!(text.contains("formal-kani"));
+        assert!(text.contains("RUN_KANI"));
+    }
+
+    #[test]
+    fn formal_v24_jit_vm_equivalence_call_subset() {
+        let source =
+            "Sub Main()\nDim x\nx = 1\nCall AddTwo\nEnd Sub\nSub AddTwo()\nx = x + 2\nEnd Sub";
+        let vm_out = Engine::new(HostConfig {
+            enable_jit: false,
+            root_object_name: None,
+        })
+        .execute_source_with_snapshot(source)
+        .expect("vm execution should succeed");
+        let jit_out = Engine::new(HostConfig {
+            enable_jit: true,
+            root_object_name: None,
+        })
+        .execute_source_with_snapshot(source)
+        .expect("jit execution should succeed");
+        assert_eq!(vm_out, jit_out);
+    }
+
+    #[test]
+    fn formal_v24_cranelift_supports_call_subset() {
+        let source =
+            "Sub Main()\nDim x\nx = 1\nCall AddTwo\nEnd Sub\nSub AddTwo()\nx = x + 2\nEnd Sub";
+        let bytecode = oxvba_compiler::compile(source).expect("compile should succeed");
+        assert!(oxvba_jit::cranelift::supports_bytecode(&bytecode));
+    }
+
+    #[test]
+    fn formal_v24_jit_falls_back_for_error_state_subset() {
+        let source = "Sub Main()\nDim x\nOn Error Resume Next\nError 5\nx = Err.Number\nEnd Sub";
+        let vm_out = Engine::new(HostConfig {
+            enable_jit: false,
+            root_object_name: None,
+        })
+        .execute_source_with_snapshot(source)
+        .expect("vm execution should succeed");
+        let jit_out = Engine::new(HostConfig {
+            enable_jit: true,
+            root_object_name: None,
+        })
+        .execute_source_with_snapshot(source)
+        .expect("jit execution should succeed");
+        assert_eq!(vm_out, jit_out);
+    }
+
+    #[test]
+    fn formal_v25_optimizer_parity_on_constant_if_fold() {
+        let source =
+            "Sub Main()\nDim x\nx = 1\nIf 1 = 1 Then\nx = x + 3\nElse\nx = x + 9\nEnd If\nEnd Sub";
+        let bound = oxvba_compiler::resolve::resolve_symbols(source);
+        let checked = oxvba_compiler::typecheck::check_types(bound).expect("typecheck");
+        let optimized = oxvba_compiler::optimize::optimize_module(checked.clone());
+        let slow_bc = oxvba_compiler::emit::emit_bytecode(&checked);
+        let fast_bc = oxvba_compiler::emit::emit_bytecode(&optimized);
+        let slow = oxvba_vm::execute_and_snapshot(&slow_bc).expect("slow execution");
+        let fast = oxvba_vm::execute_and_snapshot(&fast_bc).expect("fast execution");
+        assert_eq!(fast, slow);
+    }
+
+    #[test]
+    fn formal_v25_optimizer_parity_on_select_case_fold() {
+        let source = "Sub Main()\nDim x\nSelect Case 2\nCase 1\nx = 10\nCase 2\nx = 20\nCase Else\nx = 30\nEnd Select\nEnd Sub";
+        let bound = oxvba_compiler::resolve::resolve_symbols(source);
+        let checked = oxvba_compiler::typecheck::check_types(bound).expect("typecheck");
+        let optimized = oxvba_compiler::optimize::optimize_module(checked.clone());
+        let slow_bc = oxvba_compiler::emit::emit_bytecode(&checked);
+        let fast_bc = oxvba_compiler::emit::emit_bytecode(&optimized);
+        let slow = oxvba_vm::execute_and_snapshot(&slow_bc).expect("slow execution");
+        let fast = oxvba_vm::execute_and_snapshot(&fast_bc).expect("fast execution");
+        assert_eq!(fast, slow);
+    }
+
+    #[test]
+    fn formal_v25_optimizer_parity_on_dead_store_reduction() {
+        let source = "Sub Main()\nDim x\nx = 1\nx = 2\nEnd Sub";
+        let bound = oxvba_compiler::resolve::resolve_symbols(source);
+        let checked = oxvba_compiler::typecheck::check_types(bound).expect("typecheck");
+        let optimized = oxvba_compiler::optimize::optimize_module(checked.clone());
+        let slow_bc = oxvba_compiler::emit::emit_bytecode(&checked);
+        let fast_bc = oxvba_compiler::emit::emit_bytecode(&optimized);
+        let slow = oxvba_vm::execute_and_snapshot(&slow_bc).expect("slow execution");
+        let fast = oxvba_vm::execute_and_snapshot(&fast_bc).expect("fast execution");
+        assert_eq!(fast, slow);
+    }
+
+    #[test]
+    fn formal_v26_script_defaults_target_v26_profile_scope() {
+        let matrix = std::fs::read_to_string(repo_path("scripts/run-matrix.ps1"))
+            .expect("run-matrix script exists");
+        let formal = std::fs::read_to_string(repo_path("scripts/run-formal.ps1"))
+            .expect("run-formal script exists");
+        assert!(matrix.contains("mvp-perf-shape-v26"));
+        assert!(formal.contains("mvp-perf-shape-v26"));
+    }
+
+    #[test]
+    fn formal_v26_benchmark_default_targets_v26_artifact() {
+        let bench = std::fs::read_to_string(repo_path("scripts/run-bench.ps1"))
+            .expect("run-bench script exists");
+        assert!(bench.contains("docs/evidence/profiles/v26/benchmark_latest.md"));
+    }
+
+    #[test]
+    fn formal_v26_profile_status_document_exists() {
+        assert!(repo_path("docs/PROFILE_STATUS_V26.md").exists());
+    }
+
+    #[test]
     fn formal_v21_opt_toggle_parity() {
         let source = "Sub Main()\nDim x\nx = 1\nx = x + 0\nx = x + 2\nEnd Sub";
         let bound = oxvba_compiler::resolve::resolve_symbols(source);
