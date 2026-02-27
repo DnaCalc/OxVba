@@ -23,6 +23,12 @@ pub enum BoundStmt {
         end: BoundExpr,
         body: Vec<BoundStmt>,
     },
+    DoWhile {
+        cond: BoundCond,
+        body: Vec<BoundStmt>,
+        post_check: bool,
+    },
+    ExitDo,
     Unsupported {
         line: String,
     },
@@ -142,6 +148,23 @@ fn parse_block(
             continue;
         }
 
+        if lower.starts_with("do while ") || lower == "do" {
+            out.push(parse_do_stmt(
+                lines,
+                index,
+                declarations,
+                option_explicit,
+                line,
+            ));
+            continue;
+        }
+
+        if lower == "exit do" {
+            out.push(BoundStmt::ExitDo);
+            *index += 1;
+            continue;
+        }
+
         out.push(parse_assign_or_unsupported(line));
         *index += 1;
     }
@@ -226,6 +249,71 @@ fn parse_assign_or_unsupported(line: &str) -> BoundStmt {
         && let Some(expr) = parse_expr(rhs_raw)
     {
         return BoundStmt::Assign { target, expr };
+    }
+
+    BoundStmt::Unsupported {
+        line: line.to_string(),
+    }
+}
+
+fn parse_do_stmt(
+    lines: &[String],
+    index: &mut usize,
+    declarations: &mut Vec<String>,
+    option_explicit: &mut bool,
+    line: &str,
+) -> BoundStmt {
+    let lower = line.to_ascii_lowercase();
+    if lower.starts_with("do while ") {
+        let condition = line[8..].trim();
+        let Some(cond) = parse_condition(condition) else {
+            *index += 1;
+            return BoundStmt::Unsupported {
+                line: line.to_string(),
+            };
+        };
+
+        *index += 1;
+        let body = parse_block(lines, index, declarations, option_explicit, &["loop"]);
+        if *index < lines.len() {
+            let loop_line = lines[*index].to_ascii_lowercase();
+            if loop_line == "loop" {
+                *index += 1;
+                return BoundStmt::DoWhile {
+                    cond,
+                    body,
+                    post_check: false,
+                };
+            }
+        }
+
+        return BoundStmt::Unsupported {
+            line: line.to_string(),
+        };
+    }
+
+    if lower == "do" {
+        *index += 1;
+        let body = parse_block(lines, index, declarations, option_explicit, &["loop"]);
+        if *index < lines.len() {
+            let loop_line = lines[*index].as_str();
+            let loop_lower = loop_line.to_ascii_lowercase();
+            if loop_lower.starts_with("loop while ") {
+                let condition = loop_line[11..].trim();
+                if let Some(cond) = parse_condition(condition) {
+                    *index += 1;
+                    return BoundStmt::DoWhile {
+                        cond,
+                        body,
+                        post_check: true,
+                    };
+                }
+            }
+        }
+
+        return BoundStmt::Unsupported {
+            line: line.to_string(),
+        };
     }
 
     BoundStmt::Unsupported {
@@ -354,6 +442,8 @@ fn matches_terminator(lower_line: &str, terminators: &[&str]) -> bool {
     terminators.iter().any(|term| {
         if *term == "next" {
             lower_line == "next" || lower_line.starts_with("next ")
+        } else if *term == "loop" {
+            lower_line == "loop" || lower_line.starts_with("loop ")
         } else if *term == "elseif" {
             lower_line.starts_with("elseif ")
         } else {
@@ -513,5 +603,17 @@ mod tests {
             panic!("expected if");
         };
         assert!(!else_body.is_empty());
+    }
+
+    #[test]
+    fn resolve_do_while_and_exit_do() {
+        let source = "Sub Main()\nDim x\nDo While x < 5\nx = x + 1\nExit Do\nLoop\nEnd Sub";
+        let module = resolve_symbols(source);
+        assert!(
+            module
+                .body
+                .iter()
+                .any(|s| matches!(s, BoundStmt::DoWhile { .. }))
+        );
     }
 }

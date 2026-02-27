@@ -75,3 +75,8 @@
   - Added executable formal model checks (`FO-V5-001..003`) for branch determinism/equivalence.
   - Hardened conformance runner to classify command outcomes by `LASTEXITCODE` across shell modes.
   - Kept explicit JIT fallback notice while moving it to stdout so matrix `jit` runs remain green.
+- Started `mvp-while-loop-v6` semantics pass:
+  - Added `Do While ... Loop` and `Do ... Loop While` parsing and emission.
+  - Added `Exit Do` lowering with innermost loop exit patching.
+  - Added loop conformance fixtures (`do_while_basic`, `do_loop_while_basic`, `do_exit_do`).
+  - Added executable formal loop obligations (`FO-V6-001..003`) in host model-check tests.

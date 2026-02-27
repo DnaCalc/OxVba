@@ -6,3 +6,6 @@ FO-V4-001,v4,"cargo kani -p oxvba-vm --harness comparator_ops_produce_boolean_va
 FO-V5-001,v5,"cargo test -p oxvba-host formal_v5_branch_selection_is_total_over_small_domain",no,true,crates/oxvba-host/src/engine.rs
 FO-V5-002,v5,"cargo test -p oxvba-host formal_v5_branch_selection_matches_reference_model",no,true,crates/oxvba-host/src/engine.rs
 FO-V5-003,v5,"cargo test -p oxvba-host formal_v5_no_dual_branch_write_effect",no,true,crates/oxvba-host/src/engine.rs
+FO-V6-001,v6,"cargo test -p oxvba-host formal_v6_do_while_matches_reference_model",no,true,crates/oxvba-host/src/engine.rs
+FO-V6-002,v6,"cargo test -p oxvba-host formal_v6_post_condition_loop_semantics",no,true,crates/oxvba-host/src/engine.rs
+FO-V6-003,v6,"cargo test -p oxvba-host formal_v6_exit_do_short_circuits_iteration",no,true,crates/oxvba-host/src/engine.rs

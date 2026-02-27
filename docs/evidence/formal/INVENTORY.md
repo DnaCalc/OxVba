@@ -42,6 +42,21 @@ This inventory tracks formal artifacts and proof-adjacent harnesses by profile.
   - Artifact: `crates/oxvba-host/src/engine.rs`
   - Harness: `formal_v5_no_dual_branch_write_effect`
 
+## v6 (`mvp-while-loop-v6`)
+
+- FO-V6-001
+  - Area: pre-condition loop model
+  - Artifact: `crates/oxvba-host/src/engine.rs`
+  - Harness: `formal_v6_do_while_matches_reference_model`
+- FO-V6-002
+  - Area: post-condition loop model
+  - Artifact: `crates/oxvba-host/src/engine.rs`
+  - Harness: `formal_v6_post_condition_loop_semantics`
+- FO-V6-003
+  - Area: `Exit Do` short-circuit behavior
+  - Artifact: `crates/oxvba-host/src/engine.rs`
+  - Harness: `formal_v6_exit_do_short_circuits_iteration`
+
 ## Reports
 
 - Latest markdown report: `docs/evidence/formal/latest_run.md`

@@ -142,4 +142,41 @@ mod tests {
             assert!(matches!(snapshot[1], 1 | 10 | 100));
         }
     }
+
+    #[test]
+    fn formal_v6_do_while_matches_reference_model() {
+        let engine = Engine::new(HostConfig::default());
+        for limit in 0..=6 {
+            let source =
+                format!("Sub Main()\nDim x\nx = 0\nDo While x < {limit}\nx = x + 1\nLoop\nEnd Sub");
+            let snapshot = engine
+                .execute_source_with_snapshot(&source)
+                .expect("execution should succeed");
+            assert_eq!(snapshot[0], limit);
+        }
+    }
+
+    #[test]
+    fn formal_v6_post_condition_loop_semantics() {
+        let engine = Engine::new(HostConfig::default());
+        for limit in 0..=4 {
+            let source =
+                format!("Sub Main()\nDim x\nx = 0\nDo\nx = x + 1\nLoop While x < {limit}\nEnd Sub");
+            let snapshot = engine
+                .execute_source_with_snapshot(&source)
+                .expect("execution should succeed");
+            let expected = if limit <= 1 { 1 } else { limit };
+            assert_eq!(snapshot[0], expected);
+        }
+    }
+
+    #[test]
+    fn formal_v6_exit_do_short_circuits_iteration() {
+        let engine = Engine::new(HostConfig::default());
+        let source = "Sub Main()\nDim x\nx = 0\nDo While x < 10\nx = x + 1\nIf x = 4 Then\nExit Do\nEnd If\nLoop\nEnd Sub";
+        let snapshot = engine
+            .execute_source_with_snapshot(source)
+            .expect("execution should succeed");
+        assert_eq!(snapshot[0], 4);
+    }
 }

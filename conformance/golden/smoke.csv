@@ -1,4 +1,7 @@
 file,status,slots
+do_exit_do.bas,ok,4
+do_loop_while_basic.bas,ok,3
+do_while_basic.bas,ok,3
 for_basic.bas,ok,"6,4"
 for_zero_iter.bas,ok,"5,5"
 if_false.bas,ok,0

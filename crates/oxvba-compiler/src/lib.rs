@@ -176,4 +176,20 @@ mod tests {
         assert!(jump_if_count >= 2);
         assert!(jump_count >= 2);
     }
+
+    #[test]
+    fn compile_do_while_emits_loop_jumps() {
+        let source = "Sub Main()\nDim x\nDo While x < 3\nx = x + 1\nLoop\nEnd Sub";
+        let out = compile(source).expect("compile should succeed");
+        assert!(
+            out.instructions
+                .iter()
+                .any(|i| matches!(i, Instruction::JumpIfZero { .. }))
+        );
+        assert!(
+            out.instructions
+                .iter()
+                .any(|i| matches!(i, Instruction::Jump { .. }))
+        );
+    }
 }

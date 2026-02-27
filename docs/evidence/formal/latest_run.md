@@ -1,7 +1,7 @@
 # Formal Run Report
 
-- Timestamp (UTC): 2026-02-27T12:19:53Z
-- Profile scope: mvp-else-paths-v5
+- Timestamp (UTC): 2026-02-27T12:25:10Z
+- Profile scope: mvp-while-loop-v6
 - Overall mode: non-blocking
 - cargo-kani: unavailable
 
@@ -14,3 +14,6 @@
 | FO-V5-001 | v5 | no | pass | cargo test -p oxvba-host formal_v5_branch_selection_is_total_over_small_domain | crates/oxvba-host/src/engine.rs |  |
 | FO-V5-002 | v5 | no | pass | cargo test -p oxvba-host formal_v5_branch_selection_matches_reference_model | crates/oxvba-host/src/engine.rs |  |
 | FO-V5-003 | v5 | no | pass | cargo test -p oxvba-host formal_v5_no_dual_branch_write_effect | crates/oxvba-host/src/engine.rs |  |
+| FO-V6-001 | v6 | no | pass | cargo test -p oxvba-host formal_v6_do_while_matches_reference_model | crates/oxvba-host/src/engine.rs |  |
+| FO-V6-002 | v6 | no | pass | cargo test -p oxvba-host formal_v6_post_condition_loop_semantics | crates/oxvba-host/src/engine.rs |  |
+| FO-V6-003 | v6 | no | pass | cargo test -p oxvba-host formal_v6_exit_do_short_circuits_iteration | crates/oxvba-host/src/engine.rs |  |

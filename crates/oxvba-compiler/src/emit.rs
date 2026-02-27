@@ -13,7 +13,14 @@ pub fn emit_bytecode(module: &BoundModule) -> Bytecode {
 
     let mut temps = TempSlotAllocator::new(module.declarations.len());
     let mut instructions = Vec::new();
-    emit_stmt_list(&module.body, &slot_map, &mut temps, &mut instructions);
+    let mut loop_exit_stack: Vec<Vec<usize>> = Vec::new();
+    emit_stmt_list(
+        &module.body,
+        &slot_map,
+        &mut temps,
+        &mut instructions,
+        &mut loop_exit_stack,
+    );
 
     instructions.push(Instruction::Halt);
 
@@ -29,9 +36,10 @@ fn emit_stmt_list(
     slot_map: &HashMap<&str, usize>,
     temps: &mut TempSlotAllocator,
     instructions: &mut Vec<Instruction>,
+    loop_exit_stack: &mut Vec<Vec<usize>>,
 ) {
     for stmt in stmts {
-        emit_stmt(stmt, slot_map, temps, instructions);
+        emit_stmt(stmt, slot_map, temps, instructions, loop_exit_stack);
     }
 }
 
@@ -40,6 +48,7 @@ fn emit_stmt(
     slot_map: &HashMap<&str, usize>,
     temps: &mut TempSlotAllocator,
     instructions: &mut Vec<Instruction>,
+    loop_exit_stack: &mut Vec<Vec<usize>>,
 ) {
     match stmt {
         BoundStmt::Assign { target, expr } => {
@@ -59,7 +68,7 @@ fn emit_stmt(
                 cond_slot,
                 target_pc: 0,
             });
-            emit_stmt_list(then_body, slot_map, temps, instructions);
+            emit_stmt_list(then_body, slot_map, temps, instructions, loop_exit_stack);
             if else_body.is_empty() {
                 let target = instructions.len();
                 if let Instruction::JumpIfZero { target_pc, .. } = &mut instructions[jump_patch] {
@@ -72,7 +81,7 @@ fn emit_stmt(
                 if let Instruction::JumpIfZero { target_pc, .. } = &mut instructions[jump_patch] {
                     *target_pc = else_target;
                 }
-                emit_stmt_list(else_body, slot_map, temps, instructions);
+                emit_stmt_list(else_body, slot_map, temps, instructions, loop_exit_stack);
                 let end_target = instructions.len();
                 if let Instruction::Jump { target_pc } = &mut instructions[end_patch] {
                     *target_pc = end_target;
@@ -102,7 +111,7 @@ fn emit_stmt(
                     cond_slot,
                     target_pc: 0,
                 });
-                emit_stmt_list(body, slot_map, temps, instructions);
+                emit_stmt_list(body, slot_map, temps, instructions, loop_exit_stack);
                 instructions.push(Instruction::IncSlot { slot: var_slot });
                 instructions.push(Instruction::Jump {
                     target_pc: loop_head,
@@ -111,6 +120,63 @@ fn emit_stmt(
                 if let Instruction::JumpIfZero { target_pc, .. } = &mut instructions[exit_patch] {
                     *target_pc = exit_target;
                 }
+            }
+        }
+        BoundStmt::DoWhile {
+            cond,
+            body,
+            post_check,
+        } => {
+            let loop_head = instructions.len();
+            let cond_slot = temps.alloc_temp();
+            let mut entry_exit_patch: Option<usize> = None;
+
+            if !post_check {
+                emit_cond_into(cond, cond_slot, slot_map, temps, instructions);
+                let exit_patch = instructions.len();
+                instructions.push(Instruction::JumpIfZero {
+                    cond_slot,
+                    target_pc: 0,
+                });
+                entry_exit_patch = Some(exit_patch);
+            }
+
+            loop_exit_stack.push(Vec::new());
+            emit_stmt_list(body, slot_map, temps, instructions, loop_exit_stack);
+
+            emit_cond_into(cond, cond_slot, slot_map, temps, instructions);
+            let post_exit_patch = instructions.len();
+            instructions.push(Instruction::JumpIfZero {
+                cond_slot,
+                target_pc: 0,
+            });
+            instructions.push(Instruction::Jump {
+                target_pc: loop_head,
+            });
+
+            let exit_target = instructions.len();
+            if let Some(entry_patch) = entry_exit_patch
+                && let Instruction::JumpIfZero { target_pc, .. } = &mut instructions[entry_patch]
+            {
+                *target_pc = exit_target;
+            }
+            if let Instruction::JumpIfZero { target_pc, .. } = &mut instructions[post_exit_patch] {
+                *target_pc = exit_target;
+            }
+
+            if let Some(exit_patches) = loop_exit_stack.pop() {
+                for patch in exit_patches {
+                    if let Instruction::Jump { target_pc } = &mut instructions[patch] {
+                        *target_pc = exit_target;
+                    }
+                }
+            }
+        }
+        BoundStmt::ExitDo => {
+            if let Some(exit_patches) = loop_exit_stack.last_mut() {
+                let patch = instructions.len();
+                instructions.push(Instruction::Jump { target_pc: 0 });
+                exit_patches.push(patch);
             }
         }
         BoundStmt::Unsupported { .. } => {}
@@ -318,6 +384,25 @@ mod tests {
                 .iter()
                 .any(|i| matches!(i, Instruction::CmpLeSlots { .. }))
         );
+    }
+
+    #[test]
+    fn emits_do_while_loop_and_exit_do() {
+        let source = "Sub Main()\nDim x\nDo While x < 5\nx = x + 1\nIf x = 3 Then\nExit Do\nEnd If\nLoop\nEnd Sub";
+        let bound = resolve_symbols(source);
+        let code = emit_bytecode(&bound);
+        let jump_count = code
+            .instructions
+            .iter()
+            .filter(|i| matches!(i, Instruction::Jump { .. }))
+            .count();
+        let jump_if_count = code
+            .instructions
+            .iter()
+            .filter(|i| matches!(i, Instruction::JumpIfZero { .. }))
+            .count();
+        assert!(jump_count >= 2);
+        assert!(jump_if_count >= 2);
     }
 }
 

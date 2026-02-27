@@ -57,6 +57,11 @@ fn check_stmt(
             check_expr(end, option_explicit, declared, declarations)?;
             check_stmt_list(body, option_explicit, declared, declarations)
         }
+        BoundStmt::DoWhile { cond, body, .. } => {
+            check_condition(cond, option_explicit, declared, declarations)?;
+            check_stmt_list(body, option_explicit, declared, declarations)
+        }
+        BoundStmt::ExitDo => Ok(()),
         BoundStmt::Unsupported { line } => Err(format!("unsupported statement: {line}")),
     }
 }
