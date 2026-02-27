@@ -11,6 +11,7 @@ Draft v0 (scaffold).
 Current `Instruction` variants:
 - `LoadConstI32 { slot, value }`
 - `AddConstI32 { slot, value }`
+- `SubConstI32 { slot, value }`
 - `Halt`
 
 This is an MVP representation to support early vertical-slice execution and tests.

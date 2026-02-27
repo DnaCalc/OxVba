@@ -1,0 +1,5 @@
+"backend","file","status","slots"
+"vm","option_explicit_error.bas","error",""
+"vm","option_explicit_ok.bas","ok","3"
+"vm","smoke.bas","ok","15"
+"vm","subtract.bas","ok","16"

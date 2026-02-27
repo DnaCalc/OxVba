@@ -47,3 +47,6 @@ jobs:
       - name: MVP conformance run
         shell: pwsh
         run: ./scripts/run-conformance.ps1
+      - name: MVP matrix gate
+        shell: pwsh
+        run: ./scripts/run-matrix.ps1

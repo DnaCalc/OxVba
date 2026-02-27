@@ -1,3 +1,9 @@
+param(
+    [ValidateSet("vm", "jit")]
+    [string]$Backend = "vm",
+    [string]$ResultsPath = ""
+)
+
 $ErrorActionPreference = "Stop"
 $PSNativeCommandUseErrorActionPreference = $true
 
@@ -12,13 +18,18 @@ if (-not (Test-Path $goldenFile)) {
 }
 
 $results = @()
+$backendArgs = @()
+if ($Backend -eq "jit") {
+    $backendArgs += "--jit"
+}
+
 Get-ChildItem -Path $testsDir -Filter *.bas | Sort-Object Name | ForEach-Object {
     $name = $_.Name
     $status = "ok"
     $slots = ""
 
     try {
-        $output = cargo run -q -p oxvba-cli -- run $_.FullName --dump-slots | Out-String
+        $output = cargo run -q -p oxvba-cli -- run $_.FullName --dump-slots @backendArgs | Out-String
         $slotLine = ($output -split "`r?`n" | Where-Object { $_ -like "SLOTS:*" } | Select-Object -Last 1)
         if ($slotLine) {
             $slots = $slotLine.Substring(6)
@@ -54,4 +65,10 @@ foreach ($r in $results) {
     }
 }
 
-Write-Host "conformance run: ok ($($results.Count) files)"
+if ($ResultsPath) {
+    $results |
+        Select-Object @{Name = "backend"; Expression = { $Backend } }, file, status, slots |
+        Export-Csv -Path $ResultsPath -NoTypeInformation
+}
+
+Write-Host "conformance run: ok ($($results.Count) files, backend=$Backend)"

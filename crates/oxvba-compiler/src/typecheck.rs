@@ -8,7 +8,9 @@ pub fn check_types(module: BoundModule) -> Result<BoundModule, String> {
 
     for op in &module.ops {
         match op {
-            BoundOp::AssignConst { name, .. } | BoundOp::AddConst { name, .. } => {
+            BoundOp::AssignConst { name, .. }
+            | BoundOp::AddConst { name, .. }
+            | BoundOp::SubConst { name, .. } => {
                 if !declared.contains(name) {
                     if module.option_explicit {
                         return Err(format!("use of undeclared variable: {name}"));

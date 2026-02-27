@@ -79,4 +79,18 @@ mod tests {
             .expect("execution should succeed");
         assert_eq!(snapshot, vec![15]);
     }
+
+    #[test]
+    fn execute_source_jit_toggle_preserves_semantics() {
+        let engine = Engine::new(HostConfig {
+            enable_jit: true,
+            root_object_name: Some("Application".to_string()),
+        });
+
+        let source = "Sub Main()\nDim x\nx = 20\nx = x - 4\nEnd Sub";
+        let snapshot = engine
+            .execute_source_with_snapshot(source)
+            .expect("execution should succeed");
+        assert_eq!(snapshot, vec![16]);
+    }
 }

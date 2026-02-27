@@ -5,8 +5,8 @@ Intent: Continue implementing OxVBA against `MACH1000_PLAN.md` until project com
 Rule: The end of any cycle means continue immediately into the next cycle; do not pause for checkpoint-style stops.
 
 Current checkpoint:
-- Phase 0 bootstrap completed (workspace + crate scaffolding + CI + scripts + baseline docs).
-- Entering incremental implementation across Phase 1+.
+- Phase 12 conformance/stabilization gate passed for declared profile scope `mvp-int32-core-v1`.
+- Evidence artifacts generated in `docs/evidence/phase12/` and `docs/evidence/divergences/`.
 
 Resume protocol:
 1. Read this file.

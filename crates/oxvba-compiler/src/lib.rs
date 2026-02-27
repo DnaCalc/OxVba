@@ -60,6 +60,21 @@ mod tests {
     }
 
     #[test]
+    fn compile_dim_assign_and_subtract() {
+        let source = "Sub Main()\nDim x\nx = 10\nx = x - 3\nEnd Sub";
+        let out = compile(source).expect("compile should succeed");
+        assert_eq!(out.slot_count, 1);
+        assert_eq!(
+            out.instructions,
+            vec![
+                Instruction::LoadConstI32 { slot: 0, value: 10 },
+                Instruction::SubConstI32 { slot: 0, value: 3 },
+                Instruction::Halt
+            ]
+        );
+    }
+
+    #[test]
     fn undeclared_variable_with_option_explicit_is_rejected() {
         let source = "Option Explicit\nSub Main()\nx = 1\nEnd Sub";
         let err = compile(source).expect_err("typecheck should fail");

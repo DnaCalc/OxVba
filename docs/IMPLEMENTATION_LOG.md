@@ -31,3 +31,17 @@
 - Added host/CLI slot snapshot flow (`SLOTS:` output with `--dump-slots`).
 - Upgraded conformance script to compare both status and slot snapshots.
 - Expanded conformance corpus with `Option Explicit` pass/fail fixtures.
+
+## 2026-02-27
+- Added MVP subtraction semantics across compiler/bytecode/VM:
+  - Compiler resolution for `x = x - const`.
+  - New bytecode opcode: `SubConstI32`.
+  - VM execution support and regression tests.
+- Extended CLI runner with `--jit` toggle support and argument parser tests.
+- Added new conformance fixture `conformance/tests/subtract.bas` with golden expectation.
+- Extended conformance script with backend parameterization (`vm` / `jit`) and optional result export.
+- Added matrix gate automation script `scripts/run-matrix.ps1` producing Phase 12 artifacts under `docs/evidence/phase12/`.
+- Added divergence evidence fixtures and records:
+  - `DIV-0001` (`If ... Then`) unsupported.
+  - `DIV-0002` (`For ... Next`) unsupported.
+- Added Phase 12 status document tying gate criteria to reproducible evidence artifacts.

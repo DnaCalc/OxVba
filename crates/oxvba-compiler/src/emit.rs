@@ -30,6 +30,14 @@ pub fn emit_bytecode(module: &BoundModule) -> Bytecode {
                     });
                 }
             }
+            BoundOp::SubConst { name, value } => {
+                if let Some(slot) = slot_map.get(name.as_str()) {
+                    instructions.push(Instruction::SubConstI32 {
+                        slot: *slot,
+                        value: *value,
+                    });
+                }
+            }
             BoundOp::Unsupported { .. } => {}
         }
     }

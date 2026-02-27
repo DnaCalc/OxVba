@@ -4,6 +4,7 @@ use rkyv::{Archive, Deserialize, Serialize};
 pub enum Instruction {
     LoadConstI32 { slot: usize, value: i32 },
     AddConstI32 { slot: usize, value: i32 },
+    SubConstI32 { slot: usize, value: i32 },
     Halt,
 }
 

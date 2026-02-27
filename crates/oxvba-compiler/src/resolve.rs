@@ -2,6 +2,7 @@
 pub enum BoundOp {
     AssignConst { name: String, value: i32 },
     AddConst { name: String, value: i32 },
+    SubConst { name: String, value: i32 },
     Unsupported { line: String },
 }
 
@@ -63,6 +64,17 @@ pub fn resolve_symbols(source: &str) -> BoundModule {
                     && let Ok(value) = right.parse::<i32>()
                 {
                     ops.push(BoundOp::AddConst { name: lhs, value });
+                    continue;
+                }
+            }
+
+            if let Some((left, right)) = rhs.split_once('-') {
+                let left = left.trim();
+                let right = right.trim();
+                if left.eq_ignore_ascii_case(&lhs)
+                    && let Ok(value) = right.parse::<i32>()
+                {
+                    ops.push(BoundOp::SubConst { name: lhs, value });
                     continue;
                 }
             }

@@ -44,6 +44,12 @@ impl Vm {
                     }
                     self.registers.registers[*slot] += *value;
                 }
+                Instruction::SubConstI32 { slot, value } => {
+                    if *slot >= self.registers.registers.len() {
+                        return Err(format!("slot out of range: {slot}"));
+                    }
+                    self.registers.registers[*slot] -= *value;
+                }
                 Instruction::Halt => break,
             }
         }
@@ -70,5 +76,21 @@ mod tests {
         let mut vm = Vm::default();
         vm.execute(&bytecode).expect("vm should execute bytecode");
         assert_eq!(vm.snapshot_slots(1), vec![15]);
+    }
+
+    #[test]
+    fn executes_load_and_sub_sequence() {
+        let bytecode = Bytecode {
+            instructions: vec![
+                Instruction::LoadConstI32 { slot: 0, value: 10 },
+                Instruction::SubConstI32 { slot: 0, value: 3 },
+                Instruction::Halt,
+            ],
+            slot_count: 1,
+        };
+
+        let mut vm = Vm::default();
+        vm.execute(&bytecode).expect("vm should execute bytecode");
+        assert_eq!(vm.snapshot_slots(1), vec![7]);
     }
 }

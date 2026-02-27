@@ -1,0 +1,5 @@
+"backend","file","status","slots"
+"jit","option_explicit_error.bas","error",""
+"jit","option_explicit_ok.bas","ok","3"
+"jit","smoke.bas","ok","15"
+"jit","subtract.bas","ok","16"
