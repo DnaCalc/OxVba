@@ -296,6 +296,12 @@ fn emit_stmt(
         BoundStmt::OnErrorResumeNext => {
             instructions.push(Instruction::SetOnErrorResumeNext);
         }
+        BoundStmt::OnErrorGoto0 => {
+            instructions.push(Instruction::SetOnErrorGoto0);
+        }
+        BoundStmt::ResumeNext => {
+            instructions.push(Instruction::ResumeNext);
+        }
         BoundStmt::RaiseError(code) => {
             instructions.push(Instruction::RaiseError { code: *code });
         }

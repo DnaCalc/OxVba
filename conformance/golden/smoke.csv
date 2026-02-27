@@ -22,6 +22,7 @@ nested_if_for.bas,ok,"5,3"
 option_explicit_error.bas,error,
 option_explicit_ok.bas,ok,3
 on_error_default_fail.bas,error,
+on_error_goto_zero_fail.bas,error,
 on_error_resume_continue.bas,ok,2
 on_error_resume_next.bas,ok,5
 params_byref.bas,ok,2
@@ -32,5 +33,6 @@ proc_call_local_scope.bas,ok,2
 select_case_basic.bas,ok,20
 select_case_else.bas,ok,99
 select_case_multi.bas,ok,30
+resume_next_statement_ok.bas,ok,1
 smoke.bas,ok,15
 subtract.bas,ok,16

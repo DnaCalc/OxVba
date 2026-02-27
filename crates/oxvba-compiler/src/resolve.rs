@@ -32,6 +32,8 @@ pub enum BoundStmt {
     },
     ExitDo,
     OnErrorResumeNext,
+    OnErrorGoto0,
+    ResumeNext,
     RaiseError(i32),
     Call {
         name: String,
@@ -333,6 +335,18 @@ fn parse_block(
 
         if lower == "on error resume next" {
             out.push(BoundStmt::OnErrorResumeNext);
+            *index += 1;
+            continue;
+        }
+
+        if lower == "on error goto 0" {
+            out.push(BoundStmt::OnErrorGoto0);
+            *index += 1;
+            continue;
+        }
+
+        if lower == "resume next" {
+            out.push(BoundStmt::ResumeNext);
             *index += 1;
             continue;
         }
@@ -1098,6 +1112,24 @@ mod tests {
                 .body
                 .iter()
                 .any(|s| matches!(s, BoundStmt::RaiseError(5)))
+        );
+    }
+
+    #[test]
+    fn resolve_on_error_goto_zero_and_resume_next_stmt() {
+        let source = "Sub Main()\nOn Error GoTo 0\nResume Next\nEnd Sub";
+        let module = resolve_symbols(source);
+        assert!(
+            module
+                .body
+                .iter()
+                .any(|s| matches!(s, BoundStmt::OnErrorGoto0))
+        );
+        assert!(
+            module
+                .body
+                .iter()
+                .any(|s| matches!(s, BoundStmt::ResumeNext))
         );
     }
 }

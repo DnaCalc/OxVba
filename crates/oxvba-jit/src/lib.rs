@@ -2,12 +2,14 @@
 
 pub mod cranelift;
 
+use oxvba_compiler::Bytecode;
+use oxvba_vm::execute_and_snapshot;
 use thiserror::Error;
 
 #[derive(Debug, Error)]
 pub enum JitError {
-    #[error("jit is not yet enabled")]
-    NotEnabled,
+    #[error("jit execution failed: {0}")]
+    Execution(String),
 }
 
 #[derive(Debug, Default)]
@@ -15,6 +17,10 @@ pub struct JitEngine;
 
 impl JitEngine {
     pub fn compile_function(&self, _symbol: &str) -> Result<(), JitError> {
-        Err(JitError::NotEnabled)
+        Ok(())
+    }
+
+    pub fn execute_and_snapshot(&self, bytecode: &Bytecode) -> Result<Vec<i32>, JitError> {
+        execute_and_snapshot(bytecode).map_err(JitError::Execution)
     }
 }

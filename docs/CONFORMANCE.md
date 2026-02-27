@@ -25,6 +25,7 @@ Current corpus includes:
 - `ByVal`/`ByRef` parameter passing subset.
 - Fixed-size arrays with indexed load/store and bounds errors.
 - `On Error Resume Next` and `Err.Number` subset behavior.
+- `On Error GoTo 0` reset behavior and `Resume Next` statement subset.
 
 ## Commands
 ```powershell
@@ -42,7 +43,7 @@ At MVP stage, conformance compares:
 As runtime semantics mature, this will expand to richer structured outputs (error state and object lifecycle signals).
 
 ## Declared Profile Scope (Current Gate)
-- Profile id: `mvp-error-state-v11`
+- Profile id: `mvp-perf-stabilization-v21`
 - Platform: Windows x64
 - Backends: `vm`, `jit` (JIT toggle path with VM-equivalent semantics)
 - Required matrix cells:
@@ -50,5 +51,5 @@ As runtime semantics mature, this will expand to richer structured outputs (erro
   - `windows/x64/jit`
 
 Current profile gate is evaluated by `./scripts/run-matrix.ps1`, which writes:
-- `docs/evidence/profiles/v11/matrix_latest.csv`
-- `docs/evidence/profiles/v11/gate_report.md`
+- `docs/evidence/profiles/v21/matrix_latest.csv`
+- `docs/evidence/profiles/v21/gate_report.md`

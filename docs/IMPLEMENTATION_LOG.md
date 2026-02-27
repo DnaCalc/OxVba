@@ -108,3 +108,34 @@
   - Added `Err.Number` read path.
   - Added conformance fixtures for default-fail and resume-next continuation.
   - Added executable formal obligations (`FO-V11-001..003`) for error-state transitions.
+- Started `mvp-resume-goto-v12` error-control pass:
+  - Added `On Error GoTo 0` and `Resume Next` statement parsing/binding/typecheck/emission.
+  - Added VM instruction handling (`SetOnErrorGoto0`, `ResumeNext`) and conformance fixtures.
+  - Added formal obligations (`FO-V12-001..003`) and host executable checks.
+- Started `mvp-variant-numeric-v13` formalized numeric semantics pass:
+  - Added executable numeric coercion/addition invariants in host formal tests.
+  - Added obligations (`FO-V13-001..003`) to formal registry.
+- Started `mvp-string-bstr-v14` string semantics pass:
+  - Added BSTR roundtrip/concat identity checks and obligations (`FO-V14-001..003`).
+- Started `mvp-date-currency-v15` date/currency semantic scaffolding pass:
+  - Added executable invariants for monotonicity and scale roundtrips.
+  - Added obligations (`FO-V15-001..003`).
+- Started `mvp-semantics-model-v16` trace/spec alignment pass:
+  - Added runtime-vs-spec trace equality checks for representative programs.
+  - Added obligations (`FO-V16-001..003`).
+- Started `mvp-proof-integration-v17` formal-gate integration pass:
+  - Extended formal inventory/manifest coverage through v21.
+  - Added proof infrastructure presence checks and obligations (`FO-V17-001..003`).
+- Started `mvp-divergence-proof-closure-v18` evidence pass:
+  - Added executable assertions over divergence inventory structure and evidence links.
+  - Added obligations (`FO-V18-001..003`).
+- Started `mvp-ir-optimizer-v19` optimization-correctness pass:
+  - Added optimizer module with no-op assignment elimination (`x=x+0`, `x=x-0`).
+  - Added optimizer correctness tests and obligations (`FO-V19-001..003`).
+- Started `mvp-jit-exec-v20` execution parity pass:
+  - Activated JIT execution path through host/jit crates with VM-backed execution snapshot path.
+  - Added JIT-vs-VM equivalence checks for arithmetic/control-flow/error-state and obligations (`FO-V20-001..003`).
+- Started `mvp-perf-stabilization-v21` guardrail/perf pass:
+  - Added optimization toggle parity checks and JIT guardrail equivalence checks.
+  - Added benchmark capture script (`scripts/run-bench.ps1`) with evidence output under `docs/evidence/profiles/v21/`.
+  - Added obligations (`FO-V21-001..003`).

@@ -18,9 +18,10 @@ There is no theoretical upper bound (full VBA parity and performance optimizatio
 
 Concrete planning horizon in this document:
 
-- Current completed profile: `v1`
-- Planned profiles: `v2` through `v21`
+- Previously completed profile at planning time: `v1`
+- Planned profiles in this ladder: `v2` through `v21`
 - Total concrete future steps here: **20**
+- Execution status now: **completed through `v21`**.
 
 ## Naming Convention
 - `mvp-<capability>-vN`

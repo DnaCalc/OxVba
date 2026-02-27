@@ -15,7 +15,7 @@ Use `docs/` and `synthesis/` for supporting context and provenance.
 
 ## Current User Execution Constraint
 - Continue implementation continuously.
-- Do not stop for progress summaries, watchpoints, confirmations, or checkpoints.
+- Do not stop for progress summaries, watchpoints, confirmations, checkpoints, or any other interim responses.
 - Execute the MACH1000 profile ladder continuously until completion.
 - Only reply when one of the following is true:
   - The full profile ladder is complete and the `v21` gate is passed.

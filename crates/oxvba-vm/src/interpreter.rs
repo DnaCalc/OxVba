@@ -166,6 +166,13 @@ impl Vm {
                     self.on_error_resume_next = true;
                     pc += 1;
                 }
+                Instruction::SetOnErrorGoto0 => {
+                    self.on_error_resume_next = false;
+                    pc += 1;
+                }
+                Instruction::ResumeNext => {
+                    pc += 1;
+                }
                 Instruction::RaiseError { code } => {
                     self.last_error = *code;
                     if self.on_error_resume_next {

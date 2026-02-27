@@ -1,0 +1,3 @@
+"profile_scope","os","arch","backend","required","result","tests_ran","captured_at_utc","evidence_file"
+"mvp-date-currency-v15","windows","x64","vm","true","green","37","2026-02-27T13:22:20Z","docs\evidence\profiles\v15\conformance_vm.csv"
+"mvp-date-currency-v15","windows","x64","jit","true","green","37","2026-02-27T13:22:20Z","docs\evidence\profiles\v15\conformance_jit.csv"

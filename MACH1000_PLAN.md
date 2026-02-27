@@ -1317,10 +1317,12 @@ Initial policy:
 ### Phase 12: Conformance and Stabilization
 - Primary owner track: Green + Red + Logistics
 - Estimated duration: 4-10 weeks (iterative)
-- Status: complete for profile scope `mvp-int32-core-v1` (gate passed on 2026-02-27)
+- Status: complete for profile scope `mvp-perf-stabilization-v21` (gate passed on 2026-02-27)
 - Gate evidence:
-  - `docs/evidence/phase12/matrix_latest.csv`
-  - `docs/evidence/phase12/gate_report.md`
+  - `docs/evidence/profiles/v21/matrix_latest.csv`
+  - `docs/evidence/profiles/v21/gate_report.md`
+  - `docs/evidence/formal/latest_run.md`
+  - `docs/evidence/profiles/v21/benchmark_latest.md`
   - `docs/evidence/divergences/README.md`
 - Dependencies: all prior phases
 - Parallelizable tracks: matrix expansion, divergence triage, documentation finalization

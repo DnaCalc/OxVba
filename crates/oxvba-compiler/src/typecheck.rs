@@ -124,6 +124,8 @@ fn check_stmt(
         }
         BoundStmt::ExitDo => Ok(()),
         BoundStmt::OnErrorResumeNext => Ok(()),
+        BoundStmt::OnErrorGoto0 => Ok(()),
+        BoundStmt::ResumeNext => Ok(()),
         BoundStmt::RaiseError(_) => Ok(()),
         BoundStmt::Call { name, args } => {
             if !proc_names.contains(name) {

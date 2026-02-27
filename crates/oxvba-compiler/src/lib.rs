@@ -3,6 +3,7 @@
 pub mod bytecode;
 pub mod emit;
 pub mod lower_to_hir;
+pub mod optimize;
 pub mod resolve;
 pub mod typecheck;
 
@@ -25,8 +26,13 @@ pub fn compile(source: &str) -> Result<Bytecode, CompileError> {
 
     let bound = resolve::resolve_symbols(source);
     let checked = typecheck::check_types(bound).map_err(CompileError::TypeError)?;
-    let _hir = lower_to_hir::lower_to_hir(&checked);
-    Ok(emit::emit_bytecode(&checked))
+    let optimized = if std::env::var("OXVBA_DISABLE_OPT").ok().as_deref() == Some("1") {
+        checked
+    } else {
+        optimize::optimize_module(checked)
+    };
+    let _hir = lower_to_hir::lower_to_hir(&optimized);
+    Ok(emit::emit_bytecode(&optimized))
 }
 
 #[cfg(test)]
@@ -244,6 +250,23 @@ mod tests {
             out.instructions
                 .iter()
                 .any(|i| matches!(i, Instruction::LoadErrNumber { .. }))
+        );
+    }
+
+    #[test]
+    fn compile_on_error_goto_zero_and_resume_next_emits_ops() {
+        let source =
+            "Sub Main()\nOn Error Resume Next\nOn Error GoTo 0\nResume Next\nError 3\nEnd Sub";
+        let out = compile(source).expect("compile should succeed");
+        assert!(
+            out.instructions
+                .iter()
+                .any(|i| matches!(i, Instruction::SetOnErrorGoto0))
+        );
+        assert!(
+            out.instructions
+                .iter()
+                .any(|i| matches!(i, Instruction::ResumeNext))
         );
     }
 }

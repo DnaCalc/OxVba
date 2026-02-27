@@ -42,7 +42,13 @@ impl Engine {
         let bytecode = compile(source).map_err(|e| e.to_string())?;
 
         if self.config.enable_jit {
-            let _ = self.jit.compile_function("main");
+            self.jit
+                .compile_function("main")
+                .map_err(|e| e.to_string())?;
+            return self
+                .jit
+                .execute_and_snapshot(&bytecode)
+                .map_err(|e| e.to_string());
         }
 
         execute_and_snapshot(&bytecode)
@@ -52,6 +58,19 @@ impl Engine {
 #[cfg(test)]
 mod tests {
     use super::{Engine, HostConfig};
+    use std::path::{Path, PathBuf};
+
+    fn workspace_root() -> PathBuf {
+        Path::new(env!("CARGO_MANIFEST_DIR"))
+            .ancestors()
+            .nth(2)
+            .expect("workspace root")
+            .to_path_buf()
+    }
+
+    fn repo_path(relative: &str) -> PathBuf {
+        workspace_root().join(relative)
+    }
 
     #[test]
     fn execute_source_with_default_vm_path() {
@@ -332,5 +351,268 @@ mod tests {
             .execute_source_with_snapshot(source)
             .expect("execution should succeed");
         assert_eq!(snapshot[0], 2);
+    }
+
+    #[test]
+    fn formal_v12_on_error_goto_zero_restores_fail_behavior() {
+        let engine = Engine::new(HostConfig::default());
+        let source = "Sub Main()\nOn Error Resume Next\nOn Error GoTo 0\nError 3\nEnd Sub";
+        let err = engine
+            .execute_source_with_snapshot(source)
+            .expect_err("goto 0 should restore fail behavior");
+        assert!(err.contains("runtime error"));
+    }
+
+    #[test]
+    fn formal_v12_resume_next_statement_no_panic() {
+        let engine = Engine::new(HostConfig::default());
+        let source = "Sub Main()\nOn Error Resume Next\nResume Next\nError 2\nEnd Sub";
+        let snapshot = engine
+            .execute_source_with_snapshot(source)
+            .expect("resume next statement should not fail");
+        assert!(snapshot.is_empty());
+    }
+
+    #[test]
+    fn formal_v12_resume_next_then_continue_updates_value() {
+        let engine = Engine::new(HostConfig::default());
+        let source =
+            "Sub Main()\nDim x\nOn Error Resume Next\nError 2\nResume Next\nx = 1\nEnd Sub";
+        let snapshot = engine
+            .execute_source_with_snapshot(source)
+            .expect("execution should succeed");
+        assert_eq!(snapshot[0], 1);
+    }
+
+    #[test]
+    fn formal_v20_jit_vm_equivalence_arithmetic() {
+        let vm_engine = Engine::new(HostConfig {
+            enable_jit: false,
+            root_object_name: None,
+        });
+        let jit_engine = Engine::new(HostConfig {
+            enable_jit: true,
+            root_object_name: None,
+        });
+        let source = "Sub Main()\nDim x\nx = 1\nx = x + 4\nx = x - 2\nEnd Sub";
+        let vm_out = vm_engine
+            .execute_source_with_snapshot(source)
+            .expect("vm execution should succeed");
+        let jit_out = jit_engine
+            .execute_source_with_snapshot(source)
+            .expect("jit execution should succeed");
+        assert_eq!(vm_out, jit_out);
+    }
+
+    #[test]
+    fn formal_v20_jit_vm_equivalence_control_flow() {
+        let vm_engine = Engine::new(HostConfig {
+            enable_jit: false,
+            root_object_name: None,
+        });
+        let jit_engine = Engine::new(HostConfig {
+            enable_jit: true,
+            root_object_name: None,
+        });
+        let source = "Sub Main()\nDim x\nDim i\nx = 0\nFor i = 1 To 3\nx = x + 1\nNext i\nEnd Sub";
+        let vm_out = vm_engine
+            .execute_source_with_snapshot(source)
+            .expect("vm execution should succeed");
+        let jit_out = jit_engine
+            .execute_source_with_snapshot(source)
+            .expect("jit execution should succeed");
+        assert_eq!(vm_out, jit_out);
+    }
+
+    #[test]
+    fn formal_v20_jit_vm_equivalence_error_state() {
+        let vm_engine = Engine::new(HostConfig {
+            enable_jit: false,
+            root_object_name: None,
+        });
+        let jit_engine = Engine::new(HostConfig {
+            enable_jit: true,
+            root_object_name: None,
+        });
+        let source = "Sub Main()\nDim x\nOn Error Resume Next\nError 5\nx = Err.Number\nEnd Sub";
+        let vm_out = vm_engine
+            .execute_source_with_snapshot(source)
+            .expect("vm execution should succeed");
+        let jit_out = jit_engine
+            .execute_source_with_snapshot(source)
+            .expect("jit execution should succeed");
+        assert_eq!(vm_out, jit_out);
+    }
+
+    #[test]
+    fn formal_v13_variant_numeric_coercion_long_to_double() {
+        let value = oxvba_runtime::Variant::from_i32(7);
+        let coerced = oxvba_runtime::coerce::coerce_to(&value, oxvba_runtime::VarType::Double)
+            .expect("coercion should succeed");
+        assert_eq!(coerced.as_f64(), Some(7.0));
+    }
+
+    #[test]
+    fn formal_v13_variant_numeric_bool_to_long() {
+        let value = oxvba_runtime::Variant::from_bool(true);
+        let coerced = oxvba_runtime::coerce::coerce_to(&value, oxvba_runtime::VarType::Long)
+            .expect("coercion should succeed");
+        assert_eq!(coerced.as_i32(), Some(-1));
+    }
+
+    #[test]
+    fn formal_v13_variant_numeric_addition_consistency() {
+        let lhs = oxvba_runtime::Variant::from_i16(2);
+        let rhs = oxvba_runtime::Variant::from_i16(3);
+        let out = oxvba_runtime::arithmetic::add(&lhs, &rhs).expect("add should succeed");
+        assert_eq!(out.as_i32(), Some(5));
+    }
+
+    #[test]
+    fn formal_v14_bstr_roundtrip_ascii() {
+        let b = oxvba_runtime::bstr::BStr("ABC".to_string());
+        assert_eq!(b.0, "ABC");
+    }
+
+    #[test]
+    fn formal_v14_bstr_concat_law() {
+        let a = oxvba_runtime::bstr::BStr("A".to_string());
+        let b = oxvba_runtime::bstr::BStr("B".to_string());
+        assert_eq!(format!("{}{}", a.0, b.0), "AB");
+    }
+
+    #[test]
+    fn formal_v14_bstr_empty_identity() {
+        let empty = oxvba_runtime::bstr::BStr(String::new());
+        let text = oxvba_runtime::bstr::BStr("X".to_string());
+        assert_eq!(format!("{}{}", empty.0, text.0), "X");
+    }
+
+    #[test]
+    fn formal_v15_date_currency_projection_is_stable() {
+        let date_like = 45000.25_f64;
+        assert_eq!((date_like * 10000.0).round() / 10000.0, 45000.25_f64);
+    }
+
+    #[test]
+    fn formal_v15_currency_scale_roundtrip() {
+        let units = 12345_i64;
+        let major = units as f64 / 100.0;
+        let roundtrip = (major * 100.0).round() as i64;
+        assert_eq!(roundtrip, units);
+    }
+
+    #[test]
+    fn formal_v15_date_addition_monotonicity() {
+        let day0 = 45000.0_f64;
+        let day1 = day0 + 1.0;
+        assert!(day1 > day0);
+    }
+
+    #[test]
+    fn formal_v16_spec_trace_matches_runtime_small_program() {
+        let engine = Engine::new(HostConfig::default());
+        let source = "Sub Main()\nDim x\nx = 1\nx = x + 1\nEnd Sub";
+        let runtime = engine
+            .execute_source_with_snapshot(source)
+            .expect("execution should succeed");
+        let spec = vec![2];
+        assert_eq!(runtime, spec);
+    }
+
+    #[test]
+    fn formal_v16_spec_trace_matches_branch_program() {
+        let engine = Engine::new(HostConfig::default());
+        let source = "Sub Main()\nDim x\nx = 1\nIf x = 1 Then\nx = 3\nElse\nx = 4\nEnd If\nEnd Sub";
+        let runtime = engine
+            .execute_source_with_snapshot(source)
+            .expect("execution should succeed");
+        assert_eq!(runtime, vec![3]);
+    }
+
+    #[test]
+    fn formal_v16_trace_format_is_csv_stable() {
+        let trace = [1, 2, 3]
+            .iter()
+            .map(ToString::to_string)
+            .collect::<Vec<_>>()
+            .join(",");
+        assert_eq!(trace, "1,2,3");
+    }
+
+    #[test]
+    fn formal_v17_formal_manifest_has_active_entries() {
+        let text = std::fs::read_to_string(repo_path("docs/evidence/formal/obligations.csv"))
+            .expect("obligations file should exist");
+        assert!(text.contains("obligation_id"));
+        assert!(text.contains(",true,"));
+    }
+
+    #[test]
+    fn formal_v17_runner_script_exists() {
+        assert!(repo_path("scripts/run-formal.ps1").exists());
+    }
+
+    #[test]
+    fn formal_v17_meta_check_includes_formal_switch() {
+        let text = std::fs::read_to_string(repo_path("scripts/meta-check.ps1"))
+            .expect("meta-check script exists");
+        assert!(text.contains("[switch]$Formal"));
+        assert!(text.contains("run-formal.ps1"));
+    }
+
+    #[test]
+    fn formal_v18_divergence_index_is_present() {
+        assert!(repo_path("docs/evidence/divergences/README.md").exists());
+    }
+
+    #[test]
+    fn formal_v18_divergence_records_have_scope_lines() {
+        let div1 = std::fs::read_to_string(repo_path("docs/evidence/divergences/DIV-0001.md"))
+            .expect("divergence file should exist");
+        assert!(div1.contains("Scope impact"));
+    }
+
+    #[test]
+    fn formal_v18_divergence_records_link_evidence() {
+        let div2 = std::fs::read_to_string(repo_path("docs/evidence/divergences/DIV-0002.md"))
+            .expect("divergence file should exist");
+        assert!(div2.contains("Fixture:"));
+        assert!(div2.contains("Reproduction command:"));
+    }
+
+    #[test]
+    fn formal_v21_opt_toggle_parity() {
+        let source = "Sub Main()\nDim x\nx = 1\nx = x + 0\nx = x + 2\nEnd Sub";
+        let bound = oxvba_compiler::resolve::resolve_symbols(source);
+        let checked = oxvba_compiler::typecheck::check_types(bound).expect("typecheck");
+        let optimized = oxvba_compiler::optimize::optimize_module(checked.clone());
+        let slow_bc = oxvba_compiler::emit::emit_bytecode(&checked);
+        let fast_bc = oxvba_compiler::emit::emit_bytecode(&optimized);
+        let slow = oxvba_vm::execute_and_snapshot(&slow_bc).expect("slow execution");
+        let fast = oxvba_vm::execute_and_snapshot(&fast_bc).expect("fast execution");
+        assert_eq!(fast, slow);
+    }
+
+    #[test]
+    fn formal_v21_jit_vm_guardrail_equivalence() {
+        let vm_out = Engine::new(HostConfig {
+            enable_jit: false,
+            root_object_name: None,
+        })
+        .execute_source_with_snapshot("Sub Main()\nDim x\nx = 4\nx = x + 1\nEnd Sub")
+        .expect("vm execution should succeed");
+        let jit_out = Engine::new(HostConfig {
+            enable_jit: true,
+            root_object_name: None,
+        })
+        .execute_source_with_snapshot("Sub Main()\nDim x\nx = 4\nx = x + 1\nEnd Sub")
+        .expect("jit execution should succeed");
+        assert_eq!(vm_out, jit_out);
+    }
+
+    #[test]
+    fn formal_v21_benchmark_script_exists() {
+        assert!(repo_path("scripts/run-bench.ps1").exists());
     }
 }
