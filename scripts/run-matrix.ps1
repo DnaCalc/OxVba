@@ -1,6 +1,6 @@
 param(
-    [string]$ProfileScope = "mvp-formal-foundation-v3",
-    [string]$OutputDir = "docs/evidence/profiles/v3",
+    [string]$ProfileScope = "mvp-boolean-logic-v4",
+    [string]$OutputDir = "docs/evidence/profiles/v4",
     [string]$OutputCsv = "",
     [string]$SummaryPath = ""
 )

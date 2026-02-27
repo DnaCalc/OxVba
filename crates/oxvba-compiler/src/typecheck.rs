@@ -1,6 +1,6 @@
 use std::collections::HashSet;
 
-use crate::resolve::{BoundExpr, BoundModule, BoundStmt};
+use crate::resolve::{BoundCond, BoundExpr, BoundModule, BoundStmt};
 
 pub fn check_types(module: BoundModule) -> Result<BoundModule, String> {
     let mut module = module;
@@ -37,13 +37,8 @@ fn check_stmt(
             ensure_declared(target, option_explicit, declared, declarations)?;
             check_expr(expr, option_explicit, declared, declarations)
         }
-        BoundStmt::IfEq {
-            lhs,
-            rhs,
-            then_body,
-        } => {
-            check_expr(lhs, option_explicit, declared, declarations)?;
-            check_expr(rhs, option_explicit, declared, declarations)?;
+        BoundStmt::IfCond { cond, then_body } => {
+            check_condition(cond, option_explicit, declared, declarations)?;
             check_stmt_list(then_body, option_explicit, declared, declarations)
         }
         BoundStmt::ForRange {
@@ -58,6 +53,26 @@ fn check_stmt(
             check_stmt_list(body, option_explicit, declared, declarations)
         }
         BoundStmt::Unsupported { line } => Err(format!("unsupported statement: {line}")),
+    }
+}
+
+fn check_condition(
+    cond: &BoundCond,
+    option_explicit: bool,
+    declared: &mut HashSet<String>,
+    declarations: &mut Vec<String>,
+) -> Result<(), String> {
+    match cond {
+        BoundCond::Compare { lhs, rhs, .. } => {
+            check_expr(lhs, option_explicit, declared, declarations)?;
+            check_expr(rhs, option_explicit, declared, declarations)
+        }
+        BoundCond::Truthy(expr) => check_expr(expr, option_explicit, declared, declarations),
+        BoundCond::Not(inner) => check_condition(inner, option_explicit, declared, declarations),
+        BoundCond::And(lhs, rhs) | BoundCond::Or(lhs, rhs) => {
+            check_condition(lhs, option_explicit, declared, declarations)?;
+            check_condition(rhs, option_explicit, declared, declarations)
+        }
     }
 }
 

@@ -61,12 +61,67 @@ impl Vm {
                     self.write_slot(*dst, out)?;
                     pc += 1;
                 }
+                Instruction::CmpNeSlots { dst, lhs, rhs } => {
+                    let out = if self.read_slot(*lhs)? != self.read_slot(*rhs)? {
+                        1
+                    } else {
+                        0
+                    };
+                    self.write_slot(*dst, out)?;
+                    pc += 1;
+                }
+                Instruction::CmpLtSlots { dst, lhs, rhs } => {
+                    let out = if self.read_slot(*lhs)? < self.read_slot(*rhs)? {
+                        1
+                    } else {
+                        0
+                    };
+                    self.write_slot(*dst, out)?;
+                    pc += 1;
+                }
                 Instruction::CmpLeSlots { dst, lhs, rhs } => {
                     let out = if self.read_slot(*lhs)? <= self.read_slot(*rhs)? {
                         1
                     } else {
                         0
                     };
+                    self.write_slot(*dst, out)?;
+                    pc += 1;
+                }
+                Instruction::CmpGtSlots { dst, lhs, rhs } => {
+                    let out = if self.read_slot(*lhs)? > self.read_slot(*rhs)? {
+                        1
+                    } else {
+                        0
+                    };
+                    self.write_slot(*dst, out)?;
+                    pc += 1;
+                }
+                Instruction::CmpGeSlots { dst, lhs, rhs } => {
+                    let out = if self.read_slot(*lhs)? >= self.read_slot(*rhs)? {
+                        1
+                    } else {
+                        0
+                    };
+                    self.write_slot(*dst, out)?;
+                    pc += 1;
+                }
+                Instruction::BoolNot { dst, src } => {
+                    let out = if self.read_slot(*src)? == 0 { 1 } else { 0 };
+                    self.write_slot(*dst, out)?;
+                    pc += 1;
+                }
+                Instruction::BoolAnd { dst, lhs, rhs } => {
+                    let lhs_val = self.read_slot(*lhs)?;
+                    let rhs_val = self.read_slot(*rhs)?;
+                    let out = if lhs_val != 0 && rhs_val != 0 { 1 } else { 0 };
+                    self.write_slot(*dst, out)?;
+                    pc += 1;
+                }
+                Instruction::BoolOr { dst, lhs, rhs } => {
+                    let lhs_val = self.read_slot(*lhs)?;
+                    let rhs_val = self.read_slot(*rhs)?;
+                    let out = if lhs_val != 0 || rhs_val != 0 { 1 } else { 0 };
                     self.write_slot(*dst, out)?;
                     pc += 1;
                 }
@@ -208,6 +263,49 @@ mod tests {
         let err = vm.execute(&bytecode).expect_err("invalid jump should fail");
         assert!(err.contains("jump target out of range"));
     }
+
+    #[test]
+    fn executes_comparators_and_boolean_ops() {
+        let bytecode = Bytecode {
+            instructions: vec![
+                Instruction::LoadConstI32 { slot: 0, value: 5 },
+                Instruction::LoadConstI32 { slot: 1, value: 3 },
+                Instruction::CmpGtSlots {
+                    dst: 2,
+                    lhs: 0,
+                    rhs: 1,
+                },
+                Instruction::CmpLtSlots {
+                    dst: 3,
+                    lhs: 0,
+                    rhs: 1,
+                },
+                Instruction::CmpNeSlots {
+                    dst: 4,
+                    lhs: 0,
+                    rhs: 1,
+                },
+                Instruction::BoolAnd {
+                    dst: 5,
+                    lhs: 2,
+                    rhs: 4,
+                },
+                Instruction::BoolNot { dst: 6, src: 3 },
+                Instruction::BoolOr {
+                    dst: 7,
+                    lhs: 3,
+                    rhs: 6,
+                },
+                Instruction::Halt,
+            ],
+            slot_count: 8,
+            user_slot_count: 8,
+        };
+
+        let mut vm = Vm::default();
+        vm.execute(&bytecode).expect("vm should execute bytecode");
+        assert_eq!(vm.snapshot_slots(8), vec![5, 3, 1, 0, 1, 1, 1, 1]);
+    }
 }
 
 #[allow(unexpected_cfgs)]
@@ -238,5 +336,57 @@ mod kani_proofs {
         };
         let mut vm = Vm::default();
         assert!(vm.execute(&bytecode).is_ok());
+    }
+
+    #[kani::proof]
+    fn comparator_ops_produce_boolean_values() {
+        let a: i32 = kani::any();
+        let b: i32 = kani::any();
+        let bytecode = Bytecode {
+            instructions: vec![
+                Instruction::LoadConstI32 { slot: 0, value: a },
+                Instruction::LoadConstI32 { slot: 1, value: b },
+                Instruction::CmpEqSlots {
+                    dst: 2,
+                    lhs: 0,
+                    rhs: 1,
+                },
+                Instruction::CmpNeSlots {
+                    dst: 3,
+                    lhs: 0,
+                    rhs: 1,
+                },
+                Instruction::CmpLtSlots {
+                    dst: 4,
+                    lhs: 0,
+                    rhs: 1,
+                },
+                Instruction::CmpLeSlots {
+                    dst: 5,
+                    lhs: 0,
+                    rhs: 1,
+                },
+                Instruction::CmpGtSlots {
+                    dst: 6,
+                    lhs: 0,
+                    rhs: 1,
+                },
+                Instruction::CmpGeSlots {
+                    dst: 7,
+                    lhs: 0,
+                    rhs: 1,
+                },
+                Instruction::Halt,
+            ],
+            slot_count: 8,
+            user_slot_count: 8,
+        };
+
+        let mut vm = Vm::default();
+        assert!(vm.execute(&bytecode).is_ok());
+        let out = vm.snapshot_slots(8);
+        for idx in 2..=7 {
+            assert!(out[idx] == 0 || out[idx] == 1);
+        }
     }
 }

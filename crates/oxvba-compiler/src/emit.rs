@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use crate::{
     bytecode::{Bytecode, Instruction},
-    resolve::{BoundExpr, BoundModule, BoundStmt},
+    resolve::{BoundCond, BoundExpr, BoundModule, BoundStmt, CompareOp},
 };
 
 pub fn emit_bytecode(module: &BoundModule) -> Bytecode {
@@ -47,21 +47,9 @@ fn emit_stmt(
                 emit_expr_into(expr, target_slot, slot_map, instructions);
             }
         }
-        BoundStmt::IfEq {
-            lhs,
-            rhs,
-            then_body,
-        } => {
-            let lhs_slot = temps.alloc_temp();
-            let rhs_slot = temps.alloc_temp();
+        BoundStmt::IfCond { cond, then_body } => {
             let cond_slot = temps.alloc_temp();
-            emit_expr_into(lhs, lhs_slot, slot_map, instructions);
-            emit_expr_into(rhs, rhs_slot, slot_map, instructions);
-            instructions.push(Instruction::CmpEqSlots {
-                dst: cond_slot,
-                lhs: lhs_slot,
-                rhs: rhs_slot,
-            });
+            emit_cond_into(cond, cond_slot, slot_map, temps, instructions);
             let jump_patch = instructions.len();
             instructions.push(Instruction::JumpIfZero {
                 cond_slot,
@@ -108,6 +96,99 @@ fn emit_stmt(
             }
         }
         BoundStmt::Unsupported { .. } => {}
+    }
+}
+
+fn emit_cond_into(
+    cond: &BoundCond,
+    dst: usize,
+    slot_map: &HashMap<&str, usize>,
+    temps: &mut TempSlotAllocator,
+    instructions: &mut Vec<Instruction>,
+) {
+    match cond {
+        BoundCond::Compare { op, lhs, rhs } => {
+            let lhs_slot = temps.alloc_temp();
+            let rhs_slot = temps.alloc_temp();
+            emit_expr_into(lhs, lhs_slot, slot_map, instructions);
+            emit_expr_into(rhs, rhs_slot, slot_map, instructions);
+            match op {
+                CompareOp::Eq => instructions.push(Instruction::CmpEqSlots {
+                    dst,
+                    lhs: lhs_slot,
+                    rhs: rhs_slot,
+                }),
+                CompareOp::Ne => instructions.push(Instruction::CmpNeSlots {
+                    dst,
+                    lhs: lhs_slot,
+                    rhs: rhs_slot,
+                }),
+                CompareOp::Lt => instructions.push(Instruction::CmpLtSlots {
+                    dst,
+                    lhs: lhs_slot,
+                    rhs: rhs_slot,
+                }),
+                CompareOp::Le => instructions.push(Instruction::CmpLeSlots {
+                    dst,
+                    lhs: lhs_slot,
+                    rhs: rhs_slot,
+                }),
+                CompareOp::Gt => instructions.push(Instruction::CmpGtSlots {
+                    dst,
+                    lhs: lhs_slot,
+                    rhs: rhs_slot,
+                }),
+                CompareOp::Ge => instructions.push(Instruction::CmpGeSlots {
+                    dst,
+                    lhs: lhs_slot,
+                    rhs: rhs_slot,
+                }),
+            }
+        }
+        BoundCond::Truthy(expr) => {
+            let expr_slot = temps.alloc_temp();
+            let zero_slot = temps.alloc_temp();
+            emit_expr_into(expr, expr_slot, slot_map, instructions);
+            instructions.push(Instruction::LoadConstI32 {
+                slot: zero_slot,
+                value: 0,
+            });
+            instructions.push(Instruction::CmpNeSlots {
+                dst,
+                lhs: expr_slot,
+                rhs: zero_slot,
+            });
+        }
+        BoundCond::Not(inner) => {
+            let inner_slot = temps.alloc_temp();
+            emit_cond_into(inner, inner_slot, slot_map, temps, instructions);
+            instructions.push(Instruction::BoolNot {
+                dst,
+                src: inner_slot,
+            });
+        }
+        BoundCond::And(lhs, rhs) => {
+            let lhs_slot = temps.alloc_temp();
+            let rhs_slot = temps.alloc_temp();
+            emit_cond_into(lhs, lhs_slot, slot_map, temps, instructions);
+            emit_cond_into(rhs, rhs_slot, slot_map, temps, instructions);
+            instructions.push(Instruction::BoolAnd {
+                dst,
+                lhs: lhs_slot,
+                rhs: rhs_slot,
+            });
+        }
+        BoundCond::Or(lhs, rhs) => {
+            let lhs_slot = temps.alloc_temp();
+            let rhs_slot = temps.alloc_temp();
+            emit_cond_into(lhs, lhs_slot, slot_map, temps, instructions);
+            emit_cond_into(rhs, rhs_slot, slot_map, temps, instructions);
+            instructions.push(Instruction::BoolOr {
+                dst,
+                lhs: lhs_slot,
+                rhs: rhs_slot,
+            });
+        }
     }
 }
 

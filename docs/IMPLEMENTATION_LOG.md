@@ -63,3 +63,9 @@
   - Added structured formal run CSV output (`docs/evidence/formal/latest_run.csv`).
   - Added formal inventory doc (`docs/evidence/formal/INVENTORY.md`).
   - Added dedicated v3 workset and status docs.
+- Started `mvp-boolean-logic-v4` semantics pass:
+  - Added relational operators (`<>`, `<`, `<=`, `>`, `>=`) in `If` conditions.
+  - Added boolean condition composition support (`Not`, `And`, `Or`).
+  - Added VM opcode handling for comparison/boolean operations.
+  - Added conformance fixtures for relational/boolean condition paths.
+  - Added formal obligation `FO-V4-001` for comparator output invariants.

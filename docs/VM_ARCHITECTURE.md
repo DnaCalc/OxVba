@@ -5,7 +5,8 @@ The VM crate provides:
 - register-file abstraction,
 - interpreter entry point with `pc`-driven control flow and opcode execution:
   - arithmetic/data movement (`LoadConstI32`, `AddConstI32`, `SubConstI32`, `CopySlot`, `IncSlot`)
-  - comparisons (`CmpEqSlots`, `CmpLeSlots`)
+  - comparisons (`CmpEqSlots`, `CmpNeSlots`, `CmpLtSlots`, `CmpLeSlots`, `CmpGtSlots`, `CmpGeSlots`)
+  - boolean composition (`BoolNot`, `BoolAnd`, `BoolOr`)
   - control flow (`JumpIfZero`, `Jump`, `Halt`)
 - placeholder broadword helper,
 - error-state enum scaffold.

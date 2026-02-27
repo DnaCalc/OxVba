@@ -112,6 +112,33 @@ mod tests {
     }
 
     #[test]
+    fn compile_if_statement_with_relational_and_boolean_ops() {
+        let source =
+            "Sub Main()\nDim x\nx = 1\nIf Not x <> 1 Or x < 2 Then\nx = x + 1\nEnd If\nEnd Sub";
+        let out = compile(source).expect("compile should succeed");
+        assert!(
+            out.instructions
+                .iter()
+                .any(|i| matches!(i, Instruction::CmpNeSlots { .. }))
+        );
+        assert!(
+            out.instructions
+                .iter()
+                .any(|i| matches!(i, Instruction::CmpLtSlots { .. }))
+        );
+        assert!(
+            out.instructions
+                .iter()
+                .any(|i| matches!(i, Instruction::BoolNot { .. }))
+        );
+        assert!(
+            out.instructions
+                .iter()
+                .any(|i| matches!(i, Instruction::BoolOr { .. }))
+        );
+    }
+
+    #[test]
     fn compile_for_statement_emits_loop_instructions() {
         let source = "Sub Main()\nDim x\nDim i\nx = 0\nFor i = 1 To 3\nx = x + 1\nNext i\nEnd Sub";
         let out = compile(source).expect("compile should succeed");

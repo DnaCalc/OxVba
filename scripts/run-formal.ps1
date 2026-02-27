@@ -1,5 +1,5 @@
 param(
-    [string]$ProfileScope = "mvp-formal-foundation-v3",
+    [string]$ProfileScope = "mvp-boolean-logic-v4",
     [string]$ReportPath = "docs/evidence/formal/latest_run.md",
     [string]$ReportCsvPath = "docs/evidence/formal/latest_run.csv",
     [string]$ObligationsPath = "docs/evidence/formal/obligations.csv"

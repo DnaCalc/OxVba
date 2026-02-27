@@ -14,7 +14,14 @@ Current `Instruction` variants:
 - `SubConstI32 { slot, value }`
 - `CopySlot { dst, src }`
 - `CmpEqSlots { dst, lhs, rhs }`
+- `CmpNeSlots { dst, lhs, rhs }`
+- `CmpLtSlots { dst, lhs, rhs }`
 - `CmpLeSlots { dst, lhs, rhs }`
+- `CmpGtSlots { dst, lhs, rhs }`
+- `CmpGeSlots { dst, lhs, rhs }`
+- `BoolNot { dst, src }`
+- `BoolAnd { dst, lhs, rhs }`
+- `BoolOr { dst, lhs, rhs }`
 - `JumpIfZero { cond_slot, target_pc }`
 - `Jump { target_pc }`
 - `IncSlot { slot }`

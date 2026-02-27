@@ -20,6 +20,13 @@ This inventory tracks formal artifacts and proof-adjacent harnesses by profile.
   - Artifact: `scripts/run-formal.ps1`
   - Command: `cargo kani --version`
 
+## v4 (`mvp-boolean-logic-v4`)
+
+- FO-V4-001
+  - Area: comparator output invariants
+  - Artifact: `crates/oxvba-vm/src/interpreter.rs`
+  - Harness: `comparator_ops_produce_boolean_values`
+
 ## Reports
 
 - Latest markdown report: `docs/evidence/formal/latest_run.md`

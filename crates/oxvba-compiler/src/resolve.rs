@@ -12,9 +12,8 @@ pub enum BoundStmt {
         target: String,
         expr: BoundExpr,
     },
-    IfEq {
-        lhs: BoundExpr,
-        rhs: BoundExpr,
+    IfCond {
+        cond: BoundCond,
         then_body: Vec<BoundStmt>,
     },
     ForRange {
@@ -26,6 +25,29 @@ pub enum BoundStmt {
     Unsupported {
         line: String,
     },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CompareOp {
+    Eq,
+    Ne,
+    Lt,
+    Le,
+    Gt,
+    Ge,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum BoundCond {
+    Compare {
+        op: CompareOp,
+        lhs: BoundExpr,
+        rhs: BoundExpr,
+    },
+    Truthy(BoundExpr),
+    Not(Box<BoundCond>),
+    And(Box<BoundCond>, Box<BoundCond>),
+    Or(Box<BoundCond>, Box<BoundCond>),
 }
 
 #[derive(Debug, Clone)]
@@ -134,19 +156,7 @@ fn parse_if_stmt(
     line: &str,
 ) -> BoundStmt {
     let condition = line[2..line.len() - 4].trim();
-    let Some((lhs_raw, rhs_raw)) = condition.split_once('=') else {
-        *index += 1;
-        return BoundStmt::Unsupported {
-            line: line.to_string(),
-        };
-    };
-    let Some(lhs) = parse_expr(lhs_raw) else {
-        *index += 1;
-        return BoundStmt::Unsupported {
-            line: line.to_string(),
-        };
-    };
-    let Some(rhs) = parse_expr(rhs_raw) else {
+    let Some(cond) = parse_condition(condition) else {
         *index += 1;
         return BoundStmt::Unsupported {
             line: line.to_string(),
@@ -158,11 +168,7 @@ fn parse_if_stmt(
 
     if *index < lines.len() && lines[*index].eq_ignore_ascii_case("end if") {
         *index += 1;
-        return BoundStmt::IfEq {
-            lhs,
-            rhs,
-            then_body,
-        };
+        return BoundStmt::IfCond { cond, then_body };
     }
 
     BoundStmt::Unsupported {
@@ -254,6 +260,49 @@ fn parse_expr(text: &str) -> Option<BoundExpr> {
     normalize_ident(expr).map(BoundExpr::Var)
 }
 
+fn parse_condition(text: &str) -> Option<BoundCond> {
+    if let Some((lhs_raw, rhs_raw)) = split_keyword_ci(text, "or") {
+        let lhs = parse_condition(lhs_raw)?;
+        let rhs = parse_condition(rhs_raw)?;
+        return Some(BoundCond::Or(Box::new(lhs), Box::new(rhs)));
+    }
+
+    if let Some((lhs_raw, rhs_raw)) = split_keyword_ci(text, "and") {
+        let lhs = parse_condition(lhs_raw)?;
+        let rhs = parse_condition(rhs_raw)?;
+        return Some(BoundCond::And(Box::new(lhs), Box::new(rhs)));
+    }
+
+    let trimmed = text.trim();
+    if let Some(rest) = strip_keyword_prefix_ci(trimmed, "not") {
+        let inner = parse_condition(rest)?;
+        return Some(BoundCond::Not(Box::new(inner)));
+    }
+
+    parse_compare_condition(trimmed)
+}
+
+fn parse_compare_condition(text: &str) -> Option<BoundCond> {
+    let pairs = [
+        ("<>", CompareOp::Ne),
+        ("<=", CompareOp::Le),
+        (">=", CompareOp::Ge),
+        ("=", CompareOp::Eq),
+        ("<", CompareOp::Lt),
+        (">", CompareOp::Gt),
+    ];
+
+    for (op_text, op) in pairs {
+        if let Some((lhs_raw, rhs_raw)) = text.split_once(op_text) {
+            let lhs = parse_expr(lhs_raw)?;
+            let rhs = parse_expr(rhs_raw)?;
+            return Some(BoundCond::Compare { op, lhs, rhs });
+        }
+    }
+
+    parse_expr(text).map(BoundCond::Truthy)
+}
+
 fn parse_declaration(line: &str, declarations: &mut Vec<String>) {
     let remainder = line[4..].trim();
     let candidate = remainder
@@ -310,9 +359,28 @@ fn split_ci<'a>(text: &'a str, marker: &str) -> Option<(&'a str, &'a str)> {
     Some((lhs, rhs))
 }
 
+fn split_keyword_ci<'a>(text: &'a str, keyword: &str) -> Option<(&'a str, &'a str)> {
+    let lower = text.to_ascii_lowercase();
+    let marker = format!(" {keyword} ");
+    let idx = lower.find(&marker)?;
+    let lhs = text[..idx].trim();
+    let rhs = text[idx + marker.len()..].trim();
+    Some((lhs, rhs))
+}
+
+fn strip_keyword_prefix_ci<'a>(text: &'a str, keyword: &str) -> Option<&'a str> {
+    let lower = text.to_ascii_lowercase();
+    let marker = format!("{keyword} ");
+    if lower.starts_with(&marker) {
+        Some(text[marker.len()..].trim())
+    } else {
+        None
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{BoundExpr, BoundStmt, resolve_symbols};
+    use super::{BoundCond, BoundExpr, BoundStmt, CompareOp, resolve_symbols};
 
     #[test]
     fn resolve_if_statement_into_structured_body() {
@@ -323,7 +391,7 @@ mod tests {
             module
                 .body
                 .iter()
-                .any(|s| matches!(s, BoundStmt::IfEq { .. }))
+                .any(|s| matches!(s, BoundStmt::IfCond { .. }))
         );
     }
 
@@ -348,5 +416,31 @@ mod tests {
             panic!("expected assignment");
         };
         assert_eq!(expr, &BoundExpr::Var("y".to_string()));
+    }
+
+    #[test]
+    fn resolve_if_with_boolean_operators() {
+        let source = "Sub Main()\nDim x\nIf Not x = 0 Or x < 2 Then\nx = 1\nEnd If\nEnd Sub";
+        let module = resolve_symbols(source);
+        let Some(BoundStmt::IfCond { cond, .. }) = module.body.first() else {
+            panic!("expected if");
+        };
+        assert!(matches!(cond, BoundCond::Or(_, _)));
+    }
+
+    #[test]
+    fn resolve_if_with_non_eq_comparison() {
+        let source = "Sub Main()\nDim x\nIf x >= 1 Then\nx = 2\nEnd If\nEnd Sub";
+        let module = resolve_symbols(source);
+        let Some(BoundStmt::IfCond { cond, .. }) = module.body.first() else {
+            panic!("expected if");
+        };
+        assert!(matches!(
+            cond,
+            BoundCond::Compare {
+                op: CompareOp::Ge,
+                ..
+            }
+        ));
     }
 }

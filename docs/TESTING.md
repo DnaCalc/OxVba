@@ -13,7 +13,7 @@
 - IR: lowering consistency tests.
 - Compiler/Host: compile+execute smoke + control-flow compilation tests.
 - VM: bytecode execution tests for arithmetic, branch/loop execution, and jump validation.
-- Conformance: VM/JIT-toggle profile corpus with slot snapshots.
+- Conformance: VM/JIT-toggle profile corpus with slot snapshots (including relational/boolean branches).
 - Formal: profile-scoped non-blocking obligations via `scripts/run-formal.ps1`.
 
 ## Next additions
