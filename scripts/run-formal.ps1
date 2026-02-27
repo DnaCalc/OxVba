@@ -68,6 +68,8 @@ try {
     $cargoKaniVersion = ""
     $localCargoKaniVersion = ""
     $wslCargoKaniVersion = ""
+    $wslKaniAvailable = $false
+    $wslCommandAvailable = $null -ne (Get-Command wsl -ErrorAction SilentlyContinue)
     try {
         $localCargoKaniVersion = (& cargo kani --version 2>$null) -join " "
         if ($LASTEXITCODE -eq 0 -and -not [string]::IsNullOrWhiteSpace($localCargoKaniVersion)) {
@@ -79,23 +81,29 @@ try {
         $localCargoKaniVersion = ""
     }
 
-    if ($UseWslKani) {
-        if (-not (Get-Command wsl -ErrorAction SilentlyContinue)) {
-            throw "formal lane: -UseWslKani requested but wsl is not available on PATH"
-        }
-
+    if ($wslCommandAvailable) {
         try {
             $wslCargoKaniVersion = (& wsl bash -lc 'source $HOME/.cargo/env && cargo kani --version' 2>$null) -join " "
             if ($LASTEXITCODE -eq 0 -and -not [string]::IsNullOrWhiteSpace($wslCargoKaniVersion)) {
-                $cargoKaniAvailable = $true
-                $useWslForKani = $true
-                $cargoKaniVersion = $wslCargoKaniVersion
-                $wslRepoRoot = Convert-ToWslPath((Get-Location).Path)
+                $wslKaniAvailable = $true
             }
         }
         catch {
             $wslCargoKaniVersion = ""
         }
+    }
+
+    if ($UseWslKani) {
+        if (-not $wslCommandAvailable) {
+            throw "formal lane: -UseWslKani requested but wsl is not available on PATH"
+        }
+        if (-not $wslKaniAvailable) {
+            throw "formal lane: -UseWslKani requested but cargo-kani is unavailable in WSL"
+        }
+        $cargoKaniAvailable = $true
+        $useWslForKani = $true
+        $cargoKaniVersion = $wslCargoKaniVersion
+        $wslRepoRoot = Convert-ToWslPath((Get-Location).Path)
     }
 
     $kaniRequired = $RequireKani -or ($env:OXVBA_REQUIRE_KANI -eq "1")
@@ -108,13 +116,19 @@ try {
         $isKaniCommand = $command.Trim().ToLowerInvariant().StartsWith("cargo kani")
 
         if ($isKaniCommand -and -not $cargoKaniAvailable) {
+            $skipNote = if ($wslKaniAvailable -and -not $UseWslKani) {
+                "cargo-kani available via WSL; rerun with -UseWslKani (recommended via run-formal-kani-async.ps1)"
+            }
+            else {
+                "cargo-kani not available"
+            }
             $rows += [PSCustomObject]@{
                 obligation = $obligation.obligation_id
                 profile = $obligation.profile
                 command = $command
                 blocking = $obligation.blocking
                 status = "skipped"
-                note = "cargo-kani not available"
+                note = $skipNote
                 artifact = $obligation.artifact
             }
             continue
@@ -169,15 +183,10 @@ try {
         "- Profile scope: $ProfileScope",
         "- Overall mode: non-blocking",
         "- Kani required: $($kaniRequired.ToString().ToLowerInvariant())",
-        "- Kani execution: $(if ($useWslForKani) { 'wsl' } elseif ($cargoKaniAvailable) { 'local' } else { 'unavailable' })"
+        "- Kani execution: $(if ($useWslForKani) { 'wsl' } elseif ($cargoKaniAvailable) { 'local' } elseif ($wslKaniAvailable) { 'deferred-to-wsl-async' } else { 'unavailable' })",
+        "- cargo-kani (local): $(if ([string]::IsNullOrWhiteSpace($localCargoKaniVersion)) { 'unavailable' } else { $localCargoKaniVersion })",
+        "- cargo-kani (wsl): $(if ([string]::IsNullOrWhiteSpace($wslCargoKaniVersion)) { 'unavailable' } else { $wslCargoKaniVersion })"
     )
-
-    if ($cargoKaniAvailable) {
-        $lines += "- cargo-kani: $cargoKaniVersion"
-    }
-    else {
-        $lines += "- cargo-kani: unavailable"
-    }
 
     $lines += @(
         "",
@@ -192,7 +201,12 @@ try {
     Set-Content -Path $ReportPath -Value ($lines -join "`n")
 
     if (-not $cargoKaniAvailable) {
-        Write-Warning "formal lane: cargo-kani not installed; obligations recorded as skipped"
+        if ($wslKaniAvailable -and -not $UseWslKani) {
+            Write-Warning "formal lane: cargo-kani detected in WSL; obligations were skipped in this non-WSL run (use -UseWslKani, preferably via run-formal-kani-async.ps1)"
+        }
+        else {
+            Write-Warning "formal lane: cargo-kani not available; obligations recorded as skipped"
+        }
     }
 
     Write-Host "formal run: completed (non-blocking)"
