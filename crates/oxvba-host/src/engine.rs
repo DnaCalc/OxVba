@@ -303,4 +303,34 @@ mod tests {
             .expect("execution should succeed");
         assert_eq!(snapshot.last().copied(), Some(3));
     }
+
+    #[test]
+    fn formal_v11_resume_next_records_error_number() {
+        let engine = Engine::new(HostConfig::default());
+        let source = "Sub Main()\nDim x\nOn Error Resume Next\nError 5\nx = Err.Number\nEnd Sub";
+        let snapshot = engine
+            .execute_source_with_snapshot(source)
+            .expect("execution should succeed");
+        assert_eq!(snapshot[0], 5);
+    }
+
+    #[test]
+    fn formal_v11_default_error_mode_fails() {
+        let engine = Engine::new(HostConfig::default());
+        let source = "Sub Main()\nError 9\nEnd Sub";
+        let err = engine
+            .execute_source_with_snapshot(source)
+            .expect_err("default error mode should fail");
+        assert!(err.contains("runtime error"));
+    }
+
+    #[test]
+    fn formal_v11_resume_next_continues_execution() {
+        let engine = Engine::new(HostConfig::default());
+        let source = "Sub Main()\nDim x\nOn Error Resume Next\nx = 1\nError 2\nx = x + 1\nEnd Sub";
+        let snapshot = engine
+            .execute_source_with_snapshot(source)
+            .expect("execution should succeed");
+        assert_eq!(snapshot[0], 2);
+    }
 }

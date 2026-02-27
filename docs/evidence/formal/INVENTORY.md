@@ -117,6 +117,21 @@ This inventory tracks formal artifacts and proof-adjacent harnesses by profile.
   - Artifact: `crates/oxvba-host/src/engine.rs`
   - Harness: `formal_v10_array_index_zero_is_valid`
 
+## v11 (`mvp-error-state-v11`)
+
+- FO-V11-001
+  - Area: `Resume Next` error-number capture
+  - Artifact: `crates/oxvba-host/src/engine.rs`
+  - Harness: `formal_v11_resume_next_records_error_number`
+- FO-V11-002
+  - Area: default error mode failure
+  - Artifact: `crates/oxvba-host/src/engine.rs`
+  - Harness: `formal_v11_default_error_mode_fails`
+- FO-V11-003
+  - Area: `Resume Next` continuation semantics
+  - Artifact: `crates/oxvba-host/src/engine.rs`
+  - Harness: `formal_v11_resume_next_continues_execution`
+
 ## Reports
 
 - Latest markdown report: `docs/evidence/formal/latest_run.md`

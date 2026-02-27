@@ -123,6 +123,8 @@ fn check_stmt(
             )
         }
         BoundStmt::ExitDo => Ok(()),
+        BoundStmt::OnErrorResumeNext => Ok(()),
+        BoundStmt::RaiseError(_) => Ok(()),
         BoundStmt::Call { name, args } => {
             if !proc_names.contains(name) {
                 return Err(format!("call to unknown procedure: {name}"));
@@ -219,6 +221,10 @@ fn ensure_declared(
     declared: &mut HashSet<String>,
     declarations: &mut Vec<String>,
 ) -> Result<(), String> {
+    if name.eq_ignore_ascii_case("err_number") {
+        return Ok(());
+    }
+
     if declared.contains(name) {
         return Ok(());
     }

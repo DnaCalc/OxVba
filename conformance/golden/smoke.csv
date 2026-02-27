@@ -21,6 +21,9 @@ if_true.bas,ok,7
 nested_if_for.bas,ok,"5,3"
 option_explicit_error.bas,error,
 option_explicit_ok.bas,ok,3
+on_error_default_fail.bas,error,
+on_error_resume_continue.bas,ok,2
+on_error_resume_next.bas,ok,5
 params_byref.bas,ok,2
 params_byref_error.bas,error,
 params_byval.bas,ok,1

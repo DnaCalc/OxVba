@@ -6,6 +6,8 @@ use crate::register_file::RegisterFile;
 pub struct Vm {
     registers: RegisterFile,
     call_stack: Vec<usize>,
+    on_error_resume_next: bool,
+    last_error: i32,
 }
 
 impl Default for Vm {
@@ -13,6 +15,8 @@ impl Default for Vm {
         Self {
             registers: RegisterFile::with_capacity(256),
             call_stack: Vec::new(),
+            on_error_resume_next: false,
+            last_error: 0,
         }
     }
 }
@@ -108,6 +112,10 @@ impl Vm {
                     self.write_slot(*dst, out)?;
                     pc += 1;
                 }
+                Instruction::LoadErrNumber { slot } => {
+                    self.write_slot(*slot, self.last_error)?;
+                    pc += 1;
+                }
                 Instruction::BoolNot { dst, src } => {
                     let out = if self.read_slot(*src)? == 0 { 1 } else { 0 };
                     self.write_slot(*dst, out)?;
@@ -153,6 +161,18 @@ impl Vm {
                     }
                     self.call_stack.push(pc + 1);
                     pc = *target_pc;
+                }
+                Instruction::SetOnErrorResumeNext => {
+                    self.on_error_resume_next = true;
+                    pc += 1;
+                }
+                Instruction::RaiseError { code } => {
+                    self.last_error = *code;
+                    if self.on_error_resume_next {
+                        pc += 1;
+                    } else {
+                        return Err(format!("runtime error: {code}"));
+                    }
                 }
                 Instruction::Return => {
                     if let Some(return_pc) = self.call_stack.pop() {
@@ -341,6 +361,23 @@ mod tests {
         let mut vm = Vm::default();
         vm.execute(&bytecode).expect("vm should execute bytecode");
         assert_eq!(vm.snapshot_slots(1), vec![7]);
+    }
+
+    #[test]
+    fn resume_next_records_error_number_and_continues() {
+        let bytecode = Bytecode {
+            instructions: vec![
+                Instruction::SetOnErrorResumeNext,
+                Instruction::RaiseError { code: 5 },
+                Instruction::LoadErrNumber { slot: 0 },
+                Instruction::Halt,
+            ],
+            slot_count: 1,
+            user_slot_count: 1,
+        };
+        let mut vm = Vm::default();
+        vm.execute(&bytecode).expect("vm should continue on error");
+        assert_eq!(vm.snapshot_slots(1), vec![5]);
     }
 }
 

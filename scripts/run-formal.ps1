@@ -1,5 +1,5 @@
 param(
-    [string]$ProfileScope = "mvp-arrays-v10",
+    [string]$ProfileScope = "mvp-error-state-v11",
     [string]$ReportPath = "docs/evidence/formal/latest_run.md",
     [string]$ReportCsvPath = "docs/evidence/formal/latest_run.csv",
     [string]$ObligationsPath = "docs/evidence/formal/obligations.csv"

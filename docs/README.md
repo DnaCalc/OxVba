@@ -23,6 +23,7 @@
 | Profile v8 Status | [`PROFILE_STATUS_V8.md`](PROFILE_STATUS_V8.md) | Current gate status contract for `mvp-procedures-v8`. |
 | Profile v9 Status | [`PROFILE_STATUS_V9.md`](PROFILE_STATUS_V9.md) | Current gate status contract for `mvp-params-v9`. |
 | Profile v10 Status | [`PROFILE_STATUS_V10.md`](PROFILE_STATUS_V10.md) | Current gate status contract for `mvp-arrays-v10`. |
+| Profile v11 Status | [`PROFILE_STATUS_V11.md`](PROFILE_STATUS_V11.md) | Current gate status contract for `mvp-error-state-v11`. |
 | Phase 12 Status | [`PHASE12_STATUS.md`](PHASE12_STATUS.md) | Declared profile scope and final conformance/stabilization gate artifacts. |
 | Work Set Plan (v2) | [`worksets/WORKSET_2026-02-27_CONTROLFLOW_V2.md`](worksets/WORKSET_2026-02-27_CONTROLFLOW_V2.md) | Detailed execution-grade plan for control-flow expansion beyond `mvp-int32-core-v1`. |
 | Work Set Plan (v3) | [`worksets/WORKSET_2026-02-27_FORMAL_FOUNDATION_V3.md`](worksets/WORKSET_2026-02-27_FORMAL_FOUNDATION_V3.md) | Formal infrastructure work set for manifest-driven obligations and reporting. |
@@ -33,6 +34,7 @@
 | Work Set Plan (v8) | [`worksets/WORKSET_2026-02-27_PROCEDURES_V8.md`](worksets/WORKSET_2026-02-27_PROCEDURES_V8.md) | Procedure/call-frame baseline work set with `Call` dispatch and return semantics. |
 | Work Set Plan (v9) | [`worksets/WORKSET_2026-02-27_PARAMS_V9.md`](worksets/WORKSET_2026-02-27_PARAMS_V9.md) | Parameter passing work set for `ByVal`/`ByRef` subset semantics. |
 | Work Set Plan (v10) | [`worksets/WORKSET_2026-02-27_ARRAYS_V10.md`](worksets/WORKSET_2026-02-27_ARRAYS_V10.md) | Fixed-size array work set with indexed load/store and bounds checks. |
+| Work Set Plan (v11) | [`worksets/WORKSET_2026-02-27_ERROR_STATE_V11.md`](worksets/WORKSET_2026-02-27_ERROR_STATE_V11.md) | Error-state work set for `On Error Resume Next` + `Err.Number` subset. |
 | Profile Ladder | [`worksets/PROFILE_LADDER_2026-02-27_MACH1000.md`](worksets/PROFILE_LADDER_2026-02-27_MACH1000.md) | MACH1000-scale 20-step forward profile roadmap (`v2`..`v21`). |
 | Status Tours | [`status-tours/`](status-tours/) | Date-stamped orientation/showcase docs for implemented project state. |
 | Formal | [`FORMAL.md`](FORMAL.md) | Lean/Kani formal scaffold status and structure. |

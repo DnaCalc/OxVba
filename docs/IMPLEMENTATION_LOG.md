@@ -102,3 +102,9 @@
   - Added array load/store parsing and deterministic bounds rejection.
   - Added conformance fixtures for roundtrip, zero-index, and bounds-error cases.
   - Added executable formal obligations (`FO-V10-001..003`) for array invariants.
+- Started `mvp-error-state-v11` runtime-error pass:
+  - Added `On Error Resume Next` and `Error <code>` statements.
+  - Added VM runtime error-state registers (`on_error_resume_next`, `last_error`).
+  - Added `Err.Number` read path.
+  - Added conformance fixtures for default-fail and resume-next continuation.
+  - Added executable formal obligations (`FO-V11-001..003`) for error-state transitions.

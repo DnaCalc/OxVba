@@ -31,6 +31,8 @@ pub enum BoundStmt {
         post_check: bool,
     },
     ExitDo,
+    OnErrorResumeNext,
+    RaiseError(i32),
     Call {
         name: String,
         args: Vec<BoundExpr>,
@@ -329,6 +331,20 @@ fn parse_block(
             continue;
         }
 
+        if lower == "on error resume next" {
+            out.push(BoundStmt::OnErrorResumeNext);
+            *index += 1;
+            continue;
+        }
+
+        if lower.starts_with("error ")
+            && let Ok(code) = line[6..].trim().parse::<i32>()
+        {
+            out.push(BoundStmt::RaiseError(code));
+            *index += 1;
+            continue;
+        }
+
         if lower.starts_with("select case ") {
             out.push(parse_select_case_stmt(
                 lines,
@@ -373,8 +389,7 @@ fn parse_if_stmt(
         option_explicit,
         &["elseif", "else", "end if"],
     );
-    let Some(else_body) =
-        parse_if_tail(lines, index, declarations, array_bounds, option_explicit)
+    let Some(else_body) = parse_if_tail(lines, index, declarations, array_bounds, option_explicit)
     else {
         return BoundStmt::Unsupported {
             line: line.to_string(),
@@ -758,13 +773,12 @@ fn parse_declaration(
         return;
     }
 
-    if let Some(name) = normalize_ident(candidate) {
-        if !declarations
+    if let Some(name) = normalize_ident(candidate)
+        && !declarations
             .iter()
             .any(|existing| existing.eq_ignore_ascii_case(&name))
-        {
-            declarations.push(name);
-        }
+    {
+        declarations.push(name);
     }
 }
 
@@ -780,6 +794,9 @@ fn parse_array_declaration(token: &str) -> Option<(String, usize)> {
 }
 
 fn parse_reference_name(token: &str, array_bounds: &HashMap<String, usize>) -> Option<String> {
+    if token.trim().eq_ignore_ascii_case("err.number") {
+        return Some("err_number".to_string());
+    }
     if let Some(alias) = parse_array_reference(token, array_bounds) {
         return Some(alias);
     }
@@ -1064,5 +1081,23 @@ mod tests {
         assert!(module.declarations.iter().any(|d| d == "a_1"));
         assert!(module.declarations.iter().any(|d| d == "a_2"));
         assert!(module.declarations.iter().any(|d| d == "x"));
+    }
+
+    #[test]
+    fn resolve_on_error_resume_next_and_error_stmt() {
+        let source = "Sub Main()\nOn Error Resume Next\nError 5\nEnd Sub";
+        let module = resolve_symbols(source);
+        assert!(
+            module
+                .body
+                .iter()
+                .any(|s| matches!(s, BoundStmt::OnErrorResumeNext))
+        );
+        assert!(
+            module
+                .body
+                .iter()
+                .any(|s| matches!(s, BoundStmt::RaiseError(5)))
+        );
     }
 }

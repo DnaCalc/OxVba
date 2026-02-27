@@ -1,7 +1,7 @@
 # Formal Run Report
 
-- Timestamp (UTC): 2026-02-27T12:55:54Z
-- Profile scope: mvp-arrays-v10
+- Timestamp (UTC): 2026-02-27T13:03:50Z
+- Profile scope: mvp-error-state-v11
 - Overall mode: non-blocking
 - cargo-kani: unavailable
 
@@ -29,3 +29,6 @@
 | FO-V10-001 | v10 | no | pass | cargo test -p oxvba-host formal_v10_array_store_load_roundtrip | crates/oxvba-host/src/engine.rs |  |
 | FO-V10-002 | v10 | no | pass | cargo test -p oxvba-host formal_v10_array_bounds_violation_errors | crates/oxvba-host/src/engine.rs |  |
 | FO-V10-003 | v10 | no | pass | cargo test -p oxvba-host formal_v10_array_index_zero_is_valid | crates/oxvba-host/src/engine.rs |  |
+| FO-V11-001 | v11 | no | pass | cargo test -p oxvba-host formal_v11_resume_next_records_error_number | crates/oxvba-host/src/engine.rs |  |
+| FO-V11-002 | v11 | no | pass | cargo test -p oxvba-host formal_v11_default_error_mode_fails | crates/oxvba-host/src/engine.rs |  |
+| FO-V11-003 | v11 | no | pass | cargo test -p oxvba-host formal_v11_resume_next_continues_execution | crates/oxvba-host/src/engine.rs |  |

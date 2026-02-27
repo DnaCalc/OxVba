@@ -225,4 +225,25 @@ mod tests {
                 .any(|i| matches!(i, Instruction::Return))
         );
     }
+
+    #[test]
+    fn compile_on_error_resume_next_emits_error_state_ops() {
+        let source = "Sub Main()\nDim x\nOn Error Resume Next\nError 5\nx = Err.Number\nEnd Sub";
+        let out = compile(source).expect("compile should succeed");
+        assert!(
+            out.instructions
+                .iter()
+                .any(|i| matches!(i, Instruction::SetOnErrorResumeNext))
+        );
+        assert!(
+            out.instructions
+                .iter()
+                .any(|i| matches!(i, Instruction::RaiseError { code: 5 }))
+        );
+        assert!(
+            out.instructions
+                .iter()
+                .any(|i| matches!(i, Instruction::LoadErrNumber { .. }))
+        );
+    }
 }

@@ -36,6 +36,9 @@ Source of truth:
 | FO-V10-001 | v10 (`mvp-arrays-v10`) | Array store/load roundtrip | `formal_v10_array_store_load_roundtrip` | `scripts/run-formal.ps1` | no | todo (pending latest run update) | `docs/evidence/formal/latest_run.md` |
 | FO-V10-002 | v10 (`mvp-arrays-v10`) | Array bounds rejection | `formal_v10_array_bounds_violation_errors` | `scripts/run-formal.ps1` | no | todo (pending latest run update) | `docs/evidence/formal/latest_run.md` |
 | FO-V10-003 | v10 (`mvp-arrays-v10`) | Zero-index array semantics | `formal_v10_array_index_zero_is_valid` | `scripts/run-formal.ps1` | no | todo (pending latest run update) | `docs/evidence/formal/latest_run.md` |
+| FO-V11-001 | v11 (`mvp-error-state-v11`) | `Resume Next` error-number capture | `formal_v11_resume_next_records_error_number` | `scripts/run-formal.ps1` | no | todo (pending latest run update) | `docs/evidence/formal/latest_run.md` |
+| FO-V11-002 | v11 (`mvp-error-state-v11`) | Default error mode failure | `formal_v11_default_error_mode_fails` | `scripts/run-formal.ps1` | no | todo (pending latest run update) | `docs/evidence/formal/latest_run.md` |
+| FO-V11-003 | v11 (`mvp-error-state-v11`) | `Resume Next` continuation semantics | `formal_v11_resume_next_continues_execution` | `scripts/run-formal.ps1` | no | todo (pending latest run update) | `docs/evidence/formal/latest_run.md` |
 
 ## Policy (current ladder run)
 - Formal runs are required in-cycle for relevant changes.

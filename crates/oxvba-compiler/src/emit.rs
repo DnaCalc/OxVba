@@ -293,6 +293,12 @@ fn emit_stmt(
                 exit_patches.push(patch);
             }
         }
+        BoundStmt::OnErrorResumeNext => {
+            instructions.push(Instruction::SetOnErrorResumeNext);
+        }
+        BoundStmt::RaiseError(code) => {
+            instructions.push(Instruction::RaiseError { code: *code });
+        }
         BoundStmt::SelectCase {
             expr,
             arms,
@@ -522,6 +528,8 @@ fn emit_expr_into(
                 && src != dst
             {
                 instructions.push(Instruction::CopySlot { dst, src });
+            } else if name.eq_ignore_ascii_case("err_number") {
+                instructions.push(Instruction::LoadErrNumber { slot: dst });
             }
         }
         BoundExpr::AddConst { var, delta } => {
@@ -533,6 +541,12 @@ fn emit_expr_into(
                     slot: dst,
                     value: *delta,
                 });
+            } else if var.eq_ignore_ascii_case("err_number") {
+                instructions.push(Instruction::LoadErrNumber { slot: dst });
+                instructions.push(Instruction::AddConstI32 {
+                    slot: dst,
+                    value: *delta,
+                });
             }
         }
         BoundExpr::SubConst { var, delta } => {
@@ -540,6 +554,12 @@ fn emit_expr_into(
                 if src != dst {
                     instructions.push(Instruction::CopySlot { dst, src });
                 }
+                instructions.push(Instruction::SubConstI32 {
+                    slot: dst,
+                    value: *delta,
+                });
+            } else if var.eq_ignore_ascii_case("err_number") {
+                instructions.push(Instruction::LoadErrNumber { slot: dst });
                 instructions.push(Instruction::SubConstI32 {
                     slot: dst,
                     value: *delta,
@@ -667,6 +687,28 @@ mod tests {
             code.instructions
                 .iter()
                 .any(|i| matches!(i, Instruction::Return))
+        );
+    }
+
+    #[test]
+    fn emits_on_error_resume_next_and_raise_ops() {
+        let source = "Sub Main()\nDim x\nOn Error Resume Next\nError 5\nx = Err.Number\nEnd Sub";
+        let bound = resolve_symbols(source);
+        let code = emit_bytecode(&bound);
+        assert!(
+            code.instructions
+                .iter()
+                .any(|i| matches!(i, Instruction::SetOnErrorResumeNext))
+        );
+        assert!(
+            code.instructions
+                .iter()
+                .any(|i| matches!(i, Instruction::RaiseError { code: 5 }))
+        );
+        assert!(
+            code.instructions
+                .iter()
+                .any(|i| matches!(i, Instruction::LoadErrNumber { .. }))
         );
     }
 }
