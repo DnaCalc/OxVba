@@ -17,5 +17,7 @@ Kani harness placeholders are introduced in runtime and VM code under `#[cfg(kan
 
 ## Formal tracking
 - Manifest: `docs/evidence/formal/MANIFEST.md`
+- Obligation index (machine-readable): `docs/evidence/formal/obligations.csv`
+- Inventory: `docs/evidence/formal/INVENTORY.md`
 - Extended non-blocking backlog: `docs/evidence/formal/EXTENDED_TODO.md`
 - Runner: `./scripts/run-formal.ps1` (non-blocking by current ladder policy)

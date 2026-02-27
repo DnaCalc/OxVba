@@ -57,3 +57,9 @@
 - Generated profile gate artifacts for `mvp-controlflow-v2`:
   - `docs/evidence/profiles/v2/gate_report.md` (`PASS`)
   - `docs/evidence/profiles/v2/matrix_latest.csv`
+- Started `mvp-formal-foundation-v3` infrastructure pass:
+  - Converted formal runner to manifest-driven obligation execution.
+  - Added machine-readable obligation index (`docs/evidence/formal/obligations.csv`).
+  - Added structured formal run CSV output (`docs/evidence/formal/latest_run.csv`).
+  - Added formal inventory doc (`docs/evidence/formal/INVENTORY.md`).
+  - Added dedicated v3 workset and status docs.

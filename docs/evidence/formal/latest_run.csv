@@ -1,0 +1,4 @@
+"obligation","profile","command","blocking","status","note","artifact"
+"FO-V2-001","v2","cargo kani -p oxvba-vm --harness pc_progression_is_safe_for_valid_jump_target","no","skipped","cargo-kani not available","crates/oxvba-vm/src/interpreter.rs"
+"FO-V2-002","v2","cargo kani -p oxvba-compiler --harness temp_slots_do_not_overlap_declared_slots","no","skipped","cargo-kani not available","crates/oxvba-compiler/src/emit.rs"
+"FO-V3-001","v3","cargo kani --version","no","skipped","cargo-kani not available","scripts/run-formal.ps1"

@@ -1,22 +1,33 @@
 param(
-    [string]$OutputCsv = "docs/evidence/profiles/v2/matrix_latest.csv",
-    [string]$SummaryPath = "docs/evidence/profiles/v2/gate_report.md"
+    [string]$ProfileScope = "mvp-formal-foundation-v3",
+    [string]$OutputDir = "docs/evidence/profiles/v3",
+    [string]$OutputCsv = "",
+    [string]$SummaryPath = ""
 )
 
 $ErrorActionPreference = "Stop"
 $PSNativeCommandUseErrorActionPreference = $true
 
-$outputDir = Split-Path -Parent $OutputCsv
+$resolvedOutputCsv = $OutputCsv
+if ([string]::IsNullOrWhiteSpace($resolvedOutputCsv)) {
+    $resolvedOutputCsv = Join-Path $OutputDir "matrix_latest.csv"
+}
+
+$resolvedSummaryPath = $SummaryPath
+if ([string]::IsNullOrWhiteSpace($resolvedSummaryPath)) {
+    $resolvedSummaryPath = Join-Path $OutputDir "gate_report.md"
+}
+
+$outputDir = Split-Path -Parent $resolvedOutputCsv
 if (-not (Test-Path $outputDir)) {
     New-Item -ItemType Directory -Path $outputDir -Force | Out-Null
 }
 
-$summaryDir = Split-Path -Parent $SummaryPath
+$summaryDir = Split-Path -Parent $resolvedSummaryPath
 if (-not (Test-Path $summaryDir)) {
     New-Item -ItemType Directory -Path $summaryDir -Force | Out-Null
 }
 
-$profileScope = "mvp-controlflow-v2"
 $osName = if ($IsWindows) { "windows" } elseif ($IsLinux) { "linux" } elseif ($IsMacOS) { "macos" } else { "unknown" }
 $arch = [System.Runtime.InteropServices.RuntimeInformation]::ProcessArchitecture.ToString().ToLowerInvariant()
 $timestampUtc = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
@@ -45,7 +56,7 @@ foreach ($backend in $backends) {
     }
 }
 
-$records | Export-Csv -Path $OutputCsv -NoTypeInformation
+$records | Export-Csv -Path $resolvedOutputCsv -NoTypeInformation
 
 $gateStatus = if (($records | Where-Object { $_.result -ne "green" }).Count -eq 0) { "PASS" } else { "FAIL" }
 $requiredRows = ($records | Where-Object { $_.required -eq "true" }).Count
@@ -70,5 +81,5 @@ foreach ($record in $records) {
     $summary += "| $($record.os) | $($record.arch) | $($record.backend) | $($record.result) | $($record.tests_ran) | $($record.evidence_file) |"
 }
 
-Set-Content -Path $SummaryPath -Value ($summary -join "`n")
+Set-Content -Path $resolvedSummaryPath -Value ($summary -join "`n")
 Write-Host "matrix run: $gateStatus ($greenRows/$requiredRows required cells green)"
