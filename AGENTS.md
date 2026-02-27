@@ -18,8 +18,8 @@ Use `docs/` and `synthesis/` for supporting context and provenance.
 - Do not stop for progress summaries, watchpoints, confirmations, checkpoints, or any other interim responses.
 - Execute the MACH1000 profile ladder continuously until completion.
 - Only reply when one of the following is true:
-  - The full profile ladder is complete and the `v21` gate is passed.
-  - Blockers are documented and no progress can be made along any remaining ladder milestone without unblocking.
+  - The full profile ladder is complete and the `v26` gate is passed.
+  - Blockers are documented and no progress can be made on any remaining ladder task without unblocking.
 
 ### Blocker Handling Protocol
 - If blocked on a linear path, create or update `CURRENT_BLOCKERS.md` with the blocker entry.
