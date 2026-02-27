@@ -213,4 +213,34 @@ mod tests {
             assert_eq!(snapshot[0], 30);
         }
     }
+
+    #[test]
+    fn formal_v8_call_returns_to_caller() {
+        let engine = Engine::new(HostConfig::default());
+        let source = "Sub Main()\nDim x\nx = 1\nCall Foo\nx = x + 1\nEnd Sub\nSub Foo()\nDim y\ny = 9\nEnd Sub";
+        let snapshot = engine
+            .execute_source_with_snapshot(source)
+            .expect("execution should succeed");
+        assert_eq!(snapshot[0], 2);
+    }
+
+    #[test]
+    fn formal_v8_local_scope_isolated_between_procedures() {
+        let engine = Engine::new(HostConfig::default());
+        let source = "Sub Main()\nDim x\nx = 2\nCall Foo\nx = x + 1\nEnd Sub\nSub Foo()\nDim x\nx = 200\nEnd Sub";
+        let snapshot = engine
+            .execute_source_with_snapshot(source)
+            .expect("execution should succeed");
+        assert_eq!(snapshot[0], 3);
+    }
+
+    #[test]
+    fn formal_v8_nested_call_chain_integrity() {
+        let engine = Engine::new(HostConfig::default());
+        let source = "Sub Main()\nDim x\nx = 0\nCall A\nx = x + 1\nEnd Sub\nSub A()\nDim y\ny = 1\nCall B\nEnd Sub\nSub B()\nDim z\nz = 2\nEnd Sub";
+        let snapshot = engine
+            .execute_source_with_snapshot(source)
+            .expect("execution should succeed");
+        assert_eq!(snapshot[0], 1);
+    }
 }

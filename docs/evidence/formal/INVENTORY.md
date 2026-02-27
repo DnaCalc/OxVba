@@ -72,6 +72,21 @@ This inventory tracks formal artifacts and proof-adjacent harnesses by profile.
   - Artifact: `crates/oxvba-host/src/engine.rs`
   - Harness: `formal_v7_select_case_multi_value_arm`
 
+## v8 (`mvp-procedures-v8`)
+
+- FO-V8-001
+  - Area: caller return progression
+  - Artifact: `crates/oxvba-host/src/engine.rs`
+  - Harness: `formal_v8_call_returns_to_caller`
+- FO-V8-002
+  - Area: procedure-local slot isolation
+  - Artifact: `crates/oxvba-host/src/engine.rs`
+  - Harness: `formal_v8_local_scope_isolated_between_procedures`
+- FO-V8-003
+  - Area: nested call chain integrity
+  - Artifact: `crates/oxvba-host/src/engine.rs`
+  - Harness: `formal_v8_nested_call_chain_integrity`
+
 ## Reports
 
 - Latest markdown report: `docs/evidence/formal/latest_run.md`

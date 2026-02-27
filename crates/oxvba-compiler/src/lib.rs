@@ -208,4 +208,21 @@ mod tests {
                 .any(|i| matches!(i, Instruction::JumpIfZero { .. }))
         );
     }
+
+    #[test]
+    fn compile_named_sub_call_emits_callproc() {
+        let source =
+            "Sub Main()\nDim x\nx = 1\nCall Foo\nEnd Sub\nSub Foo()\nDim y\ny = 2\nEnd Sub";
+        let out = compile(source).expect("compile should succeed");
+        assert!(
+            out.instructions
+                .iter()
+                .any(|i| matches!(i, Instruction::CallProc { .. }))
+        );
+        assert!(
+            out.instructions
+                .iter()
+                .any(|i| matches!(i, Instruction::Return))
+        );
+    }
 }

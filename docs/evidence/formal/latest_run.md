@@ -1,7 +1,7 @@
 # Formal Run Report
 
-- Timestamp (UTC): 2026-02-27T12:30:06Z
-- Profile scope: mvp-select-case-v7
+- Timestamp (UTC): 2026-02-27T12:38:27Z
+- Profile scope: mvp-procedures-v8
 - Overall mode: non-blocking
 - cargo-kani: unavailable
 
@@ -20,3 +20,6 @@
 | FO-V7-001 | v7 | no | pass | cargo test -p oxvba-host formal_v7_select_case_first_match_wins | crates/oxvba-host/src/engine.rs |  |
 | FO-V7-002 | v7 | no | pass | cargo test -p oxvba-host formal_v7_select_case_else_fallback | crates/oxvba-host/src/engine.rs |  |
 | FO-V7-003 | v7 | no | pass | cargo test -p oxvba-host formal_v7_select_case_multi_value_arm | crates/oxvba-host/src/engine.rs |  |
+| FO-V8-001 | v8 | no | pass | cargo test -p oxvba-host formal_v8_call_returns_to_caller | crates/oxvba-host/src/engine.rs |  |
+| FO-V8-002 | v8 | no | pass | cargo test -p oxvba-host formal_v8_local_scope_isolated_between_procedures | crates/oxvba-host/src/engine.rs |  |
+| FO-V8-003 | v8 | no | pass | cargo test -p oxvba-host formal_v8_nested_call_chain_integrity | crates/oxvba-host/src/engine.rs |  |

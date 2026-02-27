@@ -85,3 +85,9 @@
   - Added emitter dispatch lowering with deterministic first-match semantics.
   - Added conformance fixtures (`select_case_basic`, `select_case_multi`, `select_case_else`).
   - Added executable formal obligations (`FO-V7-001..003`) for dispatch determinism and fallback behavior.
+- Started `mvp-procedures-v8` call-flow pass:
+  - Added named procedure extraction (`Sub`/`Function`) and call-site binding.
+  - Added VM call stack semantics via `CallProc`/`Return` opcodes.
+  - Added per-procedure declaration slot ranges for local-scope isolation.
+  - Added conformance fixtures for call chains and function-body invocation.
+  - Added executable formal obligations (`FO-V8-001..003`) for return/local-scope invariants.

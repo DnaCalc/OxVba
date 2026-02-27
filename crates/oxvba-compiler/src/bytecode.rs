@@ -15,6 +15,8 @@ pub enum Instruction {
     BoolNot { dst: usize, src: usize },
     BoolAnd { dst: usize, lhs: usize, rhs: usize },
     BoolOr { dst: usize, lhs: usize, rhs: usize },
+    CallProc { target_pc: usize },
+    Return,
     JumpIfZero { cond_slot: usize, target_pc: usize },
     Jump { target_pc: usize },
     IncSlot { slot: usize },

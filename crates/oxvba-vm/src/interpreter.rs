@@ -5,12 +5,14 @@ use crate::register_file::RegisterFile;
 #[derive(Debug)]
 pub struct Vm {
     registers: RegisterFile,
+    call_stack: Vec<usize>,
 }
 
 impl Default for Vm {
     fn default() -> Self {
         Self {
             registers: RegisterFile::with_capacity(256),
+            call_stack: Vec::new(),
         }
     }
 }
@@ -144,6 +146,20 @@ impl Vm {
                         return Err(format!("jump target out of range: {target_pc}"));
                     }
                     pc = *target_pc;
+                }
+                Instruction::CallProc { target_pc } => {
+                    if *target_pc >= bytecode.instructions.len() {
+                        return Err(format!("call target out of range: {target_pc}"));
+                    }
+                    self.call_stack.push(pc + 1);
+                    pc = *target_pc;
+                }
+                Instruction::Return => {
+                    if let Some(return_pc) = self.call_stack.pop() {
+                        pc = return_pc;
+                    } else {
+                        return Err("return with empty call stack".to_string());
+                    }
                 }
                 Instruction::IncSlot { slot } => {
                     let value = self.read_slot(*slot)?;
@@ -305,6 +321,26 @@ mod tests {
         let mut vm = Vm::default();
         vm.execute(&bytecode).expect("vm should execute bytecode");
         assert_eq!(vm.snapshot_slots(8), vec![5, 3, 1, 0, 1, 1, 1, 1]);
+    }
+
+    #[test]
+    fn executes_call_and_return_sequence() {
+        let bytecode = Bytecode {
+            instructions: vec![
+                Instruction::LoadConstI32 { slot: 0, value: 1 },
+                Instruction::CallProc { target_pc: 4 },
+                Instruction::AddConstI32 { slot: 0, value: 1 },
+                Instruction::Halt,
+                Instruction::AddConstI32 { slot: 0, value: 5 },
+                Instruction::Return,
+            ],
+            slot_count: 1,
+            user_slot_count: 1,
+        };
+
+        let mut vm = Vm::default();
+        vm.execute(&bytecode).expect("vm should execute bytecode");
+        assert_eq!(vm.snapshot_slots(1), vec![7]);
     }
 }
 

@@ -2,53 +2,111 @@ use std::collections::HashMap;
 
 use crate::{
     bytecode::{Bytecode, Instruction},
-    resolve::{BoundCond, BoundExpr, BoundModule, BoundStmt, CompareOp},
+    resolve::{BoundCond, BoundExpr, BoundModule, BoundProcedure, BoundStmt, CompareOp},
 };
 
 pub fn emit_bytecode(module: &BoundModule) -> Bytecode {
-    let mut slot_map: HashMap<&str, usize> = HashMap::new();
-    for (slot, name) in module.declarations.iter().enumerate() {
-        slot_map.insert(name.as_str(), slot);
+    let procedures = if module.procedures.is_empty() {
+        vec![BoundProcedure {
+            name: "main".to_string(),
+            declarations: module.declarations.clone(),
+            body: module.body.clone(),
+        }]
+    } else {
+        module.procedures.clone()
+    };
+
+    let entry_idx = procedures
+        .iter()
+        .position(|p| p.name.eq_ignore_ascii_case("main"))
+        .unwrap_or(0);
+
+    let mut proc_slots: Vec<HashMap<String, usize>> = Vec::new();
+    let mut next_slot = 0usize;
+    for proc in &procedures {
+        let mut map = HashMap::new();
+        for name in &proc.declarations {
+            map.insert(name.clone(), next_slot);
+            next_slot += 1;
+        }
+        proc_slots.push(map);
     }
 
-    let mut temps = TempSlotAllocator::new(module.declarations.len());
+    let mut temps = TempSlotAllocator::new(next_slot);
     let mut instructions = Vec::new();
     let mut loop_exit_stack: Vec<Vec<usize>> = Vec::new();
+    let mut call_patches: Vec<(usize, String)> = Vec::new();
+    let mut proc_labels: HashMap<String, usize> = HashMap::new();
+    proc_labels.insert(procedures[entry_idx].name.clone(), 0);
+
     emit_stmt_list(
-        &module.body,
-        &slot_map,
+        &procedures[entry_idx].body,
+        &proc_slots[entry_idx],
         &mut temps,
         &mut instructions,
         &mut loop_exit_stack,
+        &mut call_patches,
     );
-
     instructions.push(Instruction::Halt);
+
+    for (idx, proc) in procedures.iter().enumerate() {
+        if idx == entry_idx {
+            continue;
+        }
+        proc_labels.insert(proc.name.clone(), instructions.len());
+        emit_stmt_list(
+            &proc.body,
+            &proc_slots[idx],
+            &mut temps,
+            &mut instructions,
+            &mut loop_exit_stack,
+            &mut call_patches,
+        );
+        instructions.push(Instruction::Return);
+    }
+
+    for (patch_idx, proc_name) in call_patches {
+        if let Some(target) = proc_labels.get(&proc_name).copied()
+            && let Instruction::CallProc { target_pc } = &mut instructions[patch_idx]
+        {
+            *target_pc = target;
+        }
+    }
 
     Bytecode {
         instructions,
         slot_count: temps.total_slots(),
-        user_slot_count: module.declarations.len(),
+        user_slot_count: procedures[entry_idx].declarations.len(),
     }
 }
 
 fn emit_stmt_list(
     stmts: &[BoundStmt],
-    slot_map: &HashMap<&str, usize>,
+    slot_map: &HashMap<String, usize>,
     temps: &mut TempSlotAllocator,
     instructions: &mut Vec<Instruction>,
     loop_exit_stack: &mut Vec<Vec<usize>>,
+    call_patches: &mut Vec<(usize, String)>,
 ) {
     for stmt in stmts {
-        emit_stmt(stmt, slot_map, temps, instructions, loop_exit_stack);
+        emit_stmt(
+            stmt,
+            slot_map,
+            temps,
+            instructions,
+            loop_exit_stack,
+            call_patches,
+        );
     }
 }
 
 fn emit_stmt(
     stmt: &BoundStmt,
-    slot_map: &HashMap<&str, usize>,
+    slot_map: &HashMap<String, usize>,
     temps: &mut TempSlotAllocator,
     instructions: &mut Vec<Instruction>,
     loop_exit_stack: &mut Vec<Vec<usize>>,
+    call_patches: &mut Vec<(usize, String)>,
 ) {
     match stmt {
         BoundStmt::Assign { target, expr } => {
@@ -68,7 +126,14 @@ fn emit_stmt(
                 cond_slot,
                 target_pc: 0,
             });
-            emit_stmt_list(then_body, slot_map, temps, instructions, loop_exit_stack);
+            emit_stmt_list(
+                then_body,
+                slot_map,
+                temps,
+                instructions,
+                loop_exit_stack,
+                call_patches,
+            );
             if else_body.is_empty() {
                 let target = instructions.len();
                 if let Instruction::JumpIfZero { target_pc, .. } = &mut instructions[jump_patch] {
@@ -81,7 +146,14 @@ fn emit_stmt(
                 if let Instruction::JumpIfZero { target_pc, .. } = &mut instructions[jump_patch] {
                     *target_pc = else_target;
                 }
-                emit_stmt_list(else_body, slot_map, temps, instructions, loop_exit_stack);
+                emit_stmt_list(
+                    else_body,
+                    slot_map,
+                    temps,
+                    instructions,
+                    loop_exit_stack,
+                    call_patches,
+                );
                 let end_target = instructions.len();
                 if let Instruction::Jump { target_pc } = &mut instructions[end_patch] {
                     *target_pc = end_target;
@@ -111,7 +183,14 @@ fn emit_stmt(
                     cond_slot,
                     target_pc: 0,
                 });
-                emit_stmt_list(body, slot_map, temps, instructions, loop_exit_stack);
+                emit_stmt_list(
+                    body,
+                    slot_map,
+                    temps,
+                    instructions,
+                    loop_exit_stack,
+                    call_patches,
+                );
                 instructions.push(Instruction::IncSlot { slot: var_slot });
                 instructions.push(Instruction::Jump {
                     target_pc: loop_head,
@@ -142,7 +221,14 @@ fn emit_stmt(
             }
 
             loop_exit_stack.push(Vec::new());
-            emit_stmt_list(body, slot_map, temps, instructions, loop_exit_stack);
+            emit_stmt_list(
+                body,
+                slot_map,
+                temps,
+                instructions,
+                loop_exit_stack,
+                call_patches,
+            );
 
             emit_cond_into(cond, cond_slot, slot_map, temps, instructions);
             let post_exit_patch = instructions.len();
@@ -219,7 +305,14 @@ fn emit_stmt(
                     cond_slot: aggregate_slot,
                     target_pc: 0,
                 });
-                emit_stmt_list(body, slot_map, temps, instructions, loop_exit_stack);
+                emit_stmt_list(
+                    body,
+                    slot_map,
+                    temps,
+                    instructions,
+                    loop_exit_stack,
+                    call_patches,
+                );
                 let end_patch = instructions.len();
                 instructions.push(Instruction::Jump { target_pc: 0 });
                 end_patches.push(end_patch);
@@ -229,13 +322,25 @@ fn emit_stmt(
                 }
             }
 
-            emit_stmt_list(else_body, slot_map, temps, instructions, loop_exit_stack);
+            emit_stmt_list(
+                else_body,
+                slot_map,
+                temps,
+                instructions,
+                loop_exit_stack,
+                call_patches,
+            );
             let end_target = instructions.len();
             for patch in end_patches {
                 if let Instruction::Jump { target_pc } = &mut instructions[patch] {
                     *target_pc = end_target;
                 }
             }
+        }
+        BoundStmt::Call { name } => {
+            let patch_idx = instructions.len();
+            instructions.push(Instruction::CallProc { target_pc: 0 });
+            call_patches.push((patch_idx, name.clone()));
         }
         BoundStmt::Unsupported { .. } => {}
     }
@@ -244,7 +349,7 @@ fn emit_stmt(
 fn emit_cond_into(
     cond: &BoundCond,
     dst: usize,
-    slot_map: &HashMap<&str, usize>,
+    slot_map: &HashMap<String, usize>,
     temps: &mut TempSlotAllocator,
     instructions: &mut Vec<Instruction>,
 ) {
@@ -337,7 +442,7 @@ fn emit_cond_into(
 fn emit_expr_into(
     expr: &BoundExpr,
     dst: usize,
-    slot_map: &HashMap<&str, usize>,
+    slot_map: &HashMap<String, usize>,
     instructions: &mut Vec<Instruction>,
 ) {
     match expr {
@@ -477,6 +582,24 @@ mod tests {
             code.instructions
                 .iter()
                 .any(|i| matches!(i, Instruction::JumpIfZero { .. }))
+        );
+    }
+
+    #[test]
+    fn emits_callproc_and_return_for_named_sub() {
+        let source =
+            "Sub Main()\nDim x\nx = 1\nCall Foo\nEnd Sub\nSub Foo()\nDim y\ny = 2\nEnd Sub";
+        let bound = resolve_symbols(source);
+        let code = emit_bytecode(&bound);
+        assert!(
+            code.instructions
+                .iter()
+                .any(|i| matches!(i, Instruction::CallProc { .. }))
+        );
+        assert!(
+            code.instructions
+                .iter()
+                .any(|i| matches!(i, Instruction::Return))
         );
     }
 }

@@ -27,6 +27,9 @@ Source of truth:
 | FO-V7-001 | v7 (`mvp-select-case-v7`) | First-match case determinism | `formal_v7_select_case_first_match_wins` | `scripts/run-formal.ps1` | no | todo (pending latest run update) | `docs/evidence/formal/latest_run.md` |
 | FO-V7-002 | v7 (`mvp-select-case-v7`) | `Case Else` fallback semantics | `formal_v7_select_case_else_fallback` | `scripts/run-formal.ps1` | no | todo (pending latest run update) | `docs/evidence/formal/latest_run.md` |
 | FO-V7-003 | v7 (`mvp-select-case-v7`) | Multi-value arm inclusion semantics | `formal_v7_select_case_multi_value_arm` | `scripts/run-formal.ps1` | no | todo (pending latest run update) | `docs/evidence/formal/latest_run.md` |
+| FO-V8-001 | v8 (`mvp-procedures-v8`) | Caller return progression | `formal_v8_call_returns_to_caller` | `scripts/run-formal.ps1` | no | todo (pending latest run update) | `docs/evidence/formal/latest_run.md` |
+| FO-V8-002 | v8 (`mvp-procedures-v8`) | Procedure-local slot isolation | `formal_v8_local_scope_isolated_between_procedures` | `scripts/run-formal.ps1` | no | todo (pending latest run update) | `docs/evidence/formal/latest_run.md` |
+| FO-V8-003 | v8 (`mvp-procedures-v8`) | Nested call chain integrity | `formal_v8_nested_call_chain_integrity` | `scripts/run-formal.ps1` | no | todo (pending latest run update) | `docs/evidence/formal/latest_run.md` |
 
 ## Policy (current ladder run)
 - Formal runs are required in-cycle for relevant changes.

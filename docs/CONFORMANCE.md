@@ -21,6 +21,7 @@ Current corpus includes:
 - `Else` and `ElseIf` branch-chain selection.
 - `Do While ... Loop`, `Do ... Loop While`, and `Exit Do`.
 - `Select Case` constant dispatch with `Case Else`.
+- Named `Sub`/`Function` declarations and `Call` dispatch.
 
 ## Commands
 ```powershell
@@ -38,7 +39,7 @@ At MVP stage, conformance compares:
 As runtime semantics mature, this will expand to richer structured outputs (error state and object lifecycle signals).
 
 ## Declared Profile Scope (Current Gate)
-- Profile id: `mvp-select-case-v7`
+- Profile id: `mvp-procedures-v8`
 - Platform: Windows x64
 - Backends: `vm`, `jit` (JIT toggle path with VM-equivalent semantics)
 - Required matrix cells:
@@ -46,5 +47,5 @@ As runtime semantics mature, this will expand to richer structured outputs (erro
   - `windows/x64/jit`
 
 Current profile gate is evaluated by `./scripts/run-matrix.ps1`, which writes:
-- `docs/evidence/profiles/v7/matrix_latest.csv`
-- `docs/evidence/profiles/v7/gate_report.md`
+- `docs/evidence/profiles/v8/matrix_latest.csv`
+- `docs/evidence/profiles/v8/gate_report.md`

@@ -29,6 +29,9 @@ pub enum BoundStmt {
         post_check: bool,
     },
     ExitDo,
+    Call {
+        name: String,
+    },
     SelectCase {
         expr: BoundExpr,
         arms: Vec<(Vec<i32>, Vec<BoundStmt>)>,
@@ -68,11 +71,18 @@ pub struct BoundModule {
     pub option_explicit: bool,
     pub declarations: Vec<String>,
     pub body: Vec<BoundStmt>,
+    pub procedures: Vec<BoundProcedure>,
+}
+
+#[derive(Debug, Clone)]
+pub struct BoundProcedure {
+    pub name: String,
+    pub declarations: Vec<String>,
+    pub body: Vec<BoundStmt>,
 }
 
 pub fn resolve_symbols(source: &str) -> BoundModule {
     let mut option_explicit = false;
-    let mut declarations: Vec<String> = Vec::new();
     let lines = source
         .lines()
         .map(str::trim)
@@ -80,21 +90,117 @@ pub fn resolve_symbols(source: &str) -> BoundModule {
         .map(ToOwned::to_owned)
         .collect::<Vec<_>>();
 
-    let mut index = 0;
-    let body = parse_block(
-        &lines,
-        &mut index,
-        &mut declarations,
-        &mut option_explicit,
-        &[],
-    );
+    let has_explicit_procs = lines.iter().any(|line| {
+        let lower = line.to_ascii_lowercase();
+        lower.starts_with("sub ") || lower.starts_with("function ")
+    });
+
+    let procedures = if has_explicit_procs {
+        parse_procedures(&lines, &mut option_explicit)
+    } else {
+        let mut declarations: Vec<String> = Vec::new();
+        let mut index = 0;
+        let body = parse_block(
+            &lines,
+            &mut index,
+            &mut declarations,
+            &mut option_explicit,
+            &[],
+        );
+        vec![BoundProcedure {
+            name: "main".to_string(),
+            declarations,
+            body,
+        }]
+    };
+
+    let entry_idx = procedures
+        .iter()
+        .position(|p| p.name.eq_ignore_ascii_case("main"))
+        .unwrap_or(0);
+    let entry = procedures
+        .get(entry_idx)
+        .cloned()
+        .unwrap_or(BoundProcedure {
+            name: "main".to_string(),
+            declarations: Vec::new(),
+            body: Vec::new(),
+        });
 
     BoundModule {
         source: source.to_string(),
         option_explicit,
-        declarations,
-        body,
+        declarations: entry.declarations.clone(),
+        body: entry.body.clone(),
+        procedures,
     }
+}
+
+fn parse_procedures(lines: &[String], option_explicit: &mut bool) -> Vec<BoundProcedure> {
+    let mut procedures = Vec::new();
+    let mut index = 0;
+
+    while index < lines.len() {
+        let line = lines[index].as_str();
+        let lower = line.to_ascii_lowercase();
+
+        if lower == "option explicit" {
+            *option_explicit = true;
+            index += 1;
+            continue;
+        }
+
+        let is_sub = lower.starts_with("sub ");
+        let is_function = lower.starts_with("function ");
+        if !(is_sub || is_function) {
+            index += 1;
+            continue;
+        }
+
+        let Some(name) = parse_proc_name(line, is_function) else {
+            index += 1;
+            continue;
+        };
+
+        index += 1;
+        let mut declarations = Vec::new();
+        let end_term = if is_function {
+            "end function"
+        } else {
+            "end sub"
+        };
+        let body = parse_block(
+            lines,
+            &mut index,
+            &mut declarations,
+            option_explicit,
+            &[end_term],
+        );
+        if index < lines.len() && lines[index].eq_ignore_ascii_case(end_term) {
+            index += 1;
+        }
+
+        procedures.push(BoundProcedure {
+            name,
+            declarations,
+            body,
+        });
+    }
+
+    procedures
+}
+
+fn parse_proc_name(line: &str, is_function: bool) -> Option<String> {
+    let prefix_len = if is_function { 9 } else { 4 };
+    let rest = line.get(prefix_len..)?.trim();
+    let token = rest
+        .split('(')
+        .next()
+        .unwrap_or_default()
+        .split_whitespace()
+        .next()
+        .unwrap_or_default();
+    normalize_ident(token)
 }
 
 fn parse_block(
@@ -120,7 +226,11 @@ fn parse_block(
             continue;
         }
 
-        if lower.starts_with("sub ") || lower == "end sub" {
+        if lower.starts_with("sub ")
+            || lower == "end sub"
+            || lower.starts_with("function ")
+            || lower == "end function"
+        {
             *index += 1;
             continue;
         }
@@ -265,6 +375,15 @@ fn parse_assign_or_unsupported(line: &str) -> BoundStmt {
         && let Some(expr) = parse_expr(rhs_raw)
     {
         return BoundStmt::Assign { target, expr };
+    }
+
+    let call_token = if line.to_ascii_lowercase().starts_with("call ") {
+        line[5..].trim()
+    } else {
+        line.trim()
+    };
+    if let Some(name) = normalize_ident(call_token) {
+        return BoundStmt::Call { name };
     }
 
     BoundStmt::Unsupported {
@@ -722,6 +841,25 @@ mod tests {
                 .body
                 .iter()
                 .any(|s| matches!(s, BoundStmt::SelectCase { .. }))
+        );
+    }
+
+    #[test]
+    fn resolve_named_procedures_and_call_sites() {
+        let source =
+            "Sub Main()\nDim x\nx = 1\nCall Foo\nEnd Sub\nSub Foo()\nDim y\ny = 2\nEnd Sub";
+        let module = resolve_symbols(source);
+        assert_eq!(module.procedures.len(), 2);
+        let main_proc = module
+            .procedures
+            .iter()
+            .find(|p| p.name == "main")
+            .expect("main procedure should exist");
+        assert!(
+            main_proc
+                .body
+                .iter()
+                .any(|s| matches!(s, BoundStmt::Call { name } if name == "foo"))
         );
     }
 }

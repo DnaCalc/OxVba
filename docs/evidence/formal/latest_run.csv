@@ -12,3 +12,6 @@
 "FO-V7-001","v7","cargo test -p oxvba-host formal_v7_select_case_first_match_wins","no","pass","","crates/oxvba-host/src/engine.rs"
 "FO-V7-002","v7","cargo test -p oxvba-host formal_v7_select_case_else_fallback","no","pass","","crates/oxvba-host/src/engine.rs"
 "FO-V7-003","v7","cargo test -p oxvba-host formal_v7_select_case_multi_value_arm","no","pass","","crates/oxvba-host/src/engine.rs"
+"FO-V8-001","v8","cargo test -p oxvba-host formal_v8_call_returns_to_caller","no","pass","","crates/oxvba-host/src/engine.rs"
+"FO-V8-002","v8","cargo test -p oxvba-host formal_v8_local_scope_isolated_between_procedures","no","pass","","crates/oxvba-host/src/engine.rs"
+"FO-V8-003","v8","cargo test -p oxvba-host formal_v8_nested_call_chain_integrity","no","pass","","crates/oxvba-host/src/engine.rs"
