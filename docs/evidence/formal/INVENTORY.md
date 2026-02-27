@@ -102,6 +102,21 @@ This inventory tracks formal artifacts and proof-adjacent harnesses by profile.
   - Artifact: `crates/oxvba-host/src/engine.rs`
   - Harness: `formal_v9_byref_requires_variable_argument`
 
+## v10 (`mvp-arrays-v10`)
+
+- FO-V10-001
+  - Area: array store/load roundtrip
+  - Artifact: `crates/oxvba-host/src/engine.rs`
+  - Harness: `formal_v10_array_store_load_roundtrip`
+- FO-V10-002
+  - Area: array bounds rejection
+  - Artifact: `crates/oxvba-host/src/engine.rs`
+  - Harness: `formal_v10_array_bounds_violation_errors`
+- FO-V10-003
+  - Area: zero-index array semantics
+  - Artifact: `crates/oxvba-host/src/engine.rs`
+  - Harness: `formal_v10_array_index_zero_is_valid`
+
 ## Reports
 
 - Latest markdown report: `docs/evidence/formal/latest_run.md`

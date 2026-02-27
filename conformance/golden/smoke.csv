@@ -2,6 +2,9 @@ file,status,slots
 do_exit_do.bas,ok,4
 do_loop_while_basic.bas,ok,3
 do_while_basic.bas,ok,3
+array_bounds_error.bas,error,
+array_store_load.bas,ok,"5,7,0,7"
+array_zero_index.bas,ok,"3,0,0,3"
 for_basic.bas,ok,"6,4"
 for_zero_iter.bas,ok,"5,5"
 function_call_basic.bas,ok,9

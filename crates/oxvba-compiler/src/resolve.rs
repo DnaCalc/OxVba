@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum BoundExpr {
     IntConst(i32),
@@ -107,11 +109,13 @@ pub fn resolve_symbols(source: &str) -> BoundModule {
         parse_procedures(&lines, &mut option_explicit)
     } else {
         let mut declarations: Vec<String> = Vec::new();
+        let mut array_bounds: HashMap<String, usize> = HashMap::new();
         let mut index = 0;
         let body = parse_block(
             &lines,
             &mut index,
             &mut declarations,
+            &mut array_bounds,
             &mut option_explicit,
             &[],
         );
@@ -174,6 +178,7 @@ fn parse_procedures(lines: &[String], option_explicit: &mut bool) -> Vec<BoundPr
 
         index += 1;
         let mut declarations: Vec<String> = params.iter().map(|p| p.name.clone()).collect();
+        let mut array_bounds: HashMap<String, usize> = HashMap::new();
         let end_term = if is_function {
             "end function"
         } else {
@@ -183,6 +188,7 @@ fn parse_procedures(lines: &[String], option_explicit: &mut bool) -> Vec<BoundPr
             lines,
             &mut index,
             &mut declarations,
+            &mut array_bounds,
             option_explicit,
             &[end_term],
         );
@@ -246,6 +252,7 @@ fn parse_block(
     lines: &[String],
     index: &mut usize,
     declarations: &mut Vec<String>,
+    array_bounds: &mut HashMap<String, usize>,
     option_explicit: &mut bool,
     terminators: &[&str],
 ) -> Vec<BoundStmt> {
@@ -275,7 +282,7 @@ fn parse_block(
         }
 
         if lower.starts_with("dim ") {
-            parse_declaration(line, declarations);
+            parse_declaration(line, declarations, array_bounds);
             *index += 1;
             continue;
         }
@@ -285,6 +292,7 @@ fn parse_block(
                 lines,
                 index,
                 declarations,
+                array_bounds,
                 option_explicit,
                 line,
             ));
@@ -296,6 +304,7 @@ fn parse_block(
                 lines,
                 index,
                 declarations,
+                array_bounds,
                 option_explicit,
                 line,
             ));
@@ -307,6 +316,7 @@ fn parse_block(
                 lines,
                 index,
                 declarations,
+                array_bounds,
                 option_explicit,
                 line,
             ));
@@ -324,13 +334,14 @@ fn parse_block(
                 lines,
                 index,
                 declarations,
+                array_bounds,
                 option_explicit,
                 line,
             ));
             continue;
         }
 
-        out.push(parse_assign_or_unsupported(line));
+        out.push(parse_assign_or_unsupported(line, array_bounds));
         *index += 1;
     }
 
@@ -341,11 +352,12 @@ fn parse_if_stmt(
     lines: &[String],
     index: &mut usize,
     declarations: &mut Vec<String>,
+    array_bounds: &mut HashMap<String, usize>,
     option_explicit: &mut bool,
     line: &str,
 ) -> BoundStmt {
     let condition = line[2..line.len() - 4].trim();
-    let Some(cond) = parse_condition(condition) else {
+    let Some(cond) = parse_condition(condition, array_bounds) else {
         *index += 1;
         return BoundStmt::Unsupported {
             line: line.to_string(),
@@ -357,10 +369,13 @@ fn parse_if_stmt(
         lines,
         index,
         declarations,
+        array_bounds,
         option_explicit,
         &["elseif", "else", "end if"],
     );
-    let Some(else_body) = parse_if_tail(lines, index, declarations, option_explicit) else {
+    let Some(else_body) =
+        parse_if_tail(lines, index, declarations, array_bounds, option_explicit)
+    else {
         return BoundStmt::Unsupported {
             line: line.to_string(),
         };
@@ -377,10 +392,11 @@ fn parse_for_stmt(
     lines: &[String],
     index: &mut usize,
     declarations: &mut Vec<String>,
+    array_bounds: &mut HashMap<String, usize>,
     option_explicit: &mut bool,
     line: &str,
 ) -> BoundStmt {
-    let Some((var, start, end)) = parse_for_header(line) else {
+    let Some((var, start, end)) = parse_for_header(line, array_bounds) else {
         *index += 1;
         return BoundStmt::Unsupported {
             line: line.to_string(),
@@ -388,7 +404,14 @@ fn parse_for_stmt(
     };
 
     *index += 1;
-    let body = parse_block(lines, index, declarations, option_explicit, &["next"]);
+    let body = parse_block(
+        lines,
+        index,
+        declarations,
+        array_bounds,
+        option_explicit,
+        &["next"],
+    );
 
     if *index < lines.len() {
         let lower = lines[*index].to_ascii_lowercase();
@@ -408,10 +431,10 @@ fn parse_for_stmt(
     }
 }
 
-fn parse_assign_or_unsupported(line: &str) -> BoundStmt {
+fn parse_assign_or_unsupported(line: &str, array_bounds: &HashMap<String, usize>) -> BoundStmt {
     if let Some((lhs_raw, rhs_raw)) = line.split_once('=')
-        && let Some(target) = normalize_ident(lhs_raw)
-        && let Some(expr) = parse_expr(rhs_raw)
+        && let Some(target) = parse_reference_name(lhs_raw, array_bounds)
+        && let Some(expr) = parse_expr(rhs_raw, array_bounds)
     {
         return BoundStmt::Assign { target, expr };
     }
@@ -421,7 +444,7 @@ fn parse_assign_or_unsupported(line: &str) -> BoundStmt {
     } else {
         line.trim()
     };
-    if let Some((name, args)) = parse_call_invocation(call_token) {
+    if let Some((name, args)) = parse_call_invocation(call_token, array_bounds) {
         return BoundStmt::Call { name, args };
     }
     if let Some(name) = normalize_ident(call_token) {
@@ -436,7 +459,10 @@ fn parse_assign_or_unsupported(line: &str) -> BoundStmt {
     }
 }
 
-fn parse_call_invocation(text: &str) -> Option<(String, Vec<BoundExpr>)> {
+fn parse_call_invocation(
+    text: &str,
+    array_bounds: &HashMap<String, usize>,
+) -> Option<(String, Vec<BoundExpr>)> {
     let open = text.find('(')?;
     let close = text.rfind(')')?;
     if close <= open {
@@ -451,7 +477,7 @@ fn parse_call_invocation(text: &str) -> Option<(String, Vec<BoundExpr>)> {
 
     let mut args = Vec::new();
     for token in args_raw.split(',') {
-        args.push(parse_expr(token.trim())?);
+        args.push(parse_expr(token.trim(), array_bounds)?);
     }
     Some((name, args))
 }
@@ -460,13 +486,14 @@ fn parse_do_stmt(
     lines: &[String],
     index: &mut usize,
     declarations: &mut Vec<String>,
+    array_bounds: &mut HashMap<String, usize>,
     option_explicit: &mut bool,
     line: &str,
 ) -> BoundStmt {
     let lower = line.to_ascii_lowercase();
     if lower.starts_with("do while ") {
         let condition = line[8..].trim();
-        let Some(cond) = parse_condition(condition) else {
+        let Some(cond) = parse_condition(condition, array_bounds) else {
             *index += 1;
             return BoundStmt::Unsupported {
                 line: line.to_string(),
@@ -474,7 +501,14 @@ fn parse_do_stmt(
         };
 
         *index += 1;
-        let body = parse_block(lines, index, declarations, option_explicit, &["loop"]);
+        let body = parse_block(
+            lines,
+            index,
+            declarations,
+            array_bounds,
+            option_explicit,
+            &["loop"],
+        );
         if *index < lines.len() {
             let loop_line = lines[*index].to_ascii_lowercase();
             if loop_line == "loop" {
@@ -494,13 +528,20 @@ fn parse_do_stmt(
 
     if lower == "do" {
         *index += 1;
-        let body = parse_block(lines, index, declarations, option_explicit, &["loop"]);
+        let body = parse_block(
+            lines,
+            index,
+            declarations,
+            array_bounds,
+            option_explicit,
+            &["loop"],
+        );
         if *index < lines.len() {
             let loop_line = lines[*index].as_str();
             let loop_lower = loop_line.to_ascii_lowercase();
             if loop_lower.starts_with("loop while ") {
                 let condition = loop_line[11..].trim();
-                if let Some(cond) = parse_condition(condition) {
+                if let Some(cond) = parse_condition(condition, array_bounds) {
                     *index += 1;
                     return BoundStmt::DoWhile {
                         cond,
@@ -521,7 +562,10 @@ fn parse_do_stmt(
     }
 }
 
-fn parse_for_header(line: &str) -> Option<(String, BoundExpr, BoundExpr)> {
+fn parse_for_header(
+    line: &str,
+    array_bounds: &HashMap<String, usize>,
+) -> Option<(String, BoundExpr, BoundExpr)> {
     let lower = line.to_ascii_lowercase();
     if !lower.starts_with("for ") {
         return None;
@@ -531,8 +575,8 @@ fn parse_for_header(line: &str) -> Option<(String, BoundExpr, BoundExpr)> {
     let (lhs_raw, range_raw) = without_for.split_once('=')?;
     let var = normalize_ident(lhs_raw)?;
     let (start_raw, end_raw) = split_ci(range_raw, " to ")?;
-    let start = parse_expr(start_raw)?;
-    let end = parse_expr(end_raw)?;
+    let start = parse_expr(start_raw, array_bounds)?;
+    let end = parse_expr(end_raw, array_bounds)?;
     Some((var, start, end))
 }
 
@@ -540,6 +584,7 @@ fn parse_select_case_stmt(
     lines: &[String],
     index: &mut usize,
     declarations: &mut Vec<String>,
+    array_bounds: &mut HashMap<String, usize>,
     option_explicit: &mut bool,
     line: &str,
 ) -> BoundStmt {
@@ -549,7 +594,7 @@ fn parse_select_case_stmt(
             line: line.to_string(),
         };
     };
-    let Some(expr) = parse_expr(expr_raw) else {
+    let Some(expr) = parse_expr(expr_raw, array_bounds) else {
         *index += 1;
         return BoundStmt::Unsupported {
             line: line.to_string(),
@@ -575,7 +620,14 @@ fn parse_select_case_stmt(
 
         if lower.starts_with("case else") {
             *index += 1;
-            else_body = parse_block(lines, index, declarations, option_explicit, &["end select"]);
+            else_body = parse_block(
+                lines,
+                index,
+                declarations,
+                array_bounds,
+                option_explicit,
+                &["end select"],
+            );
             continue;
         }
 
@@ -597,6 +649,7 @@ fn parse_select_case_stmt(
                 lines,
                 index,
                 declarations,
+                array_bounds,
                 option_explicit,
                 &["case", "end select"],
             );
@@ -614,50 +667,50 @@ fn parse_select_case_stmt(
     }
 }
 
-fn parse_expr(text: &str) -> Option<BoundExpr> {
+fn parse_expr(text: &str, array_bounds: &HashMap<String, usize>) -> Option<BoundExpr> {
     let expr = text.trim();
     if let Ok(value) = expr.parse::<i32>() {
         return Some(BoundExpr::IntConst(value));
     }
 
     if let Some((left_raw, right_raw)) = expr.split_once('+') {
-        let var = normalize_ident(left_raw)?;
+        let var = parse_reference_name(left_raw, array_bounds)?;
         let delta = right_raw.trim().parse::<i32>().ok()?;
         return Some(BoundExpr::AddConst { var, delta });
     }
 
     if let Some((left_raw, right_raw)) = expr.split_once('-') {
-        let var = normalize_ident(left_raw)?;
+        let var = parse_reference_name(left_raw, array_bounds)?;
         let delta = right_raw.trim().parse::<i32>().ok()?;
         return Some(BoundExpr::SubConst { var, delta });
     }
 
-    normalize_ident(expr).map(BoundExpr::Var)
+    parse_reference_name(expr, array_bounds).map(BoundExpr::Var)
 }
 
-fn parse_condition(text: &str) -> Option<BoundCond> {
+fn parse_condition(text: &str, array_bounds: &HashMap<String, usize>) -> Option<BoundCond> {
     if let Some((lhs_raw, rhs_raw)) = split_keyword_ci(text, "or") {
-        let lhs = parse_condition(lhs_raw)?;
-        let rhs = parse_condition(rhs_raw)?;
+        let lhs = parse_condition(lhs_raw, array_bounds)?;
+        let rhs = parse_condition(rhs_raw, array_bounds)?;
         return Some(BoundCond::Or(Box::new(lhs), Box::new(rhs)));
     }
 
     if let Some((lhs_raw, rhs_raw)) = split_keyword_ci(text, "and") {
-        let lhs = parse_condition(lhs_raw)?;
-        let rhs = parse_condition(rhs_raw)?;
+        let lhs = parse_condition(lhs_raw, array_bounds)?;
+        let rhs = parse_condition(rhs_raw, array_bounds)?;
         return Some(BoundCond::And(Box::new(lhs), Box::new(rhs)));
     }
 
     let trimmed = text.trim();
     if let Some(rest) = strip_keyword_prefix_ci(trimmed, "not") {
-        let inner = parse_condition(rest)?;
+        let inner = parse_condition(rest, array_bounds)?;
         return Some(BoundCond::Not(Box::new(inner)));
     }
 
-    parse_compare_condition(trimmed)
+    parse_compare_condition(trimmed, array_bounds)
 }
 
-fn parse_compare_condition(text: &str) -> Option<BoundCond> {
+fn parse_compare_condition(text: &str, array_bounds: &HashMap<String, usize>) -> Option<BoundCond> {
     let pairs = [
         ("<>", CompareOp::Ne),
         ("<=", CompareOp::Le),
@@ -669,16 +722,20 @@ fn parse_compare_condition(text: &str) -> Option<BoundCond> {
 
     for (op_text, op) in pairs {
         if let Some((lhs_raw, rhs_raw)) = text.split_once(op_text) {
-            let lhs = parse_expr(lhs_raw)?;
-            let rhs = parse_expr(rhs_raw)?;
+            let lhs = parse_expr(lhs_raw, array_bounds)?;
+            let rhs = parse_expr(rhs_raw, array_bounds)?;
             return Some(BoundCond::Compare { op, lhs, rhs });
         }
     }
 
-    parse_expr(text).map(BoundCond::Truthy)
+    parse_expr(text, array_bounds).map(BoundCond::Truthy)
 }
 
-fn parse_declaration(line: &str, declarations: &mut Vec<String>) {
+fn parse_declaration(
+    line: &str,
+    declarations: &mut Vec<String>,
+    array_bounds: &mut HashMap<String, usize>,
+) {
     let remainder = line[4..].trim();
     let candidate = remainder
         .split(',')
@@ -687,13 +744,61 @@ fn parse_declaration(line: &str, declarations: &mut Vec<String>) {
         .split_whitespace()
         .next()
         .unwrap_or_default();
-    if let Some(name) = normalize_ident(candidate)
-        && !declarations
+    if let Some((base, max_index)) = parse_array_declaration(candidate) {
+        array_bounds.insert(base.clone(), max_index);
+        for idx in 0..=max_index {
+            let alias = format!("{base}_{idx}");
+            if !declarations
+                .iter()
+                .any(|existing| existing.eq_ignore_ascii_case(&alias))
+            {
+                declarations.push(alias);
+            }
+        }
+        return;
+    }
+
+    if let Some(name) = normalize_ident(candidate) {
+        if !declarations
             .iter()
             .any(|existing| existing.eq_ignore_ascii_case(&name))
-    {
-        declarations.push(name);
+        {
+            declarations.push(name);
+        }
     }
+}
+
+fn parse_array_declaration(token: &str) -> Option<(String, usize)> {
+    let open = token.find('(')?;
+    let close = token.rfind(')')?;
+    if close <= open {
+        return None;
+    }
+    let base = normalize_ident(token[..open].trim())?;
+    let max_index = token[open + 1..close].trim().parse::<usize>().ok()?;
+    Some((base, max_index))
+}
+
+fn parse_reference_name(token: &str, array_bounds: &HashMap<String, usize>) -> Option<String> {
+    if let Some(alias) = parse_array_reference(token, array_bounds) {
+        return Some(alias);
+    }
+    normalize_ident(token)
+}
+
+fn parse_array_reference(token: &str, array_bounds: &HashMap<String, usize>) -> Option<String> {
+    let open = token.find('(')?;
+    let close = token.rfind(')')?;
+    if close <= open {
+        return None;
+    }
+    let base = normalize_ident(token[..open].trim())?;
+    let index = token[open + 1..close].trim().parse::<usize>().ok()?;
+    let max = array_bounds.get(&base)?;
+    if index > *max {
+        return None;
+    }
+    Some(format!("{base}_{index}"))
 }
 
 fn normalize_ident(text: &str) -> Option<String> {
@@ -736,6 +841,7 @@ fn parse_if_tail(
     lines: &[String],
     index: &mut usize,
     declarations: &mut Vec<String>,
+    array_bounds: &mut HashMap<String, usize>,
     option_explicit: &mut bool,
 ) -> Option<Vec<BoundStmt>> {
     if *index >= lines.len() {
@@ -752,7 +858,14 @@ fn parse_if_tail(
 
     if lower == "else" {
         *index += 1;
-        let else_body = parse_block(lines, index, declarations, option_explicit, &["end if"]);
+        let else_body = parse_block(
+            lines,
+            index,
+            declarations,
+            array_bounds,
+            option_explicit,
+            &["end if"],
+        );
         if *index < lines.len() && lines[*index].eq_ignore_ascii_case("end if") {
             *index += 1;
             return Some(else_body);
@@ -762,16 +875,17 @@ fn parse_if_tail(
 
     if lower.starts_with("elseif ") && lower.ends_with(" then") {
         let condition = line[6..line.len() - 4].trim();
-        let cond = parse_condition(condition)?;
+        let cond = parse_condition(condition, array_bounds)?;
         *index += 1;
         let then_body = parse_block(
             lines,
             index,
             declarations,
+            array_bounds,
             option_explicit,
             &["elseif", "else", "end if"],
         );
-        let nested_else = parse_if_tail(lines, index, declarations, option_explicit)?;
+        let nested_else = parse_if_tail(lines, index, declarations, array_bounds, option_explicit)?;
         return Some(vec![BoundStmt::IfCond {
             cond,
             then_body,
@@ -940,5 +1054,15 @@ mod tests {
         assert_eq!(add_one.params.len(), 1);
         assert_eq!(add_one.params[0].name, "a");
         assert!(add_one.params[0].by_ref);
+    }
+
+    #[test]
+    fn resolve_array_references_into_element_slots() {
+        let source = "Sub Main()\nDim a(2)\nDim x\na(1) = 7\nx = a(1)\nEnd Sub";
+        let module = resolve_symbols(source);
+        assert!(module.declarations.iter().any(|d| d == "a_0"));
+        assert!(module.declarations.iter().any(|d| d == "a_1"));
+        assert!(module.declarations.iter().any(|d| d == "a_2"));
+        assert!(module.declarations.iter().any(|d| d == "x"));
     }
 }

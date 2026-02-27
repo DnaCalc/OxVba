@@ -273,4 +273,34 @@ mod tests {
             .expect_err("byref constant argument should fail");
         assert!(err.contains("ByRef"));
     }
+
+    #[test]
+    fn formal_v10_array_store_load_roundtrip() {
+        let engine = Engine::new(HostConfig::default());
+        let source = "Sub Main()\nDim a(2)\nDim x\na(1) = 7\nx = a(1)\nEnd Sub";
+        let snapshot = engine
+            .execute_source_with_snapshot(source)
+            .expect("execution should succeed");
+        assert_eq!(snapshot.last().copied(), Some(7));
+    }
+
+    #[test]
+    fn formal_v10_array_bounds_violation_errors() {
+        let engine = Engine::new(HostConfig::default());
+        let source = "Sub Main()\nDim a(1)\na(2) = 5\nEnd Sub";
+        let err = engine
+            .execute_source_with_snapshot(source)
+            .expect_err("out-of-range access should fail");
+        assert!(!err.trim().is_empty());
+    }
+
+    #[test]
+    fn formal_v10_array_index_zero_is_valid() {
+        let engine = Engine::new(HostConfig::default());
+        let source = "Sub Main()\nDim a(2)\nDim x\na(0) = 3\nx = a(0)\nEnd Sub";
+        let snapshot = engine
+            .execute_source_with_snapshot(source)
+            .expect("execution should succeed");
+        assert_eq!(snapshot.last().copied(), Some(3));
+    }
 }

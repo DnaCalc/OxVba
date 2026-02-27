@@ -33,6 +33,9 @@ Source of truth:
 | FO-V9-001 | v9 (`mvp-params-v9`) | `ByVal` mutation isolation | `formal_v9_byval_does_not_propagate_mutation` | `scripts/run-formal.ps1` | no | todo (pending latest run update) | `docs/evidence/formal/latest_run.md` |
 | FO-V9-002 | v9 (`mvp-params-v9`) | `ByRef` mutation propagation | `formal_v9_byref_propagates_mutation` | `scripts/run-formal.ps1` | no | todo (pending latest run update) | `docs/evidence/formal/latest_run.md` |
 | FO-V9-003 | v9 (`mvp-params-v9`) | `ByRef` argument validity rule | `formal_v9_byref_requires_variable_argument` | `scripts/run-formal.ps1` | no | todo (pending latest run update) | `docs/evidence/formal/latest_run.md` |
+| FO-V10-001 | v10 (`mvp-arrays-v10`) | Array store/load roundtrip | `formal_v10_array_store_load_roundtrip` | `scripts/run-formal.ps1` | no | todo (pending latest run update) | `docs/evidence/formal/latest_run.md` |
+| FO-V10-002 | v10 (`mvp-arrays-v10`) | Array bounds rejection | `formal_v10_array_bounds_violation_errors` | `scripts/run-formal.ps1` | no | todo (pending latest run update) | `docs/evidence/formal/latest_run.md` |
+| FO-V10-003 | v10 (`mvp-arrays-v10`) | Zero-index array semantics | `formal_v10_array_index_zero_is_valid` | `scripts/run-formal.ps1` | no | todo (pending latest run update) | `docs/evidence/formal/latest_run.md` |
 
 ## Policy (current ladder run)
 - Formal runs are required in-cycle for relevant changes.

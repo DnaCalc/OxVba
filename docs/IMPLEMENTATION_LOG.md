@@ -97,3 +97,8 @@
   - Added ByRef variable-argument validation.
   - Added call-site argument binding with ByRef copy-back semantics.
   - Added conformance + formal obligations (`FO-V9-001..003`) for pass-by-mode behavior.
+- Started `mvp-arrays-v10` fixed-array pass:
+  - Added `Dim name(n)` array declaration handling with indexed reference lowering.
+  - Added array load/store parsing and deterministic bounds rejection.
+  - Added conformance fixtures for roundtrip, zero-index, and bounds-error cases.
+  - Added executable formal obligations (`FO-V10-001..003`) for array invariants.
