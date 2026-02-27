@@ -272,6 +272,31 @@ mod tests {
     }
 
     #[test]
+    fn compile_gosub_and_return_subset() {
+        let source = "Sub Main()\nDim x\nx = 1\nGoSub add_two\nx = x + 1\nIf Err.Number = -1 Then\nadd_two:\nx = x + 2\nReturn\nEnd If\nEnd Sub";
+        let out = compile(source).expect("compile should succeed");
+        let call_count = out
+            .instructions
+            .iter()
+            .filter(|i| matches!(i, Instruction::CallProc { .. }))
+            .count();
+        let return_count = out
+            .instructions
+            .iter()
+            .filter(|i| matches!(i, Instruction::Return))
+            .count();
+        assert!(call_count >= 1);
+        assert!(return_count >= 1);
+    }
+
+    #[test]
+    fn compile_gosub_rejects_missing_label() {
+        let source = "Sub Main()\nGoSub nope\nEnd Sub";
+        let err = compile(source).expect_err("typecheck should fail");
+        assert!(err.to_string().contains("gosub target label not found"));
+    }
+
+    #[test]
     fn compile_on_error_resume_next_emits_error_state_ops() {
         let source = "Sub Main()\nDim x\nOn Error Resume Next\nError 5\nx = Err.Number\nEnd Sub";
         let out = compile(source).expect("compile should succeed");

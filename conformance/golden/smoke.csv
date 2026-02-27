@@ -8,6 +8,9 @@ array_zero_index.bas,ok,"3,0,0,3"
 for_basic.bas,ok,"6,4"
 for_zero_iter.bas,ok,"5,5"
 function_call_basic.bas,ok,9
+gosub_basic.bas,ok,4
+gosub_missing_label_error.bas,error,
+gosub_repeated.bas,ok,5
 if_false.bas,ok,0
 if_and.bas,ok,7
 if_else_path.bas,ok,20
@@ -23,6 +26,9 @@ option_explicit_error.bas,error,
 option_explicit_ok.bas,ok,3
 on_error_default_fail.bas,error,
 on_error_goto_zero_fail.bas,error,
+on_error_goto_label_missing_label_error.bas,error,
+on_error_goto_label_resume.bas,ok,6
+on_error_goto_label_then_goto_zero_error.bas,error,
 on_error_resume_continue.bas,ok,2
 on_error_resume_next.bas,ok,5
 params_byref.bas,ok,2

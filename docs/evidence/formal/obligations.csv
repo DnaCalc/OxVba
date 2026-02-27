@@ -107,3 +107,9 @@ FO-V37-003,v37,"cargo test -p oxvba-host formal_v37_optional_param_missing_requi
 FO-V38-001,v38,"cargo test -p oxvba-host formal_v38_named_args_bind_by_parameter_name",no,true,crates/oxvba-host/src/engine.rs
 FO-V38-002,v38,"cargo test -p oxvba-host formal_v38_named_args_allow_omitting_optional_by_name",no,true,crates/oxvba-host/src/engine.rs
 FO-V38-003,v38,"cargo test -p oxvba-host formal_v38_named_args_reject_positional_after_named",no,true,crates/oxvba-host/src/engine.rs
+FO-V40-001,v40,"cargo test -p oxvba-host formal_v40_gosub_executes_label_body_and_returns",no,true,crates/oxvba-host/src/engine.rs
+FO-V40-002,v40,"cargo test -p oxvba-host formal_v40_gosub_missing_label_is_rejected",no,true,crates/oxvba-host/src/engine.rs
+FO-V40-003,v40,"cargo test -p oxvba-host formal_v40_gosub_return_stack_handles_repeated_calls",no,true,crates/oxvba-host/src/engine.rs
+FO-V41-001,v41,"cargo test -p oxvba-host formal_v41_on_error_goto_label_jumps_to_handler",no,true,crates/oxvba-host/src/engine.rs
+FO-V41-002,v41,"cargo test -p oxvba-host formal_v41_on_error_goto_label_missing_target_is_rejected",no,true,crates/oxvba-host/src/engine.rs
+FO-V41-003,v41,"cargo test -p oxvba-host formal_v41_on_error_goto_zero_disables_label_handler",no,true,crates/oxvba-host/src/engine.rs

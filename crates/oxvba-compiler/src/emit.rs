@@ -46,6 +46,7 @@ pub fn emit_bytecode(module: &BoundModule) -> Bytecode {
     let mut instructions = Vec::new();
     let mut loop_exit_stack: Vec<Vec<usize>> = Vec::new();
     let mut call_patches: Vec<(usize, String)> = Vec::new();
+    let mut error_handler_patches: Vec<(usize, String)> = Vec::new();
     let mut proc_labels: HashMap<String, usize> = HashMap::new();
     let mut proc_meta: HashMap<String, EmitProcMeta> = HashMap::new();
     for (idx, proc) in procedures.iter().enumerate() {
@@ -66,7 +67,10 @@ pub fn emit_bytecode(module: &BoundModule) -> Bytecode {
         &mut instructions,
         &mut loop_exit_stack,
         &mut call_patches,
+        &mut error_handler_patches,
         &proc_meta,
+        &procedures[entry_idx].name,
+        &mut proc_labels,
     );
     instructions.push(Instruction::Halt);
 
@@ -82,7 +86,10 @@ pub fn emit_bytecode(module: &BoundModule) -> Bytecode {
             &mut instructions,
             &mut loop_exit_stack,
             &mut call_patches,
+            &mut error_handler_patches,
             &proc_meta,
+            &proc.name,
+            &mut proc_labels,
         );
         instructions.push(Instruction::Return);
     }
@@ -95,6 +102,14 @@ pub fn emit_bytecode(module: &BoundModule) -> Bytecode {
         }
     }
 
+    for (patch_idx, label_name) in error_handler_patches {
+        if let Some(target) = proc_labels.get(&label_name).copied()
+            && let Instruction::SetOnErrorGotoLabel { target_pc } = &mut instructions[patch_idx]
+        {
+            *target_pc = target;
+        }
+    }
+
     Bytecode {
         instructions,
         slot_count: temps.total_slots(),
@@ -102,6 +117,7 @@ pub fn emit_bytecode(module: &BoundModule) -> Bytecode {
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn emit_stmt_list(
     stmts: &[BoundStmt],
     slot_map: &HashMap<String, usize>,
@@ -109,7 +125,10 @@ fn emit_stmt_list(
     instructions: &mut Vec<Instruction>,
     loop_exit_stack: &mut Vec<Vec<usize>>,
     call_patches: &mut Vec<(usize, String)>,
+    error_handler_patches: &mut Vec<(usize, String)>,
     proc_meta: &HashMap<String, EmitProcMeta>,
+    current_proc_name: &str,
+    proc_labels: &mut HashMap<String, usize>,
 ) {
     for stmt in stmts {
         emit_stmt(
@@ -119,11 +138,15 @@ fn emit_stmt_list(
             instructions,
             loop_exit_stack,
             call_patches,
+            error_handler_patches,
             proc_meta,
+            current_proc_name,
+            proc_labels,
         );
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn emit_stmt(
     stmt: &BoundStmt,
     slot_map: &HashMap<String, usize>,
@@ -131,7 +154,10 @@ fn emit_stmt(
     instructions: &mut Vec<Instruction>,
     loop_exit_stack: &mut Vec<Vec<usize>>,
     call_patches: &mut Vec<(usize, String)>,
+    error_handler_patches: &mut Vec<(usize, String)>,
     proc_meta: &HashMap<String, EmitProcMeta>,
+    current_proc_name: &str,
+    proc_labels: &mut HashMap<String, usize>,
 ) {
     match stmt {
         BoundStmt::Assign { target, expr } => {
@@ -158,7 +184,10 @@ fn emit_stmt(
                 instructions,
                 loop_exit_stack,
                 call_patches,
+                error_handler_patches,
                 proc_meta,
+                current_proc_name,
+                proc_labels,
             );
             if else_body.is_empty() {
                 let target = instructions.len();
@@ -179,7 +208,10 @@ fn emit_stmt(
                     instructions,
                     loop_exit_stack,
                     call_patches,
+                    error_handler_patches,
                     proc_meta,
+                    current_proc_name,
+                    proc_labels,
                 );
                 let end_target = instructions.len();
                 if let Instruction::Jump { target_pc } = &mut instructions[end_patch] {
@@ -217,7 +249,10 @@ fn emit_stmt(
                     instructions,
                     loop_exit_stack,
                     call_patches,
+                    error_handler_patches,
                     proc_meta,
+                    current_proc_name,
+                    proc_labels,
                 );
                 instructions.push(Instruction::IncSlot { slot: var_slot });
                 instructions.push(Instruction::Jump {
@@ -256,7 +291,10 @@ fn emit_stmt(
                 instructions,
                 loop_exit_stack,
                 call_patches,
+                error_handler_patches,
                 proc_meta,
+                current_proc_name,
+                proc_labels,
             );
 
             emit_cond_into(cond, cond_slot, slot_map, temps, instructions);
@@ -300,11 +338,31 @@ fn emit_stmt(
         BoundStmt::OnErrorGoto0 => {
             instructions.push(Instruction::SetOnErrorGoto0);
         }
+        BoundStmt::OnErrorGotoLabel { label } => {
+            let patch_idx = instructions.len();
+            instructions.push(Instruction::SetOnErrorGotoLabel { target_pc: 0 });
+            error_handler_patches
+                .push((patch_idx, format!("__label::{current_proc_name}::{label}")));
+        }
         BoundStmt::ResumeNext => {
             instructions.push(Instruction::ResumeNext);
         }
         BoundStmt::RaiseError(code) => {
             instructions.push(Instruction::RaiseError { code: *code });
+        }
+        BoundStmt::Label { name } => {
+            proc_labels.insert(
+                format!("__label::{current_proc_name}::{name}"),
+                instructions.len(),
+            );
+        }
+        BoundStmt::GoSub { label } => {
+            let patch_idx = instructions.len();
+            instructions.push(Instruction::CallProc { target_pc: 0 });
+            call_patches.push((patch_idx, format!("__label::{current_proc_name}::{label}")));
+        }
+        BoundStmt::Return => {
+            instructions.push(Instruction::Return);
         }
         BoundStmt::SelectCase {
             expr,
@@ -353,7 +411,10 @@ fn emit_stmt(
                     instructions,
                     loop_exit_stack,
                     call_patches,
+                    error_handler_patches,
                     proc_meta,
+                    current_proc_name,
+                    proc_labels,
                 );
                 let end_patch = instructions.len();
                 instructions.push(Instruction::Jump { target_pc: 0 });
@@ -371,7 +432,10 @@ fn emit_stmt(
                 instructions,
                 loop_exit_stack,
                 call_patches,
+                error_handler_patches,
                 proc_meta,
+                current_proc_name,
+                proc_labels,
             );
             let end_target = instructions.len();
             for patch in end_patches {

@@ -370,6 +370,66 @@ mod tests {
     }
 
     #[test]
+    fn formal_v40_gosub_executes_label_body_and_returns() {
+        let engine = Engine::new(HostConfig::default());
+        let source = "Sub Main()\nDim x\nx = 1\nGoSub add_two\nx = x + 1\nIf Err.Number = -1 Then\nadd_two:\nx = x + 2\nReturn\nEnd If\nEnd Sub";
+        let snapshot = engine
+            .execute_source_with_snapshot(source)
+            .expect("execution should succeed");
+        assert_eq!(snapshot[0], 4);
+    }
+
+    #[test]
+    fn formal_v40_gosub_missing_label_is_rejected() {
+        let engine = Engine::new(HostConfig::default());
+        let source = "Sub Main()\nGoSub nope\nEnd Sub";
+        let err = engine
+            .execute_source_with_snapshot(source)
+            .expect_err("missing gosub label should fail");
+        assert!(err.contains("gosub target label not found"));
+    }
+
+    #[test]
+    fn formal_v40_gosub_return_stack_handles_repeated_calls() {
+        let engine = Engine::new(HostConfig::default());
+        let source = "Sub Main()\nDim x\nx = 1\nGoSub add_two\nGoSub add_two\nIf Err.Number = -1 Then\nadd_two:\nx = x + 2\nReturn\nEnd If\nEnd Sub";
+        let snapshot = engine
+            .execute_source_with_snapshot(source)
+            .expect("execution should succeed");
+        assert_eq!(snapshot[0], 5);
+    }
+
+    #[test]
+    fn formal_v41_on_error_goto_label_jumps_to_handler() {
+        let engine = Engine::new(HostConfig::default());
+        let source = "Sub Main()\nDim x\nx = 1\nOn Error GoTo handler\nError 5\nx = 99\nIf Err.Number = -1 Then\nhandler:\nx = Err.Number\nResume Next\nEnd If\nx = x + 1\nEnd Sub";
+        let snapshot = engine
+            .execute_source_with_snapshot(source)
+            .expect("execution should succeed");
+        assert_eq!(snapshot[0], 6);
+    }
+
+    #[test]
+    fn formal_v41_on_error_goto_label_missing_target_is_rejected() {
+        let engine = Engine::new(HostConfig::default());
+        let source = "Sub Main()\nOn Error GoTo handler\nError 5\nEnd Sub";
+        let err = engine
+            .execute_source_with_snapshot(source)
+            .expect_err("missing handler label should fail");
+        assert!(err.contains("on error goto target label not found"));
+    }
+
+    #[test]
+    fn formal_v41_on_error_goto_zero_disables_label_handler() {
+        let engine = Engine::new(HostConfig::default());
+        let source = "Sub Main()\nOn Error GoTo handler\nOn Error GoTo 0\nError 4\nIf Err.Number = -1 Then\nhandler:\nResume Next\nEnd If\nEnd Sub";
+        let err = engine
+            .execute_source_with_snapshot(source)
+            .expect_err("goto 0 should disable label handler");
+        assert!(err.contains("runtime error"));
+    }
+
+    #[test]
     fn formal_v10_array_store_load_roundtrip() {
         let engine = Engine::new(HostConfig::default());
         let source = "Sub Main()\nDim a(2)\nDim x\na(1) = 7\nx = a(1)\nEnd Sub";

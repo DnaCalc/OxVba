@@ -39,8 +39,18 @@ pub enum BoundStmt {
     ExitDo,
     OnErrorResumeNext,
     OnErrorGoto0,
+    OnErrorGotoLabel {
+        label: String,
+    },
     ResumeNext,
     RaiseError(i32),
+    Label {
+        name: String,
+    },
+    GoSub {
+        label: String,
+    },
+    Return,
     Call {
         name: String,
         args: Vec<BoundCallArg>,
@@ -387,6 +397,19 @@ fn parse_block(
             continue;
         }
 
+        if lower.starts_with("on error goto ") {
+            let raw = line[14..].trim();
+            if let Some(label) = normalize_ident(raw) {
+                out.push(BoundStmt::OnErrorGotoLabel { label });
+            } else {
+                out.push(BoundStmt::Unsupported {
+                    line: line.to_string(),
+                });
+            }
+            *index += 1;
+            continue;
+        }
+
         if lower == "resume next" {
             out.push(BoundStmt::ResumeNext);
             *index += 1;
@@ -397,6 +420,30 @@ fn parse_block(
             && let Ok(code) = line[6..].trim().parse::<i32>()
         {
             out.push(BoundStmt::RaiseError(code));
+            *index += 1;
+            continue;
+        }
+
+        if let Some(name) = parse_label_declaration(line) {
+            out.push(BoundStmt::Label { name });
+            *index += 1;
+            continue;
+        }
+
+        if lower.starts_with("gosub ") {
+            if let Some(label) = normalize_ident(line[6..].trim()) {
+                out.push(BoundStmt::GoSub { label });
+            } else {
+                out.push(BoundStmt::Unsupported {
+                    line: line.to_string(),
+                });
+            }
+            *index += 1;
+            continue;
+        }
+
+        if lower == "return" {
+            out.push(BoundStmt::Return);
             *index += 1;
             continue;
         }
@@ -905,6 +952,14 @@ fn normalize_ident(text: &str) -> Option<String> {
     Some(token.to_ascii_lowercase())
 }
 
+fn parse_label_declaration(line: &str) -> Option<String> {
+    let trimmed = line.trim();
+    if !trimmed.ends_with(':') {
+        return None;
+    }
+    normalize_ident(&trimmed[..trimmed.len() - 1])
+}
+
 fn matches_terminator(lower_line: &str, terminators: &[&str]) -> bool {
     terminators.iter().any(|term| {
         if *term == "next" {
@@ -1180,6 +1235,87 @@ mod tests {
     }
 
     #[test]
+    fn resolve_gosub_and_label_statements() {
+        let source = "Sub Main()\nDim x\nx = 1\nGoSub add_two\nx = x + 1\nIf Err.Number = -1 Then\nadd_two:\nx = x + 2\nReturn\nEnd If\nEnd Sub";
+        let module = resolve_symbols(source);
+        let main_proc = module
+            .procedures
+            .iter()
+            .find(|p| p.name == "main")
+            .expect("main procedure expected");
+        fn has_label(stmts: &[BoundStmt], needle: &str) -> bool {
+            for stmt in stmts {
+                match stmt {
+                    BoundStmt::Label { name } if name == needle => return true,
+                    BoundStmt::IfCond {
+                        then_body,
+                        else_body,
+                        ..
+                    } => {
+                        if has_label(then_body, needle) || has_label(else_body, needle) {
+                            return true;
+                        }
+                    }
+                    BoundStmt::ForRange { body, .. } | BoundStmt::DoWhile { body, .. } => {
+                        if has_label(body, needle) {
+                            return true;
+                        }
+                    }
+                    BoundStmt::SelectCase {
+                        arms, else_body, ..
+                    } => {
+                        if arms.iter().any(|(_, body)| has_label(body, needle))
+                            || has_label(else_body, needle)
+                        {
+                            return true;
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            false
+        }
+        fn has_return(stmts: &[BoundStmt]) -> bool {
+            for stmt in stmts {
+                match stmt {
+                    BoundStmt::Return => return true,
+                    BoundStmt::IfCond {
+                        then_body,
+                        else_body,
+                        ..
+                    } => {
+                        if has_return(then_body) || has_return(else_body) {
+                            return true;
+                        }
+                    }
+                    BoundStmt::ForRange { body, .. } | BoundStmt::DoWhile { body, .. } => {
+                        if has_return(body) {
+                            return true;
+                        }
+                    }
+                    BoundStmt::SelectCase {
+                        arms, else_body, ..
+                    } => {
+                        if arms.iter().any(|(_, body)| has_return(body)) || has_return(else_body) {
+                            return true;
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            false
+        }
+        assert!(
+            main_proc
+                .body
+                .iter()
+                .any(|s| matches!(s, BoundStmt::GoSub { label } if label == "add_two"))
+        );
+        assert!(has_label(&main_proc.body, "add_two"));
+        assert!(has_return(&main_proc.body));
+    }
+
+    #[test]
     fn resolve_array_references_into_element_slots() {
         let source = "Sub Main()\nDim a(2)\nDim x\na(1) = 7\nx = a(1)\nEnd Sub";
         let module = resolve_symbols(source);
@@ -1222,6 +1358,18 @@ mod tests {
                 .body
                 .iter()
                 .any(|s| matches!(s, BoundStmt::ResumeNext))
+        );
+    }
+
+    #[test]
+    fn resolve_on_error_goto_label_stmt() {
+        let source = "Sub Main()\nOn Error GoTo handler\nIf Err.Number = -1 Then\nhandler:\nResume Next\nEnd If\nEnd Sub";
+        let module = resolve_symbols(source);
+        assert!(
+            module
+                .body
+                .iter()
+                .any(|s| matches!(s, BoundStmt::OnErrorGotoLabel { label } if label == "handler"))
         );
     }
 }

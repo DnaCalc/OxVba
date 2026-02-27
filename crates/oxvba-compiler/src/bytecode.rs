@@ -18,6 +18,7 @@ pub enum Instruction {
     BoolOr { dst: usize, lhs: usize, rhs: usize },
     SetOnErrorResumeNext,
     SetOnErrorGoto0,
+    SetOnErrorGotoLabel { target_pc: usize },
     ResumeNext,
     RaiseError { code: i32 },
     CallProc { target_pc: usize },

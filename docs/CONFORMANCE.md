@@ -20,6 +20,7 @@ Current corpus includes:
 - Boolean condition composition (`Not`, `And`, `Or`).
 - `Else` and `ElseIf` branch-chain selection.
 - `Do While ... Loop`, `Do ... Loop While`, and `Exit Do`.
+- `GoSub`/`Return` intra-procedure flow subset.
 - `Select Case` constant dispatch with `Case Else`.
 - Named `Sub`/`Function` declarations and `Call` dispatch.
 - `ByVal`/`ByRef` parameter passing subset.
@@ -28,6 +29,7 @@ Current corpus includes:
 - Fixed-size arrays with indexed load/store and bounds errors.
 - `On Error Resume Next` and `Err.Number` subset behavior.
 - `On Error GoTo 0` reset behavior and `Resume Next` statement subset.
+- `On Error GoTo <label>` handler transfer subset.
 
 ## Commands
 ```powershell

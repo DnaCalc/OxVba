@@ -7,6 +7,7 @@ pub struct Vm {
     registers: RegisterFile,
     call_stack: Vec<usize>,
     on_error_resume_next: bool,
+    on_error_goto_label_target: Option<usize>,
     last_error: i32,
 }
 
@@ -16,6 +17,7 @@ impl Default for Vm {
             registers: RegisterFile::with_capacity(256),
             call_stack: Vec::new(),
             on_error_resume_next: false,
+            on_error_goto_label_target: None,
             last_error: 0,
         }
     }
@@ -155,10 +157,20 @@ impl Vm {
                 }
                 Instruction::SetOnErrorResumeNext => {
                     self.on_error_resume_next = true;
+                    self.on_error_goto_label_target = None;
                     pc += 1;
                 }
                 Instruction::SetOnErrorGoto0 => {
                     self.on_error_resume_next = false;
+                    self.on_error_goto_label_target = None;
+                    pc += 1;
+                }
+                Instruction::SetOnErrorGotoLabel { target_pc } => {
+                    if *target_pc >= len {
+                        return Err(format!("error handler target out of range: {target_pc}"));
+                    }
+                    self.on_error_resume_next = false;
+                    self.on_error_goto_label_target = Some(*target_pc);
                     pc += 1;
                 }
                 Instruction::ResumeNext => {
@@ -168,6 +180,8 @@ impl Vm {
                     self.last_error = *code;
                     if self.on_error_resume_next {
                         pc += 1;
+                    } else if let Some(target_pc) = self.on_error_goto_label_target {
+                        pc = target_pc;
                     } else {
                         return Err(format!("runtime error: {code}"));
                     }
@@ -406,6 +420,27 @@ mod tests {
         let mut vm = Vm::default();
         vm.execute(&bytecode).expect("vm should continue on error");
         assert_eq!(vm.snapshot_slots(1), vec![5]);
+    }
+
+    #[test]
+    fn goto_label_handler_receives_error_and_jumps() {
+        let bytecode = Bytecode {
+            instructions: vec![
+                Instruction::SetOnErrorGotoLabel { target_pc: 4 },
+                Instruction::RaiseError { code: 7 },
+                Instruction::LoadConstI32 { slot: 0, value: 99 },
+                Instruction::Halt,
+                Instruction::LoadErrNumber { slot: 0 },
+                Instruction::Halt,
+            ],
+            slot_count: 1,
+            user_slot_count: 1,
+        };
+
+        let mut vm = Vm::default();
+        vm.execute(&bytecode)
+            .expect("vm should jump to label handler");
+        assert_eq!(vm.snapshot_slots(1), vec![7]);
     }
 }
 

@@ -13,6 +13,7 @@ pub fn check_types(module: BoundModule) -> Result<BoundModule, String> {
 
     for procedure in &mut module.procedures {
         let mut declared: HashSet<String> = procedure.declarations.iter().cloned().collect();
+        let labels = collect_labels(&procedure.body);
         check_stmt_list(
             &procedure.body,
             module.option_explicit,
@@ -20,6 +21,7 @@ pub fn check_types(module: BoundModule) -> Result<BoundModule, String> {
             &mut procedure.declarations,
             &proc_names,
             &proc_params,
+            &labels,
         )?;
     }
 
@@ -43,6 +45,7 @@ fn check_stmt_list(
     declarations: &mut Vec<String>,
     proc_names: &HashSet<String>,
     proc_params: &HashMap<String, Vec<BoundParam>>,
+    labels: &HashSet<String>,
 ) -> Result<(), String> {
     for stmt in stmts {
         check_stmt(
@@ -52,6 +55,7 @@ fn check_stmt_list(
             declarations,
             proc_names,
             proc_params,
+            labels,
         )?;
     }
     Ok(())
@@ -64,6 +68,7 @@ fn check_stmt(
     declarations: &mut Vec<String>,
     proc_names: &HashSet<String>,
     proc_params: &HashMap<String, Vec<BoundParam>>,
+    labels: &HashSet<String>,
 ) -> Result<(), String> {
     match stmt {
         BoundStmt::Assign { target, expr } => {
@@ -83,6 +88,7 @@ fn check_stmt(
                 declarations,
                 proc_names,
                 proc_params,
+                labels,
             )?;
             check_stmt_list(
                 else_body,
@@ -91,6 +97,7 @@ fn check_stmt(
                 declarations,
                 proc_names,
                 proc_params,
+                labels,
             )
         }
         BoundStmt::ForRange {
@@ -109,6 +116,7 @@ fn check_stmt(
                 declarations,
                 proc_names,
                 proc_params,
+                labels,
             )
         }
         BoundStmt::DoWhile { cond, body, .. } => {
@@ -120,13 +128,30 @@ fn check_stmt(
                 declarations,
                 proc_names,
                 proc_params,
+                labels,
             )
         }
         BoundStmt::ExitDo => Ok(()),
         BoundStmt::OnErrorResumeNext => Ok(()),
         BoundStmt::OnErrorGoto0 => Ok(()),
+        BoundStmt::OnErrorGotoLabel { label } => {
+            if labels.contains(label) {
+                Ok(())
+            } else {
+                Err(format!("on error goto target label not found: {label}"))
+            }
+        }
         BoundStmt::ResumeNext => Ok(()),
         BoundStmt::RaiseError(_) => Ok(()),
+        BoundStmt::Label { .. } => Ok(()),
+        BoundStmt::GoSub { label } => {
+            if labels.contains(label) {
+                Ok(())
+            } else {
+                Err(format!("gosub target label not found: {label}"))
+            }
+        }
+        BoundStmt::Return => Ok(()),
         BoundStmt::Call { name, args } => {
             if !proc_names.contains(name) {
                 return Err(format!("call to unknown procedure: {name}"));
@@ -164,6 +189,7 @@ fn check_stmt(
                     declarations,
                     proc_names,
                     proc_params,
+                    labels,
                 )?;
             }
             check_stmt_list(
@@ -173,6 +199,7 @@ fn check_stmt(
                 declarations,
                 proc_names,
                 proc_params,
+                labels,
             )
         }
         BoundStmt::Unsupported { line } => Err(format!("unsupported statement: {line}")),
@@ -302,4 +329,40 @@ fn map_call_args_to_params<'a>(
     }
 
     Ok(mapped)
+}
+
+fn collect_labels(stmts: &[BoundStmt]) -> HashSet<String> {
+    let mut labels = HashSet::new();
+    collect_labels_recursive(stmts, &mut labels);
+    labels
+}
+
+fn collect_labels_recursive(stmts: &[BoundStmt], labels: &mut HashSet<String>) {
+    for stmt in stmts {
+        match stmt {
+            BoundStmt::Label { name } => {
+                labels.insert(name.clone());
+            }
+            BoundStmt::IfCond {
+                then_body,
+                else_body,
+                ..
+            } => {
+                collect_labels_recursive(then_body, labels);
+                collect_labels_recursive(else_body, labels);
+            }
+            BoundStmt::ForRange { body, .. } | BoundStmt::DoWhile { body, .. } => {
+                collect_labels_recursive(body, labels);
+            }
+            BoundStmt::SelectCase {
+                arms, else_body, ..
+            } => {
+                for (_, body) in arms {
+                    collect_labels_recursive(body, labels);
+                }
+                collect_labels_recursive(else_body, labels);
+            }
+            _ => {}
+        }
+    }
 }

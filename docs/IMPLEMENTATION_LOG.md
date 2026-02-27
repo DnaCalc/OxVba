@@ -205,3 +205,13 @@
     - positional-after-named rejected;
   - added named-argument conformance fixtures and formal obligations (`FO-V38-001..003`);
   - published `PROFILE_STATUS_V38` and `WORKSET_2026-02-27_NAMED_ARGS_V38`.
+- Started `mvp-lang-gosub-return-v40` language-closure pass:
+  - added parser/typecheck/emitter support for label declarations, `GoSub`, and `Return` subset;
+  - validated same-procedure gosub label targets during type-check;
+  - added gosub conformance fixtures and formal obligations (`FO-V40-001..003`);
+  - published `PROFILE_STATUS_V40` and `WORKSET_2026-02-27_GOSUB_RETURN_V40`.
+- Started `mvp-lang-on-error-goto-label-v41` language-closure pass:
+  - added `On Error GoTo <label>` parsing and same-procedure label validation;
+  - extended bytecode/vm with explicit label-handler error mode;
+  - added label-handler conformance fixtures and formal obligations (`FO-V41-001..003`);
+  - published `PROFILE_STATUS_V41` and `WORKSET_2026-02-27_ON_ERROR_GOTO_LABEL_V41`.
