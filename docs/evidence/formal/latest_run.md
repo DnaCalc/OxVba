@@ -1,8 +1,9 @@
 # Formal Run Report
 
-- Timestamp (UTC): 2026-02-27T13:21:00Z
+- Timestamp (UTC): 2026-02-27T15:17:24Z
 - Profile scope: mvp-perf-stabilization-v21
 - Overall mode: non-blocking
+- Kani required: false
 - cargo-kani: unavailable
 
 | Obligation | Profile | Blocking | Status | Command | Artifact | Note |
@@ -55,7 +56,9 @@
 | FO-V18-003 | v18 | no | pass | cargo test -p oxvba-host formal_v18_divergence_records_link_evidence | crates/oxvba-host/src/engine.rs |  |
 | FO-V19-001 | v19 | no | pass | cargo test -p oxvba-compiler formal_v19_noop_assignments_removed | crates/oxvba-compiler/src/optimize.rs |  |
 | FO-V19-002 | v19 | no | pass | cargo test -p oxvba-compiler formal_v19_optimizer_preserves_non_noop_assignments | crates/oxvba-compiler/src/optimize.rs |  |
-| FO-V19-003 | v19 | no | pass | cargo test -p oxvba-compiler formal_v19_nested_blocks_optimized_safely | crates/oxvba-compiler/src/optimize.rs |  |
+| FO-V19-003 | v19 | no | pass | cargo test -p oxvba-compiler formal_v19_constant_if_eliminates_unreachable_branch | crates/oxvba-compiler/src/optimize.rs |  |
+| FO-V19-004 | v19 | no | pass | cargo test -p oxvba-compiler formal_v19_constant_select_case_is_folded | crates/oxvba-compiler/src/optimize.rs |  |
+| FO-V19-005 | v19 | no | pass | cargo test -p oxvba-compiler formal_v19_for_loop_semantics_preserved_with_optimized_body | crates/oxvba-compiler/src/optimize.rs |  |
 | FO-V20-001 | v20 | no | pass | cargo test -p oxvba-host formal_v20_jit_vm_equivalence_arithmetic | crates/oxvba-host/src/engine.rs |  |
 | FO-V20-002 | v20 | no | pass | cargo test -p oxvba-host formal_v20_jit_vm_equivalence_control_flow | crates/oxvba-host/src/engine.rs |  |
 | FO-V20-003 | v20 | no | pass | cargo test -p oxvba-host formal_v20_jit_vm_equivalence_error_state | crates/oxvba-host/src/engine.rs |  |

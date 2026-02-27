@@ -139,3 +139,15 @@
   - Added optimization toggle parity checks and JIT guardrail equivalence checks.
   - Added benchmark capture script (`scripts/run-bench.ps1`) with evidence output under `docs/evidence/profiles/v21/`.
   - Added obligations (`FO-V21-001..003`).
+- Post-v21 hardening/exploration pass (learning-driven):
+  - Added repo-root path stability hardening across scripts (`docs-check`, `meta-check`, `run-*` scripts).
+  - Added `scripts/test-path-stability.ps1` and integrated it into `meta-check`.
+  - Added `scripts/validate-divergences.ps1` and integrated structural divergence validation into `meta-check`.
+  - Reworked divergence formal checks to assert required record structure instead of brittle free-text matches.
+  - Added Kani setup/activation helper `scripts/setup-kani.ps1`.
+  - Extended formal runner with optional strict mode (`-RequireKani` / `OXVBA_REQUIRE_KANI=1`).
+  - Added optional CI Kani job gated by repository variable `RUN_KANI`.
+  - Introduced real Cranelift-backed JIT execution for an acyclic bytecode subset with VM fallback for unsupported/backedge bytecode.
+  - Added JIT subset/fallback/parity tests in `oxvba-jit`.
+  - Expanded optimizer rules with safe branch/select folding and additional no-op elimination while preserving loop side-effect semantics.
+  - Added new optimizer formal obligations (`FO-V19-004`, `FO-V19-005`) and refreshed formal/matrix evidence artifacts.

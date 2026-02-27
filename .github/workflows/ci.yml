@@ -41,6 +41,9 @@ jobs:
       - name: Meta check (fast)
         shell: pwsh
         run: ./scripts/meta-check.ps1 -Fast
+      - name: Path stability
+        shell: pwsh
+        run: ./scripts/test-path-stability.ps1
       - name: Smoke run
         shell: pwsh
         run: ./scripts/run-smoke.ps1
@@ -53,3 +56,18 @@ jobs:
       - name: Formal obligations (non-blocking)
         shell: pwsh
         run: ./scripts/run-formal.ps1
+
+  formal-kani:
+    if: ${{ vars.RUN_KANI == '1' }}
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+      - name: Setup Kani
+        shell: pwsh
+        run: ./scripts/setup-kani.ps1 -Install
+      - name: Formal obligations (Kani required)
+        shell: pwsh
+        run: ./scripts/run-formal.ps1 -RequireKani

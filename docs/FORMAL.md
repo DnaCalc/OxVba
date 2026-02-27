@@ -24,3 +24,5 @@ Profile-scoped formal obligations may also run as deterministic, reduced-domain 
 - Inventory: `docs/evidence/formal/INVENTORY.md`
 - Extended non-blocking backlog: `docs/evidence/formal/EXTENDED_TODO.md`
 - Runner: `./scripts/run-formal.ps1` (non-blocking by current ladder policy)
+- Optional strict mode: `./scripts/run-formal.ps1 -RequireKani` or `OXVBA_REQUIRE_KANI=1`
+- Kani setup helper: `./scripts/setup-kani.ps1` (`-Install` to bootstrap locally)

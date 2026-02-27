@@ -1,4 +1,4 @@
-use crate::resolve::{BoundExpr, BoundModule, BoundStmt};
+use crate::resolve::{BoundCond, BoundExpr, BoundModule, BoundStmt, CompareOp};
 
 pub fn optimize_module(mut module: BoundModule) -> BoundModule {
     for procedure in &mut module.procedures {
@@ -19,6 +19,9 @@ fn optimize_stmt_list(stmts: Vec<BoundStmt>) -> Vec<BoundStmt> {
                 ) || matches!(
                     &expr,
                     BoundExpr::SubConst { var, delta } if *delta == 0 && var == &target
+                ) || matches!(
+                    &expr,
+                    BoundExpr::Var(var) if var == &target
                 );
                 if !is_noop {
                     out.push(BoundStmt::Assign { target, expr });
@@ -28,31 +31,52 @@ fn optimize_stmt_list(stmts: Vec<BoundStmt>) -> Vec<BoundStmt> {
                 cond,
                 then_body,
                 else_body,
-            } => out.push(BoundStmt::IfCond {
-                cond,
-                then_body: optimize_stmt_list(then_body),
-                else_body: optimize_stmt_list(else_body),
-            }),
+            } => {
+                let then_body = optimize_stmt_list(then_body);
+                let else_body = optimize_stmt_list(else_body);
+                if let Some(always_true) = eval_const_cond(&cond) {
+                    if always_true {
+                        out.extend(then_body);
+                    } else {
+                        out.extend(else_body);
+                    }
+                } else {
+                    out.push(BoundStmt::IfCond {
+                        cond,
+                        then_body,
+                        else_body,
+                    });
+                }
+            }
             BoundStmt::ForRange {
                 var,
                 start,
                 end,
                 body,
-            } => out.push(BoundStmt::ForRange {
-                var,
-                start,
-                end,
-                body: optimize_stmt_list(body),
-            }),
+            } => {
+                let body = optimize_stmt_list(body);
+                out.push(BoundStmt::ForRange {
+                    var,
+                    start,
+                    end,
+                    body,
+                });
+            }
             BoundStmt::DoWhile {
                 cond,
                 body,
                 post_check,
-            } => out.push(BoundStmt::DoWhile {
-                cond,
-                body: optimize_stmt_list(body),
-                post_check,
-            }),
+            } => {
+                let body = optimize_stmt_list(body);
+                if !post_check && matches!(eval_const_cond(&cond), Some(false)) {
+                    continue;
+                }
+                out.push(BoundStmt::DoWhile {
+                    cond,
+                    body,
+                    post_check,
+                });
+            }
             BoundStmt::SelectCase {
                 expr,
                 arms,
@@ -62,16 +86,57 @@ fn optimize_stmt_list(stmts: Vec<BoundStmt>) -> Vec<BoundStmt> {
                     .into_iter()
                     .map(|(values, body)| (values, optimize_stmt_list(body)))
                     .collect::<Vec<_>>();
-                out.push(BoundStmt::SelectCase {
-                    expr,
-                    arms: next_arms,
-                    else_body: optimize_stmt_list(else_body),
-                });
+                let else_body = optimize_stmt_list(else_body);
+
+                if let Some(value) = eval_const_expr(&expr) {
+                    let mut selected = None;
+                    for (values, body) in next_arms {
+                        if values.contains(&value) {
+                            selected = Some(body);
+                            break;
+                        }
+                    }
+                    out.extend(selected.unwrap_or(else_body));
+                } else {
+                    out.push(BoundStmt::SelectCase {
+                        expr,
+                        arms: next_arms,
+                        else_body,
+                    });
+                }
             }
             other => out.push(other),
         }
     }
     out
+}
+
+fn eval_const_expr(expr: &BoundExpr) -> Option<i32> {
+    match expr {
+        BoundExpr::IntConst(v) => Some(*v),
+        _ => None,
+    }
+}
+
+fn eval_const_cond(cond: &BoundCond) -> Option<bool> {
+    match cond {
+        BoundCond::Compare { op, lhs, rhs } => {
+            let lhs = eval_const_expr(lhs)?;
+            let rhs = eval_const_expr(rhs)?;
+            Some(match op {
+                CompareOp::Eq => lhs == rhs,
+                CompareOp::Ne => lhs != rhs,
+                CompareOp::Lt => lhs < rhs,
+                CompareOp::Le => lhs <= rhs,
+                CompareOp::Gt => lhs > rhs,
+                CompareOp::Ge => lhs >= rhs,
+            })
+        }
+        BoundCond::Truthy(expr) => Some(eval_const_expr(expr)? != 0),
+        BoundCond::Not(inner) => Some(!eval_const_cond(inner)?),
+        BoundCond::And(lhs, rhs) => Some(eval_const_cond(lhs)? && eval_const_cond(rhs)?),
+        BoundCond::Or(lhs, rhs) => Some(eval_const_cond(lhs)? || eval_const_cond(rhs)?),
+    }
 }
 
 #[cfg(test)]
@@ -120,5 +185,50 @@ mod tests {
             }
         }
         assert!(seen_else_add);
+    }
+
+    #[test]
+    fn formal_v19_constant_if_eliminates_unreachable_branch() {
+        let module = resolve_symbols(
+            "Sub Main()\nDim x\nIf 1 = 1 Then\nx = 3\nElse\nx = 4\nEnd If\nEnd Sub",
+        );
+        let optimized = optimize_module(module);
+        assert_eq!(optimized.body.len(), 1);
+        assert!(matches!(optimized.body[0], BoundStmt::Assign { .. }));
+    }
+
+    #[test]
+    fn formal_v19_constant_select_case_is_folded() {
+        let module = resolve_symbols(
+            "Sub Main()\nDim x\nSelect Case 2\nCase 1\nx = 10\nCase 2\nx = 20\nCase Else\nx = 30\nEnd Select\nEnd Sub",
+        );
+        let optimized = optimize_module(module);
+        assert!(
+            optimized
+                .body
+                .iter()
+                .all(|stmt| !matches!(stmt, BoundStmt::SelectCase { .. }))
+        );
+        assert!(
+            optimized
+                .body
+                .iter()
+                .any(|stmt| matches!(stmt, BoundStmt::Assign { .. }))
+        );
+    }
+
+    #[test]
+    fn formal_v19_for_loop_semantics_preserved_with_optimized_body() {
+        let module =
+            resolve_symbols("Sub Main()\nDim i\nFor i = 3 To 1\ni = i + 0\nNext i\nEnd Sub");
+        let optimized = optimize_module(module);
+        let mut saw_loop = false;
+        for stmt in optimized.body {
+            if let BoundStmt::ForRange { body, .. } = stmt {
+                saw_loop = true;
+                assert!(body.is_empty());
+            }
+        }
+        assert!(saw_loop);
     }
 }

@@ -13,6 +13,10 @@ oxvba-runtime.workspace = true
 oxvba-com.workspace = true
 oxvba-vm.workspace = true
 thiserror.workspace = true
+cranelift-codegen = "0.129.1"
+cranelift-frontend = "0.129.1"
+cranelift-jit = "0.129.1"
+cranelift-module = "0.129.1"
 
 [features]
 default = []

@@ -72,6 +72,22 @@ mod tests {
         workspace_root().join(relative)
     }
 
+    fn divergence_record_has_required_sections(record_path: &Path) -> bool {
+        let Ok(text) = std::fs::read_to_string(record_path) else {
+            return false;
+        };
+        if !text.starts_with("# DIV-") {
+            return false;
+        }
+        let required = [
+            "- Scope impact:",
+            "- Fixture:",
+            "- Reproduction command:",
+            "- Tracking status:",
+        ];
+        required.iter().all(|label| text.contains(label))
+    }
+
     #[test]
     fn execute_source_with_default_vm_path() {
         let mut engine = Engine::new(HostConfig {
@@ -551,6 +567,9 @@ mod tests {
     #[test]
     fn formal_v17_runner_script_exists() {
         assert!(repo_path("scripts/run-formal.ps1").exists());
+        assert!(repo_path("scripts/setup-kani.ps1").exists());
+        assert!(repo_path("scripts/test-path-stability.ps1").exists());
+        assert!(repo_path("scripts/validate-divergences.ps1").exists());
     }
 
     #[test]
@@ -559,6 +578,7 @@ mod tests {
             .expect("meta-check script exists");
         assert!(text.contains("[switch]$Formal"));
         assert!(text.contains("run-formal.ps1"));
+        assert!(text.contains("validate-divergences.ps1"));
     }
 
     #[test]
@@ -568,17 +588,16 @@ mod tests {
 
     #[test]
     fn formal_v18_divergence_records_have_scope_lines() {
-        let div1 = std::fs::read_to_string(repo_path("docs/evidence/divergences/DIV-0001.md"))
-            .expect("divergence file should exist");
-        assert!(div1.contains("Scope impact"));
+        assert!(divergence_record_has_required_sections(&repo_path(
+            "docs/evidence/divergences/DIV-0001.md"
+        )));
     }
 
     #[test]
     fn formal_v18_divergence_records_link_evidence() {
-        let div2 = std::fs::read_to_string(repo_path("docs/evidence/divergences/DIV-0002.md"))
-            .expect("divergence file should exist");
-        assert!(div2.contains("Fixture:"));
-        assert!(div2.contains("Reproduction command:"));
+        assert!(divergence_record_has_required_sections(&repo_path(
+            "docs/evidence/divergences/DIV-0002.md"
+        )));
     }
 
     #[test]

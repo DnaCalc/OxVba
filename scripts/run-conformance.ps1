@@ -7,76 +7,82 @@ param(
 $ErrorActionPreference = "Stop"
 $PSNativeCommandUseErrorActionPreference = $false
 
-$testsDir = "conformance/tests"
-$goldenFile = "conformance/golden/smoke.csv"
+Push-Location (Join-Path $PSScriptRoot "..")
+try {
+    $testsDir = "conformance/tests"
+    $goldenFile = "conformance/golden/smoke.csv"
 
-if (-not (Test-Path $testsDir)) {
-    throw "Missing conformance test directory: $testsDir"
-}
-if (-not (Test-Path $goldenFile)) {
-    throw "Missing golden file: $goldenFile"
-}
-
-$results = @()
-$backendArgs = @()
-if ($Backend -eq "jit") {
-    $backendArgs += "--jit"
-}
-
-Get-ChildItem -Path $testsDir -Filter *.bas | Sort-Object Name | ForEach-Object {
-    $name = $_.Name
-    $status = "ok"
-    $slots = ""
-
-    $output = ""
-    try {
-        $output = & cargo run -q -p oxvba-cli -- run $_.FullName --dump-slots @backendArgs 2>$null | Out-String
+    if (-not (Test-Path $testsDir)) {
+        throw "Missing conformance test directory: $testsDir"
     }
-    catch {
-        $status = "error"
+    if (-not (Test-Path $goldenFile)) {
+        throw "Missing golden file: $goldenFile"
     }
 
-    if ($status -eq "ok" -and $LASTEXITCODE -ne 0) {
-        $status = "error"
+    $results = @()
+    $backendArgs = @()
+    if ($Backend -eq "jit") {
+        $backendArgs += "--jit"
     }
 
-    if ($status -eq "ok") {
-        $slotLine = ($output -split "`r?`n" | Where-Object { $_ -like "SLOTS:*" } | Select-Object -Last 1)
-        if ($slotLine) {
-            $slots = $slotLine.Substring(6)
+    Get-ChildItem -Path $testsDir -Filter *.bas | Sort-Object Name | ForEach-Object {
+        $name = $_.Name
+        $status = "ok"
+        $slots = ""
+
+        $output = ""
+        try {
+            $output = & cargo run -q -p oxvba-cli -- run $_.FullName --dump-slots @backendArgs 2>$null | Out-String
+        }
+        catch {
+            $status = "error"
+        }
+
+        if ($status -eq "ok" -and $LASTEXITCODE -ne 0) {
+            $status = "error"
+        }
+
+        if ($status -eq "ok") {
+            $slotLine = ($output -split "`r?`n" | Where-Object { $_ -like "SLOTS:*" } | Select-Object -Last 1)
+            if ($slotLine) {
+                $slots = $slotLine.Substring(6)
+            }
+        }
+
+        $results += [PSCustomObject]@{ file = $name; status = $status; slots = $slots }
+    }
+
+    $golden = Import-Csv $goldenFile
+    $goldenMap = @{}
+    foreach ($g in $golden) {
+        if ($g.file -and $g.status) {
+            $goldenMap[$g.file] = $g
         }
     }
 
-    $results += [PSCustomObject]@{ file = $name; status = $status; slots = $slots }
-}
+    foreach ($r in $results) {
+        if (-not $goldenMap.ContainsKey($r.file)) {
+            throw "No golden expectation for $($r.file)"
+        }
 
-$golden = Import-Csv $goldenFile
-$goldenMap = @{}
-foreach ($g in $golden) {
-    if ($g.file -and $g.status) {
-        $goldenMap[$g.file] = $g
-    }
-}
+        $expected = $goldenMap[$r.file]
+        if ($expected.status -ne $r.status) {
+            throw "Conformance mismatch for $($r.file): expected status $($expected.status), got $($r.status)"
+        }
 
-foreach ($r in $results) {
-    if (-not $goldenMap.ContainsKey($r.file)) {
-        throw "No golden expectation for $($r.file)"
-    }
-
-    $expected = $goldenMap[$r.file]
-    if ($expected.status -ne $r.status) {
-        throw "Conformance mismatch for $($r.file): expected status $($expected.status), got $($r.status)"
+        if ($expected.slots -and $expected.slots -ne $r.slots) {
+            throw "Conformance mismatch for $($r.file): expected slots $($expected.slots), got $($r.slots)"
+        }
     }
 
-    if ($expected.slots -and $expected.slots -ne $r.slots) {
-        throw "Conformance mismatch for $($r.file): expected slots $($expected.slots), got $($r.slots)"
+    if ($ResultsPath) {
+        $results |
+            Select-Object @{Name = "backend"; Expression = { $Backend } }, file, status, slots |
+            Export-Csv -Path $ResultsPath -NoTypeInformation
     }
-}
 
-if ($ResultsPath) {
-    $results |
-        Select-Object @{Name = "backend"; Expression = { $Backend } }, file, status, slots |
-        Export-Csv -Path $ResultsPath -NoTypeInformation
+    Write-Host "conformance run: ok ($($results.Count) files, backend=$Backend)"
 }
-
-Write-Host "conformance run: ok ($($results.Count) files, backend=$Backend)"
+finally {
+    Pop-Location
+}
