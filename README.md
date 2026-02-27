@@ -35,3 +35,8 @@ Optional:
 ./scripts/meta-check.ps1 -Fast -Formal
 ./scripts/meta-check.ps1 -Fast -Conformance -Matrix -Formal
 ```
+
+## Tooling Notes
+- Kani is currently not installable via `cargo install kani-verifier --locked` on native Windows in this environment due Unix-only APIs in the installer path.
+- Kani is supported through WSL (Ubuntu) on this machine.
+- Use `./scripts/run-formal-kani-wsl.ps1` to run strict formal obligations (`-RequireKani`) from Windows by executing Kani commands in WSL.

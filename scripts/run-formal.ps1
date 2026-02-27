@@ -3,11 +3,23 @@ param(
     [string]$ReportPath = "docs/evidence/formal/latest_run.md",
     [string]$ReportCsvPath = "docs/evidence/formal/latest_run.csv",
     [string]$ObligationsPath = "docs/evidence/formal/obligations.csv",
-    [switch]$RequireKani
+    [switch]$RequireKani,
+    [switch]$UseWslKani
 )
 
 $ErrorActionPreference = "Stop"
 $PSNativeCommandUseErrorActionPreference = $true
+
+function Convert-ToWslPath([string]$Path) {
+    $fullPath = [System.IO.Path]::GetFullPath($Path)
+    if ($fullPath -match '^([A-Za-z]):\\(.*)$') {
+        $drive = $Matches[1].ToLowerInvariant()
+        $tail = $Matches[2] -replace '\\', '/'
+        return "/mnt/$drive/$tail"
+    }
+
+    throw "Unable to convert path to WSL form: $Path"
+}
 
 Push-Location (Join-Path $PSScriptRoot "..")
 try {
@@ -51,15 +63,39 @@ try {
 
     $rows = @()
     $cargoKaniAvailable = $false
+    $useWslForKani = $false
+    $wslRepoRoot = ""
     $cargoKaniVersion = ""
+    $localCargoKaniVersion = ""
+    $wslCargoKaniVersion = ""
     try {
-        $cargoKaniVersion = (& cargo kani --version 2>$null) -join " "
-        if ($LASTEXITCODE -eq 0 -and -not [string]::IsNullOrWhiteSpace($cargoKaniVersion)) {
+        $localCargoKaniVersion = (& cargo kani --version 2>$null) -join " "
+        if ($LASTEXITCODE -eq 0 -and -not [string]::IsNullOrWhiteSpace($localCargoKaniVersion)) {
             $cargoKaniAvailable = $true
+            $cargoKaniVersion = $localCargoKaniVersion
         }
     }
     catch {
-        $cargoKaniAvailable = $false
+        $localCargoKaniVersion = ""
+    }
+
+    if ($UseWslKani) {
+        if (-not (Get-Command wsl -ErrorAction SilentlyContinue)) {
+            throw "formal lane: -UseWslKani requested but wsl is not available on PATH"
+        }
+
+        try {
+            $wslCargoKaniVersion = (& wsl bash -lc 'source $HOME/.cargo/env && cargo kani --version' 2>$null) -join " "
+            if ($LASTEXITCODE -eq 0 -and -not [string]::IsNullOrWhiteSpace($wslCargoKaniVersion)) {
+                $cargoKaniAvailable = $true
+                $useWslForKani = $true
+                $cargoKaniVersion = $wslCargoKaniVersion
+                $wslRepoRoot = Convert-ToWslPath((Get-Location).Path)
+            }
+        }
+        catch {
+            $wslCargoKaniVersion = ""
+        }
     }
 
     $kaniRequired = $RequireKani -or ($env:OXVBA_REQUIRE_KANI -eq "1")
@@ -85,9 +121,20 @@ try {
         }
 
         try {
-            Invoke-Expression $command | Out-Null
-            if ($LASTEXITCODE -ne 0) {
-                throw "command exited with code $LASTEXITCODE"
+            if ($isKaniCommand -and $useWslForKani) {
+                $bashSingleQuoteEscape = [string]::Concat([char]39, [char]34, [char]39, [char]34, [char]39)
+                $escapedCommand = $command.Replace("'", $bashSingleQuoteEscape)
+                $wslCommand = "source `$HOME/.cargo/env && cd '$wslRepoRoot' && $escapedCommand"
+                & wsl bash -lc $wslCommand | Out-Null
+                if ($LASTEXITCODE -ne 0) {
+                    throw "command exited with code $LASTEXITCODE"
+                }
+            }
+            else {
+                Invoke-Expression $command | Out-Null
+                if ($LASTEXITCODE -ne 0) {
+                    throw "command exited with code $LASTEXITCODE"
+                }
             }
             $rows += [PSCustomObject]@{
                 obligation = $obligation.obligation_id
@@ -121,7 +168,8 @@ try {
         "- Timestamp (UTC): $timestampUtc",
         "- Profile scope: $ProfileScope",
         "- Overall mode: non-blocking",
-        "- Kani required: $($kaniRequired.ToString().ToLowerInvariant())"
+        "- Kani required: $($kaniRequired.ToString().ToLowerInvariant())",
+        "- Kani execution: $(if ($useWslForKani) { 'wsl' } elseif ($cargoKaniAvailable) { 'local' } else { 'unavailable' })"
     )
 
     if ($cargoKaniAvailable) {

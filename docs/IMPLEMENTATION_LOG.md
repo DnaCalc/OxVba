@@ -159,3 +159,7 @@
   - v26 `mvp-perf-shape-v26`: moved matrix/formal/bench defaults and phase gate artifacts to `docs/evidence/profiles/v26/`.
   - Added formal obligations `FO-V22-001..003`, `FO-V23-001..003`, `FO-V24-001..003`, `FO-V25-001..003`, `FO-V26-001..003`.
   - Added profile/workset status docs for `v22..v26` and updated ladder/provenance references.
+- Windows Kani execution bridge update:
+  - Added `-UseWslKani` mode to `scripts/run-formal.ps1` so Kani obligations can execute via WSL when native Windows `cargo-kani` is unavailable.
+  - Added convenience wrapper `scripts/run-formal-kani-wsl.ps1` for strict WSL-backed formal runs.
+  - Added Kani install/tooling note in root `README.md` and updated `docs/FORMAL.md`.

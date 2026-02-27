@@ -648,6 +648,7 @@ mod tests {
         let text = std::fs::read_to_string(repo_path("scripts/run-formal.ps1"))
             .expect("run-formal script exists");
         assert!(text.contains("[switch]$RequireKani"));
+        assert!(text.contains("[switch]$UseWslKani"));
         assert!(text.contains("OXVBA_REQUIRE_KANI"));
     }
 
@@ -657,6 +658,7 @@ mod tests {
             std::fs::read_to_string(repo_path("scripts/setup-kani.ps1")).expect("script exists");
         assert!(text.contains("cargo install kani-verifier --locked"));
         assert!(text.contains("cargo kani setup"));
+        assert!(repo_path("scripts/run-formal-kani-wsl.ps1").exists());
     }
 
     #[test]
