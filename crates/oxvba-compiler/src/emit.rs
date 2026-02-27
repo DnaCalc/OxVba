@@ -3,7 +3,8 @@ use std::collections::HashMap;
 use crate::{
     bytecode::{Bytecode, Instruction},
     resolve::{
-        BoundCond, BoundExpr, BoundModule, BoundParam, BoundProcedure, BoundStmt, CompareOp,
+        BoundCallArg, BoundCond, BoundExpr, BoundModule, BoundParam, BoundProcedure, BoundStmt,
+        CompareOp,
     },
 };
 
@@ -382,16 +383,20 @@ fn emit_stmt(
         BoundStmt::Call { name, args } => {
             let mut byref_copyback: Vec<(usize, usize)> = Vec::new();
             if let Some(meta) = proc_meta.get(name) {
+                let mapped_args = map_call_args_for_emit(args, &meta.params);
                 for (idx, param) in meta.params.iter().enumerate() {
-                    let Some(arg) = args.get(idx) else {
+                    let Some(param_slot) = meta.slots.get(param.name.as_str()).copied() else {
                         continue;
                     };
-                    let Some(param_slot) = meta.slots.get(param.name.as_str()).copied() else {
+                    let Some(arg) = mapped_args.get(idx).and_then(|arg| *arg) else {
+                        if param.optional {
+                            emit_optional_default(param, param_slot, instructions);
+                        }
                         continue;
                     };
 
                     if param.by_ref
-                        && let BoundExpr::Var(var_name) = arg
+                        && let BoundExpr::Var(var_name) = &arg.expr
                         && let Some(src_slot) = slot_map.get(var_name.as_str()).copied()
                     {
                         if src_slot != param_slot {
@@ -404,7 +409,7 @@ fn emit_stmt(
                         continue;
                     }
 
-                    emit_expr_into(arg, param_slot, slot_map, instructions);
+                    emit_expr_into(&arg.expr, param_slot, slot_map, instructions);
                 }
             }
 
@@ -573,6 +578,50 @@ fn emit_expr_into(
             }
         }
     }
+}
+
+fn emit_optional_default(param: &BoundParam, dst: usize, instructions: &mut Vec<Instruction>) {
+    instructions.push(Instruction::LoadConstI32 {
+        slot: dst,
+        value: param.default_value.unwrap_or(0),
+    });
+}
+
+fn map_call_args_for_emit<'a>(
+    args: &'a [BoundCallArg],
+    params: &[BoundParam],
+) -> Vec<Option<&'a BoundCallArg>> {
+    let mut mapped: Vec<Option<&BoundCallArg>> = vec![None; params.len()];
+    let mut next_pos = 0usize;
+    let mut seen_named = false;
+
+    for arg in args {
+        if let Some(name) = &arg.name {
+            seen_named = true;
+            if let Some(idx) = params
+                .iter()
+                .position(|p| p.name.eq_ignore_ascii_case(name))
+                && mapped[idx].is_none()
+            {
+                mapped[idx] = Some(arg);
+            }
+            continue;
+        }
+
+        if seen_named {
+            continue;
+        }
+
+        while next_pos < params.len() && mapped[next_pos].is_some() {
+            next_pos += 1;
+        }
+        if next_pos < params.len() {
+            mapped[next_pos] = Some(arg);
+            next_pos += 1;
+        }
+    }
+
+    mapped
 }
 
 #[derive(Debug, Clone)]

@@ -310,6 +310,66 @@ mod tests {
     }
 
     #[test]
+    fn formal_v37_optional_param_default_applies_when_omitted() {
+        let engine = Engine::new(HostConfig::default());
+        let source = "Sub Main()\nDim x\nCall Fill(x)\nEnd Sub\nSub Fill(ByRef target, Optional ByVal value = 7)\ntarget = value\nEnd Sub";
+        let snapshot = engine
+            .execute_source_with_snapshot(source)
+            .expect("execution should succeed");
+        assert_eq!(snapshot[0], 7);
+    }
+
+    #[test]
+    fn formal_v37_optional_param_explicit_value_overrides_default() {
+        let engine = Engine::new(HostConfig::default());
+        let source = "Sub Main()\nDim x\nCall Fill(x, 9)\nEnd Sub\nSub Fill(ByRef target, Optional ByVal value = 7)\ntarget = value\nEnd Sub";
+        let snapshot = engine
+            .execute_source_with_snapshot(source)
+            .expect("execution should succeed");
+        assert_eq!(snapshot[0], 9);
+    }
+
+    #[test]
+    fn formal_v37_optional_param_missing_required_arg_is_rejected() {
+        let engine = Engine::new(HostConfig::default());
+        let source = "Sub Main()\nCall Fill\nEnd Sub\nSub Fill(ByRef target, Optional ByVal value = 7)\ntarget = value\nEnd Sub";
+        let err = engine
+            .execute_source_with_snapshot(source)
+            .expect_err("missing required arg should fail");
+        assert!(err.contains("missing required argument"));
+    }
+
+    #[test]
+    fn formal_v38_named_args_bind_by_parameter_name() {
+        let engine = Engine::new(HostConfig::default());
+        let source = "Sub Main()\nDim x\nCall Fill(value := 9, target := x)\nEnd Sub\nSub Fill(ByRef target, Optional ByVal value = 7)\ntarget = value\nEnd Sub";
+        let snapshot = engine
+            .execute_source_with_snapshot(source)
+            .expect("execution should succeed");
+        assert_eq!(snapshot[0], 9);
+    }
+
+    #[test]
+    fn formal_v38_named_args_allow_omitting_optional_by_name() {
+        let engine = Engine::new(HostConfig::default());
+        let source = "Sub Main()\nDim x\nCall Fill(target := x)\nEnd Sub\nSub Fill(ByRef target, Optional ByVal value = 7)\ntarget = value\nEnd Sub";
+        let snapshot = engine
+            .execute_source_with_snapshot(source)
+            .expect("execution should succeed");
+        assert_eq!(snapshot[0], 7);
+    }
+
+    #[test]
+    fn formal_v38_named_args_reject_positional_after_named() {
+        let engine = Engine::new(HostConfig::default());
+        let source = "Sub Main()\nDim x\nCall Fill(value := 9, x)\nEnd Sub\nSub Fill(ByRef target, Optional ByVal value = 7)\ntarget = value\nEnd Sub";
+        let err = engine
+            .execute_source_with_snapshot(source)
+            .expect_err("positional-after-named should fail");
+        assert!(err.contains("positional argument cannot follow named argument"));
+    }
+
+    #[test]
     fn formal_v10_array_store_load_roundtrip() {
         let engine = Engine::new(HostConfig::default());
         let source = "Sub Main()\nDim a(2)\nDim x\na(1) = 7\nx = a(1)\nEnd Sub";

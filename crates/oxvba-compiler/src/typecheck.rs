@@ -1,6 +1,6 @@
 use std::collections::{HashMap, HashSet};
 
-use crate::resolve::{BoundCond, BoundExpr, BoundModule, BoundParam, BoundStmt};
+use crate::resolve::{BoundCallArg, BoundCond, BoundExpr, BoundModule, BoundParam, BoundStmt};
 
 pub fn check_types(module: BoundModule) -> Result<BoundModule, String> {
     let mut module = module;
@@ -132,23 +132,20 @@ fn check_stmt(
                 return Err(format!("call to unknown procedure: {name}"));
             }
 
-            let expected = proc_params.get(name).map_or(0, Vec::len);
-            if args.len() != expected {
-                return Err(format!(
-                    "procedure {name} expects {expected} args, got {}",
-                    args.len()
-                ));
-            }
-
             if let Some(params) = proc_params.get(name) {
-                for (arg, param) in args.iter().zip(params.iter()) {
-                    if param.by_ref && !matches!(arg, BoundExpr::Var(_)) {
+                let mapped_args = map_call_args_to_params(name, args, params)?;
+                for (idx, param) in params.iter().enumerate() {
+                    let Some(arg) = mapped_args[idx] else {
+                        continue;
+                    };
+
+                    if param.by_ref && !matches!(arg.expr, BoundExpr::Var(_)) {
                         return Err(format!(
                             "ByRef parameter {} requires variable argument",
                             param.name
                         ));
                     }
-                    check_expr(arg, option_explicit, declared, declarations)?;
+                    check_expr(&arg.expr, option_explicit, declared, declarations)?;
                 }
             }
             Ok(())
@@ -238,4 +235,71 @@ fn ensure_declared(
     declared.insert(name.to_string());
     declarations.push(name.to_string());
     Ok(())
+}
+
+fn map_call_args_to_params<'a>(
+    proc_name: &str,
+    args: &'a [BoundCallArg],
+    params: &[BoundParam],
+) -> Result<Vec<Option<&'a BoundCallArg>>, String> {
+    if args.len() > params.len() {
+        return Err(format!(
+            "procedure {proc_name} expects between {} and {} args, got {}",
+            params.iter().filter(|p| !p.optional).count(),
+            params.len(),
+            args.len()
+        ));
+    }
+
+    let mut mapped: Vec<Option<&BoundCallArg>> = vec![None; params.len()];
+    let mut next_pos = 0usize;
+    let mut seen_named = false;
+
+    for arg in args {
+        if let Some(name) = &arg.name {
+            seen_named = true;
+            let Some(param_idx) = params
+                .iter()
+                .position(|p| p.name.eq_ignore_ascii_case(name))
+            else {
+                return Err(format!(
+                    "procedure {proc_name} has no parameter named {name}"
+                ));
+            };
+            if mapped[param_idx].is_some() {
+                return Err(format!(
+                    "duplicate argument for parameter {}",
+                    params[param_idx].name
+                ));
+            }
+            mapped[param_idx] = Some(arg);
+            continue;
+        }
+
+        if seen_named {
+            return Err("positional argument cannot follow named argument".to_string());
+        }
+
+        while next_pos < params.len() && mapped[next_pos].is_some() {
+            next_pos += 1;
+        }
+        if next_pos >= params.len() {
+            return Err(format!(
+                "procedure {proc_name} expects between {} and {} args, got {}",
+                params.iter().filter(|p| !p.optional).count(),
+                params.len(),
+                args.len()
+            ));
+        }
+        mapped[next_pos] = Some(arg);
+        next_pos += 1;
+    }
+
+    for (idx, param) in params.iter().enumerate() {
+        if !param.optional && mapped[idx].is_none() {
+            return Err(format!("missing required argument {}", param.name));
+        }
+    }
+
+    Ok(mapped)
 }

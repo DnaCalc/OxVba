@@ -185,3 +185,23 @@
     - `run-formal` completed under non-blocking policy,
     - `run-bench` recorded positive gain,
     - `meta-check -Fast -Conformance -Matrix -Formal` PASS.
+- Planned next MACH1000 horizon ladder (`v37`-`v56`) in `docs/worksets/PROFILE_LADDER_2026-02-27_MACH1000_V37_V56.md`:
+  - explicit split of execution tracks into:
+    - language core closure (`v37`-`v44`),
+    - intrinsic runtime/standard library closure (`v45`-`v52`),
+    - host/interop + consolidation gate (`v53`-`v56`);
+  - anchored scope boundaries to MS-VBAL semantics and MS-OAUT interop contracts;
+  - formal/Kani execution policy aligned with WSL async long-run operations.
+- Started `mvp-lang-optional-params-v37` language-closure pass:
+  - added trailing `Optional` parameter parsing (integer literal defaults) with deterministic signature constraints;
+  - updated call arity checks to support required/optional ranges;
+  - emitted default value materialization for omitted optional call arguments;
+  - added conformance fixtures (`params_optional_default.bas`, `params_optional_override.bas`) and formal obligations (`FO-V37-001..003`);
+  - published `PROFILE_STATUS_V37` and `WORKSET_2026-02-27_OPTIONAL_PARAMS_V37`.
+- Started `mvp-lang-named-args-v38` language-closure pass:
+  - added named-argument parsing for call sites (`name := expr`);
+  - implemented deterministic positional+named mapping with validation:
+    - unknown/duplicate named arguments rejected,
+    - positional-after-named rejected;
+  - added named-argument conformance fixtures and formal obligations (`FO-V38-001..003`);
+  - published `PROFILE_STATUS_V38` and `WORKSET_2026-02-27_NAMED_ARGS_V38`.

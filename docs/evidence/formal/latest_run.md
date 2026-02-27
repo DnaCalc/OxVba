@@ -1,6 +1,6 @@
 # Formal Run Report
 
-- Timestamp (UTC): 2026-02-27T21:31:41Z
+- Timestamp (UTC): 2026-02-27T21:57:01Z
 - Profile scope: mvp-full-coverage-perf-gate-v36
 - Overall mode: non-blocking
 - Kani required: false

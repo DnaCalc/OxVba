@@ -23,6 +23,8 @@ Current corpus includes:
 - `Select Case` constant dispatch with `Case Else`.
 - Named `Sub`/`Function` declarations and `Call` dispatch.
 - `ByVal`/`ByRef` parameter passing subset.
+- Trailing `Optional` parameter defaults (integer literal subset).
+- Named argument call binding (`name := expr`) with ordering validation.
 - Fixed-size arrays with indexed load/store and bounds errors.
 - `On Error Resume Next` and `Err.Number` subset behavior.
 - `On Error GoTo 0` reset behavior and `Resume Next` statement subset.

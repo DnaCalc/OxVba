@@ -49,6 +49,8 @@
 | Profile v34 Status | [`PROFILE_STATUS_V34.md`](PROFILE_STATUS_V34.md) | Current gate status contract for `mvp-language-coverage-objects-v34`. |
 | Profile v35 Status | [`PROFILE_STATUS_V35.md`](PROFILE_STATUS_V35.md) | Current gate status contract for `mvp-jit-optimizer-hotpaths-v35`. |
 | Profile v36 Status | [`PROFILE_STATUS_V36.md`](PROFILE_STATUS_V36.md) | Current gate status contract for `mvp-full-coverage-perf-gate-v36`. |
+| Profile v37 Status | [`PROFILE_STATUS_V37.md`](PROFILE_STATUS_V37.md) | Current gate status contract for `mvp-lang-optional-params-v37`. |
+| Profile v38 Status | [`PROFILE_STATUS_V38.md`](PROFILE_STATUS_V38.md) | Current gate status contract for `mvp-lang-named-args-v38`. |
 | Phase 12 Status | [`PHASE12_STATUS.md`](PHASE12_STATUS.md) | Declared profile scope and final conformance/stabilization gate artifacts. |
 | Work Set Plan (v2) | [`worksets/WORKSET_2026-02-27_CONTROLFLOW_V2.md`](worksets/WORKSET_2026-02-27_CONTROLFLOW_V2.md) | Detailed execution-grade plan for control-flow expansion beyond `mvp-int32-core-v1`. |
 | Work Set Plan (v3) | [`worksets/WORKSET_2026-02-27_FORMAL_FOUNDATION_V3.md`](worksets/WORKSET_2026-02-27_FORMAL_FOUNDATION_V3.md) | Formal infrastructure work set for manifest-driven obligations and reporting. |
@@ -85,8 +87,11 @@
 | Work Set Plan (v34) | [`worksets/WORKSET_2026-02-27_LANGUAGE_COVERAGE_OBJECTS_V34.md`](worksets/WORKSET_2026-02-27_LANGUAGE_COVERAGE_OBJECTS_V34.md) | Object/class/module coverage closure work set. |
 | Work Set Plan (v35) | [`worksets/WORKSET_2026-02-27_JIT_OPT_HOTPATHS_V35.md`](worksets/WORKSET_2026-02-27_JIT_OPT_HOTPATHS_V35.md) | JIT/optimizer hotpath parity/performance work set. |
 | Work Set Plan (v36) | [`worksets/WORKSET_2026-02-27_FULL_COVERAGE_PERF_GATE_V36.md`](worksets/WORKSET_2026-02-27_FULL_COVERAGE_PERF_GATE_V36.md) | Coverage/performance consolidation gate work set. |
+| Work Set Plan (v37) | [`worksets/WORKSET_2026-02-27_OPTIONAL_PARAMS_V37.md`](worksets/WORKSET_2026-02-27_OPTIONAL_PARAMS_V37.md) | Optional trailing parameter/default materialization work set. |
+| Work Set Plan (v38) | [`worksets/WORKSET_2026-02-27_NAMED_ARGS_V38.md`](worksets/WORKSET_2026-02-27_NAMED_ARGS_V38.md) | Named-argument call binding and validation work set. |
 | Work Set Plan (v27-v36) | [`worksets/WORKSET_2026-02-27_BATCH_V27_V36.md`](worksets/WORKSET_2026-02-27_BATCH_V27_V36.md) | Next long batch: formal reliability, language coverage closure, and hotspot performance work. |
 | Profile Ladder | [`worksets/PROFILE_LADDER_2026-02-27_MACH1000.md`](worksets/PROFILE_LADDER_2026-02-27_MACH1000.md) | MACH1000 profile roadmap and execution history. |
+| Profile Ladder (v37-v56) | [`worksets/PROFILE_LADDER_2026-02-27_MACH1000_V37_V56.md`](worksets/PROFILE_LADDER_2026-02-27_MACH1000_V37_V56.md) | Next horizon ladder split into language core, intrinsic runtime, and host/interop tracks. |
 | Status Tours | [`status-tours/`](status-tours/) | Date-stamped orientation/showcase docs for implemented project state. |
 | Formal | [`FORMAL.md`](FORMAL.md) | Lean/Kani formal scaffold status and structure. |
 

@@ -101,3 +101,9 @@ FO-V35-003,v35,"cargo test -p oxvba-host formal_v35_profile_status_document_exis
 FO-V36-001,v36,"cargo test -p oxvba-host formal_v36_script_defaults_target_v36_profile_scope",no,true,crates/oxvba-host/src/engine.rs
 FO-V36-002,v36,"cargo test -p oxvba-host formal_v36_benchmark_default_targets_v36_artifact",no,true,crates/oxvba-host/src/engine.rs
 FO-V36-003,v36,"cargo test -p oxvba-host formal_v36_profile_status_document_exists",no,true,crates/oxvba-host/src/engine.rs
+FO-V37-001,v37,"cargo test -p oxvba-host formal_v37_optional_param_default_applies_when_omitted",no,true,crates/oxvba-host/src/engine.rs
+FO-V37-002,v37,"cargo test -p oxvba-host formal_v37_optional_param_explicit_value_overrides_default",no,true,crates/oxvba-host/src/engine.rs
+FO-V37-003,v37,"cargo test -p oxvba-host formal_v37_optional_param_missing_required_arg_is_rejected",no,true,crates/oxvba-host/src/engine.rs
+FO-V38-001,v38,"cargo test -p oxvba-host formal_v38_named_args_bind_by_parameter_name",no,true,crates/oxvba-host/src/engine.rs
+FO-V38-002,v38,"cargo test -p oxvba-host formal_v38_named_args_allow_omitting_optional_by_name",no,true,crates/oxvba-host/src/engine.rs
+FO-V38-003,v38,"cargo test -p oxvba-host formal_v38_named_args_reject_positional_after_named",no,true,crates/oxvba-host/src/engine.rs

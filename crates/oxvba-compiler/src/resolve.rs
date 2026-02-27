@@ -9,6 +9,12 @@ pub enum BoundExpr {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BoundCallArg {
+    pub name: Option<String>,
+    pub expr: BoundExpr,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum BoundStmt {
     Assign {
         target: String,
@@ -37,7 +43,7 @@ pub enum BoundStmt {
     RaiseError(i32),
     Call {
         name: String,
-        args: Vec<BoundExpr>,
+        args: Vec<BoundCallArg>,
     },
     SelectCase {
         expr: BoundExpr,
@@ -93,6 +99,8 @@ pub struct BoundProcedure {
 pub struct BoundParam {
     pub name: String,
     pub by_ref: bool,
+    pub optional: bool,
+    pub default_value: Option<i32>,
 }
 
 pub fn resolve_symbols(source: &str) -> BoundModule {
@@ -223,6 +231,7 @@ fn parse_proc_signature(line: &str, is_function: bool) -> Option<(String, Vec<Bo
         .unwrap_or_default();
     let name = normalize_ident(name_token)?;
     let mut params = Vec::new();
+    let mut seen_optional = false;
 
     if let Some(open) = rest.find('(')
         && let Some(close) = rest.rfind(')')
@@ -231,25 +240,58 @@ fn parse_proc_signature(line: &str, is_function: bool) -> Option<(String, Vec<Bo
         let params_raw = rest[open + 1..close].trim();
         if !params_raw.is_empty() {
             for item in params_raw.split(',') {
-                let token = item.trim();
+                let mut token = item.trim();
+                if token.is_empty() {
+                    return None;
+                }
+                let mut optional = false;
+                if token.to_ascii_lowercase().starts_with("optional ") {
+                    optional = true;
+                    token = token[9..].trim();
+                }
                 let lower = token.to_ascii_lowercase();
-                let (by_ref, name_text) = if lower.starts_with("byval ") {
+                let (by_ref, remainder) = if lower.starts_with("byval ") {
                     (false, token[6..].trim())
                 } else if lower.starts_with("byref ") {
                     (true, token[6..].trim())
                 } else {
                     (true, token)
                 };
+                let (name_text, default_value) = if let Some((lhs, rhs)) = remainder.split_once('=')
+                {
+                    (lhs.trim(), Some(parse_param_default(rhs.trim())?))
+                } else {
+                    (remainder, None)
+                };
+
+                if default_value.is_some() && !optional {
+                    return None;
+                }
+                if optional && by_ref {
+                    return None;
+                }
+                if optional {
+                    seen_optional = true;
+                } else if seen_optional {
+                    return None;
+                }
+
                 let param_name = normalize_ident(name_text)?;
                 params.push(BoundParam {
                     name: param_name,
                     by_ref,
+                    optional,
+                    default_value,
                 });
             }
         }
     }
 
     Some((name, params))
+}
+
+fn parse_param_default(text: &str) -> Option<i32> {
+    text.trim().parse::<i32>().ok()
 }
 
 fn parse_block(
@@ -491,7 +533,7 @@ fn parse_assign_or_unsupported(line: &str, array_bounds: &HashMap<String, usize>
 fn parse_call_invocation(
     text: &str,
     array_bounds: &HashMap<String, usize>,
-) -> Option<(String, Vec<BoundExpr>)> {
+) -> Option<(String, Vec<BoundCallArg>)> {
     let open = text.find('(')?;
     let close = text.rfind(')')?;
     if close <= open {
@@ -506,7 +548,18 @@ fn parse_call_invocation(
 
     let mut args = Vec::new();
     for token in args_raw.split(',') {
-        args.push(parse_expr(token.trim(), array_bounds)?);
+        let trimmed = token.trim();
+        if let Some((lhs, rhs)) = trimmed.split_once(":=") {
+            args.push(BoundCallArg {
+                name: Some(normalize_ident(lhs)?),
+                expr: parse_expr(rhs.trim(), array_bounds)?,
+            });
+        } else {
+            args.push(BoundCallArg {
+                name: None,
+                expr: parse_expr(trimmed, array_bounds)?,
+            });
+        }
     }
     Some((name, args))
 }
@@ -1085,6 +1138,45 @@ mod tests {
         assert_eq!(add_one.params.len(), 1);
         assert_eq!(add_one.params[0].name, "a");
         assert!(add_one.params[0].by_ref);
+        assert!(!add_one.params[0].optional);
+        assert_eq!(add_one.params[0].default_value, None);
+    }
+
+    #[test]
+    fn resolve_optional_params_with_default_literals() {
+        let source = "Sub Main()\nDim x\nCall Fill(x)\nEnd Sub\nSub Fill(ByRef target, Optional ByVal value = 7)\ntarget = value\nEnd Sub";
+        let module = resolve_symbols(source);
+        let fill = module
+            .procedures
+            .iter()
+            .find(|p| p.name == "fill")
+            .expect("fill procedure expected");
+        assert_eq!(fill.params.len(), 2);
+        assert_eq!(fill.params[0].name, "target");
+        assert!(fill.params[0].by_ref);
+        assert!(!fill.params[0].optional);
+        assert_eq!(fill.params[0].default_value, None);
+        assert_eq!(fill.params[1].name, "value");
+        assert!(!fill.params[1].by_ref);
+        assert!(fill.params[1].optional);
+        assert_eq!(fill.params[1].default_value, Some(7));
+    }
+
+    #[test]
+    fn resolve_named_call_arguments() {
+        let source = "Sub Main()\nDim x\nCall Fill(target := x, value := 9)\nEnd Sub\nSub Fill(ByRef target, Optional ByVal value = 7)\ntarget = value\nEnd Sub";
+        let module = resolve_symbols(source);
+        let main_proc = module
+            .procedures
+            .iter()
+            .find(|p| p.name == "main")
+            .expect("main procedure expected");
+        let Some(BoundStmt::Call { args, .. }) = main_proc.body.first() else {
+            panic!("expected call statement");
+        };
+        assert_eq!(args.len(), 2);
+        assert_eq!(args[0].name.as_deref(), Some("target"));
+        assert_eq!(args[1].name.as_deref(), Some("value"));
     }
 
     #[test]

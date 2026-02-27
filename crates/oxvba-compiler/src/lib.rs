@@ -233,6 +233,45 @@ mod tests {
     }
 
     #[test]
+    fn compile_optional_param_call_accepts_omitted_arg() {
+        let source = "Sub Main()\nDim x\nCall Fill(x)\nEnd Sub\nSub Fill(ByRef target, Optional ByVal value = 7)\ntarget = value\nEnd Sub";
+        let out = compile(source).expect("compile should succeed");
+        assert!(
+            out.instructions
+                .iter()
+                .any(|i| matches!(i, Instruction::CallProc { .. }))
+        );
+    }
+
+    #[test]
+    fn compile_optional_param_call_rejects_missing_required_arg() {
+        let source = "Sub Main()\nCall Fill\nEnd Sub\nSub Fill(ByRef target, Optional ByVal value = 7)\ntarget = value\nEnd Sub";
+        let err = compile(source).expect_err("typecheck should fail");
+        assert!(err.to_string().contains("missing required argument"));
+    }
+
+    #[test]
+    fn compile_named_args_call_is_supported() {
+        let source = "Sub Main()\nDim x\nCall Fill(target := x, value := 9)\nEnd Sub\nSub Fill(ByRef target, Optional ByVal value = 7)\ntarget = value\nEnd Sub";
+        let out = compile(source).expect("compile should succeed");
+        assert!(
+            out.instructions
+                .iter()
+                .any(|i| matches!(i, Instruction::CallProc { .. }))
+        );
+    }
+
+    #[test]
+    fn compile_rejects_positional_argument_after_named_argument() {
+        let source = "Sub Main()\nDim x\nCall Fill(value := 9, x)\nEnd Sub\nSub Fill(ByRef target, Optional ByVal value = 7)\ntarget = value\nEnd Sub";
+        let err = compile(source).expect_err("typecheck should fail");
+        assert!(
+            err.to_string()
+                .contains("positional argument cannot follow named argument")
+        );
+    }
+
+    #[test]
     fn compile_on_error_resume_next_emits_error_state_ops() {
         let source = "Sub Main()\nDim x\nOn Error Resume Next\nError 5\nx = Err.Number\nEnd Sub";
         let out = compile(source).expect("compile should succeed");
