@@ -24,6 +24,9 @@ Source of truth:
 | FO-V6-001 | v6 (`mvp-while-loop-v6`) | Pre-condition loop model | `formal_v6_do_while_matches_reference_model` | `scripts/run-formal.ps1` | no | todo (pending latest run update) | `docs/evidence/formal/latest_run.md` |
 | FO-V6-002 | v6 (`mvp-while-loop-v6`) | Post-condition loop model | `formal_v6_post_condition_loop_semantics` | `scripts/run-formal.ps1` | no | todo (pending latest run update) | `docs/evidence/formal/latest_run.md` |
 | FO-V6-003 | v6 (`mvp-while-loop-v6`) | `Exit Do` short-circuit behavior | `formal_v6_exit_do_short_circuits_iteration` | `scripts/run-formal.ps1` | no | todo (pending latest run update) | `docs/evidence/formal/latest_run.md` |
+| FO-V7-001 | v7 (`mvp-select-case-v7`) | First-match case determinism | `formal_v7_select_case_first_match_wins` | `scripts/run-formal.ps1` | no | todo (pending latest run update) | `docs/evidence/formal/latest_run.md` |
+| FO-V7-002 | v7 (`mvp-select-case-v7`) | `Case Else` fallback semantics | `formal_v7_select_case_else_fallback` | `scripts/run-formal.ps1` | no | todo (pending latest run update) | `docs/evidence/formal/latest_run.md` |
+| FO-V7-003 | v7 (`mvp-select-case-v7`) | Multi-value arm inclusion semantics | `formal_v7_select_case_multi_value_arm` | `scripts/run-formal.ps1` | no | todo (pending latest run update) | `docs/evidence/formal/latest_run.md` |
 
 ## Policy (current ladder run)
 - Formal runs are required in-cycle for relevant changes.

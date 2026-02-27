@@ -192,4 +192,20 @@ mod tests {
                 .any(|i| matches!(i, Instruction::Jump { .. }))
         );
     }
+
+    #[test]
+    fn compile_select_case_emits_case_dispatch() {
+        let source = "Sub Main()\nDim x\nSelect Case x\nCase 1\nx = 10\nCase 2, 3\nx = 20\nCase Else\nx = 30\nEnd Select\nEnd Sub";
+        let out = compile(source).expect("compile should succeed");
+        assert!(
+            out.instructions
+                .iter()
+                .any(|i| matches!(i, Instruction::BoolOr { .. }))
+        );
+        assert!(
+            out.instructions
+                .iter()
+                .any(|i| matches!(i, Instruction::JumpIfZero { .. }))
+        );
+    }
 }

@@ -179,6 +179,64 @@ fn emit_stmt(
                 exit_patches.push(patch);
             }
         }
+        BoundStmt::SelectCase {
+            expr,
+            arms,
+            else_body,
+        } => {
+            let expr_slot = temps.alloc_temp();
+            emit_expr_into(expr, expr_slot, slot_map, instructions);
+            let mut end_patches: Vec<usize> = Vec::new();
+
+            for (values, body) in arms {
+                let aggregate_slot = temps.alloc_temp();
+                instructions.push(Instruction::LoadConstI32 {
+                    slot: aggregate_slot,
+                    value: 0,
+                });
+
+                for value in values {
+                    let const_slot = temps.alloc_temp();
+                    let cmp_slot = temps.alloc_temp();
+                    instructions.push(Instruction::LoadConstI32 {
+                        slot: const_slot,
+                        value: *value,
+                    });
+                    instructions.push(Instruction::CmpEqSlots {
+                        dst: cmp_slot,
+                        lhs: expr_slot,
+                        rhs: const_slot,
+                    });
+                    instructions.push(Instruction::BoolOr {
+                        dst: aggregate_slot,
+                        lhs: aggregate_slot,
+                        rhs: cmp_slot,
+                    });
+                }
+
+                let next_patch = instructions.len();
+                instructions.push(Instruction::JumpIfZero {
+                    cond_slot: aggregate_slot,
+                    target_pc: 0,
+                });
+                emit_stmt_list(body, slot_map, temps, instructions, loop_exit_stack);
+                let end_patch = instructions.len();
+                instructions.push(Instruction::Jump { target_pc: 0 });
+                end_patches.push(end_patch);
+                let next_target = instructions.len();
+                if let Instruction::JumpIfZero { target_pc, .. } = &mut instructions[next_patch] {
+                    *target_pc = next_target;
+                }
+            }
+
+            emit_stmt_list(else_body, slot_map, temps, instructions, loop_exit_stack);
+            let end_target = instructions.len();
+            for patch in end_patches {
+                if let Instruction::Jump { target_pc } = &mut instructions[patch] {
+                    *target_pc = end_target;
+                }
+            }
+        }
         BoundStmt::Unsupported { .. } => {}
     }
 }
@@ -403,6 +461,23 @@ mod tests {
             .count();
         assert!(jump_count >= 2);
         assert!(jump_if_count >= 2);
+    }
+
+    #[test]
+    fn emits_select_case_dispatch_jumps() {
+        let source = "Sub Main()\nDim x\nSelect Case x\nCase 1\nx = 10\nCase 2, 3\nx = 20\nCase Else\nx = 30\nEnd Select\nEnd Sub";
+        let bound = resolve_symbols(source);
+        let code = emit_bytecode(&bound);
+        assert!(
+            code.instructions
+                .iter()
+                .any(|i| matches!(i, Instruction::BoolOr { .. }))
+        );
+        assert!(
+            code.instructions
+                .iter()
+                .any(|i| matches!(i, Instruction::JumpIfZero { .. }))
+        );
     }
 }
 

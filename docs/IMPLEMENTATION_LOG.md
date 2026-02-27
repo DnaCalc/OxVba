@@ -80,3 +80,8 @@
   - Added `Exit Do` lowering with innermost loop exit patching.
   - Added loop conformance fixtures (`do_while_basic`, `do_loop_while_basic`, `do_exit_do`).
   - Added executable formal loop obligations (`FO-V6-001..003`) in host model-check tests.
+- Started `mvp-select-case-v7` semantics pass:
+  - Added `Select Case` binding with constant arms, multi-value arm support, and `Case Else`.
+  - Added emitter dispatch lowering with deterministic first-match semantics.
+  - Added conformance fixtures (`select_case_basic`, `select_case_multi`, `select_case_else`).
+  - Added executable formal obligations (`FO-V7-001..003`) for dispatch determinism and fallback behavior.

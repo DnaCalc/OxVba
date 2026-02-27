@@ -1,7 +1,7 @@
 # Formal Run Report
 
-- Timestamp (UTC): 2026-02-27T12:25:10Z
-- Profile scope: mvp-while-loop-v6
+- Timestamp (UTC): 2026-02-27T12:30:06Z
+- Profile scope: mvp-select-case-v7
 - Overall mode: non-blocking
 - cargo-kani: unavailable
 
@@ -17,3 +17,6 @@
 | FO-V6-001 | v6 | no | pass | cargo test -p oxvba-host formal_v6_do_while_matches_reference_model | crates/oxvba-host/src/engine.rs |  |
 | FO-V6-002 | v6 | no | pass | cargo test -p oxvba-host formal_v6_post_condition_loop_semantics | crates/oxvba-host/src/engine.rs |  |
 | FO-V6-003 | v6 | no | pass | cargo test -p oxvba-host formal_v6_exit_do_short_circuits_iteration | crates/oxvba-host/src/engine.rs |  |
+| FO-V7-001 | v7 | no | pass | cargo test -p oxvba-host formal_v7_select_case_first_match_wins | crates/oxvba-host/src/engine.rs |  |
+| FO-V7-002 | v7 | no | pass | cargo test -p oxvba-host formal_v7_select_case_else_fallback | crates/oxvba-host/src/engine.rs |  |
+| FO-V7-003 | v7 | no | pass | cargo test -p oxvba-host formal_v7_select_case_multi_value_arm | crates/oxvba-host/src/engine.rs |  |

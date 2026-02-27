@@ -179,4 +179,38 @@ mod tests {
             .expect("execution should succeed");
         assert_eq!(snapshot[0], 4);
     }
+
+    #[test]
+    fn formal_v7_select_case_first_match_wins() {
+        let engine = Engine::new(HostConfig::default());
+        let source = "Sub Main()\nDim x\nx = 2\nSelect Case x\nCase 2\nx = 20\nCase 2, 3\nx = 99\nCase Else\nx = 0\nEnd Select\nEnd Sub";
+        let snapshot = engine
+            .execute_source_with_snapshot(source)
+            .expect("execution should succeed");
+        assert_eq!(snapshot[0], 20);
+    }
+
+    #[test]
+    fn formal_v7_select_case_else_fallback() {
+        let engine = Engine::new(HostConfig::default());
+        let source = "Sub Main()\nDim x\nx = 9\nSelect Case x\nCase 1\nx = 10\nCase 2\nx = 20\nCase Else\nx = 99\nEnd Select\nEnd Sub";
+        let snapshot = engine
+            .execute_source_with_snapshot(source)
+            .expect("execution should succeed");
+        assert_eq!(snapshot[0], 99);
+    }
+
+    #[test]
+    fn formal_v7_select_case_multi_value_arm() {
+        let engine = Engine::new(HostConfig::default());
+        for input in [1, 3] {
+            let source = format!(
+                "Sub Main()\nDim x\nx = {input}\nSelect Case x\nCase 1, 3\nx = 30\nCase Else\nx = 0\nEnd Select\nEnd Sub"
+            );
+            let snapshot = engine
+                .execute_source_with_snapshot(&source)
+                .expect("execution should succeed");
+            assert_eq!(snapshot[0], 30);
+        }
+    }
 }

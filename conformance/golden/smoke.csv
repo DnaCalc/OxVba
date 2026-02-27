@@ -17,5 +17,8 @@ if_true.bas,ok,7
 nested_if_for.bas,ok,"5,3"
 option_explicit_error.bas,error,
 option_explicit_ok.bas,ok,3
+select_case_basic.bas,ok,20
+select_case_else.bas,ok,99
+select_case_multi.bas,ok,30
 smoke.bas,ok,15
 subtract.bas,ok,16

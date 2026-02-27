@@ -29,6 +29,11 @@ pub enum BoundStmt {
         post_check: bool,
     },
     ExitDo,
+    SelectCase {
+        expr: BoundExpr,
+        arms: Vec<(Vec<i32>, Vec<BoundStmt>)>,
+        else_body: Vec<BoundStmt>,
+    },
     Unsupported {
         line: String,
     },
@@ -162,6 +167,17 @@ fn parse_block(
         if lower == "exit do" {
             out.push(BoundStmt::ExitDo);
             *index += 1;
+            continue;
+        }
+
+        if lower.starts_with("select case ") {
+            out.push(parse_select_case_stmt(
+                lines,
+                index,
+                declarations,
+                option_explicit,
+                line,
+            ));
             continue;
         }
 
@@ -336,6 +352,84 @@ fn parse_for_header(line: &str) -> Option<(String, BoundExpr, BoundExpr)> {
     Some((var, start, end))
 }
 
+fn parse_select_case_stmt(
+    lines: &[String],
+    index: &mut usize,
+    declarations: &mut Vec<String>,
+    option_explicit: &mut bool,
+    line: &str,
+) -> BoundStmt {
+    let Some((_, expr_raw)) = split_ci(line, "case") else {
+        *index += 1;
+        return BoundStmt::Unsupported {
+            line: line.to_string(),
+        };
+    };
+    let Some(expr) = parse_expr(expr_raw) else {
+        *index += 1;
+        return BoundStmt::Unsupported {
+            line: line.to_string(),
+        };
+    };
+
+    *index += 1;
+    let mut arms: Vec<(Vec<i32>, Vec<BoundStmt>)> = Vec::new();
+    let mut else_body: Vec<BoundStmt> = Vec::new();
+
+    while *index < lines.len() {
+        let current = lines[*index].as_str();
+        let lower = current.to_ascii_lowercase();
+
+        if lower == "end select" {
+            *index += 1;
+            return BoundStmt::SelectCase {
+                expr,
+                arms,
+                else_body,
+            };
+        }
+
+        if lower.starts_with("case else") {
+            *index += 1;
+            else_body = parse_block(lines, index, declarations, option_explicit, &["end select"]);
+            continue;
+        }
+
+        if lower.starts_with("case ") {
+            let values_raw = current[5..].trim();
+            let mut values = Vec::new();
+            for token in values_raw.split(',') {
+                let trimmed = token.trim();
+                let Ok(value) = trimmed.parse::<i32>() else {
+                    return BoundStmt::Unsupported {
+                        line: line.to_string(),
+                    };
+                };
+                values.push(value);
+            }
+
+            *index += 1;
+            let body = parse_block(
+                lines,
+                index,
+                declarations,
+                option_explicit,
+                &["case", "end select"],
+            );
+            arms.push((values, body));
+            continue;
+        }
+
+        return BoundStmt::Unsupported {
+            line: current.to_string(),
+        };
+    }
+
+    BoundStmt::Unsupported {
+        line: line.to_string(),
+    }
+}
+
 fn parse_expr(text: &str) -> Option<BoundExpr> {
     let expr = text.trim();
     if let Ok(value) = expr.parse::<i32>() {
@@ -444,6 +538,8 @@ fn matches_terminator(lower_line: &str, terminators: &[&str]) -> bool {
             lower_line == "next" || lower_line.starts_with("next ")
         } else if *term == "loop" {
             lower_line == "loop" || lower_line.starts_with("loop ")
+        } else if *term == "case" {
+            lower_line.starts_with("case ")
         } else if *term == "elseif" {
             lower_line.starts_with("elseif ")
         } else {
@@ -614,6 +710,18 @@ mod tests {
                 .body
                 .iter()
                 .any(|s| matches!(s, BoundStmt::DoWhile { .. }))
+        );
+    }
+
+    #[test]
+    fn resolve_select_case_statement() {
+        let source = "Sub Main()\nDim x\nSelect Case x\nCase 1\nx = 10\nCase 2, 3\nx = 20\nCase Else\nx = 30\nEnd Select\nEnd Sub";
+        let module = resolve_symbols(source);
+        assert!(
+            module
+                .body
+                .iter()
+                .any(|s| matches!(s, BoundStmt::SelectCase { .. }))
         );
     }
 }

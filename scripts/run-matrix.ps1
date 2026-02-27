@@ -1,6 +1,6 @@
 param(
-    [string]$ProfileScope = "mvp-while-loop-v6",
-    [string]$OutputDir = "docs/evidence/profiles/v6",
+    [string]$ProfileScope = "mvp-select-case-v7",
+    [string]$OutputDir = "docs/evidence/profiles/v7",
     [string]$OutputCsv = "",
     [string]$SummaryPath = ""
 )

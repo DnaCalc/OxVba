@@ -62,6 +62,17 @@ fn check_stmt(
             check_stmt_list(body, option_explicit, declared, declarations)
         }
         BoundStmt::ExitDo => Ok(()),
+        BoundStmt::SelectCase {
+            expr,
+            arms,
+            else_body,
+        } => {
+            check_expr(expr, option_explicit, declared, declarations)?;
+            for (_, body) in arms {
+                check_stmt_list(body, option_explicit, declared, declarations)?;
+            }
+            check_stmt_list(else_body, option_explicit, declared, declarations)
+        }
         BoundStmt::Unsupported { line } => Err(format!("unsupported statement: {line}")),
     }
 }

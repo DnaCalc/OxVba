@@ -57,6 +57,21 @@ This inventory tracks formal artifacts and proof-adjacent harnesses by profile.
   - Artifact: `crates/oxvba-host/src/engine.rs`
   - Harness: `formal_v6_exit_do_short_circuits_iteration`
 
+## v7 (`mvp-select-case-v7`)
+
+- FO-V7-001
+  - Area: first-match case determinism
+  - Artifact: `crates/oxvba-host/src/engine.rs`
+  - Harness: `formal_v7_select_case_first_match_wins`
+- FO-V7-002
+  - Area: `Case Else` fallback semantics
+  - Artifact: `crates/oxvba-host/src/engine.rs`
+  - Harness: `formal_v7_select_case_else_fallback`
+- FO-V7-003
+  - Area: multi-value arm inclusion semantics
+  - Artifact: `crates/oxvba-host/src/engine.rs`
+  - Harness: `formal_v7_select_case_multi_value_arm`
+
 ## Reports
 
 - Latest markdown report: `docs/evidence/formal/latest_run.md`
