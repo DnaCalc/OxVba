@@ -167,3 +167,8 @@
   - Added `scripts/run-formal-kani-async.ps1` with `Start/Status/Tail/Wait/Stop` actions for long-running profile/Kani steps.
   - Added `scripts/async-task-runner.ps1` to persist async exit status and completion timestamps.
   - Updated profile execution/testing docs to include async formal run pattern.
+- Ladder extension replanned for next long batch (`v27`-`v36`):
+  - reduced Variant-representation-centric work,
+  - prioritized formal reliability/capacity (`v27`-`v31`),
+  - added explicit full language coverage closure track (`v32`-`v34`),
+  - focused late profiles on JIT/optimizer hot-path parity + performance gate (`v35`-`v36`).

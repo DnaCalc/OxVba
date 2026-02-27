@@ -3,15 +3,16 @@
 ## Why This Exists
 `mvp-int32-core-v1` is stabilized, but MACH1000 needs an execution queue that scales beyond incremental feature work.
 
-This document defines the **next 25 concrete profile steps** and explicitly prioritizes formal verification earlier in the ladder.
+This document defines the **next 35 concrete profile steps** and explicitly prioritizes formal verification early, then language coverage and performance closure.
 
 ## Replan Delta (Formal-First Revision)
 Compared to the previous ladder version:
 
 1. Formal verification is moved into early/mid profiles instead of late-only support.
-2. External COM boundary and Forms runtime profiles are removed from this 20-step sequence.
+2. External COM boundary and Forms runtime profiles are removed from this core sequence.
 3. Late profiles focus on proof-backed optimizer/JIT/performance graduation.
 4. Every profile has explicit verification obligations, not just tests.
+5. Extension batch (`v27`-`v36`) pivots to formal reliability, full language coverage closure, and hotspot performance work instead of alternative Variant-representation design.
 
 ## How Many Profile Steps Are There?
 There is no theoretical upper bound (full VBA parity and performance optimization are open-ended).
@@ -19,9 +20,9 @@ There is no theoretical upper bound (full VBA parity and performance optimizatio
 Concrete planning horizon in this document:
 
 - Previously completed profile at planning time: `v1`
-- Planned profiles in this ladder: `v2` through `v26`
-- Total concrete future steps here: **25**
-- Execution status now: **completed through `v26`**.
+- Planned profiles in this ladder: `v2` through `v36`
+- Total concrete future steps here: **35**
+- Execution status now: **completed through `v26`; queued batch is `v27` through `v36`**.
 
 ## Naming Convention
 - `mvp-<capability>-vN`
@@ -59,8 +60,10 @@ Target progression across this ladder:
 - v5-v11: mixed `F1/F2` on semantics-critical behavior.
 - v12-v18: sustained `F2` with selective `F3`.
 - v19-v26: `F3` mandatory for optimizer/JIT/perf graduation.
+- v27-v31: `F3` formal reliability and proof-capacity scaling.
+- v32-v36: `F3` full-language coverage closure + performance shaping.
 
-## 25-Profile Ladder (v2-v26)
+## 35-Profile Ladder (v2-v36)
 
 ### v2 — `mvp-controlflow-v2` (F1)
 Scope:
@@ -278,6 +281,94 @@ Formal obligations:
 Gate:
 - `v26` matrix gate pass + formal report updated + benchmark artifact generated.
 
+### v27 — `mvp-formal-async-ops-v27` (F3)
+Scope:
+- make async execution the default operational path for long-running formal/Kani profile steps.
+- persist run-state, logs, and completion evidence conventions for unattended profile execution.
+Formal obligations:
+- executable checks for async orchestration contract (`Start`/`Status`/`Tail`/`Wait`/`Stop`).
+- evidence-path stability checks for async logs and completion artifacts.
+Gate:
+- at least one profile-scoped formal run is executed and recovered fully through async workflow.
+
+### v28 — `mvp-kani-unblock-v28` (F3)
+Scope:
+- unblock failing/unstable Kani obligations (starting with VM `pc` progression harness) via harness decomposition, bounded domains, and targeted stubbing.
+Formal obligations:
+- convert current Kani `todo`/OOM failure into either:
+  - passing bounded harness set, or
+  - explicit split obligations with reproducible failure taxonomy and next actions.
+Gate:
+- no opaque Kani failures in active required obligations; each non-pass has structured classification and bounded reproduction.
+
+### v29 — `mvp-kani-capacity-v29` (F3)
+Scope:
+- add verification capacity controls (bounds, unwinding guidance, optional memory/time budget profiles) for reproducible Kani operation.
+Formal obligations:
+- harness-level configuration checks and run-manifest integrity checks.
+- deterministic re-run obligations for selected Kani harness subsets.
+Gate:
+- strict formal lane can be re-run with reproducible status under documented capacity profiles.
+
+### v30 — `mvp-com-variant-conformance-v30` (F3)
+Scope:
+- deepen semantic checks around canonical COM `VARIANT` layout/flags semantics and VBA compatibility behavior.
+Formal obligations:
+- layout invariants, `VARENUM` compatibility, and reserved-field handling checks.
+- executable equivalence checks for representative coercion/arithmetic behaviors crossing runtime boundaries.
+Gate:
+- COM `VARIANT` conformance obligations green for required subset.
+
+### v31 — `mvp-boundary-marshalling-v31` (F3)
+Scope:
+- formalize and test runtime boundary marshalling rules (host/COM <-> runtime canonical form).
+Formal obligations:
+- roundtrip and no-loss guarantees for in-scope Variant subtypes.
+- deterministic failure-surface checks for unsupported boundary values.
+Gate:
+- boundary marshalling parity and formal roundtrip checks green.
+
+### v32 — `mvp-language-coverage-audit-v32` (F3)
+Scope:
+- produce executable language coverage map against full VBA7 target surface.
+- classify all uncovered constructs by complexity/risk and define closure order.
+Formal obligations:
+- coverage ledger integrity checks (no unknown/uncategorized parser/binder/runtime gaps).
+Gate:
+- published coverage index with actionable backlog and profile-linked closure tasks.
+
+### v33 — `mvp-language-coverage-core-v33` (F3)
+Scope:
+- implement and stabilize highest-impact missing language constructs from coverage audit (control flow/type/coercion semantics first).
+Formal obligations:
+- executable semantic/parity checks for each newly covered construct group.
+Gate:
+- coverage index materially reduced with new conformance corpus and green required cells.
+
+### v34 — `mvp-language-coverage-objects-v34` (F3)
+Scope:
+- expand coverage for object/class/module interaction semantics in core engine scope (excluding Forms and external COM library breadth work).
+Formal obligations:
+- lifecycle/dispatch/state-transition invariants for newly covered object behavior.
+Gate:
+- object-semantics coverage milestones green with formal linkage.
+
+### v35 — `mvp-jit-optimizer-hotpaths-v35` (F3)
+Scope:
+- expand JIT/optimizer support breadth on proven-safe language subsets and hotspot instruction paths.
+Formal obligations:
+- VM-vs-JIT and opt-on/off equivalence for all newly enabled hot paths.
+Gate:
+- parity remains green while benchmark harness shows measurable improvements on selected workloads.
+
+### v36 — `mvp-full-coverage-perf-gate-v36` (F3)
+Scope:
+- consolidate language coverage and performance evidence into a new stabilization gate.
+Formal obligations:
+- required coverage closure checks + formal manifest completeness checks for declared scope.
+Gate:
+- declared full-language-in-scope matrix cells green, formal obligations current, and performance guardrails met.
+
 ## Execution Rhythm Per Profile
 
 1. Implement pass-pack deltas.
@@ -303,7 +394,7 @@ Merge order:
 3. E lands formal obligations.
 4. D finalizes gates/docs from observed outcomes.
 
-## Global Quantitative Targets Across v2-v26
+## Global Quantitative Targets Across v2-v36
 
 1. Corpus growth: minimum +10 conformance cases per profile.
 2. Formal growth: minimum +3 formal obligations per profile from v3 onward.
@@ -313,6 +404,9 @@ Merge order:
    - no clippy warnings,
    - no test regressions,
    - formal lane status tracked and blocking where mandated by profile level.
+6. Coverage closure:
+   - maintain a language-coverage index from `v32` onward,
+   - each profile must reduce uncovered in-scope language surface or close a coverage-class blocker.
 
 ## Immediate Operationalization
 

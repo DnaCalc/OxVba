@@ -65,6 +65,7 @@
 | Work Set Plan (v24) | [`worksets/WORKSET_2026-02-27_JIT_CALLS_V24.md`](worksets/WORKSET_2026-02-27_JIT_CALLS_V24.md) | JIT call subset parity work set. |
 | Work Set Plan (v25) | [`worksets/WORKSET_2026-02-27_OPTIMIZER_PACK2_V25.md`](worksets/WORKSET_2026-02-27_OPTIMIZER_PACK2_V25.md) | Optimizer pack2 correctness/parity work set. |
 | Work Set Plan (v26) | [`worksets/WORKSET_2026-02-27_PERF_SHAPE_V26.md`](worksets/WORKSET_2026-02-27_PERF_SHAPE_V26.md) | Perf-shape stabilization and v26 closure work set. |
+| Work Set Plan (v27-v36) | [`worksets/WORKSET_2026-02-27_BATCH_V27_V36.md`](worksets/WORKSET_2026-02-27_BATCH_V27_V36.md) | Next long batch: formal reliability, language coverage closure, and hotspot performance work. |
 | Profile Ladder | [`worksets/PROFILE_LADDER_2026-02-27_MACH1000.md`](worksets/PROFILE_LADDER_2026-02-27_MACH1000.md) | MACH1000 profile roadmap and execution history. |
 | Status Tours | [`status-tours/`](status-tours/) | Date-stamped orientation/showcase docs for implemented project state. |
 | Formal | [`FORMAL.md`](FORMAL.md) | Lean/Kani formal scaffold status and structure. |
