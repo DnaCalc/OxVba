@@ -23,28 +23,10 @@ pub fn coerce_to(value: &Variant, target: VarType) -> Result<Variant, String> {
             };
             Ok(Variant::from_i32(n))
         }
-        (_, VarType::String) => {
-            let text = match value.vtype {
-                VarType::Integer => value.as_i16().unwrap_or(0).to_string(),
-                VarType::Long => value.as_i32().unwrap_or(0).to_string(),
-                VarType::Double => value.as_f64().unwrap_or(0.0).to_string(),
-                VarType::Boolean => {
-                    if value.as_bool().unwrap_or(false) {
-                        "True".to_string()
-                    } else {
-                        "False".to_string()
-                    }
-                }
-                _ => {
-                    return Err(format!(
-                        "unsupported coercion to String from {:?}",
-                        value.vtype
-                    ));
-                }
-            };
-            Variant::from_inline_ascii(&text)
-                .ok_or_else(|| "string coercion exceeds inline threshold".to_string())
-        }
+        (_, VarType::String) => Err(
+            "coercion to String requires COM BSTR allocation path (not yet implemented)"
+                .to_string(),
+        ),
         _ => Err(format!(
             "unsupported coercion from {:?} to {:?}",
             value.vtype, target

@@ -3,8 +3,8 @@
 Kani harness inventory and execution notes.
 
 Initial target areas:
-- Variant payload invariants
-- SSO threshold correctness
+- COM `VARIANT` layout and payload invariants
+- Optional internal-repr boundary marshalling correctness
 - Register-window bounds
 - Broadword decoder masks
 - COM pointer cast safety

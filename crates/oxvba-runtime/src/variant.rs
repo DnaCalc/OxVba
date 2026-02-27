@@ -15,128 +15,133 @@ pub enum VarType {
     LongLong = 0x0014,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-#[repr(C, align(16))]
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub union VariantData {
+    pub bytes: [u8; 8],
+    pub i16_val: i16,
+    pub i32_val: i32,
+    pub i64_val: i64,
+    pub f64_val: f64,
+    pub ptr_val: *mut core::ffi::c_void,
+}
+
+#[derive(Clone, Copy)]
+#[repr(C)]
 pub struct Variant {
     pub vtype: VarType,
-    pub payload: [u8; 14],
+    pub reserved1: u16,
+    pub reserved2: u16,
+    pub reserved3: u16,
+    pub data: VariantData,
+}
+
+impl core::fmt::Debug for Variant {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("Variant")
+            .field("vtype", &self.vtype)
+            .field("reserved1", &self.reserved1)
+            .field("reserved2", &self.reserved2)
+            .field("reserved3", &self.reserved3)
+            .field("data", &self.data_bytes())
+            .finish()
+    }
+}
+
+impl PartialEq for Variant {
+    fn eq(&self, other: &Self) -> bool {
+        self.vtype == other.vtype
+            && self.reserved1 == other.reserved1
+            && self.reserved2 == other.reserved2
+            && self.reserved3 == other.reserved3
+            && self.data_bytes() == other.data_bytes()
+    }
+}
+
+impl Eq for Variant {}
+
+impl Variant {
+    fn from_bytes(vtype: VarType, bytes: [u8; 8]) -> Self {
+        Self {
+            vtype,
+            reserved1: 0,
+            reserved2: 0,
+            reserved3: 0,
+            data: VariantData { bytes },
+        }
+    }
+
+    fn data_bytes(&self) -> [u8; 8] {
+        // SAFETY: `VariantData` is a C union with a `[u8; 8]` member that spans
+        // the full storage of the union.
+        unsafe { self.data.bytes }
+    }
 }
 
 impl Variant {
     pub fn empty() -> Self {
-        Self {
-            vtype: VarType::Empty,
-            payload: [0; 14],
-        }
+        Self::from_bytes(VarType::Empty, [0; 8])
     }
 
     pub fn from_i16(value: i16) -> Self {
-        let mut payload = [0u8; 14];
-        payload[0..2].copy_from_slice(&value.to_le_bytes());
-        Self {
-            vtype: VarType::Integer,
-            payload,
-        }
+        let mut bytes = [0u8; 8];
+        bytes[0..2].copy_from_slice(&value.to_le_bytes());
+        Self::from_bytes(VarType::Integer, bytes)
     }
 
     pub fn as_i16(&self) -> Option<i16> {
         if self.vtype != VarType::Integer {
             return None;
         }
-        Some(i16::from_le_bytes([self.payload[0], self.payload[1]]))
+        let bytes = self.data_bytes();
+        Some(i16::from_le_bytes([bytes[0], bytes[1]]))
     }
 
     pub fn from_i32(value: i32) -> Self {
-        let mut payload = [0u8; 14];
-        payload[0..4].copy_from_slice(&value.to_le_bytes());
-        Self {
-            vtype: VarType::Long,
-            payload,
-        }
+        let mut bytes = [0u8; 8];
+        bytes[0..4].copy_from_slice(&value.to_le_bytes());
+        Self::from_bytes(VarType::Long, bytes)
     }
 
     pub fn as_i32(&self) -> Option<i32> {
         if self.vtype != VarType::Long {
             return None;
         }
-        Some(i32::from_le_bytes([
-            self.payload[0],
-            self.payload[1],
-            self.payload[2],
-            self.payload[3],
-        ]))
+        let bytes = self.data_bytes();
+        Some(i32::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]))
     }
 
     pub fn from_f64(value: f64) -> Self {
-        let mut payload = [0u8; 14];
-        payload[0..8].copy_from_slice(&value.to_le_bytes());
-        Self {
-            vtype: VarType::Double,
-            payload,
-        }
+        Self::from_bytes(VarType::Double, value.to_le_bytes())
     }
 
     pub fn as_f64(&self) -> Option<f64> {
         if self.vtype != VarType::Double {
             return None;
         }
-        Some(f64::from_le_bytes([
-            self.payload[0],
-            self.payload[1],
-            self.payload[2],
-            self.payload[3],
-            self.payload[4],
-            self.payload[5],
-            self.payload[6],
-            self.payload[7],
-        ]))
+        Some(f64::from_le_bytes(self.data_bytes()))
     }
 
     pub fn from_bool(value: bool) -> Self {
-        let mut payload = [0u8; 14];
+        let mut bytes = [0u8; 8];
         let vb_bool: i16 = if value { -1 } else { 0 };
-        payload[0..2].copy_from_slice(&vb_bool.to_le_bytes());
-        Self {
-            vtype: VarType::Boolean,
-            payload,
-        }
+        bytes[0..2].copy_from_slice(&vb_bool.to_le_bytes());
+        Self::from_bytes(VarType::Boolean, bytes)
     }
 
     pub fn as_bool(&self) -> Option<bool> {
         if self.vtype != VarType::Boolean {
             return None;
         }
-        let v = i16::from_le_bytes([self.payload[0], self.payload[1]]);
+        let bytes = self.data_bytes();
+        let v = i16::from_le_bytes([bytes[0], bytes[1]]);
         Some(v != 0)
-    }
-
-    pub fn from_inline_ascii(value: &str) -> Option<Self> {
-        if value.len() > 14 || !value.is_ascii() {
-            return None;
-        }
-
-        let mut payload = [0u8; 14];
-        payload[..value.len()].copy_from_slice(value.as_bytes());
-        Some(Self {
-            vtype: VarType::String,
-            payload,
-        })
-    }
-
-    pub fn as_inline_ascii(&self) -> Option<String> {
-        if self.vtype != VarType::String {
-            return None;
-        }
-
-        let len = self.payload.iter().position(|b| *b == 0).unwrap_or(14);
-        let bytes = &self.payload[..len];
-        String::from_utf8(bytes.to_vec()).ok()
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{VarType, Variant};
+    use super::{VarType, Variant, VariantData};
 
     #[test]
     fn numeric_roundtrip() {
@@ -161,10 +166,9 @@ mod tests {
     }
 
     #[test]
-    fn inline_ascii_sso_roundtrip() {
-        let v = Variant::from_inline_ascii("A1").expect("short ascii should fit");
-        assert_eq!(v.vtype, VarType::String);
-        assert_eq!(v.as_inline_ascii().as_deref(), Some("A1"));
+    fn com_variant_layout_shape() {
+        assert_eq!(core::mem::size_of::<Variant>(), 16);
+        assert_eq!(core::mem::size_of::<VariantData>(), 8);
     }
 }
 
@@ -174,10 +178,7 @@ mod kani_proofs {
     use super::Variant;
 
     #[kani::proof]
-    fn sso_threshold_proof() {
-        let short = Variant::from_inline_ascii("12345678901234");
-        let long = Variant::from_inline_ascii("123456789012345");
-        assert!(short.is_some());
-        assert!(long.is_none());
+    fn com_variant_layout_is_16_bytes() {
+        assert_eq!(core::mem::size_of::<Variant>(), 16);
     }
 }

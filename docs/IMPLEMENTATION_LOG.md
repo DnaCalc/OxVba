@@ -4,7 +4,7 @@
 - Bootstrapped full Cargo workspace and crate boundaries.
 - Added baseline CI, meta-check scripts, and core docs.
 - Implemented first executable runtime primitives:
-  - 16-byte `Variant` container with typed helpers.
+  - `Variant` container scaffold with typed helpers.
   - Basic coercion and arithmetic paths.
 - Added baseline unit tests across syntax/compiler/host/runtime.
 - Added initial decision-table CSV scaffolds in `tables/`.

@@ -307,54 +307,54 @@ This is the last representation before target-specific lowering.
 
 ### 2.3 Key Types: Variant
 
-The `Variant` type is the most performance-critical data structure in the entire engine. Every VBA value passes through Variant. Its representation must balance memory efficiency, type-dispatch speed, and COM ABI compatibility.
+The `Variant` type is the most performance-critical data structure in the engine. Every VBA value passes through it, and correctness depends on matching VBA/COM semantics exactly.
 
-**Design: 16-byte (128-bit) cache-optimal tagged union**
+**Design decision: use COM `VARIANT` layout as the canonical runtime representation**
 
-The baseline 24-byte `repr(C)` layout places approximately 2.6 Variants per 64-byte cache line, causing false-sharing penalties and degraded spatial locality during intensive mathematical loops. The MACH-1000 layout fits exactly **4 Variants per cache line**.
+OxVBA keeps the official `VARIANT` field structure and ABI layout (same `vt` + reserved words + union data model used by COM). This preserves blittable interop expectations and avoids internal/external representation drift.
 
 ```rust
-#[repr(C, align(16))]
+#[repr(C)]
 pub struct Variant {
-    vtype: VarType,         // u16 discriminant (bytes 0–1, COM VARENUM compatible)
-    payload: [u8; 14],      // type-specific data (bytes 2–15)
+    vt: u16,           // VARENUM
+    reserved1: u16,
+    reserved2: u16,
+    reserved3: u16,
+    data: VariantData, // COM union payload
 }
 ```
 
-**Why not NaN-boxing:** NaN-boxing exploits IEEE-754 NaN payload bits (~51 usable bits) to store type tags and pointers. While effective for languages with limited type universes (Lua, JavaScript), it cannot represent VBA's `Decimal` type which requires a 96-bit integer plus scale and sign — far exceeding 51 bits. The 128-bit tagged scheme is the correct answer for VBA.
+**Supported variant types (canonical COM semantics):**
 
-**Supported variant types:**
-
-| VarType | Bytes 0–1 (`VARENUM`) | Bytes 2–15 (payload) | Notes |
+| VarType | `VARENUM` | Payload model | Notes |
 |---|---:|---|---|
-| `Empty` | `0x0000` | (unused) | Uninitialized |
-| `Null` | `0x0001` | (unused) | SQL Null semantics |
-| `Integer` | `0x0002` | `i16` + 12 padding | |
-| `Long` | `0x0003` | `i32` + 10 padding | |
-| `Single` | `0x0004` | `f32` + 10 padding | |
-| `Double` | `0x0005` | `f64` + 6 padding | 8-byte aligned |
-| `Currency` | `0x0006` | `i64` (scaled ×10⁴) + 6 padding | |
-| `Date` | `0x0007` | `f64` (OLE date) + 6 padding | |
-| `String` | `0x0008` | 14-byte inline (SSO) or `*mut BStr` | SSO for strings ≤14 bytes |
-| `Object` | `0x0009` | `*mut ComObject` + 6 metadata | Pointer provenance preserved |
-| `Error` | `0x000A` | `i32` error code + 10 padding | |
-| `Boolean` | `0x000B` | `i16` (0/−1) + 12 padding | |
-| `Decimal` | `0x000E` | 12-byte integer + 2-byte scale/sign | Exact fit, no padding |
-| `Byte` | `0x0011` | `u8` + 13 padding | |
-| `LongLong` | `0x0014` | `i64` + 6 padding | |
-| `LongPtr` | — | `isize` + platform-dependent padding | Pointer-sized integer |
-| `Array` | flag `0x2000` | `*mut SafeArray` | ORed with element type |
-| `ByRef` | flag `0x4000` | `*mut Variant` | ORed with referent type |
+| `Empty` | `0x0000` | none | Uninitialized |
+| `Null` | `0x0001` | none | SQL Null semantics |
+| `Integer` | `0x0002` | `i16` in union | |
+| `Long` | `0x0003` | `i32` in union | |
+| `Single` | `0x0004` | `f32` in union | |
+| `Double` | `0x0005` | `f64` in union | |
+| `Currency` | `0x0006` | `CY`/scaled `i64` | |
+| `Date` | `0x0007` | `DATE`/`f64` | |
+| `String` | `0x0008` | `BSTR` pointer | |
+| `Object` | `0x0009` | COM interface pointer | |
+| `Error` | `0x000A` | `SCODE`/`i32` | |
+| `Boolean` | `0x000B` | `VARIANT_BOOL` (`0` / `-1`) | |
+| `Decimal` | `0x000E` | COM decimal overlay rules | |
+| `Byte` | `0x0011` | `u8` in union | |
+| `LongLong` | `0x0014` | `i64` in union | |
+| `LongPtr` | platform | pointer-sized integer | |
+| `Array` | flag `0x2000` | SAFEARRAY pointer | ORed with element type |
+| `ByRef` | flag `0x4000` | by-ref pointer | ORed with referent type |
 
-**Small-string optimization (SSO):** The 14-byte payload accommodates inline storage for strings up to 14 bytes (7 BMP characters in UTF-16, or 14 ASCII bytes). When the string exceeds this threshold, the payload stores a heap pointer to a `BStr`. The vast majority of VBA string temporaries (cell references like `"A1"`, short labels, error strings) fit inline, eliminating heap allocation for the common case.
+**Optional future optimization (explicitly non-canonical):**
 
-**COM ABI bridging:** The 16-byte internal layout is not ABI-compatible with the Windows `VARIANT` struct (which is 16 bytes but with different field offsets including 6 bytes of reserved padding). At COM boundaries (and only there), Variants are converted to/from the COM layout. This cost is paid once per boundary crossing, not in the hot inner loops where cache-line packing matters.
+We may introduce an alternative internal Variant representation for hot paths only (for example compact 8-byte immediate forms, short-string embedding, indirection for long contents) if and only if benchmark evidence justifies it.
 
-Design rationale:
-- 16 bytes = exactly 4 per 64-byte cache line. Tight packing enables aggressive vectorization on arrays of Variant.
-- `Decimal` (the largest inline value) fits exactly: 12-byte integer + 2-byte scale/sign = 14 bytes payload.
-- The `vtype` field uses COM-compatible `VARENUM` discriminant values for semantic compatibility even though the physical layout differs.
-- SSO eliminates the #1 source of heap allocation in typical VBA code.
+If introduced:
+- it remains an internal optimization layer, not the canonical public/runtime `VARIANT`,
+- boundary marshalling must be deterministic and lossless,
+- formal/conformance evidence must prove semantic equivalence at representation boundaries.
 
 ### 2.4 Memory Management
 
@@ -514,8 +514,8 @@ Kani provides bounded model checking for Rust code, particularly critical for pr
 
 | Target | What Kani proves |
 |---|---|
-| 16-byte Variant union | Loads and stores through the tagged union never misalign or violate invariants for any `VarType` discriminant. Padding bytes are never read as meaningful data. |
-| SSO string threshold | The inline/heap decision boundary is correct: strings ≤14 bytes are always stored inline; strings >14 bytes always use heap pointers. No off-by-one. |
+| COM `VARIANT` layout invariants | `vt`/reserved/data fields remain ABI-compatible; union reads/writes preserve alignment/provenance and valid `VARENUM` handling. |
+| Variant boundary marshalling (if alt internal repr enabled) | Internal compact representation roundtrips losslessly to canonical COM `VARIANT` at all boundaries. |
 | Broadword decoder masks | The SWAR bitmasks cannot mis-detect an opcode byte under any 64-bit input word. No false positives, no false negatives. |
 | Register-window bounds | The sliding register window never reads or writes beyond the allocated register file. Spill/fill operations preserve all values. Window shift on call/return is always within bounds. |
 | Boundary-tag allocator | No overlapping live blocks. Coalescing never corrupts adjacent blocks. Free-list invariants hold after every operation sequence (up to bounded depth). |
@@ -960,7 +960,7 @@ OxVba/
 │   │   ├── Cargo.toml
 │   │   └── src/
 │   │       ├── lib.rs                  # Public API: Variant, VarType, coerce, builtins
-│   │       ├── variant.rs              # 16-byte Variant type with SSO
+│   │       ├── variant.rs              # COM-compatible Variant (`VARIANT`) representation
 │   │       ├── coerce.rs               # Type coercion logic (driven by decision tables)
 │   │       ├── arithmetic.rs           # Variant arithmetic (driven by decision tables)
 │   │       ├── bstr.rs                 # VBA string type (BSTR-compatible)
@@ -1054,7 +1054,7 @@ OxVba/
 │   ├── BUILDING.md                     # Build and development setup
 │   ├── CONTRIBUTING.md                 # Contribution guidelines
 │   ├── MACH1000_PLAN_REFINEMENT_20260226.md  # Refinement proposal input for synthesis
-│   ├── VARIANT_DESIGN.md              # 16-byte Variant design with SSO and NaN-boxing analysis
+│   ├── VARIANT_DESIGN.md              # VARIANT layout and optional internal-repr optimization notes
 │   ├── COM_ABSTRACTION.md             # COM layer design
 │   ├── BYTECODE_FORMAT.md             # Register bytecode instruction set reference
 │   ├── IR_DESIGN.md                   # Multi-level IR design (VbaHir/VbaMir/CfgIr)
@@ -1189,14 +1189,14 @@ Initial policy:
 - Dependencies: Phase 0
 - Parallelizable tracks: observation harness, decision table generation, Lean specs
 - Work:
-- Implement 16-byte `Variant`, SSO, coercion/arithmetic tables, `BStr`, `SafeArray`, `Decimal`.
+- Implement COM `VARIANT`-compatible `Variant`, coercion/arithmetic tables, `BStr`, `SafeArray`, `Decimal`.
 - Implement boundary-tag allocator for VBA heap objects.
 - Build observation harness and generate initial decision tables from Office VBA.
 - Lean 4: formalize `VarType` and `Coerce`.
-- Kani: Variant union access and SSO threshold harnesses.
+- Kani: COM `VARIANT` field/union invariants and boundary marshalling harnesses.
 - Quantitative gate:
 - 100% filled cells for initial coercion/arithmetic decision tables in scope.
-- Kani harnesses for Variant/SSO pass in CI.
+- Kani harnesses for Variant layout/marshalling pass in CI.
 
 ### Phase 3: End-to-End MVP Vertical Slice
 - Primary owner track: Red

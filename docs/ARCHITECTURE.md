@@ -4,7 +4,7 @@
 
 Workspace crates:
 - `oxvba-syntax`: tokenization + syntax tree scaffold.
-- `oxvba-runtime`: 16-byte Variant container, basic coercion/arithmetic.
+- `oxvba-runtime`: COM-compatible `VARIANT` container scaffold, basic coercion/arithmetic.
 - `oxvba-ir`: HIR/MIR/CFG structures and lowering scaffolds.
 - `oxvba-compiler`: resolve/typecheck/lower/emit scaffold with rkyv bytecode object.
 - `oxvba-vm`: register-file VM scaffold for instruction execution.
