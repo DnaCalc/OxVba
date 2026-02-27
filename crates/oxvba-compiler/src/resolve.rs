@@ -15,6 +15,7 @@ pub enum BoundStmt {
     IfCond {
         cond: BoundCond,
         then_body: Vec<BoundStmt>,
+        else_body: Vec<BoundStmt>,
     },
     ForRange {
         var: String,
@@ -164,15 +165,23 @@ fn parse_if_stmt(
     };
 
     *index += 1;
-    let then_body = parse_block(lines, index, declarations, option_explicit, &["end if"]);
+    let then_body = parse_block(
+        lines,
+        index,
+        declarations,
+        option_explicit,
+        &["elseif", "else", "end if"],
+    );
+    let Some(else_body) = parse_if_tail(lines, index, declarations, option_explicit) else {
+        return BoundStmt::Unsupported {
+            line: line.to_string(),
+        };
+    };
 
-    if *index < lines.len() && lines[*index].eq_ignore_ascii_case("end if") {
-        *index += 1;
-        return BoundStmt::IfCond { cond, then_body };
-    }
-
-    BoundStmt::Unsupported {
-        line: line.to_string(),
+    BoundStmt::IfCond {
+        cond,
+        then_body,
+        else_body,
     }
 }
 
@@ -345,10 +354,62 @@ fn matches_terminator(lower_line: &str, terminators: &[&str]) -> bool {
     terminators.iter().any(|term| {
         if *term == "next" {
             lower_line == "next" || lower_line.starts_with("next ")
+        } else if *term == "elseif" {
+            lower_line.starts_with("elseif ")
         } else {
             lower_line == *term
         }
     })
+}
+
+fn parse_if_tail(
+    lines: &[String],
+    index: &mut usize,
+    declarations: &mut Vec<String>,
+    option_explicit: &mut bool,
+) -> Option<Vec<BoundStmt>> {
+    if *index >= lines.len() {
+        return None;
+    }
+
+    let line = lines[*index].as_str();
+    let lower = line.to_ascii_lowercase();
+
+    if lower == "end if" {
+        *index += 1;
+        return Some(Vec::new());
+    }
+
+    if lower == "else" {
+        *index += 1;
+        let else_body = parse_block(lines, index, declarations, option_explicit, &["end if"]);
+        if *index < lines.len() && lines[*index].eq_ignore_ascii_case("end if") {
+            *index += 1;
+            return Some(else_body);
+        }
+        return None;
+    }
+
+    if lower.starts_with("elseif ") && lower.ends_with(" then") {
+        let condition = line[6..line.len() - 4].trim();
+        let cond = parse_condition(condition)?;
+        *index += 1;
+        let then_body = parse_block(
+            lines,
+            index,
+            declarations,
+            option_explicit,
+            &["elseif", "else", "end if"],
+        );
+        let nested_else = parse_if_tail(lines, index, declarations, option_explicit)?;
+        return Some(vec![BoundStmt::IfCond {
+            cond,
+            then_body,
+            else_body: nested_else,
+        }]);
+    }
+
+    None
 }
 
 fn split_ci<'a>(text: &'a str, marker: &str) -> Option<(&'a str, &'a str)> {
@@ -442,5 +503,15 @@ mod tests {
                 ..
             }
         ));
+    }
+
+    #[test]
+    fn resolve_if_else_if_else_chain() {
+        let source = "Sub Main()\nDim x\nIf x = 1 Then\nx = 2\nElseIf x = 2 Then\nx = 3\nElse\nx = 4\nEnd If\nEnd Sub";
+        let module = resolve_symbols(source);
+        let Some(BoundStmt::IfCond { else_body, .. }) = module.body.first() else {
+            panic!("expected if");
+        };
+        assert!(!else_body.is_empty());
     }
 }

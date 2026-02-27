@@ -27,6 +27,21 @@ This inventory tracks formal artifacts and proof-adjacent harnesses by profile.
   - Artifact: `crates/oxvba-vm/src/interpreter.rs`
   - Harness: `comparator_ops_produce_boolean_values`
 
+## v5 (`mvp-else-paths-v5`)
+
+- FO-V5-001
+  - Area: branch totality
+  - Artifact: `crates/oxvba-host/src/engine.rs`
+  - Harness: `formal_v5_branch_selection_is_total_over_small_domain`
+- FO-V5-002
+  - Area: branch model equivalence
+  - Artifact: `crates/oxvba-host/src/engine.rs`
+  - Harness: `formal_v5_branch_selection_matches_reference_model`
+- FO-V5-003
+  - Area: single-path write effect
+  - Artifact: `crates/oxvba-host/src/engine.rs`
+  - Harness: `formal_v5_no_dual_branch_write_effect`
+
 ## Reports
 
 - Latest markdown report: `docs/evidence/formal/latest_run.md`

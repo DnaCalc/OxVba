@@ -69,3 +69,9 @@
   - Added VM opcode handling for comparison/boolean operations.
   - Added conformance fixtures for relational/boolean condition paths.
   - Added formal obligation `FO-V4-001` for comparator output invariants.
+- Started `mvp-else-paths-v5` semantics pass:
+  - Added `Else` and `ElseIf` chain support in resolver/typecheck/emitter.
+  - Added conformance fixtures for else-path selection.
+  - Added executable formal model checks (`FO-V5-001..003`) for branch determinism/equivalence.
+  - Hardened conformance runner to classify command outcomes by `LASTEXITCODE` across shell modes.
+  - Kept explicit JIT fallback notice while moving it to stdout so matrix `jit` runs remain green.

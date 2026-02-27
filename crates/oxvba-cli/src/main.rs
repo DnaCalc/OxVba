@@ -4,7 +4,7 @@ use std::{env, fs};
 fn main() {
     let args = parse_run_args();
     if args.as_ref().map(|a| a.enable_jit).unwrap_or(false) {
-        eprintln!(
+        println!(
             "oxvba: notice: --jit requested, but JIT execution is not active yet; running VM path"
         );
     }

@@ -1,5 +1,5 @@
 param(
-    [string]$ProfileScope = "mvp-boolean-logic-v4",
+    [string]$ProfileScope = "mvp-else-paths-v5",
     [string]$ReportPath = "docs/evidence/formal/latest_run.md",
     [string]$ReportCsvPath = "docs/evidence/formal/latest_run.csv",
     [string]$ObligationsPath = "docs/evidence/formal/obligations.csv"
@@ -47,21 +47,27 @@ foreach ($entry in $allObligations) {
 }
 
 $rows = @()
-$cargoKaniAvailable = $true
+$cargoKaniAvailable = $false
 $cargoKaniVersion = ""
 try {
-    $cargoKaniVersion = (& cargo kani --version) -join " "
+    $cargoKaniVersion = (& cargo kani --version 2>$null) -join " "
+    if ($LASTEXITCODE -eq 0 -and -not [string]::IsNullOrWhiteSpace($cargoKaniVersion)) {
+        $cargoKaniAvailable = $true
+    }
 }
 catch {
     $cargoKaniAvailable = $false
 }
 
 foreach ($obligation in $obligations) {
-    if (-not $cargoKaniAvailable) {
+    $command = $obligation.command
+    $isKaniCommand = $command.Trim().ToLowerInvariant().StartsWith("cargo kani")
+
+    if ($isKaniCommand -and -not $cargoKaniAvailable) {
         $rows += [PSCustomObject]@{
             obligation = $obligation.obligation_id
             profile = $obligation.profile
-            command = $obligation.command
+            command = $command
             blocking = $obligation.blocking
             status = "skipped"
             note = "cargo-kani not available"
@@ -71,11 +77,14 @@ foreach ($obligation in $obligations) {
     }
 
     try {
-        Invoke-Expression $obligation.command | Out-Null
+        Invoke-Expression $command | Out-Null
+        if ($LASTEXITCODE -ne 0) {
+            throw "command exited with code $LASTEXITCODE"
+        }
         $rows += [PSCustomObject]@{
             obligation = $obligation.obligation_id
             profile = $obligation.profile
-            command = $obligation.command
+            command = $command
             blocking = $obligation.blocking
             status = "pass"
             note = ""
@@ -86,7 +95,7 @@ foreach ($obligation in $obligations) {
         $rows += [PSCustomObject]@{
             obligation = $obligation.obligation_id
             profile = $obligation.profile
-            command = $obligation.command
+            command = $command
             blocking = $obligation.blocking
             status = "todo"
             note = ($_.Exception.Message -replace "\|", "/")

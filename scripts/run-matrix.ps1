@@ -1,6 +1,6 @@
 param(
-    [string]$ProfileScope = "mvp-boolean-logic-v4",
-    [string]$OutputDir = "docs/evidence/profiles/v4",
+    [string]$ProfileScope = "mvp-else-paths-v5",
+    [string]$OutputDir = "docs/evidence/profiles/v5",
     [string]$OutputCsv = "",
     [string]$SummaryPath = ""
 )
@@ -28,7 +28,15 @@ if (-not (Test-Path $summaryDir)) {
     New-Item -ItemType Directory -Path $summaryDir -Force | Out-Null
 }
 
-$osName = if ($IsWindows) { "windows" } elseif ($IsLinux) { "linux" } elseif ($IsMacOS) { "macos" } else { "unknown" }
+$osName = if ($env:OS -eq "Windows_NT") {
+    "windows"
+} elseif ($IsLinux) {
+    "linux"
+} elseif ($IsMacOS) {
+    "macos"
+} else {
+    "unknown"
+}
 $arch = [System.Runtime.InteropServices.RuntimeInformation]::ProcessArchitecture.ToString().ToLowerInvariant()
 $timestampUtc = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
 $backends = @("vm", "jit")

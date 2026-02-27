@@ -3,6 +3,9 @@ for_basic.bas,ok,"6,4"
 for_zero_iter.bas,ok,"5,5"
 if_false.bas,ok,0
 if_and.bas,ok,7
+if_else_path.bas,ok,20
+if_elseif_else_path.bas,ok,99
+if_elseif_path.bas,ok,30
 if_ge.bas,ok,5
 if_lt.bas,ok,4
 if_neq.bas,ok,11

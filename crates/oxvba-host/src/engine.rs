@@ -93,4 +93,53 @@ mod tests {
             .expect("execution should succeed");
         assert_eq!(snapshot, vec![16]);
     }
+
+    #[test]
+    fn formal_v5_branch_selection_is_total_over_small_domain() {
+        let engine = Engine::new(HostConfig::default());
+        for input in -4..=4 {
+            let source = format!(
+                "Sub Main()\nDim x\nx = {input}\nIf x = 1 Then\nx = 10\nElseIf x = 2 Then\nx = 20\nElse\nx = 30\nEnd If\nEnd Sub"
+            );
+            let snapshot = engine
+                .execute_source_with_snapshot(&source)
+                .expect("execution should succeed");
+            assert!(matches!(snapshot[0], 10 | 20 | 30));
+        }
+    }
+
+    #[test]
+    fn formal_v5_branch_selection_matches_reference_model() {
+        let engine = Engine::new(HostConfig::default());
+        for input in -6..=6 {
+            let expected = if input == 1 {
+                10
+            } else if input == 2 {
+                20
+            } else {
+                30
+            };
+            let source = format!(
+                "Sub Main()\nDim x\nx = {input}\nIf x = 1 Then\nx = 10\nElseIf x = 2 Then\nx = 20\nElse\nx = 30\nEnd If\nEnd Sub"
+            );
+            let snapshot = engine
+                .execute_source_with_snapshot(&source)
+                .expect("execution should succeed");
+            assert_eq!(snapshot[0], expected);
+        }
+    }
+
+    #[test]
+    fn formal_v5_no_dual_branch_write_effect() {
+        let engine = Engine::new(HostConfig::default());
+        for input in -3..=3 {
+            let source = format!(
+                "Sub Main()\nDim x\nDim y\nx = {input}\ny = 0\nIf x = 1 Then\ny = y + 1\nElseIf x = 2 Then\ny = y + 10\nElse\ny = y + 100\nEnd If\nEnd Sub"
+            );
+            let snapshot = engine
+                .execute_source_with_snapshot(&source)
+                .expect("execution should succeed");
+            assert!(matches!(snapshot[1], 1 | 10 | 100));
+        }
+    }
 }

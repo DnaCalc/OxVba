@@ -37,9 +37,14 @@ fn check_stmt(
             ensure_declared(target, option_explicit, declared, declarations)?;
             check_expr(expr, option_explicit, declared, declarations)
         }
-        BoundStmt::IfCond { cond, then_body } => {
+        BoundStmt::IfCond {
+            cond,
+            then_body,
+            else_body,
+        } => {
             check_condition(cond, option_explicit, declared, declarations)?;
-            check_stmt_list(then_body, option_explicit, declared, declarations)
+            check_stmt_list(then_body, option_explicit, declared, declarations)?;
+            check_stmt_list(else_body, option_explicit, declared, declarations)
         }
         BoundStmt::ForRange {
             var,

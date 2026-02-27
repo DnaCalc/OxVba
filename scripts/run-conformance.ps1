@@ -5,7 +5,7 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
-$PSNativeCommandUseErrorActionPreference = $true
+$PSNativeCommandUseErrorActionPreference = $false
 
 $testsDir = "conformance/tests"
 $goldenFile = "conformance/golden/smoke.csv"
@@ -28,15 +28,23 @@ Get-ChildItem -Path $testsDir -Filter *.bas | Sort-Object Name | ForEach-Object 
     $status = "ok"
     $slots = ""
 
+    $output = ""
     try {
-        $output = cargo run -q -p oxvba-cli -- run $_.FullName --dump-slots @backendArgs | Out-String
+        $output = & cargo run -q -p oxvba-cli -- run $_.FullName --dump-slots @backendArgs 2>$null | Out-String
+    }
+    catch {
+        $status = "error"
+    }
+
+    if ($status -eq "ok" -and $LASTEXITCODE -ne 0) {
+        $status = "error"
+    }
+
+    if ($status -eq "ok") {
         $slotLine = ($output -split "`r?`n" | Where-Object { $_ -like "SLOTS:*" } | Select-Object -Last 1)
         if ($slotLine) {
             $slots = $slotLine.Substring(6)
         }
-    }
-    catch {
-        $status = "error"
     }
 
     $results += [PSCustomObject]@{ file = $name; status = $status; slots = $slots }

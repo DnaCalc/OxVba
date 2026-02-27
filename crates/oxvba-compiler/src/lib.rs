@@ -158,4 +158,22 @@ mod tests {
                 .any(|i| matches!(i, Instruction::Jump { .. }))
         );
     }
+
+    #[test]
+    fn compile_if_else_if_else_emits_chain_jumps() {
+        let source = "Sub Main()\nDim x\nx = 2\nIf x = 1 Then\nx = 10\nElseIf x = 2 Then\nx = 20\nElse\nx = 30\nEnd If\nEnd Sub";
+        let out = compile(source).expect("compile should succeed");
+        let jump_if_count = out
+            .instructions
+            .iter()
+            .filter(|i| matches!(i, Instruction::JumpIfZero { .. }))
+            .count();
+        let jump_count = out
+            .instructions
+            .iter()
+            .filter(|i| matches!(i, Instruction::Jump { .. }))
+            .count();
+        assert!(jump_if_count >= 2);
+        assert!(jump_count >= 2);
+    }
 }

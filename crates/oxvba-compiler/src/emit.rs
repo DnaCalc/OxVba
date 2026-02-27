@@ -47,7 +47,11 @@ fn emit_stmt(
                 emit_expr_into(expr, target_slot, slot_map, instructions);
             }
         }
-        BoundStmt::IfCond { cond, then_body } => {
+        BoundStmt::IfCond {
+            cond,
+            then_body,
+            else_body,
+        } => {
             let cond_slot = temps.alloc_temp();
             emit_cond_into(cond, cond_slot, slot_map, temps, instructions);
             let jump_patch = instructions.len();
@@ -56,9 +60,23 @@ fn emit_stmt(
                 target_pc: 0,
             });
             emit_stmt_list(then_body, slot_map, temps, instructions);
-            let target = instructions.len();
-            if let Instruction::JumpIfZero { target_pc, .. } = &mut instructions[jump_patch] {
-                *target_pc = target;
+            if else_body.is_empty() {
+                let target = instructions.len();
+                if let Instruction::JumpIfZero { target_pc, .. } = &mut instructions[jump_patch] {
+                    *target_pc = target;
+                }
+            } else {
+                let end_patch = instructions.len();
+                instructions.push(Instruction::Jump { target_pc: 0 });
+                let else_target = instructions.len();
+                if let Instruction::JumpIfZero { target_pc, .. } = &mut instructions[jump_patch] {
+                    *target_pc = else_target;
+                }
+                emit_stmt_list(else_body, slot_map, temps, instructions);
+                let end_target = instructions.len();
+                if let Instruction::Jump { target_pc } = &mut instructions[end_patch] {
+                    *target_pc = end_target;
+                }
             }
         }
         BoundStmt::ForRange {

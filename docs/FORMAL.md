@@ -15,6 +15,9 @@ Current files:
 ## Kani scaffold
 Kani harness placeholders are introduced in runtime and VM code under `#[cfg(kani)]` blocks and expanded as unsafe-heavy paths mature.
 
+## Executable formal model checks
+Profile-scoped formal obligations may also run as deterministic, reduced-domain model checks via `cargo test` when external provers are unavailable. These are tracked in the same obligation manifest and reported by the formal runner.
+
 ## Formal tracking
 - Manifest: `docs/evidence/formal/MANIFEST.md`
 - Obligation index (machine-readable): `docs/evidence/formal/obligations.csv`
