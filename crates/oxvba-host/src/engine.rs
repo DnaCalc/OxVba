@@ -243,4 +243,34 @@ mod tests {
             .expect("execution should succeed");
         assert_eq!(snapshot[0], 1);
     }
+
+    #[test]
+    fn formal_v9_byval_does_not_propagate_mutation() {
+        let engine = Engine::new(HostConfig::default());
+        let source = "Sub Main()\nDim x\nx = 1\nCall AddOne(x)\nEnd Sub\nSub AddOne(ByVal a)\na = a + 1\nEnd Sub";
+        let snapshot = engine
+            .execute_source_with_snapshot(source)
+            .expect("execution should succeed");
+        assert_eq!(snapshot[0], 1);
+    }
+
+    #[test]
+    fn formal_v9_byref_propagates_mutation() {
+        let engine = Engine::new(HostConfig::default());
+        let source = "Sub Main()\nDim x\nx = 1\nCall AddOne(x)\nEnd Sub\nSub AddOne(ByRef a)\na = a + 1\nEnd Sub";
+        let snapshot = engine
+            .execute_source_with_snapshot(source)
+            .expect("execution should succeed");
+        assert_eq!(snapshot[0], 2);
+    }
+
+    #[test]
+    fn formal_v9_byref_requires_variable_argument() {
+        let engine = Engine::new(HostConfig::default());
+        let source = "Sub Main()\nCall AddOne(1)\nEnd Sub\nSub AddOne(ByRef a)\na = a + 1\nEnd Sub";
+        let err = engine
+            .execute_source_with_snapshot(source)
+            .expect_err("byref constant argument should fail");
+        assert!(err.contains("ByRef"));
+    }
 }

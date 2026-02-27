@@ -2,13 +2,22 @@ use std::collections::HashMap;
 
 use crate::{
     bytecode::{Bytecode, Instruction},
-    resolve::{BoundCond, BoundExpr, BoundModule, BoundProcedure, BoundStmt, CompareOp},
+    resolve::{
+        BoundCond, BoundExpr, BoundModule, BoundParam, BoundProcedure, BoundStmt, CompareOp,
+    },
 };
+
+#[derive(Debug, Clone)]
+struct EmitProcMeta {
+    params: Vec<BoundParam>,
+    slots: HashMap<String, usize>,
+}
 
 pub fn emit_bytecode(module: &BoundModule) -> Bytecode {
     let procedures = if module.procedures.is_empty() {
         vec![BoundProcedure {
             name: "main".to_string(),
+            params: Vec::new(),
             declarations: module.declarations.clone(),
             body: module.body.clone(),
         }]
@@ -37,6 +46,16 @@ pub fn emit_bytecode(module: &BoundModule) -> Bytecode {
     let mut loop_exit_stack: Vec<Vec<usize>> = Vec::new();
     let mut call_patches: Vec<(usize, String)> = Vec::new();
     let mut proc_labels: HashMap<String, usize> = HashMap::new();
+    let mut proc_meta: HashMap<String, EmitProcMeta> = HashMap::new();
+    for (idx, proc) in procedures.iter().enumerate() {
+        proc_meta.insert(
+            proc.name.clone(),
+            EmitProcMeta {
+                params: proc.params.clone(),
+                slots: proc_slots[idx].clone(),
+            },
+        );
+    }
     proc_labels.insert(procedures[entry_idx].name.clone(), 0);
 
     emit_stmt_list(
@@ -46,6 +65,7 @@ pub fn emit_bytecode(module: &BoundModule) -> Bytecode {
         &mut instructions,
         &mut loop_exit_stack,
         &mut call_patches,
+        &proc_meta,
     );
     instructions.push(Instruction::Halt);
 
@@ -61,6 +81,7 @@ pub fn emit_bytecode(module: &BoundModule) -> Bytecode {
             &mut instructions,
             &mut loop_exit_stack,
             &mut call_patches,
+            &proc_meta,
         );
         instructions.push(Instruction::Return);
     }
@@ -87,6 +108,7 @@ fn emit_stmt_list(
     instructions: &mut Vec<Instruction>,
     loop_exit_stack: &mut Vec<Vec<usize>>,
     call_patches: &mut Vec<(usize, String)>,
+    proc_meta: &HashMap<String, EmitProcMeta>,
 ) {
     for stmt in stmts {
         emit_stmt(
@@ -96,6 +118,7 @@ fn emit_stmt_list(
             instructions,
             loop_exit_stack,
             call_patches,
+            proc_meta,
         );
     }
 }
@@ -107,6 +130,7 @@ fn emit_stmt(
     instructions: &mut Vec<Instruction>,
     loop_exit_stack: &mut Vec<Vec<usize>>,
     call_patches: &mut Vec<(usize, String)>,
+    proc_meta: &HashMap<String, EmitProcMeta>,
 ) {
     match stmt {
         BoundStmt::Assign { target, expr } => {
@@ -133,6 +157,7 @@ fn emit_stmt(
                 instructions,
                 loop_exit_stack,
                 call_patches,
+                proc_meta,
             );
             if else_body.is_empty() {
                 let target = instructions.len();
@@ -153,6 +178,7 @@ fn emit_stmt(
                     instructions,
                     loop_exit_stack,
                     call_patches,
+                    proc_meta,
                 );
                 let end_target = instructions.len();
                 if let Instruction::Jump { target_pc } = &mut instructions[end_patch] {
@@ -190,6 +216,7 @@ fn emit_stmt(
                     instructions,
                     loop_exit_stack,
                     call_patches,
+                    proc_meta,
                 );
                 instructions.push(Instruction::IncSlot { slot: var_slot });
                 instructions.push(Instruction::Jump {
@@ -228,6 +255,7 @@ fn emit_stmt(
                 instructions,
                 loop_exit_stack,
                 call_patches,
+                proc_meta,
             );
 
             emit_cond_into(cond, cond_slot, slot_map, temps, instructions);
@@ -312,6 +340,7 @@ fn emit_stmt(
                     instructions,
                     loop_exit_stack,
                     call_patches,
+                    proc_meta,
                 );
                 let end_patch = instructions.len();
                 instructions.push(Instruction::Jump { target_pc: 0 });
@@ -329,6 +358,7 @@ fn emit_stmt(
                 instructions,
                 loop_exit_stack,
                 call_patches,
+                proc_meta,
             );
             let end_target = instructions.len();
             for patch in end_patches {
@@ -337,10 +367,47 @@ fn emit_stmt(
                 }
             }
         }
-        BoundStmt::Call { name } => {
+        BoundStmt::Call { name, args } => {
+            let mut byref_copyback: Vec<(usize, usize)> = Vec::new();
+            if let Some(meta) = proc_meta.get(name) {
+                for (idx, param) in meta.params.iter().enumerate() {
+                    let Some(arg) = args.get(idx) else {
+                        continue;
+                    };
+                    let Some(param_slot) = meta.slots.get(param.name.as_str()).copied() else {
+                        continue;
+                    };
+
+                    if param.by_ref
+                        && let BoundExpr::Var(var_name) = arg
+                        && let Some(src_slot) = slot_map.get(var_name.as_str()).copied()
+                    {
+                        if src_slot != param_slot {
+                            instructions.push(Instruction::CopySlot {
+                                dst: param_slot,
+                                src: src_slot,
+                            });
+                        }
+                        byref_copyback.push((src_slot, param_slot));
+                        continue;
+                    }
+
+                    emit_expr_into(arg, param_slot, slot_map, instructions);
+                }
+            }
+
             let patch_idx = instructions.len();
             instructions.push(Instruction::CallProc { target_pc: 0 });
             call_patches.push((patch_idx, name.clone()));
+
+            for (dst_slot, src_slot) in byref_copyback {
+                if dst_slot != src_slot {
+                    instructions.push(Instruction::CopySlot {
+                        dst: dst_slot,
+                        src: src_slot,
+                    });
+                }
+            }
         }
         BoundStmt::Unsupported { .. } => {}
     }

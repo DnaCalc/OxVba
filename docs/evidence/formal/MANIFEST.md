@@ -30,6 +30,9 @@ Source of truth:
 | FO-V8-001 | v8 (`mvp-procedures-v8`) | Caller return progression | `formal_v8_call_returns_to_caller` | `scripts/run-formal.ps1` | no | todo (pending latest run update) | `docs/evidence/formal/latest_run.md` |
 | FO-V8-002 | v8 (`mvp-procedures-v8`) | Procedure-local slot isolation | `formal_v8_local_scope_isolated_between_procedures` | `scripts/run-formal.ps1` | no | todo (pending latest run update) | `docs/evidence/formal/latest_run.md` |
 | FO-V8-003 | v8 (`mvp-procedures-v8`) | Nested call chain integrity | `formal_v8_nested_call_chain_integrity` | `scripts/run-formal.ps1` | no | todo (pending latest run update) | `docs/evidence/formal/latest_run.md` |
+| FO-V9-001 | v9 (`mvp-params-v9`) | `ByVal` mutation isolation | `formal_v9_byval_does_not_propagate_mutation` | `scripts/run-formal.ps1` | no | todo (pending latest run update) | `docs/evidence/formal/latest_run.md` |
+| FO-V9-002 | v9 (`mvp-params-v9`) | `ByRef` mutation propagation | `formal_v9_byref_propagates_mutation` | `scripts/run-formal.ps1` | no | todo (pending latest run update) | `docs/evidence/formal/latest_run.md` |
+| FO-V9-003 | v9 (`mvp-params-v9`) | `ByRef` argument validity rule | `formal_v9_byref_requires_variable_argument` | `scripts/run-formal.ps1` | no | todo (pending latest run update) | `docs/evidence/formal/latest_run.md` |
 
 ## Policy (current ladder run)
 - Formal runs are required in-cycle for relevant changes.

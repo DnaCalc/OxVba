@@ -15,3 +15,6 @@ FO-V7-003,v7,"cargo test -p oxvba-host formal_v7_select_case_multi_value_arm",no
 FO-V8-001,v8,"cargo test -p oxvba-host formal_v8_call_returns_to_caller",no,true,crates/oxvba-host/src/engine.rs
 FO-V8-002,v8,"cargo test -p oxvba-host formal_v8_local_scope_isolated_between_procedures",no,true,crates/oxvba-host/src/engine.rs
 FO-V8-003,v8,"cargo test -p oxvba-host formal_v8_nested_call_chain_integrity",no,true,crates/oxvba-host/src/engine.rs
+FO-V9-001,v9,"cargo test -p oxvba-host formal_v9_byval_does_not_propagate_mutation",no,true,crates/oxvba-host/src/engine.rs
+FO-V9-002,v9,"cargo test -p oxvba-host formal_v9_byref_propagates_mutation",no,true,crates/oxvba-host/src/engine.rs
+FO-V9-003,v9,"cargo test -p oxvba-host formal_v9_byref_requires_variable_argument",no,true,crates/oxvba-host/src/engine.rs

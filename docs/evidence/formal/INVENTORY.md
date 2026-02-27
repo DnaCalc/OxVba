@@ -87,6 +87,21 @@ This inventory tracks formal artifacts and proof-adjacent harnesses by profile.
   - Artifact: `crates/oxvba-host/src/engine.rs`
   - Harness: `formal_v8_nested_call_chain_integrity`
 
+## v9 (`mvp-params-v9`)
+
+- FO-V9-001
+  - Area: `ByVal` mutation isolation
+  - Artifact: `crates/oxvba-host/src/engine.rs`
+  - Harness: `formal_v9_byval_does_not_propagate_mutation`
+- FO-V9-002
+  - Area: `ByRef` mutation propagation
+  - Artifact: `crates/oxvba-host/src/engine.rs`
+  - Harness: `formal_v9_byref_propagates_mutation`
+- FO-V9-003
+  - Area: `ByRef` argument validity rule
+  - Artifact: `crates/oxvba-host/src/engine.rs`
+  - Harness: `formal_v9_byref_requires_variable_argument`
+
 ## Reports
 
 - Latest markdown report: `docs/evidence/formal/latest_run.md`

@@ -31,6 +31,7 @@ pub enum BoundStmt {
     ExitDo,
     Call {
         name: String,
+        args: Vec<BoundExpr>,
     },
     SelectCase {
         expr: BoundExpr,
@@ -77,8 +78,15 @@ pub struct BoundModule {
 #[derive(Debug, Clone)]
 pub struct BoundProcedure {
     pub name: String,
+    pub params: Vec<BoundParam>,
     pub declarations: Vec<String>,
     pub body: Vec<BoundStmt>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BoundParam {
+    pub name: String,
+    pub by_ref: bool,
 }
 
 pub fn resolve_symbols(source: &str) -> BoundModule {
@@ -109,6 +117,7 @@ pub fn resolve_symbols(source: &str) -> BoundModule {
         );
         vec![BoundProcedure {
             name: "main".to_string(),
+            params: Vec::new(),
             declarations,
             body,
         }]
@@ -123,6 +132,7 @@ pub fn resolve_symbols(source: &str) -> BoundModule {
         .cloned()
         .unwrap_or(BoundProcedure {
             name: "main".to_string(),
+            params: Vec::new(),
             declarations: Vec::new(),
             body: Vec::new(),
         });
@@ -157,13 +167,13 @@ fn parse_procedures(lines: &[String], option_explicit: &mut bool) -> Vec<BoundPr
             continue;
         }
 
-        let Some(name) = parse_proc_name(line, is_function) else {
+        let Some((name, params)) = parse_proc_signature(line, is_function) else {
             index += 1;
             continue;
         };
 
         index += 1;
-        let mut declarations = Vec::new();
+        let mut declarations: Vec<String> = params.iter().map(|p| p.name.clone()).collect();
         let end_term = if is_function {
             "end function"
         } else {
@@ -182,6 +192,7 @@ fn parse_procedures(lines: &[String], option_explicit: &mut bool) -> Vec<BoundPr
 
         procedures.push(BoundProcedure {
             name,
+            params,
             declarations,
             body,
         });
@@ -190,17 +201,45 @@ fn parse_procedures(lines: &[String], option_explicit: &mut bool) -> Vec<BoundPr
     procedures
 }
 
-fn parse_proc_name(line: &str, is_function: bool) -> Option<String> {
+fn parse_proc_signature(line: &str, is_function: bool) -> Option<(String, Vec<BoundParam>)> {
     let prefix_len = if is_function { 9 } else { 4 };
     let rest = line.get(prefix_len..)?.trim();
-    let token = rest
+    let name_token = rest
         .split('(')
         .next()
         .unwrap_or_default()
         .split_whitespace()
         .next()
         .unwrap_or_default();
-    normalize_ident(token)
+    let name = normalize_ident(name_token)?;
+    let mut params = Vec::new();
+
+    if let Some(open) = rest.find('(')
+        && let Some(close) = rest.rfind(')')
+        && close > open
+    {
+        let params_raw = rest[open + 1..close].trim();
+        if !params_raw.is_empty() {
+            for item in params_raw.split(',') {
+                let token = item.trim();
+                let lower = token.to_ascii_lowercase();
+                let (by_ref, name_text) = if lower.starts_with("byval ") {
+                    (false, token[6..].trim())
+                } else if lower.starts_with("byref ") {
+                    (true, token[6..].trim())
+                } else {
+                    (true, token)
+                };
+                let param_name = normalize_ident(name_text)?;
+                params.push(BoundParam {
+                    name: param_name,
+                    by_ref,
+                });
+            }
+        }
+    }
+
+    Some((name, params))
 }
 
 fn parse_block(
@@ -382,13 +421,39 @@ fn parse_assign_or_unsupported(line: &str) -> BoundStmt {
     } else {
         line.trim()
     };
+    if let Some((name, args)) = parse_call_invocation(call_token) {
+        return BoundStmt::Call { name, args };
+    }
     if let Some(name) = normalize_ident(call_token) {
-        return BoundStmt::Call { name };
+        return BoundStmt::Call {
+            name,
+            args: Vec::new(),
+        };
     }
 
     BoundStmt::Unsupported {
         line: line.to_string(),
     }
+}
+
+fn parse_call_invocation(text: &str) -> Option<(String, Vec<BoundExpr>)> {
+    let open = text.find('(')?;
+    let close = text.rfind(')')?;
+    if close <= open {
+        return None;
+    }
+
+    let name = normalize_ident(text[..open].trim())?;
+    let args_raw = text[open + 1..close].trim();
+    if args_raw.is_empty() {
+        return Some((name, Vec::new()));
+    }
+
+    let mut args = Vec::new();
+    for token in args_raw.split(',') {
+        args.push(parse_expr(token.trim())?);
+    }
+    Some((name, args))
 }
 
 fn parse_do_stmt(
@@ -859,7 +924,21 @@ mod tests {
             main_proc
                 .body
                 .iter()
-                .any(|s| matches!(s, BoundStmt::Call { name } if name == "foo"))
+                .any(|s| matches!(s, BoundStmt::Call { name, .. } if name == "foo"))
         );
+    }
+
+    #[test]
+    fn resolve_procedure_params_and_call_args() {
+        let source = "Sub Main()\nDim x\nx = 1\nCall AddOne(x)\nEnd Sub\nSub AddOne(ByRef a)\na = a + 1\nEnd Sub";
+        let module = resolve_symbols(source);
+        let add_one = module
+            .procedures
+            .iter()
+            .find(|p| p.name == "addone")
+            .expect("addone procedure expected");
+        assert_eq!(add_one.params.len(), 1);
+        assert_eq!(add_one.params[0].name, "a");
+        assert!(add_one.params[0].by_ref);
     }
 }

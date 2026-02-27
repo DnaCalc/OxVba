@@ -91,3 +91,9 @@
   - Added per-procedure declaration slot ranges for local-scope isolation.
   - Added conformance fixtures for call chains and function-body invocation.
   - Added executable formal obligations (`FO-V8-001..003`) for return/local-scope invariants.
+- Started `mvp-params-v9` pass-by-mode pass:
+  - Added procedure signature parameter parsing (`ByVal` / `ByRef` / default ByRef).
+  - Added call argument parsing and arity checks.
+  - Added ByRef variable-argument validation.
+  - Added call-site argument binding with ByRef copy-back semantics.
+  - Added conformance + formal obligations (`FO-V9-001..003`) for pass-by-mode behavior.
