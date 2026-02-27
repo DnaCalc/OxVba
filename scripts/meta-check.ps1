@@ -1,7 +1,8 @@
 param(
     [switch]$Fast,
     [switch]$Conformance,
-    [switch]$Matrix
+    [switch]$Matrix,
+    [switch]$Formal
 )
 
 $ErrorActionPreference = "Stop"
@@ -32,6 +33,11 @@ if ($Conformance) {
 if ($Matrix) {
     Write-Host "[oxvba] matrix"
     & "$PSScriptRoot/run-matrix.ps1"
+}
+
+if ($Formal) {
+    Write-Host "[oxvba] formal (non-blocking)"
+    & "$PSScriptRoot/run-formal.ps1"
 }
 
 Write-Host "[oxvba] meta check complete"

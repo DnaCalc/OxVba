@@ -5,6 +5,12 @@ pub enum Instruction {
     LoadConstI32 { slot: usize, value: i32 },
     AddConstI32 { slot: usize, value: i32 },
     SubConstI32 { slot: usize, value: i32 },
+    CopySlot { dst: usize, src: usize },
+    CmpEqSlots { dst: usize, lhs: usize, rhs: usize },
+    CmpLeSlots { dst: usize, lhs: usize, rhs: usize },
+    JumpIfZero { cond_slot: usize, target_pc: usize },
+    Jump { target_pc: usize },
+    IncSlot { slot: usize },
     Halt,
 }
 
@@ -12,6 +18,7 @@ pub enum Instruction {
 pub struct Bytecode {
     pub instructions: Vec<Instruction>,
     pub slot_count: usize,
+    pub user_slot_count: usize,
 }
 
 impl Bytecode {

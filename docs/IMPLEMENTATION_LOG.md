@@ -45,3 +45,15 @@
   - `DIV-0001` (`If ... Then`) unsupported.
   - `DIV-0002` (`For ... Next`) unsupported.
 - Added Phase 12 status document tying gate criteria to reproducible evidence artifacts.
+- Started `mvp-controlflow-v2` ladder execution:
+  - Compiler binding refactor from flat ops to structured statements/expressions.
+  - Added `If ... Then ... End If` and `For ... Next` lowering path.
+  - Added jump-capable bytecode instructions and temp-slot aware emission.
+  - Upgraded VM interpreter to `pc`-driven loop with branch/jump execution.
+  - Added conformance fixtures for branch/loop/nested control flow.
+  - Added user-visible JIT honesty notice (`--jit` runs VM path until JIT execution is active).
+- Added non-blocking formal lane runner and formal obligation manifest (`FO-V2-001`, `FO-V2-002`).
+- Closed divergence records `DIV-0001` and `DIV-0002` with reproducible passing outputs.
+- Generated profile gate artifacts for `mvp-controlflow-v2`:
+  - `docs/evidence/profiles/v2/gate_report.md` (`PASS`)
+  - `docs/evidence/profiles/v2/matrix_latest.csv`

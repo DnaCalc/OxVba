@@ -32,4 +32,6 @@ Optional:
 ```powershell
 ./scripts/meta-check.ps1 -Fast -Conformance
 ./scripts/meta-check.ps1 -Fast -Matrix
+./scripts/meta-check.ps1 -Fast -Formal
+./scripts/meta-check.ps1 -Fast -Conformance -Matrix -Formal
 ```

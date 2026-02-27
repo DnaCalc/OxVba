@@ -1,18 +1,21 @@
 # CONFORMANCE.md
 
 ## Purpose
-Defines the current conformance loop and matrix gate for the OxVBA MVP profile.
+Defines the current conformance loop and matrix gate for the active ladder profile.
 
 ## Assets
 - `conformance/tests/*.bas` — executable input corpus.
 - `conformance/golden/*.csv` — expected outcomes.
-- `conformance/divergences/*.bas` — known mismatch fixtures tracked as evidence records.
+- `conformance/divergences/*.bas` — divergence/regression fixtures tracked in evidence docs.
 
 Current corpus includes:
 - MVP arithmetic smoke path.
 - `Option Explicit` success case.
 - `Option Explicit` undeclared-variable failure case.
 - Integer subtraction path.
+- `If ... Then ... End If` branch behavior.
+- `For ... Next` loop behavior (including zero-iteration case).
+- Nested `If` inside `For`.
 
 ## Commands
 ```powershell
@@ -29,14 +32,14 @@ At MVP stage, conformance compares:
 
 As runtime semantics mature, this will expand to richer structured outputs (error state and object lifecycle signals).
 
-## Declared Profile Scope (Phase 12 gate)
-- Profile id: `mvp-int32-core-v1`
+## Declared Profile Scope (Current Gate)
+- Profile id: `mvp-controlflow-v2`
 - Platform: Windows x64
 - Backends: `vm`, `jit` (JIT toggle path with VM-equivalent semantics)
 - Required matrix cells:
   - `windows/x64/vm`
   - `windows/x64/jit`
 
-Phase 12 gate is evaluated by `./scripts/run-matrix.ps1`, which writes:
-- `docs/evidence/phase12/matrix_latest.csv`
-- `docs/evidence/phase12/gate_report.md`
+Current profile gate is evaluated by `./scripts/run-matrix.ps1`, which writes:
+- `docs/evidence/profiles/v2/matrix_latest.csv`
+- `docs/evidence/profiles/v2/gate_report.md`

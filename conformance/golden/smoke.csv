@@ -1,4 +1,9 @@
 file,status,slots
+for_basic.bas,ok,"6,4"
+for_zero_iter.bas,ok,"5,5"
+if_false.bas,ok,0
+if_true.bas,ok,7
+nested_if_for.bas,ok,"5,3"
 option_explicit_error.bas,error,
 option_explicit_ok.bas,ok,3
 smoke.bas,ok,15

@@ -50,3 +50,6 @@ jobs:
       - name: MVP matrix gate
         shell: pwsh
         run: ./scripts/run-matrix.ps1
+      - name: Formal obligations (non-blocking)
+        shell: pwsh
+        run: ./scripts/run-formal.ps1

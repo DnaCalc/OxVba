@@ -83,7 +83,7 @@ mod tests {
 
     #[test]
     fn reject_unsupported_statement() {
-        let source = "Sub Main()\nDim x\nx = y + 1\nEnd Sub";
+        let source = "Sub Main()\nDim x\nx = x * 2\nEnd Sub";
         let err = compile(source).expect_err("typecheck should fail");
         assert!(err.to_string().contains("unsupported statement"));
     }
@@ -93,5 +93,42 @@ mod tests {
         let source = "Sub Main()\nx = 1\nx = x + 1\nEnd Sub";
         let out = compile(source).expect("implicit declaration should compile");
         assert_eq!(out.slot_count, 1);
+    }
+
+    #[test]
+    fn compile_if_statement_emits_branch_instructions() {
+        let source = "Sub Main()\nDim x\nx = 1\nIf x = 1 Then\nx = x + 2\nEnd If\nEnd Sub";
+        let out = compile(source).expect("compile should succeed");
+        assert!(
+            out.instructions
+                .iter()
+                .any(|i| matches!(i, Instruction::CmpEqSlots { .. }))
+        );
+        assert!(
+            out.instructions
+                .iter()
+                .any(|i| matches!(i, Instruction::JumpIfZero { .. }))
+        );
+    }
+
+    #[test]
+    fn compile_for_statement_emits_loop_instructions() {
+        let source = "Sub Main()\nDim x\nDim i\nx = 0\nFor i = 1 To 3\nx = x + 1\nNext i\nEnd Sub";
+        let out = compile(source).expect("compile should succeed");
+        assert!(
+            out.instructions
+                .iter()
+                .any(|i| matches!(i, Instruction::CmpLeSlots { .. }))
+        );
+        assert!(
+            out.instructions
+                .iter()
+                .any(|i| matches!(i, Instruction::IncSlot { .. }))
+        );
+        assert!(
+            out.instructions
+                .iter()
+                .any(|i| matches!(i, Instruction::Jump { .. }))
+        );
     }
 }

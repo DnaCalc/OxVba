@@ -1,6 +1,6 @@
 param(
-    [string]$OutputCsv = "docs/evidence/phase12/matrix_latest.csv",
-    [string]$SummaryPath = "docs/evidence/phase12/gate_report.md"
+    [string]$OutputCsv = "docs/evidence/profiles/v2/matrix_latest.csv",
+    [string]$SummaryPath = "docs/evidence/profiles/v2/gate_report.md"
 )
 
 $ErrorActionPreference = "Stop"
@@ -16,7 +16,7 @@ if (-not (Test-Path $summaryDir)) {
     New-Item -ItemType Directory -Path $summaryDir -Force | Out-Null
 }
 
-$profileScope = "mvp-int32-core-v1"
+$profileScope = "mvp-controlflow-v2"
 $osName = if ($IsWindows) { "windows" } elseif ($IsLinux) { "linux" } elseif ($IsMacOS) { "macos" } else { "unknown" }
 $arch = [System.Runtime.InteropServices.RuntimeInformation]::ProcessArchitecture.ToString().ToLowerInvariant()
 $timestampUtc = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
@@ -52,7 +52,7 @@ $requiredRows = ($records | Where-Object { $_.required -eq "true" }).Count
 $greenRows = ($records | Where-Object { $_.required -eq "true" -and $_.result -eq "green" }).Count
 
 $summary = @(
-    "# Phase 12 Gate Report",
+    "# Profile Gate Report",
     "",
     "- Timestamp (UTC): $timestampUtc",
     "- Profile scope: $profileScope",
