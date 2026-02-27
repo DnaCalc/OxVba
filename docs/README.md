@@ -39,6 +39,16 @@
 | Profile v24 Status | [`PROFILE_STATUS_V24.md`](PROFILE_STATUS_V24.md) | Current gate status contract for `mvp-jit-calls-v24`. |
 | Profile v25 Status | [`PROFILE_STATUS_V25.md`](PROFILE_STATUS_V25.md) | Current gate status contract for `mvp-optimizer-pack2-v25`. |
 | Profile v26 Status | [`PROFILE_STATUS_V26.md`](PROFILE_STATUS_V26.md) | Current gate status contract for `mvp-perf-shape-v26`. |
+| Profile v27 Status | [`PROFILE_STATUS_V27.md`](PROFILE_STATUS_V27.md) | Current gate status contract for `mvp-formal-async-ops-v27`. |
+| Profile v28 Status | [`PROFILE_STATUS_V28.md`](PROFILE_STATUS_V28.md) | Current gate status contract for `mvp-kani-unblock-v28`. |
+| Profile v29 Status | [`PROFILE_STATUS_V29.md`](PROFILE_STATUS_V29.md) | Current gate status contract for `mvp-kani-capacity-v29`. |
+| Profile v30 Status | [`PROFILE_STATUS_V30.md`](PROFILE_STATUS_V30.md) | Current gate status contract for `mvp-com-variant-conformance-v30`. |
+| Profile v31 Status | [`PROFILE_STATUS_V31.md`](PROFILE_STATUS_V31.md) | Current gate status contract for `mvp-boundary-marshalling-v31`. |
+| Profile v32 Status | [`PROFILE_STATUS_V32.md`](PROFILE_STATUS_V32.md) | Current gate status contract for `mvp-language-coverage-audit-v32`. |
+| Profile v33 Status | [`PROFILE_STATUS_V33.md`](PROFILE_STATUS_V33.md) | Current gate status contract for `mvp-language-coverage-core-v33`. |
+| Profile v34 Status | [`PROFILE_STATUS_V34.md`](PROFILE_STATUS_V34.md) | Current gate status contract for `mvp-language-coverage-objects-v34`. |
+| Profile v35 Status | [`PROFILE_STATUS_V35.md`](PROFILE_STATUS_V35.md) | Current gate status contract for `mvp-jit-optimizer-hotpaths-v35`. |
+| Profile v36 Status | [`PROFILE_STATUS_V36.md`](PROFILE_STATUS_V36.md) | Current gate status contract for `mvp-full-coverage-perf-gate-v36`. |
 | Phase 12 Status | [`PHASE12_STATUS.md`](PHASE12_STATUS.md) | Declared profile scope and final conformance/stabilization gate artifacts. |
 | Work Set Plan (v2) | [`worksets/WORKSET_2026-02-27_CONTROLFLOW_V2.md`](worksets/WORKSET_2026-02-27_CONTROLFLOW_V2.md) | Detailed execution-grade plan for control-flow expansion beyond `mvp-int32-core-v1`. |
 | Work Set Plan (v3) | [`worksets/WORKSET_2026-02-27_FORMAL_FOUNDATION_V3.md`](worksets/WORKSET_2026-02-27_FORMAL_FOUNDATION_V3.md) | Formal infrastructure work set for manifest-driven obligations and reporting. |
@@ -65,6 +75,16 @@
 | Work Set Plan (v24) | [`worksets/WORKSET_2026-02-27_JIT_CALLS_V24.md`](worksets/WORKSET_2026-02-27_JIT_CALLS_V24.md) | JIT call subset parity work set. |
 | Work Set Plan (v25) | [`worksets/WORKSET_2026-02-27_OPTIMIZER_PACK2_V25.md`](worksets/WORKSET_2026-02-27_OPTIMIZER_PACK2_V25.md) | Optimizer pack2 correctness/parity work set. |
 | Work Set Plan (v26) | [`worksets/WORKSET_2026-02-27_PERF_SHAPE_V26.md`](worksets/WORKSET_2026-02-27_PERF_SHAPE_V26.md) | Perf-shape stabilization and v26 closure work set. |
+| Work Set Plan (v27) | [`worksets/WORKSET_2026-02-27_FORMAL_ASYNC_OPS_V27.md`](worksets/WORKSET_2026-02-27_FORMAL_ASYNC_OPS_V27.md) | Async formal/Kani operations stabilization work set. |
+| Work Set Plan (v28) | [`worksets/WORKSET_2026-02-27_KANI_UNBLOCK_V28.md`](worksets/WORKSET_2026-02-27_KANI_UNBLOCK_V28.md) | Kani unblock and bounded harness hardening work set. |
+| Work Set Plan (v29) | [`worksets/WORKSET_2026-02-27_KANI_CAPACITY_V29.md`](worksets/WORKSET_2026-02-27_KANI_CAPACITY_V29.md) | Kani capacity and reproducibility work set. |
+| Work Set Plan (v30) | [`worksets/WORKSET_2026-02-27_COM_VARIANT_CONFORMANCE_V30.md`](worksets/WORKSET_2026-02-27_COM_VARIANT_CONFORMANCE_V30.md) | COM VARIANT conformance work set. |
+| Work Set Plan (v31) | [`worksets/WORKSET_2026-02-27_BOUNDARY_MARSHALLING_V31.md`](worksets/WORKSET_2026-02-27_BOUNDARY_MARSHALLING_V31.md) | Boundary marshalling correctness work set. |
+| Work Set Plan (v32) | [`worksets/WORKSET_2026-02-27_LANGUAGE_COVERAGE_AUDIT_V32.md`](worksets/WORKSET_2026-02-27_LANGUAGE_COVERAGE_AUDIT_V32.md) | Language coverage audit/index work set. |
+| Work Set Plan (v33) | [`worksets/WORKSET_2026-02-27_LANGUAGE_COVERAGE_CORE_V33.md`](worksets/WORKSET_2026-02-27_LANGUAGE_COVERAGE_CORE_V33.md) | Core language coverage closure work set. |
+| Work Set Plan (v34) | [`worksets/WORKSET_2026-02-27_LANGUAGE_COVERAGE_OBJECTS_V34.md`](worksets/WORKSET_2026-02-27_LANGUAGE_COVERAGE_OBJECTS_V34.md) | Object/class/module coverage closure work set. |
+| Work Set Plan (v35) | [`worksets/WORKSET_2026-02-27_JIT_OPT_HOTPATHS_V35.md`](worksets/WORKSET_2026-02-27_JIT_OPT_HOTPATHS_V35.md) | JIT/optimizer hotpath parity/performance work set. |
+| Work Set Plan (v36) | [`worksets/WORKSET_2026-02-27_FULL_COVERAGE_PERF_GATE_V36.md`](worksets/WORKSET_2026-02-27_FULL_COVERAGE_PERF_GATE_V36.md) | Coverage/performance consolidation gate work set. |
 | Work Set Plan (v27-v36) | [`worksets/WORKSET_2026-02-27_BATCH_V27_V36.md`](worksets/WORKSET_2026-02-27_BATCH_V27_V36.md) | Next long batch: formal reliability, language coverage closure, and hotspot performance work. |
 | Profile Ladder | [`worksets/PROFILE_LADDER_2026-02-27_MACH1000.md`](worksets/PROFILE_LADDER_2026-02-27_MACH1000.md) | MACH1000 profile roadmap and execution history. |
 | Status Tours | [`status-tours/`](status-tours/) | Date-stamped orientation/showcase docs for implemented project state. |

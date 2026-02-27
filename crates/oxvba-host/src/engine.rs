@@ -579,6 +579,7 @@ mod tests {
         assert!(text.contains("[switch]$Formal"));
         assert!(text.contains("run-formal.ps1"));
         assert!(text.contains("validate-divergences.ps1"));
+        assert!(text.contains("validate-language-coverage.ps1"));
     }
 
     #[test]
@@ -762,20 +763,242 @@ mod tests {
             .expect("run-matrix script exists");
         let formal = std::fs::read_to_string(repo_path("scripts/run-formal.ps1"))
             .expect("run-formal script exists");
-        assert!(matrix.contains("mvp-perf-shape-v26"));
-        assert!(formal.contains("mvp-perf-shape-v26"));
+        assert!(
+            matrix.contains("mvp-perf-shape-v26")
+                || matrix.contains("mvp-full-coverage-perf-gate-v36")
+        );
+        assert!(
+            formal.contains("mvp-perf-shape-v26")
+                || formal.contains("mvp-full-coverage-perf-gate-v36")
+        );
     }
 
     #[test]
     fn formal_v26_benchmark_default_targets_v26_artifact() {
         let bench = std::fs::read_to_string(repo_path("scripts/run-bench.ps1"))
             .expect("run-bench script exists");
-        assert!(bench.contains("docs/evidence/profiles/v26/benchmark_latest.md"));
+        assert!(
+            bench.contains("docs/evidence/profiles/v26/benchmark_latest.md")
+                || bench.contains("docs/evidence/profiles/v36/benchmark_latest.md")
+        );
     }
 
     #[test]
     fn formal_v26_profile_status_document_exists() {
         assert!(repo_path("docs/PROFILE_STATUS_V26.md").exists());
+    }
+
+    #[test]
+    fn formal_v27_async_runner_supports_full_action_set() {
+        let text = std::fs::read_to_string(repo_path("scripts/run-formal-kani-async.ps1"))
+            .expect("async runner exists");
+        assert!(text.contains("Start"));
+        assert!(text.contains("Status"));
+        assert!(text.contains("Tail"));
+        assert!(text.contains("Wait"));
+        assert!(text.contains("Stop"));
+    }
+
+    #[test]
+    fn formal_v27_async_runner_uses_hidden_background_window() {
+        let text = std::fs::read_to_string(repo_path("scripts/run-formal-kani-async.ps1"))
+            .expect("async runner exists");
+        assert!(text.contains("-WindowStyle Hidden"));
+    }
+
+    #[test]
+    fn formal_v27_async_runner_persists_state_and_exit_markers() {
+        let text = std::fs::read_to_string(repo_path("scripts/run-formal-kani-async.ps1"))
+            .expect("async runner exists");
+        assert!(text.contains("state.json"));
+        assert!(text.contains("exit_code.txt"));
+        assert!(text.contains("completed_utc.txt"));
+    }
+
+    #[test]
+    fn formal_v28_vm_pc_progression_kani_harness_is_bounded() {
+        let text = std::fs::read_to_string(repo_path("crates/oxvba-vm/src/interpreter.rs"))
+            .expect("vm interpreter exists");
+        assert!(text.contains("pc_progression_is_safe_for_valid_jump_target"));
+        assert!(text.contains("kani::assume(instruction_len < 64)"));
+        assert!(text.contains("next_pc_for_jump_if_zero"));
+    }
+
+    #[test]
+    fn formal_v28_vm_jump_helper_has_regression_unit_test() {
+        let text = std::fs::read_to_string(repo_path("crates/oxvba-vm/src/interpreter.rs"))
+            .expect("vm interpreter exists");
+        assert!(text.contains("jump_if_zero_pc_progression_helper"));
+    }
+
+    #[test]
+    fn formal_v28_profile_status_document_exists() {
+        assert!(repo_path("docs/PROFILE_STATUS_V28.md").exists());
+    }
+
+    #[test]
+    fn formal_v29_async_runner_wait_supports_timeouts() {
+        let text = std::fs::read_to_string(repo_path("scripts/run-formal-kani-async.ps1"))
+            .expect("async runner exists");
+        assert!(text.contains("TimeoutSeconds"));
+        assert!(text.contains("timed out"));
+    }
+
+    #[test]
+    fn formal_v29_capacity_workset_document_exists() {
+        assert!(repo_path("docs/worksets/WORKSET_2026-02-27_KANI_CAPACITY_V29.md").exists());
+    }
+
+    #[test]
+    fn formal_v29_obligation_entries_are_registered() {
+        let text = std::fs::read_to_string(repo_path("docs/evidence/formal/obligations.csv"))
+            .expect("obligations should exist");
+        assert!(text.contains("FO-V29-001"));
+        assert!(text.contains("FO-V29-002"));
+        assert!(text.contains("FO-V29-003"));
+    }
+
+    #[test]
+    fn formal_v30_variant_layout_uses_com_reserved_fields() {
+        let text = std::fs::read_to_string(repo_path("crates/oxvba-runtime/src/variant.rs"))
+            .expect("variant runtime file exists");
+        assert!(text.contains("reserved1"));
+        assert!(text.contains("reserved2"));
+        assert!(text.contains("reserved3"));
+        assert!(text.contains("union VariantData"));
+    }
+
+    #[test]
+    fn formal_v30_variant_runtime_has_com_layout_shape_test() {
+        let text = std::fs::read_to_string(repo_path("crates/oxvba-runtime/src/variant.rs"))
+            .expect("variant runtime file exists");
+        assert!(text.contains("com_variant_layout_shape"));
+    }
+
+    #[test]
+    fn formal_v30_profile_status_document_exists() {
+        assert!(repo_path("docs/PROFILE_STATUS_V30.md").exists());
+    }
+
+    #[test]
+    fn formal_v31_variant_wire_roundtrip_helpers_exist() {
+        let text = std::fs::read_to_string(repo_path("crates/oxvba-runtime/src/variant.rs"))
+            .expect("variant runtime file exists");
+        assert!(text.contains("to_wire_bytes"));
+        assert!(text.contains("from_wire_bytes"));
+        assert!(text.contains("com_variant_wire_roundtrip_for_numeric_value"));
+    }
+
+    #[test]
+    fn formal_v31_boundary_marshalling_workset_exists() {
+        assert!(repo_path("docs/worksets/WORKSET_2026-02-27_BOUNDARY_MARSHALLING_V31.md").exists());
+    }
+
+    #[test]
+    fn formal_v31_profile_status_document_exists() {
+        assert!(repo_path("docs/PROFILE_STATUS_V31.md").exists());
+    }
+
+    #[test]
+    fn formal_v32_language_coverage_index_exists() {
+        assert!(repo_path("docs/evidence/language/COVERAGE_INDEX.csv").exists());
+    }
+
+    #[test]
+    fn formal_v32_meta_check_validates_language_coverage() {
+        let text = std::fs::read_to_string(repo_path("scripts/meta-check.ps1"))
+            .expect("meta-check script exists");
+        assert!(text.contains("validate-language-coverage.ps1"));
+    }
+
+    #[test]
+    fn formal_v32_language_coverage_status_taxonomy_is_present() {
+        let text = std::fs::read_to_string(repo_path("docs/evidence/language/COVERAGE_INDEX.csv"))
+            .expect("coverage index exists");
+        assert!(text.contains(",implemented,"));
+        assert!(text.contains(",partial,"));
+        assert!(text.contains(",planned,"));
+    }
+
+    #[test]
+    fn formal_v33_core_coverage_tracks_key_control_flow_constructs() {
+        let text = std::fs::read_to_string(repo_path("docs/evidence/language/COVERAGE_INDEX.csv"))
+            .expect("coverage index exists");
+        assert!(text.contains("If Then End If"));
+        assert!(text.contains("For Next"));
+        assert!(text.contains("Select Case"));
+    }
+
+    #[test]
+    fn formal_v33_core_coverage_workset_exists() {
+        assert!(
+            repo_path("docs/worksets/WORKSET_2026-02-27_LANGUAGE_COVERAGE_CORE_V33.md").exists()
+        );
+    }
+
+    #[test]
+    fn formal_v33_core_conformance_fixtures_are_present() {
+        assert!(repo_path("conformance/tests/if_true.bas").exists());
+        assert!(repo_path("conformance/tests/for_basic.bas").exists());
+        assert!(repo_path("conformance/tests/select_case_basic.bas").exists());
+    }
+
+    #[test]
+    fn formal_v34_object_coverage_entries_are_present() {
+        let text = std::fs::read_to_string(repo_path("docs/evidence/language/COVERAGE_INDEX.csv"))
+            .expect("coverage index exists");
+        assert!(text.contains("objects,Root object injection"));
+        assert!(text.contains("objects,Class module lifecycle"));
+    }
+
+    #[test]
+    fn formal_v34_object_coverage_workset_exists() {
+        assert!(
+            repo_path("docs/worksets/WORKSET_2026-02-27_LANGUAGE_COVERAGE_OBJECTS_V34.md").exists()
+        );
+    }
+
+    #[test]
+    fn formal_v34_profile_status_document_exists() {
+        assert!(repo_path("docs/PROFILE_STATUS_V34.md").exists());
+    }
+
+    #[test]
+    fn formal_v35_hotpath_workset_exists() {
+        assert!(repo_path("docs/worksets/WORKSET_2026-02-27_JIT_OPT_HOTPATHS_V35.md").exists());
+    }
+
+    #[test]
+    fn formal_v35_jit_vm_hotpath_parity_examples_exist() {
+        assert!(repo_path("conformance/tests/for_basic.bas").exists());
+        assert!(repo_path("conformance/tests/proc_call_chain.bas").exists());
+    }
+
+    #[test]
+    fn formal_v35_profile_status_document_exists() {
+        assert!(repo_path("docs/PROFILE_STATUS_V35.md").exists());
+    }
+
+    #[test]
+    fn formal_v36_script_defaults_target_v36_profile_scope() {
+        let matrix = std::fs::read_to_string(repo_path("scripts/run-matrix.ps1"))
+            .expect("run-matrix script exists");
+        let formal = std::fs::read_to_string(repo_path("scripts/run-formal.ps1"))
+            .expect("run-formal script exists");
+        assert!(matrix.contains("mvp-full-coverage-perf-gate-v36"));
+        assert!(formal.contains("mvp-full-coverage-perf-gate-v36"));
+    }
+
+    #[test]
+    fn formal_v36_benchmark_default_targets_v36_artifact() {
+        let bench = std::fs::read_to_string(repo_path("scripts/run-bench.ps1"))
+            .expect("run-bench script exists");
+        assert!(bench.contains("docs/evidence/profiles/v36/benchmark_latest.md"));
+    }
+
+    #[test]
+    fn formal_v36_profile_status_document_exists() {
+        assert!(repo_path("docs/PROFILE_STATUS_V36.md").exists());
     }
 
     #[test]

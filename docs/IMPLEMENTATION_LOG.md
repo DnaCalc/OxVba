@@ -172,3 +172,16 @@
   - prioritized formal reliability/capacity (`v27`-`v31`),
   - added explicit full language coverage closure track (`v32`-`v34`),
   - focused late profiles on JIT/optimizer hot-path parity + performance gate (`v35`-`v36`).
+- Started `v27`-`v36` execution pass:
+  - Added profile status docs (`PROFILE_STATUS_V27`..`PROFILE_STATUS_V36`) and workset docs for each profile.
+  - Added language coverage evidence index and validator (`docs/evidence/language/COVERAGE_INDEX.csv`, `scripts/validate-language-coverage.ps1`) and integrated it into `meta-check`.
+  - Hardened VM jump progression proof path:
+    - factored bounded jump target helpers,
+    - replaced path-explosive Kani proof with bounded helper-based progression check.
+  - Extended formal obligations and host formal tests through `FO-V36-*`.
+  - Shifted matrix/formal/bench default profile scope to `mvp-full-coverage-perf-gate-v36` and v36 evidence paths.
+  - Resolved final v36 gate lint blocker (`clippy::clone_on_copy` in `coerce_to`) and confirmed full cycle green:
+    - `run-matrix` PASS (`2/2` required cells),
+    - `run-formal` completed under non-blocking policy,
+    - `run-bench` recorded positive gain,
+    - `meta-check -Fast -Conformance -Matrix -Formal` PASS.

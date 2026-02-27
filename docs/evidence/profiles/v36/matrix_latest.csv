@@ -1,0 +1,3 @@
+"profile_scope","os","arch","backend","required","result","tests_ran","captured_at_utc","evidence_file"
+"mvp-full-coverage-perf-gate-v36","windows","x64","vm","true","green","37","2026-02-27T21:26:56Z","docs\evidence\profiles\v36\conformance_vm.csv"
+"mvp-full-coverage-perf-gate-v36","windows","x64","jit","true","green","37","2026-02-27T21:26:56Z","docs\evidence\profiles\v36\conformance_jit.csv"

@@ -1,9 +1,10 @@
 # Formal Run Report
 
-- Timestamp (UTC): 2026-02-27T15:59:53Z
-- Profile scope: mvp-perf-shape-v26
+- Timestamp (UTC): 2026-02-27T21:27:23Z
+- Profile scope: mvp-full-coverage-perf-gate-v36
 - Overall mode: non-blocking
 - Kani required: false
+- Kani execution: unavailable
 - cargo-kani: unavailable
 
 | Obligation | Profile | Blocking | Status | Command | Artifact | Note |
@@ -80,3 +81,33 @@
 | FO-V26-001 | v26 | no | pass | cargo test -p oxvba-host formal_v26_script_defaults_target_v26_profile_scope | crates/oxvba-host/src/engine.rs |  |
 | FO-V26-002 | v26 | no | pass | cargo test -p oxvba-host formal_v26_benchmark_default_targets_v26_artifact | crates/oxvba-host/src/engine.rs |  |
 | FO-V26-003 | v26 | no | pass | cargo test -p oxvba-host formal_v26_profile_status_document_exists | crates/oxvba-host/src/engine.rs |  |
+| FO-V27-001 | v27 | no | pass | cargo test -p oxvba-host formal_v27_async_runner_supports_full_action_set | crates/oxvba-host/src/engine.rs |  |
+| FO-V27-002 | v27 | no | pass | cargo test -p oxvba-host formal_v27_async_runner_uses_hidden_background_window | crates/oxvba-host/src/engine.rs |  |
+| FO-V27-003 | v27 | no | pass | cargo test -p oxvba-host formal_v27_async_runner_persists_state_and_exit_markers | crates/oxvba-host/src/engine.rs |  |
+| FO-V28-001 | v28 | no | pass | cargo test -p oxvba-host formal_v28_vm_pc_progression_kani_harness_is_bounded | crates/oxvba-host/src/engine.rs |  |
+| FO-V28-002 | v28 | no | pass | cargo test -p oxvba-host formal_v28_vm_jump_helper_has_regression_unit_test | crates/oxvba-host/src/engine.rs |  |
+| FO-V28-003 | v28 | no | pass | cargo test -p oxvba-host formal_v28_profile_status_document_exists | crates/oxvba-host/src/engine.rs |  |
+| FO-V29-001 | v29 | no | pass | cargo test -p oxvba-host formal_v29_async_runner_wait_supports_timeouts | crates/oxvba-host/src/engine.rs |  |
+| FO-V29-002 | v29 | no | pass | cargo test -p oxvba-host formal_v29_capacity_workset_document_exists | crates/oxvba-host/src/engine.rs |  |
+| FO-V29-003 | v29 | no | pass | cargo test -p oxvba-host formal_v29_obligation_entries_are_registered | crates/oxvba-host/src/engine.rs |  |
+| FO-V30-001 | v30 | no | pass | cargo test -p oxvba-host formal_v30_variant_layout_uses_com_reserved_fields | crates/oxvba-host/src/engine.rs |  |
+| FO-V30-002 | v30 | no | pass | cargo test -p oxvba-host formal_v30_variant_runtime_has_com_layout_shape_test | crates/oxvba-host/src/engine.rs |  |
+| FO-V30-003 | v30 | no | pass | cargo test -p oxvba-host formal_v30_profile_status_document_exists | crates/oxvba-host/src/engine.rs |  |
+| FO-V31-001 | v31 | no | pass | cargo test -p oxvba-host formal_v31_variant_wire_roundtrip_helpers_exist | crates/oxvba-host/src/engine.rs |  |
+| FO-V31-002 | v31 | no | pass | cargo test -p oxvba-host formal_v31_boundary_marshalling_workset_exists | crates/oxvba-host/src/engine.rs |  |
+| FO-V31-003 | v31 | no | pass | cargo test -p oxvba-host formal_v31_profile_status_document_exists | crates/oxvba-host/src/engine.rs |  |
+| FO-V32-001 | v32 | no | pass | cargo test -p oxvba-host formal_v32_language_coverage_index_exists | crates/oxvba-host/src/engine.rs |  |
+| FO-V32-002 | v32 | no | pass | cargo test -p oxvba-host formal_v32_meta_check_validates_language_coverage | crates/oxvba-host/src/engine.rs |  |
+| FO-V32-003 | v32 | no | pass | cargo test -p oxvba-host formal_v32_language_coverage_status_taxonomy_is_present | crates/oxvba-host/src/engine.rs |  |
+| FO-V33-001 | v33 | no | pass | cargo test -p oxvba-host formal_v33_core_coverage_tracks_key_control_flow_constructs | crates/oxvba-host/src/engine.rs |  |
+| FO-V33-002 | v33 | no | pass | cargo test -p oxvba-host formal_v33_core_coverage_workset_exists | crates/oxvba-host/src/engine.rs |  |
+| FO-V33-003 | v33 | no | pass | cargo test -p oxvba-host formal_v33_core_conformance_fixtures_are_present | crates/oxvba-host/src/engine.rs |  |
+| FO-V34-001 | v34 | no | pass | cargo test -p oxvba-host formal_v34_object_coverage_entries_are_present | crates/oxvba-host/src/engine.rs |  |
+| FO-V34-002 | v34 | no | pass | cargo test -p oxvba-host formal_v34_object_coverage_workset_exists | crates/oxvba-host/src/engine.rs |  |
+| FO-V34-003 | v34 | no | pass | cargo test -p oxvba-host formal_v34_profile_status_document_exists | crates/oxvba-host/src/engine.rs |  |
+| FO-V35-001 | v35 | no | pass | cargo test -p oxvba-host formal_v35_hotpath_workset_exists | crates/oxvba-host/src/engine.rs |  |
+| FO-V35-002 | v35 | no | pass | cargo test -p oxvba-host formal_v35_jit_vm_hotpath_parity_examples_exist | crates/oxvba-host/src/engine.rs |  |
+| FO-V35-003 | v35 | no | pass | cargo test -p oxvba-host formal_v35_profile_status_document_exists | crates/oxvba-host/src/engine.rs |  |
+| FO-V36-001 | v36 | no | pass | cargo test -p oxvba-host formal_v36_script_defaults_target_v36_profile_scope | crates/oxvba-host/src/engine.rs |  |
+| FO-V36-002 | v36 | no | pass | cargo test -p oxvba-host formal_v36_benchmark_default_targets_v36_artifact | crates/oxvba-host/src/engine.rs |  |
+| FO-V36-003 | v36 | no | pass | cargo test -p oxvba-host formal_v36_profile_status_document_exists | crates/oxvba-host/src/engine.rs |  |

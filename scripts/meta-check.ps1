@@ -17,6 +17,9 @@ try {
     Write-Host "[oxvba] divergence-structure"
     & "$PSScriptRoot/validate-divergences.ps1"
 
+    Write-Host "[oxvba] language-coverage"
+    & "$PSScriptRoot/validate-language-coverage.ps1"
+
     if (-not $SkipPathStability) {
         Write-Host "[oxvba] path-stability"
         & "$PSScriptRoot/test-path-stability.ps1"

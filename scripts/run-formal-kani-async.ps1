@@ -2,7 +2,7 @@ param(
     [ValidateSet("Start", "Status", "Tail", "Wait", "Stop")]
     [string]$Action = "Status",
     [string]$Name = "formal-kani",
-    [string]$ProfileScope = "mvp-formal-foundation-v3",
+    [string]$ProfileScope = "mvp-full-coverage-perf-gate-v36",
     [string]$Command = "",
     [int]$TailLines = 80,
     [int]$PollSeconds = 5,

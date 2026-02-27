@@ -2,7 +2,7 @@ use crate::variant::{VarType, Variant};
 
 pub fn coerce_to(value: &Variant, target: VarType) -> Result<Variant, String> {
     if value.vtype == target {
-        return Ok(value.clone());
+        return Ok(*value);
     }
 
     match (value.vtype, target) {

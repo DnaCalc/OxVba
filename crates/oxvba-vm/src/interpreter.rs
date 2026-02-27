@@ -36,8 +36,9 @@ impl Vm {
     pub fn execute(&mut self, bytecode: &Bytecode) -> Result<(), String> {
         self.ensure_slot_count(bytecode.slot_count);
         let mut pc = 0usize;
+        let len = bytecode.instructions.len();
 
-        while pc < bytecode.instructions.len() {
+        while pc < len {
             match &bytecode.instructions[pc] {
                 Instruction::LoadConstI32 { slot, value } => {
                     self.write_slot(*slot, *value)?;
@@ -140,20 +141,10 @@ impl Vm {
                     target_pc,
                 } => {
                     let cond = self.read_slot(*cond_slot)?;
-                    if cond == 0 {
-                        if *target_pc > bytecode.instructions.len() {
-                            return Err(format!("jump target out of range: {target_pc}"));
-                        }
-                        pc = *target_pc;
-                    } else {
-                        pc += 1;
-                    }
+                    pc = Self::next_pc_for_jump_if_zero(cond, *target_pc, len, pc)?;
                 }
                 Instruction::Jump { target_pc } => {
-                    if *target_pc > bytecode.instructions.len() {
-                        return Err(format!("jump target out of range: {target_pc}"));
-                    }
-                    pc = *target_pc;
+                    pc = Self::next_pc_for_jump(*target_pc, len)?;
                 }
                 Instruction::CallProc { target_pc } => {
                     if *target_pc >= bytecode.instructions.len() {
@@ -212,6 +203,26 @@ impl Vm {
         }
         self.registers.registers[slot] = value;
         Ok(())
+    }
+
+    fn next_pc_for_jump(target_pc: usize, instruction_len: usize) -> Result<usize, String> {
+        if target_pc > instruction_len {
+            return Err(format!("jump target out of range: {target_pc}"));
+        }
+        Ok(target_pc)
+    }
+
+    fn next_pc_for_jump_if_zero(
+        cond: i32,
+        target_pc: usize,
+        instruction_len: usize,
+        current_pc: usize,
+    ) -> Result<usize, String> {
+        if cond == 0 {
+            Self::next_pc_for_jump(target_pc, instruction_len)
+        } else {
+            Ok(current_pc + 1)
+        }
     }
 }
 
@@ -308,6 +319,16 @@ mod tests {
     }
 
     #[test]
+    fn jump_if_zero_pc_progression_helper() {
+        assert_eq!(Vm::next_pc_for_jump_if_zero(0, 3, 4, 1).expect("jump"), 3);
+        assert_eq!(
+            Vm::next_pc_for_jump_if_zero(1, 3, 4, 1).expect("fallthrough"),
+            2
+        );
+        assert!(Vm::next_pc_for_jump_if_zero(0, 9, 4, 1).is_err());
+    }
+
+    #[test]
     fn executes_comparators_and_boolean_ops() {
         let bytecode = Bytecode {
             instructions: vec![
@@ -396,26 +417,20 @@ mod kani_proofs {
 
     #[kani::proof]
     fn pc_progression_is_safe_for_valid_jump_target() {
-        let branch: bool = kani::any();
-        let cond_value = if branch { 0 } else { 1 };
-        let bytecode = Bytecode {
-            instructions: vec![
-                Instruction::LoadConstI32 {
-                    slot: 0,
-                    value: cond_value,
-                },
-                Instruction::JumpIfZero {
-                    cond_slot: 0,
-                    target_pc: 3,
-                },
-                Instruction::IncSlot { slot: 0 },
-                Instruction::Halt,
-            ],
-            slot_count: 1,
-            user_slot_count: 1,
-        };
-        let mut vm = Vm::default();
-        assert!(vm.execute(&bytecode).is_ok());
+        let instruction_len: usize = kani::any();
+        kani::assume(instruction_len > 0);
+        kani::assume(instruction_len < 64);
+
+        let current_pc: usize = kani::any();
+        kani::assume(current_pc < instruction_len);
+
+        let target_pc: usize = kani::any();
+        kani::assume(target_pc <= instruction_len);
+
+        let cond: i32 = kani::any();
+        let next = Vm::next_pc_for_jump_if_zero(cond, target_pc, instruction_len, current_pc)
+            .expect("assumed valid target");
+        assert!(next <= instruction_len);
     }
 
     #[kani::proof]
