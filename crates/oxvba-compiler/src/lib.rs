@@ -365,6 +365,17 @@ mod tests {
     }
 
     #[test]
+    fn compile_intrinsic_conversion_subset_is_accepted() {
+        let source = "Sub Main()\nDim x\nx = CLng(CInt(7))\nEnd Sub";
+        let out = compile(source).expect("compile should succeed");
+        assert!(
+            out.instructions
+                .iter()
+                .any(|i| matches!(i, Instruction::LoadConstI32 { value: 7, .. }))
+        );
+    }
+
+    #[test]
     fn compile_property_let_assignment_routes_to_call() {
         let source = "Sub Main()\nDim x\nx = 1\nValue = x\nEnd Sub\nProperty Let Value(ByRef target)\ntarget = target + 2\nEnd Property";
         let out = compile(source).expect("compile should succeed");

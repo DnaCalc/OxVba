@@ -231,3 +231,8 @@
   - added assignment-form routing to property write procedures (`Let`/`Set`) using canonicalized internal procedure names;
   - added property subset conformance fixtures and formal obligations (`FO-V44-001..003`);
   - published `PROFILE_STATUS_V44` and `WORKSET_2026-02-27_PROPERTY_PROCEDURES_V44`.
+- Started `mvp-stdlib-conversion-core-v45` stdlib-core pass:
+  - added conversion-wrapper expression support for `CInt`, `CLng`, `CDbl`, `CStr`, `CBool`, `CDate`, `Val`, `Str`;
+  - lowered conversion wrappers to current integer expression model for deterministic subset semantics;
+  - added conversion conformance fixtures and formal obligations (`FO-V45-001..003`);
+  - published `PROFILE_STATUS_V45` and `WORKSET_2026-02-27_STDLIB_CONVERSION_CORE_V45`.

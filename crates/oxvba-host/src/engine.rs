@@ -524,6 +524,36 @@ mod tests {
     }
 
     #[test]
+    fn formal_v45_cint_conversion_subset() {
+        let engine = Engine::new(HostConfig::default());
+        let source = "Sub Main()\nDim x\nx = CInt(5)\nEnd Sub";
+        let snapshot = engine
+            .execute_source_with_snapshot(source)
+            .expect("execution should succeed");
+        assert_eq!(snapshot, vec![5]);
+    }
+
+    #[test]
+    fn formal_v45_nested_conversion_subset() {
+        let engine = Engine::new(HostConfig::default());
+        let source = "Sub Main()\nDim x\nx = CLng(CInt(7))\nEnd Sub";
+        let snapshot = engine
+            .execute_source_with_snapshot(source)
+            .expect("execution should succeed");
+        assert_eq!(snapshot, vec![7]);
+    }
+
+    #[test]
+    fn formal_v45_val_str_conversion_subset() {
+        let engine = Engine::new(HostConfig::default());
+        let source = "Sub Main()\nDim x\nx = Val(Str(9))\nEnd Sub";
+        let snapshot = engine
+            .execute_source_with_snapshot(source)
+            .expect("execution should succeed");
+        assert_eq!(snapshot, vec![9]);
+    }
+
+    #[test]
     fn formal_v10_array_store_load_roundtrip() {
         let engine = Engine::new(HostConfig::default());
         let source = "Sub Main()\nDim a(2)\nDim x\na(1) = 7\nx = a(1)\nEnd Sub";

@@ -122,3 +122,6 @@ FO-V43-003,v43,"cargo test -p oxvba-host formal_v43_udt_declaration_block_is_par
 FO-V44-001,v44,"cargo test -p oxvba-host formal_v44_property_let_routes_assignment_byref",no,true,crates/oxvba-host/src/engine.rs
 FO-V44-002,v44,"cargo test -p oxvba-host formal_v44_property_set_routes_assignment_byref",no,true,crates/oxvba-host/src/engine.rs
 FO-V44-003,v44,"cargo test -p oxvba-host formal_v44_property_get_block_is_parse_tolerated",no,true,crates/oxvba-host/src/engine.rs
+FO-V45-001,v45,"cargo test -p oxvba-host formal_v45_cint_conversion_subset",no,true,crates/oxvba-host/src/engine.rs
+FO-V45-002,v45,"cargo test -p oxvba-host formal_v45_nested_conversion_subset",no,true,crates/oxvba-host/src/engine.rs
+FO-V45-003,v45,"cargo test -p oxvba-host formal_v45_val_str_conversion_subset",no,true,crates/oxvba-host/src/engine.rs

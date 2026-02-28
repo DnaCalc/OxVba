@@ -1140,6 +1140,10 @@ fn parse_expr(text: &str, array_bounds: &HashMap<String, usize>) -> Option<Bound
         return Some(BoundExpr::IntConst(value));
     }
 
+    if let Some(inner) = parse_intrinsic_conversion_expr(expr, array_bounds) {
+        return Some(inner);
+    }
+
     if let Some((left_raw, right_raw)) = expr.split_once('+') {
         let var = parse_reference_name(left_raw, array_bounds)?;
         let delta = right_raw.trim().parse::<i32>().ok()?;
@@ -1153,6 +1157,25 @@ fn parse_expr(text: &str, array_bounds: &HashMap<String, usize>) -> Option<Bound
     }
 
     parse_reference_name(expr, array_bounds).map(BoundExpr::Var)
+}
+
+fn parse_intrinsic_conversion_expr(
+    expr: &str,
+    array_bounds: &HashMap<String, usize>,
+) -> Option<BoundExpr> {
+    let open = expr.find('(')?;
+    let close = expr.rfind(')')?;
+    if close <= open || !expr[close + 1..].trim().is_empty() {
+        return None;
+    }
+    let name = normalize_ident(expr[..open].trim())?;
+    if !matches!(
+        name.as_str(),
+        "cint" | "clng" | "cdbl" | "cstr" | "cbool" | "cdate" | "val" | "str"
+    ) {
+        return None;
+    }
+    parse_expr(expr[open + 1..close].trim(), array_bounds)
 }
 
 fn parse_condition(text: &str, array_bounds: &HashMap<String, usize>) -> Option<BoundCond> {
@@ -1452,6 +1475,16 @@ mod tests {
             panic!("expected assignment");
         };
         assert_eq!(expr, &BoundExpr::Var("y".to_string()));
+    }
+
+    #[test]
+    fn resolve_intrinsic_conversion_expression() {
+        let source = "Sub Main()\nDim x\nx = CLng(CInt(7))\nEnd Sub";
+        let module = resolve_symbols(source);
+        let Some(BoundStmt::Assign { expr, .. }) = module.body.first() else {
+            panic!("expected assignment");
+        };
+        assert_eq!(expr, &BoundExpr::IntConst(7));
     }
 
     #[test]

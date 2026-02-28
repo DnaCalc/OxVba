@@ -1,7 +1,7 @@
 # Formal Run Report
 
-- Timestamp (UTC): 2026-02-28T00:15:57Z
-- Profile scope: mvp-lang-property-procedures-v44
+- Timestamp (UTC): 2026-02-28T00:24:03Z
+- Profile scope: mvp-stdlib-conversion-core-v45
 - Overall mode: non-blocking
 - Kani required: false
 - Kani execution: deferred-to-wsl-async
@@ -133,3 +133,6 @@
 | FO-V44-001 | v44 | no | pass | cargo test -p oxvba-host formal_v44_property_let_routes_assignment_byref | crates/oxvba-host/src/engine.rs |  |
 | FO-V44-002 | v44 | no | pass | cargo test -p oxvba-host formal_v44_property_set_routes_assignment_byref | crates/oxvba-host/src/engine.rs |  |
 | FO-V44-003 | v44 | no | pass | cargo test -p oxvba-host formal_v44_property_get_block_is_parse_tolerated | crates/oxvba-host/src/engine.rs |  |
+| FO-V45-001 | v45 | no | pass | cargo test -p oxvba-host formal_v45_cint_conversion_subset | crates/oxvba-host/src/engine.rs |  |
+| FO-V45-002 | v45 | no | pass | cargo test -p oxvba-host formal_v45_nested_conversion_subset | crates/oxvba-host/src/engine.rs |  |
+| FO-V45-003 | v45 | no | pass | cargo test -p oxvba-host formal_v45_val_str_conversion_subset | crates/oxvba-host/src/engine.rs |  |

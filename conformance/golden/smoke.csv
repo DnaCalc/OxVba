@@ -1,4 +1,7 @@
 file,status,slots
+conversion_cint_basic.bas,ok,5
+conversion_nested_clng_cint.bas,ok,7
+conversion_val_str_subset.bas,ok,9
 do_exit_do.bas,ok,4
 do_loop_while_basic.bas,ok,3
 do_while_basic.bas,ok,3
