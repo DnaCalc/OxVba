@@ -35,6 +35,21 @@ try {
         return $null -ne (Get-Process -Id $processId -ErrorAction SilentlyContinue)
     }
 
+    function Get-FileStat([string]$path) {
+        if (-not (Test-Path $path)) {
+            return [PSCustomObject]@{
+                size_bytes = 0
+                age_seconds = -1
+            }
+        }
+        $item = Get-Item $path
+        $age = [int]((Get-Date).ToUniversalTime().Subtract($item.LastWriteTimeUtc).TotalSeconds)
+        return [PSCustomObject]@{
+            size_bytes = [int64]$item.Length
+            age_seconds = $age
+        }
+    }
+
     Write-Log "watcher start name=$Name poll_seconds=$PollSeconds"
 
     while ($true) {
@@ -62,16 +77,20 @@ try {
 
             $running = Is-Running $runnerPid
             $exitCode = if (Test-Path $exitCodePath) { (Get-Content $exitCodePath -Raw).Trim() } else { "" }
+            $stdoutPath = Join-Path $runDir "stdout.log"
+            $stderrPath = Join-Path $runDir "stderr.log"
+            $stdoutStat = Get-FileStat $stdoutPath
+            $stderrStat = Get-FileStat $stderrPath
 
             if ($running) {
-                Write-Log "status=running pid=$runnerPid exit_code=pending"
+                Write-Log "status=running pid=$runnerPid exit_code=pending stdout_bytes=$($stdoutStat.size_bytes) stdout_age_s=$($stdoutStat.age_seconds) stderr_bytes=$($stderrStat.size_bytes) stderr_age_s=$($stderrStat.age_seconds)"
             }
             elseif (-not [string]::IsNullOrWhiteSpace($exitCode)) {
-                Write-Log "status=completed pid=$runnerPid exit_code=$exitCode"
+                Write-Log "status=completed pid=$runnerPid exit_code=$exitCode stdout_bytes=$($stdoutStat.size_bytes) stdout_age_s=$($stdoutStat.age_seconds) stderr_bytes=$($stderrStat.size_bytes) stderr_age_s=$($stderrStat.age_seconds)"
                 break
             }
             else {
-                Write-Log "status=unknown pid=$runnerPid exit_code=pending"
+                Write-Log "status=stale pid=$runnerPid exit_code=pending stdout_bytes=$($stdoutStat.size_bytes) stdout_age_s=$($stdoutStat.age_seconds) stderr_bytes=$($stderrStat.size_bytes) stderr_age_s=$($stderrStat.age_seconds)"
             }
         }
         catch {

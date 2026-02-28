@@ -35,3 +35,15 @@ Timestamp (UTC): `2026-02-28T14:45:00Z`
 
 ## Notes
 - This audit satisfies terminal-gate requirement that non-folded DG rows are explicitly deferred with concrete unblock steps.
+
+## Post-v86 Addendum (2026-02-28T16:37:37Z)
+- Folded since cutoff:
+  - `DG-V74-001`: completed `pass` at `2026-02-28T15:03:49Z` (exit `0`)
+  - `DG-V75-001`: completed `pass` at `2026-02-28T15:18:22Z` (exit `0`)
+  - `DG-V77-001`: completed `pass` at `2026-02-28T15:35:35Z` (exit `0`)
+  - `DG-V78-001`: completed `pass` at `2026-02-28T16:19:59Z` (exit `0`)
+- Remaining unresolved from `DGD-V86-001`: `DG-V79-001`, `DG-V80-001`, `DG-V81-001`, `DG-V82-001`, `DG-V83-001`.
+- `DGD-V86-002` follow-up:
+  - A rerun lane was started with hardened preflight checks:
+    - `./scripts/run-formal-kani-async.ps1 -Action Start -Name v85-kani-rerun -ProfileScope mvp-typed-execution-fastpaths-v85 -WatchPollSeconds 600`
+  - Register row: `DG-V85-002` (`dg-running`).

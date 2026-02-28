@@ -1,6 +1,12 @@
 # Implementation Log
 
 ## 2026-02-28
+- Async formal hardening + backlog housekeeping:
+  - expanded `scripts/run-formal-kani-async.ps1` with `Probe` and `Reconcile` actions, persisted `preflight.json` + `status_snapshot.json`, added stale-run archiving, richer status telemetry (file sizes/ages/stall hints), and watcher reconciliation controls;
+  - expanded `scripts/watch-formal-kani-async.ps1` liveness logging to include stdout/stderr byte growth and age probes per poll;
+  - hardened `scripts/run-formal.ps1` WSL Kani discovery with retry probing and explicit probe-detail reporting;
+  - reconciled deferred formal register/docs: folded `DG-V74-001`, `DG-V75-001`, `DG-V77-001`, and `DG-V78-001`; retained `DG-V79..83` deferred-running status;
+  - started async rerun lane `v85-kani-rerun` as `DG-V85-002` after preflight success (`cargo-kani 0.67.0` via WSL), with new evidence at `docs/evidence/formal/ASYNC_KANI_V85_RERUN.md`.
 - Completed `v82` (`mvp-array-redim-full-v82`):
   - added `ReDim Preserve` legality checks in typecheck (stable rank, stable non-last dimensions, stable lower bound of last dimension);
   - extended emitter `ReDim Preserve` lowering to clear resized tail ranges so shrink/expand cycles cannot resurrect stale values;

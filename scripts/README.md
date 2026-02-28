@@ -8,7 +8,7 @@
 - `run-formal.ps1`: runs manifest-driven formal obligations in non-blocking mode and writes markdown/csv reports.
 - `run-profile-gate.ps1`: runs formal + matrix + bench lanes and emits an integrated gate report for a profile scope.
 - `run-formal-kani-wsl.ps1`: strict formal run helper that executes Kani obligations through WSL.
-- `run-formal-kani-async.ps1`: async manager for long-running Kani/profile formal runs (`Start`/`Status`/`Tail`/`Wait`/`Stop`).
+- `run-formal-kani-async.ps1`: async manager for long-running Kani/profile formal runs (`Start`/`Status`/`Tail`/`Wait`/`Stop`/`WatchStart`/`WatchStop`/`Probe`/`Reconcile`).
 - `async-task-runner.ps1`: helper invoked by async managers to execute commands and persist exit status.
 - `run-bench.ps1`: captures baseline-vs-optimized mixed workload timing evidence (VM + JIT) for the active stabilization profile.
 - `setup-kani.ps1`: verifies or installs Kani toolchain and prints activation instructions for required formal mode.

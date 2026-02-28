@@ -4,7 +4,9 @@ param(
     [string]$ReportCsvPath = "docs/evidence/formal/latest_run.csv",
     [string]$ObligationsPath = "docs/evidence/formal/obligations.csv",
     [switch]$RequireKani,
-    [switch]$UseWslKani
+    [switch]$UseWslKani,
+    [int]$WslProbeRetries = 3,
+    [int]$WslProbeRetryDelaySeconds = 2
 )
 
 $ErrorActionPreference = "Stop"
@@ -19,6 +21,38 @@ function Convert-ToWslPath([string]$Path) {
     }
 
     throw "Unable to convert path to WSL form: $Path"
+}
+
+function Probe-WslCargoKani([int]$Retries, [int]$RetryDelaySeconds) {
+    $detail = ""
+    $version = ""
+    $available = $false
+
+    for ($attempt = 1; $attempt -le $Retries; $attempt++) {
+        try {
+            $out = (& wsl bash -lc 'source $HOME/.cargo/env && cargo kani --version' 2>&1) -join " "
+            if ($LASTEXITCODE -eq 0 -and -not [string]::IsNullOrWhiteSpace($out)) {
+                $available = $true
+                $version = $out.Trim()
+                $detail = "attempt=$attempt exit_code=0"
+                break
+            }
+            $detail = "attempt=$attempt exit_code=$LASTEXITCODE output=$out"
+        }
+        catch {
+            $detail = "attempt=$attempt error=$($_.Exception.Message)"
+        }
+
+        if ($attempt -lt $Retries -and $RetryDelaySeconds -gt 0) {
+            Start-Sleep -Seconds $RetryDelaySeconds
+        }
+    }
+
+    return [PSCustomObject]@{
+        available = $available
+        version = $version
+        detail = $detail
+    }
 }
 
 Push-Location (Join-Path $PSScriptRoot "..")
@@ -69,6 +103,7 @@ try {
     $localCargoKaniVersion = ""
     $wslCargoKaniVersion = ""
     $wslKaniAvailable = $false
+    $wslProbeDetail = ""
     $wslCommandAvailable = $null -ne (Get-Command wsl -ErrorAction SilentlyContinue)
     try {
         $localCargoKaniVersion = (& cargo kani --version 2>$null) -join " "
@@ -82,15 +117,10 @@ try {
     }
 
     if ($wslCommandAvailable) {
-        try {
-            $wslCargoKaniVersion = (& wsl bash -lc 'source $HOME/.cargo/env && cargo kani --version' 2>$null) -join " "
-            if ($LASTEXITCODE -eq 0 -and -not [string]::IsNullOrWhiteSpace($wslCargoKaniVersion)) {
-                $wslKaniAvailable = $true
-            }
-        }
-        catch {
-            $wslCargoKaniVersion = ""
-        }
+        $wslProbe = Probe-WslCargoKani -Retries $WslProbeRetries -RetryDelaySeconds $WslProbeRetryDelaySeconds
+        $wslKaniAvailable = $wslProbe.available
+        $wslCargoKaniVersion = $wslProbe.version
+        $wslProbeDetail = $wslProbe.detail
     }
 
     if ($UseWslKani) {
@@ -98,7 +128,10 @@ try {
             throw "formal lane: -UseWslKani requested but wsl is not available on PATH"
         }
         if (-not $wslKaniAvailable) {
-            throw "formal lane: -UseWslKani requested but cargo-kani is unavailable in WSL"
+            if ([string]::IsNullOrWhiteSpace($wslProbeDetail)) {
+                throw "formal lane: -UseWslKani requested but cargo-kani is unavailable in WSL"
+            }
+            throw "formal lane: -UseWslKani requested but cargo-kani is unavailable in WSL ($wslProbeDetail)"
         }
         $cargoKaniAvailable = $true
         $useWslForKani = $true
@@ -185,7 +218,8 @@ try {
         "- Kani required: $($kaniRequired.ToString().ToLowerInvariant())",
         "- Kani execution: $(if ($useWslForKani) { 'wsl' } elseif ($cargoKaniAvailable) { 'local' } elseif ($wslKaniAvailable) { 'deferred-to-wsl-async' } else { 'unavailable' })",
         "- cargo-kani (local): $(if ([string]::IsNullOrWhiteSpace($localCargoKaniVersion)) { 'unavailable' } else { $localCargoKaniVersion })",
-        "- cargo-kani (wsl): $(if ([string]::IsNullOrWhiteSpace($wslCargoKaniVersion)) { 'unavailable' } else { $wslCargoKaniVersion })"
+        "- cargo-kani (wsl): $(if ([string]::IsNullOrWhiteSpace($wslCargoKaniVersion)) { 'unavailable' } else { $wslCargoKaniVersion })",
+        "- wsl probe detail: $(if ([string]::IsNullOrWhiteSpace($wslProbeDetail)) { 'n/a' } else { $wslProbeDetail })"
     )
 
     $lines += @(

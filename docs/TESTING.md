@@ -15,6 +15,8 @@ For long Kani runs in profile execution, use:
 - Tail logs: `./scripts/run-formal-kani-async.ps1 -Action Tail -Name v3-kani`
 - Wait for completion: `./scripts/run-formal-kani-async.ps1 -Action Wait -Name v3-kani`
 - Stop: `./scripts/run-formal-kani-async.ps1 -Action Stop -Name v3-kani`
+- Probe toolchain before starting/restarting: `./scripts/run-formal-kani-async.ps1 -Action Probe -Name v3-kani`
+- Reconcile stale state/watchers: `./scripts/run-formal-kani-async.ps1 -Action Reconcile -Name v3-kani`
 - Start watcher (10-minute liveness poll): `./scripts/run-formal-kani-async.ps1 -Action WatchStart -Name v3-kani -WatchPollSeconds 600`
 - Stop watcher: `./scripts/run-formal-kani-async.ps1 -Action WatchStop -Name v3-kani`
 
