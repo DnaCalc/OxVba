@@ -4,7 +4,7 @@ syntax,Line continuation,implemented,v59,conformance/tests/line_continuation_bas
 syntax,Conditional compilation,implemented,v61,conformance/tests/conditional_compilation_basic.bas,
 syntax,Option Compare,implemented,v78,conformance/tests/string_compare_option_text.bas,
 syntax,Option Base,implemented,v81,conformance/tests/array_option_base_one_bounds.bas,
-syntax,With block member access subset,implemented,v60,conformance/tests/with_block_basic.bas,
+syntax,With block member access subset,implemented,v107,conformance/tests/with_block_member_target_chain.bas,nested and direct member-chain With targets normalized to flattened aliases
 control_flow,If Then End If,implemented,v2,conformance/tests/if_true.bas,
 control_flow,ElseIf chain,implemented,v5,conformance/tests/if_elseif_path.bas,
 control_flow,Else branch,implemented,v5,conformance/tests/if_else_path.bas,

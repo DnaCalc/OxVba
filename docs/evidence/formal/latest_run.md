@@ -1,7 +1,7 @@
 # Formal Run Report
 
-- Timestamp (UTC): 2026-02-28T21:16:50Z
-- Profile scope: mvp-lang-full-closure-gate-v106
+- Timestamp (UTC): 2026-02-28T23:02:27Z
+- Profile scope: mvp-lang-with-member-target-v107
 - Overall mode: non-blocking
 - Kani required: false
 - Kani execution: deferred-to-wsl-async
@@ -260,3 +260,6 @@
 | FO-V86-001 | v86 | no | pass | cargo test -p oxvba-host formal_v86_script_defaults_target_v86_profile_scope | crates/oxvba-host/src/engine.rs |  |
 | FO-V86-002 | v86 | no | pass | cargo test -p oxvba-host formal_v86_phase12_status_targets_v86_scope | docs/PHASE12_STATUS.md |  |
 | FO-V86-003 | v86 | no | pass | cargo test -p oxvba-host formal_v86_deferred_gate_audit_exists_with_unblock_steps | docs/evidence/formal/DG_AUDIT_V86.md |  |
+| FO-V107-001 | v107 | no | pass | cargo test -p oxvba-compiler resolve::tests::resolve_with_block_direct_member_target_assignment | crates/oxvba-compiler/src/resolve.rs |  |
+| FO-V107-002 | v107 | no | pass | cargo test -p oxvba-host formal_v107_with_block_direct_member_target_executes | crates/oxvba-host/src/engine.rs |  |
+| FO-V107-003 | v107 | no | pass | cargo test -p oxvba-host formal_v107_profile_status_document_exists | docs/profile-status/PROFILE_STATUS_V107.md |  |

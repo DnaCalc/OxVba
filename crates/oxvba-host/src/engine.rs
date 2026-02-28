@@ -2090,6 +2090,28 @@ mod tests {
     }
 
     #[test]
+    fn formal_v107_with_block_direct_member_target_executes() {
+        let source = "Sub Main()\nDim x\nWith x.inner\n.Value = 4\n.Value = .Value + 3\nx = .Value\nEnd With\nEnd Sub";
+        let out = Engine::new(HostConfig {
+            enable_jit: false,
+            root_object_name: None,
+        })
+        .execute_source_with_snapshot(source)
+        .expect("execution should succeed");
+        assert_eq!(out, vec![7, 7]);
+    }
+
+    #[test]
+    fn formal_v107_with_block_member_target_conformance_fixture_exists() {
+        assert!(repo_path("conformance/tests/with_block_member_target_chain.bas").exists());
+    }
+
+    #[test]
+    fn formal_v107_profile_status_document_exists() {
+        assert!(repo_path("docs/profile-status/PROFILE_STATUS_V107.md").exists());
+    }
+
+    #[test]
     fn formal_v21_opt_toggle_parity() {
         let source = "Sub Main()\nDim x\nx = 1\nx = x + 0\nx = x + 2\nEnd Sub";
         let bound = oxvba_compiler::resolve::resolve_symbols(source);

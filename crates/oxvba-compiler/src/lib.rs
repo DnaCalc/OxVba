@@ -113,6 +113,22 @@ mod tests {
     }
 
     #[test]
+    fn compile_with_block_direct_member_target_assignments() {
+        let source = "Sub Main()\nDim x\nWith x.inner\n.Value = 4\n.Value = .Value + 3\nx = .Value\nEnd With\nEnd Sub";
+        let out = compile(source).expect("compile should succeed");
+        assert!(
+            out.instructions
+                .iter()
+                .any(|i| matches!(i, Instruction::LoadConstI32 { value: 4, .. }))
+        );
+        assert!(
+            out.instructions
+                .iter()
+                .any(|i| matches!(i, Instruction::AddConstI32 { value: 3, .. }))
+        );
+    }
+
+    #[test]
     fn compile_conditional_compilation_if_else_branch() {
         let source = "#Const ENABLE = True\nSub Main()\nDim x\n#If ENABLE Then\nx = 7\n#Else\nx = 1\n#End If\nEnd Sub";
         let out = compile(source).expect("compile should succeed");

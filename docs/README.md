@@ -5,7 +5,7 @@
 | Document | Location | Description |
 |---|---|---|
 | **MACH-1000 Plan** | [`MACH1000_PLAN.md`](../MACH1000_PLAN.md) | The definitive OxVba project plan. Charter, architecture, formal approach, testing strategy, implementation sequencing. |
-| **AutoRun State** | [`AUTORUN_STATE.md`](AUTORUN_STATE.md) | Active execution guardrail for continuous runs. Current target ladder is `v87..v106` with terminal gate `v106`; blocker handling follows `CURRENT_BLOCKERS.md`. |
+| **AutoRun State** | [`AUTORUN_STATE.md`](AUTORUN_STATE.md) | Active execution guardrail for continuous runs. Current target ladder is `v107..v146` with terminal gate `v146`; blocker handling follows `CURRENT_BLOCKERS.md`. |
 | Implementation Log | [`IMPLEMENTATION_LOG.md`](IMPLEMENTATION_LOG.md) | Rolling execution log for implementation progress. |
 | Building | [`BUILDING.md`](BUILDING.md) | Build and local verification instructions. |
 | Contributing | [`CONTRIBUTING.md`](CONTRIBUTING.md) | Contribution workflow and compatibility evidence expectations. |
@@ -100,6 +100,7 @@
 | Profile v84 Status | [`PROFILE_STATUS_V84.md`](profile-status/PROFILE_STATUS_V84.md) | Current gate status contract for `mvp-array-boundary-and-dispatch-v84`. |
 | Profile v85 Status | [`PROFILE_STATUS_V85.md`](profile-status/PROFILE_STATUS_V85.md) | Current gate status contract for `mvp-typed-execution-fastpaths-v85`. |
 | Profile v86 Status | [`PROFILE_STATUS_V86.md`](profile-status/PROFILE_STATUS_V86.md) | Typing-ladder terminal gate status contract for `mvp-full-typing-conformance-gate-v86` (latest published profile status file before `v87..v106` ladder execution). |
+| Profile v107 Status | [`PROFILE_STATUS_V107.md`](profile-status/PROFILE_STATUS_V107.md) | Current gate status contract for `mvp-lang-with-member-target-v107`. |
 | Phase 12 Status | [`PHASE12_STATUS.md`](PHASE12_STATUS.md) | Declared profile scope and final conformance/stabilization gate artifacts. |
 | Work Set Plan (v2) | [`worksets/WORKSET_2026-02-27_CONTROLFLOW_V2.md`](worksets/WORKSET_2026-02-27_CONTROLFLOW_V2.md) | Detailed execution-grade plan for control-flow expansion beyond `mvp-int32-core-v1`. |
 | Work Set Plan (v3) | [`worksets/WORKSET_2026-02-27_FORMAL_FOUNDATION_V3.md`](worksets/WORKSET_2026-02-27_FORMAL_FOUNDATION_V3.md) | Formal infrastructure work set for manifest-driven obligations and reporting. |
@@ -191,6 +192,7 @@
 | Profile Ladder (v57-v66) | [`worksets/PROFILE_LADDER_2026-02-28_MACH1000_V57_V66.md`](worksets/PROFILE_LADDER_2026-02-28_MACH1000_V57_V66.md) | Language closure + formal depth + JIT throughput ladder for the next 10 profiles. |
 | Profile Ladder (v67-v86) | [`worksets/PROFILE_LADDER_2026-02-28_MACH1000_V67_V86_TYPING.md`](worksets/PROFILE_LADDER_2026-02-28_MACH1000_V67_V86_TYPING.md) | Full VBA typing semantics ladder: diagnostics, coercion, strings, arrays, and early/late interaction with deferred formal gates. |
 | Profile Ladder (v87-v106) | [`worksets/PROFILE_LADDER_2026-02-28_MACH1000_V87_V106_LANGUAGE_COMPLETION.md`](worksets/PROFILE_LADDER_2026-02-28_MACH1000_V87_V106_LANGUAGE_COMPLETION.md) | Outstanding language-feature closure ladder: loops, unstructured flow, resume/error semantics, UDT/property/late binding, and external declare binding. |
+| Profile Ladder (v107-v146) | [`worksets/PROFILE_LADDER_2026-02-28_MACH1000_V107_V146_FULL_VBA_LANGUAGE_BUILTINS.md`](worksets/PROFILE_LADDER_2026-02-28_MACH1000_V107_V146_FULL_VBA_LANGUAGE_BUILTINS.md) | Full VBA closure ladder: semantic completion, full built-in expansion, interop hardening, oracle conformance, formal foldback, and terminal integrated gate. |
 | Status Tours | [`status-tours/`](status-tours/) | Date-stamped orientation/showcase docs for implemented project state. |
 | Formal | [`FORMAL.md`](FORMAL.md) | Lean/Kani formal scaffold status and structure. |
 | Spec Checklist | [`evidence/SPEC_CHECKLIST.md`](evidence/SPEC_CHECKLIST.md) | Structured language + built-in/library checklist aligned to current evidence and planned gaps. |

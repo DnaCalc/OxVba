@@ -21,8 +21,8 @@ Use `docs/` and `synthesis/` for supporting context and provenance.
 - Execute the MACH1000 profile ladder continuously until completion.
 - Only reply when one of the following is true:
   - The active profile ladder is complete and its final gate is passed.
-    - Current active ladder: `v87..v106` (`docs/worksets/PROFILE_LADDER_2026-02-28_MACH1000_V87_V106_LANGUAGE_COMPLETION.md`)
-    - Current required terminal gate: `v106`
+    - Current active ladder: `v107..v146` (`docs/worksets/PROFILE_LADDER_2026-02-28_MACH1000_V107_V146_FULL_VBA_LANGUAGE_BUILTINS.md`)
+    - Current required terminal gate: `v146`
   - Blockers are documented and no progress can be made on any remaining ladder task without unblocking.
 
 ### Blocker Handling Protocol

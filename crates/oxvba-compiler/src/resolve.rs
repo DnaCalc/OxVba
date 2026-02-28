@@ -422,10 +422,10 @@ fn normalize_with_target(raw: &str, parent_target: Option<&str>) -> Option<Strin
     let trimmed = raw.trim();
     if let Some(member_tail) = trimmed.strip_prefix('.') {
         let parent = parent_target?;
-        let member = normalize_ident(member_tail)?;
-        return Some(format!("{parent}_{member}"));
+        let member_chain = normalize_member_chain(member_tail)?;
+        return Some(format!("{parent}_{member_chain}"));
     }
-    normalize_ident(trimmed)
+    normalize_member_chain(trimmed)
 }
 
 fn rewrite_with_member_accesses(line: &str, target: &str) -> String {
@@ -3055,10 +3055,22 @@ fn parse_array_reference(token: &str, array_bounds: &ArrayBoundsMap) -> Option<S
 
 fn parse_member_reference(token: &str) -> Option<String> {
     let trimmed = token.trim();
-    let (base_raw, member_raw) = trimmed.split_once('.')?;
-    let base = normalize_ident(base_raw)?;
-    let member = normalize_ident(member_raw)?;
-    Some(format!("{base}_{member}"))
+    if !trimmed.contains('.') {
+        return None;
+    }
+    normalize_member_chain(trimmed)
+}
+
+fn normalize_member_chain(text: &str) -> Option<String> {
+    let mut parts = Vec::new();
+    for part in text.split('.') {
+        let normalized = normalize_ident(part)?;
+        parts.push(normalized);
+    }
+    if parts.is_empty() {
+        return None;
+    }
+    Some(parts.join("_"))
 }
 
 fn normalize_ident(text: &str) -> Option<String> {
@@ -3594,6 +3606,28 @@ mod tests {
             panic!("expected assignment");
         };
         assert_eq!(target, "x_inner_value");
+    }
+
+    #[test]
+    fn resolve_with_block_direct_member_target_assignment() {
+        let source = "Sub Main()\nDim x\nWith x.inner\n.Value = 4\n.Value = .Value + 3\nx = .Value\nEnd With\nEnd Sub";
+        let module = resolve_symbols(source);
+        let Some(BoundStmt::Assign { target, expr }) = module.body.first() else {
+            panic!("expected assignment");
+        };
+        assert_eq!(target, "x_inner_value");
+        assert_eq!(expr, &BoundExpr::IntConst(4));
+        let Some(BoundStmt::Assign { target, expr }) = module.body.get(1) else {
+            panic!("expected second assignment");
+        };
+        assert_eq!(target, "x_inner_value");
+        assert_eq!(
+            expr,
+            &BoundExpr::AddConst {
+                var: "x_inner_value".to_string(),
+                delta: 3,
+            }
+        );
     }
 
     #[test]

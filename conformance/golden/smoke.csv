@@ -156,3 +156,4 @@
 "udt_field_access_basic.bas","ok","0,7,7,7"
 "while_wend_basic.bas","ok","3"
 "with_block_basic.bas","ok","3,3"
+"with_block_member_target_chain.bas","ok","7,7"

@@ -51,6 +51,7 @@ This register tracks long-running async formal obligations that are started duri
 | DG-V104-001 | v104 | v104-kani | dg-not-started | n/a | v106 | `remote/linux-pending` | Intentionally not started locally after crash/recovery and resource-risk review; queue for remote Linux execution handoff. |
 | DG-V105-001 | v105 | v105-kani | dg-not-started | n/a | v106 | `remote/linux-pending` | Intentionally not started locally after crash/recovery and resource-risk review; queue for remote Linux execution handoff. |
 | DG-V106-001 | v106 | v106-kani | dg-not-started | n/a | v106 | `remote/linux-pending` | Intentionally not started locally after crash/recovery and resource-risk review; queue for remote Linux execution handoff. |
+| DG-V107-001 | v107 | v107-kani | dg-not-started | n/a | v116 | `remote/linux-pending` | `v107` obligations added for direct member-target `With` semantics; strict lane deferred to remote Linux async dispatcher. |
 
 ## Update Protocol
 1. On async start, add a row with `dg-started` and paths.

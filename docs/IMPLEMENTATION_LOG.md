@@ -565,3 +565,10 @@
     - language coverage index and spec checklist statuses,
     - conformance oracle topic statuses for new local implementations,
     - deferred formal gate register and extended formal todo for `v100..v106` async remote lanes.
+- Started `v107` (`mvp-lang-with-member-target-v107`) toward the `v107..v146` ladder:
+  - extended resolver `With` normalization to support direct member-chain targets (`With x.inner`), not only root identifiers and relative nested forms.
+  - generalized dotted-member alias normalization for multi-segment chains via flattened names.
+  - added resolver/compiler tests for direct member-target `With` lowering.
+  - added conformance fixture `with_block_member_target_chain.bas` and updated golden expectations (`SLOTS:7,7`) for VM/JIT parity.
+  - published `PROFILE_STATUS_V107`, updated language coverage evidence row, and registered formal obligations `FO-V107-001..003`.
+  - executed formal run for `v107` scope (non-blocking mode), with Kani skips tracked as deferred (`DG-V107-001`, `FTODO-V107-001`).

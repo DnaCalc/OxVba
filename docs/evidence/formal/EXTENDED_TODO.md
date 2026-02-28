@@ -71,3 +71,9 @@ Non-blocking formal issues and follow-up items for later ladder profiles.
   Current status (`todo` / `investigating` / `resolved`): investigating
   Reproduction command: `./scripts/run-formal-kani-async.ps1 -Action Start -Name v100-kani -ProfileScope mvp-lang-udt-fields-v100` (repeat for `v101`, `v102`, `v103`, `v104`, `v105`, `v106`) on remote Linux host.
   Suggested next action: execute remote async Kani runs, update `DEFERRED_GATES.md`, and fold results into `latest_run.*` during post-v106 reconciliation.
+- ID: FTODO-V107-001
+  Profile: v107 formal lane
+  Summary: `v107` strict Kani lane is deferred to remote Linux execution; local formal run completed with non-blocking Kani skips.
+  Current status (`todo` / `investigating` / `resolved`): investigating
+  Reproduction command: `./scripts/run-formal-kani-remote.ps1 -Action StartDeferred -DeferredVersions "107" -DeferredMode cumulative`
+  Suggested next action: run remote async `v107-kani`, then fold status into `DEFERRED_GATES.md` and `latest_run.*`.
