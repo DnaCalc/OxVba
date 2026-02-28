@@ -1,6 +1,10 @@
 # Implementation Log
 
 ## 2026-02-28
+- Completed `v72` (`mvp-typing-diagnostic-rollup-v72`):
+  - consolidated typing diagnostics into `docs/DIAGNOSTIC_TAXONOMY.md` with category/message-prefix mapping;
+  - performed Track A deferred-gate reconciliation poll (`v67..v71`) and recorded unresolved live runs as follow-up `FTODO-V72-001`;
+  - added formal obligations `FO-V72-001..003`, produced matrix artifacts under `docs/evidence/profiles/v72/`, and started strict async Kani lane (`v72-kani`) as deferred gate `DG-V72-001`.
 - Completed `v71` (`mvp-typing-early-late-classification-v71`):
   - added deterministic call-mode classification in typecheck: `Early`, `Mixed`, `Late`;
   - classified mixed-mode calls for signatures/arguments involving `Variant`/`Object` flow;

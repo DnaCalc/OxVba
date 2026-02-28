@@ -17,3 +17,9 @@ Non-blocking formal issues and follow-up items for later ladder profiles.
   Current status (`todo` / `investigating` / `resolved`): todo
   Reproduction command: `cargo kani --version`
   Suggested next action: install `cargo-kani`, then rerun `./scripts/run-formal.ps1` and update manifest/report status.
+- ID: FTODO-V72-001
+  Profile: v72 reconciliation (`v67..v71` DG foldback)
+  Summary: Deferred-gate strict Kani runs `v67-kani` through `v71-kani` are still live (`dg-running`) at v72 checkpoint and cannot yet be folded to `dg-pass|dg-fail`.
+  Current status (`todo` / `investigating` / `resolved`): investigating
+  Reproduction command: `./scripts/run-formal-kani-async.ps1 -Action Status -Name v67-kani` (repeat for `v68-kani`..`v71-kani`)
+  Suggested next action: continue periodic status polling; when any run completes, merge outcome into `latest_run.md/csv`, update `DEFERRED_GATES.md`, and mark foldback status.

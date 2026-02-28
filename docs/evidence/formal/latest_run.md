@@ -1,7 +1,7 @@
 # Formal Run Report
 
-- Timestamp (UTC): 2026-02-28T10:32:56Z
-- Profile scope: mvp-typing-early-late-classification-v71
+- Timestamp (UTC): 2026-02-28T10:40:51Z
+- Profile scope: mvp-typing-diagnostic-rollup-v72
 - Overall mode: non-blocking
 - Kani required: false
 - Kani execution: deferred-to-wsl-async
@@ -214,3 +214,6 @@
 | FO-V71-001 | v71 | no | pass | cargo test -p oxvba-compiler late_bound_object_default_member_call_is_classified_with_explicit_diagnostic | crates/oxvba-compiler/src/lib.rs |  |
 | FO-V71-002 | v71 | no | pass | cargo test -p oxvba-compiler typecheck::tests::classify_call_mode_mixed_for_variant_signature | crates/oxvba-compiler/src/typecheck.rs |  |
 | FO-V71-003 | v71 | no | pass | cargo test -p oxvba-compiler typecheck::tests::classify_call_mode_late_for_object_default_member_target | crates/oxvba-compiler/src/typecheck.rs |  |
+| FO-V72-001 | v72 | no | pass | cargo test -p oxvba-compiler duplicate_dim_declaration_is_rejected | crates/oxvba-compiler/src/lib.rs |  |
+| FO-V72-002 | v72 | no | pass | cargo test -p oxvba-compiler late_bound_object_default_member_call_is_classified_with_explicit_diagnostic | crates/oxvba-compiler/src/lib.rs |  |
+| FO-V72-003 | v72 | no | pass | cargo test -p oxvba-compiler typecheck::tests::classify_call_mode_early_for_strict_typed_procedure | crates/oxvba-compiler/src/typecheck.rs |  |

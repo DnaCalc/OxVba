@@ -334,3 +334,14 @@ Per profile:
   - run: `v71-kani`,
   - status: `dg-running`,
   - register: `docs/evidence/formal/DEFERRED_GATES.md`.
+- `v72` (`mvp-typing-diagnostic-rollup-v72`) completed:
+  - matrix gate `PASS` (`docs/evidence/profiles/v72/gate_report.md`),
+  - formal obligations `FO-V72-001..003` pass (`docs/evidence/formal/latest_run.md`),
+  - diagnostic taxonomy published (`docs/DIAGNOSTIC_TAXONOMY.md`).
+- Track A DG reconciliation (`v67..v71`) checkpoint:
+  - all tracked runs currently `dg-running` at poll time,
+  - unresolved foldback recorded in `docs/evidence/formal/EXTENDED_TODO.md` (`FTODO-V72-001`).
+- Strict WSL Kani lane for `v72` started async as deferred gate:
+  - run: `v72-kani`,
+  - status: `dg-running`,
+  - register: `docs/evidence/formal/DEFERRED_GATES.md`.
