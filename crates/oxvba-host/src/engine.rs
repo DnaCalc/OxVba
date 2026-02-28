@@ -431,6 +431,43 @@ mod tests {
     }
 
     #[test]
+    fn formal_v85_typed_fastpath_vm_parity_disabled_vs_enabled() {
+        let source = "Sub Main()\nDim x As Long\nDim i As Long\nx = 0\nFor i = 1 To 100\nx = x + 3\nNext i\nEnd Sub";
+        let bytecode = oxvba_compiler::compile(source).expect("compile should succeed");
+
+        let fast = oxvba_vm::execute_and_snapshot_with_typed_fastpaths(&bytecode, true)
+            .expect("fastpath execution should succeed");
+        let baseline = oxvba_vm::execute_and_snapshot_with_typed_fastpaths(&bytecode, false)
+            .expect("baseline execution should succeed");
+
+        assert_eq!(fast, baseline);
+        assert_eq!(fast[0], 300);
+    }
+
+    #[test]
+    fn formal_v85_typed_fastpath_jit_vm_equivalence() {
+        let source = "Sub Main()\nDim x As Long\nDim i As Long\nx = 0\nFor i = 1 To 75\nx = x + 2\nNext i\nEnd Sub";
+        let vm_out = Engine::new(HostConfig {
+            enable_jit: false,
+            root_object_name: None,
+        })
+        .execute_source_with_snapshot(source)
+        .expect("vm execution should succeed");
+        let jit_out = Engine::new(HostConfig {
+            enable_jit: true,
+            root_object_name: None,
+        })
+        .execute_source_with_snapshot(source)
+        .expect("jit execution should succeed");
+        assert_eq!(vm_out, jit_out);
+    }
+
+    #[test]
+    fn formal_v85_typed_fastpath_hotloop_fixture_exists() {
+        assert!(repo_path("conformance/tests/typed_fastpath_hotloop.bas").exists());
+    }
+
+    #[test]
     fn formal_v40_gosub_executes_label_body_and_returns() {
         let engine = Engine::new(HostConfig::default());
         let source = "Sub Main()\nDim x\nx = 1\nGoSub add_two\nx = x + 1\nIf Err.Number = -1 Then\nadd_two:\nx = x + 2\nReturn\nEnd If\nEnd Sub";

@@ -1,7 +1,7 @@
 # Formal Run Report
 
-- Timestamp (UTC): 2026-02-28T10:44:17Z
-- Profile scope: mvp-typing-diagnostic-rollup-v72
+- Timestamp (UTC): 2026-02-28T10:54:15Z
+- Profile scope: mvp-typing-coercion-matrix-v73
 - Overall mode: non-blocking
 - Kani required: true
 - Kani execution: wsl
@@ -217,3 +217,6 @@
 | FO-V72-001 | v72 | no | pass | cargo test -p oxvba-compiler duplicate_dim_declaration_is_rejected | crates/oxvba-compiler/src/lib.rs |  |
 | FO-V72-002 | v72 | no | pass | cargo test -p oxvba-compiler late_bound_object_default_member_call_is_classified_with_explicit_diagnostic | crates/oxvba-compiler/src/lib.rs |  |
 | FO-V72-003 | v72 | no | pass | cargo test -p oxvba-compiler typecheck::tests::classify_call_mode_early_for_strict_typed_procedure | crates/oxvba-compiler/src/typecheck.rs |  |
+| FO-V73-001 | v73 | no | pass | cargo test -p oxvba-compiler typecheck::tests::coercion_table_rows_align_with_typecheck_rules | crates/oxvba-compiler/src/typecheck.rs |  |
+| FO-V73-002 | v73 | no | pass | cargo test -p oxvba-compiler coercion_assignment_object_to_long_is_rejected | crates/oxvba-compiler/src/lib.rs |  |
+| FO-V73-003 | v73 | no | pass | cargo test -p oxvba-compiler coercion_argument_object_to_long_is_rejected | crates/oxvba-compiler/src/lib.rs |  |

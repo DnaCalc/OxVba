@@ -442,3 +442,12 @@ Per profile:
 - Track D DG reconciliation (`v80..v83`) checkpoint:
   - tracked strict runs `v80-kani`, `v81-kani`, `v82-kani`, and `v83-kani` are currently `dg-running` at poll time,
   - unresolved foldback recorded in `docs/evidence/formal/EXTENDED_TODO.md` (`FTODO-V84-001`).
+- `v85` (`mvp-typed-execution-fastpaths-v85`) completed:
+  - matrix gate `PASS` (`docs/evidence/profiles/v85/gate_report.md`),
+  - formal obligations `FO-V85-001..003` pass (`docs/evidence/formal/latest_run.md`),
+  - benchmark artifacts recorded (`docs/evidence/profiles/v85/benchmark_latest.md`, aggregate gain `0.31%`),
+  - added typed VM fast-path helpers for core integer slot ops with baseline fallback parity checks.
+- Strict WSL Kani lane for `v85` started async as deferred gate:
+  - run: `v85-kani`,
+  - status: `dg-running`,
+  - register: `docs/evidence/formal/DEFERRED_GATES.md`.

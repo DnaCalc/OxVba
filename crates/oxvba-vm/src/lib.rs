@@ -19,3 +19,12 @@ pub fn execute_and_snapshot(bytecode: &Bytecode) -> Result<Vec<i32>, String> {
     vm.execute(bytecode)?;
     Ok(vm.snapshot_slots(bytecode.user_slot_count))
 }
+
+pub fn execute_and_snapshot_with_typed_fastpaths(
+    bytecode: &Bytecode,
+    typed_fastpaths: bool,
+) -> Result<Vec<i32>, String> {
+    let mut vm = Vm::default();
+    vm.execute_with_typed_fastpaths(bytecode, typed_fastpaths)?;
+    Ok(vm.snapshot_slots(bytecode.user_slot_count))
+}

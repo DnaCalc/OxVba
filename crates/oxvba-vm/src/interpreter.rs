@@ -39,6 +39,15 @@ impl Vm {
     }
 
     pub fn execute(&mut self, bytecode: &Bytecode) -> Result<(), String> {
+        let typed_fastpaths = Self::typed_fastpaths_enabled_from_env();
+        self.execute_with_typed_fastpaths(bytecode, typed_fastpaths)
+    }
+
+    pub fn execute_with_typed_fastpaths(
+        &mut self,
+        bytecode: &Bytecode,
+        typed_fastpaths: bool,
+    ) -> Result<(), String> {
         self.ensure_slot_count(bytecode.slot_count);
         let mut pc = 0usize;
         let len = bytecode.instructions.len();
@@ -50,16 +59,28 @@ impl Vm {
                     pc += 1;
                 }
                 Instruction::AddConstI32 { slot, value } => {
+                    if typed_fastpaths && self.fast_add_const(*slot, *value) {
+                        pc += 1;
+                        continue;
+                    }
                     let lhs = self.read_slot(*slot)?;
                     self.write_slot(*slot, lhs + *value)?;
                     pc += 1;
                 }
                 Instruction::SubConstI32 { slot, value } => {
+                    if typed_fastpaths && self.fast_sub_const(*slot, *value) {
+                        pc += 1;
+                        continue;
+                    }
                     let lhs = self.read_slot(*slot)?;
                     self.write_slot(*slot, lhs - *value)?;
                     pc += 1;
                 }
                 Instruction::CopySlot { dst, src } => {
+                    if typed_fastpaths && self.fast_copy_slot(*dst, *src) {
+                        pc += 1;
+                        continue;
+                    }
                     let value = self.read_slot(*src)?;
                     self.write_slot(*dst, value)?;
                     pc += 1;
@@ -522,6 +543,10 @@ impl Vm {
                     pc += 1;
                 }
                 Instruction::CmpEqSlots { dst, lhs, rhs } => {
+                    if typed_fastpaths && self.fast_cmp_slots(*dst, *lhs, *rhs, |l, r| l == r) {
+                        pc += 1;
+                        continue;
+                    }
                     let out = if self.read_slot(*lhs)? == self.read_slot(*rhs)? {
                         1
                     } else {
@@ -531,6 +556,10 @@ impl Vm {
                     pc += 1;
                 }
                 Instruction::CmpNeSlots { dst, lhs, rhs } => {
+                    if typed_fastpaths && self.fast_cmp_slots(*dst, *lhs, *rhs, |l, r| l != r) {
+                        pc += 1;
+                        continue;
+                    }
                     let out = if self.read_slot(*lhs)? != self.read_slot(*rhs)? {
                         1
                     } else {
@@ -540,6 +569,10 @@ impl Vm {
                     pc += 1;
                 }
                 Instruction::CmpLtSlots { dst, lhs, rhs } => {
+                    if typed_fastpaths && self.fast_cmp_slots(*dst, *lhs, *rhs, |l, r| l < r) {
+                        pc += 1;
+                        continue;
+                    }
                     let out = if self.read_slot(*lhs)? < self.read_slot(*rhs)? {
                         1
                     } else {
@@ -549,6 +582,10 @@ impl Vm {
                     pc += 1;
                 }
                 Instruction::CmpLeSlots { dst, lhs, rhs } => {
+                    if typed_fastpaths && self.fast_cmp_slots(*dst, *lhs, *rhs, |l, r| l <= r) {
+                        pc += 1;
+                        continue;
+                    }
                     let out = if self.read_slot(*lhs)? <= self.read_slot(*rhs)? {
                         1
                     } else {
@@ -558,6 +595,10 @@ impl Vm {
                     pc += 1;
                 }
                 Instruction::CmpGtSlots { dst, lhs, rhs } => {
+                    if typed_fastpaths && self.fast_cmp_slots(*dst, *lhs, *rhs, |l, r| l > r) {
+                        pc += 1;
+                        continue;
+                    }
                     let out = if self.read_slot(*lhs)? > self.read_slot(*rhs)? {
                         1
                     } else {
@@ -567,6 +608,10 @@ impl Vm {
                     pc += 1;
                 }
                 Instruction::CmpGeSlots { dst, lhs, rhs } => {
+                    if typed_fastpaths && self.fast_cmp_slots(*dst, *lhs, *rhs, |l, r| l >= r) {
+                        pc += 1;
+                        continue;
+                    }
                     let out = if self.read_slot(*lhs)? >= self.read_slot(*rhs)? {
                         1
                     } else {
@@ -654,6 +699,10 @@ impl Vm {
                     }
                 }
                 Instruction::IncSlot { slot } => {
+                    if typed_fastpaths && self.fast_add_const(*slot, 1) {
+                        pc += 1;
+                        continue;
+                    }
                     let value = self.read_slot(*slot)?;
                     self.write_slot(*slot, value + 1)?;
                     pc += 1;
@@ -677,6 +726,57 @@ impl Vm {
         }
         self.registers.registers[slot] = value;
         Ok(())
+    }
+
+    fn typed_fastpaths_enabled_from_env() -> bool {
+        std::env::var("OXVBA_DISABLE_TYPED_FASTPATH")
+            .map(|value| value != "1")
+            .unwrap_or(true)
+    }
+
+    fn fast_read_slot(&self, slot: usize) -> Option<i32> {
+        self.registers.registers.get(slot).copied()
+    }
+
+    fn fast_write_slot(&mut self, slot: usize, value: i32) -> bool {
+        let Some(dst) = self.registers.registers.get_mut(slot) else {
+            return false;
+        };
+        *dst = value;
+        true
+    }
+
+    fn fast_add_const(&mut self, slot: usize, value: i32) -> bool {
+        let Some(dst) = self.registers.registers.get_mut(slot) else {
+            return false;
+        };
+        *dst += value;
+        true
+    }
+
+    fn fast_sub_const(&mut self, slot: usize, value: i32) -> bool {
+        let Some(dst) = self.registers.registers.get_mut(slot) else {
+            return false;
+        };
+        *dst -= value;
+        true
+    }
+
+    fn fast_copy_slot(&mut self, dst: usize, src: usize) -> bool {
+        let Some(value) = self.fast_read_slot(src) else {
+            return false;
+        };
+        self.fast_write_slot(dst, value)
+    }
+
+    fn fast_cmp_slots<F>(&mut self, dst: usize, lhs: usize, rhs: usize, pred: F) -> bool
+    where
+        F: FnOnce(i32, i32) -> bool,
+    {
+        let (Some(lhs), Some(rhs)) = (self.fast_read_slot(lhs), self.fast_read_slot(rhs)) else {
+            return false;
+        };
+        self.fast_write_slot(dst, if pred(lhs, rhs) { 1 } else { 0 })
     }
 
     fn next_pc_for_jump(target_pc: usize, instruction_len: usize) -> Result<usize, String> {
@@ -985,6 +1085,38 @@ mod tests {
         let mut vm = Vm::default();
         vm.execute(&bytecode).expect("vm should execute bytecode");
         assert_eq!(vm.snapshot_slots(1), vec![7]);
+    }
+
+    #[test]
+    fn typed_fastpath_toggle_preserves_hot_instruction_semantics() {
+        let bytecode = Bytecode {
+            instructions: vec![
+                Instruction::LoadConstI32 { slot: 0, value: 1 },
+                Instruction::LoadConstI32 { slot: 1, value: 2 },
+                Instruction::AddConstI32 { slot: 0, value: 4 },
+                Instruction::SubConstI32 { slot: 1, value: 1 },
+                Instruction::CopySlot { dst: 2, src: 0 },
+                Instruction::CmpGtSlots {
+                    dst: 3,
+                    lhs: 2,
+                    rhs: 1,
+                },
+                Instruction::IncSlot { slot: 2 },
+                Instruction::Halt,
+            ],
+            slot_count: 4,
+            user_slot_count: 4,
+        };
+
+        let mut fast = Vm::default();
+        fast.execute_with_typed_fastpaths(&bytecode, true)
+            .expect("fastpath execution should succeed");
+        let mut baseline = Vm::default();
+        baseline
+            .execute_with_typed_fastpaths(&bytecode, false)
+            .expect("baseline execution should succeed");
+
+        assert_eq!(fast.snapshot_slots(4), baseline.snapshot_slots(4));
     }
 
     #[test]

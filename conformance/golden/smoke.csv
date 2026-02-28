@@ -103,6 +103,7 @@ select_case_multi.bas,ok,30
 resume_next_statement_ok.bas,ok,1
 smoke.bas,ok,15
 subtract.bas,ok,16
+typed_fastpath_hotloop.bas,ok,"300,101"
 stdlib_date_serial_value.bas,ok,"20260228,20260228"
 stdlib_time_serial_value.bas,ok,"3723,3723"
 stdlib_date_add_diff.bas,ok,"20260231,3"

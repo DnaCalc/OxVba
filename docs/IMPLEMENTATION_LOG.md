@@ -477,3 +477,8 @@
   - wired dispatch-boundary marshalling for array-tag arguments in VM `DispatchInvoke` path while preserving scalar dispatch outputs.
   - added conformance coverage for array dispatch boundary and paramarray-to-dispatch boundary flow.
   - added formal obligations `FO-V84-001..003`, published `PROFILE_STATUS_V84`, and recorded Track-D DG reconciliation state (`FTODO-V84-001`).
+- Started `mvp-typed-execution-fastpaths-v85` pass:
+  - added explicit VM typed-fastpath execution mode for hot integer slot ops with fallback to canonical handlers.
+  - added VM API for parity execution with fastpaths enabled/disabled and host formal checks for behavioral equivalence.
+  - added typed hot-loop conformance fixture and benchmark capture for `v85` (`aggregate gain 0.31%` in current run).
+  - added formal obligations `FO-V85-001..003`, published `PROFILE_STATUS_V85`, and started strict async DG lane `DG-V85-001`.

@@ -242,3 +242,6 @@ FO-V83-003,v83,"cargo test -p oxvba-host formal_v83_paramarray_named_args_reject
 FO-V84-001,v84,"cargo test -p oxvba-host formal_v84_dispatch_invoke_marshals_array_argument_shape",no,true,crates/oxvba-host/src/engine.rs
 FO-V84-002,v84,"cargo test -p oxvba-host formal_v84_paramarray_pack_roundtrips_into_dispatch_boundary",no,true,crates/oxvba-host/src/engine.rs
 FO-V84-003,v84,"cargo test -p oxvba-host formal_v84_deferred_gate_rows_present_for_array_track",no,true,crates/oxvba-host/src/engine.rs
+FO-V85-001,v85,"cargo test -p oxvba-host formal_v85_typed_fastpath_vm_parity_disabled_vs_enabled",no,true,crates/oxvba-host/src/engine.rs
+FO-V85-002,v85,"cargo test -p oxvba-host formal_v85_typed_fastpath_jit_vm_equivalence",no,true,crates/oxvba-host/src/engine.rs
+FO-V85-003,v85,"cargo test -p oxvba-host formal_v85_typed_fastpath_hotloop_fixture_exists",no,true,crates/oxvba-host/src/engine.rs

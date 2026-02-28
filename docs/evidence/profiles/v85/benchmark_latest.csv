@@ -1,0 +1,3 @@
+"profile_scope","workload","backend","baseline_ms","optimized_ms","gain_percent"
+"mvp-typed-execution-fastpaths-v85","conformance_vm","vm","52923.81","52443.38","0.91"
+"mvp-typed-execution-fastpaths-v85","conformance_jit","jit","52957.95","53110.06","-0.29"
