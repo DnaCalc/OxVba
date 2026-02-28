@@ -1497,12 +1497,14 @@ mod tests {
                 || matrix.contains("mvp-full-coverage-perf-gate-v36")
                 || matrix.contains("mvp-language-stdlib-consolidation-gate-v56")
                 || matrix.contains("mvp-stabilization-rollup-v66")
+                || matrix.contains("mvp-full-typing-conformance-gate-v86")
         );
         assert!(
             formal.contains("mvp-perf-shape-v26")
                 || formal.contains("mvp-full-coverage-perf-gate-v36")
                 || formal.contains("mvp-language-stdlib-consolidation-gate-v56")
                 || formal.contains("mvp-stabilization-rollup-v66")
+                || formal.contains("mvp-full-typing-conformance-gate-v86")
         );
     }
 
@@ -1516,6 +1518,7 @@ mod tests {
                 || bench.contains("docs/evidence/profiles/v56/benchmark_latest.md")
                 || bench.contains("docs/evidence/profiles/v64/benchmark_latest.md")
                 || bench.contains("docs/evidence/profiles/v66/benchmark_latest.md")
+                || bench.contains("docs/evidence/profiles/v86/benchmark_latest.md")
         );
     }
 
@@ -1725,11 +1728,13 @@ mod tests {
             matrix.contains("mvp-full-coverage-perf-gate-v36")
                 || matrix.contains("mvp-language-stdlib-consolidation-gate-v56")
                 || matrix.contains("mvp-stabilization-rollup-v66")
+                || matrix.contains("mvp-full-typing-conformance-gate-v86")
         );
         assert!(
             formal.contains("mvp-full-coverage-perf-gate-v36")
                 || formal.contains("mvp-language-stdlib-consolidation-gate-v56")
                 || formal.contains("mvp-stabilization-rollup-v66")
+                || formal.contains("mvp-full-typing-conformance-gate-v86")
         );
     }
 
@@ -1742,6 +1747,7 @@ mod tests {
                 || bench.contains("docs/evidence/profiles/v56/benchmark_latest.md")
                 || bench.contains("docs/evidence/profiles/v64/benchmark_latest.md")
                 || bench.contains("docs/evidence/profiles/v66/benchmark_latest.md")
+                || bench.contains("docs/evidence/profiles/v86/benchmark_latest.md")
         );
     }
 
@@ -1759,10 +1765,12 @@ mod tests {
         assert!(
             matrix.contains("mvp-language-stdlib-consolidation-gate-v56")
                 || matrix.contains("mvp-stabilization-rollup-v66")
+                || matrix.contains("mvp-full-typing-conformance-gate-v86")
         );
         assert!(
             formal.contains("mvp-language-stdlib-consolidation-gate-v56")
                 || formal.contains("mvp-stabilization-rollup-v66")
+                || formal.contains("mvp-full-typing-conformance-gate-v86")
         );
     }
 
@@ -1774,6 +1782,7 @@ mod tests {
             bench.contains("docs/evidence/profiles/v56/benchmark_latest.md")
                 || bench.contains("docs/evidence/profiles/v64/benchmark_latest.md")
                 || bench.contains("docs/evidence/profiles/v66/benchmark_latest.md")
+                || bench.contains("docs/evidence/profiles/v86/benchmark_latest.md")
         );
     }
 
@@ -1980,10 +1989,12 @@ mod tests {
         assert!(
             bench.contains("docs/evidence/profiles/v64/benchmark_latest.md")
                 || bench.contains("docs/evidence/profiles/v66/benchmark_latest.md")
+                || bench.contains("docs/evidence/profiles/v86/benchmark_latest.md")
         );
         assert!(
             bench.contains("docs/evidence/profiles/v64/benchmark_latest.csv")
                 || bench.contains("docs/evidence/profiles/v66/benchmark_latest.csv")
+                || bench.contains("docs/evidence/profiles/v86/benchmark_latest.csv")
         );
     }
 
@@ -2020,9 +2031,18 @@ mod tests {
             .expect("run-formal script exists");
         let bench = std::fs::read_to_string(repo_path("scripts/run-bench.ps1"))
             .expect("run-bench script exists");
-        assert!(matrix.contains("mvp-stabilization-rollup-v66"));
-        assert!(formal.contains("mvp-stabilization-rollup-v66"));
-        assert!(bench.contains("docs/evidence/profiles/v66/benchmark_latest.md"));
+        assert!(
+            matrix.contains("mvp-stabilization-rollup-v66")
+                || matrix.contains("mvp-full-typing-conformance-gate-v86")
+        );
+        assert!(
+            formal.contains("mvp-stabilization-rollup-v66")
+                || formal.contains("mvp-full-typing-conformance-gate-v86")
+        );
+        assert!(
+            bench.contains("docs/evidence/profiles/v66/benchmark_latest.md")
+                || bench.contains("docs/evidence/profiles/v86/benchmark_latest.md")
+        );
     }
 
     #[test]
@@ -2033,6 +2053,40 @@ mod tests {
     #[test]
     fn formal_v66_profile_status_document_exists() {
         assert!(repo_path("docs/profile-status/PROFILE_STATUS_V66.md").exists());
+    }
+
+    #[test]
+    fn formal_v86_script_defaults_target_v86_profile_scope() {
+        let matrix = std::fs::read_to_string(repo_path("scripts/run-matrix.ps1"))
+            .expect("run-matrix script exists");
+        let formal = std::fs::read_to_string(repo_path("scripts/run-formal.ps1"))
+            .expect("run-formal script exists");
+        let bench = std::fs::read_to_string(repo_path("scripts/run-bench.ps1"))
+            .expect("run-bench script exists");
+        let integrated = std::fs::read_to_string(repo_path("scripts/run-profile-gate.ps1"))
+            .expect("run-profile-gate script exists");
+        assert!(matrix.contains("mvp-full-typing-conformance-gate-v86"));
+        assert!(formal.contains("mvp-full-typing-conformance-gate-v86"));
+        assert!(bench.contains("docs/evidence/profiles/v86/benchmark_latest.md"));
+        assert!(integrated.contains("mvp-full-typing-conformance-gate-v86"));
+    }
+
+    #[test]
+    fn formal_v86_phase12_status_targets_v86_scope() {
+        let text = std::fs::read_to_string(repo_path("docs/PHASE12_STATUS.md"))
+            .expect("phase status doc exists");
+        assert!(text.contains("mvp-full-typing-conformance-gate-v86"));
+        assert!(text.contains("docs/evidence/profiles/v86/matrix_latest.csv"));
+        assert!(text.contains("docs/evidence/profiles/v86/integrated_gate.md"));
+    }
+
+    #[test]
+    fn formal_v86_deferred_gate_audit_exists_with_unblock_steps() {
+        let text = std::fs::read_to_string(repo_path("docs/evidence/formal/DG_AUDIT_V86.md"))
+            .expect("v86 dg audit exists");
+        assert!(text.contains("Unblocking steps"));
+        assert!(text.contains("DG-V74-001"));
+        assert!(text.contains("DG-V85-001"));
     }
 
     #[test]

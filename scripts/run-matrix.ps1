@@ -1,6 +1,6 @@
 param(
-    [string]$ProfileScope = "mvp-stabilization-rollup-v66",
-    [string]$OutputDir = "docs/evidence/profiles/v66",
+    [string]$ProfileScope = "mvp-full-typing-conformance-gate-v86",
+    [string]$OutputDir = "docs/evidence/profiles/v86",
     [string]$OutputCsv = "",
     [string]$SummaryPath = ""
 )

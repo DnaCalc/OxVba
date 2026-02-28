@@ -482,3 +482,8 @@
   - added VM API for parity execution with fastpaths enabled/disabled and host formal checks for behavioral equivalence.
   - added typed hot-loop conformance fixture and benchmark capture for `v85` (`aggregate gain 0.31%` in current run).
   - added formal obligations `FO-V85-001..003`, published `PROFILE_STATUS_V85`, and started strict async DG lane `DG-V85-001`.
+- Started `mvp-full-typing-conformance-gate-v86` terminal pass:
+  - switched profile-gate script defaults (`run-formal`, `run-matrix`, `run-bench`, `run-profile-gate`) to v86 scope and artifacts.
+  - executed integrated profile gate for `v86` with `PASS` and published artifacts under `docs/evidence/profiles/v86/`.
+  - reconciled deferred-gate register with folded strict completions and explicit deferred audit/unblock steps (`DG_AUDIT_V86.md`).
+  - updated `PHASE12_STATUS.md` and published `PROFILE_STATUS_V86` + `WORKSET_2026-02-28_FULL_TYPING_CONFORMANCE_GATE_V86`.

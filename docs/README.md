@@ -98,6 +98,7 @@
 | Profile v83 Status | [`PROFILE_STATUS_V83.md`](profile-status/PROFILE_STATUS_V83.md) | Current gate status contract for `mvp-array-call-and-paramarray-v83`. |
 | Profile v84 Status | [`PROFILE_STATUS_V84.md`](profile-status/PROFILE_STATUS_V84.md) | Current gate status contract for `mvp-array-boundary-and-dispatch-v84`. |
 | Profile v85 Status | [`PROFILE_STATUS_V85.md`](profile-status/PROFILE_STATUS_V85.md) | Current gate status contract for `mvp-typed-execution-fastpaths-v85`. |
+| Profile v86 Status | [`PROFILE_STATUS_V86.md`](profile-status/PROFILE_STATUS_V86.md) | Current gate status contract for `mvp-full-typing-conformance-gate-v86`. |
 | Phase 12 Status | [`PHASE12_STATUS.md`](PHASE12_STATUS.md) | Declared profile scope and final conformance/stabilization gate artifacts. |
 | Work Set Plan (v2) | [`worksets/WORKSET_2026-02-27_CONTROLFLOW_V2.md`](worksets/WORKSET_2026-02-27_CONTROLFLOW_V2.md) | Detailed execution-grade plan for control-flow expansion beyond `mvp-int32-core-v1`. |
 | Work Set Plan (v3) | [`worksets/WORKSET_2026-02-27_FORMAL_FOUNDATION_V3.md`](worksets/WORKSET_2026-02-27_FORMAL_FOUNDATION_V3.md) | Formal infrastructure work set for manifest-driven obligations and reporting. |
@@ -182,6 +183,7 @@
 | Work Set Plan (v83) | [`worksets/WORKSET_2026-02-28_ARRAY_CALL_PARAMARRAY_V83.md`](worksets/WORKSET_2026-02-28_ARRAY_CALL_PARAMARRAY_V83.md) | Array call semantics and initial `ParamArray` packing support in current subset. |
 | Work Set Plan (v84) | [`worksets/WORKSET_2026-02-28_ARRAY_BOUNDARY_DISPATCH_V84.md`](worksets/WORKSET_2026-02-28_ARRAY_BOUNDARY_DISPATCH_V84.md) | Array dispatch-boundary marshalling subset and deferred-gate reconciliation checkpoint for array track DG runs. |
 | Work Set Plan (v85) | [`worksets/WORKSET_2026-02-28_TYPED_EXEC_FASTPATHS_V85.md`](worksets/WORKSET_2026-02-28_TYPED_EXEC_FASTPATHS_V85.md) | Typed VM execution fast-paths with fallback parity checks and typed hot-loop benchmark capture. |
+| Work Set Plan (v86) | [`worksets/WORKSET_2026-02-28_FULL_TYPING_CONFORMANCE_GATE_V86.md`](worksets/WORKSET_2026-02-28_FULL_TYPING_CONFORMANCE_GATE_V86.md) | Final typing ladder gate: integrated evidence rollup, deferred-gate audit, and Phase 12 status consolidation. |
 | Work Set Plan (v27-v36) | [`worksets/WORKSET_2026-02-27_BATCH_V27_V36.md`](worksets/WORKSET_2026-02-27_BATCH_V27_V36.md) | Next long batch: formal reliability, language coverage closure, and hotspot performance work. |
 | Profile Ladder | [`worksets/PROFILE_LADDER_2026-02-27_MACH1000.md`](worksets/PROFILE_LADDER_2026-02-27_MACH1000.md) | MACH1000 profile roadmap and execution history. |
 | Profile Ladder (v37-v56) | [`worksets/PROFILE_LADDER_2026-02-27_MACH1000_V37_V56.md`](worksets/PROFILE_LADDER_2026-02-27_MACH1000_V37_V56.md) | Next horizon ladder split into language core, intrinsic runtime, and host/interop tracks. |

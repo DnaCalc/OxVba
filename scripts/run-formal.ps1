@@ -1,5 +1,5 @@
 param(
-    [string]$ProfileScope = "mvp-stabilization-rollup-v66",
+    [string]$ProfileScope = "mvp-full-typing-conformance-gate-v86",
     [string]$ReportPath = "docs/evidence/formal/latest_run.md",
     [string]$ReportCsvPath = "docs/evidence/formal/latest_run.csv",
     [string]$ObligationsPath = "docs/evidence/formal/obligations.csv",

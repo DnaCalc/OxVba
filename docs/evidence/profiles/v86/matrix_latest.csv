@@ -1,0 +1,3 @@
+"profile_scope","os","arch","backend","required","result","tests_ran","captured_at_utc","evidence_file"
+"mvp-full-typing-conformance-gate-v86","windows","x64","vm","true","green","133","2026-02-28T14:48:38Z","docs\evidence\profiles\v86\conformance_vm.csv"
+"mvp-full-typing-conformance-gate-v86","windows","x64","jit","true","green","133","2026-02-28T14:48:38Z","docs\evidence\profiles\v86\conformance_jit.csv"

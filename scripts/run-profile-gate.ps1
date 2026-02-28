@@ -1,6 +1,6 @@
 param(
-    [string]$ProfileScope = "mvp-integrated-correctness-perf-gate-v65",
-    [string]$OutputDir = "docs/evidence/profiles/v65",
+    [string]$ProfileScope = "mvp-full-typing-conformance-gate-v86",
+    [string]$OutputDir = "docs/evidence/profiles/v86",
     [int]$BenchIterations = 3
 )
 

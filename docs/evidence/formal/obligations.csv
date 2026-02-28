@@ -245,3 +245,6 @@ FO-V84-003,v84,"cargo test -p oxvba-host formal_v84_deferred_gate_rows_present_f
 FO-V85-001,v85,"cargo test -p oxvba-host formal_v85_typed_fastpath_vm_parity_disabled_vs_enabled",no,true,crates/oxvba-host/src/engine.rs
 FO-V85-002,v85,"cargo test -p oxvba-host formal_v85_typed_fastpath_jit_vm_equivalence",no,true,crates/oxvba-host/src/engine.rs
 FO-V85-003,v85,"cargo test -p oxvba-host formal_v85_typed_fastpath_hotloop_fixture_exists",no,true,crates/oxvba-host/src/engine.rs
+FO-V86-001,v86,"cargo test -p oxvba-host formal_v86_script_defaults_target_v86_profile_scope",no,true,crates/oxvba-host/src/engine.rs
+FO-V86-002,v86,"cargo test -p oxvba-host formal_v86_phase12_status_targets_v86_scope",no,true,docs/PHASE12_STATUS.md
+FO-V86-003,v86,"cargo test -p oxvba-host formal_v86_deferred_gate_audit_exists_with_unblock_steps",no,true,docs/evidence/formal/DG_AUDIT_V86.md

@@ -451,3 +451,12 @@ Per profile:
   - run: `v85-kani`,
   - status: `dg-running`,
   - register: `docs/evidence/formal/DEFERRED_GATES.md`.
+- `v86` (`mvp-full-typing-conformance-gate-v86`) completed:
+  - integrated gate `PASS` (`docs/evidence/profiles/v86/integrated_gate.md`),
+  - matrix gate `PASS` (`docs/evidence/profiles/v86/gate_report.md`),
+  - benchmark + formal evidence consolidated under `docs/evidence/profiles/v86/` and `docs/evidence/formal/latest_run.*`.
+- Terminal DG reconciliation (`v67..v85`):
+  - completed strict runs folded: `DG-V67-001..DG-V73-001`,
+  - strict failure folded with triage: `DG-V85-001`,
+  - unresolved strict lanes explicitly deferred with unblock steps: `DG-V74-001`, `DG-V75-001`, `DG-V77-001`, `DG-V78-001`, `DG-V79-001`, `DG-V80-001`, `DG-V81-001`, `DG-V82-001`, `DG-V83-001`.
+  - reconciliation evidence: `docs/evidence/formal/DEFERRED_GATES.md`, `docs/evidence/formal/DG_AUDIT_V86.md`, `docs/evidence/formal/EXTENDED_TODO.md`.

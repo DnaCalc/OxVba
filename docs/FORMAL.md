@@ -31,6 +31,7 @@ Profile-scoped formal obligations may also run as deterministic, reduced-domain 
 - Async strict helper for long profile runs: `./scripts/run-formal-kani-async.ps1` (`Start`/`Status`/`Tail`/`Wait`/`Stop`)
 - Latest async lane evidence: `docs/evidence/formal/ASYNC_KANI_V85.md`
 - Active typing-ladder async lane evidence: `docs/evidence/formal/ASYNC_KANI_V85.md`
+- Terminal typing-ladder DG audit: `docs/evidence/formal/DG_AUDIT_V86.md`
 - Current install note: native Windows Kani install may fail in this environment; use WSL path above for strict Kani runs.
 
 ## Deferred-gate policy (DG)
