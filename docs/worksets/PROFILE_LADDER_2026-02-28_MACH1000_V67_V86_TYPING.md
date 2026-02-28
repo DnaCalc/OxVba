@@ -419,3 +419,11 @@ Per profile:
   - run: `v81-kani`,
   - status: `dg-running`,
   - register: `docs/evidence/formal/DEFERRED_GATES.md`.
+- `v82` (`mvp-array-redim-full-v82`) completed:
+  - matrix gate `PASS` (`docs/evidence/profiles/v82/gate_report.md`),
+  - formal obligations `FO-V82-001..003` pass (`docs/evidence/formal/latest_run.md`),
+  - added preserve legality diagnostics and tail-clearing semantics for shrink/expand `ReDim Preserve` transitions.
+- Strict WSL Kani lane for `v82` started async as deferred gate:
+  - run: `v82-kani`,
+  - status: `dg-running`,
+  - register: `docs/evidence/formal/DEFERRED_GATES.md`.

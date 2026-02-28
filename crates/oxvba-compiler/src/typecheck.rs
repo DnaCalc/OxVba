@@ -306,7 +306,26 @@ fn check_stmt(
                 labels,
             )
         }
-        BoundStmt::ReDim { .. } => Ok(()),
+        BoundStmt::ReDim {
+            name,
+            bounds,
+            previous_bounds,
+            preserve,
+        } => {
+            if *preserve {
+                let Some(previous_bounds) = previous_bounds else {
+                    return Err(format!(
+                        "redim preserve requires existing array bounds for {name}"
+                    ));
+                };
+                if !redim_preserve_bounds_are_legal(previous_bounds, bounds) {
+                    return Err(format!(
+                        "redim preserve only supports resizing the upper bound of the last dimension: {name}"
+                    ));
+                }
+            }
+            Ok(())
+        }
         BoundStmt::DoWhile { cond, body, .. } => {
             check_condition(
                 cond,
@@ -691,6 +710,28 @@ fn infer_expr_type(expr: &BoundExpr, declared_types: &HashMap<String, BoundType>
             intrinsic_result_type(name).unwrap_or(BoundType::Variant)
         }
     }
+}
+
+fn redim_preserve_bounds_are_legal(previous: &[(i32, i32)], next: &[(i32, i32)]) -> bool {
+    if previous.len() != next.len() || previous.is_empty() {
+        return false;
+    }
+    if previous.len() == 1 {
+        let (prev_lower, _) = previous[0];
+        let (next_lower, _) = next[0];
+        return prev_lower == next_lower;
+    }
+
+    let last = previous.len() - 1;
+    for dim in 0..last {
+        if previous[dim] != next[dim] {
+            return false;
+        }
+    }
+
+    let (prev_lower, _) = previous[last];
+    let (next_lower, _) = next[last];
+    prev_lower == next_lower
 }
 
 #[cfg(test)]

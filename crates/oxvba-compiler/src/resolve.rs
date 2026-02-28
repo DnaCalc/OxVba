@@ -63,6 +63,7 @@ pub enum BoundStmt {
     ReDim {
         name: String,
         bounds: Vec<(i32, i32)>,
+        previous_bounds: Option<Vec<(i32, i32)>>,
         preserve: bool,
     },
     DoWhile {
@@ -1819,7 +1820,7 @@ fn parse_redim_stmt(
             }
         })
         .unwrap_or(BoundType::Variant);
-    array_bounds.insert(name.clone(), bounds.clone());
+    let previous_bounds = array_bounds.insert(name.clone(), bounds.clone());
     let element_count = array_element_count(&bounds)?;
     for idx in 0..element_count {
         let alias = format!("{name}_{idx}");
@@ -1835,6 +1836,7 @@ fn parse_redim_stmt(
     Some(BoundStmt::ReDim {
         name,
         bounds,
+        previous_bounds,
         preserve,
     })
 }
@@ -3206,6 +3208,29 @@ mod tests {
             .expect("array descriptor should be present");
         assert_eq!(descriptor.bounds, vec![(0, 3)]);
         assert!(descriptor.dynamic);
+    }
+
+    #[test]
+    fn resolve_redim_preserve_records_previous_bounds_snapshot() {
+        let source = "Sub Main()\nDim a(0 To 3)\nReDim Preserve a(0 To 1)\nEnd Sub";
+        let module = resolve_symbols(source);
+        let stmt = module
+            .body
+            .iter()
+            .find(|s| matches!(s, BoundStmt::ReDim { .. }))
+            .expect("redim statement expected");
+        let BoundStmt::ReDim {
+            bounds,
+            previous_bounds,
+            preserve,
+            ..
+        } = stmt
+        else {
+            panic!("expected redim statement");
+        };
+        assert!(*preserve);
+        assert_eq!(bounds, &vec![(0, 1)]);
+        assert_eq!(previous_bounds, &Some(vec![(0, 3)]));
     }
 
     #[test]

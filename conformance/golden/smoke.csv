@@ -87,7 +87,10 @@ property_get_declaration_basic.bas,ok,4
 property_let_byref_route.bas,ok,3
 property_set_byref_route.bas,ok,7
 redim_expand_allows_new_index.bas,ok,"0,0,5,0,5"
+redim_preserve_illegal_non_last_dim_error.bas,error,
 redim_preserve_keeps_values.bas,ok,"7,0,7,0,0"
+redim_preserve_multidim_last_dimension.bas,ok,"7,0,0,0,7,0,0"
+redim_preserve_shrink_expand_clears_tail.bas,ok,"0,0,0,0,0"
 redim_shrink_bounds_error.bas,error,
 redim_without_preserve_resets.bas,ok,"0,0,0,0,0"
 select_case_basic.bas,ok,20

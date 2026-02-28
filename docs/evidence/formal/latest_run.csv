@@ -233,3 +233,6 @@
 "FO-V81-001","v81","cargo test -p oxvba-compiler resolve::tests::resolve_option_base_one_applies_to_array_declaration_bounds","no","pass","","crates/oxvba-compiler/src/resolve.rs"
 "FO-V81-002","v81","cargo test -p oxvba-compiler resolve::tests::resolve_multidim_reference_linearizes_indices","no","pass","","crates/oxvba-compiler/src/resolve.rs"
 "FO-V81-003","v81","cargo test -p oxvba-compiler compile_multidim_array_reference_subset","no","pass","","crates/oxvba-compiler/src/lib.rs"
+"FO-V82-001","v82","cargo test -p oxvba-host formal_v82_redim_preserve_multidim_last_dimension_keeps_overlap","no","pass","","crates/oxvba-host/src/engine.rs"
+"FO-V82-002","v82","cargo test -p oxvba-host formal_v82_redim_preserve_shrink_then_expand_clears_removed_tail","no","pass","","crates/oxvba-host/src/engine.rs"
+"FO-V82-003","v82","cargo test -p oxvba-host formal_v82_redim_preserve_rejects_non_last_dimension_resize","no","pass","","crates/oxvba-host/src/engine.rs"

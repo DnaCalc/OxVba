@@ -351,8 +351,25 @@ fn emit_stmt(
                 }
             }
         }
-        BoundStmt::ReDim { name, preserve, .. } => {
+        BoundStmt::ReDim {
+            name,
+            bounds,
+            previous_bounds,
+            preserve,
+        } => {
             if !preserve {
+                reset_array_slots(name, slot_map, instructions);
+            } else if let Some(prev) = previous_bounds {
+                if let (Some(old_count), Some(new_count)) =
+                    (array_element_count(prev), array_element_count(bounds))
+                {
+                    let overlap = old_count.min(new_count);
+                    let tail = old_count.max(new_count);
+                    if overlap < tail {
+                        reset_array_slots_range(name, overlap, tail, slot_map, instructions);
+                    }
+                }
+            } else {
                 reset_array_slots(name, slot_map, instructions);
             }
         }
@@ -1178,6 +1195,50 @@ fn reset_array_slots(
     for slot in slots {
         instructions.push(Instruction::LoadConstI32 { slot, value: 0 });
     }
+}
+
+fn reset_array_slots_range(
+    array_name: &str,
+    start_index: usize,
+    end_index_exclusive: usize,
+    slot_map: &HashMap<String, usize>,
+    instructions: &mut Vec<Instruction>,
+) {
+    if start_index >= end_index_exclusive {
+        return;
+    }
+    let prefix = format!("{array_name}_");
+    let mut slots = slot_map
+        .iter()
+        .filter_map(|(name, slot)| {
+            if !name.starts_with(&prefix) {
+                return None;
+            }
+            let suffix = &name[prefix.len()..];
+            let index = suffix.parse::<usize>().ok()?;
+            if (start_index..end_index_exclusive).contains(&index) {
+                Some(*slot)
+            } else {
+                None
+            }
+        })
+        .collect::<Vec<_>>();
+    slots.sort_unstable();
+    for slot in slots {
+        instructions.push(Instruction::LoadConstI32 { slot, value: 0 });
+    }
+}
+
+fn array_element_count(bounds: &[(i32, i32)]) -> Option<usize> {
+    let mut total = 1usize;
+    for (lower, upper) in bounds {
+        if upper < lower {
+            return None;
+        }
+        let width = (*upper as i64 - *lower as i64 + 1) as usize;
+        total = total.checked_mul(width)?;
+    }
+    Some(total)
 }
 
 #[derive(Debug, Clone)]

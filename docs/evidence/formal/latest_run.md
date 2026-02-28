@@ -1,7 +1,7 @@
 # Formal Run Report
 
-- Timestamp (UTC): 2026-02-28T13:05:09Z
-- Profile scope: mvp-array-bounds-and-indexing-v81
+- Timestamp (UTC): 2026-02-28T13:22:49Z
+- Profile scope: mvp-array-redim-full-v82
 - Overall mode: non-blocking
 - Kani required: false
 - Kani execution: deferred-to-wsl-async
@@ -244,3 +244,6 @@
 | FO-V81-001 | v81 | no | pass | cargo test -p oxvba-compiler resolve::tests::resolve_option_base_one_applies_to_array_declaration_bounds | crates/oxvba-compiler/src/resolve.rs |  |
 | FO-V81-002 | v81 | no | pass | cargo test -p oxvba-compiler resolve::tests::resolve_multidim_reference_linearizes_indices | crates/oxvba-compiler/src/resolve.rs |  |
 | FO-V81-003 | v81 | no | pass | cargo test -p oxvba-compiler compile_multidim_array_reference_subset | crates/oxvba-compiler/src/lib.rs |  |
+| FO-V82-001 | v82 | no | pass | cargo test -p oxvba-host formal_v82_redim_preserve_multidim_last_dimension_keeps_overlap | crates/oxvba-host/src/engine.rs |  |
+| FO-V82-002 | v82 | no | pass | cargo test -p oxvba-host formal_v82_redim_preserve_shrink_then_expand_clears_removed_tail | crates/oxvba-host/src/engine.rs |  |
+| FO-V82-003 | v82 | no | pass | cargo test -p oxvba-host formal_v82_redim_preserve_rejects_non_last_dimension_resize | crates/oxvba-host/src/engine.rs |  |

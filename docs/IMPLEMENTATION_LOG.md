@@ -1,6 +1,11 @@
 # Implementation Log
 
 ## 2026-02-28
+- Completed `v82` (`mvp-array-redim-full-v82`):
+  - added `ReDim Preserve` legality checks in typecheck (stable rank, stable non-last dimensions, stable lower bound of last dimension);
+  - extended emitter `ReDim Preserve` lowering to clear resized tail ranges so shrink/expand cycles cannot resurrect stale values;
+  - added host formal checks and conformance fixtures for legal multidimensional preserve, shrink/expand clearing, and illegal non-last-dimension resize diagnostics;
+  - added formal obligations `FO-V82-001..003`, produced matrix artifacts under `docs/evidence/profiles/v82/`, and started strict async Kani lane (`v82-kani`) as deferred gate `DG-V82-001`.
 - Completed `v81` (`mvp-array-bounds-and-indexing-v81`):
   - added lower-bound-aware array declaration/reference parsing with `Option Base` support (`0`/`1`) and explicit `lower To upper` forms;
   - added multi-dimensional index parsing and deterministic linearization for current executable array alias mapping;

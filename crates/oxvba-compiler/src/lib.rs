@@ -600,6 +600,16 @@ mod tests {
     }
 
     #[test]
+    fn compile_redim_preserve_non_last_dimension_change_is_rejected() {
+        let source = "Sub Main()\nDim m(1 To 2, 1 To 2)\nReDim Preserve m(1 To 3, 1 To 2)\nEnd Sub";
+        let err = compile(source).expect_err("compile should fail");
+        assert!(
+            err.to_string()
+                .contains("redim preserve only supports resizing")
+        );
+    }
+
+    #[test]
     fn compile_module_const_usage_is_supported() {
         let source = "Const BASE = 5\nSub Main()\nDim x\nx = BASE + 2\nEnd Sub";
         let out = compile(source).expect("compile should succeed");

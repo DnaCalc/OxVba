@@ -461,6 +461,38 @@ mod tests {
     }
 
     #[test]
+    fn formal_v82_redim_preserve_multidim_last_dimension_keeps_overlap() {
+        let engine = Engine::new(HostConfig::default());
+        let source = "Sub Main()\nDim m(1 To 2, 1 To 2)\nDim x\nm(1, 1) = 7\nReDim Preserve m(1 To 2, 1 To 3)\nx = m(1, 1)\nEnd Sub";
+        let snapshot = engine
+            .execute_source_with_snapshot(source)
+            .expect("execution should succeed");
+        assert_eq!(snapshot[0], 7);
+        assert_eq!(snapshot[4], 7);
+    }
+
+    #[test]
+    fn formal_v82_redim_preserve_shrink_then_expand_clears_removed_tail() {
+        let engine = Engine::new(HostConfig::default());
+        let source = "Sub Main()\nDim a(0 To 3)\nDim x\na(3) = 9\nReDim Preserve a(0 To 1)\nReDim Preserve a(0 To 3)\nx = a(3)\nEnd Sub";
+        let snapshot = engine
+            .execute_source_with_snapshot(source)
+            .expect("execution should succeed");
+        assert_eq!(snapshot[3], 0);
+        assert_eq!(snapshot[4], 0);
+    }
+
+    #[test]
+    fn formal_v82_redim_preserve_rejects_non_last_dimension_resize() {
+        let engine = Engine::new(HostConfig::default());
+        let source = "Sub Main()\nDim m(1 To 2, 1 To 2)\nReDim Preserve m(1 To 3, 1 To 2)\nEnd Sub";
+        let err = engine
+            .execute_source_with_snapshot(source)
+            .expect_err("non-last-dimension preserve resize should fail");
+        assert!(err.contains("redim preserve only supports resizing"));
+    }
+
+    #[test]
     fn formal_v43_module_const_evaluates_in_expression() {
         let engine = Engine::new(HostConfig::default());
         let source = "Const BASE = 5\nSub Main()\nDim x\nx = BASE + 2\nEnd Sub";
