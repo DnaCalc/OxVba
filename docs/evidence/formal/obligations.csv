@@ -230,3 +230,6 @@ FO-V79-003,v79,"cargo test -p oxvba-compiler resolve::tests::resolve_mid_stateme
 FO-V80-001,v80,"cargo test -p oxvba-compiler resolve::tests::resolve_array_descriptor_records_bounds_and_type",no,true,crates/oxvba-compiler/src/resolve.rs
 FO-V80-002,v80,"cargo test -p oxvba-compiler resolve::tests::resolve_redim_marks_array_descriptor_dynamic",no,true,crates/oxvba-compiler/src/resolve.rs
 FO-V80-003,v80,"cargo test -p oxvba-compiler resolve::tests::resolve_typed_array_dim_records_element_alias_types",no,true,crates/oxvba-compiler/src/resolve.rs
+FO-V81-001,v81,"cargo test -p oxvba-compiler resolve::tests::resolve_option_base_one_applies_to_array_declaration_bounds",no,true,crates/oxvba-compiler/src/resolve.rs
+FO-V81-002,v81,"cargo test -p oxvba-compiler resolve::tests::resolve_multidim_reference_linearizes_indices",no,true,crates/oxvba-compiler/src/resolve.rs
+FO-V81-003,v81,"cargo test -p oxvba-compiler compile_multidim_array_reference_subset",no,true,crates/oxvba-compiler/src/lib.rs

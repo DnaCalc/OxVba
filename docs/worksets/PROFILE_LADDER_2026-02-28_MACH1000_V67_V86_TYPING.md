@@ -411,3 +411,11 @@ Per profile:
   - run: `v80-kani`,
   - status: `dg-running`,
   - register: `docs/evidence/formal/DEFERRED_GATES.md`.
+- `v81` (`mvp-array-bounds-and-indexing-v81`) completed:
+  - matrix gate `PASS` (`docs/evidence/profiles/v81/gate_report.md`),
+  - formal obligations `FO-V81-001..003` pass (`docs/evidence/formal/latest_run.md`),
+  - added `Option Base` + explicit lower-bound parsing and multi-dimensional index linearization in resolver alias mapping.
+- Strict WSL Kani lane for `v81` started async as deferred gate:
+  - run: `v81-kani`,
+  - status: `dg-running`,
+  - register: `docs/evidence/formal/DEFERRED_GATES.md`.

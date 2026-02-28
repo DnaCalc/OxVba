@@ -577,6 +577,29 @@ mod tests {
     }
 
     #[test]
+    fn compile_option_base_one_array_indexing_subset() {
+        let source =
+            "Option Base 1\nSub Main()\nDim a(3)\nDim x\na(1) = 4\na(3) = 9\nx = a(3)\nEnd Sub";
+        let out = compile(source).expect("compile should succeed");
+        assert!(
+            out.instructions
+                .iter()
+                .any(|i| matches!(i, Instruction::LoadConstI32 { value: 9, .. }))
+        );
+    }
+
+    #[test]
+    fn compile_multidim_array_reference_subset() {
+        let source = "Sub Main()\nDim m(1 To 2, 1 To 3)\nDim x\nm(2, 3) = 17\nx = m(2, 3)\nEnd Sub";
+        let out = compile(source).expect("compile should succeed");
+        assert!(
+            out.instructions
+                .iter()
+                .any(|i| matches!(i, Instruction::LoadConstI32 { value: 17, .. }))
+        );
+    }
+
+    #[test]
     fn compile_module_const_usage_is_supported() {
         let source = "Const BASE = 5\nSub Main()\nDim x\nx = BASE + 2\nEnd Sub";
         let out = compile(source).expect("compile should succeed");

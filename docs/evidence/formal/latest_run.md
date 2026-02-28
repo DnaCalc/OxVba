@@ -1,7 +1,7 @@
 # Formal Run Report
 
-- Timestamp (UTC): 2026-02-28T12:39:08Z
-- Profile scope: mvp-array-type-model-v80
+- Timestamp (UTC): 2026-02-28T13:05:09Z
+- Profile scope: mvp-array-bounds-and-indexing-v81
 - Overall mode: non-blocking
 - Kani required: false
 - Kani execution: deferred-to-wsl-async
@@ -241,3 +241,6 @@
 | FO-V80-001 | v80 | no | pass | cargo test -p oxvba-compiler resolve::tests::resolve_array_descriptor_records_bounds_and_type | crates/oxvba-compiler/src/resolve.rs |  |
 | FO-V80-002 | v80 | no | pass | cargo test -p oxvba-compiler resolve::tests::resolve_redim_marks_array_descriptor_dynamic | crates/oxvba-compiler/src/resolve.rs |  |
 | FO-V80-003 | v80 | no | pass | cargo test -p oxvba-compiler resolve::tests::resolve_typed_array_dim_records_element_alias_types | crates/oxvba-compiler/src/resolve.rs |  |
+| FO-V81-001 | v81 | no | pass | cargo test -p oxvba-compiler resolve::tests::resolve_option_base_one_applies_to_array_declaration_bounds | crates/oxvba-compiler/src/resolve.rs |  |
+| FO-V81-002 | v81 | no | pass | cargo test -p oxvba-compiler resolve::tests::resolve_multidim_reference_linearizes_indices | crates/oxvba-compiler/src/resolve.rs |  |
+| FO-V81-003 | v81 | no | pass | cargo test -p oxvba-compiler compile_multidim_array_reference_subset | crates/oxvba-compiler/src/lib.rs |  |

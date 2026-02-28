@@ -1,6 +1,11 @@
 # Implementation Log
 
 ## 2026-02-28
+- Completed `v81` (`mvp-array-bounds-and-indexing-v81`):
+  - added lower-bound-aware array declaration/reference parsing with `Option Base` support (`0`/`1`) and explicit `lower To upper` forms;
+  - added multi-dimensional index parsing and deterministic linearization for current executable array alias mapping;
+  - added resolver/compiler/conformance coverage for lower-bound and multi-dimensional indexing paths;
+  - added formal obligations `FO-V81-001..003`, produced matrix artifacts under `docs/evidence/profiles/v81/`, and started strict async Kani lane (`v81-kani`) as deferred gate `DG-V81-001`.
 - Completed `v80` (`mvp-array-type-model-v80`):
   - introduced a unified bound array descriptor model shared across typed and variant arrays;
   - added descriptor metadata capture (`element_type`, `rank`, `bounds`, `dynamic`) on bound procedures/modules in resolver output;

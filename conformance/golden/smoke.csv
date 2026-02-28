@@ -22,6 +22,9 @@ do_loop_while_basic.bas,ok,3
 do_while_basic.bas,ok,3
 enum_basic.bas,ok,"3,4,5"
 array_bounds_error.bas,error,
+array_explicit_lower_bound.bas,ok,"0,11,0,11"
+array_multidim_indexing.bas,ok,"0,0,0,0,0,17,17"
+array_option_base_one_bounds.bas,ok,"4,0,9,4,9"
 array_store_load.bas,ok,"5,7,0,7"
 array_zero_index.bas,ok,"3,0,0,3"
 for_basic.bas,ok,"6,4"

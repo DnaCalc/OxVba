@@ -1,5 +1,8 @@
 use std::collections::{HashMap, HashSet};
 
+type ArrayBoundsMap = HashMap<String, Vec<(i32, i32)>>;
+type ParsedArrayDecl = (String, Option<BoundType>, Vec<(i32, i32)>);
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum BoundExpr {
     IntConst(i32),
@@ -59,7 +62,7 @@ pub enum BoundStmt {
     },
     ReDim {
         name: String,
-        max_index: usize,
+        bounds: Vec<(i32, i32)>,
         preserve: bool,
     },
     DoWhile {
@@ -188,6 +191,7 @@ pub fn resolve_symbols(source: &str) -> BoundModule {
     let mut option_explicit = false;
     let lines = normalize_source_lines(source);
     let compare_mode = collect_option_compare_mode(&lines);
+    let option_base = collect_option_base(&lines);
     let default_type_table = collect_default_type_table(&lines);
     let module_constants = collect_module_constants(&lines);
     let property_write_routes = collect_property_write_routes(&lines);
@@ -200,6 +204,7 @@ pub fn resolve_symbols(source: &str) -> BoundModule {
         parse_procedures(
             &lines,
             &mut option_explicit,
+            option_base,
             &default_type_table,
             &module_constants,
             &property_write_routes,
@@ -208,7 +213,7 @@ pub fn resolve_symbols(source: &str) -> BoundModule {
         let mut declarations: Vec<String> = Vec::new();
         let mut declaration_types: HashMap<String, BoundType> = HashMap::new();
         let mut duplicate_declarations: Vec<String> = Vec::new();
-        let mut array_bounds: HashMap<String, usize> = HashMap::new();
+        let mut array_bounds: ArrayBoundsMap = HashMap::new();
         let mut index = 0;
         for (name, _) in sorted_module_constants(&module_constants) {
             if !declarations
@@ -227,6 +232,7 @@ pub fn resolve_symbols(source: &str) -> BoundModule {
             &mut duplicate_declarations,
             &mut array_bounds,
             &mut option_explicit,
+            option_base,
             &default_type_table,
             &module_constants,
             &property_write_routes,
@@ -771,6 +777,7 @@ fn pp_bool(value: bool) -> i32 {
 fn parse_procedures(
     lines: &[String],
     option_explicit: &mut bool,
+    option_base: i32,
     default_type_table: &[BoundType; 26],
     module_constants: &HashMap<String, i32>,
     property_write_routes: &HashMap<String, String>,
@@ -784,6 +791,10 @@ fn parse_procedures(
 
         if lower == "option explicit" {
             *option_explicit = true;
+            index += 1;
+            continue;
+        }
+        if parse_option_base_directive(line).is_some() {
             index += 1;
             continue;
         }
@@ -822,7 +833,7 @@ fn parse_procedures(
             }
             declaration_types.entry(name).or_insert(BoundType::Long);
         }
-        let mut array_bounds: HashMap<String, usize> = HashMap::new();
+        let mut array_bounds: ArrayBoundsMap = HashMap::new();
         let end_term = kind.end_term();
         let mut body = parse_block(
             lines,
@@ -832,6 +843,7 @@ fn parse_procedures(
             &mut duplicate_declarations,
             &mut array_bounds,
             option_explicit,
+            option_base,
             default_type_table,
             module_constants,
             property_write_routes,
@@ -1152,8 +1164,9 @@ fn parse_block(
     declarations: &mut Vec<String>,
     declaration_types: &mut HashMap<String, BoundType>,
     duplicate_declarations: &mut Vec<String>,
-    array_bounds: &mut HashMap<String, usize>,
+    array_bounds: &mut ArrayBoundsMap,
     option_explicit: &mut bool,
+    option_base: i32,
     default_type_table: &[BoundType; 26],
     module_constants: &HashMap<String, i32>,
     property_write_routes: &HashMap<String, String>,
@@ -1171,6 +1184,10 @@ fn parse_block(
 
         if lower == "option explicit" {
             *option_explicit = true;
+            *index += 1;
+            continue;
+        }
+        if parse_option_base_directive(line).is_some() {
             *index += 1;
             continue;
         }
@@ -1199,6 +1216,7 @@ fn parse_block(
                 declaration_types,
                 duplicate_declarations,
                 array_bounds,
+                option_base,
                 default_type_table,
             );
             *index += 1;
@@ -1246,6 +1264,7 @@ fn parse_block(
                 duplicate_declarations,
                 array_bounds,
                 option_explicit,
+                option_base,
                 default_type_table,
                 module_constants,
                 property_write_routes,
@@ -1263,6 +1282,7 @@ fn parse_block(
                 duplicate_declarations,
                 array_bounds,
                 option_explicit,
+                option_base,
                 default_type_table,
                 module_constants,
                 property_write_routes,
@@ -1272,9 +1292,13 @@ fn parse_block(
         }
 
         if lower.starts_with("redim ") {
-            if let Some(stmt) =
-                parse_redim_stmt(line, declarations, declaration_types, array_bounds)
-            {
+            if let Some(stmt) = parse_redim_stmt(
+                line,
+                declarations,
+                declaration_types,
+                array_bounds,
+                option_base,
+            ) {
                 out.push(stmt);
             } else {
                 out.push(BoundStmt::Unsupported {
@@ -1294,6 +1318,7 @@ fn parse_block(
                 duplicate_declarations,
                 array_bounds,
                 option_explicit,
+                option_base,
                 default_type_table,
                 module_constants,
                 property_write_routes,
@@ -1388,6 +1413,7 @@ fn parse_block(
                 duplicate_declarations,
                 array_bounds,
                 option_explicit,
+                option_base,
                 default_type_table,
                 module_constants,
                 property_write_routes,
@@ -1415,8 +1441,9 @@ fn parse_if_stmt(
     declarations: &mut Vec<String>,
     declaration_types: &mut HashMap<String, BoundType>,
     duplicate_declarations: &mut Vec<String>,
-    array_bounds: &mut HashMap<String, usize>,
+    array_bounds: &mut ArrayBoundsMap,
     option_explicit: &mut bool,
+    option_base: i32,
     default_type_table: &[BoundType; 26],
     module_constants: &HashMap<String, i32>,
     property_write_routes: &HashMap<String, String>,
@@ -1439,6 +1466,7 @@ fn parse_if_stmt(
         duplicate_declarations,
         array_bounds,
         option_explicit,
+        option_base,
         default_type_table,
         module_constants,
         property_write_routes,
@@ -1452,6 +1480,7 @@ fn parse_if_stmt(
         duplicate_declarations,
         array_bounds,
         option_explicit,
+        option_base,
         default_type_table,
         module_constants,
         property_write_routes,
@@ -1475,8 +1504,9 @@ fn parse_for_stmt(
     declarations: &mut Vec<String>,
     declaration_types: &mut HashMap<String, BoundType>,
     duplicate_declarations: &mut Vec<String>,
-    array_bounds: &mut HashMap<String, usize>,
+    array_bounds: &mut ArrayBoundsMap,
     option_explicit: &mut bool,
+    option_base: i32,
     default_type_table: &[BoundType; 26],
     module_constants: &HashMap<String, i32>,
     property_write_routes: &HashMap<String, String>,
@@ -1498,6 +1528,7 @@ fn parse_for_stmt(
         duplicate_declarations,
         array_bounds,
         option_explicit,
+        option_base,
         default_type_table,
         module_constants,
         property_write_routes,
@@ -1525,7 +1556,7 @@ fn parse_for_stmt(
 fn parse_assign_or_unsupported(
     line: &str,
     declarations: &[String],
-    array_bounds: &HashMap<String, usize>,
+    array_bounds: &ArrayBoundsMap,
     property_write_routes: &HashMap<String, String>,
 ) -> BoundStmt {
     if let Some(stmt) = parse_mid_assign_stmt(line, array_bounds) {
@@ -1569,7 +1600,7 @@ fn parse_assign_or_unsupported(
     }
 }
 
-fn parse_mid_assign_stmt(line: &str, array_bounds: &HashMap<String, usize>) -> Option<BoundStmt> {
+fn parse_mid_assign_stmt(line: &str, array_bounds: &ArrayBoundsMap) -> Option<BoundStmt> {
     let trimmed = line.trim();
     let (lhs, rhs) = trimmed.split_once('=')?;
     let lhs = lhs.trim();
@@ -1611,7 +1642,7 @@ fn parse_mid_assign_stmt(line: &str, array_bounds: &HashMap<String, usize>) -> O
 
 fn parse_call_invocation(
     text: &str,
-    array_bounds: &HashMap<String, usize>,
+    array_bounds: &ArrayBoundsMap,
 ) -> Option<(String, Vec<BoundCallArg>)> {
     let open = text.find('(')?;
     let close = text.rfind(')')?;
@@ -1653,8 +1684,9 @@ fn parse_do_stmt(
     declarations: &mut Vec<String>,
     declaration_types: &mut HashMap<String, BoundType>,
     duplicate_declarations: &mut Vec<String>,
-    array_bounds: &mut HashMap<String, usize>,
+    array_bounds: &mut ArrayBoundsMap,
     option_explicit: &mut bool,
+    option_base: i32,
     default_type_table: &[BoundType; 26],
     module_constants: &HashMap<String, i32>,
     property_write_routes: &HashMap<String, String>,
@@ -1679,6 +1711,7 @@ fn parse_do_stmt(
             duplicate_declarations,
             array_bounds,
             option_explicit,
+            option_base,
             default_type_table,
             module_constants,
             property_write_routes,
@@ -1711,6 +1744,7 @@ fn parse_do_stmt(
             duplicate_declarations,
             array_bounds,
             option_explicit,
+            option_base,
             default_type_table,
             module_constants,
             property_write_routes,
@@ -1744,7 +1778,7 @@ fn parse_do_stmt(
 
 fn parse_for_header(
     line: &str,
-    array_bounds: &HashMap<String, usize>,
+    array_bounds: &ArrayBoundsMap,
 ) -> Option<(String, BoundExpr, BoundExpr)> {
     let lower = line.to_ascii_lowercase();
     if !lower.starts_with("for ") {
@@ -1764,7 +1798,8 @@ fn parse_redim_stmt(
     line: &str,
     declarations: &mut Vec<String>,
     declaration_types: &mut HashMap<String, BoundType>,
-    array_bounds: &mut HashMap<String, usize>,
+    array_bounds: &mut ArrayBoundsMap,
+    option_base: i32,
 ) -> Option<BoundStmt> {
     let mut payload = line[6..].trim();
     let mut preserve = false;
@@ -1772,7 +1807,7 @@ fn parse_redim_stmt(
         preserve = true;
         payload = payload[9..].trim();
     }
-    let (name, _, max_index) = parse_array_declaration(payload)?;
+    let (name, _, bounds) = parse_array_declaration(payload, option_base)?;
     let element_prefix = format!("{name}_");
     let element_ty = declaration_types
         .iter()
@@ -1784,8 +1819,9 @@ fn parse_redim_stmt(
             }
         })
         .unwrap_or(BoundType::Variant);
-    array_bounds.insert(name.clone(), max_index);
-    for idx in 0..=max_index {
+    array_bounds.insert(name.clone(), bounds.clone());
+    let element_count = array_element_count(&bounds)?;
+    for idx in 0..element_count {
         let alias = format!("{name}_{idx}");
         if !declarations
             .iter()
@@ -1798,7 +1834,7 @@ fn parse_redim_stmt(
 
     Some(BoundStmt::ReDim {
         name,
-        max_index,
+        bounds,
         preserve,
     })
 }
@@ -1810,8 +1846,9 @@ fn parse_select_case_stmt(
     declarations: &mut Vec<String>,
     declaration_types: &mut HashMap<String, BoundType>,
     duplicate_declarations: &mut Vec<String>,
-    array_bounds: &mut HashMap<String, usize>,
+    array_bounds: &mut ArrayBoundsMap,
     option_explicit: &mut bool,
+    option_base: i32,
     default_type_table: &[BoundType; 26],
     module_constants: &HashMap<String, i32>,
     property_write_routes: &HashMap<String, String>,
@@ -1857,6 +1894,7 @@ fn parse_select_case_stmt(
                 duplicate_declarations,
                 array_bounds,
                 option_explicit,
+                option_base,
                 default_type_table,
                 module_constants,
                 property_write_routes,
@@ -1887,6 +1925,7 @@ fn parse_select_case_stmt(
                 duplicate_declarations,
                 array_bounds,
                 option_explicit,
+                option_base,
                 default_type_table,
                 module_constants,
                 property_write_routes,
@@ -1906,7 +1945,7 @@ fn parse_select_case_stmt(
     }
 }
 
-fn parse_expr(text: &str, array_bounds: &HashMap<String, usize>) -> Option<BoundExpr> {
+fn parse_expr(text: &str, array_bounds: &ArrayBoundsMap) -> Option<BoundExpr> {
     let expr = text.trim();
     if expr.eq_ignore_ascii_case("vbnullstring") {
         return Some(BoundExpr::IntrinsicCall {
@@ -1940,10 +1979,7 @@ fn parse_expr(text: &str, array_bounds: &HashMap<String, usize>) -> Option<Bound
     parse_reference_name(expr, array_bounds).map(BoundExpr::Var)
 }
 
-fn parse_intrinsic_conversion_expr(
-    expr: &str,
-    array_bounds: &HashMap<String, usize>,
-) -> Option<BoundExpr> {
+fn parse_intrinsic_conversion_expr(expr: &str, array_bounds: &ArrayBoundsMap) -> Option<BoundExpr> {
     let open = expr.find('(')?;
     let close = expr.rfind(')')?;
     if close <= open || !expr[close + 1..].trim().is_empty() {
@@ -2024,7 +2060,7 @@ fn intrinsic_spec(name: &str) -> Option<IntrinsicSpec> {
 
 fn parse_stdlib_intrinsic_call_expr(
     expr: &str,
-    array_bounds: &HashMap<String, usize>,
+    array_bounds: &ArrayBoundsMap,
 ) -> Option<BoundExpr> {
     let open = expr.find('(')?;
     let close = expr.rfind(')')?;
@@ -2087,7 +2123,7 @@ fn split_call_args(args_raw: &str) -> Option<Vec<&str>> {
     Some(out)
 }
 
-fn parse_condition(text: &str, array_bounds: &HashMap<String, usize>) -> Option<BoundCond> {
+fn parse_condition(text: &str, array_bounds: &ArrayBoundsMap) -> Option<BoundCond> {
     if let Some((lhs_raw, rhs_raw)) = split_keyword_ci(text, "or") {
         let lhs = parse_condition(lhs_raw, array_bounds)?;
         let rhs = parse_condition(rhs_raw, array_bounds)?;
@@ -2109,7 +2145,7 @@ fn parse_condition(text: &str, array_bounds: &HashMap<String, usize>) -> Option<
     parse_compare_condition(trimmed, array_bounds)
 }
 
-fn parse_compare_condition(text: &str, array_bounds: &HashMap<String, usize>) -> Option<BoundCond> {
+fn parse_compare_condition(text: &str, array_bounds: &ArrayBoundsMap) -> Option<BoundCond> {
     if let Some((lhs_raw, rhs_raw)) = split_keyword_ci(text, "like") {
         let lhs = parse_expr(lhs_raw, array_bounds)?;
         let rhs = parse_expr(rhs_raw, array_bounds)?;
@@ -2145,11 +2181,14 @@ fn parse_declaration(
     declarations: &mut Vec<String>,
     declaration_types: &mut HashMap<String, BoundType>,
     duplicate_declarations: &mut Vec<String>,
-    array_bounds: &mut HashMap<String, usize>,
+    array_bounds: &mut ArrayBoundsMap,
+    option_base: i32,
     default_type_table: &[BoundType; 26],
 ) {
     let remainder = line[4..].trim();
-    let first_decl = remainder.split(',').next().unwrap_or_default().trim();
+    let first_decl = split_first_decl_segment(remainder)
+        .unwrap_or_default()
+        .trim();
     let (name_part, explicit_ty) = if let Some((lhs, rhs)) = split_keyword_ci(first_decl, "as") {
         (
             lhs.trim(),
@@ -2159,7 +2198,7 @@ fn parse_declaration(
         (first_decl, None)
     };
 
-    if let Some((base, type_char_ty, max_index)) = parse_array_declaration(name_part) {
+    if let Some((base, type_char_ty, bounds)) = parse_array_declaration(name_part, option_base) {
         let declared_ty =
             resolve_declared_type(&base, explicit_ty, type_char_ty, default_type_table);
         if declarations
@@ -2170,8 +2209,12 @@ fn parse_declaration(
             duplicate_declarations.push(base);
             return;
         }
-        array_bounds.insert(base.clone(), max_index);
-        for idx in 0..=max_index {
+        array_bounds.insert(base.clone(), bounds.clone());
+        let Some(element_count) = array_element_count(&bounds) else {
+            duplicate_declarations.push(base);
+            return;
+        };
+        for idx in 0..element_count {
             let alias = format!("{base}_{idx}");
             if !declarations
                 .iter()
@@ -2199,15 +2242,86 @@ fn parse_declaration(
     }
 }
 
-fn parse_array_declaration(token: &str) -> Option<(String, Option<BoundType>, usize)> {
+fn split_first_decl_segment(text: &str) -> Option<&str> {
+    let mut depth = 0i32;
+    for (idx, ch) in text.char_indices() {
+        match ch {
+            '(' => depth += 1,
+            ')' => depth -= 1,
+            ',' if depth == 0 => return Some(text[..idx].trim()),
+            _ => {}
+        }
+    }
+    Some(text.trim())
+}
+
+fn parse_array_declaration(token: &str, option_base: i32) -> Option<ParsedArrayDecl> {
     let open = token.find('(')?;
     let close = token.rfind(')')?;
     if close <= open {
         return None;
     }
     let (base, type_char_ty) = normalize_ident_with_type_char(token[..open].trim())?;
-    let max_index = token[open + 1..close].trim().parse::<usize>().ok()?;
-    Some((base, type_char_ty, max_index))
+    let bounds = parse_array_bounds_spec(token[open + 1..close].trim(), option_base)?;
+    Some((base, type_char_ty, bounds))
+}
+
+fn parse_array_bounds_spec(raw: &str, option_base: i32) -> Option<Vec<(i32, i32)>> {
+    let mut bounds = Vec::new();
+    for dim in split_call_args(raw)? {
+        let trimmed = dim.trim();
+        if trimmed.is_empty() {
+            return None;
+        }
+        let (lower, upper) = if let Some((lhs, rhs)) = split_keyword_ci(trimmed, "to") {
+            let lower = lhs.trim().parse::<i32>().ok()?;
+            let upper = rhs.trim().parse::<i32>().ok()?;
+            (lower, upper)
+        } else {
+            let upper = trimmed.parse::<i32>().ok()?;
+            (option_base, upper)
+        };
+        if upper < lower {
+            return None;
+        }
+        bounds.push((lower, upper));
+    }
+    if bounds.is_empty() {
+        return None;
+    }
+    Some(bounds)
+}
+
+fn array_element_count(bounds: &[(i32, i32)]) -> Option<usize> {
+    let mut total = 1usize;
+    for (lower, upper) in bounds {
+        if upper < lower {
+            return None;
+        }
+        let width = (*upper as i64 - *lower as i64 + 1) as usize;
+        total = total.checked_mul(width)?;
+    }
+    Some(total)
+}
+
+fn linearize_array_index(bounds: &[(i32, i32)], indices: &[i32]) -> Option<usize> {
+    if bounds.len() != indices.len() {
+        return None;
+    }
+    let mut offset = 0usize;
+    let mut stride = 1usize;
+    for dim in (0..bounds.len()).rev() {
+        let (lower, upper) = bounds[dim];
+        let idx = indices[dim];
+        if idx < lower || idx > upper {
+            return None;
+        }
+        let normalized = (idx - lower) as usize;
+        offset = offset.checked_add(normalized.checked_mul(stride)?)?;
+        let width = (upper as i64 - lower as i64 + 1) as usize;
+        stride = stride.checked_mul(width)?;
+    }
+    Some(offset)
 }
 
 fn parse_declared_type(token: &str) -> Option<BoundType> {
@@ -2230,7 +2344,7 @@ fn parse_declared_type(token: &str) -> Option<BoundType> {
     }
 }
 
-fn parse_reference_name(token: &str, array_bounds: &HashMap<String, usize>) -> Option<String> {
+fn parse_reference_name(token: &str, array_bounds: &ArrayBoundsMap) -> Option<String> {
     if token.trim().eq_ignore_ascii_case("err.number") {
         return Some("err_number".to_string());
     }
@@ -2240,19 +2354,20 @@ fn parse_reference_name(token: &str, array_bounds: &HashMap<String, usize>) -> O
     normalize_ident(token)
 }
 
-fn parse_array_reference(token: &str, array_bounds: &HashMap<String, usize>) -> Option<String> {
+fn parse_array_reference(token: &str, array_bounds: &ArrayBoundsMap) -> Option<String> {
     let open = token.find('(')?;
     let close = token.rfind(')')?;
     if close <= open {
         return None;
     }
     let base = normalize_ident(token[..open].trim())?;
-    let index = token[open + 1..close].trim().parse::<usize>().ok()?;
-    let max = array_bounds.get(&base)?;
-    if index > *max {
-        return None;
-    }
-    Some(format!("{base}_{index}"))
+    let bounds = array_bounds.get(&base)?;
+    let indices = split_call_args(token[open + 1..close].trim())?
+        .iter()
+        .map(|text| text.trim().parse::<i32>().ok())
+        .collect::<Option<Vec<_>>>()?;
+    let linear = linearize_array_index(bounds, &indices)?;
+    Some(format!("{base}_{linear}"))
 }
 
 fn normalize_ident(text: &str) -> Option<String> {
@@ -2343,6 +2458,26 @@ fn collect_option_compare_mode(lines: &[String]) -> BoundCompareMode {
     mode
 }
 
+fn collect_option_base(lines: &[String]) -> i32 {
+    let mut base = 0i32;
+    for line in lines {
+        if let Some(parsed) = parse_option_base_directive(line) {
+            base = parsed;
+        }
+    }
+    base
+}
+
+fn parse_option_base_directive(line: &str) -> Option<i32> {
+    let trimmed = line.trim();
+    let tail = strip_keyword_prefix_ci(trimmed, "option base")?;
+    match tail {
+        "0" => Some(0),
+        "1" => Some(1),
+        _ => None,
+    }
+}
+
 fn parse_option_compare_directive(line: &str) -> Option<BoundCompareMode> {
     let trimmed = line.trim();
     let tail = strip_keyword_prefix_ci(trimmed, "option compare")?;
@@ -2423,7 +2558,7 @@ fn parse_letter_index(token: &str) -> Option<usize> {
 }
 
 fn build_array_descriptors(
-    array_bounds: &HashMap<String, usize>,
+    array_bounds: &ArrayBoundsMap,
     declaration_types: &HashMap<String, BoundType>,
     body: &[BoundStmt],
 ) -> HashMap<String, BoundArrayDescriptor> {
@@ -2431,7 +2566,7 @@ fn build_array_descriptors(
     collect_redim_targets(body, &mut redim_targets);
 
     let mut descriptors = HashMap::new();
-    for (name, max_index) in array_bounds {
+    for (name, bounds) in array_bounds {
         let element_alias = format!("{name}_0");
         let element_type = declaration_types
             .get(&element_alias)
@@ -2441,8 +2576,8 @@ fn build_array_descriptors(
             name.clone(),
             BoundArrayDescriptor {
                 element_type,
-                rank: 1,
-                bounds: vec![(0, *max_index as i32)],
+                rank: bounds.len(),
+                bounds: bounds.clone(),
                 dynamic: redim_targets.contains(name),
             },
         );
@@ -2511,8 +2646,9 @@ fn parse_if_tail(
     declarations: &mut Vec<String>,
     declaration_types: &mut HashMap<String, BoundType>,
     duplicate_declarations: &mut Vec<String>,
-    array_bounds: &mut HashMap<String, usize>,
+    array_bounds: &mut ArrayBoundsMap,
     option_explicit: &mut bool,
+    option_base: i32,
     default_type_table: &[BoundType; 26],
     module_constants: &HashMap<String, i32>,
     property_write_routes: &HashMap<String, String>,
@@ -2539,6 +2675,7 @@ fn parse_if_tail(
             duplicate_declarations,
             array_bounds,
             option_explicit,
+            option_base,
             default_type_table,
             module_constants,
             property_write_routes,
@@ -2563,6 +2700,7 @@ fn parse_if_tail(
             duplicate_declarations,
             array_bounds,
             option_explicit,
+            option_base,
             default_type_table,
             module_constants,
             property_write_routes,
@@ -2576,6 +2714,7 @@ fn parse_if_tail(
             duplicate_declarations,
             array_bounds,
             option_explicit,
+            option_base,
             default_type_table,
             module_constants,
             property_write_routes,
@@ -3067,6 +3206,73 @@ mod tests {
             .expect("array descriptor should be present");
         assert_eq!(descriptor.bounds, vec![(0, 3)]);
         assert!(descriptor.dynamic);
+    }
+
+    #[test]
+    fn resolve_option_base_one_applies_to_array_declaration_bounds() {
+        let source = "Option Base 1\nSub Main()\nDim a(3)\na(1) = 7\na(3) = 9\nEnd Sub";
+        let module = resolve_symbols(source);
+        let main_proc = module
+            .procedures
+            .iter()
+            .find(|p| p.name == "main")
+            .expect("main procedure expected");
+        let descriptor = main_proc
+            .array_descriptors
+            .get("a")
+            .expect("array descriptor should be present");
+        assert_eq!(descriptor.rank, 1);
+        assert_eq!(descriptor.bounds, vec![(1, 3)]);
+        assert!(main_proc.declarations.iter().any(|d| d == "a_0"));
+        assert!(main_proc.declarations.iter().any(|d| d == "a_2"));
+    }
+
+    #[test]
+    fn resolve_explicit_lower_bound_maps_to_linear_slot_alias() {
+        let source = "Sub Main()\nDim a(5 To 7)\na(6) = 4\nEnd Sub";
+        let module = resolve_symbols(source);
+        let main_proc = module
+            .procedures
+            .iter()
+            .find(|p| p.name == "main")
+            .expect("main procedure expected");
+        let descriptor = main_proc
+            .array_descriptors
+            .get("a")
+            .expect("array descriptor should be present");
+        assert_eq!(descriptor.bounds, vec![(5, 7)]);
+        assert!(matches!(
+            main_proc.body.first(),
+            Some(BoundStmt::Assign { target, .. }) if target == "a_1"
+        ));
+    }
+
+    #[test]
+    fn resolve_multidim_reference_linearizes_indices() {
+        let source = "Sub Main()\nDim m(1 To 2, 1 To 3)\nDim x\nm(2, 3) = 9\nx = m(2, 3)\nEnd Sub";
+        let module = resolve_symbols(source);
+        let main_proc = module
+            .procedures
+            .iter()
+            .find(|p| p.name == "main")
+            .expect("main procedure expected");
+        let descriptor = main_proc
+            .array_descriptors
+            .get("m")
+            .expect("array descriptor should be present");
+        assert_eq!(descriptor.rank, 2);
+        assert_eq!(descriptor.bounds, vec![(1, 2), (1, 3)]);
+        assert!(matches!(
+            &main_proc.body[0],
+            BoundStmt::Assign { target, .. } if target == "m_5"
+        ));
+        assert!(matches!(
+            &main_proc.body[1],
+            BoundStmt::Assign {
+                expr: BoundExpr::Var(name),
+                ..
+            } if name == "m_5"
+        ));
     }
 
     #[test]
