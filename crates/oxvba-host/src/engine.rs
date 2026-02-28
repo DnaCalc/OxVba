@@ -493,6 +493,37 @@ mod tests {
     }
 
     #[test]
+    fn formal_v44_property_let_routes_assignment_byref() {
+        let engine = Engine::new(HostConfig::default());
+        let source = "Sub Main()\nDim x\nx = 1\nValue = x\nEnd Sub\nProperty Let Value(ByRef target)\ntarget = target + 2\nEnd Property";
+        let snapshot = engine
+            .execute_source_with_snapshot(source)
+            .expect("execution should succeed");
+        assert_eq!(snapshot, vec![3]);
+    }
+
+    #[test]
+    fn formal_v44_property_set_routes_assignment_byref() {
+        let engine = Engine::new(HostConfig::default());
+        let source = "Sub Main()\nDim x\nx = 2\nObj = x\nEnd Sub\nProperty Set Obj(ByRef target)\ntarget = target + 5\nEnd Property";
+        let snapshot = engine
+            .execute_source_with_snapshot(source)
+            .expect("execution should succeed");
+        assert_eq!(snapshot, vec![7]);
+    }
+
+    #[test]
+    fn formal_v44_property_get_block_is_parse_tolerated() {
+        let engine = Engine::new(HostConfig::default());
+        let source =
+            "Sub Main()\nDim x\nx = 4\nEnd Sub\nProperty Get Value()\nDim y\ny = 1\nEnd Property";
+        let snapshot = engine
+            .execute_source_with_snapshot(source)
+            .expect("execution should succeed");
+        assert_eq!(snapshot, vec![4]);
+    }
+
+    #[test]
     fn formal_v10_array_store_load_roundtrip() {
         let engine = Engine::new(HostConfig::default());
         let source = "Sub Main()\nDim a(2)\nDim x\na(1) = 7\nx = a(1)\nEnd Sub";

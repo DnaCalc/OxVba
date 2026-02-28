@@ -226,3 +226,8 @@
   - hardened call parsing to reject trailing tokens after `)` to avoid assignment/call misclassification;
   - added conformance fixtures and formal obligations (`FO-V43-001..003`);
   - published `PROFILE_STATUS_V43` and `WORKSET_2026-02-27_UDT_ENUM_CONST_V43`.
+- Started `mvp-lang-property-procedures-v44` language-closure pass:
+  - added parser support for top-level `Property Get` / `Property Let` / `Property Set` procedure declarations;
+  - added assignment-form routing to property write procedures (`Let`/`Set`) using canonicalized internal procedure names;
+  - added property subset conformance fixtures and formal obligations (`FO-V44-001..003`);
+  - published `PROFILE_STATUS_V44` and `WORKSET_2026-02-27_PROPERTY_PROCEDURES_V44`.

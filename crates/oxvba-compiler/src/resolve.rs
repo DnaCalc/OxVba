@@ -118,6 +118,15 @@ pub struct BoundParam {
     pub default_value: Option<i32>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ProcKind {
+    Sub,
+    Function,
+    PropertyGet,
+    PropertyLet,
+    PropertySet,
+}
+
 pub fn resolve_symbols(source: &str) -> BoundModule {
     let mut option_explicit = false;
     let lines = source
@@ -127,14 +136,19 @@ pub fn resolve_symbols(source: &str) -> BoundModule {
         .map(ToOwned::to_owned)
         .collect::<Vec<_>>();
     let module_constants = collect_module_constants(&lines);
+    let property_write_routes = collect_property_write_routes(&lines);
 
-    let has_explicit_procs = lines.iter().any(|line| {
-        let lower = line.to_ascii_lowercase();
-        lower.starts_with("sub ") || lower.starts_with("function ")
-    });
+    let has_explicit_procs = lines
+        .iter()
+        .any(|line| detect_proc_kind(&line.to_ascii_lowercase()).is_some());
 
     let procedures = if has_explicit_procs {
-        parse_procedures(&lines, &mut option_explicit, &module_constants)
+        parse_procedures(
+            &lines,
+            &mut option_explicit,
+            &module_constants,
+            &property_write_routes,
+        )
     } else {
         let mut declarations: Vec<String> = Vec::new();
         let mut array_bounds: HashMap<String, usize> = HashMap::new();
@@ -154,6 +168,7 @@ pub fn resolve_symbols(source: &str) -> BoundModule {
             &mut array_bounds,
             &mut option_explicit,
             &module_constants,
+            &property_write_routes,
             &[],
         );
         body.splice(0..0, build_const_prelude(&module_constants));
@@ -192,6 +207,7 @@ fn parse_procedures(
     lines: &[String],
     option_explicit: &mut bool,
     module_constants: &HashMap<String, i32>,
+    property_write_routes: &HashMap<String, String>,
 ) -> Vec<BoundProcedure> {
     let mut procedures = Vec::new();
     let mut index = 0;
@@ -206,14 +222,12 @@ fn parse_procedures(
             continue;
         }
 
-        let is_sub = lower.starts_with("sub ");
-        let is_function = lower.starts_with("function ");
-        if !(is_sub || is_function) {
+        let Some(kind) = detect_proc_kind(&lower) else {
             index += 1;
             continue;
-        }
+        };
 
-        let Some((name, params)) = parse_proc_signature(line, is_function) else {
+        let Some((name, params)) = parse_proc_signature(line, kind) else {
             index += 1;
             continue;
         };
@@ -229,11 +243,7 @@ fn parse_procedures(
             }
         }
         let mut array_bounds: HashMap<String, usize> = HashMap::new();
-        let end_term = if is_function {
-            "end function"
-        } else {
-            "end sub"
-        };
+        let end_term = kind.end_term();
         let mut body = parse_block(
             lines,
             &mut index,
@@ -241,6 +251,7 @@ fn parse_procedures(
             &mut array_bounds,
             option_explicit,
             module_constants,
+            property_write_routes,
             &[end_term],
         );
         body.splice(0..0, build_const_prelude(module_constants));
@@ -259,9 +270,51 @@ fn parse_procedures(
     procedures
 }
 
-fn parse_proc_signature(line: &str, is_function: bool) -> Option<(String, Vec<BoundParam>)> {
-    let prefix_len = if is_function { 9 } else { 4 };
-    let rest = line.get(prefix_len..)?.trim();
+impl ProcKind {
+    fn prefix_len(self) -> usize {
+        match self {
+            Self::Sub => 4,
+            Self::Function => 9,
+            Self::PropertyGet | Self::PropertyLet | Self::PropertySet => 13,
+        }
+    }
+
+    fn end_term(self) -> &'static str {
+        match self {
+            Self::Sub => "end sub",
+            Self::Function => "end function",
+            Self::PropertyGet | Self::PropertyLet | Self::PropertySet => "end property",
+        }
+    }
+
+    fn canonical_name(self, base: String) -> String {
+        match self {
+            Self::Sub | Self::Function => base,
+            Self::PropertyGet => format!("property_get_{base}"),
+            Self::PropertyLet => format!("property_let_{base}"),
+            Self::PropertySet => format!("property_set_{base}"),
+        }
+    }
+}
+
+fn detect_proc_kind(lower: &str) -> Option<ProcKind> {
+    if lower.starts_with("sub ") {
+        Some(ProcKind::Sub)
+    } else if lower.starts_with("function ") {
+        Some(ProcKind::Function)
+    } else if lower.starts_with("property get ") {
+        Some(ProcKind::PropertyGet)
+    } else if lower.starts_with("property let ") {
+        Some(ProcKind::PropertyLet)
+    } else if lower.starts_with("property set ") {
+        Some(ProcKind::PropertySet)
+    } else {
+        None
+    }
+}
+
+fn parse_proc_base_name(line: &str, kind: ProcKind) -> Option<String> {
+    let rest = line.get(kind.prefix_len()..)?.trim();
     let name_token = rest
         .split('(')
         .next()
@@ -269,7 +322,13 @@ fn parse_proc_signature(line: &str, is_function: bool) -> Option<(String, Vec<Bo
         .split_whitespace()
         .next()
         .unwrap_or_default();
-    let name = normalize_ident(name_token)?;
+    normalize_ident(name_token)
+}
+
+fn parse_proc_signature(line: &str, kind: ProcKind) -> Option<(String, Vec<BoundParam>)> {
+    let prefix_len = kind.prefix_len();
+    let rest = line.get(prefix_len..)?.trim();
+    let name = kind.canonical_name(parse_proc_base_name(line, kind)?);
     let mut params = Vec::new();
     let mut seen_optional = false;
 
@@ -360,12 +419,8 @@ fn collect_module_constants(lines: &[String]) -> HashMap<String, i32> {
     while index < lines.len() {
         let line = lines[index].as_str();
         let lower = line.to_ascii_lowercase();
-        if lower.starts_with("sub ") || lower.starts_with("function ") {
-            let end_term = if lower.starts_with("sub ") {
-                "end sub"
-            } else {
-                "end function"
-            };
+        if let Some(kind) = detect_proc_kind(&lower) {
+            let end_term = kind.end_term();
             index += 1;
             while index < lines.len() && !lines[index].eq_ignore_ascii_case(end_term) {
                 index += 1;
@@ -388,6 +443,22 @@ fn collect_module_constants(lines: &[String]) -> HashMap<String, i32> {
     }
 
     constants
+}
+
+fn collect_property_write_routes(lines: &[String]) -> HashMap<String, String> {
+    let mut routes = HashMap::new();
+    for line in lines {
+        let lower = line.to_ascii_lowercase();
+        let Some(kind) = detect_proc_kind(&lower) else {
+            continue;
+        };
+        if matches!(kind, ProcKind::PropertyLet | ProcKind::PropertySet)
+            && let Some(base) = parse_proc_base_name(line, kind)
+        {
+            routes.insert(base.clone(), kind.canonical_name(base));
+        }
+    }
+    routes
 }
 
 fn parse_enum_block(lines: &[String], index: &mut usize, constants: &mut HashMap<String, i32>) {
@@ -433,6 +504,7 @@ fn parse_enum_member(line: &str) -> Option<(String, Option<i32>)> {
     normalize_ident(trimmed).map(|name| (name, None))
 }
 
+#[allow(clippy::too_many_arguments)]
 fn parse_block(
     lines: &[String],
     index: &mut usize,
@@ -440,6 +512,7 @@ fn parse_block(
     array_bounds: &mut HashMap<String, usize>,
     option_explicit: &mut bool,
     module_constants: &HashMap<String, i32>,
+    property_write_routes: &HashMap<String, String>,
     terminators: &[&str],
 ) -> Vec<BoundStmt> {
     let mut out = Vec::new();
@@ -462,6 +535,10 @@ fn parse_block(
             || lower == "end sub"
             || lower.starts_with("function ")
             || lower == "end function"
+            || lower.starts_with("property get ")
+            || lower.starts_with("property let ")
+            || lower.starts_with("property set ")
+            || lower == "end property"
         {
             *index += 1;
             continue;
@@ -508,6 +585,7 @@ fn parse_block(
                 array_bounds,
                 option_explicit,
                 module_constants,
+                property_write_routes,
                 line,
             ));
             continue;
@@ -521,6 +599,7 @@ fn parse_block(
                 array_bounds,
                 option_explicit,
                 module_constants,
+                property_write_routes,
                 line,
             ));
             continue;
@@ -546,6 +625,7 @@ fn parse_block(
                 array_bounds,
                 option_explicit,
                 module_constants,
+                property_write_routes,
                 line,
             ));
             continue;
@@ -628,18 +708,25 @@ fn parse_block(
                 array_bounds,
                 option_explicit,
                 module_constants,
+                property_write_routes,
                 line,
             ));
             continue;
         }
 
-        out.push(parse_assign_or_unsupported(line, array_bounds));
+        out.push(parse_assign_or_unsupported(
+            line,
+            declarations,
+            array_bounds,
+            property_write_routes,
+        ));
         *index += 1;
     }
 
     out
 }
 
+#[allow(clippy::too_many_arguments)]
 fn parse_if_stmt(
     lines: &[String],
     index: &mut usize,
@@ -647,6 +734,7 @@ fn parse_if_stmt(
     array_bounds: &mut HashMap<String, usize>,
     option_explicit: &mut bool,
     module_constants: &HashMap<String, i32>,
+    property_write_routes: &HashMap<String, String>,
     line: &str,
 ) -> BoundStmt {
     let condition = line[2..line.len() - 4].trim();
@@ -665,6 +753,7 @@ fn parse_if_stmt(
         array_bounds,
         option_explicit,
         module_constants,
+        property_write_routes,
         &["elseif", "else", "end if"],
     );
     let Some(else_body) = parse_if_tail(
@@ -674,6 +763,7 @@ fn parse_if_stmt(
         array_bounds,
         option_explicit,
         module_constants,
+        property_write_routes,
     ) else {
         return BoundStmt::Unsupported {
             line: line.to_string(),
@@ -687,6 +777,7 @@ fn parse_if_stmt(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn parse_for_stmt(
     lines: &[String],
     index: &mut usize,
@@ -694,6 +785,7 @@ fn parse_for_stmt(
     array_bounds: &mut HashMap<String, usize>,
     option_explicit: &mut bool,
     module_constants: &HashMap<String, i32>,
+    property_write_routes: &HashMap<String, String>,
     line: &str,
 ) -> BoundStmt {
     let Some((var, start, end)) = parse_for_header(line, array_bounds) else {
@@ -711,6 +803,7 @@ fn parse_for_stmt(
         array_bounds,
         option_explicit,
         module_constants,
+        property_write_routes,
         &["next"],
     );
 
@@ -732,11 +825,26 @@ fn parse_for_stmt(
     }
 }
 
-fn parse_assign_or_unsupported(line: &str, array_bounds: &HashMap<String, usize>) -> BoundStmt {
+fn parse_assign_or_unsupported(
+    line: &str,
+    declarations: &[String],
+    array_bounds: &HashMap<String, usize>,
+    property_write_routes: &HashMap<String, String>,
+) -> BoundStmt {
     if let Some((lhs_raw, rhs_raw)) = line.split_once('=')
         && let Some(target) = parse_reference_name(lhs_raw, array_bounds)
         && let Some(expr) = parse_expr(rhs_raw, array_bounds)
     {
+        if let Some(route_proc) = property_write_routes.get(&target)
+            && !declarations
+                .iter()
+                .any(|existing| existing.eq_ignore_ascii_case(&target))
+        {
+            return BoundStmt::Call {
+                name: route_proc.clone(),
+                args: vec![BoundCallArg { name: None, expr }],
+            };
+        }
         return BoundStmt::Assign { target, expr };
     }
 
@@ -797,6 +905,7 @@ fn parse_call_invocation(
     Some((name, args))
 }
 
+#[allow(clippy::too_many_arguments)]
 fn parse_do_stmt(
     lines: &[String],
     index: &mut usize,
@@ -804,6 +913,7 @@ fn parse_do_stmt(
     array_bounds: &mut HashMap<String, usize>,
     option_explicit: &mut bool,
     module_constants: &HashMap<String, i32>,
+    property_write_routes: &HashMap<String, String>,
     line: &str,
 ) -> BoundStmt {
     let lower = line.to_ascii_lowercase();
@@ -824,6 +934,7 @@ fn parse_do_stmt(
             array_bounds,
             option_explicit,
             module_constants,
+            property_write_routes,
             &["loop"],
         );
         if *index < lines.len() {
@@ -852,6 +963,7 @@ fn parse_do_stmt(
             array_bounds,
             option_explicit,
             module_constants,
+            property_write_routes,
             &["loop"],
         );
         if *index < lines.len() {
@@ -928,6 +1040,7 @@ fn parse_redim_stmt(
     })
 }
 
+#[allow(clippy::too_many_arguments)]
 fn parse_select_case_stmt(
     lines: &[String],
     index: &mut usize,
@@ -935,6 +1048,7 @@ fn parse_select_case_stmt(
     array_bounds: &mut HashMap<String, usize>,
     option_explicit: &mut bool,
     module_constants: &HashMap<String, i32>,
+    property_write_routes: &HashMap<String, String>,
     line: &str,
 ) -> BoundStmt {
     let Some((_, expr_raw)) = split_ci(line, "case") else {
@@ -976,6 +1090,7 @@ fn parse_select_case_stmt(
                 array_bounds,
                 option_explicit,
                 module_constants,
+                property_write_routes,
                 &["end select"],
             );
             continue;
@@ -1002,6 +1117,7 @@ fn parse_select_case_stmt(
                 array_bounds,
                 option_explicit,
                 module_constants,
+                property_write_routes,
                 &["case", "end select"],
             );
             arms.push((values, body));
@@ -1205,6 +1321,7 @@ fn parse_if_tail(
     array_bounds: &mut HashMap<String, usize>,
     option_explicit: &mut bool,
     module_constants: &HashMap<String, i32>,
+    property_write_routes: &HashMap<String, String>,
 ) -> Option<Vec<BoundStmt>> {
     if *index >= lines.len() {
         return None;
@@ -1227,6 +1344,7 @@ fn parse_if_tail(
             array_bounds,
             option_explicit,
             module_constants,
+            property_write_routes,
             &["end if"],
         );
         if *index < lines.len() && lines[*index].eq_ignore_ascii_case("end if") {
@@ -1247,6 +1365,7 @@ fn parse_if_tail(
             array_bounds,
             option_explicit,
             module_constants,
+            property_write_routes,
             &["elseif", "else", "end if"],
         );
         let nested_else = parse_if_tail(
@@ -1256,6 +1375,7 @@ fn parse_if_tail(
             array_bounds,
             option_explicit,
             module_constants,
+            property_write_routes,
         )?;
         return Some(vec![BoundStmt::IfCond {
             cond,
@@ -1501,6 +1621,53 @@ mod tests {
                 .body
                 .iter()
                 .any(|s| matches!(s, BoundStmt::Assign { target, .. } if target == "x"))
+        );
+    }
+
+    #[test]
+    fn resolve_property_let_assignment_routes_to_property_call() {
+        let source = "Sub Main()\nDim x\nx = 1\nValue = x\nEnd Sub\nProperty Let Value(ByRef target)\ntarget = target + 2\nEnd Property";
+        let module = resolve_symbols(source);
+        let main_proc = module
+            .procedures
+            .iter()
+            .find(|p| p.name == "main")
+            .expect("main procedure expected");
+        assert!(
+            main_proc
+                .body
+                .iter()
+                .any(|s| matches!(s, BoundStmt::Call { name, .. } if name == "property_let_value"))
+        );
+    }
+
+    #[test]
+    fn resolve_property_set_assignment_routes_to_property_call() {
+        let source = "Sub Main()\nDim x\nx = 2\nObj = x\nEnd Sub\nProperty Set Obj(ByRef target)\ntarget = target + 5\nEnd Property";
+        let module = resolve_symbols(source);
+        let main_proc = module
+            .procedures
+            .iter()
+            .find(|p| p.name == "main")
+            .expect("main procedure expected");
+        assert!(
+            main_proc
+                .body
+                .iter()
+                .any(|s| matches!(s, BoundStmt::Call { name, .. } if name == "property_set_obj"))
+        );
+    }
+
+    #[test]
+    fn resolve_property_get_procedure_is_parsed() {
+        let source =
+            "Sub Main()\nDim x\nx = 4\nEnd Sub\nProperty Get Value()\nDim y\ny = 1\nEnd Property";
+        let module = resolve_symbols(source);
+        assert!(
+            module
+                .procedures
+                .iter()
+                .any(|proc| proc.name == "property_get_value")
         );
     }
 

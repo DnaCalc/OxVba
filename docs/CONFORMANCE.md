@@ -26,6 +26,7 @@ Current corpus includes:
 - `ByVal`/`ByRef` parameter passing subset.
 - Trailing `Optional` parameter defaults (integer literal subset).
 - Named argument call binding (`name := expr`) with ordering validation.
+- `Property Get/Let/Set` declaration subset with assignment-form routing to `Let/Set`.
 - Fixed-size arrays with indexed load/store and bounds errors.
 - Dynamic `ReDim` / `ReDim Preserve` (1D literal-bound subset).
 - Module-level `Const` and `Enum` declaration usage subset.

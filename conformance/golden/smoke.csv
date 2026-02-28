@@ -44,6 +44,9 @@ params_optional_default.bas,ok,7
 params_optional_override.bas,ok,9
 proc_call_chain.bas,ok,1
 proc_call_local_scope.bas,ok,2
+property_get_declaration_basic.bas,ok,4
+property_let_byref_route.bas,ok,3
+property_set_byref_route.bas,ok,7
 redim_expand_allows_new_index.bas,ok,"0,0,5,0,5"
 redim_preserve_keeps_values.bas,ok,"7,0,7,0,0"
 redim_shrink_bounds_error.bas,error,

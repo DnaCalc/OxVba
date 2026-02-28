@@ -1,7 +1,7 @@
 # Formal Run Report
 
-- Timestamp (UTC): 2026-02-28T00:02:09Z
-- Profile scope: mvp-lang-udt-enum-const-v43
+- Timestamp (UTC): 2026-02-28T00:15:57Z
+- Profile scope: mvp-lang-property-procedures-v44
 - Overall mode: non-blocking
 - Kani required: false
 - Kani execution: deferred-to-wsl-async
@@ -130,3 +130,6 @@
 | FO-V43-001 | v43 | no | pass | cargo test -p oxvba-host formal_v43_module_const_evaluates_in_expression | crates/oxvba-host/src/engine.rs |  |
 | FO-V43-002 | v43 | no | pass | cargo test -p oxvba-host formal_v43_enum_members_bind_to_expected_values | crates/oxvba-host/src/engine.rs |  |
 | FO-V43-003 | v43 | no | pass | cargo test -p oxvba-host formal_v43_udt_declaration_block_is_parse_tolerated | crates/oxvba-host/src/engine.rs |  |
+| FO-V44-001 | v44 | no | pass | cargo test -p oxvba-host formal_v44_property_let_routes_assignment_byref | crates/oxvba-host/src/engine.rs |  |
+| FO-V44-002 | v44 | no | pass | cargo test -p oxvba-host formal_v44_property_set_routes_assignment_byref | crates/oxvba-host/src/engine.rs |  |
+| FO-V44-003 | v44 | no | pass | cargo test -p oxvba-host formal_v44_property_get_block_is_parse_tolerated | crates/oxvba-host/src/engine.rs |  |

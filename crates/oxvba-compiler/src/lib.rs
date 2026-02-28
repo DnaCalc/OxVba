@@ -365,6 +365,40 @@ mod tests {
     }
 
     #[test]
+    fn compile_property_let_assignment_routes_to_call() {
+        let source = "Sub Main()\nDim x\nx = 1\nValue = x\nEnd Sub\nProperty Let Value(ByRef target)\ntarget = target + 2\nEnd Property";
+        let out = compile(source).expect("compile should succeed");
+        assert!(
+            out.instructions
+                .iter()
+                .any(|i| matches!(i, Instruction::CallProc { .. }))
+        );
+    }
+
+    #[test]
+    fn compile_property_set_assignment_routes_to_call() {
+        let source = "Sub Main()\nDim x\nx = 2\nObj = x\nEnd Sub\nProperty Set Obj(ByRef target)\ntarget = target + 5\nEnd Property";
+        let out = compile(source).expect("compile should succeed");
+        assert!(
+            out.instructions
+                .iter()
+                .any(|i| matches!(i, Instruction::CallProc { .. }))
+        );
+    }
+
+    #[test]
+    fn compile_property_get_procedure_is_accepted() {
+        let source =
+            "Sub Main()\nDim x\nx = 4\nEnd Sub\nProperty Get Value()\nDim y\ny = 1\nEnd Property";
+        let out = compile(source).expect("compile should succeed");
+        assert!(
+            out.instructions
+                .iter()
+                .any(|i| matches!(i, Instruction::LoadConstI32 { value: 4, .. }))
+        );
+    }
+
+    #[test]
     fn compile_on_error_resume_next_emits_error_state_ops() {
         let source = "Sub Main()\nDim x\nOn Error Resume Next\nError 5\nx = Err.Number\nEnd Sub";
         let out = compile(source).expect("compile should succeed");
