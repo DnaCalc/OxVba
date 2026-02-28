@@ -44,6 +44,12 @@ pub enum Instruction {
         start: usize,
         count: Option<usize>,
     },
+    IntrinsicMidStmtDigits {
+        target: usize,
+        start: usize,
+        count: Option<usize>,
+        value: usize,
+    },
     IntrinsicInStrDigits {
         dst: usize,
         haystack: usize,

@@ -224,3 +224,6 @@
 "FO-V78-001","v78","cargo test -p oxvba-compiler compile_option_compare_text_emits_text_compare_mode_intrinsics","no","pass","","crates/oxvba-compiler/src/lib.rs"
 "FO-V78-002","v78","cargo test -p oxvba-compiler compile_like_condition_emits_like_intrinsic_instruction","no","pass","","crates/oxvba-compiler/src/lib.rs"
 "FO-V78-003","v78","cargo test -p oxvba-compiler compile_instrrev_intrinsic_emits_intrinsic_instruction","no","pass","","crates/oxvba-compiler/src/lib.rs"
+"FO-V79-001","v79","cargo test -p oxvba-compiler compile_mid_statement_emits_mutation_instruction","no","pass","","crates/oxvba-compiler/src/lib.rs"
+"FO-V79-002","v79","cargo test -p oxvba-compiler mid_statement_object_target_is_rejected","no","pass","","crates/oxvba-compiler/src/lib.rs"
+"FO-V79-003","v79","cargo test -p oxvba-compiler resolve::tests::resolve_mid_statement_assignment","no","pass","","crates/oxvba-compiler/src/resolve.rs"

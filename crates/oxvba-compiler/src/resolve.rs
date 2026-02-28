@@ -40,6 +40,12 @@ pub enum BoundStmt {
         target: String,
         expr: BoundExpr,
     },
+    MidAssign {
+        target: String,
+        start: BoundExpr,
+        count: Option<BoundExpr>,
+        value: BoundExpr,
+    },
     IfCond {
         cond: BoundCond,
         then_body: Vec<BoundStmt>,
@@ -1506,6 +1512,10 @@ fn parse_assign_or_unsupported(
     array_bounds: &HashMap<String, usize>,
     property_write_routes: &HashMap<String, String>,
 ) -> BoundStmt {
+    if let Some(stmt) = parse_mid_assign_stmt(line, array_bounds) {
+        return stmt;
+    }
+
     if let Some((lhs_raw, rhs_raw)) = line.split_once('=')
         && let Some(target) = parse_reference_name(lhs_raw, array_bounds)
         && let Some(expr) = parse_expr(rhs_raw, array_bounds)
@@ -1541,6 +1551,46 @@ fn parse_assign_or_unsupported(
     BoundStmt::Unsupported {
         line: line.to_string(),
     }
+}
+
+fn parse_mid_assign_stmt(line: &str, array_bounds: &HashMap<String, usize>) -> Option<BoundStmt> {
+    let trimmed = line.trim();
+    let (lhs, rhs) = trimmed.split_once('=')?;
+    let lhs = lhs.trim();
+    let rhs = rhs.trim();
+    if rhs.is_empty() {
+        return None;
+    }
+
+    let open = lhs.find('(')?;
+    let close = lhs.rfind(')')?;
+    if close <= open || close != lhs.len() - 1 {
+        return None;
+    }
+    let name = normalize_ident(lhs[..open].trim())?;
+    if name != "mid" {
+        return None;
+    }
+
+    let args = split_call_args(lhs[open + 1..close].trim())?;
+    if !(args.len() == 2 || args.len() == 3) {
+        return None;
+    }
+    let target = parse_reference_name(args[0], array_bounds)?;
+    let start = parse_expr(args[1], array_bounds)?;
+    let count = if args.len() == 3 {
+        Some(parse_expr(args[2], array_bounds)?)
+    } else {
+        None
+    };
+    let value = parse_expr(rhs, array_bounds)?;
+
+    Some(BoundStmt::MidAssign {
+        target,
+        start,
+        count,
+        value,
+    })
 }
 
 fn parse_call_invocation(
@@ -2653,6 +2703,29 @@ mod tests {
             expr,
             BoundExpr::IntrinsicCall { name, args } if name == "len" && args.len() == 1
         ));
+    }
+
+    #[test]
+    fn resolve_stdlib_dollar_suffix_intrinsic_call_expression() {
+        let source = "Sub Main()\nDim x\nx = Left$(1234, 2)\nEnd Sub";
+        let module = resolve_symbols(source);
+        let Some(BoundStmt::Assign { expr, .. }) = module.body.first() else {
+            panic!("expected assignment");
+        };
+        assert!(matches!(
+            expr,
+            BoundExpr::IntrinsicCall { name, args } if name == "left" && args.len() == 2
+        ));
+    }
+
+    #[test]
+    fn resolve_mid_statement_assignment() {
+        let source = "Sub Main()\nDim x\nx = 12345\nMid(x, 2, 2) = 99\nEnd Sub";
+        let module = resolve_symbols(source);
+        let Some(BoundStmt::MidAssign { target, .. }) = module.body.get(1) else {
+            panic!("expected mid assignment");
+        };
+        assert_eq!(target, "x");
     }
 
     #[test]

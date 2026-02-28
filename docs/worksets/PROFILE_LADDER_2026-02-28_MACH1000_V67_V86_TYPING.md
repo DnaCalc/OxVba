@@ -392,3 +392,14 @@ Per profile:
   - run: `v78-kani`,
   - status: `dg-running`,
   - register: `docs/evidence/formal/DEFERRED_GATES.md`.
+- `v79` (`mvp-string-mutation-and-slices-v79`) completed:
+  - matrix gate `PASS` (`docs/evidence/profiles/v79/gate_report.md`),
+  - formal obligations `FO-V79-001..003` pass (`docs/evidence/formal/latest_run.md`),
+  - added executable `Mid` statement mutation subset and expanded slice coverage with type-character forms (`Left$`, `Right$`, `Mid$`).
+- Track C DG reconciliation (`v77..v78`) checkpoint:
+  - tracked runs `v77-kani` and `v78-kani` currently `dg-running` at poll time,
+  - unresolved foldback recorded in `docs/evidence/formal/EXTENDED_TODO.md` (`FTODO-V79-001`).
+- Strict WSL Kani lane for `v79` started async as deferred gate:
+  - run: `v79-kani`,
+  - status: `dg-running`,
+  - register: `docs/evidence/formal/DEFERRED_GATES.md`.

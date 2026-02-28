@@ -96,6 +96,25 @@ impl Vm {
                     self.write_slot(*dst, Self::mid_digits(value, start, count))?;
                     pc += 1;
                 }
+                Instruction::IntrinsicMidStmtDigits {
+                    target,
+                    start,
+                    count,
+                    value,
+                } => {
+                    let target_value = self.read_slot(*target)?;
+                    let start = self.read_slot(*start)?;
+                    let count = match count {
+                        Some(slot) => Some(self.read_slot(*slot)?),
+                        None => None,
+                    };
+                    let value = self.read_slot(*value)?;
+                    self.write_slot(
+                        *target,
+                        Self::mid_stmt_digits(target_value, start, count, value),
+                    )?;
+                    pc += 1;
+                }
                 Instruction::IntrinsicInStrDigits {
                     dst,
                     haystack,
@@ -705,6 +724,31 @@ impl Vm {
         Self::slice_digits(value, zero_based_start, count)
     }
 
+    fn mid_stmt_digits(target: i32, start: i32, count: Option<i32>, value: i32) -> i32 {
+        let base = target.to_string();
+        let repl = value.to_string();
+        let base_chars = base.chars().collect::<Vec<_>>();
+        let start_idx = if start <= 1 { 0 } else { (start - 1) as usize };
+        if start_idx >= base_chars.len() {
+            return target;
+        }
+
+        let end_idx = match count {
+            Some(c) if c <= 0 => start_idx,
+            Some(c) => (start_idx + c as usize).min(base_chars.len()),
+            None => base_chars.len(),
+        };
+
+        let replace_len = end_idx.saturating_sub(start_idx);
+        let replace_text = repl.chars().take(replace_len).collect::<String>();
+
+        let mut out = String::new();
+        out.push_str(&base_chars[..start_idx].iter().collect::<String>());
+        out.push_str(&replace_text);
+        out.push_str(&base_chars[end_idx..].iter().collect::<String>());
+        out.parse::<i32>().unwrap_or(0)
+    }
+
     fn slice_digits(value: i32, start: usize, count: Option<i32>) -> i32 {
         let text = value.to_string();
         let chars = text.chars().collect::<Vec<_>>();
@@ -987,6 +1031,34 @@ mod tests {
             vm.snapshot_slots(10),
             vec![12345, 2, 3, 5, 12, 45, 234, 3, 12345, 12345]
         );
+    }
+
+    #[test]
+    fn executes_mid_statement_mutation_subset() {
+        let bytecode = Bytecode {
+            instructions: vec![
+                Instruction::LoadConstI32 {
+                    slot: 0,
+                    value: 12345,
+                },
+                Instruction::LoadConstI32 { slot: 1, value: 2 },
+                Instruction::LoadConstI32 { slot: 2, value: 2 },
+                Instruction::LoadConstI32 { slot: 3, value: 99 },
+                Instruction::IntrinsicMidStmtDigits {
+                    target: 0,
+                    start: 1,
+                    count: Some(2),
+                    value: 3,
+                },
+                Instruction::Halt,
+            ],
+            slot_count: 4,
+            user_slot_count: 4,
+        };
+
+        let mut vm = Vm::default();
+        vm.execute(&bytecode).expect("vm should execute bytecode");
+        assert_eq!(vm.snapshot_slots(4), vec![19945, 2, 2, 99]);
     }
 
     #[test]

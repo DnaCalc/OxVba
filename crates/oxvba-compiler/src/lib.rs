@@ -299,6 +299,16 @@ mod tests {
     }
 
     #[test]
+    fn mid_statement_object_target_is_rejected() {
+        let source = "Sub Main()\nDim o As Object\nMid(o, 2, 2) = 99\nEnd Sub";
+        let err = compile(source).expect_err("Mid statement should reject object targets");
+        assert!(
+            err.to_string()
+                .contains("type mismatch in Mid assignment target")
+        );
+    }
+
+    #[test]
     fn vbnullstring_assigns_to_string() {
         let source = "Sub Main()\nDim s As String\ns = vbNullString\nEnd Sub";
         compile(source).expect("vbNullString should be treated as string-typed intrinsic constant");
@@ -641,6 +651,17 @@ mod tests {
             out.instructions
                 .iter()
                 .any(|i| matches!(i, Instruction::IntrinsicMidDigits { .. }))
+        );
+    }
+
+    #[test]
+    fn compile_mid_statement_emits_mutation_instruction() {
+        let source = "Sub Main()\nDim x\nx = 12345\nMid(x, 2, 2) = 99\nEnd Sub";
+        let out = compile(source).expect("compile should succeed");
+        assert!(
+            out.instructions
+                .iter()
+                .any(|i| matches!(i, Instruction::IntrinsicMidStmtDigits { .. }))
         );
     }
 

@@ -29,3 +29,9 @@ Non-blocking formal issues and follow-up items for later ladder profiles.
   Current status (`todo` / `investigating` / `resolved`): investigating
   Reproduction command: `./scripts/run-formal-kani-async.ps1 -Action Status -Name v73-kani` (repeat for `v74-kani`, `v75-kani`)
   Suggested next action: continue periodic status polling; fold completed outcomes into `latest_run.md/csv`, update `DEFERRED_GATES.md`, and close the item once all three DG rows are folded.
+- ID: FTODO-V79-001
+  Profile: v79 reconciliation (`v77..v78` DG foldback)
+  Summary: Deferred-gate strict Kani runs `v77-kani` and `v78-kani` remain live (`dg-running`) at the v79 checkpoint and cannot yet be folded to `dg-pass|dg-fail`.
+  Current status (`todo` / `investigating` / `resolved`): investigating
+  Reproduction command: `./scripts/run-formal-kani-async.ps1 -Action Status -Name v77-kani` (repeat for `v78-kani`)
+  Suggested next action: continue periodic status polling; fold completed outcomes into `latest_run.md/csv`, update `DEFERRED_GATES.md`, and close the item once both DG rows are folded.

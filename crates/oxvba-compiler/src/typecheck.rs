@@ -142,6 +142,84 @@ fn check_stmt(
                 ))
             }
         }
+        BoundStmt::MidAssign {
+            target,
+            start,
+            count,
+            value,
+        } => {
+            ensure_declared(
+                target,
+                option_explicit,
+                default_type_table,
+                declared,
+                declared_types,
+                declarations,
+                declaration_types,
+            )?;
+            check_expr(
+                start,
+                option_explicit,
+                default_type_table,
+                declared,
+                declared_types,
+                declarations,
+                declaration_types,
+            )?;
+            if let Some(count) = count {
+                check_expr(
+                    count,
+                    option_explicit,
+                    default_type_table,
+                    declared,
+                    declared_types,
+                    declarations,
+                    declaration_types,
+                )?;
+            }
+            check_expr(
+                value,
+                option_explicit,
+                default_type_table,
+                declared,
+                declared_types,
+                declarations,
+                declaration_types,
+            )?;
+
+            let target_ty = *declared_types.get(target).unwrap_or(&BoundType::Variant);
+            if coercion_result(BoundType::String, target_ty) != CoercionResult::Ok {
+                return Err(format!(
+                    "type mismatch in Mid assignment target: cannot mutate {:?} variable {}",
+                    target_ty, target
+                ));
+            }
+
+            let start_ty = infer_expr_type(start, declared_types);
+            if coercion_result(start_ty, BoundType::Long) != CoercionResult::Ok {
+                return Err(format!(
+                    "type mismatch in Mid assignment start expression: cannot convert {:?} to Long",
+                    start_ty
+                ));
+            }
+            if let Some(count) = count {
+                let count_ty = infer_expr_type(count, declared_types);
+                if coercion_result(count_ty, BoundType::Long) != CoercionResult::Ok {
+                    return Err(format!(
+                        "type mismatch in Mid assignment count expression: cannot convert {:?} to Long",
+                        count_ty
+                    ));
+                }
+            }
+            let value_ty = infer_expr_type(value, declared_types);
+            if coercion_result(value_ty, BoundType::String) != CoercionResult::Ok {
+                return Err(format!(
+                    "type mismatch in Mid assignment value expression: cannot convert {:?} to String",
+                    value_ty
+                ));
+            }
+            Ok(())
+        }
         BoundStmt::IfCond {
             cond,
             then_body,

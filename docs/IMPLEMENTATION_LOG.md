@@ -1,6 +1,12 @@
 # Implementation Log
 
 ## 2026-02-28
+- Completed `v79` (`mvp-string-mutation-and-slices-v79`):
+  - added resolver support for `Mid` statement mutation form (`Mid(target, start[, count]) = value`);
+  - added typecheck + bytecode + VM execution support for `Mid` statement mutation in the current numeric-string subset;
+  - added explicit regression coverage for slice intrinsic type-character forms (`Left$`, `Right$`, `Mid$`) and conformance fixtures for `Mid` mutation;
+  - added formal obligations `FO-V79-001..003`, produced matrix artifacts under `docs/evidence/profiles/v79/`, and recorded Track-C reconciliation note `FTODO-V79-001` for unresolved `v77..v78` deferred gates;
+  - started strict async Kani lane (`v79-kani`) and registered deferred gate `DG-V79-001`.
 - Completed `v78` (`mvp-string-compare-search-v78`):
   - added resolver-level `Option Compare` mode capture (`Binary`, `Text`, `Database`) and preserved module compare mode through emission;
   - extended compare/search subset with `InStrRev` and `Like` lowering/runtime instructions;

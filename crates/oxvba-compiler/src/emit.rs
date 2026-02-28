@@ -208,6 +208,46 @@ fn emit_stmt(
                 );
             }
         }
+        BoundStmt::MidAssign {
+            target,
+            start,
+            count,
+            value,
+        } => {
+            if let Some(target_slot) = slot_map.get(target.as_str()).copied() {
+                let start_slot = temps.alloc_temp();
+                emit_expr_into(
+                    start,
+                    compare_mode,
+                    start_slot,
+                    slot_map,
+                    temps,
+                    instructions,
+                );
+                let count_slot = if let Some(count) = count {
+                    let slot = temps.alloc_temp();
+                    emit_expr_into(count, compare_mode, slot, slot_map, temps, instructions);
+                    Some(slot)
+                } else {
+                    None
+                };
+                let value_slot = temps.alloc_temp();
+                emit_expr_into(
+                    value,
+                    compare_mode,
+                    value_slot,
+                    slot_map,
+                    temps,
+                    instructions,
+                );
+                instructions.push(Instruction::IntrinsicMidStmtDigits {
+                    target: target_slot,
+                    start: start_slot,
+                    count: count_slot,
+                    value: value_slot,
+                });
+            }
+        }
         BoundStmt::IfCond {
             cond,
             then_body,
