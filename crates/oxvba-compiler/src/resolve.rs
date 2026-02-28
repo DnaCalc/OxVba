@@ -168,6 +168,7 @@ pub struct BoundArrayDescriptor {
 pub struct BoundParam {
     pub name: String,
     pub by_ref: bool,
+    pub param_array: bool,
     pub optional: bool,
     pub default_value: Option<i32>,
     pub ty: BoundType,
@@ -944,6 +945,7 @@ fn parse_proc_signature(
     let name = kind.canonical_name(base_name.clone());
     let mut params = Vec::new();
     let mut seen_optional = false;
+    let mut seen_param_array = false;
     let mut explicit_return_ty = None;
 
     if let Some(open) = rest.find('(')
@@ -953,6 +955,9 @@ fn parse_proc_signature(
         let params_raw = rest[open + 1..close].trim();
         if !params_raw.is_empty() {
             for item in params_raw.split(',') {
+                if seen_param_array {
+                    return None;
+                }
                 let mut token = item.trim();
                 if token.is_empty() {
                     return None;
@@ -962,8 +967,18 @@ fn parse_proc_signature(
                     optional = true;
                     token = token[9..].trim();
                 }
+                let mut param_array = false;
+                if token.to_ascii_lowercase().starts_with("paramarray ") {
+                    param_array = true;
+                    token = token[11..].trim();
+                }
                 let lower = token.to_ascii_lowercase();
-                let (by_ref, remainder) = if lower.starts_with("byval ") {
+                let (by_ref, remainder) = if param_array {
+                    if lower.starts_with("byval ") || lower.starts_with("byref ") {
+                        return None;
+                    }
+                    (false, token)
+                } else if lower.starts_with("byval ") {
                     (false, token[6..].trim())
                 } else if lower.starts_with("byref ") {
                     (true, token[6..].trim())
@@ -990,6 +1005,9 @@ fn parse_proc_signature(
                 if default_value.is_some() && !optional {
                     return None;
                 }
+                if param_array && (optional || default_value.is_some()) {
+                    return None;
+                }
                 if optional && by_ref {
                     return None;
                 }
@@ -999,20 +1017,38 @@ fn parse_proc_signature(
                     return None;
                 }
 
-                let (param_name, type_char_ty) = normalize_ident_with_type_char(name_text)?;
-                let ty = resolve_declared_type(
-                    &param_name,
-                    explicit_ty,
-                    type_char_ty,
-                    default_type_table,
-                );
+                let normalized_name_text = if param_array {
+                    let trimmed = name_text.trim();
+                    trimmed.strip_suffix("()")?
+                } else {
+                    name_text
+                };
+                let (param_name, type_char_ty) =
+                    normalize_ident_with_type_char(normalized_name_text)?;
+                let ty = if param_array {
+                    if explicit_ty.is_some() && explicit_ty != Some(BoundType::Variant) {
+                        return None;
+                    }
+                    BoundType::Array
+                } else {
+                    resolve_declared_type(
+                        &param_name,
+                        explicit_ty,
+                        type_char_ty,
+                        default_type_table,
+                    )
+                };
                 params.push(BoundParam {
                     name: param_name,
                     by_ref,
+                    param_array,
                     optional,
                     default_value,
                     ty,
                 });
+                if param_array {
+                    seen_param_array = true;
+                }
             }
         }
 
@@ -3131,6 +3167,22 @@ mod tests {
         assert!(!fill.params[1].by_ref);
         assert!(fill.params[1].optional);
         assert_eq!(fill.params[1].default_value, Some(7));
+    }
+
+    #[test]
+    fn resolve_paramarray_signature_marks_last_param_as_array_pack() {
+        let source = "Sub Main()\nCall Capture(1, 2, 3)\nEnd Sub\nSub Capture(ParamArray items() As Variant)\nEnd Sub";
+        let module = resolve_symbols(source);
+        let capture = module
+            .procedures
+            .iter()
+            .find(|p| p.name == "capture")
+            .expect("capture procedure expected");
+        assert_eq!(capture.params.len(), 1);
+        assert_eq!(capture.params[0].name, "items");
+        assert!(capture.params[0].param_array);
+        assert!(!capture.params[0].by_ref);
+        assert_eq!(capture.params[0].ty, super::BoundType::Array);
     }
 
     #[test]

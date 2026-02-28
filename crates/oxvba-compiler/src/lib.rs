@@ -529,6 +529,24 @@ mod tests {
     }
 
     #[test]
+    fn compile_paramarray_call_accepts_trailing_positional_args() {
+        let source = "Sub Main()\nDim x\nCall Capture(x, 5, 7, 9)\nEnd Sub\nSub Capture(ByRef target, ParamArray items() As Variant)\ntarget = UBound(items)\nEnd Sub";
+        let out = compile(source).expect("compile should succeed");
+        assert!(
+            out.instructions
+                .iter()
+                .any(|i| matches!(i, Instruction::IntrinsicUBoundArray { .. }))
+        );
+    }
+
+    #[test]
+    fn compile_paramarray_named_args_are_rejected_for_current_subset() {
+        let source = "Sub Main()\nDim x\nCall Capture(target := x, items := 5)\nEnd Sub\nSub Capture(ByRef target, ParamArray items() As Variant)\ntarget = UBound(items)\nEnd Sub";
+        let err = compile(source).expect_err("typecheck should fail");
+        assert!(err.to_string().contains("ParamArray"));
+    }
+
+    #[test]
     fn compile_gosub_and_return_subset() {
         let source = "Sub Main()\nDim x\nx = 1\nGoSub add_two\nx = x + 1\nIf Err.Number = -1 Then\nadd_two:\nx = x + 2\nReturn\nEnd If\nEnd Sub";
         let out = compile(source).expect("compile should succeed");

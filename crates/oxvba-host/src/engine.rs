@@ -370,6 +370,36 @@ mod tests {
     }
 
     #[test]
+    fn formal_v83_paramarray_packs_trailing_args_count() {
+        let engine = Engine::new(HostConfig::default());
+        let source = "Sub Main()\nDim x\nCall Capture(x, 5, 7, 9)\nEnd Sub\nSub Capture(ByRef target, ParamArray items() As Variant)\ntarget = UBound(items)\nEnd Sub";
+        let snapshot = engine
+            .execute_source_with_snapshot(source)
+            .expect("execution should succeed");
+        assert_eq!(snapshot[0], 2);
+    }
+
+    #[test]
+    fn formal_v83_paramarray_empty_pack_reports_negative_upper_bound() {
+        let engine = Engine::new(HostConfig::default());
+        let source = "Sub Main()\nDim x\nCall Capture(x)\nEnd Sub\nSub Capture(ByRef target, ParamArray items() As Variant)\ntarget = UBound(items)\nEnd Sub";
+        let snapshot = engine
+            .execute_source_with_snapshot(source)
+            .expect("execution should succeed");
+        assert_eq!(snapshot[0], -1);
+    }
+
+    #[test]
+    fn formal_v83_paramarray_named_args_rejected_in_current_subset() {
+        let engine = Engine::new(HostConfig::default());
+        let source = "Sub Main()\nDim x\nCall Capture(target := x, items := 5)\nEnd Sub\nSub Capture(ByRef target, ParamArray items() As Variant)\ntarget = UBound(items)\nEnd Sub";
+        let err = engine
+            .execute_source_with_snapshot(source)
+            .expect_err("named args for paramarray should fail in current subset");
+        assert!(err.contains("ParamArray"));
+    }
+
+    #[test]
     fn formal_v40_gosub_executes_label_body_and_returns() {
         let engine = Engine::new(HostConfig::default());
         let source = "Sub Main()\nDim x\nx = 1\nGoSub add_two\nx = x + 1\nIf Err.Number = -1 Then\nadd_two:\nx = x + 2\nReturn\nEnd If\nEnd Sub";

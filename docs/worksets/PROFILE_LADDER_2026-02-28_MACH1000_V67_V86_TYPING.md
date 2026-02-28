@@ -427,3 +427,11 @@ Per profile:
   - run: `v82-kani`,
   - status: `dg-running`,
   - register: `docs/evidence/formal/DEFERRED_GATES.md`.
+- `v83` (`mvp-array-call-and-paramarray-v83`) completed:
+  - matrix gate `PASS` (`docs/evidence/profiles/v83/gate_report.md`),
+  - formal obligations `FO-V83-001..003` pass (`docs/evidence/formal/latest_run.md`),
+  - added `ParamArray` signature parsing + trailing positional pack behavior in call lowering with explicit current-subset diagnostic for named `ParamArray` arguments.
+- Strict WSL Kani lane for `v83` started async as deferred gate:
+  - run: `v83-kani`,
+  - status: `dg-running`,
+  - register: `docs/evidence/formal/DEFERRED_GATES.md`.

@@ -560,10 +560,20 @@ fn emit_stmt(
             let mut byref_copyback: Vec<(usize, usize)> = Vec::new();
             if let Some(meta) = proc_meta.get(name) {
                 let mapped_args = map_call_args_for_emit(args, &meta.params);
+                let param_array_idx = meta.params.iter().position(|p| p.param_array);
                 for (idx, param) in meta.params.iter().enumerate() {
                     let Some(param_slot) = meta.slots.get(param.name.as_str()).copied() else {
                         continue;
                     };
+                    if param.param_array {
+                        let extras_start = param_array_idx.unwrap_or(meta.params.len());
+                        let extras_count = args.len().saturating_sub(extras_start);
+                        instructions.push(Instruction::LoadConstI32 {
+                            slot: param_slot,
+                            value: ARRAY_TAG_BASE + extras_count as i32,
+                        });
+                        continue;
+                    }
                     let Some(arg) = mapped_args.get(idx).and_then(|arg| *arg) else {
                         if param.optional {
                             emit_optional_default(param, param_slot, instructions);
@@ -1142,11 +1152,16 @@ fn map_call_args_for_emit<'a>(
     args: &'a [BoundCallArg],
     params: &[BoundParam],
 ) -> Vec<Option<&'a BoundCallArg>> {
+    let param_array_idx = params.iter().position(|p| p.param_array);
+    let fixed_len = param_array_idx.unwrap_or(params.len());
     let mut mapped: Vec<Option<&BoundCallArg>> = vec![None; params.len()];
     let mut next_pos = 0usize;
     let mut seen_named = false;
 
     for arg in args {
+        if param_array_idx.is_some() && arg.name.is_some() {
+            continue;
+        }
         if let Some(name) = &arg.name {
             seen_named = true;
             if let Some(idx) = params
@@ -1166,7 +1181,7 @@ fn map_call_args_for_emit<'a>(
         while next_pos < params.len() && mapped[next_pos].is_some() {
             next_pos += 1;
         }
-        if next_pos < params.len() {
+        if next_pos < fixed_len {
             mapped[next_pos] = Some(arg);
             next_pos += 1;
         }

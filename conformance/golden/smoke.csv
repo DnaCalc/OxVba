@@ -79,6 +79,9 @@ params_byval.bas,ok,1
 params_named_bind.bas,ok,9
 params_named_optional_omit.bas,ok,7
 params_named_positional_after_named_error.bas,error,
+params_paramarray_empty.bas,ok,-1
+params_paramarray_named_error.bas,error,
+params_paramarray_pack.bas,ok,2
 params_optional_default.bas,ok,7
 params_optional_override.bas,ok,9
 proc_call_chain.bas,ok,1

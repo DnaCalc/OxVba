@@ -376,7 +376,23 @@ fn check_stmt(
 
             if let Some(params) = proc_params.get(name) {
                 let mapped_args = map_call_args_to_params(name, args, params)?;
+                let param_array_idx = params.iter().position(|p| p.param_array);
                 for (idx, param) in params.iter().enumerate() {
+                    if param.param_array {
+                        let extras_start = param_array_idx.unwrap_or(params.len());
+                        for extra in args.iter().skip(extras_start) {
+                            check_expr(
+                                &extra.expr,
+                                option_explicit,
+                                default_type_table,
+                                declared,
+                                declared_types,
+                                declarations,
+                                declaration_types,
+                            )?;
+                        }
+                        continue;
+                    }
                     let Some(arg) = mapped_args[idx] else {
                         continue;
                     };
@@ -1030,12 +1046,26 @@ fn map_call_args_to_params<'a>(
     args: &'a [BoundCallArg],
     params: &[BoundParam],
 ) -> Result<Vec<Option<&'a BoundCallArg>>, String> {
-    if args.len() > params.len() {
+    let param_array_idx = params.iter().position(|p| p.param_array);
+    let fixed_len = param_array_idx.unwrap_or(params.len());
+    let required_fixed = params
+        .iter()
+        .take(fixed_len)
+        .filter(|p| !p.optional)
+        .count();
+
+    if param_array_idx.is_none() && args.len() > params.len() {
         return Err(format!(
             "procedure {proc_name} expects between {} and {} args, got {}",
-            params.iter().filter(|p| !p.optional).count(),
+            required_fixed,
             params.len(),
             args.len()
+        ));
+    }
+
+    if param_array_idx.is_some() && args.iter().any(|arg| arg.name.is_some()) {
+        return Err(format!(
+            "named arguments are not yet supported for ParamArray procedure {proc_name}"
         ));
     }
 
@@ -1071,10 +1101,13 @@ fn map_call_args_to_params<'a>(
         while next_pos < params.len() && mapped[next_pos].is_some() {
             next_pos += 1;
         }
-        if next_pos >= params.len() {
+        if next_pos >= fixed_len {
+            if param_array_idx.is_some() {
+                continue;
+            }
             return Err(format!(
                 "procedure {proc_name} expects between {} and {} args, got {}",
-                params.iter().filter(|p| !p.optional).count(),
+                required_fixed,
                 params.len(),
                 args.len()
             ));
@@ -1083,7 +1116,7 @@ fn map_call_args_to_params<'a>(
         next_pos += 1;
     }
 
-    for (idx, param) in params.iter().enumerate() {
+    for (idx, param) in params.iter().take(fixed_len).enumerate() {
         if !param.optional && mapped[idx].is_none() {
             return Err(format!("missing required argument {}", param.name));
         }
@@ -1104,14 +1137,23 @@ fn classify_call_mode(
             return Ok(CallMode::Early);
         };
         let mapped_args = map_call_args_to_params(name, args, params)?;
+        let param_array_idx = params.iter().position(|p| p.param_array);
         let dynamic_params = params
             .iter()
+            .filter(|param| !param.param_array)
             .any(|param| matches!(param.ty, BoundType::Variant | BoundType::Object));
         let dynamic_args = mapped_args.iter().flatten().any(|arg| {
             matches!(
                 infer_expr_type(&arg.expr, declared_types),
                 BoundType::Variant | BoundType::Object
             )
+        }) || param_array_idx.is_some_and(|idx| {
+            args.iter().skip(idx).any(|arg| {
+                matches!(
+                    infer_expr_type(&arg.expr, declared_types),
+                    BoundType::Variant | BoundType::Object
+                )
+            })
         });
         if dynamic_params || dynamic_args {
             return Ok(CallMode::Mixed);
@@ -1503,6 +1545,7 @@ mod tests {
             vec![BoundParam {
                 name: "x".to_string(),
                 by_ref: false,
+                param_array: false,
                 optional: false,
                 default_value: None,
                 ty: BoundType::Long,
@@ -1528,6 +1571,7 @@ mod tests {
             vec![BoundParam {
                 name: "x".to_string(),
                 by_ref: false,
+                param_array: false,
                 optional: false,
                 default_value: None,
                 ty: BoundType::Variant,

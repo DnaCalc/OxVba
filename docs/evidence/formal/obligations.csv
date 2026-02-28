@@ -236,3 +236,6 @@ FO-V81-003,v81,"cargo test -p oxvba-compiler compile_multidim_array_reference_su
 FO-V82-001,v82,"cargo test -p oxvba-host formal_v82_redim_preserve_multidim_last_dimension_keeps_overlap",no,true,crates/oxvba-host/src/engine.rs
 FO-V82-002,v82,"cargo test -p oxvba-host formal_v82_redim_preserve_shrink_then_expand_clears_removed_tail",no,true,crates/oxvba-host/src/engine.rs
 FO-V82-003,v82,"cargo test -p oxvba-host formal_v82_redim_preserve_rejects_non_last_dimension_resize",no,true,crates/oxvba-host/src/engine.rs
+FO-V83-001,v83,"cargo test -p oxvba-host formal_v83_paramarray_packs_trailing_args_count",no,true,crates/oxvba-host/src/engine.rs
+FO-V83-002,v83,"cargo test -p oxvba-host formal_v83_paramarray_empty_pack_reports_negative_upper_bound",no,true,crates/oxvba-host/src/engine.rs
+FO-V83-003,v83,"cargo test -p oxvba-host formal_v83_paramarray_named_args_rejected_in_current_subset",no,true,crates/oxvba-host/src/engine.rs

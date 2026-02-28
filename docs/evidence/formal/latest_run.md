@@ -1,7 +1,7 @@
 # Formal Run Report
 
-- Timestamp (UTC): 2026-02-28T13:22:49Z
-- Profile scope: mvp-array-redim-full-v82
+- Timestamp (UTC): 2026-02-28T13:57:42Z
+- Profile scope: mvp-array-call-and-paramarray-v83
 - Overall mode: non-blocking
 - Kani required: false
 - Kani execution: deferred-to-wsl-async
@@ -247,3 +247,6 @@
 | FO-V82-001 | v82 | no | pass | cargo test -p oxvba-host formal_v82_redim_preserve_multidim_last_dimension_keeps_overlap | crates/oxvba-host/src/engine.rs |  |
 | FO-V82-002 | v82 | no | pass | cargo test -p oxvba-host formal_v82_redim_preserve_shrink_then_expand_clears_removed_tail | crates/oxvba-host/src/engine.rs |  |
 | FO-V82-003 | v82 | no | pass | cargo test -p oxvba-host formal_v82_redim_preserve_rejects_non_last_dimension_resize | crates/oxvba-host/src/engine.rs |  |
+| FO-V83-001 | v83 | no | pass | cargo test -p oxvba-host formal_v83_paramarray_packs_trailing_args_count | crates/oxvba-host/src/engine.rs |  |
+| FO-V83-002 | v83 | no | pass | cargo test -p oxvba-host formal_v83_paramarray_empty_pack_reports_negative_upper_bound | crates/oxvba-host/src/engine.rs |  |
+| FO-V83-003 | v83 | no | pass | cargo test -p oxvba-host formal_v83_paramarray_named_args_rejected_in_current_subset | crates/oxvba-host/src/engine.rs |  |
