@@ -345,3 +345,11 @@ Per profile:
   - run: `v72-kani`,
   - status: `dg-running`,
   - register: `docs/evidence/formal/DEFERRED_GATES.md`.
+- `v73` (`mvp-typing-coercion-matrix-v73`) completed:
+  - matrix gate `PASS` (`docs/evidence/profiles/v73/gate_report.md`),
+  - formal obligations `FO-V73-001..003` pass (`docs/evidence/formal/latest_run.md`),
+  - coercion decision table alignment checks enabled (`tables/coercion.csv` vs typecheck rules).
+- Strict WSL Kani lane for `v73` started async as deferred gate:
+  - run: `v73-kani`,
+  - status: `dg-running`,
+  - register: `docs/evidence/formal/DEFERRED_GATES.md`.

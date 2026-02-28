@@ -597,14 +597,24 @@ fn join_types(lhs: BoundType, rhs: BoundType) -> BoundType {
     BoundType::Variant
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum CoercionResult {
+    Ok,
+    TypeMismatch,
+}
+
 fn can_assign_to(target: BoundType, source: BoundType) -> bool {
+    coercion_result(source, target) == CoercionResult::Ok
+}
+
+fn coercion_result(source: BoundType, target: BoundType) -> CoercionResult {
     if target == BoundType::Variant || target == source {
-        return true;
+        return CoercionResult::Ok;
     }
     if source == BoundType::Variant {
-        return true;
+        return CoercionResult::Ok;
     }
-    match target {
+    let allowed = match target {
         BoundType::Object => source == BoundType::Object,
         BoundType::Array => source == BoundType::Array,
         BoundType::String => source != BoundType::Object && source != BoundType::Array,
@@ -627,6 +637,19 @@ fn can_assign_to(target: BoundType, source: BoundType) -> bool {
                 false
             }
         }
+    };
+    if allowed {
+        CoercionResult::Ok
+    } else {
+        CoercionResult::TypeMismatch
+    }
+}
+
+#[cfg(test)]
+fn coercion_result_label(source: BoundType, target: BoundType) -> &'static str {
+    match coercion_result(source, target) {
+        CoercionResult::Ok => "ok",
+        CoercionResult::TypeMismatch => "type-mismatch",
     }
 }
 
@@ -828,7 +851,7 @@ fn collect_labels_recursive(
 mod tests {
     use std::collections::{HashMap, HashSet};
 
-    use super::{CallMode, can_assign_to, classify_call_mode, join_types};
+    use super::{CallMode, can_assign_to, classify_call_mode, coercion_result_label, join_types};
     use crate::resolve::{BoundCallArg, BoundExpr, BoundParam, BoundType};
 
     #[test]
@@ -861,6 +884,71 @@ mod tests {
     fn assignability_array_to_scalar_is_rejected() {
         assert!(!can_assign_to(BoundType::Long, BoundType::Array));
         assert!(!can_assign_to(BoundType::Object, BoundType::Array));
+    }
+
+    #[test]
+    fn coercion_table_rows_align_with_typecheck_rules() {
+        let table_path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("..")
+            .join("..")
+            .join("tables")
+            .join("coercion.csv");
+        let table =
+            std::fs::read_to_string(&table_path).expect("coercion decision table should exist");
+        for (line_idx, line) in table.lines().enumerate().skip(1) {
+            let trimmed = line.trim();
+            if trimmed.is_empty() {
+                continue;
+            }
+            let mut parts = trimmed.split(',');
+            let source_text = parts
+                .next()
+                .expect("source column should be present")
+                .trim();
+            let target_text = parts
+                .next()
+                .expect("target column should be present")
+                .trim();
+            let result_text = parts
+                .next()
+                .expect("result column should be present")
+                .trim();
+            assert!(
+                parts.next().is_none(),
+                "coercion table row {} should have exactly 3 columns",
+                line_idx + 1
+            );
+
+            let source = parse_bound_type(source_text).expect("known source type");
+            let target = parse_bound_type(target_text).expect("known target type");
+            assert_eq!(
+                coercion_result_label(source, target),
+                result_text,
+                "coercion table mismatch at row {}",
+                line_idx + 1
+            );
+        }
+    }
+
+    fn parse_bound_type(text: &str) -> Option<BoundType> {
+        match text.trim() {
+            "Variant" => Some(BoundType::Variant),
+            "Integer" => Some(BoundType::Integer),
+            "Long" => Some(BoundType::Long),
+            "LongLong" => Some(BoundType::LongLong),
+            "LongPtr" => Some(BoundType::LongPtr),
+            "Byte" => Some(BoundType::Byte),
+            "Single" => Some(BoundType::Single),
+            "Double" => Some(BoundType::Double),
+            "Currency" => Some(BoundType::Currency),
+            "Decimal" => Some(BoundType::Decimal),
+            "Date" => Some(BoundType::Date),
+            "String" => Some(BoundType::String),
+            "Boolean" => Some(BoundType::Boolean),
+            "Object" => Some(BoundType::Object),
+            "Array" => Some(BoundType::Array),
+            _ => None,
+        }
     }
 
     #[test]

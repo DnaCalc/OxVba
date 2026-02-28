@@ -1,6 +1,12 @@
 # Implementation Log
 
 ## 2026-02-28
+- Completed `v73` (`mvp-typing-coercion-matrix-v73`):
+  - introduced explicit coercion-result classification in typecheck (`ok` vs `type-mismatch`);
+  - added table-alignment verification test mapping `tables/coercion.csv` rows to live coercion rules;
+  - expanded coercion regression coverage for assignment and argument object-to-long mismatch diagnostics;
+  - added conformance fixtures for coercion mismatch error paths;
+  - added formal obligations `FO-V73-001..003`, produced matrix artifacts under `docs/evidence/profiles/v73/`, and started strict async Kani lane (`v73-kani`) as deferred gate `DG-V73-001`.
 - Completed `v72` (`mvp-typing-diagnostic-rollup-v72`):
   - consolidated typing diagnostics into `docs/DIAGNOSTIC_TAXONOMY.md` with category/message-prefix mapping;
   - performed Track A deferred-gate reconciliation poll (`v67..v71`) and recorded unresolved live runs as follow-up `FTODO-V72-001`;

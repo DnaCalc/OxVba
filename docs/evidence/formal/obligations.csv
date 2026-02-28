@@ -206,3 +206,6 @@ FO-V71-003,v71,"cargo test -p oxvba-compiler typecheck::tests::classify_call_mod
 FO-V72-001,v72,"cargo test -p oxvba-compiler duplicate_dim_declaration_is_rejected",no,true,crates/oxvba-compiler/src/lib.rs
 FO-V72-002,v72,"cargo test -p oxvba-compiler late_bound_object_default_member_call_is_classified_with_explicit_diagnostic",no,true,crates/oxvba-compiler/src/lib.rs
 FO-V72-003,v72,"cargo test -p oxvba-compiler typecheck::tests::classify_call_mode_early_for_strict_typed_procedure",no,true,crates/oxvba-compiler/src/typecheck.rs
+FO-V73-001,v73,"cargo test -p oxvba-compiler typecheck::tests::coercion_table_rows_align_with_typecheck_rules",no,true,crates/oxvba-compiler/src/typecheck.rs
+FO-V73-002,v73,"cargo test -p oxvba-compiler coercion_assignment_object_to_long_is_rejected",no,true,crates/oxvba-compiler/src/lib.rs
+FO-V73-003,v73,"cargo test -p oxvba-compiler coercion_argument_object_to_long_is_rejected",no,true,crates/oxvba-compiler/src/lib.rs

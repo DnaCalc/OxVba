@@ -233,6 +233,27 @@ mod tests {
     }
 
     #[test]
+    fn coercion_assignment_variant_to_long_is_allowed() {
+        let source = "Sub Main()\nDim v As Variant\nDim x As Long\nx = v\nEnd Sub";
+        compile(source).expect("variant should be assignable to typed target in current matrix");
+    }
+
+    #[test]
+    fn coercion_assignment_object_to_long_is_rejected() {
+        let source = "Sub Main()\nDim o As Object\nDim x As Long\nx = o\nEnd Sub";
+        let err = compile(source).expect_err("object should not coerce to long");
+        assert!(err.to_string().contains("type mismatch in assignment"));
+    }
+
+    #[test]
+    fn coercion_argument_object_to_long_is_rejected() {
+        let source =
+            "Sub Main()\nDim o As Object\nCall Use(o)\nEnd Sub\nSub Use(ByVal x As Long)\nEnd Sub";
+        let err = compile(source).expect_err("object argument should not coerce to long");
+        assert!(err.to_string().contains("argument type mismatch"));
+    }
+
+    #[test]
     fn reject_unsupported_statement() {
         let source = "Sub Main()\nDim x\nx = x * 2\nEnd Sub";
         let err = compile(source).expect_err("typecheck should fail");
