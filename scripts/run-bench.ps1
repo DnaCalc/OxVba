@@ -1,6 +1,6 @@
 param(
     [int]$Iterations = 3,
-    [string]$OutputPath = "docs/evidence/profiles/v36/benchmark_latest.md"
+    [string]$OutputPath = "docs/evidence/profiles/v56/benchmark_latest.md"
 )
 
 $ErrorActionPreference = "Stop"

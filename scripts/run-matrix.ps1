@@ -1,6 +1,6 @@
 param(
-    [string]$ProfileScope = "mvp-full-coverage-perf-gate-v36",
-    [string]$OutputDir = "docs/evidence/profiles/v36",
+    [string]$ProfileScope = "mvp-language-stdlib-consolidation-gate-v56",
+    [string]$OutputDir = "docs/evidence/profiles/v56",
     [string]$OutputCsv = "",
     [string]$SummaryPath = ""
 )

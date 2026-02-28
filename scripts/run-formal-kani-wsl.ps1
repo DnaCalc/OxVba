@@ -1,5 +1,5 @@
 param(
-    [string]$ProfileScope = "mvp-full-coverage-perf-gate-v36",
+    [string]$ProfileScope = "mvp-language-stdlib-consolidation-gate-v56",
     [string]$ReportPath = "docs/evidence/formal/latest_run.md",
     [string]$ReportCsvPath = "docs/evidence/formal/latest_run.csv",
     [string]$ObligationsPath = "docs/evidence/formal/obligations.csv"

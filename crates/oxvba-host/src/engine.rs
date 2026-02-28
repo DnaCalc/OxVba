@@ -615,6 +615,300 @@ mod tests {
     }
 
     #[test]
+    fn formal_v48_date_serial_and_value_subset() {
+        let engine = Engine::new(HostConfig::default());
+        let source =
+            "Sub Main()\nDim x\nDim y\nx = DateSerial(2026, 2, 28)\ny = DateValue(x)\nEnd Sub";
+        let snapshot = engine
+            .execute_source_with_snapshot(source)
+            .expect("execution should succeed");
+        assert_eq!(snapshot, vec![20260228, 20260228]);
+    }
+
+    #[test]
+    fn formal_v48_time_serial_and_value_subset() {
+        let engine = Engine::new(HostConfig::default());
+        let source = "Sub Main()\nDim x\nDim y\nx = TimeSerial(1, 2, 3)\ny = TimeValue(x)\nEnd Sub";
+        let snapshot = engine
+            .execute_source_with_snapshot(source)
+            .expect("execution should succeed");
+        assert_eq!(snapshot, vec![3723, 3723]);
+    }
+
+    #[test]
+    fn formal_v48_date_add_diff_subset() {
+        let engine = Engine::new(HostConfig::default());
+        let source = "Sub Main()\nDim x\nDim y\nx = DateAdd(1, 3, DateSerial(2026, 2, 28))\ny = DateDiff(1, DateSerial(2026, 2, 28), x)\nEnd Sub";
+        let snapshot = engine
+            .execute_source_with_snapshot(source)
+            .expect("execution should succeed");
+        assert_eq!(snapshot[1], 3);
+    }
+
+    #[test]
+    fn formal_v49_math_primitives_subset() {
+        let engine = Engine::new(HostConfig::default());
+        let source = "Sub Main()\nDim a\nDim b\nDim c\nDim d\na = Abs(-7)\nb = Sgn(-9)\nc = Sqr(81)\nd = Round(19, -1)\nEnd Sub";
+        let snapshot = engine
+            .execute_source_with_snapshot(source)
+            .expect("execution should succeed");
+        assert_eq!(snapshot, vec![7, -1, 9, 20]);
+    }
+
+    #[test]
+    fn formal_v49_transcendental_identity_subset() {
+        let engine = Engine::new(HostConfig::default());
+        let source = "Sub Main()\nDim a\nDim b\nDim c\nDim d\na = Sin(0)\nb = Cos(0)\nc = Log(1)\nd = Exp(0)\nEnd Sub";
+        let snapshot = engine
+            .execute_source_with_snapshot(source)
+            .expect("execution should succeed");
+        assert_eq!(snapshot, vec![0, 1, 0, 1]);
+    }
+
+    #[test]
+    fn formal_v49_financial_zero_rate_subset() {
+        let engine = Engine::new(HostConfig::default());
+        let source = "Sub Main()\nDim a\nDim b\nDim c\na = FV(0, 3, 2, 5)\nb = PV(0, 3, 2, 5)\nc = PMT(0, 3, 6, 3)\nEnd Sub";
+        let snapshot = engine
+            .execute_source_with_snapshot(source)
+            .expect("execution should succeed");
+        assert_eq!(snapshot, vec![-11, -11, -3]);
+    }
+
+    #[test]
+    fn formal_v50_array_bounds_introspection_subset() {
+        let engine = Engine::new(HostConfig::default());
+        let source = "Sub Main()\nDim a\nDim l\nDim u\na = Array(10, 20, 30)\nl = LBound(a)\nu = UBound(a)\nEnd Sub";
+        let snapshot = engine
+            .execute_source_with_snapshot(source)
+            .expect("execution should succeed");
+        assert_eq!(snapshot[1], 0);
+        assert_eq!(snapshot[2], 2);
+    }
+
+    #[test]
+    fn formal_v50_variant_type_tag_subset() {
+        let engine = Engine::new(HostConfig::default());
+        let source = "Sub Main()\nDim a\nDim t1\nDim t2\na = Array(1, 2)\nt1 = VarType(a)\nt2 = TypeName(a)\nEnd Sub";
+        let snapshot = engine
+            .execute_source_with_snapshot(source)
+            .expect("execution should succeed");
+        assert_eq!(snapshot[1], 8204);
+        assert_eq!(snapshot[2], 1001);
+    }
+
+    #[test]
+    fn formal_v50_numeric_date_object_predicates_subset() {
+        let engine = Engine::new(HostConfig::default());
+        let source = "Sub Main()\nDim d\nDim n\nDim o\nd = IsDate(DateSerial(2026, 2, 28))\nn = IsNumeric(17)\no = IsObject(17)\nEnd Sub";
+        let snapshot = engine
+            .execute_source_with_snapshot(source)
+            .expect("execution should succeed");
+        assert_eq!(snapshot, vec![1, 1, 0]);
+    }
+
+    #[test]
+    fn formal_v51_err_raise_maps_to_runtime_error_state() {
+        let engine = Engine::new(HostConfig::default());
+        let source =
+            "Sub Main()\nDim x\nOn Error Resume Next\nErr.Raise 11\nx = Err.Number\nEnd Sub";
+        let snapshot = engine
+            .execute_source_with_snapshot(source)
+            .expect("execution should succeed");
+        assert_eq!(snapshot, vec![11]);
+    }
+
+    #[test]
+    fn formal_v51_cverr_identity_subset() {
+        let engine = Engine::new(HostConfig::default());
+        let source = "Sub Main()\nDim x\nx = CVErr(17)\nEnd Sub";
+        let snapshot = engine
+            .execute_source_with_snapshot(source)
+            .expect("execution should succeed");
+        assert_eq!(snapshot, vec![17]);
+    }
+
+    #[test]
+    fn formal_v51_err_raise_without_handler_fails() {
+        let engine = Engine::new(HostConfig::default());
+        let source = "Sub Main()\nErr.Raise 9\nEnd Sub";
+        let err = engine
+            .execute_source_with_snapshot(source)
+            .expect_err("expected runtime error");
+        assert!(err.contains("runtime error"));
+    }
+
+    #[test]
+    fn formal_v52_shell_environ_dir_host_subset() {
+        let engine = Engine::new(HostConfig::default());
+        let source =
+            "Sub Main()\nDim a\nDim b\nDim c\na = Shell(5)\nb = Environ(9)\nc = Dir(1)\nEnd Sub";
+        let snapshot = engine
+            .execute_source_with_snapshot(source)
+            .expect("execution should succeed");
+        assert_eq!(snapshot, vec![1, 9, 1]);
+    }
+
+    #[test]
+    fn formal_v52_host_sensitive_subset_is_jit_vm_equivalent() {
+        let vm_engine = Engine::new(HostConfig {
+            enable_jit: false,
+            root_object_name: None,
+        });
+        let jit_engine = Engine::new(HostConfig {
+            enable_jit: true,
+            root_object_name: None,
+        });
+        let source = "Sub Main()\nDim a\nDim b\na = Shell(7)\nb = Environ(4)\nEnd Sub";
+        let vm_out = vm_engine
+            .execute_source_with_snapshot(source)
+            .expect("vm execution should succeed");
+        let jit_out = jit_engine
+            .execute_source_with_snapshot(source)
+            .expect("jit execution should succeed");
+        assert_eq!(vm_out, jit_out);
+    }
+
+    #[test]
+    fn formal_v52_missing_capability_fallback_is_deterministic() {
+        let engine = Engine::new(HostConfig::default());
+        let source = "Sub Main()\nDim x\nx = Shell(0)\nEnd Sub";
+        let first = engine
+            .execute_source_with_snapshot(source)
+            .expect("execution should succeed");
+        let second = engine
+            .execute_source_with_snapshot(source)
+            .expect("execution should succeed");
+        assert_eq!(first, second);
+    }
+
+    #[test]
+    fn formal_v53_collection_add_item_count_subset() {
+        let engine = Engine::new(HostConfig::default());
+        let source = "Sub Main()\nDim c\nDim item\nc = CollectionAdd(0, 9)\nitem = CollectionItem(c, 1)\nEnd Sub";
+        let snapshot = engine
+            .execute_source_with_snapshot(source)
+            .expect("execution should succeed");
+        assert_eq!(snapshot, vec![1, 1]);
+    }
+
+    #[test]
+    fn formal_v53_collection_remove_subset() {
+        let engine = Engine::new(HostConfig::default());
+        let source =
+            "Sub Main()\nDim c\nc = CollectionAdd(0, 9)\nc = CollectionRemove(c, 1)\nEnd Sub";
+        let snapshot = engine
+            .execute_source_with_snapshot(source)
+            .expect("execution should succeed");
+        assert_eq!(snapshot, vec![0]);
+    }
+
+    #[test]
+    fn formal_v53_collection_ops_jit_vm_equivalent() {
+        let vm_engine = Engine::new(HostConfig {
+            enable_jit: false,
+            root_object_name: None,
+        });
+        let jit_engine = Engine::new(HostConfig {
+            enable_jit: true,
+            root_object_name: None,
+        });
+        let source = "Sub Main()\nDim c\nc = CollectionAdd(0, 2)\nc = CollectionAdd(c, 3)\nEnd Sub";
+        let vm_out = vm_engine
+            .execute_source_with_snapshot(source)
+            .expect("vm execution should succeed");
+        let jit_out = jit_engine
+            .execute_source_with_snapshot(source)
+            .expect("jit execution should succeed");
+        assert_eq!(vm_out, jit_out);
+    }
+
+    #[test]
+    fn formal_v54_class_initialize_runs_before_main() {
+        let engine = Engine::new(HostConfig::default());
+        let source =
+            "Sub Main()\nDim x\nx = 1\nEnd Sub\nSub Class_Initialize()\nErr.Raise 77\nEnd Sub";
+        let err = engine
+            .execute_source_with_snapshot(source)
+            .expect_err("initializer should run before main");
+        assert!(err.contains("runtime error"));
+    }
+
+    #[test]
+    fn formal_v54_class_terminate_runs_after_main() {
+        let engine = Engine::new(HostConfig::default());
+        let source =
+            "Sub Main()\nDim x\nx = 1\nEnd Sub\nSub Class_Terminate()\nErr.Raise 88\nEnd Sub";
+        let err = engine
+            .execute_source_with_snapshot(source)
+            .expect_err("terminate should run after main");
+        assert!(err.contains("runtime error"));
+    }
+
+    #[test]
+    fn formal_v54_lifecycle_jit_vm_equivalence() {
+        let vm_engine = Engine::new(HostConfig {
+            enable_jit: false,
+            root_object_name: None,
+        });
+        let jit_engine = Engine::new(HostConfig {
+            enable_jit: true,
+            root_object_name: None,
+        });
+        let source = "Sub Main()\nDim x\nx = 3\nEnd Sub\nSub Class_Initialize()\nOn Error Resume Next\nErr.Raise 5\nEnd Sub\nSub Class_Terminate()\nOn Error Resume Next\nErr.Raise 7\nEnd Sub";
+        let vm_out = vm_engine
+            .execute_source_with_snapshot(source)
+            .expect("vm execution should succeed");
+        let jit_out = jit_engine
+            .execute_source_with_snapshot(source)
+            .expect("jit execution should succeed");
+        assert_eq!(vm_out, jit_out);
+    }
+
+    #[test]
+    fn formal_v55_createobject_dispatch_subset() {
+        let engine = Engine::new(HostConfig::default());
+        let source = "Sub Main()\nDim x\nx = DispatchInvoke(CreateObject(11), 2, 3)\nEnd Sub";
+        let snapshot = engine
+            .execute_source_with_snapshot(source)
+            .expect("execution should succeed");
+        assert_eq!(snapshot, vec![5016]);
+    }
+
+    #[test]
+    fn formal_v55_dispatch_jit_vm_equivalence() {
+        let vm_engine = Engine::new(HostConfig {
+            enable_jit: false,
+            root_object_name: None,
+        });
+        let jit_engine = Engine::new(HostConfig {
+            enable_jit: true,
+            root_object_name: None,
+        });
+        let source = "Sub Main()\nDim x\nx = DispatchInvoke(CreateObject(9), 1, 4)\nEnd Sub";
+        let vm_out = vm_engine
+            .execute_source_with_snapshot(source)
+            .expect("vm execution should succeed");
+        let jit_out = jit_engine
+            .execute_source_with_snapshot(source)
+            .expect("jit execution should succeed");
+        assert_eq!(vm_out, jit_out);
+    }
+
+    #[test]
+    fn formal_v55_dispatch_diagnostics_are_deterministic() {
+        let engine = Engine::new(HostConfig::default());
+        let source = "Sub Main()\nDim x\nx = DispatchInvoke(CreateObject(3), 7, 8)\nEnd Sub";
+        let first = engine
+            .execute_source_with_snapshot(source)
+            .expect("execution should succeed");
+        let second = engine
+            .execute_source_with_snapshot(source)
+            .expect("execution should succeed");
+        assert_eq!(first, second);
+    }
+
+    #[test]
     fn formal_v10_array_store_load_roundtrip() {
         let engine = Engine::new(HostConfig::default());
         let source = "Sub Main()\nDim a(2)\nDim x\na(1) = 7\nx = a(1)\nEnd Sub";
@@ -1071,10 +1365,12 @@ mod tests {
         assert!(
             matrix.contains("mvp-perf-shape-v26")
                 || matrix.contains("mvp-full-coverage-perf-gate-v36")
+                || matrix.contains("mvp-language-stdlib-consolidation-gate-v56")
         );
         assert!(
             formal.contains("mvp-perf-shape-v26")
                 || formal.contains("mvp-full-coverage-perf-gate-v36")
+                || formal.contains("mvp-language-stdlib-consolidation-gate-v56")
         );
     }
 
@@ -1085,6 +1381,7 @@ mod tests {
         assert!(
             bench.contains("docs/evidence/profiles/v26/benchmark_latest.md")
                 || bench.contains("docs/evidence/profiles/v36/benchmark_latest.md")
+                || bench.contains("docs/evidence/profiles/v56/benchmark_latest.md")
         );
     }
 
@@ -1290,20 +1587,51 @@ mod tests {
             .expect("run-matrix script exists");
         let formal = std::fs::read_to_string(repo_path("scripts/run-formal.ps1"))
             .expect("run-formal script exists");
-        assert!(matrix.contains("mvp-full-coverage-perf-gate-v36"));
-        assert!(formal.contains("mvp-full-coverage-perf-gate-v36"));
+        assert!(
+            matrix.contains("mvp-full-coverage-perf-gate-v36")
+                || matrix.contains("mvp-language-stdlib-consolidation-gate-v56")
+        );
+        assert!(
+            formal.contains("mvp-full-coverage-perf-gate-v36")
+                || formal.contains("mvp-language-stdlib-consolidation-gate-v56")
+        );
     }
 
     #[test]
     fn formal_v36_benchmark_default_targets_v36_artifact() {
         let bench = std::fs::read_to_string(repo_path("scripts/run-bench.ps1"))
             .expect("run-bench script exists");
-        assert!(bench.contains("docs/evidence/profiles/v36/benchmark_latest.md"));
+        assert!(
+            bench.contains("docs/evidence/profiles/v36/benchmark_latest.md")
+                || bench.contains("docs/evidence/profiles/v56/benchmark_latest.md")
+        );
     }
 
     #[test]
     fn formal_v36_profile_status_document_exists() {
         assert!(repo_path("docs/PROFILE_STATUS_V36.md").exists());
+    }
+
+    #[test]
+    fn formal_v56_script_defaults_target_v56_profile_scope() {
+        let matrix = std::fs::read_to_string(repo_path("scripts/run-matrix.ps1"))
+            .expect("run-matrix script exists");
+        let formal = std::fs::read_to_string(repo_path("scripts/run-formal.ps1"))
+            .expect("run-formal script exists");
+        assert!(matrix.contains("mvp-language-stdlib-consolidation-gate-v56"));
+        assert!(formal.contains("mvp-language-stdlib-consolidation-gate-v56"));
+    }
+
+    #[test]
+    fn formal_v56_benchmark_default_targets_v56_artifact() {
+        let bench = std::fs::read_to_string(repo_path("scripts/run-bench.ps1"))
+            .expect("run-bench script exists");
+        assert!(bench.contains("docs/evidence/profiles/v56/benchmark_latest.md"));
+    }
+
+    #[test]
+    fn formal_v56_profile_status_document_exists() {
+        assert!(repo_path("docs/PROFILE_STATUS_V56.md").exists());
     }
 
     #[test]

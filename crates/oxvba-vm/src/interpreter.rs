@@ -11,6 +11,9 @@ pub struct Vm {
     last_error: i32,
 }
 
+const ARRAY_TAG_BASE: i32 = -1_000_000_000;
+const ARRAY_TAG_LIMIT: i32 = ARRAY_TAG_BASE + 1_000_000;
+
 impl Default for Vm {
     fn default() -> Self {
         Self {
@@ -164,6 +167,311 @@ impl Vm {
                     let lhs = self.read_slot(*lhs)?;
                     let rhs = self.read_slot(*rhs)?;
                     self.write_slot(*dst, Self::strcomp_digits(lhs, rhs))?;
+                    pc += 1;
+                }
+                Instruction::IntrinsicDateSerialDigits {
+                    dst,
+                    year,
+                    month,
+                    day,
+                } => {
+                    let year = self.read_slot(*year)?;
+                    let month = self.read_slot(*month)?;
+                    let day = self.read_slot(*day)?;
+                    self.write_slot(*dst, Self::date_serial_digits(year, month, day))?;
+                    pc += 1;
+                }
+                Instruction::IntrinsicTimeSerialDigits {
+                    dst,
+                    hour,
+                    minute,
+                    second,
+                } => {
+                    let hour = self.read_slot(*hour)?;
+                    let minute = self.read_slot(*minute)?;
+                    let second = self.read_slot(*second)?;
+                    self.write_slot(*dst, Self::time_serial_digits(hour, minute, second))?;
+                    pc += 1;
+                }
+                Instruction::IntrinsicDateValueDigits { dst, src } => {
+                    let src = self.read_slot(*src)?;
+                    self.write_slot(*dst, src)?;
+                    pc += 1;
+                }
+                Instruction::IntrinsicTimeValueDigits { dst, src } => {
+                    let src = self.read_slot(*src)?;
+                    self.write_slot(*dst, src)?;
+                    pc += 1;
+                }
+                Instruction::IntrinsicDateAddDigits {
+                    dst,
+                    interval,
+                    number,
+                    date,
+                } => {
+                    let interval = self.read_slot(*interval)?;
+                    let number = self.read_slot(*number)?;
+                    let date = self.read_slot(*date)?;
+                    self.write_slot(*dst, Self::date_add_digits(interval, number, date))?;
+                    pc += 1;
+                }
+                Instruction::IntrinsicDateDiffDigits {
+                    dst,
+                    interval,
+                    date1,
+                    date2,
+                } => {
+                    let interval = self.read_slot(*interval)?;
+                    let date1 = self.read_slot(*date1)?;
+                    let date2 = self.read_slot(*date2)?;
+                    self.write_slot(*dst, Self::date_diff_digits(interval, date1, date2))?;
+                    pc += 1;
+                }
+                Instruction::IntrinsicAbsI32 { dst, src } => {
+                    let value = self.read_slot(*src)?;
+                    self.write_slot(*dst, value.saturating_abs())?;
+                    pc += 1;
+                }
+                Instruction::IntrinsicIntI32 { dst, src } => {
+                    let value = self.read_slot(*src)?;
+                    self.write_slot(*dst, value)?;
+                    pc += 1;
+                }
+                Instruction::IntrinsicFixI32 { dst, src } => {
+                    let value = self.read_slot(*src)?;
+                    self.write_slot(*dst, value)?;
+                    pc += 1;
+                }
+                Instruction::IntrinsicSgnI32 { dst, src } => {
+                    let value = self.read_slot(*src)?;
+                    self.write_slot(*dst, value.signum())?;
+                    pc += 1;
+                }
+                Instruction::IntrinsicRoundI32 { dst, src, digits } => {
+                    let value = self.read_slot(*src)?;
+                    let digits = match digits {
+                        Some(slot) => self.read_slot(*slot)?,
+                        None => 0,
+                    };
+                    self.write_slot(*dst, Self::round_i32(value, digits))?;
+                    pc += 1;
+                }
+                Instruction::IntrinsicSqrI32 { dst, src } => {
+                    let value = self.read_slot(*src)?;
+                    self.write_slot(*dst, (value.saturating_abs() as f64).sqrt() as i32)?;
+                    pc += 1;
+                }
+                Instruction::IntrinsicSinI32 { dst, src } => {
+                    let value = self.read_slot(*src)?;
+                    self.write_slot(*dst, (value as f64).sin().round() as i32)?;
+                    pc += 1;
+                }
+                Instruction::IntrinsicCosI32 { dst, src } => {
+                    let value = self.read_slot(*src)?;
+                    self.write_slot(*dst, (value as f64).cos().round() as i32)?;
+                    pc += 1;
+                }
+                Instruction::IntrinsicLogI32 { dst, src } => {
+                    let value = self.read_slot(*src)?;
+                    self.write_slot(
+                        *dst,
+                        if value > 0 {
+                            (value as f64).ln().round() as i32
+                        } else {
+                            0
+                        },
+                    )?;
+                    pc += 1;
+                }
+                Instruction::IntrinsicExpI32 { dst, src } => {
+                    let value = self.read_slot(*src)?;
+                    self.write_slot(*dst, (value as f64).exp().round() as i32)?;
+                    pc += 1;
+                }
+                Instruction::IntrinsicFvI32 {
+                    dst,
+                    rate,
+                    nper,
+                    pmt,
+                    pv,
+                    due,
+                } => {
+                    let rate = self.read_slot(*rate)?;
+                    let nper = self.read_slot(*nper)?;
+                    let pmt = self.read_slot(*pmt)?;
+                    let pv = match pv {
+                        Some(slot) => self.read_slot(*slot)?,
+                        None => 0,
+                    };
+                    let due = match due {
+                        Some(slot) => self.read_slot(*slot)?,
+                        None => 0,
+                    };
+                    self.write_slot(*dst, Self::fv_i32(rate, nper, pmt, pv, due))?;
+                    pc += 1;
+                }
+                Instruction::IntrinsicPvI32 {
+                    dst,
+                    rate,
+                    nper,
+                    pmt,
+                    fv,
+                    due,
+                } => {
+                    let rate = self.read_slot(*rate)?;
+                    let nper = self.read_slot(*nper)?;
+                    let pmt = self.read_slot(*pmt)?;
+                    let fv = match fv {
+                        Some(slot) => self.read_slot(*slot)?,
+                        None => 0,
+                    };
+                    let due = match due {
+                        Some(slot) => self.read_slot(*slot)?,
+                        None => 0,
+                    };
+                    self.write_slot(*dst, Self::pv_i32(rate, nper, pmt, fv, due))?;
+                    pc += 1;
+                }
+                Instruction::IntrinsicPmtI32 {
+                    dst,
+                    rate,
+                    nper,
+                    pv,
+                    fv,
+                    due,
+                } => {
+                    let rate = self.read_slot(*rate)?;
+                    let nper = self.read_slot(*nper)?;
+                    let pv = self.read_slot(*pv)?;
+                    let fv = match fv {
+                        Some(slot) => self.read_slot(*slot)?,
+                        None => 0,
+                    };
+                    let due = match due {
+                        Some(slot) => self.read_slot(*slot)?,
+                        None => 0,
+                    };
+                    self.write_slot(*dst, Self::pmt_i32(rate, nper, pv, fv, due))?;
+                    pc += 1;
+                }
+                Instruction::IntrinsicLBoundArray { dst, src } => {
+                    let value = self.read_slot(*src)?;
+                    let out = if Self::is_array_tag(value) { 0 } else { -1 };
+                    self.write_slot(*dst, out)?;
+                    pc += 1;
+                }
+                Instruction::IntrinsicUBoundArray { dst, src } => {
+                    let value = self.read_slot(*src)?;
+                    let out = if Self::is_array_tag(value) {
+                        Self::array_count(value) - 1
+                    } else {
+                        -1
+                    };
+                    self.write_slot(*dst, out)?;
+                    pc += 1;
+                }
+                Instruction::IntrinsicIsArrayTag { dst, src } => {
+                    let value = self.read_slot(*src)?;
+                    self.write_slot(*dst, if Self::is_array_tag(value) { 1 } else { 0 })?;
+                    pc += 1;
+                }
+                Instruction::IntrinsicVarTypeTag { dst, src } => {
+                    let value = self.read_slot(*src)?;
+                    let out = if Self::is_array_tag(value) {
+                        8192 + 12
+                    } else {
+                        3
+                    };
+                    self.write_slot(*dst, out)?;
+                    pc += 1;
+                }
+                Instruction::IntrinsicTypeNameTag { dst, src } => {
+                    let value = self.read_slot(*src)?;
+                    let out = if Self::is_array_tag(value) {
+                        1001
+                    } else {
+                        1002
+                    };
+                    self.write_slot(*dst, out)?;
+                    pc += 1;
+                }
+                Instruction::IntrinsicIsNumericTag { dst, src } => {
+                    let value = self.read_slot(*src)?;
+                    self.write_slot(*dst, if Self::is_array_tag(value) { 0 } else { 1 })?;
+                    pc += 1;
+                }
+                Instruction::IntrinsicIsDateTag { dst, src } => {
+                    let value = self.read_slot(*src)?;
+                    let out = if (1_000_000..=99_999_999).contains(&value) {
+                        1
+                    } else {
+                        0
+                    };
+                    self.write_slot(*dst, out)?;
+                    pc += 1;
+                }
+                Instruction::IntrinsicIsObjectTag { dst, .. } => {
+                    self.write_slot(*dst, 0)?;
+                    pc += 1;
+                }
+                Instruction::IntrinsicShellHost { dst, command } => {
+                    let command = self.read_slot(*command)?;
+                    self.write_slot(*dst, if command == 0 { 0 } else { 1 })?;
+                    pc += 1;
+                }
+                Instruction::IntrinsicEnvironHost { dst, key } => {
+                    let key = self.read_slot(*key)?;
+                    self.write_slot(*dst, key)?;
+                    pc += 1;
+                }
+                Instruction::IntrinsicDirHost { dst, path } => {
+                    let path = self.read_slot(*path)?;
+                    self.write_slot(*dst, if path == 0 { 0 } else { 1 })?;
+                    pc += 1;
+                }
+                Instruction::IntrinsicCollectionAdd { dst, count, item } => {
+                    let count = self.read_slot(*count)?;
+                    let _item = self.read_slot(*item)?;
+                    self.write_slot(*dst, (count + 1).max(0))?;
+                    pc += 1;
+                }
+                Instruction::IntrinsicCollectionItem { dst, count, index } => {
+                    let count = self.read_slot(*count)?;
+                    let index = self.read_slot(*index)?;
+                    let out = if index >= 1 && index <= count {
+                        index
+                    } else {
+                        0
+                    };
+                    self.write_slot(*dst, out)?;
+                    pc += 1;
+                }
+                Instruction::IntrinsicCollectionRemove { dst, count, index } => {
+                    let count = self.read_slot(*count)?;
+                    let _index = self.read_slot(*index)?;
+                    self.write_slot(*dst, (count - 1).max(0))?;
+                    pc += 1;
+                }
+                Instruction::IntrinsicCollectionCount { dst, count } => {
+                    let count = self.read_slot(*count)?;
+                    self.write_slot(*dst, count.max(0))?;
+                    pc += 1;
+                }
+                Instruction::IntrinsicCreateObjectHost { dst, prog_id } => {
+                    let prog_id = self.read_slot(*prog_id)?;
+                    self.write_slot(*dst, 5_000 + prog_id)?;
+                    pc += 1;
+                }
+                Instruction::IntrinsicDispatchInvokeHost {
+                    dst,
+                    object,
+                    member,
+                    arg,
+                } => {
+                    let object = self.read_slot(*object)?;
+                    let member = self.read_slot(*member)?;
+                    let arg = self.read_slot(*arg)?;
+                    self.write_slot(*dst, object + member + arg)?;
                     pc += 1;
                 }
                 Instruction::CmpEqSlots { dst, lhs, rhs } => {
@@ -452,11 +760,101 @@ impl Vm {
             std::cmp::Ordering::Greater => 1,
         }
     }
+
+    fn date_serial_digits(year: i32, month: i32, day: i32) -> i32 {
+        year.saturating_mul(10_000)
+            .saturating_add(month.saturating_mul(100))
+            .saturating_add(day)
+    }
+
+    fn time_serial_digits(hour: i32, minute: i32, second: i32) -> i32 {
+        hour.saturating_mul(3600)
+            .saturating_add(minute.saturating_mul(60))
+            .saturating_add(second)
+    }
+
+    fn date_add_digits(_interval: i32, number: i32, date: i32) -> i32 {
+        date.saturating_add(number)
+    }
+
+    fn date_diff_digits(_interval: i32, date1: i32, date2: i32) -> i32 {
+        date2.saturating_sub(date1)
+    }
+
+    fn round_i32(value: i32, digits: i32) -> i32 {
+        if digits >= 0 {
+            return value;
+        }
+        let magnitude = (-digits) as u32;
+        let factor = 10_i32.saturating_pow(magnitude);
+        if factor <= 1 {
+            return value;
+        }
+        let f = factor as f64;
+        ((value as f64) / f).round() as i32 * factor
+    }
+
+    fn fv_i32(rate: i32, nper: i32, pmt: i32, pv: i32, due: i32) -> i32 {
+        if nper == 0 {
+            return 0;
+        }
+        if rate == 0 {
+            return -(pv + pmt.saturating_mul(nper));
+        }
+        let r = rate as f64 / 100.0;
+        let n = nper as f64;
+        let growth = (1.0 + r).powf(n);
+        let due_adj = if due != 0 { 1.0 + r } else { 1.0 };
+        let out = -(pv as f64 * growth + pmt as f64 * due_adj * ((growth - 1.0) / r));
+        out.round() as i32
+    }
+
+    fn pv_i32(rate: i32, nper: i32, pmt: i32, fv: i32, due: i32) -> i32 {
+        if nper == 0 {
+            return 0;
+        }
+        if rate == 0 {
+            return -(fv + pmt.saturating_mul(nper));
+        }
+        let r = rate as f64 / 100.0;
+        let n = nper as f64;
+        let growth = (1.0 + r).powf(n);
+        let due_adj = if due != 0 { 1.0 + r } else { 1.0 };
+        let out = -(fv as f64 + pmt as f64 * due_adj * ((growth - 1.0) / r)) / growth;
+        out.round() as i32
+    }
+
+    fn pmt_i32(rate: i32, nper: i32, pv: i32, fv: i32, due: i32) -> i32 {
+        if nper == 0 {
+            return 0;
+        }
+        if rate == 0 {
+            return -((pv + fv) / nper);
+        }
+        let r = rate as f64 / 100.0;
+        let n = nper as f64;
+        let growth = (1.0 + r).powf(n);
+        let due_adj = if due != 0 { 1.0 + r } else { 1.0 };
+        let denom = due_adj * ((growth - 1.0) / r);
+        if denom == 0.0 {
+            return 0;
+        }
+        let out = -(pv as f64 * growth + fv as f64) / denom;
+        out.round() as i32
+    }
+
+    fn is_array_tag(value: i32) -> bool {
+        (ARRAY_TAG_BASE..=ARRAY_TAG_LIMIT).contains(&value)
+    }
+
+    fn array_count(value: i32) -> i32 {
+        (value - ARRAY_TAG_BASE).max(0)
+    }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::Vm;
+    use super::{ARRAY_TAG_BASE, Vm};
     use oxvba_compiler::{Bytecode, Instruction};
 
     #[test]
@@ -598,6 +996,100 @@ mod tests {
                 123231, 23, 12345, 67, 12, 123, 3, 12345, 16745, 12345, 12345, 12345, -1
             ]
         );
+    }
+
+    #[test]
+    fn executes_intrinsic_runtime_expansion_subset() {
+        let bytecode = Bytecode {
+            instructions: vec![
+                Instruction::LoadConstI32 {
+                    slot: 0,
+                    value: 2026,
+                },
+                Instruction::LoadConstI32 { slot: 1, value: 2 },
+                Instruction::LoadConstI32 { slot: 2, value: 28 },
+                Instruction::LoadConstI32 { slot: 3, value: 0 },
+                Instruction::LoadConstI32 { slot: 4, value: 1 },
+                Instruction::LoadConstI32 { slot: 5, value: 3 },
+                Instruction::LoadConstI32 { slot: 6, value: 2 },
+                Instruction::LoadConstI32 {
+                    slot: 7,
+                    value: ARRAY_TAG_BASE + 3,
+                },
+                Instruction::IntrinsicDateSerialDigits {
+                    dst: 8,
+                    year: 0,
+                    month: 1,
+                    day: 2,
+                },
+                Instruction::IntrinsicDateAddDigits {
+                    dst: 9,
+                    interval: 3,
+                    number: 4,
+                    date: 8,
+                },
+                Instruction::IntrinsicDateDiffDigits {
+                    dst: 10,
+                    interval: 3,
+                    date1: 8,
+                    date2: 9,
+                },
+                Instruction::IntrinsicAbsI32 { dst: 11, src: 10 },
+                Instruction::IntrinsicSgnI32 { dst: 12, src: 10 },
+                Instruction::IntrinsicRoundI32 {
+                    dst: 13,
+                    src: 8,
+                    digits: None,
+                },
+                Instruction::IntrinsicFvI32 {
+                    dst: 14,
+                    rate: 3,
+                    nper: 5,
+                    pmt: 6,
+                    pv: Some(6),
+                    due: Some(3),
+                },
+                Instruction::IntrinsicLBoundArray { dst: 15, src: 7 },
+                Instruction::IntrinsicUBoundArray { dst: 16, src: 7 },
+                Instruction::IntrinsicIsArrayTag { dst: 17, src: 7 },
+                Instruction::IntrinsicCollectionAdd {
+                    dst: 18,
+                    count: 4,
+                    item: 6,
+                },
+                Instruction::IntrinsicCollectionCount { dst: 19, count: 18 },
+                Instruction::IntrinsicCreateObjectHost {
+                    dst: 20,
+                    prog_id: 6,
+                },
+                Instruction::IntrinsicDispatchInvokeHost {
+                    dst: 21,
+                    object: 20,
+                    member: 4,
+                    arg: 6,
+                },
+                Instruction::Halt,
+            ],
+            slot_count: 22,
+            user_slot_count: 22,
+        };
+
+        let mut vm = Vm::default();
+        vm.execute(&bytecode).expect("vm should execute bytecode");
+        let out = vm.snapshot_slots(22);
+        assert_eq!(out[8], 20260228);
+        assert_eq!(out[9], 20260229);
+        assert_eq!(out[10], 1);
+        assert_eq!(out[11], 1);
+        assert_eq!(out[12], 1);
+        assert_eq!(out[13], 20260228);
+        assert_eq!(out[15], 0);
+        assert_eq!(out[16], 2);
+        assert_eq!(out[17], 1);
+        assert_eq!(out[18], 2);
+        assert_eq!(out[19], 2);
+        assert_eq!(out[20], 5002);
+        assert_eq!(out[21], 5005);
     }
 
     #[test]

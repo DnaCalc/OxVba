@@ -30,6 +30,14 @@ Current corpus includes:
 - Intrinsic conversion subset: `CInt`, `CLng`, `CDbl`, `CStr`, `CBool`, `CDate`, `Val`, `Str` (current int-domain semantics).
 - String-core intrinsic subset: `Len`, `Left`, `Right`, `Mid`, `InStr`, `LCase`, `UCase` (decimal-string-over-int semantics).
 - String-advanced intrinsic subset: `Split`, `Join`, `Replace`, `Trim`, `LTrim`, `RTrim`, `StrComp` (decimal-string-over-int semantics).
+- Date/time intrinsic subset: `DateSerial`, `TimeSerial`, `DateValue`, `TimeValue`, `DateAdd`, `DateDiff`.
+- Math/financial intrinsic subset: `Abs`, `Int`, `Fix`, `Sgn`, `Round`, `Sqr`, `Sin`, `Cos`, `Log`, `Exp`, `FV`, `PV`, `PMT` (current deterministic subset semantics).
+- Array/introspection intrinsic subset: `Array`, `LBound`, `UBound`, `IsArray`, `VarType`, `TypeName`, `IsNumeric`, `IsDate`, `IsObject`.
+- Error-surface subset: `Err.Raise` statement form and `CVErr`.
+- Host-sensitive intrinsic subset: `Shell`, `Environ`, `Dir` (deterministic fallback behavior).
+- Collection subset model: `CollectionAdd`, `CollectionItem`, `CollectionRemove`, `CollectionCount`.
+- Class lifecycle subset: `Class_Initialize` and `Class_Terminate` are invoked around entry execution.
+- Dispatch-boundary subset: `CreateObject` and `DispatchInvoke` intrinsic bridge.
 - Fixed-size arrays with indexed load/store and bounds errors.
 - Dynamic `ReDim` / `ReDim Preserve` (1D literal-bound subset).
 - Module-level `Const` and `Enum` declaration usage subset.
@@ -54,7 +62,7 @@ At MVP stage, conformance compares:
 As runtime semantics mature, this will expand to richer structured outputs (error state and object lifecycle signals).
 
 ## Declared Profile Scope (Current Gate)
-- Profile id: `mvp-full-coverage-perf-gate-v36`
+- Profile id: `mvp-language-stdlib-consolidation-gate-v56`
 - Platform: Windows x64
 - Backends: `vm`, `jit` (JIT toggle path with VM-equivalent semantics)
 - Required matrix cells:
@@ -62,5 +70,5 @@ As runtime semantics mature, this will expand to richer structured outputs (erro
   - `windows/x64/jit`
 
 Current profile gate is evaluated by `./scripts/run-matrix.ps1`, which writes:
-- `docs/evidence/profiles/v36/matrix_latest.csv`
-- `docs/evidence/profiles/v36/gate_report.md`
+- `docs/evidence/profiles/v56/matrix_latest.csv`
+- `docs/evidence/profiles/v56/gate_report.md`

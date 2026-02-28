@@ -21,6 +21,13 @@ procedures,Property procedures (Get/Let/Set subset),implemented,v44,conformance/
 runtime,Intrinsic conversion functions (CInt/CLng/CDbl/CStr/CBool/CDate/Val/Str subset),implemented,v45,conformance/tests/conversion_cint_basic.bas,int-domain subset lowered as identity conversion
 runtime,String core intrinsics (Len/Left/Right/Mid/InStr/LCase/UCase subset),implemented,v46,conformance/tests/stdlib_len_basic.bas,decimal-string-over-int subset
 runtime,String advanced intrinsics (Split/Join/Replace/Trim/LTrim/RTrim/StrComp subset),implemented,v47,conformance/tests/stdlib_advanced_split_join.bas,decimal-string-over-int subset
+runtime,Date/time intrinsics (DateSerial/TimeSerial/DateValue/TimeValue/DateAdd/DateDiff subset),implemented,v48,conformance/tests/stdlib_date_serial_value.bas,deterministic numeric projection subset
+runtime,Math/financial intrinsics (Abs/Int/Fix/Sgn/Round/Sqr/Sin/Cos/Log/Exp/FV/PV/PMT subset),implemented,v49,conformance/tests/stdlib_math_primitives.bas,integer-domain + zero-rate financial subset
+runtime,Array/variant introspection intrinsics (Array/LBound/UBound/IsArray/VarType/TypeName/IsNumeric/IsDate/IsObject subset),implemented,v50,conformance/tests/stdlib_array_introspection_bounds.bas,array-tag projection subset
+runtime,Error-surface intrinsics (Err.Raise/CVErr subset),implemented,v51,conformance/tests/stdlib_error_err_raise_resume.bas,resolver maps Err.Raise to runtime error op
+runtime,Host-sensitive intrinsics (Shell/Environ/Dir subset),implemented,v52,conformance/tests/stdlib_host_sensitive_shell_environ_dir.bas,deterministic host-fallback subset
+interop,Dispatch boundary intrinsics (CreateObject/DispatchInvoke subset),implemented,v55,conformance/tests/com_dispatch_createobject_invoke.bas,deterministic dispatch-projection subset
+runtime,Language/stdlib consolidation gate corpus,implemented,v56,conformance/tests/consolidate_language_stdlib_mix.bas,expanded mixed-feature gate fixtures
 arrays,Fixed-size arrays,implemented,v10,conformance/tests/array_store_load.bas,
 arrays,Array bounds error,implemented,v10,conformance/tests/array_bounds_error.bas,
 arrays,Dynamic ReDim,implemented,v42,conformance/tests/redim_preserve_keeps_values.bas,
@@ -35,8 +42,8 @@ types,Module Const declarations,implemented,v43,conformance/tests/module_const_b
 types,Enum declarations,implemented,v43,conformance/tests/enum_basic.bas,
 types,User-defined types (UDT),partial,v43,conformance/tests/udt_declaration_basic.bas,Type blocks parse; field access support pending
 objects,Root object injection,implemented,v7,crates/oxvba-host/src/engine.rs,
-objects,Class module lifecycle,planned,v34,,
-objects,Collection object model,planned,v34,,
+objects,Class module lifecycle,implemented,v54,conformance/tests/class_lifecycle_resume_next_ok.bas,lifecycle procedures auto-invoked around entry
+objects,Collection object model,implemented,v53,conformance/tests/object_collection_add_item.bas,collection-count projection subset
 interop,COM VARIANT canonical layout,implemented,v30,crates/oxvba-runtime/src/variant.rs,
 interop,Boundary marshalling roundtrip,partial,v31,crates/oxvba-runtime/src/variant.rs,
 runtime,VM backend execution,implemented,v2,scripts/run-conformance.ps1,

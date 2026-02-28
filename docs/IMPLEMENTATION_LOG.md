@@ -246,3 +246,44 @@
   - extended bytecode/vm runtime with advanced string intrinsic execution ops;
   - added advanced-string conformance fixtures and formal obligations (`FO-V47-001..003`);
   - published `PROFILE_STATUS_V47` and `WORKSET_2026-02-27_STDLIB_STRING_ADVANCED_V47`.
+- Started `mvp-stdlib-date-time-core-v48` stdlib-core pass:
+  - added date/time intrinsic support for `DateSerial`, `TimeSerial`, `DateValue`, `TimeValue`, `DateAdd`, `DateDiff`;
+  - extended bytecode/vm with deterministic date/time numeric-projection ops;
+  - added date/time conformance fixtures and formal obligations (`FO-V48-001..003`);
+  - published `PROFILE_STATUS_V48` and `WORKSET_2026-02-27_STDLIB_DATE_TIME_CORE_V48`.
+- Started `mvp-stdlib-math-financial-core-v49` stdlib-core pass:
+  - added math/financial intrinsic support for `Abs`, `Int`, `Fix`, `Sgn`, `Round`, `Sqr`, `Sin`, `Cos`, `Log`, `Exp`, `FV`, `PV`, `PMT`;
+  - implemented deterministic integer-domain + zero-rate financial subset execution;
+  - added math/financial conformance fixtures and formal obligations (`FO-V49-001..003`);
+  - published `PROFILE_STATUS_V49` and `WORKSET_2026-02-27_STDLIB_MATH_FINANCIAL_CORE_V49`.
+- Started `mvp-stdlib-array-variant-introspection-v50` stdlib-core pass:
+  - added introspection intrinsic support for `Array`, `LBound`, `UBound`, `IsArray`, `VarType`, `TypeName`, `IsNumeric`, `IsDate`, `IsObject`;
+  - introduced deterministic array-tag projection in runtime execution;
+  - added introspection conformance fixtures and formal obligations (`FO-V50-001..003`);
+  - published `PROFILE_STATUS_V50` and `WORKSET_2026-02-27_STDLIB_ARRAY_VARIANT_INTROSPECTION_V50`.
+- Started `mvp-stdlib-error-surface-v51` stdlib-core pass:
+  - added `Err.Raise` statement parsing route and `CVErr` conversion wrapper support;
+  - aligned runtime error-surface subset with existing `Err.Number` state flow;
+  - added error-surface conformance fixtures and formal obligations (`FO-V51-001..003`);
+  - published `PROFILE_STATUS_V51` and `WORKSET_2026-02-27_STDLIB_ERROR_SURFACE_V51`.
+- Started `mvp-stdlib-host-sensitive-v52` stdlib-core pass:
+  - added host-sensitive intrinsic subset support for `Shell`, `Environ`, `Dir`;
+  - implemented deterministic fallback behavior under host-agnostic execution;
+  - added host-sensitive conformance fixtures and formal obligations (`FO-V52-001..003`);
+  - published `PROFILE_STATUS_V52` and `WORKSET_2026-02-27_STDLIB_HOST_SENSITIVE_V52`.
+- Started `mvp-object-collection-core-v53` host/object pass:
+  - added collection-core intrinsic model for `CollectionAdd`, `CollectionItem`, `CollectionRemove`, `CollectionCount`;
+  - added collection conformance fixtures and formal obligations (`FO-V53-001..003`);
+  - published `PROFILE_STATUS_V53` and `WORKSET_2026-02-27_OBJECT_COLLECTION_CORE_V53`.
+- Started `mvp-class-lifecycle-v54` host/object pass:
+  - wired `Class_Initialize` and `Class_Terminate` procedures around entry execution in bytecode emitter;
+  - added lifecycle conformance fixtures and formal obligations (`FO-V54-001..003`);
+  - published `PROFILE_STATUS_V54` and `WORKSET_2026-02-27_CLASS_LIFECYCLE_V54`.
+- Started `mvp-com-dispatch-boundary-v55` interop pass:
+  - added dispatch-boundary intrinsic subset `CreateObject` + `DispatchInvoke`;
+  - added dispatch conformance fixtures and formal obligations (`FO-V55-001..003`);
+  - published `PROFILE_STATUS_V55` and `WORKSET_2026-02-27_COM_DISPATCH_BOUNDARY_V55`.
+- Started `mvp-language-stdlib-consolidation-gate-v56` consolidation pass:
+  - added consolidation mixed-feature fixtures and `FO-V56-*` formal checks;
+  - switched matrix/formal/bench defaults to `v56` scope and artifact locations;
+  - published `PROFILE_STATUS_V56` and `WORKSET_2026-02-27_LANGUAGE_STDLIB_CONSOLIDATION_GATE_V56`.

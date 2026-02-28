@@ -6,7 +6,7 @@ Rule: The end of any cycle means continue immediately into the next cycle; do no
 Reply condition: only report back when `v56` gate is passed, or when all remaining progress is blocked by documented blockers.
 
 Current checkpoint:
-- Current stabilized scope is `mvp-full-coverage-perf-gate-v36`; active AutoRun target gate is `v56` via `docs/worksets/PROFILE_LADDER_2026-02-27_MACH1000_V37_V56.md`.
+- Current stabilized scope is `mvp-language-stdlib-consolidation-gate-v56`; active AutoRun target gate is `v56` via `docs/worksets/PROFILE_LADDER_2026-02-27_MACH1000_V37_V56.md`.
 - Evidence artifacts are tracked under `docs/evidence/profiles/`, `docs/evidence/formal/`, and `docs/evidence/divergences/`.
 
 Resume protocol:

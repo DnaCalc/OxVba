@@ -8,6 +8,8 @@ use crate::{
     },
 };
 
+const ARRAY_TAG_BASE: i32 = -1_000_000_000;
+
 #[derive(Debug, Clone)]
 struct EmitProcMeta {
     params: Vec<BoundParam>,
@@ -58,8 +60,21 @@ pub fn emit_bytecode(module: &BoundModule) -> Bytecode {
             },
         );
     }
+    let class_init_proc = procedures
+        .iter()
+        .find(|p| p.name.eq_ignore_ascii_case("class_initialize"))
+        .map(|p| p.name.clone());
+    let class_terminate_proc = procedures
+        .iter()
+        .find(|p| p.name.eq_ignore_ascii_case("class_terminate"))
+        .map(|p| p.name.clone());
     proc_labels.insert(procedures[entry_idx].name.clone(), 0);
 
+    if let Some(name) = class_init_proc {
+        let patch_idx = instructions.len();
+        instructions.push(Instruction::CallProc { target_pc: 0 });
+        call_patches.push((patch_idx, name));
+    }
     emit_stmt_list(
         &procedures[entry_idx].body,
         &proc_slots[entry_idx],
@@ -72,6 +87,11 @@ pub fn emit_bytecode(module: &BoundModule) -> Bytecode {
         &procedures[entry_idx].name,
         &mut proc_labels,
     );
+    if let Some(name) = class_terminate_proc {
+        let patch_idx = instructions.len();
+        instructions.push(Instruction::CallProc { target_pc: 0 });
+        call_patches.push((patch_idx, name));
+    }
     instructions.push(Instruction::Halt);
 
     for (idx, proc) in procedures.iter().enumerate() {
@@ -730,6 +750,258 @@ fn emit_expr_into(
                     lhs: *lhs,
                     rhs: *rhs,
                 }),
+                ("dateserial", [year, month, day]) => {
+                    instructions.push(Instruction::IntrinsicDateSerialDigits {
+                        dst,
+                        year: *year,
+                        month: *month,
+                        day: *day,
+                    })
+                }
+                ("timeserial", [hour, minute, second]) => {
+                    instructions.push(Instruction::IntrinsicTimeSerialDigits {
+                        dst,
+                        hour: *hour,
+                        minute: *minute,
+                        second: *second,
+                    })
+                }
+                ("datevalue", [src]) => {
+                    instructions.push(Instruction::IntrinsicDateValueDigits { dst, src: *src })
+                }
+                ("timevalue", [src]) => {
+                    instructions.push(Instruction::IntrinsicTimeValueDigits { dst, src: *src })
+                }
+                ("dateadd", [interval, number, date]) => {
+                    instructions.push(Instruction::IntrinsicDateAddDigits {
+                        dst,
+                        interval: *interval,
+                        number: *number,
+                        date: *date,
+                    })
+                }
+                ("datediff", [interval, date1, date2]) => {
+                    instructions.push(Instruction::IntrinsicDateDiffDigits {
+                        dst,
+                        interval: *interval,
+                        date1: *date1,
+                        date2: *date2,
+                    })
+                }
+                ("abs", [src]) => {
+                    instructions.push(Instruction::IntrinsicAbsI32 { dst, src: *src })
+                }
+                ("int", [src]) => {
+                    instructions.push(Instruction::IntrinsicIntI32 { dst, src: *src })
+                }
+                ("fix", [src]) => {
+                    instructions.push(Instruction::IntrinsicFixI32 { dst, src: *src })
+                }
+                ("sgn", [src]) => {
+                    instructions.push(Instruction::IntrinsicSgnI32 { dst, src: *src })
+                }
+                ("round", [src, digits]) => instructions.push(Instruction::IntrinsicRoundI32 {
+                    dst,
+                    src: *src,
+                    digits: Some(*digits),
+                }),
+                ("round", [src]) => instructions.push(Instruction::IntrinsicRoundI32 {
+                    dst,
+                    src: *src,
+                    digits: None,
+                }),
+                ("sqr", [src]) => {
+                    instructions.push(Instruction::IntrinsicSqrI32 { dst, src: *src })
+                }
+                ("sin", [src]) => {
+                    instructions.push(Instruction::IntrinsicSinI32 { dst, src: *src })
+                }
+                ("cos", [src]) => {
+                    instructions.push(Instruction::IntrinsicCosI32 { dst, src: *src })
+                }
+                ("log", [src]) => {
+                    instructions.push(Instruction::IntrinsicLogI32 { dst, src: *src })
+                }
+                ("exp", [src]) => {
+                    instructions.push(Instruction::IntrinsicExpI32 { dst, src: *src })
+                }
+                ("fv", [rate, nper, pmt]) => instructions.push(Instruction::IntrinsicFvI32 {
+                    dst,
+                    rate: *rate,
+                    nper: *nper,
+                    pmt: *pmt,
+                    pv: None,
+                    due: None,
+                }),
+                ("fv", [rate, nper, pmt, pv]) => instructions.push(Instruction::IntrinsicFvI32 {
+                    dst,
+                    rate: *rate,
+                    nper: *nper,
+                    pmt: *pmt,
+                    pv: Some(*pv),
+                    due: None,
+                }),
+                ("fv", [rate, nper, pmt, pv, due]) => {
+                    instructions.push(Instruction::IntrinsicFvI32 {
+                        dst,
+                        rate: *rate,
+                        nper: *nper,
+                        pmt: *pmt,
+                        pv: Some(*pv),
+                        due: Some(*due),
+                    })
+                }
+                ("pv", [rate, nper, pmt]) => instructions.push(Instruction::IntrinsicPvI32 {
+                    dst,
+                    rate: *rate,
+                    nper: *nper,
+                    pmt: *pmt,
+                    fv: None,
+                    due: None,
+                }),
+                ("pv", [rate, nper, pmt, fv]) => instructions.push(Instruction::IntrinsicPvI32 {
+                    dst,
+                    rate: *rate,
+                    nper: *nper,
+                    pmt: *pmt,
+                    fv: Some(*fv),
+                    due: None,
+                }),
+                ("pv", [rate, nper, pmt, fv, due]) => {
+                    instructions.push(Instruction::IntrinsicPvI32 {
+                        dst,
+                        rate: *rate,
+                        nper: *nper,
+                        pmt: *pmt,
+                        fv: Some(*fv),
+                        due: Some(*due),
+                    })
+                }
+                ("pmt", [rate, nper, pv]) => instructions.push(Instruction::IntrinsicPmtI32 {
+                    dst,
+                    rate: *rate,
+                    nper: *nper,
+                    pv: *pv,
+                    fv: None,
+                    due: None,
+                }),
+                ("pmt", [rate, nper, pv, fv]) => instructions.push(Instruction::IntrinsicPmtI32 {
+                    dst,
+                    rate: *rate,
+                    nper: *nper,
+                    pv: *pv,
+                    fv: Some(*fv),
+                    due: None,
+                }),
+                ("pmt", [rate, nper, pv, fv, due]) => {
+                    instructions.push(Instruction::IntrinsicPmtI32 {
+                        dst,
+                        rate: *rate,
+                        nper: *nper,
+                        pv: *pv,
+                        fv: Some(*fv),
+                        due: Some(*due),
+                    })
+                }
+                ("array", args) => {
+                    instructions.push(Instruction::LoadConstI32 {
+                        slot: dst,
+                        value: ARRAY_TAG_BASE + args.len() as i32,
+                    });
+                }
+                ("lbound", [src]) => {
+                    instructions.push(Instruction::IntrinsicLBoundArray { dst, src: *src })
+                }
+                ("ubound", [src]) => {
+                    instructions.push(Instruction::IntrinsicUBoundArray { dst, src: *src })
+                }
+                ("isarray", [src]) => {
+                    instructions.push(Instruction::IntrinsicIsArrayTag { dst, src: *src })
+                }
+                ("vartype", [src]) => {
+                    instructions.push(Instruction::IntrinsicVarTypeTag { dst, src: *src })
+                }
+                ("typename", [src]) => {
+                    instructions.push(Instruction::IntrinsicTypeNameTag { dst, src: *src })
+                }
+                ("isnumeric", [src]) => {
+                    instructions.push(Instruction::IntrinsicIsNumericTag { dst, src: *src })
+                }
+                ("isdate", [src]) => {
+                    instructions.push(Instruction::IntrinsicIsDateTag { dst, src: *src })
+                }
+                ("isobject", [src]) => {
+                    instructions.push(Instruction::IntrinsicIsObjectTag { dst, src: *src })
+                }
+                ("shell", [command]) => instructions.push(Instruction::IntrinsicShellHost {
+                    dst,
+                    command: *command,
+                }),
+                ("environ", [key]) => {
+                    instructions.push(Instruction::IntrinsicEnvironHost { dst, key: *key })
+                }
+                ("dir", [path]) => {
+                    instructions.push(Instruction::IntrinsicDirHost { dst, path: *path })
+                }
+                ("collectionadd", [count, item]) => {
+                    instructions.push(Instruction::IntrinsicCollectionAdd {
+                        dst,
+                        count: *count,
+                        item: *item,
+                    })
+                }
+                ("collectionadd", [count, item, _key]) => {
+                    instructions.push(Instruction::IntrinsicCollectionAdd {
+                        dst,
+                        count: *count,
+                        item: *item,
+                    })
+                }
+                ("collectionitem", [count, index]) => {
+                    instructions.push(Instruction::IntrinsicCollectionItem {
+                        dst,
+                        count: *count,
+                        index: *index,
+                    })
+                }
+                ("collectionitem", [count, index, _missing]) => {
+                    instructions.push(Instruction::IntrinsicCollectionItem {
+                        dst,
+                        count: *count,
+                        index: *index,
+                    })
+                }
+                ("collectionremove", [count, index]) => {
+                    instructions.push(Instruction::IntrinsicCollectionRemove {
+                        dst,
+                        count: *count,
+                        index: *index,
+                    })
+                }
+                ("collectionremove", [count, index, _missing]) => {
+                    instructions.push(Instruction::IntrinsicCollectionRemove {
+                        dst,
+                        count: *count,
+                        index: *index,
+                    })
+                }
+                ("collectioncount", [count]) => {
+                    instructions.push(Instruction::IntrinsicCollectionCount { dst, count: *count })
+                }
+                ("createobject", [prog_id]) => {
+                    instructions.push(Instruction::IntrinsicCreateObjectHost {
+                        dst,
+                        prog_id: *prog_id,
+                    })
+                }
+                ("dispatchinvoke", [object, member, arg]) => {
+                    instructions.push(Instruction::IntrinsicDispatchInvokeHost {
+                        dst,
+                        object: *object,
+                        member: *member,
+                        arg: *arg,
+                    })
+                }
                 _ => {}
             }
         }

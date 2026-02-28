@@ -59,6 +59,15 @@
 | Profile v45 Status | [`PROFILE_STATUS_V45.md`](PROFILE_STATUS_V45.md) | Current gate status contract for `mvp-stdlib-conversion-core-v45`. |
 | Profile v46 Status | [`PROFILE_STATUS_V46.md`](PROFILE_STATUS_V46.md) | Current gate status contract for `mvp-stdlib-string-core-v46`. |
 | Profile v47 Status | [`PROFILE_STATUS_V47.md`](PROFILE_STATUS_V47.md) | Current gate status contract for `mvp-stdlib-string-advanced-v47`. |
+| Profile v48 Status | [`PROFILE_STATUS_V48.md`](PROFILE_STATUS_V48.md) | Current gate status contract for `mvp-stdlib-date-time-core-v48`. |
+| Profile v49 Status | [`PROFILE_STATUS_V49.md`](PROFILE_STATUS_V49.md) | Current gate status contract for `mvp-stdlib-math-financial-core-v49`. |
+| Profile v50 Status | [`PROFILE_STATUS_V50.md`](PROFILE_STATUS_V50.md) | Current gate status contract for `mvp-stdlib-array-variant-introspection-v50`. |
+| Profile v51 Status | [`PROFILE_STATUS_V51.md`](PROFILE_STATUS_V51.md) | Current gate status contract for `mvp-stdlib-error-surface-v51`. |
+| Profile v52 Status | [`PROFILE_STATUS_V52.md`](PROFILE_STATUS_V52.md) | Current gate status contract for `mvp-stdlib-host-sensitive-v52`. |
+| Profile v53 Status | [`PROFILE_STATUS_V53.md`](PROFILE_STATUS_V53.md) | Current gate status contract for `mvp-object-collection-core-v53`. |
+| Profile v54 Status | [`PROFILE_STATUS_V54.md`](PROFILE_STATUS_V54.md) | Current gate status contract for `mvp-class-lifecycle-v54`. |
+| Profile v55 Status | [`PROFILE_STATUS_V55.md`](PROFILE_STATUS_V55.md) | Current gate status contract for `mvp-com-dispatch-boundary-v55`. |
+| Profile v56 Status | [`PROFILE_STATUS_V56.md`](PROFILE_STATUS_V56.md) | Current gate status contract for `mvp-language-stdlib-consolidation-gate-v56`. |
 | Phase 12 Status | [`PHASE12_STATUS.md`](PHASE12_STATUS.md) | Declared profile scope and final conformance/stabilization gate artifacts. |
 | Work Set Plan (v2) | [`worksets/WORKSET_2026-02-27_CONTROLFLOW_V2.md`](worksets/WORKSET_2026-02-27_CONTROLFLOW_V2.md) | Detailed execution-grade plan for control-flow expansion beyond `mvp-int32-core-v1`. |
 | Work Set Plan (v3) | [`worksets/WORKSET_2026-02-27_FORMAL_FOUNDATION_V3.md`](worksets/WORKSET_2026-02-27_FORMAL_FOUNDATION_V3.md) | Formal infrastructure work set for manifest-driven obligations and reporting. |
@@ -105,6 +114,15 @@
 | Work Set Plan (v45) | [`worksets/WORKSET_2026-02-27_STDLIB_CONVERSION_CORE_V45.md`](worksets/WORKSET_2026-02-27_STDLIB_CONVERSION_CORE_V45.md) | Intrinsic conversion subset baseline work set. |
 | Work Set Plan (v46) | [`worksets/WORKSET_2026-02-27_STDLIB_STRING_CORE_V46.md`](worksets/WORKSET_2026-02-27_STDLIB_STRING_CORE_V46.md) | String-core intrinsic subset over current runtime model. |
 | Work Set Plan (v47) | [`worksets/WORKSET_2026-02-27_STDLIB_STRING_ADVANCED_V47.md`](worksets/WORKSET_2026-02-27_STDLIB_STRING_ADVANCED_V47.md) | Advanced string intrinsic subset over current runtime model. |
+| Work Set Plan (v48) | [`worksets/WORKSET_2026-02-27_STDLIB_DATE_TIME_CORE_V48.md`](worksets/WORKSET_2026-02-27_STDLIB_DATE_TIME_CORE_V48.md) | Date/time intrinsic subset work set. |
+| Work Set Plan (v49) | [`worksets/WORKSET_2026-02-27_STDLIB_MATH_FINANCIAL_CORE_V49.md`](worksets/WORKSET_2026-02-27_STDLIB_MATH_FINANCIAL_CORE_V49.md) | Math and financial intrinsic subset work set. |
+| Work Set Plan (v50) | [`worksets/WORKSET_2026-02-27_STDLIB_ARRAY_VARIANT_INTROSPECTION_V50.md`](worksets/WORKSET_2026-02-27_STDLIB_ARRAY_VARIANT_INTROSPECTION_V50.md) | Array/variant introspection intrinsic subset work set. |
+| Work Set Plan (v51) | [`worksets/WORKSET_2026-02-27_STDLIB_ERROR_SURFACE_V51.md`](worksets/WORKSET_2026-02-27_STDLIB_ERROR_SURFACE_V51.md) | Error-surface intrinsic subset work set. |
+| Work Set Plan (v52) | [`worksets/WORKSET_2026-02-27_STDLIB_HOST_SENSITIVE_V52.md`](worksets/WORKSET_2026-02-27_STDLIB_HOST_SENSITIVE_V52.md) | Host-sensitive intrinsic subset work set. |
+| Work Set Plan (v53) | [`worksets/WORKSET_2026-02-27_OBJECT_COLLECTION_CORE_V53.md`](worksets/WORKSET_2026-02-27_OBJECT_COLLECTION_CORE_V53.md) | Collection-core object subset work set. |
+| Work Set Plan (v54) | [`worksets/WORKSET_2026-02-27_CLASS_LIFECYCLE_V54.md`](worksets/WORKSET_2026-02-27_CLASS_LIFECYCLE_V54.md) | Class lifecycle subset work set. |
+| Work Set Plan (v55) | [`worksets/WORKSET_2026-02-27_COM_DISPATCH_BOUNDARY_V55.md`](worksets/WORKSET_2026-02-27_COM_DISPATCH_BOUNDARY_V55.md) | COM/dispatch boundary subset work set. |
+| Work Set Plan (v56) | [`worksets/WORKSET_2026-02-27_LANGUAGE_STDLIB_CONSOLIDATION_GATE_V56.md`](worksets/WORKSET_2026-02-27_LANGUAGE_STDLIB_CONSOLIDATION_GATE_V56.md) | Consolidation gate work set for language+stdlib+interop closure. |
 | Work Set Plan (v27-v36) | [`worksets/WORKSET_2026-02-27_BATCH_V27_V36.md`](worksets/WORKSET_2026-02-27_BATCH_V27_V36.md) | Next long batch: formal reliability, language coverage closure, and hotspot performance work. |
 | Profile Ladder | [`worksets/PROFILE_LADDER_2026-02-27_MACH1000.md`](worksets/PROFILE_LADDER_2026-02-27_MACH1000.md) | MACH1000 profile roadmap and execution history. |
 | Profile Ladder (v37-v56) | [`worksets/PROFILE_LADDER_2026-02-27_MACH1000_V37_V56.md`](worksets/PROFILE_LADDER_2026-02-27_MACH1000_V37_V56.md) | Next horizon ladder split into language core, intrinsic runtime, and host/interop tracks. |

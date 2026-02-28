@@ -420,6 +420,93 @@ mod tests {
     }
 
     #[test]
+    fn compile_dateserial_intrinsic_emits_instruction() {
+        let source = "Sub Main()\nDim x\nx = DateSerial(2026, 2, 28)\nEnd Sub";
+        let out = compile(source).expect("compile should succeed");
+        assert!(
+            out.instructions
+                .iter()
+                .any(|i| matches!(i, Instruction::IntrinsicDateSerialDigits { .. }))
+        );
+    }
+
+    #[test]
+    fn compile_math_intrinsic_emits_instruction() {
+        let source = "Sub Main()\nDim x\nx = Abs(-7)\nEnd Sub";
+        let out = compile(source).expect("compile should succeed");
+        assert!(
+            out.instructions
+                .iter()
+                .any(|i| matches!(i, Instruction::IntrinsicAbsI32 { .. }))
+        );
+    }
+
+    #[test]
+    fn compile_array_introspection_intrinsic_emits_instruction() {
+        let source = "Sub Main()\nDim x\nx = UBound(Array(1, 2, 3))\nEnd Sub";
+        let out = compile(source).expect("compile should succeed");
+        assert!(
+            out.instructions
+                .iter()
+                .any(|i| matches!(i, Instruction::IntrinsicUBoundArray { .. }))
+        );
+    }
+
+    #[test]
+    fn compile_host_sensitive_intrinsic_emits_instruction() {
+        let source = "Sub Main()\nDim x\nx = Environ(77)\nEnd Sub";
+        let out = compile(source).expect("compile should succeed");
+        assert!(
+            out.instructions
+                .iter()
+                .any(|i| matches!(i, Instruction::IntrinsicEnvironHost { .. }))
+        );
+    }
+
+    #[test]
+    fn compile_collection_intrinsic_emits_instruction() {
+        let source = "Sub Main()\nDim x\nx = CollectionCount(CollectionAdd(0, 9))\nEnd Sub";
+        let out = compile(source).expect("compile should succeed");
+        assert!(
+            out.instructions
+                .iter()
+                .any(|i| matches!(i, Instruction::IntrinsicCollectionAdd { .. }))
+        );
+        assert!(
+            out.instructions
+                .iter()
+                .any(|i| matches!(i, Instruction::IntrinsicCollectionCount { .. }))
+        );
+    }
+
+    #[test]
+    fn compile_dispatch_intrinsic_emits_instruction() {
+        let source = "Sub Main()\nDim x\nx = DispatchInvoke(CreateObject(11), 2, 3)\nEnd Sub";
+        let out = compile(source).expect("compile should succeed");
+        assert!(
+            out.instructions
+                .iter()
+                .any(|i| matches!(i, Instruction::IntrinsicCreateObjectHost { .. }))
+        );
+        assert!(
+            out.instructions
+                .iter()
+                .any(|i| matches!(i, Instruction::IntrinsicDispatchInvokeHost { .. }))
+        );
+    }
+
+    #[test]
+    fn compile_err_raise_statement_is_supported() {
+        let source = "Sub Main()\nOn Error Resume Next\nErr.Raise 7\nEnd Sub";
+        let out = compile(source).expect("compile should succeed");
+        assert!(
+            out.instructions
+                .iter()
+                .any(|i| matches!(i, Instruction::RaiseError { code: 7 }))
+        );
+    }
+
+    #[test]
     fn compile_property_let_assignment_routes_to_call() {
         let source = "Sub Main()\nDim x\nx = 1\nValue = x\nEnd Sub\nProperty Let Value(ByRef target)\ntarget = target + 2\nEnd Property";
         let out = compile(source).expect("compile should succeed");

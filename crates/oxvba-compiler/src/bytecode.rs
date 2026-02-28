@@ -84,6 +84,176 @@ pub enum Instruction {
         lhs: usize,
         rhs: usize,
     },
+    IntrinsicDateSerialDigits {
+        dst: usize,
+        year: usize,
+        month: usize,
+        day: usize,
+    },
+    IntrinsicTimeSerialDigits {
+        dst: usize,
+        hour: usize,
+        minute: usize,
+        second: usize,
+    },
+    IntrinsicDateValueDigits {
+        dst: usize,
+        src: usize,
+    },
+    IntrinsicTimeValueDigits {
+        dst: usize,
+        src: usize,
+    },
+    IntrinsicDateAddDigits {
+        dst: usize,
+        interval: usize,
+        number: usize,
+        date: usize,
+    },
+    IntrinsicDateDiffDigits {
+        dst: usize,
+        interval: usize,
+        date1: usize,
+        date2: usize,
+    },
+    IntrinsicAbsI32 {
+        dst: usize,
+        src: usize,
+    },
+    IntrinsicIntI32 {
+        dst: usize,
+        src: usize,
+    },
+    IntrinsicFixI32 {
+        dst: usize,
+        src: usize,
+    },
+    IntrinsicSgnI32 {
+        dst: usize,
+        src: usize,
+    },
+    IntrinsicRoundI32 {
+        dst: usize,
+        src: usize,
+        digits: Option<usize>,
+    },
+    IntrinsicSqrI32 {
+        dst: usize,
+        src: usize,
+    },
+    IntrinsicSinI32 {
+        dst: usize,
+        src: usize,
+    },
+    IntrinsicCosI32 {
+        dst: usize,
+        src: usize,
+    },
+    IntrinsicLogI32 {
+        dst: usize,
+        src: usize,
+    },
+    IntrinsicExpI32 {
+        dst: usize,
+        src: usize,
+    },
+    IntrinsicFvI32 {
+        dst: usize,
+        rate: usize,
+        nper: usize,
+        pmt: usize,
+        pv: Option<usize>,
+        due: Option<usize>,
+    },
+    IntrinsicPvI32 {
+        dst: usize,
+        rate: usize,
+        nper: usize,
+        pmt: usize,
+        fv: Option<usize>,
+        due: Option<usize>,
+    },
+    IntrinsicPmtI32 {
+        dst: usize,
+        rate: usize,
+        nper: usize,
+        pv: usize,
+        fv: Option<usize>,
+        due: Option<usize>,
+    },
+    IntrinsicLBoundArray {
+        dst: usize,
+        src: usize,
+    },
+    IntrinsicUBoundArray {
+        dst: usize,
+        src: usize,
+    },
+    IntrinsicIsArrayTag {
+        dst: usize,
+        src: usize,
+    },
+    IntrinsicVarTypeTag {
+        dst: usize,
+        src: usize,
+    },
+    IntrinsicTypeNameTag {
+        dst: usize,
+        src: usize,
+    },
+    IntrinsicIsNumericTag {
+        dst: usize,
+        src: usize,
+    },
+    IntrinsicIsDateTag {
+        dst: usize,
+        src: usize,
+    },
+    IntrinsicIsObjectTag {
+        dst: usize,
+        src: usize,
+    },
+    IntrinsicShellHost {
+        dst: usize,
+        command: usize,
+    },
+    IntrinsicEnvironHost {
+        dst: usize,
+        key: usize,
+    },
+    IntrinsicDirHost {
+        dst: usize,
+        path: usize,
+    },
+    IntrinsicCollectionAdd {
+        dst: usize,
+        count: usize,
+        item: usize,
+    },
+    IntrinsicCollectionItem {
+        dst: usize,
+        count: usize,
+        index: usize,
+    },
+    IntrinsicCollectionRemove {
+        dst: usize,
+        count: usize,
+        index: usize,
+    },
+    IntrinsicCollectionCount {
+        dst: usize,
+        count: usize,
+    },
+    IntrinsicCreateObjectHost {
+        dst: usize,
+        prog_id: usize,
+    },
+    IntrinsicDispatchInvokeHost {
+        dst: usize,
+        object: usize,
+        member: usize,
+        arg: usize,
+    },
     CmpEqSlots {
         dst: usize,
         lhs: usize,

@@ -677,6 +677,14 @@ fn parse_block(
             continue;
         }
 
+        if lower.starts_with("err.raise ")
+            && let Ok(code) = line[10..].trim().parse::<i32>()
+        {
+            out.push(BoundStmt::RaiseError(code));
+            *index += 1;
+            continue;
+        }
+
         if let Some(name) = parse_label_declaration(line) {
             out.push(BoundStmt::Label { name });
             *index += 1;
@@ -1175,7 +1183,7 @@ fn parse_intrinsic_conversion_expr(
     let name = normalize_ident(expr[..open].trim())?;
     if !matches!(
         name.as_str(),
-        "cint" | "clng" | "cdbl" | "cstr" | "cbool" | "cdate" | "val" | "str"
+        "cint" | "clng" | "cdbl" | "cstr" | "cbool" | "cdate" | "val" | "str" | "cverr"
     ) {
         return None;
     }
@@ -1208,6 +1216,43 @@ fn parse_stdlib_intrinsic_call_expr(
             | "ltrim"
             | "rtrim"
             | "strcomp"
+            | "dateserial"
+            | "timeserial"
+            | "datevalue"
+            | "timevalue"
+            | "dateadd"
+            | "datediff"
+            | "abs"
+            | "int"
+            | "fix"
+            | "sgn"
+            | "round"
+            | "sqr"
+            | "sin"
+            | "cos"
+            | "log"
+            | "exp"
+            | "fv"
+            | "pv"
+            | "pmt"
+            | "array"
+            | "lbound"
+            | "ubound"
+            | "isarray"
+            | "vartype"
+            | "typename"
+            | "isnumeric"
+            | "isdate"
+            | "isobject"
+            | "shell"
+            | "environ"
+            | "dir"
+            | "collectionadd"
+            | "collectionitem"
+            | "collectionremove"
+            | "collectioncount"
+            | "createobject"
+            | "dispatchinvoke"
     ) {
         return None;
     }
@@ -1219,10 +1264,21 @@ fn parse_stdlib_intrinsic_call_expr(
         .collect::<Option<Vec<_>>>()?;
 
     let arity_ok = match name.as_str() {
-        "len" | "lcase" | "ucase" | "trim" | "ltrim" | "rtrim" => args.len() == 1,
+        "len" | "lcase" | "ucase" | "trim" | "ltrim" | "rtrim" | "datevalue" | "timevalue"
+        | "abs" | "int" | "fix" | "sgn" | "sqr" | "sin" | "cos" | "log" | "exp" | "lbound"
+        | "ubound" | "isarray" | "vartype" | "typename" | "isnumeric" | "isdate" | "isobject"
+        | "shell" | "environ" | "dir" | "collectioncount" | "createobject" => args.len() == 1,
         "left" | "right" | "instr" | "split" | "join" | "strcomp" => args.len() == 2,
         "mid" => args.len() == 2 || args.len() == 3,
-        "replace" => args.len() == 3,
+        "round" => args.len() == 1 || args.len() == 2,
+        "replace" | "dateserial" | "timeserial" | "dateadd" | "datediff" | "dispatchinvoke" => {
+            args.len() == 3
+        }
+        "collectionadd" | "collectionitem" | "collectionremove" => {
+            args.len() == 2 || args.len() == 3
+        }
+        "fv" | "pv" | "pmt" => (3..=5).contains(&args.len()),
+        "array" => !args.is_empty(),
         _ => false,
     };
     if !arity_ok {
@@ -1603,6 +1659,32 @@ mod tests {
         assert!(matches!(
             expr,
             BoundExpr::IntrinsicCall { name, args } if name == "replace" && args.len() == 3
+        ));
+    }
+
+    #[test]
+    fn resolve_stdlib_date_math_intrinsic_expression() {
+        let source = "Sub Main()\nDim x\nx = DateAdd(1, 2, DateSerial(2026, 2, 28))\nEnd Sub";
+        let module = resolve_symbols(source);
+        let Some(BoundStmt::Assign { expr, .. }) = module.body.first() else {
+            panic!("expected assignment");
+        };
+        assert!(matches!(
+            expr,
+            BoundExpr::IntrinsicCall { name, args } if name == "dateadd" && args.len() == 3
+        ));
+    }
+
+    #[test]
+    fn resolve_stdlib_collection_intrinsic_expression() {
+        let source = "Sub Main()\nDim x\nx = CollectionCount(CollectionAdd(0, 7, 0))\nEnd Sub";
+        let module = resolve_symbols(source);
+        let Some(BoundStmt::Assign { expr, .. }) = module.body.first() else {
+            panic!("expected assignment");
+        };
+        assert!(matches!(
+            expr,
+            BoundExpr::IntrinsicCall { name, args } if name == "collectioncount" && args.len() == 1
         ));
     }
 
