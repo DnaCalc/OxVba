@@ -128,3 +128,6 @@ FO-V45-003,v45,"cargo test -p oxvba-host formal_v45_val_str_conversion_subset",n
 FO-V46-001,v46,"cargo test -p oxvba-host formal_v46_len_intrinsic_digit_count",no,true,crates/oxvba-host/src/engine.rs
 FO-V46-002,v46,"cargo test -p oxvba-host formal_v46_slice_intrinsics_digit_subsets",no,true,crates/oxvba-host/src/engine.rs
 FO-V46-003,v46,"cargo test -p oxvba-host formal_v46_instr_and_case_intrinsics",no,true,crates/oxvba-host/src/engine.rs
+FO-V47-001,v47,"cargo test -p oxvba-host formal_v47_split_and_join_intrinsics",no,true,crates/oxvba-host/src/engine.rs
+FO-V47-002,v47,"cargo test -p oxvba-host formal_v47_replace_and_trim_intrinsics",no,true,crates/oxvba-host/src/engine.rs
+FO-V47-003,v47,"cargo test -p oxvba-host formal_v47_strcomp_intrinsic_subset",no,true,crates/oxvba-host/src/engine.rs

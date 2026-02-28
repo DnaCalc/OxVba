@@ -20,6 +20,7 @@ procedures,Named args,implemented,v38,conformance/tests/params_named_bind.bas,
 procedures,Property procedures (Get/Let/Set subset),implemented,v44,conformance/tests/property_let_byref_route.bas,
 runtime,Intrinsic conversion functions (CInt/CLng/CDbl/CStr/CBool/CDate/Val/Str subset),implemented,v45,conformance/tests/conversion_cint_basic.bas,int-domain subset lowered as identity conversion
 runtime,String core intrinsics (Len/Left/Right/Mid/InStr/LCase/UCase subset),implemented,v46,conformance/tests/stdlib_len_basic.bas,decimal-string-over-int subset
+runtime,String advanced intrinsics (Split/Join/Replace/Trim/LTrim/RTrim/StrComp subset),implemented,v47,conformance/tests/stdlib_advanced_split_join.bas,decimal-string-over-int subset
 arrays,Fixed-size arrays,implemented,v10,conformance/tests/array_store_load.bas,
 arrays,Array bounds error,implemented,v10,conformance/tests/array_bounds_error.bas,
 arrays,Dynamic ReDim,implemented,v42,conformance/tests/redim_preserve_keeps_values.bas,

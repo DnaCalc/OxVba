@@ -696,6 +696,40 @@ fn emit_expr_into(
                 ("ucase", [src]) => {
                     instructions.push(Instruction::IntrinsicUpperDigits { dst, src: *src })
                 }
+                ("split", [src, delimiter]) => {
+                    instructions.push(Instruction::IntrinsicSplitCountDigits {
+                        dst,
+                        src: *src,
+                        delimiter: *delimiter,
+                    })
+                }
+                ("join", [src, delimiter]) => instructions.push(Instruction::IntrinsicJoinDigits {
+                    dst,
+                    src: *src,
+                    delimiter: *delimiter,
+                }),
+                ("replace", [src, find, replace]) => {
+                    instructions.push(Instruction::IntrinsicReplaceDigits {
+                        dst,
+                        src: *src,
+                        find: *find,
+                        replace: *replace,
+                    })
+                }
+                ("trim", [src]) => {
+                    instructions.push(Instruction::IntrinsicTrimDigits { dst, src: *src })
+                }
+                ("ltrim", [src]) => {
+                    instructions.push(Instruction::IntrinsicLTrimDigits { dst, src: *src })
+                }
+                ("rtrim", [src]) => {
+                    instructions.push(Instruction::IntrinsicRTrimDigits { dst, src: *src })
+                }
+                ("strcomp", [lhs, rhs]) => instructions.push(Instruction::IntrinsicStrCompDigits {
+                    dst,
+                    lhs: *lhs,
+                    rhs: *rhs,
+                }),
                 _ => {}
             }
         }

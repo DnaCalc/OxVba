@@ -584,6 +584,37 @@ mod tests {
     }
 
     #[test]
+    fn formal_v47_split_and_join_intrinsics() {
+        let engine = Engine::new(HostConfig::default());
+        let source = "Sub Main()\nDim x\nDim y\nx = Split(123231, 23)\ny = Join(789, 0)\nEnd Sub";
+        let snapshot = engine
+            .execute_source_with_snapshot(source)
+            .expect("execution should succeed");
+        assert_eq!(snapshot, vec![3, 789]);
+    }
+
+    #[test]
+    fn formal_v47_replace_and_trim_intrinsics() {
+        let engine = Engine::new(HostConfig::default());
+        let source = "Sub Main()\nDim x\nDim y\nDim z\nx = Replace(12345, 23, 67)\ny = Trim(456)\nz = RTrim(321)\nEnd Sub";
+        let snapshot = engine
+            .execute_source_with_snapshot(source)
+            .expect("execution should succeed");
+        assert_eq!(snapshot, vec![16745, 456, 321]);
+    }
+
+    #[test]
+    fn formal_v47_strcomp_intrinsic_subset() {
+        let engine = Engine::new(HostConfig::default());
+        let source =
+            "Sub Main()\nDim x\nDim y\nx = StrComp(12, 123)\ny = StrComp(123, 123)\nEnd Sub";
+        let snapshot = engine
+            .execute_source_with_snapshot(source)
+            .expect("execution should succeed");
+        assert_eq!(snapshot, vec![-1, 0]);
+    }
+
+    #[test]
     fn formal_v10_array_store_load_roundtrip() {
         let engine = Engine::new(HostConfig::default());
         let source = "Sub Main()\nDim a(2)\nDim x\na(1) = 7\nx = a(1)\nEnd Sub";

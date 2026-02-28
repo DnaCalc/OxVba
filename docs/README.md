@@ -58,6 +58,7 @@
 | Profile v44 Status | [`PROFILE_STATUS_V44.md`](PROFILE_STATUS_V44.md) | Current gate status contract for `mvp-lang-property-procedures-v44`. |
 | Profile v45 Status | [`PROFILE_STATUS_V45.md`](PROFILE_STATUS_V45.md) | Current gate status contract for `mvp-stdlib-conversion-core-v45`. |
 | Profile v46 Status | [`PROFILE_STATUS_V46.md`](PROFILE_STATUS_V46.md) | Current gate status contract for `mvp-stdlib-string-core-v46`. |
+| Profile v47 Status | [`PROFILE_STATUS_V47.md`](PROFILE_STATUS_V47.md) | Current gate status contract for `mvp-stdlib-string-advanced-v47`. |
 | Phase 12 Status | [`PHASE12_STATUS.md`](PHASE12_STATUS.md) | Declared profile scope and final conformance/stabilization gate artifacts. |
 | Work Set Plan (v2) | [`worksets/WORKSET_2026-02-27_CONTROLFLOW_V2.md`](worksets/WORKSET_2026-02-27_CONTROLFLOW_V2.md) | Detailed execution-grade plan for control-flow expansion beyond `mvp-int32-core-v1`. |
 | Work Set Plan (v3) | [`worksets/WORKSET_2026-02-27_FORMAL_FOUNDATION_V3.md`](worksets/WORKSET_2026-02-27_FORMAL_FOUNDATION_V3.md) | Formal infrastructure work set for manifest-driven obligations and reporting. |
@@ -103,6 +104,7 @@
 | Work Set Plan (v44) | [`worksets/WORKSET_2026-02-27_PROPERTY_PROCEDURES_V44.md`](worksets/WORKSET_2026-02-27_PROPERTY_PROCEDURES_V44.md) | Property Get/Let/Set parsing and assignment-routing subset work set. |
 | Work Set Plan (v45) | [`worksets/WORKSET_2026-02-27_STDLIB_CONVERSION_CORE_V45.md`](worksets/WORKSET_2026-02-27_STDLIB_CONVERSION_CORE_V45.md) | Intrinsic conversion subset baseline work set. |
 | Work Set Plan (v46) | [`worksets/WORKSET_2026-02-27_STDLIB_STRING_CORE_V46.md`](worksets/WORKSET_2026-02-27_STDLIB_STRING_CORE_V46.md) | String-core intrinsic subset over current runtime model. |
+| Work Set Plan (v47) | [`worksets/WORKSET_2026-02-27_STDLIB_STRING_ADVANCED_V47.md`](worksets/WORKSET_2026-02-27_STDLIB_STRING_ADVANCED_V47.md) | Advanced string intrinsic subset over current runtime model. |
 | Work Set Plan (v27-v36) | [`worksets/WORKSET_2026-02-27_BATCH_V27_V36.md`](worksets/WORKSET_2026-02-27_BATCH_V27_V36.md) | Next long batch: formal reliability, language coverage closure, and hotspot performance work. |
 | Profile Ladder | [`worksets/PROFILE_LADDER_2026-02-27_MACH1000.md`](worksets/PROFILE_LADDER_2026-02-27_MACH1000.md) | MACH1000 profile roadmap and execution history. |
 | Profile Ladder (v37-v56) | [`worksets/PROFILE_LADDER_2026-02-27_MACH1000_V37_V56.md`](worksets/PROFILE_LADDER_2026-02-27_MACH1000_V37_V56.md) | Next horizon ladder split into language core, intrinsic runtime, and host/interop tracks. |

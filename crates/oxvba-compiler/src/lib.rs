@@ -398,6 +398,28 @@ mod tests {
     }
 
     #[test]
+    fn compile_replace_intrinsic_emits_intrinsic_instruction() {
+        let source = "Sub Main()\nDim x\nx = Replace(12345, 23, 67)\nEnd Sub";
+        let out = compile(source).expect("compile should succeed");
+        assert!(
+            out.instructions
+                .iter()
+                .any(|i| matches!(i, Instruction::IntrinsicReplaceDigits { .. }))
+        );
+    }
+
+    #[test]
+    fn compile_strcomp_intrinsic_emits_intrinsic_instruction() {
+        let source = "Sub Main()\nDim x\nx = StrComp(12, 123)\nEnd Sub";
+        let out = compile(source).expect("compile should succeed");
+        assert!(
+            out.instructions
+                .iter()
+                .any(|i| matches!(i, Instruction::IntrinsicStrCompDigits { .. }))
+        );
+    }
+
+    #[test]
     fn compile_property_let_assignment_routes_to_call() {
         let source = "Sub Main()\nDim x\nx = 1\nValue = x\nEnd Sub\nProperty Let Value(ByRef target)\ntarget = target + 2\nEnd Property";
         let out = compile(source).expect("compile should succeed");

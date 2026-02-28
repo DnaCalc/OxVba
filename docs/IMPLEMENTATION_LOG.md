@@ -241,3 +241,8 @@
   - extended bytecode/vm runtime with intrinsic execution ops under current decimal-string-over-int semantics;
   - added string-core conformance fixtures and formal obligations (`FO-V46-001..003`);
   - published `PROFILE_STATUS_V46` and `WORKSET_2026-02-27_STDLIB_STRING_CORE_V46`.
+- Started `mvp-stdlib-string-advanced-v47` stdlib-core pass:
+  - added intrinsic expression/runtime support for `Split`, `Join`, `Replace`, `Trim`, `LTrim`, `RTrim`, `StrComp`;
+  - extended bytecode/vm runtime with advanced string intrinsic execution ops;
+  - added advanced-string conformance fixtures and formal obligations (`FO-V47-001..003`);
+  - published `PROFILE_STATUS_V47` and `WORKSET_2026-02-27_STDLIB_STRING_ADVANCED_V47`.

@@ -1,7 +1,7 @@
 # Formal Run Report
 
-- Timestamp (UTC): 2026-02-28T00:36:15Z
-- Profile scope: mvp-stdlib-string-core-v46
+- Timestamp (UTC): 2026-02-28T00:48:53Z
+- Profile scope: mvp-stdlib-string-advanced-v47
 - Overall mode: non-blocking
 - Kani required: false
 - Kani execution: deferred-to-wsl-async
@@ -139,3 +139,6 @@
 | FO-V46-001 | v46 | no | pass | cargo test -p oxvba-host formal_v46_len_intrinsic_digit_count | crates/oxvba-host/src/engine.rs |  |
 | FO-V46-002 | v46 | no | pass | cargo test -p oxvba-host formal_v46_slice_intrinsics_digit_subsets | crates/oxvba-host/src/engine.rs |  |
 | FO-V46-003 | v46 | no | pass | cargo test -p oxvba-host formal_v46_instr_and_case_intrinsics | crates/oxvba-host/src/engine.rs |  |
+| FO-V47-001 | v47 | no | pass | cargo test -p oxvba-host formal_v47_split_and_join_intrinsics | crates/oxvba-host/src/engine.rs |  |
+| FO-V47-002 | v47 | no | pass | cargo test -p oxvba-host formal_v47_replace_and_trim_intrinsics | crates/oxvba-host/src/engine.rs |  |
+| FO-V47-003 | v47 | no | pass | cargo test -p oxvba-host formal_v47_strcomp_intrinsic_subset | crates/oxvba-host/src/engine.rs |  |

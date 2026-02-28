@@ -5,6 +5,9 @@ conversion_val_str_subset.bas,ok,9
 stdlib_instr_case_ops.bas,ok,"3,789,654"
 stdlib_len_basic.bas,ok,4
 stdlib_slice_ops.bas,ok,"12,45,234"
+stdlib_advanced_split_join.bas,ok,"3,789"
+stdlib_advanced_replace_trim.bas,ok,"16745,456,321"
+stdlib_advanced_strcomp.bas,ok,"-1,0"
 do_exit_do.bas,ok,4
 do_loop_while_basic.bas,ok,3
 do_while_basic.bas,ok,3

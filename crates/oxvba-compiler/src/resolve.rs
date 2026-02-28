@@ -1194,7 +1194,20 @@ fn parse_stdlib_intrinsic_call_expr(
     let name = normalize_ident(expr[..open].trim())?;
     if !matches!(
         name.as_str(),
-        "len" | "left" | "right" | "mid" | "instr" | "lcase" | "ucase"
+        "len"
+            | "left"
+            | "right"
+            | "mid"
+            | "instr"
+            | "lcase"
+            | "ucase"
+            | "split"
+            | "join"
+            | "replace"
+            | "trim"
+            | "ltrim"
+            | "rtrim"
+            | "strcomp"
     ) {
         return None;
     }
@@ -1206,9 +1219,10 @@ fn parse_stdlib_intrinsic_call_expr(
         .collect::<Option<Vec<_>>>()?;
 
     let arity_ok = match name.as_str() {
-        "len" | "lcase" | "ucase" => args.len() == 1,
-        "left" | "right" | "instr" => args.len() == 2,
+        "len" | "lcase" | "ucase" | "trim" | "ltrim" | "rtrim" => args.len() == 1,
+        "left" | "right" | "instr" | "split" | "join" | "strcomp" => args.len() == 2,
         "mid" => args.len() == 2 || args.len() == 3,
+        "replace" => args.len() == 3,
         _ => false,
     };
     if !arity_ok {
@@ -1576,6 +1590,19 @@ mod tests {
         assert!(matches!(
             expr,
             BoundExpr::IntrinsicCall { name, args } if name == "len" && args.len() == 1
+        ));
+    }
+
+    #[test]
+    fn resolve_stdlib_advanced_intrinsic_call_expression() {
+        let source = "Sub Main()\nDim x\nx = Replace(12345, 23, 67)\nEnd Sub";
+        let module = resolve_symbols(source);
+        let Some(BoundStmt::Assign { expr, .. }) = module.body.first() else {
+            panic!("expected assignment");
+        };
+        assert!(matches!(
+            expr,
+            BoundExpr::IntrinsicCall { name, args } if name == "replace" && args.len() == 3
         ));
     }
 

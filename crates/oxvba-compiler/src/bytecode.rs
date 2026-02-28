@@ -51,6 +51,39 @@ pub enum Instruction {
         dst: usize,
         src: usize,
     },
+    IntrinsicSplitCountDigits {
+        dst: usize,
+        src: usize,
+        delimiter: usize,
+    },
+    IntrinsicJoinDigits {
+        dst: usize,
+        src: usize,
+        delimiter: usize,
+    },
+    IntrinsicReplaceDigits {
+        dst: usize,
+        src: usize,
+        find: usize,
+        replace: usize,
+    },
+    IntrinsicTrimDigits {
+        dst: usize,
+        src: usize,
+    },
+    IntrinsicLTrimDigits {
+        dst: usize,
+        src: usize,
+    },
+    IntrinsicRTrimDigits {
+        dst: usize,
+        src: usize,
+    },
+    IntrinsicStrCompDigits {
+        dst: usize,
+        lhs: usize,
+        rhs: usize,
+    },
     CmpEqSlots {
         dst: usize,
         lhs: usize,

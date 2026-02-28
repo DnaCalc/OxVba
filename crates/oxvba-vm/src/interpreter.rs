@@ -113,6 +113,59 @@ impl Vm {
                     self.write_slot(*dst, Self::to_upper_digits(value))?;
                     pc += 1;
                 }
+                Instruction::IntrinsicSplitCountDigits {
+                    dst,
+                    src,
+                    delimiter,
+                } => {
+                    let value = self.read_slot(*src)?;
+                    let delimiter = self.read_slot(*delimiter)?;
+                    self.write_slot(*dst, Self::split_count_digits(value, delimiter))?;
+                    pc += 1;
+                }
+                Instruction::IntrinsicJoinDigits {
+                    dst,
+                    src,
+                    delimiter,
+                } => {
+                    let value = self.read_slot(*src)?;
+                    let delimiter = self.read_slot(*delimiter)?;
+                    self.write_slot(*dst, Self::join_digits(value, delimiter))?;
+                    pc += 1;
+                }
+                Instruction::IntrinsicReplaceDigits {
+                    dst,
+                    src,
+                    find,
+                    replace,
+                } => {
+                    let value = self.read_slot(*src)?;
+                    let find = self.read_slot(*find)?;
+                    let replace = self.read_slot(*replace)?;
+                    self.write_slot(*dst, Self::replace_digits(value, find, replace))?;
+                    pc += 1;
+                }
+                Instruction::IntrinsicTrimDigits { dst, src } => {
+                    let value = self.read_slot(*src)?;
+                    self.write_slot(*dst, Self::trim_digits(value))?;
+                    pc += 1;
+                }
+                Instruction::IntrinsicLTrimDigits { dst, src } => {
+                    let value = self.read_slot(*src)?;
+                    self.write_slot(*dst, Self::ltrim_digits(value))?;
+                    pc += 1;
+                }
+                Instruction::IntrinsicRTrimDigits { dst, src } => {
+                    let value = self.read_slot(*src)?;
+                    self.write_slot(*dst, Self::rtrim_digits(value))?;
+                    pc += 1;
+                }
+                Instruction::IntrinsicStrCompDigits { dst, lhs, rhs } => {
+                    let lhs = self.read_slot(*lhs)?;
+                    let rhs = self.read_slot(*rhs)?;
+                    self.write_slot(*dst, Self::strcomp_digits(lhs, rhs))?;
+                    pc += 1;
+                }
                 Instruction::CmpEqSlots { dst, lhs, rhs } => {
                     let out = if self.read_slot(*lhs)? == self.read_slot(*rhs)? {
                         1
@@ -352,6 +405,53 @@ impl Vm {
             .parse::<i32>()
             .unwrap_or(0)
     }
+
+    fn split_count_digits(value: i32, delimiter: i32) -> i32 {
+        let text = value.to_string();
+        let delimiter = delimiter.to_string();
+        if delimiter.is_empty() {
+            return 1;
+        }
+        text.split(&delimiter).count() as i32
+    }
+
+    fn join_digits(value: i32, _delimiter: i32) -> i32 {
+        value
+    }
+
+    fn replace_digits(value: i32, find: i32, replace: i32) -> i32 {
+        let text = value.to_string();
+        let find = find.to_string();
+        let replace = replace.to_string();
+        if find.is_empty() {
+            return value;
+        }
+        text.replace(&find, &replace).parse::<i32>().unwrap_or(0)
+    }
+
+    fn trim_digits(value: i32) -> i32 {
+        value.to_string().trim().parse::<i32>().unwrap_or(value)
+    }
+
+    fn ltrim_digits(value: i32) -> i32 {
+        value
+            .to_string()
+            .trim_start()
+            .parse::<i32>()
+            .unwrap_or(value)
+    }
+
+    fn rtrim_digits(value: i32) -> i32 {
+        value.to_string().trim_end().parse::<i32>().unwrap_or(value)
+    }
+
+    fn strcomp_digits(lhs: i32, rhs: i32) -> i32 {
+        match lhs.to_string().cmp(&rhs.to_string()) {
+            std::cmp::Ordering::Less => -1,
+            std::cmp::Ordering::Equal => 0,
+            std::cmp::Ordering::Greater => 1,
+        }
+    }
 }
 
 #[cfg(test)]
@@ -438,6 +538,65 @@ mod tests {
         assert_eq!(
             vm.snapshot_slots(10),
             vec![12345, 2, 3, 5, 12, 45, 234, 3, 12345, 12345]
+        );
+    }
+
+    #[test]
+    fn executes_intrinsic_advanced_digit_string_subset() {
+        let bytecode = Bytecode {
+            instructions: vec![
+                Instruction::LoadConstI32 {
+                    slot: 0,
+                    value: 123231,
+                },
+                Instruction::LoadConstI32 { slot: 1, value: 23 },
+                Instruction::LoadConstI32 {
+                    slot: 2,
+                    value: 12345,
+                },
+                Instruction::LoadConstI32 { slot: 3, value: 67 },
+                Instruction::LoadConstI32 { slot: 4, value: 12 },
+                Instruction::LoadConstI32 {
+                    slot: 5,
+                    value: 123,
+                },
+                Instruction::IntrinsicSplitCountDigits {
+                    dst: 6,
+                    src: 0,
+                    delimiter: 1,
+                },
+                Instruction::IntrinsicJoinDigits {
+                    dst: 7,
+                    src: 2,
+                    delimiter: 1,
+                },
+                Instruction::IntrinsicReplaceDigits {
+                    dst: 8,
+                    src: 2,
+                    find: 1,
+                    replace: 3,
+                },
+                Instruction::IntrinsicTrimDigits { dst: 9, src: 2 },
+                Instruction::IntrinsicLTrimDigits { dst: 10, src: 2 },
+                Instruction::IntrinsicRTrimDigits { dst: 11, src: 2 },
+                Instruction::IntrinsicStrCompDigits {
+                    dst: 12,
+                    lhs: 4,
+                    rhs: 5,
+                },
+                Instruction::Halt,
+            ],
+            slot_count: 13,
+            user_slot_count: 13,
+        };
+
+        let mut vm = Vm::default();
+        vm.execute(&bytecode).expect("vm should execute bytecode");
+        assert_eq!(
+            vm.snapshot_slots(13),
+            vec![
+                123231, 23, 12345, 67, 12, 123, 3, 12345, 16745, 12345, 12345, 12345, -1
+            ]
         );
     }
 
