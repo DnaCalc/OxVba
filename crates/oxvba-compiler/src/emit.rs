@@ -20,6 +20,7 @@ pub fn emit_bytecode(module: &BoundModule) -> Bytecode {
     let procedures = if module.procedures.is_empty() {
         vec![BoundProcedure {
             name: "main".to_string(),
+            return_type: crate::resolve::BoundType::Variant,
             params: Vec::new(),
             declarations: module.declarations.clone(),
             declaration_types: module.declaration_types.clone(),

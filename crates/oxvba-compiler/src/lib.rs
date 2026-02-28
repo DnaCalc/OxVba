@@ -197,6 +197,32 @@ mod tests {
     }
 
     #[test]
+    fn function_return_typechar_overrides_def_type() {
+        let source = "DefObj A-Z\nFunction alpha%()\nalpha = 1\nEnd Function\nSub Main()\nEnd Sub";
+        compile(source).expect("function return type character should override DefObj");
+    }
+
+    #[test]
+    fn function_return_explicit_as_overrides_typechar() {
+        let source = "Function alpha%() As Object\nalpha = 1\nEnd Function\nSub Main()\nEnd Sub";
+        let err = compile(source).expect_err("explicit As should control function return type");
+        assert!(err.to_string().contains("type mismatch in assignment"));
+    }
+
+    #[test]
+    fn byref_typed_exact_match_is_required() {
+        let source = "Sub Main()\nDim x As Integer\nx = 1\nCall Touch(x)\nEnd Sub\nSub Touch(ByRef target As Long)\ntarget = target + 1\nEnd Sub";
+        let err = compile(source).expect_err("typed ByRef mismatch should be rejected");
+        assert!(err.to_string().contains("ByRef parameter"));
+    }
+
+    #[test]
+    fn byref_typed_exact_match_accepts_same_type() {
+        let source = "Sub Main()\nDim x As Long\nx = 1\nCall Touch(x)\nEnd Sub\nSub Touch(ByRef target As Long)\ntarget = target + 1\nEnd Sub";
+        compile(source).expect("typed ByRef with exact type should compile");
+    }
+
+    #[test]
     fn reject_unsupported_statement() {
         let source = "Sub Main()\nDim x\nx = x * 2\nEnd Sub";
         let err = compile(source).expect_err("typecheck should fail");

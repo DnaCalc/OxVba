@@ -127,6 +127,7 @@ pub struct BoundModule {
 #[derive(Debug, Clone)]
 pub struct BoundProcedure {
     pub name: String,
+    pub return_type: BoundType,
     pub params: Vec<BoundParam>,
     pub declarations: Vec<String>,
     pub declaration_types: HashMap<String, BoundType>,
@@ -208,6 +209,7 @@ pub fn resolve_symbols(source: &str) -> BoundModule {
         body.splice(0..0, build_const_prelude(&module_constants));
         vec![BoundProcedure {
             name: "main".to_string(),
+            return_type: BoundType::Variant,
             params: Vec::new(),
             declarations,
             declaration_types,
@@ -225,6 +227,7 @@ pub fn resolve_symbols(source: &str) -> BoundModule {
         .cloned()
         .unwrap_or(BoundProcedure {
             name: "main".to_string(),
+            return_type: BoundType::Variant,
             params: Vec::new(),
             declarations: Vec::new(),
             declaration_types: HashMap::new(),
@@ -759,7 +762,9 @@ fn parse_procedures(
             continue;
         };
 
-        let Some((name, params)) = parse_proc_signature(line, kind, default_type_table) else {
+        let Some((name, params, return_type)) =
+            parse_proc_signature(line, kind, default_type_table)
+        else {
             index += 1;
             continue;
         };
@@ -768,6 +773,14 @@ fn parse_procedures(
         let mut declarations: Vec<String> = params.iter().map(|p| p.name.clone()).collect();
         let mut declaration_types: HashMap<String, BoundType> =
             params.iter().map(|p| (p.name.clone(), p.ty)).collect();
+        if matches!(kind, ProcKind::Function)
+            && !declarations
+                .iter()
+                .any(|existing| existing.eq_ignore_ascii_case(&name))
+        {
+            declarations.push(name.clone());
+            declaration_types.insert(name.clone(), return_type);
+        }
         let mut duplicate_declarations: Vec<String> = Vec::new();
         for (name, _) in sorted_module_constants(module_constants) {
             if !declarations
@@ -800,6 +813,7 @@ fn parse_procedures(
 
         procedures.push(BoundProcedure {
             name,
+            return_type,
             params,
             declarations,
             declaration_types,
@@ -870,12 +884,21 @@ fn parse_proc_signature(
     line: &str,
     kind: ProcKind,
     default_type_table: &[BoundType; 26],
-) -> Option<(String, Vec<BoundParam>)> {
+) -> Option<(String, Vec<BoundParam>, BoundType)> {
     let prefix_len = kind.prefix_len();
     let rest = line.get(prefix_len..)?.trim();
-    let name = kind.canonical_name(parse_proc_base_name(line, kind)?);
+    let name_token = rest
+        .split('(')
+        .next()
+        .unwrap_or_default()
+        .split_whitespace()
+        .next()
+        .unwrap_or_default();
+    let (base_name, name_type_char) = normalize_ident_with_type_char(name_token)?;
+    let name = kind.canonical_name(base_name.clone());
     let mut params = Vec::new();
     let mut seen_optional = false;
+    let mut explicit_return_ty = None;
 
     if let Some(open) = rest.find('(')
         && let Some(close) = rest.rfind(')')
@@ -946,9 +969,32 @@ fn parse_proc_signature(
                 });
             }
         }
+
+        if matches!(kind, ProcKind::Function | ProcKind::PropertyGet) {
+            let tail = rest[close + 1..].trim();
+            if let Some(ty_text) = strip_keyword_prefix_ci(tail, "as") {
+                explicit_return_ty =
+                    Some(parse_declared_type(ty_text).unwrap_or(BoundType::Variant));
+            }
+        }
+    } else if matches!(kind, ProcKind::Function | ProcKind::PropertyGet)
+        && let Some((_, rhs)) = split_keyword_ci(rest, "as")
+    {
+        explicit_return_ty = Some(parse_declared_type(rhs.trim()).unwrap_or(BoundType::Variant));
     }
 
-    Some((name, params))
+    let return_type = if matches!(kind, ProcKind::Function | ProcKind::PropertyGet) {
+        resolve_declared_type(
+            &base_name,
+            explicit_return_ty,
+            name_type_char,
+            default_type_table,
+        )
+    } else {
+        BoundType::Variant
+    };
+
+    Some((name, params, return_type))
 }
 
 fn parse_param_default(text: &str) -> Option<i32> {
@@ -2810,6 +2856,38 @@ mod tests {
         assert_eq!(proc.params[0].ty, super::BoundType::Object);
         assert_eq!(proc.params[1].ty, super::BoundType::Integer);
         assert_eq!(proc.params[2].ty, super::BoundType::Object);
+    }
+
+    #[test]
+    fn resolve_function_return_type_uses_type_char_and_def_type_precedence() {
+        let source = "DefObj A-Z\nFunction alpha%()\nalpha = 1\nEnd Function";
+        let module = resolve_symbols(source);
+        let proc = module
+            .procedures
+            .iter()
+            .find(|p| p.name == "alpha")
+            .expect("alpha function expected");
+        assert_eq!(proc.return_type, super::BoundType::Integer);
+        assert_eq!(
+            proc.declaration_types.get("alpha").copied(),
+            Some(super::BoundType::Integer)
+        );
+    }
+
+    #[test]
+    fn resolve_function_return_explicit_as_overrides_type_char_and_def_type() {
+        let source = "DefInt A-Z\nFunction alpha%() As Object\nalpha = 1\nEnd Function";
+        let module = resolve_symbols(source);
+        let proc = module
+            .procedures
+            .iter()
+            .find(|p| p.name == "alpha")
+            .expect("alpha function expected");
+        assert_eq!(proc.return_type, super::BoundType::Object);
+        assert_eq!(
+            proc.declaration_types.get("alpha").copied(),
+            Some(super::BoundType::Object)
+        );
     }
 
     #[test]

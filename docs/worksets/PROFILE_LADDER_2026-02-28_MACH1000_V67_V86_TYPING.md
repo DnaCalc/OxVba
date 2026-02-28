@@ -320,3 +320,10 @@ Per profile:
   - run: `v69-kani`,
   - status: `dg-running`,
   - register: `docs/evidence/formal/DEFERRED_GATES.md`.
+- `v70` (`mvp-typing-procedure-signatures-v70`) completed:
+  - matrix gate `PASS` (`docs/evidence/profiles/v70/gate_report.md`),
+  - formal obligations `FO-V70-001..003` pass (`docs/evidence/formal/latest_run.md`).
+- Strict WSL Kani lane for `v70` started async as deferred gate:
+  - run: `v70-kani`,
+  - status: `dg-running`,
+  - register: `docs/evidence/formal/DEFERRED_GATES.md`.

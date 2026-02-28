@@ -293,6 +293,16 @@ fn check_stmt(
                         declaration_types,
                     )?;
                     let arg_ty = infer_expr_type(&arg.expr, declared_types);
+                    if param.by_ref
+                        && param.ty != BoundType::Variant
+                        && arg_ty != BoundType::Variant
+                        && arg_ty != param.ty
+                    {
+                        return Err(format!(
+                            "ByRef parameter {} requires exact type match: expected {:?}, got {:?}",
+                            param.name, param.ty, arg_ty
+                        ));
+                    }
                     if !can_assign_to(param.ty, arg_ty) {
                         return Err(format!(
                             "argument type mismatch for parameter {}: cannot pass {:?} to {:?}",

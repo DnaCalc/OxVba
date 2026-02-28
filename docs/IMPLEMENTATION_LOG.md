@@ -1,6 +1,13 @@
 # Implementation Log
 
 ## 2026-02-28
+- Completed `v70` (`mvp-typing-procedure-signatures-v70`):
+  - added function return-type metadata to bound procedures and bound return-symbol typing in function scope;
+  - implemented return-type precedence (`As <type>` > type character > `Def*` > `Variant`) for function/property-get signatures;
+  - tightened typed `ByRef` legality to require exact non-Variant type match (while keeping variable-argument requirement);
+  - added compiler/resolver regression tests for return-type precedence and typed-ByRef exact-match behavior;
+  - added conformance fixtures for typed-ByRef mismatch and function return precedence diagnostics;
+  - added formal obligations `FO-V70-001..003`, produced profile matrix artifacts under `docs/evidence/profiles/v70/`, and started strict async Kani lane (`v70-kani`) as deferred gate `DG-V70-001`.
 - Completed `v69` (`mvp-typing-default-type-rules-v69`):
   - added module-level `Def*` default typing directives (`DefBool/DefByte/DefInt/DefLng/DefLngLng/DefLngPtr/DefSng/DefDbl/DefDec/DefCur/DefDate/DefStr/DefObj/DefVar`) with letter/range parsing;
   - implemented declaration/parameter type precedence: `As <type>` > type character (`%/&/^/!/ #/@/$`) > `Def*` default > `Variant`;

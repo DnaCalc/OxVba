@@ -1,7 +1,7 @@
 # Formal Run Report
 
-- Timestamp (UTC): 2026-02-28T10:16:21Z
-- Profile scope: mvp-typing-default-type-rules-v69
+- Timestamp (UTC): 2026-02-28T10:24:39Z
+- Profile scope: mvp-typing-procedure-signatures-v70
 - Overall mode: non-blocking
 - Kani required: false
 - Kani execution: deferred-to-wsl-async
@@ -208,3 +208,6 @@
 | FO-V69-001 | v69 | no | pass | cargo test -p oxvba-compiler defobj_applies_to_implicit_declarations | crates/oxvba-compiler/src/lib.rs |  |
 | FO-V69-002 | v69 | no | pass | cargo test -p oxvba-compiler explicit_as_overrides_type_char_for_params | crates/oxvba-compiler/src/lib.rs |  |
 | FO-V69-003 | v69 | no | pass | cargo test -p oxvba-compiler resolve::tests::resolve_def_type_and_type_char_precedence_for_params | crates/oxvba-compiler/src/resolve.rs |  |
+| FO-V70-001 | v70 | no | pass | cargo test -p oxvba-compiler function_return_explicit_as_overrides_typechar | crates/oxvba-compiler/src/lib.rs |  |
+| FO-V70-002 | v70 | no | pass | cargo test -p oxvba-compiler byref_typed_exact_match_is_required | crates/oxvba-compiler/src/lib.rs |  |
+| FO-V70-003 | v70 | no | pass | cargo test -p oxvba-compiler resolve::tests::resolve_function_return_explicit_as_overrides_type_char_and_def_type | crates/oxvba-compiler/src/resolve.rs |  |
