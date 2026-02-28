@@ -310,6 +310,7 @@ mod kani_proofs {
                 "x".to_string(),
                 crate::resolve::BoundType::Variant,
             )]),
+            array_descriptors: std::collections::HashMap::new(),
             body: vec![BoundStmt::Assign {
                 target: "x".to_string(),
                 expr: BoundExpr::AddConst {

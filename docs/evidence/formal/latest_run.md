@@ -1,7 +1,7 @@
 # Formal Run Report
 
-- Timestamp (UTC): 2026-02-28T12:27:23Z
-- Profile scope: mvp-string-mutation-and-slices-v79
+- Timestamp (UTC): 2026-02-28T12:39:08Z
+- Profile scope: mvp-array-type-model-v80
 - Overall mode: non-blocking
 - Kani required: false
 - Kani execution: deferred-to-wsl-async
@@ -238,3 +238,6 @@
 | FO-V79-001 | v79 | no | pass | cargo test -p oxvba-compiler compile_mid_statement_emits_mutation_instruction | crates/oxvba-compiler/src/lib.rs |  |
 | FO-V79-002 | v79 | no | pass | cargo test -p oxvba-compiler mid_statement_object_target_is_rejected | crates/oxvba-compiler/src/lib.rs |  |
 | FO-V79-003 | v79 | no | pass | cargo test -p oxvba-compiler resolve::tests::resolve_mid_statement_assignment | crates/oxvba-compiler/src/resolve.rs |  |
+| FO-V80-001 | v80 | no | pass | cargo test -p oxvba-compiler resolve::tests::resolve_array_descriptor_records_bounds_and_type | crates/oxvba-compiler/src/resolve.rs |  |
+| FO-V80-002 | v80 | no | pass | cargo test -p oxvba-compiler resolve::tests::resolve_redim_marks_array_descriptor_dynamic | crates/oxvba-compiler/src/resolve.rs |  |
+| FO-V80-003 | v80 | no | pass | cargo test -p oxvba-compiler resolve::tests::resolve_typed_array_dim_records_element_alias_types | crates/oxvba-compiler/src/resolve.rs |  |

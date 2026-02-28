@@ -92,6 +92,7 @@
 | Profile v77 Status | [`PROFILE_STATUS_V77.md`](profile-status/PROFILE_STATUS_V77.md) | Current gate status contract for `mvp-string-storage-semantics-v77`. |
 | Profile v78 Status | [`PROFILE_STATUS_V78.md`](profile-status/PROFILE_STATUS_V78.md) | Current gate status contract for `mvp-string-compare-search-v78`. |
 | Profile v79 Status | [`PROFILE_STATUS_V79.md`](profile-status/PROFILE_STATUS_V79.md) | Current gate status contract for `mvp-string-mutation-and-slices-v79`. |
+| Profile v80 Status | [`PROFILE_STATUS_V80.md`](profile-status/PROFILE_STATUS_V80.md) | Current gate status contract for `mvp-array-type-model-v80`. |
 | Phase 12 Status | [`PHASE12_STATUS.md`](PHASE12_STATUS.md) | Declared profile scope and final conformance/stabilization gate artifacts. |
 | Work Set Plan (v2) | [`worksets/WORKSET_2026-02-27_CONTROLFLOW_V2.md`](worksets/WORKSET_2026-02-27_CONTROLFLOW_V2.md) | Detailed execution-grade plan for control-flow expansion beyond `mvp-int32-core-v1`. |
 | Work Set Plan (v3) | [`worksets/WORKSET_2026-02-27_FORMAL_FOUNDATION_V3.md`](worksets/WORKSET_2026-02-27_FORMAL_FOUNDATION_V3.md) | Formal infrastructure work set for manifest-driven obligations and reporting. |
@@ -170,6 +171,7 @@
 | Work Set Plan (v77) | [`worksets/WORKSET_2026-02-28_STRING_STORAGE_SEMANTICS_V77.md`](worksets/WORKSET_2026-02-28_STRING_STORAGE_SEMANTICS_V77.md) | String sentinel storage semantics (`vbNullString`) in current executable subset. |
 | Work Set Plan (v78) | [`worksets/WORKSET_2026-02-28_STRING_COMPARE_SEARCH_V78.md`](worksets/WORKSET_2026-02-28_STRING_COMPARE_SEARCH_V78.md) | Option Compare + compare/search intrinsic subset (`InStrRev`, `Like`) in current executable model. |
 | Work Set Plan (v79) | [`worksets/WORKSET_2026-02-28_STRING_MUTATION_SLICES_V79.md`](worksets/WORKSET_2026-02-28_STRING_MUTATION_SLICES_V79.md) | String mutation/slice subset: `Mid` statement mutation and slice intrinsic completion coverage. |
+| Work Set Plan (v80) | [`worksets/WORKSET_2026-02-28_ARRAY_TYPE_MODEL_V80.md`](worksets/WORKSET_2026-02-28_ARRAY_TYPE_MODEL_V80.md) | Unified array descriptor model for typed/variant arrays and rank/bounds metadata. |
 | Work Set Plan (v27-v36) | [`worksets/WORKSET_2026-02-27_BATCH_V27_V36.md`](worksets/WORKSET_2026-02-27_BATCH_V27_V36.md) | Next long batch: formal reliability, language coverage closure, and hotspot performance work. |
 | Profile Ladder | [`worksets/PROFILE_LADDER_2026-02-27_MACH1000.md`](worksets/PROFILE_LADDER_2026-02-27_MACH1000.md) | MACH1000 profile roadmap and execution history. |
 | Profile Ladder (v37-v56) | [`worksets/PROFILE_LADDER_2026-02-27_MACH1000_V37_V56.md`](worksets/PROFILE_LADDER_2026-02-27_MACH1000_V37_V56.md) | Next horizon ladder split into language core, intrinsic runtime, and host/interop tracks. |

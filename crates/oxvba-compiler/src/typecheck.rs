@@ -62,6 +62,7 @@ pub fn check_types(module: BoundModule) -> Result<BoundModule, String> {
     {
         module.declarations = entry.declarations.clone();
         module.declaration_types = entry.declaration_types.clone();
+        module.array_descriptors = entry.array_descriptors.clone();
         module.body = entry.body.clone();
     }
 

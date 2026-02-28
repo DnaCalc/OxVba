@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum BoundExpr {
@@ -135,6 +135,7 @@ pub struct BoundModule {
     pub default_type_table: [BoundType; 26],
     pub declarations: Vec<String>,
     pub declaration_types: HashMap<String, BoundType>,
+    pub array_descriptors: HashMap<String, BoundArrayDescriptor>,
     pub body: Vec<BoundStmt>,
     pub procedures: Vec<BoundProcedure>,
 }
@@ -146,8 +147,17 @@ pub struct BoundProcedure {
     pub params: Vec<BoundParam>,
     pub declarations: Vec<String>,
     pub declaration_types: HashMap<String, BoundType>,
+    pub array_descriptors: HashMap<String, BoundArrayDescriptor>,
     pub duplicate_declarations: Vec<String>,
     pub body: Vec<BoundStmt>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BoundArrayDescriptor {
+    pub element_type: BoundType,
+    pub rank: usize,
+    pub bounds: Vec<(i32, i32)>,
+    pub dynamic: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -223,12 +233,14 @@ pub fn resolve_symbols(source: &str) -> BoundModule {
             &[],
         );
         body.splice(0..0, build_const_prelude(&module_constants));
+        let array_descriptors = build_array_descriptors(&array_bounds, &declaration_types, &body);
         vec![BoundProcedure {
             name: "main".to_string(),
             return_type: BoundType::Variant,
             params: Vec::new(),
             declarations,
             declaration_types,
+            array_descriptors,
             duplicate_declarations,
             body,
         }]
@@ -247,6 +259,7 @@ pub fn resolve_symbols(source: &str) -> BoundModule {
             params: Vec::new(),
             declarations: Vec::new(),
             declaration_types: HashMap::new(),
+            array_descriptors: HashMap::new(),
             duplicate_declarations: Vec::new(),
             body: Vec::new(),
         });
@@ -258,6 +271,7 @@ pub fn resolve_symbols(source: &str) -> BoundModule {
         default_type_table,
         declarations: entry.declarations.clone(),
         declaration_types: entry.declaration_types.clone(),
+        array_descriptors: entry.array_descriptors.clone(),
         body: entry.body.clone(),
         procedures,
     }
@@ -824,6 +838,7 @@ fn parse_procedures(
             &[end_term],
         );
         body.splice(0..0, build_const_prelude(module_constants));
+        let array_descriptors = build_array_descriptors(&array_bounds, &declaration_types, &body);
         if index < lines.len() && lines[index].eq_ignore_ascii_case(end_term) {
             index += 1;
         }
@@ -834,6 +849,7 @@ fn parse_procedures(
             params,
             declarations,
             declaration_types,
+            array_descriptors,
             duplicate_declarations,
             body,
         });
@@ -2406,6 +2422,64 @@ fn parse_letter_index(token: &str) -> Option<usize> {
     Some((ch.to_ascii_lowercase() as u8 - b'a') as usize)
 }
 
+fn build_array_descriptors(
+    array_bounds: &HashMap<String, usize>,
+    declaration_types: &HashMap<String, BoundType>,
+    body: &[BoundStmt],
+) -> HashMap<String, BoundArrayDescriptor> {
+    let mut redim_targets = HashSet::new();
+    collect_redim_targets(body, &mut redim_targets);
+
+    let mut descriptors = HashMap::new();
+    for (name, max_index) in array_bounds {
+        let element_alias = format!("{name}_0");
+        let element_type = declaration_types
+            .get(&element_alias)
+            .copied()
+            .unwrap_or(BoundType::Variant);
+        descriptors.insert(
+            name.clone(),
+            BoundArrayDescriptor {
+                element_type,
+                rank: 1,
+                bounds: vec![(0, *max_index as i32)],
+                dynamic: redim_targets.contains(name),
+            },
+        );
+    }
+    descriptors
+}
+
+fn collect_redim_targets(stmts: &[BoundStmt], targets: &mut HashSet<String>) {
+    for stmt in stmts {
+        match stmt {
+            BoundStmt::ReDim { name, .. } => {
+                targets.insert(name.clone());
+            }
+            BoundStmt::IfCond {
+                then_body,
+                else_body,
+                ..
+            } => {
+                collect_redim_targets(then_body, targets);
+                collect_redim_targets(else_body, targets);
+            }
+            BoundStmt::ForRange { body, .. } | BoundStmt::DoWhile { body, .. } => {
+                collect_redim_targets(body, targets);
+            }
+            BoundStmt::SelectCase {
+                arms, else_body, ..
+            } => {
+                for (_, body) in arms {
+                    collect_redim_targets(body, targets);
+                }
+                collect_redim_targets(else_body, targets);
+            }
+            _ => {}
+        }
+    }
+}
+
 fn parse_label_declaration(line: &str) -> Option<String> {
     let trimmed = line.trim();
     if !trimmed.ends_with(':') {
@@ -2957,6 +3031,42 @@ mod tests {
             main_proc.declaration_types.get("a_2").copied(),
             Some(super::BoundType::Integer)
         );
+    }
+
+    #[test]
+    fn resolve_array_descriptor_records_bounds_and_type() {
+        let source = "Sub Main()\nDim a(2) As Integer\na(1) = 7\nEnd Sub";
+        let module = resolve_symbols(source);
+        let main_proc = module
+            .procedures
+            .iter()
+            .find(|p| p.name == "main")
+            .expect("main procedure expected");
+        let descriptor = main_proc
+            .array_descriptors
+            .get("a")
+            .expect("array descriptor should be present");
+        assert_eq!(descriptor.element_type, super::BoundType::Integer);
+        assert_eq!(descriptor.rank, 1);
+        assert_eq!(descriptor.bounds, vec![(0, 2)]);
+        assert!(!descriptor.dynamic);
+    }
+
+    #[test]
+    fn resolve_redim_marks_array_descriptor_dynamic() {
+        let source = "Sub Main()\nDim a(1)\nReDim Preserve a(3)\na(3) = 5\nEnd Sub";
+        let module = resolve_symbols(source);
+        let main_proc = module
+            .procedures
+            .iter()
+            .find(|p| p.name == "main")
+            .expect("main procedure expected");
+        let descriptor = main_proc
+            .array_descriptors
+            .get("a")
+            .expect("array descriptor should be present");
+        assert_eq!(descriptor.bounds, vec![(0, 3)]);
+        assert!(descriptor.dynamic);
     }
 
     #[test]

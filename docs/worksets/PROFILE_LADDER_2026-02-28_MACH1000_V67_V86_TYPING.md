@@ -403,3 +403,11 @@ Per profile:
   - run: `v79-kani`,
   - status: `dg-running`,
   - register: `docs/evidence/formal/DEFERRED_GATES.md`.
+- `v80` (`mvp-array-type-model-v80`) completed:
+  - matrix gate `PASS` (`docs/evidence/profiles/v80/gate_report.md`),
+  - formal obligations `FO-V80-001..003` pass (`docs/evidence/formal/latest_run.md`),
+  - added unified array descriptor metadata (`element_type`, `rank`, `bounds`, `dynamic`) for typed/variant arrays in resolver-bound module/procedure artifacts.
+- Strict WSL Kani lane for `v80` started async as deferred gate:
+  - run: `v80-kani`,
+  - status: `dg-running`,
+  - register: `docs/evidence/formal/DEFERRED_GATES.md`.

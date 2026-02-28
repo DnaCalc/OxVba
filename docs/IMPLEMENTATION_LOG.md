@@ -1,6 +1,11 @@
 # Implementation Log
 
 ## 2026-02-28
+- Completed `v80` (`mvp-array-type-model-v80`):
+  - introduced a unified bound array descriptor model shared across typed and variant arrays;
+  - added descriptor metadata capture (`element_type`, `rank`, `bounds`, `dynamic`) on bound procedures/modules in resolver output;
+  - marked dynamic descriptors from `ReDim` usage paths while preserving current executable array behavior for follow-on profiles;
+  - added formal obligations `FO-V80-001..003`, produced matrix artifacts under `docs/evidence/profiles/v80/`, and started strict async Kani lane (`v80-kani`) as deferred gate `DG-V80-001`.
 - Completed `v79` (`mvp-string-mutation-and-slices-v79`):
   - added resolver support for `Mid` statement mutation form (`Mid(target, start[, count]) = value`);
   - added typecheck + bytecode + VM execution support for `Mid` statement mutation in the current numeric-string subset;

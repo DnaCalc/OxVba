@@ -26,6 +26,7 @@ This register tracks long-running async formal obligations that are started duri
 | DG-V77-001 | v77 | v77-kani | dg-running | 2026-02-28T11:50:22Z | v79 | `temp/async/formal-kani/v77-kani/` | Started with watcher polling (`600s`) for strict WSL Kani run of `mvp-string-storage-semantics-v77`. |
 | DG-V78-001 | v78 | v78-kani | dg-running | 2026-02-28T12:19:21Z | v79 | `temp/async/formal-kani/v78-kani/` | Started with watcher polling (`600s`) for strict WSL Kani run of `mvp-string-compare-search-v78`. |
 | DG-V79-001 | v79 | v79-kani | dg-running | 2026-02-28T12:32:24Z | v84 | `temp/async/formal-kani/v79-kani/` | Started with watcher polling (`600s`) for strict WSL Kani run of `mvp-string-mutation-and-slices-v79`. |
+| DG-V80-001 | v80 | v80-kani | dg-running | 2026-02-28T12:44:34Z | v84 | `temp/async/formal-kani/v80-kani/` | Started with watcher polling (`600s`) for strict WSL Kani run of `mvp-array-type-model-v80`. |
 
 ## Update Protocol
 1. On async start, add a row with `dg-started` and paths.
