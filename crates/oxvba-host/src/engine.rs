@@ -400,6 +400,37 @@ mod tests {
     }
 
     #[test]
+    fn formal_v84_dispatch_invoke_marshals_array_argument_shape() {
+        let engine = Engine::new(HostConfig::default());
+        let source =
+            "Sub Main()\nDim x\nx = DispatchInvoke(CreateObject(4), 6, Array(1, 2, 3))\nEnd Sub";
+        let snapshot = engine
+            .execute_source_with_snapshot(source)
+            .expect("execution should succeed");
+        assert_eq!(snapshot[0], 25_013);
+    }
+
+    #[test]
+    fn formal_v84_paramarray_pack_roundtrips_into_dispatch_boundary() {
+        let engine = Engine::new(HostConfig::default());
+        let source = "Sub Main()\nDim x\nCall InvokePack(x, 5, 7)\nEnd Sub\nSub InvokePack(ByRef target, ParamArray items() As Variant)\ntarget = DispatchInvoke(CreateObject(2), 4, items)\nEnd Sub";
+        let snapshot = engine
+            .execute_source_with_snapshot(source)
+            .expect("execution should succeed");
+        assert_eq!(snapshot[0], 25_008);
+    }
+
+    #[test]
+    fn formal_v84_deferred_gate_rows_present_for_array_track() {
+        let text = std::fs::read_to_string(repo_path("docs/evidence/formal/DEFERRED_GATES.md"))
+            .expect("deferred gates register exists");
+        assert!(text.contains("DG-V80-001"));
+        assert!(text.contains("DG-V81-001"));
+        assert!(text.contains("DG-V82-001"));
+        assert!(text.contains("DG-V83-001"));
+    }
+
+    #[test]
     fn formal_v40_gosub_executes_label_body_and_returns() {
         let engine = Engine::new(HostConfig::default());
         let source = "Sub Main()\nDim x\nx = 1\nGoSub add_two\nx = x + 1\nIf Err.Number = -1 Then\nadd_two:\nx = x + 2\nReturn\nEnd If\nEnd Sub";

@@ -850,6 +850,23 @@ mod tests {
     }
 
     #[test]
+    fn compile_dispatch_intrinsic_with_array_argument_emits_instruction() {
+        let source =
+            "Sub Main()\nDim x\nx = DispatchInvoke(CreateObject(4), 6, Array(1, 2, 3))\nEnd Sub";
+        let out = compile(source).expect("compile should succeed");
+        assert!(
+            out.instructions
+                .iter()
+                .any(|i| matches!(i, Instruction::IntrinsicDispatchInvokeHost { .. }))
+        );
+        assert!(
+            out.instructions
+                .iter()
+                .any(|i| matches!(i, Instruction::LoadConstI32 { value, .. } if *value < 0))
+        );
+    }
+
+    #[test]
     fn compile_err_raise_statement_is_supported() {
         let source = "Sub Main()\nOn Error Resume Next\nErr.Raise 7\nEnd Sub";
         let out = compile(source).expect("compile should succeed");

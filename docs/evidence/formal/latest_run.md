@@ -1,19 +1,19 @@
 # Formal Run Report
 
-- Timestamp (UTC): 2026-02-28T13:57:42Z
-- Profile scope: mvp-array-call-and-paramarray-v83
+- Timestamp (UTC): 2026-02-28T10:44:17Z
+- Profile scope: mvp-typing-diagnostic-rollup-v72
 - Overall mode: non-blocking
-- Kani required: false
-- Kani execution: deferred-to-wsl-async
+- Kani required: true
+- Kani execution: wsl
 - cargo-kani (local): unavailable
 - cargo-kani (wsl): cargo-kani 0.67.0
 
 | Obligation | Profile | Blocking | Status | Command | Artifact | Note |
 |---|---|---|---|---|---|---|
-| FO-V2-001 | v2 | no | skipped | cargo kani -p oxvba-vm --harness pc_progression_is_safe_for_valid_jump_target | crates/oxvba-vm/src/interpreter.rs | cargo-kani available via WSL; rerun with -UseWslKani (recommended via run-formal-kani-async.ps1) |
-| FO-V2-002 | v2 | no | skipped | cargo kani -p oxvba-compiler --harness temp_slots_do_not_overlap_declared_slots | crates/oxvba-compiler/src/emit.rs | cargo-kani available via WSL; rerun with -UseWslKani (recommended via run-formal-kani-async.ps1) |
-| FO-V3-001 | v3 | no | skipped | cargo kani --version | scripts/run-formal.ps1 | cargo-kani available via WSL; rerun with -UseWslKani (recommended via run-formal-kani-async.ps1) |
-| FO-V4-001 | v4 | no | skipped | cargo kani -p oxvba-vm --harness comparator_ops_produce_boolean_values | crates/oxvba-vm/src/interpreter.rs | cargo-kani available via WSL; rerun with -UseWslKani (recommended via run-formal-kani-async.ps1) |
+| FO-V2-001 | v2 | no | todo | cargo kani -p oxvba-vm --harness pc_progression_is_safe_for_valid_jump_target | crates/oxvba-vm/src/interpreter.rs | Program "wsl.exe" ended with non-zero exit code: 1. |
+| FO-V2-002 | v2 | no | pass | cargo kani -p oxvba-compiler --harness temp_slots_do_not_overlap_declared_slots | crates/oxvba-compiler/src/emit.rs |  |
+| FO-V3-001 | v3 | no | pass | cargo kani --version | scripts/run-formal.ps1 |  |
+| FO-V4-001 | v4 | no | todo | cargo kani -p oxvba-vm --harness comparator_ops_produce_boolean_values | crates/oxvba-vm/src/interpreter.rs | Program "wsl.exe" ended with non-zero exit code: 1. |
 | FO-V5-001 | v5 | no | pass | cargo test -p oxvba-host formal_v5_branch_selection_is_total_over_small_domain | crates/oxvba-host/src/engine.rs |  |
 | FO-V5-002 | v5 | no | pass | cargo test -p oxvba-host formal_v5_branch_selection_matches_reference_model | crates/oxvba-host/src/engine.rs |  |
 | FO-V5-003 | v5 | no | pass | cargo test -p oxvba-host formal_v5_no_dual_branch_write_effect | crates/oxvba-host/src/engine.rs |  |
@@ -217,36 +217,3 @@
 | FO-V72-001 | v72 | no | pass | cargo test -p oxvba-compiler duplicate_dim_declaration_is_rejected | crates/oxvba-compiler/src/lib.rs |  |
 | FO-V72-002 | v72 | no | pass | cargo test -p oxvba-compiler late_bound_object_default_member_call_is_classified_with_explicit_diagnostic | crates/oxvba-compiler/src/lib.rs |  |
 | FO-V72-003 | v72 | no | pass | cargo test -p oxvba-compiler typecheck::tests::classify_call_mode_early_for_strict_typed_procedure | crates/oxvba-compiler/src/typecheck.rs |  |
-| FO-V73-001 | v73 | no | pass | cargo test -p oxvba-compiler typecheck::tests::coercion_table_rows_align_with_typecheck_rules | crates/oxvba-compiler/src/typecheck.rs |  |
-| FO-V73-002 | v73 | no | pass | cargo test -p oxvba-compiler coercion_assignment_object_to_long_is_rejected | crates/oxvba-compiler/src/lib.rs |  |
-| FO-V73-003 | v73 | no | pass | cargo test -p oxvba-compiler coercion_argument_object_to_long_is_rejected | crates/oxvba-compiler/src/lib.rs |  |
-| FO-V74-001 | v74 | no | pass | cargo test -p oxvba-compiler typecheck::tests::arithmetic_table_rows_align_with_typecheck_rules | crates/oxvba-compiler/src/typecheck.rs |  |
-| FO-V74-002 | v74 | no | pass | cargo test -p oxvba-compiler typecheck::tests::comparison_table_rows_align_with_typecheck_rules | crates/oxvba-compiler/src/typecheck.rs |  |
-| FO-V74-003 | v74 | no | pass | cargo test -p oxvba-compiler comparison_object_long_is_rejected | crates/oxvba-compiler/src/lib.rs |  |
-| FO-V75-001 | v75 | no | pass | cargo test -p oxvba-compiler typecheck::tests::call_coercion_table_rows_align_with_typecheck_rules | crates/oxvba-compiler/src/typecheck.rs |  |
-| FO-V75-002 | v75 | no | pass | cargo test -p oxvba-compiler mixed_call_coercion_variant_to_long_is_allowed | crates/oxvba-compiler/src/lib.rs |  |
-| FO-V75-003 | v75 | no | pass | cargo test -p oxvba-compiler late_bound_named_argument_call_is_classified_with_explicit_diagnostic | crates/oxvba-compiler/src/lib.rs |  |
-| FO-V76-001 | v76 | no | pass | cargo test -p oxvba-compiler typecheck::tests::conversion_intrinsic_table_rows_align_with_typecheck_rules | crates/oxvba-compiler/src/typecheck.rs |  |
-| FO-V76-002 | v76 | no | pass | cargo test -p oxvba-compiler conversion_intrinsic_cint_to_object_assignment_is_rejected | crates/oxvba-compiler/src/lib.rs |  |
-| FO-V76-003 | v76 | no | pass | cargo test -p oxvba-compiler conversion_intrinsic_cint_to_long_assignment_is_allowed | crates/oxvba-compiler/src/lib.rs |  |
-| FO-V77-001 | v77 | no | pass | cargo test -p oxvba-compiler resolve::tests::resolve_vbnullstring_intrinsic_constant_expression | crates/oxvba-compiler/src/resolve.rs |  |
-| FO-V77-002 | v77 | no | pass | cargo test -p oxvba-compiler vbnullstring_assigns_to_string | crates/oxvba-compiler/src/lib.rs |  |
-| FO-V77-003 | v77 | no | pass | cargo test -p oxvba-compiler vbnullstring_assignment_to_object_is_rejected | crates/oxvba-compiler/src/lib.rs |  |
-| FO-V78-001 | v78 | no | pass | cargo test -p oxvba-compiler compile_option_compare_text_emits_text_compare_mode_intrinsics | crates/oxvba-compiler/src/lib.rs |  |
-| FO-V78-002 | v78 | no | pass | cargo test -p oxvba-compiler compile_like_condition_emits_like_intrinsic_instruction | crates/oxvba-compiler/src/lib.rs |  |
-| FO-V78-003 | v78 | no | pass | cargo test -p oxvba-compiler compile_instrrev_intrinsic_emits_intrinsic_instruction | crates/oxvba-compiler/src/lib.rs |  |
-| FO-V79-001 | v79 | no | pass | cargo test -p oxvba-compiler compile_mid_statement_emits_mutation_instruction | crates/oxvba-compiler/src/lib.rs |  |
-| FO-V79-002 | v79 | no | pass | cargo test -p oxvba-compiler mid_statement_object_target_is_rejected | crates/oxvba-compiler/src/lib.rs |  |
-| FO-V79-003 | v79 | no | pass | cargo test -p oxvba-compiler resolve::tests::resolve_mid_statement_assignment | crates/oxvba-compiler/src/resolve.rs |  |
-| FO-V80-001 | v80 | no | pass | cargo test -p oxvba-compiler resolve::tests::resolve_array_descriptor_records_bounds_and_type | crates/oxvba-compiler/src/resolve.rs |  |
-| FO-V80-002 | v80 | no | pass | cargo test -p oxvba-compiler resolve::tests::resolve_redim_marks_array_descriptor_dynamic | crates/oxvba-compiler/src/resolve.rs |  |
-| FO-V80-003 | v80 | no | pass | cargo test -p oxvba-compiler resolve::tests::resolve_typed_array_dim_records_element_alias_types | crates/oxvba-compiler/src/resolve.rs |  |
-| FO-V81-001 | v81 | no | pass | cargo test -p oxvba-compiler resolve::tests::resolve_option_base_one_applies_to_array_declaration_bounds | crates/oxvba-compiler/src/resolve.rs |  |
-| FO-V81-002 | v81 | no | pass | cargo test -p oxvba-compiler resolve::tests::resolve_multidim_reference_linearizes_indices | crates/oxvba-compiler/src/resolve.rs |  |
-| FO-V81-003 | v81 | no | pass | cargo test -p oxvba-compiler compile_multidim_array_reference_subset | crates/oxvba-compiler/src/lib.rs |  |
-| FO-V82-001 | v82 | no | pass | cargo test -p oxvba-host formal_v82_redim_preserve_multidim_last_dimension_keeps_overlap | crates/oxvba-host/src/engine.rs |  |
-| FO-V82-002 | v82 | no | pass | cargo test -p oxvba-host formal_v82_redim_preserve_shrink_then_expand_clears_removed_tail | crates/oxvba-host/src/engine.rs |  |
-| FO-V82-003 | v82 | no | pass | cargo test -p oxvba-host formal_v82_redim_preserve_rejects_non_last_dimension_resize | crates/oxvba-host/src/engine.rs |  |
-| FO-V83-001 | v83 | no | pass | cargo test -p oxvba-host formal_v83_paramarray_packs_trailing_args_count | crates/oxvba-host/src/engine.rs |  |
-| FO-V83-002 | v83 | no | pass | cargo test -p oxvba-host formal_v83_paramarray_empty_pack_reports_negative_upper_bound | crates/oxvba-host/src/engine.rs |  |
-| FO-V83-003 | v83 | no | pass | cargo test -p oxvba-host formal_v83_paramarray_named_args_rejected_in_current_subset | crates/oxvba-host/src/engine.rs |  |

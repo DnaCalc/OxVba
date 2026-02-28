@@ -96,6 +96,7 @@
 | Profile v81 Status | [`PROFILE_STATUS_V81.md`](profile-status/PROFILE_STATUS_V81.md) | Current gate status contract for `mvp-array-bounds-and-indexing-v81`. |
 | Profile v82 Status | [`PROFILE_STATUS_V82.md`](profile-status/PROFILE_STATUS_V82.md) | Current gate status contract for `mvp-array-redim-full-v82`. |
 | Profile v83 Status | [`PROFILE_STATUS_V83.md`](profile-status/PROFILE_STATUS_V83.md) | Current gate status contract for `mvp-array-call-and-paramarray-v83`. |
+| Profile v84 Status | [`PROFILE_STATUS_V84.md`](profile-status/PROFILE_STATUS_V84.md) | Current gate status contract for `mvp-array-boundary-and-dispatch-v84`. |
 | Phase 12 Status | [`PHASE12_STATUS.md`](PHASE12_STATUS.md) | Declared profile scope and final conformance/stabilization gate artifacts. |
 | Work Set Plan (v2) | [`worksets/WORKSET_2026-02-27_CONTROLFLOW_V2.md`](worksets/WORKSET_2026-02-27_CONTROLFLOW_V2.md) | Detailed execution-grade plan for control-flow expansion beyond `mvp-int32-core-v1`. |
 | Work Set Plan (v3) | [`worksets/WORKSET_2026-02-27_FORMAL_FOUNDATION_V3.md`](worksets/WORKSET_2026-02-27_FORMAL_FOUNDATION_V3.md) | Formal infrastructure work set for manifest-driven obligations and reporting. |
@@ -178,6 +179,7 @@
 | Work Set Plan (v81) | [`worksets/WORKSET_2026-02-28_ARRAY_BOUNDS_INDEXING_V81.md`](worksets/WORKSET_2026-02-28_ARRAY_BOUNDS_INDEXING_V81.md) | Lower-bound aware and multidimensional indexing semantics for array declarations/references. |
 | Work Set Plan (v82) | [`worksets/WORKSET_2026-02-28_ARRAY_REDIM_FULL_V82.md`](worksets/WORKSET_2026-02-28_ARRAY_REDIM_FULL_V82.md) | Full in-scope `ReDim`/`ReDim Preserve` legality and tail-clearing semantics. |
 | Work Set Plan (v83) | [`worksets/WORKSET_2026-02-28_ARRAY_CALL_PARAMARRAY_V83.md`](worksets/WORKSET_2026-02-28_ARRAY_CALL_PARAMARRAY_V83.md) | Array call semantics and initial `ParamArray` packing support in current subset. |
+| Work Set Plan (v84) | [`worksets/WORKSET_2026-02-28_ARRAY_BOUNDARY_DISPATCH_V84.md`](worksets/WORKSET_2026-02-28_ARRAY_BOUNDARY_DISPATCH_V84.md) | Array dispatch-boundary marshalling subset and deferred-gate reconciliation checkpoint for array track DG runs. |
 | Work Set Plan (v27-v36) | [`worksets/WORKSET_2026-02-27_BATCH_V27_V36.md`](worksets/WORKSET_2026-02-27_BATCH_V27_V36.md) | Next long batch: formal reliability, language coverage closure, and hotspot performance work. |
 | Profile Ladder | [`worksets/PROFILE_LADDER_2026-02-27_MACH1000.md`](worksets/PROFILE_LADDER_2026-02-27_MACH1000.md) | MACH1000 profile roadmap and execution history. |
 | Profile Ladder (v37-v56) | [`worksets/PROFILE_LADDER_2026-02-27_MACH1000_V37_V56.md`](worksets/PROFILE_LADDER_2026-02-27_MACH1000_V37_V56.md) | Next horizon ladder split into language core, intrinsic runtime, and host/interop tracks. |

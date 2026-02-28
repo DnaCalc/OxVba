@@ -1,5 +1,7 @@
 use std::collections::HashMap;
 
+use oxvba_runtime::safe_array::ARRAY_TAG_BASE;
+
 use crate::{
     bytecode::{Bytecode, Instruction, StringCompareMode},
     resolve::{
@@ -7,8 +9,6 @@ use crate::{
         BoundProcedure, BoundStmt, CompareOp,
     },
 };
-
-const ARRAY_TAG_BASE: i32 = -1_000_000_000;
 
 fn emit_compare_mode(mode: BoundCompareMode) -> StringCompareMode {
     match mode {

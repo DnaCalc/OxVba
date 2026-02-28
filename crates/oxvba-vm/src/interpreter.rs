@@ -1,4 +1,7 @@
 use oxvba_compiler::{Bytecode, Instruction, bytecode::StringCompareMode};
+use oxvba_runtime::safe_array::{
+    array_len_from_tag, is_array_tag as runtime_is_array_tag, marshal_dispatch_argument,
+};
 
 use crate::register_file::RegisterFile;
 
@@ -10,9 +13,6 @@ pub struct Vm {
     on_error_goto_label_target: Option<usize>,
     last_error: i32,
 }
-
-const ARRAY_TAG_BASE: i32 = -1_000_000_000;
-const ARRAY_TAG_LIMIT: i32 = ARRAY_TAG_BASE + 1_000_000;
 
 impl Default for Vm {
     fn default() -> Self {
@@ -517,7 +517,7 @@ impl Vm {
                 } => {
                     let object = self.read_slot(*object)?;
                     let member = self.read_slot(*member)?;
-                    let arg = self.read_slot(*arg)?;
+                    let arg = marshal_dispatch_argument(self.read_slot(*arg)?);
                     self.write_slot(*dst, object + member + arg)?;
                     pc += 1;
                 }
@@ -937,18 +937,21 @@ impl Vm {
     }
 
     fn is_array_tag(value: i32) -> bool {
-        (ARRAY_TAG_BASE..=ARRAY_TAG_LIMIT).contains(&value)
+        runtime_is_array_tag(value)
     }
 
     fn array_count(value: i32) -> i32 {
-        (value - ARRAY_TAG_BASE).max(0)
+        array_len_from_tag(value)
+            .and_then(|count| i32::try_from(count).ok())
+            .unwrap_or(0)
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{ARRAY_TAG_BASE, Vm};
+    use super::Vm;
     use oxvba_compiler::{Bytecode, Instruction, bytecode::StringCompareMode};
+    use oxvba_runtime::safe_array::ARRAY_TAG_BASE;
 
     #[test]
     fn executes_load_and_add_sequence() {
@@ -1225,6 +1228,36 @@ mod tests {
         assert_eq!(out[19], 2);
         assert_eq!(out[20], 5002);
         assert_eq!(out[21], 5005);
+    }
+
+    #[test]
+    fn dispatch_invoke_marshals_array_argument_payload() {
+        let bytecode = Bytecode {
+            instructions: vec![
+                Instruction::LoadConstI32 { slot: 0, value: 4 },
+                Instruction::IntrinsicCreateObjectHost { dst: 1, prog_id: 0 },
+                Instruction::LoadConstI32 { slot: 2, value: 6 },
+                Instruction::LoadConstI32 {
+                    slot: 3,
+                    value: ARRAY_TAG_BASE + 3,
+                },
+                Instruction::IntrinsicDispatchInvokeHost {
+                    dst: 4,
+                    object: 1,
+                    member: 2,
+                    arg: 3,
+                },
+                Instruction::Halt,
+            ],
+            slot_count: 5,
+            user_slot_count: 5,
+        };
+
+        let mut vm = Vm::default();
+        vm.execute(&bytecode).expect("vm should execute bytecode");
+        let out = vm.snapshot_slots(5);
+        assert_eq!(out[1], 5004);
+        assert_eq!(out[4], 25_013);
     }
 
     #[test]

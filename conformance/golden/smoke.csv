@@ -80,6 +80,7 @@ params_named_bind.bas,ok,9
 params_named_optional_omit.bas,ok,7
 params_named_positional_after_named_error.bas,error,
 params_paramarray_empty.bas,ok,-1
+params_paramarray_dispatch_boundary.bas,ok,25008
 params_paramarray_named_error.bas,error,
 params_paramarray_pack.bas,ok,2
 params_optional_default.bas,ok,7
@@ -124,6 +125,7 @@ class_lifecycle_initialize_fail.bas,error,
 class_lifecycle_terminate_fail.bas,error,
 class_lifecycle_resume_next_ok.bas,ok,3
 com_dispatch_createobject_invoke.bas,ok,5016
+com_dispatch_array_argument.bas,ok,25013
 com_dispatch_invoke_chain.bas,ok,"5009,5014"
 com_dispatch_invoke_deterministic.bas,ok,5018
 consolidate_language_stdlib_mix.bas,ok,"3,5008"

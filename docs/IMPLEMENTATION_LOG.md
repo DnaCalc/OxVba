@@ -472,3 +472,8 @@
   - completed array Track D baseline (`v80..v83`) with unified descriptors, lower-bound/multidim indexing, `ReDim Preserve` legality/tail semantics, and `ParamArray` packing subset.
   - published profile/workset docs through `PROFILE_STATUS_V83` and `WORKSET_2026-02-28_ARRAY_CALL_PARAMARRAY_V83`.
   - started strict async Kani deferred gates through `DG-V83-001` with evidence at `docs/evidence/formal/ASYNC_KANI_V83.md`.
+- Started `mvp-array-boundary-and-dispatch-v84` pass:
+  - added runtime SAFEARRAY-shape helpers and centralized array-tag encoding/decoding in `oxvba-runtime`.
+  - wired dispatch-boundary marshalling for array-tag arguments in VM `DispatchInvoke` path while preserving scalar dispatch outputs.
+  - added conformance coverage for array dispatch boundary and paramarray-to-dispatch boundary flow.
+  - added formal obligations `FO-V84-001..003`, published `PROFILE_STATUS_V84`, and recorded Track-D DG reconciliation state (`FTODO-V84-001`).
