@@ -4,6 +4,8 @@ conversion_cint_basic.bas,ok,5
 conversion_cint_to_object_error.bas,error,
 conversion_nested_clng_cint.bas,ok,7
 conversion_val_str_subset.bas,ok,9
+string_vbnullstring_basic.bas,ok,
+string_vbnullstring_object_error.bas,error,
 stdlib_instr_case_ops.bas,ok,"3,789,654"
 stdlib_len_basic.bas,ok,4
 stdlib_slice_ops.bas,ok,"12,45,234"

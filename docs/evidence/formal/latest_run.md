@@ -1,7 +1,7 @@
 # Formal Run Report
 
-- Timestamp (UTC): 2026-02-28T11:32:58Z
-- Profile scope: mvp-typing-conversion-intrinsics-v76
+- Timestamp (UTC): 2026-02-28T11:45:17Z
+- Profile scope: mvp-string-storage-semantics-v77
 - Overall mode: non-blocking
 - Kani required: false
 - Kani execution: deferred-to-wsl-async
@@ -229,3 +229,6 @@
 | FO-V76-001 | v76 | no | pass | cargo test -p oxvba-compiler typecheck::tests::conversion_intrinsic_table_rows_align_with_typecheck_rules | crates/oxvba-compiler/src/typecheck.rs |  |
 | FO-V76-002 | v76 | no | pass | cargo test -p oxvba-compiler conversion_intrinsic_cint_to_object_assignment_is_rejected | crates/oxvba-compiler/src/lib.rs |  |
 | FO-V76-003 | v76 | no | pass | cargo test -p oxvba-compiler conversion_intrinsic_cint_to_long_assignment_is_allowed | crates/oxvba-compiler/src/lib.rs |  |
+| FO-V77-001 | v77 | no | pass | cargo test -p oxvba-compiler resolve::tests::resolve_vbnullstring_intrinsic_constant_expression | crates/oxvba-compiler/src/resolve.rs |  |
+| FO-V77-002 | v77 | no | pass | cargo test -p oxvba-compiler vbnullstring_assigns_to_string | crates/oxvba-compiler/src/lib.rs |  |
+| FO-V77-003 | v77 | no | pass | cargo test -p oxvba-compiler vbnullstring_assignment_to_object_is_rejected | crates/oxvba-compiler/src/lib.rs |  |

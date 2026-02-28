@@ -1,0 +1,3 @@
+"profile_scope","os","arch","backend","required","result","tests_ran","captured_at_utc","evidence_file"
+"mvp-string-storage-semantics-v77","windows","x64","vm","true","green","116","2026-02-28T11:47:31Z","docs\evidence\profiles\v77\conformance_vm.csv"
+"mvp-string-storage-semantics-v77","windows","x64","jit","true","green","116","2026-02-28T11:47:31Z","docs\evidence\profiles\v77\conformance_jit.csv"

@@ -679,6 +679,10 @@ fn emit_expr_into(
             }
 
             match (name.as_str(), arg_slots.as_slice()) {
+                ("vbnullstring", []) => instructions.push(Instruction::LoadConstI32 {
+                    slot: dst,
+                    value: 0,
+                }),
                 ("len", [src]) => {
                     instructions.push(Instruction::IntrinsicLenDigits { dst, src: *src })
                 }

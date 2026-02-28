@@ -1827,6 +1827,12 @@ fn parse_select_case_stmt(
 
 fn parse_expr(text: &str, array_bounds: &HashMap<String, usize>) -> Option<BoundExpr> {
     let expr = text.trim();
+    if expr.eq_ignore_ascii_case("vbnullstring") {
+        return Some(BoundExpr::IntrinsicCall {
+            name: "vbnullstring".to_string(),
+            args: Vec::new(),
+        });
+    }
     if let Ok(value) = expr.parse::<i32>() {
         return Some(BoundExpr::IntConst(value));
     }
@@ -2688,6 +2694,19 @@ mod tests {
                 .iter()
                 .any(|s| matches!(s, BoundStmt::DoWhile { .. }))
         );
+    }
+
+    #[test]
+    fn resolve_vbnullstring_intrinsic_constant_expression() {
+        let source = "Sub Main()\nDim x\nx = vbNullString\nEnd Sub";
+        let module = resolve_symbols(source);
+        let BoundStmt::Assign { expr, .. } = &module.body[0] else {
+            panic!("expected assignment");
+        };
+        assert!(matches!(
+            expr,
+            BoundExpr::IntrinsicCall { name, args } if name == "vbnullstring" && args.is_empty()
+        ));
     }
 
     #[test]

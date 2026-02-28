@@ -291,6 +291,19 @@ mod tests {
     }
 
     #[test]
+    fn vbnullstring_assigns_to_string() {
+        let source = "Sub Main()\nDim s As String\ns = vbNullString\nEnd Sub";
+        compile(source).expect("vbNullString should be treated as string-typed intrinsic constant");
+    }
+
+    #[test]
+    fn vbnullstring_assignment_to_object_is_rejected() {
+        let source = "Sub Main()\nDim o As Object\no = vbNullString\nEnd Sub";
+        let err = compile(source).expect_err("vbNullString should not assign to object");
+        assert!(err.to_string().contains("type mismatch in assignment"));
+    }
+
+    #[test]
     fn arithmetic_object_plus_const_is_rejected() {
         let source = "Sub Main()\nDim o As Object\no = o + 1\nEnd Sub";
         let err = compile(source).expect_err("object arithmetic should be rejected");

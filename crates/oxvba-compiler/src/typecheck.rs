@@ -735,14 +735,18 @@ fn intrinsic_result_type(name: &str) -> Option<BoundType> {
         "val" => Some(BoundType::Double),
         "str" => Some(BoundType::String),
         "cverr" => Some(BoundType::Variant),
+        "vbnullstring" => Some(BoundType::String),
         _ => None,
     }
 }
 
 fn intrinsic_argument_target_type(name: &str) -> Option<BoundType> {
     match name {
+        "cint" | "clng" | "cdbl" | "cstr" | "cbool" | "cdate" | "val" | "str" => {
+            intrinsic_result_type(name)
+        }
         "cverr" => Some(BoundType::Long),
-        _ => intrinsic_result_type(name),
+        _ => None,
     }
 }
 

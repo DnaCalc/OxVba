@@ -376,3 +376,11 @@ Per profile:
 - Track B DG reconciliation (`v73..v75`) checkpoint:
   - all tracked runs currently `dg-running` at poll time,
   - unresolved foldback recorded in `docs/evidence/formal/EXTENDED_TODO.md` (`FTODO-V76-001`).
+- `v77` (`mvp-string-storage-semantics-v77`) completed:
+  - matrix gate `PASS` (`docs/evidence/profiles/v77/gate_report.md`),
+  - formal obligations `FO-V77-001..003` pass (`docs/evidence/formal/latest_run.md`),
+  - `vbNullString` string-sentinel path wired through resolver/typecheck/emitter and conformance fixtures.
+- Strict WSL Kani lane for `v77` started async as deferred gate:
+  - run: `v77-kani`,
+  - status: `dg-running`,
+  - register: `docs/evidence/formal/DEFERRED_GATES.md`.

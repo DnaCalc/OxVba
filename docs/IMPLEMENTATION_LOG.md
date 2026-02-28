@@ -1,6 +1,11 @@
 # Implementation Log
 
 ## 2026-02-28
+- Completed `v77` (`mvp-string-storage-semantics-v77`):
+  - introduced `vbNullString` handling as a typed string sentinel constant in resolver/typecheck/emitter;
+  - added regression coverage ensuring `vbNullString` is assignable to `String` but rejected for `Object` assignment;
+  - added conformance fixtures for `vbNullString` success/error paths;
+  - added formal obligations `FO-V77-001..003`, produced matrix artifacts under `docs/evidence/profiles/v77/`, and started strict async Kani lane (`v77-kani`) as deferred gate `DG-V77-001`.
 - Completed `v76` (`mvp-typing-conversion-intrinsics-v76`):
   - added typed result inference for conversion intrinsics (`CInt`, `CLng`, `CDbl`, `CStr`, `CBool`, `CDate`, `Val`, `Str`, `CVErr`);
   - routed conversion intrinsic argument admissibility through shared coercion evaluation in typecheck;
