@@ -224,23 +224,25 @@ mod tests {
     }
 
     #[test]
-    fn late_bound_object_default_member_call_is_classified_with_explicit_diagnostic() {
+    fn late_bound_object_default_member_call_is_executable_subset() {
         let source = "Sub Main()\nDim obj As Object\nCall obj(1)\nEnd Sub";
-        let err = compile(source).expect_err("late-bound target is classified but not executable");
+        let out = compile(source).expect("late-bound target should compile in executable subset");
         assert!(
-            err.to_string()
-                .contains("late-bound default-member call is not yet executable")
+            out.instructions
+                .iter()
+                .any(|i| matches!(i, Instruction::IntrinsicDispatchInvokeHost { .. }))
         );
     }
 
     #[test]
-    fn late_bound_named_argument_call_is_classified_with_explicit_diagnostic() {
+    fn late_bound_named_argument_call_is_executable_subset() {
         let source = "Sub Main()\nDim obj As Object\nCall obj(x:=1)\nEnd Sub";
-        let err = compile(source)
-            .expect_err("late-bound named-arg target is classified but not executable");
+        let out = compile(source)
+            .expect("late-bound named-arg target should compile in executable subset");
         assert!(
-            err.to_string()
-                .contains("late-bound default-member call is not yet executable")
+            out.instructions
+                .iter()
+                .any(|i| matches!(i, Instruction::IntrinsicDispatchInvokeHost { .. }))
         );
     }
 
@@ -413,7 +415,7 @@ mod tests {
         assert!(
             out.instructions
                 .iter()
-                .any(|i| matches!(i, Instruction::IncSlot { .. }))
+                .any(|i| matches!(i, Instruction::AddSlots { .. }))
         );
         assert!(
             out.instructions
@@ -453,6 +455,78 @@ mod tests {
             out.instructions
                 .iter()
                 .any(|i| matches!(i, Instruction::Jump { .. }))
+        );
+    }
+
+    #[test]
+    fn compile_for_step_emits_addslots() {
+        let source =
+            "Sub Main()\nDim x\nDim i\nx = 0\nFor i = 5 To 1 Step -2\nx = x + 1\nNext i\nEnd Sub";
+        let out = compile(source).expect("compile should succeed");
+        assert!(
+            out.instructions
+                .iter()
+                .any(|i| matches!(i, Instruction::AddSlots { .. }))
+        );
+    }
+
+    #[test]
+    fn compile_for_step_zero_is_diagnostic_error() {
+        let source = "Sub Main()\nDim i\nFor i = 1 To 5 Step 0\ni = i + 1\nNext i\nEnd Sub";
+        let err = compile(source).expect_err("compile should fail for zero step");
+        assert!(matches!(
+            err,
+            super::CompileError::TypeError(msg) if msg.contains("for loop step cannot be zero")
+        ));
+    }
+
+    #[test]
+    fn compile_select_case_is_range_emits_clause_dispatch() {
+        let source = "Sub Main()\nDim x\nSelect Case x\nCase Is < 0\nx = 1\nCase 1 To 3\nx = 2\nEnd Select\nEnd Sub";
+        let out = compile(source).expect("compile should succeed");
+        assert!(
+            out.instructions
+                .iter()
+                .any(|i| matches!(i, Instruction::CmpLtSlots { .. }))
+        );
+        assert!(
+            out.instructions
+                .iter()
+                .any(|i| matches!(i, Instruction::BoolAnd { .. }))
+        );
+    }
+
+    #[test]
+    fn compile_goto_label_binds_target() {
+        let source = "Sub Main()\nDim x\nx = 1\nGoTo done\nx = 99\ndone:\nx = x + 1\nEnd Sub";
+        let out = compile(source).expect("compile should succeed");
+        assert!(
+            out.instructions
+                .iter()
+                .any(|i| matches!(i, Instruction::Jump { .. }))
+        );
+    }
+
+    #[test]
+    fn compile_resume_label_emits_resume_label_instruction() {
+        let source =
+            "Sub Main()\nOn Error GoTo handler\nError 5\nhandler:\nResume done\ndone:\nEnd Sub";
+        let out = compile(source).expect("compile should succeed");
+        assert!(
+            out.instructions
+                .iter()
+                .any(|i| matches!(i, Instruction::ResumeLabel { .. }))
+        );
+    }
+
+    #[test]
+    fn compile_err_clear_emits_clear_err_instruction() {
+        let source = "Sub Main()\nOn Error Resume Next\nError 7\nErr.Clear\nEnd Sub";
+        let out = compile(source).expect("compile should succeed");
+        assert!(
+            out.instructions
+                .iter()
+                .any(|i| matches!(i, Instruction::ClearErr))
         );
     }
 
@@ -946,6 +1020,73 @@ mod tests {
             out.instructions
                 .iter()
                 .any(|i| matches!(i, Instruction::ResumeNext))
+        );
+    }
+
+    #[test]
+    fn compile_for_each_subset_is_accepted() {
+        let source = "Sub Main()\nDim x\nDim v\nFor Each v In Array(1, 2, 3)\nx = v\nNext\nEnd Sub";
+        let out = compile(source).expect("compile should succeed");
+        assert!(
+            out.instructions
+                .iter()
+                .any(|i| matches!(i, Instruction::LoadConstI32 { value: 3, .. }))
+        );
+    }
+
+    #[test]
+    fn compile_line_number_statement_form_is_supported() {
+        let source = "Sub Main()\nDim x\nGoTo 200\n100 x = 1\n200 x = 5\nEnd Sub";
+        let out = compile(source).expect("compile should succeed");
+        assert!(
+            out.instructions
+                .iter()
+                .any(|i| matches!(i, Instruction::Jump { .. }))
+        );
+    }
+
+    #[test]
+    fn compile_property_get_read_routes_to_assign_from_call_subset() {
+        let source =
+            "Sub Main()\nDim x\nx = Value\nEnd Sub\nProperty Get Value()\nValue = 9\nEnd Property";
+        let out = compile(source).expect("compile should succeed");
+        assert!(
+            out.instructions
+                .iter()
+                .any(|i| matches!(i, Instruction::CallProc { .. }))
+        );
+    }
+
+    #[test]
+    fn compile_udt_field_access_subset_is_accepted() {
+        let source = "Type Point\nX As Integer\nY As Integer\nEnd Type\nSub Main()\nDim p As Point\nDim x\np.X = 7\np.Y = p.X\nx = p.Y\nEnd Sub";
+        let out = compile(source).expect("compile should succeed");
+        assert!(
+            out.instructions
+                .iter()
+                .any(|i| matches!(i, Instruction::LoadConstI32 { value: 7, .. }))
+        );
+    }
+
+    #[test]
+    fn compile_late_bound_assignment_emits_dispatchinvoke_subset() {
+        let source = "Sub Main()\nDim obj As Object\nDim x\nx = obj(7)\nEnd Sub";
+        let out = compile(source).expect("compile should succeed");
+        assert!(
+            out.instructions
+                .iter()
+                .any(|i| matches!(i, Instruction::IntrinsicDispatchInvokeHost { .. }))
+        );
+    }
+
+    #[test]
+    fn compile_declare_function_stub_binding_subset_is_accepted() {
+        let source = "Declare Function HostPing Lib \"host\" Alias \"ping\" (ByVal x As Long) As Long\nSub Main()\nDim y\ny = HostPing(3)\nEnd Sub";
+        let out = compile(source).expect("compile should succeed");
+        assert!(
+            out.instructions
+                .iter()
+                .any(|i| matches!(i, Instruction::CallProc { .. }))
         );
     }
 }

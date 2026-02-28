@@ -16,6 +16,11 @@ pub enum Instruction {
         slot: usize,
         value: i32,
     },
+    AddSlots {
+        dst: usize,
+        lhs: usize,
+        rhs: usize,
+    },
     SubConstI32 {
         slot: usize,
         value: i32,
@@ -333,9 +338,14 @@ pub enum Instruction {
         target_pc: usize,
     },
     ResumeNext,
+    Resume,
+    ResumeLabel {
+        target_pc: usize,
+    },
     RaiseError {
         code: i32,
     },
+    ClearErr,
     CallProc {
         target_pc: usize,
     },

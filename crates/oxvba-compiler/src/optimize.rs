@@ -1,4 +1,4 @@
-use crate::resolve::{BoundCond, BoundExpr, BoundModule, BoundStmt, CompareOp};
+use crate::resolve::{BoundCaseClause, BoundCond, BoundExpr, BoundModule, BoundStmt, CompareOp};
 
 pub fn optimize_module(mut module: BoundModule) -> BoundModule {
     for procedure in &mut module.procedures {
@@ -72,6 +72,7 @@ fn optimize_stmt_list(stmts: Vec<BoundStmt>) -> Vec<BoundStmt> {
                 var,
                 start,
                 end,
+                step,
                 body,
             } => {
                 let body = optimize_stmt_list(body);
@@ -79,8 +80,13 @@ fn optimize_stmt_list(stmts: Vec<BoundStmt>) -> Vec<BoundStmt> {
                     var,
                     start,
                     end,
+                    step,
                     body,
                 });
+            }
+            BoundStmt::ForEach { var, items, body } => {
+                let body = optimize_stmt_list(body);
+                out.push(BoundStmt::ForEach { var, items, body });
             }
             BoundStmt::DoWhile {
                 cond,
@@ -110,8 +116,11 @@ fn optimize_stmt_list(stmts: Vec<BoundStmt>) -> Vec<BoundStmt> {
 
                 if let Some(value) = eval_const_expr(&expr) {
                     let mut selected = None;
-                    for (values, body) in next_arms {
-                        if values.contains(&value) {
+                    for (clauses, body) in next_arms {
+                        if clauses
+                            .iter()
+                            .any(|clause| case_clause_matches_const(clause, value))
+                        {
                             selected = Some(body);
                             break;
                         }
@@ -124,6 +133,9 @@ fn optimize_stmt_list(stmts: Vec<BoundStmt>) -> Vec<BoundStmt> {
                         else_body,
                     });
                 }
+            }
+            BoundStmt::AssignFromCall { target, name, args } => {
+                out.push(BoundStmt::AssignFromCall { target, name, args });
             }
             other => out.push(other),
         }
@@ -145,6 +157,7 @@ fn expr_uses_var(expr: &BoundExpr, var: &str) -> bool {
         BoundExpr::SubConst { var: name, .. } => name == var,
         BoundExpr::IntConst(_) => false,
         BoundExpr::IntrinsicCall { args, .. } => args.iter().any(|arg| expr_uses_var(arg, var)),
+        BoundExpr::ProcCall { args, .. } => args.iter().any(|arg| expr_uses_var(&arg.expr, var)),
     }
 }
 
@@ -167,6 +180,22 @@ fn eval_const_cond(cond: &BoundCond) -> Option<bool> {
         BoundCond::Not(inner) => Some(!eval_const_cond(inner)?),
         BoundCond::And(lhs, rhs) => Some(eval_const_cond(lhs)? && eval_const_cond(rhs)?),
         BoundCond::Or(lhs, rhs) => Some(eval_const_cond(lhs)? || eval_const_cond(rhs)?),
+    }
+}
+
+fn case_clause_matches_const(clause: &BoundCaseClause, value: i32) -> bool {
+    match clause {
+        BoundCaseClause::Value(exact) => value == *exact,
+        BoundCaseClause::Is { op, value: rhs } => match op {
+            CompareOp::Eq => value == *rhs,
+            CompareOp::Ne => value != *rhs,
+            CompareOp::Lt => value < *rhs,
+            CompareOp::Le => value <= *rhs,
+            CompareOp::Gt => value > *rhs,
+            CompareOp::Ge => value >= *rhs,
+            CompareOp::Like => value == *rhs,
+        },
+        BoundCaseClause::Range { start, end } => value >= *start && value <= *end,
     }
 }
 

@@ -26,6 +26,7 @@ fn supports_core_instruction(instruction: &Instruction) -> bool {
         instruction,
         Instruction::LoadConstI32 { .. }
             | Instruction::AddConstI32 { .. }
+            | Instruction::AddSlots { .. }
             | Instruction::SubConstI32 { .. }
             | Instruction::CopySlot { .. }
             | Instruction::IntrinsicAbsI32 { .. }
@@ -305,6 +306,13 @@ pub fn execute_bytecode(bytecode: &Bytecode) -> Result<Vec<i32>, String> {
                 let rhs = builder.ins().iconst(types::I32, i64::from(*value));
                 let out = builder.ins().iadd(lhs, rhs);
                 write_slot(&mut builder, slots_ptr, *slot, out)?;
+                builder.ins().jump(next_block, &[]);
+            }
+            Instruction::AddSlots { dst, lhs, rhs } => {
+                let lhs = read_slot(&mut builder, slots_ptr, *lhs)?;
+                let rhs = read_slot(&mut builder, slots_ptr, *rhs)?;
+                let out = builder.ins().iadd(lhs, rhs);
+                write_slot(&mut builder, slots_ptr, *dst, out)?;
                 builder.ins().jump(next_block, &[]);
             }
             Instruction::SubConstI32 { slot, value } => {

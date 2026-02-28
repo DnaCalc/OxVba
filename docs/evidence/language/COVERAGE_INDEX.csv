@@ -1,51 +1,78 @@
 feature_area,construct,status,phase_scope,evidence,notes
 syntax,Option Explicit,implemented,v11,conformance/tests/option_explicit_ok.bas,
-syntax,Line continuation,planned,v32,,
-syntax,Conditional compilation,planned,v32,,
+syntax,Line continuation,implemented,v59,conformance/tests/line_continuation_basic.bas,
+syntax,Conditional compilation,implemented,v61,conformance/tests/conditional_compilation_basic.bas,
+syntax,Option Compare,implemented,v78,conformance/tests/string_compare_option_text.bas,
+syntax,Option Base,implemented,v81,conformance/tests/array_option_base_one_bounds.bas,
+syntax,With block member access subset,implemented,v60,conformance/tests/with_block_basic.bas,
 control_flow,If Then End If,implemented,v2,conformance/tests/if_true.bas,
 control_flow,ElseIf chain,implemented,v5,conformance/tests/if_elseif_path.bas,
 control_flow,Else branch,implemented,v5,conformance/tests/if_else_path.bas,
 control_flow,For Next,implemented,v2,conformance/tests/for_basic.bas,
+control_flow,For Step clause,implemented,v87,conformance/tests/for_step_positive.bas,
+control_flow,For Each Next,implemented,v100,conformance/tests/for_each_array_literal_basic.bas,array literal and declared-array iteration subset
 control_flow,Do While Loop,implemented,v6,conformance/tests/do_while_basic.bas,
 control_flow,Do Loop While,implemented,v6,conformance/tests/do_loop_while_basic.bas,
+control_flow,Do Until Loop,implemented,v89,conformance/tests/do_until_basic.bas,
+control_flow,Do Loop Until,implemented,v89,conformance/tests/do_loop_until_basic.bas,
+control_flow,While Wend,implemented,v90,conformance/tests/while_wend_basic.bas,
 control_flow,Exit Do,implemented,v6,conformance/tests/do_exit_do.bas,
+control_flow,Exit For,implemented,v88,conformance/tests/for_exit_for_basic.bas,
 control_flow,Select Case,implemented,v7,conformance/tests/select_case_basic.bas,
+control_flow,Select Case range and Is clauses,implemented,v91,conformance/tests/select_case_is_range.bas,
 control_flow,GoSub Return,implemented,v40,conformance/tests/gosub_basic.bas,
+control_flow,GoTo label statement,implemented,v93,conformance/tests/goto_label_basic.bas,
+control_flow,Line-number labels and numeric GoTo,implemented,v94,conformance/tests/goto_line_number_statement_basic.bas,explicit colon form and statement-prefix line-number labels are executable
 procedures,Sub call chain,implemented,v8,conformance/tests/proc_call_chain.bas,
 procedures,Function invocation,implemented,v8,conformance/tests/function_call_basic.bas,
 procedures,ByVal params,implemented,v9,conformance/tests/params_byval.bas,
 procedures,ByRef params,implemented,v9,conformance/tests/params_byref.bas,
 procedures,Optional params,implemented,v37,conformance/tests/params_optional_default.bas,
 procedures,Named args,implemented,v38,conformance/tests/params_named_bind.bas,
+procedures,ParamArray subset,implemented,v83,conformance/tests/params_paramarray_pack.bas,
 procedures,Property procedures (Get/Let/Set subset),implemented,v44,conformance/tests/property_let_byref_route.bas,
-runtime,Intrinsic conversion functions (CInt/CLng/CDbl/CStr/CBool/CDate/Val/Str subset),implemented,v45,conformance/tests/conversion_cint_basic.bas,int-domain subset lowered as identity conversion
+procedures,Property Get expression semantics,implemented,v101,conformance/tests/property_get_expression_basic.bas,property-get read route to callable return-value subset
+procedures,Declare and external procedure binding,implemented,v104,conformance/tests/declare_function_stub_basic.bas,declare binding to deterministic executable stub subset
+runtime,Intrinsic conversion functions (CInt/CLng/CDbl/CStr/CBool/CDate/Val/Str/CVErr subset),implemented,v45,conformance/tests/conversion_cint_basic.bas,int-domain subset lowered as identity conversion
 runtime,String core intrinsics (Len/Left/Right/Mid/InStr/LCase/UCase subset),implemented,v46,conformance/tests/stdlib_len_basic.bas,decimal-string-over-int subset
-runtime,String advanced intrinsics (Split/Join/Replace/Trim/LTrim/RTrim/StrComp subset),implemented,v47,conformance/tests/stdlib_advanced_split_join.bas,decimal-string-over-int subset
+runtime,String advanced intrinsics (Split/Join/Replace/Trim/LTrim/RTrim/StrComp/Like/InStrRev subset),implemented,v47,conformance/tests/stdlib_advanced_instrrev_like.bas,decimal-string-over-int subset
 runtime,Date/time intrinsics (DateSerial/TimeSerial/DateValue/TimeValue/DateAdd/DateDiff subset),implemented,v48,conformance/tests/stdlib_date_serial_value.bas,deterministic numeric projection subset
 runtime,Math/financial intrinsics (Abs/Int/Fix/Sgn/Round/Sqr/Sin/Cos/Log/Exp/FV/PV/PMT subset),implemented,v49,conformance/tests/stdlib_math_primitives.bas,integer-domain + zero-rate financial subset
 runtime,Array/variant introspection intrinsics (Array/LBound/UBound/IsArray/VarType/TypeName/IsNumeric/IsDate/IsObject subset),implemented,v50,conformance/tests/stdlib_array_introspection_bounds.bas,array-tag projection subset
 runtime,Error-surface intrinsics (Err.Raise/CVErr subset),implemented,v51,conformance/tests/stdlib_error_err_raise_resume.bas,resolver maps Err.Raise to runtime error op
 runtime,Host-sensitive intrinsics (Shell/Environ/Dir subset),implemented,v52,conformance/tests/stdlib_host_sensitive_shell_environ_dir.bas,deterministic host-fallback subset
-interop,Dispatch boundary intrinsics (CreateObject/DispatchInvoke subset),implemented,v55,conformance/tests/com_dispatch_createobject_invoke.bas,deterministic dispatch-projection subset
 runtime,Language/stdlib consolidation gate corpus,implemented,v56,conformance/tests/consolidate_language_stdlib_mix.bas,expanded mixed-feature gate fixtures
 arrays,Fixed-size arrays,implemented,v10,conformance/tests/array_store_load.bas,
 arrays,Array bounds error,implemented,v10,conformance/tests/array_bounds_error.bas,
+arrays,Option Base lower-bound indexing,implemented,v81,conformance/tests/array_option_base_one_bounds.bas,
+arrays,Multidimensional indexing,implemented,v81,conformance/tests/array_multidim_indexing.bas,
 arrays,Dynamic ReDim,implemented,v42,conformance/tests/redim_preserve_keeps_values.bas,
+arrays,ReDim Preserve multidimensional legality,implemented,v82,conformance/tests/redim_preserve_multidim_last_dimension.bas,
+arrays,ReDim Preserve illegal non-last-dimension resize diagnostic,implemented,v82,conformance/tests/redim_preserve_illegal_non_last_dim_error.bas,
+arrays,Erase statement semantics,implemented,v99,conformance/tests/erase_array_basic.bas,
 error_handling,On Error Resume Next,implemented,v11,conformance/tests/on_error_resume_next.bas,
 error_handling,On Error GoTo 0,implemented,v12,conformance/tests/on_error_goto_zero_fail.bas,
 error_handling,Resume Next statement,implemented,v12,conformance/tests/resume_next_statement_ok.bas,
 error_handling,On Error GoTo label,implemented,v41,conformance/tests/on_error_goto_label_resume.bas,
+error_handling,Resume statement (same statement or label),implemented,v95,conformance/tests/resume_statement_basic.bas,includes both Resume and Resume <label> subset (see resume_label_basic.bas)
+error_handling,Err object full surface,partial,v96,conformance/tests/err_clear_basic.bas,subset includes Err.Number + Raise + Clear; full Err surface still pending
 types,Variant numeric core,implemented,v13,docs/evidence/formal/obligations.csv,
 types,String BSTR core,partial,v34,docs/evidence/formal/obligations.csv,boundary interop expansion pending
 types,Date and Currency core,implemented,v15,docs/evidence/formal/obligations.csv,
 types,Module Const declarations,implemented,v43,conformance/tests/module_const_basic.bas,
 types,Enum declarations,implemented,v43,conformance/tests/enum_basic.bas,
-types,User-defined types (UDT),partial,v43,conformance/tests/udt_declaration_basic.bas,Type blocks parse; field access support pending
+types,User-defined types (UDT),implemented,v100,conformance/tests/udt_field_access_basic.bas,declaration plus flattened field-alias storage subset
+types,UDT field access and assignment,implemented,v100,conformance/tests/udt_field_access_basic.bas,field read/write via flattened aliases
+types,Late-bound default-member execution,implemented,v102,conformance/tests/late_bound_default_member_exec.bas,deterministic single-argument dispatch subset
 objects,Root object injection,implemented,v7,crates/oxvba-host/src/engine.rs,
 objects,Class module lifecycle,implemented,v54,conformance/tests/class_lifecycle_resume_next_ok.bas,lifecycle procedures auto-invoked around entry
-objects,Collection object model,implemented,v53,conformance/tests/object_collection_add_item.bas,collection-count projection subset
+objects,Collection object model subset,implemented,v53,conformance/tests/object_collection_add_item.bas,collection-count projection subset
+interop,Dispatch boundary intrinsics (CreateObject/DispatchInvoke subset),implemented,v55,conformance/tests/com_dispatch_createobject_invoke.bas,deterministic dispatch-projection subset
 interop,COM VARIANT canonical layout,implemented,v30,crates/oxvba-runtime/src/variant.rs,
 interop,Boundary marshalling roundtrip,partial,v31,crates/oxvba-runtime/src/variant.rs,
+interop,Type-library driven external signature import,planned,v87,,
 runtime,VM backend execution,implemented,v2,scripts/run-conformance.ps1,
 runtime,JIT backend execution subset,implemented,v24,scripts/run-conformance.ps1,
 runtime,JIT fallback for unsupported ops,implemented,v24,crates/oxvba-jit/src/lib.rs,
+
+

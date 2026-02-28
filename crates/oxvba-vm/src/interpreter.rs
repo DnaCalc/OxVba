@@ -12,6 +12,7 @@ pub struct Vm {
     on_error_resume_next: bool,
     on_error_goto_label_target: Option<usize>,
     last_error: i32,
+    last_error_pc: Option<usize>,
 }
 
 impl Default for Vm {
@@ -22,6 +23,7 @@ impl Default for Vm {
             on_error_resume_next: false,
             on_error_goto_label_target: None,
             last_error: 0,
+            last_error_pc: None,
         }
     }
 }
@@ -65,6 +67,12 @@ impl Vm {
                     }
                     let lhs = self.read_slot(*slot)?;
                     self.write_slot(*slot, lhs + *value)?;
+                    pc += 1;
+                }
+                Instruction::AddSlots { dst, lhs, rhs } => {
+                    let lhs = self.read_slot(*lhs)?;
+                    let rhs = self.read_slot(*rhs)?;
+                    self.write_slot(*dst, lhs + rhs)?;
                     pc += 1;
                 }
                 Instruction::SubConstI32 { slot, value } => {
@@ -681,8 +689,24 @@ impl Vm {
                 Instruction::ResumeNext => {
                     pc += 1;
                 }
+                Instruction::Resume => {
+                    let Some(target_pc) = self.last_error_pc else {
+                        return Err("resume without active error".to_string());
+                    };
+                    pc = target_pc;
+                }
+                Instruction::ResumeLabel { target_pc } => {
+                    if *target_pc >= len {
+                        return Err(format!("resume target out of range: {target_pc}"));
+                    }
+                    if self.last_error_pc.is_none() {
+                        return Err("resume without active error".to_string());
+                    }
+                    pc = *target_pc;
+                }
                 Instruction::RaiseError { code } => {
                     self.last_error = *code;
+                    self.last_error_pc = Some(pc);
                     if self.on_error_resume_next {
                         pc += 1;
                     } else if let Some(target_pc) = self.on_error_goto_label_target {
@@ -690,6 +714,11 @@ impl Vm {
                     } else {
                         return Err(format!("runtime error: {code}"));
                     }
+                }
+                Instruction::ClearErr => {
+                    self.last_error = 0;
+                    self.last_error_pc = None;
+                    pc += 1;
                 }
                 Instruction::Return => {
                     if let Some(return_pc) = self.call_stack.pop() {

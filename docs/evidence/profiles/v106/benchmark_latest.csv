@@ -1,0 +1,3 @@
+"profile_scope","workload","backend","baseline_ms","optimized_ms","gain_percent"
+"mvp-lang-full-closure-gate-v106","conformance_vm","vm","64056.04","67239.81","-4.97"
+"mvp-lang-full-closure-gate-v106","conformance_jit","jit","75143.51","52577.4","30.03"

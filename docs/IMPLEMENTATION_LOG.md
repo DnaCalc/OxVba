@@ -1,6 +1,61 @@
 # Implementation Log
 
 ## 2026-02-28
+- Continued language-closure batch after crash recovery (local run; no new Kani launches):
+  - implemented control-flow coverage tranche across `v87..v94` scope subset:
+    - `For ... Step ... Next` (positive/negative step + zero-step diagnostic),
+    - `Exit For`,
+    - `Do Until ... Loop` and `Do ... Loop Until`,
+    - `While ... Wend`,
+    - `Select Case Is` and range clauses (`a To b`),
+    - `GoTo <label>` plus numeric target subset (`GoTo 100` with explicit `100:` labels).
+  - emitter/runtime updates:
+    - added bytecode op `AddSlots` and VM/JIT lowering support;
+    - loop lowering now handles dynamic step-direction termination and innermost `Exit For` unwind patching;
+    - label-jump patch lane added for direct `GoTo`.
+  - coverage + evidence updates:
+    - added conformance fixtures: `for_step_positive`, `for_step_negative`, `for_step_zero_error`, `for_exit_for_basic`, `do_until_basic`, `do_loop_until_basic`, `while_wend_basic`, `select_case_is_range`, `goto_label_basic`, `goto_numeric_basic`, `goto_missing_label_error`;
+    - updated `conformance/golden/smoke.csv`, `docs/evidence/language/COVERAGE_INDEX.csv`, `docs/evidence/SPEC_CHECKLIST.md`, and conformance topic statuses (`CCT-001/002/006/007/009/010/011` => `in-progress` with local implementation notes).
+  - verification status:
+    - `cargo test -p oxvba-compiler`, `cargo test -p oxvba-vm`, `cargo test -p oxvba-jit` all pass;
+    - conformance lane passes on both backends (`vm` and `jit`, 144 fixtures);
+    - `./scripts/meta-check.ps1 -Fast` passes after formatting/clippy fixes.
+  - formal deferred-lane handling (per instruction, no local restarts):
+    - added `dg-not-started` rows `DG-V87-001`, `DG-V88-001`, `DG-V89-001`, `DG-V90-001`, `DG-V91-001`, `DG-V93-001`, `DG-V94-001` in `docs/evidence/formal/DEFERRED_GATES.md`;
+    - refreshed post-crash async status snapshots: `DG-V79-001`, `DG-V80-001`, and `DG-V85-002` now observed `completed`/`exit_code=0`; `DG-V81-001..DG-V83-001` observed `stale` and retained deferred;
+    - logged remote migration follow-up `FTODO-V94-001` in `docs/evidence/formal/EXTENDED_TODO.md`.
+- Continued language-closure batch (`v95/v96/v99` subset, local run; no Kani launches):
+  - implemented `Resume` and `Resume <label>` parser/typecheck/emit/vm support (with explicit diagnostics for resume-without-active-error in VM);
+  - added `Err.Clear` statement support and VM error-state reset instruction;
+  - implemented `Erase <array>` subset semantics by clearing array slot aliases in current runtime model.
+  - added conformance fixtures:
+    - `conformance/tests/resume_statement_basic.bas`
+    - `conformance/tests/resume_label_basic.bas`
+    - `conformance/tests/err_clear_basic.bas`
+    - `conformance/tests/erase_array_basic.bas`
+  - refreshed evidence:
+    - updated `conformance/golden/smoke.csv` (now 148 fixtures),
+    - updated `docs/evidence/language/COVERAGE_INDEX.csv` (`Resume` => implemented, `Erase` => implemented, `Err` surface remains partial with expanded subset),
+    - updated `docs/evidence/SPEC_CHECKLIST.md`,
+    - updated conformance topic statuses for `CCT-003/004/005/022` to `in-progress`.
+  - verification:
+    - compiler/vm/jit unit lanes pass,
+    - conformance passes on both backends,
+    - `./scripts/meta-check.ps1 -Fast` passes.
+  - deferred formal register updates (no local starts):
+    - added `DG-V95-001`, `DG-V96-001`, `DG-V99-001` as `dg-not-started`,
+    - logged remote migration follow-up `FTODO-V99-001`.
+- Planned next language-closure mega ladder (`v87..v106`):
+  - added `docs/worksets/PROFILE_LADDER_2026-02-28_MACH1000_V87_V106_LANGUAGE_COMPLETION.md`;
+  - decomposition covers all currently outstanding language checklist items plus rollout gates and async formal integration policy.
+- Added oracle-focused conformance topic backlog for semantically uncertain behavior:
+  - `docs/evidence/conformance/CONFORMANCE_CHECK_TOPICS.md`
+  - `docs/evidence/conformance/CONFORMANCE_CHECK_TOPICS.csv`
+  - includes prioritized (`P0..P2`) topics for unstructured control flow, error semantics, coercion/Variant edges, arrays, late binding, interop marshalling, and host-sensitive/library behaviors.
+- Published structured spec checklists for gap-driven planning:
+  - added `docs/evidence/SPEC_CHECKLIST.md` as a combined language + built-in/library checklist;
+  - added `docs/evidence/runtime/LIBRARY_CHECKLIST.csv` for machine-readable runtime/library tracking;
+  - refreshed `docs/evidence/language/COVERAGE_INDEX.csv` to mark delivered items (`line continuation`, conditional compilation, `Option Compare`, `Option Base`, `With` subset) as implemented and added explicit planned rows for missing control-flow/error/library-adjacent language features.
 - Async formal hardening + backlog housekeeping:
   - expanded `scripts/run-formal-kani-async.ps1` with `Probe` and `Reconcile` actions, persisted `preflight.json` + `status_snapshot.json`, added stale-run archiving, richer status telemetry (file sizes/ages/stall hints), and watcher reconciliation controls;
   - expanded `scripts/watch-formal-kani-async.ps1` liveness logging to include stdout/stderr byte growth and age probes per poll;
@@ -493,3 +548,20 @@
   - executed integrated profile gate for `v86` with `PASS` and published artifacts under `docs/evidence/profiles/v86/`.
   - reconciled deferred-gate register with folded strict completions and explicit deferred audit/unblock steps (`DG_AUDIT_V86.md`).
   - updated `PHASE12_STATUS.md` and published `PROFILE_STATUS_V86` + `WORKSET_2026-02-28_FULL_TYPING_CONFORMANCE_GATE_V86`.
+- Completed language-closure ladder execution through `v106` (`v87..v106`) with end-to-end executable subset expansion:
+  - Added loop/control-flow completion subset:
+    - `For ... Step ... Next`, `Exit For`, `Do Until` / `Loop Until`, `While ... Wend`, `Select Case Is` / `a To b`.
+    - `GoTo` labels plus line-number statement-prefix labels (`100 x = 1` form).
+  - Added unstructured/error subset:
+    - `Resume`, `Resume <label>`, `Err.Clear`, and `Erase` array-slot reset path.
+  - Added language-closure subset work for previously outstanding rows:
+    - `For Each ... Next` for array-literal and declared-array iteration subsets.
+    - Property read execution subset (`Property Get` RHS assignment route).
+    - Late-bound default-member execution subset (deterministic dispatch path, up to one argument).
+    - UDT declaration + flattened field read/write subset (`p.X`, `p.Y`).
+    - `Declare` binding subset with deterministic executable stubs for declared procedures.
+  - Added/updated conformance fixtures for the new subsets and refreshed `conformance/golden/smoke.csv` to 157-file corpus parity on VM and JIT.
+  - Updated evidence/checklists for `v106` closure:
+    - language coverage index and spec checklist statuses,
+    - conformance oracle topic statuses for new local implementations,
+    - deferred formal gate register and extended formal todo for `v100..v106` async remote lanes.

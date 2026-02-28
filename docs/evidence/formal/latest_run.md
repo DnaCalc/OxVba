@@ -1,19 +1,20 @@
 # Formal Run Report
 
-- Timestamp (UTC): 2026-02-28T12:44:35Z
-- Profile scope: mvp-array-type-model-v80
+- Timestamp (UTC): 2026-02-28T21:16:50Z
+- Profile scope: mvp-lang-full-closure-gate-v106
 - Overall mode: non-blocking
-- Kani required: true
-- Kani execution: wsl
+- Kani required: false
+- Kani execution: deferred-to-wsl-async
 - cargo-kani (local): unavailable
 - cargo-kani (wsl): cargo-kani 0.67.0
+- wsl probe detail: attempt=1 exit_code=0
 
 | Obligation | Profile | Blocking | Status | Command | Artifact | Note |
 |---|---|---|---|---|---|---|
-| FO-V2-001 | v2 | no | todo | cargo kani -p oxvba-vm --harness pc_progression_is_safe_for_valid_jump_target | crates/oxvba-vm/src/interpreter.rs | Program "wsl.exe" ended with non-zero exit code: 1. |
-| FO-V2-002 | v2 | no | pass | cargo kani -p oxvba-compiler --harness temp_slots_do_not_overlap_declared_slots | crates/oxvba-compiler/src/emit.rs |  |
-| FO-V3-001 | v3 | no | pass | cargo kani --version | scripts/run-formal.ps1 |  |
-| FO-V4-001 | v4 | no | todo | cargo kani -p oxvba-vm --harness comparator_ops_produce_boolean_values | crates/oxvba-vm/src/interpreter.rs | Program "wsl.exe" ended with non-zero exit code: 1. |
+| FO-V2-001 | v2 | no | skipped | cargo kani -p oxvba-vm --harness pc_progression_is_safe_for_valid_jump_target | crates/oxvba-vm/src/interpreter.rs | cargo-kani available via WSL; rerun with -UseWslKani (recommended via run-formal-kani-async.ps1) |
+| FO-V2-002 | v2 | no | skipped | cargo kani -p oxvba-compiler --harness temp_slots_do_not_overlap_declared_slots | crates/oxvba-compiler/src/emit.rs | cargo-kani available via WSL; rerun with -UseWslKani (recommended via run-formal-kani-async.ps1) |
+| FO-V3-001 | v3 | no | skipped | cargo kani --version | scripts/run-formal.ps1 | cargo-kani available via WSL; rerun with -UseWslKani (recommended via run-formal-kani-async.ps1) |
+| FO-V4-001 | v4 | no | skipped | cargo kani -p oxvba-vm --harness comparator_ops_produce_boolean_values | crates/oxvba-vm/src/interpreter.rs | cargo-kani available via WSL; rerun with -UseWslKani (recommended via run-formal-kani-async.ps1) |
 | FO-V5-001 | v5 | no | pass | cargo test -p oxvba-host formal_v5_branch_selection_is_total_over_small_domain | crates/oxvba-host/src/engine.rs |  |
 | FO-V5-002 | v5 | no | pass | cargo test -p oxvba-host formal_v5_branch_selection_matches_reference_model | crates/oxvba-host/src/engine.rs |  |
 | FO-V5-003 | v5 | no | pass | cargo test -p oxvba-host formal_v5_no_dual_branch_write_effect | crates/oxvba-host/src/engine.rs |  |
@@ -241,3 +242,21 @@
 | FO-V80-001 | v80 | no | pass | cargo test -p oxvba-compiler resolve::tests::resolve_array_descriptor_records_bounds_and_type | crates/oxvba-compiler/src/resolve.rs |  |
 | FO-V80-002 | v80 | no | pass | cargo test -p oxvba-compiler resolve::tests::resolve_redim_marks_array_descriptor_dynamic | crates/oxvba-compiler/src/resolve.rs |  |
 | FO-V80-003 | v80 | no | pass | cargo test -p oxvba-compiler resolve::tests::resolve_typed_array_dim_records_element_alias_types | crates/oxvba-compiler/src/resolve.rs |  |
+| FO-V81-001 | v81 | no | pass | cargo test -p oxvba-compiler resolve::tests::resolve_option_base_one_applies_to_array_declaration_bounds | crates/oxvba-compiler/src/resolve.rs |  |
+| FO-V81-002 | v81 | no | pass | cargo test -p oxvba-compiler resolve::tests::resolve_multidim_reference_linearizes_indices | crates/oxvba-compiler/src/resolve.rs |  |
+| FO-V81-003 | v81 | no | pass | cargo test -p oxvba-compiler compile_multidim_array_reference_subset | crates/oxvba-compiler/src/lib.rs |  |
+| FO-V82-001 | v82 | no | pass | cargo test -p oxvba-host formal_v82_redim_preserve_multidim_last_dimension_keeps_overlap | crates/oxvba-host/src/engine.rs |  |
+| FO-V82-002 | v82 | no | pass | cargo test -p oxvba-host formal_v82_redim_preserve_shrink_then_expand_clears_removed_tail | crates/oxvba-host/src/engine.rs |  |
+| FO-V82-003 | v82 | no | pass | cargo test -p oxvba-host formal_v82_redim_preserve_rejects_non_last_dimension_resize | crates/oxvba-host/src/engine.rs |  |
+| FO-V83-001 | v83 | no | pass | cargo test -p oxvba-host formal_v83_paramarray_packs_trailing_args_count | crates/oxvba-host/src/engine.rs |  |
+| FO-V83-002 | v83 | no | pass | cargo test -p oxvba-host formal_v83_paramarray_empty_pack_reports_negative_upper_bound | crates/oxvba-host/src/engine.rs |  |
+| FO-V83-003 | v83 | no | pass | cargo test -p oxvba-host formal_v83_paramarray_named_args_rejected_in_current_subset | crates/oxvba-host/src/engine.rs |  |
+| FO-V84-001 | v84 | no | pass | cargo test -p oxvba-host formal_v84_dispatch_invoke_marshals_array_argument_shape | crates/oxvba-host/src/engine.rs |  |
+| FO-V84-002 | v84 | no | pass | cargo test -p oxvba-host formal_v84_paramarray_pack_roundtrips_into_dispatch_boundary | crates/oxvba-host/src/engine.rs |  |
+| FO-V84-003 | v84 | no | pass | cargo test -p oxvba-host formal_v84_deferred_gate_rows_present_for_array_track | crates/oxvba-host/src/engine.rs |  |
+| FO-V85-001 | v85 | no | pass | cargo test -p oxvba-host formal_v85_typed_fastpath_vm_parity_disabled_vs_enabled | crates/oxvba-host/src/engine.rs |  |
+| FO-V85-002 | v85 | no | pass | cargo test -p oxvba-host formal_v85_typed_fastpath_jit_vm_equivalence | crates/oxvba-host/src/engine.rs |  |
+| FO-V85-003 | v85 | no | pass | cargo test -p oxvba-host formal_v85_typed_fastpath_hotloop_fixture_exists | crates/oxvba-host/src/engine.rs |  |
+| FO-V86-001 | v86 | no | pass | cargo test -p oxvba-host formal_v86_script_defaults_target_v86_profile_scope | crates/oxvba-host/src/engine.rs |  |
+| FO-V86-002 | v86 | no | pass | cargo test -p oxvba-host formal_v86_phase12_status_targets_v86_scope | docs/PHASE12_STATUS.md |  |
+| FO-V86-003 | v86 | no | pass | cargo test -p oxvba-host formal_v86_deferred_gate_audit_exists_with_unblock_steps | docs/evidence/formal/DG_AUDIT_V86.md |  |

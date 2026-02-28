@@ -2,14 +2,28 @@ use std::collections::{HashMap, HashSet};
 
 type ArrayBoundsMap = HashMap<String, Vec<(i32, i32)>>;
 type ParsedArrayDecl = (String, Option<BoundType>, Vec<(i32, i32)>);
+type UdtDefMap = HashMap<String, Vec<(String, BoundType)>>;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum BoundExpr {
     IntConst(i32),
     Var(String),
-    AddConst { var: String, delta: i32 },
-    SubConst { var: String, delta: i32 },
-    IntrinsicCall { name: String, args: Vec<BoundExpr> },
+    AddConst {
+        var: String,
+        delta: i32,
+    },
+    SubConst {
+        var: String,
+        delta: i32,
+    },
+    IntrinsicCall {
+        name: String,
+        args: Vec<BoundExpr>,
+    },
+    ProcCall {
+        name: String,
+        args: Vec<BoundCallArg>,
+    },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -58,6 +72,12 @@ pub enum BoundStmt {
         var: String,
         start: BoundExpr,
         end: BoundExpr,
+        step: BoundExpr,
+        body: Vec<BoundStmt>,
+    },
+    ForEach {
+        var: String,
+        items: Vec<BoundExpr>,
         body: Vec<BoundStmt>,
     },
     ReDim {
@@ -66,21 +86,33 @@ pub enum BoundStmt {
         previous_bounds: Option<Vec<(i32, i32)>>,
         preserve: bool,
     },
+    Erase {
+        name: String,
+    },
     DoWhile {
         cond: BoundCond,
         body: Vec<BoundStmt>,
         post_check: bool,
     },
     ExitDo,
+    ExitFor,
     OnErrorResumeNext,
     OnErrorGoto0,
     OnErrorGotoLabel {
         label: String,
     },
     ResumeNext,
+    Resume,
+    ResumeLabel {
+        label: String,
+    },
     RaiseError(i32),
+    ErrClear,
     Label {
         name: String,
+    },
+    GoTo {
+        label: String,
     },
     GoSub {
         label: String,
@@ -90,14 +122,26 @@ pub enum BoundStmt {
         name: String,
         args: Vec<BoundCallArg>,
     },
+    AssignFromCall {
+        target: String,
+        name: String,
+        args: Vec<BoundCallArg>,
+    },
     SelectCase {
         expr: BoundExpr,
-        arms: Vec<(Vec<i32>, Vec<BoundStmt>)>,
+        arms: Vec<(Vec<BoundCaseClause>, Vec<BoundStmt>)>,
         else_body: Vec<BoundStmt>,
     },
     Unsupported {
         line: String,
     },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum BoundCaseClause {
+    Value(i32),
+    Is { op: CompareOp, value: i32 },
+    Range { start: i32, end: i32 },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -195,8 +239,11 @@ pub fn resolve_symbols(source: &str) -> BoundModule {
     let compare_mode = collect_option_compare_mode(&lines);
     let option_base = collect_option_base(&lines);
     let default_type_table = collect_default_type_table(&lines);
+    let udt_defs = collect_udt_definitions(&lines, &default_type_table);
     let module_constants = collect_module_constants(&lines);
     let property_write_routes = collect_property_write_routes(&lines);
+    let property_read_routes = collect_property_read_routes(&lines);
+    let declared_externals = collect_declared_external_procedures(&lines, &default_type_table);
 
     let has_explicit_procs = lines
         .iter()
@@ -208,8 +255,10 @@ pub fn resolve_symbols(source: &str) -> BoundModule {
             &mut option_explicit,
             option_base,
             &default_type_table,
+            &udt_defs,
             &module_constants,
             &property_write_routes,
+            &property_read_routes,
         )
     } else {
         let mut declarations: Vec<String> = Vec::new();
@@ -236,8 +285,10 @@ pub fn resolve_symbols(source: &str) -> BoundModule {
             &mut option_explicit,
             option_base,
             &default_type_table,
+            &udt_defs,
             &module_constants,
             &property_write_routes,
+            &property_read_routes,
             &[],
         );
         body.splice(0..0, build_const_prelude(&module_constants));
@@ -253,6 +304,16 @@ pub fn resolve_symbols(source: &str) -> BoundModule {
             body,
         }]
     };
+
+    let mut procedures = procedures;
+    for external in declared_externals {
+        if !procedures
+            .iter()
+            .any(|existing| existing.name.eq_ignore_ascii_case(&external.name))
+        {
+            procedures.push(external);
+        }
+    }
 
     let entry_idx = procedures
         .iter()
@@ -776,13 +837,16 @@ fn pp_bool(value: bool) -> i32 {
     if value { -1 } else { 0 }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn parse_procedures(
     lines: &[String],
     option_explicit: &mut bool,
     option_base: i32,
     default_type_table: &[BoundType; 26],
+    udt_defs: &UdtDefMap,
     module_constants: &HashMap<String, i32>,
     property_write_routes: &HashMap<String, String>,
+    property_read_routes: &HashMap<String, String>,
 ) -> Vec<BoundProcedure> {
     let mut procedures = Vec::new();
     let mut index = 0;
@@ -817,7 +881,7 @@ fn parse_procedures(
         let mut declarations: Vec<String> = params.iter().map(|p| p.name.clone()).collect();
         let mut declaration_types: HashMap<String, BoundType> =
             params.iter().map(|p| (p.name.clone(), p.ty)).collect();
-        if matches!(kind, ProcKind::Function)
+        if matches!(kind, ProcKind::Function | ProcKind::PropertyGet)
             && !declarations
                 .iter()
                 .any(|existing| existing.eq_ignore_ascii_case(&name))
@@ -847,8 +911,10 @@ fn parse_procedures(
             option_explicit,
             option_base,
             default_type_table,
+            udt_defs,
             module_constants,
             property_write_routes,
+            property_read_routes,
             &[end_term],
         );
         body.splice(0..0, build_const_prelude(module_constants));
@@ -1151,6 +1217,154 @@ fn collect_property_write_routes(lines: &[String]) -> HashMap<String, String> {
     routes
 }
 
+fn collect_property_read_routes(lines: &[String]) -> HashMap<String, String> {
+    let mut routes = HashMap::new();
+    for line in lines {
+        let lower = line.to_ascii_lowercase();
+        let Some(kind) = detect_proc_kind(&lower) else {
+            continue;
+        };
+        if matches!(kind, ProcKind::PropertyGet)
+            && let Some(base) = parse_proc_base_name(line, kind)
+        {
+            routes.insert(base.clone(), kind.canonical_name(base));
+        }
+    }
+    routes
+}
+
+fn collect_declared_external_procedures(
+    lines: &[String],
+    default_type_table: &[BoundType; 26],
+) -> Vec<BoundProcedure> {
+    let mut procedures = Vec::new();
+    for line in lines {
+        let Some((name, params, return_type)) =
+            parse_declare_signature_line(line, default_type_table)
+        else {
+            continue;
+        };
+        let mut declarations: Vec<String> = params.iter().map(|p| p.name.clone()).collect();
+        let mut declaration_types: HashMap<String, BoundType> =
+            params.iter().map(|p| (p.name.clone(), p.ty)).collect();
+        if !declarations
+            .iter()
+            .any(|existing| existing.eq_ignore_ascii_case(&name))
+        {
+            declarations.push(name.clone());
+            declaration_types.insert(name.clone(), return_type);
+        }
+        procedures.push(BoundProcedure {
+            name,
+            return_type,
+            params,
+            declarations,
+            declaration_types,
+            array_descriptors: HashMap::new(),
+            duplicate_declarations: Vec::new(),
+            body: Vec::new(),
+        });
+    }
+    procedures
+}
+
+fn parse_declare_signature_line(
+    line: &str,
+    default_type_table: &[BoundType; 26],
+) -> Option<(String, Vec<BoundParam>, BoundType)> {
+    let trimmed = line.trim();
+    let rest = strip_keyword_prefix_ci(trimmed, "declare")?;
+    let lower = rest.to_ascii_lowercase();
+    let (kind, tail) = if lower.starts_with("function ") {
+        (ProcKind::Function, rest[9..].trim())
+    } else if lower.starts_with("sub ") {
+        (ProcKind::Sub, rest[4..].trim())
+    } else {
+        return None;
+    };
+
+    let name_token = tail
+        .split(|c: char| c.is_whitespace() || c == '(')
+        .next()
+        .unwrap_or_default()
+        .trim();
+    if name_token.is_empty() {
+        return None;
+    }
+
+    let open = tail.find('(')?;
+    let close = tail.rfind(')')?;
+    if close <= open {
+        return None;
+    }
+
+    let params_text = &tail[open..=close];
+    let return_clause = if matches!(kind, ProcKind::Function) {
+        let after_params = tail[close + 1..].trim();
+        if let Some((_, rhs)) = split_keyword_ci(after_params, "as") {
+            format!(" As {}", rhs.trim())
+        } else {
+            String::new()
+        }
+    } else {
+        String::new()
+    };
+
+    let synthetic = match kind {
+        ProcKind::Sub => format!("Sub {name_token}{params_text}"),
+        ProcKind::Function => format!("Function {name_token}{params_text}{return_clause}"),
+        _ => return None,
+    };
+    parse_proc_signature(&synthetic, kind, default_type_table)
+}
+
+fn collect_udt_definitions(lines: &[String], default_type_table: &[BoundType; 26]) -> UdtDefMap {
+    let mut defs = HashMap::new();
+    let mut index = 0usize;
+    while index < lines.len() {
+        let line = lines[index].as_str();
+        let lower = line.to_ascii_lowercase();
+        if !lower.starts_with("type ") {
+            index += 1;
+            continue;
+        }
+        let Some(type_name) = normalize_ident(line[5..].trim()) else {
+            index += 1;
+            continue;
+        };
+        index += 1;
+        let mut fields = Vec::new();
+        while index < lines.len() && !lines[index].eq_ignore_ascii_case("end type") {
+            let raw = lines[index].trim();
+            if !raw.is_empty() {
+                let (field_name_raw, explicit_ty) =
+                    if let Some((lhs, rhs)) = split_keyword_ci(raw, "as") {
+                        (
+                            lhs.trim(),
+                            parse_declared_type(rhs.trim()).unwrap_or(BoundType::Variant),
+                        )
+                    } else {
+                        (raw, BoundType::Variant)
+                    };
+                if let Some(field_name) = normalize_ident(field_name_raw) {
+                    let field_ty = if explicit_ty == BoundType::Variant {
+                        default_type_for_name(&field_name, default_type_table)
+                    } else {
+                        explicit_ty
+                    };
+                    fields.push((field_name, field_ty));
+                }
+            }
+            index += 1;
+        }
+        defs.insert(type_name, fields);
+        if index < lines.len() {
+            index += 1;
+        }
+    }
+    defs
+}
+
 fn parse_enum_block(lines: &[String], index: &mut usize, constants: &mut HashMap<String, i32>) {
     *index += 1;
     let mut next_value = 0i32;
@@ -1205,15 +1419,30 @@ fn parse_block(
     option_explicit: &mut bool,
     option_base: i32,
     default_type_table: &[BoundType; 26],
+    udt_defs: &UdtDefMap,
     module_constants: &HashMap<String, i32>,
     property_write_routes: &HashMap<String, String>,
+    property_read_routes: &HashMap<String, String>,
     terminators: &[&str],
 ) -> Vec<BoundStmt> {
     let mut out = Vec::new();
 
     while *index < lines.len() {
-        let line = lines[*index].as_str();
-        let lower = line.to_ascii_lowercase();
+        let original_line = lines[*index].as_str();
+        let mut line_owned = original_line.to_string();
+        let mut lower = line_owned.to_ascii_lowercase();
+
+        if let Some((label, rest)) = parse_line_number_statement(original_line) {
+            out.push(BoundStmt::Label { name: label });
+            if let Some(rest) = rest {
+                line_owned = rest;
+                lower = line_owned.to_ascii_lowercase();
+            } else {
+                *index += 1;
+                continue;
+            }
+        }
+        let line = line_owned.as_str();
 
         if matches_terminator(&lower, terminators) {
             break;
@@ -1255,6 +1484,7 @@ fn parse_block(
                 array_bounds,
                 option_base,
                 default_type_table,
+                udt_defs,
             );
             *index += 1;
             continue;
@@ -1303,8 +1533,30 @@ fn parse_block(
                 option_explicit,
                 option_base,
                 default_type_table,
+                udt_defs,
                 module_constants,
                 property_write_routes,
+                property_read_routes,
+                line,
+            ));
+            continue;
+        }
+
+        if lower.starts_with("for each ") {
+            out.push(parse_for_each_stmt(
+                lines,
+                index,
+                declarations,
+                declaration_types,
+                duplicate_declarations,
+                array_bounds,
+                option_explicit,
+                option_base,
+                default_type_table,
+                udt_defs,
+                module_constants,
+                property_write_routes,
+                property_read_routes,
                 line,
             ));
             continue;
@@ -1321,8 +1573,30 @@ fn parse_block(
                 option_explicit,
                 option_base,
                 default_type_table,
+                udt_defs,
                 module_constants,
                 property_write_routes,
+                property_read_routes,
+                line,
+            ));
+            continue;
+        }
+
+        if lower.starts_with("while ") {
+            out.push(parse_while_wend_stmt(
+                lines,
+                index,
+                declarations,
+                declaration_types,
+                duplicate_declarations,
+                array_bounds,
+                option_explicit,
+                option_base,
+                default_type_table,
+                udt_defs,
+                module_constants,
+                property_write_routes,
+                property_read_routes,
                 line,
             ));
             continue;
@@ -1346,7 +1620,20 @@ fn parse_block(
             continue;
         }
 
-        if lower.starts_with("do while ") || lower == "do" {
+        if lower.starts_with("erase ") {
+            let raw = line[6..].trim();
+            if let Some(name) = normalize_ident(raw) {
+                out.push(BoundStmt::Erase { name });
+            } else {
+                out.push(BoundStmt::Unsupported {
+                    line: line.to_string(),
+                });
+            }
+            *index += 1;
+            continue;
+        }
+
+        if lower.starts_with("do while ") || lower.starts_with("do until ") || lower == "do" {
             out.push(parse_do_stmt(
                 lines,
                 index,
@@ -1357,8 +1644,10 @@ fn parse_block(
                 option_explicit,
                 option_base,
                 default_type_table,
+                udt_defs,
                 module_constants,
                 property_write_routes,
+                property_read_routes,
                 line,
             ));
             continue;
@@ -1366,6 +1655,12 @@ fn parse_block(
 
         if lower == "exit do" {
             out.push(BoundStmt::ExitDo);
+            *index += 1;
+            continue;
+        }
+
+        if lower == "exit for" {
+            out.push(BoundStmt::ExitFor);
             *index += 1;
             continue;
         }
@@ -1384,7 +1679,7 @@ fn parse_block(
 
         if lower.starts_with("on error goto ") {
             let raw = line[14..].trim();
-            if let Some(label) = normalize_ident(raw) {
+            if let Some(label) = parse_jump_target_label(raw) {
                 out.push(BoundStmt::OnErrorGotoLabel { label });
             } else {
                 out.push(BoundStmt::Unsupported {
@@ -1397,6 +1692,24 @@ fn parse_block(
 
         if lower == "resume next" {
             out.push(BoundStmt::ResumeNext);
+            *index += 1;
+            continue;
+        }
+
+        if lower == "resume" {
+            out.push(BoundStmt::Resume);
+            *index += 1;
+            continue;
+        }
+
+        if lower.starts_with("resume ") {
+            if let Some(label) = parse_jump_target_label(line[7..].trim()) {
+                out.push(BoundStmt::ResumeLabel { label });
+            } else {
+                out.push(BoundStmt::Unsupported {
+                    line: line.to_string(),
+                });
+            }
             *index += 1;
             continue;
         }
@@ -1417,14 +1730,33 @@ fn parse_block(
             continue;
         }
 
+        if lower == "err.clear" {
+            out.push(BoundStmt::ErrClear);
+            *index += 1;
+            continue;
+        }
+
         if let Some(name) = parse_label_declaration(line) {
             out.push(BoundStmt::Label { name });
             *index += 1;
             continue;
         }
 
+        if lower.starts_with("goto ") {
+            let raw = line[5..].trim();
+            if let Some(label) = parse_jump_target_label(raw) {
+                out.push(BoundStmt::GoTo { label });
+            } else {
+                out.push(BoundStmt::Unsupported {
+                    line: line.to_string(),
+                });
+            }
+            *index += 1;
+            continue;
+        }
+
         if lower.starts_with("gosub ") {
-            if let Some(label) = normalize_ident(line[6..].trim()) {
+            if let Some(label) = parse_jump_target_label(line[6..].trim()) {
                 out.push(BoundStmt::GoSub { label });
             } else {
                 out.push(BoundStmt::Unsupported {
@@ -1452,8 +1784,10 @@ fn parse_block(
                 option_explicit,
                 option_base,
                 default_type_table,
+                udt_defs,
                 module_constants,
                 property_write_routes,
+                property_read_routes,
                 line,
             ));
             continue;
@@ -1464,6 +1798,7 @@ fn parse_block(
             declarations,
             array_bounds,
             property_write_routes,
+            property_read_routes,
         ));
         *index += 1;
     }
@@ -1482,8 +1817,10 @@ fn parse_if_stmt(
     option_explicit: &mut bool,
     option_base: i32,
     default_type_table: &[BoundType; 26],
+    udt_defs: &UdtDefMap,
     module_constants: &HashMap<String, i32>,
     property_write_routes: &HashMap<String, String>,
+    property_read_routes: &HashMap<String, String>,
     line: &str,
 ) -> BoundStmt {
     let condition = line[2..line.len() - 4].trim();
@@ -1505,8 +1842,10 @@ fn parse_if_stmt(
         option_explicit,
         option_base,
         default_type_table,
+        udt_defs,
         module_constants,
         property_write_routes,
+        property_read_routes,
         &["elseif", "else", "end if"],
     );
     let Some(else_body) = parse_if_tail(
@@ -1519,8 +1858,10 @@ fn parse_if_stmt(
         option_explicit,
         option_base,
         default_type_table,
+        udt_defs,
         module_constants,
         property_write_routes,
+        property_read_routes,
     ) else {
         return BoundStmt::Unsupported {
             line: line.to_string(),
@@ -1545,11 +1886,13 @@ fn parse_for_stmt(
     option_explicit: &mut bool,
     option_base: i32,
     default_type_table: &[BoundType; 26],
+    udt_defs: &UdtDefMap,
     module_constants: &HashMap<String, i32>,
     property_write_routes: &HashMap<String, String>,
+    property_read_routes: &HashMap<String, String>,
     line: &str,
 ) -> BoundStmt {
-    let Some((var, start, end)) = parse_for_header(line, array_bounds) else {
+    let Some((var, start, end, step)) = parse_for_header(line, array_bounds) else {
         *index += 1;
         return BoundStmt::Unsupported {
             line: line.to_string(),
@@ -1567,8 +1910,10 @@ fn parse_for_stmt(
         option_explicit,
         option_base,
         default_type_table,
+        udt_defs,
         module_constants,
         property_write_routes,
+        property_read_routes,
         &["next"],
     );
 
@@ -1580,9 +1925,121 @@ fn parse_for_stmt(
                 var,
                 start,
                 end,
+                step,
                 body,
             };
         }
+    }
+
+    BoundStmt::Unsupported {
+        line: line.to_string(),
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn parse_for_each_stmt(
+    lines: &[String],
+    index: &mut usize,
+    declarations: &mut Vec<String>,
+    declaration_types: &mut HashMap<String, BoundType>,
+    duplicate_declarations: &mut Vec<String>,
+    array_bounds: &mut ArrayBoundsMap,
+    option_explicit: &mut bool,
+    option_base: i32,
+    default_type_table: &[BoundType; 26],
+    udt_defs: &UdtDefMap,
+    module_constants: &HashMap<String, i32>,
+    property_write_routes: &HashMap<String, String>,
+    property_read_routes: &HashMap<String, String>,
+    line: &str,
+) -> BoundStmt {
+    let Some((var, items)) = parse_for_each_header(line, array_bounds) else {
+        *index += 1;
+        return BoundStmt::Unsupported {
+            line: line.to_string(),
+        };
+    };
+
+    *index += 1;
+    let body = parse_block(
+        lines,
+        index,
+        declarations,
+        declaration_types,
+        duplicate_declarations,
+        array_bounds,
+        option_explicit,
+        option_base,
+        default_type_table,
+        udt_defs,
+        module_constants,
+        property_write_routes,
+        property_read_routes,
+        &["next"],
+    );
+
+    if *index < lines.len() {
+        let lower = lines[*index].to_ascii_lowercase();
+        if lower == "next" || lower.starts_with("next ") {
+            *index += 1;
+            return BoundStmt::ForEach { var, items, body };
+        }
+    }
+
+    BoundStmt::Unsupported {
+        line: line.to_string(),
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn parse_while_wend_stmt(
+    lines: &[String],
+    index: &mut usize,
+    declarations: &mut Vec<String>,
+    declaration_types: &mut HashMap<String, BoundType>,
+    duplicate_declarations: &mut Vec<String>,
+    array_bounds: &mut ArrayBoundsMap,
+    option_explicit: &mut bool,
+    option_base: i32,
+    default_type_table: &[BoundType; 26],
+    udt_defs: &UdtDefMap,
+    module_constants: &HashMap<String, i32>,
+    property_write_routes: &HashMap<String, String>,
+    property_read_routes: &HashMap<String, String>,
+    line: &str,
+) -> BoundStmt {
+    let condition = line[6..].trim();
+    let Some(cond) = parse_condition(condition, array_bounds) else {
+        *index += 1;
+        return BoundStmt::Unsupported {
+            line: line.to_string(),
+        };
+    };
+
+    *index += 1;
+    let body = parse_block(
+        lines,
+        index,
+        declarations,
+        declaration_types,
+        duplicate_declarations,
+        array_bounds,
+        option_explicit,
+        option_base,
+        default_type_table,
+        udt_defs,
+        module_constants,
+        property_write_routes,
+        property_read_routes,
+        &["wend"],
+    );
+    if *index < lines.len() && lines[*index].eq_ignore_ascii_case("wend") {
+        *index += 1;
+        return BoundStmt::DoWhile {
+            cond,
+            body,
+            post_check: false,
+        };
     }
 
     BoundStmt::Unsupported {
@@ -1595,6 +2052,7 @@ fn parse_assign_or_unsupported(
     declarations: &[String],
     array_bounds: &ArrayBoundsMap,
     property_write_routes: &HashMap<String, String>,
+    property_read_routes: &HashMap<String, String>,
 ) -> BoundStmt {
     if let Some(stmt) = parse_mid_assign_stmt(line, array_bounds) {
         return stmt;
@@ -1602,19 +2060,44 @@ fn parse_assign_or_unsupported(
 
     if let Some((lhs_raw, rhs_raw)) = line.split_once('=')
         && let Some(target) = parse_reference_name(lhs_raw, array_bounds)
-        && let Some(expr) = parse_expr(rhs_raw, array_bounds)
     {
-        if let Some(route_proc) = property_write_routes.get(&target)
+        if parse_reference_name(rhs_raw.trim(), array_bounds).is_none()
+            && let Some((call_name, args)) = parse_call_invocation(rhs_raw.trim(), array_bounds)
+            && !is_intrinsic_call_name(&call_name)
+        {
+            let name = property_read_routes
+                .get(&call_name)
+                .cloned()
+                .unwrap_or(call_name);
+            return BoundStmt::AssignFromCall { target, name, args };
+        }
+
+        if let Some(base_name) = normalize_ident(rhs_raw.trim())
+            && let Some(route_proc) = property_read_routes.get(&base_name)
             && !declarations
                 .iter()
-                .any(|existing| existing.eq_ignore_ascii_case(&target))
+                .any(|existing| existing.eq_ignore_ascii_case(&base_name))
         {
-            return BoundStmt::Call {
+            return BoundStmt::AssignFromCall {
+                target,
                 name: route_proc.clone(),
-                args: vec![BoundCallArg { name: None, expr }],
+                args: Vec::new(),
             };
         }
-        return BoundStmt::Assign { target, expr };
+
+        if let Some(expr) = parse_expr(rhs_raw, array_bounds) {
+            if let Some(route_proc) = property_write_routes.get(&target)
+                && !declarations
+                    .iter()
+                    .any(|existing| existing.eq_ignore_ascii_case(&target))
+            {
+                return BoundStmt::Call {
+                    name: route_proc.clone(),
+                    args: vec![BoundCallArg { name: None, expr }],
+                };
+            }
+            return BoundStmt::Assign { target, expr };
+        }
     }
 
     let call_token = if line.to_ascii_lowercase().starts_with("call ") {
@@ -1697,7 +2180,7 @@ fn parse_call_invocation(
     }
 
     let mut args = Vec::new();
-    for token in args_raw.split(',') {
+    for token in split_call_args(args_raw)? {
         let trimmed = token.trim();
         if let Some((lhs, rhs)) = trimmed.split_once(":=") {
             args.push(BoundCallArg {
@@ -1714,6 +2197,16 @@ fn parse_call_invocation(
     Some((name, args))
 }
 
+fn is_intrinsic_call_name(name: &str) -> bool {
+    if intrinsic_spec(name).is_some() {
+        return true;
+    }
+    matches!(
+        name,
+        "cint" | "clng" | "cdbl" | "cstr" | "cbool" | "cdate" | "val" | "str" | "cverr"
+    )
+}
+
 #[allow(clippy::too_many_arguments)]
 fn parse_do_stmt(
     lines: &[String],
@@ -1725,18 +2218,30 @@ fn parse_do_stmt(
     option_explicit: &mut bool,
     option_base: i32,
     default_type_table: &[BoundType; 26],
+    udt_defs: &UdtDefMap,
     module_constants: &HashMap<String, i32>,
     property_write_routes: &HashMap<String, String>,
+    property_read_routes: &HashMap<String, String>,
     line: &str,
 ) -> BoundStmt {
     let lower = line.to_ascii_lowercase();
-    if lower.starts_with("do while ") {
-        let condition = line[8..].trim();
+    if lower.starts_with("do while ") || lower.starts_with("do until ") {
+        let is_until = lower.starts_with("do until ");
+        let condition = if is_until {
+            line[9..].trim()
+        } else {
+            line[8..].trim()
+        };
         let Some(cond) = parse_condition(condition, array_bounds) else {
             *index += 1;
             return BoundStmt::Unsupported {
                 line: line.to_string(),
             };
+        };
+        let cond = if is_until {
+            BoundCond::Not(Box::new(cond))
+        } else {
+            cond
         };
 
         *index += 1;
@@ -1750,8 +2255,10 @@ fn parse_do_stmt(
             option_explicit,
             option_base,
             default_type_table,
+            udt_defs,
             module_constants,
             property_write_routes,
+            property_read_routes,
             &["loop"],
         );
         if *index < lines.len() {
@@ -1783,16 +2290,24 @@ fn parse_do_stmt(
             option_explicit,
             option_base,
             default_type_table,
+            udt_defs,
             module_constants,
             property_write_routes,
+            property_read_routes,
             &["loop"],
         );
         if *index < lines.len() {
             let loop_line = lines[*index].as_str();
             let loop_lower = loop_line.to_ascii_lowercase();
-            if loop_lower.starts_with("loop while ") {
+            if loop_lower.starts_with("loop while ") || loop_lower.starts_with("loop until ") {
+                let is_until = loop_lower.starts_with("loop until ");
                 let condition = loop_line[11..].trim();
                 if let Some(cond) = parse_condition(condition, array_bounds) {
+                    let cond = if is_until {
+                        BoundCond::Not(Box::new(cond))
+                    } else {
+                        cond
+                    };
                     *index += 1;
                     return BoundStmt::DoWhile {
                         cond,
@@ -1816,7 +2331,7 @@ fn parse_do_stmt(
 fn parse_for_header(
     line: &str,
     array_bounds: &ArrayBoundsMap,
-) -> Option<(String, BoundExpr, BoundExpr)> {
+) -> Option<(String, BoundExpr, BoundExpr, BoundExpr)> {
     let lower = line.to_ascii_lowercase();
     if !lower.starts_with("for ") {
         return None;
@@ -1825,10 +2340,52 @@ fn parse_for_header(
     let without_for = line[4..].trim();
     let (lhs_raw, range_raw) = without_for.split_once('=')?;
     let var = normalize_ident(lhs_raw)?;
-    let (start_raw, end_raw) = split_ci(range_raw, " to ")?;
+    let (start_raw, to_tail_raw) = split_ci(range_raw, " to ")?;
+    let (end_raw, step) = if let Some((end_raw, step_raw)) = split_keyword_ci(to_tail_raw, "step") {
+        (end_raw, parse_expr(step_raw, array_bounds)?)
+    } else {
+        (to_tail_raw, BoundExpr::IntConst(1))
+    };
     let start = parse_expr(start_raw, array_bounds)?;
     let end = parse_expr(end_raw, array_bounds)?;
-    Some((var, start, end))
+    Some((var, start, end, step))
+}
+
+fn parse_for_each_header(
+    line: &str,
+    array_bounds: &ArrayBoundsMap,
+) -> Option<(String, Vec<BoundExpr>)> {
+    let lower = line.to_ascii_lowercase();
+    if !lower.starts_with("for each ") {
+        return None;
+    }
+
+    let payload = line[9..].trim();
+    let (var_raw, iterable_raw) = split_keyword_ci(payload, "in")?;
+    let var = normalize_ident(var_raw)?;
+    let iterable = iterable_raw.trim();
+
+    let iterable_lower = iterable.to_ascii_lowercase();
+    if iterable_lower.starts_with("array(") && iterable.ends_with(')') {
+        let inner = &iterable[6..iterable.len() - 1];
+        let items = split_call_args(inner)?
+            .iter()
+            .map(|token| parse_expr(token, array_bounds))
+            .collect::<Option<Vec<_>>>()?;
+        if items.is_empty() {
+            return None;
+        }
+        return Some((var, items));
+    }
+
+    let base = normalize_ident(iterable)?;
+    let bounds = array_bounds.get(&base)?;
+    let element_count = array_element_count(bounds)?;
+    let mut items = Vec::with_capacity(element_count);
+    for idx in 0..element_count {
+        items.push(BoundExpr::Var(format!("{base}_{idx}")));
+    }
+    Some((var, items))
 }
 
 fn parse_redim_stmt(
@@ -1888,8 +2445,10 @@ fn parse_select_case_stmt(
     option_explicit: &mut bool,
     option_base: i32,
     default_type_table: &[BoundType; 26],
+    udt_defs: &UdtDefMap,
     module_constants: &HashMap<String, i32>,
     property_write_routes: &HashMap<String, String>,
+    property_read_routes: &HashMap<String, String>,
     line: &str,
 ) -> BoundStmt {
     let Some((_, expr_raw)) = split_ci(line, "case") else {
@@ -1906,7 +2465,7 @@ fn parse_select_case_stmt(
     };
 
     *index += 1;
-    let mut arms: Vec<(Vec<i32>, Vec<BoundStmt>)> = Vec::new();
+    let mut arms: Vec<(Vec<BoundCaseClause>, Vec<BoundStmt>)> = Vec::new();
     let mut else_body: Vec<BoundStmt> = Vec::new();
 
     while *index < lines.len() {
@@ -1934,8 +2493,10 @@ fn parse_select_case_stmt(
                 option_explicit,
                 option_base,
                 default_type_table,
+                udt_defs,
                 module_constants,
                 property_write_routes,
+                property_read_routes,
                 &["end select"],
             );
             continue;
@@ -1943,16 +2504,11 @@ fn parse_select_case_stmt(
 
         if lower.starts_with("case ") {
             let values_raw = current[5..].trim();
-            let mut values = Vec::new();
-            for token in values_raw.split(',') {
-                let trimmed = token.trim();
-                let Ok(value) = trimmed.parse::<i32>() else {
-                    return BoundStmt::Unsupported {
-                        line: line.to_string(),
-                    };
+            let Some(values) = parse_case_clauses(values_raw) else {
+                return BoundStmt::Unsupported {
+                    line: line.to_string(),
                 };
-                values.push(value);
-            }
+            };
 
             *index += 1;
             let body = parse_block(
@@ -1965,8 +2521,10 @@ fn parse_select_case_stmt(
                 option_explicit,
                 option_base,
                 default_type_table,
+                udt_defs,
                 module_constants,
                 property_write_routes,
+                property_read_routes,
                 &["case", "end select"],
             );
             arms.push((values, body));
@@ -1981,6 +2539,56 @@ fn parse_select_case_stmt(
     BoundStmt::Unsupported {
         line: line.to_string(),
     }
+}
+
+fn parse_case_clauses(values_raw: &str) -> Option<Vec<BoundCaseClause>> {
+    let tokens = split_call_args(values_raw)?;
+    let mut out = Vec::new();
+    for token in tokens {
+        let clause = parse_case_clause(token.trim())?;
+        out.push(clause);
+    }
+    if out.is_empty() {
+        return None;
+    }
+    Some(out)
+}
+
+fn parse_case_clause(token: &str) -> Option<BoundCaseClause> {
+    if token.is_empty() {
+        return None;
+    }
+
+    let lower = token.to_ascii_lowercase();
+    if lower.starts_with("is ") {
+        return parse_case_is_clause(token[3..].trim());
+    }
+
+    if let Some((start_raw, end_raw)) = split_keyword_ci(token, "to") {
+        let start = start_raw.trim().parse::<i32>().ok()?;
+        let end = end_raw.trim().parse::<i32>().ok()?;
+        return Some(BoundCaseClause::Range { start, end });
+    }
+
+    token.parse::<i32>().ok().map(BoundCaseClause::Value)
+}
+
+fn parse_case_is_clause(token: &str) -> Option<BoundCaseClause> {
+    let pairs = [
+        ("<>", CompareOp::Ne),
+        ("<=", CompareOp::Le),
+        (">=", CompareOp::Ge),
+        ("=", CompareOp::Eq),
+        ("<", CompareOp::Lt),
+        (">", CompareOp::Gt),
+    ];
+    for (op_text, op) in pairs {
+        if let Some(rest) = token.strip_prefix(op_text) {
+            let value = rest.trim().parse::<i32>().ok()?;
+            return Some(BoundCaseClause::Is { op, value });
+        }
+    }
+    None
 }
 
 fn parse_expr(text: &str, array_bounds: &ArrayBoundsMap) -> Option<BoundExpr> {
@@ -2000,6 +2608,12 @@ fn parse_expr(text: &str, array_bounds: &ArrayBoundsMap) -> Option<BoundExpr> {
     }
     if let Some(call) = parse_stdlib_intrinsic_call_expr(expr, array_bounds) {
         return Some(call);
+    }
+    if parse_reference_name(expr, array_bounds).is_none()
+        && let Some((name, args)) = parse_call_invocation(expr, array_bounds)
+        && !is_intrinsic_call_name(&name)
+    {
+        return Some(BoundExpr::ProcCall { name, args });
     }
 
     if let Some((left_raw, right_raw)) = expr.split_once('+') {
@@ -2214,6 +2828,7 @@ fn parse_compare_condition(text: &str, array_bounds: &ArrayBoundsMap) -> Option<
     parse_expr(text, array_bounds).map(BoundCond::Truthy)
 }
 
+#[allow(clippy::too_many_arguments)]
 fn parse_declaration(
     line: &str,
     declarations: &mut Vec<String>,
@@ -2222,19 +2837,29 @@ fn parse_declaration(
     array_bounds: &mut ArrayBoundsMap,
     option_base: i32,
     default_type_table: &[BoundType; 26],
+    udt_defs: &UdtDefMap,
 ) {
     let remainder = line[4..].trim();
     let first_decl = split_first_decl_segment(remainder)
         .unwrap_or_default()
         .trim();
-    let (name_part, explicit_ty) = if let Some((lhs, rhs)) = split_keyword_ci(first_decl, "as") {
-        (
-            lhs.trim(),
-            Some(parse_declared_type(rhs.trim()).unwrap_or(BoundType::Variant)),
-        )
-    } else {
-        (first_decl, None)
-    };
+    let (name_part, explicit_ty, explicit_udt_name) =
+        if let Some((lhs, rhs)) = split_keyword_ci(first_decl, "as") {
+            let explicit_raw = rhs.trim();
+            let primitive = parse_declared_type(explicit_raw);
+            let udt_name = if primitive.is_none() {
+                normalize_ident(explicit_raw)
+            } else {
+                None
+            };
+            (
+                lhs.trim(),
+                Some(primitive.unwrap_or(BoundType::Variant)),
+                udt_name,
+            )
+        } else {
+            (first_decl, None, None)
+        };
 
     if let Some((base, type_char_ty, bounds)) = parse_array_declaration(name_part, option_base) {
         let declared_ty =
@@ -2276,7 +2901,24 @@ fn parse_declaration(
             return;
         }
         declaration_types.insert(name.clone(), declared_ty);
-        declarations.push(name);
+        declarations.push(name.clone());
+
+        if let Some(udt_name) = explicit_udt_name
+            && let Some(fields) = udt_defs.get(&udt_name)
+        {
+            for (field_name, field_ty) in fields {
+                let alias = format!("{name}_{field_name}");
+                if declarations
+                    .iter()
+                    .any(|existing| existing.eq_ignore_ascii_case(&alias))
+                {
+                    duplicate_declarations.push(alias);
+                    continue;
+                }
+                declarations.push(alias.clone());
+                declaration_types.insert(alias, *field_ty);
+            }
+        }
     }
 }
 
@@ -2389,6 +3031,9 @@ fn parse_reference_name(token: &str, array_bounds: &ArrayBoundsMap) -> Option<St
     if let Some(alias) = parse_array_reference(token, array_bounds) {
         return Some(alias);
     }
+    if let Some(alias) = parse_member_reference(token) {
+        return Some(alias);
+    }
     normalize_ident(token)
 }
 
@@ -2406,6 +3051,14 @@ fn parse_array_reference(token: &str, array_bounds: &ArrayBoundsMap) -> Option<S
         .collect::<Option<Vec<_>>>()?;
     let linear = linearize_array_index(bounds, &indices)?;
     Some(format!("{base}_{linear}"))
+}
+
+fn parse_member_reference(token: &str) -> Option<String> {
+    let trimmed = token.trim();
+    let (base_raw, member_raw) = trimmed.split_once('.')?;
+    let base = normalize_ident(base_raw)?;
+    let member = normalize_ident(member_raw)?;
+    Some(format!("{base}_{member}"))
 }
 
 fn normalize_ident(text: &str) -> Option<String> {
@@ -2640,6 +3293,9 @@ fn collect_redim_targets(stmts: &[BoundStmt], targets: &mut HashSet<String>) {
             BoundStmt::ForRange { body, .. } | BoundStmt::DoWhile { body, .. } => {
                 collect_redim_targets(body, targets);
             }
+            BoundStmt::ForEach { body, .. } => {
+                collect_redim_targets(body, targets);
+            }
             BoundStmt::SelectCase {
                 arms, else_body, ..
             } => {
@@ -2653,12 +3309,57 @@ fn collect_redim_targets(stmts: &[BoundStmt], targets: &mut HashSet<String>) {
     }
 }
 
+fn parse_line_number_statement(line: &str) -> Option<(String, Option<String>)> {
+    let trimmed = line.trim_start();
+    let digit_count = trimmed.chars().take_while(|c| c.is_ascii_digit()).count();
+    if digit_count == 0 {
+        return None;
+    }
+    let rest_slice = &trimmed[digit_count..];
+    if !rest_slice.is_empty()
+        && rest_slice
+            .chars()
+            .next()
+            .is_some_and(|ch| !ch.is_whitespace())
+    {
+        return None;
+    }
+    let line_no = trimmed[..digit_count].parse::<i32>().ok()?;
+    if line_no < 0 {
+        return None;
+    }
+    let label = line_number_label(line_no);
+    let rest = rest_slice.trim();
+    if rest.is_empty() {
+        Some((label, None))
+    } else {
+        Some((label, Some(rest.to_string())))
+    }
+}
+
 fn parse_label_declaration(line: &str) -> Option<String> {
     let trimmed = line.trim();
     if !trimmed.ends_with(':') {
         return None;
     }
-    normalize_ident(&trimmed[..trimmed.len() - 1])
+    parse_jump_target_label(&trimmed[..trimmed.len() - 1])
+}
+
+fn parse_jump_target_label(raw: &str) -> Option<String> {
+    let token = raw.trim();
+    if token.is_empty() {
+        return None;
+    }
+    if let Ok(line_no) = token.parse::<i32>()
+        && line_no >= 0
+    {
+        return Some(line_number_label(line_no));
+    }
+    normalize_ident(token)
+}
+
+fn line_number_label(line_no: i32) -> String {
+    format!("__line_{line_no}")
 }
 
 fn matches_terminator(lower_line: &str, terminators: &[&str]) -> bool {
@@ -2688,8 +3389,10 @@ fn parse_if_tail(
     option_explicit: &mut bool,
     option_base: i32,
     default_type_table: &[BoundType; 26],
+    udt_defs: &UdtDefMap,
     module_constants: &HashMap<String, i32>,
     property_write_routes: &HashMap<String, String>,
+    property_read_routes: &HashMap<String, String>,
 ) -> Option<Vec<BoundStmt>> {
     if *index >= lines.len() {
         return None;
@@ -2715,8 +3418,10 @@ fn parse_if_tail(
             option_explicit,
             option_base,
             default_type_table,
+            udt_defs,
             module_constants,
             property_write_routes,
+            property_read_routes,
             &["end if"],
         );
         if *index < lines.len() && lines[*index].eq_ignore_ascii_case("end if") {
@@ -2740,8 +3445,10 @@ fn parse_if_tail(
             option_explicit,
             option_base,
             default_type_table,
+            udt_defs,
             module_constants,
             property_write_routes,
+            property_read_routes,
             &["elseif", "else", "end if"],
         );
         let nested_else = parse_if_tail(
@@ -2754,8 +3461,10 @@ fn parse_if_tail(
             option_explicit,
             option_base,
             default_type_table,
+            udt_defs,
             module_constants,
             property_write_routes,
+            property_read_routes,
         )?;
         return Some(vec![BoundStmt::IfCond {
             cond,
@@ -3734,6 +4443,115 @@ mod tests {
                 .body
                 .iter()
                 .any(|s| matches!(s, BoundStmt::OnErrorGotoLabel { label } if label == "handler"))
+        );
+    }
+
+    #[test]
+    fn resolve_for_step_parses_explicit_step() {
+        let source = "Sub Main()\nDim i\nFor i = 5 To 1 Step -2\ni = i + 1\nNext i\nEnd Sub";
+        let module = resolve_symbols(source);
+        let Some(BoundStmt::ForRange { step, .. }) = module.body.first() else {
+            panic!("expected for-range statement");
+        };
+        assert_eq!(step, &BoundExpr::IntConst(-2));
+    }
+
+    #[test]
+    fn resolve_while_wend_parses_as_loop() {
+        let source = "Sub Main()\nDim x\nWhile x < 3\nx = x + 1\nWend\nEnd Sub";
+        let module = resolve_symbols(source);
+        assert!(module.body.iter().any(|stmt| matches!(
+            stmt,
+            BoundStmt::DoWhile {
+                post_check: false,
+                ..
+            }
+        )));
+    }
+
+    #[test]
+    fn resolve_do_until_and_loop_until_are_supported() {
+        let source = "Sub Main()\nDim x\nDo Until x = 3\nx = x + 1\nLoop\nDo\nx = x + 1\nLoop Until x = 7\nEnd Sub";
+        let module = resolve_symbols(source);
+        let loops = module
+            .body
+            .iter()
+            .filter(|stmt| matches!(stmt, BoundStmt::DoWhile { .. }))
+            .count();
+        assert_eq!(loops, 2);
+    }
+
+    #[test]
+    fn resolve_select_case_is_and_range_clauses() {
+        let source = "Sub Main()\nDim x\nSelect Case x\nCase Is < 0\nx = 1\nCase 1 To 3\nx = 2\nEnd Select\nEnd Sub";
+        let module = resolve_symbols(source);
+        let Some(BoundStmt::SelectCase { arms, .. }) = module.body.first() else {
+            panic!("expected select-case statement");
+        };
+        assert!(matches!(
+            arms[0].0[0],
+            super::BoundCaseClause::Is {
+                op: CompareOp::Lt,
+                value: 0
+            }
+        ));
+        assert!(matches!(
+            arms[1].0[0],
+            super::BoundCaseClause::Range { start: 1, end: 3 }
+        ));
+    }
+
+    #[test]
+    fn resolve_goto_numeric_target_uses_line_label_key() {
+        let source = "Sub Main()\nGoTo 100\n100:\nEnd Sub";
+        let module = resolve_symbols(source);
+        assert!(
+            module
+                .body
+                .iter()
+                .any(|stmt| matches!(stmt, BoundStmt::GoTo { label } if label == "__line_100"))
+        );
+        assert!(
+            module
+                .body
+                .iter()
+                .any(|stmt| matches!(stmt, BoundStmt::Label { name } if name == "__line_100"))
+        );
+    }
+
+    #[test]
+    fn resolve_resume_and_resume_label_statements() {
+        let source = "Sub Main()\nOn Error GoTo handler\nError 5\nhandler:\nResume\nResume done\ndone:\nEnd Sub";
+        let module = resolve_symbols(source);
+        assert!(
+            module
+                .body
+                .iter()
+                .any(|stmt| matches!(stmt, BoundStmt::Resume))
+        );
+        assert!(
+            module
+                .body
+                .iter()
+                .any(|stmt| matches!(stmt, BoundStmt::ResumeLabel { label } if label == "done"))
+        );
+    }
+
+    #[test]
+    fn resolve_err_clear_and_erase_statements() {
+        let source = "Sub Main()\nDim a(2)\nErr.Clear\nErase a\nEnd Sub";
+        let module = resolve_symbols(source);
+        assert!(
+            module
+                .body
+                .iter()
+                .any(|stmt| matches!(stmt, BoundStmt::ErrClear))
+        );
+        assert!(
+            module
+                .body
+                .iter()
+                .any(|stmt| matches!(stmt, BoundStmt::Erase { name } if name == "a"))
         );
     }
 }

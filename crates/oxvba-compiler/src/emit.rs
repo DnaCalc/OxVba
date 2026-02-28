@@ -5,8 +5,8 @@ use oxvba_runtime::safe_array::ARRAY_TAG_BASE;
 use crate::{
     bytecode::{Bytecode, Instruction, StringCompareMode},
     resolve::{
-        BoundCallArg, BoundCompareMode, BoundCond, BoundExpr, BoundModule, BoundParam,
-        BoundProcedure, BoundStmt, CompareOp,
+        BoundCallArg, BoundCaseClause, BoundCompareMode, BoundCond, BoundExpr, BoundModule,
+        BoundParam, BoundProcedure, BoundStmt, CompareOp,
     },
 };
 
@@ -21,6 +21,7 @@ fn emit_compare_mode(mode: BoundCompareMode) -> StringCompareMode {
 struct EmitProcMeta {
     params: Vec<BoundParam>,
     slots: HashMap<String, usize>,
+    return_slot: Option<usize>,
 }
 
 pub fn emit_bytecode(module: &BoundModule) -> Bytecode {
@@ -58,9 +59,12 @@ pub fn emit_bytecode(module: &BoundModule) -> Bytecode {
 
     let mut temps = TempSlotAllocator::new(next_slot);
     let mut instructions = Vec::new();
-    let mut loop_exit_stack: Vec<Vec<usize>> = Vec::new();
+    let mut do_exit_stack: Vec<Vec<usize>> = Vec::new();
+    let mut for_exit_stack: Vec<Vec<usize>> = Vec::new();
     let mut call_patches: Vec<(usize, String)> = Vec::new();
     let mut error_handler_patches: Vec<(usize, String)> = Vec::new();
+    let mut goto_patches: Vec<(usize, String)> = Vec::new();
+    let mut resume_label_patches: Vec<(usize, String)> = Vec::new();
     let mut proc_labels: HashMap<String, usize> = HashMap::new();
     let mut proc_meta: HashMap<String, EmitProcMeta> = HashMap::new();
     for (idx, proc) in procedures.iter().enumerate() {
@@ -69,6 +73,7 @@ pub fn emit_bytecode(module: &BoundModule) -> Bytecode {
             EmitProcMeta {
                 params: proc.params.clone(),
                 slots: proc_slots[idx].clone(),
+                return_slot: proc_slots[idx].get(&proc.name).copied(),
             },
         );
     }
@@ -93,9 +98,12 @@ pub fn emit_bytecode(module: &BoundModule) -> Bytecode {
         &proc_slots[entry_idx],
         &mut temps,
         &mut instructions,
-        &mut loop_exit_stack,
+        &mut do_exit_stack,
+        &mut for_exit_stack,
         &mut call_patches,
         &mut error_handler_patches,
+        &mut goto_patches,
+        &mut resume_label_patches,
         &proc_meta,
         &procedures[entry_idx].name,
         &mut proc_labels,
@@ -118,9 +126,12 @@ pub fn emit_bytecode(module: &BoundModule) -> Bytecode {
             &proc_slots[idx],
             &mut temps,
             &mut instructions,
-            &mut loop_exit_stack,
+            &mut do_exit_stack,
+            &mut for_exit_stack,
             &mut call_patches,
             &mut error_handler_patches,
+            &mut goto_patches,
+            &mut resume_label_patches,
             &proc_meta,
             &proc.name,
             &mut proc_labels,
@@ -144,6 +155,22 @@ pub fn emit_bytecode(module: &BoundModule) -> Bytecode {
         }
     }
 
+    for (patch_idx, label_name) in goto_patches {
+        if let Some(target) = proc_labels.get(&label_name).copied()
+            && let Instruction::Jump { target_pc } = &mut instructions[patch_idx]
+        {
+            *target_pc = target;
+        }
+    }
+
+    for (patch_idx, label_name) in resume_label_patches {
+        if let Some(target) = proc_labels.get(&label_name).copied()
+            && let Instruction::ResumeLabel { target_pc } = &mut instructions[patch_idx]
+        {
+            *target_pc = target;
+        }
+    }
+
     Bytecode {
         instructions,
         slot_count: temps.total_slots(),
@@ -158,9 +185,12 @@ fn emit_stmt_list(
     slot_map: &HashMap<String, usize>,
     temps: &mut TempSlotAllocator,
     instructions: &mut Vec<Instruction>,
-    loop_exit_stack: &mut Vec<Vec<usize>>,
+    do_exit_stack: &mut Vec<Vec<usize>>,
+    for_exit_stack: &mut Vec<Vec<usize>>,
     call_patches: &mut Vec<(usize, String)>,
     error_handler_patches: &mut Vec<(usize, String)>,
+    goto_patches: &mut Vec<(usize, String)>,
+    resume_label_patches: &mut Vec<(usize, String)>,
     proc_meta: &HashMap<String, EmitProcMeta>,
     current_proc_name: &str,
     proc_labels: &mut HashMap<String, usize>,
@@ -172,9 +202,12 @@ fn emit_stmt_list(
             slot_map,
             temps,
             instructions,
-            loop_exit_stack,
+            do_exit_stack,
+            for_exit_stack,
             call_patches,
             error_handler_patches,
+            goto_patches,
+            resume_label_patches,
             proc_meta,
             current_proc_name,
             proc_labels,
@@ -189,9 +222,12 @@ fn emit_stmt(
     slot_map: &HashMap<String, usize>,
     temps: &mut TempSlotAllocator,
     instructions: &mut Vec<Instruction>,
-    loop_exit_stack: &mut Vec<Vec<usize>>,
+    do_exit_stack: &mut Vec<Vec<usize>>,
+    for_exit_stack: &mut Vec<Vec<usize>>,
     call_patches: &mut Vec<(usize, String)>,
     error_handler_patches: &mut Vec<(usize, String)>,
+    goto_patches: &mut Vec<(usize, String)>,
+    resume_label_patches: &mut Vec<(usize, String)>,
     proc_meta: &HashMap<String, EmitProcMeta>,
     current_proc_name: &str,
     proc_labels: &mut HashMap<String, usize>,
@@ -267,9 +303,12 @@ fn emit_stmt(
                 slot_map,
                 temps,
                 instructions,
-                loop_exit_stack,
+                do_exit_stack,
+                for_exit_stack,
                 call_patches,
                 error_handler_patches,
+                goto_patches,
+                resume_label_patches,
                 proc_meta,
                 current_proc_name,
                 proc_labels,
@@ -292,9 +331,12 @@ fn emit_stmt(
                     slot_map,
                     temps,
                     instructions,
-                    loop_exit_stack,
+                    do_exit_stack,
+                    for_exit_stack,
                     call_patches,
                     error_handler_patches,
+                    goto_patches,
+                    resume_label_patches,
                     proc_meta,
                     current_proc_name,
                     proc_labels,
@@ -309,45 +351,126 @@ fn emit_stmt(
             var,
             start,
             end,
+            step,
             body,
         } => {
             if let Some(var_slot) = slot_map.get(var.as_str()).copied() {
                 emit_expr_into(start, compare_mode, var_slot, slot_map, temps, instructions);
                 let end_slot = temps.alloc_temp();
+                let step_slot = temps.alloc_temp();
+                let zero_slot = temps.alloc_temp();
+                let step_non_negative_slot = temps.alloc_temp();
+                let cmp_le_slot = temps.alloc_temp();
+                let cmp_ge_slot = temps.alloc_temp();
+                let step_negative_slot = temps.alloc_temp();
+                let upper_cond_slot = temps.alloc_temp();
+                let lower_cond_slot = temps.alloc_temp();
                 let cond_slot = temps.alloc_temp();
                 emit_expr_into(end, compare_mode, end_slot, slot_map, temps, instructions);
+                emit_expr_into(step, compare_mode, step_slot, slot_map, temps, instructions);
+                instructions.push(Instruction::LoadConstI32 {
+                    slot: zero_slot,
+                    value: 0,
+                });
 
                 let loop_head = instructions.len();
+                instructions.push(Instruction::CmpGeSlots {
+                    dst: step_non_negative_slot,
+                    lhs: step_slot,
+                    rhs: zero_slot,
+                });
                 instructions.push(Instruction::CmpLeSlots {
-                    dst: cond_slot,
+                    dst: cmp_le_slot,
                     lhs: var_slot,
                     rhs: end_slot,
+                });
+                instructions.push(Instruction::CmpGeSlots {
+                    dst: cmp_ge_slot,
+                    lhs: var_slot,
+                    rhs: end_slot,
+                });
+                instructions.push(Instruction::BoolNot {
+                    dst: step_negative_slot,
+                    src: step_non_negative_slot,
+                });
+                instructions.push(Instruction::BoolAnd {
+                    dst: upper_cond_slot,
+                    lhs: step_non_negative_slot,
+                    rhs: cmp_le_slot,
+                });
+                instructions.push(Instruction::BoolAnd {
+                    dst: lower_cond_slot,
+                    lhs: step_negative_slot,
+                    rhs: cmp_ge_slot,
+                });
+                instructions.push(Instruction::BoolOr {
+                    dst: cond_slot,
+                    lhs: upper_cond_slot,
+                    rhs: lower_cond_slot,
                 });
                 let exit_patch = instructions.len();
                 instructions.push(Instruction::JumpIfZero {
                     cond_slot,
                     target_pc: 0,
                 });
+                for_exit_stack.push(Vec::new());
                 emit_stmt_list(
                     body,
                     compare_mode,
                     slot_map,
                     temps,
                     instructions,
-                    loop_exit_stack,
+                    do_exit_stack,
+                    for_exit_stack,
                     call_patches,
                     error_handler_patches,
+                    goto_patches,
+                    resume_label_patches,
                     proc_meta,
                     current_proc_name,
                     proc_labels,
                 );
-                instructions.push(Instruction::IncSlot { slot: var_slot });
+                instructions.push(Instruction::AddSlots {
+                    dst: var_slot,
+                    lhs: var_slot,
+                    rhs: step_slot,
+                });
                 instructions.push(Instruction::Jump {
                     target_pc: loop_head,
                 });
                 let exit_target = instructions.len();
                 if let Instruction::JumpIfZero { target_pc, .. } = &mut instructions[exit_patch] {
                     *target_pc = exit_target;
+                }
+                if let Some(exit_patches) = for_exit_stack.pop() {
+                    for patch in exit_patches {
+                        if let Instruction::Jump { target_pc } = &mut instructions[patch] {
+                            *target_pc = exit_target;
+                        }
+                    }
+                }
+            }
+        }
+        BoundStmt::ForEach { var, items, body } => {
+            if let Some(var_slot) = slot_map.get(var.as_str()).copied() {
+                for item in items {
+                    emit_expr_into(item, compare_mode, var_slot, slot_map, temps, instructions);
+                    emit_stmt_list(
+                        body,
+                        compare_mode,
+                        slot_map,
+                        temps,
+                        instructions,
+                        do_exit_stack,
+                        for_exit_stack,
+                        call_patches,
+                        error_handler_patches,
+                        goto_patches,
+                        resume_label_patches,
+                        proc_meta,
+                        current_proc_name,
+                        proc_labels,
+                    );
                 }
             }
         }
@@ -373,6 +496,9 @@ fn emit_stmt(
                 reset_array_slots(name, slot_map, instructions);
             }
         }
+        BoundStmt::Erase { name } => {
+            reset_array_slots(name, slot_map, instructions);
+        }
         BoundStmt::DoWhile {
             cond,
             body,
@@ -392,16 +518,19 @@ fn emit_stmt(
                 entry_exit_patch = Some(exit_patch);
             }
 
-            loop_exit_stack.push(Vec::new());
+            do_exit_stack.push(Vec::new());
             emit_stmt_list(
                 body,
                 compare_mode,
                 slot_map,
                 temps,
                 instructions,
-                loop_exit_stack,
+                do_exit_stack,
+                for_exit_stack,
                 call_patches,
                 error_handler_patches,
+                goto_patches,
+                resume_label_patches,
                 proc_meta,
                 current_proc_name,
                 proc_labels,
@@ -427,7 +556,7 @@ fn emit_stmt(
                 *target_pc = exit_target;
             }
 
-            if let Some(exit_patches) = loop_exit_stack.pop() {
+            if let Some(exit_patches) = do_exit_stack.pop() {
                 for patch in exit_patches {
                     if let Instruction::Jump { target_pc } = &mut instructions[patch] {
                         *target_pc = exit_target;
@@ -436,7 +565,14 @@ fn emit_stmt(
             }
         }
         BoundStmt::ExitDo => {
-            if let Some(exit_patches) = loop_exit_stack.last_mut() {
+            if let Some(exit_patches) = do_exit_stack.last_mut() {
+                let patch = instructions.len();
+                instructions.push(Instruction::Jump { target_pc: 0 });
+                exit_patches.push(patch);
+            }
+        }
+        BoundStmt::ExitFor => {
+            if let Some(exit_patches) = for_exit_stack.last_mut() {
                 let patch = instructions.len();
                 instructions.push(Instruction::Jump { target_pc: 0 });
                 exit_patches.push(patch);
@@ -457,14 +593,31 @@ fn emit_stmt(
         BoundStmt::ResumeNext => {
             instructions.push(Instruction::ResumeNext);
         }
+        BoundStmt::Resume => {
+            instructions.push(Instruction::Resume);
+        }
+        BoundStmt::ResumeLabel { label } => {
+            let patch_idx = instructions.len();
+            instructions.push(Instruction::ResumeLabel { target_pc: 0 });
+            resume_label_patches
+                .push((patch_idx, format!("__label::{current_proc_name}::{label}")));
+        }
         BoundStmt::RaiseError(code) => {
             instructions.push(Instruction::RaiseError { code: *code });
+        }
+        BoundStmt::ErrClear => {
+            instructions.push(Instruction::ClearErr);
         }
         BoundStmt::Label { name } => {
             proc_labels.insert(
                 format!("__label::{current_proc_name}::{name}"),
                 instructions.len(),
             );
+        }
+        BoundStmt::GoTo { label } => {
+            let patch_idx = instructions.len();
+            instructions.push(Instruction::Jump { target_pc: 0 });
+            goto_patches.push((patch_idx, format!("__label::{current_proc_name}::{label}")));
         }
         BoundStmt::GoSub { label } => {
             let patch_idx = instructions.len();
@@ -483,25 +636,16 @@ fn emit_stmt(
             emit_expr_into(expr, compare_mode, expr_slot, slot_map, temps, instructions);
             let mut end_patches: Vec<usize> = Vec::new();
 
-            for (values, body) in arms {
+            for (clauses, body) in arms {
                 let aggregate_slot = temps.alloc_temp();
                 instructions.push(Instruction::LoadConstI32 {
                     slot: aggregate_slot,
                     value: 0,
                 });
 
-                for value in values {
-                    let const_slot = temps.alloc_temp();
-                    let cmp_slot = temps.alloc_temp();
-                    instructions.push(Instruction::LoadConstI32 {
-                        slot: const_slot,
-                        value: *value,
-                    });
-                    instructions.push(Instruction::CmpEqSlots {
-                        dst: cmp_slot,
-                        lhs: expr_slot,
-                        rhs: const_slot,
-                    });
+                for clause in clauses {
+                    let cmp_slot =
+                        emit_select_case_clause_match(expr_slot, clause, temps, instructions);
                     instructions.push(Instruction::BoolOr {
                         dst: aggregate_slot,
                         lhs: aggregate_slot,
@@ -520,9 +664,12 @@ fn emit_stmt(
                     slot_map,
                     temps,
                     instructions,
-                    loop_exit_stack,
+                    do_exit_stack,
+                    for_exit_stack,
                     call_patches,
                     error_handler_patches,
+                    goto_patches,
+                    resume_label_patches,
                     proc_meta,
                     current_proc_name,
                     proc_labels,
@@ -542,9 +689,12 @@ fn emit_stmt(
                 slot_map,
                 temps,
                 instructions,
-                loop_exit_stack,
+                do_exit_stack,
+                for_exit_stack,
                 call_patches,
                 error_handler_patches,
+                goto_patches,
+                resume_label_patches,
                 proc_meta,
                 current_proc_name,
                 proc_labels,
@@ -557,69 +707,286 @@ fn emit_stmt(
             }
         }
         BoundStmt::Call { name, args } => {
-            let mut byref_copyback: Vec<(usize, usize)> = Vec::new();
-            if let Some(meta) = proc_meta.get(name) {
-                let mapped_args = map_call_args_for_emit(args, &meta.params);
-                let param_array_idx = meta.params.iter().position(|p| p.param_array);
-                for (idx, param) in meta.params.iter().enumerate() {
-                    let Some(param_slot) = meta.slots.get(param.name.as_str()).copied() else {
-                        continue;
-                    };
-                    if param.param_array {
-                        let extras_start = param_array_idx.unwrap_or(meta.params.len());
-                        let extras_count = args.len().saturating_sub(extras_start);
-                        instructions.push(Instruction::LoadConstI32 {
-                            slot: param_slot,
-                            value: ARRAY_TAG_BASE + extras_count as i32,
-                        });
-                        continue;
-                    }
-                    let Some(arg) = mapped_args.get(idx).and_then(|arg| *arg) else {
-                        if param.optional {
-                            emit_optional_default(param, param_slot, instructions);
-                        }
-                        continue;
-                    };
-
-                    if param.by_ref
-                        && let BoundExpr::Var(var_name) = &arg.expr
-                        && let Some(src_slot) = slot_map.get(var_name.as_str()).copied()
-                    {
-                        if src_slot != param_slot {
-                            instructions.push(Instruction::CopySlot {
-                                dst: param_slot,
-                                src: src_slot,
-                            });
-                        }
-                        byref_copyback.push((src_slot, param_slot));
-                        continue;
-                    }
-
-                    emit_expr_into(
-                        &arg.expr,
-                        compare_mode,
-                        param_slot,
-                        slot_map,
-                        temps,
-                        instructions,
-                    );
-                }
+            if !emit_early_call(
+                name,
+                args,
+                compare_mode,
+                slot_map,
+                temps,
+                instructions,
+                call_patches,
+                proc_meta,
+                None,
+            ) {
+                let _ = emit_late_bound_default_member_call(
+                    name,
+                    args,
+                    compare_mode,
+                    slot_map,
+                    temps,
+                    instructions,
+                    None,
+                );
             }
-
-            let patch_idx = instructions.len();
-            instructions.push(Instruction::CallProc { target_pc: 0 });
-            call_patches.push((patch_idx, name.clone()));
-
-            for (dst_slot, src_slot) in byref_copyback {
-                if dst_slot != src_slot {
-                    instructions.push(Instruction::CopySlot {
-                        dst: dst_slot,
-                        src: src_slot,
-                    });
-                }
+        }
+        BoundStmt::AssignFromCall { target, name, args } => {
+            if let Some(target_slot) = slot_map.get(target.as_str()).copied()
+                && !emit_early_call(
+                    name,
+                    args,
+                    compare_mode,
+                    slot_map,
+                    temps,
+                    instructions,
+                    call_patches,
+                    proc_meta,
+                    Some(target_slot),
+                )
+            {
+                let _ = emit_late_bound_default_member_call(
+                    name,
+                    args,
+                    compare_mode,
+                    slot_map,
+                    temps,
+                    instructions,
+                    Some(target_slot),
+                );
             }
         }
         BoundStmt::Unsupported { .. } => {}
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn emit_early_call(
+    name: &str,
+    args: &[BoundCallArg],
+    compare_mode: StringCompareMode,
+    slot_map: &HashMap<String, usize>,
+    temps: &mut TempSlotAllocator,
+    instructions: &mut Vec<Instruction>,
+    call_patches: &mut Vec<(usize, String)>,
+    proc_meta: &HashMap<String, EmitProcMeta>,
+    assign_target: Option<usize>,
+) -> bool {
+    let Some(meta) = proc_meta.get(name) else {
+        return false;
+    };
+
+    let mut byref_copyback: Vec<(usize, usize)> = Vec::new();
+    let mapped_args = map_call_args_for_emit(args, &meta.params);
+    let param_array_idx = meta.params.iter().position(|p| p.param_array);
+    for (idx, param) in meta.params.iter().enumerate() {
+        let Some(param_slot) = meta.slots.get(param.name.as_str()).copied() else {
+            continue;
+        };
+        if param.param_array {
+            let extras_start = param_array_idx.unwrap_or(meta.params.len());
+            let extras_count = args.len().saturating_sub(extras_start);
+            instructions.push(Instruction::LoadConstI32 {
+                slot: param_slot,
+                value: ARRAY_TAG_BASE + extras_count as i32,
+            });
+            continue;
+        }
+        let Some(arg) = mapped_args.get(idx).and_then(|arg| *arg) else {
+            if param.optional {
+                emit_optional_default(param, param_slot, instructions);
+            }
+            continue;
+        };
+
+        if param.by_ref
+            && let BoundExpr::Var(var_name) = &arg.expr
+            && let Some(src_slot) = slot_map.get(var_name.as_str()).copied()
+        {
+            if src_slot != param_slot {
+                instructions.push(Instruction::CopySlot {
+                    dst: param_slot,
+                    src: src_slot,
+                });
+            }
+            byref_copyback.push((src_slot, param_slot));
+            continue;
+        }
+
+        emit_expr_into(
+            &arg.expr,
+            compare_mode,
+            param_slot,
+            slot_map,
+            temps,
+            instructions,
+        );
+    }
+
+    let patch_idx = instructions.len();
+    instructions.push(Instruction::CallProc { target_pc: 0 });
+    call_patches.push((patch_idx, name.to_string()));
+
+    for (dst_slot, src_slot) in byref_copyback {
+        if dst_slot != src_slot {
+            instructions.push(Instruction::CopySlot {
+                dst: dst_slot,
+                src: src_slot,
+            });
+        }
+    }
+
+    if let Some(dst) = assign_target
+        && let Some(src) = meta.return_slot
+        && dst != src
+    {
+        instructions.push(Instruction::CopySlot { dst, src });
+    }
+
+    true
+}
+
+#[allow(clippy::too_many_arguments)]
+fn emit_late_bound_default_member_call(
+    name: &str,
+    args: &[BoundCallArg],
+    compare_mode: StringCompareMode,
+    slot_map: &HashMap<String, usize>,
+    temps: &mut TempSlotAllocator,
+    instructions: &mut Vec<Instruction>,
+    assign_target: Option<usize>,
+) -> bool {
+    let Some(object_slot) = slot_map.get(name).copied() else {
+        return false;
+    };
+    let member_slot = temps.alloc_temp();
+    instructions.push(Instruction::LoadConstI32 {
+        slot: member_slot,
+        value: 0,
+    });
+    let arg_slot = temps.alloc_temp();
+    if let Some(first_arg) = args.first() {
+        emit_expr_into(
+            &first_arg.expr,
+            compare_mode,
+            arg_slot,
+            slot_map,
+            temps,
+            instructions,
+        );
+    } else {
+        instructions.push(Instruction::LoadConstI32 {
+            slot: arg_slot,
+            value: 0,
+        });
+    }
+    let dst = assign_target.unwrap_or_else(|| temps.alloc_temp());
+    instructions.push(Instruction::IntrinsicDispatchInvokeHost {
+        dst,
+        object: object_slot,
+        member: member_slot,
+        arg: arg_slot,
+    });
+    true
+}
+
+fn emit_select_case_clause_match(
+    expr_slot: usize,
+    clause: &BoundCaseClause,
+    temps: &mut TempSlotAllocator,
+    instructions: &mut Vec<Instruction>,
+) -> usize {
+    match clause {
+        BoundCaseClause::Value(value) => {
+            let const_slot = temps.alloc_temp();
+            let cmp_slot = temps.alloc_temp();
+            instructions.push(Instruction::LoadConstI32 {
+                slot: const_slot,
+                value: *value,
+            });
+            instructions.push(Instruction::CmpEqSlots {
+                dst: cmp_slot,
+                lhs: expr_slot,
+                rhs: const_slot,
+            });
+            cmp_slot
+        }
+        BoundCaseClause::Is { op, value } => {
+            let const_slot = temps.alloc_temp();
+            let cmp_slot = temps.alloc_temp();
+            instructions.push(Instruction::LoadConstI32 {
+                slot: const_slot,
+                value: *value,
+            });
+            match op {
+                CompareOp::Eq => instructions.push(Instruction::CmpEqSlots {
+                    dst: cmp_slot,
+                    lhs: expr_slot,
+                    rhs: const_slot,
+                }),
+                CompareOp::Ne => instructions.push(Instruction::CmpNeSlots {
+                    dst: cmp_slot,
+                    lhs: expr_slot,
+                    rhs: const_slot,
+                }),
+                CompareOp::Lt => instructions.push(Instruction::CmpLtSlots {
+                    dst: cmp_slot,
+                    lhs: expr_slot,
+                    rhs: const_slot,
+                }),
+                CompareOp::Le => instructions.push(Instruction::CmpLeSlots {
+                    dst: cmp_slot,
+                    lhs: expr_slot,
+                    rhs: const_slot,
+                }),
+                CompareOp::Gt => instructions.push(Instruction::CmpGtSlots {
+                    dst: cmp_slot,
+                    lhs: expr_slot,
+                    rhs: const_slot,
+                }),
+                CompareOp::Ge => instructions.push(Instruction::CmpGeSlots {
+                    dst: cmp_slot,
+                    lhs: expr_slot,
+                    rhs: const_slot,
+                }),
+                CompareOp::Like => instructions.push(Instruction::IntrinsicLikeDigits {
+                    dst: cmp_slot,
+                    lhs: expr_slot,
+                    pattern: const_slot,
+                    mode: StringCompareMode::Binary,
+                }),
+            }
+            cmp_slot
+        }
+        BoundCaseClause::Range { start, end } => {
+            let start_slot = temps.alloc_temp();
+            let end_slot = temps.alloc_temp();
+            let ge_slot = temps.alloc_temp();
+            let le_slot = temps.alloc_temp();
+            let cmp_slot = temps.alloc_temp();
+            instructions.push(Instruction::LoadConstI32 {
+                slot: start_slot,
+                value: *start,
+            });
+            instructions.push(Instruction::LoadConstI32 {
+                slot: end_slot,
+                value: *end,
+            });
+            instructions.push(Instruction::CmpGeSlots {
+                dst: ge_slot,
+                lhs: expr_slot,
+                rhs: start_slot,
+            });
+            instructions.push(Instruction::CmpLeSlots {
+                dst: le_slot,
+                lhs: expr_slot,
+                rhs: end_slot,
+            });
+            instructions.push(Instruction::BoolAnd {
+                dst: cmp_slot,
+                lhs: ge_slot,
+                rhs: le_slot,
+            });
+            cmp_slot
+        }
     }
 }
 
@@ -1137,6 +1504,12 @@ fn emit_expr_into(
                 }
                 _ => {}
             }
+        }
+        BoundExpr::ProcCall { .. } => {
+            instructions.push(Instruction::LoadConstI32 {
+                slot: dst,
+                value: 0,
+            });
         }
     }
 }

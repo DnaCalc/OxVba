@@ -20,6 +20,11 @@ pub fn check_types(module: BoundModule) -> Result<BoundModule, String> {
         .iter()
         .map(|p| (p.name.clone(), p.params.clone()))
         .collect();
+    let proc_return_types: HashMap<String, BoundType> = module
+        .procedures
+        .iter()
+        .map(|p| (p.name.clone(), p.return_type))
+        .collect();
 
     for procedure in &mut module.procedures {
         let mut declared: HashSet<String> = procedure.declarations.iter().cloned().collect();
@@ -50,6 +55,7 @@ pub fn check_types(module: BoundModule) -> Result<BoundModule, String> {
             &mut procedure.declaration_types,
             &proc_names,
             &proc_params,
+            &proc_return_types,
             &labels,
         )?;
     }
@@ -80,6 +86,7 @@ fn check_stmt_list(
     declaration_types: &mut HashMap<String, BoundType>,
     proc_names: &HashSet<String>,
     proc_params: &HashMap<String, Vec<BoundParam>>,
+    proc_return_types: &HashMap<String, BoundType>,
     labels: &HashSet<String>,
 ) -> Result<(), String> {
     for stmt in stmts {
@@ -93,6 +100,7 @@ fn check_stmt_list(
             declaration_types,
             proc_names,
             proc_params,
+            proc_return_types,
             labels,
         )?;
     }
@@ -110,6 +118,7 @@ fn check_stmt(
     declaration_types: &mut HashMap<String, BoundType>,
     proc_names: &HashSet<String>,
     proc_params: &HashMap<String, Vec<BoundParam>>,
+    proc_return_types: &HashMap<String, BoundType>,
     labels: &HashSet<String>,
 ) -> Result<(), String> {
     match stmt {
@@ -245,6 +254,7 @@ fn check_stmt(
                 declaration_types,
                 proc_names,
                 proc_params,
+                proc_return_types,
                 labels,
             )?;
             check_stmt_list(
@@ -257,6 +267,7 @@ fn check_stmt(
                 declaration_types,
                 proc_names,
                 proc_params,
+                proc_return_types,
                 labels,
             )
         }
@@ -264,6 +275,7 @@ fn check_stmt(
             var,
             start,
             end,
+            step,
             body,
         } => {
             ensure_declared(
@@ -293,6 +305,18 @@ fn check_stmt(
                 declarations,
                 declaration_types,
             )?;
+            check_expr(
+                step,
+                option_explicit,
+                default_type_table,
+                declared,
+                declared_types,
+                declarations,
+                declaration_types,
+            )?;
+            if matches!(step, BoundExpr::IntConst(0)) {
+                return Err("for loop step cannot be zero".to_string());
+            }
             check_stmt_list(
                 body,
                 option_explicit,
@@ -303,6 +327,50 @@ fn check_stmt(
                 declaration_types,
                 proc_names,
                 proc_params,
+                proc_return_types,
+                labels,
+            )
+        }
+        BoundStmt::ForEach { var, items, body } => {
+            ensure_declared(
+                var,
+                option_explicit,
+                default_type_table,
+                declared,
+                declared_types,
+                declarations,
+                declaration_types,
+            )?;
+            let target_ty = *declared_types.get(var).unwrap_or(&BoundType::Variant);
+            for item in items {
+                check_expr(
+                    item,
+                    option_explicit,
+                    default_type_table,
+                    declared,
+                    declared_types,
+                    declarations,
+                    declaration_types,
+                )?;
+                let item_ty = infer_expr_type(item, declared_types);
+                if !can_assign_to(target_ty, item_ty) {
+                    return Err(format!(
+                        "type mismatch in For Each item assignment: cannot assign {:?} to {:?} variable {}",
+                        item_ty, target_ty, var
+                    ));
+                }
+            }
+            check_stmt_list(
+                body,
+                option_explicit,
+                default_type_table,
+                declared,
+                declared_types,
+                declarations,
+                declaration_types,
+                proc_names,
+                proc_params,
+                proc_return_types,
                 labels,
             )
         }
@@ -326,6 +394,18 @@ fn check_stmt(
             }
             Ok(())
         }
+        BoundStmt::Erase { name } => {
+            ensure_declared(
+                name,
+                option_explicit,
+                default_type_table,
+                declared,
+                declared_types,
+                declarations,
+                declaration_types,
+            )?;
+            Ok(())
+        }
         BoundStmt::DoWhile { cond, body, .. } => {
             check_condition(
                 cond,
@@ -346,10 +426,12 @@ fn check_stmt(
                 declaration_types,
                 proc_names,
                 proc_params,
+                proc_return_types,
                 labels,
             )
         }
         BoundStmt::ExitDo => Ok(()),
+        BoundStmt::ExitFor => Ok(()),
         BoundStmt::OnErrorResumeNext => Ok(()),
         BoundStmt::OnErrorGoto0 => Ok(()),
         BoundStmt::OnErrorGotoLabel { label } => {
@@ -360,8 +442,24 @@ fn check_stmt(
             }
         }
         BoundStmt::ResumeNext => Ok(()),
+        BoundStmt::Resume => Ok(()),
+        BoundStmt::ResumeLabel { label } => {
+            if labels.contains(label) {
+                Ok(())
+            } else {
+                Err(format!("resume target label not found: {label}"))
+            }
+        }
         BoundStmt::RaiseError(_) => Ok(()),
+        BoundStmt::ErrClear => Ok(()),
         BoundStmt::Label { .. } => Ok(()),
+        BoundStmt::GoTo { label } => {
+            if labels.contains(label) {
+                Ok(())
+            } else {
+                Err(format!("goto target label not found: {label}"))
+            }
+        }
         BoundStmt::GoSub { label } => {
             if labels.contains(label) {
                 Ok(())
@@ -370,91 +468,52 @@ fn check_stmt(
             }
         }
         BoundStmt::Return => Ok(()),
-        BoundStmt::Call { name, args } => {
-            let call_mode =
-                classify_call_mode(name, args, proc_names, proc_params, declared_types)?;
-
-            if let Some(params) = proc_params.get(name) {
-                let mapped_args = map_call_args_to_params(name, args, params)?;
-                let param_array_idx = params.iter().position(|p| p.param_array);
-                for (idx, param) in params.iter().enumerate() {
-                    if param.param_array {
-                        let extras_start = param_array_idx.unwrap_or(params.len());
-                        for extra in args.iter().skip(extras_start) {
-                            check_expr(
-                                &extra.expr,
-                                option_explicit,
-                                default_type_table,
-                                declared,
-                                declared_types,
-                                declarations,
-                                declaration_types,
-                            )?;
-                        }
-                        continue;
-                    }
-                    let Some(arg) = mapped_args[idx] else {
-                        continue;
-                    };
-
-                    if param.by_ref && !matches!(arg.expr, BoundExpr::Var(_)) {
-                        return Err(format!(
-                            "ByRef parameter {} requires variable argument",
-                            param.name
-                        ));
-                    }
-                    check_expr(
-                        &arg.expr,
-                        option_explicit,
-                        default_type_table,
-                        declared,
-                        declared_types,
-                        declarations,
-                        declaration_types,
-                    )?;
-                    let arg_ty = infer_expr_type(&arg.expr, declared_types);
-                    if param.by_ref
-                        && param.ty != BoundType::Variant
-                        && arg_ty != BoundType::Variant
-                        && arg_ty != param.ty
-                    {
-                        return Err(format!(
-                            "ByRef parameter {} requires exact type match: expected {:?}, got {:?}",
-                            param.name, param.ty, arg_ty
-                        ));
-                    }
-                    if call_coercion_result(call_mode, Some(param.ty), arg_ty) != CoercionResult::Ok
-                    {
-                        return Err(format!(
-                            "argument type mismatch for parameter {}: cannot pass {:?} to {:?}",
-                            param.name, arg_ty, param.ty
-                        ));
-                    }
-                }
-            } else if matches!(call_mode, CallMode::Late) {
-                for arg in args {
-                    check_expr(
-                        &arg.expr,
-                        option_explicit,
-                        default_type_table,
-                        declared,
-                        declared_types,
-                        declarations,
-                        declaration_types,
-                    )?;
-                    let arg_ty = infer_expr_type(&arg.expr, declared_types);
-                    if call_coercion_result(CallMode::Late, None, arg_ty) != CoercionResult::Ok {
-                        return Err(format!(
-                            "late-bound call argument coercion mismatch: cannot package {:?} for {}",
-                            arg_ty, name
-                        ));
-                    }
-                }
-                return Err(format!(
-                    "late-bound default-member call is not yet executable: {name}"
-                ));
+        BoundStmt::Call { name, args } => validate_call_site(
+            name,
+            args,
+            option_explicit,
+            default_type_table,
+            declared,
+            declared_types,
+            declarations,
+            declaration_types,
+            proc_names,
+            proc_params,
+            proc_return_types,
+        )
+        .map(|_| ()),
+        BoundStmt::AssignFromCall { target, name, args } => {
+            ensure_declared(
+                target,
+                option_explicit,
+                default_type_table,
+                declared,
+                declared_types,
+                declarations,
+                declaration_types,
+            )?;
+            let return_ty = validate_call_site(
+                name,
+                args,
+                option_explicit,
+                default_type_table,
+                declared,
+                declared_types,
+                declarations,
+                declaration_types,
+                proc_names,
+                proc_params,
+                proc_return_types,
+            )?;
+            let target_ty = *declared_types.get(target).unwrap_or(&BoundType::Variant);
+            if can_assign_to(target_ty, return_ty) {
+                Ok(())
+            } else {
+                Err(format!(
+                    "type mismatch in assignment from call: cannot assign {:?} to {:?} variable {}",
+                    return_ty, target_ty, target
+                ))
             }
-            Ok(())
         }
         BoundStmt::SelectCase {
             expr,
@@ -481,6 +540,7 @@ fn check_stmt(
                     declaration_types,
                     proc_names,
                     proc_params,
+                    proc_return_types,
                     labels,
                 )?;
             }
@@ -494,11 +554,120 @@ fn check_stmt(
                 declaration_types,
                 proc_names,
                 proc_params,
+                proc_return_types,
                 labels,
             )
         }
         BoundStmt::Unsupported { line } => Err(format!("unsupported statement: {line}")),
     }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn validate_call_site(
+    name: &str,
+    args: &[BoundCallArg],
+    option_explicit: bool,
+    default_type_table: &[BoundType; 26],
+    declared: &mut HashSet<String>,
+    declared_types: &mut HashMap<String, BoundType>,
+    declarations: &mut Vec<String>,
+    declaration_types: &mut HashMap<String, BoundType>,
+    proc_names: &HashSet<String>,
+    proc_params: &HashMap<String, Vec<BoundParam>>,
+    proc_return_types: &HashMap<String, BoundType>,
+) -> Result<BoundType, String> {
+    let call_mode = classify_call_mode(name, args, proc_names, proc_params, declared_types)?;
+
+    if let Some(params) = proc_params.get(name) {
+        let mapped_args = map_call_args_to_params(name, args, params)?;
+        let param_array_idx = params.iter().position(|p| p.param_array);
+        for (idx, param) in params.iter().enumerate() {
+            if param.param_array {
+                let extras_start = param_array_idx.unwrap_or(params.len());
+                for extra in args.iter().skip(extras_start) {
+                    check_expr(
+                        &extra.expr,
+                        option_explicit,
+                        default_type_table,
+                        declared,
+                        declared_types,
+                        declarations,
+                        declaration_types,
+                    )?;
+                }
+                continue;
+            }
+            let Some(arg) = mapped_args[idx] else {
+                continue;
+            };
+
+            if param.by_ref && !matches!(arg.expr, BoundExpr::Var(_)) {
+                return Err(format!(
+                    "ByRef parameter {} requires variable argument",
+                    param.name
+                ));
+            }
+            check_expr(
+                &arg.expr,
+                option_explicit,
+                default_type_table,
+                declared,
+                declared_types,
+                declarations,
+                declaration_types,
+            )?;
+            let arg_ty = infer_expr_type(&arg.expr, declared_types);
+            if param.by_ref
+                && param.ty != BoundType::Variant
+                && arg_ty != BoundType::Variant
+                && arg_ty != param.ty
+            {
+                return Err(format!(
+                    "ByRef parameter {} requires exact type match: expected {:?}, got {:?}",
+                    param.name, param.ty, arg_ty
+                ));
+            }
+            if call_coercion_result(call_mode, Some(param.ty), arg_ty) != CoercionResult::Ok {
+                return Err(format!(
+                    "argument type mismatch for parameter {}: cannot pass {:?} to {:?}",
+                    param.name, arg_ty, param.ty
+                ));
+            }
+        }
+        return Ok(proc_return_types
+            .get(name)
+            .copied()
+            .unwrap_or(BoundType::Variant));
+    }
+
+    if matches!(call_mode, CallMode::Late) {
+        if args.len() > 1 {
+            return Err(format!(
+                "late-bound default-member call supports at most one argument in current executable subset: {name}"
+            ));
+        }
+        for arg in args {
+            check_expr(
+                &arg.expr,
+                option_explicit,
+                default_type_table,
+                declared,
+                declared_types,
+                declarations,
+                declaration_types,
+            )?;
+            let arg_ty = infer_expr_type(&arg.expr, declared_types);
+            if call_coercion_result(CallMode::Late, None, arg_ty) != CoercionResult::Ok {
+                return Err(format!(
+                    "late-bound call argument coercion mismatch: cannot package {:?} for {}",
+                    arg_ty, name
+                ));
+            }
+        }
+        return Ok(BoundType::Variant);
+    }
+
+    Err(format!("call to unknown procedure: {name}"))
 }
 
 fn check_condition(
@@ -650,6 +819,10 @@ fn check_expr(
             }
             Ok(())
         }
+        BoundExpr::ProcCall { .. } => Err(
+            "procedure call expression is only supported as a direct assignment RHS in the current subset"
+                .to_string(),
+        ),
     }
 }
 
@@ -725,6 +898,7 @@ fn infer_expr_type(expr: &BoundExpr, declared_types: &HashMap<String, BoundType>
         BoundExpr::IntrinsicCall { name, .. } => {
             intrinsic_result_type(name).unwrap_or(BoundType::Variant)
         }
+        BoundExpr::ProcCall { .. } => BoundType::Variant,
     }
 }
 
@@ -1201,7 +1375,9 @@ fn collect_labels_recursive(
                 collect_labels_recursive(then_body, labels, duplicates);
                 collect_labels_recursive(else_body, labels, duplicates);
             }
-            BoundStmt::ForRange { body, .. } | BoundStmt::DoWhile { body, .. } => {
+            BoundStmt::ForRange { body, .. }
+            | BoundStmt::ForEach { body, .. }
+            | BoundStmt::DoWhile { body, .. } => {
                 collect_labels_recursive(body, labels, duplicates);
             }
             BoundStmt::SelectCase {
