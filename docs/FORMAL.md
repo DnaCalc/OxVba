@@ -22,6 +22,7 @@ Profile-scoped formal obligations may also run as deterministic, reduced-domain 
 - Manifest: `docs/evidence/formal/MANIFEST.md`
 - Obligation index (machine-readable): `docs/evidence/formal/obligations.csv`
 - Inventory: `docs/evidence/formal/INVENTORY.md`
+- Deferred formal gates register: `docs/evidence/formal/DEFERRED_GATES.md`
 - Extended non-blocking backlog: `docs/evidence/formal/EXTENDED_TODO.md`
 - Runner: `./scripts/run-formal.ps1` (non-blocking by current ladder policy)
 - Optional strict mode: `./scripts/run-formal.ps1 -RequireKani` or `OXVBA_REQUIRE_KANI=1`
@@ -29,4 +30,13 @@ Profile-scoped formal obligations may also run as deterministic, reduced-domain 
 - Windows+WSL strict helper: `./scripts/run-formal-kani-wsl.ps1` (runs Kani obligations inside WSL while keeping report paths in this repo)
 - Async strict helper for long profile runs: `./scripts/run-formal-kani-async.ps1` (`Start`/`Status`/`Tail`/`Wait`/`Stop`)
 - Latest async lane evidence: `docs/evidence/formal/ASYNC_KANI_V56.md`
+- Active typing-ladder async lane evidence: `docs/evidence/formal/ASYNC_KANI_V67.md`
 - Current install note: native Windows Kani install may fail in this environment; use WSL path above for strict Kani runs.
+
+## Deferred-gate policy (DG)
+For long-running Kani in profile ladders, formal completion may be deferred without blocking the active profile gate if all of the following are true:
+1. Async run is started and reproducible (`state.json`, stdout/stderr, command script present).
+2. DG entry is recorded in `docs/evidence/formal/DEFERRED_GATES.md`.
+3. A foldback profile is assigned where results will be reconciled.
+
+DG lanes are still required work, but they are reconciled asynchronously and folded into formal reports once complete.

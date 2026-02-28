@@ -78,6 +78,7 @@
 | Profile v64 Status | [`PROFILE_STATUS_V64.md`](profile-status/PROFILE_STATUS_V64.md) | Current gate status contract for `mvp-perf-hotpath-baselines-v64`. |
 | Profile v65 Status | [`PROFILE_STATUS_V65.md`](profile-status/PROFILE_STATUS_V65.md) | Current gate status contract for `mvp-integrated-correctness-perf-gate-v65`. |
 | Profile v66 Status | [`PROFILE_STATUS_V66.md`](profile-status/PROFILE_STATUS_V66.md) | Current gate status contract for `mvp-stabilization-rollup-v66`. |
+| Profile v67 Status | [`PROFILE_STATUS_V67.md`](profile-status/PROFILE_STATUS_V67.md) | Current gate status contract for `mvp-typing-type-lattice-v67`. |
 | Phase 12 Status | [`PHASE12_STATUS.md`](PHASE12_STATUS.md) | Declared profile scope and final conformance/stabilization gate artifacts. |
 | Work Set Plan (v2) | [`worksets/WORKSET_2026-02-27_CONTROLFLOW_V2.md`](worksets/WORKSET_2026-02-27_CONTROLFLOW_V2.md) | Detailed execution-grade plan for control-flow expansion beyond `mvp-int32-core-v1`. |
 | Work Set Plan (v3) | [`worksets/WORKSET_2026-02-27_FORMAL_FOUNDATION_V3.md`](worksets/WORKSET_2026-02-27_FORMAL_FOUNDATION_V3.md) | Formal infrastructure work set for manifest-driven obligations and reporting. |
@@ -143,12 +144,15 @@
 | Work Set Plan (v64) | [`worksets/WORKSET_2026-02-28_PERF_HOTPATH_BASELINES_V64.md`](worksets/WORKSET_2026-02-28_PERF_HOTPATH_BASELINES_V64.md) | Mixed VM/JIT hotpath baseline benchmarking work set. |
 | Work Set Plan (v65) | [`worksets/WORKSET_2026-02-28_INTEGRATED_GATE_V65.md`](worksets/WORKSET_2026-02-28_INTEGRATED_GATE_V65.md) | Integrated correctness/performance gate orchestration work set. |
 | Work Set Plan (v66) | [`worksets/WORKSET_2026-02-28_STABILIZATION_ROLLUP_V66.md`](worksets/WORKSET_2026-02-28_STABILIZATION_ROLLUP_V66.md) | Ladder stabilization rollup and closure work set. |
+| Work Set Plan (v67) | [`worksets/WORKSET_2026-02-28_TYPING_TYPE_LATTICE_V67.md`](worksets/WORKSET_2026-02-28_TYPING_TYPE_LATTICE_V67.md) | Type lattice and initial typed semantic checks work set. |
 | Work Set Plan (v27-v36) | [`worksets/WORKSET_2026-02-27_BATCH_V27_V36.md`](worksets/WORKSET_2026-02-27_BATCH_V27_V36.md) | Next long batch: formal reliability, language coverage closure, and hotspot performance work. |
 | Profile Ladder | [`worksets/PROFILE_LADDER_2026-02-27_MACH1000.md`](worksets/PROFILE_LADDER_2026-02-27_MACH1000.md) | MACH1000 profile roadmap and execution history. |
 | Profile Ladder (v37-v56) | [`worksets/PROFILE_LADDER_2026-02-27_MACH1000_V37_V56.md`](worksets/PROFILE_LADDER_2026-02-27_MACH1000_V37_V56.md) | Next horizon ladder split into language core, intrinsic runtime, and host/interop tracks. |
 | Profile Ladder (v57-v66) | [`worksets/PROFILE_LADDER_2026-02-28_MACH1000_V57_V66.md`](worksets/PROFILE_LADDER_2026-02-28_MACH1000_V57_V66.md) | Language closure + formal depth + JIT throughput ladder for the next 10 profiles. |
+| Profile Ladder (v67-v86) | [`worksets/PROFILE_LADDER_2026-02-28_MACH1000_V67_V86_TYPING.md`](worksets/PROFILE_LADDER_2026-02-28_MACH1000_V67_V86_TYPING.md) | Full VBA typing semantics ladder: diagnostics, coercion, strings, arrays, and early/late interaction with deferred formal gates. |
 | Status Tours | [`status-tours/`](status-tours/) | Date-stamped orientation/showcase docs for implemented project state. |
 | Formal | [`FORMAL.md`](FORMAL.md) | Lean/Kani formal scaffold status and structure. |
+| Deferred Formal Gates | [`evidence/formal/DEFERRED_GATES.md`](evidence/formal/DEFERRED_GATES.md) | Async Kani deferred-gate register and reconciliation status. |
 
 ## Synthesis Records
 

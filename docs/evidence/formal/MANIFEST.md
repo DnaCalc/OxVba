@@ -18,3 +18,4 @@ The obligation index is intentionally machine-readable and now the canonical reg
 - Formal runs are required in-cycle for relevant changes.
 - Formal failures are non-blocking during current ladder stage.
 - Moderate in-cycle fix effort is expected; unresolved items move to the extended todo list.
+- Long-running strict Kani obligations may use deferred-gate tracking via `docs/evidence/formal/DEFERRED_GATES.md` and are reconciled in scheduled foldback profiles.

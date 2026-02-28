@@ -1,7 +1,7 @@
 # Formal Run Report
 
-- Timestamp (UTC): 2026-02-28T08:46:24Z
-- Profile scope: mvp-stabilization-rollup-v66
+- Timestamp (UTC): 2026-02-28T09:48:45Z
+- Profile scope: mvp-typing-type-lattice-v67
 - Overall mode: non-blocking
 - Kani required: false
 - Kani execution: deferred-to-wsl-async
@@ -199,3 +199,6 @@
 | FO-V66-001 | v66 | no | pass | cargo test -p oxvba-host formal_v66_script_defaults_target_v66_profile_scope | scripts/run-formal.ps1 |  |
 | FO-V66-002 | v66 | no | pass | cargo test -p oxvba-host formal_v66_workset_document_exists | docs/worksets/WORKSET_2026-02-28_STABILIZATION_ROLLUP_V66.md |  |
 | FO-V66-003 | v66 | no | pass | cargo test -p oxvba-host formal_v66_profile_status_document_exists | crates/oxvba-host/src/engine.rs |  |
+| FO-V67-001 | v67 | no | pass | cargo test -p oxvba-compiler typecheck::tests::join_numeric_promotes_to_wider_type | crates/oxvba-compiler/src/typecheck.rs |  |
+| FO-V67-002 | v67 | no | pass | cargo test -p oxvba-compiler resolve::tests::resolve_typed_param_and_dim_declarations | crates/oxvba-compiler/src/resolve.rs |  |
+| FO-V67-003 | v67 | no | pass | cargo test -p oxvba-compiler resolve::tests::resolve_typed_array_dim_records_element_alias_types | crates/oxvba-compiler/src/resolve.rs |  |

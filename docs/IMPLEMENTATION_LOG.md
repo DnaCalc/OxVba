@@ -1,6 +1,22 @@
 # Implementation Log
 
 ## 2026-02-28
+- Started typing ladder execution at `v67` (`mvp-typing-type-lattice-v67`):
+  - added bound type model (`BoundType`) to compiler binding structures,
+  - wired typed declaration capture for `Dim ... As <type>`, typed array element aliases, and parameter `As <type>`,
+  - added initial type-lattice join + assignability checks in typecheck assignment/call flow,
+  - added compiler tests for typed declaration capture and lattice/assignability invariants.
+- Added `v67` profile artifacts:
+  - `docs/worksets/WORKSET_2026-02-28_TYPING_TYPE_LATTICE_V67.md`
+  - `docs/profile-status/PROFILE_STATUS_V67.md`
+- Added next profile ladder focused on full VBA typing closure:
+  - `docs/worksets/PROFILE_LADDER_2026-02-28_MACH1000_V67_V86_TYPING.md`
+  - covers `v67..v86` with detailed decomposition for diagnostics, coercion, early/late interaction, full string semantics, and typed/variant arrays (non-zero lower bounds, multi-dim).
+- Added deferred formal gate register and policy docs:
+  - `docs/evidence/formal/DEFERRED_GATES.md`
+  - updated `docs/FORMAL.md`, `docs/TESTING.md`, and `docs/evidence/formal/MANIFEST.md`.
+- Updated master plan sequencing to include post-v66 typing-closure phase:
+  - `MACH1000_PLAN.md` (`Phase 13: Full Typing Semantics Closure`).
 - Updated AutoRun stop/report guard to `v66` in:
   - `AGENTS.md`
   - `docs/AUTORUN_STATE.md`

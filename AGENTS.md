@@ -20,7 +20,9 @@ Use `docs/` and `synthesis/` for supporting context and provenance.
 - Do not stop for progress summaries, watchpoints, confirmations, checkpoints, or any other interim responses.
 - Execute the MACH1000 profile ladder continuously until completion.
 - Only reply when one of the following is true:
-  - The full profile ladder is complete and the `v66` gate is passed.
+  - The active profile ladder is complete and its final gate is passed.
+    - Current active ladder: `v67..v86` (`docs/worksets/PROFILE_LADDER_2026-02-28_MACH1000_V67_V86_TYPING.md`)
+    - Current required terminal gate: `v86`
   - Blockers are documented and no progress can be made on any remaining ladder task without unblocking.
 
 ### Blocker Handling Protocol

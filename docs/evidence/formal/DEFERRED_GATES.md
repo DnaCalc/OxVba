@@ -1,0 +1,27 @@
+# Deferred Formal Gates
+
+This register tracks long-running async formal obligations that are started during profile execution and reconciled later.
+
+## Status Legend
+- `dg-started`: async run created and state/log paths recorded.
+- `dg-running`: process observed live after start.
+- `dg-pass`: async run completed and formal obligations passed.
+- `dg-fail`: async run completed with one or more failing obligations.
+- `dg-folded`: completion status merged into formal reports and backlog triage done.
+
+## Register
+
+| DG ID | Profile | Run Name | Status | Started UTC | Foldback Profile | Paths | Notes |
+|---|---|---|---|---|---|---|---|
+| DG-V56-001 | v56 | v56-kani-full | dg-folded | 2026-02-28T05:14:36Z | v66 | `temp/async/formal-kani/v56-kani-full/` | Historical reference run; foldback evidence in `docs/evidence/formal/ASYNC_KANI_V56.md`. |
+| DG-V67-001 | v67 | v67-kani | dg-running | 2026-02-28T09:50:05Z | v72 | `temp/async/formal-kani/v67-kani/` | Started with watcher polling (`600s`) for strict WSL Kani run of `mvp-typing-type-lattice-v67`. |
+
+## Update Protocol
+1. On async start, add a row with `dg-started` and paths.
+2. After first successful liveness poll, move to `dg-running`.
+3. On completion, set `dg-pass` or `dg-fail` and include exit status notes.
+4. During planned reconciliation profile, merge results into:
+   - `docs/evidence/formal/latest_run.md`
+   - `docs/evidence/formal/latest_run.csv`
+   - `docs/evidence/formal/EXTENDED_TODO.md` (for unresolved failures)
+5. Mark the row `dg-folded` when foldback is complete.

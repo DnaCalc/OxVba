@@ -15,6 +15,13 @@ For long Kani runs in profile execution, use:
 - Tail logs: `./scripts/run-formal-kani-async.ps1 -Action Tail -Name v3-kani`
 - Wait for completion: `./scripts/run-formal-kani-async.ps1 -Action Wait -Name v3-kani`
 - Stop: `./scripts/run-formal-kani-async.ps1 -Action Stop -Name v3-kani`
+- Start watcher (10-minute liveness poll): `./scripts/run-formal-kani-async.ps1 -Action WatchStart -Name v3-kani -WatchPollSeconds 600`
+- Stop watcher: `./scripts/run-formal-kani-async.ps1 -Action WatchStop -Name v3-kani`
+
+Deferred formal gate policy:
+- For profiles that declare deferred gates, async Kani start + DG register update is required in-cycle.
+- Completion can be folded back in a later reconciliation profile if conformance/matrix gates are green.
+- DG register path: `docs/evidence/formal/DEFERRED_GATES.md`
 
 ## Current coverage
 - Syntax: lexer/parser smoke and error tests.

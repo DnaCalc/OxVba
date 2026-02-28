@@ -9,6 +9,25 @@ pub enum BoundExpr {
     IntrinsicCall { name: String, args: Vec<BoundExpr> },
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum BoundType {
+    Variant,
+    Integer,
+    Long,
+    LongLong,
+    LongPtr,
+    Byte,
+    Single,
+    Double,
+    Currency,
+    Decimal,
+    Date,
+    String,
+    Boolean,
+    Object,
+    Array,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BoundCallArg {
     pub name: Option<String>,
@@ -99,6 +118,7 @@ pub struct BoundModule {
     pub source: String,
     pub option_explicit: bool,
     pub declarations: Vec<String>,
+    pub declaration_types: HashMap<String, BoundType>,
     pub body: Vec<BoundStmt>,
     pub procedures: Vec<BoundProcedure>,
 }
@@ -108,6 +128,7 @@ pub struct BoundProcedure {
     pub name: String,
     pub params: Vec<BoundParam>,
     pub declarations: Vec<String>,
+    pub declaration_types: HashMap<String, BoundType>,
     pub body: Vec<BoundStmt>,
 }
 
@@ -117,6 +138,7 @@ pub struct BoundParam {
     pub by_ref: bool,
     pub optional: bool,
     pub default_value: Option<i32>,
+    pub ty: BoundType,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -153,6 +175,7 @@ pub fn resolve_symbols(source: &str) -> BoundModule {
         )
     } else {
         let mut declarations: Vec<String> = Vec::new();
+        let mut declaration_types: HashMap<String, BoundType> = HashMap::new();
         let mut array_bounds: HashMap<String, usize> = HashMap::new();
         let mut index = 0;
         for (name, _) in sorted_module_constants(&module_constants) {
@@ -162,11 +185,13 @@ pub fn resolve_symbols(source: &str) -> BoundModule {
             {
                 declarations.push(name.clone());
             }
+            declaration_types.insert(name, BoundType::Long);
         }
         let mut body = parse_block(
             &lines,
             &mut index,
             &mut declarations,
+            &mut declaration_types,
             &mut array_bounds,
             &mut option_explicit,
             &module_constants,
@@ -178,6 +203,7 @@ pub fn resolve_symbols(source: &str) -> BoundModule {
             name: "main".to_string(),
             params: Vec::new(),
             declarations,
+            declaration_types,
             body,
         }]
     };
@@ -193,6 +219,7 @@ pub fn resolve_symbols(source: &str) -> BoundModule {
             name: "main".to_string(),
             params: Vec::new(),
             declarations: Vec::new(),
+            declaration_types: HashMap::new(),
             body: Vec::new(),
         });
 
@@ -200,6 +227,7 @@ pub fn resolve_symbols(source: &str) -> BoundModule {
         source: source.to_string(),
         option_explicit,
         declarations: entry.declarations.clone(),
+        declaration_types: entry.declaration_types.clone(),
         body: entry.body.clone(),
         procedures,
     }
@@ -727,6 +755,8 @@ fn parse_procedures(
 
         index += 1;
         let mut declarations: Vec<String> = params.iter().map(|p| p.name.clone()).collect();
+        let mut declaration_types: HashMap<String, BoundType> =
+            params.iter().map(|p| (p.name.clone(), p.ty)).collect();
         for (name, _) in sorted_module_constants(module_constants) {
             if !declarations
                 .iter()
@@ -734,6 +764,7 @@ fn parse_procedures(
             {
                 declarations.push(name.clone());
             }
+            declaration_types.entry(name).or_insert(BoundType::Long);
         }
         let mut array_bounds: HashMap<String, usize> = HashMap::new();
         let end_term = kind.end_term();
@@ -741,6 +772,7 @@ fn parse_procedures(
             lines,
             &mut index,
             &mut declarations,
+            &mut declaration_types,
             &mut array_bounds,
             option_explicit,
             module_constants,
@@ -756,6 +788,7 @@ fn parse_procedures(
             name,
             params,
             declarations,
+            declaration_types,
             body,
         });
     }
@@ -849,11 +882,20 @@ fn parse_proc_signature(line: &str, kind: ProcKind) -> Option<(String, Vec<Bound
                 } else {
                     (true, token)
                 };
-                let (name_text, default_value) = if let Some((lhs, rhs)) = remainder.split_once('=')
+                let (decl_text, default_value) = if let Some((lhs, rhs)) = remainder.split_once('=')
                 {
                     (lhs.trim(), Some(parse_param_default(rhs.trim())?))
                 } else {
                     (remainder, None)
+                };
+
+                let (name_text, ty) = if let Some((lhs, rhs)) = split_keyword_ci(decl_text, "as") {
+                    (
+                        lhs.trim(),
+                        parse_declared_type(rhs.trim()).unwrap_or(BoundType::Variant),
+                    )
+                } else {
+                    (decl_text, BoundType::Variant)
                 };
 
                 if default_value.is_some() && !optional {
@@ -874,6 +916,7 @@ fn parse_proc_signature(line: &str, kind: ProcKind) -> Option<(String, Vec<Bound
                     by_ref,
                     optional,
                     default_value,
+                    ty,
                 });
             }
         }
@@ -1002,6 +1045,7 @@ fn parse_block(
     lines: &[String],
     index: &mut usize,
     declarations: &mut Vec<String>,
+    declaration_types: &mut HashMap<String, BoundType>,
     array_bounds: &mut HashMap<String, usize>,
     option_explicit: &mut bool,
     module_constants: &HashMap<String, i32>,
@@ -1038,7 +1082,7 @@ fn parse_block(
         }
 
         if lower.starts_with("dim ") {
-            parse_declaration(line, declarations, array_bounds);
+            parse_declaration(line, declarations, declaration_types, array_bounds);
             *index += 1;
             continue;
         }
@@ -1075,6 +1119,7 @@ fn parse_block(
                 lines,
                 index,
                 declarations,
+                declaration_types,
                 array_bounds,
                 option_explicit,
                 module_constants,
@@ -1089,6 +1134,7 @@ fn parse_block(
                 lines,
                 index,
                 declarations,
+                declaration_types,
                 array_bounds,
                 option_explicit,
                 module_constants,
@@ -1099,7 +1145,9 @@ fn parse_block(
         }
 
         if lower.starts_with("redim ") {
-            if let Some(stmt) = parse_redim_stmt(line, declarations, array_bounds) {
+            if let Some(stmt) =
+                parse_redim_stmt(line, declarations, declaration_types, array_bounds)
+            {
                 out.push(stmt);
             } else {
                 out.push(BoundStmt::Unsupported {
@@ -1115,6 +1163,7 @@ fn parse_block(
                 lines,
                 index,
                 declarations,
+                declaration_types,
                 array_bounds,
                 option_explicit,
                 module_constants,
@@ -1206,6 +1255,7 @@ fn parse_block(
                 lines,
                 index,
                 declarations,
+                declaration_types,
                 array_bounds,
                 option_explicit,
                 module_constants,
@@ -1232,6 +1282,7 @@ fn parse_if_stmt(
     lines: &[String],
     index: &mut usize,
     declarations: &mut Vec<String>,
+    declaration_types: &mut HashMap<String, BoundType>,
     array_bounds: &mut HashMap<String, usize>,
     option_explicit: &mut bool,
     module_constants: &HashMap<String, i32>,
@@ -1251,6 +1302,7 @@ fn parse_if_stmt(
         lines,
         index,
         declarations,
+        declaration_types,
         array_bounds,
         option_explicit,
         module_constants,
@@ -1261,6 +1313,7 @@ fn parse_if_stmt(
         lines,
         index,
         declarations,
+        declaration_types,
         array_bounds,
         option_explicit,
         module_constants,
@@ -1283,6 +1336,7 @@ fn parse_for_stmt(
     lines: &[String],
     index: &mut usize,
     declarations: &mut Vec<String>,
+    declaration_types: &mut HashMap<String, BoundType>,
     array_bounds: &mut HashMap<String, usize>,
     option_explicit: &mut bool,
     module_constants: &HashMap<String, i32>,
@@ -1301,6 +1355,7 @@ fn parse_for_stmt(
         lines,
         index,
         declarations,
+        declaration_types,
         array_bounds,
         option_explicit,
         module_constants,
@@ -1411,6 +1466,7 @@ fn parse_do_stmt(
     lines: &[String],
     index: &mut usize,
     declarations: &mut Vec<String>,
+    declaration_types: &mut HashMap<String, BoundType>,
     array_bounds: &mut HashMap<String, usize>,
     option_explicit: &mut bool,
     module_constants: &HashMap<String, i32>,
@@ -1432,6 +1488,7 @@ fn parse_do_stmt(
             lines,
             index,
             declarations,
+            declaration_types,
             array_bounds,
             option_explicit,
             module_constants,
@@ -1461,6 +1518,7 @@ fn parse_do_stmt(
             lines,
             index,
             declarations,
+            declaration_types,
             array_bounds,
             option_explicit,
             module_constants,
@@ -1514,6 +1572,7 @@ fn parse_for_header(
 fn parse_redim_stmt(
     line: &str,
     declarations: &mut Vec<String>,
+    declaration_types: &mut HashMap<String, BoundType>,
     array_bounds: &mut HashMap<String, usize>,
 ) -> Option<BoundStmt> {
     let mut payload = line[6..].trim();
@@ -1523,6 +1582,17 @@ fn parse_redim_stmt(
         payload = payload[9..].trim();
     }
     let (name, max_index) = parse_array_declaration(payload)?;
+    let element_prefix = format!("{name}_");
+    let element_ty = declaration_types
+        .iter()
+        .find_map(|(key, ty)| {
+            if key.starts_with(&element_prefix) {
+                Some(*ty)
+            } else {
+                None
+            }
+        })
+        .unwrap_or(BoundType::Variant);
     array_bounds.insert(name.clone(), max_index);
     for idx in 0..=max_index {
         let alias = format!("{name}_{idx}");
@@ -1530,8 +1600,9 @@ fn parse_redim_stmt(
             .iter()
             .any(|existing| existing.eq_ignore_ascii_case(&alias))
         {
-            declarations.push(alias);
+            declarations.push(alias.clone());
         }
+        declaration_types.insert(alias, element_ty);
     }
 
     Some(BoundStmt::ReDim {
@@ -1546,6 +1617,7 @@ fn parse_select_case_stmt(
     lines: &[String],
     index: &mut usize,
     declarations: &mut Vec<String>,
+    declaration_types: &mut HashMap<String, BoundType>,
     array_bounds: &mut HashMap<String, usize>,
     option_explicit: &mut bool,
     module_constants: &HashMap<String, i32>,
@@ -1588,6 +1660,7 @@ fn parse_select_case_stmt(
                 lines,
                 index,
                 declarations,
+                declaration_types,
                 array_bounds,
                 option_explicit,
                 module_constants,
@@ -1615,6 +1688,7 @@ fn parse_select_case_stmt(
                 lines,
                 index,
                 declarations,
+                declaration_types,
                 array_bounds,
                 option_explicit,
                 module_constants,
@@ -1856,17 +1930,21 @@ fn parse_compare_condition(text: &str, array_bounds: &HashMap<String, usize>) ->
 fn parse_declaration(
     line: &str,
     declarations: &mut Vec<String>,
+    declaration_types: &mut HashMap<String, BoundType>,
     array_bounds: &mut HashMap<String, usize>,
 ) {
     let remainder = line[4..].trim();
-    let candidate = remainder
-        .split(',')
-        .next()
-        .unwrap_or_default()
-        .split_whitespace()
-        .next()
-        .unwrap_or_default();
-    if let Some((base, max_index)) = parse_array_declaration(candidate) {
+    let first_decl = remainder.split(',').next().unwrap_or_default().trim();
+    let (name_part, declared_ty) = if let Some((lhs, rhs)) = split_keyword_ci(first_decl, "as") {
+        (
+            lhs.trim(),
+            parse_declared_type(rhs.trim()).unwrap_or(BoundType::Variant),
+        )
+    } else {
+        (first_decl, BoundType::Variant)
+    };
+
+    if let Some((base, max_index)) = parse_array_declaration(name_part) {
         array_bounds.insert(base.clone(), max_index);
         for idx in 0..=max_index {
             let alias = format!("{base}_{idx}");
@@ -1874,17 +1952,19 @@ fn parse_declaration(
                 .iter()
                 .any(|existing| existing.eq_ignore_ascii_case(&alias))
             {
-                declarations.push(alias);
+                declarations.push(alias.clone());
             }
+            declaration_types.insert(alias, declared_ty);
         }
         return;
     }
 
-    if let Some(name) = normalize_ident(candidate)
+    if let Some(name) = normalize_ident(name_part)
         && !declarations
             .iter()
             .any(|existing| existing.eq_ignore_ascii_case(&name))
     {
+        declaration_types.insert(name.clone(), declared_ty);
         declarations.push(name);
     }
 }
@@ -1898,6 +1978,26 @@ fn parse_array_declaration(token: &str) -> Option<(String, usize)> {
     let base = normalize_ident(token[..open].trim())?;
     let max_index = token[open + 1..close].trim().parse::<usize>().ok()?;
     Some((base, max_index))
+}
+
+fn parse_declared_type(token: &str) -> Option<BoundType> {
+    match token.trim().to_ascii_lowercase().as_str() {
+        "variant" => Some(BoundType::Variant),
+        "integer" => Some(BoundType::Integer),
+        "long" => Some(BoundType::Long),
+        "longlong" => Some(BoundType::LongLong),
+        "longptr" => Some(BoundType::LongPtr),
+        "byte" => Some(BoundType::Byte),
+        "single" => Some(BoundType::Single),
+        "double" => Some(BoundType::Double),
+        "currency" => Some(BoundType::Currency),
+        "decimal" => Some(BoundType::Decimal),
+        "date" => Some(BoundType::Date),
+        "string" => Some(BoundType::String),
+        "boolean" => Some(BoundType::Boolean),
+        "object" => Some(BoundType::Object),
+        _ => None,
+    }
 }
 
 fn parse_reference_name(token: &str, array_bounds: &HashMap<String, usize>) -> Option<String> {
@@ -1969,10 +2069,12 @@ fn matches_terminator(lower_line: &str, terminators: &[&str]) -> bool {
     })
 }
 
+#[allow(clippy::too_many_arguments)]
 fn parse_if_tail(
     lines: &[String],
     index: &mut usize,
     declarations: &mut Vec<String>,
+    declaration_types: &mut HashMap<String, BoundType>,
     array_bounds: &mut HashMap<String, usize>,
     option_explicit: &mut bool,
     module_constants: &HashMap<String, i32>,
@@ -1996,6 +2098,7 @@ fn parse_if_tail(
             lines,
             index,
             declarations,
+            declaration_types,
             array_bounds,
             option_explicit,
             module_constants,
@@ -2017,6 +2120,7 @@ fn parse_if_tail(
             lines,
             index,
             declarations,
+            declaration_types,
             array_bounds,
             option_explicit,
             module_constants,
@@ -2027,6 +2131,7 @@ fn parse_if_tail(
             lines,
             index,
             declarations,
+            declaration_types,
             array_bounds,
             option_explicit,
             module_constants,
@@ -2383,6 +2488,47 @@ mod tests {
         assert!(!fill.params[1].by_ref);
         assert!(fill.params[1].optional);
         assert_eq!(fill.params[1].default_value, Some(7));
+    }
+
+    #[test]
+    fn resolve_typed_param_and_dim_declarations() {
+        let source = "Sub Main(ByVal a As Integer)\nDim x As Long\nx = a\nEnd Sub";
+        let module = resolve_symbols(source);
+        let main_proc = module
+            .procedures
+            .iter()
+            .find(|p| p.name == "main")
+            .expect("main procedure expected");
+        assert_eq!(main_proc.params.len(), 1);
+        assert_eq!(main_proc.params[0].name, "a");
+        assert_eq!(main_proc.params[0].ty, super::BoundType::Integer);
+        assert_eq!(
+            main_proc
+                .declaration_types
+                .get("x")
+                .copied()
+                .expect("typed dim should be recorded"),
+            super::BoundType::Long
+        );
+    }
+
+    #[test]
+    fn resolve_typed_array_dim_records_element_alias_types() {
+        let source = "Sub Main()\nDim a(2) As Integer\na(1) = 7\nEnd Sub";
+        let module = resolve_symbols(source);
+        let main_proc = module
+            .procedures
+            .iter()
+            .find(|p| p.name == "main")
+            .expect("main procedure expected");
+        assert_eq!(
+            main_proc.declaration_types.get("a_0").copied(),
+            Some(super::BoundType::Integer)
+        );
+        assert_eq!(
+            main_proc.declaration_types.get("a_2").copied(),
+            Some(super::BoundType::Integer)
+        );
     }
 
     #[test]

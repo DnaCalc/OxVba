@@ -1334,6 +1334,30 @@ Initial policy:
 - Required matrix cells for declared profile scope are green.
 - Remaining divergences are explicitly documented with evidence records.
 
+### Phase 13: Full Typing Semantics Closure (Post-v66 Ladder)
+- Primary owner track: Red + Green
+- Estimated duration: 6-12 weeks (iterative)
+- Dependencies: Phase 12 stabilization baseline (`v66`) and existing formal async infrastructure
+- Planned profile ladder: `v67..v86`
+  - Canonical ladder doc: `docs/worksets/PROFILE_LADDER_2026-02-28_MACH1000_V67_V86_TYPING.md`
+- Work:
+- Complete full internal VBA typing semantics in scope:
+  - declared types, default type rules (`Def*`), type characters,
+  - full `Option Explicit` diagnostics and declaration checks,
+  - assignment/argument/operator coercion and conversion conformance,
+  - full string semantics in declared scope,
+  - typed and `Variant` array semantics including non-zero lower bounds and multi-dimensions,
+  - early/late binding interaction under typed call sites.
+- Formal approach:
+- Maintain `F3` profile obligations and run strict Kani as async long-running jobs.
+- Use deferred formal gates for non-blocking profile progression while async runs are active.
+- Track and reconcile deferred formal runs via:
+  - `docs/evidence/formal/DEFERRED_GATES.md`
+  - `docs/evidence/formal/latest_run.md`
+- Quantitative gate:
+- Required type/coercion/string/array matrix cells for `v86` scope are green.
+- Deferred formal gates are reconciled (`dg-folded`) or explicitly documented with unblock steps.
+
 ### Future (not sequenced):
 - Forms Designer.
 - Debugging protocol.

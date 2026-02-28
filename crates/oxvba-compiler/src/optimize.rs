@@ -303,6 +303,10 @@ mod kani_proofs {
             source: "Sub Main()\nEnd Sub".to_string(),
             option_explicit: false,
             declarations: vec!["x".to_string()],
+            declaration_types: std::collections::HashMap::from([(
+                "x".to_string(),
+                crate::resolve::BoundType::Variant,
+            )]),
             body: vec![BoundStmt::Assign {
                 target: "x".to_string(),
                 expr: BoundExpr::AddConst {
