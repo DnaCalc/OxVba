@@ -1,7 +1,7 @@
 # Formal Run Report
 
-- Timestamp (UTC): 2026-02-28T11:45:17Z
-- Profile scope: mvp-string-storage-semantics-v77
+- Timestamp (UTC): 2026-02-28T12:14:11Z
+- Profile scope: mvp-string-compare-search-v78
 - Overall mode: non-blocking
 - Kani required: false
 - Kani execution: deferred-to-wsl-async
@@ -232,3 +232,6 @@
 | FO-V77-001 | v77 | no | pass | cargo test -p oxvba-compiler resolve::tests::resolve_vbnullstring_intrinsic_constant_expression | crates/oxvba-compiler/src/resolve.rs |  |
 | FO-V77-002 | v77 | no | pass | cargo test -p oxvba-compiler vbnullstring_assigns_to_string | crates/oxvba-compiler/src/lib.rs |  |
 | FO-V77-003 | v77 | no | pass | cargo test -p oxvba-compiler vbnullstring_assignment_to_object_is_rejected | crates/oxvba-compiler/src/lib.rs |  |
+| FO-V78-001 | v78 | no | pass | cargo test -p oxvba-compiler compile_option_compare_text_emits_text_compare_mode_intrinsics | crates/oxvba-compiler/src/lib.rs |  |
+| FO-V78-002 | v78 | no | pass | cargo test -p oxvba-compiler compile_like_condition_emits_like_intrinsic_instruction | crates/oxvba-compiler/src/lib.rs |  |
+| FO-V78-003 | v78 | no | pass | cargo test -p oxvba-compiler compile_instrrev_intrinsic_emits_intrinsic_instruction | crates/oxvba-compiler/src/lib.rs |  |

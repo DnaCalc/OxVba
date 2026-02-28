@@ -1,4 +1,4 @@
-use oxvba_compiler::{Bytecode, Instruction};
+use oxvba_compiler::{Bytecode, Instruction, bytecode::StringCompareMode};
 
 use crate::register_file::RegisterFile;
 
@@ -100,10 +100,22 @@ impl Vm {
                     dst,
                     haystack,
                     needle,
+                    mode,
                 } => {
                     let haystack = self.read_slot(*haystack)?;
                     let needle = self.read_slot(*needle)?;
-                    self.write_slot(*dst, Self::instr_digits(haystack, needle))?;
+                    self.write_slot(*dst, Self::instr_digits(haystack, needle, *mode))?;
+                    pc += 1;
+                }
+                Instruction::IntrinsicInStrRevDigits {
+                    dst,
+                    haystack,
+                    needle,
+                    mode,
+                } => {
+                    let haystack = self.read_slot(*haystack)?;
+                    let needle = self.read_slot(*needle)?;
+                    self.write_slot(*dst, Self::instrrev_digits(haystack, needle, *mode))?;
                     pc += 1;
                 }
                 Instruction::IntrinsicLowerDigits { dst, src } => {
@@ -163,10 +175,26 @@ impl Vm {
                     self.write_slot(*dst, Self::rtrim_digits(value))?;
                     pc += 1;
                 }
-                Instruction::IntrinsicStrCompDigits { dst, lhs, rhs } => {
+                Instruction::IntrinsicStrCompDigits {
+                    dst,
+                    lhs,
+                    rhs,
+                    mode,
+                } => {
                     let lhs = self.read_slot(*lhs)?;
                     let rhs = self.read_slot(*rhs)?;
-                    self.write_slot(*dst, Self::strcomp_digits(lhs, rhs))?;
+                    self.write_slot(*dst, Self::strcomp_digits(lhs, rhs, *mode))?;
+                    pc += 1;
+                }
+                Instruction::IntrinsicLikeDigits {
+                    dst,
+                    lhs,
+                    pattern,
+                    mode,
+                } => {
+                    let lhs = self.read_slot(*lhs)?;
+                    let pattern = self.read_slot(*pattern)?;
+                    self.write_slot(*dst, Self::like_digits(lhs, pattern, *mode))?;
                     pc += 1;
                 }
                 Instruction::IntrinsicDateSerialDigits {
@@ -692,10 +720,23 @@ impl Vm {
         out.parse::<i32>().unwrap_or(0)
     }
 
-    fn instr_digits(haystack: i32, needle: i32) -> i32 {
-        let hay = haystack.to_string();
-        let nee = needle.to_string();
+    fn normalize_for_compare(text: String, mode: StringCompareMode) -> String {
+        match mode {
+            StringCompareMode::Binary => text,
+            StringCompareMode::Text => text.to_ascii_lowercase(),
+        }
+    }
+
+    fn instr_digits(haystack: i32, needle: i32, mode: StringCompareMode) -> i32 {
+        let hay = Self::normalize_for_compare(haystack.to_string(), mode);
+        let nee = Self::normalize_for_compare(needle.to_string(), mode);
         hay.find(&nee).map_or(0, |idx| (idx + 1) as i32)
+    }
+
+    fn instrrev_digits(haystack: i32, needle: i32, mode: StringCompareMode) -> i32 {
+        let hay = Self::normalize_for_compare(haystack.to_string(), mode);
+        let nee = Self::normalize_for_compare(needle.to_string(), mode);
+        hay.rfind(&nee).map_or(0, |idx| (idx + 1) as i32)
     }
 
     fn to_lower_digits(value: i32) -> i32 {
@@ -753,12 +794,20 @@ impl Vm {
         value.to_string().trim_end().parse::<i32>().unwrap_or(value)
     }
 
-    fn strcomp_digits(lhs: i32, rhs: i32) -> i32 {
-        match lhs.to_string().cmp(&rhs.to_string()) {
+    fn strcomp_digits(lhs: i32, rhs: i32, mode: StringCompareMode) -> i32 {
+        let lhs = Self::normalize_for_compare(lhs.to_string(), mode);
+        let rhs = Self::normalize_for_compare(rhs.to_string(), mode);
+        match lhs.cmp(&rhs) {
             std::cmp::Ordering::Less => -1,
             std::cmp::Ordering::Equal => 0,
             std::cmp::Ordering::Greater => 1,
         }
+    }
+
+    fn like_digits(lhs: i32, pattern: i32, mode: StringCompareMode) -> i32 {
+        let lhs = Self::normalize_for_compare(lhs.to_string(), mode);
+        let pattern = Self::normalize_for_compare(pattern.to_string(), mode);
+        if lhs == pattern { -1 } else { 0 }
     }
 
     fn date_serial_digits(year: i32, month: i32, day: i32) -> i32 {
@@ -855,7 +904,7 @@ impl Vm {
 #[cfg(test)]
 mod tests {
     use super::{ARRAY_TAG_BASE, Vm};
-    use oxvba_compiler::{Bytecode, Instruction};
+    use oxvba_compiler::{Bytecode, Instruction, bytecode::StringCompareMode};
 
     #[test]
     fn executes_load_and_add_sequence() {
@@ -922,6 +971,7 @@ mod tests {
                     dst: 7,
                     haystack: 0,
                     needle: 2,
+                    mode: StringCompareMode::Binary,
                 },
                 Instruction::IntrinsicLowerDigits { dst: 8, src: 0 },
                 Instruction::IntrinsicUpperDigits { dst: 9, src: 0 },
@@ -958,6 +1008,12 @@ mod tests {
                     slot: 5,
                     value: 123,
                 },
+                Instruction::IntrinsicInStrRevDigits {
+                    dst: 13,
+                    haystack: 0,
+                    needle: 1,
+                    mode: StringCompareMode::Binary,
+                },
                 Instruction::IntrinsicSplitCountDigits {
                     dst: 6,
                     src: 0,
@@ -981,19 +1037,26 @@ mod tests {
                     dst: 12,
                     lhs: 4,
                     rhs: 5,
+                    mode: StringCompareMode::Binary,
+                },
+                Instruction::IntrinsicLikeDigits {
+                    dst: 14,
+                    lhs: 4,
+                    pattern: 4,
+                    mode: StringCompareMode::Binary,
                 },
                 Instruction::Halt,
             ],
-            slot_count: 13,
-            user_slot_count: 13,
+            slot_count: 15,
+            user_slot_count: 15,
         };
 
         let mut vm = Vm::default();
         vm.execute(&bytecode).expect("vm should execute bytecode");
         assert_eq!(
-            vm.snapshot_slots(13),
+            vm.snapshot_slots(15),
             vec![
-                123231, 23, 12345, 67, 12, 123, 3, 12345, 16745, 12345, 12345, 12345, -1
+                123231, 23, 12345, 67, 12, 123, 3, 12345, 16745, 12345, 12345, 12345, -1, 4, -1
             ]
         );
     }

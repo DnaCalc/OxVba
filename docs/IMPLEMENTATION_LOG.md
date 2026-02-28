@@ -1,6 +1,12 @@
 # Implementation Log
 
 ## 2026-02-28
+- Completed `v78` (`mvp-string-compare-search-v78`):
+  - added resolver-level `Option Compare` mode capture (`Binary`, `Text`, `Database`) and preserved module compare mode through emission;
+  - extended compare/search subset with `InStrRev` and `Like` lowering/runtime instructions;
+  - made compare/search bytecode mode-aware (`InStr`, `InStrRev`, `StrComp`, `Like`) and added compiler/VM regression coverage;
+  - added conformance fixtures for option-compare scoped snapshots and `InStrRev`/`Like` subset behavior;
+  - added formal obligations `FO-V78-001..003`, produced matrix artifacts under `docs/evidence/profiles/v78/`, and started strict async Kani lane (`v78-kani`) as deferred gate `DG-V78-001`.
 - Completed `v77` (`mvp-string-storage-semantics-v77`):
   - introduced `vbNullString` handling as a typed string sentinel constant in resolver/typecheck/emitter;
   - added regression coverage ensuring `vbNullString` is assignable to `String` but rejected for `Object` assignment;

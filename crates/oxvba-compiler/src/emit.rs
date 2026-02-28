@@ -1,14 +1,21 @@
 use std::collections::HashMap;
 
 use crate::{
-    bytecode::{Bytecode, Instruction},
+    bytecode::{Bytecode, Instruction, StringCompareMode},
     resolve::{
-        BoundCallArg, BoundCond, BoundExpr, BoundModule, BoundParam, BoundProcedure, BoundStmt,
-        CompareOp,
+        BoundCallArg, BoundCompareMode, BoundCond, BoundExpr, BoundModule, BoundParam,
+        BoundProcedure, BoundStmt, CompareOp,
     },
 };
 
 const ARRAY_TAG_BASE: i32 = -1_000_000_000;
+
+fn emit_compare_mode(mode: BoundCompareMode) -> StringCompareMode {
+    match mode {
+        BoundCompareMode::Binary | BoundCompareMode::Database => StringCompareMode::Binary,
+        BoundCompareMode::Text => StringCompareMode::Text,
+    }
+}
 
 #[derive(Debug, Clone)]
 struct EmitProcMeta {
@@ -17,6 +24,7 @@ struct EmitProcMeta {
 }
 
 pub fn emit_bytecode(module: &BoundModule) -> Bytecode {
+    let compare_mode = emit_compare_mode(module.compare_mode);
     let procedures = if module.procedures.is_empty() {
         vec![BoundProcedure {
             name: "main".to_string(),
@@ -80,6 +88,7 @@ pub fn emit_bytecode(module: &BoundModule) -> Bytecode {
     }
     emit_stmt_list(
         &procedures[entry_idx].body,
+        compare_mode,
         &proc_slots[entry_idx],
         &mut temps,
         &mut instructions,
@@ -104,6 +113,7 @@ pub fn emit_bytecode(module: &BoundModule) -> Bytecode {
         proc_labels.insert(proc.name.clone(), instructions.len());
         emit_stmt_list(
             &proc.body,
+            compare_mode,
             &proc_slots[idx],
             &mut temps,
             &mut instructions,
@@ -143,6 +153,7 @@ pub fn emit_bytecode(module: &BoundModule) -> Bytecode {
 #[allow(clippy::too_many_arguments)]
 fn emit_stmt_list(
     stmts: &[BoundStmt],
+    compare_mode: StringCompareMode,
     slot_map: &HashMap<String, usize>,
     temps: &mut TempSlotAllocator,
     instructions: &mut Vec<Instruction>,
@@ -156,6 +167,7 @@ fn emit_stmt_list(
     for stmt in stmts {
         emit_stmt(
             stmt,
+            compare_mode,
             slot_map,
             temps,
             instructions,
@@ -172,6 +184,7 @@ fn emit_stmt_list(
 #[allow(clippy::too_many_arguments)]
 fn emit_stmt(
     stmt: &BoundStmt,
+    compare_mode: StringCompareMode,
     slot_map: &HashMap<String, usize>,
     temps: &mut TempSlotAllocator,
     instructions: &mut Vec<Instruction>,
@@ -185,7 +198,14 @@ fn emit_stmt(
     match stmt {
         BoundStmt::Assign { target, expr } => {
             if let Some(target_slot) = slot_map.get(target.as_str()).copied() {
-                emit_expr_into(expr, target_slot, slot_map, temps, instructions);
+                emit_expr_into(
+                    expr,
+                    compare_mode,
+                    target_slot,
+                    slot_map,
+                    temps,
+                    instructions,
+                );
             }
         }
         BoundStmt::IfCond {
@@ -194,7 +214,7 @@ fn emit_stmt(
             else_body,
         } => {
             let cond_slot = temps.alloc_temp();
-            emit_cond_into(cond, cond_slot, slot_map, temps, instructions);
+            emit_cond_into(cond, compare_mode, cond_slot, slot_map, temps, instructions);
             let jump_patch = instructions.len();
             instructions.push(Instruction::JumpIfZero {
                 cond_slot,
@@ -202,6 +222,7 @@ fn emit_stmt(
             });
             emit_stmt_list(
                 then_body,
+                compare_mode,
                 slot_map,
                 temps,
                 instructions,
@@ -226,6 +247,7 @@ fn emit_stmt(
                 }
                 emit_stmt_list(
                     else_body,
+                    compare_mode,
                     slot_map,
                     temps,
                     instructions,
@@ -249,10 +271,10 @@ fn emit_stmt(
             body,
         } => {
             if let Some(var_slot) = slot_map.get(var.as_str()).copied() {
-                emit_expr_into(start, var_slot, slot_map, temps, instructions);
+                emit_expr_into(start, compare_mode, var_slot, slot_map, temps, instructions);
                 let end_slot = temps.alloc_temp();
                 let cond_slot = temps.alloc_temp();
-                emit_expr_into(end, end_slot, slot_map, temps, instructions);
+                emit_expr_into(end, compare_mode, end_slot, slot_map, temps, instructions);
 
                 let loop_head = instructions.len();
                 instructions.push(Instruction::CmpLeSlots {
@@ -267,6 +289,7 @@ fn emit_stmt(
                 });
                 emit_stmt_list(
                     body,
+                    compare_mode,
                     slot_map,
                     temps,
                     instructions,
@@ -302,7 +325,7 @@ fn emit_stmt(
             let mut entry_exit_patch: Option<usize> = None;
 
             if !post_check {
-                emit_cond_into(cond, cond_slot, slot_map, temps, instructions);
+                emit_cond_into(cond, compare_mode, cond_slot, slot_map, temps, instructions);
                 let exit_patch = instructions.len();
                 instructions.push(Instruction::JumpIfZero {
                     cond_slot,
@@ -314,6 +337,7 @@ fn emit_stmt(
             loop_exit_stack.push(Vec::new());
             emit_stmt_list(
                 body,
+                compare_mode,
                 slot_map,
                 temps,
                 instructions,
@@ -325,7 +349,7 @@ fn emit_stmt(
                 proc_labels,
             );
 
-            emit_cond_into(cond, cond_slot, slot_map, temps, instructions);
+            emit_cond_into(cond, compare_mode, cond_slot, slot_map, temps, instructions);
             let post_exit_patch = instructions.len();
             instructions.push(Instruction::JumpIfZero {
                 cond_slot,
@@ -398,7 +422,7 @@ fn emit_stmt(
             else_body,
         } => {
             let expr_slot = temps.alloc_temp();
-            emit_expr_into(expr, expr_slot, slot_map, temps, instructions);
+            emit_expr_into(expr, compare_mode, expr_slot, slot_map, temps, instructions);
             let mut end_patches: Vec<usize> = Vec::new();
 
             for (values, body) in arms {
@@ -434,6 +458,7 @@ fn emit_stmt(
                 });
                 emit_stmt_list(
                     body,
+                    compare_mode,
                     slot_map,
                     temps,
                     instructions,
@@ -455,6 +480,7 @@ fn emit_stmt(
 
             emit_stmt_list(
                 else_body,
+                compare_mode,
                 slot_map,
                 temps,
                 instructions,
@@ -501,7 +527,14 @@ fn emit_stmt(
                         continue;
                     }
 
-                    emit_expr_into(&arg.expr, param_slot, slot_map, temps, instructions);
+                    emit_expr_into(
+                        &arg.expr,
+                        compare_mode,
+                        param_slot,
+                        slot_map,
+                        temps,
+                        instructions,
+                    );
                 }
             }
 
@@ -524,6 +557,7 @@ fn emit_stmt(
 
 fn emit_cond_into(
     cond: &BoundCond,
+    compare_mode: StringCompareMode,
     dst: usize,
     slot_map: &HashMap<String, usize>,
     temps: &mut TempSlotAllocator,
@@ -533,8 +567,8 @@ fn emit_cond_into(
         BoundCond::Compare { op, lhs, rhs } => {
             let lhs_slot = temps.alloc_temp();
             let rhs_slot = temps.alloc_temp();
-            emit_expr_into(lhs, lhs_slot, slot_map, temps, instructions);
-            emit_expr_into(rhs, rhs_slot, slot_map, temps, instructions);
+            emit_expr_into(lhs, compare_mode, lhs_slot, slot_map, temps, instructions);
+            emit_expr_into(rhs, compare_mode, rhs_slot, slot_map, temps, instructions);
             match op {
                 CompareOp::Eq => instructions.push(Instruction::CmpEqSlots {
                     dst,
@@ -566,12 +600,18 @@ fn emit_cond_into(
                     lhs: lhs_slot,
                     rhs: rhs_slot,
                 }),
+                CompareOp::Like => instructions.push(Instruction::IntrinsicLikeDigits {
+                    dst,
+                    lhs: lhs_slot,
+                    pattern: rhs_slot,
+                    mode: compare_mode,
+                }),
             }
         }
         BoundCond::Truthy(expr) => {
             let expr_slot = temps.alloc_temp();
             let zero_slot = temps.alloc_temp();
-            emit_expr_into(expr, expr_slot, slot_map, temps, instructions);
+            emit_expr_into(expr, compare_mode, expr_slot, slot_map, temps, instructions);
             instructions.push(Instruction::LoadConstI32 {
                 slot: zero_slot,
                 value: 0,
@@ -584,7 +624,14 @@ fn emit_cond_into(
         }
         BoundCond::Not(inner) => {
             let inner_slot = temps.alloc_temp();
-            emit_cond_into(inner, inner_slot, slot_map, temps, instructions);
+            emit_cond_into(
+                inner,
+                compare_mode,
+                inner_slot,
+                slot_map,
+                temps,
+                instructions,
+            );
             instructions.push(Instruction::BoolNot {
                 dst,
                 src: inner_slot,
@@ -593,8 +640,8 @@ fn emit_cond_into(
         BoundCond::And(lhs, rhs) => {
             let lhs_slot = temps.alloc_temp();
             let rhs_slot = temps.alloc_temp();
-            emit_cond_into(lhs, lhs_slot, slot_map, temps, instructions);
-            emit_cond_into(rhs, rhs_slot, slot_map, temps, instructions);
+            emit_cond_into(lhs, compare_mode, lhs_slot, slot_map, temps, instructions);
+            emit_cond_into(rhs, compare_mode, rhs_slot, slot_map, temps, instructions);
             instructions.push(Instruction::BoolAnd {
                 dst,
                 lhs: lhs_slot,
@@ -604,8 +651,8 @@ fn emit_cond_into(
         BoundCond::Or(lhs, rhs) => {
             let lhs_slot = temps.alloc_temp();
             let rhs_slot = temps.alloc_temp();
-            emit_cond_into(lhs, lhs_slot, slot_map, temps, instructions);
-            emit_cond_into(rhs, rhs_slot, slot_map, temps, instructions);
+            emit_cond_into(lhs, compare_mode, lhs_slot, slot_map, temps, instructions);
+            emit_cond_into(rhs, compare_mode, rhs_slot, slot_map, temps, instructions);
             instructions.push(Instruction::BoolOr {
                 dst,
                 lhs: lhs_slot,
@@ -617,6 +664,7 @@ fn emit_cond_into(
 
 fn emit_expr_into(
     expr: &BoundExpr,
+    compare_mode: StringCompareMode,
     dst: usize,
     slot_map: &HashMap<String, usize>,
     temps: &mut TempSlotAllocator,
@@ -674,7 +722,7 @@ fn emit_expr_into(
             let mut arg_slots = Vec::with_capacity(args.len());
             for arg in args {
                 let slot = temps.alloc_temp();
-                emit_expr_into(arg, slot, slot_map, temps, instructions);
+                emit_expr_into(arg, compare_mode, slot, slot_map, temps, instructions);
                 arg_slots.push(slot);
             }
 
@@ -715,6 +763,15 @@ fn emit_expr_into(
                         dst,
                         haystack: *haystack,
                         needle: *needle,
+                        mode: compare_mode,
+                    })
+                }
+                ("instrrev", [haystack, needle]) => {
+                    instructions.push(Instruction::IntrinsicInStrRevDigits {
+                        dst,
+                        haystack: *haystack,
+                        needle: *needle,
+                        mode: compare_mode,
                     })
                 }
                 ("lcase", [src]) => {
@@ -756,6 +813,7 @@ fn emit_expr_into(
                     dst,
                     lhs: *lhs,
                     rhs: *rhs,
+                    mode: compare_mode,
                 }),
                 ("dateserial", [year, month, day]) => {
                     instructions.push(Instruction::IntrinsicDateSerialDigits {

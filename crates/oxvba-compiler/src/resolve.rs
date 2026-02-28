@@ -98,6 +98,14 @@ pub enum CompareOp {
     Le,
     Gt,
     Ge,
+    Like,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BoundCompareMode {
+    Binary,
+    Text,
+    Database,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -117,6 +125,7 @@ pub enum BoundCond {
 pub struct BoundModule {
     pub source: String,
     pub option_explicit: bool,
+    pub compare_mode: BoundCompareMode,
     pub default_type_table: [BoundType; 26],
     pub declarations: Vec<String>,
     pub declaration_types: HashMap<String, BoundType>,
@@ -162,6 +171,7 @@ pub enum IntrinsicSurface {
 pub fn resolve_symbols(source: &str) -> BoundModule {
     let mut option_explicit = false;
     let lines = normalize_source_lines(source);
+    let compare_mode = collect_option_compare_mode(&lines);
     let default_type_table = collect_default_type_table(&lines);
     let module_constants = collect_module_constants(&lines);
     let property_write_routes = collect_property_write_routes(&lines);
@@ -238,6 +248,7 @@ pub fn resolve_symbols(source: &str) -> BoundModule {
     BoundModule {
         source: source.to_string(),
         option_explicit,
+        compare_mode,
         default_type_table,
         declarations: entry.declarations.clone(),
         declaration_types: entry.declaration_types.clone(),
@@ -1141,6 +1152,10 @@ fn parse_block(
             *index += 1;
             continue;
         }
+        if parse_option_compare_directive(line).is_some() {
+            *index += 1;
+            continue;
+        }
 
         if lower.starts_with("sub ")
             || lower == "end sub"
@@ -1920,7 +1935,7 @@ fn intrinsic_spec(name: &str) -> Option<IntrinsicSpec> {
         | "abs" | "int" | "fix" | "sgn" | "sqr" | "sin" | "cos" | "log" | "exp" | "lbound"
         | "ubound" | "isarray" | "vartype" | "typename" | "isnumeric" | "isdate" | "isobject"
         | "collectioncount" => Some(IntrinsicSpec::fixed(1, DeterministicCore)),
-        "left" | "right" | "instr" | "split" | "join" | "strcomp" => {
+        "left" | "right" | "instr" | "instrrev" | "split" | "join" | "strcomp" => {
             Some(IntrinsicSpec::fixed(2, DeterministicCore))
         }
         "mid" => Some(IntrinsicSpec::range(2, 3, DeterministicCore)),
@@ -2029,6 +2044,16 @@ fn parse_condition(text: &str, array_bounds: &HashMap<String, usize>) -> Option<
 }
 
 fn parse_compare_condition(text: &str, array_bounds: &HashMap<String, usize>) -> Option<BoundCond> {
+    if let Some((lhs_raw, rhs_raw)) = split_keyword_ci(text, "like") {
+        let lhs = parse_expr(lhs_raw, array_bounds)?;
+        let rhs = parse_expr(rhs_raw, array_bounds)?;
+        return Some(BoundCond::Compare {
+            op: CompareOp::Like,
+            lhs,
+            rhs,
+        });
+    }
+
     let pairs = [
         ("<>", CompareOp::Ne),
         ("<=", CompareOp::Le),
@@ -2242,6 +2267,27 @@ fn default_type_for_name(name: &str, default_type_table: &[BoundType; 26]) -> Bo
         .unwrap_or(BoundType::Variant)
 }
 
+fn collect_option_compare_mode(lines: &[String]) -> BoundCompareMode {
+    let mut mode = BoundCompareMode::Binary;
+    for line in lines {
+        if let Some(parsed) = parse_option_compare_directive(line) {
+            mode = parsed;
+        }
+    }
+    mode
+}
+
+fn parse_option_compare_directive(line: &str) -> Option<BoundCompareMode> {
+    let trimmed = line.trim();
+    let tail = strip_keyword_prefix_ci(trimmed, "option compare")?;
+    match tail.to_ascii_lowercase().as_str() {
+        "binary" => Some(BoundCompareMode::Binary),
+        "text" => Some(BoundCompareMode::Text),
+        "database" => Some(BoundCompareMode::Database),
+        _ => None,
+    }
+}
+
 fn collect_default_type_table(lines: &[String]) -> [BoundType; 26] {
     let mut table = [BoundType::Variant; 26];
     for line in lines {
@@ -2450,8 +2496,8 @@ fn strip_keyword_prefix_ci<'a>(text: &'a str, keyword: &str) -> Option<&'a str> 
 #[cfg(test)]
 mod tests {
     use super::{
-        BoundCond, BoundExpr, BoundStmt, CompareOp, IntrinsicSurface, intrinsic_surface,
-        resolve_symbols,
+        BoundCompareMode, BoundCond, BoundExpr, BoundStmt, CompareOp, IntrinsicSurface,
+        intrinsic_surface, resolve_symbols,
     };
 
     #[test]
@@ -2672,6 +2718,29 @@ mod tests {
                 ..
             }
         ));
+    }
+
+    #[test]
+    fn resolve_like_condition_as_compare_op() {
+        let source = "Sub Main()\nDim x\nIf 12 Like 12 Then\nx = 1\nEnd If\nEnd Sub";
+        let module = resolve_symbols(source);
+        let Some(BoundStmt::IfCond { cond, .. }) = module.body.first() else {
+            panic!("expected if");
+        };
+        assert!(matches!(
+            cond,
+            BoundCond::Compare {
+                op: CompareOp::Like,
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn resolve_option_compare_text_directive_sets_module_mode() {
+        let source = "Option Compare Text\nSub Main()\nDim x\nx = StrComp(1, 1)\nEnd Sub";
+        let module = resolve_symbols(source);
+        assert_eq!(module.compare_mode, BoundCompareMode::Text);
     }
 
     #[test]

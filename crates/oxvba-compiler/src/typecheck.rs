@@ -735,6 +735,9 @@ fn intrinsic_result_type(name: &str) -> Option<BoundType> {
         "val" => Some(BoundType::Double),
         "str" => Some(BoundType::String),
         "cverr" => Some(BoundType::Variant),
+        "instr" => Some(BoundType::Long),
+        "instrrev" => Some(BoundType::Long),
+        "strcomp" => Some(BoundType::Long),
         "vbnullstring" => Some(BoundType::String),
         _ => None,
     }
@@ -1333,6 +1336,13 @@ mod tests {
                 line_idx + 1
             );
         }
+    }
+
+    #[test]
+    fn string_compare_search_intrinsics_have_long_result_type() {
+        assert_eq!(intrinsic_result_type("instr"), Some(BoundType::Long));
+        assert_eq!(intrinsic_result_type("instrrev"), Some(BoundType::Long));
+        assert_eq!(intrinsic_result_type("strcomp"), Some(BoundType::Long));
     }
 
     fn parse_bound_type(text: &str) -> Option<BoundType> {

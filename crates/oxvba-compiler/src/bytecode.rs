@@ -1,5 +1,11 @@
 use rkyv::{Archive, Deserialize, Serialize};
 
+#[derive(Debug, Clone, Copy, Archive, Serialize, Deserialize, PartialEq, Eq)]
+pub enum StringCompareMode {
+    Binary,
+    Text,
+}
+
 #[derive(Debug, Clone, Archive, Serialize, Deserialize, PartialEq, Eq)]
 pub enum Instruction {
     LoadConstI32 {
@@ -42,6 +48,13 @@ pub enum Instruction {
         dst: usize,
         haystack: usize,
         needle: usize,
+        mode: StringCompareMode,
+    },
+    IntrinsicInStrRevDigits {
+        dst: usize,
+        haystack: usize,
+        needle: usize,
+        mode: StringCompareMode,
     },
     IntrinsicLowerDigits {
         dst: usize,
@@ -83,6 +96,13 @@ pub enum Instruction {
         dst: usize,
         lhs: usize,
         rhs: usize,
+        mode: StringCompareMode,
+    },
+    IntrinsicLikeDigits {
+        dst: usize,
+        lhs: usize,
+        pattern: usize,
+        mode: StringCompareMode,
     },
     IntrinsicDateSerialDigits {
         dst: usize,

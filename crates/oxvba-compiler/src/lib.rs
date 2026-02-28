@@ -38,6 +38,7 @@ pub fn compile(source: &str) -> Result<Bytecode, CompileError> {
 #[cfg(test)]
 mod tests {
     use super::{Instruction, compile};
+    use crate::bytecode::StringCompareMode;
 
     #[test]
     fn compile_simple_module() {
@@ -287,6 +288,13 @@ mod tests {
     fn conversion_intrinsic_str_to_object_assignment_is_rejected() {
         let source = "Sub Main()\nDim o As Object\no = Str(5)\nEnd Sub";
         let err = compile(source).expect_err("Str result should not assign to object");
+        assert!(err.to_string().contains("type mismatch in assignment"));
+    }
+
+    #[test]
+    fn instrrev_result_to_object_assignment_is_rejected() {
+        let source = "Sub Main()\nDim o As Object\no = InStrRev(123231, 23)\nEnd Sub";
+        let err = compile(source).expect_err("InStrRev result should be typed as Long");
         assert!(err.to_string().contains("type mismatch in assignment"));
     }
 
@@ -655,6 +663,41 @@ mod tests {
             out.instructions
                 .iter()
                 .any(|i| matches!(i, Instruction::IntrinsicStrCompDigits { .. }))
+        );
+    }
+
+    #[test]
+    fn compile_instrrev_intrinsic_emits_intrinsic_instruction() {
+        let source = "Sub Main()\nDim x\nx = InStrRev(123231, 23)\nEnd Sub";
+        let out = compile(source).expect("compile should succeed");
+        assert!(
+            out.instructions
+                .iter()
+                .any(|i| matches!(i, Instruction::IntrinsicInStrRevDigits { .. }))
+        );
+    }
+
+    #[test]
+    fn compile_option_compare_text_emits_text_compare_mode_intrinsics() {
+        let source = "Option Compare Text\nSub Main()\nDim x\nx = StrComp(12, 12)\nEnd Sub";
+        let out = compile(source).expect("compile should succeed");
+        assert!(out.instructions.iter().any(|i| matches!(
+            i,
+            Instruction::IntrinsicStrCompDigits {
+                mode: StringCompareMode::Text,
+                ..
+            }
+        )));
+    }
+
+    #[test]
+    fn compile_like_condition_emits_like_intrinsic_instruction() {
+        let source = "Sub Main()\nDim x\nDim y\ny = 12\nIf y Like 12 Then\nx = 1\nEnd If\nEnd Sub";
+        let out = compile(source).expect("compile should succeed");
+        assert!(
+            out.instructions
+                .iter()
+                .any(|i| matches!(i, Instruction::IntrinsicLikeDigits { .. }))
         );
     }
 

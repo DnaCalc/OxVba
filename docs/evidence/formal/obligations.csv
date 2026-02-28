@@ -221,3 +221,6 @@ FO-V76-003,v76,"cargo test -p oxvba-compiler conversion_intrinsic_cint_to_long_a
 FO-V77-001,v77,"cargo test -p oxvba-compiler resolve::tests::resolve_vbnullstring_intrinsic_constant_expression",no,true,crates/oxvba-compiler/src/resolve.rs
 FO-V77-002,v77,"cargo test -p oxvba-compiler vbnullstring_assigns_to_string",no,true,crates/oxvba-compiler/src/lib.rs
 FO-V77-003,v77,"cargo test -p oxvba-compiler vbnullstring_assignment_to_object_is_rejected",no,true,crates/oxvba-compiler/src/lib.rs
+FO-V78-001,v78,"cargo test -p oxvba-compiler compile_option_compare_text_emits_text_compare_mode_intrinsics",no,true,crates/oxvba-compiler/src/lib.rs
+FO-V78-002,v78,"cargo test -p oxvba-compiler compile_like_condition_emits_like_intrinsic_instruction",no,true,crates/oxvba-compiler/src/lib.rs
+FO-V78-003,v78,"cargo test -p oxvba-compiler compile_instrrev_intrinsic_emits_intrinsic_instruction",no,true,crates/oxvba-compiler/src/lib.rs

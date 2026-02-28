@@ -160,6 +160,7 @@ fn eval_const_cond(cond: &BoundCond) -> Option<bool> {
                 CompareOp::Le => lhs <= rhs,
                 CompareOp::Gt => lhs > rhs,
                 CompareOp::Ge => lhs >= rhs,
+                CompareOp::Like => lhs == rhs,
             })
         }
         BoundCond::Truthy(expr) => Some(eval_const_expr(expr)? != 0),
@@ -302,6 +303,7 @@ mod kani_proofs {
         let module = BoundModule {
             source: "Sub Main()\nEnd Sub".to_string(),
             option_explicit: false,
+            compare_mode: crate::resolve::BoundCompareMode::Binary,
             default_type_table: [crate::resolve::BoundType::Variant; 26],
             declarations: vec!["x".to_string()],
             declaration_types: std::collections::HashMap::from([(

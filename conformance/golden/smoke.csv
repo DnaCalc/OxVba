@@ -12,6 +12,9 @@ stdlib_slice_ops.bas,ok,"12,45,234"
 stdlib_advanced_split_join.bas,ok,"3,789"
 stdlib_advanced_replace_trim.bas,ok,"16745,456,321"
 stdlib_advanced_strcomp.bas,ok,"-1,0"
+string_compare_option_binary.bas,ok,"3,-1"
+string_compare_option_text.bas,ok,"3,-1"
+stdlib_advanced_instrrev_like.bas,ok,"4,1"
 do_exit_do.bas,ok,4
 do_loop_while_basic.bas,ok,3
 do_while_basic.bas,ok,3

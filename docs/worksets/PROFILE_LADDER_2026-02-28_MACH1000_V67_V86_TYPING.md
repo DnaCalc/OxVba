@@ -384,3 +384,11 @@ Per profile:
   - run: `v77-kani`,
   - status: `dg-running`,
   - register: `docs/evidence/formal/DEFERRED_GATES.md`.
+- `v78` (`mvp-string-compare-search-v78`) completed:
+  - matrix gate `PASS` (`docs/evidence/profiles/v78/gate_report.md`),
+  - formal obligations `FO-V78-001..003` pass (`docs/evidence/formal/latest_run.md`),
+  - added `Option Compare` mode capture in resolver and mode-aware compare/search bytecode lowering for `InStr`, `InStrRev`, `StrComp`, and `Like` subset execution.
+- Strict WSL Kani lane for `v78` started async as deferred gate:
+  - run: `v78-kani`,
+  - status: `dg-running`,
+  - register: `docs/evidence/formal/DEFERRED_GATES.md`.
