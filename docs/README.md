@@ -53,6 +53,8 @@
 | Profile v38 Status | [`PROFILE_STATUS_V38.md`](PROFILE_STATUS_V38.md) | Current gate status contract for `mvp-lang-named-args-v38`. |
 | Profile v40 Status | [`PROFILE_STATUS_V40.md`](PROFILE_STATUS_V40.md) | Current gate status contract for `mvp-lang-gosub-return-v40`. |
 | Profile v41 Status | [`PROFILE_STATUS_V41.md`](PROFILE_STATUS_V41.md) | Current gate status contract for `mvp-lang-on-error-goto-label-v41`. |
+| Profile v42 Status | [`PROFILE_STATUS_V42.md`](PROFILE_STATUS_V42.md) | Current gate status contract for `mvp-lang-redim-preserve-v42`. |
+| Profile v43 Status | [`PROFILE_STATUS_V43.md`](PROFILE_STATUS_V43.md) | Current gate status contract for `mvp-lang-udt-enum-const-v43`. |
 | Phase 12 Status | [`PHASE12_STATUS.md`](PHASE12_STATUS.md) | Declared profile scope and final conformance/stabilization gate artifacts. |
 | Work Set Plan (v2) | [`worksets/WORKSET_2026-02-27_CONTROLFLOW_V2.md`](worksets/WORKSET_2026-02-27_CONTROLFLOW_V2.md) | Detailed execution-grade plan for control-flow expansion beyond `mvp-int32-core-v1`. |
 | Work Set Plan (v3) | [`worksets/WORKSET_2026-02-27_FORMAL_FOUNDATION_V3.md`](worksets/WORKSET_2026-02-27_FORMAL_FOUNDATION_V3.md) | Formal infrastructure work set for manifest-driven obligations and reporting. |
@@ -93,6 +95,8 @@
 | Work Set Plan (v38) | [`worksets/WORKSET_2026-02-27_NAMED_ARGS_V38.md`](worksets/WORKSET_2026-02-27_NAMED_ARGS_V38.md) | Named-argument call binding and validation work set. |
 | Work Set Plan (v40) | [`worksets/WORKSET_2026-02-27_GOSUB_RETURN_V40.md`](worksets/WORKSET_2026-02-27_GOSUB_RETURN_V40.md) | GoSub/Return label-flow subset work set. |
 | Work Set Plan (v41) | [`worksets/WORKSET_2026-02-27_ON_ERROR_GOTO_LABEL_V41.md`](worksets/WORKSET_2026-02-27_ON_ERROR_GOTO_LABEL_V41.md) | On Error GoTo label handler-transfer subset work set. |
+| Work Set Plan (v42) | [`worksets/WORKSET_2026-02-27_REDIM_PRESERVE_V42.md`](worksets/WORKSET_2026-02-27_REDIM_PRESERVE_V42.md) | ReDim/ReDim Preserve (1D literal-bound) subset work set. |
+| Work Set Plan (v43) | [`worksets/WORKSET_2026-02-27_UDT_ENUM_CONST_V43.md`](worksets/WORKSET_2026-02-27_UDT_ENUM_CONST_V43.md) | Module-level Const/Enum and UDT declaration-baseline work set. |
 | Work Set Plan (v27-v36) | [`worksets/WORKSET_2026-02-27_BATCH_V27_V36.md`](worksets/WORKSET_2026-02-27_BATCH_V27_V36.md) | Next long batch: formal reliability, language coverage closure, and hotspot performance work. |
 | Profile Ladder | [`worksets/PROFILE_LADDER_2026-02-27_MACH1000.md`](worksets/PROFILE_LADDER_2026-02-27_MACH1000.md) | MACH1000 profile roadmap and execution history. |
 | Profile Ladder (v37-v56) | [`worksets/PROFILE_LADDER_2026-02-27_MACH1000_V37_V56.md`](worksets/PROFILE_LADDER_2026-02-27_MACH1000_V37_V56.md) | Next horizon ladder split into language core, intrinsic runtime, and host/interop tracks. |

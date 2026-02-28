@@ -2,6 +2,7 @@ file,status,slots
 do_exit_do.bas,ok,4
 do_loop_while_basic.bas,ok,3
 do_while_basic.bas,ok,3
+enum_basic.bas,ok,"3,4,5"
 array_bounds_error.bas,error,
 array_store_load.bas,ok,"5,7,0,7"
 array_zero_index.bas,ok,"3,0,0,3"
@@ -22,6 +23,8 @@ if_neq.bas,ok,11
 if_or_not.bas,ok,9
 if_true.bas,ok,7
 nested_if_for.bas,ok,"5,3"
+udt_declaration_basic.bas,ok,9
+module_const_basic.bas,ok,"5,7"
 option_explicit_error.bas,error,
 option_explicit_ok.bas,ok,3
 on_error_default_fail.bas,error,
@@ -41,6 +44,10 @@ params_optional_default.bas,ok,7
 params_optional_override.bas,ok,9
 proc_call_chain.bas,ok,1
 proc_call_local_scope.bas,ok,2
+redim_expand_allows_new_index.bas,ok,"0,0,5,0,5"
+redim_preserve_keeps_values.bas,ok,"7,0,7,0,0"
+redim_shrink_bounds_error.bas,error,
+redim_without_preserve_resets.bas,ok,"0,0,0,0,0"
 select_case_basic.bas,ok,20
 select_case_else.bas,ok,99
 select_case_multi.bas,ok,30

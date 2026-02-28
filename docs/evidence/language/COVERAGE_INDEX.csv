@@ -19,7 +19,7 @@ procedures,Optional params,implemented,v37,conformance/tests/params_optional_def
 procedures,Named args,implemented,v38,conformance/tests/params_named_bind.bas,
 arrays,Fixed-size arrays,implemented,v10,conformance/tests/array_store_load.bas,
 arrays,Array bounds error,implemented,v10,conformance/tests/array_bounds_error.bas,
-arrays,Dynamic ReDim,planned,v34,,
+arrays,Dynamic ReDim,implemented,v42,conformance/tests/redim_preserve_keeps_values.bas,
 error_handling,On Error Resume Next,implemented,v11,conformance/tests/on_error_resume_next.bas,
 error_handling,On Error GoTo 0,implemented,v12,conformance/tests/on_error_goto_zero_fail.bas,
 error_handling,Resume Next statement,implemented,v12,conformance/tests/resume_next_statement_ok.bas,
@@ -27,7 +27,9 @@ error_handling,On Error GoTo label,implemented,v41,conformance/tests/on_error_go
 types,Variant numeric core,implemented,v13,docs/evidence/formal/obligations.csv,
 types,String BSTR core,partial,v34,docs/evidence/formal/obligations.csv,boundary interop expansion pending
 types,Date and Currency core,implemented,v15,docs/evidence/formal/obligations.csv,
-types,User-defined types (UDT),planned,v34,,
+types,Module Const declarations,implemented,v43,conformance/tests/module_const_basic.bas,
+types,Enum declarations,implemented,v43,conformance/tests/enum_basic.bas,
+types,User-defined types (UDT),partial,v43,conformance/tests/udt_declaration_basic.bas,Type blocks parse; field access support pending
 objects,Root object injection,implemented,v7,crates/oxvba-host/src/engine.rs,
 objects,Class module lifecycle,planned,v34,,
 objects,Collection object model,planned,v34,,

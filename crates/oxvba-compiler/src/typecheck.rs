@@ -119,6 +119,7 @@ fn check_stmt(
                 labels,
             )
         }
+        BoundStmt::ReDim { .. } => Ok(()),
         BoundStmt::DoWhile { cond, body, .. } => {
             check_condition(cond, option_explicit, declared, declarations)?;
             check_stmt_list(

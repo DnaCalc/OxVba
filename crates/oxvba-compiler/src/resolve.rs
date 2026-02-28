@@ -31,6 +31,11 @@ pub enum BoundStmt {
         end: BoundExpr,
         body: Vec<BoundStmt>,
     },
+    ReDim {
+        name: String,
+        max_index: usize,
+        preserve: bool,
+    },
     DoWhile {
         cond: BoundCond,
         body: Vec<BoundStmt>,
@@ -121,6 +126,7 @@ pub fn resolve_symbols(source: &str) -> BoundModule {
         .filter(|line| !line.is_empty() && !line.starts_with('\''))
         .map(ToOwned::to_owned)
         .collect::<Vec<_>>();
+    let module_constants = collect_module_constants(&lines);
 
     let has_explicit_procs = lines.iter().any(|line| {
         let lower = line.to_ascii_lowercase();
@@ -128,19 +134,29 @@ pub fn resolve_symbols(source: &str) -> BoundModule {
     });
 
     let procedures = if has_explicit_procs {
-        parse_procedures(&lines, &mut option_explicit)
+        parse_procedures(&lines, &mut option_explicit, &module_constants)
     } else {
         let mut declarations: Vec<String> = Vec::new();
         let mut array_bounds: HashMap<String, usize> = HashMap::new();
         let mut index = 0;
-        let body = parse_block(
+        for (name, _) in sorted_module_constants(&module_constants) {
+            if !declarations
+                .iter()
+                .any(|existing| existing.eq_ignore_ascii_case(&name))
+            {
+                declarations.push(name.clone());
+            }
+        }
+        let mut body = parse_block(
             &lines,
             &mut index,
             &mut declarations,
             &mut array_bounds,
             &mut option_explicit,
+            &module_constants,
             &[],
         );
+        body.splice(0..0, build_const_prelude(&module_constants));
         vec![BoundProcedure {
             name: "main".to_string(),
             params: Vec::new(),
@@ -172,7 +188,11 @@ pub fn resolve_symbols(source: &str) -> BoundModule {
     }
 }
 
-fn parse_procedures(lines: &[String], option_explicit: &mut bool) -> Vec<BoundProcedure> {
+fn parse_procedures(
+    lines: &[String],
+    option_explicit: &mut bool,
+    module_constants: &HashMap<String, i32>,
+) -> Vec<BoundProcedure> {
     let mut procedures = Vec::new();
     let mut index = 0;
 
@@ -200,20 +220,30 @@ fn parse_procedures(lines: &[String], option_explicit: &mut bool) -> Vec<BoundPr
 
         index += 1;
         let mut declarations: Vec<String> = params.iter().map(|p| p.name.clone()).collect();
+        for (name, _) in sorted_module_constants(module_constants) {
+            if !declarations
+                .iter()
+                .any(|existing| existing.eq_ignore_ascii_case(&name))
+            {
+                declarations.push(name.clone());
+            }
+        }
         let mut array_bounds: HashMap<String, usize> = HashMap::new();
         let end_term = if is_function {
             "end function"
         } else {
             "end sub"
         };
-        let body = parse_block(
+        let mut body = parse_block(
             lines,
             &mut index,
             &mut declarations,
             &mut array_bounds,
             option_explicit,
+            module_constants,
             &[end_term],
         );
+        body.splice(0..0, build_const_prelude(module_constants));
         if index < lines.len() && lines[index].eq_ignore_ascii_case(end_term) {
             index += 1;
         }
@@ -304,12 +334,112 @@ fn parse_param_default(text: &str) -> Option<i32> {
     text.trim().parse::<i32>().ok()
 }
 
+fn sorted_module_constants(constants: &HashMap<String, i32>) -> Vec<(String, i32)> {
+    let mut out = constants
+        .iter()
+        .map(|(name, value)| (name.clone(), *value))
+        .collect::<Vec<_>>();
+    out.sort_by(|lhs, rhs| lhs.0.cmp(&rhs.0));
+    out
+}
+
+fn build_const_prelude(constants: &HashMap<String, i32>) -> Vec<BoundStmt> {
+    sorted_module_constants(constants)
+        .into_iter()
+        .map(|(name, value)| BoundStmt::Assign {
+            target: name,
+            expr: BoundExpr::IntConst(value),
+        })
+        .collect()
+}
+
+fn collect_module_constants(lines: &[String]) -> HashMap<String, i32> {
+    let mut constants = HashMap::new();
+    let mut index = 0usize;
+
+    while index < lines.len() {
+        let line = lines[index].as_str();
+        let lower = line.to_ascii_lowercase();
+        if lower.starts_with("sub ") || lower.starts_with("function ") {
+            let end_term = if lower.starts_with("sub ") {
+                "end sub"
+            } else {
+                "end function"
+            };
+            index += 1;
+            while index < lines.len() && !lines[index].eq_ignore_ascii_case(end_term) {
+                index += 1;
+            }
+            if index < lines.len() {
+                index += 1;
+            }
+            continue;
+        }
+
+        if lower.starts_with("enum ") {
+            parse_enum_block(lines, &mut index, &mut constants);
+            continue;
+        }
+
+        if let Some((name, value)) = parse_const_declaration(line) {
+            constants.insert(name, value);
+        }
+        index += 1;
+    }
+
+    constants
+}
+
+fn parse_enum_block(lines: &[String], index: &mut usize, constants: &mut HashMap<String, i32>) {
+    *index += 1;
+    let mut next_value = 0i32;
+
+    while *index < lines.len() {
+        let line = lines[*index].as_str();
+        if line.eq_ignore_ascii_case("end enum") {
+            *index += 1;
+            return;
+        }
+        if let Some((name, explicit)) = parse_enum_member(line) {
+            let value = explicit.unwrap_or(next_value);
+            constants.insert(name, value);
+            next_value = value.saturating_add(1);
+        }
+        *index += 1;
+    }
+}
+
+fn parse_const_declaration(line: &str) -> Option<(String, i32)> {
+    let trimmed = line.trim();
+    let rhs = strip_keyword_prefix_ci(trimmed, "public const")
+        .or_else(|| strip_keyword_prefix_ci(trimmed, "private const"))
+        .or_else(|| strip_keyword_prefix_ci(trimmed, "const"))?;
+    let (lhs, rhs_value) = rhs.split_once('=')?;
+    let name = lhs.split_whitespace().next().and_then(normalize_ident)?;
+    let value = rhs_value.trim().parse::<i32>().ok()?;
+    Some((name, value))
+}
+
+fn parse_enum_member(line: &str) -> Option<(String, Option<i32>)> {
+    let trimmed = line.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+    if let Some((lhs, rhs)) = trimmed.split_once('=') {
+        let name = normalize_ident(lhs.trim())?;
+        let value = rhs.trim().parse::<i32>().ok()?;
+        return Some((name, Some(value)));
+    }
+    normalize_ident(trimmed).map(|name| (name, None))
+}
+
 fn parse_block(
     lines: &[String],
     index: &mut usize,
     declarations: &mut Vec<String>,
     array_bounds: &mut HashMap<String, usize>,
     option_explicit: &mut bool,
+    module_constants: &HashMap<String, i32>,
     terminators: &[&str],
 ) -> Vec<BoundStmt> {
     let mut out = Vec::new();
@@ -343,6 +473,33 @@ fn parse_block(
             continue;
         }
 
+        if parse_const_declaration(line).is_some() {
+            *index += 1;
+            continue;
+        }
+
+        if lower.starts_with("enum ") {
+            *index += 1;
+            while *index < lines.len() && !lines[*index].eq_ignore_ascii_case("end enum") {
+                *index += 1;
+            }
+            if *index < lines.len() {
+                *index += 1;
+            }
+            continue;
+        }
+
+        if lower.starts_with("type ") {
+            *index += 1;
+            while *index < lines.len() && !lines[*index].eq_ignore_ascii_case("end type") {
+                *index += 1;
+            }
+            if *index < lines.len() {
+                *index += 1;
+            }
+            continue;
+        }
+
         if lower.starts_with("if ") && lower.ends_with(" then") {
             out.push(parse_if_stmt(
                 lines,
@@ -350,6 +507,7 @@ fn parse_block(
                 declarations,
                 array_bounds,
                 option_explicit,
+                module_constants,
                 line,
             ));
             continue;
@@ -362,8 +520,21 @@ fn parse_block(
                 declarations,
                 array_bounds,
                 option_explicit,
+                module_constants,
                 line,
             ));
+            continue;
+        }
+
+        if lower.starts_with("redim ") {
+            if let Some(stmt) = parse_redim_stmt(line, declarations, array_bounds) {
+                out.push(stmt);
+            } else {
+                out.push(BoundStmt::Unsupported {
+                    line: line.to_string(),
+                });
+            }
+            *index += 1;
             continue;
         }
 
@@ -374,6 +545,7 @@ fn parse_block(
                 declarations,
                 array_bounds,
                 option_explicit,
+                module_constants,
                 line,
             ));
             continue;
@@ -455,6 +627,7 @@ fn parse_block(
                 declarations,
                 array_bounds,
                 option_explicit,
+                module_constants,
                 line,
             ));
             continue;
@@ -473,6 +646,7 @@ fn parse_if_stmt(
     declarations: &mut Vec<String>,
     array_bounds: &mut HashMap<String, usize>,
     option_explicit: &mut bool,
+    module_constants: &HashMap<String, i32>,
     line: &str,
 ) -> BoundStmt {
     let condition = line[2..line.len() - 4].trim();
@@ -490,10 +664,17 @@ fn parse_if_stmt(
         declarations,
         array_bounds,
         option_explicit,
+        module_constants,
         &["elseif", "else", "end if"],
     );
-    let Some(else_body) = parse_if_tail(lines, index, declarations, array_bounds, option_explicit)
-    else {
+    let Some(else_body) = parse_if_tail(
+        lines,
+        index,
+        declarations,
+        array_bounds,
+        option_explicit,
+        module_constants,
+    ) else {
         return BoundStmt::Unsupported {
             line: line.to_string(),
         };
@@ -512,6 +693,7 @@ fn parse_for_stmt(
     declarations: &mut Vec<String>,
     array_bounds: &mut HashMap<String, usize>,
     option_explicit: &mut bool,
+    module_constants: &HashMap<String, i32>,
     line: &str,
 ) -> BoundStmt {
     let Some((var, start, end)) = parse_for_header(line, array_bounds) else {
@@ -528,6 +710,7 @@ fn parse_for_stmt(
         declarations,
         array_bounds,
         option_explicit,
+        module_constants,
         &["next"],
     );
 
@@ -586,6 +769,9 @@ fn parse_call_invocation(
     if close <= open {
         return None;
     }
+    if !text[close + 1..].trim().is_empty() {
+        return None;
+    }
 
     let name = normalize_ident(text[..open].trim())?;
     let args_raw = text[open + 1..close].trim();
@@ -617,6 +803,7 @@ fn parse_do_stmt(
     declarations: &mut Vec<String>,
     array_bounds: &mut HashMap<String, usize>,
     option_explicit: &mut bool,
+    module_constants: &HashMap<String, i32>,
     line: &str,
 ) -> BoundStmt {
     let lower = line.to_ascii_lowercase();
@@ -636,6 +823,7 @@ fn parse_do_stmt(
             declarations,
             array_bounds,
             option_explicit,
+            module_constants,
             &["loop"],
         );
         if *index < lines.len() {
@@ -663,6 +851,7 @@ fn parse_do_stmt(
             declarations,
             array_bounds,
             option_explicit,
+            module_constants,
             &["loop"],
         );
         if *index < lines.len() {
@@ -709,12 +898,43 @@ fn parse_for_header(
     Some((var, start, end))
 }
 
+fn parse_redim_stmt(
+    line: &str,
+    declarations: &mut Vec<String>,
+    array_bounds: &mut HashMap<String, usize>,
+) -> Option<BoundStmt> {
+    let mut payload = line[6..].trim();
+    let mut preserve = false;
+    if payload.to_ascii_lowercase().starts_with("preserve ") {
+        preserve = true;
+        payload = payload[9..].trim();
+    }
+    let (name, max_index) = parse_array_declaration(payload)?;
+    array_bounds.insert(name.clone(), max_index);
+    for idx in 0..=max_index {
+        let alias = format!("{name}_{idx}");
+        if !declarations
+            .iter()
+            .any(|existing| existing.eq_ignore_ascii_case(&alias))
+        {
+            declarations.push(alias);
+        }
+    }
+
+    Some(BoundStmt::ReDim {
+        name,
+        max_index,
+        preserve,
+    })
+}
+
 fn parse_select_case_stmt(
     lines: &[String],
     index: &mut usize,
     declarations: &mut Vec<String>,
     array_bounds: &mut HashMap<String, usize>,
     option_explicit: &mut bool,
+    module_constants: &HashMap<String, i32>,
     line: &str,
 ) -> BoundStmt {
     let Some((_, expr_raw)) = split_ci(line, "case") else {
@@ -755,6 +975,7 @@ fn parse_select_case_stmt(
                 declarations,
                 array_bounds,
                 option_explicit,
+                module_constants,
                 &["end select"],
             );
             continue;
@@ -780,6 +1001,7 @@ fn parse_select_case_stmt(
                 declarations,
                 array_bounds,
                 option_explicit,
+                module_constants,
                 &["case", "end select"],
             );
             arms.push((values, body));
@@ -982,6 +1204,7 @@ fn parse_if_tail(
     declarations: &mut Vec<String>,
     array_bounds: &mut HashMap<String, usize>,
     option_explicit: &mut bool,
+    module_constants: &HashMap<String, i32>,
 ) -> Option<Vec<BoundStmt>> {
     if *index >= lines.len() {
         return None;
@@ -1003,6 +1226,7 @@ fn parse_if_tail(
             declarations,
             array_bounds,
             option_explicit,
+            module_constants,
             &["end if"],
         );
         if *index < lines.len() && lines[*index].eq_ignore_ascii_case("end if") {
@@ -1022,9 +1246,17 @@ fn parse_if_tail(
             declarations,
             array_bounds,
             option_explicit,
+            module_constants,
             &["elseif", "else", "end if"],
         );
-        let nested_else = parse_if_tail(lines, index, declarations, array_bounds, option_explicit)?;
+        let nested_else = parse_if_tail(
+            lines,
+            index,
+            declarations,
+            array_bounds,
+            option_explicit,
+            module_constants,
+        )?;
         return Some(vec![BoundStmt::IfCond {
             cond,
             then_body,
@@ -1235,6 +1467,44 @@ mod tests {
     }
 
     #[test]
+    fn resolve_module_const_injects_const_prelude() {
+        let source = "Const BASE = 5\nSub Main()\nDim x\nx = BASE + 2\nEnd Sub";
+        let module = resolve_symbols(source);
+        assert!(module.declarations.iter().any(|d| d == "base"));
+        let Some(BoundStmt::Assign { target, expr }) = module.body.first() else {
+            panic!("expected const prelude assignment");
+        };
+        assert_eq!(target, "base");
+        assert_eq!(expr, &BoundExpr::IntConst(5));
+    }
+
+    #[test]
+    fn resolve_enum_members_as_module_constants() {
+        let source =
+            "Enum Mode\nFast = 3\nSafe\nEnd Enum\nSub Main()\nDim x\nx = Safe + 1\nEnd Sub";
+        let module = resolve_symbols(source);
+        assert!(module.declarations.iter().any(|d| d == "fast"));
+        assert!(module.declarations.iter().any(|d| d == "safe"));
+        assert!(module.body.iter().any(
+            |s| matches!(s, BoundStmt::Assign { target, expr } if target == "safe" && expr == &BoundExpr::IntConst(4))
+        ));
+    }
+
+    #[test]
+    fn resolve_udt_block_is_accepted_and_ignored_for_mvp() {
+        let source =
+            "Type Point\nX As Integer\nY As Integer\nEnd Type\nSub Main()\nDim x\nx = 9\nEnd Sub";
+        let module = resolve_symbols(source);
+        assert!(module.declarations.iter().any(|d| d == "x"));
+        assert!(
+            module
+                .body
+                .iter()
+                .any(|s| matches!(s, BoundStmt::Assign { target, .. } if target == "x"))
+        );
+    }
+
+    #[test]
     fn resolve_gosub_and_label_statements() {
         let source = "Sub Main()\nDim x\nx = 1\nGoSub add_two\nx = x + 1\nIf Err.Number = -1 Then\nadd_two:\nx = x + 2\nReturn\nEnd If\nEnd Sub";
         let module = resolve_symbols(source);
@@ -1323,6 +1593,26 @@ mod tests {
         assert!(module.declarations.iter().any(|d| d == "a_1"));
         assert!(module.declarations.iter().any(|d| d == "a_2"));
         assert!(module.declarations.iter().any(|d| d == "x"));
+    }
+
+    #[test]
+    fn resolve_redim_and_redim_preserve_statements() {
+        let source = "Sub Main()\nDim a(1)\nReDim Preserve a(3)\nReDim a(2)\nEnd Sub";
+        let module = resolve_symbols(source);
+        assert!(
+            module
+                .body
+                .iter()
+                .any(|s| matches!(s, BoundStmt::ReDim { preserve: true, .. }))
+        );
+        assert!(module.body.iter().any(|s| matches!(
+            s,
+            BoundStmt::ReDim {
+                preserve: false,
+                ..
+            }
+        )));
+        assert!(module.declarations.iter().any(|d| d == "a_3"));
     }
 
     #[test]

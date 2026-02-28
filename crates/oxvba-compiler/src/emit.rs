@@ -264,6 +264,11 @@ fn emit_stmt(
                 }
             }
         }
+        BoundStmt::ReDim { name, preserve, .. } => {
+            if !preserve {
+                reset_array_slots(name, slot_map, instructions);
+            }
+        }
         BoundStmt::DoWhile {
             cond,
             body,
@@ -686,6 +691,28 @@ fn map_call_args_for_emit<'a>(
     }
 
     mapped
+}
+
+fn reset_array_slots(
+    array_name: &str,
+    slot_map: &HashMap<String, usize>,
+    instructions: &mut Vec<Instruction>,
+) {
+    let prefix = format!("{array_name}_");
+    let mut slots = slot_map
+        .iter()
+        .filter_map(|(name, slot)| {
+            if name.starts_with(&prefix) {
+                Some(*slot)
+            } else {
+                None
+            }
+        })
+        .collect::<Vec<_>>();
+    slots.sort_unstable();
+    for slot in slots {
+        instructions.push(Instruction::LoadConstI32 { slot, value: 0 });
+    }
 }
 
 #[derive(Debug, Clone)]

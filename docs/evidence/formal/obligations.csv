@@ -113,3 +113,9 @@ FO-V40-003,v40,"cargo test -p oxvba-host formal_v40_gosub_return_stack_handles_r
 FO-V41-001,v41,"cargo test -p oxvba-host formal_v41_on_error_goto_label_jumps_to_handler",no,true,crates/oxvba-host/src/engine.rs
 FO-V41-002,v41,"cargo test -p oxvba-host formal_v41_on_error_goto_label_missing_target_is_rejected",no,true,crates/oxvba-host/src/engine.rs
 FO-V41-003,v41,"cargo test -p oxvba-host formal_v41_on_error_goto_zero_disables_label_handler",no,true,crates/oxvba-host/src/engine.rs
+FO-V42-001,v42,"cargo test -p oxvba-host formal_v42_redim_preserve_retains_existing_values",no,true,crates/oxvba-host/src/engine.rs
+FO-V42-002,v42,"cargo test -p oxvba-host formal_v42_redim_without_preserve_reinitializes_array",no,true,crates/oxvba-host/src/engine.rs
+FO-V42-003,v42,"cargo test -p oxvba-host formal_v42_redim_shrink_rejects_out_of_bounds_access",no,true,crates/oxvba-host/src/engine.rs
+FO-V43-001,v43,"cargo test -p oxvba-host formal_v43_module_const_evaluates_in_expression",no,true,crates/oxvba-host/src/engine.rs
+FO-V43-002,v43,"cargo test -p oxvba-host formal_v43_enum_members_bind_to_expected_values",no,true,crates/oxvba-host/src/engine.rs
+FO-V43-003,v43,"cargo test -p oxvba-host formal_v43_udt_declaration_block_is_parse_tolerated",no,true,crates/oxvba-host/src/engine.rs

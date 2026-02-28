@@ -430,6 +430,69 @@ mod tests {
     }
 
     #[test]
+    fn formal_v42_redim_preserve_retains_existing_values() {
+        let engine = Engine::new(HostConfig::default());
+        let source =
+            "Sub Main()\nDim a(1)\nDim x\na(0) = 7\nReDim Preserve a(3)\nx = a(0)\nEnd Sub";
+        let snapshot = engine
+            .execute_source_with_snapshot(source)
+            .expect("execution should succeed");
+        assert_eq!(snapshot[2], 7);
+    }
+
+    #[test]
+    fn formal_v42_redim_without_preserve_reinitializes_array() {
+        let engine = Engine::new(HostConfig::default());
+        let source = "Sub Main()\nDim a(1)\nDim x\na(0) = 7\nReDim a(3)\nx = a(0)\nEnd Sub";
+        let snapshot = engine
+            .execute_source_with_snapshot(source)
+            .expect("execution should succeed");
+        assert_eq!(snapshot[2], 0);
+    }
+
+    #[test]
+    fn formal_v42_redim_shrink_rejects_out_of_bounds_access() {
+        let engine = Engine::new(HostConfig::default());
+        let source = "Sub Main()\nDim a(3)\nReDim a(1)\na(2) = 9\nEnd Sub";
+        let err = engine
+            .execute_source_with_snapshot(source)
+            .expect_err("out-of-bounds after shrink should fail");
+        assert!(!err.trim().is_empty());
+    }
+
+    #[test]
+    fn formal_v43_module_const_evaluates_in_expression() {
+        let engine = Engine::new(HostConfig::default());
+        let source = "Const BASE = 5\nSub Main()\nDim x\nx = BASE + 2\nEnd Sub";
+        let snapshot = engine
+            .execute_source_with_snapshot(source)
+            .expect("execution should succeed");
+        assert_eq!(snapshot, vec![5, 7]);
+    }
+
+    #[test]
+    fn formal_v43_enum_members_bind_to_expected_values() {
+        let engine = Engine::new(HostConfig::default());
+        let source =
+            "Enum Mode\nFast = 3\nSafe\nEnd Enum\nSub Main()\nDim x\nx = Safe + 1\nEnd Sub";
+        let snapshot = engine
+            .execute_source_with_snapshot(source)
+            .expect("execution should succeed");
+        assert_eq!(snapshot, vec![3, 4, 5]);
+    }
+
+    #[test]
+    fn formal_v43_udt_declaration_block_is_parse_tolerated() {
+        let engine = Engine::new(HostConfig::default());
+        let source =
+            "Type Point\nX As Integer\nY As Integer\nEnd Type\nSub Main()\nDim x\nx = 9\nEnd Sub";
+        let snapshot = engine
+            .execute_source_with_snapshot(source)
+            .expect("execution should succeed");
+        assert_eq!(snapshot, vec![9]);
+    }
+
+    #[test]
     fn formal_v10_array_store_load_roundtrip() {
         let engine = Engine::new(HostConfig::default());
         let source = "Sub Main()\nDim a(2)\nDim x\na(1) = 7\nx = a(1)\nEnd Sub";

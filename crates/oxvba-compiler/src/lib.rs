@@ -297,6 +297,74 @@ mod tests {
     }
 
     #[test]
+    fn compile_redim_preserve_subset() {
+        let source =
+            "Sub Main()\nDim a(1)\nDim x\na(0) = 7\nReDim Preserve a(3)\nx = a(0)\nEnd Sub";
+        let out = compile(source).expect("compile should succeed");
+        assert!(
+            out.instructions
+                .iter()
+                .any(|i| matches!(i, Instruction::LoadConstI32 { value: 7, .. }))
+        );
+    }
+
+    #[test]
+    fn compile_redim_shrink_bounds_violation_is_rejected() {
+        let source = "Sub Main()\nDim a(3)\nReDim a(1)\na(2) = 9\nEnd Sub";
+        let err = compile(source).expect_err("compile should fail");
+        let message = err.to_string();
+        assert!(
+            message.contains("a(2)") || message.contains("a_2") || message.contains("unsupported"),
+            "expected bounds rejection diagnostic, got: {message}"
+        );
+    }
+
+    #[test]
+    fn compile_module_const_usage_is_supported() {
+        let source = "Const BASE = 5\nSub Main()\nDim x\nx = BASE + 2\nEnd Sub";
+        let out = compile(source).expect("compile should succeed");
+        assert!(
+            out.instructions
+                .iter()
+                .any(|i| matches!(i, Instruction::LoadConstI32 { value: 5, .. }))
+        );
+        assert!(
+            out.instructions
+                .iter()
+                .any(|i| matches!(i, Instruction::AddConstI32 { value: 2, .. }))
+        );
+    }
+
+    #[test]
+    fn compile_enum_member_usage_is_supported() {
+        let source =
+            "Enum Mode\nFast = 3\nSafe\nEnd Enum\nSub Main()\nDim x\nx = Safe + 1\nEnd Sub";
+        let out = compile(source).expect("compile should succeed");
+        assert!(
+            out.instructions
+                .iter()
+                .any(|i| matches!(i, Instruction::LoadConstI32 { value: 4, .. }))
+        );
+        assert!(
+            out.instructions
+                .iter()
+                .any(|i| matches!(i, Instruction::AddConstI32 { value: 1, .. }))
+        );
+    }
+
+    #[test]
+    fn compile_udt_declaration_block_is_accepted() {
+        let source =
+            "Type Point\nX As Integer\nY As Integer\nEnd Type\nSub Main()\nDim x\nx = 9\nEnd Sub";
+        let out = compile(source).expect("compile should succeed");
+        assert!(
+            out.instructions
+                .iter()
+                .any(|i| matches!(i, Instruction::LoadConstI32 { value: 9, .. }))
+        );
+    }
+
+    #[test]
     fn compile_on_error_resume_next_emits_error_state_ops() {
         let source = "Sub Main()\nDim x\nOn Error Resume Next\nError 5\nx = Err.Number\nEnd Sub";
         let out = compile(source).expect("compile should succeed");

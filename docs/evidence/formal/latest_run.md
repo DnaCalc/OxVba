@@ -1,7 +1,7 @@
 # Formal Run Report
 
-- Timestamp (UTC): 2026-02-27T23:37:20Z
-- Profile scope: mvp-full-coverage-perf-gate-v36
+- Timestamp (UTC): 2026-02-28T00:02:09Z
+- Profile scope: mvp-lang-udt-enum-const-v43
 - Overall mode: non-blocking
 - Kani required: false
 - Kani execution: deferred-to-wsl-async
@@ -112,3 +112,21 @@
 | FO-V36-001 | v36 | no | pass | cargo test -p oxvba-host formal_v36_script_defaults_target_v36_profile_scope | crates/oxvba-host/src/engine.rs |  |
 | FO-V36-002 | v36 | no | pass | cargo test -p oxvba-host formal_v36_benchmark_default_targets_v36_artifact | crates/oxvba-host/src/engine.rs |  |
 | FO-V36-003 | v36 | no | pass | cargo test -p oxvba-host formal_v36_profile_status_document_exists | crates/oxvba-host/src/engine.rs |  |
+| FO-V37-001 | v37 | no | pass | cargo test -p oxvba-host formal_v37_optional_param_default_applies_when_omitted | crates/oxvba-host/src/engine.rs |  |
+| FO-V37-002 | v37 | no | pass | cargo test -p oxvba-host formal_v37_optional_param_explicit_value_overrides_default | crates/oxvba-host/src/engine.rs |  |
+| FO-V37-003 | v37 | no | pass | cargo test -p oxvba-host formal_v37_optional_param_missing_required_arg_is_rejected | crates/oxvba-host/src/engine.rs |  |
+| FO-V38-001 | v38 | no | pass | cargo test -p oxvba-host formal_v38_named_args_bind_by_parameter_name | crates/oxvba-host/src/engine.rs |  |
+| FO-V38-002 | v38 | no | pass | cargo test -p oxvba-host formal_v38_named_args_allow_omitting_optional_by_name | crates/oxvba-host/src/engine.rs |  |
+| FO-V38-003 | v38 | no | pass | cargo test -p oxvba-host formal_v38_named_args_reject_positional_after_named | crates/oxvba-host/src/engine.rs |  |
+| FO-V40-001 | v40 | no | pass | cargo test -p oxvba-host formal_v40_gosub_executes_label_body_and_returns | crates/oxvba-host/src/engine.rs |  |
+| FO-V40-002 | v40 | no | pass | cargo test -p oxvba-host formal_v40_gosub_missing_label_is_rejected | crates/oxvba-host/src/engine.rs |  |
+| FO-V40-003 | v40 | no | pass | cargo test -p oxvba-host formal_v40_gosub_return_stack_handles_repeated_calls | crates/oxvba-host/src/engine.rs |  |
+| FO-V41-001 | v41 | no | pass | cargo test -p oxvba-host formal_v41_on_error_goto_label_jumps_to_handler | crates/oxvba-host/src/engine.rs |  |
+| FO-V41-002 | v41 | no | pass | cargo test -p oxvba-host formal_v41_on_error_goto_label_missing_target_is_rejected | crates/oxvba-host/src/engine.rs |  |
+| FO-V41-003 | v41 | no | pass | cargo test -p oxvba-host formal_v41_on_error_goto_zero_disables_label_handler | crates/oxvba-host/src/engine.rs |  |
+| FO-V42-001 | v42 | no | pass | cargo test -p oxvba-host formal_v42_redim_preserve_retains_existing_values | crates/oxvba-host/src/engine.rs |  |
+| FO-V42-002 | v42 | no | pass | cargo test -p oxvba-host formal_v42_redim_without_preserve_reinitializes_array | crates/oxvba-host/src/engine.rs |  |
+| FO-V42-003 | v42 | no | pass | cargo test -p oxvba-host formal_v42_redim_shrink_rejects_out_of_bounds_access | crates/oxvba-host/src/engine.rs |  |
+| FO-V43-001 | v43 | no | pass | cargo test -p oxvba-host formal_v43_module_const_evaluates_in_expression | crates/oxvba-host/src/engine.rs |  |
+| FO-V43-002 | v43 | no | pass | cargo test -p oxvba-host formal_v43_enum_members_bind_to_expected_values | crates/oxvba-host/src/engine.rs |  |
+| FO-V43-003 | v43 | no | pass | cargo test -p oxvba-host formal_v43_udt_declaration_block_is_parse_tolerated | crates/oxvba-host/src/engine.rs |  |

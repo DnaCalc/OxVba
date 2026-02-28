@@ -215,3 +215,14 @@
   - extended bytecode/vm with explicit label-handler error mode;
   - added label-handler conformance fixtures and formal obligations (`FO-V41-001..003`);
   - published `PROFILE_STATUS_V41` and `WORKSET_2026-02-27_ON_ERROR_GOTO_LABEL_V41`.
+- Started `mvp-lang-redim-preserve-v42` language-closure pass:
+  - added `ReDim`/`ReDim Preserve` parser/binder subset for 1D literal bounds;
+  - wired static-slot reshape behavior for preserve/non-preserve paths;
+  - added ReDim conformance fixtures and formal obligations (`FO-V42-001..003`);
+  - published `PROFILE_STATUS_V42` and `WORKSET_2026-02-27_REDIM_PRESERVE_V42`.
+- Started `mvp-lang-udt-enum-const-v43` language-closure pass:
+  - added module-level `Const` and `Enum` parsing with deterministic prelude lowering into procedure slots;
+  - accepted `Type ... End Type` declaration blocks in parser flow (baseline/declaration-only subset);
+  - hardened call parsing to reject trailing tokens after `)` to avoid assignment/call misclassification;
+  - added conformance fixtures and formal obligations (`FO-V43-001..003`);
+  - published `PROFILE_STATUS_V43` and `WORKSET_2026-02-27_UDT_ENUM_CONST_V43`.

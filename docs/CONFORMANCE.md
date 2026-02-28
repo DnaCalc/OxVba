@@ -27,6 +27,9 @@ Current corpus includes:
 - Trailing `Optional` parameter defaults (integer literal subset).
 - Named argument call binding (`name := expr`) with ordering validation.
 - Fixed-size arrays with indexed load/store and bounds errors.
+- Dynamic `ReDim` / `ReDim Preserve` (1D literal-bound subset).
+- Module-level `Const` and `Enum` declaration usage subset.
+- `Type ... End Type` declaration-block parse acceptance baseline.
 - `On Error Resume Next` and `Err.Number` subset behavior.
 - `On Error GoTo 0` reset behavior and `Resume Next` statement subset.
 - `On Error GoTo <label>` handler transfer subset.

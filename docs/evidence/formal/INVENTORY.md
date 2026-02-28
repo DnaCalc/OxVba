@@ -10,6 +10,6 @@ Human-readable status:
 - `docs/evidence/formal/latest_run.csv`
 
 ## Notes
-- Profiles `v2`..`v41` are represented in the obligation index.
+- Profiles `v2`..`v43` are represented in the obligation index.
 - Kani-backed obligations are recorded as `skipped` when `cargo-kani` is unavailable.
 - Executable model-check tests are used to keep formal cadence active when external provers are unavailable.
