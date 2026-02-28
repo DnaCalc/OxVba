@@ -54,3 +54,26 @@ mod tests {
         assert_eq!(err.to_string(), "input is empty");
     }
 }
+
+#[allow(unexpected_cfgs)]
+#[cfg(kani)]
+mod kani_proofs {
+    use super::parse;
+
+    #[kani::proof]
+    fn parse_non_empty_source_roundtrips_input() {
+        let len: usize = kani::any();
+        kani::assume(len > 0);
+        kani::assume(len <= 24);
+
+        let mut source = String::new();
+        for _ in 0..len {
+            let b: u8 = kani::any();
+            let ascii = 32 + (b % 95);
+            source.push(char::from(ascii));
+        }
+
+        let tree = parse(&source).expect("non-empty source should parse");
+        assert_eq!(tree.to_source(), source);
+    }
+}

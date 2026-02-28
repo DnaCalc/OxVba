@@ -289,3 +289,35 @@ mod tests {
         }));
     }
 }
+
+#[allow(unexpected_cfgs)]
+#[cfg(kani)]
+mod kani_proofs {
+    use super::optimize_module;
+    use crate::resolve::{BoundExpr, BoundModule, BoundStmt};
+
+    #[kani::proof]
+    fn zero_delta_self_add_assignment_is_removed() {
+        let delta: i32 = kani::any();
+        let module = BoundModule {
+            source: "Sub Main()\nEnd Sub".to_string(),
+            option_explicit: false,
+            declarations: vec!["x".to_string()],
+            body: vec![BoundStmt::Assign {
+                target: "x".to_string(),
+                expr: BoundExpr::AddConst {
+                    var: "x".to_string(),
+                    delta,
+                },
+            }],
+            procedures: Vec::new(),
+        };
+
+        let optimized = optimize_module(module);
+        if delta == 0 {
+            assert!(optimized.body.is_empty());
+        } else {
+            assert_eq!(optimized.body.len(), 1);
+        }
+    }
+}

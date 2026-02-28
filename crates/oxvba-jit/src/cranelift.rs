@@ -28,6 +28,10 @@ fn supports_core_instruction(instruction: &Instruction) -> bool {
             | Instruction::AddConstI32 { .. }
             | Instruction::SubConstI32 { .. }
             | Instruction::CopySlot { .. }
+            | Instruction::IntrinsicAbsI32 { .. }
+            | Instruction::IntrinsicIntI32 { .. }
+            | Instruction::IntrinsicFixI32 { .. }
+            | Instruction::IntrinsicSgnI32 { .. }
             | Instruction::CmpEqSlots { .. }
             | Instruction::CmpNeSlots { .. }
             | Instruction::CmpLtSlots { .. }
@@ -313,6 +317,37 @@ pub fn execute_bytecode(bytecode: &Bytecode) -> Result<Vec<i32>, String> {
             Instruction::CopySlot { dst, src } => {
                 let value = read_slot(&mut builder, slots_ptr, *src)?;
                 write_slot(&mut builder, slots_ptr, *dst, value)?;
+                builder.ins().jump(next_block, &[]);
+            }
+            Instruction::IntrinsicAbsI32 { dst, src } => {
+                let value = read_slot(&mut builder, slots_ptr, *src)?;
+                let is_neg = builder.ins().icmp_imm(IntCC::SignedLessThan, value, 0);
+                let negated = builder.ins().ineg(value);
+                let abs_value = builder.ins().select(is_neg, negated, value);
+                let is_min = builder
+                    .ins()
+                    .icmp_imm(IntCC::Equal, value, i64::from(i32::MIN));
+                let max_i32 = builder.ins().iconst(types::I32, i64::from(i32::MAX));
+                let saturated = builder.ins().select(is_min, max_i32, abs_value);
+                write_slot(&mut builder, slots_ptr, *dst, saturated)?;
+                builder.ins().jump(next_block, &[]);
+            }
+            Instruction::IntrinsicIntI32 { dst, src }
+            | Instruction::IntrinsicFixI32 { dst, src } => {
+                let value = read_slot(&mut builder, slots_ptr, *src)?;
+                write_slot(&mut builder, slots_ptr, *dst, value)?;
+                builder.ins().jump(next_block, &[]);
+            }
+            Instruction::IntrinsicSgnI32 { dst, src } => {
+                let value = read_slot(&mut builder, slots_ptr, *src)?;
+                let is_positive = builder.ins().icmp_imm(IntCC::SignedGreaterThan, value, 0);
+                let is_negative = builder.ins().icmp_imm(IntCC::SignedLessThan, value, 0);
+                let one = builder.ins().iconst(types::I32, 1);
+                let minus_one = builder.ins().iconst(types::I32, -1);
+                let zero = builder.ins().iconst(types::I32, 0);
+                let pos_or_zero = builder.ins().select(is_positive, one, zero);
+                let signed = builder.ins().select(is_negative, minus_one, pos_or_zero);
+                write_slot(&mut builder, slots_ptr, *dst, signed)?;
                 builder.ins().jump(next_block, &[]);
             }
             Instruction::CmpEqSlots { dst, lhs, rhs } => {

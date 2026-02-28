@@ -1,12 +1,14 @@
 param(
-    [ValidateSet("Start", "Status", "Tail", "Wait", "Stop")]
+    [ValidateSet("Start", "Status", "Tail", "Wait", "Stop", "WatchStart", "WatchStop")]
     [string]$Action = "Status",
     [string]$Name = "formal-kani",
     [string]$ProfileScope = "mvp-language-stdlib-consolidation-gate-v56",
     [string]$Command = "",
     [int]$TailLines = 80,
     [int]$PollSeconds = 5,
-    [int]$TimeoutSeconds = 0
+    [int]$TimeoutSeconds = 0,
+    [int]$WatchPollSeconds = 600,
+    [bool]$StartWatcher = $true
 )
 
 $ErrorActionPreference = "Stop"
@@ -26,6 +28,9 @@ try {
             StderrPath = (Join-Path $runDir "stderr.log")
             ExitCodePath = (Join-Path $runDir "exit_code.txt")
             CompletedPath = (Join-Path $runDir "completed_utc.txt")
+            LivenessPath = (Join-Path $runDir "liveness.log")
+            WatcherStdoutPath = (Join-Path $runDir "watcher.stdout.log")
+            WatcherStderrPath = (Join-Path $runDir "watcher.stderr.log")
         }
     }
 
@@ -33,7 +38,16 @@ try {
         if (-not (Test-Path $statePath)) {
             return $null
         }
-        return Get-Content $statePath -Raw | ConvertFrom-Json
+        try {
+            return Get-Content $statePath -Raw | ConvertFrom-Json
+        }
+        catch {
+            return $null
+        }
+    }
+
+    function Write-State([string]$statePath, [object]$state) {
+        $state | ConvertTo-Json | Set-Content $statePath
     }
 
     function Is-Running([int]$ProcessId) {
@@ -41,6 +55,32 @@ try {
             return $false
         }
         return $null -ne (Get-Process -Id $ProcessId -ErrorAction SilentlyContinue)
+    }
+
+    function Start-Watcher([string]$runName, [object]$paths, [int]$watchPollSeconds) {
+        $watcherScript = Join-Path $PSScriptRoot "watch-formal-kani-async.ps1"
+        if (-not (Test-Path $watcherScript)) {
+            throw "watch script missing: $watcherScript"
+        }
+
+        Remove-Item $paths.WatcherStdoutPath, $paths.WatcherStderrPath -Force -ErrorAction SilentlyContinue
+        return Start-Process `
+            -FilePath "pwsh" `
+            -ArgumentList @(
+                "-NoProfile",
+                "-File",
+                $watcherScript,
+                "-Name",
+                $runName,
+                "-PollSeconds",
+                $watchPollSeconds,
+                "-LogPath",
+                $paths.LivenessPath
+            ) `
+            -WindowStyle Hidden `
+            -RedirectStandardOutput $paths.WatcherStdoutPath `
+            -RedirectStandardError $paths.WatcherStderrPath `
+            -PassThru
     }
 
     $paths = Get-RunPaths $Name
@@ -60,7 +100,16 @@ try {
             $Command = "./scripts/run-formal.ps1 -ProfileScope $ProfileScope -RequireKani -UseWslKani"
         }
 
-        Remove-Item $paths.StdoutPath, $paths.StderrPath, $paths.ExitCodePath, $paths.CompletedPath, $paths.CommandPath -Force -ErrorAction SilentlyContinue
+        Remove-Item `
+            $paths.StdoutPath, `
+            $paths.StderrPath, `
+            $paths.ExitCodePath, `
+            $paths.CompletedPath, `
+            $paths.CommandPath, `
+            $paths.LivenessPath, `
+            $paths.WatcherStdoutPath, `
+            $paths.WatcherStderrPath `
+            -Force -ErrorAction SilentlyContinue
         Set-Content -Path $paths.CommandPath -Value $Command
         $process = Start-Process `
             -FilePath "pwsh" `
@@ -80,7 +129,7 @@ try {
             -RedirectStandardError $paths.StderrPath `
             -PassThru
 
-        $state = [PSCustomObject]@{
+        $state = [ordered]@{
             name = $Name
             pid = $process.Id
             started_utc = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
@@ -91,10 +140,22 @@ try {
             stderr = $paths.StderrPath
             exit_code_file = $paths.ExitCodePath
             completed_utc_file = $paths.CompletedPath
+            liveness_log = $paths.LivenessPath
+            watcher_pid = 0
+            watcher_stdout = $paths.WatcherStdoutPath
+            watcher_stderr = $paths.WatcherStderrPath
         }
-        $state | ConvertTo-Json | Set-Content $paths.StatePath
+        if ($StartWatcher) {
+            $watcherProcess = Start-Watcher -runName $Name -paths $paths -watchPollSeconds $WatchPollSeconds
+            $state.watcher_pid = $watcherProcess.Id
+        }
+        Write-State -statePath $paths.StatePath -state $state
 
         Write-Host "async formal start: name=$Name pid=$($process.Id)"
+        if ($StartWatcher) {
+            Write-Host "watcher: running pid=$($state.watcher_pid) poll_seconds=$WatchPollSeconds"
+            Write-Host "liveness: $($paths.LivenessPath)"
+        }
         Write-Host "stdout: $($paths.StdoutPath)"
         Write-Host "stderr: $($paths.StderrPath)"
         return
@@ -117,6 +178,13 @@ try {
         }
         if (-not [string]::IsNullOrWhiteSpace($exitCode)) {
             Write-Host "exit_code: $exitCode"
+        }
+        if ($null -ne $state.watcher_pid -and [int]$state.watcher_pid -gt 0) {
+            $watcherRunning = Is-Running ([int]$state.watcher_pid)
+            Write-Host "watcher: status=$(if ($watcherRunning) { 'running' } else { 'stopped' }) pid=$($state.watcher_pid)"
+        }
+        if ($null -ne $state.liveness_log) {
+            Write-Host "liveness: $($state.liveness_log)"
         }
         Write-Host "stdout: $($state.stdout)"
         Write-Host "stderr: $($state.stderr)"
@@ -173,6 +241,39 @@ try {
         }
         else {
             Write-Host "async formal stop: process already not running"
+        }
+        if ($null -ne $state.watcher_pid -and (Is-Running ([int]$state.watcher_pid))) {
+            Stop-Process -Id ([int]$state.watcher_pid) -Force
+            Write-Host "async formal stop: watcher pid=$($state.watcher_pid)"
+        }
+        return
+    }
+
+    if ($Action -eq "WatchStart") {
+        if ($null -ne $state.watcher_pid -and (Is-Running ([int]$state.watcher_pid))) {
+            Write-Host "async formal watcher: already running pid=$($state.watcher_pid)"
+            return
+        }
+
+        $watcherProcess = Start-Watcher -runName $Name -paths $paths -watchPollSeconds $WatchPollSeconds
+        $state | Add-Member -NotePropertyName watcher_pid -NotePropertyValue $watcherProcess.Id -Force
+        $state | Add-Member -NotePropertyName liveness_log -NotePropertyValue $paths.LivenessPath -Force
+        $state | Add-Member -NotePropertyName watcher_stdout -NotePropertyValue $paths.WatcherStdoutPath -Force
+        $state | Add-Member -NotePropertyName watcher_stderr -NotePropertyValue $paths.WatcherStderrPath -Force
+        Write-State -statePath $paths.StatePath -state $state
+
+        Write-Host "async formal watcher start: name=$($state.name) pid=$($watcherProcess.Id) poll_seconds=$WatchPollSeconds"
+        Write-Host "liveness: $($paths.LivenessPath)"
+        return
+    }
+
+    if ($Action -eq "WatchStop") {
+        if ($null -ne $state.watcher_pid -and (Is-Running ([int]$state.watcher_pid))) {
+            Stop-Process -Id ([int]$state.watcher_pid) -Force
+            Write-Host "async formal watcher stop: name=$($state.name) pid=$($state.watcher_pid)"
+        }
+        else {
+            Write-Host "async formal watcher stop: watcher already not running"
         }
         return
     }

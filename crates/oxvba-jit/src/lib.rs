@@ -78,4 +78,26 @@ mod tests {
             .expect("jit should execute");
         assert_eq!(jit, vm);
     }
+
+    #[test]
+    fn supports_intrinsic_math_subset() {
+        let bytecode = oxvba_compiler::compile(
+            "Sub Main()\nDim x\nx = Abs(-7)\nx = Sgn(x)\nx = Fix(x)\nEnd Sub",
+        )
+        .expect("compile should succeed");
+        assert!(cranelift::supports_bytecode(&bytecode));
+    }
+
+    #[test]
+    fn clif_execution_matches_vm_for_intrinsic_math_subset() {
+        let source = "Sub Main()\nDim x\nx = Abs(-7)\nx = Sgn(x)\nx = Fix(x)\nEnd Sub";
+        let bytecode = oxvba_compiler::compile(source).expect("compile should succeed");
+        assert!(cranelift::supports_bytecode(&bytecode));
+
+        let vm = oxvba_vm::execute_and_snapshot(&bytecode).expect("vm should execute");
+        let jit = JitEngine
+            .execute_and_snapshot(&bytecode)
+            .expect("jit should execute");
+        assert_eq!(jit, vm);
+    }
 }

@@ -128,14 +128,15 @@ enum ProcKind {
     PropertySet,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum IntrinsicSurface {
+    DeterministicCore,
+    HostSensitive,
+}
+
 pub fn resolve_symbols(source: &str) -> BoundModule {
     let mut option_explicit = false;
-    let lines = source
-        .lines()
-        .map(str::trim)
-        .filter(|line| !line.is_empty() && !line.starts_with('\''))
-        .map(ToOwned::to_owned)
-        .collect::<Vec<_>>();
+    let lines = normalize_source_lines(source);
     let module_constants = collect_module_constants(&lines);
     let property_write_routes = collect_property_write_routes(&lines);
 
@@ -202,6 +203,497 @@ pub fn resolve_symbols(source: &str) -> BoundModule {
         body: entry.body.clone(),
         procedures,
     }
+}
+
+fn normalize_source_lines(source: &str) -> Vec<String> {
+    let mut merged = Vec::new();
+    let mut pending = String::new();
+
+    for raw in source.lines() {
+        let trimmed = raw.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+
+        let has_line_continuation = trimmed.ends_with(" _");
+        let segment = if has_line_continuation {
+            trimmed[..trimmed.len() - 2].trim_end()
+        } else {
+            trimmed
+        };
+
+        if !pending.is_empty() && !segment.is_empty() {
+            pending.push(' ');
+        }
+        pending.push_str(segment);
+
+        if has_line_continuation {
+            continue;
+        }
+
+        let final_line = pending.trim();
+        if !final_line.is_empty() && !final_line.starts_with('\'') {
+            merged.push(final_line.to_string());
+        }
+        pending.clear();
+    }
+
+    let final_line = pending.trim();
+    if !final_line.is_empty() && !final_line.starts_with('\'') {
+        merged.push(final_line.to_string());
+    }
+
+    let conditional_filtered = apply_conditional_compilation(&merged);
+
+    let mut out = Vec::new();
+    let mut with_stack: Vec<String> = Vec::new();
+    for line in conditional_filtered {
+        let lower = line.to_ascii_lowercase();
+        if lower.starts_with("with ") {
+            let raw_target = line[5..].trim();
+            let parent = with_stack.last().map(String::as_str);
+            if let Some(target) = normalize_with_target(raw_target, parent) {
+                with_stack.push(target);
+            } else {
+                out.push(line);
+            }
+            continue;
+        }
+
+        if lower == "end with" {
+            if with_stack.pop().is_none() {
+                out.push(line);
+            }
+            continue;
+        }
+
+        if let Some(target) = with_stack.last() {
+            out.push(rewrite_with_member_accesses(&line, target));
+        } else {
+            out.push(line);
+        }
+    }
+
+    out
+}
+
+fn normalize_with_target(raw: &str, parent_target: Option<&str>) -> Option<String> {
+    let trimmed = raw.trim();
+    if let Some(member_tail) = trimmed.strip_prefix('.') {
+        let parent = parent_target?;
+        let member = normalize_ident(member_tail)?;
+        return Some(format!("{parent}_{member}"));
+    }
+    normalize_ident(trimmed)
+}
+
+fn rewrite_with_member_accesses(line: &str, target: &str) -> String {
+    let chars = line.chars().collect::<Vec<_>>();
+    let mut out = String::with_capacity(line.len() + 16);
+    let mut i = 0usize;
+    while i < chars.len() {
+        if chars[i] == '.'
+            && i + 1 < chars.len()
+            && (chars[i + 1].is_ascii_alphabetic() || chars[i + 1] == '_')
+        {
+            let prev_ok = if i == 0 {
+                true
+            } else {
+                let prev = chars[i - 1];
+                prev.is_whitespace()
+                    || matches!(prev, '(' | ')' | ',' | '=' | '+' | '-' | '*' | '/' | ':')
+            };
+            if prev_ok {
+                let mut j = i + 1;
+                while j < chars.len() && (chars[j].is_ascii_alphanumeric() || chars[j] == '_') {
+                    j += 1;
+                }
+                let member = chars[i + 1..j]
+                    .iter()
+                    .collect::<String>()
+                    .to_ascii_lowercase();
+                out.push_str(target);
+                out.push('_');
+                out.push_str(&member);
+                i = j;
+                continue;
+            }
+        }
+
+        out.push(chars[i]);
+        i += 1;
+    }
+
+    out
+}
+
+#[derive(Debug, Clone, Copy)]
+struct ConditionalFrame {
+    parent_active: bool,
+    branch_taken: bool,
+    current_active: bool,
+}
+
+fn apply_conditional_compilation(lines: &[String]) -> Vec<String> {
+    let mut constants: HashMap<String, i32> = HashMap::new();
+    let mut frames: Vec<ConditionalFrame> = Vec::new();
+    let mut current_active = true;
+    let mut out = Vec::new();
+
+    for line in lines {
+        let trimmed = line.trim();
+
+        if let Some((name_raw, expr_raw)) = parse_pp_const(trimmed) {
+            if current_active && let Some(name) = normalize_ident(name_raw) {
+                let value = eval_pp_expr(expr_raw, &constants).unwrap_or(0);
+                constants.insert(name, value);
+            }
+            continue;
+        }
+
+        if let Some(expr_raw) = parse_pp_if(trimmed) {
+            let parent_active = current_active;
+            let branch_active = parent_active && eval_pp_condition(expr_raw, &constants);
+            frames.push(ConditionalFrame {
+                parent_active,
+                branch_taken: branch_active,
+                current_active: branch_active,
+            });
+            current_active = branch_active;
+            continue;
+        }
+
+        if let Some(expr_raw) = parse_pp_elseif(trimmed) {
+            if let Some(frame) = frames.last_mut() {
+                let branch_active = frame.parent_active
+                    && !frame.branch_taken
+                    && eval_pp_condition(expr_raw, &constants);
+                frame.current_active = branch_active;
+                if branch_active {
+                    frame.branch_taken = true;
+                }
+                current_active = branch_active;
+            } else {
+                out.push(line.clone());
+            }
+            continue;
+        }
+
+        if is_pp_else(trimmed) {
+            if let Some(frame) = frames.last_mut() {
+                let branch_active = frame.parent_active && !frame.branch_taken;
+                frame.current_active = branch_active;
+                frame.branch_taken = true;
+                current_active = branch_active;
+            } else {
+                out.push(line.clone());
+            }
+            continue;
+        }
+
+        if is_pp_end_if(trimmed) {
+            if frames.pop().is_some() {
+                current_active = frames.last().is_none_or(|f| f.current_active);
+            } else {
+                out.push(line.clone());
+            }
+            continue;
+        }
+
+        if current_active {
+            out.push(line.clone());
+        }
+    }
+
+    out
+}
+
+fn parse_pp_const(line: &str) -> Option<(&str, &str)> {
+    let rest = strip_directive_prefix_ci(line, "#const")?;
+    let (name, expr) = rest.split_once('=')?;
+    let name = name.trim();
+    let expr = expr.trim();
+    if name.is_empty() || expr.is_empty() {
+        return None;
+    }
+    Some((name, expr))
+}
+
+fn parse_pp_if(line: &str) -> Option<&str> {
+    parse_pp_conditional_directive(line, "#if")
+}
+
+fn parse_pp_elseif(line: &str) -> Option<&str> {
+    parse_pp_conditional_directive(line, "#elseif")
+}
+
+fn parse_pp_conditional_directive<'a>(line: &'a str, keyword: &str) -> Option<&'a str> {
+    let rest = strip_directive_prefix_ci(line, keyword)?;
+    let lower = rest.to_ascii_lowercase();
+    if !lower.ends_with(" then") {
+        return None;
+    }
+    let expr = rest[..rest.len() - 5].trim();
+    if expr.is_empty() {
+        return None;
+    }
+    Some(expr)
+}
+
+fn is_pp_else(line: &str) -> bool {
+    line.eq_ignore_ascii_case("#else")
+}
+
+fn is_pp_end_if(line: &str) -> bool {
+    let lowered = line.to_ascii_lowercase();
+    lowered
+        .split_whitespace()
+        .eq(["#end", "if"].iter().copied())
+}
+
+fn strip_directive_prefix_ci<'a>(line: &'a str, prefix: &str) -> Option<&'a str> {
+    let lowered = line.to_ascii_lowercase();
+    let marker = format!("{prefix} ");
+    if lowered.starts_with(&marker) {
+        Some(line[marker.len()..].trim())
+    } else {
+        None
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum PpToken {
+    LParen,
+    RParen,
+    Eq,
+    Ne,
+    Lt,
+    Le,
+    Gt,
+    Ge,
+    And,
+    Or,
+    Not,
+    Int(i32),
+    Ident(String),
+}
+
+fn eval_pp_condition(expr: &str, constants: &HashMap<String, i32>) -> bool {
+    eval_pp_expr(expr, constants).is_some_and(|value| value != 0)
+}
+
+fn eval_pp_expr(expr: &str, constants: &HashMap<String, i32>) -> Option<i32> {
+    let tokens = tokenize_pp_expr(expr)?;
+    let mut parser = PpExprParser {
+        tokens: &tokens,
+        index: 0,
+        constants,
+    };
+    let value = parser.parse_or()?;
+    if parser.index == tokens.len() {
+        Some(value)
+    } else {
+        None
+    }
+}
+
+fn tokenize_pp_expr(expr: &str) -> Option<Vec<PpToken>> {
+    let chars = expr.chars().collect::<Vec<_>>();
+    let mut out = Vec::new();
+    let mut i = 0usize;
+
+    while i < chars.len() {
+        let ch = chars[i];
+        if ch.is_whitespace() {
+            i += 1;
+            continue;
+        }
+
+        match ch {
+            '(' => {
+                out.push(PpToken::LParen);
+                i += 1;
+                continue;
+            }
+            ')' => {
+                out.push(PpToken::RParen);
+                i += 1;
+                continue;
+            }
+            '=' => {
+                out.push(PpToken::Eq);
+                i += 1;
+                continue;
+            }
+            '<' => {
+                if i + 1 < chars.len() {
+                    if chars[i + 1] == '=' {
+                        out.push(PpToken::Le);
+                        i += 2;
+                        continue;
+                    }
+                    if chars[i + 1] == '>' {
+                        out.push(PpToken::Ne);
+                        i += 2;
+                        continue;
+                    }
+                }
+                out.push(PpToken::Lt);
+                i += 1;
+                continue;
+            }
+            '>' => {
+                if i + 1 < chars.len() && chars[i + 1] == '=' {
+                    out.push(PpToken::Ge);
+                    i += 2;
+                    continue;
+                }
+                out.push(PpToken::Gt);
+                i += 1;
+                continue;
+            }
+            _ => {}
+        }
+
+        if ch == '-' || ch.is_ascii_digit() {
+            let mut j = i;
+            if chars[j] == '-' {
+                j += 1;
+                if j >= chars.len() || !chars[j].is_ascii_digit() {
+                    return None;
+                }
+            }
+            while j < chars.len() && chars[j].is_ascii_digit() {
+                j += 1;
+            }
+            let value = chars[i..j].iter().collect::<String>().parse::<i32>().ok()?;
+            out.push(PpToken::Int(value));
+            i = j;
+            continue;
+        }
+
+        if ch.is_ascii_alphabetic() || ch == '_' {
+            let mut j = i + 1;
+            while j < chars.len() && (chars[j].is_ascii_alphanumeric() || chars[j] == '_') {
+                j += 1;
+            }
+            let ident = chars[i..j].iter().collect::<String>().to_ascii_lowercase();
+            match ident.as_str() {
+                "and" => out.push(PpToken::And),
+                "or" => out.push(PpToken::Or),
+                "not" => out.push(PpToken::Not),
+                "true" => out.push(PpToken::Int(-1)),
+                "false" => out.push(PpToken::Int(0)),
+                _ => out.push(PpToken::Ident(ident)),
+            }
+            i = j;
+            continue;
+        }
+
+        return None;
+    }
+
+    Some(out)
+}
+
+struct PpExprParser<'a> {
+    tokens: &'a [PpToken],
+    index: usize,
+    constants: &'a HashMap<String, i32>,
+}
+
+impl<'a> PpExprParser<'a> {
+    fn parse_or(&mut self) -> Option<i32> {
+        let mut lhs = self.parse_and()?;
+        while self.consume(&PpToken::Or) {
+            let rhs = self.parse_and()?;
+            lhs = pp_bool(lhs != 0 || rhs != 0);
+        }
+        Some(lhs)
+    }
+
+    fn parse_and(&mut self) -> Option<i32> {
+        let mut lhs = self.parse_not()?;
+        while self.consume(&PpToken::And) {
+            let rhs = self.parse_not()?;
+            lhs = pp_bool(lhs != 0 && rhs != 0);
+        }
+        Some(lhs)
+    }
+
+    fn parse_not(&mut self) -> Option<i32> {
+        if self.consume(&PpToken::Not) {
+            return Some(pp_bool(self.parse_not()? == 0));
+        }
+        self.parse_compare()
+    }
+
+    fn parse_compare(&mut self) -> Option<i32> {
+        let lhs = self.parse_primary()?;
+        let Some(op) = self.peek_compare() else {
+            return Some(lhs);
+        };
+        self.index += 1;
+        let rhs = self.parse_primary()?;
+        let out = match op {
+            PpToken::Eq => lhs == rhs,
+            PpToken::Ne => lhs != rhs,
+            PpToken::Lt => lhs < rhs,
+            PpToken::Le => lhs <= rhs,
+            PpToken::Gt => lhs > rhs,
+            PpToken::Ge => lhs >= rhs,
+            _ => return None,
+        };
+        Some(pp_bool(out))
+    }
+
+    fn parse_primary(&mut self) -> Option<i32> {
+        let token = self.tokens.get(self.index)?;
+        match token {
+            PpToken::Int(value) => {
+                self.index += 1;
+                Some(*value)
+            }
+            PpToken::Ident(name) => {
+                self.index += 1;
+                Some(self.constants.get(name).copied().unwrap_or(0))
+            }
+            PpToken::LParen => {
+                self.index += 1;
+                let value = self.parse_or()?;
+                if !self.consume(&PpToken::RParen) {
+                    return None;
+                }
+                Some(value)
+            }
+            _ => None,
+        }
+    }
+
+    fn consume(&mut self, token: &PpToken) -> bool {
+        if self.tokens.get(self.index) == Some(token) {
+            self.index += 1;
+            true
+        } else {
+            false
+        }
+    }
+
+    fn peek_compare(&self) -> Option<PpToken> {
+        match self.tokens.get(self.index) {
+            Some(PpToken::Eq) => Some(PpToken::Eq),
+            Some(PpToken::Ne) => Some(PpToken::Ne),
+            Some(PpToken::Lt) => Some(PpToken::Lt),
+            Some(PpToken::Le) => Some(PpToken::Le),
+            Some(PpToken::Gt) => Some(PpToken::Gt),
+            Some(PpToken::Ge) => Some(PpToken::Ge),
+            _ => None,
+        }
+    }
+}
+
+fn pp_bool(value: bool) -> i32 {
+    if value { -1 } else { 0 }
 }
 
 fn parse_procedures(
@@ -1190,6 +1682,69 @@ fn parse_intrinsic_conversion_expr(
     parse_expr(expr[open + 1..close].trim(), array_bounds)
 }
 
+#[derive(Debug, Clone, Copy)]
+struct IntrinsicSpec {
+    min_arity: usize,
+    max_arity: usize,
+    surface: IntrinsicSurface,
+}
+
+impl IntrinsicSpec {
+    const fn fixed(arity: usize, surface: IntrinsicSurface) -> Self {
+        Self {
+            min_arity: arity,
+            max_arity: arity,
+            surface,
+        }
+    }
+
+    const fn range(min_arity: usize, max_arity: usize, surface: IntrinsicSurface) -> Self {
+        Self {
+            min_arity,
+            max_arity,
+            surface,
+        }
+    }
+
+    fn arity_allows(self, count: usize) -> bool {
+        (self.min_arity..=self.max_arity).contains(&count)
+    }
+}
+
+pub fn intrinsic_surface(name: &str) -> Option<IntrinsicSurface> {
+    let normalized = normalize_ident(name)?;
+    intrinsic_spec(normalized.as_str()).map(|spec| spec.surface)
+}
+
+fn intrinsic_spec(name: &str) -> Option<IntrinsicSpec> {
+    use IntrinsicSurface::{DeterministicCore, HostSensitive};
+
+    match name {
+        "len" | "lcase" | "ucase" | "trim" | "ltrim" | "rtrim" | "datevalue" | "timevalue"
+        | "abs" | "int" | "fix" | "sgn" | "sqr" | "sin" | "cos" | "log" | "exp" | "lbound"
+        | "ubound" | "isarray" | "vartype" | "typename" | "isnumeric" | "isdate" | "isobject"
+        | "collectioncount" => Some(IntrinsicSpec::fixed(1, DeterministicCore)),
+        "left" | "right" | "instr" | "split" | "join" | "strcomp" => {
+            Some(IntrinsicSpec::fixed(2, DeterministicCore))
+        }
+        "mid" => Some(IntrinsicSpec::range(2, 3, DeterministicCore)),
+        "round" => Some(IntrinsicSpec::range(1, 2, DeterministicCore)),
+        "replace" | "dateserial" | "timeserial" | "dateadd" | "datediff" => {
+            Some(IntrinsicSpec::fixed(3, DeterministicCore))
+        }
+        "collectionadd" | "collectionitem" | "collectionremove" => {
+            Some(IntrinsicSpec::range(2, 3, DeterministicCore))
+        }
+        "fv" | "pv" | "pmt" => Some(IntrinsicSpec::range(3, 5, DeterministicCore)),
+        "array" => Some(IntrinsicSpec::range(1, usize::MAX, DeterministicCore)),
+        "shell" | "environ" | "dir" | "createobject" => {
+            Some(IntrinsicSpec::fixed(1, HostSensitive))
+        }
+        "dispatchinvoke" => Some(IntrinsicSpec::fixed(3, HostSensitive)),
+        _ => None,
+    }
+}
+
 fn parse_stdlib_intrinsic_call_expr(
     expr: &str,
     array_bounds: &HashMap<String, usize>,
@@ -1200,62 +1755,8 @@ fn parse_stdlib_intrinsic_call_expr(
         return None;
     }
     let name = normalize_ident(expr[..open].trim())?;
-    if !matches!(
-        name.as_str(),
-        "len"
-            | "left"
-            | "right"
-            | "mid"
-            | "instr"
-            | "lcase"
-            | "ucase"
-            | "split"
-            | "join"
-            | "replace"
-            | "trim"
-            | "ltrim"
-            | "rtrim"
-            | "strcomp"
-            | "dateserial"
-            | "timeserial"
-            | "datevalue"
-            | "timevalue"
-            | "dateadd"
-            | "datediff"
-            | "abs"
-            | "int"
-            | "fix"
-            | "sgn"
-            | "round"
-            | "sqr"
-            | "sin"
-            | "cos"
-            | "log"
-            | "exp"
-            | "fv"
-            | "pv"
-            | "pmt"
-            | "array"
-            | "lbound"
-            | "ubound"
-            | "isarray"
-            | "vartype"
-            | "typename"
-            | "isnumeric"
-            | "isdate"
-            | "isobject"
-            | "shell"
-            | "environ"
-            | "dir"
-            | "collectionadd"
-            | "collectionitem"
-            | "collectionremove"
-            | "collectioncount"
-            | "createobject"
-            | "dispatchinvoke"
-    ) {
-        return None;
-    }
+    let spec = intrinsic_spec(name.as_str())?;
+
     let args_raw = expr[open + 1..close].trim();
     let args_text = split_call_args(args_raw)?;
     let args = args_text
@@ -1263,25 +1764,7 @@ fn parse_stdlib_intrinsic_call_expr(
         .map(|arg| parse_expr(arg, array_bounds))
         .collect::<Option<Vec<_>>>()?;
 
-    let arity_ok = match name.as_str() {
-        "len" | "lcase" | "ucase" | "trim" | "ltrim" | "rtrim" | "datevalue" | "timevalue"
-        | "abs" | "int" | "fix" | "sgn" | "sqr" | "sin" | "cos" | "log" | "exp" | "lbound"
-        | "ubound" | "isarray" | "vartype" | "typename" | "isnumeric" | "isdate" | "isobject"
-        | "shell" | "environ" | "dir" | "collectioncount" | "createobject" => args.len() == 1,
-        "left" | "right" | "instr" | "split" | "join" | "strcomp" => args.len() == 2,
-        "mid" => args.len() == 2 || args.len() == 3,
-        "round" => args.len() == 1 || args.len() == 2,
-        "replace" | "dateserial" | "timeserial" | "dateadd" | "datediff" | "dispatchinvoke" => {
-            args.len() == 3
-        }
-        "collectionadd" | "collectionitem" | "collectionremove" => {
-            args.len() == 2 || args.len() == 3
-        }
-        "fv" | "pv" | "pmt" => (3..=5).contains(&args.len()),
-        "array" => !args.is_empty(),
-        _ => false,
-    };
-    if !arity_ok {
+    if !spec.arity_allows(args.len()) {
         return None;
     }
 
@@ -1588,7 +2071,10 @@ fn strip_keyword_prefix_ci<'a>(text: &'a str, keyword: &str) -> Option<&'a str> 
 
 #[cfg(test)]
 mod tests {
-    use super::{BoundCond, BoundExpr, BoundStmt, CompareOp, resolve_symbols};
+    use super::{
+        BoundCond, BoundExpr, BoundStmt, CompareOp, IntrinsicSurface, intrinsic_surface,
+        resolve_symbols,
+    };
 
     #[test]
     fn resolve_if_statement_into_structured_body() {
@@ -1624,6 +2110,102 @@ mod tests {
             panic!("expected assignment");
         };
         assert_eq!(expr, &BoundExpr::Var("y".to_string()));
+    }
+
+    #[test]
+    fn resolve_line_continuation_assignment_expression() {
+        let source = "Sub Main()\nDim x\nx = 1\nx = x + _\n2\nEnd Sub";
+        let module = resolve_symbols(source);
+        let Some(BoundStmt::Assign { expr, .. }) = module.body.get(1) else {
+            panic!("expected assignment");
+        };
+        assert_eq!(
+            expr,
+            &BoundExpr::AddConst {
+                var: "x".to_string(),
+                delta: 2,
+            }
+        );
+    }
+
+    #[test]
+    fn resolve_with_block_member_assignments() {
+        let source =
+            "Sub Main()\nDim x\nWith x\n.Value = 1\n.Value = .Value + 2\nEnd With\nEnd Sub";
+        let module = resolve_symbols(source);
+        let Some(BoundStmt::Assign { target, expr }) = module.body.first() else {
+            panic!("expected assignment");
+        };
+        assert_eq!(target, "x_value");
+        assert_eq!(expr, &BoundExpr::IntConst(1));
+        let Some(BoundStmt::Assign { target, expr }) = module.body.get(1) else {
+            panic!("expected second assignment");
+        };
+        assert_eq!(target, "x_value");
+        assert_eq!(
+            expr,
+            &BoundExpr::AddConst {
+                var: "x_value".to_string(),
+                delta: 2,
+            }
+        );
+    }
+
+    #[test]
+    fn resolve_nested_with_block_member_assignments() {
+        let source =
+            "Sub Main()\nDim x\nWith x\nWith .inner\n.Value = 9\nEnd With\nEnd With\nEnd Sub";
+        let module = resolve_symbols(source);
+        let Some(BoundStmt::Assign { target, .. }) = module.body.first() else {
+            panic!("expected assignment");
+        };
+        assert_eq!(target, "x_inner_value");
+    }
+
+    #[test]
+    fn resolve_conditional_compilation_if_else_branch() {
+        let source = "#Const ENABLE = True\nSub Main()\nDim x\n#If ENABLE Then\nx = 7\n#Else\nx = 1\n#End If\nEnd Sub";
+        let module = resolve_symbols(source);
+        let Some(BoundStmt::Assign { target, expr }) = module.body.first() else {
+            panic!("expected assignment");
+        };
+        assert_eq!(target, "x");
+        assert_eq!(expr, &BoundExpr::IntConst(7));
+    }
+
+    #[test]
+    fn resolve_conditional_compilation_elseif_branch() {
+        let source = "#Const A = False\n#Const B = True\nSub Main()\nDim x\n#If A Then\nx = 1\n#ElseIf B Then\nx = 9\n#Else\nx = 3\n#End If\nEnd Sub";
+        let module = resolve_symbols(source);
+        let Some(BoundStmt::Assign { target, expr }) = module.body.first() else {
+            panic!("expected assignment");
+        };
+        assert_eq!(target, "x");
+        assert_eq!(expr, &BoundExpr::IntConst(9));
+    }
+
+    #[test]
+    fn resolve_conditional_compilation_skips_inactive_const_definition() {
+        let source = "#Const OUTER = False\n#If OUTER Then\n#Const FLAG = True\n#End If\nSub Main()\nDim x\n#If FLAG Then\nx = 1\n#Else\nx = 5\n#End If\nEnd Sub";
+        let module = resolve_symbols(source);
+        let Some(BoundStmt::Assign { target, expr }) = module.body.first() else {
+            panic!("expected assignment");
+        };
+        assert_eq!(target, "x");
+        assert_eq!(expr, &BoundExpr::IntConst(5));
+    }
+
+    #[test]
+    fn resolve_intrinsic_surface_classification() {
+        assert_eq!(
+            intrinsic_surface("Len"),
+            Some(IntrinsicSurface::DeterministicCore)
+        );
+        assert_eq!(
+            intrinsic_surface("Shell"),
+            Some(IntrinsicSurface::HostSensitive)
+        );
+        assert_eq!(intrinsic_surface("UnknownIntrinsic"), None);
     }
 
     #[test]

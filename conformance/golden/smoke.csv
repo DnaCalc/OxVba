@@ -1,4 +1,5 @@
 file,status,slots
+conditional_compilation_basic.bas,ok,8
 conversion_cint_basic.bas,ok,5
 conversion_nested_clng_cint.bas,ok,7
 conversion_val_str_subset.bas,ok,9
@@ -31,7 +32,10 @@ if_lt.bas,ok,4
 if_neq.bas,ok,11
 if_or_not.bas,ok,9
 if_true.bas,ok,7
+jit_intrinsic_math_subset.bas,ok,1
+line_continuation_basic.bas,ok,3
 nested_if_for.bas,ok,"5,3"
+with_block_basic.bas,ok,"3,3"
 udt_declaration_basic.bas,ok,9
 module_const_basic.bas,ok,"5,7"
 option_explicit_error.bas,error,

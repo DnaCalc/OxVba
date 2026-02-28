@@ -12,13 +12,15 @@ Use `docs/` and `synthesis/` for supporting context and provenance.
 - End of a work cycle means immediately continue to the next cycle.
 - Do not stop at checkpoints unless explicitly instructed by the user.
 - Keep repeating: implement -> docs update -> checks -> commit -> push -> continue.
+- Accidental interim chat responses are non-blocking events; they do not reset or pause AutoRun.
+- If an interim response is sent by mistake, immediately resume execution without waiting for additional user confirmation.
 
 ## Current User Execution Constraint
 - Continue implementation continuously.
 - Do not stop for progress summaries, watchpoints, confirmations, checkpoints, or any other interim responses.
 - Execute the MACH1000 profile ladder continuously until completion.
 - Only reply when one of the following is true:
-  - The full profile ladder is complete and the `v56` gate is passed.
+  - The full profile ladder is complete and the `v66` gate is passed.
   - Blockers are documented and no progress can be made on any remaining ladder task without unblocking.
 
 ### Blocker Handling Protocol

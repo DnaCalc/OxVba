@@ -14,60 +14,70 @@
 | Bytecode Format | [`BYTECODE_FORMAT.md`](BYTECODE_FORMAT.md) | Bytecode representation status and planned evolution. |
 | VM Architecture | [`VM_ARCHITECTURE.md`](VM_ARCHITECTURE.md) | VM implementation status and next milestones. |
 | Conformance | [`CONFORMANCE.md`](CONFORMANCE.md) | Conformance assets, commands, and comparison policy. |
-| Profile v2 Status | [`PROFILE_STATUS_V2.md`](PROFILE_STATUS_V2.md) | Current gate status contract for `mvp-controlflow-v2`. |
-| Profile v3 Status | [`PROFILE_STATUS_V3.md`](PROFILE_STATUS_V3.md) | Current gate status contract for `mvp-formal-foundation-v3`. |
-| Profile v4 Status | [`PROFILE_STATUS_V4.md`](PROFILE_STATUS_V4.md) | Current gate status contract for `mvp-boolean-logic-v4`. |
-| Profile v5 Status | [`PROFILE_STATUS_V5.md`](PROFILE_STATUS_V5.md) | Current gate status contract for `mvp-else-paths-v5`. |
-| Profile v6 Status | [`PROFILE_STATUS_V6.md`](PROFILE_STATUS_V6.md) | Current gate status contract for `mvp-while-loop-v6`. |
-| Profile v7 Status | [`PROFILE_STATUS_V7.md`](PROFILE_STATUS_V7.md) | Current gate status contract for `mvp-select-case-v7`. |
-| Profile v8 Status | [`PROFILE_STATUS_V8.md`](PROFILE_STATUS_V8.md) | Current gate status contract for `mvp-procedures-v8`. |
-| Profile v9 Status | [`PROFILE_STATUS_V9.md`](PROFILE_STATUS_V9.md) | Current gate status contract for `mvp-params-v9`. |
-| Profile v10 Status | [`PROFILE_STATUS_V10.md`](PROFILE_STATUS_V10.md) | Current gate status contract for `mvp-arrays-v10`. |
-| Profile v11 Status | [`PROFILE_STATUS_V11.md`](PROFILE_STATUS_V11.md) | Current gate status contract for `mvp-error-state-v11`. |
-| Profile v12 Status | [`PROFILE_STATUS_V12.md`](PROFILE_STATUS_V12.md) | Current gate status contract for `mvp-resume-goto-v12`. |
-| Profile v13 Status | [`PROFILE_STATUS_V13.md`](PROFILE_STATUS_V13.md) | Current gate status contract for `mvp-variant-numeric-v13`. |
-| Profile v14 Status | [`PROFILE_STATUS_V14.md`](PROFILE_STATUS_V14.md) | Current gate status contract for `mvp-string-bstr-v14`. |
-| Profile v15 Status | [`PROFILE_STATUS_V15.md`](PROFILE_STATUS_V15.md) | Current gate status contract for `mvp-date-currency-v15`. |
-| Profile v16 Status | [`PROFILE_STATUS_V16.md`](PROFILE_STATUS_V16.md) | Current gate status contract for `mvp-semantics-model-v16`. |
-| Profile v17 Status | [`PROFILE_STATUS_V17.md`](PROFILE_STATUS_V17.md) | Current gate status contract for `mvp-proof-integration-v17`. |
-| Profile v18 Status | [`PROFILE_STATUS_V18.md`](PROFILE_STATUS_V18.md) | Current gate status contract for `mvp-divergence-proof-closure-v18`. |
-| Profile v19 Status | [`PROFILE_STATUS_V19.md`](PROFILE_STATUS_V19.md) | Current gate status contract for `mvp-ir-optimizer-v19`. |
-| Profile v20 Status | [`PROFILE_STATUS_V20.md`](PROFILE_STATUS_V20.md) | Current gate status contract for `mvp-jit-exec-v20`. |
-| Profile v21 Status | [`PROFILE_STATUS_V21.md`](PROFILE_STATUS_V21.md) | Current gate status contract for `mvp-perf-stabilization-v21`. |
-| Profile v22 Status | [`PROFILE_STATUS_V22.md`](PROFILE_STATUS_V22.md) | Current gate status contract for `mvp-jit-loops-v22`. |
-| Profile v23 Status | [`PROFILE_STATUS_V23.md`](PROFILE_STATUS_V23.md) | Current gate status contract for `mvp-formal-strict-kani-v23`. |
-| Profile v24 Status | [`PROFILE_STATUS_V24.md`](PROFILE_STATUS_V24.md) | Current gate status contract for `mvp-jit-calls-v24`. |
-| Profile v25 Status | [`PROFILE_STATUS_V25.md`](PROFILE_STATUS_V25.md) | Current gate status contract for `mvp-optimizer-pack2-v25`. |
-| Profile v26 Status | [`PROFILE_STATUS_V26.md`](PROFILE_STATUS_V26.md) | Current gate status contract for `mvp-perf-shape-v26`. |
-| Profile v27 Status | [`PROFILE_STATUS_V27.md`](PROFILE_STATUS_V27.md) | Current gate status contract for `mvp-formal-async-ops-v27`. |
-| Profile v28 Status | [`PROFILE_STATUS_V28.md`](PROFILE_STATUS_V28.md) | Current gate status contract for `mvp-kani-unblock-v28`. |
-| Profile v29 Status | [`PROFILE_STATUS_V29.md`](PROFILE_STATUS_V29.md) | Current gate status contract for `mvp-kani-capacity-v29`. |
-| Profile v30 Status | [`PROFILE_STATUS_V30.md`](PROFILE_STATUS_V30.md) | Current gate status contract for `mvp-com-variant-conformance-v30`. |
-| Profile v31 Status | [`PROFILE_STATUS_V31.md`](PROFILE_STATUS_V31.md) | Current gate status contract for `mvp-boundary-marshalling-v31`. |
-| Profile v32 Status | [`PROFILE_STATUS_V32.md`](PROFILE_STATUS_V32.md) | Current gate status contract for `mvp-language-coverage-audit-v32`. |
-| Profile v33 Status | [`PROFILE_STATUS_V33.md`](PROFILE_STATUS_V33.md) | Current gate status contract for `mvp-language-coverage-core-v33`. |
-| Profile v34 Status | [`PROFILE_STATUS_V34.md`](PROFILE_STATUS_V34.md) | Current gate status contract for `mvp-language-coverage-objects-v34`. |
-| Profile v35 Status | [`PROFILE_STATUS_V35.md`](PROFILE_STATUS_V35.md) | Current gate status contract for `mvp-jit-optimizer-hotpaths-v35`. |
-| Profile v36 Status | [`PROFILE_STATUS_V36.md`](PROFILE_STATUS_V36.md) | Current gate status contract for `mvp-full-coverage-perf-gate-v36`. |
-| Profile v37 Status | [`PROFILE_STATUS_V37.md`](PROFILE_STATUS_V37.md) | Current gate status contract for `mvp-lang-optional-params-v37`. |
-| Profile v38 Status | [`PROFILE_STATUS_V38.md`](PROFILE_STATUS_V38.md) | Current gate status contract for `mvp-lang-named-args-v38`. |
-| Profile v40 Status | [`PROFILE_STATUS_V40.md`](PROFILE_STATUS_V40.md) | Current gate status contract for `mvp-lang-gosub-return-v40`. |
-| Profile v41 Status | [`PROFILE_STATUS_V41.md`](PROFILE_STATUS_V41.md) | Current gate status contract for `mvp-lang-on-error-goto-label-v41`. |
-| Profile v42 Status | [`PROFILE_STATUS_V42.md`](PROFILE_STATUS_V42.md) | Current gate status contract for `mvp-lang-redim-preserve-v42`. |
-| Profile v43 Status | [`PROFILE_STATUS_V43.md`](PROFILE_STATUS_V43.md) | Current gate status contract for `mvp-lang-udt-enum-const-v43`. |
-| Profile v44 Status | [`PROFILE_STATUS_V44.md`](PROFILE_STATUS_V44.md) | Current gate status contract for `mvp-lang-property-procedures-v44`. |
-| Profile v45 Status | [`PROFILE_STATUS_V45.md`](PROFILE_STATUS_V45.md) | Current gate status contract for `mvp-stdlib-conversion-core-v45`. |
-| Profile v46 Status | [`PROFILE_STATUS_V46.md`](PROFILE_STATUS_V46.md) | Current gate status contract for `mvp-stdlib-string-core-v46`. |
-| Profile v47 Status | [`PROFILE_STATUS_V47.md`](PROFILE_STATUS_V47.md) | Current gate status contract for `mvp-stdlib-string-advanced-v47`. |
-| Profile v48 Status | [`PROFILE_STATUS_V48.md`](PROFILE_STATUS_V48.md) | Current gate status contract for `mvp-stdlib-date-time-core-v48`. |
-| Profile v49 Status | [`PROFILE_STATUS_V49.md`](PROFILE_STATUS_V49.md) | Current gate status contract for `mvp-stdlib-math-financial-core-v49`. |
-| Profile v50 Status | [`PROFILE_STATUS_V50.md`](PROFILE_STATUS_V50.md) | Current gate status contract for `mvp-stdlib-array-variant-introspection-v50`. |
-| Profile v51 Status | [`PROFILE_STATUS_V51.md`](PROFILE_STATUS_V51.md) | Current gate status contract for `mvp-stdlib-error-surface-v51`. |
-| Profile v52 Status | [`PROFILE_STATUS_V52.md`](PROFILE_STATUS_V52.md) | Current gate status contract for `mvp-stdlib-host-sensitive-v52`. |
-| Profile v53 Status | [`PROFILE_STATUS_V53.md`](PROFILE_STATUS_V53.md) | Current gate status contract for `mvp-object-collection-core-v53`. |
-| Profile v54 Status | [`PROFILE_STATUS_V54.md`](PROFILE_STATUS_V54.md) | Current gate status contract for `mvp-class-lifecycle-v54`. |
-| Profile v55 Status | [`PROFILE_STATUS_V55.md`](PROFILE_STATUS_V55.md) | Current gate status contract for `mvp-com-dispatch-boundary-v55`. |
-| Profile v56 Status | [`PROFILE_STATUS_V56.md`](PROFILE_STATUS_V56.md) | Current gate status contract for `mvp-language-stdlib-consolidation-gate-v56`. |
+| Profile v2 Status | [`PROFILE_STATUS_V2.md`](profile-status/PROFILE_STATUS_V2.md) | Current gate status contract for `mvp-controlflow-v2`. |
+| Profile v3 Status | [`PROFILE_STATUS_V3.md`](profile-status/PROFILE_STATUS_V3.md) | Current gate status contract for `mvp-formal-foundation-v3`. |
+| Profile v4 Status | [`PROFILE_STATUS_V4.md`](profile-status/PROFILE_STATUS_V4.md) | Current gate status contract for `mvp-boolean-logic-v4`. |
+| Profile v5 Status | [`PROFILE_STATUS_V5.md`](profile-status/PROFILE_STATUS_V5.md) | Current gate status contract for `mvp-else-paths-v5`. |
+| Profile v6 Status | [`PROFILE_STATUS_V6.md`](profile-status/PROFILE_STATUS_V6.md) | Current gate status contract for `mvp-while-loop-v6`. |
+| Profile v7 Status | [`PROFILE_STATUS_V7.md`](profile-status/PROFILE_STATUS_V7.md) | Current gate status contract for `mvp-select-case-v7`. |
+| Profile v8 Status | [`PROFILE_STATUS_V8.md`](profile-status/PROFILE_STATUS_V8.md) | Current gate status contract for `mvp-procedures-v8`. |
+| Profile v9 Status | [`PROFILE_STATUS_V9.md`](profile-status/PROFILE_STATUS_V9.md) | Current gate status contract for `mvp-params-v9`. |
+| Profile v10 Status | [`PROFILE_STATUS_V10.md`](profile-status/PROFILE_STATUS_V10.md) | Current gate status contract for `mvp-arrays-v10`. |
+| Profile v11 Status | [`PROFILE_STATUS_V11.md`](profile-status/PROFILE_STATUS_V11.md) | Current gate status contract for `mvp-error-state-v11`. |
+| Profile v12 Status | [`PROFILE_STATUS_V12.md`](profile-status/PROFILE_STATUS_V12.md) | Current gate status contract for `mvp-resume-goto-v12`. |
+| Profile v13 Status | [`PROFILE_STATUS_V13.md`](profile-status/PROFILE_STATUS_V13.md) | Current gate status contract for `mvp-variant-numeric-v13`. |
+| Profile v14 Status | [`PROFILE_STATUS_V14.md`](profile-status/PROFILE_STATUS_V14.md) | Current gate status contract for `mvp-string-bstr-v14`. |
+| Profile v15 Status | [`PROFILE_STATUS_V15.md`](profile-status/PROFILE_STATUS_V15.md) | Current gate status contract for `mvp-date-currency-v15`. |
+| Profile v16 Status | [`PROFILE_STATUS_V16.md`](profile-status/PROFILE_STATUS_V16.md) | Current gate status contract for `mvp-semantics-model-v16`. |
+| Profile v17 Status | [`PROFILE_STATUS_V17.md`](profile-status/PROFILE_STATUS_V17.md) | Current gate status contract for `mvp-proof-integration-v17`. |
+| Profile v18 Status | [`PROFILE_STATUS_V18.md`](profile-status/PROFILE_STATUS_V18.md) | Current gate status contract for `mvp-divergence-proof-closure-v18`. |
+| Profile v19 Status | [`PROFILE_STATUS_V19.md`](profile-status/PROFILE_STATUS_V19.md) | Current gate status contract for `mvp-ir-optimizer-v19`. |
+| Profile v20 Status | [`PROFILE_STATUS_V20.md`](profile-status/PROFILE_STATUS_V20.md) | Current gate status contract for `mvp-jit-exec-v20`. |
+| Profile v21 Status | [`PROFILE_STATUS_V21.md`](profile-status/PROFILE_STATUS_V21.md) | Current gate status contract for `mvp-perf-stabilization-v21`. |
+| Profile v22 Status | [`PROFILE_STATUS_V22.md`](profile-status/PROFILE_STATUS_V22.md) | Current gate status contract for `mvp-jit-loops-v22`. |
+| Profile v23 Status | [`PROFILE_STATUS_V23.md`](profile-status/PROFILE_STATUS_V23.md) | Current gate status contract for `mvp-formal-strict-kani-v23`. |
+| Profile v24 Status | [`PROFILE_STATUS_V24.md`](profile-status/PROFILE_STATUS_V24.md) | Current gate status contract for `mvp-jit-calls-v24`. |
+| Profile v25 Status | [`PROFILE_STATUS_V25.md`](profile-status/PROFILE_STATUS_V25.md) | Current gate status contract for `mvp-optimizer-pack2-v25`. |
+| Profile v26 Status | [`PROFILE_STATUS_V26.md`](profile-status/PROFILE_STATUS_V26.md) | Current gate status contract for `mvp-perf-shape-v26`. |
+| Profile v27 Status | [`PROFILE_STATUS_V27.md`](profile-status/PROFILE_STATUS_V27.md) | Current gate status contract for `mvp-formal-async-ops-v27`. |
+| Profile v28 Status | [`PROFILE_STATUS_V28.md`](profile-status/PROFILE_STATUS_V28.md) | Current gate status contract for `mvp-kani-unblock-v28`. |
+| Profile v29 Status | [`PROFILE_STATUS_V29.md`](profile-status/PROFILE_STATUS_V29.md) | Current gate status contract for `mvp-kani-capacity-v29`. |
+| Profile v30 Status | [`PROFILE_STATUS_V30.md`](profile-status/PROFILE_STATUS_V30.md) | Current gate status contract for `mvp-com-variant-conformance-v30`. |
+| Profile v31 Status | [`PROFILE_STATUS_V31.md`](profile-status/PROFILE_STATUS_V31.md) | Current gate status contract for `mvp-boundary-marshalling-v31`. |
+| Profile v32 Status | [`PROFILE_STATUS_V32.md`](profile-status/PROFILE_STATUS_V32.md) | Current gate status contract for `mvp-language-coverage-audit-v32`. |
+| Profile v33 Status | [`PROFILE_STATUS_V33.md`](profile-status/PROFILE_STATUS_V33.md) | Current gate status contract for `mvp-language-coverage-core-v33`. |
+| Profile v34 Status | [`PROFILE_STATUS_V34.md`](profile-status/PROFILE_STATUS_V34.md) | Current gate status contract for `mvp-language-coverage-objects-v34`. |
+| Profile v35 Status | [`PROFILE_STATUS_V35.md`](profile-status/PROFILE_STATUS_V35.md) | Current gate status contract for `mvp-jit-optimizer-hotpaths-v35`. |
+| Profile v36 Status | [`PROFILE_STATUS_V36.md`](profile-status/PROFILE_STATUS_V36.md) | Current gate status contract for `mvp-full-coverage-perf-gate-v36`. |
+| Profile v37 Status | [`PROFILE_STATUS_V37.md`](profile-status/PROFILE_STATUS_V37.md) | Current gate status contract for `mvp-lang-optional-params-v37`. |
+| Profile v38 Status | [`PROFILE_STATUS_V38.md`](profile-status/PROFILE_STATUS_V38.md) | Current gate status contract for `mvp-lang-named-args-v38`. |
+| Profile v40 Status | [`PROFILE_STATUS_V40.md`](profile-status/PROFILE_STATUS_V40.md) | Current gate status contract for `mvp-lang-gosub-return-v40`. |
+| Profile v41 Status | [`PROFILE_STATUS_V41.md`](profile-status/PROFILE_STATUS_V41.md) | Current gate status contract for `mvp-lang-on-error-goto-label-v41`. |
+| Profile v42 Status | [`PROFILE_STATUS_V42.md`](profile-status/PROFILE_STATUS_V42.md) | Current gate status contract for `mvp-lang-redim-preserve-v42`. |
+| Profile v43 Status | [`PROFILE_STATUS_V43.md`](profile-status/PROFILE_STATUS_V43.md) | Current gate status contract for `mvp-lang-udt-enum-const-v43`. |
+| Profile v44 Status | [`PROFILE_STATUS_V44.md`](profile-status/PROFILE_STATUS_V44.md) | Current gate status contract for `mvp-lang-property-procedures-v44`. |
+| Profile v45 Status | [`PROFILE_STATUS_V45.md`](profile-status/PROFILE_STATUS_V45.md) | Current gate status contract for `mvp-stdlib-conversion-core-v45`. |
+| Profile v46 Status | [`PROFILE_STATUS_V46.md`](profile-status/PROFILE_STATUS_V46.md) | Current gate status contract for `mvp-stdlib-string-core-v46`. |
+| Profile v47 Status | [`PROFILE_STATUS_V47.md`](profile-status/PROFILE_STATUS_V47.md) | Current gate status contract for `mvp-stdlib-string-advanced-v47`. |
+| Profile v48 Status | [`PROFILE_STATUS_V48.md`](profile-status/PROFILE_STATUS_V48.md) | Current gate status contract for `mvp-stdlib-date-time-core-v48`. |
+| Profile v49 Status | [`PROFILE_STATUS_V49.md`](profile-status/PROFILE_STATUS_V49.md) | Current gate status contract for `mvp-stdlib-math-financial-core-v49`. |
+| Profile v50 Status | [`PROFILE_STATUS_V50.md`](profile-status/PROFILE_STATUS_V50.md) | Current gate status contract for `mvp-stdlib-array-variant-introspection-v50`. |
+| Profile v51 Status | [`PROFILE_STATUS_V51.md`](profile-status/PROFILE_STATUS_V51.md) | Current gate status contract for `mvp-stdlib-error-surface-v51`. |
+| Profile v52 Status | [`PROFILE_STATUS_V52.md`](profile-status/PROFILE_STATUS_V52.md) | Current gate status contract for `mvp-stdlib-host-sensitive-v52`. |
+| Profile v53 Status | [`PROFILE_STATUS_V53.md`](profile-status/PROFILE_STATUS_V53.md) | Current gate status contract for `mvp-object-collection-core-v53`. |
+| Profile v54 Status | [`PROFILE_STATUS_V54.md`](profile-status/PROFILE_STATUS_V54.md) | Current gate status contract for `mvp-class-lifecycle-v54`. |
+| Profile v55 Status | [`PROFILE_STATUS_V55.md`](profile-status/PROFILE_STATUS_V55.md) | Current gate status contract for `mvp-com-dispatch-boundary-v55`. |
+| Profile v56 Status | [`PROFILE_STATUS_V56.md`](profile-status/PROFILE_STATUS_V56.md) | Current gate status contract for `mvp-language-stdlib-consolidation-gate-v56`. |
+| Profile v57 Status | [`PROFILE_STATUS_V57.md`](profile-status/PROFILE_STATUS_V57.md) | Current gate status contract for `mvp-formal-async-hardening-v57`. |
+| Profile v58 Status | [`PROFILE_STATUS_V58.md`](profile-status/PROFILE_STATUS_V58.md) | Current gate status contract for `mvp-kani-harness-expansion-v58`. |
+| Profile v59 Status | [`PROFILE_STATUS_V59.md`](profile-status/PROFILE_STATUS_V59.md) | Current gate status contract for `mvp-lang-line-continuation-v59`. |
+| Profile v60 Status | [`PROFILE_STATUS_V60.md`](profile-status/PROFILE_STATUS_V60.md) | Current gate status contract for `mvp-lang-with-block-v60`. |
+| Profile v61 Status | [`PROFILE_STATUS_V61.md`](profile-status/PROFILE_STATUS_V61.md) | Current gate status contract for `mvp-lang-conditional-compilation-v61`. |
+| Profile v62 Status | [`PROFILE_STATUS_V62.md`](profile-status/PROFILE_STATUS_V62.md) | Current gate status contract for `mvp-stdlib-surface-architecture-v62`. |
+| Profile v63 Status | [`PROFILE_STATUS_V63.md`](profile-status/PROFILE_STATUS_V63.md) | Current gate status contract for `mvp-jit-surface-expansion-v63`. |
+| Profile v64 Status | [`PROFILE_STATUS_V64.md`](profile-status/PROFILE_STATUS_V64.md) | Current gate status contract for `mvp-perf-hotpath-baselines-v64`. |
+| Profile v65 Status | [`PROFILE_STATUS_V65.md`](profile-status/PROFILE_STATUS_V65.md) | Current gate status contract for `mvp-integrated-correctness-perf-gate-v65`. |
+| Profile v66 Status | [`PROFILE_STATUS_V66.md`](profile-status/PROFILE_STATUS_V66.md) | Current gate status contract for `mvp-stabilization-rollup-v66`. |
 | Phase 12 Status | [`PHASE12_STATUS.md`](PHASE12_STATUS.md) | Declared profile scope and final conformance/stabilization gate artifacts. |
 | Work Set Plan (v2) | [`worksets/WORKSET_2026-02-27_CONTROLFLOW_V2.md`](worksets/WORKSET_2026-02-27_CONTROLFLOW_V2.md) | Detailed execution-grade plan for control-flow expansion beyond `mvp-int32-core-v1`. |
 | Work Set Plan (v3) | [`worksets/WORKSET_2026-02-27_FORMAL_FOUNDATION_V3.md`](worksets/WORKSET_2026-02-27_FORMAL_FOUNDATION_V3.md) | Formal infrastructure work set for manifest-driven obligations and reporting. |
@@ -123,9 +133,20 @@
 | Work Set Plan (v54) | [`worksets/WORKSET_2026-02-27_CLASS_LIFECYCLE_V54.md`](worksets/WORKSET_2026-02-27_CLASS_LIFECYCLE_V54.md) | Class lifecycle subset work set. |
 | Work Set Plan (v55) | [`worksets/WORKSET_2026-02-27_COM_DISPATCH_BOUNDARY_V55.md`](worksets/WORKSET_2026-02-27_COM_DISPATCH_BOUNDARY_V55.md) | COM/dispatch boundary subset work set. |
 | Work Set Plan (v56) | [`worksets/WORKSET_2026-02-27_LANGUAGE_STDLIB_CONSOLIDATION_GATE_V56.md`](worksets/WORKSET_2026-02-27_LANGUAGE_STDLIB_CONSOLIDATION_GATE_V56.md) | Consolidation gate work set for language+stdlib+interop closure. |
+| Work Set Plan (v57) | [`worksets/WORKSET_2026-02-28_FORMAL_ASYNC_HARDENING_V57.md`](worksets/WORKSET_2026-02-28_FORMAL_ASYNC_HARDENING_V57.md) | Async formal orchestration hardening and liveness control work set. |
+| Work Set Plan (v58) | [`worksets/WORKSET_2026-02-28_KANI_HARNESS_EXPANSION_V58.md`](worksets/WORKSET_2026-02-28_KANI_HARNESS_EXPANSION_V58.md) | Kani harness expansion across syntax/parser/optimizer work set. |
+| Work Set Plan (v59) | [`worksets/WORKSET_2026-02-28_LINE_CONTINUATION_V59.md`](worksets/WORKSET_2026-02-28_LINE_CONTINUATION_V59.md) | Line continuation language semantics work set. |
+| Work Set Plan (v60) | [`worksets/WORKSET_2026-02-28_WITH_BLOCK_V60.md`](worksets/WORKSET_2026-02-28_WITH_BLOCK_V60.md) | `With ... End With` language subset work set. |
+| Work Set Plan (v61) | [`worksets/WORKSET_2026-02-28_CONDITIONAL_COMPILATION_V61.md`](worksets/WORKSET_2026-02-28_CONDITIONAL_COMPILATION_V61.md) | Conditional compilation directive subset work set. |
+| Work Set Plan (v62) | [`worksets/WORKSET_2026-02-28_STDLIB_SURFACE_ARCH_V62.md`](worksets/WORKSET_2026-02-28_STDLIB_SURFACE_ARCH_V62.md) | Intrinsic surface architecture split work set. |
+| Work Set Plan (v63) | [`worksets/WORKSET_2026-02-28_JIT_SURFACE_EXPANSION_V63.md`](worksets/WORKSET_2026-02-28_JIT_SURFACE_EXPANSION_V63.md) | Cranelift JIT supported-op surface expansion work set. |
+| Work Set Plan (v64) | [`worksets/WORKSET_2026-02-28_PERF_HOTPATH_BASELINES_V64.md`](worksets/WORKSET_2026-02-28_PERF_HOTPATH_BASELINES_V64.md) | Mixed VM/JIT hotpath baseline benchmarking work set. |
+| Work Set Plan (v65) | [`worksets/WORKSET_2026-02-28_INTEGRATED_GATE_V65.md`](worksets/WORKSET_2026-02-28_INTEGRATED_GATE_V65.md) | Integrated correctness/performance gate orchestration work set. |
+| Work Set Plan (v66) | [`worksets/WORKSET_2026-02-28_STABILIZATION_ROLLUP_V66.md`](worksets/WORKSET_2026-02-28_STABILIZATION_ROLLUP_V66.md) | Ladder stabilization rollup and closure work set. |
 | Work Set Plan (v27-v36) | [`worksets/WORKSET_2026-02-27_BATCH_V27_V36.md`](worksets/WORKSET_2026-02-27_BATCH_V27_V36.md) | Next long batch: formal reliability, language coverage closure, and hotspot performance work. |
 | Profile Ladder | [`worksets/PROFILE_LADDER_2026-02-27_MACH1000.md`](worksets/PROFILE_LADDER_2026-02-27_MACH1000.md) | MACH1000 profile roadmap and execution history. |
 | Profile Ladder (v37-v56) | [`worksets/PROFILE_LADDER_2026-02-27_MACH1000_V37_V56.md`](worksets/PROFILE_LADDER_2026-02-27_MACH1000_V37_V56.md) | Next horizon ladder split into language core, intrinsic runtime, and host/interop tracks. |
+| Profile Ladder (v57-v66) | [`worksets/PROFILE_LADDER_2026-02-28_MACH1000_V57_V66.md`](worksets/PROFILE_LADDER_2026-02-28_MACH1000_V57_V66.md) | Language closure + formal depth + JIT throughput ladder for the next 10 profiles. |
 | Status Tours | [`status-tours/`](status-tours/) | Date-stamped orientation/showcase docs for implemented project state. |
 | Formal | [`FORMAL.md`](FORMAL.md) | Lean/Kani formal scaffold status and structure. |
 

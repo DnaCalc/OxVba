@@ -81,6 +81,51 @@ mod tests {
     }
 
     #[test]
+    fn compile_line_continuation_expression() {
+        let source = "Sub Main()\nDim x\nx = 1\nx = x + _\n2\nEnd Sub";
+        let out = compile(source).expect("compile should succeed");
+        assert_eq!(out.slot_count, 1);
+        assert_eq!(
+            out.instructions,
+            vec![
+                Instruction::LoadConstI32 { slot: 0, value: 1 },
+                Instruction::AddConstI32 { slot: 0, value: 2 },
+                Instruction::Halt
+            ]
+        );
+    }
+
+    #[test]
+    fn compile_with_block_member_assignments() {
+        let source = "Sub Main()\nDim x\nWith x\n.Value = 1\n.Value = .Value + 2\nx = .Value\nEnd With\nEnd Sub";
+        let out = compile(source).expect("compile should succeed");
+        assert!(
+            out.instructions
+                .iter()
+                .any(|i| matches!(i, Instruction::LoadConstI32 { value: 1, .. }))
+        );
+        assert!(
+            out.instructions
+                .iter()
+                .any(|i| matches!(i, Instruction::AddConstI32 { value: 2, .. }))
+        );
+    }
+
+    #[test]
+    fn compile_conditional_compilation_if_else_branch() {
+        let source = "#Const ENABLE = True\nSub Main()\nDim x\n#If ENABLE Then\nx = 7\n#Else\nx = 1\n#End If\nEnd Sub";
+        let out = compile(source).expect("compile should succeed");
+        assert_eq!(out.slot_count, 1);
+        assert_eq!(
+            out.instructions,
+            vec![
+                Instruction::LoadConstI32 { slot: 0, value: 7 },
+                Instruction::Halt
+            ]
+        );
+    }
+
+    #[test]
     fn undeclared_variable_with_option_explicit_is_rejected() {
         let source = "Option Explicit\nSub Main()\nx = 1\nEnd Sub";
         let err = compile(source).expect_err("typecheck should fail");

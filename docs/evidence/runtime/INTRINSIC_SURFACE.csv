@@ -1,0 +1,52 @@
+intrinsic,surface,min_arity,max_arity,emission_family,notes
+len,deterministic-core,1,1,digits,string length over digit projection
+left,deterministic-core,2,2,digits,left substring over digit projection
+right,deterministic-core,2,2,digits,right substring over digit projection
+mid,deterministic-core,2,3,digits,mid substring over digit projection
+instr,deterministic-core,2,2,digits,substring position over digit projection
+lcase,deterministic-core,1,1,digits,lowercase digit projection
+ucase,deterministic-core,1,1,digits,uppercase digit projection
+split,deterministic-core,2,2,digits,split count projection
+join,deterministic-core,2,2,digits,join projection
+replace,deterministic-core,3,3,digits,replace projection
+trim,deterministic-core,1,1,digits,trim projection
+ltrim,deterministic-core,1,1,digits,left trim projection
+rtrim,deterministic-core,1,1,digits,right trim projection
+strcomp,deterministic-core,2,2,digits,string compare projection
+dateserial,deterministic-core,3,3,date-time,numeric date projection
+timeserial,deterministic-core,3,3,date-time,numeric time projection
+datevalue,deterministic-core,1,1,date-time,date value projection
+timevalue,deterministic-core,1,1,date-time,time value projection
+dateadd,deterministic-core,3,3,date-time,date add projection
+datediff,deterministic-core,3,3,date-time,date diff projection
+abs,deterministic-core,1,1,math,integer abs subset
+int,deterministic-core,1,1,math,integer identity subset
+fix,deterministic-core,1,1,math,integer identity subset
+sgn,deterministic-core,1,1,math,integer sign subset
+round,deterministic-core,1,2,math,integer round subset
+sqr,deterministic-core,1,1,math,sqrt projection
+sin,deterministic-core,1,1,math,sine projection
+cos,deterministic-core,1,1,math,cosine projection
+log,deterministic-core,1,1,math,log projection
+exp,deterministic-core,1,1,math,exp projection
+fv,deterministic-core,3,5,financial,zero-rate deterministic subset
+pv,deterministic-core,3,5,financial,zero-rate deterministic subset
+pmt,deterministic-core,3,5,financial,zero-rate deterministic subset
+array,deterministic-core,1,variadic,array,array tag projection
+lbound,deterministic-core,1,1,array,array lower bound projection
+ubound,deterministic-core,1,1,array,array upper bound projection
+isarray,deterministic-core,1,1,array,array predicate projection
+vartype,deterministic-core,1,1,array,variant tag projection
+typename,deterministic-core,1,1,array,type name projection
+isnumeric,deterministic-core,1,1,array,numeric predicate projection
+isdate,deterministic-core,1,1,array,date predicate projection
+isobject,deterministic-core,1,1,array,object predicate projection
+collectionadd,deterministic-core,2,3,collection,collection count-update subset
+collectionitem,deterministic-core,2,3,collection,collection retrieval subset
+collectionremove,deterministic-core,2,3,collection,collection remove subset
+collectioncount,deterministic-core,1,1,collection,collection count subset
+shell,host-sensitive,1,1,host,host capability required
+environ,host-sensitive,1,1,host,host capability required
+dir,host-sensitive,1,1,host,host capability required
+createobject,host-sensitive,1,1,host,host capability required
+dispatchinvoke,host-sensitive,3,3,host,host capability required

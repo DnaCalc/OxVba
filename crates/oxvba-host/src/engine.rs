@@ -1366,11 +1366,13 @@ mod tests {
             matrix.contains("mvp-perf-shape-v26")
                 || matrix.contains("mvp-full-coverage-perf-gate-v36")
                 || matrix.contains("mvp-language-stdlib-consolidation-gate-v56")
+                || matrix.contains("mvp-stabilization-rollup-v66")
         );
         assert!(
             formal.contains("mvp-perf-shape-v26")
                 || formal.contains("mvp-full-coverage-perf-gate-v36")
                 || formal.contains("mvp-language-stdlib-consolidation-gate-v56")
+                || formal.contains("mvp-stabilization-rollup-v66")
         );
     }
 
@@ -1382,12 +1384,14 @@ mod tests {
             bench.contains("docs/evidence/profiles/v26/benchmark_latest.md")
                 || bench.contains("docs/evidence/profiles/v36/benchmark_latest.md")
                 || bench.contains("docs/evidence/profiles/v56/benchmark_latest.md")
+                || bench.contains("docs/evidence/profiles/v64/benchmark_latest.md")
+                || bench.contains("docs/evidence/profiles/v66/benchmark_latest.md")
         );
     }
 
     #[test]
     fn formal_v26_profile_status_document_exists() {
-        assert!(repo_path("docs/PROFILE_STATUS_V26.md").exists());
+        assert!(repo_path("docs/profile-status/PROFILE_STATUS_V26.md").exists());
     }
 
     #[test]
@@ -1435,7 +1439,7 @@ mod tests {
 
     #[test]
     fn formal_v28_profile_status_document_exists() {
-        assert!(repo_path("docs/PROFILE_STATUS_V28.md").exists());
+        assert!(repo_path("docs/profile-status/PROFILE_STATUS_V28.md").exists());
     }
 
     #[test]
@@ -1479,7 +1483,7 @@ mod tests {
 
     #[test]
     fn formal_v30_profile_status_document_exists() {
-        assert!(repo_path("docs/PROFILE_STATUS_V30.md").exists());
+        assert!(repo_path("docs/profile-status/PROFILE_STATUS_V30.md").exists());
     }
 
     #[test]
@@ -1498,7 +1502,7 @@ mod tests {
 
     #[test]
     fn formal_v31_profile_status_document_exists() {
-        assert!(repo_path("docs/PROFILE_STATUS_V31.md").exists());
+        assert!(repo_path("docs/profile-status/PROFILE_STATUS_V31.md").exists());
     }
 
     #[test]
@@ -1562,7 +1566,7 @@ mod tests {
 
     #[test]
     fn formal_v34_profile_status_document_exists() {
-        assert!(repo_path("docs/PROFILE_STATUS_V34.md").exists());
+        assert!(repo_path("docs/profile-status/PROFILE_STATUS_V34.md").exists());
     }
 
     #[test]
@@ -1578,7 +1582,7 @@ mod tests {
 
     #[test]
     fn formal_v35_profile_status_document_exists() {
-        assert!(repo_path("docs/PROFILE_STATUS_V35.md").exists());
+        assert!(repo_path("docs/profile-status/PROFILE_STATUS_V35.md").exists());
     }
 
     #[test]
@@ -1590,10 +1594,12 @@ mod tests {
         assert!(
             matrix.contains("mvp-full-coverage-perf-gate-v36")
                 || matrix.contains("mvp-language-stdlib-consolidation-gate-v56")
+                || matrix.contains("mvp-stabilization-rollup-v66")
         );
         assert!(
             formal.contains("mvp-full-coverage-perf-gate-v36")
                 || formal.contains("mvp-language-stdlib-consolidation-gate-v56")
+                || formal.contains("mvp-stabilization-rollup-v66")
         );
     }
 
@@ -1604,12 +1610,14 @@ mod tests {
         assert!(
             bench.contains("docs/evidence/profiles/v36/benchmark_latest.md")
                 || bench.contains("docs/evidence/profiles/v56/benchmark_latest.md")
+                || bench.contains("docs/evidence/profiles/v64/benchmark_latest.md")
+                || bench.contains("docs/evidence/profiles/v66/benchmark_latest.md")
         );
     }
 
     #[test]
     fn formal_v36_profile_status_document_exists() {
-        assert!(repo_path("docs/PROFILE_STATUS_V36.md").exists());
+        assert!(repo_path("docs/profile-status/PROFILE_STATUS_V36.md").exists());
     }
 
     #[test]
@@ -1618,20 +1626,283 @@ mod tests {
             .expect("run-matrix script exists");
         let formal = std::fs::read_to_string(repo_path("scripts/run-formal.ps1"))
             .expect("run-formal script exists");
-        assert!(matrix.contains("mvp-language-stdlib-consolidation-gate-v56"));
-        assert!(formal.contains("mvp-language-stdlib-consolidation-gate-v56"));
+        assert!(
+            matrix.contains("mvp-language-stdlib-consolidation-gate-v56")
+                || matrix.contains("mvp-stabilization-rollup-v66")
+        );
+        assert!(
+            formal.contains("mvp-language-stdlib-consolidation-gate-v56")
+                || formal.contains("mvp-stabilization-rollup-v66")
+        );
     }
 
     #[test]
     fn formal_v56_benchmark_default_targets_v56_artifact() {
         let bench = std::fs::read_to_string(repo_path("scripts/run-bench.ps1"))
             .expect("run-bench script exists");
-        assert!(bench.contains("docs/evidence/profiles/v56/benchmark_latest.md"));
+        assert!(
+            bench.contains("docs/evidence/profiles/v56/benchmark_latest.md")
+                || bench.contains("docs/evidence/profiles/v64/benchmark_latest.md")
+                || bench.contains("docs/evidence/profiles/v66/benchmark_latest.md")
+        );
     }
 
     #[test]
     fn formal_v56_profile_status_document_exists() {
-        assert!(repo_path("docs/PROFILE_STATUS_V56.md").exists());
+        assert!(repo_path("docs/profile-status/PROFILE_STATUS_V56.md").exists());
+    }
+
+    #[test]
+    fn formal_v57_async_runner_supports_watcher_controls() {
+        let text = std::fs::read_to_string(repo_path("scripts/run-formal-kani-async.ps1"))
+            .expect("async runner exists");
+        assert!(text.contains("WatchStart"));
+        assert!(text.contains("WatchStop"));
+        assert!(text.contains("StartWatcher"));
+        assert!(text.contains("WatchPollSeconds"));
+        assert!(text.contains("watcher_pid"));
+        assert!(text.contains("liveness.log"));
+    }
+
+    #[test]
+    fn formal_v57_watcher_script_is_resilient() {
+        let text = std::fs::read_to_string(repo_path("scripts/watch-formal-kani-async.ps1"))
+            .expect("watch script exists");
+        assert!(text.contains("status=state-missing"));
+        assert!(text.contains("status=state-parse-error"));
+        assert!(text.contains("status=watch-error"));
+        assert!(text.contains("status=completed"));
+    }
+
+    #[test]
+    fn formal_v57_profile_status_document_exists() {
+        assert!(repo_path("docs/profile-status/PROFILE_STATUS_V57.md").exists());
+    }
+
+    #[test]
+    fn formal_v58_syntax_kani_harnesses_exist() {
+        let lexer = std::fs::read_to_string(repo_path("crates/oxvba-syntax/src/lexer.rs"))
+            .expect("lexer exists");
+        let parser = std::fs::read_to_string(repo_path("crates/oxvba-syntax/src/parser.rs"))
+            .expect("parser exists");
+        assert!(lexer.contains("tokenize_always_appends_eof_token"));
+        assert!(parser.contains("parse_non_empty_source_roundtrips_input"));
+        assert!(lexer.contains("#[cfg(kani)]"));
+        assert!(parser.contains("#[cfg(kani)]"));
+    }
+
+    #[test]
+    fn formal_v58_optimizer_kani_harness_exists() {
+        let text = std::fs::read_to_string(repo_path("crates/oxvba-compiler/src/optimize.rs"))
+            .expect("optimizer file exists");
+        assert!(text.contains("zero_delta_self_add_assignment_is_removed"));
+        assert!(text.contains("#[cfg(kani)]"));
+    }
+
+    #[test]
+    fn formal_v58_profile_status_document_exists() {
+        assert!(repo_path("docs/profile-status/PROFILE_STATUS_V58.md").exists());
+    }
+
+    #[test]
+    fn formal_v59_line_continuation_executes() {
+        let engine = Engine::new(HostConfig::default());
+        let source = "Sub Main()\nDim x\nx = 1\nx = x + _\n2\nEnd Sub";
+        let snapshot = engine
+            .execute_source_with_snapshot(source)
+            .expect("execution should succeed");
+        assert_eq!(snapshot[0], 3);
+    }
+
+    #[test]
+    fn formal_v59_line_continuation_conformance_fixture_exists() {
+        assert!(repo_path("conformance/tests/line_continuation_basic.bas").exists());
+    }
+
+    #[test]
+    fn formal_v59_profile_status_document_exists() {
+        assert!(repo_path("docs/profile-status/PROFILE_STATUS_V59.md").exists());
+    }
+
+    #[test]
+    fn formal_v60_with_block_member_assignments_execute() {
+        let engine = Engine::new(HostConfig::default());
+        let source = "Sub Main()\nDim x\nWith x\n.Value = 1\n.Value = .Value + 2\nx = .Value\nEnd With\nEnd Sub";
+        let snapshot = engine
+            .execute_source_with_snapshot(source)
+            .expect("execution should succeed");
+        assert_eq!(snapshot[0], 3);
+    }
+
+    #[test]
+    fn formal_v60_nested_with_block_assignments_execute() {
+        let engine = Engine::new(HostConfig::default());
+        let source = "Sub Main()\nDim x\nWith x\nWith .inner\n.Value = 9\nEnd With\nx = .inner_Value\nEnd With\nEnd Sub";
+        let snapshot = engine
+            .execute_source_with_snapshot(source)
+            .expect("execution should succeed");
+        assert_eq!(snapshot[0], 9);
+    }
+
+    #[test]
+    fn formal_v60_profile_status_document_exists() {
+        assert!(repo_path("docs/profile-status/PROFILE_STATUS_V60.md").exists());
+    }
+
+    #[test]
+    fn formal_v61_conditional_compilation_if_else_executes() {
+        let engine = Engine::new(HostConfig::default());
+        let source = "#Const ENABLE = True\nSub Main()\nDim x\n#If ENABLE Then\nx = 7\n#Else\nx = 1\n#End If\nEnd Sub";
+        let snapshot = engine
+            .execute_source_with_snapshot(source)
+            .expect("execution should succeed");
+        assert_eq!(snapshot[0], 7);
+    }
+
+    #[test]
+    fn formal_v61_conditional_compilation_elseif_executes() {
+        let engine = Engine::new(HostConfig::default());
+        let source = "#Const A = False\n#Const B = True\nSub Main()\nDim x\n#If A Then\nx = 1\n#ElseIf B Then\nx = 9\n#Else\nx = 3\n#End If\nEnd Sub";
+        let snapshot = engine
+            .execute_source_with_snapshot(source)
+            .expect("execution should succeed");
+        assert_eq!(snapshot[0], 9);
+    }
+
+    #[test]
+    fn formal_v61_profile_status_document_exists() {
+        assert!(repo_path("docs/profile-status/PROFILE_STATUS_V61.md").exists());
+    }
+
+    #[test]
+    fn formal_v62_intrinsic_surface_registry_classifies_host_and_core() {
+        use oxvba_compiler::resolve::{IntrinsicSurface, intrinsic_surface};
+
+        assert_eq!(
+            intrinsic_surface("Len"),
+            Some(IntrinsicSurface::DeterministicCore)
+        );
+        assert_eq!(
+            intrinsic_surface("Shell"),
+            Some(IntrinsicSurface::HostSensitive)
+        );
+        assert_eq!(
+            intrinsic_surface("DispatchInvoke"),
+            Some(IntrinsicSurface::HostSensitive)
+        );
+    }
+
+    #[test]
+    fn formal_v62_intrinsic_surface_evidence_file_exists() {
+        assert!(repo_path("docs/evidence/runtime/INTRINSIC_SURFACE.csv").exists());
+    }
+
+    #[test]
+    fn formal_v62_profile_status_document_exists() {
+        assert!(repo_path("docs/profile-status/PROFILE_STATUS_V62.md").exists());
+    }
+
+    #[test]
+    fn formal_v63_jit_supports_intrinsic_math_subset() {
+        let bytecode = oxvba_compiler::compile(
+            "Sub Main()\nDim x\nx = Abs(-7)\nx = Sgn(x)\nx = Fix(x)\nEnd Sub",
+        )
+        .expect("compile should succeed");
+        assert!(oxvba_jit::cranelift::supports_bytecode(&bytecode));
+    }
+
+    #[test]
+    fn formal_v63_intrinsic_math_subset_is_jit_vm_equivalent() {
+        let source = "Sub Main()\nDim x\nx = Abs(-7)\nx = Sgn(x)\nx = Fix(x)\nEnd Sub";
+        let vm_out = Engine::new(HostConfig {
+            enable_jit: false,
+            root_object_name: None,
+        })
+        .execute_source_with_snapshot(source)
+        .expect("vm execution should succeed");
+        let jit_out = Engine::new(HostConfig {
+            enable_jit: true,
+            root_object_name: None,
+        })
+        .execute_source_with_snapshot(source)
+        .expect("jit execution should succeed");
+        assert_eq!(vm_out, jit_out);
+    }
+
+    #[test]
+    fn formal_v63_profile_status_document_exists() {
+        assert!(repo_path("docs/profile-status/PROFILE_STATUS_V63.md").exists());
+    }
+
+    #[test]
+    fn formal_v64_benchmark_script_tracks_mixed_workloads() {
+        let bench = std::fs::read_to_string(repo_path("scripts/run-bench.ps1"))
+            .expect("run-bench script exists");
+        assert!(bench.contains("conformance_vm"));
+        assert!(bench.contains("conformance_jit"));
+        assert!(bench.contains("OutputCsvPath"));
+    }
+
+    #[test]
+    fn formal_v64_benchmark_profile_artifact_defaults_exist() {
+        let bench = std::fs::read_to_string(repo_path("scripts/run-bench.ps1"))
+            .expect("run-bench script exists");
+        assert!(
+            bench.contains("docs/evidence/profiles/v64/benchmark_latest.md")
+                || bench.contains("docs/evidence/profiles/v66/benchmark_latest.md")
+        );
+        assert!(
+            bench.contains("docs/evidence/profiles/v64/benchmark_latest.csv")
+                || bench.contains("docs/evidence/profiles/v66/benchmark_latest.csv")
+        );
+    }
+
+    #[test]
+    fn formal_v64_profile_status_document_exists() {
+        assert!(repo_path("docs/profile-status/PROFILE_STATUS_V64.md").exists());
+    }
+
+    #[test]
+    fn formal_v65_integrated_gate_script_exists() {
+        let text = std::fs::read_to_string(repo_path("scripts/run-profile-gate.ps1"))
+            .expect("integrated gate script exists");
+        assert!(text.contains("run-formal.ps1"));
+        assert!(text.contains("run-matrix.ps1"));
+        assert!(text.contains("run-bench.ps1"));
+        assert!(text.contains("integrated_gate.md"));
+    }
+
+    #[test]
+    fn formal_v65_workset_document_exists() {
+        assert!(repo_path("docs/worksets/WORKSET_2026-02-28_INTEGRATED_GATE_V65.md").exists());
+    }
+
+    #[test]
+    fn formal_v65_profile_status_document_exists() {
+        assert!(repo_path("docs/profile-status/PROFILE_STATUS_V65.md").exists());
+    }
+
+    #[test]
+    fn formal_v66_script_defaults_target_v66_profile_scope() {
+        let matrix = std::fs::read_to_string(repo_path("scripts/run-matrix.ps1"))
+            .expect("run-matrix script exists");
+        let formal = std::fs::read_to_string(repo_path("scripts/run-formal.ps1"))
+            .expect("run-formal script exists");
+        let bench = std::fs::read_to_string(repo_path("scripts/run-bench.ps1"))
+            .expect("run-bench script exists");
+        assert!(matrix.contains("mvp-stabilization-rollup-v66"));
+        assert!(formal.contains("mvp-stabilization-rollup-v66"));
+        assert!(bench.contains("docs/evidence/profiles/v66/benchmark_latest.md"));
+    }
+
+    #[test]
+    fn formal_v66_workset_document_exists() {
+        assert!(repo_path("docs/worksets/WORKSET_2026-02-28_STABILIZATION_ROLLUP_V66.md").exists());
+    }
+
+    #[test]
+    fn formal_v66_profile_status_document_exists() {
+        assert!(repo_path("docs/profile-status/PROFILE_STATUS_V66.md").exists());
     }
 
     #[test]

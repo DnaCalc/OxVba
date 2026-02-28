@@ -1,18 +1,26 @@
 # ASYNC_KANI_V56.md
 
-## Run Summary
+## Active Run
+- Run name: `v56-kani-full`
 - Profile scope: `mvp-language-stdlib-consolidation-gate-v56`
-- Runner: `./scripts/run-formal-kani-async.ps1`
-- Start timestamp (UTC): `2026-02-28T01:15:15Z`
 - Command: `./scripts/run-formal.ps1 -ProfileScope mvp-language-stdlib-consolidation-gate-v56 -RequireKani -UseWslKani`
-- Status: exercised and timeboxed (non-blocking lane); process stopped to avoid indefinite background mutation of tracked formal artifacts.
+- Started via: `./scripts/run-formal-kani-async.ps1 -Action Start -Name v56-kani-full -ProfileScope mvp-language-stdlib-consolidation-gate-v56 -StartWatcher $true -WatchPollSeconds 600`
 
-## Artifacts
-- State: `temp/async/formal-kani/v56-kani/state.json`
-- Stdout log: `temp/async/formal-kani/v56-kani/stdout.log`
-- Stderr log: `temp/async/formal-kani/v56-kani/stderr.log`
+## Liveness Polling
+- Poller script: `scripts/watch-formal-kani-async.ps1`
+- Poll cadence: `600s` (10 minutes)
+- Poller launch mode: background hidden process
+- Liveness log: `temp/async/formal-kani/v56-kani-full/liveness.log`
+- Watcher control actions:
+  - `./scripts/run-formal-kani-async.ps1 -Action WatchStart -Name v56-kani-full -WatchPollSeconds 600`
+  - `./scripts/run-formal-kani-async.ps1 -Action WatchStop -Name v56-kani-full`
 
-## Notes
-- Async orchestration path is validated and operational for long-running Kani workloads.
-- The regular formal gate remains green in non-blocking mode (`docs/evidence/formal/latest_run.md`).
-- Kani completion remains tracked as extended formal backlog work and does not block the current ladder gate per policy.
+## Runtime Paths
+- State: `temp/async/formal-kani/v56-kani-full/state.json`
+- Stdout log: `temp/async/formal-kani/v56-kani-full/stdout.log`
+- Stderr log: `temp/async/formal-kani/v56-kani-full/stderr.log`
+- Exit code file: `temp/async/formal-kani/v56-kani-full/exit_code.txt`
+
+## Policy Context
+- This strict Kani lane is non-blocking for the current ladder per `AGENTS.md` policy.
+- Local formal gate remains tracked in `docs/evidence/formal/latest_run.md` while strict async Kani progresses independently.

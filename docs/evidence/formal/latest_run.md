@@ -1,7 +1,7 @@
 # Formal Run Report
 
-- Timestamp (UTC): 2026-02-28T02:22:43Z
-- Profile scope: mvp-language-stdlib-consolidation-gate-v56
+- Timestamp (UTC): 2026-02-28T08:46:24Z
+- Profile scope: mvp-stabilization-rollup-v66
 - Overall mode: non-blocking
 - Kani required: false
 - Kani execution: deferred-to-wsl-async
@@ -169,3 +169,33 @@
 | FO-V56-001 | v56 | no | pass | cargo test -p oxvba-host formal_v56_script_defaults_target_v56_profile_scope | crates/oxvba-host/src/engine.rs |  |
 | FO-V56-002 | v56 | no | pass | cargo test -p oxvba-host formal_v56_benchmark_default_targets_v56_artifact | crates/oxvba-host/src/engine.rs |  |
 | FO-V56-003 | v56 | no | pass | cargo test -p oxvba-host formal_v56_profile_status_document_exists | crates/oxvba-host/src/engine.rs |  |
+| FO-V57-001 | v57 | no | pass | cargo test -p oxvba-host formal_v57_async_runner_supports_watcher_controls | crates/oxvba-host/src/engine.rs |  |
+| FO-V57-002 | v57 | no | pass | cargo test -p oxvba-host formal_v57_watcher_script_is_resilient | crates/oxvba-host/src/engine.rs |  |
+| FO-V57-003 | v57 | no | pass | cargo test -p oxvba-host formal_v57_profile_status_document_exists | crates/oxvba-host/src/engine.rs |  |
+| FO-V58-001 | v58 | no | pass | cargo test -p oxvba-host formal_v58_syntax_kani_harnesses_exist | crates/oxvba-host/src/engine.rs |  |
+| FO-V58-002 | v58 | no | pass | cargo test -p oxvba-host formal_v58_optimizer_kani_harness_exists | crates/oxvba-host/src/engine.rs |  |
+| FO-V58-003 | v58 | no | pass | cargo test -p oxvba-host formal_v58_profile_status_document_exists | crates/oxvba-host/src/engine.rs |  |
+| FO-V59-001 | v59 | no | pass | cargo test -p oxvba-host formal_v59_line_continuation_executes | crates/oxvba-host/src/engine.rs |  |
+| FO-V59-002 | v59 | no | pass | cargo test -p oxvba-host formal_v59_line_continuation_conformance_fixture_exists | crates/oxvba-host/src/engine.rs |  |
+| FO-V59-003 | v59 | no | pass | cargo test -p oxvba-host formal_v59_profile_status_document_exists | crates/oxvba-host/src/engine.rs |  |
+| FO-V60-001 | v60 | no | pass | cargo test -p oxvba-host formal_v60_with_block_member_assignments_execute | crates/oxvba-host/src/engine.rs |  |
+| FO-V60-002 | v60 | no | pass | cargo test -p oxvba-host formal_v60_nested_with_block_assignments_execute | crates/oxvba-host/src/engine.rs |  |
+| FO-V60-003 | v60 | no | pass | cargo test -p oxvba-host formal_v60_profile_status_document_exists | crates/oxvba-host/src/engine.rs |  |
+| FO-V61-001 | v61 | no | pass | cargo test -p oxvba-host formal_v61_conditional_compilation_if_else_executes | crates/oxvba-host/src/engine.rs |  |
+| FO-V61-002 | v61 | no | pass | cargo test -p oxvba-host formal_v61_conditional_compilation_elseif_executes | crates/oxvba-host/src/engine.rs |  |
+| FO-V61-003 | v61 | no | pass | cargo test -p oxvba-host formal_v61_profile_status_document_exists | crates/oxvba-host/src/engine.rs |  |
+| FO-V62-001 | v62 | no | pass | cargo test -p oxvba-host formal_v62_intrinsic_surface_registry_classifies_host_and_core | crates/oxvba-host/src/engine.rs |  |
+| FO-V62-002 | v62 | no | pass | cargo test -p oxvba-host formal_v62_intrinsic_surface_evidence_file_exists | docs/evidence/runtime/INTRINSIC_SURFACE.csv |  |
+| FO-V62-003 | v62 | no | pass | cargo test -p oxvba-host formal_v62_profile_status_document_exists | crates/oxvba-host/src/engine.rs |  |
+| FO-V63-001 | v63 | no | pass | cargo test -p oxvba-host formal_v63_jit_supports_intrinsic_math_subset | crates/oxvba-host/src/engine.rs |  |
+| FO-V63-002 | v63 | no | pass | cargo test -p oxvba-host formal_v63_intrinsic_math_subset_is_jit_vm_equivalent | crates/oxvba-host/src/engine.rs |  |
+| FO-V63-003 | v63 | no | pass | cargo test -p oxvba-host formal_v63_profile_status_document_exists | crates/oxvba-host/src/engine.rs |  |
+| FO-V64-001 | v64 | no | pass | cargo test -p oxvba-host formal_v64_benchmark_script_tracks_mixed_workloads | scripts/run-bench.ps1 |  |
+| FO-V64-002 | v64 | no | pass | cargo test -p oxvba-host formal_v64_benchmark_profile_artifact_defaults_exist | scripts/run-bench.ps1 |  |
+| FO-V64-003 | v64 | no | pass | cargo test -p oxvba-host formal_v64_profile_status_document_exists | crates/oxvba-host/src/engine.rs |  |
+| FO-V65-001 | v65 | no | pass | cargo test -p oxvba-host formal_v65_integrated_gate_script_exists | scripts/run-profile-gate.ps1 |  |
+| FO-V65-002 | v65 | no | pass | cargo test -p oxvba-host formal_v65_workset_document_exists | docs/worksets/WORKSET_2026-02-28_INTEGRATED_GATE_V65.md |  |
+| FO-V65-003 | v65 | no | pass | cargo test -p oxvba-host formal_v65_profile_status_document_exists | crates/oxvba-host/src/engine.rs |  |
+| FO-V66-001 | v66 | no | pass | cargo test -p oxvba-host formal_v66_script_defaults_target_v66_profile_scope | scripts/run-formal.ps1 |  |
+| FO-V66-002 | v66 | no | pass | cargo test -p oxvba-host formal_v66_workset_document_exists | docs/worksets/WORKSET_2026-02-28_STABILIZATION_ROLLUP_V66.md |  |
+| FO-V66-003 | v66 | no | pass | cargo test -p oxvba-host formal_v66_profile_status_document_exists | crates/oxvba-host/src/engine.rs |  |

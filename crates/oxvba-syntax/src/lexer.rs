@@ -124,3 +124,31 @@ mod tests {
         assert!(toks.iter().any(|t| t.text.starts_with('\'')));
     }
 }
+
+#[allow(unexpected_cfgs)]
+#[cfg(kani)]
+mod kani_proofs {
+    use super::tokenize;
+    use crate::syntax_kind::SyntaxKind;
+
+    #[kani::proof]
+    fn tokenize_always_appends_eof_token() {
+        let len: usize = kani::any();
+        kani::assume(len > 0);
+        kani::assume(len <= 24);
+
+        let mut source = String::new();
+        for _ in 0..len {
+            let b: u8 = kani::any();
+            let ascii = 32 + (b % 95);
+            source.push(char::from(ascii));
+        }
+
+        let tokens = tokenize(&source);
+        assert!(!tokens.is_empty());
+        assert!(matches!(
+            tokens.last().map(|token| token.kind),
+            Some(SyntaxKind::EndOfFile)
+        ));
+    }
+}

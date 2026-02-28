@@ -1,5 +1,38 @@
 # Implementation Log
 
+## 2026-02-28
+- Updated AutoRun stop/report guard to `v66` in:
+  - `AGENTS.md`
+  - `docs/AUTORUN_STATE.md`
+- Started ladder `v57..v66` execution with new planning artifacts:
+  - `docs/worksets/PROFILE_LADDER_2026-02-28_MACH1000_V57_V66.md`
+  - `docs/worksets/WORKSET_2026-02-28_FORMAL_ASYNC_HARDENING_V57.md`
+  - `docs/worksets/WORKSET_2026-02-28_KANI_HARNESS_EXPANSION_V58.md`
+- v57 (`mvp-formal-async-hardening-v57`) implementation:
+  - hardened async formal orchestration with watcher lifecycle controls (`WatchStart`/`WatchStop`),
+  - added watcher metadata in async state (`watcher_pid`, `liveness_log`, watcher logs),
+  - fixed watcher reliability issue caused by `$PID` variable collision,
+  - validated liveness logging with active background watcher process.
+- v57 gate execution:
+  - `./scripts/run-formal.ps1 -ProfileScope mvp-formal-async-hardening-v57`
+  - `./scripts/run-matrix.ps1 -ProfileScope mvp-formal-async-hardening-v57 -OutputDir docs/evidence/profiles/v57`
+  - formal obligations `FO-V57-001..003` recorded as pass; matrix gate PASS.
+- Started v58 (`mvp-kani-harness-expansion-v58`) implementation:
+  - added bounded Kani harnesses in lexer/parser/optimizer modules,
+  - added host formal checks and obligation entries for `FO-V58-001..003`.
+- v58 gate execution:
+  - `./scripts/run-formal.ps1 -ProfileScope mvp-kani-harness-expansion-v58`
+  - `./scripts/run-matrix.ps1 -ProfileScope mvp-kani-harness-expansion-v58 -OutputDir docs/evidence/profiles/v58`
+  - formal obligations `FO-V58-001..003` recorded as pass; matrix gate PASS.
+- Completed v59 (`mvp-lang-line-continuation-v59`):
+  - implemented parser/resolver line continuation normalization for trailing ` _` expressions,
+  - added compiler/host regression tests and conformance fixture `line_continuation_basic.bas`,
+  - updated conformance golden set (`95` fixtures).
+- v59 gate execution:
+  - `./scripts/run-formal.ps1 -ProfileScope mvp-lang-line-continuation-v59`
+  - `./scripts/run-matrix.ps1 -ProfileScope mvp-lang-line-continuation-v59 -OutputDir docs/evidence/profiles/v59`
+  - formal obligations `FO-V59-001..003` recorded as pass; matrix gate PASS.
+
 ## 2026-02-26
 - Bootstrapped full Cargo workspace and crate boundaries.
 - Added baseline CI, meta-check scripts, and core docs.
@@ -287,3 +320,46 @@
   - added consolidation mixed-feature fixtures and `FO-V56-*` formal checks;
   - switched matrix/formal/bench defaults to `v56` scope and artifact locations;
   - published `PROFILE_STATUS_V56` and `WORKSET_2026-02-27_LANGUAGE_STDLIB_CONSOLIDATION_GATE_V56`.
+- Started `mvp-formal-async-hardening-v57` pass:
+  - hardened async Kani/formal watcher lifecycle and liveness controls.
+  - added dedicated watcher script and resilience checks.
+  - published `PROFILE_STATUS_V57` and `WORKSET_2026-02-28_FORMAL_ASYNC_HARDENING_V57`.
+- Started `mvp-kani-harness-expansion-v58` pass:
+  - expanded Kani harness coverage in syntax/parser/optimizer layers.
+  - added profile obligations and status/workset docs for `v58`.
+- Started `mvp-lang-line-continuation-v59` pass:
+  - added expression line continuation (`_`) normalization support.
+  - added conformance fixture `line_continuation_basic.bas`.
+  - published `PROFILE_STATUS_V59` and `WORKSET_2026-02-28_LINE_CONTINUATION_V59`.
+- Started `mvp-lang-with-block-v60` pass:
+  - added deterministic `With ... End With` member rewrite subset.
+  - added nested with-block rewrite behavior and conformance fixture.
+  - published `PROFILE_STATUS_V60` and `WORKSET_2026-02-28_WITH_BLOCK_V60`.
+- Started `mvp-lang-conditional-compilation-v61` pass:
+  - added compile-time directive processing (`#Const`, `#If/#ElseIf/#Else/#End If`) in source normalization.
+  - added expression evaluator for conditional compilation subset.
+  - added conformance fixture `conditional_compilation_basic.bas`.
+  - published `PROFILE_STATUS_V61` and `WORKSET_2026-02-28_CONDITIONAL_COMPILATION_V61`.
+- Started `mvp-stdlib-surface-architecture-v62` pass:
+  - introduced centralized intrinsic metadata (arity + surface class) via resolver registry.
+  - split intrinsic surface into `DeterministicCore` vs `HostSensitive`.
+  - added `docs/evidence/runtime/INTRINSIC_SURFACE.csv` and validator script.
+  - published `PROFILE_STATUS_V62` and `WORKSET_2026-02-28_STDLIB_SURFACE_ARCH_V62`.
+- Started `mvp-jit-surface-expansion-v63` pass:
+  - expanded Cranelift support to intrinsic integer-math subset (`Abs`, `Int`, `Fix`, `Sgn`).
+  - added JIT parity tests for intrinsic subset paths.
+  - added conformance fixture `jit_intrinsic_math_subset.bas`.
+  - published `PROFILE_STATUS_V63` and `WORKSET_2026-02-28_JIT_SURFACE_EXPANSION_V63`.
+- Started `mvp-perf-hotpath-baselines-v64` pass:
+  - upgraded benchmark runner to mixed VM+JIT workload timing with markdown + csv artifacts.
+  - added benchmark profile metadata and aggregate gain reporting.
+  - published `PROFILE_STATUS_V64` and `WORKSET_2026-02-28_PERF_HOTPATH_BASELINES_V64`.
+- Started `mvp-integrated-correctness-perf-gate-v65` pass:
+  - added `scripts/run-profile-gate.ps1` to orchestrate formal + matrix + bench lanes.
+  - added integrated gate markdown/csv rollup artifacts.
+  - published `PROFILE_STATUS_V65` and `WORKSET_2026-02-28_INTEGRATED_GATE_V65`.
+- Started `mvp-stabilization-rollup-v66` pass:
+  - switched default profile scope in `run-formal`, `run-matrix`, and `run-bench` to `v66`.
+  - executed integrated gate for `v66` with `PASS`.
+  - updated phase status to `mvp-stabilization-rollup-v66`.
+  - published `PROFILE_STATUS_V66` and `WORKSET_2026-02-28_STABILIZATION_ROLLUP_V66`.
