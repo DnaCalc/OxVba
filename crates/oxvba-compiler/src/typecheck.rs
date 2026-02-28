@@ -275,22 +275,6 @@ fn check_stmt(
         BoundStmt::Call { name, args } => {
             let call_mode =
                 classify_call_mode(name, args, proc_names, proc_params, declared_types)?;
-            if matches!(call_mode, CallMode::Late) {
-                for arg in args {
-                    check_expr(
-                        &arg.expr,
-                        option_explicit,
-                        default_type_table,
-                        declared,
-                        declared_types,
-                        declarations,
-                        declaration_types,
-                    )?;
-                }
-                return Err(format!(
-                    "late-bound default-member call is not yet executable: {name}"
-                ));
-            }
 
             if let Some(params) = proc_params.get(name) {
                 let mapped_args = map_call_args_to_params(name, args, params)?;
@@ -325,13 +309,36 @@ fn check_stmt(
                             param.name, param.ty, arg_ty
                         ));
                     }
-                    if !can_assign_to(param.ty, arg_ty) {
+                    if call_coercion_result(call_mode, Some(param.ty), arg_ty) != CoercionResult::Ok
+                    {
                         return Err(format!(
                             "argument type mismatch for parameter {}: cannot pass {:?} to {:?}",
                             param.name, arg_ty, param.ty
                         ));
                     }
                 }
+            } else if matches!(call_mode, CallMode::Late) {
+                for arg in args {
+                    check_expr(
+                        &arg.expr,
+                        option_explicit,
+                        default_type_table,
+                        declared,
+                        declared_types,
+                        declarations,
+                        declaration_types,
+                    )?;
+                    let arg_ty = infer_expr_type(&arg.expr, declared_types);
+                    if call_coercion_result(CallMode::Late, None, arg_ty) != CoercionResult::Ok {
+                        return Err(format!(
+                            "late-bound call argument coercion mismatch: cannot package {:?} for {}",
+                            arg_ty, name
+                        ));
+                    }
+                }
+                return Err(format!(
+                    "late-bound default-member call is not yet executable: {name}"
+                ));
             }
             Ok(())
         }
@@ -687,6 +694,19 @@ fn can_assign_to(target: BoundType, source: BoundType) -> bool {
     coercion_result(source, target) == CoercionResult::Ok
 }
 
+fn call_coercion_result(
+    call_mode: CallMode,
+    param_type: Option<BoundType>,
+    arg_type: BoundType,
+) -> CoercionResult {
+    match call_mode {
+        CallMode::Late => coercion_result(arg_type, BoundType::Variant),
+        CallMode::Early | CallMode::Mixed => {
+            coercion_result(arg_type, param_type.unwrap_or(BoundType::Variant))
+        }
+    }
+}
+
 fn coercion_result(source: BoundType, target: BoundType) -> CoercionResult {
     if target == BoundType::Variant || target == source {
         return CoercionResult::Ok;
@@ -736,6 +756,27 @@ fn arithmetic_result_label(lhs: BoundType, rhs: BoundType) -> &'static str {
 #[cfg(test)]
 fn coercion_result_label(source: BoundType, target: BoundType) -> &'static str {
     match coercion_result(source, target) {
+        CoercionResult::Ok => "ok",
+        CoercionResult::TypeMismatch => "type-mismatch",
+    }
+}
+
+#[cfg(test)]
+fn call_mode_label(call_mode: CallMode) -> &'static str {
+    match call_mode {
+        CallMode::Early => "early",
+        CallMode::Mixed => "mixed",
+        CallMode::Late => "late",
+    }
+}
+
+#[cfg(test)]
+fn call_coercion_result_label(
+    call_mode: CallMode,
+    param_type: Option<BoundType>,
+    arg_type: BoundType,
+) -> &'static str {
+    match call_coercion_result(call_mode, param_type, arg_type) {
         CoercionResult::Ok => "ok",
         CoercionResult::TypeMismatch => "type-mismatch",
     }
@@ -973,8 +1014,9 @@ mod tests {
     use std::collections::{HashMap, HashSet};
 
     use super::{
-        CallMode, arithmetic_result_label, can_assign_to, classify_call_mode,
-        coercion_result_label, comparison_result_label, join_types,
+        CallMode, arithmetic_result_label, call_coercion_result_label, call_mode_label,
+        can_assign_to, classify_call_mode, coercion_result_label, comparison_result_label,
+        join_types,
     };
     use crate::resolve::{BoundCallArg, BoundExpr, BoundParam, BoundType};
 
@@ -1144,6 +1186,62 @@ mod tests {
         }
     }
 
+    #[test]
+    fn call_coercion_table_rows_align_with_typecheck_rules() {
+        let table_path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("..")
+            .join("..")
+            .join("tables")
+            .join("call_coercion.csv");
+        let table = std::fs::read_to_string(&table_path)
+            .expect("call coercion decision table should exist");
+        for (line_idx, line) in table.lines().enumerate().skip(1) {
+            let trimmed = line.trim();
+            if trimmed.is_empty() {
+                continue;
+            }
+            let mut parts = trimmed.split(',');
+            let mode_text = parts.next().expect("mode column should be present").trim();
+            let param_text = parts.next().expect("param column should be present").trim();
+            let arg_text = parts.next().expect("arg column should be present").trim();
+            let result_text = parts
+                .next()
+                .expect("result column should be present")
+                .trim();
+            assert!(
+                parts.next().is_none(),
+                "call coercion table row {} should have exactly 4 columns",
+                line_idx + 1
+            );
+
+            let mode = parse_call_mode(mode_text).expect("known call mode");
+            let param_type = if param_text.is_empty() {
+                None
+            } else {
+                Some(parse_bound_type(param_text).expect("known parameter type"))
+            };
+            assert!(
+                !(matches!(mode, CallMode::Early | CallMode::Mixed) && param_type.is_none()),
+                "call coercion table row {} requires param type for early/mixed mode",
+                line_idx + 1
+            );
+            assert!(
+                !(matches!(mode, CallMode::Late) && param_type.is_some()),
+                "call coercion table row {} must leave param empty for late mode",
+                line_idx + 1
+            );
+
+            let arg_type = parse_bound_type(arg_text).expect("known argument type");
+            assert_eq!(
+                call_coercion_result_label(mode, param_type, arg_type),
+                result_text,
+                "call coercion table mismatch at row {} (mode={})",
+                line_idx + 1,
+                call_mode_label(mode)
+            );
+        }
+    }
+
     fn parse_bound_type(text: &str) -> Option<BoundType> {
         match text.trim() {
             "Variant" => Some(BoundType::Variant),
@@ -1161,6 +1259,15 @@ mod tests {
             "Boolean" => Some(BoundType::Boolean),
             "Object" => Some(BoundType::Object),
             "Array" => Some(BoundType::Array),
+            _ => None,
+        }
+    }
+
+    fn parse_call_mode(text: &str) -> Option<CallMode> {
+        match text.trim() {
+            "early" => Some(CallMode::Early),
+            "mixed" => Some(CallMode::Mixed),
+            "late" => Some(CallMode::Late),
             _ => None,
         }
     }

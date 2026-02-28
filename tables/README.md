@@ -6,3 +6,4 @@ Planned tables:
 - `coercion.csv`
 - `arithmetic.csv`
 - `comparison.csv`
+- `call_coercion.csv`

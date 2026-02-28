@@ -1,6 +1,12 @@
 # Implementation Log
 
 ## 2026-02-28
+- Completed `v75` (`mvp-typing-call-coercion-early-late-v75`):
+  - introduced mode-aware call coercion evaluation helper for early/mixed/late call routes;
+  - unified typed argument mismatch checks through explicit call coercion decisions;
+  - added call coercion decision table (`tables/call_coercion.csv`) and table-alignment tests;
+  - added compiler + conformance coverage for mixed variant-to-long call coercion and late named-argument call classification;
+  - added formal obligations `FO-V75-001..003`, produced matrix artifacts under `docs/evidence/profiles/v75/`, and started strict async Kani lane (`v75-kani`) as deferred gate `DG-V75-001`.
 - Completed `v74` (`mvp-typing-operator-result-rules-v74`):
   - added operator typing checks for arithmetic (`x +/- const`) and comparison conditions;
   - reject object/array arithmetic and invalid comparison type pairs with explicit diagnostics;

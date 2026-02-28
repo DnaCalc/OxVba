@@ -1,0 +1,9 @@
+mode,param,arg,result
+early,Long,Integer,ok
+early,Long,Object,type-mismatch
+mixed,Long,Variant,ok
+mixed,Long,Object,type-mismatch
+mixed,Variant,Object,ok
+late,,Long,ok
+late,,Object,ok
+late,,Array,ok

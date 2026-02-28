@@ -233,6 +233,23 @@ mod tests {
     }
 
     #[test]
+    fn late_bound_named_argument_call_is_classified_with_explicit_diagnostic() {
+        let source = "Sub Main()\nDim obj As Object\nCall obj(x:=1)\nEnd Sub";
+        let err = compile(source)
+            .expect_err("late-bound named-arg target is classified but not executable");
+        assert!(
+            err.to_string()
+                .contains("late-bound default-member call is not yet executable")
+        );
+    }
+
+    #[test]
+    fn mixed_call_coercion_variant_to_long_is_allowed() {
+        let source = "Sub Main()\nDim v As Variant\nv = 5\nCall Use(v)\nEnd Sub\nSub Use(ByVal x As Long)\nEnd Sub";
+        compile(source).expect("mixed-mode variant argument should coerce to long parameter");
+    }
+
+    #[test]
     fn coercion_assignment_variant_to_long_is_allowed() {
         let source = "Sub Main()\nDim v As Variant\nDim x As Long\nx = v\nEnd Sub";
         compile(source).expect("variant should be assignable to typed target in current matrix");

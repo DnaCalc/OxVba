@@ -1,7 +1,7 @@
 # Formal Run Report
 
-- Timestamp (UTC): 2026-02-28T11:03:41Z
-- Profile scope: mvp-typing-operator-result-rules-v74
+- Timestamp (UTC): 2026-02-28T11:21:12Z
+- Profile scope: mvp-typing-call-coercion-early-late-v75
 - Overall mode: non-blocking
 - Kani required: false
 - Kani execution: deferred-to-wsl-async
@@ -223,3 +223,6 @@
 | FO-V74-001 | v74 | no | pass | cargo test -p oxvba-compiler typecheck::tests::arithmetic_table_rows_align_with_typecheck_rules | crates/oxvba-compiler/src/typecheck.rs |  |
 | FO-V74-002 | v74 | no | pass | cargo test -p oxvba-compiler typecheck::tests::comparison_table_rows_align_with_typecheck_rules | crates/oxvba-compiler/src/typecheck.rs |  |
 | FO-V74-003 | v74 | no | pass | cargo test -p oxvba-compiler comparison_object_long_is_rejected | crates/oxvba-compiler/src/lib.rs |  |
+| FO-V75-001 | v75 | no | pass | cargo test -p oxvba-compiler typecheck::tests::call_coercion_table_rows_align_with_typecheck_rules | crates/oxvba-compiler/src/typecheck.rs |  |
+| FO-V75-002 | v75 | no | pass | cargo test -p oxvba-compiler mixed_call_coercion_variant_to_long_is_allowed | crates/oxvba-compiler/src/lib.rs |  |
+| FO-V75-003 | v75 | no | pass | cargo test -p oxvba-compiler late_bound_named_argument_call_is_classified_with_explicit_diagnostic | crates/oxvba-compiler/src/lib.rs |  |

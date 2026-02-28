@@ -212,3 +212,6 @@
 "FO-V74-001","v74","cargo test -p oxvba-compiler typecheck::tests::arithmetic_table_rows_align_with_typecheck_rules","no","pass","","crates/oxvba-compiler/src/typecheck.rs"
 "FO-V74-002","v74","cargo test -p oxvba-compiler typecheck::tests::comparison_table_rows_align_with_typecheck_rules","no","pass","","crates/oxvba-compiler/src/typecheck.rs"
 "FO-V74-003","v74","cargo test -p oxvba-compiler comparison_object_long_is_rejected","no","pass","","crates/oxvba-compiler/src/lib.rs"
+"FO-V75-001","v75","cargo test -p oxvba-compiler typecheck::tests::call_coercion_table_rows_align_with_typecheck_rules","no","pass","","crates/oxvba-compiler/src/typecheck.rs"
+"FO-V75-002","v75","cargo test -p oxvba-compiler mixed_call_coercion_variant_to_long_is_allowed","no","pass","","crates/oxvba-compiler/src/lib.rs"
+"FO-V75-003","v75","cargo test -p oxvba-compiler late_bound_named_argument_call_is_classified_with_explicit_diagnostic","no","pass","","crates/oxvba-compiler/src/lib.rs"
