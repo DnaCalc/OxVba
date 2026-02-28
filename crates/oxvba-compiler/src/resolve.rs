@@ -129,6 +129,7 @@ pub struct BoundProcedure {
     pub params: Vec<BoundParam>,
     pub declarations: Vec<String>,
     pub declaration_types: HashMap<String, BoundType>,
+    pub duplicate_declarations: Vec<String>,
     pub body: Vec<BoundStmt>,
 }
 
@@ -176,6 +177,7 @@ pub fn resolve_symbols(source: &str) -> BoundModule {
     } else {
         let mut declarations: Vec<String> = Vec::new();
         let mut declaration_types: HashMap<String, BoundType> = HashMap::new();
+        let mut duplicate_declarations: Vec<String> = Vec::new();
         let mut array_bounds: HashMap<String, usize> = HashMap::new();
         let mut index = 0;
         for (name, _) in sorted_module_constants(&module_constants) {
@@ -192,6 +194,7 @@ pub fn resolve_symbols(source: &str) -> BoundModule {
             &mut index,
             &mut declarations,
             &mut declaration_types,
+            &mut duplicate_declarations,
             &mut array_bounds,
             &mut option_explicit,
             &module_constants,
@@ -204,6 +207,7 @@ pub fn resolve_symbols(source: &str) -> BoundModule {
             params: Vec::new(),
             declarations,
             declaration_types,
+            duplicate_declarations,
             body,
         }]
     };
@@ -220,6 +224,7 @@ pub fn resolve_symbols(source: &str) -> BoundModule {
             params: Vec::new(),
             declarations: Vec::new(),
             declaration_types: HashMap::new(),
+            duplicate_declarations: Vec::new(),
             body: Vec::new(),
         });
 
@@ -757,6 +762,7 @@ fn parse_procedures(
         let mut declarations: Vec<String> = params.iter().map(|p| p.name.clone()).collect();
         let mut declaration_types: HashMap<String, BoundType> =
             params.iter().map(|p| (p.name.clone(), p.ty)).collect();
+        let mut duplicate_declarations: Vec<String> = Vec::new();
         for (name, _) in sorted_module_constants(module_constants) {
             if !declarations
                 .iter()
@@ -773,6 +779,7 @@ fn parse_procedures(
             &mut index,
             &mut declarations,
             &mut declaration_types,
+            &mut duplicate_declarations,
             &mut array_bounds,
             option_explicit,
             module_constants,
@@ -789,6 +796,7 @@ fn parse_procedures(
             params,
             declarations,
             declaration_types,
+            duplicate_declarations,
             body,
         });
     }
@@ -1046,6 +1054,7 @@ fn parse_block(
     index: &mut usize,
     declarations: &mut Vec<String>,
     declaration_types: &mut HashMap<String, BoundType>,
+    duplicate_declarations: &mut Vec<String>,
     array_bounds: &mut HashMap<String, usize>,
     option_explicit: &mut bool,
     module_constants: &HashMap<String, i32>,
@@ -1082,7 +1091,13 @@ fn parse_block(
         }
 
         if lower.starts_with("dim ") {
-            parse_declaration(line, declarations, declaration_types, array_bounds);
+            parse_declaration(
+                line,
+                declarations,
+                declaration_types,
+                duplicate_declarations,
+                array_bounds,
+            );
             *index += 1;
             continue;
         }
@@ -1120,6 +1135,7 @@ fn parse_block(
                 index,
                 declarations,
                 declaration_types,
+                duplicate_declarations,
                 array_bounds,
                 option_explicit,
                 module_constants,
@@ -1135,6 +1151,7 @@ fn parse_block(
                 index,
                 declarations,
                 declaration_types,
+                duplicate_declarations,
                 array_bounds,
                 option_explicit,
                 module_constants,
@@ -1164,6 +1181,7 @@ fn parse_block(
                 index,
                 declarations,
                 declaration_types,
+                duplicate_declarations,
                 array_bounds,
                 option_explicit,
                 module_constants,
@@ -1256,6 +1274,7 @@ fn parse_block(
                 index,
                 declarations,
                 declaration_types,
+                duplicate_declarations,
                 array_bounds,
                 option_explicit,
                 module_constants,
@@ -1283,6 +1302,7 @@ fn parse_if_stmt(
     index: &mut usize,
     declarations: &mut Vec<String>,
     declaration_types: &mut HashMap<String, BoundType>,
+    duplicate_declarations: &mut Vec<String>,
     array_bounds: &mut HashMap<String, usize>,
     option_explicit: &mut bool,
     module_constants: &HashMap<String, i32>,
@@ -1303,6 +1323,7 @@ fn parse_if_stmt(
         index,
         declarations,
         declaration_types,
+        duplicate_declarations,
         array_bounds,
         option_explicit,
         module_constants,
@@ -1314,6 +1335,7 @@ fn parse_if_stmt(
         index,
         declarations,
         declaration_types,
+        duplicate_declarations,
         array_bounds,
         option_explicit,
         module_constants,
@@ -1337,6 +1359,7 @@ fn parse_for_stmt(
     index: &mut usize,
     declarations: &mut Vec<String>,
     declaration_types: &mut HashMap<String, BoundType>,
+    duplicate_declarations: &mut Vec<String>,
     array_bounds: &mut HashMap<String, usize>,
     option_explicit: &mut bool,
     module_constants: &HashMap<String, i32>,
@@ -1356,6 +1379,7 @@ fn parse_for_stmt(
         index,
         declarations,
         declaration_types,
+        duplicate_declarations,
         array_bounds,
         option_explicit,
         module_constants,
@@ -1467,6 +1491,7 @@ fn parse_do_stmt(
     index: &mut usize,
     declarations: &mut Vec<String>,
     declaration_types: &mut HashMap<String, BoundType>,
+    duplicate_declarations: &mut Vec<String>,
     array_bounds: &mut HashMap<String, usize>,
     option_explicit: &mut bool,
     module_constants: &HashMap<String, i32>,
@@ -1489,6 +1514,7 @@ fn parse_do_stmt(
             index,
             declarations,
             declaration_types,
+            duplicate_declarations,
             array_bounds,
             option_explicit,
             module_constants,
@@ -1519,6 +1545,7 @@ fn parse_do_stmt(
             index,
             declarations,
             declaration_types,
+            duplicate_declarations,
             array_bounds,
             option_explicit,
             module_constants,
@@ -1618,6 +1645,7 @@ fn parse_select_case_stmt(
     index: &mut usize,
     declarations: &mut Vec<String>,
     declaration_types: &mut HashMap<String, BoundType>,
+    duplicate_declarations: &mut Vec<String>,
     array_bounds: &mut HashMap<String, usize>,
     option_explicit: &mut bool,
     module_constants: &HashMap<String, i32>,
@@ -1661,6 +1689,7 @@ fn parse_select_case_stmt(
                 index,
                 declarations,
                 declaration_types,
+                duplicate_declarations,
                 array_bounds,
                 option_explicit,
                 module_constants,
@@ -1689,6 +1718,7 @@ fn parse_select_case_stmt(
                 index,
                 declarations,
                 declaration_types,
+                duplicate_declarations,
                 array_bounds,
                 option_explicit,
                 module_constants,
@@ -1931,6 +1961,7 @@ fn parse_declaration(
     line: &str,
     declarations: &mut Vec<String>,
     declaration_types: &mut HashMap<String, BoundType>,
+    duplicate_declarations: &mut Vec<String>,
     array_bounds: &mut HashMap<String, usize>,
 ) {
     let remainder = line[4..].trim();
@@ -1945,6 +1976,14 @@ fn parse_declaration(
     };
 
     if let Some((base, max_index)) = parse_array_declaration(name_part) {
+        if declarations
+            .iter()
+            .any(|existing| existing.eq_ignore_ascii_case(&format!("{base}_0")))
+            || array_bounds.contains_key(&base)
+        {
+            duplicate_declarations.push(base);
+            return;
+        }
         array_bounds.insert(base.clone(), max_index);
         for idx in 0..=max_index {
             let alias = format!("{base}_{idx}");
@@ -1959,11 +1998,14 @@ fn parse_declaration(
         return;
     }
 
-    if let Some(name) = normalize_ident(name_part)
-        && !declarations
+    if let Some(name) = normalize_ident(name_part) {
+        if declarations
             .iter()
             .any(|existing| existing.eq_ignore_ascii_case(&name))
-    {
+        {
+            duplicate_declarations.push(name);
+            return;
+        }
         declaration_types.insert(name.clone(), declared_ty);
         declarations.push(name);
     }
@@ -2075,6 +2117,7 @@ fn parse_if_tail(
     index: &mut usize,
     declarations: &mut Vec<String>,
     declaration_types: &mut HashMap<String, BoundType>,
+    duplicate_declarations: &mut Vec<String>,
     array_bounds: &mut HashMap<String, usize>,
     option_explicit: &mut bool,
     module_constants: &HashMap<String, i32>,
@@ -2099,6 +2142,7 @@ fn parse_if_tail(
             index,
             declarations,
             declaration_types,
+            duplicate_declarations,
             array_bounds,
             option_explicit,
             module_constants,
@@ -2121,6 +2165,7 @@ fn parse_if_tail(
             index,
             declarations,
             declaration_types,
+            duplicate_declarations,
             array_bounds,
             option_explicit,
             module_constants,
@@ -2132,6 +2177,7 @@ fn parse_if_tail(
             index,
             declarations,
             declaration_types,
+            duplicate_declarations,
             array_bounds,
             option_explicit,
             module_constants,
@@ -2528,6 +2574,38 @@ mod tests {
         assert_eq!(
             main_proc.declaration_types.get("a_2").copied(),
             Some(super::BoundType::Integer)
+        );
+    }
+
+    #[test]
+    fn resolve_duplicate_dim_is_recorded_for_diagnostics() {
+        let source = "Sub Main()\nDim x\nDim x\nx = 1\nEnd Sub";
+        let module = resolve_symbols(source);
+        let main_proc = module
+            .procedures
+            .iter()
+            .find(|p| p.name == "main")
+            .expect("main procedure expected");
+        assert_eq!(
+            main_proc.duplicate_declarations,
+            vec!["x".to_string()],
+            "duplicate dim should be captured for downstream diagnostics"
+        );
+    }
+
+    #[test]
+    fn resolve_duplicate_array_dim_is_recorded_for_diagnostics() {
+        let source = "Sub Main()\nDim a(1) As Integer\nDim a(2) As Integer\na(0) = 1\nEnd Sub";
+        let module = resolve_symbols(source);
+        let main_proc = module
+            .procedures
+            .iter()
+            .find(|p| p.name == "main")
+            .expect("main procedure expected");
+        assert_eq!(
+            main_proc.duplicate_declarations,
+            vec!["a".to_string()],
+            "duplicate array dim should be captured for downstream diagnostics"
         );
     }
 

@@ -133,6 +133,30 @@ mod tests {
     }
 
     #[test]
+    fn duplicate_dim_declaration_is_rejected() {
+        let source = "Sub Main()\nDim x\nDim x\nx = 1\nEnd Sub";
+        let err = compile(source).expect_err("duplicate declarations should fail");
+        assert!(err.to_string().contains("duplicate declaration"));
+    }
+
+    #[test]
+    fn duplicate_label_declaration_is_rejected() {
+        let source = "Sub Main()\nDim x\nGoSub mark\nIf Err.Number = -1 Then\nmark:\nx = 1\nReturn\nmark:\nx = 2\nReturn\nEnd If\nEnd Sub";
+        let err = compile(source).expect_err("duplicate labels should fail");
+        assert!(err.to_string().contains("duplicate label declaration"));
+    }
+
+    #[test]
+    fn declaration_collision_with_other_procedure_is_rejected() {
+        let source = "Sub Main()\nDim helper\nhelper = 1\nEnd Sub\nSub Helper()\nEnd Sub";
+        let err = compile(source).expect_err("declaration/procedure collision should fail");
+        assert!(
+            err.to_string()
+                .contains("name collision between variable and procedure")
+        );
+    }
+
+    #[test]
     fn reject_unsupported_statement() {
         let source = "Sub Main()\nDim x\nx = x * 2\nEnd Sub";
         let err = compile(source).expect_err("typecheck should fail");

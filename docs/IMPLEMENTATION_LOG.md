@@ -1,6 +1,12 @@
 # Implementation Log
 
 ## 2026-02-28
+- Completed `v68` (`mvp-typing-option-explicit-diagnostics-v68`):
+  - expanded declaration diagnostics to reject duplicate `Dim` declarations, duplicate label declarations, and variable/procedure name collisions;
+  - added compiler regression tests and conformance fixtures for all three error paths;
+  - added formal obligations `FO-V68-001..003` and refreshed `latest_run` formal evidence;
+  - produced profile gate artifacts under `docs/evidence/profiles/v68/` with matrix `PASS`;
+  - started strict WSL async Kani lane (`v68-kani`) and registered deferred gate `DG-V68-001`.
 - Started typing ladder execution at `v67` (`mvp-typing-type-lattice-v67`):
   - added bound type model (`BoundType`) to compiler binding structures,
   - wired typed declaration capture for `Dim ... As <type>`, typed array element aliases, and parameter `As <type>`,

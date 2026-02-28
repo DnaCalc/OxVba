@@ -1,7 +1,7 @@
 # Formal Run Report
 
-- Timestamp (UTC): 2026-02-28T09:48:45Z
-- Profile scope: mvp-typing-type-lattice-v67
+- Timestamp (UTC): 2026-02-28T09:59:55Z
+- Profile scope: mvp-typing-option-explicit-diagnostics-v68
 - Overall mode: non-blocking
 - Kani required: false
 - Kani execution: deferred-to-wsl-async
@@ -202,3 +202,6 @@
 | FO-V67-001 | v67 | no | pass | cargo test -p oxvba-compiler typecheck::tests::join_numeric_promotes_to_wider_type | crates/oxvba-compiler/src/typecheck.rs |  |
 | FO-V67-002 | v67 | no | pass | cargo test -p oxvba-compiler resolve::tests::resolve_typed_param_and_dim_declarations | crates/oxvba-compiler/src/resolve.rs |  |
 | FO-V67-003 | v67 | no | pass | cargo test -p oxvba-compiler resolve::tests::resolve_typed_array_dim_records_element_alias_types | crates/oxvba-compiler/src/resolve.rs |  |
+| FO-V68-001 | v68 | no | pass | cargo test -p oxvba-compiler duplicate_dim_declaration_is_rejected | crates/oxvba-compiler/src/lib.rs |  |
+| FO-V68-002 | v68 | no | pass | cargo test -p oxvba-compiler duplicate_label_declaration_is_rejected | crates/oxvba-compiler/src/lib.rs |  |
+| FO-V68-003 | v68 | no | pass | cargo test -p oxvba-compiler declaration_collision_with_other_procedure_is_rejected | crates/oxvba-compiler/src/lib.rs |  |

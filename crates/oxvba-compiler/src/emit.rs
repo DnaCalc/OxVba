@@ -23,6 +23,7 @@ pub fn emit_bytecode(module: &BoundModule) -> Bytecode {
             params: Vec::new(),
             declarations: module.declarations.clone(),
             declaration_types: module.declaration_types.clone(),
+            duplicate_declarations: Vec::new(),
             body: module.body.clone(),
         }]
     } else {

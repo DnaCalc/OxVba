@@ -16,7 +16,22 @@ pub fn check_types(module: BoundModule) -> Result<BoundModule, String> {
     for procedure in &mut module.procedures {
         let mut declared: HashSet<String> = procedure.declarations.iter().cloned().collect();
         let mut declared_types: HashMap<String, BoundType> = procedure.declaration_types.clone();
-        let labels = collect_labels(&procedure.body);
+        if let Some(duplicate) = procedure.duplicate_declarations.first() {
+            return Err(format!("duplicate declaration: {duplicate}"));
+        }
+
+        for declared_name in &procedure.declarations {
+            if declared_name.eq_ignore_ascii_case(&procedure.name) {
+                continue;
+            }
+            if proc_names.contains(declared_name) {
+                return Err(format!(
+                    "name collision between variable and procedure: {declared_name}"
+                ));
+            }
+        }
+
+        let labels = collect_labels(&procedure.body)?;
         check_stmt_list(
             &procedure.body,
             module.option_explicit,
@@ -641,36 +656,46 @@ fn map_call_args_to_params<'a>(
     Ok(mapped)
 }
 
-fn collect_labels(stmts: &[BoundStmt]) -> HashSet<String> {
+fn collect_labels(stmts: &[BoundStmt]) -> Result<HashSet<String>, String> {
     let mut labels = HashSet::new();
-    collect_labels_recursive(stmts, &mut labels);
-    labels
+    let mut duplicates = Vec::new();
+    collect_labels_recursive(stmts, &mut labels, &mut duplicates);
+    if let Some(name) = duplicates.first() {
+        return Err(format!("duplicate label declaration: {name}"));
+    }
+    Ok(labels)
 }
 
-fn collect_labels_recursive(stmts: &[BoundStmt], labels: &mut HashSet<String>) {
+fn collect_labels_recursive(
+    stmts: &[BoundStmt],
+    labels: &mut HashSet<String>,
+    duplicates: &mut Vec<String>,
+) {
     for stmt in stmts {
         match stmt {
             BoundStmt::Label { name } => {
-                labels.insert(name.clone());
+                if !labels.insert(name.clone()) {
+                    duplicates.push(name.clone());
+                }
             }
             BoundStmt::IfCond {
                 then_body,
                 else_body,
                 ..
             } => {
-                collect_labels_recursive(then_body, labels);
-                collect_labels_recursive(else_body, labels);
+                collect_labels_recursive(then_body, labels, duplicates);
+                collect_labels_recursive(else_body, labels, duplicates);
             }
             BoundStmt::ForRange { body, .. } | BoundStmt::DoWhile { body, .. } => {
-                collect_labels_recursive(body, labels);
+                collect_labels_recursive(body, labels, duplicates);
             }
             BoundStmt::SelectCase {
                 arms, else_body, ..
             } => {
                 for (_, body) in arms {
-                    collect_labels_recursive(body, labels);
+                    collect_labels_recursive(body, labels, duplicates);
                 }
-                collect_labels_recursive(else_body, labels);
+                collect_labels_recursive(else_body, labels, duplicates);
             }
             _ => {}
         }

@@ -191,3 +191,6 @@ FO-V66-003,v66,"cargo test -p oxvba-host formal_v66_profile_status_document_exis
 FO-V67-001,v67,"cargo test -p oxvba-compiler typecheck::tests::join_numeric_promotes_to_wider_type",no,true,crates/oxvba-compiler/src/typecheck.rs
 FO-V67-002,v67,"cargo test -p oxvba-compiler resolve::tests::resolve_typed_param_and_dim_declarations",no,true,crates/oxvba-compiler/src/resolve.rs
 FO-V67-003,v67,"cargo test -p oxvba-compiler resolve::tests::resolve_typed_array_dim_records_element_alias_types",no,true,crates/oxvba-compiler/src/resolve.rs
+FO-V68-001,v68,"cargo test -p oxvba-compiler duplicate_dim_declaration_is_rejected",no,true,crates/oxvba-compiler/src/lib.rs
+FO-V68-002,v68,"cargo test -p oxvba-compiler duplicate_label_declaration_is_rejected",no,true,crates/oxvba-compiler/src/lib.rs
+FO-V68-003,v68,"cargo test -p oxvba-compiler declaration_collision_with_other_procedure_is_rejected",no,true,crates/oxvba-compiler/src/lib.rs

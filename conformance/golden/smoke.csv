@@ -40,6 +40,9 @@ udt_declaration_basic.bas,ok,9
 module_const_basic.bas,ok,"5,7"
 option_explicit_error.bas,error,
 option_explicit_ok.bas,ok,3
+duplicate_dim_error.bas,error,
+duplicate_label_error.bas,error,
+declaration_collision_proc_name_error.bas,error,
 on_error_default_fail.bas,error,
 on_error_goto_zero_fail.bas,error,
 on_error_goto_label_missing_label_error.bas,error,
