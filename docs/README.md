@@ -196,6 +196,7 @@
 | Spec Checklist | [`evidence/SPEC_CHECKLIST.md`](evidence/SPEC_CHECKLIST.md) | Structured language + built-in/library checklist aligned to current evidence and planned gaps. |
 | Conformance Check Topics | [`evidence/conformance/CONFORMANCE_CHECK_TOPICS.md`](evidence/conformance/CONFORMANCE_CHECK_TOPICS.md) | Oracle-driven backlog for semantically uncertain VBA behaviors to differential-check after implementation. |
 | Deferred Formal Gates | [`evidence/formal/DEFERRED_GATES.md`](evidence/formal/DEFERRED_GATES.md) | Async Kani deferred-gate register and reconciliation status. |
+| Remote Kani Runner | [`evidence/formal/REMOTE_KANI_RUNNER.md`](evidence/formal/REMOTE_KANI_RUNNER.md) | Remote Linux Kani orchestration model, constraints, commands, and artifact retrieval flow. |
 
 ## Synthesis Records
 
