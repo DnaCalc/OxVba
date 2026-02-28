@@ -2,6 +2,9 @@ file,status,slots
 conversion_cint_basic.bas,ok,5
 conversion_nested_clng_cint.bas,ok,7
 conversion_val_str_subset.bas,ok,9
+stdlib_instr_case_ops.bas,ok,"3,789,654"
+stdlib_len_basic.bas,ok,4
+stdlib_slice_ops.bas,ok,"12,45,234"
 do_exit_do.bas,ok,4
 do_loop_while_basic.bas,ok,3
 do_while_basic.bas,ok,3

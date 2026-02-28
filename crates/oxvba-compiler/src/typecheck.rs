@@ -239,6 +239,12 @@ fn check_expr(
         BoundExpr::AddConst { var, .. } | BoundExpr::SubConst { var, .. } => {
             ensure_declared(var, option_explicit, declared, declarations)
         }
+        BoundExpr::IntrinsicCall { args, .. } => {
+            for arg in args {
+                check_expr(arg, option_explicit, declared, declarations)?;
+            }
+            Ok(())
+        }
     }
 }
 

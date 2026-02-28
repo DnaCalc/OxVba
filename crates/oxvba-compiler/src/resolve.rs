@@ -6,6 +6,7 @@ pub enum BoundExpr {
     Var(String),
     AddConst { var: String, delta: i32 },
     SubConst { var: String, delta: i32 },
+    IntrinsicCall { name: String, args: Vec<BoundExpr> },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1143,6 +1144,9 @@ fn parse_expr(text: &str, array_bounds: &HashMap<String, usize>) -> Option<Bound
     if let Some(inner) = parse_intrinsic_conversion_expr(expr, array_bounds) {
         return Some(inner);
     }
+    if let Some(call) = parse_stdlib_intrinsic_call_expr(expr, array_bounds) {
+        return Some(call);
+    }
 
     if let Some((left_raw, right_raw)) = expr.split_once('+') {
         let var = parse_reference_name(left_raw, array_bounds)?;
@@ -1176,6 +1180,81 @@ fn parse_intrinsic_conversion_expr(
         return None;
     }
     parse_expr(expr[open + 1..close].trim(), array_bounds)
+}
+
+fn parse_stdlib_intrinsic_call_expr(
+    expr: &str,
+    array_bounds: &HashMap<String, usize>,
+) -> Option<BoundExpr> {
+    let open = expr.find('(')?;
+    let close = expr.rfind(')')?;
+    if close <= open || !expr[close + 1..].trim().is_empty() {
+        return None;
+    }
+    let name = normalize_ident(expr[..open].trim())?;
+    if !matches!(
+        name.as_str(),
+        "len" | "left" | "right" | "mid" | "instr" | "lcase" | "ucase"
+    ) {
+        return None;
+    }
+    let args_raw = expr[open + 1..close].trim();
+    let args_text = split_call_args(args_raw)?;
+    let args = args_text
+        .iter()
+        .map(|arg| parse_expr(arg, array_bounds))
+        .collect::<Option<Vec<_>>>()?;
+
+    let arity_ok = match name.as_str() {
+        "len" | "lcase" | "ucase" => args.len() == 1,
+        "left" | "right" | "instr" => args.len() == 2,
+        "mid" => args.len() == 2 || args.len() == 3,
+        _ => false,
+    };
+    if !arity_ok {
+        return None;
+    }
+
+    Some(BoundExpr::IntrinsicCall { name, args })
+}
+
+fn split_call_args(args_raw: &str) -> Option<Vec<&str>> {
+    if args_raw.trim().is_empty() {
+        return Some(Vec::new());
+    }
+
+    let mut out = Vec::new();
+    let mut depth = 0i32;
+    let mut start = 0usize;
+    for (idx, ch) in args_raw.char_indices() {
+        match ch {
+            '(' => depth += 1,
+            ')' => {
+                depth -= 1;
+                if depth < 0 {
+                    return None;
+                }
+            }
+            ',' if depth == 0 => {
+                let part = args_raw[start..idx].trim();
+                if part.is_empty() {
+                    return None;
+                }
+                out.push(part);
+                start = idx + 1;
+            }
+            _ => {}
+        }
+    }
+    if depth != 0 {
+        return None;
+    }
+    let tail = args_raw[start..].trim();
+    if tail.is_empty() {
+        return None;
+    }
+    out.push(tail);
+    Some(out)
 }
 
 fn parse_condition(text: &str, array_bounds: &HashMap<String, usize>) -> Option<BoundCond> {
@@ -1485,6 +1564,19 @@ mod tests {
             panic!("expected assignment");
         };
         assert_eq!(expr, &BoundExpr::IntConst(7));
+    }
+
+    #[test]
+    fn resolve_stdlib_intrinsic_call_expression() {
+        let source = "Sub Main()\nDim x\nx = Len(1234)\nEnd Sub";
+        let module = resolve_symbols(source);
+        let Some(BoundStmt::Assign { expr, .. }) = module.body.first() else {
+            panic!("expected assignment");
+        };
+        assert!(matches!(
+            expr,
+            BoundExpr::IntrinsicCall { name, args } if name == "len" && args.len() == 1
+        ));
     }
 
     #[test]

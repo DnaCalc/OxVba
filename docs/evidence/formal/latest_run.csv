@@ -125,3 +125,6 @@
 "FO-V45-001","v45","cargo test -p oxvba-host formal_v45_cint_conversion_subset","no","pass","","crates/oxvba-host/src/engine.rs"
 "FO-V45-002","v45","cargo test -p oxvba-host formal_v45_nested_conversion_subset","no","pass","","crates/oxvba-host/src/engine.rs"
 "FO-V45-003","v45","cargo test -p oxvba-host formal_v45_val_str_conversion_subset","no","pass","","crates/oxvba-host/src/engine.rs"
+"FO-V46-001","v46","cargo test -p oxvba-host formal_v46_len_intrinsic_digit_count","no","pass","","crates/oxvba-host/src/engine.rs"
+"FO-V46-002","v46","cargo test -p oxvba-host formal_v46_slice_intrinsics_digit_subsets","no","pass","","crates/oxvba-host/src/engine.rs"
+"FO-V46-003","v46","cargo test -p oxvba-host formal_v46_instr_and_case_intrinsics","no","pass","","crates/oxvba-host/src/engine.rs"

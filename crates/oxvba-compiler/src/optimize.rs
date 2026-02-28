@@ -144,6 +144,7 @@ fn expr_uses_var(expr: &BoundExpr, var: &str) -> bool {
         BoundExpr::AddConst { var: name, .. } => name == var,
         BoundExpr::SubConst { var: name, .. } => name == var,
         BoundExpr::IntConst(_) => false,
+        BoundExpr::IntrinsicCall { args, .. } => args.iter().any(|arg| expr_uses_var(arg, var)),
     }
 }
 

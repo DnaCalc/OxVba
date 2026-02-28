@@ -376,6 +376,28 @@ mod tests {
     }
 
     #[test]
+    fn compile_len_intrinsic_emits_intrinsic_instruction() {
+        let source = "Sub Main()\nDim x\nx = Len(1234)\nEnd Sub";
+        let out = compile(source).expect("compile should succeed");
+        assert!(
+            out.instructions
+                .iter()
+                .any(|i| matches!(i, Instruction::IntrinsicLenDigits { .. }))
+        );
+    }
+
+    #[test]
+    fn compile_mid_intrinsic_emits_intrinsic_instruction() {
+        let source = "Sub Main()\nDim x\nx = Mid(12345, 2, 2)\nEnd Sub";
+        let out = compile(source).expect("compile should succeed");
+        assert!(
+            out.instructions
+                .iter()
+                .any(|i| matches!(i, Instruction::IntrinsicMidDigits { .. }))
+        );
+    }
+
+    #[test]
     fn compile_property_let_assignment_routes_to_call() {
         let source = "Sub Main()\nDim x\nx = 1\nValue = x\nEnd Sub\nProperty Let Value(ByRef target)\ntarget = target + 2\nEnd Property";
         let out = compile(source).expect("compile should succeed");

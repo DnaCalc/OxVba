@@ -28,6 +28,7 @@ Current corpus includes:
 - Named argument call binding (`name := expr`) with ordering validation.
 - `Property Get/Let/Set` declaration subset with assignment-form routing to `Let/Set`.
 - Intrinsic conversion subset: `CInt`, `CLng`, `CDbl`, `CStr`, `CBool`, `CDate`, `Val`, `Str` (current int-domain semantics).
+- String-core intrinsic subset: `Len`, `Left`, `Right`, `Mid`, `InStr`, `LCase`, `UCase` (decimal-string-over-int semantics).
 - Fixed-size arrays with indexed load/store and bounds errors.
 - Dynamic `ReDim` / `ReDim Preserve` (1D literal-bound subset).
 - Module-level `Const` and `Enum` declaration usage subset.

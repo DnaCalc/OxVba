@@ -162,7 +162,7 @@ fn emit_stmt(
     match stmt {
         BoundStmt::Assign { target, expr } => {
             if let Some(target_slot) = slot_map.get(target.as_str()).copied() {
-                emit_expr_into(expr, target_slot, slot_map, instructions);
+                emit_expr_into(expr, target_slot, slot_map, temps, instructions);
             }
         }
         BoundStmt::IfCond {
@@ -226,10 +226,10 @@ fn emit_stmt(
             body,
         } => {
             if let Some(var_slot) = slot_map.get(var.as_str()).copied() {
-                emit_expr_into(start, var_slot, slot_map, instructions);
+                emit_expr_into(start, var_slot, slot_map, temps, instructions);
                 let end_slot = temps.alloc_temp();
                 let cond_slot = temps.alloc_temp();
-                emit_expr_into(end, end_slot, slot_map, instructions);
+                emit_expr_into(end, end_slot, slot_map, temps, instructions);
 
                 let loop_head = instructions.len();
                 instructions.push(Instruction::CmpLeSlots {
@@ -375,7 +375,7 @@ fn emit_stmt(
             else_body,
         } => {
             let expr_slot = temps.alloc_temp();
-            emit_expr_into(expr, expr_slot, slot_map, instructions);
+            emit_expr_into(expr, expr_slot, slot_map, temps, instructions);
             let mut end_patches: Vec<usize> = Vec::new();
 
             for (values, body) in arms {
@@ -478,7 +478,7 @@ fn emit_stmt(
                         continue;
                     }
 
-                    emit_expr_into(&arg.expr, param_slot, slot_map, instructions);
+                    emit_expr_into(&arg.expr, param_slot, slot_map, temps, instructions);
                 }
             }
 
@@ -510,8 +510,8 @@ fn emit_cond_into(
         BoundCond::Compare { op, lhs, rhs } => {
             let lhs_slot = temps.alloc_temp();
             let rhs_slot = temps.alloc_temp();
-            emit_expr_into(lhs, lhs_slot, slot_map, instructions);
-            emit_expr_into(rhs, rhs_slot, slot_map, instructions);
+            emit_expr_into(lhs, lhs_slot, slot_map, temps, instructions);
+            emit_expr_into(rhs, rhs_slot, slot_map, temps, instructions);
             match op {
                 CompareOp::Eq => instructions.push(Instruction::CmpEqSlots {
                     dst,
@@ -548,7 +548,7 @@ fn emit_cond_into(
         BoundCond::Truthy(expr) => {
             let expr_slot = temps.alloc_temp();
             let zero_slot = temps.alloc_temp();
-            emit_expr_into(expr, expr_slot, slot_map, instructions);
+            emit_expr_into(expr, expr_slot, slot_map, temps, instructions);
             instructions.push(Instruction::LoadConstI32 {
                 slot: zero_slot,
                 value: 0,
@@ -596,6 +596,7 @@ fn emit_expr_into(
     expr: &BoundExpr,
     dst: usize,
     slot_map: &HashMap<String, usize>,
+    temps: &mut TempSlotAllocator,
     instructions: &mut Vec<Instruction>,
 ) {
     match expr {
@@ -644,6 +645,58 @@ fn emit_expr_into(
                     slot: dst,
                     value: *delta,
                 });
+            }
+        }
+        BoundExpr::IntrinsicCall { name, args } => {
+            let mut arg_slots = Vec::with_capacity(args.len());
+            for arg in args {
+                let slot = temps.alloc_temp();
+                emit_expr_into(arg, slot, slot_map, temps, instructions);
+                arg_slots.push(slot);
+            }
+
+            match (name.as_str(), arg_slots.as_slice()) {
+                ("len", [src]) => {
+                    instructions.push(Instruction::IntrinsicLenDigits { dst, src: *src })
+                }
+                ("left", [src, count]) => instructions.push(Instruction::IntrinsicLeftDigits {
+                    dst,
+                    src: *src,
+                    count: *count,
+                }),
+                ("right", [src, count]) => instructions.push(Instruction::IntrinsicRightDigits {
+                    dst,
+                    src: *src,
+                    count: *count,
+                }),
+                ("mid", [src, start]) => instructions.push(Instruction::IntrinsicMidDigits {
+                    dst,
+                    src: *src,
+                    start: *start,
+                    count: None,
+                }),
+                ("mid", [src, start, count]) => {
+                    instructions.push(Instruction::IntrinsicMidDigits {
+                        dst,
+                        src: *src,
+                        start: *start,
+                        count: Some(*count),
+                    })
+                }
+                ("instr", [haystack, needle]) => {
+                    instructions.push(Instruction::IntrinsicInStrDigits {
+                        dst,
+                        haystack: *haystack,
+                        needle: *needle,
+                    })
+                }
+                ("lcase", [src]) => {
+                    instructions.push(Instruction::IntrinsicLowerDigits { dst, src: *src })
+                }
+                ("ucase", [src]) => {
+                    instructions.push(Instruction::IntrinsicUpperDigits { dst, src: *src })
+                }
+                _ => {}
             }
         }
     }

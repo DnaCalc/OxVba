@@ -1,7 +1,7 @@
 # Formal Run Report
 
-- Timestamp (UTC): 2026-02-28T00:24:03Z
-- Profile scope: mvp-stdlib-conversion-core-v45
+- Timestamp (UTC): 2026-02-28T00:36:15Z
+- Profile scope: mvp-stdlib-string-core-v46
 - Overall mode: non-blocking
 - Kani required: false
 - Kani execution: deferred-to-wsl-async
@@ -136,3 +136,6 @@
 | FO-V45-001 | v45 | no | pass | cargo test -p oxvba-host formal_v45_cint_conversion_subset | crates/oxvba-host/src/engine.rs |  |
 | FO-V45-002 | v45 | no | pass | cargo test -p oxvba-host formal_v45_nested_conversion_subset | crates/oxvba-host/src/engine.rs |  |
 | FO-V45-003 | v45 | no | pass | cargo test -p oxvba-host formal_v45_val_str_conversion_subset | crates/oxvba-host/src/engine.rs |  |
+| FO-V46-001 | v46 | no | pass | cargo test -p oxvba-host formal_v46_len_intrinsic_digit_count | crates/oxvba-host/src/engine.rs |  |
+| FO-V46-002 | v46 | no | pass | cargo test -p oxvba-host formal_v46_slice_intrinsics_digit_subsets | crates/oxvba-host/src/engine.rs |  |
+| FO-V46-003 | v46 | no | pass | cargo test -p oxvba-host formal_v46_instr_and_case_intrinsics | crates/oxvba-host/src/engine.rs |  |

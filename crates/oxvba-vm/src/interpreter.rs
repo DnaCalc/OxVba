@@ -61,6 +61,58 @@ impl Vm {
                     self.write_slot(*dst, value)?;
                     pc += 1;
                 }
+                Instruction::IntrinsicLenDigits { dst, src } => {
+                    let value = self.read_slot(*src)?;
+                    self.write_slot(*dst, Self::len_digits(value))?;
+                    pc += 1;
+                }
+                Instruction::IntrinsicLeftDigits { dst, src, count } => {
+                    let value = self.read_slot(*src)?;
+                    let count = self.read_slot(*count)?;
+                    self.write_slot(*dst, Self::left_digits(value, count))?;
+                    pc += 1;
+                }
+                Instruction::IntrinsicRightDigits { dst, src, count } => {
+                    let value = self.read_slot(*src)?;
+                    let count = self.read_slot(*count)?;
+                    self.write_slot(*dst, Self::right_digits(value, count))?;
+                    pc += 1;
+                }
+                Instruction::IntrinsicMidDigits {
+                    dst,
+                    src,
+                    start,
+                    count,
+                } => {
+                    let value = self.read_slot(*src)?;
+                    let start = self.read_slot(*start)?;
+                    let count = match count {
+                        Some(slot) => Some(self.read_slot(*slot)?),
+                        None => None,
+                    };
+                    self.write_slot(*dst, Self::mid_digits(value, start, count))?;
+                    pc += 1;
+                }
+                Instruction::IntrinsicInStrDigits {
+                    dst,
+                    haystack,
+                    needle,
+                } => {
+                    let haystack = self.read_slot(*haystack)?;
+                    let needle = self.read_slot(*needle)?;
+                    self.write_slot(*dst, Self::instr_digits(haystack, needle))?;
+                    pc += 1;
+                }
+                Instruction::IntrinsicLowerDigits { dst, src } => {
+                    let value = self.read_slot(*src)?;
+                    self.write_slot(*dst, Self::to_lower_digits(value))?;
+                    pc += 1;
+                }
+                Instruction::IntrinsicUpperDigits { dst, src } => {
+                    let value = self.read_slot(*src)?;
+                    self.write_slot(*dst, Self::to_upper_digits(value))?;
+                    pc += 1;
+                }
                 Instruction::CmpEqSlots { dst, lhs, rhs } => {
                     let out = if self.read_slot(*lhs)? == self.read_slot(*rhs)? {
                         1
@@ -238,6 +290,68 @@ impl Vm {
             Ok(current_pc + 1)
         }
     }
+
+    fn len_digits(value: i32) -> i32 {
+        value.to_string().chars().count() as i32
+    }
+
+    fn left_digits(value: i32, count: i32) -> i32 {
+        Self::slice_digits(value, 0, Some(count))
+    }
+
+    fn right_digits(value: i32, count: i32) -> i32 {
+        if count <= 0 {
+            return 0;
+        }
+        let text = value.to_string();
+        let chars = text.chars().collect::<Vec<_>>();
+        let take = (count as usize).min(chars.len());
+        let start = chars.len().saturating_sub(take);
+        let out = chars[start..].iter().collect::<String>();
+        out.parse::<i32>().unwrap_or(0)
+    }
+
+    fn mid_digits(value: i32, start: i32, count: Option<i32>) -> i32 {
+        let zero_based_start = if start <= 1 { 0 } else { (start - 1) as usize };
+        Self::slice_digits(value, zero_based_start, count)
+    }
+
+    fn slice_digits(value: i32, start: usize, count: Option<i32>) -> i32 {
+        let text = value.to_string();
+        let chars = text.chars().collect::<Vec<_>>();
+        if start >= chars.len() {
+            return 0;
+        }
+        let end = match count {
+            Some(c) if c <= 0 => start,
+            Some(c) => (start + c as usize).min(chars.len()),
+            None => chars.len(),
+        };
+        let out = chars[start..end].iter().collect::<String>();
+        out.parse::<i32>().unwrap_or(0)
+    }
+
+    fn instr_digits(haystack: i32, needle: i32) -> i32 {
+        let hay = haystack.to_string();
+        let nee = needle.to_string();
+        hay.find(&nee).map_or(0, |idx| (idx + 1) as i32)
+    }
+
+    fn to_lower_digits(value: i32) -> i32 {
+        value
+            .to_string()
+            .to_ascii_lowercase()
+            .parse::<i32>()
+            .unwrap_or(0)
+    }
+
+    fn to_upper_digits(value: i32) -> i32 {
+        value
+            .to_string()
+            .to_ascii_uppercase()
+            .parse::<i32>()
+            .unwrap_or(0)
+    }
 }
 
 #[cfg(test)]
@@ -277,6 +391,54 @@ mod tests {
         let mut vm = Vm::default();
         vm.execute(&bytecode).expect("vm should execute bytecode");
         assert_eq!(vm.snapshot_slots(1), vec![7]);
+    }
+
+    #[test]
+    fn executes_intrinsic_digit_string_subset() {
+        let bytecode = Bytecode {
+            instructions: vec![
+                Instruction::LoadConstI32 {
+                    slot: 0,
+                    value: 12345,
+                },
+                Instruction::LoadConstI32 { slot: 1, value: 2 },
+                Instruction::LoadConstI32 { slot: 2, value: 3 },
+                Instruction::IntrinsicLenDigits { dst: 3, src: 0 },
+                Instruction::IntrinsicLeftDigits {
+                    dst: 4,
+                    src: 0,
+                    count: 1,
+                },
+                Instruction::IntrinsicRightDigits {
+                    dst: 5,
+                    src: 0,
+                    count: 1,
+                },
+                Instruction::IntrinsicMidDigits {
+                    dst: 6,
+                    src: 0,
+                    start: 1,
+                    count: Some(2),
+                },
+                Instruction::IntrinsicInStrDigits {
+                    dst: 7,
+                    haystack: 0,
+                    needle: 2,
+                },
+                Instruction::IntrinsicLowerDigits { dst: 8, src: 0 },
+                Instruction::IntrinsicUpperDigits { dst: 9, src: 0 },
+                Instruction::Halt,
+            ],
+            slot_count: 10,
+            user_slot_count: 10,
+        };
+
+        let mut vm = Vm::default();
+        vm.execute(&bytecode).expect("vm should execute bytecode");
+        assert_eq!(
+            vm.snapshot_slots(10),
+            vec![12345, 2, 3, 5, 12, 45, 234, 3, 12345, 12345]
+        );
     }
 
     #[test]

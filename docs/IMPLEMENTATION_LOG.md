@@ -236,3 +236,8 @@
   - lowered conversion wrappers to current integer expression model for deterministic subset semantics;
   - added conversion conformance fixtures and formal obligations (`FO-V45-001..003`);
   - published `PROFILE_STATUS_V45` and `WORKSET_2026-02-27_STDLIB_CONVERSION_CORE_V45`.
+- Started `mvp-stdlib-string-core-v46` stdlib-core pass:
+  - added intrinsic expression support for `Len`, `Left`, `Right`, `Mid`, `InStr`, `LCase`, `UCase`;
+  - extended bytecode/vm runtime with intrinsic execution ops under current decimal-string-over-int semantics;
+  - added string-core conformance fixtures and formal obligations (`FO-V46-001..003`);
+  - published `PROFILE_STATUS_V46` and `WORKSET_2026-02-27_STDLIB_STRING_CORE_V46`.
