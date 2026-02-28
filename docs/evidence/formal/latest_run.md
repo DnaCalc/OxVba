@@ -1,7 +1,7 @@
 # Formal Run Report
 
-- Timestamp (UTC): 2026-02-28T09:59:55Z
-- Profile scope: mvp-typing-option-explicit-diagnostics-v68
+- Timestamp (UTC): 2026-02-28T10:16:21Z
+- Profile scope: mvp-typing-default-type-rules-v69
 - Overall mode: non-blocking
 - Kani required: false
 - Kani execution: deferred-to-wsl-async
@@ -205,3 +205,6 @@
 | FO-V68-001 | v68 | no | pass | cargo test -p oxvba-compiler duplicate_dim_declaration_is_rejected | crates/oxvba-compiler/src/lib.rs |  |
 | FO-V68-002 | v68 | no | pass | cargo test -p oxvba-compiler duplicate_label_declaration_is_rejected | crates/oxvba-compiler/src/lib.rs |  |
 | FO-V68-003 | v68 | no | pass | cargo test -p oxvba-compiler declaration_collision_with_other_procedure_is_rejected | crates/oxvba-compiler/src/lib.rs |  |
+| FO-V69-001 | v69 | no | pass | cargo test -p oxvba-compiler defobj_applies_to_implicit_declarations | crates/oxvba-compiler/src/lib.rs |  |
+| FO-V69-002 | v69 | no | pass | cargo test -p oxvba-compiler explicit_as_overrides_type_char_for_params | crates/oxvba-compiler/src/lib.rs |  |
+| FO-V69-003 | v69 | no | pass | cargo test -p oxvba-compiler resolve::tests::resolve_def_type_and_type_char_precedence_for_params | crates/oxvba-compiler/src/resolve.rs |  |

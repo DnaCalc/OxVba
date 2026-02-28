@@ -117,6 +117,7 @@ pub enum BoundCond {
 pub struct BoundModule {
     pub source: String,
     pub option_explicit: bool,
+    pub default_type_table: [BoundType; 26],
     pub declarations: Vec<String>,
     pub declaration_types: HashMap<String, BoundType>,
     pub body: Vec<BoundStmt>,
@@ -160,6 +161,7 @@ pub enum IntrinsicSurface {
 pub fn resolve_symbols(source: &str) -> BoundModule {
     let mut option_explicit = false;
     let lines = normalize_source_lines(source);
+    let default_type_table = collect_default_type_table(&lines);
     let module_constants = collect_module_constants(&lines);
     let property_write_routes = collect_property_write_routes(&lines);
 
@@ -171,6 +173,7 @@ pub fn resolve_symbols(source: &str) -> BoundModule {
         parse_procedures(
             &lines,
             &mut option_explicit,
+            &default_type_table,
             &module_constants,
             &property_write_routes,
         )
@@ -197,6 +200,7 @@ pub fn resolve_symbols(source: &str) -> BoundModule {
             &mut duplicate_declarations,
             &mut array_bounds,
             &mut option_explicit,
+            &default_type_table,
             &module_constants,
             &property_write_routes,
             &[],
@@ -231,6 +235,7 @@ pub fn resolve_symbols(source: &str) -> BoundModule {
     BoundModule {
         source: source.to_string(),
         option_explicit,
+        default_type_table,
         declarations: entry.declarations.clone(),
         declaration_types: entry.declaration_types.clone(),
         body: entry.body.clone(),
@@ -732,6 +737,7 @@ fn pp_bool(value: bool) -> i32 {
 fn parse_procedures(
     lines: &[String],
     option_explicit: &mut bool,
+    default_type_table: &[BoundType; 26],
     module_constants: &HashMap<String, i32>,
     property_write_routes: &HashMap<String, String>,
 ) -> Vec<BoundProcedure> {
@@ -753,7 +759,7 @@ fn parse_procedures(
             continue;
         };
 
-        let Some((name, params)) = parse_proc_signature(line, kind) else {
+        let Some((name, params)) = parse_proc_signature(line, kind, default_type_table) else {
             index += 1;
             continue;
         };
@@ -782,6 +788,7 @@ fn parse_procedures(
             &mut duplicate_declarations,
             &mut array_bounds,
             option_explicit,
+            default_type_table,
             module_constants,
             property_write_routes,
             &[end_term],
@@ -859,7 +866,11 @@ fn parse_proc_base_name(line: &str, kind: ProcKind) -> Option<String> {
     normalize_ident(name_token)
 }
 
-fn parse_proc_signature(line: &str, kind: ProcKind) -> Option<(String, Vec<BoundParam>)> {
+fn parse_proc_signature(
+    line: &str,
+    kind: ProcKind,
+    default_type_table: &[BoundType; 26],
+) -> Option<(String, Vec<BoundParam>)> {
     let prefix_len = kind.prefix_len();
     let rest = line.get(prefix_len..)?.trim();
     let name = kind.canonical_name(parse_proc_base_name(line, kind)?);
@@ -897,14 +908,15 @@ fn parse_proc_signature(line: &str, kind: ProcKind) -> Option<(String, Vec<Bound
                     (remainder, None)
                 };
 
-                let (name_text, ty) = if let Some((lhs, rhs)) = split_keyword_ci(decl_text, "as") {
-                    (
-                        lhs.trim(),
-                        parse_declared_type(rhs.trim()).unwrap_or(BoundType::Variant),
-                    )
-                } else {
-                    (decl_text, BoundType::Variant)
-                };
+                let (name_text, explicit_ty) =
+                    if let Some((lhs, rhs)) = split_keyword_ci(decl_text, "as") {
+                        (
+                            lhs.trim(),
+                            Some(parse_declared_type(rhs.trim()).unwrap_or(BoundType::Variant)),
+                        )
+                    } else {
+                        (decl_text, None)
+                    };
 
                 if default_value.is_some() && !optional {
                     return None;
@@ -918,7 +930,13 @@ fn parse_proc_signature(line: &str, kind: ProcKind) -> Option<(String, Vec<Bound
                     return None;
                 }
 
-                let param_name = normalize_ident(name_text)?;
+                let (param_name, type_char_ty) = normalize_ident_with_type_char(name_text)?;
+                let ty = resolve_declared_type(
+                    &param_name,
+                    explicit_ty,
+                    type_char_ty,
+                    default_type_table,
+                );
                 params.push(BoundParam {
                     name: param_name,
                     by_ref,
@@ -1057,6 +1075,7 @@ fn parse_block(
     duplicate_declarations: &mut Vec<String>,
     array_bounds: &mut HashMap<String, usize>,
     option_explicit: &mut bool,
+    default_type_table: &[BoundType; 26],
     module_constants: &HashMap<String, i32>,
     property_write_routes: &HashMap<String, String>,
     terminators: &[&str],
@@ -1097,7 +1116,13 @@ fn parse_block(
                 declaration_types,
                 duplicate_declarations,
                 array_bounds,
+                default_type_table,
             );
+            *index += 1;
+            continue;
+        }
+
+        if parse_def_type_directive(line).is_some() {
             *index += 1;
             continue;
         }
@@ -1138,6 +1163,7 @@ fn parse_block(
                 duplicate_declarations,
                 array_bounds,
                 option_explicit,
+                default_type_table,
                 module_constants,
                 property_write_routes,
                 line,
@@ -1154,6 +1180,7 @@ fn parse_block(
                 duplicate_declarations,
                 array_bounds,
                 option_explicit,
+                default_type_table,
                 module_constants,
                 property_write_routes,
                 line,
@@ -1184,6 +1211,7 @@ fn parse_block(
                 duplicate_declarations,
                 array_bounds,
                 option_explicit,
+                default_type_table,
                 module_constants,
                 property_write_routes,
                 line,
@@ -1277,6 +1305,7 @@ fn parse_block(
                 duplicate_declarations,
                 array_bounds,
                 option_explicit,
+                default_type_table,
                 module_constants,
                 property_write_routes,
                 line,
@@ -1305,6 +1334,7 @@ fn parse_if_stmt(
     duplicate_declarations: &mut Vec<String>,
     array_bounds: &mut HashMap<String, usize>,
     option_explicit: &mut bool,
+    default_type_table: &[BoundType; 26],
     module_constants: &HashMap<String, i32>,
     property_write_routes: &HashMap<String, String>,
     line: &str,
@@ -1326,6 +1356,7 @@ fn parse_if_stmt(
         duplicate_declarations,
         array_bounds,
         option_explicit,
+        default_type_table,
         module_constants,
         property_write_routes,
         &["elseif", "else", "end if"],
@@ -1338,6 +1369,7 @@ fn parse_if_stmt(
         duplicate_declarations,
         array_bounds,
         option_explicit,
+        default_type_table,
         module_constants,
         property_write_routes,
     ) else {
@@ -1362,6 +1394,7 @@ fn parse_for_stmt(
     duplicate_declarations: &mut Vec<String>,
     array_bounds: &mut HashMap<String, usize>,
     option_explicit: &mut bool,
+    default_type_table: &[BoundType; 26],
     module_constants: &HashMap<String, i32>,
     property_write_routes: &HashMap<String, String>,
     line: &str,
@@ -1382,6 +1415,7 @@ fn parse_for_stmt(
         duplicate_declarations,
         array_bounds,
         option_explicit,
+        default_type_table,
         module_constants,
         property_write_routes,
         &["next"],
@@ -1494,6 +1528,7 @@ fn parse_do_stmt(
     duplicate_declarations: &mut Vec<String>,
     array_bounds: &mut HashMap<String, usize>,
     option_explicit: &mut bool,
+    default_type_table: &[BoundType; 26],
     module_constants: &HashMap<String, i32>,
     property_write_routes: &HashMap<String, String>,
     line: &str,
@@ -1517,6 +1552,7 @@ fn parse_do_stmt(
             duplicate_declarations,
             array_bounds,
             option_explicit,
+            default_type_table,
             module_constants,
             property_write_routes,
             &["loop"],
@@ -1548,6 +1584,7 @@ fn parse_do_stmt(
             duplicate_declarations,
             array_bounds,
             option_explicit,
+            default_type_table,
             module_constants,
             property_write_routes,
             &["loop"],
@@ -1608,7 +1645,7 @@ fn parse_redim_stmt(
         preserve = true;
         payload = payload[9..].trim();
     }
-    let (name, max_index) = parse_array_declaration(payload)?;
+    let (name, _, max_index) = parse_array_declaration(payload)?;
     let element_prefix = format!("{name}_");
     let element_ty = declaration_types
         .iter()
@@ -1648,6 +1685,7 @@ fn parse_select_case_stmt(
     duplicate_declarations: &mut Vec<String>,
     array_bounds: &mut HashMap<String, usize>,
     option_explicit: &mut bool,
+    default_type_table: &[BoundType; 26],
     module_constants: &HashMap<String, i32>,
     property_write_routes: &HashMap<String, String>,
     line: &str,
@@ -1692,6 +1730,7 @@ fn parse_select_case_stmt(
                 duplicate_declarations,
                 array_bounds,
                 option_explicit,
+                default_type_table,
                 module_constants,
                 property_write_routes,
                 &["end select"],
@@ -1721,6 +1760,7 @@ fn parse_select_case_stmt(
                 duplicate_declarations,
                 array_bounds,
                 option_explicit,
+                default_type_table,
                 module_constants,
                 property_write_routes,
                 &["case", "end select"],
@@ -1963,19 +2003,22 @@ fn parse_declaration(
     declaration_types: &mut HashMap<String, BoundType>,
     duplicate_declarations: &mut Vec<String>,
     array_bounds: &mut HashMap<String, usize>,
+    default_type_table: &[BoundType; 26],
 ) {
     let remainder = line[4..].trim();
     let first_decl = remainder.split(',').next().unwrap_or_default().trim();
-    let (name_part, declared_ty) = if let Some((lhs, rhs)) = split_keyword_ci(first_decl, "as") {
+    let (name_part, explicit_ty) = if let Some((lhs, rhs)) = split_keyword_ci(first_decl, "as") {
         (
             lhs.trim(),
-            parse_declared_type(rhs.trim()).unwrap_or(BoundType::Variant),
+            Some(parse_declared_type(rhs.trim()).unwrap_or(BoundType::Variant)),
         )
     } else {
-        (first_decl, BoundType::Variant)
+        (first_decl, None)
     };
 
-    if let Some((base, max_index)) = parse_array_declaration(name_part) {
+    if let Some((base, type_char_ty, max_index)) = parse_array_declaration(name_part) {
+        let declared_ty =
+            resolve_declared_type(&base, explicit_ty, type_char_ty, default_type_table);
         if declarations
             .iter()
             .any(|existing| existing.eq_ignore_ascii_case(&format!("{base}_0")))
@@ -1998,7 +2041,9 @@ fn parse_declaration(
         return;
     }
 
-    if let Some(name) = normalize_ident(name_part) {
+    if let Some((name, type_char_ty)) = normalize_ident_with_type_char(name_part) {
+        let declared_ty =
+            resolve_declared_type(&name, explicit_ty, type_char_ty, default_type_table);
         if declarations
             .iter()
             .any(|existing| existing.eq_ignore_ascii_case(&name))
@@ -2011,15 +2056,15 @@ fn parse_declaration(
     }
 }
 
-fn parse_array_declaration(token: &str) -> Option<(String, usize)> {
+fn parse_array_declaration(token: &str) -> Option<(String, Option<BoundType>, usize)> {
     let open = token.find('(')?;
     let close = token.rfind(')')?;
     if close <= open {
         return None;
     }
-    let base = normalize_ident(token[..open].trim())?;
+    let (base, type_char_ty) = normalize_ident_with_type_char(token[..open].trim())?;
     let max_index = token[open + 1..close].trim().parse::<usize>().ok()?;
-    Some((base, max_index))
+    Some((base, type_char_ty, max_index))
 }
 
 fn parse_declared_type(token: &str) -> Option<BoundType> {
@@ -2068,6 +2113,10 @@ fn parse_array_reference(token: &str, array_bounds: &HashMap<String, usize>) -> 
 }
 
 fn normalize_ident(text: &str) -> Option<String> {
+    normalize_ident_with_type_char(text).map(|(name, _)| name)
+}
+
+fn normalize_ident_with_type_char(text: &str) -> Option<(String, Option<BoundType>)> {
     let token = text.trim().trim_end_matches(',').trim();
     if token.is_empty() {
         return None;
@@ -2076,7 +2125,8 @@ fn normalize_ident(text: &str) -> Option<String> {
         return None;
     }
 
-    let mut chars = token.chars();
+    let (core_token, type_char_ty) = split_type_char(token);
+    let mut chars = core_token.chars();
     let first = chars.next()?;
     if !(first.is_ascii_alphabetic() || first == '_') {
         return None;
@@ -2084,7 +2134,128 @@ fn normalize_ident(text: &str) -> Option<String> {
     if !chars.all(|c| c.is_ascii_alphanumeric() || c == '_') {
         return None;
     }
-    Some(token.to_ascii_lowercase())
+    Some((core_token.to_ascii_lowercase(), type_char_ty))
+}
+
+fn split_type_char(token: &str) -> (&str, Option<BoundType>) {
+    let Some(last) = token.chars().last() else {
+        return (token, None);
+    };
+    let Some(ty) = type_declaration_char(last) else {
+        return (token, None);
+    };
+    let cutoff = token.len() - last.len_utf8();
+    (&token[..cutoff], Some(ty))
+}
+
+fn type_declaration_char(ch: char) -> Option<BoundType> {
+    match ch {
+        '%' => Some(BoundType::Integer),
+        '&' => Some(BoundType::Long),
+        '^' => Some(BoundType::LongLong),
+        '!' => Some(BoundType::Single),
+        '#' => Some(BoundType::Double),
+        '@' => Some(BoundType::Currency),
+        '$' => Some(BoundType::String),
+        _ => None,
+    }
+}
+
+fn resolve_declared_type(
+    name: &str,
+    explicit_ty: Option<BoundType>,
+    type_char_ty: Option<BoundType>,
+    default_type_table: &[BoundType; 26],
+) -> BoundType {
+    if let Some(ty) = explicit_ty {
+        return ty;
+    }
+    if let Some(ty) = type_char_ty {
+        return ty;
+    }
+    default_type_for_name(name, default_type_table)
+}
+
+fn default_type_for_name(name: &str, default_type_table: &[BoundType; 26]) -> BoundType {
+    let Some(first) = name.chars().next() else {
+        return BoundType::Variant;
+    };
+    if !first.is_ascii_alphabetic() {
+        return BoundType::Variant;
+    }
+    let idx = (first.to_ascii_lowercase() as u8 - b'a') as usize;
+    default_type_table
+        .get(idx)
+        .copied()
+        .unwrap_or(BoundType::Variant)
+}
+
+fn collect_default_type_table(lines: &[String]) -> [BoundType; 26] {
+    let mut table = [BoundType::Variant; 26];
+    for line in lines {
+        if let Some((ty, indices)) = parse_def_type_directive(line) {
+            for idx in indices {
+                table[idx] = ty;
+            }
+        }
+    }
+    table
+}
+
+fn parse_def_type_directive(line: &str) -> Option<(BoundType, Vec<usize>)> {
+    let trimmed = line.trim();
+    let mut parts = trimmed.splitn(2, char::is_whitespace);
+    let keyword = parts.next()?.to_ascii_lowercase();
+    let spec = parts.next()?.trim();
+    let ty = match keyword.as_str() {
+        "defbool" => BoundType::Boolean,
+        "defbyte" => BoundType::Byte,
+        "defint" => BoundType::Integer,
+        "deflng" => BoundType::Long,
+        "deflnglng" => BoundType::LongLong,
+        "deflngptr" => BoundType::LongPtr,
+        "defsng" => BoundType::Single,
+        "defdbl" => BoundType::Double,
+        "defdec" => BoundType::Decimal,
+        "defcur" => BoundType::Currency,
+        "defdate" => BoundType::Date,
+        "defstr" => BoundType::String,
+        "defobj" => BoundType::Object,
+        "defvar" => BoundType::Variant,
+        _ => return None,
+    };
+
+    let mut indices = Vec::new();
+    for raw in spec.split(',') {
+        let token = raw.trim();
+        if token.is_empty() {
+            return None;
+        }
+        if let Some((lhs, rhs)) = token.split_once('-') {
+            let start = parse_letter_index(lhs.trim())?;
+            let end = parse_letter_index(rhs.trim())?;
+            let (from, to) = if start <= end {
+                (start, end)
+            } else {
+                (end, start)
+            };
+            for idx in from..=to {
+                indices.push(idx);
+            }
+        } else {
+            indices.push(parse_letter_index(token)?);
+        }
+    }
+    Some((ty, indices))
+}
+
+fn parse_letter_index(token: &str) -> Option<usize> {
+    let mut chars = token.chars();
+    let ch = chars.next()?;
+    if chars.next().is_some() || !ch.is_ascii_alphabetic() {
+        return None;
+    }
+    Some((ch.to_ascii_lowercase() as u8 - b'a') as usize)
 }
 
 fn parse_label_declaration(line: &str) -> Option<String> {
@@ -2120,6 +2291,7 @@ fn parse_if_tail(
     duplicate_declarations: &mut Vec<String>,
     array_bounds: &mut HashMap<String, usize>,
     option_explicit: &mut bool,
+    default_type_table: &[BoundType; 26],
     module_constants: &HashMap<String, i32>,
     property_write_routes: &HashMap<String, String>,
 ) -> Option<Vec<BoundStmt>> {
@@ -2145,6 +2317,7 @@ fn parse_if_tail(
             duplicate_declarations,
             array_bounds,
             option_explicit,
+            default_type_table,
             module_constants,
             property_write_routes,
             &["end if"],
@@ -2168,6 +2341,7 @@ fn parse_if_tail(
             duplicate_declarations,
             array_bounds,
             option_explicit,
+            default_type_table,
             module_constants,
             property_write_routes,
             &["elseif", "else", "end if"],
@@ -2180,6 +2354,7 @@ fn parse_if_tail(
             duplicate_declarations,
             array_bounds,
             option_explicit,
+            default_type_table,
             module_constants,
             property_write_routes,
         )?;
@@ -2575,6 +2750,66 @@ mod tests {
             main_proc.declaration_types.get("a_2").copied(),
             Some(super::BoundType::Integer)
         );
+    }
+
+    #[test]
+    fn resolve_def_type_applies_to_untyped_dim() {
+        let source = "DefLng A-Z\nSub Main()\nDim alpha\nalpha = 1\nEnd Sub";
+        let module = resolve_symbols(source);
+        let main_proc = module
+            .procedures
+            .iter()
+            .find(|p| p.name == "main")
+            .expect("main procedure expected");
+        assert_eq!(
+            main_proc.declaration_types.get("alpha").copied(),
+            Some(super::BoundType::Long)
+        );
+    }
+
+    #[test]
+    fn resolve_type_char_overrides_def_type_for_dim() {
+        let source = "DefObj A-Z\nSub Main()\nDim alpha%\nalpha = 1\nEnd Sub";
+        let module = resolve_symbols(source);
+        let main_proc = module
+            .procedures
+            .iter()
+            .find(|p| p.name == "main")
+            .expect("main procedure expected");
+        assert_eq!(
+            main_proc.declaration_types.get("alpha").copied(),
+            Some(super::BoundType::Integer)
+        );
+    }
+
+    #[test]
+    fn resolve_explicit_as_overrides_type_char_and_def_type() {
+        let source = "DefInt A-Z\nSub Main()\nDim alpha% As Object\nalpha = 1\nEnd Sub";
+        let module = resolve_symbols(source);
+        let main_proc = module
+            .procedures
+            .iter()
+            .find(|p| p.name == "main")
+            .expect("main procedure expected");
+        assert_eq!(
+            main_proc.declaration_types.get("alpha").copied(),
+            Some(super::BoundType::Object)
+        );
+    }
+
+    #[test]
+    fn resolve_def_type_and_type_char_precedence_for_params() {
+        let source = "DefObj A-Z\nSub Use(alpha, beta%, gamma% As Object)\nEnd Sub";
+        let module = resolve_symbols(source);
+        let proc = module
+            .procedures
+            .iter()
+            .find(|p| p.name == "use")
+            .expect("use procedure expected");
+        assert_eq!(proc.params.len(), 3);
+        assert_eq!(proc.params[0].ty, super::BoundType::Object);
+        assert_eq!(proc.params[1].ty, super::BoundType::Integer);
+        assert_eq!(proc.params[2].ty, super::BoundType::Object);
     }
 
     #[test]

@@ -157,6 +157,46 @@ mod tests {
     }
 
     #[test]
+    fn defobj_applies_to_implicit_declarations() {
+        let source = "DefObj A-Z\nSub Main()\na = 1\nEnd Sub";
+        let err = compile(source).expect_err("DefObj should type implicit a as Object");
+        assert!(err.to_string().contains("type mismatch in assignment"));
+    }
+
+    #[test]
+    fn type_char_overrides_def_type_for_dim() {
+        let source = "DefObj A-Z\nSub Main()\nDim a%\na = 1\nEnd Sub";
+        compile(source).expect("type character should override DefObj for Dim");
+    }
+
+    #[test]
+    fn explicit_as_overrides_type_char_for_dim() {
+        let source = "Sub Main()\nDim a% As Object\na = 1\nEnd Sub";
+        let err = compile(source).expect_err("explicit As should override type character");
+        assert!(err.to_string().contains("type mismatch in assignment"));
+    }
+
+    #[test]
+    fn def_type_applies_to_untyped_params() {
+        let source = "DefObj A-Z\nSub Main()\nCall Use(1)\nEnd Sub\nSub Use(ByVal alpha)\nEnd Sub";
+        let err = compile(source).expect_err("DefObj should type alpha as Object");
+        assert!(err.to_string().contains("argument type mismatch"));
+    }
+
+    #[test]
+    fn type_char_overrides_def_type_for_params() {
+        let source = "DefObj A-Z\nSub Main()\nCall Use(1)\nEnd Sub\nSub Use(ByVal alpha%)\nEnd Sub";
+        compile(source).expect("type character should override DefObj for parameters");
+    }
+
+    #[test]
+    fn explicit_as_overrides_type_char_for_params() {
+        let source = "Sub Main()\nCall Use(1)\nEnd Sub\nSub Use(ByVal alpha% As Object)\nEnd Sub";
+        let err = compile(source).expect_err("explicit As should override parameter type char");
+        assert!(err.to_string().contains("argument type mismatch"));
+    }
+
+    #[test]
     fn reject_unsupported_statement() {
         let source = "Sub Main()\nDim x\nx = x * 2\nEnd Sub";
         let err = compile(source).expect_err("typecheck should fail");

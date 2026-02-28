@@ -302,6 +302,7 @@ mod kani_proofs {
         let module = BoundModule {
             source: "Sub Main()\nEnd Sub".to_string(),
             option_explicit: false,
+            default_type_table: [crate::resolve::BoundType::Variant; 26],
             declarations: vec!["x".to_string()],
             declaration_types: std::collections::HashMap::from([(
                 "x".to_string(),

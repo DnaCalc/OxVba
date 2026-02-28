@@ -6,6 +6,7 @@ use crate::resolve::{
 
 pub fn check_types(module: BoundModule) -> Result<BoundModule, String> {
     let mut module = module;
+    let default_type_table = module.default_type_table;
     let proc_names: HashSet<String> = module.procedures.iter().map(|p| p.name.clone()).collect();
     let proc_params: HashMap<String, Vec<BoundParam>> = module
         .procedures
@@ -35,6 +36,7 @@ pub fn check_types(module: BoundModule) -> Result<BoundModule, String> {
         check_stmt_list(
             &procedure.body,
             module.option_explicit,
+            &default_type_table,
             &mut declared,
             &mut declared_types,
             &mut procedure.declarations,
@@ -63,6 +65,7 @@ pub fn check_types(module: BoundModule) -> Result<BoundModule, String> {
 fn check_stmt_list(
     stmts: &[BoundStmt],
     option_explicit: bool,
+    default_type_table: &[BoundType; 26],
     declared: &mut HashSet<String>,
     declared_types: &mut HashMap<String, BoundType>,
     declarations: &mut Vec<String>,
@@ -75,6 +78,7 @@ fn check_stmt_list(
         check_stmt(
             stmt,
             option_explicit,
+            default_type_table,
             declared,
             declared_types,
             declarations,
@@ -91,6 +95,7 @@ fn check_stmt_list(
 fn check_stmt(
     stmt: &BoundStmt,
     option_explicit: bool,
+    default_type_table: &[BoundType; 26],
     declared: &mut HashSet<String>,
     declared_types: &mut HashMap<String, BoundType>,
     declarations: &mut Vec<String>,
@@ -104,6 +109,7 @@ fn check_stmt(
             ensure_declared(
                 target,
                 option_explicit,
+                default_type_table,
                 declared,
                 declared_types,
                 declarations,
@@ -112,6 +118,7 @@ fn check_stmt(
             check_expr(
                 expr,
                 option_explicit,
+                default_type_table,
                 declared,
                 declared_types,
                 declarations,
@@ -136,6 +143,7 @@ fn check_stmt(
             check_condition(
                 cond,
                 option_explicit,
+                default_type_table,
                 declared,
                 declared_types,
                 declarations,
@@ -144,6 +152,7 @@ fn check_stmt(
             check_stmt_list(
                 then_body,
                 option_explicit,
+                default_type_table,
                 declared,
                 declared_types,
                 declarations,
@@ -155,6 +164,7 @@ fn check_stmt(
             check_stmt_list(
                 else_body,
                 option_explicit,
+                default_type_table,
                 declared,
                 declared_types,
                 declarations,
@@ -173,6 +183,7 @@ fn check_stmt(
             ensure_declared(
                 var,
                 option_explicit,
+                default_type_table,
                 declared,
                 declared_types,
                 declarations,
@@ -181,6 +192,7 @@ fn check_stmt(
             check_expr(
                 start,
                 option_explicit,
+                default_type_table,
                 declared,
                 declared_types,
                 declarations,
@@ -189,6 +201,7 @@ fn check_stmt(
             check_expr(
                 end,
                 option_explicit,
+                default_type_table,
                 declared,
                 declared_types,
                 declarations,
@@ -197,6 +210,7 @@ fn check_stmt(
             check_stmt_list(
                 body,
                 option_explicit,
+                default_type_table,
                 declared,
                 declared_types,
                 declarations,
@@ -211,6 +225,7 @@ fn check_stmt(
             check_condition(
                 cond,
                 option_explicit,
+                default_type_table,
                 declared,
                 declared_types,
                 declarations,
@@ -219,6 +234,7 @@ fn check_stmt(
             check_stmt_list(
                 body,
                 option_explicit,
+                default_type_table,
                 declared,
                 declared_types,
                 declarations,
@@ -270,6 +286,7 @@ fn check_stmt(
                     check_expr(
                         &arg.expr,
                         option_explicit,
+                        default_type_table,
                         declared,
                         declared_types,
                         declarations,
@@ -294,6 +311,7 @@ fn check_stmt(
             check_expr(
                 expr,
                 option_explicit,
+                default_type_table,
                 declared,
                 declared_types,
                 declarations,
@@ -303,6 +321,7 @@ fn check_stmt(
                 check_stmt_list(
                     body,
                     option_explicit,
+                    default_type_table,
                     declared,
                     declared_types,
                     declarations,
@@ -315,6 +334,7 @@ fn check_stmt(
             check_stmt_list(
                 else_body,
                 option_explicit,
+                default_type_table,
                 declared,
                 declared_types,
                 declarations,
@@ -331,6 +351,7 @@ fn check_stmt(
 fn check_condition(
     cond: &BoundCond,
     option_explicit: bool,
+    default_type_table: &[BoundType; 26],
     declared: &mut HashSet<String>,
     declared_types: &mut HashMap<String, BoundType>,
     declarations: &mut Vec<String>,
@@ -341,6 +362,7 @@ fn check_condition(
             check_expr(
                 lhs,
                 option_explicit,
+                default_type_table,
                 declared,
                 declared_types,
                 declarations,
@@ -349,6 +371,7 @@ fn check_condition(
             check_expr(
                 rhs,
                 option_explicit,
+                default_type_table,
                 declared,
                 declared_types,
                 declarations,
@@ -358,6 +381,7 @@ fn check_condition(
         BoundCond::Truthy(expr) => check_expr(
             expr,
             option_explicit,
+            default_type_table,
             declared,
             declared_types,
             declarations,
@@ -366,6 +390,7 @@ fn check_condition(
         BoundCond::Not(inner) => check_condition(
             inner,
             option_explicit,
+            default_type_table,
             declared,
             declared_types,
             declarations,
@@ -375,6 +400,7 @@ fn check_condition(
             check_condition(
                 lhs,
                 option_explicit,
+                default_type_table,
                 declared,
                 declared_types,
                 declarations,
@@ -383,6 +409,7 @@ fn check_condition(
             check_condition(
                 rhs,
                 option_explicit,
+                default_type_table,
                 declared,
                 declared_types,
                 declarations,
@@ -395,6 +422,7 @@ fn check_condition(
 fn check_expr(
     expr: &BoundExpr,
     option_explicit: bool,
+    default_type_table: &[BoundType; 26],
     declared: &mut HashSet<String>,
     declared_types: &mut HashMap<String, BoundType>,
     declarations: &mut Vec<String>,
@@ -405,6 +433,7 @@ fn check_expr(
         BoundExpr::Var(name) => ensure_declared(
             name,
             option_explicit,
+            default_type_table,
             declared,
             declared_types,
             declarations,
@@ -413,6 +442,7 @@ fn check_expr(
         BoundExpr::AddConst { var, .. } | BoundExpr::SubConst { var, .. } => ensure_declared(
             var,
             option_explicit,
+            default_type_table,
             declared,
             declared_types,
             declarations,
@@ -423,6 +453,7 @@ fn check_expr(
                 check_expr(
                     arg,
                     option_explicit,
+                    default_type_table,
                     declared,
                     declared_types,
                     declarations,
@@ -437,6 +468,7 @@ fn check_expr(
 fn ensure_declared(
     name: &str,
     option_explicit: bool,
+    default_type_table: &[BoundType; 26],
     declared: &mut HashSet<String>,
     declared_types: &mut HashMap<String, BoundType>,
     declarations: &mut Vec<String>,
@@ -451,10 +483,16 @@ fn ensure_declared(
 
     if declared.contains(name) {
         if !declared_types.contains_key(name) {
-            declared_types.insert(name.to_string(), BoundType::Variant);
+            declared_types.insert(
+                name.to_string(),
+                default_type_for_name(name, default_type_table),
+            );
         }
         if !declaration_types.contains_key(name) {
-            declaration_types.insert(name.to_string(), BoundType::Variant);
+            declaration_types.insert(
+                name.to_string(),
+                default_type_for_name(name, default_type_table),
+            );
         }
         return Ok(());
     }
@@ -465,9 +503,24 @@ fn ensure_declared(
 
     declared.insert(name.to_string());
     declarations.push(name.to_string());
-    declared_types.insert(name.to_string(), BoundType::Variant);
-    declaration_types.insert(name.to_string(), BoundType::Variant);
+    let default_ty = default_type_for_name(name, default_type_table);
+    declared_types.insert(name.to_string(), default_ty);
+    declaration_types.insert(name.to_string(), default_ty);
     Ok(())
+}
+
+fn default_type_for_name(name: &str, default_type_table: &[BoundType; 26]) -> BoundType {
+    let Some(first) = name.chars().next() else {
+        return BoundType::Variant;
+    };
+    if !first.is_ascii_alphabetic() {
+        return BoundType::Variant;
+    }
+    let idx = (first.to_ascii_lowercase() as u8 - b'a') as usize;
+    default_type_table
+        .get(idx)
+        .copied()
+        .unwrap_or(BoundType::Variant)
 }
 
 fn infer_expr_type(expr: &BoundExpr, declared_types: &HashMap<String, BoundType>) -> BoundType {

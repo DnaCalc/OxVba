@@ -16,6 +16,7 @@ This register tracks long-running async formal obligations that are started duri
 | DG-V56-001 | v56 | v56-kani-full | dg-folded | 2026-02-28T05:14:36Z | v66 | `temp/async/formal-kani/v56-kani-full/` | Historical reference run; foldback evidence in `docs/evidence/formal/ASYNC_KANI_V56.md`. |
 | DG-V67-001 | v67 | v67-kani | dg-running | 2026-02-28T09:50:05Z | v72 | `temp/async/formal-kani/v67-kani/` | Started with watcher polling (`600s`) for strict WSL Kani run of `mvp-typing-type-lattice-v67`. |
 | DG-V68-001 | v68 | v68-kani | dg-running | 2026-02-28T10:00:35Z | v72 | `temp/async/formal-kani/v68-kani/` | Started with watcher polling (`600s`) for strict WSL Kani run of `mvp-typing-option-explicit-diagnostics-v68`. |
+| DG-V69-001 | v69 | v69-kani | dg-running | 2026-02-28T10:20:12Z | v72 | `temp/async/formal-kani/v69-kani/` | Started with watcher polling (`600s`) for strict WSL Kani run of `mvp-typing-default-type-rules-v69`. |
 
 ## Update Protocol
 1. On async start, add a row with `dg-started` and paths.
