@@ -7,3 +7,4 @@ Planned tables:
 - `arithmetic.csv`
 - `comparison.csv`
 - `call_coercion.csv`
+- `conversion_intrinsics.csv`

@@ -1,6 +1,12 @@
 # Implementation Log
 
 ## 2026-02-28
+- Completed `v76` (`mvp-typing-conversion-intrinsics-v76`):
+  - added typed result inference for conversion intrinsics (`CInt`, `CLng`, `CDbl`, `CStr`, `CBool`, `CDate`, `Val`, `Str`, `CVErr`);
+  - routed conversion intrinsic argument admissibility through shared coercion evaluation in typecheck;
+  - added conversion intrinsic decision table (`tables/conversion_intrinsics.csv`) and alignment tests against compiler rules;
+  - added compiler + conformance coverage for typed conversion-result assignment mismatch paths;
+  - added formal obligations `FO-V76-001..003`, produced matrix artifacts under `docs/evidence/profiles/v76/`, and recorded Track-B DG reconciliation checkpoint with unresolved follow-up `FTODO-V76-001`.
 - Completed `v75` (`mvp-typing-call-coercion-early-late-v75`):
   - introduced mode-aware call coercion evaluation helper for early/mixed/late call routes;
   - unified typed argument mismatch checks through explicit call coercion decisions;

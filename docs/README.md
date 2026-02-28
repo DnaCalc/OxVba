@@ -88,6 +88,7 @@
 | Profile v73 Status | [`PROFILE_STATUS_V73.md`](profile-status/PROFILE_STATUS_V73.md) | Current gate status contract for `mvp-typing-coercion-matrix-v73`. |
 | Profile v74 Status | [`PROFILE_STATUS_V74.md`](profile-status/PROFILE_STATUS_V74.md) | Current gate status contract for `mvp-typing-operator-result-rules-v74`. |
 | Profile v75 Status | [`PROFILE_STATUS_V75.md`](profile-status/PROFILE_STATUS_V75.md) | Current gate status contract for `mvp-typing-call-coercion-early-late-v75`. |
+| Profile v76 Status | [`PROFILE_STATUS_V76.md`](profile-status/PROFILE_STATUS_V76.md) | Current gate status contract for `mvp-typing-conversion-intrinsics-v76`. |
 | Phase 12 Status | [`PHASE12_STATUS.md`](PHASE12_STATUS.md) | Declared profile scope and final conformance/stabilization gate artifacts. |
 | Work Set Plan (v2) | [`worksets/WORKSET_2026-02-27_CONTROLFLOW_V2.md`](worksets/WORKSET_2026-02-27_CONTROLFLOW_V2.md) | Detailed execution-grade plan for control-flow expansion beyond `mvp-int32-core-v1`. |
 | Work Set Plan (v3) | [`worksets/WORKSET_2026-02-27_FORMAL_FOUNDATION_V3.md`](worksets/WORKSET_2026-02-27_FORMAL_FOUNDATION_V3.md) | Formal infrastructure work set for manifest-driven obligations and reporting. |
@@ -162,6 +163,7 @@
 | Work Set Plan (v73) | [`worksets/WORKSET_2026-02-28_COERCION_MATRIX_V73.md`](worksets/WORKSET_2026-02-28_COERCION_MATRIX_V73.md) | Table-backed coercion matrix alignment for assignment/argument typing work set. |
 | Work Set Plan (v74) | [`worksets/WORKSET_2026-02-28_OPERATOR_RESULT_RULES_V74.md`](worksets/WORKSET_2026-02-28_OPERATOR_RESULT_RULES_V74.md) | Operator result typing and comparison compatibility table-alignment work set. |
 | Work Set Plan (v75) | [`worksets/WORKSET_2026-02-28_CALL_COERCION_EARLY_LATE_V75.md`](worksets/WORKSET_2026-02-28_CALL_COERCION_EARLY_LATE_V75.md) | Mode-aware call coercion alignment across early/mixed/late call paths. |
+| Work Set Plan (v76) | [`worksets/WORKSET_2026-02-28_CONVERSION_INTRINSICS_V76.md`](worksets/WORKSET_2026-02-28_CONVERSION_INTRINSICS_V76.md) | Conversion intrinsic typing parity with shared coercion integration and DG reconciliation poll. |
 | Work Set Plan (v27-v36) | [`worksets/WORKSET_2026-02-27_BATCH_V27_V36.md`](worksets/WORKSET_2026-02-27_BATCH_V27_V36.md) | Next long batch: formal reliability, language coverage closure, and hotspot performance work. |
 | Profile Ladder | [`worksets/PROFILE_LADDER_2026-02-27_MACH1000.md`](worksets/PROFILE_LADDER_2026-02-27_MACH1000.md) | MACH1000 profile roadmap and execution history. |
 | Profile Ladder (v37-v56) | [`worksets/PROFILE_LADDER_2026-02-27_MACH1000_V37_V56.md`](worksets/PROFILE_LADDER_2026-02-27_MACH1000_V37_V56.md) | Next horizon ladder split into language core, intrinsic runtime, and host/interop tracks. |

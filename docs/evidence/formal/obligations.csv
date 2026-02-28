@@ -215,3 +215,6 @@ FO-V74-003,v74,"cargo test -p oxvba-compiler comparison_object_long_is_rejected"
 FO-V75-001,v75,"cargo test -p oxvba-compiler typecheck::tests::call_coercion_table_rows_align_with_typecheck_rules",no,true,crates/oxvba-compiler/src/typecheck.rs
 FO-V75-002,v75,"cargo test -p oxvba-compiler mixed_call_coercion_variant_to_long_is_allowed",no,true,crates/oxvba-compiler/src/lib.rs
 FO-V75-003,v75,"cargo test -p oxvba-compiler late_bound_named_argument_call_is_classified_with_explicit_diagnostic",no,true,crates/oxvba-compiler/src/lib.rs
+FO-V76-001,v76,"cargo test -p oxvba-compiler typecheck::tests::conversion_intrinsic_table_rows_align_with_typecheck_rules",no,true,crates/oxvba-compiler/src/typecheck.rs
+FO-V76-002,v76,"cargo test -p oxvba-compiler conversion_intrinsic_cint_to_object_assignment_is_rejected",no,true,crates/oxvba-compiler/src/lib.rs
+FO-V76-003,v76,"cargo test -p oxvba-compiler conversion_intrinsic_cint_to_long_assignment_is_allowed",no,true,crates/oxvba-compiler/src/lib.rs

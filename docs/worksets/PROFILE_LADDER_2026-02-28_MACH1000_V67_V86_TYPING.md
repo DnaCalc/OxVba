@@ -369,3 +369,10 @@ Per profile:
   - run: `v75-kani`,
   - status: `dg-running`,
   - register: `docs/evidence/formal/DEFERRED_GATES.md`.
+- `v76` (`mvp-typing-conversion-intrinsics-v76`) completed:
+  - matrix gate `PASS` (`docs/evidence/profiles/v76/gate_report.md`),
+  - formal obligations `FO-V76-001..003` pass (`docs/evidence/formal/latest_run.md`),
+  - conversion intrinsic decision-table alignment checks enabled (`tables/conversion_intrinsics.csv` vs typecheck rules).
+- Track B DG reconciliation (`v73..v75`) checkpoint:
+  - all tracked runs currently `dg-running` at poll time,
+  - unresolved foldback recorded in `docs/evidence/formal/EXTENDED_TODO.md` (`FTODO-V76-001`).

@@ -1,0 +1,10 @@
+intrinsic,arg_target,result
+cint,Integer,Integer
+clng,Long,Long
+cdbl,Double,Double
+cstr,String,String
+cbool,Boolean,Boolean
+cdate,Date,Date
+val,Double,Double
+str,String,String
+cverr,Long,Variant

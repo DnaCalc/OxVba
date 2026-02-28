@@ -1,6 +1,7 @@
 file,status,slots
 conditional_compilation_basic.bas,ok,8
 conversion_cint_basic.bas,ok,5
+conversion_cint_to_object_error.bas,error,
 conversion_nested_clng_cint.bas,ok,7
 conversion_val_str_subset.bas,ok,9
 stdlib_instr_case_ops.bas,ok,"3,789,654"

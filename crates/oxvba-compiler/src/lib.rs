@@ -271,6 +271,26 @@ mod tests {
     }
 
     #[test]
+    fn conversion_intrinsic_cint_to_object_assignment_is_rejected() {
+        let source = "Sub Main()\nDim o As Object\no = CInt(5)\nEnd Sub";
+        let err = compile(source).expect_err("typed conversion result should not assign to object");
+        assert!(err.to_string().contains("type mismatch in assignment"));
+    }
+
+    #[test]
+    fn conversion_intrinsic_cint_to_long_assignment_is_allowed() {
+        let source = "Sub Main()\nDim x As Long\nx = CInt(5)\nEnd Sub";
+        compile(source).expect("typed conversion result should assign to widening numeric target");
+    }
+
+    #[test]
+    fn conversion_intrinsic_str_to_object_assignment_is_rejected() {
+        let source = "Sub Main()\nDim o As Object\no = Str(5)\nEnd Sub";
+        let err = compile(source).expect_err("Str result should not assign to object");
+        assert!(err.to_string().contains("type mismatch in assignment"));
+    }
+
+    #[test]
     fn arithmetic_object_plus_const_is_rejected() {
         let source = "Sub Main()\nDim o As Object\no = o + 1\nEnd Sub";
         let err = compile(source).expect_err("object arithmetic should be rejected");

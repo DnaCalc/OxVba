@@ -507,7 +507,7 @@ fn check_expr(
                 )),
             }
         }
-        BoundExpr::IntrinsicCall { args, .. } => {
+        BoundExpr::IntrinsicCall { name, args } => {
             for arg in args {
                 check_expr(
                     arg,
@@ -518,6 +518,21 @@ fn check_expr(
                     declarations,
                     declaration_types,
                 )?;
+            }
+            if let Some(target_type) = intrinsic_argument_target_type(name) {
+                if args.len() != 1 {
+                    return Err(format!(
+                        "conversion intrinsic {} expects exactly one argument",
+                        name
+                    ));
+                }
+                let arg_type = infer_expr_type(&args[0], declared_types);
+                if coercion_result(arg_type, target_type) != CoercionResult::Ok {
+                    return Err(format!(
+                        "argument type mismatch for conversion intrinsic {}: cannot convert {:?} to {:?}",
+                        name, arg_type, target_type
+                    ));
+                }
             }
             Ok(())
         }
@@ -593,7 +608,9 @@ fn infer_expr_type(expr: &BoundExpr, declared_types: &HashMap<String, BoundType>
                 ArithmeticResult::TypeMismatch => BoundType::Variant,
             }
         }
-        BoundExpr::IntrinsicCall { .. } => BoundType::Variant,
+        BoundExpr::IntrinsicCall { name, .. } => {
+            intrinsic_result_type(name).unwrap_or(BoundType::Variant)
+        }
     }
 }
 
@@ -704,6 +721,28 @@ fn call_coercion_result(
         CallMode::Early | CallMode::Mixed => {
             coercion_result(arg_type, param_type.unwrap_or(BoundType::Variant))
         }
+    }
+}
+
+fn intrinsic_result_type(name: &str) -> Option<BoundType> {
+    match name {
+        "cint" => Some(BoundType::Integer),
+        "clng" => Some(BoundType::Long),
+        "cdbl" => Some(BoundType::Double),
+        "cstr" => Some(BoundType::String),
+        "cbool" => Some(BoundType::Boolean),
+        "cdate" => Some(BoundType::Date),
+        "val" => Some(BoundType::Double),
+        "str" => Some(BoundType::String),
+        "cverr" => Some(BoundType::Variant),
+        _ => None,
+    }
+}
+
+fn intrinsic_argument_target_type(name: &str) -> Option<BoundType> {
+    match name {
+        "cverr" => Some(BoundType::Long),
+        _ => intrinsic_result_type(name),
     }
 }
 
@@ -1016,7 +1055,7 @@ mod tests {
     use super::{
         CallMode, arithmetic_result_label, call_coercion_result_label, call_mode_label,
         can_assign_to, classify_call_mode, coercion_result_label, comparison_result_label,
-        join_types,
+        intrinsic_argument_target_type, intrinsic_result_type, join_types,
     };
     use crate::resolve::{BoundCallArg, BoundExpr, BoundParam, BoundType};
 
@@ -1238,6 +1277,56 @@ mod tests {
                 "call coercion table mismatch at row {} (mode={})",
                 line_idx + 1,
                 call_mode_label(mode)
+            );
+        }
+    }
+
+    #[test]
+    fn conversion_intrinsic_table_rows_align_with_typecheck_rules() {
+        let table_path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("..")
+            .join("..")
+            .join("tables")
+            .join("conversion_intrinsics.csv");
+        let table = std::fs::read_to_string(&table_path)
+            .expect("conversion intrinsic decision table should exist");
+        for (line_idx, line) in table.lines().enumerate().skip(1) {
+            let trimmed = line.trim();
+            if trimmed.is_empty() {
+                continue;
+            }
+            let mut parts = trimmed.split(',');
+            let intrinsic_name = parts
+                .next()
+                .expect("intrinsic column should be present")
+                .trim();
+            let arg_target_text = parts
+                .next()
+                .expect("arg_target column should be present")
+                .trim();
+            let result_text = parts
+                .next()
+                .expect("result column should be present")
+                .trim();
+            assert!(
+                parts.next().is_none(),
+                "conversion table row {} should have exactly 3 columns",
+                line_idx + 1
+            );
+
+            let arg_target = parse_bound_type(arg_target_text).expect("known arg target type");
+            let result = parse_bound_type(result_text).expect("known result type");
+            assert_eq!(
+                intrinsic_argument_target_type(intrinsic_name),
+                Some(arg_target),
+                "conversion arg target mismatch at row {}",
+                line_idx + 1
+            );
+            assert_eq!(
+                intrinsic_result_type(intrinsic_name),
+                Some(result),
+                "conversion result mismatch at row {}",
+                line_idx + 1
             );
         }
     }
