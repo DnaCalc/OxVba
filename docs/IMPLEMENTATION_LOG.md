@@ -1,6 +1,12 @@
 # Implementation Log
 
 ## 2026-02-28
+- Completed `v74` (`mvp-typing-operator-result-rules-v74`):
+  - added operator typing checks for arithmetic (`x +/- const`) and comparison conditions;
+  - reject object/array arithmetic and invalid comparison type pairs with explicit diagnostics;
+  - switched arithmetic/comparison decision tables to machine-checkable result labels and added compiler table-alignment tests;
+  - added compiler regression coverage for arithmetic/comparison mismatch paths and conformance fixtures for operator mismatch errors;
+  - added formal obligations `FO-V74-001..003`, produced matrix artifacts under `docs/evidence/profiles/v74/`, and started strict async Kani lane (`v74-kani`) as deferred gate `DG-V74-001`.
 - Completed `v73` (`mvp-typing-coercion-matrix-v73`):
   - introduced explicit coercion-result classification in typecheck (`ok` vs `type-mismatch`);
   - added table-alignment verification test mapping `tables/coercion.csv` rows to live coercion rules;

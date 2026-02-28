@@ -408,7 +408,17 @@ fn check_condition(
                 declared_types,
                 declarations,
                 declaration_types,
-            )
+            )?;
+            let lhs_ty = infer_expr_type(lhs, declared_types);
+            let rhs_ty = infer_expr_type(rhs, declared_types);
+            if can_compare_types(lhs_ty, rhs_ty) {
+                Ok(())
+            } else {
+                Err(format!(
+                    "type mismatch in comparison: cannot compare {:?} with {:?}",
+                    lhs_ty, rhs_ty
+                ))
+            }
         }
         BoundCond::Truthy(expr) => check_expr(
             expr,
@@ -471,15 +481,25 @@ fn check_expr(
             declarations,
             declaration_types,
         ),
-        BoundExpr::AddConst { var, .. } | BoundExpr::SubConst { var, .. } => ensure_declared(
-            var,
-            option_explicit,
-            default_type_table,
-            declared,
-            declared_types,
-            declarations,
-            declaration_types,
-        ),
+        BoundExpr::AddConst { var, .. } | BoundExpr::SubConst { var, .. } => {
+            ensure_declared(
+                var,
+                option_explicit,
+                default_type_table,
+                declared,
+                declared_types,
+                declarations,
+                declaration_types,
+            )?;
+            let lhs_ty = *declared_types.get(var).unwrap_or(&BoundType::Variant);
+            match arithmetic_result(lhs_ty, BoundType::Long) {
+                ArithmeticResult::Ok(_) => Ok(()),
+                ArithmeticResult::TypeMismatch => Err(format!(
+                    "type mismatch in arithmetic expression: cannot apply +/- to {:?} and Long",
+                    lhs_ty
+                )),
+            }
+        }
         BoundExpr::IntrinsicCall { args, .. } => {
             for arg in args {
                 check_expr(
@@ -559,14 +579,18 @@ fn infer_expr_type(expr: &BoundExpr, declared_types: &HashMap<String, BoundType>
     match expr {
         BoundExpr::IntConst(_) => BoundType::Long,
         BoundExpr::Var(name) => *declared_types.get(name).unwrap_or(&BoundType::Variant),
-        BoundExpr::AddConst { var, .. } | BoundExpr::SubConst { var, .. } => join_types(
-            *declared_types.get(var).unwrap_or(&BoundType::Variant),
-            BoundType::Long,
-        ),
+        BoundExpr::AddConst { var, .. } | BoundExpr::SubConst { var, .. } => {
+            let lhs_ty = *declared_types.get(var).unwrap_or(&BoundType::Variant);
+            match arithmetic_result(lhs_ty, BoundType::Long) {
+                ArithmeticResult::Ok(result) => result,
+                ArithmeticResult::TypeMismatch => BoundType::Variant,
+            }
+        }
         BoundExpr::IntrinsicCall { .. } => BoundType::Variant,
     }
 }
 
+#[cfg(test)]
 fn join_types(lhs: BoundType, rhs: BoundType) -> BoundType {
     if lhs == rhs {
         return lhs;
@@ -595,6 +619,62 @@ fn join_types(lhs: BoundType, rhs: BoundType) -> BoundType {
         return BoundType::String;
     }
     BoundType::Variant
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ArithmeticResult {
+    Ok(BoundType),
+    TypeMismatch,
+}
+
+fn arithmetic_result(lhs: BoundType, rhs: BoundType) -> ArithmeticResult {
+    if lhs == BoundType::Variant || rhs == BoundType::Variant {
+        return ArithmeticResult::Ok(BoundType::Variant);
+    }
+    if lhs == BoundType::Object
+        || rhs == BoundType::Object
+        || lhs == BoundType::Array
+        || rhs == BoundType::Array
+    {
+        return ArithmeticResult::TypeMismatch;
+    }
+    if is_numeric_type(lhs) && is_numeric_type(rhs) {
+        return ArithmeticResult::Ok(numeric_join(lhs, rhs));
+    }
+    if is_arithmetic_coercible_type(lhs) && is_arithmetic_coercible_type(rhs) {
+        return ArithmeticResult::Ok(BoundType::Variant);
+    }
+    ArithmeticResult::TypeMismatch
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ComparisonResult {
+    Ok,
+    TypeMismatch,
+}
+
+fn can_compare_types(lhs: BoundType, rhs: BoundType) -> bool {
+    comparison_result(lhs, rhs) == ComparisonResult::Ok
+}
+
+fn comparison_result(lhs: BoundType, rhs: BoundType) -> ComparisonResult {
+    if lhs == BoundType::Variant || rhs == BoundType::Variant {
+        return ComparisonResult::Ok;
+    }
+    if lhs == BoundType::Object
+        || rhs == BoundType::Object
+        || lhs == BoundType::Array
+        || rhs == BoundType::Array
+    {
+        return ComparisonResult::TypeMismatch;
+    }
+    if lhs == rhs || (is_numeric_type(lhs) && is_numeric_type(rhs)) {
+        return ComparisonResult::Ok;
+    }
+    if is_arithmetic_coercible_type(lhs) && is_arithmetic_coercible_type(rhs) {
+        return ComparisonResult::Ok;
+    }
+    ComparisonResult::TypeMismatch
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -646,11 +726,52 @@ fn coercion_result(source: BoundType, target: BoundType) -> CoercionResult {
 }
 
 #[cfg(test)]
+fn arithmetic_result_label(lhs: BoundType, rhs: BoundType) -> &'static str {
+    match arithmetic_result(lhs, rhs) {
+        ArithmeticResult::Ok(result) => bound_type_label(result),
+        ArithmeticResult::TypeMismatch => "type-mismatch",
+    }
+}
+
+#[cfg(test)]
 fn coercion_result_label(source: BoundType, target: BoundType) -> &'static str {
     match coercion_result(source, target) {
         CoercionResult::Ok => "ok",
         CoercionResult::TypeMismatch => "type-mismatch",
     }
+}
+
+#[cfg(test)]
+fn comparison_result_label(lhs: BoundType, rhs: BoundType) -> &'static str {
+    match comparison_result(lhs, rhs) {
+        ComparisonResult::Ok => "ok",
+        ComparisonResult::TypeMismatch => "type-mismatch",
+    }
+}
+
+#[cfg(test)]
+fn bound_type_label(ty: BoundType) -> &'static str {
+    match ty {
+        BoundType::Variant => "variant",
+        BoundType::Integer => "integer",
+        BoundType::Long => "long",
+        BoundType::LongLong => "longlong",
+        BoundType::LongPtr => "longptr",
+        BoundType::Byte => "byte",
+        BoundType::Single => "single",
+        BoundType::Double => "double",
+        BoundType::Currency => "currency",
+        BoundType::Decimal => "decimal",
+        BoundType::Date => "date",
+        BoundType::String => "string",
+        BoundType::Boolean => "boolean",
+        BoundType::Object => "object",
+        BoundType::Array => "array",
+    }
+}
+
+fn is_arithmetic_coercible_type(ty: BoundType) -> bool {
+    is_numeric_type(ty) || matches!(ty, BoundType::String | BoundType::Date | BoundType::Variant)
 }
 
 fn is_numeric_type(ty: BoundType) -> bool {
@@ -851,7 +972,10 @@ fn collect_labels_recursive(
 mod tests {
     use std::collections::{HashMap, HashSet};
 
-    use super::{CallMode, can_assign_to, classify_call_mode, coercion_result_label, join_types};
+    use super::{
+        CallMode, arithmetic_result_label, can_assign_to, classify_call_mode,
+        coercion_result_label, comparison_result_label, join_types,
+    };
     use crate::resolve::{BoundCallArg, BoundExpr, BoundParam, BoundType};
 
     #[test]
@@ -925,6 +1049,96 @@ mod tests {
                 coercion_result_label(source, target),
                 result_text,
                 "coercion table mismatch at row {}",
+                line_idx + 1
+            );
+        }
+    }
+
+    #[test]
+    fn arithmetic_table_rows_align_with_typecheck_rules() {
+        let table_path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("..")
+            .join("..")
+            .join("tables")
+            .join("arithmetic.csv");
+        let table =
+            std::fs::read_to_string(&table_path).expect("arithmetic decision table should exist");
+        for (line_idx, line) in table.lines().enumerate().skip(1) {
+            let trimmed = line.trim();
+            if trimmed.is_empty() {
+                continue;
+            }
+            let mut parts = trimmed.split(',');
+            let lhs_text = parts.next().expect("lhs column should be present").trim();
+            let rhs_text = parts.next().expect("rhs column should be present").trim();
+            let op_text = parts.next().expect("op column should be present").trim();
+            let result_text = parts
+                .next()
+                .expect("result column should be present")
+                .trim();
+            assert!(
+                parts.next().is_none(),
+                "arithmetic table row {} should have exactly 4 columns",
+                line_idx + 1
+            );
+            assert!(
+                matches!(op_text, "+" | "-"),
+                "arithmetic table row {} has unsupported op {}",
+                line_idx + 1,
+                op_text
+            );
+
+            let lhs = parse_bound_type(lhs_text).expect("known lhs type");
+            let rhs = parse_bound_type(rhs_text).expect("known rhs type");
+            assert_eq!(
+                arithmetic_result_label(lhs, rhs),
+                result_text,
+                "arithmetic table mismatch at row {}",
+                line_idx + 1
+            );
+        }
+    }
+
+    #[test]
+    fn comparison_table_rows_align_with_typecheck_rules() {
+        let table_path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("..")
+            .join("..")
+            .join("tables")
+            .join("comparison.csv");
+        let table =
+            std::fs::read_to_string(&table_path).expect("comparison decision table should exist");
+        for (line_idx, line) in table.lines().enumerate().skip(1) {
+            let trimmed = line.trim();
+            if trimmed.is_empty() {
+                continue;
+            }
+            let mut parts = trimmed.split(',');
+            let lhs_text = parts.next().expect("lhs column should be present").trim();
+            let rhs_text = parts.next().expect("rhs column should be present").trim();
+            let op_text = parts.next().expect("op column should be present").trim();
+            let result_text = parts
+                .next()
+                .expect("result column should be present")
+                .trim();
+            assert!(
+                parts.next().is_none(),
+                "comparison table row {} should have exactly 4 columns",
+                line_idx + 1
+            );
+            assert!(
+                matches!(op_text, "=" | "<>" | "<" | "<=" | ">" | ">="),
+                "comparison table row {} has unsupported op {}",
+                line_idx + 1,
+                op_text
+            );
+
+            let lhs = parse_bound_type(lhs_text).expect("known lhs type");
+            let rhs = parse_bound_type(rhs_text).expect("known rhs type");
+            assert_eq!(
+                comparison_result_label(lhs, rhs),
+                result_text,
+                "comparison table mismatch at row {}",
                 line_idx + 1
             );
         }

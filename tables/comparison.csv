@@ -1,4 +1,9 @@
-lhs,rhs,op,behavior
-String,String,=,OptionCompare-dependent
-Null,Any,=,Null-propagates
-Nothing,Object,Is,reference-identity
+lhs,rhs,op,result
+Long,Long,=,ok
+String,String,=,ok
+String,Long,=,ok
+Date,Long,>=,ok
+Variant,Object,=,ok
+Object,Long,=,type-mismatch
+Object,Object,=,type-mismatch
+Array,Long,<>,type-mismatch

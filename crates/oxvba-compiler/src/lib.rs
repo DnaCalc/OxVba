@@ -254,6 +254,29 @@ mod tests {
     }
 
     #[test]
+    fn arithmetic_object_plus_const_is_rejected() {
+        let source = "Sub Main()\nDim o As Object\no = o + 1\nEnd Sub";
+        let err = compile(source).expect_err("object arithmetic should be rejected");
+        assert!(
+            err.to_string()
+                .contains("type mismatch in arithmetic expression")
+        );
+    }
+
+    #[test]
+    fn comparison_object_long_is_rejected() {
+        let source = "Sub Main()\nDim o As Object\nIf o = 1 Then\nEnd If\nEnd Sub";
+        let err = compile(source).expect_err("object vs long comparison should be rejected");
+        assert!(err.to_string().contains("type mismatch in comparison"));
+    }
+
+    #[test]
+    fn comparison_variant_long_is_allowed() {
+        let source = "Sub Main()\nDim v As Variant\nIf v = 1 Then\nv = 2\nEnd If\nEnd Sub";
+        compile(source).expect("variant comparison with long should compile");
+    }
+
+    #[test]
     fn reject_unsupported_statement() {
         let source = "Sub Main()\nDim x\nx = x * 2\nEnd Sub";
         let err = compile(source).expect_err("typecheck should fail");

@@ -1,7 +1,7 @@
 # Formal Run Report
 
-- Timestamp (UTC): 2026-02-28T10:49:45Z
-- Profile scope: mvp-typing-coercion-matrix-v73
+- Timestamp (UTC): 2026-02-28T11:03:41Z
+- Profile scope: mvp-typing-operator-result-rules-v74
 - Overall mode: non-blocking
 - Kani required: false
 - Kani execution: deferred-to-wsl-async
@@ -220,3 +220,6 @@
 | FO-V73-001 | v73 | no | pass | cargo test -p oxvba-compiler typecheck::tests::coercion_table_rows_align_with_typecheck_rules | crates/oxvba-compiler/src/typecheck.rs |  |
 | FO-V73-002 | v73 | no | pass | cargo test -p oxvba-compiler coercion_assignment_object_to_long_is_rejected | crates/oxvba-compiler/src/lib.rs |  |
 | FO-V73-003 | v73 | no | pass | cargo test -p oxvba-compiler coercion_argument_object_to_long_is_rejected | crates/oxvba-compiler/src/lib.rs |  |
+| FO-V74-001 | v74 | no | pass | cargo test -p oxvba-compiler typecheck::tests::arithmetic_table_rows_align_with_typecheck_rules | crates/oxvba-compiler/src/typecheck.rs |  |
+| FO-V74-002 | v74 | no | pass | cargo test -p oxvba-compiler typecheck::tests::comparison_table_rows_align_with_typecheck_rules | crates/oxvba-compiler/src/typecheck.rs |  |
+| FO-V74-003 | v74 | no | pass | cargo test -p oxvba-compiler comparison_object_long_is_rejected | crates/oxvba-compiler/src/lib.rs |  |

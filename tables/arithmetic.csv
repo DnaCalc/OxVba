@@ -1,4 +1,9 @@
 lhs,rhs,op,result
-Integer,Integer,+,Long
-Long,Long,+,Long-or-Double
-Long,Double,+,Double
+Integer,Long,+,long
+Long,Long,-,long
+Long,Double,+,double
+String,Long,+,variant
+Date,Long,+,variant
+Variant,Long,+,variant
+Object,Long,+,type-mismatch
+Array,Long,+,type-mismatch

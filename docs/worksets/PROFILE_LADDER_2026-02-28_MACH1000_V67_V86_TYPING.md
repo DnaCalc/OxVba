@@ -353,3 +353,11 @@ Per profile:
   - run: `v73-kani`,
   - status: `dg-running`,
   - register: `docs/evidence/formal/DEFERRED_GATES.md`.
+- `v74` (`mvp-typing-operator-result-rules-v74`) completed:
+  - matrix gate `PASS` (`docs/evidence/profiles/v74/gate_report.md`),
+  - formal obligations `FO-V74-001..003` pass (`docs/evidence/formal/latest_run.md`),
+  - arithmetic/comparison decision-table alignment checks enabled (`tables/arithmetic.csv`, `tables/comparison.csv` vs typecheck rules).
+- Strict WSL Kani lane for `v74` started async as deferred gate:
+  - run: `v74-kani`,
+  - status: `dg-running`,
+  - register: `docs/evidence/formal/DEFERRED_GATES.md`.
