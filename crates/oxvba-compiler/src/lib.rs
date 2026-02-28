@@ -223,6 +223,16 @@ mod tests {
     }
 
     #[test]
+    fn late_bound_object_default_member_call_is_classified_with_explicit_diagnostic() {
+        let source = "Sub Main()\nDim obj As Object\nCall obj(1)\nEnd Sub";
+        let err = compile(source).expect_err("late-bound target is classified but not executable");
+        assert!(
+            err.to_string()
+                .contains("late-bound default-member call is not yet executable")
+        );
+    }
+
+    #[test]
     fn reject_unsupported_statement() {
         let source = "Sub Main()\nDim x\nx = x * 2\nEnd Sub";
         let err = compile(source).expect_err("typecheck should fail");

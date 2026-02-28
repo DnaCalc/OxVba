@@ -1,6 +1,12 @@
 # Implementation Log
 
 ## 2026-02-28
+- Completed `v71` (`mvp-typing-early-late-classification-v71`):
+  - added deterministic call-mode classification in typecheck: `Early`, `Mixed`, `Late`;
+  - classified mixed-mode calls for signatures/arguments involving `Variant`/`Object` flow;
+  - classified object-like default-member call targets as late-bound and surfaced explicit non-executable diagnostics for current runtime scope;
+  - added typecheck/compiler regression tests and conformance fixture for classification behavior;
+  - added formal obligations `FO-V71-001..003`, produced profile matrix artifacts under `docs/evidence/profiles/v71/`, and started strict async Kani lane (`v71-kani`) as deferred gate `DG-V71-001`.
 - Completed `v70` (`mvp-typing-procedure-signatures-v70`):
   - added function return-type metadata to bound procedures and bound return-symbol typing in function scope;
   - implemented return-type precedence (`As <type>` > type character > `Def*` > `Variant`) for function/property-get signatures;

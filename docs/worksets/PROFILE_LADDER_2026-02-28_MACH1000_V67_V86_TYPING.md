@@ -327,3 +327,10 @@ Per profile:
   - run: `v70-kani`,
   - status: `dg-running`,
   - register: `docs/evidence/formal/DEFERRED_GATES.md`.
+- `v71` (`mvp-typing-early-late-classification-v71`) completed:
+  - matrix gate `PASS` (`docs/evidence/profiles/v71/gate_report.md`),
+  - formal obligations `FO-V71-001..003` pass (`docs/evidence/formal/latest_run.md`).
+- Strict WSL Kani lane for `v71` started async as deferred gate:
+  - run: `v71-kani`,
+  - status: `dg-running`,
+  - register: `docs/evidence/formal/DEFERRED_GATES.md`.

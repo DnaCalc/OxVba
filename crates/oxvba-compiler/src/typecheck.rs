@@ -4,6 +4,13 @@ use crate::resolve::{
     BoundCallArg, BoundCond, BoundExpr, BoundModule, BoundParam, BoundStmt, BoundType,
 };
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum CallMode {
+    Early,
+    Late,
+    Mixed,
+}
+
 pub fn check_types(module: BoundModule) -> Result<BoundModule, String> {
     let mut module = module;
     let default_type_table = module.default_type_table;
@@ -266,8 +273,23 @@ fn check_stmt(
         }
         BoundStmt::Return => Ok(()),
         BoundStmt::Call { name, args } => {
-            if !proc_names.contains(name) {
-                return Err(format!("call to unknown procedure: {name}"));
+            let call_mode =
+                classify_call_mode(name, args, proc_names, proc_params, declared_types)?;
+            if matches!(call_mode, CallMode::Late) {
+                for arg in args {
+                    check_expr(
+                        &arg.expr,
+                        option_explicit,
+                        default_type_table,
+                        declared,
+                        declared_types,
+                        declarations,
+                        declaration_types,
+                    )?;
+                }
+                return Err(format!(
+                    "late-bound default-member call is not yet executable: {name}"
+                ));
             }
 
             if let Some(params) = proc_params.get(name) {
@@ -719,6 +741,43 @@ fn map_call_args_to_params<'a>(
     Ok(mapped)
 }
 
+fn classify_call_mode(
+    name: &str,
+    args: &[BoundCallArg],
+    proc_names: &HashSet<String>,
+    proc_params: &HashMap<String, Vec<BoundParam>>,
+    declared_types: &HashMap<String, BoundType>,
+) -> Result<CallMode, String> {
+    if proc_names.contains(name) {
+        let Some(params) = proc_params.get(name) else {
+            return Ok(CallMode::Early);
+        };
+        let mapped_args = map_call_args_to_params(name, args, params)?;
+        let dynamic_params = params
+            .iter()
+            .any(|param| matches!(param.ty, BoundType::Variant | BoundType::Object));
+        let dynamic_args = mapped_args.iter().flatten().any(|arg| {
+            matches!(
+                infer_expr_type(&arg.expr, declared_types),
+                BoundType::Variant | BoundType::Object
+            )
+        });
+        if dynamic_params || dynamic_args {
+            return Ok(CallMode::Mixed);
+        }
+        return Ok(CallMode::Early);
+    }
+
+    if matches!(
+        declared_types.get(name),
+        Some(BoundType::Variant) | Some(BoundType::Object)
+    ) {
+        return Ok(CallMode::Late);
+    }
+
+    Err(format!("call to unknown procedure: {name}"))
+}
+
 fn collect_labels(stmts: &[BoundStmt]) -> Result<HashSet<String>, String> {
     let mut labels = HashSet::new();
     let mut duplicates = Vec::new();
@@ -767,8 +826,10 @@ fn collect_labels_recursive(
 
 #[cfg(test)]
 mod tests {
-    use super::{can_assign_to, join_types};
-    use crate::resolve::BoundType;
+    use std::collections::{HashMap, HashSet};
+
+    use super::{CallMode, can_assign_to, classify_call_mode, join_types};
+    use crate::resolve::{BoundCallArg, BoundExpr, BoundParam, BoundType};
 
     #[test]
     fn join_numeric_promotes_to_wider_type() {
@@ -800,5 +861,71 @@ mod tests {
     fn assignability_array_to_scalar_is_rejected() {
         assert!(!can_assign_to(BoundType::Long, BoundType::Array));
         assert!(!can_assign_to(BoundType::Object, BoundType::Array));
+    }
+
+    #[test]
+    fn classify_call_mode_early_for_strict_typed_procedure() {
+        let proc_names = HashSet::from(["work".to_string()]);
+        let proc_params = HashMap::from([(
+            "work".to_string(),
+            vec![BoundParam {
+                name: "x".to_string(),
+                by_ref: false,
+                optional: false,
+                default_value: None,
+                ty: BoundType::Long,
+            }],
+        )]);
+        let declared_types = HashMap::new();
+        let args = vec![BoundCallArg {
+            name: None,
+            expr: BoundExpr::IntConst(1),
+        }];
+        assert_eq!(
+            classify_call_mode("work", &args, &proc_names, &proc_params, &declared_types)
+                .expect("classification should succeed"),
+            CallMode::Early
+        );
+    }
+
+    #[test]
+    fn classify_call_mode_mixed_for_variant_signature() {
+        let proc_names = HashSet::from(["work".to_string()]);
+        let proc_params = HashMap::from([(
+            "work".to_string(),
+            vec![BoundParam {
+                name: "x".to_string(),
+                by_ref: false,
+                optional: false,
+                default_value: None,
+                ty: BoundType::Variant,
+            }],
+        )]);
+        let declared_types = HashMap::new();
+        let args = vec![BoundCallArg {
+            name: None,
+            expr: BoundExpr::IntConst(1),
+        }];
+        assert_eq!(
+            classify_call_mode("work", &args, &proc_names, &proc_params, &declared_types)
+                .expect("classification should succeed"),
+            CallMode::Mixed
+        );
+    }
+
+    #[test]
+    fn classify_call_mode_late_for_object_default_member_target() {
+        let proc_names = HashSet::new();
+        let proc_params = HashMap::new();
+        let declared_types = HashMap::from([("obj".to_string(), BoundType::Object)]);
+        let args = vec![BoundCallArg {
+            name: None,
+            expr: BoundExpr::IntConst(1),
+        }];
+        assert_eq!(
+            classify_call_mode("obj", &args, &proc_names, &proc_params, &declared_types)
+                .expect("classification should succeed"),
+            CallMode::Late
+        );
     }
 }

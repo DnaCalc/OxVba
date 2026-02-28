@@ -200,3 +200,6 @@
 "FO-V70-001","v70","cargo test -p oxvba-compiler function_return_explicit_as_overrides_typechar","no","pass","","crates/oxvba-compiler/src/lib.rs"
 "FO-V70-002","v70","cargo test -p oxvba-compiler byref_typed_exact_match_is_required","no","pass","","crates/oxvba-compiler/src/lib.rs"
 "FO-V70-003","v70","cargo test -p oxvba-compiler resolve::tests::resolve_function_return_explicit_as_overrides_type_char_and_def_type","no","pass","","crates/oxvba-compiler/src/resolve.rs"
+"FO-V71-001","v71","cargo test -p oxvba-compiler late_bound_object_default_member_call_is_classified_with_explicit_diagnostic","no","pass","","crates/oxvba-compiler/src/lib.rs"
+"FO-V71-002","v71","cargo test -p oxvba-compiler typecheck::tests::classify_call_mode_mixed_for_variant_signature","no","pass","","crates/oxvba-compiler/src/typecheck.rs"
+"FO-V71-003","v71","cargo test -p oxvba-compiler typecheck::tests::classify_call_mode_late_for_object_default_member_target","no","pass","","crates/oxvba-compiler/src/typecheck.rs"

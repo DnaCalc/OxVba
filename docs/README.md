@@ -82,6 +82,7 @@
 | Profile v68 Status | [`PROFILE_STATUS_V68.md`](profile-status/PROFILE_STATUS_V68.md) | Current gate status contract for `mvp-typing-option-explicit-diagnostics-v68`. |
 | Profile v69 Status | [`PROFILE_STATUS_V69.md`](profile-status/PROFILE_STATUS_V69.md) | Current gate status contract for `mvp-typing-default-type-rules-v69`. |
 | Profile v70 Status | [`PROFILE_STATUS_V70.md`](profile-status/PROFILE_STATUS_V70.md) | Current gate status contract for `mvp-typing-procedure-signatures-v70`. |
+| Profile v71 Status | [`PROFILE_STATUS_V71.md`](profile-status/PROFILE_STATUS_V71.md) | Current gate status contract for `mvp-typing-early-late-classification-v71`. |
 | Phase 12 Status | [`PHASE12_STATUS.md`](PHASE12_STATUS.md) | Declared profile scope and final conformance/stabilization gate artifacts. |
 | Work Set Plan (v2) | [`worksets/WORKSET_2026-02-27_CONTROLFLOW_V2.md`](worksets/WORKSET_2026-02-27_CONTROLFLOW_V2.md) | Detailed execution-grade plan for control-flow expansion beyond `mvp-int32-core-v1`. |
 | Work Set Plan (v3) | [`worksets/WORKSET_2026-02-27_FORMAL_FOUNDATION_V3.md`](worksets/WORKSET_2026-02-27_FORMAL_FOUNDATION_V3.md) | Formal infrastructure work set for manifest-driven obligations and reporting. |
@@ -151,6 +152,7 @@
 | Work Set Plan (v68) | [`worksets/WORKSET_2026-02-28_OPTION_EXPLICIT_DIAGNOSTICS_V68.md`](worksets/WORKSET_2026-02-28_OPTION_EXPLICIT_DIAGNOSTICS_V68.md) | Option Explicit and declaration diagnostics expansion work set. |
 | Work Set Plan (v69) | [`worksets/WORKSET_2026-02-28_DEFAULT_TYPE_RULES_V69.md`](worksets/WORKSET_2026-02-28_DEFAULT_TYPE_RULES_V69.md) | Def* default typing and type-character precedence work set. |
 | Work Set Plan (v70) | [`worksets/WORKSET_2026-02-28_PROCEDURE_SIGNATURES_V70.md`](worksets/WORKSET_2026-02-28_PROCEDURE_SIGNATURES_V70.md) | Typed procedure signatures, return typing, and typed ByRef legality work set. |
+| Work Set Plan (v71) | [`worksets/WORKSET_2026-02-28_EARLY_LATE_CLASSIFICATION_V71.md`](worksets/WORKSET_2026-02-28_EARLY_LATE_CLASSIFICATION_V71.md) | Deterministic early/mixed/late call-mode classification work set. |
 | Work Set Plan (v27-v36) | [`worksets/WORKSET_2026-02-27_BATCH_V27_V36.md`](worksets/WORKSET_2026-02-27_BATCH_V27_V36.md) | Next long batch: formal reliability, language coverage closure, and hotspot performance work. |
 | Profile Ladder | [`worksets/PROFILE_LADDER_2026-02-27_MACH1000.md`](worksets/PROFILE_LADDER_2026-02-27_MACH1000.md) | MACH1000 profile roadmap and execution history. |
 | Profile Ladder (v37-v56) | [`worksets/PROFILE_LADDER_2026-02-27_MACH1000_V37_V56.md`](worksets/PROFILE_LADDER_2026-02-27_MACH1000_V37_V56.md) | Next horizon ladder split into language core, intrinsic runtime, and host/interop tracks. |
