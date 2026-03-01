@@ -1,7 +1,7 @@
 # Formal Run Report
 
-- Timestamp (UTC): 2026-03-01T13:52:05Z
-- Profile scope: mvp-profile-v170
+- Timestamp (UTC): 2026-03-01T13:58:55Z
+- Profile scope: mvp-profile-v172
 - Overall mode: non-blocking
 - Kani required: false
 - Kani execution: deferred-to-wsl-async
@@ -337,3 +337,7 @@
 | FO-V169-002 | v169 | no | pass | cargo test -p oxvba-host formal_v169_profile_status_document_exists | docs/profile-status/PROFILE_STATUS_V169.md |  |
 | FO-V170-001 | v170 | no | pass | cargo test -p oxvba-host formal_v170_string_digit_paths_use_slice_based_substrings | crates/oxvba-vm/src/interpreter.rs |  |
 | FO-V170-002 | v170 | no | pass | cargo test -p oxvba-host formal_v170_profile_status_document_exists | docs/profile-status/PROFILE_STATUS_V170.md |  |
+| FO-V171-001 | v171 | no | pass | cargo test -p oxvba-host formal_v171_coercion_cverr_range_fixture_executes | conformance/tests/coercion_cverr_range_predicates.bas |  |
+| FO-V171-002 | v171 | no | pass | cargo test -p oxvba-host formal_v171_profile_status_document_exists | docs/profile-status/PROFILE_STATUS_V171.md |  |
+| FO-V172-001 | v172 | no | pass | cargo test -p oxvba-host formal_v172_error_nested_mode_fixture_executes | conformance/tests/error_nested_mode_transitions.bas |  |
+| FO-V172-002 | v172 | no | pass | cargo test -p oxvba-host formal_v172_profile_status_document_exists | docs/profile-status/PROFILE_STATUS_V172.md |  |

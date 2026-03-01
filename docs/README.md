@@ -130,6 +130,8 @@
 | Profile v168 Status | [`PROFILE_STATUS_V168.md`](profile-status/PROFILE_STATUS_V168.md) | Current gate status contract for `mvp-profile-v168` (runtime benchmark instrumentation expansion for focused non-HAL subsets). |
 | Profile v169 Status | [`PROFILE_STATUS_V169.md`](profile-status/PROFILE_STATUS_V169.md) | Current gate status contract for `mvp-profile-v169` (financial hot-path derivative optimization pass). |
 | Profile v170 Status | [`PROFILE_STATUS_V170.md`](profile-status/PROFILE_STATUS_V170.md) | Current gate status contract for `mvp-profile-v170` (string-digit path slice-based optimization pass). |
+| Profile v171 Status | [`PROFILE_STATUS_V171.md`](profile-status/PROFILE_STATUS_V171.md) | Current gate status contract for `mvp-profile-v171` (coercion matrix hardening for `CVErr` range/predicate edges). |
+| Profile v172 Status | [`PROFILE_STATUS_V172.md`](profile-status/PROFILE_STATUS_V172.md) | Current gate status contract for `mvp-profile-v172` (nested error-mode transition hardening). |
 | Profile v107 Status | [`PROFILE_STATUS_V107.md`](profile-status/PROFILE_STATUS_V107.md) | Current gate status contract for `mvp-lang-with-member-target-v107`. |
 | Profile v108-v146 Statuses | [`profile-status/`](profile-status/README.md) | AutoRun ladder status records are published through `PROFILE_STATUS_V146.md` for the active full-language/built-ins ladder range. |
 | Phase 12 Status | [`PHASE12_STATUS.md`](PHASE12_STATUS.md) | Declared profile scope and final conformance/stabilization gate artifacts. |
@@ -250,6 +252,8 @@
 | Work Set Plan (v168) | [`worksets/WORKSET_2026-03-01_RUNTIME_PERF_INSTRUMENTATION_V168.md`](worksets/WORKSET_2026-03-01_RUNTIME_PERF_INSTRUMENTATION_V168.md) | Runtime instrumentation workset for focused Err/string/financial benchmark subsets. |
 | Work Set Plan (v169) | [`worksets/WORKSET_2026-03-01_FINANCIAL_HOTPATH_PERF_V169.md`](worksets/WORKSET_2026-03-01_FINANCIAL_HOTPATH_PERF_V169.md) | Financial intrinsic hot-path optimization workset (`Rate` derivative path). |
 | Work Set Plan (v170) | [`worksets/WORKSET_2026-03-01_STRING_PATH_PERF_V170.md`](worksets/WORKSET_2026-03-01_STRING_PATH_PERF_V170.md) | String-digit intrinsic path optimization workset (slice-based helper flow). |
+| Work Set Plan (v171) | [`worksets/WORKSET_2026-03-01_COERCION_MATRIX_HARDENING_V171.md`](worksets/WORKSET_2026-03-01_COERCION_MATRIX_HARDENING_V171.md) | Coercion matrix hardening workset for `CVErr` range and predicate regression coverage. |
+| Work Set Plan (v172) | [`worksets/WORKSET_2026-03-01_ERROR_MODEL_HARDENING_V172.md`](worksets/WORKSET_2026-03-01_ERROR_MODEL_HARDENING_V172.md) | Error-model hardening workset for nested mode-transition regression coverage. |
 | Status Tours | [`status-tours/`](status-tours/) | Date-stamped orientation/showcase docs for implemented project state. |
 | Formal | [`FORMAL.md`](FORMAL.md) | Lean/Kani formal scaffold status and structure. |
 | Spec Checklist | [`evidence/SPEC_CHECKLIST.md`](evidence/SPEC_CHECKLIST.md) | Structured language + built-in/library checklist aligned to current evidence and planned gaps. |

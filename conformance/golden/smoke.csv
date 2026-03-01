@@ -184,3 +184,5 @@
 "while_wend_basic.bas","ok","3"
 "with_block_basic.bas","ok","3,3"
 "with_block_member_target_chain.bas","ok","7,7"
+"coercion_cverr_range_predicates.bas","ok","1,1,1,1,0,10"
+"error_nested_mode_transitions.bas","ok","5,0,0,6"

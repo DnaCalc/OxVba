@@ -325,3 +325,7 @@
 "FO-V169-002","v169","cargo test -p oxvba-host formal_v169_profile_status_document_exists","no","pass","","docs/profile-status/PROFILE_STATUS_V169.md"
 "FO-V170-001","v170","cargo test -p oxvba-host formal_v170_string_digit_paths_use_slice_based_substrings","no","pass","","crates/oxvba-vm/src/interpreter.rs"
 "FO-V170-002","v170","cargo test -p oxvba-host formal_v170_profile_status_document_exists","no","pass","","docs/profile-status/PROFILE_STATUS_V170.md"
+"FO-V171-001","v171","cargo test -p oxvba-host formal_v171_coercion_cverr_range_fixture_executes","no","pass","","conformance/tests/coercion_cverr_range_predicates.bas"
+"FO-V171-002","v171","cargo test -p oxvba-host formal_v171_profile_status_document_exists","no","pass","","docs/profile-status/PROFILE_STATUS_V171.md"
+"FO-V172-001","v172","cargo test -p oxvba-host formal_v172_error_nested_mode_fixture_executes","no","pass","","conformance/tests/error_nested_mode_transitions.bas"
+"FO-V172-002","v172","cargo test -p oxvba-host formal_v172_profile_status_document_exists","no","pass","","docs/profile-status/PROFILE_STATUS_V172.md"

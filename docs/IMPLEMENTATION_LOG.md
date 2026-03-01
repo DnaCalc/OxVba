@@ -1,6 +1,19 @@
 # Implementation Log
 
 ## 2026-03-01
+- Completed `v172` (`mvp-profile-v172`) error-model hardening:
+  - added nested error-mode transition conformance fixture:
+    - `conformance/tests/error_nested_mode_transitions.bas`
+    - golden row in `conformance/golden/smoke.csv`;
+  - validated `Resume Next` + `On Error GoTo` interaction sequence via formal host checks.
+- Completed `v171` (`mvp-profile-v171`) coercion matrix hardening:
+  - added `CVErr` range/predicate conformance fixture:
+    - `conformance/tests/coercion_cverr_range_predicates.bas`
+    - golden row in `conformance/golden/smoke.csv`;
+  - added formal checks covering `CVErr` boundary predicate and `VarType` outputs.
+- Validation lane for `v171..v172` passed:
+  - `./scripts/run-profile-gate.ps1 -ProfileScope mvp-profile-v172 -OutputDir docs/evidence/profiles/v172`
+  - `./scripts/meta-check.ps1 -Fast`
 - Completed `v170` (`mvp-profile-v170`) string-path performance pass:
   - optimized digit-string helper paths in VM (`Right`, shared slice path, `Mid` statement mutation) to avoid unnecessary char-vector materialization and use slice-based ASCII numeric substrings;
   - preserved semantic behavior with full workspace/meta checks and integrated gate artifacts under `docs/evidence/profiles/v170/`.

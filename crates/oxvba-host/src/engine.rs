@@ -2745,6 +2745,46 @@ mod tests {
     }
 
     #[test]
+    fn formal_v171_coercion_cverr_range_fixture_executes() {
+        let source = std::fs::read_to_string(repo_path(
+            "conformance/tests/coercion_cverr_range_predicates.bas",
+        ))
+        .expect("v171 coercion fixture exists");
+        let out = Engine::new(HostConfig {
+            enable_jit: false,
+            root_object_name: None,
+        })
+        .execute_source_with_snapshot(&source)
+        .expect("execution should succeed");
+        assert_eq!(out, vec![1, 1, 1, 1, 0, 10]);
+    }
+
+    #[test]
+    fn formal_v171_profile_status_document_exists() {
+        assert!(repo_path("docs/profile-status/PROFILE_STATUS_V171.md").exists());
+    }
+
+    #[test]
+    fn formal_v172_error_nested_mode_fixture_executes() {
+        let source = std::fs::read_to_string(repo_path(
+            "conformance/tests/error_nested_mode_transitions.bas",
+        ))
+        .expect("v172 error-mode fixture exists");
+        let out = Engine::new(HostConfig {
+            enable_jit: false,
+            root_object_name: None,
+        })
+        .execute_source_with_snapshot(&source)
+        .expect("execution should succeed");
+        assert_eq!(out, vec![5, 0, 0, 6]);
+    }
+
+    #[test]
+    fn formal_v172_profile_status_document_exists() {
+        assert!(repo_path("docs/profile-status/PROFILE_STATUS_V172.md").exists());
+    }
+
+    #[test]
     fn formal_v132_builtin_expansion_fixtures_exist() {
         assert!(repo_path("conformance/tests/stdlib_string_expansion_core.bas").exists());
         assert!(repo_path("conformance/tests/stdlib_format_core.bas").exists());
