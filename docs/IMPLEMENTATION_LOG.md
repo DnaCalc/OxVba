@@ -1,6 +1,22 @@
 # Implementation Log
 
 ## 2026-03-01
+- Completed `v174` (`mvp-profile-v174`) differential scaffold prep:
+  - added deferred oracle probe queue scaffold script:
+    - `scripts/oracle-probe.ps1`;
+  - added scaffold usage and policy doc:
+    - `docs/evidence/conformance/ORACLE_PROBE_SCAFFOLD.md`;
+  - published profile/workset docs:
+    - `docs/worksets/WORKSET_2026-03-01_DIFFERENTIAL_SCAFFOLD_PREP_V174.md`
+    - `docs/profile-status/PROFILE_STATUS_V174.md`.
+- Completed `v173` (`mvp-profile-v173`) JIT lowering robustness:
+  - added JIT fallback parity regressions for new non-HAL edges:
+    - `falls_back_for_cverr_range_predicates_and_matches_vm`
+    - `falls_back_for_nested_error_mode_transitions_and_matches_vm`;
+  - synchronized formal checks and obligations for profile closure.
+- Validation lane for `v173..v174` passed:
+  - `./scripts/run-profile-gate.ps1 -ProfileScope mvp-profile-v174 -OutputDir docs/evidence/profiles/v174`
+  - `./scripts/meta-check.ps1 -Fast`
 - Completed `v172` (`mvp-profile-v172`) error-model hardening:
   - added nested error-mode transition conformance fixture:
     - `conformance/tests/error_nested_mode_transitions.bas`

@@ -2785,6 +2785,35 @@ mod tests {
     }
 
     #[test]
+    fn formal_v173_jit_fallback_regressions_cover_new_non_hal_edges() {
+        let text = std::fs::read_to_string(repo_path("crates/oxvba-jit/src/lib.rs"))
+            .expect("jit source exists");
+        assert!(text.contains("falls_back_for_cverr_range_predicates_and_matches_vm"));
+        assert!(text.contains("falls_back_for_nested_error_mode_transitions_and_matches_vm"));
+    }
+
+    #[test]
+    fn formal_v173_profile_status_document_exists() {
+        assert!(repo_path("docs/profile-status/PROFILE_STATUS_V173.md").exists());
+    }
+
+    #[test]
+    fn formal_v174_oracle_probe_scaffold_exists() {
+        assert!(repo_path("scripts/oracle-probe.ps1").exists());
+        let doc = std::fs::read_to_string(repo_path(
+            "docs/evidence/conformance/ORACLE_PROBE_SCAFFOLD.md",
+        ))
+        .expect("oracle probe scaffold doc exists");
+        assert!(doc.contains("deferred oracle"));
+        assert!(doc.contains("non-blocking"));
+    }
+
+    #[test]
+    fn formal_v174_profile_status_document_exists() {
+        assert!(repo_path("docs/profile-status/PROFILE_STATUS_V174.md").exists());
+    }
+
+    #[test]
     fn formal_v132_builtin_expansion_fixtures_exist() {
         assert!(repo_path("conformance/tests/stdlib_string_expansion_core.bas").exists());
         assert!(repo_path("conformance/tests/stdlib_format_core.bas").exists());

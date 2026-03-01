@@ -1,7 +1,7 @@
 # Formal Run Report
 
-- Timestamp (UTC): 2026-03-01T13:58:55Z
-- Profile scope: mvp-profile-v172
+- Timestamp (UTC): 2026-03-01T14:20:10Z
+- Profile scope: mvp-profile-v174
 - Overall mode: non-blocking
 - Kani required: false
 - Kani execution: deferred-to-wsl-async
@@ -341,3 +341,7 @@
 | FO-V171-002 | v171 | no | pass | cargo test -p oxvba-host formal_v171_profile_status_document_exists | docs/profile-status/PROFILE_STATUS_V171.md |  |
 | FO-V172-001 | v172 | no | pass | cargo test -p oxvba-host formal_v172_error_nested_mode_fixture_executes | conformance/tests/error_nested_mode_transitions.bas |  |
 | FO-V172-002 | v172 | no | pass | cargo test -p oxvba-host formal_v172_profile_status_document_exists | docs/profile-status/PROFILE_STATUS_V172.md |  |
+| FO-V173-001 | v173 | no | pass | cargo test -p oxvba-host formal_v173_jit_fallback_regressions_cover_new_non_hal_edges | crates/oxvba-jit/src/lib.rs |  |
+| FO-V173-002 | v173 | no | pass | cargo test -p oxvba-host formal_v173_profile_status_document_exists | docs/profile-status/PROFILE_STATUS_V173.md |  |
+| FO-V174-001 | v174 | no | pass | cargo test -p oxvba-host formal_v174_oracle_probe_scaffold_exists | scripts/oracle-probe.ps1 |  |
+| FO-V174-002 | v174 | no | pass | cargo test -p oxvba-host formal_v174_profile_status_document_exists | docs/profile-status/PROFILE_STATUS_V174.md |  |

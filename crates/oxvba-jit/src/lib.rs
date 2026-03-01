@@ -132,4 +132,32 @@ mod tests {
         assert_eq!(jit, vm);
         assert_eq!(jit, vec![0, 1, 10, 3, 0, 0, 0, 1]);
     }
+
+    #[test]
+    fn falls_back_for_cverr_range_predicates_and_matches_vm() {
+        let source = "Sub Main()\nDim a\nDim b\nDim c\nDim d\nDim e\nDim f\na = IsError(CVErr(0))\nb = IsError(CVErr(65535))\nc = IsError(CVErr(70000))\nd = IsError(CVErr(-70000))\ne = IsNumeric(CVErr(0))\nf = VarType(CVErr(70000))\nEnd Sub";
+        let bytecode = oxvba_compiler::compile(source).expect("compile should succeed");
+        assert!(!cranelift::supports_bytecode(&bytecode));
+
+        let vm = oxvba_vm::execute_and_snapshot(&bytecode).expect("vm should execute");
+        let jit = JitEngine
+            .execute_and_snapshot(&bytecode)
+            .expect("jit fallback should execute");
+        assert_eq!(jit, vm);
+        assert_eq!(jit, vec![1, 1, 1, 1, 0, 10]);
+    }
+
+    #[test]
+    fn falls_back_for_nested_error_mode_transitions_and_matches_vm() {
+        let source = "Sub Main()\nDim a\nDim b\nDim c\nDim d\nOn Error Resume Next\nError 5\na = Err.Number\nResume Next\nb = Err.Number\nOn Error GoTo Handler\nError 6\nc = Err.Number\nGoTo Done\nHandler:\nd = Err.Number\nResume Next\nDone:\nEnd Sub";
+        let bytecode = oxvba_compiler::compile(source).expect("compile should succeed");
+        assert!(!cranelift::supports_bytecode(&bytecode));
+
+        let vm = oxvba_vm::execute_and_snapshot(&bytecode).expect("vm should execute");
+        let jit = JitEngine
+            .execute_and_snapshot(&bytecode)
+            .expect("jit fallback should execute");
+        assert_eq!(jit, vm);
+        assert_eq!(jit, vec![5, 0, 0, 6]);
+    }
 }

@@ -132,6 +132,8 @@
 | Profile v170 Status | [`PROFILE_STATUS_V170.md`](profile-status/PROFILE_STATUS_V170.md) | Current gate status contract for `mvp-profile-v170` (string-digit path slice-based optimization pass). |
 | Profile v171 Status | [`PROFILE_STATUS_V171.md`](profile-status/PROFILE_STATUS_V171.md) | Current gate status contract for `mvp-profile-v171` (coercion matrix hardening for `CVErr` range/predicate edges). |
 | Profile v172 Status | [`PROFILE_STATUS_V172.md`](profile-status/PROFILE_STATUS_V172.md) | Current gate status contract for `mvp-profile-v172` (nested error-mode transition hardening). |
+| Profile v173 Status | [`PROFILE_STATUS_V173.md`](profile-status/PROFILE_STATUS_V173.md) | Current gate status contract for `mvp-profile-v173` (JIT fallback robustness expansion for hardened coercion/error regressions). |
+| Profile v174 Status | [`PROFILE_STATUS_V174.md`](profile-status/PROFILE_STATUS_V174.md) | Current gate status contract for `mvp-profile-v174` (deferred oracle probe scaffolding preparation). |
 | Profile v107 Status | [`PROFILE_STATUS_V107.md`](profile-status/PROFILE_STATUS_V107.md) | Current gate status contract for `mvp-lang-with-member-target-v107`. |
 | Profile v108-v146 Statuses | [`profile-status/`](profile-status/README.md) | AutoRun ladder status records are published through `PROFILE_STATUS_V146.md` for the active full-language/built-ins ladder range. |
 | Phase 12 Status | [`PHASE12_STATUS.md`](PHASE12_STATUS.md) | Declared profile scope and final conformance/stabilization gate artifacts. |
@@ -254,6 +256,8 @@
 | Work Set Plan (v170) | [`worksets/WORKSET_2026-03-01_STRING_PATH_PERF_V170.md`](worksets/WORKSET_2026-03-01_STRING_PATH_PERF_V170.md) | String-digit intrinsic path optimization workset (slice-based helper flow). |
 | Work Set Plan (v171) | [`worksets/WORKSET_2026-03-01_COERCION_MATRIX_HARDENING_V171.md`](worksets/WORKSET_2026-03-01_COERCION_MATRIX_HARDENING_V171.md) | Coercion matrix hardening workset for `CVErr` range and predicate regression coverage. |
 | Work Set Plan (v172) | [`worksets/WORKSET_2026-03-01_ERROR_MODEL_HARDENING_V172.md`](worksets/WORKSET_2026-03-01_ERROR_MODEL_HARDENING_V172.md) | Error-model hardening workset for nested mode-transition regression coverage. |
+| Work Set Plan (v173) | [`worksets/WORKSET_2026-03-01_JIT_LOWERING_ROBUSTNESS_V173.md`](worksets/WORKSET_2026-03-01_JIT_LOWERING_ROBUSTNESS_V173.md) | JIT lowering/fallback robustness workset for hardened non-HAL regression surfaces. |
+| Work Set Plan (v174) | [`worksets/WORKSET_2026-03-01_DIFFERENTIAL_SCAFFOLD_PREP_V174.md`](worksets/WORKSET_2026-03-01_DIFFERENTIAL_SCAFFOLD_PREP_V174.md) | Deferred oracle differential scaffold workset (non-blocking queue generation). |
 | Status Tours | [`status-tours/`](status-tours/) | Date-stamped orientation/showcase docs for implemented project state. |
 | Formal | [`FORMAL.md`](FORMAL.md) | Lean/Kani formal scaffold status and structure. |
 | Spec Checklist | [`evidence/SPEC_CHECKLIST.md`](evidence/SPEC_CHECKLIST.md) | Structured language + built-in/library checklist aligned to current evidence and planned gaps. |

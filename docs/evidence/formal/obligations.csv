@@ -329,3 +329,7 @@ FO-V171-001,v171,"cargo test -p oxvba-host formal_v171_coercion_cverr_range_fixt
 FO-V171-002,v171,"cargo test -p oxvba-host formal_v171_profile_status_document_exists",no,true,docs/profile-status/PROFILE_STATUS_V171.md
 FO-V172-001,v172,"cargo test -p oxvba-host formal_v172_error_nested_mode_fixture_executes",no,true,conformance/tests/error_nested_mode_transitions.bas
 FO-V172-002,v172,"cargo test -p oxvba-host formal_v172_profile_status_document_exists",no,true,docs/profile-status/PROFILE_STATUS_V172.md
+FO-V173-001,v173,"cargo test -p oxvba-host formal_v173_jit_fallback_regressions_cover_new_non_hal_edges",no,true,crates/oxvba-jit/src/lib.rs
+FO-V173-002,v173,"cargo test -p oxvba-host formal_v173_profile_status_document_exists",no,true,docs/profile-status/PROFILE_STATUS_V173.md
+FO-V174-001,v174,"cargo test -p oxvba-host formal_v174_oracle_probe_scaffold_exists",no,true,scripts/oracle-probe.ps1
+FO-V174-002,v174,"cargo test -p oxvba-host formal_v174_profile_status_document_exists",no,true,docs/profile-status/PROFILE_STATUS_V174.md
