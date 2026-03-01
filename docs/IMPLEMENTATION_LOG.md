@@ -1,5 +1,28 @@
 # Implementation Log
 
+## 2026-03-01
+- Remote Kani runner hardening and relaunch:
+  - upgraded `scripts/run-formal-kani-remote.ps1` remote template with:
+    - per-lane heartbeat/progress telemetry (`progress.json`, `status.txt`, `summary.txt`),
+    - streamed lane logs during command execution (no end-only buffering),
+    - per-obligation timeout control (`-ObligationTimeoutSeconds`, default `10800`),
+    - deduplicated command cache (`state/dedup`) keyed by commit/toolchain/command (`-DeferredStrategy dedup`),
+    - richer status/tail surfaces (phase/progress/current-obligation/log-bytes, driver/summary/progress outputs).
+  - added `StopDeferred` action with `-StopMode stale|all`:
+    - `stale`: reconcile stale/dead deferred envelopes to explicit terminal state (`exit_code=143`, `completed:stopped`) without killing active lanes,
+    - `all`: terminate active deferred lane/dispatch/kani/cbmc processes under remote base, then mark terminal state.
+  - updated remote job classification to surface `running-detached` instead of ambiguous `unknown` when wrapper PID exits but lane/dispatch workers remain active.
+  - extended dispatch metadata/state with strategy + timeout fields and explicit dispatch state markers.
+  - updated docs:
+    - `docs/evidence/formal/REMOTE_KANI_RUNNER.md`
+    - `scripts/README.md`
+  - added investigation/evidence note:
+    - `docs/evidence/formal/REMOTE_KANI_RUNNER_INVESTIGATION_2026-03-01.md`
+  - relaunched deferred remote run with hardened settings:
+    - `./scripts/run-formal-kani-remote.ps1 -Action StartDeferred -DispatchJobName deferred-dedup-v146 -DeferredMode cumulative -DeferredStrategy dedup -DeferredVersions "146" -DeferredConcurrency 3 -ObligationTimeoutSeconds 10800`
+  - observed live telemetry after relaunch:
+    - `v146-kani` running with streamed output, heartbeat updates (`phase=running-command`, `progress=0/4`), and growing `log_bytes`, confirming active long-run visibility.
+
 ## 2026-02-28
 - Continued language-closure batch after crash recovery (local run; no new Kani launches):
   - implemented control-flow coverage tranche across `v87..v94` scope subset:

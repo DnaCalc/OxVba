@@ -1,5 +1,5 @@
 param(
-    [ValidateSet("Ensure", "ProbeCapacity", "StartDeferred", "Status", "Tail", "FetchArtifacts")]
+    [ValidateSet("Ensure", "ProbeCapacity", "StartDeferred", "StopDeferred", "Status", "Tail", "FetchArtifacts")]
     [string]$Action = "Status",
     [string]$SshHost = "94.72.99.81",
     [string]$SshUser = "ubuntu",
@@ -7,8 +7,13 @@ param(
     [string]$RemoteBase = "/home/ubuntu/.dnacalc_remote",
     [ValidateSet("cumulative", "exact")]
     [string]$DeferredMode = "cumulative",
+    [ValidateSet("lane", "dedup")]
+    [string]$DeferredStrategy = "dedup",
     [string]$DeferredVersions = "",
     [int]$DeferredConcurrency = 0,
+    [int]$ObligationTimeoutSeconds = 10800,
+    [ValidateSet("stale", "all")]
+    [string]$StopMode = "stale",
     [string]$DispatchJobName = "deferred-dispatch",
     [int]$TailLines = 80,
     [string]$Lane = "",
@@ -43,7 +48,7 @@ function Get-EnsureScript([string]$BaseDir) {
     $template = @'
 set -euo pipefail
 BASE="__BASE__"
-mkdir -p "$BASE"/{bin,logs,state/jobs,state/deferred_lanes,state/deferred_dispatch,artifacts,tmp,home,cargo,rustup,work,tools}
+mkdir -p "$BASE"/{bin,logs,state/jobs,state/deferred_lanes,state/deferred_dispatch,state/dedup,artifacts,tmp,home,cargo,rustup,work,tools}
 
 cat > "$BASE/bin/env.sh" <<'EOF'
 #!/usr/bin/env bash
@@ -55,7 +60,7 @@ export HOME="$BASE/home"
 export CARGO_HOME="$BASE/cargo"
 export RUSTUP_HOME="$BASE/rustup"
 export PATH="$BASE/tools/bin:$BASE/cargo/bin:$PATH"
-mkdir -p "$TMPDIR" "$HOME" "$CARGO_HOME" "$RUSTUP_HOME" "$BASE/logs" "$BASE/state/jobs" "$BASE/artifacts" "$BASE/work"
+mkdir -p "$TMPDIR" "$HOME" "$CARGO_HOME" "$RUSTUP_HOME" "$BASE/logs" "$BASE/state/jobs" "$BASE/state/dedup" "$BASE/artifacts" "$BASE/work"
 EOF
 
 cat > "$BASE/bin/bootstrap_kani.sh" <<'EOF'
@@ -184,7 +189,19 @@ for d in "$BASE"/state/jobs/*; do
   elif [[ -f "$d/exit_code" ]]; then
     state="finished:$(cat "$d/exit_code")"
   else
-    state="unknown"
+    cmd="$(cat "$d/command.txt" 2>/dev/null || true)"
+    if [[ "$cmd" == *"dispatch_deferred_lanes.sh"* ]] && pgrep -f "__BASE__/bin/dispatch_deferred_lanes.sh" >/dev/null 2>&1; then
+      state="running-detached"
+    elif [[ "$cmd" == *"run_deferred_lane.sh"* ]]; then
+      v="$(echo "$cmd" | sed -nE 's/.*run_deferred_lane\.sh ([0-9]+).*/\1/p' | head -n 1)"
+      if [[ -n "$v" ]] && pgrep -f "__BASE__/bin/run_deferred_lane.sh ${v} " >/dev/null 2>&1; then
+        state="running-detached"
+      else
+        state="unknown"
+      fi
+    else
+      state="unknown"
+    fi
   fi
   echo "$job_id $state pid=$pid"
 done
@@ -243,13 +260,20 @@ EOF
 cat > "$BASE/bin/run_formal_lane.py" <<'EOF'
 #!/usr/bin/env python3
 import argparse
+import hashlib
 import csv
 import datetime as dt
 import json
+import os
 import pathlib
 import re
 import subprocess
 import sys
+import time
+import shutil
+import selectors
+from contextlib import nullcontext
+from typing import Optional
 
 def now_utc() -> str:
     return dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
@@ -260,23 +284,174 @@ def parse_version(profile: str) -> int:
         return -1
     return int(m.group(1))
 
+def atomic_write_text(path: pathlib.Path, text: str) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(path.suffix + ".tmp")
+    tmp.write_text(text, encoding="utf-8")
+    tmp.replace(path)
+
+def atomic_write_json(path: pathlib.Path, payload: dict) -> None:
+    atomic_write_text(path, json.dumps(payload, indent=2) + "\n")
+
+def shell_capture(cmd: str, cwd: pathlib.Path | None = None, timeout: int = 30) -> str:
+    proc = subprocess.run(
+        ["bash", "-lc", cmd],
+        cwd=str(cwd) if cwd else None,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+        timeout=timeout,
+    )
+    if proc.returncode != 0:
+        return ""
+    return (proc.stdout or "").strip()
+
+def command_key(commit: str, tool: str, cmd: str) -> str:
+    h = hashlib.sha256()
+    h.update(commit.encode("utf-8", "replace"))
+    h.update(b"\n")
+    h.update(tool.encode("utf-8", "replace"))
+    h.update(b"\n")
+    h.update(cmd.encode("utf-8", "replace"))
+    return h.hexdigest()
+
+def acquire_cache_lock(lock_path: pathlib.Path, cache_json: pathlib.Path, progress_cb, stale_seconds: int = 86400) -> bool:
+    while True:
+        if cache_json.exists():
+            return False
+        try:
+            fd = os.open(str(lock_path), os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o644)
+            with os.fdopen(fd, "w", encoding="utf-8") as f:
+                f.write(now_utc())
+            return True
+        except FileExistsError:
+            try:
+                age = time.time() - lock_path.stat().st_mtime
+                if age > stale_seconds:
+                    lock_path.unlink(missing_ok=True)
+                    continue
+            except FileNotFoundError:
+                continue
+            progress_cb("waiting-cache-lock")
+            time.sleep(2)
+
+def stream_command(
+    cmd: str,
+    cwd: pathlib.Path,
+    obligation_log_path: pathlib.Path,
+    lane_log_path: Optional[pathlib.Path],
+    timeout_seconds: int,
+    progress_cb,
+) -> tuple[int, bool, int, str]:
+    obligation_log_path.parent.mkdir(parents=True, exist_ok=True)
+    lane_ctx = lane_log_path.open("ab") if lane_log_path else nullcontext()
+    started_ts = time.monotonic()
+    last_output = now_utc()
+    output_bytes = 0
+    timed_out = False
+
+    with obligation_log_path.open("wb") as obl_log, lane_ctx as lane_log:
+        proc = subprocess.Popen(
+            ["bash", "-lc", cmd],
+            cwd=str(cwd),
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=False,
+            bufsize=0,
+        )
+        assert proc.stdout is not None
+        fd = proc.stdout.fileno()
+        sel = selectors.DefaultSelector()
+        sel.register(fd, selectors.EVENT_READ)
+
+        while True:
+            elapsed = int(time.monotonic() - started_ts)
+            if timeout_seconds > 0 and elapsed > timeout_seconds:
+                timed_out = True
+                try:
+                    proc.kill()
+                except ProcessLookupError:
+                    pass
+                break
+
+            events = sel.select(timeout=1.0)
+            if events:
+                try:
+                    data = os.read(fd, 65536)
+                except OSError:
+                    data = b""
+                if data:
+                    output_bytes += len(data)
+                    obl_log.write(data)
+                    obl_log.flush()
+                    if lane_log is not None:
+                        lane_log.write(data)
+                        lane_log.flush()
+                    last_output = now_utc()
+                elif proc.poll() is not None:
+                    break
+
+            progress_cb("running-command", elapsed_seconds=elapsed, last_output_utc=last_output, output_bytes=output_bytes)
+
+            if proc.poll() is not None and not events:
+                break
+
+        if timed_out:
+            tail = f"\n[runner] timeout after {timeout_seconds}s; process killed\n".encode("utf-8")
+            obl_log.write(tail)
+            obl_log.flush()
+            if lane_log is not None:
+                lane_log.write(tail)
+                lane_log.flush()
+
+        try:
+            proc.wait(timeout=10)
+        except subprocess.TimeoutExpired:
+            try:
+                proc.kill()
+            except ProcessLookupError:
+                pass
+            proc.wait(timeout=10)
+
+        exit_code = proc.returncode if proc.returncode is not None else 99
+        if timed_out:
+            exit_code = 124
+        return exit_code, timed_out, output_bytes, last_output
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--repo", required=True)
     ap.add_argument("--target-version", type=int, required=True)
     ap.add_argument("--mode", choices=["cumulative", "exact"], default="cumulative")
+    ap.add_argument("--dedup-strategy", choices=["lane", "dedup"], default="dedup")
     ap.add_argument("--filter", choices=["kani", "all"], default="kani")
     ap.add_argument("--obligations", default="docs/evidence/formal/obligations.csv")
     ap.add_argument("--report-dir", required=True)
+    ap.add_argument("--cache-dir", default="")
+    ap.add_argument("--lane-log", default="")
+    ap.add_argument("--heartbeat-file", default="")
+    ap.add_argument("--timeout-seconds", type=int, default=10800)
     args = ap.parse_args()
 
     repo = pathlib.Path(args.repo).resolve()
     obligations_path = (repo / args.obligations).resolve()
     report_dir = pathlib.Path(args.report_dir).resolve()
     report_dir.mkdir(parents=True, exist_ok=True)
+    cache_dir = pathlib.Path(args.cache_dir).resolve() if args.cache_dir else (report_dir / "_cache")
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    lane_log_path = pathlib.Path(args.lane_log).resolve() if args.lane_log else None
+    heartbeat_file = pathlib.Path(args.heartbeat_file).resolve() if args.heartbeat_file else (report_dir / "progress.json")
+    status_file = report_dir / "status.txt"
 
     if not obligations_path.exists():
         raise SystemExit(f"missing obligations file: {obligations_path}")
+
+    repo_commit = shell_capture("git rev-parse HEAD", cwd=repo, timeout=20)
+    if not repo_commit:
+        repo_commit = "unknown-commit"
+    kani_version = shell_capture("cargo kani --version", cwd=repo, timeout=30)
+    if not kani_version:
+        kani_version = "unknown-kani-version"
 
     selected = []
     with obligations_path.open("r", encoding="utf-8", newline="") as f:
@@ -296,38 +471,163 @@ def main() -> int:
                 continue
             selected.append(row)
 
+    atomic_write_text(status_file, "running\n")
+    atomic_write_json(
+        heartbeat_file,
+        {
+            "timestamp_utc": now_utc(),
+            "phase": "selected",
+            "repo_commit": repo_commit,
+            "kani_version": kani_version,
+            "target_version": args.target_version,
+            "mode": args.mode,
+            "dedup_strategy": args.dedup_strategy,
+            "selected_count": len(selected),
+            "completed_count": 0,
+            "failures": 0,
+            "timeouts": 0,
+            "cache_hits": 0,
+            "timeout_seconds": args.timeout_seconds,
+        },
+    )
+
     rows = []
     failures = 0
-    for row in selected:
+    timeouts = 0
+    cache_hits = 0
+
+    for idx, row in enumerate(selected, start=1):
         obligation = row.get("obligation_id", "unknown")
         cmd = (row.get("command") or "").strip()
-        log_path = report_dir / f"{obligation}.log"
+        obligation_log_path = report_dir / f"{obligation}.log"
         started = now_utc()
-        proc = subprocess.run(
-            ["bash", "-lc", cmd],
-            cwd=str(repo),
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            text=True,
-        )
+        current_phase = "running-command"
+
+        def update_progress(phase: str, **extra):
+            payload = {
+                "timestamp_utc": now_utc(),
+                "phase": phase,
+                "repo_commit": repo_commit,
+                "kani_version": kani_version,
+                "target_version": args.target_version,
+                "mode": args.mode,
+                "dedup_strategy": args.dedup_strategy,
+                "selected_count": len(selected),
+                "completed_count": idx - 1,
+                "current_obligation": obligation,
+                "current_profile": row.get("profile", ""),
+                "failures": failures,
+                "timeouts": timeouts,
+                "cache_hits": cache_hits,
+                "timeout_seconds": args.timeout_seconds,
+            }
+            payload.update(extra)
+            atomic_write_json(heartbeat_file, payload)
+
+        update_progress("preparing")
+        cache_hit = False
+        key = command_key(repo_commit, kani_version, cmd)
+        cache_json = cache_dir / f"{key}.json"
+        cache_log = cache_dir / f"{key}.log"
+        lock_path = cache_dir / f"{key}.lock"
+
+        if args.dedup_strategy == "dedup":
+            owner = acquire_cache_lock(lock_path, cache_json, update_progress)
+            if owner:
+                cache_tmp = cache_dir / f"{key}.tmp.log"
+                exit_code, timed_out, output_bytes, last_output = stream_command(
+                    cmd=cmd,
+                    cwd=repo,
+                    obligation_log_path=obligation_log_path,
+                    lane_log_path=lane_log_path,
+                    timeout_seconds=args.timeout_seconds,
+                    progress_cb=update_progress,
+                )
+                shutil.copy2(obligation_log_path, cache_tmp)
+                cache_tmp.replace(cache_log)
+                cache_payload = {
+                    "timestamp_utc": now_utc(),
+                    "repo_commit": repo_commit,
+                    "kani_version": kani_version,
+                    "command": cmd,
+                    "exit_code": exit_code,
+                    "timed_out": timed_out,
+                    "output_bytes": output_bytes,
+                    "last_output_utc": last_output,
+                }
+                atomic_write_json(cache_json, cache_payload)
+                lock_path.unlink(missing_ok=True)
+            else:
+                while not cache_json.exists():
+                    update_progress("waiting-cache-result")
+                    time.sleep(1)
+                cache_hit = True
+                cache_hits += 1
+                cached = json.loads(cache_json.read_text(encoding="utf-8"))
+                exit_code = int(cached.get("exit_code", 99))
+                timed_out = bool(cached.get("timed_out", False))
+                if cache_log.exists():
+                    shutil.copy2(cache_log, obligation_log_path)
+                else:
+                    obligation_log_path.write_text("[runner] cache-hit without cache log\n", encoding="utf-8")
+                if lane_log_path:
+                    with lane_log_path.open("ab") as lane_log:
+                        lane_log.write(f"[runner] cache-hit obligation={obligation} command={cmd}\n".encode("utf-8"))
+                        lane_log.flush()
+        else:
+            exit_code, timed_out, output_bytes, last_output = stream_command(
+                cmd=cmd,
+                cwd=repo,
+                obligation_log_path=obligation_log_path,
+                lane_log_path=lane_log_path,
+                timeout_seconds=args.timeout_seconds,
+                progress_cb=update_progress,
+            )
+
         ended = now_utc()
-        output = proc.stdout if proc.stdout is not None else ""
-        log_path.write_text(output, encoding="utf-8")
-        status = "pass" if proc.returncode == 0 else "todo"
-        if proc.returncode != 0:
+        if timed_out:
+            status = "timeout"
+            timeouts += 1
             failures += 1
+        elif exit_code == 0:
+            status = "pass"
+        else:
+            status = "fail"
+            failures += 1
+
         rows.append(
             {
                 "obligation": obligation,
                 "profile": row.get("profile", ""),
                 "command": cmd,
                 "status": status,
-                "exit_code": proc.returncode,
+                "cache_hit": "true" if cache_hit else "false",
+                "exit_code": exit_code,
                 "artifact": row.get("artifact", ""),
                 "started_utc": started,
                 "ended_utc": ended,
-                "log": str(log_path),
+                "log": str(obligation_log_path),
             }
+        )
+        atomic_write_json(
+            heartbeat_file,
+            {
+                "timestamp_utc": now_utc(),
+                "phase": "obligation-complete",
+                "repo_commit": repo_commit,
+                "kani_version": kani_version,
+                "target_version": args.target_version,
+                "mode": args.mode,
+                "dedup_strategy": args.dedup_strategy,
+                "selected_count": len(selected),
+                "completed_count": idx,
+                "current_obligation": obligation,
+                "last_status": status,
+                "failures": failures,
+                "timeouts": timeouts,
+                "cache_hits": cache_hits,
+                "timeout_seconds": args.timeout_seconds,
+            },
         )
 
     csv_path = report_dir / "formal_lane.csv"
@@ -338,6 +638,7 @@ def main() -> int:
                 "obligation",
                 "profile",
                 "status",
+                "cache_hit",
                 "exit_code",
                 "command",
                 "artifact",
@@ -353,11 +654,16 @@ def main() -> int:
     summary = {
         "timestamp_utc": now_utc(),
         "repo": str(repo),
+        "repo_commit": repo_commit,
+        "kani_version": kani_version,
         "target_version": args.target_version,
         "mode": args.mode,
+        "dedup_strategy": args.dedup_strategy,
         "filter": args.filter,
         "selected_count": len(rows),
         "failures": failures,
+        "timeouts": timeouts,
+        "cache_hits": cache_hits,
         "status": "pass" if failures == 0 else "fail",
         "report_csv": str(csv_path),
     }
@@ -369,19 +675,53 @@ def main() -> int:
         f"- Timestamp (UTC): {summary['timestamp_utc']}",
         f"- Target version: v{args.target_version}",
         f"- Mode: {args.mode}",
+        f"- Strategy: {args.dedup_strategy}",
         f"- Filter: {args.filter}",
         f"- Selected obligations: {len(rows)}",
         f"- Failures: {failures}",
+        f"- Timeouts: {timeouts}",
+        f"- Cache hits: {cache_hits}",
         f"- Status: {summary['status']}",
         "",
-        "| Obligation | Profile | Status | Exit | Command |",
-        "|---|---|---|---:|---|",
+        "| Obligation | Profile | Status | Cache | Exit | Command |",
+        "|---|---|---|---|---:|---|",
     ]
     for row in rows:
         md_lines.append(
-            f"| {row['obligation']} | {row['profile']} | {row['status']} | {row['exit_code']} | {row['command']} |"
+            f"| {row['obligation']} | {row['profile']} | {row['status']} | {row['cache_hit']} | {row['exit_code']} | {row['command']} |"
         )
     (report_dir / "formal_lane.md").write_text("\n".join(md_lines) + "\n", encoding="utf-8")
+
+    atomic_write_text(
+        report_dir / "summary.txt",
+        (
+            f"status={summary['status']}\n"
+            f"selected_count={len(rows)}\n"
+            f"failures={failures}\n"
+            f"timeouts={timeouts}\n"
+            f"cache_hits={cache_hits}\n"
+            f"timestamp_utc={summary['timestamp_utc']}\n"
+        ),
+    )
+    atomic_write_text(status_file, f"completed:{summary['status']}\n")
+    atomic_write_json(
+        heartbeat_file,
+        {
+            "timestamp_utc": now_utc(),
+            "phase": "completed",
+            "repo_commit": repo_commit,
+            "kani_version": kani_version,
+            "target_version": args.target_version,
+            "mode": args.mode,
+            "dedup_strategy": args.dedup_strategy,
+            "selected_count": len(rows),
+            "completed_count": len(rows),
+            "failures": failures,
+            "timeouts": timeouts,
+            "cache_hits": cache_hits,
+            "status": summary["status"],
+        },
+    )
 
     if len(rows) == 0:
         return 0
@@ -406,7 +746,19 @@ lane="v${v}-kani"
 lane_dir="$BASE/state/deferred_lanes/$lane"
 mkdir -p "$lane_dir"
 export CARGO_TARGET_DIR="$BASE/work/targets/$lane"
-python3 "$BASE/bin/run_formal_lane.py" --repo "$repo" --target-version "$v" --mode "$mode" --filter kani --report-dir "$lane_dir"
+strategy="${DEFERRED_STRATEGY:-dedup}"
+timeout_seconds="${OBLIGATION_TIMEOUT_SECONDS:-10800}"
+python3 "$BASE/bin/run_formal_lane.py" \
+  --repo "$repo" \
+  --target-version "$v" \
+  --mode "$mode" \
+  --dedup-strategy "$strategy" \
+  --filter kani \
+  --report-dir "$lane_dir" \
+  --cache-dir "$BASE/state/dedup" \
+  --lane-log "$lane_dir/run.log" \
+  --heartbeat-file "$lane_dir/progress.json" \
+  --timeout-seconds "$timeout_seconds"
 EOF
 
 cat > "$BASE/bin/dispatch_deferred_lanes.sh" <<'EOF'
@@ -427,6 +779,8 @@ concurrency="${DEFERRED_CONCURRENCY:-$recommended}"
 if [[ -z "$concurrency" || "$concurrency" -lt 1 ]]; then
   concurrency=1
 fi
+strategy="${DEFERRED_STRATEGY:-dedup}"
+timeout_seconds="${OBLIGATION_TIMEOUT_SECONDS:-10800}"
 
 commit="$($BASE/bin/sync_repo.sh)"
 
@@ -445,9 +799,12 @@ mkdir -p "$dispatch_dir"
   echo "mode=$mode"
   echo "recommended_concurrency=$recommended"
   echo "concurrency=$concurrency"
+  echo "strategy=$strategy"
+  echo "obligation_timeout_seconds=$timeout_seconds"
   echo "repo_commit=$commit"
   echo "versions=${versions[*]}"
 } > "$dispatch_dir/meta.env"
+echo "running" > "$dispatch_dir/state.txt"
 
 active=0
 lanes=()
@@ -477,7 +834,10 @@ start_lane() {
     echo "start_utc=$(date -u +%Y-%m-%dT%H:%M:%SZ)" > "$lane_dir/meta.env"
     echo "version=$v" >> "$lane_dir/meta.env"
     echo "mode=$mode" >> "$lane_dir/meta.env"
-    "$BASE/bin/run_deferred_lane.sh" "$v" "$mode" > "$lane_dir/run.log" 2>&1
+    echo "strategy=$strategy" >> "$lane_dir/meta.env"
+    echo "timeout_seconds=$timeout_seconds" >> "$lane_dir/meta.env"
+    DEFERRED_STRATEGY="$strategy" OBLIGATION_TIMEOUT_SECONDS="$timeout_seconds" \
+      "$BASE/bin/run_deferred_lane.sh" "$v" "$mode" > "$lane_dir/driver.log" 2>&1
     code=$?
     echo "$code" > "$lane_dir/exit_code"
     echo "end_utc=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$lane_dir/meta.env"
@@ -514,6 +874,11 @@ done
 
 echo "finished_utc=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$dispatch_dir/meta.env"
 echo "failures=$failures" >> "$dispatch_dir/meta.env"
+if (( failures > 0 )); then
+  echo "completed:fail" > "$dispatch_dir/state.txt"
+else
+  echo "completed:pass" > "$dispatch_dir/state.txt"
+fi
 
 if (( failures > 0 )); then
   exit 1
@@ -529,14 +894,38 @@ for d in "$BASE"/state/deferred_lanes/*; do
   lane="$(basename "$d")"
   version="$(echo "$lane" | sed -E 's/^v([0-9]+)-.*/\1/')"
   code="$(cat "$d/exit_code" 2>/dev/null || true)"
+  progress="$d/progress.json"
+  status_file="$d/status.txt"
+  run_log="$d/run.log"
+  log_bytes="$(wc -c "$run_log" 2>/dev/null | awk '{print $1}' || echo 0)"
   if [[ -n "$code" ]]; then
-    echo "$lane finished:$code"
+    echo "$lane finished:$code log_bytes=$log_bytes"
   else
     pid="$(pgrep -f "run_deferred_lane.sh ${version} " | head -n 1 || true)"
+    phase="-"
+    completed="-"
+    selected="-"
+    current="-"
+    if [[ -f "$progress" ]]; then
+      readarray -t vals < <(python3 - "$progress" <<'PY'
+import json, sys
+p = json.load(open(sys.argv[1], "r", encoding="utf-8"))
+print(p.get("phase", "-"))
+print(p.get("completed_count", "-"))
+print(p.get("selected_count", "-"))
+print(p.get("current_obligation", "-"))
+PY
+      )
+      phase="${vals[0]:--}"
+      completed="${vals[1]:--}"
+      selected="${vals[2]:--}"
+      current="${vals[3]:--}"
+    fi
+    status_marker="$(cat "$status_file" 2>/dev/null || echo "-")"
     if [[ -n "$pid" ]]; then
-      echo "$lane running:pid=$pid"
+      echo "$lane running:pid=$pid phase=$phase progress=${completed}/${selected} current=$current status=$status_marker log_bytes=$log_bytes"
     else
-      echo "$lane pending"
+      echo "$lane pending phase=$phase progress=${completed}/${selected} current=$current status=$status_marker log_bytes=$log_bytes"
     fi
   fi
 done | sort
@@ -586,18 +975,20 @@ fi
 versions='__VERSIONS__'
 mode='__MODE__'
 concurrency='__CONCURRENCY__'
+strategy='__STRATEGY__'
+timeout_seconds='__TIMEOUT__'
 job_name='__JOB__'
 if [[ -n "$versions" ]]; then
   if [[ "$concurrency" -gt 0 ]]; then
-    "__BASE__/bin/start_job.sh" "$job_name" env "DEFERRED_MODE=$mode" "DEFERRED_VERSIONS=$versions" "DEFERRED_CONCURRENCY=$concurrency" "__BASE__/bin/dispatch_deferred_lanes.sh"
+    "__BASE__/bin/start_job.sh" "$job_name" env "DEFERRED_MODE=$mode" "DEFERRED_STRATEGY=$strategy" "OBLIGATION_TIMEOUT_SECONDS=$timeout_seconds" "DEFERRED_VERSIONS=$versions" "DEFERRED_CONCURRENCY=$concurrency" "__BASE__/bin/dispatch_deferred_lanes.sh"
   else
-    "__BASE__/bin/start_job.sh" "$job_name" env "DEFERRED_MODE=$mode" "DEFERRED_VERSIONS=$versions" "__BASE__/bin/dispatch_deferred_lanes.sh"
+    "__BASE__/bin/start_job.sh" "$job_name" env "DEFERRED_MODE=$mode" "DEFERRED_STRATEGY=$strategy" "OBLIGATION_TIMEOUT_SECONDS=$timeout_seconds" "DEFERRED_VERSIONS=$versions" "__BASE__/bin/dispatch_deferred_lanes.sh"
   fi
 else
   if [[ "$concurrency" -gt 0 ]]; then
-    "__BASE__/bin/start_job.sh" "$job_name" env "DEFERRED_MODE=$mode" "DEFERRED_CONCURRENCY=$concurrency" "__BASE__/bin/dispatch_deferred_lanes.sh"
+    "__BASE__/bin/start_job.sh" "$job_name" env "DEFERRED_MODE=$mode" "DEFERRED_STRATEGY=$strategy" "OBLIGATION_TIMEOUT_SECONDS=$timeout_seconds" "DEFERRED_CONCURRENCY=$concurrency" "__BASE__/bin/dispatch_deferred_lanes.sh"
   else
-    "__BASE__/bin/start_job.sh" "$job_name" env "DEFERRED_MODE=$mode" "__BASE__/bin/dispatch_deferred_lanes.sh"
+    "__BASE__/bin/start_job.sh" "$job_name" env "DEFERRED_MODE=$mode" "DEFERRED_STRATEGY=$strategy" "OBLIGATION_TIMEOUT_SECONDS=$timeout_seconds" "__BASE__/bin/dispatch_deferred_lanes.sh"
   fi
 fi
 '@
@@ -606,13 +997,134 @@ fi
             Replace("__VERSIONS__", (Escape-BashSingleQuoted $DeferredVersions)).
             Replace("__MODE__", (Escape-BashSingleQuoted $DeferredMode)).
             Replace("__CONCURRENCY__", (Escape-BashSingleQuoted $DeferredConcurrency.ToString())).
+            Replace("__STRATEGY__", (Escape-BashSingleQuoted $DeferredStrategy)).
+            Replace("__TIMEOUT__", (Escape-BashSingleQuoted $ObligationTimeoutSeconds.ToString())).
             Replace("__JOB__", (Escape-BashSingleQuoted $DispatchJobName))
         $out = Invoke-RemoteScript $startScript
         $out | ForEach-Object { Write-Host $_ }
     }
+    "StopDeferred" {
+        $stopTemplate = @'
+set -uo pipefail
+source "__BASE__/bin/env.sh"
+mode='__STOPMODE__'
+ts="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+
+is_lane_running() {
+  local v="$1"
+  pgrep -f "__BASE__/bin/run_deferred_lane.sh ${v} " >/dev/null 2>&1
+}
+
+is_dispatch_running() {
+  pgrep -f "__BASE__/bin/dispatch_deferred_lanes.sh" >/dev/null 2>&1
+}
+
+if [[ "$mode" == "all" ]]; then
+  mapfile -t pids < <(pgrep -f "__BASE__/bin/run_deferred_lane.sh|__BASE__/bin/dispatch_deferred_lanes.sh|__BASE__/tools/bin/cargo-kani|cbmc .*__BASE__/work/targets/" || true)
+  if [[ ${#pids[@]} -gt 0 ]]; then
+    for p in "${pids[@]}"; do kill -TERM "$p" 2>/dev/null || true; done
+    sleep 3
+    for p in "${pids[@]}"; do
+      if kill -0 "$p" 2>/dev/null; then
+        kill -KILL "$p" 2>/dev/null || true
+      fi
+    done
+  fi
+fi
+
+marked_jobs=0
+for d in "__BASE__"/state/jobs/*; do
+  [[ -d "$d" ]] || continue
+  [[ -f "$d/exit_code" ]] && continue
+  cmd="$(cat "$d/command.txt" 2>/dev/null || true)"
+  [[ "$cmd" == *"dispatch_deferred_lanes.sh"* || "$cmd" == *"run_deferred_lane.sh"* ]] || continue
+
+  pid="$(cat "$d/pid" 2>/dev/null || true)"
+  alive=0
+  if [[ -n "$pid" ]] && kill -0 "$pid" 2>/dev/null; then alive=1; fi
+
+  if [[ "$cmd" == *"dispatch_deferred_lanes.sh"* ]]; then
+    if [[ "$mode" == "stale" ]]; then
+      lane_pid="$(sed -nE 's/.*started lane=.* pid=([0-9]+).*/\1/p' "$d/run.log" 2>/dev/null | tail -n 1 || true)"
+      if [[ -n "$lane_pid" ]] && kill -0 "$lane_pid" 2>/dev/null; then
+        continue
+      fi
+      if (( alive == 1 )); then
+        continue
+      fi
+    fi
+  fi
+
+  if [[ "$cmd" == *"run_deferred_lane.sh"* ]]; then
+    v="$(echo "$cmd" | sed -nE 's/.*run_deferred_lane\.sh ([0-9]+).*/\1/p' | head -n 1)"
+    if [[ -n "$v" ]] && is_lane_running "$v" && [[ "$mode" == "stale" ]]; then
+      continue
+    fi
+    if (( alive == 1 )) && [[ "$mode" == "stale" ]]; then
+      continue
+    fi
+  fi
+
+  echo "143" > "$d/exit_code"
+  printf '%s\n' "end=$ts" >> "$d/meta"
+  printf '%s\n' "stop_reason=manual-$mode-reconcile" >> "$d/meta"
+  marked_jobs=$((marked_jobs + 1))
+done
+
+marked_lanes=0
+for d in "__BASE__"/state/deferred_lanes/*; do
+  [[ -d "$d" ]] || continue
+  [[ -f "$d/exit_code" ]] && continue
+  lane="$(basename "$d")"
+  version="$(echo "$lane" | sed -nE 's/^v([0-9]+)-.*/\1/p')"
+  if [[ -n "$version" ]] && is_lane_running "$version" && [[ "$mode" == "stale" ]]; then
+    continue
+  fi
+  echo "143" > "$d/exit_code"
+  echo "completed:stopped" > "$d/status.txt"
+  printf '%s\n' "status=stopped" > "$d/summary.txt"
+  printf '%s\n' "timestamp_utc=$ts" >> "$d/summary.txt"
+  printf '%s\n' "reason=manual-$mode-reconcile" >> "$d/summary.txt"
+  marked_lanes=$((marked_lanes + 1))
+done
+
+marked_dispatch=0
+for d in "__BASE__"/state/deferred_dispatch/*; do
+  [[ -d "$d" ]] || continue
+  state="$(cat "$d/state.txt" 2>/dev/null || true)"
+  if [[ "$state" == completed:* ]]; then
+    continue
+  fi
+  if is_dispatch_running && [[ "$mode" == "stale" ]]; then
+    continue
+  fi
+  echo "completed:stopped" > "$d/state.txt"
+  if ! grep -q '^finished_utc=' "$d/meta.env" 2>/dev/null; then
+    echo "finished_utc=$ts" >> "$d/meta.env"
+  fi
+  if ! grep -q '^failures=' "$d/meta.env" 2>/dev/null; then
+    echo "failures=1" >> "$d/meta.env"
+  fi
+  marked_dispatch=$((marked_dispatch + 1))
+done
+
+echo "stop_mode=$mode"
+echo "marked_jobs=$marked_jobs"
+echo "marked_lanes=$marked_lanes"
+echo "marked_dispatch=$marked_dispatch"
+echo "remaining_active:"
+pgrep -af "__BASE__/bin/run_deferred_lane.sh|__BASE__/bin/dispatch_deferred_lanes.sh|__BASE__/tools/bin/cargo-kani|cbmc .*__BASE__/work/targets/" || true
+exit 0
+'@
+        $stopScript = $stopTemplate.
+            Replace("__BASE__", $RemoteBase).
+            Replace("__STOPMODE__", (Escape-BashSingleQuoted $StopMode))
+        $out = Invoke-RemoteScript $stopScript
+        $out | ForEach-Object { Write-Host $_ }
+    }
     "Status" {
         $statusTemplate = @'
-set -euo pipefail
+set -uo pipefail
 source "__BASE__/bin/env.sh"
 "__BASE__/bin/list_jobs.sh"
 echo "---"
@@ -622,7 +1134,9 @@ latest_dispatch="$(ls -1dt __BASE__/state/deferred_dispatch/* 2>/dev/null | head
 if [[ -n "$latest_dispatch" ]]; then
   echo "dispatch_dir=$latest_dispatch"
   cat "$latest_dispatch/meta.env" || true
+  [[ -f "$latest_dispatch/state.txt" ]] && echo "dispatch_state=$(cat "$latest_dispatch/state.txt")"
 fi
+exit 0
 '@
         $statusScript = $statusTemplate.Replace("__BASE__", $RemoteBase)
         $out = Invoke-RemoteScript $statusScript
@@ -639,6 +1153,18 @@ if [[ -f "__BASE__/state/deferred_lanes/__LANE__/run.log" ]]; then
   echo "lane=__LANE__"
   tail -n __TAILLINES__ "__BASE__/state/deferred_lanes/__LANE__/run.log"
 fi
+if [[ -f "__BASE__/state/deferred_lanes/__LANE__/driver.log" ]]; then
+  echo "lane_driver=__LANE__"
+  tail -n __TAILLINES__ "__BASE__/state/deferred_lanes/__LANE__/driver.log"
+fi
+if [[ -f "__BASE__/state/deferred_lanes/__LANE__/summary.txt" ]]; then
+  echo "lane_summary=__LANE__"
+  cat "__BASE__/state/deferred_lanes/__LANE__/summary.txt"
+fi
+if [[ -f "__BASE__/state/deferred_lanes/__LANE__/progress.json" ]]; then
+  echo "lane_progress=__LANE__"
+  cat "__BASE__/state/deferred_lanes/__LANE__/progress.json"
+fi
 '@
         }
         $laneClause = $laneClauseTemplate.
@@ -647,7 +1173,7 @@ fi
             Replace("__TAILLINES__", $TailLines.ToString())
 
         $tailTemplate = @'
-set -euo pipefail
+set -uo pipefail
 source "__BASE__/bin/env.sh"
 latest_dispatch="$(ls -1dt __BASE__/state/deferred_dispatch/* 2>/dev/null | head -n 1 || true)"
 if [[ -n "$latest_dispatch" ]]; then
@@ -657,6 +1183,7 @@ if [[ -n "$latest_dispatch" ]]; then
   fi
 fi
 $__LANECLAUSE__
+exit 0
 '@
         $tailScript = $tailTemplate.
             Replace("__BASE__", $RemoteBase).
