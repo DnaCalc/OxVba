@@ -2345,6 +2345,43 @@ mod tests {
     }
 
     #[test]
+    fn formal_v158_financial_tolerance_fixture_executes_on_vm_path() {
+        let source = "Sub Main()\nDim a\nDim b\na = Rate(0, 0, 0)\nb = NPer(1, 0, 0, 0)\nEnd Sub";
+        let out = Engine::new(HostConfig {
+            enable_jit: false,
+            root_object_name: None,
+        })
+        .execute_source_with_snapshot(source)
+        .expect("execution should succeed");
+        assert_eq!(
+            out,
+            vec![error_tag_from_code(2001), error_tag_from_code(2002)]
+        );
+    }
+
+    #[test]
+    fn formal_v158_vartype_isnumeric_tags_fixture_executes() {
+        let source = "Sub Main()\nDim a\nDim b\nDim c\nDim d\nDim e\nDim f\nDim g\nDim h\na = VarType(vbNullString)\nb = VarType(Null)\nc = VarType(CVErr(9))\nd = VarType(7)\ne = IsNumeric(vbNullString)\nf = IsNumeric(Null)\ng = IsNumeric(CVErr(9))\nh = IsNumeric(7)\nEnd Sub";
+        let out = Engine::new(HostConfig {
+            enable_jit: false,
+            root_object_name: None,
+        })
+        .execute_source_with_snapshot(source)
+        .expect("execution should succeed");
+        assert_eq!(out, vec![0, 1, 10, 3, 0, 0, 0, 1]);
+    }
+
+    #[test]
+    fn formal_v158_conformance_fixture_exists() {
+        assert!(repo_path("conformance/tests/introspection_vartype_isnumeric_tags.bas").exists());
+    }
+
+    #[test]
+    fn formal_v158_profile_status_document_exists() {
+        assert!(repo_path("docs/profile-status/PROFILE_STATUS_V158.md").exists());
+    }
+
+    #[test]
     fn formal_v132_builtin_expansion_fixtures_exist() {
         assert!(repo_path("conformance/tests/stdlib_string_expansion_core.bas").exists());
         assert!(repo_path("conformance/tests/stdlib_format_core.bas").exists());

@@ -1,6 +1,25 @@
 # Implementation Log
 
 ## 2026-03-01
+- Completed `v158` (`mvp-profile-v158`) VM parity expansion:
+  - added direct interpreter coverage in `crates/oxvba-vm/src/interpreter.rs` for:
+    - algorithmic `Rate`/`NPer` bytecode execution outputs,
+    - deterministic financial non-convergence error-tag signaling,
+    - `VarType`/`IsNumeric` sentinel-tag distinctions (`Empty`/`Null`/`CVErr`/array);
+  - added source-level conformance fixture:
+    - `conformance/tests/introspection_vartype_isnumeric_tags.bas`;
+  - added host-formal checks to assert VM-path source execution parity for financial tolerance and tag-introspection outcomes.
+- Validation lane for `v158` passed:
+  - `cargo fmt --all`
+  - `cargo test -p oxvba-runtime`
+  - `cargo test -p oxvba-compiler`
+  - `cargo test -p oxvba-vm`
+  - `cargo test -p oxvba-host`
+  - `./scripts/run-conformance.ps1 -Backend vm`
+  - `./scripts/run-conformance.ps1 -Backend jit`
+  - `./scripts/run-formal.ps1 -ProfileScope mvp-profile-v158`
+  - `./scripts/run-matrix.ps1 -ProfileScope mvp-profile-v158 -OutputDir docs/evidence/profiles/v158`
+  - `./scripts/meta-check.ps1 -Fast`
 - Completed `v157` (`mvp-profile-v157`) diagnostics timing pass:
   - added explicit host-side phase classification for execution diagnostics in `crates/oxvba-host/src/engine.rs`:
     - `DiagnosticPhase::{CompileTime, Runtime}`

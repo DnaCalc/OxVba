@@ -43,7 +43,7 @@ runtime,Array/variant introspection intrinsics (Array/LBound/UBound/IsArray/VarT
 runtime,Error-surface intrinsics (Err.Raise/CVErr subset),implemented,v51,conformance/tests/stdlib_error_err_raise_resume.bas,resolver maps Err.Raise to runtime error op
 runtime,Host-sensitive intrinsics (Shell/Environ/Dir subset),implemented,v52,conformance/tests/stdlib_host_sensitive_shell_environ_dir.bas,deterministic host-fallback subset
 runtime,Extended conversion intrinsics (CSng/CByte/CCur/CDec subset),implemented,v120,conformance/tests/conversion_extended_scalar_subset.bas,conversion identity subset wired through conversion parser
-runtime,Introspection expansion intrinsics (IsEmpty/IsNull/IsError/TypeOfIs subset),implemented,v126,conformance/tests/stdlib_introspection_expansion.bas,sentinel/equality predicate subset over integer projection
+runtime,Introspection expansion intrinsics (IsEmpty/IsNull/IsError/VarType/IsNumeric/TypeOfIs subset),implemented,v126-v158,conformance/tests/introspection_vartype_isnumeric_tags.bas,sentinel-tag subset covers Empty/Null/CVErr error distinctions with deterministic VarType and IsNumeric behavior
 runtime,TypeOf ... Is condition subset,implemented,v126,conformance/tests/typeof_is_condition_basic.bas,lowered to `typeofis` intrinsic in condition parsing
 runtime,String expansion intrinsics (Space/String$/Chr/Chr$/Asc/StrConv subset),implemented,v127,conformance/tests/stdlib_string_expansion_core.bas,deterministic count/identity subset
 runtime,Format intrinsics (Format/Format$ subset),implemented,v128,conformance/tests/stdlib_format_core.bas,format identity projection subset

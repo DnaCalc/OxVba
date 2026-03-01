@@ -1311,6 +1311,7 @@ mod tests {
     use super::Vm;
     use oxvba_compiler::{Bytecode, Instruction, bytecode::StringCompareMode};
     use oxvba_runtime::safe_array::ARRAY_TAG_BASE;
+    use oxvba_runtime::value_tags::{EMPTY_TAG, NULL_TAG, error_tag_from_code};
 
     #[test]
     fn executes_load_and_add_sequence() {
@@ -1690,6 +1691,138 @@ mod tests {
         assert_eq!(out[31], 59);
         assert_eq!(out[32], -50);
         assert_eq!(out[33], -28);
+    }
+
+    #[test]
+    fn executes_intrinsic_financial_rate_nper_subset() {
+        let bytecode = Bytecode {
+            instructions: vec![
+                Instruction::LoadConstI32 { slot: 0, value: 10 },
+                Instruction::LoadConstI32 { slot: 1, value: 2 },
+                Instruction::LoadConstI32 { slot: 2, value: 99 },
+                Instruction::LoadConstI32 { slot: 3, value: 1 },
+                Instruction::LoadConstI32 { slot: 4, value: 88 },
+                Instruction::LoadConstI32 { slot: 5, value: 3 },
+                Instruction::IntrinsicRateI32 {
+                    dst: 6,
+                    nper: 0,
+                    pmt: 1,
+                    pv: 2,
+                    fv: None,
+                    due: None,
+                    guess: None,
+                },
+                Instruction::IntrinsicNPerI32 {
+                    dst: 7,
+                    rate: 3,
+                    pmt: 1,
+                    pv: 4,
+                    fv: Some(5),
+                    due: None,
+                },
+                Instruction::Halt,
+            ],
+            slot_count: 8,
+            user_slot_count: 8,
+        };
+
+        let mut vm = Vm::default();
+        vm.execute(&bytecode).expect("vm should execute bytecode");
+        let out = vm.snapshot_slots(8);
+        assert_eq!(out[6], -99);
+        assert_eq!(out[7], -38);
+    }
+
+    #[test]
+    fn financial_non_convergence_paths_return_stable_error_tags() {
+        let bytecode = Bytecode {
+            instructions: vec![
+                Instruction::LoadConstI32 { slot: 0, value: 0 },
+                Instruction::LoadConstI32 { slot: 1, value: 0 },
+                Instruction::LoadConstI32 { slot: 2, value: 1 },
+                Instruction::IntrinsicRateI32 {
+                    dst: 3,
+                    nper: 0,
+                    pmt: 1,
+                    pv: 1,
+                    fv: None,
+                    due: None,
+                    guess: None,
+                },
+                Instruction::IntrinsicNPerI32 {
+                    dst: 4,
+                    rate: 2,
+                    pmt: 1,
+                    pv: 0,
+                    fv: None,
+                    due: None,
+                },
+                Instruction::Halt,
+            ],
+            slot_count: 5,
+            user_slot_count: 5,
+        };
+
+        let mut vm = Vm::default();
+        vm.execute(&bytecode).expect("vm should execute bytecode");
+        let out = vm.snapshot_slots(5);
+        assert_eq!(out[3], error_tag_from_code(2001));
+        assert_eq!(out[4], error_tag_from_code(2002));
+    }
+
+    #[test]
+    fn vartype_and_isnumeric_distinguish_empty_null_error_and_array_tags() {
+        let bytecode = Bytecode {
+            instructions: vec![
+                Instruction::LoadConstI32 {
+                    slot: 0,
+                    value: EMPTY_TAG,
+                },
+                Instruction::LoadConstI32 {
+                    slot: 1,
+                    value: NULL_TAG,
+                },
+                Instruction::LoadConstI32 {
+                    slot: 2,
+                    value: error_tag_from_code(17),
+                },
+                Instruction::LoadConstI32 {
+                    slot: 3,
+                    value: 123,
+                },
+                Instruction::LoadConstI32 {
+                    slot: 4,
+                    value: ARRAY_TAG_BASE + 2,
+                },
+                Instruction::IntrinsicVarTypeTag { dst: 5, src: 0 },
+                Instruction::IntrinsicVarTypeTag { dst: 6, src: 1 },
+                Instruction::IntrinsicVarTypeTag { dst: 7, src: 2 },
+                Instruction::IntrinsicVarTypeTag { dst: 8, src: 3 },
+                Instruction::IntrinsicVarTypeTag { dst: 9, src: 4 },
+                Instruction::IntrinsicIsNumericTag { dst: 10, src: 0 },
+                Instruction::IntrinsicIsNumericTag { dst: 11, src: 1 },
+                Instruction::IntrinsicIsNumericTag { dst: 12, src: 2 },
+                Instruction::IntrinsicIsNumericTag { dst: 13, src: 3 },
+                Instruction::IntrinsicIsNumericTag { dst: 14, src: 4 },
+                Instruction::Halt,
+            ],
+            slot_count: 15,
+            user_slot_count: 15,
+        };
+
+        let mut vm = Vm::default();
+        vm.execute(&bytecode).expect("vm should execute bytecode");
+        let out = vm.snapshot_slots(15);
+        assert_eq!(out[5], 0);
+        assert_eq!(out[6], 1);
+        assert_eq!(out[7], 10);
+        assert_eq!(out[8], 3);
+        assert_eq!(out[9], 8192 + 12);
+        assert_eq!(out[10], 0);
+        assert_eq!(out[11], 0);
+        assert_eq!(out[12], 0);
+        assert_eq!(out[13], 1);
+        assert_eq!(out[14], 0);
     }
 
     #[test]

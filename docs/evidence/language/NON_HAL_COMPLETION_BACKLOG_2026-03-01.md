@@ -29,7 +29,7 @@ Objective:
 
 5. Null/Empty/Error coercion normalization:
 - Distinguish deterministic sentinel/tag behavior for `Empty`, `Null`, and `CVErr`-encoded errors.
-- `v153` introduces explicit error-tag encoding plus normalized `IsError`/`IsNumeric`/`VarType` handling; full propagation parity remains oracle-dependent.
+- `v153` introduces explicit error-tag encoding plus normalized `IsError`/`IsNumeric`/`VarType` handling; `v158` adds VM/source parity coverage for sentinel-tag introspection paths; full propagation parity remains oracle-dependent.
 
 6. Diagnostics and phase timing consistency:
 - Stabilize compile-time vs runtime error timing for non-HAL language/runtime constructs.

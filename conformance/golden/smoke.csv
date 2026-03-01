@@ -74,6 +74,7 @@
 "if_neq.bas","ok","11"
 "if_or_not.bas","ok","9"
 "if_true.bas","ok","7"
+"introspection_vartype_isnumeric_tags.bas","ok","0,1,10,3,0,0,0,1"
 "jit_intrinsic_math_subset.bas","ok","1"
 "late_bound_default_member_error.bas","error",""
 "late_bound_default_member_exec.bas","ok","0,7"
