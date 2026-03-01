@@ -21,7 +21,7 @@ Objective:
 - Replace deterministic projection placeholders for `NPV`, `IRR`, `MIRR`, `Rate`, `NPer` with real numeric algorithms.
 - `v154` replaces projection behavior for `NPV`/`IRR`/`MIRR` with deterministic algorithmic execution; `Rate`/`NPer` and tolerance policy remain for `v155+v156`.
 - `v155` replaces projection behavior for `Rate`/`NPer` with deterministic algorithmic execution; tolerance/convergence policy remains for `v156`.
-- Add deterministic tolerance policy and stable numeric diagnostics.
+- `v156` adds deterministic tolerance policy and stable solver-failure error-tag signaling; oracle parity remains deferred.
 
 4. UDT/value semantics hardening:
 - Strengthen UDT copy/assignment/value-initialization behavior beyond flattened alias baseline where implementable without host interop.

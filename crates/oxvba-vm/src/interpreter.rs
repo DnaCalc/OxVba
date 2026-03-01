@@ -2,7 +2,9 @@ use oxvba_compiler::{Bytecode, Instruction, bytecode::StringCompareMode};
 use oxvba_runtime::safe_array::{
     array_len_from_tag, is_array_tag as runtime_is_array_tag, marshal_dispatch_argument,
 };
-use oxvba_runtime::value_tags::{EMPTY_TAG, NULL_TAG, is_error_tag as runtime_is_error_tag};
+use oxvba_runtime::value_tags::{
+    EMPTY_TAG, NULL_TAG, error_tag_from_code, is_error_tag as runtime_is_error_tag,
+};
 
 use crate::register_file::RegisterFile;
 
@@ -15,6 +17,11 @@ pub struct Vm {
     last_error: i32,
     last_error_pc: Option<usize>,
 }
+
+const FIN_MAX_ITERS: usize = 60;
+const FIN_EPS: f64 = 1e-10;
+const FIN_RATE_ERROR_CODE: i32 = 2001;
+const FIN_NPER_ERROR_CODE: i32 = 2002;
 
 impl Default for Vm {
     fn default() -> Self {
@@ -1230,7 +1237,7 @@ impl Vm {
 
     fn rate_i32(nper: i32, pmt: i32, pv: i32, fv: i32, due: i32, guess: i32) -> i32 {
         if nper == 0 {
-            return 0;
+            return error_tag_from_code(FIN_RATE_ERROR_CODE);
         }
         let n = nper as f64;
         let pmt = pmt as f64;
@@ -1239,23 +1246,26 @@ impl Vm {
         let due = if due != 0 { 1.0 } else { 0.0 };
 
         let mut r = (guess as f64 / 100.0).clamp(-0.99, 10.0);
-        for _ in 0..60 {
+        for _ in 0..FIN_MAX_ITERS {
             let f = Self::rate_func(r, n, pmt, pv, fv, due);
             let h = 1e-7;
             let fp = (Self::rate_func(r + h, n, pmt, pv, fv, due)
                 - Self::rate_func(r - h, n, pmt, pv, fv, due))
                 / (2.0 * h);
             if fp.abs() < 1e-12 {
-                break;
+                return error_tag_from_code(FIN_RATE_ERROR_CODE);
             }
             let next = (r - f / fp).clamp(-0.99, 10.0);
-            if (next - r).abs() < 1e-10 {
+            if !next.is_finite() {
+                return error_tag_from_code(FIN_RATE_ERROR_CODE);
+            }
+            if (next - r).abs() < FIN_EPS {
                 r = next;
-                break;
+                return (r * 100.0).round() as i32;
             }
             r = next;
         }
-        (r * 100.0).round() as i32
+        error_tag_from_code(FIN_RATE_ERROR_CODE)
     }
 
     fn nper_i32(rate: i32, pmt: i32, pv: i32, fv: i32, due: i32) -> i32 {
@@ -1266,7 +1276,7 @@ impl Vm {
 
         if rate == 0 {
             if pmt == 0.0 {
-                return 0;
+                return error_tag_from_code(FIN_NPER_ERROR_CODE);
             }
             return (-(pv + fv) / pmt).round() as i32;
         }
@@ -1275,12 +1285,12 @@ impl Vm {
         let numerator = pmt * (1.0 + r * due) - fv * r;
         let denominator = pv * r + pmt * (1.0 + r * due);
         if numerator <= 0.0 || denominator <= 0.0 || (1.0 + r) <= 0.0 {
-            return 0;
+            return error_tag_from_code(FIN_NPER_ERROR_CODE);
         }
 
         let n = (numerator / denominator).ln() / (1.0 + r).ln();
         if !n.is_finite() {
-            return 0;
+            return error_tag_from_code(FIN_NPER_ERROR_CODE);
         }
         n.round() as i32
     }

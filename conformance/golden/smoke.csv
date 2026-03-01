@@ -45,6 +45,7 @@
 "err_proc_call_boundary_clears.bas","ok","0"
 "err_resume_next_clears.bas","ok","0"
 "err_surface_fields_subset.bas","ok","9,9,0,0,0,0"
+"financial_tolerance_non_convergence.bas","ok","-899997999,-899997998"
 "for_basic.bas","ok","6,4"
 "for_each_array_literal_basic.bas","ok","3,3"
 "for_each_array_variable_basic.bas","ok","4,5,6,6,6"

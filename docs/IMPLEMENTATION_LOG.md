@@ -1,6 +1,27 @@
 # Implementation Log
 
 ## 2026-03-01
+- Completed `v156` (`mvp-profile-v156`) financial tolerance/error-signaling model:
+  - introduced explicit solver policy constants in VM financial solve paths:
+    - `FIN_MAX_ITERS = 60`
+    - `FIN_EPS = 1e-10`
+  - converted deterministic failure modes into stable `CVErr`-tag-style error signaling:
+    - `Rate` invalid/non-convergent branches now return `error_tag_from_code(2001)`,
+    - `NPer` invalid-domain branches now return `error_tag_from_code(2002)`;
+  - added host-formal and conformance coverage for failure-path observability:
+    - `formal_v156_financial_non_convergence_signals_error_tags`,
+    - `conformance/tests/financial_tolerance_non_convergence.bas`.
+- Validation lane for `v156` passed:
+  - `cargo fmt --all`
+  - `cargo test -p oxvba-runtime`
+  - `cargo test -p oxvba-compiler`
+  - `cargo test -p oxvba-vm`
+  - `cargo test -p oxvba-host`
+  - `./scripts/run-conformance.ps1 -Backend vm`
+  - `./scripts/run-conformance.ps1 -Backend jit`
+  - `./scripts/run-formal.ps1 -ProfileScope mvp-profile-v156`
+  - `./scripts/run-matrix.ps1 -ProfileScope mvp-profile-v156 -OutputDir docs/evidence/profiles/v156`
+  - `./scripts/meta-check.ps1 -Fast`
 - Completed `v155` (`mvp-profile-v155`) financial functions II:
   - replaced `Rate`/`NPer` projection lowering with dedicated runtime intrinsics:
     - `Instruction::IntrinsicRateI32`

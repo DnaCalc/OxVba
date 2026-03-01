@@ -2229,6 +2229,31 @@ mod tests {
     }
 
     #[test]
+    fn formal_v156_financial_non_convergence_signals_error_tags() {
+        let source = "Sub Main()\nDim a\nDim b\na = Rate(0, 0, 0)\nb = NPer(1, 0, 0, 0)\nEnd Sub";
+        let out = Engine::new(HostConfig {
+            enable_jit: false,
+            root_object_name: None,
+        })
+        .execute_source_with_snapshot(source)
+        .expect("execution should succeed");
+        assert_eq!(
+            out,
+            vec![error_tag_from_code(2001), error_tag_from_code(2002)]
+        );
+    }
+
+    #[test]
+    fn formal_v156_conformance_fixture_exists() {
+        assert!(repo_path("conformance/tests/financial_tolerance_non_convergence.bas").exists());
+    }
+
+    #[test]
+    fn formal_v156_profile_status_document_exists() {
+        assert!(repo_path("docs/profile-status/PROFILE_STATUS_V156.md").exists());
+    }
+
+    #[test]
     fn formal_v132_builtin_expansion_fixtures_exist() {
         assert!(repo_path("conformance/tests/stdlib_string_expansion_core.bas").exists());
         assert!(repo_path("conformance/tests/stdlib_format_core.bas").exists());

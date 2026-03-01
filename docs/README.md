@@ -115,6 +115,7 @@
 | Profile v153 Status | [`PROFILE_STATUS_V153.md`](profile-status/PROFILE_STATUS_V153.md) | Current gate status contract for `mvp-profile-v153` (Null/Empty/Error coercion-edge normalization). |
 | Profile v154 Status | [`PROFILE_STATUS_V154.md`](profile-status/PROFILE_STATUS_V154.md) | Current gate status contract for `mvp-profile-v154` (algorithmic `NPV`/`IRR`/`MIRR` financial execution subset). |
 | Profile v155 Status | [`PROFILE_STATUS_V155.md`](profile-status/PROFILE_STATUS_V155.md) | Current gate status contract for `mvp-profile-v155` (algorithmic `Rate`/`NPer` financial execution subset). |
+| Profile v156 Status | [`PROFILE_STATUS_V156.md`](profile-status/PROFILE_STATUS_V156.md) | Current gate status contract for `mvp-profile-v156` (deterministic financial tolerance/non-convergence error-tag model). |
 | Profile v107 Status | [`PROFILE_STATUS_V107.md`](profile-status/PROFILE_STATUS_V107.md) | Current gate status contract for `mvp-lang-with-member-target-v107`. |
 | Profile v108-v146 Statuses | [`profile-status/`](profile-status/README.md) | AutoRun ladder status records are published through `PROFILE_STATUS_V146.md` for the active full-language/built-ins ladder range. |
 | Phase 12 Status | [`PHASE12_STATUS.md`](PHASE12_STATUS.md) | Declared profile scope and final conformance/stabilization gate artifacts. |
@@ -220,6 +221,7 @@
 | Work Set Plan (v153) | [`worksets/WORKSET_2026-03-01_COERCION_EDGE_NORMALIZATION_V153.md`](worksets/WORKSET_2026-03-01_COERCION_EDGE_NORMALIZATION_V153.md) | Coercion-edge normalization pass for deterministic `Null`/`Empty`/`CVErr` tag behavior and predicate consistency. |
 | Work Set Plan (v154) | [`worksets/WORKSET_2026-03-01_FINANCIAL_FUNCTIONS_I_V154.md`](worksets/WORKSET_2026-03-01_FINANCIAL_FUNCTIONS_I_V154.md) | Financial functions pass replacing `NPV`/`IRR`/`MIRR` projection behavior with deterministic algorithmic runtime execution. |
 | Work Set Plan (v155) | [`worksets/WORKSET_2026-03-01_FINANCIAL_FUNCTIONS_II_V155.md`](worksets/WORKSET_2026-03-01_FINANCIAL_FUNCTIONS_II_V155.md) | Financial functions pass replacing `Rate`/`NPer` projection behavior with deterministic algorithmic runtime execution. |
+| Work Set Plan (v156) | [`worksets/WORKSET_2026-03-01_FINANCIAL_TOLERANCE_MODEL_V156.md`](worksets/WORKSET_2026-03-01_FINANCIAL_TOLERANCE_MODEL_V156.md) | Financial tolerance policy pass with bounded-iteration solver behavior and deterministic error-tag signaling for invalid/non-convergent cases. |
 | Status Tours | [`status-tours/`](status-tours/) | Date-stamped orientation/showcase docs for implemented project state. |
 | Formal | [`FORMAL.md`](FORMAL.md) | Lean/Kani formal scaffold status and structure. |
 | Spec Checklist | [`evidence/SPEC_CHECKLIST.md`](evidence/SPEC_CHECKLIST.md) | Structured language + built-in/library checklist aligned to current evidence and planned gaps. |

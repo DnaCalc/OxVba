@@ -281,3 +281,6 @@
 "FO-V155-001","v155","cargo test -p oxvba-compiler compile_financial_intrinsics_emit_algorithmic_ops","no","pass","","crates/oxvba-compiler/src/lib.rs"
 "FO-V155-002","v155","cargo test -p oxvba-host formal_v155_rate_nper_algorithmic_subset","no","pass","","crates/oxvba-host/src/engine.rs"
 "FO-V155-003","v155","cargo test -p oxvba-host formal_v155_profile_status_document_exists","no","pass","","docs/profile-status/PROFILE_STATUS_V155.md"
+"FO-V156-001","v156","cargo test -p oxvba-host formal_v156_financial_non_convergence_signals_error_tags","no","pass","","crates/oxvba-host/src/engine.rs"
+"FO-V156-002","v156","cargo test -p oxvba-host formal_v156_conformance_fixture_exists","no","pass","","conformance/tests/financial_tolerance_non_convergence.bas"
+"FO-V156-003","v156","cargo test -p oxvba-host formal_v156_profile_status_document_exists","no","pass","","docs/profile-status/PROFILE_STATUS_V156.md"
