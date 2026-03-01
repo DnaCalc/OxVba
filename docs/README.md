@@ -134,6 +134,18 @@
 | Profile v172 Status | [`PROFILE_STATUS_V172.md`](profile-status/PROFILE_STATUS_V172.md) | Current gate status contract for `mvp-profile-v172` (nested error-mode transition hardening). |
 | Profile v173 Status | [`PROFILE_STATUS_V173.md`](profile-status/PROFILE_STATUS_V173.md) | Current gate status contract for `mvp-profile-v173` (JIT fallback robustness expansion for hardened coercion/error regressions). |
 | Profile v174 Status | [`PROFILE_STATUS_V174.md`](profile-status/PROFILE_STATUS_V174.md) | Current gate status contract for `mvp-profile-v174` (deferred oracle probe scaffolding preparation). |
+| Profile v175 Status | [`PROFILE_STATUS_V175.md`](profile-status/PROFILE_STATUS_V175.md) | Current gate status contract for `mvp-profile-v175` (formal lane expansion I). |
+| Profile v176 Status | [`PROFILE_STATUS_V176.md`](profile-status/PROFILE_STATUS_V176.md) | Current gate status contract for `mvp-profile-v176` (formal lane expansion II and deferred strict-lane tracking). |
+| Profile v177 Status | [`PROFILE_STATUS_V177.md`](profile-status/PROFILE_STATUS_V177.md) | Current gate status contract for `mvp-profile-v177` (conformance/formal documentation normalization). |
+| Profile v178 Status | [`PROFILE_STATUS_V178.md`](profile-status/PROFILE_STATUS_V178.md) | Current gate status contract for `mvp-profile-v178` (coverage matrix normalization audit). |
+| Profile v179 Status | [`PROFILE_STATUS_V179.md`](profile-status/PROFILE_STATUS_V179.md) | Current gate status contract for `mvp-profile-v179` (regression corpus growth for hardened non-HAL semantics). |
+| Profile v180 Status | [`PROFILE_STATUS_V180.md`](profile-status/PROFILE_STATUS_V180.md) | Current gate status contract for `mvp-profile-v180` (integrated performance gate and trend publication). |
+| Profile v181 Status | [`PROFILE_STATUS_V181.md`](profile-status/PROFILE_STATUS_V181.md) | Current gate status contract for `mvp-profile-v181` (integrated correctness gate sweep). |
+| Profile v182 Status | [`PROFILE_STATUS_V182.md`](profile-status/PROFILE_STATUS_V182.md) | Current gate status contract for `mvp-profile-v182` (deferred-oracle hygiene audit). |
+| Profile v183 Status | [`PROFILE_STATUS_V183.md`](profile-status/PROFILE_STATUS_V183.md) | Current gate status contract for `mvp-profile-v183` (divergence hygiene audit). |
+| Profile v184 Status | [`PROFILE_STATUS_V184.md`](profile-status/PROFILE_STATUS_V184.md) | Current gate status contract for `mvp-profile-v184` (terminal stabilization pass). |
+| Profile v185 Status | [`PROFILE_STATUS_V185.md`](profile-status/PROFILE_STATUS_V185.md) | Current gate status contract for `mvp-profile-v185` (release-candidate integrated gate). |
+| Profile v186 Status | [`PROFILE_STATUS_V186.md`](profile-status/PROFILE_STATUS_V186.md) | Current gate status contract for `mvp-profile-v186` (batch-2 terminal closure). |
 | Profile v107 Status | [`PROFILE_STATUS_V107.md`](profile-status/PROFILE_STATUS_V107.md) | Current gate status contract for `mvp-lang-with-member-target-v107`. |
 | Profile v108-v146 Statuses | [`profile-status/`](profile-status/README.md) | AutoRun ladder status records are published through `PROFILE_STATUS_V146.md` for the active full-language/built-ins ladder range. |
 | Phase 12 Status | [`PHASE12_STATUS.md`](PHASE12_STATUS.md) | Declared profile scope and final conformance/stabilization gate artifacts. |
@@ -258,11 +270,24 @@
 | Work Set Plan (v172) | [`worksets/WORKSET_2026-03-01_ERROR_MODEL_HARDENING_V172.md`](worksets/WORKSET_2026-03-01_ERROR_MODEL_HARDENING_V172.md) | Error-model hardening workset for nested mode-transition regression coverage. |
 | Work Set Plan (v173) | [`worksets/WORKSET_2026-03-01_JIT_LOWERING_ROBUSTNESS_V173.md`](worksets/WORKSET_2026-03-01_JIT_LOWERING_ROBUSTNESS_V173.md) | JIT lowering/fallback robustness workset for hardened non-HAL regression surfaces. |
 | Work Set Plan (v174) | [`worksets/WORKSET_2026-03-01_DIFFERENTIAL_SCAFFOLD_PREP_V174.md`](worksets/WORKSET_2026-03-01_DIFFERENTIAL_SCAFFOLD_PREP_V174.md) | Deferred oracle differential scaffold workset (non-blocking queue generation). |
+| Work Set Plan (v175) | [`worksets/WORKSET_2026-03-01_FORMAL_LANE_EXPANSION_I_V175.md`](worksets/WORKSET_2026-03-01_FORMAL_LANE_EXPANSION_I_V175.md) | Formal lane expansion I with new strict Kani harness obligations. |
+| Work Set Plan (v176) | [`worksets/WORKSET_2026-03-01_FORMAL_LANE_EXPANSION_II_V176.md`](worksets/WORKSET_2026-03-01_FORMAL_LANE_EXPANSION_II_V176.md) | Formal lane expansion II with deferred strict-lane reconciliation tracking. |
+| Work Set Plan (v177) | [`worksets/WORKSET_2026-03-01_DOCUMENTATION_NORMALIZATION_V177.md`](worksets/WORKSET_2026-03-01_DOCUMENTATION_NORMALIZATION_V177.md) | Conformance/formal documentation normalization workset. |
+| Work Set Plan (v178) | [`worksets/WORKSET_2026-03-01_COVERAGE_MATRIX_NORMALIZATION_V178.md`](worksets/WORKSET_2026-03-01_COVERAGE_MATRIX_NORMALIZATION_V178.md) | Coverage matrix normalization/audit workset. |
+| Work Set Plan (v179) | [`worksets/WORKSET_2026-03-01_REGRESSION_CORPUS_GROWTH_V179.md`](worksets/WORKSET_2026-03-01_REGRESSION_CORPUS_GROWTH_V179.md) | Regression corpus growth workset for hardened non-HAL semantics. |
+| Work Set Plan (v180) | [`worksets/WORKSET_2026-03-01_INTEGRATED_PERF_GATE_V180.md`](worksets/WORKSET_2026-03-01_INTEGRATED_PERF_GATE_V180.md) | Integrated performance gate workset with v166 trend comparison. |
+| Work Set Plan (v181) | [`worksets/WORKSET_2026-03-01_INTEGRATED_CORRECTNESS_GATE_V181.md`](worksets/WORKSET_2026-03-01_INTEGRATED_CORRECTNESS_GATE_V181.md) | Integrated correctness gate workset. |
+| Work Set Plan (v182) | [`worksets/WORKSET_2026-03-01_DEFERRED_ORACLE_HYGIENE_V182.md`](worksets/WORKSET_2026-03-01_DEFERRED_ORACLE_HYGIENE_V182.md) | Deferred-oracle hygiene workset. |
+| Work Set Plan (v183) | [`worksets/WORKSET_2026-03-01_DIVERGENCE_HYGIENE_V183.md`](worksets/WORKSET_2026-03-01_DIVERGENCE_HYGIENE_V183.md) | Divergence evidence hygiene workset. |
+| Work Set Plan (v184) | [`worksets/WORKSET_2026-03-01_TERMINAL_STABILIZATION_V184.md`](worksets/WORKSET_2026-03-01_TERMINAL_STABILIZATION_V184.md) | Terminal stabilization pass workset. |
+| Work Set Plan (v185) | [`worksets/WORKSET_2026-03-01_RELEASE_CANDIDATE_GATE_V185.md`](worksets/WORKSET_2026-03-01_RELEASE_CANDIDATE_GATE_V185.md) | Release-candidate integrated gate workset. |
+| Work Set Plan (v186) | [`worksets/WORKSET_2026-03-01_BATCH2_CLOSURE_V186.md`](worksets/WORKSET_2026-03-01_BATCH2_CLOSURE_V186.md) | Batch-2 closure and handoff workset. |
 | Status Tours | [`status-tours/`](status-tours/) | Date-stamped orientation/showcase docs for implemented project state. |
 | Formal | [`FORMAL.md`](FORMAL.md) | Lean/Kani formal scaffold status and structure. |
 | Spec Checklist | [`evidence/SPEC_CHECKLIST.md`](evidence/SPEC_CHECKLIST.md) | Structured language + built-in/library checklist aligned to current evidence and planned gaps. |
 | Conformance Check Topics | [`evidence/conformance/CONFORMANCE_CHECK_TOPICS.md`](evidence/conformance/CONFORMANCE_CHECK_TOPICS.md) | Oracle-driven backlog for semantically uncertain VBA behaviors to differential-check after implementation. |
 | Deferred Oracle Gates | [`evidence/conformance/DEFERRED_ORACLE_GATES.md`](evidence/conformance/DEFERRED_ORACLE_GATES.md) | Deferred gate register for oracle-dependent semantics (parallel to deferred formal gates). |
+| Implementation-Defined Register | [`evidence/conformance/IMPLEMENTATION_DEFINED.md`](evidence/conformance/IMPLEMENTATION_DEFINED.md) | Explicit catalog of implementation-defined behavior choices and conformance impact links. |
 | Non-HAL Completion Backlog | [`evidence/language/NON_HAL_COMPLETION_BACKLOG_2026-03-01.md`](evidence/language/NON_HAL_COMPLETION_BACKLOG_2026-03-01.md) | Remaining non-HAL implementation targets and explicit exclusions. |
 | Deferred Formal Gates | [`evidence/formal/DEFERRED_GATES.md`](evidence/formal/DEFERRED_GATES.md) | Async Kani deferred-gate register and reconciliation status. |
 | Remote Kani Runner | [`evidence/formal/REMOTE_KANI_RUNNER.md`](evidence/formal/REMOTE_KANI_RUNNER.md) | Remote Linux Kani orchestration model, constraints, commands, and artifact retrieval flow. |

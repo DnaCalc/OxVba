@@ -1,7 +1,7 @@
 # Formal Run Report
 
-- Timestamp (UTC): 2026-03-01T14:20:10Z
-- Profile scope: mvp-profile-v174
+- Timestamp (UTC): 2026-03-01T15:03:34Z
+- Profile scope: mvp-profile-v186
 - Overall mode: non-blocking
 - Kani required: false
 - Kani execution: deferred-to-wsl-async
@@ -345,3 +345,28 @@
 | FO-V173-002 | v173 | no | pass | cargo test -p oxvba-host formal_v173_profile_status_document_exists | docs/profile-status/PROFILE_STATUS_V173.md |  |
 | FO-V174-001 | v174 | no | pass | cargo test -p oxvba-host formal_v174_oracle_probe_scaffold_exists | scripts/oracle-probe.ps1 |  |
 | FO-V174-002 | v174 | no | pass | cargo test -p oxvba-host formal_v174_profile_status_document_exists | docs/profile-status/PROFILE_STATUS_V174.md |  |
+| FO-V175-001 | v175 | no | skipped | cargo kani -p oxvba-vm --harness cverr_tag_encoding_stays_in_reserved_error_band | crates/oxvba-vm/src/interpreter.rs | cargo-kani available via WSL; rerun with -UseWslKani (recommended via run-formal-kani-async.ps1) |
+| FO-V175-002 | v175 | no | skipped | cargo kani -p oxvba-vm --harness resume_next_clears_err_number_after_raise | crates/oxvba-vm/src/interpreter.rs | cargo-kani available via WSL; rerun with -UseWslKani (recommended via run-formal-kani-async.ps1) |
+| FO-V175-003 | v175 | no | pass | cargo test -p oxvba-host formal_v175_profile_status_document_exists | docs/profile-status/PROFILE_STATUS_V175.md |  |
+| FO-V176-001 | v176 | no | pass | cargo test -p oxvba-host formal_v176_deferred_gate_register_tracks_new_lanes | docs/evidence/formal/DEFERRED_GATES.md |  |
+| FO-V176-002 | v176 | no | pass | cargo test -p oxvba-host formal_v176_profile_status_document_exists | docs/profile-status/PROFILE_STATUS_V176.md |  |
+| FO-V177-001 | v177 | no | pass | cargo test -p oxvba-host formal_v177_docs_reference_non_hal_hardening_artifacts | docs/CONFORMANCE.md |  |
+| FO-V177-002 | v177 | no | pass | cargo test -p oxvba-host formal_v177_profile_status_document_exists | docs/profile-status/PROFILE_STATUS_V177.md |  |
+| FO-V178-001 | v178 | no | pass | cargo test -p oxvba-host formal_v178_coverage_normalization_assets_exist | docs/evidence/language/COVERAGE_AUDIT_V178.md |  |
+| FO-V178-002 | v178 | no | pass | cargo test -p oxvba-host formal_v178_profile_status_document_exists | docs/profile-status/PROFILE_STATUS_V178.md |  |
+| FO-V179-001 | v179 | no | pass | cargo test -p oxvba-host formal_v179_regression_fixtures_execute | conformance/tests/regression_cverr_error_resume_bridge.bas |  |
+| FO-V179-002 | v179 | no | pass | cargo test -p oxvba-host formal_v179_profile_status_document_exists | docs/profile-status/PROFILE_STATUS_V179.md |  |
+| FO-V180-001 | v180 | no | pass | cargo test -p oxvba-host formal_v180_perf_trend_report_exists | docs/evidence/profiles/v180/PERF_TREND_V166_TO_V180.md |  |
+| FO-V180-002 | v180 | no | pass | cargo test -p oxvba-host formal_v180_profile_status_document_exists | docs/profile-status/PROFILE_STATUS_V180.md |  |
+| FO-V181-001 | v181 | no | pass | cargo test -p oxvba-host formal_v181_integrated_correctness_artifacts_exist | docs/evidence/profiles/v181/gate_report.md |  |
+| FO-V181-002 | v181 | no | pass | cargo test -p oxvba-host formal_v181_profile_status_document_exists | docs/profile-status/PROFILE_STATUS_V181.md |  |
+| FO-V182-001 | v182 | no | pass | cargo test -p oxvba-host formal_v182_deferred_oracle_audit_assets_exist | docs/evidence/conformance/DEFERRED_ORACLE_AUDIT_V182.md |  |
+| FO-V182-002 | v182 | no | pass | cargo test -p oxvba-host formal_v182_profile_status_document_exists | docs/profile-status/PROFILE_STATUS_V182.md |  |
+| FO-V183-001 | v183 | no | pass | cargo test -p oxvba-host formal_v183_divergence_audit_report_exists | docs/evidence/divergences/DIVERGENCE_AUDIT_V183.md |  |
+| FO-V183-002 | v183 | no | pass | cargo test -p oxvba-host formal_v183_profile_status_document_exists | docs/profile-status/PROFILE_STATUS_V183.md |  |
+| FO-V184-001 | v184 | no | pass | cargo test -p oxvba-host formal_v184_profile_gate_runner_has_locking_and_skip_bench_switch | scripts/run-profile-gate.ps1 |  |
+| FO-V184-002 | v184 | no | pass | cargo test -p oxvba-host formal_v184_profile_status_document_exists | docs/profile-status/PROFILE_STATUS_V184.md |  |
+| FO-V185-001 | v185 | no | pass | cargo test -p oxvba-host formal_v185_release_candidate_gate_artifacts_exist | docs/evidence/profiles/v185/RC_GATE_SUMMARY.md |  |
+| FO-V185-002 | v185 | no | pass | cargo test -p oxvba-host formal_v185_profile_status_document_exists | docs/profile-status/PROFILE_STATUS_V185.md |  |
+| FO-V186-001 | v186 | no | pass | cargo test -p oxvba-host formal_v186_terminal_closure_artifacts_exist | docs/evidence/profiles/v186/BATCH2_CLOSURE.md |  |
+| FO-V186-002 | v186 | no | pass | cargo test -p oxvba-host formal_v186_profile_status_document_exists | docs/profile-status/PROFILE_STATUS_V186.md |  |

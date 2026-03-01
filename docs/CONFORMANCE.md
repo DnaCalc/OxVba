@@ -7,6 +7,8 @@ Defines the current conformance loop and matrix gate for the active ladder profi
 - `conformance/tests/*.bas` — executable input corpus.
 - `conformance/golden/*.csv` — expected outcomes.
 - `conformance/divergences/*.bas` — divergence/regression fixtures tracked in evidence docs.
+- `docs/evidence/conformance/DEFERRED_ORACLE_GATES.csv` — non-blocking oracle foldback register.
+- `docs/evidence/conformance/ORACLE_PROBE_SCAFFOLD.md` — reusable probe queue scaffold for deferred oracle capture.
 
 Current corpus includes:
 - MVP arithmetic smoke path.
@@ -62,7 +64,7 @@ At MVP stage, conformance compares:
 As runtime semantics mature, this will expand to richer structured outputs (error state and object lifecycle signals).
 
 ## Declared Profile Scope (Current Gate)
-- Profile id: `mvp-language-stdlib-consolidation-gate-v56`
+- Profile id: `mvp-profile-v186` (active non-HAL hardening ladder terminal gate)
 - Platform: Windows x64
 - Backends: `vm`, `jit` (JIT toggle path with VM-equivalent semantics)
 - Required matrix cells:
@@ -70,5 +72,9 @@ As runtime semantics mature, this will expand to richer structured outputs (erro
   - `windows/x64/jit`
 
 Current profile gate is evaluated by `./scripts/run-matrix.ps1`, which writes:
-- `docs/evidence/profiles/v56/matrix_latest.csv`
-- `docs/evidence/profiles/v56/gate_report.md`
+- `docs/evidence/profiles/<version>/matrix_latest.csv`
+- `docs/evidence/profiles/<version>/gate_report.md`
+
+Oracle-dependent parity remains deferred and tracked separately:
+- register: `docs/evidence/conformance/DEFERRED_ORACLE_GATES.csv`
+- scaffold queue: `docs/evidence/conformance/oracle_probe_queue.csv` (generated via `scripts/oracle-probe.ps1`)

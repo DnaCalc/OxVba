@@ -20,6 +20,12 @@ try {
     Write-Host "[oxvba] language-coverage"
     & "$PSScriptRoot/validate-language-coverage.ps1"
 
+    Write-Host "[oxvba] coverage-notes"
+    & "$PSScriptRoot/validate-coverage-notes.ps1"
+
+    Write-Host "[oxvba] deferred-oracle-gates"
+    & "$PSScriptRoot/validate-deferred-oracle-gates.ps1"
+
     Write-Host "[oxvba] intrinsic-surface"
     & "$PSScriptRoot/validate-intrinsic-surface.ps1"
 

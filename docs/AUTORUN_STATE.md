@@ -13,14 +13,15 @@ Terminal gate: `v186`
 Current checkpoint:
 - Prior full language+built-ins ladder `v107..v146` reached terminal gate with `PASS`.
 - Non-HAL completion ladder `v147..v166` reached terminal closure gate with `PASS`.
-- Active execution target is non-HAL hardening ladder `v175..v186` (after v173..v174 completion pass).
-- Latest integrated gate artifact: `docs/evidence/profiles/v172/integrated_gate.md`.
-- Latest matrix artifact: `docs/evidence/profiles/v174/matrix_latest.csv`.
-- Latest profile gate artifact: `docs/evidence/profiles/v174/gate_report.md`.
+- Non-HAL hardening ladder `v167..v186` reached terminal gate with `PASS`.
+- Active execution target is complete through `v186` (no remaining in-ladder steps).
+- Latest integrated gate artifact: `docs/evidence/profiles/v186/integrated_gate.md`.
+- Latest matrix artifact: `docs/evidence/profiles/v186/matrix_latest.csv`.
+- Latest profile gate artifact: `docs/evidence/profiles/v186/gate_report.md`.
 - Latest formal artifact: `docs/evidence/formal/latest_run.md`.
 - Evidence artifacts are tracked under `docs/evidence/profiles/`, `docs/evidence/formal/`, and `docs/evidence/divergences/`.
 
 Resume protocol:
 1. Read this file.
 2. Run `./scripts/meta-check.ps1 -Fast`.
-3. Continue from `docs/worksets/PROFILE_LADDER_2026-03-01_MACH1000_V147_V166_NON_HAL_COMPLETION.md` and then `...V167_V186_NON_HAL_HARDENING.md`.
+3. Start the next ladder/workset only after user approves a new terminal gate beyond `v186`.

@@ -1,6 +1,31 @@
 # Implementation Log
 
 ## 2026-03-01
+- Completed terminal non-HAL hardening ladder closure `v175..v186`:
+  - `v175..v176`: formal lane expansion with new VM Kani harnesses (`cverr_tag_encoding_stays_in_reserved_error_band`, `resume_next_clears_err_number_after_raise`) and deferred strict-lane tracking (`DG-V175-001`, `DG-V176-001`);
+  - `v177`: conformance/formal documentation normalization (`docs/CONFORMANCE.md`, `docs/FORMAL.md`);
+  - `v178`: coverage matrix normalization with executable audit script `scripts/validate-coverage-notes.ps1` and report `docs/evidence/language/COVERAGE_AUDIT_V178.md`;
+  - `v179`: regression corpus growth via:
+    - `conformance/tests/regression_cverr_error_resume_bridge.bas`
+    - `conformance/tests/regression_cverr_predicate_domain.bas`
+    - `conformance/golden/smoke.csv` updates;
+  - `v180`: integrated performance gate PASS and trend report `docs/evidence/profiles/v180/PERF_TREND_V166_TO_V180.md`;
+  - `v181`: integrated correctness gate PASS (`docs/evidence/profiles/v181/gate_report.md`);
+  - `v182`: deferred-oracle hygiene audit script/report:
+    - `scripts/validate-deferred-oracle-gates.ps1`
+    - `docs/evidence/conformance/DEFERRED_ORACLE_AUDIT_V182.md`;
+  - `v183`: divergence hygiene audit `docs/evidence/divergences/DIVERGENCE_AUDIT_V183.md`;
+  - `v184`: terminal stabilization of gate runner (`scripts/run-profile-gate.ps1`) with process lock and `-SkipBench` support;
+  - `v185`: release-candidate integrated gate PASS + `docs/evidence/profiles/v185/RC_GATE_SUMMARY.md`;
+  - `v186`: terminal integrated gate PASS + closure packet `docs/evidence/profiles/v186/BATCH2_CLOSURE.md`.
+- Added implementation-defined behavior register:
+  - `docs/evidence/conformance/IMPLEMENTATION_DEFINED.md`;
+  - updated `CONFORMANCE_CHECK_TOPICS.csv` (`CCT-036`) and closed `ODG-034`.
+- Validation lane highlights for terminal closure:
+  - `./scripts/run-profile-gate.ps1 -ProfileScope mvp-profile-v180 -OutputDir docs/evidence/profiles/v180 -BenchIterations 1`
+  - `./scripts/run-matrix.ps1 -ProfileScope mvp-profile-v181 -OutputDir docs/evidence/profiles/v181`
+  - `./scripts/run-profile-gate.ps1 -ProfileScope mvp-profile-v185 -OutputDir docs/evidence/profiles/v185 -BenchIterations 1`
+  - `./scripts/run-profile-gate.ps1 -ProfileScope mvp-profile-v186 -OutputDir docs/evidence/profiles/v186 -BenchIterations 1`
 - Completed `v174` (`mvp-profile-v174`) differential scaffold prep:
   - added deferred oracle probe queue scaffold script:
     - `scripts/oracle-probe.ps1`;

@@ -186,3 +186,5 @@
 "with_block_member_target_chain.bas","ok","7,7"
 "coercion_cverr_range_predicates.bas","ok","1,1,1,1,0,10"
 "error_nested_mode_transitions.bas","ok","5,0,0,6"
+"regression_cverr_error_resume_bridge.bas","ok","11,0,1,10,0"
+"regression_cverr_predicate_domain.bas","ok","1,1,0,0,0"

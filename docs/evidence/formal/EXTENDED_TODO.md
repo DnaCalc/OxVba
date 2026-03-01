@@ -89,3 +89,15 @@ Non-blocking formal issues and follow-up items for later ladder profiles.
   Current status (`todo` / `investigating` / `resolved`): investigating
   Reproduction command: `./scripts/run-formal-kani-remote.ps1 -Action StartDeferred -DeferredVersions "146" -DeferredMode cumulative`
   Suggested next action: run terminal strict lane remotely during final v146 gate reconciliation and fold status into `DEFERRED_GATES.md`.
+- ID: FTODO-V175-001
+  Profile: v175 formal lane expansion I
+  Summary: New strict harnesses (`cverr_tag_encoding_stays_in_reserved_error_band`, `resume_next_clears_err_number_after_raise`) were added but not yet executed in strict Kani mode.
+  Current status (`todo` / `investigating` / `resolved`): investigating
+  Reproduction command: `./scripts/run-formal-kani-remote.ps1 -Action StartDeferred -DeferredVersions "175" -DeferredMode cumulative`
+  Suggested next action: dispatch lane `v175-kani` on remote Linux and fold completion status into `DEFERRED_GATES.md` + `latest_run.*`.
+- ID: FTODO-V176-001
+  Profile: v176 formal lane expansion II
+  Summary: Strict foldback lane for the v175/v176 formal expansion tranche remains deferred to remote Linux batch execution.
+  Current status (`todo` / `investigating` / `resolved`): investigating
+  Reproduction command: `./scripts/run-formal-kani-remote.ps1 -Action StartDeferred -DeferredVersions "176" -DeferredMode cumulative`
+  Suggested next action: execute `v176-kani` remotely and reconcile deferred register + formal summaries at the v186 terminal closure sweep.

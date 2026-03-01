@@ -2193,4 +2193,30 @@ mod kani_proofs {
         let out = vm.snapshot_slots(2)[1];
         assert!(matches!(out, 0 | 1 | 3 | 10 | 8204));
     }
+
+    #[kani::proof]
+    fn cverr_tag_encoding_stays_in_reserved_error_band() {
+        let code: i32 = kani::any();
+        let tag = error_tag_from_code(code);
+        assert!(oxvba_runtime::value_tags::is_error_tag(tag));
+    }
+
+    #[kani::proof]
+    fn resume_next_clears_err_number_after_raise() {
+        let code: i32 = kani::any();
+        let bytecode = Bytecode {
+            instructions: vec![
+                Instruction::SetOnErrorResumeNext,
+                Instruction::RaiseError { code },
+                Instruction::ResumeNext,
+                Instruction::LoadErrNumber { slot: 0 },
+                Instruction::Halt,
+            ],
+            slot_count: 1,
+            user_slot_count: 1,
+        };
+        let mut vm = Vm::default();
+        assert!(vm.execute(&bytecode).is_ok());
+        assert_eq!(vm.snapshot_slots(1)[0], 0);
+    }
 }

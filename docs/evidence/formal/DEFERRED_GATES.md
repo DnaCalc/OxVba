@@ -57,6 +57,8 @@ This register tracks long-running async formal obligations that are started duri
 | DG-V132-001 | v132 | v132-kani | dg-not-started | n/a | v138 | `remote/linux-pending` | Built-in expansion sweep introduced string/date/time/random/financial subsets; strict lane deferred to remote Linux async runner. |
 | DG-V134-001 | v134 | v134-kani | dg-not-started | n/a | v138 | `remote/linux-pending` | File-introspection stub intrinsics (`FreeFile/EOF/LOF/Seek`) added; strict lane deferred to remote Linux async runner. |
 | DG-V146-001 | v146 | v146-kani | dg-not-started | n/a | v146 | `remote/linux-pending` | Terminal ladder gate strict lane deferred pending remote Linux batch execution/foldback. |
+| DG-V175-001 | v175 | v175-kani | dg-not-started | n/a | v186 | `remote/linux-pending` | New strict harnesses for CVErr error-tag range + ResumeNext error clearing were added; execution deferred to remote Linux async dispatcher. |
+| DG-V176-001 | v176 | v176-kani | dg-not-started | n/a | v186 | `remote/linux-pending` | Formal lane expansion-II reconciliation gate for v175/v176 strict obligations; queued for remote batch foldback. |
 
 ## Update Protocol
 1. On async start, add a row with `dg-started` and paths.

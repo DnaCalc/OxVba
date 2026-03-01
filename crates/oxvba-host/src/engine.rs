@@ -2814,6 +2814,183 @@ mod tests {
     }
 
     #[test]
+    fn formal_v175_vm_kani_harnesses_cover_new_cverr_and_resume_paths() {
+        let text = std::fs::read_to_string(repo_path("crates/oxvba-vm/src/interpreter.rs"))
+            .expect("interpreter exists");
+        assert!(text.contains("cverr_tag_encoding_stays_in_reserved_error_band"));
+        assert!(text.contains("resume_next_clears_err_number_after_raise"));
+    }
+
+    #[test]
+    fn formal_v175_profile_status_document_exists() {
+        assert!(repo_path("docs/profile-status/PROFILE_STATUS_V175.md").exists());
+    }
+
+    #[test]
+    fn formal_v176_deferred_gate_register_tracks_new_lanes() {
+        let text = std::fs::read_to_string(repo_path("docs/evidence/formal/DEFERRED_GATES.md"))
+            .expect("deferred gate register exists");
+        assert!(text.contains("DG-V175-001"));
+        assert!(text.contains("DG-V176-001"));
+    }
+
+    #[test]
+    fn formal_v176_profile_status_document_exists() {
+        assert!(repo_path("docs/profile-status/PROFILE_STATUS_V176.md").exists());
+    }
+
+    #[test]
+    fn formal_v177_docs_reference_non_hal_hardening_artifacts() {
+        let conformance =
+            std::fs::read_to_string(repo_path("docs/CONFORMANCE.md")).expect("conformance exists");
+        let formal = std::fs::read_to_string(repo_path("docs/FORMAL.md")).expect("formal exists");
+        assert!(conformance.contains("ORACLE_PROBE_SCAFFOLD.md"));
+        assert!(formal.contains("DEFERRED_GATES.md"));
+        assert!(formal.contains("run-formal-kani-remote.ps1"));
+    }
+
+    #[test]
+    fn formal_v177_profile_status_document_exists() {
+        assert!(repo_path("docs/profile-status/PROFILE_STATUS_V177.md").exists());
+    }
+
+    #[test]
+    fn formal_v178_coverage_normalization_assets_exist() {
+        assert!(repo_path("scripts/validate-coverage-notes.ps1").exists());
+        let report =
+            std::fs::read_to_string(repo_path("docs/evidence/language/COVERAGE_AUDIT_V178.md"))
+                .expect("coverage audit report exists");
+        assert!(report.contains("COVERAGE_INDEX.csv"));
+        assert!(report.contains("LIBRARY_CHECKLIST.csv"));
+    }
+
+    #[test]
+    fn formal_v178_profile_status_document_exists() {
+        assert!(repo_path("docs/profile-status/PROFILE_STATUS_V178.md").exists());
+    }
+
+    #[test]
+    fn formal_v179_regression_fixtures_execute() {
+        let source = std::fs::read_to_string(repo_path(
+            "conformance/tests/regression_cverr_error_resume_bridge.bas",
+        ))
+        .expect("v179 regression fixture exists");
+        let out = Engine::new(HostConfig {
+            enable_jit: false,
+            root_object_name: None,
+        })
+        .execute_source_with_snapshot(&source)
+        .expect("execution should succeed");
+        assert_eq!(out, vec![11, 0, 1, 10, 0]);
+
+        let source = std::fs::read_to_string(repo_path(
+            "conformance/tests/regression_cverr_predicate_domain.bas",
+        ))
+        .expect("v179 predicate fixture exists");
+        let out = Engine::new(HostConfig {
+            enable_jit: false,
+            root_object_name: None,
+        })
+        .execute_source_with_snapshot(&source)
+        .expect("execution should succeed");
+        assert_eq!(out, vec![1, 1, 0, 0, 0]);
+    }
+
+    #[test]
+    fn formal_v179_profile_status_document_exists() {
+        assert!(repo_path("docs/profile-status/PROFILE_STATUS_V179.md").exists());
+    }
+
+    #[test]
+    fn formal_v180_perf_trend_report_exists() {
+        let text = std::fs::read_to_string(repo_path(
+            "docs/evidence/profiles/v180/PERF_TREND_V166_TO_V180.md",
+        ))
+        .expect("v180 perf trend report exists");
+        assert!(text.contains("v166"));
+        assert!(text.contains("v180"));
+    }
+
+    #[test]
+    fn formal_v180_profile_status_document_exists() {
+        assert!(repo_path("docs/profile-status/PROFILE_STATUS_V180.md").exists());
+    }
+
+    #[test]
+    fn formal_v181_integrated_correctness_artifacts_exist() {
+        assert!(repo_path("docs/evidence/profiles/v181/matrix_latest.csv").exists());
+        assert!(repo_path("docs/evidence/profiles/v181/gate_report.md").exists());
+    }
+
+    #[test]
+    fn formal_v181_profile_status_document_exists() {
+        assert!(repo_path("docs/profile-status/PROFILE_STATUS_V181.md").exists());
+    }
+
+    #[test]
+    fn formal_v182_deferred_oracle_audit_assets_exist() {
+        assert!(repo_path("scripts/validate-deferred-oracle-gates.ps1").exists());
+        assert!(repo_path("docs/evidence/conformance/DEFERRED_ORACLE_AUDIT_V182.md").exists());
+    }
+
+    #[test]
+    fn formal_v182_profile_status_document_exists() {
+        assert!(repo_path("docs/profile-status/PROFILE_STATUS_V182.md").exists());
+    }
+
+    #[test]
+    fn formal_v183_divergence_audit_report_exists() {
+        let text = std::fs::read_to_string(repo_path(
+            "docs/evidence/divergences/DIVERGENCE_AUDIT_V183.md",
+        ))
+        .expect("v183 divergence audit report exists");
+        assert!(text.contains("DIV-0001"));
+        assert!(text.contains("DIV-0002"));
+    }
+
+    #[test]
+    fn formal_v183_profile_status_document_exists() {
+        assert!(repo_path("docs/profile-status/PROFILE_STATUS_V183.md").exists());
+    }
+
+    #[test]
+    fn formal_v184_profile_gate_runner_has_locking_and_skip_bench_switch() {
+        let text = std::fs::read_to_string(repo_path("scripts/run-profile-gate.ps1"))
+            .expect("run-profile-gate exists");
+        assert!(text.contains("profile gate already running"));
+        assert!(text.contains("lock.json"));
+        assert!(text.contains("[switch]$SkipBench"));
+    }
+
+    #[test]
+    fn formal_v184_profile_status_document_exists() {
+        assert!(repo_path("docs/profile-status/PROFILE_STATUS_V184.md").exists());
+    }
+
+    #[test]
+    fn formal_v185_release_candidate_gate_artifacts_exist() {
+        assert!(repo_path("docs/evidence/profiles/v185/integrated_gate.md").exists());
+        assert!(repo_path("docs/evidence/profiles/v185/integrated_gate.csv").exists());
+        assert!(repo_path("docs/evidence/profiles/v185/RC_GATE_SUMMARY.md").exists());
+    }
+
+    #[test]
+    fn formal_v185_profile_status_document_exists() {
+        assert!(repo_path("docs/profile-status/PROFILE_STATUS_V185.md").exists());
+    }
+
+    #[test]
+    fn formal_v186_terminal_closure_artifacts_exist() {
+        assert!(repo_path("docs/evidence/profiles/v186/integrated_gate.md").exists());
+        assert!(repo_path("docs/evidence/profiles/v186/BATCH2_CLOSURE.md").exists());
+    }
+
+    #[test]
+    fn formal_v186_profile_status_document_exists() {
+        assert!(repo_path("docs/profile-status/PROFILE_STATUS_V186.md").exists());
+    }
+
+    #[test]
     fn formal_v132_builtin_expansion_fixtures_exist() {
         assert!(repo_path("conformance/tests/stdlib_string_expansion_core.bas").exists());
         assert!(repo_path("conformance/tests/stdlib_format_core.bas").exists());

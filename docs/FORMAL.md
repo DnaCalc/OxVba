@@ -29,11 +29,14 @@ Profile-scoped formal obligations may also run as deterministic, reduced-domain 
 - Kani setup helper: `./scripts/setup-kani.ps1` (`-Install` to bootstrap locally)
 - Windows+WSL strict helper: `./scripts/run-formal-kani-wsl.ps1` (runs Kani obligations inside WSL while keeping report paths in this repo)
 - Async strict helper for long profile runs: `./scripts/run-formal-kani-async.ps1` (`Start`/`Status`/`Tail`/`Wait`/`Stop`/`WatchStart`/`WatchStop`/`Probe`/`Reconcile`)
+- Remote strict helper for resource-isolated lanes: `./scripts/run-formal-kani-remote.ps1` (`Ensure`/`ProbeCapacity`/`StartDeferred`/`Status`/`Tail`/`FetchArtifacts`)
 - Latest async lane evidence: `docs/evidence/formal/ASYNC_KANI_V85_RERUN.md`
+- Current deferred-lane declarations: `docs/evidence/formal/ASYNC_KANI_V175.md`, `docs/evidence/formal/ASYNC_KANI_V176.md`
 - Historical failed lane evidence: `docs/evidence/formal/ASYNC_KANI_V85.md`
 - Terminal typing-ladder DG audit: `docs/evidence/formal/DG_AUDIT_V86.md`
 - Current install note: native Windows Kani install may fail in this environment; use WSL path above for strict Kani runs.
 - Async hardening note: each async lane now writes `preflight.json` and `status_snapshot.json` under `temp/async/formal-kani/<run-name>/` for probe diagnostics and stale-run reconciliation.
+- Current deferred strict lanes are listed in `docs/evidence/formal/DEFERRED_GATES.md` (including v175/v176 expansion lanes queued for remote execution).
 
 ## Deferred-gate policy (DG)
 For long-running Kani in profile ladders, formal completion may be deferred without blocking the active profile gate if all of the following are true:

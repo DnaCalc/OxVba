@@ -1,0 +1,5 @@
+"profile_scope","workload","backend","include_pattern","baseline_ms","optimized_ms","gain_percent"
+"mvp-profile-v180","conformance_vm","vm","","52633.89","51175.87","2.77"
+"mvp-profile-v180","conformance_jit","jit","","49929.47","51525.57","-3.2"
+"mvp-profile-v180","subset_err_string_financial_vm","vm","err_*;string_*;financial_*;coercion_*;stdlib_error_*;stdlib_random_financial_expansion.bas","7329.87","6922.41","5.56"
+"mvp-profile-v180","subset_err_string_financial_jit","jit","err_*;string_*;financial_*;coercion_*;stdlib_error_*;stdlib_random_financial_expansion.bas","7030.69","7264.87","-3.33"
