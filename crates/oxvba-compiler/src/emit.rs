@@ -1481,17 +1481,29 @@ fn emit_expr_into(
                     })
                 }
                 ("npv", slots) if slots.len() >= 2 => {
-                    instructions.push(Instruction::CopySlot { dst, src: slots[1] });
-                    for slot in &slots[2..] {
-                        instructions.push(Instruction::AddSlots {
-                            dst,
-                            lhs: dst,
-                            rhs: *slot,
-                        });
-                    }
+                    instructions.push(Instruction::IntrinsicNpvI32 {
+                        dst,
+                        rate: slots[0],
+                        values: slots[1..].to_vec(),
+                    })
                 }
-                ("irr", [values, ..]) | ("mirr", [values, ..]) => {
-                    instructions.push(Instruction::CopySlot { dst, src: *values })
+                ("irr", [value]) => instructions.push(Instruction::IntrinsicIrrI32 {
+                    dst,
+                    value: *value,
+                    guess: None,
+                }),
+                ("irr", [value, guess]) => instructions.push(Instruction::IntrinsicIrrI32 {
+                    dst,
+                    value: *value,
+                    guess: Some(*guess),
+                }),
+                ("mirr", [value, finance_rate, reinvest_rate]) => {
+                    instructions.push(Instruction::IntrinsicMirrI32 {
+                        dst,
+                        value: *value,
+                        finance_rate: *finance_rate,
+                        reinvest_rate: *reinvest_rate,
+                    })
                 }
                 ("rate", [_, _, pv])
                 | ("rate", [_, _, pv, _])

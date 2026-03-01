@@ -14,8 +14,8 @@ Current checkpoint:
 - Prior full language+built-ins ladder `v107..v146` reached terminal gate with `PASS`.
 - Next execution target is non-HAL completion/hardening through `v186`.
 - Latest integrated gate artifact: `docs/evidence/profiles/v146/integrated_gate.md`.
-- Latest matrix artifact: `docs/evidence/profiles/v153/matrix_latest.csv`.
-- Latest profile gate artifact: `docs/evidence/profiles/v153/gate_report.md`.
+- Latest matrix artifact: `docs/evidence/profiles/v154/matrix_latest.csv`.
+- Latest profile gate artifact: `docs/evidence/profiles/v154/gate_report.md`.
 - Latest formal artifact: `docs/evidence/formal/latest_run.md`.
 - Evidence artifacts are tracked under `docs/evidence/profiles/`, `docs/evidence/formal/`, and `docs/evidence/divergences/`.
 

@@ -1,6 +1,29 @@
 # Implementation Log
 
 ## 2026-03-01
+- Completed `v154` (`mvp-profile-v154`) financial functions I:
+  - replaced projection lowering for `NPV`/`IRR`/`MIRR` with dedicated runtime intrinsics:
+    - `Instruction::IntrinsicNpvI32`
+    - `Instruction::IntrinsicIrrI32`
+    - `Instruction::IntrinsicMirrI32`
+  - implemented deterministic algorithmic runtime behavior in VM:
+    - discounted-cashflow `NPV` subset,
+    - Newton-iteration-backed synthetic `IRR` subset,
+    - rate-adjusted `MIRR` subset;
+  - updated compiler lowering/tests to assert algorithmic intrinsic emission (no passthrough projection path);
+  - updated financial conformance expectations:
+    - `stdlib_random_financial_expansion.bas` now reflects algorithmic outputs (`NPV`/`IRR`/`MIRR`) while `Rate`/`NPer` remain pending follow-up profiles.
+- Validation lane for `v154` passed:
+  - `cargo fmt --all`
+  - `cargo test -p oxvba-runtime`
+  - `cargo test -p oxvba-compiler`
+  - `cargo test -p oxvba-vm`
+  - `cargo test -p oxvba-host`
+  - `./scripts/run-conformance.ps1 -Backend vm`
+  - `./scripts/run-conformance.ps1 -Backend jit`
+  - `./scripts/run-formal.ps1 -ProfileScope mvp-profile-v154`
+  - `./scripts/run-matrix.ps1 -ProfileScope mvp-profile-v154 -OutputDir docs/evidence/profiles/v154`
+  - `./scripts/meta-check.ps1 -Fast`
 - Completed `v153` (`mvp-profile-v153`) coercion edge normalization for `Null`/`Empty`/`Error` paths:
   - added shared runtime value-tag helpers:
     - `crates/oxvba-runtime/src/value_tags.rs`

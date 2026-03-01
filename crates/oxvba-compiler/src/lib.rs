@@ -386,6 +386,27 @@ mod tests {
     }
 
     #[test]
+    fn compile_financial_intrinsics_emit_algorithmic_ops() {
+        let source = "Sub Main()\nDim c\nDim d\nDim e\nc = NPV(1, 10, 20, 30)\nd = IRR(50)\ne = MIRR(70, 1, 2)\nEnd Sub";
+        let out = compile(source).expect("compile should succeed");
+        assert!(
+            out.instructions
+                .iter()
+                .any(|i| matches!(i, Instruction::IntrinsicNpvI32 { .. }))
+        );
+        assert!(
+            out.instructions
+                .iter()
+                .any(|i| matches!(i, Instruction::IntrinsicIrrI32 { .. }))
+        );
+        assert!(
+            out.instructions
+                .iter()
+                .any(|i| matches!(i, Instruction::IntrinsicMirrI32 { .. }))
+        );
+    }
+
+    #[test]
     fn arithmetic_object_plus_const_is_rejected() {
         let source = "Sub Main()\nDim o As Object\no = o + 1\nEnd Sub";
         let err = compile(source).expect_err("object arithmetic should be rejected");

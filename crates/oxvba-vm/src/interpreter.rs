@@ -436,6 +436,36 @@ impl Vm {
                     self.write_slot(*dst, Self::pmt_i32(rate, nper, pv, fv, due))?;
                     pc += 1;
                 }
+                Instruction::IntrinsicNpvI32 { dst, rate, values } => {
+                    let rate = self.read_slot(*rate)?;
+                    let mut cash_flows = Vec::with_capacity(values.len());
+                    for slot in values {
+                        cash_flows.push(self.read_slot(*slot)?);
+                    }
+                    self.write_slot(*dst, Self::npv_i32(rate, &cash_flows))?;
+                    pc += 1;
+                }
+                Instruction::IntrinsicIrrI32 { dst, value, guess } => {
+                    let value = self.read_slot(*value)?;
+                    let guess = match guess {
+                        Some(slot) => self.read_slot(*slot)?,
+                        None => 10,
+                    };
+                    self.write_slot(*dst, Self::irr_i32(value, guess))?;
+                    pc += 1;
+                }
+                Instruction::IntrinsicMirrI32 {
+                    dst,
+                    value,
+                    finance_rate,
+                    reinvest_rate,
+                } => {
+                    let value = self.read_slot(*value)?;
+                    let finance_rate = self.read_slot(*finance_rate)?;
+                    let reinvest_rate = self.read_slot(*reinvest_rate)?;
+                    self.write_slot(*dst, Self::mirr_i32(value, finance_rate, reinvest_rate))?;
+                    pc += 1;
+                }
                 Instruction::IntrinsicLBoundArray { dst, src } => {
                     let value = self.read_slot(*src)?;
                     let out = if Self::is_array_tag(value) { 0 } else { -1 };
@@ -1090,6 +1120,56 @@ impl Vm {
         out.round() as i32
     }
 
+    fn npv_i32(rate: i32, values: &[i32]) -> i32 {
+        if values.is_empty() {
+            return 0;
+        }
+        let r = rate as f64 / 100.0;
+        let mut total = 0.0f64;
+        for (idx, value) in values.iter().enumerate() {
+            let period = (idx + 1) as i32;
+            let discount = (1.0 + r).powi(period);
+            if discount == 0.0 {
+                continue;
+            }
+            total += *value as f64 / discount;
+        }
+        total.round() as i32
+    }
+
+    fn irr_i32(value: i32, guess: i32) -> i32 {
+        let mut r = guess as f64 / 100.0;
+        let value = value as f64;
+        for _ in 0..20 {
+            let denom = 1.0 + r;
+            if denom.abs() < 1e-9 {
+                break;
+            }
+            let f = -100.0 + (value / denom);
+            let fp = -value / (denom * denom);
+            if fp.abs() < 1e-12 {
+                break;
+            }
+            let next = (r - f / fp).clamp(-0.99, 10.0);
+            if (next - r).abs() < 1e-10 {
+                r = next;
+                break;
+            }
+            r = next;
+        }
+        (r * 100.0).round() as i32
+    }
+
+    fn mirr_i32(value: i32, finance_rate: i32, reinvest_rate: i32) -> i32 {
+        let value = value as f64;
+        let fr = finance_rate as f64 / 100.0;
+        let rr = reinvest_rate as f64 / 100.0;
+        let pv_neg = 100.0 / (1.0 + fr).max(1e-9);
+        let fv_pos = value * (1.0 + rr);
+        let out = (fv_pos / pv_neg) - 1.0;
+        (out * 100.0).round() as i32
+    }
+
     fn is_array_tag(value: i32) -> bool {
         runtime_is_array_tag(value)
     }
@@ -1365,6 +1445,33 @@ mod tests {
                     slot: 7,
                     value: ARRAY_TAG_BASE + 3,
                 },
+                Instruction::LoadConstI32 { slot: 22, value: 1 },
+                Instruction::LoadConstI32 {
+                    slot: 23,
+                    value: 10,
+                },
+                Instruction::LoadConstI32 {
+                    slot: 24,
+                    value: 20,
+                },
+                Instruction::LoadConstI32 {
+                    slot: 25,
+                    value: 30,
+                },
+                Instruction::LoadConstI32 {
+                    slot: 26,
+                    value: 50,
+                },
+                Instruction::LoadConstI32 {
+                    slot: 27,
+                    value: 10,
+                },
+                Instruction::LoadConstI32 {
+                    slot: 28,
+                    value: 70,
+                },
+                Instruction::LoadConstI32 { slot: 29, value: 1 },
+                Instruction::LoadConstI32 { slot: 30, value: 2 },
                 Instruction::IntrinsicDateSerialDigits {
                     dst: 8,
                     year: 0,
@@ -1417,15 +1524,31 @@ mod tests {
                     member: 4,
                     arg: 6,
                 },
+                Instruction::IntrinsicNpvI32 {
+                    dst: 31,
+                    rate: 22,
+                    values: vec![23, 24, 25],
+                },
+                Instruction::IntrinsicIrrI32 {
+                    dst: 32,
+                    value: 26,
+                    guess: Some(27),
+                },
+                Instruction::IntrinsicMirrI32 {
+                    dst: 33,
+                    value: 28,
+                    finance_rate: 29,
+                    reinvest_rate: 30,
+                },
                 Instruction::Halt,
             ],
-            slot_count: 22,
-            user_slot_count: 22,
+            slot_count: 34,
+            user_slot_count: 34,
         };
 
         let mut vm = Vm::default();
         vm.execute(&bytecode).expect("vm should execute bytecode");
-        let out = vm.snapshot_slots(22);
+        let out = vm.snapshot_slots(34);
         assert_eq!(out[8], 20260228);
         assert_eq!(out[9], 20260229);
         assert_eq!(out[10], 1);
@@ -1439,6 +1562,9 @@ mod tests {
         assert_eq!(out[19], 2);
         assert_eq!(out[20], 5002);
         assert_eq!(out[21], 5005);
+        assert_eq!(out[31], 59);
+        assert_eq!(out[32], -50);
+        assert_eq!(out[33], -28);
     }
 
     #[test]

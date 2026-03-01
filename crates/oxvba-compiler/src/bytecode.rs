@@ -212,6 +212,22 @@ pub enum Instruction {
         fv: Option<usize>,
         due: Option<usize>,
     },
+    IntrinsicNpvI32 {
+        dst: usize,
+        rate: usize,
+        values: Vec<usize>,
+    },
+    IntrinsicIrrI32 {
+        dst: usize,
+        value: usize,
+        guess: Option<usize>,
+    },
+    IntrinsicMirrI32 {
+        dst: usize,
+        value: usize,
+        finance_rate: usize,
+        reinvest_rate: usize,
+    },
     IntrinsicLBoundArray {
         dst: usize,
         src: usize,

@@ -151,7 +151,7 @@
 "stdlib_math_primitives.bas","ok","7,-1,9,20"
 "stdlib_math_transcendental_identity.bas","ok","0,1,0,1"
 "stdlib_numeric_expansion.bas","ok","31,17,9,11"
-"stdlib_random_financial_expansion.bas","ok","1,42,60,50,70,99,88"
+"stdlib_random_financial_expansion.bas","ok","1,42,59,-50,-28,99,88"
 "stdlib_slice_ops.bas","ok","12,45,234"
 "stdlib_string_expansion_core.bas","ok","4,3,66,66,777"
 "stdlib_time_serial_value.bas","ok","3723,3723"
