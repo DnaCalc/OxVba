@@ -43,9 +43,11 @@ Optional overrides:
 ./scripts/run-formal-kani-remote.ps1 `
  -Action StartDeferred `
   -DeferredMode cumulative `
-  -DeferredStrategy dedup `
+ -DeferredStrategy dedup `
   -DeferredConcurrency 3 `
   -ObligationTimeoutSeconds 10800 `
+  -ObligationTimeoutRetries 1 `
+  -ObligationTimeoutMultiplier 10 `
   -DeferredVersions "81 82 83 87 88 89 90 91 93 94 95 96 99 100 101 102 103 104 105 106"
 ```
 
@@ -133,5 +135,13 @@ This keeps CBMC/Kani resource pressure bounded while preserving forward progress
 
 ## Timeout and Dedup
 
-- Per-obligation timeout is configurable with `-ObligationTimeoutSeconds` (default `10800`).
-- Dedup strategy (`-DeferredStrategy dedup`) avoids recomputing identical Kani commands across lanes for the same commit/toolchain.
+- Per-obligation base timeout is configurable with `-ObligationTimeoutSeconds` (default `10800`).
+- Timeout retries are configurable:
+  - `-ObligationTimeoutRetries` (default `1`)
+  - `-ObligationTimeoutMultiplier` (default `10`)
+- Scheduling policy:
+  - run all obligations once with base timeout;
+  - obligations that timeout are moved to an end-of-queue retry pass;
+  - each retry round uses `base_timeout * multiplier^retry_round`.
+- Dedup strategy (`-DeferredStrategy dedup`) avoids recomputing identical Kani commands across lanes for the same commit/toolchain/timeout tuple.
+- Lane CSV now records `initial_status`, `attempts`, `attempt`, `retry_round`, and `timeout_seconds` to distinguish first-pass timeouts from final outcomes.

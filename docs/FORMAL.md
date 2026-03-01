@@ -30,6 +30,7 @@ Profile-scoped formal obligations may also run as deterministic, reduced-domain 
 - Windows+WSL strict helper: `./scripts/run-formal-kani-wsl.ps1` (runs Kani obligations inside WSL while keeping report paths in this repo)
 - Async strict helper for long profile runs: `./scripts/run-formal-kani-async.ps1` (`Start`/`Status`/`Tail`/`Wait`/`Stop`/`WatchStart`/`WatchStop`/`Probe`/`Reconcile`)
 - Remote strict helper for resource-isolated lanes: `./scripts/run-formal-kani-remote.ps1` (`Ensure`/`ProbeCapacity`/`StartDeferred`/`Status`/`Tail`/`FetchArtifacts`)
+- Remote deferred lanes support timeout retry queues (`-ObligationTimeoutRetries`, `-ObligationTimeoutMultiplier`) so first-pass timeouts are retried at the end of queue with expanded time budgets.
 - Latest async lane evidence: `docs/evidence/formal/ASYNC_KANI_V85_RERUN.md`
 - Current deferred-lane declarations: `docs/evidence/formal/ASYNC_KANI_V175.md`, `docs/evidence/formal/ASYNC_KANI_V176.md`
 - Historical failed lane evidence: `docs/evidence/formal/ASYNC_KANI_V85.md`

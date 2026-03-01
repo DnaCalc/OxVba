@@ -1,6 +1,16 @@
 # Implementation Log
 
 ## 2026-03-01
+- Hardened remote deferred Kani runner scheduling:
+  - `scripts/run-formal-kani-remote.ps1` now supports timeout retry queue controls:
+    - `-ObligationTimeoutRetries`
+    - `-ObligationTimeoutMultiplier`;
+  - remote lane policy now runs unstarted obligations first, then retries timed-out obligations at end-of-queue with expanded timeout budgets;
+  - remote telemetry now records retry metadata in lane outputs (`initial_status`, `attempts`, `attempt`, `retry_round`, `timeout_seconds`);
+  - transport hardened with SSH/SCP keepalive/connect-timeout options to reduce transient control-channel drops.
+- Remote smoke validation for new policy:
+  - `./scripts/run-formal-kani-remote.ps1 -Action StartDeferred -DeferredMode exact -DeferredVersions "3" -ObligationTimeoutSeconds 30 -ObligationTimeoutRetries 2 -ObligationTimeoutMultiplier 10`
+  - status confirms pass with retry policy metadata in `summary.txt`/`formal_lane.csv`.
 - Completed terminal non-HAL hardening ladder closure `v175..v186`:
   - `v175..v176`: formal lane expansion with new VM Kani harnesses (`cverr_tag_encoding_stays_in_reserved_error_band`, `resume_next_clears_err_number_after_raise`) and deferred strict-lane tracking (`DG-V175-001`, `DG-V176-001`);
   - `v177`: conformance/formal documentation normalization (`docs/CONFORMANCE.md`, `docs/FORMAL.md`);

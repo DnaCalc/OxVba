@@ -12,6 +12,8 @@ param(
     [string]$DeferredVersions = "",
     [int]$DeferredConcurrency = 0,
     [int]$ObligationTimeoutSeconds = 10800,
+    [int]$ObligationTimeoutRetries = 1,
+    [double]$ObligationTimeoutMultiplier = 10.0,
     [ValidateSet("stale", "all")]
     [string]$StopMode = "stale",
     [string]$DispatchJobName = "deferred-dispatch",
@@ -22,6 +24,13 @@ param(
 
 $ErrorActionPreference = "Stop"
 $PSNativeCommandUseErrorActionPreference = $true
+
+$SshCommonOptions = @(
+    "-o", "ServerAliveInterval=15",
+    "-o", "ServerAliveCountMax=4",
+    "-o", "TCPKeepAlive=yes",
+    "-o", "ConnectTimeout=10"
+)
 
 function Require-Command([string]$Name) {
     if (-not (Get-Command $Name -ErrorAction SilentlyContinue)) {
@@ -37,7 +46,7 @@ function Invoke-RemoteScript {
 
     $sshTarget = "$SshUser@$SshHost"
     $remoteCommand = "tr -d '\r' | sed '1s/^\xEF\xBB\xBF//' | bash -s"
-    $out = $ScriptText | & ssh -i $SshKeyPath $sshTarget $remoteCommand
+    $out = $ScriptText | & ssh @SshCommonOptions -i $SshKeyPath $sshTarget $remoteCommand
     if ($LASTEXITCODE -ne 0) {
         throw "Remote command failed with exit code $LASTEXITCODE"
     }
@@ -306,13 +315,15 @@ def shell_capture(cmd: str, cwd: pathlib.Path | None = None, timeout: int = 30) 
         return ""
     return (proc.stdout or "").strip()
 
-def command_key(commit: str, tool: str, cmd: str) -> str:
+def command_key(commit: str, tool: str, cmd: str, timeout_seconds: int) -> str:
     h = hashlib.sha256()
     h.update(commit.encode("utf-8", "replace"))
     h.update(b"\n")
     h.update(tool.encode("utf-8", "replace"))
     h.update(b"\n")
     h.update(cmd.encode("utf-8", "replace"))
+    h.update(b"\n")
+    h.update(str(timeout_seconds).encode("utf-8", "replace"))
     return h.hexdigest()
 
 def acquire_cache_lock(lock_path: pathlib.Path, cache_json: pathlib.Path, progress_cb, stale_seconds: int = 86400) -> bool:
@@ -431,7 +442,15 @@ def main() -> int:
     ap.add_argument("--lane-log", default="")
     ap.add_argument("--heartbeat-file", default="")
     ap.add_argument("--timeout-seconds", type=int, default=10800)
+    ap.add_argument("--timeout-retries", type=int, default=1)
+    ap.add_argument("--timeout-multiplier", type=float, default=10.0)
     args = ap.parse_args()
+    if args.timeout_seconds < 1:
+        args.timeout_seconds = 1
+    if args.timeout_retries < 0:
+        args.timeout_retries = 0
+    if args.timeout_multiplier < 1.0:
+        args.timeout_multiplier = 1.0
 
     repo = pathlib.Path(args.repo).resolve()
     obligations_path = (repo / args.obligations).resolve()
@@ -488,20 +507,23 @@ def main() -> int:
             "timeouts": 0,
             "cache_hits": 0,
             "timeout_seconds": args.timeout_seconds,
+            "timeout_retries": args.timeout_retries,
+            "timeout_multiplier": args.timeout_multiplier,
         },
     )
 
     rows = []
-    failures = 0
-    timeouts = 0
     cache_hits = 0
+    attempt_history: dict[str, list[dict]] = {}
 
-    for idx, row in enumerate(selected, start=1):
+    def execute_obligation(row: dict, queue_index: int, queue_total: int, attempt: int, retry_round: int, timeout_seconds: int) -> dict:
+        nonlocal cache_hits
         obligation = row.get("obligation_id", "unknown")
         cmd = (row.get("command") or "").strip()
-        obligation_log_path = report_dir / f"{obligation}.log"
+        suffix = "" if attempt == 1 else f".attempt{attempt}"
+        obligation_log_path = report_dir / f"{obligation}{suffix}.log"
         started = now_utc()
-        current_phase = "running-command"
+        cache_hit = False
 
         def update_progress(phase: str, **extra):
             payload = {
@@ -513,20 +535,21 @@ def main() -> int:
                 "mode": args.mode,
                 "dedup_strategy": args.dedup_strategy,
                 "selected_count": len(selected),
-                "completed_count": idx - 1,
+                "completed_count": sum(len(v) for v in attempt_history.values()),
                 "current_obligation": obligation,
                 "current_profile": row.get("profile", ""),
-                "failures": failures,
-                "timeouts": timeouts,
+                "queue_index": queue_index,
+                "queue_total": queue_total,
+                "attempt": attempt,
+                "retry_round": retry_round,
+                "timeout_seconds": timeout_seconds,
                 "cache_hits": cache_hits,
-                "timeout_seconds": args.timeout_seconds,
             }
             payload.update(extra)
             atomic_write_json(heartbeat_file, payload)
 
         update_progress("preparing")
-        cache_hit = False
-        key = command_key(repo_commit, kani_version, cmd)
+        key = command_key(repo_commit, kani_version, cmd, timeout_seconds)
         cache_json = cache_dir / f"{key}.json"
         cache_log = cache_dir / f"{key}.log"
         lock_path = cache_dir / f"{key}.lock"
@@ -540,7 +563,7 @@ def main() -> int:
                     cwd=repo,
                     obligation_log_path=obligation_log_path,
                     lane_log_path=lane_log_path,
-                    timeout_seconds=args.timeout_seconds,
+                    timeout_seconds=timeout_seconds,
                     progress_cb=update_progress,
                 )
                 shutil.copy2(obligation_log_path, cache_tmp)
@@ -550,6 +573,7 @@ def main() -> int:
                     "repo_commit": repo_commit,
                     "kani_version": kani_version,
                     "command": cmd,
+                    "timeout_seconds": timeout_seconds,
                     "exit_code": exit_code,
                     "timed_out": timed_out,
                     "output_bytes": output_bytes,
@@ -572,7 +596,9 @@ def main() -> int:
                     obligation_log_path.write_text("[runner] cache-hit without cache log\n", encoding="utf-8")
                 if lane_log_path:
                     with lane_log_path.open("ab") as lane_log:
-                        lane_log.write(f"[runner] cache-hit obligation={obligation} command={cmd}\n".encode("utf-8"))
+                        lane_log.write(
+                            f"[runner] cache-hit obligation={obligation} timeout_seconds={timeout_seconds} command={cmd}\n".encode("utf-8")
+                        )
                         lane_log.flush()
         else:
             exit_code, timed_out, output_bytes, last_output = stream_command(
@@ -580,35 +606,33 @@ def main() -> int:
                 cwd=repo,
                 obligation_log_path=obligation_log_path,
                 lane_log_path=lane_log_path,
-                timeout_seconds=args.timeout_seconds,
+                timeout_seconds=timeout_seconds,
                 progress_cb=update_progress,
             )
 
         ended = now_utc()
         if timed_out:
             status = "timeout"
-            timeouts += 1
-            failures += 1
         elif exit_code == 0:
             status = "pass"
         else:
             status = "fail"
-            failures += 1
 
-        rows.append(
-            {
-                "obligation": obligation,
-                "profile": row.get("profile", ""),
-                "command": cmd,
-                "status": status,
-                "cache_hit": "true" if cache_hit else "false",
-                "exit_code": exit_code,
-                "artifact": row.get("artifact", ""),
-                "started_utc": started,
-                "ended_utc": ended,
-                "log": str(obligation_log_path),
-            }
-        )
+        result = {
+            "obligation": obligation,
+            "profile": row.get("profile", ""),
+            "command": cmd,
+            "status": status,
+            "cache_hit": "true" if cache_hit else "false",
+            "exit_code": exit_code,
+            "artifact": row.get("artifact", ""),
+            "started_utc": started,
+            "ended_utc": ended,
+            "log": str(obligation_log_path),
+            "attempt": attempt,
+            "retry_round": retry_round,
+            "timeout_seconds": timeout_seconds,
+        }
         atomic_write_json(
             heartbeat_file,
             {
@@ -620,15 +644,81 @@ def main() -> int:
                 "mode": args.mode,
                 "dedup_strategy": args.dedup_strategy,
                 "selected_count": len(selected),
-                "completed_count": idx,
+                "completed_count": sum(len(v) for v in attempt_history.values()) + 1,
                 "current_obligation": obligation,
                 "last_status": status,
-                "failures": failures,
-                "timeouts": timeouts,
+                "attempt": attempt,
+                "retry_round": retry_round,
+                "timeout_seconds": timeout_seconds,
                 "cache_hits": cache_hits,
-                "timeout_seconds": args.timeout_seconds,
             },
         )
+        return result
+
+    timed_out_queue: list[tuple[dict, int]] = []
+    for idx, row in enumerate(selected, start=1):
+        result = execute_obligation(
+            row=row,
+            queue_index=idx,
+            queue_total=len(selected),
+            attempt=1,
+            retry_round=0,
+            timeout_seconds=args.timeout_seconds,
+        )
+        history = attempt_history.setdefault(result["obligation"], [])
+        history.append(result)
+        if result["status"] == "timeout" and args.timeout_retries > 0:
+            timed_out_queue.append((row, 2))
+
+    for retry_round in range(1, args.timeout_retries + 1):
+        if not timed_out_queue:
+            break
+        current_queue = timed_out_queue
+        timed_out_queue = []
+        retry_timeout = max(args.timeout_seconds, int(round(args.timeout_seconds * (args.timeout_multiplier ** retry_round))))
+        atomic_write_json(
+            heartbeat_file,
+            {
+                "timestamp_utc": now_utc(),
+                "phase": "retry-queue",
+                "repo_commit": repo_commit,
+                "kani_version": kani_version,
+                "target_version": args.target_version,
+                "mode": args.mode,
+                "dedup_strategy": args.dedup_strategy,
+                "selected_count": len(selected),
+                "retry_round": retry_round,
+                "retry_count": len(current_queue),
+                "timeout_seconds": retry_timeout,
+                "cache_hits": cache_hits,
+            },
+        )
+        for idx, (row, attempt) in enumerate(current_queue, start=1):
+            result = execute_obligation(
+                row=row,
+                queue_index=idx,
+                queue_total=len(current_queue),
+                attempt=attempt,
+                retry_round=retry_round,
+                timeout_seconds=retry_timeout,
+            )
+            history = attempt_history.setdefault(result["obligation"], [])
+            history.append(result)
+            if result["status"] == "timeout" and retry_round < args.timeout_retries:
+                timed_out_queue.append((row, attempt + 1))
+
+    for row in selected:
+        obligation = row.get("obligation_id", "unknown")
+        history = attempt_history.get(obligation, [])
+        if not history:
+            continue
+        final = dict(history[-1])
+        final["attempts"] = len(history)
+        final["initial_status"] = history[0]["status"]
+        rows.append(final)
+
+    failures = sum(1 for row in rows if row["status"] != "pass")
+    timeouts = sum(1 for row in rows if row["status"] == "timeout")
 
     csv_path = report_dir / "formal_lane.csv"
     with csv_path.open("w", encoding="utf-8", newline="") as f:
@@ -638,6 +728,11 @@ def main() -> int:
                 "obligation",
                 "profile",
                 "status",
+                "initial_status",
+                "attempts",
+                "attempt",
+                "retry_round",
+                "timeout_seconds",
                 "cache_hit",
                 "exit_code",
                 "command",
@@ -664,6 +759,9 @@ def main() -> int:
         "failures": failures,
         "timeouts": timeouts,
         "cache_hits": cache_hits,
+        "timeout_seconds": args.timeout_seconds,
+        "timeout_retries": args.timeout_retries,
+        "timeout_multiplier": args.timeout_multiplier,
         "status": "pass" if failures == 0 else "fail",
         "report_csv": str(csv_path),
     }
@@ -681,14 +779,16 @@ def main() -> int:
         f"- Failures: {failures}",
         f"- Timeouts: {timeouts}",
         f"- Cache hits: {cache_hits}",
+        f"- Timeout retries: {args.timeout_retries}",
+        f"- Timeout multiplier: {args.timeout_multiplier}",
         f"- Status: {summary['status']}",
         "",
-        "| Obligation | Profile | Status | Cache | Exit | Command |",
-        "|---|---|---|---|---:|---|",
+        "| Obligation | Profile | Status | Initial | Attempts | Timeout(s) | Cache | Exit | Command |",
+        "|---|---|---|---|---:|---:|---|---:|---|",
     ]
     for row in rows:
         md_lines.append(
-            f"| {row['obligation']} | {row['profile']} | {row['status']} | {row['cache_hit']} | {row['exit_code']} | {row['command']} |"
+            f"| {row['obligation']} | {row['profile']} | {row['status']} | {row['initial_status']} | {row['attempts']} | {row['timeout_seconds']} | {row['cache_hit']} | {row['exit_code']} | {row['command']} |"
         )
     (report_dir / "formal_lane.md").write_text("\n".join(md_lines) + "\n", encoding="utf-8")
 
@@ -700,6 +800,8 @@ def main() -> int:
             f"failures={failures}\n"
             f"timeouts={timeouts}\n"
             f"cache_hits={cache_hits}\n"
+            f"timeout_retries={args.timeout_retries}\n"
+            f"timeout_multiplier={args.timeout_multiplier}\n"
             f"timestamp_utc={summary['timestamp_utc']}\n"
         ),
     )
@@ -719,6 +821,9 @@ def main() -> int:
             "failures": failures,
             "timeouts": timeouts,
             "cache_hits": cache_hits,
+            "timeout_seconds": args.timeout_seconds,
+            "timeout_retries": args.timeout_retries,
+            "timeout_multiplier": args.timeout_multiplier,
             "status": summary["status"],
         },
     )
@@ -748,6 +853,8 @@ mkdir -p "$lane_dir"
 export CARGO_TARGET_DIR="$BASE/work/targets/$lane"
 strategy="${DEFERRED_STRATEGY:-dedup}"
 timeout_seconds="${OBLIGATION_TIMEOUT_SECONDS:-10800}"
+timeout_retries="${OBLIGATION_TIMEOUT_RETRIES:-1}"
+timeout_multiplier="${OBLIGATION_TIMEOUT_MULTIPLIER:-10}"
 python3 "$BASE/bin/run_formal_lane.py" \
   --repo "$repo" \
   --target-version "$v" \
@@ -758,7 +865,9 @@ python3 "$BASE/bin/run_formal_lane.py" \
   --cache-dir "$BASE/state/dedup" \
   --lane-log "$lane_dir/run.log" \
   --heartbeat-file "$lane_dir/progress.json" \
-  --timeout-seconds "$timeout_seconds"
+  --timeout-seconds "$timeout_seconds" \
+  --timeout-retries "$timeout_retries" \
+  --timeout-multiplier "$timeout_multiplier"
 EOF
 
 cat > "$BASE/bin/dispatch_deferred_lanes.sh" <<'EOF'
@@ -781,6 +890,8 @@ if [[ -z "$concurrency" || "$concurrency" -lt 1 ]]; then
 fi
 strategy="${DEFERRED_STRATEGY:-dedup}"
 timeout_seconds="${OBLIGATION_TIMEOUT_SECONDS:-10800}"
+timeout_retries="${OBLIGATION_TIMEOUT_RETRIES:-1}"
+timeout_multiplier="${OBLIGATION_TIMEOUT_MULTIPLIER:-10}"
 
 commit="$($BASE/bin/sync_repo.sh)"
 
@@ -801,6 +912,8 @@ mkdir -p "$dispatch_dir"
   echo "concurrency=$concurrency"
   echo "strategy=$strategy"
   echo "obligation_timeout_seconds=$timeout_seconds"
+  echo "obligation_timeout_retries=$timeout_retries"
+  echo "obligation_timeout_multiplier=$timeout_multiplier"
   echo "repo_commit=$commit"
   echo "versions=${versions[*]}"
 } > "$dispatch_dir/meta.env"
@@ -836,7 +949,9 @@ start_lane() {
     echo "mode=$mode" >> "$lane_dir/meta.env"
     echo "strategy=$strategy" >> "$lane_dir/meta.env"
     echo "timeout_seconds=$timeout_seconds" >> "$lane_dir/meta.env"
-    DEFERRED_STRATEGY="$strategy" OBLIGATION_TIMEOUT_SECONDS="$timeout_seconds" \
+    echo "timeout_retries=$timeout_retries" >> "$lane_dir/meta.env"
+    echo "timeout_multiplier=$timeout_multiplier" >> "$lane_dir/meta.env"
+    DEFERRED_STRATEGY="$strategy" OBLIGATION_TIMEOUT_SECONDS="$timeout_seconds" OBLIGATION_TIMEOUT_RETRIES="$timeout_retries" OBLIGATION_TIMEOUT_MULTIPLIER="$timeout_multiplier" \
       "$BASE/bin/run_deferred_lane.sh" "$v" "$mode" > "$lane_dir/driver.log" 2>&1
     code=$?
     echo "$code" > "$lane_dir/exit_code"
@@ -977,18 +1092,20 @@ mode='__MODE__'
 concurrency='__CONCURRENCY__'
 strategy='__STRATEGY__'
 timeout_seconds='__TIMEOUT__'
+timeout_retries='__TIMEOUT_RETRIES__'
+timeout_multiplier='__TIMEOUT_MULTIPLIER__'
 job_name='__JOB__'
 if [[ -n "$versions" ]]; then
   if [[ "$concurrency" -gt 0 ]]; then
-    "__BASE__/bin/start_job.sh" "$job_name" env "DEFERRED_MODE=$mode" "DEFERRED_STRATEGY=$strategy" "OBLIGATION_TIMEOUT_SECONDS=$timeout_seconds" "DEFERRED_VERSIONS=$versions" "DEFERRED_CONCURRENCY=$concurrency" "__BASE__/bin/dispatch_deferred_lanes.sh"
+    "__BASE__/bin/start_job.sh" "$job_name" env "DEFERRED_MODE=$mode" "DEFERRED_STRATEGY=$strategy" "OBLIGATION_TIMEOUT_SECONDS=$timeout_seconds" "OBLIGATION_TIMEOUT_RETRIES=$timeout_retries" "OBLIGATION_TIMEOUT_MULTIPLIER=$timeout_multiplier" "DEFERRED_VERSIONS=$versions" "DEFERRED_CONCURRENCY=$concurrency" "__BASE__/bin/dispatch_deferred_lanes.sh"
   else
-    "__BASE__/bin/start_job.sh" "$job_name" env "DEFERRED_MODE=$mode" "DEFERRED_STRATEGY=$strategy" "OBLIGATION_TIMEOUT_SECONDS=$timeout_seconds" "DEFERRED_VERSIONS=$versions" "__BASE__/bin/dispatch_deferred_lanes.sh"
+    "__BASE__/bin/start_job.sh" "$job_name" env "DEFERRED_MODE=$mode" "DEFERRED_STRATEGY=$strategy" "OBLIGATION_TIMEOUT_SECONDS=$timeout_seconds" "OBLIGATION_TIMEOUT_RETRIES=$timeout_retries" "OBLIGATION_TIMEOUT_MULTIPLIER=$timeout_multiplier" "DEFERRED_VERSIONS=$versions" "__BASE__/bin/dispatch_deferred_lanes.sh"
   fi
 else
   if [[ "$concurrency" -gt 0 ]]; then
-    "__BASE__/bin/start_job.sh" "$job_name" env "DEFERRED_MODE=$mode" "DEFERRED_STRATEGY=$strategy" "OBLIGATION_TIMEOUT_SECONDS=$timeout_seconds" "DEFERRED_CONCURRENCY=$concurrency" "__BASE__/bin/dispatch_deferred_lanes.sh"
+    "__BASE__/bin/start_job.sh" "$job_name" env "DEFERRED_MODE=$mode" "DEFERRED_STRATEGY=$strategy" "OBLIGATION_TIMEOUT_SECONDS=$timeout_seconds" "OBLIGATION_TIMEOUT_RETRIES=$timeout_retries" "OBLIGATION_TIMEOUT_MULTIPLIER=$timeout_multiplier" "DEFERRED_CONCURRENCY=$concurrency" "__BASE__/bin/dispatch_deferred_lanes.sh"
   else
-    "__BASE__/bin/start_job.sh" "$job_name" env "DEFERRED_MODE=$mode" "DEFERRED_STRATEGY=$strategy" "OBLIGATION_TIMEOUT_SECONDS=$timeout_seconds" "__BASE__/bin/dispatch_deferred_lanes.sh"
+    "__BASE__/bin/start_job.sh" "$job_name" env "DEFERRED_MODE=$mode" "DEFERRED_STRATEGY=$strategy" "OBLIGATION_TIMEOUT_SECONDS=$timeout_seconds" "OBLIGATION_TIMEOUT_RETRIES=$timeout_retries" "OBLIGATION_TIMEOUT_MULTIPLIER=$timeout_multiplier" "__BASE__/bin/dispatch_deferred_lanes.sh"
   fi
 fi
 '@
@@ -999,6 +1116,8 @@ fi
             Replace("__CONCURRENCY__", (Escape-BashSingleQuoted $DeferredConcurrency.ToString())).
             Replace("__STRATEGY__", (Escape-BashSingleQuoted $DeferredStrategy)).
             Replace("__TIMEOUT__", (Escape-BashSingleQuoted $ObligationTimeoutSeconds.ToString())).
+            Replace("__TIMEOUT_RETRIES__", (Escape-BashSingleQuoted $ObligationTimeoutRetries.ToString())).
+            Replace("__TIMEOUT_MULTIPLIER__", (Escape-BashSingleQuoted $ObligationTimeoutMultiplier.ToString([System.Globalization.CultureInfo]::InvariantCulture))).
             Replace("__JOB__", (Escape-BashSingleQuoted $DispatchJobName))
         $out = Invoke-RemoteScript $startScript
         $out | ForEach-Object { Write-Host $_ }
@@ -1215,7 +1334,7 @@ fi
 
         New-Item -ItemType Directory -Force -Path $LocalArtifactsDir | Out-Null
         $localBundle = Join-Path $LocalArtifactsDir ([System.IO.Path]::GetFileName($remoteBundle))
-        & scp -i $SshKeyPath "$SshUser@$SshHost`:$remoteBundle" $localBundle
+        & scp @SshCommonOptions -i $SshKeyPath "$SshUser@$SshHost`:$remoteBundle" $localBundle
         if ($LASTEXITCODE -ne 0) {
             throw "Failed to fetch remote bundle: $remoteBundle"
         }
