@@ -24,6 +24,7 @@ Objective:
 - `v154` replaces projection behavior for `NPV`/`IRR`/`MIRR` with deterministic algorithmic execution; `Rate`/`NPer` and tolerance policy remain for `v155+v156`.
 - `v155` replaces projection behavior for `Rate`/`NPer` with deterministic algorithmic execution; tolerance/convergence policy remains for `v156`.
 - `v156` adds deterministic tolerance policy and stable solver-failure error-tag signaling; oracle parity remains deferred.
+- `v161` expands corpus coverage for algorithm success and mixed tolerance/error modes.
 
 4. UDT/value semantics hardening:
 - Strengthen UDT copy/assignment/value-initialization behavior beyond flattened alias baseline where implementable without host interop.

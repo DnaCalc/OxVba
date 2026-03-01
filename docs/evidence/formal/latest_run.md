@@ -1,7 +1,7 @@
 # Formal Run Report
 
-- Timestamp (UTC): 2026-03-01T09:07:30Z
-- Profile scope: mvp-profile-v160
+- Timestamp (UTC): 2026-03-01T09:18:37Z
+- Profile scope: mvp-profile-v161
 - Overall mode: non-blocking
 - Kani required: false
 - Kani execution: deferred-to-wsl-async
@@ -308,3 +308,6 @@
 | FO-V160-001 | v160 | no | pass | cargo test -p oxvba-host formal_v160_err_clear_full_surface_fixture_executes | crates/oxvba-host/src/engine.rs |  |
 | FO-V160-002 | v160 | no | pass | cargo test -p oxvba-host formal_v160_conformance_fixtures_exist | conformance/tests/err_clear_full_surface_reset.bas |  |
 | FO-V160-003 | v160 | no | pass | cargo test -p oxvba-host formal_v160_profile_status_document_exists | docs/profile-status/PROFILE_STATUS_V160.md |  |
+| FO-V161-001 | v161 | no | pass | cargo test -p oxvba-host formal_v161_financial_algorithm_fixtures_execute | crates/oxvba-host/src/engine.rs |  |
+| FO-V161-002 | v161 | no | pass | cargo test -p oxvba-host formal_v161_conformance_fixtures_exist | conformance/tests/financial_algorithm_npv_irr_mirr_subset.bas |  |
+| FO-V161-003 | v161 | no | pass | cargo test -p oxvba-host formal_v161_profile_status_document_exists | docs/profile-status/PROFILE_STATUS_V161.md |  |

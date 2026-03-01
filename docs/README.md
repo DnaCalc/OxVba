@@ -120,6 +120,7 @@
 | Profile v158 Status | [`PROFILE_STATUS_V158.md`](profile-status/PROFILE_STATUS_V158.md) | Current gate status contract for `mvp-profile-v158` (VM parity expansion for financial/tag introspection runtime behavior). |
 | Profile v159 Status | [`PROFILE_STATUS_V159.md`](profile-status/PROFILE_STATUS_V159.md) | Current gate status contract for `mvp-profile-v159` (JIT fallback parity expansion for financial/tag introspection behavior). |
 | Profile v160 Status | [`PROFILE_STATUS_V160.md`](profile-status/PROFILE_STATUS_V160.md) | Current gate status contract for `mvp-profile-v160` (conformance corpus expansion across Err/string/UDT/coercion edges). |
+| Profile v161 Status | [`PROFILE_STATUS_V161.md`](profile-status/PROFILE_STATUS_V161.md) | Current gate status contract for `mvp-profile-v161` (financial algorithm/tolerance corpus expansion). |
 | Profile v107 Status | [`PROFILE_STATUS_V107.md`](profile-status/PROFILE_STATUS_V107.md) | Current gate status contract for `mvp-lang-with-member-target-v107`. |
 | Profile v108-v146 Statuses | [`profile-status/`](profile-status/README.md) | AutoRun ladder status records are published through `PROFILE_STATUS_V146.md` for the active full-language/built-ins ladder range. |
 | Phase 12 Status | [`PHASE12_STATUS.md`](PHASE12_STATUS.md) | Declared profile scope and final conformance/stabilization gate artifacts. |
@@ -230,6 +231,7 @@
 | Work Set Plan (v158) | [`worksets/WORKSET_2026-03-01_VM_PARITY_EXPANSION_V158.md`](worksets/WORKSET_2026-03-01_VM_PARITY_EXPANSION_V158.md) | VM parity coverage expansion for newly concrete financial and sentinel-tag introspection behavior. |
 | Work Set Plan (v159) | [`worksets/WORKSET_2026-03-01_JIT_PARITY_EXPANSION_V159.md`](worksets/WORKSET_2026-03-01_JIT_PARITY_EXPANSION_V159.md) | JIT fallback parity expansion with explicit VM-equivalence checks for unsupported financial/tag introspection surfaces. |
 | Work Set Plan (v160) | [`worksets/WORKSET_2026-03-01_CORPUS_EXPANSION_I_V160.md`](worksets/WORKSET_2026-03-01_CORPUS_EXPANSION_I_V160.md) | Conformance corpus expansion for Err lifecycle reset, string sentinel flows, UDT overwrite-copy, and CVErr normalization edges. |
+| Work Set Plan (v161) | [`worksets/WORKSET_2026-03-01_CORPUS_EXPANSION_II_V161.md`](worksets/WORKSET_2026-03-01_CORPUS_EXPANSION_II_V161.md) | Financial algorithm/tolerance corpus expansion with dedicated success/failure fixture coverage. |
 | Status Tours | [`status-tours/`](status-tours/) | Date-stamped orientation/showcase docs for implemented project state. |
 | Formal | [`FORMAL.md`](FORMAL.md) | Lean/Kani formal scaffold status and structure. |
 | Spec Checklist | [`evidence/SPEC_CHECKLIST.md`](evidence/SPEC_CHECKLIST.md) | Structured language + built-in/library checklist aligned to current evidence and planned gaps. |

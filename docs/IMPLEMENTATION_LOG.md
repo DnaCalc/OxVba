@@ -1,6 +1,23 @@
 # Implementation Log
 
 ## 2026-03-01
+- Completed `v161` (`mvp-profile-v161`) corpus expansion II (financial algorithms/tolerance):
+  - added dedicated conformance fixtures:
+    - `financial_algorithm_npv_irr_mirr_subset.bas`,
+    - `financial_algorithm_rate_nper_subset.bas`,
+    - `financial_tolerance_mixed_modes.bas`;
+  - added host-formal execution checks for financial algorithm outputs and mixed tolerance/error-mode behavior.
+- Validation lane for `v161` passed:
+  - `cargo fmt --all`
+  - `cargo test -p oxvba-runtime`
+  - `cargo test -p oxvba-compiler`
+  - `cargo test -p oxvba-vm`
+  - `cargo test -p oxvba-host`
+  - `./scripts/run-conformance.ps1 -Backend vm`
+  - `./scripts/run-conformance.ps1 -Backend jit`
+  - `./scripts/run-formal.ps1 -ProfileScope mvp-profile-v161`
+  - `./scripts/run-matrix.ps1 -ProfileScope mvp-profile-v161 -OutputDir docs/evidence/profiles/v161`
+  - `./scripts/meta-check.ps1 -Fast`
 - Completed `v160` (`mvp-profile-v160`) corpus expansion I:
   - added conformance fixtures for targeted non-HAL semantics:
     - `err_clear_full_surface_reset.bas`,

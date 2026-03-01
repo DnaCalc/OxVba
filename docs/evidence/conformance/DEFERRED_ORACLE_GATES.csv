@@ -26,7 +26,7 @@ ODG-024,CCT-028,stdlib,stdlib-semantics,non-hal,open,v167-v186,"Run locale-aware
 ODG-025,CCT-029,stdlib,stdlib-semantics,non-hal,open,v167-v186,"Run oracle probes for Format token and locale behavior",,"Current identity subset"
 ODG-026,CCT-030,stdlib,stdlib-semantics,non-hal,open,v167-v186,"Run oracle probes for Now/Date/Time/Timer wall-clock semantics",,"Current deterministic subset"
 ODG-027,CCT-031,stdlib,stdlib-semantics,non-hal,open,v167-v186,"Run oracle probes for Rnd/Randomize seeded behavior",,"Current deterministic subset"
-ODG-028,CCT-032,stdlib,stdlib-semantics,non-hal,open,v167-v186,"Run oracle probes for financial function algorithm parity",,"Current deterministic algorithmic subset with stable solver-failure error tags"
+ODG-028,CCT-032,stdlib,stdlib-semantics,non-hal,open,v167-v186,"Run oracle probes for financial function algorithm parity",,"Current deterministic algorithmic subset with dedicated success/failure corpus coverage and stable solver-failure error tags"
 ODG-029,CCT-034,diagnostics,diagnostics,non-hal,open,v147-v166,"Run oracle probes for compile-time timing/message parity",,"Local phase-classified compile/runtime timing checks landed; oracle text/timing parity open"
 ODG-030,CCT-026,interop,interop,hal-adjacent,open,excluded-current,"Requires COM test server + host interop runs",,"Excluded from non-HAL completion ladder"
 ODG-031,CCT-027,interop,interop,hal-adjacent,open,excluded-current,"Requires typelib-based COM interop harness",,"Excluded from non-HAL completion ladder"
