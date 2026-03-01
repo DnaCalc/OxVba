@@ -86,6 +86,7 @@ pub fn emit_bytecode(module: &BoundModule) -> Bytecode {
         .find(|p| p.name.eq_ignore_ascii_case("class_terminate"))
         .map(|p| p.name.clone());
     proc_labels.insert(procedures[entry_idx].name.clone(), 0);
+    instructions.push(Instruction::ClearErr);
 
     if let Some(name) = class_init_proc {
         let patch_idx = instructions.len();
@@ -113,6 +114,7 @@ pub fn emit_bytecode(module: &BoundModule) -> Bytecode {
         instructions.push(Instruction::CallProc { target_pc: 0 });
         call_patches.push((patch_idx, name));
     }
+    instructions.push(Instruction::ClearErr);
     instructions.push(Instruction::Halt);
 
     for (idx, proc) in procedures.iter().enumerate() {
@@ -120,6 +122,7 @@ pub fn emit_bytecode(module: &BoundModule) -> Bytecode {
             continue;
         }
         proc_labels.insert(proc.name.clone(), instructions.len());
+        instructions.push(Instruction::ClearErr);
         emit_stmt_list(
             &proc.body,
             compare_mode,
@@ -136,6 +139,7 @@ pub fn emit_bytecode(module: &BoundModule) -> Bytecode {
             &proc.name,
             &mut proc_labels,
         );
+        instructions.push(Instruction::ClearErr);
         instructions.push(Instruction::Return);
     }
 

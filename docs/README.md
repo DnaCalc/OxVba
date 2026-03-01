@@ -108,6 +108,7 @@
 | Profile v86 Status | [`PROFILE_STATUS_V86.md`](profile-status/PROFILE_STATUS_V86.md) | Typing-ladder terminal gate status contract for `mvp-full-typing-conformance-gate-v86` (latest published profile status file before `v87..v106` ladder execution). |
 | Profile v147 Status | [`PROFILE_STATUS_V147.md`](profile-status/PROFILE_STATUS_V147.md) | Current gate status contract for `mvp-profile-v147` (non-HAL gap baseline lock). |
 | Profile v148 Status | [`PROFILE_STATUS_V148.md`](profile-status/PROFILE_STATUS_V148.md) | Current gate status contract for `mvp-profile-v148` (`Err` surface expansion I). |
+| Profile v149 Status | [`PROFILE_STATUS_V149.md`](profile-status/PROFILE_STATUS_V149.md) | Current gate status contract for `mvp-profile-v149` (`Err` lifecycle transitions). |
 | Profile v107 Status | [`PROFILE_STATUS_V107.md`](profile-status/PROFILE_STATUS_V107.md) | Current gate status contract for `mvp-lang-with-member-target-v107`. |
 | Profile v108-v146 Statuses | [`profile-status/`](profile-status/README.md) | AutoRun ladder status records are published through `PROFILE_STATUS_V146.md` for the active full-language/built-ins ladder range. |
 | Phase 12 Status | [`PHASE12_STATUS.md`](PHASE12_STATUS.md) | Declared profile scope and final conformance/stabilization gate artifacts. |
@@ -206,6 +207,7 @@
 | Profile Ladder (v167-v186) | [`worksets/PROFILE_LADDER_2026-03-01_MACH1000_V167_V186_NON_HAL_HARDENING.md`](worksets/PROFILE_LADDER_2026-03-01_MACH1000_V167_V186_NON_HAL_HARDENING.md) | Follow-on non-HAL hardening/perf/formal ladder after completion gate. |
 | Work Set Plan (v147) | [`worksets/WORKSET_2026-03-01_NON_HAL_GAP_BASELINE_LOCK_V147.md`](worksets/WORKSET_2026-03-01_NON_HAL_GAP_BASELINE_LOCK_V147.md) | Baseline lock workset for non-HAL gap classification and scope freeze. |
 | Work Set Plan (v148) | [`worksets/WORKSET_2026-03-01_ERR_SURFACE_EXPANSION_V148.md`](worksets/WORKSET_2026-03-01_ERR_SURFACE_EXPANSION_V148.md) | `Err` member-surface expansion subset workset for deterministic non-HAL execution. |
+| Work Set Plan (v149) | [`worksets/WORKSET_2026-03-01_ERR_LIFECYCLE_TRANSITIONS_V149.md`](worksets/WORKSET_2026-03-01_ERR_LIFECYCLE_TRANSITIONS_V149.md) | Deterministic `Err` lifecycle transitions for `Resume*` and procedure-boundary clearing in non-HAL execution. |
 | Status Tours | [`status-tours/`](status-tours/) | Date-stamped orientation/showcase docs for implemented project state. |
 | Formal | [`FORMAL.md`](FORMAL.md) | Lean/Kani formal scaffold status and structure. |
 | Spec Checklist | [`evidence/SPEC_CHECKLIST.md`](evidence/SPEC_CHECKLIST.md) | Structured language + built-in/library checklist aligned to current evidence and planned gaps. |

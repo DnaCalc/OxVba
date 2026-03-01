@@ -42,7 +42,7 @@ Primary evidence sources:
 | `[x]` | Arrays | `Erase` statement semantics | `erase_array_basic.bas` | Implemented fixed/dynamic array-slot reset subset. |
 | `[x]` | Error handling | `On Error Resume Next`, `On Error GoTo 0`, `On Error GoTo <label>`, `Resume Next` | `on_error_*.bas`, `resume_next_statement_ok.bas` | Implemented subset. |
 | `[x]` | Error handling | `Resume` (same statement / label targets) | `resume_statement_basic.bas`, `resume_label_basic.bas` | Implemented subset for `Resume` and `Resume <label>`. |
-| `[~]` | Error object | Full `Err` object surface | `stdlib_error_err_raise_resume.bas`, `err_clear_basic.bas`, `err_surface_fields_subset.bas` | Current subset includes `Err.Number/Description/Source/HelpContext/HelpFile/LastDllError`, `Err.Raise`, and `Err.Clear`; full lifecycle parity still pending. |
+| `[~]` | Error object | Full `Err` object surface | `stdlib_error_err_raise_resume.bas`, `err_clear_basic.bas`, `err_surface_fields_subset.bas`, `err_resume_next_clears.bas`, `err_proc_call_boundary_clears.bas` | Current subset includes `Err.Number/Description/Source/HelpContext/HelpFile/LastDllError`, `Err.Raise`, and `Err.Clear`; deterministic lifecycle clears on `Resume*` and procedure boundaries are now executable, full VBA parity still pending. |
 | `[x]` | Types | Typed scalar lattice + coercion matrix + defaults (`Def*`, type chars) | `v67..v76` artifacts and compiler tests | Implemented subset. |
 | `[~]` | Types | `String` BSTR and UDT runtime semantics | `COVERAGE_INDEX.csv` (`String BSTR core`) | String BSTR boundary expansion remains partial. |
 | `[x]` | Types | UDT field access/assignment subset | `udt_field_access_basic.bas` | Type declarations plus flattened field-alias read/write subset implemented. |

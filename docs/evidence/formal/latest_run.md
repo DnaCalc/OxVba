@@ -1,7 +1,7 @@
 # Formal Run Report
 
-- Timestamp (UTC): 2026-03-01T06:16:12Z
-- Profile scope: mvp-profile-v148
+- Timestamp (UTC): 2026-03-01T06:36:44Z
+- Profile scope: mvp-profile-v149
 - Overall mode: non-blocking
 - Kani required: false
 - Kani execution: deferred-to-wsl-async
@@ -272,3 +272,6 @@
 | FO-V148-001 | v148 | no | pass | cargo test -p oxvba-compiler resolve::tests::resolve_err_surface_member_aliases | crates/oxvba-compiler/src/resolve.rs |  |
 | FO-V148-002 | v148 | no | pass | cargo test -p oxvba-host formal_v148_err_surface_member_subset_executes | crates/oxvba-host/src/engine.rs |  |
 | FO-V148-003 | v148 | no | pass | cargo test -p oxvba-host formal_v148_profile_status_document_exists | docs/profile-status/PROFILE_STATUS_V148.md |  |
+| FO-V149-001 | v149 | no | pass | cargo test -p oxvba-vm resume_next_clears_error_state_before_continuing | crates/oxvba-vm/src/interpreter.rs |  |
+| FO-V149-002 | v149 | no | pass | cargo test -p oxvba-host formal_v149_resume_next_clears_err_number | crates/oxvba-host/src/engine.rs |  |
+| FO-V149-003 | v149 | no | pass | cargo test -p oxvba-host formal_v149_profile_status_document_exists | docs/profile-status/PROFILE_STATUS_V149.md |  |

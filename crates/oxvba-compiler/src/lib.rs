@@ -43,7 +43,14 @@ mod tests {
     #[test]
     fn compile_simple_module() {
         let out = compile("Sub Main()\nEnd Sub").expect("compile should succeed");
-        assert_eq!(out.instructions, vec![Instruction::Halt]);
+        assert_eq!(
+            out.instructions,
+            vec![
+                Instruction::ClearErr,
+                Instruction::ClearErr,
+                Instruction::Halt
+            ]
+        );
     }
 
     #[test]
@@ -59,8 +66,10 @@ mod tests {
         assert_eq!(
             out.instructions,
             vec![
+                Instruction::ClearErr,
                 Instruction::LoadConstI32 { slot: 0, value: 10 },
                 Instruction::AddConstI32 { slot: 0, value: 5 },
+                Instruction::ClearErr,
                 Instruction::Halt
             ]
         );
@@ -74,8 +83,10 @@ mod tests {
         assert_eq!(
             out.instructions,
             vec![
+                Instruction::ClearErr,
                 Instruction::LoadConstI32 { slot: 0, value: 10 },
                 Instruction::SubConstI32 { slot: 0, value: 3 },
+                Instruction::ClearErr,
                 Instruction::Halt
             ]
         );
@@ -89,8 +100,10 @@ mod tests {
         assert_eq!(
             out.instructions,
             vec![
+                Instruction::ClearErr,
                 Instruction::LoadConstI32 { slot: 0, value: 1 },
                 Instruction::AddConstI32 { slot: 0, value: 2 },
+                Instruction::ClearErr,
                 Instruction::Halt
             ]
         );
@@ -136,7 +149,9 @@ mod tests {
         assert_eq!(
             out.instructions,
             vec![
+                Instruction::ClearErr,
                 Instruction::LoadConstI32 { slot: 0, value: 7 },
+                Instruction::ClearErr,
                 Instruction::Halt
             ]
         );
@@ -1052,6 +1067,21 @@ mod tests {
             out.instructions
                 .iter()
                 .any(|i| matches!(i, Instruction::ResumeNext))
+        );
+    }
+
+    #[test]
+    fn compile_procedure_boundaries_insert_clearerr_guards() {
+        let source = "Sub Main()\nCall Worker\nEnd Sub\nSub Worker()\nDim x\nx = 1\nEnd Sub";
+        let out = compile(source).expect("compile should succeed");
+        let clear_count = out
+            .instructions
+            .iter()
+            .filter(|i| matches!(i, Instruction::ClearErr))
+            .count();
+        assert!(
+            clear_count >= 4,
+            "expected at least main/worker entry+exit clear guards, found {clear_count}"
         );
     }
 

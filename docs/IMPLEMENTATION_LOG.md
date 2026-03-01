@@ -1,6 +1,17 @@
 # Implementation Log
 
 ## 2026-03-01
+- Completed `v149` (`mvp-profile-v149`) err lifecycle transitions:
+  - VM now clears `Err` state on successful `Resume Next`, `Resume`, and `Resume <label>` paths via centralized interpreter reset helper;
+  - emitter now inserts deterministic `ClearErr` guards at procedure entry and procedure exit boundaries;
+  - added regression coverage in compiler/VM/host formal tests for resume-clearing and procedure-boundary clearing behavior;
+  - added conformance fixtures:
+    - `conformance/tests/err_resume_next_clears.bas`
+    - `conformance/tests/err_proc_call_boundary_clears.bas`
+  - updated non-HAL evidence/checklists and conformance-topic notes for `CCT-005`;
+  - added profile docs:
+    - `docs/worksets/WORKSET_2026-03-01_ERR_LIFECYCLE_TRANSITIONS_V149.md`
+    - `docs/profile-status/PROFILE_STATUS_V149.md`
 - Remote Kani runner hardening and relaunch:
   - upgraded `scripts/run-formal-kani-remote.ps1` remote template with:
     - per-lane heartbeat/progress telemetry (`progress.json`, `status.txt`, `summary.txt`),

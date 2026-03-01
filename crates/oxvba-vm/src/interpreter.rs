@@ -29,6 +29,11 @@ impl Default for Vm {
 }
 
 impl Vm {
+    fn clear_error_state(&mut self) {
+        self.last_error = 0;
+        self.last_error_pc = None;
+    }
+
     fn ensure_slot_count(&mut self, slot_count: usize) {
         if slot_count > self.registers.registers.len() {
             self.registers.registers.resize(slot_count, 0);
@@ -687,12 +692,14 @@ impl Vm {
                     pc += 1;
                 }
                 Instruction::ResumeNext => {
+                    self.clear_error_state();
                     pc += 1;
                 }
                 Instruction::Resume => {
                     let Some(target_pc) = self.last_error_pc else {
                         return Err("resume without active error".to_string());
                     };
+                    self.clear_error_state();
                     pc = target_pc;
                 }
                 Instruction::ResumeLabel { target_pc } => {
@@ -702,6 +709,7 @@ impl Vm {
                     if self.last_error_pc.is_none() {
                         return Err("resume without active error".to_string());
                     }
+                    self.clear_error_state();
                     pc = *target_pc;
                 }
                 Instruction::RaiseError { code } => {
@@ -716,8 +724,7 @@ impl Vm {
                     }
                 }
                 Instruction::ClearErr => {
-                    self.last_error = 0;
-                    self.last_error_pc = None;
+                    self.clear_error_state();
                     pc += 1;
                 }
                 Instruction::Return => {
@@ -1583,6 +1590,47 @@ mod tests {
         vm.execute(&bytecode)
             .expect("vm should jump to label handler");
         assert_eq!(vm.snapshot_slots(1), vec![7]);
+    }
+
+    #[test]
+    fn resume_next_clears_error_state_before_continuing() {
+        let bytecode = Bytecode {
+            instructions: vec![
+                Instruction::SetOnErrorResumeNext,
+                Instruction::RaiseError { code: 5 },
+                Instruction::ResumeNext,
+                Instruction::LoadErrNumber { slot: 0 },
+                Instruction::Halt,
+            ],
+            slot_count: 1,
+            user_slot_count: 1,
+        };
+
+        let mut vm = Vm::default();
+        vm.execute(&bytecode)
+            .expect("resume next should clear error state");
+        assert_eq!(vm.snapshot_slots(1), vec![0]);
+    }
+
+    #[test]
+    fn resume_label_clears_error_state_before_jump() {
+        let bytecode = Bytecode {
+            instructions: vec![
+                Instruction::SetOnErrorGotoLabel { target_pc: 3 },
+                Instruction::RaiseError { code: 9 },
+                Instruction::Halt,
+                Instruction::ResumeLabel { target_pc: 4 },
+                Instruction::LoadErrNumber { slot: 0 },
+                Instruction::Halt,
+            ],
+            slot_count: 1,
+            user_slot_count: 1,
+        };
+
+        let mut vm = Vm::default();
+        vm.execute(&bytecode)
+            .expect("resume label should clear error state");
+        assert_eq!(vm.snapshot_slots(1), vec![0]);
     }
 }
 

@@ -42,6 +42,7 @@ fn supports_core_instruction(instruction: &Instruction) -> bool {
             | Instruction::BoolNot { .. }
             | Instruction::BoolAnd { .. }
             | Instruction::BoolOr { .. }
+            | Instruction::ClearErr
             | Instruction::JumpIfZero { .. }
             | Instruction::Jump { .. }
             | Instruction::IncSlot { .. }
@@ -462,6 +463,9 @@ pub fn execute_bytecode(bytecode: &Bytecode) -> Result<Vec<i32>, String> {
                 let value = read_slot(&mut builder, slots_ptr, *slot)?;
                 let out = builder.ins().iadd_imm(value, 1);
                 write_slot(&mut builder, slots_ptr, *slot, out)?;
+                builder.ins().jump(next_block, &[]);
+            }
+            Instruction::ClearErr => {
                 builder.ins().jump(next_block, &[]);
             }
             Instruction::Halt => {

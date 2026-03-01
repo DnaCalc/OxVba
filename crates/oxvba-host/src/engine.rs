@@ -2205,6 +2205,35 @@ mod tests {
     }
 
     #[test]
+    fn formal_v149_resume_next_clears_err_number() {
+        let source = "Sub Main()\nDim x\nOn Error Resume Next\nError 5\nResume Next\nx = Err.Number\nEnd Sub";
+        let out = Engine::new(HostConfig {
+            enable_jit: false,
+            root_object_name: None,
+        })
+        .execute_source_with_snapshot(source)
+        .expect("execution should succeed");
+        assert_eq!(out, vec![0]);
+    }
+
+    #[test]
+    fn formal_v149_procedure_boundaries_clear_err_number() {
+        let source = "Sub Main()\nDim x\nOn Error Resume Next\nError 7\nCall Worker\nx = Err.Number\nEnd Sub\nSub Worker()\nDim y\ny = 1\nEnd Sub";
+        let out = Engine::new(HostConfig {
+            enable_jit: false,
+            root_object_name: None,
+        })
+        .execute_source_with_snapshot(source)
+        .expect("execution should succeed");
+        assert_eq!(out, vec![0]);
+    }
+
+    #[test]
+    fn formal_v149_profile_status_document_exists() {
+        assert!(repo_path("docs/profile-status/PROFILE_STATUS_V149.md").exists());
+    }
+
+    #[test]
     fn formal_v146_profile_status_range_exists() {
         for version in 108..=146 {
             let path = format!("docs/profile-status/PROFILE_STATUS_V{version}.md");
