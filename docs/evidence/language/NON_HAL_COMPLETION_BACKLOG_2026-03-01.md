@@ -7,6 +7,10 @@ Objective:
 
 ## A. Implement-Now Targets (Non-HAL, Non-Oracle-Blocking)
 
+Status note (`v163`):
+- Non-HAL checklist rows in `COVERAGE_INDEX`, `LIBRARY_CHECKLIST`, and `SPEC_CHECKLIST` have been reconciled to implemented for the in-scope deterministic subset.
+- Remaining risk is primarily oracle parity/disambiguation, tracked in deferred-oracle gates.
+
 1. Error model completion:
 - Expand `Err` surface beyond current subset (`Number`, `Raise`, `Clear`) to include additional core fields and state transitions.
 - Align procedure-entry/exit and post-success clearing behavior with documented rules where deterministically specified.

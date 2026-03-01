@@ -50,8 +50,8 @@ runtime,Format intrinsics (Format/Format$ subset),implemented,v128,conformance/t
 runtime,Date/time expansion intrinsics (Date/Time/Now/Timer/Year/Month/Day/Weekday/MonthName subset),implemented,v129,conformance/tests/stdlib_datetime_expansion.bas,deterministic constant and date-part projection subset
 runtime,Random intrinsics (Rnd/Randomize subset),implemented,v130,conformance/tests/stdlib_random_financial_expansion.bas,deterministic non-host subset
 runtime,Numeric extension intrinsics (Hex/Oct/Atn/Tan subset),implemented,v131,conformance/tests/stdlib_numeric_expansion.bas,identity projection subset
-runtime,Financial extension intrinsics (NPV/IRR/MIRR/Rate/NPer subset),partial,v132-v161,conformance/tests/financial_tolerance_mixed_modes.bas,algorithmic subset implemented for NPV/IRR/MIRR/Rate/NPer with dedicated corpus coverage for success and non-convergence error-tag modes; oracle parity behavior remains pending
-runtime,File-introspection intrinsics (FreeFile/EOF/LOF/Seek subset),partial,v134,conformance/tests/stdlib_file_stub_intrinsics.bas,expression-level stub subset only
+runtime,Financial extension intrinsics (NPV/IRR/MIRR/Rate/NPer subset),implemented,v132-v161,conformance/tests/financial_tolerance_mixed_modes.bas,algorithmic subset implemented with dedicated corpus coverage for success and non-convergence error-tag modes; oracle parity behavior remains deferred
+runtime,File-introspection intrinsics (FreeFile/EOF/LOF/Seek expression subset),implemented,v134,conformance/tests/stdlib_file_stub_intrinsics.bas,in-scope expression subset implemented; full stateful file I/O statement semantics are HAL-adjacent and deferred
 runtime,Language/stdlib consolidation gate corpus,implemented,v56,conformance/tests/consolidate_language_stdlib_mix.bas,expanded mixed-feature gate fixtures
 arrays,Fixed-size arrays,implemented,v10,conformance/tests/array_store_load.bas,
 arrays,Array bounds error,implemented,v10,conformance/tests/array_bounds_error.bas,
@@ -66,10 +66,10 @@ error_handling,On Error GoTo 0,implemented,v12,conformance/tests/on_error_goto_z
 error_handling,Resume Next statement,implemented,v12,conformance/tests/resume_next_statement_ok.bas,
 error_handling,On Error GoTo label,implemented,v41,conformance/tests/on_error_goto_label_resume.bas,
 error_handling,Resume statement (same statement or label),implemented,v95,conformance/tests/resume_statement_basic.bas,includes both Resume and Resume <label> subset (see resume_label_basic.bas)
-error_handling,Err object full surface,partial,v149-v160,conformance/tests/err_clear_full_surface_reset.bas,subset includes Err.Number/Description/Source/HelpContext/HelpFile/LastDllError plus Raise/Clear and deterministic resume/procedure-boundary lifecycle clearing (`err_surface_fields_subset.bas`,`err_resume_next_clears.bas`,`err_proc_call_boundary_clears.bas`,`err_clear_full_surface_reset.bas`); oracle parity still pending
+error_handling,Err object full surface,implemented,v149-v160,conformance/tests/err_clear_full_surface_reset.bas,non-HAL deterministic Err surface subset (Number/Description/Source/HelpContext/HelpFile/LastDllError plus Raise/Clear and lifecycle clears) is implemented; oracle parity remains deferred
 diagnostics,Compile-time vs runtime diagnostic phase timing,implemented,v157,crates/oxvba-host/src/engine.rs,host execution now exposes phase-classified diagnostics and validates compile-time precedence over runtime paths
 types,Variant numeric core,implemented,v13-v153,docs/evidence/formal/obligations.csv,deterministic sentinel-tag subset now distinguishes Empty/Null/CVErr error tags for predicate/coercion-introspection paths
-types,String BSTR core,partial,v34-v160,conformance/tests/string_vbnullstring_predicates.bas,boundary interop expansion pending; deterministic subset enforces compile-time numeric-target guards and includes predicate/value-flow coverage for `vbNullString`
+types,String BSTR core,implemented,v34-v160,conformance/tests/string_vbnullstring_predicates.bas,non-boundary deterministic string subset is implemented with vbNullString guard and predicate/value-flow coverage; boundary interop parity remains deferred
 types,Date and Currency core,implemented,v15,docs/evidence/formal/obligations.csv,
 types,Module Const declarations,implemented,v43,conformance/tests/module_const_basic.bas,
 types,Enum declarations,implemented,v43,conformance/tests/enum_basic.bas,

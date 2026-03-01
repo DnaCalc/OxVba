@@ -13,8 +13,8 @@ string-expansion,"Space/String$/Chr/Chr$/Asc/StrConv/Format$",implemented,v127-v
 date-time-expansion,"Date/Time/Now/Timer/Year/Month/Day/Weekday/MonthName",implemented,v129,conformance/tests/stdlib_datetime_expansion.bas,deterministic constant/date-part projection subset
 numeric-conversion-expansion,"CSng/CByte/CCur/CDec/Hex/Oct/Atn/Tan",implemented,v120-v131,conformance/tests/conversion_extended_scalar_subset.bas,conversion identity projection plus numeric extension subset
 random-expansion,"Rnd/Randomize",implemented,v130,conformance/tests/stdlib_random_financial_expansion.bas,deterministic non-host random projection subset
-financial-expansion,"NPV/IRR/MIRR/Rate/NPer and related",partial,v132-v161,conformance/tests/financial_tolerance_mixed_modes.bas,algorithmic subset in place for NPV/IRR/MIRR/Rate/NPer with dedicated corpus coverage for success and deterministic non-convergence error tags; oracle parity remains pending
-info-introspection-expansion,"IsEmpty/IsNull/IsError/TypeOf...Is",implemented,v126-v153,conformance/tests/coercion_null_empty_error_predicates.bas,sentinel/equality predicate subset with explicit Empty/Null/Error tag distinctions
+financial-expansion,"NPV/IRR/MIRR/Rate/NPer and related",implemented,v132-v161,conformance/tests/financial_tolerance_mixed_modes.bas,in-scope algorithmic subset implemented with dedicated success/failure corpus coverage; oracle parity remains deferred
+info-introspection-expansion,"IsEmpty/IsNull/IsError/VarType/IsNumeric/TypeOf...Is",implemented,v126-v158,conformance/tests/introspection_vartype_isnumeric_tags.bas,sentinel/equality predicate subset with explicit Empty/Null/Error tag distinctions and parity coverage for VarType/IsNumeric
 file-io-library,"Open/Close/Input/Line Input/Print#/Write#/EOF/LOF/Seek/FreeFile",partial,v134,conformance/tests/stdlib_file_stub_intrinsics.bas,read/write statements pending; expression-level stub subset for FreeFile/EOF/LOF/Seek
 ui-interaction,"MsgBox/InputBox",planned,v87,,
 external-automation-libraries,"Rich COM automation libraries beyond deterministic bridge",planned,v87,,

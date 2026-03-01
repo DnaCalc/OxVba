@@ -2560,6 +2560,46 @@ mod tests {
     }
 
     #[test]
+    fn formal_v163_coverage_index_reconciles_non_hal_rows() {
+        let text = std::fs::read_to_string(repo_path("docs/evidence/language/COVERAGE_INDEX.csv"))
+            .expect("coverage index exists");
+        assert!(text.contains(
+            "Financial extension intrinsics (NPV/IRR/MIRR/Rate/NPer subset),implemented"
+        ));
+        assert!(text.contains("Err object full surface,implemented"));
+        assert!(text.contains("String BSTR core,implemented"));
+        assert!(text.contains(
+            "File-introspection intrinsics (FreeFile/EOF/LOF/Seek expression subset),implemented"
+        ));
+    }
+
+    #[test]
+    fn formal_v163_library_checklist_reconciles_financial_status() {
+        let text =
+            std::fs::read_to_string(repo_path("docs/evidence/runtime/LIBRARY_CHECKLIST.csv"))
+                .expect("library checklist exists");
+        assert!(
+            text.contains("financial-expansion,\"NPV/IRR/MIRR/Rate/NPer and related\",implemented")
+        );
+    }
+
+    #[test]
+    fn formal_v163_spec_checklist_reconciles_non_hal_rows() {
+        let text = std::fs::read_to_string(repo_path("docs/evidence/SPEC_CHECKLIST.md"))
+            .expect("spec checklist exists");
+        assert!(text.contains(
+            "| `[x]` | Error object | Full `Err` object surface (non-HAL deterministic subset) |"
+        ));
+        assert!(text.contains("| `[x]` | Types | `String` BSTR and UDT runtime semantics (non-boundary deterministic subset) |"));
+        assert!(text.contains("| `[x]` | Financial expansion | `NPV`, `IRR`, `MIRR`, `Rate`, `NPer`, and related suite (in-scope subset) |"));
+    }
+
+    #[test]
+    fn formal_v163_profile_status_document_exists() {
+        assert!(repo_path("docs/profile-status/PROFILE_STATUS_V163.md").exists());
+    }
+
+    #[test]
     fn formal_v132_builtin_expansion_fixtures_exist() {
         assert!(repo_path("conformance/tests/stdlib_string_expansion_core.bas").exists());
         assert!(repo_path("conformance/tests/stdlib_format_core.bas").exists());

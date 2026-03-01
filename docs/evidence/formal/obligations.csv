@@ -303,3 +303,7 @@ FO-V162-001,v162,"cargo kani -p oxvba-vm --harness financial_rate_zero_nper_yiel
 FO-V162-002,v162,"cargo kani -p oxvba-vm --harness financial_nper_invalid_domain_yields_error_tag",no,true,crates/oxvba-vm/src/interpreter.rs
 FO-V162-003,v162,"cargo kani -p oxvba-vm --harness vartype_intrinsic_outputs_expected_domain",no,true,crates/oxvba-vm/src/interpreter.rs
 FO-V162-004,v162,"cargo test -p oxvba-host formal_v162_profile_status_document_exists",no,true,docs/profile-status/PROFILE_STATUS_V162.md
+FO-V163-001,v163,"cargo test -p oxvba-host formal_v163_coverage_index_reconciles_non_hal_rows",no,true,docs/evidence/language/COVERAGE_INDEX.csv
+FO-V163-002,v163,"cargo test -p oxvba-host formal_v163_library_checklist_reconciles_financial_status",no,true,docs/evidence/runtime/LIBRARY_CHECKLIST.csv
+FO-V163-003,v163,"cargo test -p oxvba-host formal_v163_spec_checklist_reconciles_non_hal_rows",no,true,docs/evidence/SPEC_CHECKLIST.md
+FO-V163-004,v163,"cargo test -p oxvba-host formal_v163_profile_status_document_exists",no,true,docs/profile-status/PROFILE_STATUS_V163.md

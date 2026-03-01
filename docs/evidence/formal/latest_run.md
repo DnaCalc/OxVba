@@ -1,7 +1,7 @@
 # Formal Run Report
 
-- Timestamp (UTC): 2026-03-01T09:29:09Z
-- Profile scope: mvp-profile-v162
+- Timestamp (UTC): 2026-03-01T09:40:49Z
+- Profile scope: mvp-profile-v163
 - Overall mode: non-blocking
 - Kani required: false
 - Kani execution: deferred-to-wsl-async
@@ -315,3 +315,7 @@
 | FO-V162-002 | v162 | no | skipped | cargo kani -p oxvba-vm --harness financial_nper_invalid_domain_yields_error_tag | crates/oxvba-vm/src/interpreter.rs | cargo-kani available via WSL; rerun with -UseWslKani (recommended via run-formal-kani-async.ps1) |
 | FO-V162-003 | v162 | no | skipped | cargo kani -p oxvba-vm --harness vartype_intrinsic_outputs_expected_domain | crates/oxvba-vm/src/interpreter.rs | cargo-kani available via WSL; rerun with -UseWslKani (recommended via run-formal-kani-async.ps1) |
 | FO-V162-004 | v162 | no | pass | cargo test -p oxvba-host formal_v162_profile_status_document_exists | docs/profile-status/PROFILE_STATUS_V162.md |  |
+| FO-V163-001 | v163 | no | pass | cargo test -p oxvba-host formal_v163_coverage_index_reconciles_non_hal_rows | docs/evidence/language/COVERAGE_INDEX.csv |  |
+| FO-V163-002 | v163 | no | pass | cargo test -p oxvba-host formal_v163_library_checklist_reconciles_financial_status | docs/evidence/runtime/LIBRARY_CHECKLIST.csv |  |
+| FO-V163-003 | v163 | no | pass | cargo test -p oxvba-host formal_v163_spec_checklist_reconciles_non_hal_rows | docs/evidence/SPEC_CHECKLIST.md |  |
+| FO-V163-004 | v163 | no | pass | cargo test -p oxvba-host formal_v163_profile_status_document_exists | docs/profile-status/PROFILE_STATUS_V163.md |  |

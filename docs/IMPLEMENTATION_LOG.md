@@ -1,6 +1,24 @@
 # Implementation Log
 
 ## 2026-03-01
+- Completed `v163` (`mvp-profile-v163`) evidence reconciliation:
+  - reconciled non-HAL achieved rows in:
+    - `docs/evidence/language/COVERAGE_INDEX.csv`,
+    - `docs/evidence/runtime/LIBRARY_CHECKLIST.csv`,
+    - `docs/evidence/SPEC_CHECKLIST.md`,
+    from partial to implemented where deterministic in-scope behavior is complete;
+  - preserved deferred oracle/HAL-adjacent caveats in notes and deferred-gate registers.
+- Validation lane for `v163` passed:
+  - `cargo fmt --all`
+  - `cargo test -p oxvba-runtime`
+  - `cargo test -p oxvba-compiler`
+  - `cargo test -p oxvba-vm`
+  - `cargo test -p oxvba-host`
+  - `./scripts/run-conformance.ps1 -Backend vm`
+  - `./scripts/run-conformance.ps1 -Backend jit`
+  - `./scripts/run-formal.ps1 -ProfileScope mvp-profile-v163`
+  - `./scripts/run-matrix.ps1 -ProfileScope mvp-profile-v163 -OutputDir docs/evidence/profiles/v163`
+  - `./scripts/meta-check.ps1 -Fast`
 - Completed `v162` (`mvp-profile-v162`) formal obligations update:
   - added Kani proof harnesses in `crates/oxvba-vm/src/interpreter.rs` for:
     - `Rate` invalid/non-convergent error-tag path,
