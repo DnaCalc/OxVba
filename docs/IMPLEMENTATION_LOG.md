@@ -626,3 +626,11 @@
   - switched script defaults (`run-formal`, `run-matrix`, `run-bench`, `run-profile-gate`) to `mvp-full-v146`.
   - executed integrated gate for `v146` with final `PASS` and refreshed artifacts under `docs/evidence/profiles/v146/`.
   - updated phase/autorun status docs (`PHASE12_STATUS.md`, `AUTORUN_STATE.md`) to reflect `v146` completion.
+- Started HAL specification design track initialization (early-stage draft set):
+  - added `docs/spec/` draft index with explicit draft maturity states (`design-draft`, `working-draft`, `stable-draft`).
+  - added initial HAL draft documents:
+    - `HAL_DESIGN_DRAFT.md` (scope, principles, five-profile model, virtualization requirements),
+    - `HAL_INTERFACE_DRAFT.md` (Rust-first contract shape, capability+maturity descriptors, policy model),
+    - `HAL_CONFORMANCE_DRAFT.md` (multi-axis conformance and level model),
+    - `HAL_PROFILE_MATRIX_DRAFT.md` (Windows/Linux/macOS/WASM/Null target matrix).
+  - added cross-references in `docs/README.md` and a HAL design note in `MACH1000_PLAN.md` section 6.3.

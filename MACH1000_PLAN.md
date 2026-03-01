@@ -862,6 +862,15 @@ Bytecode modules are serialized using `rkyv` (zero-copy deserialization):
 
 **Core principle:** The VBA language runtime and all built-in types work identically on all platforms. Platform differences are isolated to COM interaction and hosting.
 
+HAL design note (current stage):
+- Platform-sensitive behavior is being consolidated into a dedicated Host Abstraction Layer design track.
+- The initial draft set is in:
+  - `docs/spec/HAL_DESIGN_DRAFT.md`
+  - `docs/spec/HAL_INTERFACE_DRAFT.md`
+  - `docs/spec/HAL_CONFORMANCE_DRAFT.md`
+  - `docs/spec/HAL_PROFILE_MATRIX_DRAFT.md`
+- The draft model uses five explicit profiles (`windows`, `linux`, `macos`, `wasm`, `null`) and tracks both capability support and capability maturity.
+
 | Feature | Windows | Linux / macOS |
 |---|---|---|
 | VBA language core | Full | Full |
@@ -1054,12 +1063,18 @@ OxVba/
 │   ├── BUILDING.md                     # Build and development setup
 │   ├── CONTRIBUTING.md                 # Contribution guidelines
 │   ├── MACH1000_PLAN_REFINEMENT_20260226.md  # Refinement proposal input for synthesis
-│   ├── VARIANT_DESIGN.md              # VARIANT layout and optional internal-repr optimization notes
-│   ├── COM_ABSTRACTION.md             # COM layer design
-│   ├── BYTECODE_FORMAT.md             # Register bytecode instruction set reference
-│   ├── IR_DESIGN.md                   # Multi-level IR design (VbaHir/VbaMir/CfgIr)
-│   ├── VM_ARCHITECTURE.md            # Register-window VM and broadword dispatch
-│   └── evidence/                      # Clean-room evidence records
+│   ├── spec/                           # Early-stage + normative spec docs
+│   │   ├── README.md                   # Spec-draft index and maturity states
+│   │   ├── HAL_DESIGN_DRAFT.md         # HAL scope/principles/profile plan
+│   │   ├── HAL_INTERFACE_DRAFT.md      # HAL contracts + capability/maturity model
+│   │   ├── HAL_CONFORMANCE_DRAFT.md    # HAL conformance model and gates
+│   │   └── HAL_PROFILE_MATRIX_DRAFT.md # Per-profile capability planning matrix
+│   ├── VARIANT_DESIGN.md               # VARIANT layout and optional internal-repr optimization notes
+│   ├── COM_ABSTRACTION.md              # COM layer design
+│   ├── BYTECODE_FORMAT.md              # Register bytecode instruction set reference
+│   ├── IR_DESIGN.md                    # Multi-level IR design (VbaHir/VbaMir/CfgIr)
+│   ├── VM_ARCHITECTURE.md              # Register-window VM and broadword dispatch
+│   └── evidence/                       # Clean-room evidence records
 │       └── ...
 │
 └── scripts/

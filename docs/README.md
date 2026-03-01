@@ -15,6 +15,11 @@
 | Bytecode Format | [`BYTECODE_FORMAT.md`](BYTECODE_FORMAT.md) | Bytecode representation status and planned evolution. |
 | VM Architecture | [`VM_ARCHITECTURE.md`](VM_ARCHITECTURE.md) | VM implementation status and next milestones. |
 | Conformance | [`CONFORMANCE.md`](CONFORMANCE.md) | Conformance assets, commands, and comparison policy. |
+| Spec Drafts Index | [`spec/README.md`](spec/README.md) | Early-stage design/contract drafts that prepare future normative specs. |
+| HAL Design Draft | [`spec/HAL_DESIGN_DRAFT.md`](spec/HAL_DESIGN_DRAFT.md) | Host Abstraction Layer scope, principles, profile targets, and staged spec-run plan. |
+| HAL Interface Draft | [`spec/HAL_INTERFACE_DRAFT.md`](spec/HAL_INTERFACE_DRAFT.md) | Proposed HAL contracts, capability descriptors, maturity levels, and policy gates. |
+| HAL Conformance Draft | [`spec/HAL_CONFORMANCE_DRAFT.md`](spec/HAL_CONFORMANCE_DRAFT.md) | Proposed HAL conformance levels, test obligations, and evidence model. |
+| HAL Profile Matrix Draft | [`spec/HAL_PROFILE_MATRIX_DRAFT.md`](spec/HAL_PROFILE_MATRIX_DRAFT.md) | Initial five-profile (Windows/Linux/macOS/WASM/Null) capability+maturity planning matrix. |
 | Diagnostic Taxonomy | [`DIAGNOSTIC_TAXONOMY.md`](DIAGNOSTIC_TAXONOMY.md) | Consolidated user-facing compiler/typecheck diagnostic categories and message mapping. |
 | Profile v2 Status | [`PROFILE_STATUS_V2.md`](profile-status/PROFILE_STATUS_V2.md) | Current gate status contract for `mvp-controlflow-v2`. |
 | Profile v3 Status | [`PROFILE_STATUS_V3.md`](profile-status/PROFILE_STATUS_V3.md) | Current gate status contract for `mvp-formal-foundation-v3`. |
