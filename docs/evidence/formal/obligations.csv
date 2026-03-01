@@ -284,3 +284,6 @@ FO-V155-003,v155,"cargo test -p oxvba-host formal_v155_profile_status_document_e
 FO-V156-001,v156,"cargo test -p oxvba-host formal_v156_financial_non_convergence_signals_error_tags",no,true,crates/oxvba-host/src/engine.rs
 FO-V156-002,v156,"cargo test -p oxvba-host formal_v156_conformance_fixture_exists",no,true,conformance/tests/financial_tolerance_non_convergence.bas
 FO-V156-003,v156,"cargo test -p oxvba-host formal_v156_profile_status_document_exists",no,true,docs/profile-status/PROFILE_STATUS_V156.md
+FO-V157-001,v157,"cargo test -p oxvba-host formal_v157_compile_time_diagnostic_wins_before_runtime",no,true,crates/oxvba-host/src/engine.rs
+FO-V157-002,v157,"cargo test -p oxvba-host formal_v157_conformance_fixture_exists",no,true,conformance/tests/diagnostic_phase_compile_wins.bas
+FO-V157-003,v157,"cargo test -p oxvba-host formal_v157_profile_status_document_exists",no,true,docs/profile-status/PROFILE_STATUS_V157.md

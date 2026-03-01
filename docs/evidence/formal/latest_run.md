@@ -1,7 +1,7 @@
 # Formal Run Report
 
-- Timestamp (UTC): 2026-03-01T08:19:29Z
-- Profile scope: mvp-profile-v156
+- Timestamp (UTC): 2026-03-01T08:33:56Z
+- Profile scope: mvp-profile-v157
 - Overall mode: non-blocking
 - Kani required: false
 - Kani execution: deferred-to-wsl-async
@@ -296,3 +296,6 @@
 | FO-V156-001 | v156 | no | pass | cargo test -p oxvba-host formal_v156_financial_non_convergence_signals_error_tags | crates/oxvba-host/src/engine.rs |  |
 | FO-V156-002 | v156 | no | pass | cargo test -p oxvba-host formal_v156_conformance_fixture_exists | conformance/tests/financial_tolerance_non_convergence.bas |  |
 | FO-V156-003 | v156 | no | pass | cargo test -p oxvba-host formal_v156_profile_status_document_exists | docs/profile-status/PROFILE_STATUS_V156.md |  |
+| FO-V157-001 | v157 | no | pass | cargo test -p oxvba-host formal_v157_compile_time_diagnostic_wins_before_runtime | crates/oxvba-host/src/engine.rs |  |
+| FO-V157-002 | v157 | no | pass | cargo test -p oxvba-host formal_v157_conformance_fixture_exists | conformance/tests/diagnostic_phase_compile_wins.bas |  |
+| FO-V157-003 | v157 | no | pass | cargo test -p oxvba-host formal_v157_profile_status_document_exists | docs/profile-status/PROFILE_STATUS_V157.md |  |

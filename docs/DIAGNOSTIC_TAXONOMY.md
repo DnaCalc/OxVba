@@ -29,6 +29,7 @@ This document consolidates the current user-facing compiler/typecheck diagnostic
 - `v70`: typed ByRef legality + typed function-return diagnostics.
 - `v71`: early/mixed/late call classification diagnostics.
 - `v72`: this consolidated taxonomy artifact.
+- `v157`: host execution phase classification for compile-time vs runtime diagnostics (`PhaseDiagnostic` in `crates/oxvba-host/src/engine.rs`), with compile-time precedence checks over runtime paths.
 
 ## Next Improvement Targets
 1. Introduce stable diagnostic IDs without changing message semantics.

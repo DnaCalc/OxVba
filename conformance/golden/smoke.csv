@@ -32,6 +32,7 @@
 "declare_sub_stub_basic.bas","ok","5"
 "default_type_defobj_implicit_error.bas","error",""
 "default_type_param_defobj_error.bas","error",""
+"diagnostic_phase_compile_wins.bas","error",""
 "do_exit_do.bas","ok","4"
 "do_loop_until_basic.bas","ok","3"
 "do_loop_while_basic.bas","ok","3"

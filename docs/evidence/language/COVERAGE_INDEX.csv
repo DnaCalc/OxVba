@@ -67,6 +67,7 @@ error_handling,Resume Next statement,implemented,v12,conformance/tests/resume_ne
 error_handling,On Error GoTo label,implemented,v41,conformance/tests/on_error_goto_label_resume.bas,
 error_handling,Resume statement (same statement or label),implemented,v95,conformance/tests/resume_statement_basic.bas,includes both Resume and Resume <label> subset (see resume_label_basic.bas)
 error_handling,Err object full surface,partial,v149,conformance/tests/err_surface_fields_subset.bas,subset includes Err.Number/Description/Source/HelpContext/HelpFile/LastDllError plus Raise/Clear and deterministic resume/procedure-boundary lifecycle clearing (`err_resume_next_clears.bas`,`err_proc_call_boundary_clears.bas`); oracle parity still pending
+diagnostics,Compile-time vs runtime diagnostic phase timing,implemented,v157,crates/oxvba-host/src/engine.rs,host execution now exposes phase-classified diagnostics and validates compile-time precedence over runtime paths
 types,Variant numeric core,implemented,v13-v153,docs/evidence/formal/obligations.csv,deterministic sentinel-tag subset now distinguishes Empty/Null/CVErr error tags for predicate/coercion-introspection paths
 types,String BSTR core,partial,v34-v151,docs/evidence/formal/obligations.csv,boundary interop expansion pending; deterministic subset now enforces compile-time `vbNullString` guard against numeric assignment/call targets
 types,Date and Currency core,implemented,v15,docs/evidence/formal/obligations.csv,

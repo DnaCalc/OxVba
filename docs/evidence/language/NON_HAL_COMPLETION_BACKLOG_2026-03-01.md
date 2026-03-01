@@ -33,7 +33,7 @@ Objective:
 
 6. Diagnostics and phase timing consistency:
 - Stabilize compile-time vs runtime error timing for non-HAL language/runtime constructs.
-- Ensure diagnostic IDs and category mapping remain stable.
+- `v157` adds explicit host phase classification and compile-time precedence checks; oracle wording/timing parity and stable diagnostic IDs remain pending.
 
 ## B. Explicitly Deferred To Oracle Gates (Non-HAL)
 

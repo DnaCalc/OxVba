@@ -3,6 +3,54 @@ use oxvba_jit::JitEngine;
 use oxvba_vm::execute_and_snapshot;
 use std::collections::HashMap;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DiagnosticPhase {
+    CompileTime,
+    Runtime,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PhaseDiagnostic {
+    phase: DiagnosticPhase,
+    message: String,
+}
+
+impl PhaseDiagnostic {
+    fn compile(message: impl Into<String>) -> Self {
+        Self {
+            phase: DiagnosticPhase::CompileTime,
+            message: message.into(),
+        }
+    }
+
+    fn runtime(message: impl Into<String>) -> Self {
+        Self {
+            phase: DiagnosticPhase::Runtime,
+            message: message.into(),
+        }
+    }
+
+    pub fn phase(&self) -> DiagnosticPhase {
+        self.phase
+    }
+
+    pub fn message(&self) -> &str {
+        &self.message
+    }
+}
+
+impl std::fmt::Display for PhaseDiagnostic {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let phase = match self.phase {
+            DiagnosticPhase::CompileTime => "compile-time",
+            DiagnosticPhase::Runtime => "runtime",
+        };
+        write!(f, "{phase} diagnostic: {}", self.message)
+    }
+}
+
+impl std::error::Error for PhaseDiagnostic {}
+
 #[derive(Debug, Clone, Default)]
 pub struct HostConfig {
     pub enable_jit: bool,
@@ -39,25 +87,32 @@ impl Engine {
     }
 
     pub fn execute_source_with_snapshot(&self, source: &str) -> Result<Vec<i32>, String> {
-        let bytecode = compile(source).map_err(|e| e.to_string())?;
+        self.execute_source_with_snapshot_phased(source)
+            .map_err(|diagnostic| diagnostic.message().to_string())
+    }
 
+    pub fn execute_source_with_snapshot_phased(
+        &self,
+        source: &str,
+    ) -> Result<Vec<i32>, PhaseDiagnostic> {
+        let bytecode = compile(source).map_err(|e| PhaseDiagnostic::compile(e.to_string()))?;
         if self.config.enable_jit {
             self.jit
                 .compile_function("main")
-                .map_err(|e| e.to_string())?;
+                .map_err(|e| PhaseDiagnostic::runtime(e.to_string()))?;
             return self
                 .jit
                 .execute_and_snapshot(&bytecode)
-                .map_err(|e| e.to_string());
+                .map_err(|e| PhaseDiagnostic::runtime(e.to_string()));
         }
 
-        execute_and_snapshot(&bytecode)
+        execute_and_snapshot(&bytecode).map_err(PhaseDiagnostic::runtime)
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{Engine, HostConfig};
+    use super::{DiagnosticPhase, Engine, HostConfig};
     use oxvba_runtime::value_tags::error_tag_from_code;
     use std::path::{Path, PathBuf};
 
@@ -2251,6 +2306,42 @@ mod tests {
     #[test]
     fn formal_v156_profile_status_document_exists() {
         assert!(repo_path("docs/profile-status/PROFILE_STATUS_V156.md").exists());
+    }
+
+    #[test]
+    fn formal_v157_compile_time_diagnostic_wins_before_runtime() {
+        let source = "Sub Main()\nGoTo nowhere\nError 5\nEnd Sub";
+        let err = Engine::new(HostConfig {
+            enable_jit: false,
+            root_object_name: None,
+        })
+        .execute_source_with_snapshot_phased(source)
+        .expect_err("compile-time diagnostic should win");
+        assert_eq!(err.phase(), DiagnosticPhase::CompileTime);
+        assert!(err.message().contains("goto target label not found"));
+    }
+
+    #[test]
+    fn formal_v157_runtime_diagnostic_is_classified_after_successful_compile() {
+        let source = "Sub Main()\nError 5\nEnd Sub";
+        let err = Engine::new(HostConfig {
+            enable_jit: false,
+            root_object_name: None,
+        })
+        .execute_source_with_snapshot_phased(source)
+        .expect_err("runtime diagnostic should be raised");
+        assert_eq!(err.phase(), DiagnosticPhase::Runtime);
+        assert!(err.message().contains("runtime error"));
+    }
+
+    #[test]
+    fn formal_v157_conformance_fixture_exists() {
+        assert!(repo_path("conformance/tests/diagnostic_phase_compile_wins.bas").exists());
+    }
+
+    #[test]
+    fn formal_v157_profile_status_document_exists() {
+        assert!(repo_path("docs/profile-status/PROFILE_STATUS_V157.md").exists());
     }
 
     #[test]

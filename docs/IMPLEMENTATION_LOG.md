@@ -1,6 +1,27 @@
 # Implementation Log
 
 ## 2026-03-01
+- Completed `v157` (`mvp-profile-v157`) diagnostics timing pass:
+  - added explicit host-side phase classification for execution diagnostics in `crates/oxvba-host/src/engine.rs`:
+    - `DiagnosticPhase::{CompileTime, Runtime}`
+    - `PhaseDiagnostic` with stable `phase()` + `message()` accessors;
+  - added `Engine::execute_source_with_snapshot_phased` to expose compile-time vs runtime classification while preserving existing string API behavior;
+  - added formal tests validating timing invariants:
+    - compile-time diagnostics preempt runtime execution (`GoTo` missing-label + `Error` in same source),
+    - runtime diagnostics are classified after successful compile;
+  - added conformance fixture:
+    - `conformance/tests/diagnostic_phase_compile_wins.bas`.
+- Validation lane for `v157` passed:
+  - `cargo fmt --all`
+  - `cargo test -p oxvba-runtime`
+  - `cargo test -p oxvba-compiler`
+  - `cargo test -p oxvba-vm`
+  - `cargo test -p oxvba-host`
+  - `./scripts/run-conformance.ps1 -Backend vm`
+  - `./scripts/run-conformance.ps1 -Backend jit`
+  - `./scripts/run-formal.ps1 -ProfileScope mvp-profile-v157`
+  - `./scripts/run-matrix.ps1 -ProfileScope mvp-profile-v157 -OutputDir docs/evidence/profiles/v157`
+  - `./scripts/meta-check.ps1 -Fast`
 - Completed `v156` (`mvp-profile-v156`) financial tolerance/error-signaling model:
   - introduced explicit solver policy constants in VM financial solve paths:
     - `FIN_MAX_ITERS = 60`
