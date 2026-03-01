@@ -18,7 +18,7 @@ This file is the local path to use when referencing the library spec source set 
 - https://learn.microsoft.com/en-us/office/vba/language/reference/functions-visual-basic-for-applications
 
 3. VBA Language Reference (statements, constants, objects):
-- https://learn.microsoft.com/en-us/office/vba/language/reference/user-interface-help/
+- https://learn.microsoft.com/en-us/office/vba/language/reference/user-interface-help/visual-basic-language-reference
 
 4. Automation type/value semantics used by runtime functions:
 - MS-OAUT root: https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-oaut/
@@ -32,5 +32,6 @@ This file is the local path to use when referencing the library spec source set 
 
 ## Local-Only Notes
 
-- No full offline mirror is currently maintained in-repo.
+- A local canonical-source snapshot cache is now maintained under `docs/spec/sources/local/`.
+- `docs/spec/sources/local/LATEST.txt` points to the latest fetch.
 - Use this manifest as the stable local pointer; specific URLs should be pinned in worksets for high-risk features.

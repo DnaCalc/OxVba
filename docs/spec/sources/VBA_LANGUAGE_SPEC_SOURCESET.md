@@ -15,7 +15,7 @@ This file is the local path to use when referencing the language spec source set
 - https://learn.microsoft.com/en-us/openspecs/microsoft_general_purpose_programming_languages/ms-vbal/d5418146-0bd2-45eb-9c7a-fd9502722c74
 
 2. MS-VBA language reference family (Microsoft VBA docs):
-- https://learn.microsoft.com/en-us/office/vba/language/reference/
+- https://learn.microsoft.com/en-us/office/vba/api/overview/language-reference
 
 3. Relevant type/interoperation semantics where language rules rely on automation representation:
 - MS-OAUT root: https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-oaut/
@@ -28,5 +28,6 @@ This file is the local path to use when referencing the language spec source set
 
 ## Local-Only Notes
 
-- No full offline mirror is currently maintained in-repo.
+- A local canonical-source snapshot cache is now maintained under `docs/spec/sources/local/`.
+- `docs/spec/sources/local/LATEST.txt` points to the latest fetch.
 - If a section is operationally critical and unstable, capture a local excerpt hash + section URL in the associated workset/evidence artifact.

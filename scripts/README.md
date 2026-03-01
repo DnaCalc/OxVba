@@ -17,3 +17,4 @@
 - `validate-divergences.ps1`: validates structural fields required in divergence records.
 - `validate-language-coverage.ps1`: validates language coverage index structure/status vocabulary and duplicate keys.
 - `validate-intrinsic-surface.ps1`: validates intrinsic surface classification coverage and host-sensitive partition.
+- `fetch-spec-sources.ps1`: snapshots primary canonical language/runtime source pages into `docs/spec/sources/local/` with manifest checksums.
