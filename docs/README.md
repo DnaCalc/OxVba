@@ -118,6 +118,7 @@
 | Profile v156 Status | [`PROFILE_STATUS_V156.md`](profile-status/PROFILE_STATUS_V156.md) | Current gate status contract for `mvp-profile-v156` (deterministic financial tolerance/non-convergence error-tag model). |
 | Profile v157 Status | [`PROFILE_STATUS_V157.md`](profile-status/PROFILE_STATUS_V157.md) | Current gate status contract for `mvp-profile-v157` (compile-time vs runtime diagnostic timing classification pass). |
 | Profile v158 Status | [`PROFILE_STATUS_V158.md`](profile-status/PROFILE_STATUS_V158.md) | Current gate status contract for `mvp-profile-v158` (VM parity expansion for financial/tag introspection runtime behavior). |
+| Profile v159 Status | [`PROFILE_STATUS_V159.md`](profile-status/PROFILE_STATUS_V159.md) | Current gate status contract for `mvp-profile-v159` (JIT fallback parity expansion for financial/tag introspection behavior). |
 | Profile v107 Status | [`PROFILE_STATUS_V107.md`](profile-status/PROFILE_STATUS_V107.md) | Current gate status contract for `mvp-lang-with-member-target-v107`. |
 | Profile v108-v146 Statuses | [`profile-status/`](profile-status/README.md) | AutoRun ladder status records are published through `PROFILE_STATUS_V146.md` for the active full-language/built-ins ladder range. |
 | Phase 12 Status | [`PHASE12_STATUS.md`](PHASE12_STATUS.md) | Declared profile scope and final conformance/stabilization gate artifacts. |
@@ -226,6 +227,7 @@
 | Work Set Plan (v156) | [`worksets/WORKSET_2026-03-01_FINANCIAL_TOLERANCE_MODEL_V156.md`](worksets/WORKSET_2026-03-01_FINANCIAL_TOLERANCE_MODEL_V156.md) | Financial tolerance policy pass with bounded-iteration solver behavior and deterministic error-tag signaling for invalid/non-convergent cases. |
 | Work Set Plan (v157) | [`worksets/WORKSET_2026-03-01_DIAGNOSTICS_TIMING_PASS_V157.md`](worksets/WORKSET_2026-03-01_DIAGNOSTICS_TIMING_PASS_V157.md) | Diagnostic phase-timing pass with explicit compile-time/runtime classification and precedence tests. |
 | Work Set Plan (v158) | [`worksets/WORKSET_2026-03-01_VM_PARITY_EXPANSION_V158.md`](worksets/WORKSET_2026-03-01_VM_PARITY_EXPANSION_V158.md) | VM parity coverage expansion for newly concrete financial and sentinel-tag introspection behavior. |
+| Work Set Plan (v159) | [`worksets/WORKSET_2026-03-01_JIT_PARITY_EXPANSION_V159.md`](worksets/WORKSET_2026-03-01_JIT_PARITY_EXPANSION_V159.md) | JIT fallback parity expansion with explicit VM-equivalence checks for unsupported financial/tag introspection surfaces. |
 | Status Tours | [`status-tours/`](status-tours/) | Date-stamped orientation/showcase docs for implemented project state. |
 | Formal | [`FORMAL.md`](FORMAL.md) | Lean/Kani formal scaffold status and structure. |
 | Spec Checklist | [`evidence/SPEC_CHECKLIST.md`](evidence/SPEC_CHECKLIST.md) | Structured language + built-in/library checklist aligned to current evidence and planned gaps. |

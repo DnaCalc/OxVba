@@ -2382,6 +2382,57 @@ mod tests {
     }
 
     #[test]
+    fn formal_v159_jit_fallback_matches_vm_for_financial_tolerance_subset() {
+        let source = "Sub Main()\nDim a\nDim b\na = Rate(0, 0, 0)\nb = NPer(1, 0, 0, 0)\nEnd Sub";
+        let vm_out = Engine::new(HostConfig {
+            enable_jit: false,
+            root_object_name: None,
+        })
+        .execute_source_with_snapshot(source)
+        .expect("vm execution should succeed");
+        let jit_out = Engine::new(HostConfig {
+            enable_jit: true,
+            root_object_name: None,
+        })
+        .execute_source_with_snapshot(source)
+        .expect("jit execution should succeed");
+        assert_eq!(vm_out, jit_out);
+        assert_eq!(
+            jit_out,
+            vec![error_tag_from_code(2001), error_tag_from_code(2002)]
+        );
+    }
+
+    #[test]
+    fn formal_v159_jit_fallback_matches_vm_for_tag_introspection_subset() {
+        let source = "Sub Main()\nDim a\nDim b\nDim c\nDim d\nDim e\nDim f\nDim g\nDim h\na = VarType(vbNullString)\nb = VarType(Null)\nc = VarType(CVErr(9))\nd = VarType(7)\ne = IsNumeric(vbNullString)\nf = IsNumeric(Null)\ng = IsNumeric(CVErr(9))\nh = IsNumeric(7)\nEnd Sub";
+        let vm_out = Engine::new(HostConfig {
+            enable_jit: false,
+            root_object_name: None,
+        })
+        .execute_source_with_snapshot(source)
+        .expect("vm execution should succeed");
+        let jit_out = Engine::new(HostConfig {
+            enable_jit: true,
+            root_object_name: None,
+        })
+        .execute_source_with_snapshot(source)
+        .expect("jit execution should succeed");
+        assert_eq!(vm_out, jit_out);
+        assert_eq!(jit_out, vec![0, 1, 10, 3, 0, 0, 0, 1]);
+    }
+
+    #[test]
+    fn formal_v159_conformance_fixture_exists() {
+        assert!(repo_path("conformance/tests/introspection_vartype_isnumeric_tags.bas").exists());
+    }
+
+    #[test]
+    fn formal_v159_profile_status_document_exists() {
+        assert!(repo_path("docs/profile-status/PROFILE_STATUS_V159.md").exists());
+    }
+
+    #[test]
     fn formal_v132_builtin_expansion_fixtures_exist() {
         assert!(repo_path("conformance/tests/stdlib_string_expansion_core.bas").exists());
         assert!(repo_path("conformance/tests/stdlib_format_core.bas").exists());

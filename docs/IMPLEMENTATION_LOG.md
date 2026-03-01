@@ -1,6 +1,22 @@
 # Implementation Log
 
 ## 2026-03-01
+- Completed `v159` (`mvp-profile-v159`) JIT parity expansion:
+  - added explicit fallback parity tests in `crates/oxvba-jit/src/lib.rs` for unsupported bytecode surfaces:
+    - financial tolerance/non-convergence (`Rate`/`NPer` error-tag paths),
+    - sentinel-tag introspection (`VarType`/`IsNumeric` over `Empty`/`Null`/`CVErr`);
+  - added host-level VM-vs-JIT equivalence checks for the same source programs to ensure fallback routing preserves observable semantics.
+- Validation lane for `v159` passed:
+  - `cargo fmt --all`
+  - `cargo test -p oxvba-runtime`
+  - `cargo test -p oxvba-compiler`
+  - `cargo test -p oxvba-vm`
+  - `cargo test -p oxvba-host`
+  - `./scripts/run-conformance.ps1 -Backend vm`
+  - `./scripts/run-conformance.ps1 -Backend jit`
+  - `./scripts/run-formal.ps1 -ProfileScope mvp-profile-v159`
+  - `./scripts/run-matrix.ps1 -ProfileScope mvp-profile-v159 -OutputDir docs/evidence/profiles/v159`
+  - `./scripts/meta-check.ps1 -Fast`
 - Completed `v158` (`mvp-profile-v158`) VM parity expansion:
   - added direct interpreter coverage in `crates/oxvba-vm/src/interpreter.rs` for:
     - algorithmic `Rate`/`NPer` bytecode execution outputs,

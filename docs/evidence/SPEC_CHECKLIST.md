@@ -48,7 +48,7 @@ Primary evidence sources:
 | `[~]` | Types | `String` BSTR and UDT runtime semantics | `COVERAGE_INDEX.csv` (`String BSTR core`) | String BSTR boundary expansion remains partial; non-boundary `vbNullString` usage is now tightened with compile-time numeric-target rejection in current subset. |
 | `[x]` | Types | UDT field access/assignment subset | `udt_field_access_basic.bas`, `udt_whole_assignment_copy.bas` | Type declarations plus flattened field-alias read/write subset and deterministic whole-value copy lowering are implemented. |
 | `[x]` | Late binding | Object default-member late-bound calls | `late_bound_default_member_exec.bas`, `late_bound_named_argument_exec.bas` | Deterministic late-bound execution subset supports up to one argument. |
-| `[x]` | Backends | VM + JIT subset with fallback | `run-conformance.ps1`, `v24+` evidence | Implemented for current supported op surface. |
+| `[x]` | Backends | VM + JIT subset with fallback | `run-conformance.ps1`, `v24+` evidence | Implemented for current supported op surface, with explicit fallback parity tests for unsupported financial tolerance and sentinel-tag introspection paths (`v159`). |
 
 ## Built-in Functions and Library Checklist
 

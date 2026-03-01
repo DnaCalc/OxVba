@@ -35,6 +35,10 @@ Objective:
 - Stabilize compile-time vs runtime error timing for non-HAL language/runtime constructs.
 - `v157` adds explicit host phase classification and compile-time precedence checks; oracle wording/timing parity and stable diagnostic IDs remain pending.
 
+7. Backend parity hardening for recent semantics:
+- `v158` adds interpreter-level parity coverage for financial tolerance and sentinel-tag introspection paths.
+- `v159` adds explicit JIT fallback parity checks (VM vs JIT equivalence) for unsupported financial/tag-introspection bytecode.
+
 ## B. Explicitly Deferred To Oracle Gates (Non-HAL)
 
 Tracked in:

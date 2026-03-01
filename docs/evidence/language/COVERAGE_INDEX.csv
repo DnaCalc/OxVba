@@ -85,6 +85,6 @@ interop,Boundary marshalling roundtrip,partial,v31,crates/oxvba-runtime/src/vari
 interop,Type-library driven external signature import,planned,v87,,
 runtime,VM backend execution,implemented,v2,scripts/run-conformance.ps1,
 runtime,JIT backend execution subset,implemented,v24,scripts/run-conformance.ps1,
-runtime,JIT fallback for unsupported ops,implemented,v24,crates/oxvba-jit/src/lib.rs,
+runtime,JIT fallback for unsupported ops,implemented,v24-v159,crates/oxvba-jit/src/lib.rs,unsupported financial tolerance and sentinel-tag introspection bytecode are covered by explicit VM/JIT parity fallback tests
 
 

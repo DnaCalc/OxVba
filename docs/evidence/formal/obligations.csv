@@ -290,3 +290,6 @@ FO-V157-003,v157,"cargo test -p oxvba-host formal_v157_profile_status_document_e
 FO-V158-001,v158,"cargo test -p oxvba-vm vartype_and_isnumeric_distinguish_empty_null_error_and_array_tags",no,true,crates/oxvba-vm/src/interpreter.rs
 FO-V158-002,v158,"cargo test -p oxvba-host formal_v158_conformance_fixture_exists",no,true,conformance/tests/introspection_vartype_isnumeric_tags.bas
 FO-V158-003,v158,"cargo test -p oxvba-host formal_v158_profile_status_document_exists",no,true,docs/profile-status/PROFILE_STATUS_V158.md
+FO-V159-001,v159,"cargo test -p oxvba-jit falls_back_for_financial_tolerance_subset_and_matches_vm",no,true,crates/oxvba-jit/src/lib.rs
+FO-V159-002,v159,"cargo test -p oxvba-host formal_v159_conformance_fixture_exists",no,true,conformance/tests/introspection_vartype_isnumeric_tags.bas
+FO-V159-003,v159,"cargo test -p oxvba-host formal_v159_profile_status_document_exists",no,true,docs/profile-status/PROFILE_STATUS_V159.md

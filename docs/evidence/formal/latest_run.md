@@ -1,7 +1,7 @@
 # Formal Run Report
 
-- Timestamp (UTC): 2026-03-01T08:46:16Z
-- Profile scope: mvp-profile-v158
+- Timestamp (UTC): 2026-03-01T08:55:50Z
+- Profile scope: mvp-profile-v159
 - Overall mode: non-blocking
 - Kani required: false
 - Kani execution: deferred-to-wsl-async
@@ -302,3 +302,6 @@
 | FO-V158-001 | v158 | no | pass | cargo test -p oxvba-vm vartype_and_isnumeric_distinguish_empty_null_error_and_array_tags | crates/oxvba-vm/src/interpreter.rs |  |
 | FO-V158-002 | v158 | no | pass | cargo test -p oxvba-host formal_v158_conformance_fixture_exists | conformance/tests/introspection_vartype_isnumeric_tags.bas |  |
 | FO-V158-003 | v158 | no | pass | cargo test -p oxvba-host formal_v158_profile_status_document_exists | docs/profile-status/PROFILE_STATUS_V158.md |  |
+| FO-V159-001 | v159 | no | pass | cargo test -p oxvba-jit falls_back_for_financial_tolerance_subset_and_matches_vm | crates/oxvba-jit/src/lib.rs |  |
+| FO-V159-002 | v159 | no | pass | cargo test -p oxvba-host formal_v159_conformance_fixture_exists | conformance/tests/introspection_vartype_isnumeric_tags.bas |  |
+| FO-V159-003 | v159 | no | pass | cargo test -p oxvba-host formal_v159_profile_status_document_exists | docs/profile-status/PROFILE_STATUS_V159.md |  |
