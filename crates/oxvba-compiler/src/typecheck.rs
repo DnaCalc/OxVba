@@ -835,9 +835,9 @@ fn ensure_declared(
     declarations: &mut Vec<String>,
     declaration_types: &mut HashMap<String, BoundType>,
 ) -> Result<(), String> {
-    if name.eq_ignore_ascii_case("err_number") {
+    if is_err_member_alias(name) {
         declared_types
-            .entry("err_number".to_string())
+            .entry(name.to_ascii_lowercase())
             .or_insert(BoundType::Long);
         return Ok(());
     }
@@ -868,6 +868,18 @@ fn ensure_declared(
     declared_types.insert(name.to_string(), default_ty);
     declaration_types.insert(name.to_string(), default_ty);
     Ok(())
+}
+
+fn is_err_member_alias(name: &str) -> bool {
+    matches!(
+        name.to_ascii_lowercase().as_str(),
+        "err_number"
+            | "err_description"
+            | "err_source"
+            | "err_helpcontext"
+            | "err_helpfile"
+            | "err_lastdllerror"
+    )
 }
 
 fn default_type_for_name(name: &str, default_type_table: &[BoundType; 26]) -> BoundType {

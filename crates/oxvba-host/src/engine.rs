@@ -2183,6 +2183,28 @@ mod tests {
     }
 
     #[test]
+    fn formal_v148_err_surface_member_subset_executes() {
+        let source = "Sub Main()\nDim n\nDim d\nDim s\nDim h\nDim f\nDim l\nOn Error Resume Next\nError 9\nn = Err.Number\nd = Err.Description\ns = Err.Source\nh = Err.HelpContext\nf = Err.HelpFile\nl = Err.LastDllError\nEnd Sub";
+        let out = Engine::new(HostConfig {
+            enable_jit: false,
+            root_object_name: None,
+        })
+        .execute_source_with_snapshot(source)
+        .expect("execution should succeed");
+        assert_eq!(out, vec![9, 9, 0, 0, 0, 0]);
+    }
+
+    #[test]
+    fn formal_v148_conformance_fixture_exists() {
+        assert!(repo_path("conformance/tests/err_surface_fields_subset.bas").exists());
+    }
+
+    #[test]
+    fn formal_v148_profile_status_document_exists() {
+        assert!(repo_path("docs/profile-status/PROFILE_STATUS_V148.md").exists());
+    }
+
+    #[test]
     fn formal_v146_profile_status_range_exists() {
         for version in 108..=146 {
             let path = format!("docs/profile-status/PROFILE_STATUS_V{version}.md");

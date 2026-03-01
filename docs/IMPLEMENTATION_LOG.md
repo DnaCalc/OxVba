@@ -654,3 +654,12 @@
     - `docs/evidence/profiles/v147/non_hal_gap_baseline.md`
   - classified current `partial/planned` rows from language/library/spec sources into `non-hal` vs `hal-adjacent` scope classes for `v147..v166` execution.
   - published `WORKSET_2026-03-01_NON_HAL_GAP_BASELINE_LOCK_V147.md` and `PROFILE_STATUS_V147.md`.
+- Started `v148` (`mvp-profile-v148`) Err-surface expansion pass:
+  - added resolver/typecheck support for additional `Err` member aliases:
+    - `Err.Description`, `Err.Source`, `Err.HelpContext`, `Err.HelpFile`, `Err.LastDllError`.
+  - added emission/runtime subset mapping in current integer-slot VM model:
+    - `Err.Number` + `Err.Description` => current error code,
+    - `Err.Source`/`Err.HelpContext`/`Err.HelpFile`/`Err.LastDllError` => deterministic `0`.
+  - added conformance fixture `err_surface_fields_subset.bas` and golden expectation row.
+  - published `WORKSET_2026-03-01_ERR_SURFACE_EXPANSION_V148.md` and `PROFILE_STATUS_V148.md`.
+  - updated coverage/spec/checklist notes to reflect expanded-but-still-partial Err lifecycle semantics.

@@ -5,7 +5,7 @@ string-advanced,"Split/Join/Replace/Trim/LTrim/RTrim/StrComp/Like/InStrRev",impl
 date-time-core,"DateSerial/TimeSerial/DateValue/TimeValue/DateAdd/DateDiff",implemented,v48,docs/evidence/runtime/INTRINSIC_SURFACE.csv,deterministic numeric projection subset
 math-financial-core,"Abs/Int/Fix/Sgn/Round/Sqr/Sin/Cos/Log/Exp/FV/PV/PMT",implemented,v49,docs/evidence/runtime/INTRINSIC_SURFACE.csv,integer/zero-rate subset
 array-type-introspection,"Array/LBound/UBound/IsArray/VarType/TypeName/IsNumeric/IsDate/IsObject",implemented,v50,docs/evidence/runtime/INTRINSIC_SURFACE.csv,tag/bounds subset
-error-surface,"Err.Raise + CVErr pathways",implemented,v51,docs/evidence/language/COVERAGE_INDEX.csv,Err model still partial
+error-surface,"Err.Raise + CVErr pathways",implemented,v51-v148,docs/evidence/language/COVERAGE_INDEX.csv,Err model expanded with additional member-read subset but remains partial for full lifecycle parity
 collection-subset,"CollectionAdd/CollectionItem/CollectionRemove/CollectionCount",implemented,v53,docs/evidence/runtime/INTRINSIC_SURFACE.csv,deterministic collection model subset
 host-sensitive-core,"Shell/Environ/Dir",partial,v52,docs/evidence/runtime/INTRINSIC_SURFACE.csv,host capability fallback subset
 com-dispatch-bridge,"CreateObject/DispatchInvoke",partial,v55-v84,docs/evidence/runtime/INTRINSIC_SURFACE.csv,deterministic projection subset

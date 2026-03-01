@@ -66,7 +66,7 @@ error_handling,On Error GoTo 0,implemented,v12,conformance/tests/on_error_goto_z
 error_handling,Resume Next statement,implemented,v12,conformance/tests/resume_next_statement_ok.bas,
 error_handling,On Error GoTo label,implemented,v41,conformance/tests/on_error_goto_label_resume.bas,
 error_handling,Resume statement (same statement or label),implemented,v95,conformance/tests/resume_statement_basic.bas,includes both Resume and Resume <label> subset (see resume_label_basic.bas)
-error_handling,Err object full surface,partial,v96,conformance/tests/err_clear_basic.bas,subset includes Err.Number + Raise + Clear; full Err surface still pending
+error_handling,Err object full surface,partial,v148,conformance/tests/err_surface_fields_subset.bas,subset now includes Err.Number/Description/Source/HelpContext/HelpFile/LastDllError plus Raise/Clear; full lifecycle parity still pending
 types,Variant numeric core,implemented,v13,docs/evidence/formal/obligations.csv,
 types,String BSTR core,partial,v34,docs/evidence/formal/obligations.csv,boundary interop expansion pending
 types,Date and Currency core,implemented,v15,docs/evidence/formal/obligations.csv,

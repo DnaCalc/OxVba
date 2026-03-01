@@ -257,3 +257,6 @@ FO-V126-001,v126,"cargo test -p oxvba-host formal_v126_introspection_and_typeof_
 FO-V132-001,v132,"cargo test -p oxvba-host formal_v132_builtin_expansion_fixtures_exist",no,true,crates/oxvba-host/src/engine.rs
 FO-V134-001,v134,"cargo test -p oxvba-host formal_v134_file_stub_intrinsics_execute",no,true,crates/oxvba-host/src/engine.rs
 FO-V146-001,v146,"cargo test -p oxvba-host formal_v146_profile_status_range_exists",no,true,docs/profile-status/PROFILE_STATUS_V146.md
+FO-V148-001,v148,"cargo test -p oxvba-compiler resolve::tests::resolve_err_surface_member_aliases",no,true,crates/oxvba-compiler/src/resolve.rs
+FO-V148-002,v148,"cargo test -p oxvba-host formal_v148_err_surface_member_subset_executes",no,true,crates/oxvba-host/src/engine.rs
+FO-V148-003,v148,"cargo test -p oxvba-host formal_v148_profile_status_document_exists",no,true,docs/profile-status/PROFILE_STATUS_V148.md

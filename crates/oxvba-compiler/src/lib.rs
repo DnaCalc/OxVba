@@ -1023,6 +1023,22 @@ mod tests {
     }
 
     #[test]
+    fn compile_err_member_aliases_are_accepted_under_option_explicit() {
+        let source = "Option Explicit\nSub Main()\nDim a\nDim b\nDim c\na = Err.Description\nb = Err.Source\nc = Err.HelpContext\nEnd Sub";
+        let out = compile(source).expect("compile should succeed");
+        assert!(
+            out.instructions
+                .iter()
+                .any(|i| matches!(i, Instruction::LoadErrNumber { .. }))
+        );
+        assert!(
+            out.instructions
+                .iter()
+                .any(|i| matches!(i, Instruction::LoadConstI32 { value: 0, .. }))
+        );
+    }
+
+    #[test]
     fn compile_on_error_goto_zero_and_resume_next_emits_ops() {
         let source =
             "Sub Main()\nOn Error Resume Next\nOn Error GoTo 0\nResume Next\nError 3\nEnd Sub";

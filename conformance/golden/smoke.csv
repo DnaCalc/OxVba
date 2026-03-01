@@ -40,6 +40,7 @@
 "duplicate_label_error.bas","error",""
 "enum_basic.bas","ok","3,4,5"
 "erase_array_basic.bas","ok","0,0,0,0,0"
+"err_surface_fields_subset.bas","ok","9,9,0,0,0,0"
 "err_clear_basic.bas","ok","0"
 "for_basic.bas","ok","6,4"
 "for_each_array_literal_basic.bas","ok","3,3"

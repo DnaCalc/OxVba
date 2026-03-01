@@ -3086,8 +3086,8 @@ fn parse_declared_type(token: &str) -> Option<BoundType> {
 }
 
 fn parse_reference_name(token: &str, array_bounds: &ArrayBoundsMap) -> Option<String> {
-    if token.trim().eq_ignore_ascii_case("err.number") {
-        return Some("err_number".to_string());
+    if let Some(alias) = parse_err_member_reference(token) {
+        return Some(alias);
     }
     if let Some(alias) = parse_array_reference(token, array_bounds) {
         return Some(alias);
@@ -3096,6 +3096,26 @@ fn parse_reference_name(token: &str, array_bounds: &ArrayBoundsMap) -> Option<St
         return Some(alias);
     }
     normalize_ident(token)
+}
+
+fn parse_err_member_reference(token: &str) -> Option<String> {
+    let trimmed = token.trim();
+    let mut parts = trimmed.split('.');
+    let root = parts.next()?.trim();
+    let member = parts.next()?.trim();
+    if parts.next().is_some() || !root.eq_ignore_ascii_case("err") {
+        return None;
+    }
+
+    match member.to_ascii_lowercase().as_str() {
+        "number" => Some("err_number".to_string()),
+        "description" => Some("err_description".to_string()),
+        "source" => Some("err_source".to_string()),
+        "helpcontext" => Some("err_helpcontext".to_string()),
+        "helpfile" => Some("err_helpfile".to_string()),
+        "lastdllerror" => Some("err_lastdllerror".to_string()),
+        _ => None,
+    }
 }
 
 fn parse_array_reference(token: &str, array_bounds: &ArrayBoundsMap) -> Option<String> {
@@ -4648,5 +4668,27 @@ mod tests {
                 .iter()
                 .any(|stmt| matches!(stmt, BoundStmt::Erase { name } if name == "a"))
         );
+    }
+
+    #[test]
+    fn resolve_err_surface_member_aliases() {
+        let source = "Sub Main()\nDim a\nDim b\na = Err.Description\nb = Err.HelpContext\nEnd Sub";
+        let module = resolve_symbols(source);
+        assert!(module.declarations.iter().any(|d| d == "a"));
+        assert!(module.declarations.iter().any(|d| d == "b"));
+
+        let assign_vars = module
+            .body
+            .iter()
+            .filter_map(|stmt| match stmt {
+                BoundStmt::Assign {
+                    expr: BoundExpr::Var(name),
+                    ..
+                } => Some(name.as_str()),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        assert!(assign_vars.contains(&"err_description"));
+        assert!(assign_vars.contains(&"err_helpcontext"));
     }
 }

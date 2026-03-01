@@ -1115,8 +1115,8 @@ fn emit_expr_into(
                 && src != dst
             {
                 instructions.push(Instruction::CopySlot { dst, src });
-            } else if name.eq_ignore_ascii_case("err_number") {
-                instructions.push(Instruction::LoadErrNumber { slot: dst });
+            } else {
+                let _ = emit_err_member_value(name, dst, instructions);
             }
         }
         BoundExpr::AddConst { var, delta } => {
@@ -1128,8 +1128,7 @@ fn emit_expr_into(
                     slot: dst,
                     value: *delta,
                 });
-            } else if var.eq_ignore_ascii_case("err_number") {
-                instructions.push(Instruction::LoadErrNumber { slot: dst });
+            } else if emit_err_member_value(var, dst, instructions) {
                 instructions.push(Instruction::AddConstI32 {
                     slot: dst,
                     value: *delta,
@@ -1145,8 +1144,7 @@ fn emit_expr_into(
                     slot: dst,
                     value: *delta,
                 });
-            } else if var.eq_ignore_ascii_case("err_number") {
-                instructions.push(Instruction::LoadErrNumber { slot: dst });
+            } else if emit_err_member_value(var, dst, instructions) {
                 instructions.push(Instruction::SubConstI32 {
                     slot: dst,
                     value: *delta,
@@ -1630,6 +1628,23 @@ fn emit_expr_into(
                 value: 0,
             });
         }
+    }
+}
+
+fn emit_err_member_value(name: &str, dst: usize, instructions: &mut Vec<Instruction>) -> bool {
+    match name.to_ascii_lowercase().as_str() {
+        "err_number" | "err_description" => {
+            instructions.push(Instruction::LoadErrNumber { slot: dst });
+            true
+        }
+        "err_source" | "err_helpcontext" | "err_helpfile" | "err_lastdllerror" => {
+            instructions.push(Instruction::LoadConstI32 {
+                slot: dst,
+                value: 0,
+            });
+            true
+        }
+        _ => false,
     }
 }
 
