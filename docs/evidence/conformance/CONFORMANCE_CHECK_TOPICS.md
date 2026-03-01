@@ -9,6 +9,9 @@ Purpose:
 
 Machine-readable source:
 - `docs/evidence/conformance/CONFORMANCE_CHECK_TOPICS.csv`
+- Deferred-oracle gate register:
+  - `docs/evidence/conformance/DEFERRED_ORACLE_GATES.csv`
+  - `docs/evidence/conformance/DEFERRED_ORACLE_GATES.md`
 
 Status values:
 - `planned`: topic identified, probes not yet executed against VBA oracle.

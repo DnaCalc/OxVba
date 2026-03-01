@@ -11,5 +11,6 @@ Current draft set:
 - [`HAL_DESIGN_DRAFT.md`](HAL_DESIGN_DRAFT.md) (`design-draft`): scope, principles, profile targets, and staged design plan for the Host Abstraction Layer.
 - [`HAL_INTERFACE_DRAFT.md`](HAL_INTERFACE_DRAFT.md) (`design-draft`): proposed HAL contracts, capability schema, and maturity model.
 - [`HAL_CONFORMANCE_DRAFT.md`](HAL_CONFORMANCE_DRAFT.md) (`design-draft`): proposed conformance classes, test obligations, and evidence model.
+- [`sources/README.md`](sources/README.md): local source-set manifests for language/runtime spec references.
 
 These files intentionally optimize for design velocity and clarity of open decisions rather than immediate lock-in.

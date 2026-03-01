@@ -20,6 +20,7 @@
 | HAL Interface Draft | [`spec/HAL_INTERFACE_DRAFT.md`](spec/HAL_INTERFACE_DRAFT.md) | Proposed HAL contracts, capability descriptors, maturity levels, and policy gates. |
 | HAL Conformance Draft | [`spec/HAL_CONFORMANCE_DRAFT.md`](spec/HAL_CONFORMANCE_DRAFT.md) | Proposed HAL conformance levels, test obligations, and evidence model. |
 | HAL Profile Matrix Draft | [`spec/HAL_PROFILE_MATRIX_DRAFT.md`](spec/HAL_PROFILE_MATRIX_DRAFT.md) | Initial five-profile (Windows/Linux/macOS/WASM/Null) capability+maturity planning matrix. |
+| Spec Source Sets | [`spec/sources/README.md`](spec/sources/README.md) | Local source manifests for language/runtime specification references. |
 | Diagnostic Taxonomy | [`DIAGNOSTIC_TAXONOMY.md`](DIAGNOSTIC_TAXONOMY.md) | Consolidated user-facing compiler/typecheck diagnostic categories and message mapping. |
 | Profile v2 Status | [`PROFILE_STATUS_V2.md`](profile-status/PROFILE_STATUS_V2.md) | Current gate status contract for `mvp-controlflow-v2`. |
 | Profile v3 Status | [`PROFILE_STATUS_V3.md`](profile-status/PROFILE_STATUS_V3.md) | Current gate status contract for `mvp-formal-foundation-v3`. |
@@ -199,10 +200,14 @@
 | Profile Ladder (v67-v86) | [`worksets/PROFILE_LADDER_2026-02-28_MACH1000_V67_V86_TYPING.md`](worksets/PROFILE_LADDER_2026-02-28_MACH1000_V67_V86_TYPING.md) | Full VBA typing semantics ladder: diagnostics, coercion, strings, arrays, and early/late interaction with deferred formal gates. |
 | Profile Ladder (v87-v106) | [`worksets/PROFILE_LADDER_2026-02-28_MACH1000_V87_V106_LANGUAGE_COMPLETION.md`](worksets/PROFILE_LADDER_2026-02-28_MACH1000_V87_V106_LANGUAGE_COMPLETION.md) | Outstanding language-feature closure ladder: loops, unstructured flow, resume/error semantics, UDT/property/late binding, and external declare binding. |
 | Profile Ladder (v107-v146) | [`worksets/PROFILE_LADDER_2026-02-28_MACH1000_V107_V146_FULL_VBA_LANGUAGE_BUILTINS.md`](worksets/PROFILE_LADDER_2026-02-28_MACH1000_V107_V146_FULL_VBA_LANGUAGE_BUILTINS.md) | Full VBA closure ladder: semantic completion, full built-in expansion, interop hardening, oracle conformance, formal foldback, and terminal integrated gate. |
+| Profile Ladder (v147-v166) | [`worksets/PROFILE_LADDER_2026-03-01_MACH1000_V147_V166_NON_HAL_COMPLETION.md`](worksets/PROFILE_LADDER_2026-03-01_MACH1000_V147_V166_NON_HAL_COMPLETION.md) | Non-HAL language/runtime/library completion ladder with deferred-oracle gate policy. |
+| Profile Ladder (v167-v186) | [`worksets/PROFILE_LADDER_2026-03-01_MACH1000_V167_V186_NON_HAL_HARDENING.md`](worksets/PROFILE_LADDER_2026-03-01_MACH1000_V167_V186_NON_HAL_HARDENING.md) | Follow-on non-HAL hardening/perf/formal ladder after completion gate. |
 | Status Tours | [`status-tours/`](status-tours/) | Date-stamped orientation/showcase docs for implemented project state. |
 | Formal | [`FORMAL.md`](FORMAL.md) | Lean/Kani formal scaffold status and structure. |
 | Spec Checklist | [`evidence/SPEC_CHECKLIST.md`](evidence/SPEC_CHECKLIST.md) | Structured language + built-in/library checklist aligned to current evidence and planned gaps. |
 | Conformance Check Topics | [`evidence/conformance/CONFORMANCE_CHECK_TOPICS.md`](evidence/conformance/CONFORMANCE_CHECK_TOPICS.md) | Oracle-driven backlog for semantically uncertain VBA behaviors to differential-check after implementation. |
+| Deferred Oracle Gates | [`evidence/conformance/DEFERRED_ORACLE_GATES.md`](evidence/conformance/DEFERRED_ORACLE_GATES.md) | Deferred gate register for oracle-dependent semantics (parallel to deferred formal gates). |
+| Non-HAL Completion Backlog | [`evidence/language/NON_HAL_COMPLETION_BACKLOG_2026-03-01.md`](evidence/language/NON_HAL_COMPLETION_BACKLOG_2026-03-01.md) | Remaining non-HAL implementation targets and explicit exclusions. |
 | Deferred Formal Gates | [`evidence/formal/DEFERRED_GATES.md`](evidence/formal/DEFERRED_GATES.md) | Async Kani deferred-gate register and reconciliation status. |
 | Remote Kani Runner | [`evidence/formal/REMOTE_KANI_RUNNER.md`](evidence/formal/REMOTE_KANI_RUNNER.md) | Remote Linux Kani orchestration model, constraints, commands, and artifact retrieval flow. |
 

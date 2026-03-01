@@ -634,3 +634,16 @@
     - `HAL_CONFORMANCE_DRAFT.md` (multi-axis conformance and level model),
     - `HAL_PROFILE_MATRIX_DRAFT.md` (Windows/Linux/macOS/WASM/Null target matrix).
   - added cross-references in `docs/README.md` and a HAL design note in `MACH1000_PLAN.md` section 6.3.
+- Initialized non-HAL completion planning and deferred-oracle tracking layer:
+  - added local spec source-set manifests:
+    - `docs/spec/sources/VBA_LANGUAGE_SPEC_SOURCESET.md`
+    - `docs/spec/sources/VBA_LIBRARY_SPEC_SOURCESET.md`
+  - added non-HAL completion backlog:
+    - `docs/evidence/language/NON_HAL_COMPLETION_BACKLOG_2026-03-01.md`
+  - added deferred-oracle gate register (parallel to deferred formal gates):
+    - `docs/evidence/conformance/DEFERRED_ORACLE_GATES.md`
+    - `docs/evidence/conformance/DEFERRED_ORACLE_GATES.csv`
+  - published next two profile ladders:
+    - `docs/worksets/PROFILE_LADDER_2026-03-01_MACH1000_V147_V166_NON_HAL_COMPLETION.md`
+    - `docs/worksets/PROFILE_LADDER_2026-03-01_MACH1000_V167_V186_NON_HAL_HARDENING.md`
+  - updated docs indexes and conformance-topic guidance to include deferred-oracle tracking artifacts.
