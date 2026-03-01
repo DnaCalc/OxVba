@@ -12,7 +12,7 @@ ODG-010,CCT-012,branching,language-core,non-hal,open,v147-v166,"Run Excel oracle
 ODG-011,CCT-013,params,typing-call,non-hal,open,v147-v166,"Run Excel oracle probes for ByRef temporaries/copy-back/parentheses",,"High semantic risk"
 ODG-012,CCT-014,params,typing-call,non-hal,open,v147-v166,"Run Excel oracle probes for named/positional ordering edges",,"Diagnostic parity pending"
 ODG-013,CCT-015,params,typing-call,non-hal,open,v147-v166,"Run Excel oracle probes for ParamArray coercion/packing edges",,"Array/call edge parity pending"
-ODG-014,CCT-016,types,typing-coercion,non-hal,open,v147-v166,"Run Excel oracle matrix probes for Null/Empty/Error coercion",,"Deterministic sentinel-tag semantics and VM/source parity checks implemented; full oracle matrix parity pending"
+ODG-014,CCT-016,types,typing-coercion,non-hal,open,v147-v166,"Run Excel oracle matrix probes for Null/Empty/Error coercion",,"Deterministic sentinel-tag semantics, VM/source parity checks, and CVErr normalization corpus checks implemented; full oracle matrix parity pending"
 ODG-015,CCT-017,types,string-semantics,non-hal,open,v147-v166,"Run Excel oracle probes for vbNullString vs empty-string behavior",,"Needed for full string semantics claim"
 ODG-016,CCT-018,types,numeric-semantics,non-hal,open,v147-v166,"Run Excel oracle probes for Date/Currency rounding/overflow edges",,"Conversion parity pending"
 ODG-017,CCT-019,types,udt-semantics,non-hal,open,v147-v166,"Run Excel oracle probes for UDT copy/init/value semantics",,"Current flattened subset may diverge"

@@ -2433,6 +2433,62 @@ mod tests {
     }
 
     #[test]
+    fn formal_v160_err_clear_full_surface_fixture_executes() {
+        let source = "Sub Main()\nDim n\nDim d\nDim s\nDim h\nDim f\nDim l\nOn Error Resume Next\nError 9\nErr.Clear\nn = Err.Number\nd = Err.Description\ns = Err.Source\nh = Err.HelpContext\nf = Err.HelpFile\nl = Err.LastDllError\nEnd Sub";
+        let out = Engine::new(HostConfig {
+            enable_jit: false,
+            root_object_name: None,
+        })
+        .execute_source_with_snapshot(source)
+        .expect("execution should succeed");
+        assert_eq!(out, vec![0, 0, 0, 0, 0, 0]);
+    }
+
+    #[test]
+    fn formal_v160_string_udt_coercion_corpus_fixtures_execute() {
+        let string_source = "Sub Main()\nDim v\nDim a\nDim b\nDim c\nv = vbNullString\na = IsEmpty(v)\nb = IsNull(v)\nc = IsError(v)\nEnd Sub";
+        let string_out = Engine::new(HostConfig {
+            enable_jit: false,
+            root_object_name: None,
+        })
+        .execute_source_with_snapshot(string_source)
+        .expect("string fixture should execute");
+        assert_eq!(string_out, vec![0, 1, 0, 0]);
+
+        let udt_source = "Type Pair\nA\nB\nEnd Type\nSub Main()\nDim x As Pair\nDim y As Pair\nx.A = 1\nx.B = 2\ny.A = 9\ny.B = 8\ny = x\nx.A = 7\nx.B = 6\ny = x\nEnd Sub";
+        let udt_out = Engine::new(HostConfig {
+            enable_jit: false,
+            root_object_name: None,
+        })
+        .execute_source_with_snapshot(udt_source)
+        .expect("udt fixture should execute");
+        assert_eq!(udt_out, vec![0, 7, 6, 0, 7, 6]);
+
+        let coercion_source =
+            "Sub Main()\nDim a\nDim b\nDim c\na = CVErr(-4)\nb = CVErr(4)\nc = IsError(a)\nEnd Sub";
+        let coercion_out = Engine::new(HostConfig {
+            enable_jit: false,
+            root_object_name: None,
+        })
+        .execute_source_with_snapshot(coercion_source)
+        .expect("coercion fixture should execute");
+        assert_eq!(coercion_out, vec![-899999996, -899999996, 1]);
+    }
+
+    #[test]
+    fn formal_v160_conformance_fixtures_exist() {
+        assert!(repo_path("conformance/tests/err_clear_full_surface_reset.bas").exists());
+        assert!(repo_path("conformance/tests/string_vbnullstring_predicates.bas").exists());
+        assert!(repo_path("conformance/tests/udt_whole_assignment_overwrite.bas").exists());
+        assert!(repo_path("conformance/tests/coercion_cverr_abs_normalization.bas").exists());
+    }
+
+    #[test]
+    fn formal_v160_profile_status_document_exists() {
+        assert!(repo_path("docs/profile-status/PROFILE_STATUS_V160.md").exists());
+    }
+
+    #[test]
     fn formal_v132_builtin_expansion_fixtures_exist() {
         assert!(repo_path("conformance/tests/stdlib_string_expansion_core.bas").exists());
         assert!(repo_path("conformance/tests/stdlib_format_core.bas").exists());

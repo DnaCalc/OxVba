@@ -1,6 +1,24 @@
 # Implementation Log
 
 ## 2026-03-01
+- Completed `v160` (`mvp-profile-v160`) corpus expansion I:
+  - added conformance fixtures for targeted non-HAL semantics:
+    - `err_clear_full_surface_reset.bas`,
+    - `string_vbnullstring_predicates.bas`,
+    - `udt_whole_assignment_overwrite.bas`,
+    - `coercion_cverr_abs_normalization.bas`;
+  - updated golden corpus expectations and host-formal execution checks for these cases.
+- Validation lane for `v160` passed:
+  - `cargo fmt --all`
+  - `cargo test -p oxvba-runtime`
+  - `cargo test -p oxvba-compiler`
+  - `cargo test -p oxvba-vm`
+  - `cargo test -p oxvba-host`
+  - `./scripts/run-conformance.ps1 -Backend vm`
+  - `./scripts/run-conformance.ps1 -Backend jit`
+  - `./scripts/run-formal.ps1 -ProfileScope mvp-profile-v160`
+  - `./scripts/run-matrix.ps1 -ProfileScope mvp-profile-v160 -OutputDir docs/evidence/profiles/v160`
+  - `./scripts/meta-check.ps1 -Fast`
 - Completed `v159` (`mvp-profile-v159`) JIT parity expansion:
   - added explicit fallback parity tests in `crates/oxvba-jit/src/lib.rs` for unsupported bytecode surfaces:
     - financial tolerance/non-convergence (`Rate`/`NPer` error-tag paths),

@@ -66,15 +66,15 @@ error_handling,On Error GoTo 0,implemented,v12,conformance/tests/on_error_goto_z
 error_handling,Resume Next statement,implemented,v12,conformance/tests/resume_next_statement_ok.bas,
 error_handling,On Error GoTo label,implemented,v41,conformance/tests/on_error_goto_label_resume.bas,
 error_handling,Resume statement (same statement or label),implemented,v95,conformance/tests/resume_statement_basic.bas,includes both Resume and Resume <label> subset (see resume_label_basic.bas)
-error_handling,Err object full surface,partial,v149,conformance/tests/err_surface_fields_subset.bas,subset includes Err.Number/Description/Source/HelpContext/HelpFile/LastDllError plus Raise/Clear and deterministic resume/procedure-boundary lifecycle clearing (`err_resume_next_clears.bas`,`err_proc_call_boundary_clears.bas`); oracle parity still pending
+error_handling,Err object full surface,partial,v149-v160,conformance/tests/err_clear_full_surface_reset.bas,subset includes Err.Number/Description/Source/HelpContext/HelpFile/LastDllError plus Raise/Clear and deterministic resume/procedure-boundary lifecycle clearing (`err_surface_fields_subset.bas`,`err_resume_next_clears.bas`,`err_proc_call_boundary_clears.bas`,`err_clear_full_surface_reset.bas`); oracle parity still pending
 diagnostics,Compile-time vs runtime diagnostic phase timing,implemented,v157,crates/oxvba-host/src/engine.rs,host execution now exposes phase-classified diagnostics and validates compile-time precedence over runtime paths
 types,Variant numeric core,implemented,v13-v153,docs/evidence/formal/obligations.csv,deterministic sentinel-tag subset now distinguishes Empty/Null/CVErr error tags for predicate/coercion-introspection paths
-types,String BSTR core,partial,v34-v151,docs/evidence/formal/obligations.csv,boundary interop expansion pending; deterministic subset now enforces compile-time `vbNullString` guard against numeric assignment/call targets
+types,String BSTR core,partial,v34-v160,conformance/tests/string_vbnullstring_predicates.bas,boundary interop expansion pending; deterministic subset enforces compile-time numeric-target guards and includes predicate/value-flow coverage for `vbNullString`
 types,Date and Currency core,implemented,v15,docs/evidence/formal/obligations.csv,
 types,Module Const declarations,implemented,v43,conformance/tests/module_const_basic.bas,
 types,Enum declarations,implemented,v43,conformance/tests/enum_basic.bas,
 types,User-defined types (UDT),implemented,v100-v152,conformance/tests/udt_field_access_basic.bas,declaration plus flattened field-alias storage subset with deterministic whole-value copy lowering
-types,UDT field access and assignment,implemented,v100-v152,conformance/tests/udt_whole_assignment_copy.bas,field read/write plus whole-value assignment lowered into alias copy route
+types,UDT field access and assignment,implemented,v100-v160,conformance/tests/udt_whole_assignment_overwrite.bas,field read/write plus whole-value assignment lowered into alias copy route with repeated-overwrite fixture coverage
 types,Late-bound default-member execution,implemented,v102,conformance/tests/late_bound_default_member_exec.bas,deterministic single-argument dispatch subset
 objects,Root object injection,implemented,v7,crates/oxvba-host/src/engine.rs,
 objects,Class module lifecycle,implemented,v54,conformance/tests/class_lifecycle_resume_next_ok.bas,lifecycle procedures auto-invoked around entry

@@ -10,12 +10,14 @@ Objective:
 1. Error model completion:
 - Expand `Err` surface beyond current subset (`Number`, `Raise`, `Clear`) to include additional core fields and state transitions.
 - Align procedure-entry/exit and post-success clearing behavior with documented rules where deterministically specified.
+- `v160` expands corpus coverage for `Err.Clear` full-surface reset behavior; host-oracle parity remains deferred.
 
 2. Runtime string/value model completion:
 - Remove remaining placeholder/projection behavior in string operations where currently identity/count-only.
 - `v150` completed array-tag-aware `Join` behavior; remaining string-sentinel and deeper parity work continues in `v151+`.
 - Tighten `vbNullString` and String value-path invariants for non-boundary execution.
 - `v151` adds compile-time `vbNullString` guard against numeric assignment/call targets; runtime/oracle parity remains open.
+- `v160` adds corpus coverage for `vbNullString` predicate/value-flow behavior.
 
 3. Financial intrinsic implementation upgrade:
 - Replace deterministic projection placeholders for `NPV`, `IRR`, `MIRR`, `Rate`, `NPer` with real numeric algorithms.
@@ -26,6 +28,7 @@ Objective:
 4. UDT/value semantics hardening:
 - Strengthen UDT copy/assignment/value-initialization behavior beyond flattened alias baseline where implementable without host interop.
 - `v152` adds deterministic whole-UDT assignment lowering into field-alias copies; deeper initialization/order parity remains open.
+- `v160` adds repeated-overwrite whole-UDT copy corpus coverage.
 
 5. Null/Empty/Error coercion normalization:
 - Distinguish deterministic sentinel/tag behavior for `Empty`, `Null`, and `CVErr`-encoded errors.
