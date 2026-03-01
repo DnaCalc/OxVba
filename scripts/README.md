@@ -18,3 +18,4 @@
 - `validate-language-coverage.ps1`: validates language coverage index structure/status vocabulary and duplicate keys.
 - `validate-intrinsic-surface.ps1`: validates intrinsic surface classification coverage and host-sensitive partition.
 - `fetch-spec-sources.ps1`: snapshots primary canonical language/runtime source pages into `docs/spec/sources/local/` with manifest checksums.
+- `build-non-hal-gap-baseline.ps1`: generates `v147` non-HAL baseline artifacts from coverage/library/spec checklist partial/planned rows.

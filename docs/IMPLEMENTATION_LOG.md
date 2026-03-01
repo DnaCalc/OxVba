@@ -647,3 +647,10 @@
     - `docs/worksets/PROFILE_LADDER_2026-03-01_MACH1000_V147_V166_NON_HAL_COMPLETION.md`
     - `docs/worksets/PROFILE_LADDER_2026-03-01_MACH1000_V167_V186_NON_HAL_HARDENING.md`
   - updated docs indexes and conformance-topic guidance to include deferred-oracle tracking artifacts.
+- Started `v147` (`mvp-profile-v147`) baseline-lock execution:
+  - added reproducible baseline extractor: `scripts/build-non-hal-gap-baseline.ps1`.
+  - generated frozen baseline artifacts:
+    - `docs/evidence/profiles/v147/non_hal_gap_baseline.csv`
+    - `docs/evidence/profiles/v147/non_hal_gap_baseline.md`
+  - classified current `partial/planned` rows from language/library/spec sources into `non-hal` vs `hal-adjacent` scope classes for `v147..v166` execution.
+  - published `WORKSET_2026-03-01_NON_HAL_GAP_BASELINE_LOCK_V147.md` and `PROFILE_STATUS_V147.md`.
