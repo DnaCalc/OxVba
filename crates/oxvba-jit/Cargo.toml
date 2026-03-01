@@ -12,6 +12,7 @@ oxvba-ir.workspace = true
 oxvba-runtime.workspace = true
 oxvba-com.workspace = true
 oxvba-vm.workspace = true
+oxvba-hal.workspace = true
 thiserror.workspace = true
 cranelift-codegen = "0.129.1"
 cranelift-frontend = "0.129.1"

@@ -1,6 +1,36 @@
 # Implementation Log
 
 ## 2026-03-01
+- Completed HAL working-draft + runtime integration pass:
+  - added new workspace crate `crates/oxvba-hal` with:
+    - profile adapters (`windows`, `linux`, `macos`, `wasm`, `null`),
+    - deterministic error taxonomy (`HAL-E-*`),
+    - capability/descriptor/policy model,
+    - pre-engine conformance probes (`src/conformance.rs`);
+  - wired HAL into VM/JIT/host execution paths:
+    - VM host-sensitive intrinsics now call HAL traits and route deterministic host errors through VBA `On Error` control paths,
+    - host engine now supports profile selection and unsupported-feature mode switching (`CompileTime` vs `Runtime`),
+    - compile-time preflight rejects unsupported/policy-denied host-sensitive intrinsics when configured;
+  - added HAL conformance tooling:
+    - `scripts/run-hal-conformance.ps1`
+    - `crates/oxvba-hal/src/bin/hal-conformance.rs`
+    - artifact output lane under `docs/evidence/hal/`;
+  - published HAL working docs and crosswalk:
+    - `docs/spec/HAL_SPEC_WORKING_DRAFT.md`
+    - `docs/spec/HAL_SPEC_CROSSWALK.md`
+    - `docs/spec/HAL_CONFORMANCE_SUITE.md`;
+  - clarified COM scope policy: supported on Windows profile, explicitly unsupported on non-Windows profiles in current baseline.
+- Migrated external spec source ownership to Foundation reference mirror:
+  - added canonical source map `docs/FOUNDATION_SPEC_REFERENCE.md`;
+  - removed local spec snapshot/docs tree:
+    - `docs/spec/sources/*`
+    - `scripts/fetch-spec-sources.ps1`;
+  - updated docs/workset links to Foundation-backed source paths.
+- Added explicit MS-VBAL module/project closure requirements:
+  - `docs/evidence/language/MS_VBAL_MODULE_PROJECT_REQUIREMENTS.csv`
+  - `docs/evidence/language/MS_VBAL_MODULE_PROJECT_REQUIREMENTS.md`
+  - `docs/worksets/WORKSET_2026-03-01_MS_VBAL_MODULE_PROJECT_PROBE.md`
+  - requirement framing: full MS-VBAL scope includes module/project semantics; forms/UI host integration remains deferred-by-phase, not out-of-scope.
 - Hardened remote deferred Kani runner scheduling:
   - `scripts/run-formal-kani-remote.ps1` now supports timeout retry queue controls:
     - `-ObligationTimeoutRetries`

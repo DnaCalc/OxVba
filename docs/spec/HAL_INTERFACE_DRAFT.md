@@ -133,7 +133,7 @@ Responsibilities:
 Responsibilities:
 - `CreateObject`, dispatch invocation pathways, and object-handle lifecycle integration.
 - Windows profile: real COM bridge.
-- Non-Windows profiles: supported only where adapter semantics are explicitly defined and tested.
+- Non-Windows profiles: explicitly unsupported in current baseline; deterministic unsupported errors are required.
 
 ### 5.6 TimeLocale HAL
 

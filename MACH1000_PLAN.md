@@ -99,9 +99,16 @@ For OxVBA specifically, "Excel behavior" extends to "VBA runtime behavior in Off
 
 - **[MS-VBAL]** — VBA Language Specification (Microsoft Open Specifications). The primary north-star reference for language semantics.
 - **[MS-OAUT]** — OLE Automation Protocol. Governs COM Automation, IDispatch, Variant, SAFEARRAY, and type library semantics.
+- **[MS-OVBA]** — Office VBA file format specification. Governs project/module storage structure in Office documents.
+- **[MS-DTYP]** — Windows data types specification used by Automation and VBA-adjacent ABI contracts.
 - **[MS-COM]** — Component Object Model Plus (COM+) Protocol. Underlying object model.
 - **VBA 7.0** (Office 2010) and **VBA 7.1** (Office 2013+) as the target runtime versions.
 - DNA Calc Foundation Charter, Operations, and Architecture documents for methodology and doctrine.
+- Foundation reference doctrine and mirror index:
+  - `../Foundation/REFERENCE_SPEC_FORMAT_AND_CONFORMANCE.md`
+  - `../Foundation/reference/spec_seeds.csv`
+  - `../Foundation/reference/index.csv`
+  - `../Foundation/reference/runs/*/outputs/conformance_items.jsonl`
 - **Knuth, TAOCP Fascicle 1** — Broadword algorithms and MMIX architecture (public research).
 - **MLIR: Multi-Level Intermediate Representation** (Lattner et al.) — Progressive lowering methodology (public research; we implement the concepts in Rust, not the C++ framework).
 
@@ -689,6 +696,11 @@ The [MS-VBAL] specification defines:
 - Project structure: standard modules, class modules, document modules, form modules.
 - Conditional compilation (Section 3.4): `#If`, `#Const`, predefined constants.
 
+Implementation requirement clarification:
+- OxVBA targets full MS-VBAL scope coverage, including project/module semantics (module naming, visibility, qualification, module/class/document/form categories, and project-level resolution rules).
+- Forms/UI-host integration may be deferred by explicit phase policy, but these features remain required scope (not removed scope).
+- Normative source material and extracted conformance candidates come from `../Foundation/reference` (see `docs/FOUNDATION_SPEC_REFERENCE.md`), not locally vendored spec snapshots.
+
 Key complexity areas identified:
 - The coercion rules (Section 2.1.3) are extensive and have many special cases.
 - `ByRef` semantics interact with default properties and type coercion in subtle ways.
@@ -864,20 +876,24 @@ Bytecode modules are serialized using `rkyv` (zero-copy deserialization):
 
 HAL design note (current stage):
 - Platform-sensitive behavior is being consolidated into a dedicated Host Abstraction Layer design track.
-- The initial draft set is in:
+- The current HAL draft/spec set is in:
   - `docs/spec/HAL_DESIGN_DRAFT.md`
   - `docs/spec/HAL_INTERFACE_DRAFT.md`
   - `docs/spec/HAL_CONFORMANCE_DRAFT.md`
   - `docs/spec/HAL_PROFILE_MATRIX_DRAFT.md`
-- The draft model uses five explicit profiles (`windows`, `linux`, `macos`, `wasm`, `null`) and tracks both capability support and capability maturity.
+  - `docs/spec/HAL_SPEC_WORKING_DRAFT.md`
+  - `docs/spec/HAL_SPEC_CROSSWALK.md`
+  - `docs/spec/HAL_CONFORMANCE_SUITE.md`
+- The model uses five explicit profiles (`windows`, `linux`, `macos`, `wasm`, `null`) and tracks both capability support and capability maturity.
+- Current implementation decision: COM activation/dispatch is supported on Windows and explicitly unsupported on non-Windows profiles.
 
 | Feature | Windows | Linux / macOS |
 |---|---|---|
 | VBA language core | Full | Full |
 | Built-in functions (VBA.*) | Full | Full |
 | Built-in objects (Collection, Dictionary, etc.) | Full | Full |
-| COM object creation (CreateObject) | Real COM | Error or mock layer |
-| Type library binding (early binding) | Full (via type libraries) | Stub / portable type info |
+| COM object creation (CreateObject) | HAL capability supported | Explicitly unsupported (deterministic error) |
+| Type library binding (early binding) | Full (via type libraries) | Deferred |
 | Declare (DLL calls) | Full (LoadLibrary) | dlopen equivalent (best-effort) |
 | Host-provided objects | Via COM hosting API | Via Rust hosting trait |
 | Forms runtime (UserForm) | Native (via COM controls) | Portable rendering (future) |
@@ -1068,7 +1084,10 @@ OxVba/
 │   │   ├── HAL_DESIGN_DRAFT.md         # HAL scope/principles/profile plan
 │   │   ├── HAL_INTERFACE_DRAFT.md      # HAL contracts + capability/maturity model
 │   │   ├── HAL_CONFORMANCE_DRAFT.md    # HAL conformance model and gates
-│   │   └── HAL_PROFILE_MATRIX_DRAFT.md # Per-profile capability planning matrix
+│   │   ├── HAL_PROFILE_MATRIX_DRAFT.md # Per-profile capability planning matrix
+│   │   ├── HAL_SPEC_WORKING_DRAFT.md   # Implementation-linked HAL contract and policy semantics
+│   │   ├── HAL_SPEC_CROSSWALK.md       # HAL-to-Foundation spec anchor mapping
+│   │   └── HAL_CONFORMANCE_SUITE.md    # Runnable HAL conformance lanes and artifact model
 │   ├── VARIANT_DESIGN.md               # VARIANT layout and optional internal-repr optimization notes
 │   ├── COM_ABSTRACTION.md              # COM layer design
 │   ├── BYTECODE_FORMAT.md              # Register bytecode instruction set reference

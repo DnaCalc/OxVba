@@ -1,4 +1,12 @@
+use std::sync::Arc;
+
 use oxvba_compiler::{Bytecode, Instruction, bytecode::StringCompareMode};
+use oxvba_hal::{
+    adapters,
+    error::{HalError, HalErrorKind},
+    model::{CapabilityId, HalProfileId, HostPolicy},
+    traits::HostServices,
+};
 use oxvba_runtime::safe_array::{
     array_len_from_tag, is_array_tag as runtime_is_array_tag, marshal_dispatch_argument,
 };
@@ -8,9 +16,9 @@ use oxvba_runtime::value_tags::{
 
 use crate::register_file::RegisterFile;
 
-#[derive(Debug)]
 pub struct Vm {
     registers: RegisterFile,
+    host_services: Arc<dyn HostServices>,
     call_stack: Vec<usize>,
     on_error_resume_next: bool,
     on_error_goto_label_target: Option<usize>,
@@ -24,10 +32,21 @@ const FIN_DERIVATIVE_STEP: f64 = 1e-7;
 const FIN_RATE_ERROR_CODE: i32 = 2001;
 const FIN_NPER_ERROR_CODE: i32 = 2002;
 
+fn default_host_services() -> Arc<dyn HostServices> {
+    adapters::for_profile(HalProfileId::Windows, HostPolicy::deterministic_runtime())
+}
+
 impl Default for Vm {
     fn default() -> Self {
+        Self::new(default_host_services())
+    }
+}
+
+impl Vm {
+    pub fn new(host_services: Arc<dyn HostServices>) -> Self {
         Self {
             registers: RegisterFile::with_capacity(256),
+            host_services,
             call_stack: Vec::new(),
             on_error_resume_next: false,
             on_error_goto_label_target: None,
@@ -35,12 +54,56 @@ impl Default for Vm {
             last_error_pc: None,
         }
     }
-}
 
-impl Vm {
     fn clear_error_state(&mut self) {
         self.last_error = 0;
         self.last_error_pc = None;
+    }
+
+    fn route_runtime_error(
+        &mut self,
+        pc: usize,
+        code: i32,
+        detail: Option<&str>,
+    ) -> Result<usize, String> {
+        self.last_error = code;
+        self.last_error_pc = Some(pc);
+        if self.on_error_resume_next {
+            return Ok(pc + 1);
+        }
+        if let Some(target_pc) = self.on_error_goto_label_target {
+            return Ok(target_pc);
+        }
+        match detail {
+            Some(detail) => Err(format!("runtime error: {code} ({detail})")),
+            None => Err(format!("runtime error: {code}")),
+        }
+    }
+
+    fn route_host_error(&mut self, pc: usize, err: HalError) -> Result<usize, String> {
+        let code = Self::hal_error_code(err.kind, err.capability);
+        let detail = format!("{} [{}] {}", err.stable_code, err.operation, err.message);
+        self.route_runtime_error(pc, code, Some(detail.as_str()))
+    }
+
+    fn hal_error_code(kind: HalErrorKind, capability: CapabilityId) -> i32 {
+        let kind_code = match kind {
+            HalErrorKind::CapabilityUnavailable => 1,
+            HalErrorKind::PolicyDenied => 2,
+            HalErrorKind::AdapterFault => 3,
+            HalErrorKind::UnsupportedProfile => 4,
+        };
+        let capability_code = match capability {
+            CapabilityId::UiInteraction => 1,
+            CapabilityId::EventPump => 2,
+            CapabilityId::FileSystemIo => 3,
+            CapabilityId::ProcessEnv => 4,
+            CapabilityId::ComActivationDispatch => 5,
+            CapabilityId::TimeLocale => 6,
+            CapabilityId::DynamicLinking => 7,
+            CapabilityId::DiagnosticsTelemetry => 8,
+        };
+        53_000 + capability_code * 10 + kind_code
     }
 
     fn ensure_slot_count(&mut self, slot_count: usize) {
@@ -600,18 +663,33 @@ impl Vm {
                 }
                 Instruction::IntrinsicShellHost { dst, command } => {
                     let command = self.read_slot(*command)?;
-                    self.write_slot(*dst, if command == 0 { 0 } else { 1 })?;
-                    pc += 1;
+                    match self.host_services.process().shell(command, 0) {
+                        Ok(value) => {
+                            self.write_slot(*dst, value)?;
+                            pc += 1;
+                        }
+                        Err(err) => pc = self.route_host_error(pc, err)?,
+                    }
                 }
                 Instruction::IntrinsicEnvironHost { dst, key } => {
                     let key = self.read_slot(*key)?;
-                    self.write_slot(*dst, key)?;
-                    pc += 1;
+                    match self.host_services.process().environ(key) {
+                        Ok(value) => {
+                            self.write_slot(*dst, value)?;
+                            pc += 1;
+                        }
+                        Err(err) => pc = self.route_host_error(pc, err)?,
+                    }
                 }
                 Instruction::IntrinsicDirHost { dst, path } => {
                     let path = self.read_slot(*path)?;
-                    self.write_slot(*dst, if path == 0 { 0 } else { 1 })?;
-                    pc += 1;
+                    match self.host_services.process().dir(path, 0) {
+                        Ok(value) => {
+                            self.write_slot(*dst, value)?;
+                            pc += 1;
+                        }
+                        Err(err) => pc = self.route_host_error(pc, err)?,
+                    }
                 }
                 Instruction::IntrinsicCollectionAdd { dst, count, item } => {
                     let count = self.read_slot(*count)?;
@@ -643,8 +721,13 @@ impl Vm {
                 }
                 Instruction::IntrinsicCreateObjectHost { dst, prog_id } => {
                     let prog_id = self.read_slot(*prog_id)?;
-                    self.write_slot(*dst, 5_000 + prog_id)?;
-                    pc += 1;
+                    match self.host_services.com().create_object(prog_id) {
+                        Ok(value) => {
+                            self.write_slot(*dst, value)?;
+                            pc += 1;
+                        }
+                        Err(err) => pc = self.route_host_error(pc, err)?,
+                    }
                 }
                 Instruction::IntrinsicDispatchInvokeHost {
                     dst,
@@ -655,8 +738,17 @@ impl Vm {
                     let object = self.read_slot(*object)?;
                     let member = self.read_slot(*member)?;
                     let arg = marshal_dispatch_argument(self.read_slot(*arg)?);
-                    self.write_slot(*dst, object + member + arg)?;
-                    pc += 1;
+                    match self
+                        .host_services
+                        .com()
+                        .dispatch_invoke(object, member, arg)
+                    {
+                        Ok(value) => {
+                            self.write_slot(*dst, value)?;
+                            pc += 1;
+                        }
+                        Err(err) => pc = self.route_host_error(pc, err)?,
+                    }
                 }
                 Instruction::CmpEqSlots { dst, lhs, rhs } => {
                     if typed_fastpaths && self.fast_cmp_slots(*dst, *lhs, *rhs, |l, r| l == r) {
@@ -816,15 +908,7 @@ impl Vm {
                     pc = *target_pc;
                 }
                 Instruction::RaiseError { code } => {
-                    self.last_error = *code;
-                    self.last_error_pc = Some(pc);
-                    if self.on_error_resume_next {
-                        pc += 1;
-                    } else if let Some(target_pc) = self.on_error_goto_label_target {
-                        pc = target_pc;
-                    } else {
-                        return Err(format!("runtime error: {code}"));
-                    }
+                    pc = self.route_runtime_error(pc, *code, None)?;
                 }
                 Instruction::ClearErr => {
                     self.clear_error_state();

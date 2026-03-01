@@ -1,7 +1,13 @@
-use oxvba_compiler::compile;
+use std::{collections::HashMap, sync::Arc};
+
+use oxvba_compiler::{Bytecode, Instruction, compile};
+use oxvba_hal::{
+    adapters,
+    model::{CapabilityId, HalDescriptor, HalProfileId, HostPolicy, UnsupportedFeatureMode},
+    traits::HostServices,
+};
 use oxvba_jit::JitEngine;
-use oxvba_vm::execute_and_snapshot;
-use std::collections::HashMap;
+use oxvba_vm::execute_and_snapshot_with_host;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DiagnosticPhase {
@@ -57,11 +63,17 @@ pub struct HostConfig {
     pub root_object_name: Option<String>,
 }
 
-#[derive(Debug, Default)]
 pub struct Engine {
     config: HostConfig,
     jit: JitEngine,
     root_objects: HashMap<String, String>,
+    host_services: Arc<dyn HostServices>,
+}
+
+impl Default for Engine {
+    fn default() -> Self {
+        Self::new(HostConfig::default())
+    }
 }
 
 impl Engine {
@@ -70,7 +82,40 @@ impl Engine {
             config,
             jit: JitEngine,
             root_objects: HashMap::new(),
+            host_services: adapters::for_profile(
+                HalProfileId::Windows,
+                HostPolicy::deterministic_runtime(),
+            ),
         }
+    }
+
+    pub fn set_hal_profile(&mut self, profile: HalProfileId) {
+        let policy = self.host_services.policy().clone();
+        self.host_services = adapters::for_profile(profile, policy);
+    }
+
+    pub fn with_hal_profile(mut self, profile: HalProfileId) -> Self {
+        self.set_hal_profile(profile);
+        self
+    }
+
+    pub fn set_host_policy(&mut self, policy: HostPolicy) {
+        let profile = self.host_services.profile();
+        self.host_services = adapters::for_profile(profile, policy);
+    }
+
+    pub fn set_unsupported_feature_mode(&mut self, mode: UnsupportedFeatureMode) {
+        let mut policy = self.host_services.policy().clone();
+        policy.unsupported_feature_mode = mode;
+        self.set_host_policy(policy);
+    }
+
+    pub fn host_policy(&self) -> &HostPolicy {
+        self.host_services.policy()
+    }
+
+    pub fn hal_descriptor(&self) -> HalDescriptor {
+        self.host_services.descriptor()
     }
 
     pub fn register_root_object(&mut self, name: impl Into<String>, type_name: impl Into<String>) {
@@ -96,23 +141,100 @@ impl Engine {
         source: &str,
     ) -> Result<Vec<i32>, PhaseDiagnostic> {
         let bytecode = compile(source).map_err(|e| PhaseDiagnostic::compile(e.to_string()))?;
+        self.preflight_host_sensitive_support(&bytecode)?;
         if self.config.enable_jit {
             self.jit
                 .compile_function("main")
                 .map_err(|e| PhaseDiagnostic::runtime(e.to_string()))?;
             return self
                 .jit
-                .execute_and_snapshot(&bytecode)
+                .execute_and_snapshot_with_host(&bytecode, self.host_services.clone())
                 .map_err(|e| PhaseDiagnostic::runtime(e.to_string()));
         }
 
-        execute_and_snapshot(&bytecode).map_err(PhaseDiagnostic::runtime)
+        execute_and_snapshot_with_host(&bytecode, self.host_services.clone())
+            .map_err(PhaseDiagnostic::runtime)
+    }
+
+    fn preflight_host_sensitive_support(&self, bytecode: &Bytecode) -> Result<(), PhaseDiagnostic> {
+        if self.host_services.policy().unsupported_feature_mode
+            != UnsupportedFeatureMode::CompileTime
+        {
+            return Ok(());
+        }
+
+        let descriptor = self.host_services.descriptor();
+        let policy = self.host_services.policy();
+        let mut issues = Vec::new();
+        let mut seen = std::collections::BTreeSet::new();
+
+        for instruction in &bytecode.instructions {
+            let Some((intrinsic_name, capability)) = hal_requirement(instruction) else {
+                continue;
+            };
+            if !descriptor.supports(capability) {
+                let key = format!(
+                    "{intrinsic_name}: missing capability {:?} on profile {:?}",
+                    capability, descriptor.profile
+                );
+                if seen.insert(key.clone()) {
+                    issues.push(key);
+                }
+            }
+            match instruction {
+                Instruction::IntrinsicShellHost { .. } if !policy.allow_process_spawn => {
+                    let key = format!(
+                        "{intrinsic_name}: blocked by host policy allow_process_spawn=false"
+                    );
+                    if seen.insert(key.clone()) {
+                        issues.push(key);
+                    }
+                }
+                Instruction::IntrinsicCreateObjectHost { .. }
+                | Instruction::IntrinsicDispatchInvokeHost { .. }
+                    if !policy.allow_com_activation =>
+                {
+                    let key = format!(
+                        "{intrinsic_name}: blocked by host policy allow_com_activation=false"
+                    );
+                    if seen.insert(key.clone()) {
+                        issues.push(key);
+                    }
+                }
+                _ => {}
+            }
+        }
+
+        if issues.is_empty() {
+            Ok(())
+        } else {
+            Err(PhaseDiagnostic::compile(format!(
+                "HAL compile-time gate rejected host-sensitive intrinsics: {}",
+                issues.join("; ")
+            )))
+        }
+    }
+}
+
+fn hal_requirement(instruction: &Instruction) -> Option<(&'static str, CapabilityId)> {
+    match instruction {
+        Instruction::IntrinsicShellHost { .. } => Some(("Shell", CapabilityId::ProcessEnv)),
+        Instruction::IntrinsicEnvironHost { .. } => Some(("Environ", CapabilityId::ProcessEnv)),
+        Instruction::IntrinsicDirHost { .. } => Some(("Dir", CapabilityId::ProcessEnv)),
+        Instruction::IntrinsicCreateObjectHost { .. } => {
+            Some(("CreateObject", CapabilityId::ComActivationDispatch))
+        }
+        Instruction::IntrinsicDispatchInvokeHost { .. } => {
+            Some(("DispatchInvoke", CapabilityId::ComActivationDispatch))
+        }
+        _ => None,
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::{DiagnosticPhase, Engine, HostConfig};
+    use oxvba_hal::model::{HalProfileId, HostPolicy, UnsupportedFeatureMode};
     use oxvba_runtime::value_tags::error_tag_from_code;
     use std::path::{Path, PathBuf};
 
@@ -3170,5 +3292,55 @@ mod tests {
     #[test]
     fn formal_v21_benchmark_script_exists() {
         assert!(repo_path("scripts/run-bench.ps1").exists());
+    }
+
+    #[test]
+    fn hal_windows_default_profile_exposes_com_capability() {
+        let engine = Engine::new(HostConfig::default());
+        let descriptor = engine.hal_descriptor();
+        assert_eq!(descriptor.profile, HalProfileId::Windows);
+        assert!(
+            descriptor.supports(oxvba_hal::model::CapabilityId::ComActivationDispatch),
+            "default engine profile should keep windows COM support available"
+        );
+    }
+
+    #[test]
+    fn hal_compile_time_mode_rejects_unsupported_linux_com_intrinsics() {
+        let mut engine = Engine::new(HostConfig::default()).with_hal_profile(HalProfileId::Linux);
+        engine.set_unsupported_feature_mode(UnsupportedFeatureMode::CompileTime);
+
+        let err = engine
+            .execute_source_with_snapshot_phased("Sub Main()\nDim x\nx = CreateObject(4)\nEnd Sub")
+            .expect_err("compile-time mode should reject unsupported COM capability");
+        assert_eq!(err.phase(), DiagnosticPhase::CompileTime);
+        assert!(err.message().contains("CreateObject"));
+        assert!(err.message().contains("missing capability"));
+    }
+
+    #[test]
+    fn hal_runtime_mode_surfaces_host_error_for_unsupported_linux_com_intrinsics() {
+        let mut engine = Engine::new(HostConfig::default()).with_hal_profile(HalProfileId::Linux);
+        engine.set_unsupported_feature_mode(UnsupportedFeatureMode::Runtime);
+
+        let err = engine
+            .execute_source_with_snapshot_phased("Sub Main()\nDim x\nx = CreateObject(4)\nEnd Sub")
+            .expect_err("runtime mode should defer unsupported COM to execution");
+        assert_eq!(err.phase(), DiagnosticPhase::Runtime);
+        assert!(err.message().contains("HAL-E-CAP-UNAVAILABLE"));
+    }
+
+    #[test]
+    fn hal_compile_time_mode_rejects_policy_denied_shell() {
+        let mut engine = Engine::new(HostConfig::default());
+        let mut policy = HostPolicy::deterministic_compile_time();
+        policy.allow_process_spawn = false;
+        engine.set_host_policy(policy);
+
+        let err = engine
+            .execute_source_with_snapshot_phased("Sub Main()\nDim x\nx = Shell(1)\nEnd Sub")
+            .expect_err("compile-time mode should fail when shell policy is denied");
+        assert_eq!(err.phase(), DiagnosticPhase::CompileTime);
+        assert!(err.message().contains("allow_process_spawn=false"));
     }
 }

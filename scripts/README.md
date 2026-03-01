@@ -4,6 +4,7 @@
 - `docs-check.ps1`: verifies required top-level docs exist.
 - `run-smoke.ps1`: executes the smoke VBA sample through the CLI.
 - `run-conformance.ps1`: runs MVP conformance corpus and checks against golden expectations.
+- `run-hal-conformance.ps1`: runs HAL adapter contract tests and emits profile/lane conformance artifacts under `docs/evidence/hal`.
 - `run-matrix.ps1`: executes required matrix cells for the declared ladder profile and writes gate artifacts.
 - `run-formal.ps1`: runs manifest-driven formal obligations in non-blocking mode and writes markdown/csv reports.
 - `run-profile-gate.ps1`: runs formal + matrix + bench lanes and emits an integrated gate report for a profile scope.
@@ -17,5 +18,4 @@
 - `validate-divergences.ps1`: validates structural fields required in divergence records.
 - `validate-language-coverage.ps1`: validates language coverage index structure/status vocabulary and duplicate keys.
 - `validate-intrinsic-surface.ps1`: validates intrinsic surface classification coverage and host-sensitive partition.
-- `fetch-spec-sources.ps1`: snapshots primary canonical language/runtime source pages into `docs/spec/sources/local/` with manifest checksums.
 - `build-non-hal-gap-baseline.ps1`: generates `v147` non-HAL baseline artifacts from coverage/library/spec checklist partial/planned rows.

@@ -15,12 +15,17 @@
 | Bytecode Format | [`BYTECODE_FORMAT.md`](BYTECODE_FORMAT.md) | Bytecode representation status and planned evolution. |
 | VM Architecture | [`VM_ARCHITECTURE.md`](VM_ARCHITECTURE.md) | VM implementation status and next milestones. |
 | Conformance | [`CONFORMANCE.md`](CONFORMANCE.md) | Conformance assets, commands, and comparison policy. |
+| Foundation Spec Reference | [`FOUNDATION_SPEC_REFERENCE.md`](FOUNDATION_SPEC_REFERENCE.md) | Canonical external specification source map in `../Foundation/reference` (no local vendored VBA spec snapshots). |
 | Spec Drafts Index | [`spec/README.md`](spec/README.md) | Early-stage design/contract drafts that prepare future normative specs. |
 | HAL Design Draft | [`spec/HAL_DESIGN_DRAFT.md`](spec/HAL_DESIGN_DRAFT.md) | Host Abstraction Layer scope, principles, profile targets, and staged spec-run plan. |
 | HAL Interface Draft | [`spec/HAL_INTERFACE_DRAFT.md`](spec/HAL_INTERFACE_DRAFT.md) | Proposed HAL contracts, capability descriptors, maturity levels, and policy gates. |
 | HAL Conformance Draft | [`spec/HAL_CONFORMANCE_DRAFT.md`](spec/HAL_CONFORMANCE_DRAFT.md) | Proposed HAL conformance levels, test obligations, and evidence model. |
 | HAL Profile Matrix Draft | [`spec/HAL_PROFILE_MATRIX_DRAFT.md`](spec/HAL_PROFILE_MATRIX_DRAFT.md) | Initial five-profile (Windows/Linux/macOS/WASM/Null) capability+maturity planning matrix. |
-| Spec Source Sets | [`spec/sources/README.md`](spec/sources/README.md) | Local source manifests for language/runtime specification references. |
+| HAL Spec Working Draft | [`spec/HAL_SPEC_WORKING_DRAFT.md`](spec/HAL_SPEC_WORKING_DRAFT.md) | Implementation-linked HAL contract, deterministic error model, unsupported-mode semantics, and current Windows-only COM scope decision. |
+| HAL Spec Crosswalk | [`spec/HAL_SPEC_CROSSWALK.md`](spec/HAL_SPEC_CROSSWALK.md) | Capability/intrinsic mapping to Foundation conformance anchors and extraction-quality gaps. |
+| HAL Conformance Suite | [`spec/HAL_CONFORMANCE_SUITE.md`](spec/HAL_CONFORMANCE_SUITE.md) | Runnable HAL verification lanes, artifact outputs, and profile expectations. |
+| HAL Evidence Artifacts | [`evidence/hal/README.md`](evidence/hal/README.md) | Generated HAL conformance result bundles (`md` + `jsonl`) and lane semantics. |
+| MS-VBAL Module/Project Requirements | [`evidence/language/MS_VBAL_MODULE_PROJECT_REQUIREMENTS.md`](evidence/language/MS_VBAL_MODULE_PROJECT_REQUIREMENTS.md) | Full-scope module/project backlog for MS-VBAL closure beyond current single-source execution model. |
 | Diagnostic Taxonomy | [`DIAGNOSTIC_TAXONOMY.md`](DIAGNOSTIC_TAXONOMY.md) | Consolidated user-facing compiler/typecheck diagnostic categories and message mapping. |
 | Profile v2 Status | [`PROFILE_STATUS_V2.md`](profile-status/PROFILE_STATUS_V2.md) | Current gate status contract for `mvp-controlflow-v2`. |
 | Profile v3 Status | [`PROFILE_STATUS_V3.md`](profile-status/PROFILE_STATUS_V3.md) | Current gate status contract for `mvp-formal-foundation-v3`. |

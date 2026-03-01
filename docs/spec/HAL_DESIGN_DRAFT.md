@@ -20,7 +20,7 @@ This is intentionally not a final normative spec. It is a design-run scaffold th
 
 OxVba must support:
 - Windows (full COM and native host integration paths).
-- Linux and macOS (portable host pathways with partial/optional COM-like services).
+- Linux and macOS (portable host pathways; COM activation/dispatch is explicitly unsupported in current baseline).
 - WASM sandbox (highly constrained host surface).
 - Null HAL (deterministic no-host baseline and failure-shape oracle).
 
@@ -80,7 +80,7 @@ Rationale for Linux/macOS split:
 5. `com_activation_dispatch`:
 - `CreateObject`, dispatch invocation and late-bound pathways
 - Windows: real COM
-- Non-Windows: capability-gated adapter or deterministic unsupported result
+- Non-Windows: deterministic unsupported result in current baseline
 
 6. `time_locale`:
 - Date/time, locale-sensitive formatting/parsing hooks where host influence exists
@@ -129,7 +129,7 @@ Detailed structure is specified in [`HAL_CONFORMANCE_DRAFT.md`](HAL_CONFORMANCE_
 
 ## 9. Open Design Questions
 
-1. How far should non-Windows COM-like pathways go before clearly returning unsupported?
+1. What are the acceptance criteria for eventually enabling non-Windows COM-like pathways (if ever), versus retaining explicit unsupported behavior?
 2. Should `DoEvents` have a strict minimum scheduling contract across all profiles?
 3. What is the minimum viable WASM host surface for language/library parity claims?
 4. Which host-sensitive built-ins can be guaranteed deterministic on all profiles?

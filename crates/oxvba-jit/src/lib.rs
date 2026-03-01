@@ -2,8 +2,15 @@
 
 pub mod cranelift;
 
+use std::sync::Arc;
+
 use oxvba_compiler::Bytecode;
-use oxvba_vm::execute_and_snapshot;
+use oxvba_hal::{
+    adapters,
+    model::{HalProfileId, HostPolicy},
+    traits::HostServices,
+};
+use oxvba_vm::execute_and_snapshot_with_host;
 use thiserror::Error;
 
 #[derive(Debug, Error)]
@@ -21,11 +28,23 @@ impl JitEngine {
     }
 
     pub fn execute_and_snapshot(&self, bytecode: &Bytecode) -> Result<Vec<i32>, JitError> {
+        self.execute_and_snapshot_with_host(bytecode, default_host_services())
+    }
+
+    pub fn execute_and_snapshot_with_host(
+        &self,
+        bytecode: &Bytecode,
+        host_services: Arc<dyn HostServices>,
+    ) -> Result<Vec<i32>, JitError> {
         if cranelift::supports_bytecode(bytecode) {
             return cranelift::execute_bytecode(bytecode).map_err(JitError::Execution);
         }
-        execute_and_snapshot(bytecode).map_err(JitError::Execution)
+        execute_and_snapshot_with_host(bytecode, host_services).map_err(JitError::Execution)
     }
+}
+
+fn default_host_services() -> Arc<dyn HostServices> {
+    adapters::for_profile(HalProfileId::Windows, HostPolicy::deterministic_runtime())
 }
 
 #[cfg(test)]
