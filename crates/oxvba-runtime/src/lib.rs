@@ -7,6 +7,7 @@ pub mod builtins;
 pub mod coerce;
 pub mod decimal;
 pub mod safe_array;
+pub mod value_tags;
 pub mod variant;
 
 pub use variant::{VarType, Variant};

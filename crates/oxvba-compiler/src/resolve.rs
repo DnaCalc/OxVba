@@ -2729,7 +2729,14 @@ fn parse_intrinsic_conversion_expr(expr: &str, array_bounds: &ArrayBoundsMap) ->
     ) {
         return None;
     }
-    parse_expr(expr[open + 1..close].trim(), array_bounds)
+    let inner = parse_expr(expr[open + 1..close].trim(), array_bounds)?;
+    if name == "cverr" {
+        return Some(BoundExpr::IntrinsicCall {
+            name,
+            args: vec![inner],
+        });
+    }
+    Some(inner)
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -3813,6 +3820,19 @@ mod tests {
             panic!("expected assignment");
         };
         assert_eq!(expr, &BoundExpr::IntConst(7));
+    }
+
+    #[test]
+    fn resolve_cverr_preserves_intrinsic_call_node() {
+        let source = "Sub Main()\nDim x\nx = CVErr(7)\nEnd Sub";
+        let module = resolve_symbols(source);
+        let Some(BoundStmt::Assign { expr, .. }) = module.body.first() else {
+            panic!("expected assignment");
+        };
+        assert!(matches!(
+            expr,
+            BoundExpr::IntrinsicCall { name, args } if name == "cverr" && args == &vec![BoundExpr::IntConst(7)]
+        ));
     }
 
     #[test]

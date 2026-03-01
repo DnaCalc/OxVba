@@ -5,6 +5,6 @@ Dim c
 Dim d
 a = IsEmpty(0)
 b = IsNull(-1)
-c = IsError(-7)
+c = IsError(CVErr(7))
 d = TypeOfIs(5, 5)
 End Sub

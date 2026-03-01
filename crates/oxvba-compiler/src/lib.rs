@@ -39,6 +39,7 @@ pub fn compile(source: &str) -> Result<Bytecode, CompileError> {
 mod tests {
     use super::{Instruction, compile};
     use crate::bytecode::StringCompareMode;
+    use oxvba_runtime::value_tags::ERROR_TAG_BASE;
 
     #[test]
     fn compile_simple_module() {
@@ -367,6 +368,21 @@ mod tests {
             "Sub Main()\nCall Use(vbNullString)\nEnd Sub\nSub Use(ByVal x As Long)\nEnd Sub";
         let err = compile(source).expect_err("vbNullString should not pass to numeric parameter");
         assert!(err.to_string().contains("argument type mismatch"));
+    }
+
+    #[test]
+    fn compile_cverr_emits_error_tag_encoding_sequence() {
+        let source = "Sub Main()\nDim x\nx = CVErr(7)\nEnd Sub";
+        let out = compile(source).expect("compile should succeed");
+        assert!(
+            out.instructions
+                .iter()
+                .any(|i| matches!(i, Instruction::IntrinsicAbsI32 { .. }))
+        );
+        assert!(out.instructions.iter().any(|i| matches!(
+            i,
+            Instruction::AddConstI32 { value, .. } if *value == ERROR_TAG_BASE
+        )));
     }
 
     #[test]

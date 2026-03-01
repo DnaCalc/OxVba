@@ -25,7 +25,11 @@ Objective:
 - Strengthen UDT copy/assignment/value-initialization behavior beyond flattened alias baseline where implementable without host interop.
 - `v152` adds deterministic whole-UDT assignment lowering into field-alias copies; deeper initialization/order parity remains open.
 
-5. Diagnostics and phase timing consistency:
+5. Null/Empty/Error coercion normalization:
+- Distinguish deterministic sentinel/tag behavior for `Empty`, `Null`, and `CVErr`-encoded errors.
+- `v153` introduces explicit error-tag encoding plus normalized `IsError`/`IsNumeric`/`VarType` handling; full propagation parity remains oracle-dependent.
+
+6. Diagnostics and phase timing consistency:
 - Stabilize compile-time vs runtime error timing for non-HAL language/runtime constructs.
 - Ensure diagnostic IDs and category mapping remain stable.
 

@@ -58,6 +58,7 @@ impl Engine {
 #[cfg(test)]
 mod tests {
     use super::{Engine, HostConfig};
+    use oxvba_runtime::value_tags::error_tag_from_code;
     use std::path::{Path, PathBuf};
 
     fn workspace_root() -> PathBuf {
@@ -849,13 +850,13 @@ mod tests {
     }
 
     #[test]
-    fn formal_v51_cverr_identity_subset() {
+    fn formal_v51_cverr_error_tag_subset() {
         let engine = Engine::new(HostConfig::default());
         let source = "Sub Main()\nDim x\nx = CVErr(17)\nEnd Sub";
         let snapshot = engine
             .execute_source_with_snapshot(source)
             .expect("execution should succeed");
-        assert_eq!(snapshot, vec![17]);
+        assert_eq!(snapshot, vec![error_tag_from_code(17)]);
     }
 
     #[test]
@@ -2151,7 +2152,7 @@ mod tests {
 
     #[test]
     fn formal_v126_introspection_and_typeof_subset_executes() {
-        let source = "Sub Main()\nDim a\nDim b\nDim c\nDim d\nIf TypeOf 5 Is 5 Then\nd = 1\nElse\nd = 0\nEnd If\na = IsEmpty(0)\nb = IsNull(-1)\nc = IsError(-9)\nEnd Sub";
+        let source = "Sub Main()\nDim a\nDim b\nDim c\nDim d\nIf TypeOf 5 Is 5 Then\nd = 1\nElse\nd = 0\nEnd If\na = IsEmpty(0)\nb = IsNull(-1)\nc = IsError(CVErr(9))\nEnd Sub";
         let out = Engine::new(HostConfig {
             enable_jit: false,
             root_object_name: None,
@@ -2159,6 +2160,28 @@ mod tests {
         .execute_source_with_snapshot(source)
         .expect("execution should succeed");
         assert_eq!(out, vec![1, 1, 1, 1]);
+    }
+
+    #[test]
+    fn formal_v153_null_empty_error_predicates_are_distinct() {
+        let source = "Sub Main()\nDim a\nDim b\nDim c\nDim d\nDim e\na = IsEmpty(Empty)\nb = IsNull(Null)\nc = IsError(CVErr(7))\nd = IsError(Null)\ne = IsNumeric(CVErr(7))\nEnd Sub";
+        let out = Engine::new(HostConfig {
+            enable_jit: false,
+            root_object_name: None,
+        })
+        .execute_source_with_snapshot(source)
+        .expect("execution should succeed");
+        assert_eq!(out, vec![1, 1, 1, 0, 0]);
+    }
+
+    #[test]
+    fn formal_v153_conformance_fixture_exists() {
+        assert!(repo_path("conformance/tests/coercion_null_empty_error_predicates.bas").exists());
+    }
+
+    #[test]
+    fn formal_v153_profile_status_document_exists() {
+        assert!(repo_path("docs/profile-status/PROFILE_STATUS_V153.md").exists());
     }
 
     #[test]

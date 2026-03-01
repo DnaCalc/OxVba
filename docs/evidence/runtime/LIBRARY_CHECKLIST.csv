@@ -1,11 +1,11 @@
 library_family,function_or_surface,status,phase_scope,evidence,notes
-conversion-core,"CInt/CLng/CDbl/CStr/CBool/CDate/Val/Str/CVErr",implemented,v45-v51,docs/evidence/language/COVERAGE_INDEX.csv,current coercion/domain subset
+conversion-core,"CInt/CLng/CDbl/CStr/CBool/CDate/Val/Str/CVErr",implemented,v45-v153,docs/evidence/language/COVERAGE_INDEX.csv,current coercion/domain subset with deterministic `CVErr` error-tag encoding
 string-core,"Len/Left/Right/Mid/InStr/LCase/UCase",implemented,v46,docs/evidence/runtime/INTRINSIC_SURFACE.csv,deterministic digit/string projection subset
 string-advanced,"Split/Join/Replace/Trim/LTrim/RTrim/StrComp/Like/InStrRev",implemented,v47-v150,docs/evidence/runtime/INTRINSIC_SURFACE.csv,deterministic subset with Join mapping array tags to element count in current model
 date-time-core,"DateSerial/TimeSerial/DateValue/TimeValue/DateAdd/DateDiff",implemented,v48,docs/evidence/runtime/INTRINSIC_SURFACE.csv,deterministic numeric projection subset
 math-financial-core,"Abs/Int/Fix/Sgn/Round/Sqr/Sin/Cos/Log/Exp/FV/PV/PMT",implemented,v49,docs/evidence/runtime/INTRINSIC_SURFACE.csv,integer/zero-rate subset
-array-type-introspection,"Array/LBound/UBound/IsArray/VarType/TypeName/IsNumeric/IsDate/IsObject",implemented,v50,docs/evidence/runtime/INTRINSIC_SURFACE.csv,tag/bounds subset
-error-surface,"Err.Raise + CVErr pathways",implemented,v51-v149,docs/evidence/language/COVERAGE_INDEX.csv,Err model expanded with member-read subset and deterministic lifecycle clears on Resume/procedure boundaries; full VBA lifecycle parity remains deferred
+array-type-introspection,"Array/LBound/UBound/IsArray/VarType/TypeName/IsNumeric/IsDate/IsObject",implemented,v50-v153,docs/evidence/runtime/INTRINSIC_SURFACE.csv,tag/bounds subset with distinct Empty/Null/Error predicate typing in deterministic model
+error-surface,"Err.Raise + CVErr pathways",implemented,v51-v153,docs/evidence/language/COVERAGE_INDEX.csv,Err model expanded with member-read subset and deterministic lifecycle clears on Resume/procedure boundaries; `CVErr` now maps to reserved error-tag range
 collection-subset,"CollectionAdd/CollectionItem/CollectionRemove/CollectionCount",implemented,v53,docs/evidence/runtime/INTRINSIC_SURFACE.csv,deterministic collection model subset
 host-sensitive-core,"Shell/Environ/Dir",partial,v52,docs/evidence/runtime/INTRINSIC_SURFACE.csv,host capability fallback subset
 com-dispatch-bridge,"CreateObject/DispatchInvoke",partial,v55-v84,docs/evidence/runtime/INTRINSIC_SURFACE.csv,deterministic projection subset
@@ -14,7 +14,7 @@ date-time-expansion,"Date/Time/Now/Timer/Year/Month/Day/Weekday/MonthName",imple
 numeric-conversion-expansion,"CSng/CByte/CCur/CDec/Hex/Oct/Atn/Tan",implemented,v120-v131,conformance/tests/conversion_extended_scalar_subset.bas,conversion identity projection plus numeric extension subset
 random-expansion,"Rnd/Randomize",implemented,v130,conformance/tests/stdlib_random_financial_expansion.bas,deterministic non-host random projection subset
 financial-expansion,"NPV/IRR/MIRR/Rate/NPer and related",partial,v132,conformance/tests/stdlib_random_financial_expansion.bas,deterministic projection subset without full parity/tolerance model
-info-introspection-expansion,"IsEmpty/IsNull/IsError/TypeOf...Is",implemented,v126,conformance/tests/stdlib_introspection_expansion.bas,sentinel/equality predicate subset
+info-introspection-expansion,"IsEmpty/IsNull/IsError/TypeOf...Is",implemented,v126-v153,conformance/tests/coercion_null_empty_error_predicates.bas,sentinel/equality predicate subset with explicit Empty/Null/Error tag distinctions
 file-io-library,"Open/Close/Input/Line Input/Print#/Write#/EOF/LOF/Seek/FreeFile",partial,v134,conformance/tests/stdlib_file_stub_intrinsics.bas,read/write statements pending; expression-level stub subset for FreeFile/EOF/LOF/Seek
 ui-interaction,"MsgBox/InputBox",planned,v87,,
 external-automation-libraries,"Rich COM automation libraries beyond deterministic bridge",planned,v87,,

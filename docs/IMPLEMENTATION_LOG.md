@@ -1,6 +1,33 @@
 # Implementation Log
 
 ## 2026-03-01
+- Completed `v153` (`mvp-profile-v153`) coercion edge normalization for `Null`/`Empty`/`Error` paths:
+  - added shared runtime value-tag helpers:
+    - `crates/oxvba-runtime/src/value_tags.rs`
+    - deterministic constants/functions for `EMPTY_TAG`, `NULL_TAG`, and `CVErr`-derived error-tag encoding/range checks;
+  - preserved `CVErr(...)` as explicit intrinsic in resolver (instead of collapsing to passthrough scalar expression);
+  - updated emitter lowering:
+    - `CVErr(x)` now lowers to deterministic error-tag encoding (`Abs` + error-tag base offset),
+    - `IsError` now checks reserved error-tag range instead of generic `value < 0`,
+    - `IsNull`/`IsEmpty` use explicit sentinel tags;
+  - updated VM introspection behavior:
+    - `VarType` now distinguishes `Empty` (`0`), `Null` (`1`), and Error (`10`) in deterministic tag model;
+    - `IsNumeric` now rejects `Empty`/`Null`/Error-tag values in current subset;
+  - refreshed conformance fixtures:
+    - added `conformance/tests/coercion_null_empty_error_predicates.bas`,
+    - updated `stdlib_introspection_expansion.bas` to use `IsError(CVErr(...))`,
+    - updated `CVErr` output expectations in `conformance/golden/smoke.csv`.
+- Validation lane for `v153` passed:
+  - `cargo fmt --all`
+  - `cargo test -p oxvba-runtime`
+  - `cargo test -p oxvba-compiler`
+  - `cargo test -p oxvba-vm`
+  - `cargo test -p oxvba-host`
+  - `./scripts/run-conformance.ps1 -Backend vm`
+  - `./scripts/run-conformance.ps1 -Backend jit`
+  - `./scripts/run-formal.ps1 -ProfileScope mvp-profile-v153`
+  - `./scripts/run-matrix.ps1 -ProfileScope mvp-profile-v153 -OutputDir docs/evidence/profiles/v153`
+  - `./scripts/meta-check.ps1 -Fast`
 - Completed `v152` (`mvp-profile-v152`) UDT/value semantics hardening:
   - added resolver detection for whole-UDT assignment (`b = a`) across flattened alias sets;
   - added a dedicated bound statement path:

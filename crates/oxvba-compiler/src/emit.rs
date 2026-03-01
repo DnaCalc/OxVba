@@ -1,6 +1,9 @@
 use std::collections::HashMap;
 
-use oxvba_runtime::safe_array::ARRAY_TAG_BASE;
+use oxvba_runtime::{
+    safe_array::ARRAY_TAG_BASE,
+    value_tags::{EMPTY_TAG, ERROR_TAG_BASE, ERROR_TAG_LIMIT, NULL_TAG},
+};
 
 use crate::{
     bytecode::{Bytecode, Instruction, StringCompareMode},
@@ -1182,8 +1185,16 @@ fn emit_expr_into(
             match (name.as_str(), arg_slots.as_slice()) {
                 ("vbnullstring", []) => instructions.push(Instruction::LoadConstI32 {
                     slot: dst,
-                    value: 0,
+                    value: EMPTY_TAG,
                 }),
+                ("cverr", [src]) => {
+                    instructions.push(Instruction::CopySlot { dst, src: *src });
+                    instructions.push(Instruction::IntrinsicAbsI32 { dst, src: dst });
+                    instructions.push(Instruction::AddConstI32 {
+                        slot: dst,
+                        value: ERROR_TAG_BASE,
+                    });
+                }
                 ("date", []) => instructions.push(Instruction::LoadConstI32 {
                     slot: dst,
                     value: 20_260_228,
@@ -1525,7 +1536,7 @@ fn emit_expr_into(
                     let zero = temps.alloc_temp();
                     instructions.push(Instruction::LoadConstI32 {
                         slot: zero,
-                        value: 0,
+                        value: EMPTY_TAG,
                     });
                     instructions.push(Instruction::CmpEqSlots {
                         dst,
@@ -1537,7 +1548,7 @@ fn emit_expr_into(
                     let null_slot = temps.alloc_temp();
                     instructions.push(Instruction::LoadConstI32 {
                         slot: null_slot,
-                        value: -1,
+                        value: NULL_TAG,
                     });
                     instructions.push(Instruction::CmpEqSlots {
                         dst,
@@ -1546,15 +1557,32 @@ fn emit_expr_into(
                     });
                 }
                 ("iserror", [src]) => {
-                    let zero = temps.alloc_temp();
+                    let base = temps.alloc_temp();
+                    let limit = temps.alloc_temp();
+                    let ge = temps.alloc_temp();
+                    let le = temps.alloc_temp();
                     instructions.push(Instruction::LoadConstI32 {
-                        slot: zero,
-                        value: 0,
+                        slot: base,
+                        value: ERROR_TAG_BASE,
                     });
-                    instructions.push(Instruction::CmpLtSlots {
-                        dst,
+                    instructions.push(Instruction::LoadConstI32 {
+                        slot: limit,
+                        value: ERROR_TAG_LIMIT,
+                    });
+                    instructions.push(Instruction::CmpGeSlots {
+                        dst: ge,
                         lhs: *src,
-                        rhs: zero,
+                        rhs: base,
+                    });
+                    instructions.push(Instruction::CmpLeSlots {
+                        dst: le,
+                        lhs: *src,
+                        rhs: limit,
+                    });
+                    instructions.push(Instruction::BoolAnd {
+                        dst,
+                        lhs: ge,
+                        rhs: le,
                     });
                 }
                 ("typeofis", [lhs, rhs]) => {

@@ -1,7 +1,7 @@
 # Formal Run Report
 
-- Timestamp (UTC): 2026-03-01T07:18:25Z
-- Profile scope: mvp-profile-v152
+- Timestamp (UTC): 2026-03-01T07:39:37Z
+- Profile scope: mvp-profile-v153
 - Overall mode: non-blocking
 - Kani required: false
 - Kani execution: deferred-to-wsl-async
@@ -153,7 +153,7 @@
 | FO-V50-002 | v50 | no | pass | cargo test -p oxvba-host formal_v50_variant_type_tag_subset | crates/oxvba-host/src/engine.rs |  |
 | FO-V50-003 | v50 | no | pass | cargo test -p oxvba-host formal_v50_numeric_date_object_predicates_subset | crates/oxvba-host/src/engine.rs |  |
 | FO-V51-001 | v51 | no | pass | cargo test -p oxvba-host formal_v51_err_raise_maps_to_runtime_error_state | crates/oxvba-host/src/engine.rs |  |
-| FO-V51-002 | v51 | no | pass | cargo test -p oxvba-host formal_v51_cverr_identity_subset | crates/oxvba-host/src/engine.rs |  |
+| FO-V51-002 | v51 | no | pass | cargo test -p oxvba-host formal_v51_cverr_error_tag_subset | crates/oxvba-host/src/engine.rs |  |
 | FO-V51-003 | v51 | no | pass | cargo test -p oxvba-host formal_v51_err_raise_without_handler_fails | crates/oxvba-host/src/engine.rs |  |
 | FO-V52-001 | v52 | no | pass | cargo test -p oxvba-host formal_v52_shell_environ_dir_host_subset | crates/oxvba-host/src/engine.rs |  |
 | FO-V52-002 | v52 | no | pass | cargo test -p oxvba-host formal_v52_host_sensitive_subset_is_jit_vm_equivalent | crates/oxvba-host/src/engine.rs |  |
@@ -284,3 +284,6 @@
 | FO-V152-001 | v152 | no | pass | cargo test -p oxvba-compiler compile_udt_whole_assignment_emits_field_copy_slots | crates/oxvba-compiler/src/lib.rs |  |
 | FO-V152-002 | v152 | no | pass | cargo test -p oxvba-host formal_v152_udt_whole_assignment_copies_fields | crates/oxvba-host/src/engine.rs |  |
 | FO-V152-003 | v152 | no | pass | cargo test -p oxvba-host formal_v152_profile_status_document_exists | docs/profile-status/PROFILE_STATUS_V152.md |  |
+| FO-V153-001 | v153 | no | pass | cargo test -p oxvba-host formal_v153_null_empty_error_predicates_are_distinct | crates/oxvba-host/src/engine.rs |  |
+| FO-V153-002 | v153 | no | pass | cargo test -p oxvba-host formal_v153_conformance_fixture_exists | conformance/tests/coercion_null_empty_error_predicates.bas |  |
+| FO-V153-003 | v153 | no | pass | cargo test -p oxvba-host formal_v153_profile_status_document_exists | docs/profile-status/PROFILE_STATUS_V153.md |  |

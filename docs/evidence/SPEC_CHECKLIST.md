@@ -55,7 +55,7 @@ Reference inventory: `docs/evidence/runtime/LIBRARY_CHECKLIST.csv`.
 
 | State | Library Family | Functions / Surface | Scope/Evidence | Notes |
 |---|---|---|---|---|
-| `[x]` | Conversions (core subset) | `CInt`, `CLng`, `CDbl`, `CStr`, `CBool`, `CDate`, `Val`, `Str`, `CVErr` | `COVERAGE_INDEX.csv` (`v45`, `v51`) | Current coercion/domain subset. |
+| `[x]` | Conversions (core subset) | `CInt`, `CLng`, `CDbl`, `CStr`, `CBool`, `CDate`, `Val`, `Str`, `CVErr` | `COVERAGE_INDEX.csv` (`v45`, `v51`, `v153`) | Current coercion/domain subset with deterministic `CVErr` error-tag encoding. |
 | `[x]` | String intrinsics (core/advanced subset) | `Len`, `Left`, `Right`, `Mid`, `InStr`, `InStrRev`, `LCase`, `UCase`, `Split`, `Join`, `Replace`, `Trim/LTrim/RTrim`, `StrComp`, `Like` | `INTRINSIC_SURFACE.csv` + conformance fixtures | Deterministic subset semantics; `Join` now maps array-tag inputs to element count in current runtime model (`string_join_array_tag_count.bas`). |
 | `[x]` | Date/time subset | `DateSerial`, `TimeSerial`, `DateValue`, `TimeValue`, `DateAdd`, `DateDiff` | `v48` evidence | Deterministic numeric projection subset. |
 | `[x]` | Math/financial subset | `Abs`, `Int`, `Fix`, `Sgn`, `Round`, `Sqr`, `Sin`, `Cos`, `Log`, `Exp`, `FV`, `PV`, `PMT` | `v49` evidence | Integer/zero-rate subset semantics. |
@@ -68,7 +68,7 @@ Reference inventory: `docs/evidence/runtime/LIBRARY_CHECKLIST.csv`.
 | `[x]` | Date/time expansion | `Date`, `Time`, `Now`, `Timer`, `Year/Month/Day`, `Weekday`, `MonthName` subset | `stdlib_datetime_expansion.bas` | Deterministic constant/date-part projection subset. |
 | `[x]` | Numeric/random expansion | `CSng`, `CByte`, `CCur`, `CDec`, `Hex`, `Oct`, `Atn`, `Tan`, `Rnd`, `Randomize` subset | `conversion_extended_scalar_subset.bas`, `stdlib_numeric_expansion.bas`, `stdlib_random_financial_expansion.bas` | Deterministic projection subset. |
 | `[~]` | Financial expansion | `NPV`, `IRR`, `MIRR`, `Rate`, `NPer`, and related suite | `stdlib_random_financial_expansion.bas` | Deterministic projection subset; full parity/tolerance model pending. |
-| `[x]` | Info/introspection expansion | `IsEmpty`, `IsNull`, `IsError`, `TypeOf ... Is` subset | `stdlib_introspection_expansion.bas`, `typeof_is_condition_basic.bas` | Sentinel/equality predicate subset. |
+| `[x]` | Info/introspection expansion | `IsEmpty`, `IsNull`, `IsError`, `TypeOf ... Is` subset | `stdlib_introspection_expansion.bas`, `typeof_is_condition_basic.bas`, `coercion_null_empty_error_predicates.bas` | Deterministic sentinel-tag subset with distinct `Empty`/`Null`/`CVErr`-error handling in predicates. |
 | `[~]` | File I/O library | `Open/Close`, `Input/Line Input`, `Print #/Write #`, `EOF/LOF/Seek`, `FreeFile` | `stdlib_file_stub_intrinsics.bas` | Expression-level stub subset only; statement I/O pending. |
 | `[ ]` | Interaction/UI | `MsgBox`, `InputBox` | No execution evidence yet | Planned (host-policy dependent). |
 | `[ ]` | External automation libraries | Rich COM library surface (beyond current deterministic bridge) | No execution evidence yet | Planned. |

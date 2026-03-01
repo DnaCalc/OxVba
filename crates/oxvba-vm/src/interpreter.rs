@@ -2,6 +2,7 @@ use oxvba_compiler::{Bytecode, Instruction, bytecode::StringCompareMode};
 use oxvba_runtime::safe_array::{
     array_len_from_tag, is_array_tag as runtime_is_array_tag, marshal_dispatch_argument,
 };
+use oxvba_runtime::value_tags::{EMPTY_TAG, NULL_TAG, is_error_tag as runtime_is_error_tag};
 
 use crate::register_file::RegisterFile;
 
@@ -460,6 +461,12 @@ impl Vm {
                     let value = self.read_slot(*src)?;
                     let out = if Self::is_array_tag(value) {
                         8192 + 12
+                    } else if value == EMPTY_TAG {
+                        0
+                    } else if value == NULL_TAG {
+                        1
+                    } else if runtime_is_error_tag(value) {
+                        10
                     } else {
                         3
                     };
@@ -478,7 +485,16 @@ impl Vm {
                 }
                 Instruction::IntrinsicIsNumericTag { dst, src } => {
                     let value = self.read_slot(*src)?;
-                    self.write_slot(*dst, if Self::is_array_tag(value) { 0 } else { 1 })?;
+                    let out = if Self::is_array_tag(value)
+                        || value == EMPTY_TAG
+                        || value == NULL_TAG
+                        || runtime_is_error_tag(value)
+                    {
+                        0
+                    } else {
+                        1
+                    };
+                    self.write_slot(*dst, out)?;
                     pc += 1;
                 }
                 Instruction::IntrinsicIsDateTag { dst, src } => {
