@@ -1,8 +1,8 @@
 param(
     [int]$Iterations = 3,
-    [string]$ProfileScope = "mvp-full-typing-conformance-gate-v86",
-    [string]$OutputPath = "docs/evidence/profiles/v86/benchmark_latest.md",
-    [string]$OutputCsvPath = "docs/evidence/profiles/v86/benchmark_latest.csv"
+    [string]$ProfileScope = "mvp-full-v146",
+    [string]$OutputPath = "docs/evidence/profiles/v146/benchmark_latest.md",
+    [string]$OutputCsvPath = "docs/evidence/profiles/v146/benchmark_latest.csv"
 )
 
 $ErrorActionPreference = "Stop"

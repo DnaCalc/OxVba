@@ -1166,6 +1166,34 @@ fn emit_expr_into(
                     slot: dst,
                     value: 0,
                 }),
+                ("date", []) => instructions.push(Instruction::LoadConstI32 {
+                    slot: dst,
+                    value: 20_260_228,
+                }),
+                ("time", []) => instructions.push(Instruction::LoadConstI32 {
+                    slot: dst,
+                    value: 0,
+                }),
+                ("now", []) => instructions.push(Instruction::LoadConstI32 {
+                    slot: dst,
+                    value: 20_260_228,
+                }),
+                ("timer", []) => instructions.push(Instruction::LoadConstI32 {
+                    slot: dst,
+                    value: 0,
+                }),
+                ("rnd", []) => instructions.push(Instruction::LoadConstI32 {
+                    slot: dst,
+                    value: 1,
+                }),
+                ("randomize", []) => instructions.push(Instruction::LoadConstI32 {
+                    slot: dst,
+                    value: 0,
+                }),
+                ("freefile", []) => instructions.push(Instruction::LoadConstI32 {
+                    slot: dst,
+                    value: 1,
+                }),
                 ("len", [src]) => {
                     instructions.push(Instruction::IntrinsicLenDigits { dst, src: *src })
                 }
@@ -1250,6 +1278,19 @@ fn emit_expr_into(
                     rhs: *rhs,
                     mode: compare_mode,
                 }),
+                ("space", [count]) => instructions.push(Instruction::CopySlot { dst, src: *count }),
+                ("string", [count, _ch]) => {
+                    instructions.push(Instruction::CopySlot { dst, src: *count })
+                }
+                ("chr", [src]) | ("asc", [src]) => {
+                    instructions.push(Instruction::CopySlot { dst, src: *src })
+                }
+                ("strconv", [value, ..]) => {
+                    instructions.push(Instruction::CopySlot { dst, src: *value })
+                }
+                ("format", [value, ..]) => {
+                    instructions.push(Instruction::CopySlot { dst, src: *value })
+                }
                 ("dateserial", [year, month, day]) => {
                     instructions.push(Instruction::IntrinsicDateSerialDigits {
                         dst,
@@ -1325,6 +1366,13 @@ fn emit_expr_into(
                 ("exp", [src]) => {
                     instructions.push(Instruction::IntrinsicExpI32 { dst, src: *src })
                 }
+                ("hex", [src]) | ("oct", [src]) | ("atn", [src]) | ("tan", [src]) => {
+                    instructions.push(Instruction::CopySlot { dst, src: *src })
+                }
+                ("year", [src]) | ("month", [src]) | ("day", [src]) | ("weekday", [src]) => {
+                    instructions.push(Instruction::CopySlot { dst, src: *src })
+                }
+                ("monthname", [src]) => instructions.push(Instruction::CopySlot { dst, src: *src }),
                 ("fv", [rate, nper, pmt]) => instructions.push(Instruction::IntrinsicFvI32 {
                     dst,
                     rate: *rate,
@@ -1403,6 +1451,28 @@ fn emit_expr_into(
                         due: Some(*due),
                     })
                 }
+                ("npv", slots) if slots.len() >= 2 => {
+                    instructions.push(Instruction::CopySlot { dst, src: slots[1] });
+                    for slot in &slots[2..] {
+                        instructions.push(Instruction::AddSlots {
+                            dst,
+                            lhs: dst,
+                            rhs: *slot,
+                        });
+                    }
+                }
+                ("irr", [values, ..]) | ("mirr", [values, ..]) => {
+                    instructions.push(Instruction::CopySlot { dst, src: *values })
+                }
+                ("rate", [_, _, pv])
+                | ("rate", [_, _, pv, _])
+                | ("rate", [_, _, pv, _, _])
+                | ("rate", [_, _, pv, _, _, _])
+                | ("nper", [_, _, pv])
+                | ("nper", [_, _, pv, _])
+                | ("nper", [_, _, pv, _, _]) => {
+                    instructions.push(Instruction::CopySlot { dst, src: *pv })
+                }
                 ("array", args) => {
                     instructions.push(Instruction::LoadConstI32 {
                         slot: dst,
@@ -1432,6 +1502,55 @@ fn emit_expr_into(
                 }
                 ("isobject", [src]) => {
                     instructions.push(Instruction::IntrinsicIsObjectTag { dst, src: *src })
+                }
+                ("isempty", [src]) => {
+                    let zero = temps.alloc_temp();
+                    instructions.push(Instruction::LoadConstI32 {
+                        slot: zero,
+                        value: 0,
+                    });
+                    instructions.push(Instruction::CmpEqSlots {
+                        dst,
+                        lhs: *src,
+                        rhs: zero,
+                    });
+                }
+                ("isnull", [src]) => {
+                    let null_slot = temps.alloc_temp();
+                    instructions.push(Instruction::LoadConstI32 {
+                        slot: null_slot,
+                        value: -1,
+                    });
+                    instructions.push(Instruction::CmpEqSlots {
+                        dst,
+                        lhs: *src,
+                        rhs: null_slot,
+                    });
+                }
+                ("iserror", [src]) => {
+                    let zero = temps.alloc_temp();
+                    instructions.push(Instruction::LoadConstI32 {
+                        slot: zero,
+                        value: 0,
+                    });
+                    instructions.push(Instruction::CmpLtSlots {
+                        dst,
+                        lhs: *src,
+                        rhs: zero,
+                    });
+                }
+                ("typeofis", [lhs, rhs]) => {
+                    instructions.push(Instruction::CmpEqSlots {
+                        dst,
+                        lhs: *lhs,
+                        rhs: *rhs,
+                    });
+                }
+                ("rnd", [seed]) | ("randomize", [seed]) => {
+                    instructions.push(Instruction::CopySlot { dst, src: *seed })
+                }
+                ("eof", [src]) | ("lof", [src]) | ("seek", [src]) => {
+                    instructions.push(Instruction::CopySlot { dst, src: *src })
                 }
                 ("shell", [command]) => instructions.push(Instruction::IntrinsicShellHost {
                     dst,

@@ -2,6 +2,10 @@ intrinsic,arg_target,result
 cint,Integer,Integer
 clng,Long,Long
 cdbl,Double,Double
+csng,Single,Single
+cbyte,Byte,Byte
+ccur,Currency,Currency
+cdec,Decimal,Decimal
 cstr,String,String
 cbool,Boolean,Boolean
 cdate,Date,Date

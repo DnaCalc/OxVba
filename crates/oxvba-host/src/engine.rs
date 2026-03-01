@@ -1498,6 +1498,7 @@ mod tests {
                 || matrix.contains("mvp-language-stdlib-consolidation-gate-v56")
                 || matrix.contains("mvp-stabilization-rollup-v66")
                 || matrix.contains("mvp-full-typing-conformance-gate-v86")
+                || matrix.contains("mvp-full-v146")
         );
         assert!(
             formal.contains("mvp-perf-shape-v26")
@@ -1505,6 +1506,7 @@ mod tests {
                 || formal.contains("mvp-language-stdlib-consolidation-gate-v56")
                 || formal.contains("mvp-stabilization-rollup-v66")
                 || formal.contains("mvp-full-typing-conformance-gate-v86")
+                || formal.contains("mvp-full-v146")
         );
     }
 
@@ -1519,6 +1521,7 @@ mod tests {
                 || bench.contains("docs/evidence/profiles/v64/benchmark_latest.md")
                 || bench.contains("docs/evidence/profiles/v66/benchmark_latest.md")
                 || bench.contains("docs/evidence/profiles/v86/benchmark_latest.md")
+                || bench.contains("docs/evidence/profiles/v146/benchmark_latest.md")
         );
     }
 
@@ -1729,12 +1732,14 @@ mod tests {
                 || matrix.contains("mvp-language-stdlib-consolidation-gate-v56")
                 || matrix.contains("mvp-stabilization-rollup-v66")
                 || matrix.contains("mvp-full-typing-conformance-gate-v86")
+                || matrix.contains("mvp-full-v146")
         );
         assert!(
             formal.contains("mvp-full-coverage-perf-gate-v36")
                 || formal.contains("mvp-language-stdlib-consolidation-gate-v56")
                 || formal.contains("mvp-stabilization-rollup-v66")
                 || formal.contains("mvp-full-typing-conformance-gate-v86")
+                || formal.contains("mvp-full-v146")
         );
     }
 
@@ -1748,6 +1753,7 @@ mod tests {
                 || bench.contains("docs/evidence/profiles/v64/benchmark_latest.md")
                 || bench.contains("docs/evidence/profiles/v66/benchmark_latest.md")
                 || bench.contains("docs/evidence/profiles/v86/benchmark_latest.md")
+                || bench.contains("docs/evidence/profiles/v146/benchmark_latest.md")
         );
     }
 
@@ -1766,11 +1772,13 @@ mod tests {
             matrix.contains("mvp-language-stdlib-consolidation-gate-v56")
                 || matrix.contains("mvp-stabilization-rollup-v66")
                 || matrix.contains("mvp-full-typing-conformance-gate-v86")
+                || matrix.contains("mvp-full-v146")
         );
         assert!(
             formal.contains("mvp-language-stdlib-consolidation-gate-v56")
                 || formal.contains("mvp-stabilization-rollup-v66")
                 || formal.contains("mvp-full-typing-conformance-gate-v86")
+                || formal.contains("mvp-full-v146")
         );
     }
 
@@ -1783,6 +1791,7 @@ mod tests {
                 || bench.contains("docs/evidence/profiles/v64/benchmark_latest.md")
                 || bench.contains("docs/evidence/profiles/v66/benchmark_latest.md")
                 || bench.contains("docs/evidence/profiles/v86/benchmark_latest.md")
+                || bench.contains("docs/evidence/profiles/v146/benchmark_latest.md")
         );
     }
 
@@ -1990,11 +1999,13 @@ mod tests {
             bench.contains("docs/evidence/profiles/v64/benchmark_latest.md")
                 || bench.contains("docs/evidence/profiles/v66/benchmark_latest.md")
                 || bench.contains("docs/evidence/profiles/v86/benchmark_latest.md")
+                || bench.contains("docs/evidence/profiles/v146/benchmark_latest.md")
         );
         assert!(
             bench.contains("docs/evidence/profiles/v64/benchmark_latest.csv")
                 || bench.contains("docs/evidence/profiles/v66/benchmark_latest.csv")
                 || bench.contains("docs/evidence/profiles/v86/benchmark_latest.csv")
+                || bench.contains("docs/evidence/profiles/v146/benchmark_latest.csv")
         );
     }
 
@@ -2034,14 +2045,17 @@ mod tests {
         assert!(
             matrix.contains("mvp-stabilization-rollup-v66")
                 || matrix.contains("mvp-full-typing-conformance-gate-v86")
+                || matrix.contains("mvp-full-v146")
         );
         assert!(
             formal.contains("mvp-stabilization-rollup-v66")
                 || formal.contains("mvp-full-typing-conformance-gate-v86")
+                || formal.contains("mvp-full-v146")
         );
         assert!(
             bench.contains("docs/evidence/profiles/v66/benchmark_latest.md")
                 || bench.contains("docs/evidence/profiles/v86/benchmark_latest.md")
+                || bench.contains("docs/evidence/profiles/v146/benchmark_latest.md")
         );
     }
 
@@ -2065,19 +2079,19 @@ mod tests {
             .expect("run-bench script exists");
         let integrated = std::fs::read_to_string(repo_path("scripts/run-profile-gate.ps1"))
             .expect("run-profile-gate script exists");
-        assert!(matrix.contains("mvp-full-typing-conformance-gate-v86"));
-        assert!(formal.contains("mvp-full-typing-conformance-gate-v86"));
-        assert!(bench.contains("docs/evidence/profiles/v86/benchmark_latest.md"));
-        assert!(integrated.contains("mvp-full-typing-conformance-gate-v86"));
+        assert!(matrix.contains("mvp-full-v146"));
+        assert!(formal.contains("mvp-full-v146"));
+        assert!(bench.contains("docs/evidence/profiles/v146/benchmark_latest.md"));
+        assert!(integrated.contains("mvp-full-v146"));
     }
 
     #[test]
     fn formal_v86_phase12_status_targets_v86_scope() {
         let text = std::fs::read_to_string(repo_path("docs/PHASE12_STATUS.md"))
             .expect("phase status doc exists");
-        assert!(text.contains("mvp-full-typing-conformance-gate-v86"));
-        assert!(text.contains("docs/evidence/profiles/v86/matrix_latest.csv"));
-        assert!(text.contains("docs/evidence/profiles/v86/integrated_gate.md"));
+        assert!(text.contains("mvp-full-v146"));
+        assert!(text.contains("docs/evidence/profiles/v146/matrix_latest.csv"));
+        assert!(text.contains("docs/evidence/profiles/v146/integrated_gate.md"));
     }
 
     #[test]
@@ -2109,6 +2123,71 @@ mod tests {
     #[test]
     fn formal_v107_profile_status_document_exists() {
         assert!(repo_path("docs/profile-status/PROFILE_STATUS_V107.md").exists());
+    }
+
+    #[test]
+    fn formal_v120_extended_conversion_subset_executes() {
+        let source = "Sub Main()\nDim a\nDim b\nDim c\nDim d\na = CSng(7)\nb = CByte(8)\nc = CCur(9)\nd = CDec(10)\nEnd Sub";
+        let out = Engine::new(HostConfig {
+            enable_jit: false,
+            root_object_name: None,
+        })
+        .execute_source_with_snapshot(source)
+        .expect("execution should succeed");
+        assert_eq!(out, vec![7, 8, 9, 10]);
+    }
+
+    #[test]
+    fn formal_v121_set_let_assignment_keywords_execute() {
+        let source = "Sub Main()\nDim x\nLet x = 5\nSet x = 7\nEnd Sub";
+        let out = Engine::new(HostConfig {
+            enable_jit: false,
+            root_object_name: None,
+        })
+        .execute_source_with_snapshot(source)
+        .expect("execution should succeed");
+        assert_eq!(out, vec![7]);
+    }
+
+    #[test]
+    fn formal_v126_introspection_and_typeof_subset_executes() {
+        let source = "Sub Main()\nDim a\nDim b\nDim c\nDim d\nIf TypeOf 5 Is 5 Then\nd = 1\nElse\nd = 0\nEnd If\na = IsEmpty(0)\nb = IsNull(-1)\nc = IsError(-9)\nEnd Sub";
+        let out = Engine::new(HostConfig {
+            enable_jit: false,
+            root_object_name: None,
+        })
+        .execute_source_with_snapshot(source)
+        .expect("execution should succeed");
+        assert_eq!(out, vec![1, 1, 1, 1]);
+    }
+
+    #[test]
+    fn formal_v132_builtin_expansion_fixtures_exist() {
+        assert!(repo_path("conformance/tests/stdlib_string_expansion_core.bas").exists());
+        assert!(repo_path("conformance/tests/stdlib_format_core.bas").exists());
+        assert!(repo_path("conformance/tests/stdlib_datetime_expansion.bas").exists());
+        assert!(repo_path("conformance/tests/stdlib_numeric_expansion.bas").exists());
+        assert!(repo_path("conformance/tests/stdlib_random_financial_expansion.bas").exists());
+    }
+
+    #[test]
+    fn formal_v134_file_stub_intrinsics_execute() {
+        let source = "Sub Main()\nDim a\nDim b\nDim c\nDim d\na = FreeFile()\nb = EOF(3)\nc = LOF(4)\nd = Seek(5)\nEnd Sub";
+        let out = Engine::new(HostConfig {
+            enable_jit: false,
+            root_object_name: None,
+        })
+        .execute_source_with_snapshot(source)
+        .expect("execution should succeed");
+        assert_eq!(out, vec![1, 3, 4, 5]);
+    }
+
+    #[test]
+    fn formal_v146_profile_status_range_exists() {
+        for version in 108..=146 {
+            let path = format!("docs/profile-status/PROFILE_STATUS_V{version}.md");
+            assert!(repo_path(&path).exists());
+        }
     }
 
     #[test]

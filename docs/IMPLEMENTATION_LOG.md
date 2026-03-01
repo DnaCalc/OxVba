@@ -572,3 +572,34 @@
   - added conformance fixture `with_block_member_target_chain.bas` and updated golden expectations (`SLOTS:7,7`) for VM/JIT parity.
   - published `PROFILE_STATUS_V107`, updated language coverage evidence row, and registered formal obligations `FO-V107-001..003`.
   - executed formal run for `v107` scope (non-blocking mode), with Kani skips tracked as deferred (`DG-V107-001`, `FTODO-V107-001`).
+- Executed built-in/type-parity expansion tranche across `v120..v134` with executable conformance coverage:
+  - extended intrinsic parser/binder surface with zero-arg and expanded-arity built-ins:
+    - conversion expansion subset (`CSng/CByte/CCur/CDec`),
+    - introspection subset (`IsEmpty/IsNull/IsError/TypeOfIs`),
+    - string/format expansion subset (`Space/String$/Chr/Chr$/Asc/StrConv/Format$`),
+    - date/time expansion subset (`Date/Time/Now/Timer/Year/Month/Day/Weekday/MonthName`),
+    - random/numeric/financial subset (`Rnd/Randomize/Hex/Oct/Atn/Tan/NPV/IRR/MIRR/Rate/NPer`),
+    - file-introspection stubs (`FreeFile/EOF/LOF/Seek`).
+  - added assignment/typing coverage enhancements:
+    - `Set`/`Let` assignment keyword forms now normalize to assignment parsing path.
+    - `TypeOf ... Is` condition subset lowers through `typeofis` intrinsic.
+    - `Empty`/`Null` expression constants parse to sentinel subset values for current model.
+  - added conformance fixtures and golden rows:
+    - `conversion_extended_scalar_subset.bas`,
+    - `assignment_set_let_basic.bas`,
+    - `typeof_is_condition_basic.bas`,
+    - `stdlib_string_expansion_core.bas`,
+    - `stdlib_format_core.bas`,
+    - `stdlib_datetime_expansion.bas`,
+    - `stdlib_numeric_expansion.bas`,
+    - `stdlib_random_financial_expansion.bas`,
+    - `stdlib_introspection_expansion.bas`,
+    - `stdlib_file_stub_intrinsics.bas`.
+  - refreshed coverage/spec/runtime evidence indexes:
+    - `COVERAGE_INDEX.csv`, `SPEC_CHECKLIST.md`, `LIBRARY_CHECKLIST.csv`, `INTRINSIC_SURFACE.csv`, and conversion table rows.
+  - published profile status docs through `PROFILE_STATUS_V146.md` and added host-formal obligations/tests for `v120`, `v121`, `v126`, `v132`, `v134`, and `v146`.
+  - updated deferred formal tracking with new remote-linux pending DG rows (`DG-V120-001`, `DG-V126-001`, `DG-V132-001`, `DG-V134-001`, `DG-V146-001`) and associated extended todo entries.
+- Completed ladder terminal gate `v146`:
+  - switched script defaults (`run-formal`, `run-matrix`, `run-bench`, `run-profile-gate`) to `mvp-full-v146`.
+  - executed integrated gate for `v146` with final `PASS` and refreshed artifacts under `docs/evidence/profiles/v146/`.
+  - updated phase/autorun status docs (`PHASE12_STATUS.md`, `AUTORUN_STATE.md`) to reflect `v146` completion.

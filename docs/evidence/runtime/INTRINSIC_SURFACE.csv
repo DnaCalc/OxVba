@@ -1,4 +1,11 @@
 intrinsic,surface,min_arity,max_arity,emission_family,notes
+date,deterministic-core,0,0,date-time,deterministic date constant projection
+time,deterministic-core,0,0,date-time,deterministic time constant projection
+now,deterministic-core,0,0,date-time,deterministic now constant projection
+timer,deterministic-core,0,0,date-time,deterministic timer projection
+rnd,deterministic-core,0,1,math,deterministic rnd projection subset
+randomize,deterministic-core,0,1,math,deterministic randomize projection subset
+freefile,deterministic-core,0,1,file,deterministic freefile stub subset
 len,deterministic-core,1,1,digits,string length over digit projection
 left,deterministic-core,2,2,digits,left substring over digit projection
 right,deterministic-core,2,2,digits,right substring over digit projection
@@ -13,12 +20,23 @@ trim,deterministic-core,1,1,digits,trim projection
 ltrim,deterministic-core,1,1,digits,left trim projection
 rtrim,deterministic-core,1,1,digits,right trim projection
 strcomp,deterministic-core,2,2,digits,string compare projection
+space,deterministic-core,1,1,digits,string expansion count projection
+string,deterministic-core,2,2,digits,string expansion count projection
+chr,deterministic-core,1,1,digits,character code identity projection
+asc,deterministic-core,1,1,digits,character code identity projection
+strconv,deterministic-core,2,3,digits,string conversion identity projection
+format,deterministic-core,1,2,digits,format identity projection
 dateserial,deterministic-core,3,3,date-time,numeric date projection
 timeserial,deterministic-core,3,3,date-time,numeric time projection
 datevalue,deterministic-core,1,1,date-time,date value projection
 timevalue,deterministic-core,1,1,date-time,time value projection
 dateadd,deterministic-core,3,3,date-time,date add projection
 datediff,deterministic-core,3,3,date-time,date diff projection
+year,deterministic-core,1,1,date-time,date part projection subset
+month,deterministic-core,1,1,date-time,date part projection subset
+day,deterministic-core,1,1,date-time,date part projection subset
+weekday,deterministic-core,1,1,date-time,date part projection subset
+monthname,deterministic-core,1,1,date-time,month name projection subset
 abs,deterministic-core,1,1,math,integer abs subset
 int,deterministic-core,1,1,math,integer identity subset
 fix,deterministic-core,1,1,math,integer identity subset
@@ -29,9 +47,18 @@ sin,deterministic-core,1,1,math,sine projection
 cos,deterministic-core,1,1,math,cosine projection
 log,deterministic-core,1,1,math,log projection
 exp,deterministic-core,1,1,math,exp projection
+hex,deterministic-core,1,1,math,hex identity projection subset
+oct,deterministic-core,1,1,math,oct identity projection subset
+atn,deterministic-core,1,1,math,atan identity projection subset
+tan,deterministic-core,1,1,math,tan identity projection subset
 fv,deterministic-core,3,5,financial,zero-rate deterministic subset
 pv,deterministic-core,3,5,financial,zero-rate deterministic subset
 pmt,deterministic-core,3,5,financial,zero-rate deterministic subset
+npv,deterministic-core,2,variadic,financial,deterministic sum projection subset
+irr,deterministic-core,1,2,financial,identity projection subset
+mirr,deterministic-core,3,3,financial,identity projection subset
+rate,deterministic-core,3,6,financial,pv-argument projection subset
+nper,deterministic-core,3,5,financial,pv-argument projection subset
 array,deterministic-core,1,variadic,array,array tag projection
 lbound,deterministic-core,1,1,array,array lower bound projection
 ubound,deterministic-core,1,1,array,array upper bound projection
@@ -41,6 +68,13 @@ typename,deterministic-core,1,1,array,type name projection
 isnumeric,deterministic-core,1,1,array,numeric predicate projection
 isdate,deterministic-core,1,1,array,date predicate projection
 isobject,deterministic-core,1,1,array,object predicate projection
+isempty,deterministic-core,1,1,array,empty sentinel predicate subset
+isnull,deterministic-core,1,1,array,null sentinel predicate subset
+iserror,deterministic-core,1,1,array,error sentinel predicate subset
+typeofis,deterministic-core,2,2,array,type equality predicate subset
+eof,deterministic-core,1,1,file,file-end identity projection subset
+lof,deterministic-core,1,1,file,file-length identity projection subset
+seek,deterministic-core,1,1,file,file-position identity projection subset
 collectionadd,deterministic-core,2,3,collection,collection count-update subset
 collectionitem,deterministic-core,2,3,collection,collection retrieval subset
 collectionremove,deterministic-core,2,3,collection,collection remove subset

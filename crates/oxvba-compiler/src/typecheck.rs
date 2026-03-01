@@ -1039,6 +1039,10 @@ fn intrinsic_result_type(name: &str) -> Option<BoundType> {
         "cint" => Some(BoundType::Integer),
         "clng" => Some(BoundType::Long),
         "cdbl" => Some(BoundType::Double),
+        "csng" => Some(BoundType::Single),
+        "cbyte" => Some(BoundType::Byte),
+        "ccur" => Some(BoundType::Currency),
+        "cdec" => Some(BoundType::Decimal),
         "cstr" => Some(BoundType::String),
         "cbool" => Some(BoundType::Boolean),
         "cdate" => Some(BoundType::Date),
@@ -1048,6 +1052,17 @@ fn intrinsic_result_type(name: &str) -> Option<BoundType> {
         "instr" => Some(BoundType::Long),
         "instrrev" => Some(BoundType::Long),
         "strcomp" => Some(BoundType::Long),
+        "asc" => Some(BoundType::Long),
+        "space" | "string" | "chr" | "format" | "hex" | "oct" | "monthname" => {
+            Some(BoundType::String)
+        }
+        "date" | "time" | "now" => Some(BoundType::Date),
+        "timer" => Some(BoundType::Double),
+        "year" | "month" | "day" | "weekday" => Some(BoundType::Long),
+        "atn" | "tan" | "rate" | "irr" | "mirr" => Some(BoundType::Double),
+        "rnd" | "npv" => Some(BoundType::Double),
+        "nper" => Some(BoundType::Double),
+        "isempty" | "isnull" | "iserror" | "typeofis" => Some(BoundType::Boolean),
         "vbnullstring" => Some(BoundType::String),
         _ => None,
     }
@@ -1055,9 +1070,8 @@ fn intrinsic_result_type(name: &str) -> Option<BoundType> {
 
 fn intrinsic_argument_target_type(name: &str) -> Option<BoundType> {
     match name {
-        "cint" | "clng" | "cdbl" | "cstr" | "cbool" | "cdate" | "val" | "str" => {
-            intrinsic_result_type(name)
-        }
+        "cint" | "clng" | "cdbl" | "csng" | "cbyte" | "ccur" | "cdec" | "cstr" | "cbool"
+        | "cdate" | "val" | "str" => intrinsic_result_type(name),
         "cverr" => Some(BoundType::Long),
         _ => None,
     }

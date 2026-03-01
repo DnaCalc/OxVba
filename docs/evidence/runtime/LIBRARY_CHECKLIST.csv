@@ -9,12 +9,12 @@ error-surface,"Err.Raise + CVErr pathways",implemented,v51,docs/evidence/languag
 collection-subset,"CollectionAdd/CollectionItem/CollectionRemove/CollectionCount",implemented,v53,docs/evidence/runtime/INTRINSIC_SURFACE.csv,deterministic collection model subset
 host-sensitive-core,"Shell/Environ/Dir",partial,v52,docs/evidence/runtime/INTRINSIC_SURFACE.csv,host capability fallback subset
 com-dispatch-bridge,"CreateObject/DispatchInvoke",partial,v55-v84,docs/evidence/runtime/INTRINSIC_SURFACE.csv,deterministic projection subset
-string-expansion,"Space/String$/Chr/Chr$/Asc/StrConv/Format$",planned,v87,,
-date-time-expansion,"Date/Time/Now/Timer/Year/Month/Day/Weekday/MonthName",planned,v87,,
-numeric-conversion-expansion,"CSng/CByte/CCur/CDec/Hex/Oct/Atn/Tan",planned,v87,,
-random-expansion,"Rnd/Randomize",planned,v87,,
-financial-expansion,"NPV/IRR/MIRR/Rate/NPer and related",planned,v87,,
-info-introspection-expansion,"IsEmpty/IsNull/IsError/TypeOf...Is",planned,v87,,
-file-io-library,"Open/Close/Input/Line Input/Print#/Write#/EOF/LOF/Seek/FreeFile",planned,v87,,
+string-expansion,"Space/String$/Chr/Chr$/Asc/StrConv/Format$",implemented,v127-v128,conformance/tests/stdlib_string_expansion_core.bas,deterministic identity/count projection subset for string expansion and format family
+date-time-expansion,"Date/Time/Now/Timer/Year/Month/Day/Weekday/MonthName",implemented,v129,conformance/tests/stdlib_datetime_expansion.bas,deterministic constant/date-part projection subset
+numeric-conversion-expansion,"CSng/CByte/CCur/CDec/Hex/Oct/Atn/Tan",implemented,v120-v131,conformance/tests/conversion_extended_scalar_subset.bas,conversion identity projection plus numeric extension subset
+random-expansion,"Rnd/Randomize",implemented,v130,conformance/tests/stdlib_random_financial_expansion.bas,deterministic non-host random projection subset
+financial-expansion,"NPV/IRR/MIRR/Rate/NPer and related",partial,v132,conformance/tests/stdlib_random_financial_expansion.bas,deterministic projection subset without full parity/tolerance model
+info-introspection-expansion,"IsEmpty/IsNull/IsError/TypeOf...Is",implemented,v126,conformance/tests/stdlib_introspection_expansion.bas,sentinel/equality predicate subset
+file-io-library,"Open/Close/Input/Line Input/Print#/Write#/EOF/LOF/Seek/FreeFile",partial,v134,conformance/tests/stdlib_file_stub_intrinsics.bas,read/write statements pending; expression-level stub subset for FreeFile/EOF/LOF/Seek
 ui-interaction,"MsgBox/InputBox",planned,v87,,
 external-automation-libraries,"Rich COM automation libraries beyond deterministic bridge",planned,v87,,

@@ -12,3 +12,5 @@ When adding a new profile status file:
 1. Add `PROFILE_STATUS_V<version>.md` here.
 2. Add or update links in `docs/README.md`.
 3. Keep narrative walkthroughs in `docs/status-tours/`.
+
+Current published range includes historical files through `PROFILE_STATUS_V146.md`.

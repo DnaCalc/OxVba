@@ -52,6 +52,11 @@ This register tracks long-running async formal obligations that are started duri
 | DG-V105-001 | v105 | v105-kani | dg-not-started | n/a | v106 | `remote/linux-pending` | Intentionally not started locally after crash/recovery and resource-risk review; queue for remote Linux execution handoff. |
 | DG-V106-001 | v106 | v106-kani | dg-not-started | n/a | v106 | `remote/linux-pending` | Intentionally not started locally after crash/recovery and resource-risk review; queue for remote Linux execution handoff. |
 | DG-V107-001 | v107 | v107-kani | dg-not-started | n/a | v116 | `remote/linux-pending` | `v107` obligations added for direct member-target `With` semantics; strict lane deferred to remote Linux async dispatcher. |
+| DG-V120-001 | v120 | v120-kani | dg-not-started | n/a | v126 | `remote/linux-pending` | Conversion expansion subset (`CSng/CByte/CCur/CDec`) landed with executable fixtures; strict lane deferred to remote Linux async runner. |
+| DG-V126-001 | v126 | v126-kani | dg-not-started | n/a | v126 | `remote/linux-pending` | Introspection expansion subset (`IsEmpty/IsNull/IsError/TypeOfIs`) landed; strict lane deferred to remote Linux async runner. |
+| DG-V132-001 | v132 | v132-kani | dg-not-started | n/a | v138 | `remote/linux-pending` | Built-in expansion sweep introduced string/date/time/random/financial subsets; strict lane deferred to remote Linux async runner. |
+| DG-V134-001 | v134 | v134-kani | dg-not-started | n/a | v138 | `remote/linux-pending` | File-introspection stub intrinsics (`FreeFile/EOF/LOF/Seek`) added; strict lane deferred to remote Linux async runner. |
+| DG-V146-001 | v146 | v146-kani | dg-not-started | n/a | v146 | `remote/linux-pending` | Terminal ladder gate strict lane deferred pending remote Linux batch execution/foldback. |
 
 ## Update Protocol
 1. On async start, add a row with `dg-started` and paths.

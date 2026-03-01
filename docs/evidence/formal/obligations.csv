@@ -251,3 +251,9 @@ FO-V86-003,v86,"cargo test -p oxvba-host formal_v86_deferred_gate_audit_exists_w
 FO-V107-001,v107,"cargo test -p oxvba-compiler resolve::tests::resolve_with_block_direct_member_target_assignment",no,true,crates/oxvba-compiler/src/resolve.rs
 FO-V107-002,v107,"cargo test -p oxvba-host formal_v107_with_block_direct_member_target_executes",no,true,crates/oxvba-host/src/engine.rs
 FO-V107-003,v107,"cargo test -p oxvba-host formal_v107_profile_status_document_exists",no,true,docs/profile-status/PROFILE_STATUS_V107.md
+FO-V120-001,v120,"cargo test -p oxvba-host formal_v120_extended_conversion_subset_executes",no,true,crates/oxvba-host/src/engine.rs
+FO-V121-001,v121,"cargo test -p oxvba-host formal_v121_set_let_assignment_keywords_execute",no,true,crates/oxvba-host/src/engine.rs
+FO-V126-001,v126,"cargo test -p oxvba-host formal_v126_introspection_and_typeof_subset_executes",no,true,crates/oxvba-host/src/engine.rs
+FO-V132-001,v132,"cargo test -p oxvba-host formal_v132_builtin_expansion_fixtures_exist",no,true,crates/oxvba-host/src/engine.rs
+FO-V134-001,v134,"cargo test -p oxvba-host formal_v134_file_stub_intrinsics_execute",no,true,crates/oxvba-host/src/engine.rs
+FO-V146-001,v146,"cargo test -p oxvba-host formal_v146_profile_status_range_exists",no,true,docs/profile-status/PROFILE_STATUS_V146.md

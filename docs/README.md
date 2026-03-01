@@ -5,7 +5,7 @@
 | Document | Location | Description |
 |---|---|---|
 | **MACH-1000 Plan** | [`MACH1000_PLAN.md`](../MACH1000_PLAN.md) | The definitive OxVba project plan. Charter, architecture, formal approach, testing strategy, implementation sequencing. |
-| **AutoRun State** | [`AUTORUN_STATE.md`](AUTORUN_STATE.md) | Active execution guardrail for continuous runs. Current target ladder is `v107..v146` with terminal gate `v146`; blocker handling follows `CURRENT_BLOCKERS.md`. |
+| **AutoRun State** | [`AUTORUN_STATE.md`](AUTORUN_STATE.md) | Active execution guardrail for continuous runs. Current recorded ladder run `v107..v146` is complete with terminal gate `v146` pass; blocker handling follows `CURRENT_BLOCKERS.md`. |
 | Implementation Log | [`IMPLEMENTATION_LOG.md`](IMPLEMENTATION_LOG.md) | Rolling execution log for implementation progress. |
 | Building | [`BUILDING.md`](BUILDING.md) | Build and local verification instructions. |
 | Contributing | [`CONTRIBUTING.md`](CONTRIBUTING.md) | Contribution workflow and compatibility evidence expectations. |
@@ -101,6 +101,7 @@
 | Profile v85 Status | [`PROFILE_STATUS_V85.md`](profile-status/PROFILE_STATUS_V85.md) | Current gate status contract for `mvp-typed-execution-fastpaths-v85`. |
 | Profile v86 Status | [`PROFILE_STATUS_V86.md`](profile-status/PROFILE_STATUS_V86.md) | Typing-ladder terminal gate status contract for `mvp-full-typing-conformance-gate-v86` (latest published profile status file before `v87..v106` ladder execution). |
 | Profile v107 Status | [`PROFILE_STATUS_V107.md`](profile-status/PROFILE_STATUS_V107.md) | Current gate status contract for `mvp-lang-with-member-target-v107`. |
+| Profile v108-v146 Statuses | [`profile-status/`](profile-status/README.md) | AutoRun ladder status records are published through `PROFILE_STATUS_V146.md` for the active full-language/built-ins ladder range. |
 | Phase 12 Status | [`PHASE12_STATUS.md`](PHASE12_STATUS.md) | Declared profile scope and final conformance/stabilization gate artifacts. |
 | Work Set Plan (v2) | [`worksets/WORKSET_2026-02-27_CONTROLFLOW_V2.md`](worksets/WORKSET_2026-02-27_CONTROLFLOW_V2.md) | Detailed execution-grade plan for control-flow expansion beyond `mvp-int32-core-v1`. |
 | Work Set Plan (v3) | [`worksets/WORKSET_2026-02-27_FORMAL_FOUNDATION_V3.md`](worksets/WORKSET_2026-02-27_FORMAL_FOUNDATION_V3.md) | Formal infrastructure work set for manifest-driven obligations and reporting. |

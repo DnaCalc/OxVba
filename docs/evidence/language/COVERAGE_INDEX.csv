@@ -33,6 +33,7 @@ procedures,ParamArray subset,implemented,v83,conformance/tests/params_paramarray
 procedures,Property procedures (Get/Let/Set subset),implemented,v44,conformance/tests/property_let_byref_route.bas,
 procedures,Property Get expression semantics,implemented,v101,conformance/tests/property_get_expression_basic.bas,property-get read route to callable return-value subset
 procedures,Declare and external procedure binding,implemented,v104,conformance/tests/declare_function_stub_basic.bas,declare binding to deterministic executable stub subset
+procedures,Set/Let assignment keyword forms,implemented,v121,conformance/tests/assignment_set_let_basic.bas,set/let prefixes normalize to assignment semantics subset
 runtime,Intrinsic conversion functions (CInt/CLng/CDbl/CStr/CBool/CDate/Val/Str/CVErr subset),implemented,v45,conformance/tests/conversion_cint_basic.bas,int-domain subset lowered as identity conversion
 runtime,String core intrinsics (Len/Left/Right/Mid/InStr/LCase/UCase subset),implemented,v46,conformance/tests/stdlib_len_basic.bas,decimal-string-over-int subset
 runtime,String advanced intrinsics (Split/Join/Replace/Trim/LTrim/RTrim/StrComp/Like/InStrRev subset),implemented,v47,conformance/tests/stdlib_advanced_instrrev_like.bas,decimal-string-over-int subset
@@ -41,6 +42,16 @@ runtime,Math/financial intrinsics (Abs/Int/Fix/Sgn/Round/Sqr/Sin/Cos/Log/Exp/FV/
 runtime,Array/variant introspection intrinsics (Array/LBound/UBound/IsArray/VarType/TypeName/IsNumeric/IsDate/IsObject subset),implemented,v50,conformance/tests/stdlib_array_introspection_bounds.bas,array-tag projection subset
 runtime,Error-surface intrinsics (Err.Raise/CVErr subset),implemented,v51,conformance/tests/stdlib_error_err_raise_resume.bas,resolver maps Err.Raise to runtime error op
 runtime,Host-sensitive intrinsics (Shell/Environ/Dir subset),implemented,v52,conformance/tests/stdlib_host_sensitive_shell_environ_dir.bas,deterministic host-fallback subset
+runtime,Extended conversion intrinsics (CSng/CByte/CCur/CDec subset),implemented,v120,conformance/tests/conversion_extended_scalar_subset.bas,conversion identity subset wired through conversion parser
+runtime,Introspection expansion intrinsics (IsEmpty/IsNull/IsError/TypeOfIs subset),implemented,v126,conformance/tests/stdlib_introspection_expansion.bas,sentinel/equality predicate subset over integer projection
+runtime,TypeOf ... Is condition subset,implemented,v126,conformance/tests/typeof_is_condition_basic.bas,lowered to `typeofis` intrinsic in condition parsing
+runtime,String expansion intrinsics (Space/String$/Chr/Chr$/Asc/StrConv subset),implemented,v127,conformance/tests/stdlib_string_expansion_core.bas,deterministic count/identity subset
+runtime,Format intrinsics (Format/Format$ subset),implemented,v128,conformance/tests/stdlib_format_core.bas,format identity projection subset
+runtime,Date/time expansion intrinsics (Date/Time/Now/Timer/Year/Month/Day/Weekday/MonthName subset),implemented,v129,conformance/tests/stdlib_datetime_expansion.bas,deterministic constant and date-part projection subset
+runtime,Random intrinsics (Rnd/Randomize subset),implemented,v130,conformance/tests/stdlib_random_financial_expansion.bas,deterministic non-host subset
+runtime,Numeric extension intrinsics (Hex/Oct/Atn/Tan subset),implemented,v131,conformance/tests/stdlib_numeric_expansion.bas,identity projection subset
+runtime,Financial extension intrinsics (NPV/IRR/MIRR/Rate/NPer subset),partial,v132,conformance/tests/stdlib_random_financial_expansion.bas,projection subset pending full tolerance/parity behavior
+runtime,File-introspection intrinsics (FreeFile/EOF/LOF/Seek subset),partial,v134,conformance/tests/stdlib_file_stub_intrinsics.bas,expression-level stub subset only
 runtime,Language/stdlib consolidation gate corpus,implemented,v56,conformance/tests/consolidate_language_stdlib_mix.bas,expanded mixed-feature gate fixtures
 arrays,Fixed-size arrays,implemented,v10,conformance/tests/array_store_load.bas,
 arrays,Array bounds error,implemented,v10,conformance/tests/array_bounds_error.bas,

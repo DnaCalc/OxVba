@@ -1,7 +1,7 @@
 # Formal Run Report
 
-- Timestamp (UTC): 2026-02-28T23:02:27Z
-- Profile scope: mvp-lang-with-member-target-v107
+- Timestamp (UTC): 2026-03-01T00:01:38Z
+- Profile scope: mvp-full-v146
 - Overall mode: non-blocking
 - Kani required: false
 - Kani execution: deferred-to-wsl-async
@@ -263,3 +263,9 @@
 | FO-V107-001 | v107 | no | pass | cargo test -p oxvba-compiler resolve::tests::resolve_with_block_direct_member_target_assignment | crates/oxvba-compiler/src/resolve.rs |  |
 | FO-V107-002 | v107 | no | pass | cargo test -p oxvba-host formal_v107_with_block_direct_member_target_executes | crates/oxvba-host/src/engine.rs |  |
 | FO-V107-003 | v107 | no | pass | cargo test -p oxvba-host formal_v107_profile_status_document_exists | docs/profile-status/PROFILE_STATUS_V107.md |  |
+| FO-V120-001 | v120 | no | pass | cargo test -p oxvba-host formal_v120_extended_conversion_subset_executes | crates/oxvba-host/src/engine.rs |  |
+| FO-V121-001 | v121 | no | pass | cargo test -p oxvba-host formal_v121_set_let_assignment_keywords_execute | crates/oxvba-host/src/engine.rs |  |
+| FO-V126-001 | v126 | no | pass | cargo test -p oxvba-host formal_v126_introspection_and_typeof_subset_executes | crates/oxvba-host/src/engine.rs |  |
+| FO-V132-001 | v132 | no | pass | cargo test -p oxvba-host formal_v132_builtin_expansion_fixtures_exist | crates/oxvba-host/src/engine.rs |  |
+| FO-V134-001 | v134 | no | pass | cargo test -p oxvba-host formal_v134_file_stub_intrinsics_execute | crates/oxvba-host/src/engine.rs |  |
+| FO-V146-001 | v146 | no | pass | cargo test -p oxvba-host formal_v146_profile_status_range_exists | docs/profile-status/PROFILE_STATUS_V146.md |  |

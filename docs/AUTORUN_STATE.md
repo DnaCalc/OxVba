@@ -9,8 +9,10 @@ Active ladder: `v107..v146` (`docs/worksets/PROFILE_LADDER_2026-02-28_MACH1000_V
 Terminal gate: `v146`
 
 Current checkpoint:
-- Baseline stabilized scope is `mvp-stabilization-rollup-v66` (complete/passing).
-- Current execution target is the full VBA language+built-ins ladder `v107..v146`, terminating only at `v146` gate pass.
+- Full language+built-ins ladder `v107..v146` reached terminal gate with `PASS`.
+- Latest integrated gate artifact: `docs/evidence/profiles/v146/integrated_gate.md`.
+- Latest matrix artifact: `docs/evidence/profiles/v146/matrix_latest.csv`.
+- Latest formal artifact: `docs/evidence/formal/latest_run.md`.
 - Evidence artifacts are tracked under `docs/evidence/profiles/`, `docs/evidence/formal/`, and `docs/evidence/divergences/`.
 
 Resume protocol:

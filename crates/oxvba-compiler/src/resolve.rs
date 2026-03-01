@@ -2054,11 +2054,18 @@ fn parse_assign_or_unsupported(
     property_write_routes: &HashMap<String, String>,
     property_read_routes: &HashMap<String, String>,
 ) -> BoundStmt {
-    if let Some(stmt) = parse_mid_assign_stmt(line, array_bounds) {
+    let lowered = line.trim_start().to_ascii_lowercase();
+    let assignment_line = if lowered.starts_with("set ") || lowered.starts_with("let ") {
+        line.trim_start()[4..].trim_start()
+    } else {
+        line
+    };
+
+    if let Some(stmt) = parse_mid_assign_stmt(assignment_line, array_bounds) {
         return stmt;
     }
 
-    if let Some((lhs_raw, rhs_raw)) = line.split_once('=')
+    if let Some((lhs_raw, rhs_raw)) = assignment_line.split_once('=')
         && let Some(target) = parse_reference_name(lhs_raw, array_bounds)
     {
         if parse_reference_name(rhs_raw.trim(), array_bounds).is_none()
@@ -2100,10 +2107,10 @@ fn parse_assign_or_unsupported(
         }
     }
 
-    let call_token = if line.to_ascii_lowercase().starts_with("call ") {
-        line[5..].trim()
+    let call_token = if assignment_line.to_ascii_lowercase().starts_with("call ") {
+        assignment_line[5..].trim()
     } else {
-        line.trim()
+        assignment_line.trim()
     };
     if let Some((name, args)) = parse_call_invocation(call_token, array_bounds) {
         return BoundStmt::Call { name, args };
@@ -2203,7 +2210,19 @@ fn is_intrinsic_call_name(name: &str) -> bool {
     }
     matches!(
         name,
-        "cint" | "clng" | "cdbl" | "cstr" | "cbool" | "cdate" | "val" | "str" | "cverr"
+        "cint"
+            | "clng"
+            | "cdbl"
+            | "cstr"
+            | "cbool"
+            | "cdate"
+            | "csng"
+            | "cbyte"
+            | "ccur"
+            | "cdec"
+            | "val"
+            | "str"
+            | "cverr"
     )
 }
 
@@ -2599,6 +2618,12 @@ fn parse_expr(text: &str, array_bounds: &ArrayBoundsMap) -> Option<BoundExpr> {
             args: Vec::new(),
         });
     }
+    if expr.eq_ignore_ascii_case("empty") {
+        return Some(BoundExpr::IntConst(0));
+    }
+    if expr.eq_ignore_ascii_case("null") {
+        return Some(BoundExpr::IntConst(-1));
+    }
     if let Ok(value) = expr.parse::<i32>() {
         return Some(BoundExpr::IntConst(value));
     }
@@ -2640,7 +2665,19 @@ fn parse_intrinsic_conversion_expr(expr: &str, array_bounds: &ArrayBoundsMap) ->
     let name = normalize_ident(expr[..open].trim())?;
     if !matches!(
         name.as_str(),
-        "cint" | "clng" | "cdbl" | "cstr" | "cbool" | "cdate" | "val" | "str" | "cverr"
+        "cint"
+            | "clng"
+            | "cdbl"
+            | "cstr"
+            | "cbool"
+            | "cdate"
+            | "csng"
+            | "cbyte"
+            | "ccur"
+            | "cdec"
+            | "val"
+            | "str"
+            | "cverr"
     ) {
         return None;
     }
@@ -2685,22 +2722,35 @@ fn intrinsic_spec(name: &str) -> Option<IntrinsicSpec> {
     use IntrinsicSurface::{DeterministicCore, HostSensitive};
 
     match name {
+        "date" | "time" | "now" | "timer" | "rnd" | "randomize" | "freefile" => {
+            Some(IntrinsicSpec::range(0, 1, DeterministicCore))
+        }
         "len" | "lcase" | "ucase" | "trim" | "ltrim" | "rtrim" | "datevalue" | "timevalue"
-        | "abs" | "int" | "fix" | "sgn" | "sqr" | "sin" | "cos" | "log" | "exp" | "lbound"
-        | "ubound" | "isarray" | "vartype" | "typename" | "isnumeric" | "isdate" | "isobject"
-        | "collectioncount" => Some(IntrinsicSpec::fixed(1, DeterministicCore)),
+        | "abs" | "int" | "fix" | "sgn" | "sqr" | "sin" | "cos" | "log" | "exp" | "hex" | "oct"
+        | "atn" | "tan" | "year" | "month" | "day" | "weekday" | "space" | "chr" | "asc"
+        | "lbound" | "ubound" | "isarray" | "vartype" | "typename" | "isnumeric" | "isdate"
+        | "isobject" | "isempty" | "isnull" | "iserror" | "monthname" | "collectioncount"
+        | "eof" | "lof" | "seek" => Some(IntrinsicSpec::fixed(1, DeterministicCore)),
+        "format" => Some(IntrinsicSpec::range(1, 2, DeterministicCore)),
+        "strconv" => Some(IntrinsicSpec::range(2, 3, DeterministicCore)),
         "left" | "right" | "instr" | "instrrev" | "split" | "join" | "strcomp" => {
             Some(IntrinsicSpec::fixed(2, DeterministicCore))
         }
+        "string" | "typeofis" => Some(IntrinsicSpec::fixed(2, DeterministicCore)),
         "mid" => Some(IntrinsicSpec::range(2, 3, DeterministicCore)),
         "round" => Some(IntrinsicSpec::range(1, 2, DeterministicCore)),
         "replace" | "dateserial" | "timeserial" | "dateadd" | "datediff" => {
             Some(IntrinsicSpec::fixed(3, DeterministicCore))
         }
+        "mirr" => Some(IntrinsicSpec::fixed(3, DeterministicCore)),
         "collectionadd" | "collectionitem" | "collectionremove" => {
             Some(IntrinsicSpec::range(2, 3, DeterministicCore))
         }
         "fv" | "pv" | "pmt" => Some(IntrinsicSpec::range(3, 5, DeterministicCore)),
+        "rate" => Some(IntrinsicSpec::range(3, 6, DeterministicCore)),
+        "nper" => Some(IntrinsicSpec::range(3, 5, DeterministicCore)),
+        "irr" => Some(IntrinsicSpec::range(1, 2, DeterministicCore)),
+        "npv" => Some(IntrinsicSpec::range(2, usize::MAX, DeterministicCore)),
         "array" => Some(IntrinsicSpec::range(1, usize::MAX, DeterministicCore)),
         "shell" | "environ" | "dir" | "createobject" => {
             Some(IntrinsicSpec::fixed(1, HostSensitive))
@@ -2806,6 +2856,17 @@ fn parse_compare_condition(text: &str, array_bounds: &ArrayBoundsMap) -> Option<
             lhs,
             rhs,
         });
+    }
+
+    if let Some(rest) = strip_keyword_prefix_ci(text.trim(), "typeof")
+        && let Some((lhs_raw, rhs_raw)) = split_keyword_ci(rest, "is")
+    {
+        let lhs = parse_expr(lhs_raw, array_bounds)?;
+        let rhs = parse_expr(rhs_raw, array_bounds)?;
+        return Some(BoundCond::Truthy(BoundExpr::IntrinsicCall {
+            name: "typeofis".to_string(),
+            args: vec![lhs, rhs],
+        }));
     }
 
     let pairs = [

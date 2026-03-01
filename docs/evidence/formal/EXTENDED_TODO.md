@@ -77,3 +77,15 @@ Non-blocking formal issues and follow-up items for later ladder profiles.
   Current status (`todo` / `investigating` / `resolved`): investigating
   Reproduction command: `./scripts/run-formal-kani-remote.ps1 -Action StartDeferred -DeferredVersions "107" -DeferredMode cumulative`
   Suggested next action: run remote async `v107-kani`, then fold status into `DEFERRED_GATES.md` and `latest_run.*`.
+- ID: FTODO-V132-001
+  Profile: v120..v134 formal lanes
+  Summary: New strict Kani lanes for conversion/introspection/built-in expansion/file-stub subsets were not started locally; they are queued as remote Linux deferred gates (`DG-V120-001`, `DG-V126-001`, `DG-V132-001`, `DG-V134-001`).
+  Current status (`todo` / `investigating` / `resolved`): investigating
+  Reproduction command: `./scripts/run-formal-kani-remote.ps1 -Action StartDeferred -DeferredVersions "120,126,132,134" -DeferredMode cumulative`
+  Suggested next action: launch remote async lanes, poll completion, and fold results into `latest_run.*` at the next foldback checkpoint.
+- ID: FTODO-V146-001
+  Profile: v146 terminal formal lane
+  Summary: Terminal strict lane `DG-V146-001` remains deferred pending remote Linux capacity and batching policy.
+  Current status (`todo` / `investigating` / `resolved`): investigating
+  Reproduction command: `./scripts/run-formal-kani-remote.ps1 -Action StartDeferred -DeferredVersions "146" -DeferredMode cumulative`
+  Suggested next action: run terminal strict lane remotely during final v146 gate reconciliation and fold status into `DEFERRED_GATES.md`.

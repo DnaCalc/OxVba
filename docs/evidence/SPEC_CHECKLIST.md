@@ -34,6 +34,7 @@ Primary evidence sources:
 | `[x]` | Unstructured control | Line-number labels and numeric `GoTo` | `goto_numeric_basic.bas`, `goto_line_number_statement_basic.bas` | Explicit-colon and statement-prefix line-number labels are executable. |
 | `[x]` | Procedure calls | `Sub`, `Function`, `ByVal`, `ByRef`, `Optional`, named args | `proc_call_chain.bas`, `function_call_basic.bas`, `params_*.bas` | Implemented subsets. |
 | `[x]` | Procedure calls | `ParamArray` packing subset | `params_paramarray_pack.bas`, `params_paramarray_empty.bas` | Implemented subset with current constraints. |
+| `[x]` | Assignment forms | `Set`/`Let` keyword assignment forms (subset) | `assignment_set_let_basic.bas` | `Set`/`Let` prefixes normalize to assignment path in current subset. |
 | `[x]` | Properties | `Property Let/Set/Get` | `property_let_byref_route.bas`, `property_get_expression_basic.bas` | Let/Set routes plus Property Get RHS expression subset are executable. |
 | `[x]` | External calls | `Declare` / external binding | `declare_function_stub_basic.bas`, `declare_sub_stub_basic.bas` | Deterministic stub-execution subset; richer host binding remains future work. |
 | `[x]` | Arrays | Fixed arrays, lower bounds, multidim indexing | `array_store_load.bas`, `array_option_base_one_bounds.bas`, `array_multidim_indexing.bas` | Implemented subset. |
@@ -63,12 +64,12 @@ Reference inventory: `docs/evidence/runtime/LIBRARY_CHECKLIST.csv`.
 | `[x]` | Collection subset | `CollectionAdd`, `CollectionItem`, `CollectionRemove`, `CollectionCount` | `v53` evidence | Deterministic model subset. |
 | `[~]` | Host-sensitive runtime | `Shell`, `Environ`, `Dir` | `v52` evidence | Deterministic fallback subset, not full host parity. |
 | `[~]` | COM/dispatch bridge | `CreateObject`, `DispatchInvoke` | `v55`, `v84` evidence | Deterministic dispatch-projection subset. |
-| `[ ]` | String expansion | `Space`, `String$`, `Chr/Chr$`, `Asc`, `StrConv`, full `Format` family | No execution evidence yet | Planned. |
-| `[ ]` | Date/time expansion | `Date`, `Time`, `Now`, `Timer`, `Year/Month/Day`, `Weekday`, `MonthName` | No execution evidence yet | Planned. |
-| `[ ]` | Numeric/random expansion | `CSng`, `CByte`, `CCur`, `CDec`, `Hex`, `Oct`, `Atn`, `Tan`, `Rnd`, `Randomize` | No execution evidence yet | Planned. |
-| `[ ]` | Financial expansion | `NPV`, `IRR`, `MIRR`, `Rate`, `NPer`, and related suite | No execution evidence yet | Planned. |
-| `[ ]` | Info/introspection expansion | `IsEmpty`, `IsNull`, `IsError`, `TypeOf ... Is`, `VarPtr`-family considerations | No execution evidence yet | Planned and safety-scoped. |
-| `[ ]` | File I/O library | `Open/Close`, `Input/Line Input`, `Print #/Write #`, `EOF/LOF/Seek`, `FreeFile` | No execution evidence yet | Planned. |
+| `[x]` | String expansion | `Space`, `String$`, `Chr/Chr$`, `Asc`, `StrConv`, `Format/Format$` subset | `stdlib_string_expansion_core.bas`, `stdlib_format_core.bas` | Deterministic identity/count projection subset. |
+| `[x]` | Date/time expansion | `Date`, `Time`, `Now`, `Timer`, `Year/Month/Day`, `Weekday`, `MonthName` subset | `stdlib_datetime_expansion.bas` | Deterministic constant/date-part projection subset. |
+| `[x]` | Numeric/random expansion | `CSng`, `CByte`, `CCur`, `CDec`, `Hex`, `Oct`, `Atn`, `Tan`, `Rnd`, `Randomize` subset | `conversion_extended_scalar_subset.bas`, `stdlib_numeric_expansion.bas`, `stdlib_random_financial_expansion.bas` | Deterministic projection subset. |
+| `[~]` | Financial expansion | `NPV`, `IRR`, `MIRR`, `Rate`, `NPer`, and related suite | `stdlib_random_financial_expansion.bas` | Deterministic projection subset; full parity/tolerance model pending. |
+| `[x]` | Info/introspection expansion | `IsEmpty`, `IsNull`, `IsError`, `TypeOf ... Is` subset | `stdlib_introspection_expansion.bas`, `typeof_is_condition_basic.bas` | Sentinel/equality predicate subset. |
+| `[~]` | File I/O library | `Open/Close`, `Input/Line Input`, `Print #/Write #`, `EOF/LOF/Seek`, `FreeFile` | `stdlib_file_stub_intrinsics.bas` | Expression-level stub subset only; statement I/O pending. |
 | `[ ]` | Interaction/UI | `MsgBox`, `InputBox` | No execution evidence yet | Planned (host-policy dependent). |
 | `[ ]` | External automation libraries | Rich COM library surface (beyond current deterministic bridge) | No execution evidence yet | Planned. |
 
