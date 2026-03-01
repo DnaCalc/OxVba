@@ -1505,14 +1505,71 @@ fn emit_expr_into(
                         reinvest_rate: *reinvest_rate,
                     })
                 }
-                ("rate", [_, _, pv])
-                | ("rate", [_, _, pv, _])
-                | ("rate", [_, _, pv, _, _])
-                | ("rate", [_, _, pv, _, _, _])
-                | ("nper", [_, _, pv])
-                | ("nper", [_, _, pv, _])
-                | ("nper", [_, _, pv, _, _]) => {
-                    instructions.push(Instruction::CopySlot { dst, src: *pv })
+                ("rate", [nper, pmt, pv]) => instructions.push(Instruction::IntrinsicRateI32 {
+                    dst,
+                    nper: *nper,
+                    pmt: *pmt,
+                    pv: *pv,
+                    fv: None,
+                    due: None,
+                    guess: None,
+                }),
+                ("rate", [nper, pmt, pv, fv]) => instructions.push(Instruction::IntrinsicRateI32 {
+                    dst,
+                    nper: *nper,
+                    pmt: *pmt,
+                    pv: *pv,
+                    fv: Some(*fv),
+                    due: None,
+                    guess: None,
+                }),
+                ("rate", [nper, pmt, pv, fv, due]) => {
+                    instructions.push(Instruction::IntrinsicRateI32 {
+                        dst,
+                        nper: *nper,
+                        pmt: *pmt,
+                        pv: *pv,
+                        fv: Some(*fv),
+                        due: Some(*due),
+                        guess: None,
+                    })
+                }
+                ("rate", [nper, pmt, pv, fv, due, guess]) => {
+                    instructions.push(Instruction::IntrinsicRateI32 {
+                        dst,
+                        nper: *nper,
+                        pmt: *pmt,
+                        pv: *pv,
+                        fv: Some(*fv),
+                        due: Some(*due),
+                        guess: Some(*guess),
+                    })
+                }
+                ("nper", [rate, pmt, pv]) => instructions.push(Instruction::IntrinsicNPerI32 {
+                    dst,
+                    rate: *rate,
+                    pmt: *pmt,
+                    pv: *pv,
+                    fv: None,
+                    due: None,
+                }),
+                ("nper", [rate, pmt, pv, fv]) => instructions.push(Instruction::IntrinsicNPerI32 {
+                    dst,
+                    rate: *rate,
+                    pmt: *pmt,
+                    pv: *pv,
+                    fv: Some(*fv),
+                    due: None,
+                }),
+                ("nper", [rate, pmt, pv, fv, due]) => {
+                    instructions.push(Instruction::IntrinsicNPerI32 {
+                        dst,
+                        rate: *rate,
+                        pmt: *pmt,
+                        pv: *pv,
+                        fv: Some(*fv),
+                        due: Some(*due),
+                    })
                 }
                 ("array", args) => {
                     instructions.push(Instruction::LoadConstI32 {

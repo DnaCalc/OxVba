@@ -228,6 +228,23 @@ pub enum Instruction {
         finance_rate: usize,
         reinvest_rate: usize,
     },
+    IntrinsicRateI32 {
+        dst: usize,
+        nper: usize,
+        pmt: usize,
+        pv: usize,
+        fv: Option<usize>,
+        due: Option<usize>,
+        guess: Option<usize>,
+    },
+    IntrinsicNPerI32 {
+        dst: usize,
+        rate: usize,
+        pmt: usize,
+        pv: usize,
+        fv: Option<usize>,
+        due: Option<usize>,
+    },
     IntrinsicLBoundArray {
         dst: usize,
         src: usize,

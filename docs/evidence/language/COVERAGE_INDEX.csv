@@ -50,7 +50,7 @@ runtime,Format intrinsics (Format/Format$ subset),implemented,v128,conformance/t
 runtime,Date/time expansion intrinsics (Date/Time/Now/Timer/Year/Month/Day/Weekday/MonthName subset),implemented,v129,conformance/tests/stdlib_datetime_expansion.bas,deterministic constant and date-part projection subset
 runtime,Random intrinsics (Rnd/Randomize subset),implemented,v130,conformance/tests/stdlib_random_financial_expansion.bas,deterministic non-host subset
 runtime,Numeric extension intrinsics (Hex/Oct/Atn/Tan subset),implemented,v131,conformance/tests/stdlib_numeric_expansion.bas,identity projection subset
-runtime,Financial extension intrinsics (NPV/IRR/MIRR/Rate/NPer subset),partial,v132-v154,conformance/tests/stdlib_random_financial_expansion.bas,algorithmic subset implemented for NPV/IRR/MIRR; Rate/NPer and tolerance/parity behavior remain pending
+runtime,Financial extension intrinsics (NPV/IRR/MIRR/Rate/NPer subset),partial,v132-v155,conformance/tests/stdlib_random_financial_expansion.bas,algorithmic subset implemented for NPV/IRR/MIRR/Rate/NPer; tolerance/convergence and oracle parity behavior remain pending
 runtime,File-introspection intrinsics (FreeFile/EOF/LOF/Seek subset),partial,v134,conformance/tests/stdlib_file_stub_intrinsics.bas,expression-level stub subset only
 runtime,Language/stdlib consolidation gate corpus,implemented,v56,conformance/tests/consolidate_language_stdlib_mix.bas,expanded mixed-feature gate fixtures
 arrays,Fixed-size arrays,implemented,v10,conformance/tests/array_store_load.bas,

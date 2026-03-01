@@ -278,3 +278,6 @@ FO-V153-003,v153,"cargo test -p oxvba-host formal_v153_profile_status_document_e
 FO-V154-001,v154,"cargo test -p oxvba-compiler compile_financial_intrinsics_emit_algorithmic_ops",no,true,crates/oxvba-compiler/src/lib.rs
 FO-V154-002,v154,"cargo test -p oxvba-host formal_v154_financial_intrinsics_use_algorithmic_subset",no,true,crates/oxvba-host/src/engine.rs
 FO-V154-003,v154,"cargo test -p oxvba-host formal_v154_profile_status_document_exists",no,true,docs/profile-status/PROFILE_STATUS_V154.md
+FO-V155-001,v155,"cargo test -p oxvba-compiler compile_financial_intrinsics_emit_algorithmic_ops",no,true,crates/oxvba-compiler/src/lib.rs
+FO-V155-002,v155,"cargo test -p oxvba-host formal_v155_rate_nper_algorithmic_subset",no,true,crates/oxvba-host/src/engine.rs
+FO-V155-003,v155,"cargo test -p oxvba-host formal_v155_profile_status_document_exists",no,true,docs/profile-status/PROFILE_STATUS_V155.md

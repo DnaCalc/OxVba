@@ -466,6 +466,55 @@ impl Vm {
                     self.write_slot(*dst, Self::mirr_i32(value, finance_rate, reinvest_rate))?;
                     pc += 1;
                 }
+                Instruction::IntrinsicRateI32 {
+                    dst,
+                    nper,
+                    pmt,
+                    pv,
+                    fv,
+                    due,
+                    guess,
+                } => {
+                    let nper = self.read_slot(*nper)?;
+                    let pmt = self.read_slot(*pmt)?;
+                    let pv = self.read_slot(*pv)?;
+                    let fv = match fv {
+                        Some(slot) => self.read_slot(*slot)?,
+                        None => 0,
+                    };
+                    let due = match due {
+                        Some(slot) => self.read_slot(*slot)?,
+                        None => 0,
+                    };
+                    let guess = match guess {
+                        Some(slot) => self.read_slot(*slot)?,
+                        None => 10,
+                    };
+                    self.write_slot(*dst, Self::rate_i32(nper, pmt, pv, fv, due, guess))?;
+                    pc += 1;
+                }
+                Instruction::IntrinsicNPerI32 {
+                    dst,
+                    rate,
+                    pmt,
+                    pv,
+                    fv,
+                    due,
+                } => {
+                    let rate = self.read_slot(*rate)?;
+                    let pmt = self.read_slot(*pmt)?;
+                    let pv = self.read_slot(*pv)?;
+                    let fv = match fv {
+                        Some(slot) => self.read_slot(*slot)?,
+                        None => 0,
+                    };
+                    let due = match due {
+                        Some(slot) => self.read_slot(*slot)?,
+                        None => 0,
+                    };
+                    self.write_slot(*dst, Self::nper_i32(rate, pmt, pv, fv, due))?;
+                    pc += 1;
+                }
                 Instruction::IntrinsicLBoundArray { dst, src } => {
                     let value = self.read_slot(*src)?;
                     let out = if Self::is_array_tag(value) { 0 } else { -1 };
@@ -1168,6 +1217,72 @@ impl Vm {
         let fv_pos = value * (1.0 + rr);
         let out = (fv_pos / pv_neg) - 1.0;
         (out * 100.0).round() as i32
+    }
+
+    fn rate_func(r: f64, nper: f64, pmt: f64, pv: f64, fv: f64, due: f64) -> f64 {
+        if r.abs() < 1e-9 {
+            pv + pmt * nper + fv
+        } else {
+            let growth = (1.0 + r).powf(nper);
+            pv * growth + pmt * (1.0 + r * due) * ((growth - 1.0) / r) + fv
+        }
+    }
+
+    fn rate_i32(nper: i32, pmt: i32, pv: i32, fv: i32, due: i32, guess: i32) -> i32 {
+        if nper == 0 {
+            return 0;
+        }
+        let n = nper as f64;
+        let pmt = pmt as f64;
+        let pv = pv as f64;
+        let fv = fv as f64;
+        let due = if due != 0 { 1.0 } else { 0.0 };
+
+        let mut r = (guess as f64 / 100.0).clamp(-0.99, 10.0);
+        for _ in 0..60 {
+            let f = Self::rate_func(r, n, pmt, pv, fv, due);
+            let h = 1e-7;
+            let fp = (Self::rate_func(r + h, n, pmt, pv, fv, due)
+                - Self::rate_func(r - h, n, pmt, pv, fv, due))
+                / (2.0 * h);
+            if fp.abs() < 1e-12 {
+                break;
+            }
+            let next = (r - f / fp).clamp(-0.99, 10.0);
+            if (next - r).abs() < 1e-10 {
+                r = next;
+                break;
+            }
+            r = next;
+        }
+        (r * 100.0).round() as i32
+    }
+
+    fn nper_i32(rate: i32, pmt: i32, pv: i32, fv: i32, due: i32) -> i32 {
+        let pmt = pmt as f64;
+        let pv = pv as f64;
+        let fv = fv as f64;
+        let due = if due != 0 { 1.0 } else { 0.0 };
+
+        if rate == 0 {
+            if pmt == 0.0 {
+                return 0;
+            }
+            return (-(pv + fv) / pmt).round() as i32;
+        }
+
+        let r = rate as f64 / 100.0;
+        let numerator = pmt * (1.0 + r * due) - fv * r;
+        let denominator = pv * r + pmt * (1.0 + r * due);
+        if numerator <= 0.0 || denominator <= 0.0 || (1.0 + r) <= 0.0 {
+            return 0;
+        }
+
+        let n = (numerator / denominator).ln() / (1.0 + r).ln();
+        if !n.is_finite() {
+            return 0;
+        }
+        n.round() as i32
     }
 
     fn is_array_tag(value: i32) -> bool {

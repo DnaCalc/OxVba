@@ -2193,7 +2193,7 @@ mod tests {
         })
         .execute_source_with_snapshot(source)
         .expect("execution should succeed");
-        assert_eq!(out, vec![1, 42, 59, -50, -28, 99, 88]);
+        assert_eq!(out, vec![1, 42, 59, -50, -28, -99, -38]);
     }
 
     #[test]
@@ -2204,6 +2204,28 @@ mod tests {
     #[test]
     fn formal_v154_profile_status_document_exists() {
         assert!(repo_path("docs/profile-status/PROFILE_STATUS_V154.md").exists());
+    }
+
+    #[test]
+    fn formal_v155_rate_nper_algorithmic_subset() {
+        let source = "Sub Main()\nDim a\nDim b\nDim c\nDim d\nDim e\nDim f\nDim g\na = Rnd()\nb = Rnd(42)\nc = NPV(1, 10, 20, 30)\nd = IRR(50)\ne = MIRR(70, 1, 2)\nf = Rate(10, 2, 99)\ng = NPer(1, 2, 88, 3)\nEnd Sub";
+        let out = Engine::new(HostConfig {
+            enable_jit: false,
+            root_object_name: None,
+        })
+        .execute_source_with_snapshot(source)
+        .expect("execution should succeed");
+        assert_eq!(out, vec![1, 42, 59, -50, -28, -99, -38]);
+    }
+
+    #[test]
+    fn formal_v155_conformance_fixture_exists() {
+        assert!(repo_path("conformance/tests/stdlib_random_financial_expansion.bas").exists());
+    }
+
+    #[test]
+    fn formal_v155_profile_status_document_exists() {
+        assert!(repo_path("docs/profile-status/PROFILE_STATUS_V155.md").exists());
     }
 
     #[test]

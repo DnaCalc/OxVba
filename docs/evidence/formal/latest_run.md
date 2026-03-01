@@ -1,7 +1,7 @@
 # Formal Run Report
 
-- Timestamp (UTC): 2026-03-01T07:53:45Z
-- Profile scope: mvp-profile-v154
+- Timestamp (UTC): 2026-03-01T08:06:50Z
+- Profile scope: mvp-profile-v155
 - Overall mode: non-blocking
 - Kani required: false
 - Kani execution: deferred-to-wsl-async
@@ -290,3 +290,6 @@
 | FO-V154-001 | v154 | no | pass | cargo test -p oxvba-compiler compile_financial_intrinsics_emit_algorithmic_ops | crates/oxvba-compiler/src/lib.rs |  |
 | FO-V154-002 | v154 | no | pass | cargo test -p oxvba-host formal_v154_financial_intrinsics_use_algorithmic_subset | crates/oxvba-host/src/engine.rs |  |
 | FO-V154-003 | v154 | no | pass | cargo test -p oxvba-host formal_v154_profile_status_document_exists | docs/profile-status/PROFILE_STATUS_V154.md |  |
+| FO-V155-001 | v155 | no | pass | cargo test -p oxvba-compiler compile_financial_intrinsics_emit_algorithmic_ops | crates/oxvba-compiler/src/lib.rs |  |
+| FO-V155-002 | v155 | no | pass | cargo test -p oxvba-host formal_v155_rate_nper_algorithmic_subset | crates/oxvba-host/src/engine.rs |  |
+| FO-V155-003 | v155 | no | pass | cargo test -p oxvba-host formal_v155_profile_status_document_exists | docs/profile-status/PROFILE_STATUS_V155.md |  |

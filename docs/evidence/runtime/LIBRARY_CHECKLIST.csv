@@ -13,7 +13,7 @@ string-expansion,"Space/String$/Chr/Chr$/Asc/StrConv/Format$",implemented,v127-v
 date-time-expansion,"Date/Time/Now/Timer/Year/Month/Day/Weekday/MonthName",implemented,v129,conformance/tests/stdlib_datetime_expansion.bas,deterministic constant/date-part projection subset
 numeric-conversion-expansion,"CSng/CByte/CCur/CDec/Hex/Oct/Atn/Tan",implemented,v120-v131,conformance/tests/conversion_extended_scalar_subset.bas,conversion identity projection plus numeric extension subset
 random-expansion,"Rnd/Randomize",implemented,v130,conformance/tests/stdlib_random_financial_expansion.bas,deterministic non-host random projection subset
-financial-expansion,"NPV/IRR/MIRR/Rate/NPer and related",partial,v132-v154,conformance/tests/stdlib_random_financial_expansion.bas,algorithmic subset now in place for NPV/IRR/MIRR while Rate/NPer/tolerance parity remains pending
+financial-expansion,"NPV/IRR/MIRR/Rate/NPer and related",partial,v132-v155,conformance/tests/stdlib_random_financial_expansion.bas,algorithmic subset now in place for NPV/IRR/MIRR/Rate/NPer; tolerance/convergence parity model remains pending
 info-introspection-expansion,"IsEmpty/IsNull/IsError/TypeOf...Is",implemented,v126-v153,conformance/tests/coercion_null_empty_error_predicates.bas,sentinel/equality predicate subset with explicit Empty/Null/Error tag distinctions
 file-io-library,"Open/Close/Input/Line Input/Print#/Write#/EOF/LOF/Seek/FreeFile",partial,v134,conformance/tests/stdlib_file_stub_intrinsics.bas,read/write statements pending; expression-level stub subset for FreeFile/EOF/LOF/Seek
 ui-interaction,"MsgBox/InputBox",planned,v87,,

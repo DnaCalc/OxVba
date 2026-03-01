@@ -1,6 +1,26 @@
 # Implementation Log
 
 ## 2026-03-01
+- Completed `v155` (`mvp-profile-v155`) financial functions II:
+  - replaced `Rate`/`NPer` projection lowering with dedicated runtime intrinsics:
+    - `Instruction::IntrinsicRateI32`
+    - `Instruction::IntrinsicNPerI32`
+  - implemented deterministic solver-style runtime behavior:
+    - bounded Newton iteration (numeric derivative) for `Rate`,
+    - guarded logarithmic-form solve for `NPer`;
+  - extended financial compiler emission checks to include all five financial extension intrinsics (`NPV`, `IRR`, `MIRR`, `Rate`, `NPer`);
+  - refreshed financial conformance outputs to algorithmic values in `stdlib_random_financial_expansion.bas`.
+- Validation lane for `v155` passed:
+  - `cargo fmt --all`
+  - `cargo test -p oxvba-runtime`
+  - `cargo test -p oxvba-compiler`
+  - `cargo test -p oxvba-vm`
+  - `cargo test -p oxvba-host`
+  - `./scripts/run-conformance.ps1 -Backend vm`
+  - `./scripts/run-conformance.ps1 -Backend jit`
+  - `./scripts/run-formal.ps1 -ProfileScope mvp-profile-v155`
+  - `./scripts/run-matrix.ps1 -ProfileScope mvp-profile-v155 -OutputDir docs/evidence/profiles/v155`
+  - `./scripts/meta-check.ps1 -Fast`
 - Completed `v154` (`mvp-profile-v154`) financial functions I:
   - replaced projection lowering for `NPV`/`IRR`/`MIRR` with dedicated runtime intrinsics:
     - `Instruction::IntrinsicNpvI32`

@@ -20,6 +20,7 @@ Objective:
 3. Financial intrinsic implementation upgrade:
 - Replace deterministic projection placeholders for `NPV`, `IRR`, `MIRR`, `Rate`, `NPer` with real numeric algorithms.
 - `v154` replaces projection behavior for `NPV`/`IRR`/`MIRR` with deterministic algorithmic execution; `Rate`/`NPer` and tolerance policy remain for `v155+v156`.
+- `v155` replaces projection behavior for `Rate`/`NPer` with deterministic algorithmic execution; tolerance/convergence policy remains for `v156`.
 - Add deterministic tolerance policy and stable numeric diagnostics.
 
 4. UDT/value semantics hardening:

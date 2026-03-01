@@ -387,7 +387,7 @@ mod tests {
 
     #[test]
     fn compile_financial_intrinsics_emit_algorithmic_ops() {
-        let source = "Sub Main()\nDim c\nDim d\nDim e\nc = NPV(1, 10, 20, 30)\nd = IRR(50)\ne = MIRR(70, 1, 2)\nEnd Sub";
+        let source = "Sub Main()\nDim c\nDim d\nDim e\nDim f\nDim g\nc = NPV(1, 10, 20, 30)\nd = IRR(50)\ne = MIRR(70, 1, 2)\nf = Rate(10, 2, 99)\ng = NPer(1, 2, 88, 3)\nEnd Sub";
         let out = compile(source).expect("compile should succeed");
         assert!(
             out.instructions
@@ -403,6 +403,16 @@ mod tests {
             out.instructions
                 .iter()
                 .any(|i| matches!(i, Instruction::IntrinsicMirrI32 { .. }))
+        );
+        assert!(
+            out.instructions
+                .iter()
+                .any(|i| matches!(i, Instruction::IntrinsicRateI32 { .. }))
+        );
+        assert!(
+            out.instructions
+                .iter()
+                .any(|i| matches!(i, Instruction::IntrinsicNPerI32 { .. }))
         );
     }
 
