@@ -1,6 +1,19 @@
 # Implementation Log
 
 ## 2026-03-01
+- Completed `v151` (`mvp-profile-v151`) string sentinel tightening:
+  - added typecheck guard rejecting `vbNullString` assignment into non-`String`/`Variant` targets;
+  - added call-site guard rejecting `vbNullString` argument flow into non-`String`/`Variant` typed parameters;
+  - added compiler regressions:
+    - `vbnullstring_assignment_to_long_is_rejected`
+    - `vbnullstring_argument_to_long_param_is_rejected`
+  - added conformance fixture:
+    - `conformance/tests/string_vbnullstring_long_error.bas`
+  - added host/formal coverage:
+    - `formal_v151_vbnullstring_long_assignment_is_rejected`
+  - published profile docs:
+    - `docs/worksets/WORKSET_2026-03-01_STRING_SENTINEL_TIGHTENING_V151.md`
+    - `docs/profile-status/PROFILE_STATUS_V151.md`
 - Completed `v150` (`mvp-profile-v150`) string runtime completion I:
   - replaced `Join` projection behavior for array-tag inputs in VM runtime (`Join` now maps array-tag values to deterministic element count in current model);
   - added VM regression `join_intrinsic_maps_array_tag_to_count`;

@@ -355,6 +355,21 @@ mod tests {
     }
 
     #[test]
+    fn vbnullstring_assignment_to_long_is_rejected() {
+        let source = "Sub Main()\nDim x As Long\nx = vbNullString\nEnd Sub";
+        let err = compile(source).expect_err("vbNullString should not assign to numeric target");
+        assert!(err.to_string().contains("type mismatch in assignment"));
+    }
+
+    #[test]
+    fn vbnullstring_argument_to_long_param_is_rejected() {
+        let source =
+            "Sub Main()\nCall Use(vbNullString)\nEnd Sub\nSub Use(ByVal x As Long)\nEnd Sub";
+        let err = compile(source).expect_err("vbNullString should not pass to numeric parameter");
+        assert!(err.to_string().contains("argument type mismatch"));
+    }
+
+    #[test]
     fn arithmetic_object_plus_const_is_rejected() {
         let source = "Sub Main()\nDim o As Object\no = o + 1\nEnd Sub";
         let err = compile(source).expect_err("object arithmetic should be rejected");

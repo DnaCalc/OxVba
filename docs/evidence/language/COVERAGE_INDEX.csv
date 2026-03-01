@@ -68,7 +68,7 @@ error_handling,On Error GoTo label,implemented,v41,conformance/tests/on_error_go
 error_handling,Resume statement (same statement or label),implemented,v95,conformance/tests/resume_statement_basic.bas,includes both Resume and Resume <label> subset (see resume_label_basic.bas)
 error_handling,Err object full surface,partial,v149,conformance/tests/err_surface_fields_subset.bas,subset includes Err.Number/Description/Source/HelpContext/HelpFile/LastDllError plus Raise/Clear and deterministic resume/procedure-boundary lifecycle clearing (`err_resume_next_clears.bas`,`err_proc_call_boundary_clears.bas`); oracle parity still pending
 types,Variant numeric core,implemented,v13,docs/evidence/formal/obligations.csv,
-types,String BSTR core,partial,v34,docs/evidence/formal/obligations.csv,boundary interop expansion pending
+types,String BSTR core,partial,v34-v151,docs/evidence/formal/obligations.csv,boundary interop expansion pending; deterministic subset now enforces compile-time `vbNullString` guard against numeric assignment/call targets
 types,Date and Currency core,implemented,v15,docs/evidence/formal/obligations.csv,
 types,Module Const declarations,implemented,v43,conformance/tests/module_const_basic.bas,
 types,Enum declarations,implemented,v43,conformance/tests/enum_basic.bas,

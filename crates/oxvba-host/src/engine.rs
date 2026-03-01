@@ -2257,6 +2257,28 @@ mod tests {
     }
 
     #[test]
+    fn formal_v151_vbnullstring_long_assignment_is_rejected() {
+        let source = "Sub Main()\nDim x As Long\nx = vbNullString\nEnd Sub";
+        let err = Engine::new(HostConfig {
+            enable_jit: false,
+            root_object_name: None,
+        })
+        .execute_source_with_snapshot(source)
+        .expect_err("vbNullString assignment to Long should fail");
+        assert!(err.contains("type mismatch"));
+    }
+
+    #[test]
+    fn formal_v151_conformance_fixture_exists() {
+        assert!(repo_path("conformance/tests/string_vbnullstring_long_error.bas").exists());
+    }
+
+    #[test]
+    fn formal_v151_profile_status_document_exists() {
+        assert!(repo_path("docs/profile-status/PROFILE_STATUS_V151.md").exists());
+    }
+
+    #[test]
     fn formal_v146_profile_status_range_exists() {
         for version in 108..=146 {
             let path = format!("docs/profile-status/PROFILE_STATUS_V{version}.md");

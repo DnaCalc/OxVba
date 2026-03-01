@@ -15,6 +15,7 @@ Objective:
 - Remove remaining placeholder/projection behavior in string operations where currently identity/count-only.
 - `v150` completed array-tag-aware `Join` behavior; remaining string-sentinel and deeper parity work continues in `v151+`.
 - Tighten `vbNullString` and String value-path invariants for non-boundary execution.
+- `v151` adds compile-time `vbNullString` guard against numeric assignment/call targets; runtime/oracle parity remains open.
 
 3. Financial intrinsic implementation upgrade:
 - Replace deterministic projection placeholders for `NPV`, `IRR`, `MIRR`, `Rate`, `NPer` with real numeric algorithms.

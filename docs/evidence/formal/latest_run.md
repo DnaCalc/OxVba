@@ -1,7 +1,7 @@
 # Formal Run Report
 
-- Timestamp (UTC): 2026-03-01T06:48:54Z
-- Profile scope: mvp-profile-v150
+- Timestamp (UTC): 2026-03-01T06:59:47Z
+- Profile scope: mvp-profile-v151
 - Overall mode: non-blocking
 - Kani required: false
 - Kani execution: deferred-to-wsl-async
@@ -278,3 +278,6 @@
 | FO-V150-001 | v150 | no | pass | cargo test -p oxvba-vm join_intrinsic_maps_array_tag_to_count | crates/oxvba-vm/src/interpreter.rs |  |
 | FO-V150-002 | v150 | no | pass | cargo test -p oxvba-host formal_v150_join_maps_array_tag_to_count | crates/oxvba-host/src/engine.rs |  |
 | FO-V150-003 | v150 | no | pass | cargo test -p oxvba-host formal_v150_profile_status_document_exists | docs/profile-status/PROFILE_STATUS_V150.md |  |
+| FO-V151-001 | v151 | no | pass | cargo test -p oxvba-compiler vbnullstring_assignment_to_long_is_rejected | crates/oxvba-compiler/src/lib.rs |  |
+| FO-V151-002 | v151 | no | pass | cargo test -p oxvba-host formal_v151_vbnullstring_long_assignment_is_rejected | crates/oxvba-host/src/engine.rs |  |
+| FO-V151-003 | v151 | no | pass | cargo test -p oxvba-host formal_v151_profile_status_document_exists | docs/profile-status/PROFILE_STATUS_V151.md |  |

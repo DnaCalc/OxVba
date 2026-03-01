@@ -161,6 +161,7 @@
 "string_mid_statement_mutation.bas","ok","19945"
 "string_slice_ops_dollar.bas","ok","12,45,234"
 "string_vbnullstring_basic.bas","ok","0"
+"string_vbnullstring_long_error.bas","error",""
 "string_vbnullstring_object_error.bas","error",""
 "subtract.bas","ok","16"
 "typechar_explicit_as_precedence_error.bas","error",""

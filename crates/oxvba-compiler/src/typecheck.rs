@@ -143,6 +143,14 @@ fn check_stmt(
             )?;
             let expr_ty = infer_expr_type(expr, declared_types);
             let target_ty = *declared_types.get(target).unwrap_or(&BoundType::Variant);
+            if is_vbnullstring_expr(expr)
+                && !matches!(target_ty, BoundType::String | BoundType::Variant)
+            {
+                return Err(format!(
+                    "type mismatch in assignment: vbNullString requires String or Variant target, got {:?} variable {}",
+                    target_ty, target
+                ));
+            }
             if can_assign_to(target_ty, expr_ty) {
                 Ok(())
             } else {
@@ -617,6 +625,14 @@ fn validate_call_site(
                 declaration_types,
             )?;
             let arg_ty = infer_expr_type(&arg.expr, declared_types);
+            if is_vbnullstring_expr(&arg.expr)
+                && !matches!(param.ty, BoundType::String | BoundType::Variant)
+            {
+                return Err(format!(
+                    "argument type mismatch for parameter {}: vbNullString requires String or Variant target, got {:?}",
+                    param.name, param.ty
+                ));
+            }
             if param.by_ref
                 && param.ty != BoundType::Variant
                 && arg_ty != BoundType::Variant
@@ -912,6 +928,13 @@ fn infer_expr_type(expr: &BoundExpr, declared_types: &HashMap<String, BoundType>
         }
         BoundExpr::ProcCall { .. } => BoundType::Variant,
     }
+}
+
+fn is_vbnullstring_expr(expr: &BoundExpr) -> bool {
+    matches!(
+        expr,
+        BoundExpr::IntrinsicCall { name, args } if name == "vbnullstring" && args.is_empty()
+    )
 }
 
 fn redim_preserve_bounds_are_legal(previous: &[(i32, i32)], next: &[(i32, i32)]) -> bool {
