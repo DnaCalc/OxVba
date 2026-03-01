@@ -123,6 +123,7 @@
 | Profile v161 Status | [`PROFILE_STATUS_V161.md`](profile-status/PROFILE_STATUS_V161.md) | Current gate status contract for `mvp-profile-v161` (financial algorithm/tolerance corpus expansion). |
 | Profile v162 Status | [`PROFILE_STATUS_V162.md`](profile-status/PROFILE_STATUS_V162.md) | Current gate status contract for `mvp-profile-v162` (formal/Kani obligation expansion for financial/tag runtime paths). |
 | Profile v163 Status | [`PROFILE_STATUS_V163.md`](profile-status/PROFILE_STATUS_V163.md) | Current gate status contract for `mvp-profile-v163` (non-HAL evidence index reconciliation). |
+| Profile v164 Status | [`PROFILE_STATUS_V164.md`](profile-status/PROFILE_STATUS_V164.md) | Current gate status contract for `mvp-profile-v164` (deferred-oracle gate synchronization with foldback notes). |
 | Profile v107 Status | [`PROFILE_STATUS_V107.md`](profile-status/PROFILE_STATUS_V107.md) | Current gate status contract for `mvp-lang-with-member-target-v107`. |
 | Profile v108-v146 Statuses | [`profile-status/`](profile-status/README.md) | AutoRun ladder status records are published through `PROFILE_STATUS_V146.md` for the active full-language/built-ins ladder range. |
 | Phase 12 Status | [`PHASE12_STATUS.md`](PHASE12_STATUS.md) | Declared profile scope and final conformance/stabilization gate artifacts. |
@@ -236,6 +237,7 @@
 | Work Set Plan (v161) | [`worksets/WORKSET_2026-03-01_CORPUS_EXPANSION_II_V161.md`](worksets/WORKSET_2026-03-01_CORPUS_EXPANSION_II_V161.md) | Financial algorithm/tolerance corpus expansion with dedicated success/failure fixture coverage. |
 | Work Set Plan (v162) | [`worksets/WORKSET_2026-03-01_FORMAL_OBLIGATIONS_UPDATE_V162.md`](worksets/WORKSET_2026-03-01_FORMAL_OBLIGATIONS_UPDATE_V162.md) | Formal/Kani obligations expansion for newly added financial tolerance and `VarType` runtime paths. |
 | Work Set Plan (v163) | [`worksets/WORKSET_2026-03-01_EVIDENCE_RECONCILIATION_V163.md`](worksets/WORKSET_2026-03-01_EVIDENCE_RECONCILIATION_V163.md) | Evidence index reconciliation of achieved non-HAL implementation status across language/runtime/spec checklists. |
+| Work Set Plan (v164) | [`worksets/WORKSET_2026-03-01_DEFERRED_ORACLE_SYNC_V164.md`](worksets/WORKSET_2026-03-01_DEFERRED_ORACLE_SYNC_V164.md) | Deferred-oracle synchronization pass with explicit foldback notes and implementation-defined follow-up tracking registration. |
 | Status Tours | [`status-tours/`](status-tours/) | Date-stamped orientation/showcase docs for implemented project state. |
 | Formal | [`FORMAL.md`](FORMAL.md) | Lean/Kani formal scaffold status and structure. |
 | Spec Checklist | [`evidence/SPEC_CHECKLIST.md`](evidence/SPEC_CHECKLIST.md) | Structured language + built-in/library checklist aligned to current evidence and planned gaps. |

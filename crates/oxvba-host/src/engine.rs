@@ -2600,6 +2600,41 @@ mod tests {
     }
 
     #[test]
+    fn formal_v164_non_hal_deferred_gates_have_foldback_notes() {
+        let text = std::fs::read_to_string(repo_path(
+            "docs/evidence/conformance/DEFERRED_ORACLE_GATES.csv",
+        ))
+        .expect("deferred oracle gates exists");
+        for line in text.lines().skip(1) {
+            if line.contains(",\"non-hal\",") && line.contains(",\"open\",") {
+                assert!(
+                    line.contains("Foldback:"),
+                    "non-hal open gate missing foldback note: {line}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn formal_v164_impl_defined_followup_is_registered() {
+        let topics = std::fs::read_to_string(repo_path(
+            "docs/evidence/conformance/CONFORMANCE_CHECK_TOPICS.csv",
+        ))
+        .expect("topics exists");
+        let gates = std::fs::read_to_string(repo_path(
+            "docs/evidence/conformance/DEFERRED_ORACLE_GATES.csv",
+        ))
+        .expect("gates exists");
+        assert!(topics.contains("CCT-036"));
+        assert!(gates.contains("ODG-034"));
+    }
+
+    #[test]
+    fn formal_v164_profile_status_document_exists() {
+        assert!(repo_path("docs/profile-status/PROFILE_STATUS_V164.md").exists());
+    }
+
+    #[test]
     fn formal_v132_builtin_expansion_fixtures_exist() {
         assert!(repo_path("conformance/tests/stdlib_string_expansion_core.bas").exists());
         assert!(repo_path("conformance/tests/stdlib_format_core.bas").exists());

@@ -1,7 +1,7 @@
 # Formal Run Report
 
-- Timestamp (UTC): 2026-03-01T09:40:49Z
-- Profile scope: mvp-profile-v163
+- Timestamp (UTC): 2026-03-01T09:52:04Z
+- Profile scope: mvp-profile-v164
 - Overall mode: non-blocking
 - Kani required: false
 - Kani execution: deferred-to-wsl-async
@@ -319,3 +319,6 @@
 | FO-V163-002 | v163 | no | pass | cargo test -p oxvba-host formal_v163_library_checklist_reconciles_financial_status | docs/evidence/runtime/LIBRARY_CHECKLIST.csv |  |
 | FO-V163-003 | v163 | no | pass | cargo test -p oxvba-host formal_v163_spec_checklist_reconciles_non_hal_rows | docs/evidence/SPEC_CHECKLIST.md |  |
 | FO-V163-004 | v163 | no | pass | cargo test -p oxvba-host formal_v163_profile_status_document_exists | docs/profile-status/PROFILE_STATUS_V163.md |  |
+| FO-V164-001 | v164 | no | pass | cargo test -p oxvba-host formal_v164_non_hal_deferred_gates_have_foldback_notes | docs/evidence/conformance/DEFERRED_ORACLE_GATES.csv |  |
+| FO-V164-002 | v164 | no | pass | cargo test -p oxvba-host formal_v164_impl_defined_followup_is_registered | docs/evidence/conformance/CONFORMANCE_CHECK_TOPICS.csv |  |
+| FO-V164-003 | v164 | no | pass | cargo test -p oxvba-host formal_v164_profile_status_document_exists | docs/profile-status/PROFILE_STATUS_V164.md |  |

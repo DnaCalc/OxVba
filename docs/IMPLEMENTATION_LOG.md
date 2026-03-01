@@ -1,6 +1,20 @@
 # Implementation Log
 
 ## 2026-03-01
+- Completed `v164` (`mvp-profile-v164`) deferred-oracle synchronization:
+  - normalized all non-HAL open rows in `DEFERRED_ORACLE_GATES.csv` with explicit `Foldback:` instructions;
+  - registered implementation-defined follow-up tracking topic/gate (`CCT-036` / `ODG-034`) for post-ladder conformance governance.
+- Validation lane for `v164` passed:
+  - `cargo fmt --all`
+  - `cargo test -p oxvba-runtime`
+  - `cargo test -p oxvba-compiler`
+  - `cargo test -p oxvba-vm`
+  - `cargo test -p oxvba-host`
+  - `./scripts/run-conformance.ps1 -Backend vm`
+  - `./scripts/run-conformance.ps1 -Backend jit`
+  - `./scripts/run-formal.ps1 -ProfileScope mvp-profile-v164`
+  - `./scripts/run-matrix.ps1 -ProfileScope mvp-profile-v164 -OutputDir docs/evidence/profiles/v164`
+  - `./scripts/meta-check.ps1 -Fast`
 - Completed `v163` (`mvp-profile-v163`) evidence reconciliation:
   - reconciled non-HAL achieved rows in:
     - `docs/evidence/language/COVERAGE_INDEX.csv`,
