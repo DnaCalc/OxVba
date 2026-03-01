@@ -1,6 +1,24 @@
 # Implementation Log
 
 ## 2026-03-01
+- Completed `v166` (`mvp-profile-v166`) terminal closure for non-HAL completion ladder `v147..v166`:
+  - published terminal profile/workset status and non-HAL milestone closure note:
+    - `docs/profile-status/PROFILE_STATUS_V166.md`
+    - `docs/worksets/WORKSET_2026-03-01_TERMINAL_CLOSURE_V166.md`
+    - `docs/evidence/profiles/v166/non_hal_completion_milestone.md`;
+  - published integrated gate artifacts for `v166` under `docs/evidence/profiles/v166/`.
+- Validation lane for `v166` passed:
+  - `./scripts/run-profile-gate.ps1 -ProfileScope mvp-profile-v166 -OutputDir docs/evidence/profiles/v166`
+  - `./scripts/run-formal.ps1 -ProfileScope mvp-profile-v166`
+  - `./scripts/meta-check.ps1 -Fast`
+- Completed `v165` (`mvp-profile-v165`) integrated non-HAL gate:
+  - published integrated matrix/formal/benchmark evidence under `docs/evidence/profiles/v165/`;
+  - added formal checks/obligations and status/workset records:
+    - `docs/profile-status/PROFILE_STATUS_V165.md`
+    - `docs/worksets/WORKSET_2026-03-01_INTEGRATED_NON_HAL_GATE_V165.md`.
+- Validation lane for `v165` passed:
+  - `./scripts/run-profile-gate.ps1 -ProfileScope mvp-profile-v165 -OutputDir docs/evidence/profiles/v165`
+  - `./scripts/meta-check.ps1 -Fast`
 - Completed `v164` (`mvp-profile-v164`) deferred-oracle synchronization:
   - normalized all non-HAL open rows in `DEFERRED_ORACLE_GATES.csv` with explicit `Foldback:` instructions;
   - registered implementation-defined follow-up tracking topic/gate (`CCT-036` / `ODG-034`) for post-ladder conformance governance.

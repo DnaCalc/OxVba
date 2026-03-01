@@ -1,0 +1,11 @@
+# Integrated Gate Report
+
+- Timestamp (UTC): 2026-03-01T13:26:25Z
+- Profile scope: mvp-profile-v166
+- Final gate status: PASS
+
+| Lane | Status | Artifact | Note |
+|---|---|---|---|
+| formal | pass | docs/evidence/formal/latest_run.csv | blocking obligations must pass |
+| matrix | pass | docs\evidence\profiles\v166\gate_report.md | required cells gate |
+| bench | pass | docs\evidence\profiles\v166\benchmark_latest.md | mixed workload benchmark artifacts |

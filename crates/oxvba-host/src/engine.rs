@@ -2635,6 +2635,49 @@ mod tests {
     }
 
     #[test]
+    fn formal_v165_integrated_gate_artifacts_exist() {
+        assert!(repo_path("docs/evidence/profiles/v165/integrated_gate.md").exists());
+        assert!(repo_path("docs/evidence/profiles/v165/matrix_latest.csv").exists());
+        assert!(repo_path("docs/evidence/profiles/v165/benchmark_latest.csv").exists());
+    }
+
+    #[test]
+    fn formal_v165_workset_document_exists() {
+        assert!(
+            repo_path("docs/worksets/WORKSET_2026-03-01_INTEGRATED_NON_HAL_GATE_V165.md",).exists()
+        );
+    }
+
+    #[test]
+    fn formal_v165_profile_status_document_exists() {
+        assert!(repo_path("docs/profile-status/PROFILE_STATUS_V165.md").exists());
+    }
+
+    #[test]
+    fn formal_v166_terminal_gate_artifacts_exist() {
+        assert!(repo_path("docs/evidence/profiles/v166/integrated_gate.md").exists());
+        assert!(repo_path("docs/evidence/profiles/v166/gate_report.md").exists());
+        assert!(repo_path("docs/evidence/profiles/v166/matrix_latest.csv").exists());
+        assert!(repo_path("docs/evidence/profiles/v166/benchmark_latest.csv").exists());
+    }
+
+    #[test]
+    fn formal_v166_non_hal_milestone_closure_doc_exists() {
+        let text = std::fs::read_to_string(repo_path(
+            "docs/evidence/profiles/v166/non_hal_completion_milestone.md",
+        ))
+        .expect("v166 milestone closure document exists");
+        assert!(text.contains("v147..v166"));
+        assert!(text.contains("Exit criteria"));
+        assert!(text.contains("Deferred Oracle Gates"));
+    }
+
+    #[test]
+    fn formal_v166_profile_status_document_exists() {
+        assert!(repo_path("docs/profile-status/PROFILE_STATUS_V166.md").exists());
+    }
+
+    #[test]
     fn formal_v132_builtin_expansion_fixtures_exist() {
         assert!(repo_path("conformance/tests/stdlib_string_expansion_core.bas").exists());
         assert!(repo_path("conformance/tests/stdlib_format_core.bas").exists());
