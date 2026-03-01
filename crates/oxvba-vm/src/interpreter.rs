@@ -2066,6 +2066,7 @@ mod tests {
 mod kani_proofs {
     use crate::interpreter::Vm;
     use oxvba_compiler::{Bytecode, Instruction};
+    use oxvba_runtime::value_tags::error_tag_from_code;
 
     #[kani::proof]
     fn pc_progression_is_safe_for_valid_jump_target() {
@@ -2135,5 +2136,35 @@ mod kani_proofs {
         for idx in 2..=7 {
             assert!(out[idx] == 0 || out[idx] == 1);
         }
+    }
+
+    #[kani::proof]
+    fn financial_rate_zero_nper_yields_error_tag() {
+        let out = Vm::rate_i32(0, 0, 0, 0, 0, 0);
+        assert_eq!(out, error_tag_from_code(2001));
+    }
+
+    #[kani::proof]
+    fn financial_nper_invalid_domain_yields_error_tag() {
+        let out = Vm::nper_i32(1, 0, 0, 0, 0);
+        assert_eq!(out, error_tag_from_code(2002));
+    }
+
+    #[kani::proof]
+    fn vartype_intrinsic_outputs_expected_domain() {
+        let value: i32 = kani::any();
+        let bytecode = Bytecode {
+            instructions: vec![
+                Instruction::LoadConstI32 { slot: 0, value },
+                Instruction::IntrinsicVarTypeTag { dst: 1, src: 0 },
+                Instruction::Halt,
+            ],
+            slot_count: 2,
+            user_slot_count: 2,
+        };
+        let mut vm = Vm::default();
+        assert!(vm.execute(&bytecode).is_ok());
+        let out = vm.snapshot_slots(2)[1];
+        assert!(matches!(out, 0 | 1 | 3 | 10 | 8204));
     }
 }

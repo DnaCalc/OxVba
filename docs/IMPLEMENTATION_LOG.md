@@ -1,6 +1,23 @@
 # Implementation Log
 
 ## 2026-03-01
+- Completed `v162` (`mvp-profile-v162`) formal obligations update:
+  - added Kani proof harnesses in `crates/oxvba-vm/src/interpreter.rs` for:
+    - `Rate` invalid/non-convergent error-tag path,
+    - `NPer` invalid-domain error-tag path,
+    - `VarType` intrinsic output-domain invariants;
+  - registered new Kani obligations in `docs/evidence/formal/obligations.csv` and added host checks for harness/profile presence.
+- Validation lane for `v162` passed:
+  - `cargo fmt --all`
+  - `cargo test -p oxvba-runtime`
+  - `cargo test -p oxvba-compiler`
+  - `cargo test -p oxvba-vm`
+  - `cargo test -p oxvba-host`
+  - `./scripts/run-conformance.ps1 -Backend vm`
+  - `./scripts/run-conformance.ps1 -Backend jit`
+  - `./scripts/run-formal.ps1 -ProfileScope mvp-profile-v162`
+  - `./scripts/run-matrix.ps1 -ProfileScope mvp-profile-v162 -OutputDir docs/evidence/profiles/v162`
+  - `./scripts/meta-check.ps1 -Fast`
 - Completed `v161` (`mvp-profile-v161`) corpus expansion II (financial algorithms/tolerance):
   - added dedicated conformance fixtures:
     - `financial_algorithm_npv_irr_mirr_subset.bas`,

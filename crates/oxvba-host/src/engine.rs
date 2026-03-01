@@ -2545,6 +2545,21 @@ mod tests {
     }
 
     #[test]
+    fn formal_v162_vm_kani_harnesses_cover_financial_and_vartype_paths() {
+        let text = std::fs::read_to_string(repo_path("crates/oxvba-vm/src/interpreter.rs"))
+            .expect("interpreter exists");
+        assert!(text.contains("financial_rate_zero_nper_yields_error_tag"));
+        assert!(text.contains("financial_nper_invalid_domain_yields_error_tag"));
+        assert!(text.contains("vartype_intrinsic_outputs_expected_domain"));
+        assert!(text.contains("#[cfg(kani)]"));
+    }
+
+    #[test]
+    fn formal_v162_profile_status_document_exists() {
+        assert!(repo_path("docs/profile-status/PROFILE_STATUS_V162.md").exists());
+    }
+
+    #[test]
     fn formal_v132_builtin_expansion_fixtures_exist() {
         assert!(repo_path("conformance/tests/stdlib_string_expansion_core.bas").exists());
         assert!(repo_path("conformance/tests/stdlib_format_core.bas").exists());

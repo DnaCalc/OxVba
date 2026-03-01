@@ -1,7 +1,7 @@
 # Formal Run Report
 
-- Timestamp (UTC): 2026-03-01T09:18:37Z
-- Profile scope: mvp-profile-v161
+- Timestamp (UTC): 2026-03-01T09:29:09Z
+- Profile scope: mvp-profile-v162
 - Overall mode: non-blocking
 - Kani required: false
 - Kani execution: deferred-to-wsl-async
@@ -311,3 +311,7 @@
 | FO-V161-001 | v161 | no | pass | cargo test -p oxvba-host formal_v161_financial_algorithm_fixtures_execute | crates/oxvba-host/src/engine.rs |  |
 | FO-V161-002 | v161 | no | pass | cargo test -p oxvba-host formal_v161_conformance_fixtures_exist | conformance/tests/financial_algorithm_npv_irr_mirr_subset.bas |  |
 | FO-V161-003 | v161 | no | pass | cargo test -p oxvba-host formal_v161_profile_status_document_exists | docs/profile-status/PROFILE_STATUS_V161.md |  |
+| FO-V162-001 | v162 | no | skipped | cargo kani -p oxvba-vm --harness financial_rate_zero_nper_yields_error_tag | crates/oxvba-vm/src/interpreter.rs | cargo-kani available via WSL; rerun with -UseWslKani (recommended via run-formal-kani-async.ps1) |
+| FO-V162-002 | v162 | no | skipped | cargo kani -p oxvba-vm --harness financial_nper_invalid_domain_yields_error_tag | crates/oxvba-vm/src/interpreter.rs | cargo-kani available via WSL; rerun with -UseWslKani (recommended via run-formal-kani-async.ps1) |
+| FO-V162-003 | v162 | no | skipped | cargo kani -p oxvba-vm --harness vartype_intrinsic_outputs_expected_domain | crates/oxvba-vm/src/interpreter.rs | cargo-kani available via WSL; rerun with -UseWslKani (recommended via run-formal-kani-async.ps1) |
+| FO-V162-004 | v162 | no | pass | cargo test -p oxvba-host formal_v162_profile_status_document_exists | docs/profile-status/PROFILE_STATUS_V162.md |  |
