@@ -13,6 +13,7 @@ Objective:
 
 2. Runtime string/value model completion:
 - Remove remaining placeholder/projection behavior in string operations where currently identity/count-only.
+- `v150` completed array-tag-aware `Join` behavior; remaining string-sentinel and deeper parity work continues in `v151+`.
 - Tighten `vbNullString` and String value-path invariants for non-boundary execution.
 
 3. Financial intrinsic implementation upgrade:

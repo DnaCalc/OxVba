@@ -157,6 +157,7 @@
 "stdlib_variant_predicates.bas","ok","1,1,0"
 "string_compare_option_binary.bas","ok","3,-1"
 "string_compare_option_text.bas","ok","3,-1"
+"string_join_array_tag_count.bas","ok","-999999997,3"
 "string_mid_statement_mutation.bas","ok","19945"
 "string_slice_ops_dollar.bas","ok","12,45,234"
 "string_vbnullstring_basic.bas","ok","0"

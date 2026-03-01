@@ -56,7 +56,7 @@ Reference inventory: `docs/evidence/runtime/LIBRARY_CHECKLIST.csv`.
 | State | Library Family | Functions / Surface | Scope/Evidence | Notes |
 |---|---|---|---|---|
 | `[x]` | Conversions (core subset) | `CInt`, `CLng`, `CDbl`, `CStr`, `CBool`, `CDate`, `Val`, `Str`, `CVErr` | `COVERAGE_INDEX.csv` (`v45`, `v51`) | Current coercion/domain subset. |
-| `[x]` | String intrinsics (core/advanced subset) | `Len`, `Left`, `Right`, `Mid`, `InStr`, `InStrRev`, `LCase`, `UCase`, `Split`, `Join`, `Replace`, `Trim/LTrim/RTrim`, `StrComp`, `Like` | `INTRINSIC_SURFACE.csv` + conformance fixtures | Deterministic subset semantics. |
+| `[x]` | String intrinsics (core/advanced subset) | `Len`, `Left`, `Right`, `Mid`, `InStr`, `InStrRev`, `LCase`, `UCase`, `Split`, `Join`, `Replace`, `Trim/LTrim/RTrim`, `StrComp`, `Like` | `INTRINSIC_SURFACE.csv` + conformance fixtures | Deterministic subset semantics; `Join` now maps array-tag inputs to element count in current runtime model (`string_join_array_tag_count.bas`). |
 | `[x]` | Date/time subset | `DateSerial`, `TimeSerial`, `DateValue`, `TimeValue`, `DateAdd`, `DateDiff` | `v48` evidence | Deterministic numeric projection subset. |
 | `[x]` | Math/financial subset | `Abs`, `Int`, `Fix`, `Sgn`, `Round`, `Sqr`, `Sin`, `Cos`, `Log`, `Exp`, `FV`, `PV`, `PMT` | `v49` evidence | Integer/zero-rate subset semantics. |
 | `[x]` | Array/type inspection subset | `Array`, `LBound`, `UBound`, `IsArray`, `VarType`, `TypeName`, `IsNumeric`, `IsDate`, `IsObject` | `v50` evidence | Tag and bounds projection subset. |

@@ -263,3 +263,6 @@ FO-V148-003,v148,"cargo test -p oxvba-host formal_v148_profile_status_document_e
 FO-V149-001,v149,"cargo test -p oxvba-vm resume_next_clears_error_state_before_continuing",no,true,crates/oxvba-vm/src/interpreter.rs
 FO-V149-002,v149,"cargo test -p oxvba-host formal_v149_resume_next_clears_err_number",no,true,crates/oxvba-host/src/engine.rs
 FO-V149-003,v149,"cargo test -p oxvba-host formal_v149_profile_status_document_exists",no,true,docs/profile-status/PROFILE_STATUS_V149.md
+FO-V150-001,v150,"cargo test -p oxvba-vm join_intrinsic_maps_array_tag_to_count",no,true,crates/oxvba-vm/src/interpreter.rs
+FO-V150-002,v150,"cargo test -p oxvba-host formal_v150_join_maps_array_tag_to_count",no,true,crates/oxvba-host/src/engine.rs
+FO-V150-003,v150,"cargo test -p oxvba-host formal_v150_profile_status_document_exists",no,true,docs/profile-status/PROFILE_STATUS_V150.md

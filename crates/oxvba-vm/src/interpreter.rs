@@ -945,7 +945,9 @@ impl Vm {
     }
 
     fn join_digits(value: i32, _delimiter: i32) -> i32 {
-        value
+        array_len_from_tag(value)
+            .and_then(|count| i32::try_from(count).ok())
+            .unwrap_or(value)
     }
 
     fn replace_digits(value: i32, find: i32, replace: i32) -> i32 {
@@ -1302,6 +1304,31 @@ mod tests {
                 123231, 23, 12345, 67, 12, 123, 3, 12345, 16745, 12345, 12345, 12345, -1, 4, -1
             ]
         );
+    }
+
+    #[test]
+    fn join_intrinsic_maps_array_tag_to_count() {
+        let bytecode = Bytecode {
+            instructions: vec![
+                Instruction::LoadConstI32 {
+                    slot: 0,
+                    value: ARRAY_TAG_BASE + 3,
+                },
+                Instruction::LoadConstI32 { slot: 1, value: 0 },
+                Instruction::IntrinsicJoinDigits {
+                    dst: 2,
+                    src: 0,
+                    delimiter: 1,
+                },
+                Instruction::Halt,
+            ],
+            slot_count: 3,
+            user_slot_count: 3,
+        };
+
+        let mut vm = Vm::default();
+        vm.execute(&bytecode).expect("vm should execute bytecode");
+        assert_eq!(vm.snapshot_slots(3), vec![ARRAY_TAG_BASE + 3, 0, 3]);
     }
 
     #[test]

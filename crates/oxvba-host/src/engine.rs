@@ -2234,6 +2234,29 @@ mod tests {
     }
 
     #[test]
+    fn formal_v150_join_maps_array_tag_to_count() {
+        let source = "Sub Main()\nDim a\nDim y\na = Array(1, 2, 3)\ny = Join(a, 0)\nEnd Sub";
+        let out = Engine::new(HostConfig {
+            enable_jit: false,
+            root_object_name: None,
+        })
+        .execute_source_with_snapshot(source)
+        .expect("execution should succeed");
+        let expected_tag = oxvba_runtime::safe_array::ARRAY_TAG_BASE + 3;
+        assert_eq!(out, vec![expected_tag, 3]);
+    }
+
+    #[test]
+    fn formal_v150_conformance_fixture_exists() {
+        assert!(repo_path("conformance/tests/string_join_array_tag_count.bas").exists());
+    }
+
+    #[test]
+    fn formal_v150_profile_status_document_exists() {
+        assert!(repo_path("docs/profile-status/PROFILE_STATUS_V150.md").exists());
+    }
+
+    #[test]
     fn formal_v146_profile_status_range_exists() {
         for version in 108..=146 {
             let path = format!("docs/profile-status/PROFILE_STATUS_V{version}.md");

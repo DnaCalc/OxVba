@@ -1,6 +1,19 @@
 # Implementation Log
 
 ## 2026-03-01
+- Completed `v150` (`mvp-profile-v150`) string runtime completion I:
+  - replaced `Join` projection behavior for array-tag inputs in VM runtime (`Join` now maps array-tag values to deterministic element count in current model);
+  - added VM regression `join_intrinsic_maps_array_tag_to_count`;
+  - added host/formal coverage:
+    - `formal_v150_join_maps_array_tag_to_count`
+    - fixture/profile-status existence checks for `v150`;
+  - added conformance fixture:
+    - `conformance/tests/string_join_array_tag_count.bas`
+  - updated evidence/checklist notes:
+    - `COVERAGE_INDEX.csv`, `LIBRARY_CHECKLIST.csv`, `SPEC_CHECKLIST.md`
+  - added profile docs:
+    - `docs/worksets/WORKSET_2026-03-01_STRING_RUNTIME_COMPLETION_I_V150.md`
+    - `docs/profile-status/PROFILE_STATUS_V150.md`
 - Completed `v149` (`mvp-profile-v149`) err lifecycle transitions:
   - VM now clears `Err` state on successful `Resume Next`, `Resume`, and `Resume <label>` paths via centralized interpreter reset helper;
   - emitter now inserts deterministic `ClearErr` guards at procedure entry and procedure exit boundaries;
