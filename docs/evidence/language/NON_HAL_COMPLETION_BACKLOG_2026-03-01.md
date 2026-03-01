@@ -23,6 +23,7 @@ Objective:
 
 4. UDT/value semantics hardening:
 - Strengthen UDT copy/assignment/value-initialization behavior beyond flattened alias baseline where implementable without host interop.
+- `v152` adds deterministic whole-UDT assignment lowering into field-alias copies; deeper initialization/order parity remains open.
 
 5. Diagnostics and phase timing consistency:
 - Stabilize compile-time vs runtime error timing for non-HAL language/runtime constructs.

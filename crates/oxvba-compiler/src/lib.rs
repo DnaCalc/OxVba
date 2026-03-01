@@ -1146,6 +1146,21 @@ mod tests {
     }
 
     #[test]
+    fn compile_udt_whole_assignment_emits_field_copy_slots() {
+        let source = "Type Point\nX As Integer\nY As Integer\nEnd Type\nSub Main()\nDim a As Point\nDim b As Point\na.X = 7\na.Y = 9\nb = a\nEnd Sub";
+        let out = compile(source).expect("compile should succeed");
+        let copy_count = out
+            .instructions
+            .iter()
+            .filter(|i| matches!(i, Instruction::CopySlot { .. }))
+            .count();
+        assert!(
+            copy_count >= 2,
+            "expected field copy lowering for UDT assignment"
+        );
+    }
+
+    #[test]
     fn compile_late_bound_assignment_emits_dispatchinvoke_subset() {
         let source = "Sub Main()\nDim obj As Object\nDim x\nx = obj(7)\nEnd Sub";
         let out = compile(source).expect("compile should succeed");

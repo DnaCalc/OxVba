@@ -2279,6 +2279,28 @@ mod tests {
     }
 
     #[test]
+    fn formal_v152_udt_whole_assignment_copies_fields() {
+        let source = "Type Point\nX As Integer\nY As Integer\nEnd Type\nSub Main()\nDim a As Point\nDim b As Point\nDim x\na.X = 7\na.Y = 9\nb = a\nx = b.Y\nEnd Sub";
+        let out = Engine::new(HostConfig {
+            enable_jit: false,
+            root_object_name: None,
+        })
+        .execute_source_with_snapshot(source)
+        .expect("execution should succeed");
+        assert_eq!(out, vec![0, 7, 9, 0, 7, 9, 9]);
+    }
+
+    #[test]
+    fn formal_v152_conformance_fixture_exists() {
+        assert!(repo_path("conformance/tests/udt_whole_assignment_copy.bas").exists());
+    }
+
+    #[test]
+    fn formal_v152_profile_status_document_exists() {
+        assert!(repo_path("docs/profile-status/PROFILE_STATUS_V152.md").exists());
+    }
+
+    #[test]
     fn formal_v146_profile_status_range_exists() {
         for version in 108..=146 {
             let path = format!("docs/profile-status/PROFILE_STATUS_V{version}.md");

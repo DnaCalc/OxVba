@@ -111,6 +111,7 @@
 | Profile v149 Status | [`PROFILE_STATUS_V149.md`](profile-status/PROFILE_STATUS_V149.md) | Current gate status contract for `mvp-profile-v149` (`Err` lifecycle transitions). |
 | Profile v150 Status | [`PROFILE_STATUS_V150.md`](profile-status/PROFILE_STATUS_V150.md) | Current gate status contract for `mvp-profile-v150` (string runtime completion I: array-tag-aware `Join`). |
 | Profile v151 Status | [`PROFILE_STATUS_V151.md`](profile-status/PROFILE_STATUS_V151.md) | Current gate status contract for `mvp-profile-v151` (`vbNullString` non-boundary typing guard tightening). |
+| Profile v152 Status | [`PROFILE_STATUS_V152.md`](profile-status/PROFILE_STATUS_V152.md) | Current gate status contract for `mvp-profile-v152` (deterministic whole-UDT assignment lowering). |
 | Profile v107 Status | [`PROFILE_STATUS_V107.md`](profile-status/PROFILE_STATUS_V107.md) | Current gate status contract for `mvp-lang-with-member-target-v107`. |
 | Profile v108-v146 Statuses | [`profile-status/`](profile-status/README.md) | AutoRun ladder status records are published through `PROFILE_STATUS_V146.md` for the active full-language/built-ins ladder range. |
 | Phase 12 Status | [`PHASE12_STATUS.md`](PHASE12_STATUS.md) | Declared profile scope and final conformance/stabilization gate artifacts. |
@@ -212,6 +213,7 @@
 | Work Set Plan (v149) | [`worksets/WORKSET_2026-03-01_ERR_LIFECYCLE_TRANSITIONS_V149.md`](worksets/WORKSET_2026-03-01_ERR_LIFECYCLE_TRANSITIONS_V149.md) | Deterministic `Err` lifecycle transitions for `Resume*` and procedure-boundary clearing in non-HAL execution. |
 | Work Set Plan (v150) | [`worksets/WORKSET_2026-03-01_STRING_RUNTIME_COMPLETION_I_V150.md`](worksets/WORKSET_2026-03-01_STRING_RUNTIME_COMPLETION_I_V150.md) | String runtime completion step replacing `Join` projection behavior with concrete array-tag-aware semantics. |
 | Work Set Plan (v151) | [`worksets/WORKSET_2026-03-01_STRING_SENTINEL_TIGHTENING_V151.md`](worksets/WORKSET_2026-03-01_STRING_SENTINEL_TIGHTENING_V151.md) | String sentinel tightening pass for deterministic `vbNullString` usage rules in compile-time assignment/call flows. |
+| Work Set Plan (v152) | [`worksets/WORKSET_2026-03-01_UDT_VALUE_SEMANTICS_V152.md`](worksets/WORKSET_2026-03-01_UDT_VALUE_SEMANTICS_V152.md) | UDT value-semantics hardening pass for whole-value assignment lowering into deterministic field-copy behavior. |
 | Status Tours | [`status-tours/`](status-tours/) | Date-stamped orientation/showcase docs for implemented project state. |
 | Formal | [`FORMAL.md`](FORMAL.md) | Lean/Kani formal scaffold status and structure. |
 | Spec Checklist | [`evidence/SPEC_CHECKLIST.md`](evidence/SPEC_CHECKLIST.md) | Structured language + built-in/library checklist aligned to current evidence and planned gaps. |

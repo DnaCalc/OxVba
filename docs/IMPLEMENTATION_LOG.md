@@ -1,6 +1,33 @@
 # Implementation Log
 
 ## 2026-03-01
+- Completed `v152` (`mvp-profile-v152`) UDT/value semantics hardening:
+  - added resolver detection for whole-UDT assignment (`b = a`) across flattened alias sets;
+  - added a dedicated bound statement path:
+    - `BoundStmt::UdtAssign { target, source, fields }`
+  - added typecheck validation for UDT assignment alias-pair presence;
+  - lowered whole-UDT assignment into deterministic field copy bytecode (`CopySlot` per field);
+  - added compiler regressions:
+    - `resolve_udt_whole_assignment_emits_struct_copy_stmt`
+    - `compile_udt_whole_assignment_emits_field_copy_slots`
+  - added host/formal coverage:
+    - `formal_v152_udt_whole_assignment_copies_fields`
+    - fixture/profile-status existence checks for `v152`;
+  - added conformance fixture:
+    - `conformance/tests/udt_whole_assignment_copy.bas`
+  - published profile docs:
+    - `docs/worksets/WORKSET_2026-03-01_UDT_VALUE_SEMANTICS_V152.md`
+    - `docs/profile-status/PROFILE_STATUS_V152.md`
+- Validation lane for `v152` passed:
+  - `cargo fmt --all`
+  - `cargo test -p oxvba-compiler`
+  - `cargo test -p oxvba-vm`
+  - `cargo test -p oxvba-host`
+  - `./scripts/run-conformance.ps1 -Backend vm`
+  - `./scripts/run-conformance.ps1 -Backend jit`
+  - `./scripts/run-formal.ps1 -ProfileScope mvp-profile-v152`
+  - `./scripts/run-matrix.ps1 -ProfileScope mvp-profile-v152 -OutputDir docs/evidence/profiles/v152`
+  - `./scripts/meta-check.ps1 -Fast`
 - Completed `v151` (`mvp-profile-v151`) string sentinel tightening:
   - added typecheck guard rejecting `vbNullString` assignment into non-`String`/`Variant` targets;
   - added call-site guard rejecting `vbNullString` argument flow into non-`String`/`Variant` typed parameters;

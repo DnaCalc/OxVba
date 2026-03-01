@@ -45,7 +45,7 @@ Primary evidence sources:
 | `[~]` | Error object | Full `Err` object surface | `stdlib_error_err_raise_resume.bas`, `err_clear_basic.bas`, `err_surface_fields_subset.bas`, `err_resume_next_clears.bas`, `err_proc_call_boundary_clears.bas` | Current subset includes `Err.Number/Description/Source/HelpContext/HelpFile/LastDllError`, `Err.Raise`, and `Err.Clear`; deterministic lifecycle clears on `Resume*` and procedure boundaries are now executable, full VBA parity still pending. |
 | `[x]` | Types | Typed scalar lattice + coercion matrix + defaults (`Def*`, type chars) | `v67..v76` artifacts and compiler tests | Implemented subset. |
 | `[~]` | Types | `String` BSTR and UDT runtime semantics | `COVERAGE_INDEX.csv` (`String BSTR core`) | String BSTR boundary expansion remains partial; non-boundary `vbNullString` usage is now tightened with compile-time numeric-target rejection in current subset. |
-| `[x]` | Types | UDT field access/assignment subset | `udt_field_access_basic.bas` | Type declarations plus flattened field-alias read/write subset implemented. |
+| `[x]` | Types | UDT field access/assignment subset | `udt_field_access_basic.bas`, `udt_whole_assignment_copy.bas` | Type declarations plus flattened field-alias read/write subset and deterministic whole-value copy lowering are implemented. |
 | `[x]` | Late binding | Object default-member late-bound calls | `late_bound_default_member_exec.bas`, `late_bound_named_argument_exec.bas` | Deterministic late-bound execution subset supports up to one argument. |
 | `[x]` | Backends | VM + JIT subset with fallback | `run-conformance.ps1`, `v24+` evidence | Implemented for current supported op surface. |
 

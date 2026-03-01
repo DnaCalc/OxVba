@@ -72,8 +72,8 @@ types,String BSTR core,partial,v34-v151,docs/evidence/formal/obligations.csv,bou
 types,Date and Currency core,implemented,v15,docs/evidence/formal/obligations.csv,
 types,Module Const declarations,implemented,v43,conformance/tests/module_const_basic.bas,
 types,Enum declarations,implemented,v43,conformance/tests/enum_basic.bas,
-types,User-defined types (UDT),implemented,v100,conformance/tests/udt_field_access_basic.bas,declaration plus flattened field-alias storage subset
-types,UDT field access and assignment,implemented,v100,conformance/tests/udt_field_access_basic.bas,field read/write via flattened aliases
+types,User-defined types (UDT),implemented,v100-v152,conformance/tests/udt_field_access_basic.bas,declaration plus flattened field-alias storage subset with deterministic whole-value copy lowering
+types,UDT field access and assignment,implemented,v100-v152,conformance/tests/udt_whole_assignment_copy.bas,field read/write plus whole-value assignment lowered into alias copy route
 types,Late-bound default-member execution,implemented,v102,conformance/tests/late_bound_default_member_exec.bas,deterministic single-argument dispatch subset
 objects,Root object injection,implemented,v7,crates/oxvba-host/src/engine.rs,
 objects,Class module lifecycle,implemented,v54,conformance/tests/class_lifecycle_resume_next_ok.bas,lifecycle procedures auto-invoked around entry

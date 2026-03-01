@@ -57,6 +57,11 @@ pub enum BoundStmt {
         target: String,
         expr: BoundExpr,
     },
+    UdtAssign {
+        target: String,
+        source: String,
+        fields: Vec<String>,
+    },
     MidAssign {
         target: String,
         start: BoundExpr,
@@ -2093,6 +2098,16 @@ fn parse_assign_or_unsupported(
         }
 
         if let Some(expr) = parse_expr(rhs_raw, array_bounds) {
+            if let BoundExpr::Var(source) = &expr
+                && let Some(fields) =
+                    shared_udt_fields_for_assignment(&target, source, declarations)
+            {
+                return BoundStmt::UdtAssign {
+                    target,
+                    source: source.clone(),
+                    fields,
+                };
+            }
             if let Some(route_proc) = property_write_routes.get(&target)
                 && !declarations
                     .iter()
@@ -2125,6 +2140,39 @@ fn parse_assign_or_unsupported(
     BoundStmt::Unsupported {
         line: line.to_string(),
     }
+}
+
+fn shared_udt_fields_for_assignment(
+    target: &str,
+    source: &str,
+    declarations: &[String],
+) -> Option<Vec<String>> {
+    let target_fields = collect_udt_field_suffixes(target, declarations);
+    if target_fields.is_empty() {
+        return None;
+    }
+    let source_fields = collect_udt_field_suffixes(source, declarations);
+    if source_fields.is_empty() || source_fields != target_fields {
+        return None;
+    }
+    Some(target_fields)
+}
+
+fn collect_udt_field_suffixes(base: &str, declarations: &[String]) -> Vec<String> {
+    let prefix = format!("{}_", base.to_ascii_lowercase());
+    let mut fields = Vec::new();
+    for declaration in declarations {
+        let lower = declaration.to_ascii_lowercase();
+        if let Some(suffix) = lower.strip_prefix(&prefix) {
+            if suffix.is_empty() || suffix.chars().all(|ch| ch.is_ascii_digit()) {
+                continue;
+            }
+            fields.push(suffix.to_string());
+        }
+    }
+    fields.sort();
+    fields.dedup();
+    fields
 }
 
 fn parse_mid_assign_stmt(line: &str, array_bounds: &ArrayBoundsMap) -> Option<BoundStmt> {
@@ -4353,6 +4401,22 @@ mod tests {
                 .iter()
                 .any(|s| matches!(s, BoundStmt::Assign { target, .. } if target == "x"))
         );
+    }
+
+    #[test]
+    fn resolve_udt_whole_assignment_emits_struct_copy_stmt() {
+        let source = "Type Point\nX As Integer\nY As Integer\nEnd Type\nSub Main()\nDim a As Point\nDim b As Point\na.X = 7\na.Y = 9\nb = a\nEnd Sub";
+        let module = resolve_symbols(source);
+        assert!(module.body.iter().any(|stmt| {
+            matches!(
+                stmt,
+                BoundStmt::UdtAssign {
+                    target,
+                    source,
+                    fields
+                } if target == "b" && source == "a" && fields == &vec!["x".to_string(), "y".to_string()]
+            )
+        }));
     }
 
     #[test]

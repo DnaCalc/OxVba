@@ -160,6 +160,40 @@ fn check_stmt(
                 ))
             }
         }
+        BoundStmt::UdtAssign {
+            target,
+            source,
+            fields,
+        } => {
+            ensure_declared(
+                target,
+                option_explicit,
+                default_type_table,
+                declared,
+                declared_types,
+                declarations,
+                declaration_types,
+            )?;
+            ensure_declared(
+                source,
+                option_explicit,
+                default_type_table,
+                declared,
+                declared_types,
+                declarations,
+                declaration_types,
+            )?;
+            for field in fields {
+                let dst_alias = format!("{target}_{field}");
+                let src_alias = format!("{source}_{field}");
+                if !declared.contains(&dst_alias) || !declared.contains(&src_alias) {
+                    return Err(format!(
+                        "udt assignment field mismatch: missing alias pair {dst_alias}/{src_alias}"
+                    ));
+                }
+            }
+            Ok(())
+        }
         BoundStmt::MidAssign {
             target,
             start,

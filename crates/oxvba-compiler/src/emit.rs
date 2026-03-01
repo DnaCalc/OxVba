@@ -249,6 +249,22 @@ fn emit_stmt(
                 );
             }
         }
+        BoundStmt::UdtAssign {
+            target,
+            source,
+            fields,
+        } => {
+            for field in fields {
+                let dst_alias = format!("{target}_{field}");
+                let src_alias = format!("{source}_{field}");
+                if let (Some(dst), Some(src)) = (
+                    slot_map.get(dst_alias.as_str()).copied(),
+                    slot_map.get(src_alias.as_str()).copied(),
+                ) {
+                    instructions.push(Instruction::CopySlot { dst, src });
+                }
+            }
+        }
         BoundStmt::MidAssign {
             target,
             start,
