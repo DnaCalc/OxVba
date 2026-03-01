@@ -1,7 +1,7 @@
 # Formal Run Report
 
-- Timestamp (UTC): 2026-03-01T13:26:57Z
-- Profile scope: mvp-profile-v166
+- Timestamp (UTC): 2026-03-01T13:52:05Z
+- Profile scope: mvp-profile-v170
 - Overall mode: non-blocking
 - Kani required: false
 - Kani execution: deferred-to-wsl-async
@@ -328,3 +328,12 @@
 | FO-V166-001 | v166 | no | pass | cargo test -p oxvba-host formal_v166_terminal_gate_artifacts_exist | docs/evidence/profiles/v166/integrated_gate.md |  |
 | FO-V166-002 | v166 | no | pass | cargo test -p oxvba-host formal_v166_non_hal_milestone_closure_doc_exists | docs/evidence/profiles/v166/non_hal_completion_milestone.md |  |
 | FO-V166-003 | v166 | no | pass | cargo test -p oxvba-host formal_v166_profile_status_document_exists | docs/profile-status/PROFILE_STATUS_V166.md |  |
+| FO-V167-001 | v167 | no | pass | cargo test -p oxvba-host formal_v167_non_hal_audit_report_exists_and_is_clean | docs/evidence/language/NON_HAL_POST_COMPLETION_AUDIT_V167.md |  |
+| FO-V167-002 | v167 | no | pass | cargo test -p oxvba-host formal_v167_profile_status_document_exists | docs/profile-status/PROFILE_STATUS_V167.md |  |
+| FO-V168-001 | v168 | no | pass | cargo test -p oxvba-host formal_v168_benchmark_includes_subset_workloads | scripts/run-bench.ps1 |  |
+| FO-V168-002 | v168 | no | pass | cargo test -p oxvba-host formal_v168_conformance_runner_supports_include_pattern | scripts/run-conformance.ps1 |  |
+| FO-V168-003 | v168 | no | pass | cargo test -p oxvba-host formal_v168_profile_status_document_exists | docs/profile-status/PROFILE_STATUS_V168.md |  |
+| FO-V169-001 | v169 | no | pass | cargo test -p oxvba-host formal_v169_financial_rate_uses_derivative_helper | crates/oxvba-vm/src/interpreter.rs |  |
+| FO-V169-002 | v169 | no | pass | cargo test -p oxvba-host formal_v169_profile_status_document_exists | docs/profile-status/PROFILE_STATUS_V169.md |  |
+| FO-V170-001 | v170 | no | pass | cargo test -p oxvba-host formal_v170_string_digit_paths_use_slice_based_substrings | crates/oxvba-vm/src/interpreter.rs |  |
+| FO-V170-002 | v170 | no | pass | cargo test -p oxvba-host formal_v170_profile_status_document_exists | docs/profile-status/PROFILE_STATUS_V170.md |  |

@@ -2044,6 +2044,8 @@ mod tests {
             .expect("run-bench script exists");
         assert!(bench.contains("conformance_vm"));
         assert!(bench.contains("conformance_jit"));
+        assert!(bench.contains("subset_err_string_financial_vm"));
+        assert!(bench.contains("subset_err_string_financial_jit"));
         assert!(bench.contains("OutputCsvPath"));
     }
 
@@ -2675,6 +2677,71 @@ mod tests {
     #[test]
     fn formal_v166_profile_status_document_exists() {
         assert!(repo_path("docs/profile-status/PROFILE_STATUS_V166.md").exists());
+    }
+
+    #[test]
+    fn formal_v167_non_hal_audit_report_exists_and_is_clean() {
+        let text = std::fs::read_to_string(repo_path(
+            "docs/evidence/language/NON_HAL_POST_COMPLETION_AUDIT_V167.md",
+        ))
+        .expect("v167 non-hal post-completion audit exists");
+        assert!(text.contains("Residual non-HAL partial/planned rows: 0"));
+        assert!(text.contains("DEFERRED_ORACLE_GATES.csv"));
+    }
+
+    #[test]
+    fn formal_v167_profile_status_document_exists() {
+        assert!(repo_path("docs/profile-status/PROFILE_STATUS_V167.md").exists());
+    }
+
+    #[test]
+    fn formal_v168_benchmark_includes_subset_workloads() {
+        let bench = std::fs::read_to_string(repo_path("scripts/run-bench.ps1"))
+            .expect("run-bench script exists");
+        assert!(bench.contains("subset_err_string_financial_vm"));
+        assert!(bench.contains("subset_err_string_financial_jit"));
+        assert!(bench.contains("include_pattern"));
+    }
+
+    #[test]
+    fn formal_v168_conformance_runner_supports_include_pattern() {
+        let conformance = std::fs::read_to_string(repo_path("scripts/run-conformance.ps1"))
+            .expect("run-conformance script exists");
+        assert!(conformance.contains("[string[]]$IncludePattern"));
+        assert!(conformance.contains("filters="));
+    }
+
+    #[test]
+    fn formal_v168_profile_status_document_exists() {
+        assert!(repo_path("docs/profile-status/PROFILE_STATUS_V168.md").exists());
+    }
+
+    #[test]
+    fn formal_v169_financial_rate_uses_derivative_helper() {
+        let text = std::fs::read_to_string(repo_path("crates/oxvba-vm/src/interpreter.rs"))
+            .expect("interpreter exists");
+        assert!(text.contains("FIN_DERIVATIVE_STEP"));
+        assert!(text.contains("fn rate_func_derivative"));
+        assert!(text.contains("Self::rate_func_derivative("));
+    }
+
+    #[test]
+    fn formal_v169_profile_status_document_exists() {
+        assert!(repo_path("docs/profile-status/PROFILE_STATUS_V169.md").exists());
+    }
+
+    #[test]
+    fn formal_v170_string_digit_paths_use_slice_based_substrings() {
+        let text = std::fs::read_to_string(repo_path("crates/oxvba-vm/src/interpreter.rs"))
+            .expect("interpreter exists");
+        assert!(text.contains("text[start..end]"));
+        assert!(text.contains("text[start..]"));
+        assert!(text.contains("String::with_capacity"));
+    }
+
+    #[test]
+    fn formal_v170_profile_status_document_exists() {
+        assert!(repo_path("docs/profile-status/PROFILE_STATUS_V170.md").exists());
     }
 
     #[test]

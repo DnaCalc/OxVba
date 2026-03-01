@@ -1,6 +1,20 @@
 # Implementation Log
 
 ## 2026-03-01
+- Completed `v170` (`mvp-profile-v170`) string-path performance pass:
+  - optimized digit-string helper paths in VM (`Right`, shared slice path, `Mid` statement mutation) to avoid unnecessary char-vector materialization and use slice-based ASCII numeric substrings;
+  - preserved semantic behavior with full workspace/meta checks and integrated gate artifacts under `docs/evidence/profiles/v170/`.
+- Completed `v169` (`mvp-profile-v169`) financial hot-path optimization:
+  - added analytic derivative helper for `Rate` solver path with near-zero finite-difference fallback (`FIN_DERIVATIVE_STEP`) to reduce per-iteration function evaluations while preserving deterministic error-tag behavior.
+- Completed `v168` (`mvp-profile-v168`) runtime instrumentation expansion:
+  - extended `run-conformance.ps1` with optional include-pattern filtering;
+  - extended `run-bench.ps1` with focused subset workloads (`subset_err_string_financial_vm/jit`) in addition to full corpus workloads.
+- Completed `v167` (`mvp-profile-v167`) post-completion audit:
+  - published `docs/evidence/language/NON_HAL_POST_COMPLETION_AUDIT_V167.md` confirming residual non-HAL partial/planned rows are zero and remaining partial/planned items are HAL/interop scoped.
+- Validation lane for `v167..v170` passed:
+  - `./scripts/run-profile-gate.ps1 -ProfileScope mvp-profile-v170 -OutputDir docs/evidence/profiles/v170`
+  - `./scripts/run-formal.ps1 -ProfileScope mvp-profile-v170`
+  - `./scripts/meta-check.ps1 -Fast`
 - Completed `v166` (`mvp-profile-v166`) terminal closure for non-HAL completion ladder `v147..v166`:
   - published terminal profile/workset status and non-HAL milestone closure note:
     - `docs/profile-status/PROFILE_STATUS_V166.md`

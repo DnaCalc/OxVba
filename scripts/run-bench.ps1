@@ -10,7 +10,7 @@ $PSNativeCommandUseErrorActionPreference = $true
 
 Push-Location (Join-Path $PSScriptRoot "..")
 try {
-    function Measure-Run([string]$backend, [string]$disableOpt) {
+    function Measure-Run([string]$backend, [string]$disableOpt, [string[]]$includePattern) {
         $total = 0.0
         for ($i = 0; $i -lt $Iterations; $i++) {
             if ($disableOpt -eq "1") {
@@ -19,7 +19,11 @@ try {
                 Remove-Item Env:OXVBA_DISABLE_OPT -ErrorAction SilentlyContinue
             }
             $elapsed = (Measure-Command {
-                & "$PSScriptRoot/run-conformance.ps1" -Backend $backend | Out-Null
+                if ($includePattern -and $includePattern.Count -gt 0) {
+                    & "$PSScriptRoot/run-conformance.ps1" -Backend $backend -IncludePattern $includePattern | Out-Null
+                } else {
+                    & "$PSScriptRoot/run-conformance.ps1" -Backend $backend | Out-Null
+                }
             }).TotalMilliseconds
             $total += $elapsed
         }
@@ -27,14 +31,24 @@ try {
     }
 
     $workloads = @(
-        @{ name = "conformance_vm"; backend = "vm" },
-        @{ name = "conformance_jit"; backend = "jit" }
+        @{ name = "conformance_vm"; backend = "vm"; include = @() },
+        @{ name = "conformance_jit"; backend = "jit"; include = @() },
+        @{
+            name = "subset_err_string_financial_vm"
+            backend = "vm"
+            include = @("err_*", "string_*", "financial_*", "coercion_*", "stdlib_error_*", "stdlib_random_financial_expansion.bas")
+        },
+        @{
+            name = "subset_err_string_financial_jit"
+            backend = "jit"
+            include = @("err_*", "string_*", "financial_*", "coercion_*", "stdlib_error_*", "stdlib_random_financial_expansion.bas")
+        }
     )
 
     $rows = @()
     foreach ($workload in $workloads) {
-        $baseline = Measure-Run $workload.backend "1"
-        $optimized = Measure-Run $workload.backend "0"
+        $baseline = Measure-Run $workload.backend "1" $workload.include
+        $optimized = Measure-Run $workload.backend "0" $workload.include
         $gain = if ($baseline -gt 0) {
             [Math]::Round((($baseline - $optimized) / $baseline) * 100.0, 2)
         } else {
@@ -45,6 +59,7 @@ try {
             profile_scope = $ProfileScope
             workload = $workload.name
             backend = $workload.backend
+            include_pattern = ($workload.include -join ";")
             baseline_ms = $baseline
             optimized_ms = $optimized
             gain_percent = $gain

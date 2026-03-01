@@ -20,6 +20,7 @@ pub struct Vm {
 
 const FIN_MAX_ITERS: usize = 60;
 const FIN_EPS: f64 = 1e-10;
+const FIN_DERIVATIVE_STEP: f64 = 1e-7;
 const FIN_RATE_ERROR_CODE: i32 = 2001;
 const FIN_NPER_ERROR_CODE: i32 = 2002;
 
@@ -938,7 +939,17 @@ impl Vm {
     }
 
     fn len_digits(value: i32) -> i32 {
-        value.to_string().chars().count() as i32
+        let mut n = i64::from(value);
+        let mut digits = 0i32;
+        if n <= 0 {
+            digits += 1;
+            n = -n;
+        }
+        while n > 0 {
+            digits += 1;
+            n /= 10;
+        }
+        digits
     }
 
     fn left_digits(value: i32, count: i32) -> i32 {
@@ -950,11 +961,9 @@ impl Vm {
             return 0;
         }
         let text = value.to_string();
-        let chars = text.chars().collect::<Vec<_>>();
-        let take = (count as usize).min(chars.len());
-        let start = chars.len().saturating_sub(take);
-        let out = chars[start..].iter().collect::<String>();
-        out.parse::<i32>().unwrap_or(0)
+        let take = (count as usize).min(text.len());
+        let start = text.len().saturating_sub(take);
+        text[start..].parse::<i32>().unwrap_or(0)
     }
 
     fn mid_digits(value: i32, start: i32, count: Option<i32>) -> i32 {
@@ -965,41 +974,42 @@ impl Vm {
     fn mid_stmt_digits(target: i32, start: i32, count: Option<i32>, value: i32) -> i32 {
         let base = target.to_string();
         let repl = value.to_string();
-        let base_chars = base.chars().collect::<Vec<_>>();
         let start_idx = if start <= 1 { 0 } else { (start - 1) as usize };
-        if start_idx >= base_chars.len() {
+        if start_idx >= base.len() {
             return target;
         }
 
         let end_idx = match count {
             Some(c) if c <= 0 => start_idx,
-            Some(c) => (start_idx + c as usize).min(base_chars.len()),
-            None => base_chars.len(),
+            Some(c) => (start_idx + c as usize).min(base.len()),
+            None => base.len(),
         };
 
         let replace_len = end_idx.saturating_sub(start_idx);
-        let replace_text = repl.chars().take(replace_len).collect::<String>();
+        let replace_text = if replace_len >= repl.len() {
+            repl.as_str()
+        } else {
+            &repl[..replace_len]
+        };
 
-        let mut out = String::new();
-        out.push_str(&base_chars[..start_idx].iter().collect::<String>());
-        out.push_str(&replace_text);
-        out.push_str(&base_chars[end_idx..].iter().collect::<String>());
+        let mut out = String::with_capacity(base.len() - replace_len + replace_text.len());
+        out.push_str(&base[..start_idx]);
+        out.push_str(replace_text);
+        out.push_str(&base[end_idx..]);
         out.parse::<i32>().unwrap_or(0)
     }
 
     fn slice_digits(value: i32, start: usize, count: Option<i32>) -> i32 {
         let text = value.to_string();
-        let chars = text.chars().collect::<Vec<_>>();
-        if start >= chars.len() {
+        if start >= text.len() {
             return 0;
         }
         let end = match count {
             Some(c) if c <= 0 => start,
-            Some(c) => (start + c as usize).min(chars.len()),
-            None => chars.len(),
+            Some(c) => (start + c as usize).min(text.len()),
+            None => text.len(),
         };
-        let out = chars[start..end].iter().collect::<String>();
-        out.parse::<i32>().unwrap_or(0)
+        text[start..end].parse::<i32>().unwrap_or(0)
     }
 
     fn normalize_for_compare(text: String, mode: StringCompareMode) -> String {
@@ -1235,6 +1245,25 @@ impl Vm {
         }
     }
 
+    fn rate_func_derivative(r: f64, nper: f64, pmt: f64, pv: f64, fv: f64, due: f64) -> f64 {
+        if r.abs() < 1e-8 {
+            let h = FIN_DERIVATIVE_STEP;
+            return (Self::rate_func(r + h, nper, pmt, pv, fv, due)
+                - Self::rate_func(r - h, nper, pmt, pv, fv, due))
+                / (2.0 * h);
+        }
+
+        let base = 1.0 + r;
+        if base <= 0.0 {
+            return f64::NAN;
+        }
+        let growth = base.powf(nper);
+        let growth_prime = nper * base.powf(nper - 1.0);
+        let c = (growth - 1.0) / r;
+        let c_prime = (growth_prime * r - (growth - 1.0)) / (r * r);
+        pv * growth_prime + pmt * (due * c + (1.0 + r * due) * c_prime)
+    }
+
     fn rate_i32(nper: i32, pmt: i32, pv: i32, fv: i32, due: i32, guess: i32) -> i32 {
         if nper == 0 {
             return error_tag_from_code(FIN_RATE_ERROR_CODE);
@@ -1248,10 +1277,7 @@ impl Vm {
         let mut r = (guess as f64 / 100.0).clamp(-0.99, 10.0);
         for _ in 0..FIN_MAX_ITERS {
             let f = Self::rate_func(r, n, pmt, pv, fv, due);
-            let h = 1e-7;
-            let fp = (Self::rate_func(r + h, n, pmt, pv, fv, due)
-                - Self::rate_func(r - h, n, pmt, pv, fv, due))
-                / (2.0 * h);
+            let fp = Self::rate_func_derivative(r, n, pmt, pv, fv, due);
             if fp.abs() < 1e-12 {
                 return error_tag_from_code(FIN_RATE_ERROR_CODE);
             }

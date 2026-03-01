@@ -1,7 +1,8 @@
 param(
     [ValidateSet("vm", "jit")]
     [string]$Backend = "vm",
-    [string]$ResultsPath = ""
+    [string]$ResultsPath = "",
+    [string[]]$IncludePattern = @()
 )
 
 $ErrorActionPreference = "Stop"
@@ -27,6 +28,18 @@ try {
 
     Get-ChildItem -Path $testsDir -Filter *.bas | Sort-Object Name | ForEach-Object {
         $name = $_.Name
+        if ($IncludePattern -and $IncludePattern.Count -gt 0) {
+            $matches = $false
+            foreach ($pattern in $IncludePattern) {
+                if ($name -like $pattern) {
+                    $matches = $true
+                    break
+                }
+            }
+            if (-not $matches) {
+                return
+            }
+        }
         $status = "ok"
         $slots = ""
 
@@ -81,7 +94,12 @@ try {
             Export-Csv -Path $ResultsPath -NoTypeInformation
     }
 
-    Write-Host "conformance run: ok ($($results.Count) files, backend=$Backend)"
+    $filterNote = if ($IncludePattern -and $IncludePattern.Count -gt 0) {
+        " filters=$($IncludePattern -join ';')"
+    } else {
+        ""
+    }
+    Write-Host "conformance run: ok ($($results.Count) files, backend=$Backend$filterNote)"
 }
 finally {
     Pop-Location

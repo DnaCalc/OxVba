@@ -126,6 +126,10 @@
 | Profile v164 Status | [`PROFILE_STATUS_V164.md`](profile-status/PROFILE_STATUS_V164.md) | Current gate status contract for `mvp-profile-v164` (deferred-oracle gate synchronization with foldback notes). |
 | Profile v165 Status | [`PROFILE_STATUS_V165.md`](profile-status/PROFILE_STATUS_V165.md) | Current gate status contract for `mvp-profile-v165` (integrated non-HAL completion gate evidence run). |
 | Profile v166 Status | [`PROFILE_STATUS_V166.md`](profile-status/PROFILE_STATUS_V166.md) | Current gate status contract for `mvp-profile-v166` (terminal closure of the `v147..v166` non-HAL completion ladder). |
+| Profile v167 Status | [`PROFILE_STATUS_V167.md`](profile-status/PROFILE_STATUS_V167.md) | Current gate status contract for `mvp-profile-v167` (post-completion non-HAL residual audit and classification). |
+| Profile v168 Status | [`PROFILE_STATUS_V168.md`](profile-status/PROFILE_STATUS_V168.md) | Current gate status contract for `mvp-profile-v168` (runtime benchmark instrumentation expansion for focused non-HAL subsets). |
+| Profile v169 Status | [`PROFILE_STATUS_V169.md`](profile-status/PROFILE_STATUS_V169.md) | Current gate status contract for `mvp-profile-v169` (financial hot-path derivative optimization pass). |
+| Profile v170 Status | [`PROFILE_STATUS_V170.md`](profile-status/PROFILE_STATUS_V170.md) | Current gate status contract for `mvp-profile-v170` (string-digit path slice-based optimization pass). |
 | Profile v107 Status | [`PROFILE_STATUS_V107.md`](profile-status/PROFILE_STATUS_V107.md) | Current gate status contract for `mvp-lang-with-member-target-v107`. |
 | Profile v108-v146 Statuses | [`profile-status/`](profile-status/README.md) | AutoRun ladder status records are published through `PROFILE_STATUS_V146.md` for the active full-language/built-ins ladder range. |
 | Phase 12 Status | [`PHASE12_STATUS.md`](PHASE12_STATUS.md) | Declared profile scope and final conformance/stabilization gate artifacts. |
@@ -242,6 +246,10 @@
 | Work Set Plan (v164) | [`worksets/WORKSET_2026-03-01_DEFERRED_ORACLE_SYNC_V164.md`](worksets/WORKSET_2026-03-01_DEFERRED_ORACLE_SYNC_V164.md) | Deferred-oracle synchronization pass with explicit foldback notes and implementation-defined follow-up tracking registration. |
 | Work Set Plan (v165) | [`worksets/WORKSET_2026-03-01_INTEGRATED_NON_HAL_GATE_V165.md`](worksets/WORKSET_2026-03-01_INTEGRATED_NON_HAL_GATE_V165.md) | Integrated gate run for the non-HAL completion ladder before terminal closure. |
 | Work Set Plan (v166) | [`worksets/WORKSET_2026-03-01_TERMINAL_CLOSURE_V166.md`](worksets/WORKSET_2026-03-01_TERMINAL_CLOSURE_V166.md) | Terminal closure workset for non-HAL completion ladder `v147..v166` with explicit exit-criteria evidence. |
+| Work Set Plan (v167) | [`worksets/WORKSET_2026-03-01_POST_COMPLETION_AUDIT_V167.md`](worksets/WORKSET_2026-03-01_POST_COMPLETION_AUDIT_V167.md) | Post-completion audit workset to verify no residual non-HAL partial/planned items after `v166` closure. |
+| Work Set Plan (v168) | [`worksets/WORKSET_2026-03-01_RUNTIME_PERF_INSTRUMENTATION_V168.md`](worksets/WORKSET_2026-03-01_RUNTIME_PERF_INSTRUMENTATION_V168.md) | Runtime instrumentation workset for focused Err/string/financial benchmark subsets. |
+| Work Set Plan (v169) | [`worksets/WORKSET_2026-03-01_FINANCIAL_HOTPATH_PERF_V169.md`](worksets/WORKSET_2026-03-01_FINANCIAL_HOTPATH_PERF_V169.md) | Financial intrinsic hot-path optimization workset (`Rate` derivative path). |
+| Work Set Plan (v170) | [`worksets/WORKSET_2026-03-01_STRING_PATH_PERF_V170.md`](worksets/WORKSET_2026-03-01_STRING_PATH_PERF_V170.md) | String-digit intrinsic path optimization workset (slice-based helper flow). |
 | Status Tours | [`status-tours/`](status-tours/) | Date-stamped orientation/showcase docs for implemented project state. |
 | Formal | [`FORMAL.md`](FORMAL.md) | Lean/Kani formal scaffold status and structure. |
 | Spec Checklist | [`evidence/SPEC_CHECKLIST.md`](evidence/SPEC_CHECKLIST.md) | Structured language + built-in/library checklist aligned to current evidence and planned gaps. |
