@@ -9,12 +9,17 @@ use crate::{
         TimeLocaleHal, UiInteractionHal,
     },
 };
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    sync::{Arc, Mutex},
+};
 
 #[derive(Debug, Clone)]
 pub(crate) struct StandardHostServices {
     profile: HalProfileId,
     descriptor: HalDescriptor,
     policy: HostPolicy,
+    fs_state: Arc<Mutex<FileSystemState>>,
 }
 
 impl StandardHostServices {
@@ -28,6 +33,7 @@ impl StandardHostServices {
                 capabilities: capability_matrix(profile),
             },
             policy,
+            fs_state: Arc::new(Mutex::new(FileSystemState::default())),
         }
     }
 
@@ -53,6 +59,37 @@ impl StandardHostServices {
 
     fn denied(&self, capability: CapabilityId, op: &'static str) -> HalError {
         HalError::policy_denied(self.profile, capability, op)
+    }
+
+    fn fs_lock(
+        &self,
+        capability: CapabilityId,
+        op: &'static str,
+    ) -> HalResult<std::sync::MutexGuard<'_, FileSystemState>> {
+        self.fs_state.lock().map_err(|_| {
+            HalError::adapter_fault(
+                self.profile,
+                capability,
+                op,
+                "filesystem state lock poisoned",
+            )
+        })
+    }
+
+    fn fs_entry_mut<'a>(
+        &'a self,
+        state: &'a mut FileSystemState,
+        handle: i32,
+        op: &'static str,
+    ) -> HalResult<&'a mut FileHandleState> {
+        state.handles.get_mut(&handle).ok_or_else(|| {
+            HalError::adapter_fault(
+                self.profile,
+                CapabilityId::FileSystemIo,
+                op,
+                format!("invalid file handle: {handle}"),
+            )
+        })
     }
 }
 
@@ -107,7 +144,30 @@ impl FileSystemHal for StandardHostServices {
         if mode != 0 && !self.policy.allow_filesystem_mutation {
             return Err(self.denied(capability, "open"));
         }
-        Ok(path.saturating_add(10_000))
+
+        let mut state = self.fs_lock(capability, "open")?;
+        let Some(handle) = state.first_free_in(1, 511) else {
+            return Err(HalError::adapter_fault(
+                self.profile,
+                capability,
+                "open",
+                "no free file handles available in supported range",
+            ));
+        };
+        let initial_len = if mode == 0 {
+            pseudo_file_len_from_path_token(path)
+        } else {
+            0
+        };
+        state.handles.insert(
+            handle,
+            FileHandleState {
+                mode,
+                position: 0,
+                len: initial_len,
+            },
+        );
+        Ok(handle)
     }
 
     fn close(&self, handle: i32) -> HalResult<i32> {
@@ -115,7 +175,17 @@ impl FileSystemHal for StandardHostServices {
         if !self.supports(capability) {
             return Err(self.unsupported(capability, "close"));
         }
-        Ok(if handle == 0 { 0 } else { 1 })
+        let mut state = self.fs_lock(capability, "close")?;
+        if state.handles.remove(&handle).is_some() {
+            Ok(1)
+        } else {
+            Err(HalError::adapter_fault(
+                self.profile,
+                capability,
+                "close",
+                format!("invalid file handle: {handle}"),
+            ))
+        }
     }
 
     fn seek(&self, handle: i32, position: i32) -> HalResult<i32> {
@@ -123,7 +193,22 @@ impl FileSystemHal for StandardHostServices {
         if !self.supports(capability) {
             return Err(self.unsupported(capability, "seek"));
         }
-        Ok(handle.saturating_add(position))
+        if position < 0 {
+            return Err(HalError::adapter_fault(
+                self.profile,
+                capability,
+                "seek",
+                format!("negative seek position: {position}"),
+            ));
+        }
+
+        let mut state = self.fs_lock(capability, "seek")?;
+        let entry = self.fs_entry_mut(&mut state, handle, "seek")?;
+        entry.position = position;
+        if position > entry.len && entry.mode != 0 && self.policy.allow_filesystem_mutation {
+            entry.len = position;
+        }
+        Ok(entry.position)
     }
 
     fn eof(&self, handle: i32) -> HalResult<i32> {
@@ -131,7 +216,9 @@ impl FileSystemHal for StandardHostServices {
         if !self.supports(capability) {
             return Err(self.unsupported(capability, "eof"));
         }
-        Ok(if handle == 0 { 1 } else { 0 })
+        let mut state = self.fs_lock(capability, "eof")?;
+        let entry = self.fs_entry_mut(&mut state, handle, "eof")?;
+        Ok(if entry.position >= entry.len { 1 } else { 0 })
     }
 
     fn lof(&self, handle: i32) -> HalResult<i32> {
@@ -139,7 +226,9 @@ impl FileSystemHal for StandardHostServices {
         if !self.supports(capability) {
             return Err(self.unsupported(capability, "lof"));
         }
-        Ok(handle.max(0))
+        let mut state = self.fs_lock(capability, "lof")?;
+        let entry = self.fs_entry_mut(&mut state, handle, "lof")?;
+        Ok(entry.len)
     }
 
     fn free_file(&self, range_selector: i32) -> HalResult<i32> {
@@ -147,7 +236,20 @@ impl FileSystemHal for StandardHostServices {
         if !self.supports(capability) {
             return Err(self.unsupported(capability, "free_file"));
         }
-        Ok(1 + range_selector.abs())
+        let (start, end) = if range_selector == 1 {
+            (256, 511)
+        } else {
+            (1, 255)
+        };
+        let state = self.fs_lock(capability, "free_file")?;
+        state.first_free_in(start, end).ok_or_else(|| {
+            HalError::adapter_fault(
+                self.profile,
+                capability,
+                "free_file",
+                format!("no free file number in range {start}..={end}"),
+            )
+        })
     }
 }
 
@@ -404,4 +506,58 @@ fn capability_matrix(profile: HalProfileId) -> Vec<CapabilityDescriptor> {
         }
     }
     out
+}
+
+#[derive(Debug, Default)]
+struct FileSystemState {
+    handles: BTreeMap<i32, FileHandleState>,
+}
+
+impl FileSystemState {
+    fn first_free_in(&self, start: i32, end: i32) -> Option<i32> {
+        let in_use: BTreeSet<i32> = self.handles.keys().copied().collect();
+        (start..=end).find(|candidate| !in_use.contains(candidate))
+    }
+}
+
+#[derive(Debug, Clone)]
+struct FileHandleState {
+    mode: i32,
+    position: i32,
+    len: i32,
+}
+
+fn pseudo_file_len_from_path_token(path: i32) -> i32 {
+    let magnitude = path.saturating_abs();
+    1 + (magnitude % 4096)
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::{
+        model::{HalProfileId, HostPolicy},
+        traits::FileSystemHal,
+    };
+
+    use super::StandardHostServices;
+
+    #[test]
+    fn file_open_seek_eof_lof_close_roundtrip() {
+        let host = StandardHostServices::new(HalProfileId::Windows, HostPolicy::default());
+        let handle = host.open(77, 0).expect("open should succeed");
+        assert_eq!(handle, 1);
+        assert_eq!(host.eof(handle).expect("eof should work"), 0);
+        assert!(host.lof(handle).expect("lof should work") > 0);
+        host.seek(handle, host.lof(handle).expect("lof should work"))
+            .expect("seek to end should work");
+        assert_eq!(host.eof(handle).expect("eof should work"), 1);
+        assert_eq!(host.close(handle).expect("close should work"), 1);
+    }
+
+    #[test]
+    fn free_file_respects_low_and_high_ranges() {
+        let host = StandardHostServices::new(HalProfileId::Windows, HostPolicy::default());
+        assert_eq!(host.free_file(0).expect("default free file"), 1);
+        assert_eq!(host.free_file(1).expect("high-range free file"), 256);
+    }
 }
