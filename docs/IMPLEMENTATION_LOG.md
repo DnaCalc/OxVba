@@ -1,6 +1,21 @@
 # Implementation Log
 
 ## 2026-03-02
+- Completed HAL formalization Phase 3 (adapter refinement + operating envelope closure):
+  - expanded adapter invariant checks and property tests in `oxvba-hal`:
+    - side-effect guarantees on denied/invalid filesystem operations,
+    - explicit null-profile support set assertions,
+    - policy/capability denial checks for UI and host-sensitive domains,
+    - property checks for `free_file` progression and `seek/eof` boundary behavior;
+  - added host-level HAL runtime error-routing regression:
+    - `hal_runtime_mode_routes_host_error_through_on_error_resume_next`
+    - `hal_compile_time_mode_rejects_even_with_on_error_resume_next`;
+  - updated clause catalog promotions and verification mappings:
+    - `docs/spec/HAL_CONTRACT_CLAUSE_CATALOG_V1.md`;
+  - published operating envelope summary:
+    - `docs/spec/HAL_OPERATING_ENVELOPE_V1.md`;
+  - published phase evidence:
+    - `docs/evidence/hal/HAL_PHASE3_ADAPTER_REFINEMENT_2026-03-02.md`.
 - Advanced HAL formalization Phase 2 (clause-mapped executable checks):
   - upgraded `oxvba-hal` conformance reporting to map probes and descriptor checks to explicit clause IDs;
   - added clause coverage aggregation into conformance reports and artifact output fields (`clause_count`, `clause_pass_count`, `failed_clauses`);
@@ -10,8 +25,8 @@
   - published phase artifact:
     - `docs/evidence/hal/HAL_PHASE2_CONTRACT_CHECKS_2026-03-02.md`;
   - refreshed HAL evidence output:
-    - `docs/evidence/hal/HAL_CONFORMANCE_1772430024.md`
-    - `docs/evidence/hal/HAL_CONFORMANCE_1772430024.jsonl`.
+    - `docs/evidence/hal/HAL_CONFORMANCE_1772431514.md`
+    - `docs/evidence/hal/HAL_CONFORMANCE_1772431514.jsonl`.
 
 ## 2026-03-01
 - Started HAL formalization Phase 1 (spec-first baseline):

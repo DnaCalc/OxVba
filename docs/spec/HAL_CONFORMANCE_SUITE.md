@@ -95,3 +95,7 @@ Phase-1 expectation:
 
 Phase-2 progress:
 - conformance reports now carry clause coverage aggregation mapped from descriptor checks and probe-to-clause assignments.
+
+Phase-3 progress:
+- adapter suite includes side-effect/invariant checks and property checks for selected filesystem behaviors;
+- host suite includes explicit runtime error-routing checks for HAL failures under `On Error Resume Next`.

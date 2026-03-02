@@ -534,6 +534,8 @@ fn pseudo_file_len_from_path_token(path: i32) -> i32 {
 
 #[cfg(test)]
 mod tests {
+    use proptest::prelude::*;
+
     use crate::{
         error::HalErrorKind,
         model::{HalProfileId, HostPolicy},
@@ -703,5 +705,118 @@ mod tests {
             .do_events()
             .expect_err("null do_events should be unsupported");
         assert_eq!(err.kind, HalErrorKind::CapabilityUnavailable);
+    }
+
+    #[test]
+    fn file_open_denied_has_no_state_side_effects() {
+        let host = StandardHostServices::new(
+            HalProfileId::Windows,
+            HostPolicy {
+                allow_filesystem_mutation: false,
+                ..HostPolicy::default()
+            },
+        );
+        assert_eq!(host.free_file(0).expect("first free should be 1"), 1);
+        let err = host
+            .open(10, 1)
+            .expect_err("mutation open should be denied by policy");
+        assert_eq!(err.kind, HalErrorKind::PolicyDenied);
+        assert_eq!(
+            host.free_file(0)
+                .expect("free file should remain unchanged"),
+            1
+        );
+    }
+
+    #[test]
+    fn invalid_close_does_not_mutate_handle_state() {
+        let host = StandardHostServices::new(HalProfileId::Windows, HostPolicy::default());
+        let first = host.open(10, 0).expect("open should succeed");
+        assert_eq!(first, 1);
+        let err = host.close(99).expect_err("invalid close should fail");
+        assert_eq!(err.kind, HalErrorKind::AdapterFault);
+        assert_eq!(
+            host.free_file(0)
+                .expect("free file should still skip handle 1"),
+            2
+        );
+    }
+
+    #[test]
+    fn ui_msg_box_enforces_policy_and_capability_failures() {
+        let denied_host = StandardHostServices::new(HalProfileId::Windows, HostPolicy::default());
+        let err = denied_host
+            .msg_box(1, 1)
+            .expect_err("interaction is denied by default policy");
+        assert_eq!(err.kind, HalErrorKind::PolicyDenied);
+
+        let null_host = StandardHostServices::new(
+            HalProfileId::Null,
+            HostPolicy {
+                allow_interaction: true,
+                ..HostPolicy::default()
+            },
+        );
+        let err = null_host
+            .msg_box(1, 1)
+            .expect_err("null profile should report unsupported capability");
+        assert_eq!(err.kind, HalErrorKind::CapabilityUnavailable);
+    }
+
+    #[test]
+    fn null_profile_support_set_is_explicit() {
+        let host = StandardHostServices::new(HalProfileId::Null, HostPolicy::default());
+        let descriptor = host.descriptor();
+        assert!(!descriptor.supports(crate::model::CapabilityId::UiInteraction));
+        assert!(!descriptor.supports(crate::model::CapabilityId::EventPump));
+        assert!(!descriptor.supports(crate::model::CapabilityId::FileSystemIo));
+        assert!(!descriptor.supports(crate::model::CapabilityId::ProcessEnv));
+        assert!(!descriptor.supports(crate::model::CapabilityId::ComActivationDispatch));
+        assert!(descriptor.supports(crate::model::CapabilityId::TimeLocale));
+        assert!(!descriptor.supports(crate::model::CapabilityId::DynamicLinking));
+        assert!(descriptor.supports(crate::model::CapabilityId::DiagnosticsTelemetry));
+    }
+
+    #[test]
+    fn maturity_does_not_affect_policy_denial_shape() {
+        let policy = HostPolicy {
+            allow_process_spawn: false,
+            ..HostPolicy::default()
+        };
+        let windows = StandardHostServices::new(HalProfileId::Windows, policy.clone());
+        let linux = StandardHostServices::new(HalProfileId::Linux, policy);
+        assert_eq!(
+            windows.shell(1, 0).expect_err("windows shell denial").kind,
+            HalErrorKind::PolicyDenied
+        );
+        assert_eq!(
+            linux.shell(1, 0).expect_err("linux shell denial").kind,
+            HalErrorKind::PolicyDenied
+        );
+    }
+
+    proptest! {
+        #[test]
+        fn prop_free_file_low_range_tracks_open_count(path_seed in 1i32..10_000, open_count in 0usize..32) {
+            let host = StandardHostServices::new(HalProfileId::Windows, HostPolicy::default());
+            for idx in 0..open_count {
+                let path = path_seed.saturating_add(idx as i32);
+                let _ = host.open(path, 0).expect("open should succeed");
+            }
+            let expected = 1 + open_count as i32;
+            let free = host.free_file(0).expect("free_file should succeed");
+            prop_assert_eq!(free, expected);
+        }
+
+        #[test]
+        fn prop_seek_eof_boundary(path_token in 1i32..10_000, offset in 0i32..6000) {
+            let host = StandardHostServices::new(HalProfileId::Windows, HostPolicy::default());
+            let handle = host.open(path_token, 0).expect("open should succeed");
+            let len = host.lof(handle).expect("lof should succeed");
+            host.seek(handle, offset).expect("seek should succeed");
+            let eof = host.eof(handle).expect("eof should succeed");
+            let expected = if offset >= len { 1 } else { 0 };
+            prop_assert_eq!(eof, expected);
+        }
     }
 }

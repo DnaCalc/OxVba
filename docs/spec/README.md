@@ -19,5 +19,6 @@ Current draft set:
 - [`HAL_CONFORMANCE_SUITE.md`](HAL_CONFORMANCE_SUITE.md) (`working-draft`): runnable HAL harness layers, commands, artifact schema, and expectations.
 - [`HAL_FORMALIZATION_PROGRAM.md`](HAL_FORMALIZATION_PROGRAM.md) (`working-draft`): charter-driven HAL formalization program with 5-step execution ladder and H1/H2/H3 tracks.
 - [`HAL_CONTRACT_CLAUSE_CATALOG_V1.md`](HAL_CONTRACT_CLAUSE_CATALOG_V1.md) (`working-draft`): explicit clause ID catalog with pre/postconditions, failure obligations, and verification mapping.
+- [`HAL_OPERATING_ENVELOPE_V1.md`](HAL_OPERATING_ENVELOPE_V1.md) (`working-draft`): explicit v1 host-boundary guarantees, non-guarantees, and optimization-safe operating constraints.
 
 These files intentionally optimize for design velocity and clarity of open decisions rather than immediate lock-in.

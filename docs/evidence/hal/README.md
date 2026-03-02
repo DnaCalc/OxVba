@@ -23,3 +23,6 @@ Phase-1 formalization artifacts:
 
 Phase-2 formalization artifact:
 - `HAL_PHASE2_CONTRACT_CHECKS_2026-03-02.md`
+
+Phase-3 formalization artifact:
+- `HAL_PHASE3_ADAPTER_REFINEMENT_2026-03-02.md`

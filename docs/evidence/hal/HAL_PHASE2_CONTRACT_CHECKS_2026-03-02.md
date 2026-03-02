@@ -44,8 +44,8 @@ Doc:
 - `./scripts/run-hal-conformance.ps1 -SkipTests` (pass)
 
 Generated artifact set:
-- `docs/evidence/hal/HAL_CONFORMANCE_1772430024.md`
-- `docs/evidence/hal/HAL_CONFORMANCE_1772430024.jsonl`
+- `docs/evidence/hal/HAL_CONFORMANCE_1772431514.md`
+- `docs/evidence/hal/HAL_CONFORMANCE_1772431514.jsonl`
 
 ## 4. Remaining Gaps for Next Phase
 

@@ -3343,4 +3343,30 @@ mod tests {
         assert_eq!(err.phase(), DiagnosticPhase::CompileTime);
         assert!(err.message().contains("allow_process_spawn=false"));
     }
+
+    #[test]
+    fn hal_runtime_mode_routes_host_error_through_on_error_resume_next() {
+        let mut engine = Engine::new(HostConfig::default()).with_hal_profile(HalProfileId::Linux);
+        engine.set_unsupported_feature_mode(UnsupportedFeatureMode::Runtime);
+
+        let source = "Sub Main()\nDim x\nDim y\nOn Error Resume Next\nx = CreateObject(4)\ny = Err.Number\nEnd Sub";
+        let out = engine
+            .execute_source_with_snapshot(source)
+            .expect("runtime mode with On Error Resume Next should continue");
+        assert_eq!(out[0], 0);
+        assert_eq!(out[1], 53_051);
+    }
+
+    #[test]
+    fn hal_compile_time_mode_rejects_even_with_on_error_resume_next() {
+        let mut engine = Engine::new(HostConfig::default()).with_hal_profile(HalProfileId::Linux);
+        engine.set_unsupported_feature_mode(UnsupportedFeatureMode::CompileTime);
+
+        let source = "Sub Main()\nDim x\nOn Error Resume Next\nx = CreateObject(4)\nEnd Sub";
+        let err = engine
+            .execute_source_with_snapshot_phased(source)
+            .expect_err("compile-time gate should reject unsupported host intrinsic");
+        assert_eq!(err.phase(), DiagnosticPhase::CompileTime);
+        assert!(err.message().contains("CreateObject"));
+    }
 }

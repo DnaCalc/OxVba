@@ -11,8 +11,8 @@ Formal HAL program driven by CHARTER priorities (robustness/compatibility first)
 - [x] Audit current HAL docs/code against formal contract needs and identify gaps by capability/domain.
 - [x] Author phased HAL formal spec set (phase ladder, contract clauses, pre/post-conditions, failure semantics, profile/null behavior, uncertainty/implementation-defined registries).
 - [x] Implement executable contract checks (conformance and property tests) mapped to spec clauses.
-- [ ] Refine adapter implementations to satisfy the tightened contract and rerun evidence suite.
-- [ ] Update project references/logs and summarize resulting HAL operating envelope and open uncertainties.
+- [x] Refine adapter implementations to satisfy the tightened contract and rerun evidence suite.
+- [x] Update project references/logs and summarize resulting HAL operating envelope and open uncertainties.
 
 This program is intentionally specification-first so runtime integration never depends on ambiguous host behavior.
 

@@ -26,9 +26,11 @@
 | HAL Conformance Suite | [`spec/HAL_CONFORMANCE_SUITE.md`](spec/HAL_CONFORMANCE_SUITE.md) | Runnable HAL verification lanes, artifact outputs, and profile expectations. |
 | HAL Formalization Program | [`spec/HAL_FORMALIZATION_PROGRAM.md`](spec/HAL_FORMALIZATION_PROGRAM.md) | Charter-driven HAL formalization ladder (5-step program + H1/H2/H3 execution tracks). |
 | HAL Contract Clause Catalog v1 | [`spec/HAL_CONTRACT_CLAUSE_CATALOG_V1.md`](spec/HAL_CONTRACT_CLAUSE_CATALOG_V1.md) | Clause-level HAL contract baseline with pre/postconditions, failure semantics, and verification links. |
+| HAL Operating Envelope v1 | [`spec/HAL_OPERATING_ENVELOPE_V1.md`](spec/HAL_OPERATING_ENVELOPE_V1.md) | Explicit HAL boundary guarantees/non-guarantees for safe runtime/compiler optimization assumptions. |
 | HAL Evidence Artifacts | [`evidence/hal/README.md`](evidence/hal/README.md) | Generated HAL conformance result bundles (`md` + `jsonl`) and lane semantics. |
 | HAL Phase-1 Baseline Audit | [`evidence/hal/HAL_PHASE1_BASELINE_AUDIT_2026-03-02.md`](evidence/hal/HAL_PHASE1_BASELINE_AUDIT_2026-03-02.md) | Capability/domain audit baseline for HAL formalization phase 1. |
 | HAL Phase-2 Contract Checks | [`evidence/hal/HAL_PHASE2_CONTRACT_CHECKS_2026-03-02.md`](evidence/hal/HAL_PHASE2_CONTRACT_CHECKS_2026-03-02.md) | Clause-mapped executable contract check expansion and verification outcomes for HAL phase 2. |
+| HAL Phase-3 Adapter Refinement | [`evidence/hal/HAL_PHASE3_ADAPTER_REFINEMENT_2026-03-02.md`](evidence/hal/HAL_PHASE3_ADAPTER_REFINEMENT_2026-03-02.md) | Adapter invariant/property hardening and operating-envelope closure evidence for HAL phase 3. |
 | HAL Uncertainty Register | [`evidence/hal/HAL_UNCERTAINTY_REGISTER.md`](evidence/hal/HAL_UNCERTAINTY_REGISTER.md) | Open HAL contract-shape uncertainties and planned resolution phases. |
 | HAL Implementation-Defined Register | [`evidence/hal/HAL_IMPLEMENTATION_DEFINED.md`](evidence/hal/HAL_IMPLEMENTATION_DEFINED.md) | HAL-specific implementation-defined behaviors that are explicitly tracked. |
 | MS-VBAL Module/Project Requirements | [`evidence/language/MS_VBAL_MODULE_PROJECT_REQUIREMENTS.md`](evidence/language/MS_VBAL_MODULE_PROJECT_REQUIREMENTS.md) | Full-scope module/project backlog for MS-VBAL closure beyond current single-source execution model. |

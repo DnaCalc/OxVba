@@ -44,7 +44,7 @@ Each clause includes:
 | `HAL-DES-002` | `descriptor.adapter_version` must be non-empty. | implemented-verified | `validate_descriptor_shape` |
 | `HAL-DES-003` | Duplicate capability descriptors are invalid. | implemented-verified | `validate_descriptor_shape` |
 | `HAL-DES-004` | `supported = false` implies all operations in that capability fail with `CapabilityUnavailable` unless compile-time gate intercepts earlier. | implemented-verified | `run_conformance` + host compile-time gate tests |
-| `HAL-DES-005` | Capability `maturity` is metadata only at v1; it must not weaken failure determinism rules. | implemented-partial | metadata asserted implicitly; no explicit clause test yet |
+| `HAL-DES-005` | Capability `maturity` is metadata only at v1; it must not weaken failure determinism rules. | implemented-verified | `maturity_does_not_affect_policy_denial_shape` |
 
 ## 5. Error Contract Clauses
 
@@ -52,7 +52,7 @@ Each clause includes:
 |---|---|---|---|
 | `HAL-ERR-001` | Stable codes must be used: `HAL-E-CAP-UNAVAILABLE`, `HAL-E-POLICY-DENIED`, `HAL-E-ADAPTER-FAULT`, `HAL-E-UNSUPPORTED-PROFILE`. | implemented-verified | constructors in `error.rs`; runtime tests inspect `HAL-E-CAP-UNAVAILABLE` |
 | `HAL-ERR-002` | Error payload must include profile, capability, operation, and message. | implemented-verified | `HalError` schema in `error.rs` |
-| `HAL-ERR-003` | VM host error routing must preserve VBA error-control behavior (`On Error` paths) and produce deterministic runtime diagnostics when unhandled. | implemented-partial | covered by existing VM/host error tests; no HAL-specific property suite yet |
+| `HAL-ERR-003` | VM host error routing must preserve VBA error-control behavior (`On Error` paths) and produce deterministic runtime diagnostics when unhandled. | implemented-verified | `hal_runtime_mode_routes_host_error_through_on_error_resume_next`; `hal_compile_time_mode_rejects_even_with_on_error_resume_next` |
 
 ## 6. Domain Clauses
 
@@ -60,7 +60,7 @@ Each clause includes:
 
 | Clause ID | Operation | Preconditions | Postconditions | Failure obligations | Status | Verification |
 |---|---|---|---|---|---|---|
-| `HAL-UI-001` | `msg_box(prompt, style)` | capability supported; interaction allowed by policy | returns deterministic `ValueToken` response | unsupported -> `CapabilityUnavailable`; denied -> `PolicyDenied` | implemented-partial | conformance `ui.msg_box` probe |
+| `HAL-UI-001` | `msg_box(prompt, style)` | capability supported; interaction allowed by policy | returns deterministic `ValueToken` response | unsupported -> `CapabilityUnavailable`; denied -> `PolicyDenied` | implemented-verified | conformance `ui.msg_box` probe; `ui_msg_box_enforces_policy_and_capability_failures` |
 | `HAL-UI-002` | `input_box(prompt, default)` | capability supported; interaction allowed by policy | returns deterministic response token by virtualization mode | unsupported/denied failure as above | implemented-verified | `ui_virtualization_modes_follow_contract`; `ui_fail_on_prompt_returns_policy_denied` |
 | `HAL-UI-003` | Virtualization mode controls result shape (`ScriptedResponses`, `Disabled`, `FailOnPrompt`) | valid policy | deterministic branch-specific outcome | `FailOnPrompt` returns policy denial | implemented-verified | `ui_virtualization_modes_follow_contract`; `ui_fail_on_prompt_returns_policy_denied` |
 
@@ -75,12 +75,12 @@ Each clause includes:
 
 | Clause ID | Operation | Preconditions | Postconditions | Failure obligations | Status | Verification |
 |---|---|---|---|---|---|---|
-| `HAL-FS-001` | `open(path, mode)` | capability supported; mutation allowed when `mode != 0` | allocates deterministic handle in supported range; initializes file state | unsupported/policy-denied/adapter-fault as applicable | implemented-verified | `file_open_seek_eof_lof_close_roundtrip` |
+| `HAL-FS-001` | `open(path, mode)` | capability supported; mutation allowed when `mode != 0` | allocates deterministic handle in supported range; initializes file state | unsupported/policy-denied/adapter-fault as applicable | implemented-verified | `file_open_seek_eof_lof_close_roundtrip`; `file_open_denied_has_no_state_side_effects`; `prop_free_file_low_range_tracks_open_count` |
 | `HAL-FS-002` | `close(handle)` | valid open handle | handle removed from state; returns success token | invalid handle -> `AdapterFault` | implemented-verified | `file_open_seek_eof_lof_close_roundtrip` |
-| `HAL-FS-003` | `seek(handle, position)` | valid handle; non-negative position | updates position; optionally extends logical length in mutation mode | invalid handle or negative position -> `AdapterFault` | implemented-verified | `file_open_seek_eof_lof_close_roundtrip` |
+| `HAL-FS-003` | `seek(handle, position)` | valid handle; non-negative position | updates position; optionally extends logical length in mutation mode | invalid handle or negative position -> `AdapterFault` | implemented-verified | `file_open_seek_eof_lof_close_roundtrip`; `seek_negative_returns_adapter_fault`; `prop_seek_eof_boundary` |
 | `HAL-FS-004` | `eof(handle)` | valid handle | returns 1 when `position >= len` else 0 | invalid handle -> `AdapterFault` | implemented-verified | `file_open_seek_eof_lof_close_roundtrip` |
 | `HAL-FS-005` | `lof(handle)` | valid handle | returns logical length token | invalid handle -> `AdapterFault` | implemented-verified | `file_open_seek_eof_lof_close_roundtrip` |
-| `HAL-FS-006` | `free_file(range_selector)` | capability supported | returns first free handle in `[1..255]` or `[256..511]` | no free handle -> `AdapterFault` | implemented-verified | `free_file_respects_low_and_high_ranges` |
+| `HAL-FS-006` | `free_file(range_selector)` | capability supported | returns first free handle in `[1..255]` or `[256..511]` | no free handle -> `AdapterFault` | implemented-verified | `free_file_respects_low_and_high_ranges`; `free_file_low_range_tracks_allocated_handles`; `prop_free_file_low_range_tracks_open_count` |
 | `HAL-FS-007` | v1 file model is deterministic in-memory handle semantics, not OS file binding semantics. | none | behavior deterministic and testable | n/a | implemented-partial | specified in implementation-defined registry |
 
 ### 6.4 `ProcessEnvHal`
@@ -122,7 +122,7 @@ Each clause includes:
 | Clause ID | Clause | Status | Verification |
 |---|---|---|---|
 | `HAL-NULL-001` | Null profile is a deterministic unsupported floor for non-guaranteed capabilities. | implemented-verified | conformance across profiles |
-| `HAL-NULL-002` | Null profile may still support explicitly declared deterministic capabilities (`TimeLocale`, `DiagnosticsTelemetry` in v1). | implemented-partial | descriptor + conformance; dedicated assertions pending |
+| `HAL-NULL-002` | Null profile may still support explicitly declared deterministic capabilities (`TimeLocale`, `DiagnosticsTelemetry` in v1). | implemented-verified | `null_profile_support_set_is_explicit`; descriptor + conformance |
 
 ## 8. Verification Coverage Summary
 
@@ -132,7 +132,7 @@ Each clause includes:
 | `specified-needs-tests` | Clause documented, implementation exists, but dedicated clause-level test is not yet present. |
 | `specified-pending` | Clause defined as target behavior for future implementation. |
 
-Phase-2 interim aggregate:
-- verified-core: descriptor/policy/error floor + filesystem handle subset + compile/runtime unsupported mode + per-method checks across UI/process/com/time/dynlink/diag deterministic contracts.
+Phase-3 interim aggregate:
+- verified-core: descriptor/policy/error floor + clause-mapped probes + per-method deterministic checks + property checks for selected filesystem invariants + runtime error-routing guarantees.
 - specified-needs-tests: advanced behavioral parity clauses (host-native semantics, queue fairness, ABI-stability guarantees).
 - specified-pending: richer host semantics not yet formalized for parity claims.
