@@ -26,6 +26,9 @@
 | HAL Conformance Suite | [`spec/HAL_CONFORMANCE_SUITE.md`](spec/HAL_CONFORMANCE_SUITE.md) | Runnable HAL verification lanes, artifact outputs, and profile expectations. |
 | HAL Formalization Program | [`spec/HAL_FORMALIZATION_PROGRAM.md`](spec/HAL_FORMALIZATION_PROGRAM.md) | Charter-driven HAL formalization ladder (5-step program + H1/H2/H3 execution tracks). |
 | HAL Contract Clause Catalog v1 | [`spec/HAL_CONTRACT_CLAUSE_CATALOG_V1.md`](spec/HAL_CONTRACT_CLAUSE_CATALOG_V1.md) | Clause-level HAL contract baseline with pre/postconditions, failure semantics, and verification links. |
+| HAL Contract Clause Catalog v1 (CSV) | [`spec/HAL_CONTRACT_CLAUSE_CATALOG_V1.csv`](spec/HAL_CONTRACT_CLAUSE_CATALOG_V1.csv) | Machine-readable clause schema used for conformance coverage and markdown drift-guard checks. |
+| HAL Policy Presets | [`spec/HAL_POLICY_PRESETS.md`](spec/HAL_POLICY_PRESETS.md) | Explicit policy preset table for reproducible host behavior across CI/runtime/dev lanes. |
+| HAL Contract Assertion Hardening | [`spec/HAL_CONTRACT_ASSERTION_HARDENING.md`](spec/HAL_CONTRACT_ASSERTION_HARDENING.md) | Build-gated debug/checked pre-post assertion scaffold and staged hardening plan for in-code contract enforcement. |
 | HAL Operating Envelope v1 | [`spec/HAL_OPERATING_ENVELOPE_V1.md`](spec/HAL_OPERATING_ENVELOPE_V1.md) | Explicit HAL boundary guarantees/non-guarantees for safe runtime/compiler optimization assumptions. |
 | HAL Evidence Artifacts | [`evidence/hal/README.md`](evidence/hal/README.md) | Generated HAL conformance result bundles (`md` + `jsonl`) and lane semantics. |
 | HAL Phase-1 Baseline Audit | [`evidence/hal/HAL_PHASE1_BASELINE_AUDIT_2026-03-02.md`](evidence/hal/HAL_PHASE1_BASELINE_AUDIT_2026-03-02.md) | Capability/domain audit baseline for HAL formalization phase 1. |

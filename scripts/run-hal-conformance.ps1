@@ -8,6 +8,9 @@ $ErrorActionPreference = "Stop"
 $repoRoot = Resolve-Path (Join-Path $PSScriptRoot "..")
 Push-Location $repoRoot
 try {
+    Write-Host "[hal] validating clause catalog drift guard"
+    & (Join-Path $PSScriptRoot "check-hal-clause-drift.ps1")
+
     if (-not $SkipTests) {
         Write-Host "[hal] running crate tests (oxvba-hal)"
         cargo test -p oxvba-hal

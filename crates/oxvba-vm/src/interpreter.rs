@@ -1420,6 +1420,10 @@ impl Vm {
 mod tests {
     use super::Vm;
     use oxvba_compiler::{Bytecode, Instruction, bytecode::StringCompareMode};
+    use oxvba_hal::{
+        error::{HalError, HalErrorKind},
+        model::CapabilityId,
+    };
     use oxvba_runtime::safe_array::ARRAY_TAG_BASE;
     use oxvba_runtime::value_tags::{EMPTY_TAG, NULL_TAG, error_tag_from_code};
 
@@ -2168,6 +2172,50 @@ mod tests {
         vm.execute(&bytecode)
             .expect("resume label should clear error state");
         assert_eq!(vm.snapshot_slots(1), vec![0]);
+    }
+
+    #[test]
+    fn hal_error_code_mapping_is_total_and_stable() {
+        for kind in [
+            HalErrorKind::CapabilityUnavailable,
+            HalErrorKind::PolicyDenied,
+            HalErrorKind::AdapterFault,
+            HalErrorKind::UnsupportedProfile,
+        ] {
+            for capability in [
+                CapabilityId::UiInteraction,
+                CapabilityId::EventPump,
+                CapabilityId::FileSystemIo,
+                CapabilityId::ProcessEnv,
+                CapabilityId::ComActivationDispatch,
+                CapabilityId::TimeLocale,
+                CapabilityId::DynamicLinking,
+                CapabilityId::DiagnosticsTelemetry,
+            ] {
+                let code = Vm::hal_error_code(kind, capability);
+                assert!(
+                    (53_011..=53_084).contains(&code),
+                    "HAL error code out of expected deterministic band: {}",
+                    code
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn route_host_error_surfaces_stable_code_and_operation_in_runtime_message() {
+        let mut vm = Vm::default();
+        let err = HalError::policy_denied(
+            oxvba_hal::model::HalProfileId::Windows,
+            CapabilityId::ProcessEnv,
+            "shell",
+        );
+        let runtime = vm
+            .route_host_error(0, err)
+            .expect_err("without On Error handlers, host failures must surface");
+        assert!(runtime.contains("HAL-E-POLICY-DENIED"));
+        assert!(runtime.contains("[shell]"));
+        assert!(runtime.contains("runtime error: 53042"));
     }
 }
 

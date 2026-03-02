@@ -58,7 +58,7 @@ fn main() -> Result<(), Box<dyn Error>> {
             };
             let host = for_profile(profile, policy);
             let report = run_conformance(host.as_ref());
-            let clause_coverage = report.clause_coverage();
+            let clause_coverage = report.clause_coverage_against_catalog();
             let clause_total = clause_coverage.len();
             let clause_pass = clause_coverage.values().filter(|passed| **passed).count();
             let clause_failed = clause_total.saturating_sub(clause_pass);
@@ -73,9 +73,19 @@ fn main() -> Result<(), Box<dyn Error>> {
             md.push_str(&format!(
                 "  - Clauses: `{clause_pass}/{clause_total}` passed (`{clause_failed}` failed)\n"
             ));
+            md.push_str(&format!(
+                "  - Governance notices: `{}`\n",
+                report.governance_notices.len()
+            ));
 
             let failures = report
                 .failures
+                .iter()
+                .map(|f| format!("\"{}\"", json_escape(f)))
+                .collect::<Vec<_>>()
+                .join(", ");
+            let governance_notices = report
+                .governance_notices
                 .iter()
                 .map(|f| format!("\"{}\"", json_escape(f)))
                 .collect::<Vec<_>>()
@@ -92,16 +102,18 @@ fn main() -> Result<(), Box<dyn Error>> {
                 .filter(|p| p.status == oxvba_hal::conformance::ProbeStatus::Passed)
                 .count();
             jsonl.push_str(&format!(
-                "{{\"profile\":\"{:?}\",\"lane\":\"{}\",\"passed\":{},\"failure_count\":{},\"probe_count\":{},\"probe_pass_count\":{},\"clause_count\":{},\"clause_pass_count\":{},\"failed_clauses\":[{}],\"failures\":[{}]}}\n",
+                "{{\"profile\":\"{:?}\",\"lane\":\"{}\",\"passed\":{},\"failure_count\":{},\"governance_notice_count\":{},\"probe_count\":{},\"probe_pass_count\":{},\"clause_count\":{},\"clause_pass_count\":{},\"failed_clauses\":[{}],\"governance_notices\":[{}],\"failures\":[{}]}}\n",
                 profile,
                 lane.as_str(),
                 report.passed,
                 report.failures.len(),
+                report.governance_notices.len(),
                 report.probes.len(),
                 passed_probes,
                 clause_total,
                 clause_pass,
                 failed_clauses,
+                governance_notices,
                 failures
             ));
         }

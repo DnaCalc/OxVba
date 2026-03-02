@@ -11,6 +11,9 @@ This catalog defines explicit HAL contract clauses with stable IDs so behavior c
 - compatibility impact,
 - conformance evidence.
 
+Machine-readable companion catalog:
+- [`HAL_CONTRACT_CLAUSE_CATALOG_V1.csv`](HAL_CONTRACT_CLAUSE_CATALOG_V1.csv)
+
 Each clause includes:
 - scope,
 - preconditions,
@@ -35,6 +38,7 @@ Each clause includes:
 | `HAL-GEN-005` | `HostPolicy.unsupported_feature_mode = CompileTime` requires host preflight rejection of host-sensitive bytecode when capability/policy constraints fail. | implemented-verified | `hal_compile_time_mode_*` tests in `oxvba-host` |
 | `HAL-GEN-006` | `HostPolicy.unsupported_feature_mode = Runtime` permits execution; failure must surface at runtime through deterministic host error propagation. | implemented-verified | `hal_runtime_mode_surfaces_host_error_for_unsupported_linux_com_intrinsics` |
 | `HAL-GEN-007` | Profile-level COM support baseline: Windows supported; non-Windows unsupported. | implemented-verified | `windows_declares_com_supported_only_on_windows` |
+| `HAL-GEN-008` | Conformance clause references must resolve to known IDs in the machine-readable clause catalog (drift guard). | implemented-verified | `validate_clause_reference_integrity` in `conformance.rs` |
 
 ## 4. Descriptor and Capability Clauses
 
@@ -50,9 +54,16 @@ Each clause includes:
 
 | Clause ID | Clause | Status | Verification |
 |---|---|---|---|
-| `HAL-ERR-001` | Stable codes must be used: `HAL-E-CAP-UNAVAILABLE`, `HAL-E-POLICY-DENIED`, `HAL-E-ADAPTER-FAULT`, `HAL-E-UNSUPPORTED-PROFILE`. | implemented-verified | constructors in `error.rs`; runtime tests inspect `HAL-E-CAP-UNAVAILABLE` |
-| `HAL-ERR-002` | Error payload must include profile, capability, operation, and message. | implemented-verified | `HalError` schema in `error.rs` |
+| `HAL-ERR-001` | Stable codes must be used: `HAL-E-CAP-UNAVAILABLE`, `HAL-E-POLICY-DENIED`, `HAL-E-ADAPTER-FAULT`, `HAL-E-UNSUPPORTED-PROFILE`. | implemented-verified | `expected_stable_code_for_kind` + conformance probe validation |
+| `HAL-ERR-002` | Error payload must include profile, capability, operation, and message. | implemented-verified | conformance payload-shape checks in `run_conformance`; `HalError` schema in `error.rs` |
 | `HAL-ERR-003` | VM host error routing must preserve VBA error-control behavior (`On Error` paths) and produce deterministic runtime diagnostics when unhandled. | implemented-verified | `hal_runtime_mode_routes_host_error_through_on_error_resume_next`; `hal_compile_time_mode_rejects_even_with_on_error_resume_next` |
+
+## 5.5 Governance Clauses (Exploratory Non-Blocking)
+
+| Clause ID | Clause | Status | Verification |
+|---|---|---|---|
+| `HAL-GOV-001` | Supported capabilities should not remain at `Stub` maturity; if they do, emit deterministic governance notice entries. | implemented-verified | `evaluate_maturity_governance` + `governance_rules_are_executable_and_non_blocking` |
+| `HAL-GOV-002` | Unsupported capabilities should remain `Stable` maturity metadata in v1; deviations emit deterministic governance notice entries. | implemented-verified | `evaluate_maturity_governance` + `governance_rules_are_executable_and_non_blocking` |
 
 ## 6. Domain Clauses
 

@@ -1,6 +1,59 @@
 # Implementation Log
 
 ## 2026-03-02
+- Executed HAL rigor expansion batch (machine-readable clauses + drift guard + policy presets + error contract checks):
+  - added machine-readable clause catalog:
+    - `docs/spec/HAL_CONTRACT_CLAUSE_CATALOG_V1.csv`;
+  - added clause drift guard in both code and tooling:
+    - `conformance.rs` `HAL-GEN-008` check verifies conformance-referenced clause IDs resolve in catalog,
+    - `scripts/check-hal-clause-drift.ps1`,
+    - `scripts/run-hal-conformance.ps1` now runs drift guard before artifact generation;
+  - expanded conformance report model and artifacts:
+    - catalog-scoped clause coverage (`ConformanceReport::clause_coverage_against_catalog`),
+    - governance notice emission (`governance_notice_count`, `governance_notices`),
+    - machine/markdown catalog lockstep test;
+  - strengthened HAL error contract checks in conformance lane:
+    - stable-code validation by error kind (`HAL-ERR-001`),
+    - payload-shape validation (`HAL-ERR-002`);
+  - added executable, non-blocking maturity governance checks:
+    - `HAL-GOV-001`, `HAL-GOV-002` in conformance clause checks and notices;
+  - added explicit host-policy presets and wiring:
+    - `HostPolicyPreset` + `HostPolicy::for_preset` in `oxvba-hal`,
+    - `strict-ci`, `deterministic-runtime`, `deterministic-compile-time`, `interactive-dev`,
+    - engine helper `set_host_policy_preset`;
+  - expanded adapter property tests across UI and host-sensitive branches:
+    - UI virtualization projections,
+    - policy-denied shape across UI/process/COM/dynlink,
+    - deterministic process/COM/dynlink projection behavior;
+  - hardened deterministic arithmetic projections:
+    - saturated `create_object`, `dispatch_invoke`, `invoke_symbol` to prevent overflow panics in checked/debug lanes;
+  - strengthened VM/host end-to-end HAL error mapping tests:
+    - VM deterministic `53xxx` mapping coverage over all kinds/capabilities,
+    - runtime diagnostic includes stable code + operation token,
+    - host runtime policy-denied shell tests validate diagnostic shape and `Err.Number = 53042`;
+  - added/updated docs:
+    - `docs/spec/HAL_POLICY_PRESETS.md`,
+    - `docs/spec/HAL_CONTRACT_CLAUSE_CATALOG_V1.md`,
+    - `docs/spec/HAL_CONFORMANCE_SUITE.md`,
+    - `docs/spec/HAL_SPEC_WORKING_DRAFT.md`,
+    - `docs/spec/README.md`, `docs/README.md`, `docs/evidence/hal/README.md`;
+  - refreshed conformance evidence:
+    - `docs/evidence/hal/HAL_CONFORMANCE_1772433393.md`
+    - `docs/evidence/hal/HAL_CONFORMANCE_1772433393.jsonl`.
+- Added HAL contract assertion scaffold for debug/checked builds:
+  - introduced `oxvba-hal` feature flag `hal_contract_checks` (off by default);
+  - added build-gated lightweight pre/post assertions in `crates/oxvba-hal/src/adapters/standard.rs`:
+    - filesystem state invariants around `open`/`close`/`seek`/`free_file`,
+    - UI virtualization postcondition checks for `msg_box`/`input_box`;
+  - assertions execute when `debug_assertions` are enabled or `--features hal_contract_checks` is used;
+  - added staged hardening roadmap:
+    - `docs/spec/HAL_CONTRACT_ASSERTION_HARDENING.md`;
+  - linked the new scaffold artifact in:
+    - `docs/spec/README.md`
+    - `docs/README.md`;
+  - verification:
+    - `cargo test -p oxvba-hal`
+    - `cargo test -p oxvba-host`.
 - Completed HAL formalization Phase 3 (adapter refinement + operating envelope closure):
   - expanded adapter invariant checks and property tests in `oxvba-hal`:
     - side-effect guarantees on denied/invalid filesystem operations,

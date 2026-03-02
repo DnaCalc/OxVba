@@ -92,6 +92,13 @@ Current compile-time preflighted intrinsic families:
 - `Shell`, `Environ`, `Dir` -> `ProcessEnv`
 - `CreateObject`, `DispatchInvoke` -> `ComActivationDispatch`
 
+Named preset table:
+- [`HAL_POLICY_PRESETS.md`](HAL_POLICY_PRESETS.md) defines reproducible policy bundles:
+  - `strict-ci`
+  - `deterministic-runtime`
+  - `deterministic-compile-time`
+  - `interactive-dev`
+
 ## 7. Deterministic Error Taxonomy
 
 HAL stable codes (implemented in `crates/oxvba-hal/src/error.rs`):

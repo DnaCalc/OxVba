@@ -6,6 +6,10 @@ license.workspace = true
 authors.workspace = true
 repository.workspace = true
 
+[features]
+default = []
+hal_contract_checks = []
+
 [dependencies]
 thiserror.workspace = true
 

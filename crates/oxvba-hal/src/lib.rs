@@ -9,7 +9,7 @@ pub mod traits;
 pub use error::{HalError, HalErrorKind, HalResult};
 pub use model::{
     CapabilityDescriptor, CapabilityId, CapabilityMaturity, HalDescriptor, HalProfileId,
-    HostPolicy, UiVirtualizationMode, UnsupportedFeatureMode,
+    HostPolicy, HostPolicyPreset, UiVirtualizationMode, UnsupportedFeatureMode,
 };
 pub use traits::{
     ComHal, DiagnosticsHal, DynamicLinkHal, EventPumpHal, FileSystemHal, HostServices,

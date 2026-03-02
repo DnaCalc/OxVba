@@ -3,7 +3,10 @@ use std::{collections::HashMap, sync::Arc};
 use oxvba_compiler::{Bytecode, Instruction, compile};
 use oxvba_hal::{
     adapters,
-    model::{CapabilityId, HalDescriptor, HalProfileId, HostPolicy, UnsupportedFeatureMode},
+    model::{
+        CapabilityId, HalDescriptor, HalProfileId, HostPolicy, HostPolicyPreset,
+        UnsupportedFeatureMode,
+    },
     traits::HostServices,
 };
 use oxvba_jit::JitEngine;
@@ -102,6 +105,10 @@ impl Engine {
     pub fn set_host_policy(&mut self, policy: HostPolicy) {
         let profile = self.host_services.profile();
         self.host_services = adapters::for_profile(profile, policy);
+    }
+
+    pub fn set_host_policy_preset(&mut self, preset: HostPolicyPreset) {
+        self.set_host_policy(HostPolicy::for_preset(preset));
     }
 
     pub fn set_unsupported_feature_mode(&mut self, mode: UnsupportedFeatureMode) {
@@ -234,7 +241,7 @@ fn hal_requirement(instruction: &Instruction) -> Option<(&'static str, Capabilit
 #[cfg(test)]
 mod tests {
     use super::{DiagnosticPhase, Engine, HostConfig};
-    use oxvba_hal::model::{HalProfileId, HostPolicy, UnsupportedFeatureMode};
+    use oxvba_hal::model::{HalProfileId, HostPolicy, HostPolicyPreset, UnsupportedFeatureMode};
     use oxvba_runtime::value_tags::error_tag_from_code;
     use std::path::{Path, PathBuf};
 
@@ -3355,6 +3362,44 @@ mod tests {
             .expect("runtime mode with On Error Resume Next should continue");
         assert_eq!(out[0], 0);
         assert_eq!(out[1], 53_051);
+    }
+
+    #[test]
+    fn hal_runtime_policy_denied_shell_surfaces_stable_error_shape() {
+        let mut engine = Engine::new(HostConfig::default());
+        let mut policy = HostPolicy::deterministic_runtime();
+        policy.allow_process_spawn = false;
+        engine.set_host_policy(policy);
+
+        let err = engine
+            .execute_source_with_snapshot_phased("Sub Main()\nDim x\nx = Shell(1)\nEnd Sub")
+            .expect_err("runtime policy denial should surface at execution");
+        assert_eq!(err.phase(), DiagnosticPhase::Runtime);
+        assert!(err.message().contains("HAL-E-POLICY-DENIED"));
+        assert!(err.message().contains("[shell]"));
+    }
+
+    #[test]
+    fn hal_runtime_policy_denied_shell_routes_to_expected_err_number() {
+        let mut engine = Engine::new(HostConfig::default());
+        let mut policy = HostPolicy::deterministic_runtime();
+        policy.allow_process_spawn = false;
+        engine.set_host_policy(policy);
+
+        let source =
+            "Sub Main()\nDim x\nDim y\nOn Error Resume Next\nx = Shell(1)\ny = Err.Number\nEnd Sub";
+        let out = engine
+            .execute_source_with_snapshot(source)
+            .expect("On Error Resume Next should capture host policy failure");
+        assert_eq!(out[0], 0);
+        assert_eq!(out[1], 53_042);
+    }
+
+    #[test]
+    fn hal_policy_preset_switch_updates_engine_policy() {
+        let mut engine = Engine::new(HostConfig::default());
+        engine.set_host_policy_preset(HostPolicyPreset::StrictCi);
+        assert_eq!(engine.host_policy(), &HostPolicy::strict_ci());
     }
 
     #[test]

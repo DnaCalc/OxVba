@@ -14,6 +14,24 @@ use std::{
     sync::{Arc, Mutex},
 };
 
+#[cfg(any(debug_assertions, feature = "hal_contract_checks"))]
+macro_rules! hal_contract_assert {
+    ($cond:expr, $($arg:tt)+) => {
+        assert!(
+            $cond,
+            "HAL contract assertion failed: {}",
+            format_args!($($arg)+)
+        );
+    };
+}
+
+#[cfg(not(any(debug_assertions, feature = "hal_contract_checks")))]
+macro_rules! hal_contract_assert {
+    ($cond:expr, $($arg:tt)+) => {
+        let _ = (stringify!($cond), stringify!($($arg)+));
+    };
+}
+
 #[derive(Debug, Clone)]
 pub(crate) struct StandardHostServices {
     profile: HalProfileId,
@@ -91,6 +109,63 @@ impl StandardHostServices {
             )
         })
     }
+
+    // Contract-check scaffold: lightweight invariants now, intended to harden over time.
+    // Future steps are tracked in docs/spec/HAL_CONTRACT_ASSERTION_HARDENING.md.
+    fn assert_fs_invariants(&self, state: &FileSystemState, op: &'static str) {
+        #[cfg(any(debug_assertions, feature = "hal_contract_checks"))]
+        {
+            hal_contract_assert!(
+                state.handles.len() <= 511,
+                "op={} tracks too many handles: {}",
+                op,
+                state.handles.len()
+            );
+            for (handle, entry) in &state.handles {
+                hal_contract_assert!(
+                    (1..=511).contains(handle),
+                    "op={} observed out-of-range handle {}",
+                    op,
+                    handle
+                );
+                hal_contract_assert!(
+                    entry.position >= 0,
+                    "op={} observed negative position {} for handle {}",
+                    op,
+                    entry.position,
+                    handle
+                );
+                hal_contract_assert!(
+                    entry.len >= 0,
+                    "op={} observed negative len {} for handle {}",
+                    op,
+                    entry.len,
+                    handle
+                );
+                if entry.mode == 0 {
+                    hal_contract_assert!(
+                        entry.len > 0,
+                        "op={} read-only handle {} must retain positive pseudo-length",
+                        op,
+                        handle
+                    );
+                }
+                if !self.policy.allow_filesystem_mutation {
+                    hal_contract_assert!(
+                        entry.mode == 0,
+                        "op={} observed mutable handle {} while mutation policy is disabled",
+                        op,
+                        handle
+                    );
+                }
+            }
+        }
+
+        #[cfg(not(any(debug_assertions, feature = "hal_contract_checks")))]
+        {
+            let _ = (state, op);
+        }
+    }
 }
 
 impl UiInteractionHal for StandardHostServices {
@@ -102,11 +177,19 @@ impl UiInteractionHal for StandardHostServices {
         if !self.policy.allow_interaction {
             return Err(self.denied(capability, "msg_box"));
         }
-        match self.policy.ui_virtualization {
+        let result = match self.policy.ui_virtualization {
             UiVirtualizationMode::FailOnPrompt => Err(self.denied(capability, "msg_box")),
             UiVirtualizationMode::ScriptedResponses => Ok(style.max(1)),
             UiVirtualizationMode::Disabled => Ok(prompt.max(1)),
+        };
+        if let Ok(value) = result {
+            hal_contract_assert!(
+                value >= 1,
+                "op=msg_box must return positive token, got {}",
+                value
+            );
         }
+        result
     }
 
     fn input_box(&self, prompt: i32, default_value: i32) -> HalResult<i32> {
@@ -117,11 +200,33 @@ impl UiInteractionHal for StandardHostServices {
         if !self.policy.allow_interaction {
             return Err(self.denied(capability, "input_box"));
         }
-        match self.policy.ui_virtualization {
+        let result = match self.policy.ui_virtualization {
             UiVirtualizationMode::FailOnPrompt => Err(self.denied(capability, "input_box")),
             UiVirtualizationMode::ScriptedResponses => Ok(default_value),
             UiVirtualizationMode::Disabled => Ok(prompt),
+        };
+        if let Ok(value) = result {
+            match self.policy.ui_virtualization {
+                UiVirtualizationMode::ScriptedResponses => {
+                    hal_contract_assert!(
+                        value == default_value,
+                        "op=input_box scripted response mismatch: expected {}, got {}",
+                        default_value,
+                        value
+                    );
+                }
+                UiVirtualizationMode::Disabled => {
+                    hal_contract_assert!(
+                        value == prompt,
+                        "op=input_box disabled response mismatch: expected {}, got {}",
+                        prompt,
+                        value
+                    );
+                }
+                UiVirtualizationMode::FailOnPrompt => {}
+            }
         }
+        result
     }
 }
 
@@ -146,6 +251,7 @@ impl FileSystemHal for StandardHostServices {
         }
 
         let mut state = self.fs_lock(capability, "open")?;
+        self.assert_fs_invariants(&state, "open-pre");
         let Some(handle) = state.first_free_in(1, 511) else {
             return Err(HalError::adapter_fault(
                 self.profile,
@@ -167,6 +273,12 @@ impl FileSystemHal for StandardHostServices {
                 len: initial_len,
             },
         );
+        self.assert_fs_invariants(&state, "open-post");
+        hal_contract_assert!(
+            (1..=511).contains(&handle),
+            "op=open returned out-of-range handle {}",
+            handle
+        );
         Ok(handle)
     }
 
@@ -176,7 +288,9 @@ impl FileSystemHal for StandardHostServices {
             return Err(self.unsupported(capability, "close"));
         }
         let mut state = self.fs_lock(capability, "close")?;
+        self.assert_fs_invariants(&state, "close-pre");
         if state.handles.remove(&handle).is_some() {
+            self.assert_fs_invariants(&state, "close-post");
             Ok(1)
         } else {
             Err(HalError::adapter_fault(
@@ -203,12 +317,37 @@ impl FileSystemHal for StandardHostServices {
         }
 
         let mut state = self.fs_lock(capability, "seek")?;
-        let entry = self.fs_entry_mut(&mut state, handle, "seek")?;
-        entry.position = position;
-        if position > entry.len && entry.mode != 0 && self.policy.allow_filesystem_mutation {
-            entry.len = position;
-        }
-        Ok(entry.position)
+        self.assert_fs_invariants(&state, "seek-pre");
+        let final_position = {
+            let entry = self.fs_entry_mut(&mut state, handle, "seek")?;
+            let prior_len = entry.len;
+            entry.position = position;
+            if position > entry.len && entry.mode != 0 && self.policy.allow_filesystem_mutation {
+                entry.len = position;
+            }
+            hal_contract_assert!(
+                entry.position == position,
+                "op=seek did not preserve requested position {}; got {}",
+                position,
+                entry.position
+            );
+            let expected_len =
+                if position > prior_len && entry.mode != 0 && self.policy.allow_filesystem_mutation
+                {
+                    position
+                } else {
+                    prior_len
+                };
+            hal_contract_assert!(
+                entry.len == expected_len,
+                "op=seek expected len {} but found {}",
+                expected_len,
+                entry.len
+            );
+            entry.position
+        };
+        self.assert_fs_invariants(&state, "seek-post");
+        Ok(final_position)
     }
 
     fn eof(&self, handle: i32) -> HalResult<i32> {
@@ -242,14 +381,23 @@ impl FileSystemHal for StandardHostServices {
             (1, 255)
         };
         let state = self.fs_lock(capability, "free_file")?;
-        state.first_free_in(start, end).ok_or_else(|| {
+        self.assert_fs_invariants(&state, "free_file");
+        let candidate = state.first_free_in(start, end).ok_or_else(|| {
             HalError::adapter_fault(
                 self.profile,
                 capability,
                 "free_file",
                 format!("no free file number in range {start}..={end}"),
             )
-        })
+        })?;
+        hal_contract_assert!(
+            (start..=end).contains(&candidate),
+            "op=free_file returned {} outside range {}..={}",
+            candidate,
+            start,
+            end
+        );
+        Ok(candidate)
     }
 }
 
@@ -291,7 +439,7 @@ impl ComHal for StandardHostServices {
         if !self.policy.allow_com_activation {
             return Err(self.denied(capability, "create_object"));
         }
-        Ok(5_000 + prog_id)
+        Ok(5_000i32.saturating_add(prog_id))
     }
 
     fn dispatch_invoke(&self, object: i32, member: i32, arg: i32) -> HalResult<i32> {
@@ -302,7 +450,7 @@ impl ComHal for StandardHostServices {
         if !self.policy.allow_com_activation {
             return Err(self.denied(capability, "dispatch_invoke"));
         }
-        Ok(object + member + arg)
+        Ok(object.saturating_add(member).saturating_add(arg))
     }
 }
 
@@ -341,7 +489,7 @@ impl DynamicLinkHal for StandardHostServices {
         if !self.policy.allow_dynamic_link {
             return Err(self.denied(capability, "invoke_symbol"));
         }
-        Ok(symbol + arg)
+        Ok(symbol.saturating_add(arg))
     }
 }
 
@@ -817,6 +965,119 @@ mod tests {
             let eof = host.eof(handle).expect("eof should succeed");
             let expected = if offset >= len { 1 } else { 0 };
             prop_assert_eq!(eof, expected);
+        }
+
+        #[test]
+        fn prop_ui_virtualization_projection_is_stable(prompt in any::<i32>(), style in any::<i32>(), default_value in any::<i32>()) {
+            let scripted = StandardHostServices::new(
+                HalProfileId::Windows,
+                HostPolicy {
+                    allow_interaction: true,
+                    ui_virtualization: crate::model::UiVirtualizationMode::ScriptedResponses,
+                    ..HostPolicy::default()
+                },
+            );
+            prop_assert_eq!(
+                scripted.msg_box(prompt, style).expect("scripted msg_box"),
+                style.max(1)
+            );
+            prop_assert_eq!(
+                scripted.input_box(prompt, default_value).expect("scripted input_box"),
+                default_value
+            );
+
+            let disabled = StandardHostServices::new(
+                HalProfileId::Windows,
+                HostPolicy {
+                    allow_interaction: true,
+                    ui_virtualization: crate::model::UiVirtualizationMode::Disabled,
+                    ..HostPolicy::default()
+                },
+            );
+            prop_assert_eq!(
+                disabled.msg_box(prompt, style).expect("disabled msg_box"),
+                prompt.max(1)
+            );
+            prop_assert_eq!(
+                disabled.input_box(prompt, default_value).expect("disabled input_box"),
+                prompt
+            );
+        }
+
+        #[test]
+        fn prop_host_sensitive_policy_denials_are_stable(
+            shell_cmd in any::<i32>(),
+            prog_id in any::<i32>(),
+            symbol in any::<i32>(),
+            arg in any::<i32>()
+        ) {
+            let host = StandardHostServices::new(
+                HalProfileId::Windows,
+                HostPolicy {
+                    allow_interaction: false,
+                    allow_process_spawn: false,
+                    allow_com_activation: false,
+                    allow_dynamic_link: false,
+                    ..HostPolicy::default()
+                },
+            );
+
+            prop_assert_eq!(
+                host.msg_box(1, 1).expect_err("msg_box denied").kind,
+                HalErrorKind::PolicyDenied
+            );
+            prop_assert_eq!(
+                host.shell(shell_cmd, 0).expect_err("shell denied").kind,
+                HalErrorKind::PolicyDenied
+            );
+            prop_assert_eq!(
+                host.create_object(prog_id).expect_err("create_object denied").kind,
+                HalErrorKind::PolicyDenied
+            );
+            prop_assert_eq!(
+                host.invoke_symbol(symbol, arg).expect_err("invoke_symbol denied").kind,
+                HalErrorKind::PolicyDenied
+            );
+        }
+
+        #[test]
+        fn prop_process_com_dynlink_projection_is_stable(
+            shell_cmd in any::<i32>(),
+            prog_id in any::<i32>(),
+            object in any::<i32>(),
+            member in any::<i32>(),
+            arg in any::<i32>(),
+            symbol in any::<i32>()
+        ) {
+            let host = StandardHostServices::new(
+                HalProfileId::Windows,
+                HostPolicy {
+                    allow_interaction: true,
+                    allow_process_spawn: true,
+                    allow_com_activation: true,
+                    allow_dynamic_link: true,
+                    ..HostPolicy::default()
+                },
+            );
+
+            let shell_expected = if shell_cmd == 0 { 0 } else { 1 };
+            prop_assert_eq!(
+                host.shell(shell_cmd, 0).expect("shell should succeed"),
+                shell_expected
+            );
+            prop_assert_eq!(
+                host.create_object(prog_id).expect("create_object should succeed"),
+                5_000i32.saturating_add(prog_id)
+            );
+            prop_assert_eq!(
+                host.dispatch_invoke(object, member, arg)
+                    .expect("dispatch_invoke should succeed"),
+                object.saturating_add(member).saturating_add(arg)
+            );
+            prop_assert_eq!(
+                host.invoke_symbol(symbol, arg).expect("invoke_symbol should succeed"),
+                symbol.saturating_add(arg)
+            );
         }
     }
 }

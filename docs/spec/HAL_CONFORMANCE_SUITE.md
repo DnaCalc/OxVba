@@ -36,6 +36,12 @@ Full HAL suite artifacts:
 scripts/run-hal-conformance.ps1
 ```
 
+Catalog drift guard only:
+
+```powershell
+scripts/check-hal-clause-drift.ps1
+```
+
 This command runs crate tests and emits artifacts under `docs/evidence/hal`:
 - `HAL_CONFORMANCE_<timestamp>.md`
 - `HAL_CONFORMANCE_<timestamp>.jsonl`
@@ -44,6 +50,11 @@ Current artifact schema also includes clause-coverage totals per profile/lane:
 - `clause_count`
 - `clause_pass_count`
 - `failed_clauses`
+- `governance_notice_count`
+- `governance_notices`
+
+Clause coverage is computed against the machine-readable catalog:
+- `docs/spec/HAL_CONTRACT_CLAUSE_CATALOG_V1.csv`
 
 Integration lane:
 
@@ -95,6 +106,10 @@ Phase-1 expectation:
 
 Phase-2 progress:
 - conformance reports now carry clause coverage aggregation mapped from descriptor checks and probe-to-clause assignments.
+
+Phase-4 progress:
+- conformance lane coverage is now catalog-scoped against the machine-readable CSV (drift-guarded against markdown IDs),
+- governance notices are emitted as non-blocking evidence for maturity-policy issues.
 
 Phase-3 progress:
 - adapter suite includes side-effect/invariant checks and property checks for selected filesystem behaviors;
