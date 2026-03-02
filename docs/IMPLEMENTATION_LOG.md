@@ -1,6 +1,28 @@
 # Implementation Log
 
 ## 2026-03-02
+- Completed HAL expansion batch (host-backed lanes + clause promotion + wasm class split + CI automation):
+  - conformance runner now emits three lanes: `runtime`, `compile-time`, `interactive-dev`;
+  - conformance report now includes explicit host-backed metadata:
+    - `host_backed_eligible`
+    - `host_backed_active`;
+  - Wasm profile now includes runtime classes (`wasi`, `browser-sandbox`) surfaced in descriptor/runtime artifacts;
+  - promoted partial clauses to executable conformance checks:
+    - `HAL-FS-007` via `verify_fs_host_backed_contract`,
+    - `HAL-PROC-004` via `verify_process_host_backed_contract`,
+    - `HAL-TIME-002` via `verify_time_host_backed_contract`;
+  - added first explicit Windows-native realization check:
+    - mutation lane test `windows_native_mode_persists_mutation_to_host_file`;
+    - Windows shell probe now executes token-derived command via `cmd /C`;
+  - added wasm-target conformance runner automation:
+    - `scripts/run-hal-conformance-wasm32.ps1`;
+  - CI now publishes HAL evidence artifacts for:
+    - native lanes (`hal-conformance-native`),
+    - wasm32 lanes (`hal-conformance-wasm32`);
+  - refreshed artifacts:
+    - native: `docs/evidence/hal_ci_native/HAL_CONFORMANCE_1772441432.{md,jsonl}`
+    - wasm32: `docs/evidence/hal_ci_wasm32/HAL_CONFORMANCE_1772441445.{md,jsonl}`
+    - local reference: `docs/evidence/hal/HAL_CONFORMANCE_1772441422.{md,jsonl}`.
 - Closed HAL wasm-target test caveat:
   - root workspace `proptest` dependency now disables default `fork/timeout` features and keeps wasm-compatible `std` + `bit-set`;
   - this removes `rusty-fork`/`wait-timeout` from `oxvba-hal` dev build graph on `wasm32-wasip1`;

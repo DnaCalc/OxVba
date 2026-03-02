@@ -60,6 +60,7 @@ Current implementation shape:
 
 Each adapter publishes a `HalDescriptor`:
 - `profile`
+- `runtime_class`
 - `contract_version`
 - `adapter_version`
 - per-capability entries: `supported`, `maturity`, `spec_anchor`
@@ -139,9 +140,17 @@ VM propagation:
 
 ## 8.5 Wasm HAL Contract (v1)
 
-`wasm` adapter in v1 is deterministic and sandbox-oriented:
+`wasm` adapter in v1 is deterministic and sandbox-oriented, with explicit runtime classes:
+- `wasi`:
+  - `UiInteraction` remains supported under virtualization policy,
+  - host integration capabilities (`FileSystemIo`, `ProcessEnv`, `ComActivationDispatch`, `DynamicLinking`) are unsupported.
+- `browser-sandbox`:
+  - `UiInteraction` is capability-unavailable by descriptor contract,
+  - host integration capabilities remain unsupported.
+
+Common v1 wasm guarantees:
 - unsupported capabilities (`FileSystemIo`, `ProcessEnv`, `ComActivationDispatch`, `DynamicLinking`) fail with `HAL-E-CAP-UNAVAILABLE`;
-- `UiInteraction` requires policy-enabled interaction plus virtualization (`ScriptedResponses`); `Disabled`/`FailOnPrompt` return deterministic policy denial;
+- `UiInteraction` (when supported by runtime class) requires policy-enabled interaction plus virtualization (`ScriptedResponses`); `Disabled`/`FailOnPrompt` return deterministic policy denial;
 - `EventPump`, `TimeLocale`, and `DiagnosticsTelemetry` remain available with deterministic token semantics.
 
 ## 9. Conformance Execution

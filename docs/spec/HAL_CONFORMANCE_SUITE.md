@@ -36,6 +36,12 @@ Full HAL suite artifacts:
 scripts/run-hal-conformance.ps1
 ```
 
+Wasm target suite artifacts:
+
+```powershell
+scripts/run-hal-conformance-wasm32.ps1
+```
+
 Catalog drift guard only:
 
 ```powershell
@@ -52,6 +58,9 @@ Current artifact schema also includes clause-coverage totals per profile/lane:
 - `failed_clauses`
 - `governance_notice_count`
 - `governance_notices`
+- `runtime_class`
+- `host_backed_eligible`
+- `host_backed_active`
 
 Clause coverage is computed against the machine-readable catalog:
 - `docs/spec/HAL_CONTRACT_CLAUSE_CATALOG_V1.csv`
@@ -74,6 +83,11 @@ The pre-engine harness probes all current profiles:
 Each profile is executed in:
 - `runtime` unsupported mode,
 - `compile-time` unsupported mode.
+- `interactive-dev` host-backed exploration mode.
+
+Wasm profile is executed for runtime classes:
+- `wasi`
+- `browser-sandbox`
 
 ## 5. Expected COM Result
 
@@ -92,8 +106,8 @@ At current ladder stage:
 ## 7. Next Hardening Steps
 
 1. Promote candidate spec anchors to reviewed, behavior-specific conformance rows.
-2. Add richer UI virtualization and event-pump deterministic model probes.
-3. Add Office empirical differential checks for host-sensitive behavior classes on Windows.
+2. Add Office empirical differential checks for host-sensitive behavior classes on Windows.
+3. Add macOS host execution evidence when target infrastructure is available.
 
 ## 8. Clause Mapping Baseline
 

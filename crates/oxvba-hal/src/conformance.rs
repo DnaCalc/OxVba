@@ -5,7 +5,10 @@ use std::collections::{BTreeMap, BTreeSet, HashSet};
 use crate::{
     HalResult,
     error::HalErrorKind,
-    model::{ALL_CAPABILITIES, CapabilityId, CapabilityMaturity, HalDescriptor},
+    model::{
+        ALL_CAPABILITIES, CapabilityId, CapabilityMaturity, HalDescriptor, host_backed_mode_active,
+        host_backed_profile_matches_host,
+    },
     traits::HostServices,
 };
 
@@ -47,6 +50,8 @@ pub struct ProbeOutcome {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ConformanceReport {
     pub descriptor: HalDescriptor,
+    pub host_backed_eligible: bool,
+    pub host_backed_active: bool,
     pub passed: bool,
     pub failures: Vec<String>,
     pub governance_notices: Vec<String>,
@@ -196,6 +201,8 @@ impl ConformanceReport {
 
 pub fn run_conformance(host: &dyn HostServices) -> ConformanceReport {
     let descriptor = host.descriptor();
+    let host_backed_eligible = host_backed_profile_matches_host(descriptor.profile);
+    let host_backed_active = host_backed_mode_active(descriptor.profile, host.policy());
     let mut clause_checks = Vec::new();
     let mut failures = Vec::new();
     let mut governance_notices = Vec::new();
@@ -358,6 +365,13 @@ pub fn run_conformance(host: &dyn HostServices) -> ConformanceReport {
         &["HAL-DIAG-001", "HAL-DES-004", "HAL-GEN-001", "HAL-GEN-003"],
         host.diag().emit(1, 2).map(|_| ()),
     );
+    evaluate_host_backed_contract_paths(
+        host,
+        &descriptor,
+        host_backed_active,
+        &mut clause_checks,
+        &mut failures,
+    );
 
     clause_checks.push(ClauseCheck {
         clause_id: "HAL-ERR-001",
@@ -390,12 +404,302 @@ pub fn run_conformance(host: &dyn HostServices) -> ConformanceReport {
 
     ConformanceReport {
         descriptor,
+        host_backed_eligible,
+        host_backed_active,
         passed: failures.is_empty(),
         failures,
         governance_notices,
         clause_checks,
         probes,
     }
+}
+
+fn evaluate_host_backed_contract_paths(
+    host: &dyn HostServices,
+    descriptor: &HalDescriptor,
+    host_backed_active: bool,
+    checks: &mut Vec<ClauseCheck>,
+    failures: &mut Vec<String>,
+) {
+    let fs_ok = verify_fs_host_backed_contract(host, descriptor, host_backed_active, failures);
+    checks.push(ClauseCheck {
+        clause_id: "HAL-FS-007",
+        status: if fs_ok {
+            ClauseCheckStatus::Passed
+        } else {
+            ClauseCheckStatus::Failed
+        },
+        detail: if fs_ok {
+            None
+        } else {
+            Some("filesystem host-backed/deterministic floor checks failed".to_string())
+        },
+    });
+
+    let proc_ok =
+        verify_process_host_backed_contract(host, descriptor, host_backed_active, failures);
+    checks.push(ClauseCheck {
+        clause_id: "HAL-PROC-004",
+        status: if proc_ok {
+            ClauseCheckStatus::Passed
+        } else {
+            ClauseCheckStatus::Failed
+        },
+        detail: if proc_ok {
+            None
+        } else {
+            Some("process/env host-backed contract checks failed".to_string())
+        },
+    });
+
+    let time_ok = verify_time_host_backed_contract(host, descriptor, host_backed_active, failures);
+    checks.push(ClauseCheck {
+        clause_id: "HAL-TIME-002",
+        status: if time_ok {
+            ClauseCheckStatus::Passed
+        } else {
+            ClauseCheckStatus::Failed
+        },
+        detail: if time_ok {
+            None
+        } else {
+            Some("time host-backed contract checks failed".to_string())
+        },
+    });
+}
+
+fn verify_fs_host_backed_contract(
+    host: &dyn HostServices,
+    descriptor: &HalDescriptor,
+    host_backed_active: bool,
+    failures: &mut Vec<String>,
+) -> bool {
+    if !descriptor.supports(CapabilityId::FileSystemIo) {
+        return true;
+    }
+
+    let mut ok = true;
+    let handle = match host.fs().open(901, 0) {
+        Ok(handle) => handle,
+        Err(err) => {
+            failures.push(format!(
+                "fs.open(mode=0) failed while FileSystemIo is supported: {} ({})",
+                err.stable_code, err.message
+            ));
+            return false;
+        }
+    };
+    let _ = host.fs().close(handle);
+
+    if host.policy().allow_filesystem_mutation {
+        match host.fs().open(902, 1) {
+            Ok(mutable_handle) => {
+                if let Err(err) = host.fs().seek(mutable_handle, 96) {
+                    ok = false;
+                    failures.push(format!(
+                        "fs.seek mutation probe failed: {} ({})",
+                        err.stable_code, err.message
+                    ));
+                } else {
+                    match host.fs().lof(mutable_handle) {
+                        Ok(len) => {
+                            if len < 96 {
+                                ok = false;
+                                failures.push(format!(
+                                    "fs.lof mutation probe expected >= 96, observed {}",
+                                    len
+                                ));
+                            }
+                        }
+                        Err(err) => {
+                            ok = false;
+                            failures.push(format!(
+                                "fs.lof mutation probe failed: {} ({})",
+                                err.stable_code, err.message
+                            ));
+                        }
+                    }
+                }
+                let _ = host.fs().close(mutable_handle);
+            }
+            Err(err) => {
+                ok = false;
+                failures.push(format!(
+                    "fs.open(mode=1) denied/faulted while mutation is allowed: {} ({})",
+                    err.stable_code, err.message
+                ));
+            }
+        }
+    } else if let Err(err) = host.fs().open(903, 1) {
+        if err.kind != HalErrorKind::PolicyDenied {
+            ok = false;
+            failures.push(format!(
+                "fs.open(mode=1) expected policy denial; got {} ({})",
+                err.stable_code, err.message
+            ));
+        }
+    } else {
+        ok = false;
+        failures.push(
+            "fs.open(mode=1) unexpectedly succeeded when mutation policy is disabled".to_string(),
+        );
+    }
+
+    if host_backed_active && descriptor.profile == crate::model::HalProfileId::Windows {
+        // Windows-native realization check: mutation lane should not collapse to the deterministic
+        // constant-size path.
+        match host.fs().open(904, 1) {
+            Ok(h) => {
+                let _ = host.fs().seek(h, 128);
+                match host.fs().lof(h) {
+                    Ok(len) if len >= 128 => {}
+                    Ok(len) => {
+                        ok = false;
+                        failures.push(format!(
+                            "windows host-backed fs expected len >= 128, observed {}",
+                            len
+                        ));
+                    }
+                    Err(err) => {
+                        ok = false;
+                        failures.push(format!(
+                            "windows host-backed fs lof probe failed: {} ({})",
+                            err.stable_code, err.message
+                        ));
+                    }
+                }
+                let _ = host.fs().close(h);
+            }
+            Err(err) => {
+                ok = false;
+                failures.push(format!(
+                    "windows host-backed fs open probe failed: {} ({})",
+                    err.stable_code, err.message
+                ));
+            }
+        }
+    }
+
+    ok
+}
+
+fn verify_process_host_backed_contract(
+    host: &dyn HostServices,
+    descriptor: &HalDescriptor,
+    host_backed_active: bool,
+    failures: &mut Vec<String>,
+) -> bool {
+    if !descriptor.supports(CapabilityId::ProcessEnv) {
+        return true;
+    }
+    if !host.policy().allow_process_spawn {
+        return true;
+    }
+
+    let mut ok = true;
+    match host.process().shell(1, 0) {
+        Ok(token) => {
+            if host_backed_active && token <= 1 {
+                ok = false;
+                failures.push(format!(
+                    "process.shell expected host-backed pid-like token > 1; observed {}",
+                    token
+                ));
+            }
+        }
+        Err(err) => {
+            ok = false;
+            failures.push(format!(
+                "process.shell probe failed despite supported capability/policy: {} ({})",
+                err.stable_code, err.message
+            ));
+        }
+    }
+
+    if let Err(err) = host.process().environ(1) {
+        ok = false;
+        failures.push(format!(
+            "process.environ host-backed contract probe failed: {} ({})",
+            err.stable_code, err.message
+        ));
+    }
+    if let Err(err) = host.process().dir(0, 0) {
+        ok = false;
+        failures.push(format!(
+            "process.dir host-backed contract probe failed: {} ({})",
+            err.stable_code, err.message
+        ));
+    }
+    ok
+}
+
+fn verify_time_host_backed_contract(
+    host: &dyn HostServices,
+    descriptor: &HalDescriptor,
+    host_backed_active: bool,
+    failures: &mut Vec<String>,
+) -> bool {
+    if !descriptor.supports(CapabilityId::TimeLocale) {
+        return true;
+    }
+
+    let mut ok = true;
+    let date = match host.time_locale().date_serial_now() {
+        Ok(value) => value,
+        Err(err) => {
+            failures.push(format!(
+                "time.date_serial_now probe failed: {} ({})",
+                err.stable_code, err.message
+            ));
+            return false;
+        }
+    };
+    let time = match host.time_locale().time_serial_now() {
+        Ok(value) => value,
+        Err(err) => {
+            failures.push(format!(
+                "time.time_serial_now probe failed: {} ({})",
+                err.stable_code, err.message
+            ));
+            return false;
+        }
+    };
+    let ticks = match host.time_locale().timer_ticks() {
+        Ok(value) => value,
+        Err(err) => {
+            failures.push(format!(
+                "time.timer_ticks probe failed: {} ({})",
+                err.stable_code, err.message
+            ));
+            return false;
+        }
+    };
+
+    if host_backed_active {
+        if date < 0 || time < 0 || ticks < 0 {
+            ok = false;
+            failures.push(format!(
+                "host-backed time probe observed negative tokens: date={}, time={}, ticks={}",
+                date, time, ticks
+            ));
+        }
+        if date == 20_260_301 && time == 123_456 && ticks == 42 {
+            ok = false;
+            failures.push(
+                "host-backed time probe observed deterministic constants; expected system-time-derived values".to_string(),
+            );
+        }
+    } else if host.policy().deterministic_mode
+        && (date != 20_260_301 || time != 123_456 || ticks != 42)
+    {
+        ok = false;
+        failures.push(format!(
+            "deterministic time lane expected constants; observed date={}, time={}, ticks={}",
+            date, time, ticks
+        ));
+    }
+
+    ok
 }
 
 const fn expected_stable_code_for_kind(kind: HalErrorKind) -> &'static str {
@@ -611,7 +915,10 @@ mod tests {
 
     use crate::{
         adapters::for_profile,
-        model::{CapabilityId, HalProfileId, HostPolicy},
+        model::{
+            CapabilityId, HalProfileId, HostPolicy, WasmRuntimeClass,
+            host_backed_profile_matches_host,
+        },
     };
 
     use super::{
@@ -758,5 +1065,32 @@ mod tests {
             expected.is_subset(&actual),
             "probe clause IDs should include required set"
         );
+    }
+
+    #[test]
+    fn conformance_report_exposes_host_backed_flags_for_interactive_lane() {
+        let profile = if cfg!(target_os = "windows") {
+            HalProfileId::Windows
+        } else if cfg!(target_os = "linux") {
+            HalProfileId::Linux
+        } else {
+            HalProfileId::Linux
+        };
+        let host = for_profile(profile, HostPolicy::interactive_dev());
+        let report = run_conformance(host.as_ref());
+        let expected = host_backed_profile_matches_host(profile);
+        assert_eq!(report.host_backed_eligible, expected);
+        assert_eq!(report.host_backed_active, expected);
+    }
+
+    #[test]
+    fn wasm_runtime_class_is_reported_in_descriptor() {
+        let host = for_profile(
+            HalProfileId::Wasm,
+            HostPolicy::deterministic_runtime()
+                .with_wasm_runtime_class(WasmRuntimeClass::BrowserSandbox),
+        );
+        let report = run_conformance(host.as_ref());
+        assert_eq!(report.descriptor.runtime_class, "browser-sandbox");
     }
 }

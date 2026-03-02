@@ -21,6 +21,38 @@ jobs:
       - name: Cargo check
         run: cargo check --workspace
 
+  hal-conformance-native:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+      - name: HAL conformance (native lanes)
+        shell: pwsh
+        run: ./scripts/run-hal-conformance.ps1 -OutputDir docs/evidence/hal_ci_native
+      - name: Upload HAL native artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: hal-conformance-native
+          path: docs/evidence/hal_ci_native/
+          if-no-files-found: error
+
+  hal-conformance-wasm32:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+      - name: HAL conformance (wasm32-wasip1)
+        shell: pwsh
+        run: ./scripts/run-hal-conformance-wasm32.ps1 -OutputDir docs/evidence/hal_ci_wasm32
+      - name: Upload HAL wasm32 artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: hal-conformance-wasm32
+          path: docs/evidence/hal_ci_wasm32/
+          if-no-files-found: error
+
   docs-check:
     runs-on: ubuntu-latest
     steps:

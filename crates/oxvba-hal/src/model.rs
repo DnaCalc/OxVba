@@ -40,6 +40,7 @@ pub struct CapabilityDescriptor {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct HalDescriptor {
     pub profile: HalProfileId,
+    pub runtime_class: &'static str,
     pub contract_version: &'static str,
     pub adapter_version: &'static str,
     pub capabilities: Vec<CapabilityDescriptor>,
@@ -66,6 +67,21 @@ pub enum UiVirtualizationMode {
 pub enum UnsupportedFeatureMode {
     CompileTime,
     Runtime,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WasmRuntimeClass {
+    Wasi,
+    BrowserSandbox,
+}
+
+impl WasmRuntimeClass {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Wasi => "wasi",
+            Self::BrowserSandbox => "browser-sandbox",
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -97,6 +113,7 @@ pub struct HostPolicy {
     pub deterministic_mode: bool,
     pub ui_virtualization: UiVirtualizationMode,
     pub unsupported_feature_mode: UnsupportedFeatureMode,
+    pub wasm_runtime_class: WasmRuntimeClass,
 }
 
 impl HostPolicy {
@@ -111,6 +128,7 @@ impl HostPolicy {
                 deterministic_mode: true,
                 ui_virtualization: UiVirtualizationMode::FailOnPrompt,
                 unsupported_feature_mode: UnsupportedFeatureMode::CompileTime,
+                wasm_runtime_class: WasmRuntimeClass::Wasi,
             },
             HostPolicyPreset::DeterministicRuntime => Self {
                 allow_interaction: false,
@@ -121,6 +139,7 @@ impl HostPolicy {
                 deterministic_mode: true,
                 ui_virtualization: UiVirtualizationMode::ScriptedResponses,
                 unsupported_feature_mode: UnsupportedFeatureMode::Runtime,
+                wasm_runtime_class: WasmRuntimeClass::Wasi,
             },
             HostPolicyPreset::DeterministicCompileTime => Self {
                 unsupported_feature_mode: UnsupportedFeatureMode::CompileTime,
@@ -135,8 +154,14 @@ impl HostPolicy {
                 deterministic_mode: false,
                 ui_virtualization: UiVirtualizationMode::Disabled,
                 unsupported_feature_mode: UnsupportedFeatureMode::Runtime,
+                wasm_runtime_class: WasmRuntimeClass::Wasi,
             },
         }
+    }
+
+    pub fn with_wasm_runtime_class(mut self, runtime_class: WasmRuntimeClass) -> Self {
+        self.wasm_runtime_class = runtime_class;
+        self
     }
 
     pub fn strict_ci() -> Self {
@@ -173,9 +198,24 @@ pub const ALL_CAPABILITIES: [CapabilityId; 8] = [
     CapabilityId::DiagnosticsTelemetry,
 ];
 
+pub fn host_backed_profile_matches_host(profile: HalProfileId) -> bool {
+    match profile {
+        HalProfileId::Windows => cfg!(target_os = "windows"),
+        HalProfileId::Linux => cfg!(target_os = "linux"),
+        _ => false,
+    }
+}
+
+pub fn host_backed_mode_active(profile: HalProfileId, policy: &HostPolicy) -> bool {
+    !policy.deterministic_mode && host_backed_profile_matches_host(profile)
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{HostPolicy, HostPolicyPreset, UiVirtualizationMode, UnsupportedFeatureMode};
+    use super::{
+        HalProfileId, HostPolicy, HostPolicyPreset, UiVirtualizationMode, UnsupportedFeatureMode,
+        WasmRuntimeClass, host_backed_profile_matches_host,
+    };
 
     #[test]
     fn preset_deterministic_runtime_matches_existing_factory() {
@@ -192,6 +232,7 @@ mod tests {
             policy.unsupported_feature_mode,
             UnsupportedFeatureMode::CompileTime
         );
+        assert_eq!(policy.wasm_runtime_class, WasmRuntimeClass::Wasi);
         assert!(policy.deterministic_mode);
     }
 
@@ -209,6 +250,7 @@ mod tests {
             policy.unsupported_feature_mode,
             UnsupportedFeatureMode::CompileTime
         );
+        assert_eq!(policy.wasm_runtime_class, WasmRuntimeClass::Wasi);
     }
 
     #[test]
@@ -225,5 +267,35 @@ mod tests {
             policy.unsupported_feature_mode,
             UnsupportedFeatureMode::Runtime
         );
+        assert_eq!(policy.wasm_runtime_class, WasmRuntimeClass::Wasi);
+    }
+
+    #[test]
+    fn wasm_runtime_class_override_is_available() {
+        let policy = HostPolicy::deterministic_runtime()
+            .with_wasm_runtime_class(WasmRuntimeClass::BrowserSandbox);
+        assert_eq!(policy.wasm_runtime_class, WasmRuntimeClass::BrowserSandbox);
+    }
+
+    #[test]
+    fn host_backed_profile_match_function_is_stable() {
+        let windows = host_backed_profile_matches_host(HalProfileId::Windows);
+        let linux = host_backed_profile_matches_host(HalProfileId::Linux);
+        let macos = host_backed_profile_matches_host(HalProfileId::MacOs);
+        let wasm = host_backed_profile_matches_host(HalProfileId::Wasm);
+        let null = host_backed_profile_matches_host(HalProfileId::Null);
+        assert!(!macos);
+        assert!(!wasm);
+        assert!(!null);
+        if cfg!(target_os = "windows") {
+            assert!(windows);
+            assert!(!linux);
+        } else if cfg!(target_os = "linux") {
+            assert!(!windows);
+            assert!(linux);
+        } else {
+            assert!(!windows);
+            assert!(!linux);
+        }
     }
 }

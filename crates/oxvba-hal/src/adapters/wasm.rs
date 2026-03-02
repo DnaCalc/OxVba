@@ -21,7 +21,7 @@ pub struct WasmHostServices {
 impl WasmHostServices {
     pub fn new(policy: HostPolicy) -> Self {
         Self {
-            descriptor: descriptor_for_profile(HalProfileId::Wasm),
+            descriptor: descriptor_for_profile(HalProfileId::Wasm, &policy),
             policy,
         }
     }
@@ -36,6 +36,10 @@ impl WasmHostServices {
 
     fn denied(&self, capability: CapabilityId, op: &'static str) -> HalError {
         HalError::policy_denied(HalProfileId::Wasm, capability, op)
+    }
+
+    fn supports(&self, capability: CapabilityId) -> bool {
+        self.descriptor.supports(capability)
     }
 }
 
@@ -80,6 +84,9 @@ impl HostServices for WasmHostServices {
 
 impl UiInteractionHal for WasmHostServices {
     fn msg_box(&self, _prompt: i32, style: i32) -> HalResult<i32> {
+        if !self.supports(CapabilityId::UiInteraction) {
+            return Err(self.unsupported(CapabilityId::UiInteraction, "msg_box"));
+        }
         if !self.policy.allow_interaction {
             return Err(self.denied(CapabilityId::UiInteraction, "msg_box"));
         }
@@ -92,6 +99,9 @@ impl UiInteractionHal for WasmHostServices {
     }
 
     fn input_box(&self, _prompt: i32, default_value: i32) -> HalResult<i32> {
+        if !self.supports(CapabilityId::UiInteraction) {
+            return Err(self.unsupported(CapabilityId::UiInteraction, "input_box"));
+        }
         if !self.policy.allow_interaction {
             return Err(self.denied(CapabilityId::UiInteraction, "input_box"));
         }
@@ -190,8 +200,8 @@ impl DiagnosticsHal for WasmHostServices {
 mod tests {
     use crate::{
         error::HalErrorKind,
-        model::UiVirtualizationMode,
-        traits::{ProcessEnvHal, UiInteractionHal},
+        model::{CapabilityId, UiVirtualizationMode, WasmRuntimeClass},
+        traits::{HostServices, ProcessEnvHal, UiInteractionHal},
     };
 
     use super::WasmHostServices;
@@ -218,6 +228,23 @@ mod tests {
         let host = WasmHostServices::new(crate::HostPolicy::interactive_dev());
         assert_eq!(
             host.shell(1, 0).expect_err("shell").kind,
+            HalErrorKind::CapabilityUnavailable
+        );
+    }
+
+    #[test]
+    fn wasm_browser_sandbox_descriptor_disables_ui_capability() {
+        let host = WasmHostServices::new(
+            crate::HostPolicy::deterministic_runtime()
+                .with_wasm_runtime_class(WasmRuntimeClass::BrowserSandbox),
+        );
+        assert_eq!(host.descriptor().runtime_class, "browser-sandbox");
+        assert!(
+            !host.descriptor().supports(CapabilityId::UiInteraction),
+            "browser sandbox class should disable ui capability"
+        );
+        assert_eq!(
+            host.msg_box(1, 1).expect_err("msg_box").kind,
             HalErrorKind::CapabilityUnavailable
         );
     }

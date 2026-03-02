@@ -20,7 +20,7 @@ pub struct NullHostServices {
 impl NullHostServices {
     pub fn new(policy: HostPolicy) -> Self {
         Self {
-            descriptor: descriptor_for_profile(HalProfileId::Null),
+            descriptor: descriptor_for_profile(HalProfileId::Null, &policy),
             policy,
         }
     }

@@ -2,7 +2,7 @@ use crate::{
     error::{HalError, HalResult},
     model::{
         CapabilityDescriptor, CapabilityId, CapabilityMaturity, HalDescriptor, HalProfileId,
-        HostPolicy, UiVirtualizationMode,
+        HostPolicy, UiVirtualizationMode, WasmRuntimeClass, host_backed_mode_active,
     },
     traits::{
         ComHal, DiagnosticsHal, DynamicLinkHal, EventPumpHal, FileSystemHal, ProcessEnvHal,
@@ -49,7 +49,7 @@ impl StandardHostServices {
     pub(crate) fn new(profile: HalProfileId, policy: HostPolicy) -> Self {
         Self {
             profile,
-            descriptor: descriptor_for_profile(profile),
+            descriptor: descriptor_for_profile(profile, &policy),
             policy,
             fs_state: Arc::new(Mutex::new(FileSystemState::default())),
         }
@@ -160,15 +160,7 @@ impl StandardHostServices {
     }
 
     fn native_mode_enabled(&self) -> bool {
-        !self.policy.deterministic_mode && self.native_profile_matches_host()
-    }
-
-    fn native_profile_matches_host(&self) -> bool {
-        match self.profile {
-            HalProfileId::Windows => cfg!(target_os = "windows"),
-            HalProfileId::Linux => cfg!(target_os = "linux"),
-            _ => false,
-        }
+        host_backed_mode_active(self.profile, &self.policy)
     }
 
     fn native_fs_enabled(&self) -> bool {
@@ -207,22 +199,29 @@ impl StandardHostServices {
     }
 
     #[cfg(target_os = "windows")]
-    fn spawn_probe_shell_process(&self) -> std::io::Result<std::process::Child> {
-        Command::new("cmd").args(["/C", "exit", "0"]).spawn()
+    fn spawn_probe_shell_process(&self, command: i32) -> std::io::Result<std::process::Child> {
+        Command::new("cmd")
+            .args(["/C", &format!("echo OXVBA_HAL_{command} > NUL")])
+            .spawn()
     }
 
     #[cfg(not(target_os = "windows"))]
-    fn spawn_probe_shell_process(&self) -> std::io::Result<std::process::Child> {
+    fn spawn_probe_shell_process(&self, _command: i32) -> std::io::Result<std::process::Child> {
         Command::new("sh").arg("-c").arg("true").spawn()
     }
 }
 
-pub(crate) fn descriptor_for_profile(profile: HalProfileId) -> HalDescriptor {
+pub(crate) fn descriptor_for_profile(profile: HalProfileId, policy: &HostPolicy) -> HalDescriptor {
     HalDescriptor {
         profile,
+        runtime_class: match profile {
+            HalProfileId::Wasm => policy.wasm_runtime_class.as_str(),
+            HalProfileId::Null => "null-floor",
+            _ => "host-native",
+        },
         contract_version: "hal-v1",
         adapter_version: "0.1.0",
-        capabilities: capability_matrix(profile),
+        capabilities: capability_matrix(profile, policy.wasm_runtime_class),
     }
 }
 
@@ -541,7 +540,7 @@ impl ProcessEnvHal for StandardHostServices {
             return Err(self.denied(capability, "shell"));
         }
         if self.native_process_enabled() && command != 0 {
-            let mut child = self.spawn_probe_shell_process().map_err(|err| {
+            let mut child = self.spawn_probe_shell_process(command).map_err(|err| {
                 HalError::adapter_fault(
                     self.profile,
                     capability,
@@ -706,7 +705,10 @@ impl DiagnosticsHal for StandardHostServices {
     }
 }
 
-fn capability_matrix(profile: HalProfileId) -> Vec<CapabilityDescriptor> {
+fn capability_matrix(
+    profile: HalProfileId,
+    wasm_runtime_class: WasmRuntimeClass,
+) -> Vec<CapabilityDescriptor> {
     use CapabilityId as C;
     use CapabilityMaturity as M;
     let mut out = Vec::new();
@@ -815,26 +817,48 @@ fn capability_matrix(profile: HalProfileId) -> Vec<CapabilityDescriptor> {
             push(C::DynamicLinking, true, M::Stub, "MS-VBAL:Declare");
             push(C::DiagnosticsTelemetry, true, M::Stable, "OxVba:HAL");
         }
-        HalProfileId::Wasm => {
-            push(
-                C::UiInteraction,
-                true,
-                M::Experimental,
-                "CONF-discovered-ms-vbal-250520-f945507e-0337",
-            );
-            push(C::EventPump, true, M::Experimental, "MS-VBAL:DoEvents");
-            push(C::FileSystemIo, false, M::Stable, "MS-VBAL:file-io");
-            push(C::ProcessEnv, false, M::Stable, "MS-VBAL:Shell");
-            push(C::ComActivationDispatch, false, M::Stable, "MS-OAUT");
-            push(
-                C::TimeLocale,
-                true,
-                M::Experimental,
-                "CONF-discovered-ms-vbal-250520-f945507e-0252",
-            );
-            push(C::DynamicLinking, false, M::Stable, "MS-VBAL:Declare");
-            push(C::DiagnosticsTelemetry, true, M::Stable, "OxVba:HAL");
-        }
+        HalProfileId::Wasm => match wasm_runtime_class {
+            WasmRuntimeClass::Wasi => {
+                push(
+                    C::UiInteraction,
+                    true,
+                    M::Experimental,
+                    "CONF-discovered-ms-vbal-250520-f945507e-0337",
+                );
+                push(C::EventPump, true, M::Experimental, "MS-VBAL:DoEvents");
+                push(C::FileSystemIo, false, M::Stable, "MS-VBAL:file-io");
+                push(C::ProcessEnv, false, M::Stable, "MS-VBAL:Shell");
+                push(C::ComActivationDispatch, false, M::Stable, "MS-OAUT");
+                push(
+                    C::TimeLocale,
+                    true,
+                    M::Experimental,
+                    "CONF-discovered-ms-vbal-250520-f945507e-0252",
+                );
+                push(C::DynamicLinking, false, M::Stable, "MS-VBAL:Declare");
+                push(C::DiagnosticsTelemetry, true, M::Stable, "OxVba:HAL");
+            }
+            WasmRuntimeClass::BrowserSandbox => {
+                push(
+                    C::UiInteraction,
+                    false,
+                    M::Stable,
+                    "MS-VBAL:MsgBox/InputBox",
+                );
+                push(C::EventPump, true, M::Experimental, "MS-VBAL:DoEvents");
+                push(C::FileSystemIo, false, M::Stable, "MS-VBAL:file-io");
+                push(C::ProcessEnv, false, M::Stable, "MS-VBAL:Shell");
+                push(C::ComActivationDispatch, false, M::Stable, "MS-OAUT");
+                push(
+                    C::TimeLocale,
+                    true,
+                    M::Experimental,
+                    "CONF-discovered-ms-vbal-250520-f945507e-0252",
+                );
+                push(C::DynamicLinking, false, M::Stable, "MS-VBAL:Declare");
+                push(C::DiagnosticsTelemetry, true, M::Stable, "OxVba:HAL");
+            }
+        },
         HalProfileId::Null => {
             push(
                 C::UiInteraction,
@@ -1199,6 +1223,25 @@ mod tests {
         assert!(host.date_serial_now().expect("date") >= 0);
         assert!(host.time_serial_now().expect("time") >= 0);
         assert!(host.timer_ticks().expect("ticks") >= 0);
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn windows_native_mode_persists_mutation_to_host_file() {
+        let host = StandardHostServices::new(HalProfileId::Windows, HostPolicy::interactive_dev());
+        let token = 424_242;
+        let host_path = host.host_path_from_token(token);
+        let _ = std::fs::remove_file(&host_path);
+
+        let handle = host.open(token, 1).expect("native open should succeed");
+        host.seek(handle, 160).expect("native seek should succeed");
+        assert_eq!(host.close(handle).expect("native close should succeed"), 1);
+
+        let metadata = std::fs::metadata(&host_path).expect("host-backed file should exist");
+        assert!(
+            metadata.len() >= 160,
+            "host-backed file should reflect seek growth"
+        );
     }
 
     proptest! {
