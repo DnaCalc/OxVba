@@ -215,7 +215,11 @@ fn build_external_call_descriptors(
             symbol,
             marshal_lane: "m0-deterministic".to_string(),
             calling_convention: "platform-default".to_string(),
-            selection_policy: "case-insensitive-canonical".to_string(),
+            selection_policy: if decl.ordinal_alias {
+                "ordinal-literal-canonical".to_string()
+            } else {
+                "case-insensitive-canonical".to_string()
+            },
         });
     }
     out

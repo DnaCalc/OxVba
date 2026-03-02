@@ -22,7 +22,7 @@ Date: 2026-03-02
 - bytecode now carries `external_call_descriptors` with deterministic ordering and explicit metadata:
   - `marshal_lane` (currently `m0-deterministic`),
   - `calling_convention` (currently `platform-default`),
-  - `selection_policy` (currently `case-insensitive-canonical`).
+  - `selection_policy` (`case-insensitive-canonical` for symbolic aliases, `ordinal-literal-canonical` for `#ordinal` aliases).
 
 3. VM execution:
 - runtime supports two modes:
@@ -37,6 +37,7 @@ Date: 2026-03-02
   - `invoke_bound`,
   - plus compatibility shims (`invoke_descriptor`, legacy `invoke_symbol`).
 - standard adapter implements descriptor binding cache and deterministic validation of lane/convention.
+ - standard adapter implements descriptor binding cache and deterministic validation of lane/convention/selection-policy metadata.
 
 5. Policy and mode gates:
 - compile-time preflight still enforces policy gates for declare invocation in compile-time unsupported mode.
@@ -63,7 +64,7 @@ Date: 2026-03-02
   - `HAL-DYN-003`, `HAL-DYN-009`, `HAL-DYN-010`,
   - `HAL-DYN-011..020`.
 - specified/deferred:
-  - rich Automation/native marshaling legality breadth (`HAL-DYN-005..008`) remains staged and deferred-oracle linked.
+  - rich COM dispatch output obligations (`HAL-DYN-008`) and full Automation/native marshaling legality breadth beyond the current deterministic subset remain staged and deferred-oracle linked.
 
 ## Test/Conformance Evidence Anchors
 

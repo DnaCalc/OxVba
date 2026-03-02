@@ -779,6 +779,11 @@ impl TimeLocaleHal for StandardHostServices {
 impl DynamicLinkHal for StandardHostServices {
     fn bind_descriptor(&self, descriptor: &DynLinkDescriptorView<'_>) -> HalResult<i32> {
         let capability = CapabilityId::DynamicLinking;
+        const LANE_M0: &str = "m0-deterministic";
+        const CONV_PLATFORM_DEFAULT: &str = "platform-default";
+        const POLICY_CASE_INSENSITIVE: &str = "case-insensitive-canonical";
+        const POLICY_ORDINAL_LITERAL: &str = "ordinal-literal-canonical";
+
         if !self.supports(capability) {
             return Err(self.unsupported(capability, "invoke_symbol"));
         }
@@ -786,7 +791,7 @@ impl DynamicLinkHal for StandardHostServices {
             return Err(self.denied(capability, "invoke_symbol"));
         }
 
-        if descriptor.marshal_lane != "m0-deterministic" {
+        if descriptor.marshal_lane != LANE_M0 {
             return Err(HalError::adapter_fault(
                 self.profile,
                 capability,
@@ -797,7 +802,7 @@ impl DynamicLinkHal for StandardHostServices {
                 ),
             ));
         }
-        if descriptor.calling_convention != "platform-default" {
+        if descriptor.calling_convention != CONV_PLATFORM_DEFAULT {
             return Err(HalError::adapter_fault(
                 self.profile,
                 capability,
@@ -805,6 +810,91 @@ impl DynamicLinkHal for StandardHostServices {
                 format!(
                     "unsupported calling convention `{}` for descriptor {}",
                     descriptor.calling_convention, descriptor.descriptor_id
+                ),
+            ));
+        }
+        let expected_selection_policy = if descriptor.ordinal_alias {
+            POLICY_ORDINAL_LITERAL
+        } else {
+            POLICY_CASE_INSENSITIVE
+        };
+        let legacy_symbol_mode = descriptor.selection_policy == "legacy-symbol";
+        if !legacy_symbol_mode && descriptor.selection_policy != expected_selection_policy {
+            return Err(HalError::adapter_fault(
+                self.profile,
+                capability,
+                "invoke_symbol",
+                format!(
+                    "unsupported selection policy `{}` for descriptor {} (expected `{}`)",
+                    descriptor.selection_policy,
+                    descriptor.descriptor_id,
+                    expected_selection_policy
+                ),
+            ));
+        }
+        if descriptor.declared_name.trim().is_empty() {
+            return Err(HalError::adapter_fault(
+                self.profile,
+                capability,
+                "invoke_symbol",
+                format!(
+                    "descriptor {} has empty declared_name",
+                    descriptor.descriptor_id
+                ),
+            ));
+        }
+        if descriptor.library.trim().is_empty() {
+            return Err(HalError::adapter_fault(
+                self.profile,
+                capability,
+                "invoke_symbol",
+                format!("descriptor {} has empty library", descriptor.descriptor_id),
+            ));
+        }
+        if descriptor.alias.trim().is_empty() {
+            return Err(HalError::adapter_fault(
+                self.profile,
+                capability,
+                "invoke_symbol",
+                format!("descriptor {} has empty alias", descriptor.descriptor_id),
+            ));
+        }
+        if descriptor.ordinal_alias {
+            let ordinal_digits = descriptor.alias.strip_prefix('#').ok_or_else(|| {
+                HalError::adapter_fault(
+                    self.profile,
+                    capability,
+                    "invoke_symbol",
+                    format!(
+                        "ordinal alias descriptor {} must start with `#`",
+                        descriptor.descriptor_id
+                    ),
+                )
+            })?;
+            if ordinal_digits.is_empty() || !ordinal_digits.chars().all(|ch| ch.is_ascii_digit()) {
+                return Err(HalError::adapter_fault(
+                    self.profile,
+                    capability,
+                    "invoke_symbol",
+                    format!(
+                        "ordinal alias descriptor {} must contain decimal digits after `#`",
+                        descriptor.descriptor_id
+                    ),
+                ));
+            }
+        }
+        if legacy_symbol_mode
+            && !(descriptor.declared_name == "<legacy>"
+                && descriptor.library == "<legacy>"
+                && descriptor.alias == "<legacy>")
+        {
+            return Err(HalError::adapter_fault(
+                self.profile,
+                capability,
+                "invoke_symbol",
+                format!(
+                    "legacy selection policy is only valid for legacy descriptors (id={})",
+                    descriptor.descriptor_id
                 ),
             ));
         }
@@ -1184,8 +1274,8 @@ mod tests {
         error::HalErrorKind,
         model::{HalProfileId, HostPolicy},
         traits::{
-            ComHal, DiagnosticsHal, DynamicLinkHal, EventPumpHal, FileSystemHal, ProcessEnvHal,
-            TimeLocaleHal, UiInteractionHal,
+            ComHal, DiagnosticsHal, DynLinkDescriptorView, DynamicLinkHal, EventPumpHal,
+            FileSystemHal, ProcessEnvHal, TimeLocaleHal, UiInteractionHal,
         },
     };
 
@@ -1319,6 +1409,114 @@ mod tests {
             host.invoke_symbol(1, 2).expect_err("dynlink deny").kind,
             HalErrorKind::PolicyDenied
         );
+    }
+
+    #[test]
+    fn dynlink_bind_descriptor_rejects_unsupported_marshal_lane() {
+        let host = StandardHostServices::new(
+            HalProfileId::Windows,
+            HostPolicy {
+                allow_dynamic_link: true,
+                ..HostPolicy::default()
+            },
+        );
+        let descriptor = DynLinkDescriptorView {
+            descriptor_id: 7,
+            declared_name: "hostping",
+            library: "host",
+            alias: "ping",
+            ordinal_alias: false,
+            symbol: 7,
+            marshal_lane: "m2-pointer-lpstr",
+            calling_convention: "platform-default",
+            selection_policy: "case-insensitive-canonical",
+        };
+        let err = host
+            .bind_descriptor(&descriptor)
+            .expect_err("unsupported marshaling lane should fail deterministically");
+        assert_eq!(err.kind, HalErrorKind::AdapterFault);
+        assert!(err.message.contains("unsupported marshaling lane"));
+    }
+
+    #[test]
+    fn dynlink_bind_descriptor_rejects_unsupported_calling_convention() {
+        let host = StandardHostServices::new(
+            HalProfileId::Windows,
+            HostPolicy {
+                allow_dynamic_link: true,
+                ..HostPolicy::default()
+            },
+        );
+        let descriptor = DynLinkDescriptorView {
+            descriptor_id: 7,
+            declared_name: "hostping",
+            library: "host",
+            alias: "ping",
+            ordinal_alias: false,
+            symbol: 7,
+            marshal_lane: "m0-deterministic",
+            calling_convention: "stdcall",
+            selection_policy: "case-insensitive-canonical",
+        };
+        let err = host
+            .bind_descriptor(&descriptor)
+            .expect_err("unsupported calling convention should fail deterministically");
+        assert_eq!(err.kind, HalErrorKind::AdapterFault);
+        assert!(err.message.contains("unsupported calling convention"));
+    }
+
+    #[test]
+    fn dynlink_bind_descriptor_rejects_selection_policy_mismatch() {
+        let host = StandardHostServices::new(
+            HalProfileId::Windows,
+            HostPolicy {
+                allow_dynamic_link: true,
+                ..HostPolicy::default()
+            },
+        );
+        let descriptor = DynLinkDescriptorView {
+            descriptor_id: 7,
+            declared_name: "hostping",
+            library: "host",
+            alias: "ping",
+            ordinal_alias: false,
+            symbol: 7,
+            marshal_lane: "m0-deterministic",
+            calling_convention: "platform-default",
+            selection_policy: "ordinal-literal-canonical",
+        };
+        let err = host
+            .bind_descriptor(&descriptor)
+            .expect_err("selection policy mismatch should fail deterministically");
+        assert_eq!(err.kind, HalErrorKind::AdapterFault);
+        assert!(err.message.contains("unsupported selection policy"));
+    }
+
+    #[test]
+    fn dynlink_bind_descriptor_validates_ordinal_alias_shape() {
+        let host = StandardHostServices::new(
+            HalProfileId::Windows,
+            HostPolicy {
+                allow_dynamic_link: true,
+                ..HostPolicy::default()
+            },
+        );
+        let descriptor = DynLinkDescriptorView {
+            descriptor_id: 7,
+            declared_name: "hostping",
+            library: "host",
+            alias: "ping",
+            ordinal_alias: true,
+            symbol: 7,
+            marshal_lane: "m0-deterministic",
+            calling_convention: "platform-default",
+            selection_policy: "ordinal-literal-canonical",
+        };
+        let err = host
+            .bind_descriptor(&descriptor)
+            .expect_err("ordinal alias without #digits should fail deterministically");
+        assert_eq!(err.kind, HalErrorKind::AdapterFault);
+        assert!(err.message.contains("must start with `#`"));
     }
 
     #[test]

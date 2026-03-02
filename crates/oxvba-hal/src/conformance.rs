@@ -572,6 +572,8 @@ fn evaluate_dynlink_contract_paths(
     };
     let mut win_ok = true;
     let mut linux_ok = true;
+    let mut pointer_lane_ok = true;
+    let mut byref_writeback_lane_ok = true;
     match host.dynlink().invoke_descriptor(&descriptor_ping, 4) {
         Ok(value) => {
             if host_backed_active
@@ -608,6 +610,69 @@ fn evaluate_dynlink_contract_paths(
             ));
         }
     }
+    let pointer_descriptor = DynLinkDescriptorView {
+        descriptor_id: descriptor_ping.descriptor_id.wrapping_add(1),
+        declared_name: "hostping",
+        library: "host",
+        alias: "ping",
+        ordinal_alias: false,
+        symbol: descriptor_ping.symbol,
+        marshal_lane: "m2-pointer-lpstr",
+        calling_convention: "platform-default",
+        selection_policy: "case-insensitive-canonical",
+    };
+    match host.dynlink().invoke_descriptor(&pointer_descriptor, 4) {
+        Err(err)
+            if err.kind == HalErrorKind::AdapterFault
+                && err.message.contains("unsupported marshaling lane") => {}
+        Err(err) => {
+            pointer_lane_ok = false;
+            failures.push(format!(
+                "pointer-string lane rejection probe expected adapter fault for unsupported marshaling lane; observed {} ({})",
+                err.stable_code, err.message
+            ));
+        }
+        Ok(value) => {
+            pointer_lane_ok = false;
+            failures.push(format!(
+                "pointer-string lane rejection probe unexpectedly succeeded with value {}",
+                value
+            ));
+        }
+    }
+    let byref_writeback_descriptor = DynLinkDescriptorView {
+        descriptor_id: descriptor_ping.descriptor_id.wrapping_add(2),
+        declared_name: "hostping",
+        library: "host",
+        alias: "ping",
+        ordinal_alias: false,
+        symbol: descriptor_ping.symbol,
+        marshal_lane: "m2-byref-writeback",
+        calling_convention: "platform-default",
+        selection_policy: "case-insensitive-canonical",
+    };
+    match host
+        .dynlink()
+        .invoke_descriptor(&byref_writeback_descriptor, 4)
+    {
+        Err(err)
+            if err.kind == HalErrorKind::AdapterFault
+                && err.message.contains("unsupported marshaling lane") => {}
+        Err(err) => {
+            byref_writeback_lane_ok = false;
+            failures.push(format!(
+                "ByRef writeback lane rejection probe expected adapter fault for unsupported marshaling lane; observed {} ({})",
+                err.stable_code, err.message
+            ));
+        }
+        Ok(value) => {
+            byref_writeback_lane_ok = false;
+            failures.push(format!(
+                "ByRef writeback lane rejection probe unexpectedly succeeded with value {}",
+                value
+            ));
+        }
+    }
 
     checks.push(ClauseCheck {
         clause_id: "HAL-DYN-016",
@@ -637,17 +702,29 @@ fn evaluate_dynlink_contract_paths(
     });
     checks.push(ClauseCheck {
         clause_id: "HAL-DYN-018",
-        status: ClauseCheckStatus::Passed,
-        detail: Some(
-            "pointer-string lane remains deterministic/deferred in this cycle".to_string(),
-        ),
+        status: if pointer_lane_ok {
+            ClauseCheckStatus::Passed
+        } else {
+            ClauseCheckStatus::Failed
+        },
+        detail: if pointer_lane_ok {
+            Some("unsupported pointer-string lane is rejected deterministically".to_string())
+        } else {
+            Some("pointer-string lane rejection contract probe failed".to_string())
+        },
     });
     checks.push(ClauseCheck {
         clause_id: "HAL-DYN-019",
-        status: ClauseCheckStatus::Passed,
-        detail: Some(
-            "ByRef writeback lane remains deterministic/deferred in this cycle".to_string(),
-        ),
+        status: if byref_writeback_lane_ok {
+            ClauseCheckStatus::Passed
+        } else {
+            ClauseCheckStatus::Failed
+        },
+        detail: if byref_writeback_lane_ok {
+            Some("unsupported ByRef writeback lane is rejected deterministically".to_string())
+        } else {
+            Some("ByRef writeback lane rejection contract probe failed".to_string())
+        },
     });
 }
 

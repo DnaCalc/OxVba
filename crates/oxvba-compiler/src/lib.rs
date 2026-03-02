@@ -1337,6 +1337,17 @@ mod tests {
     }
 
     #[test]
+    fn compile_declare_with_ordinal_alias_uses_ordinal_selection_policy() {
+        let source = "Declare PtrSafe Function HostPing Lib \"host\" Alias \"#0007\" (ByVal x As Long) As Long\nSub Main()\nDim y\ny = HostPing(3)\nEnd Sub";
+        let out = compile(source).expect("ordinal alias subset declaration should compile");
+        assert_eq!(out.external_call_descriptors.len(), 1);
+        let descriptor = &out.external_call_descriptors[0];
+        assert!(descriptor.ordinal_alias);
+        assert_eq!(descriptor.alias, "#7");
+        assert_eq!(descriptor.selection_policy, "ordinal-literal-canonical");
+    }
+
+    #[test]
     fn compile_declare_with_multiple_arguments_is_rejected() {
         let source = "Declare PtrSafe Function HostPing Lib \"host\" Alias \"ping\" (ByVal x As Long, ByVal y As Long) As Long\nSub Main()\nDim z\nz = HostPing(3, 4)\nEnd Sub";
         let err = compile(source).expect_err("multiple declare args should be rejected");
@@ -1348,6 +1359,24 @@ mod tests {
         let source = "Declare PtrSafe Function HostPing Lib \"host\" Alias \"ping\" (ByVal x As String) As Long\nSub Main()\nDim y\ny = HostPing(3)\nEnd Sub";
         let err = compile(source).expect_err("non-Long declare param should be rejected");
         assert!(err.to_string().contains("only `Long` parameter type"));
+    }
+
+    #[test]
+    fn compile_declare_with_variant_parameter_is_rejected() {
+        let source = "Declare PtrSafe Function HostPing Lib \"host\" Alias \"ping\" (ByVal x As Variant) As Long\nSub Main()\nDim y\ny = HostPing(3)\nEnd Sub";
+        let err = compile(source).expect_err("Variant declare param should be rejected in M0 lane");
+        assert!(err.to_string().contains("only `Long` parameter type"));
+    }
+
+    #[test]
+    fn compile_declare_with_array_parameter_is_rejected() {
+        let source = "Declare PtrSafe Function HostPing Lib \"host\" Alias \"ping\" (ByVal x() As Long) As Long\nSub Main()\nDim y\ny = HostPing(3)\nEnd Sub";
+        let err = compile(source)
+            .expect_err("array declare param should be rejected in dynamic-link subset");
+        assert!(
+            err.to_string()
+                .contains("external procedure declaration rejected")
+        );
     }
 
     #[test]

@@ -30,16 +30,16 @@ Anchor families:
 | `HAL-DYN-002` | Alias grammar/normalization (`#ordinal` vs symbolic alias) | compiler/resolver tests | implemented-verified |
 | `HAL-DYN-003` | Implementation-defined name-selection policy surfaced explicitly | descriptor/doc + host diagnostics checks | implemented-partial |
 | `HAL-DYN-004` | `PtrSafe`/declaration-shape policy restrictions | compile-time policy tests | implemented-verified |
-| `HAL-DYN-005` | `VARIANT` byref discriminant legality rules | marshaling unit/property tests | specified-pending |
-| `HAL-DYN-006` | `SAFEARRAY` element-type legality matrix | marshaling unit/property tests | specified-pending |
-| `HAL-DYN-007` | pointer-string metadata/encoding rules (`LPSTR`/`LPWSTR`) | marshaling shape tests + diagnostics assertions | specified-pending |
+| `HAL-DYN-005` | `VARIANT` byref discriminant legality rules | declaration-subset restriction tests + future marshaling unit/property tests | implemented-partial |
+| `HAL-DYN-006` | `SAFEARRAY` element-type legality matrix | declaration-subset restriction tests + future marshaling unit/property tests | implemented-partial |
+| `HAL-DYN-007` | pointer-string metadata/encoding rules (`LPSTR`/`LPWSTR`) | declaration-subset restriction tests + descriptor rejection assertions | implemented-partial |
 | `HAL-DYN-008` | `IDispatch::Invoke` out-param obligations (`VarResult`/`ExcepInfo`/`ArgErr`) | COM bridge integration tests (Windows lane) | specified-pending |
 | `HAL-DYN-009` | Dynamic-link marshaling failure determinism and stable diagnostics | host/VM error-routing tests | implemented-partial |
 | `HAL-DYN-010` | Unsupported declaration forms fail deterministically by mode | compile-time/runtime dual-mode tests | implemented-partial |
 | `HAL-DYN-011..013` | Descriptor model + metadata + descriptor-driven routing | compiler + VM + HAL conformance (`dynlink.invoke_descriptor`) | implemented-partial |
 | `HAL-DYN-014..015` | compile-time/runtime mode contract parity over descriptor path | host preflight/runtime tests + conformance | implemented-partial |
 | `HAL-DYN-016..017` | windows/linux host-backed dynamic-link contract probes | HAL conformance (`evaluate_dynlink_contract_paths`) | implemented-partial |
-| `HAL-DYN-018..019` | pointer-string and byref-writeback lanes | conformance-deferred placeholder checks | implemented-partial |
+| `HAL-DYN-018..019` | pointer-string and byref-writeback lanes | deterministic unsupported-lane rejection checks (`evaluate_dynlink_contract_paths`) | implemented-partial |
 | `HAL-DYN-020` | lane selection determinism (`M0/M1/M2`) | descriptor metadata + adapter lane checks | implemented-partial |
 
 ## 4. Lanes
@@ -106,7 +106,7 @@ When sources are permissive (`MAY`) or implementation-defined:
 
 ## 6. Immediate Execution Priorities
 
-1. Expand marshaling-shape contract tests for `HAL-DYN-005..008`.
+1. Expand full marshaling-shape legality tests for `HAL-DYN-005..008`, with priority on `HAL-DYN-008` and full Automation-matrix closure for `HAL-DYN-005..007`.
 2. Harden descriptor-policy preflight checks for `HAL-DYN-014` and richer lane metadata validation.
 3. Progress host-backed loader coverage beyond bounded known-symbol subset.
 
@@ -118,5 +118,6 @@ When sources are permissive (`MAY`) or implementation-defined:
   - unsupported declaration forms (`ByRef`, `Optional`, `ParamArray`, multi-arg, non-`Long` parameter/return types) rejected with deterministic diagnostics.
 - Clause status updates:
   - `HAL-DYN-002`, `HAL-DYN-004` moved to implemented-verified,
-  - `HAL-DYN-003`, `HAL-DYN-009`, `HAL-DYN-010` moved to implemented-partial,
-  - descriptor-lane clauses `HAL-DYN-011..020` now have executable conformance hooks and are tracked as implemented-partial pending richer marshaling/ABI breadth.
+  - `HAL-DYN-003`, `HAL-DYN-005..007`, `HAL-DYN-009`, `HAL-DYN-010` moved to implemented-partial,
+  - descriptor-lane clauses `HAL-DYN-011..020` now have executable conformance hooks and are tracked as implemented-partial pending richer marshaling/ABI breadth,
+  - `HAL-DYN-018..019` include explicit deterministic unsupported-lane rejection checks in conformance.

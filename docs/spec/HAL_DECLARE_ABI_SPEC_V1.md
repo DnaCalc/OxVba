@@ -122,12 +122,19 @@ Planned obligations:
 - `SAFEARRAY` element-type constraints for in-scope Automation types,
 - deterministic error mapping when bridge cannot satisfy OAUT shape constraints.
 
+Current partial closure:
+- declaration subset deterministically rejects `Variant`/array boundary shapes in `M0`,
+- descriptor path rejects unsupported marshaling lanes deterministically (stable adapter-fault contract).
+
 ### 6.3 M2 (specified target: native C ABI lane)
 
 Planned obligations:
 - calling convention and width rules explicit per profile/runtime-class,
 - pointer-string semantics require explicit encoding + length/termination model,
 - unsupported declaration shapes rejected deterministically.
+
+Current partial closure:
+- pointer-string and byref-writeback lane descriptors are deterministically rejected until explicit `M2` metadata contracts are enabled.
 
 ## 7. Failure Contract
 
