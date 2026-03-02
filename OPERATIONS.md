@@ -11,6 +11,7 @@ This document defines how OxVBA work is executed day-to-day: fast iteration, cle
 
 ## 3. Execution Model
 OxVBA follows the sequencing in `MACH1000_PLAN.md`.
+Execution doctrine details and run hygiene are captured in `docs/LOCAL_EXECUTION_DOCTRINE.md`.
 
 Execution defaults:
 - Build an end-to-end vertical slice early.
@@ -45,6 +46,10 @@ Recommended routine:
 - Fast local lane: `cargo test` for impacted crates.
 - Full lane (CI): formatter/lints/tests plus heavier checks.
 - For long-running Kani/profile formal steps, prefer async execution with repo scripts and log/state tracking, then merge results back into formal evidence artifacts.
+
+Additional required local checks for doc-heavy profile ladder runs:
+- `./scripts/validate-profile-scaffold.ps1 -FromVersion <start> -ToVersion <end>`
+- `./scripts/check-hal-clause-drift.ps1` (when HAL clause/spec surfaces are touched)
 
 ## 7. Documentation and Synthesis
 Use synthesis runs when changing plan-level direction or resolving multiple proposal inputs.

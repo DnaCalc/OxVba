@@ -18,4 +18,5 @@
 - `validate-divergences.ps1`: validates structural fields required in divergence records.
 - `validate-language-coverage.ps1`: validates language coverage index structure/status vocabulary and duplicate keys.
 - `validate-intrinsic-surface.ps1`: validates intrinsic surface classification coverage and host-sensitive partition.
+- `validate-profile-scaffold.ps1`: validates profile ladder scaffold integrity (naming, multiline structure, and referenced artifact existence) for selected version ranges.
 - `build-non-hal-gap-baseline.ps1`: generates `v147` non-HAL baseline artifacts from coverage/library/spec checklist partial/planned rows.

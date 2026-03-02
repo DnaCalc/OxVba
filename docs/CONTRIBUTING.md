@@ -5,6 +5,8 @@
 2. Implement changes with tests.
 3. Run `./scripts/meta-check.ps1`.
    - For long Kani/profile formal runs, use `./scripts/run-formal-kani-async.ps1` and attach status/log artifacts.
+   - For profile ladder doc generation/edits, also run `./scripts/validate-profile-scaffold.ps1 -FromVersion <start> -ToVersion <end>`.
+   - If HAL clause/spec surface changed, run `./scripts/check-hal-clause-drift.ps1`.
 4. Update docs for any behavior/plan changes.
 5. Open PR with clear scope and evidence notes.
 

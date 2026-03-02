@@ -6,6 +6,7 @@
 |---|---|---|
 | **MACH-1000 Plan** | [`MACH1000_PLAN.md`](../MACH1000_PLAN.md) | The definitive OxVba project plan. Charter, architecture, formal approach, testing strategy, implementation sequencing. |
 | **AutoRun State** | [`AUTORUN_STATE.md`](AUTORUN_STATE.md) | Active execution guardrail for continuous runs. Current target is non-HAL completion/hardening ladders through terminal gate `v186`; blocker handling follows `CURRENT_BLOCKERS.md`. |
+| **Local Execution Doctrine** | [`LOCAL_EXECUTION_DOCTRINE.md`](LOCAL_EXECUTION_DOCTRINE.md) | Local process hardening rules learned from ladder execution, including scaffold integrity gates and required local checks. |
 | Implementation Log | [`IMPLEMENTATION_LOG.md`](IMPLEMENTATION_LOG.md) | Rolling execution log for implementation progress. |
 | Building | [`BUILDING.md`](BUILDING.md) | Build and local verification instructions. |
 | Contributing | [`CONTRIBUTING.md`](CONTRIBUTING.md) | Contribution workflow and compatibility evidence expectations. |
