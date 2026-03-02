@@ -106,7 +106,7 @@ At current ladder stage:
 ## 7. Next Hardening Steps
 
 1. Promote candidate spec anchors to reviewed, behavior-specific conformance rows.
-2. Expand `Declare` + marshaling conformance lanes (`HAL-DYN-002..010`) as defined in [`HAL_DECLARE_MARSHAL_CONFORMANCE_V1.md`](HAL_DECLARE_MARSHAL_CONFORMANCE_V1.md).
+2. Expand `Declare` + marshaling conformance lanes (`HAL-DYN-002..020`) as defined in [`HAL_DECLARE_MARSHAL_CONFORMANCE_V1.md`](HAL_DECLARE_MARSHAL_CONFORMANCE_V1.md), with partial/deferred annotations preserved for non-implemented marshaling breadth.
 3. Add Office empirical differential checks for host-sensitive behavior classes on Windows.
 4. Add macOS host execution evidence when target infrastructure is available.
 

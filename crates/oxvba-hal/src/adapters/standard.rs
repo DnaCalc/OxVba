@@ -6,8 +6,8 @@ use crate::{
         host_backed_mode_active,
     },
     traits::{
-        ComHal, DiagnosticsHal, DynamicLinkHal, EventPumpHal, FileSystemHal, ProcessEnvHal,
-        TimeLocaleHal, UiInteractionHal,
+        ComHal, DiagnosticsHal, DynLinkDescriptorView, DynamicLinkHal, EventPumpHal, FileSystemHal,
+        ProcessEnvHal, TimeLocaleHal, UiInteractionHal,
     },
 };
 use std::{
@@ -50,6 +50,7 @@ pub(crate) struct StandardHostServices {
     descriptor: HalDescriptor,
     policy: HostPolicy,
     fs_state: Arc<Mutex<FileSystemState>>,
+    dynlink_bindings: Arc<Mutex<BTreeMap<u32, i32>>>,
 }
 
 impl StandardHostServices {
@@ -71,6 +72,7 @@ impl StandardHostServices {
             descriptor: descriptor_for_profile(profile, runtime_class, &policy),
             policy,
             fs_state: Arc::new(Mutex::new(FileSystemState::default())),
+            dynlink_bindings: Arc::new(Mutex::new(BTreeMap::new())),
         }
     }
 
@@ -775,7 +777,70 @@ impl TimeLocaleHal for StandardHostServices {
 }
 
 impl DynamicLinkHal for StandardHostServices {
-    fn invoke_symbol(&self, symbol: i32, arg: i32) -> HalResult<i32> {
+    fn bind_descriptor(&self, descriptor: &DynLinkDescriptorView<'_>) -> HalResult<i32> {
+        let capability = CapabilityId::DynamicLinking;
+        if !self.supports(capability) {
+            return Err(self.unsupported(capability, "invoke_symbol"));
+        }
+        if !self.policy.allow_dynamic_link {
+            return Err(self.denied(capability, "invoke_symbol"));
+        }
+
+        if descriptor.marshal_lane != "m0-deterministic" {
+            return Err(HalError::adapter_fault(
+                self.profile,
+                capability,
+                "invoke_symbol",
+                format!(
+                    "unsupported marshaling lane `{}` for descriptor {}",
+                    descriptor.marshal_lane, descriptor.descriptor_id
+                ),
+            ));
+        }
+        if descriptor.calling_convention != "platform-default" {
+            return Err(HalError::adapter_fault(
+                self.profile,
+                capability,
+                "invoke_symbol",
+                format!(
+                    "unsupported calling convention `{}` for descriptor {}",
+                    descriptor.calling_convention, descriptor.descriptor_id
+                ),
+            ));
+        }
+
+        let binding = descriptor.symbol;
+        let mut table = self.dynlink_bindings.lock().map_err(|_| {
+            HalError::adapter_fault(
+                self.profile,
+                capability,
+                "invoke_symbol",
+                "dynlink binding table lock poisoned",
+            )
+        })?;
+        if let Some(existing) = table.get(&descriptor.descriptor_id).copied() {
+            if existing != binding {
+                return Err(HalError::adapter_fault(
+                    self.profile,
+                    capability,
+                    "invoke_symbol",
+                    format!(
+                        "descriptor {} binding mismatch: existing={}, new={}",
+                        descriptor.descriptor_id, existing, binding
+                    ),
+                ));
+            }
+            return Ok(existing);
+        }
+        table.insert(descriptor.descriptor_id, binding);
+        Ok(binding)
+    }
+
+    fn prepare_invoke(&self, _binding: i32, arg: i32) -> HalResult<i32> {
+        Ok(arg)
+    }
+
+    fn invoke_bound(&self, binding: i32, arg: i32) -> HalResult<i32> {
         let capability = CapabilityId::DynamicLinking;
         if !self.supports(capability) {
             return Err(self.unsupported(capability, "invoke_symbol"));
@@ -786,7 +851,7 @@ impl DynamicLinkHal for StandardHostServices {
         if self.native_mode_enabled()
             && matches!(self.profile, HalProfileId::Windows | HalProfileId::Linux)
         {
-            return match symbol {
+            return match binding {
                 s if s == external_symbol_token("host", "ping", "hostping") => {
                     Ok(arg.saturating_add(1))
                 }
@@ -797,11 +862,36 @@ impl DynamicLinkHal for StandardHostServices {
                     self.profile,
                     capability,
                     "invoke_symbol",
-                    format!("symbol token {symbol} not resolved in host-backed lane"),
+                    format!("symbol token {binding} not resolved in host-backed lane"),
                 )),
             };
         }
-        Ok(symbol.saturating_add(arg))
+        Ok(binding.saturating_add(arg))
+    }
+
+    fn invoke_descriptor(
+        &self,
+        descriptor: &DynLinkDescriptorView<'_>,
+        arg: i32,
+    ) -> HalResult<i32> {
+        let binding = self.bind_descriptor(descriptor)?;
+        let prepared = self.prepare_invoke(binding, arg)?;
+        self.invoke_bound(binding, prepared)
+    }
+
+    fn invoke_symbol(&self, symbol: i32, arg: i32) -> HalResult<i32> {
+        let descriptor = DynLinkDescriptorView {
+            descriptor_id: symbol as u32,
+            declared_name: "<legacy>",
+            library: "<legacy>",
+            alias: "<legacy>",
+            ordinal_alias: false,
+            symbol,
+            marshal_lane: "m0-deterministic",
+            calling_convention: "platform-default",
+            selection_policy: "legacy-symbol",
+        };
+        self.invoke_descriptor(&descriptor, arg)
     }
 }
 

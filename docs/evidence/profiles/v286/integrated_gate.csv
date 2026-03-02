@@ -1,0 +1,9 @@
+lane,status,artifact,note
+clause_drift,pass,docs/spec/HAL_CONTRACT_CLAUSE_CATALOG_V1.md,markdown/csv clause ids in lockstep
+hal_tests,pass,crates/oxvba-hal/src/lib.rs,full crate tests pass
+compiler_declare_tests,pass,crates/oxvba-compiler/src/lib.rs,declare descriptor lowering tests pass
+vm_declare_tests,pass,crates/oxvba-vm/src/interpreter.rs,descriptor-route VM tests pass
+host_declare_tests,pass,crates/oxvba-host/src/engine.rs,host-backed declare tests pass
+workspace_build,pass,target/,workspace test binaries build
+formal_lane,pass,docs/evidence/formal/latest_run.md,non-blocking formal lane executed for v286 profile scope
+meta_check_fast,pass,scripts/meta-check.ps1,fast doctrine checks including clippy and full workspace tests pass

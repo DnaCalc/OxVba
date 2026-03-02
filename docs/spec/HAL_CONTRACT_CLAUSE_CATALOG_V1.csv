@@ -48,6 +48,16 @@ HAL-DYN-007,dynlink,specified-pending,documentation,HAL_DECLARE_MARSHAL_CONFORMA
 HAL-DYN-008,dynlink,specified-pending,documentation,HAL_DECLARE_MARSHAL_CONFORMANCE_V1.md
 HAL-DYN-009,dynlink,implemented-partial,host-tests,hal_runtime_host_backed_unknown_declare_symbol_surfaces_adapter_fault_shape
 HAL-DYN-010,dynlink,implemented-partial,host-tests,compile_declare_with_multiple_arguments_is_rejected
+HAL-DYN-011,dynlink,implemented-partial,conformance,dynlink.invoke_descriptor
+HAL-DYN-012,dynlink,implemented-partial,conformance,dynlink.invoke_descriptor
+HAL-DYN-013,dynlink,implemented-partial,conformance,dynlink.invoke_descriptor
+HAL-DYN-014,dynlink,implemented-partial,host-tests,hal_compile_time_mode_rejects_policy_denied_declare_invoke
+HAL-DYN-015,dynlink,implemented-partial,conformance,dynlink.invoke_descriptor
+HAL-DYN-016,dynlink,implemented-partial,conformance,evaluate_dynlink_contract_paths
+HAL-DYN-017,dynlink,implemented-partial,conformance,evaluate_dynlink_contract_paths
+HAL-DYN-018,dynlink,implemented-partial,conformance,evaluate_dynlink_contract_paths
+HAL-DYN-019,dynlink,implemented-partial,conformance,evaluate_dynlink_contract_paths
+HAL-DYN-020,dynlink,implemented-partial,conformance,dynlink.invoke_descriptor
 HAL-DIAG-001,diagnostics,implemented-verified,conformance,diag.emit
 HAL-NULL-001,null-profile,implemented-verified,host-tests,null_profile_support_set_is_explicit
 HAL-NULL-002,null-profile,implemented-verified,host-tests,null_profile_support_set_is_explicit

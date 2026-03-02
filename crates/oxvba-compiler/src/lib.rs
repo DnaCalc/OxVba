@@ -1301,6 +1301,25 @@ mod tests {
                 .iter()
                 .any(|i| matches!(i, Instruction::IntrinsicInvokeSymbolHost { .. }))
         );
+        assert_eq!(out.external_call_descriptors.len(), 1);
+        let descriptor = &out.external_call_descriptors[0];
+        assert_eq!(descriptor.declared_name.to_ascii_lowercase(), "hostping");
+        assert_eq!(descriptor.library, "host");
+        assert_eq!(descriptor.alias, "ping");
+        assert_eq!(descriptor.marshal_lane, "m0-deterministic");
+        assert_eq!(descriptor.calling_convention, "platform-default");
+        assert_eq!(descriptor.selection_policy, "case-insensitive-canonical");
+    }
+
+    #[test]
+    fn compile_declare_descriptor_table_is_stable_for_identical_source() {
+        let source = "Declare PtrSafe Function HostPing Lib \"HOST\" Alias \"PiNg\" (ByVal x As Long) As Long\nSub Main()\nDim y\ny = HostPing(3)\nEnd Sub";
+        let out1 = compile(source).expect("first compile should succeed");
+        let out2 = compile(source).expect("second compile should succeed");
+        assert_eq!(
+            out1.external_call_descriptors,
+            out2.external_call_descriptors
+        );
     }
 
     #[test]

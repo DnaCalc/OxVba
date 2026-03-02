@@ -5,7 +5,7 @@ use oxvba_hal::{
     adapters,
     error::{HalError, HalErrorKind},
     model::{CapabilityId, HalProfileId, HostPolicy},
-    traits::HostServices,
+    traits::{DynLinkDescriptorView, HostServices},
 };
 use oxvba_runtime::safe_array::{
     array_len_from_tag, is_array_tag as runtime_is_array_tag, marshal_dispatch_argument,
@@ -847,9 +847,65 @@ impl Vm {
                         Err(err) => pc = self.route_host_error(pc, err)?,
                     }
                 }
-                Instruction::IntrinsicInvokeSymbolHost { dst, symbol, arg } => {
+                Instruction::IntrinsicInvokeSymbolHost {
+                    dst,
+                    descriptor_id,
+                    symbol,
+                    arg,
+                } => {
                     let arg = self.read_slot(*arg)?;
-                    match self.host_services.dynlink().invoke_symbol(*symbol, arg) {
+                    if bytecode.external_call_descriptors.is_empty() {
+                        match self.host_services.dynlink().invoke_symbol(*symbol, arg) {
+                            Ok(value) => {
+                                self.write_slot(*dst, value)?;
+                                pc += 1;
+                            }
+                            Err(err) => pc = self.route_host_error(pc, err)?,
+                        }
+                        continue;
+                    }
+
+                    let Some(descriptor) = bytecode
+                        .external_call_descriptors
+                        .iter()
+                        .find(|entry| entry.descriptor_id == *descriptor_id)
+                    else {
+                        let err = HalError::adapter_fault(
+                            self.host_services.profile(),
+                            CapabilityId::DynamicLinking,
+                            "invoke_descriptor",
+                            format!("unknown external descriptor id {}", descriptor_id),
+                        );
+                        pc = self.route_host_error(pc, err)?;
+                        continue;
+                    };
+
+                    if descriptor.symbol != *symbol {
+                        let err = HalError::adapter_fault(
+                            self.host_services.profile(),
+                            CapabilityId::DynamicLinking,
+                            "invoke_descriptor",
+                            format!(
+                                "descriptor {} symbol mismatch: instruction={}, descriptor={}",
+                                descriptor_id, symbol, descriptor.symbol
+                            ),
+                        );
+                        pc = self.route_host_error(pc, err)?;
+                        continue;
+                    }
+
+                    let view = DynLinkDescriptorView {
+                        descriptor_id: descriptor.descriptor_id,
+                        declared_name: descriptor.declared_name.as_str(),
+                        library: descriptor.library.as_str(),
+                        alias: descriptor.alias.as_str(),
+                        ordinal_alias: descriptor.ordinal_alias,
+                        symbol: descriptor.symbol,
+                        marshal_lane: descriptor.marshal_lane.as_str(),
+                        calling_convention: descriptor.calling_convention.as_str(),
+                        selection_policy: descriptor.selection_policy.as_str(),
+                    };
+                    match self.host_services.dynlink().invoke_descriptor(&view, arg) {
                         Ok(value) => {
                             self.write_slot(*dst, value)?;
                             pc += 1;
@@ -1542,6 +1598,7 @@ mod tests {
                 Instruction::AddConstI32 { slot: 0, value: 5 },
                 Instruction::Halt,
             ],
+            external_call_descriptors: Vec::new(),
             slot_count: 1,
             user_slot_count: 1,
         };
@@ -1559,6 +1616,7 @@ mod tests {
                 Instruction::SubConstI32 { slot: 0, value: 3 },
                 Instruction::Halt,
             ],
+            external_call_descriptors: Vec::new(),
             slot_count: 1,
             user_slot_count: 1,
         };
@@ -1585,6 +1643,7 @@ mod tests {
                 Instruction::IncSlot { slot: 2 },
                 Instruction::Halt,
             ],
+            external_call_descriptors: Vec::new(),
             slot_count: 4,
             user_slot_count: 4,
         };
@@ -1637,6 +1696,7 @@ mod tests {
                 Instruction::IntrinsicUpperDigits { dst: 9, src: 0 },
                 Instruction::Halt,
             ],
+            external_call_descriptors: Vec::new(),
             slot_count: 10,
             user_slot_count: 10,
         };
@@ -1668,6 +1728,7 @@ mod tests {
                 },
                 Instruction::Halt,
             ],
+            external_call_descriptors: Vec::new(),
             slot_count: 4,
             user_slot_count: 4,
         };
@@ -1735,6 +1796,7 @@ mod tests {
                 },
                 Instruction::Halt,
             ],
+            external_call_descriptors: Vec::new(),
             slot_count: 15,
             user_slot_count: 15,
         };
@@ -1765,6 +1827,7 @@ mod tests {
                 },
                 Instruction::Halt,
             ],
+            external_call_descriptors: Vec::new(),
             slot_count: 3,
             user_slot_count: 3,
         };
@@ -1889,6 +1952,7 @@ mod tests {
                 },
                 Instruction::Halt,
             ],
+            external_call_descriptors: Vec::new(),
             slot_count: 34,
             user_slot_count: 34,
         };
@@ -1943,6 +2007,7 @@ mod tests {
                 },
                 Instruction::Halt,
             ],
+            external_call_descriptors: Vec::new(),
             slot_count: 8,
             user_slot_count: 8,
         };
@@ -1980,6 +2045,7 @@ mod tests {
                 },
                 Instruction::Halt,
             ],
+            external_call_descriptors: Vec::new(),
             slot_count: 5,
             user_slot_count: 5,
         };
@@ -2027,6 +2093,7 @@ mod tests {
                 Instruction::IntrinsicIsNumericTag { dst: 14, src: 4 },
                 Instruction::Halt,
             ],
+            external_call_descriptors: Vec::new(),
             slot_count: 15,
             user_slot_count: 15,
         };
@@ -2065,6 +2132,7 @@ mod tests {
                 },
                 Instruction::Halt,
             ],
+            external_call_descriptors: Vec::new(),
             slot_count: 5,
             user_slot_count: 5,
         };
@@ -2083,11 +2151,13 @@ mod tests {
                 Instruction::LoadConstI32 { slot: 0, value: 3 },
                 Instruction::IntrinsicInvokeSymbolHost {
                     dst: 1,
+                    descriptor_id: 1_234,
                     symbol: 1_234,
                     arg: 0,
                 },
                 Instruction::Halt,
             ],
+            external_call_descriptors: Vec::new(),
             slot_count: 2,
             user_slot_count: 2,
         };
@@ -2102,6 +2172,89 @@ mod tests {
         vm.execute(&bytecode).expect("vm should execute bytecode");
         let out = vm.snapshot_slots(2);
         assert_eq!(out[1], 1_237);
+    }
+
+    #[test]
+    fn declare_invoke_uses_descriptor_table_when_present() {
+        let symbol = 2_345;
+        let bytecode = Bytecode {
+            instructions: vec![
+                Instruction::LoadConstI32 { slot: 0, value: 3 },
+                Instruction::IntrinsicInvokeSymbolHost {
+                    dst: 1,
+                    descriptor_id: symbol as u32,
+                    symbol,
+                    arg: 0,
+                },
+                Instruction::Halt,
+            ],
+            external_call_descriptors: vec![oxvba_compiler::bytecode::ExternalCallDescriptor {
+                descriptor_id: symbol as u32,
+                declared_name: "hostping".to_string(),
+                library: "host".to_string(),
+                alias: "ping".to_string(),
+                ordinal_alias: false,
+                symbol,
+                marshal_lane: "m0-deterministic".to_string(),
+                calling_convention: "platform-default".to_string(),
+                selection_policy: "case-insensitive-canonical".to_string(),
+            }],
+            slot_count: 2,
+            user_slot_count: 2,
+        };
+
+        let mut vm = Vm::new(oxvba_hal::adapters::for_profile(
+            oxvba_hal::model::HalProfileId::Windows,
+            oxvba_hal::model::HostPolicy {
+                allow_dynamic_link: true,
+                ..oxvba_hal::model::HostPolicy::deterministic_runtime()
+            },
+        ));
+        vm.execute(&bytecode).expect("vm should execute bytecode");
+        let out = vm.snapshot_slots(2);
+        assert_eq!(out[1], 2_348);
+    }
+
+    #[test]
+    fn declare_invoke_descriptor_id_mismatch_is_reported() {
+        let symbol = 4_321;
+        let bytecode = Bytecode {
+            instructions: vec![
+                Instruction::LoadConstI32 { slot: 0, value: 3 },
+                Instruction::IntrinsicInvokeSymbolHost {
+                    dst: 1,
+                    descriptor_id: 999,
+                    symbol,
+                    arg: 0,
+                },
+                Instruction::Halt,
+            ],
+            external_call_descriptors: vec![oxvba_compiler::bytecode::ExternalCallDescriptor {
+                descriptor_id: symbol as u32,
+                declared_name: "hostping".to_string(),
+                library: "host".to_string(),
+                alias: "ping".to_string(),
+                ordinal_alias: false,
+                symbol,
+                marshal_lane: "m0-deterministic".to_string(),
+                calling_convention: "platform-default".to_string(),
+                selection_policy: "case-insensitive-canonical".to_string(),
+            }],
+            slot_count: 2,
+            user_slot_count: 2,
+        };
+
+        let mut vm = Vm::new(oxvba_hal::adapters::for_profile(
+            oxvba_hal::model::HalProfileId::Windows,
+            oxvba_hal::model::HostPolicy {
+                allow_dynamic_link: true,
+                ..oxvba_hal::model::HostPolicy::deterministic_runtime()
+            },
+        ));
+        let err = vm
+            .execute(&bytecode)
+            .expect_err("descriptor mismatch should be reported");
+        assert!(err.contains("unknown external descriptor id"));
     }
 
     #[test]
@@ -2136,6 +2289,7 @@ mod tests {
                 Instruction::Jump { target_pc: 7 },
                 Instruction::Halt,
             ],
+            external_call_descriptors: Vec::new(),
             slot_count: 7,
             user_slot_count: 7,
         };
@@ -2149,6 +2303,7 @@ mod tests {
     fn rejects_invalid_jump_target() {
         let bytecode = Bytecode {
             instructions: vec![Instruction::Jump { target_pc: 10 }, Instruction::Halt],
+            external_call_descriptors: Vec::new(),
             slot_count: 0,
             user_slot_count: 0,
         };
@@ -2201,6 +2356,7 @@ mod tests {
                 },
                 Instruction::Halt,
             ],
+            external_call_descriptors: Vec::new(),
             slot_count: 8,
             user_slot_count: 8,
         };
@@ -2221,6 +2377,7 @@ mod tests {
                 Instruction::AddConstI32 { slot: 0, value: 5 },
                 Instruction::Return,
             ],
+            external_call_descriptors: Vec::new(),
             slot_count: 1,
             user_slot_count: 1,
         };
@@ -2239,6 +2396,7 @@ mod tests {
                 Instruction::LoadErrNumber { slot: 0 },
                 Instruction::Halt,
             ],
+            external_call_descriptors: Vec::new(),
             slot_count: 1,
             user_slot_count: 1,
         };
@@ -2258,6 +2416,7 @@ mod tests {
                 Instruction::LoadErrNumber { slot: 0 },
                 Instruction::Halt,
             ],
+            external_call_descriptors: Vec::new(),
             slot_count: 1,
             user_slot_count: 1,
         };
@@ -2278,6 +2437,7 @@ mod tests {
                 Instruction::LoadErrNumber { slot: 0 },
                 Instruction::Halt,
             ],
+            external_call_descriptors: Vec::new(),
             slot_count: 1,
             user_slot_count: 1,
         };
@@ -2299,6 +2459,7 @@ mod tests {
                 Instruction::LoadErrNumber { slot: 0 },
                 Instruction::Halt,
             ],
+            external_call_descriptors: Vec::new(),
             slot_count: 1,
             user_slot_count: 1,
         };
@@ -2419,6 +2580,7 @@ mod kani_proofs {
                 },
                 Instruction::Halt,
             ],
+            external_call_descriptors: Vec::new(),
             slot_count: 8,
             user_slot_count: 8,
         };
@@ -2452,6 +2614,7 @@ mod kani_proofs {
                 Instruction::IntrinsicVarTypeTag { dst: 1, src: 0 },
                 Instruction::Halt,
             ],
+            external_call_descriptors: Vec::new(),
             slot_count: 2,
             user_slot_count: 2,
         };
@@ -2479,6 +2642,7 @@ mod kani_proofs {
                 Instruction::LoadErrNumber { slot: 0 },
                 Instruction::Halt,
             ],
+            external_call_descriptors: Vec::new(),
             slot_count: 1,
             user_slot_count: 1,
         };

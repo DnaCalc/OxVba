@@ -6,7 +6,7 @@ use oxvba_runtime::{
 };
 
 use crate::{
-    bytecode::{Bytecode, Instruction, StringCompareMode},
+    bytecode::{Bytecode, ExternalCallDescriptor, Instruction, StringCompareMode},
     resolve::{
         BoundCallArg, BoundCaseClause, BoundCompareMode, BoundCond, BoundExpr, BoundExternalDecl,
         BoundModule, BoundParam, BoundProcedure, BoundStmt, CompareOp,
@@ -71,6 +71,7 @@ pub fn emit_bytecode(module: &BoundModule) -> Bytecode {
     let mut proc_labels: HashMap<String, usize> = HashMap::new();
     let mut proc_meta: HashMap<String, EmitProcMeta> = HashMap::new();
     let external_decls = module.external_declarations.clone();
+    let external_call_descriptors = build_external_call_descriptors(&external_decls);
     for (idx, proc) in procedures.iter().enumerate() {
         proc_meta.insert(
             proc.name.clone(),
@@ -183,9 +184,41 @@ pub fn emit_bytecode(module: &BoundModule) -> Bytecode {
 
     Bytecode {
         instructions,
+        external_call_descriptors,
         slot_count: temps.total_slots(),
         user_slot_count: procedures[entry_idx].declarations.len(),
     }
+}
+
+fn build_external_call_descriptors(
+    external_decls: &HashMap<String, BoundExternalDecl>,
+) -> Vec<ExternalCallDescriptor> {
+    let mut decls: Vec<_> = external_decls.values().cloned().collect();
+    decls.sort_by(|lhs, rhs| {
+        lhs.name
+            .to_ascii_lowercase()
+            .cmp(&rhs.name.to_ascii_lowercase())
+    });
+    let mut out = Vec::with_capacity(decls.len());
+    for decl in decls {
+        let symbol = external_symbol_token(
+            decl.library.as_str(),
+            decl.alias.as_str(),
+            decl.name.as_str(),
+        );
+        out.push(ExternalCallDescriptor {
+            descriptor_id: symbol as u32,
+            declared_name: decl.name,
+            library: decl.library,
+            alias: decl.alias,
+            ordinal_alias: decl.ordinal_alias,
+            symbol,
+            marshal_lane: "m0-deterministic".to_string(),
+            calling_convention: "platform-default".to_string(),
+            selection_policy: "case-insensitive-canonical".to_string(),
+        });
+    }
+    out
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -932,6 +965,7 @@ fn emit_external_declare_call(
     );
     instructions.push(Instruction::IntrinsicInvokeSymbolHost {
         dst,
+        descriptor_id: symbol as u32,
         symbol,
         arg: arg_slot,
     });

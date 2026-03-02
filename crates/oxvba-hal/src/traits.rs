@@ -17,6 +17,19 @@ use crate::{
 /// This is intentionally `i32` for the current register-window runtime representation.
 pub type ValueToken = i32;
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DynLinkDescriptorView<'a> {
+    pub descriptor_id: u32,
+    pub declared_name: &'a str,
+    pub library: &'a str,
+    pub alias: &'a str,
+    pub ordinal_alias: bool,
+    pub symbol: ValueToken,
+    pub marshal_lane: &'a str,
+    pub calling_convention: &'a str,
+    pub selection_policy: &'a str,
+}
+
 pub trait HostServices: Send + Sync {
     fn profile(&self) -> HalProfileId;
     fn descriptor(&self) -> HalDescriptor;
@@ -76,6 +89,33 @@ pub trait TimeLocaleHal: Send + Sync {
 }
 
 pub trait DynamicLinkHal: Send + Sync {
+    /// Resolves descriptor metadata into an invocation binding token.
+    fn bind_descriptor(&self, descriptor: &DynLinkDescriptorView<'_>) -> HalResult<ValueToken> {
+        Ok(descriptor.symbol)
+    }
+
+    /// Optional argument normalization/writeback preparation hook.
+    fn prepare_invoke(&self, _binding: ValueToken, arg: ValueToken) -> HalResult<ValueToken> {
+        Ok(arg)
+    }
+
+    /// Invokes a previously bound symbol token.
+    fn invoke_bound(&self, binding: ValueToken, arg: ValueToken) -> HalResult<ValueToken> {
+        self.invoke_symbol(binding, arg)
+    }
+
+    /// Descriptor-driven invoke path used by VM/host integrations.
+    fn invoke_descriptor(
+        &self,
+        descriptor: &DynLinkDescriptorView<'_>,
+        arg: ValueToken,
+    ) -> HalResult<ValueToken> {
+        let binding = self.bind_descriptor(descriptor)?;
+        let prepared = self.prepare_invoke(binding, arg)?;
+        self.invoke_bound(binding, prepared)
+    }
+
+    /// Legacy symbol-token invoke path retained for backward compatibility.
     fn invoke_symbol(&self, symbol: ValueToken, arg: ValueToken) -> HalResult<ValueToken>;
 }
 

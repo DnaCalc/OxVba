@@ -13,6 +13,6 @@ pub use model::{
     WasmRuntimeClass, host_backed_mode_active, host_backed_profile_matches_host,
 };
 pub use traits::{
-    ComHal, DiagnosticsHal, DynamicLinkHal, EventPumpHal, FileSystemHal, HostServices,
-    ProcessEnvHal, TimeLocaleHal, UiInteractionHal,
+    ComHal, DiagnosticsHal, DynLinkDescriptorView, DynamicLinkHal, EventPumpHal, FileSystemHal,
+    HostServices, ProcessEnvHal, TimeLocaleHal, UiInteractionHal,
 };

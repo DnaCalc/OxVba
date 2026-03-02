@@ -1,7 +1,7 @@
 # Formal Run Report
 
-- Timestamp (UTC): 2026-03-01T15:03:34Z
-- Profile scope: mvp-profile-v186
+- Timestamp (UTC): 2026-03-02T21:47:42Z
+- Profile scope: mvp-profile-v286
 - Overall mode: non-blocking
 - Kani required: false
 - Kani execution: deferred-to-wsl-async

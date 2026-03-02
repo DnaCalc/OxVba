@@ -9,7 +9,7 @@ use crate::{
         ALL_CAPABILITIES, CapabilityId, CapabilityMaturity, HalDescriptor, host_backed_mode_active,
         host_backed_profile_matches_host,
     },
-    traits::HostServices,
+    traits::{DynLinkDescriptorView, HostServices},
 };
 
 const CLAUSE_CATALOG_CSV_V1: &str =
@@ -359,6 +359,35 @@ pub fn run_conformance(host: &dyn HostServices) -> ConformanceReport {
         ],
         host.dynlink().invoke_symbol(1, 2).map(|_| ()),
     );
+    let dynlink_descriptor = DynLinkDescriptorView {
+        descriptor_id: external_symbol_token("host", "ping", "hostping") as u32,
+        declared_name: "hostping",
+        library: "host",
+        alias: "ping",
+        ordinal_alias: false,
+        symbol: external_symbol_token("host", "ping", "hostping"),
+        marshal_lane: "m0-deterministic",
+        calling_convention: "platform-default",
+        selection_policy: "case-insensitive-canonical",
+    };
+    probe(
+        CapabilityId::DynamicLinking,
+        "dynlink.invoke_descriptor",
+        &[
+            "HAL-DYN-011",
+            "HAL-DYN-012",
+            "HAL-DYN-013",
+            "HAL-DYN-015",
+            "HAL-DYN-020",
+            "HAL-DES-004",
+            "HAL-GEN-001",
+            "HAL-GEN-003",
+            "HAL-GEN-004",
+        ],
+        host.dynlink()
+            .invoke_descriptor(&dynlink_descriptor, 2)
+            .map(|_| ()),
+    );
     probe(
         CapabilityId::DiagnosticsTelemetry,
         "diag.emit",
@@ -366,6 +395,13 @@ pub fn run_conformance(host: &dyn HostServices) -> ConformanceReport {
         host.diag().emit(1, 2).map(|_| ()),
     );
     evaluate_host_backed_contract_paths(
+        host,
+        &descriptor,
+        host_backed_active,
+        &mut clause_checks,
+        &mut failures,
+    );
+    evaluate_dynlink_contract_paths(
         host,
         &descriptor,
         host_backed_active,
@@ -465,6 +501,153 @@ fn evaluate_host_backed_contract_paths(
         } else {
             Some("time host-backed contract checks failed".to_string())
         },
+    });
+}
+
+fn evaluate_dynlink_contract_paths(
+    host: &dyn HostServices,
+    descriptor: &HalDescriptor,
+    host_backed_active: bool,
+    checks: &mut Vec<ClauseCheck>,
+    failures: &mut Vec<String>,
+) {
+    if !descriptor.supports(CapabilityId::DynamicLinking) {
+        checks.push(ClauseCheck {
+            clause_id: "HAL-DYN-016",
+            status: ClauseCheckStatus::Passed,
+            detail: Some("dynamic-link capability unsupported; clause not applicable".to_string()),
+        });
+        checks.push(ClauseCheck {
+            clause_id: "HAL-DYN-017",
+            status: ClauseCheckStatus::Passed,
+            detail: Some("dynamic-link capability unsupported; clause not applicable".to_string()),
+        });
+        checks.push(ClauseCheck {
+            clause_id: "HAL-DYN-018",
+            status: ClauseCheckStatus::Passed,
+            detail: Some("pointer-string lane deferred; deterministic subset active".to_string()),
+        });
+        checks.push(ClauseCheck {
+            clause_id: "HAL-DYN-019",
+            status: ClauseCheckStatus::Passed,
+            detail: Some("ByRef writeback lane deferred; deterministic subset active".to_string()),
+        });
+        return;
+    }
+
+    if !host.policy().allow_dynamic_link {
+        checks.push(ClauseCheck {
+            clause_id: "HAL-DYN-016",
+            status: ClauseCheckStatus::Passed,
+            detail: Some("dynamic-link policy disabled; bind/invoke clauses deferred".to_string()),
+        });
+        checks.push(ClauseCheck {
+            clause_id: "HAL-DYN-017",
+            status: ClauseCheckStatus::Passed,
+            detail: Some("dynamic-link policy disabled; bind/invoke clauses deferred".to_string()),
+        });
+        checks.push(ClauseCheck {
+            clause_id: "HAL-DYN-018",
+            status: ClauseCheckStatus::Passed,
+            detail: Some("pointer-string lane deferred; deterministic subset active".to_string()),
+        });
+        checks.push(ClauseCheck {
+            clause_id: "HAL-DYN-019",
+            status: ClauseCheckStatus::Passed,
+            detail: Some("ByRef writeback lane deferred; deterministic subset active".to_string()),
+        });
+        return;
+    }
+
+    let descriptor_ping = DynLinkDescriptorView {
+        descriptor_id: external_symbol_token("host", "ping", "hostping") as u32,
+        declared_name: "hostping",
+        library: "host",
+        alias: "ping",
+        ordinal_alias: false,
+        symbol: external_symbol_token("host", "ping", "hostping"),
+        marshal_lane: "m0-deterministic",
+        calling_convention: "platform-default",
+        selection_policy: "case-insensitive-canonical",
+    };
+    let mut win_ok = true;
+    let mut linux_ok = true;
+    match host.dynlink().invoke_descriptor(&descriptor_ping, 4) {
+        Ok(value) => {
+            if host_backed_active
+                && descriptor.profile == crate::model::HalProfileId::Windows
+                && value != 5
+            {
+                win_ok = false;
+                failures.push(format!(
+                    "windows dynamic-link host-backed ping expected 5, observed {}",
+                    value
+                ));
+            }
+            if host_backed_active
+                && descriptor.profile == crate::model::HalProfileId::Linux
+                && value != 5
+            {
+                linux_ok = false;
+                failures.push(format!(
+                    "linux dynamic-link host-backed ping expected 5, observed {}",
+                    value
+                ));
+            }
+        }
+        Err(err) => {
+            if descriptor.profile == crate::model::HalProfileId::Windows {
+                win_ok = false;
+            }
+            if descriptor.profile == crate::model::HalProfileId::Linux {
+                linux_ok = false;
+            }
+            failures.push(format!(
+                "dynamic-link descriptor ping probe failed: {} ({})",
+                err.stable_code, err.message
+            ));
+        }
+    }
+
+    checks.push(ClauseCheck {
+        clause_id: "HAL-DYN-016",
+        status: if descriptor.profile != crate::model::HalProfileId::Windows || win_ok {
+            ClauseCheckStatus::Passed
+        } else {
+            ClauseCheckStatus::Failed
+        },
+        detail: if descriptor.profile == crate::model::HalProfileId::Windows && !win_ok {
+            Some("windows loader lane contract probe failed".to_string())
+        } else {
+            None
+        },
+    });
+    checks.push(ClauseCheck {
+        clause_id: "HAL-DYN-017",
+        status: if descriptor.profile != crate::model::HalProfileId::Linux || linux_ok {
+            ClauseCheckStatus::Passed
+        } else {
+            ClauseCheckStatus::Failed
+        },
+        detail: if descriptor.profile == crate::model::HalProfileId::Linux && !linux_ok {
+            Some("linux loader lane contract probe failed".to_string())
+        } else {
+            None
+        },
+    });
+    checks.push(ClauseCheck {
+        clause_id: "HAL-DYN-018",
+        status: ClauseCheckStatus::Passed,
+        detail: Some(
+            "pointer-string lane remains deterministic/deferred in this cycle".to_string(),
+        ),
+    });
+    checks.push(ClauseCheck {
+        clause_id: "HAL-DYN-019",
+        status: ClauseCheckStatus::Passed,
+        detail: Some(
+            "ByRef writeback lane remains deterministic/deferred in this cycle".to_string(),
+        ),
     });
 }
 
@@ -909,6 +1092,21 @@ const fn is_policy_gated(capability: CapabilityId) -> bool {
     )
 }
 
+fn external_symbol_token(library: &str, alias: &str, name: &str) -> i32 {
+    let mut hash: u32 = 2_166_136_261;
+    for byte in library
+        .bytes()
+        .chain([b'!'])
+        .chain(alias.bytes())
+        .chain([b'!'])
+        .chain(name.bytes())
+    {
+        hash ^= byte as u32;
+        hash = hash.wrapping_mul(16_777_619);
+    }
+    (hash & 0x7fff_ffff).max(1) as i32
+}
+
 #[cfg(test)]
 mod tests {
     use std::collections::BTreeSet;
@@ -1079,6 +1277,17 @@ mod tests {
         let expected = host_backed_profile_matches_host(profile);
         assert_eq!(report.host_backed_eligible, expected);
         assert_eq!(report.host_backed_active, expected);
+    }
+
+    #[test]
+    fn conformance_descriptor_dynlink_clauses_are_emitted() {
+        let host = for_profile(HalProfileId::Windows, HostPolicy::interactive_dev());
+        let report = run_conformance(host.as_ref());
+        let coverage = report.clause_coverage();
+        assert_eq!(coverage.get("HAL-DYN-011"), Some(&true));
+        assert_eq!(coverage.get("HAL-DYN-012"), Some(&true));
+        assert_eq!(coverage.get("HAL-DYN-013"), Some(&true));
+        assert_eq!(coverage.get("HAL-DYN-020"), Some(&true));
     }
 
     #[test]

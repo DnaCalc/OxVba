@@ -202,6 +202,7 @@ fn inline_bytecode(bytecode: &Bytecode) -> Result<Bytecode, String> {
 
     Ok(Bytecode {
         instructions,
+        external_call_descriptors: bytecode.external_call_descriptors.clone(),
         slot_count: bytecode.slot_count,
         user_slot_count: bytecode.user_slot_count,
     })

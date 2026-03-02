@@ -227,6 +227,7 @@ pub struct BoundParam {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BoundExternalDecl {
+    pub name: String,
     pub library: String,
     pub alias: String,
     pub ptr_safe: bool,
@@ -1297,6 +1298,7 @@ fn collect_declared_external_procedures(
         externals.insert(
             declare.name.to_ascii_lowercase(),
             BoundExternalDecl {
+                name: declare.name,
                 library: declare.library,
                 alias: declare.alias,
                 ptr_safe: declare.ptr_safe,
@@ -1356,9 +1358,7 @@ fn parse_declare_signature_line(
         .unwrap_or_default()
         .trim();
     if name_token.is_empty() {
-        return Err(
-            "external procedure declaration rejected: missing procedure name".to_string(),
-        );
+        return Err("external procedure declaration rejected: missing procedure name".to_string());
     }
 
     let open = tail.find('(').ok_or_else(|| {
@@ -1389,12 +1389,13 @@ fn parse_declare_signature_line(
         ProcKind::Sub => format!("Sub {name_token}{params_text}"),
         ProcKind::Function => format!("Function {name_token}{params_text}{return_clause}"),
         _ => {
-            return Err("external procedure declaration rejected: invalid declaration kind"
-                .to_string());
+            return Err(
+                "external procedure declaration rejected: invalid declaration kind".to_string(),
+            );
         }
     };
-    let (name, params, return_type) =
-        parse_proc_signature(&synthetic, kind, default_type_table).ok_or_else(|| {
+    let (name, params, return_type) = parse_proc_signature(&synthetic, kind, default_type_table)
+        .ok_or_else(|| {
             "external procedure declaration rejected: unable to parse signature".to_string()
         })?;
 
@@ -1467,9 +1468,7 @@ fn extract_quoted_after_keyword(text: &str, keyword: &str) -> Option<String> {
 fn normalize_external_alias(alias: &str) -> Result<(String, bool), String> {
     let alias = alias.trim();
     if alias.is_empty() {
-        return Err(
-            "external procedure declaration rejected: alias must not be empty".to_string(),
-        );
+        return Err("external procedure declaration rejected: alias must not be empty".to_string());
     }
     if let Some(ordinal_digits) = alias.strip_prefix('#') {
         if ordinal_digits.is_empty() || !ordinal_digits.chars().all(|ch| ch.is_ascii_digit()) {

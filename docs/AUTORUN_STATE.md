@@ -6,20 +6,20 @@ Rule: The end of any cycle means continue immediately into the next cycle; do no
 Recovery rule: an accidental interim status reply is non-blocking and must be treated as a logging mistake, not a stop condition. Resume execution immediately.
 Reply condition: only report back when the active ladder end gate is passed, or when all remaining progress is blocked by documented blockers.
 Active ladders:
-- `v187..v226` (`docs/worksets/PROFILE_LADDER_2026-03-02_MACH1000_V187_V226_HOST_PLATFORM_EXPANSION.md`)
-Terminal gate: `v226`
+- `v227..v286` (`docs/worksets/PROFILE_LADDER_2026-03-02_MACH1000_V227_V286_DECLARE_MARSHAL_FULL_SCOPE.md`)
+Terminal gate: `v286`
 
 Current checkpoint:
 - Prior full language+built-ins ladder `v107..v146` reached terminal gate with `PASS`.
 - Non-HAL completion ladder `v147..v166` reached terminal closure gate with `PASS`.
 - Non-HAL hardening ladder `v167..v186` reached terminal gate with `PASS`.
 - Host-platform expansion ladder `v187..v226` reached terminal gate with `PASS`.
-- Active execution target is complete through `v226` (no remaining in-ladder steps).
-- Latest integrated gate artifact: `docs/evidence/profiles/v226/integrated_gate.md`.
+- Declare/marshaling full-scope ladder `v227..v286` reached terminal gate with `PASS`.
+- Latest integrated gate artifact: `docs/evidence/profiles/v286/integrated_gate.md`.
 - Latest formal artifact: `docs/evidence/formal/latest_run.md`.
 - Evidence artifacts are tracked under `docs/evidence/profiles/`, `docs/evidence/formal/`, and `docs/evidence/divergences/`.
 
 Resume protocol:
 1. Read this file.
 2. Run `./scripts/meta-check.ps1 -Fast`.
-3. Start the next ladder/workset only after user approves a new terminal gate beyond `v226`.
+3. Start the next ladder/workset only after user approves a new terminal gate beyond `v286`.

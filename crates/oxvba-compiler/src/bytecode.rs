@@ -7,6 +7,19 @@ pub enum StringCompareMode {
 }
 
 #[derive(Debug, Clone, Archive, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ExternalCallDescriptor {
+    pub descriptor_id: u32,
+    pub declared_name: String,
+    pub library: String,
+    pub alias: String,
+    pub ordinal_alias: bool,
+    pub symbol: i32,
+    pub marshal_lane: String,
+    pub calling_convention: String,
+    pub selection_policy: String,
+}
+
+#[derive(Debug, Clone, Archive, Serialize, Deserialize, PartialEq, Eq)]
 pub enum Instruction {
     LoadConstI32 {
         slot: usize,
@@ -349,6 +362,7 @@ pub enum Instruction {
     },
     IntrinsicInvokeSymbolHost {
         dst: usize,
+        descriptor_id: u32,
         symbol: i32,
         arg: usize,
     },
@@ -433,6 +447,7 @@ pub enum Instruction {
 #[derive(Debug, Clone, Archive, Serialize, Deserialize)]
 pub struct Bytecode {
     pub instructions: Vec<Instruction>,
+    pub external_call_descriptors: Vec<ExternalCallDescriptor>,
     pub slot_count: usize,
     pub user_slot_count: usize,
 }

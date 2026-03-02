@@ -21,10 +21,9 @@ Use `docs/` and `synthesis/` for supporting context and provenance.
 - Execute the MACH1000 profile ladder continuously until completion.
 - Only reply when one of the following is true:
   - The active profile ladder is complete and its final gate is passed.
-    - Current active ladders:
-      - `v147..v166` (`docs/worksets/PROFILE_LADDER_2026-03-01_MACH1000_V147_V166_NON_HAL_COMPLETION.md`)
-      - `v167..v186` (`docs/worksets/PROFILE_LADDER_2026-03-01_MACH1000_V167_V186_NON_HAL_HARDENING.md`)
-    - Current required terminal gate: `v186`
+    - Current active ladder:
+      - `v227..v286` (`docs/worksets/PROFILE_LADDER_2026-03-02_MACH1000_V227_V286_DECLARE_MARSHAL_FULL_SCOPE.md`)
+    - Current required terminal gate: `v286`
   - Blockers are documented and no progress can be made on any remaining ladder task without unblocking.
 
 ### Blocker Handling Protocol

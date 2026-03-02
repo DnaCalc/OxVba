@@ -78,9 +78,14 @@ Primary source root:
 - invalid shapes fail deterministically (no undefined behavior, no silent coercion).
 
 Current trait anchor:
-- `DynamicLinkHal::invoke_symbol(symbol_token, arg_token) -> token`
+- `DynamicLinkHal::bind_descriptor(...) -> binding_token`
+- `DynamicLinkHal::prepare_invoke(binding_token, arg_token) -> prepared_arg_token`
+- `DynamicLinkHal::invoke_bound(binding_token, prepared_arg_token) -> token`
+- compatibility entrypoints:
+  - `DynamicLinkHal::invoke_descriptor(descriptor, arg_token) -> token`
+  - `DynamicLinkHal::invoke_symbol(symbol_token, arg_token) -> token` (legacy shim)
 
-V1 keeps this narrow trait, with marshaling richness represented in policy/capability and contract clauses.
+V1 now exposes phased descriptor contracts while keeping token-model marshaling boundaries explicit.
 
 ## 5. Capability/Profile Contract
 
@@ -164,6 +169,6 @@ Conformance planning companion:
 
 ## 10. Open Decisions
 
-1. Whether `DynamicLinkHal` should split into explicit bind/prepare/invoke phases.
+1. Whether `bind_descriptor` should become mandatory (non-default) once non-token marshaling lanes are enabled.
 2. Profile-level default calling-convention policy when declaration omits explicit convention.
 3. Canonical typed boundary for non-token marshaling lanes and how it coexists with current `ValueToken = i32`.

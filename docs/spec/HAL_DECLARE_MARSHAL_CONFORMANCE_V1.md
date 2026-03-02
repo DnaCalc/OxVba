@@ -27,15 +27,20 @@ Anchor families:
 | Clause ID | Topic | Verification lane | Current state |
 |---|---|---|---|
 | `HAL-DYN-001` | DynamicLink capability + policy gating floor | existing HAL conformance (`dynlink.invoke_symbol`) | implemented-verified |
-| `HAL-DYN-002` | Alias grammar/normalization (`#ordinal` vs symbolic alias) | compiler/resolver tests | specified-pending |
-| `HAL-DYN-003` | Implementation-defined name-selection policy surfaced explicitly | descriptor/doc + host diagnostics checks | specified-pending |
-| `HAL-DYN-004` | `PtrSafe`/declaration-shape policy restrictions | compile-time policy tests | specified-pending |
+| `HAL-DYN-002` | Alias grammar/normalization (`#ordinal` vs symbolic alias) | compiler/resolver tests | implemented-verified |
+| `HAL-DYN-003` | Implementation-defined name-selection policy surfaced explicitly | descriptor/doc + host diagnostics checks | implemented-partial |
+| `HAL-DYN-004` | `PtrSafe`/declaration-shape policy restrictions | compile-time policy tests | implemented-verified |
 | `HAL-DYN-005` | `VARIANT` byref discriminant legality rules | marshaling unit/property tests | specified-pending |
 | `HAL-DYN-006` | `SAFEARRAY` element-type legality matrix | marshaling unit/property tests | specified-pending |
 | `HAL-DYN-007` | pointer-string metadata/encoding rules (`LPSTR`/`LPWSTR`) | marshaling shape tests + diagnostics assertions | specified-pending |
 | `HAL-DYN-008` | `IDispatch::Invoke` out-param obligations (`VarResult`/`ExcepInfo`/`ArgErr`) | COM bridge integration tests (Windows lane) | specified-pending |
-| `HAL-DYN-009` | Dynamic-link marshaling failure determinism and stable diagnostics | host/VM error-routing tests | specified-pending |
-| `HAL-DYN-010` | Unsupported declaration forms fail deterministically by mode | compile-time/runtime dual-mode tests | specified-pending |
+| `HAL-DYN-009` | Dynamic-link marshaling failure determinism and stable diagnostics | host/VM error-routing tests | implemented-partial |
+| `HAL-DYN-010` | Unsupported declaration forms fail deterministically by mode | compile-time/runtime dual-mode tests | implemented-partial |
+| `HAL-DYN-011..013` | Descriptor model + metadata + descriptor-driven routing | compiler + VM + HAL conformance (`dynlink.invoke_descriptor`) | implemented-partial |
+| `HAL-DYN-014..015` | compile-time/runtime mode contract parity over descriptor path | host preflight/runtime tests + conformance | implemented-partial |
+| `HAL-DYN-016..017` | windows/linux host-backed dynamic-link contract probes | HAL conformance (`evaluate_dynlink_contract_paths`) | implemented-partial |
+| `HAL-DYN-018..019` | pointer-string and byref-writeback lanes | conformance-deferred placeholder checks | implemented-partial |
+| `HAL-DYN-020` | lane selection determinism (`M0/M1/M2`) | descriptor metadata + adapter lane checks | implemented-partial |
 
 ## 4. Lanes
 
@@ -96,14 +101,14 @@ Policy:
 When sources are permissive (`MAY`) or implementation-defined:
 1. Record decision in `HAL_IMPLEMENTATION_DEFINED.md`.
 2. Record uncertainty in `HAL_UNCERTAINTY_REGISTER.md` when unresolved.
-3. Mark clause as `specified-pending` until executable checks are in place.
+3. Mark clause as `implemented-partial` if executable checks exist but lane breadth is still intentionally constrained.
 4. Add deferred-oracle item if real-host behavior is needed for compatibility claim.
 
 ## 6. Immediate Execution Priorities
 
-1. Implement Lane A tests for alias grammar/normalization and policy restrictions.
-2. Introduce marshaling-shape contract tests for `HAL-DYN-005..007`.
-3. Extend host/VM diagnostics tests for dynamic-link failure taxonomy (`HAL-DYN-009`).
+1. Expand marshaling-shape contract tests for `HAL-DYN-005..008`.
+2. Harden descriptor-policy preflight checks for `HAL-DYN-014` and richer lane metadata validation.
+3. Progress host-backed loader coverage beyond bounded known-symbol subset.
 
 ## 7. Progress Snapshot (Current)
 
@@ -113,4 +118,5 @@ When sources are permissive (`MAY`) or implementation-defined:
   - unsupported declaration forms (`ByRef`, `Optional`, `ParamArray`, multi-arg, non-`Long` parameter/return types) rejected with deterministic diagnostics.
 - Clause status updates:
   - `HAL-DYN-002`, `HAL-DYN-004` moved to implemented-verified,
-  - `HAL-DYN-003`, `HAL-DYN-009`, `HAL-DYN-010` moved to implemented-partial.
+  - `HAL-DYN-003`, `HAL-DYN-009`, `HAL-DYN-010` moved to implemented-partial,
+  - descriptor-lane clauses `HAL-DYN-011..020` now have executable conformance hooks and are tracked as implemented-partial pending richer marshaling/ABI breadth.
