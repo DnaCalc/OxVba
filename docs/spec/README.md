@@ -17,5 +17,7 @@ Current draft set:
 - [`HAL_SPEC_WORKING_DRAFT.md`](HAL_SPEC_WORKING_DRAFT.md) (`working-draft`): implementation-linked HAL contract, deterministic error model, unsupported-mode semantics, and Windows-only COM decision.
 - [`HAL_SPEC_CROSSWALK.md`](HAL_SPEC_CROSSWALK.md) (`working-draft`): capability/intrinsic to Foundation anchor mapping plus known extraction gaps.
 - [`HAL_CONFORMANCE_SUITE.md`](HAL_CONFORMANCE_SUITE.md) (`working-draft`): runnable HAL harness layers, commands, artifact schema, and expectations.
+- [`HAL_FORMALIZATION_PROGRAM.md`](HAL_FORMALIZATION_PROGRAM.md) (`working-draft`): charter-driven HAL formalization program with 5-step execution ladder and H1/H2/H3 tracks.
+- [`HAL_CONTRACT_CLAUSE_CATALOG_V1.md`](HAL_CONTRACT_CLAUSE_CATALOG_V1.md) (`working-draft`): explicit clause ID catalog with pre/postconditions, failure obligations, and verification mapping.
 
 These files intentionally optimize for design velocity and clarity of open decisions rather than immediate lock-in.

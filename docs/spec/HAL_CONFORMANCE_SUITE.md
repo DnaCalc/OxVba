@@ -78,3 +78,12 @@ At current ladder stage:
 1. Promote candidate spec anchors to reviewed, behavior-specific conformance rows.
 2. Add richer UI virtualization and event-pump deterministic model probes.
 3. Add Office empirical differential checks for host-sensitive behavior classes on Windows.
+
+## 8. Clause Mapping Baseline
+
+Clause catalog baseline:
+- `docs/spec/HAL_CONTRACT_CLAUSE_CATALOG_V1.md`
+
+Phase-1 expectation:
+- every new contract clause added to the catalog must include an explicit verification mapping field.
+- clauses marked `implemented-partial` require dedicated test expansion in Phase 2.

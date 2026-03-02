@@ -1,6 +1,17 @@
 # Implementation Log
 
 ## 2026-03-01
+- Started HAL formalization Phase 1 (spec-first baseline):
+  - added charter-driven program doc:
+    - `docs/spec/HAL_FORMALIZATION_PROGRAM.md`;
+  - added clause catalog v1 with explicit clause IDs, pre/postconditions, failure obligations, and verification mapping:
+    - `docs/spec/HAL_CONTRACT_CLAUSE_CATALOG_V1.md`;
+  - added HAL Phase-1 baseline audit:
+    - `docs/evidence/hal/HAL_PHASE1_BASELINE_AUDIT_2026-03-02.md`;
+  - added HAL uncertainty and implementation-defined registries:
+    - `docs/evidence/hal/HAL_UNCERTAINTY_REGISTER.md`
+    - `docs/evidence/hal/HAL_IMPLEMENTATION_DEFINED.md`;
+  - linked new artifacts in `docs/spec/README.md`, `docs/README.md`, and `docs/evidence/hal/README.md`.
 - Completed HAL working-draft + runtime integration pass:
   - added new workspace crate `crates/oxvba-hal` with:
     - profile adapters (`windows`, `linux`, `macos`, `wasm`, `null`),

@@ -24,7 +24,12 @@
 | HAL Spec Working Draft | [`spec/HAL_SPEC_WORKING_DRAFT.md`](spec/HAL_SPEC_WORKING_DRAFT.md) | Implementation-linked HAL contract, deterministic error model, unsupported-mode semantics, and current Windows-only COM scope decision. |
 | HAL Spec Crosswalk | [`spec/HAL_SPEC_CROSSWALK.md`](spec/HAL_SPEC_CROSSWALK.md) | Capability/intrinsic mapping to Foundation conformance anchors and extraction-quality gaps. |
 | HAL Conformance Suite | [`spec/HAL_CONFORMANCE_SUITE.md`](spec/HAL_CONFORMANCE_SUITE.md) | Runnable HAL verification lanes, artifact outputs, and profile expectations. |
+| HAL Formalization Program | [`spec/HAL_FORMALIZATION_PROGRAM.md`](spec/HAL_FORMALIZATION_PROGRAM.md) | Charter-driven HAL formalization ladder (5-step program + H1/H2/H3 execution tracks). |
+| HAL Contract Clause Catalog v1 | [`spec/HAL_CONTRACT_CLAUSE_CATALOG_V1.md`](spec/HAL_CONTRACT_CLAUSE_CATALOG_V1.md) | Clause-level HAL contract baseline with pre/postconditions, failure semantics, and verification links. |
 | HAL Evidence Artifacts | [`evidence/hal/README.md`](evidence/hal/README.md) | Generated HAL conformance result bundles (`md` + `jsonl`) and lane semantics. |
+| HAL Phase-1 Baseline Audit | [`evidence/hal/HAL_PHASE1_BASELINE_AUDIT_2026-03-02.md`](evidence/hal/HAL_PHASE1_BASELINE_AUDIT_2026-03-02.md) | Capability/domain audit baseline for HAL formalization phase 1. |
+| HAL Uncertainty Register | [`evidence/hal/HAL_UNCERTAINTY_REGISTER.md`](evidence/hal/HAL_UNCERTAINTY_REGISTER.md) | Open HAL contract-shape uncertainties and planned resolution phases. |
+| HAL Implementation-Defined Register | [`evidence/hal/HAL_IMPLEMENTATION_DEFINED.md`](evidence/hal/HAL_IMPLEMENTATION_DEFINED.md) | HAL-specific implementation-defined behaviors that are explicitly tracked. |
 | MS-VBAL Module/Project Requirements | [`evidence/language/MS_VBAL_MODULE_PROJECT_REQUIREMENTS.md`](evidence/language/MS_VBAL_MODULE_PROJECT_REQUIREMENTS.md) | Full-scope module/project backlog for MS-VBAL closure beyond current single-source execution model. |
 | Diagnostic Taxonomy | [`DIAGNOSTIC_TAXONOMY.md`](DIAGNOSTIC_TAXONOMY.md) | Consolidated user-facing compiler/typecheck diagnostic categories and message mapping. |
 | Profile v2 Status | [`PROFILE_STATUS_V2.md`](profile-status/PROFILE_STATUS_V2.md) | Current gate status contract for `mvp-controlflow-v2`. |

@@ -14,6 +14,11 @@ Define a deterministic Host Abstraction Layer (HAL) contract for OxVba so host-s
 
 This draft is implementation-linked (code exists) but still open for compatibility refinements.
 
+Primary formal contract companion docs:
+- [`HAL_CONTRACT_CLAUSE_CATALOG_V1.md`](HAL_CONTRACT_CLAUSE_CATALOG_V1.md)
+- [`../evidence/hal/HAL_UNCERTAINTY_REGISTER.md`](../evidence/hal/HAL_UNCERTAINTY_REGISTER.md)
+- [`../evidence/hal/HAL_IMPLEMENTATION_DEFINED.md`](../evidence/hal/HAL_IMPLEMENTATION_DEFINED.md)
+
 ## 2. Normative Source Families
 
 Primary external references are maintained in `../Foundation/reference`:
