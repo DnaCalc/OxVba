@@ -17,6 +17,18 @@
     - `native_mode_filesystem_seek_can_extend_length`
     - `native_mode_time_tokens_are_non_negative`;
   - updated HAL spec/operating-envelope + implementation-defined records for dual-mode behavior.
+- Verified HAL conformance across executable host platforms:
+  - local Windows run:
+    - `docs/evidence/hal/HAL_CONFORMANCE_1772434865.md`
+    - `docs/evidence/hal/HAL_CONFORMANCE_1772434865.jsonl`;
+  - remote Linux run (`/home/ubuntu/.dnacalc_remote/work/OxVba`, commit `157d59b`):
+    - `cargo test -p oxvba-hal` -> `38 passed; 0 failed`,
+    - remote conformance artifacts copied to:
+      - `docs/evidence/hal/HAL_CONFORMANCE_REMOTE_LINUX_1772434934.md`
+      - `docs/evidence/hal/HAL_CONFORMANCE_REMOTE_LINUX_1772434934.jsonl`,
+    - verification record:
+      - `docs/evidence/hal/HAL_REMOTE_LINUX_VERIFICATION_2026-03-02.md`;
+  - macOS verification explicitly deferred.
 - Executed HAL rigor expansion batch (machine-readable clauses + drift guard + policy presets + error contract checks):
   - added machine-readable clause catalog:
     - `docs/spec/HAL_CONTRACT_CLAUSE_CATALOG_V1.csv`;

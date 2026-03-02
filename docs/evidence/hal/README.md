@@ -11,6 +11,7 @@ Generator:
 Primary outputs:
 - `HAL_CONFORMANCE_<timestamp>.md`: human-readable summary table by profile/lane.
 - `HAL_CONFORMANCE_<timestamp>.jsonl`: machine-readable summary records.
+- `HAL_CONFORMANCE_REMOTE_LINUX_<timestamp>.md|jsonl`: copied remote Linux conformance artifacts for host-verification evidence.
 
 Current JSONL summary fields include:
 - `profile`
@@ -40,3 +41,6 @@ Phase-2 formalization artifact:
 
 Phase-3 formalization artifact:
 - `HAL_PHASE3_ADAPTER_REFINEMENT_2026-03-02.md`
+
+Remote host verification record:
+- `HAL_REMOTE_LINUX_VERIFICATION_2026-03-02.md`
