@@ -186,6 +186,7 @@ pub struct BoundModule {
     pub option_explicit: bool,
     pub compare_mode: BoundCompareMode,
     pub default_type_table: [BoundType; 26],
+    pub resolution_diagnostics: Vec<String>,
     pub declarations: Vec<String>,
     pub declaration_types: HashMap<String, BoundType>,
     pub array_descriptors: HashMap<String, BoundArrayDescriptor>,
@@ -228,6 +229,8 @@ pub struct BoundParam {
 pub struct BoundExternalDecl {
     pub library: String,
     pub alias: String,
+    pub ptr_safe: bool,
+    pub ordinal_alias: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -255,7 +258,7 @@ pub fn resolve_symbols(source: &str) -> BoundModule {
     let module_constants = collect_module_constants(&lines);
     let property_write_routes = collect_property_write_routes(&lines);
     let property_read_routes = collect_property_read_routes(&lines);
-    let (declared_externals, external_declarations) =
+    let (declared_externals, external_declarations, external_decl_diagnostics) =
         collect_declared_external_procedures(&lines, &default_type_table);
 
     let has_explicit_procs = lines
@@ -351,6 +354,7 @@ pub fn resolve_symbols(source: &str) -> BoundModule {
         option_explicit,
         compare_mode,
         default_type_table,
+        resolution_diagnostics: external_decl_diagnostics,
         declarations: entry.declarations.clone(),
         declaration_types: entry.declaration_types.clone(),
         array_descriptors: entry.array_descriptors.clone(),
@@ -1250,12 +1254,22 @@ fn collect_property_read_routes(lines: &[String]) -> HashMap<String, String> {
 fn collect_declared_external_procedures(
     lines: &[String],
     default_type_table: &[BoundType; 26],
-) -> (Vec<BoundProcedure>, HashMap<String, BoundExternalDecl>) {
+) -> (
+    Vec<BoundProcedure>,
+    HashMap<String, BoundExternalDecl>,
+    Vec<String>,
+) {
     let mut procedures = Vec::new();
     let mut externals = HashMap::new();
+    let mut diagnostics = Vec::new();
     for line in lines {
-        let Some(declare) = parse_declare_signature_line(line, default_type_table) else {
-            continue;
+        let declare = match parse_declare_signature_line(line, default_type_table) {
+            Ok(Some(declare)) => declare,
+            Ok(None) => continue,
+            Err(diagnostic) => {
+                diagnostics.push(format!("{diagnostic}: `{}`", line.trim()));
+                continue;
+            }
         };
         let name = declare.name.clone();
         let params = declare.params.clone();
@@ -1285,10 +1299,12 @@ fn collect_declared_external_procedures(
             BoundExternalDecl {
                 library: declare.library,
                 alias: declare.alias,
+                ptr_safe: declare.ptr_safe,
+                ordinal_alias: declare.ordinal_alias,
             },
         );
     }
-    (procedures, externals)
+    (procedures, externals, diagnostics)
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1298,21 +1314,40 @@ struct ParsedDeclareSignature {
     return_type: BoundType,
     library: String,
     alias: String,
+    ptr_safe: bool,
+    ordinal_alias: bool,
 }
 
 fn parse_declare_signature_line(
     line: &str,
     default_type_table: &[BoundType; 26],
-) -> Option<ParsedDeclareSignature> {
+) -> Result<Option<ParsedDeclareSignature>, String> {
     let trimmed = line.trim();
-    let rest = strip_keyword_prefix_ci(trimmed, "declare")?;
+    let Some(rest) = strip_keyword_prefix_ci(trimmed, "declare") else {
+        return Ok(None);
+    };
+    let rest = rest.trim();
+    let rest_lower = rest.to_ascii_lowercase();
+    let (ptr_safe, rest) = if rest_lower.starts_with("ptrsafe ") {
+        (true, rest[7..].trim())
+    } else {
+        (false, rest)
+    };
+    if !ptr_safe {
+        return Err(
+            "external procedure declaration rejected: PtrSafe keyword is required".to_string(),
+        );
+    }
+
     let lower = rest.to_ascii_lowercase();
     let (kind, tail) = if lower.starts_with("function ") {
         (ProcKind::Function, rest[9..].trim())
     } else if lower.starts_with("sub ") {
         (ProcKind::Sub, rest[4..].trim())
     } else {
-        return None;
+        return Err(
+            "external procedure declaration rejected: expected `Function` or `Sub`".to_string(),
+        );
     };
 
     let name_token = tail
@@ -1321,19 +1356,27 @@ fn parse_declare_signature_line(
         .unwrap_or_default()
         .trim();
     if name_token.is_empty() {
-        return None;
+        return Err(
+            "external procedure declaration rejected: missing procedure name".to_string(),
+        );
     }
 
-    let open = tail.find('(')?;
-    let close = tail.rfind(')')?;
+    let open = tail.find('(').ok_or_else(|| {
+        "external procedure declaration rejected: missing parameter list".to_string()
+    })?;
+    let close = tail.rfind(')').ok_or_else(|| {
+        "external procedure declaration rejected: missing closing `)`".to_string()
+    })?;
     if close <= open {
-        return None;
+        return Err(
+            "external procedure declaration rejected: malformed parameter list".to_string(),
+        );
     }
 
     let params_text = &tail[open..=close];
     let return_clause = if matches!(kind, ProcKind::Function) {
         let after_params = tail[close + 1..].trim();
-        if let Some((_, rhs)) = split_keyword_ci(after_params, "as") {
+        if let Some(rhs) = strip_keyword_prefix_ci(after_params, "as") {
             format!(" As {}", rhs.trim())
         } else {
             String::new()
@@ -1345,21 +1388,68 @@ fn parse_declare_signature_line(
     let synthetic = match kind {
         ProcKind::Sub => format!("Sub {name_token}{params_text}"),
         ProcKind::Function => format!("Function {name_token}{params_text}{return_clause}"),
-        _ => return None,
+        _ => {
+            return Err("external procedure declaration rejected: invalid declaration kind"
+                .to_string());
+        }
     };
-    let (name, params, return_type) = parse_proc_signature(&synthetic, kind, default_type_table)?;
+    let (name, params, return_type) =
+        parse_proc_signature(&synthetic, kind, default_type_table).ok_or_else(|| {
+            "external procedure declaration rejected: unable to parse signature".to_string()
+        })?;
 
-    let lib = extract_quoted_after_keyword(tail, "lib")?;
-    let alias =
-        extract_quoted_after_keyword(tail, "alias").unwrap_or_else(|| name_token.to_string());
+    if params.iter().any(|param| param.param_array) {
+        return Err(
+            "external procedure declaration rejected: ParamArray is not supported in dynamic-link subset"
+                .to_string(),
+        );
+    }
+    if params.iter().any(|param| param.optional) {
+        return Err(
+            "external procedure declaration rejected: Optional parameters are not supported in dynamic-link subset"
+                .to_string(),
+        );
+    }
+    if params.iter().any(|param| param.by_ref) {
+        return Err(
+            "external procedure declaration rejected: ByRef parameters are not supported in dynamic-link subset"
+                .to_string(),
+        );
+    }
+    if params.len() > 1 {
+        return Err(
+            "external procedure declaration rejected: only one argument is supported in dynamic-link subset"
+                .to_string(),
+        );
+    }
+    if params.iter().any(|param| param.ty != BoundType::Long) {
+        return Err(
+            "external procedure declaration rejected: only `Long` parameter type is supported in dynamic-link subset"
+                .to_string(),
+        );
+    }
+    if matches!(kind, ProcKind::Function) && return_type != BoundType::Long {
+        return Err(
+            "external procedure declaration rejected: only `Long` return type is supported in dynamic-link subset"
+                .to_string(),
+        );
+    }
 
-    Some(ParsedDeclareSignature {
+    let lib = extract_quoted_after_keyword(tail, "lib").ok_or_else(|| {
+        "external procedure declaration rejected: missing `Lib \"...\"` clause".to_string()
+    })?;
+    let alias_raw = extract_quoted_after_keyword(tail, "alias").unwrap_or_else(|| name.clone());
+    let (alias, ordinal_alias) = normalize_external_alias(alias_raw.as_str())?;
+
+    Ok(Some(ParsedDeclareSignature {
         name,
         params,
         return_type,
-        library: lib,
+        library: lib.trim().to_ascii_lowercase(),
         alias,
-    })
+        ptr_safe,
+        ordinal_alias,
+    }))
 }
 
 fn extract_quoted_after_keyword(text: &str, keyword: &str) -> Option<String> {
@@ -1372,6 +1462,31 @@ fn extract_quoted_after_keyword(text: &str, keyword: &str) -> Option<String> {
     let rest = &after[first_quote + 1..];
     let second_quote = rest.find('"')?;
     Some(rest[..second_quote].to_string())
+}
+
+fn normalize_external_alias(alias: &str) -> Result<(String, bool), String> {
+    let alias = alias.trim();
+    if alias.is_empty() {
+        return Err(
+            "external procedure declaration rejected: alias must not be empty".to_string(),
+        );
+    }
+    if let Some(ordinal_digits) = alias.strip_prefix('#') {
+        if ordinal_digits.is_empty() || !ordinal_digits.chars().all(|ch| ch.is_ascii_digit()) {
+            return Err(
+                "external procedure declaration rejected: ordinal alias must be `#` followed by digits"
+                    .to_string(),
+            );
+        }
+        let canonical_digits = ordinal_digits.trim_start_matches('0');
+        let canonical_digits = if canonical_digits.is_empty() {
+            "0"
+        } else {
+            canonical_digits
+        };
+        return Ok((format!("#{canonical_digits}"), true));
+    }
+    Ok((alias.to_ascii_lowercase(), false))
 }
 
 fn collect_udt_definitions(lines: &[String], default_type_table: &[BoundType; 26]) -> UdtDefMap {
@@ -4843,5 +4958,59 @@ mod tests {
             .collect::<Vec<_>>();
         assert!(assign_vars.contains(&"err_description"));
         assert!(assign_vars.contains(&"err_helpcontext"));
+    }
+
+    #[test]
+    fn resolve_declare_alias_is_canonicalized_and_ptrsafe_recorded() {
+        let source = "Declare PtrSafe Function HostPing Lib \"HOST\" Alias \"Ping\" (ByVal x As Long) As Long\nSub Main()\nEnd Sub";
+        let module = resolve_symbols(source);
+        let ext = module
+            .external_declarations
+            .get("hostping")
+            .expect("external declaration should be registered");
+        assert_eq!(ext.library, "host");
+        assert_eq!(ext.alias, "ping");
+        assert!(ext.ptr_safe);
+        assert!(!ext.ordinal_alias);
+        assert!(module.resolution_diagnostics.is_empty());
+    }
+
+    #[test]
+    fn resolve_declare_ordinal_alias_is_normalized() {
+        let source = "Declare PtrSafe Function HostPing Lib \"host\" Alias \"#0007\" (ByVal x As Long) As Long\nSub Main()\nEnd Sub";
+        let module = resolve_symbols(source);
+        let ext = module
+            .external_declarations
+            .get("hostping")
+            .expect("external declaration should be registered");
+        assert_eq!(ext.alias, "#7");
+        assert!(ext.ordinal_alias);
+        assert!(module.resolution_diagnostics.is_empty());
+    }
+
+    #[test]
+    fn resolve_declare_without_ptrsafe_adds_resolution_diagnostic() {
+        let source = "Declare Function HostPing Lib \"host\" Alias \"ping\" (ByVal x As Long) As Long\nSub Main()\nEnd Sub";
+        let module = resolve_symbols(source);
+        assert_eq!(module.external_declarations.len(), 0);
+        assert!(
+            module
+                .resolution_diagnostics
+                .iter()
+                .any(|diag| diag.contains("PtrSafe keyword is required"))
+        );
+    }
+
+    #[test]
+    fn resolve_declare_byref_parameter_adds_resolution_diagnostic() {
+        let source = "Declare PtrSafe Function HostPing Lib \"host\" Alias \"ping\" (ByRef x As Long) As Long\nSub Main()\nEnd Sub";
+        let module = resolve_symbols(source);
+        assert_eq!(module.external_declarations.len(), 0);
+        assert!(
+            module
+                .resolution_diagnostics
+                .iter()
+                .any(|diag| diag.contains("ByRef parameters are not supported"))
+        );
     }
 }

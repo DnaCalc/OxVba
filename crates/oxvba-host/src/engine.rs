@@ -3492,7 +3492,7 @@ mod tests {
         policy.allow_dynamic_link = false;
         engine.set_host_policy(policy);
 
-        let source = "Declare Function HostPing Lib \"host\" Alias \"ping\" (ByVal x As Long) As Long\nSub Main()\nDim y\ny = HostPing(3)\nEnd Sub";
+        let source = "Declare PtrSafe Function HostPing Lib \"host\" Alias \"ping\" (ByVal x As Long) As Long\nSub Main()\nDim y\ny = HostPing(3)\nEnd Sub";
         let err = engine
             .execute_source_with_snapshot_phased(source)
             .expect_err("compile-time mode should fail when declare invoke policy is denied");
@@ -3566,7 +3566,7 @@ mod tests {
         policy.allow_dynamic_link = false;
         engine.set_host_policy(policy);
 
-        let source = "Declare Function HostPing Lib \"host\" Alias \"ping\" (ByVal x As Long) As Long\nSub Main()\nDim y\ny = HostPing(3)\nEnd Sub";
+        let source = "Declare PtrSafe Function HostPing Lib \"host\" Alias \"ping\" (ByVal x As Long) As Long\nSub Main()\nDim y\ny = HostPing(3)\nEnd Sub";
         let err = engine
             .execute_source_with_snapshot_phased(source)
             .expect_err("runtime policy denial should surface for declare invoke");
@@ -3583,11 +3583,59 @@ mod tests {
         let mut engine = Engine::new(HostConfig::default());
         engine.set_host_policy(HostPolicy::interactive_dev());
 
-        let source = "Declare Function HostPing Lib \"host\" Alias \"ping\" (ByVal x As Long) As Long\nSub Main()\nDim y\ny = HostPing(3)\nEnd Sub";
+        let source = "Declare PtrSafe Function HostPing Lib \"host\" Alias \"ping\" (ByVal x As Long) As Long\nSub Main()\nDim y\ny = HostPing(3)\nEnd Sub";
         let out = engine
             .execute_source_with_snapshot(source)
             .expect("host-backed declare invoke should succeed");
         assert_eq!(out, vec![4]);
+    }
+
+    #[test]
+    fn hal_runtime_host_backed_declare_invoke_is_case_insensitive_for_lib_and_alias() {
+        if !cfg!(target_os = "windows") {
+            return;
+        }
+        let mut engine = Engine::new(HostConfig::default());
+        engine.set_host_policy(HostPolicy::interactive_dev());
+
+        let source = "Declare PtrSafe Function HostPing Lib \"HOST\" Alias \"PiNg\" (ByVal x As Long) As Long\nSub Main()\nDim y\ny = HostPing(3)\nEnd Sub";
+        let out = engine
+            .execute_source_with_snapshot(source)
+            .expect("host-backed declare invoke should resolve canonicalized lib/alias");
+        assert_eq!(out, vec![4]);
+    }
+
+    #[test]
+    fn hal_runtime_host_backed_unknown_declare_symbol_surfaces_adapter_fault_shape() {
+        if !cfg!(target_os = "windows") {
+            return;
+        }
+        let mut engine = Engine::new(HostConfig::default());
+        engine.set_host_policy(HostPolicy::interactive_dev());
+
+        let source = "Declare PtrSafe Function HostMissing Lib \"host\" Alias \"missing\" (ByVal x As Long) As Long\nSub Main()\nDim y\ny = HostMissing(3)\nEnd Sub";
+        let err = engine
+            .execute_source_with_snapshot_phased(source)
+            .expect_err("unknown symbol should raise deterministic adapter fault");
+        assert_eq!(err.phase(), DiagnosticPhase::Runtime);
+        assert!(err.message().contains("HAL-E-ADAPTER-FAULT"));
+        assert!(err.message().contains("[invoke_symbol]"));
+    }
+
+    #[test]
+    fn hal_runtime_host_backed_unknown_declare_symbol_routes_expected_err_number() {
+        if !cfg!(target_os = "windows") {
+            return;
+        }
+        let mut engine = Engine::new(HostConfig::default());
+        engine.set_host_policy(HostPolicy::interactive_dev());
+
+        let source = "Declare PtrSafe Function HostMissing Lib \"host\" Alias \"missing\" (ByVal x As Long) As Long\nSub Main()\nDim y\nDim e\nOn Error Resume Next\ny = HostMissing(3)\ne = Err.Number\nEnd Sub";
+        let out = engine
+            .execute_source_with_snapshot(source)
+            .expect("On Error Resume Next should capture adapter fault");
+        assert_eq!(out[0], 0);
+        assert_eq!(out[1], 53_073);
     }
 
     #[test]

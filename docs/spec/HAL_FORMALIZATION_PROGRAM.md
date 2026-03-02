@@ -124,6 +124,7 @@ No clause should remain undocumented in terms of verification mapping.
 - DoEvents conformance draft: `HAL_DOEVENTS_CONFORMANCE_V1.md`
 - COM bridge scope: `HAL_COM_BRIDGE_SCOPE_V1.md`
 - Declare/ABI draft: `HAL_DECLARE_ABI_SPEC_V1.md`
+- Declare/marshal conformance lanes: `HAL_DECLARE_MARSHAL_CONFORMANCE_V1.md`
 - filesystem conformance draft: `HAL_FILESYSTEM_IO_CONFORMANCE_V1.md`
 - wasm class contract draft: `HAL_WASM_RUNTIME_CLASSES_V1.md`
 - time semantics completion draft: `HAL_TIME_SEMANTICS_V1.md`

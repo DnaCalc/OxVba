@@ -15,6 +15,8 @@ pub use bytecode::{Bytecode, Instruction};
 pub enum CompileError {
     #[error("empty source")]
     EmptySource,
+    #[error("resolve error: {0}")]
+    ResolveError(String),
     #[error("type error: {0}")]
     TypeError(String),
 }
@@ -25,6 +27,11 @@ pub fn compile(source: &str) -> Result<Bytecode, CompileError> {
     }
 
     let bound = resolve::resolve_symbols(source);
+    if !bound.resolution_diagnostics.is_empty() {
+        return Err(CompileError::ResolveError(
+            bound.resolution_diagnostics.join("; "),
+        ));
+    }
     let checked = typecheck::check_types(bound).map_err(CompileError::TypeError)?;
     let optimized = if std::env::var("OXVBA_DISABLE_OPT").ok().as_deref() == Some("1") {
         checked
@@ -1287,12 +1294,47 @@ mod tests {
 
     #[test]
     fn compile_declare_function_stub_binding_subset_is_accepted() {
-        let source = "Declare Function HostPing Lib \"host\" Alias \"ping\" (ByVal x As Long) As Long\nSub Main()\nDim y\ny = HostPing(3)\nEnd Sub";
+        let source = "Declare PtrSafe Function HostPing Lib \"host\" Alias \"ping\" (ByVal x As Long) As Long\nSub Main()\nDim y\ny = HostPing(3)\nEnd Sub";
         let out = compile(source).expect("compile should succeed");
         assert!(
             out.instructions
                 .iter()
                 .any(|i| matches!(i, Instruction::IntrinsicInvokeSymbolHost { .. }))
         );
+    }
+
+    #[test]
+    fn compile_declare_without_ptrsafe_is_rejected() {
+        let source = "Declare Function HostPing Lib \"host\" Alias \"ping\" (ByVal x As Long) As Long\nSub Main()\nDim y\ny = HostPing(3)\nEnd Sub";
+        let err = compile(source).expect_err("non-ptrsafe declare should be rejected");
+        assert!(err.to_string().contains("PtrSafe keyword is required"));
+    }
+
+    #[test]
+    fn compile_declare_with_invalid_ordinal_alias_is_rejected() {
+        let source = "Declare PtrSafe Function HostPing Lib \"host\" Alias \"#12a\" (ByVal x As Long) As Long\nSub Main()\nDim y\ny = HostPing(3)\nEnd Sub";
+        let err = compile(source).expect_err("invalid ordinal alias should be rejected");
+        assert!(err.to_string().contains("ordinal alias"));
+    }
+
+    #[test]
+    fn compile_declare_with_multiple_arguments_is_rejected() {
+        let source = "Declare PtrSafe Function HostPing Lib \"host\" Alias \"ping\" (ByVal x As Long, ByVal y As Long) As Long\nSub Main()\nDim z\nz = HostPing(3, 4)\nEnd Sub";
+        let err = compile(source).expect_err("multiple declare args should be rejected");
+        assert!(err.to_string().contains("only one argument is supported"));
+    }
+
+    #[test]
+    fn compile_declare_with_non_long_parameter_is_rejected() {
+        let source = "Declare PtrSafe Function HostPing Lib \"host\" Alias \"ping\" (ByVal x As String) As Long\nSub Main()\nDim y\ny = HostPing(3)\nEnd Sub";
+        let err = compile(source).expect_err("non-Long declare param should be rejected");
+        assert!(err.to_string().contains("only `Long` parameter type"));
+    }
+
+    #[test]
+    fn compile_declare_with_non_long_return_is_rejected() {
+        let source = "Declare PtrSafe Function HostPing Lib \"host\" Alias \"ping\" (ByVal x As Long) As String\nSub Main()\nDim y\ny = HostPing(3)\nEnd Sub";
+        let err = compile(source).expect_err("non-Long declare return should be rejected");
+        assert!(err.to_string().contains("only `Long` return type"));
     }
 }

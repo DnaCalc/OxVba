@@ -26,11 +26,35 @@ Date: 2026-03-02
   - `host!ping!HostPing` -> `arg + 1`
   - `host!double!HostDouble` -> `arg * 2`
 - unresolved symbol token in host-backed lane returns deterministic adapter fault.
+6. Lane-A declaration hardening:
+- `Declare PtrSafe ...` is required in v1 subset.
+- declaration alias is canonicalized deterministically:
+  - symbolic alias is normalized to lowercase,
+  - ordinal alias must be `#` followed by digits and is normalized (for example `#0007` -> `#7`).
+- unsupported declaration shapes are rejected during resolve/compile in current subset:
+  - `ByRef` parameters,
+  - `Optional` and `ParamArray` parameters,
+  - more than one argument.
+- supported ABI value surface in current subset:
+  - one `ByVal ... As Long` argument,
+  - `Function ... As Long` return type.
 
 ## Current Scope Boundary
 
 - This is a deterministic subset suitable for language/runtime integration and conformance scaffolding.
 - Full native ABI loading (`LoadLibrary`/`dlopen` symbol lookup by textual name and rich marshaling) remains future work.
+
+## Relationship To Formal Contract
+
+The formal contract baseline for next expansion is now captured in:
+- [`HAL_DECLARE_ABI_SPEC_V1.md`](HAL_DECLARE_ABI_SPEC_V1.md)
+- [`HAL_DECLARE_MARSHAL_CONFORMANCE_V1.md`](HAL_DECLARE_MARSHAL_CONFORMANCE_V1.md)
+
+This implementation currently satisfies only the subset floor (`HAL-DYN-001`) and does not yet implement:
+- alias/ordinal normalization conformance checks (`HAL-DYN-002`),
+- ptrsafe/declaration-shape policy restrictions (`HAL-DYN-004`, `HAL-DYN-010`),
+- Automation/native marshaling legality checks (`HAL-DYN-005..008`),
+- expanded dynamic-link failure taxonomy checks (`HAL-DYN-009`).
 
 ## Test Evidence
 

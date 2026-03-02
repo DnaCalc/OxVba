@@ -39,6 +39,15 @@ HAL-COM-003,com,implemented-verified,host-tests,windows_declares_com_supported_o
 HAL-TIME-001,time-locale,implemented-verified,conformance,time.timer_ticks
 HAL-TIME-002,time-locale,implemented-verified,conformance,verify_time_host_backed_contract
 HAL-DYN-001,dynlink,implemented-verified,conformance,dynlink.invoke_symbol
+HAL-DYN-002,dynlink,implemented-verified,host-tests,resolve_declare_alias_is_canonicalized_and_ptrsafe_recorded
+HAL-DYN-003,dynlink,implemented-partial,host-tests,hal_runtime_host_backed_declare_invoke_is_case_insensitive_for_lib_and_alias
+HAL-DYN-004,dynlink,implemented-verified,host-tests,compile_declare_without_ptrsafe_is_rejected
+HAL-DYN-005,dynlink,specified-pending,documentation,HAL_DECLARE_MARSHAL_CONFORMANCE_V1.md
+HAL-DYN-006,dynlink,specified-pending,documentation,HAL_DECLARE_MARSHAL_CONFORMANCE_V1.md
+HAL-DYN-007,dynlink,specified-pending,documentation,HAL_DECLARE_MARSHAL_CONFORMANCE_V1.md
+HAL-DYN-008,dynlink,specified-pending,documentation,HAL_DECLARE_MARSHAL_CONFORMANCE_V1.md
+HAL-DYN-009,dynlink,implemented-partial,host-tests,hal_runtime_host_backed_unknown_declare_symbol_surfaces_adapter_fault_shape
+HAL-DYN-010,dynlink,implemented-partial,host-tests,compile_declare_with_multiple_arguments_is_rejected
 HAL-DIAG-001,diagnostics,implemented-verified,conformance,diag.emit
 HAL-NULL-001,null-profile,implemented-verified,host-tests,null_profile_support_set_is_explicit
 HAL-NULL-002,null-profile,implemented-verified,host-tests,null_profile_support_set_is_explicit

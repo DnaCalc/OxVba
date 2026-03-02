@@ -26,5 +26,7 @@ Current draft set:
 - [`HAL_RUNTIME_PROFILE_BOOTSTRAP_IMPLEMENTATION_V2.md`](HAL_RUNTIME_PROFILE_BOOTSTRAP_IMPLEMENTATION_V2.md) (`working-draft`): implemented runtime bootstrap resolver and CLI integration snapshot (`v198..v201`).
 - [`HAL_UI_PLATFORM_IMPLEMENTATION_V2.md`](HAL_UI_PLATFORM_IMPLEMENTATION_V2.md) (`working-draft`): implemented Windows GUI/Linux stdio UI + DoEvents runtime-class behavior snapshot (`v207..v211`).
 - [`HAL_DECLARE_EXECUTION_IMPLEMENTATION_V2.md`](HAL_DECLARE_EXECUTION_IMPLEMENTATION_V2.md) (`working-draft`): implemented Declare metadata/lowering/VM/HAL dynamic-link subset snapshot (`v212..v218`).
+- [`HAL_DECLARE_ABI_SPEC_V1.md`](HAL_DECLARE_ABI_SPEC_V1.md) (`working-draft`): formalized external declaration + marshaling contract with source-anchor mapping and implementation-defined boundaries.
+- [`HAL_DECLARE_MARSHAL_CONFORMANCE_V1.md`](HAL_DECLARE_MARSHAL_CONFORMANCE_V1.md) (`working-draft`): clause-mapped conformance lanes for declaration parsing, runtime gating, marshaling, and deferred oracle checks.
 
 These files intentionally optimize for design velocity and clarity of open decisions rather than immediate lock-in.
