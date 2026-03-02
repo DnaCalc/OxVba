@@ -27,6 +27,10 @@ Define the exact operating envelope guaranteed by HAL v1 so compiler/runtime opt
 - deterministic unsupported behavior for non-supported capabilities.
 - explicitly supported baseline capabilities remain available by descriptor contract.
 
+5. Wasm profile floor:
+- deterministic sandbox behavior for unsupported host integration capabilities (FS/process/COM/dynlink).
+- UI is virtualization-driven; interactive disabled/fail modes return deterministic policy denial in v1.
+
 5. Filesystem model:
 - deterministic in-memory handle state machine (`open/close/seek/eof/lof/free_file`) is always available.
 - host-matching Windows/Linux + non-deterministic policy may use token-mapped temporary host-file backing for mutation paths.
@@ -39,8 +43,8 @@ Define the exact operating envelope guaranteed by HAL v1 so compiler/runtime opt
 | `Windows` | Supported (deterministic projection model) | Real COM bridge is future work (H2 track). Non-COM domains may use host-backed mode under non-deterministic policy. |
 | `Linux` | Unsupported | Deterministic unsupported behavior for COM; non-COM domains may use host-backed mode under non-deterministic policy on Linux host builds. |
 | `MacOs` | Unsupported | Deterministic unsupported behavior. |
-| `Wasm` | Unsupported | Deterministic unsupported behavior. |
-| `Null` | Unsupported | Deterministic unsupported floor profile. |
+| `Wasm` | Unsupported | Dedicated sandbox adapter; unsupported FS/process/com/dynlink, virtualization-driven UI, deterministic time/diag/event floor. |
+| `Null` | Unsupported | Dedicated deterministic unsupported floor profile (`TimeLocale` + diagnostics only). |
 
 ## 4. Verification Envelope
 

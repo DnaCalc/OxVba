@@ -49,12 +49,7 @@ impl StandardHostServices {
     pub(crate) fn new(profile: HalProfileId, policy: HostPolicy) -> Self {
         Self {
             profile,
-            descriptor: HalDescriptor {
-                profile,
-                contract_version: "hal-v1",
-                adapter_version: "0.1.0",
-                capabilities: capability_matrix(profile),
-            },
+            descriptor: descriptor_for_profile(profile),
             policy,
             fs_state: Arc::new(Mutex::new(FileSystemState::default())),
         }
@@ -219,6 +214,15 @@ impl StandardHostServices {
     #[cfg(not(target_os = "windows"))]
     fn spawn_probe_shell_process(&self) -> std::io::Result<std::process::Child> {
         Command::new("sh").arg("-c").arg("true").spawn()
+    }
+}
+
+pub(crate) fn descriptor_for_profile(profile: HalProfileId) -> HalDescriptor {
+    HalDescriptor {
+        profile,
+        contract_version: "hal-v1",
+        adapter_version: "0.1.0",
+        capabilities: capability_matrix(profile),
     }
 }
 

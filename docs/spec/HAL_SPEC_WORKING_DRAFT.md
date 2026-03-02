@@ -51,7 +51,8 @@ Implemented profile adapters:
 - `windows`, `linux`, `macos`, `wasm`, `null`
 
 Current implementation shape:
-- all profiles share a common contract core (`StandardHostServices`) with profile-specific descriptor/capability surfaces;
+- `windows`/`linux`/`macos` use a shared contract core (`StandardHostServices`) with profile-specific descriptor/capability surfaces;
+- `wasm` and `null` are dedicated adapters with explicit deterministic profile floors (no wrapper-only aliasing);
 - in deterministic policy presets, behavior stays deterministic by contract;
 - on host-matching Windows/Linux builds with non-deterministic policy presets (for example `interactive-dev`), selected domains use host-backed behavior paths.
 
@@ -135,6 +136,13 @@ VM propagation:
 - unsupported capabilities must fail with `HAL-E-CAP-UNAVAILABLE`.
 - selected pure deterministic capabilities remain available (`TimeLocale`, `DiagnosticsTelemetry` in current model).
 - no silent no-op behavior for unsupported operations.
+
+## 8.5 Wasm HAL Contract (v1)
+
+`wasm` adapter in v1 is deterministic and sandbox-oriented:
+- unsupported capabilities (`FileSystemIo`, `ProcessEnv`, `ComActivationDispatch`, `DynamicLinking`) fail with `HAL-E-CAP-UNAVAILABLE`;
+- `UiInteraction` requires policy-enabled interaction plus virtualization (`ScriptedResponses`); `Disabled`/`FailOnPrompt` return deterministic policy denial;
+- `EventPump`, `TimeLocale`, and `DiagnosticsTelemetry` remain available with deterministic token semantics.
 
 ## 9. Conformance Execution
 

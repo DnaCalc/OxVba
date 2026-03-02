@@ -1,6 +1,18 @@
 # Implementation Log
 
 ## 2026-03-02
+- Implemented dedicated Null/Wasm HAL adapters (replacing wrapper-only aliases):
+  - `crates/oxvba-hal/src/adapters/null.rs` now provides explicit deterministic Null backend behavior:
+    - host-sensitive domains return `HAL-E-CAP-UNAVAILABLE`,
+    - deterministic floor capabilities `TimeLocale` and diagnostics remain available;
+  - `crates/oxvba-hal/src/adapters/wasm.rs` now provides explicit deterministic WASM sandbox behavior:
+    - unsupported domains (`FileSystemIo`, `ProcessEnv`, `ComActivationDispatch`, `DynamicLinking`) return `HAL-E-CAP-UNAVAILABLE`,
+    - UI requires policy-enabled virtualization path and deterministically denies `Disabled`/`FailOnPrompt` interactive mode in v1;
+  - centralized profile descriptor construction via `descriptor_for_profile` in `standard.rs` to preserve a single capability-matrix source of truth;
+  - added backend-specific adapter tests for Null and WASM behavior in `null.rs` and `wasm.rs`;
+  - refreshed HAL conformance artifacts:
+    - `docs/evidence/hal/HAL_CONFORMANCE_1772435576.md`
+    - `docs/evidence/hal/HAL_CONFORMANCE_1772435576.jsonl`.
 - Added initial host-backed HAL implementation paths for Windows/Linux exploratory mode:
   - `StandardHostServices` now enables host-backed behavior when:
     - policy is non-deterministic (`interactive-dev` class), and
