@@ -22,10 +22,12 @@ Out of scope (explicit exclusions for this ladder):
 ## Authoritative Source Sets
 
 Language source map:
-- `docs/spec/sources/VBA_LANGUAGE_SPEC_SOURCESET.md`
+- `docs/FOUNDATION_SPEC_REFERENCE.md`
+- `../Foundation/reference/runs/20260301-ms-vbal-pass07/outputs/conformance_items.jsonl`
 
 Library source map:
-- `docs/spec/sources/VBA_LIBRARY_SPEC_SOURCESET.md`
+- `docs/FOUNDATION_SPEC_REFERENCE.md`
+- `../Foundation/reference/runs/20260301-ms-vbal-pass07/outputs/conformance_items.jsonl`
 
 Current implementation backlog:
 - `docs/evidence/language/NON_HAL_COMPLETION_BACKLOG_2026-03-01.md`

@@ -10,6 +10,7 @@ Status legend:
 Primary evidence sources:
 - Language coverage index: `docs/evidence/language/COVERAGE_INDEX.csv`
 - Intrinsic surface index: `docs/evidence/runtime/INTRINSIC_SURFACE.csv`
+- Module/project requirements: `docs/evidence/language/MS_VBAL_MODULE_PROJECT_REQUIREMENTS.csv`
 - Conformance corpus: `conformance/tests/`
 
 ## Language Feature Checklist
@@ -81,3 +82,4 @@ Use this checklist to drive profile/workset decomposition:
 2. Promote to `partial` when parser/binder/typecheck scaffolding exists.
 3. Promote to `implemented` only with executable conformance evidence.
 4. For semantically uncertain items, add/track oracle probes in `docs/evidence/conformance/CONFORMANCE_CHECK_TOPICS.csv`.
+5. For full MS-VBAL closure, drive module/project backlog via `MS_VBAL_MODULE_PROJECT_REQUIREMENTS.csv`.
