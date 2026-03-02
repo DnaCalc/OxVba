@@ -10,6 +10,50 @@ pub enum HalProfileId {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum HalRuntimeClass {
+    HostNative,
+    WindowsGui,
+    WindowsHeadless,
+    LinuxStdio,
+    LinuxHeadless,
+    MacOsGui,
+    MacOsHeadless,
+    WasmWasiLocal,
+    WasmBrowserSandbox,
+    NullFloor,
+}
+
+impl HalRuntimeClass {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::HostNative => "host-native",
+            Self::WindowsGui => "windows-gui",
+            Self::WindowsHeadless => "windows-headless",
+            Self::LinuxStdio => "linux-stdio",
+            Self::LinuxHeadless => "linux-headless",
+            Self::MacOsGui => "macos-gui",
+            Self::MacOsHeadless => "macos-headless",
+            Self::WasmWasiLocal => "wasi-local",
+            Self::WasmBrowserSandbox => "browser-sandbox",
+            Self::NullFloor => "null-floor",
+        }
+    }
+
+    pub const fn default_for(profile: HalProfileId, wasm_runtime_class: WasmRuntimeClass) -> Self {
+        match profile {
+            HalProfileId::Windows => Self::HostNative,
+            HalProfileId::Linux => Self::HostNative,
+            HalProfileId::MacOs => Self::HostNative,
+            HalProfileId::Wasm => match wasm_runtime_class {
+                WasmRuntimeClass::Wasi => Self::WasmWasiLocal,
+                WasmRuntimeClass::BrowserSandbox => Self::WasmBrowserSandbox,
+            },
+            HalProfileId::Null => Self::NullFloor,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum CapabilityId {
     UiInteraction,
     EventPump,
@@ -105,6 +149,7 @@ impl HostPolicyPreset {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct HostPolicy {
+    pub runtime_class: Option<HalRuntimeClass>,
     pub allow_interaction: bool,
     pub allow_process_spawn: bool,
     pub allow_filesystem_mutation: bool,
@@ -120,6 +165,7 @@ impl HostPolicy {
     pub fn for_preset(preset: HostPolicyPreset) -> Self {
         match preset {
             HostPolicyPreset::StrictCi => Self {
+                runtime_class: None,
                 allow_interaction: false,
                 allow_process_spawn: false,
                 allow_filesystem_mutation: false,
@@ -131,6 +177,7 @@ impl HostPolicy {
                 wasm_runtime_class: WasmRuntimeClass::Wasi,
             },
             HostPolicyPreset::DeterministicRuntime => Self {
+                runtime_class: None,
                 allow_interaction: false,
                 allow_process_spawn: true,
                 allow_filesystem_mutation: false,
@@ -146,6 +193,7 @@ impl HostPolicy {
                 ..Self::for_preset(HostPolicyPreset::DeterministicRuntime)
             },
             HostPolicyPreset::InteractiveDev => Self {
+                runtime_class: None,
                 allow_interaction: true,
                 allow_process_spawn: true,
                 allow_filesystem_mutation: true,
@@ -161,6 +209,11 @@ impl HostPolicy {
 
     pub fn with_wasm_runtime_class(mut self, runtime_class: WasmRuntimeClass) -> Self {
         self.wasm_runtime_class = runtime_class;
+        self
+    }
+
+    pub fn with_runtime_class(mut self, runtime_class: HalRuntimeClass) -> Self {
+        self.runtime_class = Some(runtime_class);
         self
     }
 

@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use crate::{
     adapters::standard::StandardHostServices,
-    model::{HalDescriptor, HalProfileId, HostPolicy},
+    model::{HalDescriptor, HalProfileId, HalRuntimeClass, HostPolicy},
     traits::{
         ComHal, DiagnosticsHal, DynamicLinkHal, EventPumpHal, FileSystemHal, HostServices,
         ProcessEnvHal, TimeLocaleHal, UiInteractionHal,
@@ -21,8 +21,25 @@ impl WindowsHostServices {
         }
     }
 
+    pub fn new_with_runtime_class(policy: HostPolicy, runtime_class: HalRuntimeClass) -> Self {
+        Self {
+            inner: StandardHostServices::new_with_runtime_class(
+                HalProfileId::Windows,
+                runtime_class,
+                policy,
+            ),
+        }
+    }
+
     pub fn boxed(policy: HostPolicy) -> Arc<dyn HostServices> {
         Arc::new(Self::new(policy))
+    }
+
+    pub fn boxed_with_runtime_class(
+        policy: HostPolicy,
+        runtime_class: HalRuntimeClass,
+    ) -> Arc<dyn HostServices> {
+        Arc::new(Self::new_with_runtime_class(policy, runtime_class))
     }
 }
 

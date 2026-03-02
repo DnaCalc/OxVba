@@ -5,7 +5,7 @@ use crate::{
     error::{HalError, HalResult},
     model::CapabilityId,
     model::UiVirtualizationMode,
-    model::{HalDescriptor, HalProfileId, HostPolicy},
+    model::{HalDescriptor, HalProfileId, HalRuntimeClass, HostPolicy},
     traits::{
         ComHal, DiagnosticsHal, DynamicLinkHal, EventPumpHal, FileSystemHal, HostServices,
         ProcessEnvHal, TimeLocaleHal, UiInteractionHal,
@@ -20,8 +20,12 @@ pub struct WasmHostServices {
 
 impl WasmHostServices {
     pub fn new(policy: HostPolicy) -> Self {
+        let runtime_class = policy.runtime_class.unwrap_or(HalRuntimeClass::default_for(
+            HalProfileId::Wasm,
+            policy.wasm_runtime_class,
+        ));
         Self {
-            descriptor: descriptor_for_profile(HalProfileId::Wasm, &policy),
+            descriptor: descriptor_for_profile(HalProfileId::Wasm, runtime_class, &policy),
             policy,
         }
     }

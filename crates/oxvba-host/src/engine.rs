@@ -12,6 +12,8 @@ use oxvba_hal::{
 use oxvba_jit::JitEngine;
 use oxvba_vm::execute_and_snapshot_with_host;
 
+use crate::runner::RuntimeProfileId;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DiagnosticPhase {
     CompileTime,
@@ -70,6 +72,7 @@ pub struct Engine {
     config: HostConfig,
     jit: JitEngine,
     root_objects: HashMap<String, String>,
+    runtime_profile: RuntimeProfileId,
     host_services: Arc<dyn HostServices>,
 }
 
@@ -81,20 +84,46 @@ impl Default for Engine {
 
 impl Engine {
     pub fn new(config: HostConfig) -> Self {
+        let runtime_profile = RuntimeProfileId::WindowsHeadless;
+        let mut policy = HostPolicy::deterministic_runtime();
+        policy.runtime_class = Some(runtime_profile.runtime_class());
         Self {
             config,
             jit: JitEngine,
             root_objects: HashMap::new(),
-            host_services: adapters::for_profile(
-                HalProfileId::Windows,
-                HostPolicy::deterministic_runtime(),
+            runtime_profile,
+            host_services: adapters::for_profile_with_runtime_class(
+                runtime_profile.hal_profile(),
+                runtime_profile.runtime_class(),
+                policy,
             ),
         }
     }
 
     pub fn set_hal_profile(&mut self, profile: HalProfileId) {
         let policy = self.host_services.policy().clone();
-        self.host_services = adapters::for_profile(profile, policy);
+        self.runtime_profile = RuntimeProfileId::default_for_hal_profile(profile);
+        let runtime_class = policy
+            .runtime_class
+            .unwrap_or(self.runtime_profile.runtime_class());
+        self.host_services =
+            adapters::for_profile_with_runtime_class(profile, runtime_class, policy);
+    }
+
+    pub fn set_runtime_profile(&mut self, runtime_profile: RuntimeProfileId) {
+        self.runtime_profile = runtime_profile;
+        let mut policy = self.host_services.policy().clone();
+        policy.runtime_class = Some(runtime_profile.runtime_class());
+        self.host_services = adapters::for_profile_with_runtime_class(
+            runtime_profile.hal_profile(),
+            runtime_profile.runtime_class(),
+            policy,
+        );
+    }
+
+    pub fn with_runtime_profile(mut self, runtime_profile: RuntimeProfileId) -> Self {
+        self.set_runtime_profile(runtime_profile);
+        self
     }
 
     pub fn with_hal_profile(mut self, profile: HalProfileId) -> Self {
@@ -104,7 +133,11 @@ impl Engine {
 
     pub fn set_host_policy(&mut self, policy: HostPolicy) {
         let profile = self.host_services.profile();
-        self.host_services = adapters::for_profile(profile, policy);
+        let runtime_class = policy
+            .runtime_class
+            .unwrap_or(self.runtime_profile.runtime_class());
+        self.host_services =
+            adapters::for_profile_with_runtime_class(profile, runtime_class, policy);
     }
 
     pub fn set_host_policy_preset(&mut self, preset: HostPolicyPreset) {
@@ -119,6 +152,10 @@ impl Engine {
 
     pub fn host_policy(&self) -> &HostPolicy {
         self.host_services.policy()
+    }
+
+    pub fn runtime_profile(&self) -> RuntimeProfileId {
+        self.runtime_profile
     }
 
     pub fn hal_descriptor(&self) -> HalDescriptor {
@@ -201,9 +238,8 @@ impl Engine {
                 | Instruction::IntrinsicInputBoxHost { .. }
                     if !policy.allow_interaction =>
                 {
-                    let key = format!(
-                        "{intrinsic_name}: blocked by host policy allow_interaction=false"
-                    );
+                    let key =
+                        format!("{intrinsic_name}: blocked by host policy allow_interaction=false");
                     if seen.insert(key.clone()) {
                         issues.push(key);
                     }
@@ -214,6 +250,14 @@ impl Engine {
                 {
                     let key = format!(
                         "{intrinsic_name}: blocked by host policy allow_com_activation=false"
+                    );
+                    if seen.insert(key.clone()) {
+                        issues.push(key);
+                    }
+                }
+                Instruction::IntrinsicInvokeSymbolHost { .. } if !policy.allow_dynamic_link => {
+                    let key = format!(
+                        "{intrinsic_name}: blocked by host policy allow_dynamic_link=false"
                     );
                     if seen.insert(key.clone()) {
                         issues.push(key);
@@ -254,6 +298,9 @@ fn hal_requirement(instruction: &Instruction) -> Option<(&'static str, Capabilit
         }
         Instruction::IntrinsicDispatchInvokeHost { .. } => {
             Some(("DispatchInvoke", CapabilityId::ComActivationDispatch))
+        }
+        Instruction::IntrinsicInvokeSymbolHost { .. } => {
+            Some(("DeclareInvoke", CapabilityId::DynamicLinking))
         }
         _ => None,
     }
@@ -3439,6 +3486,21 @@ mod tests {
     }
 
     #[test]
+    fn hal_compile_time_mode_rejects_policy_denied_declare_invoke() {
+        let mut engine = Engine::new(HostConfig::default());
+        let mut policy = HostPolicy::deterministic_compile_time();
+        policy.allow_dynamic_link = false;
+        engine.set_host_policy(policy);
+
+        let source = "Declare Function HostPing Lib \"host\" Alias \"ping\" (ByVal x As Long) As Long\nSub Main()\nDim y\ny = HostPing(3)\nEnd Sub";
+        let err = engine
+            .execute_source_with_snapshot_phased(source)
+            .expect_err("compile-time mode should fail when declare invoke policy is denied");
+        assert_eq!(err.phase(), DiagnosticPhase::CompileTime);
+        assert!(err.message().contains("allow_dynamic_link=false"));
+    }
+
+    #[test]
     fn hal_runtime_mode_routes_host_error_through_on_error_resume_next() {
         let mut engine = Engine::new(HostConfig::default()).with_hal_profile(HalProfileId::Linux);
         engine.set_unsupported_feature_mode(UnsupportedFeatureMode::Runtime);
@@ -3495,6 +3557,37 @@ mod tests {
         assert_eq!(err.phase(), DiagnosticPhase::Runtime);
         assert!(err.message().contains("HAL-E-POLICY-DENIED"));
         assert!(err.message().contains("[msg_box]"));
+    }
+
+    #[test]
+    fn hal_runtime_policy_denied_declare_invoke_surfaces_stable_error_shape() {
+        let mut engine = Engine::new(HostConfig::default());
+        let mut policy = HostPolicy::deterministic_runtime();
+        policy.allow_dynamic_link = false;
+        engine.set_host_policy(policy);
+
+        let source = "Declare Function HostPing Lib \"host\" Alias \"ping\" (ByVal x As Long) As Long\nSub Main()\nDim y\ny = HostPing(3)\nEnd Sub";
+        let err = engine
+            .execute_source_with_snapshot_phased(source)
+            .expect_err("runtime policy denial should surface for declare invoke");
+        assert_eq!(err.phase(), DiagnosticPhase::Runtime);
+        assert!(err.message().contains("HAL-E-POLICY-DENIED"));
+        assert!(err.message().contains("[invoke_symbol]"));
+    }
+
+    #[test]
+    fn hal_runtime_host_backed_declare_invoke_executes_known_symbol() {
+        if !cfg!(target_os = "windows") {
+            return;
+        }
+        let mut engine = Engine::new(HostConfig::default());
+        engine.set_host_policy(HostPolicy::interactive_dev());
+
+        let source = "Declare Function HostPing Lib \"host\" Alias \"ping\" (ByVal x As Long) As Long\nSub Main()\nDim y\ny = HostPing(3)\nEnd Sub";
+        let out = engine
+            .execute_source_with_snapshot(source)
+            .expect("host-backed declare invoke should succeed");
+        assert_eq!(out, vec![4]);
     }
 
     #[test]

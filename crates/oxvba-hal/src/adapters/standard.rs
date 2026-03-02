@@ -2,7 +2,8 @@ use crate::{
     error::{HalError, HalResult},
     model::{
         CapabilityDescriptor, CapabilityId, CapabilityMaturity, HalDescriptor, HalProfileId,
-        HostPolicy, UiVirtualizationMode, WasmRuntimeClass, host_backed_mode_active,
+        HalRuntimeClass, HostPolicy, UiVirtualizationMode, WasmRuntimeClass,
+        host_backed_mode_active,
     },
     traits::{
         ComHal, DiagnosticsHal, DynamicLinkHal, EventPumpHal, FileSystemHal, ProcessEnvHal,
@@ -17,6 +18,11 @@ use std::{
     sync::{Arc, Mutex},
     thread,
     time::{SystemTime, UNIX_EPOCH},
+};
+
+#[cfg(target_os = "windows")]
+use windows_sys::Win32::UI::WindowsAndMessaging::{
+    DispatchMessageW, MB_OK, MSG, MessageBoxW, PM_REMOVE, PeekMessageW, TranslateMessage,
 };
 
 #[cfg(any(debug_assertions, feature = "hal_contract_checks"))]
@@ -40,6 +46,7 @@ macro_rules! hal_contract_assert {
 #[derive(Debug, Clone)]
 pub(crate) struct StandardHostServices {
     profile: HalProfileId,
+    runtime_class: HalRuntimeClass,
     descriptor: HalDescriptor,
     policy: HostPolicy,
     fs_state: Arc<Mutex<FileSystemState>>,
@@ -47,9 +54,21 @@ pub(crate) struct StandardHostServices {
 
 impl StandardHostServices {
     pub(crate) fn new(profile: HalProfileId, policy: HostPolicy) -> Self {
+        let runtime_class = policy
+            .runtime_class
+            .unwrap_or_else(|| HalRuntimeClass::default_for(profile, policy.wasm_runtime_class));
+        Self::new_with_runtime_class(profile, runtime_class, policy)
+    }
+
+    pub(crate) fn new_with_runtime_class(
+        profile: HalProfileId,
+        runtime_class: HalRuntimeClass,
+        policy: HostPolicy,
+    ) -> Self {
         Self {
             profile,
-            descriptor: descriptor_for_profile(profile, &policy),
+            runtime_class,
+            descriptor: descriptor_for_profile(profile, runtime_class, &policy),
             policy,
             fs_state: Arc::new(Mutex::new(FileSystemState::default())),
         }
@@ -57,6 +76,10 @@ impl StandardHostServices {
 
     pub(crate) fn profile(&self) -> HalProfileId {
         self.profile
+    }
+
+    pub(crate) fn runtime_class(&self) -> HalRuntimeClass {
+        self.runtime_class
     }
 
     pub(crate) fn descriptor(&self) -> HalDescriptor {
@@ -209,19 +232,64 @@ impl StandardHostServices {
     fn spawn_probe_shell_process(&self, _command: i32) -> std::io::Result<std::process::Child> {
         Command::new("sh").arg("-c").arg("true").spawn()
     }
+
+    #[cfg(target_os = "windows")]
+    fn native_windows_msg_box(&self, prompt: i32, style: i32) -> HalResult<i32> {
+        let text = format!("OxVba MsgBox token={prompt}");
+        let title = "OxVba";
+        let text_w: Vec<u16> = text.encode_utf16().chain(std::iter::once(0)).collect();
+        let title_w: Vec<u16> = title.encode_utf16().chain(std::iter::once(0)).collect();
+        let style_flags = if style == 0 { MB_OK } else { style as u32 };
+        let result = unsafe {
+            MessageBoxW(
+                std::ptr::null_mut(),
+                text_w.as_ptr(),
+                title_w.as_ptr(),
+                style_flags,
+            )
+        };
+        if result <= 0 {
+            return Err(HalError::adapter_fault(
+                self.profile,
+                CapabilityId::UiInteraction,
+                "msg_box",
+                "native MessageBoxW returned failure",
+            ));
+        }
+        Ok(result)
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    fn native_windows_msg_box(&self, _prompt: i32, _style: i32) -> HalResult<i32> {
+        Ok(1)
+    }
+
+    #[cfg(target_os = "windows")]
+    fn pump_windows_messages_once(&self) {
+        let mut msg: MSG = unsafe { std::mem::zeroed() };
+        unsafe {
+            while PeekMessageW(&mut msg, std::ptr::null_mut(), 0, 0, PM_REMOVE) != 0 {
+                TranslateMessage(&msg);
+                DispatchMessageW(&msg);
+            }
+        }
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    fn pump_windows_messages_once(&self) {}
 }
 
-pub(crate) fn descriptor_for_profile(profile: HalProfileId, policy: &HostPolicy) -> HalDescriptor {
+pub(crate) fn descriptor_for_profile(
+    profile: HalProfileId,
+    runtime_class: HalRuntimeClass,
+    policy: &HostPolicy,
+) -> HalDescriptor {
     HalDescriptor {
         profile,
-        runtime_class: match profile {
-            HalProfileId::Wasm => policy.wasm_runtime_class.as_str(),
-            HalProfileId::Null => "null-floor",
-            _ => "host-native",
-        },
+        runtime_class: runtime_class.as_str(),
         contract_version: "hal-v1",
         adapter_version: "0.1.0",
-        capabilities: capability_matrix(profile, policy.wasm_runtime_class),
+        capabilities: capability_matrix(profile, runtime_class, policy.wasm_runtime_class),
     }
 }
 
@@ -233,6 +301,21 @@ impl UiInteractionHal for StandardHostServices {
         }
         if !self.policy.allow_interaction {
             return Err(self.denied(capability, "msg_box"));
+        }
+        if self.native_mode_enabled()
+            && self.profile == HalProfileId::Windows
+            && self.runtime_class() == HalRuntimeClass::WindowsGui
+            && self.policy.ui_virtualization == UiVirtualizationMode::Disabled
+        {
+            return self.native_windows_msg_box(prompt, style);
+        }
+        if self.native_mode_enabled()
+            && self.profile == HalProfileId::Linux
+            && self.runtime_class() == HalRuntimeClass::LinuxStdio
+            && self.policy.ui_virtualization == UiVirtualizationMode::Disabled
+        {
+            eprintln!("[oxvba-hal] linux-stdio msg_box token={prompt} style={style}");
+            return Ok(style.max(1));
         }
         let result = match self.policy.ui_virtualization {
             UiVirtualizationMode::FailOnPrompt => Err(self.denied(capability, "msg_box")),
@@ -256,6 +339,14 @@ impl UiInteractionHal for StandardHostServices {
         }
         if !self.policy.allow_interaction {
             return Err(self.denied(capability, "input_box"));
+        }
+        if self.native_mode_enabled()
+            && self.profile == HalProfileId::Linux
+            && self.runtime_class() == HalRuntimeClass::LinuxStdio
+            && self.policy.ui_virtualization == UiVirtualizationMode::Disabled
+        {
+            eprintln!("[oxvba-hal] linux-stdio input_box token={prompt} default={default_value}");
+            return Ok(default_value);
         }
         let result = match self.policy.ui_virtualization {
             UiVirtualizationMode::FailOnPrompt => Err(self.denied(capability, "input_box")),
@@ -294,6 +385,11 @@ impl EventPumpHal for StandardHostServices {
             return Err(self.unsupported(capability, "do_events"));
         }
         if self.native_mode_enabled() {
+            if self.profile == HalProfileId::Windows
+                && self.runtime_class() == HalRuntimeClass::WindowsGui
+            {
+                self.pump_windows_messages_once();
+            }
             thread::yield_now();
         }
         Ok(0)
@@ -342,6 +438,7 @@ impl FileSystemHal for StandardHostServices {
                     .read(true)
                     .write(true)
                     .create(true)
+                    .truncate(false)
                     .open(host_path)
                     .map_err(|err| {
                         HalError::adapter_fault(
@@ -427,6 +524,7 @@ impl FileSystemHal for StandardHostServices {
                         .read(true)
                         .write(true)
                         .create(true)
+                        .truncate(false)
                         .open(host_path)
                         .map_err(|err| {
                             HalError::adapter_fault(
@@ -657,7 +755,7 @@ impl TimeLocaleHal for StandardHostServices {
                 .unwrap_or_default();
             return Ok((now.as_secs() % 86_400) as i32);
         }
-        Ok(1_234_56)
+        Ok(123_456)
     }
 
     fn timer_ticks(&self) -> HalResult<i32> {
@@ -685,6 +783,24 @@ impl DynamicLinkHal for StandardHostServices {
         if !self.policy.allow_dynamic_link {
             return Err(self.denied(capability, "invoke_symbol"));
         }
+        if self.native_mode_enabled()
+            && matches!(self.profile, HalProfileId::Windows | HalProfileId::Linux)
+        {
+            return match symbol {
+                s if s == external_symbol_token("host", "ping", "hostping") => {
+                    Ok(arg.saturating_add(1))
+                }
+                s if s == external_symbol_token("host", "double", "hostdouble") => {
+                    Ok(arg.saturating_mul(2))
+                }
+                _ => Err(HalError::adapter_fault(
+                    self.profile,
+                    capability,
+                    "invoke_symbol",
+                    format!("symbol token {symbol} not resolved in host-backed lane"),
+                )),
+            };
+        }
         Ok(symbol.saturating_add(arg))
     }
 }
@@ -707,6 +823,7 @@ impl DiagnosticsHal for StandardHostServices {
 
 fn capability_matrix(
     profile: HalProfileId,
+    runtime_class: HalRuntimeClass,
     wasm_runtime_class: WasmRuntimeClass,
 ) -> Vec<CapabilityDescriptor> {
     use CapabilityId as C;
@@ -817,8 +934,8 @@ fn capability_matrix(
             push(C::DynamicLinking, true, M::Stub, "MS-VBAL:Declare");
             push(C::DiagnosticsTelemetry, true, M::Stable, "OxVba:HAL");
         }
-        HalProfileId::Wasm => match wasm_runtime_class {
-            WasmRuntimeClass::Wasi => {
+        HalProfileId::Wasm => match runtime_class {
+            HalRuntimeClass::WasmWasiLocal => {
                 push(
                     C::UiInteraction,
                     true,
@@ -838,7 +955,7 @@ fn capability_matrix(
                 push(C::DynamicLinking, false, M::Stable, "MS-VBAL:Declare");
                 push(C::DiagnosticsTelemetry, true, M::Stable, "OxVba:HAL");
             }
-            WasmRuntimeClass::BrowserSandbox => {
+            HalRuntimeClass::WasmBrowserSandbox => {
                 push(
                     C::UiInteraction,
                     false,
@@ -858,6 +975,48 @@ fn capability_matrix(
                 push(C::DynamicLinking, false, M::Stable, "MS-VBAL:Declare");
                 push(C::DiagnosticsTelemetry, true, M::Stable, "OxVba:HAL");
             }
+            _ => match wasm_runtime_class {
+                WasmRuntimeClass::Wasi => {
+                    push(
+                        C::UiInteraction,
+                        true,
+                        M::Experimental,
+                        "CONF-discovered-ms-vbal-250520-f945507e-0337",
+                    );
+                    push(C::EventPump, true, M::Experimental, "MS-VBAL:DoEvents");
+                    push(C::FileSystemIo, false, M::Stable, "MS-VBAL:file-io");
+                    push(C::ProcessEnv, false, M::Stable, "MS-VBAL:Shell");
+                    push(C::ComActivationDispatch, false, M::Stable, "MS-OAUT");
+                    push(
+                        C::TimeLocale,
+                        true,
+                        M::Experimental,
+                        "CONF-discovered-ms-vbal-250520-f945507e-0252",
+                    );
+                    push(C::DynamicLinking, false, M::Stable, "MS-VBAL:Declare");
+                    push(C::DiagnosticsTelemetry, true, M::Stable, "OxVba:HAL");
+                }
+                WasmRuntimeClass::BrowserSandbox => {
+                    push(
+                        C::UiInteraction,
+                        false,
+                        M::Stable,
+                        "MS-VBAL:MsgBox/InputBox",
+                    );
+                    push(C::EventPump, true, M::Experimental, "MS-VBAL:DoEvents");
+                    push(C::FileSystemIo, false, M::Stable, "MS-VBAL:file-io");
+                    push(C::ProcessEnv, false, M::Stable, "MS-VBAL:Shell");
+                    push(C::ComActivationDispatch, false, M::Stable, "MS-OAUT");
+                    push(
+                        C::TimeLocale,
+                        true,
+                        M::Experimental,
+                        "CONF-discovered-ms-vbal-250520-f945507e-0252",
+                    );
+                    push(C::DynamicLinking, false, M::Stable, "MS-VBAL:Declare");
+                    push(C::DiagnosticsTelemetry, true, M::Stable, "OxVba:HAL");
+                }
+            },
         },
         HalProfileId::Null => {
             push(
@@ -910,6 +1069,21 @@ fn pseudo_file_len_from_path_token(path: i32) -> i32 {
 
 fn clamp_u64_to_i32(value: u64) -> i32 {
     value.min(i32::MAX as u64) as i32
+}
+
+fn external_symbol_token(library: &str, alias: &str, name: &str) -> i32 {
+    let mut hash: u32 = 2_166_136_261;
+    for byte in library
+        .bytes()
+        .chain([b'!'])
+        .chain(alias.bytes())
+        .chain([b'!'])
+        .chain(name.bytes())
+    {
+        hash ^= byte as u32;
+        hash = hash.wrapping_mul(16_777_619);
+    }
+    (hash & 0x7fff_ffff).max(1) as i32
 }
 
 #[cfg(test)]

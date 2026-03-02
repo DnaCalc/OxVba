@@ -847,6 +847,16 @@ impl Vm {
                         Err(err) => pc = self.route_host_error(pc, err)?,
                     }
                 }
+                Instruction::IntrinsicInvokeSymbolHost { dst, symbol, arg } => {
+                    let arg = self.read_slot(*arg)?;
+                    match self.host_services.dynlink().invoke_symbol(*symbol, arg) {
+                        Ok(value) => {
+                            self.write_slot(*dst, value)?;
+                            pc += 1;
+                        }
+                        Err(err) => pc = self.route_host_error(pc, err)?,
+                    }
+                }
                 Instruction::CmpEqSlots { dst, lhs, rhs } => {
                     if typed_fastpaths && self.fast_cmp_slots(*dst, *lhs, *rhs, |l, r| l == r) {
                         pc += 1;
@@ -2064,6 +2074,34 @@ mod tests {
         let out = vm.snapshot_slots(5);
         assert_eq!(out[1], 5004);
         assert_eq!(out[4], 25_013);
+    }
+
+    #[test]
+    fn declare_invoke_routes_through_dynlink_host_service() {
+        let bytecode = Bytecode {
+            instructions: vec![
+                Instruction::LoadConstI32 { slot: 0, value: 3 },
+                Instruction::IntrinsicInvokeSymbolHost {
+                    dst: 1,
+                    symbol: 1_234,
+                    arg: 0,
+                },
+                Instruction::Halt,
+            ],
+            slot_count: 2,
+            user_slot_count: 2,
+        };
+
+        let mut vm = Vm::new(oxvba_hal::adapters::for_profile(
+            oxvba_hal::model::HalProfileId::Windows,
+            oxvba_hal::model::HostPolicy {
+                allow_dynamic_link: true,
+                ..oxvba_hal::model::HostPolicy::deterministic_runtime()
+            },
+        ));
+        vm.execute(&bytecode).expect("vm should execute bytecode");
+        let out = vm.snapshot_slots(2);
+        assert_eq!(out[1], 1_237);
     }
 
     #[test]

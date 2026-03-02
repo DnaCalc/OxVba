@@ -13,5 +13,8 @@ hal_contract_checks = []
 [dependencies]
 thiserror.workspace = true
 
+[target.'cfg(target_os = "windows")'.dependencies]
+windows-sys = { version = "0.59", features = ["Win32_UI_WindowsAndMessaging"] }
+
 [dev-dependencies]
 proptest.workspace = true

@@ -5,7 +5,7 @@
 | Document | Location | Description |
 |---|---|---|
 | **MACH-1000 Plan** | [`MACH1000_PLAN.md`](../MACH1000_PLAN.md) | The definitive OxVba project plan. Charter, architecture, formal approach, testing strategy, implementation sequencing. |
-| **AutoRun State** | [`AUTORUN_STATE.md`](AUTORUN_STATE.md) | Active execution guardrail for continuous runs. Current target is non-HAL completion/hardening ladders through terminal gate `v186`; blocker handling follows `CURRENT_BLOCKERS.md`. |
+| **AutoRun State** | [`AUTORUN_STATE.md`](AUTORUN_STATE.md) | Active execution guardrail for continuous runs. Current target has completed host-platform expansion ladder through terminal gate `v226`; blocker handling follows `CURRENT_BLOCKERS.md`. |
 | **Local Execution Doctrine** | [`LOCAL_EXECUTION_DOCTRINE.md`](LOCAL_EXECUTION_DOCTRINE.md) | Local process hardening rules learned from ladder execution, including scaffold integrity gates and required local checks. |
 | Implementation Log | [`IMPLEMENTATION_LOG.md`](IMPLEMENTATION_LOG.md) | Rolling execution log for implementation progress. |
 | Building | [`BUILDING.md`](BUILDING.md) | Build and local verification instructions. |
@@ -31,7 +31,11 @@
 | HAL Policy Presets | [`spec/HAL_POLICY_PRESETS.md`](spec/HAL_POLICY_PRESETS.md) | Explicit policy preset table for reproducible host behavior across CI/runtime/dev lanes. |
 | HAL Contract Assertion Hardening | [`spec/HAL_CONTRACT_ASSERTION_HARDENING.md`](spec/HAL_CONTRACT_ASSERTION_HARDENING.md) | Build-gated debug/checked pre-post assertion scaffold and staged hardening plan for in-code contract enforcement. |
 | HAL Operating Envelope v1 | [`spec/HAL_OPERATING_ENVELOPE_V1.md`](spec/HAL_OPERATING_ENVELOPE_V1.md) | Explicit HAL boundary guarantees/non-guarantees for safe runtime/compiler optimization assumptions. |
+| HAL Runtime Bootstrap Impl v2 | [`spec/HAL_RUNTIME_PROFILE_BOOTSTRAP_IMPLEMENTATION_V2.md`](spec/HAL_RUNTIME_PROFILE_BOOTSTRAP_IMPLEMENTATION_V2.md) | Implemented runtime profile bootstrap resolver (`CLI > ENV > config > defaults`) and CLI surface snapshot. |
+| HAL UI Platform Impl v2 | [`spec/HAL_UI_PLATFORM_IMPLEMENTATION_V2.md`](spec/HAL_UI_PLATFORM_IMPLEMENTATION_V2.md) | Implemented Windows GUI and Linux stdio interaction lanes with runtime-class-aware `DoEvents` behavior. |
+| HAL Declare Execution Impl v2 | [`spec/HAL_DECLARE_EXECUTION_IMPLEMENTATION_V2.md`](spec/HAL_DECLARE_EXECUTION_IMPLEMENTATION_V2.md) | Implemented `Declare` metadata/lowering/VM/HAL dynamic-link execution subset and error model. |
 | HAL Evidence Artifacts | [`evidence/hal/README.md`](evidence/hal/README.md) | Generated HAL conformance result bundles (`md` + `jsonl`) and lane semantics. |
+| HAL Block B-D Summary | [`evidence/hal/HAL_BLOCK_BCD_IMPLEMENTATION_2026-03-02.md`](evidence/hal/HAL_BLOCK_BCD_IMPLEMENTATION_2026-03-02.md) | Consolidated implementation + verification summary for host-platform expansion blocks `v197..v226`. |
 | HAL Phase-1 Baseline Audit | [`evidence/hal/HAL_PHASE1_BASELINE_AUDIT_2026-03-02.md`](evidence/hal/HAL_PHASE1_BASELINE_AUDIT_2026-03-02.md) | Capability/domain audit baseline for HAL formalization phase 1. |
 | HAL Phase-2 Contract Checks | [`evidence/hal/HAL_PHASE2_CONTRACT_CHECKS_2026-03-02.md`](evidence/hal/HAL_PHASE2_CONTRACT_CHECKS_2026-03-02.md) | Clause-mapped executable contract check expansion and verification outcomes for HAL phase 2. |
 | HAL Phase-3 Adapter Refinement | [`evidence/hal/HAL_PHASE3_ADAPTER_REFINEMENT_2026-03-02.md`](evidence/hal/HAL_PHASE3_ADAPTER_REFINEMENT_2026-03-02.md) | Adapter invariant/property hardening and operating-envelope closure evidence for HAL phase 3. |
@@ -163,6 +167,7 @@
 | Profile v184 Status | [`PROFILE_STATUS_V184.md`](profile-status/PROFILE_STATUS_V184.md) | Current gate status contract for `mvp-profile-v184` (terminal stabilization pass). |
 | Profile v185 Status | [`PROFILE_STATUS_V185.md`](profile-status/PROFILE_STATUS_V185.md) | Current gate status contract for `mvp-profile-v185` (release-candidate integrated gate). |
 | Profile v186 Status | [`PROFILE_STATUS_V186.md`](profile-status/PROFILE_STATUS_V186.md) | Current gate status contract for `mvp-profile-v186` (batch-2 terminal closure). |
+| Profile v226 Status | [`PROFILE_STATUS_V226.md`](profile-status/PROFILE_STATUS_V226.md) | Current gate status contract for `mvp-profile-v226` (host-platform expansion terminal closure). |
 | Profile v107 Status | [`PROFILE_STATUS_V107.md`](profile-status/PROFILE_STATUS_V107.md) | Current gate status contract for `mvp-lang-with-member-target-v107`. |
 | Profile v108-v146 Statuses | [`profile-status/`](profile-status/README.md) | AutoRun ladder status records are published through `PROFILE_STATUS_V146.md` for the active full-language/built-ins ladder range. |
 | Phase 12 Status | [`PHASE12_STATUS.md`](PHASE12_STATUS.md) | Declared profile scope and final conformance/stabilization gate artifacts. |
@@ -259,6 +264,7 @@
 | Profile Ladder (v107-v146) | [`worksets/PROFILE_LADDER_2026-02-28_MACH1000_V107_V146_FULL_VBA_LANGUAGE_BUILTINS.md`](worksets/PROFILE_LADDER_2026-02-28_MACH1000_V107_V146_FULL_VBA_LANGUAGE_BUILTINS.md) | Full VBA closure ladder: semantic completion, full built-in expansion, interop hardening, oracle conformance, formal foldback, and terminal integrated gate. |
 | Profile Ladder (v147-v166) | [`worksets/PROFILE_LADDER_2026-03-01_MACH1000_V147_V166_NON_HAL_COMPLETION.md`](worksets/PROFILE_LADDER_2026-03-01_MACH1000_V147_V166_NON_HAL_COMPLETION.md) | Non-HAL language/runtime/library completion ladder with deferred-oracle gate policy. |
 | Profile Ladder (v167-v186) | [`worksets/PROFILE_LADDER_2026-03-01_MACH1000_V167_V186_NON_HAL_HARDENING.md`](worksets/PROFILE_LADDER_2026-03-01_MACH1000_V167_V186_NON_HAL_HARDENING.md) | Follow-on non-HAL hardening/perf/formal ladder after completion gate. |
+| Profile Ladder (v187-v226) | [`worksets/PROFILE_LADDER_2026-03-02_MACH1000_V187_V226_HOST_PLATFORM_EXPANSION.md`](worksets/PROFILE_LADDER_2026-03-02_MACH1000_V187_V226_HOST_PLATFORM_EXPANSION.md) | Host/HAL platform expansion ladder covering runtime profile bootstrap, UI/DoEvents host lanes, Declare dynlink integration, and terminal closure gates. |
 | Work Set Plan (v147) | [`worksets/WORKSET_2026-03-01_NON_HAL_GAP_BASELINE_LOCK_V147.md`](worksets/WORKSET_2026-03-01_NON_HAL_GAP_BASELINE_LOCK_V147.md) | Baseline lock workset for non-HAL gap classification and scope freeze. |
 | Work Set Plan (v148) | [`worksets/WORKSET_2026-03-01_ERR_SURFACE_EXPANSION_V148.md`](worksets/WORKSET_2026-03-01_ERR_SURFACE_EXPANSION_V148.md) | `Err` member-surface expansion subset workset for deterministic non-HAL execution. |
 | Work Set Plan (v149) | [`worksets/WORKSET_2026-03-01_ERR_LIFECYCLE_TRANSITIONS_V149.md`](worksets/WORKSET_2026-03-01_ERR_LIFECYCLE_TRANSITIONS_V149.md) | Deterministic `Err` lifecycle transitions for `Resume*` and procedure-boundary clearing in non-HAL execution. |
@@ -299,6 +305,7 @@
 | Work Set Plan (v184) | [`worksets/WORKSET_2026-03-01_TERMINAL_STABILIZATION_V184.md`](worksets/WORKSET_2026-03-01_TERMINAL_STABILIZATION_V184.md) | Terminal stabilization pass workset. |
 | Work Set Plan (v185) | [`worksets/WORKSET_2026-03-01_RELEASE_CANDIDATE_GATE_V185.md`](worksets/WORKSET_2026-03-01_RELEASE_CANDIDATE_GATE_V185.md) | Release-candidate integrated gate workset. |
 | Work Set Plan (v186) | [`worksets/WORKSET_2026-03-01_BATCH2_CLOSURE_V186.md`](worksets/WORKSET_2026-03-01_BATCH2_CLOSURE_V186.md) | Batch-2 closure and handoff workset. |
+| Work Set Plan (v226) | [`worksets/WORKSET_2026-03-02_TERMINAL_INTEGRATED_CLOSURE_GATE_V226.md`](worksets/WORKSET_2026-03-02_TERMINAL_INTEGRATED_CLOSURE_GATE_V226.md) | Terminal integrated closure gate workset for host-platform expansion ladder `v187..v226`. |
 | Status Tours | [`status-tours/`](status-tours/) | Date-stamped orientation/showcase docs for implemented project state. |
 | Formal | [`FORMAL.md`](FORMAL.md) | Lean/Kani formal scaffold status and structure. |
 | Spec Checklist | [`evidence/SPEC_CHECKLIST.md`](evidence/SPEC_CHECKLIST.md) | Structured language + built-in/library checklist aligned to current evidence and planned gaps. |

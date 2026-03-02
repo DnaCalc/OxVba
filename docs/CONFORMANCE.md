@@ -64,7 +64,7 @@ At MVP stage, conformance compares:
 As runtime semantics mature, this will expand to richer structured outputs (error state and object lifecycle signals).
 
 ## Declared Profile Scope (Current Gate)
-- Profile id: `mvp-profile-v186` (active non-HAL hardening ladder terminal gate)
+- Profile id: `mvp-profile-v226` (active host-platform expansion ladder terminal gate)
 - Platform: Windows x64
 - Backends: `vm`, `jit` (JIT toggle path with VM-equivalent semantics)
 - Required matrix cells:

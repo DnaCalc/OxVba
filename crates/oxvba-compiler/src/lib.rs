@@ -1014,11 +1014,13 @@ mod tests {
     fn compile_freefile_intrinsic_emits_host_instruction() {
         let source = "Sub Main()\nDim a\nDim b\na = FreeFile()\nb = FreeFile(1)\nEnd Sub";
         let out = compile(source).expect("compile should succeed");
-        assert!(
-            out.instructions
-                .iter()
-                .any(|i| matches!(i, Instruction::IntrinsicFreeFileHost { range_selector: None, .. }))
-        );
+        assert!(out.instructions.iter().any(|i| matches!(
+            i,
+            Instruction::IntrinsicFreeFileHost {
+                range_selector: None,
+                ..
+            }
+        )));
         assert!(out.instructions.iter().any(|i| matches!(
             i,
             Instruction::IntrinsicFreeFileHost {
@@ -1290,7 +1292,7 @@ mod tests {
         assert!(
             out.instructions
                 .iter()
-                .any(|i| matches!(i, Instruction::CallProc { .. }))
+                .any(|i| matches!(i, Instruction::IntrinsicInvokeSymbolHost { .. }))
         );
     }
 }

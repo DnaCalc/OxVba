@@ -31,6 +31,12 @@ Block-A expansion companion docs (`v187..v196`):
 - [`HOST_RUNNER_POLICY_BOOTSTRAP_V1.md`](HOST_RUNNER_POLICY_BOOTSTRAP_V1.md)
 - [`HAL_CONFORMANCE_EXPANSION_PLAN_V196.md`](HAL_CONFORMANCE_EXPANSION_PLAN_V196.md)
 
+Block-B/C implementation companion docs (`v197..v220`):
+- [`HAL_RUNTIME_PROFILE_BOOTSTRAP_IMPLEMENTATION_V2.md`](HAL_RUNTIME_PROFILE_BOOTSTRAP_IMPLEMENTATION_V2.md)
+- [`HAL_UI_PLATFORM_IMPLEMENTATION_V2.md`](HAL_UI_PLATFORM_IMPLEMENTATION_V2.md)
+- [`HAL_DECLARE_EXECUTION_IMPLEMENTATION_V2.md`](HAL_DECLARE_EXECUTION_IMPLEMENTATION_V2.md)
+- [`../evidence/hal/HAL_BLOCK_BCD_IMPLEMENTATION_2026-03-02.md`](../evidence/hal/HAL_BLOCK_BCD_IMPLEMENTATION_2026-03-02.md)
+
 ## 2. Normative Source Families
 
 Primary external references are maintained in `../Foundation/reference`:
@@ -57,7 +63,7 @@ Domain subtraits:
 - `DiagnosticsHal`
 
 Adapter factory:
-- `crates/oxvba-hal/src/adapters/mod.rs` (`for_profile`)
+- `crates/oxvba-hal/src/adapters/mod.rs` (`for_profile`, `for_profile_with_runtime_class`)
 
 Implemented profile adapters:
 - `windows`, `linux`, `macos`, `wasm`, `null`
@@ -129,15 +135,17 @@ Host-backed mode availability:
 - other profile/host combinations stay on deterministic fallback paths.
 
 Policy bootstrap/orchestration note:
-- top-level external policy/profile configuration (CLI/env/config) is not yet formalized.
-- current configuration path is programmatic through host API (`Engine::set_host_policy*` / `set_hal_profile`).
-- tracked as `HAL-U-009` in [`../evidence/hal/HAL_UNCERTAINTY_REGISTER.md`](../evidence/hal/HAL_UNCERTAINTY_REGISTER.md).
+- deterministic bootstrap resolution is implemented in host runner (`CLI > ENV > config > defaults`) with deterministic startup fingerprinting.
+- CLI integration is available through `oxvba-cli run` bootstrap flags.
+- remaining governance questions for non-CLI embedding and long-term orchestration are tracked as `HAL-U-009` in [`../evidence/hal/HAL_UNCERTAINTY_REGISTER.md`](../evidence/hal/HAL_UNCERTAINTY_REGISTER.md).
 
 Current host-backed domains (Windows/Linux host-matching mode):
 - `FileSystemHal` (token-mapped temp-dir file backing for mutable open/seek growth),
 - `ProcessEnvHal` (`shell` spawn probe, host env projection, directory enumeration probe),
 - `TimeLocaleHal` (system-time derived tokens),
-- `EventPumpHal` (`thread::yield_now`),
+- `EventPumpHal` (`thread::yield_now`, with non-blocking Windows queue pump in `windows-gui` runtime class),
+- `UiInteractionHal` (`windows-gui` native `MessageBoxW` lane; `linux-stdio` non-blocking prompt/response lane),
+- `DynamicLinkHal` (known-symbol host-backed subset plus deterministic projection fallback),
 - `DiagnosticsHal` (stderr emission side-effect while preserving token contract).
 
 ## 7. Deterministic Error Taxonomy

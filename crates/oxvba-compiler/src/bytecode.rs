@@ -347,6 +347,11 @@ pub enum Instruction {
         member: usize,
         arg: usize,
     },
+    IntrinsicInvokeSymbolHost {
+        dst: usize,
+        symbol: i32,
+        arg: usize,
+    },
     CmpEqSlots {
         dst: usize,
         lhs: usize,

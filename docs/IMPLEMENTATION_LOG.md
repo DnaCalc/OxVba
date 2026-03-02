@@ -1,6 +1,35 @@
 # Implementation Log
 
 ## 2026-03-02
+- Closed host-platform expansion ladder `v187..v226` with doctrine-aligned artifacts and integrated gates:
+  - implemented/runtime-wired profile bootstrap and runtime-class model:
+    - new host runner resolver (`crates/oxvba-host/src/runner.rs`),
+    - deterministic precedence (`CLI > ENV > config > defaults`),
+    - CLI bootstrap surface + fingerprint output (`oxvba-cli run --dump-bootstrap`);
+  - expanded host-backed HAL behavior:
+    - Windows GUI native `MsgBox` lane (`MessageBoxW`),
+    - Linux stdio UI lane with deterministic non-blocking output tokens,
+    - runtime-class-aware `DoEvents` (Windows queue pump + scheduler yield);
+  - completed executable `Declare` subset path:
+    - resolver stores `Lib`/`Alias`,
+    - compiler lowers to `IntrinsicInvokeSymbolHost`,
+    - VM routes through HAL dynamic-link domain,
+    - host policy gates include dynamic-link compile-time/runtime checks;
+  - generated and validated profile scaffold for `v197..v226`:
+    - `docs/worksets/WORKSET_2026-03-02_*_V197..V226.md`,
+    - `docs/profile-status/PROFILE_STATUS_V197..V226.md`,
+    - `docs/evidence/profiles/v197..v226/integrated_gate.md`;
+  - synchronized HAL registers/spec docs for implemented state:
+    - `docs/spec/HAL_SPEC_WORKING_DRAFT.md`,
+    - `docs/evidence/hal/HAL_UNCERTAINTY_REGISTER.md`,
+    - `docs/evidence/hal/HAL_IMPLEMENTATION_DEFINED.md`;
+  - evidence/gate checks:
+    - `./scripts/validate-profile-scaffold.ps1 -FromVersion 197 -ToVersion 226` -> PASS,
+    - `./scripts/check-hal-clause-drift.ps1` -> PASS (`43` IDs),
+    - `./scripts/meta-check.ps1 -Fast` -> PASS,
+    - `./scripts/run-hal-conformance.ps1` -> PASS (`HAL_CONFORMANCE_1772458938.{md,jsonl}`),
+    - `./scripts/run-hal-conformance-wasm32.ps1 -SkipTests` -> PASS (`HAL_CONFORMANCE_1772458937.{md,jsonl}`).
+
 - Completed HAL expansion batch (host-backed lanes + clause promotion + wasm class split + CI automation):
   - conformance runner now emits three lanes: `runtime`, `compile-time`, `interactive-dev`;
   - conformance report now includes explicit host-backed metadata:

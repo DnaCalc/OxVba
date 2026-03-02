@@ -23,5 +23,8 @@ Current draft set:
 - [`HAL_POLICY_PRESETS.md`](HAL_POLICY_PRESETS.md) (`working-draft`): named host-policy preset table (`strict-ci`, deterministic modes, interactive-dev) and intended usage.
 - [`HAL_CONTRACT_ASSERTION_HARDENING.md`](HAL_CONTRACT_ASSERTION_HARDENING.md) (`working-draft`): debug/checked build assertion scaffold and staged hardening path for in-code contract checks.
 - [`HAL_OPERATING_ENVELOPE_V1.md`](HAL_OPERATING_ENVELOPE_V1.md) (`working-draft`): explicit v1 host-boundary guarantees, non-guarantees, and optimization-safe operating constraints.
+- [`HAL_RUNTIME_PROFILE_BOOTSTRAP_IMPLEMENTATION_V2.md`](HAL_RUNTIME_PROFILE_BOOTSTRAP_IMPLEMENTATION_V2.md) (`working-draft`): implemented runtime bootstrap resolver and CLI integration snapshot (`v198..v201`).
+- [`HAL_UI_PLATFORM_IMPLEMENTATION_V2.md`](HAL_UI_PLATFORM_IMPLEMENTATION_V2.md) (`working-draft`): implemented Windows GUI/Linux stdio UI + DoEvents runtime-class behavior snapshot (`v207..v211`).
+- [`HAL_DECLARE_EXECUTION_IMPLEMENTATION_V2.md`](HAL_DECLARE_EXECUTION_IMPLEMENTATION_V2.md) (`working-draft`): implemented Declare metadata/lowering/VM/HAL dynamic-link subset snapshot (`v212..v218`).
 
 These files intentionally optimize for design velocity and clarity of open decisions rather than immediate lock-in.

@@ -15,7 +15,7 @@ Purpose: track unresolved HAL contract questions that can affect compatibility a
 | `HAL-U-006` | Dynamic linking contract | Required ABI safety and symbol resolution guarantees by profile. | Policy-gated deterministic placeholder behavior. | Medium for Declare/interop features. | H2/H3 | Open |
 | `HAL-U-007` | Error mapping granularity | Required mapping from host-layer failures to stable code families and runtime error numbers. | `HAL-E-*` + deterministic VM mapping is sufficient baseline. | Medium for diagnosability stability. | H1 test expansion | Open |
 | `HAL-U-008` | Maturity promotion | Exact objective criteria for `Stub -> Experimental -> Provisional -> Stable`. | Advisory maturity metadata with manual review. | Medium for profile confidence claims. | H1 governance | Open |
-| `HAL-U-009` | Policy bootstrap/orchestration | How host policy/profile should be configured from top-level process/runtime environment (CLI/env/config), and how this is validated/audited. | Current configuration is programmatic (`Engine::set_host_policy*`) with no formal external bootstrap contract yet. | High for reproducibility, CI consistency, and deployment safety posture. | H1/H2 formalization + host-runner design pass | Open |
+| `HAL-U-009` | Policy bootstrap/orchestration | Remaining governance scope for host policy/profile bootstrap (beyond implemented precedence) and long-term embedding contract for non-CLI hosts. | Deterministic bootstrap is implemented via host runner (`CLI > ENV > config > defaults`) with fingerprinting; external-host governance details remain open. | Medium for multi-host embedding consistency. | H2/H3 governance pass | Open |
 
 ## Governance
 

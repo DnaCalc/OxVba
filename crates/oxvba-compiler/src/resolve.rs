@@ -189,6 +189,7 @@ pub struct BoundModule {
     pub declarations: Vec<String>,
     pub declaration_types: HashMap<String, BoundType>,
     pub array_descriptors: HashMap<String, BoundArrayDescriptor>,
+    pub external_declarations: HashMap<String, BoundExternalDecl>,
     pub body: Vec<BoundStmt>,
     pub procedures: Vec<BoundProcedure>,
 }
@@ -223,6 +224,12 @@ pub struct BoundParam {
     pub ty: BoundType,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BoundExternalDecl {
+    pub library: String,
+    pub alias: String,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum ProcKind {
     Sub,
@@ -248,7 +255,8 @@ pub fn resolve_symbols(source: &str) -> BoundModule {
     let module_constants = collect_module_constants(&lines);
     let property_write_routes = collect_property_write_routes(&lines);
     let property_read_routes = collect_property_read_routes(&lines);
-    let declared_externals = collect_declared_external_procedures(&lines, &default_type_table);
+    let (declared_externals, external_declarations) =
+        collect_declared_external_procedures(&lines, &default_type_table);
 
     let has_explicit_procs = lines
         .iter()
@@ -346,6 +354,7 @@ pub fn resolve_symbols(source: &str) -> BoundModule {
         declarations: entry.declarations.clone(),
         declaration_types: entry.declaration_types.clone(),
         array_descriptors: entry.array_descriptors.clone(),
+        external_declarations,
         body: entry.body.clone(),
         procedures,
     }
@@ -1241,14 +1250,16 @@ fn collect_property_read_routes(lines: &[String]) -> HashMap<String, String> {
 fn collect_declared_external_procedures(
     lines: &[String],
     default_type_table: &[BoundType; 26],
-) -> Vec<BoundProcedure> {
+) -> (Vec<BoundProcedure>, HashMap<String, BoundExternalDecl>) {
     let mut procedures = Vec::new();
+    let mut externals = HashMap::new();
     for line in lines {
-        let Some((name, params, return_type)) =
-            parse_declare_signature_line(line, default_type_table)
-        else {
+        let Some(declare) = parse_declare_signature_line(line, default_type_table) else {
             continue;
         };
+        let name = declare.name.clone();
+        let params = declare.params.clone();
+        let return_type = declare.return_type;
         let mut declarations: Vec<String> = params.iter().map(|p| p.name.clone()).collect();
         let mut declaration_types: HashMap<String, BoundType> =
             params.iter().map(|p| (p.name.clone(), p.ty)).collect();
@@ -1269,14 +1280,30 @@ fn collect_declared_external_procedures(
             duplicate_declarations: Vec::new(),
             body: Vec::new(),
         });
+        externals.insert(
+            declare.name.to_ascii_lowercase(),
+            BoundExternalDecl {
+                library: declare.library,
+                alias: declare.alias,
+            },
+        );
     }
-    procedures
+    (procedures, externals)
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct ParsedDeclareSignature {
+    name: String,
+    params: Vec<BoundParam>,
+    return_type: BoundType,
+    library: String,
+    alias: String,
 }
 
 fn parse_declare_signature_line(
     line: &str,
     default_type_table: &[BoundType; 26],
-) -> Option<(String, Vec<BoundParam>, BoundType)> {
+) -> Option<ParsedDeclareSignature> {
     let trimmed = line.trim();
     let rest = strip_keyword_prefix_ci(trimmed, "declare")?;
     let lower = rest.to_ascii_lowercase();
@@ -1320,7 +1347,31 @@ fn parse_declare_signature_line(
         ProcKind::Function => format!("Function {name_token}{params_text}{return_clause}"),
         _ => return None,
     };
-    parse_proc_signature(&synthetic, kind, default_type_table)
+    let (name, params, return_type) = parse_proc_signature(&synthetic, kind, default_type_table)?;
+
+    let lib = extract_quoted_after_keyword(tail, "lib")?;
+    let alias =
+        extract_quoted_after_keyword(tail, "alias").unwrap_or_else(|| name_token.to_string());
+
+    Some(ParsedDeclareSignature {
+        name,
+        params,
+        return_type,
+        library: lib,
+        alias,
+    })
+}
+
+fn extract_quoted_after_keyword(text: &str, keyword: &str) -> Option<String> {
+    let lower = text.to_ascii_lowercase();
+    let key = keyword.to_ascii_lowercase();
+    let needle = format!("{key} ");
+    let pos = lower.find(&needle)?;
+    let after = &text[pos + needle.len()..];
+    let first_quote = after.find('"')?;
+    let rest = &after[first_quote + 1..];
+    let second_quote = rest.find('"')?;
+    Some(rest[..second_quote].to_string())
 }
 
 fn collect_udt_definitions(lines: &[String], default_type_table: &[BoundType; 26]) -> UdtDefMap {

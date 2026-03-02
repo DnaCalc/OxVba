@@ -4,7 +4,7 @@ use crate::{
     adapters::standard::descriptor_for_profile,
     error::{HalError, HalResult},
     model::CapabilityId,
-    model::{HalDescriptor, HalProfileId, HostPolicy},
+    model::{HalDescriptor, HalProfileId, HalRuntimeClass, HostPolicy},
     traits::{
         ComHal, DiagnosticsHal, DynamicLinkHal, EventPumpHal, FileSystemHal, HostServices,
         ProcessEnvHal, TimeLocaleHal, UiInteractionHal,
@@ -19,8 +19,9 @@ pub struct NullHostServices {
 
 impl NullHostServices {
     pub fn new(policy: HostPolicy) -> Self {
+        let runtime_class = policy.runtime_class.unwrap_or(HalRuntimeClass::NullFloor);
         Self {
-            descriptor: descriptor_for_profile(HalProfileId::Null, &policy),
+            descriptor: descriptor_for_profile(HalProfileId::Null, runtime_class, &policy),
             policy,
         }
     }

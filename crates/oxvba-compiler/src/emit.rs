@@ -8,8 +8,8 @@ use oxvba_runtime::{
 use crate::{
     bytecode::{Bytecode, Instruction, StringCompareMode},
     resolve::{
-        BoundCallArg, BoundCaseClause, BoundCompareMode, BoundCond, BoundExpr, BoundModule,
-        BoundParam, BoundProcedure, BoundStmt, CompareOp,
+        BoundCallArg, BoundCaseClause, BoundCompareMode, BoundCond, BoundExpr, BoundExternalDecl,
+        BoundModule, BoundParam, BoundProcedure, BoundStmt, CompareOp,
     },
 };
 
@@ -70,6 +70,7 @@ pub fn emit_bytecode(module: &BoundModule) -> Bytecode {
     let mut resume_label_patches: Vec<(usize, String)> = Vec::new();
     let mut proc_labels: HashMap<String, usize> = HashMap::new();
     let mut proc_meta: HashMap<String, EmitProcMeta> = HashMap::new();
+    let external_decls = module.external_declarations.clone();
     for (idx, proc) in procedures.iter().enumerate() {
         proc_meta.insert(
             proc.name.clone(),
@@ -109,6 +110,7 @@ pub fn emit_bytecode(module: &BoundModule) -> Bytecode {
         &mut goto_patches,
         &mut resume_label_patches,
         &proc_meta,
+        &external_decls,
         &procedures[entry_idx].name,
         &mut proc_labels,
     );
@@ -139,6 +141,7 @@ pub fn emit_bytecode(module: &BoundModule) -> Bytecode {
             &mut goto_patches,
             &mut resume_label_patches,
             &proc_meta,
+            &external_decls,
             &proc.name,
             &mut proc_labels,
         );
@@ -199,6 +202,7 @@ fn emit_stmt_list(
     goto_patches: &mut Vec<(usize, String)>,
     resume_label_patches: &mut Vec<(usize, String)>,
     proc_meta: &HashMap<String, EmitProcMeta>,
+    external_decls: &HashMap<String, BoundExternalDecl>,
     current_proc_name: &str,
     proc_labels: &mut HashMap<String, usize>,
 ) {
@@ -216,6 +220,7 @@ fn emit_stmt_list(
             goto_patches,
             resume_label_patches,
             proc_meta,
+            external_decls,
             current_proc_name,
             proc_labels,
         );
@@ -236,6 +241,7 @@ fn emit_stmt(
     goto_patches: &mut Vec<(usize, String)>,
     resume_label_patches: &mut Vec<(usize, String)>,
     proc_meta: &HashMap<String, EmitProcMeta>,
+    external_decls: &HashMap<String, BoundExternalDecl>,
     current_proc_name: &str,
     proc_labels: &mut HashMap<String, usize>,
 ) {
@@ -333,6 +339,7 @@ fn emit_stmt(
                 goto_patches,
                 resume_label_patches,
                 proc_meta,
+                external_decls,
                 current_proc_name,
                 proc_labels,
             );
@@ -361,6 +368,7 @@ fn emit_stmt(
                     goto_patches,
                     resume_label_patches,
                     proc_meta,
+                    external_decls,
                     current_proc_name,
                     proc_labels,
                 );
@@ -450,6 +458,7 @@ fn emit_stmt(
                     goto_patches,
                     resume_label_patches,
                     proc_meta,
+                    external_decls,
                     current_proc_name,
                     proc_labels,
                 );
@@ -491,6 +500,7 @@ fn emit_stmt(
                         goto_patches,
                         resume_label_patches,
                         proc_meta,
+                        external_decls,
                         current_proc_name,
                         proc_labels,
                     );
@@ -555,6 +565,7 @@ fn emit_stmt(
                 goto_patches,
                 resume_label_patches,
                 proc_meta,
+                external_decls,
                 current_proc_name,
                 proc_labels,
             );
@@ -694,6 +705,7 @@ fn emit_stmt(
                     goto_patches,
                     resume_label_patches,
                     proc_meta,
+                    external_decls,
                     current_proc_name,
                     proc_labels,
                 );
@@ -719,6 +731,7 @@ fn emit_stmt(
                 goto_patches,
                 resume_label_patches,
                 proc_meta,
+                external_decls,
                 current_proc_name,
                 proc_labels,
             );
@@ -739,6 +752,7 @@ fn emit_stmt(
                 instructions,
                 call_patches,
                 proc_meta,
+                external_decls,
                 None,
             ) {
                 let _ = emit_late_bound_default_member_call(
@@ -763,6 +777,7 @@ fn emit_stmt(
                     instructions,
                     call_patches,
                     proc_meta,
+                    external_decls,
                     Some(target_slot),
                 )
             {
@@ -791,8 +806,22 @@ fn emit_early_call(
     instructions: &mut Vec<Instruction>,
     call_patches: &mut Vec<(usize, String)>,
     proc_meta: &HashMap<String, EmitProcMeta>,
+    external_decls: &HashMap<String, BoundExternalDecl>,
     assign_target: Option<usize>,
 ) -> bool {
+    if let Some(external_decl) = external_decls.get(&name.to_ascii_lowercase()) {
+        return emit_external_declare_call(
+            name,
+            external_decl,
+            args,
+            compare_mode,
+            slot_map,
+            temps,
+            instructions,
+            assign_target,
+        );
+    }
+
     let Some(meta) = proc_meta.get(name) else {
         return false;
     };
@@ -865,6 +894,63 @@ fn emit_early_call(
     }
 
     true
+}
+
+#[allow(clippy::too_many_arguments)]
+fn emit_external_declare_call(
+    name: &str,
+    external_decl: &BoundExternalDecl,
+    args: &[BoundCallArg],
+    compare_mode: StringCompareMode,
+    slot_map: &HashMap<String, usize>,
+    temps: &mut TempSlotAllocator,
+    instructions: &mut Vec<Instruction>,
+    assign_target: Option<usize>,
+) -> bool {
+    let dst = assign_target.unwrap_or_else(|| temps.alloc_temp());
+    let arg_slot = if let Some(first_arg) = args.first() {
+        let slot = temps.alloc_temp();
+        emit_expr_into(
+            &first_arg.expr,
+            compare_mode,
+            slot,
+            slot_map,
+            temps,
+            instructions,
+        );
+        slot
+    } else {
+        let slot = temps.alloc_temp();
+        instructions.push(Instruction::LoadConstI32 { slot, value: 0 });
+        slot
+    };
+
+    let symbol = external_symbol_token(
+        external_decl.library.as_str(),
+        external_decl.alias.as_str(),
+        name,
+    );
+    instructions.push(Instruction::IntrinsicInvokeSymbolHost {
+        dst,
+        symbol,
+        arg: arg_slot,
+    });
+    true
+}
+
+fn external_symbol_token(library: &str, alias: &str, name: &str) -> i32 {
+    let mut hash: u32 = 2_166_136_261;
+    for byte in library
+        .bytes()
+        .chain([b'!'])
+        .chain(alias.bytes())
+        .chain([b'!'])
+        .chain(name.bytes())
+    {
+        hash ^= byte as u32;
+        hash = hash.wrapping_mul(16_777_619);
+    }
+    (hash & 0x7fff_ffff).max(1) as i32
 }
 
 #[allow(clippy::too_many_arguments)]

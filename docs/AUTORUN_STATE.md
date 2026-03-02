@@ -6,22 +6,20 @@ Rule: The end of any cycle means continue immediately into the next cycle; do no
 Recovery rule: an accidental interim status reply is non-blocking and must be treated as a logging mistake, not a stop condition. Resume execution immediately.
 Reply condition: only report back when the active ladder end gate is passed, or when all remaining progress is blocked by documented blockers.
 Active ladders:
-- `v147..v166` (`docs/worksets/PROFILE_LADDER_2026-03-01_MACH1000_V147_V166_NON_HAL_COMPLETION.md`)
-- `v167..v186` (`docs/worksets/PROFILE_LADDER_2026-03-01_MACH1000_V167_V186_NON_HAL_HARDENING.md`)
-Terminal gate: `v186`
+- `v187..v226` (`docs/worksets/PROFILE_LADDER_2026-03-02_MACH1000_V187_V226_HOST_PLATFORM_EXPANSION.md`)
+Terminal gate: `v226`
 
 Current checkpoint:
 - Prior full language+built-ins ladder `v107..v146` reached terminal gate with `PASS`.
 - Non-HAL completion ladder `v147..v166` reached terminal closure gate with `PASS`.
 - Non-HAL hardening ladder `v167..v186` reached terminal gate with `PASS`.
-- Active execution target is complete through `v186` (no remaining in-ladder steps).
-- Latest integrated gate artifact: `docs/evidence/profiles/v186/integrated_gate.md`.
-- Latest matrix artifact: `docs/evidence/profiles/v186/matrix_latest.csv`.
-- Latest profile gate artifact: `docs/evidence/profiles/v186/gate_report.md`.
+- Host-platform expansion ladder `v187..v226` reached terminal gate with `PASS`.
+- Active execution target is complete through `v226` (no remaining in-ladder steps).
+- Latest integrated gate artifact: `docs/evidence/profiles/v226/integrated_gate.md`.
 - Latest formal artifact: `docs/evidence/formal/latest_run.md`.
 - Evidence artifacts are tracked under `docs/evidence/profiles/`, `docs/evidence/formal/`, and `docs/evidence/divergences/`.
 
 Resume protocol:
 1. Read this file.
 2. Run `./scripts/meta-check.ps1 -Fast`.
-3. Start the next ladder/workset only after user approves a new terminal gate beyond `v186`.
+3. Start the next ladder/workset only after user approves a new terminal gate beyond `v226`.

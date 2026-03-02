@@ -1071,8 +1071,6 @@ mod tests {
     fn conformance_report_exposes_host_backed_flags_for_interactive_lane() {
         let profile = if cfg!(target_os = "windows") {
             HalProfileId::Windows
-        } else if cfg!(target_os = "linux") {
-            HalProfileId::Linux
         } else {
             HalProfileId::Linux
         };
