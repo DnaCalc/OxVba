@@ -1195,22 +1195,12 @@ fn emit_expr_into(
                         value: ERROR_TAG_BASE,
                     });
                 }
-                ("date", []) => instructions.push(Instruction::LoadConstI32 {
-                    slot: dst,
-                    value: 20_260_228,
-                }),
-                ("time", []) => instructions.push(Instruction::LoadConstI32 {
-                    slot: dst,
-                    value: 0,
-                }),
-                ("now", []) => instructions.push(Instruction::LoadConstI32 {
-                    slot: dst,
-                    value: 20_260_228,
-                }),
-                ("timer", []) => instructions.push(Instruction::LoadConstI32 {
-                    slot: dst,
-                    value: 0,
-                }),
+                ("date", []) => instructions.push(Instruction::IntrinsicDateNowHost { dst }),
+                ("time", []) => instructions.push(Instruction::IntrinsicTimeNowHost { dst }),
+                // Current register-window value model uses i32 tokens; `Now` currently
+                // projects to date token until composite date-time value lowering lands.
+                ("now", []) => instructions.push(Instruction::IntrinsicNowHost { dst }),
+                ("timer", []) => instructions.push(Instruction::IntrinsicTimerHost { dst }),
                 ("rnd", []) => instructions.push(Instruction::LoadConstI32 {
                     slot: dst,
                     value: 1,
@@ -1219,10 +1209,42 @@ fn emit_expr_into(
                     slot: dst,
                     value: 0,
                 }),
-                ("freefile", []) => instructions.push(Instruction::LoadConstI32 {
-                    slot: dst,
-                    value: 1,
+                ("freefile", []) => instructions.push(Instruction::IntrinsicFreeFileHost {
+                    dst,
+                    range_selector: None,
                 }),
+                ("freefile", [range_selector]) => {
+                    instructions.push(Instruction::IntrinsicFreeFileHost {
+                        dst,
+                        range_selector: Some(*range_selector),
+                    })
+                }
+                ("doevents", []) => instructions.push(Instruction::IntrinsicDoEventsHost { dst }),
+                ("msgbox", [prompt]) => instructions.push(Instruction::IntrinsicMsgBoxHost {
+                    dst,
+                    prompt: *prompt,
+                    style: None,
+                }),
+                ("msgbox", [prompt, style]) => {
+                    instructions.push(Instruction::IntrinsicMsgBoxHost {
+                        dst,
+                        prompt: *prompt,
+                        style: Some(*style),
+                    })
+                }
+                // Current HAL trait takes prompt/default only; this lowering uses arg2 as default.
+                ("inputbox", [prompt]) => instructions.push(Instruction::IntrinsicInputBoxHost {
+                    dst,
+                    prompt: *prompt,
+                    default_value: None,
+                }),
+                ("inputbox", [prompt, default_value]) => {
+                    instructions.push(Instruction::IntrinsicInputBoxHost {
+                        dst,
+                        prompt: *prompt,
+                        default_value: Some(*default_value),
+                    })
+                }
                 ("len", [src]) => {
                     instructions.push(Instruction::IntrinsicLenDigits { dst, src: *src })
                 }

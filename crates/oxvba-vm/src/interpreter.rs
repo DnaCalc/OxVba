@@ -380,6 +380,103 @@ impl Vm {
                     self.write_slot(*dst, Self::date_diff_digits(interval, date1, date2))?;
                     pc += 1;
                 }
+                Instruction::IntrinsicDateNowHost { dst } => {
+                    match self.host_services.time_locale().date_serial_now() {
+                        Ok(value) => {
+                            self.write_slot(*dst, value)?;
+                            pc += 1;
+                        }
+                        Err(err) => pc = self.route_host_error(pc, err)?,
+                    }
+                }
+                Instruction::IntrinsicTimeNowHost { dst } => {
+                    match self.host_services.time_locale().time_serial_now() {
+                        Ok(value) => {
+                            self.write_slot(*dst, value)?;
+                            pc += 1;
+                        }
+                        Err(err) => pc = self.route_host_error(pc, err)?,
+                    }
+                }
+                Instruction::IntrinsicNowHost { dst } => {
+                    // Current token model uses date projection for Now().
+                    match self.host_services.time_locale().date_serial_now() {
+                        Ok(value) => {
+                            self.write_slot(*dst, value)?;
+                            pc += 1;
+                        }
+                        Err(err) => pc = self.route_host_error(pc, err)?,
+                    }
+                }
+                Instruction::IntrinsicTimerHost { dst } => {
+                    match self.host_services.time_locale().timer_ticks() {
+                        Ok(value) => {
+                            self.write_slot(*dst, value)?;
+                            pc += 1;
+                        }
+                        Err(err) => pc = self.route_host_error(pc, err)?,
+                    }
+                }
+                Instruction::IntrinsicFreeFileHost {
+                    dst,
+                    range_selector,
+                } => {
+                    let selector = if let Some(slot) = range_selector {
+                        self.read_slot(*slot)?
+                    } else {
+                        0
+                    };
+                    match self.host_services.fs().free_file(selector) {
+                        Ok(value) => {
+                            self.write_slot(*dst, value)?;
+                            pc += 1;
+                        }
+                        Err(err) => pc = self.route_host_error(pc, err)?,
+                    }
+                }
+                Instruction::IntrinsicMsgBoxHost { dst, prompt, style } => {
+                    let prompt = self.read_slot(*prompt)?;
+                    let style = if let Some(slot) = style {
+                        self.read_slot(*slot)?
+                    } else {
+                        1
+                    };
+                    match self.host_services.ui().msg_box(prompt, style) {
+                        Ok(value) => {
+                            self.write_slot(*dst, value)?;
+                            pc += 1;
+                        }
+                        Err(err) => pc = self.route_host_error(pc, err)?,
+                    }
+                }
+                Instruction::IntrinsicInputBoxHost {
+                    dst,
+                    prompt,
+                    default_value,
+                } => {
+                    let prompt = self.read_slot(*prompt)?;
+                    let default_value = if let Some(slot) = default_value {
+                        self.read_slot(*slot)?
+                    } else {
+                        0
+                    };
+                    match self.host_services.ui().input_box(prompt, default_value) {
+                        Ok(value) => {
+                            self.write_slot(*dst, value)?;
+                            pc += 1;
+                        }
+                        Err(err) => pc = self.route_host_error(pc, err)?,
+                    }
+                }
+                Instruction::IntrinsicDoEventsHost { dst } => {
+                    match self.host_services.events().do_events() {
+                        Ok(value) => {
+                            self.write_slot(*dst, value)?;
+                            pc += 1;
+                        }
+                        Err(err) => pc = self.route_host_error(pc, err)?,
+                    }
+                }
                 Instruction::IntrinsicAbsI32 { dst, src } => {
                     let value = self.read_slot(*src)?;
                     self.write_slot(*dst, value.saturating_abs())?;

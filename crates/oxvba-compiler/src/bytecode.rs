@@ -147,6 +147,35 @@ pub enum Instruction {
         date1: usize,
         date2: usize,
     },
+    IntrinsicDateNowHost {
+        dst: usize,
+    },
+    IntrinsicTimeNowHost {
+        dst: usize,
+    },
+    IntrinsicNowHost {
+        dst: usize,
+    },
+    IntrinsicTimerHost {
+        dst: usize,
+    },
+    IntrinsicFreeFileHost {
+        dst: usize,
+        range_selector: Option<usize>,
+    },
+    IntrinsicMsgBoxHost {
+        dst: usize,
+        prompt: usize,
+        style: Option<usize>,
+    },
+    IntrinsicInputBoxHost {
+        dst: usize,
+        prompt: usize,
+        default_value: Option<usize>,
+    },
+    IntrinsicDoEventsHost {
+        dst: usize,
+    },
     IntrinsicAbsI32 {
         dst: usize,
         src: usize,

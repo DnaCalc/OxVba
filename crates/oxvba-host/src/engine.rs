@@ -197,6 +197,17 @@ impl Engine {
                         issues.push(key);
                     }
                 }
+                Instruction::IntrinsicMsgBoxHost { .. }
+                | Instruction::IntrinsicInputBoxHost { .. }
+                    if !policy.allow_interaction =>
+                {
+                    let key = format!(
+                        "{intrinsic_name}: blocked by host policy allow_interaction=false"
+                    );
+                    if seen.insert(key.clone()) {
+                        issues.push(key);
+                    }
+                }
                 Instruction::IntrinsicCreateObjectHost { .. }
                 | Instruction::IntrinsicDispatchInvokeHost { .. }
                     if !policy.allow_com_activation =>
@@ -228,6 +239,16 @@ fn hal_requirement(instruction: &Instruction) -> Option<(&'static str, Capabilit
         Instruction::IntrinsicShellHost { .. } => Some(("Shell", CapabilityId::ProcessEnv)),
         Instruction::IntrinsicEnvironHost { .. } => Some(("Environ", CapabilityId::ProcessEnv)),
         Instruction::IntrinsicDirHost { .. } => Some(("Dir", CapabilityId::ProcessEnv)),
+        Instruction::IntrinsicDateNowHost { .. } => Some(("Date", CapabilityId::TimeLocale)),
+        Instruction::IntrinsicTimeNowHost { .. } => Some(("Time", CapabilityId::TimeLocale)),
+        Instruction::IntrinsicNowHost { .. } => Some(("Now", CapabilityId::TimeLocale)),
+        Instruction::IntrinsicTimerHost { .. } => Some(("Timer", CapabilityId::TimeLocale)),
+        Instruction::IntrinsicFreeFileHost { .. } => Some(("FreeFile", CapabilityId::FileSystemIo)),
+        Instruction::IntrinsicMsgBoxHost { .. } => Some(("MsgBox", CapabilityId::UiInteraction)),
+        Instruction::IntrinsicInputBoxHost { .. } => {
+            Some(("InputBox", CapabilityId::UiInteraction))
+        }
+        Instruction::IntrinsicDoEventsHost { .. } => Some(("DoEvents", CapabilityId::EventPump)),
         Instruction::IntrinsicCreateObjectHost { .. } => {
             Some(("CreateObject", CapabilityId::ComActivationDispatch))
         }
@@ -241,7 +262,9 @@ fn hal_requirement(instruction: &Instruction) -> Option<(&'static str, Capabilit
 #[cfg(test)]
 mod tests {
     use super::{DiagnosticPhase, Engine, HostConfig};
-    use oxvba_hal::model::{HalProfileId, HostPolicy, HostPolicyPreset, UnsupportedFeatureMode};
+    use oxvba_hal::model::{
+        HalProfileId, HostPolicy, HostPolicyPreset, UiVirtualizationMode, UnsupportedFeatureMode,
+    };
     use oxvba_runtime::value_tags::error_tag_from_code;
     use std::path::{Path, PathBuf};
 
@@ -1062,6 +1085,40 @@ mod tests {
             .execute_source_with_snapshot(source)
             .expect("execution should succeed");
         assert_eq!(snapshot, vec![1, 9, 1]);
+    }
+
+    #[test]
+    fn formal_v52_time_locale_host_subset() {
+        let engine = Engine::new(HostConfig::default());
+        let source = "Sub Main()\nDim d\nDim t\nDim n\nDim k\nd = Date()\nt = Time()\nn = Now()\nk = Timer()\nEnd Sub";
+        let snapshot = engine
+            .execute_source_with_snapshot(source)
+            .expect("execution should succeed");
+        assert_eq!(snapshot, vec![20_260_301, 123_456, 20_260_301, 42]);
+    }
+
+    #[test]
+    fn formal_v52_freefile_host_subset() {
+        let engine = Engine::new(HostConfig::default());
+        let source = "Sub Main()\nDim a\nDim b\na = FreeFile()\nb = FreeFile(1)\nEnd Sub";
+        let snapshot = engine
+            .execute_source_with_snapshot(source)
+            .expect("execution should succeed");
+        assert_eq!(snapshot, vec![1, 256]);
+    }
+
+    #[test]
+    fn formal_v52_ui_event_host_subset() {
+        let mut engine = Engine::new(HostConfig::default());
+        let mut policy = HostPolicy::deterministic_runtime();
+        policy.allow_interaction = true;
+        policy.ui_virtualization = UiVirtualizationMode::ScriptedResponses;
+        engine.set_host_policy(policy);
+        let source = "Sub Main()\nDim a\nDim b\nDim c\na = MsgBox(7, 3)\nb = InputBox(9, 4)\nc = DoEvents()\nEnd Sub";
+        let snapshot = engine
+            .execute_source_with_snapshot(source)
+            .expect("execution should succeed");
+        assert_eq!(snapshot, vec![3, 4, 0]);
     }
 
     #[test]
@@ -2114,6 +2171,22 @@ mod tests {
         assert_eq!(
             intrinsic_surface("Len"),
             Some(IntrinsicSurface::DeterministicCore)
+        );
+        assert_eq!(
+            intrinsic_surface("Date"),
+            Some(IntrinsicSurface::HostSensitive)
+        );
+        assert_eq!(
+            intrinsic_surface("FreeFile"),
+            Some(IntrinsicSurface::HostSensitive)
+        );
+        assert_eq!(
+            intrinsic_surface("MsgBox"),
+            Some(IntrinsicSurface::HostSensitive)
+        );
+        assert_eq!(
+            intrinsic_surface("DoEvents"),
+            Some(IntrinsicSurface::HostSensitive)
         );
         assert_eq!(
             intrinsic_surface("Shell"),
@@ -3352,6 +3425,20 @@ mod tests {
     }
 
     #[test]
+    fn hal_compile_time_mode_rejects_policy_denied_msgbox() {
+        let mut engine = Engine::new(HostConfig::default());
+        let mut policy = HostPolicy::deterministic_compile_time();
+        policy.allow_interaction = false;
+        engine.set_host_policy(policy);
+
+        let err = engine
+            .execute_source_with_snapshot_phased("Sub Main()\nDim x\nx = MsgBox(1)\nEnd Sub")
+            .expect_err("compile-time mode should fail when msgbox policy is denied");
+        assert_eq!(err.phase(), DiagnosticPhase::CompileTime);
+        assert!(err.message().contains("allow_interaction=false"));
+    }
+
+    #[test]
     fn hal_runtime_mode_routes_host_error_through_on_error_resume_next() {
         let mut engine = Engine::new(HostConfig::default()).with_hal_profile(HalProfileId::Linux);
         engine.set_unsupported_feature_mode(UnsupportedFeatureMode::Runtime);
@@ -3393,6 +3480,21 @@ mod tests {
             .expect("On Error Resume Next should capture host policy failure");
         assert_eq!(out[0], 0);
         assert_eq!(out[1], 53_042);
+    }
+
+    #[test]
+    fn hal_runtime_policy_denied_msgbox_surfaces_stable_error_shape() {
+        let mut engine = Engine::new(HostConfig::default());
+        let mut policy = HostPolicy::deterministic_runtime();
+        policy.allow_interaction = false;
+        engine.set_host_policy(policy);
+
+        let err = engine
+            .execute_source_with_snapshot_phased("Sub Main()\nDim x\nx = MsgBox(1)\nEnd Sub")
+            .expect_err("runtime policy denial should surface at execution");
+        assert_eq!(err.phase(), DiagnosticPhase::Runtime);
+        assert!(err.message().contains("HAL-E-POLICY-DENIED"));
+        assert!(err.message().contains("[msg_box]"));
     }
 
     #[test]

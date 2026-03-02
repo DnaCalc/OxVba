@@ -985,6 +985,71 @@ mod tests {
     }
 
     #[test]
+    fn compile_time_locale_intrinsics_emit_host_instructions() {
+        let source = "Sub Main()\nDim a\nDim b\nDim c\nDim d\na = Date()\nb = Time()\nc = Now()\nd = Timer()\nEnd Sub";
+        let out = compile(source).expect("compile should succeed");
+        assert!(
+            out.instructions
+                .iter()
+                .any(|i| matches!(i, Instruction::IntrinsicDateNowHost { .. }))
+        );
+        assert!(
+            out.instructions
+                .iter()
+                .any(|i| matches!(i, Instruction::IntrinsicTimeNowHost { .. }))
+        );
+        assert!(
+            out.instructions
+                .iter()
+                .any(|i| matches!(i, Instruction::IntrinsicNowHost { .. }))
+        );
+        assert!(
+            out.instructions
+                .iter()
+                .any(|i| matches!(i, Instruction::IntrinsicTimerHost { .. }))
+        );
+    }
+
+    #[test]
+    fn compile_freefile_intrinsic_emits_host_instruction() {
+        let source = "Sub Main()\nDim a\nDim b\na = FreeFile()\nb = FreeFile(1)\nEnd Sub";
+        let out = compile(source).expect("compile should succeed");
+        assert!(
+            out.instructions
+                .iter()
+                .any(|i| matches!(i, Instruction::IntrinsicFreeFileHost { range_selector: None, .. }))
+        );
+        assert!(out.instructions.iter().any(|i| matches!(
+            i,
+            Instruction::IntrinsicFreeFileHost {
+                range_selector: Some(_),
+                ..
+            }
+        )));
+    }
+
+    #[test]
+    fn compile_ui_event_intrinsics_emit_host_instructions() {
+        let source = "Sub Main()\nDim a\nDim b\nDim c\na = MsgBox(7, 3)\nb = InputBox(9, 4)\nc = DoEvents()\nEnd Sub";
+        let out = compile(source).expect("compile should succeed");
+        assert!(
+            out.instructions
+                .iter()
+                .any(|i| matches!(i, Instruction::IntrinsicMsgBoxHost { .. }))
+        );
+        assert!(
+            out.instructions
+                .iter()
+                .any(|i| matches!(i, Instruction::IntrinsicInputBoxHost { .. }))
+        );
+        assert!(
+            out.instructions
+                .iter()
+                .any(|i| matches!(i, Instruction::IntrinsicDoEventsHost { .. }))
+        );
+    }
+
+    #[test]
     fn compile_collection_intrinsic_emits_instruction() {
         let source = "Sub Main()\nDim x\nx = CollectionCount(CollectionAdd(0, 9))\nEnd Sub";
         let out = compile(source).expect("compile should succeed");

@@ -2777,9 +2777,11 @@ fn intrinsic_spec(name: &str) -> Option<IntrinsicSpec> {
     use IntrinsicSurface::{DeterministicCore, HostSensitive};
 
     match name {
-        "date" | "time" | "now" | "timer" | "rnd" | "randomize" | "freefile" => {
-            Some(IntrinsicSpec::range(0, 1, DeterministicCore))
-        }
+        "rnd" | "randomize" => Some(IntrinsicSpec::range(0, 1, DeterministicCore)),
+        "date" | "time" | "now" | "timer" => Some(IntrinsicSpec::fixed(0, HostSensitive)),
+        "freefile" => Some(IntrinsicSpec::range(0, 1, HostSensitive)),
+        "doevents" => Some(IntrinsicSpec::fixed(0, HostSensitive)),
+        "msgbox" | "inputbox" => Some(IntrinsicSpec::range(1, 2, HostSensitive)),
         "len" | "lcase" | "ucase" | "trim" | "ltrim" | "rtrim" | "datevalue" | "timevalue"
         | "abs" | "int" | "fix" | "sgn" | "sqr" | "sin" | "cos" | "log" | "exp" | "hex" | "oct"
         | "atn" | "tan" | "year" | "month" | "day" | "weekday" | "space" | "chr" | "asc"
@@ -3804,6 +3806,22 @@ mod tests {
         assert_eq!(
             intrinsic_surface("Len"),
             Some(IntrinsicSurface::DeterministicCore)
+        );
+        assert_eq!(
+            intrinsic_surface("Date"),
+            Some(IntrinsicSurface::HostSensitive)
+        );
+        assert_eq!(
+            intrinsic_surface("FreeFile"),
+            Some(IntrinsicSurface::HostSensitive)
+        );
+        assert_eq!(
+            intrinsic_surface("MsgBox"),
+            Some(IntrinsicSurface::HostSensitive)
+        );
+        assert_eq!(
+            intrinsic_surface("DoEvents"),
+            Some(IntrinsicSurface::HostSensitive)
         );
         assert_eq!(
             intrinsic_surface("Shell"),
