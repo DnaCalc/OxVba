@@ -50,6 +50,11 @@ Adapter factory:
 Implemented profile adapters:
 - `windows`, `linux`, `macos`, `wasm`, `null`
 
+Current implementation shape:
+- all profiles share a common contract core (`StandardHostServices`) with profile-specific descriptor/capability surfaces;
+- in deterministic policy presets, behavior stays deterministic by contract;
+- on host-matching Windows/Linux builds with non-deterministic policy presets (for example `interactive-dev`), selected domains use host-backed behavior paths.
+
 ## 4. Capability Model
 
 Each adapter publishes a `HalDescriptor`:
@@ -98,6 +103,19 @@ Named preset table:
   - `deterministic-runtime`
   - `deterministic-compile-time`
   - `interactive-dev`
+
+Host-backed mode availability:
+- `interactive-dev` can activate host-backed paths only when profile matches current OS build target:
+  - Windows profile on Windows host build,
+  - Linux profile on Linux host build.
+- other profile/host combinations stay on deterministic fallback paths.
+
+Current host-backed domains (Windows/Linux host-matching mode):
+- `FileSystemHal` (token-mapped temp-dir file backing for mutable open/seek growth),
+- `ProcessEnvHal` (`shell` spawn probe, host env projection, directory enumeration probe),
+- `TimeLocaleHal` (system-time derived tokens),
+- `EventPumpHal` (`thread::yield_now`),
+- `DiagnosticsHal` (stderr emission side-effect while preserving token contract).
 
 ## 7. Deterministic Error Taxonomy
 

@@ -1,6 +1,22 @@
 # Implementation Log
 
 ## 2026-03-02
+- Added initial host-backed HAL implementation paths for Windows/Linux exploratory mode:
+  - `StandardHostServices` now enables host-backed behavior when:
+    - policy is non-deterministic (`interactive-dev` class), and
+    - active profile matches build host OS (`Windows` on Windows, `Linux` on Linux);
+  - implemented host-backed subsets:
+    - filesystem token mapping to temporary host files for mutable open/seek growth,
+    - process/env probing (`shell` spawn probe, environment projection, directory enumeration),
+    - time/locale tokens from system time,
+    - event pump scheduler yield hook,
+    - diagnostics stderr emission side-effect while keeping token contract;
+  - retained deterministic fallback paths as the v1 contract floor for all presets/profiles;
+  - added native-path adapter tests:
+    - `native_mode_process_and_env_paths_are_callable`
+    - `native_mode_filesystem_seek_can_extend_length`
+    - `native_mode_time_tokens_are_non_negative`;
+  - updated HAL spec/operating-envelope + implementation-defined records for dual-mode behavior.
 - Executed HAL rigor expansion batch (machine-readable clauses + drift guard + policy presets + error contract checks):
   - added machine-readable clause catalog:
     - `docs/spec/HAL_CONTRACT_CLAUSE_CATALOG_V1.csv`;

@@ -337,12 +337,7 @@ pub fn run_conformance(host: &dyn HostServices) -> ConformanceReport {
     probe(
         CapabilityId::TimeLocale,
         "time.timer_ticks",
-        &[
-            "HAL-TIME-001",
-            "HAL-DES-004",
-            "HAL-GEN-001",
-            "HAL-GEN-003",
-        ],
+        &["HAL-TIME-001", "HAL-DES-004", "HAL-GEN-001", "HAL-GEN-003"],
         host.time_locale().timer_ticks().map(|_| ()),
     );
     probe(
@@ -360,12 +355,7 @@ pub fn run_conformance(host: &dyn HostServices) -> ConformanceReport {
     probe(
         CapabilityId::DiagnosticsTelemetry,
         "diag.emit",
-        &[
-            "HAL-DIAG-001",
-            "HAL-DES-004",
-            "HAL-GEN-001",
-            "HAL-GEN-003",
-        ],
+        &["HAL-DIAG-001", "HAL-DES-004", "HAL-GEN-001", "HAL-GEN-003"],
         host.diag().emit(1, 2).map(|_| ()),
     );
 

@@ -92,7 +92,7 @@ Each clause includes:
 | `HAL-FS-004` | `eof(handle)` | valid handle | returns 1 when `position >= len` else 0 | invalid handle -> `AdapterFault` | implemented-verified | `file_open_seek_eof_lof_close_roundtrip` |
 | `HAL-FS-005` | `lof(handle)` | valid handle | returns logical length token | invalid handle -> `AdapterFault` | implemented-verified | `file_open_seek_eof_lof_close_roundtrip` |
 | `HAL-FS-006` | `free_file(range_selector)` | capability supported | returns first free handle in `[1..255]` or `[256..511]` | no free handle -> `AdapterFault` | implemented-verified | `free_file_respects_low_and_high_ranges`; `free_file_low_range_tracks_allocated_handles`; `prop_free_file_low_range_tracks_open_count` |
-| `HAL-FS-007` | v1 file model is deterministic in-memory handle semantics, not OS file binding semantics. | none | behavior deterministic and testable | n/a | implemented-partial | specified in implementation-defined registry |
+| `HAL-FS-007` | v1 file model guarantees deterministic in-memory handle semantics; host-matching Windows/Linux non-deterministic mode may additionally map tokens to temporary host files. | none | deterministic floor always available; host-backed mode is policy/host contingent | n/a | implemented-partial | specified in implementation-defined registry |
 
 ### 6.4 `ProcessEnvHal`
 
@@ -101,6 +101,7 @@ Each clause includes:
 | `HAL-PROC-001` | `shell(command, style)` | capability supported; process spawn allowed | deterministic token return | unsupported/policy-denied | implemented-verified | conformance `process.shell`; host compile-time policy test; `process_com_dynlink_policy_denials_are_enforced` |
 | `HAL-PROC-002` | `environ(key)` | capability supported | deterministic token mapping | unsupported -> `CapabilityUnavailable` | implemented-verified | `process_env_deterministic_projection_contract` |
 | `HAL-PROC-003` | `dir(path, attrs)` | capability supported | deterministic token mapping | unsupported -> `CapabilityUnavailable` | implemented-verified | `process_env_deterministic_projection_contract` |
+| `HAL-PROC-004` | Host-matching Windows/Linux non-deterministic mode may use host-backed process/env/path probes while preserving error contract and policy precedence. | policy non-deterministic + host/profile match | host-backed projection permitted | unsupported/policy-denied contract unchanged | implemented-partial | adapter tests (`native_mode_process_and_env_paths_are_callable`) |
 
 ### 6.5 `ComHal`
 
@@ -115,6 +116,7 @@ Each clause includes:
 | Clause ID | Operation | Preconditions | Postconditions | Failure obligations | Status | Verification |
 |---|---|---|---|---|---|---|
 | `HAL-TIME-001` | `date_serial_now`, `time_serial_now`, `timer_ticks` | capability supported | deterministic value tokens in v1 | unsupported -> `CapabilityUnavailable` | implemented-verified | conformance `time.timer_ticks`; `time_locale_contract_values_are_stable` |
+| `HAL-TIME-002` | Host-matching Windows/Linux non-deterministic mode may return system-time derived tokens; deterministic presets retain fixed values. | policy non-deterministic + host/profile match | host-time projection permitted | unsupported -> `CapabilityUnavailable` | implemented-partial | adapter tests (`native_mode_time_tokens_are_non_negative`) |
 
 ### 6.7 `DynamicLinkHal`
 

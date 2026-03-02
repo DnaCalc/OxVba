@@ -32,10 +32,12 @@ HAL-FS-007,file-system,implemented-partial,documentation,implementation_defined_
 HAL-PROC-001,process-env,implemented-verified,conformance,process.shell
 HAL-PROC-002,process-env,implemented-verified,host-tests,process_env_deterministic_projection_contract
 HAL-PROC-003,process-env,implemented-verified,host-tests,process_env_deterministic_projection_contract
+HAL-PROC-004,process-env,implemented-partial,host-tests,native_mode_process_and_env_paths_are_callable
 HAL-COM-001,com,implemented-verified,conformance,com.create_object
 HAL-COM-002,com,implemented-verified,host-tests,dispatch_invoke_deterministic_projection_contract
 HAL-COM-003,com,implemented-verified,host-tests,windows_declares_com_supported_only_on_windows
 HAL-TIME-001,time-locale,implemented-verified,conformance,time.timer_ticks
+HAL-TIME-002,time-locale,implemented-partial,host-tests,native_mode_time_tokens_are_non_negative
 HAL-DYN-001,dynlink,implemented-verified,conformance,dynlink.invoke_symbol
 HAL-DIAG-001,diagnostics,implemented-verified,conformance,diag.emit
 HAL-NULL-001,null-profile,implemented-verified,host-tests,null_profile_support_set_is_explicit

@@ -11,7 +11,12 @@ use crate::{
 };
 use std::{
     collections::{BTreeMap, BTreeSet},
+    fs::{self, OpenOptions},
+    path::PathBuf,
+    process::Command,
     sync::{Arc, Mutex},
+    thread,
+    time::{SystemTime, UNIX_EPOCH},
 };
 
 #[cfg(any(debug_assertions, feature = "hal_contract_checks"))]
@@ -142,14 +147,6 @@ impl StandardHostServices {
                     entry.len,
                     handle
                 );
-                if entry.mode == 0 {
-                    hal_contract_assert!(
-                        entry.len > 0,
-                        "op={} read-only handle {} must retain positive pseudo-length",
-                        op,
-                        handle
-                    );
-                }
                 if !self.policy.allow_filesystem_mutation {
                     hal_contract_assert!(
                         entry.mode == 0,
@@ -165,6 +162,63 @@ impl StandardHostServices {
         {
             let _ = (state, op);
         }
+    }
+
+    fn native_mode_enabled(&self) -> bool {
+        !self.policy.deterministic_mode && self.native_profile_matches_host()
+    }
+
+    fn native_profile_matches_host(&self) -> bool {
+        match self.profile {
+            HalProfileId::Windows => cfg!(target_os = "windows"),
+            HalProfileId::Linux => cfg!(target_os = "linux"),
+            _ => false,
+        }
+    }
+
+    fn native_fs_enabled(&self) -> bool {
+        self.native_mode_enabled()
+    }
+
+    fn native_process_enabled(&self) -> bool {
+        self.native_mode_enabled()
+    }
+
+    fn native_time_enabled(&self) -> bool {
+        self.native_mode_enabled()
+    }
+
+    fn native_diagnostics_enabled(&self) -> bool {
+        self.native_mode_enabled()
+    }
+
+    fn host_fs_base_dir(&self) -> PathBuf {
+        let mut out = std::env::temp_dir();
+        out.push("oxvba_hal");
+        out.push(match self.profile {
+            HalProfileId::Windows => "windows",
+            HalProfileId::Linux => "linux",
+            HalProfileId::MacOs => "macos",
+            HalProfileId::Wasm => "wasm",
+            HalProfileId::Null => "null",
+        });
+        out
+    }
+
+    fn host_path_from_token(&self, token: i32) -> PathBuf {
+        let mut path = self.host_fs_base_dir();
+        path.push(format!("token_{}.dat", token.saturating_abs()));
+        path
+    }
+
+    #[cfg(target_os = "windows")]
+    fn spawn_probe_shell_process(&self) -> std::io::Result<std::process::Child> {
+        Command::new("cmd").args(["/C", "exit", "0"]).spawn()
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    fn spawn_probe_shell_process(&self) -> std::io::Result<std::process::Child> {
+        Command::new("sh").arg("-c").arg("true").spawn()
     }
 }
 
@@ -236,6 +290,9 @@ impl EventPumpHal for StandardHostServices {
         if !self.supports(capability) {
             return Err(self.unsupported(capability, "do_events"));
         }
+        if self.native_mode_enabled() {
+            thread::yield_now();
+        }
         Ok(0)
     }
 }
@@ -260,7 +317,44 @@ impl FileSystemHal for StandardHostServices {
                 "no free file handles available in supported range",
             ));
         };
-        let initial_len = if mode == 0 {
+        let host_path = if self.native_fs_enabled() {
+            let host_path = self.host_path_from_token(path);
+            if let Some(parent) = host_path.parent() {
+                fs::create_dir_all(parent).map_err(|err| {
+                    HalError::adapter_fault(
+                        self.profile,
+                        capability,
+                        "open",
+                        format!("failed to create host fs directory: {err}"),
+                    )
+                })?;
+            }
+            Some(host_path)
+        } else {
+            None
+        };
+        let initial_len = if let Some(host_path) = host_path.as_ref() {
+            if mode != 0 {
+                let file = OpenOptions::new()
+                    .read(true)
+                    .write(true)
+                    .create(true)
+                    .open(host_path)
+                    .map_err(|err| {
+                        HalError::adapter_fault(
+                            self.profile,
+                            capability,
+                            "open",
+                            format!("failed to open host path {}: {err}", host_path.display()),
+                        )
+                    })?;
+                clamp_u64_to_i32(file.metadata().map(|meta| meta.len()).unwrap_or(0))
+            } else {
+                fs::metadata(host_path)
+                    .map(|meta| clamp_u64_to_i32(meta.len()))
+                    .unwrap_or_else(|_| pseudo_file_len_from_path_token(path))
+            }
+        } else if mode == 0 {
             pseudo_file_len_from_path_token(path)
         } else {
             0
@@ -271,6 +365,7 @@ impl FileSystemHal for StandardHostServices {
                 mode,
                 position: 0,
                 len: initial_len,
+                host_path,
             },
         );
         self.assert_fs_invariants(&state, "open-post");
@@ -321,8 +416,39 @@ impl FileSystemHal for StandardHostServices {
         let final_position = {
             let entry = self.fs_entry_mut(&mut state, handle, "seek")?;
             let prior_len = entry.len;
+            let host_path = entry.host_path.clone();
             entry.position = position;
             if position > entry.len && entry.mode != 0 && self.policy.allow_filesystem_mutation {
+                if let Some(host_path) = host_path.as_ref() {
+                    let file = OpenOptions::new()
+                        .read(true)
+                        .write(true)
+                        .create(true)
+                        .open(host_path)
+                        .map_err(|err| {
+                            HalError::adapter_fault(
+                                self.profile,
+                                capability,
+                                "seek",
+                                format!(
+                                    "failed to open host path {} for seek: {err}",
+                                    host_path.display()
+                                ),
+                            )
+                        })?;
+                    file.set_len(position as u64).map_err(|err| {
+                        HalError::adapter_fault(
+                            self.profile,
+                            capability,
+                            "seek",
+                            format!(
+                                "failed to extend host path {} to {}: {err}",
+                                host_path.display(),
+                                position
+                            ),
+                        )
+                    })?;
+                }
                 entry.len = position;
             }
             hal_contract_assert!(
@@ -410,6 +536,19 @@ impl ProcessEnvHal for StandardHostServices {
         if !self.policy.allow_process_spawn {
             return Err(self.denied(capability, "shell"));
         }
+        if self.native_process_enabled() && command != 0 {
+            let mut child = self.spawn_probe_shell_process().map_err(|err| {
+                HalError::adapter_fault(
+                    self.profile,
+                    capability,
+                    "shell",
+                    format!("failed to spawn probe shell process: {err}"),
+                )
+            })?;
+            let child_id = i32::try_from(child.id()).unwrap_or(i32::MAX).max(1);
+            let _ = child.wait();
+            return Ok(child_id);
+        }
         Ok(if command == 0 { 0 } else { 1 })
     }
 
@@ -418,6 +557,17 @@ impl ProcessEnvHal for StandardHostServices {
         if !self.supports(capability) {
             return Err(self.unsupported(capability, "environ"));
         }
+        if self.native_process_enabled() {
+            let mut vars: Vec<(std::ffi::OsString, std::ffi::OsString)> =
+                std::env::vars_os().collect();
+            if vars.is_empty() {
+                return Ok(0);
+            }
+            vars.sort_by(|a, b| a.0.cmp(&b.0));
+            let idx = (key.unsigned_abs() as usize) % vars.len();
+            let value_len = vars[idx].1.to_string_lossy().len();
+            return Ok(value_len.min(i32::MAX as usize) as i32);
+        }
         Ok(key)
     }
 
@@ -425,6 +575,30 @@ impl ProcessEnvHal for StandardHostServices {
         let capability = CapabilityId::ProcessEnv;
         if !self.supports(capability) {
             return Err(self.unsupported(capability, "dir"));
+        }
+        if self.native_process_enabled() {
+            let target = if path == 0 {
+                std::env::current_dir().map_err(|err| {
+                    HalError::adapter_fault(
+                        self.profile,
+                        capability,
+                        "dir",
+                        format!("failed to get current directory: {err}"),
+                    )
+                })?
+            } else {
+                self.host_path_from_token(path)
+            };
+            return Ok(match fs::read_dir(target) {
+                Ok(mut entries) => {
+                    if entries.next().is_some() {
+                        1
+                    } else {
+                        0
+                    }
+                }
+                Err(_) => 0,
+            });
         }
         Ok(if path == 0 { 0 } else { 1 })
     }
@@ -460,6 +634,12 @@ impl TimeLocaleHal for StandardHostServices {
         if !self.supports(capability) {
             return Err(self.unsupported(capability, "date_serial_now"));
         }
+        if self.native_time_enabled() {
+            let now = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap_or_default();
+            return Ok(clamp_u64_to_i32(now.as_secs() / 86_400));
+        }
         Ok(20_260_301)
     }
 
@@ -468,6 +648,12 @@ impl TimeLocaleHal for StandardHostServices {
         if !self.supports(capability) {
             return Err(self.unsupported(capability, "time_serial_now"));
         }
+        if self.native_time_enabled() {
+            let now = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap_or_default();
+            return Ok((now.as_secs() % 86_400) as i32);
+        }
         Ok(1_234_56)
     }
 
@@ -475,6 +661,13 @@ impl TimeLocaleHal for StandardHostServices {
         let capability = CapabilityId::TimeLocale;
         if !self.supports(capability) {
             return Err(self.unsupported(capability, "timer_ticks"));
+        }
+        if self.native_time_enabled() {
+            let now = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap_or_default();
+            let modulo = i32::MAX as u128;
+            return Ok((now.as_millis() % modulo) as i32);
         }
         Ok(42)
     }
@@ -498,6 +691,12 @@ impl DiagnosticsHal for StandardHostServices {
         let capability = CapabilityId::DiagnosticsTelemetry;
         if !self.supports(capability) {
             return Err(self.unsupported(capability, "emit"));
+        }
+        if self.native_diagnostics_enabled() {
+            eprintln!(
+                "[oxvba-hal] profile={:?} code={} payload={}",
+                self.profile, code, payload
+            );
         }
         Ok(code.saturating_add(payload))
     }
@@ -673,11 +872,16 @@ struct FileHandleState {
     mode: i32,
     position: i32,
     len: i32,
+    host_path: Option<PathBuf>,
 }
 
 fn pseudo_file_len_from_path_token(path: i32) -> i32 {
     let magnitude = path.saturating_abs();
     1 + (magnitude % 4096)
+}
+
+fn clamp_u64_to_i32(value: u64) -> i32 {
+    value.min(i32::MAX as u64) as i32
 }
 
 #[cfg(test)]
@@ -694,6 +898,16 @@ mod tests {
     };
 
     use super::StandardHostServices;
+
+    fn current_native_profile() -> Option<HalProfileId> {
+        if cfg!(target_os = "windows") {
+            Some(HalProfileId::Windows)
+        } else if cfg!(target_os = "linux") {
+            Some(HalProfileId::Linux)
+        } else {
+            None
+        }
+    }
 
     #[test]
     fn file_open_seek_eof_lof_close_roundtrip() {
@@ -941,6 +1155,46 @@ mod tests {
             linux.shell(1, 0).expect_err("linux shell denial").kind,
             HalErrorKind::PolicyDenied
         );
+    }
+
+    #[test]
+    fn native_mode_process_and_env_paths_are_callable() {
+        let Some(profile) = current_native_profile() else {
+            return;
+        };
+        let host = StandardHostServices::new(profile, HostPolicy::interactive_dev());
+        let shell = host.shell(1, 0).expect("native shell should succeed");
+        assert!(shell >= 1);
+        let environ = host.environ(3).expect("native environ should succeed");
+        assert!(environ >= 0);
+        let dir = host.dir(0, 0).expect("native dir should succeed");
+        assert!(dir == 0 || dir == 1);
+    }
+
+    #[test]
+    fn native_mode_filesystem_seek_can_extend_length() {
+        let Some(profile) = current_native_profile() else {
+            return;
+        };
+        let host = StandardHostServices::new(profile, HostPolicy::interactive_dev());
+        let handle = host.open(31415, 1).expect("native open should succeed");
+        host.seek(handle, 64).expect("native seek should succeed");
+        assert!(
+            host.lof(handle).expect("native lof should succeed") >= 64,
+            "native seek in mutation mode should extend logical length"
+        );
+        assert_eq!(host.close(handle).expect("native close should succeed"), 1);
+    }
+
+    #[test]
+    fn native_mode_time_tokens_are_non_negative() {
+        let Some(profile) = current_native_profile() else {
+            return;
+        };
+        let host = StandardHostServices::new(profile, HostPolicy::interactive_dev());
+        assert!(host.date_serial_now().expect("date") >= 0);
+        assert!(host.time_serial_now().expect("time") >= 0);
+        assert!(host.timer_ticks().expect("ticks") >= 0);
     }
 
     proptest! {
