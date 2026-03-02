@@ -19,6 +19,18 @@ Primary formal contract companion docs:
 - [`../evidence/hal/HAL_UNCERTAINTY_REGISTER.md`](../evidence/hal/HAL_UNCERTAINTY_REGISTER.md)
 - [`../evidence/hal/HAL_IMPLEMENTATION_DEFINED.md`](../evidence/hal/HAL_IMPLEMENTATION_DEFINED.md)
 
+Block-A expansion companion docs (`v187..v196`):
+- [`HAL_RUNTIME_PROFILE_MATRIX_V1.md`](HAL_RUNTIME_PROFILE_MATRIX_V1.md)
+- [`HAL_UI_INTERACTION_CONFORMANCE_V1.md`](HAL_UI_INTERACTION_CONFORMANCE_V1.md)
+- [`HAL_DOEVENTS_CONFORMANCE_V1.md`](HAL_DOEVENTS_CONFORMANCE_V1.md)
+- [`HAL_COM_BRIDGE_SCOPE_V1.md`](HAL_COM_BRIDGE_SCOPE_V1.md)
+- [`HAL_DECLARE_ABI_SPEC_V1.md`](HAL_DECLARE_ABI_SPEC_V1.md)
+- [`HAL_FILESYSTEM_IO_CONFORMANCE_V1.md`](HAL_FILESYSTEM_IO_CONFORMANCE_V1.md)
+- [`HAL_WASM_RUNTIME_CLASSES_V1.md`](HAL_WASM_RUNTIME_CLASSES_V1.md)
+- [`HAL_TIME_SEMANTICS_V1.md`](HAL_TIME_SEMANTICS_V1.md)
+- [`HOST_RUNNER_POLICY_BOOTSTRAP_V1.md`](HOST_RUNNER_POLICY_BOOTSTRAP_V1.md)
+- [`HAL_CONFORMANCE_EXPANSION_PLAN_V196.md`](HAL_CONFORMANCE_EXPANSION_PLAN_V196.md)
+
 ## 2. Normative Source Families
 
 Primary external references are maintained in `../Foundation/reference`:
@@ -97,6 +109,10 @@ This is intentional and test-covered. Non-Windows COM remains future scope, not 
 
 Current compile-time preflighted intrinsic families:
 - `Shell`, `Environ`, `Dir` -> `ProcessEnv`
+- `Date`, `Time`, `Now`, `Timer` -> `TimeLocale`
+- `FreeFile` -> `FileSystemIo`
+- `MsgBox`, `InputBox` -> `UiInteraction`
+- `DoEvents` -> `EventPump`
 - `CreateObject`, `DispatchInvoke` -> `ComActivationDispatch`
 
 Named preset table:
@@ -111,6 +127,11 @@ Host-backed mode availability:
   - Windows profile on Windows host build,
   - Linux profile on Linux host build.
 - other profile/host combinations stay on deterministic fallback paths.
+
+Policy bootstrap/orchestration note:
+- top-level external policy/profile configuration (CLI/env/config) is not yet formalized.
+- current configuration path is programmatic through host API (`Engine::set_host_policy*` / `set_hal_profile`).
+- tracked as `HAL-U-009` in [`../evidence/hal/HAL_UNCERTAINTY_REGISTER.md`](../evidence/hal/HAL_UNCERTAINTY_REGISTER.md).
 
 Current host-backed domains (Windows/Linux host-matching mode):
 - `FileSystemHal` (token-mapped temp-dir file backing for mutable open/seek growth),

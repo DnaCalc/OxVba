@@ -116,3 +116,16 @@ No clause should remain undocumented in terms of verification mapping.
 2. Introduce uncertainty + implementation-defined registries under `docs/evidence/hal/`.
 3. Expand conformance harness to report clause IDs and pass/fail per profile/lane.
 4. Use this as the gate for subsequent Windows-native behavior implementation work.
+
+## 7. Block A Deliverables Landed (`v187..v196`)
+
+- runtime profile taxonomy and matrix: `HAL_RUNTIME_PROFILE_MATRIX_V1.md`
+- UI conformance draft: `HAL_UI_INTERACTION_CONFORMANCE_V1.md`
+- DoEvents conformance draft: `HAL_DOEVENTS_CONFORMANCE_V1.md`
+- COM bridge scope: `HAL_COM_BRIDGE_SCOPE_V1.md`
+- Declare/ABI draft: `HAL_DECLARE_ABI_SPEC_V1.md`
+- filesystem conformance draft: `HAL_FILESYSTEM_IO_CONFORMANCE_V1.md`
+- wasm class contract draft: `HAL_WASM_RUNTIME_CLASSES_V1.md`
+- time semantics completion draft: `HAL_TIME_SEMANTICS_V1.md`
+- host runner policy bootstrap draft: `HOST_RUNNER_POLICY_BOOTSTRAP_V1.md`
+- clause-to-check expansion plan: `HAL_CONFORMANCE_EXPANSION_PLAN_V196.md`
