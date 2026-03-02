@@ -1,6 +1,14 @@
 # Implementation Log
 
 ## 2026-03-02
+- Closed HAL wasm-target test caveat:
+  - root workspace `proptest` dependency now disables default `fork/timeout` features and keeps wasm-compatible `std` + `bit-set`;
+  - this removes `rusty-fork`/`wait-timeout` from `oxvba-hal` dev build graph on `wasm32-wasip1`;
+  - verified full wasm target test execution via Wasmtime runner:
+    - `cargo test -p oxvba-hal --target wasm32-wasip1` -> `42 passed; 0 failed`;
+  - generated wasm-runtime conformance artifacts:
+    - `docs/evidence/hal_wasm32/HAL_CONFORMANCE_1772439012.{md,jsonl}`
+    - `docs/evidence/hal_wasm32/HAL_CONFORMANCE_1772439915.{md,jsonl}`.
 - Implemented dedicated Null/Wasm HAL adapters (replacing wrapper-only aliases):
   - `crates/oxvba-hal/src/adapters/null.rs` now provides explicit deterministic Null backend behavior:
     - host-sensitive domains return `HAL-E-CAP-UNAVAILABLE`,

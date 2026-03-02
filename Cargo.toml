@@ -32,5 +32,5 @@ oxvba-com = { path = "crates/oxvba-com" }
 oxvba-host = { path = "crates/oxvba-host" }
 rkyv = "0.8"
 thiserror = "2"
-proptest = "1"
+proptest = { version = "1", default-features = false, features = ["std", "bit-set"] }
 serde = { version = "1", features = ["derive"] }
