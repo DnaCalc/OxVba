@@ -28,6 +28,7 @@
 | HAL Contract Clause Catalog v1 | [`spec/HAL_CONTRACT_CLAUSE_CATALOG_V1.md`](spec/HAL_CONTRACT_CLAUSE_CATALOG_V1.md) | Clause-level HAL contract baseline with pre/postconditions, failure semantics, and verification links. |
 | HAL Evidence Artifacts | [`evidence/hal/README.md`](evidence/hal/README.md) | Generated HAL conformance result bundles (`md` + `jsonl`) and lane semantics. |
 | HAL Phase-1 Baseline Audit | [`evidence/hal/HAL_PHASE1_BASELINE_AUDIT_2026-03-02.md`](evidence/hal/HAL_PHASE1_BASELINE_AUDIT_2026-03-02.md) | Capability/domain audit baseline for HAL formalization phase 1. |
+| HAL Phase-2 Contract Checks | [`evidence/hal/HAL_PHASE2_CONTRACT_CHECKS_2026-03-02.md`](evidence/hal/HAL_PHASE2_CONTRACT_CHECKS_2026-03-02.md) | Clause-mapped executable contract check expansion and verification outcomes for HAL phase 2. |
 | HAL Uncertainty Register | [`evidence/hal/HAL_UNCERTAINTY_REGISTER.md`](evidence/hal/HAL_UNCERTAINTY_REGISTER.md) | Open HAL contract-shape uncertainties and planned resolution phases. |
 | HAL Implementation-Defined Register | [`evidence/hal/HAL_IMPLEMENTATION_DEFINED.md`](evidence/hal/HAL_IMPLEMENTATION_DEFINED.md) | HAL-specific implementation-defined behaviors that are explicitly tracked. |
 | MS-VBAL Module/Project Requirements | [`evidence/language/MS_VBAL_MODULE_PROJECT_REQUIREMENTS.md`](evidence/language/MS_VBAL_MODULE_PROJECT_REQUIREMENTS.md) | Full-scope module/project backlog for MS-VBAL closure beyond current single-source execution model. |

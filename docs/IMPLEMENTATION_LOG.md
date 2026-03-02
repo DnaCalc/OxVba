@@ -1,5 +1,18 @@
 # Implementation Log
 
+## 2026-03-02
+- Advanced HAL formalization Phase 2 (clause-mapped executable checks):
+  - upgraded `oxvba-hal` conformance reporting to map probes and descriptor checks to explicit clause IDs;
+  - added clause coverage aggregation into conformance reports and artifact output fields (`clause_count`, `clause_pass_count`, `failed_clauses`);
+  - expanded deterministic adapter contract tests for UI/event/process/com/dynlink/time/diag and stronger filesystem invariants;
+  - updated clause status promotions in:
+    - `docs/spec/HAL_CONTRACT_CLAUSE_CATALOG_V1.md`;
+  - published phase artifact:
+    - `docs/evidence/hal/HAL_PHASE2_CONTRACT_CHECKS_2026-03-02.md`;
+  - refreshed HAL evidence output:
+    - `docs/evidence/hal/HAL_CONFORMANCE_1772430024.md`
+    - `docs/evidence/hal/HAL_CONFORMANCE_1772430024.jsonl`.
+
 ## 2026-03-01
 - Started HAL formalization Phase 1 (spec-first baseline):
   - added charter-driven program doc:

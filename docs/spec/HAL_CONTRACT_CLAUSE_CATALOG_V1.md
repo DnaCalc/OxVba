@@ -61,14 +61,14 @@ Each clause includes:
 | Clause ID | Operation | Preconditions | Postconditions | Failure obligations | Status | Verification |
 |---|---|---|---|---|---|---|
 | `HAL-UI-001` | `msg_box(prompt, style)` | capability supported; interaction allowed by policy | returns deterministic `ValueToken` response | unsupported -> `CapabilityUnavailable`; denied -> `PolicyDenied` | implemented-partial | conformance `ui.msg_box` probe |
-| `HAL-UI-002` | `input_box(prompt, default)` | capability supported; interaction allowed by policy | returns deterministic response token by virtualization mode | unsupported/denied failure as above | implemented-partial | method present; direct probe coverage pending |
-| `HAL-UI-003` | Virtualization mode controls result shape (`ScriptedResponses`, `Disabled`, `FailOnPrompt`) | valid policy | deterministic branch-specific outcome | `FailOnPrompt` returns policy denial | implemented-partial | implementation only; dedicated tests pending |
+| `HAL-UI-002` | `input_box(prompt, default)` | capability supported; interaction allowed by policy | returns deterministic response token by virtualization mode | unsupported/denied failure as above | implemented-verified | `ui_virtualization_modes_follow_contract`; `ui_fail_on_prompt_returns_policy_denied` |
+| `HAL-UI-003` | Virtualization mode controls result shape (`ScriptedResponses`, `Disabled`, `FailOnPrompt`) | valid policy | deterministic branch-specific outcome | `FailOnPrompt` returns policy denial | implemented-verified | `ui_virtualization_modes_follow_contract`; `ui_fail_on_prompt_returns_policy_denied` |
 
 ### 6.2 `EventPumpHal`
 
 | Clause ID | Operation | Preconditions | Postconditions | Failure obligations | Status | Verification |
 |---|---|---|---|---|---|---|
-| `HAL-EVT-001` | `do_events()` | capability supported | deterministic token return | unsupported -> `CapabilityUnavailable` | implemented-partial | conformance `events.do_events` probe |
+| `HAL-EVT-001` | `do_events()` | capability supported | deterministic token return | unsupported -> `CapabilityUnavailable` | implemented-verified | conformance `events.do_events`; `event_pump_supported_and_unsupported_paths` |
 | `HAL-EVT-002` | v1 does not define external queue fairness or scheduling guarantees. | none | deterministic local contract only | n/a | specified-pending | tracked in uncertainty registry |
 
 ### 6.3 `FileSystemHal`
@@ -87,35 +87,35 @@ Each clause includes:
 
 | Clause ID | Operation | Preconditions | Postconditions | Failure obligations | Status | Verification |
 |---|---|---|---|---|---|---|
-| `HAL-PROC-001` | `shell(command, style)` | capability supported; process spawn allowed | deterministic token return | unsupported/policy-denied | implemented-partial | conformance `process.shell`; host compile-time policy test |
-| `HAL-PROC-002` | `environ(key)` | capability supported | deterministic token mapping | unsupported -> `CapabilityUnavailable` | implemented-partial | operation called in VM path; direct clause test pending |
-| `HAL-PROC-003` | `dir(path, attrs)` | capability supported | deterministic token mapping | unsupported -> `CapabilityUnavailable` | implemented-partial | operation called in VM path; direct clause test pending |
+| `HAL-PROC-001` | `shell(command, style)` | capability supported; process spawn allowed | deterministic token return | unsupported/policy-denied | implemented-verified | conformance `process.shell`; host compile-time policy test; `process_com_dynlink_policy_denials_are_enforced` |
+| `HAL-PROC-002` | `environ(key)` | capability supported | deterministic token mapping | unsupported -> `CapabilityUnavailable` | implemented-verified | `process_env_deterministic_projection_contract` |
+| `HAL-PROC-003` | `dir(path, attrs)` | capability supported | deterministic token mapping | unsupported -> `CapabilityUnavailable` | implemented-verified | `process_env_deterministic_projection_contract` |
 
 ### 6.5 `ComHal`
 
 | Clause ID | Operation | Preconditions | Postconditions | Failure obligations | Status | Verification |
 |---|---|---|---|---|---|---|
-| `HAL-COM-001` | `create_object(prog_id)` | capability supported; COM activation allowed | deterministic token result in v1 | unsupported/policy-denied | implemented-partial | conformance `com.create_object`; host mode tests |
-| `HAL-COM-002` | `dispatch_invoke(object, member, arg)` | capability supported; COM activation allowed | deterministic token result in v1 | unsupported/policy-denied | implemented-partial | VM path coverage; direct clause test pending |
+| `HAL-COM-001` | `create_object(prog_id)` | capability supported; COM activation allowed | deterministic token result in v1 | unsupported/policy-denied | implemented-verified | conformance `com.create_object`; host mode tests; `process_com_dynlink_policy_denials_are_enforced` |
+| `HAL-COM-002` | `dispatch_invoke(object, member, arg)` | capability supported; COM activation allowed | deterministic token result in v1 | unsupported/policy-denied | implemented-verified | `dispatch_invoke_deterministic_projection_contract`; policy test via `process_com_dynlink_policy_denials_are_enforced` |
 | `HAL-COM-003` | Non-Windows profiles must report COM unsupported in v1 descriptor baseline. | profile != windows | deterministic unsupported contract | n/a | implemented-verified | `windows_declares_com_supported_only_on_windows` |
 
 ### 6.6 `TimeLocaleHal`
 
 | Clause ID | Operation | Preconditions | Postconditions | Failure obligations | Status | Verification |
 |---|---|---|---|---|---|---|
-| `HAL-TIME-001` | `date_serial_now`, `time_serial_now`, `timer_ticks` | capability supported | deterministic value tokens in v1 | unsupported -> `CapabilityUnavailable` | implemented-partial | conformance `time.timer_ticks`; direct per-method tests pending |
+| `HAL-TIME-001` | `date_serial_now`, `time_serial_now`, `timer_ticks` | capability supported | deterministic value tokens in v1 | unsupported -> `CapabilityUnavailable` | implemented-verified | conformance `time.timer_ticks`; `time_locale_contract_values_are_stable` |
 
 ### 6.7 `DynamicLinkHal`
 
 | Clause ID | Operation | Preconditions | Postconditions | Failure obligations | Status | Verification |
 |---|---|---|---|---|---|---|
-| `HAL-DYN-001` | `invoke_symbol(symbol, arg)` | capability supported; dynamic link allowed by policy | deterministic token result | unsupported/policy-denied | implemented-partial | conformance `dynlink.invoke_symbol` |
+| `HAL-DYN-001` | `invoke_symbol(symbol, arg)` | capability supported; dynamic link allowed by policy | deterministic token result | unsupported/policy-denied | implemented-verified | conformance `dynlink.invoke_symbol`; `process_com_dynlink_policy_denials_are_enforced` |
 
 ### 6.8 `DiagnosticsHal`
 
 | Clause ID | Operation | Preconditions | Postconditions | Failure obligations | Status | Verification |
 |---|---|---|---|---|---|---|
-| `HAL-DIAG-001` | `emit(code, payload)` | capability supported | deterministic token result | unsupported -> `CapabilityUnavailable` | implemented-partial | conformance `diag.emit` |
+| `HAL-DIAG-001` | `emit(code, payload)` | capability supported | deterministic token result | unsupported -> `CapabilityUnavailable` | implemented-verified | conformance `diag.emit`; `diagnostics_emit_contract_is_deterministic` |
 
 ## 7. Null Profile Clauses
 
@@ -132,7 +132,7 @@ Each clause includes:
 | `specified-needs-tests` | Clause documented, implementation exists, but dedicated clause-level test is not yet present. |
 | `specified-pending` | Clause defined as target behavior for future implementation. |
 
-Phase-1 aggregate:
-- verified-core: descriptor/policy/error floor + filesystem handle subset + compile/runtime unsupported mode.
-- specified-needs-tests: many per-method domain clauses beyond minimal conformance probe set.
-- specified-pending: queue fairness and richer host semantics not yet formalized for parity claims.
+Phase-2 interim aggregate:
+- verified-core: descriptor/policy/error floor + filesystem handle subset + compile/runtime unsupported mode + per-method checks across UI/process/com/time/dynlink/diag deterministic contracts.
+- specified-needs-tests: advanced behavioral parity clauses (host-native semantics, queue fairness, ABI-stability guarantees).
+- specified-pending: richer host semantics not yet formalized for parity claims.

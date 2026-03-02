@@ -20,3 +20,6 @@ Phase-1 formalization artifacts:
 - `HAL_PHASE1_BASELINE_AUDIT_2026-03-02.md`
 - `HAL_UNCERTAINTY_REGISTER.md`
 - `HAL_IMPLEMENTATION_DEFINED.md`
+
+Phase-2 formalization artifact:
+- `HAL_PHASE2_CONTRACT_CHECKS_2026-03-02.md`

@@ -58,6 +58,10 @@ fn main() -> Result<(), Box<dyn Error>> {
             };
             let host = for_profile(profile, policy);
             let report = run_conformance(host.as_ref());
+            let clause_coverage = report.clause_coverage();
+            let clause_total = clause_coverage.len();
+            let clause_pass = clause_coverage.values().filter(|passed| **passed).count();
+            let clause_failed = clause_total.saturating_sub(clause_pass);
 
             md.push_str(&format!(
                 "| {:?} | {} | {} | {} |\n",
@@ -66,11 +70,20 @@ fn main() -> Result<(), Box<dyn Error>> {
                 report.passed,
                 report.failures.len()
             ));
+            md.push_str(&format!(
+                "  - Clauses: `{clause_pass}/{clause_total}` passed (`{clause_failed}` failed)\n"
+            ));
 
             let failures = report
                 .failures
                 .iter()
                 .map(|f| format!("\"{}\"", json_escape(f)))
+                .collect::<Vec<_>>()
+                .join(", ");
+            let failed_clauses = clause_coverage
+                .iter()
+                .filter_map(|(id, passed)| if *passed { None } else { Some(*id) })
+                .map(|id| format!("\"{id}\""))
                 .collect::<Vec<_>>()
                 .join(", ");
             let passed_probes = report
@@ -79,13 +92,16 @@ fn main() -> Result<(), Box<dyn Error>> {
                 .filter(|p| p.status == oxvba_hal::conformance::ProbeStatus::Passed)
                 .count();
             jsonl.push_str(&format!(
-                "{{\"profile\":\"{:?}\",\"lane\":\"{}\",\"passed\":{},\"failure_count\":{},\"probe_count\":{},\"probe_pass_count\":{},\"failures\":[{}]}}\n",
+                "{{\"profile\":\"{:?}\",\"lane\":\"{}\",\"passed\":{},\"failure_count\":{},\"probe_count\":{},\"probe_pass_count\":{},\"clause_count\":{},\"clause_pass_count\":{},\"failed_clauses\":[{}],\"failures\":[{}]}}\n",
                 profile,
                 lane.as_str(),
                 report.passed,
                 report.failures.len(),
                 report.probes.len(),
                 passed_probes,
+                clause_total,
+                clause_pass,
+                failed_clauses,
                 failures
             ));
         }

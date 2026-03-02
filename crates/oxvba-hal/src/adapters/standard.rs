@@ -535,8 +535,12 @@ fn pseudo_file_len_from_path_token(path: i32) -> i32 {
 #[cfg(test)]
 mod tests {
     use crate::{
+        error::HalErrorKind,
         model::{HalProfileId, HostPolicy},
-        traits::FileSystemHal,
+        traits::{
+            ComHal, DiagnosticsHal, DynamicLinkHal, EventPumpHal, FileSystemHal, ProcessEnvHal,
+            TimeLocaleHal, UiInteractionHal,
+        },
     };
 
     use super::StandardHostServices;
@@ -559,5 +563,145 @@ mod tests {
         let host = StandardHostServices::new(HalProfileId::Windows, HostPolicy::default());
         assert_eq!(host.free_file(0).expect("default free file"), 1);
         assert_eq!(host.free_file(1).expect("high-range free file"), 256);
+    }
+
+    #[test]
+    fn close_releases_handle_for_reuse() {
+        let host = StandardHostServices::new(HalProfileId::Windows, HostPolicy::default());
+        let first = host.open(10, 0).expect("open should succeed");
+        assert_eq!(first, 1);
+        host.close(first).expect("close should succeed");
+        let second = host.open(11, 0).expect("second open should succeed");
+        assert_eq!(second, 1, "closed handles must be reusable");
+    }
+
+    #[test]
+    fn free_file_low_range_tracks_allocated_handles() {
+        let host = StandardHostServices::new(HalProfileId::Windows, HostPolicy::default());
+        let mut handles = Vec::new();
+        for expected in 1..=8 {
+            assert_eq!(
+                host.free_file(0).expect("free_file should succeed"),
+                expected
+            );
+            handles.push(host.open(expected, 0).expect("open should succeed"));
+        }
+        assert_eq!(handles, vec![1, 2, 3, 4, 5, 6, 7, 8]);
+    }
+
+    #[test]
+    fn seek_negative_returns_adapter_fault() {
+        let host = StandardHostServices::new(HalProfileId::Windows, HostPolicy::default());
+        let handle = host.open(42, 0).expect("open should succeed");
+        let err = host
+            .seek(handle, -1)
+            .expect_err("negative seek should return error");
+        assert_eq!(err.kind, HalErrorKind::AdapterFault);
+    }
+
+    #[test]
+    fn ui_virtualization_modes_follow_contract() {
+        let policy = HostPolicy {
+            allow_interaction: true,
+            ui_virtualization: crate::model::UiVirtualizationMode::ScriptedResponses,
+            ..HostPolicy::default()
+        };
+        let host = StandardHostServices::new(HalProfileId::Windows, policy.clone());
+        assert_eq!(host.msg_box(100, 3).expect("msg_box"), 3);
+        assert_eq!(host.input_box(100, 7).expect("input_box"), 7);
+
+        let host_disabled = StandardHostServices::new(
+            HalProfileId::Windows,
+            HostPolicy {
+                ui_virtualization: crate::model::UiVirtualizationMode::Disabled,
+                ..policy
+            },
+        );
+        assert_eq!(host_disabled.msg_box(100, 3).expect("msg_box"), 100);
+        assert_eq!(host_disabled.input_box(100, 7).expect("input_box"), 100);
+    }
+
+    #[test]
+    fn ui_fail_on_prompt_returns_policy_denied() {
+        let host = StandardHostServices::new(
+            HalProfileId::Windows,
+            HostPolicy {
+                allow_interaction: true,
+                ui_virtualization: crate::model::UiVirtualizationMode::FailOnPrompt,
+                ..HostPolicy::default()
+            },
+        );
+        let err = host.msg_box(9, 1).expect_err("msg_box should be denied");
+        assert_eq!(err.kind, HalErrorKind::PolicyDenied);
+        let err = host
+            .input_box(9, 1)
+            .expect_err("input_box should be denied");
+        assert_eq!(err.kind, HalErrorKind::PolicyDenied);
+    }
+
+    #[test]
+    fn process_com_dynlink_policy_denials_are_enforced() {
+        let host = StandardHostServices::new(
+            HalProfileId::Windows,
+            HostPolicy {
+                allow_process_spawn: false,
+                allow_com_activation: false,
+                allow_dynamic_link: false,
+                ..HostPolicy::default()
+            },
+        );
+
+        assert_eq!(
+            host.shell(1, 0).expect_err("shell deny").kind,
+            HalErrorKind::PolicyDenied
+        );
+        assert_eq!(
+            host.create_object(1).expect_err("com deny").kind,
+            HalErrorKind::PolicyDenied
+        );
+        assert_eq!(
+            host.invoke_symbol(1, 2).expect_err("dynlink deny").kind,
+            HalErrorKind::PolicyDenied
+        );
+    }
+
+    #[test]
+    fn time_locale_contract_values_are_stable() {
+        let host = StandardHostServices::new(HalProfileId::Windows, HostPolicy::default());
+        assert_eq!(host.date_serial_now().expect("date"), 20_260_301);
+        assert_eq!(host.time_serial_now().expect("time"), 123_456);
+        assert_eq!(host.timer_ticks().expect("timer"), 42);
+    }
+
+    #[test]
+    fn process_env_deterministic_projection_contract() {
+        let host = StandardHostServices::new(HalProfileId::Windows, HostPolicy::default());
+        assert_eq!(host.environ(88).expect("environ"), 88);
+        assert_eq!(host.dir(0, 0).expect("dir"), 0);
+        assert_eq!(host.dir(5, 0).expect("dir"), 1);
+    }
+
+    #[test]
+    fn dispatch_invoke_deterministic_projection_contract() {
+        let host = StandardHostServices::new(HalProfileId::Windows, HostPolicy::default());
+        assert_eq!(host.dispatch_invoke(10, 20, 30).expect("dispatch"), 60);
+    }
+
+    #[test]
+    fn diagnostics_emit_contract_is_deterministic() {
+        let host = StandardHostServices::new(HalProfileId::Windows, HostPolicy::default());
+        assert_eq!(host.emit(4, 5).expect("emit"), 9);
+    }
+
+    #[test]
+    fn event_pump_supported_and_unsupported_paths() {
+        let windows = StandardHostServices::new(HalProfileId::Windows, HostPolicy::default());
+        assert_eq!(windows.do_events().expect("windows do_events"), 0);
+
+        let null = StandardHostServices::new(HalProfileId::Null, HostPolicy::default());
+        let err = null
+            .do_events()
+            .expect_err("null do_events should be unsupported");
+        assert_eq!(err.kind, HalErrorKind::CapabilityUnavailable);
     }
 }

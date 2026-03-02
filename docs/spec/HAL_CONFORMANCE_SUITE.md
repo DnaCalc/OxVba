@@ -40,6 +40,11 @@ This command runs crate tests and emits artifacts under `docs/evidence/hal`:
 - `HAL_CONFORMANCE_<timestamp>.md`
 - `HAL_CONFORMANCE_<timestamp>.jsonl`
 
+Current artifact schema also includes clause-coverage totals per profile/lane:
+- `clause_count`
+- `clause_pass_count`
+- `failed_clauses`
+
 Integration lane:
 
 ```powershell
@@ -87,3 +92,6 @@ Clause catalog baseline:
 Phase-1 expectation:
 - every new contract clause added to the catalog must include an explicit verification mapping field.
 - clauses marked `implemented-partial` require dedicated test expansion in Phase 2.
+
+Phase-2 progress:
+- conformance reports now carry clause coverage aggregation mapped from descriptor checks and probe-to-clause assignments.
