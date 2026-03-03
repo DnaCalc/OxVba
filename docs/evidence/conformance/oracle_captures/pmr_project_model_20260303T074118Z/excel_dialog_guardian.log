@@ -1,0 +1,4 @@
+2026-03-03T09:41:21.417+02:00 start excel_pid=34852 poll_ms=250 max_seconds=1800 stop_file=C:\Work\DnaCalc\OxVba\docs\evidence\conformance\oracle_captures\pmr_project_model_20260303T074118Z\excel_dialog_guardian.stop
+2026-03-03T09:41:29.277+02:00 handled dialog window='Excel' button='Enable Macros'
+2026-03-03T09:41:34.532+02:00 stop file observed; exiting
+2026-03-03T09:41:34.544+02:00 exit

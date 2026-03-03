@@ -4,6 +4,8 @@
 - `docs-check.ps1`: verifies required top-level docs exist.
 - `run-smoke.ps1`: executes the smoke VBA sample through the CLI.
 - `run-conformance.ps1`: runs MVP conformance corpus and checks against golden expectations.
+- `run-pmr-project-model-oracle.ps1`: executable Excel oracle runner for PMR topics `CCT-037..CCT-041`, with built-in dialog guardian support for macro/add-in trust prompts.
+- `excel-dialog-guardian.ps1`: hidden UI Automation watcher used by PMR oracle runs to detect and accept Excel security/macro/add-in enable dialogs for the active automation instance.
 - `run-hal-conformance.ps1`: runs HAL adapter contract tests and emits profile/lane conformance artifacts under `docs/evidence/hal`.
 - `run-matrix.ps1`: executes required matrix cells for the declared ladder profile and writes gate artifacts.
 - `run-formal.ps1`: runs manifest-driven formal obligations in non-blocking mode and writes markdown/csv reports.

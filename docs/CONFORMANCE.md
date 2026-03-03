@@ -9,6 +9,10 @@ Defines the current conformance loop and matrix gate for the active ladder profi
 - `conformance/divergences/*.bas` — divergence/regression fixtures tracked in evidence docs.
 - `docs/evidence/conformance/DEFERRED_ORACLE_GATES.csv` — non-blocking oracle foldback register.
 - `docs/evidence/conformance/ORACLE_PROBE_SCAFFOLD.md` — reusable probe queue scaffold for deferred oracle capture.
+- `docs/evidence/conformance/PMR_PROJECT_MODEL_FIXTURE_MATRIX_V1.md` — executable PMR project-model fixture mapping for workset `P9`.
+- `docs/evidence/conformance/PMR_PROJECT_MODEL_ORACLE_TEMPLATES_V1.md` — Excel oracle templates for `CCT-037..CCT-041`.
+- `scripts/run-pmr-project-model-oracle.ps1` — executable Excel oracle runner for PMR topics `CCT-037..CCT-041`.
+- `scripts/excel-dialog-guardian.ps1` — hidden UI Automation watcher used by PMR oracle runs to auto-handle Excel macro/add-in trust dialogs.
 
 Current corpus includes:
 - MVP arithmetic smoke path.
@@ -47,6 +51,7 @@ Current corpus includes:
 - `On Error Resume Next` and `Err.Number` subset behavior.
 - `On Error GoTo 0` reset behavior and `Resume Next` statement subset.
 - `On Error GoTo <label>` handler transfer subset.
+- PMR project-model deterministic fixture matrix (manifest/project graph diagnostics, qualification paths, visibility/export gating, reference-order shadowing).
 
 ## Commands
 ```powershell
@@ -54,7 +59,13 @@ Current corpus includes:
 ./scripts/run-conformance.ps1
 ./scripts/run-conformance.ps1 -Backend jit
 ./scripts/run-matrix.ps1
+./scripts/run-pmr-project-model-oracle.ps1
+./scripts/run-pmr-project-model-oracle.ps1 -DisableDialogGuardian
 ```
+
+PMR oracle runner note:
+- Default behavior starts a hidden UI Automation watcher (`scripts/excel-dialog-guardian.ps1`) bound to the active Excel PID to auto-handle macro/add-in trust dialogs that can otherwise block unattended runs.
+- Guardian telemetry is written into each run folder as `excel_dialog_guardian.log`.
 
 ## Current policy
 At MVP stage, conformance compares:
