@@ -1,9 +1,11 @@
 # COM Client/Server Scope V1
 
-Status: `design-draft`  
+Status: `working-draft`  
 Date: 2026-03-04  
 Primary scope: Windows (`HalProfileId::Windows`)  
-Related ladder: `docs/worksets/PROFILE_LADDER_2026-03-04_MACH1000_V287_V306_COM_FORMAL_SCAFFOLD.md`
+Related ladders:
+- `docs/worksets/PROFILE_LADDER_2026-03-04_MACH1000_V287_V306_COM_FORMAL_SCAFFOLD.md`
+- `docs/worksets/PROFILE_LADDER_2026-03-04_MACH1000_V387_V406_COM_CLIENT_LATEBOUND_C2.md`
 
 ## 1. Objective
 
@@ -76,13 +78,28 @@ Source-quality note:
 - Every COM boundary failure must map to deterministic OxVba diagnostics (`HalError` and VM/host error routes).
 - No silent fallback from COM to projection mode for COM-enabled profiles once a call is routed to native COM lanes.
 
+### D6. Activation Surface (C2 Direction)
+
+- C1-compatible tokenized activation (`create_object(prog_id_token)`) remains valid.
+- C2 introduces a semantic path for `CreateObject` with ProgID text in VBA source while preserving deterministic policy/failure handling.
+- Server-name parameter forms are tracked as implementation-defined/deferred-oracle until host parity evidence is captured.
+
+### D7. Member Resolution Surface (C2 Direction)
+
+- C1-compatible tokenized member selection (`dispatch_invoke(object_token, member_token, arg_token)`) remains valid.
+- C2 requires deterministic member-name resolution (`GetIDsOfNames`) with explicit case policy and per-object cache semantics.
+- Missing-member and ambiguous-resolution paths must produce stable failure diagnostics.
+
 ## 4. Capability and Maturity Tiers
 
 ### Client tiers
 
 - `C0` (existing): deterministic token projection only.
 - `C1`: native activation + scalar invoke (`CreateObject`, `GetIDsOfNames`, `Invoke` with scalar arguments).
-- `C2`: byref/optional/named argument invoke parity subset (`DISPPARAMS`, `ArgErr`, `ExcepInfo`, `VarResult` handling).
+- `C2`: late-bound client surface contract closure and subset implementation runway:
+  - `CreateObject` ProgID-text path,
+  - member-name invocation path,
+  - deterministic `DISPPARAMS`/`ArgErr`/`ExcepInfo`/`VarResult` translation.
 - `C3`: array/object boundary subset (`SAFEARRAY`, interface pointers, richer variant coercion lanes).
 
 ### Server tiers
@@ -101,6 +118,9 @@ Preconditions:
 - Windows profile active.
 - COM activation policy enabled.
 - Apartment initialized for COM lane.
+- Activation selector is either:
+  - tokenized selector (C1 floor), or
+  - ProgID text selector (C2 path).
 
 Postconditions:
 
@@ -112,13 +132,22 @@ Postconditions:
 Preconditions:
 
 - object token resolves to a live COM object.
-- member token/name resolves deterministically under case policy.
+- member selector (token and/or name) resolves deterministically under declared case policy.
 - argument pack contract satisfied.
 
 Postconditions:
 
 - success: return token value with explicit mapping contract.
 - failure: deterministic translation of HRESULT/EXCEPINFO/ArgErr to OxVba diagnostics and `Err` model.
+
+### 5.5 C2 Late-Bound Subset Contract
+
+Required C2 semantics:
+
+1. Name-based member invoke is stable and deterministic for a declared case policy.
+2. `DISPPARAMS` argument-ordering and named-argument packing rules are explicitly documented for the supported subset.
+3. `VarResult`, `ExcepInfo`, and `ArgErr` output channels are translated into deterministic OxVba diagnostics.
+4. Unsupported argument shapes fail deterministically; no silent coercion/no-op paths.
 
 ### 5.3 Lifetime invariants
 
@@ -165,6 +194,8 @@ Track as implementation-defined or deferred-oracle topics:
 2. Exact named/optional argument packing parity for broad `Invoke` shapes.
 3. Class-module exposure policy vs host-injected project/module metadata evolution.
 4. Registration-free server loading constraints under varied CI environments.
+5. `CreateObject` server-name semantics and cross-host policy differences.
+6. exact named/optional argument parity for broad Office automation surfaces.
 
 Tracking files:
 
@@ -172,3 +203,11 @@ Tracking files:
 - `docs/evidence/hal/HAL_UNCERTAINTY_REGISTER.md`
 - `docs/evidence/conformance/DEFERRED_ORACLE_GATES.csv`
 
+## 9. v387..v392 Spec-Closure Outputs
+
+The `v387..v392` closure pass freezes C2 planning-level contracts and verification runway by updating:
+
+- COM scope/conformance drafts (this file + companion conformance file),
+- HAL COM bridge scope alignment,
+- HAL clause catalog (`HAL-COM-005`, `HAL-COM-006`),
+- implementation-defined and uncertainty registers for late-bound boundary behavior.

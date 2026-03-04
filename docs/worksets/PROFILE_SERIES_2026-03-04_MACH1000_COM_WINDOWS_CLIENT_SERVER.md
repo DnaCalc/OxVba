@@ -12,6 +12,7 @@ Define and execute the COM-focused Windows-first ladder that advances OxVba from
 | R2 | `v307..v336` | COM client depth (`CreateObject`/`Invoke`/marshaling lanes) | stable client subset with deterministic fallback paths |
 | R3 | `v337..v366` | COM server scaffold depth (`IUnknown`/`IDispatch` shell) | reproducible server harness skeleton + policy wiring |
 | R4 | `v367..v386` | stabilization, foldback, and gate hardening | integrated `v386` closure gate with evidence bundle |
+| R5 | `v387..v406` | late-bound client C2 formal closure + implementation runway | C2 contract frozen and runnable first lane (`v392` spec gate) |
 
 ## Current Active Ladders
 
@@ -19,3 +20,4 @@ Define and execute the COM-focused Windows-first ladder that advances OxVba from
 - `docs/worksets/PROFILE_LADDER_2026-03-04_MACH1000_V307_V336_COM_CLIENT_DEPTH.md`
 - `docs/worksets/PROFILE_LADDER_2026-03-04_MACH1000_V337_V366_COM_SERVER_DEPTH.md`
 - `docs/worksets/PROFILE_LADDER_2026-03-04_MACH1000_V367_V386_COM_STABILIZATION.md`
+- `docs/worksets/PROFILE_LADDER_2026-03-04_MACH1000_V387_V406_COM_CLIENT_LATEBOUND_C2.md`

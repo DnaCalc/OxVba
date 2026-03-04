@@ -37,6 +37,8 @@ HAL-COM-001,com,implemented-verified,conformance,com.create_object
 HAL-COM-002,com,implemented-verified,host-tests,dispatch_invoke_deterministic_projection_contract
 HAL-COM-003,com,implemented-verified,host-tests,windows_declares_com_supported_only_on_windows
 HAL-COM-004,com,implemented-verified,host-tests,windows_native_com_dictionary_lane_executes_when_available
+HAL-COM-005,com,specified-pending,documentation,COM_CLIENT_SERVER_SCOPE_V1.md
+HAL-COM-006,com,specified-pending,documentation,COM_CLIENT_SERVER_CONFORMANCE_V1.md
 HAL-TIME-001,time-locale,implemented-verified,conformance,time.timer_ticks
 HAL-TIME-002,time-locale,implemented-verified,conformance,verify_time_host_backed_contract
 HAL-DYN-001,dynlink,implemented-verified,conformance,dynlink.invoke_symbol

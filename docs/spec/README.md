@@ -36,7 +36,8 @@ Current draft set:
 - [`PROJECT_MODULE_REFERENCE_TYPELIB_IMPORTLIB_HAL_DRAFT_V1.md`](PROJECT_MODULE_REFERENCE_TYPELIB_IMPORTLIB_HAL_DRAFT_V1.md) (`working-draft`): deterministic importlib/type-library binding contract draft and HAL interaction shape for PMR reference resolution.
 - [`PROJECT_MODULE_REFERENCE_SOURCE_CROSSWALK_V1.md`](PROJECT_MODULE_REFERENCE_SOURCE_CROSSWALK_V1.md) (`working-draft`): PMR source-anchor crosswalk across MS-VBAL, MS-OAUT, and MS-OVBA extraction status.
 - [`CLASS_MODULE_COM_ALIGNMENT_PLAN_V1.md`](CLASS_MODULE_COM_ALIGNMENT_PLAN_V1.md) (`working-draft`): staged class-module/COM alignment plan with explicit near-term semantic steps and deferred interop boundaries.
-- [`COM_CLIENT_SERVER_SCOPE_V1.md`](COM_CLIENT_SERVER_SCOPE_V1.md) (`design-draft`): Windows COM client/server support scope, contract boundaries, tier model, apartment policy stance, and uncertainty map.
-- [`COM_CLIENT_SERVER_CONFORMANCE_V1.md`](COM_CLIENT_SERVER_CONFORMANCE_V1.md) (`design-draft`): COM-specific conformance lane architecture, artifact model, and formal/deferred-oracle integration plan.
+- [`COM_CLIENT_SERVER_SCOPE_V1.md`](COM_CLIENT_SERVER_SCOPE_V1.md) (`working-draft`): Windows COM client/server support scope, contract boundaries, tier model, apartment policy stance, and C2 late-bound client runway.
+- [`COM_CLIENT_SERVER_CONFORMANCE_V1.md`](COM_CLIENT_SERVER_CONFORMANCE_V1.md) (`working-draft`): COM-specific conformance lane architecture, artifact model, and C2 late-bound client lane planning with formal/deferred-oracle integration.
+- [`HAL_COM_BRIDGE_SCOPE_V1.md`](HAL_COM_BRIDGE_SCOPE_V1.md) (`working-draft`): HAL-owned COM boundary scope and C1->C2 transition contract for tokenized/native late-bound client behavior.
 
 These files intentionally optimize for design velocity and clarity of open decisions rather than immediate lock-in.

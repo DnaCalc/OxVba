@@ -1348,3 +1348,23 @@
     - `docs/evidence/formal/latest_run.md` (`mvp-profile-v386`, non-blocking/deferred Kani policy).
   - updated AutoRun control docs to active terminal gate `v386`:
     - `AGENTS.md`, `docs/AUTORUN_STATE.md`, `README.md`, `docs/README.md`, `docs/profile-status/README.md`.
+- Executed COM late-bound client C2 spec-closure pass through `v392`:
+  - published new ladder/workset artifacts:
+    - `docs/worksets/PROFILE_LADDER_2026-03-04_MACH1000_V387_V406_COM_CLIENT_LATEBOUND_C2.md`
+    - `docs/worksets/WORKSET_2026-03-04_COM_CLIENT_LATEBOUND_SPEC_CLOSURE_V387_V392.md`
+  - advanced COM scope/conformance and HAL COM bridge drafts from planning baseline to C2 runway closure:
+    - `docs/spec/COM_CLIENT_SERVER_SCOPE_V1.md`
+    - `docs/spec/COM_CLIENT_SERVER_CONFORMANCE_V1.md`
+    - `docs/spec/HAL_COM_BRIDGE_SCOPE_V1.md`
+  - expanded HAL COM clause catalog for late-bound C2 planning:
+    - added `HAL-COM-005` (ProgID-text activation contract),
+    - added `HAL-COM-006` (member-name invoke + `VarResult`/`ExcepInfo`/`ArgErr` contract),
+    - synchronized machine-readable catalog (`HAL_CONTRACT_CLAUSE_CATALOG_V1.csv`).
+  - updated HAL contract governance registers:
+    - revised `HAL-ID-006` to reflect current native+fallback COM behavior,
+    - added `HAL-ID-018` for current token-oriented late-bound boundary shape,
+    - added uncertainties `HAL-U-015` and `HAL-U-016` for selector/error-channel parity topics.
+  - published profile status records `PROFILE_STATUS_V387.md` through `PROFILE_STATUS_V392.md` and closure evidence:
+    - `docs/evidence/profiles/v392/V392_COM_CLIENT_C2_SPEC_CLOSURE.md`.
+  - moved AutoRun/control/docs index targets to interim C2 gate `v392`:
+    - `AGENTS.md`, `docs/AUTORUN_STATE.md`, `README.md`, `docs/README.md`, `docs/profile-status/README.md`, `docs/worksets/PROFILE_SERIES_2026-03-04_MACH1000_COM_WINDOWS_CLIENT_SERVER.md`.
