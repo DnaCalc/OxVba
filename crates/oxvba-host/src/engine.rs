@@ -1449,7 +1449,7 @@ mod tests {
     #[test]
     fn formal_v397_createobject_string_progid_subset_executes() {
         let engine = Engine::new(HostConfig::default());
-        let source = "Sub Main()\nDim x\nx = CreateObject(\"Scripting.Dictionary\")\nEnd Sub";
+        let source = "Sub Main()\nDim x\nx = CreateObject(\"OxVba.TestDispatch\")\nEnd Sub";
         let snapshot = engine
             .execute_source_with_snapshot(source)
             .expect("execution should succeed");
@@ -1459,7 +1459,7 @@ mod tests {
     #[test]
     fn formal_v398_dispatchinvoke_member_name_subset_executes() {
         let engine = Engine::new(HostConfig::default());
-        let source = "Sub Main()\nDim x\nx = DispatchInvoke(CreateObject(\"Scripting.Dictionary\"), \"Count\", 0)\nEnd Sub";
+        let source = "Sub Main()\nDim x\nx = DispatchInvoke(CreateObject(\"OxVba.TestDispatch\"), \"Count\", 0)\nEnd Sub";
         let snapshot = engine
             .execute_source_with_snapshot(source)
             .expect("execution should succeed");
@@ -1469,7 +1469,7 @@ mod tests {
     #[test]
     fn formal_v399_dispatchinvoke_two_arg_property_get_subset_executes() {
         let engine = Engine::new(HostConfig::default());
-        let source = "Sub Main()\nDim x\nx = DispatchInvoke(CreateObject(\"Scripting.Dictionary\"), \"Count\")\nEnd Sub";
+        let source = "Sub Main()\nDim x\nx = DispatchInvoke(CreateObject(\"OxVba.TestDispatch\"), \"Count\")\nEnd Sub";
         let snapshot = engine
             .execute_source_with_snapshot(source)
             .expect("execution should succeed");
@@ -1481,7 +1481,7 @@ mod tests {
         let mut engine = Engine::new(HostConfig::default()).with_hal_profile(HalProfileId::Linux);
         engine.set_unsupported_feature_mode(UnsupportedFeatureMode::Runtime);
 
-        let source = "Sub Main()\nDim x\nDim e\nOn Error Resume Next\nx = DispatchInvoke(CreateObject(\"Scripting.Dictionary\"), \"Count\", 0)\ne = Err.Number\nEnd Sub";
+        let source = "Sub Main()\nDim x\nDim e\nOn Error Resume Next\nx = DispatchInvoke(CreateObject(\"OxVba.TestDispatch\"), \"Count\", 0)\ne = Err.Number\nEnd Sub";
         let snapshot = engine
             .execute_source_with_snapshot(source)
             .expect("On Error Resume Next should continue");

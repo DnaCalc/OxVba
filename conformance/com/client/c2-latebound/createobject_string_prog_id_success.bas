@@ -1,4 +1,4 @@
 Sub Main()
 Dim o
-o = CreateObject("Scripting.Dictionary")
+o = CreateObject("OxVba.TestDispatch")
 End Sub

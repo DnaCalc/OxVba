@@ -1417,3 +1417,7 @@
     - `docs/evidence/hal/HAL_IMPLEMENTATION_DEFINED.md` (`HAL-ID-018`)
   - advanced AutoRun/control target to `v400`:
     - `AGENTS.md`, `docs/AUTORUN_STATE.md`, `README.md`, `docs/README.md`, `docs/profile-status/README.md`, ladder gate note.
+- Added controlled COM test-server lane for integration stability (post-`v400` hardening):
+  - Windows host-backed COM activation now maps default tokenized test selector (`prog_id=4`) to in-process OxVba-owned `IDispatch` test object (`OxVba.TestDispatch`) unless overridden by `OXVBA_COM_PROGID_4`.
+  - Added deterministic `IDispatch` implementation for integration tests (`Count` property-get, `Exists(i4)` method) to reduce external COM registration dependency in client tests.
+  - Updated C2 fixtures/spec notes to target the controlled lane (`CreateObject("OxVba.TestDispatch")`).

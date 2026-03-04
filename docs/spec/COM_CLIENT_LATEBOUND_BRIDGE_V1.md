@@ -20,6 +20,7 @@ Define the executable bridge from VBA late-bound call semantics to HAL COM trans
 - `IntrinsicDispatchInvokeHost { object, member, arg }`
 - Known-literal lowering subset:
   - `CreateObject("Scripting.Dictionary") -> prog_id_token=4`
+  - `CreateObject("OxVba.TestDispatch") -> prog_id_token=4` (controlled test lane alias)
   - `DispatchInvoke(..., "Count", ...) -> member_token=1`
   - `DispatchInvoke(..., "Exists", ...) -> member_token=2`
 - `DispatchInvoke` arity subset:
@@ -33,6 +34,7 @@ Define the executable bridge from VBA late-bound call semantics to HAL COM trans
 4. Native COM adapter (Windows host-backed mode)
 - Activation: `CLSIDFromProgID` + `CoCreateInstance`
 - Invoke: `IDispatch::Invoke`
+- Controlled test lane: `CreateObject("OxVba.TestDispatch")` activates an in-process OxVba-owned `IDispatch` object for deterministic integration testing without external COM registration dependencies.
 
 ## Contract Invariants
 

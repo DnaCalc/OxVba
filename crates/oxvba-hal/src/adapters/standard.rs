@@ -10,6 +10,8 @@ use crate::{
         ProcessEnvHal, TimeLocaleHal, UiInteractionHal,
     },
 };
+#[cfg(target_os = "windows")]
+use std::sync::atomic::{AtomicU32, Ordering};
 use std::{
     cell::Cell,
     collections::{BTreeMap, BTreeSet},
@@ -56,6 +58,8 @@ macro_rules! hal_contract_assert {
 }
 
 const DISPATCH_INVOKE_MISSING_ARG_TOKEN: i32 = i32::MIN + 2_048;
+#[cfg(target_os = "windows")]
+const OXVBA_TEST_DISPATCH_PROGID: &str = "OxVba.TestDispatch";
 
 #[derive(Debug, Clone)]
 pub(crate) struct StandardHostServices {
@@ -383,7 +387,8 @@ impl StandardHostServices {
             }
         }
         match prog_id {
-            4 => Some("Scripting.Dictionary".to_string()),
+            // Controlled in-process COM automation object for OxVba integration tests.
+            4 => Some(OXVBA_TEST_DISPATCH_PROGID.to_string()),
             _ => None,
         }
     }
@@ -395,6 +400,9 @@ impl StandardHostServices {
 
     #[cfg(target_os = "windows")]
     fn native_com_activate_dispatch(&self, prog_id: &str) -> HalResult<*mut RawIDispatch> {
+        if prog_id.eq_ignore_ascii_case(OXVBA_TEST_DISPATCH_PROGID) {
+            return Ok(create_oxvba_test_dispatch());
+        }
         let wide: Vec<u16> = prog_id.encode_utf16().chain(std::iter::once(0)).collect();
         let mut clsid = windows_sys::core::GUID {
             data1: 0,
@@ -478,7 +486,9 @@ impl StandardHostServices {
         member: i32,
         arg: i32,
     ) -> HalResult<i32> {
-        let result = if prog_id.eq_ignore_ascii_case("Scripting.Dictionary") {
+        let result = if prog_id.eq_ignore_ascii_case("Scripting.Dictionary")
+            || prog_id.eq_ignore_ascii_case(OXVBA_TEST_DISPATCH_PROGID)
+        {
             match member {
                 1 => unsafe { raw_dispatch_dictionary_count(dispatch) },
                 2 if arg == DISPATCH_INVOKE_MISSING_ARG_TOKEN => {
@@ -1672,7 +1682,9 @@ struct ComMemberSpec {
 
 #[cfg(target_os = "windows")]
 fn com_member_spec_for_token(prog_id: &str, member: i32) -> Option<ComMemberSpec> {
-    if prog_id.eq_ignore_ascii_case("Scripting.Dictionary") {
+    if prog_id.eq_ignore_ascii_case("Scripting.Dictionary")
+        || prog_id.eq_ignore_ascii_case(OXVBA_TEST_DISPATCH_PROGID)
+    {
         return match member {
             1 => Some(ComMemberSpec {
                 name: "Count",
@@ -1761,6 +1773,35 @@ const IID_NULL: windows_sys::core::GUID = windows_sys::core::GUID {
 };
 
 #[cfg(target_os = "windows")]
+const IID_IUNKNOWN: windows_sys::core::GUID = windows_sys::core::GUID {
+    data1: 0x0000_0000,
+    data2: 0x0000,
+    data3: 0x0000,
+    data4: [0xC0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x46],
+};
+
+#[cfg(target_os = "windows")]
+const COM_S_OK: i32 = 0;
+#[cfg(target_os = "windows")]
+const COM_E_NOINTERFACE: i32 = 0x8000_4002u32 as i32;
+#[cfg(target_os = "windows")]
+const COM_E_NOTIMPL: i32 = 0x8000_4001u32 as i32;
+#[cfg(target_os = "windows")]
+const COM_E_INVALIDARG: i32 = 0x8007_0057u32 as i32;
+#[cfg(target_os = "windows")]
+const COM_DISP_E_MEMBERNOTFOUND: i32 = 0x8002_0003u32 as i32;
+#[cfg(target_os = "windows")]
+const COM_DISP_E_UNKNOWNNAME: i32 = 0x8002_0006u32 as i32;
+#[cfg(target_os = "windows")]
+const COM_DISP_E_BADPARAMCOUNT: i32 = 0x8002_000Eu32 as i32;
+#[cfg(target_os = "windows")]
+const COM_DISP_E_TYPEMISMATCH: i32 = 0x8002_0005u32 as i32;
+#[cfg(target_os = "windows")]
+const TEST_DISPID_COUNT: i32 = 1;
+#[cfg(target_os = "windows")]
+const TEST_DISPID_EXISTS: i32 = 2;
+
+#[cfg(target_os = "windows")]
 #[repr(C)]
 struct RawIUnknownVtbl {
     query_interface: unsafe extern "system" fn(
@@ -1809,6 +1850,226 @@ struct RawIDispatchVtbl {
 #[repr(C)]
 struct RawIDispatch {
     vtbl: *const RawIDispatchVtbl,
+}
+
+#[cfg(target_os = "windows")]
+#[repr(C)]
+struct OxvbaTestDispatch {
+    dispatch: RawIDispatch,
+    ref_count: AtomicU32,
+}
+
+#[cfg(target_os = "windows")]
+static OXVBA_TEST_DISPATCH_VTBL: RawIDispatchVtbl = RawIDispatchVtbl {
+    unknown: RawIUnknownVtbl {
+        query_interface: oxvba_test_query_interface,
+        add_ref: oxvba_test_add_ref,
+        release: oxvba_test_release,
+    },
+    get_type_info_count: oxvba_test_get_type_info_count,
+    get_type_info: oxvba_test_get_type_info,
+    get_ids_of_names: oxvba_test_get_ids_of_names,
+    invoke: oxvba_test_invoke,
+};
+
+#[cfg(target_os = "windows")]
+fn create_oxvba_test_dispatch() -> *mut RawIDispatch {
+    let object = Box::new(OxvbaTestDispatch {
+        dispatch: RawIDispatch {
+            vtbl: &OXVBA_TEST_DISPATCH_VTBL,
+        },
+        ref_count: AtomicU32::new(1),
+    });
+    Box::into_raw(object).cast::<RawIDispatch>()
+}
+
+#[cfg(target_os = "windows")]
+#[allow(unsafe_op_in_unsafe_fn)]
+unsafe fn guid_equals(lhs: *const windows_sys::core::GUID, rhs: &windows_sys::core::GUID) -> bool {
+    if lhs.is_null() {
+        return false;
+    }
+    let lhs = &*lhs;
+    lhs.data1 == rhs.data1
+        && lhs.data2 == rhs.data2
+        && lhs.data3 == rhs.data3
+        && lhs.data4 == rhs.data4
+}
+
+#[cfg(target_os = "windows")]
+#[allow(unsafe_op_in_unsafe_fn)]
+unsafe fn read_utf16_z(ptr: *const u16) -> Option<String> {
+    if ptr.is_null() {
+        return None;
+    }
+    let mut len = 0usize;
+    while *ptr.add(len) != 0 {
+        len = len.saturating_add(1);
+    }
+    let slice = std::slice::from_raw_parts(ptr, len);
+    String::from_utf16(slice).ok()
+}
+
+#[cfg(target_os = "windows")]
+#[allow(unsafe_op_in_unsafe_fn)]
+unsafe fn as_oxvba_test_dispatch(this: *mut core::ffi::c_void) -> *mut OxvbaTestDispatch {
+    this.cast::<OxvbaTestDispatch>()
+}
+
+#[cfg(target_os = "windows")]
+#[allow(unsafe_op_in_unsafe_fn)]
+unsafe fn set_variant_i32(value: i32, result: *mut VARIANT) {
+    if result.is_null() {
+        return;
+    }
+    (*result).Anonymous.Anonymous.vt = VT_I4;
+    (*result).Anonymous.Anonymous.Anonymous.lVal = value;
+}
+
+#[cfg(target_os = "windows")]
+#[allow(unsafe_op_in_unsafe_fn)]
+unsafe fn set_variant_bool(value: bool, result: *mut VARIANT) {
+    if result.is_null() {
+        return;
+    }
+    (*result).Anonymous.Anonymous.vt = VT_BOOL;
+    (*result).Anonymous.Anonymous.Anonymous.boolVal = if value { -1 } else { 0 };
+}
+
+#[cfg(target_os = "windows")]
+#[allow(unsafe_op_in_unsafe_fn)]
+unsafe extern "system" fn oxvba_test_query_interface(
+    this: *mut core::ffi::c_void,
+    riid: *const windows_sys::core::GUID,
+    ppv: *mut *mut core::ffi::c_void,
+) -> i32 {
+    if ppv.is_null() {
+        return COM_E_INVALIDARG;
+    }
+    *ppv = std::ptr::null_mut();
+    if guid_equals(riid, &IID_IUNKNOWN) || guid_equals(riid, &IID_IDISPATCH) {
+        *ppv = this;
+        let object = as_oxvba_test_dispatch(this);
+        (*object).ref_count.fetch_add(1, Ordering::AcqRel);
+        return COM_S_OK;
+    }
+    COM_E_NOINTERFACE
+}
+
+#[cfg(target_os = "windows")]
+#[allow(unsafe_op_in_unsafe_fn)]
+unsafe extern "system" fn oxvba_test_add_ref(this: *mut core::ffi::c_void) -> u32 {
+    let object = as_oxvba_test_dispatch(this);
+    (*object).ref_count.fetch_add(1, Ordering::AcqRel) + 1
+}
+
+#[cfg(target_os = "windows")]
+#[allow(unsafe_op_in_unsafe_fn)]
+unsafe extern "system" fn oxvba_test_release(this: *mut core::ffi::c_void) -> u32 {
+    let object = as_oxvba_test_dispatch(this);
+    let prev = (*object).ref_count.fetch_sub(1, Ordering::AcqRel);
+    let next = prev.saturating_sub(1);
+    if next == 0 {
+        drop(Box::from_raw(object));
+    }
+    next
+}
+
+#[cfg(target_os = "windows")]
+#[allow(unsafe_op_in_unsafe_fn)]
+unsafe extern "system" fn oxvba_test_get_type_info_count(
+    _this: *mut core::ffi::c_void,
+    pctinfo: *mut u32,
+) -> i32 {
+    if pctinfo.is_null() {
+        return COM_E_INVALIDARG;
+    }
+    *pctinfo = 0;
+    COM_S_OK
+}
+
+#[cfg(target_os = "windows")]
+unsafe extern "system" fn oxvba_test_get_type_info(
+    _this: *mut core::ffi::c_void,
+    _itinfo: u32,
+    _lcid: u32,
+    _pptinfo: *mut *mut core::ffi::c_void,
+) -> i32 {
+    COM_E_NOTIMPL
+}
+
+#[cfg(target_os = "windows")]
+#[allow(unsafe_op_in_unsafe_fn)]
+unsafe extern "system" fn oxvba_test_get_ids_of_names(
+    _this: *mut core::ffi::c_void,
+    _riid: *const windows_sys::core::GUID,
+    rgsznames: *mut *mut u16,
+    cnames: u32,
+    _lcid: u32,
+    rgdispid: *mut i32,
+) -> i32 {
+    if rgsznames.is_null() || rgdispid.is_null() || cnames == 0 {
+        return COM_E_INVALIDARG;
+    }
+    let name = read_utf16_z(*rgsznames)
+        .unwrap_or_default()
+        .trim()
+        .to_ascii_lowercase();
+    let dispid = match name.as_str() {
+        "count" => TEST_DISPID_COUNT,
+        "exists" => TEST_DISPID_EXISTS,
+        _ => return COM_DISP_E_UNKNOWNNAME,
+    };
+    *rgdispid = dispid;
+    COM_S_OK
+}
+
+#[cfg(target_os = "windows")]
+#[allow(unsafe_op_in_unsafe_fn)]
+unsafe extern "system" fn oxvba_test_invoke(
+    _this: *mut core::ffi::c_void,
+    dispidmember: i32,
+    _riid: *const windows_sys::core::GUID,
+    _lcid: u32,
+    wflags: u16,
+    pparams: *mut DISPPARAMS,
+    pvarresult: *mut VARIANT,
+    _pexcepinfo: *mut EXCEPINFO,
+    puargerr: *mut u32,
+) -> i32 {
+    let (cargs, rgvarg) = if pparams.is_null() {
+        (0, std::ptr::null_mut())
+    } else {
+        ((*pparams).cArgs, (*pparams).rgvarg)
+    };
+    match dispidmember {
+        TEST_DISPID_COUNT => {
+            if (wflags & DISPATCH_PROPERTYGET) == 0 || cargs != 0 {
+                return COM_DISP_E_BADPARAMCOUNT;
+            }
+            set_variant_i32(7, pvarresult);
+            COM_S_OK
+        }
+        TEST_DISPID_EXISTS => {
+            if (wflags & DISPATCH_METHOD) == 0 || cargs != 1 || rgvarg.is_null() {
+                return COM_DISP_E_BADPARAMCOUNT;
+            }
+            let arg = &*rgvarg;
+            let key = match arg.Anonymous.Anonymous.vt {
+                VT_I4 => arg.Anonymous.Anonymous.Anonymous.lVal,
+                VT_UI4 => arg.Anonymous.Anonymous.Anonymous.ulVal as i32,
+                _ => {
+                    if !puargerr.is_null() {
+                        *puargerr = 0;
+                    }
+                    return COM_DISP_E_TYPEMISMATCH;
+                }
+            };
+            set_variant_bool(key == 42, pvarresult);
+            COM_S_OK
+        }
+        _ => COM_DISP_E_MEMBERNOTFOUND,
+    }
 }
 
 #[cfg(target_os = "windows")]
@@ -2460,6 +2721,34 @@ mod tests {
             .dispatch_invoke(object, 2, 42)
             .expect("dictionary Exists should be invokable");
         assert!(exists == 0 || exists == 1);
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn windows_native_controlled_test_dispatch_returns_deterministic_values() {
+        let host = StandardHostServices::new(HalProfileId::Windows, HostPolicy::interactive_dev());
+        let object = host
+            .create_object(4)
+            .expect("create_object should return a token");
+        assert!(
+            object >= 20_001,
+            "controlled COM lane should bind native object"
+        );
+        assert_eq!(
+            host.dispatch_invoke(object, 1, super::DISPATCH_INVOKE_MISSING_ARG_TOKEN)
+                .expect("Count property-get should succeed"),
+            7
+        );
+        assert_eq!(
+            host.dispatch_invoke(object, 2, 42)
+                .expect("Exists(42) should succeed"),
+            1
+        );
+        assert_eq!(
+            host.dispatch_invoke(object, 2, 41)
+                .expect("Exists(41) should succeed"),
+            0
+        );
     }
 
     #[cfg(target_os = "windows")]

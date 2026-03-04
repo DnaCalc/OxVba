@@ -1,4 +1,4 @@
 Sub Main()
 Dim x
-x = DispatchInvoke(CreateObject("Scripting.Dictionary"), "Count")
+x = DispatchInvoke(CreateObject("OxVba.TestDispatch"), "Count")
 End Sub

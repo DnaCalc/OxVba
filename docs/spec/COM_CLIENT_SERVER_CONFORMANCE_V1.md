@@ -60,6 +60,7 @@ Primary checks:
 - `DISPPARAMS` packing subset (phase-I: 2-arg/3-arg positional forms),
 - deterministic `VarResult`/`ExcepInfo`/`ArgErr` translation to OxVba diagnostics.
 - failure-path behavior under `On Error Resume Next` on unsupported profiles.
+- controlled COM server path via OxVba-owned in-process test ProgID (`OxVba.TestDispatch`) to reduce external registration variance.
 
 ### Lane L3: Windows COM server scaffold lane
 

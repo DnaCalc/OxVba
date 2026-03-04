@@ -3144,6 +3144,7 @@ fn map_createobject_literal_token(text: &str) -> Option<i32> {
     let canonical = text.trim().to_ascii_lowercase();
     match canonical.as_str() {
         "scripting.dictionary" => Some(4),
+        "oxvba.testdispatch" => Some(4),
         _ => None,
     }
 }

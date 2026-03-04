@@ -1130,6 +1130,17 @@ mod tests {
     }
 
     #[test]
+    fn compile_createobject_with_oxvba_test_dispatch_literal_maps_to_known_token() {
+        let source = "Sub Main()\nDim x\nx = CreateObject(\"OxVba.TestDispatch\")\nEnd Sub";
+        let out = compile(source).expect("compile should succeed for known controlled test ProgID");
+        assert!(
+            out.instructions
+                .iter()
+                .any(|i| matches!(i, Instruction::LoadConstI32 { value: 4, .. }))
+        );
+    }
+
+    #[test]
     fn compile_dispatchinvoke_with_member_literal_maps_to_known_member_token() {
         let source = "Sub Main()\nDim x\nx = DispatchInvoke(CreateObject(\"Scripting.Dictionary\"), \"Count\", 0)\nEnd Sub";
         let out = compile(source).expect("compile should succeed for known member literal");

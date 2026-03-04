@@ -10,6 +10,10 @@ Current fixtures:
 - `dispatch_member_name_two_arg_property_get.bas`: 2-arg property-get lowering subset.
 - `dispatch_member_name_failure_resume_next.bas`: failure-route harness for `On Error Resume Next`.
 
+Controlled COM test server note:
+- These fixtures target `CreateObject("OxVba.TestDispatch")`.
+- In native Windows host-backed mode, this ProgID resolves to an in-process OxVba-owned `IDispatch` test object (no external COM registration dependency).
+
 Planned next fixture families:
 - `dispatch_named_optional_args_*`
 - `dispatch_argerr_excepinfo_*`
