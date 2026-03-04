@@ -5,7 +5,7 @@
 | Document | Location | Description |
 |---|---|---|
 | **MACH-1000 Plan** | [`MACH1000_PLAN.md`](../MACH1000_PLAN.md) | The definitive OxVba project plan. Charter, architecture, formal approach, testing strategy, implementation sequencing. |
-| **AutoRun State** | [`AUTORUN_STATE.md`](AUTORUN_STATE.md) | Active execution guardrail for continuous runs. Current target has completed host-platform expansion ladder through terminal gate `v226`; blocker handling follows `CURRENT_BLOCKERS.md`. |
+| **AutoRun State** | [`AUTORUN_STATE.md`](AUTORUN_STATE.md) | Active execution guardrail for continuous runs. Current target is the COM client/server ladder terminal gate `v386`; blocker handling follows `CURRENT_BLOCKERS.md`. |
 | **Local Execution Doctrine** | [`LOCAL_EXECUTION_DOCTRINE.md`](LOCAL_EXECUTION_DOCTRINE.md) | Local process hardening rules learned from ladder execution, including scaffold integrity gates and required local checks. |
 | Implementation Log | [`IMPLEMENTATION_LOG.md`](IMPLEMENTATION_LOG.md) | Rolling execution log for implementation progress. |
 | Building | [`BUILDING.md`](BUILDING.md) | Build and local verification instructions. |
@@ -51,6 +51,8 @@
 | PMR Typelib/Importlib HAL Draft v1 | [`spec/PROJECT_MODULE_REFERENCE_TYPELIB_IMPORTLIB_HAL_DRAFT_V1.md`](spec/PROJECT_MODULE_REFERENCE_TYPELIB_IMPORTLIB_HAL_DRAFT_V1.md) | Deterministic first-pass contract for type-library importlib resolution and planned HAL resolver boundary. |
 | PMR Source Crosswalk v1 | [`spec/PROJECT_MODULE_REFERENCE_SOURCE_CROSSWALK_V1.md`](spec/PROJECT_MODULE_REFERENCE_SOURCE_CROSSWALK_V1.md) | Anchor-level source traceability across MS-VBAL, MS-OAUT, and current MS-OVBA extraction status. |
 | Class/COM Alignment Plan v1 | [`spec/CLASS_MODULE_COM_ALIGNMENT_PLAN_V1.md`](spec/CLASS_MODULE_COM_ALIGNMENT_PLAN_V1.md) | Staged plan to align class-module semantics with COM behavior now while explicitly deferring full ABI/interop mechanics. |
+| COM Client/Server Scope v1 | [`spec/COM_CLIENT_SERVER_SCOPE_V1.md`](spec/COM_CLIENT_SERVER_SCOPE_V1.md) | Windows COM client+server scope baseline with formal contract boundaries, tier model, and apartment/lifecycle policy decisions. |
+| COM Client/Server Conformance v1 | [`spec/COM_CLIENT_SERVER_CONFORMANCE_V1.md`](spec/COM_CLIENT_SERVER_CONFORMANCE_V1.md) | Executable lane plan and artifact schema for COM client/server verification and deferred-oracle foldback. |
 | PMR Class/COM A1-A5 Evidence | [`evidence/language/PMR_CLASS_COM_ALIGNMENT_A1_A5_2026-03-03.md`](evidence/language/PMR_CLASS_COM_ALIGNMENT_A1_A5_2026-03-03.md) | Execution evidence for A1-A5: project-graph scaffold, PMR diagnostics, class semantic boundary alignment, and claim-tier gating. |
 | PMR ProjectGraph P0-P10 Rollup | [`evidence/language/PMR_PROJECTGRAPH_P0_P10_ROLLUP_2026-03-03.md`](evidence/language/PMR_PROJECTGRAPH_P0_P10_ROLLUP_2026-03-03.md) | End-to-end execution rollup for parser+binder ProjectGraph integration master workset through oracle/deferred-gate setup. |
 | PMR Fixture Matrix v1 | [`evidence/conformance/PMR_PROJECT_MODEL_FIXTURE_MATRIX_V1.md`](evidence/conformance/PMR_PROJECT_MODEL_FIXTURE_MATRIX_V1.md) | Deterministic executable fixture mapping for PMR project-model scenarios required by P9. |
@@ -183,6 +185,8 @@
 | Profile v185 Status | [`PROFILE_STATUS_V185.md`](profile-status/PROFILE_STATUS_V185.md) | Current gate status contract for `mvp-profile-v185` (release-candidate integrated gate). |
 | Profile v186 Status | [`PROFILE_STATUS_V186.md`](profile-status/PROFILE_STATUS_V186.md) | Current gate status contract for `mvp-profile-v186` (batch-2 terminal closure). |
 | Profile v226 Status | [`PROFILE_STATUS_V226.md`](profile-status/PROFILE_STATUS_V226.md) | Current gate status contract for `mvp-profile-v226` (host-platform expansion terminal closure). |
+| Profile v286 Status | [`PROFILE_STATUS_V286.md`](profile-status/PROFILE_STATUS_V286.md) | Current gate status contract for `mvp-profile-v286` (declare/marshaling full-scope terminal closure). |
+| Profile v287-v386 Statuses | [`profile-status/`](profile-status/README.md) | COM client/server series status records are published through `PROFILE_STATUS_V386.md`. |
 | Profile v107 Status | [`PROFILE_STATUS_V107.md`](profile-status/PROFILE_STATUS_V107.md) | Current gate status contract for `mvp-lang-with-member-target-v107`. |
 | Profile v108-v146 Statuses | [`profile-status/`](profile-status/README.md) | AutoRun ladder status records are published through `PROFILE_STATUS_V146.md` for the active full-language/built-ins ladder range. |
 | Phase 12 Status | [`PHASE12_STATUS.md`](PHASE12_STATUS.md) | Declared profile scope and final conformance/stabilization gate artifacts. |
@@ -280,6 +284,11 @@
 | Profile Ladder (v147-v166) | [`worksets/PROFILE_LADDER_2026-03-01_MACH1000_V147_V166_NON_HAL_COMPLETION.md`](worksets/PROFILE_LADDER_2026-03-01_MACH1000_V147_V166_NON_HAL_COMPLETION.md) | Non-HAL language/runtime/library completion ladder with deferred-oracle gate policy. |
 | Profile Ladder (v167-v186) | [`worksets/PROFILE_LADDER_2026-03-01_MACH1000_V167_V186_NON_HAL_HARDENING.md`](worksets/PROFILE_LADDER_2026-03-01_MACH1000_V167_V186_NON_HAL_HARDENING.md) | Follow-on non-HAL hardening/perf/formal ladder after completion gate. |
 | Profile Ladder (v187-v226) | [`worksets/PROFILE_LADDER_2026-03-02_MACH1000_V187_V226_HOST_PLATFORM_EXPANSION.md`](worksets/PROFILE_LADDER_2026-03-02_MACH1000_V187_V226_HOST_PLATFORM_EXPANSION.md) | Host/HAL platform expansion ladder covering runtime profile bootstrap, UI/DoEvents host lanes, Declare dynlink integration, and terminal closure gates. |
+| Profile Series (COM Windows) | [`worksets/PROFILE_SERIES_2026-03-04_MACH1000_COM_WINDOWS_CLIENT_SERVER.md`](worksets/PROFILE_SERIES_2026-03-04_MACH1000_COM_WINDOWS_CLIENT_SERVER.md) | Multi-round COM roadmap for Windows client+server support (`v287..v386`). |
+| Profile Ladder (v287-v306) | [`worksets/PROFILE_LADDER_2026-03-04_MACH1000_V287_V306_COM_FORMAL_SCAFFOLD.md`](worksets/PROFILE_LADDER_2026-03-04_MACH1000_V287_V306_COM_FORMAL_SCAFFOLD.md) | First COM ladder: formal baseline, clause/conformance scaffolding, and native smoke-path bring-up. |
+| Profile Ladder (v307-v336) | [`worksets/PROFILE_LADDER_2026-03-04_MACH1000_V307_V336_COM_CLIENT_DEPTH.md`](worksets/PROFILE_LADDER_2026-03-04_MACH1000_V307_V336_COM_CLIENT_DEPTH.md) | COM client-depth ladder for native activation/invoke behavior, fallback policy contracts, and executable evidence. |
+| Profile Ladder (v337-v366) | [`worksets/PROFILE_LADDER_2026-03-04_MACH1000_V337_V366_COM_SERVER_DEPTH.md`](worksets/PROFILE_LADDER_2026-03-04_MACH1000_V337_V366_COM_SERVER_DEPTH.md) | COM server-depth ladder for class-factory/dispatch scaffolding, policy controls, and harness coverage. |
+| Profile Ladder (v367-v386) | [`worksets/PROFILE_LADDER_2026-03-04_MACH1000_V367_V386_COM_STABILIZATION.md`](worksets/PROFILE_LADDER_2026-03-04_MACH1000_V367_V386_COM_STABILIZATION.md) | COM stabilization ladder for regression hardening, formal/deferred gate sync, and terminal closure gate `v386`. |
 | Work Set Plan (v147) | [`worksets/WORKSET_2026-03-01_NON_HAL_GAP_BASELINE_LOCK_V147.md`](worksets/WORKSET_2026-03-01_NON_HAL_GAP_BASELINE_LOCK_V147.md) | Baseline lock workset for non-HAL gap classification and scope freeze. |
 | Work Set Plan (v148) | [`worksets/WORKSET_2026-03-01_ERR_SURFACE_EXPANSION_V148.md`](worksets/WORKSET_2026-03-01_ERR_SURFACE_EXPANSION_V148.md) | `Err` member-surface expansion subset workset for deterministic non-HAL execution. |
 | Work Set Plan (v149) | [`worksets/WORKSET_2026-03-01_ERR_LIFECYCLE_TRANSITIONS_V149.md`](worksets/WORKSET_2026-03-01_ERR_LIFECYCLE_TRANSITIONS_V149.md) | Deterministic `Err` lifecycle transitions for `Resume*` and procedure-boundary clearing in non-HAL execution. |
@@ -321,6 +330,7 @@
 | Work Set Plan (v185) | [`worksets/WORKSET_2026-03-01_RELEASE_CANDIDATE_GATE_V185.md`](worksets/WORKSET_2026-03-01_RELEASE_CANDIDATE_GATE_V185.md) | Release-candidate integrated gate workset. |
 | Work Set Plan (v186) | [`worksets/WORKSET_2026-03-01_BATCH2_CLOSURE_V186.md`](worksets/WORKSET_2026-03-01_BATCH2_CLOSURE_V186.md) | Batch-2 closure and handoff workset. |
 | Work Set Plan (v226) | [`worksets/WORKSET_2026-03-02_TERMINAL_INTEGRATED_CLOSURE_GATE_V226.md`](worksets/WORKSET_2026-03-02_TERMINAL_INTEGRATED_CLOSURE_GATE_V226.md) | Terminal integrated closure gate workset for host-platform expansion ladder `v187..v226`. |
+| Work Set Plan (v386) | [`worksets/WORKSET_2026-03-04_TERMINAL_INTEGRATED_CLOSURE_GATE_V386.md`](worksets/WORKSET_2026-03-04_TERMINAL_INTEGRATED_CLOSURE_GATE_V386.md) | Terminal integrated closure gate workset for COM client/server series ladder `v287..v386`. |
 | Status Tours | [`status-tours/`](status-tours/) | Date-stamped orientation/showcase docs for implemented project state. |
 | Formal | [`FORMAL.md`](FORMAL.md) | Lean/Kani formal scaffold status and structure. |
 | Spec Checklist | [`evidence/SPEC_CHECKLIST.md`](evidence/SPEC_CHECKLIST.md) | Structured language + built-in/library checklist aligned to current evidence and planned gaps. |

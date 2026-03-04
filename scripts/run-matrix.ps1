@@ -1,6 +1,6 @@
 param(
-    [string]$ProfileScope = "mvp-full-v146",
-    [string]$OutputDir = "docs/evidence/profiles/v146",
+    [string]$ProfileScope = "mvp-profile-v386",
+    [string]$OutputDir = "docs/evidence/profiles/v386",
     [string]$OutputCsv = "",
     [string]$SummaryPath = ""
 )

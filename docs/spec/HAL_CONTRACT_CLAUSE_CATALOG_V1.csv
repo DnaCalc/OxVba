@@ -36,6 +36,7 @@ HAL-PROC-004,process-env,implemented-verified,conformance,verify_process_host_ba
 HAL-COM-001,com,implemented-verified,conformance,com.create_object
 HAL-COM-002,com,implemented-verified,host-tests,dispatch_invoke_deterministic_projection_contract
 HAL-COM-003,com,implemented-verified,host-tests,windows_declares_com_supported_only_on_windows
+HAL-COM-004,com,implemented-verified,host-tests,windows_native_com_dictionary_lane_executes_when_available
 HAL-TIME-001,time-locale,implemented-verified,conformance,time.timer_ticks
 HAL-TIME-002,time-locale,implemented-verified,conformance,verify_time_host_backed_contract
 HAL-DYN-001,dynlink,implemented-verified,conformance,dynlink.invoke_symbol

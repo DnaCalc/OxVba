@@ -358,3 +358,6 @@
 "FO-V185-002","v185","cargo test -p oxvba-host formal_v185_profile_status_document_exists","no","pass","","docs/profile-status/PROFILE_STATUS_V185.md"
 "FO-V186-001","v186","cargo test -p oxvba-host formal_v186_terminal_closure_artifacts_exist","no","pass","","docs/evidence/profiles/v186/BATCH2_CLOSURE.md"
 "FO-V186-002","v186","cargo test -p oxvba-host formal_v186_profile_status_document_exists","no","pass","","docs/profile-status/PROFILE_STATUS_V186.md"
+"FO-V287-001","v287","cargo kani -p oxvba-host --harness pmr_typelib_resolution_transitions_typelib_refs_out_of_unbound","no","skipped","cargo-kani available via WSL; rerun with -UseWslKani (recommended via run-formal-kani-async.ps1)","crates/oxvba-host/src/project.rs"
+"FO-V287-002","v287","cargo kani -p oxvba-host --harness pmr_active_resolution_prefers_local_symbol_before_reference_symbol","no","skipped","cargo-kani available via WSL; rerun with -UseWslKani (recommended via run-formal-kani-async.ps1)","crates/oxvba-host/src/project.rs"
+"FO-V287-003","v287","cargo kani -p oxvba-hal --harness dynlink_contract_rejects_mismatched_selection_policy","no","skipped","cargo-kani available via WSL; rerun with -UseWslKani (recommended via run-formal-kani-async.ps1)","crates/oxvba-hal/src/traits.rs"

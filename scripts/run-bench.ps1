@@ -1,8 +1,8 @@
 param(
     [int]$Iterations = 3,
-    [string]$ProfileScope = "mvp-full-v146",
-    [string]$OutputPath = "docs/evidence/profiles/v146/benchmark_latest.md",
-    [string]$OutputCsvPath = "docs/evidence/profiles/v146/benchmark_latest.csv"
+    [string]$ProfileScope = "mvp-profile-v386",
+    [string]$OutputPath = "docs/evidence/profiles/v386/benchmark_latest.md",
+    [string]$OutputCsvPath = "docs/evidence/profiles/v386/benchmark_latest.csv"
 )
 
 $ErrorActionPreference = "Stop"

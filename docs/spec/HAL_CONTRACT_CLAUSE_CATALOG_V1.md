@@ -110,6 +110,7 @@ Each clause includes:
 | `HAL-COM-001` | `create_object(prog_id)` | capability supported; COM activation allowed | deterministic token result in v1 | unsupported/policy-denied | implemented-verified | conformance `com.create_object`; host mode tests; `process_com_dynlink_policy_denials_are_enforced` |
 | `HAL-COM-002` | `dispatch_invoke(object, member, arg)` | capability supported; COM activation allowed | deterministic token result in v1 | unsupported/policy-denied | implemented-verified | `dispatch_invoke_deterministic_projection_contract`; policy test via `process_com_dynlink_policy_denials_are_enforced` |
 | `HAL-COM-003` | Non-Windows profiles must report COM unsupported in v1 descriptor baseline. | profile != windows | deterministic unsupported contract | n/a | implemented-verified | `windows_declares_com_supported_only_on_windows` |
+| `HAL-COM-004` | Windows host-backed mode may activate native COM + `IDispatch::Invoke` for mapped tokens while retaining deterministic projection fallback for unmapped/unavailable paths. | profile = windows; host-backed mode active; COM activation allowed | mapped native lanes return stable integer tokens; fallback path remains deterministic | unsupported/policy-denied and adapter faults preserve stable error contract | implemented-verified | `windows_native_com_dictionary_lane_executes_when_available` |
 
 ### 6.6 `TimeLocaleHal`
 

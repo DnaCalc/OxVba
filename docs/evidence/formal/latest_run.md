@@ -1,7 +1,7 @@
 # Formal Run Report
 
-- Timestamp (UTC): 2026-03-02T21:47:42Z
-- Profile scope: mvp-profile-v286
+- Timestamp (UTC): 2026-03-04T19:23:27Z
+- Profile scope: mvp-profile-v386
 - Overall mode: non-blocking
 - Kani required: false
 - Kani execution: deferred-to-wsl-async
@@ -370,3 +370,6 @@
 | FO-V185-002 | v185 | no | pass | cargo test -p oxvba-host formal_v185_profile_status_document_exists | docs/profile-status/PROFILE_STATUS_V185.md |  |
 | FO-V186-001 | v186 | no | pass | cargo test -p oxvba-host formal_v186_terminal_closure_artifacts_exist | docs/evidence/profiles/v186/BATCH2_CLOSURE.md |  |
 | FO-V186-002 | v186 | no | pass | cargo test -p oxvba-host formal_v186_profile_status_document_exists | docs/profile-status/PROFILE_STATUS_V186.md |  |
+| FO-V287-001 | v287 | no | skipped | cargo kani -p oxvba-host --harness pmr_typelib_resolution_transitions_typelib_refs_out_of_unbound | crates/oxvba-host/src/project.rs | cargo-kani available via WSL; rerun with -UseWslKani (recommended via run-formal-kani-async.ps1) |
+| FO-V287-002 | v287 | no | skipped | cargo kani -p oxvba-host --harness pmr_active_resolution_prefers_local_symbol_before_reference_symbol | crates/oxvba-host/src/project.rs | cargo-kani available via WSL; rerun with -UseWslKani (recommended via run-formal-kani-async.ps1) |
+| FO-V287-003 | v287 | no | skipped | cargo kani -p oxvba-hal --harness dynlink_contract_rejects_mismatched_selection_policy | crates/oxvba-hal/src/traits.rs | cargo-kani available via WSL; rerun with -UseWslKani (recommended via run-formal-kani-async.ps1) |

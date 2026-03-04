@@ -1313,3 +1313,38 @@
   - added conformance fixture `err_surface_fields_subset.bas` and golden expectation row.
   - published `WORKSET_2026-03-01_ERR_SURFACE_EXPANSION_V148.md` and `PROFILE_STATUS_V148.md`.
   - updated coverage/spec/checklist notes to reflect expanded-but-still-partial Err lifecycle semantics.
+- Added COM client/server planning baseline (Windows-first) after post-`v286` review:
+  - published COM scope and conformance drafts:
+    - `docs/spec/COM_CLIENT_SERVER_SCOPE_V1.md`
+    - `docs/spec/COM_CLIENT_SERVER_CONFORMANCE_V1.md`
+  - published COM profile series and first ladder/workset set:
+    - `docs/worksets/PROFILE_SERIES_2026-03-04_MACH1000_COM_WINDOWS_CLIENT_SERVER.md`
+    - `docs/worksets/PROFILE_LADDER_2026-03-04_MACH1000_V287_V306_COM_FORMAL_SCAFFOLD.md`
+    - `docs/worksets/WORKSET_2026-03-04_COM_FORMAL_BASELINE_V287.md`
+    - `docs/worksets/WORKSET_2026-03-04_COM_CLAUSE_CONFORMANCE_SCAFFOLD_V288_V292.md`
+    - `docs/worksets/WORKSET_2026-03-04_COM_WINDOWS_TEST_COMPONENTS_V293_V300.md`
+    - `docs/worksets/WORKSET_2026-03-04_COM_CLIENT_SERVER_SMOKE_GATE_V301_V306.md`
+  - updated `docs/spec/README.md` and `docs/README.md` indexes for COM planning artifacts.
+- Executed COM series continuation through terminal closure `v386`:
+  - published continuation ladders and closure workset:
+    - `docs/worksets/PROFILE_LADDER_2026-03-04_MACH1000_V307_V336_COM_CLIENT_DEPTH.md`
+    - `docs/worksets/PROFILE_LADDER_2026-03-04_MACH1000_V337_V366_COM_SERVER_DEPTH.md`
+    - `docs/worksets/PROFILE_LADDER_2026-03-04_MACH1000_V367_V386_COM_STABILIZATION.md`
+    - `docs/worksets/WORKSET_2026-03-04_TERMINAL_INTEGRATED_CLOSURE_GATE_V386.md`
+  - generated profile status records for `v287..v386` under `docs/profile-status/`.
+  - implemented Windows host-backed native COM client lane in HAL `ComHal` adapter while preserving deterministic projection fallback:
+    - added token->ProgID mapping support (`OXVBA_COM_PROGID_<token>` override + default `4 => Scripting.Dictionary`),
+    - added COM apartment guard (`CoInitializeEx`/`CoUninitialize`) and activation path (`CLSIDFromProgID` + `CoCreateInstance`),
+    - added `IDispatch` invocation subset for dictionary `Count`/`Exists` with deterministic token conversion for `VT_EMPTY`, `VT_I4`, `VT_UI4`, `VT_BOOL`.
+  - expanded HAL clause catalog with host-tested COM native/fallback contract clause `HAL-COM-004`.
+  - reconciled conformance corpus with current runtime behavior:
+    - updated declare-stub expectations to deterministic error status under current declaration policy,
+    - added PMR class-graph fixture expectations,
+    - refreshed deterministic datetime expansion golden row to current host-token constants.
+  - produced closure evidence artifacts:
+    - `docs/evidence/profiles/v386/integrated_gate.md` (`PASS`),
+    - `docs/evidence/profiles/v386/gate_report.md` (`PASS`),
+    - `docs/evidence/profiles/v386/matrix_latest.csv` (`2/2` required cells green),
+    - `docs/evidence/formal/latest_run.md` (`mvp-profile-v386`, non-blocking/deferred Kani policy).
+  - updated AutoRun control docs to active terminal gate `v386`:
+    - `AGENTS.md`, `docs/AUTORUN_STATE.md`, `README.md`, `docs/README.md`, `docs/profile-status/README.md`.

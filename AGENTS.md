@@ -22,8 +22,8 @@ Use `docs/` and `synthesis/` for supporting context and provenance.
 - Only reply when one of the following is true:
   - The active profile ladder is complete and its final gate is passed.
     - Current active ladder:
-      - `v227..v286` (`docs/worksets/PROFILE_LADDER_2026-03-02_MACH1000_V227_V286_DECLARE_MARSHAL_FULL_SCOPE.md`)
-    - Current required terminal gate: `v286`
+      - `v287..v386` (`docs/worksets/PROFILE_SERIES_2026-03-04_MACH1000_COM_WINDOWS_CLIENT_SERVER.md`)
+    - Current required terminal gate: `v386`
   - Blockers are documented and no progress can be made on any remaining ladder task without unblocking.
 
 ### Blocker Handling Protocol

@@ -1907,6 +1907,7 @@ mod tests {
                 || matrix.contains("mvp-stabilization-rollup-v66")
                 || matrix.contains("mvp-full-typing-conformance-gate-v86")
                 || matrix.contains("mvp-full-v146")
+                || matrix.contains("mvp-profile-v386")
         );
         assert!(
             formal.contains("mvp-perf-shape-v26")
@@ -1915,6 +1916,7 @@ mod tests {
                 || formal.contains("mvp-stabilization-rollup-v66")
                 || formal.contains("mvp-full-typing-conformance-gate-v86")
                 || formal.contains("mvp-full-v146")
+                || formal.contains("mvp-profile-v386")
         );
     }
 
@@ -1930,6 +1932,7 @@ mod tests {
                 || bench.contains("docs/evidence/profiles/v66/benchmark_latest.md")
                 || bench.contains("docs/evidence/profiles/v86/benchmark_latest.md")
                 || bench.contains("docs/evidence/profiles/v146/benchmark_latest.md")
+                || bench.contains("docs/evidence/profiles/v386/benchmark_latest.md")
         );
     }
 
@@ -2141,6 +2144,7 @@ mod tests {
                 || matrix.contains("mvp-stabilization-rollup-v66")
                 || matrix.contains("mvp-full-typing-conformance-gate-v86")
                 || matrix.contains("mvp-full-v146")
+                || matrix.contains("mvp-profile-v386")
         );
         assert!(
             formal.contains("mvp-full-coverage-perf-gate-v36")
@@ -2148,6 +2152,7 @@ mod tests {
                 || formal.contains("mvp-stabilization-rollup-v66")
                 || formal.contains("mvp-full-typing-conformance-gate-v86")
                 || formal.contains("mvp-full-v146")
+                || formal.contains("mvp-profile-v386")
         );
     }
 
@@ -2162,6 +2167,7 @@ mod tests {
                 || bench.contains("docs/evidence/profiles/v66/benchmark_latest.md")
                 || bench.contains("docs/evidence/profiles/v86/benchmark_latest.md")
                 || bench.contains("docs/evidence/profiles/v146/benchmark_latest.md")
+                || bench.contains("docs/evidence/profiles/v386/benchmark_latest.md")
         );
     }
 
@@ -2181,12 +2187,14 @@ mod tests {
                 || matrix.contains("mvp-stabilization-rollup-v66")
                 || matrix.contains("mvp-full-typing-conformance-gate-v86")
                 || matrix.contains("mvp-full-v146")
+                || matrix.contains("mvp-profile-v386")
         );
         assert!(
             formal.contains("mvp-language-stdlib-consolidation-gate-v56")
                 || formal.contains("mvp-stabilization-rollup-v66")
                 || formal.contains("mvp-full-typing-conformance-gate-v86")
                 || formal.contains("mvp-full-v146")
+                || formal.contains("mvp-profile-v386")
         );
     }
 
@@ -2200,6 +2208,7 @@ mod tests {
                 || bench.contains("docs/evidence/profiles/v66/benchmark_latest.md")
                 || bench.contains("docs/evidence/profiles/v86/benchmark_latest.md")
                 || bench.contains("docs/evidence/profiles/v146/benchmark_latest.md")
+                || bench.contains("docs/evidence/profiles/v386/benchmark_latest.md")
         );
     }
 
@@ -2426,12 +2435,14 @@ mod tests {
                 || bench.contains("docs/evidence/profiles/v66/benchmark_latest.md")
                 || bench.contains("docs/evidence/profiles/v86/benchmark_latest.md")
                 || bench.contains("docs/evidence/profiles/v146/benchmark_latest.md")
+                || bench.contains("docs/evidence/profiles/v386/benchmark_latest.md")
         );
         assert!(
             bench.contains("docs/evidence/profiles/v64/benchmark_latest.csv")
                 || bench.contains("docs/evidence/profiles/v66/benchmark_latest.csv")
                 || bench.contains("docs/evidence/profiles/v86/benchmark_latest.csv")
                 || bench.contains("docs/evidence/profiles/v146/benchmark_latest.csv")
+                || bench.contains("docs/evidence/profiles/v386/benchmark_latest.csv")
         );
     }
 
@@ -2472,16 +2483,19 @@ mod tests {
             matrix.contains("mvp-stabilization-rollup-v66")
                 || matrix.contains("mvp-full-typing-conformance-gate-v86")
                 || matrix.contains("mvp-full-v146")
+                || matrix.contains("mvp-profile-v386")
         );
         assert!(
             formal.contains("mvp-stabilization-rollup-v66")
                 || formal.contains("mvp-full-typing-conformance-gate-v86")
                 || formal.contains("mvp-full-v146")
+                || formal.contains("mvp-profile-v386")
         );
         assert!(
             bench.contains("docs/evidence/profiles/v66/benchmark_latest.md")
                 || bench.contains("docs/evidence/profiles/v86/benchmark_latest.md")
                 || bench.contains("docs/evidence/profiles/v146/benchmark_latest.md")
+                || bench.contains("docs/evidence/profiles/v386/benchmark_latest.md")
         );
     }
 
@@ -2505,19 +2519,28 @@ mod tests {
             .expect("run-bench script exists");
         let integrated = std::fs::read_to_string(repo_path("scripts/run-profile-gate.ps1"))
             .expect("run-profile-gate script exists");
-        assert!(matrix.contains("mvp-full-v146"));
-        assert!(formal.contains("mvp-full-v146"));
-        assert!(bench.contains("docs/evidence/profiles/v146/benchmark_latest.md"));
-        assert!(integrated.contains("mvp-full-v146"));
+        assert!(matrix.contains("mvp-full-v146") || matrix.contains("mvp-profile-v386"));
+        assert!(formal.contains("mvp-full-v146") || formal.contains("mvp-profile-v386"));
+        assert!(
+            bench.contains("docs/evidence/profiles/v146/benchmark_latest.md")
+                || bench.contains("docs/evidence/profiles/v386/benchmark_latest.md")
+        );
+        assert!(integrated.contains("mvp-full-v146") || integrated.contains("mvp-profile-v386"));
     }
 
     #[test]
     fn formal_v86_phase12_status_targets_v86_scope() {
         let text = std::fs::read_to_string(repo_path("docs/PHASE12_STATUS.md"))
             .expect("phase status doc exists");
-        assert!(text.contains("mvp-full-v146"));
-        assert!(text.contains("docs/evidence/profiles/v146/matrix_latest.csv"));
-        assert!(text.contains("docs/evidence/profiles/v146/integrated_gate.md"));
+        assert!(text.contains("mvp-full-v146") || text.contains("mvp-profile-v386"));
+        assert!(
+            text.contains("docs/evidence/profiles/v146/matrix_latest.csv")
+                || text.contains("docs/evidence/profiles/v386/matrix_latest.csv")
+        );
+        assert!(
+            text.contains("docs/evidence/profiles/v146/integrated_gate.md")
+                || text.contains("docs/evidence/profiles/v386/integrated_gate.md")
+        );
     }
 
     #[test]

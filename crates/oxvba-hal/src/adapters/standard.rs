@@ -21,6 +21,17 @@ use std::{
 };
 
 #[cfg(target_os = "windows")]
+use windows_sys::Win32::Foundation::VARIANT_BOOL;
+#[cfg(target_os = "windows")]
+use windows_sys::Win32::System::Com::{
+    CLSCTX_SERVER, CLSIDFromProgID, COINIT_APARTMENTTHREADED, CoCreateInstance, CoInitializeEx,
+    CoUninitialize, DISPATCH_METHOD, DISPATCH_PROPERTYGET, DISPPARAMS, EXCEPINFO,
+};
+#[cfg(target_os = "windows")]
+use windows_sys::Win32::System::Variant::{
+    VARIANT, VT_BOOL, VT_EMPTY, VT_I4, VT_UI4, VariantClear,
+};
+#[cfg(target_os = "windows")]
 use windows_sys::Win32::UI::WindowsAndMessaging::{
     DispatchMessageW, MB_OK, MSG, MessageBoxW, PM_REMOVE, PeekMessageW, TranslateMessage,
 };
@@ -50,6 +61,7 @@ pub(crate) struct StandardHostServices {
     descriptor: HalDescriptor,
     policy: HostPolicy,
     fs_state: Arc<Mutex<FileSystemState>>,
+    com_state: Arc<Mutex<ComState>>,
     dynlink_bindings: Arc<Mutex<BTreeMap<u32, i32>>>,
 }
 
@@ -72,6 +84,7 @@ impl StandardHostServices {
             descriptor: descriptor_for_profile(profile, runtime_class, &policy),
             policy,
             fs_state: Arc::new(Mutex::new(FileSystemState::default())),
+            com_state: Arc::new(Mutex::new(ComState::default())),
             dynlink_bindings: Arc::new(Mutex::new(BTreeMap::new())),
         }
     }
@@ -116,6 +129,16 @@ impl StandardHostServices {
                 op,
                 "filesystem state lock poisoned",
             )
+        })
+    }
+
+    fn com_lock(
+        &self,
+        capability: CapabilityId,
+        op: &'static str,
+    ) -> HalResult<std::sync::MutexGuard<'_, ComState>> {
+        self.com_state.lock().map_err(|_| {
+            HalError::adapter_fault(self.profile, capability, op, "com state lock poisoned")
         })
     }
 
@@ -204,6 +227,10 @@ impl StandardHostServices {
         self.native_mode_enabled()
     }
 
+    fn native_com_enabled(&self) -> bool {
+        self.native_mode_enabled() && self.profile == HalProfileId::Windows
+    }
+
     fn host_fs_base_dir(&self) -> PathBuf {
         let mut out = std::env::temp_dir();
         out.push("oxvba_hal");
@@ -279,6 +306,153 @@ impl StandardHostServices {
 
     #[cfg(not(target_os = "windows"))]
     fn pump_windows_messages_once(&self) {}
+
+    #[cfg(target_os = "windows")]
+    fn resolve_native_com_progid(&self, prog_id: i32) -> Option<String> {
+        let env_key = format!("OXVBA_COM_PROGID_{prog_id}");
+        if let Ok(value) = std::env::var(env_key) {
+            let trimmed = value.trim();
+            if !trimmed.is_empty() {
+                return Some(trimmed.to_string());
+            }
+        }
+        match prog_id {
+            4 => Some("Scripting.Dictionary".to_string()),
+            _ => None,
+        }
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    fn resolve_native_com_progid(&self, _prog_id: i32) -> Option<String> {
+        None
+    }
+
+    #[cfg(target_os = "windows")]
+    fn native_com_probe_activation(&self, prog_id: &str) -> HalResult<()> {
+        let _apartment = ComApartmentGuard::enter(self.profile, "create_object")?;
+        let dispatch = self.native_com_activate_dispatch(prog_id)?;
+        unsafe {
+            raw_release_dispatch(dispatch);
+        }
+        Ok(())
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    fn native_com_probe_activation(&self, _prog_id: &str) -> HalResult<()> {
+        Err(HalError::adapter_fault(
+            self.profile,
+            CapabilityId::ComActivationDispatch,
+            "create_object",
+            "native COM activation unavailable on this platform",
+        ))
+    }
+
+    #[cfg(target_os = "windows")]
+    fn native_com_activate_dispatch(&self, prog_id: &str) -> HalResult<*mut RawIDispatch> {
+        let wide: Vec<u16> = prog_id.encode_utf16().chain(std::iter::once(0)).collect();
+        let mut clsid = windows_sys::core::GUID {
+            data1: 0,
+            data2: 0,
+            data3: 0,
+            data4: [0; 8],
+        };
+        let hr = unsafe { CLSIDFromProgID(wide.as_ptr(), &mut clsid) };
+        if hr < 0 {
+            return Err(HalError::adapter_fault(
+                self.profile,
+                CapabilityId::ComActivationDispatch,
+                "create_object",
+                format!(
+                    "CLSIDFromProgID failed for `{prog_id}` with HRESULT {:#010X}",
+                    hr as u32
+                ),
+            ));
+        }
+
+        let mut dispatch_ptr: *mut core::ffi::c_void = std::ptr::null_mut();
+        let hr = unsafe {
+            CoCreateInstance(
+                &clsid,
+                std::ptr::null_mut(),
+                CLSCTX_SERVER,
+                &IID_IDISPATCH,
+                &mut dispatch_ptr,
+            )
+        };
+        if hr < 0 {
+            return Err(HalError::adapter_fault(
+                self.profile,
+                CapabilityId::ComActivationDispatch,
+                "create_object",
+                format!(
+                    "CoCreateInstance failed for `{prog_id}` with HRESULT {:#010X}",
+                    hr as u32
+                ),
+            ));
+        }
+        if dispatch_ptr.is_null() {
+            return Err(HalError::adapter_fault(
+                self.profile,
+                CapabilityId::ComActivationDispatch,
+                "create_object",
+                "CoCreateInstance returned a null IDispatch pointer",
+            ));
+        }
+        Ok(dispatch_ptr.cast::<RawIDispatch>())
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    fn native_com_activate_dispatch(&self, _prog_id: &str) -> HalResult<*mut core::ffi::c_void> {
+        Err(HalError::adapter_fault(
+            self.profile,
+            CapabilityId::ComActivationDispatch,
+            "create_object",
+            "native COM activation unavailable on this platform",
+        ))
+    }
+
+    #[cfg(target_os = "windows")]
+    fn native_com_dispatch_invoke(&self, prog_id: &str, member: i32, arg: i32) -> HalResult<i32> {
+        let _apartment = ComApartmentGuard::enter(self.profile, "dispatch_invoke")?;
+        let dispatch = self.native_com_activate_dispatch(prog_id)?;
+        let result = if prog_id.eq_ignore_ascii_case("Scripting.Dictionary") {
+            match member {
+                1 => unsafe { raw_dispatch_dictionary_count(dispatch) },
+                2 => unsafe { raw_dispatch_dictionary_exists(dispatch, arg) },
+                _ => Err(format!(
+                    "unsupported Scripting.Dictionary member token: {member}"
+                )),
+            }
+        } else {
+            unsafe { raw_dispatch_property_get_noargs(dispatch, member) }
+        };
+        unsafe {
+            raw_release_dispatch(dispatch);
+        }
+        result.map_err(|message| {
+            HalError::adapter_fault(
+                self.profile,
+                CapabilityId::ComActivationDispatch,
+                "dispatch_invoke",
+                message,
+            )
+        })
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    fn native_com_dispatch_invoke(
+        &self,
+        _prog_id: &str,
+        _member: i32,
+        _arg: i32,
+    ) -> HalResult<i32> {
+        Err(HalError::adapter_fault(
+            self.profile,
+            CapabilityId::ComActivationDispatch,
+            "dispatch_invoke",
+            "native COM invoke unavailable on this platform",
+        ))
+    }
 }
 
 pub(crate) fn descriptor_for_profile(
@@ -716,6 +890,15 @@ impl ComHal for StandardHostServices {
         if !self.policy.allow_com_activation {
             return Err(self.denied(capability, "create_object"));
         }
+        if self.native_com_enabled()
+            && let Some(prog_id_name) = self.resolve_native_com_progid(prog_id)
+            && self.native_com_probe_activation(&prog_id_name).is_ok()
+        {
+            let mut state = self.com_lock(capability, "create_object")?;
+            let handle = state.allocate_handle();
+            state.bindings.insert(handle, ComBinding { prog_id_name });
+            return Ok(handle);
+        }
         Ok(5_000i32.saturating_add(prog_id))
     }
 
@@ -726,6 +909,15 @@ impl ComHal for StandardHostServices {
         }
         if !self.policy.allow_com_activation {
             return Err(self.denied(capability, "dispatch_invoke"));
+        }
+        if self.native_com_enabled() {
+            let binding = {
+                let state = self.com_lock(capability, "dispatch_invoke")?;
+                state.bindings.get(&object).cloned()
+            };
+            if let Some(binding) = binding {
+                return self.native_com_dispatch_invoke(&binding.prog_id_name, member, arg);
+            }
         }
         Ok(object.saturating_add(member).saturating_add(arg))
     }
@@ -1242,6 +1434,263 @@ struct FileHandleState {
     host_path: Option<PathBuf>,
 }
 
+#[derive(Debug, Default)]
+struct ComState {
+    next_handle: i32,
+    bindings: BTreeMap<i32, ComBinding>,
+}
+
+impl ComState {
+    fn allocate_handle(&mut self) -> i32 {
+        self.next_handle = self.next_handle.saturating_add(1).max(1);
+        20_000i32.saturating_add(self.next_handle)
+    }
+}
+
+#[derive(Debug, Clone)]
+struct ComBinding {
+    prog_id_name: String,
+}
+
+#[cfg(target_os = "windows")]
+const IID_IDISPATCH: windows_sys::core::GUID = windows_sys::core::GUID {
+    data1: 0x0002_0400,
+    data2: 0x0000,
+    data3: 0x0000,
+    data4: [0xC0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x46],
+};
+
+#[cfg(target_os = "windows")]
+const IID_NULL: windows_sys::core::GUID = windows_sys::core::GUID {
+    data1: 0,
+    data2: 0,
+    data3: 0,
+    data4: [0; 8],
+};
+
+#[cfg(target_os = "windows")]
+#[repr(C)]
+struct RawIUnknownVtbl {
+    query_interface: unsafe extern "system" fn(
+        this: *mut core::ffi::c_void,
+        riid: *const windows_sys::core::GUID,
+        ppv: *mut *mut core::ffi::c_void,
+    ) -> i32,
+    add_ref: unsafe extern "system" fn(this: *mut core::ffi::c_void) -> u32,
+    release: unsafe extern "system" fn(this: *mut core::ffi::c_void) -> u32,
+}
+
+#[cfg(target_os = "windows")]
+#[repr(C)]
+struct RawIDispatchVtbl {
+    unknown: RawIUnknownVtbl,
+    get_type_info_count:
+        unsafe extern "system" fn(this: *mut core::ffi::c_void, pctinfo: *mut u32) -> i32,
+    get_type_info: unsafe extern "system" fn(
+        this: *mut core::ffi::c_void,
+        itinfo: u32,
+        lcid: u32,
+        pptinfo: *mut *mut core::ffi::c_void,
+    ) -> i32,
+    get_ids_of_names: unsafe extern "system" fn(
+        this: *mut core::ffi::c_void,
+        riid: *const windows_sys::core::GUID,
+        rgsznames: *mut *mut u16,
+        cnames: u32,
+        lcid: u32,
+        rgdispid: *mut i32,
+    ) -> i32,
+    invoke: unsafe extern "system" fn(
+        this: *mut core::ffi::c_void,
+        dispidmember: i32,
+        riid: *const windows_sys::core::GUID,
+        lcid: u32,
+        wflags: u16,
+        pparams: *mut DISPPARAMS,
+        pvarresult: *mut VARIANT,
+        pexcepinfo: *mut EXCEPINFO,
+        puargerr: *mut u32,
+    ) -> i32,
+}
+
+#[cfg(target_os = "windows")]
+#[repr(C)]
+struct RawIDispatch {
+    vtbl: *const RawIDispatchVtbl,
+}
+
+#[cfg(target_os = "windows")]
+struct ComApartmentGuard {
+    initialized: bool,
+}
+
+#[cfg(target_os = "windows")]
+impl ComApartmentGuard {
+    fn enter(profile: HalProfileId, operation: &'static str) -> HalResult<Self> {
+        let hr = unsafe { CoInitializeEx(std::ptr::null(), COINIT_APARTMENTTHREADED as u32) };
+        if hr < 0 {
+            return Err(HalError::adapter_fault(
+                profile,
+                CapabilityId::ComActivationDispatch,
+                operation,
+                format!("CoInitializeEx failed with HRESULT {:#010X}", hr as u32),
+            ));
+        }
+        Ok(Self { initialized: true })
+    }
+}
+
+#[cfg(target_os = "windows")]
+impl Drop for ComApartmentGuard {
+    fn drop(&mut self) {
+        if self.initialized {
+            unsafe {
+                CoUninitialize();
+            }
+        }
+    }
+}
+
+#[cfg(target_os = "windows")]
+#[allow(unsafe_op_in_unsafe_fn)]
+unsafe fn raw_release_dispatch(dispatch: *mut RawIDispatch) {
+    if dispatch.is_null() {
+        return;
+    }
+    let vtbl = (*dispatch).vtbl;
+    ((*vtbl).unknown.release)(dispatch.cast());
+}
+
+#[cfg(target_os = "windows")]
+#[allow(unsafe_op_in_unsafe_fn)]
+unsafe fn raw_get_dispid_by_name(dispatch: *mut RawIDispatch, name: &str) -> Result<i32, String> {
+    let mut name_wide: Vec<u16> = name.encode_utf16().chain(std::iter::once(0)).collect();
+    let mut name_ptr = name_wide.as_mut_ptr();
+    let mut dispid = 0i32;
+    let hr = ((*(*dispatch).vtbl).get_ids_of_names)(
+        dispatch.cast(),
+        &IID_NULL,
+        &mut name_ptr,
+        1,
+        0x0400,
+        &mut dispid,
+    );
+    if hr < 0 {
+        return Err(format!(
+            "IDispatch::GetIDsOfNames failed for `{name}` with HRESULT {:#010X}",
+            hr as u32
+        ));
+    }
+    Ok(dispid)
+}
+
+#[cfg(target_os = "windows")]
+#[allow(unsafe_op_in_unsafe_fn)]
+unsafe fn raw_variant_to_token(variant: &VARIANT) -> Result<i32, String> {
+    let value = match variant.Anonymous.Anonymous.vt {
+        VT_EMPTY => 0,
+        VT_I4 => variant.Anonymous.Anonymous.Anonymous.lVal,
+        VT_UI4 => variant.Anonymous.Anonymous.Anonymous.ulVal as i32,
+        VT_BOOL => {
+            let value: VARIANT_BOOL = variant.Anonymous.Anonymous.Anonymous.boolVal;
+            if value == 0 { 0 } else { 1 }
+        }
+        vt => {
+            return Err(format!("unsupported VARIANT return type vt={vt}"));
+        }
+    };
+    Ok(value)
+}
+
+#[cfg(target_os = "windows")]
+#[allow(unsafe_op_in_unsafe_fn)]
+unsafe fn raw_dispatch_property_get_noargs(
+    dispatch: *mut RawIDispatch,
+    dispid: i32,
+) -> Result<i32, String> {
+    let mut result: VARIANT = std::mem::zeroed();
+    let mut excep: EXCEPINFO = std::mem::zeroed();
+    let mut arg_err = 0u32;
+    let mut params = DISPPARAMS {
+        rgvarg: std::ptr::null_mut(),
+        rgdispidNamedArgs: std::ptr::null_mut(),
+        cArgs: 0,
+        cNamedArgs: 0,
+    };
+    let hr = ((*(*dispatch).vtbl).invoke)(
+        dispatch.cast(),
+        dispid,
+        &IID_NULL,
+        0x0400,
+        DISPATCH_PROPERTYGET,
+        &mut params,
+        &mut result,
+        &mut excep,
+        &mut arg_err,
+    );
+    if hr < 0 {
+        return Err(format!(
+            "IDispatch::Invoke(property-get) failed with HRESULT {:#010X} (arg_err={})",
+            hr as u32, arg_err
+        ));
+    }
+
+    let token = raw_variant_to_token(&result)?;
+    let _ = VariantClear(&mut result);
+    Ok(token)
+}
+
+#[cfg(target_os = "windows")]
+#[allow(unsafe_op_in_unsafe_fn)]
+unsafe fn raw_dispatch_dictionary_count(dispatch: *mut RawIDispatch) -> Result<i32, String> {
+    let dispid = raw_get_dispid_by_name(dispatch, "Count")?;
+    raw_dispatch_property_get_noargs(dispatch, dispid)
+}
+
+#[cfg(target_os = "windows")]
+#[allow(unsafe_op_in_unsafe_fn)]
+unsafe fn raw_dispatch_dictionary_exists(
+    dispatch: *mut RawIDispatch,
+    key: i32,
+) -> Result<i32, String> {
+    let dispid = raw_get_dispid_by_name(dispatch, "Exists")?;
+
+    let mut arg_variant: VARIANT = std::mem::zeroed();
+    arg_variant.Anonymous.Anonymous.vt = VT_I4;
+    arg_variant.Anonymous.Anonymous.Anonymous.lVal = key;
+
+    let mut result: VARIANT = std::mem::zeroed();
+    let mut excep: EXCEPINFO = std::mem::zeroed();
+    let mut arg_err = 0u32;
+    let mut params = DISPPARAMS {
+        rgvarg: &mut arg_variant,
+        rgdispidNamedArgs: std::ptr::null_mut(),
+        cArgs: 1,
+        cNamedArgs: 0,
+    };
+    let hr = ((*(*dispatch).vtbl).invoke)(
+        dispatch.cast(),
+        dispid,
+        &IID_NULL,
+        0x0400,
+        DISPATCH_METHOD,
+        &mut params,
+        &mut result,
+        &mut excep,
+        &mut arg_err,
+    );
+    if hr < 0 {
+        return Err(format!(
+            "IDispatch::Invoke(method Exists) failed with HRESULT {:#010X} (arg_err={})",
+            hr as u32, arg_err
+        ));
+    }
+
+    let token = raw_variant_to_token(&result)?;
+    let _ = VariantClear(&mut result);
+    Ok(token)
+}
+
 fn pseudo_file_len_from_path_token(path: i32) -> i32 {
     let magnitude = path.saturating_abs();
     1 + (magnitude % 4096)
@@ -1704,6 +2153,34 @@ mod tests {
             metadata.len() >= 160,
             "host-backed file should reflect seek growth"
         );
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn windows_native_com_dictionary_lane_executes_when_available() {
+        let host = StandardHostServices::new(HalProfileId::Windows, HostPolicy::interactive_dev());
+        let object = host
+            .create_object(4)
+            .expect("create_object should return a token");
+
+        if object == 5_004 {
+            // Environment lacks native activation prerequisites; deterministic fallback remains valid.
+            return;
+        }
+
+        assert!(
+            object >= 20_001,
+            "native COM handles use COM-state handle space"
+        );
+        let count = host
+            .dispatch_invoke(object, 1, 0)
+            .expect("dictionary Count should be invokable");
+        assert!(count >= 0);
+
+        let exists = host
+            .dispatch_invoke(object, 2, 42)
+            .expect("dictionary Exists should be invokable");
+        assert!(exists == 0 || exists == 1);
     }
 
     proptest! {
