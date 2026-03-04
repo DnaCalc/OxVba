@@ -44,10 +44,13 @@ Optional overrides:
  -Action StartDeferred `
   -DeferredMode cumulative `
  -DeferredStrategy dedup `
-  -DeferredConcurrency 3 `
+  -DeferredConcurrency 2 `
   -ObligationTimeoutSeconds 10800 `
   -ObligationTimeoutRetries 1 `
   -ObligationTimeoutMultiplier 10 `
+  -MemorySoftUsedPercent 85 `
+  -MemoryHardUsedPercent 92 `
+  -HardPressureAction pause `
   -DeferredVersions "81 82 83 87 88 89 90 91 93 94 95 96 99 100 101 102 103 104 105 106"
 ```
 
@@ -68,6 +71,23 @@ This runs one cumulative lane at the highest target version and reuses deduplica
 
 ```powershell
 ./scripts/run-formal-kani-remote.ps1 -Action Status
+```
+
+4b. Active memory telemetry samples with optional guard actions:
+
+```powershell
+# one sample
+./scripts/run-formal-kani-remote.ps1 -Action Monitor
+
+# 10-minute monitor loop, 30s interval, auto-pause on pressure and resume on recovery
+./scripts/run-formal-kani-remote.ps1 `
+  -Action Monitor `
+  -MonitorDurationSeconds 600 `
+  -MonitorIntervalSeconds 30 `
+  -MemorySoftUsedPercent 85 `
+  -MemoryHardUsedPercent 92 `
+  -HardPressureAction pause `
+  -MonitorAutoResume $true
 ```
 
 5. Stop deferred jobs:
@@ -114,6 +134,10 @@ Under `/home/ubuntu/.dnacalc_remote`:
   - `current` obligation id
   - `status` marker (`running` / `completed:*`)
   - `log_bytes`
+- `Status` now classifies empty lane selections as explicit `no-op` with
+  `warning=probable-commit-obligation-mismatch` instead of treating them as
+  silent successes.
+- `Status` includes `resource_snapshot` fields (`mem_used_percent`, swap/load, `cbmc_count`, `kani_count`) and active pause-flag visibility.
 - `Status` job rows classify detached wrappers explicitly as `running-detached` (instead of ambiguous `unknown`) when lane/dispatch workers are still live.
 - `StopDeferred -StopMode stale` marks stale/unknown deferred envelopes with explicit terminal state (`exit_code=143`, `completed:stopped`) so status no longer shows ambiguous `unknown` for dead runs.
 - `Tail -Lane <name>` includes:
@@ -133,6 +157,19 @@ The remote probe uses a conservative no-swap heuristic:
 
 This keeps CBMC/Kani resource pressure bounded while preserving forward progress.
 
+## Memory Guardrails
+
+- `StartDeferred` accepts:
+  - `-MemorySoftUsedPercent` (default `85`)
+  - `-MemoryHardUsedPercent` (default `92`)
+  - `-HardPressureAction` (`pause` | `halt-one` | `halt-all` | `none`; default `pause`)
+- Dispatch behavior:
+  - if used memory is above soft threshold, lane starts pause until memory recovers;
+  - if hard threshold is reached, configured hard action is applied;
+  - automatic pause file: `state/deferred_dispatch/PAUSE_NEW_LANES.auto`;
+  - optional manual pause file: `state/deferred_dispatch/PAUSE_NEW_LANES.manual`.
+- `Monitor` action can enforce the same thresholds out-of-band and auto-resume the auto-pause flag when memory drops below soft threshold.
+
 ## Timeout and Dedup
 
 - Per-obligation base timeout is configurable with `-ObligationTimeoutSeconds` (default `10800`).
@@ -145,3 +182,7 @@ This keeps CBMC/Kani resource pressure bounded while preserving forward progress
   - each retry round uses `base_timeout * multiplier^retry_round`.
 - Dedup strategy (`-DeferredStrategy dedup`) avoids recomputing identical Kani commands across lanes for the same commit/toolchain/timeout tuple.
 - Lane CSV now records `initial_status`, `attempts`, `attempt`, `retry_round`, and `timeout_seconds` to distinguish first-pass timeouts from final outcomes.
+- Lane completion semantics:
+  - `completed:pass`: obligations selected and all passed.
+  - `completed:fail`: one or more obligations failed/timed out.
+  - `completed:no-op`: `selected_count=0` (treated as mismatch/no-op, not as a passing gate).

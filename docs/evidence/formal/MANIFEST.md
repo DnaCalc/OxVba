@@ -9,6 +9,7 @@ This manifest tracks profile-scoped formal obligations.
 
 ## Source Of Truth
 - Obligation index: `docs/evidence/formal/obligations.csv`
+- Kani obligation policy: `docs/evidence/formal/KANI_OBLIGATION_POLICY_V1.csv`
 - Latest run report: `docs/evidence/formal/latest_run.md`
 - Latest run csv: `docs/evidence/formal/latest_run.csv`
 

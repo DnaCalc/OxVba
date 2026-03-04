@@ -4,6 +4,7 @@
 - `docs-check.ps1`: verifies required top-level docs exist.
 - `run-smoke.ps1`: executes the smoke VBA sample through the CLI.
 - `run-conformance.ps1`: runs MVP conformance corpus and checks against golden expectations.
+- `run-project-integration-suite.ps1`: runs tracked multi-project integration fixtures (`conformance/integration/`) and emits run artifacts under `docs/evidence/conformance/project_integration/`.
 - `run-pmr-project-model-oracle.ps1`: executable Excel oracle runner for PMR topics `CCT-037..CCT-041`, with built-in dialog guardian support for macro/add-in trust prompts.
 - `excel-dialog-guardian.ps1`: hidden UI Automation watcher used by PMR oracle runs to detect and accept Excel security/macro/add-in enable dialogs for the active automation instance.
 - `run-hal-conformance.ps1`: runs HAL adapter contract tests and emits profile/lane conformance artifacts under `docs/evidence/hal`.
@@ -12,12 +13,15 @@
 - `run-profile-gate.ps1`: runs formal + matrix + bench lanes and emits an integrated gate report for a profile scope.
 - `run-formal-kani-wsl.ps1`: strict formal run helper that executes Kani obligations through WSL.
 - `run-formal-kani-async.ps1`: async manager for long-running Kani/profile formal runs (`Start`/`Status`/`Tail`/`Wait`/`Stop`/`WatchStart`/`WatchStop`/`Probe`/`Reconcile`).
-- `run-formal-kani-remote.ps1`: remote Linux deferred-lane manager for Kani (`Ensure`/`ProbeCapacity`/`StartDeferred`/`StopDeferred`/`Status`/`Tail`/`FetchArtifacts`) under `/home/ubuntu/.dnacalc_remote`, with dedup strategy, per-obligation timeout, and lane heartbeat/progress telemetry.
+- `run-formal-kani-remote.ps1`: remote Linux deferred-lane manager for Kani (`Ensure`/`ProbeCapacity`/`StartDeferred`/`StopDeferred`/`Status`/`Tail`/`FetchArtifacts`/`Monitor`) under `/home/ubuntu/.dnacalc_remote`, with dedup strategy, per-obligation timeout, lane heartbeat/progress telemetry, and memory-pressure guard controls.
 - `async-task-runner.ps1`: helper invoked by async managers to execute commands and persist exit status.
 - `run-bench.ps1`: captures baseline-vs-optimized mixed workload timing evidence (VM + JIT) for the active stabilization profile.
 - `setup-kani.ps1`: verifies or installs Kani toolchain and prints activation instructions for required formal mode.
 - `test-path-stability.ps1`: validates scripts/tests behave correctly when executed from non-root working directories.
 - `validate-divergences.ps1`: validates structural fields required in divergence records.
+- `validate-pmr-followup-sync.ps1`: enforces PMR follow-up/oracle/divergence synchronization (`PMR-FUP-004/006`, `ODG-038/039`, `DIV-0003/0004`, tolerance-matrix anchors).
+- `validate-project-integration-catalog.ps1`: validates the tracked project integration catalog schema, fixture presence for active cases, and deferred-case linkage hygiene.
+- `validate-kani-obligation-policy.ps1`: validates `KANI_OBLIGATION_POLICY_V1.csv` against active `cargo kani` obligations (coverage, no duplicates, profile sync, tier vocabulary).
 - `validate-language-coverage.ps1`: validates language coverage index structure/status vocabulary and duplicate keys.
 - `validate-intrinsic-surface.ps1`: validates intrinsic surface classification coverage and host-sensitive partition.
 - `validate-profile-scaffold.ps1`: validates profile ladder scaffold integrity (naming, multiline structure, and referenced artifact existence) for selected version ranges.

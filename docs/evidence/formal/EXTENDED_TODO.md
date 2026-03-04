@@ -101,3 +101,27 @@ Non-blocking formal issues and follow-up items for later ladder profiles.
   Current status (`todo` / `investigating` / `resolved`): investigating
   Reproduction command: `./scripts/run-formal-kani-remote.ps1 -Action StartDeferred -DeferredVersions "176" -DeferredMode cumulative`
   Suggested next action: execute `v176-kani` remotely and reconcile deferred register + formal summaries at the v186 terminal closure sweep.
+- ID: FTODO-V287-001
+  Profile: v287 PMR/Declare formal lane setup
+  Summary: New strict harnesses for PMR project-graph invariants and Declare descriptor-contract checks were executed in pinned remote lane with non-empty selection (`selected_count=3`); host PMR harnesses timed out while HAL dynlink harness passed.
+  Current status (`todo` / `investigating` / `resolved`): investigating
+  Reproduction command: `./scripts/run-formal-kani-remote.ps1 -Action StartDeferred -DeferredVersions "287" -DeferredMode exact`
+  Suggested next action: perform host-harness timeout remediation for `FO-V287-001/002` (slicing/assumption/bounds), rerun remote `v287` lane, and only then reopen bridge-retirement decision.
+- ID: FTODO-KANI-REVIEW-001
+  Profile: cross-profile (`v87+` remote deferred lanes)
+  Summary: Multiple deferred lanes report `selected_count=0` / `completed:no-op` with `probable-commit-obligation-mismatch`; this is a runner-input mismatch class, not a proof result.
+  Current status (`todo` / `investigating` / `resolved`): investigating
+  Reproduction command: `./scripts/run-formal-kani-remote.ps1 -Action Status`
+  Suggested next action: add an explicit lane-to-obligation selection preflight and fail fast when selected count is zero unexpectedly.
+- ID: FTODO-KANI-REVIEW-002
+  Profile: high-signal harnesses (`FO-V2-001`, `FO-V4-001`, `FO-V287-001`, `FO-V287-002`)
+  Summary: Strict Kani runs are dominated by timeout/OOM from broad symbolic state (`unicode`/`memchr`/host-heavy harnesses).
+  Current status (`todo` / `investigating` / `resolved`): investigating
+  Reproduction command: `./scripts/run-formal-kani-remote.ps1 -Action Tail -Lane v89-kani -TailLines 120`
+  Suggested next action: slice high-signal harnesses into smaller bounded proofs with focused assumptions and/or stubs.
+- ID: FTODO-KANI-REVIEW-003
+  Profile: remote runner control plane
+  Summary: Memory guardrails are now implemented (`soft`/`hard` thresholds + `pause`/`halt-*` actions), but need burn-in and threshold tuning under real queue load.
+  Current status (`todo` / `investigating` / `resolved`): investigating
+  Reproduction command: `./scripts/run-formal-kani-remote.ps1 -Action Monitor -MonitorDurationSeconds 600 -MonitorIntervalSeconds 30`
+  Suggested next action: run 24h monitor sample, record pressure/action incidence, then tune defaults for this host.

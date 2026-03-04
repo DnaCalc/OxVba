@@ -1,5 +1,5 @@
 param(
-    [ValidateSet("Ensure", "ProbeCapacity", "StartDeferred", "StopDeferred", "Status", "Tail", "FetchArtifacts")]
+    [ValidateSet("Ensure", "ProbeCapacity", "StartDeferred", "StopDeferred", "Status", "Tail", "FetchArtifacts", "Monitor")]
     [string]$Action = "Status",
     [string]$SshHost = "94.72.99.81",
     [string]$SshUser = "ubuntu",
@@ -14,12 +14,19 @@ param(
     [int]$ObligationTimeoutSeconds = 10800,
     [int]$ObligationTimeoutRetries = 1,
     [double]$ObligationTimeoutMultiplier = 10.0,
+    [int]$MemorySoftUsedPercent = 85,
+    [int]$MemoryHardUsedPercent = 92,
+    [ValidateSet("pause", "halt-one", "halt-all", "none")]
+    [string]$HardPressureAction = "pause",
     [ValidateSet("stale", "all")]
     [string]$StopMode = "stale",
     [string]$DispatchJobName = "deferred-dispatch",
     [int]$TailLines = 80,
     [string]$Lane = "",
-    [string]$LocalArtifactsDir = "temp/async/kani_remote"
+    [string]$LocalArtifactsDir = "temp/async/kani_remote",
+    [int]$MonitorDurationSeconds = 0,
+    [int]$MonitorIntervalSeconds = 30,
+    [bool]$MonitorAutoResume = $true
 )
 
 $ErrorActionPreference = "Stop"
@@ -239,8 +246,14 @@ cat > "$BASE/bin/probe_capacity.sh" <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
 cpu="$(nproc)"
-mem_kib="$(awk '/MemAvailable/ {print $2}' /proc/meminfo)"
-mem_gib=$((mem_kib / 1024 / 1024))
+mem_available_kib="$(awk '/MemAvailable/ {print $2}' /proc/meminfo)"
+mem_total_kib="$(awk '/MemTotal/ {print $2}' /proc/meminfo)"
+mem_gib=$((mem_available_kib / 1024 / 1024))
+mem_total_gib=$((mem_total_kib / 1024 / 1024))
+mem_used_pct=0
+if (( mem_total_kib > 0 )); then
+  mem_used_pct=$(( (100 * (mem_total_kib - mem_available_kib)) / mem_total_kib ))
+fi
 by_cpu=$((cpu / 8))
 by_mem=$((mem_gib / 24))
 if (( by_cpu < 1 )); then by_cpu=1; fi
@@ -248,7 +261,43 @@ if (( by_mem < 1 )); then by_mem=1; fi
 conc="$by_cpu"
 if (( by_mem < conc )); then conc="$by_mem"; fi
 if (( conc > 4 )); then conc=4; fi
-printf 'cpu=%s\nmem_gib=%s\nrecommended_concurrency=%s\n' "$cpu" "$mem_gib" "$conc"
+load1="$(awk '{print $1}' /proc/loadavg)"
+printf 'cpu=%s\nmem_total_gib=%s\nmem_available_gib=%s\nmem_used_percent=%s\nload1=%s\nrecommended_concurrency=%s\n' "$cpu" "$mem_total_gib" "$mem_gib" "$mem_used_pct" "$load1" "$conc"
+EOF
+
+cat > "$BASE/bin/resource_snapshot.sh" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+cpu="$(nproc)"
+mem_total_kib="$(awk '/MemTotal/ {print $2}' /proc/meminfo)"
+mem_available_kib="$(awk '/MemAvailable/ {print $2}' /proc/meminfo)"
+swap_total_kib="$(awk '/SwapTotal/ {print $2}' /proc/meminfo)"
+swap_free_kib="$(awk '/SwapFree/ {print $2}' /proc/meminfo)"
+mem_used_pct=0
+if (( mem_total_kib > 0 )); then
+  mem_used_pct=$(( (100 * (mem_total_kib - mem_available_kib)) / mem_total_kib ))
+fi
+swap_used_kib=$((swap_total_kib - swap_free_kib))
+load_line="$(cat /proc/loadavg)"
+load1="$(awk '{print $1}' /proc/loadavg)"
+ts="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+cbmc_count="$(pgrep -fc 'cbmc .*' || true)"
+kani_count="$(pgrep -fc 'cargo-kani|cargo kani' || true)"
+printf 'timestamp_utc=%s\ncpu=%s\nmem_total_kib=%s\nmem_available_kib=%s\nmem_used_percent=%s\nswap_total_kib=%s\nswap_used_kib=%s\nload1=%s\nloadavg=%s\ncbmc_count=%s\nkani_count=%s\n' \
+  "$ts" "$cpu" "$mem_total_kib" "$mem_available_kib" "$mem_used_pct" "$swap_total_kib" "$swap_used_kib" "$load1" "$load_line" "$cbmc_count" "$kani_count"
+
+if pgrep -f "__BASE__/tools/bin/cargo-kani|cbmc .*__BASE__/work/targets/" >/dev/null 2>&1; then
+  echo "top_processes_begin"
+  ps -eo pid,rss,comm,args --sort=-rss | awk '
+    /cargo-kani|cbmc/ && $0 !~ /awk/ {
+      rss_mib = $2 / 1024.0;
+      printf("pid=%s rss_mib=%.1f comm=%s cmd=%s\n", $1, rss_mib, $3, substr($0, index($0,$4)));
+      shown++;
+      if (shown >= 8) exit 0;
+    }
+  '
+  echo "top_processes_end"
+fi
 EOF
 
 cat > "$BASE/bin/sync_repo.sh" <<'EOF'
@@ -717,8 +766,13 @@ def main() -> int:
         final["initial_status"] = history[0]["status"]
         rows.append(final)
 
+    selected_total = len(rows)
     failures = sum(1 for row in rows if row["status"] != "pass")
     timeouts = sum(1 for row in rows if row["status"] == "timeout")
+    if selected_total == 0:
+        lane_status = "no-op"
+    else:
+        lane_status = "pass" if failures == 0 else "fail"
 
     csv_path = report_dir / "formal_lane.csv"
     with csv_path.open("w", encoding="utf-8", newline="") as f:
@@ -755,14 +809,14 @@ def main() -> int:
         "mode": args.mode,
         "dedup_strategy": args.dedup_strategy,
         "filter": args.filter,
-        "selected_count": len(rows),
+        "selected_count": selected_total,
         "failures": failures,
         "timeouts": timeouts,
         "cache_hits": cache_hits,
         "timeout_seconds": args.timeout_seconds,
         "timeout_retries": args.timeout_retries,
         "timeout_multiplier": args.timeout_multiplier,
-        "status": "pass" if failures == 0 else "fail",
+        "status": lane_status,
         "report_csv": str(csv_path),
     }
     (report_dir / "formal_lane.json").write_text(json.dumps(summary, indent=2), encoding="utf-8")
@@ -775,7 +829,7 @@ def main() -> int:
         f"- Mode: {args.mode}",
         f"- Strategy: {args.dedup_strategy}",
         f"- Filter: {args.filter}",
-        f"- Selected obligations: {len(rows)}",
+        f"- Selected obligations: {selected_total}",
         f"- Failures: {failures}",
         f"- Timeouts: {timeouts}",
         f"- Cache hits: {cache_hits}",
@@ -796,7 +850,7 @@ def main() -> int:
         report_dir / "summary.txt",
         (
             f"status={summary['status']}\n"
-            f"selected_count={len(rows)}\n"
+            f"selected_count={selected_total}\n"
             f"failures={failures}\n"
             f"timeouts={timeouts}\n"
             f"cache_hits={cache_hits}\n"
@@ -816,8 +870,8 @@ def main() -> int:
             "target_version": args.target_version,
             "mode": args.mode,
             "dedup_strategy": args.dedup_strategy,
-            "selected_count": len(rows),
-            "completed_count": len(rows),
+            "selected_count": selected_total,
+            "completed_count": selected_total,
             "failures": failures,
             "timeouts": timeouts,
             "cache_hits": cache_hits,
@@ -828,9 +882,9 @@ def main() -> int:
         },
     )
 
-    if len(rows) == 0:
-        return 0
-    return 0 if failures == 0 else 1
+    if lane_status == "no-op":
+        return 2
+    return 0 if lane_status == "pass" else 1
 
 if __name__ == "__main__":
     sys.exit(main())
@@ -855,6 +909,11 @@ strategy="${DEFERRED_STRATEGY:-dedup}"
 timeout_seconds="${OBLIGATION_TIMEOUT_SECONDS:-10800}"
 timeout_retries="${OBLIGATION_TIMEOUT_RETRIES:-1}"
 timeout_multiplier="${OBLIGATION_TIMEOUT_MULTIPLIER:-10}"
+mem_soft_used_percent="${MEM_SOFT_USED_PERCENT:-85}"
+mem_hard_used_percent="${MEM_HARD_USED_PERCENT:-92}"
+hard_pressure_action="${HARD_PRESSURE_ACTION:-pause}"
+pause_flag_file="$BASE/state/deferred_dispatch/PAUSE_NEW_LANES.auto"
+manual_pause_file="$BASE/state/deferred_dispatch/PAUSE_NEW_LANES.manual"
 python3 "$BASE/bin/run_formal_lane.py" \
   --repo "$repo" \
   --target-version "$v" \
@@ -914,6 +973,9 @@ mkdir -p "$dispatch_dir"
   echo "obligation_timeout_seconds=$timeout_seconds"
   echo "obligation_timeout_retries=$timeout_retries"
   echo "obligation_timeout_multiplier=$timeout_multiplier"
+  echo "mem_soft_used_percent=$mem_soft_used_percent"
+  echo "mem_hard_used_percent=$mem_hard_used_percent"
+  echo "hard_pressure_action=$hard_pressure_action"
   echo "repo_commit=$commit"
   echo "versions=${versions[*]}"
 } > "$dispatch_dir/meta.env"
@@ -925,6 +987,71 @@ lanes=()
 is_lane_running() {
   local v="$1"
   pgrep -f "run_deferred_lane.sh ${v} " >/dev/null 2>&1
+}
+
+mem_used_percent() {
+  local total available
+  total="$(awk '/MemTotal/ {print $2}' /proc/meminfo)"
+  available="$(awk '/MemAvailable/ {print $2}' /proc/meminfo)"
+  if [[ -z "$total" || "$total" == "0" || -z "$available" ]]; then
+    echo 0
+    return
+  fi
+  echo $(( (100 * (total - available)) / total ))
+}
+
+has_pause_flag() {
+  [[ -f "$pause_flag_file" || -f "$manual_pause_file" ]]
+}
+
+enforce_pressure_policy() {
+  local used
+  used="$(mem_used_percent)"
+  if (( used < mem_soft_used_percent )); then
+    if [[ -f "$pause_flag_file" ]]; then
+      rm -f "$pause_flag_file"
+      echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) guard action=resume reason=memory-recovered mem_used_percent=$used" | tee -a "$dispatch_dir/dispatch.log"
+    fi
+    return 0
+  fi
+
+  if (( used >= mem_hard_used_percent )); then
+    case "$hard_pressure_action" in
+      halt-one)
+        pid="$(ps -eo pid,rss,args --sort=-rss | awk '/cargo-kani|cbmc/ && $0 !~ /awk/ {print $1; exit}')"
+        if [[ -n "${pid:-}" ]]; then
+          kill -TERM "$pid" 2>/dev/null || true
+          sleep 2
+          if kill -0 "$pid" 2>/dev/null; then
+            kill -KILL "$pid" 2>/dev/null || true
+          fi
+          echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) guard action=halt-one mem_used_percent=$used pid=$pid" | tee -a "$dispatch_dir/dispatch.log"
+        fi
+        ;;
+      halt-all)
+        mapfile -t pids < <(pgrep -f "__BASE__/tools/bin/cargo-kani|cbmc .*__BASE__/work/targets/" || true)
+        for p in "${pids[@]:-}"; do
+          kill -TERM "$p" 2>/dev/null || true
+        done
+        sleep 2
+        for p in "${pids[@]:-}"; do
+          if kill -0 "$p" 2>/dev/null; then
+            kill -KILL "$p" 2>/dev/null || true
+          fi
+        done
+        echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) guard action=halt-all mem_used_percent=$used count=${#pids[@]}" | tee -a "$dispatch_dir/dispatch.log"
+        ;;
+      pause|*)
+        touch "$pause_flag_file"
+        echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) guard action=pause mem_used_percent=$used" | tee -a "$dispatch_dir/dispatch.log"
+        ;;
+    esac
+  fi
+
+  if (( used >= mem_soft_used_percent )); then
+    return 1
+  fi
+  return 0
 }
 
 start_lane() {
@@ -951,6 +1078,9 @@ start_lane() {
     echo "timeout_seconds=$timeout_seconds" >> "$lane_dir/meta.env"
     echo "timeout_retries=$timeout_retries" >> "$lane_dir/meta.env"
     echo "timeout_multiplier=$timeout_multiplier" >> "$lane_dir/meta.env"
+    echo "mem_soft_used_percent=$mem_soft_used_percent" >> "$lane_dir/meta.env"
+    echo "mem_hard_used_percent=$mem_hard_used_percent" >> "$lane_dir/meta.env"
+    echo "hard_pressure_action=$hard_pressure_action" >> "$lane_dir/meta.env"
     DEFERRED_STRATEGY="$strategy" OBLIGATION_TIMEOUT_SECONDS="$timeout_seconds" OBLIGATION_TIMEOUT_RETRIES="$timeout_retries" OBLIGATION_TIMEOUT_MULTIPLIER="$timeout_multiplier" \
       "$BASE/bin/run_deferred_lane.sh" "$v" "$mode" > "$lane_dir/driver.log" 2>&1
     code=$?
@@ -969,19 +1099,44 @@ for v in "${versions[@]}"; do
     if wait -n; then :; fi
     active=$((active - 1))
   done
+  while true; do
+    if has_pause_flag; then
+      echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) guard wait reason=pause-flag lane=v${v}-kani" | tee -a "$dispatch_dir/dispatch.log"
+      sleep 15
+      continue
+    fi
+    if enforce_pressure_policy; then
+      break
+    fi
+    used_now="$(mem_used_percent)"
+    echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) guard wait reason=memory-pressure lane=v${v}-kani mem_used_percent=$used_now soft=$mem_soft_used_percent hard=$mem_hard_used_percent action=$hard_pressure_action" | tee -a "$dispatch_dir/dispatch.log"
+    sleep 15
+  done
   start_lane "$v"
 done
 
 while (( active > 0 )); do
+  enforce_pressure_policy || true
   if wait -n; then :; fi
   active=$((active - 1))
 done
 
 failures=0
 for lane in "${lanes[@]}"; do
-  code_file="$BASE/state/deferred_lanes/$lane/exit_code"
+  lane_dir="$BASE/state/deferred_lanes/$lane"
+  code_file="$lane_dir/exit_code"
+  status_file="$lane_dir/status.txt"
+  summary_file="$lane_dir/summary.txt"
   code="$(cat "$code_file" 2>/dev/null || echo 99)"
-  echo "lane=$lane exit_code=$code" | tee -a "$dispatch_dir/dispatch.log"
+  status_marker="$(cat "$status_file" 2>/dev/null || echo "-")"
+  selected_count="$(sed -nE 's/^selected_count=([0-9]+).*/\1/p' "$summary_file" 2>/dev/null | head -n 1 || true)"
+  if [[ -z "$selected_count" ]]; then
+    selected_count="-"
+  fi
+  echo "lane=$lane exit_code=$code status=$status_marker selected_count=$selected_count" | tee -a "$dispatch_dir/dispatch.log"
+  if [[ "$status_marker" == "completed:no-op" || "$selected_count" == "0" ]]; then
+    echo "warning lane=$lane no-op-selected-count-zero probable_commit_obligation_mismatch" | tee -a "$dispatch_dir/dispatch.log"
+  fi
   if [[ "$code" != "0" ]]; then
     failures=$((failures + 1))
   fi
@@ -1014,9 +1169,19 @@ for d in "$BASE"/state/deferred_lanes/*; do
   run_log="$d/run.log"
   log_bytes="$(wc -c "$run_log" 2>/dev/null | awk '{print $1}' || echo 0)"
   if [[ -n "$code" ]]; then
-    echo "$lane finished:$code log_bytes=$log_bytes"
+    status_marker="$(cat "$status_file" 2>/dev/null || echo "-")"
+    selected_count="$(sed -nE 's/^selected_count=([0-9]+).*/\1/p' "$d/summary.txt" 2>/dev/null | head -n 1 || true)"
+    if [[ -z "$selected_count" ]]; then selected_count="-"; fi
+    if [[ "$status_marker" == "completed:no-op" || "$selected_count" == "0" ]]; then
+      echo "$lane no-op:$code selected_count=$selected_count log_bytes=$log_bytes warning=probable-commit-obligation-mismatch"
+    else
+      echo "$lane finished:$code selected_count=$selected_count log_bytes=$log_bytes"
+    fi
   else
-    pid="$(pgrep -f "run_deferred_lane.sh ${version} " | head -n 1 || true)"
+    pid=""
+    if [[ "$lane" =~ ^v[0-9]+-kani$ ]]; then
+      pid="$(pgrep -f "run_deferred_lane.sh ${version} " | head -n 1 || true)"
+    fi
     phase="-"
     completed="-"
     selected="-"
@@ -1037,6 +1202,10 @@ PY
       current="${vals[3]:--}"
     fi
     status_marker="$(cat "$status_file" 2>/dev/null || echo "-")"
+    if [[ "$status_marker" == completed:* && -z "$pid" ]]; then
+      echo "$lane finished:unknown phase=$phase progress=${completed}/${selected} current=$current status=$status_marker log_bytes=$log_bytes"
+      continue
+    fi
     if [[ -n "$pid" ]]; then
       echo "$lane running:pid=$pid phase=$phase progress=${completed}/${selected} current=$current status=$status_marker log_bytes=$log_bytes"
     else
@@ -1062,6 +1231,19 @@ function Escape-BashSingleQuoted([string]$Value) {
 
 Require-Command ssh
 Require-Command scp
+
+if ($MemorySoftUsedPercent -lt 1 -or $MemorySoftUsedPercent -gt 99) {
+    throw "-MemorySoftUsedPercent must be between 1 and 99"
+}
+if ($MemoryHardUsedPercent -lt 1 -or $MemoryHardUsedPercent -gt 99) {
+    throw "-MemoryHardUsedPercent must be between 1 and 99"
+}
+if ($MemoryHardUsedPercent -lt $MemorySoftUsedPercent) {
+    throw "-MemoryHardUsedPercent must be >= -MemorySoftUsedPercent"
+}
+if ($MonitorIntervalSeconds -lt 1) {
+    throw "-MonitorIntervalSeconds must be >= 1"
+}
 
 switch ($Action) {
     "Ensure" {
@@ -1094,18 +1276,21 @@ strategy='__STRATEGY__'
 timeout_seconds='__TIMEOUT__'
 timeout_retries='__TIMEOUT_RETRIES__'
 timeout_multiplier='__TIMEOUT_MULTIPLIER__'
+mem_soft_used_percent='__MEM_SOFT__'
+mem_hard_used_percent='__MEM_HARD__'
+hard_pressure_action='__HARD_ACTION__'
 job_name='__JOB__'
 if [[ -n "$versions" ]]; then
   if [[ "$concurrency" -gt 0 ]]; then
-    "__BASE__/bin/start_job.sh" "$job_name" env "DEFERRED_MODE=$mode" "DEFERRED_STRATEGY=$strategy" "OBLIGATION_TIMEOUT_SECONDS=$timeout_seconds" "OBLIGATION_TIMEOUT_RETRIES=$timeout_retries" "OBLIGATION_TIMEOUT_MULTIPLIER=$timeout_multiplier" "DEFERRED_VERSIONS=$versions" "DEFERRED_CONCURRENCY=$concurrency" "__BASE__/bin/dispatch_deferred_lanes.sh"
+    "__BASE__/bin/start_job.sh" "$job_name" env "DEFERRED_MODE=$mode" "DEFERRED_STRATEGY=$strategy" "OBLIGATION_TIMEOUT_SECONDS=$timeout_seconds" "OBLIGATION_TIMEOUT_RETRIES=$timeout_retries" "OBLIGATION_TIMEOUT_MULTIPLIER=$timeout_multiplier" "MEM_SOFT_USED_PERCENT=$mem_soft_used_percent" "MEM_HARD_USED_PERCENT=$mem_hard_used_percent" "HARD_PRESSURE_ACTION=$hard_pressure_action" "DEFERRED_VERSIONS=$versions" "DEFERRED_CONCURRENCY=$concurrency" "__BASE__/bin/dispatch_deferred_lanes.sh"
   else
-    "__BASE__/bin/start_job.sh" "$job_name" env "DEFERRED_MODE=$mode" "DEFERRED_STRATEGY=$strategy" "OBLIGATION_TIMEOUT_SECONDS=$timeout_seconds" "OBLIGATION_TIMEOUT_RETRIES=$timeout_retries" "OBLIGATION_TIMEOUT_MULTIPLIER=$timeout_multiplier" "DEFERRED_VERSIONS=$versions" "__BASE__/bin/dispatch_deferred_lanes.sh"
+    "__BASE__/bin/start_job.sh" "$job_name" env "DEFERRED_MODE=$mode" "DEFERRED_STRATEGY=$strategy" "OBLIGATION_TIMEOUT_SECONDS=$timeout_seconds" "OBLIGATION_TIMEOUT_RETRIES=$timeout_retries" "OBLIGATION_TIMEOUT_MULTIPLIER=$timeout_multiplier" "MEM_SOFT_USED_PERCENT=$mem_soft_used_percent" "MEM_HARD_USED_PERCENT=$mem_hard_used_percent" "HARD_PRESSURE_ACTION=$hard_pressure_action" "DEFERRED_VERSIONS=$versions" "__BASE__/bin/dispatch_deferred_lanes.sh"
   fi
 else
   if [[ "$concurrency" -gt 0 ]]; then
-    "__BASE__/bin/start_job.sh" "$job_name" env "DEFERRED_MODE=$mode" "DEFERRED_STRATEGY=$strategy" "OBLIGATION_TIMEOUT_SECONDS=$timeout_seconds" "OBLIGATION_TIMEOUT_RETRIES=$timeout_retries" "OBLIGATION_TIMEOUT_MULTIPLIER=$timeout_multiplier" "DEFERRED_CONCURRENCY=$concurrency" "__BASE__/bin/dispatch_deferred_lanes.sh"
+    "__BASE__/bin/start_job.sh" "$job_name" env "DEFERRED_MODE=$mode" "DEFERRED_STRATEGY=$strategy" "OBLIGATION_TIMEOUT_SECONDS=$timeout_seconds" "OBLIGATION_TIMEOUT_RETRIES=$timeout_retries" "OBLIGATION_TIMEOUT_MULTIPLIER=$timeout_multiplier" "MEM_SOFT_USED_PERCENT=$mem_soft_used_percent" "MEM_HARD_USED_PERCENT=$mem_hard_used_percent" "HARD_PRESSURE_ACTION=$hard_pressure_action" "DEFERRED_CONCURRENCY=$concurrency" "__BASE__/bin/dispatch_deferred_lanes.sh"
   else
-    "__BASE__/bin/start_job.sh" "$job_name" env "DEFERRED_MODE=$mode" "DEFERRED_STRATEGY=$strategy" "OBLIGATION_TIMEOUT_SECONDS=$timeout_seconds" "OBLIGATION_TIMEOUT_RETRIES=$timeout_retries" "OBLIGATION_TIMEOUT_MULTIPLIER=$timeout_multiplier" "__BASE__/bin/dispatch_deferred_lanes.sh"
+    "__BASE__/bin/start_job.sh" "$job_name" env "DEFERRED_MODE=$mode" "DEFERRED_STRATEGY=$strategy" "OBLIGATION_TIMEOUT_SECONDS=$timeout_seconds" "OBLIGATION_TIMEOUT_RETRIES=$timeout_retries" "OBLIGATION_TIMEOUT_MULTIPLIER=$timeout_multiplier" "MEM_SOFT_USED_PERCENT=$mem_soft_used_percent" "MEM_HARD_USED_PERCENT=$mem_hard_used_percent" "HARD_PRESSURE_ACTION=$hard_pressure_action" "__BASE__/bin/dispatch_deferred_lanes.sh"
   fi
 fi
 '@
@@ -1118,6 +1303,9 @@ fi
             Replace("__TIMEOUT__", (Escape-BashSingleQuoted $ObligationTimeoutSeconds.ToString())).
             Replace("__TIMEOUT_RETRIES__", (Escape-BashSingleQuoted $ObligationTimeoutRetries.ToString())).
             Replace("__TIMEOUT_MULTIPLIER__", (Escape-BashSingleQuoted $ObligationTimeoutMultiplier.ToString([System.Globalization.CultureInfo]::InvariantCulture))).
+            Replace("__MEM_SOFT__", (Escape-BashSingleQuoted $MemorySoftUsedPercent.ToString())).
+            Replace("__MEM_HARD__", (Escape-BashSingleQuoted $MemoryHardUsedPercent.ToString())).
+            Replace("__HARD_ACTION__", (Escape-BashSingleQuoted $HardPressureAction)).
             Replace("__JOB__", (Escape-BashSingleQuoted $DispatchJobName))
         $out = Invoke-RemoteScript $startScript
         $out | ForEach-Object { Write-Host $_ }
@@ -1249,7 +1437,13 @@ source "__BASE__/bin/env.sh"
 echo "---"
 "__BASE__/bin/deferred_status.sh" || true
 echo "---"
-latest_dispatch="$(ls -1dt __BASE__/state/deferred_dispatch/* 2>/dev/null | head -n 1 || true)"
+if [[ -x "__BASE__/bin/resource_snapshot.sh" ]]; then
+  "__BASE__/bin/resource_snapshot.sh" || true
+fi
+echo "---"
+ls -1 "__BASE__/state/deferred_dispatch"/PAUSE_NEW_LANES* 2>/dev/null || echo "pause_flags=none"
+echo "---"
+latest_dispatch="$(find __BASE__/state/deferred_dispatch -mindepth 1 -maxdepth 1 -type d -print 2>/dev/null | sort | tail -n 1 || true)"
 if [[ -n "$latest_dispatch" ]]; then
   echo "dispatch_dir=$latest_dispatch"
   cat "$latest_dispatch/meta.env" || true
@@ -1260,6 +1454,109 @@ exit 0
         $statusScript = $statusTemplate.Replace("__BASE__", $RemoteBase)
         $out = Invoke-RemoteScript $statusScript
         $out | ForEach-Object { Write-Host $_ }
+    }
+    "Monitor" {
+        $monitorTemplate = @'
+set -uo pipefail
+source "__BASE__/bin/env.sh"
+soft='__MEM_SOFT__'
+hard='__MEM_HARD__'
+hard_action='__HARD_ACTION__'
+auto_resume='__AUTO_RESUME__'
+pause_file="__BASE__/state/deferred_dispatch/PAUSE_NEW_LANES.auto"
+manual_pause_file="__BASE__/state/deferred_dispatch/PAUSE_NEW_LANES.manual"
+
+if [[ ! -x "__BASE__/bin/resource_snapshot.sh" ]]; then
+  echo "resource_snapshot=missing"
+  exit 0
+fi
+
+snapshot="$("__BASE__/bin/resource_snapshot.sh")"
+printf '%s\n' "$snapshot"
+used="$(printf '%s\n' "$snapshot" | awk -F= '$1=="mem_used_percent"{print $2}' | tail -n 1)"
+if [[ -z "$used" ]]; then
+  used=0
+fi
+
+if (( used >= hard )); then
+  case "$hard_action" in
+    halt-one)
+      pid="$(ps -eo pid,rss,args --sort=-rss | awk '/cargo-kani|cbmc/ && $0 !~ /awk/ {print $1; exit}')"
+      if [[ -n "${pid:-}" ]]; then
+        kill -TERM "$pid" 2>/dev/null || true
+        sleep 2
+        if kill -0 "$pid" 2>/dev/null; then
+          kill -KILL "$pid" 2>/dev/null || true
+        fi
+        echo "monitor_action=halt-one pid=$pid mem_used_percent=$used hard=$hard"
+      else
+        echo "monitor_action=halt-one pid=none mem_used_percent=$used hard=$hard"
+      fi
+      ;;
+    halt-all)
+      mapfile -t pids < <(pgrep -f "__BASE__/tools/bin/cargo-kani|cbmc .*__BASE__/work/targets/" || true)
+      for p in "${pids[@]:-}"; do
+        kill -TERM "$p" 2>/dev/null || true
+      done
+      sleep 2
+      for p in "${pids[@]:-}"; do
+        if kill -0 "$p" 2>/dev/null; then
+          kill -KILL "$p" 2>/dev/null || true
+        fi
+      done
+      echo "monitor_action=halt-all count=${#pids[@]} mem_used_percent=$used hard=$hard"
+      ;;
+    pause)
+      touch "$pause_file"
+      echo "monitor_action=pause mem_used_percent=$used hard=$hard"
+      ;;
+    none|*)
+      echo "monitor_action=none mem_used_percent=$used hard=$hard"
+      ;;
+  esac
+elif (( used >= soft )); then
+  touch "$pause_file"
+  echo "monitor_action=soft-pause mem_used_percent=$used soft=$soft"
+else
+  if [[ "$auto_resume" == "1" && -f "$pause_file" ]]; then
+    rm -f "$pause_file"
+    echo "monitor_action=resume mem_used_percent=$used soft=$soft"
+  fi
+fi
+
+if [[ -f "$pause_file" ]]; then
+  echo "pause_flag_auto=present"
+else
+  echo "pause_flag_auto=absent"
+fi
+if [[ -f "$manual_pause_file" ]]; then
+  echo "pause_flag_manual=present"
+else
+  echo "pause_flag_manual=absent"
+fi
+exit 0
+'@
+        $autoResumeToken = if ($MonitorAutoResume) { "1" } else { "0" }
+        $monitorScriptBase = $monitorTemplate.
+            Replace("__BASE__", $RemoteBase).
+            Replace("__MEM_SOFT__", (Escape-BashSingleQuoted $MemorySoftUsedPercent.ToString())).
+            Replace("__MEM_HARD__", (Escape-BashSingleQuoted $MemoryHardUsedPercent.ToString())).
+            Replace("__HARD_ACTION__", (Escape-BashSingleQuoted $HardPressureAction)).
+            Replace("__AUTO_RESUME__", $autoResumeToken)
+
+        $iterations = 1
+        if ($MonitorDurationSeconds -gt 0) {
+            $iterations = [Math]::Max(1, [int][Math]::Ceiling($MonitorDurationSeconds / [double]$MonitorIntervalSeconds))
+        }
+
+        for ($i = 1; $i -le $iterations; $i++) {
+            Write-Host ("monitor_sample={0}/{1}" -f $i, $iterations)
+            $out = Invoke-RemoteScript $monitorScriptBase
+            $out | ForEach-Object { Write-Host $_ }
+            if ($i -lt $iterations) {
+                Start-Sleep -Seconds $MonitorIntervalSeconds
+            }
+        }
     }
     "Tail" {
         $laneClauseTemplate = if ([string]::IsNullOrWhiteSpace($Lane)) {
@@ -1294,7 +1591,7 @@ fi
         $tailTemplate = @'
 set -uo pipefail
 source "__BASE__/bin/env.sh"
-latest_dispatch="$(ls -1dt __BASE__/state/deferred_dispatch/* 2>/dev/null | head -n 1 || true)"
+latest_dispatch="$(find __BASE__/state/deferred_dispatch -mindepth 1 -maxdepth 1 -type d -print 2>/dev/null | sort | tail -n 1 || true)"
 if [[ -n "$latest_dispatch" ]]; then
   echo "dispatch_dir=$latest_dispatch"
   if [[ -f "$latest_dispatch/dispatch.log" ]]; then

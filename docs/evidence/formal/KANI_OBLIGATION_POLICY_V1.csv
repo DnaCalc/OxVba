@@ -1,0 +1,13 @@
+obligation_id,profile,signal_tier,primary_value,current_state,execution_policy,next_action
+FO-V2-001,v2,high,vm_pc_progression_safety,timeout-heavy,strict-async-sliced,split_harness_and_constrain_symbolic_inputs
+FO-V2-002,v2,medium,compiler_slot_non_overlap,unknown_recent,strict-async,rerun_and_capture_counterexample_if_any
+FO-V3-001,v3,low,toolchain_presence_smoke,pass,non-blocking-smoke,keep_as_fast_probe
+FO-V4-001,v4,high,comparator_boolean_contract,oom-timeout,strict-async-sliced,extract_small_domain_model_and_stub_string_paths
+FO-V162-001,v162,medium,financial_rate_domain_safety,not-started,strict-async,execute_after_no-op-mismatch_repair
+FO-V162-002,v162,medium,financial_nper_domain_safety,not-started,strict-async,execute_after_no-op-mismatch_repair
+FO-V162-003,v162,medium,vartype_contract_consistency,not-started,strict-async,execute_after_no-op-mismatch_repair
+FO-V175-001,v175,high,cverr_tag_reserved_band_safety,not-started,strict-async,execute_with_memory_guard_then_foldback
+FO-V175-002,v175,high,resume_next_err_clear_safety,not-started,strict-async,execute_with_memory_guard_then_foldback
+FO-V287-001,v287,high,pmr_typelib_resolution_invariant,timeout,strict-async-sliced,slice_host_harness_state_space
+FO-V287-002,v287,high,pmr_active_resolution_invariant,timeout,strict-async-sliced,slice_host_harness_state_space
+FO-V287-003,v287,high,dynlink_contract_rejects_unsupported,pass,strict-async,retain_as_reference_pass_lane

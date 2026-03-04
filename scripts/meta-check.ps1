@@ -29,6 +29,21 @@ try {
     Write-Host "[oxvba] intrinsic-surface"
     & "$PSScriptRoot/validate-intrinsic-surface.ps1"
 
+    Write-Host "[oxvba] hal-clause-drift"
+    & "$PSScriptRoot/check-hal-clause-drift.ps1"
+
+    Write-Host "[oxvba] pmr-clause-drift"
+    & "$PSScriptRoot/check-pmr-clause-drift.ps1"
+
+    Write-Host "[oxvba] pmr-followup-sync"
+    & "$PSScriptRoot/validate-pmr-followup-sync.ps1"
+
+    Write-Host "[oxvba] project-integration-catalog"
+    & "$PSScriptRoot/validate-project-integration-catalog.ps1"
+
+    Write-Host "[oxvba] kani-obligation-policy"
+    & "$PSScriptRoot/validate-kani-obligation-policy.ps1"
+
     if (-not $SkipPathStability) {
         Write-Host "[oxvba] path-stability"
         & "$PSScriptRoot/test-path-stability.ps1"
