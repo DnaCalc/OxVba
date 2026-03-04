@@ -11,6 +11,7 @@ Primary evidence sources:
 - Language coverage index: `docs/evidence/language/COVERAGE_INDEX.csv`
 - Intrinsic surface index: `docs/evidence/runtime/INTRINSIC_SURFACE.csv`
 - Module/project requirements: `docs/evidence/language/MS_VBAL_MODULE_PROJECT_REQUIREMENTS.csv`
+- PMR formal clauses: `docs/spec/PROJECT_MODULE_REFERENCE_CLAUSE_CATALOG_V1.csv`
 - Conformance corpus: `conformance/tests/`
 
 ## Language Feature Checklist
@@ -37,6 +38,8 @@ Primary evidence sources:
 | `[x]` | Procedure calls | `ParamArray` packing subset | `params_paramarray_pack.bas`, `params_paramarray_empty.bas` | Implemented subset with current constraints. |
 | `[x]` | Assignment forms | `Set`/`Let` keyword assignment forms (subset) | `assignment_set_let_basic.bas` | `Set`/`Let` prefixes normalize to assignment path in current subset. |
 | `[x]` | Properties | `Property Let/Set/Get` | `property_let_byref_route.bas`, `property_get_expression_basic.bas` | Let/Set routes plus Property Get RHS expression subset are executable. |
+| `[~]` | Project model | Project/module/reference deterministic scaffold (`ProjectGraph` + `ProjectManifest`) | `crates/oxvba-host/src/project.rs`, `crates/oxvba-compiler/src/project.rs`, `docs/evidence/conformance/PMR_PROJECT_MODEL_FIXTURE_MATRIX_V1.md` | Identity/module/reference invariants, deterministic project compile entry, qualification rewrite subset, and host export registry are executable; full parity and cross-project runtime breadth remain partial. |
+| `[~]` | Class/project gating | `WithEvents`/`Implements`/`RaiseEvent` PMR diagnostics | `project_model_*_requires_class_graph.bas`, compiler tests | Explicit PMR diagnostics now gate deferred class semantics instead of generic unsupported paths. |
 | `[x]` | External calls | `Declare` / external binding | `declare_function_stub_basic.bas`, `declare_sub_stub_basic.bas` | Deterministic stub-execution subset; richer host binding remains future work. |
 | `[x]` | Arrays | Fixed arrays, lower bounds, multidim indexing | `array_store_load.bas`, `array_option_base_one_bounds.bas`, `array_multidim_indexing.bas` | Implemented subset. |
 | `[x]` | Arrays | `ReDim` / `ReDim Preserve` legality subset | `redim_preserve_*.bas`, `redim_without_preserve_resets.bas` | Implemented scoped behavior. |

@@ -79,6 +79,11 @@ types,Late-bound default-member execution,implemented,v102,conformance/tests/lat
 objects,Root object injection,implemented,v7,crates/oxvba-host/src/engine.rs,
 objects,Class module lifecycle,implemented,v54,conformance/tests/class_lifecycle_resume_next_ok.bas,lifecycle procedures auto-invoked around entry
 objects,Collection object model subset,implemented,v53,conformance/tests/object_collection_add_item.bas,collection-count projection subset
+project_model,ProjectGraph identity/module/reference deterministic scaffold,implemented,pmr-a1-a5,crates/oxvba-host/src/project.rs,host-side ProjectGraph/ProjectNode invariants and stable PMR error codes are executable with unit coverage
+project_model,Class/project deferred-feature diagnostics (WithEvents/Implements/RaiseEvent),implemented,pmr-a1-a5,conformance/tests/project_model_withevents_requires_class_graph.bas,compiler now emits stable PMR diagnostics for class/project surfaces pending full ProjectGraph runtime integration
+project_model,ProjectManifest compile entry and module-header retention,implemented,pmr-p0-p10,crates/oxvba-compiler/src/project.rs,compile_project and module_unit_from_source provide deterministic project/module parsing and lowering subset
+project_model,Reference-order symbol resolution subset,implemented,pmr-p0-p10,crates/oxvba-host/src/project.rs,active-project symbol resolution now honors declared reference precedence for shadowing cases
+project_model,Host export eligibility registry subset,implemented,pmr-p0-p10,crates/oxvba-compiler/src/project.rs,public procedural exports are enumerated for host-direct invocation lanes, including Option Private members; reference-boundary visibility remains deferred
 interop,Dispatch boundary intrinsics (CreateObject/DispatchInvoke subset),implemented,v55,conformance/tests/com_dispatch_createobject_invoke.bas,deterministic dispatch-projection subset
 interop,COM VARIANT canonical layout,implemented,v30,crates/oxvba-runtime/src/variant.rs,
 interop,Boundary marshalling roundtrip,partial,v31,crates/oxvba-runtime/src/variant.rs,
@@ -86,5 +91,6 @@ interop,Type-library driven external signature import,planned,v87,,
 runtime,VM backend execution,implemented,v2,scripts/run-conformance.ps1,
 runtime,JIT backend execution subset,implemented,v24,scripts/run-conformance.ps1,
 runtime,JIT fallback for unsupported ops,implemented,v24-v159,crates/oxvba-jit/src/lib.rs,unsupported financial tolerance and sentinel-tag introspection bytecode are covered by explicit VM/JIT parity fallback tests
+
 
 

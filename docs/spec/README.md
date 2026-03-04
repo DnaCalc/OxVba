@@ -28,5 +28,13 @@ Current draft set:
 - [`HAL_DECLARE_EXECUTION_IMPLEMENTATION_V2.md`](HAL_DECLARE_EXECUTION_IMPLEMENTATION_V2.md) (`working-draft`): implemented Declare metadata/lowering/VM/HAL dynamic-link subset snapshot (`v212..v218`).
 - [`HAL_DECLARE_ABI_SPEC_V1.md`](HAL_DECLARE_ABI_SPEC_V1.md) (`working-draft`): formalized external declaration + marshaling contract with source-anchor mapping and implementation-defined boundaries.
 - [`HAL_DECLARE_MARSHAL_CONFORMANCE_V1.md`](HAL_DECLARE_MARSHAL_CONFORMANCE_V1.md) (`working-draft`): clause-mapped conformance lanes for declaration parsing, runtime gating, marshaling, and deferred oracle checks.
+- [`PROJECT_MODULE_REFERENCE_SPEC_V1.md`](PROJECT_MODULE_REFERENCE_SPEC_V1.md) (`working-draft`): formal state model, invariants, pre/postconditions, and deterministic error semantics for project/module/reference behavior.
+- [`PROJECT_MODULE_REFERENCE_CLAUSE_CATALOG_V1.md`](PROJECT_MODULE_REFERENCE_CLAUSE_CATALOG_V1.md) (`working-draft`): clause IDs and verification mappings for PMR semantics.
+- [`PROJECT_MODULE_REFERENCE_CLAUSE_CATALOG_V1.csv`](PROJECT_MODULE_REFERENCE_CLAUSE_CATALOG_V1.csv) (`working-draft`): machine-readable PMR clause coverage map.
+- [`PROJECT_MODULE_REFERENCE_CONFORMANCE_V1.md`](PROJECT_MODULE_REFERENCE_CONFORMANCE_V1.md) (`working-draft`): executable lane design for PMR static semantics, multi-module resolution, references, and storage.
+- [`PROJECT_MODULE_REFERENCE_HAL_INTEGRATION_V1.md`](PROJECT_MODULE_REFERENCE_HAL_INTEGRATION_V1.md) (`working-draft`): HAL-adjacent contract and capability planning for host projects, references, and storage.
+- [`PROJECT_MODULE_REFERENCE_TYPELIB_IMPORTLIB_HAL_DRAFT_V1.md`](PROJECT_MODULE_REFERENCE_TYPELIB_IMPORTLIB_HAL_DRAFT_V1.md) (`working-draft`): deterministic importlib/type-library binding contract draft and HAL interaction shape for PMR reference resolution.
+- [`PROJECT_MODULE_REFERENCE_SOURCE_CROSSWALK_V1.md`](PROJECT_MODULE_REFERENCE_SOURCE_CROSSWALK_V1.md) (`working-draft`): PMR source-anchor crosswalk across MS-VBAL, MS-OAUT, and MS-OVBA extraction status.
+- [`CLASS_MODULE_COM_ALIGNMENT_PLAN_V1.md`](CLASS_MODULE_COM_ALIGNMENT_PLAN_V1.md) (`working-draft`): staged class-module/COM alignment plan with explicit near-term semantic steps and deferred interop boundaries.
 
 These files intentionally optimize for design velocity and clarity of open decisions rather than immediate lock-in.

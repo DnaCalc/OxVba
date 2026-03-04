@@ -7,34 +7,34 @@ Source: post-P10 observations and parity-gate follow-up request
 ## Observation Disposition
 
 1. `PMR-FUP-001`: `compile_project` rewrite bridge (not full module-aware IR bind)
-- Status: open backlog
-- Disposition: documented + queued.
-- Next step: move from source rewrite to module-aware binder/IR lowering.
+- Status: addressed (active path advanced)
+- Disposition: `compile_project` now defaults to module-aware bind-plan lowering with explicit bridge fallback (`OXVBA_PMR_LOWERING=rewrite-bridge`), including deterministic bare `Call` target rewrites.
+- Next step: bridge retirement remains blocked by `DG-V287-001` host-harness timeouts (`FO-V287-001/002`); keep fallback until remediation + clean re-run.
 
 2. `PMR-FUP-002`: cross-project execution unsupported (`PMR-E-REFERENCE-CROSS-PROJECT-UNSUPPORTED`)
-- Status: open backlog
-- Disposition: documented + queued.
-- Next step: add executable cross-project bind/runtime path.
+- Status: partial (advanced)
+- Disposition: executable subset now supports cross-project calls when referenced project source is loaded into the manifest (`reference_projects`).
+- Next step: add richer bind/runtime path for host-resolved reference payloads (non-source-backed lanes).
 
 3. `PMR-FUP-003`: reference-order parity needed end-to-end
-- Status: partial (host graph/oracle lane complete, compiler/runtime lane pending)
-- Disposition: addressed in host graph subset + oracle validated for precedence behavior.
-- Next step: unify precedence semantics through compiler/runtime execution path.
+- Status: addressed (current subset)
+- Disposition: compiler/runtime executable path now follows declared reference order for unqualified call rewrites, aligned with host graph and oracle subset.
+- Next step: preserve this ordering in future module-aware IR binder path.
 
 4. `PMR-FUP-004`: header parsing strictness and host-edge tolerance
-- Status: partial
-- Disposition: deterministic malformed-header diagnostics + oracle export evidence landed.
-- Next step: add host-import tolerance matrix tests where safe.
+- Status: addressed (matrix-backed)
+- Disposition: malformed-header diagnostics remain deterministic; host-edge tolerance/rejection policy is now explicit and test-anchored in `docs/evidence/conformance/PMR_HOST_IMPORT_TOLERANCE_MATRIX_V1.md`.
+- Next step: expand matrix rows as additional host-import shapes are discovered.
 
 5. `PMR-FUP-005`: `Option Private Module` boundary behavior nuance
-- Status: partial
-- Disposition: addressed for host-direct invocation lane (oracle-backed).
-- Next step: separate host-direct callable vs reference-visible contracts explicitly in PMR model.
+- Status: addressed (current subset)
+- Disposition: host-direct callable and reference-visible export surfaces are split explicitly (`host_exports` vs `reference_visible_exports`) in compiler and host models.
+- Next step: fold this split into future host project catalog/reference APIs.
 
 6. `PMR-FUP-006`: follow-up queue formalization and synchronization
-- Status: active ongoing process
-- Disposition: addressed.
-- Next step: keep PMR oracle lane and divergence foldback synchronized with implementation backlog.
+- Status: addressed (guarded)
+- Disposition: synchronization now has an executable guard (`scripts/validate-pmr-followup-sync.ps1`) wired into `scripts/meta-check.ps1`.
+- Next step: keep the guard green as oracle/divergence records evolve.
 
 ## Parity Queue (`CCT-037..CCT-041`)
 
@@ -61,6 +61,7 @@ Source: post-P10 observations and parity-gate follow-up request
 
 ## Next Execution Block
 
-1. `PMR-FUP-001..003`: module-aware binder/IR and cross-project executable resolution path.
-2. `PMR-FUP-005`: explicit split of host-direct callable vs reference-visible access semantics.
-3. `PMR-FUP-004/006`: tolerance matrix + ongoing oracle/divergence synchronization.
+1. Remediate host Kani timeout behavior for `FO-V287-001/002` and rerun `DG-V287-001`.
+2. Retire rewrite-bridge fallback only after rerun foldback clears host PMR obligations (`PMR-FUP-001` closure).
+3. Keep `PMR-FUP-004/006` synchronized with oracle/divergence foldback and tolerance-matrix expansion.
+4. Continue deferring `PMR-FUP-002` (`CCT-043`/`ODG-041`) to the COM stabilization tranche.

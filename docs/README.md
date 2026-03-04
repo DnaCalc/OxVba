@@ -16,6 +16,8 @@
 | Bytecode Format | [`BYTECODE_FORMAT.md`](BYTECODE_FORMAT.md) | Bytecode representation status and planned evolution. |
 | VM Architecture | [`VM_ARCHITECTURE.md`](VM_ARCHITECTURE.md) | VM implementation status and next milestones. |
 | Conformance | [`CONFORMANCE.md`](CONFORMANCE.md) | Conformance assets, commands, and comparison policy. |
+| Integration Suite Strategy | [`evidence/conformance/PROJECT_INTEGRATION_SUITE_STRATEGY_V1.md`](evidence/conformance/PROJECT_INTEGRATION_SUITE_STRATEGY_V1.md) | Data-driven multi-project integration test strategy, deterministic policy contract, and growth plan. |
+| Integration Deferred Notes | [`evidence/conformance/PROJECT_INTEGRATION_DEFERRED_UNCERTAINTIES_V1.md`](evidence/conformance/PROJECT_INTEGRATION_DEFERRED_UNCERTAINTIES_V1.md) | Deferred/unclear integration topics linked to `ODG`/`CCT` tracking and active-limit coverage. |
 | Foundation Spec Reference | [`FOUNDATION_SPEC_REFERENCE.md`](FOUNDATION_SPEC_REFERENCE.md) | Canonical external specification source map in `../Foundation/reference` (no local vendored VBA spec snapshots). |
 | Spec Drafts Index | [`spec/README.md`](spec/README.md) | Early-stage design/contract drafts that prepare future normative specs. |
 | HAL Design Draft | [`spec/HAL_DESIGN_DRAFT.md`](spec/HAL_DESIGN_DRAFT.md) | Host Abstraction Layer scope, principles, profile targets, and staged spec-run plan. |
@@ -42,6 +44,19 @@
 | HAL Uncertainty Register | [`evidence/hal/HAL_UNCERTAINTY_REGISTER.md`](evidence/hal/HAL_UNCERTAINTY_REGISTER.md) | Open HAL contract-shape uncertainties and planned resolution phases. |
 | HAL Implementation-Defined Register | [`evidence/hal/HAL_IMPLEMENTATION_DEFINED.md`](evidence/hal/HAL_IMPLEMENTATION_DEFINED.md) | HAL-specific implementation-defined behaviors that are explicitly tracked. |
 | MS-VBAL Module/Project Requirements | [`evidence/language/MS_VBAL_MODULE_PROJECT_REQUIREMENTS.md`](evidence/language/MS_VBAL_MODULE_PROJECT_REQUIREMENTS.md) | Full-scope module/project backlog for MS-VBAL closure beyond current single-source execution model. |
+| PMR Spec v1 | [`spec/PROJECT_MODULE_REFERENCE_SPEC_V1.md`](spec/PROJECT_MODULE_REFERENCE_SPEC_V1.md) | Formal Project/Module/Reference state model, invariants, operation contracts, and deterministic error model. |
+| PMR Clause Catalog v1 | [`spec/PROJECT_MODULE_REFERENCE_CLAUSE_CATALOG_V1.md`](spec/PROJECT_MODULE_REFERENCE_CLAUSE_CATALOG_V1.md) | Clause IDs and verification mapping for PMR semantics. |
+| PMR Conformance v1 | [`spec/PROJECT_MODULE_REFERENCE_CONFORMANCE_V1.md`](spec/PROJECT_MODULE_REFERENCE_CONFORMANCE_V1.md) | Planned executable conformance lanes for PMR static semantics, references, class/event semantics, and storage. |
+| PMR HAL Integration v1 | [`spec/PROJECT_MODULE_REFERENCE_HAL_INTEGRATION_V1.md`](spec/PROJECT_MODULE_REFERENCE_HAL_INTEGRATION_V1.md) | HAL-adjacent capability and contract planning for host projects, references, and storage. |
+| PMR Typelib/Importlib HAL Draft v1 | [`spec/PROJECT_MODULE_REFERENCE_TYPELIB_IMPORTLIB_HAL_DRAFT_V1.md`](spec/PROJECT_MODULE_REFERENCE_TYPELIB_IMPORTLIB_HAL_DRAFT_V1.md) | Deterministic first-pass contract for type-library importlib resolution and planned HAL resolver boundary. |
+| PMR Source Crosswalk v1 | [`spec/PROJECT_MODULE_REFERENCE_SOURCE_CROSSWALK_V1.md`](spec/PROJECT_MODULE_REFERENCE_SOURCE_CROSSWALK_V1.md) | Anchor-level source traceability across MS-VBAL, MS-OAUT, and current MS-OVBA extraction status. |
+| Class/COM Alignment Plan v1 | [`spec/CLASS_MODULE_COM_ALIGNMENT_PLAN_V1.md`](spec/CLASS_MODULE_COM_ALIGNMENT_PLAN_V1.md) | Staged plan to align class-module semantics with COM behavior now while explicitly deferring full ABI/interop mechanics. |
+| PMR Class/COM A1-A5 Evidence | [`evidence/language/PMR_CLASS_COM_ALIGNMENT_A1_A5_2026-03-03.md`](evidence/language/PMR_CLASS_COM_ALIGNMENT_A1_A5_2026-03-03.md) | Execution evidence for A1-A5: project-graph scaffold, PMR diagnostics, class semantic boundary alignment, and claim-tier gating. |
+| PMR ProjectGraph P0-P10 Rollup | [`evidence/language/PMR_PROJECTGRAPH_P0_P10_ROLLUP_2026-03-03.md`](evidence/language/PMR_PROJECTGRAPH_P0_P10_ROLLUP_2026-03-03.md) | End-to-end execution rollup for parser+binder ProjectGraph integration master workset through oracle/deferred-gate setup. |
+| PMR Fixture Matrix v1 | [`evidence/conformance/PMR_PROJECT_MODEL_FIXTURE_MATRIX_V1.md`](evidence/conformance/PMR_PROJECT_MODEL_FIXTURE_MATRIX_V1.md) | Deterministic executable fixture mapping for PMR project-model scenarios required by P9. |
+| PMR Oracle Templates v1 | [`evidence/conformance/PMR_PROJECT_MODEL_ORACLE_TEMPLATES_V1.md`](evidence/conformance/PMR_PROJECT_MODEL_ORACLE_TEMPLATES_V1.md) | Structured Excel probe templates for deferred-oracle topics `CCT-037..CCT-041` (P10). |
+| PMR Oracle Runner | [`../scripts/run-pmr-project-model-oracle.ps1`](../scripts/run-pmr-project-model-oracle.ps1) | Automated Excel oracle capture runner for PMR topics (`CCT-037..CCT-041`) with CSV+summary artifacts. |
+| PMR Follow-up Queue | [`worksets/WORKSET_2026-03-03_PMR_FOLLOWUP_QUEUE_FROM_OBSERVATIONS.md`](worksets/WORKSET_2026-03-03_PMR_FOLLOWUP_QUEUE_FROM_OBSERVATIONS.md) | Queue generated from P10 observations and parity foldback, including divergence-linked implementation backlog. |
 | Diagnostic Taxonomy | [`DIAGNOSTIC_TAXONOMY.md`](DIAGNOSTIC_TAXONOMY.md) | Consolidated user-facing compiler/typecheck diagnostic categories and message mapping. |
 | Profile v2 Status | [`PROFILE_STATUS_V2.md`](profile-status/PROFILE_STATUS_V2.md) | Current gate status contract for `mvp-controlflow-v2`. |
 | Profile v3 Status | [`PROFILE_STATUS_V3.md`](profile-status/PROFILE_STATUS_V3.md) | Current gate status contract for `mvp-formal-foundation-v3`. |

@@ -7,6 +7,8 @@ Defines the current conformance loop and matrix gate for the active ladder profi
 - `conformance/tests/*.bas` — executable input corpus.
 - `conformance/golden/*.csv` — expected outcomes.
 - `conformance/divergences/*.bas` — divergence/regression fixtures tracked in evidence docs.
+- `conformance/integration/catalog.psv` — tracked multi-project integration suite catalog (active + deferred cases).
+- `conformance/integration/projects/*` — project/module/reference integration fixtures.
 - `docs/evidence/conformance/DEFERRED_ORACLE_GATES.csv` — non-blocking oracle foldback register.
 - `docs/evidence/conformance/ORACLE_PROBE_SCAFFOLD.md` — reusable probe queue scaffold for deferred oracle capture.
 - `docs/evidence/conformance/PMR_PROJECT_MODEL_FIXTURE_MATRIX_V1.md` — executable PMR project-model fixture mapping for workset `P9`.
@@ -58,6 +60,8 @@ Current corpus includes:
 ./scripts/run-smoke.ps1
 ./scripts/run-conformance.ps1
 ./scripts/run-conformance.ps1 -Backend jit
+./scripts/run-project-integration-suite.ps1
+./scripts/run-project-integration-suite.ps1 -CasePattern INTP-005
 ./scripts/run-matrix.ps1
 ./scripts/run-pmr-project-model-oracle.ps1
 ./scripts/run-pmr-project-model-oracle.ps1 -DisableDialogGuardian
@@ -73,6 +77,10 @@ At MVP stage, conformance compares:
 - slot snapshot output (`SLOTS:` line from CLI)
 
 As runtime semantics mature, this will expand to richer structured outputs (error state and object lifecycle signals).
+
+Project integration lane:
+- Uses `cargo test -p oxvba-host --test project_integration_suite` over `conformance/integration/catalog.psv`.
+- Supports increasing complexity levels (`L1..L6`), `active-limit` expected-failure cases, and deferred/planned entries linked to ODG/CCT tracking.
 
 ## Declared Profile Scope (Current Gate)
 - Profile id: `mvp-profile-v226` (active host-platform expansion ladder terminal gate)

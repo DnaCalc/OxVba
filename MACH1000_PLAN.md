@@ -700,6 +700,11 @@ Implementation requirement clarification:
 - OxVBA targets full MS-VBAL scope coverage, including project/module semantics (module naming, visibility, qualification, module/class/document/form categories, and project-level resolution rules).
 - Forms/UI-host integration may be deferred by explicit phase policy, but these features remain required scope (not removed scope).
 - Normative source material and extracted conformance candidates come from `../Foundation/reference` (see `docs/FOUNDATION_SPEC_REFERENCE.md`), not locally vendored spec snapshots.
+- Formal PMR specification baseline:
+  - `docs/spec/PROJECT_MODULE_REFERENCE_SPEC_V1.md`
+  - `docs/spec/PROJECT_MODULE_REFERENCE_CLAUSE_CATALOG_V1.md`
+  - `docs/spec/PROJECT_MODULE_REFERENCE_CONFORMANCE_V1.md`
+  - `docs/spec/PROJECT_MODULE_REFERENCE_HAL_INTEGRATION_V1.md`
 
 Key complexity areas identified:
 - The coercion rules (Section 2.1.3) are extensive and have many special cases.
@@ -1087,7 +1092,11 @@ OxVba/
 │   │   ├── HAL_PROFILE_MATRIX_DRAFT.md # Per-profile capability planning matrix
 │   │   ├── HAL_SPEC_WORKING_DRAFT.md   # Implementation-linked HAL contract and policy semantics
 │   │   ├── HAL_SPEC_CROSSWALK.md       # HAL-to-Foundation spec anchor mapping
-│   │   └── HAL_CONFORMANCE_SUITE.md    # Runnable HAL conformance lanes and artifact model
+│   │   ├── HAL_CONFORMANCE_SUITE.md    # Runnable HAL conformance lanes and artifact model
+│   │   ├── PROJECT_MODULE_REFERENCE_SPEC_V1.md
+│   │   ├── PROJECT_MODULE_REFERENCE_CLAUSE_CATALOG_V1.md
+│   │   ├── PROJECT_MODULE_REFERENCE_CONFORMANCE_V1.md
+│   │   └── PROJECT_MODULE_REFERENCE_HAL_INTEGRATION_V1.md
 │   ├── VARIANT_DESIGN.md               # VARIANT layout and optional internal-repr optimization notes
 │   ├── COM_ABSTRACTION.md              # COM layer design
 │   ├── BYTECODE_FORMAT.md              # Register bytecode instruction set reference

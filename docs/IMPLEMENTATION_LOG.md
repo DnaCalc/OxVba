@@ -1,5 +1,43 @@
 # Implementation Log
 
+## 2026-03-03
+- PMR formalization follow-up planning + lane setup:
+  - published focused workset for replacing rewrite-bridge PMR lowering with module-aware bind/IR path:
+    - `docs/worksets/WORKSET_2026-03-03_PMR_MODULE_AWARE_BIND_AND_FORMAL_SETUP_V287.md`;
+  - synchronized PMR follow-up queue priorities:
+    - `PMR-FUP-001` (primary), `PMR-FUP-003` (formal lane setup), and explicit defer of `PMR-FUP-002` to COM stabilization;
+  - added dedicated Kani harness scaffolding:
+    - PMR project-graph invariants in `crates/oxvba-host/src/project.rs`,
+    - Declare descriptor-contract invariants in `crates/oxvba-hal/src/traits.rs`;
+  - wired formal/deferred gate artifacts:
+    - `FO-V287-001..003` in `docs/evidence/formal/obligations.csv`,
+    - `DG-V287-001` in `docs/evidence/formal/DEFERRED_GATES.md`,
+    - `FTODO-V287-001` in `docs/evidence/formal/EXTENDED_TODO.md`;
+  - evidence note:
+    - `docs/evidence/language/PMR_FORMAL_SETUP_V287_2026-03-03.md`;
+  - checks:
+    - `cargo fmt --all` -> PASS,
+    - `cargo test -p oxvba-host project::tests:: -- --nocapture` -> PASS,
+    - `cargo test -p oxvba-hal -- --nocapture` -> PASS,
+    - `./scripts/meta-check.ps1 -Fast` -> PASS.
+- PMR bind-path execution (`PMR-FUP-001`) on compiler side:
+  - `compile_project(...)` now routes through lowering strategy selection:
+    - default active path: `ModuleAwareBindPlan`,
+    - explicit fallback: `RewriteBridge` (`OXVBA_PMR_LOWERING=rewrite-bridge`);
+  - added module-aware bind-plan lowering seams in `crates/oxvba-compiler/src/project.rs`:
+    - `lower_project_source`, `lower_module_source_module_aware`, `build_line_bind_plan`,
+    - shared invocation bind/apply helpers,
+    - bare `Call <target>` rewrite support for module-qualified calls without parentheses;
+  - retained rewrite bridge as controlled fallback and parity baseline;
+  - added compiler tests:
+    - `compile_project_module_aware_matches_rewrite_bridge_for_shared_fixture`,
+    - `compile_project_module_aware_rewrites_module_qualified_call_without_parentheses`;
+  - evidence note:
+    - `docs/evidence/language/PMR_MODULE_AWARE_BIND_EXECUTION_V287_2026-03-03.md`;
+  - checks:
+    - `cargo test -p oxvba-compiler project::tests:: -- --nocapture` -> PASS,
+    - `./scripts/meta-check.ps1 -Fast` -> PASS.
+
 ## 2026-03-02
 - Closed host-platform expansion ladder `v187..v226` with doctrine-aligned artifacts and integrated gates:
   - implemented/runtime-wired profile bootstrap and runtime-class model:
