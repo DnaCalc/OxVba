@@ -39,5 +39,6 @@ Current draft set:
 - [`COM_CLIENT_SERVER_SCOPE_V1.md`](COM_CLIENT_SERVER_SCOPE_V1.md) (`working-draft`): Windows COM client/server support scope, contract boundaries, tier model, apartment policy stance, and C2 late-bound client runway.
 - [`COM_CLIENT_SERVER_CONFORMANCE_V1.md`](COM_CLIENT_SERVER_CONFORMANCE_V1.md) (`working-draft`): COM-specific conformance lane architecture, artifact model, and C2 late-bound client lane planning with formal/deferred-oracle integration.
 - [`HAL_COM_BRIDGE_SCOPE_V1.md`](HAL_COM_BRIDGE_SCOPE_V1.md) (`working-draft`): HAL-owned COM boundary scope and C1->C2 transition contract for tokenized/native late-bound client behavior.
+- [`COM_CLIENT_LATEBOUND_BRIDGE_V1.md`](COM_CLIENT_LATEBOUND_BRIDGE_V1.md) (`working-draft`): explicit cross-layer bridge contract (VBA semantics -> compiler/VM transport -> HAL COM transport -> native adapter).
 
 These files intentionally optimize for design velocity and clarity of open decisions rather than immediate lock-in.

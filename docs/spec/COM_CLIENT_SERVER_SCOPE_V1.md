@@ -211,3 +211,6 @@ The `v387..v392` closure pass freezes C2 planning-level contracts and verificati
 - HAL COM bridge scope alignment,
 - HAL clause catalog (`HAL-COM-005`, `HAL-COM-006`),
 - implementation-defined and uncertainty registers for late-bound boundary behavior.
+
+`v393` bridge-lock artifact:
+- `docs/spec/COM_CLIENT_LATEBOUND_BRIDGE_V1.md`

@@ -2553,6 +2553,44 @@ mod tests {
     }
 
     #[test]
+    fn formal_v393_meta_check_runs_gate_sync_validator() {
+        let text = std::fs::read_to_string(repo_path("scripts/meta-check.ps1"))
+            .expect("meta-check script exists");
+        assert!(text.contains("validate-gate-sync.ps1"));
+    }
+
+    #[test]
+    fn formal_v394_com_latebound_bridge_spec_exists() {
+        let text =
+            std::fs::read_to_string(repo_path("docs/spec/COM_CLIENT_LATEBOUND_BRIDGE_V1.md"))
+                .expect("latebound bridge spec should exist");
+        assert!(text.contains("IntrinsicCreateObjectHost"));
+        assert!(text.contains("IntrinsicDispatchInvokeHost"));
+    }
+
+    #[test]
+    fn formal_v395_com_error_mapping_table_exists_and_has_required_rows() {
+        let text = std::fs::read_to_string(repo_path(
+            "docs/evidence/conformance/COM_CLIENT_ERROR_MAPPING_V1.csv",
+        ))
+        .expect("COM error mapping table should exist");
+        assert!(text.contains("COM-CREATEOBJECT-CLASS-NOT-REGISTERED"));
+        assert!(text.contains("COM-DISPATCH-MEMBER-NOT-FOUND"));
+        assert!(text.contains("COM-DISPATCH-ARG-ERROR"));
+    }
+
+    #[test]
+    fn formal_v396_c2_conformance_scaffold_files_exist() {
+        assert!(repo_path("conformance/com/client/c2-latebound/README.md").exists());
+        assert!(
+            repo_path(
+                "conformance/com/client/c2-latebound/createobject_string_prog_id_scaffold.bas"
+            )
+            .exists()
+        );
+    }
+
+    #[test]
     fn formal_v107_with_block_direct_member_target_executes() {
         let source = "Sub Main()\nDim x\nWith x.inner\n.Value = 4\n.Value = .Value + 3\nx = .Value\nEnd With\nEnd Sub";
         let out = Engine::new(HostConfig {

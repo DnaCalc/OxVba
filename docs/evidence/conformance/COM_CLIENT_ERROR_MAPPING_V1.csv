@@ -1,0 +1,7 @@
+mapping_id,operation,hresult,label,hal_error_code,err_number_policy,status,notes
+COM-CREATEOBJECT-CLASS-NOT-REGISTERED,create_object,0x80040154,class-not-registered,HAL-E-ADAPTER-FAULT,deferred-oracle,active,Expected when ProgID/CLSID is missing on host.
+COM-DISPATCH-MEMBER-NOT-FOUND,dispatch_invoke,0x80020003,member-not-found,HAL-E-ADAPTER-FAULT,deferred-oracle,active,Member resolution failure via GetIDsOfNames/Invoke.
+COM-DISPATCH-TYPE-MISMATCH,dispatch_invoke,0x80020005,type-mismatch,HAL-E-ADAPTER-FAULT,deferred-oracle,active,Invoke argument type mismatch path.
+COM-DISPATCH-EXCEPTION-RAISED,dispatch_invoke,0x80020009,exception-raised,HAL-E-ADAPTER-FAULT,deferred-oracle,active,Invoke propagated COM exception path.
+COM-DISPATCH-ARG-ERROR,dispatch_invoke,arg_err,arg-error,HAL-E-ADAPTER-FAULT,deferred-oracle,active,Invoke argument index failure path.
+COM-DISPATCH-UNCLASSIFIED,dispatch_invoke,other,native-failure,HAL-E-ADAPTER-FAULT,deferred-oracle,active,Fallback label for unmapped native HRESULTs.

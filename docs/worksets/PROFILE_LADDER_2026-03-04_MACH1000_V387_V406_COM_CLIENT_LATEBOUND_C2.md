@@ -3,7 +3,7 @@
 ## Range
 
 - Ladder span: `v387..v406`
-- Immediate terminal gate for approved run: `v392`
+- Immediate terminal gate for approved run: `v396`
 - Focus: late-bound COM client C2 contract closure and executable runway.
 
 ## Objectives
@@ -22,13 +22,13 @@
 | `v390` | invoke contract | `DISPPARAMS`/`VarResult`/`ExcepInfo`/`ArgErr` translation rules and deterministic mapping |
 | `v391` | HAL clause uplift | add C2-targeted `HAL-COM-*` clauses with verification plan wiring |
 | `v392` | spec closure gate | publish closure evidence + profile statuses + index/control updates |
-| `v393` | object-handle table hardening | durable native object identity/lifetime state in HAL adapter |
-| `v394` | `CreateObject` string path implementation | runtime surface supports ProgID string activation lane |
-| `v395` | member-name invoke implementation | name-based dispatch path with deterministic cache semantics |
-| `v396` | invoke packing implementation I | positional arguments and scalar VARIANT coercion subset |
-| `v397` | invoke packing implementation II | optional/named arg subset + deterministic unsupported paths |
-| `v398` | diagnostics contract implementation | stable HRESULT/ArgErr/ExcepInfo to OxVba error mapping |
-| `v399` | fixture expansion I | registration-free COM client fixtures for happy-path late binding |
+| `v393` | bridge + lifetime contract lock | explicit VBA late-bound bridge contract + native COM object identity/lifetime hardening in HAL |
+| `v394` | activation runway hardening | durable activation/object-token ownership path prepared for ProgID-text lane |
+| `v395` | deterministic COM error taxonomy | machine-readable COM error mapping + adapter labeling/tests for native failure families |
+| `v396` | conformance + process scaffold | C2 late-bound fixture scaffold, gate-drift guard, and uncertainty->work mapping updates |
+| `v397` | `CreateObject` string path implementation | runtime surface supports ProgID string activation lane |
+| `v398` | member-name invoke implementation | name-based dispatch path with deterministic cache semantics |
+| `v399` | invoke packing implementation I | positional arguments and scalar VARIANT coercion subset |
 | `v400` | fixture expansion II | failure-path fixtures and `On Error Resume Next` checks |
 | `v401` | lane script scaffold | COM client lane runner scripts and artifact model |
 | `v402` | lane run I | registration-free lane evidence |

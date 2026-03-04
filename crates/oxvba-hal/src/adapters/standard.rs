@@ -11,6 +11,7 @@ use crate::{
     },
 };
 use std::{
+    cell::Cell,
     collections::{BTreeMap, BTreeSet},
     fs::{self, OpenOptions},
     path::PathBuf,
@@ -25,7 +26,7 @@ use windows_sys::Win32::Foundation::VARIANT_BOOL;
 #[cfg(target_os = "windows")]
 use windows_sys::Win32::System::Com::{
     CLSCTX_SERVER, CLSIDFromProgID, COINIT_APARTMENTTHREADED, CoCreateInstance, CoInitializeEx,
-    CoUninitialize, DISPATCH_METHOD, DISPATCH_PROPERTYGET, DISPPARAMS, EXCEPINFO,
+    DISPATCH_METHOD, DISPATCH_PROPERTYGET, DISPPARAMS, EXCEPINFO,
 };
 #[cfg(target_os = "windows")]
 use windows_sys::Win32::System::Variant::{
@@ -207,6 +208,35 @@ impl StandardHostServices {
         }
     }
 
+    // Contract-check scaffold for COM handle-state invariants.
+    fn assert_com_invariants(&self, state: &ComState, op: &'static str) {
+        #[cfg(any(debug_assertions, feature = "hal_contract_checks"))]
+        {
+            for handle in state.bindings.keys().copied() {
+                hal_contract_assert!(
+                    handle >= 20_001,
+                    "op={} observed out-of-range COM handle {}",
+                    op,
+                    handle
+                );
+            }
+            #[cfg(not(target_os = "windows"))]
+            for (handle, binding) in &state.bindings {
+                hal_contract_assert!(
+                    binding.native_dispatch == 0,
+                    "op={} non-windows binding {} unexpectedly has native dispatch pointer",
+                    op,
+                    handle
+                );
+            }
+        }
+
+        #[cfg(not(any(debug_assertions, feature = "hal_contract_checks")))]
+        {
+            let _ = (state, op);
+        }
+    }
+
     fn native_mode_enabled(&self) -> bool {
         host_backed_mode_active(self.profile, &self.policy)
     }
@@ -308,6 +338,31 @@ impl StandardHostServices {
     fn pump_windows_messages_once(&self) {}
 
     #[cfg(target_os = "windows")]
+    fn ensure_thread_com_apartment(&self, operation: &'static str) -> HalResult<()> {
+        THREAD_COM_APARTMENT_READY.with(|ready| {
+            if ready.get() {
+                return Ok(());
+            }
+            let hr = unsafe { CoInitializeEx(std::ptr::null(), COINIT_APARTMENTTHREADED as u32) };
+            if hr < 0 {
+                return Err(HalError::adapter_fault(
+                    self.profile,
+                    CapabilityId::ComActivationDispatch,
+                    operation,
+                    format!("CoInitializeEx failed with HRESULT {:#010X}", hr as u32),
+                ));
+            }
+            ready.set(true);
+            Ok(())
+        })
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    fn ensure_thread_com_apartment(&self, _operation: &'static str) -> HalResult<()> {
+        Ok(())
+    }
+
+    #[cfg(target_os = "windows")]
     fn resolve_native_com_progid(&self, prog_id: i32) -> Option<String> {
         let env_key = format!("OXVBA_COM_PROGID_{prog_id}");
         if let Ok(value) = std::env::var(env_key) {
@@ -325,26 +380,6 @@ impl StandardHostServices {
     #[cfg(not(target_os = "windows"))]
     fn resolve_native_com_progid(&self, _prog_id: i32) -> Option<String> {
         None
-    }
-
-    #[cfg(target_os = "windows")]
-    fn native_com_probe_activation(&self, prog_id: &str) -> HalResult<()> {
-        let _apartment = ComApartmentGuard::enter(self.profile, "create_object")?;
-        let dispatch = self.native_com_activate_dispatch(prog_id)?;
-        unsafe {
-            raw_release_dispatch(dispatch);
-        }
-        Ok(())
-    }
-
-    #[cfg(not(target_os = "windows"))]
-    fn native_com_probe_activation(&self, _prog_id: &str) -> HalResult<()> {
-        Err(HalError::adapter_fault(
-            self.profile,
-            CapabilityId::ComActivationDispatch,
-            "create_object",
-            "native COM activation unavailable on this platform",
-        ))
     }
 
     #[cfg(target_os = "windows")]
@@ -401,6 +436,13 @@ impl StandardHostServices {
         Ok(dispatch_ptr.cast::<RawIDispatch>())
     }
 
+    #[cfg(target_os = "windows")]
+    fn try_native_com_binding(&self, prog_id: &str) -> HalResult<RawDispatchPtr> {
+        self.ensure_thread_com_apartment("create_object")?;
+        self.native_com_activate_dispatch(prog_id)
+            .map(|dispatch| dispatch as RawDispatchPtr)
+    }
+
     #[cfg(not(target_os = "windows"))]
     fn native_com_activate_dispatch(&self, _prog_id: &str) -> HalResult<*mut core::ffi::c_void> {
         Err(HalError::adapter_fault(
@@ -411,32 +453,80 @@ impl StandardHostServices {
         ))
     }
 
+    #[cfg(not(target_os = "windows"))]
+    fn try_native_com_binding(&self, prog_id: &str) -> HalResult<RawDispatchPtr> {
+        self.native_com_activate_dispatch(prog_id)
+            .map(|dispatch| dispatch as RawDispatchPtr)
+    }
+
     #[cfg(target_os = "windows")]
-    fn native_com_dispatch_invoke(&self, prog_id: &str, member: i32, arg: i32) -> HalResult<i32> {
-        let _apartment = ComApartmentGuard::enter(self.profile, "dispatch_invoke")?;
-        let dispatch = self.native_com_activate_dispatch(prog_id)?;
+    fn native_com_dispatch_invoke_core(
+        &self,
+        dispatch: *mut RawIDispatch,
+        prog_id: &str,
+        member: i32,
+        arg: i32,
+    ) -> HalResult<i32> {
         let result = if prog_id.eq_ignore_ascii_case("Scripting.Dictionary") {
             match member {
                 1 => unsafe { raw_dispatch_dictionary_count(dispatch) },
                 2 => unsafe { raw_dispatch_dictionary_exists(dispatch, arg) },
                 _ => Err(format!(
-                    "unsupported Scripting.Dictionary member token: {member}"
+                    "IDispatch::Invoke unsupported Scripting.Dictionary member token {member}"
                 )),
             }
         } else {
             unsafe { raw_dispatch_property_get_noargs(dispatch, member) }
         };
+        result.map_err(|message| self.com_dispatch_adapter_fault(message))
+    }
+
+    #[cfg(target_os = "windows")]
+    fn native_com_dispatch_invoke_with_bound_dispatch(
+        &self,
+        dispatch: *mut RawIDispatch,
+        prog_id: &str,
+        member: i32,
+        arg: i32,
+    ) -> HalResult<i32> {
+        self.ensure_thread_com_apartment("dispatch_invoke")?;
+        self.native_com_dispatch_invoke_core(dispatch, prog_id, member, arg)
+    }
+
+    #[cfg(target_os = "windows")]
+    fn native_com_dispatch_invoke(&self, prog_id: &str, member: i32, arg: i32) -> HalResult<i32> {
+        self.ensure_thread_com_apartment("dispatch_invoke")?;
+        let dispatch = self.native_com_activate_dispatch(prog_id)?;
+        let result = self.native_com_dispatch_invoke_core(dispatch, prog_id, member, arg);
         unsafe {
             raw_release_dispatch(dispatch);
         }
-        result.map_err(|message| {
-            HalError::adapter_fault(
-                self.profile,
-                CapabilityId::ComActivationDispatch,
-                "dispatch_invoke",
-                message,
-            )
-        })
+        result
+    }
+
+    #[cfg(target_os = "windows")]
+    fn com_dispatch_adapter_fault(&self, message: String) -> HalError {
+        let hresult = parse_hresult_hex(&message);
+        let arg_err = parse_arg_err(&message);
+        let label = map_com_hresult_label(hresult, arg_err);
+        let mut suffix = String::new();
+        if let Some(value) = hresult {
+            suffix.push_str(&format!("hresult=0x{value:08X};"));
+        }
+        if let Some(value) = arg_err {
+            suffix.push_str(&format!("arg_err={value};"));
+        }
+        let prefix = if suffix.is_empty() {
+            format!("com-dispatch-{label}")
+        } else {
+            format!("com-dispatch-{label};{suffix}")
+        };
+        HalError::adapter_fault(
+            self.profile,
+            CapabilityId::ComActivationDispatch,
+            "dispatch_invoke",
+            format!("{prefix} {message}"),
+        )
     }
 
     #[cfg(not(target_os = "windows"))]
@@ -892,11 +982,14 @@ impl ComHal for StandardHostServices {
         }
         if self.native_com_enabled()
             && let Some(prog_id_name) = self.resolve_native_com_progid(prog_id)
-            && self.native_com_probe_activation(&prog_id_name).is_ok()
+            && let Ok(native_dispatch) = self.try_native_com_binding(&prog_id_name)
         {
             let mut state = self.com_lock(capability, "create_object")?;
             let handle = state.allocate_handle();
-            state.bindings.insert(handle, ComBinding { prog_id_name });
+            state
+                .bindings
+                .insert(handle, ComBinding::native(prog_id_name, native_dispatch));
+            self.assert_com_invariants(&state, "create_object");
             return Ok(handle);
         }
         Ok(5_000i32.saturating_add(prog_id))
@@ -913,9 +1006,19 @@ impl ComHal for StandardHostServices {
         if self.native_com_enabled() {
             let binding = {
                 let state = self.com_lock(capability, "dispatch_invoke")?;
+                self.assert_com_invariants(&state, "dispatch_invoke");
                 state.bindings.get(&object).cloned()
             };
             if let Some(binding) = binding {
+                #[cfg(target_os = "windows")]
+                if binding.native_dispatch != 0 {
+                    return self.native_com_dispatch_invoke_with_bound_dispatch(
+                        binding.native_dispatch as *mut RawIDispatch,
+                        &binding.prog_id_name,
+                        member,
+                        arg,
+                    );
+                }
                 return self.native_com_dispatch_invoke(&binding.prog_id_name, member, arg);
             }
         }
@@ -1447,9 +1550,82 @@ impl ComState {
     }
 }
 
+type RawDispatchPtr = usize;
+
+#[cfg(target_os = "windows")]
+thread_local! {
+    static THREAD_COM_APARTMENT_READY: Cell<bool> = const { Cell::new(false) };
+}
+
 #[derive(Debug, Clone)]
 struct ComBinding {
     prog_id_name: String,
+    native_dispatch: RawDispatchPtr,
+}
+
+impl ComBinding {
+    fn native(prog_id_name: String, native_dispatch: RawDispatchPtr) -> Self {
+        Self {
+            prog_id_name,
+            native_dispatch,
+        }
+    }
+}
+
+#[cfg(target_os = "windows")]
+impl Drop for ComState {
+    fn drop(&mut self) {
+        for binding in self.bindings.values_mut() {
+            if binding.native_dispatch != 0 {
+                unsafe {
+                    raw_release_dispatch(binding.native_dispatch as *mut RawIDispatch);
+                }
+                binding.native_dispatch = 0;
+            }
+        }
+    }
+}
+
+#[cfg(target_os = "windows")]
+fn parse_hresult_hex(message: &str) -> Option<u32> {
+    let marker = "HRESULT 0x";
+    let offset = message.find(marker)?;
+    let start = offset + marker.len();
+    let end = start.saturating_add(8).min(message.len());
+    let hex = message.get(start..end)?;
+    if hex.len() != 8 || !hex.chars().all(|ch| ch.is_ascii_hexdigit()) {
+        return None;
+    }
+    u32::from_str_radix(hex, 16).ok()
+}
+
+#[cfg(target_os = "windows")]
+fn parse_arg_err(message: &str) -> Option<u32> {
+    let marker = "arg_err=";
+    let offset = message.find(marker)?;
+    let start = offset + marker.len();
+    let tail = message.get(start..)?;
+    let digits: String = tail.chars().take_while(|ch| ch.is_ascii_digit()).collect();
+    if digits.is_empty() {
+        return None;
+    }
+    digits.parse::<u32>().ok()
+}
+
+#[cfg(target_os = "windows")]
+fn map_com_hresult_label(hresult: Option<u32>, arg_err: Option<u32>) -> &'static str {
+    if arg_err.is_some() {
+        return "arg-error";
+    }
+    match hresult {
+        Some(0x8004_0154) => "class-not-registered",
+        Some(0x8002_0003) => "member-not-found",
+        Some(0x8002_0005) => "type-mismatch",
+        Some(0x8002_0009) => "exception-raised",
+        Some(0x8007_0057) => "invalid-argument",
+        Some(_) => "native-failure",
+        None => "fault-unspecified",
+    }
 }
 
 #[cfg(target_os = "windows")]
@@ -1517,38 +1693,6 @@ struct RawIDispatchVtbl {
 #[repr(C)]
 struct RawIDispatch {
     vtbl: *const RawIDispatchVtbl,
-}
-
-#[cfg(target_os = "windows")]
-struct ComApartmentGuard {
-    initialized: bool,
-}
-
-#[cfg(target_os = "windows")]
-impl ComApartmentGuard {
-    fn enter(profile: HalProfileId, operation: &'static str) -> HalResult<Self> {
-        let hr = unsafe { CoInitializeEx(std::ptr::null(), COINIT_APARTMENTTHREADED as u32) };
-        if hr < 0 {
-            return Err(HalError::adapter_fault(
-                profile,
-                CapabilityId::ComActivationDispatch,
-                operation,
-                format!("CoInitializeEx failed with HRESULT {:#010X}", hr as u32),
-            ));
-        }
-        Ok(Self { initialized: true })
-    }
-}
-
-#[cfg(target_os = "windows")]
-impl Drop for ComApartmentGuard {
-    fn drop(&mut self) {
-        if self.initialized {
-            unsafe {
-                CoUninitialize();
-            }
-        }
-    }
 }
 
 #[cfg(target_os = "windows")]
@@ -2181,6 +2325,70 @@ mod tests {
             .dispatch_invoke(object, 2, 42)
             .expect("dictionary Exists should be invokable");
         assert!(exists == 0 || exists == 1);
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn windows_native_com_binding_keeps_stable_dispatch_identity() {
+        let host = StandardHostServices::new(HalProfileId::Windows, HostPolicy::interactive_dev());
+        let object = host
+            .create_object(4)
+            .expect("create_object should return a token");
+        if object == 5_004 {
+            return;
+        }
+
+        let before = {
+            let state = host
+                .com_state
+                .lock()
+                .expect("com state lock should succeed");
+            let binding = state
+                .bindings
+                .get(&object)
+                .expect("native object should be tracked");
+            assert!(
+                binding.native_dispatch != 0,
+                "native COM binding should hold a dispatch pointer"
+            );
+            binding.native_dispatch
+        };
+        let _ = host
+            .dispatch_invoke(object, 1, 0)
+            .expect("dispatch invoke should succeed");
+        let after = {
+            let state = host
+                .com_state
+                .lock()
+                .expect("com state lock should succeed");
+            state
+                .bindings
+                .get(&object)
+                .expect("native object should remain tracked")
+                .native_dispatch
+        };
+        assert_eq!(
+            before, after,
+            "COM dispatch identity should stay stable for the bound object token"
+        );
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn com_hresult_mapping_labels_are_stable() {
+        assert_eq!(
+            super::map_com_hresult_label(Some(0x8004_0154), None),
+            "class-not-registered"
+        );
+        assert_eq!(
+            super::map_com_hresult_label(Some(0x8002_0003), None),
+            "member-not-found"
+        );
+        assert_eq!(super::map_com_hresult_label(None, Some(0)), "arg-error");
+        assert_eq!(
+            super::map_com_hresult_label(None, None),
+            "fault-unspecified"
+        );
     }
 
     proptest! {

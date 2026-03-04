@@ -1368,3 +1368,27 @@
     - `docs/evidence/profiles/v392/V392_COM_CLIENT_C2_SPEC_CLOSURE.md`.
   - moved AutoRun/control/docs index targets to interim C2 gate `v392`:
     - `AGENTS.md`, `docs/AUTORUN_STATE.md`, `README.md`, `docs/README.md`, `docs/profile-status/README.md`, `docs/worksets/PROFILE_SERIES_2026-03-04_MACH1000_COM_WINDOWS_CLIENT_SERVER.md`.
+- Executed COM late-bound client C2 implementation block `v393..v396`:
+  - published implementation workset:
+    - `docs/worksets/WORKSET_2026-03-04_COM_CLIENT_LATEBOUND_IMPLEMENTATION_V393_V396.md`
+  - added explicit bridge contract artifact:
+    - `docs/spec/COM_CLIENT_LATEBOUND_BRIDGE_V1.md`
+  - hardened HAL COM native object identity/lifetime handling:
+    - native activation now binds durable dispatch pointers to COM object tokens,
+    - invoke path reuses bound dispatch identity instead of per-invoke reactivation,
+    - COM-state drop releases bound native dispatch handles deterministically.
+  - added deterministic COM error-taxonomy artifacts and adapter labeling:
+    - `docs/evidence/conformance/COM_CLIENT_ERROR_MAPPING_V1.csv`
+    - `docs/evidence/conformance/COM_CLIENT_ERROR_MAPPING_V1.md`
+    - adapter dispatch-fault messages now include stable COM label + extracted native context (`hresult`, `arg_err`) where available.
+  - established C2 conformance fixture scaffold:
+    - `conformance/com/client/c2-latebound/README.md`
+    - initial scaffold fixtures under `conformance/com/client/c2-latebound/*.bas`
+  - added process-hardening gate sync check:
+    - `scripts/validate-gate-sync.ps1`
+    - wired into `scripts/meta-check.ps1`.
+  - published profile statuses and closure evidence:
+    - `docs/profile-status/PROFILE_STATUS_V393.md` .. `PROFILE_STATUS_V396.md`
+    - `docs/evidence/profiles/v396/V396_COM_CLIENT_IMPLEMENTATION_BLOCK.md`
+  - advanced AutoRun/control target to `v396`:
+    - `AGENTS.md`, `docs/AUTORUN_STATE.md`, `README.md`, `docs/README.md`, `docs/profile-status/README.md`.

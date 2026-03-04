@@ -121,6 +121,7 @@ Planned evidence paths:
 - `docs/evidence/conformance/com/COM_CONFORMANCE_LATEST.csv`
 - `docs/evidence/conformance/com/COM_CONFORMANCE_LATEST.md`
 - `docs/evidence/profiles/v392/V392_COM_CLIENT_C2_SPEC_CLOSURE.md`
+- `docs/evidence/conformance/COM_CLIENT_ERROR_MAPPING_V1.csv`
 
 Each row should include:
 
