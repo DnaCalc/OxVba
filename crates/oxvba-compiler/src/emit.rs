@@ -13,6 +13,8 @@ use crate::{
     },
 };
 
+const DISPATCH_INVOKE_MISSING_ARG_TOKEN: i32 = i32::MIN + 2_048;
+
 fn emit_compare_mode(mode: BoundCompareMode) -> StringCompareMode {
     match mode {
         BoundCompareMode::Binary | BoundCompareMode::Database => StringCompareMode::Binary,
@@ -1880,6 +1882,19 @@ fn emit_expr_into(
                         object: *object,
                         member: *member,
                         arg: *arg,
+                    })
+                }
+                ("dispatchinvoke", [object, member]) => {
+                    let missing_arg = temps.alloc_temp();
+                    instructions.push(Instruction::LoadConstI32 {
+                        slot: missing_arg,
+                        value: DISPATCH_INVOKE_MISSING_ARG_TOKEN,
+                    });
+                    instructions.push(Instruction::IntrinsicDispatchInvokeHost {
+                        dst,
+                        object: *object,
+                        member: *member,
+                        arg: missing_arg,
                     })
                 }
                 _ => {}

@@ -3059,7 +3059,7 @@ fn intrinsic_spec(name: &str) -> Option<IntrinsicSpec> {
         "shell" | "environ" | "dir" | "createobject" => {
             Some(IntrinsicSpec::fixed(1, HostSensitive))
         }
-        "dispatchinvoke" => Some(IntrinsicSpec::fixed(3, HostSensitive)),
+        "dispatchinvoke" => Some(IntrinsicSpec::range(2, 3, HostSensitive)),
         _ => None,
     }
 }
@@ -3078,16 +3078,83 @@ fn parse_stdlib_intrinsic_call_expr(
 
     let args_raw = expr[open + 1..close].trim();
     let args_text = split_call_args(args_raw)?;
-    let args = args_text
-        .iter()
-        .map(|arg| parse_expr(arg, array_bounds))
-        .collect::<Option<Vec<_>>>()?;
+    let args = match name.as_str() {
+        "createobject" => args_text
+            .iter()
+            .map(|arg| parse_createobject_arg(arg, array_bounds))
+            .collect::<Option<Vec<_>>>()?,
+        "dispatchinvoke" => parse_dispatch_invoke_args(&args_text, array_bounds)?,
+        _ => args_text
+            .iter()
+            .map(|arg| parse_expr(arg, array_bounds))
+            .collect::<Option<Vec<_>>>()?,
+    };
 
     if !spec.arity_allows(args.len()) {
         return None;
     }
 
     Some(BoundExpr::IntrinsicCall { name, args })
+}
+
+fn parse_createobject_arg(arg: &str, array_bounds: &ArrayBoundsMap) -> Option<BoundExpr> {
+    if let Some(expr) = parse_expr(arg, array_bounds) {
+        return Some(expr);
+    }
+    let literal = parse_quoted_string_literal(arg)?;
+    let token = map_createobject_literal_token(literal.as_str())?;
+    Some(BoundExpr::IntConst(token))
+}
+
+fn parse_dispatch_member_arg(arg: &str, array_bounds: &ArrayBoundsMap) -> Option<BoundExpr> {
+    if let Some(expr) = parse_expr(arg, array_bounds) {
+        return Some(expr);
+    }
+    let literal = parse_quoted_string_literal(arg)?;
+    let token = map_dispatch_member_literal_token(literal.as_str())?;
+    Some(BoundExpr::IntConst(token))
+}
+
+fn parse_dispatch_invoke_args(
+    args_text: &[&str],
+    array_bounds: &ArrayBoundsMap,
+) -> Option<Vec<BoundExpr>> {
+    if !(args_text.len() == 2 || args_text.len() == 3) {
+        return None;
+    }
+    let mut out = Vec::with_capacity(args_text.len());
+    out.push(parse_expr(args_text[0], array_bounds)?);
+    out.push(parse_dispatch_member_arg(args_text[1], array_bounds)?);
+    if args_text.len() == 3 {
+        out.push(parse_expr(args_text[2], array_bounds)?);
+    }
+    Some(out)
+}
+
+fn parse_quoted_string_literal(text: &str) -> Option<String> {
+    let trimmed = text.trim();
+    if !trimmed.starts_with('"') || !trimmed.ends_with('"') || trimmed.len() < 2 {
+        return None;
+    }
+    let body = &trimmed[1..trimmed.len() - 1];
+    Some(body.replace("\"\"", "\""))
+}
+
+fn map_createobject_literal_token(text: &str) -> Option<i32> {
+    let canonical = text.trim().to_ascii_lowercase();
+    match canonical.as_str() {
+        "scripting.dictionary" => Some(4),
+        _ => None,
+    }
+}
+
+fn map_dispatch_member_literal_token(text: &str) -> Option<i32> {
+    let canonical = text.trim().to_ascii_lowercase();
+    match canonical.as_str() {
+        "count" => Some(1),
+        "exists" => Some(2),
+        _ => None,
+    }
 }
 
 fn split_call_args(args_raw: &str) -> Option<Vec<&str>> {

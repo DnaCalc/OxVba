@@ -82,12 +82,14 @@ Source-quality note:
 
 - C1-compatible tokenized activation (`create_object(prog_id_token)`) remains valid.
 - C2 introduces a semantic path for `CreateObject` with ProgID text in VBA source while preserving deterministic policy/failure handling.
+- Current implemented C2 subset (`v397..v400`): known ProgID literal lowering for `"Scripting.Dictionary"` to tokenized activation floor.
 - Server-name parameter forms are tracked as implementation-defined/deferred-oracle until host parity evidence is captured.
 
 ### D7. Member Resolution Surface (C2 Direction)
 
 - C1-compatible tokenized member selection (`dispatch_invoke(object_token, member_token, arg_token)`) remains valid.
 - C2 requires deterministic member-name resolution (`GetIDsOfNames`) with explicit case policy and per-object cache semantics.
+- Current implemented C2 subset (`v397..v400`): known member literal lowering (`"Count"`, `"Exists"`), plus per-object native DISPID caching for those lanes.
 - Missing-member and ambiguous-resolution paths must produce stable failure diagnostics.
 
 ## 4. Capability and Maturity Tiers
@@ -99,7 +101,8 @@ Source-quality note:
 - `C2`: late-bound client surface contract closure and subset implementation runway:
   - `CreateObject` ProgID-text path,
   - member-name invocation path,
-  - deterministic `DISPPARAMS`/`ArgErr`/`ExcepInfo`/`VarResult` translation.
+  - deterministic `DISPPARAMS`/`ArgErr`/`ExcepInfo`/`VarResult` translation,
+  - 2-arg/3-arg `DispatchInvoke` phase-I invoke packing behavior.
 - `C3`: array/object boundary subset (`SAFEARRAY`, interface pointers, richer variant coercion lanes).
 
 ### Server tiers

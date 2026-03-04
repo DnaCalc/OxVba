@@ -1114,6 +1114,57 @@ mod tests {
     }
 
     #[test]
+    fn compile_createobject_with_progid_literal_maps_to_known_token() {
+        let source = "Sub Main()\nDim x\nx = CreateObject(\"Scripting.Dictionary\")\nEnd Sub";
+        let out = compile(source).expect("compile should succeed for known ProgID literal");
+        assert!(
+            out.instructions
+                .iter()
+                .any(|i| matches!(i, Instruction::IntrinsicCreateObjectHost { .. }))
+        );
+        assert!(
+            out.instructions
+                .iter()
+                .any(|i| matches!(i, Instruction::LoadConstI32 { value: 4, .. }))
+        );
+    }
+
+    #[test]
+    fn compile_dispatchinvoke_with_member_literal_maps_to_known_member_token() {
+        let source = "Sub Main()\nDim x\nx = DispatchInvoke(CreateObject(\"Scripting.Dictionary\"), \"Count\", 0)\nEnd Sub";
+        let out = compile(source).expect("compile should succeed for known member literal");
+        assert!(
+            out.instructions
+                .iter()
+                .any(|i| matches!(i, Instruction::IntrinsicDispatchInvokeHost { .. }))
+        );
+        assert!(
+            out.instructions
+                .iter()
+                .any(|i| matches!(i, Instruction::LoadConstI32 { value: 1, .. }))
+        );
+    }
+
+    #[test]
+    fn compile_dispatchinvoke_accepts_two_arg_property_get_form() {
+        let source = "Sub Main()\nDim x\nx = DispatchInvoke(CreateObject(\"Scripting.Dictionary\"), \"Count\")\nEnd Sub";
+        let out = compile(source).expect("two-arg DispatchInvoke should compile");
+        assert!(
+            out.instructions
+                .iter()
+                .any(|i| matches!(i, Instruction::IntrinsicDispatchInvokeHost { .. }))
+        );
+    }
+
+    #[test]
+    fn compile_createobject_with_unknown_progid_literal_is_rejected() {
+        let source = "Sub Main()\nDim x\nx = CreateObject(\"Unknown.Component\")\nEnd Sub";
+        let err =
+            compile(source).expect_err("unknown ProgID literal should fail in current subset");
+        assert!(!err.to_string().trim().is_empty());
+    }
+
+    #[test]
     fn compile_err_raise_statement_is_supported() {
         let source = "Sub Main()\nOn Error Resume Next\nErr.Raise 7\nEnd Sub";
         let out = compile(source).expect("compile should succeed");

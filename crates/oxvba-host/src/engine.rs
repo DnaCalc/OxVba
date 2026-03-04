@@ -1447,6 +1447,49 @@ mod tests {
     }
 
     #[test]
+    fn formal_v397_createobject_string_progid_subset_executes() {
+        let engine = Engine::new(HostConfig::default());
+        let source = "Sub Main()\nDim x\nx = CreateObject(\"Scripting.Dictionary\")\nEnd Sub";
+        let snapshot = engine
+            .execute_source_with_snapshot(source)
+            .expect("execution should succeed");
+        assert_eq!(snapshot, vec![5_004]);
+    }
+
+    #[test]
+    fn formal_v398_dispatchinvoke_member_name_subset_executes() {
+        let engine = Engine::new(HostConfig::default());
+        let source = "Sub Main()\nDim x\nx = DispatchInvoke(CreateObject(\"Scripting.Dictionary\"), \"Count\", 0)\nEnd Sub";
+        let snapshot = engine
+            .execute_source_with_snapshot(source)
+            .expect("execution should succeed");
+        assert_eq!(snapshot, vec![5_005]);
+    }
+
+    #[test]
+    fn formal_v399_dispatchinvoke_two_arg_property_get_subset_executes() {
+        let engine = Engine::new(HostConfig::default());
+        let source = "Sub Main()\nDim x\nx = DispatchInvoke(CreateObject(\"Scripting.Dictionary\"), \"Count\")\nEnd Sub";
+        let snapshot = engine
+            .execute_source_with_snapshot(source)
+            .expect("execution should succeed");
+        assert_eq!(snapshot, vec![5_005]);
+    }
+
+    #[test]
+    fn formal_v400_string_com_lane_failure_routes_through_resume_next() {
+        let mut engine = Engine::new(HostConfig::default()).with_hal_profile(HalProfileId::Linux);
+        engine.set_unsupported_feature_mode(UnsupportedFeatureMode::Runtime);
+
+        let source = "Sub Main()\nDim x\nDim e\nOn Error Resume Next\nx = DispatchInvoke(CreateObject(\"Scripting.Dictionary\"), \"Count\", 0)\ne = Err.Number\nEnd Sub";
+        let snapshot = engine
+            .execute_source_with_snapshot(source)
+            .expect("On Error Resume Next should continue");
+        assert_eq!(snapshot[0], 0);
+        assert_eq!(snapshot[1], 53_051);
+    }
+
+    #[test]
     fn formal_v10_array_store_load_roundtrip() {
         let engine = Engine::new(HostConfig::default());
         let source = "Sub Main()\nDim a(2)\nDim x\na(1) = 7\nx = a(1)\nEnd Sub";
@@ -2585,6 +2628,42 @@ mod tests {
         assert!(
             repo_path(
                 "conformance/com/client/c2-latebound/createobject_string_prog_id_scaffold.bas"
+            )
+            .exists()
+        );
+    }
+
+    #[test]
+    fn formal_v397_profile_status_document_exists() {
+        assert!(repo_path("docs/profile-status/PROFILE_STATUS_V397.md").exists());
+    }
+
+    #[test]
+    fn formal_v398_profile_status_document_exists() {
+        assert!(repo_path("docs/profile-status/PROFILE_STATUS_V398.md").exists());
+    }
+
+    #[test]
+    fn formal_v399_profile_status_document_exists() {
+        assert!(repo_path("docs/profile-status/PROFILE_STATUS_V399.md").exists());
+    }
+
+    #[test]
+    fn formal_v400_profile_status_document_exists() {
+        assert!(repo_path("docs/profile-status/PROFILE_STATUS_V400.md").exists());
+    }
+
+    #[test]
+    fn formal_v400_c2_fixture_pack_exists() {
+        assert!(
+            repo_path(
+                "conformance/com/client/c2-latebound/createobject_string_prog_id_success.bas"
+            )
+            .exists()
+        );
+        assert!(
+            repo_path(
+                "conformance/com/client/c2-latebound/dispatch_member_name_failure_resume_next.bas"
             )
             .exists()
         );

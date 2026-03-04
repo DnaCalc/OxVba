@@ -23,7 +23,7 @@ Use `docs/` and `synthesis/` for supporting context and provenance.
   - The active profile ladder is complete and its final gate is passed.
     - Current active ladder:
       - `v387..v406` (`docs/worksets/PROFILE_LADDER_2026-03-04_MACH1000_V387_V406_COM_CLIENT_LATEBOUND_C2.md`)
-    - Current required terminal gate: `v396`
+    - Current required terminal gate: `v400`
   - Blockers are documented and no progress can be made on any remaining ladder task without unblocking.
 
 ### Blocker Handling Protocol

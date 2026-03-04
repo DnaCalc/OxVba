@@ -57,8 +57,9 @@ Primary checks:
 
 - `CreateObject` ProgID-text activation path,
 - member-name resolution path (`GetIDsOfNames`) and deterministic cache behavior,
-- `DISPPARAMS` packing subset (positional + selected named/optional forms),
+- `DISPPARAMS` packing subset (phase-I: 2-arg/3-arg positional forms),
 - deterministic `VarResult`/`ExcepInfo`/`ArgErr` translation to OxVba diagnostics.
+- failure-path behavior under `On Error Resume Next` on unsupported profiles.
 
 ### Lane L3: Windows COM server scaffold lane
 
@@ -104,6 +105,12 @@ Planned fixture roots:
 - `conformance/com/roundtrip/`
 - `conformance/com/client/c2-latebound/`
 
+Current implemented C2 fixture subset:
+- `conformance/com/client/c2-latebound/createobject_string_prog_id_success.bas`
+- `conformance/com/client/c2-latebound/dispatch_member_name_success.bas`
+- `conformance/com/client/c2-latebound/dispatch_member_name_two_arg_property_get.bas`
+- `conformance/com/client/c2-latebound/dispatch_member_name_failure_resume_next.bas`
+
 ### Execution scripts
 
 Planned script surfaces:
@@ -122,6 +129,7 @@ Planned evidence paths:
 - `docs/evidence/conformance/com/COM_CONFORMANCE_LATEST.md`
 - `docs/evidence/profiles/v392/V392_COM_CLIENT_C2_SPEC_CLOSURE.md`
 - `docs/evidence/conformance/COM_CLIENT_ERROR_MAPPING_V1.csv`
+- `docs/evidence/profiles/v400/V400_COM_CLIENT_C2_IMPLEMENTATION_BLOCK_II.md`
 
 Each row should include:
 

@@ -55,6 +55,8 @@ macro_rules! hal_contract_assert {
     };
 }
 
+const DISPATCH_INVOKE_MISSING_ARG_TOKEN: i32 = i32::MIN + 2_048;
+
 #[derive(Debug, Clone)]
 pub(crate) struct StandardHostServices {
     profile: HalProfileId,
@@ -212,13 +214,22 @@ impl StandardHostServices {
     fn assert_com_invariants(&self, state: &ComState, op: &'static str) {
         #[cfg(any(debug_assertions, feature = "hal_contract_checks"))]
         {
-            for handle in state.bindings.keys().copied() {
+            for (handle, binding) in &state.bindings {
                 hal_contract_assert!(
-                    handle >= 20_001,
+                    *handle >= 20_001,
                     "op={} observed out-of-range COM handle {}",
                     op,
                     handle
                 );
+                for (member, dispid) in &binding.member_dispids {
+                    hal_contract_assert!(
+                        *dispid != 0,
+                        "op={} observed zero DISPID cache entry for handle {} member {}",
+                        op,
+                        handle,
+                        member
+                    );
+                }
             }
             #[cfg(not(target_os = "windows"))]
             for (handle, binding) in &state.bindings {
@@ -470,6 +481,9 @@ impl StandardHostServices {
         let result = if prog_id.eq_ignore_ascii_case("Scripting.Dictionary") {
             match member {
                 1 => unsafe { raw_dispatch_dictionary_count(dispatch) },
+                2 if arg == DISPATCH_INVOKE_MISSING_ARG_TOKEN => {
+                    Err("IDispatch::Invoke requires an argument for member token 2".to_string())
+                }
                 2 => unsafe { raw_dispatch_dictionary_exists(dispatch, arg) },
                 _ => Err(format!(
                     "IDispatch::Invoke unsupported Scripting.Dictionary member token {member}"
@@ -479,6 +493,57 @@ impl StandardHostServices {
             unsafe { raw_dispatch_property_get_noargs(dispatch, member) }
         };
         result.map_err(|message| self.com_dispatch_adapter_fault(message))
+    }
+
+    #[cfg(target_os = "windows")]
+    fn resolve_member_dispid_cached(
+        &self,
+        object: i32,
+        dispatch: *mut RawIDispatch,
+        prog_id: &str,
+        member: i32,
+        cached: Option<i32>,
+    ) -> HalResult<Option<(i32, bool)>> {
+        let Some(spec) = com_member_spec_for_token(prog_id, member) else {
+            return Ok(None);
+        };
+        if let Some(dispid) = cached {
+            return Ok(Some((dispid, spec.requires_argument)));
+        }
+        let dispid = unsafe { raw_get_dispid_by_name(dispatch, spec.name) }
+            .map_err(|message| self.com_dispatch_adapter_fault(message))?;
+        let mut state = self.com_lock(CapabilityId::ComActivationDispatch, "dispatch_invoke")?;
+        if let Some(binding) = state.bindings.get_mut(&object) {
+            binding.member_dispids.insert(member, dispid);
+        }
+        self.assert_com_invariants(&state, "dispatch_invoke_cache_update");
+        Ok(Some((dispid, spec.requires_argument)))
+    }
+
+    #[cfg(target_os = "windows")]
+    fn native_com_dispatch_invoke_with_member_spec(
+        &self,
+        dispatch: *mut RawIDispatch,
+        dispid: i32,
+        requires_argument: bool,
+        arg: i32,
+    ) -> HalResult<i32> {
+        self.ensure_thread_com_apartment("dispatch_invoke")?;
+        if requires_argument {
+            if arg == DISPATCH_INVOKE_MISSING_ARG_TOKEN {
+                return Err(HalError::adapter_fault(
+                    self.profile,
+                    CapabilityId::ComActivationDispatch,
+                    "dispatch_invoke",
+                    "member requires argument but DispatchInvoke omitted the third argument",
+                ));
+            }
+            unsafe { raw_dispatch_invoke_method_i4(dispatch, dispid, arg) }
+                .map_err(|message| self.com_dispatch_adapter_fault(message))
+        } else {
+            unsafe { raw_dispatch_property_get_noargs(dispatch, dispid) }
+                .map_err(|message| self.com_dispatch_adapter_fault(message))
+        }
     }
 
     #[cfg(target_os = "windows")]
@@ -1004,16 +1069,35 @@ impl ComHal for StandardHostServices {
             return Err(self.denied(capability, "dispatch_invoke"));
         }
         if self.native_com_enabled() {
-            let binding = {
+            let (binding, cached_dispid) = {
                 let state = self.com_lock(capability, "dispatch_invoke")?;
                 self.assert_com_invariants(&state, "dispatch_invoke");
-                state.bindings.get(&object).cloned()
+                let binding = state.bindings.get(&object).cloned();
+                let cached_dispid = binding
+                    .as_ref()
+                    .and_then(|entry| entry.member_dispids.get(&member).copied());
+                (binding, cached_dispid)
             };
             if let Some(binding) = binding {
                 #[cfg(target_os = "windows")]
                 if binding.native_dispatch != 0 {
+                    let dispatch = binding.native_dispatch as *mut RawIDispatch;
+                    if let Some((dispid, requires_argument)) = self.resolve_member_dispid_cached(
+                        object,
+                        dispatch,
+                        &binding.prog_id_name,
+                        member,
+                        cached_dispid,
+                    )? {
+                        return self.native_com_dispatch_invoke_with_member_spec(
+                            dispatch,
+                            dispid,
+                            requires_argument,
+                            arg,
+                        );
+                    }
                     return self.native_com_dispatch_invoke_with_bound_dispatch(
-                        binding.native_dispatch as *mut RawIDispatch,
+                        dispatch,
                         &binding.prog_id_name,
                         member,
                         arg,
@@ -1022,6 +1106,11 @@ impl ComHal for StandardHostServices {
                 return self.native_com_dispatch_invoke(&binding.prog_id_name, member, arg);
             }
         }
+        let arg = if arg == DISPATCH_INVOKE_MISSING_ARG_TOKEN {
+            0
+        } else {
+            arg
+        };
         Ok(object.saturating_add(member).saturating_add(arg))
     }
 }
@@ -1561,6 +1650,7 @@ thread_local! {
 struct ComBinding {
     prog_id_name: String,
     native_dispatch: RawDispatchPtr,
+    member_dispids: BTreeMap<i32, i32>,
 }
 
 impl ComBinding {
@@ -1568,8 +1658,34 @@ impl ComBinding {
         Self {
             prog_id_name,
             native_dispatch,
+            member_dispids: BTreeMap::new(),
         }
     }
+}
+
+#[cfg(target_os = "windows")]
+#[derive(Debug, Clone, Copy)]
+struct ComMemberSpec {
+    name: &'static str,
+    requires_argument: bool,
+}
+
+#[cfg(target_os = "windows")]
+fn com_member_spec_for_token(prog_id: &str, member: i32) -> Option<ComMemberSpec> {
+    if prog_id.eq_ignore_ascii_case("Scripting.Dictionary") {
+        return match member {
+            1 => Some(ComMemberSpec {
+                name: "Count",
+                requires_argument: false,
+            }),
+            2 => Some(ComMemberSpec {
+                name: "Exists",
+                requires_argument: true,
+            }),
+            _ => None,
+        };
+    }
+    None
 }
 
 #[cfg(target_os = "windows")]
@@ -1798,10 +1914,19 @@ unsafe fn raw_dispatch_dictionary_exists(
     key: i32,
 ) -> Result<i32, String> {
     let dispid = raw_get_dispid_by_name(dispatch, "Exists")?;
+    raw_dispatch_invoke_method_i4(dispatch, dispid, key)
+}
 
+#[cfg(target_os = "windows")]
+#[allow(unsafe_op_in_unsafe_fn)]
+unsafe fn raw_dispatch_invoke_method_i4(
+    dispatch: *mut RawIDispatch,
+    dispid: i32,
+    arg: i32,
+) -> Result<i32, String> {
     let mut arg_variant: VARIANT = std::mem::zeroed();
     arg_variant.Anonymous.Anonymous.vt = VT_I4;
-    arg_variant.Anonymous.Anonymous.Anonymous.lVal = key;
+    arg_variant.Anonymous.Anonymous.Anonymous.lVal = arg;
 
     let mut result: VARIANT = std::mem::zeroed();
     let mut excep: EXCEPINFO = std::mem::zeroed();
@@ -1825,7 +1950,7 @@ unsafe fn raw_dispatch_dictionary_exists(
     );
     if hr < 0 {
         return Err(format!(
-            "IDispatch::Invoke(method Exists) failed with HRESULT {:#010X} (arg_err={})",
+            "IDispatch::Invoke(method dispid={dispid}) failed with HRESULT {:#010X} (arg_err={})",
             hr as u32, arg_err
         ));
     }
@@ -2135,6 +2260,16 @@ mod tests {
     }
 
     #[test]
+    fn dispatch_invoke_missing_arg_token_projects_as_zero() {
+        let host = StandardHostServices::new(HalProfileId::Windows, HostPolicy::default());
+        assert_eq!(
+            host.dispatch_invoke(10, 20, super::DISPATCH_INVOKE_MISSING_ARG_TOKEN)
+                .expect("dispatch"),
+            30
+        );
+    }
+
+    #[test]
     fn diagnostics_emit_contract_is_deterministic() {
         let host = StandardHostServices::new(HalProfileId::Windows, HostPolicy::default());
         assert_eq!(host.emit(4, 5).expect("emit"), 9);
@@ -2370,6 +2505,57 @@ mod tests {
         assert_eq!(
             before, after,
             "COM dispatch identity should stay stable for the bound object token"
+        );
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn windows_native_com_member_dispid_cache_populates_for_known_tokens() {
+        let host = StandardHostServices::new(HalProfileId::Windows, HostPolicy::interactive_dev());
+        let object = host
+            .create_object(4)
+            .expect("create_object should return a token");
+        if object == 5_004 {
+            return;
+        }
+
+        let _ = host
+            .dispatch_invoke(object, 1, super::DISPATCH_INVOKE_MISSING_ARG_TOKEN)
+            .expect("dictionary Count should be invokable");
+        let cache_size_after_first = {
+            let state = host
+                .com_state
+                .lock()
+                .expect("com state lock should succeed");
+            state
+                .bindings
+                .get(&object)
+                .expect("binding should remain tracked")
+                .member_dispids
+                .len()
+        };
+        let _ = host
+            .dispatch_invoke(object, 1, super::DISPATCH_INVOKE_MISSING_ARG_TOKEN)
+            .expect("dictionary Count should be invokable repeatedly");
+        let cache_size_after_second = {
+            let state = host
+                .com_state
+                .lock()
+                .expect("com state lock should succeed");
+            state
+                .bindings
+                .get(&object)
+                .expect("binding should remain tracked")
+                .member_dispids
+                .len()
+        };
+        assert!(
+            cache_size_after_first >= 1,
+            "member cache should populate after first invocation"
+        );
+        assert_eq!(
+            cache_size_after_first, cache_size_after_second,
+            "repeated invocation should reuse cached member DISPID entries"
         );
     }
 

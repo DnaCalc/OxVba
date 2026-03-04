@@ -1392,3 +1392,28 @@
     - `docs/evidence/profiles/v396/V396_COM_CLIENT_IMPLEMENTATION_BLOCK.md`
   - advanced AutoRun/control target to `v396`:
     - `AGENTS.md`, `docs/AUTORUN_STATE.md`, `README.md`, `docs/README.md`, `docs/profile-status/README.md`.
+- Executed COM late-bound client C2 implementation block `v397..v400`:
+  - published continuation workset:
+    - `docs/worksets/WORKSET_2026-03-05_COM_CLIENT_LATEBOUND_IMPLEMENTATION_V397_V400.md`
+  - implemented compiler literal-lowering subset for COM lanes:
+    - `CreateObject("Scripting.Dictionary")` lowers to deterministic selector token (`4`),
+    - `DispatchInvoke(..., "Count"/"Exists", ...)` lowers to deterministic member tokens (`1`/`2`),
+    - `DispatchInvoke` now accepts 2-arg property-get and 3-arg scalar forms in current subset.
+  - implemented native Windows COM member-cache path:
+    - HAL stores per-object member DISPID cache for known member-token lanes,
+    - missing third-argument handling is deterministic (`property-get` lanes normalize; argument-required lanes reject).
+  - expanded C2 conformance fixtures from scaffold to active subset:
+    - `conformance/com/client/c2-latebound/createobject_string_prog_id_success.bas`
+    - `conformance/com/client/c2-latebound/dispatch_member_name_success.bas`
+    - `conformance/com/client/c2-latebound/dispatch_member_name_two_arg_property_get.bas`
+    - `conformance/com/client/c2-latebound/dispatch_member_name_failure_resume_next.bas`
+  - published profile statuses and block evidence:
+    - `docs/profile-status/PROFILE_STATUS_V397.md` .. `PROFILE_STATUS_V400.md`
+    - `docs/evidence/profiles/v400/V400_COM_CLIENT_C2_IMPLEMENTATION_BLOCK_II.md`
+  - updated COM C2 specs/registers with implemented subset semantics:
+    - `docs/spec/COM_CLIENT_LATEBOUND_BRIDGE_V1.md`
+    - `docs/spec/COM_CLIENT_SERVER_SCOPE_V1.md`
+    - `docs/spec/COM_CLIENT_SERVER_CONFORMANCE_V1.md`
+    - `docs/evidence/hal/HAL_IMPLEMENTATION_DEFINED.md` (`HAL-ID-018`)
+  - advanced AutoRun/control target to `v400`:
+    - `AGENTS.md`, `docs/AUTORUN_STATE.md`, `README.md`, `docs/README.md`, `docs/profile-status/README.md`, ladder gate note.
