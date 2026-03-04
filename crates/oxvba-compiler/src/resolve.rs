@@ -261,6 +261,7 @@ pub fn resolve_symbols(source: &str) -> BoundModule {
     let property_read_routes = collect_property_read_routes(&lines);
     let (declared_externals, external_declarations, external_decl_diagnostics) =
         collect_declared_external_procedures(&lines, &default_type_table);
+    let class_model_diagnostics = collect_class_model_diagnostics(&lines);
 
     let has_explicit_procs = lines
         .iter()
@@ -350,12 +351,22 @@ pub fn resolve_symbols(source: &str) -> BoundModule {
             body: Vec::new(),
         });
 
+    let mut resolution_diagnostics = external_decl_diagnostics;
+    for diagnostic in class_model_diagnostics {
+        if !resolution_diagnostics
+            .iter()
+            .any(|existing| existing == &diagnostic)
+        {
+            resolution_diagnostics.push(diagnostic);
+        }
+    }
+
     BoundModule {
         source: source.to_string(),
         option_explicit,
         compare_mode,
         default_type_table,
-        resolution_diagnostics: external_decl_diagnostics,
+        resolution_diagnostics,
         declarations: entry.declarations.clone(),
         declaration_types: entry.declaration_types.clone(),
         array_descriptors: entry.array_descriptors.clone(),
@@ -1307,6 +1318,76 @@ fn collect_declared_external_procedures(
         );
     }
     (procedures, externals, diagnostics)
+}
+
+fn collect_class_model_diagnostics(lines: &[String]) -> Vec<String> {
+    let mut diagnostics = Vec::new();
+    let mut seen = HashSet::new();
+
+    for line in lines {
+        let trimmed = line.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+
+        let lower = trimmed.to_ascii_lowercase();
+
+        if strip_keyword_prefix_ci(trimmed, "implements").is_some() {
+            let message = "PMR-E-IMPLEMENTS-PROJECTGRAPH-REQUIRED: `Implements` requires Project/Module graph class-model integration";
+            push_class_model_diagnostic(&mut diagnostics, &mut seen, message, trimmed);
+        }
+
+        if starts_with_keyword_ci(trimmed, "raiseevent") {
+            let message = "PMR-E-RAISEEVENT-CLASS-MODEL-REQUIRED: `RaiseEvent` requires class-event metadata integration";
+            push_class_model_diagnostic(&mut diagnostics, &mut seen, message, trimmed);
+        }
+
+        if (starts_with_keyword_ci(trimmed, "dim")
+            || starts_with_keyword_ci(trimmed, "public")
+            || starts_with_keyword_ci(trimmed, "private"))
+            && contains_keyword_token_ci(trimmed, "withevents")
+        {
+            let message = "PMR-E-WITHEVENTS-MODULE-KIND-UNRESOLVED: `WithEvents` declarations require module-kind-aware class metadata";
+            push_class_model_diagnostic(&mut diagnostics, &mut seen, message, trimmed);
+        }
+
+        if lower.starts_with("option private module") && !is_procedural_module_context(lines) {
+            let message = "PMR-E-OPTION-PRIVATE-MODULE-KIND-UNRESOLVED: `Option Private Module` requires project/module-kind integration";
+            push_class_model_diagnostic(&mut diagnostics, &mut seen, message, trimmed);
+        }
+    }
+
+    diagnostics
+}
+
+fn push_class_model_diagnostic(
+    diagnostics: &mut Vec<String>,
+    seen: &mut HashSet<String>,
+    message: &str,
+    source_line: &str,
+) {
+    let formatted = format!("{message}: `{source_line}`");
+    if seen.insert(formatted.clone()) {
+        diagnostics.push(formatted);
+    }
+}
+
+fn starts_with_keyword_ci(text: &str, keyword: &str) -> bool {
+    let lowered = text.to_ascii_lowercase();
+    let needle = keyword.to_ascii_lowercase();
+    lowered == needle || lowered.starts_with(&format!("{needle} "))
+}
+
+fn contains_keyword_token_ci(text: &str, keyword: &str) -> bool {
+    text.split(|ch: char| !ch.is_ascii_alphanumeric() && ch != '_')
+        .any(|token| !token.is_empty() && token.eq_ignore_ascii_case(keyword))
+}
+
+fn is_procedural_module_context(lines: &[String]) -> bool {
+    !lines.iter().any(|line| {
+        let lowered = line.trim().to_ascii_lowercase();
+        lowered.starts_with("class ") || lowered.starts_with("attribute vb_name")
+    })
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -2295,7 +2376,7 @@ fn parse_assign_or_unsupported(
     if let Some((name, args)) = parse_call_invocation(call_token, array_bounds) {
         return BoundStmt::Call { name, args };
     }
-    if let Some(name) = normalize_ident(call_token) {
+    if let Some(name) = normalize_ident(call_token).or_else(|| parse_member_reference(call_token)) {
         return BoundStmt::Call {
             name,
             args: Vec::new(),
@@ -2393,7 +2474,8 @@ fn parse_call_invocation(
         return None;
     }
 
-    let name = normalize_ident(text[..open].trim())?;
+    let name = normalize_ident(text[..open].trim())
+        .or_else(|| parse_member_reference(text[..open].trim()))?;
     let args_raw = text[open + 1..close].trim();
     if args_raw.is_empty() {
         return Some((name, Vec::new()));
@@ -4569,6 +4651,39 @@ mod tests {
     }
 
     #[test]
+    fn resolve_module_qualified_call_with_parentheses_normalizes_member_chain() {
+        let source =
+            "Sub Main()\nCall MathModule.Add(1, 2)\nEnd Sub\nSub Add(ByVal a, ByVal b)\nEnd Sub";
+        let module = resolve_symbols(source);
+        let main_proc = module
+            .procedures
+            .iter()
+            .find(|p| p.name == "main")
+            .expect("main procedure expected");
+        let Some(BoundStmt::Call { name, args }) = main_proc.body.first() else {
+            panic!("expected call statement");
+        };
+        assert_eq!(name, "mathmodule_add");
+        assert_eq!(args.len(), 2);
+    }
+
+    #[test]
+    fn resolve_module_qualified_call_without_parentheses_normalizes_member_chain() {
+        let source = "Sub Main()\nCall MathModule.Ping\nEnd Sub\nSub Ping()\nEnd Sub";
+        let module = resolve_symbols(source);
+        let main_proc = module
+            .procedures
+            .iter()
+            .find(|p| p.name == "main")
+            .expect("main procedure expected");
+        let Some(BoundStmt::Call { name, args }) = main_proc.body.first() else {
+            panic!("expected call statement");
+        };
+        assert_eq!(name, "mathmodule_ping");
+        assert!(args.is_empty());
+    }
+
+    #[test]
     fn resolve_module_const_injects_const_prelude() {
         let source = "Const BASE = 5\nSub Main()\nDim x\nx = BASE + 2\nEnd Sub";
         let module = resolve_symbols(source);
@@ -5011,5 +5126,32 @@ mod tests {
                 .iter()
                 .any(|diag| diag.contains("ByRef parameters are not supported"))
         );
+    }
+
+    #[test]
+    fn resolve_withevents_declaration_emits_pmr_diagnostic() {
+        let source = "Sub Main()\nDim WithEvents app As Object\nEnd Sub";
+        let module = resolve_symbols(source);
+        assert!(module.resolution_diagnostics.iter().any(|diag| {
+            diag.contains("PMR-E-WITHEVENTS-MODULE-KIND-UNRESOLVED") && diag.contains("WithEvents")
+        }));
+    }
+
+    #[test]
+    fn resolve_implements_directive_emits_pmr_diagnostic() {
+        let source = "Implements IFoo\nSub Main()\nEnd Sub";
+        let module = resolve_symbols(source);
+        assert!(module.resolution_diagnostics.iter().any(|diag| {
+            diag.contains("PMR-E-IMPLEMENTS-PROJECTGRAPH-REQUIRED") && diag.contains("Implements")
+        }));
+    }
+
+    #[test]
+    fn resolve_raiseevent_statement_emits_pmr_diagnostic() {
+        let source = "Sub Main()\nRaiseEvent Tick\nEnd Sub";
+        let module = resolve_symbols(source);
+        assert!(module.resolution_diagnostics.iter().any(|diag| {
+            diag.contains("PMR-E-RAISEEVENT-CLASS-MODEL-REQUIRED") && diag.contains("RaiseEvent")
+        }));
     }
 }

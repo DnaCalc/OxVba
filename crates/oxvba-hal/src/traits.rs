@@ -30,6 +30,35 @@ pub struct DynLinkDescriptorView<'a> {
     pub selection_policy: &'a str,
 }
 
+impl DynLinkDescriptorView<'_> {
+    pub fn contract_violation(&self) -> Option<&'static str> {
+        if self.declared_name.trim().is_empty() {
+            return Some("declared_name is empty");
+        }
+        if self.library.trim().is_empty() {
+            return Some("library is empty");
+        }
+        if self.alias.trim().is_empty() {
+            return Some("alias is empty");
+        }
+        if self.marshal_lane != "m0-deterministic" {
+            return Some("marshal_lane is not m0-deterministic");
+        }
+        if self.calling_convention != "platform-default" {
+            return Some("calling_convention is not platform-default");
+        }
+        let expected_selection_policy = if self.ordinal_alias {
+            "ordinal-literal-canonical"
+        } else {
+            "case-insensitive-canonical"
+        };
+        if self.selection_policy != expected_selection_policy {
+            return Some("selection_policy does not match ordinal_alias contract");
+        }
+        None
+    }
+}
+
 pub trait HostServices: Send + Sync {
     fn profile(&self) -> HalProfileId;
     fn descriptor(&self) -> HalDescriptor;
@@ -121,4 +150,45 @@ pub trait DynamicLinkHal: Send + Sync {
 
 pub trait DiagnosticsHal: Send + Sync {
     fn emit(&self, code: ValueToken, payload: ValueToken) -> HalResult<ValueToken>;
+}
+
+#[allow(unexpected_cfgs)]
+#[cfg(kani)]
+mod kani_proofs {
+    use super::DynLinkDescriptorView;
+
+    #[kani::proof]
+    fn dynlink_contract_accepts_canonical_non_ordinal_descriptor() {
+        let descriptor = DynLinkDescriptorView {
+            descriptor_id: 1,
+            declared_name: "GetTickCount",
+            library: "kernel32.dll",
+            alias: "GetTickCount",
+            ordinal_alias: false,
+            symbol: 100,
+            marshal_lane: "m0-deterministic",
+            calling_convention: "platform-default",
+            selection_policy: "case-insensitive-canonical",
+        };
+        assert_eq!(descriptor.contract_violation(), None);
+    }
+
+    #[kani::proof]
+    fn dynlink_contract_rejects_mismatched_selection_policy() {
+        let descriptor = DynLinkDescriptorView {
+            descriptor_id: 2,
+            declared_name: "OrdinalCall",
+            library: "example.dll",
+            alias: "7",
+            ordinal_alias: true,
+            symbol: 200,
+            marshal_lane: "m0-deterministic",
+            calling_convention: "platform-default",
+            selection_policy: "case-insensitive-canonical",
+        };
+        assert_eq!(
+            descriptor.contract_violation(),
+            Some("selection_policy does not match ordinal_alias contract")
+        );
+    }
 }

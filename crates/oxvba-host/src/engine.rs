@@ -1,6 +1,6 @@
 use std::{collections::HashMap, sync::Arc};
 
-use oxvba_compiler::{Bytecode, Instruction, compile};
+use oxvba_compiler::{Bytecode, Instruction, ProjectManifest, compile, compile_project};
 use oxvba_hal::{
     adapters,
     model::{
@@ -200,6 +200,27 @@ impl Engine {
             .map_err(PhaseDiagnostic::runtime)
     }
 
+    pub fn execute_project_with_snapshot_phased(
+        &self,
+        manifest: &ProjectManifest,
+    ) -> Result<Vec<i32>, PhaseDiagnostic> {
+        let compiled =
+            compile_project(manifest).map_err(|e| PhaseDiagnostic::compile(e.to_string()))?;
+        self.preflight_host_sensitive_support(&compiled.bytecode)?;
+        if self.config.enable_jit {
+            self.jit
+                .compile_function("main")
+                .map_err(|e| PhaseDiagnostic::runtime(e.to_string()))?;
+            return self
+                .jit
+                .execute_and_snapshot_with_host(&compiled.bytecode, self.host_services.clone())
+                .map_err(|e| PhaseDiagnostic::runtime(e.to_string()));
+        }
+
+        execute_and_snapshot_with_host(&compiled.bytecode, self.host_services.clone())
+            .map_err(PhaseDiagnostic::runtime)
+    }
+
     fn preflight_host_sensitive_support(&self, bytecode: &Bytecode) -> Result<(), PhaseDiagnostic> {
         if self.host_services.policy().unsupported_feature_mode
             != UnsupportedFeatureMode::CompileTime
@@ -309,6 +330,10 @@ fn hal_requirement(instruction: &Instruction) -> Option<(&'static str, Capabilit
 #[cfg(test)]
 mod tests {
     use super::{DiagnosticPhase, Engine, HostConfig};
+    use oxvba_compiler::{
+        ModuleKind, ProjectKind, ProjectManifest, ProjectReference, ReferenceKind,
+        ReferencedProjectManifest, module_unit_from_source,
+    };
     use oxvba_hal::model::{
         HalProfileId, HostPolicy, HostPolicyPreset, UiVirtualizationMode, UnsupportedFeatureMode,
     };
@@ -1282,6 +1307,100 @@ mod tests {
             .execute_source_with_snapshot(source)
             .expect("jit execution should succeed");
         assert_eq!(vm_out, jit_out);
+    }
+
+    #[test]
+    fn formal_pmr_project_manifest_cross_module_call_executes() {
+        let engine = Engine::new(HostConfig::default());
+        let main_module = module_unit_from_source(
+            "MainModule",
+            ModuleKind::Procedural,
+            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim x\nx = MathModule.Add(1, 2)\nEnd Sub",
+        )
+        .expect("main module should parse");
+        let math_module = module_unit_from_source(
+            "MathModule",
+            ModuleKind::Procedural,
+            "Attribute VB_Name = \"MathModule\"\nPublic Function Add(ByVal a, ByVal b)\nAdd = a\nEnd Function",
+        )
+        .expect("math module should parse");
+
+        let manifest = ProjectManifest {
+            project_name: "ProjectA".to_string(),
+            project_kind: ProjectKind::Source,
+            modules: vec![main_module, math_module],
+            references: Vec::new(),
+            reference_projects: Vec::new(),
+            conditional_constants: std::collections::BTreeMap::new(),
+        };
+
+        let snapshot = engine
+            .execute_project_with_snapshot_phased(&manifest)
+            .expect("project execution should succeed");
+        assert_eq!(snapshot[0], 1);
+    }
+
+    #[test]
+    fn formal_pmr_project_manifest_cross_project_call_executes_with_loaded_reference_source() {
+        let engine = Engine::new(HostConfig::default());
+        let main_module = module_unit_from_source(
+            "MainModule",
+            ModuleKind::Procedural,
+            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim x\nx = OtherProject.Tools.Add(1, 2)\nEnd Sub",
+        )
+        .expect("main module should parse");
+        let tools_module = module_unit_from_source(
+            "Tools",
+            ModuleKind::Procedural,
+            "Attribute VB_Name = \"Tools\"\nPublic Function Add(ByVal a, ByVal b)\nAdd = a\nEnd Function",
+        )
+        .expect("tools module should parse");
+        let manifest = ProjectManifest {
+            project_name: "ProjectA".to_string(),
+            project_kind: ProjectKind::Source,
+            modules: vec![main_module],
+            references: vec![ProjectReference {
+                referenced_project_name: "OtherProject".to_string(),
+                reference_kind: ReferenceKind::Project,
+            }],
+            reference_projects: vec![ReferencedProjectManifest {
+                project_name: "OtherProject".to_string(),
+                modules: vec![tools_module],
+            }],
+            conditional_constants: std::collections::BTreeMap::new(),
+        };
+
+        let snapshot = engine
+            .execute_project_with_snapshot_phased(&manifest)
+            .expect("cross-project execution should succeed");
+        assert_eq!(snapshot[0], 1);
+    }
+
+    #[test]
+    fn formal_pmr_project_manifest_option_private_module_preserves_host_export_entry() {
+        let module = module_unit_from_source(
+            "PrivateModule",
+            ModuleKind::Procedural,
+            "Attribute VB_Name = \"PrivateModule\"\nOption Private Module\nPublic Function Hidden()\nHidden = 1\nEnd Function\nPublic Sub Main()\nEnd Sub",
+        )
+        .expect("module should parse");
+        let manifest = ProjectManifest {
+            project_name: "ProjectA".to_string(),
+            project_kind: ProjectKind::Source,
+            modules: vec![module],
+            references: Vec::new(),
+            reference_projects: Vec::new(),
+            conditional_constants: std::collections::BTreeMap::new(),
+        };
+        let compiled = oxvba_compiler::compile_project(&manifest).expect("compile should succeed");
+        assert!(
+            compiled
+                .host_exports
+                .iter()
+                .any(|entry| entry.module_name == "privatemodule"
+                    && entry.procedure_name == "hidden"),
+            "Option Private Module procedures remain callable for host-direct invocation lanes"
+        );
     }
 
     #[test]

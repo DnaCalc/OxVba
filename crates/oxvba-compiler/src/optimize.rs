@@ -334,12 +334,14 @@ mod kani_proofs {
             option_explicit: false,
             compare_mode: crate::resolve::BoundCompareMode::Binary,
             default_type_table: [crate::resolve::BoundType::Variant; 26],
+            resolution_diagnostics: Vec::new(),
             declarations: vec!["x".to_string()],
             declaration_types: std::collections::HashMap::from([(
                 "x".to_string(),
                 crate::resolve::BoundType::Variant,
             )]),
             array_descriptors: std::collections::HashMap::new(),
+            external_declarations: std::collections::HashMap::new(),
             body: vec![BoundStmt::Assign {
                 target: "x".to_string(),
                 expr: BoundExpr::AddConst {

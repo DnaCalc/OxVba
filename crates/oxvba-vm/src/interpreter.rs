@@ -905,6 +905,19 @@ impl Vm {
                         calling_convention: descriptor.calling_convention.as_str(),
                         selection_policy: descriptor.selection_policy.as_str(),
                     };
+                    if let Some(violation) = view.contract_violation() {
+                        let err = HalError::adapter_fault(
+                            self.host_services.profile(),
+                            CapabilityId::DynamicLinking,
+                            "invoke_descriptor",
+                            format!(
+                                "external descriptor contract violation for id {}: {}",
+                                descriptor_id, violation
+                            ),
+                        );
+                        pc = self.route_host_error(pc, err)?;
+                        continue;
+                    }
                     match self.host_services.dynlink().invoke_descriptor(&view, arg) {
                         Ok(value) => {
                             self.write_slot(*dst, value)?;
@@ -2255,6 +2268,92 @@ mod tests {
             .execute(&bytecode)
             .expect_err("descriptor mismatch should be reported");
         assert!(err.contains("unknown external descriptor id"));
+    }
+
+    #[test]
+    fn declare_invoke_descriptor_contract_empty_library_is_reported() {
+        let symbol = 4_321;
+        let bytecode = Bytecode {
+            instructions: vec![
+                Instruction::LoadConstI32 { slot: 0, value: 3 },
+                Instruction::IntrinsicInvokeSymbolHost {
+                    dst: 1,
+                    descriptor_id: symbol as u32,
+                    symbol,
+                    arg: 0,
+                },
+                Instruction::Halt,
+            ],
+            external_call_descriptors: vec![oxvba_compiler::bytecode::ExternalCallDescriptor {
+                descriptor_id: symbol as u32,
+                declared_name: "hostping".to_string(),
+                library: " ".to_string(),
+                alias: "ping".to_string(),
+                ordinal_alias: false,
+                symbol,
+                marshal_lane: "m0-deterministic".to_string(),
+                calling_convention: "platform-default".to_string(),
+                selection_policy: "case-insensitive-canonical".to_string(),
+            }],
+            slot_count: 2,
+            user_slot_count: 2,
+        };
+
+        let mut vm = Vm::new(oxvba_hal::adapters::for_profile(
+            oxvba_hal::model::HalProfileId::Windows,
+            oxvba_hal::model::HostPolicy {
+                allow_dynamic_link: true,
+                ..oxvba_hal::model::HostPolicy::deterministic_runtime()
+            },
+        ));
+        let err = vm
+            .execute(&bytecode)
+            .expect_err("contract violation should be reported");
+        assert!(err.contains("external descriptor contract violation"));
+        assert!(err.contains("library is empty"));
+    }
+
+    #[test]
+    fn declare_invoke_descriptor_contract_selection_policy_mismatch_is_reported() {
+        let symbol = 5_432;
+        let bytecode = Bytecode {
+            instructions: vec![
+                Instruction::LoadConstI32 { slot: 0, value: 3 },
+                Instruction::IntrinsicInvokeSymbolHost {
+                    dst: 1,
+                    descriptor_id: symbol as u32,
+                    symbol,
+                    arg: 0,
+                },
+                Instruction::Halt,
+            ],
+            external_call_descriptors: vec![oxvba_compiler::bytecode::ExternalCallDescriptor {
+                descriptor_id: symbol as u32,
+                declared_name: "hostping".to_string(),
+                library: "host".to_string(),
+                alias: "7".to_string(),
+                ordinal_alias: true,
+                symbol,
+                marshal_lane: "m0-deterministic".to_string(),
+                calling_convention: "platform-default".to_string(),
+                selection_policy: "case-insensitive-canonical".to_string(),
+            }],
+            slot_count: 2,
+            user_slot_count: 2,
+        };
+
+        let mut vm = Vm::new(oxvba_hal::adapters::for_profile(
+            oxvba_hal::model::HalProfileId::Windows,
+            oxvba_hal::model::HostPolicy {
+                allow_dynamic_link: true,
+                ..oxvba_hal::model::HostPolicy::deterministic_runtime()
+            },
+        ));
+        let err = vm
+            .execute(&bytecode)
+            .expect_err("selection policy mismatch should be reported");
+        assert!(err.contains("external descriptor contract violation"));
+        assert!(err.contains("selection_policy does not match ordinal_alias contract"));
     }
 
     #[test]

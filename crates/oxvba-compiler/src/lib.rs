@@ -4,12 +4,18 @@ pub mod bytecode;
 pub mod emit;
 pub mod lower_to_hir;
 pub mod optimize;
+pub mod project;
 pub mod resolve;
 pub mod typecheck;
 
 use thiserror::Error;
 
 pub use bytecode::{Bytecode, Instruction};
+pub use project::{
+    CompiledProject, ExportKind, HostProcedureExport, ModuleAttributes, ModuleKind, ModuleUnit,
+    ProjectCompileError, ProjectKind, ProjectManifest, ProjectReference, ReferenceKind,
+    ReferencedProjectManifest, compile_project, module_unit_from_source,
+};
 
 #[derive(Debug, Error)]
 pub enum CompileError {
@@ -1384,5 +1390,35 @@ mod tests {
         let source = "Declare PtrSafe Function HostPing Lib \"host\" Alias \"ping\" (ByVal x As Long) As String\nSub Main()\nDim y\ny = HostPing(3)\nEnd Sub";
         let err = compile(source).expect_err("non-Long declare return should be rejected");
         assert!(err.to_string().contains("only `Long` return type"));
+    }
+
+    #[test]
+    fn compile_withevents_declaration_surfaces_project_model_diagnostic() {
+        let source = "Sub Main()\nDim WithEvents app As Object\nEnd Sub";
+        let err = compile(source).expect_err("WithEvents should currently be project-model gated");
+        assert!(
+            err.to_string()
+                .contains("PMR-E-WITHEVENTS-MODULE-KIND-UNRESOLVED")
+        );
+    }
+
+    #[test]
+    fn compile_implements_directive_surfaces_project_model_diagnostic() {
+        let source = "Implements IFoo\nSub Main()\nEnd Sub";
+        let err = compile(source).expect_err("Implements should currently be project-model gated");
+        assert!(
+            err.to_string()
+                .contains("PMR-E-IMPLEMENTS-PROJECTGRAPH-REQUIRED")
+        );
+    }
+
+    #[test]
+    fn compile_raiseevent_statement_surfaces_project_model_diagnostic() {
+        let source = "Sub Main()\nRaiseEvent Tick\nEnd Sub";
+        let err = compile(source).expect_err("RaiseEvent should currently be class-model gated");
+        assert!(
+            err.to_string()
+                .contains("PMR-E-RAISEEVENT-CLASS-MODEL-REQUIRED")
+        );
     }
 }
