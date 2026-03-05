@@ -86,7 +86,8 @@ Policy:
 - use `./scripts/run-formal-kani-sync.ps1` as the default operator entrypoint,
 - reconcile before and after each deferred dispatch start,
 - during active runs, reconcile at least every 30 minutes (or at each cycle boundary),
-- do not treat `selected_count=0` no-op lanes as formal pass evidence.
+- do not treat `selected_count=0` no-op lanes as formal pass evidence,
+- keep a durable remote-monitor trace during long runs (`-StatusSnapshotNdjson` / `-MonitorSnapshotNdjson`) so stall/rate triage is based on time-series evidence.
 
 ## Required Local Checks (Doc-Heavy Ladder Runs)
 
@@ -96,15 +97,27 @@ Policy:
 ./scripts/validate-profile-scaffold.ps1 -FromVersion <start> -ToVersion <end>
 ```
 
-2. Validate HAL clause/doc drift when HAL spec surface is touched:
+2. Validate active ladder gate coherence before or during runs:
+
+```powershell
+./scripts/validate-active-ladder-sync.ps1
+```
+
+3. Validate HAL clause/doc drift when HAL spec surface is touched:
 
 ```powershell
 ./scripts/check-hal-clause-drift.ps1
 ```
 
-3. Run targeted tests for touched crates and host/hal paths.
+4. Run targeted tests for touched crates and host/hal paths.
 
-4. Ensure referenced artifacts actually exist before commit.
+5. Ensure referenced artifacts actually exist before commit.
+
+6. Prefer scaffold generation for large profile slices:
+
+```powershell
+./scripts/new-profile-slice.ps1 -FromVersion <start> -ToVersion <end> -LadderPath <ladder> -WorksetPath <workset>
+```
 
 ## Commit Discipline for Ladder Docs
 

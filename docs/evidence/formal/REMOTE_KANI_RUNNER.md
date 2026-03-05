@@ -73,6 +73,14 @@ This runs one cumulative lane at the highest target version and reuses deduplica
 ./scripts/run-formal-kani-remote.ps1 -Action Status
 ```
 
+Optional status snapshots (NDJSON, one record per status poll):
+
+```powershell
+./scripts/run-formal-kani-remote.ps1 `
+  -Action Status `
+  -StatusSnapshotNdjson temp/async/kani_remote/status_snapshots.ndjson
+```
+
 4b. Active memory telemetry samples with optional guard actions:
 
 ```powershell
@@ -87,7 +95,8 @@ This runs one cumulative lane at the highest target version and reuses deduplica
   -MemorySoftUsedPercent 85 `
   -MemoryHardUsedPercent 92 `
   -HardPressureAction pause `
-  -MonitorAutoResume $true
+  -MonitorAutoResume $true `
+  -MonitorSnapshotNdjson temp/async/kani_remote/monitor_snapshots.ndjson
 ```
 
 5. Stop deferred jobs:
@@ -146,14 +155,20 @@ Under `/home/ubuntu/.dnacalc_remote`:
   - `current` obligation id
   - `status` marker (`running` / `completed:*`)
   - `log_bytes`
+  - `progress_age_s` (age of latest heartbeat/progress update)
 - `Status` now classifies empty lane selections as explicit `no-op` with
   `warning=probable-commit-obligation-mismatch` instead of treating them as
   silent successes.
+- `Status` adds local-side health warnings:
+  - `warning=dispatch-commit-drift` when running dispatch commit differs from local head.
+  - `warning=lane-no-progress-threshold` when a running lane shows no completed obligations beyond configured threshold.
+  - `warning=no-op-lane-count` summary for probable obligation-mismatch lanes.
 - `reconcile-formal-deferred-gates.ps1` reads remote lane states directly and
   updates DG rows from mutable states (`dg-not-started`/`dg-deferred`/`dg-fail`/`dg-running`)
   to reduce long-lived local-vs-remote drift.
 - `Status` includes `resource_snapshot` fields (`mem_used_percent`, swap/load, `cbmc_count`, `kani_count`) and active pause-flag visibility.
 - `Status` job rows classify detached wrappers explicitly as `running-detached` (instead of ambiguous `unknown`) when lane/dispatch workers are still live.
+- `Status` prints `status_summary` counters (`running`, `pending`, `finished_pass`, `finished_fail`, `finished_unknown`, `no_op`) to make live queue health/rate visible at a glance.
 - `StopDeferred -StopMode stale` marks stale/unknown deferred envelopes with explicit terminal state (`exit_code=143`, `completed:stopped`) so status no longer shows ambiguous `unknown` for dead runs.
 - `Tail -Lane <name>` includes:
   - `run.log` (streamed command output)
@@ -184,6 +199,9 @@ This keeps CBMC/Kani resource pressure bounded while preserving forward progress
   - automatic pause file: `state/deferred_dispatch/PAUSE_NEW_LANES.auto`;
   - optional manual pause file: `state/deferred_dispatch/PAUSE_NEW_LANES.manual`.
 - `Monitor` action can enforce the same thresholds out-of-band and auto-resume the auto-pause flag when memory drops below soft threshold.
+- `Monitor` now prints `monitor_summary` per sample and can append machine-readable telemetry (`-MonitorSnapshotNdjson`) for trend/rate analysis.
+- `Status` supports configurable no-progress warning threshold:
+  - `-StatusStalledMinutesWarn` (default `90`).
 
 ## Timeout and Dedup
 

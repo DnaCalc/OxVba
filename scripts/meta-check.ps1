@@ -17,6 +17,9 @@ try {
     Write-Host "[oxvba] gate-sync"
     & "$PSScriptRoot/validate-gate-sync.ps1"
 
+    Write-Host "[oxvba] active-ladder-sync"
+    & "$PSScriptRoot/validate-active-ladder-sync.ps1"
+
     Write-Host "[oxvba] divergence-structure"
     & "$PSScriptRoot/validate-divergences.ps1"
 

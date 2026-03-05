@@ -17,7 +17,7 @@
 - `run-profile-gate.ps1`: runs formal + matrix + bench lanes and emits an integrated gate report for a profile scope.
 - `run-formal-kani-wsl.ps1`: strict formal run helper that executes Kani obligations through WSL.
 - `run-formal-kani-async.ps1`: async manager for long-running Kani/profile formal runs (`Start`/`Status`/`Tail`/`Wait`/`Stop`/`WatchStart`/`WatchStop`/`Probe`/`Reconcile`).
-- `run-formal-kani-remote.ps1`: remote Linux deferred-lane manager for Kani (`Ensure`/`ProbeCapacity`/`StartDeferred`/`StopDeferred`/`Status`/`Tail`/`FetchArtifacts`/`Monitor`) under `/home/ubuntu/.dnacalc_remote`, with dedup strategy, per-obligation timeout, lane heartbeat/progress telemetry, and memory-pressure guard controls.
+- `run-formal-kani-remote.ps1`: remote Linux deferred-lane manager for Kani (`Ensure`/`ProbeCapacity`/`StartDeferred`/`StopDeferred`/`Status`/`Tail`/`FetchArtifacts`/`Monitor`) under `/home/ubuntu/.dnacalc_remote`, with dedup strategy, per-obligation timeout, lane heartbeat/progress telemetry, memory-pressure guard controls, status summary counters, and optional NDJSON status/monitor snapshot output (`-StatusSnapshotNdjson`, `-MonitorSnapshotNdjson`).
 - `reconcile-formal-deferred-gates.ps1`: reconciles `docs/evidence/formal/DEFERRED_GATES.md` DG statuses from live remote lane state (`running/pass/fail/no-op->deferred`) to reduce status drift.
 - `run-formal-kani-sync.ps1`: hardened one-shot supervisor for remote formal lanes (`reconcile -> detect running -> start unresolved policy lanes when idle -> reconcile -> status`).
 - `async-task-runner.ps1`: helper invoked by async managers to execute commands and persist exit status.
@@ -28,7 +28,9 @@
 - `validate-pmr-followup-sync.ps1`: enforces PMR follow-up/oracle/divergence synchronization (`PMR-FUP-004/006`, `ODG-038/039`, `DIV-0003/0004`, tolerance-matrix anchors).
 - `validate-project-integration-catalog.ps1`: validates the tracked project integration catalog schema, fixture presence for active cases, and deferred-case linkage hygiene.
 - `validate-kani-obligation-policy.ps1`: validates `KANI_OBLIGATION_POLICY_V1.csv` against active `cargo kani` obligations (coverage, no duplicates, profile sync, tier vocabulary).
+- `validate-active-ladder-sync.ps1`: validates active ladder coherence across `AGENTS.md`, `docs/AUTORUN_STATE.md`, ladder header gates/range, matching workset pattern, and terminal profile/evidence presence.
 - `validate-language-coverage.ps1`: validates language coverage index structure/status vocabulary and duplicate keys.
 - `validate-intrinsic-surface.ps1`: validates intrinsic surface classification coverage and host-sensitive partition.
 - `validate-profile-scaffold.ps1`: validates profile ladder scaffold integrity (naming, multiline structure, and referenced artifact existence) for selected version ranges.
+- `new-profile-slice.ps1`: generates profile-step evidence and `PROFILE_STATUS_V*` scaffolding for a version range to reduce manual drift in ladder runs.
 - `build-non-hal-gap-baseline.ps1`: generates `v147` non-HAL baseline artifacts from coverage/library/spec checklist partial/planned rows.

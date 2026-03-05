@@ -26,7 +26,10 @@ param(
     [string]$LocalArtifactsDir = "temp/async/kani_remote",
     [int]$MonitorDurationSeconds = 0,
     [int]$MonitorIntervalSeconds = 30,
-    [bool]$MonitorAutoResume = $true
+    [bool]$MonitorAutoResume = $true,
+    [int]$StatusStalledMinutesWarn = 90,
+    [string]$StatusSnapshotNdjson = "",
+    [string]$MonitorSnapshotNdjson = ""
 )
 
 $ErrorActionPreference = "Stop"
@@ -58,6 +61,98 @@ function Invoke-RemoteScript {
         throw "Remote command failed with exit code $LASTEXITCODE"
     }
     return $out
+}
+
+function Write-NdjsonRecord {
+    param(
+        [string]$Path,
+        [Parameter(Mandatory = $true)]
+        [object]$Record
+    )
+
+    if ([string]::IsNullOrWhiteSpace($Path)) {
+        return
+    }
+
+    $resolvedPath = $Path
+    if (-not [System.IO.Path]::IsPathRooted($resolvedPath)) {
+        $resolvedPath = Join-Path (Join-Path $PSScriptRoot "..") $resolvedPath
+    }
+
+    $dir = Split-Path -Parent $resolvedPath
+    if (-not [string]::IsNullOrWhiteSpace($dir) -and -not (Test-Path $dir)) {
+        New-Item -ItemType Directory -Path $dir -Force | Out-Null
+    }
+
+    $json = $Record | ConvertTo-Json -Compress -Depth 12
+    Add-Content -Path $resolvedPath -Value $json
+}
+
+function Convert-LinesToKeyValueMap {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string[]]$Lines,
+        [string[]]$AllowedKeys = @()
+    )
+
+    $map = @{}
+    foreach ($line in $Lines) {
+        if ($line -match '^([A-Za-z0-9_]+)=(.*)$') {
+            $key = $Matches[1]
+            if ($AllowedKeys.Count -gt 0 -and $key -notin $AllowedKeys) {
+                continue
+            }
+            $map[$key] = $Matches[2]
+        }
+    }
+    return $map
+}
+
+function Get-DeferredStatusSummary {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string[]]$Lines
+    )
+
+    $summary = [ordered]@{
+        running = 0
+        pending = 0
+        no_op = 0
+        finished_pass = 0
+        finished_fail = 0
+        finished_unknown = 0
+    }
+
+    foreach ($line in $Lines) {
+        if ($line -notmatch '^(v\d+-kani)\s+') {
+            continue
+        }
+        if ($line -match '\sno-op:') {
+            $summary.no_op++
+            continue
+        }
+        if ($line -match '\srunning:') {
+            $summary.running++
+            continue
+        }
+        if ($line -match '\spending\b') {
+            $summary.pending++
+            continue
+        }
+        if ($line -match '\sfinished:') {
+            if ($line -match 'status=completed:pass' -or $line -match 'finished:0\b') {
+                $summary.finished_pass++
+            }
+            elseif ($line -match 'status=completed:(fail|stopped)' -or $line -match 'finished:(1|2|143)\b') {
+                $summary.finished_fail++
+            }
+            else {
+                $summary.finished_unknown++
+            }
+        }
+    }
+
+    return [pscustomobject]$summary
 }
 
 function Get-EnsureScript([string]$BaseDir) {
@@ -1191,6 +1286,7 @@ for d in "$BASE"/state/deferred_lanes/*; do
     completed="-"
     selected="-"
     current="-"
+    progress_age_s="-"
     if [[ -f "$progress" ]]; then
       readarray -t vals < <(python3 - "$progress" <<'PY'
 import json, sys
@@ -1205,16 +1301,21 @@ PY
       completed="${vals[1]:--}"
       selected="${vals[2]:--}"
       current="${vals[3]:--}"
+      p_mtime="$(stat -c %Y "$progress" 2>/dev/null || echo 0)"
+      now_s="$(date +%s)"
+      if [[ -n "$p_mtime" && "$p_mtime" =~ ^[0-9]+$ && -n "$now_s" && "$now_s" =~ ^[0-9]+$ && "$p_mtime" -gt 0 ]]; then
+        progress_age_s="$((now_s - p_mtime))"
+      fi
     fi
     status_marker="$(cat "$status_file" 2>/dev/null || echo "-")"
     if [[ "$status_marker" == completed:* && -z "$pid" ]]; then
-      echo "$lane finished:unknown phase=$phase progress=${completed}/${selected} current=$current status=$status_marker log_bytes=$log_bytes"
+      echo "$lane finished:unknown phase=$phase progress=${completed}/${selected} current=$current status=$status_marker log_bytes=$log_bytes progress_age_s=$progress_age_s"
       continue
     fi
     if [[ -n "$pid" ]]; then
-      echo "$lane running:pid=$pid phase=$phase progress=${completed}/${selected} current=$current status=$status_marker log_bytes=$log_bytes"
+      echo "$lane running:pid=$pid phase=$phase progress=${completed}/${selected} current=$current status=$status_marker log_bytes=$log_bytes progress_age_s=$progress_age_s"
     else
-      echo "$lane pending phase=$phase progress=${completed}/${selected} current=$current status=$status_marker log_bytes=$log_bytes"
+      echo "$lane pending phase=$phase progress=${completed}/${selected} current=$current status=$status_marker log_bytes=$log_bytes progress_age_s=$progress_age_s"
     fi
   fi
 done | sort
@@ -1459,6 +1560,75 @@ exit 0
         $statusScript = $statusTemplate.Replace("__BASE__", $RemoteBase)
         $out = Invoke-RemoteScript $statusScript
         $out | ForEach-Object { Write-Host $_ }
+
+        $statusLines = @($out | ForEach-Object { "$_" })
+        $dispatchStateLine = $statusLines | Where-Object { $_ -like "dispatch_state=*" } | Select-Object -Last 1
+        $dispatchState = if ($dispatchStateLine) { ($dispatchStateLine -split "=", 2)[1] } else { "" }
+        $dispatchStartedLine = $statusLines | Where-Object { $_ -like "started_utc=*" } | Select-Object -Last 1
+        $dispatchStarted = if ($dispatchStartedLine) { ($dispatchStartedLine -split "=", 2)[1] } else { "" }
+        $dispatchCommitLine = $statusLines | Where-Object { $_ -like "repo_commit=*" } | Select-Object -Last 1
+        $dispatchCommit = if ($dispatchCommitLine) { ($dispatchCommitLine -split "=", 2)[1] } else { "" }
+
+        if ($dispatchState -like "running*") {
+            if (-not [string]::IsNullOrWhiteSpace($dispatchCommit)) {
+                try {
+                    $localHead = (git -C (Join-Path $PSScriptRoot "..") rev-parse HEAD).Trim()
+                    if (-not [string]::IsNullOrWhiteSpace($localHead) -and $localHead -ne $dispatchCommit) {
+                        Write-Host "warning=dispatch-commit-drift local_head=$localHead remote_dispatch_commit=$dispatchCommit"
+                    }
+                }
+                catch {
+                    Write-Host "warning=dispatch-commit-drift-check-failed reason=$($_.Exception.Message)"
+                }
+            }
+
+            if (-not [string]::IsNullOrWhiteSpace($dispatchStarted)) {
+                $dispatchAgeMinutes = $null
+                try {
+                    $startedUtc = [DateTime]::Parse($dispatchStarted, [System.Globalization.CultureInfo]::InvariantCulture, [System.Globalization.DateTimeStyles]::AssumeUniversal -bor [System.Globalization.DateTimeStyles]::AdjustToUniversal)
+                    $dispatchAgeMinutes = [math]::Floor(((Get-Date).ToUniversalTime() - $startedUtc).TotalMinutes)
+                }
+                catch { }
+
+                foreach ($line in $statusLines) {
+                    if ($line -notmatch '^(v\d+-kani)\s+running:') {
+                        continue
+                    }
+                    $lane = $Matches[1]
+                    if ($line -notmatch 'progress=([0-9\-]+)/([0-9\-]+)') {
+                        continue
+                    }
+                    $completed = $Matches[1]
+                    $selected = $Matches[2]
+                    $ageSeconds = ""
+                    if ($line -match 'progress_age_s=([0-9\-]+)') {
+                        $ageSeconds = $Matches[1]
+                    }
+                    if ($completed -eq "0" -and $selected -match '^[0-9]+$' -and [int]$selected -gt 0 -and $dispatchAgeMinutes -ne $null -and $dispatchAgeMinutes -ge $StatusStalledMinutesWarn) {
+                        $ageMinutes = if ($ageSeconds -match '^[0-9]+$') { [math]::Floor(([int]$ageSeconds) / 60) } else { -1 }
+                        Write-Host "warning=lane-no-progress-threshold lane=$lane dispatch_age_minutes=$dispatchAgeMinutes progress_age_minutes=$ageMinutes threshold_minutes=$StatusStalledMinutesWarn"
+                    }
+                }
+            }
+
+            $noOpCount = @($statusLines | Where-Object { $_ -match '\sno-op:' }).Count
+            if ($noOpCount -gt 0) {
+                Write-Host "warning=no-op-lane-count count=$noOpCount hint=probable-commit-obligation-mismatch"
+            }
+        }
+
+        $laneSummary = Get-DeferredStatusSummary -Lines $statusLines
+        Write-Host ("status_summary running={0} pending={1} finished_pass={2} finished_fail={3} finished_unknown={4} no_op={5} dispatch_state={6}" -f $laneSummary.running, $laneSummary.pending, $laneSummary.finished_pass, $laneSummary.finished_fail, $laneSummary.finished_unknown, $laneSummary.no_op, $dispatchState)
+
+        Write-NdjsonRecord -Path $StatusSnapshotNdjson -Record ([ordered]@{
+                timestamp_utc = (Get-Date).ToUniversalTime().ToString("o")
+                action = "Status"
+                dispatch_state = $dispatchState
+                dispatch_started_utc = $dispatchStarted
+                dispatch_repo_commit = $dispatchCommit
+                lane_summary = $laneSummary
+                warnings = @($statusLines | Where-Object { $_ -match '\bwarning=' })
+            })
     }
     "Monitor" {
         $monitorTemplate = @'
@@ -1558,6 +1728,43 @@ exit 0
             Write-Host ("monitor_sample={0}/{1}" -f $i, $iterations)
             $out = Invoke-RemoteScript $monitorScriptBase
             $out | ForEach-Object { Write-Host $_ }
+            $monitorLines = @($out | ForEach-Object { "$_" })
+            $kv = Convert-LinesToKeyValueMap -Lines $monitorLines -AllowedKeys @(
+                "timestamp_utc",
+                "cpu",
+                "mem_total_kib",
+                "mem_available_kib",
+                "mem_used_percent",
+                "swap_total_kib",
+                "swap_used_kib",
+                "load1",
+                "loadavg",
+                "cbmc_count",
+                "kani_count",
+                "pause_flag_auto",
+                "pause_flag_manual"
+            )
+            $memUsed = if ($kv.ContainsKey("mem_used_percent")) { $kv["mem_used_percent"] } else { "-" }
+            $cbmcCount = if ($kv.ContainsKey("cbmc_count")) { $kv["cbmc_count"] } else { "-" }
+            $kaniCount = if ($kv.ContainsKey("kani_count")) { $kv["kani_count"] } else { "-" }
+            $actionLine = ($monitorLines | Where-Object { $_ -like "monitor_action=*" } | Select-Object -Last 1)
+            $pauseAuto = if ($kv.ContainsKey("pause_flag_auto")) { $kv["pause_flag_auto"] } else { "-" }
+            $pauseManual = if ($kv.ContainsKey("pause_flag_manual")) { $kv["pause_flag_manual"] } else { "-" }
+            if (-not [string]::IsNullOrWhiteSpace($actionLine)) {
+                Write-Host "monitor_summary mem_used_percent=$memUsed cbmc_count=$cbmcCount kani_count=$kaniCount pause_auto=$pauseAuto pause_manual=$pauseManual $actionLine"
+            }
+            else {
+                Write-Host "monitor_summary mem_used_percent=$memUsed cbmc_count=$cbmcCount kani_count=$kaniCount pause_auto=$pauseAuto pause_manual=$pauseManual"
+            }
+
+            Write-NdjsonRecord -Path $MonitorSnapshotNdjson -Record ([ordered]@{
+                    timestamp_utc = (Get-Date).ToUniversalTime().ToString("o")
+                    action = "Monitor"
+                    sample_index = $i
+                    sample_total = $iterations
+                    metrics = $kv
+                    monitor_action = $actionLine
+                })
             if ($i -lt $iterations) {
                 Start-Sleep -Seconds $MonitorIntervalSeconds
             }
