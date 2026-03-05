@@ -1,5 +1,20 @@
 # Implementation Log
 
+## 2026-03-05
+- COM early-binding + type-library planning pass (research-first, three-iteration cross-reference):
+  - completed online source pass over MS-VBAL, MS-OAUT, MS-OVBA, Win32 OleAut APIs, and VBA references APIs;
+  - published comprehensive scope/design doc:
+    - `docs/spec/COM_EARLY_BINDING_TYPELIB_SCOPE_V1.md`;
+  - published conformance/formal lane plan:
+    - `docs/spec/COM_EARLY_BINDING_TYPELIB_CONFORMANCE_V1.md`;
+  - published new profile ladder for implementation run:
+    - `docs/worksets/PROFILE_LADDER_2026-03-05_MACH1000_V407_V466_COM_EARLY_BINDING_TYPELIB.md`;
+  - published planning closure workset:
+    - `docs/worksets/WORKSET_2026-03-05_COM_EARLY_BINDING_TYPELIB_PLANNING_V407_V416.md`;
+  - updated documentation indexes:
+    - `docs/spec/README.md`,
+    - `docs/README.md`.
+
 ## 2026-03-03
 - PMR formalization follow-up planning + lane setup:
   - published focused workset for replacing rewrite-bridge PMR lowering with module-aware bind/IR path:

@@ -38,6 +38,8 @@ Current draft set:
 - [`CLASS_MODULE_COM_ALIGNMENT_PLAN_V1.md`](CLASS_MODULE_COM_ALIGNMENT_PLAN_V1.md) (`working-draft`): staged class-module/COM alignment plan with explicit near-term semantic steps and deferred interop boundaries.
 - [`COM_CLIENT_SERVER_SCOPE_V1.md`](COM_CLIENT_SERVER_SCOPE_V1.md) (`working-draft`): Windows COM client/server support scope, contract boundaries, tier model, apartment policy stance, and C2 late-bound client runway.
 - [`COM_CLIENT_SERVER_CONFORMANCE_V1.md`](COM_CLIENT_SERVER_CONFORMANCE_V1.md) (`working-draft`): COM-specific conformance lane architecture, artifact model, and C2 late-bound client lane planning with formal/deferred-oracle integration.
+- [`COM_EARLY_BINDING_TYPELIB_SCOPE_V1.md`](COM_EARLY_BINDING_TYPELIB_SCOPE_V1.md) (`working-draft`): comprehensive design for COM early binding and type-library consumption across PMR, HAL, binder, IR/runtime, caching, diagnostics, and formalized verification planning.
+- [`COM_EARLY_BINDING_TYPELIB_CONFORMANCE_V1.md`](COM_EARLY_BINDING_TYPELIB_CONFORMANCE_V1.md) (`working-draft`): executable lane plan (`E0..E6`) for early-binding/type-library conformance, formal lanes, and deferred-oracle tracking.
 - [`HAL_COM_BRIDGE_SCOPE_V1.md`](HAL_COM_BRIDGE_SCOPE_V1.md) (`working-draft`): HAL-owned COM boundary scope and C1->C2 transition contract for tokenized/native late-bound client behavior.
 - [`COM_CLIENT_LATEBOUND_BRIDGE_V1.md`](COM_CLIENT_LATEBOUND_BRIDGE_V1.md) (`working-draft`): explicit cross-layer bridge contract (VBA semantics -> compiler/VM transport -> HAL COM transport -> native adapter).
 
