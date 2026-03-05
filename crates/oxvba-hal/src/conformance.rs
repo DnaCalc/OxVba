@@ -9,7 +9,7 @@ use crate::{
         ALL_CAPABILITIES, CapabilityId, CapabilityMaturity, HalDescriptor, host_backed_mode_active,
         host_backed_profile_matches_host,
     },
-    traits::{DynLinkDescriptorView, HostServices},
+    traits::{DynLinkDescriptorView, HostServices, TypeLibResolveRequest},
 };
 
 const CLAUSE_CATALOG_CSV_V1: &str =
@@ -340,6 +340,27 @@ pub fn run_conformance(host: &dyn HostServices) -> ConformanceReport {
             "HAL-GEN-004",
         ],
         host.com().create_object(4).map(|_| ()),
+    );
+    probe(
+        CapabilityId::ComActivationDispatch,
+        "typelib.resolve_typelib_reference",
+        &[
+            "HAL-COM-001",
+            "HAL-DES-004",
+            "HAL-GEN-001",
+            "HAL-GEN-003",
+            "HAL-GEN-004",
+        ],
+        host.typelibs()
+            .resolve_typelib_reference(&TypeLibResolveRequest {
+                reference_name: "StdOle".to_string(),
+                importlib_hint: Some("stdole2.tlb".to_string()),
+                libid_hint: None,
+                major_version_hint: Some(2),
+                minor_version_hint: Some(0),
+                lcid_hint: Some(0),
+            })
+            .map(|_| ()),
     );
     probe(
         CapabilityId::TimeLocale,

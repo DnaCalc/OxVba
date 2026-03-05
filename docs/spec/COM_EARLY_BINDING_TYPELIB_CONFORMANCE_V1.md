@@ -4,6 +4,12 @@ Status: `working-draft`
 Date: 2026-03-05
 Companion scope: `docs/spec/COM_EARLY_BINDING_TYPELIB_SCOPE_V1.md`
 
+Implementation snapshot (`v417..v426`):
+- E1 subset is active via PMR resolver tests covering deterministic libid/importlib resolution and ambiguity handling.
+- E2 subset is active via compiler project-lowering tests for constrained external declarations and member rewrite diagnostics.
+- E4 substrate is active in HAL via deterministic metadata cache/invalidation operations (initial known-identity subset).
+- E3 runtime currently executes through existing late-bound COM transport for the constrained rewritten subset; dedicated native early-bound runtime lanes remain staged for later profiles.
+
 ## 1. Goal
 
 Define executable verification lanes for early-bound COM + type-library support with clause-level traceability and deterministic evidence capture.

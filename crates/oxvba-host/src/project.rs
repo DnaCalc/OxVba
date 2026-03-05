@@ -46,8 +46,10 @@ mod kani_proofs {
         let records = project.resolve_type_library_references(&[TypeLibraryCatalogEntry {
             library_name: "StdOle".to_string(),
             importlib: "stdole2.tlb".to_string(),
+            libid: None,
             major_version: 2,
             minor_version: 0,
+            lcid: None,
         }]);
 
         assert_eq!(records.len(), 1);
@@ -163,14 +165,20 @@ pub struct ProjectReference {
     pub reference_kind: ReferenceKind,
     pub binding_state: ReferenceBindingState,
     pub importlib_hint: Option<String>,
+    pub libid_hint: Option<String>,
+    pub major_version_hint: Option<u16>,
+    pub minor_version_hint: Option<u16>,
+    pub lcid_hint: Option<u32>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TypeLibraryCatalogEntry {
     pub library_name: String,
     pub importlib: String,
+    pub libid: Option<String>,
     pub major_version: u16,
     pub minor_version: u16,
+    pub lcid: Option<u32>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -183,8 +191,10 @@ pub struct TypeLibraryBindingRecord {
 pub enum TypeLibraryBindingStatus {
     Bound {
         importlib: String,
+        libid: Option<String>,
         major_version: u16,
         minor_version: u16,
+        lcid: Option<u32>,
     },
     MissingImportLibHint,
     ImportLibUnresolved {
@@ -192,6 +202,13 @@ pub enum TypeLibraryBindingStatus {
     },
     ImportLibAmbiguous {
         importlib: String,
+        candidate_libraries: Vec<String>,
+    },
+    LibIdUnresolved {
+        libid: String,
+    },
+    LibIdAmbiguous {
+        libid: String,
         candidate_libraries: Vec<String>,
     },
 }
@@ -203,6 +220,8 @@ impl TypeLibraryBindingStatus {
             Self::MissingImportLibHint => "PMR-E-TYPELIB-IMPORTLIB-MISSING",
             Self::ImportLibUnresolved { .. } => "PMR-E-TYPELIB-IMPORTLIB-UNRESOLVED",
             Self::ImportLibAmbiguous { .. } => "PMR-E-TYPELIB-IMPORTLIB-AMBIGUOUS",
+            Self::LibIdUnresolved { .. } => "PMR-E-TYPELIB-LIBID-UNRESOLVED",
+            Self::LibIdAmbiguous { .. } => "PMR-E-TYPELIB-LIBID-AMBIGUOUS",
         }
     }
 }
@@ -431,6 +450,10 @@ impl ProjectNode {
             reference_kind,
             binding_state: ReferenceBindingState::Unbound,
             importlib_hint: None,
+            libid_hint: None,
+            major_version_hint: None,
+            minor_version_hint: None,
+            lcid_hint: None,
         });
         Ok(())
     }
@@ -465,6 +488,42 @@ impl ProjectNode {
         Ok(())
     }
 
+    pub fn set_reference_typelib_identity(
+        &mut self,
+        referenced_project_name: &str,
+        libid_hint: impl Into<String>,
+        major_version_hint: Option<u16>,
+        minor_version_hint: Option<u16>,
+        lcid_hint: Option<u32>,
+    ) -> Result<(), ProjectModelError> {
+        let key = normalize_identifier(referenced_project_name);
+        let libid_hint = libid_hint.into().trim().to_string();
+        let Some(reference) = self
+            .references
+            .iter_mut()
+            .find(|reference| normalize_identifier(&reference.referenced_project_name) == key)
+        else {
+            return Err(ProjectModelError::ReferenceNotFound {
+                name: referenced_project_name.to_string(),
+            });
+        };
+        if reference.reference_kind != ReferenceKind::TypeLibrary {
+            return Err(ProjectModelError::TypeLibraryKindMismatch {
+                name: reference.referenced_project_name.clone(),
+            });
+        }
+        reference.libid_hint = if libid_hint.is_empty() {
+            None
+        } else {
+            Some(libid_hint)
+        };
+        reference.major_version_hint = major_version_hint;
+        reference.minor_version_hint = minor_version_hint;
+        reference.lcid_hint = lcid_hint;
+        reference.binding_state = ReferenceBindingState::Unbound;
+        Ok(())
+    }
+
     pub fn resolve_type_library_references(
         &mut self,
         catalog: &[TypeLibraryCatalogEntry],
@@ -480,7 +539,41 @@ impl ProjectNode {
             .iter_mut()
             .filter(|reference| reference.reference_kind == ReferenceKind::TypeLibrary)
         {
-            let Some(importlib_hint) = reference.importlib_hint.as_ref() else {
+            let matches = if let Some(libid_hint) = reference.libid_hint.as_ref() {
+                let normalized_libid = normalize_guid_like(libid_hint);
+                catalog
+                    .iter()
+                    .filter(|entry| {
+                        entry
+                            .libid
+                            .as_ref()
+                            .map(|value| normalize_guid_like(value) == normalized_libid)
+                            .unwrap_or(false)
+                    })
+                    .filter(|entry| {
+                        reference
+                            .major_version_hint
+                            .is_none_or(|major| major == entry.major_version)
+                    })
+                    .filter(|entry| {
+                        reference
+                            .minor_version_hint
+                            .is_none_or(|minor| minor == entry.minor_version)
+                    })
+                    .filter(|entry| {
+                        reference
+                            .lcid_hint
+                            .is_none_or(|lcid| entry.lcid == Some(lcid))
+                    })
+                    .collect::<Vec<_>>()
+            } else if let Some(importlib_hint) = reference.importlib_hint.as_ref() {
+                let normalized_hint = normalize_identifier(importlib_hint);
+                catalog
+                    .iter()
+                    .filter(|entry| !entry.importlib.trim().is_empty())
+                    .filter(|entry| normalize_identifier(&entry.importlib) == normalized_hint)
+                    .collect::<Vec<_>>()
+            } else {
                 reference.binding_state = ReferenceBindingState::Failed;
                 records.push(TypeLibraryBindingRecord {
                     reference_name: reference.referenced_project_name.clone(),
@@ -488,12 +581,6 @@ impl ProjectNode {
                 });
                 continue;
             };
-            let normalized_hint = normalize_identifier(importlib_hint);
-            let matches = catalog
-                .iter()
-                .filter(|entry| !entry.importlib.trim().is_empty())
-                .filter(|entry| normalize_identifier(&entry.importlib) == normalized_hint)
-                .collect::<Vec<_>>();
             match matches.as_slice() {
                 [entry] => {
                     reference.binding_state = ReferenceBindingState::Bound;
@@ -501,8 +588,10 @@ impl ProjectNode {
                         reference_name: reference.referenced_project_name.clone(),
                         status: TypeLibraryBindingStatus::Bound {
                             importlib: entry.importlib.clone(),
+                            libid: entry.libid.clone(),
                             major_version: entry.major_version,
                             minor_version: entry.minor_version,
+                            lcid: entry.lcid,
                         },
                     });
                 }
@@ -510,8 +599,14 @@ impl ProjectNode {
                     reference.binding_state = ReferenceBindingState::Failed;
                     records.push(TypeLibraryBindingRecord {
                         reference_name: reference.referenced_project_name.clone(),
-                        status: TypeLibraryBindingStatus::ImportLibUnresolved {
-                            importlib: importlib_hint.clone(),
+                        status: if let Some(libid_hint) = reference.libid_hint.as_ref() {
+                            TypeLibraryBindingStatus::LibIdUnresolved {
+                                libid: libid_hint.clone(),
+                            }
+                        } else {
+                            TypeLibraryBindingStatus::ImportLibUnresolved {
+                                importlib: reference.importlib_hint.clone().unwrap_or_default(),
+                            }
                         },
                     });
                 }
@@ -525,9 +620,16 @@ impl ProjectNode {
                     candidate_libraries.dedup();
                     records.push(TypeLibraryBindingRecord {
                         reference_name: reference.referenced_project_name.clone(),
-                        status: TypeLibraryBindingStatus::ImportLibAmbiguous {
-                            importlib: importlib_hint.clone(),
-                            candidate_libraries,
+                        status: if let Some(libid_hint) = reference.libid_hint.as_ref() {
+                            TypeLibraryBindingStatus::LibIdAmbiguous {
+                                libid: libid_hint.clone(),
+                                candidate_libraries,
+                            }
+                        } else {
+                            TypeLibraryBindingStatus::ImportLibAmbiguous {
+                                importlib: reference.importlib_hint.clone().unwrap_or_default(),
+                                candidate_libraries,
+                            }
                         },
                     });
                 }
@@ -808,6 +910,14 @@ fn normalize_identifier(input: &str) -> String {
     input.trim().to_ascii_lowercase()
 }
 
+fn normalize_guid_like(input: &str) -> String {
+    input
+        .trim()
+        .trim_matches('{')
+        .trim_matches('}')
+        .to_ascii_lowercase()
+}
+
 fn is_valid_vba_identifier(input: &str) -> bool {
     let mut chars = input.trim().chars();
     let Some(first) = chars.next() else {
@@ -992,8 +1102,10 @@ mod tests {
         let records = project.resolve_type_library_references(&[TypeLibraryCatalogEntry {
             library_name: "StdOle".to_string(),
             importlib: "stdole2.tlb".to_string(),
+            libid: None,
             major_version: 2,
             minor_version: 0,
+            lcid: None,
         }]);
         assert_eq!(records.len(), 1);
         assert_eq!(records[0].reference_name, "StdOle");
@@ -1073,14 +1185,18 @@ mod tests {
             TypeLibraryCatalogEntry {
                 library_name: "StdOle".to_string(),
                 importlib: "stdole2.tlb".to_string(),
+                libid: None,
                 major_version: 2,
                 minor_version: 0,
+                lcid: None,
             },
             TypeLibraryCatalogEntry {
                 library_name: "AltStdOle".to_string(),
                 importlib: "stdole2.tlb".to_string(),
+                libid: None,
                 major_version: 1,
                 minor_version: 9,
+                lcid: None,
             },
         ]);
         assert_eq!(records.len(), 1);
@@ -1088,6 +1204,96 @@ mod tests {
             records[0].status.code(),
             "PMR-E-TYPELIB-IMPORTLIB-AMBIGUOUS"
         );
+        assert_eq!(
+            project.references[0].binding_state,
+            ReferenceBindingState::Failed
+        );
+    }
+
+    #[test]
+    fn type_library_resolution_binds_unique_libid_identity() {
+        let mut graph = ProjectGraph::default();
+        graph
+            .create_project("Alpha", ProjectKind::Source)
+            .expect("project should be created");
+        let project = graph.active_project_mut().expect("active project expected");
+        project
+            .add_reference("StdOle", ReferenceKind::TypeLibrary)
+            .expect("reference should be accepted");
+        project
+            .set_reference_typelib_identity(
+                "StdOle",
+                "{00020430-0000-0000-C000-000000000046}",
+                Some(2),
+                Some(0),
+                Some(0),
+            )
+            .expect("libid identity should be set");
+        let records = project.resolve_type_library_references(&[
+            TypeLibraryCatalogEntry {
+                library_name: "StdOle".to_string(),
+                importlib: "stdole2.tlb".to_string(),
+                libid: Some("00020430-0000-0000-C000-000000000046".to_string()),
+                major_version: 2,
+                minor_version: 0,
+                lcid: Some(0),
+            },
+            TypeLibraryCatalogEntry {
+                library_name: "AltStdOle".to_string(),
+                importlib: "stdole2.tlb".to_string(),
+                libid: Some("00020430-0000-0000-C000-000000000046".to_string()),
+                major_version: 1,
+                minor_version: 9,
+                lcid: Some(0),
+            },
+        ]);
+        assert_eq!(records.len(), 1);
+        assert_eq!(records[0].status.code(), "PMR-I-TYPELIB-BOUND");
+        assert_eq!(
+            project.references[0].binding_state,
+            ReferenceBindingState::Bound
+        );
+    }
+
+    #[test]
+    fn type_library_resolution_reports_ambiguous_libid_identity() {
+        let mut graph = ProjectGraph::default();
+        graph
+            .create_project("Alpha", ProjectKind::Source)
+            .expect("project should be created");
+        let project = graph.active_project_mut().expect("active project expected");
+        project
+            .add_reference("StdOle", ReferenceKind::TypeLibrary)
+            .expect("reference should be accepted");
+        project
+            .set_reference_typelib_identity(
+                "StdOle",
+                "{00020430-0000-0000-C000-000000000046}",
+                None,
+                None,
+                None,
+            )
+            .expect("libid identity should be set");
+        let records = project.resolve_type_library_references(&[
+            TypeLibraryCatalogEntry {
+                library_name: "StdOle".to_string(),
+                importlib: "stdole2.tlb".to_string(),
+                libid: Some("00020430-0000-0000-c000-000000000046".to_string()),
+                major_version: 2,
+                minor_version: 0,
+                lcid: Some(0),
+            },
+            TypeLibraryCatalogEntry {
+                library_name: "AltStdOle".to_string(),
+                importlib: "stdole2_v2.tlb".to_string(),
+                libid: Some("00020430-0000-0000-c000-000000000046".to_string()),
+                major_version: 2,
+                minor_version: 0,
+                lcid: Some(1033),
+            },
+        ]);
+        assert_eq!(records.len(), 1);
+        assert_eq!(records[0].status.code(), "PMR-E-TYPELIB-LIBID-AMBIGUOUS");
         assert_eq!(
             project.references[0].binding_state,
             ReferenceBindingState::Failed
@@ -1112,14 +1318,18 @@ mod tests {
             TypeLibraryCatalogEntry {
                 library_name: "AltStdOle".to_string(),
                 importlib: "stdole2.tlb".to_string(),
+                libid: None,
                 major_version: 1,
                 minor_version: 9,
+                lcid: None,
             },
             TypeLibraryCatalogEntry {
                 library_name: "StdOle".to_string(),
                 importlib: "stdole2.tlb".to_string(),
+                libid: None,
                 major_version: 2,
                 minor_version: 0,
+                lcid: None,
             },
         ];
         let catalog_b = vec![catalog_a[1].clone(), catalog_a[0].clone()];

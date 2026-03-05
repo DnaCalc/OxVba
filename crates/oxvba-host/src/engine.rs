@@ -2708,6 +2708,70 @@ mod tests {
     }
 
     #[test]
+    fn formal_v417_profile_status_document_exists() {
+        assert!(repo_path("docs/profile-status/PROFILE_STATUS_V417.md").exists());
+    }
+
+    #[test]
+    fn formal_v418_profile_status_document_exists() {
+        assert!(repo_path("docs/profile-status/PROFILE_STATUS_V418.md").exists());
+    }
+
+    #[test]
+    fn formal_v419_profile_status_document_exists() {
+        assert!(repo_path("docs/profile-status/PROFILE_STATUS_V419.md").exists());
+    }
+
+    #[test]
+    fn formal_v420_profile_status_document_exists() {
+        assert!(repo_path("docs/profile-status/PROFILE_STATUS_V420.md").exists());
+    }
+
+    #[test]
+    fn formal_v421_profile_status_document_exists() {
+        assert!(repo_path("docs/profile-status/PROFILE_STATUS_V421.md").exists());
+    }
+
+    #[test]
+    fn formal_v422_profile_status_document_exists() {
+        assert!(repo_path("docs/profile-status/PROFILE_STATUS_V422.md").exists());
+    }
+
+    #[test]
+    fn formal_v423_profile_status_document_exists() {
+        assert!(repo_path("docs/profile-status/PROFILE_STATUS_V423.md").exists());
+    }
+
+    #[test]
+    fn formal_v424_profile_status_document_exists() {
+        assert!(repo_path("docs/profile-status/PROFILE_STATUS_V424.md").exists());
+    }
+
+    #[test]
+    fn formal_v425_profile_status_document_exists() {
+        assert!(repo_path("docs/profile-status/PROFILE_STATUS_V425.md").exists());
+    }
+
+    #[test]
+    fn formal_v426_profile_status_document_exists() {
+        assert!(repo_path("docs/profile-status/PROFILE_STATUS_V426.md").exists());
+    }
+
+    #[test]
+    fn formal_v426_early_binding_workset_and_evidence_exist() {
+        assert!(
+            repo_path(
+                "docs/worksets/WORKSET_2026-03-05_COM_EARLY_BINDING_TYPELIB_IMPLEMENTATION_V417_V426.md"
+            )
+            .exists()
+        );
+        assert!(
+            repo_path("docs/evidence/profiles/v426/V426_COM_EARLY_IMPLEMENTATION_BLOCK_I.md")
+                .exists()
+        );
+    }
+
+    #[test]
     fn formal_v107_with_block_direct_member_target_executes() {
         let source = "Sub Main()\nDim x\nWith x.inner\n.Value = 4\n.Value = .Value + 3\nx = .Value\nEnd With\nEnd Sub";
         let out = Engine::new(HostConfig {

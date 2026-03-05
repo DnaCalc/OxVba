@@ -7,7 +7,8 @@ use crate::{
     },
     traits::{
         ComHal, DiagnosticsHal, DynLinkDescriptorView, DynamicLinkHal, EventPumpHal, FileSystemHal,
-        ProcessEnvHal, TimeLocaleHal, UiInteractionHal,
+        ProcessEnvHal, TimeLocaleHal, TypeLibCacheScope, TypeLibMetadataBlob,
+        TypeLibResolveRequest, TypeLibResolvedIdentity, TypeLibraryHal, UiInteractionHal,
     },
 };
 #[cfg(target_os = "windows")]
@@ -69,6 +70,7 @@ pub(crate) struct StandardHostServices {
     policy: HostPolicy,
     fs_state: Arc<Mutex<FileSystemState>>,
     com_state: Arc<Mutex<ComState>>,
+    typelib_state: Arc<Mutex<TypeLibraryCacheState>>,
     dynlink_bindings: Arc<Mutex<BTreeMap<u32, i32>>>,
 }
 
@@ -92,6 +94,7 @@ impl StandardHostServices {
             policy,
             fs_state: Arc::new(Mutex::new(FileSystemState::default())),
             com_state: Arc::new(Mutex::new(ComState::default())),
+            typelib_state: Arc::new(Mutex::new(TypeLibraryCacheState::default())),
             dynlink_bindings: Arc::new(Mutex::new(BTreeMap::new())),
         }
     }
@@ -146,6 +149,16 @@ impl StandardHostServices {
     ) -> HalResult<std::sync::MutexGuard<'_, ComState>> {
         self.com_state.lock().map_err(|_| {
             HalError::adapter_fault(self.profile, capability, op, "com state lock poisoned")
+        })
+    }
+
+    fn typelib_lock(
+        &self,
+        capability: CapabilityId,
+        op: &'static str,
+    ) -> HalResult<std::sync::MutexGuard<'_, TypeLibraryCacheState>> {
+        self.typelib_state.lock().map_err(|_| {
+            HalError::adapter_fault(self.profile, capability, op, "typelib state lock poisoned")
         })
     }
 
@@ -274,6 +287,73 @@ impl StandardHostServices {
 
     fn native_com_enabled(&self) -> bool {
         self.native_mode_enabled() && self.profile == HalProfileId::Windows
+    }
+
+    fn windows_typelib_supported(&self) -> bool {
+        self.profile == HalProfileId::Windows && self.supports(CapabilityId::ComActivationDispatch)
+    }
+
+    fn resolve_known_typelib_identity(
+        &self,
+        request: &TypeLibResolveRequest,
+    ) -> Option<TypeLibResolvedIdentity> {
+        let normalized_importlib = request.importlib_hint.as_deref().map(normalize_ci_token);
+        let normalized_libid = request.libid_hint.as_deref().map(normalize_guid_like);
+
+        if normalized_importlib
+            .as_deref()
+            .is_some_and(|value| value == "stdole2.tlb")
+            || normalized_libid
+                .as_deref()
+                .is_some_and(|value| value == "00020430-0000-0000-c000-000000000046")
+        {
+            return Some(TypeLibResolvedIdentity {
+                reference_name: request.reference_name.clone(),
+                importlib: "stdole2.tlb".to_string(),
+                libid: Some("00020430-0000-0000-C000-000000000046".to_string()),
+                major_version: 2,
+                minor_version: 0,
+                lcid: Some(0),
+                cache_key: "typelib:stdole2:2.0:0".to_string(),
+            });
+        }
+
+        if normalized_importlib
+            .as_deref()
+            .is_some_and(|value| value == "oxvba_testdispatch.tlb")
+            || normalized_libid
+                .as_deref()
+                .is_some_and(|value| value == "11111111-2222-3333-4444-555555555555")
+        {
+            return Some(TypeLibResolvedIdentity {
+                reference_name: request.reference_name.clone(),
+                importlib: "oxvba_testdispatch.tlb".to_string(),
+                libid: Some("11111111-2222-3333-4444-555555555555".to_string()),
+                major_version: 1,
+                minor_version: 0,
+                lcid: Some(0),
+                cache_key: "typelib:oxvba-testdispatch:1.0:0".to_string(),
+            });
+        }
+
+        None
+    }
+
+    fn build_typelib_metadata(&self, identity: &TypeLibResolvedIdentity) -> TypeLibMetadataBlob {
+        let members = if identity
+            .importlib
+            .eq_ignore_ascii_case("oxvba_testdispatch.tlb")
+            || identity.libid.as_deref().is_some_and(|libid| {
+                libid.eq_ignore_ascii_case("11111111-2222-3333-4444-555555555555")
+            }) {
+            vec![("Count".to_string(), 1), ("Exists".to_string(), 2)]
+        } else {
+            Vec::new()
+        };
+        TypeLibMetadataBlob {
+            identity: identity.clone(),
+            member_name_to_token: members,
+        }
     }
 
     fn host_fs_base_dir(&self) -> PathBuf {
@@ -1168,6 +1248,96 @@ impl ComHal for StandardHostServices {
     }
 }
 
+impl TypeLibraryHal for StandardHostServices {
+    fn resolve_typelib_reference(
+        &self,
+        request: &TypeLibResolveRequest,
+    ) -> HalResult<TypeLibResolvedIdentity> {
+        let capability = CapabilityId::ComActivationDispatch;
+        if !self.windows_typelib_supported() {
+            return Err(self.unsupported(capability, "resolve_typelib_reference"));
+        }
+        if !self.policy.allow_com_activation {
+            return Err(self.denied(capability, "resolve_typelib_reference"));
+        }
+        let Some(identity) = self.resolve_known_typelib_identity(request) else {
+            let request_key = request
+                .importlib_hint
+                .as_deref()
+                .or(request.libid_hint.as_deref())
+                .unwrap_or("<missing-identity>");
+            return Err(HalError::adapter_fault(
+                self.profile,
+                capability,
+                "resolve_typelib_reference",
+                format!("no deterministic typelib identity mapping for `{request_key}`"),
+            ));
+        };
+        Ok(identity)
+    }
+
+    fn load_typelib_metadata(
+        &self,
+        identity: &TypeLibResolvedIdentity,
+    ) -> HalResult<TypeLibMetadataBlob> {
+        let capability = CapabilityId::ComActivationDispatch;
+        if !self.windows_typelib_supported() {
+            return Err(self.unsupported(capability, "load_typelib_metadata"));
+        }
+        if !self.policy.allow_com_activation {
+            return Err(self.denied(capability, "load_typelib_metadata"));
+        }
+        let mut state = self.typelib_lock(capability, "load_typelib_metadata")?;
+        if let Some(cached) = state.metadata.get(&identity.cache_key) {
+            return Ok(cached.clone());
+        }
+        let blob = self.build_typelib_metadata(identity);
+        state
+            .metadata
+            .insert(identity.cache_key.clone(), blob.clone());
+        Ok(blob)
+    }
+
+    fn invalidate_typelib_cache(
+        &self,
+        scope: TypeLibCacheScope,
+        reference_name: Option<&str>,
+    ) -> HalResult<i32> {
+        let capability = CapabilityId::ComActivationDispatch;
+        if !self.windows_typelib_supported() {
+            return Err(self.unsupported(capability, "invalidate_typelib_cache"));
+        }
+        if !self.policy.allow_com_activation {
+            return Err(self.denied(capability, "invalidate_typelib_cache"));
+        }
+        let mut state = self.typelib_lock(capability, "invalidate_typelib_cache")?;
+        let removed = match scope {
+            TypeLibCacheScope::Global => {
+                let count = state.metadata.len();
+                state.metadata.clear();
+                count
+            }
+            TypeLibCacheScope::Reference => {
+                let Some(reference_name) = reference_name else {
+                    return Err(HalError::adapter_fault(
+                        self.profile,
+                        capability,
+                        "invalidate_typelib_cache",
+                        "reference scope requires reference_name",
+                    ));
+                };
+                let key = normalize_ci_token(reference_name);
+                let before = state.metadata.len();
+                state
+                    .metadata
+                    .retain(|_, blob| normalize_ci_token(&blob.identity.reference_name) != key);
+                before.saturating_sub(state.metadata.len())
+            }
+        };
+        Ok(i32::try_from(removed).unwrap_or(i32::MAX))
+    }
+}
+
 impl TimeLocaleHal for StandardHostServices {
     fn date_serial_now(&self) -> HalResult<i32> {
         let capability = CapabilityId::TimeLocale;
@@ -1690,6 +1860,11 @@ impl ComState {
         self.next_handle = self.next_handle.saturating_add(1).max(1);
         20_000i32.saturating_add(self.next_handle)
     }
+}
+
+#[derive(Debug, Default)]
+struct TypeLibraryCacheState {
+    metadata: BTreeMap<String, TypeLibMetadataBlob>,
 }
 
 type RawDispatchPtr = usize;
@@ -2272,6 +2447,18 @@ fn pseudo_file_len_from_path_token(path: i32) -> i32 {
 
 fn clamp_u64_to_i32(value: u64) -> i32 {
     value.min(i32::MAX as u64) as i32
+}
+
+fn normalize_ci_token(input: &str) -> String {
+    input.trim().to_ascii_lowercase()
+}
+
+fn normalize_guid_like(input: &str) -> String {
+    input
+        .trim()
+        .trim_matches('{')
+        .trim_matches('}')
+        .to_ascii_lowercase()
 }
 
 fn external_symbol_token(library: &str, alias: &str, name: &str) -> i32 {

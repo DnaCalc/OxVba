@@ -14,5 +14,6 @@ pub use model::{
 };
 pub use traits::{
     ComHal, DiagnosticsHal, DynLinkDescriptorView, DynamicLinkHal, EventPumpHal, FileSystemHal,
-    HostServices, ProcessEnvHal, TimeLocaleHal, UiInteractionHal,
+    HostServices, ProcessEnvHal, TimeLocaleHal, TypeLibCacheScope, TypeLibMetadataBlob,
+    TypeLibResolveRequest, TypeLibResolvedIdentity, TypeLibraryHal, UiInteractionHal,
 };

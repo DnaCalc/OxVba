@@ -69,6 +69,7 @@ pub trait HostServices: Send + Sync {
     fn fs(&self) -> &dyn FileSystemHal;
     fn process(&self) -> &dyn ProcessEnvHal;
     fn com(&self) -> &dyn ComHal;
+    fn typelibs(&self) -> &dyn TypeLibraryHal;
     fn time_locale(&self) -> &dyn TimeLocaleHal;
     fn dynlink(&self) -> &dyn DynamicLinkHal;
     fn diag(&self) -> &dyn DiagnosticsHal;
@@ -108,6 +109,55 @@ pub trait ComHal: Send + Sync {
         object: ValueToken,
         member: ValueToken,
         arg: ValueToken,
+    ) -> HalResult<ValueToken>;
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TypeLibResolveRequest {
+    pub reference_name: String,
+    pub importlib_hint: Option<String>,
+    pub libid_hint: Option<String>,
+    pub major_version_hint: Option<u16>,
+    pub minor_version_hint: Option<u16>,
+    pub lcid_hint: Option<u32>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TypeLibResolvedIdentity {
+    pub reference_name: String,
+    pub importlib: String,
+    pub libid: Option<String>,
+    pub major_version: u16,
+    pub minor_version: u16,
+    pub lcid: Option<u32>,
+    pub cache_key: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TypeLibMetadataBlob {
+    pub identity: TypeLibResolvedIdentity,
+    pub member_name_to_token: Vec<(String, ValueToken)>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TypeLibCacheScope {
+    Global,
+    Reference,
+}
+
+pub trait TypeLibraryHal: Send + Sync {
+    fn resolve_typelib_reference(
+        &self,
+        request: &TypeLibResolveRequest,
+    ) -> HalResult<TypeLibResolvedIdentity>;
+    fn load_typelib_metadata(
+        &self,
+        identity: &TypeLibResolvedIdentity,
+    ) -> HalResult<TypeLibMetadataBlob>;
+    fn invalidate_typelib_cache(
+        &self,
+        scope: TypeLibCacheScope,
+        reference_name: Option<&str>,
     ) -> HalResult<ValueToken>;
 }
 

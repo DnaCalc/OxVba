@@ -7,7 +7,8 @@ use crate::{
     model::{HalDescriptor, HalProfileId, HalRuntimeClass, HostPolicy},
     traits::{
         ComHal, DiagnosticsHal, DynamicLinkHal, EventPumpHal, FileSystemHal, HostServices,
-        ProcessEnvHal, TimeLocaleHal, UiInteractionHal,
+        ProcessEnvHal, TimeLocaleHal, TypeLibCacheScope, TypeLibMetadataBlob,
+        TypeLibResolveRequest, TypeLibResolvedIdentity, TypeLibraryHal, UiInteractionHal,
     },
 };
 
@@ -61,6 +62,9 @@ impl HostServices for NullHostServices {
         self
     }
     fn com(&self) -> &dyn ComHal {
+        self
+    }
+    fn typelibs(&self) -> &dyn TypeLibraryHal {
         self
     }
     fn time_locale(&self) -> &dyn TimeLocaleHal {
@@ -137,6 +141,36 @@ impl ComHal for NullHostServices {
 
     fn dispatch_invoke(&self, _object: i32, _member: i32, _arg: i32) -> HalResult<i32> {
         Err(self.unsupported(CapabilityId::ComActivationDispatch, "dispatch_invoke"))
+    }
+}
+
+impl TypeLibraryHal for NullHostServices {
+    fn resolve_typelib_reference(
+        &self,
+        _request: &TypeLibResolveRequest,
+    ) -> HalResult<TypeLibResolvedIdentity> {
+        Err(self.unsupported(
+            CapabilityId::ComActivationDispatch,
+            "resolve_typelib_reference",
+        ))
+    }
+
+    fn load_typelib_metadata(
+        &self,
+        _identity: &TypeLibResolvedIdentity,
+    ) -> HalResult<TypeLibMetadataBlob> {
+        Err(self.unsupported(CapabilityId::ComActivationDispatch, "load_typelib_metadata"))
+    }
+
+    fn invalidate_typelib_cache(
+        &self,
+        _scope: TypeLibCacheScope,
+        _reference_name: Option<&str>,
+    ) -> HalResult<i32> {
+        Err(self.unsupported(
+            CapabilityId::ComActivationDispatch,
+            "invalidate_typelib_cache",
+        ))
     }
 }
 

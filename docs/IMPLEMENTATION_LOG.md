@@ -1460,3 +1460,25 @@
     - `docs/evidence/conformance/com_early/COM_EARLY_OPEN_QUESTIONS_V416.md`
   - refreshed docs indexes for early-binding planning closure visibility:
     - `docs/README.md`, `docs/profile-status/README.md`.
+- Completed COM early-binding/type-library implementation block `v417..v426`:
+  - published implementation workset:
+    - `docs/worksets/WORKSET_2026-03-05_COM_EARLY_BINDING_TYPELIB_IMPLEMENTATION_V417_V426.md`
+  - implemented PMR type-library identity and resolver expansion:
+    - `ProjectReference` now carries optional `libid_hint`, `major_version_hint`, `minor_version_hint`, and `lcid_hint`.
+    - `TypeLibraryBindingStatus` now distinguishes importlib and libid unresolved/ambiguous paths with stable codes (`PMR-E-TYPELIB-LIBID-UNRESOLVED`, `PMR-E-TYPELIB-LIBID-AMBIGUOUS`).
+    - resolver supports deterministic libid-first matching with importlib fallback.
+  - introduced HAL type-library contract and adapter wiring:
+    - new `TypeLibraryHal` surface (`resolve_typelib_reference`, `load_typelib_metadata`, `invalidate_typelib_cache`) and host exposure via `HostServices::typelibs()`.
+    - Windows standard adapter implements deterministic known-identity resolution and cache/invalidation substrate; non-Windows and null adapters return deterministic unsupported behavior.
+  - integrated compiler-side early-bound subset bridge:
+    - constrained external declarations (`Dim x As Lib.Type`, `Dim x As New Lib.Type`) are rewritten to deterministic object + `CreateObject` subset lanes.
+    - constrained member invokes (`x.Count()`, `x.Exists(arg)`) rewrite to `DispatchInvoke` token lanes.
+    - explicit deterministic diagnostics added for unresolved qualifiers, unsupported members, unsupported arity, and unsupported `As New` selector mapping.
+    - module-aware and rewrite-bridge lowering strategies remain parity-checked for the early-bound fixture lane.
+  - expanded formal/test guardrails:
+    - host formal tests now assert profile-status coverage through `v426` and existence of implementation workset/evidence files.
+  - published per-step profile status + evidence artifacts:
+    - `docs/profile-status/PROFILE_STATUS_V417.md` .. `PROFILE_STATUS_V426.md`
+    - `docs/evidence/profiles/v417/..` through `docs/evidence/profiles/v426/..`
+  - advanced AutoRun/control docs to active terminal gate `v426`:
+    - `AGENTS.md`, `docs/AUTORUN_STATE.md`, `README.md`, `docs/README.md`, `docs/profile-status/README.md`.

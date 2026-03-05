@@ -5,7 +5,7 @@ use crate::{
     model::{HalDescriptor, HalProfileId, HalRuntimeClass, HostPolicy},
     traits::{
         ComHal, DiagnosticsHal, DynamicLinkHal, EventPumpHal, FileSystemHal, HostServices,
-        ProcessEnvHal, TimeLocaleHal, UiInteractionHal,
+        ProcessEnvHal, TimeLocaleHal, TypeLibraryHal, UiInteractionHal,
     },
 };
 
@@ -69,6 +69,9 @@ impl HostServices for WindowsHostServices {
         &self.inner
     }
     fn com(&self) -> &dyn ComHal {
+        &self.inner
+    }
+    fn typelibs(&self) -> &dyn TypeLibraryHal {
         &self.inner
     }
     fn time_locale(&self) -> &dyn TimeLocaleHal {

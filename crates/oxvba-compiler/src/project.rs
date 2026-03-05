@@ -158,6 +158,25 @@ pub enum ProjectCompileError {
         "PMR-E-REFERENCE-CROSS-PROJECT-UNSUPPORTED: referenced-project call target `{name}` is not executable in current subset"
     )]
     CrossProjectReferenceUnsupported { name: String },
+    #[error(
+        "BIND-E-TYPELIB-QUALIFIER-UNRESOLVED: external type `{type_name}` uses unknown typelib qualifier `{qualifier}`"
+    )]
+    TypeLibraryQualifierUnresolved {
+        type_name: String,
+        qualifier: String,
+    },
+    #[error(
+        "BIND-E-TYPELIB-CREATEOBJECT-UNSUPPORTED: `As New` external type `{type_name}` has no deterministic CreateObject selector mapping"
+    )]
+    TypeLibraryCreateObjectUnsupported { type_name: String },
+    #[error(
+        "BIND-E-TYPELIB-MEMBER-UNSUPPORTED: external member `{member_name}` is outside the current deterministic early-bind subset"
+    )]
+    TypeLibraryMemberUnsupported { member_name: String },
+    #[error(
+        "BIND-E-TYPELIB-INVOKE-ARITY-UNSUPPORTED: external invoke target `{target}` exceeds current supported arity subset (0 or 1 args)"
+    )]
+    TypeLibraryInvokeArityUnsupported { target: String },
     #[error("PMR-E-BACKEND-COMPILE: {message}")]
     BackendCompile { message: String },
 }
@@ -185,6 +204,14 @@ impl ProjectCompileError {
             Self::ProjectQualificationInvalid { .. } => "PMR-E-PROJECT-QUALIFICATION-INVALID",
             Self::CrossProjectReferenceUnsupported { .. } => {
                 "PMR-E-REFERENCE-CROSS-PROJECT-UNSUPPORTED"
+            }
+            Self::TypeLibraryQualifierUnresolved { .. } => "BIND-E-TYPELIB-QUALIFIER-UNRESOLVED",
+            Self::TypeLibraryCreateObjectUnsupported { .. } => {
+                "BIND-E-TYPELIB-CREATEOBJECT-UNSUPPORTED"
+            }
+            Self::TypeLibraryMemberUnsupported { .. } => "BIND-E-TYPELIB-MEMBER-UNSUPPORTED",
+            Self::TypeLibraryInvokeArityUnsupported { .. } => {
+                "BIND-E-TYPELIB-INVOKE-ARITY-UNSUPPORTED"
             }
             Self::BackendCompile { .. } => "PMR-E-BACKEND-COMPILE",
         }
@@ -640,6 +667,20 @@ struct LineBindPlan {
     bound_call_targets: Vec<(String, String)>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct EarlyBoundBinding {
+    qualified_type: String,
+    create_selector: Option<i32>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct ExternalDimDecl {
+    leading_ws: String,
+    var_name: String,
+    qualified_type: String,
+    as_new: bool,
+}
+
 #[allow(clippy::too_many_arguments)]
 fn lower_module_source_module_aware(
     manifest: &ProjectManifest,
@@ -652,26 +693,307 @@ fn lower_module_source_module_aware(
     let current_module = normalize_identifier(&module.module_name);
     let mut out = Vec::new();
     let mut active_function_result: Option<(String, String)> = None;
+    let mut early_bound = BTreeMap::<String, EarlyBoundBinding>::new();
     for line in module.source.lines() {
-        let (plan, next_function_result) = build_line_bind_plan(
-            manifest,
-            active_project,
-            module,
-            current_project,
-            &current_module,
-            procedures,
-            reference_order,
-            line,
-            active_function_result.as_ref(),
-        )?;
-        active_function_result = next_function_result;
-        let _ = &plan.bound_call_targets;
-        if plan.drop_line {
-            continue;
+        let expanded = expand_early_bound_source_line(line, manifest, &mut early_bound)?;
+        for expanded_line in expanded {
+            let (plan, next_function_result) = build_line_bind_plan(
+                manifest,
+                active_project,
+                module,
+                current_project,
+                &current_module,
+                procedures,
+                reference_order,
+                &expanded_line,
+                active_function_result.as_ref(),
+            )?;
+            active_function_result = next_function_result;
+            let _ = &plan.bound_call_targets;
+            if plan.drop_line {
+                continue;
+            }
+            out.push(plan.lowered_line);
         }
-        out.push(plan.lowered_line);
     }
     Ok(out.join("\n"))
+}
+
+fn expand_early_bound_source_line(
+    line: &str,
+    manifest: &ProjectManifest,
+    early_bound: &mut BTreeMap<String, EarlyBoundBinding>,
+) -> Result<Vec<String>, ProjectCompileError> {
+    if let Some(dim_decl) = parse_external_dim_declaration(line) {
+        let (qualifier, _) = parse_qualified_type_reference(&dim_decl.qualified_type)
+            .expect("external dim declaration must carry qualified type");
+        let qualifier = qualifier.to_string();
+        if !manifest.references.iter().any(|reference| {
+            reference.reference_kind == ReferenceKind::TypeLibrary
+                && normalize_identifier(&reference.referenced_project_name)
+                    == normalize_identifier(&qualifier)
+        }) {
+            return Err(ProjectCompileError::TypeLibraryQualifierUnresolved {
+                type_name: dim_decl.qualified_type,
+                qualifier,
+            });
+        }
+        let selector = known_create_object_selector(&dim_decl.qualified_type);
+        early_bound.insert(
+            normalize_identifier(&dim_decl.var_name),
+            EarlyBoundBinding {
+                qualified_type: dim_decl.qualified_type.clone(),
+                create_selector: selector,
+            },
+        );
+        let mut out = Vec::new();
+        out.push(format!(
+            "{}Dim {} As Object",
+            dim_decl.leading_ws, dim_decl.var_name
+        ));
+        if dim_decl.as_new {
+            let Some(selector) = selector else {
+                return Err(ProjectCompileError::TypeLibraryCreateObjectUnsupported {
+                    type_name: dim_decl.qualified_type,
+                });
+            };
+            out.push(format!(
+                "{}{} = CreateObject({selector})",
+                dim_decl.leading_ws, dim_decl.var_name
+            ));
+        }
+        return Ok(out);
+    }
+
+    let rewritten = rewrite_early_bound_member_dispatch(line, early_bound)?;
+    Ok(vec![rewritten])
+}
+
+fn parse_external_dim_declaration(line: &str) -> Option<ExternalDimDecl> {
+    let leading_ws_len = line.len().saturating_sub(line.trim_start().len());
+    let leading_ws = line[..leading_ws_len].to_string();
+    let trimmed = line.trim();
+    if !trimmed.to_ascii_lowercase().starts_with("dim ") {
+        return None;
+    }
+    let payload = trimmed[4..].trim();
+    if payload.contains(',') {
+        return None;
+    }
+    let (lhs, rhs) = split_keyword_ascii_ci(payload, " as ")?;
+    let var_name = lhs.trim();
+    if var_name.is_empty() || !is_valid_vba_identifier(var_name) {
+        return None;
+    }
+    let mut rhs_trimmed = rhs.trim();
+    let as_new = if rhs_trimmed.len() >= 4 && rhs_trimmed[..4].eq_ignore_ascii_case("new ") {
+        rhs_trimmed = rhs_trimmed[4..].trim();
+        true
+    } else {
+        false
+    };
+    let (_, normalized_type) = parse_qualified_type_reference(rhs_trimmed)?;
+    Some(ExternalDimDecl {
+        leading_ws,
+        var_name: var_name.to_string(),
+        qualified_type: normalized_type,
+        as_new,
+    })
+}
+
+fn parse_qualified_type_reference(type_text: &str) -> Option<(&str, String)> {
+    let raw = type_text.trim();
+    if raw.is_empty() {
+        return None;
+    }
+    let mut parts = raw.split('.');
+    let qualifier = parts.next()?.trim();
+    if !is_valid_vba_identifier(qualifier) {
+        return None;
+    }
+    let mut normalized = vec![qualifier.to_string()];
+    let mut saw_tail = false;
+    for part in parts {
+        let token = part.trim();
+        if !is_valid_vba_identifier(token) {
+            return None;
+        }
+        normalized.push(token.to_string());
+        saw_tail = true;
+    }
+    if !saw_tail {
+        return None;
+    }
+    Some((qualifier, normalized.join(".")))
+}
+
+fn rewrite_early_bound_member_dispatch(
+    line: &str,
+    early_bound: &BTreeMap<String, EarlyBoundBinding>,
+) -> Result<String, ProjectCompileError> {
+    let mut replacements: Vec<(usize, usize, String)> = Vec::new();
+    let mut cursor = 0usize;
+    while let Some(open_rel) = line[cursor..].find('(') {
+        let open = cursor + open_rel;
+        let Some((name_start, name_end)) = invocation_name_span(line, open) else {
+            cursor = open + 1;
+            continue;
+        };
+        let Some(close) = find_matching_paren(line, open) else {
+            cursor = open + 1;
+            continue;
+        };
+        let raw_name = line[name_start..name_end].trim();
+        let Some(dot_idx) = raw_name.find('.') else {
+            cursor = close + 1;
+            continue;
+        };
+        let var_name = raw_name[..dot_idx].trim();
+        let member_name = raw_name[dot_idx + 1..].trim();
+        if var_name.is_empty() || member_name.is_empty() {
+            cursor = close + 1;
+            continue;
+        }
+        let key = normalize_identifier(var_name);
+        if !early_bound.contains_key(&key) {
+            cursor = close + 1;
+            continue;
+        }
+        let Some(member_token) = known_dispatch_member_token(member_name) else {
+            return Err(ProjectCompileError::TypeLibraryMemberUnsupported {
+                member_name: member_name.to_string(),
+            });
+        };
+        let args_raw = line[open + 1..close].trim();
+        let args = split_top_level_args(args_raw)?;
+        if args.len() > 1 {
+            return Err(ProjectCompileError::TypeLibraryInvokeArityUnsupported {
+                target: raw_name.to_string(),
+            });
+        }
+        let replacement = if args.is_empty() || args[0].trim().is_empty() {
+            format!("DispatchInvoke({var_name}, {member_token})")
+        } else {
+            format!(
+                "DispatchInvoke({var_name}, {member_token}, {})",
+                args[0].trim()
+            )
+        };
+        replacements.push((name_start, close + 1, replacement));
+        cursor = close + 1;
+    }
+    if replacements.is_empty() {
+        return Ok(line.to_string());
+    }
+    let mut out = String::with_capacity(line.len() + 32);
+    let mut previous = 0usize;
+    for (start, end, replacement) in replacements {
+        if start < previous || end > line.len() || start >= end {
+            continue;
+        }
+        out.push_str(&line[previous..start]);
+        out.push_str(&replacement);
+        previous = end;
+    }
+    out.push_str(&line[previous..]);
+    Ok(out)
+}
+
+fn split_top_level_args(args: &str) -> Result<Vec<String>, ProjectCompileError> {
+    if args.trim().is_empty() {
+        return Ok(Vec::new());
+    }
+    let mut out = Vec::new();
+    let mut start = 0usize;
+    let mut depth = 0i32;
+    let mut in_string = false;
+    let chars = args.as_bytes();
+    let mut idx = 0usize;
+    while idx < chars.len() {
+        let ch = chars[idx] as char;
+        if ch == '"' {
+            in_string = !in_string;
+            idx += 1;
+            continue;
+        }
+        if in_string {
+            idx += 1;
+            continue;
+        }
+        match ch {
+            '(' => depth += 1,
+            ')' => depth -= 1,
+            ',' if depth == 0 => {
+                out.push(args[start..idx].trim().to_string());
+                start = idx + 1;
+            }
+            _ => {}
+        }
+        idx += 1;
+    }
+    if depth != 0 || in_string {
+        return Err(ProjectCompileError::BackendCompile {
+            message: "BIND-E-TYPELIB-ARG-PARSE: malformed argument list while rewriting early-bound member invocation".to_string(),
+        });
+    }
+    out.push(args[start..].trim().to_string());
+    Ok(out)
+}
+
+fn find_matching_paren(text: &str, open_idx: usize) -> Option<usize> {
+    let bytes = text.as_bytes();
+    if open_idx >= bytes.len() || bytes[open_idx] != b'(' {
+        return None;
+    }
+    let mut depth = 0i32;
+    let mut in_string = false;
+    for (idx, b) in bytes.iter().enumerate().skip(open_idx) {
+        let ch = *b as char;
+        if ch == '"' {
+            in_string = !in_string;
+            continue;
+        }
+        if in_string {
+            continue;
+        }
+        match ch {
+            '(' => depth += 1,
+            ')' => {
+                depth -= 1;
+                if depth == 0 {
+                    return Some(idx);
+                }
+                if depth < 0 {
+                    return None;
+                }
+            }
+            _ => {}
+        }
+    }
+    None
+}
+
+fn split_keyword_ascii_ci<'a>(text: &'a str, keyword: &'a str) -> Option<(&'a str, &'a str)> {
+    let lower = text.to_ascii_lowercase();
+    let needle = keyword.to_ascii_lowercase();
+    let idx = lower.find(&needle)?;
+    Some((&text[..idx], &text[idx + keyword.len()..]))
+}
+
+fn known_create_object_selector(qualified_type: &str) -> Option<i32> {
+    match normalize_identifier(qualified_type).as_str() {
+        "oxvba.testdispatch" => Some(4),
+        "scripting.dictionary" => Some(4),
+        _ => None,
+    }
+}
+
+fn known_dispatch_member_token(member_name: &str) -> Option<i32> {
+    match normalize_identifier(member_name).as_str() {
+        "count" => Some(1),
+        "exists" => Some(2),
+        _ => None,
+    }
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -904,45 +1226,49 @@ fn rewrite_module_source(
     let current_module = normalize_identifier(&module.module_name);
     let mut out = Vec::new();
     let mut active_function_result: Option<(String, String)> = None;
+    let mut early_bound = BTreeMap::<String, EarlyBoundBinding>::new();
     for line in module.source.lines() {
-        let trimmed = line.trim();
-        let lower = trimmed.to_ascii_lowercase();
-        if lower.starts_with("attribute ") || lower == "option private module" {
-            continue;
-        }
-        if module.module_kind == ModuleKind::Class && lower.starts_with("implements ") {
-            continue;
-        }
-        let normalized = normalize_visibility_prefixed_procedure_signature(line);
-        if let Some((proc_name, _, _)) = parse_procedure_signature_line(&normalized)
-            && let Some(decl) =
-                find_decl_by_signature(procedures, current_project, &current_module, &proc_name)
-        {
-            let rewritten = rewrite_signature_name(&normalized, &decl.lowered_name);
-            if decl.kind == ExportKind::Function {
-                active_function_result = Some((proc_name, decl.lowered_name.clone()));
-            } else {
+        let expanded = expand_early_bound_source_line(line, manifest, &mut early_bound)?;
+        for expanded_line in expanded {
+            let trimmed = expanded_line.trim();
+            let lower = trimmed.to_ascii_lowercase();
+            if lower.starts_with("attribute ") || lower == "option private module" {
+                continue;
+            }
+            if module.module_kind == ModuleKind::Class && lower.starts_with("implements ") {
+                continue;
+            }
+            let normalized = normalize_visibility_prefixed_procedure_signature(&expanded_line);
+            if let Some((proc_name, _, _)) = parse_procedure_signature_line(&normalized)
+                && let Some(decl) =
+                    find_decl_by_signature(procedures, current_project, &current_module, &proc_name)
+            {
+                let rewritten = rewrite_signature_name(&normalized, &decl.lowered_name);
+                if decl.kind == ExportKind::Function {
+                    active_function_result = Some((proc_name, decl.lowered_name.clone()));
+                } else {
+                    active_function_result = None;
+                }
+                out.push(rewritten);
+                continue;
+            }
+            let mut rewritten = rewrite_invocation_targets(
+                &normalized,
+                manifest,
+                active_project,
+                current_project,
+                &current_module,
+                procedures,
+                reference_order,
+            )?;
+            if let Some((result_name, lowered_name)) = &active_function_result {
+                rewritten = rewrite_bare_identifier(&rewritten, result_name, lowered_name);
+            }
+            if lower.starts_with("end function") {
                 active_function_result = None;
             }
             out.push(rewritten);
-            continue;
         }
-        let mut rewritten = rewrite_invocation_targets(
-            &normalized,
-            manifest,
-            active_project,
-            current_project,
-            &current_module,
-            procedures,
-            reference_order,
-        )?;
-        if let Some((result_name, lowered_name)) = &active_function_result {
-            rewritten = rewrite_bare_identifier(&rewritten, result_name, lowered_name);
-        }
-        if lower.starts_with("end function") {
-            active_function_result = None;
-        }
-        out.push(rewritten);
     }
     Ok(out.join("\n"))
 }
@@ -2118,6 +2444,77 @@ mod tests {
     }
 
     #[test]
+    fn compile_project_rewrites_early_bound_member_call_to_dispatchinvoke_subset() {
+        let main_module = module_unit_from_source(
+            "MainModule",
+            ModuleKind::Procedural,
+            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim obj As OxVba.TestDispatch\nDim x\nobj = CreateObject(4)\nx = obj.Count()\nEnd Sub",
+        )
+        .expect("module parses");
+        let manifest = ProjectManifest {
+            project_name: "ProjectA".to_string(),
+            project_kind: ProjectKind::Source,
+            modules: vec![main_module],
+            references: vec![ProjectReference {
+                referenced_project_name: "OxVba".to_string(),
+                reference_kind: ReferenceKind::TypeLibrary,
+            }],
+            reference_projects: Vec::new(),
+            conditional_constants: BTreeMap::new(),
+        };
+        let compiled = compile_project(&manifest).expect("early-bound rewrite should compile");
+        let lowered = compiled.rewritten_source.to_ascii_lowercase();
+        assert!(lowered.contains("dim obj as object"));
+        assert!(lowered.contains("x = dispatchinvoke(obj, 1)"));
+    }
+
+    #[test]
+    fn compile_project_rewrites_as_new_external_type_to_createobject_selector() {
+        let main_module = module_unit_from_source(
+            "MainModule",
+            ModuleKind::Procedural,
+            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim obj As New OxVba.TestDispatch\nDim x\nx = obj.Count()\nEnd Sub",
+        )
+        .expect("module parses");
+        let manifest = ProjectManifest {
+            project_name: "ProjectA".to_string(),
+            project_kind: ProjectKind::Source,
+            modules: vec![main_module],
+            references: vec![ProjectReference {
+                referenced_project_name: "OxVba".to_string(),
+                reference_kind: ReferenceKind::TypeLibrary,
+            }],
+            reference_projects: Vec::new(),
+            conditional_constants: BTreeMap::new(),
+        };
+        let compiled = compile_project(&manifest).expect("As New rewrite should compile");
+        let lowered = compiled.rewritten_source.to_ascii_lowercase();
+        assert!(lowered.contains("dim obj as object"));
+        assert!(lowered.contains("obj = createobject(4)"));
+        assert!(lowered.contains("x = dispatchinvoke(obj, 1)"));
+    }
+
+    #[test]
+    fn compile_project_rejects_unresolved_external_typelib_qualifier() {
+        let main_module = module_unit_from_source(
+            "MainModule",
+            ModuleKind::Procedural,
+            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim obj As UnknownLib.Widget\nEnd Sub",
+        )
+        .expect("module parses");
+        let manifest = ProjectManifest {
+            project_name: "ProjectA".to_string(),
+            project_kind: ProjectKind::Source,
+            modules: vec![main_module],
+            references: Vec::new(),
+            reference_projects: Vec::new(),
+            conditional_constants: BTreeMap::new(),
+        };
+        let err = compile_project(&manifest).expect_err("unknown typelib qualifier should fail");
+        assert_eq!(err.code(), "BIND-E-TYPELIB-QUALIFIER-UNRESOLVED");
+    }
+
+    #[test]
     fn project_compile_error_code_is_stable() {
         let err = ProjectCompileError::ProjectNameInvalid {
             name: "123".to_string(),
@@ -2433,5 +2830,27 @@ mod tests {
                 .to_string()
                 .contains("unknown procedure: hidden")
         );
+    }
+
+    #[test]
+    fn compile_project_module_aware_matches_rewrite_bridge_for_early_bound_fixture() {
+        let main_module = module_unit_from_source(
+            "MainModule",
+            ModuleKind::Procedural,
+            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim obj As New OxVba.TestDispatch\nDim x\nx = obj.Count()\nEnd Sub",
+        )
+        .expect("module parses");
+        let manifest = ProjectManifest {
+            project_name: "ProjectA".to_string(),
+            project_kind: ProjectKind::Source,
+            modules: vec![main_module],
+            references: vec![ProjectReference {
+                referenced_project_name: "OxVba".to_string(),
+                reference_kind: ReferenceKind::TypeLibrary,
+            }],
+            reference_projects: Vec::new(),
+            conditional_constants: BTreeMap::new(),
+        };
+        assert_strategy_parity(&manifest);
     }
 }
