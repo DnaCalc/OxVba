@@ -36,6 +36,9 @@ Admissible evidence for compatibility claims:
 
 Every compatibility claim should be traceable to a reproducible artifact (test case, harness output, or decision-table entry).
 
+Artifact naming convention:
+- Prefer `.jsonl` over `.ndjson` for line-delimited JSON evidence/telemetry files.
+
 ## 6. Testing and Gates
 Minimum expectations before merge:
 - Relevant crate tests pass.
