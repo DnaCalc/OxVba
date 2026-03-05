@@ -1,0 +1,9 @@
+# COM Early Lane E1 Run
+
+- Run ID: 20260305T200201Z
+- Lane: E1
+
+| Test | Status | Clause IDs | Evidence |
+|---|---|---|---|
+| E1-001 | pass | PMR-TLIB-IDENTITY-UNIQUE | docs\evidence\conformance\com_early\lanes\COM_EARLY_E1_E1-001_20260305T200201Z.log |
+| E1-002 | pass | PMR-TLIB-IDENTITY-AMBIGUOUS | docs\evidence\conformance\com_early\lanes\COM_EARLY_E1_E1-002_20260305T200201Z.log |

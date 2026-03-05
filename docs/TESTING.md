@@ -9,6 +9,8 @@
 - Combined ladder lane: `./scripts/meta-check.ps1 -Fast -Conformance -Matrix -Formal`
 - COM conformance (required registrationless lane): `./scripts/run-com-conformance.ps1`
 - COM conformance (registrationless + registered external lane): `./scripts/run-com-conformance.ps1 -IncludeRegisteredLane -RegisteredProgIds "Scripting.Dictionary"`
+- COM early-binding conformance (`E0..E6`): `./scripts/run-com-early-conformance.ps1 -IncludeFormalLane`
+- COM early-binding perf baseline: `./scripts/run-com-early-perf.ps1 -Iterations 3`
 - Integration fixture lint: `./scripts/lint-integration-fixtures.ps1`
 
 ## Async long-running formal steps

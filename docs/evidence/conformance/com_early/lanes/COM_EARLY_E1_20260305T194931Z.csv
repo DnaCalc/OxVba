@@ -1,0 +1,3 @@
+"lane_id","test_id","profile","runtime_class","clause_ids","status","diagnostic_code","hresult","evidence_path","repro_command"
+"E1","E1-001","windows","windows-headless","PMR-TLIB-IDENTITY-UNIQUE","pass","","","docs\evidence\conformance\com_early\lanes\COM_EARLY_E1_E1-001_20260305T194931Z.log","cargo test -p oxvba-host type_library_resolution_binds_unique_libid_identity -- --nocapture"
+"E1","E1-002","windows","windows-headless","PMR-TLIB-IDENTITY-AMBIGUOUS","pass","","","docs\evidence\conformance\com_early\lanes\COM_EARLY_E1_E1-002_20260305T194931Z.log","cargo test -p oxvba-host type_library_resolution_reports_ambiguous_libid_identity -- --nocapture"

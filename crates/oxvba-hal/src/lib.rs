@@ -8,9 +8,10 @@ pub mod traits;
 
 pub use error::{HalError, HalErrorKind, HalResult};
 pub use model::{
-    CapabilityDescriptor, CapabilityId, CapabilityMaturity, HalDescriptor, HalProfileId,
-    HalRuntimeClass, HostPolicy, HostPolicyPreset, UiVirtualizationMode, UnsupportedFeatureMode,
-    WasmRuntimeClass, host_backed_mode_active, host_backed_profile_matches_host,
+    CapabilityDescriptor, CapabilityId, CapabilityMaturity, ComInvocationStrategy, HalDescriptor,
+    HalProfileId, HalRuntimeClass, HostPolicy, HostPolicyPreset, UiVirtualizationMode,
+    UnsupportedFeatureMode, WasmRuntimeClass, host_backed_mode_active,
+    host_backed_profile_matches_host,
 };
 pub use traits::{
     ComHal, DiagnosticsHal, DynLinkDescriptorView, DynamicLinkHal, EventPumpHal, FileSystemHal,

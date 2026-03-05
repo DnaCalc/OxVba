@@ -1,0 +1,3 @@
+"lane_id","test_id","profile","runtime_class","clause_ids","status","diagnostic_code","hresult","evidence_path","repro_command"
+"E5","E5-001","windows","windows-headless","E2E-MIXED-EARLY-LATE","pass","","","docs\evidence\conformance\com_early\lanes\COM_EARLY_E5_E5-001_20260305T194931Z.log","cargo test -p oxvba-host --test com_early_project_end_to_end early_and_late_dispatch_paths_can_mix_in_one_project -- --nocapture"
+"E5","E5-002","windows","windows-headless","E2E-PROJECT-SUITE","pass","","","docs\evidence\conformance\com_early\lanes\COM_EARLY_E5_E5-002_20260305T194931Z.log","cargo test -p oxvba-host --test com_early_project_end_to_end -- --nocapture"

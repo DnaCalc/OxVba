@@ -63,6 +63,8 @@ This register tracks long-running async formal obligations that are started duri
 | DG-V175-001 | v175 | v175-kani | dg-not-started | n/a | v186 | `remote/linux-pending` | New strict harnesses for CVErr error-tag range + ResumeNext error clearing were added; execution deferred to remote Linux async dispatcher. |
 | DG-V176-001 | v176 | v176-kani | dg-not-started | n/a | v186 | `remote/linux-pending` | Formal lane expansion-II reconciliation gate for v175/v176 strict obligations; queued for remote batch foldback. |
 | DG-V287-001 | v287 | v287-kani | dg-deferred | n/a | v290 | `remote/linux-folded` | Foldback from pinned remote lane `v287-kani-pinned-fast` (job `20260303T201117Z_manual-v287-kani-pinned-fast`) produced `selected_count=3`, with `FO-V287-001/002` timeout at 600s and `FO-V287-003` pass. Bridge-retirement gate remains closed pending host harness timeout remediation. Evidence: `docs/evidence/language/PMR_DG_V287_FOLDBACK_2026-03-03.md`.; Reconciled 2026-03-05T08:41:00Z from remote lane status (completed:pass) selected_count=0 |
+| DG-V438-001 | v438 | v438-kani | dg-deferred | n/a | v466 | `remote/linux-pending` | Early-binding formal lane I obligations (`FO-V438-001`, `FO-V438-002`) are registered and remain non-blocking deferred under long-running async Kani policy. |
+| DG-V456-001 | v456 | v456-kani | dg-deferred | n/a | v466 | `remote/linux-pending` | Early-binding formal lane II obligations (`FO-V456-001`, `FO-V456-002`) are registered and remain non-blocking deferred under long-running async Kani policy. |
 
 ## Update Protocol
 1. On async start, add a row with `dg-started` and paths.

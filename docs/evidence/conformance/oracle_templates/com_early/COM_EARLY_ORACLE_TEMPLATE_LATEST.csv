@@ -1,0 +1,4 @@
+"topic_id","scenario","expected_vba","observed_oxvba","status"
+"CCT-046","As New early-bound class instantiation","","","pending"
+"CCT-047","Dual-interface fallback dispatch-vs-vtable","","","pending"
+"CCT-048","Typelib version selection and broken-reference behavior","","","pending"

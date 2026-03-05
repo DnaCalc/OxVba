@@ -2515,6 +2515,54 @@ mod tests {
     }
 
     #[test]
+    fn compile_project_rejects_unsupported_external_member_token() {
+        let main_module = module_unit_from_source(
+            "MainModule",
+            ModuleKind::Procedural,
+            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim obj As OxVba.TestDispatch\nDim x\nobj = CreateObject(4)\nx = obj.UnknownMember()\nEnd Sub",
+        )
+        .expect("module parses");
+        let manifest = ProjectManifest {
+            project_name: "ProjectA".to_string(),
+            project_kind: ProjectKind::Source,
+            modules: vec![main_module],
+            references: vec![ProjectReference {
+                referenced_project_name: "OxVba".to_string(),
+                reference_kind: ReferenceKind::TypeLibrary,
+            }],
+            reference_projects: Vec::new(),
+            conditional_constants: BTreeMap::new(),
+        };
+        let err =
+            compile_project(&manifest).expect_err("unsupported member should reject compilation");
+        assert_eq!(err.code(), "BIND-E-TYPELIB-MEMBER-UNSUPPORTED");
+    }
+
+    #[test]
+    fn compile_project_rejects_unsupported_external_member_arity() {
+        let main_module = module_unit_from_source(
+            "MainModule",
+            ModuleKind::Procedural,
+            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim obj As OxVba.TestDispatch\nDim x\nobj = CreateObject(4)\nx = obj.Exists(1, 2)\nEnd Sub",
+        )
+        .expect("module parses");
+        let manifest = ProjectManifest {
+            project_name: "ProjectA".to_string(),
+            project_kind: ProjectKind::Source,
+            modules: vec![main_module],
+            references: vec![ProjectReference {
+                referenced_project_name: "OxVba".to_string(),
+                reference_kind: ReferenceKind::TypeLibrary,
+            }],
+            reference_projects: Vec::new(),
+            conditional_constants: BTreeMap::new(),
+        };
+        let err =
+            compile_project(&manifest).expect_err("unsupported arity should reject compilation");
+        assert_eq!(err.code(), "BIND-E-TYPELIB-INVOKE-ARITY-UNSUPPORTED");
+    }
+
+    #[test]
     fn project_compile_error_code_is_stable() {
         let err = ProjectCompileError::ProjectNameInvalid {
             name: "123".to_string(),

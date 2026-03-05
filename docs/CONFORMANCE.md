@@ -62,6 +62,8 @@ Current corpus includes:
 ./scripts/run-conformance.ps1 -Backend jit
 ./scripts/run-project-integration-suite.ps1
 ./scripts/run-project-integration-suite.ps1 -CasePattern INTP-005
+./scripts/run-com-early-conformance.ps1 -IncludeFormalLane
+./scripts/run-com-early-perf.ps1 -Iterations 3
 ./scripts/run-matrix.ps1
 ./scripts/run-pmr-project-model-oracle.ps1
 ./scripts/run-pmr-project-model-oracle.ps1 -DisableDialogGuardian
@@ -83,7 +85,7 @@ Project integration lane:
 - Supports increasing complexity levels (`L1..L6`), `active-limit` expected-failure cases, and deferred/planned entries linked to ODG/CCT tracking.
 
 ## Declared Profile Scope (Current Gate)
-- Profile id: `mvp-profile-v226` (active host-platform expansion ladder terminal gate)
+- Profile id: `mvp-profile-v466` (COM early-binding/type-library ladder terminal gate)
 - Platform: Windows x64
 - Backends: `vm`, `jit` (JIT toggle path with VM-equivalent semantics)
 - Required matrix cells:

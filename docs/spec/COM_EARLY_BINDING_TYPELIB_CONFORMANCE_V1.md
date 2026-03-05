@@ -4,11 +4,12 @@ Status: `working-draft`
 Date: 2026-03-05
 Companion scope: `docs/spec/COM_EARLY_BINDING_TYPELIB_SCOPE_V1.md`
 
-Implementation snapshot (`v417..v426`):
-- E1 subset is active via PMR resolver tests covering deterministic libid/importlib resolution and ambiguity handling.
-- E2 subset is active via compiler project-lowering tests for constrained external declarations and member rewrite diagnostics.
-- E4 substrate is active in HAL via deterministic metadata cache/invalidation operations (initial known-identity subset).
-- E3 runtime currently executes through existing late-bound COM transport for the constrained rewritten subset; dedicated native early-bound runtime lanes remain staged for later profiles.
+Implementation snapshot (`v427..v466`):
+- E0..E5 lanes are executable through `scripts/run-com-early-conformance.ps1` and produce deterministic lane artifacts under `docs/evidence/conformance/com_early/`.
+- E1/E2 PMR+binder deterministic subsets are active with stable diagnostic families (`PMR-E-TYPELIB-*`, `BIND-E-TYPELIB-*`).
+- E3 runtime executes early-binding rewrite subset through controlled COM test-server pathways with explicit VM/JIT parity coverage.
+- E4 cache/invalidation substrate is active in HAL with deterministic scoped invalidation semantics.
+- E6 formal lane is active under deferred-gate policy (non-blocking), with obligations tracked in formal registers and foldback artifacts.
 
 ## 1. Goal
 
@@ -156,7 +157,7 @@ Lane scripts:
 - `scripts/run-com-early-lane-e3.ps1`
 - `scripts/run-com-early-lane-e4.ps1`
 - `scripts/run-com-early-lane-e5.ps1`
-- `scripts/run-com-early-lane-e6-formal.ps1`
+- `scripts/run-com-early-lane-e6.ps1`
 
 ## 6. Artifact schema
 

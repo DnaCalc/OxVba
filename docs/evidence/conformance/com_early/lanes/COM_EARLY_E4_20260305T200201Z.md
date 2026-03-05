@@ -1,0 +1,9 @@
+# COM Early Lane E4 Run
+
+- Run ID: 20260305T200201Z
+- Lane: E4
+
+| Test | Status | Clause IDs | Evidence |
+|---|---|---|---|
+| E4-001 | pass | CACHE-INVALIDATE-REFERENCE | docs\evidence\conformance\com_early\lanes\COM_EARLY_E4_E4-001_20260305T200201Z.log |
+| E4-002 | pass | CACHE-REPLAY-DETERMINISTIC | docs\evidence\conformance\com_early\lanes\COM_EARLY_E4_E4-002_20260305T200201Z.log |

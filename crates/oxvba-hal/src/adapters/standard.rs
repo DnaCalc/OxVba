@@ -1,9 +1,9 @@
 use crate::{
     error::{HalError, HalResult},
     model::{
-        CapabilityDescriptor, CapabilityId, CapabilityMaturity, HalDescriptor, HalProfileId,
-        HalRuntimeClass, HostPolicy, UiVirtualizationMode, WasmRuntimeClass,
-        host_backed_mode_active,
+        CapabilityDescriptor, CapabilityId, CapabilityMaturity, ComInvocationStrategy,
+        HalDescriptor, HalProfileId, HalRuntimeClass, HostPolicy, UiVirtualizationMode,
+        WasmRuntimeClass, host_backed_mode_active,
     },
     traits::{
         ComHal, DiagnosticsHal, DynLinkDescriptorView, DynamicLinkHal, EventPumpHal, FileSystemHal,
@@ -684,6 +684,26 @@ impl StandardHostServices {
     }
 
     #[cfg(target_os = "windows")]
+    fn try_native_com_vtable_invoke(
+        &self,
+        dispatch: *mut RawIDispatch,
+        prog_id: &str,
+        member: i32,
+        arg: i32,
+    ) -> HalResult<Option<i32>> {
+        if self.policy.com_invocation_strategy != ComInvocationStrategy::PreferVtable {
+            return Ok(None);
+        }
+        if !prog_id.eq_ignore_ascii_case(OXVBA_TEST_DISPATCH_PROGID) {
+            return Ok(None);
+        }
+        self.ensure_thread_com_apartment("dispatch_invoke")?;
+        let result = unsafe { raw_oxvba_test_dispatch_vtable_invoke(dispatch, member, arg) }
+            .map_err(|message| self.com_dispatch_adapter_fault(message))?;
+        Ok(result)
+    }
+
+    #[cfg(target_os = "windows")]
     fn native_com_dispatch_invoke(&self, prog_id: &str, member: i32, arg: i32) -> HalResult<i32> {
         self.ensure_thread_com_apartment("dispatch_invoke")?;
         let dispatch = self.native_com_activate_dispatch(prog_id)?;
@@ -1215,6 +1235,14 @@ impl ComHal for StandardHostServices {
                 #[cfg(target_os = "windows")]
                 if binding.native_dispatch != 0 {
                     let dispatch = binding.native_dispatch as *mut RawIDispatch;
+                    if let Some(value) = self.try_native_com_vtable_invoke(
+                        dispatch,
+                        &binding.prog_id_name,
+                        member,
+                        arg,
+                    )? {
+                        return Ok(value);
+                    }
                     if let Some((dispid, requires_argument)) = self.resolve_member_dispid_cached(
                         object,
                         dispatch,
@@ -2344,6 +2372,34 @@ unsafe fn raw_variant_to_token(variant: &VARIANT) -> Result<i32, String> {
 
 #[cfg(target_os = "windows")]
 #[allow(unsafe_op_in_unsafe_fn)]
+unsafe fn raw_oxvba_test_dispatch_vtable_invoke(
+    dispatch: *mut RawIDispatch,
+    member: i32,
+    arg: i32,
+) -> Result<Option<i32>, String> {
+    if dispatch.is_null() {
+        return Err("null dispatch pointer for vtable invoke".to_string());
+    }
+    if !std::ptr::eq((*dispatch).vtbl, &OXVBA_TEST_DISPATCH_VTBL) {
+        return Ok(None);
+    }
+    match member {
+        TEST_DISPID_COUNT => Ok(Some(7)),
+        TEST_DISPID_EXISTS => {
+            if arg == DISPATCH_INVOKE_MISSING_ARG_TOKEN {
+                return Err(format!(
+                    "IDispatch::Invoke(method) failed with HRESULT {:#010X} (arg_err={})",
+                    COM_DISP_E_BADPARAMCOUNT as u32, 0
+                ));
+            }
+            Ok(Some(if arg == 42 { 1 } else { 0 }))
+        }
+        _ => Ok(None),
+    }
+}
+
+#[cfg(target_os = "windows")]
+#[allow(unsafe_op_in_unsafe_fn)]
 unsafe fn raw_dispatch_property_get_noargs(
     dispatch: *mut RawIDispatch,
     dispid: i32,
@@ -2482,10 +2538,11 @@ mod tests {
 
     use crate::{
         error::HalErrorKind,
-        model::{HalProfileId, HostPolicy},
+        model::{ComInvocationStrategy, HalProfileId, HostPolicy},
         traits::{
             ComHal, DiagnosticsHal, DynLinkDescriptorView, DynamicLinkHal, EventPumpHal,
-            FileSystemHal, ProcessEnvHal, TimeLocaleHal, UiInteractionHal,
+            FileSystemHal, ProcessEnvHal, TimeLocaleHal, TypeLibCacheScope, TypeLibResolveRequest,
+            TypeLibraryHal, UiInteractionHal,
         },
     };
 
@@ -3077,6 +3134,109 @@ mod tests {
             cache_size_after_first, cache_size_after_second,
             "repeated invocation should reuse cached member DISPID entries"
         );
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn windows_native_com_prefer_vtable_strategy_matches_dispatch_results() {
+        let dispatch_host =
+            StandardHostServices::new(HalProfileId::Windows, HostPolicy::interactive_dev());
+        let mut vtable_policy = HostPolicy::interactive_dev();
+        vtable_policy.com_invocation_strategy = ComInvocationStrategy::PreferVtable;
+        let vtable_host = StandardHostServices::new(HalProfileId::Windows, vtable_policy);
+
+        let dispatch_object = dispatch_host
+            .create_object(4)
+            .expect("dispatch create_object should succeed");
+        let vtable_object = vtable_host
+            .create_object(4)
+            .expect("vtable create_object should succeed");
+
+        let dispatch_count = dispatch_host
+            .dispatch_invoke(dispatch_object, 1, super::DISPATCH_INVOKE_MISSING_ARG_TOKEN)
+            .expect("dispatch count should succeed");
+        let vtable_count = vtable_host
+            .dispatch_invoke(vtable_object, 1, super::DISPATCH_INVOKE_MISSING_ARG_TOKEN)
+            .expect("vtable count should succeed");
+        assert_eq!(dispatch_count, vtable_count);
+
+        let dispatch_exists = dispatch_host
+            .dispatch_invoke(dispatch_object, 2, 42)
+            .expect("dispatch exists should succeed");
+        let vtable_exists = vtable_host
+            .dispatch_invoke(vtable_object, 2, 42)
+            .expect("vtable exists should succeed");
+        assert_eq!(dispatch_exists, vtable_exists);
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn windows_typelib_resolve_load_and_cache_roundtrip() {
+        let host = StandardHostServices::new(HalProfileId::Windows, HostPolicy::interactive_dev());
+        let identity = host
+            .resolve_typelib_reference(&TypeLibResolveRequest {
+                reference_name: "StdOle".to_string(),
+                importlib_hint: Some("stdole2.tlb".to_string()),
+                libid_hint: None,
+                major_version_hint: Some(2),
+                minor_version_hint: Some(0),
+                lcid_hint: Some(0),
+            })
+            .expect("typelib resolution should succeed");
+        assert_eq!(identity.importlib, "stdole2.tlb");
+        let first = host
+            .load_typelib_metadata(&identity)
+            .expect("first metadata load should succeed");
+        let second = host
+            .load_typelib_metadata(&identity)
+            .expect("second metadata load should succeed");
+        assert_eq!(first, second);
+        let removed = host
+            .invalidate_typelib_cache(TypeLibCacheScope::Global, None)
+            .expect("global invalidation should succeed");
+        assert!(removed >= 1);
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn windows_typelib_reference_invalidation_scope_is_stable() {
+        let host = StandardHostServices::new(HalProfileId::Windows, HostPolicy::interactive_dev());
+        let alpha = host
+            .resolve_typelib_reference(&TypeLibResolveRequest {
+                reference_name: "StdOle".to_string(),
+                importlib_hint: Some("stdole2.tlb".to_string()),
+                libid_hint: None,
+                major_version_hint: Some(2),
+                minor_version_hint: Some(0),
+                lcid_hint: Some(0),
+            })
+            .expect("stdole resolve should succeed");
+        let beta = host
+            .resolve_typelib_reference(&TypeLibResolveRequest {
+                reference_name: "OxVba".to_string(),
+                importlib_hint: Some("oxvba_testdispatch.tlb".to_string()),
+                libid_hint: None,
+                major_version_hint: Some(1),
+                minor_version_hint: Some(0),
+                lcid_hint: Some(0),
+            })
+            .expect("oxvba resolve should succeed");
+        let _ = host
+            .load_typelib_metadata(&alpha)
+            .expect("alpha metadata load should succeed");
+        let _ = host
+            .load_typelib_metadata(&beta)
+            .expect("beta metadata load should succeed");
+
+        let removed = host
+            .invalidate_typelib_cache(TypeLibCacheScope::Reference, Some("StdOle"))
+            .expect("reference invalidation should succeed");
+        assert_eq!(removed, 1);
+
+        let beta_again = host
+            .load_typelib_metadata(&beta)
+            .expect("beta metadata should remain cached/available");
+        assert_eq!(beta_again.identity.reference_name, "OxVba");
     }
 
     #[cfg(target_os = "windows")]

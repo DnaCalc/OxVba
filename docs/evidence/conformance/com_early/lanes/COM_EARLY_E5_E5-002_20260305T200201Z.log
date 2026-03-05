@@ -1,0 +1,11 @@
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.14s
+     Running tests\com_early_project_end_to_end.rs (target\debug\deps\com_early_project_end_to_end-6f0b03a29c8b86fa.exe)
+
+running 4 tests
+test early_bound_project_reports_compile_error_for_unsupported_member ... ok
+test early_bound_project_executes_with_typed_declarations_subset ... ok
+test early_and_late_dispatch_paths_can_mix_in_one_project ... ok
+test early_bound_project_vm_jit_snapshots_match_for_subset ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+

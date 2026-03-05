@@ -1,0 +1,14 @@
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.09s
+     Running unittests src\lib.rs (target\debug\deps\oxvba_hal-e68de57e5c4a7198.exe)
+
+running 1 test
+test adapters::standard::tests::windows_typelib_reference_invalidation_scope_is_stable ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 65 filtered out; finished in 0.00s
+
+     Running unittests src\bin\hal-conformance.rs (target\debug\deps\hal_conformance-ec3087ae465495d6.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+

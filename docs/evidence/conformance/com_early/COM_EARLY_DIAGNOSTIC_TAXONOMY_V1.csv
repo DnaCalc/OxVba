@@ -1,0 +1,7 @@
+code,phase,category,trigger,source
+PMR-E-TYPELIB-LIBID-UNRESOLVED,compile-time,pmr-reference-resolution,LIBID hint does not resolve to unique catalog entry,crates/oxvba-host/src/project.rs
+PMR-E-TYPELIB-LIBID-AMBIGUOUS,compile-time,pmr-reference-resolution,LIBID hint resolves to multiple catalog entries,crates/oxvba-host/src/project.rs
+BIND-E-TYPELIB-QUALIFIER-UNRESOLVED,compile-time,early-bind-binder,external declaration qualifier not present in type-library references,crates/oxvba-compiler/src/project.rs
+BIND-E-TYPELIB-CREATEOBJECT-UNSUPPORTED,compile-time,early-bind-binder,As New type has no deterministic selector mapping in current subset,crates/oxvba-compiler/src/project.rs
+BIND-E-TYPELIB-MEMBER-UNSUPPORTED,compile-time,early-bind-binder,member call outside deterministic early-bind subset,crates/oxvba-compiler/src/project.rs
+BIND-E-TYPELIB-INVOKE-ARITY-UNSUPPORTED,compile-time,early-bind-binder,member invocation arity outside current subset,crates/oxvba-compiler/src/project.rs

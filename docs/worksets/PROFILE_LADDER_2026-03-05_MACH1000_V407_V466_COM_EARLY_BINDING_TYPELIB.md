@@ -3,7 +3,7 @@
 ## Range
 
 - Ladder span: `v407..v466`
-- Implementation block-I closure gate (current approved run): `v426`
+- Full-series terminal gate (current approved run): `v466`
 - Full implementation and conformance closure gate: `v466`
 
 ## Objectives

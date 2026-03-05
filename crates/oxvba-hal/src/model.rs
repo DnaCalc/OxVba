@@ -115,6 +115,21 @@ pub enum UnsupportedFeatureMode {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ComInvocationStrategy {
+    DispatchOnly,
+    PreferVtable,
+}
+
+impl ComInvocationStrategy {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::DispatchOnly => "dispatch-only",
+            Self::PreferVtable => "prefer-vtable",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum WasmRuntimeClass {
     Wasi,
     BrowserSandbox,
@@ -159,6 +174,7 @@ pub struct HostPolicy {
     pub deterministic_mode: bool,
     pub ui_virtualization: UiVirtualizationMode,
     pub unsupported_feature_mode: UnsupportedFeatureMode,
+    pub com_invocation_strategy: ComInvocationStrategy,
     pub wasm_runtime_class: WasmRuntimeClass,
     pub com_prog_id_overrides: BTreeMap<i32, String>,
 }
@@ -176,6 +192,7 @@ impl HostPolicy {
                 deterministic_mode: true,
                 ui_virtualization: UiVirtualizationMode::FailOnPrompt,
                 unsupported_feature_mode: UnsupportedFeatureMode::CompileTime,
+                com_invocation_strategy: ComInvocationStrategy::DispatchOnly,
                 wasm_runtime_class: WasmRuntimeClass::Wasi,
                 com_prog_id_overrides: BTreeMap::new(),
             },
@@ -189,6 +206,7 @@ impl HostPolicy {
                 deterministic_mode: true,
                 ui_virtualization: UiVirtualizationMode::ScriptedResponses,
                 unsupported_feature_mode: UnsupportedFeatureMode::Runtime,
+                com_invocation_strategy: ComInvocationStrategy::DispatchOnly,
                 wasm_runtime_class: WasmRuntimeClass::Wasi,
                 com_prog_id_overrides: BTreeMap::new(),
             },
@@ -206,6 +224,7 @@ impl HostPolicy {
                 deterministic_mode: false,
                 ui_virtualization: UiVirtualizationMode::Disabled,
                 unsupported_feature_mode: UnsupportedFeatureMode::Runtime,
+                com_invocation_strategy: ComInvocationStrategy::DispatchOnly,
                 wasm_runtime_class: WasmRuntimeClass::Wasi,
                 com_prog_id_overrides: BTreeMap::new(),
             },
@@ -224,6 +243,11 @@ impl HostPolicy {
 
     pub fn with_com_prog_id_override(mut self, selector: i32, prog_id: impl Into<String>) -> Self {
         self.com_prog_id_overrides.insert(selector, prog_id.into());
+        self
+    }
+
+    pub fn with_com_invocation_strategy(mut self, strategy: ComInvocationStrategy) -> Self {
+        self.com_invocation_strategy = strategy;
         self
     }
 
@@ -276,8 +300,8 @@ pub fn host_backed_mode_active(profile: HalProfileId, policy: &HostPolicy) -> bo
 #[cfg(test)]
 mod tests {
     use super::{
-        HalProfileId, HostPolicy, HostPolicyPreset, UiVirtualizationMode, UnsupportedFeatureMode,
-        WasmRuntimeClass, host_backed_profile_matches_host,
+        ComInvocationStrategy, HalProfileId, HostPolicy, HostPolicyPreset, UiVirtualizationMode,
+        UnsupportedFeatureMode, WasmRuntimeClass, host_backed_profile_matches_host,
     };
 
     #[test]
@@ -313,6 +337,10 @@ mod tests {
             policy.unsupported_feature_mode,
             UnsupportedFeatureMode::CompileTime
         );
+        assert_eq!(
+            policy.com_invocation_strategy,
+            ComInvocationStrategy::DispatchOnly
+        );
         assert_eq!(policy.wasm_runtime_class, WasmRuntimeClass::Wasi);
         assert!(policy.com_prog_id_overrides.is_empty());
     }
@@ -331,6 +359,10 @@ mod tests {
             policy.unsupported_feature_mode,
             UnsupportedFeatureMode::Runtime
         );
+        assert_eq!(
+            policy.com_invocation_strategy,
+            ComInvocationStrategy::DispatchOnly
+        );
         assert_eq!(policy.wasm_runtime_class, WasmRuntimeClass::Wasi);
         assert!(policy.com_prog_id_overrides.is_empty());
     }
@@ -342,6 +374,17 @@ mod tests {
             policy.com_prog_id_overrides.get(&4).map(String::as_str),
             Some("Word.Application")
         );
+    }
+
+    #[test]
+    fn com_invocation_strategy_override_is_available() {
+        let policy = HostPolicy::interactive_dev()
+            .with_com_invocation_strategy(ComInvocationStrategy::PreferVtable);
+        assert_eq!(
+            policy.com_invocation_strategy,
+            ComInvocationStrategy::PreferVtable
+        );
+        assert_eq!(policy.com_invocation_strategy.as_str(), "prefer-vtable");
     }
 
     #[test]

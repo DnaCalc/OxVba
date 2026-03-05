@@ -1,0 +1,7 @@
+"run_id","iteration","workload","command","elapsed_ms"
+"20260305T193007Z","1","compile-earlybind-fixture","cargo test -p oxvba-compiler compile_project_module_aware_matches_rewrite_bridge_for_early_bound_fixture -- --nocapture","218.524"
+"20260305T193007Z","1","runtime-earlybind-vm-jit","cargo test -p oxvba-host --test com_early_project_end_to_end early_bound_project_vm_jit_snapshots_match_for_subset -- --nocapture","305.41"
+"20260305T193007Z","2","compile-earlybind-fixture","cargo test -p oxvba-compiler compile_project_module_aware_matches_rewrite_bridge_for_early_bound_fixture -- --nocapture","201.889"
+"20260305T193007Z","2","runtime-earlybind-vm-jit","cargo test -p oxvba-host --test com_early_project_end_to_end early_bound_project_vm_jit_snapshots_match_for_subset -- --nocapture","296.667"
+"20260305T193007Z","3","compile-earlybind-fixture","cargo test -p oxvba-compiler compile_project_module_aware_matches_rewrite_bridge_for_early_bound_fixture -- --nocapture","195.069"
+"20260305T193007Z","3","runtime-earlybind-vm-jit","cargo test -p oxvba-host --test com_early_project_end_to_end early_bound_project_vm_jit_snapshots_match_for_subset -- --nocapture","277.821"

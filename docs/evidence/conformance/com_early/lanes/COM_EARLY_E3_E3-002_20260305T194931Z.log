@@ -1,0 +1,8 @@
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.15s
+     Running tests\com_early_project_end_to_end.rs (target\debug\deps\com_early_project_end_to_end-6f0b03a29c8b86fa.exe)
+
+running 1 test
+test early_bound_project_vm_jit_snapshots_match_for_subset ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 3 filtered out; finished in 0.01s
+

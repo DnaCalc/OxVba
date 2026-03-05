@@ -72,6 +72,8 @@ try {
     if ($Conformance) {
         Write-Host "[oxvba] conformance"
         & "$PSScriptRoot/run-conformance.ps1"
+        Write-Host "[oxvba] conformance (com-early)"
+        & "$PSScriptRoot/run-com-early-conformance.ps1" -IncludeFormalLane
     }
 
     if ($Matrix) {

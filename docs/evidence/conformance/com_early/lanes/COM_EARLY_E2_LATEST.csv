@@ -1,0 +1,4 @@
+"lane_id","test_id","profile","runtime_class","clause_ids","status","diagnostic_code","hresult","evidence_path","repro_command"
+"E2","E2-001","windows","windows-headless","BIND-TLIB-ASNEW","pass","","","docs\evidence\conformance\com_early\lanes\COM_EARLY_E2_E2-001_20260305T200201Z.log","cargo test -p oxvba-compiler compile_project_rewrites_as_new_external_type_to_createobject_selector -- --nocapture"
+"E2","E2-002","windows","windows-headless","BIND-TLIB-MEMBER-REWRITE","pass","","","docs\evidence\conformance\com_early\lanes\COM_EARLY_E2_E2-002_20260305T200201Z.log","cargo test -p oxvba-compiler compile_project_rewrites_early_bound_member_call_to_dispatchinvoke_subset -- --nocapture"
+"E2","E2-003","windows","windows-headless","BIND-TLIB-MEMBER-DIAG","pass","","","docs\evidence\conformance\com_early\lanes\COM_EARLY_E2_E2-003_20260305T200201Z.log","cargo test -p oxvba-compiler compile_project_rejects_unsupported_external_member_token -- --nocapture"

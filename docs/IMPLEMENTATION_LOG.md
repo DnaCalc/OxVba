@@ -1482,3 +1482,27 @@
     - `docs/evidence/profiles/v417/..` through `docs/evidence/profiles/v426/..`
   - advanced AutoRun/control docs to active terminal gate `v426`:
     - `AGENTS.md`, `docs/AUTORUN_STATE.md`, `README.md`, `docs/README.md`, `docs/profile-status/README.md`.
+- Completed COM early-binding/type-library full ladder closure `v427..v466` (terminal gate `v466`):
+  - published implementation/oracle/closure worksets:
+    - `docs/worksets/WORKSET_2026-03-05_COM_EARLY_BINDING_TYPELIB_IMPLEMENTATION_V427_V445.md`
+    - `docs/worksets/WORKSET_2026-03-05_COM_EARLY_BINDING_TYPELIB_ORACLE_FORMAL_V446_V457.md`
+    - `docs/worksets/WORKSET_2026-03-05_COM_EARLY_BINDING_TYPELIB_CLOSURE_V458_V466.md`
+    - `docs/worksets/WORKSET_2026-03-05_COM_EARLY_BINDING_TYPELIB_EXECUTION_V407_V466.md`
+  - published profile status/evidence records for `v427..v466` and terminal artifacts:
+    - `docs/profile-status/PROFILE_STATUS_V427.md` .. `PROFILE_STATUS_V466.md`
+    - `docs/evidence/profiles/v464/integrated_gate.{md,csv}`
+    - `docs/evidence/profiles/v466/integrated_gate.md`
+    - `docs/evidence/profiles/v466/V466_COM_EARLY_CLOSURE_REPORT.md`
+  - expanded formal guardrails in host tests:
+    - profile-status existence range assertion for `v427..v466`,
+    - terminal artifact existence assertion (`formal_v466_early_binding_terminal_artifacts_exist`).
+  - completed early-binding lane/process hardening:
+    - policy strategy control (`ComInvocationStrategy`) and vtable-preference test lane,
+    - early-bind E2E host tests (`crates/oxvba-host/tests/com_early_project_end_to_end.rs`),
+    - conformance lane orchestrator + wrappers + perf runner (`scripts/run-com-early-*`).
+  - refreshed conformance/perf/oracle scaffolding artifacts:
+    - `docs/evidence/conformance/com_early/COM_EARLY_CONFORMANCE_LATEST.*`
+    - `docs/evidence/perf/com_early/COM_EARLY_PERF_LATEST.*`
+    - `docs/evidence/conformance/oracle_templates/com_early/COM_EARLY_ORACLE_TEMPLATE_LATEST.*`
+  - synchronized gate/docs pointers to terminal `v466`:
+    - `AGENTS.md`, `docs/AUTORUN_STATE.md`, `README.md`, `docs/README.md`, `docs/profile-status/README.md`.

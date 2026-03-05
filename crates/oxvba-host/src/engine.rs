@@ -2772,6 +2772,40 @@ mod tests {
     }
 
     #[test]
+    fn formal_v466_profile_status_range_exists() {
+        for version in 427..=466 {
+            let path = format!("docs/profile-status/PROFILE_STATUS_V{version}.md");
+            assert!(
+                repo_path(&path).exists(),
+                "missing profile status for v{version}"
+            );
+        }
+    }
+
+    #[test]
+    fn formal_v466_early_binding_terminal_artifacts_exist() {
+        let required = [
+            "docs/worksets/WORKSET_2026-03-05_COM_EARLY_BINDING_TYPELIB_IMPLEMENTATION_V427_V445.md",
+            "docs/worksets/WORKSET_2026-03-05_COM_EARLY_BINDING_TYPELIB_ORACLE_FORMAL_V446_V457.md",
+            "docs/worksets/WORKSET_2026-03-05_COM_EARLY_BINDING_TYPELIB_CLOSURE_V458_V466.md",
+            "docs/worksets/WORKSET_2026-03-05_COM_EARLY_BINDING_TYPELIB_EXECUTION_V407_V466.md",
+            "docs/evidence/profiles/v464/integrated_gate.md",
+            "docs/evidence/profiles/v464/integrated_gate.csv",
+            "docs/evidence/profiles/v466/integrated_gate.md",
+            "docs/evidence/profiles/v466/V466_COM_EARLY_TERMINAL_GATE.md",
+            "docs/evidence/profiles/v466/V466_COM_EARLY_CLOSURE_REPORT.md",
+            "docs/evidence/conformance/com_early/COM_EARLY_CONFORMANCE_LATEST.csv",
+            "docs/evidence/perf/com_early/COM_EARLY_PERF_LATEST.csv",
+        ];
+        for path in required {
+            assert!(
+                repo_path(path).exists(),
+                "missing required terminal artifact: {path}"
+            );
+        }
+    }
+
+    #[test]
     fn formal_v107_with_block_direct_member_target_executes() {
         let source = "Sub Main()\nDim x\nWith x.inner\n.Value = 4\n.Value = .Value + 3\nx = .Value\nEnd With\nEnd Sub";
         let out = Engine::new(HostConfig {

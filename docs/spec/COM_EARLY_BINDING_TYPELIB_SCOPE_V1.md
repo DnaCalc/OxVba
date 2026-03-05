@@ -8,14 +8,15 @@ Companion docs:
 - `docs/spec/PROJECT_MODULE_REFERENCE_TYPELIB_IMPORTLIB_HAL_DRAFT_V1.md`
 - `docs/spec/COM_EARLY_BINDING_TYPELIB_CONFORMANCE_V1.md`
 
-Implementation snapshot (`v417..v426`):
+Implementation snapshot (`v427..v466`):
 - PMR now supports type-library identity hints (`importlib/libid/version/lcid`) and deterministic bind statuses for unresolved/ambiguous identity outcomes.
 - HAL now exposes `TypeLibraryHal` for resolve/load/invalidate operations, with Windows deterministic subset implementation and deterministic unsupported behavior on non-Windows profiles.
 - Compiler project-lowering now supports a constrained early-bound bridge that rewrites:
   - `Dim x As Lib.Type` -> `Dim x As Object`,
   - `Dim x As New Lib.Type` -> object declaration plus deterministic `CreateObject` selector initialization,
   - `x.Member(...)` for supported member subset -> `DispatchInvoke` tokenized calls.
-- Runtime execution for this tranche intentionally reuses existing late-bound COM transport (`CreateObject`/`DispatchInvoke`) to preserve deterministic behavior while full early-bound runtime lanes are still staged.
+- Runtime execution currently reuses deterministic late-bound COM transport (`CreateObject`/`DispatchInvoke`) for the approved early-bound subset, with explicit policy-controlled vtable preference scaffolding for controlled native lanes.
+- Conformance/perf/formal scaffolding for the implemented subset is executable and linked to lane artifacts (`E0..E6`) and deferred-gate registers.
 
 ## 1. Objective
 
@@ -175,7 +176,7 @@ Add Windows-only HAL surface for typelib access:
 trait TypeLibraryHal {
     fn resolve_typelib_reference(&self, request: &TypeLibResolveRequest) -> HalResult<TypeLibResolvedIdentity>;
     fn load_typelib_metadata(&self, identity: &TypeLibResolvedIdentity) -> HalResult<TypeLibMetadataBlob>;
-    fn invalidate_typelib_cache(&self, scope: TypeLibCacheScope) -> HalResult<()>;
+    fn invalidate_typelib_cache(&self, scope: TypeLibCacheScope, reference_name: Option<&str>) -> HalResult<i32>;
 }
 ```
 
