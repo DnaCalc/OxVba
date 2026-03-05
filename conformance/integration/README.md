@@ -30,3 +30,9 @@ Module kinds:
 ```
 
 The runner executes `cargo test -p oxvba-host --test project_integration_suite` and writes run artifacts under `docs/evidence/conformance/project_integration/`.
+
+Additional mixed end-to-end pressure/edge lane:
+
+```powershell
+cargo test -p oxvba-host --test end_to_end_mix
+```

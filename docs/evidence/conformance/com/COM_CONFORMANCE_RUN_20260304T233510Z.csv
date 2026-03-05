@@ -1,0 +1,33 @@
+"PSMessageDetails","Exception","TargetObject","CategoryInfo","FullyQualifiedErrorId","ErrorDetails","InvocationInfo","ScriptStackTrace","PipelineIterationInfo"
+,"System.Management.Automation.RemoteException:     Finished `test` profile [unoptimized + debuginfo] target(s) in 0.15s","    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.15s","NotSpecified: (    Finished `test`… target(s) in 0.15s:String) [], RemoteException","NativeCommandError",,"System.Management.Automation.InvocationInfo","at <ScriptBlock>, C:\Work\DnaCalc\OxVba\scripts\run-com-registrationless.ps1: line 32
+at <ScriptBlock>, C:\Work\DnaCalc\OxVba\scripts\run-com-conformance.ps1: line 30
+at <ScriptBlock>, <No file>: line 2","System.Collections.ObjectModel.ReadOnlyCollection`1[System.Int32]"
+,"System.Management.Automation.RemoteException:      Running tests\com_client_end_to_end.rs (target\debug\deps\com_client_end_to_end-ee29b9689bc0eee5.exe)",,"NotSpecified: (:) [], RemoteException","NativeCommandErrorMessage",,"System.Management.Automation.InvocationInfo","at <ScriptBlock>, C:\Work\DnaCalc\OxVba\scripts\run-com-registrationless.ps1: line 32
+at <ScriptBlock>, C:\Work\DnaCalc\OxVba\scripts\run-com-conformance.ps1: line 30
+at <ScriptBlock>, <No file>: line 2","System.Collections.ObjectModel.ReadOnlyCollection`1[System.Int32]"
+,,,,,,,,
+,,,,,,,,
+,,,,,,,,
+,,,,,,,,
+,,,,,,,,
+,,,,,,,,
+,,,,,,,,
+,,,,,,,,
+,,,,,,,,
+,"System.Management.Automation.RemoteException:     Finished `test` profile [unoptimized + debuginfo] target(s) in 0.18s","    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.18s","NotSpecified: (    Finished `test`… target(s) in 0.18s:String) [], RemoteException","NativeCommandError",,"System.Management.Automation.InvocationInfo","at <ScriptBlock>, C:\Work\DnaCalc\OxVba\scripts\run-com-registered.ps1: line 52
+at <ScriptBlock>, C:\Work\DnaCalc\OxVba\scripts\run-com-conformance.ps1: line 50
+at <ScriptBlock>, <No file>: line 2","System.Collections.ObjectModel.ReadOnlyCollection`1[System.Int32]"
+,"System.Management.Automation.RemoteException:      Running tests\com_client_registered_lane.rs (target\debug\deps\com_client_registered_lane-b494b64bd4cfbbb8.exe)",,"NotSpecified: (:) [], RemoteException","NativeCommandErrorMessage",,"System.Management.Automation.InvocationInfo","at <ScriptBlock>, C:\Work\DnaCalc\OxVba\scripts\run-com-registered.ps1: line 52
+at <ScriptBlock>, C:\Work\DnaCalc\OxVba\scripts\run-com-conformance.ps1: line 50
+at <ScriptBlock>, <No file>: line 2","System.Collections.ObjectModel.ReadOnlyCollection`1[System.Int32]"
+,,,,,,,,
+,,,,,,,,
+,,,,,,,,
+,,,,,,,,
+,,,,,,,,
+,,,,,,,,
+,,,,,,,,
+,,,,,,,,
+,,,,,,,,
+,,,,,,,,
+,,,,,,,,

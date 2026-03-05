@@ -7,6 +7,9 @@
 - Formal lane (non-blocking): `./scripts/meta-check.ps1 -Fast -Formal`
 - Formal lane (strict Kani via WSL): `./scripts/run-formal-kani-wsl.ps1 -ProfileScope mvp-formal-foundation-v3`
 - Combined ladder lane: `./scripts/meta-check.ps1 -Fast -Conformance -Matrix -Formal`
+- COM conformance (required registrationless lane): `./scripts/run-com-conformance.ps1`
+- COM conformance (registrationless + registered external lane): `./scripts/run-com-conformance.ps1 -IncludeRegisteredLane -RegisteredProgIds "Scripting.Dictionary"`
+- Integration fixture lint: `./scripts/lint-integration-fixtures.ps1`
 
 ## Async long-running formal steps
 For long Kani runs in profile execution, use:
@@ -33,6 +36,18 @@ Deferred formal gate policy:
 - VM: bytecode execution tests for arithmetic, branch/loop execution, and jump validation.
 - Conformance: VM/JIT-toggle profile corpus with slot snapshots (including relational/boolean branches).
 - Formal: profile-scoped non-blocking obligations via `scripts/run-formal.ps1`.
+- COM client E2E:
+  - registrationless controlled lane (`com_client_end_to_end`) is always runnable in Windows host-backed mode,
+  - registered external lane (`com_client_registered_lane`) uses ignored tests and runs only via explicit script/`--ignored` invocation.
+
+## COM Lane Policy
+- Registered COM tests are `#[ignore]` by default to avoid accidental nondeterministic CI/local failures.
+- Registered COM lanes must run single-threaded (`--test-threads=1`) due shared COM apartment + global process state sensitivity.
+- Prefer engine/policy COM selector overrides for deterministic tests (`Engine::set_com_prog_id_override`) over environment-only mapping.
+- COM lane artifacts are written under `docs/evidence/conformance/com/` by:
+  - `scripts/run-com-registrationless.ps1`,
+  - `scripts/run-com-registered.ps1`,
+  - `scripts/run-com-conformance.ps1`.
 
 ## Next additions
 - Property tests for parse/print and coercion matrices.

@@ -1,4 +1,5 @@
 //! Contract model for HAL capabilities, profile descriptors, and host policy.
+use std::collections::BTreeMap;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum HalProfileId {
@@ -159,6 +160,7 @@ pub struct HostPolicy {
     pub ui_virtualization: UiVirtualizationMode,
     pub unsupported_feature_mode: UnsupportedFeatureMode,
     pub wasm_runtime_class: WasmRuntimeClass,
+    pub com_prog_id_overrides: BTreeMap<i32, String>,
 }
 
 impl HostPolicy {
@@ -175,6 +177,7 @@ impl HostPolicy {
                 ui_virtualization: UiVirtualizationMode::FailOnPrompt,
                 unsupported_feature_mode: UnsupportedFeatureMode::CompileTime,
                 wasm_runtime_class: WasmRuntimeClass::Wasi,
+                com_prog_id_overrides: BTreeMap::new(),
             },
             HostPolicyPreset::DeterministicRuntime => Self {
                 runtime_class: None,
@@ -187,6 +190,7 @@ impl HostPolicy {
                 ui_virtualization: UiVirtualizationMode::ScriptedResponses,
                 unsupported_feature_mode: UnsupportedFeatureMode::Runtime,
                 wasm_runtime_class: WasmRuntimeClass::Wasi,
+                com_prog_id_overrides: BTreeMap::new(),
             },
             HostPolicyPreset::DeterministicCompileTime => Self {
                 unsupported_feature_mode: UnsupportedFeatureMode::CompileTime,
@@ -203,6 +207,7 @@ impl HostPolicy {
                 ui_virtualization: UiVirtualizationMode::Disabled,
                 unsupported_feature_mode: UnsupportedFeatureMode::Runtime,
                 wasm_runtime_class: WasmRuntimeClass::Wasi,
+                com_prog_id_overrides: BTreeMap::new(),
             },
         }
     }
@@ -214,6 +219,15 @@ impl HostPolicy {
 
     pub fn with_runtime_class(mut self, runtime_class: HalRuntimeClass) -> Self {
         self.runtime_class = Some(runtime_class);
+        self
+    }
+
+    pub fn with_com_prog_id_override(
+        mut self,
+        selector: i32,
+        prog_id: impl Into<String>,
+    ) -> Self {
+        self.com_prog_id_overrides.insert(selector, prog_id.into());
         self
     }
 
@@ -304,6 +318,7 @@ mod tests {
             UnsupportedFeatureMode::CompileTime
         );
         assert_eq!(policy.wasm_runtime_class, WasmRuntimeClass::Wasi);
+        assert!(policy.com_prog_id_overrides.is_empty());
     }
 
     #[test]
@@ -321,6 +336,16 @@ mod tests {
             UnsupportedFeatureMode::Runtime
         );
         assert_eq!(policy.wasm_runtime_class, WasmRuntimeClass::Wasi);
+        assert!(policy.com_prog_id_overrides.is_empty());
+    }
+
+    #[test]
+    fn com_prog_id_override_builder_sets_selector_mapping() {
+        let policy = HostPolicy::interactive_dev().with_com_prog_id_override(4, "Word.Application");
+        assert_eq!(
+            policy.com_prog_id_overrides.get(&4).map(String::as_str),
+            Some("Word.Application")
+        );
     }
 
     #[test]

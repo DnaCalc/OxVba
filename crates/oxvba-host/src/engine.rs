@@ -150,6 +150,22 @@ impl Engine {
         self.set_host_policy(policy);
     }
 
+    pub fn set_com_prog_id_override(
+        &mut self,
+        selector: i32,
+        prog_id: impl Into<String>,
+    ) {
+        let mut policy = self.host_services.policy().clone();
+        policy.com_prog_id_overrides.insert(selector, prog_id.into());
+        self.set_host_policy(policy);
+    }
+
+    pub fn clear_com_prog_id_override(&mut self, selector: i32) {
+        let mut policy = self.host_services.policy().clone();
+        policy.com_prog_id_overrides.remove(&selector);
+        self.set_host_policy(policy);
+    }
+
     pub fn host_policy(&self) -> &HostPolicy {
         self.host_services.policy()
     }
@@ -1487,6 +1503,27 @@ mod tests {
             .expect("On Error Resume Next should continue");
         assert_eq!(snapshot[0], 0);
         assert_eq!(snapshot[1], 53_051);
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn formal_com_prog_id_override_can_force_registered_lane_failure_for_negative_coverage() {
+        let mut engine = Engine::new(HostConfig::default());
+        engine.set_host_policy(HostPolicy::interactive_dev());
+        engine.set_com_prog_id_override(4, "OxVba.DoesNotExist.Component");
+        let err = engine
+            .execute_source_with_snapshot_phased(
+                "Sub Main()\nDim x\nx = CreateObject(\"Scripting.Dictionary\")\nEnd Sub",
+            )
+            .expect_err("invalid override should fail native COM activation");
+        assert_eq!(err.phase(), DiagnosticPhase::Runtime);
+        assert!(
+            err.message().contains("com-createobject-class-not-registered")
+                || err.message().contains("com-createobject-invalid-class-string")
+                || err.message().contains("0x80040154"),
+            "expected class-not-registered indicator, got {}",
+            err.message()
+        );
     }
 
     #[test]

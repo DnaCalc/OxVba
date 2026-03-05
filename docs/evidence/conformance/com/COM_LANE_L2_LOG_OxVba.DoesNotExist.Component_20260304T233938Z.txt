@@ -1,0 +1,43 @@
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.18s
+     Running tests\com_client_registered_lane.rs (target\debug\deps\com_client_registered_lane-b494b64bd4cfbbb8.exe)
+
+running 5 tests
+test windows_registered_com_lane::registered_class_not_registered_is_reported_with_stable_label ... ok
+test windows_registered_com_lane::registered_createobject_dispatchinvoke_success_lane ... FAILED
+test windows_registered_com_lane::registered_dispatchinvoke_missing_arg_routes_to_err ... FAILED
+test windows_registered_com_lane::registered_lane_repeated_invokes_are_stable ... FAILED
+test windows_registered_com_lane::registered_member_not_found_routes_through_resume_next ... FAILED
+
+failures:
+
+---- windows_registered_com_lane::registered_createobject_dispatchinvoke_success_lane stdout ----
+
+thread 'windows_registered_com_lane::registered_createobject_dispatchinvoke_success_lane' (63816) panicked at crates\oxvba-host\tests\com_client_registered_lane.rs:21:14:
+registered COM lane source should execute: PhaseDiagnostic { phase: Runtime, message: "runtime error: 53053 (HAL-E-ADAPTER-FAULT [create_object] com-createobject-invalid-class-string;hresult=0x800401F3; CLSIDFromProgID failed for `OxVba.DoesNotExist.Component` with HRESULT 0x800401F3)" }
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+---- windows_registered_com_lane::registered_dispatchinvoke_missing_arg_routes_to_err stdout ----
+
+thread 'windows_registered_com_lane::registered_dispatchinvoke_missing_arg_routes_to_err' (54576) panicked at crates\oxvba-host\tests\com_client_registered_lane.rs:64:9:
+registered lane should allocate native COM handle, got [0, 2, 53053]
+
+---- windows_registered_com_lane::registered_lane_repeated_invokes_are_stable stdout ----
+
+thread 'windows_registered_com_lane::registered_lane_repeated_invokes_are_stable' (47968) panicked at crates\oxvba-host\tests\com_client_registered_lane.rs:21:14:
+registered COM lane source should execute: PhaseDiagnostic { phase: Runtime, message: "runtime error: 53053 (HAL-E-ADAPTER-FAULT [create_object] com-createobject-invalid-class-string;hresult=0x800401F3; CLSIDFromProgID failed for `OxVba.DoesNotExist.Component` with HRESULT 0x800401F3)" }
+
+---- windows_registered_com_lane::registered_member_not_found_routes_through_resume_next stdout ----
+
+thread 'windows_registered_com_lane::registered_member_not_found_routes_through_resume_next' (84840) panicked at crates\oxvba-host\tests\com_client_registered_lane.rs:116:9:
+registered lane should allocate native COM handle, got [0, 777, 53053]
+
+
+failures:
+    windows_registered_com_lane::registered_createobject_dispatchinvoke_success_lane
+    windows_registered_com_lane::registered_dispatchinvoke_missing_arg_routes_to_err
+    windows_registered_com_lane::registered_lane_repeated_invokes_are_stable
+    windows_registered_com_lane::registered_member_not_found_routes_through_resume_next
+
+test result: FAILED. 1 passed; 4 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.05s
+
+error: test failed, to rerun pass `-p oxvba-host --test com_client_registered_lane`

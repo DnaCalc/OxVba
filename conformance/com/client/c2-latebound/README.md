@@ -20,4 +20,9 @@ Planned next fixture families:
 
 Execution note:
 - These fixtures are currently asserted via host formal tests and profile evidence.
+- End-to-end client run against the controlled COM server object is covered by:
+  - `cargo test -p oxvba-host --test com_client_end_to_end`
+- Registered external COM lane is covered by:
+  - `cargo test -p oxvba-host --test com_client_registered_lane -- --ignored --test-threads=1`
+  - `./scripts/run-com-registered.ps1 -ProgId "Scripting.Dictionary"`
 - Lane wiring to the integrated conformance runner is tracked in `docs/spec/COM_CLIENT_SERVER_CONFORMANCE_V1.md` (`Lane L2b`).

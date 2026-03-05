@@ -8,6 +8,11 @@ $PSNativeCommandUseErrorActionPreference = $false
 
 Push-Location (Join-Path $PSScriptRoot "..")
 try {
+    & (Join-Path $PSScriptRoot "lint-integration-fixtures.ps1")
+    if ($LASTEXITCODE -ne 0) {
+        throw "integration fixture lint failed"
+    }
+
     $catalogPath = "conformance/integration/catalog.psv"
     if (-not (Test-Path $catalogPath)) {
         throw "Missing integration catalog: $catalogPath"

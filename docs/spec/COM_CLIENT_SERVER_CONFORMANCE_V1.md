@@ -114,11 +114,16 @@ Current implemented C2 fixture subset:
 
 ### Execution scripts
 
-Planned script surfaces:
+Implemented script surfaces:
 
 - `scripts/run-com-conformance.ps1` (root orchestrator)
 - `scripts/run-com-registrationless.ps1` (isolated lane)
 - `scripts/run-com-registered.ps1` (registered lane)
+
+Current lane mapping:
+
+- L2b registrationless controlled lane -> `com_client_end_to_end`.
+- L2 registered external lane -> `com_client_registered_lane` (ignored-by-default tests, executed via `scripts/run-com-registered.ps1`; external ProgID selected by `-ProgId` / `OXVBA_REGISTERED_COM_PROGID`, runtime selector mapping uses engine policy override API).
 
 ## 4. Artifact Model
 
@@ -131,6 +136,17 @@ Planned evidence paths:
 - `docs/evidence/profiles/v392/V392_COM_CLIENT_C2_SPEC_CLOSURE.md`
 - `docs/evidence/conformance/COM_CLIENT_ERROR_MAPPING_V1.csv`
 - `docs/evidence/profiles/v400/V400_COM_CLIENT_C2_IMPLEMENTATION_BLOCK_II.md`
+
+Current script-emitted evidence (implemented):
+
+- `docs/evidence/conformance/com/COM_LANE_L2B_RUN_<runid>.md`
+- `docs/evidence/conformance/com/COM_LANE_L2B_LOG_<runid>.txt`
+- `docs/evidence/conformance/com/COM_LANE_L2_RUN_<progid>_<runid>.md`
+- `docs/evidence/conformance/com/COM_LANE_L2_LOG_<progid>_<runid>.txt`
+- `docs/evidence/conformance/com/COM_CONFORMANCE_RUN_<runid>.csv`
+- `docs/evidence/conformance/com/COM_CONFORMANCE_RUN_<runid>.md`
+- `docs/evidence/conformance/com/COM_CONFORMANCE_LATEST.csv`
+- `docs/evidence/conformance/com/COM_CONFORMANCE_LATEST.md`
 
 Each row should include:
 

@@ -1,0 +1,9 @@
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.15s
+     Running tests\project_integration_suite.rs (target\debug\deps\project_integration_suite-c820808fc620b511.exe)
+
+running 2 tests
+test project_integration_catalog_is_well_formed_and_tracked ... ok
+test project_integration_suite_executes_active_cases ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+

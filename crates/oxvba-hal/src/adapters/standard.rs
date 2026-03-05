@@ -379,6 +379,12 @@ impl StandardHostServices {
 
     #[cfg(target_os = "windows")]
     fn resolve_native_com_progid(&self, prog_id: i32) -> Option<String> {
+        if let Some(value) = self.policy.com_prog_id_overrides.get(&prog_id) {
+            let trimmed = value.trim();
+            if !trimmed.is_empty() {
+                return Some(trimmed.to_string());
+            }
+        }
         let env_key = format!("OXVBA_COM_PROGID_{prog_id}");
         if let Ok(value) = std::env::var(env_key) {
             let trimmed = value.trim();
@@ -391,6 +397,27 @@ impl StandardHostServices {
             4 => Some(OXVBA_TEST_DISPATCH_PROGID.to_string()),
             _ => None,
         }
+    }
+
+    #[cfg(target_os = "windows")]
+    fn has_explicit_native_com_override(&self, prog_id: i32) -> bool {
+        if self
+            .policy
+            .com_prog_id_overrides
+            .get(&prog_id)
+            .is_some_and(|value| !value.trim().is_empty())
+        {
+            return true;
+        }
+        let env_key = format!("OXVBA_COM_PROGID_{prog_id}");
+        std::env::var(env_key)
+            .map(|value| !value.trim().is_empty())
+            .unwrap_or(false)
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    fn has_explicit_native_com_override(&self, _prog_id: i32) -> bool {
+        false
     }
 
     #[cfg(not(target_os = "windows"))]
@@ -412,15 +439,10 @@ impl StandardHostServices {
         };
         let hr = unsafe { CLSIDFromProgID(wide.as_ptr(), &mut clsid) };
         if hr < 0 {
-            return Err(HalError::adapter_fault(
-                self.profile,
-                CapabilityId::ComActivationDispatch,
-                "create_object",
-                format!(
-                    "CLSIDFromProgID failed for `{prog_id}` with HRESULT {:#010X}",
-                    hr as u32
-                ),
-            ));
+            return Err(self.com_createobject_adapter_fault(format!(
+                "CLSIDFromProgID failed for `{prog_id}` with HRESULT {:#010X}",
+                hr as u32
+            )));
         }
 
         let mut dispatch_ptr: *mut core::ffi::c_void = std::ptr::null_mut();
@@ -434,25 +456,38 @@ impl StandardHostServices {
             )
         };
         if hr < 0 {
-            return Err(HalError::adapter_fault(
-                self.profile,
-                CapabilityId::ComActivationDispatch,
-                "create_object",
-                format!(
-                    "CoCreateInstance failed for `{prog_id}` with HRESULT {:#010X}",
-                    hr as u32
-                ),
-            ));
+            return Err(self.com_createobject_adapter_fault(format!(
+                "CoCreateInstance failed for `{prog_id}` with HRESULT {:#010X}",
+                hr as u32
+            )));
         }
         if dispatch_ptr.is_null() {
-            return Err(HalError::adapter_fault(
-                self.profile,
-                CapabilityId::ComActivationDispatch,
-                "create_object",
-                "CoCreateInstance returned a null IDispatch pointer",
+            return Err(self.com_createobject_adapter_fault(
+                "CoCreateInstance returned a null IDispatch pointer".to_string(),
             ));
         }
         Ok(dispatch_ptr.cast::<RawIDispatch>())
+    }
+
+    #[cfg(target_os = "windows")]
+    fn com_createobject_adapter_fault(&self, message: String) -> HalError {
+        let hresult = parse_hresult_hex(&message);
+        let label = map_com_hresult_label(hresult, None);
+        let mut suffix = String::new();
+        if let Some(value) = hresult {
+            suffix.push_str(&format!("hresult=0x{value:08X};"));
+        }
+        let prefix = if suffix.is_empty() {
+            format!("com-createobject-{label}")
+        } else {
+            format!("com-createobject-{label};{suffix}")
+        };
+        HalError::adapter_fault(
+            self.profile,
+            CapabilityId::ComActivationDispatch,
+            "create_object",
+            format!("{prefix} {message}"),
+        )
     }
 
     #[cfg(target_os = "windows")]
@@ -1057,15 +1092,23 @@ impl ComHal for StandardHostServices {
         }
         if self.native_com_enabled()
             && let Some(prog_id_name) = self.resolve_native_com_progid(prog_id)
-            && let Ok(native_dispatch) = self.try_native_com_binding(&prog_id_name)
         {
-            let mut state = self.com_lock(capability, "create_object")?;
-            let handle = state.allocate_handle();
-            state
-                .bindings
-                .insert(handle, ComBinding::native(prog_id_name, native_dispatch));
-            self.assert_com_invariants(&state, "create_object");
-            return Ok(handle);
+            match self.try_native_com_binding(&prog_id_name) {
+                Ok(native_dispatch) => {
+                    let mut state = self.com_lock(capability, "create_object")?;
+                    let handle = state.allocate_handle();
+                    state
+                        .bindings
+                        .insert(handle, ComBinding::native(prog_id_name, native_dispatch));
+                    self.assert_com_invariants(&state, "create_object");
+                    return Ok(handle);
+                }
+                Err(err) => {
+                    if self.has_explicit_native_com_override(prog_id) {
+                        return Err(err);
+                    }
+                }
+            }
         }
         Ok(5_000i32.saturating_add(prog_id))
     }
@@ -1747,6 +1790,7 @@ fn map_com_hresult_label(hresult: Option<u32>, arg_err: Option<u32>) -> &'static
     }
     match hresult {
         Some(0x8004_0154) => "class-not-registered",
+        Some(0x8004_01F3) => "invalid-class-string",
         Some(0x8002_0003) => "member-not-found",
         Some(0x8002_0005) => "type-mismatch",
         Some(0x8002_0009) => "exception-raised",
@@ -2859,10 +2903,51 @@ mod tests {
             super::map_com_hresult_label(Some(0x8002_0003), None),
             "member-not-found"
         );
+        assert_eq!(
+            super::map_com_hresult_label(Some(0x8004_01F3), None),
+            "invalid-class-string"
+        );
         assert_eq!(super::map_com_hresult_label(None, Some(0)), "arg-error");
         assert_eq!(
             super::map_com_hresult_label(None, None),
             "fault-unspecified"
+        );
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn windows_com_policy_override_resolves_native_mapping() {
+        let mut policy = HostPolicy::interactive_dev();
+        policy
+            .com_prog_id_overrides
+            .insert(4, "Scripting.Dictionary".to_string());
+        let host = StandardHostServices::new(HalProfileId::Windows, policy);
+        let object = host
+            .create_object(4)
+            .expect("policy override should resolve native COM activation");
+        assert!(
+            object >= 20_001,
+            "expected native COM object handle from policy override, got {object}"
+        );
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn windows_createobject_failure_includes_stable_label_when_class_missing() {
+        let mut policy = HostPolicy::interactive_dev();
+        policy
+            .com_prog_id_overrides
+            .insert(4, "OxVba.DoesNotExist.Component".to_string());
+        let host = StandardHostServices::new(HalProfileId::Windows, policy);
+        let err = host
+            .create_object(4)
+            .expect_err("missing class should fail create_object");
+        assert!(
+            err.message.contains("com-createobject-class-not-registered")
+                || err.message.contains("com-createobject-invalid-class-string")
+                || err.message.contains("0x80040154"),
+            "expected stable class-not-registered label, got {}",
+            err.message
         );
     }
 
