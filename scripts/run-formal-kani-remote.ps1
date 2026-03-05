@@ -951,6 +951,11 @@ strategy="${DEFERRED_STRATEGY:-dedup}"
 timeout_seconds="${OBLIGATION_TIMEOUT_SECONDS:-10800}"
 timeout_retries="${OBLIGATION_TIMEOUT_RETRIES:-1}"
 timeout_multiplier="${OBLIGATION_TIMEOUT_MULTIPLIER:-10}"
+mem_soft_used_percent="${MEM_SOFT_USED_PERCENT:-85}"
+mem_hard_used_percent="${MEM_HARD_USED_PERCENT:-92}"
+hard_pressure_action="${HARD_PRESSURE_ACTION:-pause}"
+pause_flag_file="$BASE/state/deferred_dispatch/PAUSE_NEW_LANES.auto"
+manual_pause_file="$BASE/state/deferred_dispatch/PAUSE_NEW_LANES.manual"
 
 commit="$($BASE/bin/sync_repo.sh)"
 

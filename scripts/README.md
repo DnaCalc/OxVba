@@ -4,7 +4,11 @@
 - `docs-check.ps1`: verifies required top-level docs exist.
 - `run-smoke.ps1`: executes the smoke VBA sample through the CLI.
 - `run-conformance.ps1`: runs MVP conformance corpus and checks against golden expectations.
+- `run-com-conformance.ps1`: COM conformance orchestrator (required registrationless lane + optional registered external-server matrix) with summary artifacts under `docs/evidence/conformance/com/` (`COM_CONFORMANCE_RUN_*` + `COM_CONFORMANCE_LATEST.*`).
+- `run-com-registrationless.ps1`: runs registrationless controlled COM client end-to-end lane (`com_client_end_to_end`) and emits lane artifacts.
+- `run-com-registered.ps1`: runs registered external COM client lane (`com_client_registered_lane`, ignored tests) with selected ProgID (`-ProgId` / `OXVBA_REGISTERED_COM_PROGID`) and emits lane artifacts.
 - `run-project-integration-suite.ps1`: runs tracked multi-project integration fixtures (`conformance/integration/`) and emits run artifacts under `docs/evidence/conformance/project_integration/`.
+- `lint-integration-fixtures.ps1`: lightweight guardrail for integration fixture source shapes known to stress unsupported backend forms.
 - `run-pmr-project-model-oracle.ps1`: executable Excel oracle runner for PMR topics `CCT-037..CCT-041`, with built-in dialog guardian support for macro/add-in trust prompts.
 - `excel-dialog-guardian.ps1`: hidden UI Automation watcher used by PMR oracle runs to detect and accept Excel security/macro/add-in enable dialogs for the active automation instance.
 - `run-hal-conformance.ps1`: runs HAL adapter contract tests and emits profile/lane conformance artifacts under `docs/evidence/hal`.
@@ -14,6 +18,8 @@
 - `run-formal-kani-wsl.ps1`: strict formal run helper that executes Kani obligations through WSL.
 - `run-formal-kani-async.ps1`: async manager for long-running Kani/profile formal runs (`Start`/`Status`/`Tail`/`Wait`/`Stop`/`WatchStart`/`WatchStop`/`Probe`/`Reconcile`).
 - `run-formal-kani-remote.ps1`: remote Linux deferred-lane manager for Kani (`Ensure`/`ProbeCapacity`/`StartDeferred`/`StopDeferred`/`Status`/`Tail`/`FetchArtifacts`/`Monitor`) under `/home/ubuntu/.dnacalc_remote`, with dedup strategy, per-obligation timeout, lane heartbeat/progress telemetry, and memory-pressure guard controls.
+- `reconcile-formal-deferred-gates.ps1`: reconciles `docs/evidence/formal/DEFERRED_GATES.md` DG statuses from live remote lane state (`running/pass/fail/no-op->deferred`) to reduce status drift.
+- `run-formal-kani-sync.ps1`: hardened one-shot supervisor for remote formal lanes (`reconcile -> detect running -> start unresolved policy lanes when idle -> reconcile -> status`).
 - `async-task-runner.ps1`: helper invoked by async managers to execute commands and persist exit status.
 - `run-bench.ps1`: captures baseline-vs-optimized mixed workload timing evidence (VM + JIT) for the active stabilization profile.
 - `setup-kani.ps1`: verifies or installs Kani toolchain and prints activation instructions for required formal mode.

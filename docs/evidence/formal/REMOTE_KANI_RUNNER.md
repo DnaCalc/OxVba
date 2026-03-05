@@ -113,6 +113,18 @@ This runs one cumulative lane at the highest target version and reuses deduplica
 ./scripts/run-formal-kani-remote.ps1 -Action FetchArtifacts -LocalArtifactsDir temp/async/kani_remote
 ```
 
+8. Preferred drift-control entrypoint (one-shot reconcile + guarded start):
+
+```powershell
+./scripts/run-formal-kani-sync.ps1
+```
+
+Optional targeted queue:
+
+```powershell
+./scripts/run-formal-kani-sync.ps1 -VersionList "2 4 162 175 287" -DeferredConcurrency 2
+```
+
 ## Remote Layout
 
 Under `/home/ubuntu/.dnacalc_remote`:
@@ -137,6 +149,9 @@ Under `/home/ubuntu/.dnacalc_remote`:
 - `Status` now classifies empty lane selections as explicit `no-op` with
   `warning=probable-commit-obligation-mismatch` instead of treating them as
   silent successes.
+- `reconcile-formal-deferred-gates.ps1` reads remote lane states directly and
+  updates DG rows from mutable states (`dg-not-started`/`dg-deferred`/`dg-fail`/`dg-running`)
+  to reduce long-lived local-vs-remote drift.
 - `Status` includes `resource_snapshot` fields (`mem_used_percent`, swap/load, `cbmc_count`, `kani_count`) and active pause-flag visibility.
 - `Status` job rows classify detached wrappers explicitly as `running-detached` (instead of ambiguous `unknown`) when lane/dispatch workers are still live.
 - `StopDeferred -StopMode stale` marks stale/unknown deferred envelopes with explicit terminal state (`exit_code=143`, `completed:stopped`) so status no longer shows ambiguous `unknown` for dead runs.

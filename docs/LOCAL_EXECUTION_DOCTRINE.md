@@ -60,6 +60,34 @@ Until fully implemented:
 - API-driven configuration remains valid,
 - external bootstrap remains tracked as a formal uncertainty/work item.
 
+## 6) COM coverage requires split lanes by design
+
+Keep two independent COM client lanes:
+- registrationless controlled lane (deterministic floor, always required),
+- registered external lane (real host-registration behavior, opt-in).
+
+Do not collapse them into one lane. They catch different failure classes.
+
+## 7) Registered COM lanes must be explicit and serialized
+
+Registered external COM tests are ignored-by-default and must be run intentionally through scripts.
+
+Operational requirements:
+- run with `--ignored`,
+- force `--test-threads=1`,
+- capture structured evidence (`csv`/`md`/logs under `docs/evidence/conformance/com/`),
+- treat selector mapping as policy-level config first (engine/HAL override API), env fallback second.
+
+## 8) Deferred formal lanes need explicit anti-drift reconciliation
+
+Remote Kani is asynchronous and long-running; DG metadata must be reconciled regularly so local planning does not diverge from live runner state.
+
+Policy:
+- use `./scripts/run-formal-kani-sync.ps1` as the default operator entrypoint,
+- reconcile before and after each deferred dispatch start,
+- during active runs, reconcile at least every 30 minutes (or at each cycle boundary),
+- do not treat `selected_count=0` no-op lanes as formal pass evidence.
+
 ## Required Local Checks (Doc-Heavy Ladder Runs)
 
 1. Validate profile scaffold integrity:
