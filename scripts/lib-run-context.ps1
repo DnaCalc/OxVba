@@ -84,7 +84,26 @@ function Resolve-RunId {
         try {
             $lock = Get-Content $lockPath -Raw | ConvertFrom-Json
             if ($null -ne $lock -and -not [string]::IsNullOrWhiteSpace([string]$lock.run_id) -and -not [string]::IsNullOrWhiteSpace([string]$lock.generated_utc)) {
-                $generated = [DateTime]::Parse([string]$lock.generated_utc).ToUniversalTime()
+                $generatedRaw = $lock.generated_utc
+                $generated = $null
+                if ($generatedRaw -is [DateTimeOffset]) {
+                    $generated = $generatedRaw.UtcDateTime
+                }
+                elseif ($generatedRaw -is [DateTime]) {
+                    if ($generatedRaw.Kind -eq [System.DateTimeKind]::Unspecified) {
+                        $generated = [DateTime]::SpecifyKind($generatedRaw, [System.DateTimeKind]::Utc)
+                    }
+                    else {
+                        $generated = $generatedRaw.ToUniversalTime()
+                    }
+                }
+                else {
+                    $generated = [DateTimeOffset]::Parse(
+                        [string]$generatedRaw,
+                        [System.Globalization.CultureInfo]::InvariantCulture,
+                        [System.Globalization.DateTimeStyles]::RoundtripKind
+                    ).UtcDateTime
+                }
                 $age = $nowUtc - $generated
                 if ($age.TotalMinutes -ge 0 -and $age.TotalMinutes -le $ReuseWindowMinutes) {
                     return [string]$lock.run_id
