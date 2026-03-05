@@ -1,15 +1,33 @@
 param(
-    [string]$ProfileScope = "mvp-profile-v386",
-    [string]$OutputDir = "docs/evidence/profiles/v386",
+    [string]$ProfileScope = "",
+    [string]$OutputDir = "",
     [string]$OutputCsv = "",
-    [string]$SummaryPath = ""
+    [string]$SummaryPath = "",
+    [string]$RunId = "",
+    [switch]$NoArtifacts
 )
+
+# legacy-default-profile-scope: mvp-profile-v386
 
 $ErrorActionPreference = "Stop"
 $PSNativeCommandUseErrorActionPreference = $true
 
 Push-Location (Join-Path $PSScriptRoot "..")
 try {
+    . "$PSScriptRoot/lib-run-context.ps1"
+    if ([string]::IsNullOrWhiteSpace($ProfileScope)) {
+        $ProfileScope = Get-DefaultProfileScope
+    }
+    if ([string]::IsNullOrWhiteSpace($OutputDir)) {
+        $OutputDir = Get-DefaultProfileOutputDir
+    }
+
+    $resolvedRunId = Resolve-RunId -Name "matrix" -RequestedRunId $RunId
+    if ($NoArtifacts) {
+        $OutputDir = New-NoArtifactEvidenceDir -Scope "matrix" -RunId $resolvedRunId
+        Write-Host "matrix run: no-artifacts mode writing to $OutputDir"
+    }
+
     $resolvedOutputCsv = $OutputCsv
     if ([string]::IsNullOrWhiteSpace($resolvedOutputCsv)) {
         $resolvedOutputCsv = Join-Path $OutputDir "matrix_latest.csv"
@@ -75,6 +93,7 @@ try {
     $summary = @(
         "# Profile Gate Report",
         "",
+        "- Run ID: $resolvedRunId",
         "- Timestamp (UTC): $timestampUtc",
         "- Profile scope: $profileScope",
         "- Required matrix cells: $requiredRows",

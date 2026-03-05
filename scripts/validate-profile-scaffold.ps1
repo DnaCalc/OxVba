@@ -112,6 +112,12 @@ foreach ($f in $gateFiles) {
         $artifact = ($line -replace '^  - ', '').Trim()
         Check-ArtifactPath $f.FullName $artifact
     }
+
+    $gateDir = Split-Path -Parent $f.FullName
+    $gateJson = Join-Path $gateDir "gate.json"
+    if (-not (Test-Path $gateJson)) {
+        Add-Warning("Integrated gate is missing machine-readable manifest: $($gateJson.Replace($repoRoot, '.'))")
+    }
 }
 
 if ($warnings.Count -gt 0) {

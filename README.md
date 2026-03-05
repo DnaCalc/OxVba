@@ -24,6 +24,7 @@ OxVBA is part of the broader DNA Calc program and aligns with Foundation doctrin
 ## Quick Verification
 ```powershell
 ./scripts/meta-check.ps1 -Fast
+./scripts/meta-check.ps1 -Fast -NoArtifacts
 ./scripts/run-smoke.ps1
 ./scripts/run-conformance.ps1
 ./scripts/run-matrix.ps1
@@ -35,6 +36,12 @@ Optional:
 ./scripts/meta-check.ps1 -Fast -Matrix
 ./scripts/meta-check.ps1 -Fast -Formal
 ./scripts/meta-check.ps1 -Fast -Conformance -Matrix -Formal
+```
+
+Pre-commit guardrails:
+```powershell
+./scripts/check-staged-commit-scope.ps1
+./scripts/validate-profile-artifact-scope.ps1 -Mode staged
 ```
 
 ## Tooling Notes

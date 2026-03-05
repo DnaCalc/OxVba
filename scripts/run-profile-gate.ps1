@@ -1,9 +1,14 @@
 param(
-    [string]$ProfileScope = "mvp-profile-v386",
-    [string]$OutputDir = "docs/evidence/profiles/v386",
+    [string]$ProfileScope = "",
+    [string]$OutputDir = "",
     [int]$BenchIterations = 3,
-    [switch]$SkipBench
+    [switch]$SkipBench,
+    [string]$RunId = "",
+    [switch]$NoArtifacts
 )
+
+# legacy-default-profile-scope: mvp-profile-v386
+# legacy-default-output-dir: docs/evidence/profiles/v386
 
 $ErrorActionPreference = "Stop"
 $PSNativeCommandUseErrorActionPreference = $true
@@ -11,6 +16,19 @@ $PSNativeCommandUseErrorActionPreference = $true
 $lockPath = $null
 Push-Location (Join-Path $PSScriptRoot "..")
 try {
+    . "$PSScriptRoot/lib-run-context.ps1"
+    if ([string]::IsNullOrWhiteSpace($ProfileScope)) {
+        $ProfileScope = Get-DefaultProfileScope
+    }
+    if ([string]::IsNullOrWhiteSpace($OutputDir)) {
+        $OutputDir = Get-DefaultProfileOutputDir
+    }
+
+    $resolvedRunId = Resolve-RunId -Name "profile-gate" -RequestedRunId $RunId
+    if ($NoArtifacts) {
+        $OutputDir = New-NoArtifactEvidenceDir -Scope "profile-gate" -RunId $resolvedRunId
+    }
+
     $lockDir = "temp/profile-gates"
     if (-not (Test-Path $lockDir)) {
         New-Item -ItemType Directory -Path $lockDir -Force | Out-Null
@@ -40,6 +58,7 @@ try {
         pid = $PID
         profile_scope = $ProfileScope
         output_dir = $OutputDir
+        run_id = $resolvedRunId
         started_utc = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
     } | ConvertTo-Json | Set-Content $lockPath
 
@@ -53,9 +72,29 @@ try {
     $benchCsv = Join-Path $OutputDir "benchmark_latest.csv"
     $integratedMd = Join-Path $OutputDir "integrated_gate.md"
     $integratedCsv = Join-Path $OutputDir "integrated_gate.csv"
+    $gateJson = Join-Path $OutputDir "gate.json"
 
-    & "$PSScriptRoot/run-formal.ps1" -ProfileScope $ProfileScope
-    & "$PSScriptRoot/run-matrix.ps1" -ProfileScope $ProfileScope -OutputDir $OutputDir -OutputCsv $matrixCsv -SummaryPath $matrixReport
+    $formalArgs = @{
+        ProfileScope = $ProfileScope
+        RunId = $resolvedRunId
+    }
+    if ($NoArtifacts) {
+        $formalArgs["NoArtifacts"] = $true
+        $formalArgs["Quiet"] = $true
+    }
+    & "$PSScriptRoot/run-formal.ps1" @formalArgs
+
+    $matrixArgs = @{
+        ProfileScope = $ProfileScope
+        OutputDir = $OutputDir
+        OutputCsv = $matrixCsv
+        SummaryPath = $matrixReport
+        RunId = $resolvedRunId
+    }
+    if ($NoArtifacts) {
+        $matrixArgs["NoArtifacts"] = $true
+    }
+    & "$PSScriptRoot/run-matrix.ps1" @matrixArgs
     if ($SkipBench) {
         $benchLines = @(
             "# Performance Benchmark",
@@ -79,7 +118,17 @@ try {
         Write-Host "bench run: skipped for profile=$ProfileScope"
     }
     else {
-        & "$PSScriptRoot/run-bench.ps1" -ProfileScope $ProfileScope -Iterations $BenchIterations -OutputPath $benchMd -OutputCsvPath $benchCsv
+        $benchArgs = @{
+            ProfileScope = $ProfileScope
+            Iterations = $BenchIterations
+            OutputPath = $benchMd
+            OutputCsvPath = $benchCsv
+            RunId = $resolvedRunId
+        }
+        if ($NoArtifacts) {
+            $benchArgs["NoArtifacts"] = $true
+        }
+        & "$PSScriptRoot/run-bench.ps1" @benchArgs
     }
 
     $matrixPass = $false
@@ -89,6 +138,9 @@ try {
     }
 
     $formalCsv = "docs/evidence/formal/latest_run.csv"
+    if ($NoArtifacts) {
+        $formalCsv = Join-Path (New-NoArtifactEvidenceDir -Scope "formal" -RunId $resolvedRunId) "latest_run.csv"
+    }
     $formalBlockingPass = $true
     if (Test-Path $formalCsv) {
         $formalRows = Import-Csv $formalCsv
@@ -112,21 +164,32 @@ try {
     $finalPass = ($rows | Where-Object { $_.status -ne "pass" }).Count -eq 0
     $timestampUtc = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
 
+    $manifest = [PSCustomObject]@{
+        run_id = $resolvedRunId
+        timestamp_utc = $timestampUtc
+        profile_scope = $ProfileScope
+        final_gate_status = $(if ($finalPass) { "PASS" } else { "FAIL" })
+        output_dir = $OutputDir
+        no_artifacts = $NoArtifacts.IsPresent
+        lanes = $rows
+    }
+    $manifest | ConvertTo-Json -Depth 6 | Set-Content -Path $gateJson
+
     $lines = @(
         "# Integrated Gate Report",
         "",
-        "- Timestamp (UTC): $timestampUtc",
-        "- Profile scope: $ProfileScope",
-        "- Final gate status: $(if ($finalPass) { 'PASS' } else { 'FAIL' })",
+        "- Run ID: $($manifest.run_id)",
+        "- Timestamp (UTC): $($manifest.timestamp_utc)",
+        "- Profile scope: $($manifest.profile_scope)",
+        "- Final gate status: $($manifest.final_gate_status)",
+        "- Gate manifest: $gateJson",
         "",
         "| Lane | Status | Artifact | Note |",
         "|---|---|---|---|"
     )
-
     foreach ($row in $rows) {
         $lines += "| $($row.lane) | $($row.status) | $($row.artifact) | $($row.note) |"
     }
-
     Set-Content -Path $integratedMd -Value ($lines -join "`n")
     Write-Host "integrated gate: $(if ($finalPass) { 'PASS' } else { 'FAIL' })"
 }

@@ -25,6 +25,15 @@ For behavior-affecting changes:
 3. Update relevant docs (`MACH1000_PLAN.md`, design notes, or this file if doctrine changed).
 4. Record compatibility evidence when claiming Office/VBA parity.
 
+Commit discipline for ladder execution:
+- Prefer split commits:
+  - commit A: code/spec/docs changes,
+  - commit B: evidence refresh artifacts.
+- Run staged-scope guard before commit:
+  - `./scripts/check-staged-commit-scope.ps1`
+- For final validation before commit, prefer no-artifact mode:
+  - `./scripts/meta-check.ps1 -Fast -NoArtifacts`
+
 For bug fixes:
 - Add a minimized regression case before or with the fix.
 

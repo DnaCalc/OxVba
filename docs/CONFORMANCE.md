@@ -63,8 +63,11 @@ Current corpus includes:
 ./scripts/run-project-integration-suite.ps1
 ./scripts/run-project-integration-suite.ps1 -CasePattern INTP-005
 ./scripts/run-com-early-conformance.ps1 -IncludeFormalLane
+./scripts/run-com-early-conformance.ps1 -IncludeFormalLane -NoArtifacts
 ./scripts/run-com-early-perf.ps1 -Iterations 3
+./scripts/run-com-early-perf.ps1 -Iterations 3 -NoArtifacts
 ./scripts/run-matrix.ps1
+./scripts/run-matrix.ps1 -NoArtifacts
 ./scripts/run-pmr-project-model-oracle.ps1
 ./scripts/run-pmr-project-model-oracle.ps1 -DisableDialogGuardian
 ```
@@ -95,6 +98,8 @@ Project integration lane:
 Current profile gate is evaluated by `./scripts/run-matrix.ps1`, which writes:
 - `docs/evidence/profiles/<version>/matrix_latest.csv`
 - `docs/evidence/profiles/<version>/gate_report.md`
+
+For no-artifact validation runs, use `-NoArtifacts` to redirect outputs to `temp/no-artifacts/...` and avoid mutating tracked `LATEST` evidence.
 
 Oracle-dependent parity remains deferred and tracked separately:
 - register: `docs/evidence/conformance/DEFERRED_ORACLE_GATES.csv`

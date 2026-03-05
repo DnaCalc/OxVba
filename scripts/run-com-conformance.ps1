@@ -3,7 +3,10 @@ param(
     [string]$RegisteredProgId = "Scripting.Dictionary",
     [string[]]$RegisteredProgIds = @(),
     [switch]$NoCapture,
-    [string]$EvidenceDir = "docs/evidence/conformance/com"
+    [string]$EvidenceDir = "docs/evidence/conformance/com",
+    [string]$RunId = "",
+    [switch]$NoArtifacts,
+    [switch]$NoLatest
 )
 
 $ErrorActionPreference = "Stop"
@@ -11,18 +14,25 @@ $PSNativeCommandUseErrorActionPreference = $false
 
 Push-Location (Join-Path $PSScriptRoot "..")
 try {
+    . "$PSScriptRoot/lib-run-context.ps1"
+    $resolvedRunId = Resolve-RunId -Name "com-conformance" -RequestedRunId $RunId
+    $resolvedNoLatest = $NoLatest -or $NoArtifacts
+    if ($NoArtifacts) {
+        $EvidenceDir = New-NoArtifactEvidenceDir -Scope "com-conformance" -RunId $resolvedRunId
+    }
+
     if (-not (Test-Path $EvidenceDir)) {
         New-Item -ItemType Directory -Path $EvidenceDir -Force | Out-Null
     }
 
-    $runId = (Get-Date).ToUniversalTime().ToString("yyyyMMddTHHmmssZ")
     $results = @()
 
-    Write-Host "[oxvba] COM conformance orchestrator (run_id=$runId)"
+    Write-Host "[oxvba] COM conformance orchestrator (run_id=$resolvedRunId)"
     $registrationlessArgs = @{
         EvidenceDir = $EvidenceDir
-        RunId = $runId
+        RunId = $resolvedRunId
         NoThrow = $true
+        NoLatest = $resolvedNoLatest
     }
     if ($NoCapture) {
         $registrationlessArgs["NoCapture"] = $true
@@ -41,8 +51,9 @@ try {
             $registeredArgs = @{
                 ProgId = $target
                 EvidenceDir = $EvidenceDir
-                RunId = $runId
+                RunId = $resolvedRunId
                 NoThrow = $true
+                NoLatest = $resolvedNoLatest
             }
             if ($NoCapture) {
                 $registeredArgs["NoCapture"] = $true
@@ -53,22 +64,25 @@ try {
         Write-Host "[oxvba] registered lane skipped (use -IncludeRegisteredLane to enable)"
     }
 
-    $summaryPath = Join-Path $EvidenceDir ("COM_CONFORMANCE_RUN_{0}.md" -f $runId)
+    $summaryPath = Join-Path $EvidenceDir ("COM_CONFORMANCE_RUN_{0}.md" -f $resolvedRunId)
     $summaryLatestPath = Join-Path $EvidenceDir "COM_CONFORMANCE_LATEST.md"
-    $csvPath = Join-Path $EvidenceDir ("COM_CONFORMANCE_RUN_{0}.csv" -f $runId)
+    $csvPath = Join-Path $EvidenceDir ("COM_CONFORMANCE_RUN_{0}.csv" -f $resolvedRunId)
     $csvLatestPath = Join-Path $EvidenceDir "COM_CONFORMANCE_LATEST.csv"
 
     $results | Export-Csv -Path $csvPath -NoTypeInformation
-    Copy-Item -Path $csvPath -Destination $csvLatestPath -Force
+    if (-not $resolvedNoLatest) {
+        Copy-Item -Path $csvPath -Destination $csvLatestPath -Force
+    }
 
     $failed = @($results | Where-Object { $_.status -ne "pass" })
     $report = @(
         "# COM Conformance Run",
         "",
-        "- Run ID: $runId",
+        "- Run ID: $resolvedRunId",
         "- Status: $(if ($failed.Count -eq 0) { 'pass' } else { 'fail' })",
         "- Registrationless lane: required",
         "- Registered lane: $(if ($IncludeRegisteredLane) { 'included' } else { 'skipped' })",
+        "- Latest pointers updated: $((-not $resolvedNoLatest).ToString().ToLowerInvariant())",
         "- Results CSV: $csvPath",
         "",
         "| Lane | Profile | ProgID | Status | Exit | Log |",
@@ -78,7 +92,9 @@ try {
         $report += "| $($row.lane_id) | $($row.profile) | $($row.prog_id) | $($row.status) | $($row.exit_code) | $($row.log) |"
     }
     Set-Content -Path $summaryPath -Value ($report -join "`n")
-    Copy-Item -Path $summaryPath -Destination $summaryLatestPath -Force
+    if (-not $resolvedNoLatest) {
+        Copy-Item -Path $summaryPath -Destination $summaryLatestPath -Force
+    }
 
     Write-Host "[oxvba] COM conformance summary: $(if ($failed.Count -eq 0) { 'pass' } else { 'fail' })"
     if ($failed.Count -ne 0) {

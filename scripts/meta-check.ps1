@@ -3,14 +3,30 @@ param(
     [switch]$Conformance,
     [switch]$Matrix,
     [switch]$Formal,
-    [switch]$SkipPathStability
+    [switch]$SkipPathStability,
+    [switch]$NoArtifacts,
+    [string]$RunId = ""
 )
 
 $ErrorActionPreference = "Stop"
 $PSNativeCommandUseErrorActionPreference = $true
 
+$previousRunId = ""
+$hadPreviousRunId = $false
+
 Push-Location (Join-Path $PSScriptRoot "..")
 try {
+    . "$PSScriptRoot/lib-run-context.ps1"
+    $resolvedRunId = Resolve-RunId -Name "meta-check" -RequestedRunId $RunId
+    $previousRunId = [string]$env:OXVBA_RUN_ID
+    $hadPreviousRunId = Test-Path Env:OXVBA_RUN_ID
+    $env:OXVBA_RUN_ID = $resolvedRunId
+
+    Write-Host "[oxvba] run-id: $resolvedRunId"
+    if ($NoArtifacts) {
+        Write-Host "[oxvba] no-artifacts mode: enabled (writes redirected to temp/no-artifacts)"
+    }
+
     Write-Host "[oxvba] docs-check"
     & "$PSScriptRoot/docs-check.ps1"
 
@@ -19,6 +35,9 @@ try {
 
     Write-Host "[oxvba] active-ladder-sync"
     & "$PSScriptRoot/validate-active-ladder-sync.ps1"
+
+    Write-Host "[oxvba] profile-artifact-scope"
+    & "$PSScriptRoot/validate-profile-artifact-scope.ps1" -Mode working
 
     Write-Host "[oxvba] divergence-structure"
     & "$PSScriptRoot/validate-divergences.ps1"
@@ -73,21 +92,47 @@ try {
         Write-Host "[oxvba] conformance"
         & "$PSScriptRoot/run-conformance.ps1"
         Write-Host "[oxvba] conformance (com-early)"
-        & "$PSScriptRoot/run-com-early-conformance.ps1" -IncludeFormalLane
+        $comEarlyArgs = @{
+            IncludeFormalLane = $true
+            RunId = $resolvedRunId
+        }
+        if ($NoArtifacts) {
+            $comEarlyArgs["NoArtifacts"] = $true
+        }
+        & "$PSScriptRoot/run-com-early-conformance.ps1" @comEarlyArgs
     }
 
     if ($Matrix) {
         Write-Host "[oxvba] matrix"
-        & "$PSScriptRoot/run-matrix.ps1"
+        $matrixArgs = @{
+            RunId = $resolvedRunId
+        }
+        if ($NoArtifacts) {
+            $matrixArgs["NoArtifacts"] = $true
+        }
+        & "$PSScriptRoot/run-matrix.ps1" @matrixArgs
     }
 
     if ($Formal) {
         Write-Host "[oxvba] formal (non-blocking)"
-        & "$PSScriptRoot/run-formal.ps1"
+        $formalArgs = @{
+            RunId = $resolvedRunId
+            Quiet = $true
+        }
+        if ($NoArtifacts) {
+            $formalArgs["NoArtifacts"] = $true
+        }
+        & "$PSScriptRoot/run-formal.ps1" @formalArgs
     }
 
     Write-Host "[oxvba] meta check complete"
 }
 finally {
+    if ($hadPreviousRunId) {
+        $env:OXVBA_RUN_ID = $previousRunId
+    }
+    else {
+        Remove-Item Env:OXVBA_RUN_ID -ErrorAction SilentlyContinue
+    }
     Pop-Location
 }

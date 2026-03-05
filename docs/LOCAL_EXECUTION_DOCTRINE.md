@@ -87,7 +87,35 @@ Policy:
 - reconcile before and after each deferred dispatch start,
 - during active runs, reconcile at least every 30 minutes (or at each cycle boundary),
 - do not treat `selected_count=0` no-op lanes as formal pass evidence,
-- keep a durable remote-monitor trace during long runs (`-StatusSnapshotNdjson` / `-MonitorSnapshotNdjson`) so stall/rate triage is based on time-series evidence.
+- keep a durable remote-monitor trace during long runs (`-StatusSnapshotJsonl` / `-MonitorSnapshotJsonl`; `*Ndjson` aliases retained) so stall/rate triage is based on time-series evidence.
+
+## 9) Final validation should not mutate tracked evidence
+
+Use no-artifact validation for pre-commit confidence checks so `LATEST` files do not churn during staging.
+
+Policy:
+- prefer `./scripts/meta-check.ps1 -Fast -NoArtifacts` before commit,
+- use artifact-producing runs only when intentionally refreshing evidence.
+
+## 10) Conformance and perf runs must share a stable run-id per cycle
+
+Artifact-heavy lanes should resolve run-id through lock-aware run context (`scripts/lib-run-context.ps1`) so repeated calls within one cycle reuse the same identifier and avoid duplicate `RUN_*` churn.
+
+## 11) Keep evidence history bounded
+
+Timestamped evidence files are valuable, but unbounded growth hurts repository operations.
+
+Policy:
+- keep `LATEST` pointers plus a bounded number of timestamped runs,
+- use `./scripts/prune-evidence-artifacts.ps1 -KeepCount <N>` as housekeeping.
+
+## 12) Guard profile artifact scope before commit
+
+Do not unintentionally mutate historical profile artifacts when closing a newer gate.
+
+Policy:
+- run `./scripts/validate-profile-artifact-scope.ps1 -Mode staged` before commit,
+- if historical backfill is intentional, pass explicit allow-list versions.
 
 ## Required Local Checks (Doc-Heavy Ladder Runs)
 
@@ -113,7 +141,19 @@ Policy:
 
 5. Ensure referenced artifacts actually exist before commit.
 
-6. Prefer scaffold generation for large profile slices:
+6. Validate staged commit scope split:
+
+```powershell
+./scripts/check-staged-commit-scope.ps1
+```
+
+7. Validate profile artifact scope:
+
+```powershell
+./scripts/validate-profile-artifact-scope.ps1 -Mode staged
+```
+
+8. Prefer scaffold generation for large profile slices:
 
 ```powershell
 ./scripts/new-profile-slice.ps1 -FromVersion <start> -ToVersion <end> -LadderPath <ladder> -WorksetPath <workset>

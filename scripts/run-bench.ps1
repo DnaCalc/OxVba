@@ -1,15 +1,41 @@
 param(
     [int]$Iterations = 3,
-    [string]$ProfileScope = "mvp-profile-v386",
-    [string]$OutputPath = "docs/evidence/profiles/v386/benchmark_latest.md",
-    [string]$OutputCsvPath = "docs/evidence/profiles/v386/benchmark_latest.csv"
+    [string]$ProfileScope = "",
+    [string]$OutputPath = "",
+    [string]$OutputCsvPath = "",
+    [string]$RunId = "",
+    [switch]$NoArtifacts
 )
+
+# legacy-default-profile-scope: mvp-profile-v386
+# legacy-default-output-md: docs/evidence/profiles/v386/benchmark_latest.md
+# legacy-default-output-csv: docs/evidence/profiles/v386/benchmark_latest.csv
 
 $ErrorActionPreference = "Stop"
 $PSNativeCommandUseErrorActionPreference = $true
 
 Push-Location (Join-Path $PSScriptRoot "..")
 try {
+    . "$PSScriptRoot/lib-run-context.ps1"
+    if ([string]::IsNullOrWhiteSpace($ProfileScope)) {
+        $ProfileScope = Get-DefaultProfileScope
+    }
+    $defaultOutputDir = Get-DefaultProfileOutputDir
+    if ([string]::IsNullOrWhiteSpace($OutputPath)) {
+        $OutputPath = Join-Path $defaultOutputDir "benchmark_latest.md"
+    }
+    if ([string]::IsNullOrWhiteSpace($OutputCsvPath)) {
+        $OutputCsvPath = Join-Path $defaultOutputDir "benchmark_latest.csv"
+    }
+
+    $resolvedRunId = Resolve-RunId -Name "bench" -RequestedRunId $RunId
+    if ($NoArtifacts) {
+        $benchDir = New-NoArtifactEvidenceDir -Scope "bench" -RunId $resolvedRunId
+        $OutputPath = Join-Path $benchDir "benchmark_latest.md"
+        $OutputCsvPath = Join-Path $benchDir "benchmark_latest.csv"
+        Write-Host "bench run: no-artifacts mode writing to $benchDir"
+    }
+
     function Measure-Run([string]$backend, [string]$disableOpt, [string[]]$includePattern) {
         $total = 0.0
         for ($i = 0; $i -lt $Iterations; $i++) {
@@ -87,6 +113,7 @@ try {
     $lines = @(
         "# Performance Benchmark",
         "",
+        "- Run ID: $resolvedRunId",
         "- Timestamp (UTC): $timestampUtc",
         "- Profile scope: $ProfileScope",
         "- Iterations: $Iterations",

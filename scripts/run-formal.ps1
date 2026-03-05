@@ -1,13 +1,20 @@
 param(
-    [string]$ProfileScope = "mvp-profile-v386",
-    [string]$ReportPath = "docs/evidence/formal/latest_run.md",
-    [string]$ReportCsvPath = "docs/evidence/formal/latest_run.csv",
+    [string]$ProfileScope = "",
+    [string]$ReportPath = "",
+    [string]$ReportCsvPath = "",
+    [string]$ReportJsonlPath = "",
     [string]$ObligationsPath = "docs/evidence/formal/obligations.csv",
     [switch]$RequireKani,
     [switch]$UseWslKani,
     [int]$WslProbeRetries = 3,
-    [int]$WslProbeRetryDelaySeconds = 2
+    [int]$WslProbeRetryDelaySeconds = 2,
+    [string]$RunId = "",
+    [switch]$NoArtifacts,
+    [switch]$Quiet,
+    [switch]$VerboseFailures
 )
+
+# legacy-default-profile-scope: mvp-profile-v386
 
 $ErrorActionPreference = "Stop"
 $PSNativeCommandUseErrorActionPreference = $true
@@ -57,6 +64,29 @@ function Probe-WslCargoKani([int]$Retries, [int]$RetryDelaySeconds) {
 
 Push-Location (Join-Path $PSScriptRoot "..")
 try {
+    . "$PSScriptRoot/lib-run-context.ps1"
+
+    if ([string]::IsNullOrWhiteSpace($ProfileScope)) {
+        $ProfileScope = Get-DefaultProfileScope
+    }
+    if ([string]::IsNullOrWhiteSpace($ReportPath)) {
+        $ReportPath = "docs/evidence/formal/latest_run.md"
+    }
+    if ([string]::IsNullOrWhiteSpace($ReportCsvPath)) {
+        $ReportCsvPath = "docs/evidence/formal/latest_run.csv"
+    }
+    if ([string]::IsNullOrWhiteSpace($ReportJsonlPath)) {
+        $ReportJsonlPath = "docs/evidence/formal/latest_run.jsonl"
+    }
+
+    $resolvedRunId = Resolve-RunId -Name "formal" -RequestedRunId $RunId
+    if ($NoArtifacts) {
+        $formalNoArtifactsDir = New-NoArtifactEvidenceDir -Scope "formal" -RunId $resolvedRunId
+        $ReportPath = Join-Path $formalNoArtifactsDir "latest_run.md"
+        $ReportCsvPath = Join-Path $formalNoArtifactsDir "latest_run.csv"
+        $ReportJsonlPath = Join-Path $formalNoArtifactsDir "latest_run.jsonl"
+    }
+
     $reportDir = Split-Path -Parent $ReportPath
     if (-not (Test-Path $reportDir)) {
         New-Item -ItemType Directory -Path $reportDir -Force | Out-Null
@@ -65,6 +95,10 @@ try {
     $csvDir = Split-Path -Parent $ReportCsvPath
     if (-not (Test-Path $csvDir)) {
         New-Item -ItemType Directory -Path $csvDir -Force | Out-Null
+    }
+    $jsonlDir = Split-Path -Parent $ReportJsonlPath
+    if (-not (Test-Path $jsonlDir)) {
+        New-Item -ItemType Directory -Path $jsonlDir -Force | Out-Null
     }
 
     if (-not (Test-Path $ObligationsPath)) {
@@ -203,15 +237,35 @@ try {
                 note = ($_.Exception.Message -replace "\|", "/")
                 artifact = $obligation.artifact
             }
-            Write-Warning "formal lane: obligation $($obligation.obligation_id) did not pass (non-blocking)"
+            if ($VerboseFailures -and -not $Quiet) {
+                Write-Warning "formal lane: obligation $($obligation.obligation_id) did not pass (non-blocking)"
+            }
         }
     }
 
     $rows | Export-Csv -Path $ReportCsvPath -NoTypeInformation
 
+    $jsonlRows = @()
+    foreach ($row in $rows) {
+        $jsonlRows += ([PSCustomObject]@{
+            run_id = $resolvedRunId
+            timestamp_utc = $timestampUtc
+            profile_scope = $ProfileScope
+            obligation = $row.obligation
+            profile = $row.profile
+            blocking = $row.blocking
+            status = $row.status
+            command = $row.command
+            artifact = $row.artifact
+            note = $row.note
+        } | ConvertTo-Json -Compress)
+    }
+    Set-Content -Path $ReportJsonlPath -Value $jsonlRows
+
     $lines = @(
         "# Formal Run Report",
         "",
+        "- Run ID: $resolvedRunId",
         "- Timestamp (UTC): $timestampUtc",
         "- Profile scope: $ProfileScope",
         "- Overall mode: non-blocking",
@@ -219,7 +273,8 @@ try {
         "- Kani execution: $(if ($useWslForKani) { 'wsl' } elseif ($cargoKaniAvailable) { 'local' } elseif ($wslKaniAvailable) { 'deferred-to-wsl-async' } else { 'unavailable' })",
         "- cargo-kani (local): $(if ([string]::IsNullOrWhiteSpace($localCargoKaniVersion)) { 'unavailable' } else { $localCargoKaniVersion })",
         "- cargo-kani (wsl): $(if ([string]::IsNullOrWhiteSpace($wslCargoKaniVersion)) { 'unavailable' } else { $wslCargoKaniVersion })",
-        "- wsl probe detail: $(if ([string]::IsNullOrWhiteSpace($wslProbeDetail)) { 'n/a' } else { $wslProbeDetail })"
+        "- wsl probe detail: $(if ([string]::IsNullOrWhiteSpace($wslProbeDetail)) { 'n/a' } else { $wslProbeDetail })",
+        "- JSONL report: $ReportJsonlPath"
     )
 
     $lines += @(
@@ -236,14 +291,20 @@ try {
 
     if (-not $cargoKaniAvailable) {
         if ($wslKaniAvailable -and -not $UseWslKani) {
-            Write-Warning "formal lane: cargo-kani detected in WSL; obligations were skipped in this non-WSL run (use -UseWslKani, preferably via run-formal-kani-async.ps1)"
+            if (-not $Quiet) {
+                Write-Warning "formal lane: cargo-kani detected in WSL; obligations were skipped in this non-WSL run (use -UseWslKani, preferably via run-formal-kani-async.ps1)"
+            }
         }
         else {
-            Write-Warning "formal lane: cargo-kani not available; obligations recorded as skipped"
+            if (-not $Quiet) {
+                Write-Warning "formal lane: cargo-kani not available; obligations recorded as skipped"
+            }
         }
     }
 
-    Write-Host "formal run: completed (non-blocking)"
+    $failCount = @($rows | Where-Object { $_.status -ne "pass" -and $_.status -ne "skipped" }).Count
+    $skipCount = @($rows | Where-Object { $_.status -eq "skipped" }).Count
+    Write-Host "formal run: completed (run_id=$resolvedRunId obligations=$($rows.Count) failures=$failCount skipped=$skipCount mode=non-blocking)"
 }
 finally {
     Pop-Location

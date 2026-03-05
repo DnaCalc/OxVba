@@ -2,7 +2,8 @@ param(
     [string]$EvidenceDir = "docs/evidence/conformance/com_early/lanes",
     [string]$RunId = "",
     [switch]$NoCapture,
-    [switch]$NoThrow
+    [switch]$NoThrow,
+    [switch]$NoLatest
 )
 
 $args = @{
@@ -10,6 +11,7 @@ $args = @{
     EvidenceDir = $EvidenceDir
     RunId = $RunId
     NoThrow = $NoThrow
+    NoLatest = $NoLatest
 }
 if ($NoCapture) {
     $args["NoCapture"] = $true

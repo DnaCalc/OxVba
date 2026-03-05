@@ -1,6 +1,9 @@
 param(
     [string]$CasePattern = "",
-    [string]$EvidenceDir = "docs/evidence/conformance/project_integration"
+    [string]$EvidenceDir = "docs/evidence/conformance/project_integration",
+    [string]$RunId = "",
+    [switch]$NoArtifacts,
+    [switch]$NoLatest
 )
 
 $ErrorActionPreference = "Stop"
@@ -8,6 +11,13 @@ $PSNativeCommandUseErrorActionPreference = $false
 
 Push-Location (Join-Path $PSScriptRoot "..")
 try {
+    . "$PSScriptRoot/lib-run-context.ps1"
+    $resolvedRunId = Resolve-RunId -Name "project-integration-suite" -RequestedRunId $RunId
+    $resolvedNoLatest = $NoLatest -or $NoArtifacts
+    if ($NoArtifacts) {
+        $EvidenceDir = New-NoArtifactEvidenceDir -Scope "project-integration-suite" -RunId $resolvedRunId
+    }
+
     & (Join-Path $PSScriptRoot "lint-integration-fixtures.ps1")
     if ($LASTEXITCODE -ne 0) {
         throw "integration fixture lint failed"
@@ -28,8 +38,7 @@ try {
         $env:OXVBA_PROJECT_INTEGRATION_FILTER = $CasePattern
     }
 
-    $timestamp = (Get-Date).ToUniversalTime().ToString("yyyyMMddTHHmmssZ")
-    $logPath = Join-Path $EvidenceDir ("PROJECT_INTEGRATION_SUITE_LOG_{0}.txt" -f $timestamp)
+    $logPath = Join-Path $EvidenceDir ("PROJECT_INTEGRATION_SUITE_LOG_{0}.txt" -f $resolvedRunId)
 
     $lines = Get-Content $catalogPath | Where-Object {
         $trimmed = $_.Trim()
@@ -72,7 +81,7 @@ try {
     $finishUtc = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
     $status = if ($exitCode -eq 0) { "pass" } else { "fail" }
 
-    $reportPath = Join-Path $EvidenceDir ("PROJECT_INTEGRATION_SUITE_RUN_{0}.md" -f $timestamp)
+    $reportPath = Join-Path $EvidenceDir ("PROJECT_INTEGRATION_SUITE_RUN_{0}.md" -f $resolvedRunId)
     $latestPath = Join-Path $EvidenceDir "PROJECT_INTEGRATION_SUITE_LATEST.md"
     $csvPath = Join-Path $EvidenceDir "PROJECT_INTEGRATION_SUITE_LATEST.csv"
     $caseFilterText = if ([string]::IsNullOrWhiteSpace($CasePattern)) { "<none>" } else { $CasePattern }
@@ -80,6 +89,7 @@ try {
     $report = @(
         "# Project Integration Suite Run",
         "",
+        "- Run ID: $resolvedRunId",
         "- Started UTC: $startUtc",
         "- Finished UTC: $finishUtc",
         "- Status: $status",
@@ -88,6 +98,7 @@ try {
         "- Case filter: $caseFilterText",
         "- Active cases in catalog: $($activeRows.Count)",
         "- Deferred/planned cases in catalog: $($deferredRows.Count)",
+        "- Latest pointers updated: $((-not $resolvedNoLatest).ToString().ToLowerInvariant())",
         "- Log: $logPath",
         "",
         "## Deferred Tracking Snapshot",
@@ -103,9 +114,11 @@ try {
     }
 
     Set-Content -Path $reportPath -Value ($report -join "`n")
-    Copy-Item -Path $reportPath -Destination $latestPath -Force
+    if (-not $resolvedNoLatest) {
+        Copy-Item -Path $reportPath -Destination $latestPath -Force
+    }
 
-    [PSCustomObject]@{
+    $csvRow = [PSCustomObject]@{
         timestamp_utc = $finishUtc
         status = $status
         exit_code = $exitCode
@@ -113,7 +126,10 @@ try {
         deferred_cases = $deferredRows.Count
         report = $reportPath
         log = $logPath
-    } | Export-Csv -Path $csvPath -NoTypeInformation
+    }
+    if (-not $resolvedNoLatest) {
+        $csvRow | Export-Csv -Path $csvPath -NoTypeInformation
+    }
 
     Write-Host "project integration suite: $status (active=$($activeRows.Count), deferred=$($deferredRows.Count))"
 

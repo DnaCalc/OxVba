@@ -2,7 +2,8 @@ param(
     [switch]$NoCapture,
     [string]$EvidenceDir = "docs/evidence/conformance/com",
     [string]$RunId = "",
-    [switch]$NoThrow
+    [switch]$NoThrow,
+    [switch]$NoLatest
 )
 
 $ErrorActionPreference = "Stop"
@@ -63,7 +64,9 @@ try {
         "- Log: $logPath"
     )
     Set-Content -Path $reportPath -Value ($report -join "`n")
-    $result | Export-Csv -Path $latestCsvPath -NoTypeInformation
+    if (-not $NoLatest) {
+        $result | Export-Csv -Path $latestCsvPath -NoTypeInformation
+    }
 
     if ($exitCode -ne 0 -and -not $NoThrow) {
         throw "registrationless COM lane failed (exit=$exitCode)"

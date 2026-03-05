@@ -73,12 +73,12 @@ This runs one cumulative lane at the highest target version and reuses deduplica
 ./scripts/run-formal-kani-remote.ps1 -Action Status
 ```
 
-Optional status snapshots (NDJSON, one record per status poll):
+Optional status snapshots (JSONL, one record per status poll):
 
 ```powershell
 ./scripts/run-formal-kani-remote.ps1 `
   -Action Status `
-  -StatusSnapshotNdjson temp/async/kani_remote/status_snapshots.ndjson
+  -StatusSnapshotJsonl temp/async/kani_remote/status_snapshots.jsonl
 ```
 
 4b. Active memory telemetry samples with optional guard actions:
@@ -96,7 +96,7 @@ Optional status snapshots (NDJSON, one record per status poll):
   -MemoryHardUsedPercent 92 `
   -HardPressureAction pause `
   -MonitorAutoResume $true `
-  -MonitorSnapshotNdjson temp/async/kani_remote/monitor_snapshots.ndjson
+  -MonitorSnapshotJsonl temp/async/kani_remote/monitor_snapshots.jsonl
 ```
 
 5. Stop deferred jobs:
@@ -199,7 +199,7 @@ This keeps CBMC/Kani resource pressure bounded while preserving forward progress
   - automatic pause file: `state/deferred_dispatch/PAUSE_NEW_LANES.auto`;
   - optional manual pause file: `state/deferred_dispatch/PAUSE_NEW_LANES.manual`.
 - `Monitor` action can enforce the same thresholds out-of-band and auto-resume the auto-pause flag when memory drops below soft threshold.
-- `Monitor` now prints `monitor_summary` per sample and can append machine-readable telemetry (`-MonitorSnapshotNdjson`) for trend/rate analysis.
+- `Monitor` now prints `monitor_summary` per sample and can append machine-readable telemetry (`-MonitorSnapshotJsonl`) for trend/rate analysis.
 - `Status` supports configurable no-progress warning threshold:
   - `-StatusStalledMinutesWarn` (default `90`).
 

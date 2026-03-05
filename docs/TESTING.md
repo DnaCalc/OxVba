@@ -2,16 +2,21 @@
 
 ## Local lanes
 - Fast lane: `./scripts/meta-check.ps1 -Fast`
+- Fast lane (no artifact churn): `./scripts/meta-check.ps1 -Fast -NoArtifacts`
 - Full lane: `./scripts/meta-check.ps1`
 - Matrix lane: `./scripts/meta-check.ps1 -Fast -Matrix`
 - Formal lane (non-blocking): `./scripts/meta-check.ps1 -Fast -Formal`
 - Formal lane (strict Kani via WSL): `./scripts/run-formal-kani-wsl.ps1 -ProfileScope mvp-formal-foundation-v3`
 - Combined ladder lane: `./scripts/meta-check.ps1 -Fast -Conformance -Matrix -Formal`
+- Combined ladder lane (no artifact churn): `./scripts/meta-check.ps1 -Fast -Conformance -Matrix -Formal -NoArtifacts`
 - COM conformance (required registrationless lane): `./scripts/run-com-conformance.ps1`
 - COM conformance (registrationless + registered external lane): `./scripts/run-com-conformance.ps1 -IncludeRegisteredLane -RegisteredProgIds "Scripting.Dictionary"`
 - COM early-binding conformance (`E0..E6`): `./scripts/run-com-early-conformance.ps1 -IncludeFormalLane`
 - COM early-binding perf baseline: `./scripts/run-com-early-perf.ps1 -Iterations 3`
 - Integration fixture lint: `./scripts/lint-integration-fixtures.ps1`
+- Staged commit scope guard: `./scripts/check-staged-commit-scope.ps1`
+- Profile artifact scope guard: `./scripts/validate-profile-artifact-scope.ps1 -Mode staged`
+- Evidence retention prune (keep latest + N runs): `./scripts/prune-evidence-artifacts.ps1 -KeepCount 5`
 
 ## Async long-running formal steps
 For long Kani runs in profile execution, use:
@@ -24,6 +29,7 @@ For long Kani runs in profile execution, use:
 - Reconcile stale state/watchers: `./scripts/run-formal-kani-async.ps1 -Action Reconcile -Name v3-kani`
 - Start watcher (10-minute liveness poll): `./scripts/run-formal-kani-async.ps1 -Action WatchStart -Name v3-kani -WatchPollSeconds 600`
 - Stop watcher: `./scripts/run-formal-kani-async.ps1 -Action WatchStop -Name v3-kani`
+- Optional JSONL snapshots for remote monitoring: `./scripts/run-formal-kani-remote.ps1 -Action Monitor -MonitorSnapshotJsonl temp/async/kani_remote/monitor_snapshots.jsonl`
 
 Deferred formal gate policy:
 - For profiles that declare deferred gates, async Kani start + DG register update is required in-cycle.
@@ -38,6 +44,7 @@ Deferred formal gate policy:
 - VM: bytecode execution tests for arithmetic, branch/loop execution, and jump validation.
 - Conformance: VM/JIT-toggle profile corpus with slot snapshots (including relational/boolean branches).
 - Formal: profile-scoped non-blocking obligations via `scripts/run-formal.ps1`.
+  - Structured record: `docs/evidence/formal/latest_run.jsonl` (or temp path when `-NoArtifacts`).
 - COM client E2E:
   - registrationless controlled lane (`com_client_end_to_end`) is always runnable in Windows host-backed mode,
   - registered external lane (`com_client_registered_lane`) uses ignored tests and runs only via explicit script/`--ignored` invocation.

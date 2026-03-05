@@ -4,7 +4,8 @@ param(
     [string]$EvidenceDir = "docs/evidence/conformance/com_early/lanes",
     [string]$RunId = "",
     [switch]$NoCapture,
-    [switch]$NoThrow
+    [switch]$NoThrow,
+    [switch]$NoLatest
 )
 
 $ErrorActionPreference = "Stop"
@@ -82,9 +83,9 @@ function Get-LaneCases {
 
 Push-Location (Join-Path $PSScriptRoot "..")
 try {
-    if ([string]::IsNullOrWhiteSpace($RunId)) {
-        $RunId = (Get-Date).ToUniversalTime().ToString("yyyyMMddTHHmmssZ")
-    }
+    . "$PSScriptRoot/lib-run-context.ps1"
+    $RunId = Resolve-RunId -Name ("com-early-lane-{0}" -f $LaneId.ToLowerInvariant()) -RequestedRunId $RunId
+
     if (-not (Test-Path $EvidenceDir)) {
         New-Item -ItemType Directory -Path $EvidenceDir -Force | Out-Null
     }
@@ -132,7 +133,9 @@ try {
     $csvPath = Join-Path $EvidenceDir ("COM_EARLY_{0}_{1}.csv" -f $LaneId, $RunId)
     $latestCsvPath = Join-Path $EvidenceDir ("COM_EARLY_{0}_LATEST.csv" -f $LaneId)
     $results | Export-Csv -Path $csvPath -NoTypeInformation
-    Copy-Item -Path $csvPath -Destination $latestCsvPath -Force
+    if (-not $NoLatest) {
+        Copy-Item -Path $csvPath -Destination $latestCsvPath -Force
+    }
 
     $reportPath = Join-Path $EvidenceDir ("COM_EARLY_{0}_{1}.md" -f $LaneId, $RunId)
     $latestReportPath = Join-Path $EvidenceDir ("COM_EARLY_{0}_LATEST.md" -f $LaneId)
@@ -149,7 +152,9 @@ try {
         $lines += "| $($row.test_id) | $($row.status) | $($row.clause_ids) | $($row.evidence_path) |"
     }
     Set-Content -Path $reportPath -Value ($lines -join "`n")
-    Copy-Item -Path $reportPath -Destination $latestReportPath -Force
+    if (-not $NoLatest) {
+        Copy-Item -Path $reportPath -Destination $latestReportPath -Force
+    }
 
     if (-not $NoThrow) {
         $failed = @($results | Where-Object { $_.status -eq "fail" })

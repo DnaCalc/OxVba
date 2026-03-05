@@ -28,12 +28,17 @@ param(
     [int]$MonitorIntervalSeconds = 30,
     [bool]$MonitorAutoResume = $true,
     [int]$StatusStalledMinutesWarn = 90,
+    [string]$StatusSnapshotJsonl = "",
+    [string]$MonitorSnapshotJsonl = "",
     [string]$StatusSnapshotNdjson = "",
     [string]$MonitorSnapshotNdjson = ""
 )
 
 $ErrorActionPreference = "Stop"
 $PSNativeCommandUseErrorActionPreference = $true
+
+$resolvedStatusSnapshotJsonl = if (-not [string]::IsNullOrWhiteSpace($StatusSnapshotJsonl)) { $StatusSnapshotJsonl } else { $StatusSnapshotNdjson }
+$resolvedMonitorSnapshotJsonl = if (-not [string]::IsNullOrWhiteSpace($MonitorSnapshotJsonl)) { $MonitorSnapshotJsonl } else { $MonitorSnapshotNdjson }
 
 $SshCommonOptions = @(
     "-o", "ServerAliveInterval=15",
@@ -63,7 +68,7 @@ function Invoke-RemoteScript {
     return $out
 }
 
-function Write-NdjsonRecord {
+function Write-JsonlRecord {
     param(
         [string]$Path,
         [Parameter(Mandatory = $true)]
@@ -1620,7 +1625,7 @@ exit 0
         $laneSummary = Get-DeferredStatusSummary -Lines $statusLines
         Write-Host ("status_summary running={0} pending={1} finished_pass={2} finished_fail={3} finished_unknown={4} no_op={5} dispatch_state={6}" -f $laneSummary.running, $laneSummary.pending, $laneSummary.finished_pass, $laneSummary.finished_fail, $laneSummary.finished_unknown, $laneSummary.no_op, $dispatchState)
 
-        Write-NdjsonRecord -Path $StatusSnapshotNdjson -Record ([ordered]@{
+        Write-JsonlRecord -Path $resolvedStatusSnapshotJsonl -Record ([ordered]@{
                 timestamp_utc = (Get-Date).ToUniversalTime().ToString("o")
                 action = "Status"
                 dispatch_state = $dispatchState
@@ -1757,7 +1762,7 @@ exit 0
                 Write-Host "monitor_summary mem_used_percent=$memUsed cbmc_count=$cbmcCount kani_count=$kaniCount pause_auto=$pauseAuto pause_manual=$pauseManual"
             }
 
-            Write-NdjsonRecord -Path $MonitorSnapshotNdjson -Record ([ordered]@{
+            Write-JsonlRecord -Path $resolvedMonitorSnapshotJsonl -Record ([ordered]@{
                     timestamp_utc = (Get-Date).ToUniversalTime().ToString("o")
                     action = "Monitor"
                     sample_index = $i
