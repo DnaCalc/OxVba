@@ -19,10 +19,12 @@ Current checkpoint:
 - Latest integrated gate artifact: `docs/evidence/profiles/v386/integrated_gate.md`.
 - COM late-bound client C2 ladder `v387..v406` reached terminal gate `v406` with closure evidence.
 - Latest C2 closure artifact: `docs/evidence/profiles/v406/V406_COM_CLIENT_C2_CLOSURE.md`.
+- COM early-binding/type-library planning slice `v407..v416` reached terminal planning gate `v416`.
+- Latest planning closure artifact: `docs/evidence/profiles/v416/V416_COM_EARLY_PLANNING_WORKSET_CLOSURE.md`.
 - Latest formal artifact: `docs/evidence/formal/latest_run.md`.
 - Evidence artifacts are tracked under `docs/evidence/profiles/`, `docs/evidence/formal/`, and `docs/evidence/divergences/`.
 
 Resume protocol:
 1. Read this file.
 2. Run `./scripts/meta-check.ps1 -Fast`.
-3. Continue COM early-binding/type-library planning+execution steps through `v416`.
+3. Continue COM early-binding/type-library execution steps beyond planning closure (`v417+`) when instructed.

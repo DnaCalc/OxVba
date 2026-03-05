@@ -190,7 +190,7 @@
 | Profile v186 Status | [`PROFILE_STATUS_V186.md`](profile-status/PROFILE_STATUS_V186.md) | Current gate status contract for `mvp-profile-v186` (batch-2 terminal closure). |
 | Profile v226 Status | [`PROFILE_STATUS_V226.md`](profile-status/PROFILE_STATUS_V226.md) | Current gate status contract for `mvp-profile-v226` (host-platform expansion terminal closure). |
 | Profile v286 Status | [`PROFILE_STATUS_V286.md`](profile-status/PROFILE_STATUS_V286.md) | Current gate status contract for `mvp-profile-v286` (declare/marshaling full-scope terminal closure). |
-| Profile v287-v406 Statuses | [`profile-status/`](profile-status/README.md) | COM client/server series status records are published through `PROFILE_STATUS_V406.md`. |
+| Profile v287-v416 Statuses | [`profile-status/`](profile-status/README.md) | COM client/server + early-binding planning status records are published through `PROFILE_STATUS_V416.md`. |
 | Profile v107 Status | [`PROFILE_STATUS_V107.md`](profile-status/PROFILE_STATUS_V107.md) | Current gate status contract for `mvp-lang-with-member-target-v107`. |
 | Profile v108-v146 Statuses | [`profile-status/`](profile-status/README.md) | AutoRun ladder status records are published through `PROFILE_STATUS_V146.md` for the active full-language/built-ins ladder range. |
 | Phase 12 Status | [`PHASE12_STATUS.md`](PHASE12_STATUS.md) | Declared profile scope and final conformance/stabilization gate artifacts. |
@@ -342,6 +342,7 @@
 | Work Set Plan (v397-v400) | [`worksets/WORKSET_2026-03-05_COM_CLIENT_LATEBOUND_IMPLEMENTATION_V397_V400.md`](worksets/WORKSET_2026-03-05_COM_CLIENT_LATEBOUND_IMPLEMENTATION_V397_V400.md) | Second implementation block for COM late-bound client C2 runway: ProgID/member-name literal lowering, invoke packing phase-I, and failure-path fixtures. |
 | Work Set Plan (v401-v406) | [`worksets/WORKSET_2026-03-05_COM_CLIENT_LATEBOUND_EXECUTION_V401_V406.md`](worksets/WORKSET_2026-03-05_COM_CLIENT_LATEBOUND_EXECUTION_V401_V406.md) | C2 execution/closure workset: lane scaffolding, registrationless+registered evidence runs, VM/JIT parity sweep, and terminal closure gate. |
 | Work Set Plan (v407-v416) | [`worksets/WORKSET_2026-03-05_COM_EARLY_BINDING_TYPELIB_PLANNING_V407_V416.md`](worksets/WORKSET_2026-03-05_COM_EARLY_BINDING_TYPELIB_PLANNING_V407_V416.md) | Planning closure workset for COM early binding and type-library support baseline before implementation-heavy phases. |
+| COM Early Open Questions (v416) | [`evidence/conformance/com_early/COM_EARLY_OPEN_QUESTIONS_V416.md`](evidence/conformance/com_early/COM_EARLY_OPEN_QUESTIONS_V416.md) | Planning-stage open-question register for early-binding/type-library behavior to close via source anchors or explicit implementation-defined policy. |
 | Status Tours | [`status-tours/`](status-tours/) | Date-stamped orientation/showcase docs for implemented project state. |
 | Formal | [`FORMAL.md`](FORMAL.md) | Lean/Kani formal scaffold status and structure. |
 | Spec Checklist | [`evidence/SPEC_CHECKLIST.md`](evidence/SPEC_CHECKLIST.md) | Structured language + built-in/library checklist aligned to current evidence and planned gaps. |

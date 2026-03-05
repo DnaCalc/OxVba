@@ -1449,3 +1449,14 @@
     - `resume_next_com_failure_vm_jit_snapshots_match`
   - refreshed guardrail docs/gate sync to new active target:
     - `AGENTS.md`, `docs/AUTORUN_STATE.md`, `README.md`, `docs/README.md`, `docs/profile-status/README.md`.
+- Completed COM early-binding/type-library planning ladder slice `v407..v416`:
+  - reconciled ladder planning gate contract to the approved run target (`v416`) in:
+    - `docs/worksets/PROFILE_LADDER_2026-03-05_MACH1000_V407_V466_COM_EARLY_BINDING_TYPELIB.md`
+  - published per-step planning evidence:
+    - `docs/evidence/profiles/v407/..` through `docs/evidence/profiles/v416/..`
+  - published profile statuses:
+    - `docs/profile-status/PROFILE_STATUS_V407.md` through `PROFILE_STATUS_V416.md`
+  - added explicit planning-stage open-question register:
+    - `docs/evidence/conformance/com_early/COM_EARLY_OPEN_QUESTIONS_V416.md`
+  - refreshed docs indexes for early-binding planning closure visibility:
+    - `docs/README.md`, `docs/profile-status/README.md`.
