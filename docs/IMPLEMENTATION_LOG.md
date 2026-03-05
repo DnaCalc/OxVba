@@ -1436,3 +1436,16 @@
   - Windows host-backed COM activation now maps default tokenized test selector (`prog_id=4`) to in-process OxVba-owned `IDispatch` test object (`OxVba.TestDispatch`) unless overridden by `OXVBA_COM_PROGID_4`.
   - Added deterministic `IDispatch` implementation for integration tests (`Count` property-get, `Exists(i4)` method) to reduce external COM registration dependency in client tests.
   - Updated C2 fixtures/spec notes to target the controlled lane (`CreateObject("OxVba.TestDispatch")`).
+- Completed COM late-bound client C2 closure ladder `v401..v406` and moved execution target to early-binding planning gate `v416`:
+  - published closure workset + step evidence/status artifacts:
+    - `docs/worksets/WORKSET_2026-03-05_COM_CLIENT_LATEBOUND_EXECUTION_V401_V406.md`
+    - `docs/evidence/profiles/v401/..` through `docs/evidence/profiles/v406/..`
+    - `docs/profile-status/PROFILE_STATUS_V401.md` through `PROFILE_STATUS_V406.md`
+  - refreshed executable C2 conformance evidence:
+    - `./scripts/run-com-conformance.ps1 -IncludeRegisteredLane` (`run_id=20260305T094952Z`, `pass`)
+    - `./scripts/run-project-integration-suite.ps1` (`run_id=20260305T095134Z`, `pass`)
+  - added explicit C2 VM/JIT parity assertions in `com_client_end_to_end`:
+    - `createobject_dispatchinvoke_vm_jit_snapshots_match`
+    - `resume_next_com_failure_vm_jit_snapshots_match`
+  - refreshed guardrail docs/gate sync to new active target:
+    - `AGENTS.md`, `docs/AUTORUN_STATE.md`, `README.md`, `docs/README.md`, `docs/profile-status/README.md`.

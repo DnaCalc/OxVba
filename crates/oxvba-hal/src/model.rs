@@ -222,11 +222,7 @@ impl HostPolicy {
         self
     }
 
-    pub fn with_com_prog_id_override(
-        mut self,
-        selector: i32,
-        prog_id: impl Into<String>,
-    ) -> Self {
+    pub fn with_com_prog_id_override(mut self, selector: i32, prog_id: impl Into<String>) -> Self {
         self.com_prog_id_overrides.insert(selector, prog_id.into());
         self
     }

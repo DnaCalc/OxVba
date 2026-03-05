@@ -131,8 +131,7 @@ fn e2e_scaling_pressure_large_linear_statement_block_vm_jit_parity() {
 #[test]
 fn e2e_scaling_pressure_cross_project_many_modules() {
     let mut ref_modules = Vec::new();
-    let mut main_source =
-        String::from("Option Explicit\nPublic Sub Main()\nDim marker As Long\n");
+    let mut main_source = String::from("Option Explicit\nPublic Sub Main()\nDim marker As Long\n");
     let module_count = 32usize;
     let mut expected_marker = 0i32;
     for index in 1..=module_count {

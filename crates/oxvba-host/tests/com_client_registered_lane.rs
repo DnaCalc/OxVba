@@ -146,8 +146,11 @@ End Sub
             .expect_err("missing registered class should error");
         assert_eq!(err.phase(), DiagnosticPhase::Runtime);
         assert!(
-            err.message().contains("com-createobject-class-not-registered")
-                || err.message().contains("com-createobject-invalid-class-string")
+            err.message()
+                .contains("com-createobject-class-not-registered")
+                || err
+                    .message()
+                    .contains("com-createobject-invalid-class-string")
                 || err.message().contains("0x80040154"),
             "expected class-not-registered mapping in error message, got {}",
             err.message()

@@ -5,7 +5,7 @@
 | Document | Location | Description |
 |---|---|---|
 | **MACH-1000 Plan** | [`MACH1000_PLAN.md`](../MACH1000_PLAN.md) | The definitive OxVba project plan. Charter, architecture, formal approach, testing strategy, implementation sequencing. |
-| **AutoRun State** | [`AUTORUN_STATE.md`](AUTORUN_STATE.md) | Active execution guardrail for continuous runs. Current target is the COM late-bound client C2 implementation gate `v400`; blocker handling follows `CURRENT_BLOCKERS.md`. |
+| **AutoRun State** | [`AUTORUN_STATE.md`](AUTORUN_STATE.md) | Active execution guardrail for continuous runs. Current target is the COM early-binding/type-library planning gate `v416`; blocker handling follows `CURRENT_BLOCKERS.md`. |
 | **Local Execution Doctrine** | [`LOCAL_EXECUTION_DOCTRINE.md`](LOCAL_EXECUTION_DOCTRINE.md) | Local process hardening rules learned from ladder execution, including scaffold integrity gates and required local checks. |
 | Implementation Log | [`IMPLEMENTATION_LOG.md`](IMPLEMENTATION_LOG.md) | Rolling execution log for implementation progress. |
 | Building | [`BUILDING.md`](BUILDING.md) | Build and local verification instructions. |
@@ -190,7 +190,7 @@
 | Profile v186 Status | [`PROFILE_STATUS_V186.md`](profile-status/PROFILE_STATUS_V186.md) | Current gate status contract for `mvp-profile-v186` (batch-2 terminal closure). |
 | Profile v226 Status | [`PROFILE_STATUS_V226.md`](profile-status/PROFILE_STATUS_V226.md) | Current gate status contract for `mvp-profile-v226` (host-platform expansion terminal closure). |
 | Profile v286 Status | [`PROFILE_STATUS_V286.md`](profile-status/PROFILE_STATUS_V286.md) | Current gate status contract for `mvp-profile-v286` (declare/marshaling full-scope terminal closure). |
-| Profile v287-v400 Statuses | [`profile-status/`](profile-status/README.md) | COM client/server series status records are published through `PROFILE_STATUS_V400.md`. |
+| Profile v287-v406 Statuses | [`profile-status/`](profile-status/README.md) | COM client/server series status records are published through `PROFILE_STATUS_V406.md`. |
 | Profile v107 Status | [`PROFILE_STATUS_V107.md`](profile-status/PROFILE_STATUS_V107.md) | Current gate status contract for `mvp-lang-with-member-target-v107`. |
 | Profile v108-v146 Statuses | [`profile-status/`](profile-status/README.md) | AutoRun ladder status records are published through `PROFILE_STATUS_V146.md` for the active full-language/built-ins ladder range. |
 | Phase 12 Status | [`PHASE12_STATUS.md`](PHASE12_STATUS.md) | Declared profile scope and final conformance/stabilization gate artifacts. |
@@ -293,7 +293,7 @@
 | Profile Ladder (v307-v336) | [`worksets/PROFILE_LADDER_2026-03-04_MACH1000_V307_V336_COM_CLIENT_DEPTH.md`](worksets/PROFILE_LADDER_2026-03-04_MACH1000_V307_V336_COM_CLIENT_DEPTH.md) | COM client-depth ladder for native activation/invoke behavior, fallback policy contracts, and executable evidence. |
 | Profile Ladder (v337-v366) | [`worksets/PROFILE_LADDER_2026-03-04_MACH1000_V337_V366_COM_SERVER_DEPTH.md`](worksets/PROFILE_LADDER_2026-03-04_MACH1000_V337_V366_COM_SERVER_DEPTH.md) | COM server-depth ladder for class-factory/dispatch scaffolding, policy controls, and harness coverage. |
 | Profile Ladder (v367-v386) | [`worksets/PROFILE_LADDER_2026-03-04_MACH1000_V367_V386_COM_STABILIZATION.md`](worksets/PROFILE_LADDER_2026-03-04_MACH1000_V367_V386_COM_STABILIZATION.md) | COM stabilization ladder for regression hardening, formal/deferred gate sync, and terminal closure gate `v386`. |
-| Profile Ladder (v387-v406) | [`worksets/PROFILE_LADDER_2026-03-04_MACH1000_V387_V406_COM_CLIENT_LATEBOUND_C2.md`](worksets/PROFILE_LADDER_2026-03-04_MACH1000_V387_V406_COM_CLIENT_LATEBOUND_C2.md) | COM late-bound client C2 ladder covering contract closure, implementation runway, and closure gate `v406` (`v400` approved interim gate). |
+| Profile Ladder (v387-v406) | [`worksets/PROFILE_LADDER_2026-03-04_MACH1000_V387_V406_COM_CLIENT_LATEBOUND_C2.md`](worksets/PROFILE_LADDER_2026-03-04_MACH1000_V387_V406_COM_CLIENT_LATEBOUND_C2.md) | COM late-bound client C2 ladder covering contract closure, implementation runway, and terminal closure gate `v406` (completed). |
 | Profile Ladder (v407-v466) | [`worksets/PROFILE_LADDER_2026-03-05_MACH1000_V407_V466_COM_EARLY_BINDING_TYPELIB.md`](worksets/PROFILE_LADDER_2026-03-05_MACH1000_V407_V466_COM_EARLY_BINDING_TYPELIB.md) | COM early-binding and type-library consumption ladder covering planning (`v407..v416`) through integrated implementation/conformance closure (`v466`). |
 | Work Set Plan (v147) | [`worksets/WORKSET_2026-03-01_NON_HAL_GAP_BASELINE_LOCK_V147.md`](worksets/WORKSET_2026-03-01_NON_HAL_GAP_BASELINE_LOCK_V147.md) | Baseline lock workset for non-HAL gap classification and scope freeze. |
 | Work Set Plan (v148) | [`worksets/WORKSET_2026-03-01_ERR_SURFACE_EXPANSION_V148.md`](worksets/WORKSET_2026-03-01_ERR_SURFACE_EXPANSION_V148.md) | `Err` member-surface expansion subset workset for deterministic non-HAL execution. |
@@ -340,6 +340,7 @@
 | Work Set Plan (v387-v392) | [`worksets/WORKSET_2026-03-04_COM_CLIENT_LATEBOUND_SPEC_CLOSURE_V387_V392.md`](worksets/WORKSET_2026-03-04_COM_CLIENT_LATEBOUND_SPEC_CLOSURE_V387_V392.md) | Spec-closure workset for COM late-bound client C2 runway (`v387..v392`). |
 | Work Set Plan (v393-v396) | [`worksets/WORKSET_2026-03-04_COM_CLIENT_LATEBOUND_IMPLEMENTATION_V393_V396.md`](worksets/WORKSET_2026-03-04_COM_CLIENT_LATEBOUND_IMPLEMENTATION_V393_V396.md) | First implementation block for COM late-bound client C2 runway: bridge/lifetime hardening, error taxonomy, and conformance/process scaffolding. |
 | Work Set Plan (v397-v400) | [`worksets/WORKSET_2026-03-05_COM_CLIENT_LATEBOUND_IMPLEMENTATION_V397_V400.md`](worksets/WORKSET_2026-03-05_COM_CLIENT_LATEBOUND_IMPLEMENTATION_V397_V400.md) | Second implementation block for COM late-bound client C2 runway: ProgID/member-name literal lowering, invoke packing phase-I, and failure-path fixtures. |
+| Work Set Plan (v401-v406) | [`worksets/WORKSET_2026-03-05_COM_CLIENT_LATEBOUND_EXECUTION_V401_V406.md`](worksets/WORKSET_2026-03-05_COM_CLIENT_LATEBOUND_EXECUTION_V401_V406.md) | C2 execution/closure workset: lane scaffolding, registrationless+registered evidence runs, VM/JIT parity sweep, and terminal closure gate. |
 | Work Set Plan (v407-v416) | [`worksets/WORKSET_2026-03-05_COM_EARLY_BINDING_TYPELIB_PLANNING_V407_V416.md`](worksets/WORKSET_2026-03-05_COM_EARLY_BINDING_TYPELIB_PLANNING_V407_V416.md) | Planning closure workset for COM early binding and type-library support baseline before implementation-heavy phases. |
 | Status Tours | [`status-tours/`](status-tours/) | Date-stamped orientation/showcase docs for implemented project state. |
 | Formal | [`FORMAL.md`](FORMAL.md) | Lean/Kani formal scaffold status and structure. |

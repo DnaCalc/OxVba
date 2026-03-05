@@ -3,9 +3,9 @@ mod windows_com_e2e {
     use oxvba_hal::model::HostPolicy;
     use oxvba_host::{Engine, HostConfig};
 
-    fn run_windows_host_backed(source: &str) -> Vec<i32> {
+    fn run_windows_host_backed(source: &str, enable_jit: bool) -> Vec<i32> {
         let mut engine = Engine::new(HostConfig {
-            enable_jit: false,
+            enable_jit,
             root_object_name: None,
         });
         engine.set_host_policy(HostPolicy::interactive_dev());
@@ -27,6 +27,7 @@ countValue = DispatchInvoke(obj, "Count")
 existsValue = DispatchInvoke(obj, "Exists", 42)
 End Sub
 "#,
+            false,
         );
 
         assert!(
@@ -54,6 +55,7 @@ keepAfter = DispatchInvoke(obj, "Exists")
 errNo = Err.Number
 End Sub
 "#,
+            false,
         );
 
         assert!(
@@ -71,7 +73,9 @@ End Sub
 
     #[test]
     fn repeated_dispatch_calls_stay_stable_under_pressure() {
-        let mut source = String::from("Sub Main()\nDim obj\nDim value\nobj = CreateObject(\"OxVba.TestDispatch\")\n");
+        let mut source = String::from(
+            "Sub Main()\nDim obj\nDim value\nobj = CreateObject(\"OxVba.TestDispatch\")\n",
+        );
         for _ in 0..512 {
             source.push_str("value = DispatchInvoke(obj, \"Count\")\n");
             source.push_str("value = DispatchInvoke(obj, \"Exists\", 41)\n");
@@ -79,7 +83,7 @@ End Sub
         }
         source.push_str("End Sub\n");
 
-        let out = run_windows_host_backed(&source);
+        let out = run_windows_host_backed(&source, false);
         assert!(
             out[0] >= 20_001,
             "expected native COM object handle space, got {:?}",
@@ -88,6 +92,51 @@ End Sub
         assert_eq!(
             out[1], 1,
             "final Exists(42) result should remain stable after repeated dispatch"
+        );
+    }
+
+    #[test]
+    fn createobject_dispatchinvoke_vm_jit_snapshots_match() {
+        let source = r#"
+Sub Main()
+Dim obj
+Dim countValue
+Dim existsValue
+obj = CreateObject("OxVba.TestDispatch")
+countValue = DispatchInvoke(obj, "Count")
+existsValue = DispatchInvoke(obj, "Exists", 42)
+End Sub
+"#;
+
+        let vm = run_windows_host_backed(source, false);
+        let jit = run_windows_host_backed(source, true);
+        assert_eq!(
+            vm, jit,
+            "VM/JIT snapshots diverged on controlled COM success path: vm={vm:?} jit={jit:?}"
+        );
+    }
+
+    #[test]
+    fn resume_next_com_failure_vm_jit_snapshots_match() {
+        let source = r#"
+Sub Main()
+Dim obj
+Dim keepOk
+Dim keepAfter
+Dim errNo
+On Error Resume Next
+obj = CreateObject("OxVba.TestDispatch")
+keepOk = DispatchInvoke(obj, "Exists", 42)
+keepAfter = DispatchInvoke(obj, "Exists")
+errNo = Err.Number
+End Sub
+"#;
+
+        let vm = run_windows_host_backed(source, false);
+        let jit = run_windows_host_backed(source, true);
+        assert_eq!(
+            vm, jit,
+            "VM/JIT snapshots diverged on COM failure/resume-next path: vm={vm:?} jit={jit:?}"
         );
     }
 }

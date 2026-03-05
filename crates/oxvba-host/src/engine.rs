@@ -150,13 +150,11 @@ impl Engine {
         self.set_host_policy(policy);
     }
 
-    pub fn set_com_prog_id_override(
-        &mut self,
-        selector: i32,
-        prog_id: impl Into<String>,
-    ) {
+    pub fn set_com_prog_id_override(&mut self, selector: i32, prog_id: impl Into<String>) {
         let mut policy = self.host_services.policy().clone();
-        policy.com_prog_id_overrides.insert(selector, prog_id.into());
+        policy
+            .com_prog_id_overrides
+            .insert(selector, prog_id.into());
         self.set_host_policy(policy);
     }
 
@@ -1518,8 +1516,11 @@ mod tests {
             .expect_err("invalid override should fail native COM activation");
         assert_eq!(err.phase(), DiagnosticPhase::Runtime);
         assert!(
-            err.message().contains("com-createobject-class-not-registered")
-                || err.message().contains("com-createobject-invalid-class-string")
+            err.message()
+                .contains("com-createobject-class-not-registered")
+                || err
+                    .message()
+                    .contains("com-createobject-invalid-class-string")
                 || err.message().contains("0x80040154"),
             "expected class-not-registered indicator, got {}",
             err.message()

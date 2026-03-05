@@ -6,7 +6,7 @@ OxVBA is a full-fidelity VBA 7 runtime engine in Rust, built for compatibility, 
 - `CHARTER.md` — project mission, values, scope, and clean-room rule.
 - `OPERATIONS.md` — execution and development doctrine for this repo.
 - `MACH1000_PLAN.md` — detailed architecture and phased implementation plan.
-- `docs/AUTORUN_STATE.md` — active AutoRun guardrail and current terminal gate target (`v400`).
+- `docs/AUTORUN_STATE.md` — active AutoRun guardrail and current terminal gate target (`v416`).
 - `docs/IMPLEMENTATION_LOG.md` — rolling implementation progress log.
 
 ## Top-Level Layout

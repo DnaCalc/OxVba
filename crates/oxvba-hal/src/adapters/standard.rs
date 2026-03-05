@@ -2943,8 +2943,11 @@ mod tests {
             .create_object(4)
             .expect_err("missing class should fail create_object");
         assert!(
-            err.message.contains("com-createobject-class-not-registered")
-                || err.message.contains("com-createobject-invalid-class-string")
+            err.message
+                .contains("com-createobject-class-not-registered")
+                || err
+                    .message
+                    .contains("com-createobject-invalid-class-string")
                 || err.message.contains("0x80040154"),
             "expected stable class-not-registered label, got {}",
             err.message

@@ -125,3 +125,9 @@ Non-blocking formal issues and follow-up items for later ladder profiles.
   Current status (`todo` / `investigating` / `resolved`): investigating
   Reproduction command: `./scripts/run-formal-kani-remote.ps1 -Action Monitor -MonitorDurationSeconds 600 -MonitorIntervalSeconds 30`
   Suggested next action: run 24h monitor sample, record pressure/action incidence, then tune defaults for this host.
+- ID: FTODO-KANI-REVIEW-004
+  Profile: remote deferred queue continuity (`v2/v4/v162/v175/v287`)
+  Summary: Active deferred dispatch is currently executing on commit `560e5a0` while local head has advanced; this is acceptable for now but requires explicit post-run reconcile/restart on latest commit to avoid prolonged drift.
+  Current status (`todo` / `investigating` / `resolved`): investigating
+  Reproduction command: `./scripts/run-formal-kani-remote.ps1 -Action Status`
+  Suggested next action: keep current run until terminal state, then run `./scripts/run-formal-kani-sync.ps1` to reconcile and restart unresolved lanes against latest head.

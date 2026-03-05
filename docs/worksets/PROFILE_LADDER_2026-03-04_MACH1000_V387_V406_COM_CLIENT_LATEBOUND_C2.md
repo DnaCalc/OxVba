@@ -3,7 +3,7 @@
 ## Range
 
 - Ladder span: `v387..v406`
-- Immediate terminal gate for approved run: `v400`
+- Terminal gate for executed run: `v406`
 - Focus: late-bound COM client C2 contract closure and executable runway.
 
 ## Objectives
