@@ -365,3 +365,12 @@ FO-V438-001,v438,"cargo kani -p oxvba-host --harness pmr_typelib_resolution_tran
 FO-V438-002,v438,"cargo kani -p oxvba-hal --harness dynlink_contract_accepts_canonical_non_ordinal_descriptor",no,true,crates/oxvba-hal/src/traits.rs
 FO-V456-001,v456,"cargo kani -p oxvba-vm --harness cverr_tag_encoding_stays_in_reserved_error_band",no,true,crates/oxvba-vm/src/interpreter.rs
 FO-V456-002,v456,"cargo kani -p oxvba-vm --harness resume_next_clears_err_number_after_raise",no,true,crates/oxvba-vm/src/interpreter.rs
+FO-V466-001,v466,"cargo test -p oxvba-compiler compile_project_rejects_withevents_in_procedural_module",no,true,crates/oxvba-compiler/src/project.rs
+FO-V466-002,v466,"cargo test -p oxvba-compiler compile_project_rejects_implements_missing_member_coverage",no,true,crates/oxvba-compiler/src/project.rs
+FO-V466-003,v466,"cargo test -p oxvba-compiler compile_project_rejects_raiseevent_undeclared_event",no,true,crates/oxvba-compiler/src/project.rs
+FO-V466-004,v466,"cargo test -p oxvba-compiler compile_project_allows_raiseevent_for_declared_event",no,true,crates/oxvba-compiler/src/project.rs
+FO-V466-005,v466,"cargo test -p oxvba-host formal_v466_feature_obligation_coverage_index_is_uniform_and_deep",no,true,docs/evidence/formal/FEATURE_OBLIGATION_COVERAGE_V1.csv
+FO-V466-006,v466,"cargo test -p oxvba-host formal_v466_event_docs_reflect_post_gate_semantics",no,true,docs/spec/PROJECT_MODULE_REFERENCE_SPEC_V1.md
+FO-V466-007,v466,"cargo test -p oxvba-host formal_v466_profile_status_document_exists",no,true,docs/profile-status/PROFILE_STATUS_V466.md
+FO-V466-008,v466,"cargo test -p oxvba-host formal_v466_project_integration_limits_use_post_gate_diagnostics",no,true,conformance/integration/catalog.psv
+FO-V466-009,v466,"cargo test -p oxvba-host formal_v466_governance_doctrine_tracks_pmr_event_and_oracle_schema_contracts",no,true,scripts/check-governance.ps1

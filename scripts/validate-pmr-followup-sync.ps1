@@ -51,8 +51,20 @@ try {
     if (([string]$odg038.topic_id).Trim() -ne "CCT-040") {
         throw "ODG-038 topic mismatch: expected CCT-040"
     }
-    if (([string]$odg038.status).Trim() -ne "closed") {
-        throw "ODG-038 must be closed for PMR sync discipline"
+    $odg038Status = ([string]$odg038.status).Trim()
+    if ($odg038Status -eq "open") {
+        if (([string]$odg038.owner_phase).Trim() -ne "events-story-completion") {
+            throw "ODG-038 open-state owner_phase must be events-story-completion"
+        }
+        if (([string]$odg038.foldback_required).Trim().ToLowerInvariant() -ne "true") {
+            throw "ODG-038 open-state must set foldback_required=true"
+        }
+        if ([string]::IsNullOrWhiteSpace(([string]$odg038.foldback_steps))) {
+            throw "ODG-038 open-state must include foldback_steps"
+        }
+    }
+    elseif ($odg038Status -ne "closed") {
+        throw "ODG-038 status must be open or closed"
     }
     if (-not ([string]$odg038.notes).Contains("DIV-0003")) {
         throw "ODG-038 notes must reference DIV-0003"
@@ -65,8 +77,20 @@ try {
     if (([string]$odg039.topic_id).Trim() -ne "CCT-041") {
         throw "ODG-039 topic mismatch: expected CCT-041"
     }
-    if (([string]$odg039.status).Trim() -ne "closed") {
-        throw "ODG-039 must be closed for PMR sync discipline"
+    $odg039Status = ([string]$odg039.status).Trim()
+    if ($odg039Status -eq "open") {
+        if (([string]$odg039.owner_phase).Trim() -ne "events-story-completion") {
+            throw "ODG-039 open-state owner_phase must be events-story-completion"
+        }
+        if (([string]$odg039.foldback_required).Trim().ToLowerInvariant() -ne "true") {
+            throw "ODG-039 open-state must set foldback_required=true"
+        }
+        if ([string]::IsNullOrWhiteSpace(([string]$odg039.foldback_steps))) {
+            throw "ODG-039 open-state must include foldback_steps"
+        }
+    }
+    elseif ($odg039Status -ne "closed") {
+        throw "ODG-039 status must be open or closed"
     }
     if (-not ([string]$odg039.notes).Contains("DIV-0004")) {
         throw "ODG-039 notes must reference DIV-0004"
@@ -84,7 +108,7 @@ try {
         }
     }
 
-    Write-Host "pmr-followup-sync: ok (ODG-038/039 + DIV-0003/0004 + FUP-004/006 linked)"
+    Write-Host "pmr-followup-sync: ok (ODG-038/039 + DIV-0003/0004 + FUP-004/006 linked; open/closed lifecycle accepted)"
 }
 finally {
     Pop-Location

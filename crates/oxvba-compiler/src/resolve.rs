@@ -112,6 +112,10 @@ pub enum BoundStmt {
         label: String,
     },
     RaiseError(i32),
+    RaiseEvent {
+        name: String,
+        args: Vec<BoundCallArg>,
+    },
     ErrClear,
     Label {
         name: String,
@@ -1332,25 +1336,6 @@ fn collect_class_model_diagnostics(lines: &[String]) -> Vec<String> {
 
         let lower = trimmed.to_ascii_lowercase();
 
-        if strip_keyword_prefix_ci(trimmed, "implements").is_some() {
-            let message = "PMR-E-IMPLEMENTS-PROJECTGRAPH-REQUIRED: `Implements` requires Project/Module graph class-model integration";
-            push_class_model_diagnostic(&mut diagnostics, &mut seen, message, trimmed);
-        }
-
-        if starts_with_keyword_ci(trimmed, "raiseevent") {
-            let message = "PMR-E-RAISEEVENT-CLASS-MODEL-REQUIRED: `RaiseEvent` requires class-event metadata integration";
-            push_class_model_diagnostic(&mut diagnostics, &mut seen, message, trimmed);
-        }
-
-        if (starts_with_keyword_ci(trimmed, "dim")
-            || starts_with_keyword_ci(trimmed, "public")
-            || starts_with_keyword_ci(trimmed, "private"))
-            && contains_keyword_token_ci(trimmed, "withevents")
-        {
-            let message = "PMR-E-WITHEVENTS-MODULE-KIND-UNRESOLVED: `WithEvents` declarations require module-kind-aware class metadata";
-            push_class_model_diagnostic(&mut diagnostics, &mut seen, message, trimmed);
-        }
-
         if lower.starts_with("option private module") && !is_procedural_module_context(lines) {
             let message = "PMR-E-OPTION-PRIVATE-MODULE-KIND-UNRESOLVED: `Option Private Module` requires project/module-kind integration";
             push_class_model_diagnostic(&mut diagnostics, &mut seen, message, trimmed);
@@ -1370,17 +1355,6 @@ fn push_class_model_diagnostic(
     if seen.insert(formatted.clone()) {
         diagnostics.push(formatted);
     }
-}
-
-fn starts_with_keyword_ci(text: &str, keyword: &str) -> bool {
-    let lowered = text.to_ascii_lowercase();
-    let needle = keyword.to_ascii_lowercase();
-    lowered == needle || lowered.starts_with(&format!("{needle} "))
-}
-
-fn contains_keyword_token_ci(text: &str, keyword: &str) -> bool {
-    text.split(|ch: char| !ch.is_ascii_alphanumeric() && ch != '_')
-        .any(|token| !token.is_empty() && token.eq_ignore_ascii_case(keyword))
 }
 
 fn is_procedural_module_context(lines: &[String]) -> bool {
@@ -1726,6 +1700,15 @@ fn parse_block(
             continue;
         }
 
+        if lower.starts_with("implements ")
+            || lower.starts_with("event ")
+            || lower.starts_with("public event ")
+            || lower.starts_with("private event ")
+        {
+            *index += 1;
+            continue;
+        }
+
         if lower.starts_with("dim ") {
             parse_declaration(
                 line,
@@ -1956,6 +1939,18 @@ fn parse_block(
         if lower.starts_with("resume ") {
             if let Some(label) = parse_jump_target_label(line[7..].trim()) {
                 out.push(BoundStmt::ResumeLabel { label });
+            } else {
+                out.push(BoundStmt::Unsupported {
+                    line: line.to_string(),
+                });
+            }
+            *index += 1;
+            continue;
+        }
+
+        if lower.starts_with("raiseevent ") {
+            if let Some((name, args)) = parse_raiseevent_invocation(line, array_bounds) {
+                out.push(BoundStmt::RaiseEvent { name, args });
             } else {
                 out.push(BoundStmt::Unsupported {
                     line: line.to_string(),
@@ -2497,6 +2492,44 @@ fn parse_call_invocation(
         }
     }
     Some((name, args))
+}
+
+fn parse_raiseevent_invocation(
+    line: &str,
+    array_bounds: &ArrayBoundsMap,
+) -> Option<(String, Vec<BoundCallArg>)> {
+    let payload = line.trim()[10..].trim();
+    if payload.is_empty() {
+        return None;
+    }
+    if let Some(open) = payload.find('(') {
+        let close = payload.rfind(')')?;
+        if close <= open || !payload[close + 1..].trim().is_empty() {
+            return None;
+        }
+        let name = normalize_ident(payload[..open].trim())?;
+        let args_raw = payload[open + 1..close].trim();
+        if args_raw.is_empty() {
+            return Some((name, Vec::new()));
+        }
+        let mut args = Vec::new();
+        for token in split_call_args(args_raw)? {
+            let trimmed = token.trim();
+            if let Some((lhs, rhs)) = trimmed.split_once(":=") {
+                args.push(BoundCallArg {
+                    name: Some(normalize_ident(lhs)?),
+                    expr: parse_expr(rhs.trim(), array_bounds)?,
+                });
+            } else {
+                args.push(BoundCallArg {
+                    name: None,
+                    expr: parse_expr(trimmed, array_bounds)?,
+                });
+            }
+        }
+        return Some((name, args));
+    }
+    Some((normalize_ident(payload)?, Vec::new()))
 }
 
 fn is_intrinsic_call_name(name: &str) -> bool {
@@ -3273,6 +3306,12 @@ fn parse_declaration(
     udt_defs: &UdtDefMap,
 ) {
     let remainder = line[4..].trim();
+    let remainder = if remainder.len() >= 11 && remainder[..11].eq_ignore_ascii_case("withevents ")
+    {
+        remainder[11..].trim_start()
+    } else {
+        remainder
+    };
     let first_decl = split_first_decl_segment(remainder)
         .unwrap_or_default()
         .trim();
@@ -5197,29 +5236,28 @@ mod tests {
     }
 
     #[test]
-    fn resolve_withevents_declaration_emits_pmr_diagnostic() {
+    fn resolve_withevents_declaration_is_parsed_as_regular_object_declaration() {
         let source = "Sub Main()\nDim WithEvents app As Object\nEnd Sub";
         let module = resolve_symbols(source);
-        assert!(module.resolution_diagnostics.iter().any(|diag| {
-            diag.contains("PMR-E-WITHEVENTS-MODULE-KIND-UNRESOLVED") && diag.contains("WithEvents")
-        }));
+        assert!(module.resolution_diagnostics.is_empty());
+        assert!(module.declarations.iter().any(|name| name == "app"));
     }
 
     #[test]
-    fn resolve_implements_directive_emits_pmr_diagnostic() {
+    fn resolve_implements_directive_is_ignored_in_single_module_resolve() {
         let source = "Implements IFoo\nSub Main()\nEnd Sub";
         let module = resolve_symbols(source);
-        assert!(module.resolution_diagnostics.iter().any(|diag| {
-            diag.contains("PMR-E-IMPLEMENTS-PROJECTGRAPH-REQUIRED") && diag.contains("Implements")
-        }));
+        assert!(module.resolution_diagnostics.is_empty());
     }
 
     #[test]
-    fn resolve_raiseevent_statement_emits_pmr_diagnostic() {
+    fn resolve_raiseevent_statement_is_captured_for_downstream_lowering() {
         let source = "Sub Main()\nRaiseEvent Tick\nEnd Sub";
         let module = resolve_symbols(source);
-        assert!(module.resolution_diagnostics.iter().any(|diag| {
-            diag.contains("PMR-E-RAISEEVENT-CLASS-MODEL-REQUIRED") && diag.contains("RaiseEvent")
-        }));
+        assert!(module.resolution_diagnostics.is_empty());
+        assert!(module.body.iter().any(|stmt| matches!(
+            stmt,
+            BoundStmt::RaiseEvent { name, args } if name == "tick" && args.is_empty()
+        )));
     }
 }

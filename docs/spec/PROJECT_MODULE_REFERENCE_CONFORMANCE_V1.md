@@ -102,15 +102,21 @@ Expected probes:
 
 Current executable subset (A2):
 
-- explicit PMR diagnostics for unsupported class-project features:
-  - `PMR-E-WITHEVENTS-MODULE-KIND-UNRESOLVED`
-  - `PMR-E-IMPLEMENTS-PROJECTGRAPH-REQUIRED`
-  - `PMR-E-RAISEEVENT-CLASS-MODEL-REQUIRED`
+- project-aware legality and coverage diagnostics:
+  - canonical list is generated from `docs/evidence/diagnostics/PMR_EVENT_DIAGNOSTICS_V1.csv`:
+    - `docs/generated/PMR_EVENT_DIAGNOSTICS_SNIPPET.md`
+  - covered by compiler tests such as:
+    - `compile_project_rejects_withevents_in_procedural_module`
+    - `compile_project_rejects_implements_missing_member_coverage`
+    - `compile_project_rejects_raiseevent_undeclared_event`
 - non-interop class runtime checks via host tests:
   - `formal_v44_property_let_routes_assignment_byref`
   - `formal_v44_property_set_routes_assignment_byref`
   - `formal_v54_class_initialize_runs_before_main`
   - `formal_v54_class_terminate_runs_after_main`
+
+Remaining deferred portion:
+- runtime class-event dispatch ordering and subscription graph semantics (`WithEvents` reassignment ordering and `RaiseEvent` subscriber dispatch).
 
 ## Lane E: Storage and roundtrip
 
@@ -177,9 +183,9 @@ Initial PMR lane command placeholders:
 ```powershell
 cargo test -p oxvba-compiler pmr_
 cargo test -p oxvba-host pmr_
-cargo test -p oxvba-compiler compile_withevents_declaration_surfaces_project_model_diagnostic
-cargo test -p oxvba-compiler compile_implements_directive_surfaces_project_model_diagnostic
-cargo test -p oxvba-compiler compile_raiseevent_statement_surfaces_project_model_diagnostic
+cargo test -p oxvba-compiler compile_project_rejects_withevents_in_procedural_module
+cargo test -p oxvba-compiler compile_project_rejects_implements_in_non_class_module
+cargo test -p oxvba-compiler compile_project_rejects_raiseevent_undeclared_event
 ```
 
 And evidence collation via existing profile gate scaffolding once PMR tests land.

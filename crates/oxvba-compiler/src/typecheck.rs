@@ -493,6 +493,20 @@ fn check_stmt(
             }
         }
         BoundStmt::RaiseError(_) => Ok(()),
+        BoundStmt::RaiseEvent { args, .. } => {
+            for arg in args {
+                check_expr(
+                    &arg.expr,
+                    option_explicit,
+                    default_type_table,
+                    declared,
+                    declared_types,
+                    declarations,
+                    declaration_types,
+                )?;
+            }
+            Ok(())
+        }
         BoundStmt::ErrClear => Ok(()),
         BoundStmt::Label { .. } => Ok(()),
         BoundStmt::GoTo { label } => {

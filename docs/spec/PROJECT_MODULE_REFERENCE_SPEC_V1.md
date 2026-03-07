@@ -221,7 +221,8 @@ The class semantic contract is locked at language/runtime level even when full C
 - `Class_Initialize` executes before `Main` body effects become observable.
 - `Class_Terminate` executes after `Main` path completion for deterministic teardown paths.
 - `Property Let/Set` assignment routes to callable property procedures and preserves ByRef write route expectations.
-- deterministic diagnostics are required for class-project features not yet executable (`WithEvents`, `Implements`, `RaiseEvent`) and must use stable PMR diagnostic codes.
+- project-aware class-event legality is compile-time executable for `WithEvents`/`Implements`/`RaiseEvent`, with stable PMR diagnostics for invalid patterns.
+- full runtime event graph dispatch semantics (`WithEvents` handler routing/reassignment ordering + `RaiseEvent` subscriber dispatch) remain staged and are tracked as event-model closure work.
 
 Current executable evidence lives in host/compiler tests and is tracked in:
 

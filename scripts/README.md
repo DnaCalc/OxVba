@@ -1,6 +1,7 @@
 # scripts/
 
 - `meta-check.ps1`: one-command readiness check for this repository.
+- `check-governance.ps1`: single governance pass for doctrine/registry checks (doc presence, gate sync, deferred-gate schema, PMR follow-up links, integration catalog integrity, PMR diagnostic manifest sync).
 - `docs-check.ps1`: verifies required top-level docs exist.
 - `run-smoke.ps1`: executes the smoke VBA sample through the CLI.
 - `run-conformance.ps1`: runs MVP conformance corpus and checks against golden expectations.
@@ -33,6 +34,8 @@
 - `validate-profile-artifact-scope.ps1`: guardrail that blocks accidental edits to profile artifacts outside the active ladder range.
 - `validate-divergences.ps1`: validates structural fields required in divergence records.
 - `validate-pmr-followup-sync.ps1`: enforces PMR follow-up/oracle/divergence synchronization (`PMR-FUP-004/006`, `ODG-038/039`, `DIV-0003/0004`, tolerance-matrix anchors).
+- `generate-pmr-event-diagnostic-snippets.ps1`: generates/validates PMR event diagnostic snippets from the canonical manifest (`docs/evidence/diagnostics/PMR_EVENT_DIAGNOSTICS_V1.csv`).
+- `validate-pmr-event-diagnostic-sync.ps1`: enforces canonical PMR/event diagnostic IDs across active docs/integration surfaces while treating historical oracle captures as excluded.
 - `validate-project-integration-catalog.ps1`: validates the tracked project integration catalog schema, fixture presence for active cases, and deferred-case linkage hygiene.
 - `validate-kani-obligation-policy.ps1`: validates `KANI_OBLIGATION_POLICY_V1.csv` against active `cargo kani` obligations (coverage, no duplicates, profile sync, tier vocabulary).
 - `validate-active-ladder-sync.ps1`: validates active ladder coherence across `AGENTS.md`, `docs/AUTORUN_STATE.md`, ladder header gates/range, matching workset pattern, and terminal profile/evidence presence.

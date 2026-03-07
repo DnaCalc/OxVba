@@ -33,6 +33,8 @@ Commit discipline for ladder execution:
   - `./scripts/check-staged-commit-scope.ps1`
 - For final validation before commit, prefer no-artifact mode:
   - `./scripts/meta-check.ps1 -Fast -NoArtifacts`
+- Governance-only pass (fast, no compile):
+  - `./scripts/check-governance.ps1`
 
 For bug fixes:
 - Add a minimized regression case before or with the fix.
@@ -48,6 +50,13 @@ Every compatibility claim should be traceable to a reproducible artifact (test c
 Artifact naming convention:
 - Prefer `.jsonl` over `.ndjson` for line-delimited JSON evidence/telemetry files.
 
+PMR/event diagnostic source of truth:
+- Canonical registry: `docs/evidence/diagnostics/PMR_EVENT_DIAGNOSTICS_V1.csv`
+- Generated snippets (must be in sync): `docs/generated/PMR_EVENT_DIAGNOSTICS_SNIPPET.md`
+- Regenerate/check via:
+  - `./scripts/generate-pmr-event-diagnostic-snippets.ps1`
+  - `./scripts/generate-pmr-event-diagnostic-snippets.ps1 -Check`
+
 ## 6. Testing and Gates
 Minimum expectations before merge:
 - Relevant crate tests pass.
@@ -58,6 +67,8 @@ Recommended routine:
 - Fast local lane: `cargo test` for impacted crates.
 - Full lane (CI): formatter/lints/tests plus heavier checks.
 - For long-running Kani/profile formal steps, prefer async execution with repo scripts and log/state tracking, then merge results back into formal evidence artifacts.
+- Run governance checks early for doc/spec/conformance changes:
+  - `./scripts/check-governance.ps1`
 
 Additional required local checks for doc-heavy profile ladder runs:
 - `./scripts/validate-profile-scaffold.ps1 -FromVersion <start> -ToVersion <end>`
@@ -74,6 +85,13 @@ A synthesis run should include:
 - manifest.
 
 Not every change needs synthesis. Routine implementation changes should update docs directly.
+
+Post-semantics-change checklist (required when diagnostics or conformance semantics change):
+1. Update canonical diagnostic manifest and regenerate snippets (`PMR_EVENT_DIAGNOSTICS_V1.csv` + generated files).
+2. Update active conformance/spec docs (`CONFORMANCE_CHECK_TOPICS.csv`, `DEFERRED_ORACLE_GATES.csv`, integration catalog, divergence notes).
+3. Ensure deferred-gate structured fields are consistent (`foldback_required`, `foldback_steps`, `close_condition`).
+4. Run `./scripts/check-governance.ps1`.
+5. Run impacted crate tests and `./scripts/meta-check.ps1 -Fast -NoArtifacts` before merge.
 
 ## 8. Roles and Foundation Alignment
 OxVBA is primarily a Rust delivery project within the broader DNA Calc structure.

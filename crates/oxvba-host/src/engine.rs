@@ -352,6 +352,7 @@ mod tests {
         HalProfileId, HostPolicy, HostPolicyPreset, UiVirtualizationMode, UnsupportedFeatureMode,
     };
     use oxvba_runtime::value_tags::error_tag_from_code;
+    use std::collections::HashSet;
     use std::path::{Path, PathBuf};
 
     fn workspace_root() -> PathBuf {
@@ -1796,7 +1797,7 @@ mod tests {
             .expect("meta-check script exists");
         assert!(text.contains("[switch]$Formal"));
         assert!(text.contains("run-formal.ps1"));
-        assert!(text.contains("validate-divergences.ps1"));
+        assert!(text.contains("check-governance.ps1") || text.contains("validate-divergences.ps1"));
         assert!(text.contains("validate-language-coverage.ps1"));
     }
 
@@ -2637,7 +2638,7 @@ mod tests {
     fn formal_v393_meta_check_runs_gate_sync_validator() {
         let text = std::fs::read_to_string(repo_path("scripts/meta-check.ps1"))
             .expect("meta-check script exists");
-        assert!(text.contains("validate-gate-sync.ps1"));
+        assert!(text.contains("check-governance.ps1") || text.contains("validate-gate-sync.ps1"));
     }
 
     #[test]
@@ -3251,11 +3252,49 @@ mod tests {
             "docs/evidence/conformance/DEFERRED_ORACLE_GATES.csv",
         ))
         .expect("deferred oracle gates exists");
-        for line in text.lines().skip(1) {
-            if line.contains(",\"non-hal\",") && line.contains(",\"open\",") {
+        let mut lines = text.lines().filter(|line| !line.trim().is_empty());
+        let header = lines.next().expect("deferred oracle gates header should exist");
+        let header_cols = header
+            .trim_matches('"')
+            .split("\",\"")
+            .collect::<Vec<_>>();
+        assert_eq!(
+            header_cols,
+            vec![
+                "gate_id",
+                "topic_id",
+                "domain",
+                "track",
+                "scope_class",
+                "status",
+                "owner_phase",
+                "unblock_condition",
+                "evidence",
+                "foldback_required",
+                "foldback_steps",
+                "close_condition",
+                "notes",
+            ]
+        );
+        for line in lines {
+            let cols = line.trim_matches('"').split("\",\"").collect::<Vec<_>>();
+            assert_eq!(
+                cols.len(),
+                13,
+                "deferred gate row should keep 13 structured columns: {line}"
+            );
+            if cols[4] == "non-hal" && cols[5] == "open" {
                 assert!(
-                    line.contains("Foldback:"),
-                    "non-hal open gate missing foldback note: {line}"
+                    cols[9] == "true",
+                    "non-hal open gate missing foldback_required=true: {line}"
+                );
+                assert!(
+                    !cols[10].trim().is_empty(),
+                    "non-hal open gate missing foldback_steps payload: {line}"
+                );
+                assert!(
+                    !cols[11].trim().is_empty(),
+                    "deferred gate row is missing close_condition payload: {line}"
                 );
             }
         }
@@ -4051,5 +4090,190 @@ mod tests {
             .expect_err("compile-time gate should reject unsupported host intrinsic");
         assert_eq!(err.phase(), DiagnosticPhase::CompileTime);
         assert!(err.message().contains("CreateObject"));
+    }
+
+    #[test]
+    fn formal_v466_feature_obligation_coverage_index_is_uniform_and_deep() {
+        let obligations_text =
+            std::fs::read_to_string(repo_path("docs/evidence/formal/obligations.csv"))
+                .expect("obligation index should exist");
+        let mut obligation_ids = HashSet::<String>::new();
+        for line in obligations_text.lines().skip(1) {
+            let trimmed = line.trim();
+            if trimmed.is_empty() || !trimmed.starts_with("FO-") || !trimmed.contains(",true,") {
+                continue;
+            }
+            if let Some((id, _)) = trimmed.split_once(',') {
+                obligation_ids.insert(id.to_string());
+            }
+        }
+        assert!(
+            !obligation_ids.is_empty(),
+            "active formal obligation set must not be empty"
+        );
+
+        let coverage_text = std::fs::read_to_string(repo_path(
+            "docs/evidence/formal/FEATURE_OBLIGATION_COVERAGE_V1.csv",
+        ))
+        .expect("feature obligation coverage index should exist");
+
+        let mut seen_features = HashSet::<String>::new();
+        let mut baseline_depth: Option<usize> = None;
+        for line in coverage_text.lines().skip(1) {
+            let trimmed = line.trim();
+            if trimmed.is_empty() {
+                continue;
+            }
+            let mut parts = trimmed.splitn(4, ',');
+            let feature = parts.next().expect("feature column").trim();
+            let depth_text = parts.next().expect("depth column").trim();
+            let ids_text = parts.next().expect("obligation id column").trim();
+            let rationale = parts.next().expect("rationale column").trim();
+            let depth = depth_text
+                .parse::<usize>()
+                .expect("depth should parse as usize");
+            assert!(
+                seen_features.insert(feature.to_string()),
+                "duplicate feature area in coverage index: {feature}"
+            );
+            assert!(
+                !rationale.is_empty(),
+                "feature area `{feature}` must include non-empty rationale text"
+            );
+            assert!(
+                depth >= 3,
+                "feature area `{feature}` must have minimum depth >= 3"
+            );
+            if let Some(expected) = baseline_depth {
+                assert_eq!(
+                    depth, expected,
+                    "feature depth must be uniform; `{feature}` differs"
+                );
+            } else {
+                baseline_depth = Some(depth);
+            }
+            let ids = ids_text
+                .split(';')
+                .map(str::trim)
+                .filter(|token| !token.is_empty())
+                .collect::<Vec<_>>();
+            let mut ids_seen = HashSet::<&str>::new();
+            assert!(
+                ids.len() >= depth,
+                "feature `{feature}` declares fewer obligations than depth target"
+            );
+            for obligation in ids {
+                assert!(
+                    ids_seen.insert(obligation),
+                    "feature `{feature}` repeats obligation `{obligation}`"
+                );
+                assert!(
+                    obligation_ids.contains(obligation),
+                    "feature `{feature}` references missing obligation `{obligation}`"
+                );
+            }
+        }
+        assert!(
+            seen_features.len() >= 10,
+            "feature obligation index should cover broad runtime/compiler surface"
+        );
+    }
+
+    #[test]
+    fn formal_v466_event_docs_reflect_post_gate_semantics() {
+        let pmr_spec =
+            std::fs::read_to_string(repo_path("docs/spec/PROJECT_MODULE_REFERENCE_SPEC_V1.md"))
+                .expect("pmr spec should exist");
+        let pmr_conformance = std::fs::read_to_string(repo_path(
+            "docs/spec/PROJECT_MODULE_REFERENCE_CONFORMANCE_V1.md",
+        ))
+        .expect("pmr conformance spec should exist");
+        let pmr_hal_integration = std::fs::read_to_string(repo_path(
+            "docs/spec/PROJECT_MODULE_REFERENCE_HAL_INTEGRATION_V1.md",
+        ))
+        .expect("pmr hal integration spec should exist");
+        let div3 = std::fs::read_to_string(repo_path("docs/evidence/divergences/DIV-0003.md"))
+            .expect("divergence doc should exist");
+        let div4 = std::fs::read_to_string(repo_path("docs/evidence/divergences/DIV-0004.md"))
+            .expect("divergence doc should exist");
+        let topics = std::fs::read_to_string(repo_path(
+            "docs/evidence/conformance/CONFORMANCE_CHECK_TOPICS.csv",
+        ))
+        .expect("conformance topics should exist");
+        let taxonomy = std::fs::read_to_string(repo_path("docs/DIAGNOSTIC_TAXONOMY.md"))
+            .expect("diagnostic taxonomy should exist");
+        let generated_diag_snippet = std::fs::read_to_string(repo_path(
+            "docs/generated/PMR_EVENT_DIAGNOSTICS_SNIPPET.md",
+        ))
+        .expect("generated PMR event diagnostic snippet should exist");
+
+        assert!(pmr_spec.contains("compile-time executable"));
+        assert!(pmr_conformance.contains("docs/generated/PMR_EVENT_DIAGNOSTICS_SNIPPET.md"));
+        assert!(pmr_hal_integration.contains("docs/generated/PMR_EVENT_DIAGNOSTICS_SNIPPET.md"));
+        assert!(div3.contains("compile semantics are implemented"));
+        assert!(div4.contains("compile semantics are implemented"));
+        assert!(topics.contains("remaining divergence tracking is runtime"));
+        assert!(taxonomy.contains("docs/generated/PMR_EVENT_DIAGNOSTICS_SNIPPET.md"));
+        assert!(generated_diag_snippet.contains("PMR-E-IMPLEMENTS-MODULE-KIND"));
+        assert!(generated_diag_snippet.contains("PMR-E-RAISEEVENT-MODULE-KIND"));
+
+        assert!(!pmr_spec.contains("PMR-E-IMPLEMENTS-PROJECTGRAPH-REQUIRED"));
+        assert!(!pmr_spec.contains("PMR-E-RAISEEVENT-CLASS-MODEL-REQUIRED"));
+        assert!(!pmr_spec.contains("PMR-E-WITHEVENTS-MODULE-KIND-UNRESOLVED"));
+        assert!(!pmr_hal_integration.contains("PMR-E-IMPLEMENTS-PROJECTGRAPH-REQUIRED"));
+        assert!(!pmr_hal_integration.contains("PMR-E-RAISEEVENT-CLASS-MODEL-REQUIRED"));
+        assert!(!pmr_hal_integration.contains("PMR-E-WITHEVENTS-MODULE-KIND-UNRESOLVED"));
+        assert!(!taxonomy.contains("PMR-E-IMPLEMENTS-PROJECTGRAPH-REQUIRED"));
+        assert!(!taxonomy.contains("PMR-E-RAISEEVENT-CLASS-MODEL-REQUIRED"));
+        assert!(!taxonomy.contains("PMR-E-WITHEVENTS-MODULE-KIND-UNRESOLVED"));
+    }
+
+    #[test]
+    fn formal_v466_project_integration_limits_use_post_gate_diagnostics() {
+        let catalog = std::fs::read_to_string(repo_path("conformance/integration/catalog.psv"))
+            .expect("project integration catalog should exist");
+
+        let line_008 = catalog
+            .lines()
+            .find(|line| line.starts_with("INTP-008|"))
+            .expect("INTP-008 row should exist");
+        assert!(line_008.contains("PMR-E-IMPLEMENTS-MODULE-KIND"));
+        assert!(!line_008.contains("PMR-E-IMPLEMENTS-PROJECTGRAPH-REQUIRED"));
+
+        let line_009 = catalog
+            .lines()
+            .find(|line| line.starts_with("INTP-009|"))
+            .expect("INTP-009 row should exist");
+        assert!(line_009.contains("PMR-E-RAISEEVENT-MODULE-KIND"));
+        assert!(!line_009.contains("PMR-E-RAISEEVENT-CLASS-MODEL-REQUIRED"));
+    }
+
+    #[test]
+    fn formal_v466_governance_doctrine_tracks_pmr_event_and_oracle_schema_contracts() {
+        let governance = std::fs::read_to_string(repo_path("scripts/check-governance.ps1"))
+            .expect("governance script should exist");
+        let operations =
+            std::fs::read_to_string(repo_path("OPERATIONS.md")).expect("operations doc should exist");
+        let conformance_layout = std::fs::read_to_string(repo_path(
+            "docs/evidence/conformance/README.md",
+        ))
+        .expect("conformance layout readme should exist");
+
+        assert!(governance.contains("generate-pmr-event-diagnostic-snippets.ps1\" -Check"));
+        assert!(governance.contains("validate-pmr-event-diagnostic-sync.ps1"));
+        assert!(governance.contains("validate-deferred-oracle-gates.ps1"));
+
+        assert!(operations.contains("./scripts/check-governance.ps1"));
+        assert!(operations.contains("Post-semantics-change checklist"));
+        assert!(operations.contains("PMR_EVENT_DIAGNOSTICS_V1.csv"));
+
+        assert!(conformance_layout.contains("Active Governance Surfaces"));
+        assert!(conformance_layout.contains("Historical Capture Areas"));
+        assert!(conformance_layout.contains("oracle_captures/"));
+    }
+
+    #[test]
+    fn formal_v466_profile_status_document_exists() {
+        assert!(repo_path("docs/profile-status/PROFILE_STATUS_V466.md").exists());
     }
 }

@@ -10,6 +10,11 @@ Purpose:
 Machine-readable register:
 - `docs/evidence/conformance/DEFERRED_ORACLE_GATES.csv`
 
+Structured governance columns:
+- `foldback_required` (`true|false`)
+- `foldback_steps` (required when `foldback_required=true`)
+- `close_condition` (required for every row)
+
 ## Status Model
 
 - `open`: deferred, no oracle run evidence captured yet.
@@ -25,6 +30,11 @@ A deferred oracle gate can close only when all are present:
 2. OxVba conformance fixture exists or is updated.
 3. Divergence record updated if mismatch remains.
 4. Topic status in `CONFORMANCE_CHECK_TOPICS.csv` updated accordingly.
+
+Non-HAL open rows must set:
+- `foldback_required=true`
+- non-empty `foldback_steps`
+- non-empty `close_condition`
 
 ## Current Scope Policy (2026-03-01)
 

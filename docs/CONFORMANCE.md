@@ -103,4 +103,5 @@ For no-artifact validation runs, use `-NoArtifacts` to redirect outputs to `temp
 
 Oracle-dependent parity remains deferred and tracked separately:
 - register: `docs/evidence/conformance/DEFERRED_ORACLE_GATES.csv`
+  - structured fields: `foldback_required`, `foldback_steps`, `close_condition`
 - scaffold queue: `docs/evidence/conformance/oracle_probe_queue.csv` (generated via `scripts/oracle-probe.ps1`)

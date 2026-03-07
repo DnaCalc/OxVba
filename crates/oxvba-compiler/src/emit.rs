@@ -678,6 +678,12 @@ fn emit_stmt(
         BoundStmt::RaiseError(code) => {
             instructions.push(Instruction::RaiseError { code: *code });
         }
+        BoundStmt::RaiseEvent { args, .. } => {
+            for arg in args {
+                let temp = temps.alloc_temp();
+                emit_expr_into(&arg.expr, compare_mode, temp, slot_map, temps, instructions);
+            }
+        }
         BoundStmt::ErrClear => {
             instructions.push(Instruction::ClearErr);
         }

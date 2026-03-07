@@ -127,6 +127,40 @@ pub enum ProjectCompileError {
     )]
     OptionPrivateModuleKind { module_name: String },
     #[error(
+        "PMR-E-WITHEVENTS-MODULE-KIND: `WithEvents` declaration is only valid in class/document/form modules (`{module_name}`)"
+    )]
+    WithEventsModuleKind { module_name: String },
+    #[error(
+        "PMR-E-IMPLEMENTS-MODULE-KIND: `Implements` directive is only valid in class modules (`{module_name}`)"
+    )]
+    ImplementsModuleKind { module_name: String },
+    #[error(
+        "PMR-E-IMPLEMENTS-INTERFACE-NOT-FOUND: class `{module_name}` implements unknown interface `{interface_name}`"
+    )]
+    ImplementsInterfaceNotFound {
+        module_name: String,
+        interface_name: String,
+    },
+    #[error(
+        "PMR-E-IMPLEMENTS-MEMBER-MISSING: class `{module_name}` is missing `{interface_name}_{member_name}` for Implements coverage"
+    )]
+    ImplementsMemberMissing {
+        module_name: String,
+        interface_name: String,
+        member_name: String,
+    },
+    #[error(
+        "PMR-E-RAISEEVENT-MODULE-KIND: `RaiseEvent` is only valid in class modules (`{module_name}`)"
+    )]
+    RaiseEventModuleKind { module_name: String },
+    #[error(
+        "PMR-E-RAISEEVENT-UNDECLARED: class module `{module_name}` raises undeclared event `{event_name}`"
+    )]
+    RaiseEventUndeclared {
+        module_name: String,
+        event_name: String,
+    },
+    #[error(
         "PMR-E-REFERENCE-NAME-INVALID: referenced project name `{name}` is not a valid VBA identifier"
     )]
     ReferenceNameInvalid { name: String },
@@ -193,6 +227,12 @@ impl ProjectCompileError {
             Self::ModuleHeaderInvalid { .. } => "PMR-E-MODULE-HEADER-INVALID",
             Self::SourceProjectClassAttributeConstraint => "PMR-E-MODULE-CLASS-ATTRIBUTE",
             Self::OptionPrivateModuleKind { .. } => "PMR-E-OPTION-PRIVATE-MODULE-KIND",
+            Self::WithEventsModuleKind { .. } => "PMR-E-WITHEVENTS-MODULE-KIND",
+            Self::ImplementsModuleKind { .. } => "PMR-E-IMPLEMENTS-MODULE-KIND",
+            Self::ImplementsInterfaceNotFound { .. } => "PMR-E-IMPLEMENTS-INTERFACE-NOT-FOUND",
+            Self::ImplementsMemberMissing { .. } => "PMR-E-IMPLEMENTS-MEMBER-MISSING",
+            Self::RaiseEventModuleKind { .. } => "PMR-E-RAISEEVENT-MODULE-KIND",
+            Self::RaiseEventUndeclared { .. } => "PMR-E-RAISEEVENT-UNDECLARED",
             Self::ReferenceNameInvalid { .. } => "PMR-E-REFERENCE-NAME-INVALID",
             Self::ReferenceDuplicateTarget { .. } => "PMR-E-REFERENCE-DUPLICATE-TARGET",
             Self::ReferenceProjectNotDeclared { .. } => "PMR-E-REFERENCE-PROJECT-NOT-DECLARED",
@@ -289,6 +329,7 @@ fn compile_project_with_strategy(
     let procedure_index = collect_project_procedures(manifest);
     let reference_order = build_reference_order_map(manifest);
     let active_project = normalize_identifier(&manifest.project_name);
+    validate_event_semantics(manifest, &procedure_index, &reference_order)?;
 
     let rewritten_source = lower_project_source(
         strategy,
@@ -472,6 +513,262 @@ fn validate_manifest(manifest: &ProjectManifest) -> Result<(), ProjectCompileErr
     }
 
     Ok(())
+}
+
+fn validate_event_semantics(
+    manifest: &ProjectManifest,
+    procedures: &[ProcedureDecl],
+    reference_order: &BTreeMap<String, usize>,
+) -> Result<(), ProjectCompileError> {
+    let mut class_public_members = BTreeMap::<(String, String), BTreeSet<String>>::new();
+    let mut class_declared_events = BTreeMap::<(String, String), BTreeSet<String>>::new();
+
+    for (project_name, module) in iter_all_modules(manifest, reference_order) {
+        let project_key = normalize_identifier(project_name);
+        let module_key = normalize_identifier(&module.module_name);
+        let events = collect_declared_events(module);
+        if !events.is_empty() {
+            class_declared_events.insert((project_key.clone(), module_key.clone()), events);
+        }
+    }
+
+    for decl in procedures {
+        if decl.module_kind == ModuleKind::Class && decl.is_public {
+            class_public_members
+                .entry((decl.project_name.clone(), decl.module_name.clone()))
+                .or_default()
+                .insert(decl.procedure_name.clone());
+        }
+    }
+
+    for (project_name, module) in iter_all_modules(manifest, reference_order) {
+        let project_key = normalize_identifier(project_name);
+        let module_key = normalize_identifier(&module.module_name);
+        let module_name = format!("{project_name}.{}", module.module_name);
+        for line in module.source.lines() {
+            if parse_withevents_declaration(line).is_some()
+                && !matches!(
+                    module.module_kind,
+                    ModuleKind::Class | ModuleKind::Document | ModuleKind::Form
+                )
+            {
+                return Err(ProjectCompileError::WithEventsModuleKind {
+                    module_name: module_name.clone(),
+                });
+            }
+
+            if let Some(interface_name) = parse_implements_directive(line) {
+                if module.module_kind != ModuleKind::Class {
+                    return Err(ProjectCompileError::ImplementsModuleKind {
+                        module_name: module_name.clone(),
+                    });
+                }
+
+                let Some((iface_project, iface_module)) = resolve_interface_module(
+                    manifest,
+                    &project_key,
+                    &interface_name,
+                    reference_order,
+                ) else {
+                    return Err(ProjectCompileError::ImplementsInterfaceNotFound {
+                        module_name: module_name.clone(),
+                        interface_name,
+                    });
+                };
+
+                let required_members = class_public_members
+                    .get(&(iface_project.clone(), iface_module.clone()))
+                    .cloned()
+                    .unwrap_or_default();
+                if required_members.is_empty() {
+                    continue;
+                }
+                let implemented_members = procedures
+                    .iter()
+                    .filter(|decl| {
+                        decl.project_name == project_key
+                            && decl.module_name == module_key
+                            && decl.module_kind == ModuleKind::Class
+                    })
+                    .map(|decl| decl.procedure_name.clone())
+                    .collect::<BTreeSet<_>>();
+                let iface_prefix = normalize_identifier(&interface_name);
+                for member in required_members {
+                    let expected = format!("{iface_prefix}_{member}");
+                    if !implemented_members.contains(&expected) {
+                        return Err(ProjectCompileError::ImplementsMemberMissing {
+                            module_name: module_name.clone(),
+                            interface_name: iface_prefix.clone(),
+                            member_name: member,
+                        });
+                    }
+                }
+            }
+
+            if let Some(event_name) = parse_raiseevent_name(line) {
+                if module.module_kind != ModuleKind::Class {
+                    return Err(ProjectCompileError::RaiseEventModuleKind {
+                        module_name: module_name.clone(),
+                    });
+                }
+                let key = (project_key.clone(), module_key.clone());
+                let declared = class_declared_events.get(&key).cloned().unwrap_or_default();
+                if !declared.contains(&event_name) {
+                    return Err(ProjectCompileError::RaiseEventUndeclared {
+                        module_name: module_name.clone(),
+                        event_name,
+                    });
+                }
+            }
+        }
+    }
+
+    Ok(())
+}
+
+fn iter_all_modules<'a>(
+    manifest: &'a ProjectManifest,
+    reference_order: &'a BTreeMap<String, usize>,
+) -> Vec<(&'a str, &'a ModuleUnit)> {
+    let mut out = Vec::new();
+    out.extend(
+        manifest
+            .modules
+            .iter()
+            .map(|module| (manifest.project_name.as_str(), module)),
+    );
+
+    let mut referenced = manifest.reference_projects.iter().collect::<Vec<_>>();
+    referenced.sort_by_key(|entry| {
+        reference_order
+            .get(&normalize_identifier(&entry.project_name))
+            .copied()
+            .unwrap_or(usize::MAX)
+    });
+    for entry in referenced {
+        out.extend(
+            entry
+                .modules
+                .iter()
+                .map(|module| (entry.project_name.as_str(), module)),
+        );
+    }
+    out
+}
+
+fn resolve_interface_module(
+    manifest: &ProjectManifest,
+    current_project: &str,
+    interface_name: &str,
+    reference_order: &BTreeMap<String, usize>,
+) -> Option<(String, String)> {
+    let iface = normalize_identifier(interface_name);
+    for module in &manifest.modules {
+        if module.module_kind == ModuleKind::Class
+            && normalize_identifier(&module.module_name) == iface
+            && normalize_identifier(&manifest.project_name) == current_project
+        {
+            return Some((
+                normalize_identifier(&manifest.project_name),
+                normalize_identifier(&module.module_name),
+            ));
+        }
+    }
+
+    let mut referenced = manifest.reference_projects.iter().collect::<Vec<_>>();
+    referenced.sort_by_key(|entry| {
+        reference_order
+            .get(&normalize_identifier(&entry.project_name))
+            .copied()
+            .unwrap_or(usize::MAX)
+    });
+    for entry in referenced {
+        for module in &entry.modules {
+            if module.module_kind == ModuleKind::Class
+                && normalize_identifier(&module.module_name) == iface
+            {
+                return Some((
+                    normalize_identifier(&entry.project_name),
+                    normalize_identifier(&module.module_name),
+                ));
+            }
+        }
+    }
+
+    None
+}
+
+fn collect_declared_events(module: &ModuleUnit) -> BTreeSet<String> {
+    let mut out = BTreeSet::new();
+    for line in module.source.lines() {
+        if let Some(name) = parse_event_declaration(line) {
+            out.insert(name);
+        }
+    }
+    out
+}
+
+fn parse_implements_directive(line: &str) -> Option<String> {
+    let trimmed = line.trim();
+    let lower = trimmed.to_ascii_lowercase();
+    let rest = if lower.starts_with("implements ") {
+        trimmed[11..].trim()
+    } else {
+        return None;
+    };
+    normalize_procedure_name(rest)
+}
+
+fn parse_event_declaration(line: &str) -> Option<String> {
+    let trimmed = line.trim();
+    let lower = trimmed.to_ascii_lowercase();
+    let payload = if lower.starts_with("event ") {
+        trimmed[6..].trim()
+    } else if lower.starts_with("public event ") {
+        trimmed[13..].trim()
+    } else if lower.starts_with("private event ") {
+        trimmed[14..].trim()
+    } else {
+        return None;
+    };
+    let token = payload
+        .split(|ch: char| ch.is_ascii_whitespace() || ch == '(')
+        .next()
+        .unwrap_or_default();
+    normalize_procedure_name(token)
+}
+
+fn parse_withevents_declaration(line: &str) -> Option<String> {
+    let trimmed = line.trim();
+    let lower = trimmed.to_ascii_lowercase();
+    let payload = if lower.starts_with("dim withevents ") {
+        trimmed[15..].trim()
+    } else if lower.starts_with("public withevents ") {
+        trimmed[18..].trim()
+    } else if lower.starts_with("private withevents ") {
+        trimmed[19..].trim()
+    } else {
+        return None;
+    };
+    let token = payload
+        .split(|ch: char| ch.is_ascii_whitespace() || ch == ',' || ch == '(')
+        .next()
+        .unwrap_or_default();
+    normalize_procedure_name(token)
+}
+
+fn parse_raiseevent_name(line: &str) -> Option<String> {
+    let trimmed = line.trim();
+    let lower = trimmed.to_ascii_lowercase();
+    if !lower.starts_with("raiseevent ") {
+        return None;
+    }
+    let payload = trimmed[10..].trim();
+    let token = payload
+        .split(|ch: char| ch.is_ascii_whitespace() || ch == '(')
+        .next()
+        .unwrap_or_default();
+    normalize_procedure_name(token)
 }
 
 fn collect_project_procedures(manifest: &ProjectManifest) -> Vec<ProcedureDecl> {
@@ -2390,7 +2687,7 @@ mod tests {
     }
 
     #[test]
-    fn compile_project_preserves_withevents_diagnostic_gate() {
+    fn compile_project_rejects_withevents_in_procedural_module() {
         let main_module = module_unit_from_source(
             "MainModule",
             ModuleKind::Procedural,
@@ -2405,16 +2702,38 @@ mod tests {
             reference_projects: Vec::new(),
             conditional_constants: BTreeMap::new(),
         };
-        let err = compile_project(&manifest).expect_err("WithEvents should stay explicitly gated");
-        assert_eq!(err.code(), "PMR-E-BACKEND-COMPILE");
-        assert!(
-            err.to_string()
-                .contains("PMR-E-WITHEVENTS-MODULE-KIND-UNRESOLVED")
-        );
+        let err =
+            compile_project(&manifest).expect_err("WithEvents should reject in procedural module");
+        assert_eq!(err.code(), "PMR-E-WITHEVENTS-MODULE-KIND");
     }
 
     #[test]
-    fn compile_project_preserves_raiseevent_diagnostic_gate() {
+    fn compile_project_allows_withevents_in_class_module() {
+        let class_module = module_unit_from_source(
+            "Widget",
+            ModuleKind::Class,
+            "Attribute VB_Name = \"Widget\"\nPublic Sub Setup()\nDim WithEvents sink As Object\nEnd Sub",
+        )
+        .expect("module parses");
+        let main_module = module_unit_from_source(
+            "MainModule",
+            ModuleKind::Procedural,
+            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nEnd Sub",
+        )
+        .expect("module parses");
+        let manifest = ProjectManifest {
+            project_name: "ProjectA".to_string(),
+            project_kind: ProjectKind::Source,
+            modules: vec![main_module, class_module],
+            references: Vec::new(),
+            reference_projects: Vec::new(),
+            conditional_constants: BTreeMap::new(),
+        };
+        compile_project(&manifest).expect("WithEvents in class module should compile");
+    }
+
+    #[test]
+    fn compile_project_rejects_raiseevent_undeclared_event() {
         let class_module = module_unit_from_source(
             "Widget",
             ModuleKind::Class,
@@ -2435,12 +2754,171 @@ mod tests {
             reference_projects: Vec::new(),
             conditional_constants: BTreeMap::new(),
         };
-        let err = compile_project(&manifest).expect_err("RaiseEvent should stay explicitly gated");
-        assert_eq!(err.code(), "PMR-E-BACKEND-COMPILE");
-        assert!(
-            err.to_string()
-                .contains("PMR-E-RAISEEVENT-CLASS-MODEL-REQUIRED")
-        );
+        let err = compile_project(&manifest).expect_err("RaiseEvent must target declared event");
+        assert_eq!(err.code(), "PMR-E-RAISEEVENT-UNDECLARED");
+    }
+
+    #[test]
+    fn compile_project_rejects_raiseevent_in_non_class_module() {
+        let main_module = module_unit_from_source(
+            "MainModule",
+            ModuleKind::Procedural,
+            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nRaiseEvent Changed\nEnd Sub",
+        )
+        .expect("module parses");
+        let manifest = ProjectManifest {
+            project_name: "ProjectA".to_string(),
+            project_kind: ProjectKind::Source,
+            modules: vec![main_module],
+            references: Vec::new(),
+            reference_projects: Vec::new(),
+            conditional_constants: BTreeMap::new(),
+        };
+        let err =
+            compile_project(&manifest).expect_err("RaiseEvent should reject in standard module");
+        assert_eq!(err.code(), "PMR-E-RAISEEVENT-MODULE-KIND");
+    }
+
+    #[test]
+    fn compile_project_allows_raiseevent_for_declared_event() {
+        let class_module = module_unit_from_source(
+            "Widget",
+            ModuleKind::Class,
+            "Attribute VB_Name = \"Widget\"\nPublic Event Changed()\nPublic Sub Fire()\nRaiseEvent Changed\nEnd Sub",
+        )
+        .expect("module parses");
+        let main_module = module_unit_from_source(
+            "MainModule",
+            ModuleKind::Procedural,
+            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nEnd Sub",
+        )
+        .expect("module parses");
+        let manifest = ProjectManifest {
+            project_name: "ProjectA".to_string(),
+            project_kind: ProjectKind::Source,
+            modules: vec![main_module, class_module],
+            references: Vec::new(),
+            reference_projects: Vec::new(),
+            conditional_constants: BTreeMap::new(),
+        };
+        compile_project(&manifest).expect("RaiseEvent should compile when event is declared");
+    }
+
+    #[test]
+    fn compile_project_rejects_implements_unknown_interface() {
+        let class_impl = module_unit_from_source(
+            "ThingImpl",
+            ModuleKind::Class,
+            "Attribute VB_Name = \"ThingImpl\"\nImplements IThing\nPrivate Sub IThing_Ping()\nEnd Sub",
+        )
+        .expect("module parses");
+        let main_module = module_unit_from_source(
+            "MainModule",
+            ModuleKind::Procedural,
+            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nEnd Sub",
+        )
+        .expect("module parses");
+        let manifest = ProjectManifest {
+            project_name: "ProjectA".to_string(),
+            project_kind: ProjectKind::Source,
+            modules: vec![main_module, class_impl],
+            references: Vec::new(),
+            reference_projects: Vec::new(),
+            conditional_constants: BTreeMap::new(),
+        };
+        let err = compile_project(&manifest).expect_err("unknown interface should fail");
+        assert_eq!(err.code(), "PMR-E-IMPLEMENTS-INTERFACE-NOT-FOUND");
+    }
+
+    #[test]
+    fn compile_project_rejects_implements_in_non_class_module() {
+        let main_module = module_unit_from_source(
+            "MainModule",
+            ModuleKind::Procedural,
+            "Attribute VB_Name = \"MainModule\"\nImplements IThing\nPublic Sub Main()\nEnd Sub",
+        )
+        .expect("module parses");
+        let manifest = ProjectManifest {
+            project_name: "ProjectA".to_string(),
+            project_kind: ProjectKind::Source,
+            modules: vec![main_module],
+            references: Vec::new(),
+            reference_projects: Vec::new(),
+            conditional_constants: BTreeMap::new(),
+        };
+        let err =
+            compile_project(&manifest).expect_err("Implements should reject outside class modules");
+        assert_eq!(err.code(), "PMR-E-IMPLEMENTS-MODULE-KIND");
+    }
+
+    #[test]
+    fn compile_project_rejects_implements_missing_member_coverage() {
+        let class_interface = module_unit_from_source(
+            "IThing",
+            ModuleKind::Class,
+            "Attribute VB_Name = \"IThing\"\nPublic Sub Ping()\nEnd Sub",
+        )
+        .expect("module parses");
+        let class_impl = module_unit_from_source(
+            "ThingImpl",
+            ModuleKind::Class,
+            "Attribute VB_Name = \"ThingImpl\"\nImplements IThing\nPrivate Sub NotTheInterfaceMethod()\nEnd Sub",
+        )
+        .expect("module parses");
+        let main_module = module_unit_from_source(
+            "MainModule",
+            ModuleKind::Procedural,
+            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nEnd Sub",
+        )
+        .expect("module parses");
+        let manifest = ProjectManifest {
+            project_name: "ProjectA".to_string(),
+            project_kind: ProjectKind::Source,
+            modules: vec![main_module, class_interface, class_impl],
+            references: Vec::new(),
+            reference_projects: Vec::new(),
+            conditional_constants: BTreeMap::new(),
+        };
+        let err =
+            compile_project(&manifest).expect_err("missing interface implementation should fail");
+        assert_eq!(err.code(), "PMR-E-IMPLEMENTS-MEMBER-MISSING");
+    }
+
+    #[test]
+    fn compile_project_allows_implements_interface_from_referenced_project() {
+        let class_impl = module_unit_from_source(
+            "ThingImpl",
+            ModuleKind::Class,
+            "Attribute VB_Name = \"ThingImpl\"\nImplements IThing\nPrivate Sub IThing_Ping()\nEnd Sub",
+        )
+        .expect("module parses");
+        let main_module = module_unit_from_source(
+            "MainModule",
+            ModuleKind::Procedural,
+            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nEnd Sub",
+        )
+        .expect("module parses");
+        let ref_interface = module_unit_from_source(
+            "IThing",
+            ModuleKind::Class,
+            "Attribute VB_Name = \"IThing\"\nPublic Sub Ping()\nEnd Sub",
+        )
+        .expect("reference interface parses");
+        let manifest = ProjectManifest {
+            project_name: "ProjectA".to_string(),
+            project_kind: ProjectKind::Source,
+            modules: vec![main_module, class_impl],
+            references: vec![ProjectReference {
+                referenced_project_name: "LibOne".to_string(),
+                reference_kind: ReferenceKind::Project,
+            }],
+            reference_projects: vec![ReferencedProjectManifest {
+                project_name: "LibOne".to_string(),
+                modules: vec![ref_interface],
+            }],
+            conditional_constants: BTreeMap::new(),
+        };
+        compile_project(&manifest).expect("Implements should resolve reference project interface");
     }
 
     #[test]

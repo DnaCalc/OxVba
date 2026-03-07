@@ -17,14 +17,17 @@ Landed:
 
 Landed:
 
-- Compiler diagnostics tests for deferred class/project semantics:
-  - `compile_withevents_declaration_surfaces_project_model_diagnostic`
-  - `compile_implements_directive_surfaces_project_model_diagnostic`
-  - `compile_raiseevent_statement_surfaces_project_model_diagnostic`
-- Resolver-level PMR diagnostics:
-  - `PMR-E-WITHEVENTS-MODULE-KIND-UNRESOLVED`
-  - `PMR-E-IMPLEMENTS-PROJECTGRAPH-REQUIRED`
-  - `PMR-E-RAISEEVENT-CLASS-MODEL-REQUIRED`
+- Compiler diagnostics tests for class/project semantics:
+  - `compile_project_rejects_withevents_in_procedural_module`
+  - `compile_project_rejects_implements_missing_member_coverage`
+  - `compile_project_rejects_raiseevent_undeclared_event`
+- PMR diagnostics (current post-gate compile-time subset):
+  - `PMR-E-WITHEVENTS-MODULE-KIND`
+  - `PMR-E-IMPLEMENTS-MODULE-KIND`
+  - `PMR-E-IMPLEMENTS-INTERFACE-NOT-FOUND`
+  - `PMR-E-IMPLEMENTS-MEMBER-MISSING`
+  - `PMR-E-RAISEEVENT-MODULE-KIND`
+  - `PMR-E-RAISEEVENT-UNDECLARED`
 - Conformance fixtures:
   - `conformance/tests/project_model_withevents_requires_class_graph.bas`
   - `conformance/tests/project_model_implements_requires_class_graph.bas`

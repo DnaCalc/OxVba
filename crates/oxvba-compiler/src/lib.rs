@@ -1455,32 +1455,20 @@ mod tests {
     }
 
     #[test]
-    fn compile_withevents_declaration_surfaces_project_model_diagnostic() {
+    fn compile_withevents_declaration_in_single_module_subset_succeeds() {
         let source = "Sub Main()\nDim WithEvents app As Object\nEnd Sub";
-        let err = compile(source).expect_err("WithEvents should currently be project-model gated");
-        assert!(
-            err.to_string()
-                .contains("PMR-E-WITHEVENTS-MODULE-KIND-UNRESOLVED")
-        );
+        compile(source).expect("WithEvents declaration should compile in deterministic subset");
     }
 
     #[test]
-    fn compile_implements_directive_surfaces_project_model_diagnostic() {
+    fn compile_implements_directive_in_single_module_subset_succeeds() {
         let source = "Implements IFoo\nSub Main()\nEnd Sub";
-        let err = compile(source).expect_err("Implements should currently be project-model gated");
-        assert!(
-            err.to_string()
-                .contains("PMR-E-IMPLEMENTS-PROJECTGRAPH-REQUIRED")
-        );
+        compile(source).expect("Implements directive should compile in deterministic subset");
     }
 
     #[test]
-    fn compile_raiseevent_statement_surfaces_project_model_diagnostic() {
+    fn compile_raiseevent_statement_in_single_module_subset_succeeds() {
         let source = "Sub Main()\nRaiseEvent Tick\nEnd Sub";
-        let err = compile(source).expect_err("RaiseEvent should currently be class-model gated");
-        assert!(
-            err.to_string()
-                .contains("PMR-E-RAISEEVENT-CLASS-MODEL-REQUIRED")
-        );
+        compile(source).expect("RaiseEvent statement should compile in deterministic subset");
     }
 }

@@ -1,0 +1,14 @@
+feature_area,min_depth,obligation_ids,rationale
+control_flow_core,3,FO-V5-001;FO-V6-001;FO-V7-001;FO-V40-001;FO-V41-001,Core branching and loop transfer semantics have multiple independent obligations.
+error_handling_core,3,FO-V11-001;FO-V12-001;FO-V51-001;FO-V149-001;FO-V160-001,Error-mode transitions and Err lifecycle require cross-profile depth.
+typing_and_coercion,3,FO-V67-001;FO-V73-001;FO-V74-001;FO-V75-001;FO-V76-001,Type lattice and coercion matrix behavior is covered through multiple formal lanes.
+array_semantics,3,FO-V10-001;FO-V42-001;FO-V50-001,Array storage and resize/introspection semantics remain deeply covered.
+object_and_lifecycle,3,FO-V44-001;FO-V54-001;FO-V55-001;FO-V107-002,Property and lifecycle behavior spans compiler and host execution lanes.
+project_model_reference,3,FO-V287-001;FO-V287-002;FO-V466-001;FO-V466-002;FO-V466-003,Project graph and PMR class/event legality checks maintain deep obligation coverage.
+event_semantics_compiler,3,FO-V466-001;FO-V466-002;FO-V466-003;FO-V466-004,New class event semantics require explicit legality and positive-path obligations.
+interop_typelib_bridge,3,FO-V287-003;FO-V438-001;FO-V438-002,Interop and type-library behavior stays represented across host and HAL obligations.
+runtime_host_policy,3,FO-V52-003;FO-V55-003;FO-V164-001,Host policy fallback and deterministic diagnostics require repeated checks.
+stdlib_string,3,FO-V46-001;FO-V47-001;FO-V78-003;FO-V170-001,String intrinsic surface remains deep and multi-phase.
+stdlib_date_time_numeric,3,FO-V15-001;FO-V48-001;FO-V49-001,Date/time and numeric projection semantics keep minimum depth.
+stdlib_financial,3,FO-V49-003;FO-V154-002;FO-V162-001;FO-V169-001,Financial algorithmic semantics and safety checks remain deeply represented.
+formal_governance_docs,3,FO-V466-005;FO-V466-006;FO-V466-007;FO-V466-008;FO-V466-009,Formal/documentation governance has dedicated obligations to keep post-gate semantics and profile evidence synchronized.

@@ -27,29 +27,17 @@ try {
         Write-Host "[oxvba] no-artifacts mode: enabled (writes redirected to temp/no-artifacts)"
     }
 
-    Write-Host "[oxvba] docs-check"
-    & "$PSScriptRoot/docs-check.ps1"
-
-    Write-Host "[oxvba] gate-sync"
-    & "$PSScriptRoot/validate-gate-sync.ps1"
-
-    Write-Host "[oxvba] active-ladder-sync"
-    & "$PSScriptRoot/validate-active-ladder-sync.ps1"
+    Write-Host "[oxvba] governance"
+    & "$PSScriptRoot/check-governance.ps1"
 
     Write-Host "[oxvba] profile-artifact-scope"
     & "$PSScriptRoot/validate-profile-artifact-scope.ps1" -Mode working
-
-    Write-Host "[oxvba] divergence-structure"
-    & "$PSScriptRoot/validate-divergences.ps1"
 
     Write-Host "[oxvba] language-coverage"
     & "$PSScriptRoot/validate-language-coverage.ps1"
 
     Write-Host "[oxvba] coverage-notes"
     & "$PSScriptRoot/validate-coverage-notes.ps1"
-
-    Write-Host "[oxvba] deferred-oracle-gates"
-    & "$PSScriptRoot/validate-deferred-oracle-gates.ps1"
 
     Write-Host "[oxvba] intrinsic-surface"
     & "$PSScriptRoot/validate-intrinsic-surface.ps1"
@@ -59,12 +47,6 @@ try {
 
     Write-Host "[oxvba] pmr-clause-drift"
     & "$PSScriptRoot/check-pmr-clause-drift.ps1"
-
-    Write-Host "[oxvba] pmr-followup-sync"
-    & "$PSScriptRoot/validate-pmr-followup-sync.ps1"
-
-    Write-Host "[oxvba] project-integration-catalog"
-    & "$PSScriptRoot/validate-project-integration-catalog.ps1"
 
     Write-Host "[oxvba] kani-obligation-policy"
     & "$PSScriptRoot/validate-kani-obligation-policy.ps1"
