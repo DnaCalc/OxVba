@@ -3194,6 +3194,7 @@ fn map_dispatch_member_literal_token(text: &str) -> Option<i32> {
     match canonical.as_str() {
         "count" => Some(1),
         "exists" => Some(2),
+        "firechanged" => Some(3),
         _ => None,
     }
 }

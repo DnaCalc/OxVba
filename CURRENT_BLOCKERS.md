@@ -22,10 +22,17 @@ Run context: full events parity closure (non-COM + Windows COM)
 - Impact:
   - Blocks full scope completion for COM parity claims in the parity workset.
   - Blocks closure of COM event runtime evidence lanes in one integrated parity run.
+- Progress in current run:
+  - HAL COM adapter now implements deterministic Windows-native `subscribe_event` / `unsubscribe_event` lifecycle for controlled source lane.
+  - Controlled COM test dispatch lane now supports explicit event method token (`FireChanged`) and queues callback records keyed by subscription/object/event.
+  - Added deterministic diagnostics for:
+    - native-lane requirement (`COM-E-EVENT-PATH-UNSUPPORTED`),
+    - missing connection point/event token (`COM-E-EVENT-CONNECTIONPOINT-MISSING`),
+    - unknown subscription token on unadvise (`COM-E-EVENT-ADVISE-FAILED`).
 - Why blocked:
-  - Current run has non-COM/internal event semantics advanced, but full COM callback transport completion still needs:
-    - connection-point lifecycle integration (`Advise`/`Unadvise`) in runtime event graph lane,
-    - deterministic callback argument mapping from typelib event metadata,
+  - Current run has non-COM/internal event semantics advanced and COM lifecycle substrate implemented, but full COM callback transport completion still needs:
+    - callback ingress path from HAL callback queue into host/runtime handler execution path,
+    - deterministic callback argument mapping from typelib event metadata into executable handler argument routing,
     - explicit `COM-EVT-B` implementation or formal deterministic unsupported closure.
 - Exact unblocking steps:
   1. Lock COM event bridge contract for callback ingress (`COM-EVT-A` required, `COM-EVT-B` implementation/defer decision).

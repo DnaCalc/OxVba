@@ -257,6 +257,29 @@ impl StandardHostServices {
                     handle
                 );
             }
+            for (subscription, entry) in &state.subscriptions {
+                hal_contract_assert!(
+                    *subscription >= 40_001,
+                    "op={} observed out-of-range COM event subscription {}",
+                    op,
+                    subscription
+                );
+                hal_contract_assert!(
+                    state.bindings.contains_key(&entry.object),
+                    "op={} observed COM event subscription {} for unknown object {}",
+                    op,
+                    subscription,
+                    entry.object
+                );
+            }
+            for callback in &state.pending_callbacks {
+                hal_contract_assert!(
+                    state.subscriptions.contains_key(&callback.subscription),
+                    "op={} observed callback for unknown subscription {}",
+                    op,
+                    callback.subscription
+                );
+            }
         }
 
         #[cfg(not(any(debug_assertions, feature = "hal_contract_checks")))]
@@ -601,9 +624,7 @@ impl StandardHostServices {
         member: i32,
         arg: i32,
     ) -> HalResult<i32> {
-        let result = if prog_id.eq_ignore_ascii_case("Scripting.Dictionary")
-            || prog_id.eq_ignore_ascii_case(OXVBA_TEST_DISPATCH_PROGID)
-        {
+        let result = if prog_id.eq_ignore_ascii_case("Scripting.Dictionary") {
             match member {
                 1 => unsafe { raw_dispatch_dictionary_count(dispatch) },
                 2 if arg == DISPATCH_INVOKE_MISSING_ARG_TOKEN => {
@@ -612,6 +633,23 @@ impl StandardHostServices {
                 2 => unsafe { raw_dispatch_dictionary_exists(dispatch, arg) },
                 _ => Err(format!(
                     "IDispatch::Invoke unsupported Scripting.Dictionary member token {member}"
+                )),
+            }
+        } else if prog_id.eq_ignore_ascii_case(OXVBA_TEST_DISPATCH_PROGID) {
+            match member {
+                1 => unsafe { raw_dispatch_dictionary_count(dispatch) },
+                2 if arg == DISPATCH_INVOKE_MISSING_ARG_TOKEN => {
+                    Err("IDispatch::Invoke requires an argument for member token 2".to_string())
+                }
+                2 => unsafe { raw_dispatch_dictionary_exists(dispatch, arg) },
+                3 if arg == DISPATCH_INVOKE_MISSING_ARG_TOKEN => {
+                    Err("IDispatch::Invoke requires an argument for member token 3".to_string())
+                }
+                3 => unsafe {
+                    raw_dispatch_invoke_method_i4(dispatch, TEST_DISPID_FIRE_CHANGED, arg)
+                },
+                _ => Err(format!(
+                    "IDispatch::Invoke unsupported OxVba.TestDispatch member token {member}"
                 )),
             }
         } else {
@@ -737,6 +775,35 @@ impl StandardHostServices {
             "dispatch_invoke",
             format!("{prefix} {message}"),
         )
+    }
+
+    #[cfg(target_os = "windows")]
+    fn queue_com_event_callbacks(
+        &self,
+        object: i32,
+        binding: &ComBinding,
+        member: i32,
+        arg: i32,
+    ) -> HalResult<()> {
+        let Some(event) = com_event_from_member_token(binding, member) else {
+            return Ok(());
+        };
+        let mut state = self.com_lock(CapabilityId::ComActivationDispatch, "dispatch_invoke")?;
+        self.assert_com_invariants(&state, "dispatch_invoke-event-pre");
+        let _ = state.queue_callbacks_for_source_event(object, event, arg);
+        self.assert_com_invariants(&state, "dispatch_invoke-event-post");
+        Ok(())
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    fn queue_com_event_callbacks(
+        &self,
+        _object: i32,
+        _binding: &ComBinding,
+        _member: i32,
+        _arg: i32,
+    ) -> HalResult<()> {
+        Ok(())
     }
 
     #[cfg(not(target_os = "windows"))]
@@ -1235,36 +1302,42 @@ impl ComHal for StandardHostServices {
                 #[cfg(target_os = "windows")]
                 if binding.native_dispatch != 0 {
                     let dispatch = binding.native_dispatch as *mut RawIDispatch;
-                    if let Some(value) = self.try_native_com_vtable_invoke(
+                    let value = if let Some(value) = self.try_native_com_vtable_invoke(
                         dispatch,
                         &binding.prog_id_name,
                         member,
                         arg,
                     )? {
-                        return Ok(value);
-                    }
-                    if let Some((dispid, requires_argument)) = self.resolve_member_dispid_cached(
-                        object,
-                        dispatch,
-                        &binding.prog_id_name,
-                        member,
-                        cached_dispid,
-                    )? {
-                        return self.native_com_dispatch_invoke_with_member_spec(
+                        value
+                    } else if let Some((dispid, requires_argument)) = self
+                        .resolve_member_dispid_cached(
+                            object,
+                            dispatch,
+                            &binding.prog_id_name,
+                            member,
+                            cached_dispid,
+                        )?
+                    {
+                        self.native_com_dispatch_invoke_with_member_spec(
                             dispatch,
                             dispid,
                             requires_argument,
                             arg,
-                        );
-                    }
-                    return self.native_com_dispatch_invoke_with_bound_dispatch(
-                        dispatch,
-                        &binding.prog_id_name,
-                        member,
-                        arg,
-                    );
+                        )?
+                    } else {
+                        self.native_com_dispatch_invoke_with_bound_dispatch(
+                            dispatch,
+                            &binding.prog_id_name,
+                            member,
+                            arg,
+                        )?
+                    };
+                    self.queue_com_event_callbacks(object, &binding, member, arg)?;
+                    return Ok(value);
                 }
-                return self.native_com_dispatch_invoke(&binding.prog_id_name, member, arg);
+                let value = self.native_com_dispatch_invoke(&binding.prog_id_name, member, arg)?;
+                self.queue_com_event_callbacks(object, &binding, member, arg)?;
+                return Ok(value);
             }
         }
         let arg = if arg == DISPATCH_INVOKE_MISSING_ARG_TOKEN {
@@ -1275,7 +1348,7 @@ impl ComHal for StandardHostServices {
         Ok(object.saturating_add(member).saturating_add(arg))
     }
 
-    fn subscribe_event(&self, _object: i32, _event: i32) -> HalResult<i32> {
+    fn subscribe_event(&self, object: i32, event: i32) -> HalResult<i32> {
         let capability = CapabilityId::ComActivationDispatch;
         if !self.supports(capability) {
             return Err(self.unsupported(capability, "subscribe_event"));
@@ -1283,15 +1356,44 @@ impl ComHal for StandardHostServices {
         if !self.policy.allow_com_activation {
             return Err(self.denied(capability, "subscribe_event"));
         }
-        Err(HalError::adapter_fault(
-            self.profile,
-            capability,
-            "subscribe_event",
-            "COM event subscribe bridge is not implemented in this lane",
-        ))
+        if !self.native_com_enabled() {
+            return Err(HalError::adapter_fault(
+                self.profile,
+                capability,
+                "subscribe_event",
+                "COM-E-EVENT-PATH-UNSUPPORTED: native COM event subscription requires host-backed Windows native mode",
+            ));
+        }
+        let mut state = self.com_lock(capability, "subscribe_event")?;
+        self.assert_com_invariants(&state, "subscribe_event-pre");
+        let Some(binding) = state.bindings.get(&object).cloned() else {
+            return Err(HalError::adapter_fault(
+                self.profile,
+                capability,
+                "subscribe_event",
+                format!("COM-E-EVENT-CONNECTIONPOINT-MISSING: unknown COM object token {object}"),
+            ));
+        };
+        if !com_event_supported_for_binding(&binding, event) {
+            return Err(HalError::adapter_fault(
+                self.profile,
+                capability,
+                "subscribe_event",
+                format!(
+                    "COM-E-EVENT-CONNECTIONPOINT-MISSING: object `{}` does not expose event token {}",
+                    binding.prog_id_name, event
+                ),
+            ));
+        }
+        let subscription = state.allocate_subscription();
+        state
+            .subscriptions
+            .insert(subscription, ComEventSubscription { object, event });
+        self.assert_com_invariants(&state, "subscribe_event-post");
+        Ok(subscription)
     }
 
-    fn unsubscribe_event(&self, _subscription: i32) -> HalResult<i32> {
+    fn unsubscribe_event(&self, subscription: i32) -> HalResult<i32> {
         let capability = CapabilityId::ComActivationDispatch;
         if !self.supports(capability) {
             return Err(self.unsupported(capability, "unsubscribe_event"));
@@ -1299,12 +1401,31 @@ impl ComHal for StandardHostServices {
         if !self.policy.allow_com_activation {
             return Err(self.denied(capability, "unsubscribe_event"));
         }
-        Err(HalError::adapter_fault(
-            self.profile,
-            capability,
-            "unsubscribe_event",
-            "COM event unsubscribe bridge is not implemented in this lane",
-        ))
+        if !self.native_com_enabled() {
+            return Err(HalError::adapter_fault(
+                self.profile,
+                capability,
+                "unsubscribe_event",
+                "COM-E-EVENT-PATH-UNSUPPORTED: native COM event subscription requires host-backed Windows native mode",
+            ));
+        }
+        let mut state = self.com_lock(capability, "unsubscribe_event")?;
+        self.assert_com_invariants(&state, "unsubscribe_event-pre");
+        let Some(entry) = state.subscriptions.remove(&subscription) else {
+            return Err(HalError::adapter_fault(
+                self.profile,
+                capability,
+                "unsubscribe_event",
+                format!(
+                    "COM-E-EVENT-ADVISE-FAILED: unknown COM event subscription token {subscription}"
+                ),
+            ));
+        };
+        state.pending_callbacks.retain(|callback| {
+            callback.subscription != subscription || callback.object != entry.object
+        });
+        self.assert_com_invariants(&state, "unsubscribe_event-post");
+        Ok(1)
     }
 }
 
@@ -1912,13 +2033,37 @@ struct FileHandleState {
 #[derive(Debug, Default)]
 struct ComState {
     next_handle: i32,
+    next_subscription: i32,
     bindings: BTreeMap<i32, ComBinding>,
+    subscriptions: BTreeMap<i32, ComEventSubscription>,
+    pending_callbacks: Vec<ComEventCallback>,
 }
 
 impl ComState {
     fn allocate_handle(&mut self) -> i32 {
         self.next_handle = self.next_handle.saturating_add(1).max(1);
         20_000i32.saturating_add(self.next_handle)
+    }
+
+    fn allocate_subscription(&mut self) -> i32 {
+        self.next_subscription = self.next_subscription.saturating_add(1).max(1);
+        40_000i32.saturating_add(self.next_subscription)
+    }
+
+    fn queue_callbacks_for_source_event(&mut self, object: i32, event: i32, arg: i32) -> usize {
+        let mut queued = 0usize;
+        for (subscription, entry) in &self.subscriptions {
+            if entry.object == object && entry.event == event {
+                self.pending_callbacks.push(ComEventCallback {
+                    subscription: *subscription,
+                    object,
+                    event,
+                    arg,
+                });
+                queued = queued.saturating_add(1);
+            }
+        }
+        queued
     }
 }
 
@@ -1951,6 +2096,20 @@ impl ComBinding {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct ComEventSubscription {
+    object: i32,
+    event: i32,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct ComEventCallback {
+    subscription: i32,
+    object: i32,
+    event: i32,
+    arg: i32,
+}
+
 #[cfg(target_os = "windows")]
 #[derive(Debug, Clone, Copy)]
 struct ComMemberSpec {
@@ -1960,9 +2119,7 @@ struct ComMemberSpec {
 
 #[cfg(target_os = "windows")]
 fn com_member_spec_for_token(prog_id: &str, member: i32) -> Option<ComMemberSpec> {
-    if prog_id.eq_ignore_ascii_case("Scripting.Dictionary")
-        || prog_id.eq_ignore_ascii_case(OXVBA_TEST_DISPATCH_PROGID)
-    {
+    if prog_id.eq_ignore_ascii_case("Scripting.Dictionary") {
         return match member {
             1 => Some(ComMemberSpec {
                 name: "Count",
@@ -1975,12 +2132,61 @@ fn com_member_spec_for_token(prog_id: &str, member: i32) -> Option<ComMemberSpec
             _ => None,
         };
     }
+    if prog_id.eq_ignore_ascii_case(OXVBA_TEST_DISPATCH_PROGID) {
+        return match member {
+            1 => Some(ComMemberSpec {
+                name: "Count",
+                requires_argument: false,
+            }),
+            2 => Some(ComMemberSpec {
+                name: "Exists",
+                requires_argument: true,
+            }),
+            3 => Some(ComMemberSpec {
+                name: "FireChanged",
+                requires_argument: true,
+            }),
+            _ => None,
+        };
+    }
+    None
+}
+
+#[cfg(target_os = "windows")]
+fn com_event_supported_for_binding(binding: &ComBinding, event: i32) -> bool {
+    binding
+        .prog_id_name
+        .eq_ignore_ascii_case(OXVBA_TEST_DISPATCH_PROGID)
+        && event == TEST_EVENT_CHANGED
+}
+
+#[cfg(not(target_os = "windows"))]
+fn com_event_supported_for_binding(_binding: &ComBinding, _event: i32) -> bool {
+    false
+}
+
+#[cfg(target_os = "windows")]
+fn com_event_from_member_token(binding: &ComBinding, member: i32) -> Option<i32> {
+    if binding
+        .prog_id_name
+        .eq_ignore_ascii_case(OXVBA_TEST_DISPATCH_PROGID)
+        && member == TEST_DISPID_FIRE_CHANGED
+    {
+        return Some(TEST_EVENT_CHANGED);
+    }
+    None
+}
+
+#[cfg(not(target_os = "windows"))]
+fn com_event_from_member_token(_binding: &ComBinding, _member: i32) -> Option<i32> {
     None
 }
 
 #[cfg(target_os = "windows")]
 impl Drop for ComState {
     fn drop(&mut self) {
+        self.subscriptions.clear();
+        self.pending_callbacks.clear();
         for binding in self.bindings.values_mut() {
             if binding.native_dispatch != 0 {
                 unsafe {
@@ -1989,6 +2195,7 @@ impl Drop for ComState {
                 binding.native_dispatch = 0;
             }
         }
+        self.bindings.clear();
     }
 }
 
@@ -2079,6 +2286,10 @@ const COM_DISP_E_TYPEMISMATCH: i32 = 0x8002_0005u32 as i32;
 const TEST_DISPID_COUNT: i32 = 1;
 #[cfg(target_os = "windows")]
 const TEST_DISPID_EXISTS: i32 = 2;
+#[cfg(target_os = "windows")]
+const TEST_DISPID_FIRE_CHANGED: i32 = 3;
+#[cfg(target_os = "windows")]
+const TEST_EVENT_CHANGED: i32 = 1;
 
 #[cfg(target_os = "windows")]
 #[repr(C)]
@@ -2297,6 +2508,7 @@ unsafe extern "system" fn oxvba_test_get_ids_of_names(
     let dispid = match name.as_str() {
         "count" => TEST_DISPID_COUNT,
         "exists" => TEST_DISPID_EXISTS,
+        "firechanged" => TEST_DISPID_FIRE_CHANGED,
         _ => return COM_DISP_E_UNKNOWNNAME,
     };
     *rgdispid = dispid;
@@ -2345,6 +2557,24 @@ unsafe extern "system" fn oxvba_test_invoke(
                 }
             };
             set_variant_bool(key == 42, pvarresult);
+            COM_S_OK
+        }
+        TEST_DISPID_FIRE_CHANGED => {
+            if (wflags & DISPATCH_METHOD) == 0 || cargs != 1 || rgvarg.is_null() {
+                return COM_DISP_E_BADPARAMCOUNT;
+            }
+            let arg = &*rgvarg;
+            let value = match arg.Anonymous.Anonymous.vt {
+                VT_I4 => arg.Anonymous.Anonymous.Anonymous.lVal,
+                VT_UI4 => arg.Anonymous.Anonymous.Anonymous.ulVal as i32,
+                _ => {
+                    if !puargerr.is_null() {
+                        *puargerr = 0;
+                    }
+                    return COM_DISP_E_TYPEMISMATCH;
+                }
+            };
+            set_variant_i32(value, pvarresult);
             COM_S_OK
         }
         _ => COM_DISP_E_MEMBERNOTFOUND,
@@ -2425,6 +2655,15 @@ unsafe fn raw_oxvba_test_dispatch_vtable_invoke(
                 ));
             }
             Ok(Some(if arg == 42 { 1 } else { 0 }))
+        }
+        TEST_DISPID_FIRE_CHANGED => {
+            if arg == DISPATCH_INVOKE_MISSING_ARG_TOKEN {
+                return Err(format!(
+                    "IDispatch::Invoke(method) failed with HRESULT {:#010X} (arg_err={})",
+                    COM_DISP_E_BADPARAMCOUNT as u32, 0
+                ));
+            }
+            Ok(Some(arg))
         }
         _ => Ok(None),
     }
@@ -2997,19 +3236,104 @@ mod tests {
     }
 
     #[test]
-    fn com_event_subscription_lane_is_explicitly_unimplemented() {
-        let host = StandardHostServices::new(HalProfileId::Windows, HostPolicy::interactive_dev());
+    fn com_event_subscription_lane_requires_native_mode() {
+        let host = StandardHostServices::new(HalProfileId::Windows, HostPolicy::default());
         let subscribe = host
             .subscribe_event(1, 1)
-            .expect_err("subscribe_event should be explicitly unimplemented");
+            .expect_err("subscribe_event should require native mode");
         assert_eq!(subscribe.kind, HalErrorKind::AdapterFault);
         assert_eq!(subscribe.operation, "subscribe_event");
+        assert!(subscribe.message.contains("COM-E-EVENT-PATH-UNSUPPORTED"));
 
         let unsubscribe = host
             .unsubscribe_event(1)
-            .expect_err("unsubscribe_event should be explicitly unimplemented");
+            .expect_err("unsubscribe_event should require native mode");
         assert_eq!(unsubscribe.kind, HalErrorKind::AdapterFault);
         assert_eq!(unsubscribe.operation, "unsubscribe_event");
+        assert!(unsubscribe.message.contains("COM-E-EVENT-PATH-UNSUPPORTED"));
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn windows_native_com_event_subscription_lifecycle_is_tracked() {
+        let host = StandardHostServices::new(HalProfileId::Windows, HostPolicy::interactive_dev());
+        let object = host
+            .create_object(4)
+            .expect("create_object should return a token");
+        assert!(
+            object >= 20_001,
+            "controlled COM lane should bind native object"
+        );
+        let subscription = host
+            .subscribe_event(object, 1)
+            .expect("subscribe_event should succeed for controlled event source");
+        assert!(subscription >= 40_001);
+
+        assert_eq!(
+            host.dispatch_invoke(object, 3, 77)
+                .expect("FireChanged should succeed"),
+            77
+        );
+        let queued = {
+            let state = host
+                .com_state
+                .lock()
+                .expect("com state lock should succeed");
+            state
+                .pending_callbacks
+                .iter()
+                .find(|entry| entry.subscription == subscription)
+                .copied()
+        };
+        let queued = queued.expect("expected queued callback for subscription");
+        assert_eq!(queued.object, object);
+        assert_eq!(queued.event, 1);
+        assert_eq!(queued.arg, 77);
+
+        assert_eq!(
+            host.unsubscribe_event(subscription)
+                .expect("unsubscribe_event should succeed"),
+            1
+        );
+        let still_queued = {
+            let state = host
+                .com_state
+                .lock()
+                .expect("com state lock should succeed");
+            state
+                .pending_callbacks
+                .iter()
+                .any(|entry| entry.subscription == subscription)
+        };
+        assert!(
+            !still_queued,
+            "unsubscribe should clear queued callbacks for that subscription"
+        );
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn windows_native_com_event_subscription_rejects_unknown_event_token() {
+        let host = StandardHostServices::new(HalProfileId::Windows, HostPolicy::interactive_dev());
+        let object = host
+            .create_object(4)
+            .expect("create_object should return a token");
+        let err = host
+            .subscribe_event(object, 7)
+            .expect_err("unknown event token should fail deterministically");
+        assert_eq!(err.kind, HalErrorKind::AdapterFault);
+        assert!(err.message.contains("COM-E-EVENT-CONNECTIONPOINT-MISSING"));
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn windows_native_com_event_unsubscribe_rejects_unknown_subscription() {
+        let host = StandardHostServices::new(HalProfileId::Windows, HostPolicy::interactive_dev());
+        let err = host
+            .unsubscribe_event(40_999)
+            .expect_err("unknown subscription should fail deterministically");
+        assert_eq!(err.kind, HalErrorKind::AdapterFault);
+        assert!(err.message.contains("COM-E-EVENT-ADVISE-FAILED"));
     }
 
     #[cfg(target_os = "windows")]
