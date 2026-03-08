@@ -1414,8 +1414,8 @@ The compiler/binder event semantics are closed (EVT1/EVT2). `WithEvents`, `Imple
 |-------|-------|--------|
 | EVT3 | Runtime subscription graph and dispatch semantics | In progress (baseline implemented; deterministic reassignment/clear transition probes executable; full sink-instance graph parity pending) |
 | EVT4 | Embedded host event bridge and code-behind routing | In progress (non-COM dispatch mapping baseline implemented) |
-| EVT5 | COM-EVT-A: dispatch-style event callbacks (blocking) | Pending |
-| EVT6 | COM-EVT-B: non-dispatch event paths (non-blocking deferral allowed) | Pending |
+| EVT5 | COM-EVT-A: dispatch-style event callbacks (blocking) | In progress (controlled native connection-point callback lifecycle implemented; external oracle evidence pending) |
+| EVT6 | COM-EVT-B: non-dispatch event paths (non-blocking deferral allowed) | In progress (controlled source-interface callback lane implemented; external-server parity evidence pending) |
 | EVT7 | Conformance, oracle, and formal lanes | Pending |
 | EVT8 | Closure gate (close/re-scope remaining event divergences) | In progress (`DIV-0003` closed; `DIV-0004` open) |
 

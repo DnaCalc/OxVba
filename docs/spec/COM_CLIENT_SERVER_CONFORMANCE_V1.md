@@ -77,6 +77,7 @@ Primary checks:
 - deterministic `VarResult`/`ExcepInfo`/`ArgErr` translation to OxVba diagnostics.
 - failure-path behavior under `On Error Resume Next` on unsupported profiles.
 - controlled COM server path via OxVba-owned in-process test ProgID (`OxVba.TestDispatch`) to reduce external registration variance.
+- controlled `COM-EVT-B` source-interface callback ingress lane for `OxVba.TestDispatch` (`subscribe -> trigger -> callback -> unsubscribe`) with deterministic handler-symbol routing.
 
 ### Lane L3: Windows COM server scaffold lane
 

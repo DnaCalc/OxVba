@@ -1886,6 +1886,7 @@ fn known_dispatch_member_token(member_name: &str) -> Option<i32> {
         "exists" => Some(2),
         "firechanged" => Some(3),
         "firechangedpair" => Some(4),
+        "firechangedsourceinterface" => Some(11),
         "ping" => Some(5),
         "lookup" => Some(6),
         "setvalue" => Some(7),

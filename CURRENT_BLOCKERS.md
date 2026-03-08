@@ -17,8 +17,8 @@ Run context: full events parity closure (non-COM + Windows COM)
 
 ## Active blocker entries
 
-### BLK-COM-001: COM event callback parity lane requires dedicated transport completion
-- Title: Complete Windows COM event callback lifecycle (`COM-EVT-A` and `COM-EVT-B`/explicit defer).
+### BLK-COM-001: COM event callback parity lane requires external oracle evidence closure
+- Title: Complete Windows COM event callback parity evidence (`COM-EVT-A` + `COM-EVT-B`) on external registered servers.
 - Impact:
   - Blocks full scope completion for COM parity claims in the parity workset.
   - Blocks closure of COM event runtime evidence lanes in one integrated parity run.
@@ -47,9 +47,12 @@ Run context: full events parity closure (non-COM + Windows COM)
     - HAL COM callback lane now exposes deterministic callback arity lookup (`event_callback_arity`),
     - callback payload storage now carries argument vectors with deterministic index diagnostics,
     - host callback ingress now fetches full callback argument vectors and enforces exact handler signature arity at runtime (`PMR-E-EVENT-CALLBACK-SIGNATURE-MISMATCH`).
-  - `COM-EVT-B` now has explicit deterministic unsupported closure in controlled Windows lane:
-    - subscribing source-interface token path returns deterministic unsupported diagnostic:
-      - `COM-E-EVENT-PATH-UNSUPPORTED: source-interface COM event callbacks (COM-EVT-B) are unsupported in current lane`.
+  - `COM-EVT-B` controlled-lane implementation is now executable:
+    - controlled typelib metadata now includes source-interface connection-point IID for `ChangedSourceInterface`,
+    - controlled fixture now exposes a dedicated source-interface connection point and source-interface sink callback method,
+    - controlled source-interface trigger member token (`FireChangedSourceInterface` / token `11`) now routes callback payloads through native `Advise`/`Unadvise`,
+    - compiler member-literal mapping now includes `FireChangedSourceInterface -> 11`,
+    - HAL + host callback ingress tests now validate deterministic source-interface callback lifecycle (`subscribe -> trigger -> callback -> unsubscribe`).
   - Controlled COM fixture/event lane now includes multi-argument callback payload flow:
     - controlled dispatch member token `4` (`FireChangedPair`) emits deterministic callback payload `[arg0, arg1]`,
     - controlled event token `3` advertises arity-2 callback shape,
@@ -152,11 +155,11 @@ Run context: full events parity closure (non-COM + Windows COM)
     - trigger member mapping executes (`projection-trigger ... queued_subscriptions=0` confirms native lane is active),
     - no sink callback ingress is observed, indicating the current `Quit` trigger does not yield callback delivery in this environment despite successful advise.
 - Why blocked:
-  - Current run closes controlled-lane connection-point callback ingress and deterministic lifecycle (`Advise`/`Unadvise`) in Windows native mode.
-  - Remaining strict parity closure is now limited to external evidence and ingestion:
-    - populate real external typelib event metadata with connection-point IID/member IDs,
+  - Current run closes controlled-lane connection-point callback ingress and deterministic lifecycle (`Advise`/`Unadvise`) for both `COM-EVT-A` and controlled `COM-EVT-B`.
+  - Remaining strict parity closure is now limited to external evidence/oracle ingestion:
     - validate true connection-point callback evidence on at least one external registered COM server beyond the controlled in-process test server.
   - Forced external activation probe currently fails in this environment because no registered `OxVba.TestDispatch` class is available.
+  - Additional external probe (`InternetExplorer.Application`) currently fails at metadata stage (`COM-E-EVENT-CONNECTIONPOINT-MISSING`) because no external event token/IID mapping is defined in the registered lane metadata set.
 - Exact unblocking steps:
   1. Provision at least one event-capable registered COM server in the validation environment (either register `OxVba.TestDispatch` externally or select a deterministic third-party server).
   2. Populate external typelib metadata with connection-point IID/member identity (per chosen external server lane).
@@ -169,7 +172,7 @@ Run context: full events parity closure (non-COM + Windows COM)
   - `BLK-COM-001` — COM event callback parity lane requires dedicated transport completion.
 - Impact by milestone/phase:
   - Non-COM dynamic owner dispatch path: unblocked and implemented.
-  - COM parity closure: callback transport + arity/signature enforcement + controlled multi-arg fixture lane implemented with explicit COM-EVT-B unsupported policy, and controlled + non-OxVba registered metadata-projection lanes now pass; blocked at true connection-point transport completion.
+  - COM parity closure: callback transport + arity/signature enforcement + controlled multi-arg fixture lane + controlled COM-EVT-B source-interface connection-point lane implemented; blocked at external-server oracle evidence completion.
 - Exact unblocking steps:
   - Implement + validate true connection-point callback transport in CI/oracle evidence (metadata-projection success lanes are covered in controlled and non-OxVba registered configurations).
 - Suggestions/questions for user:

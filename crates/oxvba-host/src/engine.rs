@@ -1926,6 +1926,42 @@ mod tests {
 
     #[cfg(target_os = "windows")]
     #[test]
+    fn formal_com_evt_b_source_interface_callback_ingress_maps_to_registered_handler_symbol() {
+        let mut engine = Engine::new(HostConfig::default());
+        engine.set_host_policy(HostPolicy::interactive_dev());
+
+        let object = engine
+            .host_services
+            .com()
+            .create_object(4)
+            .expect("create_object should return controlled COM object");
+        let subscription = engine
+            .subscribe_com_event_handler(object, 2, "SinkA_OnSourceChanged")
+            .expect("subscribe_com_event_handler should succeed for source-interface event");
+
+        let _ = engine
+            .host_services
+            .com()
+            .dispatch_invoke(object, 11, 55)
+            .expect("dispatch_invoke should queue source-interface callback");
+        let callback = engine
+            .poll_com_event_callback()
+            .expect("callback poll should succeed")
+            .expect("callback should be available");
+
+        assert_eq!(callback.subscription_token, subscription);
+        assert_eq!(callback.handler_symbol, "sinka_onsourcechanged");
+        assert_eq!(callback.args, vec![55]);
+        assert_eq!(callback.arg0, 55);
+        assert!(
+            engine
+                .unsubscribe_com_event_handler(subscription)
+                .expect("unsubscribe should succeed")
+        );
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
     fn formal_com_event_callback_runtime_dispatch_invokes_project_handler() {
         let mut engine = Engine::new(HostConfig::default());
         engine.set_host_policy(HostPolicy::interactive_dev());

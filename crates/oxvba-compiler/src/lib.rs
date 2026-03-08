@@ -1224,6 +1224,23 @@ mod tests {
     }
 
     #[test]
+    fn compile_dispatchinvoke_with_source_interface_event_literal_maps_to_member_token_eleven() {
+        let source = "Sub Main()\nDim x\nx = DispatchInvoke(CreateObject(\"OxVba.TestDispatch\"), \"FireChangedSourceInterface\", 7)\nEnd Sub";
+        let out =
+            compile(source).expect("compile should succeed for source-interface trigger member");
+        assert!(
+            out.instructions
+                .iter()
+                .any(|i| matches!(i, Instruction::IntrinsicDispatchInvokeHost { .. }))
+        );
+        assert!(
+            out.instructions
+                .iter()
+                .any(|i| matches!(i, Instruction::LoadConstI32 { value: 11, .. }))
+        );
+    }
+
+    #[test]
     fn compile_dispatchinvoke_with_quit_literal_maps_to_member_token_ten() {
         let source = "Sub Main()\nDim x\nx = DispatchInvoke(CreateObject(\"OxVba.TestDispatch\"), \"Quit\")\nEnd Sub";
         let out = compile(source).expect("compile should succeed for quit member literal");
