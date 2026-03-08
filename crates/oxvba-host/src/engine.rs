@@ -339,6 +339,8 @@ impl Engine {
                 }
                 Instruction::IntrinsicCreateObjectHost { .. }
                 | Instruction::IntrinsicDispatchInvokeHost { .. }
+                | Instruction::IntrinsicComSubscribeEventHost { .. }
+                | Instruction::IntrinsicComUnsubscribeEventHost { .. }
                     if !policy.allow_com_activation =>
                 {
                     let key = format!(
@@ -391,6 +393,12 @@ fn hal_requirement(instruction: &Instruction) -> Option<(&'static str, Capabilit
         }
         Instruction::IntrinsicDispatchInvokeHost { .. } => {
             Some(("DispatchInvoke", CapabilityId::ComActivationDispatch))
+        }
+        Instruction::IntrinsicComSubscribeEventHost { .. } => {
+            Some(("ComSubscribeEvent", CapabilityId::ComActivationDispatch))
+        }
+        Instruction::IntrinsicComUnsubscribeEventHost { .. } => {
+            Some(("ComUnsubscribeEvent", CapabilityId::ComActivationDispatch))
         }
         Instruction::IntrinsicInvokeSymbolHost { .. } => {
             Some(("DeclareInvoke", CapabilityId::DynamicLinking))

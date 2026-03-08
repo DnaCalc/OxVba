@@ -1903,6 +1903,19 @@ fn emit_expr_into(
                         arg: missing_arg,
                     })
                 }
+                ("__oxvba_com_subscribe_event", [object, event]) => {
+                    instructions.push(Instruction::IntrinsicComSubscribeEventHost {
+                        dst,
+                        object: *object,
+                        event: *event,
+                    })
+                }
+                ("__oxvba_com_unsubscribe_event", [subscription]) => {
+                    instructions.push(Instruction::IntrinsicComUnsubscribeEventHost {
+                        dst,
+                        subscription: *subscription,
+                    })
+                }
                 ("__oxvba_withevents_get", [owner, binding]) => {
                     instructions.push(Instruction::IntrinsicWithEventsGet {
                         dst,

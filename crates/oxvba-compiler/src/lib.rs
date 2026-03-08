@@ -1524,4 +1524,22 @@ mod tests {
             "expected IntrinsicWithEventsNextOwner emission"
         );
     }
+
+    #[test]
+    fn compile_com_event_subscription_intrinsics_emit_deterministically() {
+        let source = "Sub Main()\nDim x\nDim y\nx = __oxvba_com_subscribe_event(20001, 1)\ny = __oxvba_com_unsubscribe_event(x)\nEnd Sub";
+        let out = compile(source).expect("COM event subscription intrinsics should compile");
+        assert!(
+            out.instructions
+                .iter()
+                .any(|inst| matches!(inst, Instruction::IntrinsicComSubscribeEventHost { .. })),
+            "expected IntrinsicComSubscribeEventHost emission"
+        );
+        assert!(
+            out.instructions
+                .iter()
+                .any(|inst| matches!(inst, Instruction::IntrinsicComUnsubscribeEventHost { .. })),
+            "expected IntrinsicComUnsubscribeEventHost emission"
+        );
+    }
 }

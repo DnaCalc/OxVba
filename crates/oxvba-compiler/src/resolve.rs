@@ -3096,6 +3096,8 @@ fn intrinsic_spec(name: &str) -> Option<IntrinsicSpec> {
             Some(IntrinsicSpec::fixed(1, HostSensitive))
         }
         "dispatchinvoke" => Some(IntrinsicSpec::range(2, 3, HostSensitive)),
+        "__oxvba_com_subscribe_event" => Some(IntrinsicSpec::fixed(2, HostSensitive)),
+        "__oxvba_com_unsubscribe_event" => Some(IntrinsicSpec::fixed(1, HostSensitive)),
         "__oxvba_withevents_get" => Some(IntrinsicSpec::fixed(2, DeterministicCore)),
         "__oxvba_withevents_set" => Some(IntrinsicSpec::fixed(3, DeterministicCore)),
         "__oxvba_withevents_first_owner" => Some(IntrinsicSpec::fixed(2, DeterministicCore)),

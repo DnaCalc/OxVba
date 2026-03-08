@@ -859,6 +859,27 @@ impl Vm {
                         Err(err) => pc = self.route_host_error(pc, err)?,
                     }
                 }
+                Instruction::IntrinsicComSubscribeEventHost { dst, object, event } => {
+                    let object = self.read_slot(*object)?;
+                    let event = self.read_slot(*event)?;
+                    match self.host_services.com().subscribe_event(object, event) {
+                        Ok(value) => {
+                            self.write_slot(*dst, value)?;
+                            pc += 1;
+                        }
+                        Err(err) => pc = self.route_host_error(pc, err)?,
+                    }
+                }
+                Instruction::IntrinsicComUnsubscribeEventHost { dst, subscription } => {
+                    let subscription = self.read_slot(*subscription)?;
+                    match self.host_services.com().unsubscribe_event(subscription) {
+                        Ok(value) => {
+                            self.write_slot(*dst, value)?;
+                            pc += 1;
+                        }
+                        Err(err) => pc = self.route_host_error(pc, err)?,
+                    }
+                }
                 Instruction::IntrinsicInvokeSymbolHost {
                     dst,
                     descriptor_id,
@@ -2263,6 +2284,56 @@ mod tests {
         let out = vm.snapshot_slots(5);
         assert_eq!(out[1], 5004);
         assert_eq!(out[4], 25_013);
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn com_event_subscription_intrinsics_roundtrip_through_vm_host_lane() {
+        let bytecode = Bytecode {
+            instructions: vec![
+                Instruction::LoadConstI32 { slot: 0, value: 4 },
+                Instruction::IntrinsicCreateObjectHost { dst: 1, prog_id: 0 },
+                Instruction::LoadConstI32 { slot: 2, value: 1 },
+                Instruction::IntrinsicComSubscribeEventHost {
+                    dst: 3,
+                    object: 1,
+                    event: 2,
+                },
+                Instruction::LoadConstI32 { slot: 4, value: 3 },
+                Instruction::LoadConstI32 { slot: 5, value: 77 },
+                Instruction::IntrinsicDispatchInvokeHost {
+                    dst: 6,
+                    object: 1,
+                    member: 4,
+                    arg: 5,
+                },
+                Instruction::IntrinsicDoEventsHost { dst: 7 },
+                Instruction::IntrinsicComUnsubscribeEventHost {
+                    dst: 8,
+                    subscription: 3,
+                },
+                Instruction::Halt,
+            ],
+            external_call_descriptors: Vec::new(),
+            slot_count: 9,
+            user_slot_count: 9,
+        };
+
+        let mut vm = Vm::new(oxvba_hal::adapters::for_profile(
+            oxvba_hal::model::HalProfileId::Windows,
+            oxvba_hal::model::HostPolicy::interactive_dev(),
+        ));
+        vm.execute(&bytecode)
+            .expect("vm should execute COM event subscribe/unsubscribe flow");
+        let out = vm.snapshot_slots(9);
+        assert!(out[1] >= 20_001, "expected native COM object handle");
+        assert!(out[3] >= 40_001, "expected native COM subscription handle");
+        assert_eq!(out[6], 77, "expected FireChanged return value");
+        assert_eq!(
+            out[7], out[3],
+            "expected DoEvents callback pump to return subscription token"
+        );
+        assert_eq!(out[8], 1, "expected unsubscribe success token");
     }
 
     #[test]

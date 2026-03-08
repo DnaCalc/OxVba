@@ -935,6 +935,23 @@ impl EventPumpHal for StandardHostServices {
             }
             thread::yield_now();
         }
+        if self.native_com_enabled() {
+            let mut state = self.com_state.lock().map_err(|_| {
+                HalError::adapter_fault(
+                    self.profile,
+                    capability,
+                    "do_events",
+                    "com state lock poisoned during event callback pump",
+                )
+            })?;
+            self.assert_com_invariants(&state, "do_events-pre");
+            if let Some(callback) = state.pending_callbacks.first().copied() {
+                let _ = state.pending_callbacks.remove(0);
+                self.assert_com_invariants(&state, "do_events-post");
+                return Ok(callback.subscription);
+            }
+            self.assert_com_invariants(&state, "do_events-post");
+        }
         Ok(0)
     }
 }
@@ -3289,6 +3306,11 @@ mod tests {
         assert_eq!(queued.object, object);
         assert_eq!(queued.event, 1);
         assert_eq!(queued.arg, 77);
+        assert_eq!(
+            host.do_events()
+                .expect("do_events should pump pending COM callback"),
+            subscription
+        );
 
         assert_eq!(
             host.unsubscribe_event(subscription)

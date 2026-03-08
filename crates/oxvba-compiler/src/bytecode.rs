@@ -360,6 +360,15 @@ pub enum Instruction {
         member: usize,
         arg: usize,
     },
+    IntrinsicComSubscribeEventHost {
+        dst: usize,
+        object: usize,
+        event: usize,
+    },
+    IntrinsicComUnsubscribeEventHost {
+        dst: usize,
+        subscription: usize,
+    },
     IntrinsicInvokeSymbolHost {
         dst: usize,
         descriptor_id: u32,

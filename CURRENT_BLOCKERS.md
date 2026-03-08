@@ -25,14 +25,18 @@ Run context: full events parity closure (non-COM + Windows COM)
 - Progress in current run:
   - HAL COM adapter now implements deterministic Windows-native `subscribe_event` / `unsubscribe_event` lifecycle for controlled source lane.
   - Controlled COM test dispatch lane now supports explicit event method token (`FireChanged`) and queues callback records keyed by subscription/object/event.
+  - VM/bytecode lane now has executable COM subscription intrinsics:
+    - `__oxvba_com_subscribe_event(object, event)`
+    - `__oxvba_com_unsubscribe_event(subscription)`
+  - Event pump (`DoEvents`) now drains queued COM callbacks and returns subscription token for callback ingress.
   - Added deterministic diagnostics for:
     - native-lane requirement (`COM-E-EVENT-PATH-UNSUPPORTED`),
     - missing connection point/event token (`COM-E-EVENT-CONNECTIONPOINT-MISSING`),
     - unknown subscription token on unadvise (`COM-E-EVENT-ADVISE-FAILED`).
 - Why blocked:
   - Current run has non-COM/internal event semantics advanced and COM lifecycle substrate implemented, but full COM callback transport completion still needs:
-    - callback ingress path from HAL callback queue into host/runtime handler execution path,
-    - deterministic callback argument mapping from typelib event metadata into executable handler argument routing,
+    - callback ingress path from callback token pump into actual handler procedure execution path (subscription token currently observable, procedure dispatch not yet bound),
+    - deterministic callback argument mapping from callback queue/typelib metadata into executable handler argument routing,
     - explicit `COM-EVT-B` implementation or formal deterministic unsupported closure.
 - Exact unblocking steps:
   1. Lock COM event bridge contract for callback ingress (`COM-EVT-A` required, `COM-EVT-B` implementation/defer decision).
