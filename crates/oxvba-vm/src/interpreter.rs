@@ -2524,6 +2524,113 @@ mod tests {
     }
 
     #[test]
+    fn withevents_bindings_are_owner_scoped() {
+        let bytecode = Bytecode {
+            instructions: vec![
+                Instruction::LoadConstI32 { slot: 0, value: 11 },
+                Instruction::LoadConstI32 { slot: 1, value: 22 },
+                Instruction::LoadConstI32 { slot: 2, value: 7 },
+                Instruction::LoadConstI32 {
+                    slot: 3,
+                    value: 101,
+                },
+                Instruction::LoadConstI32 {
+                    slot: 4,
+                    value: 202,
+                },
+                Instruction::IntrinsicWithEventsSet {
+                    dst: 5,
+                    owner: 0,
+                    binding: 2,
+                    value: 3,
+                },
+                Instruction::IntrinsicWithEventsSet {
+                    dst: 6,
+                    owner: 1,
+                    binding: 2,
+                    value: 4,
+                },
+                Instruction::IntrinsicWithEventsGet {
+                    dst: 7,
+                    owner: 0,
+                    binding: 2,
+                },
+                Instruction::IntrinsicWithEventsGet {
+                    dst: 8,
+                    owner: 1,
+                    binding: 2,
+                },
+                Instruction::Halt,
+            ],
+            external_call_descriptors: Vec::new(),
+            slot_count: 9,
+            user_slot_count: 9,
+        };
+
+        let mut vm = Vm::default();
+        vm.execute(&bytecode).expect("vm should execute bytecode");
+        assert_eq!(vm.snapshot_slots(9)[7], 101);
+        assert_eq!(vm.snapshot_slots(9)[8], 202);
+    }
+
+    #[test]
+    fn withevents_clear_only_removes_matching_owner_binding() {
+        let bytecode = Bytecode {
+            instructions: vec![
+                Instruction::LoadConstI32 { slot: 0, value: 11 },
+                Instruction::LoadConstI32 { slot: 1, value: 22 },
+                Instruction::LoadConstI32 { slot: 2, value: 7 },
+                Instruction::LoadConstI32 {
+                    slot: 3,
+                    value: 101,
+                },
+                Instruction::LoadConstI32 {
+                    slot: 4,
+                    value: 202,
+                },
+                Instruction::LoadConstI32 { slot: 5, value: 0 },
+                Instruction::IntrinsicWithEventsSet {
+                    dst: 6,
+                    owner: 0,
+                    binding: 2,
+                    value: 3,
+                },
+                Instruction::IntrinsicWithEventsSet {
+                    dst: 7,
+                    owner: 1,
+                    binding: 2,
+                    value: 4,
+                },
+                Instruction::IntrinsicWithEventsSet {
+                    dst: 8,
+                    owner: 0,
+                    binding: 2,
+                    value: 5,
+                },
+                Instruction::IntrinsicWithEventsGet {
+                    dst: 9,
+                    owner: 0,
+                    binding: 2,
+                },
+                Instruction::IntrinsicWithEventsGet {
+                    dst: 10,
+                    owner: 1,
+                    binding: 2,
+                },
+                Instruction::Halt,
+            ],
+            external_call_descriptors: Vec::new(),
+            slot_count: 11,
+            user_slot_count: 11,
+        };
+
+        let mut vm = Vm::default();
+        vm.execute(&bytecode).expect("vm should execute bytecode");
+        assert_eq!(vm.snapshot_slots(11)[9], 0);
+        assert_eq!(vm.snapshot_slots(11)[10], 202);
+    }
+
+    #[test]
     fn resume_next_records_error_number_and_continues() {
         let bytecode = Bytecode {
             instructions: vec![
