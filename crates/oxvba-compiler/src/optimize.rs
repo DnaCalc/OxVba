@@ -1,4 +1,7 @@
-use crate::resolve::{BoundCaseClause, BoundCond, BoundExpr, BoundModule, BoundStmt, CompareOp};
+use crate::resolve::{
+    BoundCaseClause, BoundCond, BoundExpr, BoundModule, BoundStmt, CompareOp, IntrinsicSurface,
+    intrinsic_surface,
+};
 
 pub fn optimize_module(mut module: BoundModule) -> BoundModule {
     for procedure in &mut module.procedures {
@@ -35,10 +38,12 @@ fn optimize_stmt_list(stmts: Vec<BoundStmt>) -> Vec<BoundStmt> {
 
                 if let Some(BoundStmt::Assign {
                     target: prev_target,
+                    expr: prev_expr,
                     ..
                 }) = out.last()
                     && prev_target == &target
                     && !expr_uses_var(&expr, &target)
+                    && !expr_has_observable_effect(prev_expr)
                 {
                     out.pop();
                 }
@@ -158,6 +163,21 @@ fn expr_uses_var(expr: &BoundExpr, var: &str) -> bool {
         BoundExpr::IntConst(_) => false,
         BoundExpr::IntrinsicCall { args, .. } => args.iter().any(|arg| expr_uses_var(arg, var)),
         BoundExpr::ProcCall { args, .. } => args.iter().any(|arg| expr_uses_var(&arg.expr, var)),
+    }
+}
+
+fn expr_has_observable_effect(expr: &BoundExpr) -> bool {
+    match expr {
+        BoundExpr::IntrinsicCall { name, args } => {
+            let call_has_effect = name.eq_ignore_ascii_case("__oxvba_withevents_set")
+                || matches!(
+                    intrinsic_surface(name.as_str()),
+                    Some(IntrinsicSurface::HostSensitive)
+                );
+            call_has_effect || args.iter().any(expr_has_observable_effect)
+        }
+        BoundExpr::ProcCall { .. } => true,
+        BoundExpr::Var(_) | BoundExpr::AddConst { .. } | BoundExpr::SubConst { .. } | BoundExpr::IntConst(_) => false,
     }
 }
 
@@ -302,6 +322,28 @@ mod tests {
             .filter(|stmt| matches!(stmt, BoundStmt::Assign { .. }))
             .count();
         assert_eq!(assigns, 1);
+    }
+
+    #[test]
+    fn formal_v19_dead_store_preserves_previous_assignment_with_observable_effect() {
+        let module = resolve_symbols(
+            "Sub Main()\nDim x\nx = __oxvba_withevents_set(7, 11)\nx = __oxvba_withevents_get(7)\nEnd Sub",
+        );
+        let optimized = optimize_module(module);
+        let intrinsic_set_count = optimized
+            .body
+            .iter()
+            .filter(|stmt| {
+                matches!(
+                    stmt,
+                    BoundStmt::Assign {
+                        expr: crate::resolve::BoundExpr::IntrinsicCall { name, .. },
+                        ..
+                    } if name == "__oxvba_withevents_set"
+                )
+            })
+            .count();
+        assert_eq!(intrinsic_set_count, 1);
     }
 
     #[test]
