@@ -1,0 +1,18 @@
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.15s
+     Running tests\com_client_registered_lane.rs (target\debug\deps\com_client_registered_lane-b494b64bd4cfbbb8.exe)
+
+running 1 test
+
+thread 'windows_registered_com_lane::registered_event_callback_success_when_event_capable_server_is_configured' (23964) panicked at crates\oxvba-host\tests\com_client_registered_lane.rs:467:17:
+registered lane event callback was required for `Excel.Application` but no callback was available
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+test windows_registered_com_lane::registered_event_callback_success_when_event_capable_server_is_configured ... FAILED
+
+failures:
+
+failures:
+    windows_registered_com_lane::registered_event_callback_success_when_event_capable_server_is_configured
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 7 filtered out; finished in 2.89s
+
+error: test failed, to rerun pass `-p oxvba-host --test com_client_registered_lane`
