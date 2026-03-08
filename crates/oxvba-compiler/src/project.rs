@@ -1884,6 +1884,13 @@ fn known_dispatch_member_token(member_name: &str) -> Option<i32> {
     match normalize_identifier(member_name).as_str() {
         "count" => Some(1),
         "exists" => Some(2),
+        "firechanged" => Some(3),
+        "firechangedpair" => Some(4),
+        "ping" => Some(5),
+        "lookup" => Some(6),
+        "setvalue" => Some(7),
+        "setvalueref" => Some(8),
+        "value" => Some(9),
         _ => None,
     }
 }

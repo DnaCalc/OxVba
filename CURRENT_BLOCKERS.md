@@ -116,6 +116,10 @@ Run context: full events parity closure (non-COM + Windows COM)
       - `SetValueRef` (`PropertyPutRef`),
       - `Value` (`PropertyGet`) for state verification.
     - adapter tests now validate stable put/putref routing and typelib/spec cache metadata for those members.
+  - Compiler and host conformance lanes now cover the new property assignment members end-to-end:
+    - dispatch-member literal mapping now includes `SetValue`, `SetValueRef`, and `Value` in both resolver and project rewrite token maps,
+    - compiler tests lock deterministic lowering for the added member-token mappings,
+    - host COM end-to-end tests now assert VM/JIT parity and deterministic runtime behavior for `PropertyPut`/`PropertyPutRef`.
   - Controlled COM fixture now includes explicit invoke-kind coverage members:
     - `Ping` (no-arg method),
     - `Lookup` (property-get with required arg),

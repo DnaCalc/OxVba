@@ -1203,6 +1203,27 @@ mod tests {
     }
 
     #[test]
+    fn compile_dispatchinvoke_with_property_set_literals_maps_to_member_tokens() {
+        let source = "Sub Main()\nDim x\nx = DispatchInvoke(CreateObject(\"OxVba.TestDispatch\"), \"SetValue\", 7)\nx = DispatchInvoke(CreateObject(\"OxVba.TestDispatch\"), \"SetValueRef\", 7)\nEnd Sub";
+        let out = compile(source).expect("compile should succeed for controlled setter members");
+        assert!(
+            out.instructions
+                .iter()
+                .any(|i| matches!(i, Instruction::IntrinsicDispatchInvokeHost { .. }))
+        );
+        assert!(
+            out.instructions
+                .iter()
+                .any(|i| matches!(i, Instruction::LoadConstI32 { value: 7, .. }))
+        );
+        assert!(
+            out.instructions
+                .iter()
+                .any(|i| matches!(i, Instruction::LoadConstI32 { value: 8, .. }))
+        );
+    }
+
+    #[test]
     fn compile_dispatchinvoke_accepts_two_arg_property_get_form() {
         let source = "Sub Main()\nDim x\nx = DispatchInvoke(CreateObject(\"Scripting.Dictionary\"), \"Count\")\nEnd Sub";
         let out = compile(source).expect("two-arg DispatchInvoke should compile");

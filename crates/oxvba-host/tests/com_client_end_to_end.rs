@@ -40,6 +40,46 @@ End Sub
     }
 
     #[test]
+    fn dispatchinvoke_property_put_and_putref_routes_are_deterministic() {
+        let source = r#"
+Sub Main()
+Dim obj
+Dim setValueResult
+Dim valueAfterSet
+Dim setValueRefResult
+Dim valueAfterSetRef
+obj = CreateObject("OxVba.TestDispatch")
+setValueResult = DispatchInvoke(obj, "SetValue", 12)
+valueAfterSet = DispatchInvoke(obj, "Value")
+setValueRefResult = DispatchInvoke(obj, "SetValueRef", 12)
+valueAfterSetRef = DispatchInvoke(obj, "Value")
+End Sub
+"#;
+
+        let vm = run_windows_host_backed(source, false);
+        let jit = run_windows_host_backed(source, true);
+        assert_eq!(
+            vm, jit,
+            "VM/JIT snapshots diverged on property put/putref path: vm={vm:?} jit={jit:?}"
+        );
+        assert!(
+            vm[0] >= 20_001,
+            "expected native COM object handle space, got {:?}",
+            vm
+        );
+        assert_eq!(vm[1], 12, "SetValue should store direct value");
+        assert_eq!(vm[2], 12, "Value getter should reflect SetValue result");
+        assert_eq!(
+            vm[3], 100_012,
+            "SetValueRef should take deterministic putref route"
+        );
+        assert_eq!(
+            vm[4], 100_012,
+            "Value getter should reflect SetValueRef result"
+        );
+    }
+
+    #[test]
     fn dispatchinvoke_error_path_routes_through_on_error_resume_next() {
         let out = run_windows_host_backed(
             r#"

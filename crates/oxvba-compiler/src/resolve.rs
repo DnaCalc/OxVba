@@ -3201,6 +3201,12 @@ fn map_dispatch_member_literal_token(text: &str) -> Option<i32> {
         "count" => Some(1),
         "exists" => Some(2),
         "firechanged" => Some(3),
+        "firechangedpair" => Some(4),
+        "ping" => Some(5),
+        "lookup" => Some(6),
+        "setvalue" => Some(7),
+        "setvalueref" => Some(8),
+        "value" => Some(9),
         _ => None,
     }
 }
