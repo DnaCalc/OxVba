@@ -159,6 +159,8 @@ pub struct TypeLibMemberMetadata {
 pub enum TypeLibMemberInvokeKind {
     PropertyGet,
     Method,
+    PropertyPut,
+    PropertyPutRef,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

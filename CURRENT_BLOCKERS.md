@@ -108,6 +108,14 @@ Run context: full events parity closure (non-COM + Windows COM)
       - property-get with required arg,
       - method no-arg,
       - method with required arg.
+  - Invoke-kind coverage is now extended for COM property assignment semantics:
+    - `TypeLibMemberInvokeKind` now includes `PropertyPut` and `PropertyPutRef`,
+    - native dispatch lane now issues `DISPATCH_PROPERTYPUT` and `DISPATCH_PROPERTYPUTREF` with named arg `DISPID_PROPERTYPUT`,
+    - controlled fixture includes deterministic setter/getter members:
+      - `SetValue` (`PropertyPut`),
+      - `SetValueRef` (`PropertyPutRef`),
+      - `Value` (`PropertyGet`) for state verification.
+    - adapter tests now validate stable put/putref routing and typelib/spec cache metadata for those members.
   - Controlled COM fixture now includes explicit invoke-kind coverage members:
     - `Ping` (no-arg method),
     - `Lookup` (property-get with required arg),

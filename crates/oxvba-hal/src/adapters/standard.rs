@@ -13,7 +13,7 @@ use crate::{
     },
 };
 #[cfg(target_os = "windows")]
-use std::sync::atomic::{AtomicU32, Ordering};
+use std::sync::atomic::{AtomicI32, AtomicU32, Ordering};
 use std::{
     cell::Cell,
     collections::{BTreeMap, BTreeSet},
@@ -30,7 +30,8 @@ use windows_sys::Win32::Foundation::VARIANT_BOOL;
 #[cfg(target_os = "windows")]
 use windows_sys::Win32::System::Com::{
     CLSCTX_SERVER, CLSIDFromProgID, COINIT_APARTMENTTHREADED, CoCreateInstance, CoInitializeEx,
-    DISPATCH_METHOD, DISPATCH_PROPERTYGET, DISPPARAMS, EXCEPINFO,
+    DISPATCH_METHOD, DISPATCH_PROPERTYGET, DISPATCH_PROPERTYPUT, DISPATCH_PROPERTYPUTREF,
+    DISPPARAMS, EXCEPINFO,
 };
 #[cfg(target_os = "windows")]
 use windows_sys::Win32::System::Variant::{
@@ -442,6 +443,24 @@ impl StandardHostServices {
                     name: "Lookup".to_string(),
                     token: TEST_DISPID_LOOKUP,
                     requires_argument: true,
+                    invoke_kind: TypeLibMemberInvokeKind::PropertyGet,
+                },
+                TypeLibMemberMetadata {
+                    name: "SetValue".to_string(),
+                    token: TEST_DISPID_SET_VALUE,
+                    requires_argument: true,
+                    invoke_kind: TypeLibMemberInvokeKind::PropertyPut,
+                },
+                TypeLibMemberMetadata {
+                    name: "SetValueRef".to_string(),
+                    token: TEST_DISPID_SET_VALUE_REF,
+                    requires_argument: true,
+                    invoke_kind: TypeLibMemberInvokeKind::PropertyPutRef,
+                },
+                TypeLibMemberMetadata {
+                    name: "Value".to_string(),
+                    token: TEST_DISPID_VALUE,
+                    requires_argument: false,
                     invoke_kind: TypeLibMemberInvokeKind::PropertyGet,
                 },
             ];
@@ -907,6 +926,14 @@ impl StandardHostServices {
                     return unsafe { raw_dispatch_invoke_method_noargs(dispatch, dispid) }
                         .map_err(|message| self.com_dispatch_adapter_fault(message));
                 }
+                TypeLibMemberInvokeKind::PropertyPut | TypeLibMemberInvokeKind::PropertyPutRef => {
+                    return Err(HalError::adapter_fault(
+                        self.profile,
+                        CapabilityId::ComActivationDispatch,
+                        "dispatch_invoke",
+                        "member requires argument for property put/putref dispatch",
+                    ));
+                }
             }
         }
         match spec.invoke_kind {
@@ -915,6 +942,12 @@ impl StandardHostServices {
             },
             TypeLibMemberInvokeKind::Method => unsafe {
                 raw_dispatch_invoke_method_i4(dispatch, dispid, arg)
+            },
+            TypeLibMemberInvokeKind::PropertyPut => unsafe {
+                raw_dispatch_property_put_i4(dispatch, dispid, arg)
+            },
+            TypeLibMemberInvokeKind::PropertyPutRef => unsafe {
+                raw_dispatch_property_putref_i4(dispatch, dispid, arg)
             },
         }
         .map_err(|message| self.com_dispatch_adapter_fault(message))
@@ -2830,6 +2863,21 @@ fn com_member_spec_for_token(prog_id: &str, member: i32) -> Option<ComMemberSpec
                 requires_argument: true,
                 invoke_kind: TypeLibMemberInvokeKind::PropertyGet,
             }),
+            7 => Some(ComMemberSpec {
+                name: "SetValue".to_string(),
+                requires_argument: true,
+                invoke_kind: TypeLibMemberInvokeKind::PropertyPut,
+            }),
+            8 => Some(ComMemberSpec {
+                name: "SetValueRef".to_string(),
+                requires_argument: true,
+                invoke_kind: TypeLibMemberInvokeKind::PropertyPutRef,
+            }),
+            9 => Some(ComMemberSpec {
+                name: "Value".to_string(),
+                requires_argument: false,
+                invoke_kind: TypeLibMemberInvokeKind::PropertyGet,
+            }),
             _ => None,
         };
     }
@@ -3101,6 +3149,8 @@ const COM_DISP_E_BADPARAMCOUNT: i32 = 0x8002_000Eu32 as i32;
 #[cfg(target_os = "windows")]
 const COM_DISP_E_TYPEMISMATCH: i32 = 0x8002_0005u32 as i32;
 #[cfg(target_os = "windows")]
+const COM_DISPID_PROPERTYPUT: i32 = -3;
+#[cfg(target_os = "windows")]
 const COM_CONNECT_E_NOCONNECTION: i32 = 0x8004_0004u32 as i32;
 #[cfg(target_os = "windows")]
 const COM_CONNECT_E_CANNOTCONNECT: i32 = 0x8004_0002u32 as i32;
@@ -3110,6 +3160,9 @@ const TEST_DISPID_FIRE_CHANGED: i32 = 3;
 const TEST_DISPID_FIRE_CHANGED_PAIR: i32 = 4;
 const TEST_DISPID_PING: i32 = 5;
 const TEST_DISPID_LOOKUP: i32 = 6;
+const TEST_DISPID_SET_VALUE: i32 = 7;
+const TEST_DISPID_SET_VALUE_REF: i32 = 8;
+const TEST_DISPID_VALUE: i32 = 9;
 const TEST_EVENT_CHANGED: i32 = 1;
 const TEST_EVENT_CHANGED_SOURCE_INTERFACE: i32 = 2;
 const TEST_EVENT_CHANGED_PAIR: i32 = 3;
@@ -3248,6 +3301,7 @@ struct OxvbaTestDispatchObject {
     dispatch: OxvbaTestDispatchInterface,
     connection_point_container: OxvbaTestConnectionPointContainerInterface,
     connection_point: OxvbaTestConnectionPointInterface,
+    value_state: AtomicI32,
     ref_count: AtomicU32,
     next_cookie: AtomicU32,
     sinks: Mutex<BTreeMap<u32, RawDispatchPtr>>,
@@ -3333,6 +3387,7 @@ fn create_oxvba_test_dispatch() -> *mut RawIDispatch {
             vtbl: &OXVBA_TEST_CONNECTIONPOINT_VTBL,
             owner: std::ptr::null_mut(),
         },
+        value_state: AtomicI32::new(0),
         ref_count: AtomicU32::new(1),
         next_cookie: AtomicU32::new(0),
         sinks: Mutex::new(BTreeMap::new()),
@@ -3577,6 +3632,36 @@ unsafe fn raw_variant_token_from_invoke_arg(
         }),
         VT_EMPTY if arg_index == 0 => Ok(0),
         _ => Err(COM_DISP_E_TYPEMISMATCH),
+    }
+}
+
+#[cfg(target_os = "windows")]
+#[allow(unsafe_op_in_unsafe_fn)]
+unsafe fn raw_property_put_i4_from_params(
+    pparams: *mut DISPPARAMS,
+    puargerr: *mut u32,
+) -> Result<i32, i32> {
+    if pparams.is_null() {
+        return Err(COM_DISP_E_BADPARAMCOUNT);
+    }
+    let params = &*pparams;
+    if params.cArgs != 1
+        || params.cNamedArgs != 1
+        || params.rgvarg.is_null()
+        || params.rgdispidNamedArgs.is_null()
+        || *params.rgdispidNamedArgs != COM_DISPID_PROPERTYPUT
+    {
+        return Err(COM_DISP_E_BADPARAMCOUNT);
+    }
+    let arg = &*params.rgvarg;
+    match raw_variant_token_from_invoke_arg(arg, 0) {
+        Ok(value) => Ok(value),
+        Err(hr) => {
+            if !puargerr.is_null() {
+                *puargerr = 0;
+            }
+            Err(hr)
+        }
     }
 }
 
@@ -3851,6 +3936,9 @@ unsafe extern "system" fn oxvba_test_get_ids_of_names(
         "firechangedpair" => TEST_DISPID_FIRE_CHANGED_PAIR,
         "ping" => TEST_DISPID_PING,
         "lookup" => TEST_DISPID_LOOKUP,
+        "setvalue" => TEST_DISPID_SET_VALUE,
+        "setvalueref" => TEST_DISPID_SET_VALUE_REF,
+        "value" => TEST_DISPID_VALUE,
         _ => return COM_DISP_E_UNKNOWNNAME,
     };
     *rgdispid = dispid;
@@ -3965,6 +4053,42 @@ unsafe extern "system" fn oxvba_test_invoke(
                 }
             };
             set_variant_i32(value.saturating_add(1_000), pvarresult);
+            COM_S_OK
+        }
+        TEST_DISPID_SET_VALUE => {
+            if (wflags & DISPATCH_PROPERTYPUT) == 0 {
+                return COM_DISP_E_BADPARAMCOUNT;
+            }
+            let value = match raw_property_put_i4_from_params(pparams, puargerr) {
+                Ok(value) => value,
+                Err(hr) => return hr,
+            };
+            let owner = as_oxvba_test_dispatch_owner_from_dispatch(this);
+            (*owner).value_state.store(value, Ordering::Release);
+            set_variant_i32(value, pvarresult);
+            COM_S_OK
+        }
+        TEST_DISPID_SET_VALUE_REF => {
+            if (wflags & DISPATCH_PROPERTYPUTREF) == 0 {
+                return COM_DISP_E_BADPARAMCOUNT;
+            }
+            let value = match raw_property_put_i4_from_params(pparams, puargerr) {
+                Ok(value) => value,
+                Err(hr) => return hr,
+            };
+            let owner = as_oxvba_test_dispatch_owner_from_dispatch(this);
+            let stored = value.saturating_add(100_000);
+            (*owner).value_state.store(stored, Ordering::Release);
+            set_variant_i32(stored, pvarresult);
+            COM_S_OK
+        }
+        TEST_DISPID_VALUE => {
+            if (wflags & DISPATCH_PROPERTYGET) == 0 || cargs != 0 {
+                return COM_DISP_E_BADPARAMCOUNT;
+            }
+            let owner = as_oxvba_test_dispatch_owner_from_dispatch(this);
+            let value = (*owner).value_state.load(Ordering::Acquire);
+            set_variant_i32(value, pvarresult);
             COM_S_OK
         }
         _ => COM_DISP_E_MEMBERNOTFOUND,
@@ -4401,6 +4525,94 @@ unsafe fn raw_dispatch_property_get_i4(
     if hr < 0 {
         return Err(format!(
             "IDispatch::Invoke(property-get dispid={dispid}) failed with HRESULT {:#010X} (arg_err={})",
+            hr as u32, arg_err
+        ));
+    }
+
+    let token = raw_variant_to_token(&result)?;
+    let _ = VariantClear(&mut result);
+    Ok(token)
+}
+
+#[cfg(target_os = "windows")]
+#[allow(unsafe_op_in_unsafe_fn)]
+unsafe fn raw_dispatch_property_put_i4(
+    dispatch: *mut RawIDispatch,
+    dispid: i32,
+    arg: i32,
+) -> Result<i32, String> {
+    let mut arg_variant: VARIANT = std::mem::zeroed();
+    arg_variant.Anonymous.Anonymous.vt = VT_I4;
+    arg_variant.Anonymous.Anonymous.Anonymous.lVal = arg;
+
+    let mut named_arg = COM_DISPID_PROPERTYPUT;
+    let mut result: VARIANT = std::mem::zeroed();
+    let mut excep: EXCEPINFO = std::mem::zeroed();
+    let mut arg_err = 0u32;
+    let mut params = DISPPARAMS {
+        rgvarg: &mut arg_variant,
+        rgdispidNamedArgs: &mut named_arg,
+        cArgs: 1,
+        cNamedArgs: 1,
+    };
+    let hr = ((*(*dispatch).vtbl).invoke)(
+        dispatch.cast(),
+        dispid,
+        &IID_NULL,
+        0x0400,
+        DISPATCH_PROPERTYPUT,
+        &mut params,
+        &mut result,
+        &mut excep,
+        &mut arg_err,
+    );
+    if hr < 0 {
+        return Err(format!(
+            "IDispatch::Invoke(property-put dispid={dispid}) failed with HRESULT {:#010X} (arg_err={})",
+            hr as u32, arg_err
+        ));
+    }
+
+    let token = raw_variant_to_token(&result)?;
+    let _ = VariantClear(&mut result);
+    Ok(token)
+}
+
+#[cfg(target_os = "windows")]
+#[allow(unsafe_op_in_unsafe_fn)]
+unsafe fn raw_dispatch_property_putref_i4(
+    dispatch: *mut RawIDispatch,
+    dispid: i32,
+    arg: i32,
+) -> Result<i32, String> {
+    let mut arg_variant: VARIANT = std::mem::zeroed();
+    arg_variant.Anonymous.Anonymous.vt = VT_I4;
+    arg_variant.Anonymous.Anonymous.Anonymous.lVal = arg;
+
+    let mut named_arg = COM_DISPID_PROPERTYPUT;
+    let mut result: VARIANT = std::mem::zeroed();
+    let mut excep: EXCEPINFO = std::mem::zeroed();
+    let mut arg_err = 0u32;
+    let mut params = DISPPARAMS {
+        rgvarg: &mut arg_variant,
+        rgdispidNamedArgs: &mut named_arg,
+        cArgs: 1,
+        cNamedArgs: 1,
+    };
+    let hr = ((*(*dispatch).vtbl).invoke)(
+        dispatch.cast(),
+        dispid,
+        &IID_NULL,
+        0x0400,
+        DISPATCH_PROPERTYPUTREF,
+        &mut params,
+        &mut result,
+        &mut excep,
+        &mut arg_err,
+    );
+    if hr < 0 {
+        return Err(format!(
+            "IDispatch::Invoke(property-putref dispid={dispid}) failed with HRESULT {:#010X} (arg_err={})",
             hr as u32, arg_err
         ));
     }
@@ -5334,6 +5546,34 @@ mod tests {
                 .expect("Lookup property-get with argument should succeed"),
             1_042
         );
+        assert_eq!(
+            host.dispatch_invoke(object, super::TEST_DISPID_SET_VALUE, 33)
+                .expect("SetValue property-put should succeed"),
+            33
+        );
+        assert_eq!(
+            host.dispatch_invoke(
+                object,
+                super::TEST_DISPID_VALUE,
+                super::DISPATCH_INVOKE_MISSING_ARG_TOKEN
+            )
+            .expect("Value property-get should reflect SetValue"),
+            33
+        );
+        assert_eq!(
+            host.dispatch_invoke(object, super::TEST_DISPID_SET_VALUE_REF, 33)
+                .expect("SetValueRef property-putref should succeed"),
+            100_033
+        );
+        assert_eq!(
+            host.dispatch_invoke(
+                object,
+                super::TEST_DISPID_VALUE,
+                super::DISPATCH_INVOKE_MISSING_ARG_TOKEN
+            )
+            .expect("Value property-get should reflect SetValueRef"),
+            100_033
+        );
     }
 
     #[cfg(target_os = "windows")]
@@ -5587,6 +5827,9 @@ mod tests {
                 ),
                 ("Ping".to_string(), super::TEST_DISPID_PING),
                 ("Lookup".to_string(), super::TEST_DISPID_LOOKUP),
+                ("SetValue".to_string(), super::TEST_DISPID_SET_VALUE),
+                ("SetValueRef".to_string(), super::TEST_DISPID_SET_VALUE_REF),
+                ("Value".to_string(), super::TEST_DISPID_VALUE),
             ]
         );
         let fire_changed_pair = metadata
@@ -5626,6 +5869,36 @@ mod tests {
         assert!(lookup_member.requires_argument);
         assert_eq!(
             lookup_member.invoke_kind,
+            super::TypeLibMemberInvokeKind::PropertyGet
+        );
+        let set_value_member = metadata
+            .members
+            .iter()
+            .find(|entry| entry.token == super::TEST_DISPID_SET_VALUE)
+            .expect("SetValue metadata should exist");
+        assert!(set_value_member.requires_argument);
+        assert_eq!(
+            set_value_member.invoke_kind,
+            super::TypeLibMemberInvokeKind::PropertyPut
+        );
+        let set_value_ref_member = metadata
+            .members
+            .iter()
+            .find(|entry| entry.token == super::TEST_DISPID_SET_VALUE_REF)
+            .expect("SetValueRef metadata should exist");
+        assert!(set_value_ref_member.requires_argument);
+        assert_eq!(
+            set_value_ref_member.invoke_kind,
+            super::TypeLibMemberInvokeKind::PropertyPutRef
+        );
+        let value_member = metadata
+            .members
+            .iter()
+            .find(|entry| entry.token == super::TEST_DISPID_VALUE)
+            .expect("Value metadata should exist");
+        assert!(!value_member.requires_argument);
+        assert_eq!(
+            value_member.invoke_kind,
             super::TypeLibMemberInvokeKind::PropertyGet
         );
         let source_interface_event = metadata
@@ -5692,6 +5965,36 @@ mod tests {
         assert!(lookup.requires_argument);
         assert_eq!(
             lookup.invoke_kind,
+            super::TypeLibMemberInvokeKind::PropertyGet
+        );
+        let set_value = binding
+            .member_specs
+            .get(&super::TEST_DISPID_SET_VALUE)
+            .expect("member spec for SetValue should be present");
+        assert_eq!(set_value.name, "SetValue");
+        assert!(set_value.requires_argument);
+        assert_eq!(
+            set_value.invoke_kind,
+            super::TypeLibMemberInvokeKind::PropertyPut
+        );
+        let set_value_ref = binding
+            .member_specs
+            .get(&super::TEST_DISPID_SET_VALUE_REF)
+            .expect("member spec for SetValueRef should be present");
+        assert_eq!(set_value_ref.name, "SetValueRef");
+        assert!(set_value_ref.requires_argument);
+        assert_eq!(
+            set_value_ref.invoke_kind,
+            super::TypeLibMemberInvokeKind::PropertyPutRef
+        );
+        let value = binding
+            .member_specs
+            .get(&super::TEST_DISPID_VALUE)
+            .expect("member spec for Value should be present");
+        assert_eq!(value.name, "Value");
+        assert!(!value.requires_argument);
+        assert_eq!(
+            value.invoke_kind,
             super::TypeLibMemberInvokeKind::PropertyGet
         );
         let dispatch_event = binding
