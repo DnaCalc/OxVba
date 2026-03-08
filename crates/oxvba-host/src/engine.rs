@@ -1482,7 +1482,7 @@ mod tests {
         let main_module = module_unit_from_source(
             "MainModule",
             ModuleKind::Procedural,
-            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nCall Emitter.Fire\nEnd Sub",
+            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim e As New Emitter\nDim sa As New SinkA\nDim sb As New SinkB\nCall sa.Attach(e)\nCall sb.Attach(e)\nCall e.Fire\nEnd Sub",
         )
         .expect("main module should parse");
         let emitter = module_unit_from_source(
@@ -1494,13 +1494,13 @@ mod tests {
         let sink_b = module_unit_from_source(
             "SinkB",
             ModuleKind::Class,
-            "Attribute VB_Name = \"SinkB\"\nPrivate WithEvents em As Emitter\nPublic Sub em_changed()\nErr.Raise 202\nEnd Sub",
+            "Attribute VB_Name = \"SinkB\"\nPrivate WithEvents em As Emitter\nPublic Sub Attach(ByVal e As Emitter)\nSet em = e\nEnd Sub\nPublic Sub em_changed()\nErr.Raise 202\nEnd Sub",
         )
         .expect("sink module should parse");
         let sink_a = module_unit_from_source(
             "SinkA",
             ModuleKind::Class,
-            "Attribute VB_Name = \"SinkA\"\nPrivate WithEvents em As Emitter\nPublic Sub em_changed()\nErr.Raise 101\nEnd Sub",
+            "Attribute VB_Name = \"SinkA\"\nPrivate WithEvents em As Emitter\nPublic Sub Attach(ByVal e As Emitter)\nSet em = e\nEnd Sub\nPublic Sub em_changed()\nErr.Raise 101\nEnd Sub",
         )
         .expect("sink module should parse");
 
@@ -1567,7 +1567,7 @@ mod tests {
         let main_module = module_unit_from_source(
             "MainModule",
             ModuleKind::Procedural,
-            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nCall Emitter.Fire\nEnd Sub",
+            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim e As New Emitter\nDim s As New SinkA\nCall s.Attach(e)\nCall e.Fire\nEnd Sub",
         )
         .expect("main module should parse");
         let emitter = module_unit_from_source(
@@ -1579,7 +1579,7 @@ mod tests {
         let sink = module_unit_from_source(
             "SinkA",
             ModuleKind::Class,
-            "Attribute VB_Name = \"SinkA\"\nPrivate WithEvents em As Emitter\nPublic Sub em_changed(ByVal n)\nIf n = 42 Then\nError 142\nElse\nError 141\nEnd If\nEnd Sub",
+            "Attribute VB_Name = \"SinkA\"\nPrivate WithEvents em As Emitter\nPublic Sub Attach(ByVal e As Emitter)\nSet em = e\nEnd Sub\nPublic Sub em_changed(ByVal n)\nIf n = 42 Then\nError 142\nElse\nError 141\nEnd If\nEnd Sub",
         )
         .expect("sink module should parse");
 
@@ -1606,7 +1606,7 @@ mod tests {
         let main_module = module_unit_from_source(
             "MainModule",
             ModuleKind::Procedural,
-            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim e1 As New Emitter\nDim e2 As New Emitter\nDim s As New Sink\nDim a\nDim b\nCall s.Attach(e1)\na = __oxvba_withevents_get(0, 2049099222)\nCall s.Attach(e2)\nb = __oxvba_withevents_get(0, 2049099222)\nIf a = 1 And b = 2 Then\nError 13\nElse\nError 77\nEnd If\nEnd Sub",
+            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim e1 As New Emitter\nDim e2 As New Emitter\nDim s As New Sink\nDim a\nDim b\nCall s.Attach(e1)\na = __oxvba_withevents_get(s, 2049099222)\nCall s.Attach(e2)\nb = __oxvba_withevents_get(s, 2049099222)\nIf a = 1 And b = 2 Then\nError 13\nElse\nError 77\nEnd If\nEnd Sub",
         )
         .expect("main module should parse");
         let emitter = module_unit_from_source(
@@ -1681,7 +1681,7 @@ mod tests {
         let main_module = module_unit_from_source(
             "MainModule",
             ModuleKind::Procedural,
-            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim e1 As New Emitter\nDim e2 As New Emitter\nDim s As New Sink\nDim a\nDim b\nDim c\nCall s.Attach(e1)\na = __oxvba_withevents_get(0, 2049099222)\nCall s.Detach\nb = __oxvba_withevents_get(0, 2049099222)\nCall s.Attach(e2)\nc = __oxvba_withevents_get(0, 2049099222)\nIf a = 1 And b = 0 And c = 2 Then\nError 13\nElse\nError 77\nEnd If\nEnd Sub",
+            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim e1 As New Emitter\nDim e2 As New Emitter\nDim s As New Sink\nDim a\nDim b\nDim c\nCall s.Attach(e1)\na = __oxvba_withevents_get(s, 2049099222)\nCall s.Detach\nb = __oxvba_withevents_get(s, 2049099222)\nCall s.Attach(e2)\nc = __oxvba_withevents_get(s, 2049099222)\nIf a = 1 And b = 0 And c = 2 Then\nError 13\nElse\nError 77\nEnd If\nEnd Sub",
         )
         .expect("main module should parse");
         let emitter = module_unit_from_source(

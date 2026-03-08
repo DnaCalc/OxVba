@@ -991,6 +991,7 @@ struct LineBindPlan {
 
 type EventDispatchKey = (String, String, String);
 type EventDispatchPlan = BTreeMap<EventDispatchKey, Vec<EventDispatchRoute>>;
+const WITH_EVENTS_OWNER_SCAN_MAX: i32 = 32;
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 struct EventDispatchRoute {
@@ -1718,7 +1719,7 @@ fn rewrite_internal_class_set_assignment(
     if withevents_bindings.contains(&normalized_lhs) {
         let binding_token = withevents_binding_token(current_project, current_module, lhs);
         return format!(
-            "{}{} = __oxvba_withevents_set(0, {}, {})",
+            "{}{} = __oxvba_withevents_set(__oxvba_this_instance, {}, {})",
             &line[..leading],
             lhs,
             binding_token,
@@ -2045,27 +2046,29 @@ fn rewrite_raiseevent_to_handler_calls(
             &route,
             event_arg_count,
         );
-        let mut call_line = if event_arg_count == 0 {
-            format!("{leading_ws}Call {wrapper}(__oxvba_this_instance)")
-        } else {
-            format!(
-                "{leading_ws}Call {wrapper}(__oxvba_this_instance, {})",
-                parsed_args[0].trim()
-            )
-        };
-        call_line = rewrite_invocation_targets(
-            &call_line,
-            manifest,
-            active_project,
-            current_project,
-            current_module,
-            procedures,
-            reference_order,
-        )?;
-        if let Some((result_name, lowered_name)) = active_function_result {
-            call_line = rewrite_bare_identifier(&call_line, result_name, lowered_name);
+        for owner in 1..=WITH_EVENTS_OWNER_SCAN_MAX {
+            let mut call_line = if event_arg_count == 0 {
+                format!("{leading_ws}Call {wrapper}({owner}, __oxvba_this_instance)")
+            } else {
+                format!(
+                    "{leading_ws}Call {wrapper}({owner}, __oxvba_this_instance, {})",
+                    parsed_args[0].trim()
+                )
+            };
+            call_line = rewrite_invocation_targets(
+                &call_line,
+                manifest,
+                active_project,
+                current_project,
+                current_module,
+                procedures,
+                reference_order,
+            )?;
+            if let Some((result_name, lowered_name)) = active_function_result {
+                call_line = rewrite_bare_identifier(&call_line, result_name, lowered_name);
+            }
+            lowered_lines.push(call_line);
         }
-        lowered_lines.push(call_line);
     }
 
     Ok(Some(lowered_lines.join("\n")))
@@ -2157,23 +2160,24 @@ fn emit_event_guard_wrappers_for_module(
                     current_module,
                     &route.withevents_var,
                 );
-                let guard_expr =
-                    format!("__oxvba_withevents_get(0, {binding_token}) = __oxvba_source_instance");
+                let guard_expr = format!(
+                    "__oxvba_source_instance <> 0 And __oxvba_withevents_get(__oxvba_owner_instance, {binding_token}) = __oxvba_source_instance"
+                );
                 let call_args = if handler_param_count == 0 {
-                    "__oxvba_source_instance".to_string()
+                    "__oxvba_owner_instance".to_string()
                 } else if event_arg_count == 0 {
-                    "__oxvba_source_instance, 0".to_string()
+                    "__oxvba_owner_instance, 0".to_string()
                 } else {
-                    "__oxvba_source_instance, __oxvba_arg0".to_string()
+                    "__oxvba_owner_instance, __oxvba_arg0".to_string()
                 };
                 let wrapper_body = if event_arg_count == 0 {
                     format!(
-                        "Sub {wrapper}(Optional ByVal __oxvba_source_instance = 0)\nIf {guard_expr} Then\nCall {}({call_args})\nEnd If\nEnd Sub",
+                        "Sub {wrapper}(Optional ByVal __oxvba_owner_instance = 0, Optional ByVal __oxvba_source_instance = 0)\nIf {guard_expr} Then\nCall {}({call_args})\nEnd If\nEnd Sub",
                         route.handler_symbol,
                     )
                 } else {
                     format!(
-                        "Sub {wrapper}(Optional ByVal __oxvba_source_instance = 0, Optional ByVal __oxvba_arg0 = 0)\nIf {guard_expr} Then\nCall {}({call_args})\nEnd If\nEnd Sub",
+                        "Sub {wrapper}(Optional ByVal __oxvba_owner_instance = 0, Optional ByVal __oxvba_source_instance = 0, Optional ByVal __oxvba_arg0 = 0)\nIf {guard_expr} Then\nCall {}({call_args})\nEnd If\nEnd Sub",
                         route.handler_symbol,
                     )
                 };
@@ -3933,12 +3937,12 @@ mod tests {
         let lowered = compiled.rewritten_source.to_ascii_lowercase();
         assert!(
             lowered.contains(
-                "call pmr_evtguard_projecta_emitter_changed_sinka_em_a0(__oxvba_this_instance)"
+                "call pmr_evtguard_projecta_emitter_changed_sinka_em_a0(1, __oxvba_this_instance)"
             ),
             "RaiseEvent should lower to guard-dispatched handler call"
         );
         assert!(
-            lowered.contains("call pmr_projecta_sinka_em_changed(__oxvba_source_instance)"),
+            lowered.contains("call pmr_projecta_sinka_em_changed(__oxvba_owner_instance)"),
             "guard wrapper should invoke concrete WithEvents handler"
         );
         assert_eq!(
@@ -3984,11 +3988,11 @@ mod tests {
         let compiled = compile_project(&manifest).expect("rewrite should compile");
         let lowered = compiled.rewritten_source.to_ascii_lowercase();
         assert!(
-            lowered.contains("__oxvba_withevents_set(0,"),
+            lowered.contains("__oxvba_withevents_set(__oxvba_this_instance,"),
             "WithEvents Set assignment should route through runtime binding setter"
         );
         assert!(
-            lowered.contains("__oxvba_withevents_get(0,"),
+            lowered.contains("__oxvba_withevents_get(__oxvba_owner_instance,"),
             "event guard should route through runtime binding getter"
         );
     }
