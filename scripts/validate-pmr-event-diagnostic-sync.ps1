@@ -38,7 +38,7 @@ try {
         "docs/DIAGNOSTIC_TAXONOMY.md",
         "docs/spec/PROJECT_MODULE_REFERENCE_CONFORMANCE_V1.md",
         "docs/spec/PROJECT_MODULE_REFERENCE_HAL_INTEGRATION_V1.md",
-        "docs/spec/HOSTING_PROJECT_TOOLING_PROPOSAL_V2.md",
+        "docs/spec/HOSTING_PROJECT_TOOLING_PROPOSAL.md",
         "docs/evidence/conformance/CONFORMANCE_CHECK_TOPICS.csv",
         "docs/evidence/conformance/PROJECT_INTEGRATION_DEFERRED_UNCERTAINTIES_V1.md",
         "docs/evidence/divergences/DIV-0003.md",

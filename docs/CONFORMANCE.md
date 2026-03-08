@@ -88,7 +88,7 @@ Project integration lane:
 - Supports increasing complexity levels (`L1..L6`), `active-limit` expected-failure cases, and deferred/planned entries linked to ODG/CCT tracking.
 
 ## Declared Profile Scope (Current Gate)
-- Profile id: `mvp-profile-v466` (COM early-binding/type-library ladder terminal gate)
+- Profile id: `mvp-profile-v620` (VBA 7.1 + Windows Office COM compliance ladder terminal gate)
 - Platform: Windows x64
 - Backends: `vm`, `jit` (JIT toggle path with VM-equivalent semantics)
 - Required matrix cells:

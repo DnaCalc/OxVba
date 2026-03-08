@@ -321,7 +321,7 @@ Public Function RunProbe()
 End Function
 "@
         } -ReferencePaths @() -ProcedureName "RunProbe"
-        Add-Row -TopicId "CCT-040" -CaseId "CCT-040-A" -Scenario "Implements with required prefixed member compiles" -VbaStatus $case040a.status -VbaObserved $case040a.observed -OxvbaStatus "error" -OxvbaObserved "PMR-E-IMPLEMENTS-PROJECTGRAPH-REQUIRED" -Notes "Known divergence: class interface coverage semantics pending"
+        Add-Row -TopicId "CCT-040" -CaseId "CCT-040-A" -Scenario "Implements with required prefixed member compiles" -VbaStatus $case040a.status -VbaObserved $case040a.observed -OxvbaStatus "ok" -OxvbaObserved "1" -Notes "Baseline Implements coverage parity is now executable in deterministic project-aware lane"
 
         # CCT-041: event ordering with class-level WithEvents + RaiseEvent.
         $case041 = Invoke-WorkbookProbe -Excel $excel -ProjectName (New-UniqueName "Probe041") -Populate {
@@ -359,7 +359,7 @@ Public Function RunProbe()
 End Function
 "@
         } -ReferencePaths @() -ProcedureName "RunProbe"
-        Add-Row -TopicId "CCT-041" -CaseId "CCT-041-A" -Scenario "WithEvents + RaiseEvent handler ordering under reassignment" -VbaStatus $case041.status -VbaObserved $case041.observed -OxvbaStatus "error" -OxvbaObserved "PMR-E-RAISEEVENT-CLASS-MODEL-REQUIRED" -Notes "Known divergence: event model not yet implemented in OxVba"
+        Add-Row -TopicId "CCT-041" -CaseId "CCT-041-A" -Scenario "WithEvents + RaiseEvent handler ordering under reassignment" -VbaStatus $case041.status -VbaObserved $case041.observed -OxvbaStatus "error" -OxvbaObserved "PMR-E-NAME-RESOLUTION-NOT-FOUND" -Notes "Known residual divergence: true instance-level WithEvents reassignment path is still outside current deterministic object-model subset"
 
         $csvPath = Join-Path $runDir "results.csv"
         $rows | Export-Csv -Path $csvPath -NoTypeInformation

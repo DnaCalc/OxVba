@@ -1113,6 +1113,7 @@ fn lower_module_source_module_aware(
     Ok(out.join("\n"))
 }
 
+#[allow(clippy::too_many_arguments)]
 fn expand_bound_source_line(
     line: &str,
     manifest: &ProjectManifest,
@@ -2447,6 +2448,7 @@ fn call_statement_name_span(line: &str) -> Option<(usize, usize)> {
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn rewrite_module_source(
     manifest: &ProjectManifest,
     active_project: &str,

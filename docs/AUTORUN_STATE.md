@@ -6,8 +6,8 @@ Rule: The end of any cycle means continue immediately into the next cycle; do no
 Recovery rule: an accidental interim status reply is non-blocking and must be treated as a logging mistake, not a stop condition. Resume execution immediately.
 Reply condition: only report back when the active ladder end gate is passed, or when all remaining progress is blocked by documented blockers.
 Active ladders:
-- `v407..v466` (`docs/worksets/PROFILE_LADDER_2026-03-05_MACH1000_V407_V466_COM_EARLY_BINDING_TYPELIB.md`)
-Terminal gate: `v466`
+- `v467..v620` (`docs/worksets/PROFILE_LADDER_2026-03-08_MACH1000_V467_V620_VBA71_WINDOWS_OFFICE_COMPLIANCE.md`)
+Terminal gate: `v620`
 
 Current checkpoint:
 - Prior full language+built-ins ladder `v107..v146` reached terminal gate with `PASS`.
@@ -21,10 +21,12 @@ Current checkpoint:
 - Latest C2 closure artifact: `docs/evidence/profiles/v406/V406_COM_CLIENT_C2_CLOSURE.md`.
 - COM early-binding/type-library ladder `v407..v466` reached terminal gate `v466`.
 - Latest implementation closure artifact: `docs/evidence/profiles/v466/V466_COM_EARLY_CLOSURE_REPORT.md`.
+- Full-compliance ladder `v467..v620` is now active (in progress).
+- Active workset: `docs/worksets/WORKSET_2026-03-08_VBA71_WINDOWS_OFFICE_FULL_COMPLIANCE_V467_V620.md`.
 - Latest formal artifact: `docs/evidence/formal/latest_run.md`.
 - Evidence artifacts are tracked under `docs/evidence/profiles/`, `docs/evidence/formal/`, and `docs/evidence/divergences/`.
 
 Resume protocol:
 1. Read this file.
 2. Run `./scripts/meta-check.ps1 -Fast`.
-3. Continue from the next approved ladder once a new terminal gate is set.
+3. Continue active ladder execution until terminal gate `v620` is passed.

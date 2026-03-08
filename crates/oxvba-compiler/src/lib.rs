@@ -685,14 +685,15 @@ mod tests {
 
     #[test]
     fn compile_with_runtime_metadata_reports_entry_points_for_named_procedures() {
-        let source =
-            "Sub Main()\nDim x\nx = 1\nCall Foo(x)\nEnd Sub\nSub Foo(ByVal n)\nDim y\ny = n\nEnd Sub";
+        let source = "Sub Main()\nDim x\nx = 1\nCall Foo(x)\nEnd Sub\nSub Foo(ByVal n)\nDim y\ny = n\nEnd Sub";
         let (bytecode, metadata) =
             compile_with_runtime_metadata(source).expect("compile should succeed");
         let main = metadata
             .get("main")
             .expect("entry procedure metadata should exist");
-        let foo = metadata.get("foo").expect("named procedure metadata should exist");
+        let foo = metadata
+            .get("foo")
+            .expect("named procedure metadata should exist");
         assert!(main.entry_pc < bytecode.instructions.len());
         assert!(foo.entry_pc < bytecode.instructions.len());
         assert_eq!(foo.param_slots.len(), 1);

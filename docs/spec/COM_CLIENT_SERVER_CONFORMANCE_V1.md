@@ -46,6 +46,8 @@ Primary checks:
 - `CreateObject` with registered test classes,
 - deterministic behavior for class-not-registered and method-not-found paths,
 - argument/result conversion subset parity.
+- deterministic COM event subscribe failure mapping for external ProgIDs without surfaced event metadata (`COM-E-EVENT-CONNECTIONPOINT-MISSING` / explicit path-unsupported mapping),
+- deterministic COM event unadvise failure mapping for unknown subscription tokens (`COM-E-EVENT-ADVISE-FAILED`).
 
 ### Lane L2b: Windows late-bound client C2 lane (new)
 
@@ -123,7 +125,7 @@ Implemented script surfaces:
 Current lane mapping:
 
 - L2b registrationless controlled lane -> `com_client_end_to_end`.
-- L2 registered external lane -> `com_client_registered_lane` (ignored-by-default tests, executed via `scripts/run-com-registered.ps1`; external ProgID selected by `-ProgId` / `OXVBA_REGISTERED_COM_PROGID`, runtime selector mapping uses engine policy override API).
+- L2 registered external lane -> `com_client_registered_lane` (ignored-by-default tests, executed via `scripts/run-com-registered.ps1`; external ProgID selected by `-ProgId` / `OXVBA_REGISTERED_COM_PROGID`, runtime selector mapping uses engine policy override API, now including event subscribe/unsubscribe failure-shape checks).
 
 ## 4. Artifact Model
 

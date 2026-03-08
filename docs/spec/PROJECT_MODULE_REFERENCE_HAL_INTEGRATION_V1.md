@@ -107,7 +107,7 @@ PMR-facing stable diagnostics for class/event compile-time legality (implemented
 - canonical source: `docs/evidence/diagnostics/PMR_EVENT_DIAGNOSTICS_V1.csv`
 - generated list: `docs/generated/PMR_EVENT_DIAGNOSTICS_SNIPPET.md`
 
-Runtime event ordering/subscription parity and full event dispatch semantics remain tracked as conformance/divergence items (`CCT-040`, `CCT-041`, `DIV-0003`, `DIV-0004`).
+Runtime event ordering/subscription parity and full event dispatch semantics remain tracked as conformance/divergence items (`CCT-040`, `CCT-041`, `ODG-038`, `DIV-0004`).
 
 Phase routing:
 

@@ -62,12 +62,18 @@ Run context: full events parity closure (non-COM + Windows COM)
     - native-lane requirement (`COM-E-EVENT-PATH-UNSUPPORTED`),
     - missing connection point/event token (`COM-E-EVENT-CONNECTIONPOINT-MISSING`),
     - unknown subscription token on unadvise (`COM-E-EVENT-ADVISE-FAILED`).
+  - Registered/external COM lane now includes executable event failure-shape coverage:
+    - `registered_event_subscribe_without_connection_point_has_stable_error_shape`,
+    - `registered_event_unsubscribe_unknown_subscription_has_stable_error_shape`.
+  - Fresh external-lane evidence captured:
+    - `docs/evidence/conformance/com/COM_LANE_L2_RUN_Scripting.Dictionary_20260308T174630Z.md`,
+    - `docs/evidence/conformance/com/COM_LANE_L2_LOG_Scripting.Dictionary_20260308T174630Z.txt`.
 - Why blocked:
   - Current run has non-COM/internal event semantics advanced, COM lifecycle substrate implemented, callback->handler runtime invocation wired, and deterministic COM-EVT-B unsupported policy in place.
   - Remaining parity closure still needs:
-    - registered/external evidence expansion for callback bridge coverage beyond controlled fixture lane.
+    - positive callback lifecycle evidence on at least one registered external COM source that actually emits callbacks into the bridge (beyond deterministic failure-shape mapping).
 - Exact unblocking steps:
-  1. Add registered/external COM event fixture coverage for callback lifecycle + failure mapping (`WI-E03`).
+  1. Add registered/external COM event fixture with real callback emission and sink dispatch assertions (`WI-E03`, success path).
   2. Reconcile oracle evidence and update divergence/deferred gates.
 
 ## Structured summary
@@ -78,6 +84,6 @@ Run context: full events parity closure (non-COM + Windows COM)
   - Non-COM dynamic owner dispatch path: unblocked and implemented.
   - COM parity closure: callback transport + arity/signature enforcement + controlled multi-arg fixture lane implemented with explicit COM-EVT-B unsupported policy, and controlled lane now binds event/member shape through typelib metadata; blocked at registered/evidence completion (`WI-E03`).
 - Exact unblocking steps:
-  - Implement + validate registered/external callback lanes in CI/oracle evidence.
+  - Implement + validate real registered/external callback success lane in CI/oracle evidence (failure-shape lane now covered).
 - Suggestions/questions for user:
   - Confirm which registered COM library lane to prioritize for external parity evidence first (Excel, ScriptControl-style, or another deterministic candidate).

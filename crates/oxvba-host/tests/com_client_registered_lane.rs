@@ -156,4 +156,63 @@ End Sub
             err.message()
         );
     }
+
+    #[test]
+    #[ignore = "requires registered external COM server lane (run via scripts/run-com-registered.ps1)"]
+    fn registered_event_subscribe_without_connection_point_has_stable_error_shape() {
+        let mut engine = Engine::new(HostConfig {
+            enable_jit: false,
+            root_object_name: None,
+        });
+        engine.set_host_policy(HostPolicy::interactive_dev());
+        engine.set_com_prog_id_override(4, selected_registered_prog_id());
+        let out = engine
+            .execute_source_with_snapshot_phased(
+                r#"
+Sub Main()
+Dim obj
+obj = CreateObject("Scripting.Dictionary")
+End Sub
+"#,
+            )
+            .expect("registered lane should create COM object");
+        let object = out[0];
+        assert!(
+            object >= 20_001,
+            "registered lane should allocate native COM handle, got {:?}",
+            out
+        );
+        let err = engine
+            .subscribe_com_event_handler(object, 1, "Sink_OnChanged")
+            .expect_err("object without event connection-point mapping should fail subscribe");
+
+        assert_eq!(err.phase(), DiagnosticPhase::Runtime);
+        assert!(
+            err.message().contains("COM-E-EVENT-CONNECTIONPOINT-MISSING")
+                || err.message().contains("COM-E-EVENT-PATH-UNSUPPORTED"),
+            "expected deterministic COM event subscribe failure mapping, got {}",
+            err.message()
+        );
+    }
+
+    #[test]
+    #[ignore = "requires registered external COM server lane (run via scripts/run-com-registered.ps1)"]
+    fn registered_event_unsubscribe_unknown_subscription_has_stable_error_shape() {
+        let mut engine = Engine::new(HostConfig {
+            enable_jit: false,
+            root_object_name: None,
+        });
+        engine.set_host_policy(HostPolicy::interactive_dev());
+
+        let err = engine
+            .unsubscribe_com_event_handler(99_901)
+            .expect_err("unsubscribe with unknown token should fail deterministically");
+
+        assert_eq!(err.phase(), DiagnosticPhase::Runtime);
+        assert!(
+            err.message().contains("COM-E-EVENT-ADVISE-FAILED"),
+            "expected deterministic unadvise failure mapping, got {}",
+            err.message()
+        );
+    }
 }
