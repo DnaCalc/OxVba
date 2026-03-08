@@ -144,6 +144,13 @@ Run context: full events parity closure (non-COM + Windows COM)
     - `docs/evidence/conformance/com/COM_LANE_L2E_LOG_Excel.Application_20260308T202040Z.txt`.
   - Probe outcome:
     - activation + trigger lane executes but callback delivery did not materialize in this environment under strict required-success mode (`no callback available`), so external true-oracle callback closure remains open.
+  - Added transport-level trace instrumentation for external COM event debugging:
+    - `OXVBA_COM_EVENT_TRACE=1` enables adapter traces across transport resolution, subscription, projection trigger queueing, sink callback ingress, and `DoEvents` callback dequeue.
+    - Registered-event script lane exposes this as `-EnableTrace`.
+  - Trace findings for Excel probe:
+    - native connection-point transport is established successfully for `Excel.Application` (`resolve-transport ... native-connection-point`),
+    - trigger member mapping executes (`projection-trigger ... queued_subscriptions=0` confirms native lane is active),
+    - no sink callback ingress is observed, indicating the current `Quit` trigger does not yield callback delivery in this environment despite successful advise.
 - Why blocked:
   - Current run closes controlled-lane connection-point callback ingress and deterministic lifecycle (`Advise`/`Unadvise`) in Windows native mode.
   - Remaining strict parity closure is now limited to external evidence and ingestion:

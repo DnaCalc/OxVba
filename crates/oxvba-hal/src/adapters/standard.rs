@@ -1122,7 +1122,13 @@ impl StandardHostServices {
         }
         let mut state = self.com_lock(CapabilityId::ComActivationDispatch, "dispatch_invoke")?;
         self.assert_com_invariants(&state, "dispatch_invoke-event-pre");
-        let _ = state.queue_callbacks_for_source_event(object, event, args.as_slice());
+        let queued = state.queue_callbacks_for_source_event(object, event, args.as_slice());
+        if com_event_trace_enabled() {
+            eprintln!(
+                "[oxvba-hal][com-event] projection-trigger object={} member={} event={} args={:?} queued_subscriptions={}",
+                object, member, event, args, queued
+            );
+        }
         self.assert_com_invariants(&state, "dispatch_invoke-event-post");
         Ok(())
     }
@@ -1169,10 +1175,21 @@ impl StandardHostServices {
                 format!("COM-E-EVENT-ADVISE-FAILED: {message}"),
             )
         })?;
-        Ok(match advised {
+        let transport = match advised {
             Some(native) => ComEventSubscriptionTransport::NativeConnectionPoint(native),
             None => ComEventSubscriptionTransport::Projection,
-        })
+        };
+        if com_event_trace_enabled() {
+            eprintln!(
+                "[oxvba-hal][com-event] resolve-transport object={} event={} iid={} dispatch_member={} resolved={}",
+                object,
+                event,
+                connection_point_iid,
+                event_dispatch_member,
+                transport.kind_label()
+            );
+        }
+        Ok(transport)
     }
 
     #[cfg(target_os = "windows")]
@@ -1366,6 +1383,13 @@ impl EventPumpHal for StandardHostServices {
             self.assert_com_invariants(&state, "do_events-pre");
             if let Some(callback) = state.pending_callbacks.first().copied() {
                 let _ = state.pending_callbacks.remove(0);
+                if com_event_trace_enabled() {
+                    eprintln!(
+                        "[oxvba-hal][com-event] do-events callback={} remaining_pending={}",
+                        callback,
+                        state.pending_callbacks.len()
+                    );
+                }
                 self.assert_com_invariants(&state, "do_events-post");
                 return Ok(callback);
             }
@@ -1864,6 +1888,17 @@ impl ComHal for StandardHostServices {
                 transport,
             },
         );
+        #[cfg(target_os = "windows")]
+        if com_event_trace_enabled() {
+            eprintln!(
+                "[oxvba-hal][com-event] subscribe object={} event={} subscription={} transport={} arity={}",
+                object,
+                event,
+                subscription,
+                transport.kind_label(),
+                expected_arity
+            );
+        }
         self.assert_com_invariants(&state, "subscribe_event-post");
         Ok(subscription)
     }
@@ -2815,6 +2850,14 @@ impl ComEventSubscriptionTransport {
     const fn is_projection(self) -> bool {
         matches!(self, Self::Projection)
     }
+
+    const fn kind_label(self) -> &'static str {
+        match self {
+            Self::Projection => "projection",
+            #[cfg(target_os = "windows")]
+            Self::NativeConnectionPoint(_) => "native-connection-point",
+        }
+    }
 }
 
 #[cfg(target_os = "windows")]
@@ -3117,6 +3160,19 @@ fn parse_hresult_hex(message: &str) -> Option<u32> {
         return None;
     }
     u32::from_str_radix(hex, 16).ok()
+}
+
+#[cfg(target_os = "windows")]
+fn com_event_trace_enabled() -> bool {
+    std::env::var("OXVBA_COM_EVENT_TRACE")
+        .ok()
+        .map(|value| {
+            matches!(
+                value.trim().to_ascii_lowercase().as_str(),
+                "1" | "true" | "yes" | "on"
+            )
+        })
+        .unwrap_or(false)
 }
 
 #[cfg(target_os = "windows")]
@@ -4258,6 +4314,14 @@ unsafe extern "system" fn oxvba_event_sink_invoke(
     if (*sink).event_dispatch_member != COM_EVENT_DISPATCH_MEMBER_WILDCARD
         && dispidmember != (*sink).event_dispatch_member
     {
+        if com_event_trace_enabled() {
+            eprintln!(
+                "[oxvba-hal][com-event] sink-invoke ignored subscription={} expected_dispid={} actual_dispid={}",
+                (*sink).subscription,
+                (*sink).event_dispatch_member,
+                dispidmember
+            );
+        }
         return COM_DISP_E_MEMBERNOTFOUND;
     }
     let (cargs, rgvarg) = if pparams.is_null() {
@@ -4266,6 +4330,15 @@ unsafe extern "system" fn oxvba_event_sink_invoke(
         ((*pparams).cArgs as usize, (*pparams).rgvarg)
     };
     if cargs != (*sink).expected_arity || (cargs > 0 && rgvarg.is_null()) {
+        if com_event_trace_enabled() {
+            eprintln!(
+                "[oxvba-hal][com-event] sink-invoke bad-arity subscription={} expected={} actual={} rgvarg_null={}",
+                (*sink).subscription,
+                (*sink).expected_arity,
+                cargs,
+                rgvarg.is_null()
+            );
+        }
         return COM_DISP_E_BADPARAMCOUNT;
     }
     let mut args = Vec::with_capacity(cargs);
@@ -4275,6 +4348,14 @@ unsafe extern "system" fn oxvba_event_sink_invoke(
         let value = match raw_variant_token_from_invoke_arg(variant, arg_index) {
             Ok(value) => value,
             Err(hr) => {
+                if com_event_trace_enabled() {
+                    eprintln!(
+                        "[oxvba-hal][com-event] sink-invoke arg-conversion-failed subscription={} arg_index={} hresult={:#010X}",
+                        (*sink).subscription,
+                        arg_index,
+                        hr as u32
+                    );
+                }
                 if !puargerr.is_null() {
                     *puargerr = u32::try_from(arg_index).unwrap_or(u32::MAX);
                 }
@@ -4291,7 +4372,18 @@ unsafe extern "system" fn oxvba_event_sink_invoke(
         && subscription.object == (*sink).object
         && subscription.event == (*sink).event_token
     {
-        let _ = state.queue_callback_for_subscription((*sink).subscription, args.as_slice());
+        let queued = state.queue_callback_for_subscription((*sink).subscription, args.as_slice());
+        if com_event_trace_enabled() {
+            eprintln!(
+                "[oxvba-hal][com-event] sink-invoke subscription={} object={} event={} dispid={} args={:?} queued={}",
+                (*sink).subscription,
+                (*sink).object,
+                (*sink).event_token,
+                dispidmember,
+                args,
+                queued
+            );
+        }
     }
     COM_S_OK
 }

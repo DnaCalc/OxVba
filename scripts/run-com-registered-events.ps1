@@ -5,6 +5,7 @@ param(
     [int]$TriggerArg = 77,
     [int]$ExpectedArgCount = 1,
     [switch]$ForceRegisteredTestDispatch,
+    [switch]$EnableTrace,
     [switch]$NoCapture,
     [string]$EvidenceDir = "docs/evidence/conformance/com",
     [string]$RunId = "",
@@ -50,6 +51,7 @@ try {
     $prevTriggerArg = $env:OXVBA_REGISTERED_EVENT_TRIGGER_ARG
     $prevExpectedArgCount = $env:OXVBA_REGISTERED_EVENT_EXPECTED_ARGC
     $prevForceRegistered = $env:OXVBA_COM_FORCE_REGISTERED_TESTDISPATCH
+    $prevTrace = $env:OXVBA_COM_EVENT_TRACE
     $hadPrevProg = Test-Path Env:OXVBA_REGISTERED_COM_PROGID
     $hadPrevRequire = Test-Path Env:OXVBA_REGISTERED_EVENT_REQUIRE_SUCCESS
     $hadPrevEventToken = Test-Path Env:OXVBA_REGISTERED_EVENT_TOKEN
@@ -57,6 +59,7 @@ try {
     $hadPrevTriggerArg = Test-Path Env:OXVBA_REGISTERED_EVENT_TRIGGER_ARG
     $hadPrevExpectedArgCount = Test-Path Env:OXVBA_REGISTERED_EVENT_EXPECTED_ARGC
     $hadPrevForceRegistered = Test-Path Env:OXVBA_COM_FORCE_REGISTERED_TESTDISPATCH
+    $hadPrevTrace = Test-Path Env:OXVBA_COM_EVENT_TRACE
     try {
         $env:OXVBA_REGISTERED_COM_PROGID = $ProgId
         $env:OXVBA_REGISTERED_EVENT_REQUIRE_SUCCESS = "1"
@@ -66,6 +69,9 @@ try {
         $env:OXVBA_REGISTERED_EVENT_EXPECTED_ARGC = "$ExpectedArgCount"
         if ($ForceRegisteredTestDispatch) {
             $env:OXVBA_COM_FORCE_REGISTERED_TESTDISPATCH = "1"
+        }
+        if ($EnableTrace) {
+            $env:OXVBA_COM_EVENT_TRACE = "1"
         }
 
         $cmd = @(
@@ -96,6 +102,7 @@ try {
         Write-Host "[oxvba] event token/member/arg: $EventToken/$TriggerMember/$TriggerArg"
         Write-Host "[oxvba] expected callback arg count: $ExpectedArgCount"
         Write-Host "[oxvba] force registered test dispatch: $($ForceRegisteredTestDispatch.ToString().ToLowerInvariant())"
+        Write-Host "[oxvba] com event trace: $($EnableTrace.ToString().ToLowerInvariant())"
         Write-Host "[oxvba] command: $cmdText"
         $null = & cargo @cmd 2>&1 | Tee-Object -FilePath $logPath
         $exitCode = $LASTEXITCODE
@@ -132,6 +139,7 @@ try {
             "- Trigger member: $TriggerMember",
             "- Trigger arg: $TriggerArg",
             "- Expected callback arg count: $ExpectedArgCount",
+            "- COM event trace: $($EnableTrace.ToString().ToLowerInvariant())",
             "- Log: $logPath"
         )
         Set-Content -Path $reportPath -Value ($report -join "`n")
@@ -179,6 +187,11 @@ try {
             $env:OXVBA_COM_FORCE_REGISTERED_TESTDISPATCH = $prevForceRegistered
         } else {
             Remove-Item Env:OXVBA_COM_FORCE_REGISTERED_TESTDISPATCH -ErrorAction SilentlyContinue
+        }
+        if ($hadPrevTrace) {
+            $env:OXVBA_COM_EVENT_TRACE = $prevTrace
+        } else {
+            Remove-Item Env:OXVBA_COM_EVENT_TRACE -ErrorAction SilentlyContinue
         }
     }
 }

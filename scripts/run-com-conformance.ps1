@@ -8,6 +8,7 @@ param(
     [int]$RegisteredEventTriggerMember = 3,
     [int]$RegisteredEventTriggerArg = 77,
     [int]$RegisteredEventExpectedArgCount = 1,
+    [switch]$RegisteredEventEnableTrace,
     [switch]$ForceRegisteredTestDispatch,
     [switch]$NoCapture,
     [string]$EvidenceDir = "docs/evidence/conformance/com",
@@ -85,6 +86,9 @@ try {
         }
         if ($ForceRegisteredTestDispatch) {
             $registeredEventArgs["ForceRegisteredTestDispatch"] = $true
+        }
+        if ($RegisteredEventEnableTrace) {
+            $registeredEventArgs["EnableTrace"] = $true
         }
         if ($NoCapture) {
             $registeredEventArgs["NoCapture"] = $true
