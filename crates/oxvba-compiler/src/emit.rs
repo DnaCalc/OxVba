@@ -1916,6 +1916,25 @@ fn emit_expr_into(
                         subscription: *subscription,
                     })
                 }
+                ("__oxvba_com_callback_subscription", [callback]) => {
+                    instructions.push(Instruction::IntrinsicComEventCallbackSubscriptionHost {
+                        dst,
+                        callback: *callback,
+                    })
+                }
+                ("__oxvba_com_callback_arg", [callback, index]) => {
+                    instructions.push(Instruction::IntrinsicComEventCallbackArgHost {
+                        dst,
+                        callback: *callback,
+                        index: *index,
+                    })
+                }
+                ("__oxvba_com_release_callback", [callback]) => {
+                    instructions.push(Instruction::IntrinsicComReleaseEventCallbackHost {
+                        dst,
+                        callback: *callback,
+                    })
+                }
                 ("__oxvba_withevents_get", [owner, binding]) => {
                     instructions.push(Instruction::IntrinsicWithEventsGet {
                         dst,

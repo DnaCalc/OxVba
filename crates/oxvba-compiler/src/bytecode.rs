@@ -369,6 +369,19 @@ pub enum Instruction {
         dst: usize,
         subscription: usize,
     },
+    IntrinsicComEventCallbackSubscriptionHost {
+        dst: usize,
+        callback: usize,
+    },
+    IntrinsicComEventCallbackArgHost {
+        dst: usize,
+        callback: usize,
+        index: usize,
+    },
+    IntrinsicComReleaseEventCallbackHost {
+        dst: usize,
+        callback: usize,
+    },
     IntrinsicInvokeSymbolHost {
         dst: usize,
         descriptor_id: u32,

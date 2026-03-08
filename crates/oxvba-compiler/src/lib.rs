@@ -1527,7 +1527,7 @@ mod tests {
 
     #[test]
     fn compile_com_event_subscription_intrinsics_emit_deterministically() {
-        let source = "Sub Main()\nDim x\nDim y\nx = __oxvba_com_subscribe_event(20001, 1)\ny = __oxvba_com_unsubscribe_event(x)\nEnd Sub";
+        let source = "Sub Main()\nDim x\nDim y\nDim z\nDim w\nx = __oxvba_com_subscribe_event(20001, 1)\ny = __oxvba_com_callback_subscription(60001)\nz = __oxvba_com_callback_arg(60001, 0)\nw = __oxvba_com_release_callback(60001)\ny = __oxvba_com_unsubscribe_event(x)\nEnd Sub";
         let out = compile(source).expect("COM event subscription intrinsics should compile");
         assert!(
             out.instructions
@@ -1540,6 +1540,26 @@ mod tests {
                 .iter()
                 .any(|inst| matches!(inst, Instruction::IntrinsicComUnsubscribeEventHost { .. })),
             "expected IntrinsicComUnsubscribeEventHost emission"
+        );
+        assert!(
+            out.instructions.iter().any(|inst| matches!(
+                inst,
+                Instruction::IntrinsicComEventCallbackSubscriptionHost { .. }
+            )),
+            "expected IntrinsicComEventCallbackSubscriptionHost emission"
+        );
+        assert!(
+            out.instructions
+                .iter()
+                .any(|inst| matches!(inst, Instruction::IntrinsicComEventCallbackArgHost { .. })),
+            "expected IntrinsicComEventCallbackArgHost emission"
+        );
+        assert!(
+            out.instructions.iter().any(|inst| matches!(
+                inst,
+                Instruction::IntrinsicComReleaseEventCallbackHost { .. }
+            )),
+            "expected IntrinsicComReleaseEventCallbackHost emission"
         );
     }
 }

@@ -150,6 +150,24 @@ impl ComHal for NullHostServices {
     fn unsubscribe_event(&self, _subscription: i32) -> HalResult<i32> {
         Err(self.unsupported(CapabilityId::ComActivationDispatch, "unsubscribe_event"))
     }
+
+    fn event_callback_subscription(&self, _callback: i32) -> HalResult<i32> {
+        Err(self.unsupported(
+            CapabilityId::ComActivationDispatch,
+            "event_callback_subscription",
+        ))
+    }
+
+    fn event_callback_arg(&self, _callback: i32, _index: i32) -> HalResult<i32> {
+        Err(self.unsupported(CapabilityId::ComActivationDispatch, "event_callback_arg"))
+    }
+
+    fn release_event_callback(&self, _callback: i32) -> HalResult<i32> {
+        Err(self.unsupported(
+            CapabilityId::ComActivationDispatch,
+            "release_event_callback",
+        ))
+    }
 }
 
 impl TypeLibraryHal for NullHostServices {
@@ -246,6 +264,24 @@ mod tests {
         assert_eq!(
             host.unsubscribe_event(1)
                 .expect_err("unsubscribe_event")
+                .kind,
+            HalErrorKind::CapabilityUnavailable
+        );
+        assert_eq!(
+            host.event_callback_subscription(1)
+                .expect_err("event_callback_subscription")
+                .kind,
+            HalErrorKind::CapabilityUnavailable
+        );
+        assert_eq!(
+            host.event_callback_arg(1, 0)
+                .expect_err("event_callback_arg")
+                .kind,
+            HalErrorKind::CapabilityUnavailable
+        );
+        assert_eq!(
+            host.release_event_callback(1)
+                .expect_err("release_event_callback")
                 .kind,
             HalErrorKind::CapabilityUnavailable
         );

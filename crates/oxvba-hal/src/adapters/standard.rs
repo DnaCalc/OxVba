@@ -274,10 +274,24 @@ impl StandardHostServices {
             }
             for callback in &state.pending_callbacks {
                 hal_contract_assert!(
-                    state.subscriptions.contains_key(&callback.subscription),
+                    state.callbacks.contains_key(callback),
+                    "op={} observed pending callback token {} without payload",
+                    op,
+                    callback
+                );
+            }
+            for (callback, payload) in &state.callbacks {
+                hal_contract_assert!(
+                    *callback >= 60_001,
+                    "op={} observed out-of-range callback token {}",
+                    op,
+                    callback
+                );
+                hal_contract_assert!(
+                    state.subscriptions.contains_key(&payload.subscription),
                     "op={} observed callback for unknown subscription {}",
                     op,
-                    callback.subscription
+                    payload.subscription
                 );
             }
         }
@@ -948,7 +962,7 @@ impl EventPumpHal for StandardHostServices {
             if let Some(callback) = state.pending_callbacks.first().copied() {
                 let _ = state.pending_callbacks.remove(0);
                 self.assert_com_invariants(&state, "do_events-post");
-                return Ok(callback.subscription);
+                return Ok(callback);
             }
             self.assert_com_invariants(&state, "do_events-post");
         }
@@ -1438,10 +1452,124 @@ impl ComHal for StandardHostServices {
                 ),
             ));
         };
-        state.pending_callbacks.retain(|callback| {
-            callback.subscription != subscription || callback.object != entry.object
-        });
+        let stale_callbacks: BTreeSet<i32> = state
+            .callbacks
+            .iter()
+            .filter_map(|(callback, payload)| {
+                if payload.subscription == subscription && payload.object == entry.object {
+                    Some(*callback)
+                } else {
+                    None
+                }
+            })
+            .collect();
+        for callback in &stale_callbacks {
+            state.callbacks.remove(callback);
+        }
+        state
+            .pending_callbacks
+            .retain(|callback| !stale_callbacks.contains(callback));
         self.assert_com_invariants(&state, "unsubscribe_event-post");
+        Ok(1)
+    }
+
+    fn event_callback_subscription(&self, callback: i32) -> HalResult<i32> {
+        let capability = CapabilityId::ComActivationDispatch;
+        if !self.supports(capability) {
+            return Err(self.unsupported(capability, "event_callback_subscription"));
+        }
+        if !self.policy.allow_com_activation {
+            return Err(self.denied(capability, "event_callback_subscription"));
+        }
+        if !self.native_com_enabled() {
+            return Err(HalError::adapter_fault(
+                self.profile,
+                capability,
+                "event_callback_subscription",
+                "COM-E-EVENT-PATH-UNSUPPORTED: native COM event callback lookup requires host-backed Windows native mode",
+            ));
+        }
+        let state = self.com_lock(capability, "event_callback_subscription")?;
+        self.assert_com_invariants(&state, "event_callback_subscription");
+        let Some(payload) = state.callbacks.get(&callback) else {
+            return Err(HalError::adapter_fault(
+                self.profile,
+                capability,
+                "event_callback_subscription",
+                format!("COM-E-EVENT-CALLBACK-MISSING: unknown callback token {callback}"),
+            ));
+        };
+        Ok(payload.subscription)
+    }
+
+    fn event_callback_arg(&self, callback: i32, index: i32) -> HalResult<i32> {
+        let capability = CapabilityId::ComActivationDispatch;
+        if !self.supports(capability) {
+            return Err(self.unsupported(capability, "event_callback_arg"));
+        }
+        if !self.policy.allow_com_activation {
+            return Err(self.denied(capability, "event_callback_arg"));
+        }
+        if !self.native_com_enabled() {
+            return Err(HalError::adapter_fault(
+                self.profile,
+                capability,
+                "event_callback_arg",
+                "COM-E-EVENT-PATH-UNSUPPORTED: native COM event callback lookup requires host-backed Windows native mode",
+            ));
+        }
+        if index != 0 {
+            return Err(HalError::adapter_fault(
+                self.profile,
+                capability,
+                "event_callback_arg",
+                format!(
+                    "COM-E-EVENT-CALLBACK-SIGNATURE-MISMATCH: callback argument index {} is unsupported in current lane",
+                    index
+                ),
+            ));
+        }
+        let state = self.com_lock(capability, "event_callback_arg")?;
+        self.assert_com_invariants(&state, "event_callback_arg");
+        let Some(payload) = state.callbacks.get(&callback) else {
+            return Err(HalError::adapter_fault(
+                self.profile,
+                capability,
+                "event_callback_arg",
+                format!("COM-E-EVENT-CALLBACK-MISSING: unknown callback token {callback}"),
+            ));
+        };
+        Ok(payload.arg)
+    }
+
+    fn release_event_callback(&self, callback: i32) -> HalResult<i32> {
+        let capability = CapabilityId::ComActivationDispatch;
+        if !self.supports(capability) {
+            return Err(self.unsupported(capability, "release_event_callback"));
+        }
+        if !self.policy.allow_com_activation {
+            return Err(self.denied(capability, "release_event_callback"));
+        }
+        if !self.native_com_enabled() {
+            return Err(HalError::adapter_fault(
+                self.profile,
+                capability,
+                "release_event_callback",
+                "COM-E-EVENT-PATH-UNSUPPORTED: native COM event callback release requires host-backed Windows native mode",
+            ));
+        }
+        let mut state = self.com_lock(capability, "release_event_callback")?;
+        self.assert_com_invariants(&state, "release_event_callback-pre");
+        if state.callbacks.remove(&callback).is_none() {
+            return Err(HalError::adapter_fault(
+                self.profile,
+                capability,
+                "release_event_callback",
+                format!("COM-E-EVENT-CALLBACK-MISSING: unknown callback token {callback}"),
+            ));
+        }
+        state.pending_callbacks.retain(|token| *token != callback);
+        self.assert_com_invariants(&state, "release_event_callback-post");
         Ok(1)
     }
 }
@@ -2051,9 +2179,11 @@ struct FileHandleState {
 struct ComState {
     next_handle: i32,
     next_subscription: i32,
+    next_callback: i32,
     bindings: BTreeMap<i32, ComBinding>,
     subscriptions: BTreeMap<i32, ComEventSubscription>,
-    pending_callbacks: Vec<ComEventCallback>,
+    callbacks: BTreeMap<i32, ComEventCallback>,
+    pending_callbacks: Vec<i32>,
 }
 
 impl ComState {
@@ -2067,20 +2197,37 @@ impl ComState {
         40_000i32.saturating_add(self.next_subscription)
     }
 
+    fn allocate_callback(&mut self) -> i32 {
+        self.next_callback = self.next_callback.saturating_add(1).max(1);
+        60_000i32.saturating_add(self.next_callback)
+    }
+
     fn queue_callbacks_for_source_event(&mut self, object: i32, event: i32, arg: i32) -> usize {
-        let mut queued = 0usize;
-        for (subscription, entry) in &self.subscriptions {
-            if entry.object == object && entry.event == event {
-                self.pending_callbacks.push(ComEventCallback {
+        let targets: Vec<i32> = self
+            .subscriptions
+            .iter()
+            .filter_map(|(subscription, entry)| {
+                if entry.object == object && entry.event == event {
+                    Some(*subscription)
+                } else {
+                    None
+                }
+            })
+            .collect();
+        for subscription in &targets {
+            let callback = self.allocate_callback();
+            self.callbacks.insert(
+                callback,
+                ComEventCallback {
                     subscription: *subscription,
                     object,
                     event,
                     arg,
-                });
-                queued = queued.saturating_add(1);
-            }
+                },
+            );
+            self.pending_callbacks.push(callback);
         }
-        queued
+        targets.len()
     }
 }
 
@@ -2203,6 +2350,7 @@ fn com_event_from_member_token(_binding: &ComBinding, _member: i32) -> Option<i3
 impl Drop for ComState {
     fn drop(&mut self) {
         self.subscriptions.clear();
+        self.callbacks.clear();
         self.pending_callbacks.clear();
         for binding in self.bindings.values_mut() {
             if binding.native_dispatch != 0 {
@@ -3268,6 +3416,24 @@ mod tests {
         assert_eq!(unsubscribe.kind, HalErrorKind::AdapterFault);
         assert_eq!(unsubscribe.operation, "unsubscribe_event");
         assert!(unsubscribe.message.contains("COM-E-EVENT-PATH-UNSUPPORTED"));
+        assert!(
+            host.event_callback_subscription(60_001)
+                .expect_err("event_callback_subscription should require native mode")
+                .message
+                .contains("COM-E-EVENT-PATH-UNSUPPORTED")
+        );
+        assert!(
+            host.event_callback_arg(60_001, 0)
+                .expect_err("event_callback_arg should require native mode")
+                .message
+                .contains("COM-E-EVENT-PATH-UNSUPPORTED")
+        );
+        assert!(
+            host.release_event_callback(60_001)
+                .expect_err("release_event_callback should require native mode")
+                .message
+                .contains("COM-E-EVENT-PATH-UNSUPPORTED")
+        );
     }
 
     #[cfg(target_os = "windows")]
@@ -3291,25 +3457,24 @@ mod tests {
                 .expect("FireChanged should succeed"),
             77
         );
-        let queued = {
-            let state = host
-                .com_state
-                .lock()
-                .expect("com state lock should succeed");
-            state
-                .pending_callbacks
-                .iter()
-                .find(|entry| entry.subscription == subscription)
-                .copied()
-        };
-        let queued = queued.expect("expected queued callback for subscription");
-        assert_eq!(queued.object, object);
-        assert_eq!(queued.event, 1);
-        assert_eq!(queued.arg, 77);
+        let callback = host
+            .do_events()
+            .expect("do_events should pump pending COM callback");
+        assert!(callback >= 60_001);
         assert_eq!(
-            host.do_events()
-                .expect("do_events should pump pending COM callback"),
+            host.event_callback_subscription(callback)
+                .expect("callback subscription lookup should succeed"),
             subscription
+        );
+        assert_eq!(
+            host.event_callback_arg(callback, 0)
+                .expect("callback arg lookup should succeed"),
+            77
+        );
+        assert_eq!(
+            host.release_event_callback(callback)
+                .expect("callback release should succeed"),
+            1
         );
 
         assert_eq!(
@@ -3317,19 +3482,16 @@ mod tests {
                 .expect("unsubscribe_event should succeed"),
             1
         );
-        let still_queued = {
+        let callback_still_present = {
             let state = host
                 .com_state
                 .lock()
                 .expect("com state lock should succeed");
-            state
-                .pending_callbacks
-                .iter()
-                .any(|entry| entry.subscription == subscription)
+            state.callbacks.contains_key(&callback)
         };
         assert!(
-            !still_queued,
-            "unsubscribe should clear queued callbacks for that subscription"
+            !callback_still_present,
+            "released callback payload should be removed from callback registry"
         );
     }
 
@@ -3356,6 +3518,51 @@ mod tests {
             .expect_err("unknown subscription should fail deterministically");
         assert_eq!(err.kind, HalErrorKind::AdapterFault);
         assert!(err.message.contains("COM-E-EVENT-ADVISE-FAILED"));
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn windows_native_com_event_callback_lookup_rejects_unknown_callback() {
+        let host = StandardHostServices::new(HalProfileId::Windows, HostPolicy::interactive_dev());
+        let err = host
+            .event_callback_subscription(60_999)
+            .expect_err("unknown callback should fail deterministically");
+        assert_eq!(err.kind, HalErrorKind::AdapterFault);
+        assert!(err.message.contains("COM-E-EVENT-CALLBACK-MISSING"));
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn windows_native_com_event_callback_arg_index_is_validated() {
+        let host = StandardHostServices::new(HalProfileId::Windows, HostPolicy::interactive_dev());
+        let object = host
+            .create_object(4)
+            .expect("create_object should return a token");
+        let subscription = host
+            .subscribe_event(object, 1)
+            .expect("subscribe should succeed");
+        let _ = host
+            .dispatch_invoke(object, 3, 77)
+            .expect("FireChanged should succeed");
+        let callback = host.do_events().expect("callback token");
+        let err = host
+            .event_callback_arg(callback, 1)
+            .expect_err("only callback arg index 0 should be supported");
+        assert_eq!(err.kind, HalErrorKind::AdapterFault);
+        assert!(
+            err.message
+                .contains("COM-E-EVENT-CALLBACK-SIGNATURE-MISMATCH")
+        );
+        assert_eq!(
+            host.release_event_callback(callback)
+                .expect("release callback should succeed"),
+            1
+        );
+        assert_eq!(
+            host.unsubscribe_event(subscription)
+                .expect("unsubscribe should succeed"),
+            1
+        );
     }
 
     #[cfg(target_os = "windows")]

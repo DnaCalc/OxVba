@@ -341,6 +341,9 @@ impl Engine {
                 | Instruction::IntrinsicDispatchInvokeHost { .. }
                 | Instruction::IntrinsicComSubscribeEventHost { .. }
                 | Instruction::IntrinsicComUnsubscribeEventHost { .. }
+                | Instruction::IntrinsicComEventCallbackSubscriptionHost { .. }
+                | Instruction::IntrinsicComEventCallbackArgHost { .. }
+                | Instruction::IntrinsicComReleaseEventCallbackHost { .. }
                     if !policy.allow_com_activation =>
                 {
                     let key = format!(
@@ -400,6 +403,17 @@ fn hal_requirement(instruction: &Instruction) -> Option<(&'static str, Capabilit
         Instruction::IntrinsicComUnsubscribeEventHost { .. } => {
             Some(("ComUnsubscribeEvent", CapabilityId::ComActivationDispatch))
         }
+        Instruction::IntrinsicComEventCallbackSubscriptionHost { .. } => Some((
+            "ComEventCallbackSubscription",
+            CapabilityId::ComActivationDispatch,
+        )),
+        Instruction::IntrinsicComEventCallbackArgHost { .. } => {
+            Some(("ComEventCallbackArg", CapabilityId::ComActivationDispatch))
+        }
+        Instruction::IntrinsicComReleaseEventCallbackHost { .. } => Some((
+            "ComReleaseEventCallback",
+            CapabilityId::ComActivationDispatch,
+        )),
         Instruction::IntrinsicInvokeSymbolHost { .. } => {
             Some(("DeclareInvoke", CapabilityId::DynamicLinking))
         }

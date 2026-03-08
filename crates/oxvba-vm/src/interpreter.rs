@@ -880,6 +880,45 @@ impl Vm {
                         Err(err) => pc = self.route_host_error(pc, err)?,
                     }
                 }
+                Instruction::IntrinsicComEventCallbackSubscriptionHost { dst, callback } => {
+                    let callback = self.read_slot(*callback)?;
+                    match self
+                        .host_services
+                        .com()
+                        .event_callback_subscription(callback)
+                    {
+                        Ok(value) => {
+                            self.write_slot(*dst, value)?;
+                            pc += 1;
+                        }
+                        Err(err) => pc = self.route_host_error(pc, err)?,
+                    }
+                }
+                Instruction::IntrinsicComEventCallbackArgHost {
+                    dst,
+                    callback,
+                    index,
+                } => {
+                    let callback = self.read_slot(*callback)?;
+                    let index = self.read_slot(*index)?;
+                    match self.host_services.com().event_callback_arg(callback, index) {
+                        Ok(value) => {
+                            self.write_slot(*dst, value)?;
+                            pc += 1;
+                        }
+                        Err(err) => pc = self.route_host_error(pc, err)?,
+                    }
+                }
+                Instruction::IntrinsicComReleaseEventCallbackHost { dst, callback } => {
+                    let callback = self.read_slot(*callback)?;
+                    match self.host_services.com().release_event_callback(callback) {
+                        Ok(value) => {
+                            self.write_slot(*dst, value)?;
+                            pc += 1;
+                        }
+                        Err(err) => pc = self.route_host_error(pc, err)?,
+                    }
+                }
                 Instruction::IntrinsicInvokeSymbolHost {
                     dst,
                     descriptor_id,
@@ -2308,15 +2347,29 @@ mod tests {
                     arg: 5,
                 },
                 Instruction::IntrinsicDoEventsHost { dst: 7 },
-                Instruction::IntrinsicComUnsubscribeEventHost {
+                Instruction::IntrinsicComEventCallbackSubscriptionHost {
                     dst: 8,
+                    callback: 7,
+                },
+                Instruction::LoadConstI32 { slot: 9, value: 0 },
+                Instruction::IntrinsicComEventCallbackArgHost {
+                    dst: 10,
+                    callback: 7,
+                    index: 9,
+                },
+                Instruction::IntrinsicComReleaseEventCallbackHost {
+                    dst: 11,
+                    callback: 7,
+                },
+                Instruction::IntrinsicComUnsubscribeEventHost {
+                    dst: 12,
                     subscription: 3,
                 },
                 Instruction::Halt,
             ],
             external_call_descriptors: Vec::new(),
-            slot_count: 9,
-            user_slot_count: 9,
+            slot_count: 13,
+            user_slot_count: 13,
         };
 
         let mut vm = Vm::new(oxvba_hal::adapters::for_profile(
@@ -2325,15 +2378,24 @@ mod tests {
         ));
         vm.execute(&bytecode)
             .expect("vm should execute COM event subscribe/unsubscribe flow");
-        let out = vm.snapshot_slots(9);
+        let out = vm.snapshot_slots(13);
         assert!(out[1] >= 20_001, "expected native COM object handle");
         assert!(out[3] >= 40_001, "expected native COM subscription handle");
         assert_eq!(out[6], 77, "expected FireChanged return value");
-        assert_eq!(
-            out[7], out[3],
-            "expected DoEvents callback pump to return subscription token"
+        assert!(
+            out[7] >= 60_001,
+            "expected DoEvents callback pump to return callback token"
         );
-        assert_eq!(out[8], 1, "expected unsubscribe success token");
+        assert_eq!(
+            out[8], out[3],
+            "expected callback subscription lookup to return subscription token"
+        );
+        assert_eq!(
+            out[10], 77,
+            "expected callback arg lookup to return event payload"
+        );
+        assert_eq!(out[11], 1, "expected callback release token");
+        assert_eq!(out[12], 1, "expected unsubscribe success token");
     }
 
     #[test]
