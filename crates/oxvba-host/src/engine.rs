@@ -1606,7 +1606,7 @@ mod tests {
         let main_module = module_unit_from_source(
             "MainModule",
             ModuleKind::Procedural,
-            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim e1 As New Emitter\nDim e2 As New Emitter\nDim s As New Sink\nDim a\nDim b\nCall s.Attach(e1)\na = __oxvba_withevents_get(2049099222)\nCall s.Attach(e2)\nb = __oxvba_withevents_get(2049099222)\nIf a = 1 And b = 2 Then\nError 13\nElse\nError 77\nEnd If\nEnd Sub",
+            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim e1 As New Emitter\nDim e2 As New Emitter\nDim s As New Sink\nDim a\nDim b\nCall s.Attach(e1)\na = __oxvba_withevents_get(0, 2049099222)\nCall s.Attach(e2)\nb = __oxvba_withevents_get(0, 2049099222)\nIf a = 1 And b = 2 Then\nError 13\nElse\nError 77\nEnd If\nEnd Sub",
         )
         .expect("main module should parse");
         let emitter = module_unit_from_source(
@@ -1681,7 +1681,7 @@ mod tests {
         let main_module = module_unit_from_source(
             "MainModule",
             ModuleKind::Procedural,
-            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim e1 As New Emitter\nDim e2 As New Emitter\nDim s As New Sink\nDim a\nDim b\nDim c\nCall s.Attach(e1)\na = __oxvba_withevents_get(2049099222)\nCall s.Detach\nb = __oxvba_withevents_get(2049099222)\nCall s.Attach(e2)\nc = __oxvba_withevents_get(2049099222)\nIf a = 1 And b = 0 And c = 2 Then\nError 13\nElse\nError 77\nEnd If\nEnd Sub",
+            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim e1 As New Emitter\nDim e2 As New Emitter\nDim s As New Sink\nDim a\nDim b\nDim c\nCall s.Attach(e1)\na = __oxvba_withevents_get(0, 2049099222)\nCall s.Detach\nb = __oxvba_withevents_get(0, 2049099222)\nCall s.Attach(e2)\nc = __oxvba_withevents_get(0, 2049099222)\nIf a = 1 And b = 0 And c = 2 Then\nError 13\nElse\nError 77\nEnd If\nEnd Sub",
         )
         .expect("main module should parse");
         let emitter = module_unit_from_source(
@@ -1724,7 +1724,7 @@ mod tests {
     #[test]
     fn formal_event_runtime_withevents_binding_intrinsics_roundtrip_state() {
         let engine = Engine::new(HostConfig::default());
-        let source = "Sub Main()\nDim x\nx = __oxvba_withevents_set(2049099222, 42)\nIf __oxvba_withevents_get(2049099222) = 42 Then\nError 13\nElse\nError 77\nEnd If\nEnd Sub";
+        let source = "Sub Main()\nDim x\nx = __oxvba_withevents_set(0, 2049099222, 42)\nIf __oxvba_withevents_get(0, 2049099222) = 42 Then\nError 13\nElse\nError 77\nEnd If\nEnd Sub";
         let err = engine
             .execute_source_with_snapshot_phased(source)
             .expect_err("intrinsic roundtrip should raise deterministic sentinel");

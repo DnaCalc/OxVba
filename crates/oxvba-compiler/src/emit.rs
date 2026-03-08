@@ -1903,15 +1903,17 @@ fn emit_expr_into(
                         arg: missing_arg,
                     })
                 }
-                ("__oxvba_withevents_get", [binding]) => {
+                ("__oxvba_withevents_get", [owner, binding]) => {
                     instructions.push(Instruction::IntrinsicWithEventsGet {
                         dst,
+                        owner: *owner,
                         binding: *binding,
                     })
                 }
-                ("__oxvba_withevents_set", [binding, value]) => {
+                ("__oxvba_withevents_set", [owner, binding, value]) => {
                     instructions.push(Instruction::IntrinsicWithEventsSet {
                         dst,
+                        owner: *owner,
                         binding: *binding,
                         value: *value,
                     })

@@ -177,7 +177,10 @@ fn expr_has_observable_effect(expr: &BoundExpr) -> bool {
             call_has_effect || args.iter().any(expr_has_observable_effect)
         }
         BoundExpr::ProcCall { .. } => true,
-        BoundExpr::Var(_) | BoundExpr::AddConst { .. } | BoundExpr::SubConst { .. } | BoundExpr::IntConst(_) => false,
+        BoundExpr::Var(_)
+        | BoundExpr::AddConst { .. }
+        | BoundExpr::SubConst { .. }
+        | BoundExpr::IntConst(_) => false,
     }
 }
 
@@ -327,7 +330,7 @@ mod tests {
     #[test]
     fn formal_v19_dead_store_preserves_previous_assignment_with_observable_effect() {
         let module = resolve_symbols(
-            "Sub Main()\nDim x\nx = __oxvba_withevents_set(7, 11)\nx = __oxvba_withevents_get(7)\nEnd Sub",
+            "Sub Main()\nDim x\nx = __oxvba_withevents_set(0, 7, 11)\nx = __oxvba_withevents_get(0, 7)\nEnd Sub",
         );
         let optimized = optimize_module(module);
         let intrinsic_set_count = optimized

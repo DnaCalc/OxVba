@@ -20,7 +20,7 @@ pub struct Vm {
     registers: RegisterFile,
     host_services: Arc<dyn HostServices>,
     call_stack: Vec<usize>,
-    withevents_bindings: HashMap<i32, i32>,
+    withevents_bindings: HashMap<i64, i32>,
     on_error_resume_next: bool,
     on_error_goto_label_target: Option<usize>,
     last_error: i32,
@@ -929,23 +929,32 @@ impl Vm {
                         Err(err) => pc = self.route_host_error(pc, err)?,
                     }
                 }
-                Instruction::IntrinsicWithEventsGet { dst, binding } => {
+                Instruction::IntrinsicWithEventsGet {
+                    dst,
+                    owner,
+                    binding,
+                } => {
+                    let owner = self.read_slot(*owner)?;
                     let binding = self.read_slot(*binding)?;
-                    let value = self.withevents_bindings.get(&binding).copied().unwrap_or(0);
+                    let key = Self::withevents_binding_key(owner, binding);
+                    let value = self.withevents_bindings.get(&key).copied().unwrap_or(0);
                     self.write_slot(*dst, value)?;
                     pc += 1;
                 }
                 Instruction::IntrinsicWithEventsSet {
                     dst,
+                    owner,
                     binding,
                     value,
                 } => {
+                    let owner = self.read_slot(*owner)?;
                     let binding = self.read_slot(*binding)?;
                     let value = self.read_slot(*value)?;
+                    let key = Self::withevents_binding_key(owner, binding);
                     if value == 0 {
-                        self.withevents_bindings.remove(&binding);
+                        self.withevents_bindings.remove(&key);
                     } else {
-                        self.withevents_bindings.insert(binding, value);
+                        self.withevents_bindings.insert(key, value);
                     }
                     self.write_slot(*dst, value)?;
                     pc += 1;
@@ -1155,6 +1164,10 @@ impl Vm {
         std::env::var("OXVBA_DISABLE_TYPED_FASTPATH")
             .map(|value| value != "1")
             .unwrap_or(true)
+    }
+
+    fn withevents_binding_key(owner: i32, binding: i32) -> i64 {
+        ((owner as i64) << 32) | (binding as u32 as i64)
     }
 
     fn fast_read_slot(&self, slot: usize) -> Option<i32> {

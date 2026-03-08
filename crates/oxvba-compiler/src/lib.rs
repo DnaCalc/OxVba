@@ -1475,7 +1475,7 @@ mod tests {
 
     #[test]
     fn compile_withevents_runtime_binding_intrinsics_emit_deterministically() {
-        let source = "Sub Main()\nDim x\nx = __oxvba_withevents_set(7, 42)\nIf __oxvba_withevents_get(7) = 42 Then\nx = 1\nEnd If\nEnd Sub";
+        let source = "Sub Main()\nDim x\nx = __oxvba_withevents_set(0, 7, 42)\nIf __oxvba_withevents_get(0, 7) = 42 Then\nx = 1\nEnd If\nEnd Sub";
         let out = compile(source).expect("WithEvents binding intrinsics should compile");
         assert!(
             out.instructions

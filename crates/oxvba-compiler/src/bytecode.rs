@@ -368,10 +368,12 @@ pub enum Instruction {
     },
     IntrinsicWithEventsGet {
         dst: usize,
+        owner: usize,
         binding: usize,
     },
     IntrinsicWithEventsSet {
         dst: usize,
+        owner: usize,
         binding: usize,
         value: usize,
     },

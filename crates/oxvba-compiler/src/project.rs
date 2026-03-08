@@ -1718,7 +1718,7 @@ fn rewrite_internal_class_set_assignment(
     if withevents_bindings.contains(&normalized_lhs) {
         let binding_token = withevents_binding_token(current_project, current_module, lhs);
         return format!(
-            "{}{} = __oxvba_withevents_set({}, {})",
+            "{}{} = __oxvba_withevents_set(0, {}, {})",
             &line[..leading],
             lhs,
             binding_token,
@@ -2158,7 +2158,7 @@ fn emit_event_guard_wrappers_for_module(
                     &route.withevents_var,
                 );
                 let guard_expr =
-                    format!("__oxvba_withevents_get({binding_token}) = __oxvba_source_instance");
+                    format!("__oxvba_withevents_get(0, {binding_token}) = __oxvba_source_instance");
                 let call_args = if handler_param_count == 0 {
                     "__oxvba_source_instance".to_string()
                 } else if event_arg_count == 0 {
