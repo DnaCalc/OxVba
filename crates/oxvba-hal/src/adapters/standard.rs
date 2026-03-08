@@ -7,8 +7,9 @@ use crate::{
     },
     traits::{
         ComHal, DiagnosticsHal, DynLinkDescriptorView, DynamicLinkHal, EventPumpHal, FileSystemHal,
-        ProcessEnvHal, TimeLocaleHal, TypeLibCacheScope, TypeLibMetadataBlob,
-        TypeLibResolveRequest, TypeLibResolvedIdentity, TypeLibraryHal, UiInteractionHal,
+        ProcessEnvHal, TimeLocaleHal, TypeLibCacheScope, TypeLibEventDispatchPath,
+        TypeLibEventMetadata, TypeLibMemberMetadata, TypeLibMetadataBlob, TypeLibResolveRequest,
+        TypeLibResolvedIdentity, TypeLibraryHal, UiInteractionHal,
     },
 };
 #[cfg(target_os = "windows")]
@@ -383,20 +384,121 @@ impl StandardHostServices {
     }
 
     fn build_typelib_metadata(&self, identity: &TypeLibResolvedIdentity) -> TypeLibMetadataBlob {
-        let members = if identity
+        let (member_name_to_token, members, events) = if identity
             .importlib
             .eq_ignore_ascii_case("oxvba_testdispatch.tlb")
             || identity.libid.as_deref().is_some_and(|libid| {
                 libid.eq_ignore_ascii_case("11111111-2222-3333-4444-555555555555")
             }) {
-            vec![("Count".to_string(), 1), ("Exists".to_string(), 2)]
+            let members = vec![
+                TypeLibMemberMetadata {
+                    name: "Count".to_string(),
+                    token: TEST_DISPID_COUNT,
+                    requires_argument: false,
+                },
+                TypeLibMemberMetadata {
+                    name: "Exists".to_string(),
+                    token: TEST_DISPID_EXISTS,
+                    requires_argument: true,
+                },
+                TypeLibMemberMetadata {
+                    name: "FireChanged".to_string(),
+                    token: TEST_DISPID_FIRE_CHANGED,
+                    requires_argument: true,
+                },
+                TypeLibMemberMetadata {
+                    name: "FireChangedPair".to_string(),
+                    token: TEST_DISPID_FIRE_CHANGED_PAIR,
+                    requires_argument: true,
+                },
+            ];
+            let events = vec![
+                TypeLibEventMetadata {
+                    name: "Changed".to_string(),
+                    token: TEST_EVENT_CHANGED,
+                    callback_arity: 1,
+                    dispatch_path: TypeLibEventDispatchPath::Dispatch,
+                },
+                TypeLibEventMetadata {
+                    name: "ChangedSourceInterface".to_string(),
+                    token: TEST_EVENT_CHANGED_SOURCE_INTERFACE,
+                    callback_arity: 1,
+                    dispatch_path: TypeLibEventDispatchPath::SourceInterface,
+                },
+                TypeLibEventMetadata {
+                    name: "ChangedPair".to_string(),
+                    token: TEST_EVENT_CHANGED_PAIR,
+                    callback_arity: 2,
+                    dispatch_path: TypeLibEventDispatchPath::Dispatch,
+                },
+            ];
+            let member_name_to_token = members
+                .iter()
+                .map(|entry| (entry.name.clone(), entry.token))
+                .collect();
+            (member_name_to_token, members, events)
         } else {
-            Vec::new()
+            (Vec::new(), Vec::new(), Vec::new())
         };
         TypeLibMetadataBlob {
             identity: identity.clone(),
-            member_name_to_token: members,
+            member_name_to_token,
+            members,
+            events,
         }
+    }
+
+    #[cfg(target_os = "windows")]
+    fn known_typelib_identity_for_prog_id_name(
+        &self,
+        prog_id_name: &str,
+    ) -> Option<TypeLibResolvedIdentity> {
+        if !prog_id_name.eq_ignore_ascii_case(OXVBA_TEST_DISPATCH_PROGID) {
+            return None;
+        }
+        Some(TypeLibResolvedIdentity {
+            reference_name: "OxVba.TestDispatch".to_string(),
+            importlib: "oxvba_testdispatch.tlb".to_string(),
+            libid: Some("11111111-2222-3333-4444-555555555555".to_string()),
+            major_version: 1,
+            minor_version: 0,
+            lcid: Some(0),
+            cache_key: "typelib:oxvba-testdispatch:1.0:0".to_string(),
+        })
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    fn known_typelib_identity_for_prog_id_name(
+        &self,
+        _prog_id_name: &str,
+    ) -> Option<TypeLibResolvedIdentity> {
+        None
+    }
+
+    #[cfg(target_os = "windows")]
+    fn load_typelib_metadata_for_prog_id_name(
+        &self,
+        prog_id_name: &str,
+    ) -> HalResult<Option<TypeLibMetadataBlob>> {
+        let Some(identity) = self.known_typelib_identity_for_prog_id_name(prog_id_name) else {
+            return Ok(None);
+        };
+        let capability = CapabilityId::ComActivationDispatch;
+        let mut state = self.typelib_lock(capability, "create_object")?;
+        if let Some(cached) = state.metadata.get(&identity.cache_key) {
+            return Ok(Some(cached.clone()));
+        }
+        let blob = self.build_typelib_metadata(&identity);
+        state.metadata.insert(identity.cache_key, blob.clone());
+        Ok(Some(blob))
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    fn load_typelib_metadata_for_prog_id_name(
+        &self,
+        _prog_id_name: &str,
+    ) -> HalResult<Option<TypeLibMetadataBlob>> {
+        Ok(None)
     }
 
     fn host_fs_base_dir(&self) -> PathBuf {
@@ -689,17 +791,19 @@ impl StandardHostServices {
         &self,
         object: i32,
         dispatch: *mut RawIDispatch,
-        prog_id: &str,
+        binding: &ComBinding,
         member: i32,
         cached: Option<i32>,
     ) -> HalResult<Option<(i32, bool)>> {
-        let Some(spec) = com_member_spec_for_token(prog_id, member) else {
+        let Some(spec) = com_member_spec_for_binding(binding, member)
+            .or_else(|| com_member_spec_for_token(&binding.prog_id_name, member))
+        else {
             return Ok(None);
         };
         if let Some(dispid) = cached {
             return Ok(Some((dispid, spec.requires_argument)));
         }
-        let dispid = unsafe { raw_get_dispid_by_name(dispatch, spec.name) }
+        let dispid = unsafe { raw_get_dispid_by_name(dispatch, &spec.name) }
             .map_err(|message| self.com_dispatch_adapter_fault(message))?;
         let mut state = self.com_lock(CapabilityId::ComActivationDispatch, "dispatch_invoke")?;
         if let Some(binding) = state.bindings.get_mut(&object) {
@@ -815,6 +919,38 @@ impl StandardHostServices {
         else {
             return Ok(());
         };
+        let Some(expected_arity) = com_event_signature_arity_for_binding(binding, event) else {
+            return Err(HalError::adapter_fault(
+                self.profile,
+                CapabilityId::ComActivationDispatch,
+                "dispatch_invoke",
+                format!(
+                    "COM-E-EVENT-CONNECTIONPOINT-MISSING: object `{}` does not expose event token {}",
+                    binding.prog_id_name, event
+                ),
+            ));
+        };
+        if com_event_is_source_interface_only(binding, event) {
+            return Err(HalError::adapter_fault(
+                self.profile,
+                CapabilityId::ComActivationDispatch,
+                "dispatch_invoke",
+                "COM-E-EVENT-PATH-UNSUPPORTED: source-interface COM event callbacks (COM-EVT-B) are unsupported in current lane",
+            ));
+        }
+        if args.len() != expected_arity {
+            return Err(HalError::adapter_fault(
+                self.profile,
+                CapabilityId::ComActivationDispatch,
+                "dispatch_invoke",
+                format!(
+                    "COM-E-EVENT-CALLBACK-SIGNATURE-MISMATCH: event token {} expected {} argument(s), queued {}",
+                    event,
+                    expected_arity,
+                    args.len()
+                ),
+            ));
+        }
         let mut state = self.com_lock(CapabilityId::ComActivationDispatch, "dispatch_invoke")?;
         self.assert_com_invariants(&state, "dispatch_invoke-event-pre");
         let _ = state.queue_callbacks_for_source_event(object, event, args.as_slice());
@@ -1306,11 +1442,13 @@ impl ComHal for StandardHostServices {
         {
             match self.try_native_com_binding(&prog_id_name) {
                 Ok(native_dispatch) => {
+                    let metadata = self.load_typelib_metadata_for_prog_id_name(&prog_id_name)?;
                     let mut state = self.com_lock(capability, "create_object")?;
                     let handle = state.allocate_handle();
-                    state
-                        .bindings
-                        .insert(handle, ComBinding::native(prog_id_name, native_dispatch));
+                    state.bindings.insert(
+                        handle,
+                        ComBinding::native(prog_id_name, native_dispatch, metadata.as_ref()),
+                    );
                     self.assert_com_invariants(&state, "create_object");
                     return Ok(handle);
                 }
@@ -1357,7 +1495,7 @@ impl ComHal for StandardHostServices {
                         .resolve_member_dispid_cached(
                             object,
                             dispatch,
-                            &binding.prog_id_name,
+                            &binding,
                             member,
                             cached_dispid,
                         )?
@@ -2321,14 +2459,26 @@ struct ComBinding {
     prog_id_name: String,
     native_dispatch: RawDispatchPtr,
     member_dispids: BTreeMap<i32, i32>,
+    member_specs: BTreeMap<i32, ComMemberSpec>,
+    event_specs: BTreeMap<i32, ComEventSpec>,
 }
 
 impl ComBinding {
-    fn native(prog_id_name: String, native_dispatch: RawDispatchPtr) -> Self {
+    fn native(
+        prog_id_name: String,
+        native_dispatch: RawDispatchPtr,
+        metadata: Option<&TypeLibMetadataBlob>,
+    ) -> Self {
         Self {
             prog_id_name,
             native_dispatch,
             member_dispids: BTreeMap::new(),
+            member_specs: metadata
+                .map(com_member_specs_from_typelib_metadata)
+                .unwrap_or_default(),
+            event_specs: metadata
+                .map(com_event_specs_from_typelib_metadata)
+                .unwrap_or_default(),
         }
     }
 }
@@ -2347,10 +2497,21 @@ struct ComEventCallback {
     args: Vec<i32>,
 }
 
-#[cfg(target_os = "windows")]
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ComEventPath {
+    Dispatch,
+    SourceInterface,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct ComEventSpec {
+    callback_arity: usize,
+    path: ComEventPath,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 struct ComMemberSpec {
-    name: &'static str,
+    name: String,
     requires_argument: bool,
 }
 
@@ -2359,11 +2520,11 @@ fn com_member_spec_for_token(prog_id: &str, member: i32) -> Option<ComMemberSpec
     if prog_id.eq_ignore_ascii_case("Scripting.Dictionary") {
         return match member {
             1 => Some(ComMemberSpec {
-                name: "Count",
+                name: "Count".to_string(),
                 requires_argument: false,
             }),
             2 => Some(ComMemberSpec {
-                name: "Exists",
+                name: "Exists".to_string(),
                 requires_argument: true,
             }),
             _ => None,
@@ -2372,19 +2533,19 @@ fn com_member_spec_for_token(prog_id: &str, member: i32) -> Option<ComMemberSpec
     if prog_id.eq_ignore_ascii_case(OXVBA_TEST_DISPATCH_PROGID) {
         return match member {
             1 => Some(ComMemberSpec {
-                name: "Count",
+                name: "Count".to_string(),
                 requires_argument: false,
             }),
             2 => Some(ComMemberSpec {
-                name: "Exists",
+                name: "Exists".to_string(),
                 requires_argument: true,
             }),
             3 => Some(ComMemberSpec {
-                name: "FireChanged",
+                name: "FireChanged".to_string(),
                 requires_argument: true,
             }),
             4 => Some(ComMemberSpec {
-                name: "FireChangedPair",
+                name: "FireChangedPair".to_string(),
                 requires_argument: true,
             }),
             _ => None,
@@ -2396,22 +2557,20 @@ fn com_member_spec_for_token(prog_id: &str, member: i32) -> Option<ComMemberSpec
 #[cfg(target_os = "windows")]
 fn com_event_signature_arity_for_binding(binding: &ComBinding, event: i32) -> Option<usize> {
     binding
-        .prog_id_name
-        .eq_ignore_ascii_case(OXVBA_TEST_DISPATCH_PROGID)
-        .then_some(())
-        .and_then(|_| match event {
-            TEST_EVENT_CHANGED => Some(1),
-            TEST_EVENT_CHANGED_PAIR => Some(2),
-            _ => None,
-        })
+        .event_specs
+        .get(&event)
+        .map(|spec| spec.callback_arity)
 }
 
 #[cfg(target_os = "windows")]
 fn com_event_is_source_interface_only(binding: &ComBinding, event: i32) -> bool {
-    binding
-        .prog_id_name
-        .eq_ignore_ascii_case(OXVBA_TEST_DISPATCH_PROGID)
-        && event == TEST_EVENT_CHANGED_SOURCE_INTERFACE
+    matches!(
+        binding.event_specs.get(&event),
+        Some(ComEventSpec {
+            path: ComEventPath::SourceInterface,
+            ..
+        })
+    )
 }
 
 #[cfg(not(target_os = "windows"))]
@@ -2443,6 +2602,47 @@ fn com_event_callback_args_from_member_token(
         };
     }
     None
+}
+
+fn com_event_specs_from_typelib_metadata(
+    blob: &TypeLibMetadataBlob,
+) -> BTreeMap<i32, ComEventSpec> {
+    blob.events
+        .iter()
+        .map(|event| {
+            (
+                event.token,
+                ComEventSpec {
+                    callback_arity: usize::from(event.callback_arity),
+                    path: match event.dispatch_path {
+                        TypeLibEventDispatchPath::Dispatch => ComEventPath::Dispatch,
+                        TypeLibEventDispatchPath::SourceInterface => ComEventPath::SourceInterface,
+                    },
+                },
+            )
+        })
+        .collect()
+}
+
+fn com_member_specs_from_typelib_metadata(
+    blob: &TypeLibMetadataBlob,
+) -> BTreeMap<i32, ComMemberSpec> {
+    blob.members
+        .iter()
+        .map(|member| {
+            (
+                member.token,
+                ComMemberSpec {
+                    name: member.name.clone(),
+                    requires_argument: member.requires_argument,
+                },
+            )
+        })
+        .collect()
+}
+
+fn com_member_spec_for_binding(binding: &ComBinding, member: i32) -> Option<ComMemberSpec> {
+    binding.member_specs.get(&member).cloned()
 }
 
 #[cfg(not(target_os = "windows"))]
@@ -2555,19 +2755,12 @@ const COM_DISP_E_UNKNOWNNAME: i32 = 0x8002_0006u32 as i32;
 const COM_DISP_E_BADPARAMCOUNT: i32 = 0x8002_000Eu32 as i32;
 #[cfg(target_os = "windows")]
 const COM_DISP_E_TYPEMISMATCH: i32 = 0x8002_0005u32 as i32;
-#[cfg(target_os = "windows")]
 const TEST_DISPID_COUNT: i32 = 1;
-#[cfg(target_os = "windows")]
 const TEST_DISPID_EXISTS: i32 = 2;
-#[cfg(target_os = "windows")]
 const TEST_DISPID_FIRE_CHANGED: i32 = 3;
-#[cfg(target_os = "windows")]
 const TEST_DISPID_FIRE_CHANGED_PAIR: i32 = 4;
-#[cfg(target_os = "windows")]
 const TEST_EVENT_CHANGED: i32 = 1;
-#[cfg(target_os = "windows")]
 const TEST_EVENT_CHANGED_SOURCE_INTERFACE: i32 = 2;
-#[cfg(target_os = "windows")]
 const TEST_EVENT_CHANGED_PAIR: i32 = 3;
 
 #[cfg(target_os = "windows")]
@@ -4077,6 +4270,91 @@ mod tests {
             .load_typelib_metadata(&beta)
             .expect("beta metadata should remain cached/available");
         assert_eq!(beta_again.identity.reference_name, "OxVba");
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn windows_typelib_testdispatch_metadata_includes_member_and_event_shapes() {
+        let host = StandardHostServices::new(HalProfileId::Windows, HostPolicy::interactive_dev());
+        let identity = host
+            .resolve_typelib_reference(&TypeLibResolveRequest {
+                reference_name: "OxVba".to_string(),
+                importlib_hint: Some("oxvba_testdispatch.tlb".to_string()),
+                libid_hint: None,
+                major_version_hint: Some(1),
+                minor_version_hint: Some(0),
+                lcid_hint: Some(0),
+            })
+            .expect("oxvba resolve should succeed");
+        let metadata = host
+            .load_typelib_metadata(&identity)
+            .expect("metadata load should succeed");
+        assert_eq!(
+            metadata.member_name_to_token,
+            vec![
+                ("Count".to_string(), super::TEST_DISPID_COUNT),
+                ("Exists".to_string(), super::TEST_DISPID_EXISTS),
+                ("FireChanged".to_string(), super::TEST_DISPID_FIRE_CHANGED),
+                (
+                    "FireChangedPair".to_string(),
+                    super::TEST_DISPID_FIRE_CHANGED_PAIR
+                ),
+            ]
+        );
+        let fire_changed_pair = metadata
+            .members
+            .iter()
+            .find(|entry| entry.token == super::TEST_DISPID_FIRE_CHANGED_PAIR)
+            .expect("FireChangedPair metadata should exist");
+        assert!(fire_changed_pair.requires_argument);
+        let source_interface_event = metadata
+            .events
+            .iter()
+            .find(|entry| entry.token == super::TEST_EVENT_CHANGED_SOURCE_INTERFACE)
+            .expect("source-interface event metadata should exist");
+        assert_eq!(source_interface_event.callback_arity, 1);
+        assert_eq!(
+            source_interface_event.dispatch_path,
+            super::TypeLibEventDispatchPath::SourceInterface
+        );
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn windows_native_com_binding_caches_typelib_member_and_event_specs() {
+        let host = StandardHostServices::new(HalProfileId::Windows, HostPolicy::interactive_dev());
+        let object = host
+            .create_object(4)
+            .expect("create_object should return a token");
+        let state = host
+            .com_state
+            .lock()
+            .expect("com state lock should succeed");
+        let binding = state
+            .bindings
+            .get(&object)
+            .expect("binding should be present for native object token");
+        let member = binding
+            .member_specs
+            .get(&super::TEST_DISPID_FIRE_CHANGED_PAIR)
+            .expect("member spec for FireChangedPair should be present");
+        assert_eq!(member.name, "FireChangedPair");
+        assert!(member.requires_argument);
+        let dispatch_event = binding
+            .event_specs
+            .get(&super::TEST_EVENT_CHANGED_PAIR)
+            .expect("ChangedPair event spec should be present");
+        assert_eq!(dispatch_event.callback_arity, 2);
+        assert_eq!(dispatch_event.path, super::ComEventPath::Dispatch);
+        let source_interface_event = binding
+            .event_specs
+            .get(&super::TEST_EVENT_CHANGED_SOURCE_INTERFACE)
+            .expect("source-interface event spec should be present");
+        assert_eq!(source_interface_event.callback_arity, 1);
+        assert_eq!(
+            source_interface_event.path,
+            super::ComEventPath::SourceInterface
+        );
     }
 
     #[cfg(target_os = "windows")]

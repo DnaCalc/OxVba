@@ -143,6 +143,29 @@ pub struct TypeLibResolvedIdentity {
 pub struct TypeLibMetadataBlob {
     pub identity: TypeLibResolvedIdentity,
     pub member_name_to_token: Vec<(String, ValueToken)>,
+    pub members: Vec<TypeLibMemberMetadata>,
+    pub events: Vec<TypeLibEventMetadata>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TypeLibMemberMetadata {
+    pub name: String,
+    pub token: ValueToken,
+    pub requires_argument: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TypeLibEventDispatchPath {
+    Dispatch,
+    SourceInterface,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TypeLibEventMetadata {
+    pub name: String,
+    pub token: ValueToken,
+    pub callback_arity: u8,
+    pub dispatch_path: TypeLibEventDispatchPath,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
