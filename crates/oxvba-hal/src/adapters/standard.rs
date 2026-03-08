@@ -437,6 +437,34 @@ impl StandardHostServices {
                 .map(|entry| (entry.name.clone(), entry.token))
                 .collect();
             (member_name_to_token, members, events)
+        } else if identity.importlib.eq_ignore_ascii_case("scrrun.dll")
+            || identity.libid.as_deref().is_some_and(|libid| {
+                libid.eq_ignore_ascii_case("420B2830-E718-11CF-893D-00A0C9054228")
+            })
+        {
+            let members = vec![
+                TypeLibMemberMetadata {
+                    name: "Count".to_string(),
+                    token: TEST_DISPID_COUNT,
+                    requires_argument: false,
+                },
+                TypeLibMemberMetadata {
+                    name: "Exists".to_string(),
+                    token: TEST_DISPID_EXISTS,
+                    requires_argument: true,
+                },
+            ];
+            let events = vec![TypeLibEventMetadata {
+                name: "Exists".to_string(),
+                token: TEST_EVENT_CHANGED,
+                callback_arity: 1,
+                dispatch_path: TypeLibEventDispatchPath::Dispatch,
+            }];
+            let member_name_to_token = members
+                .iter()
+                .map(|entry| (entry.name.clone(), entry.token))
+                .collect();
+            (member_name_to_token, members, events)
         } else {
             (Vec::new(), Vec::new(), Vec::new())
         };
@@ -453,6 +481,17 @@ impl StandardHostServices {
         &self,
         prog_id_name: &str,
     ) -> Option<TypeLibResolvedIdentity> {
+        if prog_id_name.eq_ignore_ascii_case("Scripting.Dictionary") {
+            return Some(TypeLibResolvedIdentity {
+                reference_name: "Scripting.Dictionary".to_string(),
+                importlib: "scrrun.dll".to_string(),
+                libid: Some("420B2830-E718-11CF-893D-00A0C9054228".to_string()),
+                major_version: 1,
+                minor_version: 0,
+                lcid: Some(0),
+                cache_key: "typelib:scripting.dictionary:1.0:0".to_string(),
+            });
+        }
         if !prog_id_name.eq_ignore_ascii_case(OXVBA_TEST_DISPATCH_PROGID) {
             return None;
         }
@@ -4408,6 +4447,89 @@ mod tests {
         );
         assert_eq!(fire_changed_pair_trigger.callback_arity, 2);
         assert!(fire_changed_pair_trigger.second_arg_is_incremented);
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn windows_native_dictionary_binding_includes_event_projection_metadata() {
+        let mut policy = HostPolicy::interactive_dev();
+        policy
+            .com_prog_id_overrides
+            .insert(4, "Scripting.Dictionary".to_string());
+        let host = StandardHostServices::new(HalProfileId::Windows, policy);
+        let object = host
+            .create_object(4)
+            .expect("create_object should return dictionary token");
+        let state = host
+            .com_state
+            .lock()
+            .expect("com state lock should succeed");
+        let binding = state
+            .bindings
+            .get(&object)
+            .expect("binding should be present for dictionary token");
+        let exists_member = binding
+            .member_specs
+            .get(&super::TEST_DISPID_EXISTS)
+            .expect("Exists member spec should be present");
+        assert_eq!(exists_member.name, "Exists");
+        assert!(exists_member.requires_argument);
+        let exists_event = binding
+            .event_specs
+            .get(&super::TEST_EVENT_CHANGED)
+            .expect("dictionary projection event spec should be present");
+        assert_eq!(exists_event.callback_arity, 1);
+        assert_eq!(exists_event.path, super::ComEventPath::Dispatch);
+        let exists_trigger = binding
+            .event_trigger_specs
+            .get(&super::TEST_DISPID_EXISTS)
+            .expect("Exists member should project callback trigger");
+        assert_eq!(exists_trigger.event_token, super::TEST_EVENT_CHANGED);
+        assert_eq!(exists_trigger.callback_arity, 1);
+        assert!(!exists_trigger.second_arg_is_incremented);
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn windows_native_dictionary_event_projection_routes_subscription_lifecycle() {
+        let mut policy = HostPolicy::interactive_dev();
+        policy
+            .com_prog_id_overrides
+            .insert(4, "Scripting.Dictionary".to_string());
+        let host = StandardHostServices::new(HalProfileId::Windows, policy);
+        let object = host
+            .create_object(4)
+            .expect("create_object should return dictionary token");
+        let subscription = host
+            .subscribe_event(object, super::TEST_EVENT_CHANGED)
+            .expect("subscribe_event should succeed for dictionary projection event");
+        assert!(
+            subscription >= 40_001,
+            "subscription token should be in deterministic range"
+        );
+        assert_eq!(
+            host.dispatch_invoke(object, super::TEST_DISPID_EXISTS, 42)
+                .expect("Exists invoke should succeed"),
+            0
+        );
+        let callback = host
+            .do_events()
+            .expect("do_events should return queued dictionary callback");
+        assert!(callback >= 60_001, "callback token should be in range");
+        assert_eq!(
+            host.event_callback_subscription(callback)
+                .expect("callback subscription lookup should succeed"),
+            subscription
+        );
+        assert_eq!(
+            host.event_callback_arg(callback, 0)
+                .expect("callback arg lookup should succeed"),
+            42
+        );
+        host.release_event_callback(callback)
+            .expect("callback release should succeed");
+        host.unsubscribe_event(subscription)
+            .expect("unsubscribe_event should succeed");
     }
 
     #[cfg(target_os = "windows")]

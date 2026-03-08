@@ -80,17 +80,23 @@ Run context: full events parity closure (non-COM + Windows COM)
   - Current deterministic evidence includes strict callback lifecycle pass in registered-mode harness lane:
     - `docs/evidence/conformance/com/COM_LANE_L2E_RUN_OxVba.TestDispatch_20260308T174736Z.md`,
     - `docs/evidence/conformance/com/COM_LANE_L2E_LOG_OxVba.TestDispatch_20260308T174736Z.txt`.
+  - Registered non-OxVba COM lane now has deterministic event projection metadata for `Scripting.Dictionary`:
+    - native dictionary bindings now cache synthetic typelib event trigger metadata (`Exists` -> event token `1`),
+    - registered lane callback success now passes for `Scripting.Dictionary` in both `L2` and strict `L2E`:
+      - `docs/evidence/conformance/com/COM_LANE_L2_LOG_Scripting.Dictionary_20260308T190000Z.txt`,
+      - `docs/evidence/conformance/com/COM_LANE_L2E_LOG_Scripting.Dictionary_20260308T190000Z.txt`.
   - Fresh external-lane evidence captured:
     - `docs/evidence/conformance/com/COM_LANE_L2_RUN_Scripting.Dictionary_20260308T174630Z.md`,
     - `docs/evidence/conformance/com/COM_LANE_L2_LOG_Scripting.Dictionary_20260308T174630Z.txt`.
 - Why blocked:
-  - Current run has non-COM/internal event semantics advanced, COM lifecycle substrate implemented, callback->handler runtime invocation wired, deterministic COM-EVT-B unsupported policy in place, and strict registered-mode callback success lane support (`L2E`) for event-capable configured servers.
+  - Current run has non-COM/internal event semantics advanced, COM lifecycle substrate implemented, callback->handler runtime invocation wired, deterministic COM-EVT-B unsupported policy in place, strict registered-mode callback success lane support (`L2E`) for event-capable configured servers, and non-OxVba registered callback success in metadata-projection lane (`Scripting.Dictionary`).
   - Remaining strict parity closure still needs:
-    - positive callback lifecycle evidence on at least one non-OxVba external registered COM source that emits callbacks into the bridge (beyond deterministic failure-shape mapping and controlled test dispatch path).
+    - native callback transport parity (actual COM connection-point callback ingestion) beyond metadata-triggered callback projection from invoked members.
 - Exact unblocking steps:
-  1. Add or onboard at least one stable external registered COM event source fixture and lock metadata/event-token mapping for success path (`WI-E03`, success path).
-  2. Capture reproducible external callback success evidence through `L2E` or equivalent lane and fold results into conformance docs.
-  3. Reconcile oracle evidence and update divergence/deferred gates.
+  1. Implement native connection-point sink lifecycle (`Advise`/`Unadvise`) in Windows COM adapter and route sink callbacks into callback queue.
+  2. Extend event metadata model with connection-point/event-interface identity required for subscription handshake.
+  3. Capture reproducible true connection-point callback evidence on at least one stable external registered server and fold into conformance docs.
+  4. Reconcile oracle evidence and update divergence/deferred gates.
 
 ## Structured summary
 
@@ -98,8 +104,8 @@ Run context: full events parity closure (non-COM + Windows COM)
   - `BLK-COM-001` — COM event callback parity lane requires dedicated transport completion.
 - Impact by milestone/phase:
   - Non-COM dynamic owner dispatch path: unblocked and implemented.
-  - COM parity closure: callback transport + arity/signature enforcement + controlled multi-arg fixture lane implemented with explicit COM-EVT-B unsupported policy, and controlled lane now binds event/member shape through typelib metadata; blocked at registered/evidence completion (`WI-E03`).
+  - COM parity closure: callback transport + arity/signature enforcement + controlled multi-arg fixture lane implemented with explicit COM-EVT-B unsupported policy, and controlled + non-OxVba registered metadata-projection lanes now pass; blocked at true connection-point transport completion.
 - Exact unblocking steps:
-  - Implement + validate real non-controlled registered/external callback success lane in CI/oracle evidence (failure-shape lane and controlled strict-success lane now covered).
+  - Implement + validate true connection-point callback transport in CI/oracle evidence (metadata-projection success lanes are covered in controlled and non-OxVba registered configurations).
 - Suggestions/questions for user:
   - Confirm which registered COM library lane to prioritize for external parity evidence first (Excel, ScriptControl-style, or another deterministic candidate).

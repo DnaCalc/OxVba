@@ -41,7 +41,7 @@ mod windows_registered_com_lane {
         }
 
         fn is_event_capable_for_registered_lane(self) -> bool {
-            matches!(self, Self::OxvbaTestDispatch)
+            matches!(self, Self::ScriptingDictionary | Self::OxvbaTestDispatch)
         }
     }
 
@@ -76,11 +76,19 @@ mod windows_registered_com_lane {
     }
 
     fn registered_event_trigger_member() -> i32 {
-        read_env_i32("OXVBA_REGISTERED_EVENT_TRIGGER_MEMBER", 3)
+        let default_member = match selected_registered_prog_id_flavor() {
+            RegisteredProgIdFlavor::ScriptingDictionary => 2,
+            _ => 3,
+        };
+        read_env_i32("OXVBA_REGISTERED_EVENT_TRIGGER_MEMBER", default_member)
     }
 
     fn registered_event_trigger_arg() -> i32 {
-        read_env_i32("OXVBA_REGISTERED_EVENT_TRIGGER_ARG", 77)
+        let default_arg = match selected_registered_prog_id_flavor() {
+            RegisteredProgIdFlavor::ScriptingDictionary => 42,
+            _ => 77,
+        };
+        read_env_i32("OXVBA_REGISTERED_EVENT_TRIGGER_ARG", default_arg)
     }
 
     fn run_registered_lane_source(source: &str) -> Vec<i32> {
@@ -284,7 +292,7 @@ End Sub
             out
         );
         let err = engine
-            .subscribe_com_event_handler(object, 1, "Sink_OnChanged")
+            .subscribe_com_event_handler(object, 99, "Sink_OnChanged")
             .expect_err("object without event connection-point mapping should fail subscribe");
 
         assert_eq!(err.phase(), DiagnosticPhase::Runtime);

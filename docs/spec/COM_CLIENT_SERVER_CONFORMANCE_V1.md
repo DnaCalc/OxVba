@@ -48,6 +48,7 @@ Primary checks:
 - argument/result conversion subset parity.
 - deterministic COM event subscribe failure mapping for external ProgIDs without surfaced event metadata (`COM-E-EVENT-CONNECTIONPOINT-MISSING` / explicit path-unsupported mapping),
 - deterministic COM event unadvise failure mapping for unknown subscription tokens (`COM-E-EVENT-ADVISE-FAILED`).
+- registered non-OxVba callback projection success lane (`Scripting.Dictionary`: `Exists` member trigger metadata -> callback lifecycle pass in `L2`).
 
 ### Lane L2E: Windows registered event-callback lane (event-capable ProgID)
 
