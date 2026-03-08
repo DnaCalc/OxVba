@@ -1,4 +1,4 @@
-    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.17s
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.15s
      Running tests\com_client_end_to_end.rs (target\debug\deps\com_client_end_to_end-ee29b9689bc0eee5.exe)
 
 running 5 tests
