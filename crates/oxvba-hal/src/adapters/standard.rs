@@ -272,6 +272,23 @@ impl StandardHostServices {
                     subscription,
                     entry.object
                 );
+                #[cfg(target_os = "windows")]
+                if let ComEventSubscriptionTransport::NativeConnectionPoint(native) =
+                    entry.transport
+                {
+                    hal_contract_assert!(
+                        native.connection_point != 0,
+                        "op={} observed native COM subscription {} with null connection point",
+                        op,
+                        subscription
+                    );
+                    hal_contract_assert!(
+                        native.cookie != 0,
+                        "op={} observed native COM subscription {} with zero cookie",
+                        op,
+                        subscription
+                    );
+                }
             }
             for callback in &state.pending_callbacks {
                 hal_contract_assert!(
@@ -997,6 +1014,63 @@ impl StandardHostServices {
         Ok(())
     }
 
+    #[cfg(target_os = "windows")]
+    fn resolve_event_subscription_transport(
+        &self,
+        binding: &ComBinding,
+        subscription: i32,
+        object: i32,
+        event: i32,
+        expected_arity: usize,
+    ) -> HalResult<ComEventSubscriptionTransport> {
+        if binding.native_dispatch == 0 {
+            return Ok(ComEventSubscriptionTransport::Projection);
+        }
+        self.ensure_thread_com_apartment("subscribe_event")?;
+        let dispatch = binding.native_dispatch as *mut RawIDispatch;
+        let advised = unsafe {
+            raw_try_advise_oxvba_test_dispatch_event(
+                dispatch,
+                Arc::clone(&self.com_state),
+                subscription,
+                object,
+                event,
+                expected_arity,
+            )
+        }
+        .map_err(|message| {
+            HalError::adapter_fault(
+                self.profile,
+                CapabilityId::ComActivationDispatch,
+                "subscribe_event",
+                format!("COM-E-EVENT-ADVISE-FAILED: {message}"),
+            )
+        })?;
+        Ok(match advised {
+            Some(native) => ComEventSubscriptionTransport::NativeConnectionPoint(native),
+            None => ComEventSubscriptionTransport::Projection,
+        })
+    }
+
+    #[cfg(target_os = "windows")]
+    fn release_event_subscription_transport(
+        &self,
+        transport: ComEventSubscriptionTransport,
+    ) -> HalResult<()> {
+        if let ComEventSubscriptionTransport::NativeConnectionPoint(native) = transport {
+            self.ensure_thread_com_apartment("unsubscribe_event")?;
+            unsafe { raw_unadvise_connection_point(native) }.map_err(|message| {
+                HalError::adapter_fault(
+                    self.profile,
+                    CapabilityId::ComActivationDispatch,
+                    "unsubscribe_event",
+                    format!("COM-E-EVENT-ADVISE-FAILED: {message}"),
+                )
+            })?;
+        }
+        Ok(())
+    }
+
     #[cfg(not(target_os = "windows"))]
     fn queue_com_event_callbacks(
         &self,
@@ -1021,6 +1095,26 @@ impl StandardHostServices {
             "dispatch_invoke",
             "native COM invoke unavailable on this platform",
         ))
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    fn resolve_event_subscription_transport(
+        &self,
+        _binding: &ComBinding,
+        _subscription: i32,
+        _object: i32,
+        _event: i32,
+        _expected_arity: usize,
+    ) -> HalResult<ComEventSubscriptionTransport> {
+        Ok(ComEventSubscriptionTransport::Projection)
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    fn release_event_subscription_transport(
+        &self,
+        _transport: ComEventSubscriptionTransport,
+    ) -> HalResult<()> {
+        Ok(())
     }
 }
 
@@ -1585,39 +1679,73 @@ impl ComHal for StandardHostServices {
                 "COM-E-EVENT-PATH-UNSUPPORTED: native COM event subscription requires host-backed Windows native mode",
             ));
         }
+        let (binding, expected_arity, subscription) = {
+            let mut state = self.com_lock(capability, "subscribe_event")?;
+            self.assert_com_invariants(&state, "subscribe_event-pre");
+            let Some(binding) = state.bindings.get(&object).cloned() else {
+                return Err(HalError::adapter_fault(
+                    self.profile,
+                    capability,
+                    "subscribe_event",
+                    format!(
+                        "COM-E-EVENT-CONNECTIONPOINT-MISSING: unknown COM object token {object}"
+                    ),
+                ));
+            };
+            if com_event_is_source_interface_only(&binding, event) {
+                return Err(HalError::adapter_fault(
+                    self.profile,
+                    capability,
+                    "subscribe_event",
+                    "COM-E-EVENT-PATH-UNSUPPORTED: source-interface COM event callbacks (COM-EVT-B) are unsupported in current lane",
+                ));
+            }
+            let Some(expected_arity) = com_event_signature_arity_for_binding(&binding, event)
+            else {
+                return Err(HalError::adapter_fault(
+                    self.profile,
+                    capability,
+                    "subscribe_event",
+                    format!(
+                        "COM-E-EVENT-CONNECTIONPOINT-MISSING: object `{}` does not expose event token {}",
+                        binding.prog_id_name, event
+                    ),
+                ));
+            };
+            let subscription = state.allocate_subscription();
+            (binding, expected_arity, subscription)
+        };
+        let transport = self.resolve_event_subscription_transport(
+            &binding,
+            subscription,
+            object,
+            event,
+            expected_arity,
+        )?;
         let mut state = self.com_lock(capability, "subscribe_event")?;
-        self.assert_com_invariants(&state, "subscribe_event-pre");
-        let Some(binding) = state.bindings.get(&object).cloned() else {
+        self.assert_com_invariants(&state, "subscribe_event-pre-insert");
+        if !state.bindings.contains_key(&object) {
+            if let Err(err) = self.release_event_subscription_transport(transport) {
+                eprintln!(
+                    "[oxvba-hal] failed to release abandoned COM event transport for object {object}: {}",
+                    err.message
+                );
+            }
             return Err(HalError::adapter_fault(
                 self.profile,
                 capability,
                 "subscribe_event",
                 format!("COM-E-EVENT-CONNECTIONPOINT-MISSING: unknown COM object token {object}"),
             ));
-        };
-        if com_event_is_source_interface_only(&binding, event) {
-            return Err(HalError::adapter_fault(
-                self.profile,
-                capability,
-                "subscribe_event",
-                "COM-E-EVENT-PATH-UNSUPPORTED: source-interface COM event callbacks (COM-EVT-B) are unsupported in current lane",
-            ));
         }
-        if com_event_signature_arity_for_binding(&binding, event).is_none() {
-            return Err(HalError::adapter_fault(
-                self.profile,
-                capability,
-                "subscribe_event",
-                format!(
-                    "COM-E-EVENT-CONNECTIONPOINT-MISSING: object `{}` does not expose event token {}",
-                    binding.prog_id_name, event
-                ),
-            ));
-        }
-        let subscription = state.allocate_subscription();
-        state
-            .subscriptions
-            .insert(subscription, ComEventSubscription { object, event });
+        state.subscriptions.insert(
+            subscription,
+            ComEventSubscription {
+                object,
+                event,
+                transport,
+            },
+        );
         self.assert_com_invariants(&state, "subscribe_event-post");
         Ok(subscription)
     }
@@ -1638,8 +1766,24 @@ impl ComHal for StandardHostServices {
                 "COM-E-EVENT-PATH-UNSUPPORTED: native COM event subscription requires host-backed Windows native mode",
             ));
         }
+        let transport = {
+            let state = self.com_lock(capability, "unsubscribe_event")?;
+            self.assert_com_invariants(&state, "unsubscribe_event-pre");
+            let Some(entry) = state.subscriptions.get(&subscription) else {
+                return Err(HalError::adapter_fault(
+                    self.profile,
+                    capability,
+                    "unsubscribe_event",
+                    format!(
+                        "COM-E-EVENT-ADVISE-FAILED: unknown COM event subscription token {subscription}"
+                    ),
+                ));
+            };
+            entry.transport
+        };
+        self.release_event_subscription_transport(transport)?;
         let mut state = self.com_lock(capability, "unsubscribe_event")?;
-        self.assert_com_invariants(&state, "unsubscribe_event-pre");
+        self.assert_com_invariants(&state, "unsubscribe_event-pre-remove");
         let Some(entry) = state.subscriptions.remove(&subscription) else {
             return Err(HalError::adapter_fault(
                 self.profile,
@@ -1667,7 +1811,7 @@ impl ComHal for StandardHostServices {
         state
             .pending_callbacks
             .retain(|callback| !stale_callbacks.contains(callback));
-        self.assert_com_invariants(&state, "unsubscribe_event-post");
+        self.assert_com_invariants(&state, "unsubscribe_event-post-remove");
         Ok(1)
     }
 
@@ -2452,12 +2596,31 @@ impl ComState {
         60_000i32.saturating_add(self.next_callback)
     }
 
+    fn queue_callback_for_subscription(&mut self, subscription: i32, args: &[i32]) -> bool {
+        let Some(entry) = self.subscriptions.get(&subscription).cloned() else {
+            return false;
+        };
+        let callback = self.allocate_callback();
+        self.callbacks.insert(
+            callback,
+            ComEventCallback {
+                subscription,
+                object: entry.object,
+                event: entry.event,
+                args: args.to_vec(),
+            },
+        );
+        self.pending_callbacks.push(callback);
+        true
+    }
+
     fn queue_callbacks_for_source_event(&mut self, object: i32, event: i32, args: &[i32]) -> usize {
         let targets: Vec<i32> = self
             .subscriptions
             .iter()
             .filter_map(|(subscription, entry)| {
-                if entry.object == object && entry.event == event {
+                if entry.object == object && entry.event == event && entry.transport.is_projection()
+                {
                     Some(*subscription)
                 } else {
                     None
@@ -2465,17 +2628,7 @@ impl ComState {
             })
             .collect();
         for subscription in &targets {
-            let callback = self.allocate_callback();
-            self.callbacks.insert(
-                callback,
-                ComEventCallback {
-                    subscription: *subscription,
-                    object,
-                    event,
-                    args: args.to_vec(),
-                },
-            );
-            self.pending_callbacks.push(callback);
+            let _ = self.queue_callback_for_subscription(*subscription, args);
         }
         targets.len()
     }
@@ -2526,10 +2679,31 @@ impl ComBinding {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 struct ComEventSubscription {
     object: i32,
     event: i32,
+    transport: ComEventSubscriptionTransport,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ComEventSubscriptionTransport {
+    Projection,
+    #[cfg(target_os = "windows")]
+    NativeConnectionPoint(ComNativeConnectionPointTransport),
+}
+
+impl ComEventSubscriptionTransport {
+    const fn is_projection(self) -> bool {
+        matches!(self, Self::Projection)
+    }
+}
+
+#[cfg(target_os = "windows")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct ComNativeConnectionPointTransport {
+    connection_point: usize,
+    cookie: u32,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -2732,6 +2906,15 @@ fn com_event_callback_args_from_member_token(
 #[cfg(target_os = "windows")]
 impl Drop for ComState {
     fn drop(&mut self) {
+        for subscription in self.subscriptions.values() {
+            if let ComEventSubscriptionTransport::NativeConnectionPoint(native) =
+                subscription.transport
+            {
+                unsafe {
+                    let _ = raw_unadvise_connection_point(native);
+                }
+            }
+        }
         self.subscriptions.clear();
         self.callbacks.clear();
         self.pending_callbacks.clear();
@@ -2815,6 +2998,30 @@ const IID_IUNKNOWN: windows_sys::core::GUID = windows_sys::core::GUID {
 };
 
 #[cfg(target_os = "windows")]
+const IID_ICONNECTIONPOINTCONTAINER: windows_sys::core::GUID = windows_sys::core::GUID {
+    data1: 0xB196_B284,
+    data2: 0xBAB4,
+    data3: 0x101A,
+    data4: [0xB6, 0x9C, 0x00, 0xAA, 0x00, 0x34, 0x1D, 0x07],
+};
+
+#[cfg(target_os = "windows")]
+const IID_ICONNECTIONPOINT: windows_sys::core::GUID = windows_sys::core::GUID {
+    data1: 0xB196_B286,
+    data2: 0xBAB4,
+    data3: 0x101A,
+    data4: [0xB6, 0x9C, 0x00, 0xAA, 0x00, 0x34, 0x1D, 0x07],
+};
+
+#[cfg(target_os = "windows")]
+const IID_OXVBA_TEST_DISPATCH_EVENTS: windows_sys::core::GUID = windows_sys::core::GUID {
+    data1: 0x1111_1112,
+    data2: 0x2222,
+    data3: 0x3333,
+    data4: [0x44, 0x44, 0x55, 0x55, 0x55, 0x55, 0x55, 0x56],
+};
+
+#[cfg(target_os = "windows")]
 const COM_S_OK: i32 = 0;
 #[cfg(target_os = "windows")]
 const COM_E_NOINTERFACE: i32 = 0x8000_4002u32 as i32;
@@ -2830,6 +3037,10 @@ const COM_DISP_E_UNKNOWNNAME: i32 = 0x8002_0006u32 as i32;
 const COM_DISP_E_BADPARAMCOUNT: i32 = 0x8002_000Eu32 as i32;
 #[cfg(target_os = "windows")]
 const COM_DISP_E_TYPEMISMATCH: i32 = 0x8002_0005u32 as i32;
+#[cfg(target_os = "windows")]
+const COM_CONNECT_E_NOCONNECTION: i32 = 0x8004_0004u32 as i32;
+#[cfg(target_os = "windows")]
+const COM_CONNECT_E_CANNOTCONNECT: i32 = 0x8004_0002u32 as i32;
 const TEST_DISPID_COUNT: i32 = 1;
 const TEST_DISPID_EXISTS: i32 = 2;
 const TEST_DISPID_FIRE_CHANGED: i32 = 3;
@@ -2848,6 +3059,12 @@ struct RawIUnknownVtbl {
     ) -> i32,
     add_ref: unsafe extern "system" fn(this: *mut core::ffi::c_void) -> u32,
     release: unsafe extern "system" fn(this: *mut core::ffi::c_void) -> u32,
+}
+
+#[cfg(target_os = "windows")]
+#[repr(C)]
+struct RawIUnknown {
+    vtbl: *const RawIUnknownVtbl,
 }
 
 #[cfg(target_os = "windows")]
@@ -2891,9 +3108,96 @@ struct RawIDispatch {
 
 #[cfg(target_os = "windows")]
 #[repr(C)]
-struct OxvbaTestDispatch {
+struct RawIConnectionPointContainerVtbl {
+    unknown: RawIUnknownVtbl,
+    enum_connection_points: unsafe extern "system" fn(
+        this: *mut core::ffi::c_void,
+        pp_enum: *mut *mut core::ffi::c_void,
+    ) -> i32,
+    find_connection_point: unsafe extern "system" fn(
+        this: *mut core::ffi::c_void,
+        riid: *const windows_sys::core::GUID,
+        pp_cp: *mut *mut core::ffi::c_void,
+    ) -> i32,
+}
+
+#[cfg(target_os = "windows")]
+#[repr(C)]
+struct RawIConnectionPointContainer {
+    vtbl: *const RawIConnectionPointContainerVtbl,
+}
+
+#[cfg(target_os = "windows")]
+#[repr(C)]
+struct RawIConnectionPointVtbl {
+    unknown: RawIUnknownVtbl,
+    get_connection_interface: unsafe extern "system" fn(
+        this: *mut core::ffi::c_void,
+        p_iid: *mut windows_sys::core::GUID,
+    ) -> i32,
+    get_connection_point_container: unsafe extern "system" fn(
+        this: *mut core::ffi::c_void,
+        pp_cpc: *mut *mut core::ffi::c_void,
+    ) -> i32,
+    advise: unsafe extern "system" fn(
+        this: *mut core::ffi::c_void,
+        p_unk_sink: *mut core::ffi::c_void,
+        pdw_cookie: *mut u32,
+    ) -> i32,
+    unadvise: unsafe extern "system" fn(this: *mut core::ffi::c_void, dw_cookie: u32) -> i32,
+    enum_connections: unsafe extern "system" fn(
+        this: *mut core::ffi::c_void,
+        pp_enum: *mut *mut core::ffi::c_void,
+    ) -> i32,
+}
+
+#[cfg(target_os = "windows")]
+#[repr(C)]
+struct RawIConnectionPoint {
+    vtbl: *const RawIConnectionPointVtbl,
+}
+
+#[cfg(target_os = "windows")]
+#[repr(C)]
+struct OxvbaTestDispatchInterface {
+    vtbl: *const RawIDispatchVtbl,
+    owner: *mut OxvbaTestDispatchObject,
+}
+
+#[cfg(target_os = "windows")]
+#[repr(C)]
+struct OxvbaTestConnectionPointContainerInterface {
+    vtbl: *const RawIConnectionPointContainerVtbl,
+    owner: *mut OxvbaTestDispatchObject,
+}
+
+#[cfg(target_os = "windows")]
+#[repr(C)]
+struct OxvbaTestConnectionPointInterface {
+    vtbl: *const RawIConnectionPointVtbl,
+    owner: *mut OxvbaTestDispatchObject,
+}
+
+#[cfg(target_os = "windows")]
+struct OxvbaTestDispatchObject {
+    dispatch: OxvbaTestDispatchInterface,
+    connection_point_container: OxvbaTestConnectionPointContainerInterface,
+    connection_point: OxvbaTestConnectionPointInterface,
+    ref_count: AtomicU32,
+    next_cookie: AtomicU32,
+    sinks: Mutex<BTreeMap<u32, RawDispatchPtr>>,
+}
+
+#[cfg(target_os = "windows")]
+#[repr(C)]
+struct OxvbaComEventSink {
     dispatch: RawIDispatch,
     ref_count: AtomicU32,
+    com_state: Arc<Mutex<ComState>>,
+    subscription: i32,
+    object: i32,
+    event: i32,
+    expected_arity: usize,
 }
 
 #[cfg(target_os = "windows")]
@@ -2910,14 +3214,93 @@ static OXVBA_TEST_DISPATCH_VTBL: RawIDispatchVtbl = RawIDispatchVtbl {
 };
 
 #[cfg(target_os = "windows")]
+static OXVBA_TEST_CONNECTIONPOINTCONTAINER_VTBL: RawIConnectionPointContainerVtbl =
+    RawIConnectionPointContainerVtbl {
+        unknown: RawIUnknownVtbl {
+            query_interface: oxvba_test_connection_point_container_query_interface,
+            add_ref: oxvba_test_connection_point_container_add_ref,
+            release: oxvba_test_connection_point_container_release,
+        },
+        enum_connection_points: oxvba_test_enum_connection_points,
+        find_connection_point: oxvba_test_find_connection_point,
+    };
+
+#[cfg(target_os = "windows")]
+static OXVBA_TEST_CONNECTIONPOINT_VTBL: RawIConnectionPointVtbl = RawIConnectionPointVtbl {
+    unknown: RawIUnknownVtbl {
+        query_interface: oxvba_test_connection_point_query_interface,
+        add_ref: oxvba_test_connection_point_add_ref,
+        release: oxvba_test_connection_point_release,
+    },
+    get_connection_interface: oxvba_test_get_connection_interface,
+    get_connection_point_container: oxvba_test_get_connection_point_container,
+    advise: oxvba_test_advise,
+    unadvise: oxvba_test_unadvise,
+    enum_connections: oxvba_test_enum_connections,
+};
+
+#[cfg(target_os = "windows")]
+static OXVBA_COM_EVENT_SINK_VTBL: RawIDispatchVtbl = RawIDispatchVtbl {
+    unknown: RawIUnknownVtbl {
+        query_interface: oxvba_event_sink_query_interface,
+        add_ref: oxvba_event_sink_add_ref,
+        release: oxvba_event_sink_release,
+    },
+    get_type_info_count: oxvba_event_sink_get_type_info_count,
+    get_type_info: oxvba_event_sink_get_type_info,
+    get_ids_of_names: oxvba_event_sink_get_ids_of_names,
+    invoke: oxvba_event_sink_invoke,
+};
+
+#[cfg(target_os = "windows")]
 fn create_oxvba_test_dispatch() -> *mut RawIDispatch {
-    let object = Box::new(OxvbaTestDispatch {
-        dispatch: RawIDispatch {
+    let mut object = Box::new(OxvbaTestDispatchObject {
+        dispatch: OxvbaTestDispatchInterface {
             vtbl: &OXVBA_TEST_DISPATCH_VTBL,
+            owner: std::ptr::null_mut(),
+        },
+        connection_point_container: OxvbaTestConnectionPointContainerInterface {
+            vtbl: &OXVBA_TEST_CONNECTIONPOINTCONTAINER_VTBL,
+            owner: std::ptr::null_mut(),
+        },
+        connection_point: OxvbaTestConnectionPointInterface {
+            vtbl: &OXVBA_TEST_CONNECTIONPOINT_VTBL,
+            owner: std::ptr::null_mut(),
         },
         ref_count: AtomicU32::new(1),
+        next_cookie: AtomicU32::new(0),
+        sinks: Mutex::new(BTreeMap::new()),
     });
-    Box::into_raw(object).cast::<RawIDispatch>()
+    let object_ptr: *mut OxvbaTestDispatchObject = &mut *object;
+    object.dispatch.owner = object_ptr;
+    object.connection_point_container.owner = object_ptr;
+    object.connection_point.owner = object_ptr;
+    let dispatch_ptr =
+        (&mut object.dispatch as *mut OxvbaTestDispatchInterface).cast::<RawIDispatch>();
+    let _ = Box::into_raw(object);
+    dispatch_ptr
+}
+
+#[cfg(target_os = "windows")]
+fn create_oxvba_com_event_sink(
+    com_state: Arc<Mutex<ComState>>,
+    subscription: i32,
+    object: i32,
+    event: i32,
+    expected_arity: usize,
+) -> *mut RawIDispatch {
+    let sink = Box::new(OxvbaComEventSink {
+        dispatch: RawIDispatch {
+            vtbl: &OXVBA_COM_EVENT_SINK_VTBL,
+        },
+        ref_count: AtomicU32::new(1),
+        com_state,
+        subscription,
+        object,
+        event,
+        expected_arity,
+    });
+    Box::into_raw(sink).cast::<RawIDispatch>()
 }
 
 #[cfg(target_os = "windows")]
@@ -2949,8 +3332,184 @@ unsafe fn read_utf16_z(ptr: *const u16) -> Option<String> {
 
 #[cfg(target_os = "windows")]
 #[allow(unsafe_op_in_unsafe_fn)]
-unsafe fn as_oxvba_test_dispatch(this: *mut core::ffi::c_void) -> *mut OxvbaTestDispatch {
-    this.cast::<OxvbaTestDispatch>()
+unsafe fn as_oxvba_test_dispatch_owner_from_dispatch(
+    this: *mut core::ffi::c_void,
+) -> *mut OxvbaTestDispatchObject {
+    let iface = this.cast::<OxvbaTestDispatchInterface>();
+    (*iface).owner
+}
+
+#[cfg(target_os = "windows")]
+#[allow(unsafe_op_in_unsafe_fn)]
+unsafe fn as_oxvba_test_dispatch_owner_from_connection_point_container(
+    this: *mut core::ffi::c_void,
+) -> *mut OxvbaTestDispatchObject {
+    let iface = this.cast::<OxvbaTestConnectionPointContainerInterface>();
+    (*iface).owner
+}
+
+#[cfg(target_os = "windows")]
+#[allow(unsafe_op_in_unsafe_fn)]
+unsafe fn as_oxvba_test_dispatch_owner_from_connection_point(
+    this: *mut core::ffi::c_void,
+) -> *mut OxvbaTestDispatchObject {
+    let iface = this.cast::<OxvbaTestConnectionPointInterface>();
+    (*iface).owner
+}
+
+#[cfg(target_os = "windows")]
+#[allow(unsafe_op_in_unsafe_fn)]
+unsafe fn as_oxvba_com_event_sink(this: *mut core::ffi::c_void) -> *mut OxvbaComEventSink {
+    this.cast::<OxvbaComEventSink>()
+}
+
+#[cfg(target_os = "windows")]
+#[allow(unsafe_op_in_unsafe_fn)]
+unsafe fn oxvba_test_owner_add_ref(owner: *mut OxvbaTestDispatchObject) -> u32 {
+    (*owner).ref_count.fetch_add(1, Ordering::AcqRel) + 1
+}
+
+#[cfg(target_os = "windows")]
+#[allow(unsafe_op_in_unsafe_fn)]
+unsafe fn oxvba_test_owner_release(owner: *mut OxvbaTestDispatchObject) -> u32 {
+    let prev = (*owner).ref_count.fetch_sub(1, Ordering::AcqRel);
+    let next = prev.saturating_sub(1);
+    if next == 0 {
+        let mut sinks = match (*owner).sinks.lock() {
+            Ok(guard) => guard,
+            Err(poisoned) => poisoned.into_inner(),
+        };
+        let retained: Vec<RawDispatchPtr> = sinks.values().copied().collect();
+        sinks.clear();
+        drop(sinks);
+        for sink in retained {
+            raw_release_dispatch(sink as *mut RawIDispatch);
+        }
+        drop(Box::from_raw(owner));
+    }
+    next
+}
+
+#[cfg(target_os = "windows")]
+#[allow(unsafe_op_in_unsafe_fn)]
+unsafe fn oxvba_test_owner_query_interface(
+    owner: *mut OxvbaTestDispatchObject,
+    riid: *const windows_sys::core::GUID,
+    ppv: *mut *mut core::ffi::c_void,
+) -> i32 {
+    if ppv.is_null() {
+        return COM_E_INVALIDARG;
+    }
+    *ppv = std::ptr::null_mut();
+    if guid_equals(riid, &IID_IUNKNOWN) || guid_equals(riid, &IID_IDISPATCH) {
+        *ppv = (&mut (*owner).dispatch as *mut OxvbaTestDispatchInterface).cast();
+        let _ = oxvba_test_owner_add_ref(owner);
+        return COM_S_OK;
+    }
+    if guid_equals(riid, &IID_ICONNECTIONPOINTCONTAINER) {
+        *ppv = (&mut (*owner).connection_point_container
+            as *mut OxvbaTestConnectionPointContainerInterface)
+            .cast();
+        let _ = oxvba_test_owner_add_ref(owner);
+        return COM_S_OK;
+    }
+    if guid_equals(riid, &IID_ICONNECTIONPOINT) {
+        *ppv = (&mut (*owner).connection_point as *mut OxvbaTestConnectionPointInterface).cast();
+        let _ = oxvba_test_owner_add_ref(owner);
+        return COM_S_OK;
+    }
+    COM_E_NOINTERFACE
+}
+
+#[cfg(target_os = "windows")]
+#[allow(unsafe_op_in_unsafe_fn)]
+unsafe fn oxvba_test_fire_event(
+    owner: *mut OxvbaTestDispatchObject,
+    dispid: i32,
+    args: &[i32],
+) -> i32 {
+    let sinks: Vec<RawDispatchPtr> = {
+        let sinks = match (*owner).sinks.lock() {
+            Ok(guard) => guard,
+            Err(poisoned) => poisoned.into_inner(),
+        };
+        sinks.values().copied().collect()
+    };
+    for sink in sinks {
+        let dispatch = sink as *mut RawIDispatch;
+        let _ = raw_dispatch_invoke_event(dispatch, dispid, args);
+    }
+    COM_S_OK
+}
+
+#[cfg(target_os = "windows")]
+#[allow(unsafe_op_in_unsafe_fn)]
+unsafe fn raw_dispatch_invoke_event(
+    dispatch: *mut RawIDispatch,
+    dispid: i32,
+    args: &[i32],
+) -> Result<(), String> {
+    if dispatch.is_null() {
+        return Err("event sink dispatch pointer is null".to_string());
+    }
+    let mut variants: Vec<VARIANT> = vec![std::mem::zeroed(); args.len()];
+    for (idx, value) in args.iter().enumerate() {
+        let slot = args.len().saturating_sub(1).saturating_sub(idx);
+        variants[slot].Anonymous.Anonymous.vt = VT_I4;
+        variants[slot].Anonymous.Anonymous.Anonymous.lVal = *value;
+    }
+    let mut excep: EXCEPINFO = std::mem::zeroed();
+    let mut arg_err = 0u32;
+    let mut params = DISPPARAMS {
+        rgvarg: if variants.is_empty() {
+            std::ptr::null_mut()
+        } else {
+            variants.as_mut_ptr()
+        },
+        rgdispidNamedArgs: std::ptr::null_mut(),
+        cArgs: u32::try_from(variants.len()).unwrap_or(u32::MAX),
+        cNamedArgs: 0,
+    };
+    let hr = ((*(*dispatch).vtbl).invoke)(
+        dispatch.cast(),
+        dispid,
+        &IID_NULL,
+        0x0400,
+        DISPATCH_METHOD,
+        &mut params,
+        std::ptr::null_mut(),
+        &mut excep,
+        &mut arg_err,
+    );
+    if hr < 0 {
+        return Err(format!(
+            "IDispatch::Invoke(event dispid={dispid}) failed with HRESULT {:#010X} (arg_err={arg_err})",
+            hr as u32
+        ));
+    }
+    Ok(())
+}
+
+#[cfg(target_os = "windows")]
+#[allow(unsafe_op_in_unsafe_fn)]
+unsafe fn raw_variant_token_from_invoke_arg(
+    variant: *const VARIANT,
+    arg_index: usize,
+) -> Result<i32, i32> {
+    if variant.is_null() {
+        return Err(COM_DISP_E_TYPEMISMATCH);
+    }
+    match (*variant).Anonymous.Anonymous.vt {
+        VT_I4 => Ok((*variant).Anonymous.Anonymous.Anonymous.lVal),
+        VT_UI4 => Ok((*variant).Anonymous.Anonymous.Anonymous.ulVal as i32),
+        VT_BOOL => Ok(if (*variant).Anonymous.Anonymous.Anonymous.boolVal == 0 {
+            0
+        } else {
+            1
+        }),
+        VT_EMPTY if arg_index == 0 => Ok(0),
+        _ => Err(COM_DISP_E_TYPEMISMATCH),
+    }
 }
 
 #[cfg(target_os = "windows")]
@@ -2980,36 +3539,201 @@ unsafe extern "system" fn oxvba_test_query_interface(
     riid: *const windows_sys::core::GUID,
     ppv: *mut *mut core::ffi::c_void,
 ) -> i32 {
-    if ppv.is_null() {
-        return COM_E_INVALIDARG;
-    }
-    *ppv = std::ptr::null_mut();
-    if guid_equals(riid, &IID_IUNKNOWN) || guid_equals(riid, &IID_IDISPATCH) {
-        *ppv = this;
-        let object = as_oxvba_test_dispatch(this);
-        (*object).ref_count.fetch_add(1, Ordering::AcqRel);
-        return COM_S_OK;
-    }
-    COM_E_NOINTERFACE
+    let owner = as_oxvba_test_dispatch_owner_from_dispatch(this);
+    oxvba_test_owner_query_interface(owner, riid, ppv)
 }
 
 #[cfg(target_os = "windows")]
 #[allow(unsafe_op_in_unsafe_fn)]
 unsafe extern "system" fn oxvba_test_add_ref(this: *mut core::ffi::c_void) -> u32 {
-    let object = as_oxvba_test_dispatch(this);
-    (*object).ref_count.fetch_add(1, Ordering::AcqRel) + 1
+    let owner = as_oxvba_test_dispatch_owner_from_dispatch(this);
+    oxvba_test_owner_add_ref(owner)
 }
 
 #[cfg(target_os = "windows")]
 #[allow(unsafe_op_in_unsafe_fn)]
 unsafe extern "system" fn oxvba_test_release(this: *mut core::ffi::c_void) -> u32 {
-    let object = as_oxvba_test_dispatch(this);
-    let prev = (*object).ref_count.fetch_sub(1, Ordering::AcqRel);
-    let next = prev.saturating_sub(1);
-    if next == 0 {
-        drop(Box::from_raw(object));
+    let owner = as_oxvba_test_dispatch_owner_from_dispatch(this);
+    oxvba_test_owner_release(owner)
+}
+
+#[cfg(target_os = "windows")]
+#[allow(unsafe_op_in_unsafe_fn)]
+unsafe extern "system" fn oxvba_test_connection_point_container_query_interface(
+    this: *mut core::ffi::c_void,
+    riid: *const windows_sys::core::GUID,
+    ppv: *mut *mut core::ffi::c_void,
+) -> i32 {
+    let owner = as_oxvba_test_dispatch_owner_from_connection_point_container(this);
+    oxvba_test_owner_query_interface(owner, riid, ppv)
+}
+
+#[cfg(target_os = "windows")]
+#[allow(unsafe_op_in_unsafe_fn)]
+unsafe extern "system" fn oxvba_test_connection_point_container_add_ref(
+    this: *mut core::ffi::c_void,
+) -> u32 {
+    let owner = as_oxvba_test_dispatch_owner_from_connection_point_container(this);
+    oxvba_test_owner_add_ref(owner)
+}
+
+#[cfg(target_os = "windows")]
+#[allow(unsafe_op_in_unsafe_fn)]
+unsafe extern "system" fn oxvba_test_connection_point_container_release(
+    this: *mut core::ffi::c_void,
+) -> u32 {
+    let owner = as_oxvba_test_dispatch_owner_from_connection_point_container(this);
+    oxvba_test_owner_release(owner)
+}
+
+#[cfg(target_os = "windows")]
+unsafe extern "system" fn oxvba_test_enum_connection_points(
+    _this: *mut core::ffi::c_void,
+    _pp_enum: *mut *mut core::ffi::c_void,
+) -> i32 {
+    COM_E_NOTIMPL
+}
+
+#[cfg(target_os = "windows")]
+#[allow(unsafe_op_in_unsafe_fn)]
+unsafe extern "system" fn oxvba_test_find_connection_point(
+    this: *mut core::ffi::c_void,
+    riid: *const windows_sys::core::GUID,
+    pp_cp: *mut *mut core::ffi::c_void,
+) -> i32 {
+    if pp_cp.is_null() {
+        return COM_E_INVALIDARG;
     }
-    next
+    *pp_cp = std::ptr::null_mut();
+    if !guid_equals(riid, &IID_OXVBA_TEST_DISPATCH_EVENTS) {
+        return COM_CONNECT_E_NOCONNECTION;
+    }
+    let owner = as_oxvba_test_dispatch_owner_from_connection_point_container(this);
+    *pp_cp = (&mut (*owner).connection_point as *mut OxvbaTestConnectionPointInterface).cast();
+    let _ = oxvba_test_owner_add_ref(owner);
+    COM_S_OK
+}
+
+#[cfg(target_os = "windows")]
+#[allow(unsafe_op_in_unsafe_fn)]
+unsafe extern "system" fn oxvba_test_connection_point_query_interface(
+    this: *mut core::ffi::c_void,
+    riid: *const windows_sys::core::GUID,
+    ppv: *mut *mut core::ffi::c_void,
+) -> i32 {
+    let owner = as_oxvba_test_dispatch_owner_from_connection_point(this);
+    oxvba_test_owner_query_interface(owner, riid, ppv)
+}
+
+#[cfg(target_os = "windows")]
+#[allow(unsafe_op_in_unsafe_fn)]
+unsafe extern "system" fn oxvba_test_connection_point_add_ref(this: *mut core::ffi::c_void) -> u32 {
+    let owner = as_oxvba_test_dispatch_owner_from_connection_point(this);
+    oxvba_test_owner_add_ref(owner)
+}
+
+#[cfg(target_os = "windows")]
+#[allow(unsafe_op_in_unsafe_fn)]
+unsafe extern "system" fn oxvba_test_connection_point_release(this: *mut core::ffi::c_void) -> u32 {
+    let owner = as_oxvba_test_dispatch_owner_from_connection_point(this);
+    oxvba_test_owner_release(owner)
+}
+
+#[cfg(target_os = "windows")]
+#[allow(unsafe_op_in_unsafe_fn)]
+unsafe extern "system" fn oxvba_test_get_connection_interface(
+    _this: *mut core::ffi::c_void,
+    p_iid: *mut windows_sys::core::GUID,
+) -> i32 {
+    if p_iid.is_null() {
+        return COM_E_INVALIDARG;
+    }
+    *p_iid = IID_OXVBA_TEST_DISPATCH_EVENTS;
+    COM_S_OK
+}
+
+#[cfg(target_os = "windows")]
+#[allow(unsafe_op_in_unsafe_fn)]
+unsafe extern "system" fn oxvba_test_get_connection_point_container(
+    this: *mut core::ffi::c_void,
+    pp_cpc: *mut *mut core::ffi::c_void,
+) -> i32 {
+    if pp_cpc.is_null() {
+        return COM_E_INVALIDARG;
+    }
+    *pp_cpc = std::ptr::null_mut();
+    let owner = as_oxvba_test_dispatch_owner_from_connection_point(this);
+    *pp_cpc = (&mut (*owner).connection_point_container
+        as *mut OxvbaTestConnectionPointContainerInterface)
+        .cast();
+    let _ = oxvba_test_owner_add_ref(owner);
+    COM_S_OK
+}
+
+#[cfg(target_os = "windows")]
+#[allow(unsafe_op_in_unsafe_fn)]
+unsafe extern "system" fn oxvba_test_advise(
+    this: *mut core::ffi::c_void,
+    p_unk_sink: *mut core::ffi::c_void,
+    pdw_cookie: *mut u32,
+) -> i32 {
+    if p_unk_sink.is_null() || pdw_cookie.is_null() {
+        return COM_E_INVALIDARG;
+    }
+    *pdw_cookie = 0;
+    let owner = as_oxvba_test_dispatch_owner_from_connection_point(this);
+    let mut sink_dispatch: *mut core::ffi::c_void = std::ptr::null_mut();
+    let unknown = p_unk_sink.cast::<RawIUnknown>();
+    let hr = ((*(*unknown).vtbl).query_interface)(p_unk_sink, &IID_IDISPATCH, &mut sink_dispatch);
+    if hr < 0 || sink_dispatch.is_null() {
+        return COM_CONNECT_E_CANNOTCONNECT;
+    }
+    let mut sinks = match (*owner).sinks.lock() {
+        Ok(guard) => guard,
+        Err(poisoned) => poisoned.into_inner(),
+    };
+    let mut cookie = (*owner)
+        .next_cookie
+        .fetch_add(1, Ordering::AcqRel)
+        .saturating_add(1);
+    if cookie == 0 {
+        cookie = 1;
+    }
+    while sinks.contains_key(&cookie) {
+        cookie = cookie.saturating_add(1).max(1);
+    }
+    sinks.insert(cookie, sink_dispatch as RawDispatchPtr);
+    *pdw_cookie = cookie;
+    COM_S_OK
+}
+
+#[cfg(target_os = "windows")]
+#[allow(unsafe_op_in_unsafe_fn)]
+unsafe extern "system" fn oxvba_test_unadvise(this: *mut core::ffi::c_void, dw_cookie: u32) -> i32 {
+    if dw_cookie == 0 {
+        return COM_CONNECT_E_NOCONNECTION;
+    }
+    let owner = as_oxvba_test_dispatch_owner_from_connection_point(this);
+    let sink = {
+        let mut sinks = match (*owner).sinks.lock() {
+            Ok(guard) => guard,
+            Err(poisoned) => poisoned.into_inner(),
+        };
+        sinks.remove(&dw_cookie)
+    };
+    let Some(sink) = sink else {
+        return COM_CONNECT_E_NOCONNECTION;
+    };
+    raw_release_dispatch(sink as *mut RawIDispatch);
+    COM_S_OK
+}
+
+#[cfg(target_os = "windows")]
+unsafe extern "system" fn oxvba_test_enum_connections(
+    _this: *mut core::ffi::c_void,
+    _pp_enum: *mut *mut core::ffi::c_void,
+) -> i32 {
+    COM_E_NOTIMPL
 }
 
 #[cfg(target_os = "windows")]
@@ -3066,7 +3790,7 @@ unsafe extern "system" fn oxvba_test_get_ids_of_names(
 #[cfg(target_os = "windows")]
 #[allow(unsafe_op_in_unsafe_fn)]
 unsafe extern "system" fn oxvba_test_invoke(
-    _this: *mut core::ffi::c_void,
+    this: *mut core::ffi::c_void,
     dispidmember: i32,
     _riid: *const windows_sys::core::GUID,
     _lcid: u32,
@@ -3112,16 +3836,17 @@ unsafe extern "system" fn oxvba_test_invoke(
                 return COM_DISP_E_BADPARAMCOUNT;
             }
             let arg = &*rgvarg;
-            let value = match arg.Anonymous.Anonymous.vt {
-                VT_I4 => arg.Anonymous.Anonymous.Anonymous.lVal,
-                VT_UI4 => arg.Anonymous.Anonymous.Anonymous.ulVal as i32,
-                _ => {
+            let value = match raw_variant_token_from_invoke_arg(arg, 0) {
+                Ok(value) => value,
+                Err(hr) => {
                     if !puargerr.is_null() {
                         *puargerr = 0;
                     }
-                    return COM_DISP_E_TYPEMISMATCH;
+                    return hr;
                 }
             };
+            let owner = as_oxvba_test_dispatch_owner_from_dispatch(this);
+            let _ = oxvba_test_fire_event(owner, TEST_EVENT_CHANGED, &[value]);
             set_variant_i32(value, pvarresult);
             COM_S_OK
         }
@@ -3130,21 +3855,153 @@ unsafe extern "system" fn oxvba_test_invoke(
                 return COM_DISP_E_BADPARAMCOUNT;
             }
             let arg = &*rgvarg;
-            let value = match arg.Anonymous.Anonymous.vt {
-                VT_I4 => arg.Anonymous.Anonymous.Anonymous.lVal,
-                VT_UI4 => arg.Anonymous.Anonymous.Anonymous.ulVal as i32,
-                _ => {
+            let value = match raw_variant_token_from_invoke_arg(arg, 0) {
+                Ok(value) => value,
+                Err(hr) => {
                     if !puargerr.is_null() {
                         *puargerr = 0;
                     }
-                    return COM_DISP_E_TYPEMISMATCH;
+                    return hr;
                 }
             };
+            let owner = as_oxvba_test_dispatch_owner_from_dispatch(this);
+            let _ = oxvba_test_fire_event(
+                owner,
+                TEST_EVENT_CHANGED_PAIR,
+                &[value, value.saturating_add(1)],
+            );
             set_variant_i32(value.saturating_add(1), pvarresult);
             COM_S_OK
         }
         _ => COM_DISP_E_MEMBERNOTFOUND,
     }
+}
+
+#[cfg(target_os = "windows")]
+#[allow(unsafe_op_in_unsafe_fn)]
+unsafe extern "system" fn oxvba_event_sink_query_interface(
+    this: *mut core::ffi::c_void,
+    riid: *const windows_sys::core::GUID,
+    ppv: *mut *mut core::ffi::c_void,
+) -> i32 {
+    if ppv.is_null() {
+        return COM_E_INVALIDARG;
+    }
+    *ppv = std::ptr::null_mut();
+    if guid_equals(riid, &IID_IUNKNOWN) || guid_equals(riid, &IID_IDISPATCH) {
+        *ppv = this;
+        let sink = as_oxvba_com_event_sink(this);
+        (*sink).ref_count.fetch_add(1, Ordering::AcqRel);
+        return COM_S_OK;
+    }
+    COM_E_NOINTERFACE
+}
+
+#[cfg(target_os = "windows")]
+#[allow(unsafe_op_in_unsafe_fn)]
+unsafe extern "system" fn oxvba_event_sink_add_ref(this: *mut core::ffi::c_void) -> u32 {
+    let sink = as_oxvba_com_event_sink(this);
+    (*sink).ref_count.fetch_add(1, Ordering::AcqRel) + 1
+}
+
+#[cfg(target_os = "windows")]
+#[allow(unsafe_op_in_unsafe_fn)]
+unsafe extern "system" fn oxvba_event_sink_release(this: *mut core::ffi::c_void) -> u32 {
+    let sink = as_oxvba_com_event_sink(this);
+    let prev = (*sink).ref_count.fetch_sub(1, Ordering::AcqRel);
+    let next = prev.saturating_sub(1);
+    if next == 0 {
+        drop(Box::from_raw(sink));
+    }
+    next
+}
+
+#[cfg(target_os = "windows")]
+#[allow(unsafe_op_in_unsafe_fn)]
+unsafe extern "system" fn oxvba_event_sink_get_type_info_count(
+    _this: *mut core::ffi::c_void,
+    pctinfo: *mut u32,
+) -> i32 {
+    if pctinfo.is_null() {
+        return COM_E_INVALIDARG;
+    }
+    *pctinfo = 0;
+    COM_S_OK
+}
+
+#[cfg(target_os = "windows")]
+unsafe extern "system" fn oxvba_event_sink_get_type_info(
+    _this: *mut core::ffi::c_void,
+    _itinfo: u32,
+    _lcid: u32,
+    _pptinfo: *mut *mut core::ffi::c_void,
+) -> i32 {
+    COM_E_NOTIMPL
+}
+
+#[cfg(target_os = "windows")]
+unsafe extern "system" fn oxvba_event_sink_get_ids_of_names(
+    _this: *mut core::ffi::c_void,
+    _riid: *const windows_sys::core::GUID,
+    _rgsznames: *mut *mut u16,
+    _cnames: u32,
+    _lcid: u32,
+    _rgdispid: *mut i32,
+) -> i32 {
+    COM_DISP_E_UNKNOWNNAME
+}
+
+#[cfg(target_os = "windows")]
+#[allow(unsafe_op_in_unsafe_fn)]
+unsafe extern "system" fn oxvba_event_sink_invoke(
+    this: *mut core::ffi::c_void,
+    dispidmember: i32,
+    _riid: *const windows_sys::core::GUID,
+    _lcid: u32,
+    _wflags: u16,
+    pparams: *mut DISPPARAMS,
+    _pvarresult: *mut VARIANT,
+    _pexcepinfo: *mut EXCEPINFO,
+    puargerr: *mut u32,
+) -> i32 {
+    let sink = as_oxvba_com_event_sink(this);
+    if dispidmember != (*sink).event {
+        return COM_DISP_E_MEMBERNOTFOUND;
+    }
+    let (cargs, rgvarg) = if pparams.is_null() {
+        (0usize, std::ptr::null_mut())
+    } else {
+        ((*pparams).cArgs as usize, (*pparams).rgvarg)
+    };
+    if cargs != (*sink).expected_arity || (cargs > 0 && rgvarg.is_null()) {
+        return COM_DISP_E_BADPARAMCOUNT;
+    }
+    let mut args = Vec::with_capacity(cargs);
+    for idx in (0..cargs).rev() {
+        let variant = rgvarg.add(idx);
+        let arg_index = cargs.saturating_sub(1).saturating_sub(idx);
+        let value = match raw_variant_token_from_invoke_arg(variant, arg_index) {
+            Ok(value) => value,
+            Err(hr) => {
+                if !puargerr.is_null() {
+                    *puargerr = u32::try_from(arg_index).unwrap_or(u32::MAX);
+                }
+                return hr;
+            }
+        };
+        args.push(value);
+    }
+    let mut state = match (*sink).com_state.lock() {
+        Ok(guard) => guard,
+        Err(poisoned) => poisoned.into_inner(),
+    };
+    if let Some(subscription) = state.subscriptions.get(&(*sink).subscription)
+        && subscription.object == (*sink).object
+        && subscription.event == (*sink).event
+    {
+        let _ = state.queue_callback_for_subscription((*sink).subscription, args.as_slice());
+    }
+    COM_S_OK
 }
 
 #[cfg(target_os = "windows")]
@@ -3155,6 +4012,108 @@ unsafe fn raw_release_dispatch(dispatch: *mut RawIDispatch) {
     }
     let vtbl = (*dispatch).vtbl;
     ((*vtbl).unknown.release)(dispatch.cast());
+}
+
+#[cfg(target_os = "windows")]
+#[allow(unsafe_op_in_unsafe_fn)]
+unsafe fn raw_release_connection_point(connection_point: *mut RawIConnectionPoint) {
+    if connection_point.is_null() {
+        return;
+    }
+    let vtbl = (*connection_point).vtbl;
+    ((*vtbl).unknown.release)(connection_point.cast());
+}
+
+#[cfg(target_os = "windows")]
+#[allow(unsafe_op_in_unsafe_fn)]
+unsafe fn raw_release_unknown(unknown: *mut core::ffi::c_void) {
+    if unknown.is_null() {
+        return;
+    }
+    let unknown = unknown.cast::<RawIUnknown>();
+    let vtbl = (*unknown).vtbl;
+    ((*vtbl).release)(unknown.cast());
+}
+
+#[cfg(target_os = "windows")]
+#[allow(unsafe_op_in_unsafe_fn)]
+unsafe fn raw_try_advise_oxvba_test_dispatch_event(
+    dispatch: *mut RawIDispatch,
+    com_state: Arc<Mutex<ComState>>,
+    subscription: i32,
+    object: i32,
+    event: i32,
+    expected_arity: usize,
+) -> Result<Option<ComNativeConnectionPointTransport>, String> {
+    if dispatch.is_null() {
+        return Ok(None);
+    }
+    if !std::ptr::eq((*dispatch).vtbl, &OXVBA_TEST_DISPATCH_VTBL) {
+        return Ok(None);
+    }
+    let mut cpc_ptr: *mut core::ffi::c_void = std::ptr::null_mut();
+    let hr = ((*(*dispatch).vtbl).unknown.query_interface)(
+        dispatch.cast(),
+        &IID_ICONNECTIONPOINTCONTAINER,
+        &mut cpc_ptr,
+    );
+    if hr < 0 || cpc_ptr.is_null() {
+        return Err(format!(
+            "IUnknown::QueryInterface(IConnectionPointContainer) failed with HRESULT {:#010X}",
+            hr as u32
+        ));
+    }
+    let cpc = cpc_ptr.cast::<RawIConnectionPointContainer>();
+    let mut cp_ptr: *mut core::ffi::c_void = std::ptr::null_mut();
+    let hr = ((*(*cpc).vtbl).find_connection_point)(
+        cpc.cast(),
+        &IID_OXVBA_TEST_DISPATCH_EVENTS,
+        &mut cp_ptr,
+    );
+    raw_release_unknown(cpc.cast());
+    if hr < 0 || cp_ptr.is_null() {
+        return Err(format!(
+            "IConnectionPointContainer::FindConnectionPoint failed with HRESULT {:#010X}",
+            hr as u32
+        ));
+    }
+    let connection_point = cp_ptr.cast::<RawIConnectionPoint>();
+    let sink = create_oxvba_com_event_sink(com_state, subscription, object, event, expected_arity);
+    let mut cookie = 0u32;
+    let hr =
+        ((*(*connection_point).vtbl).advise)(connection_point.cast(), sink.cast(), &mut cookie);
+    raw_release_dispatch(sink);
+    if hr < 0 || cookie == 0 {
+        raw_release_connection_point(connection_point);
+        return Err(format!(
+            "IConnectionPoint::Advise failed with HRESULT {:#010X}",
+            hr as u32
+        ));
+    }
+    Ok(Some(ComNativeConnectionPointTransport {
+        connection_point: connection_point as usize,
+        cookie,
+    }))
+}
+
+#[cfg(target_os = "windows")]
+#[allow(unsafe_op_in_unsafe_fn)]
+unsafe fn raw_unadvise_connection_point(
+    transport: ComNativeConnectionPointTransport,
+) -> Result<(), String> {
+    if transport.connection_point == 0 {
+        return Ok(());
+    }
+    let connection_point = transport.connection_point as *mut RawIConnectionPoint;
+    let hr = ((*(*connection_point).vtbl).unadvise)(connection_point.cast(), transport.cookie);
+    raw_release_connection_point(connection_point);
+    if hr < 0 {
+        return Err(format!(
+            "IConnectionPoint::Unadvise failed with HRESULT {:#010X}",
+            hr as u32
+        ));
+    }
+    Ok(())
 }
 
 #[cfg(target_os = "windows")]
@@ -3867,6 +4826,23 @@ mod tests {
             .subscribe_event(object, 1)
             .expect("subscribe_event should succeed for controlled event source");
         assert!(subscription >= 40_001);
+        {
+            let state = host
+                .com_state
+                .lock()
+                .expect("com state lock should succeed");
+            let registered = state
+                .subscriptions
+                .get(&subscription)
+                .expect("subscription should be tracked");
+            assert!(
+                matches!(
+                    registered.transport,
+                    super::ComEventSubscriptionTransport::NativeConnectionPoint(_)
+                ),
+                "controlled lane should use native connection-point transport"
+            );
+        }
 
         assert_eq!(
             host.dispatch_invoke(object, 3, 77)
@@ -3897,11 +4873,24 @@ mod tests {
                 .expect("callback release should succeed"),
             1
         );
+        assert_eq!(
+            host.do_events().expect("callback queue should be drained"),
+            0,
+            "native callback lane should not enqueue duplicate projection callbacks"
+        );
 
         assert_eq!(
             host.unsubscribe_event(subscription)
                 .expect("unsubscribe_event should succeed"),
             1
+        );
+        let _ = host
+            .dispatch_invoke(object, 3, 88)
+            .expect("FireChanged should remain invokable after unsubscribe");
+        assert_eq!(
+            host.do_events()
+                .expect("callback queue should remain empty after unsubscribe"),
+            0
         );
         let callback_still_present = {
             let state = host
@@ -4507,6 +5496,23 @@ mod tests {
             subscription >= 40_001,
             "subscription token should be in deterministic range"
         );
+        {
+            let state = host
+                .com_state
+                .lock()
+                .expect("com state lock should succeed");
+            let registered = state
+                .subscriptions
+                .get(&subscription)
+                .expect("dictionary projection subscription should be tracked");
+            assert!(
+                matches!(
+                    registered.transport,
+                    super::ComEventSubscriptionTransport::Projection
+                ),
+                "dictionary lane should continue to use projection transport"
+            );
+        }
         assert_eq!(
             host.dispatch_invoke(object, super::TEST_DISPID_EXISTS, 42)
                 .expect("Exists invoke should succeed"),

@@ -88,14 +88,27 @@ Run context: full events parity closure (non-COM + Windows COM)
   - Fresh external-lane evidence captured:
     - `docs/evidence/conformance/com/COM_LANE_L2_RUN_Scripting.Dictionary_20260308T174630Z.md`,
     - `docs/evidence/conformance/com/COM_LANE_L2_LOG_Scripting.Dictionary_20260308T174630Z.txt`.
+  - Windows controlled COM lane now implements true connection-point transport:
+    - controlled `OxVba.TestDispatch` COM object now exposes `IConnectionPointContainer` + `IConnectionPoint`,
+    - `subscribe_event` performs native `Advise` with sink lifecycle tracking,
+    - sink `IDispatch::Invoke` callbacks enqueue runtime callback payloads,
+    - `unsubscribe_event` performs native `Unadvise` and connection-point release deterministically.
+  - Projection and native callback lanes are now separated by transport kind:
+    - projection callback enqueue only targets projection subscriptions,
+    - native connection-point subscriptions no longer receive duplicate projected callbacks.
+  - Updated conformance evidence with connection-point callback lane:
+    - `docs/evidence/conformance/com/COM_CONFORMANCE_RUN_20260308T190057Z.md`,
+    - `docs/evidence/conformance/com/COM_LANE_L2B_RUN_20260308T190057Z.md`,
+    - `docs/evidence/conformance/com/COM_LANE_L2E_RUN_OxVba.TestDispatch_20260308T190057Z.md`.
 - Why blocked:
-  - Current run has non-COM/internal event semantics advanced, COM lifecycle substrate implemented, callback->handler runtime invocation wired, deterministic COM-EVT-B unsupported policy in place, strict registered-mode callback success lane support (`L2E`) for event-capable configured servers, and non-OxVba registered callback success in metadata-projection lane (`Scripting.Dictionary`).
-  - Remaining strict parity closure still needs:
-    - native callback transport parity (actual COM connection-point callback ingestion) beyond metadata-triggered callback projection from invoked members.
+  - Current run closes controlled-lane connection-point callback ingress and deterministic lifecycle (`Advise`/`Unadvise`) in Windows native mode.
+  - Remaining strict parity closure still needs external-library generalization:
+    - event-interface identity from typelib metadata (IID + event DISPIDs) for non-controlled registered servers,
+    - validated true connection-point callback evidence on at least one external registered COM server beyond the controlled in-process test server.
 - Exact unblocking steps:
-  1. Implement native connection-point sink lifecycle (`Advise`/`Unadvise`) in Windows COM adapter and route sink callbacks into callback queue.
-  2. Extend event metadata model with connection-point/event-interface identity required for subscription handshake.
-  3. Capture reproducible true connection-point callback evidence on at least one stable external registered server and fold into conformance docs.
+  1. Extend event metadata model with connection-point/event-interface identity required for external subscription handshake.
+  2. Implement generalized external connection-point subscription path (non-controlled servers) using metadata-derived interface identity.
+  3. Capture reproducible external true connection-point callback evidence and fold into conformance docs.
   4. Reconcile oracle evidence and update divergence/deferred gates.
 
 ## Structured summary
