@@ -5,7 +5,7 @@ pub mod events;
 pub mod project;
 pub mod runner;
 
-pub use engine::{Engine, HostConfig};
+pub use engine::{ComEventCallbackDispatch, Engine, HostConfig, ProjectRuntimeSession};
 pub use project::{
     GraphPublicSymbolResolution, HostExportKind, HostProcedureExport, ModuleAttributes, ModuleKind,
     ModuleNode, Project, ProjectGraph, ProjectKind, ProjectModelError, ProjectNode,

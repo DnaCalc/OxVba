@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 
 use oxvba_runtime::{
     safe_array::ARRAY_TAG_BASE,
@@ -29,7 +29,19 @@ struct EmitProcMeta {
     return_slot: Option<usize>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ProcedureRuntimeMetadata {
+    pub entry_pc: usize,
+    pub param_slots: Vec<usize>,
+}
+
 pub fn emit_bytecode(module: &BoundModule) -> Bytecode {
+    emit_bytecode_with_runtime_metadata(module).0
+}
+
+pub fn emit_bytecode_with_runtime_metadata(
+    module: &BoundModule,
+) -> (Bytecode, BTreeMap<String, ProcedureRuntimeMetadata>) {
     let compare_mode = emit_compare_mode(module.compare_mode);
     let procedures = if module.procedures.is_empty() {
         vec![BoundProcedure {
@@ -71,6 +83,7 @@ pub fn emit_bytecode(module: &BoundModule) -> Bytecode {
     let mut goto_patches: Vec<(usize, String)> = Vec::new();
     let mut resume_label_patches: Vec<(usize, String)> = Vec::new();
     let mut proc_labels: HashMap<String, usize> = HashMap::new();
+    let mut procedure_runtime_metadata = BTreeMap::<String, ProcedureRuntimeMetadata>::new();
     let mut proc_meta: HashMap<String, EmitProcMeta> = HashMap::new();
     let external_decls = module.external_declarations.clone();
     let external_call_descriptors = build_external_call_descriptors(&external_decls);
@@ -93,6 +106,17 @@ pub fn emit_bytecode(module: &BoundModule) -> Bytecode {
         .find(|p| p.name.eq_ignore_ascii_case("class_terminate"))
         .map(|p| p.name.clone());
     proc_labels.insert(procedures[entry_idx].name.clone(), 0);
+    procedure_runtime_metadata.insert(
+        procedures[entry_idx].name.to_ascii_lowercase(),
+        ProcedureRuntimeMetadata {
+            entry_pc: 0,
+            param_slots: procedures[entry_idx]
+                .params
+                .iter()
+                .filter_map(|param| proc_slots[entry_idx].get(&param.name).copied())
+                .collect(),
+        },
+    );
     instructions.push(Instruction::ClearErr);
 
     if let Some(name) = class_init_proc {
@@ -129,7 +153,19 @@ pub fn emit_bytecode(module: &BoundModule) -> Bytecode {
         if idx == entry_idx {
             continue;
         }
-        proc_labels.insert(proc.name.clone(), instructions.len());
+        let entry_pc = instructions.len();
+        proc_labels.insert(proc.name.clone(), entry_pc);
+        procedure_runtime_metadata.insert(
+            proc.name.to_ascii_lowercase(),
+            ProcedureRuntimeMetadata {
+                entry_pc,
+                param_slots: proc
+                    .params
+                    .iter()
+                    .filter_map(|param| proc_slots[idx].get(&param.name).copied())
+                    .collect(),
+            },
+        );
         instructions.push(Instruction::ClearErr);
         emit_stmt_list(
             &proc.body,
@@ -184,12 +220,15 @@ pub fn emit_bytecode(module: &BoundModule) -> Bytecode {
         }
     }
 
-    Bytecode {
-        instructions,
-        external_call_descriptors,
-        slot_count: temps.total_slots(),
-        user_slot_count: procedures[entry_idx].declarations.len(),
-    }
+    (
+        Bytecode {
+            instructions,
+            external_call_descriptors,
+            slot_count: temps.total_slots(),
+            user_slot_count: procedures[entry_idx].declarations.len(),
+        },
+        procedure_runtime_metadata,
+    )
 }
 
 fn build_external_call_descriptors(

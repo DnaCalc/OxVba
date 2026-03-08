@@ -138,11 +138,58 @@ impl Vm {
         typed_fastpaths: bool,
     ) -> Result<(), String> {
         self.ensure_slot_count(bytecode.slot_count);
+        self.call_stack.clear();
         self.withevents_bindings.clear();
         self.withevents_owner_iters.clear();
-        let mut pc = 0usize;
-        let len = bytecode.instructions.len();
+        self.on_error_resume_next = false;
+        self.on_error_goto_label_target = None;
+        self.clear_error_state();
+        self.execute_loop(bytecode, 0, typed_fastpaths, false)
+    }
 
+    pub fn invoke_procedure_with_i32_args(
+        &mut self,
+        bytecode: &Bytecode,
+        entry_pc: usize,
+        arg_slots: &[usize],
+        args: &[i32],
+    ) -> Result<(), String> {
+        if arg_slots.len() != args.len() {
+            return Err(format!(
+                "argument shape mismatch: {} slots for {} values",
+                arg_slots.len(),
+                args.len()
+            ));
+        }
+        if entry_pc >= bytecode.instructions.len() {
+            return Err(format!("procedure entry out of range: {entry_pc}"));
+        }
+        self.ensure_slot_count(bytecode.slot_count);
+        self.call_stack.clear();
+        self.withevents_owner_iters.clear();
+        self.on_error_resume_next = false;
+        self.on_error_goto_label_target = None;
+        self.clear_error_state();
+        for (slot, value) in arg_slots.iter().zip(args.iter()) {
+            self.write_slot(*slot, *value)?;
+        }
+        self.execute_loop(
+            bytecode,
+            entry_pc,
+            Self::typed_fastpaths_enabled_from_env(),
+            true,
+        )
+    }
+
+    fn execute_loop(
+        &mut self,
+        bytecode: &Bytecode,
+        entry_pc: usize,
+        typed_fastpaths: bool,
+        return_halts_when_stack_empty: bool,
+    ) -> Result<(), String> {
+        let mut pc = entry_pc;
+        let len = bytecode.instructions.len();
         while pc < len {
             match &bytecode.instructions[pc] {
                 Instruction::LoadConstI32 { slot, value } => {
@@ -1234,6 +1281,8 @@ impl Vm {
                 Instruction::Return => {
                     if let Some(return_pc) = self.call_stack.pop() {
                         pc = return_pc;
+                    } else if return_halts_when_stack_empty {
+                        break;
                     } else {
                         return Err("return with empty call stack".to_string());
                     }
@@ -2725,6 +2774,61 @@ mod tests {
         let mut vm = Vm::default();
         vm.execute(&bytecode).expect("vm should execute bytecode");
         assert_eq!(vm.snapshot_slots(1), vec![7]);
+    }
+
+    #[test]
+    fn invoke_procedure_with_i32_args_dispatches_into_existing_vm_state() {
+        let bytecode = Bytecode {
+            instructions: vec![
+                Instruction::LoadConstI32 { slot: 0, value: 11 },
+                Instruction::LoadConstI32 { slot: 1, value: 7 },
+                Instruction::LoadConstI32 { slot: 2, value: 99 },
+                Instruction::IntrinsicWithEventsSet {
+                    dst: 3,
+                    owner: 0,
+                    binding: 1,
+                    value: 2,
+                },
+                Instruction::Halt,
+                Instruction::IntrinsicWithEventsGet {
+                    dst: 4,
+                    owner: 0,
+                    binding: 1,
+                },
+                Instruction::AddSlots {
+                    dst: 5,
+                    lhs: 4,
+                    rhs: 6,
+                },
+                Instruction::Return,
+            ],
+            external_call_descriptors: Vec::new(),
+            slot_count: 7,
+            user_slot_count: 7,
+        };
+
+        let mut vm = Vm::default();
+        vm.execute(&bytecode)
+            .expect("initial run should seed WithEvents bindings");
+        vm.invoke_procedure_with_i32_args(&bytecode, 5, &[6], &[1])
+            .expect("procedure invoke should execute against existing VM state");
+        assert_eq!(vm.snapshot_slots(7)[5], 100);
+    }
+
+    #[test]
+    fn invoke_procedure_with_i32_args_rejects_mismatched_shape() {
+        let bytecode = Bytecode {
+            instructions: vec![Instruction::Halt],
+            external_call_descriptors: Vec::new(),
+            slot_count: 1,
+            user_slot_count: 1,
+        };
+
+        let mut vm = Vm::default();
+        let err = vm
+            .invoke_procedure_with_i32_args(&bytecode, 0, &[0], &[])
+            .expect_err("invoke should reject mismatched arg slots and values");
+        assert!(err.contains("argument shape mismatch"));
     }
 
     #[test]

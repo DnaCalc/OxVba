@@ -38,21 +38,23 @@ Run context: full events parity closure (non-COM + Windows COM)
     - COM callback token -> subscription + `arg0`,
     - subscription -> registered handler symbol mapping,
     - deterministic missing-handler diagnostic (`PMR-E-EVENT-DISPATCH-TARGET-MISSING`).
+  - Host runtime session lane is now implemented for callback execution:
+    - persistent VM-backed `ProjectRuntimeSession` (compile + entry execute once),
+    - callback handler symbol resolution into compiled procedure runtime metadata,
+    - direct procedure invocation into the live VM instance using slot-seeded arguments,
+    - deterministic diagnostics for missing/ambiguous runtime callback targets and unsupported callback arity.
   - Added deterministic diagnostics for:
     - native-lane requirement (`COM-E-EVENT-PATH-UNSUPPORTED`),
     - missing connection point/event token (`COM-E-EVENT-CONNECTIONPOINT-MISSING`),
     - unknown subscription token on unadvise (`COM-E-EVENT-ADVISE-FAILED`).
 - Why blocked:
-  - Current run has non-COM/internal event semantics advanced and COM lifecycle substrate implemented, but full COM callback transport completion still needs:
-    - callback token ingress path into actual handler procedure execution path (ingress mapping exists; callback -> direct procedure invocation is not yet wired),
-    - typelib-driven callback argument shape mapping from COM metadata into handler signature enforcement beyond current controlled lane,
+  - Current run has non-COM/internal event semantics advanced, COM lifecycle substrate implemented, and callback->handler runtime invocation wired for the controlled arg0 lane.
+  - Remaining parity closure still needs:
+    - typelib-driven callback argument shape mapping from COM metadata into handler signature enforcement beyond current controlled single-argument lane,
     - explicit `COM-EVT-B` implementation or formal deterministic unsupported closure.
-  - Immediate architecture blocker for first bullet:
-    - host/runtime lane currently executes fixed project entrypoint and lacks an in-runtime "invoke procedure by symbol in existing instance graph" primitive,
-    - without that primitive, callback ingress can map to handler symbol but cannot dispatch into live project state with VBA-parity object identity semantics.
 - Exact unblocking steps:
-  1. Lock COM event bridge contract for callback ingress (`COM-EVT-A` required, `COM-EVT-B` implementation/defer decision).
-  2. Implement callback ingress wiring into unified runtime event dispatch model.
+  1. Lock COM event bridge contract for callback ingress (`COM-EVT-A` implemented; `COM-EVT-B` implementation/defer decision pending).
+  2. Extend callback marshalling from fixed `arg0` to typelib-driven shape contract and handler signature validation.
   3. Add controlled COM event fixture lane and deterministic CI coverage for callback lifecycle + failure mapping.
   4. Reconcile oracle evidence and update divergence/deferred gates.
 
@@ -62,7 +64,7 @@ Run context: full events parity closure (non-COM + Windows COM)
   - `BLK-COM-001` — COM event callback parity lane requires dedicated transport completion.
 - Impact by milestone/phase:
   - Non-COM dynamic owner dispatch path: unblocked and implemented.
-  - COM parity closure: blocked at callback transport + fixture/evidence completion (`WI-D02`..`WI-D06`, `WI-E01`..`WI-E03`).
+  - COM parity closure: callback transport base lane implemented; blocked at typed marshalling + fixture/evidence completion (`WI-D03`..`WI-D06`, `WI-E01`..`WI-E03`).
 - Exact unblocking steps:
   - Approve COM callback bridge policy for `COM-EVT-A/B`.
   - Implement + validate callback lanes in CI/oracle evidence.

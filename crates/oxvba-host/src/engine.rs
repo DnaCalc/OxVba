@@ -3,7 +3,10 @@ use std::{
     sync::{Arc, Mutex},
 };
 
-use oxvba_compiler::{Bytecode, Instruction, ProjectManifest, compile, compile_project};
+use oxvba_compiler::{
+    Bytecode, CompiledProject, Instruction, ProcedureRuntimeMetadata, ProjectManifest, compile,
+    compile_project,
+};
 use oxvba_hal::{
     adapters,
     model::{
@@ -13,7 +16,7 @@ use oxvba_hal::{
     traits::HostServices,
 };
 use oxvba_jit::JitEngine;
-use oxvba_vm::execute_and_snapshot_with_host;
+use oxvba_vm::{Vm, execute_and_snapshot_with_host};
 
 use crate::{
     events::{EventDispatcher, EventSourceKey},
@@ -90,6 +93,18 @@ pub struct ComEventCallbackDispatch {
     pub subscription_token: i32,
     pub handler_symbol: String,
     pub arg0: i32,
+}
+
+pub struct ProjectRuntimeSession {
+    compiled: CompiledProject,
+    vm: Vm,
+}
+
+impl ProjectRuntimeSession {
+    pub fn snapshot_slots(&self) -> Vec<i32> {
+        self.vm
+            .snapshot_slots(self.compiled.bytecode.user_slot_count)
+    }
 }
 
 impl Default for Engine {
@@ -344,6 +359,67 @@ impl Engine {
         }))
     }
 
+    pub fn start_project_runtime_session(
+        &self,
+        manifest: &ProjectManifest,
+    ) -> Result<ProjectRuntimeSession, PhaseDiagnostic> {
+        if self.config.enable_jit {
+            return Err(PhaseDiagnostic::runtime(
+                "project runtime session requires VM execution path (set enable_jit=false)",
+            ));
+        }
+        let compiled =
+            compile_project(manifest).map_err(|e| PhaseDiagnostic::compile(e.to_string()))?;
+        if let Ok(mut dispatcher) = self.event_dispatcher.lock() {
+            dispatcher.apply_bindings(&compiled.event_dispatch_bindings);
+        }
+        self.preflight_host_sensitive_support(&compiled.bytecode)?;
+        let mut vm = Vm::new(self.host_services.clone());
+        vm.execute(&compiled.bytecode)
+            .map_err(PhaseDiagnostic::runtime)?;
+        Ok(ProjectRuntimeSession { compiled, vm })
+    }
+
+    pub fn poll_and_dispatch_next_com_event_callback(
+        &self,
+        runtime: &mut ProjectRuntimeSession,
+    ) -> Result<bool, PhaseDiagnostic> {
+        let Some(callback) = self.poll_com_event_callback()? else {
+            return Ok(false);
+        };
+        self.dispatch_com_event_callback_into_runtime(runtime, &callback)?;
+        Ok(true)
+    }
+
+    pub fn dispatch_com_event_callback_into_runtime(
+        &self,
+        runtime: &mut ProjectRuntimeSession,
+        callback: &ComEventCallbackDispatch,
+    ) -> Result<(), PhaseDiagnostic> {
+        let (resolved_symbol, metadata) =
+            self.resolve_runtime_handler_metadata(runtime, &callback.handler_symbol)?;
+        let (arg_slots, args) = match metadata.param_slots.as_slice() {
+            [] => (Vec::new(), Vec::new()),
+            [slot] => (vec![*slot], vec![callback.arg0]),
+            params => {
+                return Err(PhaseDiagnostic::runtime(format!(
+                    "PMR-E-EVENT-ARITY-UNSUPPORTED: callback dispatch target `{}` requires {} parameters; current callback lane supports up to one argument",
+                    resolved_symbol,
+                    params.len()
+                )));
+            }
+        };
+        runtime
+            .vm
+            .invoke_procedure_with_i32_args(
+                &runtime.compiled.bytecode,
+                metadata.entry_pc,
+                &arg_slots,
+                &args,
+            )
+            .map_err(PhaseDiagnostic::runtime)
+    }
+
     pub fn execute_source(&self, source: &str) -> Result<(), String> {
         let _ = self.execute_source_with_snapshot(source)?;
         Ok(())
@@ -477,6 +553,44 @@ impl Engine {
                 "HAL compile-time gate rejected host-sensitive intrinsics: {}",
                 issues.join("; ")
             )))
+        }
+    }
+
+    fn resolve_runtime_handler_metadata(
+        &self,
+        runtime: &ProjectRuntimeSession,
+        handler_symbol: &str,
+    ) -> Result<(String, ProcedureRuntimeMetadata), PhaseDiagnostic> {
+        let normalized = handler_symbol.trim().to_ascii_lowercase();
+        if let Some(metadata) = runtime.compiled.procedure_runtime_metadata.get(&normalized) {
+            return Ok((normalized, metadata.clone()));
+        }
+
+        let suffix = format!("_{normalized}");
+        let mut matches: Vec<_> = runtime
+            .compiled
+            .procedure_runtime_metadata
+            .iter()
+            .filter_map(|(name, metadata)| {
+                if name.ends_with(&suffix) {
+                    Some((name.clone(), metadata.clone()))
+                } else {
+                    None
+                }
+            })
+            .collect();
+        matches.sort_by(|lhs, rhs| lhs.0.cmp(&rhs.0));
+
+        match matches.as_slice() {
+            [] => Err(PhaseDiagnostic::runtime(format!(
+                "PMR-E-EVENT-DISPATCH-TARGET-MISSING: callback handler `{}` is not present in project runtime metadata",
+                normalized
+            ))),
+            [(name, metadata)] => Ok((name.clone(), metadata.clone())),
+            _ => Err(PhaseDiagnostic::runtime(format!(
+                "PMR-E-EVENT-DISPATCH-TARGET-AMBIGUOUS: callback handler `{}` resolves to multiple project procedures",
+                normalized
+            ))),
         }
     }
 }
@@ -1757,6 +1871,105 @@ mod tests {
         );
 
         let _ = engine.host_services.com().unsubscribe_event(subscription);
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn formal_com_event_callback_runtime_dispatch_invokes_project_handler() {
+        let mut engine = Engine::new(HostConfig::default());
+        engine.set_host_policy(HostPolicy::interactive_dev());
+
+        let main_module = module_unit_from_source(
+            "MainModule",
+            ModuleKind::Procedural,
+            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nEnd Sub\nPublic Sub SinkA_OnChanged(ByVal n)\nIf n = 77 Then\nError 177\nElse\nError 178\nEnd If\nEnd Sub",
+        )
+        .expect("main module should parse");
+        let manifest = ProjectManifest {
+            project_name: "ProjectA".to_string(),
+            project_kind: ProjectKind::Source,
+            modules: vec![main_module],
+            references: Vec::new(),
+            reference_projects: Vec::new(),
+            conditional_constants: std::collections::BTreeMap::new(),
+        };
+
+        let mut runtime = engine
+            .start_project_runtime_session(&manifest)
+            .expect("project runtime session should start");
+        let object = engine
+            .host_services
+            .com()
+            .create_object(4)
+            .expect("create_object should return controlled COM object");
+        let subscription = engine
+            .subscribe_com_event_handler(object, 1, "SinkA_OnChanged")
+            .expect("subscribe should succeed");
+        let _ = engine
+            .host_services
+            .com()
+            .dispatch_invoke(object, 3, 77)
+            .expect("dispatch_invoke should queue callback");
+
+        let err = engine
+            .poll_and_dispatch_next_com_event_callback(&mut runtime)
+            .expect_err("runtime handler should raise deterministic callback code");
+        assert_eq!(err.phase(), DiagnosticPhase::Runtime);
+        assert!(err.message().contains("runtime error: 177"));
+        assert!(
+            engine
+                .unsubscribe_com_event_handler(subscription)
+                .expect("unsubscribe should succeed")
+        );
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn formal_com_event_callback_runtime_dispatch_reports_missing_project_handler() {
+        let mut engine = Engine::new(HostConfig::default());
+        engine.set_host_policy(HostPolicy::interactive_dev());
+
+        let main_module = module_unit_from_source(
+            "MainModule",
+            ModuleKind::Procedural,
+            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nEnd Sub",
+        )
+        .expect("main module should parse");
+        let manifest = ProjectManifest {
+            project_name: "ProjectA".to_string(),
+            project_kind: ProjectKind::Source,
+            modules: vec![main_module],
+            references: Vec::new(),
+            reference_projects: Vec::new(),
+            conditional_constants: std::collections::BTreeMap::new(),
+        };
+
+        let mut runtime = engine
+            .start_project_runtime_session(&manifest)
+            .expect("project runtime session should start");
+        let object = engine
+            .host_services
+            .com()
+            .create_object(4)
+            .expect("create_object should return controlled COM object");
+        let subscription = engine
+            .subscribe_com_event_handler(object, 1, "MissingHandler")
+            .expect("subscribe should succeed");
+        let _ = engine
+            .host_services
+            .com()
+            .dispatch_invoke(object, 3, 77)
+            .expect("dispatch_invoke should queue callback");
+
+        let err = engine
+            .poll_and_dispatch_next_com_event_callback(&mut runtime)
+            .expect_err("unknown runtime handler should fail deterministically");
+        assert_eq!(err.phase(), DiagnosticPhase::Runtime);
+        assert!(
+            err.message()
+                .contains("PMR-E-EVENT-DISPATCH-TARGET-MISSING")
+        );
+        let _ = engine.unsubscribe_com_event_handler(subscription);
     }
 
     #[test]

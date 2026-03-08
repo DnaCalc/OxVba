@@ -11,6 +11,7 @@ pub mod typecheck;
 use thiserror::Error;
 
 pub use bytecode::{Bytecode, Instruction};
+pub use emit::ProcedureRuntimeMetadata;
 pub use project::{
     CompiledProject, ExportKind, HostProcedureExport, ModuleAttributes, ModuleKind, ModuleUnit,
     ProjectCompileError, ProjectEventDispatchBinding, ProjectKind, ProjectManifest,
@@ -29,6 +30,18 @@ pub enum CompileError {
 }
 
 pub fn compile(source: &str) -> Result<Bytecode, CompileError> {
+    compile_with_runtime_metadata(source).map(|(bytecode, _)| bytecode)
+}
+
+pub fn compile_with_runtime_metadata(
+    source: &str,
+) -> Result<
+    (
+        Bytecode,
+        std::collections::BTreeMap<String, ProcedureRuntimeMetadata>,
+    ),
+    CompileError,
+> {
     if source.trim().is_empty() {
         return Err(CompileError::EmptySource);
     }
@@ -46,12 +59,12 @@ pub fn compile(source: &str) -> Result<Bytecode, CompileError> {
         optimize::optimize_module(checked)
     };
     let _hir = lower_to_hir::lower_to_hir(&optimized);
-    Ok(emit::emit_bytecode(&optimized))
+    Ok(emit::emit_bytecode_with_runtime_metadata(&optimized))
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{Instruction, compile};
+    use super::{Instruction, compile, compile_with_runtime_metadata};
     use crate::bytecode::StringCompareMode;
     use oxvba_runtime::value_tags::ERROR_TAG_BASE;
 
@@ -668,6 +681,21 @@ mod tests {
                 .iter()
                 .any(|i| matches!(i, Instruction::Return))
         );
+    }
+
+    #[test]
+    fn compile_with_runtime_metadata_reports_entry_points_for_named_procedures() {
+        let source =
+            "Sub Main()\nDim x\nx = 1\nCall Foo(x)\nEnd Sub\nSub Foo(ByVal n)\nDim y\ny = n\nEnd Sub";
+        let (bytecode, metadata) =
+            compile_with_runtime_metadata(source).expect("compile should succeed");
+        let main = metadata
+            .get("main")
+            .expect("entry procedure metadata should exist");
+        let foo = metadata.get("foo").expect("named procedure metadata should exist");
+        assert!(main.entry_pc < bytecode.instructions.len());
+        assert!(foo.entry_pc < bytecode.instructions.len());
+        assert_eq!(foo.param_slots.len(), 1);
     }
 
     #[test]

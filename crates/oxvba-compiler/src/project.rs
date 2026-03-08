@@ -2,7 +2,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use thiserror::Error;
 
-use crate::{Bytecode, compile};
+use crate::{Bytecode, ProcedureRuntimeMetadata, compile_with_runtime_metadata};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ProjectKind {
@@ -92,6 +92,7 @@ pub struct ProjectEventDispatchBinding {
 #[derive(Debug, Clone)]
 pub struct CompiledProject {
     pub bytecode: Bytecode,
+    pub procedure_runtime_metadata: BTreeMap<String, ProcedureRuntimeMetadata>,
     pub rewritten_source: String,
     pub host_exports: Vec<HostProcedureExport>,
     pub reference_visible_exports: Vec<HostProcedureExport>,
@@ -352,8 +353,11 @@ fn compile_project_with_strategy(
         &event_dispatch_plan,
     )?;
 
-    let bytecode = compile(&rewritten_source).map_err(|e| ProjectCompileError::BackendCompile {
-        message: e.to_string(),
+    let (bytecode, procedure_runtime_metadata) = compile_with_runtime_metadata(&rewritten_source)
+        .map_err(|e| {
+        ProjectCompileError::BackendCompile {
+            message: e.to_string(),
+        }
     })?;
 
     let host_exports = collect_host_exports(manifest, &procedure_index);
@@ -365,6 +369,7 @@ fn compile_project_with_strategy(
         })?;
     Ok(CompiledProject {
         bytecode,
+        procedure_runtime_metadata,
         rewritten_source,
         host_exports,
         reference_visible_exports,
@@ -3954,6 +3959,16 @@ mod tests {
                 handler_symbol: "pmr_projecta_sinka_em_changed".to_string(),
             }]
         );
+        for binding in &compiled.event_dispatch_bindings {
+            let metadata = compiled
+                .procedure_runtime_metadata
+                .get(&binding.handler_symbol)
+                .expect("event handler symbol should map to procedure runtime metadata");
+            assert!(
+                metadata.entry_pc < compiled.bytecode.instructions.len(),
+                "handler entry point should be within bytecode bounds"
+            );
+        }
     }
 
     #[test]
