@@ -13,6 +13,8 @@ param(
     [Nullable[int]]$RegisteredEventDispatchMember = $null,
     [bool]$RegisteredEventTriggerRequiresArg = $true,
     [string]$RegisteredEventTriggerInvokeKind = "",
+    [int]$RegisteredEventPollIterations = 40,
+    [int]$RegisteredEventPollDelayMs = 50,
     [switch]$RegisteredEventEnableTrace,
     [switch]$ForceRegisteredTestDispatch,
     [switch]$NoCapture,
@@ -85,6 +87,8 @@ try {
             TriggerArg = $RegisteredEventTriggerArg
             ExpectedArgCount = $RegisteredEventExpectedArgCount
             TriggerRequiresArg = $RegisteredEventTriggerRequiresArg
+            PollIterations = $RegisteredEventPollIterations
+            PollDelayMs = $RegisteredEventPollDelayMs
             EvidenceDir = $EvidenceDir
             RunId = $resolvedRunId
             NoThrow = $true

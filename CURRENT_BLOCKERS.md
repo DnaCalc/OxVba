@@ -163,6 +163,16 @@ Run context: full events parity closure (non-COM + Windows COM)
       - `DispatchMember` / `OXVBA_REGISTERED_EVENT_DISPATCH_MEMBER`,
       - `TriggerRequiresArg` / `OXVBA_REGISTERED_EVENT_TRIGGER_REQUIRES_ARG`,
       - `TriggerInvokeKind` / `OXVBA_REGISTERED_EVENT_TRIGGER_INVOKE_KIND`.
+  - Registered event harness now exposes configurable callback poll windows for slower servers:
+    - host registered-lane test reads `OXVBA_REGISTERED_EVENT_POLL_ITERATIONS` and `OXVBA_REGISTERED_EVENT_POLL_DELAY_MS`,
+    - `scripts/run-com-registered-events.ps1` and `scripts/run-com-conformance.ps1` surface these as `PollIterations` and `PollDelayMs`.
+  - External Internet Explorer callback probes executed with override path:
+    - `docs/evidence/conformance/com/COM_LANE_L2E_RUN_InternetExplorer.Application_20260308T213000Z.md`,
+    - `docs/evidence/conformance/com/COM_LANE_L2E_RUN_InternetExplorer.Application_20260308T213200Z.md`,
+    - `docs/evidence/conformance/com/COM_LANE_L2E_RUN_InternetExplorer.Application_20260308T214000Z.md`.
+  - Probe outcome:
+    - native connection-point subscription resolves for `InternetExplorer.Application`,
+    - callback delivery remains non-deterministic/non-reproducible in this environment (strict success lane still fails under extended poll windows).
 - Why blocked:
   - Current run closes controlled-lane connection-point callback ingress and deterministic lifecycle (`Advise`/`Unadvise`) for both `COM-EVT-A` and controlled `COM-EVT-B`.
   - Remaining strict parity closure is now limited to external evidence/oracle ingestion:

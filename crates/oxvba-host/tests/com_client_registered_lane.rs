@@ -70,6 +70,20 @@ mod windows_registered_com_lane {
             .unwrap_or(default_value)
     }
 
+    fn read_env_usize(name: &str, default_value: usize) -> usize {
+        std::env::var(name)
+            .ok()
+            .and_then(|value| value.trim().parse::<usize>().ok())
+            .unwrap_or(default_value)
+    }
+
+    fn read_env_u64(name: &str, default_value: u64) -> u64 {
+        std::env::var(name)
+            .ok()
+            .and_then(|value| value.trim().parse::<u64>().ok())
+            .unwrap_or(default_value)
+    }
+
     fn registered_event_success_required() -> bool {
         std::env::var("OXVBA_REGISTERED_EVENT_REQUIRE_SUCCESS")
             .ok()
@@ -111,10 +125,15 @@ mod windows_registered_com_lane {
             RegisteredProgIdFlavor::ExcelApplication => 0,
             _ => 1,
         };
-        std::env::var("OXVBA_REGISTERED_EVENT_EXPECTED_ARGC")
-            .ok()
-            .and_then(|value| value.trim().parse::<usize>().ok())
-            .unwrap_or(default_count)
+        read_env_usize("OXVBA_REGISTERED_EVENT_EXPECTED_ARGC", default_count)
+    }
+
+    fn registered_event_poll_iterations() -> usize {
+        read_env_usize("OXVBA_REGISTERED_EVENT_POLL_ITERATIONS", 40).max(1)
+    }
+
+    fn registered_event_poll_delay_ms() -> u64 {
+        read_env_u64("OXVBA_REGISTERED_EVENT_POLL_DELAY_MS", 50)
     }
 
     fn run_registered_lane_source(source: &str) -> Vec<i32> {
@@ -394,6 +413,8 @@ End Sub
         let trigger_member = registered_event_trigger_member();
         let trigger_arg = registered_event_trigger_arg();
         let expected_arg_count = registered_event_expected_arg_count();
+        let poll_iterations = registered_event_poll_iterations();
+        let poll_delay_ms = registered_event_poll_delay_ms();
 
         let subscription = match engine.subscribe_com_event_handler(
             object,
@@ -436,14 +457,14 @@ End Sub
         }
 
         let mut callback = None;
-        for _ in 0..40 {
+        for _ in 0..poll_iterations {
             match engine.poll_com_event_callback() {
                 Ok(Some(next)) => {
                     callback = Some(next);
                     break;
                 }
                 Ok(None) => {
-                    std::thread::sleep(std::time::Duration::from_millis(50));
+                    std::thread::sleep(std::time::Duration::from_millis(poll_delay_ms));
                 }
                 Err(err) => {
                     let _ = engine.unsubscribe_com_event_handler(subscription);

@@ -9,6 +9,8 @@ param(
     [Nullable[int]]$DispatchMember = $null,
     [bool]$TriggerRequiresArg = $true,
     [string]$TriggerInvokeKind = "",
+    [int]$PollIterations = 40,
+    [int]$PollDelayMs = 50,
     [switch]$ForceRegisteredTestDispatch,
     [switch]$EnableTrace,
     [switch]$NoCapture,
@@ -60,6 +62,8 @@ try {
     $prevDispatchMember = $env:OXVBA_REGISTERED_EVENT_DISPATCH_MEMBER
     $prevTriggerRequiresArg = $env:OXVBA_REGISTERED_EVENT_TRIGGER_REQUIRES_ARG
     $prevTriggerInvokeKind = $env:OXVBA_REGISTERED_EVENT_TRIGGER_INVOKE_KIND
+    $prevPollIterations = $env:OXVBA_REGISTERED_EVENT_POLL_ITERATIONS
+    $prevPollDelayMs = $env:OXVBA_REGISTERED_EVENT_POLL_DELAY_MS
     $prevForceRegistered = $env:OXVBA_COM_FORCE_REGISTERED_TESTDISPATCH
     $prevTrace = $env:OXVBA_COM_EVENT_TRACE
     $hadPrevProg = Test-Path Env:OXVBA_REGISTERED_COM_PROGID
@@ -73,6 +77,8 @@ try {
     $hadPrevDispatchMember = Test-Path Env:OXVBA_REGISTERED_EVENT_DISPATCH_MEMBER
     $hadPrevTriggerRequiresArg = Test-Path Env:OXVBA_REGISTERED_EVENT_TRIGGER_REQUIRES_ARG
     $hadPrevTriggerInvokeKind = Test-Path Env:OXVBA_REGISTERED_EVENT_TRIGGER_INVOKE_KIND
+    $hadPrevPollIterations = Test-Path Env:OXVBA_REGISTERED_EVENT_POLL_ITERATIONS
+    $hadPrevPollDelayMs = Test-Path Env:OXVBA_REGISTERED_EVENT_POLL_DELAY_MS
     $hadPrevForceRegistered = Test-Path Env:OXVBA_COM_FORCE_REGISTERED_TESTDISPATCH
     $hadPrevTrace = Test-Path Env:OXVBA_COM_EVENT_TRACE
     try {
@@ -107,6 +113,8 @@ try {
         } else {
             Remove-Item Env:OXVBA_REGISTERED_EVENT_TRIGGER_INVOKE_KIND -ErrorAction SilentlyContinue
         }
+        $env:OXVBA_REGISTERED_EVENT_POLL_ITERATIONS = "$PollIterations"
+        $env:OXVBA_REGISTERED_EVENT_POLL_DELAY_MS = "$PollDelayMs"
         if ($ForceRegisteredTestDispatch) {
             $env:OXVBA_COM_FORCE_REGISTERED_TESTDISPATCH = "1"
         }
@@ -146,6 +154,8 @@ try {
         Write-Host "[oxvba] dispatch-member override: $(if ($DispatchMember.HasValue) { $DispatchMember.Value } else { '<default>' })"
         Write-Host "[oxvba] trigger requires arg: $($TriggerRequiresArg.ToString().ToLowerInvariant())"
         Write-Host "[oxvba] trigger invoke kind: $(if ([string]::IsNullOrWhiteSpace($TriggerInvokeKind)) { '<default>' } else { $TriggerInvokeKind })"
+        Write-Host "[oxvba] callback poll iterations: $PollIterations"
+        Write-Host "[oxvba] callback poll delay ms: $PollDelayMs"
         Write-Host "[oxvba] force registered test dispatch: $($ForceRegisteredTestDispatch.ToString().ToLowerInvariant())"
         Write-Host "[oxvba] com event trace: $($EnableTrace.ToString().ToLowerInvariant())"
         Write-Host "[oxvba] command: $cmdText"
@@ -189,6 +199,8 @@ try {
             "- Dispatch-member override: $(if ($DispatchMember.HasValue) { $DispatchMember.Value } else { '<default>' })",
             "- Trigger requires arg: $($TriggerRequiresArg.ToString().ToLowerInvariant())",
             "- Trigger invoke kind override: $(if ([string]::IsNullOrWhiteSpace($TriggerInvokeKind)) { '<default>' } else { $TriggerInvokeKind })",
+            "- Callback poll iterations: $PollIterations",
+            "- Callback poll delay ms: $PollDelayMs",
             "- COM event trace: $($EnableTrace.ToString().ToLowerInvariant())",
             "- Log: $logPath"
         )
@@ -257,6 +269,16 @@ try {
             $env:OXVBA_REGISTERED_EVENT_TRIGGER_INVOKE_KIND = $prevTriggerInvokeKind
         } else {
             Remove-Item Env:OXVBA_REGISTERED_EVENT_TRIGGER_INVOKE_KIND -ErrorAction SilentlyContinue
+        }
+        if ($hadPrevPollIterations) {
+            $env:OXVBA_REGISTERED_EVENT_POLL_ITERATIONS = $prevPollIterations
+        } else {
+            Remove-Item Env:OXVBA_REGISTERED_EVENT_POLL_ITERATIONS -ErrorAction SilentlyContinue
+        }
+        if ($hadPrevPollDelayMs) {
+            $env:OXVBA_REGISTERED_EVENT_POLL_DELAY_MS = $prevPollDelayMs
+        } else {
+            Remove-Item Env:OXVBA_REGISTERED_EVENT_POLL_DELAY_MS -ErrorAction SilentlyContinue
         }
         if ($hadPrevForceRegistered) {
             $env:OXVBA_COM_FORCE_REGISTERED_TESTDISPATCH = $prevForceRegistered
