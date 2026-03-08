@@ -399,6 +399,10 @@ pub enum Instruction {
         binding: usize,
         value: usize,
     },
+    IntrinsicWithEventsClearOwner {
+        dst: usize,
+        owner: usize,
+    },
     IntrinsicWithEventsFirstOwner {
         dst: usize,
         source: usize,

@@ -170,6 +170,7 @@ fn expr_has_observable_effect(expr: &BoundExpr) -> bool {
     match expr {
         BoundExpr::IntrinsicCall { name, args } => {
             let call_has_effect = name.eq_ignore_ascii_case("__oxvba_withevents_set")
+                || name.eq_ignore_ascii_case("__oxvba_withevents_clear_owner")
                 || name.eq_ignore_ascii_case("__oxvba_withevents_first_owner")
                 || name.eq_ignore_ascii_case("__oxvba_withevents_next_owner")
                 || matches!(

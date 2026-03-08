@@ -1056,7 +1056,8 @@ fn lower_module_source_module_aware(
     let mut early_bound = BTreeMap::<String, EarlyBoundBinding>::new();
     let mut internal_class_bindings = BTreeMap::<String, InternalClassBinding>::new();
     let mut withevents_bindings = BTreeSet::<String>::new();
-    for line in module.source.lines() {
+    let source_lines = module_source_lines_with_class_terminate_cleanup(module);
+    for line in &source_lines {
         let expanded = expand_bound_source_line(
             line,
             manifest,
@@ -1111,6 +1112,40 @@ fn lower_module_source_module_aware(
         &withevents_bindings,
     ));
     Ok(out.join("\n"))
+}
+
+fn module_source_lines_with_class_terminate_cleanup(module: &ModuleUnit) -> Vec<String> {
+    if module.module_kind != ModuleKind::Class {
+        return module.source.lines().map(|line| line.to_string()).collect();
+    }
+
+    let mut out = Vec::new();
+    let mut in_class_terminate = false;
+    for line in module.source.lines() {
+        let normalized = normalize_visibility_prefixed_procedure_signature(line);
+        if let Some((proc_name, _, _)) = parse_procedure_signature_line(&normalized) {
+            in_class_terminate = proc_name.eq_ignore_ascii_case("class_terminate");
+        }
+
+        let lower = line.trim().to_ascii_lowercase();
+        if in_class_terminate && lower == "end sub" {
+            let leading_ws_len = line.len().saturating_sub(line.trim_start().len());
+            let leading_ws = &line[..leading_ws_len];
+            let cleanup_line = format!(
+                "{leading_ws}__oxvba_this_instance = __oxvba_withevents_clear_owner(__oxvba_this_instance)"
+            );
+            let already_injected = out
+                .last()
+                .map(|prior: &String| prior.trim().eq_ignore_ascii_case(cleanup_line.trim()))
+                .unwrap_or(false);
+            if !already_injected {
+                out.push(cleanup_line);
+            }
+            in_class_terminate = false;
+        }
+        out.push(line.to_string());
+    }
+    out
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -2465,7 +2500,8 @@ fn rewrite_module_source(
     let mut early_bound = BTreeMap::<String, EarlyBoundBinding>::new();
     let mut internal_class_bindings = BTreeMap::<String, InternalClassBinding>::new();
     let mut withevents_bindings = BTreeSet::<String>::new();
-    for line in module.source.lines() {
+    let source_lines = module_source_lines_with_class_terminate_cleanup(module);
+    for line in &source_lines {
         let expanded = expand_bound_source_line(
             line,
             manifest,
@@ -4011,6 +4047,37 @@ mod tests {
         assert!(
             lowered.contains("__oxvba_withevents_first_owner(__oxvba_source_instance,"),
             "event guard wrapper should enumerate runtime owner bindings through first-owner intrinsic"
+        );
+    }
+
+    #[test]
+    fn compile_project_injects_withevents_owner_cleanup_in_class_terminate() {
+        let main_module = module_unit_from_source(
+            "MainModule",
+            ModuleKind::Procedural,
+            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nEnd Sub",
+        )
+        .expect("module parses");
+        let sink = module_unit_from_source(
+            "Sink",
+            ModuleKind::Class,
+            "Attribute VB_Name = \"Sink\"\nPrivate WithEvents src As Emitter\nPublic Sub Class_Terminate()\nDim x\nx = 1\nEnd Sub",
+        )
+        .expect("module parses");
+        let manifest = ProjectManifest {
+            project_name: "ProjectA".to_string(),
+            project_kind: ProjectKind::Source,
+            modules: vec![main_module, sink],
+            references: Vec::new(),
+            reference_projects: Vec::new(),
+            conditional_constants: BTreeMap::new(),
+        };
+
+        let compiled = compile_project(&manifest).expect("rewrite should compile");
+        let lowered = compiled.rewritten_source.to_ascii_lowercase();
+        assert!(
+            lowered.contains("__oxvba_withevents_clear_owner(__oxvba_this_instance)"),
+            "Class_Terminate should inject owner-wide WithEvents cleanup call"
         );
     }
 

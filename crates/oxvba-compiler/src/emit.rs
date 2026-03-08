@@ -1989,6 +1989,8 @@ fn emit_expr_into(
                         value: *value,
                     })
                 }
+                ("__oxvba_withevents_clear_owner", [owner]) => instructions
+                    .push(Instruction::IntrinsicWithEventsClearOwner { dst, owner: *owner }),
                 ("__oxvba_withevents_first_owner", [source, binding]) => {
                     instructions.push(Instruction::IntrinsicWithEventsFirstOwner {
                         dst,

@@ -60,6 +60,7 @@ Primary checks:
 - `CreateObject` ProgID-text activation path,
 - member-name resolution path (`GetIDsOfNames`) and deterministic cache behavior,
 - `DISPPARAMS` packing subset (phase-I: 2-arg/3-arg positional forms),
+- typelib-derived member/event trigger metadata routing for callback queue projection in controlled lanes,
 - deterministic `VarResult`/`ExcepInfo`/`ArgErr` translation to OxVba diagnostics.
 - failure-path behavior under `On Error Resume Next` on unsupported profiles.
 - controlled COM server path via OxVba-owned in-process test ProgID (`OxVba.TestDispatch`) to reduce external registration variance.

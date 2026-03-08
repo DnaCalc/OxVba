@@ -58,6 +58,10 @@ Run context: full events parity closure (non-COM + Windows COM)
     - `TypeLibMetadataBlob` now includes explicit member/event records (tokens, callback arity, dispatch path),
     - native `create_object` loads and caches typelib metadata for known bindings and attaches it to COM binding state,
     - event subscription/path checks and callback-queue signature validation now resolve from binding metadata instead of hardcoded event signatures.
+  - Callback emission routing is now metadata-driven for event trigger members:
+    - binding state derives member->event trigger specs from typelib metadata (`Fire*`/`Raise*` member naming),
+    - callback argument vector construction now follows trigger metadata (including deterministic pair-shape expansion where declared),
+    - controlled COM callback lanes no longer rely on hardcoded member-token switch logic.
   - Added deterministic diagnostics for:
     - native-lane requirement (`COM-E-EVENT-PATH-UNSUPPORTED`),
     - missing connection point/event token (`COM-E-EVENT-CONNECTIONPOINT-MISSING`),

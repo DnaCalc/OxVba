@@ -1537,6 +1537,18 @@ mod tests {
     }
 
     #[test]
+    fn compile_withevents_clear_owner_intrinsic_emits_deterministically() {
+        let source = "Sub Main()\nDim x\nx = __oxvba_withevents_clear_owner(11)\nEnd Sub";
+        let out = compile(source).expect("WithEvents clear-owner intrinsic should compile");
+        assert!(
+            out.instructions
+                .iter()
+                .any(|inst| matches!(inst, Instruction::IntrinsicWithEventsClearOwner { .. })),
+            "expected IntrinsicWithEventsClearOwner emission"
+        );
+    }
+
+    #[test]
     fn compile_withevents_owner_iteration_intrinsics_emit_deterministically() {
         let source = "Sub Main()\nDim x\nx = __oxvba_withevents_first_owner(1, 7)\nx = __oxvba_withevents_next_owner()\nEnd Sub";
         let out = compile(source).expect("WithEvents owner iteration intrinsics should compile");

@@ -188,7 +188,8 @@ End Sub
 
         assert_eq!(err.phase(), DiagnosticPhase::Runtime);
         assert!(
-            err.message().contains("COM-E-EVENT-CONNECTIONPOINT-MISSING")
+            err.message()
+                .contains("COM-E-EVENT-CONNECTIONPOINT-MISSING")
                 || err.message().contains("COM-E-EVENT-PATH-UNSUPPORTED"),
             "expected deterministic COM event subscribe failure mapping, got {}",
             err.message()

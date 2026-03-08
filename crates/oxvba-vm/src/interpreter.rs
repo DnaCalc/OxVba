@@ -1075,6 +1075,13 @@ impl Vm {
                     self.write_slot(*dst, value)?;
                     pc += 1;
                 }
+                Instruction::IntrinsicWithEventsClearOwner { dst, owner } => {
+                    let owner = self.read_slot(*owner)?;
+                    self.withevents_bindings
+                        .retain(|key, _| Self::withevents_owner_from_key(*key) != owner);
+                    self.write_slot(*dst, 0)?;
+                    pc += 1;
+                }
                 Instruction::IntrinsicWithEventsFirstOwner {
                     dst,
                     source,
@@ -3013,6 +3020,74 @@ mod tests {
         vm.execute(&bytecode).expect("vm should execute bytecode");
         assert_eq!(vm.snapshot_slots(11)[9], 0);
         assert_eq!(vm.snapshot_slots(11)[10], 202);
+    }
+
+    #[test]
+    fn withevents_clear_owner_removes_all_bindings_for_owner() {
+        let bytecode = Bytecode {
+            instructions: vec![
+                Instruction::LoadConstI32 { slot: 0, value: 11 },
+                Instruction::LoadConstI32 { slot: 1, value: 22 },
+                Instruction::LoadConstI32 { slot: 2, value: 7 },
+                Instruction::LoadConstI32 { slot: 3, value: 8 },
+                Instruction::LoadConstI32 {
+                    slot: 4,
+                    value: 101,
+                },
+                Instruction::LoadConstI32 {
+                    slot: 5,
+                    value: 202,
+                },
+                Instruction::LoadConstI32 {
+                    slot: 6,
+                    value: 303,
+                },
+                Instruction::IntrinsicWithEventsSet {
+                    dst: 7,
+                    owner: 0,
+                    binding: 2,
+                    value: 4,
+                },
+                Instruction::IntrinsicWithEventsSet {
+                    dst: 8,
+                    owner: 0,
+                    binding: 3,
+                    value: 5,
+                },
+                Instruction::IntrinsicWithEventsSet {
+                    dst: 9,
+                    owner: 1,
+                    binding: 2,
+                    value: 6,
+                },
+                Instruction::IntrinsicWithEventsClearOwner { dst: 10, owner: 0 },
+                Instruction::IntrinsicWithEventsGet {
+                    dst: 11,
+                    owner: 0,
+                    binding: 2,
+                },
+                Instruction::IntrinsicWithEventsGet {
+                    dst: 12,
+                    owner: 0,
+                    binding: 3,
+                },
+                Instruction::IntrinsicWithEventsGet {
+                    dst: 13,
+                    owner: 1,
+                    binding: 2,
+                },
+                Instruction::Halt,
+            ],
+            external_call_descriptors: Vec::new(),
+            slot_count: 14,
+            user_slot_count: 14,
+        };
+
+        let mut vm = Vm::default();
+        vm.execute(&bytecode).expect("vm should execute bytecode");
+        assert_eq!(vm.snapshot_slots(14)[11], 0);
+        assert_eq!(vm.snapshot_slots(14)[12], 0);
+        assert_eq!(vm.snapshot_slots(14)[13], 303);
     }
 
     #[test]

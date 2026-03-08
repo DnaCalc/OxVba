@@ -2461,6 +2461,7 @@ struct ComBinding {
     member_dispids: BTreeMap<i32, i32>,
     member_specs: BTreeMap<i32, ComMemberSpec>,
     event_specs: BTreeMap<i32, ComEventSpec>,
+    event_trigger_specs: BTreeMap<i32, ComEventTriggerSpec>,
 }
 
 impl ComBinding {
@@ -2478,6 +2479,9 @@ impl ComBinding {
                 .unwrap_or_default(),
             event_specs: metadata
                 .map(com_event_specs_from_typelib_metadata)
+                .unwrap_or_default(),
+            event_trigger_specs: metadata
+                .map(com_event_trigger_specs_from_typelib_metadata)
                 .unwrap_or_default(),
         }
     }
@@ -2513,6 +2517,13 @@ struct ComEventSpec {
 struct ComMemberSpec {
     name: String,
     requires_argument: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct ComEventTriggerSpec {
+    event_token: i32,
+    callback_arity: usize,
+    second_arg_is_incremented: bool,
 }
 
 #[cfg(target_os = "windows")]
@@ -2589,19 +2600,44 @@ fn com_event_callback_args_from_member_token(
     member: i32,
     arg: i32,
 ) -> Option<(i32, Vec<i32>)> {
-    if binding
-        .prog_id_name
-        .eq_ignore_ascii_case(OXVBA_TEST_DISPATCH_PROGID)
-    {
-        return match member {
-            TEST_DISPID_FIRE_CHANGED => Some((TEST_EVENT_CHANGED, vec![arg])),
-            TEST_DISPID_FIRE_CHANGED_PAIR => {
-                Some((TEST_EVENT_CHANGED_PAIR, vec![arg, arg.saturating_add(1)]))
-            }
-            _ => None,
+    let spec = binding.event_trigger_specs.get(&member)?;
+    let args = match spec.callback_arity {
+        0 => Vec::new(),
+        1 => vec![arg],
+        2 if spec.second_arg_is_incremented => vec![arg, arg.saturating_add(1)],
+        n => vec![arg; n],
+    };
+    Some((spec.event_token, args))
+}
+
+fn com_event_trigger_specs_from_typelib_metadata(
+    blob: &TypeLibMetadataBlob,
+) -> BTreeMap<i32, ComEventTriggerSpec> {
+    let events_by_name: BTreeMap<String, &TypeLibEventMetadata> = blob
+        .events
+        .iter()
+        .map(|event| (normalize_ci_token(&event.name), event))
+        .collect();
+    let mut out = BTreeMap::new();
+    for member in &blob.members {
+        let normalized_member_name = normalize_ci_token(&member.name);
+        let event_name = normalized_member_name
+            .strip_prefix("fire")
+            .or_else(|| normalized_member_name.strip_prefix("raise"))
+            .unwrap_or(normalized_member_name.as_str());
+        let Some(event) = events_by_name.get(event_name) else {
+            continue;
         };
+        out.insert(
+            member.token,
+            ComEventTriggerSpec {
+                event_token: event.token,
+                callback_arity: usize::from(event.callback_arity),
+                second_arg_is_incremented: normalized_member_name.ends_with("pair"),
+            },
+        );
     }
-    None
+    out
 }
 
 fn com_event_specs_from_typelib_metadata(
@@ -4355,6 +4391,23 @@ mod tests {
             source_interface_event.path,
             super::ComEventPath::SourceInterface
         );
+        let fire_changed_trigger = binding
+            .event_trigger_specs
+            .get(&super::TEST_DISPID_FIRE_CHANGED)
+            .expect("FireChanged trigger spec should be present");
+        assert_eq!(fire_changed_trigger.event_token, super::TEST_EVENT_CHANGED);
+        assert_eq!(fire_changed_trigger.callback_arity, 1);
+        assert!(!fire_changed_trigger.second_arg_is_incremented);
+        let fire_changed_pair_trigger = binding
+            .event_trigger_specs
+            .get(&super::TEST_DISPID_FIRE_CHANGED_PAIR)
+            .expect("FireChangedPair trigger spec should be present");
+        assert_eq!(
+            fire_changed_pair_trigger.event_token,
+            super::TEST_EVENT_CHANGED_PAIR
+        );
+        assert_eq!(fire_changed_pair_trigger.callback_arity, 2);
+        assert!(fire_changed_pair_trigger.second_arg_is_incremented);
     }
 
     #[cfg(target_os = "windows")]
