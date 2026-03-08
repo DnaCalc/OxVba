@@ -23,4 +23,5 @@ Scope: Workset `P9` fixture requirements
   - `docs/evidence/conformance/PMR_HOST_IMPORT_TOLERANCE_MATRIX_V1.md`
 - Excel/VBA parity for `CCT-037..CCT-041` has oracle evidence captured (`pmr_project_model_20260303T070427Z`):
   - `CCT-037..CCT-039` matched and closed.
-  - `CCT-040..CCT-041` closed with recorded divergences (`DIV-0003`, `DIV-0004`).
+  - `CCT-040` original baseline divergence is closed locally after project-aware Implements compile/runtime closure; refreshed multi-interface oracle edge capture remains queued in `ODG-038`.
+  - `CCT-041` remains open as recorded divergence (`DIV-0004`) for true instance-level reassignment/subscription semantics.

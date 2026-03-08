@@ -61,4 +61,5 @@ Initial capture status:
 - Completed run: `docs/evidence/conformance/oracle_captures/pmr_project_model_20260303T070427Z/summary.md`
 - Gate outcomes:
   - `CCT-037..CCT-039` matched.
-  - `CCT-040..CCT-041` divergence recorded (`DIV-0003`, `DIV-0004`).
+  - `CCT-040` original divergence is closed locally for baseline shape; refreshed edge-matrix oracle foldback remains open (`ODG-038`).
+  - `CCT-041` divergence remains open (`DIV-0004`) for true instance-level reassignment/subscription semantics.
