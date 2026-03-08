@@ -293,6 +293,12 @@ impl StandardHostServices {
                     op,
                     payload.subscription
                 );
+                hal_contract_assert!(
+                    payload.args.len() <= 32,
+                    "op={} observed oversized callback args payload (len={})",
+                    op,
+                    payload.args.len()
+                );
             }
         }
 
@@ -799,12 +805,13 @@ impl StandardHostServices {
         member: i32,
         arg: i32,
     ) -> HalResult<()> {
-        let Some(event) = com_event_from_member_token(binding, member) else {
+        let Some((event, args)) = com_event_callback_args_from_member_token(binding, member, arg)
+        else {
             return Ok(());
         };
         let mut state = self.com_lock(CapabilityId::ComActivationDispatch, "dispatch_invoke")?;
         self.assert_com_invariants(&state, "dispatch_invoke-event-pre");
-        let _ = state.queue_callbacks_for_source_event(object, event, arg);
+        let _ = state.queue_callbacks_for_source_event(object, event, args.as_slice());
         self.assert_com_invariants(&state, "dispatch_invoke-event-post");
         Ok(())
     }
@@ -1405,7 +1412,15 @@ impl ComHal for StandardHostServices {
                 format!("COM-E-EVENT-CONNECTIONPOINT-MISSING: unknown COM object token {object}"),
             ));
         };
-        if !com_event_supported_for_binding(&binding, event) {
+        if com_event_is_source_interface_only(&binding, event) {
+            return Err(HalError::adapter_fault(
+                self.profile,
+                capability,
+                "subscribe_event",
+                "COM-E-EVENT-PATH-UNSUPPORTED: source-interface COM event callbacks (COM-EVT-B) are unsupported in current lane",
+            ));
+        }
+        if com_event_signature_arity_for_binding(&binding, event).is_none() {
             return Err(HalError::adapter_fault(
                 self.profile,
                 capability,
@@ -1502,6 +1517,45 @@ impl ComHal for StandardHostServices {
         Ok(payload.subscription)
     }
 
+    fn event_callback_arity(&self, callback: i32) -> HalResult<i32> {
+        let capability = CapabilityId::ComActivationDispatch;
+        if !self.supports(capability) {
+            return Err(self.unsupported(capability, "event_callback_arity"));
+        }
+        if !self.policy.allow_com_activation {
+            return Err(self.denied(capability, "event_callback_arity"));
+        }
+        if !self.native_com_enabled() {
+            return Err(HalError::adapter_fault(
+                self.profile,
+                capability,
+                "event_callback_arity",
+                "COM-E-EVENT-PATH-UNSUPPORTED: native COM event callback lookup requires host-backed Windows native mode",
+            ));
+        }
+        let state = self.com_lock(capability, "event_callback_arity")?;
+        self.assert_com_invariants(&state, "event_callback_arity");
+        let Some(payload) = state.callbacks.get(&callback) else {
+            return Err(HalError::adapter_fault(
+                self.profile,
+                capability,
+                "event_callback_arity",
+                format!("COM-E-EVENT-CALLBACK-MISSING: unknown callback token {callback}"),
+            ));
+        };
+        i32::try_from(payload.args.len()).map_err(|_| {
+            HalError::adapter_fault(
+                self.profile,
+                capability,
+                "event_callback_arity",
+                format!(
+                    "COM-E-EVENT-CALLBACK-SIGNATURE-MISMATCH: callback arity {} exceeds deterministic token range",
+                    payload.args.len()
+                ),
+            )
+        })
+    }
+
     fn event_callback_arg(&self, callback: i32, index: i32) -> HalResult<i32> {
         let capability = CapabilityId::ComActivationDispatch;
         if !self.supports(capability) {
@@ -1518,7 +1572,7 @@ impl ComHal for StandardHostServices {
                 "COM-E-EVENT-PATH-UNSUPPORTED: native COM event callback lookup requires host-backed Windows native mode",
             ));
         }
-        if index != 0 {
+        if index < 0 {
             return Err(HalError::adapter_fault(
                 self.profile,
                 capability,
@@ -1539,7 +1593,20 @@ impl ComHal for StandardHostServices {
                 format!("COM-E-EVENT-CALLBACK-MISSING: unknown callback token {callback}"),
             ));
         };
-        Ok(payload.arg)
+        let idx = index as usize;
+        let Some(value) = payload.args.get(idx).copied() else {
+            return Err(HalError::adapter_fault(
+                self.profile,
+                capability,
+                "event_callback_arg",
+                format!(
+                    "COM-E-EVENT-CALLBACK-SIGNATURE-MISMATCH: callback argument index {} exceeds callback arity {}",
+                    index,
+                    payload.args.len()
+                ),
+            ));
+        };
+        Ok(value)
     }
 
     fn release_event_callback(&self, callback: i32) -> HalResult<i32> {
@@ -2202,7 +2269,7 @@ impl ComState {
         60_000i32.saturating_add(self.next_callback)
     }
 
-    fn queue_callbacks_for_source_event(&mut self, object: i32, event: i32, arg: i32) -> usize {
+    fn queue_callbacks_for_source_event(&mut self, object: i32, event: i32, args: &[i32]) -> usize {
         let targets: Vec<i32> = self
             .subscriptions
             .iter()
@@ -2222,7 +2289,7 @@ impl ComState {
                     subscription: *subscription,
                     object,
                     event,
-                    arg,
+                    args: args.to_vec(),
                 },
             );
             self.pending_callbacks.push(callback);
@@ -2266,12 +2333,12 @@ struct ComEventSubscription {
     event: i32,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 struct ComEventCallback {
     subscription: i32,
     object: i32,
     event: i32,
-    arg: i32,
+    args: Vec<i32>,
 }
 
 #[cfg(target_os = "windows")]
@@ -2317,32 +2384,57 @@ fn com_member_spec_for_token(prog_id: &str, member: i32) -> Option<ComMemberSpec
 }
 
 #[cfg(target_os = "windows")]
-fn com_event_supported_for_binding(binding: &ComBinding, event: i32) -> bool {
+fn com_event_signature_arity_for_binding(binding: &ComBinding, event: i32) -> Option<usize> {
     binding
         .prog_id_name
         .eq_ignore_ascii_case(OXVBA_TEST_DISPATCH_PROGID)
-        && event == TEST_EVENT_CHANGED
+        .then_some(())
+        .and_then(|_| match event {
+            TEST_EVENT_CHANGED => Some(1),
+            _ => None,
+        })
+}
+
+#[cfg(target_os = "windows")]
+fn com_event_is_source_interface_only(binding: &ComBinding, event: i32) -> bool {
+    binding
+        .prog_id_name
+        .eq_ignore_ascii_case(OXVBA_TEST_DISPATCH_PROGID)
+        && event == TEST_EVENT_CHANGED_SOURCE_INTERFACE
 }
 
 #[cfg(not(target_os = "windows"))]
-fn com_event_supported_for_binding(_binding: &ComBinding, _event: i32) -> bool {
+fn com_event_signature_arity_for_binding(_binding: &ComBinding, _event: i32) -> Option<usize> {
+    None
+}
+
+#[cfg(not(target_os = "windows"))]
+fn com_event_is_source_interface_only(_binding: &ComBinding, _event: i32) -> bool {
     false
 }
 
 #[cfg(target_os = "windows")]
-fn com_event_from_member_token(binding: &ComBinding, member: i32) -> Option<i32> {
+fn com_event_callback_args_from_member_token(
+    binding: &ComBinding,
+    member: i32,
+    arg: i32,
+) -> Option<(i32, Vec<i32>)> {
     if binding
         .prog_id_name
         .eq_ignore_ascii_case(OXVBA_TEST_DISPATCH_PROGID)
         && member == TEST_DISPID_FIRE_CHANGED
     {
-        return Some(TEST_EVENT_CHANGED);
+        return Some((TEST_EVENT_CHANGED, vec![arg]));
     }
     None
 }
 
 #[cfg(not(target_os = "windows"))]
-fn com_event_from_member_token(_binding: &ComBinding, _member: i32) -> Option<i32> {
+fn com_event_callback_args_from_member_token(
+    _binding: &ComBinding,
+    _member: i32,
+    _arg: i32,
+) -> Option<(i32, Vec<i32>)> {
     None
 }
 
@@ -2455,6 +2547,8 @@ const TEST_DISPID_EXISTS: i32 = 2;
 const TEST_DISPID_FIRE_CHANGED: i32 = 3;
 #[cfg(target_os = "windows")]
 const TEST_EVENT_CHANGED: i32 = 1;
+#[cfg(target_os = "windows")]
+const TEST_EVENT_CHANGED_SOURCE_INTERFACE: i32 = 2;
 
 #[cfg(target_os = "windows")]
 #[repr(C)]
@@ -3423,6 +3517,12 @@ mod tests {
                 .contains("COM-E-EVENT-PATH-UNSUPPORTED")
         );
         assert!(
+            host.event_callback_arity(60_001)
+                .expect_err("event_callback_arity should require native mode")
+                .message
+                .contains("COM-E-EVENT-PATH-UNSUPPORTED")
+        );
+        assert!(
             host.event_callback_arg(60_001, 0)
                 .expect_err("event_callback_arg should require native mode")
                 .message
@@ -3472,6 +3572,11 @@ mod tests {
             77
         );
         assert_eq!(
+            host.event_callback_arity(callback)
+                .expect("callback arity lookup should succeed"),
+            1
+        );
+        assert_eq!(
             host.release_event_callback(callback)
                 .expect("callback release should succeed"),
             1
@@ -3511,6 +3616,27 @@ mod tests {
 
     #[cfg(target_os = "windows")]
     #[test]
+    fn windows_native_com_event_subscription_reports_explicit_com_evt_b_unsupported() {
+        let host = StandardHostServices::new(HalProfileId::Windows, HostPolicy::interactive_dev());
+        let object = host
+            .create_object(4)
+            .expect("create_object should return a token");
+        let err = host
+            .subscribe_event(object, super::TEST_EVENT_CHANGED_SOURCE_INTERFACE)
+            .expect_err("COM-EVT-B event token should fail deterministically");
+        assert_eq!(err.kind, HalErrorKind::AdapterFault);
+        assert!(
+            err.message.contains("COM-E-EVENT-PATH-UNSUPPORTED"),
+            "expected explicit unsupported policy diagnostic"
+        );
+        assert!(
+            err.message.contains("COM-EVT-B"),
+            "diagnostic should identify unsupported event lane"
+        );
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
     fn windows_native_com_event_unsubscribe_rejects_unknown_subscription() {
         let host = StandardHostServices::new(HalProfileId::Windows, HostPolicy::interactive_dev());
         let err = host
@@ -3527,6 +3653,11 @@ mod tests {
         let err = host
             .event_callback_subscription(60_999)
             .expect_err("unknown callback should fail deterministically");
+        assert_eq!(err.kind, HalErrorKind::AdapterFault);
+        assert!(err.message.contains("COM-E-EVENT-CALLBACK-MISSING"));
+        let err = host
+            .event_callback_arity(60_999)
+            .expect_err("unknown callback arity lookup should fail deterministically");
         assert_eq!(err.kind, HalErrorKind::AdapterFault);
         assert!(err.message.contains("COM-E-EVENT-CALLBACK-MISSING"));
     }

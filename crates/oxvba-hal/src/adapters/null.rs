@@ -158,6 +158,10 @@ impl ComHal for NullHostServices {
         ))
     }
 
+    fn event_callback_arity(&self, _callback: i32) -> HalResult<i32> {
+        Err(self.unsupported(CapabilityId::ComActivationDispatch, "event_callback_arity"))
+    }
+
     fn event_callback_arg(&self, _callback: i32, _index: i32) -> HalResult<i32> {
         Err(self.unsupported(CapabilityId::ComActivationDispatch, "event_callback_arg"))
     }
@@ -270,6 +274,12 @@ mod tests {
         assert_eq!(
             host.event_callback_subscription(1)
                 .expect_err("event_callback_subscription")
+                .kind,
+            HalErrorKind::CapabilityUnavailable
+        );
+        assert_eq!(
+            host.event_callback_arity(1)
+                .expect_err("event_callback_arity")
                 .kind,
             HalErrorKind::CapabilityUnavailable
         );

@@ -93,6 +93,7 @@ pub struct ComEventCallbackDispatch {
     pub subscription_token: i32,
     pub handler_symbol: String,
     pub arg0: i32,
+    pub args: Vec<i32>,
 }
 
 pub struct ProjectRuntimeSession {
@@ -324,11 +325,26 @@ impl Engine {
             .com()
             .event_callback_subscription(callback_token)
             .map_err(|err| PhaseDiagnostic::runtime(err.to_string()))?;
-        let arg0 = self
+        let callback_arity = self
             .host_services
             .com()
-            .event_callback_arg(callback_token, 0)
+            .event_callback_arity(callback_token)
             .map_err(|err| PhaseDiagnostic::runtime(err.to_string()))?;
+        if callback_arity < 0 {
+            return Err(PhaseDiagnostic::runtime(format!(
+                "COM-E-EVENT-CALLBACK-SIGNATURE-MISMATCH: callback arity {} is invalid",
+                callback_arity
+            )));
+        }
+        let mut args = Vec::with_capacity(callback_arity as usize);
+        for index in 0..callback_arity {
+            let value = self
+                .host_services
+                .com()
+                .event_callback_arg(callback_token, index)
+                .map_err(|err| PhaseDiagnostic::runtime(err.to_string()))?;
+            args.push(value);
+        }
         self.host_services
             .com()
             .release_event_callback(callback_token)
@@ -355,7 +371,8 @@ impl Engine {
             callback_token,
             subscription_token,
             handler_symbol,
-            arg0,
+            arg0: args.first().copied().unwrap_or(0),
+            args,
         }))
     }
 
@@ -398,24 +415,21 @@ impl Engine {
     ) -> Result<(), PhaseDiagnostic> {
         let (resolved_symbol, metadata) =
             self.resolve_runtime_handler_metadata(runtime, &callback.handler_symbol)?;
-        let (arg_slots, args) = match metadata.param_slots.as_slice() {
-            [] => (Vec::new(), Vec::new()),
-            [slot] => (vec![*slot], vec![callback.arg0]),
-            params => {
-                return Err(PhaseDiagnostic::runtime(format!(
-                    "PMR-E-EVENT-ARITY-UNSUPPORTED: callback dispatch target `{}` requires {} parameters; current callback lane supports up to one argument",
-                    resolved_symbol,
-                    params.len()
-                )));
-            }
-        };
+        let expected_arity = metadata.param_slots.len();
+        let callback_arity = callback.args.len();
+        if expected_arity != callback_arity {
+            return Err(PhaseDiagnostic::runtime(format!(
+                "PMR-E-EVENT-CALLBACK-SIGNATURE-MISMATCH: callback dispatch target `{}` expects {} arguments but callback supplied {}",
+                resolved_symbol, expected_arity, callback_arity
+            )));
+        }
         runtime
             .vm
             .invoke_procedure_with_i32_args(
                 &runtime.compiled.bytecode,
                 metadata.entry_pc,
-                &arg_slots,
-                &args,
+                &metadata.param_slots,
+                callback.args.as_slice(),
             )
             .map_err(PhaseDiagnostic::runtime)
     }
@@ -1830,6 +1844,7 @@ mod tests {
         assert_eq!(callback.subscription_token, subscription);
         assert_eq!(callback.handler_symbol, "sinka_onchanged");
         assert_eq!(callback.arg0, 77);
+        assert_eq!(callback.args, vec![77]);
         assert!(callback.callback_token >= 60_001);
         assert!(
             engine
@@ -1968,6 +1983,55 @@ mod tests {
         assert!(
             err.message()
                 .contains("PMR-E-EVENT-DISPATCH-TARGET-MISSING")
+        );
+        let _ = engine.unsubscribe_com_event_handler(subscription);
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn formal_com_event_callback_runtime_dispatch_enforces_handler_signature_arity() {
+        let mut engine = Engine::new(HostConfig::default());
+        engine.set_host_policy(HostPolicy::interactive_dev());
+
+        let main_module = module_unit_from_source(
+            "MainModule",
+            ModuleKind::Procedural,
+            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nEnd Sub\nPublic Sub SinkA_OnChanged()\nEnd Sub",
+        )
+        .expect("main module should parse");
+        let manifest = ProjectManifest {
+            project_name: "ProjectA".to_string(),
+            project_kind: ProjectKind::Source,
+            modules: vec![main_module],
+            references: Vec::new(),
+            reference_projects: Vec::new(),
+            conditional_constants: std::collections::BTreeMap::new(),
+        };
+
+        let mut runtime = engine
+            .start_project_runtime_session(&manifest)
+            .expect("project runtime session should start");
+        let object = engine
+            .host_services
+            .com()
+            .create_object(4)
+            .expect("create_object should return controlled COM object");
+        let subscription = engine
+            .subscribe_com_event_handler(object, 1, "SinkA_OnChanged")
+            .expect("subscribe should succeed");
+        let _ = engine
+            .host_services
+            .com()
+            .dispatch_invoke(object, 3, 77)
+            .expect("dispatch_invoke should queue callback");
+
+        let err = engine
+            .poll_and_dispatch_next_com_event_callback(&mut runtime)
+            .expect_err("signature mismatch should fail deterministically");
+        assert_eq!(err.phase(), DiagnosticPhase::Runtime);
+        assert!(
+            err.message()
+                .contains("PMR-E-EVENT-CALLBACK-SIGNATURE-MISMATCH")
         );
         let _ = engine.unsubscribe_com_event_handler(subscription);
     }

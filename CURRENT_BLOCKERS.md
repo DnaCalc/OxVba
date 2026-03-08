@@ -43,18 +43,25 @@ Run context: full events parity closure (non-COM + Windows COM)
     - callback handler symbol resolution into compiled procedure runtime metadata,
     - direct procedure invocation into the live VM instance using slot-seeded arguments,
     - deterministic diagnostics for missing/ambiguous runtime callback targets and unsupported callback arity.
+  - COM callback payload contract is extended beyond fixed `arg0`:
+    - HAL COM callback lane now exposes deterministic callback arity lookup (`event_callback_arity`),
+    - callback payload storage now carries argument vectors with deterministic index diagnostics,
+    - host callback ingress now fetches full callback argument vectors and enforces exact handler signature arity at runtime (`PMR-E-EVENT-CALLBACK-SIGNATURE-MISMATCH`).
+  - `COM-EVT-B` now has explicit deterministic unsupported closure in controlled Windows lane:
+    - subscribing source-interface token path returns deterministic unsupported diagnostic:
+      - `COM-E-EVENT-PATH-UNSUPPORTED: source-interface COM event callbacks (COM-EVT-B) are unsupported in current lane`.
   - Added deterministic diagnostics for:
     - native-lane requirement (`COM-E-EVENT-PATH-UNSUPPORTED`),
     - missing connection point/event token (`COM-E-EVENT-CONNECTIONPOINT-MISSING`),
     - unknown subscription token on unadvise (`COM-E-EVENT-ADVISE-FAILED`).
 - Why blocked:
-  - Current run has non-COM/internal event semantics advanced, COM lifecycle substrate implemented, and callback->handler runtime invocation wired for the controlled arg0 lane.
+  - Current run has non-COM/internal event semantics advanced, COM lifecycle substrate implemented, callback->handler runtime invocation wired, and deterministic COM-EVT-B unsupported policy in place.
   - Remaining parity closure still needs:
-    - typelib-driven callback argument shape mapping from COM metadata into handler signature enforcement beyond current controlled single-argument lane,
-    - explicit `COM-EVT-B` implementation or formal deterministic unsupported closure.
+    - typelib-driven callback argument shape mapping from COM metadata into runtime callback payload + handler signature enforcement beyond current controlled token lane,
+    - controlled/registered evidence expansion for multi-argument callback shapes and bridge coverage.
 - Exact unblocking steps:
-  1. Lock COM event bridge contract for callback ingress (`COM-EVT-A` implemented; `COM-EVT-B` implementation/defer decision pending).
-  2. Extend callback marshalling from fixed `arg0` to typelib-driven shape contract and handler signature validation.
+  1. Bind callback argument shape directly to typelib event metadata (`WI-D01`/`WI-D03`) for COM-EVT-A lanes.
+  2. Extend controlled COM fixture surface with multi-argument callback members and deterministic coverage (`WI-E01`/`WI-E02`).
   3. Add controlled COM event fixture lane and deterministic CI coverage for callback lifecycle + failure mapping.
   4. Reconcile oracle evidence and update divergence/deferred gates.
 
@@ -64,9 +71,9 @@ Run context: full events parity closure (non-COM + Windows COM)
   - `BLK-COM-001` — COM event callback parity lane requires dedicated transport completion.
 - Impact by milestone/phase:
   - Non-COM dynamic owner dispatch path: unblocked and implemented.
-  - COM parity closure: callback transport base lane implemented; blocked at typed marshalling + fixture/evidence completion (`WI-D03`..`WI-D06`, `WI-E01`..`WI-E03`).
+  - COM parity closure: callback transport + arity/signature enforcement lane implemented with explicit COM-EVT-B unsupported policy; blocked at typelib-bound shape + fixture/evidence completion (`WI-D01`, `WI-D03`, `WI-E01`..`WI-E03`).
 - Exact unblocking steps:
   - Approve COM callback bridge policy for `COM-EVT-A/B`.
   - Implement + validate callback lanes in CI/oracle evidence.
 - Suggestions/questions for user:
-  - Confirm preferred `COM-EVT-B` policy target for this run: full implementation now vs explicit deterministic defer.
+  - Confirm whether to prioritize typelib-bound multi-argument callback shape binding (`WI-D01` + `WI-D03`) or controlled fixture expansion (`WI-E01` + `WI-E02`) next.
