@@ -3,6 +3,7 @@ param(
     [int]$EventToken = 1,
     [int]$TriggerMember = 3,
     [int]$TriggerArg = 77,
+    [int]$ExpectedArgCount = 1,
     [switch]$ForceRegisteredTestDispatch,
     [switch]$NoCapture,
     [string]$EvidenceDir = "docs/evidence/conformance/com",
@@ -26,17 +27,35 @@ try {
         New-Item -ItemType Directory -Path $EvidenceDir -Force | Out-Null
     }
 
+    $progIdNormalized = $ProgId.Trim().ToLowerInvariant()
+    if ($progIdNormalized -eq "excel.application") {
+        if (-not $PSBoundParameters.ContainsKey("EventToken")) {
+            $EventToken = 10
+        }
+        if (-not $PSBoundParameters.ContainsKey("TriggerMember")) {
+            $TriggerMember = 10
+        }
+        if (-not $PSBoundParameters.ContainsKey("TriggerArg")) {
+            $TriggerArg = 0
+        }
+        if (-not $PSBoundParameters.ContainsKey("ExpectedArgCount")) {
+            $ExpectedArgCount = 0
+        }
+    }
+
     $prevProg = $env:OXVBA_REGISTERED_COM_PROGID
     $prevRequire = $env:OXVBA_REGISTERED_EVENT_REQUIRE_SUCCESS
     $prevEventToken = $env:OXVBA_REGISTERED_EVENT_TOKEN
     $prevTriggerMember = $env:OXVBA_REGISTERED_EVENT_TRIGGER_MEMBER
     $prevTriggerArg = $env:OXVBA_REGISTERED_EVENT_TRIGGER_ARG
+    $prevExpectedArgCount = $env:OXVBA_REGISTERED_EVENT_EXPECTED_ARGC
     $prevForceRegistered = $env:OXVBA_COM_FORCE_REGISTERED_TESTDISPATCH
     $hadPrevProg = Test-Path Env:OXVBA_REGISTERED_COM_PROGID
     $hadPrevRequire = Test-Path Env:OXVBA_REGISTERED_EVENT_REQUIRE_SUCCESS
     $hadPrevEventToken = Test-Path Env:OXVBA_REGISTERED_EVENT_TOKEN
     $hadPrevTriggerMember = Test-Path Env:OXVBA_REGISTERED_EVENT_TRIGGER_MEMBER
     $hadPrevTriggerArg = Test-Path Env:OXVBA_REGISTERED_EVENT_TRIGGER_ARG
+    $hadPrevExpectedArgCount = Test-Path Env:OXVBA_REGISTERED_EVENT_EXPECTED_ARGC
     $hadPrevForceRegistered = Test-Path Env:OXVBA_COM_FORCE_REGISTERED_TESTDISPATCH
     try {
         $env:OXVBA_REGISTERED_COM_PROGID = $ProgId
@@ -44,6 +63,7 @@ try {
         $env:OXVBA_REGISTERED_EVENT_TOKEN = "$EventToken"
         $env:OXVBA_REGISTERED_EVENT_TRIGGER_MEMBER = "$TriggerMember"
         $env:OXVBA_REGISTERED_EVENT_TRIGGER_ARG = "$TriggerArg"
+        $env:OXVBA_REGISTERED_EVENT_EXPECTED_ARGC = "$ExpectedArgCount"
         if ($ForceRegisteredTestDispatch) {
             $env:OXVBA_COM_FORCE_REGISTERED_TESTDISPATCH = "1"
         }
@@ -74,6 +94,7 @@ try {
         Write-Host "[oxvba] COM lane L2E (registered event-capable server)"
         Write-Host "[oxvba] registered ProgID: $ProgId"
         Write-Host "[oxvba] event token/member/arg: $EventToken/$TriggerMember/$TriggerArg"
+        Write-Host "[oxvba] expected callback arg count: $ExpectedArgCount"
         Write-Host "[oxvba] force registered test dispatch: $($ForceRegisteredTestDispatch.ToString().ToLowerInvariant())"
         Write-Host "[oxvba] command: $cmdText"
         $null = & cargo @cmd 2>&1 | Tee-Object -FilePath $logPath
@@ -110,6 +131,7 @@ try {
             "- Event token: $EventToken",
             "- Trigger member: $TriggerMember",
             "- Trigger arg: $TriggerArg",
+            "- Expected callback arg count: $ExpectedArgCount",
             "- Log: $logPath"
         )
         Set-Content -Path $reportPath -Value ($report -join "`n")
@@ -147,6 +169,11 @@ try {
             $env:OXVBA_REGISTERED_EVENT_TRIGGER_ARG = $prevTriggerArg
         } else {
             Remove-Item Env:OXVBA_REGISTERED_EVENT_TRIGGER_ARG -ErrorAction SilentlyContinue
+        }
+        if ($hadPrevExpectedArgCount) {
+            $env:OXVBA_REGISTERED_EVENT_EXPECTED_ARGC = $prevExpectedArgCount
+        } else {
+            Remove-Item Env:OXVBA_REGISTERED_EVENT_EXPECTED_ARGC -ErrorAction SilentlyContinue
         }
         if ($hadPrevForceRegistered) {
             $env:OXVBA_COM_FORCE_REGISTERED_TESTDISPATCH = $prevForceRegistered

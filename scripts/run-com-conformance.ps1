@@ -7,6 +7,7 @@ param(
     [int]$RegisteredEventToken = 1,
     [int]$RegisteredEventTriggerMember = 3,
     [int]$RegisteredEventTriggerArg = 77,
+    [int]$RegisteredEventExpectedArgCount = 1,
     [switch]$ForceRegisteredTestDispatch,
     [switch]$NoCapture,
     [string]$EvidenceDir = "docs/evidence/conformance/com",
@@ -76,6 +77,7 @@ try {
             EventToken = $RegisteredEventToken
             TriggerMember = $RegisteredEventTriggerMember
             TriggerArg = $RegisteredEventTriggerArg
+            ExpectedArgCount = $RegisteredEventExpectedArgCount
             EvidenceDir = $EvidenceDir
             RunId = $resolvedRunId
             NoThrow = $true

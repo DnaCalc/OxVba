@@ -3207,6 +3207,7 @@ fn map_dispatch_member_literal_token(text: &str) -> Option<i32> {
         "setvalue" => Some(7),
         "setvalueref" => Some(8),
         "value" => Some(9),
+        "quit" => Some(10),
         _ => None,
     }
 }

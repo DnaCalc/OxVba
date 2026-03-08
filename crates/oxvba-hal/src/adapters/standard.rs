@@ -63,6 +63,8 @@ macro_rules! hal_contract_assert {
 const DISPATCH_INVOKE_MISSING_ARG_TOKEN: i32 = i32::MIN + 2_048;
 #[cfg(target_os = "windows")]
 const OXVBA_TEST_DISPATCH_PROGID: &str = "OxVba.TestDispatch";
+#[cfg(target_os = "windows")]
+const EXCEL_APPLICATION_PROGID: &str = "Excel.Application";
 
 #[derive(Debug, Clone)]
 pub(crate) struct StandardHostServices {
@@ -398,6 +400,24 @@ impl StandardHostServices {
             });
         }
 
+        if normalized_importlib
+            .as_deref()
+            .is_some_and(|value| value == "excel.exe")
+            || normalized_libid
+                .as_deref()
+                .is_some_and(|value| value == "00020813-0000-0000-c000-000000000046")
+        {
+            return Some(TypeLibResolvedIdentity {
+                reference_name: request.reference_name.clone(),
+                importlib: "excel.exe".to_string(),
+                libid: Some("00020813-0000-0000-C000-000000000046".to_string()),
+                major_version: 1,
+                minor_version: 0,
+                lcid: Some(0),
+                cache_key: "typelib:excel.application:1.0:0".to_string(),
+            });
+        }
+
         None
     }
 
@@ -495,6 +515,30 @@ impl StandardHostServices {
                 .map(|entry| (entry.name.clone(), entry.token))
                 .collect();
             (member_name_to_token, members, events)
+        } else if identity.importlib.eq_ignore_ascii_case("excel.exe")
+            || identity.libid.as_deref().is_some_and(|libid| {
+                libid.eq_ignore_ascii_case("00020813-0000-0000-C000-000000000046")
+            })
+        {
+            let members = vec![TypeLibMemberMetadata {
+                name: "Quit".to_string(),
+                token: TEST_DISPID_EXCEL_QUIT,
+                requires_argument: false,
+                invoke_kind: TypeLibMemberInvokeKind::Method,
+            }];
+            let events = vec![TypeLibEventMetadata {
+                name: "Quit".to_string(),
+                token: TEST_EVENT_EXCEL_APP_QUIT,
+                callback_arity: 0,
+                dispatch_path: TypeLibEventDispatchPath::Dispatch,
+                connection_point_iid: Some(IID_EXCEL_APPLICATION_EVENTS_STR.to_string()),
+                dispatch_member_id: None,
+            }];
+            let member_name_to_token = members
+                .iter()
+                .map(|entry| (entry.name.clone(), entry.token))
+                .collect();
+            (member_name_to_token, members, events)
         } else if identity.importlib.eq_ignore_ascii_case("scrrun.dll")
             || identity.libid.as_deref().is_some_and(|libid| {
                 libid.eq_ignore_ascii_case("420B2830-E718-11CF-893D-00A0C9054228")
@@ -552,6 +596,17 @@ impl StandardHostServices {
                 minor_version: 0,
                 lcid: Some(0),
                 cache_key: "typelib:scripting.dictionary:1.0:0".to_string(),
+            });
+        }
+        if prog_id_name.eq_ignore_ascii_case(EXCEL_APPLICATION_PROGID) {
+            return Some(TypeLibResolvedIdentity {
+                reference_name: EXCEL_APPLICATION_PROGID.to_string(),
+                importlib: "excel.exe".to_string(),
+                libid: Some("00020813-0000-0000-C000-000000000046".to_string()),
+                major_version: 1,
+                minor_version: 0,
+                lcid: Some(0),
+                cache_key: "typelib:excel.application:1.0:0".to_string(),
             });
         }
         if !prog_id_name.eq_ignore_ascii_case(OXVBA_TEST_DISPATCH_PROGID) {
@@ -1090,7 +1145,9 @@ impl StandardHostServices {
         let Some(connection_point_iid) = spec.connection_point_iid.as_deref() else {
             return Ok(ComEventSubscriptionTransport::Projection);
         };
-        let event_dispatch_member = spec.dispatch_member_id.unwrap_or(event);
+        let event_dispatch_member = spec
+            .dispatch_member_id
+            .unwrap_or(COM_EVENT_DISPATCH_MEMBER_WILDCARD);
         self.ensure_thread_com_apartment("subscribe_event")?;
         let dispatch = binding.native_dispatch as *mut RawIDispatch;
         let request = ComConnectionPointAdviseRequest {
@@ -2816,6 +2873,16 @@ struct ComEventTriggerSpec {
 
 #[cfg(target_os = "windows")]
 fn com_member_spec_for_token(prog_id: &str, member: i32) -> Option<ComMemberSpec> {
+    if prog_id.eq_ignore_ascii_case(EXCEL_APPLICATION_PROGID) {
+        return match member {
+            TEST_DISPID_EXCEL_QUIT => Some(ComMemberSpec {
+                name: "Quit".to_string(),
+                requires_argument: false,
+                invoke_kind: TypeLibMemberInvokeKind::Method,
+            }),
+            _ => None,
+        };
+    }
     if prog_id.eq_ignore_ascii_case("Scripting.Dictionary") {
         return match member {
             1 => Some(ComMemberSpec {
@@ -3131,6 +3198,8 @@ const IID_OXVBA_TEST_DISPATCH_EVENTS: windows_sys::core::GUID = windows_sys::cor
 };
 #[cfg(target_os = "windows")]
 const IID_OXVBA_TEST_DISPATCH_EVENTS_STR: &str = "11111112-2222-3333-4444-555555555556";
+#[cfg(target_os = "windows")]
+const IID_EXCEL_APPLICATION_EVENTS_STR: &str = "00024413-0000-0000-C000-000000000046";
 
 #[cfg(target_os = "windows")]
 const COM_S_OK: i32 = 0;
@@ -3163,9 +3232,12 @@ const TEST_DISPID_LOOKUP: i32 = 6;
 const TEST_DISPID_SET_VALUE: i32 = 7;
 const TEST_DISPID_SET_VALUE_REF: i32 = 8;
 const TEST_DISPID_VALUE: i32 = 9;
+const TEST_DISPID_EXCEL_QUIT: i32 = 10;
 const TEST_EVENT_CHANGED: i32 = 1;
 const TEST_EVENT_CHANGED_SOURCE_INTERFACE: i32 = 2;
 const TEST_EVENT_CHANGED_PAIR: i32 = 3;
+const TEST_EVENT_EXCEL_APP_QUIT: i32 = 10;
+const COM_EVENT_DISPATCH_MEMBER_WILDCARD: i32 = i32::MIN + 3_333;
 
 #[cfg(target_os = "windows")]
 #[repr(C)]
@@ -4183,7 +4255,9 @@ unsafe extern "system" fn oxvba_event_sink_invoke(
     puargerr: *mut u32,
 ) -> i32 {
     let sink = as_oxvba_com_event_sink(this);
-    if dispidmember != (*sink).event_dispatch_member {
+    if (*sink).event_dispatch_member != COM_EVENT_DISPATCH_MEMBER_WILDCARD
+        && dispidmember != (*sink).event_dispatch_member
+    {
         return COM_DISP_E_MEMBERNOTFOUND;
     }
     let (cargs, rgvarg) = if pparams.is_null() {
@@ -5926,6 +6000,56 @@ mod tests {
             dispatch_event.dispatch_member_id,
             Some(super::TEST_EVENT_CHANGED_PAIR)
         );
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn windows_typelib_excel_metadata_includes_quit_event_connection_point_shape() {
+        let host = StandardHostServices::new(HalProfileId::Windows, HostPolicy::interactive_dev());
+        let identity = host
+            .resolve_typelib_reference(&TypeLibResolveRequest {
+                reference_name: "Excel".to_string(),
+                importlib_hint: Some("excel.exe".to_string()),
+                libid_hint: None,
+                major_version_hint: Some(1),
+                minor_version_hint: Some(0),
+                lcid_hint: Some(0),
+            })
+            .expect("excel resolve should succeed");
+        let metadata = host
+            .load_typelib_metadata(&identity)
+            .expect("excel metadata load should succeed");
+
+        assert_eq!(
+            metadata.member_name_to_token,
+            vec![("Quit".to_string(), super::TEST_DISPID_EXCEL_QUIT)]
+        );
+        let quit_member = metadata
+            .members
+            .iter()
+            .find(|entry| entry.token == super::TEST_DISPID_EXCEL_QUIT)
+            .expect("Quit member metadata should exist");
+        assert!(!quit_member.requires_argument);
+        assert_eq!(
+            quit_member.invoke_kind,
+            super::TypeLibMemberInvokeKind::Method
+        );
+
+        let quit_event = metadata
+            .events
+            .iter()
+            .find(|entry| entry.token == super::TEST_EVENT_EXCEL_APP_QUIT)
+            .expect("Quit event metadata should exist");
+        assert_eq!(quit_event.callback_arity, 0);
+        assert_eq!(
+            quit_event.dispatch_path,
+            super::TypeLibEventDispatchPath::Dispatch
+        );
+        assert_eq!(
+            quit_event.connection_point_iid.as_deref(),
+            Some(super::IID_EXCEL_APPLICATION_EVENTS_STR)
+        );
+        assert!(quit_event.dispatch_member_id.is_none());
     }
 
     #[cfg(target_os = "windows")]

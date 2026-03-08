@@ -135,6 +135,15 @@ Run context: full events parity closure (non-COM + Windows COM)
     - `docs/evidence/conformance/com/COM_CONFORMANCE_RUN_20260308T190057Z.md`,
     - `docs/evidence/conformance/com/COM_LANE_L2B_RUN_20260308T190057Z.md`,
     - `docs/evidence/conformance/com/COM_LANE_L2E_RUN_OxVba.TestDispatch_20260308T190057Z.md`.
+  - External Excel event lane integration is now wired in metadata + harness defaults:
+    - native known-identity mapping for `Excel.Application` / `excel.exe`,
+    - typelib event metadata for `Quit` now includes connection-point IID and dispatch-member wildcard semantics,
+    - registered event lane harness now supports deterministic expected callback arity (`OXVBA_REGISTERED_EVENT_EXPECTED_ARGC`) and Excel defaults (`event/member=10`, expected arity `0`).
+  - External Excel event callback probe executed (strict lane, non-throw capture):
+    - `docs/evidence/conformance/com/COM_LANE_L2E_RUN_Excel.Application_20260308T202040Z.md`,
+    - `docs/evidence/conformance/com/COM_LANE_L2E_LOG_Excel.Application_20260308T202040Z.txt`.
+  - Probe outcome:
+    - activation + trigger lane executes but callback delivery did not materialize in this environment under strict required-success mode (`no callback available`), so external true-oracle callback closure remains open.
 - Why blocked:
   - Current run closes controlled-lane connection-point callback ingress and deterministic lifecycle (`Advise`/`Unadvise`) in Windows native mode.
   - Remaining strict parity closure is now limited to external evidence and ingestion:

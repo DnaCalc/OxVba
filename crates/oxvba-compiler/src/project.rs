@@ -1891,6 +1891,7 @@ fn known_dispatch_member_token(member_name: &str) -> Option<i32> {
         "setvalue" => Some(7),
         "setvalueref" => Some(8),
         "value" => Some(9),
+        "quit" => Some(10),
         _ => None,
     }
 }

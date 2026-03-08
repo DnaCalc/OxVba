@@ -10,6 +10,7 @@ mod windows_registered_com_lane {
     enum RegisteredProgIdFlavor {
         ScriptingDictionary,
         OxvbaTestDispatch,
+        ExcelApplication,
         Other,
     }
 
@@ -21,6 +22,9 @@ mod windows_registered_com_lane {
             if prog_id.eq_ignore_ascii_case(OXVBA_TEST_DISPATCH_PROGID) {
                 return Self::OxvbaTestDispatch;
             }
+            if prog_id.eq_ignore_ascii_case("Excel.Application") {
+                return Self::ExcelApplication;
+            }
             Self::Other
         }
 
@@ -28,6 +32,7 @@ mod windows_registered_com_lane {
             match self {
                 Self::ScriptingDictionary => Some(0),
                 Self::OxvbaTestDispatch => Some(7),
+                Self::ExcelApplication => None,
                 Self::Other => None,
             }
         }
@@ -36,12 +41,16 @@ mod windows_registered_com_lane {
             match self {
                 Self::ScriptingDictionary => Some(0),
                 Self::OxvbaTestDispatch => Some(1),
+                Self::ExcelApplication => None,
                 Self::Other => None,
             }
         }
 
         fn is_event_capable_for_registered_lane(self) -> bool {
-            matches!(self, Self::ScriptingDictionary | Self::OxvbaTestDispatch)
+            matches!(
+                self,
+                Self::ScriptingDictionary | Self::OxvbaTestDispatch | Self::ExcelApplication
+            )
         }
     }
 
@@ -72,12 +81,17 @@ mod windows_registered_com_lane {
     }
 
     fn registered_event_token() -> i32 {
-        read_env_i32("OXVBA_REGISTERED_EVENT_TOKEN", 1)
+        let default_token = match selected_registered_prog_id_flavor() {
+            RegisteredProgIdFlavor::ExcelApplication => 10,
+            _ => 1,
+        };
+        read_env_i32("OXVBA_REGISTERED_EVENT_TOKEN", default_token)
     }
 
     fn registered_event_trigger_member() -> i32 {
         let default_member = match selected_registered_prog_id_flavor() {
             RegisteredProgIdFlavor::ScriptingDictionary => 2,
+            RegisteredProgIdFlavor::ExcelApplication => 10,
             _ => 3,
         };
         read_env_i32("OXVBA_REGISTERED_EVENT_TRIGGER_MEMBER", default_member)
@@ -86,9 +100,21 @@ mod windows_registered_com_lane {
     fn registered_event_trigger_arg() -> i32 {
         let default_arg = match selected_registered_prog_id_flavor() {
             RegisteredProgIdFlavor::ScriptingDictionary => 42,
+            RegisteredProgIdFlavor::ExcelApplication => 0,
             _ => 77,
         };
         read_env_i32("OXVBA_REGISTERED_EVENT_TRIGGER_ARG", default_arg)
+    }
+
+    fn registered_event_expected_arg_count() -> usize {
+        let default_count = match selected_registered_prog_id_flavor() {
+            RegisteredProgIdFlavor::ExcelApplication => 0,
+            _ => 1,
+        };
+        std::env::var("OXVBA_REGISTERED_EVENT_EXPECTED_ARGC")
+            .ok()
+            .and_then(|value| value.trim().parse::<usize>().ok())
+            .unwrap_or(default_count)
     }
 
     fn run_registered_lane_source(source: &str) -> Vec<i32> {
@@ -367,6 +393,7 @@ End Sub
         let event_token = registered_event_token();
         let trigger_member = registered_event_trigger_member();
         let trigger_arg = registered_event_trigger_arg();
+        let expected_arg_count = registered_event_expected_arg_count();
 
         let subscription = match engine.subscribe_com_event_handler(
             object,
@@ -408,34 +435,43 @@ End Sub
             return;
         }
 
-        let callback = match engine.poll_com_event_callback() {
-            Ok(Some(callback)) => callback,
-            Ok(None) => {
-                let _ = engine.unsubscribe_com_event_handler(subscription);
-                if require_success {
-                    panic!(
-                        "registered lane event callback was required for `{selected_prog_id}` but no callback was available"
-                    );
+        let mut callback = None;
+        for _ in 0..40 {
+            match engine.poll_com_event_callback() {
+                Ok(Some(next)) => {
+                    callback = Some(next);
+                    break;
                 }
-                eprintln!(
-                    "registered lane: no callback observed for `{selected_prog_id}`; treating as optional in this run"
-                );
-                return;
-            }
-            Err(err) => {
-                let _ = engine.unsubscribe_com_event_handler(subscription);
-                if require_success {
-                    panic!(
-                        "registered lane event callback poll was required for `{selected_prog_id}` but failed: {}",
+                Ok(None) => {
+                    std::thread::sleep(std::time::Duration::from_millis(50));
+                }
+                Err(err) => {
+                    let _ = engine.unsubscribe_com_event_handler(subscription);
+                    if require_success {
+                        panic!(
+                            "registered lane event callback poll was required for `{selected_prog_id}` but failed: {}",
+                            err.message()
+                        );
+                    }
+                    eprintln!(
+                        "registered lane: callback polling unavailable for `{selected_prog_id}`: {}",
                         err.message()
                     );
+                    return;
                 }
-                eprintln!(
-                    "registered lane: callback polling unavailable for `{selected_prog_id}`: {}",
-                    err.message()
-                );
-                return;
             }
+        }
+        let Some(callback) = callback else {
+            let _ = engine.unsubscribe_com_event_handler(subscription);
+            if require_success {
+                panic!(
+                    "registered lane event callback was required for `{selected_prog_id}` but no callback was available"
+                );
+            }
+            eprintln!(
+                "registered lane: no callback observed for `{selected_prog_id}`; treating as optional in this run"
+            );
+            return;
         };
 
         assert_eq!(
@@ -447,14 +483,36 @@ End Sub
             "callback handler symbol mismatch for `{selected_prog_id}`"
         );
         assert_eq!(
-            callback.args,
-            vec![trigger_arg],
-            "callback payload mismatch for `{selected_prog_id}`"
+            callback.args.len(),
+            expected_arg_count,
+            "callback arg count mismatch for `{selected_prog_id}`"
         );
-        assert_eq!(
-            callback.arg0, trigger_arg,
-            "callback arg0 mismatch for `{selected_prog_id}`"
-        );
+        if expected_arg_count == 0 {
+            assert!(
+                callback.args.is_empty(),
+                "callback payload should be empty for `{selected_prog_id}`"
+            );
+            assert_eq!(
+                callback.arg0, 0,
+                "callback arg0 should be zero when callback has no arguments for `{selected_prog_id}`"
+            );
+        } else {
+            assert_eq!(
+                callback.args[0], trigger_arg,
+                "callback first-arg mismatch for `{selected_prog_id}`"
+            );
+            assert_eq!(
+                callback.arg0, trigger_arg,
+                "callback arg0 mismatch for `{selected_prog_id}`"
+            );
+            if expected_arg_count == 1 {
+                assert_eq!(
+                    callback.args,
+                    vec![trigger_arg],
+                    "callback payload mismatch for `{selected_prog_id}`"
+                );
+            }
+        }
         let removed = engine
             .unsubscribe_com_event_handler(subscription)
             .expect("registered lane callback subscription should unsubscribe");
