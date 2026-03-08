@@ -435,18 +435,24 @@ impl StandardHostServices {
                     token: TEST_EVENT_CHANGED,
                     callback_arity: 1,
                     dispatch_path: TypeLibEventDispatchPath::Dispatch,
+                    connection_point_iid: Some(IID_OXVBA_TEST_DISPATCH_EVENTS_STR.to_string()),
+                    dispatch_member_id: Some(TEST_EVENT_CHANGED),
                 },
                 TypeLibEventMetadata {
                     name: "ChangedSourceInterface".to_string(),
                     token: TEST_EVENT_CHANGED_SOURCE_INTERFACE,
                     callback_arity: 1,
                     dispatch_path: TypeLibEventDispatchPath::SourceInterface,
+                    connection_point_iid: None,
+                    dispatch_member_id: None,
                 },
                 TypeLibEventMetadata {
                     name: "ChangedPair".to_string(),
                     token: TEST_EVENT_CHANGED_PAIR,
                     callback_arity: 2,
                     dispatch_path: TypeLibEventDispatchPath::Dispatch,
+                    connection_point_iid: Some(IID_OXVBA_TEST_DISPATCH_EVENTS_STR.to_string()),
+                    dispatch_member_id: Some(TEST_EVENT_CHANGED_PAIR),
                 },
             ];
             let member_name_to_token = members
@@ -476,6 +482,8 @@ impl StandardHostServices {
                 token: TEST_EVENT_CHANGED,
                 callback_arity: 1,
                 dispatch_path: TypeLibEventDispatchPath::Dispatch,
+                connection_point_iid: None,
+                dispatch_member_id: Some(TEST_EVENT_CHANGED),
             }];
             let member_name_to_token = members
                 .iter()
@@ -1026,17 +1034,25 @@ impl StandardHostServices {
         if binding.native_dispatch == 0 {
             return Ok(ComEventSubscriptionTransport::Projection);
         }
+        let Some(spec) = binding.event_specs.get(&event) else {
+            return Ok(ComEventSubscriptionTransport::Projection);
+        };
+        let Some(connection_point_iid) = spec.connection_point_iid.as_deref() else {
+            return Ok(ComEventSubscriptionTransport::Projection);
+        };
+        let event_dispatch_member = spec.dispatch_member_id.unwrap_or(event);
         self.ensure_thread_com_apartment("subscribe_event")?;
         let dispatch = binding.native_dispatch as *mut RawIDispatch;
+        let request = ComConnectionPointAdviseRequest {
+            com_state: Arc::clone(&self.com_state),
+            subscription,
+            object,
+            event_token: event,
+            event_dispatch_member,
+            expected_arity,
+        };
         let advised = unsafe {
-            raw_try_advise_oxvba_test_dispatch_event(
-                dispatch,
-                Arc::clone(&self.com_state),
-                subscription,
-                object,
-                event,
-                expected_arity,
-            )
+            raw_try_advise_connection_point_event(dispatch, request, connection_point_iid)
         }
         .map_err(|message| {
             HalError::adapter_fault(
@@ -2706,6 +2722,17 @@ struct ComNativeConnectionPointTransport {
     cookie: u32,
 }
 
+#[cfg(target_os = "windows")]
+#[derive(Debug, Clone)]
+struct ComConnectionPointAdviseRequest {
+    com_state: Arc<Mutex<ComState>>,
+    subscription: i32,
+    object: i32,
+    event_token: i32,
+    event_dispatch_member: i32,
+    expected_arity: usize,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct ComEventCallback {
     subscription: i32,
@@ -2720,10 +2747,12 @@ enum ComEventPath {
     SourceInterface,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 struct ComEventSpec {
     callback_arity: usize,
     path: ComEventPath,
+    connection_point_iid: Option<String>,
+    dispatch_member_id: Option<i32>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -2867,6 +2896,8 @@ fn com_event_specs_from_typelib_metadata(
                         TypeLibEventDispatchPath::Dispatch => ComEventPath::Dispatch,
                         TypeLibEventDispatchPath::SourceInterface => ComEventPath::SourceInterface,
                     },
+                    connection_point_iid: event.connection_point_iid.clone(),
+                    dispatch_member_id: event.dispatch_member_id,
                 },
             )
         })
@@ -3020,6 +3051,8 @@ const IID_OXVBA_TEST_DISPATCH_EVENTS: windows_sys::core::GUID = windows_sys::cor
     data3: 0x3333,
     data4: [0x44, 0x44, 0x55, 0x55, 0x55, 0x55, 0x55, 0x56],
 };
+#[cfg(target_os = "windows")]
+const IID_OXVBA_TEST_DISPATCH_EVENTS_STR: &str = "11111112-2222-3333-4444-555555555556";
 
 #[cfg(target_os = "windows")]
 const COM_S_OK: i32 = 0;
@@ -3196,7 +3229,8 @@ struct OxvbaComEventSink {
     com_state: Arc<Mutex<ComState>>,
     subscription: i32,
     object: i32,
-    event: i32,
+    event_token: i32,
+    event_dispatch_member: i32,
     expected_arity: usize,
 }
 
@@ -3286,7 +3320,8 @@ fn create_oxvba_com_event_sink(
     com_state: Arc<Mutex<ComState>>,
     subscription: i32,
     object: i32,
-    event: i32,
+    event_token: i32,
+    event_dispatch_member: i32,
     expected_arity: usize,
 ) -> *mut RawIDispatch {
     let sink = Box::new(OxvbaComEventSink {
@@ -3297,7 +3332,8 @@ fn create_oxvba_com_event_sink(
         com_state,
         subscription,
         object,
-        event,
+        event_token,
+        event_dispatch_member,
         expected_arity,
     });
     Box::into_raw(sink).cast::<RawIDispatch>()
@@ -3965,7 +4001,7 @@ unsafe extern "system" fn oxvba_event_sink_invoke(
     puargerr: *mut u32,
 ) -> i32 {
     let sink = as_oxvba_com_event_sink(this);
-    if dispidmember != (*sink).event {
+    if dispidmember != (*sink).event_dispatch_member {
         return COM_DISP_E_MEMBERNOTFOUND;
     }
     let (cargs, rgvarg) = if pparams.is_null() {
@@ -3997,7 +4033,7 @@ unsafe extern "system" fn oxvba_event_sink_invoke(
     };
     if let Some(subscription) = state.subscriptions.get(&(*sink).subscription)
         && subscription.object == (*sink).object
-        && subscription.event == (*sink).event
+        && subscription.event == (*sink).event_token
     {
         let _ = state.queue_callback_for_subscription((*sink).subscription, args.as_slice());
     }
@@ -4036,21 +4072,50 @@ unsafe fn raw_release_unknown(unknown: *mut core::ffi::c_void) {
 }
 
 #[cfg(target_os = "windows")]
+fn parse_guid_canonical(input: &str) -> Option<windows_sys::core::GUID> {
+    let normalized = normalize_guid_like(input);
+    let parts: Vec<&str> = normalized.split('-').collect();
+    if parts.len() != 5
+        || parts[0].len() != 8
+        || parts[1].len() != 4
+        || parts[2].len() != 4
+        || parts[3].len() != 4
+        || parts[4].len() != 12
+    {
+        return None;
+    }
+    let data1 = u32::from_str_radix(parts[0], 16).ok()?;
+    let data2 = u16::from_str_radix(parts[1], 16).ok()?;
+    let data3 = u16::from_str_radix(parts[2], 16).ok()?;
+    let mut data4 = [0u8; 8];
+    data4[0] = u8::from_str_radix(&parts[3][0..2], 16).ok()?;
+    data4[1] = u8::from_str_radix(&parts[3][2..4], 16).ok()?;
+    for idx in 0..6 {
+        let start = idx * 2;
+        let end = start + 2;
+        data4[idx + 2] = u8::from_str_radix(&parts[4][start..end], 16).ok()?;
+    }
+    Some(windows_sys::core::GUID {
+        data1,
+        data2,
+        data3,
+        data4,
+    })
+}
+
+#[cfg(target_os = "windows")]
 #[allow(unsafe_op_in_unsafe_fn)]
-unsafe fn raw_try_advise_oxvba_test_dispatch_event(
+unsafe fn raw_try_advise_connection_point_event(
     dispatch: *mut RawIDispatch,
-    com_state: Arc<Mutex<ComState>>,
-    subscription: i32,
-    object: i32,
-    event: i32,
-    expected_arity: usize,
+    request: ComConnectionPointAdviseRequest,
+    connection_point_iid: &str,
 ) -> Result<Option<ComNativeConnectionPointTransport>, String> {
     if dispatch.is_null() {
         return Ok(None);
     }
-    if !std::ptr::eq((*dispatch).vtbl, &OXVBA_TEST_DISPATCH_VTBL) {
-        return Ok(None);
-    }
+    let event_interface = parse_guid_canonical(connection_point_iid).ok_or_else(|| {
+        format!("invalid connection-point IID `{connection_point_iid}` in event metadata")
+    })?;
     let mut cpc_ptr: *mut core::ffi::c_void = std::ptr::null_mut();
     let hr = ((*(*dispatch).vtbl).unknown.query_interface)(
         dispatch.cast(),
@@ -4065,11 +4130,7 @@ unsafe fn raw_try_advise_oxvba_test_dispatch_event(
     }
     let cpc = cpc_ptr.cast::<RawIConnectionPointContainer>();
     let mut cp_ptr: *mut core::ffi::c_void = std::ptr::null_mut();
-    let hr = ((*(*cpc).vtbl).find_connection_point)(
-        cpc.cast(),
-        &IID_OXVBA_TEST_DISPATCH_EVENTS,
-        &mut cp_ptr,
-    );
+    let hr = ((*(*cpc).vtbl).find_connection_point)(cpc.cast(), &event_interface, &mut cp_ptr);
     raw_release_unknown(cpc.cast());
     if hr < 0 || cp_ptr.is_null() {
         return Err(format!(
@@ -4078,7 +4139,14 @@ unsafe fn raw_try_advise_oxvba_test_dispatch_event(
         ));
     }
     let connection_point = cp_ptr.cast::<RawIConnectionPoint>();
-    let sink = create_oxvba_com_event_sink(com_state, subscription, object, event, expected_arity);
+    let sink = create_oxvba_com_event_sink(
+        request.com_state,
+        request.subscription,
+        request.object,
+        request.event_token,
+        request.event_dispatch_member,
+        request.expected_arity,
+    );
     let mut cookie = 0u32;
     let hr =
         ((*(*connection_point).vtbl).advise)(connection_point.cast(), sink.cast(), &mut cookie);
@@ -5381,6 +5449,21 @@ mod tests {
             source_interface_event.dispatch_path,
             super::TypeLibEventDispatchPath::SourceInterface
         );
+        assert!(source_interface_event.connection_point_iid.is_none());
+        assert!(source_interface_event.dispatch_member_id.is_none());
+        let dispatch_event = metadata
+            .events
+            .iter()
+            .find(|entry| entry.token == super::TEST_EVENT_CHANGED_PAIR)
+            .expect("dispatch event metadata should exist");
+        assert_eq!(
+            dispatch_event.connection_point_iid.as_deref(),
+            Some(super::IID_OXVBA_TEST_DISPATCH_EVENTS_STR)
+        );
+        assert_eq!(
+            dispatch_event.dispatch_member_id,
+            Some(super::TEST_EVENT_CHANGED_PAIR)
+        );
     }
 
     #[cfg(target_os = "windows")]
@@ -5410,6 +5493,14 @@ mod tests {
             .expect("ChangedPair event spec should be present");
         assert_eq!(dispatch_event.callback_arity, 2);
         assert_eq!(dispatch_event.path, super::ComEventPath::Dispatch);
+        assert_eq!(
+            dispatch_event.connection_point_iid.as_deref(),
+            Some(super::IID_OXVBA_TEST_DISPATCH_EVENTS_STR)
+        );
+        assert_eq!(
+            dispatch_event.dispatch_member_id,
+            Some(super::TEST_EVENT_CHANGED_PAIR)
+        );
         let source_interface_event = binding
             .event_specs
             .get(&super::TEST_EVENT_CHANGED_SOURCE_INTERFACE)
@@ -5419,6 +5510,8 @@ mod tests {
             source_interface_event.path,
             super::ComEventPath::SourceInterface
         );
+        assert!(source_interface_event.connection_point_iid.is_none());
+        assert!(source_interface_event.dispatch_member_id.is_none());
         let fire_changed_trigger = binding
             .event_trigger_specs
             .get(&super::TEST_DISPID_FIRE_CHANGED)
@@ -5469,6 +5562,7 @@ mod tests {
             .expect("dictionary projection event spec should be present");
         assert_eq!(exists_event.callback_arity, 1);
         assert_eq!(exists_event.path, super::ComEventPath::Dispatch);
+        assert!(exists_event.connection_point_iid.is_none());
         let exists_trigger = binding
             .event_trigger_specs
             .get(&super::TEST_DISPID_EXISTS)

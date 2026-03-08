@@ -96,20 +96,23 @@ Run context: full events parity closure (non-COM + Windows COM)
   - Projection and native callback lanes are now separated by transport kind:
     - projection callback enqueue only targets projection subscriptions,
     - native connection-point subscriptions no longer receive duplicate projected callbacks.
+  - Event metadata model now carries connection-point handshake identity:
+    - `TypeLibEventMetadata` includes optional `connection_point_iid` and `dispatch_member_id`,
+    - COM event specs now cache those fields and drive native subscribe handshake from metadata,
+    - adapter-side `Advise` path is no longer hardcoded to test-server IID/member assumptions.
   - Updated conformance evidence with connection-point callback lane:
     - `docs/evidence/conformance/com/COM_CONFORMANCE_RUN_20260308T190057Z.md`,
     - `docs/evidence/conformance/com/COM_LANE_L2B_RUN_20260308T190057Z.md`,
     - `docs/evidence/conformance/com/COM_LANE_L2E_RUN_OxVba.TestDispatch_20260308T190057Z.md`.
 - Why blocked:
   - Current run closes controlled-lane connection-point callback ingress and deterministic lifecycle (`Advise`/`Unadvise`) in Windows native mode.
-  - Remaining strict parity closure still needs external-library generalization:
-    - event-interface identity from typelib metadata (IID + event DISPIDs) for non-controlled registered servers,
-    - validated true connection-point callback evidence on at least one external registered COM server beyond the controlled in-process test server.
+  - Remaining strict parity closure is now limited to external evidence and ingestion:
+    - populate real external typelib event metadata with connection-point IID/member IDs,
+    - validate true connection-point callback evidence on at least one external registered COM server beyond the controlled in-process test server.
 - Exact unblocking steps:
-  1. Extend event metadata model with connection-point/event-interface identity required for external subscription handshake.
-  2. Implement generalized external connection-point subscription path (non-controlled servers) using metadata-derived interface identity.
-  3. Capture reproducible external true connection-point callback evidence and fold into conformance docs.
-  4. Reconcile oracle evidence and update divergence/deferred gates.
+  1. Populate external typelib metadata with connection-point IID/member identity (per chosen external server lane).
+  2. Capture reproducible external true connection-point callback evidence and fold into conformance docs.
+  3. Reconcile oracle evidence and update divergence/deferred gates.
 
 ## Structured summary
 

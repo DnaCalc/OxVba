@@ -166,6 +166,8 @@ pub struct TypeLibEventMetadata {
     pub token: ValueToken,
     pub callback_arity: u8,
     pub dispatch_path: TypeLibEventDispatchPath,
+    pub connection_point_iid: Option<String>,
+    pub dispatch_member_id: Option<i32>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
