@@ -991,7 +991,6 @@ struct LineBindPlan {
 
 type EventDispatchKey = (String, String, String);
 type EventDispatchPlan = BTreeMap<EventDispatchKey, Vec<EventDispatchRoute>>;
-const WITH_EVENTS_OWNER_SCAN_MAX: i32 = 32;
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 struct EventDispatchRoute {
@@ -1745,6 +1744,49 @@ fn withevents_binding_token(project: &str, module: &str, var_name: &str) -> i32 
     if token == 0 { 1 } else { token }
 }
 
+fn withevents_owner_scan_max(
+    manifest: &ProjectManifest,
+    current_project: &str,
+    reference_order: &BTreeMap<String, usize>,
+) -> i32 {
+    let mut max_owner = 0i32;
+    let mut consider_modules = |modules: &[ModuleUnit]| {
+        for module in modules {
+            let mut next_internal_instance_id = 1i32;
+            for line in module.source.lines() {
+                let Some(dim_decl) = parse_internal_class_dim_declaration(line) else {
+                    continue;
+                };
+                if !dim_decl.as_new {
+                    continue;
+                }
+                if resolve_interface_module(
+                    manifest,
+                    current_project,
+                    &dim_decl.type_name,
+                    reference_order,
+                )
+                .is_none()
+                {
+                    continue;
+                }
+                next_internal_instance_id = next_internal_instance_id.saturating_add(1);
+            }
+            max_owner = max_owner.max(next_internal_instance_id.saturating_sub(1));
+        }
+    };
+
+    if normalize_identifier(&manifest.project_name) == current_project {
+        consider_modules(&manifest.modules);
+    }
+    for referenced in ordered_reference_projects(manifest) {
+        if normalize_identifier(&referenced.project_name) == current_project {
+            consider_modules(&referenced.modules);
+        }
+    }
+    max_owner.max(1)
+}
+
 fn split_top_level_args(args: &str) -> Result<Vec<String>, ProjectCompileError> {
     if args.trim().is_empty() {
         return Ok(Vec::new());
@@ -2030,6 +2072,7 @@ fn rewrite_raiseevent_to_handler_calls(
         .iter()
         .filter(|arg| !arg.trim().is_empty())
         .count();
+    let owner_scan_max = withevents_owner_scan_max(manifest, current_project, reference_order);
     if event_arg_count > 1 {
         return Err(ProjectCompileError::BackendCompile {
             message:
@@ -2046,7 +2089,7 @@ fn rewrite_raiseevent_to_handler_calls(
             &route,
             event_arg_count,
         );
-        for owner in 1..=WITH_EVENTS_OWNER_SCAN_MAX {
+        for owner in 1..=owner_scan_max {
             let mut call_line = if event_arg_count == 0 {
                 format!("{leading_ws}Call {wrapper}({owner}, __oxvba_this_instance)")
             } else {
