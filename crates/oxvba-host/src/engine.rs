@@ -1737,6 +1737,21 @@ mod tests {
     }
 
     #[test]
+    fn formal_event_runtime_withevents_binding_intrinsics_are_owner_scoped() {
+        let engine = Engine::new(HostConfig::default());
+        let source = "Sub Main()\nDim a\nDim b\na = __oxvba_withevents_set(11, 2049099222, 41)\nb = __oxvba_withevents_set(22, 2049099222, 52)\nIf __oxvba_withevents_get(11, 2049099222) = 41 And __oxvba_withevents_get(22, 2049099222) = 52 Then\nError 13\nElse\nError 77\nEnd If\nEnd Sub";
+        let err = engine
+            .execute_source_with_snapshot_phased(source)
+            .expect_err("owner-scoped intrinsic state should roundtrip deterministically");
+        assert_eq!(err.phase(), DiagnosticPhase::Runtime);
+        assert!(
+            err.message().contains("runtime error: 13"),
+            "unexpected runtime message: {}",
+            err.message()
+        );
+    }
+
+    #[test]
     fn formal_event_runtime_implements_prefixed_member_executes_in_class_flow() {
         let engine = Engine::new(HostConfig::default());
         let main_module = module_unit_from_source(

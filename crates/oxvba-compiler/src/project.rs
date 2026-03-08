@@ -3984,11 +3984,11 @@ mod tests {
         let compiled = compile_project(&manifest).expect("rewrite should compile");
         let lowered = compiled.rewritten_source.to_ascii_lowercase();
         assert!(
-            lowered.contains("__oxvba_withevents_set("),
+            lowered.contains("__oxvba_withevents_set(0,"),
             "WithEvents Set assignment should route through runtime binding setter"
         );
         assert!(
-            lowered.contains("__oxvba_withevents_get("),
+            lowered.contains("__oxvba_withevents_get(0,"),
             "event guard should route through runtime binding getter"
         );
     }
