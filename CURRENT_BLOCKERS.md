@@ -100,6 +100,18 @@ Run context: full events parity closure (non-COM + Windows COM)
     - `TypeLibEventMetadata` includes optional `connection_point_iid` and `dispatch_member_id`,
     - COM event specs now cache those fields and drive native subscribe handshake from metadata,
     - adapter-side `Advise` path is no longer hardcoded to test-server IID/member assumptions.
+  - Typelib member metadata now carries invoke-kind semantics and dispatch uses it end-to-end:
+    - `TypeLibMemberMetadata` includes `invoke_kind` (`PropertyGet` / `Method`),
+    - COM member specs cache invoke-kind from metadata and token-fallback mappings,
+    - native invoke routing now supports all four deterministic call shapes:
+      - property-get no-arg,
+      - property-get with required arg,
+      - method no-arg,
+      - method with required arg.
+  - Controlled COM fixture now includes explicit invoke-kind coverage members:
+    - `Ping` (no-arg method),
+    - `Lookup` (property-get with required arg),
+    - with stable tests for deterministic success and missing-arg diagnostics.
   - Updated conformance evidence with connection-point callback lane:
     - `docs/evidence/conformance/com/COM_CONFORMANCE_RUN_20260308T190057Z.md`,
     - `docs/evidence/conformance/com/COM_LANE_L2B_RUN_20260308T190057Z.md`,

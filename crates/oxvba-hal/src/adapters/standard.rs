@@ -8,8 +8,8 @@ use crate::{
     traits::{
         ComHal, DiagnosticsHal, DynLinkDescriptorView, DynamicLinkHal, EventPumpHal, FileSystemHal,
         ProcessEnvHal, TimeLocaleHal, TypeLibCacheScope, TypeLibEventDispatchPath,
-        TypeLibEventMetadata, TypeLibMemberMetadata, TypeLibMetadataBlob, TypeLibResolveRequest,
-        TypeLibResolvedIdentity, TypeLibraryHal, UiInteractionHal,
+        TypeLibEventMetadata, TypeLibMemberInvokeKind, TypeLibMemberMetadata, TypeLibMetadataBlob,
+        TypeLibResolveRequest, TypeLibResolvedIdentity, TypeLibraryHal, UiInteractionHal,
     },
 };
 #[cfg(target_os = "windows")]
@@ -412,21 +412,37 @@ impl StandardHostServices {
                     name: "Count".to_string(),
                     token: TEST_DISPID_COUNT,
                     requires_argument: false,
+                    invoke_kind: TypeLibMemberInvokeKind::PropertyGet,
                 },
                 TypeLibMemberMetadata {
                     name: "Exists".to_string(),
                     token: TEST_DISPID_EXISTS,
                     requires_argument: true,
+                    invoke_kind: TypeLibMemberInvokeKind::Method,
                 },
                 TypeLibMemberMetadata {
                     name: "FireChanged".to_string(),
                     token: TEST_DISPID_FIRE_CHANGED,
                     requires_argument: true,
+                    invoke_kind: TypeLibMemberInvokeKind::Method,
                 },
                 TypeLibMemberMetadata {
                     name: "FireChangedPair".to_string(),
                     token: TEST_DISPID_FIRE_CHANGED_PAIR,
                     requires_argument: true,
+                    invoke_kind: TypeLibMemberInvokeKind::Method,
+                },
+                TypeLibMemberMetadata {
+                    name: "Ping".to_string(),
+                    token: TEST_DISPID_PING,
+                    requires_argument: false,
+                    invoke_kind: TypeLibMemberInvokeKind::Method,
+                },
+                TypeLibMemberMetadata {
+                    name: "Lookup".to_string(),
+                    token: TEST_DISPID_LOOKUP,
+                    requires_argument: true,
+                    invoke_kind: TypeLibMemberInvokeKind::PropertyGet,
                 },
             ];
             let events = vec![
@@ -470,11 +486,13 @@ impl StandardHostServices {
                     name: "Count".to_string(),
                     token: TEST_DISPID_COUNT,
                     requires_argument: false,
+                    invoke_kind: TypeLibMemberInvokeKind::PropertyGet,
                 },
                 TypeLibMemberMetadata {
                     name: "Exists".to_string(),
                     token: TEST_DISPID_EXISTS,
                     requires_argument: true,
+                    invoke_kind: TypeLibMemberInvokeKind::Method,
                 },
             ];
             let events = vec![TypeLibEventMetadata {
@@ -810,44 +828,13 @@ impl StandardHostServices {
         member: i32,
         arg: i32,
     ) -> HalResult<i32> {
-        let result = if prog_id.eq_ignore_ascii_case("Scripting.Dictionary") {
-            match member {
-                1 => unsafe { raw_dispatch_dictionary_count(dispatch) },
-                2 if arg == DISPATCH_INVOKE_MISSING_ARG_TOKEN => {
-                    Err("IDispatch::Invoke requires an argument for member token 2".to_string())
-                }
-                2 => unsafe { raw_dispatch_dictionary_exists(dispatch, arg) },
-                _ => Err(format!(
-                    "IDispatch::Invoke unsupported Scripting.Dictionary member token {member}"
-                )),
-            }
-        } else if prog_id.eq_ignore_ascii_case(OXVBA_TEST_DISPATCH_PROGID) {
-            match member {
-                1 => unsafe { raw_dispatch_dictionary_count(dispatch) },
-                2 if arg == DISPATCH_INVOKE_MISSING_ARG_TOKEN => {
-                    Err("IDispatch::Invoke requires an argument for member token 2".to_string())
-                }
-                2 => unsafe { raw_dispatch_dictionary_exists(dispatch, arg) },
-                3 if arg == DISPATCH_INVOKE_MISSING_ARG_TOKEN => {
-                    Err("IDispatch::Invoke requires an argument for member token 3".to_string())
-                }
-                3 => unsafe {
-                    raw_dispatch_invoke_method_i4(dispatch, TEST_DISPID_FIRE_CHANGED, arg)
-                },
-                4 if arg == DISPATCH_INVOKE_MISSING_ARG_TOKEN => {
-                    Err("IDispatch::Invoke requires an argument for member token 4".to_string())
-                }
-                4 => unsafe {
-                    raw_dispatch_invoke_method_i4(dispatch, TEST_DISPID_FIRE_CHANGED_PAIR, arg)
-                },
-                _ => Err(format!(
-                    "IDispatch::Invoke unsupported OxVba.TestDispatch member token {member}"
-                )),
-            }
-        } else {
-            unsafe { raw_dispatch_property_get_noargs(dispatch, member) }
-        };
-        result.map_err(|message| self.com_dispatch_adapter_fault(message))
+        if let Some(spec) = com_member_spec_for_token(prog_id, member) {
+            let dispid = unsafe { raw_get_dispid_by_name(dispatch, &spec.name) }
+                .map_err(|message| self.com_dispatch_adapter_fault(message))?;
+            return self.native_com_dispatch_invoke_with_member_spec(dispatch, dispid, &spec, arg);
+        }
+        unsafe { raw_dispatch_property_get_noargs(dispatch, member) }
+            .map_err(|message| self.com_dispatch_adapter_fault(message))
     }
 
     #[cfg(target_os = "windows")]
@@ -858,14 +845,14 @@ impl StandardHostServices {
         binding: &ComBinding,
         member: i32,
         cached: Option<i32>,
-    ) -> HalResult<Option<(i32, bool)>> {
+    ) -> HalResult<Option<(i32, ComMemberSpec)>> {
         let Some(spec) = com_member_spec_for_binding(binding, member)
             .or_else(|| com_member_spec_for_token(&binding.prog_id_name, member))
         else {
             return Ok(None);
         };
         if let Some(dispid) = cached {
-            return Ok(Some((dispid, spec.requires_argument)));
+            return Ok(Some((dispid, spec)));
         }
         let dispid = unsafe { raw_get_dispid_by_name(dispatch, &spec.name) }
             .map_err(|message| self.com_dispatch_adapter_fault(message))?;
@@ -874,7 +861,7 @@ impl StandardHostServices {
             binding.member_dispids.insert(member, dispid);
         }
         self.assert_com_invariants(&state, "dispatch_invoke_cache_update");
-        Ok(Some((dispid, spec.requires_argument)))
+        Ok(Some((dispid, spec)))
     }
 
     #[cfg(target_os = "windows")]
@@ -882,11 +869,11 @@ impl StandardHostServices {
         &self,
         dispatch: *mut RawIDispatch,
         dispid: i32,
-        requires_argument: bool,
+        spec: &ComMemberSpec,
         arg: i32,
     ) -> HalResult<i32> {
         self.ensure_thread_com_apartment("dispatch_invoke")?;
-        if requires_argument {
+        if spec.requires_argument {
             if arg == DISPATCH_INVOKE_MISSING_ARG_TOKEN {
                 return Err(HalError::adapter_fault(
                     self.profile,
@@ -895,12 +882,27 @@ impl StandardHostServices {
                     "member requires argument but DispatchInvoke omitted the third argument",
                 ));
             }
-            unsafe { raw_dispatch_invoke_method_i4(dispatch, dispid, arg) }
-                .map_err(|message| self.com_dispatch_adapter_fault(message))
         } else {
-            unsafe { raw_dispatch_property_get_noargs(dispatch, dispid) }
-                .map_err(|message| self.com_dispatch_adapter_fault(message))
+            match spec.invoke_kind {
+                TypeLibMemberInvokeKind::PropertyGet => {
+                    return unsafe { raw_dispatch_property_get_noargs(dispatch, dispid) }
+                        .map_err(|message| self.com_dispatch_adapter_fault(message));
+                }
+                TypeLibMemberInvokeKind::Method => {
+                    return unsafe { raw_dispatch_invoke_method_noargs(dispatch, dispid) }
+                        .map_err(|message| self.com_dispatch_adapter_fault(message));
+                }
+            }
         }
+        match spec.invoke_kind {
+            TypeLibMemberInvokeKind::PropertyGet => unsafe {
+                raw_dispatch_property_get_i4(dispatch, dispid, arg)
+            },
+            TypeLibMemberInvokeKind::Method => unsafe {
+                raw_dispatch_invoke_method_i4(dispatch, dispid, arg)
+            },
+        }
+        .map_err(|message| self.com_dispatch_adapter_fault(message))
     }
 
     #[cfg(target_os = "windows")]
@@ -1640,20 +1642,15 @@ impl ComHal for StandardHostServices {
                         arg,
                     )? {
                         value
-                    } else if let Some((dispid, requires_argument)) = self
-                        .resolve_member_dispid_cached(
-                            object,
-                            dispatch,
-                            &binding,
-                            member,
-                            cached_dispid,
-                        )?
-                    {
+                    } else if let Some((dispid, spec)) = self.resolve_member_dispid_cached(
+                        object,
+                        dispatch,
+                        &binding,
+                        member,
+                        cached_dispid,
+                    )? {
                         self.native_com_dispatch_invoke_with_member_spec(
-                            dispatch,
-                            dispid,
-                            requires_argument,
-                            arg,
+                            dispatch, dispid, &spec, arg,
                         )?
                     } else {
                         self.native_com_dispatch_invoke_with_bound_dispatch(
@@ -2759,6 +2756,7 @@ struct ComEventSpec {
 struct ComMemberSpec {
     name: String,
     requires_argument: bool,
+    invoke_kind: TypeLibMemberInvokeKind,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -2775,10 +2773,12 @@ fn com_member_spec_for_token(prog_id: &str, member: i32) -> Option<ComMemberSpec
             1 => Some(ComMemberSpec {
                 name: "Count".to_string(),
                 requires_argument: false,
+                invoke_kind: TypeLibMemberInvokeKind::PropertyGet,
             }),
             2 => Some(ComMemberSpec {
                 name: "Exists".to_string(),
                 requires_argument: true,
+                invoke_kind: TypeLibMemberInvokeKind::Method,
             }),
             _ => None,
         };
@@ -2788,18 +2788,32 @@ fn com_member_spec_for_token(prog_id: &str, member: i32) -> Option<ComMemberSpec
             1 => Some(ComMemberSpec {
                 name: "Count".to_string(),
                 requires_argument: false,
+                invoke_kind: TypeLibMemberInvokeKind::PropertyGet,
             }),
             2 => Some(ComMemberSpec {
                 name: "Exists".to_string(),
                 requires_argument: true,
+                invoke_kind: TypeLibMemberInvokeKind::Method,
             }),
             3 => Some(ComMemberSpec {
                 name: "FireChanged".to_string(),
                 requires_argument: true,
+                invoke_kind: TypeLibMemberInvokeKind::Method,
             }),
             4 => Some(ComMemberSpec {
                 name: "FireChangedPair".to_string(),
                 requires_argument: true,
+                invoke_kind: TypeLibMemberInvokeKind::Method,
+            }),
+            5 => Some(ComMemberSpec {
+                name: "Ping".to_string(),
+                requires_argument: false,
+                invoke_kind: TypeLibMemberInvokeKind::Method,
+            }),
+            6 => Some(ComMemberSpec {
+                name: "Lookup".to_string(),
+                requires_argument: true,
+                invoke_kind: TypeLibMemberInvokeKind::PropertyGet,
             }),
             _ => None,
         };
@@ -2915,6 +2929,7 @@ fn com_member_specs_from_typelib_metadata(
                 ComMemberSpec {
                     name: member.name.clone(),
                     requires_argument: member.requires_argument,
+                    invoke_kind: member.invoke_kind,
                 },
             )
         })
@@ -3078,6 +3093,8 @@ const TEST_DISPID_COUNT: i32 = 1;
 const TEST_DISPID_EXISTS: i32 = 2;
 const TEST_DISPID_FIRE_CHANGED: i32 = 3;
 const TEST_DISPID_FIRE_CHANGED_PAIR: i32 = 4;
+const TEST_DISPID_PING: i32 = 5;
+const TEST_DISPID_LOOKUP: i32 = 6;
 const TEST_EVENT_CHANGED: i32 = 1;
 const TEST_EVENT_CHANGED_SOURCE_INTERFACE: i32 = 2;
 const TEST_EVENT_CHANGED_PAIR: i32 = 3;
@@ -3817,6 +3834,8 @@ unsafe extern "system" fn oxvba_test_get_ids_of_names(
         "exists" => TEST_DISPID_EXISTS,
         "firechanged" => TEST_DISPID_FIRE_CHANGED,
         "firechangedpair" => TEST_DISPID_FIRE_CHANGED_PAIR,
+        "ping" => TEST_DISPID_PING,
+        "lookup" => TEST_DISPID_LOOKUP,
         _ => return COM_DISP_E_UNKNOWNNAME,
     };
     *rgdispid = dispid;
@@ -3907,6 +3926,30 @@ unsafe extern "system" fn oxvba_test_invoke(
                 &[value, value.saturating_add(1)],
             );
             set_variant_i32(value.saturating_add(1), pvarresult);
+            COM_S_OK
+        }
+        TEST_DISPID_PING => {
+            if (wflags & DISPATCH_METHOD) == 0 || cargs != 0 {
+                return COM_DISP_E_BADPARAMCOUNT;
+            }
+            set_variant_i32(123, pvarresult);
+            COM_S_OK
+        }
+        TEST_DISPID_LOOKUP => {
+            if (wflags & DISPATCH_PROPERTYGET) == 0 || cargs != 1 || rgvarg.is_null() {
+                return COM_DISP_E_BADPARAMCOUNT;
+            }
+            let arg = &*rgvarg;
+            let value = match raw_variant_token_from_invoke_arg(arg, 0) {
+                Ok(value) => value,
+                Err(hr) => {
+                    if !puargerr.is_null() {
+                        *puargerr = 0;
+                    }
+                    return hr;
+                }
+            };
+            set_variant_i32(value.saturating_add(1_000), pvarresult);
             COM_S_OK
         }
         _ => COM_DISP_E_MEMBERNOTFOUND,
@@ -4311,19 +4354,83 @@ unsafe fn raw_dispatch_property_get_noargs(
 
 #[cfg(target_os = "windows")]
 #[allow(unsafe_op_in_unsafe_fn)]
-unsafe fn raw_dispatch_dictionary_count(dispatch: *mut RawIDispatch) -> Result<i32, String> {
-    let dispid = raw_get_dispid_by_name(dispatch, "Count")?;
-    raw_dispatch_property_get_noargs(dispatch, dispid)
+unsafe fn raw_dispatch_property_get_i4(
+    dispatch: *mut RawIDispatch,
+    dispid: i32,
+    arg: i32,
+) -> Result<i32, String> {
+    let mut arg_variant: VARIANT = std::mem::zeroed();
+    arg_variant.Anonymous.Anonymous.vt = VT_I4;
+    arg_variant.Anonymous.Anonymous.Anonymous.lVal = arg;
+
+    let mut result: VARIANT = std::mem::zeroed();
+    let mut excep: EXCEPINFO = std::mem::zeroed();
+    let mut arg_err = 0u32;
+    let mut params = DISPPARAMS {
+        rgvarg: &mut arg_variant,
+        rgdispidNamedArgs: std::ptr::null_mut(),
+        cArgs: 1,
+        cNamedArgs: 0,
+    };
+    let hr = ((*(*dispatch).vtbl).invoke)(
+        dispatch.cast(),
+        dispid,
+        &IID_NULL,
+        0x0400,
+        DISPATCH_PROPERTYGET,
+        &mut params,
+        &mut result,
+        &mut excep,
+        &mut arg_err,
+    );
+    if hr < 0 {
+        return Err(format!(
+            "IDispatch::Invoke(property-get dispid={dispid}) failed with HRESULT {:#010X} (arg_err={})",
+            hr as u32, arg_err
+        ));
+    }
+
+    let token = raw_variant_to_token(&result)?;
+    let _ = VariantClear(&mut result);
+    Ok(token)
 }
 
 #[cfg(target_os = "windows")]
 #[allow(unsafe_op_in_unsafe_fn)]
-unsafe fn raw_dispatch_dictionary_exists(
+unsafe fn raw_dispatch_invoke_method_noargs(
     dispatch: *mut RawIDispatch,
-    key: i32,
+    dispid: i32,
 ) -> Result<i32, String> {
-    let dispid = raw_get_dispid_by_name(dispatch, "Exists")?;
-    raw_dispatch_invoke_method_i4(dispatch, dispid, key)
+    let mut result: VARIANT = std::mem::zeroed();
+    let mut excep: EXCEPINFO = std::mem::zeroed();
+    let mut arg_err = 0u32;
+    let mut params = DISPPARAMS {
+        rgvarg: std::ptr::null_mut(),
+        rgdispidNamedArgs: std::ptr::null_mut(),
+        cArgs: 0,
+        cNamedArgs: 0,
+    };
+    let hr = ((*(*dispatch).vtbl).invoke)(
+        dispatch.cast(),
+        dispid,
+        &IID_NULL,
+        0x0400,
+        DISPATCH_METHOD,
+        &mut params,
+        &mut result,
+        &mut excep,
+        &mut arg_err,
+    );
+    if hr < 0 {
+        return Err(format!(
+            "IDispatch::Invoke(method dispid={dispid}) failed with HRESULT {:#010X} (arg_err={})",
+            hr as u32, arg_err
+        ));
+    }
+
+    let token = raw_variant_to_token(&result)?;
+    let _ = VariantClear(&mut result);
+    Ok(token)
 }
 
 #[cfg(target_os = "windows")]
@@ -5202,6 +5309,38 @@ mod tests {
                 .expect("Exists(41) should succeed"),
             0
         );
+        assert_eq!(
+            host.dispatch_invoke(object, super::TEST_DISPID_PING, 999)
+                .expect("Ping no-arg method invoke should succeed"),
+            123
+        );
+        assert_eq!(
+            host.dispatch_invoke(object, super::TEST_DISPID_LOOKUP, 42)
+                .expect("Lookup property-get with argument should succeed"),
+            1_042
+        );
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn windows_native_controlled_property_get_with_required_arg_reports_missing_arg_stably() {
+        let host = StandardHostServices::new(HalProfileId::Windows, HostPolicy::interactive_dev());
+        let object = host
+            .create_object(4)
+            .expect("create_object should return a token");
+        let err = host
+            .dispatch_invoke(
+                object,
+                super::TEST_DISPID_LOOKUP,
+                super::DISPATCH_INVOKE_MISSING_ARG_TOKEN,
+            )
+            .expect_err("Lookup should reject missing argument");
+        assert_eq!(err.kind, HalErrorKind::AdapterFault);
+        assert!(
+            err.message.contains("member requires argument"),
+            "expected stable missing-argument surface, got {}",
+            err.message
+        );
     }
 
     #[cfg(target_os = "windows")]
@@ -5431,6 +5570,8 @@ mod tests {
                     "FireChangedPair".to_string(),
                     super::TEST_DISPID_FIRE_CHANGED_PAIR
                 ),
+                ("Ping".to_string(), super::TEST_DISPID_PING),
+                ("Lookup".to_string(), super::TEST_DISPID_LOOKUP),
             ]
         );
         let fire_changed_pair = metadata
@@ -5439,6 +5580,39 @@ mod tests {
             .find(|entry| entry.token == super::TEST_DISPID_FIRE_CHANGED_PAIR)
             .expect("FireChangedPair metadata should exist");
         assert!(fire_changed_pair.requires_argument);
+        assert_eq!(
+            fire_changed_pair.invoke_kind,
+            super::TypeLibMemberInvokeKind::Method
+        );
+        let count_member = metadata
+            .members
+            .iter()
+            .find(|entry| entry.token == super::TEST_DISPID_COUNT)
+            .expect("Count metadata should exist");
+        assert_eq!(
+            count_member.invoke_kind,
+            super::TypeLibMemberInvokeKind::PropertyGet
+        );
+        let ping_member = metadata
+            .members
+            .iter()
+            .find(|entry| entry.token == super::TEST_DISPID_PING)
+            .expect("Ping metadata should exist");
+        assert!(!ping_member.requires_argument);
+        assert_eq!(
+            ping_member.invoke_kind,
+            super::TypeLibMemberInvokeKind::Method
+        );
+        let lookup_member = metadata
+            .members
+            .iter()
+            .find(|entry| entry.token == super::TEST_DISPID_LOOKUP)
+            .expect("Lookup metadata should exist");
+        assert!(lookup_member.requires_argument);
+        assert_eq!(
+            lookup_member.invoke_kind,
+            super::TypeLibMemberInvokeKind::PropertyGet
+        );
         let source_interface_event = metadata
             .events
             .iter()
@@ -5487,6 +5661,24 @@ mod tests {
             .expect("member spec for FireChangedPair should be present");
         assert_eq!(member.name, "FireChangedPair");
         assert!(member.requires_argument);
+        assert_eq!(member.invoke_kind, super::TypeLibMemberInvokeKind::Method);
+        let ping = binding
+            .member_specs
+            .get(&super::TEST_DISPID_PING)
+            .expect("member spec for Ping should be present");
+        assert_eq!(ping.name, "Ping");
+        assert!(!ping.requires_argument);
+        assert_eq!(ping.invoke_kind, super::TypeLibMemberInvokeKind::Method);
+        let lookup = binding
+            .member_specs
+            .get(&super::TEST_DISPID_LOOKUP)
+            .expect("member spec for Lookup should be present");
+        assert_eq!(lookup.name, "Lookup");
+        assert!(lookup.requires_argument);
+        assert_eq!(
+            lookup.invoke_kind,
+            super::TypeLibMemberInvokeKind::PropertyGet
+        );
         let dispatch_event = binding
             .event_specs
             .get(&super::TEST_EVENT_CHANGED_PAIR)
@@ -5556,6 +5748,10 @@ mod tests {
             .expect("Exists member spec should be present");
         assert_eq!(exists_member.name, "Exists");
         assert!(exists_member.requires_argument);
+        assert_eq!(
+            exists_member.invoke_kind,
+            super::TypeLibMemberInvokeKind::Method
+        );
         let exists_event = binding
             .event_specs
             .get(&super::TEST_EVENT_CHANGED)

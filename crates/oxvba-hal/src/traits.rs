@@ -152,6 +152,13 @@ pub struct TypeLibMemberMetadata {
     pub name: String,
     pub token: ValueToken,
     pub requires_argument: bool,
+    pub invoke_kind: TypeLibMemberInvokeKind,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TypeLibMemberInvokeKind {
+    PropertyGet,
+    Method,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
