@@ -1,0 +1,25 @@
+   Compiling oxvba-hal v0.1.0 (C:\Work\DnaCalc\OxVba\crates\oxvba-hal)
+   Compiling oxvba-vm v0.1.0 (C:\Work\DnaCalc\OxVba\crates\oxvba-vm)
+   Compiling oxvba-jit v0.1.0 (C:\Work\DnaCalc\OxVba\crates\oxvba-jit)
+   Compiling oxvba-host v0.1.0 (C:\Work\DnaCalc\OxVba\crates\oxvba-host)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 4.71s
+     Running tests\com_client_registered_lane.rs (target\debug\deps\com_client_registered_lane-b494b64bd4cfbbb8.exe)
+
+running 1 test
+[oxvba-hal][com-event] resolve-transport object=20001 event=10 iid=00024413-0000-0000-C000-000000000046 dispatch_member=-2147480315 resolved=native-connection-point
+[oxvba-hal][com-event] subscribe object=20001 event=10 subscription=40001 transport=native-connection-point arity=0
+[oxvba-hal][com-event] projection-trigger object=20001 member=10 event=10 args=[] queued_subscriptions=0
+
+thread 'windows_registered_com_lane::registered_event_callback_success_when_event_capable_server_is_configured' (33472) panicked at crates\oxvba-host\tests\com_client_registered_lane.rs:467:17:
+registered lane event callback was required for `Excel.Application` but no callback was available
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+test windows_registered_com_lane::registered_event_callback_success_when_event_capable_server_is_configured ... FAILED
+
+failures:
+
+failures:
+    windows_registered_com_lane::registered_event_callback_success_when_event_capable_server_is_configured
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 7 filtered out; finished in 3.07s
+
+error: test failed, to rerun pass `-p oxvba-host --test com_client_registered_lane`
