@@ -1,4 +1,7 @@
-use std::{collections::HashMap, sync::Arc};
+use std::{
+    collections::HashMap,
+    sync::{Arc, Mutex},
+};
 
 use oxvba_compiler::{Bytecode, Instruction, ProjectManifest, compile, compile_project};
 use oxvba_hal::{
@@ -12,7 +15,10 @@ use oxvba_hal::{
 use oxvba_jit::JitEngine;
 use oxvba_vm::execute_and_snapshot_with_host;
 
-use crate::runner::RuntimeProfileId;
+use crate::{
+    events::{EventDispatcher, EventSourceKey},
+    runner::RuntimeProfileId,
+};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DiagnosticPhase {
@@ -72,6 +78,7 @@ pub struct Engine {
     config: HostConfig,
     jit: JitEngine,
     root_objects: HashMap<String, String>,
+    event_dispatcher: Mutex<EventDispatcher>,
     runtime_profile: RuntimeProfileId,
     host_services: Arc<dyn HostServices>,
 }
@@ -91,6 +98,7 @@ impl Engine {
             config,
             jit: JitEngine,
             root_objects: HashMap::new(),
+            event_dispatcher: Mutex::new(EventDispatcher::default()),
             runtime_profile,
             host_services: adapters::for_profile_with_runtime_class(
                 runtime_profile.hal_profile(),
@@ -184,6 +192,53 @@ impl Engine {
         self.root_objects.contains_key(name)
     }
 
+    pub fn subscribe_host_event_handler(
+        &self,
+        project_name: &str,
+        module_name: &str,
+        event_name: &str,
+        handler_symbol: &str,
+    ) {
+        if let Ok(mut dispatcher) = self.event_dispatcher.lock() {
+            dispatcher.subscribe(
+                &EventSourceKey::new(project_name, module_name, event_name),
+                handler_symbol,
+            );
+        }
+    }
+
+    pub fn unsubscribe_host_event_handler(
+        &self,
+        project_name: &str,
+        module_name: &str,
+        event_name: &str,
+        handler_symbol: &str,
+    ) -> bool {
+        self.event_dispatcher
+            .lock()
+            .map(|mut dispatcher| {
+                dispatcher.unsubscribe(
+                    &EventSourceKey::new(project_name, module_name, event_name),
+                    handler_symbol,
+                )
+            })
+            .unwrap_or(false)
+    }
+
+    pub fn dispatch_host_event(
+        &self,
+        project_name: &str,
+        module_name: &str,
+        event_name: &str,
+    ) -> Vec<String> {
+        self.event_dispatcher
+            .lock()
+            .map(|dispatcher| {
+                dispatcher.dispatch(&EventSourceKey::new(project_name, module_name, event_name))
+            })
+            .unwrap_or_default()
+    }
+
     pub fn execute_source(&self, source: &str) -> Result<(), String> {
         let _ = self.execute_source_with_snapshot(source)?;
         Ok(())
@@ -220,6 +275,9 @@ impl Engine {
     ) -> Result<Vec<i32>, PhaseDiagnostic> {
         let compiled =
             compile_project(manifest).map_err(|e| PhaseDiagnostic::compile(e.to_string()))?;
+        if let Ok(mut dispatcher) = self.event_dispatcher.lock() {
+            dispatcher.apply_bindings(&compiled.event_dispatch_bindings);
+        }
         self.preflight_host_sensitive_support(&compiled.bytecode)?;
         if self.config.enable_jit {
             self.jit
@@ -1416,6 +1474,306 @@ mod tests {
                     && entry.procedure_name == "hidden"),
             "Option Private Module procedures remain callable for host-direct invocation lanes"
         );
+    }
+
+    #[test]
+    fn formal_event_runtime_raiseevent_dispatches_to_withevents_handlers_in_stable_order() {
+        let engine = Engine::new(HostConfig::default());
+        let main_module = module_unit_from_source(
+            "MainModule",
+            ModuleKind::Procedural,
+            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nCall Emitter.Fire\nEnd Sub",
+        )
+        .expect("main module should parse");
+        let emitter = module_unit_from_source(
+            "Emitter",
+            ModuleKind::Class,
+            "Attribute VB_Name = \"Emitter\"\nPublic Event Changed()\nPublic Sub Fire()\nRaiseEvent Changed\nEnd Sub",
+        )
+        .expect("class module should parse");
+        let sink_b = module_unit_from_source(
+            "SinkB",
+            ModuleKind::Class,
+            "Attribute VB_Name = \"SinkB\"\nPrivate WithEvents em As Emitter\nPublic Sub em_changed()\nErr.Raise 202\nEnd Sub",
+        )
+        .expect("sink module should parse");
+        let sink_a = module_unit_from_source(
+            "SinkA",
+            ModuleKind::Class,
+            "Attribute VB_Name = \"SinkA\"\nPrivate WithEvents em As Emitter\nPublic Sub em_changed()\nErr.Raise 101\nEnd Sub",
+        )
+        .expect("sink module should parse");
+
+        let manifest = ProjectManifest {
+            project_name: "ProjectA".to_string(),
+            project_kind: ProjectKind::Source,
+            modules: vec![main_module, emitter, sink_b, sink_a],
+            references: Vec::new(),
+            reference_projects: Vec::new(),
+            conditional_constants: std::collections::BTreeMap::new(),
+        };
+
+        let err = engine
+            .execute_project_with_snapshot_phased(&manifest)
+            .expect_err("first lowered handler should raise deterministic runtime error");
+        assert_eq!(err.phase(), DiagnosticPhase::Runtime);
+        assert!(
+            err.message().contains("runtime error: 101"),
+            "expected first handler (SinkA) to run before SinkB"
+        );
+    }
+
+    #[test]
+    fn formal_event_runtime_dispatch_host_event_returns_bound_handlers() {
+        let engine = Engine::new(HostConfig::default());
+        let main_module = module_unit_from_source(
+            "MainModule",
+            ModuleKind::Procedural,
+            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nEnd Sub",
+        )
+        .expect("main module should parse");
+        let emitter = module_unit_from_source(
+            "Emitter",
+            ModuleKind::Class,
+            "Attribute VB_Name = \"Emitter\"\nPublic Event Changed()\nPublic Sub Fire()\nRaiseEvent Changed\nEnd Sub",
+        )
+        .expect("class module should parse");
+        let sink = module_unit_from_source(
+            "SinkA",
+            ModuleKind::Class,
+            "Attribute VB_Name = \"SinkA\"\nPrivate WithEvents em As Emitter\nPublic Sub em_changed()\nEnd Sub",
+        )
+        .expect("sink module should parse");
+        let manifest = ProjectManifest {
+            project_name: "ProjectA".to_string(),
+            project_kind: ProjectKind::Source,
+            modules: vec![main_module, emitter, sink],
+            references: Vec::new(),
+            reference_projects: Vec::new(),
+            conditional_constants: std::collections::BTreeMap::new(),
+        };
+
+        let _ = engine
+            .execute_project_with_snapshot_phased(&manifest)
+            .expect("project compile/execute should load event bindings");
+
+        let handlers = engine.dispatch_host_event("ProjectA", "Emitter", "Changed");
+        assert_eq!(handlers, vec!["pmr_projecta_sinka_em_changed".to_string()]);
+    }
+
+    #[test]
+    fn formal_event_runtime_raiseevent_forwards_single_event_arg() {
+        let engine = Engine::new(HostConfig::default());
+        let main_module = module_unit_from_source(
+            "MainModule",
+            ModuleKind::Procedural,
+            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nCall Emitter.Fire\nEnd Sub",
+        )
+        .expect("main module should parse");
+        let emitter = module_unit_from_source(
+            "Emitter",
+            ModuleKind::Class,
+            "Attribute VB_Name = \"Emitter\"\nPublic Event Changed(ByVal n)\nPublic Sub Fire()\nRaiseEvent Changed(42)\nEnd Sub",
+        )
+        .expect("class module should parse");
+        let sink = module_unit_from_source(
+            "SinkA",
+            ModuleKind::Class,
+            "Attribute VB_Name = \"SinkA\"\nPrivate WithEvents em As Emitter\nPublic Sub em_changed(ByVal n)\nIf n = 42 Then\nError 142\nElse\nError 141\nEnd If\nEnd Sub",
+        )
+        .expect("sink module should parse");
+
+        let manifest = ProjectManifest {
+            project_name: "ProjectA".to_string(),
+            project_kind: ProjectKind::Source,
+            modules: vec![main_module, emitter, sink],
+            references: Vec::new(),
+            reference_projects: Vec::new(),
+            conditional_constants: std::collections::BTreeMap::new(),
+        };
+
+        let err = engine
+            .execute_project_with_snapshot_phased(&manifest)
+            .expect_err("event arg should flow to handler and raise deterministic runtime code");
+        assert_eq!(err.phase(), DiagnosticPhase::Runtime);
+        assert!(err.message().contains("runtime error: 142"));
+    }
+
+    #[test]
+    fn formal_event_runtime_withevents_reassignment_rebinds_non_default_instances_deterministically()
+     {
+        let engine = Engine::new(HostConfig::default());
+        let main_module = module_unit_from_source(
+            "MainModule",
+            ModuleKind::Procedural,
+            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim e1 As New Emitter\nDim e2 As New Emitter\nDim s As New Sink\nDim a\nDim b\nCall s.Attach(e1)\na = __oxvba_withevents_get(2049099222)\nCall s.Attach(e2)\nb = __oxvba_withevents_get(2049099222)\nIf a = 1 And b = 2 Then\nError 13\nElse\nError 77\nEnd If\nEnd Sub",
+        )
+        .expect("main module should parse");
+        let emitter = module_unit_from_source(
+            "Emitter",
+            ModuleKind::Class,
+            "Attribute VB_Name = \"Emitter\"\nPublic Event Tick(ByVal n As Integer)\nPublic Sub Fire(ByVal n As Integer)\nRaiseEvent Tick(n)\nEnd Sub",
+        )
+        .expect("class module should parse");
+        let sink = module_unit_from_source(
+            "Sink",
+            ModuleKind::Class,
+            "Attribute VB_Name = \"Sink\"\nPrivate WithEvents src As Emitter\nPublic Sub Attach(ByVal e As Emitter)\nSet src = e\nEnd Sub",
+        )
+        .expect("sink module should parse");
+
+        let manifest = ProjectManifest {
+            project_name: "ProjectA".to_string(),
+            project_kind: ProjectKind::Source,
+            modules: vec![main_module, emitter, sink],
+            references: Vec::new(),
+            reference_projects: Vec::new(),
+            conditional_constants: std::collections::BTreeMap::new(),
+        };
+        let compiled = oxvba_compiler::compile_project(&manifest)
+            .expect("project should compile for event lane");
+        let lowered = compiled.rewritten_source.to_ascii_lowercase();
+        assert!(
+            lowered.contains("__oxvba_withevents_set("),
+            "expected WithEvents set rewrite in lowered source"
+        );
+        assert!(
+            lowered.contains("__oxvba_withevents_get("),
+            "expected WithEvents guard rewrite in lowered source"
+        );
+        assert!(
+            lowered.contains("pmr_projecta_sink_attach"),
+            "expected sink attach call path in lowered source"
+        );
+        assert!(
+            compiled.bytecode.instructions.iter().any(|inst| matches!(
+                inst,
+                oxvba_compiler::Instruction::IntrinsicWithEventsSet { .. }
+            )),
+            "expected IntrinsicWithEventsSet in emitted bytecode"
+        );
+        assert!(
+            compiled.bytecode.instructions.iter().any(|inst| matches!(
+                inst,
+                oxvba_compiler::Instruction::IntrinsicWithEventsGet { .. }
+            )),
+            "expected IntrinsicWithEventsGet in emitted bytecode"
+        );
+        let err = engine
+            .execute_project_with_snapshot_phased(&manifest)
+            .expect_err("reassignment lane should emit deterministic parity sentinel");
+        assert_eq!(
+            err.phase(),
+            DiagnosticPhase::Runtime,
+            "unexpected phase with message: {}",
+            err.message()
+        );
+        assert!(
+            err.message().contains("runtime error: 13"),
+            "unexpected runtime message: {}",
+            err.message()
+        );
+    }
+
+    #[test]
+    fn formal_event_runtime_withevents_clear_then_rebind_updates_dispatch_membership() {
+        let engine = Engine::new(HostConfig::default());
+        let main_module = module_unit_from_source(
+            "MainModule",
+            ModuleKind::Procedural,
+            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim e1 As New Emitter\nDim e2 As New Emitter\nDim s As New Sink\nDim a\nDim b\nDim c\nCall s.Attach(e1)\na = __oxvba_withevents_get(2049099222)\nCall s.Detach\nb = __oxvba_withevents_get(2049099222)\nCall s.Attach(e2)\nc = __oxvba_withevents_get(2049099222)\nIf a = 1 And b = 0 And c = 2 Then\nError 13\nElse\nError 77\nEnd If\nEnd Sub",
+        )
+        .expect("main module should parse");
+        let emitter = module_unit_from_source(
+            "Emitter",
+            ModuleKind::Class,
+            "Attribute VB_Name = \"Emitter\"\nPublic Event Tick(ByVal n As Integer)\nPublic Sub Fire(ByVal n As Integer)\nRaiseEvent Tick(n)\nEnd Sub",
+        )
+        .expect("class module should parse");
+        let sink = module_unit_from_source(
+            "Sink",
+            ModuleKind::Class,
+            "Attribute VB_Name = \"Sink\"\nPrivate WithEvents src As Emitter\nPublic Sub Attach(ByVal e As Emitter)\nSet src = e\nEnd Sub\nPublic Sub Detach()\nSet src = Nothing\nEnd Sub",
+        )
+        .expect("sink module should parse");
+
+        let manifest = ProjectManifest {
+            project_name: "ProjectA".to_string(),
+            project_kind: ProjectKind::Source,
+            modules: vec![main_module, emitter, sink],
+            references: Vec::new(),
+            reference_projects: Vec::new(),
+            conditional_constants: std::collections::BTreeMap::new(),
+        };
+        let err = engine
+            .execute_project_with_snapshot_phased(&manifest)
+            .expect_err("clear/rebind lane should emit deterministic parity sentinel");
+        assert_eq!(
+            err.phase(),
+            DiagnosticPhase::Runtime,
+            "unexpected phase with message: {}",
+            err.message()
+        );
+        assert!(
+            err.message().contains("runtime error: 13"),
+            "unexpected runtime message: {}",
+            err.message()
+        );
+    }
+
+    #[test]
+    fn formal_event_runtime_withevents_binding_intrinsics_roundtrip_state() {
+        let engine = Engine::new(HostConfig::default());
+        let source = "Sub Main()\nDim x\nx = __oxvba_withevents_set(2049099222, 42)\nIf __oxvba_withevents_get(2049099222) = 42 Then\nError 13\nElse\nError 77\nEnd If\nEnd Sub";
+        let err = engine
+            .execute_source_with_snapshot_phased(source)
+            .expect_err("intrinsic roundtrip should raise deterministic sentinel");
+        assert_eq!(err.phase(), DiagnosticPhase::Runtime);
+        assert!(
+            err.message().contains("runtime error: 13"),
+            "unexpected runtime message: {}",
+            err.message()
+        );
+    }
+
+    #[test]
+    fn formal_event_runtime_implements_prefixed_member_executes_in_class_flow() {
+        let engine = Engine::new(HostConfig::default());
+        let main_module = module_unit_from_source(
+            "MainModule",
+            ModuleKind::Procedural,
+            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nCall ThingImpl.Fire\nEnd Sub",
+        )
+        .expect("main module should parse");
+        let iface_module = module_unit_from_source(
+            "IThing",
+            ModuleKind::Class,
+            "Attribute VB_Name = \"IThing\"\nPublic Sub Ping()\nEnd Sub",
+        )
+        .expect("interface module should parse");
+        let impl_module = module_unit_from_source(
+            "ThingImpl",
+            ModuleKind::Class,
+            "Attribute VB_Name = \"ThingImpl\"\nImplements IThing\nPrivate Sub IThing_Ping()\nErr.Raise 303\nEnd Sub\nPublic Sub Fire()\nCall IThing_Ping\nEnd Sub",
+        )
+        .expect("implementation module should parse");
+
+        let manifest = ProjectManifest {
+            project_name: "ProjectA".to_string(),
+            project_kind: ProjectKind::Source,
+            modules: vec![main_module, iface_module, impl_module],
+            references: Vec::new(),
+            reference_projects: Vec::new(),
+            conditional_constants: std::collections::BTreeMap::new(),
+        };
+
+        let err = engine
+            .execute_project_with_snapshot_phased(&manifest)
+            .expect_err(
+                "Implements-prefixed member call should execute and raise deterministic error",
+            );
+        assert_eq!(err.phase(), DiagnosticPhase::Runtime);
+        assert!(err.message().contains("runtime error: 303"));
     }
 
     #[test]
@@ -3253,11 +3611,10 @@ mod tests {
         ))
         .expect("deferred oracle gates exists");
         let mut lines = text.lines().filter(|line| !line.trim().is_empty());
-        let header = lines.next().expect("deferred oracle gates header should exist");
-        let header_cols = header
-            .trim_matches('"')
-            .split("\",\"")
-            .collect::<Vec<_>>();
+        let header = lines
+            .next()
+            .expect("deferred oracle gates header should exist");
+        let header_cols = header.trim_matches('"').split("\",\"").collect::<Vec<_>>();
         assert_eq!(
             header_cols,
             vec![
@@ -4202,17 +4559,18 @@ mod tests {
         .expect("conformance topics should exist");
         let taxonomy = std::fs::read_to_string(repo_path("docs/DIAGNOSTIC_TAXONOMY.md"))
             .expect("diagnostic taxonomy should exist");
-        let generated_diag_snippet = std::fs::read_to_string(repo_path(
-            "docs/generated/PMR_EVENT_DIAGNOSTICS_SNIPPET.md",
-        ))
-        .expect("generated PMR event diagnostic snippet should exist");
+        let generated_diag_snippet =
+            std::fs::read_to_string(repo_path("docs/generated/PMR_EVENT_DIAGNOSTICS_SNIPPET.md"))
+                .expect("generated PMR event diagnostic snippet should exist");
 
         assert!(pmr_spec.contains("compile-time executable"));
         assert!(pmr_conformance.contains("docs/generated/PMR_EVENT_DIAGNOSTICS_SNIPPET.md"));
         assert!(pmr_hal_integration.contains("docs/generated/PMR_EVENT_DIAGNOSTICS_SNIPPET.md"));
-        assert!(div3.contains("compile semantics are implemented"));
+        assert!(div3.contains("Closed for the originally recorded mismatch shape"));
         assert!(div4.contains("compile semantics are implemented"));
-        assert!(topics.contains("remaining divergence tracking is runtime"));
+        assert!(topics.contains("\"CCT-040\""));
+        assert!(topics.contains("ODG-038"));
+        assert!(topics.contains("DIV-0004"));
         assert!(taxonomy.contains("docs/generated/PMR_EVENT_DIAGNOSTICS_SNIPPET.md"));
         assert!(generated_diag_snippet.contains("PMR-E-IMPLEMENTS-MODULE-KIND"));
         assert!(generated_diag_snippet.contains("PMR-E-RAISEEVENT-MODULE-KIND"));
@@ -4252,12 +4610,11 @@ mod tests {
     fn formal_v466_governance_doctrine_tracks_pmr_event_and_oracle_schema_contracts() {
         let governance = std::fs::read_to_string(repo_path("scripts/check-governance.ps1"))
             .expect("governance script should exist");
-        let operations =
-            std::fs::read_to_string(repo_path("OPERATIONS.md")).expect("operations doc should exist");
-        let conformance_layout = std::fs::read_to_string(repo_path(
-            "docs/evidence/conformance/README.md",
-        ))
-        .expect("conformance layout readme should exist");
+        let operations = std::fs::read_to_string(repo_path("OPERATIONS.md"))
+            .expect("operations doc should exist");
+        let conformance_layout =
+            std::fs::read_to_string(repo_path("docs/evidence/conformance/README.md"))
+                .expect("conformance layout readme should exist");
 
         assert!(governance.contains("generate-pmr-event-diagnostic-snippets.ps1\" -Check"));
         assert!(governance.contains("validate-pmr-event-diagnostic-sync.ps1"));

@@ -2952,6 +2952,9 @@ fn parse_expr(text: &str, array_bounds: &ArrayBoundsMap) -> Option<BoundExpr> {
     if expr.eq_ignore_ascii_case("null") {
         return Some(BoundExpr::IntConst(-1));
     }
+    if expr.eq_ignore_ascii_case("nothing") {
+        return Some(BoundExpr::IntConst(0));
+    }
     if let Ok(value) = expr.parse::<i32>() {
         return Some(BoundExpr::IntConst(value));
     }
@@ -3093,6 +3096,8 @@ fn intrinsic_spec(name: &str) -> Option<IntrinsicSpec> {
             Some(IntrinsicSpec::fixed(1, HostSensitive))
         }
         "dispatchinvoke" => Some(IntrinsicSpec::range(2, 3, HostSensitive)),
+        "__oxvba_withevents_get" => Some(IntrinsicSpec::fixed(1, DeterministicCore)),
+        "__oxvba_withevents_set" => Some(IntrinsicSpec::fixed(2, DeterministicCore)),
         _ => None,
     }
 }

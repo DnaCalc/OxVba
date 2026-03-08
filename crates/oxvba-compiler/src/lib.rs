@@ -13,8 +13,9 @@ use thiserror::Error;
 pub use bytecode::{Bytecode, Instruction};
 pub use project::{
     CompiledProject, ExportKind, HostProcedureExport, ModuleAttributes, ModuleKind, ModuleUnit,
-    ProjectCompileError, ProjectKind, ProjectManifest, ProjectReference, ReferenceKind,
-    ReferencedProjectManifest, compile_project, module_unit_from_source,
+    ProjectCompileError, ProjectEventDispatchBinding, ProjectKind, ProjectManifest,
+    ProjectReference, ReferenceKind, ReferencedProjectManifest, compile_project,
+    module_unit_from_source,
 };
 
 #[derive(Debug, Error)]
@@ -1470,5 +1471,23 @@ mod tests {
     fn compile_raiseevent_statement_in_single_module_subset_succeeds() {
         let source = "Sub Main()\nRaiseEvent Tick\nEnd Sub";
         compile(source).expect("RaiseEvent statement should compile in deterministic subset");
+    }
+
+    #[test]
+    fn compile_withevents_runtime_binding_intrinsics_emit_deterministically() {
+        let source = "Sub Main()\nDim x\nx = __oxvba_withevents_set(7, 42)\nIf __oxvba_withevents_get(7) = 42 Then\nx = 1\nEnd If\nEnd Sub";
+        let out = compile(source).expect("WithEvents binding intrinsics should compile");
+        assert!(
+            out.instructions
+                .iter()
+                .any(|inst| matches!(inst, Instruction::IntrinsicWithEventsSet { .. })),
+            "expected IntrinsicWithEventsSet emission"
+        );
+        assert!(
+            out.instructions
+                .iter()
+                .any(|inst| matches!(inst, Instruction::IntrinsicWithEventsGet { .. })),
+            "expected IntrinsicWithEventsGet emission"
+        );
     }
 }

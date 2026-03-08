@@ -366,6 +366,15 @@ pub enum Instruction {
         symbol: i32,
         arg: usize,
     },
+    IntrinsicWithEventsGet {
+        dst: usize,
+        binding: usize,
+    },
+    IntrinsicWithEventsSet {
+        dst: usize,
+        binding: usize,
+        value: usize,
+    },
     CmpEqSlots {
         dst: usize,
         lhs: usize,

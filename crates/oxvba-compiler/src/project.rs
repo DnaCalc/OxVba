@@ -81,12 +81,21 @@ pub struct HostProcedureExport {
     pub kind: ExportKind,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+pub struct ProjectEventDispatchBinding {
+    pub source_project_name: String,
+    pub source_module_name: String,
+    pub event_name: String,
+    pub handler_symbol: String,
+}
+
 #[derive(Debug, Clone)]
 pub struct CompiledProject {
     pub bytecode: Bytecode,
     pub rewritten_source: String,
     pub host_exports: Vec<HostProcedureExport>,
     pub reference_visible_exports: Vec<HostProcedureExport>,
+    pub event_dispatch_bindings: Vec<ProjectEventDispatchBinding>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -266,6 +275,7 @@ struct ProcedureDecl {
     lowered_name: String,
     kind: ExportKind,
     is_public: bool,
+    param_count: usize,
     module_kind: ModuleKind,
     option_private_module: bool,
 }
@@ -330,6 +340,8 @@ fn compile_project_with_strategy(
     let reference_order = build_reference_order_map(manifest);
     let active_project = normalize_identifier(&manifest.project_name);
     validate_event_semantics(manifest, &procedure_index, &reference_order)?;
+    let event_dispatch_plan =
+        collect_event_dispatch_plan(manifest, &procedure_index, &reference_order);
 
     let rewritten_source = lower_project_source(
         strategy,
@@ -337,6 +349,7 @@ fn compile_project_with_strategy(
         &active_project,
         &procedure_index,
         &reference_order,
+        &event_dispatch_plan,
     )?;
 
     let bytecode = compile(&rewritten_source).map_err(|e| ProjectCompileError::BackendCompile {
@@ -345,6 +358,7 @@ fn compile_project_with_strategy(
 
     let host_exports = collect_host_exports(manifest, &procedure_index);
     let reference_visible_exports = collect_reference_visible_exports(manifest, &procedure_index);
+    let event_dispatch_bindings = flatten_event_dispatch_plan(&event_dispatch_plan);
     validate_compiled_project_contract(manifest, &host_exports, &reference_visible_exports)
         .map_err(|message| ProjectCompileError::BackendCompile {
             message: format!("PMR-E-INTERNAL-CONTRACT: {message}"),
@@ -354,6 +368,7 @@ fn compile_project_with_strategy(
         rewritten_source,
         host_exports,
         reference_visible_exports,
+        event_dispatch_bindings,
     })
 }
 
@@ -363,6 +378,7 @@ fn lower_project_source(
     active_project: &str,
     procedures: &[ProcedureDecl],
     reference_order: &BTreeMap<String, usize>,
+    event_dispatch_plan: &EventDispatchPlan,
 ) -> Result<String, ProjectCompileError> {
     let mut lowered_modules = Vec::new();
     for module in &manifest.modules {
@@ -374,6 +390,7 @@ fn lower_project_source(
             active_project,
             procedures,
             reference_order,
+            event_dispatch_plan,
         )?;
         lowered_modules.push(lowered);
     }
@@ -388,6 +405,7 @@ fn lower_project_source(
                 &project_name,
                 procedures,
                 reference_order,
+                event_dispatch_plan,
             )?;
             lowered_modules.push(lowered);
         }
@@ -404,6 +422,7 @@ fn lower_module_source(
     current_project: &str,
     procedures: &[ProcedureDecl],
     reference_order: &BTreeMap<String, usize>,
+    event_dispatch_plan: &EventDispatchPlan,
 ) -> Result<String, ProjectCompileError> {
     match strategy {
         ProjectLoweringStrategy::ModuleAwareBindPlan => lower_module_source_module_aware(
@@ -413,6 +432,7 @@ fn lower_module_source(
             current_project,
             procedures,
             reference_order,
+            event_dispatch_plan,
         ),
         ProjectLoweringStrategy::RewriteBridge => rewrite_module_source(
             manifest,
@@ -421,6 +441,7 @@ fn lower_module_source(
             current_project,
             procedures,
             reference_order,
+            event_dispatch_plan,
         ),
     }
 }
@@ -778,6 +799,7 @@ fn collect_project_procedures(manifest: &ProjectManifest) -> Vec<ProcedureDecl> 
         let module_name = normalize_identifier(&module.module_name);
         for line in module.source.lines() {
             if let Some((name, kind, is_public)) = parse_procedure_signature_line(line) {
+                let param_count = procedure_signature_param_count(line).unwrap_or(0);
                 let lowered_name = lowered_proc_symbol(&active_project, &module_name, &name);
                 procedures.push(ProcedureDecl {
                     project_name: active_project.clone(),
@@ -786,6 +808,7 @@ fn collect_project_procedures(manifest: &ProjectManifest) -> Vec<ProcedureDecl> 
                     lowered_name,
                     kind,
                     is_public,
+                    param_count,
                     module_kind: module.module_kind,
                     option_private_module: module.attributes.option_private_module,
                 });
@@ -798,6 +821,7 @@ fn collect_project_procedures(manifest: &ProjectManifest) -> Vec<ProcedureDecl> 
             let module_name = normalize_identifier(&module.module_name);
             for line in module.source.lines() {
                 if let Some((name, kind, is_public)) = parse_procedure_signature_line(line) {
+                    let param_count = procedure_signature_param_count(line).unwrap_or(0);
                     let lowered_name = lowered_proc_symbol(&project_name, &module_name, &name);
                     procedures.push(ProcedureDecl {
                         project_name: project_name.clone(),
@@ -806,6 +830,7 @@ fn collect_project_procedures(manifest: &ProjectManifest) -> Vec<ProcedureDecl> 
                         lowered_name,
                         kind,
                         is_public,
+                        param_count,
                         module_kind: module.module_kind,
                         option_private_module: module.attributes.option_private_module,
                     });
@@ -964,6 +989,17 @@ struct LineBindPlan {
     bound_call_targets: Vec<(String, String)>,
 }
 
+type EventDispatchKey = (String, String, String);
+type EventDispatchPlan = BTreeMap<EventDispatchKey, Vec<EventDispatchRoute>>;
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+struct EventDispatchRoute {
+    handler_symbol: String,
+    sink_project_name: String,
+    sink_module_name: String,
+    withevents_var: String,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct EarlyBoundBinding {
     qualified_type: String,
@@ -971,10 +1007,24 @@ struct EarlyBoundBinding {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+struct InternalClassBinding {
+    project_name: String,
+    module_name: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 struct ExternalDimDecl {
     leading_ws: String,
     var_name: String,
     qualified_type: String,
+    as_new: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct InternalClassDimDecl {
+    leading_ws: String,
+    var_name: String,
+    type_name: String,
     as_new: bool,
 }
 
@@ -986,14 +1036,42 @@ fn lower_module_source_module_aware(
     current_project: &str,
     procedures: &[ProcedureDecl],
     reference_order: &BTreeMap<String, usize>,
+    event_dispatch_plan: &EventDispatchPlan,
 ) -> Result<String, ProjectCompileError> {
     let current_module = normalize_identifier(&module.module_name);
     let mut out = Vec::new();
     let mut active_function_result: Option<(String, String)> = None;
     let mut early_bound = BTreeMap::<String, EarlyBoundBinding>::new();
+    let mut internal_class_bindings = BTreeMap::<String, InternalClassBinding>::new();
+    let mut withevents_bindings = BTreeSet::<String>::new();
+    let mut next_internal_instance_id = 1i32;
     for line in module.source.lines() {
-        let expanded = expand_early_bound_source_line(line, manifest, &mut early_bound)?;
+        let expanded = expand_bound_source_line(
+            line,
+            manifest,
+            current_project,
+            reference_order,
+            &mut early_bound,
+            &mut internal_class_bindings,
+            &mut withevents_bindings,
+            &mut next_internal_instance_id,
+        )?;
         for expanded_line in expanded {
+            let expanded_line = rewrite_internal_class_set_assignment(
+                &expanded_line,
+                current_project,
+                &current_module,
+                &internal_class_bindings,
+                &withevents_bindings,
+            );
+            let expanded_line = rewrite_internal_class_member_dispatch(
+                &expanded_line,
+                active_project,
+                current_project,
+                &current_module,
+                procedures,
+                &internal_class_bindings,
+            )?;
             let (plan, next_function_result) = build_line_bind_plan(
                 manifest,
                 active_project,
@@ -1002,6 +1080,7 @@ fn lower_module_source_module_aware(
                 &current_module,
                 procedures,
                 reference_order,
+                event_dispatch_plan,
                 &expanded_line,
                 active_function_result.as_ref(),
             )?;
@@ -1013,13 +1092,25 @@ fn lower_module_source_module_aware(
             out.push(plan.lowered_line);
         }
     }
+    out.extend(emit_event_guard_wrappers_for_module(
+        current_project,
+        &current_module,
+        event_dispatch_plan,
+        procedures,
+        &withevents_bindings,
+    ));
     Ok(out.join("\n"))
 }
 
-fn expand_early_bound_source_line(
+fn expand_bound_source_line(
     line: &str,
     manifest: &ProjectManifest,
+    current_project: &str,
+    reference_order: &BTreeMap<String, usize>,
     early_bound: &mut BTreeMap<String, EarlyBoundBinding>,
+    internal_class_bindings: &mut BTreeMap<String, InternalClassBinding>,
+    withevents_bindings: &mut BTreeSet<String>,
+    next_internal_instance_id: &mut i32,
 ) -> Result<Vec<String>, ProjectCompileError> {
     if let Some(dim_decl) = parse_external_dim_declaration(line) {
         let (qualifier, _) = parse_qualified_type_reference(&dim_decl.qualified_type)
@@ -1062,6 +1153,49 @@ fn expand_early_bound_source_line(
         return Ok(out);
     }
 
+    if let Some(dim_decl) = parse_internal_class_dim_declaration(line)
+        && let Some((target_project, target_module)) = resolve_interface_module(
+            manifest,
+            current_project,
+            &dim_decl.type_name,
+            reference_order,
+        )
+    {
+        internal_class_bindings.insert(
+            normalize_identifier(&dim_decl.var_name),
+            InternalClassBinding {
+                project_name: target_project,
+                module_name: target_module,
+            },
+        );
+        let mut out = vec![format!("{}Dim {}", dim_decl.leading_ws, dim_decl.var_name)];
+        if dim_decl.as_new {
+            out.push(format!(
+                "{}{} = {}",
+                dim_decl.leading_ws, dim_decl.var_name, *next_internal_instance_id
+            ));
+            *next_internal_instance_id = next_internal_instance_id.saturating_add(1);
+        }
+        return Ok(out);
+    }
+
+    if let Some((withevents_var, source_type)) = parse_withevents_declaration_binding(line)
+        && let Some((target_project, target_module)) =
+            resolve_event_source_module(manifest, current_project, &source_type, reference_order)
+    {
+        let leading_ws_len = line.len().saturating_sub(line.trim_start().len());
+        let leading_ws = &line[..leading_ws_len];
+        internal_class_bindings.insert(
+            normalize_identifier(&withevents_var),
+            InternalClassBinding {
+                project_name: target_project,
+                module_name: target_module,
+            },
+        );
+        withevents_bindings.insert(normalize_identifier(&withevents_var));
+        return Ok(vec![format!("{leading_ws}Public {withevents_var}")]);
+    }
+
     let rewritten = rewrite_early_bound_member_dispatch(line, early_bound)?;
     Ok(vec![rewritten])
 }
@@ -1094,6 +1228,52 @@ fn parse_external_dim_declaration(line: &str) -> Option<ExternalDimDecl> {
         leading_ws,
         var_name: var_name.to_string(),
         qualified_type: normalized_type,
+        as_new,
+    })
+}
+
+fn parse_internal_class_dim_declaration(line: &str) -> Option<InternalClassDimDecl> {
+    let leading_ws_len = line.len().saturating_sub(line.trim_start().len());
+    let leading_ws = line[..leading_ws_len].to_string();
+    let trimmed = line.trim();
+    if !trimmed.to_ascii_lowercase().starts_with("dim ") {
+        return None;
+    }
+    let payload = trimmed[4..].trim();
+    if payload.contains(',') {
+        return None;
+    }
+    let (lhs, rhs) = split_keyword_ascii_ci(payload, " as ")?;
+    let var_name = lhs.trim();
+    if var_name.is_empty() || !is_valid_vba_identifier(var_name) {
+        return None;
+    }
+    let mut rhs_trimmed = rhs.trim();
+    let as_new = if rhs_trimmed.len() >= 4 && rhs_trimmed[..4].eq_ignore_ascii_case("new ") {
+        rhs_trimmed = rhs_trimmed[4..].trim();
+        true
+    } else {
+        false
+    };
+    let type_token = rhs_trimmed
+        .split(|ch: char| ch.is_ascii_whitespace() || ch == '(')
+        .next()
+        .unwrap_or_default()
+        .trim();
+    if type_token.is_empty() {
+        return None;
+    }
+    let type_name = type_token
+        .split('.')
+        .next_back()
+        .map(normalize_identifier)?;
+    if type_name.is_empty() {
+        return None;
+    }
+    Some(InternalClassDimDecl {
+        leading_ws,
+        var_name: var_name.to_string(),
+        type_name,
         as_new,
     })
 }
@@ -1196,6 +1376,374 @@ fn rewrite_early_bound_member_dispatch(
     Ok(out)
 }
 
+#[allow(clippy::too_many_arguments)]
+fn rewrite_internal_class_member_dispatch(
+    line: &str,
+    active_project: &str,
+    current_project: &str,
+    current_module: &str,
+    procedures: &[ProcedureDecl],
+    internal_class_bindings: &BTreeMap<String, InternalClassBinding>,
+) -> Result<String, ProjectCompileError> {
+    let mut replacements: Vec<(usize, usize, String)> = Vec::new();
+    let mut cursor = 0usize;
+    while let Some(open_rel) = line[cursor..].find('(') {
+        let open = cursor + open_rel;
+        let Some((name_start, name_end)) = invocation_name_span(line, open) else {
+            cursor = open + 1;
+            continue;
+        };
+        let Some(close) = find_matching_paren(line, open) else {
+            cursor = open + 1;
+            continue;
+        };
+        let raw_name = line[name_start..name_end].trim();
+        let Some(dot_idx) = raw_name.find('.') else {
+            cursor = close + 1;
+            continue;
+        };
+        let receiver = normalize_identifier(raw_name[..dot_idx].trim());
+        let member = normalize_identifier(raw_name[dot_idx + 1..].trim());
+        if receiver.is_empty() || member.is_empty() {
+            cursor = close + 1;
+            continue;
+        }
+        let Some((target, instance_arg)) = resolve_internal_class_member_target(
+            &receiver,
+            &member,
+            raw_name,
+            active_project,
+            current_project,
+            current_module,
+            procedures,
+            internal_class_bindings,
+        )?
+        else {
+            cursor = close + 1;
+            continue;
+        };
+        let args_raw = line[open + 1..close].trim();
+        let args = split_top_level_args(args_raw)?;
+        let mut rewritten_args = vec![instance_arg];
+        rewritten_args.extend(args.into_iter().filter(|arg| !arg.trim().is_empty()));
+        let replacement = format!("{target}({})", rewritten_args.join(", "));
+        replacements.push((name_start, close + 1, replacement));
+        cursor = close + 1;
+    }
+    let rewritten = if replacements.is_empty() {
+        line.to_string()
+    } else {
+        let mut out = String::with_capacity(line.len() + 32);
+        let mut previous = 0usize;
+        for (start, end, replacement) in replacements {
+            if start < previous || end > line.len() || start >= end {
+                continue;
+            }
+            out.push_str(&line[previous..start]);
+            out.push_str(&replacement);
+            previous = end;
+        }
+        out.push_str(&line[previous..]);
+        out
+    };
+
+    rewrite_internal_class_call_statement_without_parens(
+        &rewritten,
+        active_project,
+        current_project,
+        current_module,
+        procedures,
+        internal_class_bindings,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn resolve_internal_class_member_target(
+    receiver: &str,
+    member: &str,
+    raw_name: &str,
+    active_project: &str,
+    current_project: &str,
+    current_module: &str,
+    procedures: &[ProcedureDecl],
+    internal_class_bindings: &BTreeMap<String, InternalClassBinding>,
+) -> Result<Option<(String, String)>, ProjectCompileError> {
+    let Some((target_project, target_module, instance_arg)) = internal_class_bindings
+        .get(receiver)
+        .map(|binding| {
+            (
+                binding.project_name.clone(),
+                binding.module_name.clone(),
+                receiver.to_string(),
+            )
+        })
+        .or_else(|| {
+            procedures
+                .iter()
+                .any(|decl| {
+                    decl.project_name == current_project
+                        && decl.module_name == receiver
+                        && decl.module_kind == ModuleKind::Class
+                })
+                .then(|| {
+                    (
+                        current_project.to_string(),
+                        receiver.to_string(),
+                        "0".to_string(),
+                    )
+                })
+        })
+    else {
+        return Ok(None);
+    };
+
+    let mut candidates = procedures
+        .iter()
+        .filter(|decl| {
+            decl.project_name == target_project
+                && decl.module_name == target_module
+                && decl.procedure_name == member
+                && is_visible_from_active_project(
+                    decl,
+                    active_project,
+                    current_project,
+                    current_module,
+                )
+        })
+        .collect::<Vec<_>>();
+    if candidates.is_empty() {
+        return Err(ProjectCompileError::NameResolutionNotFound {
+            name: raw_name.to_string(),
+        });
+    }
+    candidates.sort_by_key(|decl| decl.lowered_name.clone());
+    Ok(Some((candidates[0].lowered_name.clone(), instance_arg)))
+}
+
+#[allow(clippy::too_many_arguments)]
+fn rewrite_internal_class_call_statement_without_parens(
+    line: &str,
+    active_project: &str,
+    current_project: &str,
+    current_module: &str,
+    procedures: &[ProcedureDecl],
+    internal_class_bindings: &BTreeMap<String, InternalClassBinding>,
+) -> Result<String, ProjectCompileError> {
+    let trimmed = line.trim_start();
+    let leading = line.len().saturating_sub(trimmed.len());
+    let lower = trimmed.to_ascii_lowercase();
+    if !lower.starts_with("call ") {
+        return Ok(line.to_string());
+    }
+    let payload = trimmed[5..].trim_start();
+    if payload.is_empty() || payload.contains('(') {
+        return Ok(line.to_string());
+    }
+    let callee_end = payload.find(char::is_whitespace).unwrap_or(payload.len());
+    let callee = payload[..callee_end].trim();
+    let args_tail = payload[callee_end..].trim();
+    let Some(dot_idx) = callee.find('.') else {
+        return Ok(line.to_string());
+    };
+    let receiver = normalize_identifier(callee[..dot_idx].trim());
+    let member = normalize_identifier(callee[dot_idx + 1..].trim());
+    if receiver.is_empty() || member.is_empty() {
+        return Ok(line.to_string());
+    }
+    let Some((target, instance_arg)) = resolve_internal_class_member_target(
+        &receiver,
+        &member,
+        callee,
+        active_project,
+        current_project,
+        current_module,
+        procedures,
+        internal_class_bindings,
+    )?
+    else {
+        return Ok(line.to_string());
+    };
+    let joined_args = if args_tail.is_empty() {
+        instance_arg
+    } else {
+        format!("{instance_arg}, {args_tail}")
+    };
+    Ok(format!(
+        "{}Call {}({})",
+        &line[..leading],
+        target,
+        joined_args
+    ))
+}
+
+fn class_module_self_targets(
+    current_project: &str,
+    current_module: &str,
+    procedures: &[ProcedureDecl],
+) -> BTreeSet<String> {
+    procedures
+        .iter()
+        .filter(|decl| {
+            decl.project_name == current_project
+                && decl.module_name == current_module
+                && decl.module_kind == ModuleKind::Class
+        })
+        .map(|decl| decl.lowered_name.clone())
+        .collect()
+}
+
+fn rewrite_internal_class_self_call_statement_without_parens(
+    line: &str,
+    self_targets: &BTreeSet<String>,
+) -> String {
+    let trimmed = line.trim_start();
+    let leading = line.len().saturating_sub(trimmed.len());
+    let lower = trimmed.to_ascii_lowercase();
+    if !lower.starts_with("call ") {
+        return line.to_string();
+    }
+    let payload = trimmed[5..].trim_start();
+    if payload.is_empty() || payload.contains('(') {
+        return line.to_string();
+    }
+    let callee_end = payload.find(char::is_whitespace).unwrap_or(payload.len());
+    let callee = payload[..callee_end].trim();
+    if callee.contains('.') {
+        return line.to_string();
+    }
+    let callee_normalized = normalize_identifier(callee);
+    if !self_targets.contains(&callee_normalized) {
+        return line.to_string();
+    }
+    let args_tail = payload[callee_end..].trim();
+    let joined_args = if args_tail.is_empty() {
+        "__oxvba_this_instance".to_string()
+    } else {
+        format!("__oxvba_this_instance, {args_tail}")
+    };
+    format!("{}Call {}({})", &line[..leading], callee, joined_args)
+}
+
+fn rewrite_internal_class_self_dispatch(
+    line: &str,
+    current_project: &str,
+    current_module: &str,
+    procedures: &[ProcedureDecl],
+) -> Result<String, ProjectCompileError> {
+    let self_targets = class_module_self_targets(current_project, current_module, procedures);
+    if self_targets.is_empty() {
+        return Ok(line.to_string());
+    }
+
+    let mut replacements: Vec<(usize, usize, String)> = Vec::new();
+    let mut cursor = 0usize;
+    while let Some(open_rel) = line[cursor..].find('(') {
+        let open = cursor + open_rel;
+        let Some((name_start, name_end)) = invocation_name_span(line, open) else {
+            cursor = open + 1;
+            continue;
+        };
+        let raw_name = line[name_start..name_end].trim();
+        if raw_name.contains('.') {
+            cursor = open + 1;
+            continue;
+        }
+        let normalized = normalize_identifier(raw_name);
+        if !self_targets.contains(&normalized) {
+            cursor = open + 1;
+            continue;
+        }
+        let Some(close) = find_matching_paren(line, open) else {
+            cursor = open + 1;
+            continue;
+        };
+        let args_raw = line[open + 1..close].trim();
+        let args = split_top_level_args(args_raw)?;
+        let mut rewritten_args = vec!["__oxvba_this_instance".to_string()];
+        rewritten_args.extend(args.into_iter().filter(|arg| !arg.trim().is_empty()));
+        let replacement = format!("{raw_name}({})", rewritten_args.join(", "));
+        replacements.push((name_start, close + 1, replacement));
+        cursor = close + 1;
+    }
+
+    let rewritten = if replacements.is_empty() {
+        line.to_string()
+    } else {
+        let mut out = String::with_capacity(line.len() + 32);
+        let mut previous = 0usize;
+        for (start, end, replacement) in replacements {
+            if start < previous || end > line.len() || start >= end {
+                continue;
+            }
+            out.push_str(&line[previous..start]);
+            out.push_str(&replacement);
+            previous = end;
+        }
+        out.push_str(&line[previous..]);
+        out
+    };
+
+    Ok(rewrite_internal_class_self_call_statement_without_parens(
+        &rewritten,
+        &self_targets,
+    ))
+}
+
+fn rewrite_internal_class_set_assignment(
+    line: &str,
+    current_project: &str,
+    current_module: &str,
+    internal_class_bindings: &BTreeMap<String, InternalClassBinding>,
+    withevents_bindings: &BTreeSet<String>,
+) -> String {
+    let trimmed = line.trim_start();
+    let leading = line.len().saturating_sub(trimmed.len());
+    let lower = trimmed.to_ascii_lowercase();
+    if !lower.starts_with("set ") {
+        return line.to_string();
+    }
+    let payload = trimmed[4..].trim_start();
+    let Some(eq_idx) = payload.find('=') else {
+        return line.to_string();
+    };
+    let lhs = payload[..eq_idx].trim();
+    let rhs = payload[eq_idx + 1..].trim();
+    if lhs.is_empty() || rhs.is_empty() {
+        return line.to_string();
+    }
+    if !internal_class_bindings.contains_key(&normalize_identifier(lhs)) {
+        return line.to_string();
+    }
+    let normalized_lhs = normalize_identifier(lhs);
+    if withevents_bindings.contains(&normalized_lhs) {
+        let binding_token = withevents_binding_token(current_project, current_module, lhs);
+        return format!(
+            "{}{} = __oxvba_withevents_set({}, {})",
+            &line[..leading],
+            lhs,
+            binding_token,
+            rhs
+        );
+    }
+    format!("{}{} = {}", &line[..leading], lhs, rhs)
+}
+
+fn withevents_binding_token(project: &str, module: &str, var_name: &str) -> i32 {
+    let mut hash: u32 = 2_166_136_261;
+    let key = format!(
+        "{}|{}|{}",
+        normalize_identifier(project),
+        normalize_identifier(module),
+        normalize_identifier(var_name)
+    );
+    for byte in key.bytes() {
+        hash ^= byte as u32;
+        hash = hash.wrapping_mul(16_777_619);
+    }
+    let token = (hash & 0x7fff_ffff) as i32;
+    if token == 0 { 1 } else { token }
+}
+
 fn split_top_level_args(args: &str) -> Result<Vec<String>, ProjectCompileError> {
     if args.trim().is_empty() {
         return Ok(Vec::new());
@@ -1293,6 +1841,349 @@ fn known_dispatch_member_token(member_name: &str) -> Option<i32> {
     }
 }
 
+fn collect_event_dispatch_plan(
+    manifest: &ProjectManifest,
+    procedures: &[ProcedureDecl],
+    reference_order: &BTreeMap<String, usize>,
+) -> EventDispatchPlan {
+    let mut declared_events = BTreeMap::<(String, String), BTreeSet<String>>::new();
+    for (project_name, module) in iter_all_modules(manifest, reference_order) {
+        if module.module_kind != ModuleKind::Class {
+            continue;
+        }
+        let events = collect_declared_events(module);
+        if events.is_empty() {
+            continue;
+        }
+        declared_events.insert(
+            (
+                normalize_identifier(project_name),
+                normalize_identifier(&module.module_name),
+            ),
+            events,
+        );
+    }
+
+    let mut plan = EventDispatchPlan::new();
+    for (project_name, module) in iter_all_modules(manifest, reference_order) {
+        let project_key = normalize_identifier(project_name);
+        let module_key = normalize_identifier(&module.module_name);
+        let module_handlers = procedures
+            .iter()
+            .filter(|decl| decl.project_name == project_key && decl.module_name == module_key)
+            .collect::<Vec<_>>();
+        if module_handlers.is_empty() {
+            continue;
+        }
+        for line in module.source.lines() {
+            let Some((withevents_var, source_type)) = parse_withevents_declaration_binding(line)
+            else {
+                continue;
+            };
+            let Some((source_project, source_module)) =
+                resolve_event_source_module(manifest, &project_key, &source_type, reference_order)
+            else {
+                continue;
+            };
+            let Some(available_events) =
+                declared_events.get(&(source_project.clone(), source_module.clone()))
+            else {
+                continue;
+            };
+            let prefix = format!("{withevents_var}_");
+            for handler in &module_handlers {
+                let Some(event_name) = handler.procedure_name.strip_prefix(&prefix) else {
+                    continue;
+                };
+                if event_name.is_empty() || !available_events.contains(event_name) {
+                    continue;
+                }
+                let key = (
+                    source_project.clone(),
+                    source_module.clone(),
+                    event_name.to_string(),
+                );
+                plan.entry(key).or_default().push(EventDispatchRoute {
+                    handler_symbol: handler.lowered_name.clone(),
+                    sink_project_name: project_key.clone(),
+                    sink_module_name: module_key.clone(),
+                    withevents_var: withevents_var.clone(),
+                });
+            }
+        }
+    }
+
+    for routes in plan.values_mut() {
+        routes.sort();
+        routes.dedup();
+    }
+
+    plan
+}
+
+fn flatten_event_dispatch_plan(plan: &EventDispatchPlan) -> Vec<ProjectEventDispatchBinding> {
+    let mut out = Vec::new();
+    for ((project_name, module_name, event_name), routes) in plan {
+        for route in routes {
+            out.push(ProjectEventDispatchBinding {
+                source_project_name: project_name.clone(),
+                source_module_name: module_name.clone(),
+                event_name: event_name.clone(),
+                handler_symbol: route.handler_symbol.clone(),
+            });
+        }
+    }
+    out
+}
+
+fn resolve_event_source_module(
+    manifest: &ProjectManifest,
+    current_project: &str,
+    source_type: &str,
+    reference_order: &BTreeMap<String, usize>,
+) -> Option<(String, String)> {
+    resolve_interface_module(manifest, current_project, source_type, reference_order)
+}
+
+fn parse_withevents_declaration_binding(line: &str) -> Option<(String, String)> {
+    let trimmed = line.trim();
+    let lower = trimmed.to_ascii_lowercase();
+    let payload = if lower.starts_with("dim withevents ") {
+        trimmed[15..].trim()
+    } else if lower.starts_with("public withevents ") {
+        trimmed[18..].trim()
+    } else if lower.starts_with("private withevents ") {
+        trimmed[19..].trim()
+    } else {
+        return None;
+    };
+
+    let (lhs, rhs) = split_keyword_ascii_ci(payload, " as ")?;
+    let var_token = lhs
+        .trim()
+        .split(|ch: char| ch.is_ascii_whitespace() || ch == ',' || ch == '(')
+        .next()
+        .unwrap_or_default();
+    let var_name = normalize_procedure_name(var_token)?;
+
+    let mut rhs_trimmed = rhs.trim();
+    if rhs_trimmed.len() >= 4 && rhs_trimmed[..4].eq_ignore_ascii_case("new ") {
+        rhs_trimmed = rhs_trimmed[4..].trim();
+    }
+    let type_token = rhs_trimmed
+        .split(|ch: char| ch.is_ascii_whitespace() || ch == '(')
+        .next()
+        .unwrap_or_default();
+    let mut type_name = type_token
+        .split('.')
+        .next_back()
+        .map(normalize_identifier)?;
+    if type_name.is_empty() {
+        return None;
+    }
+    type_name = normalize_identifier(&type_name);
+    Some((var_name, type_name))
+}
+
+#[allow(clippy::too_many_arguments)]
+fn rewrite_raiseevent_to_handler_calls(
+    line: &str,
+    manifest: &ProjectManifest,
+    module: &ModuleUnit,
+    active_project: &str,
+    current_project: &str,
+    current_module: &str,
+    procedures: &[ProcedureDecl],
+    reference_order: &BTreeMap<String, usize>,
+    event_dispatch_plan: &EventDispatchPlan,
+    active_function_result: Option<&(String, String)>,
+) -> Result<Option<String>, ProjectCompileError> {
+    if module.module_kind != ModuleKind::Class {
+        return Ok(None);
+    }
+    let Some((event_name, args_payload)) = parse_raiseevent_invocation(line) else {
+        return Ok(None);
+    };
+    let dispatch_key = (
+        normalize_identifier(current_project),
+        current_module.to_string(),
+        event_name,
+    );
+    let routes = event_dispatch_plan
+        .get(&dispatch_key)
+        .cloned()
+        .unwrap_or_default();
+    if routes.is_empty() {
+        return Ok(Some(String::new()));
+    }
+
+    let leading_ws_len = line.len().saturating_sub(line.trim_start().len());
+    let leading_ws = &line[..leading_ws_len];
+    let mut lowered_lines = Vec::new();
+    let parsed_args = if let Some(args) = args_payload.as_ref() {
+        split_top_level_args(args)?
+    } else {
+        Vec::new()
+    };
+    let event_arg_count = parsed_args
+        .iter()
+        .filter(|arg| !arg.trim().is_empty())
+        .count();
+    if event_arg_count > 1 {
+        return Err(ProjectCompileError::BackendCompile {
+            message:
+                "BIND-E-EVENT-ARITY-UNSUPPORTED: class event dispatch currently supports up to one event argument"
+                    .to_string(),
+        });
+    }
+
+    for route in routes {
+        let wrapper = event_guard_wrapper_symbol(
+            current_project,
+            current_module,
+            &dispatch_key.2,
+            &route,
+            event_arg_count,
+        );
+        let mut call_line = if event_arg_count == 0 {
+            format!("{leading_ws}Call {wrapper}(__oxvba_this_instance)")
+        } else {
+            format!(
+                "{leading_ws}Call {wrapper}(__oxvba_this_instance, {})",
+                parsed_args[0].trim()
+            )
+        };
+        call_line = rewrite_invocation_targets(
+            &call_line,
+            manifest,
+            active_project,
+            current_project,
+            current_module,
+            procedures,
+            reference_order,
+        )?;
+        if let Some((result_name, lowered_name)) = active_function_result {
+            call_line = rewrite_bare_identifier(&call_line, result_name, lowered_name);
+        }
+        lowered_lines.push(call_line);
+    }
+
+    Ok(Some(lowered_lines.join("\n")))
+}
+
+fn parse_raiseevent_invocation(line: &str) -> Option<(String, Option<String>)> {
+    let trimmed = line.trim();
+    let lower = trimmed.to_ascii_lowercase();
+    if !lower.starts_with("raiseevent ") {
+        return None;
+    }
+    let payload = trimmed[10..].trim();
+    if payload.is_empty() {
+        return None;
+    }
+    let mut split_idx = payload.len();
+    for (idx, ch) in payload.char_indices() {
+        if ch.is_ascii_whitespace() || ch == '(' {
+            split_idx = idx;
+            break;
+        }
+    }
+    let event_token = payload[..split_idx].trim();
+    let event_name = normalize_procedure_name(event_token)?;
+
+    let remainder = payload[split_idx..].trim();
+    if remainder.is_empty() {
+        return Some((event_name, None));
+    }
+    if remainder.starts_with('(') {
+        let close = find_matching_paren(remainder, 0)?;
+        let args = remainder[1..close].trim().to_string();
+        return Some((event_name, Some(args)));
+    }
+    Some((event_name, Some(remainder.to_string())))
+}
+
+fn event_guard_wrapper_symbol(
+    source_project: &str,
+    source_module: &str,
+    event_name: &str,
+    route: &EventDispatchRoute,
+    event_arg_count: usize,
+) -> String {
+    format!(
+        "pmr_evtguard_{source_project}_{source_module}_{event_name}_{}_{}_a{}",
+        route.sink_module_name, route.withevents_var, event_arg_count
+    )
+}
+
+fn emit_event_guard_wrappers_for_module(
+    current_project: &str,
+    current_module: &str,
+    event_dispatch_plan: &EventDispatchPlan,
+    procedures: &[ProcedureDecl],
+    withevents_bindings: &BTreeSet<String>,
+) -> Vec<String> {
+    let mut out = Vec::new();
+    let mut emitted = BTreeSet::<String>::new();
+    for ((source_project, source_module, event_name), routes) in event_dispatch_plan {
+        for route in routes {
+            if route.sink_project_name != current_project
+                || route.sink_module_name != current_module
+            {
+                continue;
+            }
+            let handler_param_count = procedures
+                .iter()
+                .find(|decl| decl.lowered_name == route.handler_symbol)
+                .map(|decl| decl.param_count)
+                .unwrap_or(0);
+            for event_arg_count in [0usize, 1usize] {
+                let wrapper = event_guard_wrapper_symbol(
+                    source_project,
+                    source_module,
+                    event_name,
+                    route,
+                    event_arg_count,
+                );
+                if !emitted.insert(wrapper.clone()) {
+                    continue;
+                }
+                let normalized_var = normalize_identifier(&route.withevents_var);
+                if !withevents_bindings.contains(&normalized_var) {
+                    continue;
+                }
+                let binding_token = withevents_binding_token(
+                    current_project,
+                    current_module,
+                    &route.withevents_var,
+                );
+                let guard_expr =
+                    format!("__oxvba_withevents_get({binding_token}) = __oxvba_source_instance");
+                let call_args = if handler_param_count == 0 {
+                    "__oxvba_source_instance".to_string()
+                } else if event_arg_count == 0 {
+                    "__oxvba_source_instance, 0".to_string()
+                } else {
+                    "__oxvba_source_instance, __oxvba_arg0".to_string()
+                };
+                let wrapper_body = if event_arg_count == 0 {
+                    format!(
+                        "Sub {wrapper}(Optional ByVal __oxvba_source_instance = 0)\nIf {guard_expr} Then\nCall {}({call_args})\nEnd If\nEnd Sub",
+                        route.handler_symbol,
+                    )
+                } else {
+                    format!(
+                        "Sub {wrapper}(Optional ByVal __oxvba_source_instance = 0, Optional ByVal __oxvba_arg0 = 0)\nIf {guard_expr} Then\nCall {}({call_args})\nEnd If\nEnd Sub",
+                        route.handler_symbol,
+                    )
+                };
+                out.push(wrapper_body);
+            }
+        }
+    }
+    out
+}
+
 #[allow(clippy::too_many_arguments)]
 fn build_line_bind_plan(
     manifest: &ProjectManifest,
@@ -1302,6 +2193,7 @@ fn build_line_bind_plan(
     current_module: &str,
     procedures: &[ProcedureDecl],
     reference_order: &BTreeMap<String, usize>,
+    event_dispatch_plan: &EventDispatchPlan,
     line: &str,
     active_function_result: Option<&(String, String)>,
 ) -> Result<(LineBindPlan, Option<(String, String)>), ProjectCompileError> {
@@ -1333,7 +2225,11 @@ fn build_line_bind_plan(
         && let Some(decl) =
             find_decl_by_signature(procedures, current_project, current_module, &proc_name)
     {
-        let rewritten = rewrite_signature_name(&normalized, &decl.lowered_name);
+        let mut rewritten = rewrite_signature_name(&normalized, &decl.lowered_name);
+        if module.module_kind == ModuleKind::Class {
+            rewritten = inject_hidden_instance_param(&rewritten);
+            rewritten = strip_signature_param_types(&rewritten);
+        }
         let next_function_result = if decl.kind == ExportKind::Function {
             Some((proc_name, decl.lowered_name.clone()))
         } else {
@@ -1346,6 +2242,28 @@ fn build_line_bind_plan(
                 bound_call_targets: Vec::new(),
             },
             next_function_result,
+        ));
+    }
+
+    if let Some(dispatch_line) = rewrite_raiseevent_to_handler_calls(
+        &normalized,
+        manifest,
+        module,
+        active_project,
+        current_project,
+        current_module,
+        procedures,
+        reference_order,
+        event_dispatch_plan,
+        active_function_result,
+    )? {
+        return Ok((
+            LineBindPlan {
+                drop_line: dispatch_line.is_empty(),
+                lowered_line: dispatch_line,
+                bound_call_targets: Vec::new(),
+            },
+            active_function_result.cloned(),
         ));
     }
 
@@ -1368,6 +2286,14 @@ fn build_line_bind_plan(
         procedures,
         reference_order,
     )?;
+    if module.module_kind == ModuleKind::Class {
+        lowered_line = rewrite_internal_class_self_dispatch(
+            &lowered_line,
+            current_project,
+            current_module,
+            procedures,
+        )?;
+    }
     if let Some((result_name, lowered_name)) = active_function_result {
         lowered_line = rewrite_bare_identifier(&lowered_line, result_name, lowered_name);
     }
@@ -1519,14 +2445,34 @@ fn rewrite_module_source(
     current_project: &str,
     procedures: &[ProcedureDecl],
     reference_order: &BTreeMap<String, usize>,
+    event_dispatch_plan: &EventDispatchPlan,
 ) -> Result<String, ProjectCompileError> {
     let current_module = normalize_identifier(&module.module_name);
     let mut out = Vec::new();
     let mut active_function_result: Option<(String, String)> = None;
     let mut early_bound = BTreeMap::<String, EarlyBoundBinding>::new();
+    let mut internal_class_bindings = BTreeMap::<String, InternalClassBinding>::new();
+    let mut withevents_bindings = BTreeSet::<String>::new();
+    let mut next_internal_instance_id = 1i32;
     for line in module.source.lines() {
-        let expanded = expand_early_bound_source_line(line, manifest, &mut early_bound)?;
+        let expanded = expand_bound_source_line(
+            line,
+            manifest,
+            current_project,
+            reference_order,
+            &mut early_bound,
+            &mut internal_class_bindings,
+            &mut withevents_bindings,
+            &mut next_internal_instance_id,
+        )?;
         for expanded_line in expanded {
+            let expanded_line = rewrite_internal_class_set_assignment(
+                &expanded_line,
+                current_project,
+                &current_module,
+                &internal_class_bindings,
+                &withevents_bindings,
+            );
             let trimmed = expanded_line.trim();
             let lower = trimmed.to_ascii_lowercase();
             if lower.starts_with("attribute ") || lower == "option private module" {
@@ -1535,18 +2481,47 @@ fn rewrite_module_source(
             if module.module_kind == ModuleKind::Class && lower.starts_with("implements ") {
                 continue;
             }
+            let expanded_line = rewrite_internal_class_member_dispatch(
+                &expanded_line,
+                active_project,
+                current_project,
+                &current_module,
+                procedures,
+                &internal_class_bindings,
+            )?;
             let normalized = normalize_visibility_prefixed_procedure_signature(&expanded_line);
             if let Some((proc_name, _, _)) = parse_procedure_signature_line(&normalized)
                 && let Some(decl) =
                     find_decl_by_signature(procedures, current_project, &current_module, &proc_name)
             {
-                let rewritten = rewrite_signature_name(&normalized, &decl.lowered_name);
+                let mut rewritten = rewrite_signature_name(&normalized, &decl.lowered_name);
+                if module.module_kind == ModuleKind::Class {
+                    rewritten = inject_hidden_instance_param(&rewritten);
+                    rewritten = strip_signature_param_types(&rewritten);
+                }
                 if decl.kind == ExportKind::Function {
                     active_function_result = Some((proc_name, decl.lowered_name.clone()));
                 } else {
                     active_function_result = None;
                 }
                 out.push(rewritten);
+                continue;
+            }
+            if let Some(dispatch_line) = rewrite_raiseevent_to_handler_calls(
+                &normalized,
+                manifest,
+                module,
+                active_project,
+                current_project,
+                &current_module,
+                procedures,
+                reference_order,
+                event_dispatch_plan,
+                active_function_result.as_ref(),
+            )? {
+                if !dispatch_line.is_empty() {
+                    out.push(dispatch_line);
+                }
                 continue;
             }
             let mut rewritten = rewrite_invocation_targets(
@@ -1558,6 +2533,14 @@ fn rewrite_module_source(
                 procedures,
                 reference_order,
             )?;
+            if module.module_kind == ModuleKind::Class {
+                rewritten = rewrite_internal_class_self_dispatch(
+                    &rewritten,
+                    current_project,
+                    &current_module,
+                    procedures,
+                )?;
+            }
             if let Some((result_name, lowered_name)) = &active_function_result {
                 rewritten = rewrite_bare_identifier(&rewritten, result_name, lowered_name);
             }
@@ -1567,6 +2550,13 @@ fn rewrite_module_source(
             out.push(rewritten);
         }
     }
+    out.extend(emit_event_guard_wrappers_for_module(
+        current_project,
+        &current_module,
+        event_dispatch_plan,
+        procedures,
+        &withevents_bindings,
+    ));
     Ok(out.join("\n"))
 }
 
@@ -1658,6 +2648,83 @@ fn rewrite_signature_name(line: &str, replacement_name: &str) -> String {
         }
     }
     line.to_string()
+}
+
+fn inject_hidden_instance_param(line: &str) -> String {
+    let trimmed = line.trim_start();
+    let leading = line.len() - trimmed.len();
+    let lowered = trimmed.to_ascii_lowercase();
+    let markers = [
+        "sub ",
+        "function ",
+        "property get ",
+        "property let ",
+        "property set ",
+    ];
+    if !markers.iter().any(|marker| lowered.starts_with(marker)) {
+        return line.to_string();
+    }
+    if lowered.starts_with("end ") {
+        return line.to_string();
+    }
+    let hidden = "ByVal __oxvba_this_instance";
+    if let Some(open_idx) = trimmed.find('(')
+        && let Some(close_idx) = find_matching_paren(trimmed, open_idx)
+    {
+        let existing = trimmed[open_idx + 1..close_idx].trim();
+        let joined = if existing.is_empty() {
+            hidden.to_string()
+        } else {
+            format!("{hidden}, {existing}")
+        };
+        let mut out = String::new();
+        out.push_str(&line[..leading]);
+        out.push_str(&trimmed[..open_idx + 1]);
+        out.push_str(&joined);
+        out.push_str(&trimmed[close_idx..]);
+        return out;
+    }
+
+    // Signature without explicit parens.
+    format!("{}{}({hidden})", &line[..leading], trimmed)
+}
+
+fn strip_signature_param_types(line: &str) -> String {
+    let trimmed = line.trim_start();
+    let leading = line.len() - trimmed.len();
+    let Some(open_idx) = trimmed.find('(') else {
+        return line.to_string();
+    };
+    let Some(close_idx) = find_matching_paren(trimmed, open_idx) else {
+        return line.to_string();
+    };
+    let payload = trimmed[open_idx + 1..close_idx].trim();
+    let normalized = if payload.is_empty() {
+        String::new()
+    } else {
+        payload
+            .split(',')
+            .map(|param| {
+                let raw = param.trim();
+                if raw.is_empty() {
+                    return String::new();
+                }
+                if let Some((lhs, _)) = split_keyword_ascii_ci(raw, " as ") {
+                    lhs.trim().to_string()
+                } else {
+                    raw.to_string()
+                }
+            })
+            .collect::<Vec<_>>()
+            .join(", ")
+    };
+
+    let mut out = String::new();
+    out.push_str(&line[..leading]);
+    out.push_str(&trimmed[..open_idx + 1]);
+    out.push_str(&normalized);
+    out.push_str(&trimmed[close_idx..]);
+    out
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -2103,6 +3170,35 @@ fn parse_procedure_signature_line(line: &str) -> Option<(String, ExportKind, boo
     Some((name, kind, is_public))
 }
 
+fn procedure_signature_param_count(line: &str) -> Option<usize> {
+    let trimmed = line.trim();
+    let open = trimmed.find('(')?;
+    let close = find_matching_paren(trimmed, open)?;
+    let payload = trimmed[open + 1..close].trim();
+    if payload.is_empty() {
+        return Some(0);
+    }
+    let mut depth = 0i32;
+    let mut count = 1usize;
+    let mut in_string = false;
+    for ch in payload.chars() {
+        if ch == '"' {
+            in_string = !in_string;
+            continue;
+        }
+        if in_string {
+            continue;
+        }
+        match ch {
+            '(' => depth += 1,
+            ')' => depth -= 1,
+            ',' if depth == 0 => count += 1,
+            _ => {}
+        }
+    }
+    Some(count)
+}
+
 fn normalize_procedure_name(token: &str) -> Option<String> {
     let token = token.trim();
     if token.is_empty() {
@@ -2151,10 +3247,10 @@ fn normalize_identifier(name: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::{
-        ExportKind, ModuleKind, ProjectCompileError, ProjectKind, ProjectLoweringStrategy,
-        ProjectManifest, ProjectReference, ReferenceKind, ReferencedProjectManifest,
-        compile_project, compile_project_with_strategy, module_unit_from_source,
-        validate_compiled_project_contract,
+        ExportKind, ModuleKind, ProjectCompileError, ProjectEventDispatchBinding, ProjectKind,
+        ProjectLoweringStrategy, ProjectManifest, ProjectReference, ReferenceKind,
+        ReferencedProjectManifest, compile_project, compile_project_with_strategy,
+        module_unit_from_source, validate_compiled_project_contract,
     };
     use std::collections::BTreeMap;
 
@@ -2802,6 +3898,149 @@ mod tests {
             conditional_constants: BTreeMap::new(),
         };
         compile_project(&manifest).expect("RaiseEvent should compile when event is declared");
+    }
+
+    #[test]
+    fn compile_project_rewrites_raiseevent_to_known_withevents_handlers() {
+        let main_module = module_unit_from_source(
+            "MainModule",
+            ModuleKind::Procedural,
+            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nCall Emitter.Fire\nEnd Sub",
+        )
+        .expect("module parses");
+        let emitter = module_unit_from_source(
+            "Emitter",
+            ModuleKind::Class,
+            "Attribute VB_Name = \"Emitter\"\nPublic Event Changed()\nPublic Sub Fire()\nRaiseEvent Changed\nEnd Sub",
+        )
+        .expect("module parses");
+        let sink = module_unit_from_source(
+            "SinkA",
+            ModuleKind::Class,
+            "Attribute VB_Name = \"SinkA\"\nPrivate WithEvents em As Emitter\nPublic Sub em_changed()\nCall MainModule.Main\nEnd Sub",
+        )
+        .expect("module parses");
+        let manifest = ProjectManifest {
+            project_name: "ProjectA".to_string(),
+            project_kind: ProjectKind::Source,
+            modules: vec![main_module, emitter, sink],
+            references: Vec::new(),
+            reference_projects: Vec::new(),
+            conditional_constants: BTreeMap::new(),
+        };
+
+        let compiled = compile_project(&manifest).expect("RaiseEvent rewrite should compile");
+        let lowered = compiled.rewritten_source.to_ascii_lowercase();
+        assert!(
+            lowered.contains(
+                "call pmr_evtguard_projecta_emitter_changed_sinka_em_a0(__oxvba_this_instance)"
+            ),
+            "RaiseEvent should lower to guard-dispatched handler call"
+        );
+        assert!(
+            lowered.contains("call pmr_projecta_sinka_em_changed(__oxvba_source_instance)"),
+            "guard wrapper should invoke concrete WithEvents handler"
+        );
+        assert_eq!(
+            compiled.event_dispatch_bindings,
+            vec![ProjectEventDispatchBinding {
+                source_project_name: "projecta".to_string(),
+                source_module_name: "emitter".to_string(),
+                event_name: "changed".to_string(),
+                handler_symbol: "pmr_projecta_sinka_em_changed".to_string(),
+            }]
+        );
+    }
+
+    #[test]
+    fn compile_project_rewrites_withevents_set_and_guard_through_runtime_binding_intrinsics() {
+        let main_module = module_unit_from_source(
+            "MainModule",
+            ModuleKind::Procedural,
+            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim e As New Emitter\nDim s As New Sink\nCall s.Attach(e)\nCall e.Fire(1)\nEnd Sub",
+        )
+        .expect("module parses");
+        let emitter = module_unit_from_source(
+            "Emitter",
+            ModuleKind::Class,
+            "Attribute VB_Name = \"Emitter\"\nPublic Event Tick(ByVal n As Integer)\nPublic Sub Fire(ByVal n As Integer)\nRaiseEvent Tick(n)\nEnd Sub",
+        )
+        .expect("module parses");
+        let sink = module_unit_from_source(
+            "Sink",
+            ModuleKind::Class,
+            "Attribute VB_Name = \"Sink\"\nPrivate WithEvents src As Emitter\nPublic Sub Attach(ByVal e As Emitter)\nSet src = e\nEnd Sub\nPrivate Sub src_tick(ByVal n As Integer)\nCall MainModule.Main\nEnd Sub",
+        )
+        .expect("module parses");
+        let manifest = ProjectManifest {
+            project_name: "ProjectA".to_string(),
+            project_kind: ProjectKind::Source,
+            modules: vec![main_module, emitter, sink],
+            references: Vec::new(),
+            reference_projects: Vec::new(),
+            conditional_constants: BTreeMap::new(),
+        };
+
+        let compiled = compile_project(&manifest).expect("rewrite should compile");
+        let lowered = compiled.rewritten_source.to_ascii_lowercase();
+        assert!(
+            lowered.contains("__oxvba_withevents_set("),
+            "WithEvents Set assignment should route through runtime binding setter"
+        );
+        assert!(
+            lowered.contains("__oxvba_withevents_get("),
+            "event guard should route through runtime binding getter"
+        );
+    }
+
+    #[test]
+    fn compile_project_event_dispatch_bindings_are_sorted_and_stable() {
+        let main_module = module_unit_from_source(
+            "MainModule",
+            ModuleKind::Procedural,
+            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nCall Emitter.Fire\nEnd Sub",
+        )
+        .expect("module parses");
+        let emitter = module_unit_from_source(
+            "Emitter",
+            ModuleKind::Class,
+            "Attribute VB_Name = \"Emitter\"\nPublic Event Changed()\nPublic Sub Fire()\nRaiseEvent Changed\nEnd Sub",
+        )
+        .expect("module parses");
+        let sink_b = module_unit_from_source(
+            "SinkB",
+            ModuleKind::Class,
+            "Attribute VB_Name = \"SinkB\"\nPrivate WithEvents em As Emitter\nPublic Sub em_changed()\nEnd Sub",
+        )
+        .expect("module parses");
+        let sink_a = module_unit_from_source(
+            "SinkA",
+            ModuleKind::Class,
+            "Attribute VB_Name = \"SinkA\"\nPrivate WithEvents em As Emitter\nPublic Sub em_changed()\nEnd Sub",
+        )
+        .expect("module parses");
+        let manifest = ProjectManifest {
+            project_name: "ProjectA".to_string(),
+            project_kind: ProjectKind::Source,
+            modules: vec![main_module, emitter, sink_b, sink_a],
+            references: Vec::new(),
+            reference_projects: Vec::new(),
+            conditional_constants: BTreeMap::new(),
+        };
+
+        let compiled = compile_project(&manifest).expect("event binding extraction should compile");
+        let handlers = compiled
+            .event_dispatch_bindings
+            .iter()
+            .map(|binding| binding.handler_symbol.clone())
+            .collect::<Vec<_>>();
+        assert_eq!(
+            handlers,
+            vec![
+                "pmr_projecta_sinka_em_changed".to_string(),
+                "pmr_projecta_sinkb_em_changed".to_string()
+            ]
+        );
     }
 
     #[test]

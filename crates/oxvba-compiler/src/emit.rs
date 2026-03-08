@@ -1903,6 +1903,19 @@ fn emit_expr_into(
                         arg: missing_arg,
                     })
                 }
+                ("__oxvba_withevents_get", [binding]) => {
+                    instructions.push(Instruction::IntrinsicWithEventsGet {
+                        dst,
+                        binding: *binding,
+                    })
+                }
+                ("__oxvba_withevents_set", [binding, value]) => {
+                    instructions.push(Instruction::IntrinsicWithEventsSet {
+                        dst,
+                        binding: *binding,
+                        value: *value,
+                    })
+                }
                 _ => {}
             }
         }

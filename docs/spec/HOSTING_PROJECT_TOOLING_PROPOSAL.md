@@ -3,12 +3,15 @@
 Status: `design-draft`
 Date: 2026-03-07
 Scope owner: OxVBA runtime/host/tooling
-Supersedes: `HOSTING_PROJECT_TOOLING_PROPOSAL_V1.md`
+Canonical path: `docs/spec/HOSTING_PROJECT_TOOLING_PROPOSAL.md`
+Supersedes: `docs/spec/archive/HOSTING_PROJECT_TOOLING_PROPOSAL_V1.md`
 
 Related docs:
 - `docs/spec/VBP_SUBSET_AND_PROJECT_ARTIFACT_STRATEGY_DISCUSSION_V1.md`
 - `docs/worksets/WORKSET_2026-03-05_VBP_SUBSET_AND_ARTIFACT_PLAN.md`
 - `docs/worksets/WORKSET_2026-03-07_EVENTS_STORY_COMPLETION.md`
+- `docs/worksets/WORKSET_2026-03-08_EVENTS_RUNTIME_HOST_PROJECT_HAL_SPLIT.md`
+- `docs/worksets/WORKSET_2026-03-08_EVENTS_PARITY_CLOSURE.md`
 - `docs/spec/PROJECT_MODULE_REFERENCE_SPEC_V1.md`
 - `docs/spec/HAL_SPEC_WORKING_DRAFT.md`
 - `docs/spec/CLASS_MODULE_COM_ALIGNMENT_PLAN_V1.md`
@@ -23,6 +26,7 @@ Related docs:
 2. [Current Implementation Baseline](#2-current-implementation-baseline)
 3. [Product Use Cases in Depth](#3-product-use-cases-in-depth)
    - 3.1 [UC-A: App-Embedded Hosting (PRIMARY)](#31-uc-a-app-embedded-hosting-primary)
+   - 3.1.7 [Normative Integration Split: Host Project vs HAL vs COM](#317-normative-integration-split-host-project-vs-hal-vs-com)
    - 3.2 [UC-B: Add-in Authoring Outside Documents](#32-uc-b-add-in-authoring-outside-documents)
    - 3.3 [UC-C: General Runtime/Framework Tooling](#33-uc-c-general-runtimeframework-tooling)
    - 3.4 [UC-D: Top-Level Code Extension](#34-uc-d-top-level-code-extension)
@@ -158,11 +162,13 @@ Late-bound COM client lanes and early-binding/type-library support through the t
   - generated list: `docs/generated/PMR_EVENT_DIAGNOSTICS_SNIPPET.md`
 - `WithEvents` module-kind legality, `Implements` interface existence + member coverage, `RaiseEvent` class-only + declared-event enforcement are all validated at compile time.
 
-**Runtime (EVT3+ — pending):**
+**Runtime (EVT3+ — baseline started 2026-03-08):**
 
-- `EventDispatcher` remains a stub (`crates/oxvba-host/src/events.rs` — 7 lines).
-- Runtime subscription graph, executable event dispatch, host event bridge, and COM event bridge are not yet implemented.
-- Divergences `DIV-0003` and `DIV-0004` remain open until runtime semantics are complete.
+- `compile_project(...)` now lowers `RaiseEvent` into deterministic handler call paths for known `WithEvents` bindings in the executable subset.
+- Compiled projects now emit deterministic event dispatch bindings (`source project/module/event -> lowered handler symbol`) for host/runtime hydration.
+- Host runtime owns a deterministic non-COM event dispatcher map with subscribe/unsubscribe/dispatch lookup API.
+- Remaining runtime parity work: full sink-instance subscription graph parity, full callback argument-shape parity, and COM event adapter completion.
+- `DIV-0003` baseline mismatch is closed; `DIV-0004` remains open for full sink-instance graph/subscription parity.
 
 ### 2.6 CLI posture
 
@@ -580,6 +586,31 @@ Embedded hosts that provide a VBA IDE or editor need language services from the 
 - **Option B (follow-up):** LSP wrapper — an LSP server wrapping the Rust API for editor integration (VS Code, etc.). Higher compatibility with external editors, but adds IPC overhead.
 
 Recommendation: implement direct Rust API first (for DNA VbCalc and other in-process hosts), then add LSP wrapper for broader editor ecosystem.
+
+#### 3.1.7 Normative integration split: Host Project vs HAL vs COM
+
+To avoid over-coupling the language model to COM, OxVBA adopts a three-plane contract:
+
+1. **Host Project semantic plane (language-level, cross-platform)**
+   - Defines host-visible symbols/types/events available to user projects.
+   - Defines compile-time shape and name binding for host entities (including event signature/prefix rules).
+   - Is the canonical semantic contract for both COM and non-COM hosts.
+
+2. **HAL service plane (runtime capabilities, cross-platform)**
+   - Hosts MUST provide the full HAL service suite contract (subject to selected runtime profile/policy):
+     `FileSystemIo`, `TimeLocale`, `ProcessEnv`, `UiInteraction`, `EventPump`, `DiagnosticsTelemetry`, and related capability gates.
+   - Host Project semantics do not replace HAL provisioning; they complement it.
+   - Policy presets and capability denials remain enforced through HAL regardless of host object model style.
+
+3. **Transport adapter plane (platform-specific)**
+   - COM is a Windows transport adapter lane for object/event delivery (`IDispatch`, connection points, typelib binding).
+   - Non-COM hosts use equivalent bridge transports while preserving the same Host Project semantic contract.
+   - DNA VbCalc pathfinder is explicitly required to validate this contract cross-platform without COM dependency.
+
+**Normative consequence:**
+- Semantic compatibility claims for host-object/event behavior are anchored to the Host Project + runtime event engine.
+- COM parity claims are scoped to adapter parity, not semantic ownership of the event model.
+- Runtime event execution parity (`WithEvents` reassignment ordering, `RaiseEvent` dispatch lifecycle) remains tracked in EVT3-EVT8 and `DIV-0004`.
 
 ---
 
@@ -1373,20 +1404,20 @@ path = "build/Release/MyNativeLib.dll"
 
 ### 4.7 Event Model Closure
 
-**Current state (2026-03-07):**
+**Current state (2026-03-08):**
 
-The compiler/binder event semantics are closed (EVT1/EVT2). `WithEvents`, `Implements`, and `RaiseEvent` have proper project-aware validation with deterministic diagnostics. The compiler emits metadata that the runtime needs for event dispatch.
+The compiler/binder event semantics are closed (EVT1/EVT2). `WithEvents`, `Implements`, and `RaiseEvent` have proper project-aware validation with deterministic diagnostics. EVT3 baseline is implemented for the current subset: `RaiseEvent` lowering now dispatches to known `WithEvents` handlers, and compiled projects emit deterministic host-consumable event dispatch bindings.
 
 **Remaining work (EVT3-EVT8):**
 
 | Phase | Scope | Status |
 |-------|-------|--------|
-| EVT3 | Runtime subscription graph and dispatch semantics | Pending |
-| EVT4 | Embedded host event bridge and code-behind routing | Pending |
+| EVT3 | Runtime subscription graph and dispatch semantics | In progress (baseline implemented; deterministic reassignment/clear transition probes executable; full sink-instance graph parity pending) |
+| EVT4 | Embedded host event bridge and code-behind routing | In progress (non-COM dispatch mapping baseline implemented) |
 | EVT5 | COM-EVT-A: dispatch-style event callbacks (blocking) | Pending |
 | EVT6 | COM-EVT-B: non-dispatch event paths (non-blocking deferral allowed) | Pending |
 | EVT7 | Conformance, oracle, and formal lanes | Pending |
-| EVT8 | Closure gate (close DIV-0003, DIV-0004) | Pending |
+| EVT8 | Closure gate (close/re-scope remaining event divergences) | In progress (`DIV-0003` closed; `DIV-0004` open) |
 
 **Two-layer design:**
 
@@ -1556,7 +1587,7 @@ pub trait LanguageServiceProvider {
 - COM event bridge: dispatch-style callbacks (EVT5).
 - COM event bridge: non-dispatch paths or explicit deferral (EVT6).
 - Conformance lanes and oracle probes (EVT7).
-- Closure gate: close DIV-0003, DIV-0004 (EVT8).
+- Closure gate: close remaining divergence scope (currently `DIV-0004`) and complete edge-oracle foldback (`ODG-038/039`) (EVT8).
 
 **Gate:** Close divergence tickets or explicitly downgrade parity claim scope.
 **Dependencies:** EVT1/EVT2 (already complete). P5 provides validation target.
@@ -1636,7 +1667,7 @@ Parallelism opportunities:
 
 3. **`VBP-S0-EXEC`** — Execute `WORKSET_2026-03-05_VBP_SUBSET_AND_ARTIFACT_PLAN.md` phases VBP1-VBP3. (P3)
 
-4. **`EVENT-MODEL-RUNTIME`** — EVT3-EVT4: runtime subscription graph and host event bridge. (P6, first half)
+4. **`EVENTS-PARITY-CLOSURE`** — execute `WORKSET_2026-03-08_EVENTS_PARITY_CLOSURE.md` to drive event runtime semantics from EVR baseline through parity closure (runtime subscription lifecycle, host ingress parity, COM adapter tier closure, divergence/deferred-gate closure). (P6/P5 overlap)
 
 5. **`DNA-VBCALC-PATHFINDER`** — DNA VbCalc application design refinement, object model definition, initial implementation. (P5)
 

@@ -374,3 +374,10 @@ FO-V466-006,v466,"cargo test -p oxvba-host formal_v466_event_docs_reflect_post_g
 FO-V466-007,v466,"cargo test -p oxvba-host formal_v466_profile_status_document_exists",no,true,docs/profile-status/PROFILE_STATUS_V466.md
 FO-V466-008,v466,"cargo test -p oxvba-host formal_v466_project_integration_limits_use_post_gate_diagnostics",no,true,conformance/integration/catalog.psv
 FO-V466-009,v466,"cargo test -p oxvba-host formal_v466_governance_doctrine_tracks_pmr_event_and_oracle_schema_contracts",no,true,scripts/check-governance.ps1
+FO-V466-010,v466,"cargo test -p oxvba-host formal_event_runtime_raiseevent_dispatches_to_withevents_handlers_in_stable_order",no,true,crates/oxvba-host/src/engine.rs
+FO-V466-011,v466,"cargo test -p oxvba-host formal_event_runtime_dispatch_host_event_returns_bound_handlers",no,true,crates/oxvba-host/src/engine.rs
+FO-V466-012,v466,"cargo test -p oxvba-host formal_event_runtime_implements_prefixed_member_executes_in_class_flow",no,true,crates/oxvba-host/src/engine.rs
+FO-V466-013,v466,"cargo test -p oxvba-host formal_event_runtime_raiseevent_forwards_single_event_arg",no,true,crates/oxvba-host/src/engine.rs
+FO-V466-014,v466,"cargo test -p oxvba-host formal_event_runtime_withevents_reassignment_rebinds_non_default_instances_deterministically",no,true,crates/oxvba-host/src/engine.rs
+FO-V466-015,v466,"cargo test -p oxvba-host formal_event_runtime_withevents_clear_then_rebind_updates_dispatch_membership",no,true,crates/oxvba-host/src/engine.rs
+FO-V466-016,v466,"cargo test -p oxvba-host formal_event_runtime_withevents_binding_intrinsics_roundtrip_state",no,true,crates/oxvba-host/src/engine.rs

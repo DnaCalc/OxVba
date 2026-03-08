@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{collections::HashMap, sync::Arc};
 
 use oxvba_compiler::{Bytecode, Instruction, bytecode::StringCompareMode};
 use oxvba_hal::{
@@ -20,6 +20,7 @@ pub struct Vm {
     registers: RegisterFile,
     host_services: Arc<dyn HostServices>,
     call_stack: Vec<usize>,
+    withevents_bindings: HashMap<i32, i32>,
     on_error_resume_next: bool,
     on_error_goto_label_target: Option<usize>,
     last_error: i32,
@@ -48,6 +49,7 @@ impl Vm {
             registers: RegisterFile::with_capacity(256),
             host_services,
             call_stack: Vec::new(),
+            withevents_bindings: HashMap::new(),
             on_error_resume_next: false,
             on_error_goto_label_target: None,
             last_error: 0,
@@ -128,6 +130,7 @@ impl Vm {
         typed_fastpaths: bool,
     ) -> Result<(), String> {
         self.ensure_slot_count(bytecode.slot_count);
+        self.withevents_bindings.clear();
         let mut pc = 0usize;
         let len = bytecode.instructions.len();
 
@@ -925,6 +928,27 @@ impl Vm {
                         }
                         Err(err) => pc = self.route_host_error(pc, err)?,
                     }
+                }
+                Instruction::IntrinsicWithEventsGet { dst, binding } => {
+                    let binding = self.read_slot(*binding)?;
+                    let value = self.withevents_bindings.get(&binding).copied().unwrap_or(0);
+                    self.write_slot(*dst, value)?;
+                    pc += 1;
+                }
+                Instruction::IntrinsicWithEventsSet {
+                    dst,
+                    binding,
+                    value,
+                } => {
+                    let binding = self.read_slot(*binding)?;
+                    let value = self.read_slot(*value)?;
+                    if value == 0 {
+                        self.withevents_bindings.remove(&binding);
+                    } else {
+                        self.withevents_bindings.insert(binding, value);
+                    }
+                    self.write_slot(*dst, value)?;
+                    pc += 1;
                 }
                 Instruction::CmpEqSlots { dst, lhs, rhs } => {
                     if typed_fastpaths && self.fast_cmp_slots(*dst, *lhs, *rhs, |l, r| l == r) {
