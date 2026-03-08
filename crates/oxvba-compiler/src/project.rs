@@ -381,6 +381,7 @@ fn lower_project_source(
     event_dispatch_plan: &EventDispatchPlan,
 ) -> Result<String, ProjectCompileError> {
     let mut lowered_modules = Vec::new();
+    let mut next_internal_instance_id = 1i32;
     for module in &manifest.modules {
         let lowered = lower_module_source(
             strategy,
@@ -391,6 +392,7 @@ fn lower_project_source(
             procedures,
             reference_order,
             event_dispatch_plan,
+            &mut next_internal_instance_id,
         )?;
         lowered_modules.push(lowered);
     }
@@ -406,6 +408,7 @@ fn lower_project_source(
                 procedures,
                 reference_order,
                 event_dispatch_plan,
+                &mut next_internal_instance_id,
             )?;
             lowered_modules.push(lowered);
         }
@@ -423,6 +426,7 @@ fn lower_module_source(
     procedures: &[ProcedureDecl],
     reference_order: &BTreeMap<String, usize>,
     event_dispatch_plan: &EventDispatchPlan,
+    next_internal_instance_id: &mut i32,
 ) -> Result<String, ProjectCompileError> {
     match strategy {
         ProjectLoweringStrategy::ModuleAwareBindPlan => lower_module_source_module_aware(
@@ -433,6 +437,7 @@ fn lower_module_source(
             procedures,
             reference_order,
             event_dispatch_plan,
+            next_internal_instance_id,
         ),
         ProjectLoweringStrategy::RewriteBridge => rewrite_module_source(
             manifest,
@@ -442,6 +447,7 @@ fn lower_module_source(
             procedures,
             reference_order,
             event_dispatch_plan,
+            next_internal_instance_id,
         ),
     }
 }
@@ -1037,6 +1043,7 @@ fn lower_module_source_module_aware(
     procedures: &[ProcedureDecl],
     reference_order: &BTreeMap<String, usize>,
     event_dispatch_plan: &EventDispatchPlan,
+    next_internal_instance_id: &mut i32,
 ) -> Result<String, ProjectCompileError> {
     let current_module = normalize_identifier(&module.module_name);
     let mut out = Vec::new();
@@ -1044,7 +1051,6 @@ fn lower_module_source_module_aware(
     let mut early_bound = BTreeMap::<String, EarlyBoundBinding>::new();
     let mut internal_class_bindings = BTreeMap::<String, InternalClassBinding>::new();
     let mut withevents_bindings = BTreeSet::<String>::new();
-    let mut next_internal_instance_id = 1i32;
     for line in module.source.lines() {
         let expanded = expand_bound_source_line(
             line,
@@ -1054,7 +1060,7 @@ fn lower_module_source_module_aware(
             &mut early_bound,
             &mut internal_class_bindings,
             &mut withevents_bindings,
-            &mut next_internal_instance_id,
+            next_internal_instance_id,
         )?;
         for expanded_line in expanded {
             let expanded_line = rewrite_internal_class_set_assignment(
@@ -1749,10 +1755,9 @@ fn withevents_owner_scan_max(
     current_project: &str,
     reference_order: &BTreeMap<String, usize>,
 ) -> i32 {
-    let mut max_owner = 0i32;
+    let mut next_internal_instance_id = 1i32;
     let mut consider_modules = |modules: &[ModuleUnit]| {
         for module in modules {
-            let mut next_internal_instance_id = 1i32;
             for line in module.source.lines() {
                 let Some(dim_decl) = parse_internal_class_dim_declaration(line) else {
                     continue;
@@ -1772,7 +1777,6 @@ fn withevents_owner_scan_max(
                 }
                 next_internal_instance_id = next_internal_instance_id.saturating_add(1);
             }
-            max_owner = max_owner.max(next_internal_instance_id.saturating_sub(1));
         }
     };
 
@@ -1784,7 +1788,7 @@ fn withevents_owner_scan_max(
             consider_modules(&referenced.modules);
         }
     }
-    max_owner.max(1)
+    next_internal_instance_id.saturating_sub(1).max(1)
 }
 
 fn split_top_level_args(args: &str) -> Result<Vec<String>, ProjectCompileError> {
@@ -2493,6 +2497,7 @@ fn rewrite_module_source(
     procedures: &[ProcedureDecl],
     reference_order: &BTreeMap<String, usize>,
     event_dispatch_plan: &EventDispatchPlan,
+    next_internal_instance_id: &mut i32,
 ) -> Result<String, ProjectCompileError> {
     let current_module = normalize_identifier(&module.module_name);
     let mut out = Vec::new();
@@ -2500,7 +2505,6 @@ fn rewrite_module_source(
     let mut early_bound = BTreeMap::<String, EarlyBoundBinding>::new();
     let mut internal_class_bindings = BTreeMap::<String, InternalClassBinding>::new();
     let mut withevents_bindings = BTreeSet::<String>::new();
-    let mut next_internal_instance_id = 1i32;
     for line in module.source.lines() {
         let expanded = expand_bound_source_line(
             line,
@@ -2510,7 +2514,7 @@ fn rewrite_module_source(
             &mut early_bound,
             &mut internal_class_bindings,
             &mut withevents_bindings,
-            &mut next_internal_instance_id,
+            next_internal_instance_id,
         )?;
         for expanded_line in expanded {
             let expanded_line = rewrite_internal_class_set_assignment(
