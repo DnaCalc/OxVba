@@ -1750,47 +1750,6 @@ fn withevents_binding_token(project: &str, module: &str, var_name: &str) -> i32 
     if token == 0 { 1 } else { token }
 }
 
-fn withevents_owner_scan_max(
-    manifest: &ProjectManifest,
-    current_project: &str,
-    reference_order: &BTreeMap<String, usize>,
-) -> i32 {
-    let mut next_internal_instance_id = 1i32;
-    let mut consider_modules = |modules: &[ModuleUnit]| {
-        for module in modules {
-            for line in module.source.lines() {
-                let Some(dim_decl) = parse_internal_class_dim_declaration(line) else {
-                    continue;
-                };
-                if !dim_decl.as_new {
-                    continue;
-                }
-                if resolve_interface_module(
-                    manifest,
-                    current_project,
-                    &dim_decl.type_name,
-                    reference_order,
-                )
-                .is_none()
-                {
-                    continue;
-                }
-                next_internal_instance_id = next_internal_instance_id.saturating_add(1);
-            }
-        }
-    };
-
-    if normalize_identifier(&manifest.project_name) == current_project {
-        consider_modules(&manifest.modules);
-    }
-    for referenced in ordered_reference_projects(manifest) {
-        if normalize_identifier(&referenced.project_name) == current_project {
-            consider_modules(&referenced.modules);
-        }
-    }
-    next_internal_instance_id.saturating_sub(1).max(1)
-}
-
 fn split_top_level_args(args: &str) -> Result<Vec<String>, ProjectCompileError> {
     if args.trim().is_empty() {
         return Ok(Vec::new());
@@ -2076,7 +2035,6 @@ fn rewrite_raiseevent_to_handler_calls(
         .iter()
         .filter(|arg| !arg.trim().is_empty())
         .count();
-    let owner_scan_max = withevents_owner_scan_max(manifest, current_project, reference_order);
     if event_arg_count > 1 {
         return Err(ProjectCompileError::BackendCompile {
             message:
@@ -2093,29 +2051,27 @@ fn rewrite_raiseevent_to_handler_calls(
             &route,
             event_arg_count,
         );
-        for owner in 1..=owner_scan_max {
-            let mut call_line = if event_arg_count == 0 {
-                format!("{leading_ws}Call {wrapper}({owner}, __oxvba_this_instance)")
-            } else {
-                format!(
-                    "{leading_ws}Call {wrapper}({owner}, __oxvba_this_instance, {})",
-                    parsed_args[0].trim()
-                )
-            };
-            call_line = rewrite_invocation_targets(
-                &call_line,
-                manifest,
-                active_project,
-                current_project,
-                current_module,
-                procedures,
-                reference_order,
-            )?;
-            if let Some((result_name, lowered_name)) = active_function_result {
-                call_line = rewrite_bare_identifier(&call_line, result_name, lowered_name);
-            }
-            lowered_lines.push(call_line);
+        let mut call_line = if event_arg_count == 0 {
+            format!("{leading_ws}Call {wrapper}(__oxvba_this_instance)")
+        } else {
+            format!(
+                "{leading_ws}Call {wrapper}(__oxvba_this_instance, {})",
+                parsed_args[0].trim()
+            )
+        };
+        call_line = rewrite_invocation_targets(
+            &call_line,
+            manifest,
+            active_project,
+            current_project,
+            current_module,
+            procedures,
+            reference_order,
+        )?;
+        if let Some((result_name, lowered_name)) = active_function_result {
+            call_line = rewrite_bare_identifier(&call_line, result_name, lowered_name);
         }
+        lowered_lines.push(call_line);
     }
 
     Ok(Some(lowered_lines.join("\n")))
@@ -2207,9 +2163,6 @@ fn emit_event_guard_wrappers_for_module(
                     current_module,
                     &route.withevents_var,
                 );
-                let guard_expr = format!(
-                    "__oxvba_source_instance <> 0 And __oxvba_withevents_get(__oxvba_owner_instance, {binding_token}) = __oxvba_source_instance"
-                );
                 let call_args = if handler_param_count == 0 {
                     "__oxvba_owner_instance".to_string()
                 } else if event_arg_count == 0 {
@@ -2219,12 +2172,12 @@ fn emit_event_guard_wrappers_for_module(
                 };
                 let wrapper_body = if event_arg_count == 0 {
                     format!(
-                        "Sub {wrapper}(Optional ByVal __oxvba_owner_instance = 0, Optional ByVal __oxvba_source_instance = 0)\nIf {guard_expr} Then\nCall {}({call_args})\nEnd If\nEnd Sub",
+                        "Sub {wrapper}(Optional ByVal __oxvba_source_instance = 0)\nDim __oxvba_owner_instance\n__oxvba_owner_instance = __oxvba_withevents_first_owner(__oxvba_source_instance, {binding_token})\nDo While __oxvba_owner_instance <> 0\nCall {}({call_args})\n__oxvba_owner_instance = __oxvba_withevents_next_owner()\nLoop\nEnd Sub",
                         route.handler_symbol,
                     )
                 } else {
                     format!(
-                        "Sub {wrapper}(Optional ByVal __oxvba_owner_instance = 0, Optional ByVal __oxvba_source_instance = 0, Optional ByVal __oxvba_arg0 = 0)\nIf {guard_expr} Then\nCall {}({call_args})\nEnd If\nEnd Sub",
+                        "Sub {wrapper}(Optional ByVal __oxvba_source_instance = 0, Optional ByVal __oxvba_arg0 = 0)\nDim __oxvba_owner_instance\n__oxvba_owner_instance = __oxvba_withevents_first_owner(__oxvba_source_instance, {binding_token})\nDo While __oxvba_owner_instance <> 0\nCall {}({call_args})\n__oxvba_owner_instance = __oxvba_withevents_next_owner()\nLoop\nEnd Sub",
                         route.handler_symbol,
                     )
                 };
@@ -3984,7 +3937,7 @@ mod tests {
         let lowered = compiled.rewritten_source.to_ascii_lowercase();
         assert!(
             lowered.contains(
-                "call pmr_evtguard_projecta_emitter_changed_sinka_em_a0(1, __oxvba_this_instance)"
+                "call pmr_evtguard_projecta_emitter_changed_sinka_em_a0(__oxvba_this_instance)"
             ),
             "RaiseEvent should lower to guard-dispatched handler call"
         );
@@ -4039,8 +3992,8 @@ mod tests {
             "WithEvents Set assignment should route through runtime binding setter"
         );
         assert!(
-            lowered.contains("__oxvba_withevents_get(__oxvba_owner_instance,"),
-            "event guard should route through runtime binding getter"
+            lowered.contains("__oxvba_withevents_first_owner(__oxvba_source_instance,"),
+            "event guard wrapper should enumerate runtime owner bindings through first-owner intrinsic"
         );
     }
 

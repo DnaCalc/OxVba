@@ -1918,6 +1918,16 @@ fn emit_expr_into(
                         value: *value,
                     })
                 }
+                ("__oxvba_withevents_first_owner", [source, binding]) => {
+                    instructions.push(Instruction::IntrinsicWithEventsFirstOwner {
+                        dst,
+                        source: *source,
+                        binding: *binding,
+                    })
+                }
+                ("__oxvba_withevents_next_owner", []) => {
+                    instructions.push(Instruction::IntrinsicWithEventsNextOwner { dst })
+                }
                 _ => {}
             }
         }

@@ -16,11 +16,18 @@ use oxvba_runtime::value_tags::{
 
 use crate::register_file::RegisterFile;
 
+#[derive(Debug, Default, Clone)]
+struct WithEventsOwnerIterator {
+    owners: Vec<i32>,
+    next_index: usize,
+}
+
 pub struct Vm {
     registers: RegisterFile,
     host_services: Arc<dyn HostServices>,
     call_stack: Vec<usize>,
     withevents_bindings: HashMap<i64, i32>,
+    withevents_owner_iters: Vec<WithEventsOwnerIterator>,
     on_error_resume_next: bool,
     on_error_goto_label_target: Option<usize>,
     last_error: i32,
@@ -50,6 +57,7 @@ impl Vm {
             host_services,
             call_stack: Vec::new(),
             withevents_bindings: HashMap::new(),
+            withevents_owner_iters: Vec::new(),
             on_error_resume_next: false,
             on_error_goto_label_target: None,
             last_error: 0,
@@ -131,6 +139,7 @@ impl Vm {
     ) -> Result<(), String> {
         self.ensure_slot_count(bytecode.slot_count);
         self.withevents_bindings.clear();
+        self.withevents_owner_iters.clear();
         let mut pc = 0usize;
         let len = bytecode.instructions.len();
 
@@ -959,6 +968,45 @@ impl Vm {
                     self.write_slot(*dst, value)?;
                     pc += 1;
                 }
+                Instruction::IntrinsicWithEventsFirstOwner {
+                    dst,
+                    source,
+                    binding,
+                } => {
+                    let source = self.read_slot(*source)?;
+                    let binding = self.read_slot(*binding)?;
+                    let mut owners = self.withevents_matching_owners(source, binding);
+                    owners.sort_unstable();
+                    if owners.is_empty() {
+                        self.write_slot(*dst, 0)?;
+                    } else {
+                        let first = owners[0];
+                        self.withevents_owner_iters.push(WithEventsOwnerIterator {
+                            owners,
+                            next_index: 1,
+                        });
+                        self.write_slot(*dst, first)?;
+                    }
+                    pc += 1;
+                }
+                Instruction::IntrinsicWithEventsNextOwner { dst } => {
+                    let next = if let Some(iter) = self.withevents_owner_iters.last_mut() {
+                        if iter.next_index < iter.owners.len() {
+                            let owner = iter.owners[iter.next_index];
+                            iter.next_index += 1;
+                            owner
+                        } else {
+                            0
+                        }
+                    } else {
+                        0
+                    };
+                    if next == 0 {
+                        let _ = self.withevents_owner_iters.pop();
+                    }
+                    self.write_slot(*dst, next)?;
+                    pc += 1;
+                }
                 Instruction::CmpEqSlots { dst, lhs, rhs } => {
                     if typed_fastpaths && self.fast_cmp_slots(*dst, *lhs, *rhs, |l, r| l == r) {
                         pc += 1;
@@ -1168,6 +1216,29 @@ impl Vm {
 
     fn withevents_binding_key(owner: i32, binding: i32) -> i64 {
         ((owner as i64) << 32) | (binding as u32 as i64)
+    }
+
+    fn withevents_binding_from_key(key: i64) -> i32 {
+        (key as u32) as i32
+    }
+
+    fn withevents_owner_from_key(key: i64) -> i32 {
+        (key >> 32) as i32
+    }
+
+    fn withevents_matching_owners(&self, source: i32, binding: i32) -> Vec<i32> {
+        if source == 0 {
+            return Vec::new();
+        }
+        self.withevents_bindings
+            .iter()
+            .filter_map(|(key, value)| {
+                if *value != source || Self::withevents_binding_from_key(*key) != binding {
+                    return None;
+                }
+                Some(Self::withevents_owner_from_key(*key))
+            })
+            .collect()
     }
 
     fn fast_read_slot(&self, slot: usize) -> Option<i32> {
@@ -2628,6 +2699,55 @@ mod tests {
         vm.execute(&bytecode).expect("vm should execute bytecode");
         assert_eq!(vm.snapshot_slots(11)[9], 0);
         assert_eq!(vm.snapshot_slots(11)[10], 202);
+    }
+
+    #[test]
+    fn withevents_owner_iteration_intrinsics_yield_deterministic_owner_order() {
+        let bytecode = Bytecode {
+            instructions: vec![
+                Instruction::LoadConstI32 { slot: 0, value: 11 },
+                Instruction::LoadConstI32 { slot: 1, value: 22 },
+                Instruction::LoadConstI32 { slot: 2, value: 33 },
+                Instruction::LoadConstI32 { slot: 3, value: 7 },
+                Instruction::LoadConstI32 { slot: 4, value: 8 },
+                Instruction::LoadConstI32 { slot: 5, value: 5 },
+                Instruction::IntrinsicWithEventsSet {
+                    dst: 6,
+                    owner: 0,
+                    binding: 3,
+                    value: 5,
+                },
+                Instruction::IntrinsicWithEventsSet {
+                    dst: 7,
+                    owner: 1,
+                    binding: 3,
+                    value: 5,
+                },
+                Instruction::IntrinsicWithEventsSet {
+                    dst: 8,
+                    owner: 2,
+                    binding: 4,
+                    value: 5,
+                },
+                Instruction::IntrinsicWithEventsFirstOwner {
+                    dst: 9,
+                    source: 5,
+                    binding: 3,
+                },
+                Instruction::IntrinsicWithEventsNextOwner { dst: 10 },
+                Instruction::IntrinsicWithEventsNextOwner { dst: 11 },
+                Instruction::Halt,
+            ],
+            external_call_descriptors: Vec::new(),
+            slot_count: 12,
+            user_slot_count: 12,
+        };
+
+        let mut vm = Vm::default();
+        vm.execute(&bytecode).expect("vm should execute bytecode");
+        assert_eq!(vm.snapshot_slots(12)[9], 11);
+        assert_eq!(vm.snapshot_slots(12)[10], 22);
+        assert_eq!(vm.snapshot_slots(12)[11], 0);
     }
 
     #[test]

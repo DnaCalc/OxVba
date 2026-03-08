@@ -170,6 +170,8 @@ fn expr_has_observable_effect(expr: &BoundExpr) -> bool {
     match expr {
         BoundExpr::IntrinsicCall { name, args } => {
             let call_has_effect = name.eq_ignore_ascii_case("__oxvba_withevents_set")
+                || name.eq_ignore_ascii_case("__oxvba_withevents_first_owner")
+                || name.eq_ignore_ascii_case("__oxvba_withevents_next_owner")
                 || matches!(
                     intrinsic_surface(name.as_str()),
                     Some(IntrinsicSurface::HostSensitive)
@@ -347,6 +349,29 @@ mod tests {
             })
             .count();
         assert_eq!(intrinsic_set_count, 1);
+    }
+
+    #[test]
+    fn formal_v19_dead_store_preserves_withevents_owner_iteration_intrinsics() {
+        let module = resolve_symbols(
+            "Sub Main()\nDim x\nx = __oxvba_withevents_first_owner(1, 7)\nx = __oxvba_withevents_next_owner()\nEnd Sub",
+        );
+        let optimized = optimize_module(module);
+        let iterator_calls = optimized
+            .body
+            .iter()
+            .filter(|stmt| {
+                matches!(
+                    stmt,
+                    BoundStmt::Assign {
+                        expr: crate::resolve::BoundExpr::IntrinsicCall { name, .. },
+                        ..
+                    } if name == "__oxvba_withevents_first_owner"
+                        || name == "__oxvba_withevents_next_owner"
+                )
+            })
+            .count();
+        assert_eq!(iterator_calls, 2);
     }
 
     #[test]

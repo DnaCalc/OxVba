@@ -377,6 +377,14 @@ pub enum Instruction {
         binding: usize,
         value: usize,
     },
+    IntrinsicWithEventsFirstOwner {
+        dst: usize,
+        source: usize,
+        binding: usize,
+    },
+    IntrinsicWithEventsNextOwner {
+        dst: usize,
+    },
     CmpEqSlots {
         dst: usize,
         lhs: usize,

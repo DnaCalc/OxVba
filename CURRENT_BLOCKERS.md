@@ -1,26 +1,21 @@
 # Current Blockers (Events Parity Closure)
 
-Date: 2026-03-08
+Date: 2026-03-08  
 Run context: full events parity closure (non-COM + Windows COM)
 
-## Blocker entries
+## Status update
 
-### BLK-EVT-001: Runtime subscription graph execution model not yet available
-- Title: Replace compile-time owner fanout with runtime-owned subscription graph dispatch.
-- Impact:
-  - Blocks full closure of `DIV-0004` sink-instance parity scope.
-  - Blocks workset items `WI-B01`..`WI-B05` terminal semantics (true runtime subscribe/unsubscribe graph, arbitrary lifetime handling, non-bounded dispatch).
-  - Prevents full parity claim for dynamic sink lifetimes beyond compile-time owner candidate approximation.
-- Why blocked:
-  - Current bytecode/VM model does not have a first-class event-dispatch instruction that can:
-    - enumerate runtime subscriptions by source/event,
-    - invoke handler targets dynamically with sink-owner identity,
-    - preserve deterministic ordering and reentrancy semantics without compile-time fanout codegen.
-- Exact unblocking steps:
-  1. Approve runtime event IR shape (`DispatchEvent`-style instruction and metadata contract).
-  2. Implement VM/JIT dynamic handler dispatch over runtime-owned subscription map.
-  3. Rewire `RaiseEvent` lowering to emit runtime dispatch op instead of static owner fanout wrappers.
-  4. Add lifecycle tests for dynamic creation/release/reassignment without compile-time owner bounds.
+### BLK-EVT-001: Runtime subscription graph execution model
+- Status: resolved in current run.
+- Resolution summary:
+  - Removed compile-time bounded owner fanout from `RaiseEvent` lowering.
+  - Added runtime owner-iteration intrinsics:
+    - `__oxvba_withevents_first_owner(source, binding)`
+    - `__oxvba_withevents_next_owner()`
+  - Wrapper lowering now iterates runtime owner bindings dynamically and dispatches handlers with sink-owner identity.
+  - Added/updated compiler/optimizer/VM/host tests to lock deterministic behavior.
+
+## Active blocker entries
 
 ### BLK-COM-001: COM event callback parity lane requires dedicated transport completion
 - Title: Complete Windows COM event callback lifecycle (`COM-EVT-A` and `COM-EVT-B`/explicit defer).
@@ -40,16 +35,13 @@ Run context: full events parity closure (non-COM + Windows COM)
 
 ## Structured summary
 
-- Blocker IDs/titles:
-  - `BLK-EVT-001` — Runtime subscription graph execution model not yet available.
+- Active blocker IDs/titles:
   - `BLK-COM-001` — COM event callback parity lane requires dedicated transport completion.
 - Impact by milestone/phase:
-  - Non-COM full parity closure: blocked at runtime dynamic graph architecture (`WI-B01`..`WI-B05` terminal closure).
+  - Non-COM dynamic owner dispatch path: unblocked and implemented.
   - COM parity closure: blocked at callback transport + fixture/evidence completion (`WI-D02`..`WI-D06`, `WI-E01`..`WI-E03`).
 - Exact unblocking steps:
-  - Approve dynamic event IR + runtime execution path.
   - Approve COM callback bridge policy for `COM-EVT-A/B`.
-  - Implement + validate in CI/oracle lanes.
+  - Implement + validate callback lanes in CI/oracle evidence.
 - Suggestions/questions for user:
-  - Decide whether to prioritize `BLK-EVT-001` (dynamic runtime event IR) first, then fold COM on top, or run both in parallel tracks.
   - Confirm preferred `COM-EVT-B` policy target for this run: full implementation now vs explicit deterministic defer.

@@ -1490,4 +1490,22 @@ mod tests {
             "expected IntrinsicWithEventsGet emission"
         );
     }
+
+    #[test]
+    fn compile_withevents_owner_iteration_intrinsics_emit_deterministically() {
+        let source = "Sub Main()\nDim x\nx = __oxvba_withevents_first_owner(1, 7)\nx = __oxvba_withevents_next_owner()\nEnd Sub";
+        let out = compile(source).expect("WithEvents owner iteration intrinsics should compile");
+        assert!(
+            out.instructions
+                .iter()
+                .any(|inst| matches!(inst, Instruction::IntrinsicWithEventsFirstOwner { .. })),
+            "expected IntrinsicWithEventsFirstOwner emission"
+        );
+        assert!(
+            out.instructions
+                .iter()
+                .any(|inst| matches!(inst, Instruction::IntrinsicWithEventsNextOwner { .. })),
+            "expected IntrinsicWithEventsNextOwner emission"
+        );
+    }
 }
