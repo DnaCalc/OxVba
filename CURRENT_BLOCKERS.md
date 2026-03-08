@@ -69,16 +69,28 @@ Run context: full events parity closure (non-COM + Windows COM)
   - Registered/external COM lane now includes executable event failure-shape coverage:
     - `registered_event_subscribe_without_connection_point_has_stable_error_shape`,
     - `registered_event_unsubscribe_unknown_subscription_has_stable_error_shape`.
+  - Registered-mode event callback success lane is now executable and scriptable:
+    - ignored test `registered_event_callback_success_when_event_capable_server_is_configured`,
+    - strict success mode via env contract:
+      - `OXVBA_REGISTERED_EVENT_REQUIRE_SUCCESS=1`,
+      - `OXVBA_REGISTERED_EVENT_TOKEN`,
+      - `OXVBA_REGISTERED_EVENT_TRIGGER_MEMBER`,
+      - `OXVBA_REGISTERED_EVENT_TRIGGER_ARG`,
+    - script lane `scripts/run-com-registered-events.ps1` (`L2E`) and orchestrator support in `scripts/run-com-conformance.ps1 -IncludeRegisteredEventLane`.
+  - Current deterministic evidence includes strict callback lifecycle pass in registered-mode harness lane:
+    - `docs/evidence/conformance/com/COM_LANE_L2E_RUN_OxVba.TestDispatch_20260308T174736Z.md`,
+    - `docs/evidence/conformance/com/COM_LANE_L2E_LOG_OxVba.TestDispatch_20260308T174736Z.txt`.
   - Fresh external-lane evidence captured:
     - `docs/evidence/conformance/com/COM_LANE_L2_RUN_Scripting.Dictionary_20260308T174630Z.md`,
     - `docs/evidence/conformance/com/COM_LANE_L2_LOG_Scripting.Dictionary_20260308T174630Z.txt`.
 - Why blocked:
-  - Current run has non-COM/internal event semantics advanced, COM lifecycle substrate implemented, callback->handler runtime invocation wired, and deterministic COM-EVT-B unsupported policy in place.
-  - Remaining parity closure still needs:
-    - positive callback lifecycle evidence on at least one registered external COM source that actually emits callbacks into the bridge (beyond deterministic failure-shape mapping).
+  - Current run has non-COM/internal event semantics advanced, COM lifecycle substrate implemented, callback->handler runtime invocation wired, deterministic COM-EVT-B unsupported policy in place, and strict registered-mode callback success lane support (`L2E`) for event-capable configured servers.
+  - Remaining strict parity closure still needs:
+    - positive callback lifecycle evidence on at least one non-OxVba external registered COM source that emits callbacks into the bridge (beyond deterministic failure-shape mapping and controlled test dispatch path).
 - Exact unblocking steps:
-  1. Add registered/external COM event fixture with real callback emission and sink dispatch assertions (`WI-E03`, success path).
-  2. Reconcile oracle evidence and update divergence/deferred gates.
+  1. Add or onboard at least one stable external registered COM event source fixture and lock metadata/event-token mapping for success path (`WI-E03`, success path).
+  2. Capture reproducible external callback success evidence through `L2E` or equivalent lane and fold results into conformance docs.
+  3. Reconcile oracle evidence and update divergence/deferred gates.
 
 ## Structured summary
 
@@ -88,6 +100,6 @@ Run context: full events parity closure (non-COM + Windows COM)
   - Non-COM dynamic owner dispatch path: unblocked and implemented.
   - COM parity closure: callback transport + arity/signature enforcement + controlled multi-arg fixture lane implemented with explicit COM-EVT-B unsupported policy, and controlled lane now binds event/member shape through typelib metadata; blocked at registered/evidence completion (`WI-E03`).
 - Exact unblocking steps:
-  - Implement + validate real registered/external callback success lane in CI/oracle evidence (failure-shape lane now covered).
+  - Implement + validate real non-controlled registered/external callback success lane in CI/oracle evidence (failure-shape lane and controlled strict-success lane now covered).
 - Suggestions/questions for user:
   - Confirm which registered COM library lane to prioritize for external parity evidence first (Excel, ScriptControl-style, or another deterministic candidate).

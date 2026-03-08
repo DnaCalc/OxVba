@@ -11,6 +11,8 @@
 - Combined ladder lane (no artifact churn): `./scripts/meta-check.ps1 -Fast -Conformance -Matrix -Formal -NoArtifacts`
 - COM conformance (required registrationless lane): `./scripts/run-com-conformance.ps1`
 - COM conformance (registrationless + registered external lane): `./scripts/run-com-conformance.ps1 -IncludeRegisteredLane -RegisteredProgIds "Scripting.Dictionary"`
+- COM conformance (include registered event callback lane): `./scripts/run-com-conformance.ps1 -IncludeRegisteredEventLane -RegisteredEventProgId "OxVba.TestDispatch"`
+- Registered event callback lane only (`L2E`): `./scripts/run-com-registered-events.ps1 -ProgId "OxVba.TestDispatch"`
 - COM early-binding conformance (`E0..E6`): `./scripts/run-com-early-conformance.ps1 -IncludeFormalLane`
 - COM early-binding perf baseline: `./scripts/run-com-early-perf.ps1 -Iterations 3`
 - Integration fixture lint: `./scripts/lint-integration-fixtures.ps1`
@@ -56,6 +58,7 @@ Deferred formal gate policy:
 - COM lane artifacts are written under `docs/evidence/conformance/com/` by:
   - `scripts/run-com-registrationless.ps1`,
   - `scripts/run-com-registered.ps1`,
+  - `scripts/run-com-registered-events.ps1`,
   - `scripts/run-com-conformance.ps1`.
 
 ## Next additions

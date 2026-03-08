@@ -45,3 +45,4 @@ Use `docs/` and `synthesis/` for supporting context and provenance.
 ## Immediate Instruction Capture
 - This file update records the latest instruction set.
 - Do not start implementation work until the user explicitly asks to continue.
+- Latest explicit continue instruction (2026-03-08): execute the full active ladder to `v620`, keep AutoRun doctrine active, and apply blocker handling from this file.

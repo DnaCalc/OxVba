@@ -1,7 +1,12 @@
 param(
     [switch]$IncludeRegisteredLane,
+    [switch]$IncludeRegisteredEventLane,
     [string]$RegisteredProgId = "Scripting.Dictionary",
     [string[]]$RegisteredProgIds = @(),
+    [string]$RegisteredEventProgId = "OxVba.TestDispatch",
+    [int]$RegisteredEventToken = 1,
+    [int]$RegisteredEventTriggerMember = 3,
+    [int]$RegisteredEventTriggerArg = 77,
     [switch]$NoCapture,
     [string]$EvidenceDir = "docs/evidence/conformance/com",
     [string]$RunId = "",
@@ -64,6 +69,25 @@ try {
         Write-Host "[oxvba] registered lane skipped (use -IncludeRegisteredLane to enable)"
     }
 
+    if ($IncludeRegisteredEventLane) {
+        $registeredEventArgs = @{
+            ProgId = $RegisteredEventProgId
+            EventToken = $RegisteredEventToken
+            TriggerMember = $RegisteredEventTriggerMember
+            TriggerArg = $RegisteredEventTriggerArg
+            EvidenceDir = $EvidenceDir
+            RunId = $resolvedRunId
+            NoThrow = $true
+            NoLatest = $resolvedNoLatest
+        }
+        if ($NoCapture) {
+            $registeredEventArgs["NoCapture"] = $true
+        }
+        $results += & (Join-Path $PSScriptRoot "run-com-registered-events.ps1") @registeredEventArgs
+    } else {
+        Write-Host "[oxvba] registered event lane skipped (use -IncludeRegisteredEventLane to enable)"
+    }
+
     $summaryPath = Join-Path $EvidenceDir ("COM_CONFORMANCE_RUN_{0}.md" -f $resolvedRunId)
     $summaryLatestPath = Join-Path $EvidenceDir "COM_CONFORMANCE_LATEST.md"
     $csvPath = Join-Path $EvidenceDir ("COM_CONFORMANCE_RUN_{0}.csv" -f $resolvedRunId)
@@ -82,6 +106,7 @@ try {
         "- Status: $(if ($failed.Count -eq 0) { 'pass' } else { 'fail' })",
         "- Registrationless lane: required",
         "- Registered lane: $(if ($IncludeRegisteredLane) { 'included' } else { 'skipped' })",
+        "- Registered event lane: $(if ($IncludeRegisteredEventLane) { 'included' } else { 'skipped' })",
         "- Latest pointers updated: $((-not $resolvedNoLatest).ToString().ToLowerInvariant())",
         "- Results CSV: $csvPath",
         "",

@@ -5,9 +5,10 @@
 - `docs-check.ps1`: verifies required top-level docs exist.
 - `run-smoke.ps1`: executes the smoke VBA sample through the CLI.
 - `run-conformance.ps1`: runs MVP conformance corpus and checks against golden expectations.
-- `run-com-conformance.ps1`: COM conformance orchestrator (required registrationless lane + optional registered external-server matrix) with summary artifacts under `docs/evidence/conformance/com/` (`COM_CONFORMANCE_RUN_*` + `COM_CONFORMANCE_LATEST.*`).
+- `run-com-conformance.ps1`: COM conformance orchestrator (required registrationless lane + optional registered external-server matrix + optional registered event-callback lane) with summary artifacts under `docs/evidence/conformance/com/` (`COM_CONFORMANCE_RUN_*` + `COM_CONFORMANCE_LATEST.*`).
 - `run-com-registrationless.ps1`: runs registrationless controlled COM client end-to-end lane (`com_client_end_to_end`) and emits lane artifacts.
 - `run-com-registered.ps1`: runs registered external COM client lane (`com_client_registered_lane`, ignored tests) with selected ProgID (`-ProgId` / `OXVBA_REGISTERED_COM_PROGID`) and emits lane artifacts.
+- `run-com-registered-events.ps1`: runs strict registered event-callback success lane (`L2E`) for an event-capable ProgID and emits lane artifacts.
 - `run-com-early-conformance.ps1`: COM early-binding conformance orchestrator (`E0..E6`) with shared run-id support and optional no-artifact mode.
 - `run-com-early-lane*.ps1`: per-lane COM early conformance runners with `-NoLatest` support for dry/no-artifact cycles.
 - `run-com-early-perf.ps1`: COM early perf lane with shared run-id and optional no-artifact mode.

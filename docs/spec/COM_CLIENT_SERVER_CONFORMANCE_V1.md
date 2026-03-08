@@ -49,6 +49,18 @@ Primary checks:
 - deterministic COM event subscribe failure mapping for external ProgIDs without surfaced event metadata (`COM-E-EVENT-CONNECTIONPOINT-MISSING` / explicit path-unsupported mapping),
 - deterministic COM event unadvise failure mapping for unknown subscription tokens (`COM-E-EVENT-ADVISE-FAILED`).
 
+### Lane L2E: Windows registered event-callback lane (event-capable ProgID)
+
+Purpose:
+
+- Validate callback lifecycle success path (`subscribe -> trigger -> callback poll -> unsubscribe`) in registered-mode test harness configuration.
+
+Primary checks:
+
+- strict callback success path when event-capable ProgID is explicitly configured,
+- deterministic optional-skip behavior when default registered ProgID does not expose event metadata,
+- callback payload shape and handler binding identity mapping.
+
 ### Lane L2b: Windows late-bound client C2 lane (new)
 
 Purpose:
@@ -122,11 +134,13 @@ Implemented script surfaces:
 - `scripts/run-com-conformance.ps1` (root orchestrator)
 - `scripts/run-com-registrationless.ps1` (isolated lane)
 - `scripts/run-com-registered.ps1` (registered lane)
+- `scripts/run-com-registered-events.ps1` (registered event-callback lane)
 
 Current lane mapping:
 
 - L2b registrationless controlled lane -> `com_client_end_to_end`.
 - L2 registered external lane -> `com_client_registered_lane` (ignored-by-default tests, executed via `scripts/run-com-registered.ps1`; external ProgID selected by `-ProgId` / `OXVBA_REGISTERED_COM_PROGID`, runtime selector mapping uses engine policy override API, now including event subscribe/unsubscribe failure-shape checks).
+- L2E registered event-callback lane -> `com_client_registered_lane::registered_event_callback_success_when_event_capable_server_is_configured` (strict path via `scripts/run-com-registered-events.ps1` using `OXVBA_REGISTERED_EVENT_REQUIRE_SUCCESS=1` and event token/member trigger env bindings).
 
 ## 4. Artifact Model
 
