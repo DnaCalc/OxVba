@@ -1,0 +1,14 @@
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.15s
+     Running tests\com_client_registered_lane.rs (target\debug\deps\com_client_registered_lane-b494b64bd4cfbbb8.exe)
+
+running 7 tests
+test windows_registered_com_lane::registered_class_not_registered_is_reported_with_stable_label ... ok
+test windows_registered_com_lane::registered_createobject_dispatchinvoke_success_lane ... ok
+test windows_registered_com_lane::registered_dispatchinvoke_missing_arg_routes_to_err ... ok
+test windows_registered_com_lane::registered_event_subscribe_without_connection_point_has_stable_error_shape ... ok
+test windows_registered_com_lane::registered_event_unsubscribe_unknown_subscription_has_stable_error_shape ... ok
+test windows_registered_com_lane::registered_lane_repeated_invokes_are_stable ... ok
+test windows_registered_com_lane::registered_member_not_found_routes_through_resume_next ... ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.07s
+

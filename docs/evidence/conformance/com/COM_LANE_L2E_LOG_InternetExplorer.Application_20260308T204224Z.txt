@@ -1,0 +1,21 @@
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.20s
+     Running tests\com_client_registered_lane.rs (target\debug\deps\com_client_registered_lane-b494b64bd4cfbbb8.exe)
+
+running 1 test
+test windows_registered_com_lane::registered_event_callback_success_when_event_capable_server_is_configured ... FAILED
+
+failures:
+
+---- windows_registered_com_lane::registered_event_callback_success_when_event_capable_server_is_configured stdout ----
+
+thread 'windows_registered_com_lane::registered_event_callback_success_when_event_capable_server_is_configured' (26632) panicked at crates\oxvba-host\tests\com_client_registered_lane.rs:406:21:
+registered lane event subscription was required for `InternetExplorer.Application` but failed: AdapterFault [HAL-E-ADAPTER-FAULT] profile=Windows capability=ComActivationDispatch op=subscribe_event: COM-E-EVENT-CONNECTIONPOINT-MISSING: object `InternetExplorer.Application` does not expose event token 1
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    windows_registered_com_lane::registered_event_callback_success_when_event_capable_server_is_configured
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 7 filtered out; finished in 0.72s
+
+error: test failed, to rerun pass `-p oxvba-host --test com_client_registered_lane`

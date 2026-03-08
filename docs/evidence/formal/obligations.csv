@@ -381,3 +381,4 @@ FO-V466-013,v466,"cargo test -p oxvba-host formal_event_runtime_raiseevent_forwa
 FO-V466-014,v466,"cargo test -p oxvba-host formal_event_runtime_withevents_reassignment_rebinds_non_default_instances_deterministically",no,true,crates/oxvba-host/src/engine.rs
 FO-V466-015,v466,"cargo test -p oxvba-host formal_event_runtime_withevents_clear_then_rebind_updates_dispatch_membership",no,true,crates/oxvba-host/src/engine.rs
 FO-V466-016,v466,"cargo test -p oxvba-host formal_event_runtime_withevents_binding_intrinsics_roundtrip_state",no,true,crates/oxvba-host/src/engine.rs
+FO-V620-001,v620,"cargo test -p oxvba-host formal_com_evt_b_source_interface_callback_ingress_maps_to_registered_handler_symbol",no,true,crates/oxvba-host/src/engine.rs
