@@ -8,6 +8,11 @@ param(
     [int]$RegisteredEventTriggerMember = 3,
     [int]$RegisteredEventTriggerArg = 77,
     [int]$RegisteredEventExpectedArgCount = 1,
+    [string]$RegisteredEventPath = "",
+    [string]$RegisteredEventConnectionPointIid = "",
+    [Nullable[int]]$RegisteredEventDispatchMember = $null,
+    [bool]$RegisteredEventTriggerRequiresArg = $true,
+    [string]$RegisteredEventTriggerInvokeKind = "",
     [switch]$RegisteredEventEnableTrace,
     [switch]$ForceRegisteredTestDispatch,
     [switch]$NoCapture,
@@ -79,10 +84,23 @@ try {
             TriggerMember = $RegisteredEventTriggerMember
             TriggerArg = $RegisteredEventTriggerArg
             ExpectedArgCount = $RegisteredEventExpectedArgCount
+            TriggerRequiresArg = $RegisteredEventTriggerRequiresArg
             EvidenceDir = $EvidenceDir
             RunId = $resolvedRunId
             NoThrow = $true
             NoLatest = $resolvedNoLatest
+        }
+        if (-not [string]::IsNullOrWhiteSpace($RegisteredEventPath)) {
+            $registeredEventArgs["EventPath"] = $RegisteredEventPath
+        }
+        if (-not [string]::IsNullOrWhiteSpace($RegisteredEventConnectionPointIid)) {
+            $registeredEventArgs["ConnectionPointIid"] = $RegisteredEventConnectionPointIid
+        }
+        if ($RegisteredEventDispatchMember.HasValue) {
+            $registeredEventArgs["DispatchMember"] = $RegisteredEventDispatchMember.Value
+        }
+        if (-not [string]::IsNullOrWhiteSpace($RegisteredEventTriggerInvokeKind)) {
+            $registeredEventArgs["TriggerInvokeKind"] = $RegisteredEventTriggerInvokeKind
         }
         if ($ForceRegisteredTestDispatch) {
             $registeredEventArgs["ForceRegisteredTestDispatch"] = $true

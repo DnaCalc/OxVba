@@ -61,6 +61,10 @@ Primary checks:
 - strict callback success path when event-capable ProgID is explicitly configured,
 - deterministic optional-skip behavior when default registered ProgID does not expose event metadata,
 - callback payload shape and handler binding identity mapping.
+- override-driven external metadata and trigger invoke-shape projection for strict registered probes:
+  - event transport path (`dispatch` / `source-interface`),
+  - connection-point IID and optional dispatch member selector,
+  - direct dispatch trigger invoke kind and argument requirement.
 
 ### Lane L2b: Windows late-bound client C2 lane (new)
 
@@ -142,7 +146,7 @@ Current lane mapping:
 
 - L2b registrationless controlled lane -> `com_client_end_to_end`.
 - L2 registered external lane -> `com_client_registered_lane` (ignored-by-default tests, executed via `scripts/run-com-registered.ps1`; external ProgID selected by `-ProgId` / `OXVBA_REGISTERED_COM_PROGID`, runtime selector mapping uses engine policy override API, now including event subscribe/unsubscribe failure-shape checks).
-- L2E registered event-callback lane -> `com_client_registered_lane::registered_event_callback_success_when_event_capable_server_is_configured` (strict path via `scripts/run-com-registered-events.ps1` using `OXVBA_REGISTERED_EVENT_REQUIRE_SUCCESS=1` and event token/member trigger env bindings).
+- L2E registered event-callback lane -> `com_client_registered_lane::registered_event_callback_success_when_event_capable_server_is_configured` (strict path via `scripts/run-com-registered-events.ps1` using `OXVBA_REGISTERED_EVENT_REQUIRE_SUCCESS=1` plus event callback/transport/trigger env bindings: `OXVBA_REGISTERED_EVENT_TOKEN`, `OXVBA_REGISTERED_EVENT_EXPECTED_ARGC`, `OXVBA_REGISTERED_EVENT_PATH`, `OXVBA_REGISTERED_EVENT_CONNECTION_POINT_IID`, `OXVBA_REGISTERED_EVENT_DISPATCH_MEMBER`, `OXVBA_REGISTERED_EVENT_TRIGGER_MEMBER`, `OXVBA_REGISTERED_EVENT_TRIGGER_REQUIRES_ARG`, `OXVBA_REGISTERED_EVENT_TRIGGER_INVOKE_KIND`, `OXVBA_REGISTERED_EVENT_TRIGGER_ARG`).
 
 ## 4. Artifact Model
 

@@ -665,6 +665,216 @@ impl StandardHostServices {
         Ok(None)
     }
 
+    #[cfg(target_os = "windows")]
+    fn registered_event_override_for_prog_id_name(
+        &self,
+        prog_id_name: &str,
+        op: &'static str,
+    ) -> HalResult<Option<RegisteredEventOverrideConfig>> {
+        let configured_prog_id = match std::env::var("OXVBA_REGISTERED_COM_PROGID") {
+            Ok(value) => value,
+            Err(_) => return Ok(None),
+        };
+        if !configured_prog_id.eq_ignore_ascii_case(prog_id_name) {
+            return Ok(None);
+        }
+        let capability = CapabilityId::ComActivationDispatch;
+        let Some(event_token) =
+            self.parse_registered_event_env_i32("OXVBA_REGISTERED_EVENT_TOKEN", capability, op)?
+        else {
+            return Ok(None);
+        };
+        let callback_arity_raw = self
+            .parse_registered_event_env_i32("OXVBA_REGISTERED_EVENT_EXPECTED_ARGC", capability, op)?
+            .unwrap_or(1);
+        if callback_arity_raw < 0 {
+            return Err(HalError::adapter_fault(
+                self.profile,
+                capability,
+                op,
+                "registered event override expected arg count must be non-negative",
+            ));
+        }
+        let path = match std::env::var("OXVBA_REGISTERED_EVENT_PATH")
+            .ok()
+            .map(|value| value.trim().to_ascii_lowercase())
+        {
+            Some(value) if value.is_empty() || value == "dispatch" => ComEventPath::Dispatch,
+            Some(value) if value == "source-interface" || value == "sourceinterface" => {
+                ComEventPath::SourceInterface
+            }
+            Some(value) => {
+                return Err(HalError::adapter_fault(
+                    self.profile,
+                    capability,
+                    op,
+                    format!(
+                        "registered event override has unsupported path `{value}` (expected `dispatch` or `source-interface`)"
+                    ),
+                ));
+            }
+            None => ComEventPath::Dispatch,
+        };
+        let connection_point_iid = std::env::var("OXVBA_REGISTERED_EVENT_CONNECTION_POINT_IID")
+            .ok()
+            .map(|value| value.trim().to_string())
+            .filter(|value| !value.is_empty());
+        let dispatch_member_id = self.parse_registered_event_env_i32(
+            "OXVBA_REGISTERED_EVENT_DISPATCH_MEMBER",
+            capability,
+            op,
+        )?;
+        let trigger_member = self.parse_registered_event_env_i32(
+            "OXVBA_REGISTERED_EVENT_TRIGGER_MEMBER",
+            capability,
+            op,
+        )?;
+        let trigger_requires_argument = self
+            .parse_registered_event_env_bool(
+                "OXVBA_REGISTERED_EVENT_TRIGGER_REQUIRES_ARG",
+                capability,
+                op,
+            )?
+            .unwrap_or(true);
+        let trigger_invoke_kind = self
+            .parse_registered_event_env_invoke_kind(
+                "OXVBA_REGISTERED_EVENT_TRIGGER_INVOKE_KIND",
+                capability,
+                op,
+            )?
+            .unwrap_or(TypeLibMemberInvokeKind::Method);
+        Ok(Some(RegisteredEventOverrideConfig {
+            event_token,
+            callback_arity: callback_arity_raw as usize,
+            path,
+            connection_point_iid,
+            dispatch_member_id,
+            trigger_member,
+            trigger_requires_argument,
+            trigger_invoke_kind,
+        }))
+    }
+
+    #[cfg(target_os = "windows")]
+    fn parse_registered_event_env_i32(
+        &self,
+        key: &str,
+        capability: CapabilityId,
+        op: &'static str,
+    ) -> HalResult<Option<i32>> {
+        let Some(raw) = std::env::var(key).ok() else {
+            return Ok(None);
+        };
+        let trimmed = raw.trim();
+        if trimmed.is_empty() {
+            return Ok(None);
+        }
+        trimmed.parse::<i32>().map(Some).map_err(|_| {
+            HalError::adapter_fault(
+                self.profile,
+                capability,
+                op,
+                format!("registered event override `{key}` must parse as i32"),
+            )
+        })
+    }
+
+    #[cfg(target_os = "windows")]
+    fn parse_registered_event_env_bool(
+        &self,
+        key: &str,
+        capability: CapabilityId,
+        op: &'static str,
+    ) -> HalResult<Option<bool>> {
+        let Some(raw) = std::env::var(key).ok() else {
+            return Ok(None);
+        };
+        let trimmed = raw.trim().to_ascii_lowercase();
+        if trimmed.is_empty() {
+            return Ok(None);
+        }
+        let value = match trimmed.as_str() {
+            "1" | "true" | "yes" | "on" => true,
+            "0" | "false" | "no" | "off" => false,
+            _ => {
+                return Err(HalError::adapter_fault(
+                    self.profile,
+                    capability,
+                    op,
+                    format!("registered event override `{key}` must parse as boolean"),
+                ));
+            }
+        };
+        Ok(Some(value))
+    }
+
+    #[cfg(target_os = "windows")]
+    fn parse_registered_event_env_invoke_kind(
+        &self,
+        key: &str,
+        capability: CapabilityId,
+        op: &'static str,
+    ) -> HalResult<Option<TypeLibMemberInvokeKind>> {
+        let Some(raw) = std::env::var(key).ok() else {
+            return Ok(None);
+        };
+        let trimmed = raw.trim().to_ascii_lowercase();
+        if trimmed.is_empty() {
+            return Ok(None);
+        }
+        let kind = match trimmed.as_str() {
+            "method" => TypeLibMemberInvokeKind::Method,
+            "propertyget" | "property-get" => TypeLibMemberInvokeKind::PropertyGet,
+            "propertyput" | "property-put" => TypeLibMemberInvokeKind::PropertyPut,
+            "propertyputref" | "property-putref" => TypeLibMemberInvokeKind::PropertyPutRef,
+            _ => {
+                return Err(HalError::adapter_fault(
+                    self.profile,
+                    capability,
+                    op,
+                    format!(
+                        "registered event override `{key}` has unsupported invoke kind `{trimmed}`"
+                    ),
+                ));
+            }
+        };
+        Ok(Some(kind))
+    }
+
+    #[cfg(target_os = "windows")]
+    fn apply_registered_event_override_to_binding(
+        &self,
+        binding: &mut ComBinding,
+        override_cfg: &RegisteredEventOverrideConfig,
+    ) {
+        binding.event_specs.insert(
+            override_cfg.event_token,
+            ComEventSpec {
+                callback_arity: override_cfg.callback_arity,
+                path: override_cfg.path,
+                connection_point_iid: override_cfg.connection_point_iid.clone(),
+                dispatch_member_id: override_cfg.dispatch_member_id,
+            },
+        );
+        if let Some(trigger_member) = override_cfg.trigger_member {
+            binding.direct_dispatch_specs.insert(
+                trigger_member,
+                ComDirectDispatchSpec {
+                    invoke_kind: override_cfg.trigger_invoke_kind,
+                    requires_argument: override_cfg.trigger_requires_argument,
+                },
+            );
+            binding.event_trigger_specs.insert(
+                trigger_member,
+                ComEventTriggerSpec {
+                    event_token: override_cfg.event_token,
+                    callback_arity: override_cfg.callback_arity,
+                    second_arg_is_incremented: false,
+                },
+            );
+        }
+    }
+
     fn host_fs_base_dir(&self) -> PathBuf {
         let mut out = std::env::temp_dir();
         out.push("oxvba_hal");
@@ -1000,6 +1210,56 @@ impl StandardHostServices {
             }
         }
         match spec.invoke_kind {
+            TypeLibMemberInvokeKind::PropertyGet => unsafe {
+                raw_dispatch_property_get_i4(dispatch, dispid, arg)
+            },
+            TypeLibMemberInvokeKind::Method => unsafe {
+                raw_dispatch_invoke_method_i4(dispatch, dispid, arg)
+            },
+            TypeLibMemberInvokeKind::PropertyPut => unsafe {
+                raw_dispatch_property_put_i4(dispatch, dispid, arg)
+            },
+            TypeLibMemberInvokeKind::PropertyPutRef => unsafe {
+                raw_dispatch_property_putref_i4(dispatch, dispid, arg)
+            },
+        }
+        .map_err(|message| self.com_dispatch_adapter_fault(message))
+    }
+
+    #[cfg(target_os = "windows")]
+    fn native_com_dispatch_invoke_with_direct_dispid(
+        &self,
+        dispatch: *mut RawIDispatch,
+        dispid: i32,
+        invoke_kind: TypeLibMemberInvokeKind,
+        requires_argument: bool,
+        arg: i32,
+    ) -> HalResult<i32> {
+        self.ensure_thread_com_apartment("dispatch_invoke")?;
+        if requires_argument {
+            if arg == DISPATCH_INVOKE_MISSING_ARG_TOKEN {
+                return Err(HalError::adapter_fault(
+                    self.profile,
+                    CapabilityId::ComActivationDispatch,
+                    "dispatch_invoke",
+                    "member requires argument but DispatchInvoke omitted the third argument",
+                ));
+            }
+        } else {
+            return match invoke_kind {
+                TypeLibMemberInvokeKind::PropertyGet => unsafe {
+                    raw_dispatch_property_get_noargs(dispatch, dispid)
+                },
+                TypeLibMemberInvokeKind::Method => unsafe {
+                    raw_dispatch_invoke_method_noargs(dispatch, dispid)
+                },
+                TypeLibMemberInvokeKind::PropertyPut | TypeLibMemberInvokeKind::PropertyPutRef => {
+                    Err("member requires argument for property put/putref dispatch".to_string())
+                }
+            }
+            .map_err(|message| self.com_dispatch_adapter_fault(message));
+        }
+        match invoke_kind {
             TypeLibMemberInvokeKind::PropertyGet => unsafe {
                 raw_dispatch_property_get_i4(dispatch, dispid, arg)
             },
@@ -1760,12 +2020,21 @@ impl ComHal for StandardHostServices {
             match self.try_native_com_binding(&prog_id_name) {
                 Ok(native_dispatch) => {
                     let metadata = self.load_typelib_metadata_for_prog_id_name(&prog_id_name)?;
+                    #[cfg(target_os = "windows")]
+                    let registered_event_override = self
+                        .registered_event_override_for_prog_id_name(
+                            &prog_id_name,
+                            "create_object",
+                        )?;
                     let mut state = self.com_lock(capability, "create_object")?;
                     let handle = state.allocate_handle();
-                    state.bindings.insert(
-                        handle,
-                        ComBinding::native(prog_id_name, native_dispatch, metadata.as_ref()),
-                    );
+                    let mut binding =
+                        ComBinding::native(prog_id_name, native_dispatch, metadata.as_ref());
+                    #[cfg(target_os = "windows")]
+                    if let Some(override_cfg) = registered_event_override.as_ref() {
+                        self.apply_registered_event_override_to_binding(&mut binding, override_cfg);
+                    }
+                    state.bindings.insert(handle, binding);
                     self.assert_com_invariants(&state, "create_object");
                     return Ok(handle);
                 }
@@ -1817,6 +2086,14 @@ impl ComHal for StandardHostServices {
                     )? {
                         self.native_com_dispatch_invoke_with_member_spec(
                             dispatch, dispid, &spec, arg,
+                        )?
+                    } else if let Some(spec) = binding.direct_dispatch_specs.get(&member).copied() {
+                        self.native_com_dispatch_invoke_with_direct_dispid(
+                            dispatch,
+                            member,
+                            spec.invoke_kind,
+                            spec.requires_argument,
+                            arg,
                         )?
                     } else {
                         self.native_com_dispatch_invoke_with_bound_dispatch(
@@ -2836,6 +3113,7 @@ struct ComBinding {
     native_dispatch: RawDispatchPtr,
     member_dispids: BTreeMap<i32, i32>,
     member_specs: BTreeMap<i32, ComMemberSpec>,
+    direct_dispatch_specs: BTreeMap<i32, ComDirectDispatchSpec>,
     event_specs: BTreeMap<i32, ComEventSpec>,
     event_trigger_specs: BTreeMap<i32, ComEventTriggerSpec>,
 }
@@ -2853,6 +3131,7 @@ impl ComBinding {
             member_specs: metadata
                 .map(com_member_specs_from_typelib_metadata)
                 .unwrap_or_default(),
+            direct_dispatch_specs: BTreeMap::new(),
             event_specs: metadata
                 .map(com_event_specs_from_typelib_metadata)
                 .unwrap_or_default(),
@@ -2946,10 +3225,29 @@ struct ComMemberSpec {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct ComDirectDispatchSpec {
+    requires_argument: bool,
+    invoke_kind: TypeLibMemberInvokeKind,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct ComEventTriggerSpec {
     event_token: i32,
     callback_arity: usize,
     second_arg_is_incremented: bool,
+}
+
+#[cfg(target_os = "windows")]
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct RegisteredEventOverrideConfig {
+    event_token: i32,
+    callback_arity: usize,
+    path: ComEventPath,
+    connection_point_iid: Option<String>,
+    dispatch_member_id: Option<i32>,
+    trigger_member: Option<i32>,
+    trigger_requires_argument: bool,
+    trigger_invoke_kind: TypeLibMemberInvokeKind,
 }
 
 #[cfg(target_os = "windows")]

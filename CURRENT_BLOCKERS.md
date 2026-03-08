@@ -154,15 +154,24 @@ Run context: full events parity closure (non-COM + Windows COM)
     - native connection-point transport is established successfully for `Excel.Application` (`resolve-transport ... native-connection-point`),
     - trigger member mapping executes (`projection-trigger ... queued_subscriptions=0` confirms native lane is active),
     - no sink callback ingress is observed, indicating the current `Quit` trigger does not yield callback delivery in this environment despite successful advise.
+  - Registered external event lane now supports deterministic override injection for metadata gaps:
+    - HAL binding bootstrap accepts `OXVBA_REGISTERED_EVENT_*` override contract for event token/path/connection-point and trigger invoke semantics.
+    - Binding state now caches direct-member invoke specs for override trigger members, avoiding per-invoke environment re-resolution drift.
+    - Registered event scripts now expose override controls:
+      - `EventPath` / `OXVBA_REGISTERED_EVENT_PATH`,
+      - `ConnectionPointIid` / `OXVBA_REGISTERED_EVENT_CONNECTION_POINT_IID`,
+      - `DispatchMember` / `OXVBA_REGISTERED_EVENT_DISPATCH_MEMBER`,
+      - `TriggerRequiresArg` / `OXVBA_REGISTERED_EVENT_TRIGGER_REQUIRES_ARG`,
+      - `TriggerInvokeKind` / `OXVBA_REGISTERED_EVENT_TRIGGER_INVOKE_KIND`.
 - Why blocked:
   - Current run closes controlled-lane connection-point callback ingress and deterministic lifecycle (`Advise`/`Unadvise`) for both `COM-EVT-A` and controlled `COM-EVT-B`.
   - Remaining strict parity closure is now limited to external evidence/oracle ingestion:
     - validate true connection-point callback evidence on at least one external registered COM server beyond the controlled in-process test server.
   - Forced external activation probe currently fails in this environment because no registered `OxVba.TestDispatch` class is available.
-  - Additional external probe (`InternetExplorer.Application`) currently fails at metadata stage (`COM-E-EVENT-CONNECTIONPOINT-MISSING`) because no external event token/IID mapping is defined in the registered lane metadata set.
+  - Additional external probe (`InternetExplorer.Application`) still requires oracle-stable event token/IID/member data and an event trigger that deterministically emits callbacks in this environment.
 - Exact unblocking steps:
   1. Provision at least one event-capable registered COM server in the validation environment (either register `OxVba.TestDispatch` externally or select a deterministic third-party server).
-  2. Populate external typelib metadata with connection-point IID/member identity (per chosen external server lane).
+  2. Provide external event identity data (either static typelib metadata mapping or registered-lane override parameters) for the selected server lane.
   3. Capture reproducible external true connection-point callback evidence (with `-ForceRegisteredTestDispatch` where applicable) and fold into conformance docs.
   4. Reconcile oracle evidence and update divergence/deferred gates.
 

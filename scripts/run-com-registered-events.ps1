@@ -4,6 +4,11 @@ param(
     [int]$TriggerMember = 3,
     [int]$TriggerArg = 77,
     [int]$ExpectedArgCount = 1,
+    [string]$EventPath = "",
+    [string]$ConnectionPointIid = "",
+    [Nullable[int]]$DispatchMember = $null,
+    [bool]$TriggerRequiresArg = $true,
+    [string]$TriggerInvokeKind = "",
     [switch]$ForceRegisteredTestDispatch,
     [switch]$EnableTrace,
     [switch]$NoCapture,
@@ -50,6 +55,11 @@ try {
     $prevTriggerMember = $env:OXVBA_REGISTERED_EVENT_TRIGGER_MEMBER
     $prevTriggerArg = $env:OXVBA_REGISTERED_EVENT_TRIGGER_ARG
     $prevExpectedArgCount = $env:OXVBA_REGISTERED_EVENT_EXPECTED_ARGC
+    $prevEventPath = $env:OXVBA_REGISTERED_EVENT_PATH
+    $prevConnectionPointIid = $env:OXVBA_REGISTERED_EVENT_CONNECTION_POINT_IID
+    $prevDispatchMember = $env:OXVBA_REGISTERED_EVENT_DISPATCH_MEMBER
+    $prevTriggerRequiresArg = $env:OXVBA_REGISTERED_EVENT_TRIGGER_REQUIRES_ARG
+    $prevTriggerInvokeKind = $env:OXVBA_REGISTERED_EVENT_TRIGGER_INVOKE_KIND
     $prevForceRegistered = $env:OXVBA_COM_FORCE_REGISTERED_TESTDISPATCH
     $prevTrace = $env:OXVBA_COM_EVENT_TRACE
     $hadPrevProg = Test-Path Env:OXVBA_REGISTERED_COM_PROGID
@@ -58,6 +68,11 @@ try {
     $hadPrevTriggerMember = Test-Path Env:OXVBA_REGISTERED_EVENT_TRIGGER_MEMBER
     $hadPrevTriggerArg = Test-Path Env:OXVBA_REGISTERED_EVENT_TRIGGER_ARG
     $hadPrevExpectedArgCount = Test-Path Env:OXVBA_REGISTERED_EVENT_EXPECTED_ARGC
+    $hadPrevEventPath = Test-Path Env:OXVBA_REGISTERED_EVENT_PATH
+    $hadPrevConnectionPointIid = Test-Path Env:OXVBA_REGISTERED_EVENT_CONNECTION_POINT_IID
+    $hadPrevDispatchMember = Test-Path Env:OXVBA_REGISTERED_EVENT_DISPATCH_MEMBER
+    $hadPrevTriggerRequiresArg = Test-Path Env:OXVBA_REGISTERED_EVENT_TRIGGER_REQUIRES_ARG
+    $hadPrevTriggerInvokeKind = Test-Path Env:OXVBA_REGISTERED_EVENT_TRIGGER_INVOKE_KIND
     $hadPrevForceRegistered = Test-Path Env:OXVBA_COM_FORCE_REGISTERED_TESTDISPATCH
     $hadPrevTrace = Test-Path Env:OXVBA_COM_EVENT_TRACE
     try {
@@ -67,6 +82,31 @@ try {
         $env:OXVBA_REGISTERED_EVENT_TRIGGER_MEMBER = "$TriggerMember"
         $env:OXVBA_REGISTERED_EVENT_TRIGGER_ARG = "$TriggerArg"
         $env:OXVBA_REGISTERED_EVENT_EXPECTED_ARGC = "$ExpectedArgCount"
+        $triggerRequiresArgValue = "0"
+        if ($TriggerRequiresArg) {
+            $triggerRequiresArgValue = "1"
+        }
+        $env:OXVBA_REGISTERED_EVENT_TRIGGER_REQUIRES_ARG = $triggerRequiresArgValue
+        if (-not [string]::IsNullOrWhiteSpace($EventPath)) {
+            $env:OXVBA_REGISTERED_EVENT_PATH = $EventPath
+        } else {
+            Remove-Item Env:OXVBA_REGISTERED_EVENT_PATH -ErrorAction SilentlyContinue
+        }
+        if (-not [string]::IsNullOrWhiteSpace($ConnectionPointIid)) {
+            $env:OXVBA_REGISTERED_EVENT_CONNECTION_POINT_IID = $ConnectionPointIid
+        } else {
+            Remove-Item Env:OXVBA_REGISTERED_EVENT_CONNECTION_POINT_IID -ErrorAction SilentlyContinue
+        }
+        if ($DispatchMember.HasValue) {
+            $env:OXVBA_REGISTERED_EVENT_DISPATCH_MEMBER = "$($DispatchMember.Value)"
+        } else {
+            Remove-Item Env:OXVBA_REGISTERED_EVENT_DISPATCH_MEMBER -ErrorAction SilentlyContinue
+        }
+        if (-not [string]::IsNullOrWhiteSpace($TriggerInvokeKind)) {
+            $env:OXVBA_REGISTERED_EVENT_TRIGGER_INVOKE_KIND = $TriggerInvokeKind
+        } else {
+            Remove-Item Env:OXVBA_REGISTERED_EVENT_TRIGGER_INVOKE_KIND -ErrorAction SilentlyContinue
+        }
         if ($ForceRegisteredTestDispatch) {
             $env:OXVBA_COM_FORCE_REGISTERED_TESTDISPATCH = "1"
         }
@@ -101,6 +141,11 @@ try {
         Write-Host "[oxvba] registered ProgID: $ProgId"
         Write-Host "[oxvba] event token/member/arg: $EventToken/$TriggerMember/$TriggerArg"
         Write-Host "[oxvba] expected callback arg count: $ExpectedArgCount"
+        Write-Host "[oxvba] event path: $(if ([string]::IsNullOrWhiteSpace($EventPath)) { '<default>' } else { $EventPath })"
+        Write-Host "[oxvba] connection-point IID: $(if ([string]::IsNullOrWhiteSpace($ConnectionPointIid)) { '<default>' } else { $ConnectionPointIid })"
+        Write-Host "[oxvba] dispatch-member override: $(if ($DispatchMember.HasValue) { $DispatchMember.Value } else { '<default>' })"
+        Write-Host "[oxvba] trigger requires arg: $($TriggerRequiresArg.ToString().ToLowerInvariant())"
+        Write-Host "[oxvba] trigger invoke kind: $(if ([string]::IsNullOrWhiteSpace($TriggerInvokeKind)) { '<default>' } else { $TriggerInvokeKind })"
         Write-Host "[oxvba] force registered test dispatch: $($ForceRegisteredTestDispatch.ToString().ToLowerInvariant())"
         Write-Host "[oxvba] com event trace: $($EnableTrace.ToString().ToLowerInvariant())"
         Write-Host "[oxvba] command: $cmdText"
@@ -139,6 +184,11 @@ try {
             "- Trigger member: $TriggerMember",
             "- Trigger arg: $TriggerArg",
             "- Expected callback arg count: $ExpectedArgCount",
+            "- Event path override: $(if ([string]::IsNullOrWhiteSpace($EventPath)) { '<default>' } else { $EventPath })",
+            "- Connection-point IID override: $(if ([string]::IsNullOrWhiteSpace($ConnectionPointIid)) { '<default>' } else { $ConnectionPointIid })",
+            "- Dispatch-member override: $(if ($DispatchMember.HasValue) { $DispatchMember.Value } else { '<default>' })",
+            "- Trigger requires arg: $($TriggerRequiresArg.ToString().ToLowerInvariant())",
+            "- Trigger invoke kind override: $(if ([string]::IsNullOrWhiteSpace($TriggerInvokeKind)) { '<default>' } else { $TriggerInvokeKind })",
             "- COM event trace: $($EnableTrace.ToString().ToLowerInvariant())",
             "- Log: $logPath"
         )
@@ -182,6 +232,31 @@ try {
             $env:OXVBA_REGISTERED_EVENT_EXPECTED_ARGC = $prevExpectedArgCount
         } else {
             Remove-Item Env:OXVBA_REGISTERED_EVENT_EXPECTED_ARGC -ErrorAction SilentlyContinue
+        }
+        if ($hadPrevEventPath) {
+            $env:OXVBA_REGISTERED_EVENT_PATH = $prevEventPath
+        } else {
+            Remove-Item Env:OXVBA_REGISTERED_EVENT_PATH -ErrorAction SilentlyContinue
+        }
+        if ($hadPrevConnectionPointIid) {
+            $env:OXVBA_REGISTERED_EVENT_CONNECTION_POINT_IID = $prevConnectionPointIid
+        } else {
+            Remove-Item Env:OXVBA_REGISTERED_EVENT_CONNECTION_POINT_IID -ErrorAction SilentlyContinue
+        }
+        if ($hadPrevDispatchMember) {
+            $env:OXVBA_REGISTERED_EVENT_DISPATCH_MEMBER = $prevDispatchMember
+        } else {
+            Remove-Item Env:OXVBA_REGISTERED_EVENT_DISPATCH_MEMBER -ErrorAction SilentlyContinue
+        }
+        if ($hadPrevTriggerRequiresArg) {
+            $env:OXVBA_REGISTERED_EVENT_TRIGGER_REQUIRES_ARG = $prevTriggerRequiresArg
+        } else {
+            Remove-Item Env:OXVBA_REGISTERED_EVENT_TRIGGER_REQUIRES_ARG -ErrorAction SilentlyContinue
+        }
+        if ($hadPrevTriggerInvokeKind) {
+            $env:OXVBA_REGISTERED_EVENT_TRIGGER_INVOKE_KIND = $prevTriggerInvokeKind
+        } else {
+            Remove-Item Env:OXVBA_REGISTERED_EVENT_TRIGGER_INVOKE_KIND -ErrorAction SilentlyContinue
         }
         if ($hadPrevForceRegistered) {
             $env:OXVBA_COM_FORCE_REGISTERED_TESTDISPATCH = $prevForceRegistered
