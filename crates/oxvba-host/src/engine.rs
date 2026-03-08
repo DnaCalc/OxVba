@@ -1890,6 +1890,42 @@ mod tests {
 
     #[cfg(target_os = "windows")]
     #[test]
+    fn formal_com_event_callback_ingress_captures_multi_arg_payload_shape() {
+        let mut engine = Engine::new(HostConfig::default());
+        engine.set_host_policy(HostPolicy::interactive_dev());
+
+        let object = engine
+            .host_services
+            .com()
+            .create_object(4)
+            .expect("create_object should return controlled COM object");
+        let subscription = engine
+            .subscribe_com_event_handler(object, 3, "SinkA_OnPair")
+            .expect("subscribe_com_event_handler should succeed");
+
+        let _ = engine
+            .host_services
+            .com()
+            .dispatch_invoke(object, 4, 90)
+            .expect("dispatch_invoke should queue pair callback");
+        let callback = engine
+            .poll_com_event_callback()
+            .expect("callback poll should succeed")
+            .expect("callback should be available");
+
+        assert_eq!(callback.subscription_token, subscription);
+        assert_eq!(callback.handler_symbol, "sinka_onpair");
+        assert_eq!(callback.args, vec![90, 91]);
+        assert_eq!(callback.arg0, 90);
+        assert!(
+            engine
+                .unsubscribe_com_event_handler(subscription)
+                .expect("unsubscribe should succeed")
+        );
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
     fn formal_com_event_callback_runtime_dispatch_invokes_project_handler() {
         let mut engine = Engine::new(HostConfig::default());
         engine.set_host_policy(HostPolicy::interactive_dev());
@@ -2033,6 +2069,52 @@ mod tests {
             err.message()
                 .contains("PMR-E-EVENT-CALLBACK-SIGNATURE-MISMATCH")
         );
+        let _ = engine.unsubscribe_com_event_handler(subscription);
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn formal_com_event_callback_runtime_dispatch_invokes_two_arg_handler() {
+        let mut engine = Engine::new(HostConfig::default());
+        engine.set_host_policy(HostPolicy::interactive_dev());
+
+        let main_module = module_unit_from_source(
+            "MainModule",
+            ModuleKind::Procedural,
+            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nEnd Sub\nPublic Sub SinkA_OnPair(ByVal a, ByVal b)\nIf a = 90 And b = 91 Then\nError 190\nElse\nError 191\nEnd If\nEnd Sub",
+        )
+        .expect("main module should parse");
+        let manifest = ProjectManifest {
+            project_name: "ProjectA".to_string(),
+            project_kind: ProjectKind::Source,
+            modules: vec![main_module],
+            references: Vec::new(),
+            reference_projects: Vec::new(),
+            conditional_constants: std::collections::BTreeMap::new(),
+        };
+
+        let mut runtime = engine
+            .start_project_runtime_session(&manifest)
+            .expect("project runtime session should start");
+        let object = engine
+            .host_services
+            .com()
+            .create_object(4)
+            .expect("create_object should return controlled COM object");
+        let subscription = engine
+            .subscribe_com_event_handler(object, 3, "SinkA_OnPair")
+            .expect("subscribe should succeed");
+        let _ = engine
+            .host_services
+            .com()
+            .dispatch_invoke(object, 4, 90)
+            .expect("dispatch_invoke should queue callback");
+
+        let err = engine
+            .poll_and_dispatch_next_com_event_callback(&mut runtime)
+            .expect_err("runtime handler should execute with two callback arguments");
+        assert_eq!(err.phase(), DiagnosticPhase::Runtime);
+        assert!(err.message().contains("runtime error: 190"));
         let _ = engine.unsubscribe_com_event_handler(subscription);
     }
 

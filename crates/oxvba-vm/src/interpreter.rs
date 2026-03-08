@@ -2447,6 +2447,83 @@ mod tests {
         assert_eq!(out[12], 1, "expected unsubscribe success token");
     }
 
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn com_event_subscription_intrinsics_roundtrip_multi_arg_callback_lane() {
+        let bytecode = Bytecode {
+            instructions: vec![
+                Instruction::LoadConstI32 { slot: 0, value: 4 },
+                Instruction::IntrinsicCreateObjectHost { dst: 1, prog_id: 0 },
+                Instruction::LoadConstI32 { slot: 2, value: 3 },
+                Instruction::IntrinsicComSubscribeEventHost {
+                    dst: 3,
+                    object: 1,
+                    event: 2,
+                },
+                Instruction::LoadConstI32 { slot: 4, value: 4 },
+                Instruction::LoadConstI32 { slot: 5, value: 90 },
+                Instruction::IntrinsicDispatchInvokeHost {
+                    dst: 6,
+                    object: 1,
+                    member: 4,
+                    arg: 5,
+                },
+                Instruction::IntrinsicDoEventsHost { dst: 7 },
+                Instruction::IntrinsicComEventCallbackSubscriptionHost {
+                    dst: 8,
+                    callback: 7,
+                },
+                Instruction::LoadConstI32 { slot: 9, value: 0 },
+                Instruction::IntrinsicComEventCallbackArgHost {
+                    dst: 10,
+                    callback: 7,
+                    index: 9,
+                },
+                Instruction::LoadConstI32 { slot: 11, value: 1 },
+                Instruction::IntrinsicComEventCallbackArgHost {
+                    dst: 12,
+                    callback: 7,
+                    index: 11,
+                },
+                Instruction::IntrinsicComReleaseEventCallbackHost {
+                    dst: 13,
+                    callback: 7,
+                },
+                Instruction::IntrinsicComUnsubscribeEventHost {
+                    dst: 14,
+                    subscription: 3,
+                },
+                Instruction::Halt,
+            ],
+            external_call_descriptors: Vec::new(),
+            slot_count: 15,
+            user_slot_count: 15,
+        };
+
+        let mut vm = Vm::new(oxvba_hal::adapters::for_profile(
+            oxvba_hal::model::HalProfileId::Windows,
+            oxvba_hal::model::HostPolicy::interactive_dev(),
+        ));
+        vm.execute(&bytecode)
+            .expect("vm should execute COM event subscribe/unsubscribe flow");
+        let out = vm.snapshot_slots(15);
+        assert!(out[1] >= 20_001, "expected native COM object handle");
+        assert!(out[3] >= 40_001, "expected native COM subscription handle");
+        assert_eq!(out[6], 91, "expected FireChangedPair return value");
+        assert!(
+            out[7] >= 60_001,
+            "expected DoEvents callback pump to return callback token"
+        );
+        assert_eq!(
+            out[8], out[3],
+            "expected callback subscription lookup to return subscription token"
+        );
+        assert_eq!(out[10], 90, "expected callback arg0 payload");
+        assert_eq!(out[12], 91, "expected callback arg1 payload");
+        assert_eq!(out[13], 1, "expected callback release token");
+        assert_eq!(out[14], 1, "expected unsubscribe success token");
+    }
+
     #[test]
     fn declare_invoke_routes_through_dynlink_host_service() {
         let bytecode = Bytecode {

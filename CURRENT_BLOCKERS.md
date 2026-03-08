@@ -50,6 +50,10 @@ Run context: full events parity closure (non-COM + Windows COM)
   - `COM-EVT-B` now has explicit deterministic unsupported closure in controlled Windows lane:
     - subscribing source-interface token path returns deterministic unsupported diagnostic:
       - `COM-E-EVENT-PATH-UNSUPPORTED: source-interface COM event callbacks (COM-EVT-B) are unsupported in current lane`.
+  - Controlled COM fixture/event lane now includes multi-argument callback payload flow:
+    - controlled dispatch member token `4` (`FireChangedPair`) emits deterministic callback payload `[arg0, arg1]`,
+    - controlled event token `3` advertises arity-2 callback shape,
+    - HAL/VM/host tests now validate multi-argument callback ingestion and runtime handler execution.
   - Added deterministic diagnostics for:
     - native-lane requirement (`COM-E-EVENT-PATH-UNSUPPORTED`),
     - missing connection point/event token (`COM-E-EVENT-CONNECTIONPOINT-MISSING`),
@@ -58,12 +62,11 @@ Run context: full events parity closure (non-COM + Windows COM)
   - Current run has non-COM/internal event semantics advanced, COM lifecycle substrate implemented, callback->handler runtime invocation wired, and deterministic COM-EVT-B unsupported policy in place.
   - Remaining parity closure still needs:
     - typelib-driven callback argument shape mapping from COM metadata into runtime callback payload + handler signature enforcement beyond current controlled token lane,
-    - controlled/registered evidence expansion for multi-argument callback shapes and bridge coverage.
+    - registered/external evidence expansion for callback bridge coverage beyond controlled fixture lane.
 - Exact unblocking steps:
   1. Bind callback argument shape directly to typelib event metadata (`WI-D01`/`WI-D03`) for COM-EVT-A lanes.
-  2. Extend controlled COM fixture surface with multi-argument callback members and deterministic coverage (`WI-E01`/`WI-E02`).
-  3. Add controlled COM event fixture lane and deterministic CI coverage for callback lifecycle + failure mapping.
-  4. Reconcile oracle evidence and update divergence/deferred gates.
+  2. Add registered/external COM event fixture coverage for callback lifecycle + failure mapping (`WI-E03`).
+  3. Reconcile oracle evidence and update divergence/deferred gates.
 
 ## Structured summary
 
@@ -71,7 +74,7 @@ Run context: full events parity closure (non-COM + Windows COM)
   - `BLK-COM-001` — COM event callback parity lane requires dedicated transport completion.
 - Impact by milestone/phase:
   - Non-COM dynamic owner dispatch path: unblocked and implemented.
-  - COM parity closure: callback transport + arity/signature enforcement lane implemented with explicit COM-EVT-B unsupported policy; blocked at typelib-bound shape + fixture/evidence completion (`WI-D01`, `WI-D03`, `WI-E01`..`WI-E03`).
+  - COM parity closure: callback transport + arity/signature enforcement + controlled multi-arg fixture lane implemented with explicit COM-EVT-B unsupported policy; blocked at typelib-bound shape + registered/evidence completion (`WI-D01`, `WI-D03`, `WI-E03`).
 - Exact unblocking steps:
   - Approve COM callback bridge policy for `COM-EVT-A/B`.
   - Implement + validate callback lanes in CI/oracle evidence.

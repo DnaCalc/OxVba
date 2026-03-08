@@ -668,6 +668,12 @@ impl StandardHostServices {
                 3 => unsafe {
                     raw_dispatch_invoke_method_i4(dispatch, TEST_DISPID_FIRE_CHANGED, arg)
                 },
+                4 if arg == DISPATCH_INVOKE_MISSING_ARG_TOKEN => {
+                    Err("IDispatch::Invoke requires an argument for member token 4".to_string())
+                }
+                4 => unsafe {
+                    raw_dispatch_invoke_method_i4(dispatch, TEST_DISPID_FIRE_CHANGED_PAIR, arg)
+                },
                 _ => Err(format!(
                     "IDispatch::Invoke unsupported OxVba.TestDispatch member token {member}"
                 )),
@@ -2377,6 +2383,10 @@ fn com_member_spec_for_token(prog_id: &str, member: i32) -> Option<ComMemberSpec
                 name: "FireChanged",
                 requires_argument: true,
             }),
+            4 => Some(ComMemberSpec {
+                name: "FireChangedPair",
+                requires_argument: true,
+            }),
             _ => None,
         };
     }
@@ -2391,6 +2401,7 @@ fn com_event_signature_arity_for_binding(binding: &ComBinding, event: i32) -> Op
         .then_some(())
         .and_then(|_| match event {
             TEST_EVENT_CHANGED => Some(1),
+            TEST_EVENT_CHANGED_PAIR => Some(2),
             _ => None,
         })
 }
@@ -2422,9 +2433,14 @@ fn com_event_callback_args_from_member_token(
     if binding
         .prog_id_name
         .eq_ignore_ascii_case(OXVBA_TEST_DISPATCH_PROGID)
-        && member == TEST_DISPID_FIRE_CHANGED
     {
-        return Some((TEST_EVENT_CHANGED, vec![arg]));
+        return match member {
+            TEST_DISPID_FIRE_CHANGED => Some((TEST_EVENT_CHANGED, vec![arg])),
+            TEST_DISPID_FIRE_CHANGED_PAIR => {
+                Some((TEST_EVENT_CHANGED_PAIR, vec![arg, arg.saturating_add(1)]))
+            }
+            _ => None,
+        };
     }
     None
 }
@@ -2546,9 +2562,13 @@ const TEST_DISPID_EXISTS: i32 = 2;
 #[cfg(target_os = "windows")]
 const TEST_DISPID_FIRE_CHANGED: i32 = 3;
 #[cfg(target_os = "windows")]
+const TEST_DISPID_FIRE_CHANGED_PAIR: i32 = 4;
+#[cfg(target_os = "windows")]
 const TEST_EVENT_CHANGED: i32 = 1;
 #[cfg(target_os = "windows")]
 const TEST_EVENT_CHANGED_SOURCE_INTERFACE: i32 = 2;
+#[cfg(target_os = "windows")]
+const TEST_EVENT_CHANGED_PAIR: i32 = 3;
 
 #[cfg(target_os = "windows")]
 #[repr(C)]
@@ -2768,6 +2788,7 @@ unsafe extern "system" fn oxvba_test_get_ids_of_names(
         "count" => TEST_DISPID_COUNT,
         "exists" => TEST_DISPID_EXISTS,
         "firechanged" => TEST_DISPID_FIRE_CHANGED,
+        "firechangedpair" => TEST_DISPID_FIRE_CHANGED_PAIR,
         _ => return COM_DISP_E_UNKNOWNNAME,
     };
     *rgdispid = dispid;
@@ -2834,6 +2855,24 @@ unsafe extern "system" fn oxvba_test_invoke(
                 }
             };
             set_variant_i32(value, pvarresult);
+            COM_S_OK
+        }
+        TEST_DISPID_FIRE_CHANGED_PAIR => {
+            if (wflags & DISPATCH_METHOD) == 0 || cargs != 1 || rgvarg.is_null() {
+                return COM_DISP_E_BADPARAMCOUNT;
+            }
+            let arg = &*rgvarg;
+            let value = match arg.Anonymous.Anonymous.vt {
+                VT_I4 => arg.Anonymous.Anonymous.Anonymous.lVal,
+                VT_UI4 => arg.Anonymous.Anonymous.Anonymous.ulVal as i32,
+                _ => {
+                    if !puargerr.is_null() {
+                        *puargerr = 0;
+                    }
+                    return COM_DISP_E_TYPEMISMATCH;
+                }
+            };
+            set_variant_i32(value.saturating_add(1), pvarresult);
             COM_S_OK
         }
         _ => COM_DISP_E_MEMBERNOTFOUND,
@@ -2923,6 +2962,15 @@ unsafe fn raw_oxvba_test_dispatch_vtable_invoke(
                 ));
             }
             Ok(Some(arg))
+        }
+        TEST_DISPID_FIRE_CHANGED_PAIR => {
+            if arg == DISPATCH_INVOKE_MISSING_ARG_TOKEN {
+                return Err(format!(
+                    "IDispatch::Invoke(method) failed with HRESULT {:#010X} (arg_err={})",
+                    COM_DISP_E_BADPARAMCOUNT as u32, 0
+                ));
+            }
+            Ok(Some(arg.saturating_add(1)))
         }
         _ => Ok(None),
     }
@@ -3597,6 +3645,66 @@ mod tests {
         assert!(
             !callback_still_present,
             "released callback payload should be removed from callback registry"
+        );
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn windows_native_com_event_multi_arg_callback_payload_roundtrips() {
+        let host = StandardHostServices::new(HalProfileId::Windows, HostPolicy::interactive_dev());
+        let object = host
+            .create_object(4)
+            .expect("create_object should return a token");
+        let subscription = host
+            .subscribe_event(object, super::TEST_EVENT_CHANGED_PAIR)
+            .expect("subscribe_event should succeed for controlled pair-event source");
+
+        assert_eq!(
+            host.dispatch_invoke(object, super::TEST_DISPID_FIRE_CHANGED_PAIR, 90)
+                .expect("FireChangedPair should succeed"),
+            91
+        );
+        let callback = host
+            .do_events()
+            .expect("do_events should pump pending COM callback");
+        assert!(callback >= 60_001);
+        assert_eq!(
+            host.event_callback_subscription(callback)
+                .expect("callback subscription lookup should succeed"),
+            subscription
+        );
+        assert_eq!(
+            host.event_callback_arity(callback)
+                .expect("callback arity lookup should succeed"),
+            2
+        );
+        assert_eq!(
+            host.event_callback_arg(callback, 0)
+                .expect("callback arg0 lookup should succeed"),
+            90
+        );
+        assert_eq!(
+            host.event_callback_arg(callback, 1)
+                .expect("callback arg1 lookup should succeed"),
+            91
+        );
+        let err = host
+            .event_callback_arg(callback, 2)
+            .expect_err("index beyond callback arity should fail");
+        assert_eq!(err.kind, HalErrorKind::AdapterFault);
+        assert!(
+            err.message
+                .contains("COM-E-EVENT-CALLBACK-SIGNATURE-MISMATCH")
+        );
+        assert_eq!(
+            host.release_event_callback(callback)
+                .expect("callback release should succeed"),
+            1
+        );
+        assert_eq!(
+            host.unsubscribe_event(subscription)
+                .expect("unsubscribe_event should succeed"),
+            1
         );
     }
 
