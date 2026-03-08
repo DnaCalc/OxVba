@@ -734,7 +734,9 @@ impl StandardHostServices {
 
     #[cfg(target_os = "windows")]
     fn native_com_activate_dispatch(&self, prog_id: &str) -> HalResult<*mut RawIDispatch> {
-        if prog_id.eq_ignore_ascii_case(OXVBA_TEST_DISPATCH_PROGID) {
+        if prog_id.eq_ignore_ascii_case(OXVBA_TEST_DISPATCH_PROGID)
+            && !self.force_registered_test_dispatch()
+        {
             return Ok(create_oxvba_test_dispatch());
         }
         let wide: Vec<u16> = prog_id.encode_utf16().chain(std::iter::once(0)).collect();
@@ -774,6 +776,19 @@ impl StandardHostServices {
             ));
         }
         Ok(dispatch_ptr.cast::<RawIDispatch>())
+    }
+
+    #[cfg(target_os = "windows")]
+    fn force_registered_test_dispatch(&self) -> bool {
+        std::env::var("OXVBA_COM_FORCE_REGISTERED_TESTDISPATCH")
+            .ok()
+            .map(|value| {
+                matches!(
+                    value.trim().to_ascii_lowercase().as_str(),
+                    "1" | "true" | "yes" | "on"
+                )
+            })
+            .unwrap_or(false)
     }
 
     #[cfg(target_os = "windows")]

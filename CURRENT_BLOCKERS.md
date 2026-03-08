@@ -112,6 +112,13 @@ Run context: full events parity closure (non-COM + Windows COM)
     - `Ping` (no-arg method),
     - `Lookup` (property-get with required arg),
     - with stable tests for deterministic success and missing-arg diagnostics.
+  - Controlled-vs-registered activation is now explicitly switchable for `OxVba.TestDispatch`:
+    - HAL honors `OXVBA_COM_FORCE_REGISTERED_TESTDISPATCH=1` to bypass in-process fixture activation and require `CLSIDFromProgID` + `CoCreateInstance`,
+    - conformance script lanes can forward this mode (`-ForceRegisteredTestDispatch`) for true external-server probing.
+  - External true-registration probe captured and archived:
+    - `docs/evidence/conformance/com/COM_LANE_L2E_RUN_OxVba.TestDispatch_20260308T193727Z.md`,
+    - `docs/evidence/conformance/com/COM_LANE_L2E_LOG_OxVba.TestDispatch_20260308T193727Z.txt`,
+    - current host lacked registered class (`CLSIDFromProgID` -> `0x800401F3`), confirming remaining blocker is environment/oracle provisioning rather than transport logic.
   - Updated conformance evidence with connection-point callback lane:
     - `docs/evidence/conformance/com/COM_CONFORMANCE_RUN_20260308T190057Z.md`,
     - `docs/evidence/conformance/com/COM_LANE_L2B_RUN_20260308T190057Z.md`,
@@ -121,10 +128,12 @@ Run context: full events parity closure (non-COM + Windows COM)
   - Remaining strict parity closure is now limited to external evidence and ingestion:
     - populate real external typelib event metadata with connection-point IID/member IDs,
     - validate true connection-point callback evidence on at least one external registered COM server beyond the controlled in-process test server.
+  - Forced external activation probe currently fails in this environment because no registered `OxVba.TestDispatch` class is available.
 - Exact unblocking steps:
-  1. Populate external typelib metadata with connection-point IID/member identity (per chosen external server lane).
-  2. Capture reproducible external true connection-point callback evidence and fold into conformance docs.
-  3. Reconcile oracle evidence and update divergence/deferred gates.
+  1. Provision at least one event-capable registered COM server in the validation environment (either register `OxVba.TestDispatch` externally or select a deterministic third-party server).
+  2. Populate external typelib metadata with connection-point IID/member identity (per chosen external server lane).
+  3. Capture reproducible external true connection-point callback evidence (with `-ForceRegisteredTestDispatch` where applicable) and fold into conformance docs.
+  4. Reconcile oracle evidence and update divergence/deferred gates.
 
 ## Structured summary
 

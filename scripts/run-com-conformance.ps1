@@ -7,6 +7,7 @@ param(
     [int]$RegisteredEventToken = 1,
     [int]$RegisteredEventTriggerMember = 3,
     [int]$RegisteredEventTriggerArg = 77,
+    [switch]$ForceRegisteredTestDispatch,
     [switch]$NoCapture,
     [string]$EvidenceDir = "docs/evidence/conformance/com",
     [string]$RunId = "",
@@ -79,6 +80,9 @@ try {
             RunId = $resolvedRunId
             NoThrow = $true
             NoLatest = $resolvedNoLatest
+        }
+        if ($ForceRegisteredTestDispatch) {
+            $registeredEventArgs["ForceRegisteredTestDispatch"] = $true
         }
         if ($NoCapture) {
             $registeredEventArgs["NoCapture"] = $true

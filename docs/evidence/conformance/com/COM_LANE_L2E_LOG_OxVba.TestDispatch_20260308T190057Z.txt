@@ -1,4 +1,5 @@
-    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.13s
+   Compiling oxvba-host v0.1.0 (C:\Work\DnaCalc\OxVba\crates\oxvba-host)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 1.53s
      Running tests\com_client_registered_lane.rs (target\debug\deps\com_client_registered_lane-b494b64bd4cfbbb8.exe)
 
 running 1 test

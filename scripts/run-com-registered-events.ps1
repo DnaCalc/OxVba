@@ -3,6 +3,7 @@ param(
     [int]$EventToken = 1,
     [int]$TriggerMember = 3,
     [int]$TriggerArg = 77,
+    [switch]$ForceRegisteredTestDispatch,
     [switch]$NoCapture,
     [string]$EvidenceDir = "docs/evidence/conformance/com",
     [string]$RunId = "",
@@ -30,17 +31,22 @@ try {
     $prevEventToken = $env:OXVBA_REGISTERED_EVENT_TOKEN
     $prevTriggerMember = $env:OXVBA_REGISTERED_EVENT_TRIGGER_MEMBER
     $prevTriggerArg = $env:OXVBA_REGISTERED_EVENT_TRIGGER_ARG
+    $prevForceRegistered = $env:OXVBA_COM_FORCE_REGISTERED_TESTDISPATCH
     $hadPrevProg = Test-Path Env:OXVBA_REGISTERED_COM_PROGID
     $hadPrevRequire = Test-Path Env:OXVBA_REGISTERED_EVENT_REQUIRE_SUCCESS
     $hadPrevEventToken = Test-Path Env:OXVBA_REGISTERED_EVENT_TOKEN
     $hadPrevTriggerMember = Test-Path Env:OXVBA_REGISTERED_EVENT_TRIGGER_MEMBER
     $hadPrevTriggerArg = Test-Path Env:OXVBA_REGISTERED_EVENT_TRIGGER_ARG
+    $hadPrevForceRegistered = Test-Path Env:OXVBA_COM_FORCE_REGISTERED_TESTDISPATCH
     try {
         $env:OXVBA_REGISTERED_COM_PROGID = $ProgId
         $env:OXVBA_REGISTERED_EVENT_REQUIRE_SUCCESS = "1"
         $env:OXVBA_REGISTERED_EVENT_TOKEN = "$EventToken"
         $env:OXVBA_REGISTERED_EVENT_TRIGGER_MEMBER = "$TriggerMember"
         $env:OXVBA_REGISTERED_EVENT_TRIGGER_ARG = "$TriggerArg"
+        if ($ForceRegisteredTestDispatch) {
+            $env:OXVBA_COM_FORCE_REGISTERED_TESTDISPATCH = "1"
+        }
 
         $cmd = @(
             "test",
@@ -68,6 +74,7 @@ try {
         Write-Host "[oxvba] COM lane L2E (registered event-capable server)"
         Write-Host "[oxvba] registered ProgID: $ProgId"
         Write-Host "[oxvba] event token/member/arg: $EventToken/$TriggerMember/$TriggerArg"
+        Write-Host "[oxvba] force registered test dispatch: $($ForceRegisteredTestDispatch.ToString().ToLowerInvariant())"
         Write-Host "[oxvba] command: $cmdText"
         $null = & cargo @cmd 2>&1 | Tee-Object -FilePath $logPath
         $exitCode = $LASTEXITCODE
@@ -140,6 +147,11 @@ try {
             $env:OXVBA_REGISTERED_EVENT_TRIGGER_ARG = $prevTriggerArg
         } else {
             Remove-Item Env:OXVBA_REGISTERED_EVENT_TRIGGER_ARG -ErrorAction SilentlyContinue
+        }
+        if ($hadPrevForceRegistered) {
+            $env:OXVBA_COM_FORCE_REGISTERED_TESTDISPATCH = $prevForceRegistered
+        } else {
+            Remove-Item Env:OXVBA_COM_FORCE_REGISTERED_TESTDISPATCH -ErrorAction SilentlyContinue
         }
     }
 }
