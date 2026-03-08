@@ -79,8 +79,17 @@ pub struct Engine {
     jit: JitEngine,
     root_objects: HashMap<String, String>,
     event_dispatcher: Mutex<EventDispatcher>,
+    com_subscription_handlers: Mutex<HashMap<i32, String>>,
     runtime_profile: RuntimeProfileId,
     host_services: Arc<dyn HostServices>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ComEventCallbackDispatch {
+    pub callback_token: i32,
+    pub subscription_token: i32,
+    pub handler_symbol: String,
+    pub arg0: i32,
 }
 
 impl Default for Engine {
@@ -99,6 +108,7 @@ impl Engine {
             jit: JitEngine,
             root_objects: HashMap::new(),
             event_dispatcher: Mutex::new(EventDispatcher::default()),
+            com_subscription_handlers: Mutex::new(HashMap::new()),
             runtime_profile,
             host_services: adapters::for_profile_with_runtime_class(
                 runtime_profile.hal_profile(),
@@ -237,6 +247,101 @@ impl Engine {
                 dispatcher.dispatch(&EventSourceKey::new(project_name, module_name, event_name))
             })
             .unwrap_or_default()
+    }
+
+    pub fn subscribe_com_event_handler(
+        &self,
+        object_token: i32,
+        event_token: i32,
+        handler_symbol: &str,
+    ) -> Result<i32, PhaseDiagnostic> {
+        let subscription = self
+            .host_services
+            .com()
+            .subscribe_event(object_token, event_token)
+            .map_err(|err| PhaseDiagnostic::runtime(err.to_string()))?;
+        self.com_subscription_handlers
+            .lock()
+            .map_err(|_| {
+                PhaseDiagnostic::runtime(
+                    "COM subscription handler registry lock poisoned during subscribe",
+                )
+            })?
+            .insert(subscription, handler_symbol.trim().to_ascii_lowercase());
+        Ok(subscription)
+    }
+
+    pub fn unsubscribe_com_event_handler(
+        &self,
+        subscription_token: i32,
+    ) -> Result<bool, PhaseDiagnostic> {
+        self.host_services
+            .com()
+            .unsubscribe_event(subscription_token)
+            .map_err(|err| PhaseDiagnostic::runtime(err.to_string()))?;
+        let removed = self
+            .com_subscription_handlers
+            .lock()
+            .map_err(|_| {
+                PhaseDiagnostic::runtime(
+                    "COM subscription handler registry lock poisoned during unsubscribe",
+                )
+            })?
+            .remove(&subscription_token)
+            .is_some();
+        Ok(removed)
+    }
+
+    pub fn poll_com_event_callback(
+        &self,
+    ) -> Result<Option<ComEventCallbackDispatch>, PhaseDiagnostic> {
+        let callback_token = self
+            .host_services
+            .events()
+            .do_events()
+            .map_err(|err| PhaseDiagnostic::runtime(err.to_string()))?;
+        if callback_token == 0 {
+            return Ok(None);
+        }
+
+        let subscription_token = self
+            .host_services
+            .com()
+            .event_callback_subscription(callback_token)
+            .map_err(|err| PhaseDiagnostic::runtime(err.to_string()))?;
+        let arg0 = self
+            .host_services
+            .com()
+            .event_callback_arg(callback_token, 0)
+            .map_err(|err| PhaseDiagnostic::runtime(err.to_string()))?;
+        self.host_services
+            .com()
+            .release_event_callback(callback_token)
+            .map_err(|err| PhaseDiagnostic::runtime(err.to_string()))?;
+
+        let handler_symbol = self
+            .com_subscription_handlers
+            .lock()
+            .map_err(|_| {
+                PhaseDiagnostic::runtime(
+                    "COM subscription handler registry lock poisoned during callback poll",
+                )
+            })?
+            .get(&subscription_token)
+            .cloned()
+            .ok_or_else(|| {
+                PhaseDiagnostic::runtime(format!(
+                    "PMR-E-EVENT-DISPATCH-TARGET-MISSING: no handler binding for COM subscription token {}",
+                    subscription_token
+                ))
+            })?;
+
+        Ok(Some(ComEventCallbackDispatch {
+            callback_token,
+            subscription_token,
+            handler_symbol,
+            arg0,
+        }))
     }
 
     pub fn execute_source(&self, source: &str) -> Result<(), String> {
@@ -1581,6 +1686,77 @@ mod tests {
 
         let handlers = engine.dispatch_host_event("ProjectA", "Emitter", "Changed");
         assert_eq!(handlers, vec!["pmr_projecta_sinka_em_changed".to_string()]);
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn formal_com_event_callback_ingress_maps_to_registered_handler_symbol() {
+        let mut engine = Engine::new(HostConfig::default());
+        engine.set_host_policy(HostPolicy::interactive_dev());
+
+        let object = engine
+            .host_services
+            .com()
+            .create_object(4)
+            .expect("create_object should return controlled COM object");
+        let subscription = engine
+            .subscribe_com_event_handler(object, 1, "SinkA_OnChanged")
+            .expect("subscribe_com_event_handler should succeed");
+
+        let _ = engine
+            .host_services
+            .com()
+            .dispatch_invoke(object, 3, 77)
+            .expect("dispatch_invoke should queue callback");
+        let callback = engine
+            .poll_com_event_callback()
+            .expect("callback poll should succeed")
+            .expect("callback should be available");
+
+        assert_eq!(callback.subscription_token, subscription);
+        assert_eq!(callback.handler_symbol, "sinka_onchanged");
+        assert_eq!(callback.arg0, 77);
+        assert!(callback.callback_token >= 60_001);
+        assert!(
+            engine
+                .unsubscribe_com_event_handler(subscription)
+                .expect("unsubscribe should succeed"),
+            "subscription binding should have been tracked"
+        );
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn formal_com_event_callback_ingress_requires_registered_handler_binding() {
+        let mut engine = Engine::new(HostConfig::default());
+        engine.set_host_policy(HostPolicy::interactive_dev());
+
+        let object = engine
+            .host_services
+            .com()
+            .create_object(4)
+            .expect("create_object should return controlled COM object");
+        let subscription = engine
+            .host_services
+            .com()
+            .subscribe_event(object, 1)
+            .expect("subscribe_event should succeed");
+        let _ = engine
+            .host_services
+            .com()
+            .dispatch_invoke(object, 3, 21)
+            .expect("dispatch_invoke should queue callback");
+
+        let err = engine
+            .poll_com_event_callback()
+            .expect_err("callback without handler binding should fail deterministically");
+        assert_eq!(err.phase(), DiagnosticPhase::Runtime);
+        assert!(
+            err.message()
+                .contains("PMR-E-EVENT-DISPATCH-TARGET-MISSING")
+        );
+
+        let _ = engine.host_services.com().unsubscribe_event(subscription);
     }
 
     #[test]
