@@ -142,6 +142,14 @@ impl ComHal for NullHostServices {
     fn dispatch_invoke(&self, _object: i32, _member: i32, _arg: i32) -> HalResult<i32> {
         Err(self.unsupported(CapabilityId::ComActivationDispatch, "dispatch_invoke"))
     }
+
+    fn subscribe_event(&self, _object: i32, _event: i32) -> HalResult<i32> {
+        Err(self.unsupported(CapabilityId::ComActivationDispatch, "subscribe_event"))
+    }
+
+    fn unsubscribe_event(&self, _subscription: i32) -> HalResult<i32> {
+        Err(self.unsupported(CapabilityId::ComActivationDispatch, "unsubscribe_event"))
+    }
 }
 
 impl TypeLibraryHal for NullHostServices {
@@ -204,7 +212,7 @@ impl DiagnosticsHal for NullHostServices {
 mod tests {
     use crate::{
         error::HalErrorKind,
-        traits::{DiagnosticsHal, ProcessEnvHal, TimeLocaleHal, UiInteractionHal},
+        traits::{ComHal, DiagnosticsHal, ProcessEnvHal, TimeLocaleHal, UiInteractionHal},
     };
 
     use super::NullHostServices;
@@ -227,6 +235,18 @@ mod tests {
         );
         assert_eq!(
             host.shell(1, 0).expect_err("shell").kind,
+            HalErrorKind::CapabilityUnavailable
+        );
+        assert_eq!(
+            host.subscribe_event(1, 1)
+                .expect_err("subscribe_event")
+                .kind,
+            HalErrorKind::CapabilityUnavailable
+        );
+        assert_eq!(
+            host.unsubscribe_event(1)
+                .expect_err("unsubscribe_event")
+                .kind,
             HalErrorKind::CapabilityUnavailable
         );
     }

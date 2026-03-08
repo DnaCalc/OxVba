@@ -176,6 +176,14 @@ impl ComHal for WasmHostServices {
     fn dispatch_invoke(&self, _object: i32, _member: i32, _arg: i32) -> HalResult<i32> {
         Err(self.unsupported(CapabilityId::ComActivationDispatch, "dispatch_invoke"))
     }
+
+    fn subscribe_event(&self, _object: i32, _event: i32) -> HalResult<i32> {
+        Err(self.unsupported(CapabilityId::ComActivationDispatch, "subscribe_event"))
+    }
+
+    fn unsubscribe_event(&self, _subscription: i32) -> HalResult<i32> {
+        Err(self.unsupported(CapabilityId::ComActivationDispatch, "unsubscribe_event"))
+    }
 }
 
 impl TypeLibraryHal for WasmHostServices {
@@ -239,7 +247,7 @@ mod tests {
     use crate::{
         error::HalErrorKind,
         model::{CapabilityId, UiVirtualizationMode, WasmRuntimeClass},
-        traits::{HostServices, ProcessEnvHal, UiInteractionHal},
+        traits::{ComHal, HostServices, ProcessEnvHal, UiInteractionHal},
     };
 
     use super::WasmHostServices;
@@ -266,6 +274,18 @@ mod tests {
         let host = WasmHostServices::new(crate::HostPolicy::interactive_dev());
         assert_eq!(
             host.shell(1, 0).expect_err("shell").kind,
+            HalErrorKind::CapabilityUnavailable
+        );
+        assert_eq!(
+            host.subscribe_event(1, 1)
+                .expect_err("subscribe_event")
+                .kind,
+            HalErrorKind::CapabilityUnavailable
+        );
+        assert_eq!(
+            host.unsubscribe_event(1)
+                .expect_err("unsubscribe_event")
+                .kind,
             HalErrorKind::CapabilityUnavailable
         );
     }

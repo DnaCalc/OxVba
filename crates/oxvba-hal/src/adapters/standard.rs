@@ -1274,6 +1274,38 @@ impl ComHal for StandardHostServices {
         };
         Ok(object.saturating_add(member).saturating_add(arg))
     }
+
+    fn subscribe_event(&self, _object: i32, _event: i32) -> HalResult<i32> {
+        let capability = CapabilityId::ComActivationDispatch;
+        if !self.supports(capability) {
+            return Err(self.unsupported(capability, "subscribe_event"));
+        }
+        if !self.policy.allow_com_activation {
+            return Err(self.denied(capability, "subscribe_event"));
+        }
+        Err(HalError::adapter_fault(
+            self.profile,
+            capability,
+            "subscribe_event",
+            "COM event subscribe bridge is not implemented in this lane",
+        ))
+    }
+
+    fn unsubscribe_event(&self, _subscription: i32) -> HalResult<i32> {
+        let capability = CapabilityId::ComActivationDispatch;
+        if !self.supports(capability) {
+            return Err(self.unsupported(capability, "unsubscribe_event"));
+        }
+        if !self.policy.allow_com_activation {
+            return Err(self.denied(capability, "unsubscribe_event"));
+        }
+        Err(HalError::adapter_fault(
+            self.profile,
+            capability,
+            "unsubscribe_event",
+            "COM event unsubscribe bridge is not implemented in this lane",
+        ))
+    }
 }
 
 impl TypeLibraryHal for StandardHostServices {
@@ -2962,6 +2994,22 @@ mod tests {
         assert!(host.date_serial_now().expect("date") >= 0);
         assert!(host.time_serial_now().expect("time") >= 0);
         assert!(host.timer_ticks().expect("ticks") >= 0);
+    }
+
+    #[test]
+    fn com_event_subscription_lane_is_explicitly_unimplemented() {
+        let host = StandardHostServices::new(HalProfileId::Windows, HostPolicy::interactive_dev());
+        let subscribe = host
+            .subscribe_event(1, 1)
+            .expect_err("subscribe_event should be explicitly unimplemented");
+        assert_eq!(subscribe.kind, HalErrorKind::AdapterFault);
+        assert_eq!(subscribe.operation, "subscribe_event");
+
+        let unsubscribe = host
+            .unsubscribe_event(1)
+            .expect_err("unsubscribe_event should be explicitly unimplemented");
+        assert_eq!(unsubscribe.kind, HalErrorKind::AdapterFault);
+        assert_eq!(unsubscribe.operation, "unsubscribe_event");
     }
 
     #[cfg(target_os = "windows")]

@@ -110,6 +110,8 @@ pub trait ComHal: Send + Sync {
         member: ValueToken,
         arg: ValueToken,
     ) -> HalResult<ValueToken>;
+    fn subscribe_event(&self, object: ValueToken, event: ValueToken) -> HalResult<ValueToken>;
+    fn unsubscribe_event(&self, subscription: ValueToken) -> HalResult<ValueToken>;
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
