@@ -47,6 +47,9 @@ Run context: full events parity closure (non-COM + Windows COM)
     - callback token ingress path into actual handler procedure execution path (ingress mapping exists; callback -> direct procedure invocation is not yet wired),
     - typelib-driven callback argument shape mapping from COM metadata into handler signature enforcement beyond current controlled lane,
     - explicit `COM-EVT-B` implementation or formal deterministic unsupported closure.
+  - Immediate architecture blocker for first bullet:
+    - host/runtime lane currently executes fixed project entrypoint and lacks an in-runtime "invoke procedure by symbol in existing instance graph" primitive,
+    - without that primitive, callback ingress can map to handler symbol but cannot dispatch into live project state with VBA-parity object identity semantics.
 - Exact unblocking steps:
   1. Lock COM event bridge contract for callback ingress (`COM-EVT-A` required, `COM-EVT-B` implementation/defer decision).
   2. Implement callback ingress wiring into unified runtime event dispatch model.
