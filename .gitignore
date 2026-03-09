@@ -4,3 +4,6 @@ Cargo.lock
 
 # Local/transient artifacts
 temp/
+.claude/
+tools/**/bin/
+tools/**/obj/

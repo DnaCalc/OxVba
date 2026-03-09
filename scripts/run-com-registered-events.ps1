@@ -9,8 +9,8 @@ param(
     [Nullable[int]]$DispatchMember = $null,
     [bool]$TriggerRequiresArg = $true,
     [string]$TriggerInvokeKind = "",
-    [int]$PollIterations = 40,
-    [int]$PollDelayMs = 50,
+    [int]$PollIterations = 80,
+    [int]$PollDelayMs = 25,
     [switch]$ForceRegisteredTestDispatch,
     [switch]$EnableTrace,
     [switch]$NoCapture,
@@ -25,7 +25,10 @@ $PSNativeCommandUseErrorActionPreference = $false
 
 Push-Location (Join-Path $PSScriptRoot "..")
 try {
-    if (-not $IsWindows) {
+    $isWindowsHost = [System.Runtime.InteropServices.RuntimeInformation]::IsOSPlatform(
+        [System.Runtime.InteropServices.OSPlatform]::Windows
+    )
+    if (-not $isWindowsHost) {
         throw "registered COM event lane is Windows-only"
     }
     if ([string]::IsNullOrWhiteSpace($RunId)) {
@@ -36,6 +39,29 @@ try {
     }
 
     $progIdNormalized = $ProgId.Trim().ToLowerInvariant()
+    if ($progIdNormalized -eq "oxvba.testeventserver") {
+        if (-not $PSBoundParameters.ContainsKey("EventToken")) {
+            $EventToken = 1
+        }
+        if (-not $PSBoundParameters.ContainsKey("TriggerMember")) {
+            $TriggerMember = 101
+        }
+        if (-not $PSBoundParameters.ContainsKey("TriggerArg")) {
+            $TriggerArg = 0
+        }
+        if (-not $PSBoundParameters.ContainsKey("ExpectedArgCount")) {
+            $ExpectedArgCount = 0
+        }
+        if (-not $PSBoundParameters.ContainsKey("TriggerRequiresArg")) {
+            $TriggerRequiresArg = $false
+        }
+        if (-not $PSBoundParameters.ContainsKey("ConnectionPointIid")) {
+            $ConnectionPointIid = "E2A30001-0001-0001-0001-000000000002"
+        }
+        if (-not $PSBoundParameters.ContainsKey("DispatchMember")) {
+            $DispatchMember = 1
+        }
+    }
     if ($progIdNormalized -eq "excel.application") {
         if (-not $PSBoundParameters.ContainsKey("EventToken")) {
             $EventToken = 10
@@ -159,8 +185,15 @@ try {
         Write-Host "[oxvba] force registered test dispatch: $($ForceRegisteredTestDispatch.ToString().ToLowerInvariant())"
         Write-Host "[oxvba] com event trace: $($EnableTrace.ToString().ToLowerInvariant())"
         Write-Host "[oxvba] command: $cmdText"
-        $null = & cargo @cmd 2>&1 | Tee-Object -FilePath $logPath
-        $exitCode = $LASTEXITCODE
+        $prevErrorActionPreference = $ErrorActionPreference
+        try {
+            $ErrorActionPreference = "Continue"
+            $cargoOutput = & cargo @cmd 2>&1
+            $exitCode = $LASTEXITCODE
+        } finally {
+            $ErrorActionPreference = $prevErrorActionPreference
+        }
+        $cargoOutput | Tee-Object -FilePath $logPath | Out-Null
         $finishedUtc = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
         $status = if ($exitCode -eq 0) { "pass" } else { "fail" }
 

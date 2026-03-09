@@ -65,6 +65,8 @@ const DISPATCH_INVOKE_MISSING_ARG_TOKEN: i32 = i32::MIN + 2_048;
 const OXVBA_TEST_DISPATCH_PROGID: &str = "OxVba.TestDispatch";
 #[cfg(target_os = "windows")]
 const EXCEL_APPLICATION_PROGID: &str = "Excel.Application";
+#[cfg(target_os = "windows")]
+const OXVBA_TEST_EVENT_SERVER_PROGID: &str = "OxVba.TestEventServer";
 
 #[derive(Debug, Clone)]
 pub(crate) struct StandardHostServices {
@@ -547,6 +549,74 @@ impl StandardHostServices {
                 .map(|entry| (entry.name.clone(), entry.token))
                 .collect();
             (member_name_to_token, members, events)
+        } else if identity.importlib.eq_ignore_ascii_case("oxvba_testeventserver.tlb")
+            || identity.libid.as_deref().is_some_and(|libid| {
+                libid.eq_ignore_ascii_case("E2A30001-0001-0001-0001-000000000001")
+            })
+        {
+            let members = vec![
+                TypeLibMemberMetadata {
+                    name: "FireSimpleEvent".to_string(),
+                    token: TEST_EVENT_SERVER_DISPID_FIRE_SIMPLE,
+                    requires_argument: false,
+                    invoke_kind: TypeLibMemberInvokeKind::Method,
+                },
+                TypeLibMemberMetadata {
+                    name: "FireValueChanged".to_string(),
+                    token: TEST_EVENT_SERVER_DISPID_FIRE_VALUE_CHANGED,
+                    requires_argument: true,
+                    invoke_kind: TypeLibMemberInvokeKind::Method,
+                },
+                TypeLibMemberMetadata {
+                    name: "FirePairChanged".to_string(),
+                    token: TEST_EVENT_SERVER_DISPID_FIRE_PAIR_CHANGED,
+                    requires_argument: true,
+                    invoke_kind: TypeLibMemberInvokeKind::Method,
+                },
+                TypeLibMemberMetadata {
+                    name: "Ping".to_string(),
+                    token: TEST_EVENT_SERVER_DISPID_PING,
+                    requires_argument: false,
+                    invoke_kind: TypeLibMemberInvokeKind::Method,
+                },
+            ];
+            let events = vec![
+                TypeLibEventMetadata {
+                    name: "SimpleEvent".to_string(),
+                    token: TEST_EVENT_SERVER_EVENT_SIMPLE,
+                    callback_arity: 0,
+                    dispatch_path: TypeLibEventDispatchPath::Dispatch,
+                    connection_point_iid: Some(
+                        IID_OXVBA_TEST_EVENT_SERVER_EVENTS_STR.to_string(),
+                    ),
+                    dispatch_member_id: Some(TEST_EVENT_SERVER_EVENT_SIMPLE),
+                },
+                TypeLibEventMetadata {
+                    name: "ValueChanged".to_string(),
+                    token: TEST_EVENT_SERVER_EVENT_VALUE_CHANGED,
+                    callback_arity: 1,
+                    dispatch_path: TypeLibEventDispatchPath::Dispatch,
+                    connection_point_iid: Some(
+                        IID_OXVBA_TEST_EVENT_SERVER_EVENTS_STR.to_string(),
+                    ),
+                    dispatch_member_id: Some(TEST_EVENT_SERVER_EVENT_VALUE_CHANGED),
+                },
+                TypeLibEventMetadata {
+                    name: "PairChanged".to_string(),
+                    token: TEST_EVENT_SERVER_EVENT_PAIR_CHANGED,
+                    callback_arity: 2,
+                    dispatch_path: TypeLibEventDispatchPath::Dispatch,
+                    connection_point_iid: Some(
+                        IID_OXVBA_TEST_EVENT_SERVER_EVENTS_STR.to_string(),
+                    ),
+                    dispatch_member_id: Some(TEST_EVENT_SERVER_EVENT_PAIR_CHANGED),
+                },
+            ];
+            let member_name_to_token = members
+                .iter()
+                .map(|entry| (entry.name.clone(), entry.token))
+                .collect();
+            (member_name_to_token, members, events)
         } else if identity.importlib.eq_ignore_ascii_case("scrrun.dll")
             || identity.libid.as_deref().is_some_and(|libid| {
                 libid.eq_ignore_ascii_case("420B2830-E718-11CF-893D-00A0C9054228")
@@ -615,6 +685,17 @@ impl StandardHostServices {
                 minor_version: 0,
                 lcid: Some(0),
                 cache_key: "typelib:excel.application:1.0:0".to_string(),
+            });
+        }
+        if prog_id_name.eq_ignore_ascii_case(OXVBA_TEST_EVENT_SERVER_PROGID) {
+            return Some(TypeLibResolvedIdentity {
+                reference_name: "OxVba.TestEventServer".to_string(),
+                importlib: "oxvba_testeventserver.tlb".to_string(),
+                libid: Some("E2A30001-0001-0001-0001-000000000001".to_string()),
+                major_version: 1,
+                minor_version: 0,
+                lcid: Some(0),
+                cache_key: "typelib:oxvba-testeventserver:1.0:0".to_string(),
             });
         }
         if !prog_id_name.eq_ignore_ascii_case(OXVBA_TEST_DISPATCH_PROGID) {
@@ -1661,9 +1742,7 @@ impl EventPumpHal for StandardHostServices {
             return Err(self.unsupported(capability, "do_events"));
         }
         if self.native_mode_enabled() {
-            if self.profile == HalProfileId::Windows
-                && self.runtime_class() == HalRuntimeClass::WindowsGui
-            {
+            if self.profile == HalProfileId::Windows {
                 self.pump_windows_messages_once();
             }
             thread::yield_now();
@@ -3611,6 +3690,8 @@ const IID_OXVBA_TEST_DISPATCH_SOURCE_EVENTS: windows_sys::core::GUID = windows_s
 const IID_OXVBA_TEST_DISPATCH_SOURCE_EVENTS_STR: &str = "11111113-2222-3333-4444-555555555557";
 #[cfg(target_os = "windows")]
 const IID_EXCEL_APPLICATION_EVENTS_STR: &str = "00024413-0000-0000-C000-000000000046";
+#[cfg(target_os = "windows")]
+const IID_OXVBA_TEST_EVENT_SERVER_EVENTS_STR: &str = "E2A30001-0001-0001-0001-000000000002";
 
 #[cfg(target_os = "windows")]
 const COM_S_OK: i32 = 0;
@@ -3649,6 +3730,13 @@ const TEST_EVENT_CHANGED: i32 = 1;
 const TEST_EVENT_CHANGED_SOURCE_INTERFACE: i32 = 2;
 const TEST_EVENT_CHANGED_PAIR: i32 = 3;
 const TEST_EVENT_EXCEL_APP_QUIT: i32 = 10;
+const TEST_EVENT_SERVER_DISPID_FIRE_SIMPLE: i32 = 101;
+const TEST_EVENT_SERVER_DISPID_FIRE_VALUE_CHANGED: i32 = 102;
+const TEST_EVENT_SERVER_DISPID_FIRE_PAIR_CHANGED: i32 = 103;
+const TEST_EVENT_SERVER_DISPID_PING: i32 = 104;
+const TEST_EVENT_SERVER_EVENT_SIMPLE: i32 = 1;
+const TEST_EVENT_SERVER_EVENT_VALUE_CHANGED: i32 = 2;
+const TEST_EVENT_SERVER_EVENT_PAIR_CHANGED: i32 = 3;
 const COM_EVENT_DISPATCH_MEMBER_WILDCARD: i32 = i32::MIN + 3_333;
 
 #[cfg(target_os = "windows")]
@@ -3813,6 +3901,7 @@ struct OxvbaComEventSink {
     event_token: i32,
     event_dispatch_member: i32,
     expected_arity: usize,
+    connection_point_iid: Option<windows_sys::core::GUID>,
 }
 
 #[cfg(target_os = "windows")]
@@ -3949,6 +4038,7 @@ fn create_oxvba_com_event_sink(
     event_token: i32,
     event_dispatch_member: i32,
     expected_arity: usize,
+    connection_point_iid: Option<windows_sys::core::GUID>,
 ) -> *mut core::ffi::c_void {
     let sink = Box::new(OxvbaComEventSink {
         dispatch: RawIDispatch {
@@ -3961,6 +4051,7 @@ fn create_oxvba_com_event_sink(
         event_token,
         event_dispatch_member,
         expected_arity,
+        connection_point_iid,
     });
     Box::into_raw(sink).cast::<core::ffi::c_void>()
 }
@@ -4799,6 +4890,14 @@ unsafe extern "system" fn oxvba_event_sink_query_interface(
         (*sink).ref_count.fetch_add(1, Ordering::AcqRel);
         return COM_S_OK;
     }
+    let sink = as_oxvba_com_event_sink(this);
+    if let Some(ref cp_iid) = (*sink).connection_point_iid {
+        if guid_equals(riid, cp_iid) {
+            *ppv = this;
+            (*sink).ref_count.fetch_add(1, Ordering::AcqRel);
+            return COM_S_OK;
+        }
+    }
     COM_E_NOINTERFACE
 }
 
@@ -5141,6 +5240,7 @@ unsafe fn raw_try_advise_connection_point_event(
             request.event_token,
             event_dispatch_member,
             request.expected_arity,
+            Some(event_interface),
         ),
         ComConnectionPointSinkMode::SourceInterface => {
             if !guid_equals(&event_interface, &IID_OXVBA_TEST_DISPATCH_SOURCE_EVENTS) {

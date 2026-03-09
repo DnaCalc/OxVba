@@ -1,0 +1,23 @@
+# COM Lane L2E Run
+
+- Run ID: 20260308T223358Z
+- Lane: L2E registered event callback
+- Status: pass
+- Exit code: 0
+- Started UTC: 2026-03-08T22:33:58Z
+- Finished UTC: 2026-03-08T22:33:59Z
+- Command: cargo test -p oxvba-host --test com_client_registered_lane windows_registered_com_lane::registered_event_callback_success_when_event_capable_server_is_configured -- --ignored --exact --test-threads=1 --nocapture
+- ProgID: OxVba.TestEventServer
+- Event token: 3
+- Trigger member: 103
+- Trigger arg: 77
+- Expected callback arg count: 2
+- Event path override: <default>
+- Connection-point IID override: E2A30001-0001-0001-0001-000000000002
+- Dispatch-member override: <default>
+- Trigger requires arg: false
+- Trigger invoke kind override: <default>
+- Callback poll iterations: 80
+- Callback poll delay ms: 25
+- COM event trace: true
+- Log: docs\evidence\conformance\com\COM_LANE_L2E_LOG_OxVba.TestEventServer_20260308T223358Z.txt

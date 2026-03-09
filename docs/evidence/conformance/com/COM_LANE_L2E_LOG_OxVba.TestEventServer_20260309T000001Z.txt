@@ -1,0 +1,13 @@
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 4.43s
+     Running tests\com_client_registered_lane.rs (target\debug\deps\com_client_registered_lane-b494b64bd4cfbbb8.exe)
+
+running 1 test
+[oxvba-hal][com-event] resolve-transport object=20001 event=1 iid=E2A30001-0001-0001-0001-000000000002 dispatch_member=-2147480315 resolved=native-connection-point
+[oxvba-hal][com-event] subscribe object=20001 event=1 subscription=40001 transport=native-connection-point arity=0
+[oxvba-hal][com-event] sink-invoke subscription=40001 object=20001 event=1 dispid=1 args=[] queued=true
+[oxvba-hal][com-event] projection-trigger object=20001 member=101 event=1 args=[] queued_subscriptions=0
+[oxvba-hal][com-event] do-events callback=60001 remaining_pending=0
+test windows_registered_com_lane::registered_event_callback_success_when_event_capable_server_is_configured ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 7 filtered out; finished in 0.14s
+

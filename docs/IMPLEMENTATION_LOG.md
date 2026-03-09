@@ -1,5 +1,41 @@
 # Implementation Log
 
+## 2026-03-09
+- External registered COM event parity closure + housekeeping batch:
+  - adopted and normalized the dirty work batch around external registered COM callbacks;
+  - added repo ignore rules for local/editor and .NET build residue:
+    - `.claude/`
+    - `tools/**/bin/`
+    - `tools/**/obj/`
+  - added deterministic external registered COM test fixture:
+    - `tools/OxVba.TestEventServer/OxVba.TestEventServer.csproj`
+    - `tools/OxVba.TestEventServer/TestEventServer.cs`
+    - registration helpers:
+      - `tools/OxVba.TestEventServer/register.ps1`
+      - `tools/OxVba.TestEventServer/OxVba.TestEventServer.reg`
+      - `tools/OxVba.TestEventServer/OxVba.TestEventServer.hkcu.reg`
+  - extended HAL/type-library metadata for `OxVba.TestEventServer` and hardened callback ingress:
+    - known ProgID/typelib identity + member/event metadata mapping
+    - Windows message pumping during `DoEvents` for all Windows profiles
+    - event sink `QueryInterface` now answers the configured connection-point IID
+  - updated registered event lane test/script surface:
+    - `crates/oxvba-host/tests/com_client_registered_lane.rs`
+    - `scripts/run-com-registered-events.ps1`
+  - validated external registered callback delivery using per-user registration and fresh evidence:
+    - zero-arg callback: `COM_LANE_L2E_RUN_OxVba.TestEventServer_20260309T000001Z.md`
+    - one-arg callback: `COM_LANE_L2E_RUN_OxVba.TestEventServer_20260309T000002Z.md`
+    - pair callback: `COM_LANE_L2E_RUN_OxVba.TestEventServer_20260309T000003Z.md`
+    - Windows PowerShell harness compatibility smoke: `COM_LANE_L2E_RUN_OxVba.TestEventServer_20260309T000005Z.md`
+  - documented blocker closure in `CURRENT_BLOCKERS.md` and refreshed `COM_LANE_L2E_LATEST_OxVba.TestEventServer.csv`.
+  - important scope note:
+    - late-bound COM dispatch is still single-argument at the HAL boundary (`dispatch_invoke(object, member, arg)`).
+    - current multi-value behavior is limited to callback payload delivery, not general multi-argument late-bound method calls.
+    - the VM/runtime can pass an array-shaped token across the dispatch boundary, but this is not equivalent to full COM `IDispatch::Invoke` support for arbitrary multi-argument argument lists.
+  - residual observation from fresh trace evidence:
+    - native connection-point pair callback delivery produced `args=[77, 78]`,
+    - synthetic projection trace still showed `args=[77, 77]` with `queued_subscriptions=0`,
+    - current external registered lane is therefore green, but synthetic projection for pair events still needs direct correctness coverage if that path remains relevant.
+
 ## 2026-03-05
 - COM early-binding + type-library planning pass (research-first, three-iteration cross-reference):
   - completed online source pass over MS-VBAL, MS-OAUT, MS-OVBA, Win32 OleAut APIs, and VBA references APIs;

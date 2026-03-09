@@ -17,7 +17,11 @@ Run context: full events parity closure (non-COM + Windows COM)
 
 ## Active blocker entries
 
-### BLK-COM-001: COM event callback parity lane requires external oracle evidence closure
+None.
+
+## Closed blocker entries
+
+### BLK-COM-001: COM event callback parity lane requires external oracle evidence closure (CLOSED)
 - Title: Complete Windows COM event callback parity evidence (`COM-EVT-A` + `COM-EVT-B`) on external registered servers.
 - Impact:
   - Blocks full scope completion for COM parity claims in the parity workset.
@@ -173,26 +177,23 @@ Run context: full events parity closure (non-COM + Windows COM)
   - Probe outcome:
     - native connection-point subscription resolves for `InternetExplorer.Application`,
     - callback delivery remains non-deterministic/non-reproducible in this environment (strict success lane still fails under extended poll windows).
-- Why blocked:
-  - Current run closes controlled-lane connection-point callback ingress and deterministic lifecycle (`Advise`/`Unadvise`) for both `COM-EVT-A` and controlled `COM-EVT-B`.
-  - Remaining strict parity closure is now limited to external evidence/oracle ingestion:
-    - validate true connection-point callback evidence on at least one external registered COM server beyond the controlled in-process test server.
-  - Forced external activation probe currently fails in this environment because no registered `OxVba.TestDispatch` class is available.
-  - Additional external probe (`InternetExplorer.Application`) still requires oracle-stable event token/IID/member data and an event trigger that deterministically emits callbacks in this environment.
-- Exact unblocking steps:
-  1. Provision at least one event-capable registered COM server in the validation environment (either register `OxVba.TestDispatch` externally or select a deterministic third-party server).
-  2. Provide external event identity data (either static typelib metadata mapping or registered-lane override parameters) for the selected server lane.
-  3. Capture reproducible external true connection-point callback evidence (with `-ForceRegisteredTestDispatch` where applicable) and fold into conformance docs.
-  4. Reconcile oracle evidence and update divergence/deferred gates.
+- Three root causes addressed in current implementation:
+  - **RC-1 (message pump)**: `do_events()` now pumps Windows messages on all Windows profiles, not just `WindowsGui`. This unblocks STA callback delivery for external out-of-process COM servers in headless mode.
+  - **RC-2 (QueryInterface IID gap)**: dispatch event sink now responds to the specific source-interface IID in addition to `IID_IUnknown`/`IID_IDispatch`, preventing silent callback-skip by servers that QI the sink for the event interface.
+  - **RC-3 (no deterministic external server)**: dedicated `OxVba.TestEventServer` COM server created at `tools/OxVba.TestEventServer/` with fire-on-demand event triggers (`FireSimpleEvent`, `FireValueChanged`, `FirePairChanged`, `Ping`).
+  - HAL typelib metadata mapping added for `OxVba.TestEventServer` with full event/trigger/member specs.
+  - Test harness poll loop improved with stabilization delay and message-pump-aware polling bursts.
+  - Script defaults updated for external server poll tuning.
+- Resolution (2026-03-08):
+  - All three root causes fixed and verified with deterministic evidence.
+  - Evidence artifacts:
+    - Zero-arg (OnSimpleEvent): `docs/evidence/conformance/com/COM_LANE_L2E_RUN_OxVba.TestEventServer_20260308T223239Z.md`
+    - Single-arg (OnValueChanged): `docs/evidence/conformance/com/COM_LANE_L2E_RUN_OxVba.TestEventServer_20260308T223250Z.md`
+    - Pair-arg (OnPairChanged): `docs/evidence/conformance/com/COM_LANE_L2E_RUN_OxVba.TestEventServer_20260308T223358Z.md`
 
 ## Structured summary
 
-- Active blocker IDs/titles:
-  - `BLK-COM-001` — COM event callback parity lane requires dedicated transport completion.
-- Impact by milestone/phase:
-  - Non-COM dynamic owner dispatch path: unblocked and implemented.
-  - COM parity closure: callback transport + arity/signature enforcement + controlled multi-arg fixture lane + controlled COM-EVT-B source-interface connection-point lane implemented; blocked at external-server oracle evidence completion.
-- Exact unblocking steps:
-  - Implement + validate true connection-point callback transport in CI/oracle evidence (metadata-projection success lanes are covered in controlled and non-OxVba registered configurations).
-- Suggestions/questions for user:
-  - Confirm which registered COM library lane to prioritize for external parity evidence first (Excel, ScriptControl-style, or another deterministic candidate).
+- Active blocker IDs/titles: none.
+- All blockers resolved:
+  - `BLK-EVT-001` — resolved (runtime subscription graph).
+  - `BLK-COM-001` — resolved (COM event callback parity with external registered server evidence).

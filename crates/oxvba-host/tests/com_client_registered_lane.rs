@@ -10,6 +10,7 @@ mod windows_registered_com_lane {
     enum RegisteredProgIdFlavor {
         ScriptingDictionary,
         OxvbaTestDispatch,
+        OxvbaTestEventServer,
         ExcelApplication,
         Other,
     }
@@ -22,6 +23,9 @@ mod windows_registered_com_lane {
             if prog_id.eq_ignore_ascii_case(OXVBA_TEST_DISPATCH_PROGID) {
                 return Self::OxvbaTestDispatch;
             }
+            if prog_id.eq_ignore_ascii_case("OxVba.TestEventServer") {
+                return Self::OxvbaTestEventServer;
+            }
             if prog_id.eq_ignore_ascii_case("Excel.Application") {
                 return Self::ExcelApplication;
             }
@@ -32,6 +36,7 @@ mod windows_registered_com_lane {
             match self {
                 Self::ScriptingDictionary => Some(0),
                 Self::OxvbaTestDispatch => Some(7),
+                Self::OxvbaTestEventServer => None,
                 Self::ExcelApplication => None,
                 Self::Other => None,
             }
@@ -41,6 +46,7 @@ mod windows_registered_com_lane {
             match self {
                 Self::ScriptingDictionary => Some(0),
                 Self::OxvbaTestDispatch => Some(1),
+                Self::OxvbaTestEventServer => None,
                 Self::ExcelApplication => None,
                 Self::Other => None,
             }
@@ -49,7 +55,10 @@ mod windows_registered_com_lane {
         fn is_event_capable_for_registered_lane(self) -> bool {
             matches!(
                 self,
-                Self::ScriptingDictionary | Self::OxvbaTestDispatch | Self::ExcelApplication
+                Self::ScriptingDictionary
+                    | Self::OxvbaTestDispatch
+                    | Self::OxvbaTestEventServer
+                    | Self::ExcelApplication
             )
         }
     }
@@ -456,6 +465,8 @@ End Sub
             return;
         }
 
+        std::thread::sleep(std::time::Duration::from_millis(100));
+
         let mut callback = None;
         for _ in 0..poll_iterations {
             match engine.poll_com_event_callback() {
@@ -464,7 +475,11 @@ End Sub
                     break;
                 }
                 Ok(None) => {
-                    std::thread::sleep(std::time::Duration::from_millis(poll_delay_ms));
+                    let burst_count = (poll_delay_ms / 5).max(1);
+                    for _ in 0..burst_count {
+                        let _ = engine.poll_com_event_callback();
+                        std::thread::sleep(std::time::Duration::from_millis(5));
+                    }
                 }
                 Err(err) => {
                     let _ = engine.unsubscribe_com_event_handler(subscription);
