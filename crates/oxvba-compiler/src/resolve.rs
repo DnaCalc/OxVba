@@ -3095,7 +3095,7 @@ fn intrinsic_spec(name: &str) -> Option<IntrinsicSpec> {
         "shell" | "environ" | "dir" | "createobject" => {
             Some(IntrinsicSpec::fixed(1, HostSensitive))
         }
-        "dispatchinvoke" => Some(IntrinsicSpec::range(2, 3, HostSensitive)),
+        "dispatchinvoke" => Some(IntrinsicSpec::range(2, usize::MAX, HostSensitive)),
         "__oxvba_com_subscribe_event" => Some(IntrinsicSpec::fixed(2, HostSensitive)),
         "__oxvba_com_unsubscribe_event" => Some(IntrinsicSpec::fixed(1, HostSensitive)),
         "__oxvba_com_callback_subscription" => Some(IntrinsicSpec::fixed(1, HostSensitive)),
@@ -3165,14 +3165,14 @@ fn parse_dispatch_invoke_args(
     args_text: &[&str],
     array_bounds: &ArrayBoundsMap,
 ) -> Option<Vec<BoundExpr>> {
-    if !(args_text.len() == 2 || args_text.len() == 3) {
+    if args_text.len() < 2 {
         return None;
     }
     let mut out = Vec::with_capacity(args_text.len());
     out.push(parse_expr(args_text[0], array_bounds)?);
     out.push(parse_dispatch_member_arg(args_text[1], array_bounds)?);
-    if args_text.len() == 3 {
-        out.push(parse_expr(args_text[2], array_bounds)?);
+    for arg in &args_text[2..] {
+        out.push(parse_expr(arg, array_bounds)?);
     }
     Some(out)
 }
@@ -3209,6 +3209,10 @@ fn map_dispatch_member_literal_token(text: &str) -> Option<i32> {
         "setvalueref" => Some(8),
         "value" => Some(9),
         "quit" => Some(10),
+        "sumpair" => Some(12),
+        "lookuppair" => Some(13),
+        "setindexedvalue" => Some(14),
+        "setindexedvalueref" => Some(15),
         _ => None,
     }
 }

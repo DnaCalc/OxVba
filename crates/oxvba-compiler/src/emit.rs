@@ -1,6 +1,5 @@
 use std::collections::{BTreeMap, HashMap};
 
-use oxvba_com::DISPATCH_INVOKE_MISSING_ARG_TOKEN;
 use oxvba_runtime::{
     safe_array::ARRAY_TAG_BASE,
     value_tags::{EMPTY_TAG, ERROR_TAG_BASE, ERROR_TAG_LIMIT, NULL_TAG},
@@ -1055,28 +1054,25 @@ fn emit_late_bound_default_member_call(
         slot: member_slot,
         value: 0,
     });
-    let arg_slot = temps.alloc_temp();
-    if let Some(first_arg) = args.first() {
+    let mut arg_slots = Vec::with_capacity(args.len());
+    for arg in args {
+        let arg_slot = temps.alloc_temp();
         emit_expr_into(
-            &first_arg.expr,
+            &arg.expr,
             compare_mode,
             arg_slot,
             slot_map,
             temps,
             instructions,
         );
-    } else {
-        instructions.push(Instruction::LoadConstI32 {
-            slot: arg_slot,
-            value: 0,
-        });
+        arg_slots.push(arg_slot);
     }
     let dst = assign_target.unwrap_or_else(|| temps.alloc_temp());
     instructions.push(Instruction::IntrinsicDispatchInvokeHost {
         dst,
         object: object_slot,
         member: member_slot,
-        arg: arg_slot,
+        args: arg_slots,
     });
     true
 }
@@ -1920,25 +1916,12 @@ fn emit_expr_into(
                         prog_id: *prog_id,
                     })
                 }
-                ("dispatchinvoke", [object, member, arg]) => {
+                ("dispatchinvoke", [object, member, args @ ..]) => {
                     instructions.push(Instruction::IntrinsicDispatchInvokeHost {
                         dst,
                         object: *object,
                         member: *member,
-                        arg: *arg,
-                    })
-                }
-                ("dispatchinvoke", [object, member]) => {
-                    let missing_arg = temps.alloc_temp();
-                    instructions.push(Instruction::LoadConstI32 {
-                        slot: missing_arg,
-                        value: DISPATCH_INVOKE_MISSING_ARG_TOKEN,
-                    });
-                    instructions.push(Instruction::IntrinsicDispatchInvokeHost {
-                        dst,
-                        object: *object,
-                        member: *member,
-                        arg: missing_arg,
+                        args: args.to_vec(),
                     })
                 }
                 ("__oxvba_com_subscribe_event", [object, event]) => {

@@ -97,23 +97,25 @@ mod tests {
 
     #[test]
     fn capability_unavailable_factory_is_stable() {
-        let err =
-            HalError::capability_unavailable(HalProfileId::Null, CapabilityId::UiInteraction, "msg_box");
+        let err = HalError::capability_unavailable(
+            HalProfileId::Null,
+            CapabilityId::UiInteraction,
+            "msg_box",
+        );
         assert_eq!(err.kind, HalErrorKind::CapabilityUnavailable);
         assert_eq!(err.stable_code, "HAL-E-CAP-UNAVAILABLE");
         assert_eq!(err.profile, HalProfileId::Null);
         assert_eq!(err.capability, CapabilityId::UiInteraction);
         assert_eq!(err.operation, "msg_box");
-        assert_eq!(err.message, "capability is not supported by active HAL profile");
+        assert_eq!(
+            err.message,
+            "capability is not supported by active HAL profile"
+        );
     }
 
     #[test]
     fn policy_denied_factory_is_stable() {
-        let err = HalError::policy_denied(
-            HalProfileId::Windows,
-            CapabilityId::ProcessEnv,
-            "shell",
-        );
+        let err = HalError::policy_denied(HalProfileId::Windows, CapabilityId::ProcessEnv, "shell");
         assert_eq!(err.kind, HalErrorKind::PolicyDenied);
         assert_eq!(err.stable_code, "HAL-E-POLICY-DENIED");
         assert_eq!(err.profile, HalProfileId::Windows);

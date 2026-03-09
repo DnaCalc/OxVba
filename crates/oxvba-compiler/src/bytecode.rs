@@ -358,7 +358,7 @@ pub enum Instruction {
         dst: usize,
         object: usize,
         member: usize,
-        arg: usize,
+        args: Vec<usize>,
     },
     IntrinsicComSubscribeEventHost {
         dst: usize,

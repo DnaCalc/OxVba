@@ -1,5 +1,6 @@
 use std::{collections::HashMap, sync::Arc};
 
+use oxvba_com::ComInvokeRequest;
 use oxvba_compiler::{Bytecode, Instruction, bytecode::StringCompareMode};
 use oxvba_hal::{
     adapters,
@@ -886,16 +887,17 @@ impl Vm {
                     dst,
                     object,
                     member,
-                    arg,
+                    args,
                 } => {
                     let object = self.read_slot(*object)?;
                     let member = self.read_slot(*member)?;
-                    let arg = marshal_dispatch_argument(self.read_slot(*arg)?);
-                    match self
-                        .host_services
-                        .com()
-                        .dispatch_invoke(object, member, arg)
-                    {
+                    let mut request = ComInvokeRequest::new(object.into(), member, Vec::new());
+                    for arg_slot in args {
+                        request
+                            .args
+                            .push(marshal_dispatch_argument(self.read_slot(*arg_slot)?));
+                    }
+                    match self.host_services.com().dispatch_invoke_v2(&request) {
                         Ok(value) => {
                             self.write_slot(*dst, value)?;
                             pc += 1;
@@ -2166,7 +2168,7 @@ mod tests {
                     dst: 21,
                     object: 20,
                     member: 4,
-                    arg: 6,
+                    args: vec![6],
                 },
                 Instruction::IntrinsicNpvI32 {
                     dst: 31,
@@ -2362,7 +2364,7 @@ mod tests {
                     dst: 4,
                     object: 1,
                     member: 2,
-                    arg: 3,
+                    args: vec![3],
                 },
                 Instruction::Halt,
             ],
@@ -2397,7 +2399,7 @@ mod tests {
                     dst: 6,
                     object: 1,
                     member: 4,
-                    arg: 5,
+                    args: vec![5],
                 },
                 Instruction::IntrinsicDoEventsHost { dst: 7 },
                 Instruction::IntrinsicComEventCallbackSubscriptionHost {
@@ -2470,7 +2472,7 @@ mod tests {
                     dst: 6,
                     object: 1,
                     member: 4,
-                    arg: 5,
+                    args: vec![5],
                 },
                 Instruction::IntrinsicDoEventsHost { dst: 7 },
                 Instruction::IntrinsicComEventCallbackSubscriptionHost {

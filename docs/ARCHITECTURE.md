@@ -10,7 +10,7 @@ Workspace crates and current roles:
 - `oxvba-vm`: register-slot interpreter
 - `oxvba-jit`: JIT backend subset
 - `oxvba-hal`: host/profile/policy boundary plus current shared adapter core
-- `oxvba-com`: emerging shared COM transport/model crate; current extraction target for deeper COM cleanup
+- `oxvba-com`: emerging COM bridge crate; now owns shared COM transport and typelib data models and is the extraction target for deeper COM cleanup
 - `oxvba-host`: engine orchestration, host policy, project runtime sessions, event dispatch
 - `oxvba-cli`: CLI bootstrap/run surface
 
@@ -21,7 +21,7 @@ High-level execution path:
 - `oxvba-compiler` produces `Bytecode`
 - `oxvba-vm` and `oxvba-jit` execute compiled subsets
 - `oxvba-hal` provides profile/policy-governed host services
-- COM-related shared transport/types now begin in `oxvba-com`, while deeper COM execution/state still largely lives in `oxvba-hal` pending extraction
+- COM-related shared transport/types and typelib metadata shapes now begin in `oxvba-com`, while deeper COM execution/state still largely lives in `oxvba-hal` pending extraction
 
 ## Important Current Truths
 

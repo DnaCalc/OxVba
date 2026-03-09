@@ -177,7 +177,7 @@ impl ComHal for WasmHostServices {
         Err(self.unsupported(CapabilityId::ComActivationDispatch, "release_object"))
     }
 
-    fn dispatch_invoke(&self, _object: i32, _member: i32, _arg: i32) -> HalResult<i32> {
+    fn dispatch_invoke_v2(&self, _request: &oxvba_com::ComInvokeRequest) -> HalResult<i32> {
         Err(self.unsupported(CapabilityId::ComActivationDispatch, "dispatch_invoke"))
     }
 

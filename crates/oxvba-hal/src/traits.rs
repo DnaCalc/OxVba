@@ -12,7 +12,11 @@ use crate::{
     error::HalResult,
     model::{HalDescriptor, HalProfileId, HostPolicy},
 };
-use oxvba_com::ComCallbackPayload;
+use oxvba_com::{ComCallbackPayload, ComInvokeRequest};
+pub use oxvba_com::{
+    TypeLibCacheScope, TypeLibEventDispatchPath, TypeLibEventMetadata, TypeLibMemberInvokeKind,
+    TypeLibMemberMetadata, TypeLibMetadataBlob, TypeLibResolveRequest, TypeLibResolvedIdentity,
+};
 
 /// VM/runtime value token crossing the current HAL boundary.
 /// This is intentionally `i32` for the current register-window runtime representation.
@@ -106,12 +110,16 @@ pub trait ProcessEnvHal: Send + Sync {
 pub trait ComHal: Send + Sync {
     fn create_object(&self, prog_id: ValueToken) -> HalResult<ValueToken>;
     fn release_object(&self, object: ValueToken) -> HalResult<ValueToken>;
+    fn dispatch_invoke_v2(&self, request: &ComInvokeRequest) -> HalResult<ValueToken>;
     fn dispatch_invoke(
         &self,
         object: ValueToken,
         member: ValueToken,
         arg: ValueToken,
-    ) -> HalResult<ValueToken>;
+    ) -> HalResult<ValueToken> {
+        let request = ComInvokeRequest::legacy(object, member, arg);
+        self.dispatch_invoke_v2(&request)
+    }
     fn subscribe_event(&self, object: ValueToken, event: ValueToken) -> HalResult<ValueToken>;
     fn unsubscribe_event(&self, subscription: ValueToken) -> HalResult<ValueToken>;
     fn poll_event_callback(&self) -> HalResult<Option<ComCallbackPayload>>;
@@ -119,73 +127,6 @@ pub trait ComHal: Send + Sync {
     fn event_callback_arity(&self, callback: ValueToken) -> HalResult<ValueToken>;
     fn event_callback_arg(&self, callback: ValueToken, index: ValueToken) -> HalResult<ValueToken>;
     fn release_event_callback(&self, callback: ValueToken) -> HalResult<ValueToken>;
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct TypeLibResolveRequest {
-    pub reference_name: String,
-    pub importlib_hint: Option<String>,
-    pub libid_hint: Option<String>,
-    pub major_version_hint: Option<u16>,
-    pub minor_version_hint: Option<u16>,
-    pub lcid_hint: Option<u32>,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct TypeLibResolvedIdentity {
-    pub reference_name: String,
-    pub importlib: String,
-    pub libid: Option<String>,
-    pub major_version: u16,
-    pub minor_version: u16,
-    pub lcid: Option<u32>,
-    pub cache_key: String,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct TypeLibMetadataBlob {
-    pub identity: TypeLibResolvedIdentity,
-    pub member_name_to_token: Vec<(String, ValueToken)>,
-    pub members: Vec<TypeLibMemberMetadata>,
-    pub events: Vec<TypeLibEventMetadata>,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct TypeLibMemberMetadata {
-    pub name: String,
-    pub token: ValueToken,
-    pub requires_argument: bool,
-    pub invoke_kind: TypeLibMemberInvokeKind,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum TypeLibMemberInvokeKind {
-    PropertyGet,
-    Method,
-    PropertyPut,
-    PropertyPutRef,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum TypeLibEventDispatchPath {
-    Dispatch,
-    SourceInterface,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct TypeLibEventMetadata {
-    pub name: String,
-    pub token: ValueToken,
-    pub callback_arity: u8,
-    pub dispatch_path: TypeLibEventDispatchPath,
-    pub connection_point_iid: Option<String>,
-    pub dispatch_member_id: Option<i32>,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum TypeLibCacheScope {
-    Global,
-    Reference,
 }
 
 pub trait TypeLibraryHal: Send + Sync {

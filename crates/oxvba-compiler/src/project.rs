@@ -1390,18 +1390,16 @@ fn rewrite_early_bound_member_dispatch(
         };
         let args_raw = line[open + 1..close].trim();
         let args = split_top_level_args(args_raw)?;
-        if args.len() > 1 {
-            return Err(ProjectCompileError::TypeLibraryInvokeArityUnsupported {
-                target: raw_name.to_string(),
-            });
-        }
-        let replacement = if args.is_empty() || args[0].trim().is_empty() {
+        let replacement = if args.is_empty() || args.iter().all(|arg| arg.trim().is_empty()) {
             format!("DispatchInvoke({var_name}, {member_token})")
         } else {
-            format!(
-                "DispatchInvoke({var_name}, {member_token}, {})",
-                args[0].trim()
-            )
+            let rendered_args = args
+                .iter()
+                .map(|arg| arg.trim())
+                .filter(|arg| !arg.is_empty())
+                .collect::<Vec<_>>()
+                .join(", ");
+            format!("DispatchInvoke({var_name}, {member_token}, {rendered_args})")
         };
         replacements.push((name_start, close + 1, replacement));
         cursor = close + 1;
@@ -1893,6 +1891,10 @@ fn known_dispatch_member_token(member_name: &str) -> Option<i32> {
         "setvalueref" => Some(8),
         "value" => Some(9),
         "quit" => Some(10),
+        "sumpair" => Some(12),
+        "lookuppair" => Some(13),
+        "setindexedvalue" => Some(14),
+        "setindexedvalueref" => Some(15),
         _ => None,
     }
 }
@@ -4353,11 +4355,11 @@ mod tests {
     }
 
     #[test]
-    fn compile_project_rejects_unsupported_external_member_arity() {
+    fn compile_project_rewrites_multi_arg_external_member_call_to_dispatchinvoke() {
         let main_module = module_unit_from_source(
             "MainModule",
             ModuleKind::Procedural,
-            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim obj As OxVba.TestDispatch\nDim x\nobj = CreateObject(4)\nx = obj.Exists(1, 2)\nEnd Sub",
+            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim obj As OxVba.TestDispatch\nDim x\nobj = CreateObject(4)\nx = obj.SumPair(1, 2)\nEnd Sub",
         )
         .expect("module parses");
         let manifest = ProjectManifest {
@@ -4371,9 +4373,10 @@ mod tests {
             reference_projects: Vec::new(),
             conditional_constants: BTreeMap::new(),
         };
-        let err =
-            compile_project(&manifest).expect_err("unsupported arity should reject compilation");
-        assert_eq!(err.code(), "BIND-E-TYPELIB-INVOKE-ARITY-UNSUPPORTED");
+        let compiled = compile_project(&manifest)
+            .expect("multi-arg external member call should compile in widened subset");
+        let lowered = compiled.rewritten_source.to_ascii_lowercase();
+        assert!(lowered.contains("dispatchinvoke(obj, 12, 1, 2)"));
     }
 
     #[test]

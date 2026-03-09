@@ -1,6 +1,30 @@
 # Implementation Log
 
 ## 2026-03-10
+- COM invoke v2 widening + typelib ownership staging batch:
+  - widened `DispatchInvoke` from scalar-arg transport to a vector/request model:
+    - new shared `oxvba-com` types:
+      - `ComInvokeKind`
+      - `ComInvokeRequest`
+    - `ComHal` now exposes `dispatch_invoke_v2(&ComInvokeRequest)` with the legacy scalar method retained as a compatibility shim
+    - bytecode/VM transport now carries `IntrinsicDispatchInvokeHost { object, member, args }`
+  - widened compiler/source handling:
+    - `dispatchinvoke` intrinsic arity is now `2..variadic`
+    - early-bound project rewriting now emits variadic `DispatchInvoke(...)` for supported typelib members instead of rejecting multi-arg member calls
+    - added compiler coverage for direct multi-arg `DispatchInvoke`
+  - widened Windows COM adapter invocation:
+    - generic `IDispatch::Invoke` helpers now marshal variadic `VT_I4` argument vectors for method/property-get/property-put/property-putref
+    - controlled `OxVba.TestDispatch` fixture now includes true multi-arg members:
+      - `SumPair`
+      - `LookupPair`
+      - `SetIndexedValue`
+      - `SetIndexedValueRef`
+    - event-trigger projection now consumes real argument vectors when present instead of always synthesizing from one scalar
+  - began `TypeLibraryHal` extraction staging:
+    - moved stable typelib data shapes into `crates/oxvba-com/src/typelib.rs`
+    - HAL now re-exports those types while the behavior still delegates through `StandardHostServices`
+  - verification:
+    - `cargo test -p oxvba-com -p oxvba-hal -p oxvba-compiler -p oxvba-host --quiet` -> PASS
 - COM transport normalization + HAL/VM cleanup batch:
   - added shared COM transport model in `oxvba-com`:
     - `ComObjectToken`

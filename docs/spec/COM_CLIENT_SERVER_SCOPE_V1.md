@@ -87,7 +87,8 @@ Source-quality note:
 
 ### D7. Member Resolution Surface (C2 Direction)
 
-- C1-compatible tokenized member selection (`dispatch_invoke(object_token, member_token, arg_token)`) remains valid.
+- C1-compatible tokenized member selection remains valid through the legacy scalar shim.
+- Current widened contract is request/vector based (`dispatch_invoke_v2`) with variadic argument support.
 - C2 requires deterministic member-name resolution (`GetIDsOfNames`) with explicit case policy and per-object cache semantics.
 - Current implemented C2 subset (`v397..v400`): known member literal lowering (`"Count"`, `"Exists"`), plus per-object native DISPID caching for those lanes.
 - Missing-member and ambiguous-resolution paths must produce stable failure diagnostics.
@@ -102,7 +103,7 @@ Source-quality note:
   - `CreateObject` ProgID-text path,
   - member-name invocation path,
   - deterministic `DISPPARAMS`/`ArgErr`/`ExcepInfo`/`VarResult` translation,
-  - 2-arg/3-arg `DispatchInvoke` phase-I invoke packing behavior.
+  - variadic `DispatchInvoke` argument packing for method/property-get/property-put/property-putref in the current integer-token subset.
 - `C3`: array/object boundary subset (`SAFEARRAY`, interface pointers, richer variant coercion lanes).
 
 ### Server tiers

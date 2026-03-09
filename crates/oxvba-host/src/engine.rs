@@ -2449,6 +2449,16 @@ mod tests {
     }
 
     #[test]
+    fn formal_dispatchinvoke_multi_arg_subset_executes() {
+        let engine = Engine::new(HostConfig::default());
+        let source = "Sub Main()\nDim x\nx = DispatchInvoke(CreateObject(\"OxVba.TestDispatch\"), \"SumPair\", 3, 14)\nEnd Sub";
+        let snapshot = engine
+            .execute_source_with_snapshot(source)
+            .expect("execution should succeed");
+        assert_eq!(snapshot, vec![5_033]);
+    }
+
+    #[test]
     fn formal_v400_string_com_lane_failure_routes_through_resume_next() {
         let mut engine = Engine::new(HostConfig::default()).with_hal_profile(HalProfileId::Linux);
         engine.set_unsupported_feature_mode(UnsupportedFeatureMode::Runtime);

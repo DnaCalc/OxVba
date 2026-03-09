@@ -17,19 +17,21 @@ Define the executable bridge from VBA late-bound call semantics to HAL COM trans
 
 2. Compiler/VM transport
 - `IntrinsicCreateObjectHost { prog_id }`
-- `IntrinsicDispatchInvokeHost { object, member, arg }`
+- `IntrinsicDispatchInvokeHost { object, member, args }`
 - Known-literal lowering subset:
   - `CreateObject("Scripting.Dictionary") -> prog_id_token=4`
   - `CreateObject("OxVba.TestDispatch") -> prog_id_token=4` (controlled test lane alias)
   - `DispatchInvoke(..., "Count", ...) -> member_token=1`
   - `DispatchInvoke(..., "Exists", ...) -> member_token=2`
 - `DispatchInvoke` arity subset:
-  - 3-arg form (`object, member, arg`)
-  - 2-arg form (`object, member`) lowered with missing-arg sentinel token.
+  - 2-arg form (`object, member`) for no-arg member/property-get lanes
+  - variadic form (`object, member, arg1, arg2, ...`)
+  - each call argument is marshaled independently; a VBA array passed as one argument remains one marshaled argument token.
 
 3. HAL COM transport
 - `create_object(prog_id_token) -> object_token`
-- `dispatch_invoke(object_token, member_token, arg_token) -> result_token`
+- `dispatch_invoke_v2(request) -> result_token`
+- legacy scalar `dispatch_invoke(object_token, member_token, arg_token)` remains as a compatibility shim over `dispatch_invoke_v2`.
 
 4. Native COM adapter (Windows host-backed mode)
 - Activation: `CLSIDFromProgID` + `CoCreateInstance`
@@ -43,9 +45,10 @@ Define the executable bridge from VBA late-bound call semantics to HAL COM trans
 3. Unsupported or denied paths remain deterministic and must not mutate COM-state.
 4. Failure translation is deterministic and tagged by the COM error taxonomy table.
 5. Member-name lanes must keep deterministic per-object cache semantics for resolved DISPIDs on native Windows path.
-6. Missing third argument in `DispatchInvoke`:
-- property-get member lanes may proceed with no argument;
+6. Omitted argument packs in `DispatchInvoke`:
+- property-get/no-arg member lanes may proceed with an empty argument vector;
 - argument-required member lanes must fail deterministically.
+7. Event-trigger projection consumes the same authoritative argument vector used for invoke, and only synthesizes fallback payload shape when a native callback path is unavailable.
 
 ## Deferred Extensions
 

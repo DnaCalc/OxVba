@@ -1268,6 +1268,21 @@ mod tests {
     }
 
     #[test]
+    fn compile_dispatchinvoke_accepts_multi_arg_form() {
+        let source = "Sub Main()\nDim x\nx = DispatchInvoke(CreateObject(\"OxVba.TestDispatch\"), \"SumPair\", 3, 14)\nEnd Sub";
+        let out = compile(source).expect("multi-arg DispatchInvoke should compile");
+        let invoke = out
+            .instructions
+            .iter()
+            .find_map(|instruction| match instruction {
+                Instruction::IntrinsicDispatchInvokeHost { args, .. } => Some(args.clone()),
+                _ => None,
+            })
+            .expect("dispatch invoke instruction should be present");
+        assert_eq!(invoke.len(), 2);
+    }
+
+    #[test]
     fn compile_createobject_with_unknown_progid_literal_is_rejected() {
         let source = "Sub Main()\nDim x\nx = CreateObject(\"Unknown.Component\")\nEnd Sub";
         let err =

@@ -12,9 +12,10 @@ use crate::{
         TypeLibResolveRequest, TypeLibResolvedIdentity, TypeLibraryHal, UiInteractionHal,
     },
 };
+#[cfg(test)]
+pub use oxvba_com::DISPATCH_INVOKE_MISSING_ARG_TOKEN;
 use oxvba_com::{
-    ComCallbackPayload, ComCallbackToken, ComObjectToken, ComSubscriptionToken,
-    DISPATCH_INVOKE_MISSING_ARG_TOKEN,
+    ComCallbackPayload, ComCallbackToken, ComInvokeRequest, ComObjectToken, ComSubscriptionToken,
 };
 #[cfg(target_os = "windows")]
 use std::sync::atomic::{AtomicI32, AtomicU32, Ordering};
@@ -577,6 +578,30 @@ impl StandardHostServices {
                     token: TEST_DISPID_VALUE,
                     requires_argument: false,
                     invoke_kind: TypeLibMemberInvokeKind::PropertyGet,
+                },
+                TypeLibMemberMetadata {
+                    name: "SumPair".to_string(),
+                    token: TEST_DISPID_SUM_PAIR,
+                    requires_argument: true,
+                    invoke_kind: TypeLibMemberInvokeKind::Method,
+                },
+                TypeLibMemberMetadata {
+                    name: "LookupPair".to_string(),
+                    token: TEST_DISPID_LOOKUP_PAIR,
+                    requires_argument: true,
+                    invoke_kind: TypeLibMemberInvokeKind::PropertyGet,
+                },
+                TypeLibMemberMetadata {
+                    name: "SetIndexedValue".to_string(),
+                    token: TEST_DISPID_SET_INDEXED_VALUE,
+                    requires_argument: true,
+                    invoke_kind: TypeLibMemberInvokeKind::PropertyPut,
+                },
+                TypeLibMemberMetadata {
+                    name: "SetIndexedValueRef".to_string(),
+                    token: TEST_DISPID_SET_INDEXED_VALUE_REF,
+                    requires_argument: true,
+                    invoke_kind: TypeLibMemberInvokeKind::PropertyPutRef,
                 },
             ];
             let events = vec![
@@ -1321,18 +1346,18 @@ impl StandardHostServices {
         dispatch: *mut RawIDispatch,
         prog_id: &str,
         member: i32,
-        arg: i32,
+        args: &[i32],
     ) -> HalResult<i32> {
         if let Some(spec) = com_member_spec_for_token(prog_id, member) {
             // SAFETY: `dispatch` is a live IDispatch pointer owned by this adapter and `spec.name`
             // is converted to a temporary wide buffer inside the helper.
             let dispid = unsafe { raw_get_dispid_by_name(dispatch, &spec.name) }
                 .map_err(|message| self.com_dispatch_adapter_fault(message))?;
-            return self.native_com_dispatch_invoke_with_member_spec(dispatch, dispid, &spec, arg);
+            return self.native_com_dispatch_invoke_with_member_spec(dispatch, dispid, &spec, args);
         }
         // SAFETY: `dispatch` is a live IDispatch pointer and `member` is treated as a direct
         // DISPID for the controlled late-bound fallback path.
-        unsafe { raw_dispatch_property_get_noargs(dispatch, member) }
+        unsafe { raw_dispatch_property_get_i4_args(dispatch, member, &[]) }
             .map_err(|message| self.com_dispatch_adapter_fault(message))
     }
 
@@ -1371,11 +1396,11 @@ impl StandardHostServices {
         dispatch: *mut RawIDispatch,
         dispid: i32,
         spec: &ComMemberSpec,
-        arg: i32,
+        args: &[i32],
     ) -> HalResult<i32> {
         self.ensure_thread_com_apartment("dispatch_invoke")?;
         if spec.requires_argument {
-            if arg == DISPATCH_INVOKE_MISSING_ARG_TOKEN {
+            if args.is_empty() {
                 return Err(HalError::adapter_fault(
                     self.profile,
                     CapabilityId::ComActivationDispatch,
@@ -1388,13 +1413,13 @@ impl StandardHostServices {
                 TypeLibMemberInvokeKind::PropertyGet => {
                     // SAFETY: `dispatch` is a live IDispatch pointer and `dispid` was resolved for
                     // this member on the same interface.
-                    return unsafe { raw_dispatch_property_get_noargs(dispatch, dispid) }
+                    return unsafe { raw_dispatch_property_get_i4_args(dispatch, dispid, &[]) }
                         .map_err(|message| self.com_dispatch_adapter_fault(message));
                 }
                 TypeLibMemberInvokeKind::Method => {
                     // SAFETY: `dispatch` is a live IDispatch pointer and `dispid` targets a method
                     // on the same interface without arguments.
-                    return unsafe { raw_dispatch_invoke_method_noargs(dispatch, dispid) }
+                    return unsafe { raw_dispatch_invoke_method_i4_args(dispatch, dispid, &[]) }
                         .map_err(|message| self.com_dispatch_adapter_fault(message));
                 }
                 TypeLibMemberInvokeKind::PropertyPut | TypeLibMemberInvokeKind::PropertyPutRef => {
@@ -1408,22 +1433,22 @@ impl StandardHostServices {
             }
         }
         match spec.invoke_kind {
-            // SAFETY: `dispatch` is a live IDispatch pointer and the helper marshals the i32
-            // automation argument into a stack-local VARIANT for the Invoke call.
+            // SAFETY: `dispatch` is a live IDispatch pointer and the helper marshals all i32
+            // automation arguments into stack-owned VARIANT storage for the Invoke call.
             TypeLibMemberInvokeKind::PropertyGet => unsafe {
-                raw_dispatch_property_get_i4(dispatch, dispid, arg)
+                raw_dispatch_property_get_i4_args(dispatch, dispid, args)
             },
             // SAFETY: Same as above; the helper owns all temporary Automation structures.
             TypeLibMemberInvokeKind::Method => unsafe {
-                raw_dispatch_invoke_method_i4(dispatch, dispid, arg)
+                raw_dispatch_invoke_method_i4_args(dispatch, dispid, args)
             },
             // SAFETY: Same as above; property-put marshalling uses a stack-local VARIANT.
             TypeLibMemberInvokeKind::PropertyPut => unsafe {
-                raw_dispatch_property_put_i4(dispatch, dispid, arg)
+                raw_dispatch_property_put_i4_args(dispatch, dispid, args)
             },
             // SAFETY: Same as above; property-putref uses the same validated pointer and argument.
             TypeLibMemberInvokeKind::PropertyPutRef => unsafe {
-                raw_dispatch_property_putref_i4(dispatch, dispid, arg)
+                raw_dispatch_property_putref_i4_args(dispatch, dispid, args)
             },
         }
         .map_err(|message| self.com_dispatch_adapter_fault(message))
@@ -1436,11 +1461,11 @@ impl StandardHostServices {
         dispid: i32,
         invoke_kind: TypeLibMemberInvokeKind,
         requires_argument: bool,
-        arg: i32,
+        args: &[i32],
     ) -> HalResult<i32> {
         self.ensure_thread_com_apartment("dispatch_invoke")?;
         if requires_argument {
-            if arg == DISPATCH_INVOKE_MISSING_ARG_TOKEN {
+            if args.is_empty() {
                 return Err(HalError::adapter_fault(
                     self.profile,
                     CapabilityId::ComActivationDispatch,
@@ -1453,11 +1478,11 @@ impl StandardHostServices {
                 // SAFETY: `dispatch` is a live IDispatch pointer and `dispid` is treated as a
                 // direct member id for the controlled direct-dispatch path.
                 TypeLibMemberInvokeKind::PropertyGet => unsafe {
-                    raw_dispatch_property_get_noargs(dispatch, dispid)
+                    raw_dispatch_property_get_i4_args(dispatch, dispid, &[])
                 },
                 // SAFETY: Same pointer/dispid validity as above for no-arg method invoke.
                 TypeLibMemberInvokeKind::Method => unsafe {
-                    raw_dispatch_invoke_method_noargs(dispatch, dispid)
+                    raw_dispatch_invoke_method_i4_args(dispatch, dispid, &[])
                 },
                 TypeLibMemberInvokeKind::PropertyPut | TypeLibMemberInvokeKind::PropertyPutRef => {
                     Err("member requires argument for property put/putref dispatch".to_string())
@@ -1467,21 +1492,21 @@ impl StandardHostServices {
         }
         match invoke_kind {
             // SAFETY: `dispatch` is a live IDispatch pointer and the helper owns temporary
-            // Automation state for the single i32 argument.
+            // Automation state for the argument vector.
             TypeLibMemberInvokeKind::PropertyGet => unsafe {
-                raw_dispatch_property_get_i4(dispatch, dispid, arg)
+                raw_dispatch_property_get_i4_args(dispatch, dispid, args)
             },
             // SAFETY: Same pointer and marshalling guarantees as above.
             TypeLibMemberInvokeKind::Method => unsafe {
-                raw_dispatch_invoke_method_i4(dispatch, dispid, arg)
+                raw_dispatch_invoke_method_i4_args(dispatch, dispid, args)
             },
             // SAFETY: Same pointer and marshalling guarantees as above.
             TypeLibMemberInvokeKind::PropertyPut => unsafe {
-                raw_dispatch_property_put_i4(dispatch, dispid, arg)
+                raw_dispatch_property_put_i4_args(dispatch, dispid, args)
             },
             // SAFETY: Same pointer and marshalling guarantees as above.
             TypeLibMemberInvokeKind::PropertyPutRef => unsafe {
-                raw_dispatch_property_putref_i4(dispatch, dispid, arg)
+                raw_dispatch_property_putref_i4_args(dispatch, dispid, args)
             },
         }
         .map_err(|message| self.com_dispatch_adapter_fault(message))
@@ -1493,10 +1518,10 @@ impl StandardHostServices {
         dispatch: *mut RawIDispatch,
         prog_id: &str,
         member: i32,
-        arg: i32,
+        args: &[i32],
     ) -> HalResult<i32> {
         self.ensure_thread_com_apartment("dispatch_invoke")?;
-        self.native_com_dispatch_invoke_core(dispatch, prog_id, member, arg)
+        self.native_com_dispatch_invoke_core(dispatch, prog_id, member, args)
     }
 
     #[cfg(target_os = "windows")]
@@ -1505,7 +1530,7 @@ impl StandardHostServices {
         dispatch: *mut RawIDispatch,
         prog_id: &str,
         member: i32,
-        arg: i32,
+        args: &[i32],
     ) -> HalResult<Option<i32>> {
         if self.policy.com_invocation_strategy != ComInvocationStrategy::PreferVtable {
             return Ok(None);
@@ -1516,16 +1541,21 @@ impl StandardHostServices {
         self.ensure_thread_com_apartment("dispatch_invoke")?;
         // SAFETY: `dispatch` points at the controlled OxVba.TestDispatch implementation, so the
         // helper may downcast to the known vtable layout for the prefer-vtable lane.
-        let result = unsafe { raw_oxvba_test_dispatch_vtable_invoke(dispatch, member, arg) }
+        let result = unsafe { raw_oxvba_test_dispatch_vtable_invoke(dispatch, member, args) }
             .map_err(|message| self.com_dispatch_adapter_fault(message))?;
         Ok(result)
     }
 
     #[cfg(target_os = "windows")]
-    fn native_com_dispatch_invoke(&self, prog_id: &str, member: i32, arg: i32) -> HalResult<i32> {
+    fn native_com_dispatch_invoke(
+        &self,
+        prog_id: &str,
+        member: i32,
+        args: &[i32],
+    ) -> HalResult<i32> {
         self.ensure_thread_com_apartment("dispatch_invoke")?;
         let dispatch = self.native_com_activate_dispatch(prog_id)?;
-        let result = self.native_com_dispatch_invoke_core(dispatch, prog_id, member, arg);
+        let result = self.native_com_dispatch_invoke_core(dispatch, prog_id, member, args);
         // SAFETY: `dispatch` was returned by native_com_activate_dispatch and has not been
         // released yet; this balances the adapter-owned AddRef from activation.
         unsafe {
@@ -1565,9 +1595,9 @@ impl StandardHostServices {
         object: i32,
         binding: &ComBinding,
         member: i32,
-        arg: i32,
+        args: &[i32],
     ) -> HalResult<()> {
-        let Some((event, args)) = com_event_callback_args_from_member_token(binding, member, arg)
+        let Some((event, args)) = com_event_callback_args_from_member_token(binding, member, args)
         else {
             return Ok(());
         };
@@ -1733,7 +1763,7 @@ impl StandardHostServices {
         _object: i32,
         _binding: &ComBinding,
         _member: i32,
-        _arg: i32,
+        _args: &[i32],
     ) -> HalResult<()> {
         Ok(())
     }
@@ -1743,7 +1773,7 @@ impl StandardHostServices {
         &self,
         _prog_id: &str,
         _member: i32,
-        _arg: i32,
+        _args: &[i32],
     ) -> HalResult<i32> {
         Err(HalError::adapter_fault(
             self.profile,
@@ -2405,7 +2435,10 @@ impl ComHal for StandardHostServices {
         Ok(1)
     }
 
-    fn dispatch_invoke(&self, object: i32, member: i32, arg: i32) -> HalResult<i32> {
+    fn dispatch_invoke_v2(&self, request: &ComInvokeRequest) -> HalResult<i32> {
+        let object = request.object.raw();
+        let member = request.member;
+        let args = request.args.as_slice();
         let capability = CapabilityId::ComActivationDispatch;
         if !self.supports(capability) {
             return Err(self.unsupported(capability, "dispatch_invoke"));
@@ -2431,7 +2464,7 @@ impl ComHal for StandardHostServices {
                         dispatch,
                         &binding.prog_id_name,
                         member,
-                        arg,
+                        args,
                     )? {
                         value
                     } else if let Some((dispid, spec)) = self.resolve_member_dispid_cached(
@@ -2442,7 +2475,7 @@ impl ComHal for StandardHostServices {
                         cached_dispid,
                     )? {
                         self.native_com_dispatch_invoke_with_member_spec(
-                            dispatch, dispid, &spec, arg,
+                            dispatch, dispid, &spec, args,
                         )?
                     } else if let Some(spec) = binding.direct_dispatch_specs.get(&member).copied() {
                         self.native_com_dispatch_invoke_with_direct_dispid(
@@ -2450,30 +2483,27 @@ impl ComHal for StandardHostServices {
                             member,
                             spec.invoke_kind,
                             spec.requires_argument,
-                            arg,
+                            args,
                         )?
                     } else {
                         self.native_com_dispatch_invoke_with_bound_dispatch(
                             dispatch,
                             &binding.prog_id_name,
                             member,
-                            arg,
+                            args,
                         )?
                     };
-                    self.queue_com_event_callbacks(object, &binding, member, arg)?;
+                    self.queue_com_event_callbacks(object, &binding, member, args)?;
                     return Ok(value);
                 }
-                let value = self.native_com_dispatch_invoke(&binding.prog_id_name, member, arg)?;
-                self.queue_com_event_callbacks(object, &binding, member, arg)?;
+                let value = self.native_com_dispatch_invoke(&binding.prog_id_name, member, args)?;
+                self.queue_com_event_callbacks(object, &binding, member, args)?;
                 return Ok(value);
             }
         }
-        let arg = if arg == DISPATCH_INVOKE_MISSING_ARG_TOKEN {
-            0
-        } else {
-            arg
-        };
-        Ok(object.saturating_add(member).saturating_add(arg))
+        Ok(args.iter().fold(object.saturating_add(member), |acc, arg| {
+            acc.saturating_add(*arg)
+        }))
     }
 
     fn subscribe_event(&self, object: i32, event: i32) -> HalResult<i32> {
@@ -3738,6 +3768,26 @@ fn com_member_spec_for_token(prog_id: &str, member: i32) -> Option<ComMemberSpec
                 requires_argument: false,
                 invoke_kind: TypeLibMemberInvokeKind::PropertyGet,
             }),
+            12 => Some(ComMemberSpec {
+                name: "SumPair".to_string(),
+                requires_argument: true,
+                invoke_kind: TypeLibMemberInvokeKind::Method,
+            }),
+            13 => Some(ComMemberSpec {
+                name: "LookupPair".to_string(),
+                requires_argument: true,
+                invoke_kind: TypeLibMemberInvokeKind::PropertyGet,
+            }),
+            14 => Some(ComMemberSpec {
+                name: "SetIndexedValue".to_string(),
+                requires_argument: true,
+                invoke_kind: TypeLibMemberInvokeKind::PropertyPut,
+            }),
+            15 => Some(ComMemberSpec {
+                name: "SetIndexedValueRef".to_string(),
+                requires_argument: true,
+                invoke_kind: TypeLibMemberInvokeKind::PropertyPutRef,
+            }),
             _ => None,
         };
     }
@@ -3782,14 +3832,19 @@ fn com_event_is_source_interface_only(_binding: &ComBinding, _event: i32) -> boo
 fn com_event_callback_args_from_member_token(
     binding: &ComBinding,
     member: i32,
-    arg: i32,
+    args: &[i32],
 ) -> Option<(i32, Vec<i32>)> {
     let spec = binding.event_trigger_specs.get(&member)?;
     let args = match spec.callback_arity {
         0 => Vec::new(),
-        1 => vec![arg],
-        2 if spec.second_arg_is_incremented => vec![arg, arg.saturating_add(1)],
-        n => vec![arg; n],
+        1 => vec![*args.first().unwrap_or(&0)],
+        2 if args.len() >= 2 => args[..2].to_vec(),
+        2 if spec.second_arg_is_incremented => {
+            let arg = *args.first().unwrap_or(&0);
+            vec![arg, arg.saturating_add(1)]
+        }
+        n if args.len() >= n => args[..n].to_vec(),
+        n => vec![*args.first().unwrap_or(&0); n],
     };
     Some((spec.event_token, args))
 }
@@ -4060,6 +4115,10 @@ const TEST_DISPID_SET_VALUE: i32 = 7;
 const TEST_DISPID_SET_VALUE_REF: i32 = 8;
 const TEST_DISPID_VALUE: i32 = 9;
 const TEST_DISPID_EXCEL_QUIT: i32 = 10;
+const TEST_DISPID_SUM_PAIR: i32 = 12;
+const TEST_DISPID_LOOKUP_PAIR: i32 = 13;
+const TEST_DISPID_SET_INDEXED_VALUE: i32 = 14;
+const TEST_DISPID_SET_INDEXED_VALUE_REF: i32 = 15;
 const TEST_EVENT_CHANGED: i32 = 1;
 const TEST_EVENT_CHANGED_SOURCE_INTERFACE: i32 = 2;
 const TEST_EVENT_CHANGED_PAIR: i32 = 3;
@@ -4675,15 +4734,44 @@ unsafe fn raw_variant_token_from_invoke_arg(
 
 #[cfg(target_os = "windows")]
 #[allow(unsafe_op_in_unsafe_fn)]
-unsafe fn raw_property_put_i4_from_params(
+unsafe fn raw_variant_token_from_dispparams(
     pparams: *mut DISPPARAMS,
+    logical_index: usize,
     puargerr: *mut u32,
 ) -> Result<i32, i32> {
     if pparams.is_null() {
         return Err(COM_DISP_E_BADPARAMCOUNT);
     }
     let params = &*pparams;
-    if params.cArgs != 1
+    let cargs = params.cArgs as usize;
+    if logical_index >= cargs || params.rgvarg.is_null() {
+        return Err(COM_DISP_E_BADPARAMCOUNT);
+    }
+    let raw_index = cargs - 1 - logical_index;
+    let arg = params.rgvarg.add(raw_index);
+    match raw_variant_token_from_invoke_arg(arg, logical_index) {
+        Ok(value) => Ok(value),
+        Err(hr) => {
+            if !puargerr.is_null() {
+                *puargerr = raw_index as u32;
+            }
+            Err(hr)
+        }
+    }
+}
+
+#[cfg(target_os = "windows")]
+#[allow(unsafe_op_in_unsafe_fn)]
+unsafe fn raw_property_put_args_from_params(
+    pparams: *mut DISPPARAMS,
+    expected_count: usize,
+    puargerr: *mut u32,
+) -> Result<Vec<i32>, i32> {
+    if pparams.is_null() {
+        return Err(COM_DISP_E_BADPARAMCOUNT);
+    }
+    let params = &*pparams;
+    if params.cArgs != expected_count as u32
         || params.cNamedArgs != 1
         || params.rgvarg.is_null()
         || params.rgdispidNamedArgs.is_null()
@@ -4691,16 +4779,24 @@ unsafe fn raw_property_put_i4_from_params(
     {
         return Err(COM_DISP_E_BADPARAMCOUNT);
     }
-    let arg = &*params.rgvarg;
-    match raw_variant_token_from_invoke_arg(arg, 0) {
-        Ok(value) => Ok(value),
-        Err(hr) => {
-            if !puargerr.is_null() {
-                *puargerr = 0;
-            }
-            Err(hr)
-        }
+    let mut values = Vec::with_capacity(expected_count);
+    for logical_index in 0..expected_count {
+        values.push(raw_variant_token_from_dispparams(
+            pparams,
+            logical_index,
+            puargerr,
+        )?);
     }
+    Ok(values)
+}
+
+#[cfg(target_os = "windows")]
+#[allow(unsafe_op_in_unsafe_fn)]
+unsafe fn raw_property_put_i4_from_params(
+    pparams: *mut DISPPARAMS,
+    puargerr: *mut u32,
+) -> Result<i32, i32> {
+    raw_property_put_args_from_params(pparams, 1, puargerr).map(|args| args[0])
 }
 
 #[cfg(target_os = "windows")]
@@ -5032,6 +5128,10 @@ unsafe extern "system" fn oxvba_test_get_ids_of_names(
         "setvalue" => TEST_DISPID_SET_VALUE,
         "setvalueref" => TEST_DISPID_SET_VALUE_REF,
         "value" => TEST_DISPID_VALUE,
+        "sumpair" => TEST_DISPID_SUM_PAIR,
+        "lookuppair" => TEST_DISPID_LOOKUP_PAIR,
+        "setindexedvalue" => TEST_DISPID_SET_INDEXED_VALUE,
+        "setindexedvalueref" => TEST_DISPID_SET_INDEXED_VALUE_REF,
         _ => return COM_DISP_E_UNKNOWNNAME,
     };
     *rgdispid = dispid;
@@ -5068,16 +5168,9 @@ unsafe extern "system" fn oxvba_test_invoke(
             if (wflags & DISPATCH_METHOD) == 0 || cargs != 1 || rgvarg.is_null() {
                 return COM_DISP_E_BADPARAMCOUNT;
             }
-            let arg = &*rgvarg;
-            let key = match arg.Anonymous.Anonymous.vt {
-                VT_I4 => arg.Anonymous.Anonymous.Anonymous.lVal,
-                VT_UI4 => arg.Anonymous.Anonymous.Anonymous.ulVal as i32,
-                _ => {
-                    if !puargerr.is_null() {
-                        *puargerr = 0;
-                    }
-                    return COM_DISP_E_TYPEMISMATCH;
-                }
+            let key = match raw_variant_token_from_dispparams(pparams, 0, puargerr) {
+                Ok(value) => value,
+                Err(hr) => return hr,
             };
             set_variant_bool(key == 42, pvarresult);
             COM_S_OK
@@ -5154,17 +5247,48 @@ unsafe extern "system" fn oxvba_test_invoke(
             if (wflags & DISPATCH_PROPERTYGET) == 0 || cargs != 1 || rgvarg.is_null() {
                 return COM_DISP_E_BADPARAMCOUNT;
             }
-            let arg = &*rgvarg;
-            let value = match raw_variant_token_from_invoke_arg(arg, 0) {
+            let value = match raw_variant_token_from_dispparams(pparams, 0, puargerr) {
                 Ok(value) => value,
                 Err(hr) => {
-                    if !puargerr.is_null() {
-                        *puargerr = 0;
-                    }
                     return hr;
                 }
             };
             set_variant_i32(value.saturating_add(1_000), pvarresult);
+            COM_S_OK
+        }
+        TEST_DISPID_SUM_PAIR => {
+            if (wflags & DISPATCH_METHOD) == 0 || cargs != 2 || rgvarg.is_null() {
+                return COM_DISP_E_BADPARAMCOUNT;
+            }
+            let lhs = match raw_variant_token_from_dispparams(pparams, 0, puargerr) {
+                Ok(value) => value,
+                Err(hr) => return hr,
+            };
+            let rhs = match raw_variant_token_from_dispparams(pparams, 1, puargerr) {
+                Ok(value) => value,
+                Err(hr) => return hr,
+            };
+            set_variant_i32(lhs.saturating_mul(1_000).saturating_add(rhs), pvarresult);
+            COM_S_OK
+        }
+        TEST_DISPID_LOOKUP_PAIR => {
+            if (wflags & DISPATCH_PROPERTYGET) == 0 || cargs != 2 || rgvarg.is_null() {
+                return COM_DISP_E_BADPARAMCOUNT;
+            }
+            let lhs = match raw_variant_token_from_dispparams(pparams, 0, puargerr) {
+                Ok(value) => value,
+                Err(hr) => return hr,
+            };
+            let rhs = match raw_variant_token_from_dispparams(pparams, 1, puargerr) {
+                Ok(value) => value,
+                Err(hr) => return hr,
+            };
+            set_variant_i32(
+                lhs.saturating_mul(1_000)
+                    .saturating_add(rhs)
+                    .saturating_add(200_000),
+                pvarresult,
+            );
             COM_S_OK
         }
         TEST_DISPID_SET_VALUE => {
@@ -5190,6 +5314,40 @@ unsafe extern "system" fn oxvba_test_invoke(
             };
             let owner = as_oxvba_test_dispatch_owner_from_dispatch(this);
             let stored = value.saturating_add(100_000);
+            (*owner).value_state.store(stored, Ordering::Release);
+            set_variant_i32(stored, pvarresult);
+            COM_S_OK
+        }
+        TEST_DISPID_SET_INDEXED_VALUE => {
+            if (wflags & DISPATCH_PROPERTYPUT) == 0 {
+                return COM_DISP_E_BADPARAMCOUNT;
+            }
+            let args = match raw_property_put_args_from_params(pparams, 2, puargerr) {
+                Ok(args) => args,
+                Err(hr) => return hr,
+            };
+            let owner = as_oxvba_test_dispatch_owner_from_dispatch(this);
+            let stored = args[0]
+                .saturating_mul(1_000)
+                .saturating_add(args[1])
+                .saturating_add(300_000);
+            (*owner).value_state.store(stored, Ordering::Release);
+            set_variant_i32(stored, pvarresult);
+            COM_S_OK
+        }
+        TEST_DISPID_SET_INDEXED_VALUE_REF => {
+            if (wflags & DISPATCH_PROPERTYPUTREF) == 0 {
+                return COM_DISP_E_BADPARAMCOUNT;
+            }
+            let args = match raw_property_put_args_from_params(pparams, 2, puargerr) {
+                Ok(args) => args,
+                Err(hr) => return hr,
+            };
+            let owner = as_oxvba_test_dispatch_owner_from_dispatch(this);
+            let stored = args[0]
+                .saturating_mul(1_000)
+                .saturating_add(args[1])
+                .saturating_add(400_000);
             (*owner).value_state.store(stored, Ordering::Release);
             set_variant_i32(stored, pvarresult);
             COM_S_OK
@@ -5672,10 +5830,75 @@ unsafe fn raw_variant_to_token(variant: &VARIANT) -> Result<i32, String> {
 
 #[cfg(target_os = "windows")]
 #[allow(unsafe_op_in_unsafe_fn)]
+unsafe fn set_variant_i4_arg(variant: &mut VARIANT, value: i32) {
+    variant.Anonymous.Anonymous.vt = VT_I4;
+    variant.Anonymous.Anonymous.Anonymous.lVal = value;
+}
+
+#[cfg(target_os = "windows")]
+#[allow(unsafe_op_in_unsafe_fn)]
+unsafe fn raw_dispatch_invoke_i4_args(
+    dispatch: *mut RawIDispatch,
+    dispid: i32,
+    flags: u16,
+    args: &[i32],
+    property_put_named_arg: bool,
+    label: &str,
+) -> Result<i32, String> {
+    let mut invoke_args: Vec<VARIANT> = Vec::with_capacity(args.len());
+    for arg in args.iter().rev() {
+        let mut variant: VARIANT = std::mem::zeroed();
+        set_variant_i4_arg(&mut variant, *arg);
+        invoke_args.push(variant);
+    }
+
+    let mut named_arg = COM_DISPID_PROPERTYPUT;
+    let mut result: VARIANT = std::mem::zeroed();
+    let mut excep: EXCEPINFO = std::mem::zeroed();
+    let mut arg_err = 0u32;
+    let mut params = DISPPARAMS {
+        rgvarg: if invoke_args.is_empty() {
+            std::ptr::null_mut()
+        } else {
+            invoke_args.as_mut_ptr()
+        },
+        rgdispidNamedArgs: if property_put_named_arg {
+            &mut named_arg
+        } else {
+            std::ptr::null_mut()
+        },
+        cArgs: args.len() as u32,
+        cNamedArgs: if property_put_named_arg { 1 } else { 0 },
+    };
+    let hr = ((*(*dispatch).vtbl).invoke)(
+        dispatch.cast(),
+        dispid,
+        &IID_NULL,
+        0x0400,
+        flags,
+        &mut params,
+        &mut result,
+        &mut excep,
+        &mut arg_err,
+    );
+    if hr < 0 {
+        return Err(format!(
+            "IDispatch::Invoke({label} dispid={dispid}) failed with HRESULT {:#010X} (arg_err={})",
+            hr as u32, arg_err
+        ));
+    }
+
+    let token = raw_variant_to_token(&result)?;
+    let _ = VariantClear(&mut result);
+    Ok(token)
+}
+
+#[cfg(target_os = "windows")]
+#[allow(unsafe_op_in_unsafe_fn)]
 unsafe fn raw_oxvba_test_dispatch_vtable_invoke(
     dispatch: *mut RawIDispatch,
     member: i32,
-    arg: i32,
+    args: &[i32],
 ) -> Result<Option<i32>, String> {
     if dispatch.is_null() {
         return Err("null dispatch pointer for vtable invoke".to_string());
@@ -5686,31 +5909,82 @@ unsafe fn raw_oxvba_test_dispatch_vtable_invoke(
     match member {
         TEST_DISPID_COUNT => Ok(Some(7)),
         TEST_DISPID_EXISTS => {
-            if arg == DISPATCH_INVOKE_MISSING_ARG_TOKEN {
+            if args.len() != 1 {
                 return Err(format!(
                     "IDispatch::Invoke(method) failed with HRESULT {:#010X} (arg_err={})",
                     COM_DISP_E_BADPARAMCOUNT as u32, 0
                 ));
             }
-            Ok(Some(if arg == 42 { 1 } else { 0 }))
+            Ok(Some(if args[0] == 42 { 1 } else { 0 }))
         }
         TEST_DISPID_FIRE_CHANGED => {
-            if arg == DISPATCH_INVOKE_MISSING_ARG_TOKEN {
+            if args.len() != 1 {
                 return Err(format!(
                     "IDispatch::Invoke(method) failed with HRESULT {:#010X} (arg_err={})",
                     COM_DISP_E_BADPARAMCOUNT as u32, 0
                 ));
             }
-            Ok(Some(arg))
+            Ok(Some(args[0]))
         }
         TEST_DISPID_FIRE_CHANGED_PAIR => {
-            if arg == DISPATCH_INVOKE_MISSING_ARG_TOKEN {
+            if args.len() != 1 {
                 return Err(format!(
                     "IDispatch::Invoke(method) failed with HRESULT {:#010X} (arg_err={})",
                     COM_DISP_E_BADPARAMCOUNT as u32, 0
                 ));
             }
-            Ok(Some(arg.saturating_add(1)))
+            Ok(Some(args[0].saturating_add(1)))
+        }
+        TEST_DISPID_SUM_PAIR => {
+            if args.len() != 2 {
+                return Err(format!(
+                    "IDispatch::Invoke(method) failed with HRESULT {:#010X} (arg_err={})",
+                    COM_DISP_E_BADPARAMCOUNT as u32, 0
+                ));
+            }
+            Ok(Some(args[0].saturating_mul(1_000).saturating_add(args[1])))
+        }
+        TEST_DISPID_LOOKUP_PAIR => {
+            if args.len() != 2 {
+                return Err(format!(
+                    "IDispatch::Invoke(property-get) failed with HRESULT {:#010X} (arg_err={})",
+                    COM_DISP_E_BADPARAMCOUNT as u32, 0
+                ));
+            }
+            Ok(Some(
+                args[0]
+                    .saturating_mul(1_000)
+                    .saturating_add(args[1])
+                    .saturating_add(200_000),
+            ))
+        }
+        TEST_DISPID_SET_INDEXED_VALUE => {
+            if args.len() != 2 {
+                return Err(format!(
+                    "IDispatch::Invoke(property-put) failed with HRESULT {:#010X} (arg_err={})",
+                    COM_DISP_E_BADPARAMCOUNT as u32, 0
+                ));
+            }
+            Ok(Some(
+                args[0]
+                    .saturating_mul(1_000)
+                    .saturating_add(args[1])
+                    .saturating_add(300_000),
+            ))
+        }
+        TEST_DISPID_SET_INDEXED_VALUE_REF => {
+            if args.len() != 2 {
+                return Err(format!(
+                    "IDispatch::Invoke(property-putref) failed with HRESULT {:#010X} (arg_err={})",
+                    COM_DISP_E_BADPARAMCOUNT as u32, 0
+                ));
+            }
+            Ok(Some(
+                args[0]
+                    .saturating_mul(1_000)
+                    .saturating_add(args[1])
+                    .saturating_add(400_000),
+            ))
         }
         _ => Ok(None),
     }
@@ -5718,252 +5992,63 @@ unsafe fn raw_oxvba_test_dispatch_vtable_invoke(
 
 #[cfg(target_os = "windows")]
 #[allow(unsafe_op_in_unsafe_fn)]
-unsafe fn raw_dispatch_property_get_noargs(
+unsafe fn raw_dispatch_property_get_i4_args(
     dispatch: *mut RawIDispatch,
     dispid: i32,
+    args: &[i32],
 ) -> Result<i32, String> {
-    let mut result: VARIANT = std::mem::zeroed();
-    let mut excep: EXCEPINFO = std::mem::zeroed();
-    let mut arg_err = 0u32;
-    let mut params = DISPPARAMS {
-        rgvarg: std::ptr::null_mut(),
-        rgdispidNamedArgs: std::ptr::null_mut(),
-        cArgs: 0,
-        cNamedArgs: 0,
-    };
-    let hr = ((*(*dispatch).vtbl).invoke)(
-        dispatch.cast(),
+    raw_dispatch_invoke_i4_args(
+        dispatch,
         dispid,
-        &IID_NULL,
-        0x0400,
         DISPATCH_PROPERTYGET,
-        &mut params,
-        &mut result,
-        &mut excep,
-        &mut arg_err,
-    );
-    if hr < 0 {
-        return Err(format!(
-            "IDispatch::Invoke(property-get) failed with HRESULT {:#010X} (arg_err={})",
-            hr as u32, arg_err
-        ));
-    }
-
-    let token = raw_variant_to_token(&result)?;
-    let _ = VariantClear(&mut result);
-    Ok(token)
+        args,
+        false,
+        "property-get",
+    )
 }
 
 #[cfg(target_os = "windows")]
 #[allow(unsafe_op_in_unsafe_fn)]
-unsafe fn raw_dispatch_property_get_i4(
+unsafe fn raw_dispatch_property_put_i4_args(
     dispatch: *mut RawIDispatch,
     dispid: i32,
-    arg: i32,
+    args: &[i32],
 ) -> Result<i32, String> {
-    let mut arg_variant: VARIANT = std::mem::zeroed();
-    arg_variant.Anonymous.Anonymous.vt = VT_I4;
-    arg_variant.Anonymous.Anonymous.Anonymous.lVal = arg;
-
-    let mut result: VARIANT = std::mem::zeroed();
-    let mut excep: EXCEPINFO = std::mem::zeroed();
-    let mut arg_err = 0u32;
-    let mut params = DISPPARAMS {
-        rgvarg: &mut arg_variant,
-        rgdispidNamedArgs: std::ptr::null_mut(),
-        cArgs: 1,
-        cNamedArgs: 0,
-    };
-    let hr = ((*(*dispatch).vtbl).invoke)(
-        dispatch.cast(),
+    raw_dispatch_invoke_i4_args(
+        dispatch,
         dispid,
-        &IID_NULL,
-        0x0400,
-        DISPATCH_PROPERTYGET,
-        &mut params,
-        &mut result,
-        &mut excep,
-        &mut arg_err,
-    );
-    if hr < 0 {
-        return Err(format!(
-            "IDispatch::Invoke(property-get dispid={dispid}) failed with HRESULT {:#010X} (arg_err={})",
-            hr as u32, arg_err
-        ));
-    }
-
-    let token = raw_variant_to_token(&result)?;
-    let _ = VariantClear(&mut result);
-    Ok(token)
-}
-
-#[cfg(target_os = "windows")]
-#[allow(unsafe_op_in_unsafe_fn)]
-unsafe fn raw_dispatch_property_put_i4(
-    dispatch: *mut RawIDispatch,
-    dispid: i32,
-    arg: i32,
-) -> Result<i32, String> {
-    let mut arg_variant: VARIANT = std::mem::zeroed();
-    arg_variant.Anonymous.Anonymous.vt = VT_I4;
-    arg_variant.Anonymous.Anonymous.Anonymous.lVal = arg;
-
-    let mut named_arg = COM_DISPID_PROPERTYPUT;
-    let mut result: VARIANT = std::mem::zeroed();
-    let mut excep: EXCEPINFO = std::mem::zeroed();
-    let mut arg_err = 0u32;
-    let mut params = DISPPARAMS {
-        rgvarg: &mut arg_variant,
-        rgdispidNamedArgs: &mut named_arg,
-        cArgs: 1,
-        cNamedArgs: 1,
-    };
-    let hr = ((*(*dispatch).vtbl).invoke)(
-        dispatch.cast(),
-        dispid,
-        &IID_NULL,
-        0x0400,
         DISPATCH_PROPERTYPUT,
-        &mut params,
-        &mut result,
-        &mut excep,
-        &mut arg_err,
-    );
-    if hr < 0 {
-        return Err(format!(
-            "IDispatch::Invoke(property-put dispid={dispid}) failed with HRESULT {:#010X} (arg_err={})",
-            hr as u32, arg_err
-        ));
-    }
-
-    let token = raw_variant_to_token(&result)?;
-    let _ = VariantClear(&mut result);
-    Ok(token)
+        args,
+        true,
+        "property-put",
+    )
 }
 
 #[cfg(target_os = "windows")]
 #[allow(unsafe_op_in_unsafe_fn)]
-unsafe fn raw_dispatch_property_putref_i4(
+unsafe fn raw_dispatch_property_putref_i4_args(
     dispatch: *mut RawIDispatch,
     dispid: i32,
-    arg: i32,
+    args: &[i32],
 ) -> Result<i32, String> {
-    let mut arg_variant: VARIANT = std::mem::zeroed();
-    arg_variant.Anonymous.Anonymous.vt = VT_I4;
-    arg_variant.Anonymous.Anonymous.Anonymous.lVal = arg;
-
-    let mut named_arg = COM_DISPID_PROPERTYPUT;
-    let mut result: VARIANT = std::mem::zeroed();
-    let mut excep: EXCEPINFO = std::mem::zeroed();
-    let mut arg_err = 0u32;
-    let mut params = DISPPARAMS {
-        rgvarg: &mut arg_variant,
-        rgdispidNamedArgs: &mut named_arg,
-        cArgs: 1,
-        cNamedArgs: 1,
-    };
-    let hr = ((*(*dispatch).vtbl).invoke)(
-        dispatch.cast(),
+    raw_dispatch_invoke_i4_args(
+        dispatch,
         dispid,
-        &IID_NULL,
-        0x0400,
         DISPATCH_PROPERTYPUTREF,
-        &mut params,
-        &mut result,
-        &mut excep,
-        &mut arg_err,
-    );
-    if hr < 0 {
-        return Err(format!(
-            "IDispatch::Invoke(property-putref dispid={dispid}) failed with HRESULT {:#010X} (arg_err={})",
-            hr as u32, arg_err
-        ));
-    }
-
-    let token = raw_variant_to_token(&result)?;
-    let _ = VariantClear(&mut result);
-    Ok(token)
+        args,
+        true,
+        "property-putref",
+    )
 }
 
 #[cfg(target_os = "windows")]
 #[allow(unsafe_op_in_unsafe_fn)]
-unsafe fn raw_dispatch_invoke_method_noargs(
+unsafe fn raw_dispatch_invoke_method_i4_args(
     dispatch: *mut RawIDispatch,
     dispid: i32,
+    args: &[i32],
 ) -> Result<i32, String> {
-    let mut result: VARIANT = std::mem::zeroed();
-    let mut excep: EXCEPINFO = std::mem::zeroed();
-    let mut arg_err = 0u32;
-    let mut params = DISPPARAMS {
-        rgvarg: std::ptr::null_mut(),
-        rgdispidNamedArgs: std::ptr::null_mut(),
-        cArgs: 0,
-        cNamedArgs: 0,
-    };
-    let hr = ((*(*dispatch).vtbl).invoke)(
-        dispatch.cast(),
-        dispid,
-        &IID_NULL,
-        0x0400,
-        DISPATCH_METHOD,
-        &mut params,
-        &mut result,
-        &mut excep,
-        &mut arg_err,
-    );
-    if hr < 0 {
-        return Err(format!(
-            "IDispatch::Invoke(method dispid={dispid}) failed with HRESULT {:#010X} (arg_err={})",
-            hr as u32, arg_err
-        ));
-    }
-
-    let token = raw_variant_to_token(&result)?;
-    let _ = VariantClear(&mut result);
-    Ok(token)
-}
-
-#[cfg(target_os = "windows")]
-#[allow(unsafe_op_in_unsafe_fn)]
-unsafe fn raw_dispatch_invoke_method_i4(
-    dispatch: *mut RawIDispatch,
-    dispid: i32,
-    arg: i32,
-) -> Result<i32, String> {
-    let mut arg_variant: VARIANT = std::mem::zeroed();
-    arg_variant.Anonymous.Anonymous.vt = VT_I4;
-    arg_variant.Anonymous.Anonymous.Anonymous.lVal = arg;
-
-    let mut result: VARIANT = std::mem::zeroed();
-    let mut excep: EXCEPINFO = std::mem::zeroed();
-    let mut arg_err = 0u32;
-    let mut params = DISPPARAMS {
-        rgvarg: &mut arg_variant,
-        rgdispidNamedArgs: std::ptr::null_mut(),
-        cArgs: 1,
-        cNamedArgs: 0,
-    };
-    let hr = ((*(*dispatch).vtbl).invoke)(
-        dispatch.cast(),
-        dispid,
-        &IID_NULL,
-        0x0400,
-        DISPATCH_METHOD,
-        &mut params,
-        &mut result,
-        &mut excep,
-        &mut arg_err,
-    );
-    if hr < 0 {
-        return Err(format!(
-            "IDispatch::Invoke(method dispid={dispid}) failed with HRESULT {:#010X} (arg_err={})",
-            hr as u32, arg_err
-        ));
-    }
-
-    let token = raw_variant_to_token(&result)?;
-    let _ = VariantClear(&mut result);
-    Ok(token)
+    raw_dispatch_invoke_i4_args(dispatch, dispid, DISPATCH_METHOD, args, false, "method")
 }
 
 fn pseudo_file_len_from_path_token(path: i32) -> i32 {
@@ -7231,6 +7316,16 @@ mod tests {
                 ("SetValue".to_string(), super::TEST_DISPID_SET_VALUE),
                 ("SetValueRef".to_string(), super::TEST_DISPID_SET_VALUE_REF),
                 ("Value".to_string(), super::TEST_DISPID_VALUE),
+                ("SumPair".to_string(), super::TEST_DISPID_SUM_PAIR),
+                ("LookupPair".to_string(), super::TEST_DISPID_LOOKUP_PAIR),
+                (
+                    "SetIndexedValue".to_string(),
+                    super::TEST_DISPID_SET_INDEXED_VALUE
+                ),
+                (
+                    "SetIndexedValueRef".to_string(),
+                    super::TEST_DISPID_SET_INDEXED_VALUE_REF
+                ),
             ]
         );
         let fire_changed_pair = metadata
@@ -7301,6 +7396,46 @@ mod tests {
         assert_eq!(
             value_member.invoke_kind,
             super::TypeLibMemberInvokeKind::PropertyGet
+        );
+        let sum_pair_member = metadata
+            .members
+            .iter()
+            .find(|entry| entry.token == super::TEST_DISPID_SUM_PAIR)
+            .expect("SumPair metadata should exist");
+        assert!(sum_pair_member.requires_argument);
+        assert_eq!(
+            sum_pair_member.invoke_kind,
+            super::TypeLibMemberInvokeKind::Method
+        );
+        let lookup_pair_member = metadata
+            .members
+            .iter()
+            .find(|entry| entry.token == super::TEST_DISPID_LOOKUP_PAIR)
+            .expect("LookupPair metadata should exist");
+        assert!(lookup_pair_member.requires_argument);
+        assert_eq!(
+            lookup_pair_member.invoke_kind,
+            super::TypeLibMemberInvokeKind::PropertyGet
+        );
+        let set_indexed_value_member = metadata
+            .members
+            .iter()
+            .find(|entry| entry.token == super::TEST_DISPID_SET_INDEXED_VALUE)
+            .expect("SetIndexedValue metadata should exist");
+        assert!(set_indexed_value_member.requires_argument);
+        assert_eq!(
+            set_indexed_value_member.invoke_kind,
+            super::TypeLibMemberInvokeKind::PropertyPut
+        );
+        let set_indexed_value_ref_member = metadata
+            .members
+            .iter()
+            .find(|entry| entry.token == super::TEST_DISPID_SET_INDEXED_VALUE_REF)
+            .expect("SetIndexedValueRef metadata should exist");
+        assert!(set_indexed_value_ref_member.requires_argument);
+        assert_eq!(
+            set_indexed_value_ref_member.invoke_kind,
+            super::TypeLibMemberInvokeKind::PropertyPutRef
         );
         let source_interface_event = metadata
             .events

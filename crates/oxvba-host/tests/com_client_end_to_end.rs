@@ -80,6 +80,58 @@ End Sub
     }
 
     #[test]
+    fn dispatchinvoke_multi_arg_method_and_indexed_property_routes_are_deterministic() {
+        let source = r#"
+Sub Main()
+Dim obj
+Dim sumPair
+Dim lookupPair
+Dim setIndexedValueResult
+Dim valueAfterSetIndexed
+Dim setIndexedValueRefResult
+Dim valueAfterSetIndexedRef
+obj = CreateObject("OxVba.TestDispatch")
+sumPair = DispatchInvoke(obj, "SumPair", 3, 14)
+lookupPair = DispatchInvoke(obj, "LookupPair", 5, 9)
+setIndexedValueResult = DispatchInvoke(obj, "SetIndexedValue", 7, 11)
+valueAfterSetIndexed = DispatchInvoke(obj, "Value")
+setIndexedValueRefResult = DispatchInvoke(obj, "SetIndexedValueRef", 8, 13)
+valueAfterSetIndexedRef = DispatchInvoke(obj, "Value")
+End Sub
+"#;
+
+        let vm = run_windows_host_backed(source, false);
+        let jit = run_windows_host_backed(source, true);
+        assert_eq!(
+            vm, jit,
+            "VM/JIT snapshots diverged on multi-arg COM path: vm={vm:?} jit={jit:?}"
+        );
+        assert!(
+            vm[0] >= 20_001,
+            "expected native COM object handle space, got {:?}",
+            vm
+        );
+        assert_eq!(vm[1], 3_014, "SumPair should preserve both arguments");
+        assert_eq!(vm[2], 205_009, "LookupPair should preserve both arguments");
+        assert_eq!(
+            vm[3], 307_011,
+            "SetIndexedValue should route through multi-arg property put"
+        );
+        assert_eq!(
+            vm[4], 307_011,
+            "Value getter should reflect multi-arg property put result"
+        );
+        assert_eq!(
+            vm[5], 408_013,
+            "SetIndexedValueRef should route through multi-arg property putref"
+        );
+        assert_eq!(
+            vm[6], 408_013,
+            "Value getter should reflect multi-arg property putref result"
+        );
+    }
+
+    #[test]
     fn dispatchinvoke_error_path_routes_through_on_error_resume_next() {
         let out = run_windows_host_backed(
             r#"

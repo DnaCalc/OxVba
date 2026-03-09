@@ -158,7 +158,8 @@ Current host-backed domains (Windows/Linux host-matching mode):
 
 Current type-library note:
 - `TypeLibraryHal` is part of the current public HAL surface and is implemented in `StandardHostServices`.
-- This is current truth, not a long-term architecture endorsement; the active COM extraction plan intends to move deeper typelib ownership toward `oxvba-com`.
+- The stable typelib data shapes (`TypeLibResolveRequest`, `TypeLibResolvedIdentity`, `TypeLibMetadataBlob`, member/event metadata enums) now live in `oxvba-com` and are re-exported through HAL during transition.
+- This is current truth, not a long-term architecture endorsement; the active COM extraction plan intends to move deeper typelib ownership and resolver/build logic toward `oxvba-com`.
 
 ## 7. Deterministic Error Taxonomy
 

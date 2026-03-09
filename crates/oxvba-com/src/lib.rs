@@ -5,10 +5,15 @@ pub mod dispatch;
 pub mod model;
 pub mod platform;
 pub mod refcount;
+pub mod typelib;
 
 pub use dispatch::{ComDispatch, DispatchResult};
 pub use model::{
-    ComCallbackPayload, ComCallbackToken, ComObjectToken, ComSubscriptionToken,
-    DISPATCH_INVOKE_MISSING_ARG_TOKEN,
+    ComCallbackPayload, ComCallbackToken, ComInvokeKind, ComInvokeRequest, ComObjectToken,
+    ComSubscriptionToken, DISPATCH_INVOKE_MISSING_ARG_TOKEN,
 };
 pub use refcount::RefCount;
+pub use typelib::{
+    TypeLibCacheScope, TypeLibEventDispatchPath, TypeLibEventMetadata, TypeLibMemberInvokeKind,
+    TypeLibMemberMetadata, TypeLibMetadataBlob, TypeLibResolveRequest, TypeLibResolvedIdentity,
+};
