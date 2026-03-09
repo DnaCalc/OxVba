@@ -191,3 +191,11 @@ This workset is complete only when:
 
 Execution ladder for this program:
 - `docs/worksets/PROFILE_LADDER_2026-03-08_MACH1000_V467_V620_VBA71_WINDOWS_OFFICE_COMPLIANCE.md`
+
+## 11. Immediate follow-on work items
+
+Targeted follow-on under Track D and Track F:
+- `docs/worksets/WORKSET_2026-03-09_COM_INTEROP_CONTINUATION_MULTIARG_LATEBOUND_AND_EVENT_PROJECTION.md`
+
+Reason:
+- the external registered COM event lane is now green, but general late-bound COM invoke still remains single-argument at the HAL boundary, and the synthetic pair-event projection path still needs explicit closure.
