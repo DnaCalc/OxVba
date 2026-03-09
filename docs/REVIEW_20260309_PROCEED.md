@@ -257,3 +257,75 @@ Entries are canonicalized, deduplicated, and ordered for immediate execution val
   - future P6 event bridge integration
 - Dependencies: should remain aligned with the Host Project semantic plane and the `oxvba-com` repurpose decision
 - Verification: proposal/spec consistency, future host harness tests, event-ingress integration tests once implemented
+
+## [P-15] HAL COM Surface Contraction and Bootstrap-Seam Redesign
+
+- Status: proceed
+- Source: `docs/REVIEW_20260309.md` section `H4`
+- Additional sources: resolved `oxvba-com` repurpose decision on 2026-03-09
+- Summary: With `oxvba-com` now designated as the long-term home for COM transport/state/metadata behavior, the old recommendation to split `ComHal` into narrower concerns is no longer a speculative cleanup. It is part of the required HAL contraction plan so HAL stops pretending to be the permanent COM implementation boundary.
+- Why it matters: maintainability | compatibility | delivery
+- Decision: proceed now as an architectural cleanup item under the COM extraction program.
+- Rationale: The question is no longer whether HAL should remain COM-heavy. The current task is to define the surviving HAL bootstrap/delegation seam and stop deepening the old monolithic `ComHal` shape.
+- Duplicates merged: `H4`
+- Next step: define the post-extraction HAL-facing seam and identify which current `ComHal` responsibilities move fully into `oxvba-com` versus remain as narrow bootstrap hooks.
+- Proposed workset: `WORKSET_2026-03-09_OXVBA_COM_REPURPOSE_AND_HAL_COM_EXTRACTION.md`
+- Ladder:
+  - `v506-v526` COM invoke, marshaling, metadata, and integration closure
+  - HAL contraction follow-through after delegated COM paths are stable
+- Dependencies: `P-13`; should be sequenced after the first `oxvba-com` transport/state extraction slices
+- Verification: reduced HAL COM method surface, clearer ownership split in architecture/spec docs, preserved COM client/event lanes
+
+## [P-16] `TypeLibraryHal` Internalization Into the COM Bridge Boundary
+
+- Status: proceed
+- Source: `docs/REVIEW_20260309.md` sections `H7`, `SD-3`
+- Additional sources: resolved `oxvba-com` repurpose decision on 2026-03-09
+- Summary: The review correctly identified that type library loading/metadata is really a COM bridge concern, not a peer host capability. With `oxvba-com` now defined as the COM boundary crate, this item should move from deferred cleanup to active planning and extraction.
+- Why it matters: maintainability | compatibility | delivery
+- Decision: proceed now as part of the COM metadata extraction path.
+- Rationale: Typelib ingestion is already on the active ladder. Keeping `TypeLibraryHal` as a generic long-term HAL surface would work against the newly locked architecture.
+- Duplicates merged: `H7`, `SD-3`
+- Next step: move current typelib ownership and metadata-loading planning under `oxvba-com`, then reduce the HAL draft to whatever bootstrap hooks remain necessary during transition.
+- Proposed workset: `WORKSET_2026-03-09_OXVBA_COM_REPURPOSE_AND_HAL_COM_EXTRACTION.md`
+- Ladder:
+  - `v517-v520` typelib ingestion closure
+  - `v521-v526` metadata integration gate
+- Dependencies: `P-13`; should be coordinated with `P-06`
+- Verification: metadata/type-info ownership moved or explicitly delegated to `oxvba-com`, HAL spec updated, existing early-bind and COM metadata lanes remain green
+
+## [P-17] Collapse Redundant Platform `HostServices` Wrappers During HAL Cleanup
+
+- Status: proceed
+- Source: `docs/REVIEW_20260309.md` section `H8`
+- Additional sources: `P-04`, `P-13`
+- Summary: The per-platform `HostServices` wrapper types are increasingly hard to justify now that HAL is being simplified and COM is being extracted. They should be reconsidered as active cleanup work, not indefinite deferred polish.
+- Why it matters: maintainability | delivery
+- Decision: proceed now, but sequence after profile default fixes and the first HAL contraction pass.
+- Rationale: This is still lower priority than the core COM extraction, but it is now clearly part of the same cleanup story rather than a disconnected later refactor.
+- Duplicates merged: `H8`
+- Next step: reassess the wrappers once the surviving HAL seam is clearer, then either collapse them into `StandardHostServices` or document the specific value they still add.
+- Proposed workset: `WORKSET_2026-03-09_OXVBA_COM_REPURPOSE_AND_HAL_COM_EXTRACTION.md`
+- Ladder:
+  - follows `P-04` profile-default/smoke coverage work
+  - supports later HAL simplification after `v506-v526`
+- Dependencies: `P-04`, `P-13`
+- Verification: equivalent profile behavior after wrapper removal or simplification, cross-platform smoke coverage still green
+
+## [P-18] Engine-Facing COM Object Capability and Identity Visibility
+
+- Status: proceed
+- Source: `docs/REVIEW_20260309.md` section `H11`
+- Additional sources: resolved host/object bridge decisions on 2026-03-09
+- Summary: Once COM is being treated as an explicit bridge domain rather than hidden HAL internals, the engine/runtime will benefit from an explicit way to observe object identity/capabilities during the migration. The review suggestion to expose event-support or object-identity signals is now materially useful, not just a later convenience.
+- Why it matters: maintainability | compatibility | delivery
+- Decision: proceed now as a scoped bridge-surface enhancement tied to the extraction program.
+- Rationale: This helps the migration away from opaque adapter internals and aligns with the broader move toward explicit object/value transport and bridge semantics.
+- Duplicates merged: `H11`
+- Next step: define the minimal capability/identity surface the engine needs during and after COM extraction, and avoid overexposing adapter internals beyond that.
+- Proposed workset: `WORKSET_2026-03-09_OXVBA_COM_REPURPOSE_AND_HAL_COM_EXTRACTION.md`
+- Ladder:
+  - supports `v524-v526` late-bind integration and metadata closure
+  - supports later host-model integration where object capability checks matter
+- Dependencies: `P-13`, `P-14`
+- Verification: targeted engine/bridge tests for capability detection and identity reporting, no duplication of semantic ownership across host and COM bridges
