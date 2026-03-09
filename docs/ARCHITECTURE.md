@@ -21,7 +21,7 @@ High-level execution path:
 - `oxvba-compiler` produces `Bytecode`
 - `oxvba-vm` and `oxvba-jit` execute compiled subsets
 - `oxvba-hal` provides profile/policy-governed host services
-- COM-related shared transport/types and typelib metadata shapes now begin in `oxvba-com`, while deeper COM execution/state still largely lives in `oxvba-hal` pending extraction
+- COM-related shared transport/types plus deterministic typelib catalog/metadata construction now begin in `oxvba-com`, while deeper COM execution/state and transitional cache ownership still largely live in `oxvba-hal` pending extraction
 
 ## Important Current Truths
 

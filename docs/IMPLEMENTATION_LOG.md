@@ -1,6 +1,17 @@
 # Implementation Log
 
 ## 2026-03-10
+- deterministic typelib catalog extraction stage:
+  - added `crates/oxvba-com/src/typelib_catalog.rs` as the shared home for deterministic known-typelib identity resolution and metadata construction
+  - `oxvba-com` now exports:
+    - `resolve_known_typelib_identity`
+    - `known_typelib_identity_for_prog_id_name`
+    - `build_typelib_metadata`
+  - `StandardHostServices` now delegates deterministic typelib resolution/build steps to `oxvba-com` while retaining transitional `TypeLibraryHal` cache ownership
+  - removed stale duplicate HAL-local test-event-server typelib constants that were left behind after the extraction
+  - verification:
+    - `cargo test -p oxvba-com -p oxvba-hal --quiet` -> PASS
+    - `cargo test -p oxvba-com -p oxvba-hal -p oxvba-compiler -p oxvba-host --quiet` -> PASS
 - COM invoke v2 widening + typelib ownership staging batch:
   - widened `DispatchInvoke` from scalar-arg transport to a vector/request model:
     - new shared `oxvba-com` types:

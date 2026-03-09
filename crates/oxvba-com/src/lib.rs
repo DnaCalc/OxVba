@@ -6,6 +6,7 @@ pub mod model;
 pub mod platform;
 pub mod refcount;
 pub mod typelib;
+pub mod typelib_catalog;
 
 pub use dispatch::{ComDispatch, DispatchResult};
 pub use model::{
@@ -16,4 +17,7 @@ pub use refcount::RefCount;
 pub use typelib::{
     TypeLibCacheScope, TypeLibEventDispatchPath, TypeLibEventMetadata, TypeLibMemberInvokeKind,
     TypeLibMemberMetadata, TypeLibMetadataBlob, TypeLibResolveRequest, TypeLibResolvedIdentity,
+};
+pub use typelib_catalog::{
+    build_typelib_metadata, known_typelib_identity_for_prog_id_name, resolve_known_typelib_identity,
 };
