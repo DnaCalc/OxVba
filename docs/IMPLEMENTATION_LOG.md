@@ -36,6 +36,24 @@
     - `docs/README.md` index entry for the new catalog
   - verification:
     - `cargo test -p oxvba-com -p oxvba-compiler -p oxvba-hal -p oxvba-vm -p oxvba-host --quiet` -> PASS
+- documentation/spec sync + HAL error taxonomy coverage batch:
+  - refreshed `docs/BYTECODE_FORMAT.md` to describe the current in-memory bytecode model truthfully and explicitly point to code as the authority
+  - refreshed `docs/ARCHITECTURE.md` to include the real workspace shape:
+    - `oxvba-hal` as an active runtime boundary crate
+    - `oxvba-com` as the emerging COM transport/extraction target
+  - refreshed `docs/spec/HAL_SPEC_WORKING_DRAFT.md` to include:
+    - `TypeLibraryHal` in the current public surface
+    - direct `StandardHostServices` factory use for Windows/Linux/macOS
+    - transitional COM callback payload polling alongside legacy callback-token methods
+    - explicit note that current typelib ownership in HAL is transitional
+  - added direct `HalError` constructor coverage in `crates/oxvba-hal/src/error.rs` for:
+    - `capability_unavailable`
+    - `policy_denied`
+    - `adapter_fault`
+    - `unsupported_profile`
+  - verification:
+    - `cargo test -p oxvba-hal --quiet` -> PASS
+    - `./scripts/check-governance.ps1` -> PASS
 
 ## 2026-03-09
 - External registered COM event parity closure + housekeeping batch:

@@ -59,6 +59,7 @@ Domain subtraits:
 - `FileSystemHal`
 - `ProcessEnvHal`
 - `ComHal`
+- `TypeLibraryHal`
 - `TimeLocaleHal`
 - `DynamicLinkHal`
 - `DiagnosticsHal`
@@ -74,6 +75,7 @@ Current implementation shape:
 - `wasm` and `null` are dedicated adapters with explicit deterministic profile floors (no wrapper-only aliasing);
 - in deterministic policy presets, behavior stays deterministic by contract;
 - on host-matching Windows/Linux builds with non-deterministic policy presets (for example `interactive-dev`), selected domains use host-backed behavior paths.
+- current factory construction instantiates `StandardHostServices` directly for Windows/Linux/macOS profiles.
 
 ## 4. Capability Model
 
@@ -122,6 +124,11 @@ Current compile-time preflighted intrinsic families:
 - `DoEvents` -> `EventPump`
 - `CreateObject`, `DispatchInvoke` -> `ComActivationDispatch`
 
+Current COM callback/runtime note:
+- `EventPumpHal::do_events()` is still the host/event-pump intrinsic surface.
+- COM callback consumption now also has a payload-returning path via `ComHal::poll_event_callback()`.
+- legacy callback-token interrogation methods remain temporarily present for compatibility with older VM/compiler scaffolding and should be treated as transitional.
+
 Named preset table:
 - [`HAL_POLICY_PRESETS.md`](HAL_POLICY_PRESETS.md) defines reproducible policy bundles:
   - `strict-ci`
@@ -149,6 +156,10 @@ Current host-backed domains (Windows/Linux host-matching mode):
 - `DynamicLinkHal` (known-symbol host-backed subset plus deterministic projection fallback),
 - `DiagnosticsHal` (stderr emission side-effect while preserving token contract).
 
+Current type-library note:
+- `TypeLibraryHal` is part of the current public HAL surface and is implemented in `StandardHostServices`.
+- This is current truth, not a long-term architecture endorsement; the active COM extraction plan intends to move deeper typelib ownership toward `oxvba-com`.
+
 ## 7. Deterministic Error Taxonomy
 
 HAL stable codes (implemented in `crates/oxvba-hal/src/error.rs`):
@@ -156,6 +167,9 @@ HAL stable codes (implemented in `crates/oxvba-hal/src/error.rs`):
 - `HAL-E-POLICY-DENIED`
 - `HAL-E-ADAPTER-FAULT`
 - `HAL-E-UNSUPPORTED-PROFILE`
+
+Related implemented families outside the centralized HAL enum:
+- `COM-E-*` string-prefixed adapter/host diagnostics for COM activation/dispatch/event lifecycle failures
 
 VM propagation:
 - host errors map to deterministic runtime error numbers (`53xxx`) with capability+kind encoding.
@@ -199,5 +213,6 @@ Details: [`HAL_CONFORMANCE_SUITE.md`](HAL_CONFORMANCE_SUITE.md).
 1. Extracted candidate packs currently expose many host APIs as signature fragments (`may`) with limited normative behavioral detail.
 2. Some key host-sensitive behaviors (e.g., `DoEvents` scheduling semantics) are not cleanly captured by current extraction runs and need dedicated review/extraction refinement.
 3. Behavioral requirements for UI/process interactions are split across sources and host context; strict parity claims require empirical Office-based follow-up packs.
+4. The current HAL surface still contains COM-heavy areas (`ComHal`, `TypeLibraryHal`) that are planned extraction targets, so this draft describes current contract shape while that refactor is underway.
 
 These are tracked as design-stage uncertainty, not blockers for deterministic HAL scaffolding.

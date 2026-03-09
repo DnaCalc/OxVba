@@ -1,42 +1,94 @@
-# BYTECODE_FORMAT.md
+# Bytecode Format
 
 ## Status
-Draft v0 (scaffold).
 
-## Representation
-`oxvba-compiler::Bytecode` currently stores:
+Implementation-linked working document.
+
+Authoritative current implementation:
+- `crates/oxvba-compiler/src/bytecode.rs`
+- `crates/oxvba-compiler/src/emit.rs`
+- `crates/oxvba-vm/src/interpreter.rs`
+
+This document describes the current in-memory bytecode model. It is not a frozen binary serialization spec.
+
+## Current Representation
+
+`oxvba-compiler::Bytecode` currently carries:
 - `instructions: Vec<Instruction>`
+- `external_call_descriptors: Vec<ExternalCallDescriptor>`
 - `slot_count: usize`
+- `user_slot_count: usize`
 
-Current `Instruction` variants:
-- `LoadConstI32 { slot, value }`
-- `AddConstI32 { slot, value }`
-- `SubConstI32 { slot, value }`
-- `CopySlot { dst, src }`
-- `CmpEqSlots { dst, lhs, rhs }`
-- `CmpNeSlots { dst, lhs, rhs }`
-- `CmpLtSlots { dst, lhs, rhs }`
-- `CmpLeSlots { dst, lhs, rhs }`
-- `CmpGtSlots { dst, lhs, rhs }`
-- `CmpGeSlots { dst, lhs, rhs }`
-- `BoolNot { dst, src }`
-- `BoolAnd { dst, lhs, rhs }`
-- `BoolOr { dst, lhs, rhs }`
-- `JumpIfZero { cond_slot, target_pc }`
-- `Jump { target_pc }`
-- `IncSlot { slot }`
-- `Halt`
+`ExternalCallDescriptor` currently carries:
+- `descriptor_id`
+- `declared_name`
+- `library`
+- `alias`
+- `ordinal_alias`
+- `symbol`
+- `marshal_lane`
+- `calling_convention`
+- `selection_policy`
 
-`Bytecode` now tracks:
-- `slot_count`: total runtime slots (declared + compiler temporaries).
-- `user_slot_count`: declared/user-visible slots for snapshots and conformance output.
+## Instruction Surface
 
-This is an MVP representation to support early vertical-slice execution and tests.
+The current `Instruction` enum is the source of truth.
 
-## Planned evolution
-- Explicit opcode enum and operand encoding.
-- Register-window aware calling convention.
-- rkyv-serializable stable binary layout for mmap/zero-copy loading.
+Implemented instruction families include:
+- scalar register load/copy/arithmetic
+- comparisons and boolean ops
+- jumps, calls, returns, halt
+- error-state operations
+- host intrinsics:
+  - UI
+  - `DoEvents`
+  - filesystem/process/time
+  - COM create/invoke/subscribe/unsubscribe/callback legacy intrinsics
+  - dynamic-link invoke
+- collection/runtime helper intrinsics
+- array/tag/type introspection intrinsics
+- `WithEvents` runtime binding/owner-iteration intrinsics
 
-## Feature flags
-- `mach_zero_copy_bytecode` (crate: `oxvba-compiler`): enables zero-copy bytecode loading optimization path when implemented.
+Representative examples:
+- `LoadConstI32`
+- `AddConstI32`
+- `JumpIfZero`
+- `CallProc`
+- `IntrinsicDispatchInvokeHost`
+- `IntrinsicCreateObjectHost`
+- `IntrinsicInvokeSymbolHost`
+- `IntrinsicWithEventsSet`
+- `ClearErr`
+- `RaiseErr`
+- `ResumeNext`
+
+## Execution Model Notes
+
+Current bytecode is:
+- register-slot based
+- interpreted by `oxvba-vm`
+- optionally mirrored through `oxvba-jit` for supported subsets
+
+Current slots are not a stable ABI. They are compiler/runtime implementation details.
+
+## Stability Boundary
+
+Current stable expectations:
+- enum variants and fields are authoritative for current source
+- emitted bytecode is deterministic for identical source/config inputs
+- `user_slot_count` is the host-visible snapshot boundary
+
+Not yet stable:
+- binary on-disk encoding
+- opcode numbering
+- compact operand encoding
+- mmap/zero-copy persistence contract
+
+## Near-Term Direction
+
+Planned evolution remains:
+- clearer bytecode authority boundary versus future serialized form
+- tighter documentation of instruction families and invariants
+- eventual stable serialization only after the instruction surface and calling conventions settle
+
+Until then, code is authoritative and this document should stay synchronized to that code rather than pretending a frozen format already exists.
