@@ -4,9 +4,9 @@
 
 This document defines how to triage [`docs/REVIEW_20260309.md`](./REVIEW_20260309.md) into three incorporation files:
 
-- `docs/REVIEW_PROCEED.md`
-- `docs/REVIEW_DEFER.md`
-- `docs/REVIEW_FOLLOWUP.md`
+- `docs/REVIEW_20260309_PROCEED.md`
+- `docs/REVIEW_20260309_DEFER.md`
+- `docs/REVIEW_20260309_FOLLOWUP.md`
 
 Goal: convert a wide, mixed-quality review corpus into a controlled backlog that is actionable, auditable, and aligned with the active MACH1000 ladder.
 
@@ -25,7 +25,7 @@ Narrative praise, maturity estimates, and descriptive observations are not triag
 
 ## Output Files
 
-### `docs/REVIEW_PROCEED.md`
+### `docs/REVIEW_20260309_PROCEED.md`
 
 Use for items that should become an executable workset now.
 
@@ -36,7 +36,7 @@ A `PROCEED` item must satisfy all of:
 - no unresolved product decision needed
 - can be expressed as a bounded workset with checks
 
-### `docs/REVIEW_DEFER.md`
+### `docs/REVIEW_20260309_DEFER.md`
 
 Use for items that are accepted in principle but should wait.
 
@@ -47,7 +47,7 @@ A `DEFER` item is appropriate when:
 - the change is large and not needed for the next gate
 - the area is intentionally scaffold/future-facing
 
-### `docs/REVIEW_FOLLOWUP.md`
+### `docs/REVIEW_20260309_FOLLOWUP.md`
 
 Use for items that need user guidance or a deliberate design decision.
 
@@ -241,8 +241,8 @@ A triage pass is acceptable only if:
 
 After this plan, create:
 
-1. `docs/REVIEW_PROCEED.md`
-2. `docs/REVIEW_DEFER.md`
-3. `docs/REVIEW_FOLLOWUP.md`
+1. `docs/REVIEW_20260309_PROCEED.md`
+2. `docs/REVIEW_20260309_DEFER.md`
+3. `docs/REVIEW_20260309_FOLLOWUP.md`
 
 and populate them in the processing order above.

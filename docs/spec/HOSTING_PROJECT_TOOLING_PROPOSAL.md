@@ -257,6 +257,9 @@ pub trait OxvbaHostBridge {
     /// Unsubscribe from a previously subscribed event.
     fn unsubscribe_event(&self, subscription: SubscriptionId) -> Result<(), HostError>;
 
+    /// Release a previously resolved host object token.
+    fn release_object(&self, object: HostObjectToken) -> Result<(), HostError>;
+
     /// Invoke a method on a host-provided object.
     fn invoke_method(
         &self,
@@ -284,6 +287,27 @@ pub trait OxvbaHostBridge {
     fn emit_diagnostic(&self, diagnostic: EngineDiagnostic);
 }
 ```
+
+**Contract lock (2026-03-09):**
+
+1. The host bridge keeps a single `Variant` value boundary.
+2. Object-valued property/method results cross the boundary as object-capable `Variant` values that carry host object identity.
+3. The bridge does not add special-case APIs for collection/default-member behavior.
+   - Host Project + runtime semantics remain the authority for deciding when VBA syntax implies default-member access.
+   - The bridge exposes ordinary property/method operations only.
+4. Host-to-engine event ingress is explicit and engine-owned:
+
+```rust
+impl Engine {
+    pub fn dispatch_host_event(
+        &mut self,
+        subscription: SubscriptionId,
+        args: &[Variant],
+    ) -> Result<(), HostError>;
+}
+```
+
+5. The bridge owns host object resolution/invocation/subscription/release, while the engine owns VBA semantic dispatch and event lifecycle behavior.
 
 **Lifecycle sequence:**
 
@@ -380,186 +404,45 @@ When multiple add-ins export procedures with the same name, the host must apply 
 
 DNA VbCalc is a purpose-built pathfinder host application designed to put us "in harm's way" for every aspect of the kind of hosting that Excel does to the VBA runtime. It is not a minimal stub — it is a full-exercise embedded host that validates every interaction surface between a host application and the OxVBA engine. It also serves as a useful interactive runner for trying out VBA code.
 
-The design defined here will be refined further. The focus is on defining all key hosting aspects that a full-exercise host of the type we want to support should exhibit.
+**Repository boundary note (2026-03-09):**
 
-**Work panel and controls** `[APP-IDEA]`
+DNA VbCalc is expected to live in a separate future repository.
 
-DNA VbCalc provides a work panel — an interactive surface with input and output controls:
+This OxVba repo carries:
+1. the host/tooling contract,
+2. the bridge semantics,
+3. the preparatory baseline note:
+   - `docs/DNAVBCALC_HOST_SHELL_BASELINE_PREPARATION_2026-03-09.md`
 
-- **Input controls**: text boxes, spin buttons, combo boxes, check boxes.
-- **Output controls**: labels, list views, simple grid/table views.
-- **Action controls**: buttons, toggle buttons.
-- **Layout**: controls arranged in a panel that VBA code can read, write, and restructure.
+The actual DNA VbCalc implementation plan should be created in that future repository, not added to OxVba workset execution as if it were an in-repo implementation track.
 
-The work panel is the primary surface through which users interact with VBA code. VBA code can:
-- Read input values from controls.
-- Write output values to controls.
-- Modify the panel layout (add, remove, reposition controls).
-- Subscribe to events from controls.
+The richer DNA VbCalc application ideas are intentionally moved into a separate preparation doc set so they do not interfere with OxVba workset planning:
+1. `docs/DNAVBCALC_PREPARATION_INDEX_2026-03-09.md`
+2. `docs/DNAVBCALC_HOST_SHELL_BASELINE_PREPARATION_2026-03-09.md`
+3. `docs/DNAVBCALC_APPLICATION_IDEAS_PREPARATION_2026-03-09.md`
 
-**Rich COM object model** `[HOST-REQ]`
+**Baseline lock (2026-03-09):**
 
-DNA VbCalc exposes a host object model that the VBA runtime accesses through the standard OxVBA hosting bridge. The object hierarchy:
+For the future separate DNA VbCalc repository, the first baseline host shell is:
+1. Tauri desktop shell,
+2. Rust backend,
+3. web UI frontend,
+4. `oxvba.toml` project open path at startup and via UI,
+5. debug/immediate-style shell as the first user-facing interaction surface,
+6. full reset + recompile on reload,
+7. non-COM host-bridge path first.
 
-```
-Application                         (root object, injected via register_root_object)
-  ├── .Name As String               (application name)
-  ├── .Version As String
-  ├── .ActiveWorkspace As Workspace
-  ├── .Quit()
-  │
-  └── .WorkPanel As WorkPanel       (the interactive surface)
-        ├── .Controls As Controls   (collection of UI controls)
-        │     ├── .Count As Long
-        │     ├── .Item(index) As Control
-        │     ├── .Item(name) As Control  (default member)
-        │     ├── .Add(type, name, ...) As Control
-        │     └── .Remove(name)
-        │
-        ├── .Refresh()
-        └── .Clear()
+This baseline is intentionally debug-centric and does not require a first-pass visual designer or rich control hierarchy.
 
-Control (base)                      (common properties for all controls)
-  ├── .Name As String
-  ├── .Value As Variant             (read/write for inputs, read for outputs)
-  ├── .Caption As String
-  ├── .Visible As Boolean
-  ├── .Enabled As Boolean
-  ├── .ControlType As Long
-  └── events: Click, Change, DblClick, ...
+**Normative host-contract implications** `[HOST-REQ]`
 
-Button : Control                    (action control)
-  └── events: Click
-
-TextBox : Control                   (input control)
-  ├── .Text As String
-  └── events: Change, KeyPress
-
-Label : Control                     (output control)
-  └── .Caption As String
-
-ListBox : Control                   (list control)
-  ├── .List() As Variant
-  ├── .ListIndex As Long
-  ├── .AddItem(text)
-  ├── .RemoveItem(index)
-  └── events: Click, DblClick
-```
-
-This model exercises: root object injection, child object navigation, collection access with default members, property get/set/let, method invocation, and event subscription — the complete host object interaction surface.
-
-**Event subscription exercise** `[HOST-REQ]`
-
-VBA code must be able to subscribe to host object events through `WithEvents`:
-
-```vba
-' Document module (code-behind for the workspace)
-Private WithEvents btnCalc As Button
-Private WithEvents txtInput As TextBox
-
-Private Sub Workspace_Open()
-    Set btnCalc = Application.WorkPanel.Controls("btnCalculate")
-    Set txtInput = Application.WorkPanel.Controls("txtInput")
-End Sub
-
-Private Sub btnCalc_Click()
-    Dim val As Double
-    val = CDbl(txtInput.Text)
-    Application.WorkPanel.Controls("lblResult").Caption = Format(val * 2, "#,##0.00")
-End Sub
-
-Private Sub txtInput_Change()
-    ' Live preview as user types
-    If IsNumeric(txtInput.Text) Then
-        Application.WorkPanel.Controls("lblPreview").Caption = "Preview: " & CStr(CDbl(txtInput.Text) * 2)
-    End If
-End Sub
-```
-
-This exercises the full host-to-engine event routing pipeline: object identity, subscription lifecycle, handler dispatch, and the interaction between `WithEvents` variable assignment and subscription state.
-
-**Persistence format** `[APP-IDEA]`
-
-DNA VbCalc uses a simple XML-in-ZIP container format (file extension: `.vbcalc`), inspired by OOXML but deliberately simple with no compatibility requirements:
-
-```
-workspace.vbcalc (ZIP archive)
-  ├── [Content_Types].xml           (MIME type registry)
-  ├── workspace.xml                 (panel layout, control definitions, settings)
-  ├── vba/
-  │     ├── project.xml             (project manifest in XML)
-  │     ├── Module1.bas             (VBA source files)
-  │     ├── ThisWorkspace.cls       (document module / code-behind)
-  │     └── ...
-  └── refs/                         (optional embedded reference projects)
-        └── UtilLib/
-              ├── project.xml
-              └── *.bas / *.cls
-```
-
-This format stores: workspace layout and control definitions, referenced VBA projects (possibly embedded), host configuration and settings. It exercises the host-managed project store contract — the host loads VBA source from within its own file format and provides it to the engine.
-
-**Hosting surface coverage checklist**
-
-DNA VbCalc is designed to exercise every hosting interaction that a full embedded host requires:
-
-| Hosting aspect | VbCalc exercise | Contract area |
-|---|---|---|
-| Project load from host store | Load from `.vbcalc` ZIP or loose files | `OxvbaHostBridge::load_project` |
-| Root object injection | `Application` + `WorkPanel` | `Engine::register_root_object` |
-| Object model navigation | `Application.WorkPanel.Controls("x").Value` | `invoke_method`, `get_property`, `set_property` |
-| Event subscription lifecycle | `WithEvents btn As Button` / `Set btn = ...` / `Set btn = Nothing` | `subscribe_event`, `unsubscribe_event` |
-| Event dispatch | Host raises `Click` on button -> VBA handler runs | Event bridge dispatch path |
-| Error routing | VBA `Err.Raise` during handler -> host sees error | Diagnostic/error model |
-| Multiple projects | Document project + add-in library references | `ProjectGraph` multi-project |
-| Function export and registration | Public functions visible to host | Export inventory |
-| Lifecycle management | `Workspace_Open`, `Class_Initialize`, `Class_Terminate` | Object lifecycle |
-| Policy and capability gating | COM blocked in headless mode, filesystem restricted | HAL policy presets |
-| Add-in scope conversion | Mark project as process-global add-in | Scope model |
-| Project reload | Edit VBA, re-compile without restarting host | Re-compilation path |
-
-**Proposed Rust sketch:**
-
-```rust
-fn main() {
-    // 1. Create engine
-    let config = HostConfig {
-        enable_jit: false,
-        root_object_name: Some("Application".to_string()),
-    };
-    let mut engine = Engine::new(config);
-    engine.set_runtime_profile(RuntimeProfileId::WindowsGui);
-
-    // 2. Create host object model
-    let app = VbCalcApplication::new();
-    let work_panel = WorkPanel::new();
-    work_panel.add_control(Button::new("btnCalculate", "Calculate"));
-    work_panel.add_control(TextBox::new("txtInput", ""));
-    work_panel.add_control(Label::new("lblResult", ""));
-    app.set_work_panel(work_panel);
-
-    // 3. Register root objects
-    engine.register_root_object("Application", "VbCalcApplication");
-
-    // 4. Load project from workspace file
-    let workspace = VbCalcWorkspace::open("examples/demo.vbcalc");
-    let manifest = workspace.load_vba_project();
-
-    // 5. Compile and execute
-    match engine.execute_project_with_snapshot_phased(&manifest) {
-        Ok((slots, diagnostics)) => { /* ... */ },
-        Err(e) => eprintln!("Execution error: {e}"),
-    }
-
-    // 6. Event pump loop
-    loop {
-        if let Some(event) = app.poll_event() {
-            engine.dispatch_host_event(event);
-        }
-        if app.should_quit() { break; }
-    }
-}
-```
+The DNA VbCalc pathfinder remains valuable here only insofar as it validates the host/tooling contract. The important in-repo requirements are:
+1. host-managed project load from non-filesystem-controlled storage paths when needed,
+2. root object injection and object model navigation through the hosting bridge,
+3. explicit event subscription and host-to-engine event ingress,
+4. diagnostics/error routing through the host contract,
+5. deterministic reset/reload behavior for v1,
+6. language services against host-managed source stores.
 
 #### 3.1.6 Language services contract
 
@@ -606,6 +489,7 @@ To avoid over-coupling the language model to COM, OxVBA adopts a three-plane con
    - COM is a Windows transport adapter lane for object/event delivery (`IDispatch`, connection points, typelib binding).
    - Non-COM hosts use equivalent bridge transports while preserving the same Host Project semantic contract.
    - DNA VbCalc pathfinder is explicitly required to validate this contract cross-platform without COM dependency.
+   - Object-valued returns and event ingress MUST still respect the host-bridge contract above (`Variant` value boundary + explicit `dispatch_host_event(...)`), even when COM is the underlying transport.
 
 **Normative consequence:**
 - Semantic compatibility claims for host-object/event behavior are anchored to the Host Project + runtime event engine.

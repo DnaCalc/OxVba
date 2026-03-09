@@ -196,6 +196,10 @@ Execution ladder for this program:
 
 Targeted follow-on under Track D and Track F:
 - `docs/worksets/WORKSET_2026-03-09_COM_INTEROP_CONTINUATION_MULTIARG_LATEBOUND_AND_EVENT_PROJECTION.md`
+- `docs/worksets/WORKSET_2026-03-09_OXVBA_COM_REPURPOSE_AND_HAL_COM_EXTRACTION.md`
+- `docs/worksets/WORKSET_2026-03-09_HOST_BRIDGE_OBJECT_VALUE_AND_EVENT_INGRESS_CONTRACT.md`
 
 Reason:
 - the external registered COM event lane is now green, but general late-bound COM invoke still remains single-argument at the HAL boundary, and the synthetic pair-event projection path still needs explicit closure.
+- the COM implementation boundary also needs a coherent long-term home so invoke/event/server cleanup does not further entrench Windows COM behavior inside generic HAL traits.
+- the future host/pathfinder work also needs a locked object-value and event-ingress contract so COM transport work and non-COM host semantics converge on one bridge model.
