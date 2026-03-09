@@ -34,6 +34,23 @@ define_token!(ComSubscriptionToken);
 define_token!(ComCallbackToken);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ComObjectTransportKind {
+    Projection,
+    NativeDispatch,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ComObjectDescriptor {
+    pub object: ComObjectToken,
+    pub prog_id_name: String,
+    pub transport: ComObjectTransportKind,
+    pub supports_events: bool,
+    pub known_member_tokens: Vec<i32>,
+    pub known_event_tokens: Vec<i32>,
+    pub typelib_cache_key: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ComInvokeKind {
     Method,
     PropertyGet,

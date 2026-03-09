@@ -9,9 +9,10 @@ use crate::{
     traits::{
         ComHal, DiagnosticsHal, DynamicLinkHal, EventPumpHal, FileSystemHal, HostServices,
         ProcessEnvHal, TimeLocaleHal, TypeLibCacheScope, TypeLibMetadataBlob,
-        TypeLibResolveRequest, TypeLibResolvedIdentity, TypeLibraryHal, UiInteractionHal,
+        TypeLibResolveRequest, TypeLibResolvedIdentity, UiInteractionHal,
     },
 };
+use oxvba_com::ComObjectDescriptor;
 
 #[derive(Debug, Clone)]
 pub struct WasmHostServices {
@@ -74,9 +75,6 @@ impl HostServices for WasmHostServices {
         self
     }
     fn com(&self) -> &dyn ComHal {
-        self
-    }
-    fn typelibs(&self) -> &dyn TypeLibraryHal {
         self
     }
     fn time_locale(&self) -> &dyn TimeLocaleHal {
@@ -177,6 +175,10 @@ impl ComHal for WasmHostServices {
         Err(self.unsupported(CapabilityId::ComActivationDispatch, "release_object"))
     }
 
+    fn describe_object(&self, _object: i32) -> HalResult<Option<ComObjectDescriptor>> {
+        Err(self.unsupported(CapabilityId::ComActivationDispatch, "describe_object"))
+    }
+
     fn dispatch_invoke_v2(&self, _request: &oxvba_com::ComInvokeRequest) -> HalResult<i32> {
         Err(self.unsupported(CapabilityId::ComActivationDispatch, "dispatch_invoke"))
     }
@@ -214,9 +216,6 @@ impl ComHal for WasmHostServices {
             "release_event_callback",
         ))
     }
-}
-
-impl TypeLibraryHal for WasmHostServices {
     fn resolve_typelib_reference(
         &self,
         _request: &TypeLibResolveRequest,

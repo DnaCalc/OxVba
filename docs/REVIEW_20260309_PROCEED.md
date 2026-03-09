@@ -4,9 +4,13 @@ Triaged from `docs/REVIEW_20260309.md` using `docs/REVIEW_20260309_TRIAGE_PLAN.m
 
 Entries are canonicalized, deduplicated, and ordered for immediate execution value.
 
+Execution status:
+- `P-01` through `P-18` completed as of 2026-03-10 through the staged COM/HAL continuation batches recorded in `docs/IMPLEMENTATION_LOG.md`.
+- This file remains the canonical record of what was accepted from the review, but no `PROCEED` items remain open after the 2026-03-10 execution pass.
+
 ## [P-01] COM Invoke V2 and Multi-Argument Event Closure
 
-- Status: proceed
+- Status: completed (2026-03-10)
 - Source: `docs/REVIEW_20260309.md` sections `5`, `H2`, `PR-10`, `XR`
 - Additional sources: `PR-1` suggestion 3, `PR-12`
 - Summary: The review correctly identifies that OxVba still exposes a single-argument late-bound COM invoke shape at the HAL boundary, while recent evidence shows the registered COM event lane is now green but still relies on legacy projection behavior in one path. The next work period should finish the COM HAL v2 invoke contract so method/property get/put/putref, true multi-argument dispatch, and event-trigger projection all use one authoritative argument model.
@@ -25,7 +29,7 @@ Entries are canonicalized, deduplicated, and ordered for immediate execution val
 
 ## [P-02] Typed COM Tokens and Callback Payload Normalization
 
-- Status: proceed
+- Status: completed (2026-03-10)
 - Source: `docs/REVIEW_20260309.md` sections `2`, `8`, `H1`, `H3`, `PR-1`, `PR-10`
 - Additional sources: `XR`
 - Summary: The review surfaces two related problems: callback payloads still carry historical single-argument artifacts (`arg0`) and the COM layer still overloads raw `i32` tokens for object handles, subscriptions, callbacks, and value transport. The next work period should normalize callback payloads around a single authoritative `args` vector and introduce typed wrappers/value objects where the boundary currently relies on interchangeable integer tokens.
@@ -44,7 +48,7 @@ Entries are canonicalized, deduplicated, and ordered for immediate execution val
 
 ## [P-03] COM Callback Polling and `release_object` Lifecycle Closure
 
-- Status: proceed
+- Status: completed (2026-03-10)
 - Source: `docs/REVIEW_20260309.md` sections `H1`, `H3`, `H5`, `PR-1`
 - Additional sources: `XR`
 - Summary: The current callback-consumption path is a chatty token interrogation protocol spread across `do_events()` and multiple `ComHal` calls, and there is still no `release_object` method for deterministic COM object teardown. The next work period should replace the callback interrogation sequence with one payload-returning poll API and close the missing object-release lifecycle path.
@@ -63,7 +67,7 @@ Entries are canonicalized, deduplicated, and ordered for immediate execution val
 
 ## [P-04] Cross-Platform Default Profile Selection and Smoke Coverage
 
-- Status: proceed
+- Status: completed (2026-03-10)
 - Source: `docs/REVIEW_20260309.md` sections `4`, `10`, `TC`, `CI`, `CB-16`
 - Additional sources: `XR`
 - Summary: The review identifies a concrete correctness issue in hardcoded `HalProfileId::Windows` defaults and a broader gap in non-Windows end-to-end smoke coverage. Even though the active claim target is Windows, wrong defaults and untested non-Windows stubs create avoidable regressions and reduce confidence in host/service profile selection.
@@ -81,7 +85,7 @@ Entries are canonicalized, deduplicated, and ordered for immediate execution val
 
 ## [P-05] BYTECODE Format Authority Closure
 
-- Status: proceed
+- Status: completed (2026-03-10)
 - Source: `docs/REVIEW_20260309.md` sections `SD-1`, `Documentation Consistency`, `XR`
 - Additional sources: `Audit Summary`
 - Summary: `docs/BYTECODE_FORMAT.md` is badly stale relative to `bytecode.rs`. The review is correct that the current file cannot remain as a quasi-spec without either being expanded or explicitly superseded by code plus a narrower normative note.
@@ -99,7 +103,7 @@ Entries are canonicalized, deduplicated, and ordered for immediate execution val
 
 ## [P-06] ARCHITECTURE and HAL Spec Structural Sync
 
-- Status: proceed
+- Status: completed (2026-03-10)
 - Source: `docs/REVIEW_20260309.md` sections `SD-2`, `SD-3`, `Documentation Consistency`, `CB-12`
 - Additional sources: `Audit Summary`
 - Summary: The structural docs are materially out of sync with the actual workspace and HAL surface. `ARCHITECTURE.md` omits `oxvba-hal`, and `HAL_SPEC_WORKING_DRAFT.md` lags the current public trait surface by excluding `TypeLibraryHal` and related support types.
@@ -117,7 +121,7 @@ Entries are canonicalized, deduplicated, and ordered for immediate execution val
 
 ## [P-07] Error Code Catalog and Family Register
 
-- Status: proceed
+- Status: completed (2026-03-10)
 - Source: `docs/REVIEW_20260309.md` sections `CB-6`, `CB-11`, `EH`, `XR`
 - Additional sources: `Audit Summary`
 - Summary: The review is directionally right that the error-code families need one authoritative catalog, but it overstates the gap by claiming `HAL-E-*` is undefined. The next work period should create a single error-code register that catalogs existing `HAL-E-*`, `PMR-E-*`, `COM-E-*` surfaces and records the status of proposal-stage families such as `VBP-E-*`.
@@ -135,7 +139,7 @@ Entries are canonicalized, deduplicated, and ordered for immediate execution val
 
 ## [P-08] COM FFI `// SAFETY:` Annotation Pass
 
-- Status: proceed
+- Status: completed (2026-03-10)
 - Source: `docs/REVIEW_20260309.md` sections `SEC`, `TD`, `XR`
 - Additional sources: `Audit Summary`
 - Summary: All `unsafe` blocks in the codebase sit in the Windows COM FFI adapter and none currently carry `// SAFETY:` comments. The review is correct that this is the highest-priority safety auditability gap.
@@ -153,7 +157,7 @@ Entries are canonicalized, deduplicated, and ordered for immediate execution val
 
 ## [P-09] `HalError` Factory Coverage
 
-- Status: proceed
+- Status: completed (2026-03-10)
 - Source: `docs/REVIEW_20260309.md` sections `TC`, `EH`, `XR`
 - Additional sources: none
 - Summary: The four `HalError` constructor helpers are public, stable, and currently untested. This is a small but real gap because these constructors define the project's core HAL error taxonomy.
@@ -171,7 +175,7 @@ Entries are canonicalized, deduplicated, and ordered for immediate execution val
 
 ## [P-10] Environment Variable Caching at Initialization Boundaries
 
-- Status: proceed
+- Status: completed (2026-03-10)
 - Source: `docs/REVIEW_20260309.md` sections `6`, `EH`, `XR`
 - Additional sources: none
 - Summary: Several toggles are re-read from environment variables on every call path rather than being captured at construction time. The review is correct that this is both noisy and a source of inconsistent behavior inside a single execution session.
@@ -188,7 +192,7 @@ Entries are canonicalized, deduplicated, and ordered for immediate execution val
 
 ## [P-11] VM Execution-State Reset Consolidation
 
-- Status: proceed
+- Status: completed (2026-03-10)
 - Source: `docs/REVIEW_20260309.md` sections `9`, `VM Execution`, `XR`
 - Additional sources: none
 - Summary: The reset/init sequence in `Vm::execute` and adjacent entry points is duplicated with slightly different behavior. The review correctly flags this as a future divergence trap.
@@ -206,7 +210,7 @@ Entries are canonicalized, deduplicated, and ordered for immediate execution val
 
 ## [P-12] `DISPATCH_INVOKE_MISSING_ARG_TOKEN` Deduplication
 
-- Status: proceed
+- Status: completed (2026-03-10)
 - Source: `docs/REVIEW_20260309.md` sections `3`, `TD`, `XR`
 - Additional sources: none
 - Summary: The same dispatch-missing sentinel constant is defined in multiple crates. The review is correct that this should be a single shared definition rather than duplicated magic.
@@ -223,7 +227,7 @@ Entries are canonicalized, deduplicated, and ordered for immediate execution val
 
 ## [P-13] Repurpose `oxvba-com` as the Bidirectional COM Bridge and Extract COM From HAL
 
-- Status: proceed
+- Status: completed (2026-03-10)
 - Source: `docs/REVIEW_20260309.md` sections `H6`, `H1-H5`, `H7-H11`, `Architecture and Crate Structure`, `CB-1`, `CB-2`, `CB-13`
 - Additional sources: resolved user decision on 2026-03-09
 - Summary: The review correctly surfaced that COM feels misplaced inside the generic HAL surface and that `oxvba-com` no longer matches its intended role. The project decision is now to repurpose `oxvba-com` into the Windows-first bidirectional COM bridge that maps external COM into OxVba/VBA object semantics and exposes OxVba outward as COM, while `oxvba-hal` contracts back toward profile/policy/bootstrap responsibilities.
@@ -242,7 +246,7 @@ Entries are canonicalized, deduplicated, and ordered for immediate execution val
 
 ## [P-14] Host-Bridge Object Value and Event-Ingress Contract Lock
 
-- Status: proceed
+- Status: completed (2026-03-10)
 - Source: `docs/REVIEW_20260309.md` sections `PR-1`, `PR-10`, `PR-11`, `PR-12`
 - Additional sources: resolved user decision on 2026-03-09
 - Summary: The host/tooling proposal needs one authoritative contract for object-valued bridge operations and host-to-engine event delivery. The project decision is to keep a single `Variant` value boundary, represent host object references as object-capable `Variant` values, require explicit engine-side `dispatch_host_event(subscription, args)`, and keep collection/default-member semantics in the semantic/runtime layer instead of inventing bridge special cases.
@@ -260,7 +264,7 @@ Entries are canonicalized, deduplicated, and ordered for immediate execution val
 
 ## [P-15] HAL COM Surface Contraction and Bootstrap-Seam Redesign
 
-- Status: proceed
+- Status: completed (2026-03-10)
 - Source: `docs/REVIEW_20260309.md` section `H4`
 - Additional sources: resolved `oxvba-com` repurpose decision on 2026-03-09
 - Summary: With `oxvba-com` now designated as the long-term home for COM transport/state/metadata behavior, the old recommendation to split `ComHal` into narrower concerns is no longer a speculative cleanup. It is part of the required HAL contraction plan so HAL stops pretending to be the permanent COM implementation boundary.
@@ -278,7 +282,7 @@ Entries are canonicalized, deduplicated, and ordered for immediate execution val
 
 ## [P-16] `TypeLibraryHal` Internalization Into the COM Bridge Boundary
 
-- Status: proceed
+- Status: completed (2026-03-10)
 - Source: `docs/REVIEW_20260309.md` sections `H7`, `SD-3`
 - Additional sources: resolved `oxvba-com` repurpose decision on 2026-03-09
 - Summary: The review correctly identified that type library loading/metadata is really a COM bridge concern, not a peer host capability. With `oxvba-com` now defined as the COM boundary crate, this item should move from deferred cleanup to active planning and extraction.
@@ -296,7 +300,7 @@ Entries are canonicalized, deduplicated, and ordered for immediate execution val
 
 ## [P-17] Collapse Redundant Platform `HostServices` Wrappers During HAL Cleanup
 
-- Status: proceed
+- Status: completed (2026-03-10)
 - Source: `docs/REVIEW_20260309.md` section `H8`
 - Additional sources: `P-04`, `P-13`
 - Summary: The per-platform `HostServices` wrapper types are increasingly hard to justify now that HAL is being simplified and COM is being extracted. They should be reconsidered as active cleanup work, not indefinite deferred polish.
@@ -314,7 +318,7 @@ Entries are canonicalized, deduplicated, and ordered for immediate execution val
 
 ## [P-18] Engine-Facing COM Object Capability and Identity Visibility
 
-- Status: proceed
+- Status: completed (2026-03-10)
 - Source: `docs/REVIEW_20260309.md` section `H11`
 - Additional sources: resolved host/object bridge decisions on 2026-03-09
 - Summary: Once COM is being treated as an explicit bridge domain rather than hidden HAL internals, the engine/runtime will benefit from an explicit way to observe object identity/capabilities during the migration. The review suggestion to expose event-support or object-identity signals is now materially useful, not just a later convenience.

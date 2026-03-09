@@ -59,7 +59,6 @@ Domain subtraits:
 - `FileSystemHal`
 - `ProcessEnvHal`
 - `ComHal`
-- `TypeLibraryHal`
 - `TimeLocaleHal`
 - `DynamicLinkHal`
 - `DiagnosticsHal`
@@ -157,10 +156,10 @@ Current host-backed domains (Windows/Linux host-matching mode):
 - `DiagnosticsHal` (stderr emission side-effect while preserving token contract).
 
 Current type-library note:
-- `TypeLibraryHal` is part of the current public HAL surface and is implemented in `StandardHostServices`.
-- The stable typelib data shapes (`TypeLibResolveRequest`, `TypeLibResolvedIdentity`, `TypeLibMetadataBlob`, member/event metadata enums) now live in `oxvba-com` and are re-exported through HAL during transition.
-- Deterministic known-typelib resolution and metadata construction now also delegate from `StandardHostServices` into `oxvba-com`; HAL currently retains cache ownership and the temporary public bridge surface.
-- This is current truth, not a long-term architecture endorsement; the active COM extraction plan intends to move the remaining typelib ownership and bootstrap seams toward `oxvba-com`.
+- The separate `TypeLibraryHal` trait/accessor has been removed from the public HAL surface.
+- Typelib resolve/load/invalidate operations now live under `ComHal`, matching their actual ownership as COM bridge behavior.
+- The stable typelib data shapes (`TypeLibResolveRequest`, `TypeLibResolvedIdentity`, `TypeLibMetadataBlob`, member/event metadata enums) and deterministic catalog/build logic now live in `oxvba-com` and are re-exported through HAL during transition.
+- `StandardHostServices` still retains transitional typelib cache ownership while the deeper COM state/metadata extraction continues toward `oxvba-com`.
 
 ## 7. Deterministic Error Taxonomy
 
@@ -215,6 +214,6 @@ Details: [`HAL_CONFORMANCE_SUITE.md`](HAL_CONFORMANCE_SUITE.md).
 1. Extracted candidate packs currently expose many host APIs as signature fragments (`may`) with limited normative behavioral detail.
 2. Some key host-sensitive behaviors (e.g., `DoEvents` scheduling semantics) are not cleanly captured by current extraction runs and need dedicated review/extraction refinement.
 3. Behavioral requirements for UI/process interactions are split across sources and host context; strict parity claims require empirical Office-based follow-up packs.
-4. The current HAL surface still contains COM-heavy areas (`ComHal`, `TypeLibraryHal`) that are planned extraction targets, so this draft describes current contract shape while that refactor is underway.
+4. The current HAL surface still contains a COM-heavy `ComHal` seam that is a planned extraction target, so this draft describes current contract shape while that refactor is underway.
 
 These are tracked as design-stage uncertainty, not blockers for deterministic HAL scaffolding.

@@ -12,7 +12,7 @@ use crate::{
     error::HalResult,
     model::{HalDescriptor, HalProfileId, HostPolicy},
 };
-use oxvba_com::{ComCallbackPayload, ComInvokeRequest};
+use oxvba_com::{ComCallbackPayload, ComInvokeRequest, ComObjectDescriptor};
 pub use oxvba_com::{
     TypeLibCacheScope, TypeLibEventDispatchPath, TypeLibEventMetadata, TypeLibMemberInvokeKind,
     TypeLibMemberMetadata, TypeLibMetadataBlob, TypeLibResolveRequest, TypeLibResolvedIdentity,
@@ -74,7 +74,6 @@ pub trait HostServices: Send + Sync {
     fn fs(&self) -> &dyn FileSystemHal;
     fn process(&self) -> &dyn ProcessEnvHal;
     fn com(&self) -> &dyn ComHal;
-    fn typelibs(&self) -> &dyn TypeLibraryHal;
     fn time_locale(&self) -> &dyn TimeLocaleHal;
     fn dynlink(&self) -> &dyn DynamicLinkHal;
     fn diag(&self) -> &dyn DiagnosticsHal;
@@ -110,6 +109,7 @@ pub trait ProcessEnvHal: Send + Sync {
 pub trait ComHal: Send + Sync {
     fn create_object(&self, prog_id: ValueToken) -> HalResult<ValueToken>;
     fn release_object(&self, object: ValueToken) -> HalResult<ValueToken>;
+    fn describe_object(&self, object: ValueToken) -> HalResult<Option<ComObjectDescriptor>>;
     fn dispatch_invoke_v2(&self, request: &ComInvokeRequest) -> HalResult<ValueToken>;
     fn dispatch_invoke(
         &self,
@@ -127,9 +127,6 @@ pub trait ComHal: Send + Sync {
     fn event_callback_arity(&self, callback: ValueToken) -> HalResult<ValueToken>;
     fn event_callback_arg(&self, callback: ValueToken, index: ValueToken) -> HalResult<ValueToken>;
     fn release_event_callback(&self, callback: ValueToken) -> HalResult<ValueToken>;
-}
-
-pub trait TypeLibraryHal: Send + Sync {
     fn resolve_typelib_reference(
         &self,
         request: &TypeLibResolveRequest,

@@ -10,7 +10,7 @@ Companion docs:
 
 Implementation snapshot (`v427..v466`):
 - PMR now supports type-library identity hints (`importlib/libid/version/lcid`) and deterministic bind statuses for unresolved/ambiguous identity outcomes.
-- HAL now exposes `TypeLibraryHal` for resolve/load/invalidate operations, with Windows deterministic subset implementation and deterministic unsupported behavior on non-Windows profiles.
+- HAL now exposes typelib resolve/load/invalidate through `ComHal`, with Windows deterministic subset implementation and deterministic unsupported behavior on non-Windows profiles.
 - Compiler project-lowering now supports a constrained early-bound bridge that rewrites:
   - `Dim x As Lib.Type` -> `Dim x As Object`,
   - `Dim x As New Lib.Type` -> object declaration plus deterministic `CreateObject` selector initialization,
@@ -116,7 +116,7 @@ Anchor families to use directly in implementation and conformance mapping:
 Boundary ownership:
 
 - PMR / ProjectGraph owns reference declarations, ordering, and binding states.
-- HAL owns platform access for type library discovery/load and COM activation.
+- HAL owns the current platform/bootstrap access for COM activation, while typelib discovery/load behavior now rides the COM boundary rather than a separate peer trait.
 - Compiler binder owns symbol/type/member resolution and typed call lowering decisions.
 - VM/runtime owns execution of the lowered call plan and deterministic error propagation.
 
@@ -168,12 +168,12 @@ Expose deterministic diagnostic families (`PMR-E-TYPELIB-*`, `BIND-E-TYPELIB-*`)
 
 ## 6. Type library ingestion and cache model
 
-## 6.1 HAL contract extension (planned)
+## 6.1 COM boundary contract extension (implemented transitional shape)
 
-Add Windows-only HAL surface for typelib access:
+Typelib access now lives on `ComHal`:
 
 ```rust
-trait TypeLibraryHal {
+trait ComHal {
     fn resolve_typelib_reference(&self, request: &TypeLibResolveRequest) -> HalResult<TypeLibResolvedIdentity>;
     fn load_typelib_metadata(&self, identity: &TypeLibResolvedIdentity) -> HalResult<TypeLibMetadataBlob>;
     fn invalidate_typelib_cache(&self, scope: TypeLibCacheScope, reference_name: Option<&str>) -> HalResult<i32>;

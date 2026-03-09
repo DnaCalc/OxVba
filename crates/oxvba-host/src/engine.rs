@@ -3,7 +3,7 @@ use std::{
     sync::{Arc, Mutex},
 };
 
-use oxvba_com::ComCallbackPayload;
+use oxvba_com::{ComCallbackPayload, ComObjectDescriptor};
 use oxvba_compiler::{
     Bytecode, CompiledProject, Instruction, ProcedureRuntimeMetadata, ProjectManifest, compile,
     compile_project,
@@ -306,6 +306,16 @@ impl Engine {
             .remove(&subscription_token)
             .is_some();
         Ok(removed)
+    }
+
+    pub fn describe_com_object(
+        &self,
+        object_token: i32,
+    ) -> Result<Option<ComObjectDescriptor>, PhaseDiagnostic> {
+        self.host_services
+            .com()
+            .describe_object(object_token)
+            .map_err(|err| PhaseDiagnostic::runtime(err.to_string()))
     }
 
     pub fn poll_com_event_callback(
@@ -1844,6 +1854,39 @@ mod tests {
                 .unsubscribe_com_event_handler(subscription)
                 .expect("unsubscribe should succeed"),
             "subscription binding should have been tracked"
+        );
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn formal_com_object_descriptor_reports_identity_and_capabilities() {
+        let mut engine = Engine::new(HostConfig::default());
+        engine.set_host_policy(HostPolicy::interactive_dev());
+
+        let object = engine
+            .host_services
+            .com()
+            .create_object(4)
+            .expect("create_object should return controlled COM object");
+        let descriptor = engine
+            .describe_com_object(object)
+            .expect("describe_com_object should succeed")
+            .expect("known COM object should produce a descriptor");
+
+        assert_eq!(descriptor.object.raw(), object);
+        assert_eq!(descriptor.prog_id_name, "OxVba.TestDispatch");
+        assert_eq!(
+            descriptor.transport,
+            oxvba_com::ComObjectTransportKind::NativeDispatch
+        );
+        assert!(descriptor.supports_events);
+        assert!(descriptor.known_member_tokens.contains(&1));
+        assert!(descriptor.known_member_tokens.contains(&12));
+        assert!(descriptor.known_event_tokens.contains(&1));
+        assert!(descriptor.known_event_tokens.contains(&3));
+        assert_eq!(
+            descriptor.typelib_cache_key.as_deref(),
+            Some("typelib:oxvba-testdispatch:1.0:0")
         );
     }
 

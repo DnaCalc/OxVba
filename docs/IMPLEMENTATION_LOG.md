@@ -1,6 +1,12 @@
 # Implementation Log
 
 ## 2026-03-10
+- COM/HAL contraction slice:
+  - removed the public `TypeLibraryHal`/`HostServices::typelibs()` split and folded typelib resolve/load/invalidate operations under `ComHal`
+  - added shared COM object-descriptor types in `oxvba-com` and exposed `ComHal::describe_object(...)`
+  - added adapter + engine coverage for explicit COM object identity/capability visibility during the extraction program
+  - verification:
+    - `cargo test -p oxvba-com -p oxvba-hal -p oxvba-host --quiet` -> PASS
 - deterministic typelib catalog extraction stage:
   - added `crates/oxvba-com/src/typelib_catalog.rs` as the shared home for deterministic known-typelib identity resolution and metadata construction
   - `oxvba-com` now exports:

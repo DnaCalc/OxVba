@@ -22,11 +22,14 @@ High-level execution path:
 - `oxvba-vm` and `oxvba-jit` execute compiled subsets
 - `oxvba-hal` provides profile/policy-governed host services
 - COM-related shared transport/types plus deterministic typelib catalog/metadata construction now begin in `oxvba-com`, while deeper COM execution/state and transitional cache ownership still largely live in `oxvba-hal` pending extraction
+- the surviving HAL-facing COM seam is now narrower:
+  - `ComHal` carries current activation/invoke/event/object-description/typelib hooks
+  - the old parallel `TypeLibraryHal` surface has been collapsed away
 
 ## Important Current Truths
 
 1. `oxvba-hal` is a real workspace crate and part of the active runtime boundary.
-2. `oxvba-com` is no longer just historical scaffolding; it now owns shared COM transport primitives, but not yet the full COM bridge implementation.
+2. `oxvba-com` is no longer just historical scaffolding; it now owns shared COM transport primitives, object-descriptor types, and deterministic typelib catalog/build logic, but not yet the full COM bridge implementation.
 3. `StandardHostServices` is currently the shared Windows/Linux/macOS adapter core.
 4. Windows COM support is active and tested; non-Windows COM remains explicitly unsupported.
 5. Host/runtime event ingress exists in two planes:

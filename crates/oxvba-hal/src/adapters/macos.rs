@@ -5,7 +5,7 @@ use crate::{
     model::{HalDescriptor, HalProfileId, HalRuntimeClass, HostPolicy},
     traits::{
         ComHal, DiagnosticsHal, DynamicLinkHal, EventPumpHal, FileSystemHal, HostServices,
-        ProcessEnvHal, TimeLocaleHal, TypeLibraryHal, UiInteractionHal,
+        ProcessEnvHal, TimeLocaleHal, UiInteractionHal,
     },
 };
 
@@ -69,9 +69,6 @@ impl HostServices for MacOsHostServices {
         &self.inner
     }
     fn com(&self) -> &dyn ComHal {
-        &self.inner
-    }
-    fn typelibs(&self) -> &dyn TypeLibraryHal {
         &self.inner
     }
     fn time_locale(&self) -> &dyn TimeLocaleHal {

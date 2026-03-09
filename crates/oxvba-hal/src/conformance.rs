@@ -351,7 +351,7 @@ pub fn run_conformance(host: &dyn HostServices) -> ConformanceReport {
             "HAL-GEN-003",
             "HAL-GEN-004",
         ],
-        host.typelibs()
+        host.com()
             .resolve_typelib_reference(&TypeLibResolveRequest {
                 reference_name: "StdOle".to_string(),
                 importlib_hint: Some("stdole2.tlb".to_string()),

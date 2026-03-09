@@ -9,15 +9,15 @@ use crate::{
         ComHal, DiagnosticsHal, DynLinkDescriptorView, DynamicLinkHal, EventPumpHal, FileSystemHal,
         HostServices, ProcessEnvHal, TimeLocaleHal, TypeLibCacheScope, TypeLibEventDispatchPath,
         TypeLibEventMetadata, TypeLibMemberInvokeKind, TypeLibMetadataBlob, TypeLibResolveRequest,
-        TypeLibResolvedIdentity, TypeLibraryHal, UiInteractionHal,
+        TypeLibResolvedIdentity, UiInteractionHal,
     },
 };
 #[cfg(test)]
 pub use oxvba_com::DISPATCH_INVOKE_MISSING_ARG_TOKEN;
 use oxvba_com::{
-    ComCallbackPayload, ComCallbackToken, ComInvokeRequest, ComObjectToken, ComSubscriptionToken,
-    build_typelib_metadata, known_typelib_identity_for_prog_id_name,
-    resolve_known_typelib_identity,
+    ComCallbackPayload, ComCallbackToken, ComInvokeRequest, ComObjectDescriptor, ComObjectToken,
+    ComObjectTransportKind, ComSubscriptionToken, build_typelib_metadata,
+    known_typelib_identity_for_prog_id_name, resolve_known_typelib_identity,
 };
 #[cfg(target_os = "windows")]
 use std::sync::atomic::{AtomicI32, AtomicU32, Ordering};
@@ -1483,10 +1483,6 @@ impl HostServices for StandardHostServices {
         self
     }
 
-    fn typelibs(&self) -> &dyn TypeLibraryHal {
-        self
-    }
-
     fn time_locale(&self) -> &dyn TimeLocaleHal {
         self
     }
@@ -2081,6 +2077,52 @@ impl ComHal for StandardHostServices {
         Ok(1)
     }
 
+    fn describe_object(&self, object: i32) -> HalResult<Option<ComObjectDescriptor>> {
+        let capability = CapabilityId::ComActivationDispatch;
+        if !self.supports(capability) {
+            return Err(self.unsupported(capability, "describe_object"));
+        }
+        if !self.policy.allow_com_activation {
+            return Err(self.denied(capability, "describe_object"));
+        }
+        let descriptor = if self.native_com_enabled() {
+            let state = self.com_lock(capability, "describe_object")?;
+            self.assert_com_invariants(&state, "describe_object");
+            state
+                .bindings
+                .get(&object)
+                .map(|binding| ComObjectDescriptor {
+                    object: ComObjectToken::new(object),
+                    prog_id_name: binding.prog_id_name.clone(),
+                    transport: if binding.native_dispatch != 0 {
+                        ComObjectTransportKind::NativeDispatch
+                    } else {
+                        ComObjectTransportKind::Projection
+                    },
+                    supports_events: !binding.event_specs.is_empty(),
+                    known_member_tokens: binding.member_specs.keys().copied().collect(),
+                    known_event_tokens: binding.event_specs.keys().copied().collect(),
+                    typelib_cache_key: known_typelib_identity_for_prog_id_name(
+                        &binding.prog_id_name,
+                    )
+                    .map(|identity| identity.cache_key),
+                })
+        } else if object == 0 {
+            None
+        } else {
+            Some(ComObjectDescriptor {
+                object: ComObjectToken::new(object),
+                prog_id_name: format!("selector:{object}"),
+                transport: ComObjectTransportKind::Projection,
+                supports_events: false,
+                known_member_tokens: Vec::new(),
+                known_event_tokens: Vec::new(),
+                typelib_cache_key: None,
+            })
+        };
+        Ok(descriptor)
+    }
+
     fn dispatch_invoke_v2(&self, request: &ComInvokeRequest) -> HalResult<i32> {
         let object = request.object.raw();
         let member = request.member;
@@ -2485,9 +2527,7 @@ impl ComHal for StandardHostServices {
         self.assert_com_invariants(&state, "release_event_callback-post");
         Ok(1)
     }
-}
 
-impl TypeLibraryHal for StandardHostServices {
     fn resolve_typelib_reference(
         &self,
         request: &TypeLibResolveRequest,
@@ -5739,7 +5779,7 @@ mod tests {
         traits::{
             ComHal, DiagnosticsHal, DynLinkDescriptorView, DynamicLinkHal, EventPumpHal,
             FileSystemHal, ProcessEnvHal, TimeLocaleHal, TypeLibCacheScope, TypeLibResolveRequest,
-            TypeLibraryHal, UiInteractionHal,
+            UiInteractionHal,
         },
     };
 
@@ -7291,6 +7331,51 @@ mod tests {
         );
         assert_eq!(fire_changed_source_trigger.callback_arity, 1);
         assert!(!fire_changed_source_trigger.second_arg_is_incremented);
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn windows_native_com_object_descriptor_reports_identity_and_capabilities() {
+        let host = StandardHostServices::new(HalProfileId::Windows, HostPolicy::interactive_dev());
+        let object = host
+            .create_object(4)
+            .expect("create_object should return a token");
+        let descriptor = host
+            .describe_object(object)
+            .expect("describe_object should succeed")
+            .expect("known COM object should produce a descriptor");
+
+        assert_eq!(descriptor.object.raw(), object);
+        assert_eq!(descriptor.prog_id_name, "OxVba.TestDispatch");
+        assert_eq!(
+            descriptor.transport,
+            oxvba_com::ComObjectTransportKind::NativeDispatch
+        );
+        assert!(descriptor.supports_events);
+        assert!(
+            descriptor
+                .known_member_tokens
+                .contains(&super::TEST_DISPID_COUNT)
+        );
+        assert!(
+            descriptor
+                .known_member_tokens
+                .contains(&super::TEST_DISPID_FIRE_CHANGED_PAIR)
+        );
+        assert!(
+            descriptor
+                .known_event_tokens
+                .contains(&super::TEST_EVENT_CHANGED)
+        );
+        assert!(
+            descriptor
+                .known_event_tokens
+                .contains(&super::TEST_EVENT_CHANGED_PAIR)
+        );
+        assert_eq!(
+            descriptor.typelib_cache_key.as_deref(),
+            Some("typelib:oxvba-testdispatch:1.0:0")
+        );
     }
 
     #[cfg(target_os = "windows")]

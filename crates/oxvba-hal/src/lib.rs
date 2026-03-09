@@ -17,5 +17,5 @@ pub use traits::{
     ComHal, DiagnosticsHal, DynLinkDescriptorView, DynamicLinkHal, EventPumpHal, FileSystemHal,
     HostServices, ProcessEnvHal, TimeLocaleHal, TypeLibCacheScope, TypeLibEventDispatchPath,
     TypeLibEventMetadata, TypeLibMemberMetadata, TypeLibMetadataBlob, TypeLibResolveRequest,
-    TypeLibResolvedIdentity, TypeLibraryHal, UiInteractionHal,
+    TypeLibResolvedIdentity, UiInteractionHal,
 };
