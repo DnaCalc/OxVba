@@ -83,4 +83,4 @@ shell,host-sensitive,1,1,host,host capability required
 environ,host-sensitive,1,1,host,host capability required
 dir,host-sensitive,1,1,host,host capability required
 createobject,host-sensitive,1,1,host,host capability required
-dispatchinvoke,host-sensitive,3,3,host,host capability required
+dispatchinvoke,host-sensitive,2,variadic,host,host capability required
