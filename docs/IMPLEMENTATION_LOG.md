@@ -1,5 +1,42 @@
 # Implementation Log
 
+## 2026-03-10
+- COM transport normalization + HAL/VM cleanup batch:
+  - added shared COM transport model in `oxvba-com`:
+    - `ComObjectToken`
+    - `ComSubscriptionToken`
+    - `ComCallbackToken`
+    - `ComCallbackPayload`
+    - shared `DISPATCH_INVOKE_MISSING_ARG_TOKEN`
+  - rewired HAL/host callback consumption to support a payload-returning poll path:
+    - `ComHal::poll_event_callback()`
+    - `ComHal::release_object()`
+    - `Engine::poll_com_event_callback()` now consumes authoritative `args` payloads and no longer carries redundant `arg0`
+  - kept the legacy callback-token interrogation path temporarily compatible for VM/compiler scaffolding while moving host/runtime code to the new payload model;
+  - tightened COM object lifecycle:
+    - `StandardHostServices::release_object()` now clears bindings, subscriptions, pending callbacks, and native dispatch ownership coherently
+    - added adapter tests for structured callback polling and release-object cleanup
+  - contracted HAL factory indirection:
+    - `StandardHostServices` now implements `HostServices` directly
+    - Windows/Linux/macOS factory paths now instantiate `StandardHostServices` directly instead of wrapper-only pass-through types
+  - corrected default-profile selection for host-native execution:
+    - added `native_host_profile()` in `oxvba-hal`
+    - VM default host wiring now follows the current build host instead of hardcoding Windows
+    - `Engine::new()` default runtime profile now derives from the native host profile
+  - consolidated VM execution reset behavior:
+    - extracted a reset helper with explicit `WithEvents` binding preservation policy
+    - cached the typed-fastpath env switch per `Vm` instance instead of re-reading process env on every execute/invoke path
+  - cached COM-related environment switches at `StandardHostServices` construction time:
+    - registered COM ProgID overrides
+    - registered-event override parameters
+    - `OXVBA_COM_FORCE_REGISTERED_TESTDISPATCH`
+  - completed first COM FFI safety annotation pass across raw Win32/COM interaction blocks in `crates/oxvba-hal/src/adapters/standard.rs`
+  - added documentation catalog:
+    - `docs/ERROR_CODES.md` as the authoritative implemented/reserved/proposal-only error-family register
+    - `docs/README.md` index entry for the new catalog
+  - verification:
+    - `cargo test -p oxvba-com -p oxvba-compiler -p oxvba-hal -p oxvba-vm -p oxvba-host --quiet` -> PASS
+
 ## 2026-03-09
 - External registered COM event parity closure + housekeeping batch:
   - adopted and normalized the dirty work batch around external registered COM callbacks;

@@ -7,16 +7,20 @@ use crate::{
     },
     traits::{
         ComHal, DiagnosticsHal, DynLinkDescriptorView, DynamicLinkHal, EventPumpHal, FileSystemHal,
-        ProcessEnvHal, TimeLocaleHal, TypeLibCacheScope, TypeLibEventDispatchPath,
+        HostServices, ProcessEnvHal, TimeLocaleHal, TypeLibCacheScope, TypeLibEventDispatchPath,
         TypeLibEventMetadata, TypeLibMemberInvokeKind, TypeLibMemberMetadata, TypeLibMetadataBlob,
         TypeLibResolveRequest, TypeLibResolvedIdentity, TypeLibraryHal, UiInteractionHal,
     },
+};
+use oxvba_com::{
+    ComCallbackPayload, ComCallbackToken, ComObjectToken, ComSubscriptionToken,
+    DISPATCH_INVOKE_MISSING_ARG_TOKEN,
 };
 #[cfg(target_os = "windows")]
 use std::sync::atomic::{AtomicI32, AtomicU32, Ordering};
 use std::{
     cell::Cell,
-    collections::{BTreeMap, BTreeSet},
+    collections::{BTreeMap, BTreeSet, VecDeque},
     fs::{self, OpenOptions},
     path::PathBuf,
     process::Command,
@@ -60,7 +64,6 @@ macro_rules! hal_contract_assert {
     };
 }
 
-const DISPATCH_INVOKE_MISSING_ARG_TOKEN: i32 = i32::MIN + 2_048;
 #[cfg(target_os = "windows")]
 const OXVBA_TEST_DISPATCH_PROGID: &str = "OxVba.TestDispatch";
 #[cfg(target_os = "windows")]
@@ -74,10 +77,93 @@ pub(crate) struct StandardHostServices {
     runtime_class: HalRuntimeClass,
     descriptor: HalDescriptor,
     policy: HostPolicy,
+    env_cache: StandardEnvCache,
     fs_state: Arc<Mutex<FileSystemState>>,
     com_state: Arc<Mutex<ComState>>,
     typelib_state: Arc<Mutex<TypeLibraryCacheState>>,
     dynlink_bindings: Arc<Mutex<BTreeMap<u32, i32>>>,
+}
+
+#[derive(Debug, Clone, Default)]
+struct StandardEnvCache {
+    native_com_prog_id_overrides: BTreeMap<i32, String>,
+    registered_com_prog_id: Option<String>,
+    registered_event_token: Option<String>,
+    registered_event_expected_argc: Option<String>,
+    registered_event_path: Option<String>,
+    registered_event_connection_point_iid: Option<String>,
+    registered_event_dispatch_member: Option<String>,
+    registered_event_trigger_member: Option<String>,
+    registered_event_trigger_requires_arg: Option<String>,
+    registered_event_trigger_invoke_kind: Option<String>,
+    force_registered_testdispatch: bool,
+}
+
+impl StandardEnvCache {
+    fn capture() -> Self {
+        let vars: Vec<(String, String)> = std::env::vars().collect();
+        let mut native_com_prog_id_overrides = BTreeMap::new();
+        for (key, value) in &vars {
+            let Some(suffix) = key.strip_prefix("OXVBA_COM_PROGID_") else {
+                continue;
+            };
+            let Ok(token) = suffix.parse::<i32>() else {
+                continue;
+            };
+            let trimmed = value.trim();
+            if !trimmed.is_empty() {
+                native_com_prog_id_overrides.insert(token, trimmed.to_string());
+            }
+        }
+        Self {
+            native_com_prog_id_overrides,
+            registered_com_prog_id: cached_env_value(&vars, "OXVBA_REGISTERED_COM_PROGID"),
+            registered_event_token: cached_env_value(&vars, "OXVBA_REGISTERED_EVENT_TOKEN"),
+            registered_event_expected_argc: cached_env_value(
+                &vars,
+                "OXVBA_REGISTERED_EVENT_EXPECTED_ARGC",
+            ),
+            registered_event_path: cached_env_value(&vars, "OXVBA_REGISTERED_EVENT_PATH"),
+            registered_event_connection_point_iid: cached_env_value(
+                &vars,
+                "OXVBA_REGISTERED_EVENT_CONNECTION_POINT_IID",
+            ),
+            registered_event_dispatch_member: cached_env_value(
+                &vars,
+                "OXVBA_REGISTERED_EVENT_DISPATCH_MEMBER",
+            ),
+            registered_event_trigger_member: cached_env_value(
+                &vars,
+                "OXVBA_REGISTERED_EVENT_TRIGGER_MEMBER",
+            ),
+            registered_event_trigger_requires_arg: cached_env_value(
+                &vars,
+                "OXVBA_REGISTERED_EVENT_TRIGGER_REQUIRES_ARG",
+            ),
+            registered_event_trigger_invoke_kind: cached_env_value(
+                &vars,
+                "OXVBA_REGISTERED_EVENT_TRIGGER_INVOKE_KIND",
+            ),
+            force_registered_testdispatch: cached_env_value(
+                &vars,
+                "OXVBA_COM_FORCE_REGISTERED_TESTDISPATCH",
+            )
+            .map(|value| {
+                matches!(
+                    value.to_ascii_lowercase().as_str(),
+                    "1" | "true" | "yes" | "on"
+                )
+            })
+            .unwrap_or(false),
+        }
+    }
+}
+
+fn cached_env_value(vars: &[(String, String)], key: &str) -> Option<String> {
+    vars.iter()
+        .find(|(candidate, _)| candidate == key)
+        .map(|(_, value)| value.trim().to_string())
+        .filter(|value| !value.is_empty())
 }
 
 impl StandardHostServices {
@@ -98,6 +184,7 @@ impl StandardHostServices {
             runtime_class,
             descriptor: descriptor_for_profile(profile, runtime_class, &policy),
             policy,
+            env_cache: StandardEnvCache::capture(),
             fs_state: Arc::new(Mutex::new(FileSystemState::default())),
             com_state: Arc::new(Mutex::new(ComState::default())),
             typelib_state: Arc::new(Mutex::new(TypeLibraryCacheState::default())),
@@ -549,7 +636,9 @@ impl StandardHostServices {
                 .map(|entry| (entry.name.clone(), entry.token))
                 .collect();
             (member_name_to_token, members, events)
-        } else if identity.importlib.eq_ignore_ascii_case("oxvba_testeventserver.tlb")
+        } else if identity
+            .importlib
+            .eq_ignore_ascii_case("oxvba_testeventserver.tlb")
             || identity.libid.as_deref().is_some_and(|libid| {
                 libid.eq_ignore_ascii_case("E2A30001-0001-0001-0001-000000000001")
             })
@@ -586,9 +675,7 @@ impl StandardHostServices {
                     token: TEST_EVENT_SERVER_EVENT_SIMPLE,
                     callback_arity: 0,
                     dispatch_path: TypeLibEventDispatchPath::Dispatch,
-                    connection_point_iid: Some(
-                        IID_OXVBA_TEST_EVENT_SERVER_EVENTS_STR.to_string(),
-                    ),
+                    connection_point_iid: Some(IID_OXVBA_TEST_EVENT_SERVER_EVENTS_STR.to_string()),
                     dispatch_member_id: Some(TEST_EVENT_SERVER_EVENT_SIMPLE),
                 },
                 TypeLibEventMetadata {
@@ -596,9 +683,7 @@ impl StandardHostServices {
                     token: TEST_EVENT_SERVER_EVENT_VALUE_CHANGED,
                     callback_arity: 1,
                     dispatch_path: TypeLibEventDispatchPath::Dispatch,
-                    connection_point_iid: Some(
-                        IID_OXVBA_TEST_EVENT_SERVER_EVENTS_STR.to_string(),
-                    ),
+                    connection_point_iid: Some(IID_OXVBA_TEST_EVENT_SERVER_EVENTS_STR.to_string()),
                     dispatch_member_id: Some(TEST_EVENT_SERVER_EVENT_VALUE_CHANGED),
                 },
                 TypeLibEventMetadata {
@@ -606,9 +691,7 @@ impl StandardHostServices {
                     token: TEST_EVENT_SERVER_EVENT_PAIR_CHANGED,
                     callback_arity: 2,
                     dispatch_path: TypeLibEventDispatchPath::Dispatch,
-                    connection_point_iid: Some(
-                        IID_OXVBA_TEST_EVENT_SERVER_EVENTS_STR.to_string(),
-                    ),
+                    connection_point_iid: Some(IID_OXVBA_TEST_EVENT_SERVER_EVENTS_STR.to_string()),
                     dispatch_member_id: Some(TEST_EVENT_SERVER_EVENT_PAIR_CHANGED),
                 },
             ];
@@ -752,9 +835,8 @@ impl StandardHostServices {
         prog_id_name: &str,
         op: &'static str,
     ) -> HalResult<Option<RegisteredEventOverrideConfig>> {
-        let configured_prog_id = match std::env::var("OXVBA_REGISTERED_COM_PROGID") {
-            Ok(value) => value,
-            Err(_) => return Ok(None),
+        let Some(configured_prog_id) = self.env_cache.registered_com_prog_id.as_deref() else {
+            return Ok(None);
         };
         if !configured_prog_id.eq_ignore_ascii_case(prog_id_name) {
             return Ok(None);
@@ -776,9 +858,11 @@ impl StandardHostServices {
                 "registered event override expected arg count must be non-negative",
             ));
         }
-        let path = match std::env::var("OXVBA_REGISTERED_EVENT_PATH")
-            .ok()
-            .map(|value| value.trim().to_ascii_lowercase())
+        let path = match self
+            .env_cache
+            .registered_event_path
+            .as_deref()
+            .map(|value| value.to_ascii_lowercase())
         {
             Some(value) if value.is_empty() || value == "dispatch" => ComEventPath::Dispatch,
             Some(value) if value == "source-interface" || value == "sourceinterface" => {
@@ -796,10 +880,7 @@ impl StandardHostServices {
             }
             None => ComEventPath::Dispatch,
         };
-        let connection_point_iid = std::env::var("OXVBA_REGISTERED_EVENT_CONNECTION_POINT_IID")
-            .ok()
-            .map(|value| value.trim().to_string())
-            .filter(|value| !value.is_empty());
+        let connection_point_iid = self.env_cache.registered_event_connection_point_iid.clone();
         let dispatch_member_id = self.parse_registered_event_env_i32(
             "OXVBA_REGISTERED_EVENT_DISPATCH_MEMBER",
             capability,
@@ -843,7 +924,20 @@ impl StandardHostServices {
         capability: CapabilityId,
         op: &'static str,
     ) -> HalResult<Option<i32>> {
-        let Some(raw) = std::env::var(key).ok() else {
+        let raw = match key {
+            "OXVBA_REGISTERED_EVENT_TOKEN" => self.env_cache.registered_event_token.as_deref(),
+            "OXVBA_REGISTERED_EVENT_EXPECTED_ARGC" => {
+                self.env_cache.registered_event_expected_argc.as_deref()
+            }
+            "OXVBA_REGISTERED_EVENT_DISPATCH_MEMBER" => {
+                self.env_cache.registered_event_dispatch_member.as_deref()
+            }
+            "OXVBA_REGISTERED_EVENT_TRIGGER_MEMBER" => {
+                self.env_cache.registered_event_trigger_member.as_deref()
+            }
+            _ => None,
+        };
+        let Some(raw) = raw else {
             return Ok(None);
         };
         let trimmed = raw.trim();
@@ -867,7 +961,14 @@ impl StandardHostServices {
         capability: CapabilityId,
         op: &'static str,
     ) -> HalResult<Option<bool>> {
-        let Some(raw) = std::env::var(key).ok() else {
+        let raw = match key {
+            "OXVBA_REGISTERED_EVENT_TRIGGER_REQUIRES_ARG" => self
+                .env_cache
+                .registered_event_trigger_requires_arg
+                .as_deref(),
+            _ => None,
+        };
+        let Some(raw) = raw else {
             return Ok(None);
         };
         let trimmed = raw.trim().to_ascii_lowercase();
@@ -896,7 +997,14 @@ impl StandardHostServices {
         capability: CapabilityId,
         op: &'static str,
     ) -> HalResult<Option<TypeLibMemberInvokeKind>> {
-        let Some(raw) = std::env::var(key).ok() else {
+        let raw = match key {
+            "OXVBA_REGISTERED_EVENT_TRIGGER_INVOKE_KIND" => self
+                .env_cache
+                .registered_event_trigger_invoke_kind
+                .as_deref(),
+            _ => None,
+        };
+        let Some(raw) = raw else {
             return Ok(None);
         };
         let trimmed = raw.trim().to_ascii_lowercase();
@@ -994,6 +1102,8 @@ impl StandardHostServices {
         let text_w: Vec<u16> = text.encode_utf16().chain(std::iter::once(0)).collect();
         let title_w: Vec<u16> = title.encode_utf16().chain(std::iter::once(0)).collect();
         let style_flags = if style == 0 { MB_OK } else { style as u32 };
+        // SAFETY: The UTF-16 buffers are nul-terminated and remain alive for the full
+        // MessageBoxW call; null HWND is explicitly permitted for an app-modal box.
         let result = unsafe {
             MessageBoxW(
                 std::ptr::null_mut(),
@@ -1020,7 +1130,11 @@ impl StandardHostServices {
 
     #[cfg(target_os = "windows")]
     fn pump_windows_messages_once(&self) {
+        // SAFETY: MSG is a plain old data Win32 struct that is immediately initialized by
+        // PeekMessageW before any field reads.
         let mut msg: MSG = unsafe { std::mem::zeroed() };
+        // SAFETY: The message loop uses the current thread queue only and the MSG pointer stays
+        // valid for the duration of the Win32 calls.
         unsafe {
             while PeekMessageW(&mut msg, std::ptr::null_mut(), 0, 0, PM_REMOVE) != 0 {
                 TranslateMessage(&msg);
@@ -1038,6 +1152,8 @@ impl StandardHostServices {
             if ready.get() {
                 return Ok(());
             }
+            // SAFETY: We initialize COM for the current thread only once and request the STA
+            // apartment model required by the current Windows COM adapter.
             let hr = unsafe { CoInitializeEx(std::ptr::null(), COINIT_APARTMENTTHREADED as u32) };
             if hr < 0 {
                 return Err(HalError::adapter_fault(
@@ -1065,12 +1181,8 @@ impl StandardHostServices {
                 return Some(trimmed.to_string());
             }
         }
-        let env_key = format!("OXVBA_COM_PROGID_{prog_id}");
-        if let Ok(value) = std::env::var(env_key) {
-            let trimmed = value.trim();
-            if !trimmed.is_empty() {
-                return Some(trimmed.to_string());
-            }
+        if let Some(value) = self.env_cache.native_com_prog_id_overrides.get(&prog_id) {
+            return Some(value.clone());
         }
         match prog_id {
             // Controlled in-process COM automation object for OxVba integration tests.
@@ -1089,10 +1201,9 @@ impl StandardHostServices {
         {
             return true;
         }
-        let env_key = format!("OXVBA_COM_PROGID_{prog_id}");
-        std::env::var(env_key)
-            .map(|value| !value.trim().is_empty())
-            .unwrap_or(false)
+        self.env_cache
+            .native_com_prog_id_overrides
+            .contains_key(&prog_id)
     }
 
     #[cfg(not(target_os = "windows"))]
@@ -1119,6 +1230,8 @@ impl StandardHostServices {
             data3: 0,
             data4: [0; 8],
         };
+        // SAFETY: `wide` is a valid nul-terminated UTF-16 ProgID buffer and `clsid` is a valid
+        // out-parameter for CLSIDFromProgID.
         let hr = unsafe { CLSIDFromProgID(wide.as_ptr(), &mut clsid) };
         if hr < 0 {
             return Err(self.com_createobject_adapter_fault(format!(
@@ -1128,6 +1241,8 @@ impl StandardHostServices {
         }
 
         let mut dispatch_ptr: *mut core::ffi::c_void = std::ptr::null_mut();
+        // SAFETY: CLSID/IID pointers are valid, COM apartment is initialized on this thread, and
+        // `dispatch_ptr` is a writable out-parameter for CoCreateInstance.
         let hr = unsafe {
             CoCreateInstance(
                 &clsid,
@@ -1153,15 +1268,7 @@ impl StandardHostServices {
 
     #[cfg(target_os = "windows")]
     fn force_registered_test_dispatch(&self) -> bool {
-        std::env::var("OXVBA_COM_FORCE_REGISTERED_TESTDISPATCH")
-            .ok()
-            .map(|value| {
-                matches!(
-                    value.trim().to_ascii_lowercase().as_str(),
-                    "1" | "true" | "yes" | "on"
-                )
-            })
-            .unwrap_or(false)
+        self.env_cache.force_registered_testdispatch
     }
 
     #[cfg(target_os = "windows")]
@@ -1217,10 +1324,14 @@ impl StandardHostServices {
         arg: i32,
     ) -> HalResult<i32> {
         if let Some(spec) = com_member_spec_for_token(prog_id, member) {
+            // SAFETY: `dispatch` is a live IDispatch pointer owned by this adapter and `spec.name`
+            // is converted to a temporary wide buffer inside the helper.
             let dispid = unsafe { raw_get_dispid_by_name(dispatch, &spec.name) }
                 .map_err(|message| self.com_dispatch_adapter_fault(message))?;
             return self.native_com_dispatch_invoke_with_member_spec(dispatch, dispid, &spec, arg);
         }
+        // SAFETY: `dispatch` is a live IDispatch pointer and `member` is treated as a direct
+        // DISPID for the controlled late-bound fallback path.
         unsafe { raw_dispatch_property_get_noargs(dispatch, member) }
             .map_err(|message| self.com_dispatch_adapter_fault(message))
     }
@@ -1242,6 +1353,8 @@ impl StandardHostServices {
         if let Some(dispid) = cached {
             return Ok(Some((dispid, spec)));
         }
+        // SAFETY: `dispatch` is a live IDispatch pointer owned by this adapter and `spec.name`
+        // remains valid for the duration of the lookup helper.
         let dispid = unsafe { raw_get_dispid_by_name(dispatch, &spec.name) }
             .map_err(|message| self.com_dispatch_adapter_fault(message))?;
         let mut state = self.com_lock(CapabilityId::ComActivationDispatch, "dispatch_invoke")?;
@@ -1273,10 +1386,14 @@ impl StandardHostServices {
         } else {
             match spec.invoke_kind {
                 TypeLibMemberInvokeKind::PropertyGet => {
+                    // SAFETY: `dispatch` is a live IDispatch pointer and `dispid` was resolved for
+                    // this member on the same interface.
                     return unsafe { raw_dispatch_property_get_noargs(dispatch, dispid) }
                         .map_err(|message| self.com_dispatch_adapter_fault(message));
                 }
                 TypeLibMemberInvokeKind::Method => {
+                    // SAFETY: `dispatch` is a live IDispatch pointer and `dispid` targets a method
+                    // on the same interface without arguments.
                     return unsafe { raw_dispatch_invoke_method_noargs(dispatch, dispid) }
                         .map_err(|message| self.com_dispatch_adapter_fault(message));
                 }
@@ -1291,15 +1408,20 @@ impl StandardHostServices {
             }
         }
         match spec.invoke_kind {
+            // SAFETY: `dispatch` is a live IDispatch pointer and the helper marshals the i32
+            // automation argument into a stack-local VARIANT for the Invoke call.
             TypeLibMemberInvokeKind::PropertyGet => unsafe {
                 raw_dispatch_property_get_i4(dispatch, dispid, arg)
             },
+            // SAFETY: Same as above; the helper owns all temporary Automation structures.
             TypeLibMemberInvokeKind::Method => unsafe {
                 raw_dispatch_invoke_method_i4(dispatch, dispid, arg)
             },
+            // SAFETY: Same as above; property-put marshalling uses a stack-local VARIANT.
             TypeLibMemberInvokeKind::PropertyPut => unsafe {
                 raw_dispatch_property_put_i4(dispatch, dispid, arg)
             },
+            // SAFETY: Same as above; property-putref uses the same validated pointer and argument.
             TypeLibMemberInvokeKind::PropertyPutRef => unsafe {
                 raw_dispatch_property_putref_i4(dispatch, dispid, arg)
             },
@@ -1328,9 +1450,12 @@ impl StandardHostServices {
             }
         } else {
             return match invoke_kind {
+                // SAFETY: `dispatch` is a live IDispatch pointer and `dispid` is treated as a
+                // direct member id for the controlled direct-dispatch path.
                 TypeLibMemberInvokeKind::PropertyGet => unsafe {
                     raw_dispatch_property_get_noargs(dispatch, dispid)
                 },
+                // SAFETY: Same pointer/dispid validity as above for no-arg method invoke.
                 TypeLibMemberInvokeKind::Method => unsafe {
                     raw_dispatch_invoke_method_noargs(dispatch, dispid)
                 },
@@ -1341,15 +1466,20 @@ impl StandardHostServices {
             .map_err(|message| self.com_dispatch_adapter_fault(message));
         }
         match invoke_kind {
+            // SAFETY: `dispatch` is a live IDispatch pointer and the helper owns temporary
+            // Automation state for the single i32 argument.
             TypeLibMemberInvokeKind::PropertyGet => unsafe {
                 raw_dispatch_property_get_i4(dispatch, dispid, arg)
             },
+            // SAFETY: Same pointer and marshalling guarantees as above.
             TypeLibMemberInvokeKind::Method => unsafe {
                 raw_dispatch_invoke_method_i4(dispatch, dispid, arg)
             },
+            // SAFETY: Same pointer and marshalling guarantees as above.
             TypeLibMemberInvokeKind::PropertyPut => unsafe {
                 raw_dispatch_property_put_i4(dispatch, dispid, arg)
             },
+            // SAFETY: Same pointer and marshalling guarantees as above.
             TypeLibMemberInvokeKind::PropertyPutRef => unsafe {
                 raw_dispatch_property_putref_i4(dispatch, dispid, arg)
             },
@@ -1384,6 +1514,8 @@ impl StandardHostServices {
             return Ok(None);
         }
         self.ensure_thread_com_apartment("dispatch_invoke")?;
+        // SAFETY: `dispatch` points at the controlled OxVba.TestDispatch implementation, so the
+        // helper may downcast to the known vtable layout for the prefer-vtable lane.
         let result = unsafe { raw_oxvba_test_dispatch_vtable_invoke(dispatch, member, arg) }
             .map_err(|message| self.com_dispatch_adapter_fault(message))?;
         Ok(result)
@@ -1394,6 +1526,8 @@ impl StandardHostServices {
         self.ensure_thread_com_apartment("dispatch_invoke")?;
         let dispatch = self.native_com_activate_dispatch(prog_id)?;
         let result = self.native_com_dispatch_invoke_core(dispatch, prog_id, member, arg);
+        // SAFETY: `dispatch` was returned by native_com_activate_dispatch and has not been
+        // released yet; this balances the adapter-owned AddRef from activation.
         unsafe {
             raw_release_dispatch(dispatch);
         }
@@ -1539,6 +1673,8 @@ impl StandardHostServices {
             expected_arity,
             sink_mode,
         };
+        // SAFETY: `dispatch` is a live COM object pointer, the request owns/clones all state it
+        // hands to the sink, and `connection_point_iid` was validated from deterministic metadata.
         let advised = unsafe {
             raw_try_advise_connection_point_event(dispatch, request, connection_point_iid)
         }
@@ -1577,6 +1713,8 @@ impl StandardHostServices {
     ) -> HalResult<()> {
         if let ComEventSubscriptionTransport::NativeConnectionPoint(native) = transport {
             self.ensure_thread_com_apartment("unsubscribe_event")?;
+            // SAFETY: `native` came from a successful Advise call in this adapter and is released
+            // at most once here or during teardown paths that remove the same subscription.
             unsafe { raw_unadvise_connection_point(native) }.map_err(|message| {
                 HalError::adapter_fault(
                     self.profile,
@@ -1633,6 +1771,56 @@ impl StandardHostServices {
         _transport: ComEventSubscriptionTransport,
     ) -> HalResult<()> {
         Ok(())
+    }
+}
+
+impl HostServices for StandardHostServices {
+    fn profile(&self) -> HalProfileId {
+        self.profile()
+    }
+
+    fn descriptor(&self) -> HalDescriptor {
+        self.descriptor()
+    }
+
+    fn policy(&self) -> &HostPolicy {
+        self.policy()
+    }
+
+    fn ui(&self) -> &dyn UiInteractionHal {
+        self
+    }
+
+    fn events(&self) -> &dyn EventPumpHal {
+        self
+    }
+
+    fn fs(&self) -> &dyn FileSystemHal {
+        self
+    }
+
+    fn process(&self) -> &dyn ProcessEnvHal {
+        self
+    }
+
+    fn com(&self) -> &dyn ComHal {
+        self
+    }
+
+    fn typelibs(&self) -> &dyn TypeLibraryHal {
+        self
+    }
+
+    fn time_locale(&self) -> &dyn TimeLocaleHal {
+        self
+    }
+
+    fn dynlink(&self) -> &dyn DynamicLinkHal {
+        self
+    }
+
+    fn diag(&self) -> &dyn DiagnosticsHal {
+        self
     }
 }
 
@@ -1757,13 +1945,13 @@ impl EventPumpHal for StandardHostServices {
                 )
             })?;
             self.assert_com_invariants(&state, "do_events-pre");
-            if let Some(callback) = state.pending_callbacks.first().copied() {
-                let _ = state.pending_callbacks.remove(0);
+            if let Some(callback) = state.mark_next_callback_pumped() {
                 if com_event_trace_enabled() {
                     eprintln!(
-                        "[oxvba-hal][com-event] do-events callback={} remaining_pending={}",
+                        "[oxvba-hal][com-event] do-events callback={} remaining_pending={} last_pumped={:?}",
                         callback,
-                        state.pending_callbacks.len()
+                        state.pending_callbacks.len(),
+                        state.last_pumped_callback
                     );
                 }
                 self.assert_com_invariants(&state, "do_events-post");
@@ -2127,6 +2315,96 @@ impl ComHal for StandardHostServices {
         Ok(5_000i32.saturating_add(prog_id))
     }
 
+    fn release_object(&self, object: i32) -> HalResult<i32> {
+        let capability = CapabilityId::ComActivationDispatch;
+        if !self.supports(capability) {
+            return Err(self.unsupported(capability, "release_object"));
+        }
+        if !self.policy.allow_com_activation {
+            return Err(self.denied(capability, "release_object"));
+        }
+        if !self.native_com_enabled() {
+            return Ok(if object == 0 { 0 } else { 1 });
+        }
+        let (binding, transports, stale_callbacks) = {
+            let mut state = self.com_lock(capability, "release_object")?;
+            self.assert_com_invariants(&state, "release_object-pre");
+            let Some(binding) = state.bindings.remove(&object) else {
+                return Err(HalError::adapter_fault(
+                    self.profile,
+                    capability,
+                    "release_object",
+                    format!("COM-E-OBJECT-MISSING: unknown COM object token {object}"),
+                ));
+            };
+            let subscriptions: Vec<(i32, ComEventSubscription)> = state
+                .subscriptions
+                .iter()
+                .filter_map(|(subscription, entry)| {
+                    if entry.object == object {
+                        Some((*subscription, entry.clone()))
+                    } else {
+                        None
+                    }
+                })
+                .collect();
+            for (subscription, _) in &subscriptions {
+                state.subscriptions.remove(subscription);
+            }
+            let stale_callbacks: BTreeSet<i32> = state
+                .callbacks
+                .iter()
+                .filter_map(|(callback, payload)| {
+                    if payload.object == object {
+                        Some(*callback)
+                    } else {
+                        None
+                    }
+                })
+                .collect();
+            for callback in &stale_callbacks {
+                state.callbacks.remove(callback);
+            }
+            state
+                .pending_callbacks
+                .retain(|callback| !stale_callbacks.contains(callback));
+            if state
+                .last_pumped_callback
+                .is_some_and(|callback| stale_callbacks.contains(&callback))
+            {
+                state.last_pumped_callback = None;
+            }
+            self.assert_com_invariants(&state, "release_object-post");
+            (
+                binding,
+                subscriptions
+                    .into_iter()
+                    .map(|(_, entry)| entry.transport)
+                    .collect::<Vec<_>>(),
+                stale_callbacks,
+            )
+        };
+        for transport in transports {
+            self.release_event_subscription_transport(transport)?;
+        }
+        #[cfg(target_os = "windows")]
+        if binding.native_dispatch != 0 {
+            // SAFETY: `binding.native_dispatch` was removed from the binding table above and has
+            // not been released yet; this balances the adapter-owned reference for the object.
+            unsafe {
+                raw_release_dispatch(binding.native_dispatch as *mut RawIDispatch);
+            }
+        }
+        if com_event_trace_enabled() {
+            eprintln!(
+                "[oxvba-hal][com-event] release-object object={} removed_callbacks={}",
+                object,
+                stale_callbacks.len()
+            );
+        }
+        Ok(1)
+    }
+
     fn dispatch_invoke(&self, object: i32, member: i32, arg: i32) -> HalResult<i32> {
         let capability = CapabilityId::ComActivationDispatch;
         if !self.supports(capability) {
@@ -2349,8 +2627,32 @@ impl ComHal for StandardHostServices {
         state
             .pending_callbacks
             .retain(|callback| !stale_callbacks.contains(callback));
+        if state
+            .last_pumped_callback
+            .is_some_and(|callback| stale_callbacks.contains(&callback))
+        {
+            state.last_pumped_callback = None;
+        }
         self.assert_com_invariants(&state, "unsubscribe_event-post-remove");
         Ok(1)
+    }
+
+    fn poll_event_callback(&self) -> HalResult<Option<ComCallbackPayload>> {
+        let capability = CapabilityId::ComActivationDispatch;
+        if !self.supports(capability) {
+            return Err(self.unsupported(capability, "poll_event_callback"));
+        }
+        if !self.policy.allow_com_activation {
+            return Err(self.denied(capability, "poll_event_callback"));
+        }
+        if !self.native_com_enabled() {
+            return Ok(None);
+        }
+        let mut state = self.com_lock(capability, "poll_event_callback")?;
+        self.assert_com_invariants(&state, "poll_event_callback-pre");
+        let payload = state.take_polled_callback();
+        self.assert_com_invariants(&state, "poll_event_callback-post");
+        Ok(payload)
     }
 
     fn event_callback_subscription(&self, callback: i32) -> HalResult<i32> {
@@ -2501,6 +2803,9 @@ impl ComHal for StandardHostServices {
             ));
         }
         state.pending_callbacks.retain(|token| *token != callback);
+        if state.last_pumped_callback == Some(callback) {
+            state.last_pumped_callback = None;
+        }
         self.assert_com_invariants(&state, "release_event_callback-post");
         Ok(1)
     }
@@ -3115,7 +3420,8 @@ struct ComState {
     bindings: BTreeMap<i32, ComBinding>,
     subscriptions: BTreeMap<i32, ComEventSubscription>,
     callbacks: BTreeMap<i32, ComEventCallback>,
-    pending_callbacks: Vec<i32>,
+    pending_callbacks: VecDeque<i32>,
+    last_pumped_callback: Option<i32>,
 }
 
 impl ComState {
@@ -3148,7 +3454,7 @@ impl ComState {
                 args: args.to_vec(),
             },
         );
-        self.pending_callbacks.push(callback);
+        self.pending_callbacks.push_back(callback);
         true
     }
 
@@ -3169,6 +3475,30 @@ impl ComState {
             let _ = self.queue_callback_for_subscription(*subscription, args);
         }
         targets.len()
+    }
+
+    fn mark_next_callback_pumped(&mut self) -> Option<i32> {
+        if let Some(callback) = self.last_pumped_callback {
+            return Some(callback);
+        }
+        let callback = self.pending_callbacks.pop_front()?;
+        self.last_pumped_callback = Some(callback);
+        Some(callback)
+    }
+
+    fn take_polled_callback(&mut self) -> Option<ComCallbackPayload> {
+        let callback = self
+            .last_pumped_callback
+            .take()
+            .or_else(|| self.pending_callbacks.pop_front())?;
+        let payload = self.callbacks.remove(&callback)?;
+        Some(ComCallbackPayload {
+            callback: ComCallbackToken::from(callback),
+            subscription: ComSubscriptionToken::from(payload.subscription),
+            object: ComObjectToken::from(payload.object),
+            event: payload.event,
+            args: payload.args,
+        })
     }
 }
 
@@ -3554,6 +3884,8 @@ impl Drop for ComState {
             if let ComEventSubscriptionTransport::NativeConnectionPoint(native) =
                 subscription.transport
             {
+                // SAFETY: These native connection points were created by this state object and are
+                // being best-effort unadvised exactly once during teardown.
                 unsafe {
                     let _ = raw_unadvise_connection_point(native);
                 }
@@ -3564,6 +3896,8 @@ impl Drop for ComState {
         self.pending_callbacks.clear();
         for binding in self.bindings.values_mut() {
             if binding.native_dispatch != 0 {
+                // SAFETY: These dispatch pointers are owned by the binding table and have not been
+                // released yet; teardown balances the adapter-owned reference.
                 unsafe {
                     raw_release_dispatch(binding.native_dispatch as *mut RawIDispatch);
                 }
@@ -4891,12 +5225,12 @@ unsafe extern "system" fn oxvba_event_sink_query_interface(
         return COM_S_OK;
     }
     let sink = as_oxvba_com_event_sink(this);
-    if let Some(ref cp_iid) = (*sink).connection_point_iid {
-        if guid_equals(riid, cp_iid) {
-            *ppv = this;
-            (*sink).ref_count.fetch_add(1, Ordering::AcqRel);
-            return COM_S_OK;
-        }
+    if let Some(ref cp_iid) = (*sink).connection_point_iid
+        && guid_equals(riid, cp_iid)
+    {
+        *ppv = this;
+        (*sink).ref_count.fetch_add(1, Ordering::AcqRel);
+        return COM_S_OK;
     }
     COM_E_NOINTERFACE
 }
@@ -5670,6 +6004,8 @@ fn external_symbol_token(library: &str, alias: &str, name: &str) -> i32 {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::{Mutex, OnceLock};
+
     use proptest::prelude::*;
 
     use crate::{
@@ -5684,6 +6020,11 @@ mod tests {
 
     use super::StandardHostServices;
 
+    fn env_lock() -> &'static Mutex<()> {
+        static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+        LOCK.get_or_init(|| Mutex::new(()))
+    }
+
     fn current_native_profile() -> Option<HalProfileId> {
         if cfg!(target_os = "windows") {
             Some(HalProfileId::Windows)
@@ -5692,6 +6033,35 @@ mod tests {
         } else {
             None
         }
+    }
+
+    #[test]
+    #[cfg(target_os = "windows")]
+    fn com_force_registered_testdispatch_is_cached_at_host_construction() {
+        let _guard = env_lock().lock().expect("env lock should be available");
+        // SAFETY: Test-only serialized environment mutation guarded by env_lock.
+        unsafe {
+            std::env::set_var("OXVBA_COM_FORCE_REGISTERED_TESTDISPATCH", "1");
+        }
+        let cached_true = StandardHostServices::new(HalProfileId::Windows, HostPolicy::default());
+        // SAFETY: Test-only serialized environment mutation guarded by env_lock.
+        unsafe {
+            std::env::set_var("OXVBA_COM_FORCE_REGISTERED_TESTDISPATCH", "0");
+        }
+        let cached_false = StandardHostServices::new(HalProfileId::Windows, HostPolicy::default());
+        // SAFETY: Test-only serialized environment mutation guarded by env_lock.
+        unsafe {
+            std::env::remove_var("OXVBA_COM_FORCE_REGISTERED_TESTDISPATCH");
+        }
+
+        assert!(
+            cached_true.force_registered_test_dispatch(),
+            "first host should preserve env-cached COM dispatch override"
+        );
+        assert!(
+            !cached_false.force_registered_test_dispatch(),
+            "later hosts should see later env values at construction time"
+        );
     }
 
     #[test]
@@ -6293,6 +6663,76 @@ mod tests {
             host.unsubscribe_event(subscription)
                 .expect("unsubscribe_event should succeed"),
             1
+        );
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn windows_native_com_event_poll_returns_structured_payload() {
+        let host = StandardHostServices::new(HalProfileId::Windows, HostPolicy::interactive_dev());
+        let object = host
+            .create_object(4)
+            .expect("create_object should return a token");
+        let subscription = host
+            .subscribe_event(object, super::TEST_EVENT_CHANGED_PAIR)
+            .expect("subscribe_event should succeed for controlled pair-event source");
+
+        assert_eq!(
+            host.dispatch_invoke(object, super::TEST_DISPID_FIRE_CHANGED_PAIR, 90)
+                .expect("FireChangedPair should succeed"),
+            91
+        );
+        let callback = host
+            .do_events()
+            .expect("do_events should pump pending COM callback");
+        let payload = host
+            .poll_event_callback()
+            .expect("poll_event_callback should succeed")
+            .expect("callback payload should be available");
+        assert_eq!(payload.callback.raw(), callback);
+        assert_eq!(payload.subscription.raw(), subscription);
+        assert_eq!(payload.object.raw(), object);
+        assert_eq!(payload.event, super::TEST_EVENT_CHANGED_PAIR);
+        assert_eq!(payload.args, vec![90, 91]);
+        assert!(
+            host.poll_event_callback()
+                .expect("poll_event_callback should succeed when queue is empty")
+                .is_none()
+        );
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn windows_native_com_release_object_clears_subscriptions_and_callbacks() {
+        let host = StandardHostServices::new(HalProfileId::Windows, HostPolicy::interactive_dev());
+        let object = host
+            .create_object(4)
+            .expect("create_object should return a token");
+        let subscription = host
+            .subscribe_event(object, 1)
+            .expect("subscribe_event should succeed for controlled event source");
+        host.dispatch_invoke(object, 3, 77)
+            .expect("FireChanged should succeed");
+        let callback = host
+            .do_events()
+            .expect("do_events should pump pending COM callback");
+
+        assert_eq!(host.release_object(object).expect("release_object"), 1);
+        let callback_err = host
+            .event_callback_subscription(callback)
+            .expect_err("released object callback should be gone");
+        assert!(
+            callback_err
+                .message
+                .contains("COM-E-EVENT-CALLBACK-MISSING")
+        );
+        let subscription_err = host
+            .unsubscribe_event(subscription)
+            .expect_err("released object subscription should be gone");
+        assert!(
+            subscription_err
+                .message
+                .contains("COM-E-EVENT-ADVISE-FAILED")
         );
     }
 
@@ -7243,6 +7683,46 @@ mod tests {
             "expected stable class-not-registered label, got {}",
             err.message
         );
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn release_object_clears_native_subscriptions_and_pending_callbacks() {
+        let host = StandardHostServices::new(HalProfileId::Windows, HostPolicy::interactive_dev());
+        let object = host
+            .create_object(4)
+            .expect("create_object should return controlled COM object");
+        let subscription = host
+            .subscribe_event(object, 1)
+            .expect("subscribe_event should succeed");
+        let _ = host
+            .dispatch_invoke(object, 3, 77)
+            .expect("dispatch_invoke should queue callback");
+
+        assert!(
+            host.poll_event_callback()
+                .expect("first callback should be available")
+                .is_some()
+        );
+
+        let _ = host
+            .dispatch_invoke(object, 3, 88)
+            .expect("second callback should queue");
+        assert_eq!(
+            host.release_object(object)
+                .expect("release_object should clear tracked COM state"),
+            1
+        );
+        assert!(
+            host.poll_event_callback()
+                .expect("released object should not leave callback payloads behind")
+                .is_none()
+        );
+
+        let err = host
+            .unsubscribe_event(subscription)
+            .expect_err("released object subscription should already be removed");
+        assert_eq!(err.kind, HalErrorKind::AdapterFault);
     }
 
     proptest! {

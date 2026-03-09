@@ -173,6 +173,10 @@ impl ComHal for WasmHostServices {
         Err(self.unsupported(CapabilityId::ComActivationDispatch, "create_object"))
     }
 
+    fn release_object(&self, _object: i32) -> HalResult<i32> {
+        Err(self.unsupported(CapabilityId::ComActivationDispatch, "release_object"))
+    }
+
     fn dispatch_invoke(&self, _object: i32, _member: i32, _arg: i32) -> HalResult<i32> {
         Err(self.unsupported(CapabilityId::ComActivationDispatch, "dispatch_invoke"))
     }
@@ -183,6 +187,10 @@ impl ComHal for WasmHostServices {
 
     fn unsubscribe_event(&self, _subscription: i32) -> HalResult<i32> {
         Err(self.unsupported(CapabilityId::ComActivationDispatch, "unsubscribe_event"))
+    }
+
+    fn poll_event_callback(&self) -> HalResult<Option<oxvba_com::ComCallbackPayload>> {
+        Err(self.unsupported(CapabilityId::ComActivationDispatch, "poll_event_callback"))
     }
 
     fn event_callback_subscription(&self, _callback: i32) -> HalResult<i32> {

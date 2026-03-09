@@ -293,6 +293,18 @@ pub fn host_backed_profile_matches_host(profile: HalProfileId) -> bool {
     }
 }
 
+pub fn native_host_profile() -> HalProfileId {
+    if cfg!(target_os = "windows") {
+        HalProfileId::Windows
+    } else if cfg!(target_os = "linux") {
+        HalProfileId::Linux
+    } else if cfg!(target_os = "macos") {
+        HalProfileId::MacOs
+    } else {
+        HalProfileId::Null
+    }
+}
+
 pub fn host_backed_mode_active(profile: HalProfileId, policy: &HostPolicy) -> bool {
     !policy.deterministic_mode && host_backed_profile_matches_host(profile)
 }

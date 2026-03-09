@@ -1,5 +1,6 @@
 use std::collections::{BTreeMap, HashMap};
 
+use oxvba_com::DISPATCH_INVOKE_MISSING_ARG_TOKEN;
 use oxvba_runtime::{
     safe_array::ARRAY_TAG_BASE,
     value_tags::{EMPTY_TAG, ERROR_TAG_BASE, ERROR_TAG_LIMIT, NULL_TAG},
@@ -12,8 +13,6 @@ use crate::{
         BoundModule, BoundParam, BoundProcedure, BoundStmt, CompareOp,
     },
 };
-
-const DISPATCH_INVOKE_MISSING_ARG_TOKEN: i32 = i32::MIN + 2_048;
 
 fn emit_compare_mode(mode: BoundCompareMode) -> StringCompareMode {
     match mode {

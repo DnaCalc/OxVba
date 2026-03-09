@@ -25,15 +25,9 @@ pub fn for_profile_with_runtime_class(
     policy: HostPolicy,
 ) -> Arc<dyn HostServices> {
     match profile {
-        HalProfileId::Windows => {
-            windows::WindowsHostServices::boxed_with_runtime_class(policy, runtime_class)
-        }
-        HalProfileId::Linux => {
-            linux::LinuxHostServices::boxed_with_runtime_class(policy, runtime_class)
-        }
-        HalProfileId::MacOs => {
-            macos::MacOsHostServices::boxed_with_runtime_class(policy, runtime_class)
-        }
+        HalProfileId::Windows | HalProfileId::Linux | HalProfileId::MacOs => Arc::new(
+            standard::StandardHostServices::new_with_runtime_class(profile, runtime_class, policy),
+        ),
         HalProfileId::Wasm => wasm::WasmHostServices::boxed(policy),
         HalProfileId::Null => null::NullHostServices::boxed(policy),
     }

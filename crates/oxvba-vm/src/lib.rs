@@ -10,7 +10,7 @@ use std::sync::Arc;
 use oxvba_compiler::Bytecode;
 use oxvba_hal::{
     adapters,
-    model::{HalProfileId, HostPolicy},
+    model::{HostPolicy, native_host_profile},
     traits::HostServices,
 };
 
@@ -64,5 +64,18 @@ pub fn execute_and_snapshot_with_host_and_typed_fastpaths(
 }
 
 fn default_host_services() -> Arc<dyn HostServices> {
-    adapters::for_profile(HalProfileId::Windows, HostPolicy::deterministic_runtime())
+    adapters::for_profile(native_host_profile(), HostPolicy::deterministic_runtime())
+}
+
+#[cfg(test)]
+mod tests {
+    use oxvba_hal::model::native_host_profile;
+
+    use super::default_host_services;
+
+    #[test]
+    fn default_host_services_follow_native_host_profile() {
+        let host = default_host_services();
+        assert_eq!(host.profile(), native_host_profile());
+    }
 }

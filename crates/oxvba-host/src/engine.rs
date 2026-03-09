@@ -3,6 +3,7 @@ use std::{
     sync::{Arc, Mutex},
 };
 
+use oxvba_com::ComCallbackPayload;
 use oxvba_compiler::{
     Bytecode, CompiledProject, Instruction, ProcedureRuntimeMetadata, ProjectManifest, compile,
     compile_project,
@@ -11,7 +12,7 @@ use oxvba_hal::{
     adapters,
     model::{
         CapabilityId, HalDescriptor, HalProfileId, HostPolicy, HostPolicyPreset,
-        UnsupportedFeatureMode,
+        UnsupportedFeatureMode, native_host_profile,
     },
     traits::HostServices,
 };
@@ -92,7 +93,6 @@ pub struct ComEventCallbackDispatch {
     pub callback_token: i32,
     pub subscription_token: i32,
     pub handler_symbol: String,
-    pub arg0: i32,
     pub args: Vec<i32>,
 }
 
@@ -116,7 +116,7 @@ impl Default for Engine {
 
 impl Engine {
     pub fn new(config: HostConfig) -> Self {
-        let runtime_profile = RuntimeProfileId::WindowsHeadless;
+        let runtime_profile = RuntimeProfileId::default_for_hal_profile(native_host_profile());
         let mut policy = HostPolicy::deterministic_runtime();
         policy.runtime_class = Some(runtime_profile.runtime_class());
         Self {
@@ -311,44 +311,28 @@ impl Engine {
     pub fn poll_com_event_callback(
         &self,
     ) -> Result<Option<ComEventCallbackDispatch>, PhaseDiagnostic> {
-        let callback_token = self
+        let _ = self
             .host_services
             .events()
             .do_events()
             .map_err(|err| PhaseDiagnostic::runtime(err.to_string()))?;
-        if callback_token == 0 {
+        let Some(payload) = self
+            .host_services
+            .com()
+            .poll_event_callback()
+            .map_err(|err| PhaseDiagnostic::runtime(err.to_string()))?
+        else {
             return Ok(None);
-        }
+        };
 
-        let subscription_token = self
-            .host_services
-            .com()
-            .event_callback_subscription(callback_token)
-            .map_err(|err| PhaseDiagnostic::runtime(err.to_string()))?;
-        let callback_arity = self
-            .host_services
-            .com()
-            .event_callback_arity(callback_token)
-            .map_err(|err| PhaseDiagnostic::runtime(err.to_string()))?;
-        if callback_arity < 0 {
+        let callback = normalize_callback_payload(payload)?;
+        let callback_arity = callback.args.len();
+        if callback_arity > i32::MAX as usize {
             return Err(PhaseDiagnostic::runtime(format!(
-                "COM-E-EVENT-CALLBACK-SIGNATURE-MISMATCH: callback arity {} is invalid",
+                "COM-E-EVENT-CALLBACK-SIGNATURE-MISMATCH: callback arity {} exceeds deterministic token range",
                 callback_arity
             )));
         }
-        let mut args = Vec::with_capacity(callback_arity as usize);
-        for index in 0..callback_arity {
-            let value = self
-                .host_services
-                .com()
-                .event_callback_arg(callback_token, index)
-                .map_err(|err| PhaseDiagnostic::runtime(err.to_string()))?;
-            args.push(value);
-        }
-        self.host_services
-            .com()
-            .release_event_callback(callback_token)
-            .map_err(|err| PhaseDiagnostic::runtime(err.to_string()))?;
 
         let handler_symbol = self
             .com_subscription_handlers
@@ -358,21 +342,20 @@ impl Engine {
                     "COM subscription handler registry lock poisoned during callback poll",
                 )
             })?
-            .get(&subscription_token)
+            .get(&callback.subscription_token)
             .cloned()
             .ok_or_else(|| {
                 PhaseDiagnostic::runtime(format!(
                     "PMR-E-EVENT-DISPATCH-TARGET-MISSING: no handler binding for COM subscription token {}",
-                    subscription_token
+                    callback.subscription_token
                 ))
             })?;
 
         Ok(Some(ComEventCallbackDispatch {
-            callback_token,
-            subscription_token,
+            callback_token: callback.callback_token,
+            subscription_token: callback.subscription_token,
             handler_symbol,
-            arg0: args.first().copied().unwrap_or(0),
-            args,
+            args: callback.args,
         }))
     }
 
@@ -607,6 +590,17 @@ impl Engine {
             ))),
         }
     }
+}
+
+fn normalize_callback_payload(
+    payload: ComCallbackPayload,
+) -> Result<ComEventCallbackDispatch, PhaseDiagnostic> {
+    Ok(ComEventCallbackDispatch {
+        callback_token: payload.callback.raw(),
+        subscription_token: payload.subscription.raw(),
+        handler_symbol: String::new(),
+        args: payload.args,
+    })
 }
 
 fn hal_requirement(instruction: &Instruction) -> Option<(&'static str, CapabilityId)> {
@@ -1843,7 +1837,6 @@ mod tests {
 
         assert_eq!(callback.subscription_token, subscription);
         assert_eq!(callback.handler_symbol, "sinka_onchanged");
-        assert_eq!(callback.arg0, 77);
         assert_eq!(callback.args, vec![77]);
         assert!(callback.callback_token >= 60_001);
         assert!(
@@ -1916,7 +1909,6 @@ mod tests {
         assert_eq!(callback.subscription_token, subscription);
         assert_eq!(callback.handler_symbol, "sinka_onpair");
         assert_eq!(callback.args, vec![90, 91]);
-        assert_eq!(callback.arg0, 90);
         assert!(
             engine
                 .unsubscribe_com_event_handler(subscription)
@@ -1952,7 +1944,6 @@ mod tests {
         assert_eq!(callback.subscription_token, subscription);
         assert_eq!(callback.handler_symbol, "sinka_onsourcechanged");
         assert_eq!(callback.args, vec![55]);
-        assert_eq!(callback.arg0, 55);
         assert!(
             engine
                 .unsubscribe_com_event_handler(subscription)

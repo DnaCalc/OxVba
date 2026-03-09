@@ -4,7 +4,7 @@ use oxvba_compiler::{Bytecode, Instruction, bytecode::StringCompareMode};
 use oxvba_hal::{
     adapters,
     error::{HalError, HalErrorKind},
-    model::{CapabilityId, HalProfileId, HostPolicy},
+    model::{CapabilityId, HostPolicy, native_host_profile},
     traits::{DynLinkDescriptorView, HostServices},
 };
 use oxvba_runtime::safe_array::{
@@ -25,6 +25,7 @@ struct WithEventsOwnerIterator {
 pub struct Vm {
     registers: RegisterFile,
     host_services: Arc<dyn HostServices>,
+    typed_fastpaths_default: bool,
     call_stack: Vec<usize>,
     withevents_bindings: HashMap<i64, i32>,
     withevents_owner_iters: Vec<WithEventsOwnerIterator>,
@@ -41,7 +42,7 @@ const FIN_RATE_ERROR_CODE: i32 = 2001;
 const FIN_NPER_ERROR_CODE: i32 = 2002;
 
 fn default_host_services() -> Arc<dyn HostServices> {
-    adapters::for_profile(HalProfileId::Windows, HostPolicy::deterministic_runtime())
+    adapters::for_profile(native_host_profile(), HostPolicy::deterministic_runtime())
 }
 
 impl Default for Vm {
@@ -55,6 +56,7 @@ impl Vm {
         Self {
             registers: RegisterFile::with_capacity(256),
             host_services,
+            typed_fastpaths_default: Self::typed_fastpaths_enabled_from_env(),
             call_stack: Vec::new(),
             withevents_bindings: HashMap::new(),
             withevents_owner_iters: Vec::new(),
@@ -128,8 +130,7 @@ impl Vm {
     }
 
     pub fn execute(&mut self, bytecode: &Bytecode) -> Result<(), String> {
-        let typed_fastpaths = Self::typed_fastpaths_enabled_from_env();
-        self.execute_with_typed_fastpaths(bytecode, typed_fastpaths)
+        self.execute_with_typed_fastpaths(bytecode, self.typed_fastpaths_default)
     }
 
     pub fn execute_with_typed_fastpaths(
@@ -137,13 +138,7 @@ impl Vm {
         bytecode: &Bytecode,
         typed_fastpaths: bool,
     ) -> Result<(), String> {
-        self.ensure_slot_count(bytecode.slot_count);
-        self.call_stack.clear();
-        self.withevents_bindings.clear();
-        self.withevents_owner_iters.clear();
-        self.on_error_resume_next = false;
-        self.on_error_goto_label_target = None;
-        self.clear_error_state();
+        self.reset_execution_state(bytecode.slot_count, false);
         self.execute_loop(bytecode, 0, typed_fastpaths, false)
     }
 
@@ -164,21 +159,23 @@ impl Vm {
         if entry_pc >= bytecode.instructions.len() {
             return Err(format!("procedure entry out of range: {entry_pc}"));
         }
-        self.ensure_slot_count(bytecode.slot_count);
+        self.reset_execution_state(bytecode.slot_count, true);
+        for (slot, value) in arg_slots.iter().zip(args.iter()) {
+            self.write_slot(*slot, *value)?;
+        }
+        self.execute_loop(bytecode, entry_pc, self.typed_fastpaths_default, true)
+    }
+
+    fn reset_execution_state(&mut self, slot_count: usize, preserve_withevents_bindings: bool) {
+        self.ensure_slot_count(slot_count);
         self.call_stack.clear();
+        if !preserve_withevents_bindings {
+            self.withevents_bindings.clear();
+        }
         self.withevents_owner_iters.clear();
         self.on_error_resume_next = false;
         self.on_error_goto_label_target = None;
         self.clear_error_state();
-        for (slot, value) in arg_slots.iter().zip(args.iter()) {
-            self.write_slot(*slot, *value)?;
-        }
-        self.execute_loop(
-            bytecode,
-            entry_pc,
-            Self::typed_fastpaths_enabled_from_env(),
-            true,
-        )
     }
 
     fn execute_loop(

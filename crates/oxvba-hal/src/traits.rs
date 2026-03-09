@@ -12,6 +12,7 @@ use crate::{
     error::HalResult,
     model::{HalDescriptor, HalProfileId, HostPolicy},
 };
+use oxvba_com::ComCallbackPayload;
 
 /// VM/runtime value token crossing the current HAL boundary.
 /// This is intentionally `i32` for the current register-window runtime representation.
@@ -104,6 +105,7 @@ pub trait ProcessEnvHal: Send + Sync {
 
 pub trait ComHal: Send + Sync {
     fn create_object(&self, prog_id: ValueToken) -> HalResult<ValueToken>;
+    fn release_object(&self, object: ValueToken) -> HalResult<ValueToken>;
     fn dispatch_invoke(
         &self,
         object: ValueToken,
@@ -112,6 +114,7 @@ pub trait ComHal: Send + Sync {
     ) -> HalResult<ValueToken>;
     fn subscribe_event(&self, object: ValueToken, event: ValueToken) -> HalResult<ValueToken>;
     fn unsubscribe_event(&self, subscription: ValueToken) -> HalResult<ValueToken>;
+    fn poll_event_callback(&self) -> HalResult<Option<ComCallbackPayload>>;
     fn event_callback_subscription(&self, callback: ValueToken) -> HalResult<ValueToken>;
     fn event_callback_arity(&self, callback: ValueToken) -> HalResult<ValueToken>;
     fn event_callback_arg(&self, callback: ValueToken, index: ValueToken) -> HalResult<ValueToken>;

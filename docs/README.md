@@ -72,6 +72,7 @@
 | PMR Oracle Runner | [`../scripts/run-pmr-project-model-oracle.ps1`](../scripts/run-pmr-project-model-oracle.ps1) | Automated Excel oracle capture runner for PMR topics (`CCT-037..CCT-041`) with CSV+summary artifacts. |
 | PMR Follow-up Queue | [`worksets/WORKSET_2026-03-03_PMR_FOLLOWUP_QUEUE_FROM_OBSERVATIONS.md`](worksets/WORKSET_2026-03-03_PMR_FOLLOWUP_QUEUE_FROM_OBSERVATIONS.md) | Queue generated from P10 observations and parity foldback, including divergence-linked implementation backlog. |
 | Diagnostic Taxonomy | [`DIAGNOSTIC_TAXONOMY.md`](DIAGNOSTIC_TAXONOMY.md) | Consolidated user-facing compiler/typecheck diagnostic categories and message mapping. |
+| Error Codes | [`ERROR_CODES.md`](ERROR_CODES.md) | Authoritative register of implemented, reserved, and proposal-only error-code families. |
 | Profile v2 Status | [`PROFILE_STATUS_V2.md`](profile-status/PROFILE_STATUS_V2.md) | Current gate status contract for `mvp-controlflow-v2`. |
 | Profile v3 Status | [`PROFILE_STATUS_V3.md`](profile-status/PROFILE_STATUS_V3.md) | Current gate status contract for `mvp-formal-foundation-v3`. |
 | Profile v4 Status | [`PROFILE_STATUS_V4.md`](profile-status/PROFILE_STATUS_V4.md) | Current gate status contract for `mvp-boolean-logic-v4`. |

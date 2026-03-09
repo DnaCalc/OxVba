@@ -528,18 +528,10 @@ End Sub
                 callback.args.is_empty(),
                 "callback payload should be empty for `{selected_prog_id}`"
             );
-            assert_eq!(
-                callback.arg0, 0,
-                "callback arg0 should be zero when callback has no arguments for `{selected_prog_id}`"
-            );
         } else {
             assert_eq!(
                 callback.args[0], trigger_arg,
                 "callback first-arg mismatch for `{selected_prog_id}`"
-            );
-            assert_eq!(
-                callback.arg0, trigger_arg,
-                "callback arg0 mismatch for `{selected_prog_id}`"
             );
             if expected_arg_count == 1 {
                 assert_eq!(
