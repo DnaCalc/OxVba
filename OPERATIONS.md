@@ -18,6 +18,34 @@ Execution defaults:
 - Keep high-risk performance paths behind feature flags until parity/correctness gates are green.
 - Use measurable phase gates (pass rates, divergence counts, benchmark thresholds).
 
+### 3.1 Workset Completion Doctrine
+
+The default expectation for an accepted work area is full parity completion for the scoped behavior, not a partial landing that is described with completion language.
+
+Binding rules:
+- `implemented` means the scoped behavior is actually implemented to the intended parity target for that work area.
+- `closed` or `closure` means the work item is complete for its stated scope and its required verification/evidence gates are satisfied.
+- Do not use `implemented`, `closed`, or `closure` for a partial subset, an intermediate scaffold, or a merely enabled path inside a broader unfinished behavior area.
+- If only part of a behavior area is done, the status must remain `in-progress`, even if a useful subset works.
+- If a work area stops short of parity because of ambiguity, uncertainty, external constraints, or unresolved design questions, record it explicitly as `in-progress` with:
+  - the blocking question or decision,
+  - the current impact on parity,
+  - the exact next unblocking step,
+  - a recommendation where possible.
+
+Parity target rule:
+- OxVBA work is aimed at parity with the VBA specifications and observed VBA behavior in Excel.
+- Where the specifications and Excel behavior diverge, or where behavior is ambiguous, the discrepancy must be documented explicitly with evidence and a stated project decision.
+- Those discrepancies do not justify using completion language for an unfinished work area unless the workset scope explicitly includes documenting and resolving that discrepancy as its end condition.
+
+Stopping rule:
+- Once a work item is active, the default is to continue until parity-complete for its stated scope.
+- The only valid reasons to stop short are:
+  - safety or correctness risk,
+  - explicit user intervention or reprioritization,
+  - a genuine blocker that prevents further progress,
+  - a deliberate scope split recorded in the docs so the remaining gap is tracked as a new active in-progress item rather than silently dropped.
+
 ## 4. Change Workflow
 For behavior-affecting changes:
 1. Implement code change.
@@ -106,3 +134,7 @@ A change is done when:
 - tests and evidence are updated,
 - docs reflect the new truth,
 - CI gates for the touched area are green.
+
+Additional completion constraint:
+- For a scoped compatibility/workset claim, `done` also requires that the scoped behavior is parity-complete for the declared target, or that any residual ambiguity/discrepancy is explicitly documented and resolved within the scope itself.
+- A partial subset that leaves the main parity target open is not `done`; it remains `in-progress`.

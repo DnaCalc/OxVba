@@ -7,6 +7,11 @@ Primary guidance for automated contributors, in order:
 
 Use `docs/` and `synthesis/` for supporting context and provenance.
 
+## Workset Status Doctrine
+- Follow `OPERATIONS.md` section `3.1 Workset Completion Doctrine` as binding terminology and execution policy.
+- Do not describe partial subsets as `implemented`, `closed`, or `closure`.
+- If parity for the scoped work area is not complete, status remains `in-progress` and the remaining blocker/question must be documented explicitly.
+
 ## AutoRun Continuation Rule
 - Active mode is `AutoRun`.
 - End of a work cycle means immediately continue to the next cycle.
