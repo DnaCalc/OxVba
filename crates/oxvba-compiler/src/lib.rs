@@ -294,14 +294,15 @@ mod tests {
     }
 
     #[test]
-    fn late_bound_named_argument_call_is_executable_subset() {
+    fn late_bound_named_argument_call_is_rejected_until_transport_supports_names() {
         let source = "Sub Main()\nDim obj As Object\nCall obj(x:=1)\nEnd Sub";
-        let out = compile(source)
-            .expect("late-bound named-arg target should compile in executable subset");
+        let err = compile(source).expect_err(
+            "late-bound named-arg target should be rejected until names survive transport",
+        );
         assert!(
-            out.instructions
-                .iter()
-                .any(|i| matches!(i, Instruction::IntrinsicDispatchInvokeHost { .. }))
+            err.to_string().contains(
+                "named arguments are not yet supported for late-bound default-member call"
+            )
         );
     }
 

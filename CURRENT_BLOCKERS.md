@@ -1,7 +1,7 @@
-# Current Blockers (Events Parity Closure)
+# Current Blockers
 
-Date: 2026-03-08  
-Run context: full events parity closure (non-COM + Windows COM)
+Date: 2026-03-10  
+Run context: active parity/compliance execution plus in-progress feature worklist execution pass
 
 ## Status update
 
@@ -17,7 +17,97 @@ Run context: full events parity closure (non-COM + Windows COM)
 
 ## Active blocker entries
 
-None.
+### BLK-COM-IDISPATCH-001: Late-bound COM transport cannot carry named args or omission metadata
+- Impact:
+  - Blocks `IP-03` Windows late-bound COM client parity.
+  - Blocks full closure of `HAL-DYN-008` and parts of `IP-09` declare/marshaling parity.
+  - Blocks downstream property/default-member closure work in `IP-02`.
+- Current state:
+  - public invoke transport only carries positional `args`,
+  - bytecode/VM host intrinsic only carries positional arg slots,
+  - native invoke builder only supports the special `DISPID_PROPERTYPUT` named-arg case,
+  - current run corrected one false subset behavior by rejecting late-bound named-arg default-member calls at compile time.
+- Exact unblock steps:
+  - extend `oxvba-com` invoke transport to carry named-arg and omission metadata,
+  - extend bytecode + VM host invoke path to preserve that metadata,
+  - implement general `DISPPARAMS`/`rgdispidNamedArgs` packing and output-channel handling.
+- Recommendation:
+  - treat this as the next primary COM implementation slice.
+
+### BLK-COM-BOUNDARY-001: Final `oxvba-com` extraction is blocked on unsettled COM behavior contracts
+- Impact:
+  - Blocks `IP-04` final COM ownership extraction from HAL.
+  - Blocks `IP-05` early-binding completion, `IP-06` server/export parity, and part of `IP-08` hosting parity.
+- Current state:
+  - some shared transport/types and typelib catalog logic now live in `oxvba-com`,
+  - main client/event/type-library runtime state still lives materially in `crates/oxvba-hal/src/adapters/standard.rs`,
+  - extracting now would freeze unstable invoke/property/server boundaries.
+- Exact unblock steps:
+  - close `BLK-COM-IDISPATCH-001`,
+  - stabilize property/default-member intent model,
+  - then extract client -> event -> server slices into `oxvba-com`.
+- Recommendation:
+  - do not force final crate extraction ahead of invoke/property closure.
+
+### BLK-PROP-001: Property/default-member intent model is not yet end-to-end executable
+- Impact:
+  - Blocks `IP-02` VBA property model and default-member semantics.
+  - Blocks part of `IP-06` COM server/export parity and `IP-08` Office-style hosting parity.
+- Current state:
+  - property get/put/putref lanes exist in parts of the COM client path,
+  - but there is no fully closed end-to-end model for `Property Get/Let/Set`, `Set` vs `Let`, default-member resolution source of truth, and call-vs-value context parity.
+- Exact unblock steps:
+  - close the late-bound invoke transport gap,
+  - lock runtime/binder property intent transport,
+  - implement and test default-member and `Set`/`Let` semantics across compiler/runtime/host/COM.
+- Recommendation:
+  - treat this as the first major semantic closure track after the late-bound COM transport redesign.
+
+### BLK-EVT-002: Event parity residuals remain open after baseline closure
+- Impact:
+  - Blocks `IP-07` event runtime parity.
+  - Blocks part of `IP-08` host project / Office-style hosting parity.
+- Current state:
+  - baseline event runtime work is stronger, but open residuals remain:
+    - `DIV-0004`
+    - `ODG-038`
+    - `ODG-039`
+    - remaining COM adapter parity lanes
+- Exact unblock steps:
+  - finish unified host ingress behavior,
+  - close remaining COM callback/event transport residuals,
+  - resolve or bound the remaining divergence/oracle topics.
+- Recommendation:
+  - continue after host/object/event ingress and COM transport work are stable.
+
+### BLK-ORACLE-001: Oracle closure depends on unfinished implementation areas and external captures
+- Impact:
+  - Blocks `IP-10` oracle/differential parity closure.
+  - Prevents full parity claims for `IP-03`, `IP-05`, `IP-07`, and `IP-09`.
+- Current state:
+  - deferred oracle structure exists and some probes are captured,
+  - but required Office/host differential captures cannot close meaningfully while the underlying behavior is still unfinished.
+- Exact unblock steps:
+  - finish the feature work for the affected areas,
+  - run the remaining Office/host capture matrix,
+  - fold results back into claim docs and divergence registers.
+- Recommendation:
+  - do not spend oracle effort ahead of core feature closure except for targeted ambiguity resolution.
+
+### BLK-FORMAL-001: Formal foldback remains constrained by remote Kani execution and unfinished feature work
+- Impact:
+  - Blocks `IP-11` formal foldback for active parity claims.
+  - Blocks final umbrella closure for `IP-01`.
+- Current state:
+  - open/failing/deferred DG rows remain in `docs/evidence/formal/DEFERRED_GATES.md`,
+  - some lanes require remote Linux/Kani execution,
+  - other lanes cannot close honestly until the underlying feature behavior is finished.
+- Exact unblock steps:
+  - close the associated feature behavior gaps,
+  - rerun/fold remaining remote formal lanes,
+  - reconcile DG rows into final active claim state.
+- Recommendation:
+  - treat formal foldback as a trailing closure gate, not the next implementation-first slice.
 
 ## Closed blocker entries
 

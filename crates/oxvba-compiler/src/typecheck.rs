@@ -711,6 +711,11 @@ fn validate_call_site(
             ));
         }
         for arg in args {
+            if arg.name.is_some() {
+                return Err(format!(
+                    "named arguments are not yet supported for late-bound default-member call {name}"
+                ));
+            }
             check_expr(
                 &arg.expr,
                 option_explicit,

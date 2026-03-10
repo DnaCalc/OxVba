@@ -1,6 +1,24 @@
 # Implementation Log
 
 ## 2026-03-10
+- in-progress feature execution pass:
+  - added `docs/IN_PROGRESS_FEATURE_EXECUTION_2026-03-10.md` as the execution ledger for the active in-progress feature register
+  - completed one concrete correctness fix inside `IP-03`:
+    - late-bound named-arg default-member calls are now rejected at compile time instead of silently losing name metadata before host invoke
+  - audited the remaining in-progress feature areas and recorded exact blockers plus next required actions
+  - updated `CURRENT_BLOCKERS.md` with the active blocker summary for:
+    - late-bound COM invoke transport
+    - final `oxvba-com` extraction
+    - property/default-member semantics
+    - event parity residuals
+    - oracle closure
+    - formal foldback
+  - verification:
+    - `cargo test -p oxvba-compiler late_bound_named_argument_call_is_rejected_until_transport_supports_names --quiet` -> PASS
+    - `cargo test -p oxvba-compiler compile_named_args_call_is_supported --quiet` -> PASS
+    - `cargo test -p oxvba-compiler --quiet` -> PASS
+    - `./scripts/check-governance.ps1` -> PASS
+    - `./scripts/meta-check.ps1 -Fast -NoArtifacts` -> PASS
 - in-progress feature consolidation:
   - added `docs/IN_PROGRESS_FEATURE_WORKLIST.md` as the canonical repo-level register of unfinished feature areas
   - consolidated active partial-feature ownership across:

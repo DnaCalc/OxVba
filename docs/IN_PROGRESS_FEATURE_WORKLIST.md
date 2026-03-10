@@ -6,6 +6,9 @@ Purpose: canonical repo-level register of feature areas that remain `in-progress
 
 This file is the authoritative consolidation point for part-implemented feature work.
 
+Latest execution pass:
+1. `docs/IN_PROGRESS_FEATURE_EXECUTION_2026-03-10.md`
+
 Use it to answer:
 1. what major behavior areas are still unfinished,
 2. why they are still `in-progress`,
