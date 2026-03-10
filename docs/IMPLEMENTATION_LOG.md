@@ -1,6 +1,17 @@
 # Implementation Log
 
 ## 2026-03-10
+- in-progress feature consolidation:
+  - added `docs/IN_PROGRESS_FEATURE_WORKLIST.md` as the canonical repo-level register of unfinished feature areas
+  - consolidated active partial-feature ownership across:
+    - active compliance worksets,
+    - COM continuation worksets,
+    - clause/spec docs with `implemented-partial` or subset claims,
+    - deferred oracle and formal registers
+  - linked the new register from `docs/README.md`
+  - verification:
+    - `./scripts/check-governance.ps1` -> PASS
+    - `./scripts/meta-check.ps1 -Fast -NoArtifacts` -> PASS
 - AutoRun control-file cleanup:
   - reduced `docs/AUTORUN_STATE.md` to a minimal active-ladder control/sync surface
   - removed duplicated human checkpoint/history material from `AUTORUN_STATE.md`
