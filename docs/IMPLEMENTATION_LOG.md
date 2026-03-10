@@ -1,6 +1,16 @@
 # Implementation Log
 
 ## 2026-03-10
+- doctrine-alignment cleanup for historical COM status artifacts:
+  - reworded `AUTORUN_STATE` checkpoint entries so prior COM and declare/marshaling ladders are described as tranche gates, not parity-complete closure
+  - corrected historical COM profile/evidence/status docs for `v386`, `v406`, and `v466` so they explicitly distinguish planned terminal-gate completion from full VBA/Excel parity
+  - cross-linked active completion worksets from those historical artifacts:
+    - `docs/worksets/WORKSET_2026-03-09_OXVBA_COM_REPURPOSE_AND_HAL_COM_EXTRACTION.md`
+    - `docs/worksets/WORKSET_2026-03-10_IDISPATCH_LATEBOUND_COM_COMPLETION.md`
+  - verification:
+    - `./scripts/check-governance.ps1` -> PASS
+    - `./scripts/validate-profile-artifact-scope.ps1 -Mode working -AllowVersions 386,406,466` -> PASS
+    - `./scripts/meta-check.ps1 -Fast -NoArtifacts` -> expected scope-guard failure because this pass intentionally edits historical profile artifacts outside active ladder `v467..v620`
 - COM/HAL contraction slice:
   - removed the public `TypeLibraryHal`/`HostServices::typelibs()` split and folded typelib resolve/load/invalidate operations under `ComHal`
   - added shared COM object-descriptor types in `oxvba-com` and exposed `ComHal::describe_object(...)`
@@ -97,7 +107,7 @@
     - `./scripts/check-governance.ps1` -> PASS
 
 ## 2026-03-09
-- External registered COM event parity closure + housekeeping batch:
+- External registered COM event tranche completion + housekeeping batch:
   - adopted and normalized the dirty work batch around external registered COM callbacks;
   - added repo ignore rules for local/editor and .NET build residue:
     - `.claude/`
@@ -122,7 +132,7 @@
     - one-arg callback: `COM_LANE_L2E_RUN_OxVba.TestEventServer_20260309T000002Z.md`
     - pair callback: `COM_LANE_L2E_RUN_OxVba.TestEventServer_20260309T000003Z.md`
     - Windows PowerShell harness compatibility smoke: `COM_LANE_L2E_RUN_OxVba.TestEventServer_20260309T000005Z.md`
-  - documented blocker closure in `CURRENT_BLOCKERS.md` and refreshed `COM_LANE_L2E_LATEST_OxVba.TestEventServer.csv`.
+  - documented blocker resolution in `CURRENT_BLOCKERS.md` and refreshed `COM_LANE_L2E_LATEST_OxVba.TestEventServer.csv`.
   - important scope note:
     - late-bound COM dispatch is still single-argument at the HAL boundary (`dispatch_invoke(object, member, arg)`).
     - current multi-value behavior is limited to callback payload delivery, not general multi-argument late-bound method calls.
@@ -1472,8 +1482,8 @@
     - `docs/worksets/WORKSET_2026-03-04_COM_WINDOWS_TEST_COMPONENTS_V293_V300.md`
     - `docs/worksets/WORKSET_2026-03-04_COM_CLIENT_SERVER_SMOKE_GATE_V301_V306.md`
   - updated `docs/spec/README.md` and `docs/README.md` indexes for COM planning artifacts.
-- Executed COM series continuation through terminal closure `v386`:
-  - published continuation ladders and closure workset:
+- Executed COM series continuation through ladder terminal gate `v386`:
+  - published continuation ladders and terminal-gate workset:
     - `docs/worksets/PROFILE_LADDER_2026-03-04_MACH1000_V307_V336_COM_CLIENT_DEPTH.md`
     - `docs/worksets/PROFILE_LADDER_2026-03-04_MACH1000_V337_V366_COM_SERVER_DEPTH.md`
     - `docs/worksets/PROFILE_LADDER_2026-03-04_MACH1000_V367_V386_COM_STABILIZATION.md`
@@ -1488,18 +1498,18 @@
     - updated declare-stub expectations to deterministic error status under current declaration policy,
     - added PMR class-graph fixture expectations,
     - refreshed deterministic datetime expansion golden row to current host-token constants.
-  - produced closure evidence artifacts:
+  - produced terminal-gate evidence artifacts:
     - `docs/evidence/profiles/v386/integrated_gate.md` (`PASS`),
     - `docs/evidence/profiles/v386/gate_report.md` (`PASS`),
     - `docs/evidence/profiles/v386/matrix_latest.csv` (`2/2` required cells green),
     - `docs/evidence/formal/latest_run.md` (`mvp-profile-v386`, non-blocking/deferred Kani policy).
   - updated AutoRun control docs to active terminal gate `v386`:
     - `AGENTS.md`, `docs/AUTORUN_STATE.md`, `README.md`, `docs/README.md`, `docs/profile-status/README.md`.
-- Executed COM late-bound client C2 spec-closure pass through `v392`:
+- Executed COM late-bound client C2 spec/tranche lock pass through `v392`:
   - published new ladder/workset artifacts:
     - `docs/worksets/PROFILE_LADDER_2026-03-04_MACH1000_V387_V406_COM_CLIENT_LATEBOUND_C2.md`
     - `docs/worksets/WORKSET_2026-03-04_COM_CLIENT_LATEBOUND_SPEC_CLOSURE_V387_V392.md`
-  - advanced COM scope/conformance and HAL COM bridge drafts from planning baseline to C2 runway closure:
+  - advanced COM scope/conformance and HAL COM bridge drafts from planning baseline to a locked C2 runway tranche:
     - `docs/spec/COM_CLIENT_SERVER_SCOPE_V1.md`
     - `docs/spec/COM_CLIENT_SERVER_CONFORMANCE_V1.md`
     - `docs/spec/HAL_COM_BRIDGE_SCOPE_V1.md`
@@ -1511,7 +1521,7 @@
     - revised `HAL-ID-006` to reflect current native+fallback COM behavior,
     - added `HAL-ID-018` for current token-oriented late-bound boundary shape,
     - added uncertainties `HAL-U-015` and `HAL-U-016` for selector/error-channel parity topics.
-  - published profile status records `PROFILE_STATUS_V387.md` through `PROFILE_STATUS_V392.md` and closure evidence:
+  - published profile status records `PROFILE_STATUS_V387.md` through `PROFILE_STATUS_V392.md` and tranche evidence:
     - `docs/evidence/profiles/v392/V392_COM_CLIENT_C2_SPEC_CLOSURE.md`.
   - moved AutoRun/control/docs index targets to interim C2 gate `v392`:
     - `AGENTS.md`, `docs/AUTORUN_STATE.md`, `README.md`, `docs/README.md`, `docs/profile-status/README.md`, `docs/worksets/PROFILE_SERIES_2026-03-04_MACH1000_COM_WINDOWS_CLIENT_SERVER.md`.
@@ -1534,7 +1544,7 @@
   - added process-hardening gate sync check:
     - `scripts/validate-gate-sync.ps1`
     - wired into `scripts/meta-check.ps1`.
-  - published profile statuses and closure evidence:
+  - published profile statuses and tranche evidence:
     - `docs/profile-status/PROFILE_STATUS_V393.md` .. `PROFILE_STATUS_V396.md`
     - `docs/evidence/profiles/v396/V396_COM_CLIENT_IMPLEMENTATION_BLOCK.md`
   - advanced AutoRun/control target to `v396`:

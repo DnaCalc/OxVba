@@ -15,15 +15,18 @@ Current checkpoint:
 - Non-HAL completion ladder `v147..v166` reached terminal closure gate with `PASS`.
 - Non-HAL hardening ladder `v167..v186` reached terminal gate with `PASS`.
 - Host-platform expansion ladder `v187..v226` reached terminal gate with `PASS`.
-- Declare/marshaling full-scope ladder `v227..v286` reached terminal gate with `PASS`.
-- COM client/server series ladder `v287..v386` reached terminal gate with `PASS`.
+- Declare/marshaling ladder `v227..v286` reached terminal gate with `PASS` for the then-scoped tranche; full Automation marshaling parity remains in progress in the live spec/catalog.
+- COM client/server series ladder `v287..v386` reached terminal gate with `PASS` for the planning/native-client/stabilization tranche; broad COM server and full client parity remain in progress.
 - Latest integrated gate artifact: `docs/evidence/profiles/v386/integrated_gate.md`.
-- COM late-bound client C2 ladder `v387..v406` reached terminal gate `v406` with closure evidence.
-- Latest C2 closure artifact: `docs/evidence/profiles/v406/V406_COM_CLIENT_C2_CLOSURE.md`.
-- COM early-binding/type-library ladder `v407..v466` reached terminal gate `v466`.
-- Latest implementation closure artifact: `docs/evidence/profiles/v466/V466_COM_EARLY_CLOSURE_REPORT.md`.
+- COM late-bound client C2 ladder `v387..v406` reached terminal gate `v406` for the current late-bound subset tranche; full `IDispatch` parity remains in progress under `docs/worksets/WORKSET_2026-03-10_IDISPATCH_LATEBOUND_COM_COMPLETION.md`.
+- Latest C2 tranche artifact: `docs/evidence/profiles/v406/V406_COM_CLIENT_C2_CLOSURE.md`.
+- COM early-binding/type-library ladder `v407..v466` reached terminal gate `v466` for the implemented early-binding subset tranche; full parity and final `oxvba-com` migration remain in progress.
+- Latest early-binding tranche artifact: `docs/evidence/profiles/v466/V466_COM_EARLY_CLOSURE_REPORT.md`.
 - Full-compliance ladder `v467..v620` is now active (in progress).
 - Active workset: `docs/worksets/WORKSET_2026-03-08_VBA71_WINDOWS_OFFICE_FULL_COMPLIANCE_V467_V620.md`.
+- Active COM completion worksets:
+  - `docs/worksets/WORKSET_2026-03-09_OXVBA_COM_REPURPOSE_AND_HAL_COM_EXTRACTION.md`
+  - `docs/worksets/WORKSET_2026-03-10_IDISPATCH_LATEBOUND_COM_COMPLETION.md`
 - Latest formal artifact: `docs/evidence/formal/latest_run.md`.
 - Evidence artifacts are tracked under `docs/evidence/profiles/`, `docs/evidence/formal/`, and `docs/evidence/divergences/`.
 

@@ -64,7 +64,7 @@ Files: `scripts/run-com-early-conformance.ps1`, `scripts/run-com-early-lane.ps1`
 - Perf latest:
   - `docs/evidence/perf/com_early/COM_EARLY_PERF_LATEST.csv`
   - `docs/evidence/perf/com_early/COM_EARLY_PERF_LATEST.md`
-- Terminal closure:
+- Tranche terminal artifact:
   - `docs/evidence/profiles/v466/V466_COM_EARLY_CLOSURE_REPORT.md`
 
 ## Deferred/non-blocking items
@@ -77,4 +77,4 @@ Files: `scripts/run-com-early-conformance.ps1`, `scripts/run-com-early-lane.ps1`
 
 ## Bottom line
 
-The COM early-binding/type-library ladder is closed for the implemented deterministic subset and is now backed by explicit scripts, diagnostics taxonomy, conformance/perf artifacts, and terminal-gate documentation.
+The COM early-binding/type-library ladder reached its planned terminal gate for the implemented deterministic subset tranche and is now backed by explicit scripts, diagnostics taxonomy, conformance/perf artifacts, and terminal-gate documentation. Full parity remains in progress.

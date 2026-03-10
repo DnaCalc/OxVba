@@ -6,7 +6,7 @@
 - Workset: WORKSET_2026-03-05_COM_EARLY_BINDING_TYPELIB_CLOSURE_V458_V466.md
 
 ## Step Outcome
-- Ladder v407..v466 terminal gate is complete and passed with artifacts synchronized.
+- Ladder `v407..v466` terminal gate is complete and passed for the implemented early-binding subset tranche, with artifacts synchronized.
 
 ## Primary Artifacts
 - docs/worksets/PROFILE_LADDER_2026-03-05_MACH1000_V407_V466_COM_EARLY_BINDING_TYPELIB.md
@@ -16,4 +16,5 @@
 - docs/evidence/profiles/v466/V466_COM_EARLY_CLOSURE_REPORT.md
 
 ## Gate Signal
-- v466 implementation objectives are captured and cross-linked.
+- `v466` tranche objectives are captured and cross-linked.
+- This terminal-gate artifact does not claim full VBA/Excel COM early-binding parity.
