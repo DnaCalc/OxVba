@@ -191,6 +191,15 @@ Governance and doc sync:
 
 - `docs/worksets/WORKSET_2026-03-08_VBA71_WINDOWS_OFFICE_FULL_COMPLIANCE.md`
 - `docs/worksets/PROFILE_LADDER_2026-03-08_MACH1000_V467_V620_VBA71_WINDOWS_OFFICE_COMPLIANCE.md`
+- `docs/worksets/WORKSET_2026-03-10_IDISPATCH_LATEBOUND_COM_COMPLETION.md`
 - `docs/evidence/hal/HAL_IMPLEMENTATION_DEFINED.md`
 - `docs/evidence/SPEC_CHECKLIST.md`
 - `docs/REVIEW_20260309.md`
+
+## Follow-on planning note
+
+As of 2026-03-10, the multi-arg invoke and event-projection closure originally tracked here has materially advanced. The remaining major client-side gap has been split into the more specific follow-on workset:
+
+- `docs/worksets/WORKSET_2026-03-10_IDISPATCH_LATEBOUND_COM_COMPLETION.md`
+
+Use this older workset for historical continuity and the narrower multi-arg/event-projection rationale, but use the new workset for the remaining broad `IDispatch` / late-bound COM completion plan.

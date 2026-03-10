@@ -240,3 +240,4 @@ Required checks for the repurpose/extraction program:
 1. Record this decision in review triage and active workset docs.
 2. Treat `oxvba-com` repurpose as the architectural target for the ongoing COM continuation work.
 3. In the next implementation pass, prefer moving new COM transport types into `oxvba-com` instead of deepening HAL-owned COM APIs.
+4. Treat `docs/worksets/WORKSET_2026-03-10_IDISPATCH_LATEBOUND_COM_COMPLETION.md` as the focused client-side completion plan for the remaining late-bound `IDispatch` surface.
