@@ -7,6 +7,7 @@ Usage policy:
 - Treat them as reference/provenance docs, not active implementation guidance.
 - Put active status and orientation material in `docs/PHASE12_STATUS.md`,
   `docs/IMPLEMENTATION_LOG.md`, and `docs/status-tours/`.
+- Treat `docs/AUTORUN_STATE.md` as a minimal active-ladder control file only, not a narrative status rollup.
 
 When adding a new profile status file:
 1. Add `PROFILE_STATUS_V<version>.md` here.

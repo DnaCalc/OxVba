@@ -1,6 +1,12 @@
 # Implementation Log
 
 ## 2026-03-10
+- AutoRun control-file cleanup:
+  - reduced `docs/AUTORUN_STATE.md` to a minimal active-ladder control/sync surface
+  - removed duplicated human checkpoint/history material from `AUTORUN_STATE.md`
+  - updated `README.md`, `docs/README.md`, `docs/profile-status/README.md`, and `scripts/README.md` so durable status now points to `IMPLEMENTATION_LOG.md`, `CURRENT_BLOCKERS.md`, `docs/profile-status/`, and `docs/status-tours/`
+  - verification:
+    - `./scripts/check-governance.ps1` -> PASS
 - doctrine-alignment cleanup for historical COM status artifacts:
   - reworded `AUTORUN_STATE` checkpoint entries so prior COM and declare/marshaling ladders are described as tranche gates, not parity-complete closure
   - corrected historical COM profile/evidence/status docs for `v386`, `v406`, and `v466` so they explicitly distinguish planned terminal-gate completion from full VBA/Excel parity

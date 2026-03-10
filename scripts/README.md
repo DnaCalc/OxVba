@@ -39,7 +39,7 @@
 - `validate-pmr-event-diagnostic-sync.ps1`: enforces canonical PMR/event diagnostic IDs across active docs/integration surfaces while treating historical oracle captures as excluded.
 - `validate-project-integration-catalog.ps1`: validates the tracked project integration catalog schema, fixture presence for active cases, and deferred-case linkage hygiene.
 - `validate-kani-obligation-policy.ps1`: validates `KANI_OBLIGATION_POLICY_V1.csv` against active `cargo kani` obligations (coverage, no duplicates, profile sync, tier vocabulary).
-- `validate-active-ladder-sync.ps1`: validates active ladder coherence across `AGENTS.md`, `docs/AUTORUN_STATE.md`, ladder header gates/range, matching workset pattern, and terminal profile/evidence presence.
+- `validate-active-ladder-sync.ps1`: validates active ladder coherence across `AGENTS.md`, the minimal control file `docs/AUTORUN_STATE.md`, ladder header gates/range, matching workset pattern, and terminal profile/evidence presence.
 - `validate-language-coverage.ps1`: validates language coverage index structure/status vocabulary and duplicate keys.
 - `validate-intrinsic-surface.ps1`: validates intrinsic surface classification coverage and host-sensitive partition.
 - `validate-profile-scaffold.ps1`: validates profile ladder scaffold integrity (naming, multiline structure, and referenced artifact existence) for selected version ranges.
