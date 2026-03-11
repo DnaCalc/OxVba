@@ -10,8 +10,8 @@ use oxvba_hal::{
     model::{HalProfileId, HostPolicy},
     traits::HostServices,
 };
-use oxvba_runtime::RuntimeValue;
-use oxvba_vm::{execute_and_snapshot_values_with_host, execute_and_snapshot_with_host};
+use oxvba_runtime::{RuntimeValue, value_tags::EMPTY_TAG};
+use oxvba_vm::execute_and_snapshot_values_with_host;
 use thiserror::Error;
 
 #[derive(Debug, Error)]
@@ -23,13 +23,21 @@ pub enum JitError {
 #[derive(Debug, Default)]
 pub struct JitEngine;
 
+fn project_runtime_values_to_legacy_slots(values: Vec<RuntimeValue>) -> Vec<i32> {
+    values
+        .into_iter()
+        .map(|value| value.to_legacy_i32().unwrap_or(EMPTY_TAG))
+        .collect()
+}
+
 impl JitEngine {
     pub fn compile_function(&self, _symbol: &str) -> Result<(), JitError> {
         Ok(())
     }
 
     pub fn execute_and_snapshot(&self, bytecode: &Bytecode) -> Result<Vec<i32>, JitError> {
-        self.execute_and_snapshot_with_host(bytecode, default_host_services())
+        self.execute_and_snapshot_values_with_host(bytecode, default_host_services())
+            .map(project_runtime_values_to_legacy_slots)
     }
 
     pub fn execute_and_snapshot_values(
@@ -44,10 +52,8 @@ impl JitEngine {
         bytecode: &Bytecode,
         host_services: Arc<dyn HostServices>,
     ) -> Result<Vec<i32>, JitError> {
-        if cranelift::supports_bytecode(bytecode) {
-            return cranelift::execute_bytecode(bytecode).map_err(JitError::Execution);
-        }
-        execute_and_snapshot_with_host(bytecode, host_services).map_err(JitError::Execution)
+        self.execute_and_snapshot_values_with_host(bytecode, host_services)
+            .map(project_runtime_values_to_legacy_slots)
     }
 
     pub fn execute_and_snapshot_values_with_host(
@@ -127,6 +133,22 @@ mod tests {
             .expect("fallback value snapshot should succeed");
         assert_eq!(out.len(), 1);
         assert!(matches!(out[0], RuntimeValue::ObjectHandle(handle) if handle > 0));
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn execute_and_snapshot_fallback_projects_non_legacy_runtime_values_to_legacy_slots() {
+        let bytecode = oxvba_compiler::compile("Sub Main()\nDim x\nx = CreateObject(4)\nEnd Sub")
+            .expect("compile should succeed");
+        assert!(!cranelift::supports_bytecode(&bytecode));
+        let host_services =
+            adapters::for_profile(HalProfileId::Windows, HostPolicy::interactive_dev());
+
+        let out = JitEngine
+            .execute_and_snapshot_with_host(&bytecode, host_services)
+            .expect("fallback legacy snapshot should succeed");
+        assert_eq!(out.len(), 1);
+        assert!(out[0] > 0);
     }
 
     #[test]

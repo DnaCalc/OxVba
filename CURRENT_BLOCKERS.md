@@ -83,10 +83,10 @@ Run context: active parity/compliance execution plus in-progress feature worklis
   - Blocks practical object/string/real-SAFEARRAY transport for `IP-08` host object/value bridge follow-through.
 - Current state:
   - `crates/oxvba-vm/src/register_file.rs` now stores `Vec<RuntimeValue>`,
-  - `crates/oxvba-vm/src/lib.rs` and `crates/oxvba-host/src/engine.rs` now expose additive VM-backed value-snapshot APIs alongside the legacy integer snapshot lane,
+  - `crates/oxvba-vm/src/lib.rs` and `crates/oxvba-host/src/engine.rs` now expose semantic value-snapshot APIs as the primary execution lane, with the legacy integer snapshot surface reduced to compatibility projection over `RuntimeValue`,
   - `crates/oxvba-hal/src/traits.rs` still defines `ValueToken = i32`,
   - the runtime now records `CreateObject` results as `RuntimeValue::ObjectHandle(...)` rather than plain integer slots,
-  - COM callback ingress now preserves `RuntimeValue` into the runtime, but many host/public execution helpers still expose or expect the legacy integer observation lane,
+  - COM callback ingress now preserves `RuntimeValue` into the runtime, but many callers and tests still consume the legacy integer observation lane,
   - JIT-backed value snapshots now preserve full `RuntimeValue` shape on VM fallback and project the supported Cranelift subset into `RuntimeValue`, but JIT internals and many parity harnesses still fundamentally operate over the legacy integer snapshot lane,
   - HAL now exposes additive semantic-return helper methods and the VM routes host-return paths through them, but the underlying input/output token contract is still `i32`,
   - the first input-side semantic wrapper migration is now in place for active VM host intrinsics:
@@ -98,7 +98,7 @@ Run context: active parity/compliance execution plus in-progress feature worklis
     - dynamic-link invoke wrappers,
   - the file-system value path now accepts semantic runtime inputs (`open_value`, `close_value`, `seek_value`, `eof_value`, `lof_value`, `free_file_value`) instead of taking raw tokens behind a value-returning facade,
   - VM host intrinsic execution for those lanes now reads `RuntimeValue` directly instead of forcing `read_slot(...)`/legacy token narrowing on entry,
-  - many bytecode execution paths and tests still assume the legacy integer observation surface,
+  - many bytecode execution callers and tests still assume the legacy integer observation surface,
   - the new `ComValue` carrier and generic dynamic-object protocol can live at the COM boundary, but they cannot yet become the single runtime object/value model while the wider execution substrate remains token-only.
 - Exact unblock steps:
   - replace or strictly extend the HAL `ValueToken = i32` contract with the canonical runtime value model or an explicit indirection model,

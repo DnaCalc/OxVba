@@ -45,7 +45,7 @@ Completed slices:
 1. `RuntimeValue` now exists in [runtime_value.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-runtime\src\runtime_value.rs) as the first canonical runtime value type.
 2. VM register storage now persists `RuntimeValue` rather than raw `i32`.
 3. VM snapshot APIs now expose both legacy `snapshot_slots(...)` and semantic `snapshot_values(...)`.
-4. Host VM execution now exposes additive value-snapshot APIs.
+4. Host VM execution now exposes additive value-snapshot APIs, and the legacy snapshot wrappers now project from the semantic execution lane instead of maintaining a separate token-only path.
 5. COM callback ingress now hands semantic runtime values into VM procedure dispatch instead of re-narrowing through the legacy token lane.
 6. JIT-backed value snapshots now preserve full `RuntimeValue` shape on VM fallback and project the supported Cranelift subset into `RuntimeValue` for host/public compatibility.
 7. `CreateObject` results now enter the runtime as `RuntimeValue::ObjectHandle(...)`.

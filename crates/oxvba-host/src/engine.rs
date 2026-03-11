@@ -18,7 +18,8 @@ use oxvba_hal::{
 };
 use oxvba_jit::JitEngine;
 use oxvba_runtime::RuntimeValue;
-use oxvba_vm::{Vm, execute_and_snapshot_values_with_host, execute_and_snapshot_with_host};
+use oxvba_runtime::value_tags::EMPTY_TAG;
+use oxvba_vm::{Vm, execute_and_snapshot_values_with_host};
 
 use crate::{
     events::{EventDispatcher, EventSourceKey},
@@ -104,8 +105,7 @@ pub struct ProjectRuntimeSession {
 
 impl ProjectRuntimeSession {
     pub fn snapshot_slots(&self) -> Vec<i32> {
-        self.vm
-            .snapshot_slots(self.compiled.bytecode.user_slot_count)
+        project_runtime_values_to_legacy_slots(self.snapshot_values())
     }
 
     pub fn snapshot_values(&self) -> Vec<RuntimeValue> {
@@ -118,6 +118,13 @@ impl Default for Engine {
     fn default() -> Self {
         Self::new(HostConfig::default())
     }
+}
+
+fn project_runtime_values_to_legacy_slots(values: Vec<RuntimeValue>) -> Vec<i32> {
+    values
+        .into_iter()
+        .map(|value| value.to_legacy_i32().unwrap_or(EMPTY_TAG))
+        .collect()
 }
 
 impl Engine {
@@ -434,7 +441,7 @@ impl Engine {
     }
 
     pub fn execute_source(&self, source: &str) -> Result<(), String> {
-        let _ = self.execute_source_with_snapshot(source)?;
+        let _ = self.execute_source_with_value_snapshot(source)?;
         Ok(())
     }
 
@@ -455,20 +462,8 @@ impl Engine {
         &self,
         source: &str,
     ) -> Result<Vec<i32>, PhaseDiagnostic> {
-        let bytecode = compile(source).map_err(|e| PhaseDiagnostic::compile(e.to_string()))?;
-        self.preflight_host_sensitive_support(&bytecode)?;
-        if self.config.enable_jit {
-            self.jit
-                .compile_function("main")
-                .map_err(|e| PhaseDiagnostic::runtime(e.to_string()))?;
-            return self
-                .jit
-                .execute_and_snapshot_with_host(&bytecode, self.host_services.clone())
-                .map_err(|e| PhaseDiagnostic::runtime(e.to_string()));
-        }
-
-        execute_and_snapshot_with_host(&bytecode, self.host_services.clone())
-            .map_err(PhaseDiagnostic::runtime)
+        self.execute_source_with_value_snapshot_phased(source)
+            .map(project_runtime_values_to_legacy_slots)
     }
 
     pub fn execute_source_with_value_snapshot_phased(
@@ -495,24 +490,8 @@ impl Engine {
         &self,
         manifest: &ProjectManifest,
     ) -> Result<Vec<i32>, PhaseDiagnostic> {
-        let compiled =
-            compile_project(manifest).map_err(|e| PhaseDiagnostic::compile(e.to_string()))?;
-        if let Ok(mut dispatcher) = self.event_dispatcher.lock() {
-            dispatcher.apply_bindings(&compiled.event_dispatch_bindings);
-        }
-        self.preflight_host_sensitive_support(&compiled.bytecode)?;
-        if self.config.enable_jit {
-            self.jit
-                .compile_function("main")
-                .map_err(|e| PhaseDiagnostic::runtime(e.to_string()))?;
-            return self
-                .jit
-                .execute_and_snapshot_with_host(&compiled.bytecode, self.host_services.clone())
-                .map_err(|e| PhaseDiagnostic::runtime(e.to_string()));
-        }
-
-        execute_and_snapshot_with_host(&compiled.bytecode, self.host_services.clone())
-            .map_err(PhaseDiagnostic::runtime)
+        self.execute_project_with_value_snapshot_phased(manifest)
+            .map(project_runtime_values_to_legacy_slots)
     }
 
     pub fn execute_project_with_value_snapshot_phased(
@@ -5412,5 +5391,23 @@ mod tests {
             .expect("CreateObject value snapshot should preserve object handle on JIT fallback");
         assert_eq!(out.len(), 1);
         assert!(matches!(out[0], RuntimeValue::ObjectHandle(handle) if handle > 0));
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn legacy_snapshot_api_projects_object_handle_shape_with_jit_enabled() {
+        let mut engine = Engine::new(HostConfig {
+            enable_jit: true,
+            root_object_name: None,
+        });
+        engine.set_host_policy(HostPolicy::interactive_dev());
+
+        let out = engine
+            .execute_source_with_snapshot("Sub Main()\nDim x\nx = CreateObject(4)\nEnd Sub")
+            .expect(
+                "CreateObject legacy snapshot should remain available through value projection",
+            );
+        assert_eq!(out.len(), 1);
+        assert!(out[0] > 0);
     }
 }

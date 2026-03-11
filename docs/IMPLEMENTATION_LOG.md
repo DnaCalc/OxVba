@@ -1,6 +1,15 @@
 # Implementation Log
 
 ## 2026-03-11
+- runtime legacy-snapshot compatibility slice:
+  - changed VM/JIT/host legacy snapshot APIs to execute through semantic `RuntimeValue` snapshot paths and project to `Vec<i32>` only at the compatibility edge
+  - added host/JIT coverage to lock `CreateObject` compatibility behavior with `enable_jit=true`
+  - narrowed the remaining blocker seam:
+    - callers/tests still lean heavily on integer snapshots,
+    - Cranelift-supported subsets still only expose integer-slot semantics,
+    - HAL `ValueToken = i32` remains the core contract
+  - verification:
+    - `cargo test -p oxvba-vm -p oxvba-jit -p oxvba-host --quiet` -> PASS
 - runtime JIT semantic-fallback slice:
   - changed `JitEngine::execute_and_snapshot_values*` so unsupported bytecode now falls back through VM `RuntimeValue` snapshots instead of flattening through the legacy `Vec<i32>` lane first
   - added JIT/host coverage to lock object-handle preservation on value snapshots with `enable_jit=true`

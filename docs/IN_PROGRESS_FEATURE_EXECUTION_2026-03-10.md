@@ -128,7 +128,8 @@ Status vocabulary:
     - the first input-side semantic wrapper slice is now in place for active VM host intrinsics (`MsgBox`, `InputBox`, `FreeFile`, `Shell`, `Environ`, `Dir`, `CreateObject`, COM event helper intrinsics, dynamic-link invoke),
     - the file-system value path now also accepts semantic runtime inputs (`open_value`, `close_value`, `seek_value`, `eof_value`, `lof_value`, `free_file_value`) instead of only returning semantic values after token-only inputs,
     - VM host intrinsic execution now reads `RuntimeValue` directly for those lanes instead of narrowing through `read_slot(...)` before the HAL boundary,
-    - the remaining active seam is the actual HAL `ValueToken` contract plus the still-token-bound HAL domains, remaining outward runtime APIs, and the remaining legacy public-snapshot migration.
+    - legacy public snapshot APIs in VM/JIT/host now route through semantic `RuntimeValue` snapshots and project only at the compatibility edge,
+    - the remaining active seam is the actual HAL `ValueToken` contract plus the still-token-bound HAL domains, remaining outward runtime APIs, and the still-legacy-heavy caller/test estate around integer snapshots.
 
 ### `IP-05` Windows early-bound COM and type-library parity
 
