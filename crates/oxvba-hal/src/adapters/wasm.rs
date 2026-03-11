@@ -350,26 +350,28 @@ impl TimeLocaleHal for WasmHostServices {
 }
 
 impl DynamicLinkHal for WasmHostServices {
-    fn invoke_symbol(&self, _symbol: i32, _arg: i32) -> HalResult<i32> {
+    fn invoke_bound(&self, _binding: i32, _arg: i32) -> HalResult<i32> {
         Err(self.unsupported(CapabilityId::DynamicLinking, "invoke_symbol"))
     }
 
-    fn invoke_descriptor_value(
+    fn invoke_descriptor(
         &self,
         _descriptor: &crate::traits::DynLinkDescriptorView<'_>,
         _arg: RuntimeValue,
     ) -> HalResult<RuntimeValue> {
-        Err(self.unsupported(CapabilityId::DynamicLinking, "invoke_descriptor"))
+        Err(self.unsupported(CapabilityId::DynamicLinking, "invoke_symbol"))
     }
 
-    fn invoke_symbol_value(&self, _symbol: i32, _arg: RuntimeValue) -> HalResult<RuntimeValue> {
+    fn invoke_symbol(&self, _symbol: i32, _arg: RuntimeValue) -> HalResult<RuntimeValue> {
         Err(self.unsupported(CapabilityId::DynamicLinking, "invoke_symbol"))
     }
 }
 
 impl DiagnosticsHal for WasmHostServices {
-    fn emit(&self, code: i32, payload: i32) -> HalResult<i32> {
-        Ok(code.saturating_add(payload))
+    fn emit(&self, code: RuntimeValue, payload: RuntimeValue) -> HalResult<RuntimeValue> {
+        let code = code.to_legacy_i32().unwrap_or(0);
+        let payload = payload.to_legacy_i32().unwrap_or(0);
+        Ok(RuntimeValue::I32(code.saturating_add(payload)))
     }
 }
 

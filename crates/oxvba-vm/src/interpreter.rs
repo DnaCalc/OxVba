@@ -1068,11 +1068,7 @@ impl Vm {
                 } => {
                     let arg = self.read_value_slot(*arg)?;
                     if bytecode.external_call_descriptors.is_empty() {
-                        match self
-                            .host_services
-                            .dynlink()
-                            .invoke_symbol_value(*symbol, arg)
-                        {
+                        match self.host_services.dynlink().invoke_symbol(*symbol, arg) {
                             Ok(value) => {
                                 self.write_value_slot(*dst, value)?;
                                 pc += 1;
@@ -1135,11 +1131,7 @@ impl Vm {
                         pc = self.route_host_error(pc, err)?;
                         continue;
                     }
-                    match self
-                        .host_services
-                        .dynlink()
-                        .invoke_descriptor_value(&view, arg)
-                    {
+                    match self.host_services.dynlink().invoke_descriptor(&view, arg) {
                         Ok(value) => {
                             self.write_value_slot(*dst, value)?;
                             pc += 1;

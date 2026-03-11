@@ -390,7 +390,9 @@ pub fn run_conformance(host: &dyn HostServices) -> ConformanceReport {
             "HAL-GEN-003",
             "HAL-GEN-004",
         ],
-        host.dynlink().invoke_symbol(1, 2).map(|_| ()),
+        host.dynlink()
+            .invoke_symbol(1, RuntimeValue::I32(2))
+            .map(|_| ()),
     );
     let dynlink_descriptor = DynLinkDescriptorView {
         descriptor_id: external_symbol_token("host", "ping", "hostping") as u32,
@@ -418,14 +420,16 @@ pub fn run_conformance(host: &dyn HostServices) -> ConformanceReport {
             "HAL-GEN-004",
         ],
         host.dynlink()
-            .invoke_descriptor(&dynlink_descriptor, 2)
+            .invoke_descriptor(&dynlink_descriptor, RuntimeValue::I32(2))
             .map(|_| ()),
     );
     probe(
         CapabilityId::DiagnosticsTelemetry,
         "diag.emit",
         &["HAL-DIAG-001", "HAL-DES-004", "HAL-GEN-001", "HAL-GEN-003"],
-        host.diag().emit(1, 2).map(|_| ()),
+        host.diag()
+            .emit(RuntimeValue::I32(1), RuntimeValue::I32(2))
+            .map(|_| ()),
     );
     evaluate_host_backed_contract_paths(
         host,
@@ -607,8 +611,12 @@ fn evaluate_dynlink_contract_paths(
     let mut linux_ok = true;
     let mut pointer_lane_ok = true;
     let mut byref_writeback_lane_ok = true;
-    match host.dynlink().invoke_descriptor(&descriptor_ping, 4) {
+    match host
+        .dynlink()
+        .invoke_descriptor(&descriptor_ping, RuntimeValue::I32(4))
+    {
         Ok(value) => {
+            let value = runtime_i32(&value).unwrap_or_default();
             if host_backed_active
                 && descriptor.profile == crate::model::HalProfileId::Windows
                 && value != 5
@@ -654,7 +662,10 @@ fn evaluate_dynlink_contract_paths(
         calling_convention: "platform-default",
         selection_policy: "case-insensitive-canonical",
     };
-    match host.dynlink().invoke_descriptor(&pointer_descriptor, 4) {
+    match host
+        .dynlink()
+        .invoke_descriptor(&pointer_descriptor, RuntimeValue::I32(4))
+    {
         Err(err)
             if err.kind == HalErrorKind::AdapterFault
                 && err.message.contains("unsupported marshaling lane") => {}
@@ -668,7 +679,7 @@ fn evaluate_dynlink_contract_paths(
         Ok(value) => {
             pointer_lane_ok = false;
             failures.push(format!(
-                "pointer-string lane rejection probe unexpectedly succeeded with value {}",
+                "pointer-string lane rejection probe unexpectedly succeeded with value {:?}",
                 value
             ));
         }
@@ -686,7 +697,7 @@ fn evaluate_dynlink_contract_paths(
     };
     match host
         .dynlink()
-        .invoke_descriptor(&byref_writeback_descriptor, 4)
+        .invoke_descriptor(&byref_writeback_descriptor, RuntimeValue::I32(4))
     {
         Err(err)
             if err.kind == HalErrorKind::AdapterFault
@@ -701,7 +712,7 @@ fn evaluate_dynlink_contract_paths(
         Ok(value) => {
             byref_writeback_lane_ok = false;
             failures.push(format!(
-                "ByRef writeback lane rejection probe unexpectedly succeeded with value {}",
+                "ByRef writeback lane rejection probe unexpectedly succeeded with value {:?}",
                 value
             ));
         }

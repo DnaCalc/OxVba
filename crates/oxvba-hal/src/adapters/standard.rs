@@ -4111,14 +4111,27 @@ impl DynamicLinkHal for StandardHostServices {
     fn invoke_descriptor(
         &self,
         descriptor: &DynLinkDescriptorView<'_>,
-        arg: i32,
-    ) -> HalResult<i32> {
+        arg: RuntimeValue,
+    ) -> HalResult<RuntimeValue> {
+        let arg = self.runtime_value_to_legacy_i32(
+            &arg,
+            CapabilityId::DynamicLinking,
+            "invoke_descriptor",
+            "arg",
+        )?;
         let binding = self.bind_descriptor(descriptor)?;
         let prepared = self.prepare_invoke(binding, arg)?;
         self.invoke_bound(binding, prepared)
+            .map(RuntimeValue::from_legacy_i32)
     }
 
-    fn invoke_symbol(&self, symbol: i32, arg: i32) -> HalResult<i32> {
+    fn invoke_symbol(&self, symbol: i32, arg: RuntimeValue) -> HalResult<RuntimeValue> {
+        let arg = self.runtime_value_to_legacy_i32(
+            &arg,
+            CapabilityId::DynamicLinking,
+            "invoke_symbol",
+            "arg",
+        )?;
         let descriptor = DynLinkDescriptorView {
             descriptor_id: symbol as u32,
             declared_name: "<legacy>",
@@ -4130,49 +4143,25 @@ impl DynamicLinkHal for StandardHostServices {
             calling_convention: "platform-default",
             selection_policy: "legacy-symbol",
         };
-        self.invoke_descriptor(&descriptor, arg)
-    }
-
-    fn invoke_descriptor_value(
-        &self,
-        descriptor: &DynLinkDescriptorView<'_>,
-        arg: RuntimeValue,
-    ) -> HalResult<RuntimeValue> {
-        let arg = self.runtime_value_to_legacy_i32(
-            &arg,
-            CapabilityId::DynamicLinking,
-            "invoke_descriptor",
-            "arg",
-        )?;
-        self.invoke_descriptor(descriptor, arg)
-            .map(RuntimeValue::from_legacy_i32)
-    }
-
-    fn invoke_symbol_value(&self, symbol: i32, arg: RuntimeValue) -> HalResult<RuntimeValue> {
-        let arg = self.runtime_value_to_legacy_i32(
-            &arg,
-            CapabilityId::DynamicLinking,
-            "invoke_symbol",
-            "arg",
-        )?;
-        self.invoke_symbol(symbol, arg)
-            .map(RuntimeValue::from_legacy_i32)
+        self.invoke_descriptor(&descriptor, RuntimeValue::I32(arg))
     }
 }
 
 impl DiagnosticsHal for StandardHostServices {
-    fn emit(&self, code: i32, payload: i32) -> HalResult<i32> {
+    fn emit(&self, code: RuntimeValue, payload: RuntimeValue) -> HalResult<RuntimeValue> {
         let capability = CapabilityId::DiagnosticsTelemetry;
         if !self.supports(capability) {
             return Err(self.unsupported(capability, "emit"));
         }
+        let code = self.runtime_value_to_legacy_i32(&code, capability, "emit", "code")?;
+        let payload = self.runtime_value_to_legacy_i32(&payload, capability, "emit", "payload")?;
         if self.native_diagnostics_enabled() {
             eprintln!(
                 "[oxvba-hal] profile={:?} code={} payload={}",
                 self.profile, code, payload
             );
         }
-        Ok(code.saturating_add(payload))
+        Ok(RuntimeValue::I32(code.saturating_add(payload)))
     }
 }
 
@@ -8078,7 +8067,7 @@ mod tests {
             HalErrorKind::PolicyDenied
         );
         assert_eq!(
-            host.invoke_symbol(1, 2).expect_err("dynlink deny").kind,
+            host.invoke_symbol(1, rv(2)).expect_err("dynlink deny").kind,
             HalErrorKind::PolicyDenied
         );
     }
@@ -8319,7 +8308,7 @@ mod tests {
     #[test]
     fn diagnostics_emit_contract_is_deterministic() {
         let host = StandardHostServices::new(HalProfileId::Windows, HostPolicy::default());
-        assert_eq!(host.emit(4, 5).expect("emit"), 9);
+        assert_eq!(host.emit(rv(4), rv(5)).expect("emit"), rv(9));
     }
 
     #[test]
@@ -10204,7 +10193,9 @@ mod tests {
                 HalErrorKind::PolicyDenied
             );
             prop_assert_eq!(
-                host.invoke_symbol(symbol, arg).expect_err("invoke_symbol denied").kind,
+                host.invoke_symbol(symbol, rv(arg))
+                    .expect_err("invoke_symbol denied")
+                    .kind,
                 HalErrorKind::PolicyDenied
             );
         }
@@ -10244,8 +10235,9 @@ mod tests {
                 object.saturating_add(member).saturating_add(arg)
             );
             prop_assert_eq!(
-                host.invoke_symbol(symbol, arg).expect("invoke_symbol should succeed"),
-                symbol.saturating_add(arg)
+                host.invoke_symbol(symbol, rv(arg))
+                    .expect("invoke_symbol should succeed"),
+                rv(symbol.saturating_add(arg))
             );
         }
     }

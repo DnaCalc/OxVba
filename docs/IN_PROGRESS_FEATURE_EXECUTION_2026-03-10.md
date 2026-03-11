@@ -130,6 +130,7 @@ Status vocabulary:
     - VM host intrinsic execution now reads `RuntimeValue` directly for those lanes instead of narrowing through `read_slot(...)` before the HAL boundary,
     - `EventPumpHal::do_events()` and `TimeLocaleHal::{date_serial_now,time_serial_now,timer_ticks}` now return semantic `RuntimeValue` directly and the corresponding VM time/event host intrinsics consume those results without intermediate `*_value()` wrappers,
     - `UiInteractionHal::{msg_box,input_box}` and `ProcessEnvHal::{shell,environ,dir}` now also use direct semantic `RuntimeValue` contracts and the corresponding VM/conformance/test surfaces consume them without token-first wrapper methods,
+    - `DynamicLinkHal::{invoke_symbol,invoke_descriptor}` and `DiagnosticsHal::emit` now also use direct semantic `RuntimeValue` contracts on the VM/conformance-facing path instead of token-first wrapper methods,
     - legacy public snapshot APIs in VM/JIT/host now route through semantic `RuntimeValue` snapshots and project only at the compatibility edge,
     - VM `WithEvents` binding storage now preserves semantic `RuntimeValue` payloads instead of flattening bound source/object values to raw integers,
     - VM `DispatchInvoke` now consumes object slots from semantic runtime state and preserves object handles rather than re-reading them through the raw slot lane before COM request construction,

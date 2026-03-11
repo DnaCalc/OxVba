@@ -65,10 +65,11 @@ Completed slices:
 15. VM `DispatchInvoke` now reads the object slot from semantic runtime state and preserves object handles before constructing the COM request.
 16. `EventPumpHal::do_events()` and `TimeLocaleHal::{date_serial_now,time_serial_now,timer_ticks}` now return semantic `RuntimeValue` directly, and VM host intrinsics consume those semantic results without an intermediate token wrapper lane.
 17. `UiInteractionHal::{msg_box,input_box}` and `ProcessEnvHal::{shell,environ,dir}` now also use direct semantic `RuntimeValue` contracts, and the VM/conformance/test surfaces consume those domains without token-first wrapper methods.
+18. `DynamicLinkHal::{invoke_symbol,invoke_descriptor}` and `DiagnosticsHal::emit` now also use direct semantic `RuntimeValue` contracts on the VM/conformance-facing path instead of token-first wrapper methods.
 
 Remaining blocker seam:
 1. HAL `ValueToken = i32` still anchors many remaining seams,
-2. many HAL call inputs and a large share of the remaining file-system, COM, dynamic-link, and diagnostics seams are still fundamentally integer tokens rather than runtime semantic values,
+2. many HAL call inputs and a large share of the remaining file-system and COM seams are still fundamentally integer tokens rather than runtime semantic values, and dynamic-link binding identity plus other compatibility shims still retain legacy token assumptions,
 3. many public observation APIs still expose the legacy integer lane as the primary compatibility surface,
 4. JIT internals and parity harnesses still observe only the integer slot lane for Cranelift-supported subsets,
 5. many tests still assume integer snapshots as the primary public contract.

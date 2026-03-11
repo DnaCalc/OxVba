@@ -1977,3 +1977,10 @@
   - HAL conformance probes now exercise the process/UI domains through semantic runtime values rather than token-only wrappers
   - verification:
     - `cargo test -p oxvba-hal -p oxvba-vm --quiet`
+- Continued the runtime HAL semantic-contract migration into dynamic-link/diagnostics domains:
+  - `DynamicLinkHal::{invoke_symbol,invoke_descriptor}` now use direct `RuntimeValue` contracts on the VM/conformance-facing path instead of token-first `*_value()` wrappers
+  - `DiagnosticsHal::emit` now uses a direct `RuntimeValue` contract instead of a token-return method plus `emit_value()` facade
+  - VM host intrinsic execution and HAL conformance probes now consume those direct semantic results
+  - null/wasm/standard adapters and the affected regression/property tests were migrated to the semantic contract
+  - verification:
+    - `cargo test -p oxvba-hal -p oxvba-vm --quiet`

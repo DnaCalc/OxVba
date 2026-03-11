@@ -308,26 +308,28 @@ impl TimeLocaleHal for NullHostServices {
 }
 
 impl DynamicLinkHal for NullHostServices {
-    fn invoke_symbol(&self, _symbol: i32, _arg: i32) -> HalResult<i32> {
+    fn invoke_bound(&self, _binding: i32, _arg: i32) -> HalResult<i32> {
         Err(self.unsupported(CapabilityId::DynamicLinking, "invoke_symbol"))
     }
 
-    fn invoke_descriptor_value(
+    fn invoke_descriptor(
         &self,
         _descriptor: &crate::traits::DynLinkDescriptorView<'_>,
         _arg: RuntimeValue,
     ) -> HalResult<RuntimeValue> {
-        Err(self.unsupported(CapabilityId::DynamicLinking, "invoke_descriptor"))
+        Err(self.unsupported(CapabilityId::DynamicLinking, "invoke_symbol"))
     }
 
-    fn invoke_symbol_value(&self, _symbol: i32, _arg: RuntimeValue) -> HalResult<RuntimeValue> {
+    fn invoke_symbol(&self, _symbol: i32, _arg: RuntimeValue) -> HalResult<RuntimeValue> {
         Err(self.unsupported(CapabilityId::DynamicLinking, "invoke_symbol"))
     }
 }
 
 impl DiagnosticsHal for NullHostServices {
-    fn emit(&self, code: i32, payload: i32) -> HalResult<i32> {
-        Ok(code.saturating_add(payload))
+    fn emit(&self, code: RuntimeValue, payload: RuntimeValue) -> HalResult<RuntimeValue> {
+        let code = code.to_legacy_i32().unwrap_or(0);
+        let payload = payload.to_legacy_i32().unwrap_or(0);
+        Ok(RuntimeValue::I32(code.saturating_add(payload)))
     }
 }
 
@@ -353,7 +355,11 @@ mod tests {
             RuntimeValue::I32(123_456)
         );
         assert_eq!(host.timer_ticks().expect("timer"), RuntimeValue::I32(42));
-        assert_eq!(host.emit(10, 3).expect("emit"), 13);
+        assert_eq!(
+            host.emit(RuntimeValue::I32(10), RuntimeValue::I32(3))
+                .expect("emit"),
+            RuntimeValue::I32(13)
+        );
     }
 
     #[test]

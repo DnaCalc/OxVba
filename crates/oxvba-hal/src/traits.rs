@@ -208,9 +208,7 @@ pub trait DynamicLinkHal: Send + Sync {
     }
 
     /// Invokes a previously bound symbol token.
-    fn invoke_bound(&self, binding: ValueToken, arg: ValueToken) -> HalResult<ValueToken> {
-        self.invoke_symbol(binding, arg)
-    }
+    fn invoke_bound(&self, binding: ValueToken, arg: ValueToken) -> HalResult<ValueToken>;
     fn invoke_bound_value(&self, binding: ValueToken, arg: ValueToken) -> HalResult<RuntimeValue> {
         self.invoke_bound(binding, arg)
             .map(RuntimeValue::from_legacy_i32)
@@ -220,29 +218,15 @@ pub trait DynamicLinkHal: Send + Sync {
     fn invoke_descriptor(
         &self,
         descriptor: &DynLinkDescriptorView<'_>,
-        arg: ValueToken,
-    ) -> HalResult<ValueToken> {
-        let binding = self.bind_descriptor(descriptor)?;
-        let prepared = self.prepare_invoke(binding, arg)?;
-        self.invoke_bound(binding, prepared)
-    }
-    fn invoke_descriptor_value(
-        &self,
-        descriptor: &DynLinkDescriptorView<'_>,
         arg: RuntimeValue,
     ) -> HalResult<RuntimeValue>;
 
     /// Legacy symbol-token invoke path retained for backward compatibility.
-    fn invoke_symbol(&self, symbol: ValueToken, arg: ValueToken) -> HalResult<ValueToken>;
-    fn invoke_symbol_value(&self, symbol: ValueToken, arg: RuntimeValue)
-    -> HalResult<RuntimeValue>;
+    fn invoke_symbol(&self, symbol: ValueToken, arg: RuntimeValue) -> HalResult<RuntimeValue>;
 }
 
 pub trait DiagnosticsHal: Send + Sync {
-    fn emit(&self, code: ValueToken, payload: ValueToken) -> HalResult<ValueToken>;
-    fn emit_value(&self, code: ValueToken, payload: ValueToken) -> HalResult<RuntimeValue> {
-        self.emit(code, payload).map(RuntimeValue::from_legacy_i32)
-    }
+    fn emit(&self, code: RuntimeValue, payload: RuntimeValue) -> HalResult<RuntimeValue>;
 }
 
 #[allow(unexpected_cfgs)]
