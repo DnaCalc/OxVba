@@ -4,36 +4,43 @@ use crate::{
     value_tags::{EMPTY_TAG, NULL_TAG, error_code_from_tag, error_tag_from_code, is_error_tag},
 };
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
-pub struct ObjectHandle(i32);
+macro_rules! define_i32_handle {
+    ($name:ident) => {
+        #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
+        pub struct $name(i32);
 
-impl ObjectHandle {
-    pub const fn new(raw: i32) -> Self {
-        Self(raw)
-    }
+        impl $name {
+            pub const fn new(raw: i32) -> Self {
+                Self(raw)
+            }
 
-    pub const fn raw(self) -> i32 {
-        self.0
-    }
+            pub const fn raw(self) -> i32 {
+                self.0
+            }
+        }
+
+        impl core::fmt::Display for $name {
+            fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+                write!(f, "{}", self.0)
+            }
+        }
+
+        impl From<i32> for $name {
+            fn from(value: i32) -> Self {
+                Self::new(value)
+            }
+        }
+
+        impl From<$name> for i32 {
+            fn from(value: $name) -> Self {
+                value.raw()
+            }
+        }
+    };
 }
 
-impl core::fmt::Display for ObjectHandle {
-    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        write!(f, "{}", self.0)
-    }
-}
-
-impl From<i32> for ObjectHandle {
-    fn from(value: i32) -> Self {
-        Self::new(value)
-    }
-}
-
-impl From<ObjectHandle> for i32 {
-    fn from(value: ObjectHandle) -> Self {
-        value.raw()
-    }
-}
+define_i32_handle!(ObjectHandle);
+define_i32_handle!(BindingHandle);
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub enum RuntimeValue {

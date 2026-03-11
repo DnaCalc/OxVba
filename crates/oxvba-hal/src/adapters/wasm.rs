@@ -13,7 +13,7 @@ use crate::{
     },
 };
 use oxvba_com::ComObjectDescriptor;
-use oxvba_runtime::{ObjectHandle, RuntimeValue};
+use oxvba_runtime::{BindingHandle, ObjectHandle, RuntimeValue};
 
 #[derive(Debug, Clone)]
 pub struct WasmHostServices {
@@ -289,7 +289,7 @@ impl TimeLocaleHal for WasmHostServices {
 }
 
 impl DynamicLinkHal for WasmHostServices {
-    fn invoke_bound(&self, _binding: i32, _arg: i32) -> HalResult<i32> {
+    fn invoke_bound(&self, _binding: BindingHandle, _arg: i32) -> HalResult<i32> {
         Err(self.unsupported(CapabilityId::DynamicLinking, "invoke_symbol"))
     }
 

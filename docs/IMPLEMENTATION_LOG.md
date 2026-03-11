@@ -12,6 +12,17 @@
 - Verification:
   - `cargo test -p oxvba-hal -p oxvba-host -p oxvba-vm -p oxvba-com -p oxvba-runtime -p oxvba-jit -p oxvba-cli --quiet`
 
+## 2026-03-11 - Runtime dynamic-link binding identity typed
+
+- Introduced explicit `BindingHandle` in [runtime_value.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-runtime\src\runtime_value.rs) alongside `ObjectHandle`.
+- Tightened `DynamicLinkHal` binding APIs in [traits.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-hal\src\traits.rs):
+  - `bind_descriptor(...) -> BindingHandle`
+  - `prepare_invoke(BindingHandle, ...)`
+  - `invoke_bound(BindingHandle, ...)`
+- Updated Windows/null/wasm HAL adapters accordingly, keeping descriptor symbol IDs and legacy `invoke_symbol(...)` as the remaining compatibility lane.
+- Verification:
+  - `cargo test -p oxvba-runtime -p oxvba-hal -p oxvba-vm -p oxvba-host --quiet`
+
 ## 2026-03-11
 - runtime COM-dispatch object-entry slice:
   - changed VM `DispatchInvoke` request construction to read the object slot from semantic runtime state and preserve object handles before building the COM request

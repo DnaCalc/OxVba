@@ -17,7 +17,7 @@ pub use oxvba_com::{
     TypeLibCacheScope, TypeLibEventDispatchPath, TypeLibEventMetadata, TypeLibMemberInvokeKind,
     TypeLibMemberMetadata, TypeLibMetadataBlob, TypeLibResolveRequest, TypeLibResolvedIdentity,
 };
-use oxvba_runtime::{ObjectHandle, RuntimeValue};
+use oxvba_runtime::{BindingHandle, ObjectHandle, RuntimeValue};
 
 /// VM/runtime value token crossing the current HAL boundary.
 /// This is intentionally `i32` for the current register-window runtime representation.
@@ -168,24 +168,24 @@ pub trait TimeLocaleHal: Send + Sync {
 
 pub trait DynamicLinkHal: Send + Sync {
     /// Resolves descriptor metadata into an invocation binding token.
-    fn bind_descriptor(&self, descriptor: &DynLinkDescriptorView<'_>) -> HalResult<ValueToken> {
-        Ok(descriptor.symbol)
+    fn bind_descriptor(&self, descriptor: &DynLinkDescriptorView<'_>) -> HalResult<BindingHandle> {
+        Ok(descriptor.symbol.into())
     }
     fn bind_descriptor_value(
         &self,
         descriptor: &DynLinkDescriptorView<'_>,
     ) -> HalResult<RuntimeValue> {
         self.bind_descriptor(descriptor)
-            .map(RuntimeValue::from_legacy_i32)
+            .map(|binding| RuntimeValue::from_legacy_i32(binding.raw()))
     }
 
     /// Optional argument normalization/writeback preparation hook.
-    fn prepare_invoke(&self, _binding: ValueToken, arg: ValueToken) -> HalResult<ValueToken> {
+    fn prepare_invoke(&self, _binding: BindingHandle, arg: ValueToken) -> HalResult<ValueToken> {
         Ok(arg)
     }
     fn prepare_invoke_value(
         &self,
-        binding: ValueToken,
+        binding: BindingHandle,
         arg: ValueToken,
     ) -> HalResult<RuntimeValue> {
         self.prepare_invoke(binding, arg)
@@ -193,8 +193,12 @@ pub trait DynamicLinkHal: Send + Sync {
     }
 
     /// Invokes a previously bound symbol token.
-    fn invoke_bound(&self, binding: ValueToken, arg: ValueToken) -> HalResult<ValueToken>;
-    fn invoke_bound_value(&self, binding: ValueToken, arg: ValueToken) -> HalResult<RuntimeValue> {
+    fn invoke_bound(&self, binding: BindingHandle, arg: ValueToken) -> HalResult<ValueToken>;
+    fn invoke_bound_value(
+        &self,
+        binding: BindingHandle,
+        arg: ValueToken,
+    ) -> HalResult<RuntimeValue> {
         self.invoke_bound(binding, arg)
             .map(RuntimeValue::from_legacy_i32)
     }

@@ -19,7 +19,7 @@ use oxvba_com::{
     known_typelib_identity_for_prog_id_name, resolve_known_typelib_identity,
 };
 use oxvba_runtime::{
-    ObjectHandle, RuntimeValue,
+    BindingHandle, ObjectHandle, RuntimeValue,
     bstr::BStr,
     value_tags::{NULL_TAG, error_tag_from_code},
 };
@@ -87,7 +87,7 @@ pub(crate) struct StandardHostServices {
     fs_state: Arc<Mutex<FileSystemState>>,
     com_state: Arc<Mutex<ComState>>,
     typelib_state: Arc<Mutex<TypeLibraryCacheState>>,
-    dynlink_bindings: Arc<Mutex<BTreeMap<u32, i32>>>,
+    dynlink_bindings: Arc<Mutex<BTreeMap<u32, BindingHandle>>>,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -3860,7 +3860,7 @@ impl TimeLocaleHal for StandardHostServices {
 }
 
 impl DynamicLinkHal for StandardHostServices {
-    fn bind_descriptor(&self, descriptor: &DynLinkDescriptorView<'_>) -> HalResult<i32> {
+    fn bind_descriptor(&self, descriptor: &DynLinkDescriptorView<'_>) -> HalResult<BindingHandle> {
         let capability = CapabilityId::DynamicLinking;
         const LANE_M0: &str = "m0-deterministic";
         const CONV_PLATFORM_DEFAULT: &str = "platform-default";
@@ -3982,7 +3982,7 @@ impl DynamicLinkHal for StandardHostServices {
             ));
         }
 
-        let binding = descriptor.symbol;
+        let binding = BindingHandle::new(descriptor.symbol);
         let mut table = self.dynlink_bindings.lock().map_err(|_| {
             HalError::adapter_fault(
                 self.profile,
@@ -4009,11 +4009,11 @@ impl DynamicLinkHal for StandardHostServices {
         Ok(binding)
     }
 
-    fn prepare_invoke(&self, _binding: i32, arg: i32) -> HalResult<i32> {
+    fn prepare_invoke(&self, _binding: BindingHandle, arg: i32) -> HalResult<i32> {
         Ok(arg)
     }
 
-    fn invoke_bound(&self, binding: i32, arg: i32) -> HalResult<i32> {
+    fn invoke_bound(&self, binding: BindingHandle, arg: i32) -> HalResult<i32> {
         let capability = CapabilityId::DynamicLinking;
         if !self.supports(capability) {
             return Err(self.unsupported(capability, "invoke_symbol"));
@@ -4024,7 +4024,7 @@ impl DynamicLinkHal for StandardHostServices {
         if self.native_mode_enabled()
             && matches!(self.profile, HalProfileId::Windows | HalProfileId::Linux)
         {
-            return match binding {
+            return match binding.raw() {
                 s if s == external_symbol_token("host", "ping", "hostping") => {
                     Ok(arg.saturating_add(1))
                 }
@@ -4035,11 +4035,14 @@ impl DynamicLinkHal for StandardHostServices {
                     self.profile,
                     capability,
                     "invoke_symbol",
-                    format!("symbol token {binding} not resolved in host-backed lane"),
+                    format!(
+                        "symbol token {} not resolved in host-backed lane",
+                        binding.raw()
+                    ),
                 )),
             };
         }
-        Ok(binding.saturating_add(arg))
+        Ok(binding.raw().saturating_add(arg))
     }
 
     fn invoke_descriptor(
