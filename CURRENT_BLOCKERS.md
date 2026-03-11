@@ -366,7 +366,19 @@ Run context: active parity/compliance execution plus in-progress feature worklis
 
 ## Structured summary
 
-- Active blocker IDs/titles: none.
-- All blockers resolved:
-  - `BLK-EVT-001` — resolved (runtime subscription graph).
-  - `BLK-COM-001` — resolved (COM event callback parity with external registered server evidence).
+- Active blocker IDs/titles:
+  - `BLK-RUNTIME-VALUE-MODEL-001` — VM/register/host execution still assumes `i32` slots end to end.
+- Impact by milestone/phase:
+  - blocks further honest progress on `WORKSET_2026-03-11_RUNTIME_VALUE_MODEL_MIGRATION.md` beyond the already-landed wrapper, observation-surface, `WithEvents`, and COM-entry slices
+  - blocks full closure of `WORKSET_2026-03-11_UNIFIED_DYNAMIC_OBJECT_PROTOCOL_AND_VALUE_CARRIER.md`
+  - blocks parity-complete completion of late-bound COM/client work that depends on richer runtime-side object/string/array transport
+- Exact unblocking steps:
+  - replace or strictly extend the HAL `ValueToken = i32` contract with the canonical runtime value model or explicit indirection model
+  - migrate the remaining HAL token-only call seams
+  - migrate remaining VM/JIT/public caller and parity-harness expectations off the integer observation lane
+- Suggestions/questions for the user:
+  - no new product decision is required
+  - the next work should be treated as a dedicated core-contract migration program, not another adapter-local cleanup slice
+- Previously resolved blockers:
+  - `BLK-EVT-001` — resolved (runtime subscription graph)
+  - `BLK-COM-001` — resolved (COM event callback parity with external registered server evidence)
