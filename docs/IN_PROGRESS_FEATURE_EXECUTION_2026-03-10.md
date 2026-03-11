@@ -173,6 +173,7 @@ Status vocabulary:
     - host-side COM end-to-end, early-binding, and registered-lane integration tests now execute through the semantic snapshot APIs rather than the legacy integer snapshot APIs,
     - the Cranelift subset helper now also exposes semantic `RuntimeValue` snapshots as its primary API, with an explicit `execute_bytecode_legacy(...)` compatibility projection retained for the integer subset,
     - CLI execution no longer stores duplicate integer snapshots in memory and derives `SLOTS:` output directly from semantic runtime values only when requested,
+    - the mixed edge/scaling host integration suite now also executes through semantic project snapshots instead of the legacy integer snapshot API,
     - the remaining active seam is the explicit raw-`i32` HAL compatibility contract plus the still-legacy-heavy interpreter/caller/test estate around integer snapshots.
 
 ### `IP-05` Windows early-bound COM and type-library parity

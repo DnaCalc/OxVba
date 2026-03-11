@@ -108,6 +108,7 @@
 
 ## 2026-03-11 - COM HAL invoke seam now projects from runtime values
 
+- Moved [end_to_end_mix.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-host\tests\end_to_end_mix.rs) onto `execute_project_with_snapshot_phased(...)` so the mixed edge/scaling host suite now validates semantic `RuntimeValue` snapshots instead of legacy integer projections.
 - Removed the CLI’s duplicate stored `Vec<i32>` snapshot state in [main.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-cli\src\main.rs); `SLOTS:` output is now derived from semantic runtime values only at the output edge when requested.
 - Switched the Cranelift subset helper in [cranelift.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-jit\src\cranelift.rs) to a semantic primary API: `execute_bytecode(...) -> Vec<RuntimeValue>`, with `execute_bytecode_legacy(...) -> Vec<i32>` retained as the explicit compatibility projection.
 - Moved the host-side COM end-to-end and early-binding integration tests onto `Engine::{execute_source_with_snapshot_phased,execute_project_with_snapshot_phased}` so the public COM test surface now validates semantic `RuntimeValue` snapshots instead of the legacy integer projection lane.
