@@ -3271,6 +3271,7 @@ fn map_dispatch_member_literal_token(text: &str) -> Option<i32> {
         "setindexedvalue" => Some(14),
         "setindexedvalueref" => Some(15),
         "echovariant" => Some(16),
+        "raiseexception" => Some(17),
         _ => None,
     }
 }

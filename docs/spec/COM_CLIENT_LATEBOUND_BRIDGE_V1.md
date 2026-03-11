@@ -65,6 +65,10 @@ Define the executable bridge from VBA late-bound call semantics to HAL COM trans
 - outbound invoke marshalling must emit `VT_NULL` and `VT_ERROR` when runtime null/error-tag values are supplied;
 - unsupported `VARIANT` shapes must fail deterministically and must not silently coerce into incorrect integer tokens.
 9. Event-trigger projection consumes the same authoritative argument vector used for invoke, and only synthesizes fallback payload shape when a native callback path is unavailable.
+10. Invoke failure transport:
+- `ArgErr` must be treated as an optional invoke output channel, not inferred from a default zero value when COM does not report one;
+- bounded `EXCEPINFO` details surfaced by native dispatch must be preserved in adapter-fault diagnostics for controlled/native exception lanes;
+- richer external automation parity for `VarResult`, `EXCEPINFO`, and argument-fault detail remains open until the broader automation matrix is covered.
 
 ## Deferred Extensions
 

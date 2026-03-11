@@ -1,6 +1,13 @@
 # Implementation Log
 
 ## 2026-03-11
+- late-bound COM invoke error-channel fidelity slice:
+  - invoke failures now distinguish real `ArgErr` output from the previous synthetic `arg_err=0` formatting fallback
+  - added controlled `RaiseException` dispatch coverage so `DISP_E_EXCEPTION` paths populate bounded `EXCEPINFO` source/description/scode data
+  - adapter-fault translation now preserves those bounded exception details instead of discarding them
+  - widened controlled metadata and host-backed lanes to cover the exception path deterministically
+  - verification:
+    - `cargo test -p oxvba-hal -p oxvba-host -p oxvba-com -p oxvba-compiler -p oxvba-runtime --quiet` -> PASS
 - late-bound COM `VT_ERROR` / `VT_NULL` roundtrip slice:
   - extended controlled `OxVba.TestDispatch` metadata and invoke surface with `EchoVariant(value)` for deterministic variant echo coverage
   - native/controlled late-bound marshalling now preserves runtime null and `CVErr(...)` token semantics across `IDispatch::Invoke`

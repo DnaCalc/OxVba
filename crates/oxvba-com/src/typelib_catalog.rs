@@ -315,6 +315,13 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
                 invoke_kind: TypeLibMemberInvokeKind::Method,
                 parameter_names: vec!["value".to_string()],
             },
+            TypeLibMemberMetadata {
+                name: "RaiseException".to_string(),
+                token: 17,
+                requires_argument: false,
+                invoke_kind: TypeLibMemberInvokeKind::Method,
+                parameter_names: Vec::new(),
+            },
         ];
         let events = vec![
             TypeLibEventMetadata {

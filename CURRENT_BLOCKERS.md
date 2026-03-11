@@ -31,13 +31,15 @@ Run context: active parity/compliance execution plus in-progress feature worklis
   - expression-form `DispatchInvoke(...)` assignments now preserve named trailing COM arguments instead of rejecting the statement outright,
   - omitted-argument metadata now survives the invoke request and yields deterministic required-argument faults,
   - controlled `IDispatch` variant roundtrips now cover `VT_NULL` and `VT_ERROR` in addition to the existing scalar subset,
+  - invoke failure translation now distinguishes real `ArgErr` presence from the previous synthetic `arg_err=0` fallback,
+  - controlled `DISP_E_EXCEPTION` lanes now preserve bounded `EXCEPINFO` source/description/scode details in the adapter-fault surface,
   - late-bound default-member calls with named arguments remain compile-time blocked because runtime still cannot recover the authoritative default COM member identity for named dispatch,
   - broad object/interface-pointer and full `VARIANT`/`SAFEARRAY` marshalling remain below parity target,
-  - `Invoke` result fidelity still lacks the broader `ArgErr` / `ExcepInfo` / `VarResult` parity surface required for Office-style automation coverage.
+  - `Invoke` result fidelity still lacks the broader `VarResult` surface and richer external automation `ExcepInfo`/argument-fault coverage required for Office-style automation parity.
 - Exact unblock steps:
   - recover authoritative default-member identity for named late-bound dispatch,
   - complete full `VARIANT`/object/`SAFEARRAY` marshalling,
-  - complete richer `Invoke` error/result fidelity.
+  - complete broader external `Invoke` error/result fidelity beyond the controlled exception/argument-fault subset.
 - Recommendation:
   - continue with the late-bound COM completion workset; the next slice should target broader `VARIANT`/object/`SAFEARRAY` marshalling plus richer `Invoke` error/result fidelity.
 

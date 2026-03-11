@@ -50,6 +50,10 @@ Status vocabulary:
     - `VT_NULL` now roundtrips to the stable runtime null tag
     - `VT_ERROR` now roundtrips to the stable `CVErr(...)` error-tag space
     - native invoke marshalling now emits `VT_NULL` / `VT_ERROR` on outbound calls when the runtime token shape requires it
+  - tightened invoke failure fidelity in the controlled native lane:
+    - invoke failures now treat `ArgErr` as optional output instead of inferring `arg_err=0` on every failing call
+    - controlled `DISP_E_EXCEPTION` lanes now populate bounded `EXCEPINFO` source/description/scode details
+    - adapter-fault translation preserves those bounded exception details instead of discarding them
   - kept one safety gate explicit:
     - late-bound default-member calls with named arguments remain compile-time blocked because runtime still cannot recover the authoritative default COM member identity for named dispatch
   - verification:
@@ -58,7 +62,7 @@ Status vocabulary:
   - parity is still blocked by the remaining scope:
     - default-member named dispatch still lacks authoritative member identity,
     - object/interface-pointer and broad `VARIANT`/`SAFEARRAY` marshalling are still below parity target,
-    - full `Invoke` error/result fidelity (`ArgErr`, `ExcepInfo`, broader `VarResult`) is still below parity target.
+    - broader external `Invoke` error/result fidelity (`VarResult`, richer non-controlled `ExcepInfo`, broader argument-fault coverage) is still below parity target.
 - Next required action:
   - finish full marshalling/error-channel fidelity and reopen default-member named dispatch only after runtime member identity is authoritative.
 

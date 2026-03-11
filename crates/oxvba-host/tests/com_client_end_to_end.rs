@@ -241,6 +241,37 @@ End Sub
     }
 
     #[test]
+    fn dispatchinvoke_exception_path_routes_through_on_error_resume_next() {
+        let out = run_windows_host_backed(
+            r#"
+Sub Main()
+Dim obj
+Dim keepOk
+Dim errNo
+On Error Resume Next
+obj = CreateObject("OxVba.TestDispatch")
+keepOk = DispatchInvoke(obj, "Exists", 42)
+Call DispatchInvoke(obj, "RaiseException")
+errNo = Err.Number
+End Sub
+"#,
+            false,
+        );
+
+        assert!(
+            out[0] >= 20_001,
+            "expected native COM object handle space, got {:?}",
+            out
+        );
+        assert_eq!(out[1], 1, "pre-exception call should have succeeded");
+        assert!(
+            out[2] != 0,
+            "exception COM invoke should set Err.Number, got {:?}",
+            out
+        );
+    }
+
+    #[test]
     fn repeated_dispatch_calls_stay_stable_under_pressure() {
         let mut source = String::from(
             "Sub Main()\nDim obj\nDim value\nobj = CreateObject(\"OxVba.TestDispatch\")\n",

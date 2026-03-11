@@ -33,7 +33,7 @@ use std::{
 };
 
 #[cfg(target_os = "windows")]
-use windows_sys::Win32::Foundation::VARIANT_BOOL;
+use windows_sys::Win32::Foundation::{SysAllocString, SysFreeString, SysStringLen, VARIANT_BOOL};
 #[cfg(target_os = "windows")]
 use windows_sys::Win32::System::Com::{
     CLSCTX_SERVER, CLSIDFromProgID, COINIT_APARTMENTTHREADED, CoCreateInstance, CoInitializeEx,
@@ -1061,7 +1061,7 @@ impl StandardHostServices {
         // SAFETY: `dispatch` is a live IDispatch pointer and `member` is treated as a direct
         // DISPID for the controlled late-bound fallback path.
         unsafe { raw_dispatch_property_get_i4_args(dispatch, member, args, &[]) }
-            .map_err(|message| self.com_dispatch_adapter_fault(message))
+            .map_err(|failure| self.com_dispatch_invoke_fault(failure))
     }
 
     #[cfg(target_os = "windows")]
@@ -1127,7 +1127,7 @@ impl StandardHostServices {
                     return unsafe {
                         raw_dispatch_property_get_i4_args(dispatch, dispid, &[], &[])
                     }
-                    .map_err(|message| self.com_dispatch_adapter_fault(message));
+                    .map_err(|failure| self.com_dispatch_invoke_fault(failure));
                 }
                 TypeLibMemberInvokeKind::Method => {
                     // SAFETY: `dispatch` is a live IDispatch pointer and `dispid` targets a method
@@ -1135,7 +1135,7 @@ impl StandardHostServices {
                     return unsafe {
                         raw_dispatch_invoke_method_i4_args(dispatch, dispid, &[], &[])
                     }
-                    .map_err(|message| self.com_dispatch_adapter_fault(message));
+                    .map_err(|failure| self.com_dispatch_invoke_fault(failure));
                 }
                 TypeLibMemberInvokeKind::PropertyPut | TypeLibMemberInvokeKind::PropertyPutRef => {
                     return Err(HalError::adapter_fault(
@@ -1180,7 +1180,7 @@ impl StandardHostServices {
                 raw_dispatch_property_putref_i4_args(dispatch, dispid, args, &named_arg_dispids)
             },
         }
-        .map_err(|message| self.com_dispatch_adapter_fault(message))
+        .map_err(|failure| self.com_dispatch_invoke_fault(failure))
     }
 
     #[cfg(target_os = "windows")]
@@ -1214,10 +1214,15 @@ impl StandardHostServices {
                     raw_dispatch_invoke_method_i4_args(dispatch, dispid, &[], &[])
                 },
                 TypeLibMemberInvokeKind::PropertyPut | TypeLibMemberInvokeKind::PropertyPutRef => {
-                    Err("member requires argument for property put/putref dispatch".to_string())
+                    return Err(HalError::adapter_fault(
+                        self.profile,
+                        CapabilityId::ComActivationDispatch,
+                        "dispatch_invoke",
+                        "member requires argument for property put/putref dispatch",
+                    ));
                 }
             }
-            .map_err(|message| self.com_dispatch_adapter_fault(message));
+            .map_err(|failure| self.com_dispatch_invoke_fault(failure));
         }
         if args.iter().any(|arg| arg.name.is_some()) {
             return Err(HalError::adapter_fault(
@@ -1246,7 +1251,7 @@ impl StandardHostServices {
                 raw_dispatch_property_putref_i4_args(dispatch, dispid, args, &[])
             },
         }
-        .map_err(|message| self.com_dispatch_adapter_fault(message))
+        .map_err(|failure| self.com_dispatch_invoke_fault(failure))
     }
 
     #[cfg(target_os = "windows")]
@@ -1323,6 +1328,34 @@ impl StandardHostServices {
             CapabilityId::ComActivationDispatch,
             "dispatch_invoke",
             format!("{prefix} {message}"),
+        )
+    }
+
+    #[cfg(target_os = "windows")]
+    fn com_dispatch_invoke_fault(&self, failure: ComInvokeFailure) -> HalError {
+        let label = map_com_hresult_label(failure.hr.map(|hr| hr as u32), failure.arg_err);
+        let mut suffix = String::new();
+        if let Some(hr) = failure.hr {
+            suffix.push_str(&format!("hresult=0x{:08X};", hr as u32));
+        }
+        if let Some(value) = failure.arg_err {
+            suffix.push_str(&format!("arg_err={value};"));
+        }
+        if let Some(excep) = &failure.excep
+            && let Some(scode) = excep.scode
+        {
+            suffix.push_str(&format!("excep_scode=0x{:08X};", scode as u32));
+        }
+        let prefix = if suffix.is_empty() {
+            format!("com-dispatch-{label}")
+        } else {
+            format!("com-dispatch-{label};{suffix}")
+        };
+        HalError::adapter_fault(
+            self.profile,
+            CapabilityId::ComActivationDispatch,
+            "dispatch_invoke",
+            format!("{prefix} {}", failure.render()),
         )
     }
 
@@ -3597,6 +3630,12 @@ fn com_member_spec_for_token(prog_id: &str, member: i32) -> Option<ComMemberSpec
                 invoke_kind: TypeLibMemberInvokeKind::Method,
                 parameter_names: vec!["value".to_string()],
             }),
+            17 => Some(ComMemberSpec {
+                name: "RaiseException".to_string(),
+                requires_argument: false,
+                invoke_kind: TypeLibMemberInvokeKind::Method,
+                parameter_names: Vec::new(),
+            }),
             _ => None,
         };
     }
@@ -3891,6 +3930,123 @@ fn parse_arg_err(message: &str) -> Option<u32> {
 }
 
 #[cfg(target_os = "windows")]
+#[derive(Debug)]
+struct ComInvokeExceptionInfo {
+    source: Option<String>,
+    description: Option<String>,
+    scode: Option<i32>,
+}
+
+#[cfg(target_os = "windows")]
+#[derive(Debug)]
+struct ComInvokeFailure {
+    label: &'static str,
+    dispid: i32,
+    hr: Option<i32>,
+    arg_err: Option<u32>,
+    excep: Option<ComInvokeExceptionInfo>,
+    detail: Option<String>,
+}
+
+#[cfg(target_os = "windows")]
+impl ComInvokeFailure {
+    fn render(&self) -> String {
+        let mut message = format!(
+            "IDispatch::Invoke({} dispid={}) failed",
+            self.label, self.dispid
+        );
+        if let Some(hr) = self.hr {
+            message.push_str(&format!(" with HRESULT {:#010X}", hr as u32));
+        }
+        if let Some(arg_err) = self.arg_err {
+            message.push_str(&format!(" (arg_err={arg_err})"));
+        }
+        if let Some(excep) = &self.excep {
+            if let Some(source) = &excep.source {
+                message.push_str(&format!(
+                    " excep_source=\"{}\"",
+                    sanitize_error_text(source)
+                ));
+            }
+            if let Some(description) = &excep.description {
+                message.push_str(&format!(
+                    " excep_description=\"{}\"",
+                    sanitize_error_text(description)
+                ));
+            }
+            if let Some(scode) = excep.scode {
+                message.push_str(&format!(" excep_scode={:#010X}", scode as u32));
+            }
+        }
+        if let Some(detail) = &self.detail {
+            message.push_str(&format!(" detail=\"{}\"", sanitize_error_text(detail)));
+        }
+        message
+    }
+}
+
+#[cfg(target_os = "windows")]
+fn sanitize_error_text(text: &str) -> String {
+    text.replace('\\', "\\\\").replace('"', "\\\"")
+}
+
+#[cfg(target_os = "windows")]
+#[allow(unsafe_op_in_unsafe_fn)]
+unsafe fn alloc_bstr(text: &str) -> windows_sys::core::BSTR {
+    let wide: Vec<u16> = text.encode_utf16().chain(std::iter::once(0)).collect();
+    SysAllocString(wide.as_ptr())
+}
+
+#[cfg(target_os = "windows")]
+#[allow(unsafe_op_in_unsafe_fn)]
+unsafe fn bstr_to_string_and_free(bstr: windows_sys::core::BSTR) -> Option<String> {
+    if bstr.is_null() {
+        return None;
+    }
+    let len = usize::try_from(SysStringLen(bstr)).unwrap_or(0);
+    let slice = std::slice::from_raw_parts(bstr, len);
+    let text = String::from_utf16_lossy(slice);
+    SysFreeString(bstr);
+    Some(text)
+}
+
+#[cfg(target_os = "windows")]
+#[allow(unsafe_op_in_unsafe_fn)]
+unsafe fn take_excepinfo(excep: &mut EXCEPINFO) -> Option<ComInvokeExceptionInfo> {
+    let source = bstr_to_string_and_free(excep.bstrSource);
+    let description = bstr_to_string_and_free(excep.bstrDescription);
+    let _ = bstr_to_string_and_free(excep.bstrHelpFile);
+    excep.bstrSource = std::ptr::null_mut();
+    excep.bstrDescription = std::ptr::null_mut();
+    excep.bstrHelpFile = std::ptr::null_mut();
+    let scode = if excep.scode != 0 {
+        Some(excep.scode)
+    } else {
+        None
+    };
+    if source.is_none() && description.is_none() && scode.is_none() {
+        None
+    } else {
+        Some(ComInvokeExceptionInfo {
+            source,
+            description,
+            scode,
+        })
+    }
+}
+
+#[cfg(target_os = "windows")]
+#[allow(unsafe_op_in_unsafe_fn)]
+unsafe fn populate_excepinfo(excep: *mut EXCEPINFO, source: &str, description: &str, scode: i32) {
+    if excep.is_null() {
+        return;
+    }
+    (*excep).bstrSource = alloc_bstr(source);
+    (*excep).bstrDescription = alloc_bstr(description);
+    (*excep).scode = scode;
+}
+
+#[cfg(target_os = "windows")]
 fn map_com_hresult_label(hresult: Option<u32>, arg_err: Option<u32>) -> &'static str {
     if arg_err.is_some() {
         return "arg-error";
@@ -3980,6 +4136,8 @@ const COM_E_INVALIDARG: i32 = 0x8007_0057u32 as i32;
 #[cfg(target_os = "windows")]
 const COM_DISP_E_MEMBERNOTFOUND: i32 = 0x8002_0003u32 as i32;
 #[cfg(target_os = "windows")]
+const COM_DISP_E_EXCEPTION: i32 = 0x8002_0009u32 as i32;
+#[cfg(target_os = "windows")]
 const COM_DISP_E_PARAMNOTFOUND: i32 = 0x8002_0004u32 as i32;
 #[cfg(target_os = "windows")]
 const COM_DISP_E_UNKNOWNNAME: i32 = 0x8002_0006u32 as i32;
@@ -4009,6 +4167,7 @@ const TEST_DISPID_LOOKUP_PAIR: i32 = 13;
 const TEST_DISPID_SET_INDEXED_VALUE: i32 = 14;
 const TEST_DISPID_SET_INDEXED_VALUE_REF: i32 = 15;
 const TEST_DISPID_ECHO_VARIANT: i32 = 16;
+const TEST_DISPID_RAISE_EXCEPTION: i32 = 17;
 const TEST_NAMED_DISPID_LHS: i32 = 101;
 const TEST_NAMED_DISPID_RHS: i32 = 102;
 const TEST_NAMED_DISPID_INDEX: i32 = 103;
@@ -5069,6 +5228,7 @@ unsafe extern "system" fn oxvba_test_get_ids_of_names(
             "setindexedvalue" => TEST_DISPID_SET_INDEXED_VALUE,
             "setindexedvalueref" => TEST_DISPID_SET_INDEXED_VALUE_REF,
             "echovariant" => TEST_DISPID_ECHO_VARIANT,
+            "raiseexception" => TEST_DISPID_RAISE_EXCEPTION,
             "lhs" => TEST_NAMED_DISPID_LHS,
             "rhs" => TEST_NAMED_DISPID_RHS,
             "index" => TEST_NAMED_DISPID_INDEX,
@@ -5336,6 +5496,18 @@ unsafe extern "system" fn oxvba_test_invoke(
             };
             set_variant_dispatch_arg(pvarresult, value);
             COM_S_OK
+        }
+        TEST_DISPID_RAISE_EXCEPTION => {
+            if (wflags & DISPATCH_METHOD) == 0 || cargs != 0 {
+                return COM_DISP_E_BADPARAMCOUNT;
+            }
+            populate_excepinfo(
+                _pexcepinfo,
+                OXVBA_TEST_DISPATCH_PROGID,
+                "controlled dispatch exception",
+                COM_DISP_E_EXCEPTION,
+            );
+            COM_DISP_E_EXCEPTION
         }
         TEST_DISPID_VALUE => {
             if (wflags & DISPATCH_PROPERTYGET) == 0 || cargs != 0 {
@@ -5869,8 +6041,8 @@ unsafe fn raw_dispatch_invoke_i4_args(
     flags: u16,
     args: &[ComInvokeArg],
     named_arg_dispids: &[i32],
-    label: &str,
-) -> Result<i32, String> {
+    label: &'static str,
+) -> Result<i32, ComInvokeFailure> {
     let mut invoke_args: Vec<VARIANT> = Vec::with_capacity(args.len());
     for arg in args.iter().rev() {
         let mut variant: VARIANT = std::mem::zeroed();
@@ -5885,7 +6057,7 @@ unsafe fn raw_dispatch_invoke_i4_args(
         named_arg_dispids.iter().rev().copied().collect();
     let mut result: VARIANT = std::mem::zeroed();
     let mut excep: EXCEPINFO = std::mem::zeroed();
-    let mut arg_err = 0u32;
+    let mut arg_err = u32::MAX;
     let mut params = DISPPARAMS {
         rgvarg: if invoke_args.is_empty() {
             std::ptr::null_mut()
@@ -5912,13 +6084,30 @@ unsafe fn raw_dispatch_invoke_i4_args(
         &mut arg_err,
     );
     if hr < 0 {
-        return Err(format!(
-            "IDispatch::Invoke({label} dispid={dispid}) failed with HRESULT {:#010X} (arg_err={})",
-            hr as u32, arg_err
-        ));
+        return Err(ComInvokeFailure {
+            label,
+            dispid,
+            hr: Some(hr),
+            arg_err: (arg_err != u32::MAX).then_some(arg_err),
+            excep: take_excepinfo(&mut excep),
+            detail: None,
+        });
     }
 
-    let token = raw_variant_to_token(&result)?;
+    let token = match raw_variant_to_token(&result) {
+        Ok(token) => token,
+        Err(detail) => {
+            let _ = VariantClear(&mut result);
+            return Err(ComInvokeFailure {
+                label,
+                dispid,
+                hr: None,
+                arg_err: None,
+                excep: None,
+                detail: Some(detail),
+            });
+        }
+    };
     let _ = VariantClear(&mut result);
     Ok(token)
 }
@@ -5931,8 +6120,8 @@ unsafe fn raw_dispatch_invoke_i4_args_positional(
     flags: u16,
     args: &[i32],
     property_put_named_arg: bool,
-    label: &str,
-) -> Result<i32, String> {
+    label: &'static str,
+) -> Result<i32, ComInvokeFailure> {
     let mut invoke_args: Vec<VARIANT> = Vec::with_capacity(args.len());
     for arg in args.iter().rev() {
         let mut variant: VARIANT = std::mem::zeroed();
@@ -5943,7 +6132,7 @@ unsafe fn raw_dispatch_invoke_i4_args_positional(
     let mut named_arg = COM_DISPID_PROPERTYPUT;
     let mut result: VARIANT = std::mem::zeroed();
     let mut excep: EXCEPINFO = std::mem::zeroed();
-    let mut arg_err = 0u32;
+    let mut arg_err = u32::MAX;
     let mut params = DISPPARAMS {
         rgvarg: if invoke_args.is_empty() {
             std::ptr::null_mut()
@@ -5970,13 +6159,30 @@ unsafe fn raw_dispatch_invoke_i4_args_positional(
         &mut arg_err,
     );
     if hr < 0 {
-        return Err(format!(
-            "IDispatch::Invoke({label} dispid={dispid}) failed with HRESULT {:#010X} (arg_err={})",
-            hr as u32, arg_err
-        ));
+        return Err(ComInvokeFailure {
+            label,
+            dispid,
+            hr: Some(hr),
+            arg_err: (arg_err != u32::MAX).then_some(arg_err),
+            excep: take_excepinfo(&mut excep),
+            detail: None,
+        });
     }
 
-    let token = raw_variant_to_token(&result)?;
+    let token = match raw_variant_to_token(&result) {
+        Ok(token) => token,
+        Err(detail) => {
+            let _ = VariantClear(&mut result);
+            return Err(ComInvokeFailure {
+                label,
+                dispid,
+                hr: None,
+                arg_err: None,
+                excep: None,
+                detail: Some(detail),
+            });
+        }
+    };
     let _ = VariantClear(&mut result);
     Ok(token)
 }
@@ -6083,6 +6289,10 @@ unsafe fn raw_oxvba_test_dispatch_vtable_invoke(
             }
             Ok(Some(args[0]))
         }
+        TEST_DISPID_RAISE_EXCEPTION => Err(format!(
+            "IDispatch::Invoke(method) failed with HRESULT {:#010X} excep_description=\"controlled dispatch exception\" excep_scode={:#010X}",
+            COM_DISP_E_EXCEPTION as u32, COM_DISP_E_EXCEPTION as u32
+        )),
         _ => Ok(None),
     }
 }
@@ -6094,7 +6304,7 @@ unsafe fn raw_dispatch_property_get_i4_args(
     dispid: i32,
     args: &[ComInvokeArg],
     named_arg_dispids: &[i32],
-) -> Result<i32, String> {
+) -> Result<i32, ComInvokeFailure> {
     raw_dispatch_invoke_i4_args(
         dispatch,
         dispid,
@@ -6112,7 +6322,7 @@ unsafe fn raw_dispatch_property_put_i4_args(
     dispid: i32,
     args: &[ComInvokeArg],
     named_arg_dispids: &[i32],
-) -> Result<i32, String> {
+) -> Result<i32, ComInvokeFailure> {
     if named_arg_dispids.is_empty()
         && args
             .iter()
@@ -6147,7 +6357,7 @@ unsafe fn raw_dispatch_property_putref_i4_args(
     dispid: i32,
     args: &[ComInvokeArg],
     named_arg_dispids: &[i32],
-) -> Result<i32, String> {
+) -> Result<i32, ComInvokeFailure> {
     if named_arg_dispids.is_empty()
         && args
             .iter()
@@ -6182,7 +6392,7 @@ unsafe fn raw_dispatch_invoke_method_i4_args(
     dispid: i32,
     args: &[ComInvokeArg],
     named_arg_dispids: &[i32],
-) -> Result<i32, String> {
+) -> Result<i32, ComInvokeFailure> {
     raw_dispatch_invoke_i4_args(
         dispatch,
         dispid,
@@ -7377,6 +7587,39 @@ mod tests {
 
     #[cfg(target_os = "windows")]
     #[test]
+    fn windows_native_controlled_exception_surfaces_excepinfo_without_fake_arg_error() {
+        let host = StandardHostServices::new(HalProfileId::Windows, HostPolicy::interactive_dev());
+        let object = host
+            .create_object(4)
+            .expect("create_object should return a token");
+        let err = host
+            .dispatch_invoke(
+                object,
+                super::TEST_DISPID_RAISE_EXCEPTION,
+                super::DISPATCH_INVOKE_MISSING_ARG_TOKEN,
+            )
+            .expect_err("RaiseException should surface an adapter fault");
+        assert_eq!(err.kind, HalErrorKind::AdapterFault);
+        assert!(
+            err.message.contains("com-dispatch-exception-raised"),
+            "expected exception-raised classification, got {}",
+            err.message
+        );
+        assert!(
+            err.message
+                .contains("excep_description=\"controlled dispatch exception\""),
+            "expected EXCEPINFO description in adapter fault, got {}",
+            err.message
+        );
+        assert!(
+            !err.message.contains("arg_err="),
+            "unexpected arg_err classification leak in {}",
+            err.message
+        );
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
     fn windows_native_com_binding_keeps_stable_dispatch_identity() {
         let host = StandardHostServices::new(HalProfileId::Windows, HostPolicy::interactive_dev());
         let object = host
@@ -7622,6 +7865,10 @@ mod tests {
                     super::TEST_DISPID_SET_INDEXED_VALUE_REF
                 ),
                 ("EchoVariant".to_string(), 16),
+                (
+                    "RaiseException".to_string(),
+                    super::TEST_DISPID_RAISE_EXCEPTION
+                ),
             ]
         );
         let fire_changed_pair = metadata
@@ -7649,6 +7896,16 @@ mod tests {
             .find(|entry| entry.token == super::TEST_DISPID_PING)
             .expect("Ping metadata should exist");
         assert!(!ping_member.requires_argument);
+        let raise_exception_member = metadata
+            .members
+            .iter()
+            .find(|entry| entry.token == super::TEST_DISPID_RAISE_EXCEPTION)
+            .expect("RaiseException metadata should exist");
+        assert_eq!(
+            raise_exception_member.invoke_kind,
+            super::TypeLibMemberInvokeKind::Method
+        );
+        assert!(!raise_exception_member.requires_argument);
         assert_eq!(
             ping_member.invoke_kind,
             super::TypeLibMemberInvokeKind::Method
