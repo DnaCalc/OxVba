@@ -58,13 +58,14 @@ Run context: active parity/compliance execution plus in-progress feature worklis
   - native late-bound COM argument marshalling now clears temporary `VARIANT` invoke arguments after dispatch so BSTR-backed calls do not leak adapter-owned allocations,
   - `ComValue` now preserves `ObjectHandle(...)` semantically instead of degrading it back into plain integers before the COM boundary,
   - Windows native COM argument marshalling now resolves `ObjectHandle(...)` through adapter-owned binding state and emits `VT_DISPATCH` with balanced `AddRef`/`VariantClear` ownership for native COM-backed objects,
+  - Windows native COM invoke result conversion now binds `VT_DISPATCH` results back into adapter-owned object handles on the runtime-value path instead of discarding them into the legacy scalar lane,
   - VM slots and the wider runtime/host value model are still `i32`-backed, so the new carrier currently preserves only the semantically recoverable subset,
   - array intent is now preserved to the COM boundary, but the Windows adapter still has to narrow that intent to the old placeholder integer because real SAFEARRAY payload data is not yet available,
-  - object-valued COM results still do not traverse the shared runtime-facing carrier and still fall back to the legacy return lane,
+  - broader interface-pointer result forms beyond `VT_DISPATCH` (for example `VT_UNKNOWN`) still do not traverse the shared runtime-facing carrier,
   - callback ingress into the wider runtime still narrows back into the old runtime token lane after the COM boundary because the unified dynamic-object/value-carrier work is only partially complete.
 - Exact unblock steps:
   - extend the first `ComValue` slice into the full canonical OxVba-side external-call carrier for:
-    - object-valued results and identity roundtrip,
+    - broader object/interface-pointer result forms and identity roundtrip,
     - real SAFEARRAY payloads,
     - broader scalar/variant categories,
   - thread the new dynamic-object protocol and expanded carrier through compiler bytecode, VM host invoke construction, callback transport, and host runtime ingestion without making raw COM wire structs the VM/compiler value model,

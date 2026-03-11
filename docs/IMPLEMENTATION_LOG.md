@@ -1922,4 +1922,6 @@
   - `oxvba-com` `ComValue` now preserves `ObjectHandle(...)` instead of degrading it back to a plain integer
   - Windows native COM argument marshalling now resolves `ObjectHandle(...)` through adapter-owned COM binding state and emits `VT_DISPATCH` with balanced `AddRef`/`VariantClear` ownership
   - added Windows regression coverage for object-handle-to-dispatch-pointer marshalling in the adapter helper layer
-  - object-valued COM results still do not traverse the runtime-facing carrier; that remains open under `BLK-COM-VALUE-TRANSPORT-001`
+  - Windows native runtime-value invoke conversion now binds `VT_DISPATCH` results back into adapter-owned object handles instead of discarding them into the legacy scalar lane
+  - added Windows regression coverage that a dispatch-valued `VARIANT` result produces a live object handle that can be released through the COM binding table
+  - broader interface-pointer forms beyond `VT_DISPATCH` and real SAFEARRAY payloads remain open under `BLK-COM-VALUE-TRANSPORT-001`

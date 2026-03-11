@@ -58,6 +58,7 @@ Completed slices:
    - dynamic-link invoke wrappers.
 10. VM host intrinsic execution for those lanes now reads `RuntimeValue` directly and no longer forces `read_slot(...)` legacy narrowing before the HAL boundary.
 11. The shared COM carrier now preserves runtime strings and `ObjectHandle(...)` semantics on outbound native COM argument marshalling instead of degrading them to plain integer tokens before the Windows `VARIANT` boundary.
+12. The supported native COM runtime-value return seam now binds `VT_DISPATCH` results back into adapter-owned object handles instead of forcing them through the legacy scalar return lane.
 
 Remaining blocker seam:
 1. HAL `ValueToken = i32`,
