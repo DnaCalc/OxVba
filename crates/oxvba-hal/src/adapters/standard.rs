@@ -2323,15 +2323,82 @@ impl EventPumpHal for StandardHostServices {
 }
 
 impl FileSystemHal for StandardHostServices {
-    fn open(&self, path: i32, mode: i32) -> HalResult<i32> {
+    fn open(&self, path: RuntimeValue, mode: RuntimeValue) -> HalResult<RuntimeValue> {
         let capability = CapabilityId::FileSystemIo;
         if !self.supports(capability) {
             return Err(self.unsupported(capability, "open"));
         }
+        let mode = self.runtime_value_to_legacy_i32(&mode, capability, "open", "mode")?;
         if mode != 0 && !self.policy.allow_filesystem_mutation {
             return Err(self.denied(capability, "open"));
         }
-
+        if let RuntimeValue::String(BStr(path_text)) = &path {
+            let mut state = self.fs_lock(capability, "open")?;
+            self.assert_fs_invariants(&state, "open-pre");
+            let Some(handle) = state.first_free_in(1, 511) else {
+                return Err(HalError::adapter_fault(
+                    self.profile,
+                    capability,
+                    "open",
+                    "no free file handles available in supported range",
+                ));
+            };
+            let host_path = if self.native_fs_enabled() {
+                let host_path = PathBuf::from(path_text);
+                if let Some(parent) = host_path.parent() {
+                    fs::create_dir_all(parent).map_err(|err| {
+                        HalError::adapter_fault(
+                            self.profile,
+                            capability,
+                            "open",
+                            format!("failed to create host fs directory: {err}"),
+                        )
+                    })?;
+                }
+                Some(host_path)
+            } else {
+                None
+            };
+            let initial_len = if let Some(host_path) = host_path.as_ref() {
+                if mode != 0 {
+                    let file = OpenOptions::new()
+                        .read(true)
+                        .write(true)
+                        .create(true)
+                        .truncate(false)
+                        .open(host_path)
+                        .map_err(|err| {
+                            HalError::adapter_fault(
+                                self.profile,
+                                capability,
+                                "open",
+                                format!("failed to open host path {}: {err}", host_path.display()),
+                            )
+                        })?;
+                    clamp_u64_to_i32(file.metadata().map(|meta| meta.len()).unwrap_or(0))
+                } else {
+                    fs::metadata(host_path)
+                        .map(|meta| clamp_u64_to_i32(meta.len()))
+                        .unwrap_or(1)
+                }
+            } else if mode == 0 {
+                i32::from(!path_text.is_empty())
+            } else {
+                0
+            };
+            state.handles.insert(
+                handle,
+                FileHandleState {
+                    mode,
+                    position: 0,
+                    len: initial_len,
+                    host_path,
+                },
+            );
+            self.assert_fs_invariants(&state, "open-post");
+            return Ok(RuntimeValue::I32(handle));
+        }
+        let path = self.runtime_value_to_legacy_i32(&path, capability, "open", "path")?;
         let mut state = self.fs_lock(capability, "open")?;
         self.assert_fs_invariants(&state, "open-pre");
         let Some(handle) = state.first_free_in(1, 511) else {
@@ -2400,95 +2467,20 @@ impl FileSystemHal for StandardHostServices {
             "op=open returned out-of-range handle {}",
             handle
         );
-        Ok(handle)
+        Ok(RuntimeValue::I32(handle))
     }
 
-    fn open_value(&self, path: RuntimeValue, mode: RuntimeValue) -> HalResult<RuntimeValue> {
-        let capability = CapabilityId::FileSystemIo;
-        if !self.supports(capability) {
-            return Err(self.unsupported(capability, "open"));
-        }
-        let mode = self.runtime_value_to_legacy_i32(&mode, capability, "open", "mode")?;
-        if let RuntimeValue::String(BStr(path_text)) = &path {
-            let mut state = self.fs_lock(capability, "open")?;
-            self.assert_fs_invariants(&state, "open-pre");
-            let Some(handle) = state.first_free_in(1, 511) else {
-                return Err(HalError::adapter_fault(
-                    self.profile,
-                    capability,
-                    "open",
-                    "no free file handles available in supported range",
-                ));
-            };
-            let host_path = if self.native_fs_enabled() {
-                let host_path = PathBuf::from(path_text);
-                if let Some(parent) = host_path.parent() {
-                    fs::create_dir_all(parent).map_err(|err| {
-                        HalError::adapter_fault(
-                            self.profile,
-                            capability,
-                            "open",
-                            format!("failed to create host fs directory: {err}"),
-                        )
-                    })?;
-                }
-                Some(host_path)
-            } else {
-                None
-            };
-            let initial_len = if let Some(host_path) = host_path.as_ref() {
-                if mode != 0 {
-                    let file = OpenOptions::new()
-                        .read(true)
-                        .write(true)
-                        .create(true)
-                        .truncate(false)
-                        .open(host_path)
-                        .map_err(|err| {
-                            HalError::adapter_fault(
-                                self.profile,
-                                capability,
-                                "open",
-                                format!("failed to open host path {}: {err}", host_path.display()),
-                            )
-                        })?;
-                    clamp_u64_to_i32(file.metadata().map(|meta| meta.len()).unwrap_or(0))
-                } else {
-                    fs::metadata(host_path)
-                        .map(|meta| clamp_u64_to_i32(meta.len()))
-                        .unwrap_or(1)
-                }
-            } else if mode == 0 {
-                i32::from(!path_text.is_empty())
-            } else {
-                0
-            };
-            state.handles.insert(
-                handle,
-                FileHandleState {
-                    mode,
-                    position: 0,
-                    len: initial_len,
-                    host_path,
-                },
-            );
-            self.assert_fs_invariants(&state, "open-post");
-            return Ok(RuntimeValue::I32(handle));
-        }
-        let path = self.runtime_value_to_legacy_i32(&path, capability, "open", "path")?;
-        self.open(path, mode).map(RuntimeValue::I32)
-    }
-
-    fn close(&self, handle: i32) -> HalResult<i32> {
+    fn close(&self, handle: RuntimeValue) -> HalResult<RuntimeValue> {
         let capability = CapabilityId::FileSystemIo;
         if !self.supports(capability) {
             return Err(self.unsupported(capability, "close"));
         }
+        let handle = self.runtime_value_to_legacy_i32(&handle, capability, "close", "handle")?;
         let mut state = self.fs_lock(capability, "close")?;
         self.assert_fs_invariants(&state, "close-pre");
         if state.handles.remove(&handle).is_some() {
             self.assert_fs_invariants(&state, "close-post");
-            Ok(1)
+            Ok(RuntimeValue::I32(1))
         } else {
             Err(HalError::adapter_fault(
                 self.profile,
@@ -2499,21 +2491,14 @@ impl FileSystemHal for StandardHostServices {
         }
     }
 
-    fn close_value(&self, handle: RuntimeValue) -> HalResult<RuntimeValue> {
-        let handle = self.runtime_value_to_legacy_i32(
-            &handle,
-            CapabilityId::FileSystemIo,
-            "close",
-            "handle",
-        )?;
-        self.close(handle).map(RuntimeValue::I32)
-    }
-
-    fn seek(&self, handle: i32, position: i32) -> HalResult<i32> {
+    fn seek(&self, handle: RuntimeValue, position: RuntimeValue) -> HalResult<RuntimeValue> {
         let capability = CapabilityId::FileSystemIo;
         if !self.supports(capability) {
             return Err(self.unsupported(capability, "seek"));
         }
+        let handle = self.runtime_value_to_legacy_i32(&handle, capability, "seek", "handle")?;
+        let position =
+            self.runtime_value_to_legacy_i32(&position, capability, "seek", "position")?;
         if position < 0 {
             return Err(HalError::adapter_fault(
                 self.profile,
@@ -2586,54 +2571,46 @@ impl FileSystemHal for StandardHostServices {
             entry.position
         };
         self.assert_fs_invariants(&state, "seek-post");
-        Ok(final_position)
+        Ok(RuntimeValue::I32(final_position))
     }
 
-    fn seek_value(&self, handle: RuntimeValue, position: RuntimeValue) -> HalResult<RuntimeValue> {
-        let capability = CapabilityId::FileSystemIo;
-        let handle = self.runtime_value_to_legacy_i32(&handle, capability, "seek", "handle")?;
-        let position =
-            self.runtime_value_to_legacy_i32(&position, capability, "seek", "position")?;
-        self.seek(handle, position).map(RuntimeValue::I32)
-    }
-
-    fn eof(&self, handle: i32) -> HalResult<i32> {
+    fn eof(&self, handle: RuntimeValue) -> HalResult<RuntimeValue> {
         let capability = CapabilityId::FileSystemIo;
         if !self.supports(capability) {
             return Err(self.unsupported(capability, "eof"));
         }
+        let handle = self.runtime_value_to_legacy_i32(&handle, capability, "eof", "handle")?;
         let mut state = self.fs_lock(capability, "eof")?;
         let entry = self.fs_entry_mut(&mut state, handle, "eof")?;
-        Ok(if entry.position >= entry.len { 1 } else { 0 })
+        Ok(RuntimeValue::I32(if entry.position >= entry.len {
+            1
+        } else {
+            0
+        }))
     }
 
-    fn eof_value(&self, handle: RuntimeValue) -> HalResult<RuntimeValue> {
-        let handle =
-            self.runtime_value_to_legacy_i32(&handle, CapabilityId::FileSystemIo, "eof", "handle")?;
-        self.eof(handle).map(RuntimeValue::I32)
-    }
-
-    fn lof(&self, handle: i32) -> HalResult<i32> {
+    fn lof(&self, handle: RuntimeValue) -> HalResult<RuntimeValue> {
         let capability = CapabilityId::FileSystemIo;
         if !self.supports(capability) {
             return Err(self.unsupported(capability, "lof"));
         }
+        let handle = self.runtime_value_to_legacy_i32(&handle, capability, "lof", "handle")?;
         let mut state = self.fs_lock(capability, "lof")?;
         let entry = self.fs_entry_mut(&mut state, handle, "lof")?;
-        Ok(entry.len)
+        Ok(RuntimeValue::I32(entry.len))
     }
 
-    fn lof_value(&self, handle: RuntimeValue) -> HalResult<RuntimeValue> {
-        let handle =
-            self.runtime_value_to_legacy_i32(&handle, CapabilityId::FileSystemIo, "lof", "handle")?;
-        self.lof(handle).map(RuntimeValue::I32)
-    }
-
-    fn free_file(&self, range_selector: i32) -> HalResult<i32> {
+    fn free_file(&self, range_selector: RuntimeValue) -> HalResult<RuntimeValue> {
         let capability = CapabilityId::FileSystemIo;
         if !self.supports(capability) {
             return Err(self.unsupported(capability, "free_file"));
         }
+        let range_selector = self.runtime_value_to_legacy_i32(
+            &range_selector,
+            capability,
+            "free_file",
+            "range_selector",
+        )?;
         let (start, end) = if range_selector == 1 {
             (256, 511)
         } else {
@@ -2656,17 +2633,7 @@ impl FileSystemHal for StandardHostServices {
             start,
             end
         );
-        Ok(candidate)
-    }
-
-    fn free_file_value(&self, range_selector: RuntimeValue) -> HalResult<RuntimeValue> {
-        let selector = self.runtime_value_to_legacy_i32(
-            &range_selector,
-            CapabilityId::FileSystemIo,
-            "free_file",
-            "range_selector",
-        )?;
-        self.free_file(selector).map(RuntimeValue::I32)
+        Ok(RuntimeValue::I32(candidate))
     }
 }
 
@@ -7897,36 +7864,37 @@ mod tests {
     #[test]
     fn file_open_seek_eof_lof_close_roundtrip() {
         let host = StandardHostServices::new(HalProfileId::Windows, HostPolicy::default());
-        let handle = host.open(77, 0).expect("open should succeed");
-        assert_eq!(handle, 1);
-        assert_eq!(host.eof(handle).expect("eof should work"), 0);
-        assert!(host.lof(handle).expect("lof should work") > 0);
-        host.seek(handle, host.lof(handle).expect("lof should work"))
+        let handle = host.open(rv(77), rv(0)).expect("open should succeed");
+        assert_eq!(handle, rv(1));
+        assert_eq!(host.eof(handle.clone()).expect("eof should work"), rv(0));
+        let len = expect_i32(host.lof(handle.clone()).expect("lof should work"));
+        assert!(len > 0);
+        host.seek(handle.clone(), rv(len))
             .expect("seek to end should work");
-        assert_eq!(host.eof(handle).expect("eof should work"), 1);
-        assert_eq!(host.close(handle).expect("close should work"), 1);
+        assert_eq!(host.eof(handle.clone()).expect("eof should work"), rv(1));
+        assert_eq!(host.close(handle).expect("close should work"), rv(1));
     }
 
     #[test]
-    fn file_value_wrappers_accept_runtime_string_paths() {
+    fn file_open_accepts_runtime_string_paths() {
         let host = StandardHostServices::new(HalProfileId::Windows, HostPolicy::default());
         let handle = host
-            .open_value(
+            .open(
                 RuntimeValue::String(BStr("runtime-fs-value-path.txt".to_string())),
                 RuntimeValue::I32(0),
             )
-            .expect("open_value should succeed");
+            .expect("open should succeed");
         let RuntimeValue::I32(handle) = handle else {
-            panic!("open_value should return file handle");
+            panic!("open should return file handle");
         };
         assert_eq!(
-            host.lof_value(RuntimeValue::I32(handle))
-                .expect("lof_value should succeed"),
+            host.lof(RuntimeValue::I32(handle))
+                .expect("lof should succeed"),
             RuntimeValue::I32(1)
         );
         assert_eq!(
-            host.close_value(RuntimeValue::I32(handle))
-                .expect("close_value should succeed"),
+            host.close(RuntimeValue::I32(handle))
+                .expect("close should succeed"),
             RuntimeValue::I32(1)
         );
     }
@@ -7934,18 +7902,23 @@ mod tests {
     #[test]
     fn free_file_respects_low_and_high_ranges() {
         let host = StandardHostServices::new(HalProfileId::Windows, HostPolicy::default());
-        assert_eq!(host.free_file(0).expect("default free file"), 1);
-        assert_eq!(host.free_file(1).expect("high-range free file"), 256);
+        assert_eq!(host.free_file(rv(0)).expect("default free file"), rv(1));
+        assert_eq!(
+            host.free_file(rv(1)).expect("high-range free file"),
+            rv(256)
+        );
     }
 
     #[test]
     fn close_releases_handle_for_reuse() {
         let host = StandardHostServices::new(HalProfileId::Windows, HostPolicy::default());
-        let first = host.open(10, 0).expect("open should succeed");
-        assert_eq!(first, 1);
+        let first = host.open(rv(10), rv(0)).expect("open should succeed");
+        assert_eq!(first, rv(1));
         host.close(first).expect("close should succeed");
-        let second = host.open(11, 0).expect("second open should succeed");
-        assert_eq!(second, 1, "closed handles must be reusable");
+        let second = host
+            .open(rv(11), rv(0))
+            .expect("second open should succeed");
+        assert_eq!(second, rv(1), "closed handles must be reusable");
     }
 
     #[test]
@@ -7954,20 +7927,20 @@ mod tests {
         let mut handles = Vec::new();
         for expected in 1..=8 {
             assert_eq!(
-                host.free_file(0).expect("free_file should succeed"),
-                expected
+                host.free_file(rv(0)).expect("free_file should succeed"),
+                rv(expected)
             );
-            handles.push(host.open(expected, 0).expect("open should succeed"));
+            handles.push(host.open(rv(expected), rv(0)).expect("open should succeed"));
         }
-        assert_eq!(handles, vec![1, 2, 3, 4, 5, 6, 7, 8]);
+        assert_eq!(handles, (1..=8).map(rv).collect::<Vec<_>>());
     }
 
     #[test]
     fn seek_negative_returns_adapter_fault() {
         let host = StandardHostServices::new(HalProfileId::Windows, HostPolicy::default());
-        let handle = host.open(42, 0).expect("open should succeed");
+        let handle = host.open(rv(42), rv(0)).expect("open should succeed");
         let err = host
-            .seek(handle, -1)
+            .seek(handle, rv(-1))
             .expect_err("negative seek should return error");
         assert_eq!(err.kind, HalErrorKind::AdapterFault);
     }
@@ -8335,29 +8308,32 @@ mod tests {
                 ..HostPolicy::default()
             },
         );
-        assert_eq!(host.free_file(0).expect("first free should be 1"), 1);
+        assert_eq!(
+            host.free_file(rv(0)).expect("first free should be 1"),
+            rv(1)
+        );
         let err = host
-            .open(10, 1)
+            .open(rv(10), rv(1))
             .expect_err("mutation open should be denied by policy");
         assert_eq!(err.kind, HalErrorKind::PolicyDenied);
         assert_eq!(
-            host.free_file(0)
+            host.free_file(rv(0))
                 .expect("free file should remain unchanged"),
-            1
+            rv(1)
         );
     }
 
     #[test]
     fn invalid_close_does_not_mutate_handle_state() {
         let host = StandardHostServices::new(HalProfileId::Windows, HostPolicy::default());
-        let first = host.open(10, 0).expect("open should succeed");
-        assert_eq!(first, 1);
-        let err = host.close(99).expect_err("invalid close should fail");
+        let first = host.open(rv(10), rv(0)).expect("open should succeed");
+        assert_eq!(first, rv(1));
+        let err = host.close(rv(99)).expect_err("invalid close should fail");
         assert_eq!(err.kind, HalErrorKind::AdapterFault);
         assert_eq!(
-            host.free_file(0)
+            host.free_file(rv(0))
                 .expect("free file should still skip handle 1"),
-            2
+            rv(2)
         );
     }
 
@@ -8443,13 +8419,19 @@ mod tests {
             return;
         };
         let host = StandardHostServices::new(profile, HostPolicy::interactive_dev());
-        let handle = host.open(31415, 1).expect("native open should succeed");
-        host.seek(handle, 64).expect("native seek should succeed");
+        let handle = host
+            .open(rv(31415), rv(1))
+            .expect("native open should succeed");
+        host.seek(handle.clone(), rv(64))
+            .expect("native seek should succeed");
         assert!(
-            host.lof(handle).expect("native lof should succeed") >= 64,
+            expect_i32(host.lof(handle.clone()).expect("native lof should succeed")) >= 64,
             "native seek in mutation mode should extend logical length"
         );
-        assert_eq!(host.close(handle).expect("native close should succeed"), 1);
+        assert_eq!(
+            host.close(handle).expect("native close should succeed"),
+            rv(1)
+        );
     }
 
     #[test]
@@ -8867,9 +8849,15 @@ mod tests {
         let host_path = host.host_path_from_token(token);
         let _ = std::fs::remove_file(&host_path);
 
-        let handle = host.open(token, 1).expect("native open should succeed");
-        host.seek(handle, 160).expect("native seek should succeed");
-        assert_eq!(host.close(handle).expect("native close should succeed"), 1);
+        let handle = host
+            .open(rv(token), rv(1))
+            .expect("native open should succeed");
+        host.seek(handle.clone(), rv(160))
+            .expect("native seek should succeed");
+        assert_eq!(
+            host.close(handle).expect("native close should succeed"),
+            rv(1)
+        );
 
         let metadata = std::fs::metadata(&host_path).expect("host-backed file should exist");
         assert!(
@@ -10101,22 +10089,22 @@ mod tests {
             let host = StandardHostServices::new(HalProfileId::Windows, HostPolicy::default());
             for idx in 0..open_count {
                 let path = path_seed.saturating_add(idx as i32);
-                let _ = host.open(path, 0).expect("open should succeed");
+                let _ = host.open(rv(path), rv(0)).expect("open should succeed");
             }
             let expected = 1 + open_count as i32;
-            let free = host.free_file(0).expect("free_file should succeed");
-            prop_assert_eq!(free, expected);
+            let free = host.free_file(rv(0)).expect("free_file should succeed");
+            prop_assert_eq!(free, rv(expected));
         }
 
         #[test]
         fn prop_seek_eof_boundary(path_token in 1i32..10_000, offset in 0i32..6000) {
             let host = StandardHostServices::new(HalProfileId::Windows, HostPolicy::default());
-            let handle = host.open(path_token, 0).expect("open should succeed");
-            let len = host.lof(handle).expect("lof should succeed");
-            host.seek(handle, offset).expect("seek should succeed");
+            let handle = host.open(rv(path_token), rv(0)).expect("open should succeed");
+            let len = expect_i32(host.lof(handle.clone()).expect("lof should succeed"));
+            host.seek(handle.clone(), rv(offset)).expect("seek should succeed");
             let eof = host.eof(handle).expect("eof should succeed");
             let expected = if offset >= len { 1 } else { 0 };
-            prop_assert_eq!(eof, expected);
+            prop_assert_eq!(eof, rv(expected));
         }
 
         #[test]

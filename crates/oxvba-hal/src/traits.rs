@@ -97,18 +97,12 @@ pub trait EventPumpHal: Send + Sync {
 }
 
 pub trait FileSystemHal: Send + Sync {
-    fn open(&self, path: ValueToken, mode: ValueToken) -> HalResult<ValueToken>;
-    fn open_value(&self, path: RuntimeValue, mode: RuntimeValue) -> HalResult<RuntimeValue>;
-    fn close(&self, handle: ValueToken) -> HalResult<ValueToken>;
-    fn close_value(&self, handle: RuntimeValue) -> HalResult<RuntimeValue>;
-    fn seek(&self, handle: ValueToken, position: ValueToken) -> HalResult<ValueToken>;
-    fn seek_value(&self, handle: RuntimeValue, position: RuntimeValue) -> HalResult<RuntimeValue>;
-    fn eof(&self, handle: ValueToken) -> HalResult<ValueToken>;
-    fn eof_value(&self, handle: RuntimeValue) -> HalResult<RuntimeValue>;
-    fn lof(&self, handle: ValueToken) -> HalResult<ValueToken>;
-    fn lof_value(&self, handle: RuntimeValue) -> HalResult<RuntimeValue>;
-    fn free_file(&self, range_selector: ValueToken) -> HalResult<ValueToken>;
-    fn free_file_value(&self, range_selector: RuntimeValue) -> HalResult<RuntimeValue>;
+    fn open(&self, path: RuntimeValue, mode: RuntimeValue) -> HalResult<RuntimeValue>;
+    fn close(&self, handle: RuntimeValue) -> HalResult<RuntimeValue>;
+    fn seek(&self, handle: RuntimeValue, position: RuntimeValue) -> HalResult<RuntimeValue>;
+    fn eof(&self, handle: RuntimeValue) -> HalResult<RuntimeValue>;
+    fn lof(&self, handle: RuntimeValue) -> HalResult<RuntimeValue>;
+    fn free_file(&self, range_selector: RuntimeValue) -> HalResult<RuntimeValue>;
 }
 
 pub trait ProcessEnvHal: Send + Sync {

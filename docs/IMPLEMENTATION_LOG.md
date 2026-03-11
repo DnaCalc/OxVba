@@ -1957,9 +1957,9 @@
   - added Windows regression coverage that a dispatch-valued `VARIANT` result produces a live object handle that can be released through the COM binding table
   - broader interface-pointer forms beyond `VT_DISPATCH` and real SAFEARRAY payloads remain open under `BLK-COM-VALUE-TRANSPORT-001`
 - Continued the runtime HAL input-seam migration into the filesystem domain:
-  - `FileSystemHal` value-path methods now accept semantic runtime inputs (`open_value`, `close_value`, `seek_value`, `eof_value`, `lof_value`, `free_file_value`) instead of taking raw tokens behind a value-return facade
+  - `FileSystemHal::{open,close,seek,eof,lof,free_file}` now use direct semantic `RuntimeValue` contracts instead of token-first methods plus `*_value` wrappers
   - VM `FreeFile` host execution now reads `RuntimeValue` directly before the HAL boundary
-  - added regression coverage that `open_value` accepts runtime string paths and that value-path filesystem calls remain deterministic on the current host subset
+  - added regression coverage that filesystem `open(...)` accepts runtime string paths and that semantic filesystem calls remain deterministic on the current host subset
 - Continued the runtime HAL result-seam migration into time/event domains:
   - `EventPumpHal::do_events()` now returns semantic `RuntimeValue` directly instead of a legacy token plus `do_events_value()` facade
   - `TimeLocaleHal::{date_serial_now,time_serial_now,timer_ticks}` now return semantic `RuntimeValue` directly instead of token-return methods plus `*_value()` facades

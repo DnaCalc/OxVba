@@ -60,7 +60,7 @@ Completed slices:
 10. VM host intrinsic execution for those lanes now reads `RuntimeValue` directly and no longer forces `read_slot(...)` legacy narrowing before the HAL boundary.
 11. The shared COM carrier now preserves runtime strings and `ObjectHandle(...)` semantics on outbound native COM argument marshalling instead of degrading them to plain integer tokens before the Windows `VARIANT` boundary.
 12. The supported native COM runtime-value return seam now binds `VT_DISPATCH` results back into adapter-owned object handles instead of forcing them through the legacy scalar return lane.
-13. The file-system value path now accepts semantic runtime inputs (`open_value`, `close_value`, `seek_value`, `eof_value`, `lof_value`, `free_file_value`) instead of keeping a token-only input contract behind a value-returning facade.
+13. `FileSystemHal::{open,close,seek,eof,lof,free_file}` now use direct semantic `RuntimeValue` contracts instead of token-first methods plus `*_value` wrappers.
 14. VM `WithEvents` binding storage now preserves semantic `RuntimeValue` payloads instead of flattening bound source/object values to raw integers, and the corresponding intrinsics now read/write semantic values directly.
 15. VM `DispatchInvoke` now reads the object slot from semantic runtime state and preserves object handles before constructing the COM request.
 16. `EventPumpHal::do_events()` and `TimeLocaleHal::{date_serial_now,time_serial_now,timer_ticks}` now return semantic `RuntimeValue` directly, and VM host intrinsics consume those semantic results without an intermediate token wrapper lane.

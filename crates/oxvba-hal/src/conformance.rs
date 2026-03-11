@@ -324,7 +324,7 @@ pub fn run_conformance(host: &dyn HostServices) -> ConformanceReport {
         CapabilityId::FileSystemIo,
         "fs.free_file",
         &["HAL-FS-006", "HAL-DES-004", "HAL-GEN-001", "HAL-GEN-003"],
-        host.fs().free_file(0).map(|_| ()),
+        host.fs().free_file(RuntimeValue::I32(0)).map(|_| ()),
     );
     probe(
         CapabilityId::ProcessEnv,
@@ -783,7 +783,7 @@ fn verify_fs_host_backed_contract(
     }
 
     let mut ok = true;
-    let handle = match host.fs().open(901, 0) {
+    let handle = match host.fs().open(RuntimeValue::I32(901), RuntimeValue::I32(0)) {
         Ok(handle) => handle,
         Err(err) => {
             failures.push(format!(
@@ -793,20 +793,24 @@ fn verify_fs_host_backed_contract(
             return false;
         }
     };
-    let _ = host.fs().close(handle);
+    let _ = host.fs().close(handle.clone());
 
     if host.policy().allow_filesystem_mutation {
-        match host.fs().open(902, 1) {
+        match host.fs().open(RuntimeValue::I32(902), RuntimeValue::I32(1)) {
             Ok(mutable_handle) => {
-                if let Err(err) = host.fs().seek(mutable_handle, 96) {
+                if let Err(err) = host
+                    .fs()
+                    .seek(mutable_handle.clone(), RuntimeValue::I32(96))
+                {
                     ok = false;
                     failures.push(format!(
                         "fs.seek mutation probe failed: {} ({})",
                         err.stable_code, err.message
                     ));
                 } else {
-                    match host.fs().lof(mutable_handle) {
+                    match host.fs().lof(mutable_handle.clone()) {
                         Ok(len) => {
+                            let len = runtime_i32(&len).unwrap_or_default();
                             if len < 96 {
                                 ok = false;
                                 failures.push(format!(
@@ -834,7 +838,7 @@ fn verify_fs_host_backed_contract(
                 ));
             }
         }
-    } else if let Err(err) = host.fs().open(903, 1) {
+    } else if let Err(err) = host.fs().open(RuntimeValue::I32(903), RuntimeValue::I32(1)) {
         if err.kind != HalErrorKind::PolicyDenied {
             ok = false;
             failures.push(format!(
@@ -852,12 +856,13 @@ fn verify_fs_host_backed_contract(
     if host_backed_active && descriptor.profile == crate::model::HalProfileId::Windows {
         // Windows-native realization check: mutation lane should not collapse to the deterministic
         // constant-size path.
-        match host.fs().open(904, 1) {
+        match host.fs().open(RuntimeValue::I32(904), RuntimeValue::I32(1)) {
             Ok(h) => {
-                let _ = host.fs().seek(h, 128);
-                match host.fs().lof(h) {
-                    Ok(len) if len >= 128 => {}
+                let _ = host.fs().seek(h.clone(), RuntimeValue::I32(128));
+                match host.fs().lof(h.clone()) {
+                    Ok(len) if runtime_i32(&len).unwrap_or_default() >= 128 => {}
                     Ok(len) => {
+                        let len = runtime_i32(&len).unwrap_or_default();
                         ok = false;
                         failures.push(format!(
                             "windows host-backed fs expected len >= 128, observed {}",

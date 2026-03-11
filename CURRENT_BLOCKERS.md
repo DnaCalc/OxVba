@@ -99,7 +99,7 @@ Run context: active parity/compliance execution plus in-progress feature worklis
     - `CreateObject`,
     - COM event subscription/callback helper intrinsics,
     - dynamic-link invoke wrappers,
-  - the file-system value path now accepts semantic runtime inputs (`open_value`, `close_value`, `seek_value`, `eof_value`, `lof_value`, `free_file_value`) instead of taking raw tokens behind a value-returning facade,
+  - `FileSystemHal::{open,close,seek,eof,lof,free_file}` now use direct semantic `RuntimeValue` contracts instead of token-first methods plus `*_value` wrappers,
   - VM host intrinsic execution for those lanes now reads `RuntimeValue` directly instead of forcing `read_slot(...)`/legacy token narrowing on entry,
   - VM `WithEvents` binding state now preserves semantic `RuntimeValue` payloads instead of flattening bound source/object values to raw integers,
   - VM `DispatchInvoke` now reads the object slot from semantic runtime state and preserves object handles instead of re-reading the object through the raw slot lane before constructing the COM request,

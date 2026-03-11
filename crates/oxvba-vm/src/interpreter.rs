@@ -516,7 +516,7 @@ impl Vm {
                     } else {
                         RuntimeValue::I32(0)
                     };
-                    match self.host_services.fs().free_file_value(selector) {
+                    match self.host_services.fs().free_file(selector) {
                         Ok(value) => {
                             self.write_value_slot(*dst, value)?;
                             pc += 1;

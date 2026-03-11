@@ -126,7 +126,7 @@ Status vocabulary:
     - `CreateObject` results now enter runtime state as `RuntimeValue::ObjectHandle(...)`,
     - HAL semantic-return helper wrappers are now in place and used by the VM for host-return paths,
     - the first input-side semantic wrapper slice is now in place for active VM host intrinsics (`MsgBox`, `InputBox`, `FreeFile`, `Shell`, `Environ`, `Dir`, `CreateObject`, COM event helper intrinsics, dynamic-link invoke),
-    - the file-system value path now also accepts semantic runtime inputs (`open_value`, `close_value`, `seek_value`, `eof_value`, `lof_value`, `free_file_value`) instead of only returning semantic values after token-only inputs,
+    - `FileSystemHal::{open,close,seek,eof,lof,free_file}` now also use direct semantic `RuntimeValue` contracts instead of token-first methods with separate `*_value` wrappers,
     - VM host intrinsic execution now reads `RuntimeValue` directly for those lanes instead of narrowing through `read_slot(...)` before the HAL boundary,
     - `EventPumpHal::do_events()` and `TimeLocaleHal::{date_serial_now,time_serial_now,timer_ticks}` now return semantic `RuntimeValue` directly and the corresponding VM time/event host intrinsics consume those results without intermediate `*_value()` wrappers,
     - `UiInteractionHal::{msg_box,input_box}` and `ProcessEnvHal::{shell,environ,dir}` now also use direct semantic `RuntimeValue` contracts and the corresponding VM/conformance/test surfaces consume them without token-first wrapper methods,
