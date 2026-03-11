@@ -144,6 +144,7 @@ Run context: active parity/compliance execution plus in-progress feature worklis
   - CLI execution now also uses the semantic snapshot lane by default and derives `SLOTS:` output from that value path only when needed,
   - host-side COM end-to-end, early-binding, and registered-lane integration tests now execute through the semantic snapshot APIs rather than the legacy integer snapshot APIs,
   - the Cranelift subset helper now also exposes semantic `RuntimeValue` snapshots as its primary execution API, with the integer-slot form reduced to an explicit compatibility wrapper,
+  - the CLI no longer stores a duplicate `Vec<i32>` execution result; `SLOTS:` output is now projected directly from semantic runtime values only at the output edge,
   - the remaining runtime/host boundary holdouts are now concentrated in:
     - `ComHal::dispatch_invoke_legacy_v2`,
     - `ComHal::{create_object_legacy,release_object_legacy,invalidate_typelib_cache_legacy}`,

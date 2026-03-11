@@ -36,32 +36,20 @@ fn main() {
     let execution = if dump_slots || dump_values {
         engine
             .execute_source_with_value_snapshot(&source)
-            .map(|values| ExecutionResult {
-                slots: values
-                    .iter()
-                    .map(|value| value.to_legacy_i32().unwrap_or(EMPTY_TAG))
-                    .collect(),
-                values,
-            })
+            .map(|values| ExecutionResult { values })
     } else {
         engine
             .execute_source_with_snapshot(&source)
-            .map(|values| ExecutionResult {
-                slots: values
-                    .iter()
-                    .map(|value| value.to_legacy_i32().unwrap_or(EMPTY_TAG))
-                    .collect(),
-                values,
-            })
+            .map(|values| ExecutionResult { values })
     };
 
     match execution {
         Ok(result) => {
             if dump_slots {
                 let payload = result
-                    .slots
+                    .values
                     .iter()
-                    .map(ToString::to_string)
+                    .map(|value| value.to_legacy_i32().unwrap_or(EMPTY_TAG).to_string())
                     .collect::<Vec<_>>()
                     .join(",");
                 println!("SLOTS:{payload}");
@@ -94,7 +82,6 @@ struct RunArgs {
 }
 
 struct ExecutionResult {
-    slots: Vec<i32>,
     values: Vec<RuntimeValue>,
 }
 
