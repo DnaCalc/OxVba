@@ -105,6 +105,11 @@ Status vocabulary:
   - the remaining COM runtime still lives materially in `crates/oxvba-hal/src/adapters/standard.rs`, but moving it now without the final invoke/property/server contracts would lock in unstable boundaries again.
 - Next required action:
   - define and execute the runtime value-model migration needed by `BLK-RUNTIME-VALUE-MODEL-001`, then continue the stabilized client/event/server extraction in `oxvba-com`.
+  - current progress on that migration:
+    - `RuntimeValue` exists as the first canonical runtime value type,
+    - VM register storage now persists semantic values,
+    - additive VM and host value-snapshot APIs are now in place,
+    - the remaining active seam is HAL/callback/JIT/public-snapshot migration.
 
 ### `IP-05` Windows early-bound COM and type-library parity
 

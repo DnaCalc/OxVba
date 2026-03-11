@@ -8,6 +8,7 @@ use oxvba_hal::{
     model::{CapabilityId, HostPolicy, native_host_profile},
     traits::{DynLinkDescriptorView, HostServices},
 };
+use oxvba_runtime::RuntimeValue;
 use oxvba_runtime::safe_array::{array_len_from_tag, is_array_tag as runtime_is_array_tag};
 use oxvba_runtime::value_tags::{
     EMPTY_TAG, NULL_TAG, error_tag_from_code, is_error_tag as runtime_is_error_tag,
@@ -119,11 +120,21 @@ impl Vm {
 
     fn ensure_slot_count(&mut self, slot_count: usize) {
         if slot_count > self.registers.registers.len() {
-            self.registers.registers.resize(slot_count, 0);
+            self.registers
+                .registers
+                .resize(slot_count, RuntimeValue::default());
         }
     }
 
     pub fn snapshot_slots(&self, slot_count: usize) -> Vec<i32> {
+        let end = slot_count.min(self.registers.registers.len());
+        self.registers.registers[..end]
+            .iter()
+            .map(|value| value.to_legacy_i32().unwrap_or(EMPTY_TAG))
+            .collect()
+    }
+
+    pub fn snapshot_values(&self, slot_count: usize) -> Vec<RuntimeValue> {
         let end = slot_count.min(self.registers.registers.len());
         self.registers.registers[..end].to_vec()
     }
@@ -1312,13 +1323,25 @@ impl Vm {
     }
 
     fn read_slot(&self, slot: usize) -> Result<i32, String> {
-        if slot >= self.registers.registers.len() {
-            return Err(format!("slot out of range: {slot}"));
-        }
-        Ok(self.registers.registers[slot])
+        self.read_value_slot(slot)?
+            .to_legacy_i32()
+            .map_err(|detail| {
+                format!("runtime value in slot {slot} cannot enter legacy i32 lane: {detail}")
+            })
     }
 
     fn write_slot(&mut self, slot: usize, value: i32) -> Result<(), String> {
+        self.write_value_slot(slot, RuntimeValue::from_legacy_i32(value))
+    }
+
+    fn read_value_slot(&self, slot: usize) -> Result<RuntimeValue, String> {
+        if slot >= self.registers.registers.len() {
+            return Err(format!("slot out of range: {slot}"));
+        }
+        Ok(self.registers.registers[slot].clone())
+    }
+
+    fn write_value_slot(&mut self, slot: usize, value: RuntimeValue) -> Result<(), String> {
         if slot >= self.registers.registers.len() {
             return Err(format!("slot out of range: {slot}"));
         }
@@ -1360,22 +1383,22 @@ impl Vm {
     }
 
     fn fast_read_slot(&self, slot: usize) -> Option<i32> {
-        self.registers.registers.get(slot).copied()
+        self.registers.registers.get(slot)?.as_i32_lossy()
     }
 
     fn fast_write_slot(&mut self, slot: usize, value: i32) -> bool {
-        let Some(dst) = self.registers.registers.get_mut(slot) else {
-            return false;
-        };
-        *dst = value;
-        true
+        self.write_value_slot(slot, RuntimeValue::from_legacy_i32(value))
+            .is_ok()
     }
 
     fn fast_add_const(&mut self, slot: usize, value: i32) -> bool {
         let Some(dst) = self.registers.registers.get_mut(slot) else {
             return false;
         };
-        *dst += value;
+        let Some(current) = dst.as_i32_lossy() else {
+            return false;
+        };
+        *dst = RuntimeValue::from_legacy_i32(current + value);
         true
     }
 
@@ -1383,7 +1406,10 @@ impl Vm {
         let Some(dst) = self.registers.registers.get_mut(slot) else {
             return false;
         };
-        *dst -= value;
+        let Some(current) = dst.as_i32_lossy() else {
+            return false;
+        };
+        *dst = RuntimeValue::from_legacy_i32(current - value);
         true
     }
 
@@ -1829,8 +1855,8 @@ mod tests {
         error::{HalError, HalErrorKind},
         model::CapabilityId,
     };
-    use oxvba_runtime::safe_array::ARRAY_TAG_BASE;
     use oxvba_runtime::value_tags::{EMPTY_TAG, NULL_TAG, error_tag_from_code};
+    use oxvba_runtime::{RuntimeValue, bstr::BStr, safe_array::ARRAY_TAG_BASE};
 
     #[test]
     fn executes_load_and_add_sequence() {
@@ -1866,6 +1892,33 @@ mod tests {
         let mut vm = Vm::default();
         vm.execute(&bytecode).expect("vm should execute bytecode");
         assert_eq!(vm.snapshot_slots(1), vec![7]);
+    }
+
+    #[test]
+    fn snapshot_values_preserve_non_legacy_runtime_values() {
+        let mut vm = Vm::default();
+        vm.reset_execution_state(1, false);
+        vm.write_value_slot(0, RuntimeValue::String(BStr("ABC".to_string())))
+            .expect("write string runtime value");
+
+        assert_eq!(
+            vm.snapshot_values(1),
+            vec![RuntimeValue::String(BStr("ABC".to_string()))]
+        );
+        assert_eq!(vm.snapshot_slots(1), vec![EMPTY_TAG]);
+    }
+
+    #[test]
+    fn read_value_slot_returns_runtime_value_shape() {
+        let mut vm = Vm::default();
+        vm.reset_execution_state(1, false);
+        vm.write_value_slot(0, RuntimeValue::Bool(true))
+            .expect("write bool runtime value");
+
+        assert_eq!(
+            vm.read_value_slot(0).expect("read runtime value"),
+            RuntimeValue::Bool(true)
+        );
     }
 
     #[test]

@@ -142,7 +142,7 @@ Open remainder:
 3. the unified late-bound object protocol is defined in code but is not yet wired through compiler/VM/host as the single runtime model,
 4. the next execution blocker is now explicit:
    - `BLK-RUNTIME-VALUE-MODEL-001`
-   - VM register storage, HAL value tokens, host snapshots, and many execution/test seams are still globally `i32` based.
+  - VM register storage and additive value snapshots have started migrating, but HAL value tokens, callback ingress, JIT/public observation surfaces, and many execution/test seams are still materially `i32` based.
 5. the blocker now has a dedicated execution owner:
    - `docs/worksets/WORKSET_2026-03-11_RUNTIME_VALUE_MODEL_MIGRATION.md`
 

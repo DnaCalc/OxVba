@@ -1,6 +1,31 @@
 # Implementation Log
 
 ## 2026-03-11
+- runtime value-model migration slice:
+  - added `crates/oxvba-runtime/src/runtime_value.rs` with the first canonical runtime value type:
+    - `Empty`
+    - `Null`
+    - `ErrorCode(...)`
+    - `I32`
+    - `Bool`
+    - `String`
+    - `ArrayIntent`
+    - `ObjectHandle`
+  - migrated `crates/oxvba-vm/src/register_file.rs` from raw `Vec<i32>` storage to `Vec<RuntimeValue>`
+  - widened VM APIs with additive semantic snapshot lanes:
+    - `Vm::snapshot_values(...)`
+    - `oxvba_vm::execute_and_snapshot_values*`
+  - widened host VM execution with additive semantic snapshot lanes:
+    - `ProjectRuntimeSession::snapshot_values()`
+    - `Engine::execute_source_with_value_snapshot*`
+    - `Engine::execute_project_with_value_snapshot_phased(...)`
+  - kept the legacy integer snapshot APIs in place for the unmigrated compatibility path
+  - explicitly locked the current boundary:
+    - VM-backed value snapshots are supported,
+    - JIT-backed value snapshots are still rejected until that lane migrates,
+    - HAL `ValueToken = i32` and callback/public observation narrowing remain the active blocker seam
+  - verification:
+    - `cargo test -p oxvba-runtime -p oxvba-vm -p oxvba-host --quiet` -> PASS
 - runtime value-model migration workset setup:
   - created a dedicated workset for the now-explicit substrate blocker:
     - `docs/worksets/WORKSET_2026-03-11_RUNTIME_VALUE_MODEL_MIGRATION.md`

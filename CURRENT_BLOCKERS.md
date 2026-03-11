@@ -80,15 +80,17 @@ Run context: active parity/compliance execution plus in-progress feature worklis
   - Blocks full closure of `IP-03` Windows late-bound COM client parity and `IP-04` `oxvba-com` extraction.
   - Blocks practical object/string/real-SAFEARRAY transport for `IP-08` host object/value bridge follow-through.
 - Current state:
-  - `crates/oxvba-vm/src/register_file.rs` stores `Vec<i32>`,
+  - `crates/oxvba-vm/src/register_file.rs` now stores `Vec<RuntimeValue>`,
+  - `crates/oxvba-vm/src/lib.rs` and `crates/oxvba-host/src/engine.rs` now expose additive VM-backed value-snapshot APIs alongside the legacy integer snapshot lane,
   - `crates/oxvba-hal/src/traits.rs` still defines `ValueToken = i32`,
-  - VM read/write helpers, snapshots, host test harnesses, and many bytecode execution paths are hard-wired to `i32`,
+  - callback ingress and many host/public execution helpers still narrow event/runtime values back to `i32`,
+  - JIT execution and parity harnesses still snapshot through `Vec<i32>`,
+  - many bytecode execution paths and tests still assume the legacy integer observation surface,
   - the new `ComValue` carrier and generic dynamic-object protocol can live at the COM boundary, but they cannot yet become the single runtime object/value model while the wider execution substrate remains token-only.
 - Exact unblock steps:
   - define the canonical runtime value representation or indirection model that replaces or strictly extends the current `i32` slot contract,
   - plan and execute migration of:
-    - VM register storage,
-    - VM read/write helpers,
+    - remaining VM read/write helpers and outward runtime APIs,
     - HAL `ValueToken` seams,
     - host/runtime snapshot and callback ingress surfaces,
     - JIT/VM equivalence expectations and affected tests,

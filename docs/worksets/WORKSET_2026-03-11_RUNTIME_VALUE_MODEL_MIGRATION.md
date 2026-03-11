@@ -1,7 +1,7 @@
 # Workset: Runtime Value Model Migration
 
 Date: 2026-03-11  
-Status: planned  
+Status: active  
 Primary ladder mapping: `v497..v505`, `v506..v513`  
 Secondary ladder mapping: `v524..v526`, `v540..v544`
 
@@ -27,17 +27,31 @@ Current blocker:
 1. `BLK-RUNTIME-VALUE-MODEL-001`
 
 Current structural constraints:
-1. [register_file.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-vm\src\register_file.rs) stores `Vec<i32>`.
-2. [traits.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-hal\src\traits.rs) defines `ValueToken = i32`.
-3. VM read/write helpers, snapshots, and many interpreter operations assume raw integer slots.
-4. Host execution helpers and tests assume `Vec<i32>` snapshots as the public observation surface.
-5. New semantic COM carrier/protocol slices can exist at the boundary, but cannot become the runtime’s authoritative model while these seams stay token-only.
+1. [register_file.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-vm\src\register_file.rs) has now been migrated to `Vec<RuntimeValue>`, but the surrounding execution substrate is still only partially widened.
+2. [traits.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-hal\src\traits.rs) still defines `ValueToken = i32`.
+3. VM read/write helpers and snapshots now have additive value-path support, but much of the interpreter/runtime boundary still assumes the legacy integer lane.
+4. Host execution helpers now expose VM-backed value snapshots, but JIT and many public/test observation paths still assume `Vec<i32>`.
+5. New semantic COM carrier/protocol slices can exist at the boundary, but cannot become the runtime’s authoritative model while these seams stay partially token-only.
 
 Consequences:
 1. object values remain awkward or impossible to carry honestly through runtime seams,
 2. strings/BSTR and real SAFEARRAY payloads cannot close on the right boundary,
 3. callback ingress and host-bridge object/value semantics keep narrowing too early,
 4. COM cleanup risks stalling unless the runtime substrate evolves.
+
+## 2.1 Execution status
+
+Completed slices:
+1. `RuntimeValue` now exists in [runtime_value.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-runtime\src\runtime_value.rs) as the first canonical runtime value type.
+2. VM register storage now persists `RuntimeValue` rather than raw `i32`.
+3. VM snapshot APIs now expose both legacy `snapshot_slots(...)` and semantic `snapshot_values(...)`.
+4. Host VM execution now exposes additive value-snapshot APIs while honestly rejecting the unmigrated JIT path.
+
+Remaining blocker seam:
+1. HAL `ValueToken = i32`,
+2. callback ingress and other outward runtime APIs still narrow too early,
+3. JIT and parity harnesses still observe only the integer slot lane,
+4. many tests still assume integer snapshots as the primary public contract.
 
 ## 3. Target architecture
 
@@ -128,6 +142,11 @@ Deliverables:
 Acceptance:
 1. VM execution is no longer intrinsically limited to raw `i32` values.
 
+Progress:
+1. `RegisterFile` migration is complete for the VM storage layer.
+2. additive VM/host value snapshot surfaces are in place.
+3. this phase remains open until the broader runtime-facing APIs stop depending on the legacy slot lane as their primary contract.
+
 ### Phase C. Boundary migration
 
 Deliverables:
@@ -138,6 +157,9 @@ Deliverables:
 
 Acceptance:
 1. runtime-facing external value carriers and dynamic-object protocol can traverse the core seams without early narrowing.
+
+Current blocker:
+1. HAL and callback/JIT/public observation surfaces remain the next required migration seam.
 
 ### Phase D. Integration follow-through
 

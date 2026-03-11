@@ -17,7 +17,8 @@ use oxvba_hal::{
     traits::HostServices,
 };
 use oxvba_jit::JitEngine;
-use oxvba_vm::{Vm, execute_and_snapshot_with_host};
+use oxvba_runtime::RuntimeValue;
+use oxvba_vm::{Vm, execute_and_snapshot_values_with_host, execute_and_snapshot_with_host};
 
 use crate::{
     events::{EventDispatcher, EventSourceKey},
@@ -105,6 +106,11 @@ impl ProjectRuntimeSession {
     pub fn snapshot_slots(&self) -> Vec<i32> {
         self.vm
             .snapshot_slots(self.compiled.bytecode.user_slot_count)
+    }
+
+    pub fn snapshot_values(&self) -> Vec<RuntimeValue> {
+        self.vm
+            .snapshot_values(self.compiled.bytecode.user_slot_count)
     }
 }
 
@@ -437,6 +443,14 @@ impl Engine {
             .map_err(|diagnostic| diagnostic.message().to_string())
     }
 
+    pub fn execute_source_with_value_snapshot(
+        &self,
+        source: &str,
+    ) -> Result<Vec<RuntimeValue>, String> {
+        self.execute_source_with_value_snapshot_phased(source)
+            .map_err(|diagnostic| diagnostic.message().to_string())
+    }
+
     pub fn execute_source_with_snapshot_phased(
         &self,
         source: &str,
@@ -454,6 +468,22 @@ impl Engine {
         }
 
         execute_and_snapshot_with_host(&bytecode, self.host_services.clone())
+            .map_err(PhaseDiagnostic::runtime)
+    }
+
+    pub fn execute_source_with_value_snapshot_phased(
+        &self,
+        source: &str,
+    ) -> Result<Vec<RuntimeValue>, PhaseDiagnostic> {
+        let bytecode = compile(source).map_err(|e| PhaseDiagnostic::compile(e.to_string()))?;
+        self.preflight_host_sensitive_support(&bytecode)?;
+        if self.config.enable_jit {
+            return Err(PhaseDiagnostic::runtime(
+                "runtime value snapshot requires VM execution path (set enable_jit=false)",
+            ));
+        }
+
+        execute_and_snapshot_values_with_host(&bytecode, self.host_services.clone())
             .map_err(PhaseDiagnostic::runtime)
     }
 
@@ -478,6 +508,26 @@ impl Engine {
         }
 
         execute_and_snapshot_with_host(&compiled.bytecode, self.host_services.clone())
+            .map_err(PhaseDiagnostic::runtime)
+    }
+
+    pub fn execute_project_with_value_snapshot_phased(
+        &self,
+        manifest: &ProjectManifest,
+    ) -> Result<Vec<RuntimeValue>, PhaseDiagnostic> {
+        let compiled =
+            compile_project(manifest).map_err(|e| PhaseDiagnostic::compile(e.to_string()))?;
+        if let Ok(mut dispatcher) = self.event_dispatcher.lock() {
+            dispatcher.apply_bindings(&compiled.event_dispatch_bindings);
+        }
+        self.preflight_host_sensitive_support(&compiled.bytecode)?;
+        if self.config.enable_jit {
+            return Err(PhaseDiagnostic::runtime(
+                "runtime value snapshot requires VM execution path (set enable_jit=false)",
+            ));
+        }
+
+        execute_and_snapshot_values_with_host(&compiled.bytecode, self.host_services.clone())
             .map_err(PhaseDiagnostic::runtime)
     }
 
@@ -679,7 +729,7 @@ mod tests {
     use oxvba_hal::model::{
         HalProfileId, HostPolicy, HostPolicyPreset, UiVirtualizationMode, UnsupportedFeatureMode,
     };
-    use oxvba_runtime::value_tags::error_tag_from_code;
+    use oxvba_runtime::{RuntimeValue, value_tags::error_tag_from_code};
     use std::collections::HashSet;
     use std::path::{Path, PathBuf};
 
@@ -5301,5 +5351,28 @@ mod tests {
     #[test]
     fn formal_v466_profile_status_document_exists() {
         assert!(repo_path("docs/profile-status/PROFILE_STATUS_V466.md").exists());
+    }
+
+    #[test]
+    fn runtime_value_snapshot_api_preserves_vm_value_shape() {
+        let out = Engine::new(HostConfig {
+            enable_jit: false,
+            root_object_name: None,
+        })
+        .execute_source_with_value_snapshot("Sub Main()\nDim x\nx = 4\nEnd Sub")
+        .expect("vm value snapshot should succeed");
+        assert_eq!(out, vec![RuntimeValue::I32(4)]);
+    }
+
+    #[test]
+    fn runtime_value_snapshot_api_rejects_jit_execution_path() {
+        let err = Engine::new(HostConfig {
+            enable_jit: true,
+            root_object_name: None,
+        })
+        .execute_source_with_value_snapshot_phased("Sub Main()\nDim x\nx = 4\nEnd Sub")
+        .expect_err("value snapshot should remain VM-only until JIT migrates");
+        assert_eq!(err.phase(), DiagnosticPhase::Runtime);
+        assert!(err.message().contains("VM execution path"));
     }
 }

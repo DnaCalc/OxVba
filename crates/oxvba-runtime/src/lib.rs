@@ -6,8 +6,10 @@ pub mod bstr;
 pub mod builtins;
 pub mod coerce;
 pub mod decimal;
+pub mod runtime_value;
 pub mod safe_array;
 pub mod value_tags;
 pub mod variant;
 
+pub use runtime_value::RuntimeValue;
 pub use variant::{VarType, Variant};
