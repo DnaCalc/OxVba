@@ -1760,3 +1760,14 @@
     - `docs/worksets/WORKSET_2026-03-10_IDISPATCH_LATEBOUND_COM_COMPLETION.md`
   - aligned the active blocker wording with that doctrine:
     - `CURRENT_BLOCKERS.md`
+- Refined the COM target architecture further:
+  - added an explicit design note that COM typelibs should project as synthetic reference/project metadata in the compiler while COM-backed objects adapt into the same internal late-bound object protocol used for OxVba/VBA objects:
+    - `docs/spec/COM_REFERENCE_FACADE_AND_DYNAMIC_OBJECT_PROTOCOL_V1.md`
+  - updated the main architecture and workset docs to make the unified dynamic-object protocol and synthetic reference-facade direction explicit:
+    - `docs/ARCHITECTURE.md`
+    - `docs/worksets/WORKSET_2026-03-09_OXVBA_COM_REPURPOSE_AND_HAL_COM_EXTRACTION.md`
+    - `docs/worksets/WORKSET_2026-03-10_IDISPATCH_LATEBOUND_COM_COMPLETION.md`
+    - `docs/spec/COM_EARLY_BINDING_TYPELIB_SCOPE_V1.md`
+    - `docs/spec/COM_CLIENT_LATEBOUND_BRIDGE_V1.md`
+  - tightened blocker sequencing so the next implementation pass is framed as shared protocol/value-boundary work rather than more adapter-local COM special cases:
+    - `CURRENT_BLOCKERS.md`

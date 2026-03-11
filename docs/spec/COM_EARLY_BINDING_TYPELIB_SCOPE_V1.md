@@ -120,6 +120,12 @@ Boundary ownership:
 - Compiler binder owns symbol/type/member resolution and typed call lowering decisions.
 - VM/runtime owns execution of the lowered call plan and deterministic error propagation.
 
+Reference-facade rule:
+
+- imported COM libraries should increasingly appear to the compiler as synthetic reference/project metadata rather than as a separate ad hoc COM-only symbol domain;
+- typelib metadata is therefore not just runtime lookup fuel, but compiler-visible reference structure;
+- runtime execution may still use COM-backed activation/invoke behind the scenes, but the compiler-facing model should align with normal referenced-library semantics wherever VBA behavior allows.
+
 ## 5. Project reference integration design
 
 ## 5.1 Reference representation

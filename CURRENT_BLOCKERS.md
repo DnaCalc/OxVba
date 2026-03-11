@@ -56,6 +56,7 @@ Run context: active parity/compliance execution plus in-progress feature worklis
   - object-valued COM arguments/results have no shared transport representation outside the narrow existing object-handle lanes,
   - the current shape therefore pushes COM-specific transport pressure into the wrong places instead of keeping OxVba semantic values canonical and letting `oxvba-com` perform boundary translation.
 - Exact unblock steps:
+  - define the unified internal late-bound object protocol that both native VBA objects and COM-backed objects will use,
   - define a canonical OxVba-side external-call value carrier that can preserve at least:
     - scalar integer/bool/null/error values,
     - array-tag or real SAFEARRAY payload intent,
@@ -63,10 +64,11 @@ Run context: active parity/compliance execution plus in-progress feature worklis
     - future BSTR/string payloads,
   - thread that carrier through compiler bytecode, VM host invoke construction, and callback transport without making raw COM wire structs the VM/compiler value model,
   - move `VARIANT`/`BSTR`/`SAFEARRAY`/interface-pointer translation into `oxvba-com`,
+  - align COM-backed object calls to the shared late-bound object protocol instead of preserving a COM-special runtime lane,
   - contract HAL toward delegation/bootstrap once the new carrier is in place,
   - then reopen practical SAFEARRAY/object/string late-bound COM work on top of that carrier.
 - Recommendation:
-  - treat the next implementation slice as a semantic-value transport redesign centered on `oxvba-com`, not another adapter-local patch.
+  - treat the next implementation slice as a semantic-value and dynamic-object-protocol redesign centered on `oxvba-com`, not another adapter-local patch.
 
 ### BLK-COM-BOUNDARY-001: Final `oxvba-com` extraction is blocked on unsettled COM behavior contracts
 - Impact:
@@ -78,6 +80,8 @@ Run context: active parity/compliance execution plus in-progress feature worklis
   - extracting now would freeze unstable invoke/property/server boundaries.
 - Exact unblock steps:
   - close `BLK-COM-IDISPATCH-001`,
+  - establish the synthetic reference-facade model for typelib-backed imports,
+  - establish the shared late-bound object protocol for native and COM-backed objects,
   - stabilize property/default-member intent model,
   - then extract client -> event -> server slices into `oxvba-com`.
 - Recommendation:

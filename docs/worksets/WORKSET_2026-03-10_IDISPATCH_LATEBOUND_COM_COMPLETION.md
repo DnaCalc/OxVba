@@ -18,6 +18,7 @@ This workset is specifically about client-side late binding:
 5. Office-relevant late-bound behavior across supported invoke shapes.
 
 This workset is the client-side completion track inside the broader `oxvba-com` repurpose/extraction program. It is not the whole COM extraction plan and not the COM server/export plan.
+It should land on the same internal late-bound object protocol used for OxVba/VBA objects rather than hardening a COM-special runtime path.
 
 ## 2. Current state
 
@@ -97,6 +98,17 @@ Current gap:
 2. richer values are either reduced before the COM boundary or not transportable at all,
 3. additional late-bound parity work would otherwise keep reinforcing the wrong boundary.
 
+### IDC-02B Unified late-bound object protocol
+
+Need:
+1. one internal dynamic-call model for late-bound VBA objects and COM-backed objects,
+2. semantic operations for method/get/let/set, named args, omission, and default-member intent,
+3. COM adaptation that implements that protocol rather than bypassing it.
+
+Current gap:
+1. late-bound COM still reads as a partially separate execution lane in the current docs and code shape,
+2. property/default-member closure is harder while COM and native dynamic-object semantics are not yet converged.
+
 ### IDC-03 `VARIANT` marshalling parity
 
 Need:
@@ -154,7 +166,18 @@ Acceptance:
 1. late-bound COM calls are no longer fundamentally limited by the lossy `i32` transport lane,
 2. further COM parity work can proceed without deepening HAL-owned or adapter-local wire handling.
 
-### Phase C. `DISPPARAMS` and named-arg support
+### Phase C. Unified dynamic-object protocol alignment
+
+Deliverables:
+1. define the internal late-bound object protocol used by OxVba/VBA objects,
+2. adapt COM-backed objects to that protocol inside `oxvba-com`,
+3. align default-member/property intent transport with that shared protocol.
+
+Acceptance:
+1. late-bound COM is no longer a special top-level runtime path,
+2. downstream property/default-member work can close on one semantics model.
+
+### Phase D. `DISPPARAMS` and named-arg support
 
 Deliverables:
 1. request model extension for named args and omission metadata,
@@ -164,7 +187,7 @@ Deliverables:
 Acceptance:
 1. method/property invoke shapes with named args no longer collapse into positional-only subset semantics.
 
-### Phase D. `VARIANT` / object / array marshalling expansion
+### Phase E. `VARIANT` / object / array marshalling expansion
 
 Deliverables:
 1. supported Automation type matrix for late-bound client calls,
@@ -175,7 +198,7 @@ Deliverables:
 Acceptance:
 1. supported argument/result categories cross the invoke boundary without integer-token-only distortion.
 
-### Phase E. Error-channel and `Err` fidelity
+### Phase F. Error-channel and `Err` fidelity
 
 Deliverables:
 1. stable mapping rules for `HRESULT`, `ArgErr`, `VarResult`, and bounded `ExcepInfo`,
@@ -185,7 +208,7 @@ Deliverables:
 Acceptance:
 1. failure behavior is deterministic and closer to real VBA late-bound expectations.
 
-### Phase F. Real-lane evidence closure
+### Phase G. Real-lane evidence closure
 
 Deliverables:
 1. controlled fixture matrix for:
@@ -232,8 +255,9 @@ The completion pass should cover at minimum:
 1. Do not re-expand HAL into the long-term COM home.
 2. New late-bound invoke/marshalling logic should prefer `oxvba-com` ownership wherever practical.
 3. Keep compiler/VM/host on canonical OxVba semantic values or a host-neutral carrier rather than raw COM wire types.
-4. Keep deterministic unsupported behavior on non-Windows profiles.
-5. Do not claim “full VBA parity” until the acceptance matrix and evidence actually support that claim.
+4. Make COM-backed objects adapt into the same internal late-bound object protocol used for VBA objects.
+5. Keep deterministic unsupported behavior on non-Windows profiles.
+6. Do not claim “full VBA parity” until the acceptance matrix and evidence actually support that claim.
 
 ## 9. Verification
 
@@ -259,17 +283,19 @@ pwsh -ExecutionPolicy Bypass -File scripts/run-com-registered.ps1
 This workset is complete when:
 1. the supported late-bound client invoke matrix is explicitly documented,
 2. the canonical OxVba-side value carrier replaces the lossy token-only invoke lane for the supported categories,
-3. named/optional argument support for the chosen subset is real, not deferred text,
-4. object/array/value marshalling covers the supported Automation matrix,
-5. property `get` / `put` / `putref` are evidence-backed,
-6. failure-channel mapping is documented and tested,
-7. controlled and registered lanes demonstrate the supported surface,
-8. repo docs can honestly say OxVba supports the defined Windows late-bound `IDispatch` client scope without hand-waving.
+3. COM-backed objects run through the same internal late-bound object protocol as VBA objects,
+4. named/optional argument support for the chosen subset is real, not deferred text,
+5. object/array/value marshalling covers the supported Automation matrix,
+6. property `get` / `put` / `putref` are evidence-backed,
+7. failure-channel mapping is documented and tested,
+8. controlled and registered lanes demonstrate the supported surface,
+9. repo docs can honestly say OxVba supports the defined Windows late-bound `IDispatch` client scope without hand-waving.
 
 ## 11. Related documents
 
 - `docs/worksets/WORKSET_2026-03-09_COM_INTEROP_CONTINUATION_MULTIARG_LATEBOUND_AND_EVENT_PROJECTION.md`
 - `docs/worksets/WORKSET_2026-03-09_OXVBA_COM_REPURPOSE_AND_HAL_COM_EXTRACTION.md`
+- `docs/spec/COM_REFERENCE_FACADE_AND_DYNAMIC_OBJECT_PROTOCOL_V1.md`
 - `docs/spec/COM_CLIENT_LATEBOUND_BRIDGE_V1.md`
 - `docs/spec/COM_CLIENT_SERVER_SCOPE_V1.md`
 - `docs/spec/COM_CLIENT_SERVER_CONFORMANCE_V1.md`
