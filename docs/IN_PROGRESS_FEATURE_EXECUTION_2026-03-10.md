@@ -151,8 +151,13 @@ Status vocabulary:
       - `Engine::execute_project_with_snapshot_phased(...)` now returns semantic `RuntimeValue` snapshots,
       - explicit integer-slot compatibility is labeled `execute_project_with_legacy_snapshot_phased(...)`,
       - `ProjectRuntimeSession::snapshot()` is now the semantic primary and `snapshot_legacy_slots()` is the explicit compatibility view,
+    - VM/JIT library snapshot helpers are now also value-first by name:
+      - `oxvba_vm::execute_and_snapshot*` now returns semantic `RuntimeValue` snapshots,
+      - explicit integer-slot compatibility is labeled `execute_and_legacy_snapshot*`,
+      - `JitEngine::execute_and_snapshot*` now returns semantic `RuntimeValue` snapshots,
+      - explicit integer-slot compatibility is labeled `execute_and_legacy_snapshot*`,
     - CLI execution now uses the semantic snapshot lane by default and derives integer slots from `RuntimeValue` only at the output edge,
-    - the remaining active seam is the actual HAL `ValueToken` contract plus remaining outward runtime APIs and the still-legacy-heavy caller/test estate around integer snapshots.
+    - the remaining active seam is the actual HAL `ValueToken` contract plus the remaining direct `Vm`/interpreter observation APIs and the still-legacy-heavy caller/test estate around integer snapshots.
 
 ### `IP-05` Windows early-bound COM and type-library parity
 

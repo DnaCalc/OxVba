@@ -29,31 +29,42 @@ pub fn execute(bytecode: &Bytecode) -> Result<(), String> {
     vm.execute(bytecode)
 }
 
-pub fn execute_and_snapshot(bytecode: &Bytecode) -> Result<Vec<i32>, String> {
-    execute_and_snapshot_values(bytecode).map(project_runtime_values_to_legacy_slots)
-}
-
-pub fn execute_and_snapshot_values(bytecode: &Bytecode) -> Result<Vec<RuntimeValue>, String> {
+pub fn execute_and_snapshot(bytecode: &Bytecode) -> Result<Vec<RuntimeValue>, String> {
     let mut vm = Vm::new(default_host_services());
     vm.execute(bytecode)?;
     Ok(vm.snapshot_values(bytecode.user_slot_count))
 }
 
-pub fn execute_and_snapshot_with_typed_fastpaths(
-    bytecode: &Bytecode,
-    typed_fastpaths: bool,
-) -> Result<Vec<i32>, String> {
-    execute_and_snapshot_values_with_typed_fastpaths(bytecode, typed_fastpaths)
-        .map(project_runtime_values_to_legacy_slots)
+pub fn execute_and_snapshot_values(bytecode: &Bytecode) -> Result<Vec<RuntimeValue>, String> {
+    execute_and_snapshot(bytecode)
 }
 
-pub fn execute_and_snapshot_values_with_typed_fastpaths(
+pub fn execute_and_legacy_snapshot(bytecode: &Bytecode) -> Result<Vec<i32>, String> {
+    execute_and_snapshot(bytecode).map(project_runtime_values_to_legacy_slots)
+}
+
+pub fn execute_and_snapshot_with_typed_fastpaths(
     bytecode: &Bytecode,
     typed_fastpaths: bool,
 ) -> Result<Vec<RuntimeValue>, String> {
     let mut vm = Vm::new(default_host_services());
     vm.execute_with_typed_fastpaths(bytecode, typed_fastpaths)?;
     Ok(vm.snapshot_values(bytecode.user_slot_count))
+}
+
+pub fn execute_and_snapshot_values_with_typed_fastpaths(
+    bytecode: &Bytecode,
+    typed_fastpaths: bool,
+) -> Result<Vec<RuntimeValue>, String> {
+    execute_and_snapshot_with_typed_fastpaths(bytecode, typed_fastpaths)
+}
+
+pub fn execute_and_legacy_snapshot_with_typed_fastpaths(
+    bytecode: &Bytecode,
+    typed_fastpaths: bool,
+) -> Result<Vec<i32>, String> {
+    execute_and_snapshot_with_typed_fastpaths(bytecode, typed_fastpaths)
+        .map(project_runtime_values_to_legacy_slots)
 }
 
 pub fn execute_with_host(
@@ -67,34 +78,28 @@ pub fn execute_with_host(
 pub fn execute_and_snapshot_with_host(
     bytecode: &Bytecode,
     host_services: Arc<dyn HostServices>,
-) -> Result<Vec<i32>, String> {
-    execute_and_snapshot_values_with_host(bytecode, host_services)
-        .map(project_runtime_values_to_legacy_slots)
-}
-
-pub fn execute_and_snapshot_values_with_host(
-    bytecode: &Bytecode,
-    host_services: Arc<dyn HostServices>,
 ) -> Result<Vec<RuntimeValue>, String> {
     let mut vm = Vm::new(host_services);
     vm.execute(bytecode)?;
     Ok(vm.snapshot_values(bytecode.user_slot_count))
 }
 
-pub fn execute_and_snapshot_with_host_and_typed_fastpaths(
+pub fn execute_and_snapshot_values_with_host(
     bytecode: &Bytecode,
     host_services: Arc<dyn HostServices>,
-    typed_fastpaths: bool,
-) -> Result<Vec<i32>, String> {
-    execute_and_snapshot_values_with_host_and_typed_fastpaths(
-        bytecode,
-        host_services,
-        typed_fastpaths,
-    )
-    .map(project_runtime_values_to_legacy_slots)
+) -> Result<Vec<RuntimeValue>, String> {
+    execute_and_snapshot_with_host(bytecode, host_services)
 }
 
-pub fn execute_and_snapshot_values_with_host_and_typed_fastpaths(
+pub fn execute_and_legacy_snapshot_with_host(
+    bytecode: &Bytecode,
+    host_services: Arc<dyn HostServices>,
+) -> Result<Vec<i32>, String> {
+    execute_and_snapshot_with_host(bytecode, host_services)
+        .map(project_runtime_values_to_legacy_slots)
+}
+
+pub fn execute_and_snapshot_with_host_and_typed_fastpaths(
     bytecode: &Bytecode,
     host_services: Arc<dyn HostServices>,
     typed_fastpaths: bool,
@@ -102,6 +107,23 @@ pub fn execute_and_snapshot_values_with_host_and_typed_fastpaths(
     let mut vm = Vm::new(host_services);
     vm.execute_with_typed_fastpaths(bytecode, typed_fastpaths)?;
     Ok(vm.snapshot_values(bytecode.user_slot_count))
+}
+
+pub fn execute_and_snapshot_values_with_host_and_typed_fastpaths(
+    bytecode: &Bytecode,
+    host_services: Arc<dyn HostServices>,
+    typed_fastpaths: bool,
+) -> Result<Vec<RuntimeValue>, String> {
+    execute_and_snapshot_with_host_and_typed_fastpaths(bytecode, host_services, typed_fastpaths)
+}
+
+pub fn execute_and_legacy_snapshot_with_host_and_typed_fastpaths(
+    bytecode: &Bytecode,
+    host_services: Arc<dyn HostServices>,
+    typed_fastpaths: bool,
+) -> Result<Vec<i32>, String> {
+    execute_and_snapshot_with_host_and_typed_fastpaths(bytecode, host_services, typed_fastpaths)
+        .map(project_runtime_values_to_legacy_slots)
 }
 
 fn default_host_services() -> Arc<dyn HostServices> {

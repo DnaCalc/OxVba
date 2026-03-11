@@ -81,13 +81,18 @@ Completed slices:
    - explicit integer-slot compatibility is labeled `execute_source_with_legacy_snapshot*`,
    - `ProjectRuntimeSession::snapshot()` is now the semantic primary and `snapshot_legacy_slots()` is the explicit compatibility view.
 30. CLI execution now uses the semantic snapshot lane by default and derives `SLOTS:` output from that value path only when requested.
+31. VM/JIT library snapshot helpers are now value-first by name:
+   - `oxvba_vm::execute_and_snapshot*` now returns semantic `RuntimeValue` snapshots,
+   - explicit integer-slot compatibility is labeled `execute_and_legacy_snapshot*`,
+   - `JitEngine::execute_and_snapshot*` now returns semantic `RuntimeValue` snapshots,
+   - explicit integer-slot compatibility is labeled `execute_and_legacy_snapshot*`.
 
 Remaining blocker seam:
 1. HAL `ValueToken = i32` still anchors many remaining seams,
 2. the remaining holdouts are now concentrated in:
    - `ComHal::{create_object_value,dispatch_invoke_v2}`,
-   - remaining VM/library/public compatibility surfaces that still expose integer-slot observation as a primary or strongly-coupled contract,
-3. many public observation APIs still expose the legacy integer lane as the primary compatibility surface,
+   - remaining direct `Vm`/interpreter observation APIs that still expose integer-slot observation as the primary instance-level contract,
+3. many interpreter tests and parity expectations still anchor on the legacy integer lane,
 4. JIT internals and parity harnesses still observe only the integer slot lane for Cranelift-supported subsets,
 5. many tests still assume integer snapshots as the primary public contract.
 
@@ -107,6 +112,12 @@ This model must remain OxVba-semantic:
 1. not raw COM wire types,
 2. not a COM-special runtime lane,
 3. not a host-specific alternate value system.
+4. layout-level alignment with COM-style representations is acceptable when it reduces marshalling cost without handing semantic ownership to COM.
+
+Implementation default:
+1. `Variant`/`BSTR`-like layouts are acceptable defaults where they help the external-call boundary,
+2. but the runtime still owns semantic meaning and execution contracts,
+3. and `oxvba-com` remains the place where those semantic values are translated to/from COM wire behavior.
 
 ### 3.2 Compatible execution strategy
 

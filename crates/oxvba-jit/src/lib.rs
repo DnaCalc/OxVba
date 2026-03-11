@@ -11,7 +11,7 @@ use oxvba_hal::{
     traits::HostServices,
 };
 use oxvba_runtime::{RuntimeValue, value_tags::EMPTY_TAG};
-use oxvba_vm::execute_and_snapshot_values_with_host;
+use oxvba_vm::execute_and_snapshot_with_host;
 use thiserror::Error;
 
 #[derive(Debug, Error)]
@@ -35,28 +35,23 @@ impl JitEngine {
         Ok(())
     }
 
-    pub fn execute_and_snapshot(&self, bytecode: &Bytecode) -> Result<Vec<i32>, JitError> {
-        self.execute_and_snapshot_values_with_host(bytecode, default_host_services())
-            .map(project_runtime_values_to_legacy_slots)
+    pub fn execute_and_snapshot(&self, bytecode: &Bytecode) -> Result<Vec<RuntimeValue>, JitError> {
+        self.execute_and_snapshot_with_host(bytecode, default_host_services())
     }
 
     pub fn execute_and_snapshot_values(
         &self,
         bytecode: &Bytecode,
     ) -> Result<Vec<RuntimeValue>, JitError> {
-        self.execute_and_snapshot_values_with_host(bytecode, default_host_services())
+        self.execute_and_snapshot(bytecode)
     }
 
-    pub fn execute_and_snapshot_with_host(
-        &self,
-        bytecode: &Bytecode,
-        host_services: Arc<dyn HostServices>,
-    ) -> Result<Vec<i32>, JitError> {
-        self.execute_and_snapshot_values_with_host(bytecode, host_services)
+    pub fn execute_and_legacy_snapshot(&self, bytecode: &Bytecode) -> Result<Vec<i32>, JitError> {
+        self.execute_and_snapshot(bytecode)
             .map(project_runtime_values_to_legacy_slots)
     }
 
-    pub fn execute_and_snapshot_values_with_host(
+    pub fn execute_and_snapshot_with_host(
         &self,
         bytecode: &Bytecode,
         host_services: Arc<dyn HostServices>,
@@ -71,7 +66,24 @@ impl JitEngine {
                 })
                 .map_err(JitError::Execution);
         }
-        execute_and_snapshot_values_with_host(bytecode, host_services).map_err(JitError::Execution)
+        execute_and_snapshot_with_host(bytecode, host_services).map_err(JitError::Execution)
+    }
+
+    pub fn execute_and_snapshot_values_with_host(
+        &self,
+        bytecode: &Bytecode,
+        host_services: Arc<dyn HostServices>,
+    ) -> Result<Vec<RuntimeValue>, JitError> {
+        self.execute_and_snapshot_with_host(bytecode, host_services)
+    }
+
+    pub fn execute_and_legacy_snapshot_with_host(
+        &self,
+        bytecode: &Bytecode,
+        host_services: Arc<dyn HostServices>,
+    ) -> Result<Vec<i32>, JitError> {
+        self.execute_and_snapshot_with_host(bytecode, host_services)
+            .map(project_runtime_values_to_legacy_slots)
     }
 }
 
@@ -104,7 +116,7 @@ mod tests {
         assert!(!cranelift::supports_bytecode(&bytecode));
 
         let out = JitEngine
-            .execute_and_snapshot(&bytecode)
+            .execute_and_legacy_snapshot(&bytecode)
             .expect("fallback execution should succeed");
         assert!(out.is_empty());
     }
@@ -145,7 +157,7 @@ mod tests {
             adapters::for_profile(HalProfileId::Windows, HostPolicy::interactive_dev());
 
         let out = JitEngine
-            .execute_and_snapshot_with_host(&bytecode, host_services)
+            .execute_and_legacy_snapshot_with_host(&bytecode, host_services)
             .expect("fallback legacy snapshot should succeed");
         assert_eq!(out.len(), 1);
         assert!(out[0] > 0);
@@ -157,9 +169,9 @@ mod tests {
         let bytecode = oxvba_compiler::compile(source).expect("compile should succeed");
         assert!(cranelift::supports_bytecode(&bytecode));
 
-        let vm = oxvba_vm::execute_and_snapshot(&bytecode).expect("vm should execute");
+        let vm = oxvba_vm::execute_and_legacy_snapshot(&bytecode).expect("vm should execute");
         let jit = JitEngine
-            .execute_and_snapshot(&bytecode)
+            .execute_and_legacy_snapshot(&bytecode)
             .expect("jit should execute");
         assert_eq!(jit, vm);
     }
@@ -171,9 +183,9 @@ mod tests {
         let bytecode = oxvba_compiler::compile(source).expect("compile should succeed");
         assert!(cranelift::supports_bytecode(&bytecode));
 
-        let vm = oxvba_vm::execute_and_snapshot(&bytecode).expect("vm should execute");
+        let vm = oxvba_vm::execute_and_legacy_snapshot(&bytecode).expect("vm should execute");
         let jit = JitEngine
-            .execute_and_snapshot(&bytecode)
+            .execute_and_legacy_snapshot(&bytecode)
             .expect("jit should execute");
         assert_eq!(jit, vm);
     }
@@ -193,9 +205,9 @@ mod tests {
         let bytecode = oxvba_compiler::compile(source).expect("compile should succeed");
         assert!(cranelift::supports_bytecode(&bytecode));
 
-        let vm = oxvba_vm::execute_and_snapshot(&bytecode).expect("vm should execute");
+        let vm = oxvba_vm::execute_and_legacy_snapshot(&bytecode).expect("vm should execute");
         let jit = JitEngine
-            .execute_and_snapshot(&bytecode)
+            .execute_and_legacy_snapshot(&bytecode)
             .expect("jit should execute");
         assert_eq!(jit, vm);
     }
@@ -206,9 +218,9 @@ mod tests {
         let bytecode = oxvba_compiler::compile(source).expect("compile should succeed");
         assert!(!cranelift::supports_bytecode(&bytecode));
 
-        let vm = oxvba_vm::execute_and_snapshot(&bytecode).expect("vm should execute");
+        let vm = oxvba_vm::execute_and_legacy_snapshot(&bytecode).expect("vm should execute");
         let jit = JitEngine
-            .execute_and_snapshot(&bytecode)
+            .execute_and_legacy_snapshot(&bytecode)
             .expect("jit fallback should execute");
         assert_eq!(jit, vm);
         assert_eq!(
@@ -223,9 +235,9 @@ mod tests {
         let bytecode = oxvba_compiler::compile(source).expect("compile should succeed");
         assert!(!cranelift::supports_bytecode(&bytecode));
 
-        let vm = oxvba_vm::execute_and_snapshot(&bytecode).expect("vm should execute");
+        let vm = oxvba_vm::execute_and_legacy_snapshot(&bytecode).expect("vm should execute");
         let jit = JitEngine
-            .execute_and_snapshot(&bytecode)
+            .execute_and_legacy_snapshot(&bytecode)
             .expect("jit fallback should execute");
         assert_eq!(jit, vm);
         assert_eq!(jit, vec![0, 1, 10, 3, 0, 0, 0, 1]);
@@ -237,9 +249,9 @@ mod tests {
         let bytecode = oxvba_compiler::compile(source).expect("compile should succeed");
         assert!(!cranelift::supports_bytecode(&bytecode));
 
-        let vm = oxvba_vm::execute_and_snapshot(&bytecode).expect("vm should execute");
+        let vm = oxvba_vm::execute_and_legacy_snapshot(&bytecode).expect("vm should execute");
         let jit = JitEngine
-            .execute_and_snapshot(&bytecode)
+            .execute_and_legacy_snapshot(&bytecode)
             .expect("jit fallback should execute");
         assert_eq!(jit, vm);
         assert_eq!(jit, vec![1, 1, 1, 1, 0, 10]);
@@ -251,9 +263,9 @@ mod tests {
         let bytecode = oxvba_compiler::compile(source).expect("compile should succeed");
         assert!(!cranelift::supports_bytecode(&bytecode));
 
-        let vm = oxvba_vm::execute_and_snapshot(&bytecode).expect("vm should execute");
+        let vm = oxvba_vm::execute_and_legacy_snapshot(&bytecode).expect("vm should execute");
         let jit = JitEngine
-            .execute_and_snapshot(&bytecode)
+            .execute_and_legacy_snapshot(&bytecode)
             .expect("jit fallback should execute");
         assert_eq!(jit, vm);
         assert_eq!(jit, vec![5, 0, 0, 6]);

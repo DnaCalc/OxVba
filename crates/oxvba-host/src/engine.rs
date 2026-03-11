@@ -19,7 +19,7 @@ use oxvba_hal::{
 use oxvba_jit::JitEngine;
 use oxvba_runtime::value_tags::EMPTY_TAG;
 use oxvba_runtime::{ObjectHandle, RuntimeValue};
-use oxvba_vm::{Vm, execute_and_snapshot_values_with_host};
+use oxvba_vm::{Vm, execute_and_snapshot_with_host};
 
 use crate::{
     events::{EventDispatcher, EventSourceKey},
@@ -494,11 +494,11 @@ impl Engine {
                 .map_err(|e| PhaseDiagnostic::runtime(e.to_string()))?;
             return self
                 .jit
-                .execute_and_snapshot_values_with_host(&bytecode, self.host_services.clone())
+                .execute_and_snapshot_with_host(&bytecode, self.host_services.clone())
                 .map_err(|e| PhaseDiagnostic::runtime(e.to_string()));
         }
 
-        execute_and_snapshot_values_with_host(&bytecode, self.host_services.clone())
+        execute_and_snapshot_with_host(&bytecode, self.host_services.clone())
             .map_err(PhaseDiagnostic::runtime)
     }
 
@@ -533,14 +533,11 @@ impl Engine {
                 .map_err(|e| PhaseDiagnostic::runtime(e.to_string()))?;
             return self
                 .jit
-                .execute_and_snapshot_values_with_host(
-                    &compiled.bytecode,
-                    self.host_services.clone(),
-                )
+                .execute_and_snapshot_with_host(&compiled.bytecode, self.host_services.clone())
                 .map_err(|e| PhaseDiagnostic::runtime(e.to_string()));
         }
 
-        execute_and_snapshot_values_with_host(&compiled.bytecode, self.host_services.clone())
+        execute_and_snapshot_with_host(&compiled.bytecode, self.host_services.clone())
             .map_err(PhaseDiagnostic::runtime)
     }
 
@@ -1141,7 +1138,7 @@ mod tests {
             .expect("baseline execution should succeed");
 
         assert_eq!(fast, baseline);
-        assert_eq!(fast[0], 300);
+        assert_eq!(fast[0], RuntimeValue::I32(300));
     }
 
     #[test]
@@ -3053,8 +3050,8 @@ mod tests {
         let optimized = oxvba_compiler::optimize::optimize_module(checked.clone());
         let slow_bc = oxvba_compiler::emit::emit_bytecode(&checked);
         let fast_bc = oxvba_compiler::emit::emit_bytecode(&optimized);
-        let slow = oxvba_vm::execute_and_snapshot(&slow_bc).expect("slow execution");
-        let fast = oxvba_vm::execute_and_snapshot(&fast_bc).expect("fast execution");
+        let slow = oxvba_vm::execute_and_legacy_snapshot(&slow_bc).expect("slow execution");
+        let fast = oxvba_vm::execute_and_legacy_snapshot(&fast_bc).expect("fast execution");
         assert_eq!(fast, slow);
     }
 
@@ -3066,8 +3063,8 @@ mod tests {
         let optimized = oxvba_compiler::optimize::optimize_module(checked.clone());
         let slow_bc = oxvba_compiler::emit::emit_bytecode(&checked);
         let fast_bc = oxvba_compiler::emit::emit_bytecode(&optimized);
-        let slow = oxvba_vm::execute_and_snapshot(&slow_bc).expect("slow execution");
-        let fast = oxvba_vm::execute_and_snapshot(&fast_bc).expect("fast execution");
+        let slow = oxvba_vm::execute_and_legacy_snapshot(&slow_bc).expect("slow execution");
+        let fast = oxvba_vm::execute_and_legacy_snapshot(&fast_bc).expect("fast execution");
         assert_eq!(fast, slow);
     }
 
@@ -3079,8 +3076,8 @@ mod tests {
         let optimized = oxvba_compiler::optimize::optimize_module(checked.clone());
         let slow_bc = oxvba_compiler::emit::emit_bytecode(&checked);
         let fast_bc = oxvba_compiler::emit::emit_bytecode(&optimized);
-        let slow = oxvba_vm::execute_and_snapshot(&slow_bc).expect("slow execution");
-        let fast = oxvba_vm::execute_and_snapshot(&fast_bc).expect("fast execution");
+        let slow = oxvba_vm::execute_and_legacy_snapshot(&slow_bc).expect("slow execution");
+        let fast = oxvba_vm::execute_and_legacy_snapshot(&fast_bc).expect("fast execution");
         assert_eq!(fast, slow);
     }
 
@@ -4935,8 +4932,8 @@ mod tests {
         let optimized = oxvba_compiler::optimize::optimize_module(checked.clone());
         let slow_bc = oxvba_compiler::emit::emit_bytecode(&checked);
         let fast_bc = oxvba_compiler::emit::emit_bytecode(&optimized);
-        let slow = oxvba_vm::execute_and_snapshot(&slow_bc).expect("slow execution");
-        let fast = oxvba_vm::execute_and_snapshot(&fast_bc).expect("fast execution");
+        let slow = oxvba_vm::execute_and_legacy_snapshot(&slow_bc).expect("slow execution");
+        let fast = oxvba_vm::execute_and_legacy_snapshot(&fast_bc).expect("fast execution");
         assert_eq!(fast, slow);
     }
 

@@ -84,6 +84,7 @@ Run context: active parity/compliance execution plus in-progress feature worklis
 - Current state:
   - `crates/oxvba-vm/src/register_file.rs` now stores `Vec<RuntimeValue>`,
   - `crates/oxvba-vm/src/lib.rs` and `crates/oxvba-host/src/engine.rs` now expose semantic value-snapshot APIs as the primary execution lane, with the legacy integer snapshot surface reduced to compatibility projection over `RuntimeValue`,
+  - `crates/oxvba-jit/src/lib.rs` now also exposes semantic value-snapshot APIs as the primary execution lane, with the legacy integer snapshot surface reduced to compatibility projection over `RuntimeValue`,
   - `crates/oxvba-hal/src/traits.rs` still defines `ValueToken = i32`,
   - the runtime now records `CreateObject` results as `RuntimeValue::ObjectHandle(...)` rather than plain integer slots,
   - COM callback ingress now preserves `RuntimeValue` into the runtime, but many callers and tests still consume the legacy integer observation lane,
@@ -122,11 +123,16 @@ Run context: active parity/compliance execution plus in-progress feature worklis
     - `Engine::execute_source_with_snapshot*` now returns semantic `RuntimeValue` snapshots,
     - explicit integer-slot compatibility is now labeled `execute_source_with_legacy_snapshot*`,
     - `ProjectRuntimeSession::snapshot()` is now the semantic primary and `snapshot_legacy_slots()` is the explicit compatibility view,
+  - VM/JIT library snapshot helpers are now value-first by name:
+    - `oxvba_vm::execute_and_snapshot*` now returns semantic `RuntimeValue` snapshots,
+    - explicit integer-slot compatibility is now labeled `execute_and_legacy_snapshot*`,
+    - `JitEngine::execute_and_snapshot*` now returns semantic `RuntimeValue` snapshots,
+    - explicit integer-slot compatibility is now labeled `execute_and_legacy_snapshot*`,
   - CLI execution now also uses the semantic snapshot lane by default and derives `SLOTS:` output from that value path only when needed,
   - the remaining runtime/host boundary holdouts are now concentrated in:
     - `ValueToken = i32` itself,
     - `ComHal::{create_object_value,dispatch_invoke_v2}`,
-    - remaining VM/library/public compatibility paths that still expose integer-slot observation as a primary or strongly-coupled contract,
+    - remaining direct `Vm`/interpreter observation APIs that still expose integer-slot observation as the primary instance-level contract,
     - many bytecode execution callers and tests still assume the legacy integer observation surface,
   - the new `ComValue` carrier and generic dynamic-object protocol can live at the COM boundary, but they cannot yet become the single runtime object/value model while the wider execution substrate remains token-only.
 - Exact unblock steps:

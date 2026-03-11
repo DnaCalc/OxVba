@@ -1,5 +1,24 @@
 # Implementation Log
 
+## 2026-03-11 - VM/JIT snapshot helper surfaces now default to runtime values
+
+- Tightened the VM/JIT library snapshot surface:
+  - `oxvba_vm::execute_and_snapshot*` now returns semantic `RuntimeValue` snapshots,
+  - explicit integer-slot compatibility now lives under `execute_and_legacy_snapshot*`,
+  - `JitEngine::execute_and_snapshot*` now returns semantic `RuntimeValue` snapshots,
+  - explicit integer-slot compatibility now lives under `execute_and_legacy_snapshot*`.
+- Updated host/JIT internal callers to use the primary value-first helper names rather than the compatibility aliases.
+- Recorded the runtime-model design default in the workset:
+  - OxVba remains the semantic owner of runtime values,
+  - COM-aligned layouts such as `Variant`/`BSTR` are acceptable implementation defaults when they reduce translation cost without turning COM wire behavior into the core contract.
+- Net effect:
+  - host/public, VM library, and JIT library observation APIs are now consistently value-first by name,
+  - the remaining runtime-model wall is narrowed further to `ValueToken = i32`, the direct `Vm`/interpreter observation APIs, and the still-legacy-heavy caller/test estate around integer snapshots.
+- Verification:
+  - `cargo test -p oxvba-vm -p oxvba-jit -p oxvba-host --quiet`
+  - `./scripts/check-governance.ps1`
+  - `./scripts/meta-check.ps1 -Fast -NoArtifacts`
+
 ## 2026-03-11 - Host snapshot/public observation APIs now default to runtime values
 
 - Tightened the host/public runtime observation surface in [engine.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-host\src\engine.rs):
