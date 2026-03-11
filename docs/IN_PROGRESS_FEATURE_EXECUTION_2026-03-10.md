@@ -111,7 +111,9 @@ Status vocabulary:
     - additive VM and host value-snapshot APIs are now in place,
     - COM callback ingress now dispatches semantic runtime values directly into VM procedure calls,
     - JIT-backed value snapshots now project into the same semantic observation surface,
-    - the remaining active seam is HAL/public-snapshot migration.
+    - `CreateObject` results now enter runtime state as `RuntimeValue::ObjectHandle(...)`,
+    - HAL semantic-return helper wrappers are now in place and used by the VM for host-return paths,
+    - the remaining active seam is the actual HAL `ValueToken` and input-side contract plus the remaining legacy public-snapshot migration.
 
 ### `IP-05` Windows early-bound COM and type-library parity
 

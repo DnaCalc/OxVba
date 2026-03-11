@@ -48,12 +48,15 @@ Completed slices:
 4. Host VM execution now exposes additive value-snapshot APIs.
 5. COM callback ingress now hands semantic runtime values into VM procedure dispatch instead of re-narrowing through the legacy token lane.
 6. JIT-backed value snapshots now project the supported legacy subset into `RuntimeValue` for host/public compatibility.
+7. `CreateObject` results now enter the runtime as `RuntimeValue::ObjectHandle(...)`.
+8. HAL now exposes additive semantic-return helper methods and VM host-return paths route through them.
 
 Remaining blocker seam:
 1. HAL `ValueToken = i32`,
-2. many public observation APIs still expose the legacy integer lane as the primary compatibility surface,
-3. JIT internals and parity harnesses still observe only the integer slot lane,
-4. many tests still assume integer snapshots as the primary public contract.
+2. HAL call inputs are still fundamentally integer tokens rather than runtime semantic values,
+3. many public observation APIs still expose the legacy integer lane as the primary compatibility surface,
+4. JIT internals and parity harnesses still observe only the integer slot lane,
+5. many tests still assume integer snapshots as the primary public contract.
 
 ## 3. Target architecture
 
@@ -149,7 +152,9 @@ Progress:
 2. additive VM/host value snapshot surfaces are in place.
 3. COM callback procedure ingress now uses semantic runtime values.
 4. JIT-backed value snapshots now participate in the semantic observation surface through compatibility projection.
-5. this phase remains open until the broader runtime-facing APIs stop depending on the legacy slot lane as their primary contract.
+5. the runtime now distinguishes COM object identity semantically on the `CreateObject` path.
+6. HAL semantic-return helper wrappers are now in place and used by the VM for host-return paths.
+7. this phase remains open until the broader runtime-facing APIs stop depending on the legacy slot lane as their primary contract.
 
 ### Phase C. Boundary migration
 
@@ -163,7 +168,7 @@ Acceptance:
 1. runtime-facing external value carriers and dynamic-object protocol can traverse the core seams without early narrowing.
 
 Current blocker:
-1. HAL and the remaining legacy public observation surfaces remain the next required migration seam.
+1. the next required migration seam is the actual HAL `ValueToken` contract and input-side host-call surface, plus the remaining legacy public observation contracts.
 
 ### Phase D. Integration follow-through
 

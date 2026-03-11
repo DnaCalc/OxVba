@@ -1,6 +1,18 @@
 # Implementation Log
 
 ## 2026-03-11
+- HAL semantic-return wrapper slice:
+  - added additive semantic-return helper methods on HAL domains while keeping the underlying `ValueToken = i32` contract intact
+  - changed the VM host-return paths to consume those semantic wrappers instead of re-wrapping legacy integers locally
+  - this removes another layer of direct integer-token handling from the VM without yet changing HAL input semantics
+  - verification:
+    - `cargo test -p oxvba-hal -p oxvba-vm -p oxvba-host -p oxvba-jit -p oxvba-com --quiet` -> PASS
+- runtime object-handle semantic slice:
+  - changed the VM `CreateObject` lane to store `RuntimeValue::ObjectHandle(...)` instead of a plain integer slot
+  - added host-level coverage to lock object-handle shape on semantic value snapshots
+  - this moves COM object identity one step further into the canonical runtime value model without changing the current HAL token contract
+  - verification:
+    - `cargo test -p oxvba-vm -p oxvba-host -p oxvba-jit -p oxvba-com --quiet` -> PASS
 - runtime public-observation CLI slice:
   - added `--dump-values` to `oxvba-cli run ...`
   - CLI now emits a stable `VALUES:` line alongside the existing `SLOTS:` line when requested

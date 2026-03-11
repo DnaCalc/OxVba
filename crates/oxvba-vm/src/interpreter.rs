@@ -471,18 +471,18 @@ impl Vm {
                     pc += 1;
                 }
                 Instruction::IntrinsicDateNowHost { dst } => {
-                    match self.host_services.time_locale().date_serial_now() {
+                    match self.host_services.time_locale().date_serial_now_value() {
                         Ok(value) => {
-                            self.write_slot(*dst, value)?;
+                            self.write_value_slot(*dst, value)?;
                             pc += 1;
                         }
                         Err(err) => pc = self.route_host_error(pc, err)?,
                     }
                 }
                 Instruction::IntrinsicTimeNowHost { dst } => {
-                    match self.host_services.time_locale().time_serial_now() {
+                    match self.host_services.time_locale().time_serial_now_value() {
                         Ok(value) => {
-                            self.write_slot(*dst, value)?;
+                            self.write_value_slot(*dst, value)?;
                             pc += 1;
                         }
                         Err(err) => pc = self.route_host_error(pc, err)?,
@@ -490,18 +490,18 @@ impl Vm {
                 }
                 Instruction::IntrinsicNowHost { dst } => {
                     // Current token model uses date projection for Now().
-                    match self.host_services.time_locale().date_serial_now() {
+                    match self.host_services.time_locale().date_serial_now_value() {
                         Ok(value) => {
-                            self.write_slot(*dst, value)?;
+                            self.write_value_slot(*dst, value)?;
                             pc += 1;
                         }
                         Err(err) => pc = self.route_host_error(pc, err)?,
                     }
                 }
                 Instruction::IntrinsicTimerHost { dst } => {
-                    match self.host_services.time_locale().timer_ticks() {
+                    match self.host_services.time_locale().timer_ticks_value() {
                         Ok(value) => {
-                            self.write_slot(*dst, value)?;
+                            self.write_value_slot(*dst, value)?;
                             pc += 1;
                         }
                         Err(err) => pc = self.route_host_error(pc, err)?,
@@ -516,9 +516,9 @@ impl Vm {
                     } else {
                         0
                     };
-                    match self.host_services.fs().free_file(selector) {
+                    match self.host_services.fs().free_file_value(selector) {
                         Ok(value) => {
-                            self.write_slot(*dst, value)?;
+                            self.write_value_slot(*dst, value)?;
                             pc += 1;
                         }
                         Err(err) => pc = self.route_host_error(pc, err)?,
@@ -531,9 +531,9 @@ impl Vm {
                     } else {
                         1
                     };
-                    match self.host_services.ui().msg_box(prompt, style) {
+                    match self.host_services.ui().msg_box_value(prompt, style) {
                         Ok(value) => {
-                            self.write_slot(*dst, value)?;
+                            self.write_value_slot(*dst, value)?;
                             pc += 1;
                         }
                         Err(err) => pc = self.route_host_error(pc, err)?,
@@ -550,18 +550,22 @@ impl Vm {
                     } else {
                         0
                     };
-                    match self.host_services.ui().input_box(prompt, default_value) {
+                    match self
+                        .host_services
+                        .ui()
+                        .input_box_value(prompt, default_value)
+                    {
                         Ok(value) => {
-                            self.write_slot(*dst, value)?;
+                            self.write_value_slot(*dst, value)?;
                             pc += 1;
                         }
                         Err(err) => pc = self.route_host_error(pc, err)?,
                     }
                 }
                 Instruction::IntrinsicDoEventsHost { dst } => {
-                    match self.host_services.events().do_events() {
+                    match self.host_services.events().do_events_value() {
                         Ok(value) => {
-                            self.write_slot(*dst, value)?;
+                            self.write_value_slot(*dst, value)?;
                             pc += 1;
                         }
                         Err(err) => pc = self.route_host_error(pc, err)?,
@@ -850,9 +854,9 @@ impl Vm {
                 }
                 Instruction::IntrinsicShellHost { dst, command } => {
                     let command = self.read_slot(*command)?;
-                    match self.host_services.process().shell(command, 0) {
+                    match self.host_services.process().shell_value(command, 0) {
                         Ok(value) => {
-                            self.write_slot(*dst, value)?;
+                            self.write_value_slot(*dst, value)?;
                             pc += 1;
                         }
                         Err(err) => pc = self.route_host_error(pc, err)?,
@@ -860,9 +864,9 @@ impl Vm {
                 }
                 Instruction::IntrinsicEnvironHost { dst, key } => {
                     let key = self.read_slot(*key)?;
-                    match self.host_services.process().environ(key) {
+                    match self.host_services.process().environ_value(key) {
                         Ok(value) => {
-                            self.write_slot(*dst, value)?;
+                            self.write_value_slot(*dst, value)?;
                             pc += 1;
                         }
                         Err(err) => pc = self.route_host_error(pc, err)?,
@@ -870,9 +874,9 @@ impl Vm {
                 }
                 Instruction::IntrinsicDirHost { dst, path } => {
                     let path = self.read_slot(*path)?;
-                    match self.host_services.process().dir(path, 0) {
+                    match self.host_services.process().dir_value(path, 0) {
                         Ok(value) => {
-                            self.write_slot(*dst, value)?;
+                            self.write_value_slot(*dst, value)?;
                             pc += 1;
                         }
                         Err(err) => pc = self.route_host_error(pc, err)?,
@@ -908,9 +912,9 @@ impl Vm {
                 }
                 Instruction::IntrinsicCreateObjectHost { dst, prog_id } => {
                     let prog_id = self.read_slot(*prog_id)?;
-                    match self.host_services.com().create_object(prog_id) {
+                    match self.host_services.com().create_object_value(prog_id) {
                         Ok(value) => {
-                            self.write_slot(*dst, value)?;
+                            self.write_value_slot(*dst, value)?;
                             pc += 1;
                         }
                         Err(err) => pc = self.route_host_error(pc, err)?,
@@ -935,9 +939,13 @@ impl Vm {
                             name: arg.name.clone(),
                         });
                     }
-                    match self.host_services.com().dispatch_invoke_v2(&request) {
+                    match self
+                        .host_services
+                        .com()
+                        .dispatch_invoke_runtime_value_v2(&request)
+                    {
                         Ok(value) => {
-                            self.write_slot(*dst, value)?;
+                            self.write_value_slot(*dst, value)?;
                             pc += 1;
                         }
                         Err(err) => pc = self.route_host_error(pc, err)?,
@@ -946,9 +954,13 @@ impl Vm {
                 Instruction::IntrinsicComSubscribeEventHost { dst, object, event } => {
                     let object = self.read_slot(*object)?;
                     let event = self.read_slot(*event)?;
-                    match self.host_services.com().subscribe_event(object, event) {
+                    match self
+                        .host_services
+                        .com()
+                        .subscribe_event_value(object, event)
+                    {
                         Ok(value) => {
-                            self.write_slot(*dst, value)?;
+                            self.write_value_slot(*dst, value)?;
                             pc += 1;
                         }
                         Err(err) => pc = self.route_host_error(pc, err)?,
@@ -956,9 +968,13 @@ impl Vm {
                 }
                 Instruction::IntrinsicComUnsubscribeEventHost { dst, subscription } => {
                     let subscription = self.read_slot(*subscription)?;
-                    match self.host_services.com().unsubscribe_event(subscription) {
+                    match self
+                        .host_services
+                        .com()
+                        .unsubscribe_event_value(subscription)
+                    {
                         Ok(value) => {
-                            self.write_slot(*dst, value)?;
+                            self.write_value_slot(*dst, value)?;
                             pc += 1;
                         }
                         Err(err) => pc = self.route_host_error(pc, err)?,
@@ -969,10 +985,10 @@ impl Vm {
                     match self
                         .host_services
                         .com()
-                        .event_callback_subscription(callback)
+                        .event_callback_subscription_value(callback)
                     {
                         Ok(value) => {
-                            self.write_slot(*dst, value)?;
+                            self.write_value_slot(*dst, value)?;
                             pc += 1;
                         }
                         Err(err) => pc = self.route_host_error(pc, err)?,
@@ -985,9 +1001,13 @@ impl Vm {
                 } => {
                     let callback = self.read_slot(*callback)?;
                     let index = self.read_slot(*index)?;
-                    match self.host_services.com().event_callback_arg(callback, index) {
+                    match self
+                        .host_services
+                        .com()
+                        .event_callback_arg_value(callback, index)
+                    {
                         Ok(value) => {
-                            self.write_slot(*dst, value)?;
+                            self.write_value_slot(*dst, value)?;
                             pc += 1;
                         }
                         Err(err) => pc = self.route_host_error(pc, err)?,
@@ -995,9 +1015,13 @@ impl Vm {
                 }
                 Instruction::IntrinsicComReleaseEventCallbackHost { dst, callback } => {
                     let callback = self.read_slot(*callback)?;
-                    match self.host_services.com().release_event_callback(callback) {
+                    match self
+                        .host_services
+                        .com()
+                        .release_event_callback_value(callback)
+                    {
                         Ok(value) => {
-                            self.write_slot(*dst, value)?;
+                            self.write_value_slot(*dst, value)?;
                             pc += 1;
                         }
                         Err(err) => pc = self.route_host_error(pc, err)?,
@@ -1011,9 +1035,13 @@ impl Vm {
                 } => {
                     let arg = self.read_slot(*arg)?;
                     if bytecode.external_call_descriptors.is_empty() {
-                        match self.host_services.dynlink().invoke_symbol(*symbol, arg) {
+                        match self
+                            .host_services
+                            .dynlink()
+                            .invoke_symbol_value(*symbol, arg)
+                        {
                             Ok(value) => {
-                                self.write_slot(*dst, value)?;
+                                self.write_value_slot(*dst, value)?;
                                 pc += 1;
                             }
                             Err(err) => pc = self.route_host_error(pc, err)?,
@@ -1074,9 +1102,13 @@ impl Vm {
                         pc = self.route_host_error(pc, err)?;
                         continue;
                     }
-                    match self.host_services.dynlink().invoke_descriptor(&view, arg) {
+                    match self
+                        .host_services
+                        .dynlink()
+                        .invoke_descriptor_value(&view, arg)
+                    {
                         Ok(value) => {
-                            self.write_slot(*dst, value)?;
+                            self.write_value_slot(*dst, value)?;
                             pc += 1;
                         }
                         Err(err) => pc = self.route_host_error(pc, err)?,

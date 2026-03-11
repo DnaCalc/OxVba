@@ -17,6 +17,7 @@ pub use oxvba_com::{
     TypeLibCacheScope, TypeLibEventDispatchPath, TypeLibEventMetadata, TypeLibMemberInvokeKind,
     TypeLibMemberMetadata, TypeLibMetadataBlob, TypeLibResolveRequest, TypeLibResolvedIdentity,
 };
+use oxvba_runtime::RuntimeValue;
 
 /// VM/runtime value token crossing the current HAL boundary.
 /// This is intentionally `i32` for the current register-window runtime representation.
@@ -82,35 +83,94 @@ pub trait HostServices: Send + Sync {
 pub trait UiInteractionHal: Send + Sync {
     /// Deterministically implements `MsgBox` interaction or a policy/capability error.
     fn msg_box(&self, prompt: ValueToken, style: ValueToken) -> HalResult<ValueToken>;
+    fn msg_box_value(&self, prompt: ValueToken, style: ValueToken) -> HalResult<RuntimeValue> {
+        self.msg_box(prompt, style)
+            .map(RuntimeValue::from_legacy_i32)
+    }
     /// Deterministically implements `InputBox` interaction or a policy/capability error.
     fn input_box(&self, prompt: ValueToken, default_value: ValueToken) -> HalResult<ValueToken>;
+    fn input_box_value(
+        &self,
+        prompt: ValueToken,
+        default_value: ValueToken,
+    ) -> HalResult<RuntimeValue> {
+        self.input_box(prompt, default_value)
+            .map(RuntimeValue::from_legacy_i32)
+    }
 }
 
 pub trait EventPumpHal: Send + Sync {
     /// Deterministically pumps host events, or reports unsupported behavior.
     fn do_events(&self) -> HalResult<ValueToken>;
+    fn do_events_value(&self) -> HalResult<RuntimeValue> {
+        self.do_events().map(RuntimeValue::from_legacy_i32)
+    }
 }
 
 pub trait FileSystemHal: Send + Sync {
     fn open(&self, path: ValueToken, mode: ValueToken) -> HalResult<ValueToken>;
+    fn open_value(&self, path: ValueToken, mode: ValueToken) -> HalResult<RuntimeValue> {
+        self.open(path, mode).map(RuntimeValue::from_legacy_i32)
+    }
     fn close(&self, handle: ValueToken) -> HalResult<ValueToken>;
+    fn close_value(&self, handle: ValueToken) -> HalResult<RuntimeValue> {
+        self.close(handle).map(RuntimeValue::from_legacy_i32)
+    }
     fn seek(&self, handle: ValueToken, position: ValueToken) -> HalResult<ValueToken>;
+    fn seek_value(&self, handle: ValueToken, position: ValueToken) -> HalResult<RuntimeValue> {
+        self.seek(handle, position)
+            .map(RuntimeValue::from_legacy_i32)
+    }
     fn eof(&self, handle: ValueToken) -> HalResult<ValueToken>;
+    fn eof_value(&self, handle: ValueToken) -> HalResult<RuntimeValue> {
+        self.eof(handle).map(RuntimeValue::from_legacy_i32)
+    }
     fn lof(&self, handle: ValueToken) -> HalResult<ValueToken>;
+    fn lof_value(&self, handle: ValueToken) -> HalResult<RuntimeValue> {
+        self.lof(handle).map(RuntimeValue::from_legacy_i32)
+    }
     fn free_file(&self, range_selector: ValueToken) -> HalResult<ValueToken>;
+    fn free_file_value(&self, range_selector: ValueToken) -> HalResult<RuntimeValue> {
+        self.free_file(range_selector)
+            .map(RuntimeValue::from_legacy_i32)
+    }
 }
 
 pub trait ProcessEnvHal: Send + Sync {
     fn shell(&self, command: ValueToken, window_style: ValueToken) -> HalResult<ValueToken>;
+    fn shell_value(
+        &self,
+        command: ValueToken,
+        window_style: ValueToken,
+    ) -> HalResult<RuntimeValue> {
+        self.shell(command, window_style)
+            .map(RuntimeValue::from_legacy_i32)
+    }
     fn environ(&self, key: ValueToken) -> HalResult<ValueToken>;
+    fn environ_value(&self, key: ValueToken) -> HalResult<RuntimeValue> {
+        self.environ(key).map(RuntimeValue::from_legacy_i32)
+    }
     fn dir(&self, path: ValueToken, attrs: ValueToken) -> HalResult<ValueToken>;
+    fn dir_value(&self, path: ValueToken, attrs: ValueToken) -> HalResult<RuntimeValue> {
+        self.dir(path, attrs).map(RuntimeValue::from_legacy_i32)
+    }
 }
 
 pub trait ComHal: Send + Sync {
     fn create_object(&self, prog_id: ValueToken) -> HalResult<ValueToken>;
+    fn create_object_value(&self, prog_id: ValueToken) -> HalResult<RuntimeValue> {
+        self.create_object(prog_id).map(RuntimeValue::ObjectHandle)
+    }
     fn release_object(&self, object: ValueToken) -> HalResult<ValueToken>;
     fn describe_object(&self, object: ValueToken) -> HalResult<Option<ComObjectDescriptor>>;
     fn dispatch_invoke_v2(&self, request: &ComInvokeRequest) -> HalResult<ValueToken>;
+    fn dispatch_invoke_runtime_value_v2(
+        &self,
+        request: &ComInvokeRequest,
+    ) -> HalResult<RuntimeValue> {
+        self.dispatch_invoke_v2(request)
+            .map(RuntimeValue::from_legacy_i32)
+    }
     fn dispatch_invoke(
         &self,
         object: ValueToken,
@@ -121,12 +181,44 @@ pub trait ComHal: Send + Sync {
         self.dispatch_invoke_v2(&request)
     }
     fn subscribe_event(&self, object: ValueToken, event: ValueToken) -> HalResult<ValueToken>;
+    fn subscribe_event_value(
+        &self,
+        object: ValueToken,
+        event: ValueToken,
+    ) -> HalResult<RuntimeValue> {
+        self.subscribe_event(object, event)
+            .map(RuntimeValue::from_legacy_i32)
+    }
     fn unsubscribe_event(&self, subscription: ValueToken) -> HalResult<ValueToken>;
+    fn unsubscribe_event_value(&self, subscription: ValueToken) -> HalResult<RuntimeValue> {
+        self.unsubscribe_event(subscription)
+            .map(RuntimeValue::from_legacy_i32)
+    }
     fn poll_event_callback(&self) -> HalResult<Option<ComCallbackPayload>>;
     fn event_callback_subscription(&self, callback: ValueToken) -> HalResult<ValueToken>;
+    fn event_callback_subscription_value(&self, callback: ValueToken) -> HalResult<RuntimeValue> {
+        self.event_callback_subscription(callback)
+            .map(RuntimeValue::from_legacy_i32)
+    }
     fn event_callback_arity(&self, callback: ValueToken) -> HalResult<ValueToken>;
+    fn event_callback_arity_value(&self, callback: ValueToken) -> HalResult<RuntimeValue> {
+        self.event_callback_arity(callback)
+            .map(RuntimeValue::from_legacy_i32)
+    }
     fn event_callback_arg(&self, callback: ValueToken, index: ValueToken) -> HalResult<ValueToken>;
+    fn event_callback_arg_value(
+        &self,
+        callback: ValueToken,
+        index: ValueToken,
+    ) -> HalResult<RuntimeValue> {
+        self.event_callback_arg(callback, index)
+            .map(RuntimeValue::from_legacy_i32)
+    }
     fn release_event_callback(&self, callback: ValueToken) -> HalResult<ValueToken>;
+    fn release_event_callback_value(&self, callback: ValueToken) -> HalResult<RuntimeValue> {
+        self.release_event_callback(callback)
+            .map(RuntimeValue::from_legacy_i32)
+    }
     fn resolve_typelib_reference(
         &self,
         request: &TypeLibResolveRequest,
@@ -144,8 +236,17 @@ pub trait ComHal: Send + Sync {
 
 pub trait TimeLocaleHal: Send + Sync {
     fn date_serial_now(&self) -> HalResult<ValueToken>;
+    fn date_serial_now_value(&self) -> HalResult<RuntimeValue> {
+        self.date_serial_now().map(RuntimeValue::from_legacy_i32)
+    }
     fn time_serial_now(&self) -> HalResult<ValueToken>;
+    fn time_serial_now_value(&self) -> HalResult<RuntimeValue> {
+        self.time_serial_now().map(RuntimeValue::from_legacy_i32)
+    }
     fn timer_ticks(&self) -> HalResult<ValueToken>;
+    fn timer_ticks_value(&self) -> HalResult<RuntimeValue> {
+        self.timer_ticks().map(RuntimeValue::from_legacy_i32)
+    }
 }
 
 pub trait DynamicLinkHal: Send + Sync {
@@ -153,15 +254,34 @@ pub trait DynamicLinkHal: Send + Sync {
     fn bind_descriptor(&self, descriptor: &DynLinkDescriptorView<'_>) -> HalResult<ValueToken> {
         Ok(descriptor.symbol)
     }
+    fn bind_descriptor_value(
+        &self,
+        descriptor: &DynLinkDescriptorView<'_>,
+    ) -> HalResult<RuntimeValue> {
+        self.bind_descriptor(descriptor)
+            .map(RuntimeValue::from_legacy_i32)
+    }
 
     /// Optional argument normalization/writeback preparation hook.
     fn prepare_invoke(&self, _binding: ValueToken, arg: ValueToken) -> HalResult<ValueToken> {
         Ok(arg)
     }
+    fn prepare_invoke_value(
+        &self,
+        binding: ValueToken,
+        arg: ValueToken,
+    ) -> HalResult<RuntimeValue> {
+        self.prepare_invoke(binding, arg)
+            .map(RuntimeValue::from_legacy_i32)
+    }
 
     /// Invokes a previously bound symbol token.
     fn invoke_bound(&self, binding: ValueToken, arg: ValueToken) -> HalResult<ValueToken> {
         self.invoke_symbol(binding, arg)
+    }
+    fn invoke_bound_value(&self, binding: ValueToken, arg: ValueToken) -> HalResult<RuntimeValue> {
+        self.invoke_bound(binding, arg)
+            .map(RuntimeValue::from_legacy_i32)
     }
 
     /// Descriptor-driven invoke path used by VM/host integrations.
@@ -174,13 +294,28 @@ pub trait DynamicLinkHal: Send + Sync {
         let prepared = self.prepare_invoke(binding, arg)?;
         self.invoke_bound(binding, prepared)
     }
+    fn invoke_descriptor_value(
+        &self,
+        descriptor: &DynLinkDescriptorView<'_>,
+        arg: ValueToken,
+    ) -> HalResult<RuntimeValue> {
+        self.invoke_descriptor(descriptor, arg)
+            .map(RuntimeValue::from_legacy_i32)
+    }
 
     /// Legacy symbol-token invoke path retained for backward compatibility.
     fn invoke_symbol(&self, symbol: ValueToken, arg: ValueToken) -> HalResult<ValueToken>;
+    fn invoke_symbol_value(&self, symbol: ValueToken, arg: ValueToken) -> HalResult<RuntimeValue> {
+        self.invoke_symbol(symbol, arg)
+            .map(RuntimeValue::from_legacy_i32)
+    }
 }
 
 pub trait DiagnosticsHal: Send + Sync {
     fn emit(&self, code: ValueToken, payload: ValueToken) -> HalResult<ValueToken>;
+    fn emit_value(&self, code: ValueToken, payload: ValueToken) -> HalResult<RuntimeValue> {
+        self.emit(code, payload).map(RuntimeValue::from_legacy_i32)
+    }
 }
 
 #[allow(unexpected_cfgs)]

@@ -83,15 +83,17 @@ Run context: active parity/compliance execution plus in-progress feature worklis
   - `crates/oxvba-vm/src/register_file.rs` now stores `Vec<RuntimeValue>`,
   - `crates/oxvba-vm/src/lib.rs` and `crates/oxvba-host/src/engine.rs` now expose additive VM-backed value-snapshot APIs alongside the legacy integer snapshot lane,
   - `crates/oxvba-hal/src/traits.rs` still defines `ValueToken = i32`,
+  - the runtime now records `CreateObject` results as `RuntimeValue::ObjectHandle(...)` rather than plain integer slots,
   - COM callback ingress now preserves `RuntimeValue` into the runtime, but many host/public execution helpers still expose or expect the legacy integer observation lane,
   - JIT-backed value snapshots now project the supported subset into `RuntimeValue`, but JIT internals and many parity harnesses still fundamentally operate over the legacy integer snapshot lane,
+  - HAL now exposes additive semantic-return helper methods and the VM routes host-return paths through them, but the underlying input/output token contract is still `i32`,
   - many bytecode execution paths and tests still assume the legacy integer observation surface,
   - the new `ComValue` carrier and generic dynamic-object protocol can live at the COM boundary, but they cannot yet become the single runtime object/value model while the wider execution substrate remains token-only.
 - Exact unblock steps:
-  - define the canonical runtime value representation or indirection model that replaces or strictly extends the current `i32` slot contract,
+  - replace or strictly extend the HAL `ValueToken = i32` contract with the canonical runtime value model or an explicit indirection model,
   - plan and execute migration of:
+    - HAL input-side and result-side call seams,
     - remaining VM read/write helpers and outward runtime APIs,
-    - HAL `ValueToken` seams,
     - remaining host/runtime snapshot and public observation surfaces,
     - remaining JIT/VM equivalence expectations and affected tests,
   - then wire the dynamic-object protocol and expanded value carrier through those seams as the single runtime-facing model.

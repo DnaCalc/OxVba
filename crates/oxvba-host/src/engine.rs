@@ -5381,4 +5381,20 @@ mod tests {
         .expect("value snapshot should project JIT subset into runtime values");
         assert_eq!(out, vec![RuntimeValue::I32(4)]);
     }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn runtime_value_snapshot_createobject_uses_object_handle_shape() {
+        let mut engine = Engine::new(HostConfig {
+            enable_jit: false,
+            root_object_name: None,
+        });
+        engine.set_host_policy(HostPolicy::interactive_dev());
+
+        let out = engine
+            .execute_source_with_value_snapshot("Sub Main()\nDim x\nx = CreateObject(4)\nEnd Sub")
+            .expect("CreateObject value snapshot should succeed");
+        assert_eq!(out.len(), 1);
+        assert!(matches!(out[0], RuntimeValue::ObjectHandle(handle) if handle > 0));
+    }
 }
