@@ -132,6 +132,52 @@ End Sub
     }
 
     #[test]
+    fn dispatchinvoke_named_indexed_property_put_and_putref_routes_are_deterministic() {
+        let source = r#"
+Sub Main()
+Dim obj
+Dim setIndexedValueResult
+Dim valueAfterSetIndexed
+Dim setIndexedValueRefResult
+Dim valueAfterSetIndexedRef
+obj = CreateObject("OxVba.TestDispatch")
+setIndexedValueResult = DispatchInvoke(obj, "SetIndexedValue", value := 11, lhs := 7)
+valueAfterSetIndexed = DispatchInvoke(obj, "Value")
+setIndexedValueRefResult = DispatchInvoke(obj, "SetIndexedValueRef", value := 13, lhs := 8)
+valueAfterSetIndexedRef = DispatchInvoke(obj, "Value")
+End Sub
+"#;
+
+        let vm = run_windows_host_backed(source, false);
+        let jit = run_windows_host_backed(source, true);
+        assert_eq!(
+            vm, jit,
+            "VM/JIT snapshots diverged on named indexed property put path: vm={vm:?} jit={jit:?}"
+        );
+        assert!(
+            vm[0] >= 20_001,
+            "expected native COM object handle space, got {:?}",
+            vm
+        );
+        assert_eq!(
+            vm[1], 307_011,
+            "SetIndexedValue should accept fully named indexed property put arguments"
+        );
+        assert_eq!(
+            vm[2], 307_011,
+            "Value getter should reflect named indexed property put result"
+        );
+        assert_eq!(
+            vm[3], 408_013,
+            "SetIndexedValueRef should accept fully named indexed property putref arguments"
+        );
+        assert_eq!(
+            vm[4], 408_013,
+            "Value getter should reflect named indexed property putref result"
+        );
+    }
+
+    #[test]
     fn dispatchinvoke_error_path_routes_through_on_error_resume_next() {
         let out = run_windows_host_backed(
             r#"

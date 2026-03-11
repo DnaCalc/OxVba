@@ -632,6 +632,18 @@ fn validate_call_site(
     proc_params: &HashMap<String, Vec<BoundParam>>,
     proc_return_types: &HashMap<String, BoundType>,
 ) -> Result<BoundType, String> {
+    if name.eq_ignore_ascii_case("dispatchinvoke") {
+        return validate_dispatch_invoke_call_site(
+            args,
+            option_explicit,
+            default_type_table,
+            declared,
+            declared_types,
+            declarations,
+            declaration_types,
+        );
+    }
+
     let call_mode = classify_call_mode(name, args, proc_names, proc_params, declared_types)?;
 
     if let Some(params) = proc_params.get(name) {
@@ -732,6 +744,52 @@ fn validate_call_site(
     }
 
     Err(format!("call to unknown procedure: {name}"))
+}
+
+fn validate_dispatch_invoke_call_site(
+    args: &[BoundCallArg],
+    option_explicit: bool,
+    default_type_table: &[BoundType; 26],
+    declared: &mut HashSet<String>,
+    declared_types: &mut HashMap<String, BoundType>,
+    declarations: &mut Vec<String>,
+    declaration_types: &mut HashMap<String, BoundType>,
+) -> Result<BoundType, String> {
+    if args.len() < 2 {
+        return Err("DispatchInvoke expects at least object and member arguments".to_string());
+    }
+    if args[0].name.is_some() || args[1].name.is_some() {
+        return Err("DispatchInvoke object/member arguments cannot be named".to_string());
+    }
+    let mut named_started = false;
+    for arg in args.iter().skip(2) {
+        if arg.name.is_some() {
+            named_started = true;
+        } else if named_started {
+            return Err("positional argument cannot follow named argument".to_string());
+        }
+    }
+    for arg in args {
+        check_expr(
+            &arg.expr,
+            option_explicit,
+            default_type_table,
+            declared,
+            declared_types,
+            declarations,
+            declaration_types,
+        )?;
+    }
+    for arg in args.iter().skip(2) {
+        let arg_ty = infer_expr_type(&arg.expr, declared_types);
+        if call_coercion_result(CallMode::Late, None, arg_ty) != CoercionResult::Ok {
+            return Err(format!(
+                "late-bound call argument coercion mismatch: cannot package {:?} for DispatchInvoke",
+                arg_ty
+            ));
+        }
+    }
+    Ok(BoundType::Variant)
 }
 
 fn check_condition(

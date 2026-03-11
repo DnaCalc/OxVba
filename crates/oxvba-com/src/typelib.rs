@@ -33,6 +33,7 @@ pub struct TypeLibMemberMetadata {
     pub token: i32,
     pub requires_argument: bool,
     pub invoke_kind: TypeLibMemberInvokeKind,
+    pub parameter_names: Vec<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

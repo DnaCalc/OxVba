@@ -1284,6 +1284,23 @@ mod tests {
     }
 
     #[test]
+    fn compile_dispatchinvoke_accepts_named_args_in_assignment_form() {
+        let source = "Sub Main()\nDim x\nx = DispatchInvoke(CreateObject(\"OxVba.TestDispatch\"), \"SetIndexedValue\", value := 11, lhs := 7)\nEnd Sub";
+        let out = compile(source).expect("named DispatchInvoke assignment form should compile");
+        let invoke = out
+            .instructions
+            .iter()
+            .find_map(|instruction| match instruction {
+                Instruction::IntrinsicDispatchInvokeHost { args, .. } => Some(args.clone()),
+                _ => None,
+            })
+            .expect("dispatch invoke instruction should be present");
+        assert_eq!(invoke.len(), 2);
+        assert_eq!(invoke[0].name.as_deref(), Some("value"));
+        assert_eq!(invoke[1].name.as_deref(), Some("lhs"));
+    }
+
+    #[test]
     fn compile_createobject_with_unknown_progid_literal_is_rejected() {
         let source = "Sub Main()\nDim x\nx = CreateObject(\"Unknown.Component\")\nEnd Sub";
         let err =

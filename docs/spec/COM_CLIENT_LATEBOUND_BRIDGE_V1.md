@@ -58,12 +58,12 @@ Define the executable bridge from VBA late-bound call semantics to HAL COM trans
 - argument-required member lanes must fail deterministically.
 7. Named-argument transport:
 - member-known method/property-get lanes must preserve forwarded argument names through bytecode, VM, and HAL request transport;
+- member-known property-put/property-putref lanes must canonicalize named/indexed arguments so the property value uses `DISPID_PROPERTYPUT`/`DISPID_PROPERTYPUTREF` without depending on caller argument order;
 - default-member/direct-DISPID dispatch must not silently erase named arguments when runtime member identity is unresolved.
 8. Event-trigger projection consumes the same authoritative argument vector used for invoke, and only synthesizes fallback payload shape when a native callback path is unavailable.
 
 ## Deferred Extensions
 
 - Natural VBA member syntax to late-bound dispatch lowering.
-- Named property-put/putref parity completion.
 - Default-member named-dispatch parity once runtime member identity is authoritative.
 - Full generic ProgID/member-name text selector path through current integer-token VM boundary.

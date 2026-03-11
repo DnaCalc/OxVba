@@ -1101,6 +1101,14 @@ impl StandardHostServices {
         args: &[ComInvokeArg],
     ) -> HalResult<i32> {
         self.ensure_thread_com_apartment("dispatch_invoke")?;
+        let canonical_args;
+        let args = match spec.invoke_kind {
+            TypeLibMemberInvokeKind::PropertyPut | TypeLibMemberInvokeKind::PropertyPutRef => {
+                canonical_args = canonicalize_member_known_args(spec, args)?;
+                canonical_args.as_slice()
+            }
+            _ => args,
+        };
         if spec.requires_argument {
             if args.iter().all(|arg| arg.value.is_none()) {
                 return Err(HalError::adapter_fault(
@@ -3437,6 +3445,7 @@ struct ComMemberSpec {
     name: String,
     requires_argument: bool,
     invoke_kind: TypeLibMemberInvokeKind,
+    parameter_names: Vec<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -3473,6 +3482,7 @@ fn com_member_spec_for_token(prog_id: &str, member: i32) -> Option<ComMemberSpec
                 name: "Quit".to_string(),
                 requires_argument: false,
                 invoke_kind: TypeLibMemberInvokeKind::Method,
+                parameter_names: Vec::new(),
             }),
             _ => None,
         };
@@ -3483,11 +3493,13 @@ fn com_member_spec_for_token(prog_id: &str, member: i32) -> Option<ComMemberSpec
                 name: "Count".to_string(),
                 requires_argument: false,
                 invoke_kind: TypeLibMemberInvokeKind::PropertyGet,
+                parameter_names: Vec::new(),
             }),
             2 => Some(ComMemberSpec {
                 name: "Exists".to_string(),
                 requires_argument: true,
                 invoke_kind: TypeLibMemberInvokeKind::Method,
+                parameter_names: vec!["value".to_string()],
             }),
             _ => None,
         };
@@ -3498,71 +3510,85 @@ fn com_member_spec_for_token(prog_id: &str, member: i32) -> Option<ComMemberSpec
                 name: "Count".to_string(),
                 requires_argument: false,
                 invoke_kind: TypeLibMemberInvokeKind::PropertyGet,
+                parameter_names: Vec::new(),
             }),
             2 => Some(ComMemberSpec {
                 name: "Exists".to_string(),
                 requires_argument: true,
                 invoke_kind: TypeLibMemberInvokeKind::Method,
+                parameter_names: vec!["value".to_string()],
             }),
             3 => Some(ComMemberSpec {
                 name: "FireChanged".to_string(),
                 requires_argument: true,
                 invoke_kind: TypeLibMemberInvokeKind::Method,
+                parameter_names: vec!["value".to_string()],
             }),
             4 => Some(ComMemberSpec {
                 name: "FireChangedPair".to_string(),
                 requires_argument: true,
                 invoke_kind: TypeLibMemberInvokeKind::Method,
+                parameter_names: vec!["value".to_string()],
             }),
             11 => Some(ComMemberSpec {
                 name: "FireChangedSourceInterface".to_string(),
                 requires_argument: true,
                 invoke_kind: TypeLibMemberInvokeKind::Method,
+                parameter_names: vec!["value".to_string()],
             }),
             5 => Some(ComMemberSpec {
                 name: "Ping".to_string(),
                 requires_argument: false,
                 invoke_kind: TypeLibMemberInvokeKind::Method,
+                parameter_names: Vec::new(),
             }),
             6 => Some(ComMemberSpec {
                 name: "Lookup".to_string(),
                 requires_argument: true,
                 invoke_kind: TypeLibMemberInvokeKind::PropertyGet,
+                parameter_names: vec!["value".to_string()],
             }),
             7 => Some(ComMemberSpec {
                 name: "SetValue".to_string(),
                 requires_argument: true,
                 invoke_kind: TypeLibMemberInvokeKind::PropertyPut,
+                parameter_names: vec!["value".to_string()],
             }),
             8 => Some(ComMemberSpec {
                 name: "SetValueRef".to_string(),
                 requires_argument: true,
                 invoke_kind: TypeLibMemberInvokeKind::PropertyPutRef,
+                parameter_names: vec!["value".to_string()],
             }),
             9 => Some(ComMemberSpec {
                 name: "Value".to_string(),
                 requires_argument: false,
                 invoke_kind: TypeLibMemberInvokeKind::PropertyGet,
+                parameter_names: Vec::new(),
             }),
             12 => Some(ComMemberSpec {
                 name: "SumPair".to_string(),
                 requires_argument: true,
                 invoke_kind: TypeLibMemberInvokeKind::Method,
+                parameter_names: vec!["lhs".to_string(), "rhs".to_string()],
             }),
             13 => Some(ComMemberSpec {
                 name: "LookupPair".to_string(),
                 requires_argument: true,
                 invoke_kind: TypeLibMemberInvokeKind::PropertyGet,
+                parameter_names: vec!["lhs".to_string(), "rhs".to_string()],
             }),
             14 => Some(ComMemberSpec {
                 name: "SetIndexedValue".to_string(),
                 requires_argument: true,
                 invoke_kind: TypeLibMemberInvokeKind::PropertyPut,
+                parameter_names: vec!["lhs".to_string(), "value".to_string()],
             }),
             15 => Some(ComMemberSpec {
                 name: "SetIndexedValueRef".to_string(),
                 requires_argument: true,
                 invoke_kind: TypeLibMemberInvokeKind::PropertyPutRef,
+                parameter_names: vec!["lhs".to_string(), "value".to_string()],
             }),
             _ => None,
         };
@@ -3689,6 +3715,7 @@ fn com_member_specs_from_typelib_metadata(
                     name: member.name.clone(),
                     requires_argument: member.requires_argument,
                     invoke_kind: member.invoke_kind,
+                    parameter_names: member.parameter_names.clone(),
                 },
             )
         })
@@ -3697,6 +3724,84 @@ fn com_member_specs_from_typelib_metadata(
 
 fn com_member_spec_for_binding(binding: &ComBinding, member: i32) -> Option<ComMemberSpec> {
     binding.member_specs.get(&member).cloned()
+}
+
+#[cfg(target_os = "windows")]
+fn canonicalize_member_known_args(
+    spec: &ComMemberSpec,
+    args: &[ComInvokeArg],
+) -> HalResult<Vec<ComInvokeArg>> {
+    if spec.parameter_names.is_empty() || args.is_empty() {
+        return Ok(args.to_vec());
+    }
+    if args.len() > spec.parameter_names.len() {
+        return Err(HalError::adapter_fault(
+            HalProfileId::Windows,
+            CapabilityId::ComActivationDispatch,
+            "dispatch_invoke",
+            format!(
+                "member `{}` received {} arguments but only {} are defined in current metadata",
+                spec.name,
+                args.len(),
+                spec.parameter_names.len()
+            ),
+        ));
+    }
+    let mut ordered: Vec<Option<ComInvokeArg>> = vec![None; spec.parameter_names.len()];
+    let mut next_positional = 0usize;
+    for arg in args {
+        if let Some(name) = &arg.name {
+            let Some(index) = spec
+                .parameter_names
+                .iter()
+                .position(|candidate| candidate.eq_ignore_ascii_case(name))
+            else {
+                return Err(HalError::adapter_fault(
+                    HalProfileId::Windows,
+                    CapabilityId::ComActivationDispatch,
+                    "dispatch_invoke",
+                    format!(
+                        "named COM argument `{name}` is not defined for member `{}` in current metadata",
+                        spec.name
+                    ),
+                ));
+            };
+            if ordered[index].is_some() {
+                return Err(HalError::adapter_fault(
+                    HalProfileId::Windows,
+                    CapabilityId::ComActivationDispatch,
+                    "dispatch_invoke",
+                    format!(
+                        "named COM argument `{name}` was provided more than once for member `{}`",
+                        spec.name
+                    ),
+                ));
+            }
+            ordered[index] = Some(arg.clone());
+            continue;
+        }
+        while next_positional < ordered.len() && ordered[next_positional].is_some() {
+            next_positional += 1;
+        }
+        if next_positional >= ordered.len() {
+            return Err(HalError::adapter_fault(
+                HalProfileId::Windows,
+                CapabilityId::ComActivationDispatch,
+                "dispatch_invoke",
+                format!(
+                    "member `{}` received too many positional arguments for current metadata",
+                    spec.name
+                ),
+            ));
+        }
+        ordered[next_positional] = Some(arg.clone());
+        next_positional += 1;
+    }
+    Ok(ordered
+        .into_iter()
+        .zip(spec.parameter_names.iter())
+        .map(|(arg, name)| arg.unwrap_or_else(|| ComInvokeArg::omitted_named(name.clone())))
+        .collect())
 }
 
 #[cfg(not(target_os = "windows"))]
@@ -4580,11 +4685,20 @@ unsafe fn raw_property_put_args_from_params(
     }
     let params = &*pparams;
     if params.cArgs != expected_count as u32
-        || params.cNamedArgs != 1
+        || params.cNamedArgs == 0
         || params.rgvarg.is_null()
         || params.rgdispidNamedArgs.is_null()
-        || *params.rgdispidNamedArgs != COM_DISPID_PROPERTYPUT
     {
+        return Err(COM_DISP_E_BADPARAMCOUNT);
+    }
+    let mut found_property_put = false;
+    for raw_index in 0..params.cNamedArgs as usize {
+        if *params.rgdispidNamedArgs.add(raw_index) == COM_DISPID_PROPERTYPUT {
+            found_property_put = true;
+            break;
+        }
+    }
+    if !found_property_put {
         return Err(COM_DISP_E_BADPARAMCOUNT);
     }
     let mut values = Vec::with_capacity(expected_count);
@@ -7123,6 +7237,72 @@ mod tests {
             host.dispatch_invoke_v2(&request)
                 .expect("named value argument should still route through property-put lane"),
             307_009
+        );
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn windows_native_controlled_test_dispatch_named_indexed_property_put_reorders_value_last_v2() {
+        let host = StandardHostServices::new(HalProfileId::Windows, HostPolicy::interactive_dev());
+        let object = host
+            .create_object(4)
+            .expect("create_object should return a token");
+        let request = ComInvokeRequest {
+            object: object.into(),
+            member: super::TEST_DISPID_SET_INDEXED_VALUE,
+            args: vec![
+                ComInvokeArg::named(9, "value"),
+                ComInvokeArg::named(7, "lhs"),
+            ],
+            invoke_kind_hint: None,
+        };
+        assert_eq!(
+            host.dispatch_invoke_v2(&request)
+                .expect("fully named indexed property-put should canonicalize deterministically"),
+            307_009
+        );
+        assert_eq!(
+            host.dispatch_invoke(
+                object,
+                super::TEST_DISPID_VALUE,
+                super::DISPATCH_INVOKE_MISSING_ARG_TOKEN
+            )
+            .expect("Value property-get should reflect named indexed property-put"),
+            307_009
+        );
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn windows_native_controlled_test_dispatch_named_indexed_property_putref_reorders_value_last_v2()
+     {
+        let host = StandardHostServices::new(HalProfileId::Windows, HostPolicy::interactive_dev());
+        let object = host
+            .create_object(4)
+            .expect("create_object should return a token");
+        let request = ComInvokeRequest {
+            object: object.into(),
+            member: super::TEST_DISPID_SET_INDEXED_VALUE_REF,
+            args: vec![
+                ComInvokeArg::named(13, "value"),
+                ComInvokeArg::named(8, "lhs"),
+            ],
+            invoke_kind_hint: None,
+        };
+        assert_eq!(
+            host.dispatch_invoke_v2(&request).expect(
+                "fully named indexed property-putref should canonicalize deterministically"
+            ),
+            408_013
+        );
+        assert_eq!(
+            host.dispatch_invoke(
+                object,
+                super::TEST_DISPID_VALUE,
+                super::DISPATCH_INVOKE_MISSING_ARG_TOKEN
+            )
+            .expect("Value property-get should reflect named indexed property-putref"),
+            408_013
         );
     }
 

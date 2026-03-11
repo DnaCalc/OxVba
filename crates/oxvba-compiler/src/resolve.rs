@@ -2315,6 +2315,16 @@ fn parse_assign_or_unsupported(
         && let Some(target) = parse_reference_name(lhs_raw, array_bounds)
     {
         if parse_reference_name(rhs_raw.trim(), array_bounds).is_none()
+            && let Some((call_name, args)) =
+                parse_dispatch_invoke_call_invocation(rhs_raw.trim(), array_bounds)
+        {
+            return BoundStmt::AssignFromCall {
+                target,
+                name: call_name,
+                args,
+            };
+        }
+        if parse_reference_name(rhs_raw.trim(), array_bounds).is_none()
             && let Some((call_name, args)) = parse_call_invocation(rhs_raw.trim(), array_bounds)
             && !is_intrinsic_call_name(&call_name)
         {
@@ -2368,6 +2378,9 @@ fn parse_assign_or_unsupported(
     } else {
         assignment_line.trim()
     };
+    if let Some((name, args)) = parse_dispatch_invoke_call_invocation(call_token, array_bounds) {
+        return BoundStmt::Call { name, args };
+    }
     if let Some((name, args)) = parse_call_invocation(call_token, array_bounds) {
         return BoundStmt::Call { name, args };
     }
@@ -2478,6 +2491,50 @@ fn parse_call_invocation(
 
     let mut args = Vec::new();
     for token in split_call_args(args_raw)? {
+        let trimmed = token.trim();
+        if let Some((lhs, rhs)) = trimmed.split_once(":=") {
+            args.push(BoundCallArg {
+                name: Some(normalize_ident(lhs)?),
+                expr: parse_expr(rhs.trim(), array_bounds)?,
+            });
+        } else {
+            args.push(BoundCallArg {
+                name: None,
+                expr: parse_expr(trimmed, array_bounds)?,
+            });
+        }
+    }
+    Some((name, args))
+}
+
+fn parse_dispatch_invoke_call_invocation(
+    text: &str,
+    array_bounds: &ArrayBoundsMap,
+) -> Option<(String, Vec<BoundCallArg>)> {
+    let open = text.find('(')?;
+    let close = text.rfind(')')?;
+    if close <= open || !text[close + 1..].trim().is_empty() {
+        return None;
+    }
+    let name = normalize_ident(text[..open].trim())?;
+    if name != "dispatchinvoke" {
+        return None;
+    }
+    let args_raw = text[open + 1..close].trim();
+    let args_text = split_call_args(args_raw)?;
+    if args_text.len() < 2 {
+        return None;
+    }
+    let mut args = Vec::with_capacity(args_text.len());
+    args.push(BoundCallArg {
+        name: None,
+        expr: parse_expr(args_text[0], array_bounds)?,
+    });
+    args.push(BoundCallArg {
+        name: None,
+        expr: parse_dispatch_member_arg(args_text[1], array_bounds)?,
+    });
+    for token in &args_text[2..] {
         let trimmed = token.trim();
         if let Some((lhs, rhs)) = trimmed.split_once(":=") {
             args.push(BoundCallArg {

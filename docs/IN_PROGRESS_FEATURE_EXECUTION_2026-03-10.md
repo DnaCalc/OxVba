@@ -43,6 +43,8 @@ Status vocabulary:
   - implemented general named-argument invoke packing for Windows member-known lanes:
     - named method calls are now executable through `IDispatch::GetIDsOfNames` + `Invoke`
     - named property-get calls are now executable through the same transport
+    - member-known property-put/property-putref calls now canonicalize named/indexed arguments before invoke so value-argument routing no longer depends on caller order
+    - expression-form `DispatchInvoke(...)` assignments now preserve named trailing COM arguments through compiler lowering instead of rejecting the statement
     - omitted required arguments now survive the transport and fail deterministically at the adapter boundary
   - kept one safety gate explicit:
     - late-bound default-member calls with named arguments remain compile-time blocked because runtime still cannot recover the authoritative default COM member identity for named dispatch
@@ -50,12 +52,10 @@ Status vocabulary:
     - `cargo test -p oxvba-com -p oxvba-compiler -p oxvba-vm -p oxvba-hal --quiet` -> PASS
 - Blocker:
   - parity is still blocked by the remaining scope:
-    - named property-put/putref semantics are not fully closed,
     - default-member named dispatch still lacks authoritative member identity,
-    - explicit compiler/source support for named late-bound transport is still narrow,
     - object/interface-pointer and broad `VARIANT`/`SAFEARRAY` marshalling are still below parity target.
 - Next required action:
-  - complete named property-put/putref packing and evidence closure, then finish full marshalling/error-channel fidelity and reopen default-member named dispatch only after runtime member identity is authoritative.
+  - finish full marshalling/error-channel fidelity and reopen default-member named dispatch only after runtime member identity is authoritative.
 
 ### `IP-04` `oxvba-com` architectural repurpose and HAL COM extraction
 

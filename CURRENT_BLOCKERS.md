@@ -27,16 +27,16 @@ Run context: active parity/compliance execution plus in-progress feature worklis
   - bytecode `IntrinsicDispatchInvokeHost` now preserves per-argument slot/name metadata,
   - VM host invoke construction now forwards that metadata into `ComInvokeRequest`,
   - Windows native adapter now supports general named-argument `DISPPARAMS` packing for member-known method/property-get lanes,
+  - member-known property-put/property-putref lanes now canonicalize fully named/indexed arguments so the property value does not depend on caller argument order,
+  - expression-form `DispatchInvoke(...)` assignments now preserve named trailing COM arguments instead of rejecting the statement outright,
   - omitted-argument metadata now survives the invoke request and yields deterministic required-argument faults,
   - late-bound default-member calls with named arguments remain compile-time blocked because runtime still cannot recover the authoritative default COM member identity for named dispatch,
-  - named property-put/putref semantics are still not parity-complete beyond the legacy `DISPID_PROPERTYPUT` lane,
   - broad object/interface-pointer and full `VARIANT`/`SAFEARRAY` marshalling remain below parity target.
 - Exact unblock steps:
-  - complete named property-put/putref packing and evidence closure,
   - add an explicit compiler surface for named late-bound transport that does not depend on unresolved default-member identity,
   - complete full `VARIANT`/object/`SAFEARRAY` marshalling and richer `Invoke` error/result fidelity.
 - Recommendation:
-  - continue with the late-bound COM completion workset; the next slice should target named property-put/putref and broader marshalling fidelity.
+  - continue with the late-bound COM completion workset; the next slice should target broader `VARIANT`/object/`SAFEARRAY` marshalling plus richer `Invoke` error/result fidelity.
 
 ### BLK-COM-BOUNDARY-001: Final `oxvba-com` extraction is blocked on unsettled COM behavior contracts
 - Impact:

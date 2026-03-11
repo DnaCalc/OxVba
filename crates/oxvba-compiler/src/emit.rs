@@ -893,6 +893,17 @@ fn emit_early_call(
     external_decls: &HashMap<String, BoundExternalDecl>,
     assign_target: Option<usize>,
 ) -> bool {
+    if name.eq_ignore_ascii_case("dispatchinvoke") {
+        return emit_dispatch_invoke_call(
+            args,
+            compare_mode,
+            slot_map,
+            temps,
+            instructions,
+            assign_target,
+        );
+    }
+
     if let Some(external_decl) = external_decls.get(&name.to_ascii_lowercase()) {
         return emit_external_declare_call(
             name,
@@ -977,6 +988,61 @@ fn emit_early_call(
         instructions.push(Instruction::CopySlot { dst, src });
     }
 
+    true
+}
+
+fn emit_dispatch_invoke_call(
+    args: &[BoundCallArg],
+    compare_mode: StringCompareMode,
+    slot_map: &HashMap<String, usize>,
+    temps: &mut TempSlotAllocator,
+    instructions: &mut Vec<Instruction>,
+    assign_target: Option<usize>,
+) -> bool {
+    let [object, member, invoke_args @ ..] = args else {
+        return false;
+    };
+    let object_slot = temps.alloc_temp();
+    emit_expr_into(
+        &object.expr,
+        compare_mode,
+        object_slot,
+        slot_map,
+        temps,
+        instructions,
+    );
+    let member_slot = temps.alloc_temp();
+    emit_expr_into(
+        &member.expr,
+        compare_mode,
+        member_slot,
+        slot_map,
+        temps,
+        instructions,
+    );
+    let mut bytecode_args = Vec::with_capacity(invoke_args.len());
+    for arg in invoke_args {
+        let arg_slot = temps.alloc_temp();
+        emit_expr_into(
+            &arg.expr,
+            compare_mode,
+            arg_slot,
+            slot_map,
+            temps,
+            instructions,
+        );
+        bytecode_args.push(DispatchInvokeArg {
+            slot: Some(arg_slot),
+            name: arg.name.clone(),
+        });
+    }
+    let dst = assign_target.unwrap_or_else(|| temps.alloc_temp());
+    instructions.push(Instruction::IntrinsicDispatchInvokeHost {
+        dst,
+        object: object_slot,
+        member: member_slot,
+        args: bytecode_args,
+    });
     true
 }
 

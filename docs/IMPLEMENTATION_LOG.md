@@ -1,6 +1,13 @@
 # Implementation Log
 
 ## 2026-03-11
+- late-bound COM named property-put/property-putref closure slice:
+  - extended deterministic COM typelib/member metadata with ordered parameter names for member-known late-bound dispatch lanes
+  - member-known property-put/property-putref calls now canonicalize named/indexed arguments before native invoke, so `DISPID_PROPERTYPUT` / `DISPID_PROPERTYPUTREF` no longer depend on caller argument order
+  - widened the controlled COM fixture validation lane to accept fully named indexed property-put/property-putref calls
+  - expression-form `DispatchInvoke(...)` assignments now preserve named trailing COM arguments through compiler lowering instead of being rejected as unsupported statements
+  - verification:
+    - `cargo test -p oxvba-compiler -p oxvba-com -p oxvba-hal -p oxvba-host --quiet` -> PASS
 - GitHub CI check-in workflow cleanup:
   - replaced the failing broad push/PR workflow with a stable Windows readiness gate that mirrors the repo doctrine:
     - `./scripts/meta-check.ps1 -Fast -NoArtifacts`
@@ -26,7 +33,7 @@
     - named method invoke through `IDispatch::Invoke`
     - named property-get invoke through `IDispatch::Invoke`
     - omitted required-argument transport through `dispatch_invoke_v2`
-    - named property-put value-argument route still executes through the legacy `DISPID_PROPERTYPUT` lane while broader named property-put/putref parity remains open
+    - named property-put/property-putref indexed routes now execute deterministically in both adapter-level and end-to-end host-backed lanes
   - kept one safety gate explicit:
     - late-bound default-member calls with named arguments remain compile-time blocked until runtime can recover authoritative default-member identity for named COM dispatch
   - verification:
