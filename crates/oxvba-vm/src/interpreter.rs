@@ -531,7 +531,7 @@ impl Vm {
                     } else {
                         RuntimeValue::I32(1)
                     };
-                    match self.host_services.ui().msg_box_value(prompt, style) {
+                    match self.host_services.ui().msg_box(prompt, style) {
                         Ok(value) => {
                             self.write_value_slot(*dst, value)?;
                             pc += 1;
@@ -550,11 +550,7 @@ impl Vm {
                     } else {
                         RuntimeValue::I32(0)
                     };
-                    match self
-                        .host_services
-                        .ui()
-                        .input_box_value(prompt, default_value)
-                    {
+                    match self.host_services.ui().input_box(prompt, default_value) {
                         Ok(value) => {
                             self.write_value_slot(*dst, value)?;
                             pc += 1;
@@ -857,7 +853,7 @@ impl Vm {
                     match self
                         .host_services
                         .process()
-                        .shell_value(command, RuntimeValue::I32(0))
+                        .shell(command, RuntimeValue::I32(0))
                     {
                         Ok(value) => {
                             self.write_value_slot(*dst, value)?;
@@ -868,7 +864,7 @@ impl Vm {
                 }
                 Instruction::IntrinsicEnvironHost { dst, key } => {
                     let key = self.read_value_slot(*key)?;
-                    match self.host_services.process().environ_value(key) {
+                    match self.host_services.process().environ(key) {
                         Ok(value) => {
                             self.write_value_slot(*dst, value)?;
                             pc += 1;
@@ -878,11 +874,7 @@ impl Vm {
                 }
                 Instruction::IntrinsicDirHost { dst, path } => {
                     let path = self.read_value_slot(*path)?;
-                    match self
-                        .host_services
-                        .process()
-                        .dir_value(path, RuntimeValue::I32(0))
-                    {
+                    match self.host_services.process().dir(path, RuntimeValue::I32(0)) {
                         Ok(value) => {
                             self.write_value_slot(*dst, value)?;
                             pc += 1;

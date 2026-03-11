@@ -90,22 +90,13 @@ impl HostServices for WasmHostServices {
 }
 
 impl UiInteractionHal for WasmHostServices {
-    fn msg_box(&self, _prompt: i32, style: i32) -> HalResult<i32> {
+    fn msg_box(&self, _prompt: RuntimeValue, style: RuntimeValue) -> HalResult<RuntimeValue> {
         if !self.supports(CapabilityId::UiInteraction) {
             return Err(self.unsupported(CapabilityId::UiInteraction, "msg_box"));
         }
         if !self.policy.allow_interaction {
             return Err(self.denied(CapabilityId::UiInteraction, "msg_box"));
         }
-        match self.policy.ui_virtualization {
-            UiVirtualizationMode::ScriptedResponses => Ok(style.max(1)),
-            UiVirtualizationMode::FailOnPrompt | UiVirtualizationMode::Disabled => {
-                Err(self.denied(CapabilityId::UiInteraction, "msg_box"))
-            }
-        }
-    }
-
-    fn msg_box_value(&self, _prompt: RuntimeValue, style: RuntimeValue) -> HalResult<RuntimeValue> {
         let style = style.to_legacy_i32().map_err(|detail| {
             crate::HalError::adapter_fault(
                 HalProfileId::Wasm,
@@ -114,25 +105,15 @@ impl UiInteractionHal for WasmHostServices {
                 format!("style cannot enter legacy wasm UI lane: {detail}"),
             )
         })?;
-        self.msg_box(0, style).map(RuntimeValue::from_legacy_i32)
-    }
-
-    fn input_box(&self, _prompt: i32, default_value: i32) -> HalResult<i32> {
-        if !self.supports(CapabilityId::UiInteraction) {
-            return Err(self.unsupported(CapabilityId::UiInteraction, "input_box"));
-        }
-        if !self.policy.allow_interaction {
-            return Err(self.denied(CapabilityId::UiInteraction, "input_box"));
-        }
         match self.policy.ui_virtualization {
-            UiVirtualizationMode::ScriptedResponses => Ok(default_value),
+            UiVirtualizationMode::ScriptedResponses => Ok(RuntimeValue::I32(style.max(1))),
             UiVirtualizationMode::FailOnPrompt | UiVirtualizationMode::Disabled => {
-                Err(self.denied(CapabilityId::UiInteraction, "input_box"))
+                Err(self.denied(CapabilityId::UiInteraction, "msg_box"))
             }
         }
     }
 
-    fn input_box_value(
+    fn input_box(
         &self,
         _prompt: RuntimeValue,
         default_value: RuntimeValue,
@@ -213,11 +194,7 @@ impl FileSystemHal for WasmHostServices {
 }
 
 impl ProcessEnvHal for WasmHostServices {
-    fn shell(&self, _command: i32, _window_style: i32) -> HalResult<i32> {
-        Err(self.unsupported(CapabilityId::ProcessEnv, "shell"))
-    }
-
-    fn shell_value(
+    fn shell(
         &self,
         _command: RuntimeValue,
         _window_style: RuntimeValue,
@@ -225,19 +202,11 @@ impl ProcessEnvHal for WasmHostServices {
         Err(self.unsupported(CapabilityId::ProcessEnv, "shell"))
     }
 
-    fn environ(&self, _key: i32) -> HalResult<i32> {
+    fn environ(&self, _key: RuntimeValue) -> HalResult<RuntimeValue> {
         Err(self.unsupported(CapabilityId::ProcessEnv, "environ"))
     }
 
-    fn environ_value(&self, _key: RuntimeValue) -> HalResult<RuntimeValue> {
-        Err(self.unsupported(CapabilityId::ProcessEnv, "environ"))
-    }
-
-    fn dir(&self, _path: i32, _attrs: i32) -> HalResult<i32> {
-        Err(self.unsupported(CapabilityId::ProcessEnv, "dir"))
-    }
-
-    fn dir_value(&self, _path: RuntimeValue, _attrs: RuntimeValue) -> HalResult<RuntimeValue> {
+    fn dir(&self, _path: RuntimeValue, _attrs: RuntimeValue) -> HalResult<RuntimeValue> {
         Err(self.unsupported(CapabilityId::ProcessEnv, "dir"))
     }
 }
@@ -411,6 +380,7 @@ mod tests {
         model::{CapabilityId, UiVirtualizationMode, WasmRuntimeClass},
         traits::{ComHal, HostServices, ProcessEnvHal, UiInteractionHal},
     };
+    use oxvba_runtime::RuntimeValue;
 
     use super::WasmHostServices;
 
@@ -422,11 +392,15 @@ mod tests {
             ..crate::HostPolicy::interactive_dev()
         });
         assert_eq!(
-            host.msg_box(3, 1).expect_err("msg_box").kind,
+            host.msg_box(RuntimeValue::I32(3), RuntimeValue::I32(1))
+                .expect_err("msg_box")
+                .kind,
             HalErrorKind::PolicyDenied
         );
         assert_eq!(
-            host.input_box(3, 1).expect_err("input_box").kind,
+            host.input_box(RuntimeValue::I32(3), RuntimeValue::I32(1))
+                .expect_err("input_box")
+                .kind,
             HalErrorKind::PolicyDenied
         );
     }
@@ -435,7 +409,9 @@ mod tests {
     fn wasm_backend_rejects_process_env_domain() {
         let host = WasmHostServices::new(crate::HostPolicy::interactive_dev());
         assert_eq!(
-            host.shell(1, 0).expect_err("shell").kind,
+            host.shell(RuntimeValue::I32(1), RuntimeValue::I32(0))
+                .expect_err("shell")
+                .kind,
             HalErrorKind::CapabilityUnavailable
         );
         assert_eq!(
@@ -488,7 +464,9 @@ mod tests {
             "browser sandbox class should disable ui capability"
         );
         assert_eq!(
-            host.msg_box(1, 1).expect_err("msg_box").kind,
+            host.msg_box(RuntimeValue::I32(1), RuntimeValue::I32(1))
+                .expect_err("msg_box")
+                .kind,
             HalErrorKind::CapabilityUnavailable
         );
     }

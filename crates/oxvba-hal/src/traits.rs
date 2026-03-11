@@ -82,11 +82,9 @@ pub trait HostServices: Send + Sync {
 
 pub trait UiInteractionHal: Send + Sync {
     /// Deterministically implements `MsgBox` interaction or a policy/capability error.
-    fn msg_box(&self, prompt: ValueToken, style: ValueToken) -> HalResult<ValueToken>;
-    fn msg_box_value(&self, prompt: RuntimeValue, style: RuntimeValue) -> HalResult<RuntimeValue>;
+    fn msg_box(&self, prompt: RuntimeValue, style: RuntimeValue) -> HalResult<RuntimeValue>;
     /// Deterministically implements `InputBox` interaction or a policy/capability error.
-    fn input_box(&self, prompt: ValueToken, default_value: ValueToken) -> HalResult<ValueToken>;
-    fn input_box_value(
+    fn input_box(
         &self,
         prompt: RuntimeValue,
         default_value: RuntimeValue,
@@ -114,16 +112,9 @@ pub trait FileSystemHal: Send + Sync {
 }
 
 pub trait ProcessEnvHal: Send + Sync {
-    fn shell(&self, command: ValueToken, window_style: ValueToken) -> HalResult<ValueToken>;
-    fn shell_value(
-        &self,
-        command: RuntimeValue,
-        window_style: RuntimeValue,
-    ) -> HalResult<RuntimeValue>;
-    fn environ(&self, key: ValueToken) -> HalResult<ValueToken>;
-    fn environ_value(&self, key: RuntimeValue) -> HalResult<RuntimeValue>;
-    fn dir(&self, path: ValueToken, attrs: ValueToken) -> HalResult<ValueToken>;
-    fn dir_value(&self, path: RuntimeValue, attrs: RuntimeValue) -> HalResult<RuntimeValue>;
+    fn shell(&self, command: RuntimeValue, window_style: RuntimeValue) -> HalResult<RuntimeValue>;
+    fn environ(&self, key: RuntimeValue) -> HalResult<RuntimeValue>;
+    fn dir(&self, path: RuntimeValue, attrs: RuntimeValue) -> HalResult<RuntimeValue>;
 }
 
 pub trait ComHal: Send + Sync {

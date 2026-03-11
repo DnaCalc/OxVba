@@ -64,10 +64,11 @@ Completed slices:
 14. VM `WithEvents` binding storage now preserves semantic `RuntimeValue` payloads instead of flattening bound source/object values to raw integers, and the corresponding intrinsics now read/write semantic values directly.
 15. VM `DispatchInvoke` now reads the object slot from semantic runtime state and preserves object handles before constructing the COM request.
 16. `EventPumpHal::do_events()` and `TimeLocaleHal::{date_serial_now,time_serial_now,timer_ticks}` now return semantic `RuntimeValue` directly, and VM host intrinsics consume those semantic results without an intermediate token wrapper lane.
+17. `UiInteractionHal::{msg_box,input_box}` and `ProcessEnvHal::{shell,environ,dir}` now also use direct semantic `RuntimeValue` contracts, and the VM/conformance/test surfaces consume those domains without token-first wrapper methods.
 
 Remaining blocker seam:
 1. HAL `ValueToken = i32` still anchors many remaining seams,
-2. many HAL call inputs and a large share of non-time/non-event result lanes are still fundamentally integer tokens rather than runtime semantic values,
+2. many HAL call inputs and a large share of the remaining file-system, COM, dynamic-link, and diagnostics seams are still fundamentally integer tokens rather than runtime semantic values,
 3. many public observation APIs still expose the legacy integer lane as the primary compatibility surface,
 4. JIT internals and parity harnesses still observe only the integer slot lane for Cranelift-supported subsets,
 5. many tests still assume integer snapshots as the primary public contract.

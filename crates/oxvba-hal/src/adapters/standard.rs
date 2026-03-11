@@ -839,34 +839,6 @@ impl StandardHostServices {
     }
 
     #[cfg(target_os = "windows")]
-    fn native_windows_msg_box(&self, prompt: i32, style: i32) -> HalResult<i32> {
-        let text = format!("OxVba MsgBox token={prompt}");
-        let title = "OxVba";
-        let text_w: Vec<u16> = text.encode_utf16().chain(std::iter::once(0)).collect();
-        let title_w: Vec<u16> = title.encode_utf16().chain(std::iter::once(0)).collect();
-        let style_flags = if style == 0 { MB_OK } else { style as u32 };
-        // SAFETY: The UTF-16 buffers are nul-terminated and remain alive for the full
-        // MessageBoxW call; null HWND is explicitly permitted for an app-modal box.
-        let result = unsafe {
-            MessageBoxW(
-                std::ptr::null_mut(),
-                text_w.as_ptr(),
-                title_w.as_ptr(),
-                style_flags,
-            )
-        };
-        if result <= 0 {
-            return Err(HalError::adapter_fault(
-                self.profile,
-                CapabilityId::UiInteraction,
-                "msg_box",
-                "native MessageBoxW returned failure",
-            ));
-        }
-        Ok(result)
-    }
-
-    #[cfg(target_os = "windows")]
     fn native_windows_msg_box_value(&self, prompt: &RuntimeValue, style: i32) -> HalResult<i32> {
         let text = self.runtime_value_to_display_text(prompt);
         let title = "OxVba";
@@ -890,11 +862,6 @@ impl StandardHostServices {
             ));
         }
         Ok(result)
-    }
-
-    #[cfg(not(target_os = "windows"))]
-    fn native_windows_msg_box(&self, _prompt: i32, _style: i32) -> HalResult<i32> {
-        Ok(1)
     }
 
     #[cfg(not(target_os = "windows"))]
@@ -2246,45 +2213,7 @@ pub(crate) fn descriptor_for_profile(
 }
 
 impl UiInteractionHal for StandardHostServices {
-    fn msg_box(&self, prompt: i32, style: i32) -> HalResult<i32> {
-        let capability = CapabilityId::UiInteraction;
-        if !self.supports(capability) {
-            return Err(self.unsupported(capability, "msg_box"));
-        }
-        if !self.policy.allow_interaction {
-            return Err(self.denied(capability, "msg_box"));
-        }
-        if self.native_mode_enabled()
-            && self.profile == HalProfileId::Windows
-            && self.runtime_class() == HalRuntimeClass::WindowsGui
-            && self.policy.ui_virtualization == UiVirtualizationMode::Disabled
-        {
-            return self.native_windows_msg_box(prompt, style);
-        }
-        if self.native_mode_enabled()
-            && self.profile == HalProfileId::Linux
-            && self.runtime_class() == HalRuntimeClass::LinuxStdio
-            && self.policy.ui_virtualization == UiVirtualizationMode::Disabled
-        {
-            eprintln!("[oxvba-hal] linux-stdio msg_box token={prompt} style={style}");
-            return Ok(style.max(1));
-        }
-        let result = match self.policy.ui_virtualization {
-            UiVirtualizationMode::FailOnPrompt => Err(self.denied(capability, "msg_box")),
-            UiVirtualizationMode::ScriptedResponses => Ok(style.max(1)),
-            UiVirtualizationMode::Disabled => Ok(prompt.max(1)),
-        };
-        if let Ok(value) = result {
-            hal_contract_assert!(
-                value >= 1,
-                "op=msg_box must return positive token, got {}",
-                value
-            );
-        }
-        result
-    }
-
-    fn msg_box_value(&self, prompt: RuntimeValue, style: RuntimeValue) -> HalResult<RuntimeValue> {
+    fn msg_box(&self, prompt: RuntimeValue, style: RuntimeValue) -> HalResult<RuntimeValue> {
         let capability = CapabilityId::UiInteraction;
         let style = self.runtime_value_to_legacy_i32(&style, capability, "msg_box", "style")?;
         if !self.supports(capability) {
@@ -2322,52 +2251,7 @@ impl UiInteractionHal for StandardHostServices {
         }
     }
 
-    fn input_box(&self, prompt: i32, default_value: i32) -> HalResult<i32> {
-        let capability = CapabilityId::UiInteraction;
-        if !self.supports(capability) {
-            return Err(self.unsupported(capability, "input_box"));
-        }
-        if !self.policy.allow_interaction {
-            return Err(self.denied(capability, "input_box"));
-        }
-        if self.native_mode_enabled()
-            && self.profile == HalProfileId::Linux
-            && self.runtime_class() == HalRuntimeClass::LinuxStdio
-            && self.policy.ui_virtualization == UiVirtualizationMode::Disabled
-        {
-            eprintln!("[oxvba-hal] linux-stdio input_box token={prompt} default={default_value}");
-            return Ok(default_value);
-        }
-        let result = match self.policy.ui_virtualization {
-            UiVirtualizationMode::FailOnPrompt => Err(self.denied(capability, "input_box")),
-            UiVirtualizationMode::ScriptedResponses => Ok(default_value),
-            UiVirtualizationMode::Disabled => Ok(prompt),
-        };
-        if let Ok(value) = result {
-            match self.policy.ui_virtualization {
-                UiVirtualizationMode::ScriptedResponses => {
-                    hal_contract_assert!(
-                        value == default_value,
-                        "op=input_box scripted response mismatch: expected {}, got {}",
-                        default_value,
-                        value
-                    );
-                }
-                UiVirtualizationMode::Disabled => {
-                    hal_contract_assert!(
-                        value == prompt,
-                        "op=input_box disabled response mismatch: expected {}, got {}",
-                        prompt,
-                        value
-                    );
-                }
-                UiVirtualizationMode::FailOnPrompt => {}
-            }
-        }
-        result
-    }
-
-    fn input_box_value(
+    fn input_box(
         &self,
         prompt: RuntimeValue,
         default_value: RuntimeValue,
@@ -2787,35 +2671,7 @@ impl FileSystemHal for StandardHostServices {
 }
 
 impl ProcessEnvHal for StandardHostServices {
-    fn shell(&self, command: i32, _window_style: i32) -> HalResult<i32> {
-        let capability = CapabilityId::ProcessEnv;
-        if !self.supports(capability) {
-            return Err(self.unsupported(capability, "shell"));
-        }
-        if !self.policy.allow_process_spawn {
-            return Err(self.denied(capability, "shell"));
-        }
-        if self.native_process_enabled() && command != 0 {
-            let mut child = self.spawn_probe_shell_process(command).map_err(|err| {
-                HalError::adapter_fault(
-                    self.profile,
-                    capability,
-                    "shell",
-                    format!("failed to spawn probe shell process: {err}"),
-                )
-            })?;
-            let child_id = i32::try_from(child.id()).unwrap_or(i32::MAX).max(1);
-            let _ = child.wait();
-            return Ok(child_id);
-        }
-        Ok(if command == 0 { 0 } else { 1 })
-    }
-
-    fn shell_value(
-        &self,
-        command: RuntimeValue,
-        _window_style: RuntimeValue,
-    ) -> HalResult<RuntimeValue> {
+    fn shell(&self, command: RuntimeValue, _window_style: RuntimeValue) -> HalResult<RuntimeValue> {
         let capability = CapabilityId::ProcessEnv;
         if !self.supports(capability) {
             return Err(self.unsupported(capability, "shell"));
@@ -2839,35 +2695,38 @@ impl ProcessEnvHal for StandardHostServices {
             let _ = child.wait();
             return Ok(RuntimeValue::I32(child_id));
         }
+        if self.native_process_enabled() {
+            let command = self
+                .runtime_value_to_legacy_i32(&command, capability, "shell", "command")
+                .unwrap_or(0);
+            if command != 0 {
+                let mut child = self.spawn_probe_shell_process(command).map_err(|err| {
+                    HalError::adapter_fault(
+                        self.profile,
+                        capability,
+                        "shell",
+                        format!("failed to spawn probe shell process: {err}"),
+                    )
+                })?;
+                let child_id = i32::try_from(child.id()).unwrap_or(i32::MAX).max(1);
+                let _ = child.wait();
+                return Ok(RuntimeValue::I32(child_id));
+            }
+        }
         let command = match &command {
             RuntimeValue::String(BStr(text)) => i32::from(!text.trim().is_empty()),
             other => self
                 .runtime_value_to_legacy_i32(other, capability, "shell", "command")
                 .unwrap_or(0),
         };
-        self.shell(command, 0).map(RuntimeValue::from_legacy_i32)
+        Ok(RuntimeValue::from_legacy_i32(if command == 0 {
+            0
+        } else {
+            1
+        }))
     }
 
-    fn environ(&self, key: i32) -> HalResult<i32> {
-        let capability = CapabilityId::ProcessEnv;
-        if !self.supports(capability) {
-            return Err(self.unsupported(capability, "environ"));
-        }
-        if self.native_process_enabled() {
-            let mut vars: Vec<(std::ffi::OsString, std::ffi::OsString)> =
-                std::env::vars_os().collect();
-            if vars.is_empty() {
-                return Ok(0);
-            }
-            vars.sort_by(|a, b| a.0.cmp(&b.0));
-            let idx = (key.unsigned_abs() as usize) % vars.len();
-            let value_len = vars[idx].1.to_string_lossy().len();
-            return Ok(value_len.min(i32::MAX as usize) as i32);
-        }
-        Ok(key)
-    }
-
-    fn environ_value(&self, key: RuntimeValue) -> HalResult<RuntimeValue> {
+    fn environ(&self, key: RuntimeValue) -> HalResult<RuntimeValue> {
         let capability = CapabilityId::ProcessEnv;
         if !self.supports(capability) {
             return Err(self.unsupported(capability, "environ"));
@@ -2880,48 +2739,30 @@ impl ProcessEnvHal for StandardHostServices {
                 .unwrap_or(0);
             return Ok(RuntimeValue::I32(value_len.min(i32::MAX as usize) as i32));
         }
+        if self.native_process_enabled() {
+            let mut vars: Vec<(std::ffi::OsString, std::ffi::OsString)> =
+                std::env::vars_os().collect();
+            if vars.is_empty() {
+                return Ok(RuntimeValue::I32(0));
+            }
+            vars.sort_by(|a, b| a.0.cmp(&b.0));
+            let key = self
+                .runtime_value_to_legacy_i32(&key, capability, "environ", "key")
+                .unwrap_or(0);
+            let idx = (key.unsigned_abs() as usize) % vars.len();
+            let value_len = vars[idx].1.to_string_lossy().len();
+            return Ok(RuntimeValue::I32(value_len.min(i32::MAX as usize) as i32));
+        }
         let key = match &key {
             RuntimeValue::String(BStr(text)) => text.len().min(i32::MAX as usize) as i32,
             other => self
                 .runtime_value_to_legacy_i32(other, capability, "environ", "key")
                 .unwrap_or(0),
         };
-        self.environ(key).map(RuntimeValue::from_legacy_i32)
+        Ok(RuntimeValue::from_legacy_i32(key))
     }
 
-    fn dir(&self, path: i32, _attrs: i32) -> HalResult<i32> {
-        let capability = CapabilityId::ProcessEnv;
-        if !self.supports(capability) {
-            return Err(self.unsupported(capability, "dir"));
-        }
-        if self.native_process_enabled() {
-            let target = if path == 0 {
-                std::env::current_dir().map_err(|err| {
-                    HalError::adapter_fault(
-                        self.profile,
-                        capability,
-                        "dir",
-                        format!("failed to get current directory: {err}"),
-                    )
-                })?
-            } else {
-                self.host_path_from_token(path)
-            };
-            return Ok(match fs::read_dir(target) {
-                Ok(mut entries) => {
-                    if entries.next().is_some() {
-                        1
-                    } else {
-                        0
-                    }
-                }
-                Err(_) => 0,
-            });
-        }
-        Ok(if path == 0 { 0 } else { 1 })
-    }
-
-    fn dir_value(&self, path: RuntimeValue, _attrs: RuntimeValue) -> HalResult<RuntimeValue> {
+    fn dir(&self, path: RuntimeValue, _attrs: RuntimeValue) -> HalResult<RuntimeValue> {
         let capability = CapabilityId::ProcessEnv;
         if !self.supports(capability) {
             return Err(self.unsupported(capability, "dir"));
@@ -8021,6 +7862,10 @@ mod tests {
         value
     }
 
+    fn rv(value: i32) -> RuntimeValue {
+        RuntimeValue::I32(value)
+    }
+
     fn current_native_profile() -> Option<HalProfileId> {
         if cfg!(target_os = "windows") {
             Some(HalProfileId::Windows)
@@ -8146,8 +7991,8 @@ mod tests {
             ..HostPolicy::default()
         };
         let host = StandardHostServices::new(HalProfileId::Windows, policy.clone());
-        assert_eq!(host.msg_box(100, 3).expect("msg_box"), 3);
-        assert_eq!(host.input_box(100, 7).expect("input_box"), 7);
+        assert_eq!(host.msg_box(rv(100), rv(3)).expect("msg_box"), rv(3));
+        assert_eq!(host.input_box(rv(100), rv(7)).expect("input_box"), rv(7));
 
         let host_disabled = StandardHostServices::new(
             HalProfileId::Windows,
@@ -8156,12 +8001,18 @@ mod tests {
                 ..policy
             },
         );
-        assert_eq!(host_disabled.msg_box(100, 3).expect("msg_box"), 100);
-        assert_eq!(host_disabled.input_box(100, 7).expect("input_box"), 100);
+        assert_eq!(
+            host_disabled.msg_box(rv(100), rv(3)).expect("msg_box"),
+            rv(100)
+        );
+        assert_eq!(
+            host_disabled.input_box(rv(100), rv(7)).expect("input_box"),
+            rv(100)
+        );
     }
 
     #[test]
-    fn ui_value_wrappers_preserve_runtime_string_inputs() {
+    fn ui_runtime_value_lanes_preserve_string_inputs() {
         let policy = HostPolicy {
             allow_interaction: true,
             ui_virtualization: crate::model::UiVirtualizationMode::ScriptedResponses,
@@ -8169,19 +8020,19 @@ mod tests {
         };
         let host = StandardHostServices::new(HalProfileId::Windows, policy.clone());
         assert_eq!(
-            host.msg_box_value(
+            host.msg_box(
                 RuntimeValue::String(BStr("Prompt".to_string())),
                 RuntimeValue::I32(3),
             )
-            .expect("msg_box_value"),
+            .expect("msg_box"),
             RuntimeValue::I32(3)
         );
         assert_eq!(
-            host.input_box_value(
+            host.input_box(
                 RuntimeValue::String(BStr("Prompt".to_string())),
                 RuntimeValue::String(BStr("Default".to_string())),
             )
-            .expect("input_box_value"),
+            .expect("input_box"),
             RuntimeValue::String(BStr("Default".to_string()))
         );
     }
@@ -8196,10 +8047,12 @@ mod tests {
                 ..HostPolicy::default()
             },
         );
-        let err = host.msg_box(9, 1).expect_err("msg_box should be denied");
+        let err = host
+            .msg_box(rv(9), rv(1))
+            .expect_err("msg_box should be denied");
         assert_eq!(err.kind, HalErrorKind::PolicyDenied);
         let err = host
-            .input_box(9, 1)
+            .input_box(rv(9), rv(1))
             .expect_err("input_box should be denied");
         assert_eq!(err.kind, HalErrorKind::PolicyDenied);
     }
@@ -8217,7 +8070,7 @@ mod tests {
         );
 
         assert_eq!(
-            host.shell(1, 0).expect_err("shell deny").kind,
+            host.shell(rv(1), rv(0)).expect_err("shell deny").kind,
             HalErrorKind::PolicyDenied
         );
         assert_eq!(
@@ -8231,27 +8084,27 @@ mod tests {
     }
 
     #[test]
-    fn process_value_wrappers_accept_string_inputs_in_deterministic_mode() {
+    fn process_runtime_value_lanes_accept_string_inputs_in_deterministic_mode() {
         let host = StandardHostServices::new(HalProfileId::Windows, HostPolicy::default());
         assert_eq!(
-            host.shell_value(
+            host.shell(
                 RuntimeValue::String(BStr("echo hi".to_string())),
                 RuntimeValue::I32(0),
             )
-            .expect("shell_value"),
+            .expect("shell"),
             RuntimeValue::I32(1)
         );
         assert_eq!(
-            host.environ_value(RuntimeValue::String(BStr("PATH".to_string())))
-                .expect("environ_value"),
+            host.environ(RuntimeValue::String(BStr("PATH".to_string())))
+                .expect("environ"),
             RuntimeValue::I32(4)
         );
         assert_eq!(
-            host.dir_value(
+            host.dir(
                 RuntimeValue::String(BStr("folder".to_string())),
                 RuntimeValue::I32(0),
             )
-            .expect("dir_value"),
+            .expect("dir"),
             RuntimeValue::I32(1)
         );
     }
@@ -8442,9 +8295,9 @@ mod tests {
     #[test]
     fn process_env_deterministic_projection_contract() {
         let host = StandardHostServices::new(HalProfileId::Windows, HostPolicy::default());
-        assert_eq!(host.environ(88).expect("environ"), 88);
-        assert_eq!(host.dir(0, 0).expect("dir"), 0);
-        assert_eq!(host.dir(5, 0).expect("dir"), 1);
+        assert_eq!(host.environ(rv(88)).expect("environ"), rv(88));
+        assert_eq!(host.dir(rv(0), rv(0)).expect("dir"), rv(0));
+        assert_eq!(host.dir(rv(5), rv(0)).expect("dir"), rv(1));
     }
 
     #[test]
@@ -8523,7 +8376,7 @@ mod tests {
     fn ui_msg_box_enforces_policy_and_capability_failures() {
         let denied_host = StandardHostServices::new(HalProfileId::Windows, HostPolicy::default());
         let err = denied_host
-            .msg_box(1, 1)
+            .msg_box(rv(1), rv(1))
             .expect_err("interaction is denied by default policy");
         assert_eq!(err.kind, HalErrorKind::PolicyDenied);
 
@@ -8535,7 +8388,7 @@ mod tests {
             },
         );
         let err = null_host
-            .msg_box(1, 1)
+            .msg_box(rv(1), rv(1))
             .expect_err("null profile should report unsupported capability");
         assert_eq!(err.kind, HalErrorKind::CapabilityUnavailable);
     }
@@ -8563,11 +8416,17 @@ mod tests {
         let windows = StandardHostServices::new(HalProfileId::Windows, policy.clone());
         let linux = StandardHostServices::new(HalProfileId::Linux, policy);
         assert_eq!(
-            windows.shell(1, 0).expect_err("windows shell denial").kind,
+            windows
+                .shell(rv(1), rv(0))
+                .expect_err("windows shell denial")
+                .kind,
             HalErrorKind::PolicyDenied
         );
         assert_eq!(
-            linux.shell(1, 0).expect_err("linux shell denial").kind,
+            linux
+                .shell(rv(1), rv(0))
+                .expect_err("linux shell denial")
+                .kind,
             HalErrorKind::PolicyDenied
         );
     }
@@ -8578,11 +8437,14 @@ mod tests {
             return;
         };
         let host = StandardHostServices::new(profile, HostPolicy::interactive_dev());
-        let shell = host.shell(1, 0).expect("native shell should succeed");
+        let shell = expect_i32(
+            host.shell(rv(1), rv(0))
+                .expect("native shell should succeed"),
+        );
         assert!(shell >= 1);
-        let environ = host.environ(3).expect("native environ should succeed");
+        let environ = expect_i32(host.environ(rv(3)).expect("native environ should succeed"));
         assert!(environ >= 0);
-        let dir = host.dir(0, 0).expect("native dir should succeed");
+        let dir = expect_i32(host.dir(rv(0), rv(0)).expect("native dir should succeed"));
         assert!(dir == 0 || dir == 1);
     }
 
@@ -10279,12 +10141,14 @@ mod tests {
                 },
             );
             prop_assert_eq!(
-                scripted.msg_box(prompt, style).expect("scripted msg_box"),
-                style.max(1)
+                scripted.msg_box(rv(prompt), rv(style)).expect("scripted msg_box"),
+                rv(style.max(1))
             );
             prop_assert_eq!(
-                scripted.input_box(prompt, default_value).expect("scripted input_box"),
-                default_value
+                scripted
+                    .input_box(rv(prompt), rv(default_value))
+                    .expect("scripted input_box"),
+                rv(default_value)
             );
 
             let disabled = StandardHostServices::new(
@@ -10296,12 +10160,14 @@ mod tests {
                 },
             );
             prop_assert_eq!(
-                disabled.msg_box(prompt, style).expect("disabled msg_box"),
-                prompt.max(1)
+                disabled.msg_box(rv(prompt), rv(style)).expect("disabled msg_box"),
+                rv(prompt.max(1))
             );
             prop_assert_eq!(
-                disabled.input_box(prompt, default_value).expect("disabled input_box"),
-                prompt
+                disabled
+                    .input_box(rv(prompt), rv(default_value))
+                    .expect("disabled input_box"),
+                rv(prompt)
             );
         }
 
@@ -10324,11 +10190,13 @@ mod tests {
             );
 
             prop_assert_eq!(
-                host.msg_box(1, 1).expect_err("msg_box denied").kind,
+                host.msg_box(rv(1), rv(1)).expect_err("msg_box denied").kind,
                 HalErrorKind::PolicyDenied
             );
             prop_assert_eq!(
-                host.shell(shell_cmd, 0).expect_err("shell denied").kind,
+                host.shell(rv(shell_cmd), rv(0))
+                    .expect_err("shell denied")
+                    .kind,
                 HalErrorKind::PolicyDenied
             );
             prop_assert_eq!(
@@ -10363,8 +10231,8 @@ mod tests {
 
             let shell_expected = if shell_cmd == 0 { 0 } else { 1 };
             prop_assert_eq!(
-                host.shell(shell_cmd, 0).expect("shell should succeed"),
-                shell_expected
+                host.shell(rv(shell_cmd), rv(0)).expect("shell should succeed"),
+                rv(shell_expected)
             );
             prop_assert_eq!(
                 host.create_object(prog_id).expect("create_object should succeed"),

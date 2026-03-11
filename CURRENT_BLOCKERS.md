@@ -90,6 +90,7 @@ Run context: active parity/compliance execution plus in-progress feature worklis
   - JIT-backed value snapshots now preserve full `RuntimeValue` shape on VM fallback and project the supported Cranelift subset into `RuntimeValue`, but JIT internals and many parity harnesses still fundamentally operate over the legacy integer snapshot lane,
   - HAL now exposes additive semantic-return helper methods and the VM routes host-return paths through them, but the underlying input/output token contract is still `i32`,
   - `EventPumpHal::do_events()` and `TimeLocaleHal::{date_serial_now,time_serial_now,timer_ticks}` now return semantic `RuntimeValue` directly and the HAL conformance probes/tests have been migrated to treat those domains as semantic-return lanes rather than integer-token facades,
+  - `UiInteractionHal::{msg_box,input_box}` and `ProcessEnvHal::{shell,environ,dir}` now also use direct semantic `RuntimeValue` contracts, and the VM/conformance/test surfaces no longer rely on token-first wrappers for those host domains,
   - the first input-side semantic wrapper migration is now in place for active VM host intrinsics:
     - `MsgBox` / `InputBox`,
     - `FreeFile`,
@@ -102,6 +103,7 @@ Run context: active parity/compliance execution plus in-progress feature worklis
   - VM `WithEvents` binding state now preserves semantic `RuntimeValue` payloads instead of flattening bound source/object values to raw integers,
   - VM `DispatchInvoke` now reads the object slot from semantic runtime state and preserves object handles instead of re-reading the object through the raw slot lane before constructing the COM request,
   - time/event host intrinsics now also read semantic `RuntimeValue` directly from the HAL boundary instead of routing through removed `*_value()` wrappers,
+  - UI/process host intrinsics now likewise read semantic `RuntimeValue` directly from the HAL boundary instead of routing through removed `*_value()` wrappers,
   - many bytecode execution callers and tests still assume the legacy integer observation surface,
   - the new `ComValue` carrier and generic dynamic-object protocol can live at the COM boundary, but they cannot yet become the single runtime object/value model while the wider execution substrate remains token-only.
 - Exact unblock steps:

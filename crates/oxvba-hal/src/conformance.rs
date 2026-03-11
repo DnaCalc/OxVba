@@ -310,7 +310,9 @@ pub fn run_conformance(host: &dyn HostServices) -> ConformanceReport {
             "HAL-GEN-003",
             "HAL-GEN-004",
         ],
-        host.ui().msg_box(7, 1).map(|_| ()),
+        host.ui()
+            .msg_box(RuntimeValue::I32(7), RuntimeValue::I32(1))
+            .map(|_| ()),
     );
     probe(
         CapabilityId::EventPump,
@@ -334,7 +336,9 @@ pub fn run_conformance(host: &dyn HostServices) -> ConformanceReport {
             "HAL-GEN-003",
             "HAL-GEN-004",
         ],
-        host.process().shell(1, 0).map(|_| ()),
+        host.process()
+            .shell(RuntimeValue::I32(1), RuntimeValue::I32(0))
+            .map(|_| ()),
     );
     probe(
         CapabilityId::ComActivationDispatch,
@@ -886,8 +890,12 @@ fn verify_process_host_backed_contract(
     }
 
     let mut ok = true;
-    match host.process().shell(1, 0) {
+    match host
+        .process()
+        .shell(RuntimeValue::I32(1), RuntimeValue::I32(0))
+    {
         Ok(token) => {
+            let token = runtime_i32(&token).unwrap_or_default();
             if host_backed_active && token <= 1 {
                 ok = false;
                 failures.push(format!(
@@ -905,14 +913,17 @@ fn verify_process_host_backed_contract(
         }
     }
 
-    if let Err(err) = host.process().environ(1) {
+    if let Err(err) = host.process().environ(RuntimeValue::I32(1)) {
         ok = false;
         failures.push(format!(
             "process.environ host-backed contract probe failed: {} ({})",
             err.stable_code, err.message
         ));
     }
-    if let Err(err) = host.process().dir(0, 0) {
+    if let Err(err) = host
+        .process()
+        .dir(RuntimeValue::I32(0), RuntimeValue::I32(0))
+    {
         ok = false;
         failures.push(format!(
             "process.dir host-backed contract probe failed: {} ({})",

@@ -1969,3 +1969,11 @@
   - verification:
     - `cargo test -p oxvba-hal -p oxvba-vm --quiet`
     - `./scripts/meta-check.ps1 -Fast -NoArtifacts`
+- Continued the runtime HAL semantic-contract migration into UI/process domains:
+  - `UiInteractionHal::{msg_box,input_box}` now use direct `RuntimeValue` input/output contracts instead of token-return methods plus `*_value()` facades
+  - `ProcessEnvHal::{shell,environ,dir}` now use direct `RuntimeValue` contracts instead of token-return methods plus `*_value()` facades
+  - VM host intrinsic execution now consumes those direct semantic results for `MsgBox`, `InputBox`, `Shell`, `Environ`, and `Dir`
+  - null/wasm/standard adapters and their regression/property tests were migrated to the semantic contract
+  - HAL conformance probes now exercise the process/UI domains through semantic runtime values rather than token-only wrappers
+  - verification:
+    - `cargo test -p oxvba-hal -p oxvba-vm --quiet`

@@ -78,23 +78,11 @@ impl HostServices for NullHostServices {
 }
 
 impl UiInteractionHal for NullHostServices {
-    fn msg_box(&self, _prompt: i32, _style: i32) -> HalResult<i32> {
+    fn msg_box(&self, _prompt: RuntimeValue, _style: RuntimeValue) -> HalResult<RuntimeValue> {
         Err(self.unsupported(CapabilityId::UiInteraction, "msg_box"))
     }
 
-    fn msg_box_value(
-        &self,
-        _prompt: RuntimeValue,
-        _style: RuntimeValue,
-    ) -> HalResult<RuntimeValue> {
-        Err(self.unsupported(CapabilityId::UiInteraction, "msg_box"))
-    }
-
-    fn input_box(&self, _prompt: i32, _default_value: i32) -> HalResult<i32> {
-        Err(self.unsupported(CapabilityId::UiInteraction, "input_box"))
-    }
-
-    fn input_box_value(
+    fn input_box(
         &self,
         _prompt: RuntimeValue,
         _default_value: RuntimeValue,
@@ -164,11 +152,7 @@ impl FileSystemHal for NullHostServices {
 }
 
 impl ProcessEnvHal for NullHostServices {
-    fn shell(&self, _command: i32, _window_style: i32) -> HalResult<i32> {
-        Err(self.unsupported(CapabilityId::ProcessEnv, "shell"))
-    }
-
-    fn shell_value(
+    fn shell(
         &self,
         _command: RuntimeValue,
         _window_style: RuntimeValue,
@@ -176,19 +160,11 @@ impl ProcessEnvHal for NullHostServices {
         Err(self.unsupported(CapabilityId::ProcessEnv, "shell"))
     }
 
-    fn environ(&self, _key: i32) -> HalResult<i32> {
+    fn environ(&self, _key: RuntimeValue) -> HalResult<RuntimeValue> {
         Err(self.unsupported(CapabilityId::ProcessEnv, "environ"))
     }
 
-    fn environ_value(&self, _key: RuntimeValue) -> HalResult<RuntimeValue> {
-        Err(self.unsupported(CapabilityId::ProcessEnv, "environ"))
-    }
-
-    fn dir(&self, _path: i32, _attrs: i32) -> HalResult<i32> {
-        Err(self.unsupported(CapabilityId::ProcessEnv, "dir"))
-    }
-
-    fn dir_value(&self, _path: RuntimeValue, _attrs: RuntimeValue) -> HalResult<RuntimeValue> {
+    fn dir(&self, _path: RuntimeValue, _attrs: RuntimeValue) -> HalResult<RuntimeValue> {
         Err(self.unsupported(CapabilityId::ProcessEnv, "dir"))
     }
 }
@@ -384,11 +360,15 @@ mod tests {
     fn null_backend_rejects_host_sensitive_domains() {
         let host = NullHostServices::new(crate::HostPolicy::interactive_dev());
         assert_eq!(
-            host.msg_box(1, 1).expect_err("msg_box").kind,
+            host.msg_box(RuntimeValue::I32(1), RuntimeValue::I32(1))
+                .expect_err("msg_box")
+                .kind,
             HalErrorKind::CapabilityUnavailable
         );
         assert_eq!(
-            host.shell(1, 0).expect_err("shell").kind,
+            host.shell(RuntimeValue::I32(1), RuntimeValue::I32(0))
+                .expect_err("shell")
+                .kind,
             HalErrorKind::CapabilityUnavailable
         );
         assert_eq!(
