@@ -50,6 +50,7 @@ Run context: active parity/compliance execution plus in-progress feature worklis
   - Blocks the remaining high-value closure work in `IP-03` Windows late-bound COM client parity.
   - Blocks practical SAFEARRAY/object/string COM transport and therefore parts of `IP-04` COM extraction and `IP-09` marshaling parity.
 - Current state:
+  - `oxvba-com` now exposes an executable generic dynamic-object protocol API (`DynamicCallRequest`, `DynamicMemberSelector`, `DynamicCallKind`, `DynamicEventPayload`) with conversions from the current COM request/payload structs,
   - `oxvba-com` now owns a first semantic carrier slice via `ComValue`,
   - `ComInvokeArg.value` and `ComCallbackPayload.args` no longer use raw `i32` tokens at the shared COM boundary,
   - VM `DispatchInvoke` construction now preserves `Empty`/`Null`/`CVErr(...)`/array-intent shape into that carrier instead of flattening array tags before the COM boundary,
@@ -65,14 +66,35 @@ Run context: active parity/compliance execution plus in-progress feature worklis
     - BSTR/string payloads,
     - real SAFEARRAY payloads,
     - broader scalar/variant categories,
-  - define the unified internal late-bound object protocol that both native VBA objects and COM-backed objects will use,
-  - thread that carrier through compiler bytecode, VM host invoke construction, callback transport, and host runtime ingestion without making raw COM wire structs the VM/compiler value model,
+  - thread the new dynamic-object protocol and expanded carrier through compiler bytecode, VM host invoke construction, callback transport, and host runtime ingestion without making raw COM wire structs the VM/compiler value model,
   - move `VARIANT`/`BSTR`/`SAFEARRAY`/interface-pointer translation into `oxvba-com`,
   - align COM-backed object calls to the shared late-bound object protocol instead of preserving a COM-special runtime lane,
   - contract HAL toward delegation/bootstrap once the new carrier is in place,
   - then reopen practical SAFEARRAY/object/string late-bound COM work on top of that carrier.
 - Recommendation:
   - treat the next implementation slice as the work defined in `docs/worksets/WORKSET_2026-03-11_UNIFIED_DYNAMIC_OBJECT_PROTOCOL_AND_VALUE_CARRIER.md`, not another adapter-local patch.
+
+### BLK-RUNTIME-VALUE-MODEL-001: VM/register/host execution still assumes `i32` slots end to end
+- Impact:
+  - Blocks `WORKSET_2026-03-11_UNIFIED_DYNAMIC_OBJECT_PROTOCOL_AND_VALUE_CARRIER.md` from progressing beyond the current boundary slices.
+  - Blocks full closure of `IP-03` Windows late-bound COM client parity and `IP-04` `oxvba-com` extraction.
+  - Blocks practical object/string/real-SAFEARRAY transport for `IP-08` host object/value bridge follow-through.
+- Current state:
+  - `crates/oxvba-vm/src/register_file.rs` stores `Vec<i32>`,
+  - `crates/oxvba-hal/src/traits.rs` still defines `ValueToken = i32`,
+  - VM read/write helpers, snapshots, host test harnesses, and many bytecode execution paths are hard-wired to `i32`,
+  - the new `ComValue` carrier and generic dynamic-object protocol can live at the COM boundary, but they cannot yet become the single runtime object/value model while the wider execution substrate remains token-only.
+- Exact unblock steps:
+  - define the canonical runtime value representation or indirection model that replaces or strictly extends the current `i32` slot contract,
+  - plan and execute migration of:
+    - VM register storage,
+    - VM read/write helpers,
+    - HAL `ValueToken` seams,
+    - host/runtime snapshot and callback ingress surfaces,
+    - JIT/VM equivalence expectations and affected tests,
+  - then wire the dynamic-object protocol and expanded value carrier through those seams as the single runtime-facing model.
+- Recommendation:
+  - treat this as the real blocker for continuing the first workset beyond the currently landed protocol/carrier boundary slices; do not keep patching COM-specific adapters around it.
 
 ### BLK-COM-BOUNDARY-001: Final `oxvba-com` extraction is blocked on unsettled COM behavior contracts
 - Impact:

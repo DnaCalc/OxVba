@@ -1,6 +1,24 @@
 # Implementation Log
 
 ## 2026-03-11
+- unified dynamic-object protocol API slice:
+  - added an executable generic dynamic-object protocol surface in `oxvba-com`:
+    - `DynamicCallRequest`
+    - `DynamicMemberSelector`
+    - `DynamicCallKind`
+    - `DynamicEventPayload`
+    - `DynamicValue`
+  - added conversions from current COM request/payload structs into that generic protocol shape
+  - this makes the unified late-bound object protocol explicit in code rather than only in design docs
+  - remaining blocker:
+    - the protocol is still not wired through compiler/VM/host as the single runtime object-call contract because the wider runtime remains constrained by the `i32` slot/value model
+  - audit confirmation:
+    - `crates/oxvba-vm/src/register_file.rs` still stores `Vec<i32>`
+    - `crates/oxvba-hal/src/traits.rs` still defines `ValueToken = i32`
+    - host snapshots and many VM/JIT/test seams still assume `Vec<i32>`
+    - recorded `BLK-RUNTIME-VALUE-MODEL-001` as the next real blocker for this workset
+  - verification:
+    - `cargo test -p oxvba-com --quiet` -> PASS
 - unified COM semantic-value carrier slice:
   - introduced `ComValue` in `oxvba-com` as the first shared semantic COM request/callback carrier for the currently recoverable subset:
     - `Empty`

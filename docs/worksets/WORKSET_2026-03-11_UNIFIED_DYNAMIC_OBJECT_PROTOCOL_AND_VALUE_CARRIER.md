@@ -113,7 +113,13 @@ Acceptance:
 Progress:
 1. first executable semantic carrier slice is now in place in `oxvba-com` as `ComValue`,
 2. shared COM request/callback structs now use that carrier instead of raw `i32` values,
-3. array/null/error intent now survives to the COM boundary before any Windows-specific narrowing occurs.
+3. array/null/error intent now survives to the COM boundary before any Windows-specific narrowing occurs,
+4. `oxvba-com` now exposes an executable generic dynamic-object protocol API:
+   - `DynamicCallRequest`
+   - `DynamicMemberSelector`
+   - `DynamicCallKind`
+   - `DynamicEventPayload`
+5. current COM request/payload types can now convert into that generic protocol shape.
 
 ### Phase B. Core transport replacement
 
@@ -133,7 +139,10 @@ Progress:
 Open remainder:
 1. object identity, BSTR/string payloads, and real SAFEARRAY contents still need carrier representation,
 2. wider runtime/host ingestion still narrows back into the old token lane after the COM boundary,
-3. the unified late-bound object protocol itself is not yet executable as the single runtime model.
+3. the unified late-bound object protocol is defined in code but is not yet wired through compiler/VM/host as the single runtime model,
+4. the next execution blocker is now explicit:
+   - `BLK-RUNTIME-VALUE-MODEL-001`
+   - VM register storage, HAL value tokens, host snapshots, and many execution/test seams are still globally `i32` based.
 
 ### Phase C. COM adaptation alignment
 

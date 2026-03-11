@@ -2,6 +2,7 @@
 
 pub mod cycle_gc;
 pub mod dispatch;
+pub mod dynamic_object;
 pub mod model;
 pub mod platform;
 pub mod refcount;
@@ -9,6 +10,10 @@ pub mod typelib;
 pub mod typelib_catalog;
 
 pub use dispatch::{ComDispatch, DispatchResult};
+pub use dynamic_object::{
+    DynamicCallArg, DynamicCallKind, DynamicCallRequest, DynamicCallbackToken, DynamicEventPayload,
+    DynamicMemberSelector, DynamicObjectToken, DynamicSubscriptionToken, DynamicValue,
+};
 pub use model::{
     ComCallbackPayload, ComCallbackToken, ComInvokeArg, ComInvokeKind, ComInvokeRequest,
     ComObjectDescriptor, ComObjectToken, ComObjectTransportKind, ComSubscriptionToken, ComValue,

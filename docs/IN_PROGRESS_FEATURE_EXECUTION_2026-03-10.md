@@ -42,6 +42,12 @@ Status vocabulary:
     - VM `DispatchInvoke` construction now preserves array/null/error shape into the COM boundary instead of flattening arrays before the request is built,
     - Windows COM invoke/result translation now maps between `ComValue` and `VARIANT` for the supported subset,
     - callback payload polling now returns semantic COM values and host/runtime ingestion narrows them back into the current runtime token lane only after the COM boundary,
+    - added an executable generic dynamic-object protocol API in `oxvba-com`:
+      - `DynamicCallRequest`
+      - `DynamicMemberSelector`
+      - `DynamicCallKind`
+      - `DynamicEventPayload`
+    - current COM request/payload structs now convert into that generic protocol shape for the shared runtime-contract path,
     - updated VM/host/HAL tests to lock the new preserved array-intent behavior,
   - widened the shared COM invoke transport:
     - `ComInvokeRequest.args` now carries per-argument value/name metadata in `oxvba-com`
@@ -94,9 +100,11 @@ Status vocabulary:
     - `IP-05` early-binding parity,
     - `IP-06` COM server/export parity,
     - `IP-07` COM event parity residuals.
+  - the current run also confirmed a more immediate execution blocker:
+    - the wider VM/register/host substrate is still globally `i32`-slot based, so the new dynamic-object protocol and semantic carrier cannot yet become the single runtime model without a broader value-model migration.
   - the remaining COM runtime still lives materially in `crates/oxvba-hal/src/adapters/standard.rs`, but moving it now without the final invoke/property/server contracts would lock in unstable boundaries again.
 - Next required action:
-  - complete the late-bound invoke transport redesign first, then extract the stabilized client/event/server slices into `oxvba-com` in that order.
+  - define and execute the runtime value-model migration needed by `BLK-RUNTIME-VALUE-MODEL-001`, then continue the stabilized client/event/server extraction in `oxvba-com`.
 
 ### `IP-05` Windows early-bound COM and type-library parity
 
