@@ -512,9 +512,9 @@ impl Vm {
                     range_selector,
                 } => {
                     let selector = if let Some(slot) = range_selector {
-                        self.read_slot(*slot)?
+                        self.read_value_slot(*slot)?
                     } else {
-                        0
+                        RuntimeValue::I32(0)
                     };
                     match self.host_services.fs().free_file_value(selector) {
                         Ok(value) => {

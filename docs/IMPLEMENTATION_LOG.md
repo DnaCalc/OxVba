@@ -1925,3 +1925,7 @@
   - Windows native runtime-value invoke conversion now binds `VT_DISPATCH` results back into adapter-owned object handles instead of discarding them into the legacy scalar lane
   - added Windows regression coverage that a dispatch-valued `VARIANT` result produces a live object handle that can be released through the COM binding table
   - broader interface-pointer forms beyond `VT_DISPATCH` and real SAFEARRAY payloads remain open under `BLK-COM-VALUE-TRANSPORT-001`
+- Continued the runtime HAL input-seam migration into the filesystem domain:
+  - `FileSystemHal` value-path methods now accept semantic runtime inputs (`open_value`, `close_value`, `seek_value`, `eof_value`, `lof_value`, `free_file_value`) instead of taking raw tokens behind a value-return facade
+  - VM `FreeFile` host execution now reads `RuntimeValue` directly before the HAL boundary
+  - added regression coverage that `open_value` accepts runtime string paths and that value-path filesystem calls remain deterministic on the current host subset

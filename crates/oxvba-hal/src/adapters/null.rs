@@ -114,7 +114,15 @@ impl FileSystemHal for NullHostServices {
         Err(self.unsupported(CapabilityId::FileSystemIo, "open"))
     }
 
+    fn open_value(&self, _path: RuntimeValue, _mode: RuntimeValue) -> HalResult<RuntimeValue> {
+        Err(self.unsupported(CapabilityId::FileSystemIo, "open"))
+    }
+
     fn close(&self, _handle: i32) -> HalResult<i32> {
+        Err(self.unsupported(CapabilityId::FileSystemIo, "close"))
+    }
+
+    fn close_value(&self, _handle: RuntimeValue) -> HalResult<RuntimeValue> {
         Err(self.unsupported(CapabilityId::FileSystemIo, "close"))
     }
 
@@ -122,7 +130,19 @@ impl FileSystemHal for NullHostServices {
         Err(self.unsupported(CapabilityId::FileSystemIo, "seek"))
     }
 
+    fn seek_value(
+        &self,
+        _handle: RuntimeValue,
+        _position: RuntimeValue,
+    ) -> HalResult<RuntimeValue> {
+        Err(self.unsupported(CapabilityId::FileSystemIo, "seek"))
+    }
+
     fn eof(&self, _handle: i32) -> HalResult<i32> {
+        Err(self.unsupported(CapabilityId::FileSystemIo, "eof"))
+    }
+
+    fn eof_value(&self, _handle: RuntimeValue) -> HalResult<RuntimeValue> {
         Err(self.unsupported(CapabilityId::FileSystemIo, "eof"))
     }
 
@@ -130,7 +150,15 @@ impl FileSystemHal for NullHostServices {
         Err(self.unsupported(CapabilityId::FileSystemIo, "lof"))
     }
 
+    fn lof_value(&self, _handle: RuntimeValue) -> HalResult<RuntimeValue> {
+        Err(self.unsupported(CapabilityId::FileSystemIo, "lof"))
+    }
+
     fn free_file(&self, _range_selector: i32) -> HalResult<i32> {
+        Err(self.unsupported(CapabilityId::FileSystemIo, "free_file"))
+    }
+
+    fn free_file_value(&self, _range_selector: RuntimeValue) -> HalResult<RuntimeValue> {
         Err(self.unsupported(CapabilityId::FileSystemIo, "free_file"))
     }
 }

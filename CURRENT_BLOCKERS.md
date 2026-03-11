@@ -91,10 +91,12 @@ Run context: active parity/compliance execution plus in-progress feature worklis
   - HAL now exposes additive semantic-return helper methods and the VM routes host-return paths through them, but the underlying input/output token contract is still `i32`,
   - the first input-side semantic wrapper migration is now in place for active VM host intrinsics:
     - `MsgBox` / `InputBox`,
+    - `FreeFile`,
     - `Shell` / `Environ` / `Dir`,
     - `CreateObject`,
     - COM event subscription/callback helper intrinsics,
     - dynamic-link invoke wrappers,
+  - the file-system value path now accepts semantic runtime inputs (`open_value`, `close_value`, `seek_value`, `eof_value`, `lof_value`, `free_file_value`) instead of taking raw tokens behind a value-returning facade,
   - VM host intrinsic execution for those lanes now reads `RuntimeValue` directly instead of forcing `read_slot(...)`/legacy token narrowing on entry,
   - many bytecode execution paths and tests still assume the legacy integer observation surface,
   - the new `ComValue` carrier and generic dynamic-object protocol can live at the COM boundary, but they cannot yet become the single runtime object/value model while the wider execution substrate remains token-only.
