@@ -1895,6 +1895,7 @@ fn known_dispatch_member_token(member_name: &str) -> Option<i32> {
         "lookuppair" => Some(13),
         "setindexedvalue" => Some(14),
         "setindexedvalueref" => Some(15),
+        "echovariant" => Some(16),
         _ => None,
     }
 }

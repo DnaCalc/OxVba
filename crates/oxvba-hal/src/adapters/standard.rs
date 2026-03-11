@@ -18,6 +18,7 @@ use oxvba_com::{
     ComObjectToken, ComObjectTransportKind, ComSubscriptionToken, build_typelib_metadata,
     known_typelib_identity_for_prog_id_name, resolve_known_typelib_identity,
 };
+use oxvba_runtime::value_tags::{NULL_TAG, error_code_from_tag, error_tag_from_code, is_error_tag};
 #[cfg(target_os = "windows")]
 use std::sync::atomic::{AtomicI32, AtomicU32, Ordering};
 use std::{
@@ -41,7 +42,7 @@ use windows_sys::Win32::System::Com::{
 };
 #[cfg(target_os = "windows")]
 use windows_sys::Win32::System::Variant::{
-    VARIANT, VT_BOOL, VT_EMPTY, VT_ERROR, VT_I4, VT_UI4, VariantClear,
+    VARIANT, VT_BOOL, VT_EMPTY, VT_ERROR, VT_I4, VT_NULL, VT_UI4, VariantClear,
 };
 #[cfg(target_os = "windows")]
 use windows_sys::Win32::UI::WindowsAndMessaging::{
@@ -3590,6 +3591,12 @@ fn com_member_spec_for_token(prog_id: &str, member: i32) -> Option<ComMemberSpec
                 invoke_kind: TypeLibMemberInvokeKind::PropertyPutRef,
                 parameter_names: vec!["lhs".to_string(), "value".to_string()],
             }),
+            16 => Some(ComMemberSpec {
+                name: "EchoVariant".to_string(),
+                requires_argument: true,
+                invoke_kind: TypeLibMemberInvokeKind::Method,
+                parameter_names: vec!["value".to_string()],
+            }),
             _ => None,
         };
     }
@@ -4001,6 +4008,7 @@ const TEST_DISPID_SUM_PAIR: i32 = 12;
 const TEST_DISPID_LOOKUP_PAIR: i32 = 13;
 const TEST_DISPID_SET_INDEXED_VALUE: i32 = 14;
 const TEST_DISPID_SET_INDEXED_VALUE_REF: i32 = 15;
+const TEST_DISPID_ECHO_VARIANT: i32 = 16;
 const TEST_NAMED_DISPID_LHS: i32 = 101;
 const TEST_NAMED_DISPID_RHS: i32 = 102;
 const TEST_NAMED_DISPID_INDEX: i32 = 103;
@@ -4608,6 +4616,10 @@ unsafe fn raw_variant_token_from_invoke_arg(
         } else {
             1
         }),
+        VT_NULL => Ok(NULL_TAG),
+        VT_ERROR => Ok(error_tag_from_code(
+            (*variant).Anonymous.Anonymous.Anonymous.scode,
+        )),
         VT_EMPTY if arg_index == 0 => Ok(0),
         _ => Err(COM_DISP_E_TYPEMISMATCH),
     }
@@ -5056,6 +5068,7 @@ unsafe extern "system" fn oxvba_test_get_ids_of_names(
             "lookuppair" => TEST_DISPID_LOOKUP_PAIR,
             "setindexedvalue" => TEST_DISPID_SET_INDEXED_VALUE,
             "setindexedvalueref" => TEST_DISPID_SET_INDEXED_VALUE_REF,
+            "echovariant" => TEST_DISPID_ECHO_VARIANT,
             "lhs" => TEST_NAMED_DISPID_LHS,
             "rhs" => TEST_NAMED_DISPID_RHS,
             "index" => TEST_NAMED_DISPID_INDEX,
@@ -5311,6 +5324,17 @@ unsafe extern "system" fn oxvba_test_invoke(
                 .saturating_add(400_000);
             (*owner).value_state.store(stored, Ordering::Release);
             set_variant_i32(stored, pvarresult);
+            COM_S_OK
+        }
+        TEST_DISPID_ECHO_VARIANT => {
+            if (wflags & DISPATCH_METHOD) == 0 || cargs != 1 || rgvarg.is_null() {
+                return COM_DISP_E_BADPARAMCOUNT;
+            }
+            let value = match raw_variant_token_from_dispparams(pparams, 0, puargerr) {
+                Ok(value) => value,
+                Err(hr) => return hr,
+            };
+            set_variant_dispatch_arg(pvarresult, value);
             COM_S_OK
         }
         TEST_DISPID_VALUE => {
@@ -5802,6 +5826,8 @@ unsafe fn raw_variant_to_token(variant: &VARIANT) -> Result<i32, String> {
             let value: VARIANT_BOOL = variant.Anonymous.Anonymous.Anonymous.boolVal;
             if value == 0 { 0 } else { 1 }
         }
+        VT_NULL => NULL_TAG,
+        VT_ERROR => error_tag_from_code(variant.Anonymous.Anonymous.Anonymous.scode),
         vt => {
             return Err(format!("unsupported VARIANT return type vt={vt}"));
         }
@@ -5811,9 +5837,21 @@ unsafe fn raw_variant_to_token(variant: &VARIANT) -> Result<i32, String> {
 
 #[cfg(target_os = "windows")]
 #[allow(unsafe_op_in_unsafe_fn)]
-unsafe fn set_variant_i4_arg(variant: &mut VARIANT, value: i32) {
-    variant.Anonymous.Anonymous.vt = VT_I4;
-    variant.Anonymous.Anonymous.Anonymous.lVal = value;
+unsafe fn set_variant_dispatch_arg(variant: *mut VARIANT, value: i32) {
+    if variant.is_null() {
+        return;
+    }
+    if value == NULL_TAG {
+        (*variant).Anonymous.Anonymous.vt = VT_NULL;
+        return;
+    }
+    if is_error_tag(value) {
+        (*variant).Anonymous.Anonymous.vt = VT_ERROR;
+        (*variant).Anonymous.Anonymous.Anonymous.scode = error_code_from_tag(value).unwrap_or(0);
+        return;
+    }
+    (*variant).Anonymous.Anonymous.vt = VT_I4;
+    (*variant).Anonymous.Anonymous.Anonymous.lVal = value;
 }
 
 #[cfg(target_os = "windows")]
@@ -5837,7 +5875,7 @@ unsafe fn raw_dispatch_invoke_i4_args(
     for arg in args.iter().rev() {
         let mut variant: VARIANT = std::mem::zeroed();
         match arg.value {
-            Some(value) => set_variant_i4_arg(&mut variant, value),
+            Some(value) => set_variant_dispatch_arg(&mut variant, value),
             None => set_variant_missing_arg(&mut variant),
         }
         invoke_args.push(variant);
@@ -5898,7 +5936,7 @@ unsafe fn raw_dispatch_invoke_i4_args_positional(
     let mut invoke_args: Vec<VARIANT> = Vec::with_capacity(args.len());
     for arg in args.iter().rev() {
         let mut variant: VARIANT = std::mem::zeroed();
-        set_variant_i4_arg(&mut variant, *arg);
+        set_variant_dispatch_arg(&mut variant, *arg);
         invoke_args.push(variant);
     }
 
@@ -6035,6 +6073,15 @@ unsafe fn raw_oxvba_test_dispatch_vtable_invoke(
                     .saturating_add(args[1])
                     .saturating_add(400_000),
             ))
+        }
+        TEST_DISPID_ECHO_VARIANT => {
+            if args.len() != 1 {
+                return Err(format!(
+                    "IDispatch::Invoke(method) failed with HRESULT {:#010X} (arg_err={})",
+                    COM_DISP_E_BADPARAMCOUNT as u32, 0
+                ));
+            }
+            Ok(Some(args[0]))
         }
         _ => Ok(None),
     }
@@ -7574,6 +7621,7 @@ mod tests {
                     "SetIndexedValueRef".to_string(),
                     super::TEST_DISPID_SET_INDEXED_VALUE_REF
                 ),
+                ("EchoVariant".to_string(), 16),
             ]
         );
         let fire_changed_pair = metadata

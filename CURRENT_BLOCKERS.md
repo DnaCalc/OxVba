@@ -17,7 +17,7 @@ Run context: active parity/compliance execution plus in-progress feature worklis
 
 ## Active blocker entries
 
-### BLK-COM-IDISPATCH-001: Late-bound COM transport cannot carry named args or omission metadata
+### BLK-COM-IDISPATCH-001: Late-bound COM parity remains below VBA/Excel `IDispatch` behavior
 - Impact:
   - Blocks `IP-03` Windows late-bound COM client parity.
   - Blocks full closure of `HAL-DYN-008` and parts of `IP-09` declare/marshaling parity.
@@ -30,11 +30,14 @@ Run context: active parity/compliance execution plus in-progress feature worklis
   - member-known property-put/property-putref lanes now canonicalize fully named/indexed arguments so the property value does not depend on caller argument order,
   - expression-form `DispatchInvoke(...)` assignments now preserve named trailing COM arguments instead of rejecting the statement outright,
   - omitted-argument metadata now survives the invoke request and yields deterministic required-argument faults,
+  - controlled `IDispatch` variant roundtrips now cover `VT_NULL` and `VT_ERROR` in addition to the existing scalar subset,
   - late-bound default-member calls with named arguments remain compile-time blocked because runtime still cannot recover the authoritative default COM member identity for named dispatch,
-  - broad object/interface-pointer and full `VARIANT`/`SAFEARRAY` marshalling remain below parity target.
+  - broad object/interface-pointer and full `VARIANT`/`SAFEARRAY` marshalling remain below parity target,
+  - `Invoke` result fidelity still lacks the broader `ArgErr` / `ExcepInfo` / `VarResult` parity surface required for Office-style automation coverage.
 - Exact unblock steps:
-  - add an explicit compiler surface for named late-bound transport that does not depend on unresolved default-member identity,
-  - complete full `VARIANT`/object/`SAFEARRAY` marshalling and richer `Invoke` error/result fidelity.
+  - recover authoritative default-member identity for named late-bound dispatch,
+  - complete full `VARIANT`/object/`SAFEARRAY` marshalling,
+  - complete richer `Invoke` error/result fidelity.
 - Recommendation:
   - continue with the late-bound COM completion workset; the next slice should target broader `VARIANT`/object/`SAFEARRAY` marshalling plus richer `Invoke` error/result fidelity.
 

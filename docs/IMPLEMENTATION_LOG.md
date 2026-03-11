@@ -1,6 +1,13 @@
 # Implementation Log
 
 ## 2026-03-11
+- late-bound COM `VT_ERROR` / `VT_NULL` roundtrip slice:
+  - extended controlled `OxVba.TestDispatch` metadata and invoke surface with `EchoVariant(value)` for deterministic variant echo coverage
+  - native/controlled late-bound marshalling now preserves runtime null and `CVErr(...)` token semantics across `IDispatch::Invoke`
+  - outbound invoke marshalling now emits `VT_NULL` / `VT_ERROR` instead of collapsing those runtime values into integer payloads
+  - widened host-backed end-to-end coverage to assert stable roundtrip behavior for `Null` and `CVErr(17)`
+  - verification:
+    - `cargo test -p oxvba-runtime -p oxvba-com -p oxvba-hal -p oxvba-compiler -p oxvba-host --quiet` -> PASS
 - late-bound COM named property-put/property-putref closure slice:
   - extended deterministic COM typelib/member metadata with ordered parameter names for member-known late-bound dispatch lanes
   - member-known property-put/property-putref calls now canonicalize named/indexed arguments before native invoke, so `DISPID_PROPERTYPUT` / `DISPID_PROPERTYPUTREF` no longer depend on caller argument order

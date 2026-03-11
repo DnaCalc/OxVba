@@ -12,6 +12,7 @@ hal_contract_checks = []
 
 [dependencies]
 oxvba-com.workspace = true
+oxvba-runtime.workspace = true
 thiserror.workspace = true
 
 [target.'cfg(target_os = "windows")'.dependencies]

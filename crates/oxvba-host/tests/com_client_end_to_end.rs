@@ -178,6 +178,37 @@ End Sub
     }
 
     #[test]
+    fn dispatchinvoke_variant_error_and_null_tokens_roundtrip_deterministically() {
+        let source = r#"
+Sub Main()
+Dim obj
+Dim errValue
+Dim nullValue
+obj = CreateObject("OxVba.TestDispatch")
+errValue = DispatchInvoke(obj, "EchoVariant", CVErr(17))
+nullValue = DispatchInvoke(obj, "EchoVariant", Null)
+End Sub
+"#;
+
+        let vm = run_windows_host_backed(source, false);
+        let jit = run_windows_host_backed(source, true);
+        assert_eq!(
+            vm, jit,
+            "VM/JIT snapshots diverged on VT_ERROR/VT_NULL roundtrip path: vm={vm:?} jit={jit:?}"
+        );
+        assert!(
+            vm[0] >= 20_001,
+            "expected native COM object handle space, got {:?}",
+            vm
+        );
+        assert_eq!(
+            vm[1], -899_999_983,
+            "CVErr(17) should roundtrip as an error tag"
+        );
+        assert_eq!(vm[2], -1, "Null should roundtrip as the stable null tag");
+    }
+
+    #[test]
     fn dispatchinvoke_error_path_routes_through_on_error_resume_next() {
         let out = run_windows_host_backed(
             r#"

@@ -46,14 +46,19 @@ Status vocabulary:
     - member-known property-put/property-putref calls now canonicalize named/indexed arguments before invoke so value-argument routing no longer depends on caller order
     - expression-form `DispatchInvoke(...)` assignments now preserve named trailing COM arguments through compiler lowering instead of rejecting the statement
     - omitted required arguments now survive the transport and fail deterministically at the adapter boundary
+  - extended deterministic variant roundtrip coverage in the controlled dispatch lane:
+    - `VT_NULL` now roundtrips to the stable runtime null tag
+    - `VT_ERROR` now roundtrips to the stable `CVErr(...)` error-tag space
+    - native invoke marshalling now emits `VT_NULL` / `VT_ERROR` on outbound calls when the runtime token shape requires it
   - kept one safety gate explicit:
     - late-bound default-member calls with named arguments remain compile-time blocked because runtime still cannot recover the authoritative default COM member identity for named dispatch
   - verification:
-    - `cargo test -p oxvba-com -p oxvba-compiler -p oxvba-vm -p oxvba-hal --quiet` -> PASS
+    - `cargo test -p oxvba-runtime -p oxvba-com -p oxvba-hal -p oxvba-compiler -p oxvba-host --quiet` -> PASS
 - Blocker:
   - parity is still blocked by the remaining scope:
     - default-member named dispatch still lacks authoritative member identity,
-    - object/interface-pointer and broad `VARIANT`/`SAFEARRAY` marshalling are still below parity target.
+    - object/interface-pointer and broad `VARIANT`/`SAFEARRAY` marshalling are still below parity target,
+    - full `Invoke` error/result fidelity (`ArgErr`, `ExcepInfo`, broader `VarResult`) is still below parity target.
 - Next required action:
   - finish full marshalling/error-channel fidelity and reopen default-member named dispatch only after runtime member identity is authoritative.
 

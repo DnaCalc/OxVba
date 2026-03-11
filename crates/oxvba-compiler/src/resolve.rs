@@ -3270,6 +3270,7 @@ fn map_dispatch_member_literal_token(text: &str) -> Option<i32> {
         "lookuppair" => Some(13),
         "setindexedvalue" => Some(14),
         "setindexedvalueref" => Some(15),
+        "echovariant" => Some(16),
         _ => None,
     }
 }

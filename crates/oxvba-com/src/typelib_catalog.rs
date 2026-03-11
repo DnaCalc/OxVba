@@ -308,6 +308,13 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
                 invoke_kind: TypeLibMemberInvokeKind::PropertyPutRef,
                 parameter_names: vec!["lhs".to_string(), "value".to_string()],
             },
+            TypeLibMemberMetadata {
+                name: "EchoVariant".to_string(),
+                token: 16,
+                requires_argument: true,
+                invoke_kind: TypeLibMemberInvokeKind::Method,
+                parameter_names: vec!["value".to_string()],
+            },
         ];
         let events = vec![
             TypeLibEventMetadata {
