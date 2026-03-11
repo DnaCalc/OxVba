@@ -351,7 +351,7 @@ pub fn run_conformance(host: &dyn HostServices) -> ConformanceReport {
             "HAL-GEN-003",
             "HAL-GEN-004",
         ],
-        host.com().create_object(4).map(|_| ()),
+        host.com().create_object_legacy(4).map(|_| ()),
     );
     probe(
         CapabilityId::ComActivationDispatch,

@@ -920,7 +920,7 @@ impl Vm {
                 }
                 Instruction::IntrinsicCreateObjectHost { dst, prog_id } => {
                     let prog_id = self.read_value_slot(*prog_id)?;
-                    match self.host_services.com().create_object_value(prog_id) {
+                    match self.host_services.com().create_object(prog_id) {
                         Ok(value) => {
                             self.write_value_slot(*dst, value)?;
                             pc += 1;

@@ -112,8 +112,8 @@ pub trait ProcessEnvHal: Send + Sync {
 }
 
 pub trait ComHal: Send + Sync {
-    fn create_object(&self, prog_id: ValueToken) -> HalResult<ObjectHandle>;
-    fn create_object_value(&self, prog_id: RuntimeValue) -> HalResult<RuntimeValue>;
+    fn create_object(&self, prog_id: RuntimeValue) -> HalResult<RuntimeValue>;
+    fn create_object_legacy(&self, prog_id: ValueToken) -> HalResult<ObjectHandle>;
     fn release_object(&self, object: ObjectHandle) -> HalResult<ValueToken>;
     fn describe_object(&self, object: ObjectHandle) -> HalResult<Option<ComObjectDescriptor>>;
     /// Canonical COM invoke seam. Implementations should translate between COM

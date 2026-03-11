@@ -15,6 +15,20 @@
   - `./scripts/check-governance.ps1`
   - `./scripts/meta-check.ps1 -Fast -NoArtifacts`
 
+## 2026-03-11 - COM activation now defaults to semantic runtime values
+
+- Tightened the `CreateObject` HAL seam in [traits.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-hal\src\traits.rs):
+  - `ComHal::create_object(...)` now takes semantic `RuntimeValue` ProgID input and returns semantic `RuntimeValue::ObjectHandle(...)`,
+  - explicit raw-token compatibility now lives under `ComHal::create_object_legacy(...)`.
+- Updated VM activation, HAL conformance, host tests, and adapter regression tests to use the semantic primary name for runtime-facing calls and the explicit `legacy` name for token-compatibility lanes.
+- Net effect:
+  - COM activation now matches the value-first naming already used by the runtime-value dispatch seam,
+  - the remaining COM token compatibility wall is narrowed further to `dispatch_invoke_v2(...)` and the broader `ValueToken = i32` contract.
+- Verification:
+  - `cargo test -p oxvba-hal -p oxvba-vm -p oxvba-host --quiet`
+  - `./scripts/check-governance.ps1`
+  - `./scripts/meta-check.ps1 -Fast -NoArtifacts`
+
 ## 2026-03-11 - VM/JIT snapshot helper surfaces now default to runtime values
 
 - Tightened the VM/JIT library snapshot surface:
@@ -75,7 +89,7 @@
 - Introduced explicit `ObjectHandle` in [runtime_value.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-runtime\src\runtime_value.rs) and changed `RuntimeValue::ObjectHandle(...)` to carry that typed handle instead of a plain integer payload.
 - Updated the shared COM carrier in [model.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-com\src\model.rs) so runtime-value conversions preserve the typed handle explicitly.
 - Tightened `ComHal` object-identity APIs in [traits.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-hal\src\traits.rs):
-  - `create_object(...) -> ObjectHandle`
+  - `create_object_legacy(...) -> ObjectHandle`
   - `release_object(ObjectHandle)`
   - `describe_object(ObjectHandle)`
 - Updated Windows/null/wasm HAL adapters and host wrappers accordingly, including registered COM lane coverage.
@@ -2109,7 +2123,7 @@
 - Runtime value-model migration stop condition after the filesystem and COM event-helper slices:
   - the remaining seam is no longer another wrapper cleanup; it is the core `ValueToken = i32` contract plus the token-based COM object/binding and dynamic-link binding state around it
   - remaining holdouts are concentrated in:
-    - `ComHal::{create_object,create_object_value,release_object,describe_object,dispatch_invoke_v2,dispatch_invoke_runtime_value_v2}`,
+    - `ComHal::{create_object,create_object_legacy,release_object,describe_object,dispatch_invoke_v2,dispatch_invoke_runtime_value_v2}`,
     - `DynamicLinkHal::{bind_descriptor,prepare_invoke,invoke_bound}`,
     - engine/public callers that still observe COM object identity through raw integer tokens
   - further honest progress now requires the next planned phase of `WORKSET_2026-03-11_RUNTIME_VALUE_MODEL_MIGRATION.md`: replace or explicitly extend the `ValueToken` contract with the canonical runtime object/value model or indirection model

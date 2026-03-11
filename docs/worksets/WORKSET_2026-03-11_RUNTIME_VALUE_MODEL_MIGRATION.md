@@ -89,11 +89,14 @@ Completed slices:
 32. The direct `Vm` observation surface is now also value-first by name:
    - `Vm::snapshot(...)` is the semantic primary,
    - explicit integer-slot compatibility is labeled `Vm::snapshot_legacy_slots(...)`.
+33. The COM activation seam is now also value-first by name:
+   - `ComHal::create_object(...)` now takes semantic `RuntimeValue` ProgID input and returns semantic `RuntimeValue::ObjectHandle(...)`,
+   - explicit raw-token compatibility is labeled `ComHal::create_object_legacy(...)`.
 
 Remaining blocker seam:
 1. HAL `ValueToken = i32` still anchors many remaining seams,
 2. the remaining holdouts are now concentrated in:
-   - `ComHal::{create_object_value,dispatch_invoke_v2}`,
+   - `ComHal::dispatch_invoke_v2`,
    - remaining interpreter/test/caller expectations that still consume the legacy integer observation aliases,
 3. many interpreter tests and parity expectations still anchor on the legacy integer lane,
 4. JIT internals and parity harnesses still observe only the integer slot lane for Cranelift-supported subsets,

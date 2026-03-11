@@ -184,11 +184,11 @@ impl ProcessEnvHal for WasmHostServices {
 }
 
 impl ComHal for WasmHostServices {
-    fn create_object(&self, _prog_id: i32) -> HalResult<ObjectHandle> {
+    fn create_object_legacy(&self, _prog_id: i32) -> HalResult<ObjectHandle> {
         Err(self.unsupported(CapabilityId::ComActivationDispatch, "create_object"))
     }
 
-    fn create_object_value(&self, _prog_id: RuntimeValue) -> HalResult<RuntimeValue> {
+    fn create_object(&self, _prog_id: RuntimeValue) -> HalResult<RuntimeValue> {
         Err(self.unsupported(CapabilityId::ComActivationDispatch, "create_object"))
     }
 

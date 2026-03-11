@@ -159,6 +159,9 @@ Status vocabulary:
     - the direct `Vm` observation surface is now also value-first by name:
       - `Vm::snapshot(...)` is the semantic primary,
       - explicit integer-slot compatibility is labeled `Vm::snapshot_legacy_slots(...)`,
+    - the COM activation seam is now also value-first by name:
+      - `ComHal::create_object(...)` now takes semantic `RuntimeValue` ProgID input and returns semantic `RuntimeValue::ObjectHandle(...)`,
+      - explicit raw-token compatibility is labeled `ComHal::create_object_legacy(...)`,
     - CLI execution now uses the semantic snapshot lane by default and derives integer slots from `RuntimeValue` only at the output edge,
     - the remaining active seam is the actual HAL `ValueToken` contract plus the still-legacy-heavy interpreter/caller/test estate around integer snapshots.
 

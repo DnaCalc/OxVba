@@ -1913,7 +1913,7 @@ mod tests {
         let object = engine
             .host_services
             .com()
-            .create_object(4)
+            .create_object_legacy(4)
             .expect("create_object should return controlled COM object");
         let subscription = engine
             .subscribe_com_event_handler(object, 1, "SinkA_OnChanged")
@@ -1950,7 +1950,7 @@ mod tests {
         let object = engine
             .host_services
             .com()
-            .create_object(4)
+            .create_object_legacy(4)
             .expect("create_object should return controlled COM object");
         let descriptor = engine
             .describe_com_object(object)
@@ -1983,7 +1983,7 @@ mod tests {
         let object = engine
             .host_services
             .com()
-            .create_object(4)
+            .create_object_legacy(4)
             .expect("create_object should return controlled COM object");
         let subscription = engine
             .host_services
@@ -2024,7 +2024,7 @@ mod tests {
         let object = engine
             .host_services
             .com()
-            .create_object(4)
+            .create_object_legacy(4)
             .expect("create_object should return controlled COM object");
         let subscription = engine
             .subscribe_com_event_handler(object, 3, "SinkA_OnPair")
@@ -2062,7 +2062,7 @@ mod tests {
         let object = engine
             .host_services
             .com()
-            .create_object(4)
+            .create_object_legacy(4)
             .expect("create_object should return controlled COM object");
         let subscription = engine
             .subscribe_com_event_handler(object, 2, "SinkA_OnSourceChanged")
@@ -2115,7 +2115,7 @@ mod tests {
         let object = engine
             .host_services
             .com()
-            .create_object(4)
+            .create_object_legacy(4)
             .expect("create_object should return controlled COM object");
         let subscription = engine
             .subscribe_com_event_handler(object, 1, "SinkA_OnChanged")
@@ -2165,7 +2165,7 @@ mod tests {
         let object = engine
             .host_services
             .com()
-            .create_object(4)
+            .create_object_legacy(4)
             .expect("create_object should return controlled COM object");
         let subscription = engine
             .subscribe_com_event_handler(object, 1, "MissingHandler")
@@ -2214,7 +2214,7 @@ mod tests {
         let object = engine
             .host_services
             .com()
-            .create_object(4)
+            .create_object_legacy(4)
             .expect("create_object should return controlled COM object");
         let subscription = engine
             .subscribe_com_event_handler(object, 1, "SinkA_OnChanged")
@@ -2263,7 +2263,7 @@ mod tests {
         let object = engine
             .host_services
             .com()
-            .create_object(4)
+            .create_object_legacy(4)
             .expect("create_object should return controlled COM object");
         let subscription = engine
             .subscribe_com_event_handler(object, 3, "SinkA_OnPair")
