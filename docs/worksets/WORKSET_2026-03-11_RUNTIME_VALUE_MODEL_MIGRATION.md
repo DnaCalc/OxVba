@@ -15,9 +15,9 @@ Replace the current globally `i32`-token-based execution substrate with a canoni
 5. future broader marshaling work.
 
 This workset exists because the current runtime is still structurally centered on:
-1. `Vec<i32>` VM register storage,
-2. `ValueToken = i32` at the HAL seam,
-3. host/runtime snapshots and callback ingress built around raw `i32` slots.
+1. `Vec<i32>`-shaped compatibility expectations across parts of the host/JIT/test estate,
+2. explicit raw `i32` compatibility signatures still remaining at parts of the HAL seam,
+3. host/runtime snapshots and callback ingress that still carry legacy integer observation pressure.
 
 That model was sufficient for the current subset, but it is now the real blocker for further honest progress.
 
@@ -28,7 +28,7 @@ Current blocker:
 
 Current structural constraints:
 1. [register_file.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-vm\src\register_file.rs) has now been migrated to `Vec<RuntimeValue>`, but the surrounding execution substrate is still only partially widened.
-2. [traits.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-hal\src\traits.rs) still defines `ValueToken = i32`.
+2. [traits.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-hal\src\traits.rs) still retains explicit raw `i32` compatibility signatures for the remaining legacy COM seams.
 3. VM read/write helpers and snapshots now have additive value-path support, but much of the interpreter/runtime boundary still assumes the legacy integer lane.
 4. Host execution helpers now expose VM-backed value snapshots, but many public/test observation paths still assume `Vec<i32>` and the Cranelift-supported subset still exposes only integer-slot semantics.
 5. New semantic COM carrier/protocol slices can exist at the boundary, but cannot become the runtime’s authoritative model while these seams stay partially token-only.
@@ -74,7 +74,7 @@ Completed slices:
 24. Dynamic-link symbol identity is now explicitly typed at the runtime/HAL seam as `DynLinkSymbol` rather than existing there only as an ambiguous integer symbol token.
 25. `DynLinkDescriptorView.symbol` and `DynamicLinkHal::invoke_symbol(...)` now use `DynLinkSymbol` directly at the runtime/HAL seam.
 26. Serialized bytecode dynamic-link descriptor and instruction symbol fields now also use `DynLinkSymbol`, so the VM bytecode path no longer reintroduces raw symbol integers at execution time.
-27. The standard Windows COM adapter now treats `dispatch_invoke_runtime_value_v2(...)` as the canonical implementation seam and projects the legacy `dispatch_invoke_v2(...)` result only at the compatibility edge.
+27. The standard Windows COM adapter now treats `dispatch_invoke_runtime_value_v2(...)` as the canonical implementation seam and projects the legacy `dispatch_invoke_legacy_v2(...)` result only at the compatibility edge.
 28. The canonical runtime-value COM invoke path now explicitly preserves the working zero-argument native `IDispatch` method/property-get cases, so moving the semantic seam did not regress existing native COM behavior.
 29. Host public execution/session observation APIs are now value-first by name:
    - `Engine::execute_source_with_snapshot*` now returns semantic `RuntimeValue` snapshots,
@@ -95,12 +95,16 @@ Completed slices:
 34. The dynamic-link binding/invoke seam is now also semantic on argument/result flow:
    - `DynamicLinkHal::prepare_invoke(...)` now takes and returns `RuntimeValue`,
    - `DynamicLinkHal::invoke_bound(...)` now takes and returns `RuntimeValue`.
+35. COM release/cache-maintenance seams are now also semantic on return flow:
+   - `ComHal::release_object(...)` now returns semantic `RuntimeValue`,
+   - `ComHal::invalidate_typelib_cache(...)` now returns semantic `RuntimeValue`,
+   - explicit raw-token compatibility is labeled `release_object_legacy(...)` and `invalidate_typelib_cache_legacy(...)`.
 
 Remaining blocker seam:
-1. HAL `ValueToken = i32` still anchors many remaining seams,
+1. explicit raw `i32` compatibility signatures still anchor the remaining legacy COM seams,
 2. the remaining holdouts are now concentrated in:
-   - `ComHal::dispatch_invoke_v2`,
-   - `ComHal::{create_object_legacy,release_object,invalidate_typelib_cache}`,
+   - `ComHal::dispatch_invoke_legacy_v2`,
+   - `ComHal::{create_object_legacy,release_object_legacy,invalidate_typelib_cache_legacy}`,
    - the legacy `ComHal::dispatch_invoke(...)` helper over raw object/member/arg tokens,
    - remaining interpreter/test/caller expectations that still consume the legacy integer observation aliases,
 3. many interpreter tests and parity expectations still anchor on the legacy integer lane,
@@ -145,7 +149,7 @@ The design choice must satisfy:
 ### 3.3 Boundary rule
 
 After migration:
-1. HAL must no longer be semantically limited by `ValueToken = i32`,
+1. HAL must no longer be semantically limited by explicit raw `i32` compatibility seams,
 2. VM/host/runtime seams must no longer force object/string/array semantics through raw integer narrowing,
 3. `oxvba-com` remains responsible for COM wire translation,
 4. the core runtime remains responsible for semantic values.
@@ -157,7 +161,7 @@ After migration:
 1. Runtime value model design lock.
 2. VM register storage migration or indirection-layer migration.
 3. VM read/write/snapshot API updates.
-4. HAL `ValueToken` seam redesign.
+4. HAL legacy raw-`i32` seam redesign.
 5. Host/runtime callback ingress and snapshot surface redesign.
 6. JIT/VM/test migration required by the new value model.
 7. Documentation and blocker/worklist updates.
@@ -214,7 +218,7 @@ Progress:
 ### Phase C. Boundary migration
 
 Deliverables:
-1. redesign `ValueToken` and affected HAL seams,
+1. redesign the remaining raw-`i32` HAL compatibility seams,
 2. migrate host runtime execution helpers,
 3. migrate callback ingress and dynamic-object carrier handoff,
 4. maintain non-Windows deterministic unsupported behavior.
@@ -223,7 +227,7 @@ Acceptance:
 1. runtime-facing external value carriers and dynamic-object protocol can traverse the core seams without early narrowing.
 
 Current blocker:
-1. the next required migration seam is the actual HAL `ValueToken` contract, the remaining token-bound HAL domains beyond the newly widened host intrinsic lanes, and the remaining legacy public observation contracts.
+1. the next required migration seam is the remaining explicit raw-`i32` HAL compatibility contract, the remaining token-bound HAL domains beyond the newly widened host intrinsic lanes, and the remaining legacy public observation contracts.
 
 ### Phase D. Integration follow-through
 
@@ -255,7 +259,7 @@ Targeted expectations:
 ## 8. Exit criteria
 
 This workset is complete when:
-1. the runtime no longer fundamentally depends on `Vec<i32>` / `ValueToken = i32` as its sole semantic model,
+1. the runtime no longer fundamentally depends on `Vec<i32>`-shaped compatibility expectations or raw `i32` HAL seams as its sole semantic model,
 2. the canonical OxVba runtime value representation is the authoritative execution substrate,
 3. unified dynamic-object protocol and external value carrier work can proceed without structural token-lane blockers,
 4. docs and blockers truthfully reflect the migrated runtime boundary.

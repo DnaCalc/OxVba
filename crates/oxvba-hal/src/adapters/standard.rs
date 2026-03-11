@@ -2847,7 +2847,12 @@ impl ComHal for StandardHostServices {
             .map(RuntimeValue::ObjectHandle)
     }
 
-    fn release_object(&self, object: ObjectHandle) -> HalResult<i32> {
+    fn release_object(&self, object: ObjectHandle) -> HalResult<RuntimeValue> {
+        self.release_object_legacy(object)
+            .map(RuntimeValue::from_legacy_i32)
+    }
+
+    fn release_object_legacy(&self, object: ObjectHandle) -> HalResult<i32> {
         let capability = CapabilityId::ComActivationDispatch;
         if !self.supports(capability) {
             return Err(self.unsupported(capability, "release_object"));
@@ -3164,7 +3169,7 @@ impl ComHal for StandardHostServices {
         ))
     }
 
-    fn dispatch_invoke_v2(&self, request: &ComInvokeRequest) -> HalResult<i32> {
+    fn dispatch_invoke_legacy_v2(&self, request: &ComInvokeRequest) -> HalResult<i32> {
         self.dispatch_invoke_runtime_value_v2(request)?
             .to_legacy_i32()
             .map_err(|message| self.com_dispatch_adapter_fault(message))
@@ -3599,6 +3604,15 @@ impl ComHal for StandardHostServices {
     }
 
     fn invalidate_typelib_cache(
+        &self,
+        scope: TypeLibCacheScope,
+        reference_name: Option<&str>,
+    ) -> HalResult<RuntimeValue> {
+        self.invalidate_typelib_cache_legacy(scope, reference_name)
+            .map(RuntimeValue::from_legacy_i32)
+    }
+
+    fn invalidate_typelib_cache_legacy(
         &self,
         scope: TypeLibCacheScope,
         reference_name: Option<&str>,
@@ -7920,7 +7934,7 @@ mod tests {
         };
         assert!(handle.raw() >= 20_001);
         assert_eq!(
-            host.release_object(handle)
+            host.release_object_legacy(handle)
                 .expect("release_object should succeed"),
             1
         );
@@ -8059,14 +8073,17 @@ mod tests {
     #[test]
     fn dispatch_invoke_deterministic_projection_contract() {
         let host = StandardHostServices::new(HalProfileId::Windows, HostPolicy::default());
-        assert_eq!(host.dispatch_invoke(10, 20, 30).expect("dispatch"), 60);
+        assert_eq!(
+            host.dispatch_invoke_legacy(10, 20, 30).expect("dispatch"),
+            60
+        );
     }
 
     #[test]
     fn dispatch_invoke_missing_arg_token_projects_as_zero() {
         let host = StandardHostServices::new(HalProfileId::Windows, HostPolicy::default());
         assert_eq!(
-            host.dispatch_invoke(10, 20, super::DISPATCH_INVOKE_MISSING_ARG_TOKEN)
+            host.dispatch_invoke_legacy(10, 20, super::DISPATCH_INVOKE_MISSING_ARG_TOKEN)
                 .expect("dispatch"),
             30
         );
@@ -8316,7 +8333,7 @@ mod tests {
         }
 
         assert_eq!(
-            host.dispatch_invoke(object.into(), 3, 77)
+            host.dispatch_invoke_legacy(object.into(), 3, 77)
                 .expect("FireChanged should succeed"),
             77
         );
@@ -8357,7 +8374,7 @@ mod tests {
             rv(1)
         );
         let _ = host
-            .dispatch_invoke(object.into(), 3, 88)
+            .dispatch_invoke_legacy(object.into(), 3, 88)
             .expect("FireChanged should remain invokable after unsubscribe");
         assert_eq!(
             host.do_events()
@@ -8390,7 +8407,7 @@ mod tests {
         let subscription = expect_i32(subscription);
 
         assert_eq!(
-            host.dispatch_invoke(object.into(), super::TEST_DISPID_FIRE_CHANGED_PAIR, 90)
+            host.dispatch_invoke_legacy(object.into(), super::TEST_DISPID_FIRE_CHANGED_PAIR, 90)
                 .expect("FireChangedPair should succeed"),
             91
         );
@@ -8452,7 +8469,7 @@ mod tests {
         let subscription = expect_i32(subscription);
 
         assert_eq!(
-            host.dispatch_invoke(object.into(), super::TEST_DISPID_FIRE_CHANGED_PAIR, 90)
+            host.dispatch_invoke_legacy(object.into(), super::TEST_DISPID_FIRE_CHANGED_PAIR, 90)
                 .expect("FireChangedPair should succeed"),
             91
         );
@@ -8487,14 +8504,17 @@ mod tests {
             .subscribe_event(rv(object.into()), rv(1))
             .expect("subscribe_event should succeed for controlled event source");
         let subscription = expect_i32(subscription);
-        host.dispatch_invoke(object.into(), 3, 77)
+        host.dispatch_invoke_legacy(object.into(), 3, 77)
             .expect("FireChanged should succeed");
         let callback = host
             .do_events()
             .expect("do_events should pump pending COM callback");
         let callback = expect_i32(callback);
 
-        assert_eq!(host.release_object(object).expect("release_object"), 1);
+        assert_eq!(
+            host.release_object_legacy(object).expect("release_object"),
+            1
+        );
         let callback_err = host
             .event_callback_subscription(rv(callback))
             .expect_err("released object callback should be gone");
@@ -8546,7 +8566,7 @@ mod tests {
             "subscription token should be in deterministic range"
         );
         assert_eq!(
-            host.dispatch_invoke(
+            host.dispatch_invoke_legacy(
                 object.into(),
                 super::TEST_DISPID_FIRE_CHANGED_SOURCE_INTERFACE,
                 77
@@ -8624,7 +8644,7 @@ mod tests {
             .expect("subscribe should succeed");
         let subscription = expect_i32(subscription);
         let _ = host
-            .dispatch_invoke(object.into(), 3, 77)
+            .dispatch_invoke_legacy(object.into(), 3, 77)
             .expect("FireChanged should succeed");
         let callback = host.do_events().expect("callback token");
         let callback = expect_i32(callback);
@@ -8691,12 +8711,12 @@ mod tests {
             "native COM handles use COM-state handle space"
         );
         let count = host
-            .dispatch_invoke(object.into(), 1, 0)
+            .dispatch_invoke_legacy(object.into(), 1, 0)
             .expect("dictionary Count should be invokable");
         assert!(count >= 0);
 
         let exists = host
-            .dispatch_invoke(object.into(), 2, 42)
+            .dispatch_invoke_legacy(object.into(), 2, 42)
             .expect("dictionary Exists should be invokable");
         assert!(exists == 0 || exists == 1);
     }
@@ -8713,37 +8733,37 @@ mod tests {
             "controlled COM lane should bind native object"
         );
         assert_eq!(
-            host.dispatch_invoke(object.into(), 1, super::DISPATCH_INVOKE_MISSING_ARG_TOKEN)
+            host.dispatch_invoke_legacy(object.into(), 1, super::DISPATCH_INVOKE_MISSING_ARG_TOKEN)
                 .expect("Count property-get should succeed"),
             7
         );
         assert_eq!(
-            host.dispatch_invoke(object.into(), 2, 42)
+            host.dispatch_invoke_legacy(object.into(), 2, 42)
                 .expect("Exists(42) should succeed"),
             1
         );
         assert_eq!(
-            host.dispatch_invoke(object.into(), 2, 41)
+            host.dispatch_invoke_legacy(object.into(), 2, 41)
                 .expect("Exists(41) should succeed"),
             0
         );
         assert_eq!(
-            host.dispatch_invoke(object.into(), super::TEST_DISPID_PING, 999)
+            host.dispatch_invoke_legacy(object.into(), super::TEST_DISPID_PING, 999)
                 .expect("Ping no-arg method invoke should succeed"),
             123
         );
         assert_eq!(
-            host.dispatch_invoke(object.into(), super::TEST_DISPID_LOOKUP, 42)
+            host.dispatch_invoke_legacy(object.into(), super::TEST_DISPID_LOOKUP, 42)
                 .expect("Lookup property-get with argument should succeed"),
             1_042
         );
         assert_eq!(
-            host.dispatch_invoke(object.into(), super::TEST_DISPID_SET_VALUE, 33)
+            host.dispatch_invoke_legacy(object.into(), super::TEST_DISPID_SET_VALUE, 33)
                 .expect("SetValue property-put should succeed"),
             33
         );
         assert_eq!(
-            host.dispatch_invoke(
+            host.dispatch_invoke_legacy(
                 object.into(),
                 super::TEST_DISPID_VALUE,
                 super::DISPATCH_INVOKE_MISSING_ARG_TOKEN
@@ -8752,12 +8772,12 @@ mod tests {
             33
         );
         assert_eq!(
-            host.dispatch_invoke(object.into(), super::TEST_DISPID_SET_VALUE_REF, 33)
+            host.dispatch_invoke_legacy(object.into(), super::TEST_DISPID_SET_VALUE_REF, 33)
                 .expect("SetValueRef property-putref should succeed"),
             100_033
         );
         assert_eq!(
-            host.dispatch_invoke(
+            host.dispatch_invoke_legacy(
                 object.into(),
                 super::TEST_DISPID_VALUE,
                 super::DISPATCH_INVOKE_MISSING_ARG_TOKEN
@@ -8883,7 +8903,7 @@ mod tests {
             invoke_kind_hint: None,
         };
         let err = host
-            .dispatch_invoke_v2(&request)
+            .dispatch_invoke_legacy_v2(&request)
             .expect_err("omitted required argument should fail deterministically");
         assert_eq!(err.kind, HalErrorKind::AdapterFault);
         assert!(err.message.contains("member requires argument"));
@@ -8903,7 +8923,7 @@ mod tests {
             invoke_kind_hint: None,
         };
         assert_eq!(
-            host.dispatch_invoke_v2(&request)
+            host.dispatch_invoke_legacy_v2(&request)
                 .expect("named value argument should still route through property-put lane"),
             307_009
         );
@@ -8926,12 +8946,12 @@ mod tests {
             invoke_kind_hint: None,
         };
         assert_eq!(
-            host.dispatch_invoke_v2(&request)
+            host.dispatch_invoke_legacy_v2(&request)
                 .expect("fully named indexed property-put should canonicalize deterministically"),
             307_009
         );
         assert_eq!(
-            host.dispatch_invoke(
+            host.dispatch_invoke_legacy(
                 object.into(),
                 super::TEST_DISPID_VALUE,
                 super::DISPATCH_INVOKE_MISSING_ARG_TOKEN
@@ -8959,13 +8979,13 @@ mod tests {
             invoke_kind_hint: None,
         };
         assert_eq!(
-            host.dispatch_invoke_v2(&request).expect(
+            host.dispatch_invoke_legacy_v2(&request).expect(
                 "fully named indexed property-putref should canonicalize deterministically"
             ),
             408_013
         );
         assert_eq!(
-            host.dispatch_invoke(
+            host.dispatch_invoke_legacy(
                 object.into(),
                 super::TEST_DISPID_VALUE,
                 super::DISPATCH_INVOKE_MISSING_ARG_TOKEN
@@ -8983,7 +9003,7 @@ mod tests {
             .create_object_legacy(4)
             .expect("create_object should return a token");
         let err = host
-            .dispatch_invoke(
+            .dispatch_invoke_legacy(
                 object.into(),
                 super::TEST_DISPID_LOOKUP,
                 super::DISPATCH_INVOKE_MISSING_ARG_TOKEN,
@@ -9005,7 +9025,7 @@ mod tests {
             .create_object_legacy(4)
             .expect("create_object should return a token");
         let err = host
-            .dispatch_invoke(
+            .dispatch_invoke_legacy(
                 object.into(),
                 super::TEST_DISPID_RAISE_EXCEPTION,
                 super::DISPATCH_INVOKE_MISSING_ARG_TOKEN,
@@ -9057,7 +9077,7 @@ mod tests {
             binding.native_dispatch
         };
         let _ = host
-            .dispatch_invoke(object.into(), 1, 0)
+            .dispatch_invoke_legacy(object.into(), 1, 0)
             .expect("dispatch invoke should succeed");
         let after = {
             let state = host
@@ -9088,7 +9108,7 @@ mod tests {
         }
 
         let _ = host
-            .dispatch_invoke(object.into(), 1, super::DISPATCH_INVOKE_MISSING_ARG_TOKEN)
+            .dispatch_invoke_legacy(object.into(), 1, super::DISPATCH_INVOKE_MISSING_ARG_TOKEN)
             .expect("dictionary Count should be invokable");
         let cache_size_after_first = {
             let state = host
@@ -9103,7 +9123,7 @@ mod tests {
                 .len()
         };
         let _ = host
-            .dispatch_invoke(object.into(), 1, super::DISPATCH_INVOKE_MISSING_ARG_TOKEN)
+            .dispatch_invoke_legacy(object.into(), 1, super::DISPATCH_INVOKE_MISSING_ARG_TOKEN)
             .expect("dictionary Count should be invokable repeatedly");
         let cache_size_after_second = {
             let state = host
@@ -9144,14 +9164,14 @@ mod tests {
             .expect("vtable create_object should succeed");
 
         let dispatch_count = dispatch_host
-            .dispatch_invoke(
+            .dispatch_invoke_legacy(
                 dispatch_object.into(),
                 1,
                 super::DISPATCH_INVOKE_MISSING_ARG_TOKEN,
             )
             .expect("dispatch count should succeed");
         let vtable_count = vtable_host
-            .dispatch_invoke(
+            .dispatch_invoke_legacy(
                 vtable_object.into(),
                 1,
                 super::DISPATCH_INVOKE_MISSING_ARG_TOKEN,
@@ -9160,10 +9180,10 @@ mod tests {
         assert_eq!(dispatch_count, vtable_count);
 
         let dispatch_exists = dispatch_host
-            .dispatch_invoke(dispatch_object.into(), 2, 42)
+            .dispatch_invoke_legacy(dispatch_object.into(), 2, 42)
             .expect("dispatch exists should succeed");
         let vtable_exists = vtable_host
-            .dispatch_invoke(vtable_object.into(), 2, 42)
+            .dispatch_invoke_legacy(vtable_object.into(), 2, 42)
             .expect("vtable exists should succeed");
         assert_eq!(dispatch_exists, vtable_exists);
     }
@@ -9191,7 +9211,7 @@ mod tests {
             .expect("second metadata load should succeed");
         assert_eq!(first, second);
         let removed = host
-            .invalidate_typelib_cache(TypeLibCacheScope::Global, None)
+            .invalidate_typelib_cache_legacy(TypeLibCacheScope::Global, None)
             .expect("global invalidation should succeed");
         assert!(removed >= 1);
     }
@@ -9228,7 +9248,7 @@ mod tests {
             .expect("beta metadata load should succeed");
 
         let removed = host
-            .invalidate_typelib_cache(TypeLibCacheScope::Reference, Some("StdOle"))
+            .invalidate_typelib_cache_legacy(TypeLibCacheScope::Reference, Some("StdOle"))
             .expect("reference invalidation should succeed");
         assert_eq!(removed, 1);
 
@@ -9779,7 +9799,7 @@ mod tests {
             );
         }
         assert_eq!(
-            host.dispatch_invoke(object.into(), super::TEST_DISPID_EXISTS, 42)
+            host.dispatch_invoke_legacy(object.into(), super::TEST_DISPID_EXISTS, 42)
                 .expect("Exists invoke should succeed"),
             0
         );
@@ -9878,7 +9898,7 @@ mod tests {
             .expect("subscribe_event should succeed");
         let subscription = expect_i32(subscription);
         let _ = host
-            .dispatch_invoke(object.into(), 3, 77)
+            .dispatch_invoke_legacy(object.into(), 3, 77)
             .expect("dispatch_invoke should queue callback");
 
         assert!(
@@ -9888,10 +9908,10 @@ mod tests {
         );
 
         let _ = host
-            .dispatch_invoke(object.into(), 3, 88)
+            .dispatch_invoke_legacy(object.into(), 3, 88)
             .expect("second callback should queue");
         assert_eq!(
-            host.release_object(object)
+            host.release_object_legacy(object)
                 .expect("release_object should clear tracked COM state"),
             1
         );
@@ -10044,7 +10064,7 @@ mod tests {
                 5_000i32.saturating_add(prog_id)
             );
             prop_assert_eq!(
-                host.dispatch_invoke(object, member, arg)
+                host.dispatch_invoke_legacy(object, member, arg)
                     .expect("dispatch_invoke should succeed"),
                 object.saturating_add(member).saturating_add(arg)
             );

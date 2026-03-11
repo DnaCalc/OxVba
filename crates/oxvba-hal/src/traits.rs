@@ -19,10 +19,6 @@ pub use oxvba_com::{
 };
 use oxvba_runtime::{BindingHandle, DynLinkSymbol, ObjectHandle, RuntimeValue};
 
-/// VM/runtime value token crossing the current HAL boundary.
-/// This is intentionally `i32` for the current register-window runtime representation.
-pub type ValueToken = i32;
-
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DynLinkDescriptorView<'a> {
     pub descriptor_id: u32,
@@ -113,8 +109,9 @@ pub trait ProcessEnvHal: Send + Sync {
 
 pub trait ComHal: Send + Sync {
     fn create_object(&self, prog_id: RuntimeValue) -> HalResult<RuntimeValue>;
-    fn create_object_legacy(&self, prog_id: ValueToken) -> HalResult<ObjectHandle>;
-    fn release_object(&self, object: ObjectHandle) -> HalResult<ValueToken>;
+    fn create_object_legacy(&self, prog_id: i32) -> HalResult<ObjectHandle>;
+    fn release_object(&self, object: ObjectHandle) -> HalResult<RuntimeValue>;
+    fn release_object_legacy(&self, object: ObjectHandle) -> HalResult<i32>;
     fn describe_object(&self, object: ObjectHandle) -> HalResult<Option<ComObjectDescriptor>>;
     /// Canonical COM invoke seam. Implementations should translate between COM
     /// wire values and the runtime semantic value model here.
@@ -127,15 +124,10 @@ pub trait ComHal: Send + Sync {
     ) -> HalResult<RuntimeValue>;
     /// Legacy compatibility seam for callers that still observe integer slots.
     /// This should project the canonical runtime-value result when possible.
-    fn dispatch_invoke_v2(&self, request: &ComInvokeRequest) -> HalResult<ValueToken>;
-    fn dispatch_invoke(
-        &self,
-        object: ValueToken,
-        member: ValueToken,
-        arg: ValueToken,
-    ) -> HalResult<ValueToken> {
+    fn dispatch_invoke_legacy_v2(&self, request: &ComInvokeRequest) -> HalResult<i32>;
+    fn dispatch_invoke_legacy(&self, object: i32, member: i32, arg: i32) -> HalResult<i32> {
         let request = ComInvokeRequest::legacy(object, member, arg);
-        self.dispatch_invoke_v2(&request)
+        self.dispatch_invoke_legacy_v2(&request)
     }
     fn subscribe_event(&self, object: RuntimeValue, event: RuntimeValue)
     -> HalResult<RuntimeValue>;
@@ -161,7 +153,12 @@ pub trait ComHal: Send + Sync {
         &self,
         scope: TypeLibCacheScope,
         reference_name: Option<&str>,
-    ) -> HalResult<ValueToken>;
+    ) -> HalResult<RuntimeValue>;
+    fn invalidate_typelib_cache_legacy(
+        &self,
+        scope: TypeLibCacheScope,
+        reference_name: Option<&str>,
+    ) -> HalResult<i32>;
 }
 
 pub trait TimeLocaleHal: Send + Sync {

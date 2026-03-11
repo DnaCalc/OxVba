@@ -85,7 +85,7 @@ Run context: active parity/compliance execution plus in-progress feature worklis
   - `crates/oxvba-vm/src/register_file.rs` now stores `Vec<RuntimeValue>`,
   - `crates/oxvba-vm/src/lib.rs` and `crates/oxvba-host/src/engine.rs` now expose semantic value-snapshot APIs as the primary execution lane, with the legacy integer snapshot surface reduced to compatibility projection over `RuntimeValue`,
   - `crates/oxvba-jit/src/lib.rs` now also exposes semantic value-snapshot APIs as the primary execution lane, with the legacy integer snapshot surface reduced to compatibility projection over `RuntimeValue`,
-  - `crates/oxvba-hal/src/traits.rs` still defines `ValueToken = i32`,
+  - the HAL no longer exposes a fake `ValueToken` abstraction; the remaining raw `i32` compatibility seams are now explicit and localized,
   - the runtime now records `CreateObject` results as `RuntimeValue::ObjectHandle(...)` rather than plain integer slots,
   - COM callback ingress now preserves `RuntimeValue` into the runtime, but many callers and tests still consume the legacy integer observation lane,
   - JIT-backed value snapshots now preserve full `RuntimeValue` shape on VM fallback and project the supported Cranelift subset into `RuntimeValue`, but JIT internals and many parity harnesses still fundamentally operate over the legacy integer snapshot lane,
@@ -117,7 +117,7 @@ Run context: active parity/compliance execution plus in-progress feature worklis
   - UI/process host intrinsics now likewise read semantic `RuntimeValue` directly from the HAL boundary instead of routing through removed `*_value()` wrappers,
   - dynamic-link host intrinsics and diagnostics/conformance probes now likewise use direct semantic `RuntimeValue` contracts instead of routing through removed `*_value()` wrappers,
   - COM event helper host intrinsics and engine subscription paths now likewise use direct semantic `RuntimeValue` contracts instead of routing through removed `*_value()` wrappers,
-  - the standard Windows COM adapter now treats `dispatch_invoke_runtime_value_v2(...)` as the canonical implementation seam and projects `dispatch_invoke_v2(...)` from that semantic path only at the compatibility edge,
+  - the standard Windows COM adapter now treats `dispatch_invoke_runtime_value_v2(...)` as the canonical implementation seam and projects `dispatch_invoke_legacy_v2(...)` from that semantic path only at the compatibility edge,
   - the runtime-value COM invoke path now explicitly preserves the working zero-argument native `IDispatch` method/property-get behavior instead of regressing `DISP_E_BADPARAMCOUNT` on the canonical path,
   - host public execution/session observation APIs are now value-first by name:
     - `Engine::execute_source_with_snapshot*` now returns semantic `RuntimeValue` snapshots,
@@ -137,17 +137,21 @@ Run context: active parity/compliance execution plus in-progress feature worklis
   - the dynamic-link binding/invoke seam is now also semantic on argument/result flow:
     - `DynamicLinkHal::prepare_invoke(...)` now takes and returns `RuntimeValue`,
     - `DynamicLinkHal::invoke_bound(...)` now takes and returns `RuntimeValue`,
+  - COM release/cache-maintenance seams are now also semantic on return flow:
+    - `ComHal::release_object(...)` now returns semantic `RuntimeValue`,
+    - `ComHal::invalidate_typelib_cache(...)` now returns semantic `RuntimeValue`,
+    - explicit raw-token compatibility now lives under `release_object_legacy(...)` and `invalidate_typelib_cache_legacy(...)`,
   - CLI execution now also uses the semantic snapshot lane by default and derives `SLOTS:` output from that value path only when needed,
   - the remaining runtime/host boundary holdouts are now concentrated in:
-    - `ValueToken = i32` itself,
-    - `ComHal::dispatch_invoke_v2`,
-    - `ComHal::create_object_legacy`, `ComHal::release_object`, and `ComHal::invalidate_typelib_cache`,
+    - `ComHal::dispatch_invoke_legacy_v2`,
+    - `ComHal::{create_object_legacy,release_object_legacy,invalidate_typelib_cache_legacy}`,
     - the legacy `ComHal::dispatch_invoke(...)` helper over raw member/object/arg tokens,
+    - remaining explicit raw `i32` compatibility signatures in the HAL COM seam,
     - remaining direct interpreter/test/caller expectations that still consume the legacy integer observation aliases,
     - many bytecode execution callers and tests still assume the legacy integer observation surface,
   - the new `ComValue` carrier and generic dynamic-object protocol can live at the COM boundary, but they cannot yet become the single runtime object/value model while the wider execution substrate remains token-only.
 - Exact unblock steps:
-  - replace or strictly extend the HAL `ValueToken = i32` contract with the canonical runtime value model or an explicit indirection model,
+  - remove the remaining explicit raw `i32` compatibility signatures from the HAL COM seam in favor of the canonical runtime value model or an explicit indirection model,
   - decide and implement the runtime-facing semantic representation for external object identity/binding handles so `create_object`/`release_object`/`describe_object` and dynamic binding state stop depending on raw integer tokens,
   - migrate the remaining COM dispatch/dynlink compatibility shims once that object/binding representation exists,
   - plan and execute migration of:

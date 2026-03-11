@@ -739,6 +739,7 @@ fn hal_requirement(instruction: &Instruction) -> Option<(&'static str, Capabilit
 #[cfg(test)]
 mod tests {
     use super::{DiagnosticPhase, Engine, HostConfig};
+    use oxvba_com::{ComInvokeArg, ComInvokeRequest, ComObjectToken};
     use oxvba_compiler::{
         ModuleKind, ProjectKind, ProjectManifest, ProjectReference, ReferenceKind,
         ReferencedProjectManifest, module_unit_from_source,
@@ -756,6 +757,42 @@ mod tests {
             .nth(2)
             .expect("workspace root")
             .to_path_buf()
+    }
+
+    #[cfg(target_os = "windows")]
+    fn create_controlled_com_object(engine: &Engine) -> oxvba_runtime::ObjectHandle {
+        match engine
+            .host_services
+            .com()
+            .create_object(RuntimeValue::I32(4))
+            .expect("create_object should return controlled COM object")
+        {
+            RuntimeValue::ObjectHandle(handle) => handle,
+            other => panic!("expected object handle from create_object, got {:?}", other),
+        }
+    }
+
+    #[cfg(target_os = "windows")]
+    fn dispatch_controlled_com_call(
+        engine: &Engine,
+        object: oxvba_runtime::ObjectHandle,
+        member: i32,
+        arg: i32,
+    ) -> RuntimeValue {
+        let request = ComInvokeRequest::new(
+            ComObjectToken::new(object.raw()),
+            member,
+            if arg == oxvba_com::DISPATCH_INVOKE_MISSING_ARG_TOKEN {
+                Vec::new()
+            } else {
+                vec![ComInvokeArg::positional(arg)]
+            },
+        );
+        engine
+            .host_services
+            .com()
+            .dispatch_invoke_runtime_value_v2(&request)
+            .expect("dispatch_invoke should succeed")
     }
 
     fn repo_path(relative: &str) -> PathBuf {
@@ -1910,20 +1947,12 @@ mod tests {
         let mut engine = Engine::new(HostConfig::default());
         engine.set_host_policy(HostPolicy::interactive_dev());
 
-        let object = engine
-            .host_services
-            .com()
-            .create_object_legacy(4)
-            .expect("create_object should return controlled COM object");
+        let object = create_controlled_com_object(&engine);
         let subscription = engine
             .subscribe_com_event_handler(object, 1, "SinkA_OnChanged")
             .expect("subscribe_com_event_handler should succeed");
 
-        let _ = engine
-            .host_services
-            .com()
-            .dispatch_invoke(object.into(), 3, 77)
-            .expect("dispatch_invoke should queue callback");
+        let _ = dispatch_controlled_com_call(&engine, object, 3, 77);
         let callback = engine
             .poll_com_event_callback()
             .expect("callback poll should succeed")
@@ -1947,11 +1976,7 @@ mod tests {
         let mut engine = Engine::new(HostConfig::default());
         engine.set_host_policy(HostPolicy::interactive_dev());
 
-        let object = engine
-            .host_services
-            .com()
-            .create_object_legacy(4)
-            .expect("create_object should return controlled COM object");
+        let object = create_controlled_com_object(&engine);
         let descriptor = engine
             .describe_com_object(object)
             .expect("describe_com_object should succeed")
@@ -1980,11 +2005,7 @@ mod tests {
         let mut engine = Engine::new(HostConfig::default());
         engine.set_host_policy(HostPolicy::interactive_dev());
 
-        let object = engine
-            .host_services
-            .com()
-            .create_object_legacy(4)
-            .expect("create_object should return controlled COM object");
+        let object = create_controlled_com_object(&engine);
         let subscription = engine
             .host_services
             .com()
@@ -1994,11 +2015,7 @@ mod tests {
             RuntimeValue::I32(token) => token,
             other => panic!("expected integer subscription token, got {:?}", other),
         };
-        let _ = engine
-            .host_services
-            .com()
-            .dispatch_invoke(object.into(), 3, 21)
-            .expect("dispatch_invoke should queue callback");
+        let _ = dispatch_controlled_com_call(&engine, object, 3, 21);
 
         let err = engine
             .poll_com_event_callback()
@@ -2021,20 +2038,12 @@ mod tests {
         let mut engine = Engine::new(HostConfig::default());
         engine.set_host_policy(HostPolicy::interactive_dev());
 
-        let object = engine
-            .host_services
-            .com()
-            .create_object_legacy(4)
-            .expect("create_object should return controlled COM object");
+        let object = create_controlled_com_object(&engine);
         let subscription = engine
             .subscribe_com_event_handler(object, 3, "SinkA_OnPair")
             .expect("subscribe_com_event_handler should succeed");
 
-        let _ = engine
-            .host_services
-            .com()
-            .dispatch_invoke(object.into(), 4, 90)
-            .expect("dispatch_invoke should queue pair callback");
+        let _ = dispatch_controlled_com_call(&engine, object, 4, 90);
         let callback = engine
             .poll_com_event_callback()
             .expect("callback poll should succeed")
@@ -2059,20 +2068,12 @@ mod tests {
         let mut engine = Engine::new(HostConfig::default());
         engine.set_host_policy(HostPolicy::interactive_dev());
 
-        let object = engine
-            .host_services
-            .com()
-            .create_object_legacy(4)
-            .expect("create_object should return controlled COM object");
+        let object = create_controlled_com_object(&engine);
         let subscription = engine
             .subscribe_com_event_handler(object, 2, "SinkA_OnSourceChanged")
             .expect("subscribe_com_event_handler should succeed for source-interface event");
 
-        let _ = engine
-            .host_services
-            .com()
-            .dispatch_invoke(object.into(), 11, 55)
-            .expect("dispatch_invoke should queue source-interface callback");
+        let _ = dispatch_controlled_com_call(&engine, object, 11, 55);
         let callback = engine
             .poll_com_event_callback()
             .expect("callback poll should succeed")
@@ -2112,19 +2113,11 @@ mod tests {
         let mut runtime = engine
             .start_project_runtime_session(&manifest)
             .expect("project runtime session should start");
-        let object = engine
-            .host_services
-            .com()
-            .create_object_legacy(4)
-            .expect("create_object should return controlled COM object");
+        let object = create_controlled_com_object(&engine);
         let subscription = engine
             .subscribe_com_event_handler(object, 1, "SinkA_OnChanged")
             .expect("subscribe should succeed");
-        let _ = engine
-            .host_services
-            .com()
-            .dispatch_invoke(object.into(), 3, 77)
-            .expect("dispatch_invoke should queue callback");
+        let _ = dispatch_controlled_com_call(&engine, object, 3, 77);
 
         let err = engine
             .poll_and_dispatch_next_com_event_callback(&mut runtime)
@@ -2162,19 +2155,11 @@ mod tests {
         let mut runtime = engine
             .start_project_runtime_session(&manifest)
             .expect("project runtime session should start");
-        let object = engine
-            .host_services
-            .com()
-            .create_object_legacy(4)
-            .expect("create_object should return controlled COM object");
+        let object = create_controlled_com_object(&engine);
         let subscription = engine
             .subscribe_com_event_handler(object, 1, "MissingHandler")
             .expect("subscribe should succeed");
-        let _ = engine
-            .host_services
-            .com()
-            .dispatch_invoke(object.into(), 3, 77)
-            .expect("dispatch_invoke should queue callback");
+        let _ = dispatch_controlled_com_call(&engine, object, 3, 77);
 
         let err = engine
             .poll_and_dispatch_next_com_event_callback(&mut runtime)
@@ -2211,19 +2196,11 @@ mod tests {
         let mut runtime = engine
             .start_project_runtime_session(&manifest)
             .expect("project runtime session should start");
-        let object = engine
-            .host_services
-            .com()
-            .create_object_legacy(4)
-            .expect("create_object should return controlled COM object");
+        let object = create_controlled_com_object(&engine);
         let subscription = engine
             .subscribe_com_event_handler(object, 1, "SinkA_OnChanged")
             .expect("subscribe should succeed");
-        let _ = engine
-            .host_services
-            .com()
-            .dispatch_invoke(object.into(), 3, 77)
-            .expect("dispatch_invoke should queue callback");
+        let _ = dispatch_controlled_com_call(&engine, object, 3, 77);
 
         let err = engine
             .poll_and_dispatch_next_com_event_callback(&mut runtime)
@@ -2260,19 +2237,11 @@ mod tests {
         let mut runtime = engine
             .start_project_runtime_session(&manifest)
             .expect("project runtime session should start");
-        let object = engine
-            .host_services
-            .com()
-            .create_object_legacy(4)
-            .expect("create_object should return controlled COM object");
+        let object = create_controlled_com_object(&engine);
         let subscription = engine
             .subscribe_com_event_handler(object, 3, "SinkA_OnPair")
             .expect("subscribe should succeed");
-        let _ = engine
-            .host_services
-            .com()
-            .dispatch_invoke(object.into(), 4, 90)
-            .expect("dispatch_invoke should queue callback");
+        let _ = dispatch_controlled_com_call(&engine, object, 4, 90);
 
         let err = engine
             .poll_and_dispatch_next_com_event_callback(&mut runtime)

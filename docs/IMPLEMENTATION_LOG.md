@@ -1,5 +1,33 @@
 # Implementation Log
 
+## 2026-03-11 - COM release and typelib-cache invalidation now default to semantic returns
+
+- Tightened two remaining COM maintenance seams in [traits.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-hal\src\traits.rs):
+  - `ComHal::release_object(...)` now returns semantic `RuntimeValue`,
+  - `ComHal::invalidate_typelib_cache(...)` now returns semantic `RuntimeValue`,
+  - explicit raw-token compatibility now lives under `release_object_legacy(...)` and `invalidate_typelib_cache_legacy(...)`.
+- Updated the standard/null/wasm adapters and COM regression callers so the semantic return path is primary and the token-return path is clearly labeled legacy.
+- Net effect:
+  - COM activation, dispatch, release, and cache-maintenance no longer present raw token returns as the default runtime-facing contract,
+  - the remaining `ValueToken` wall is now concentrated in the alias itself plus the explicit legacy COM compatibility helpers.
+- Verification:
+  - `cargo test -p oxvba-hal --quiet`
+
+## 2026-03-11 - Legacy COM dispatch compatibility names are now explicit
+
+- Tightened the remaining COM dispatch compatibility surface in [traits.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-hal\src\traits.rs):
+  - `dispatch_invoke_runtime_value_v2(...)` remains the semantic primary,
+  - the raw-token projection is now explicitly named `dispatch_invoke_legacy_v2(...)`,
+  - the scalar helper is now explicitly named `dispatch_invoke_legacy(...)`.
+- Updated the standard/null/wasm adapters plus host/adapter regression callers to use the explicit `legacy` names.
+- Net effect:
+  - the live API no longer makes the token compatibility path look like the default COM dispatch contract,
+  - the remaining runtime-model wall is now dominated by the `ValueToken = i32` alias itself and the few explicit legacy methods that still return raw token projections.
+- Verification:
+  - `cargo test -p oxvba-hal -p oxvba-host --quiet`
+  - `./scripts/check-governance.ps1`
+  - `./scripts/meta-check.ps1 -Fast -NoArtifacts`
+
 ## 2026-03-11 - Dynamic-link bound invoke now uses semantic runtime values
 
 - Tightened the remaining bound dynamic-link helper seam in [traits.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-hal\src\traits.rs):
@@ -35,7 +63,7 @@
 - Updated VM activation, HAL conformance, host tests, and adapter regression tests to use the semantic primary name for runtime-facing calls and the explicit `legacy` name for token-compatibility lanes.
 - Net effect:
   - COM activation now matches the value-first naming already used by the runtime-value dispatch seam,
-  - the remaining COM token compatibility wall is narrowed further to `dispatch_invoke_v2(...)` and the broader `ValueToken = i32` contract.
+  - the remaining COM token compatibility wall is narrowed further to `dispatch_invoke_legacy_v2(...)` and the broader `ValueToken = i32` contract.
 - Verification:
   - `cargo test -p oxvba-hal -p oxvba-vm -p oxvba-host --quiet`
   - `./scripts/check-governance.ps1`
@@ -80,10 +108,13 @@
 
 ## 2026-03-11 - COM HAL invoke seam now projects from runtime values
 
-- Tightened the COM HAL seam in [traits.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-hal\src\traits.rs) so `dispatch_invoke_runtime_value_v2(...)` is documented as the canonical semantic path and `dispatch_invoke_v2(...)` is explicitly treated as the remaining legacy compatibility projection.
+- Removed the fake HAL `ValueToken` alias in [traits.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-hal\src\traits.rs) so the remaining raw `i32` COM compatibility signatures are explicit instead of masquerading as a semantic runtime contract.
+- Continued the runtime-value migration at the caller edge by moving host COM engine tests and the HAL conformance `com.create_object` probe onto the semantic `create_object(...)` / `dispatch_invoke_runtime_value_v2(...)` surface rather than the raw-token compatibility helpers.
+- The remaining runtime-model wall is now more honestly described as the explicit raw-`i32` compatibility seams and the legacy snapshot/test estate around them, not a still-authoritative `ValueToken` abstraction.
+- Tightened the COM HAL seam in [traits.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-hal\src\traits.rs) so `dispatch_invoke_runtime_value_v2(...)` is documented as the canonical semantic path and `dispatch_invoke_legacy_v2(...)` is explicitly treated as the remaining legacy compatibility projection.
 - Updated null/wasm adapters to expose the runtime-value COM invoke seam directly instead of inheriting it only through the legacy token path.
 - Changed the Windows adapter in [standard.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-hal\src\adapters\standard.rs) so:
-  - `dispatch_invoke_v2(...)` now projects from `dispatch_invoke_runtime_value_v2(...)`,
+  - `dispatch_invoke_legacy_v2(...)` now projects from `dispatch_invoke_runtime_value_v2(...)`,
   - the duplicate token-first native COM invoke implementation was removed,
   - the canonical runtime-value path preserves the working zero-argument native `IDispatch` method/property-get cases instead of regressing them behind the broader runtime-value packer.
 - Added direct runtime-path coverage for named method/property-get/default-member dispatch and preserved the existing compatibility tests.
@@ -343,7 +374,7 @@
   - strengthened controlled COM fixture coverage:
     - named method invoke through `IDispatch::Invoke`
     - named property-get invoke through `IDispatch::Invoke`
-    - omitted required-argument transport through `dispatch_invoke_v2`
+    - omitted required-argument transport through `dispatch_invoke_legacy_v2`
     - named property-put/property-putref indexed routes now execute deterministically in both adapter-level and end-to-end host-backed lanes
   - kept one safety gate explicit:
     - late-bound default-member calls with named arguments remain compile-time blocked until runtime can recover authoritative default-member identity for named COM dispatch
@@ -418,7 +449,7 @@
     - new shared `oxvba-com` types:
       - `ComInvokeKind`
       - `ComInvokeRequest`
-    - `ComHal` now exposes `dispatch_invoke_v2(&ComInvokeRequest)` with the legacy scalar method retained as a compatibility shim
+    - `ComHal` now exposes `dispatch_invoke_legacy_v2(&ComInvokeRequest)` with the legacy scalar method retained as a compatibility shim
     - bytecode/VM transport now carries `IntrinsicDispatchInvokeHost { object, member, args }`
   - widened compiler/source handling:
     - `dispatchinvoke` intrinsic arity is now `2..variadic`
@@ -2135,7 +2166,8 @@
 - Runtime value-model migration stop condition after the filesystem and COM event-helper slices:
   - the remaining seam is no longer another wrapper cleanup; it is the core `ValueToken = i32` contract plus the token-based COM object/binding and dynamic-link binding state around it
   - remaining holdouts are concentrated in:
-    - `ComHal::{create_object,create_object_legacy,release_object,describe_object,dispatch_invoke_v2,dispatch_invoke_runtime_value_v2}`,
+    - `ComHal::{create_object,create_object_legacy,release_object,describe_object,dispatch_invoke_legacy_v2,dispatch_invoke_runtime_value_v2}`,
     - `DynamicLinkHal::{bind_descriptor,prepare_invoke,invoke_bound}`,
     - engine/public callers that still observe COM object identity through raw integer tokens
   - further honest progress now requires the next planned phase of `WORKSET_2026-03-11_RUNTIME_VALUE_MODEL_MIGRATION.md`: replace or explicitly extend the `ValueToken` contract with the canonical runtime object/value model or indirection model
+
