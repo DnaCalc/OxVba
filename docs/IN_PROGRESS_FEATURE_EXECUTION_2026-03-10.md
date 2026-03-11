@@ -171,6 +171,7 @@ Status vocabulary:
       - explicit raw-token compatibility is labeled `release_object_legacy(...)` and `invalidate_typelib_cache_legacy(...)`,
     - CLI execution now uses the semantic snapshot lane by default and derives integer slots from `RuntimeValue` only at the output edge,
     - host-side COM end-to-end, early-binding, and registered-lane integration tests now execute through the semantic snapshot APIs rather than the legacy integer snapshot APIs,
+    - the fixture-driven project integration suite now also executes through semantic project snapshots and projects back to legacy slots only at the assertion edge so the catalog format remains stable during migration,
     - the Cranelift subset helper now also exposes semantic `RuntimeValue` snapshots as its primary API, with an explicit `execute_bytecode_legacy(...)` compatibility projection retained for the integer subset,
     - CLI execution no longer stores duplicate integer snapshots in memory and derives `SLOTS:` output directly from semantic runtime values only when requested,
     - the mixed edge/scaling host integration suite now also executes through semantic project snapshots instead of the legacy integer snapshot API,

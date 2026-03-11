@@ -100,9 +100,10 @@ Completed slices:
    - `ComHal::invalidate_typelib_cache(...)` now returns semantic `RuntimeValue`,
    - explicit raw-token compatibility is labeled `release_object_legacy(...)` and `invalidate_typelib_cache_legacy(...)`.
 36. Host-side COM end-to-end, early-binding, and registered-lane integration tests now use the semantic host snapshot APIs instead of the legacy integer snapshot APIs.
-37. The Cranelift subset helper now exposes semantic `RuntimeValue` snapshots as its primary API, with `execute_bytecode_legacy(...)` retained as the explicit integer compatibility projection.
-38. CLI execution no longer stores duplicate integer snapshots in memory and derives `SLOTS:` output directly from semantic runtime values only at the output edge.
-39. The mixed edge/scaling host integration suite now also executes through semantic project snapshots instead of the legacy integer snapshot API.
+37. The fixture-driven project integration suite now also uses semantic project snapshots, with legacy slot projection retained only at the assertion edge so the existing catalog format stays stable during migration.
+38. The Cranelift subset helper now exposes semantic `RuntimeValue` snapshots as its primary API, with `execute_bytecode_legacy(...)` retained as the explicit integer compatibility projection.
+39. CLI execution no longer stores duplicate integer snapshots in memory and derives `SLOTS:` output directly from semantic runtime values only at the output edge.
+40. The mixed edge/scaling host integration suite now also executes through semantic project snapshots instead of the legacy integer snapshot API.
 
 Remaining blocker seam:
 1. explicit raw `i32` compatibility signatures still anchor the remaining legacy COM seams,

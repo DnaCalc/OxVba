@@ -143,6 +143,7 @@ Run context: active parity/compliance execution plus in-progress feature worklis
     - explicit raw-token compatibility now lives under `release_object_legacy(...)` and `invalidate_typelib_cache_legacy(...)`,
   - CLI execution now also uses the semantic snapshot lane by default and derives `SLOTS:` output from that value path only when needed,
   - host-side COM end-to-end, early-binding, and registered-lane integration tests now execute through the semantic snapshot APIs rather than the legacy integer snapshot APIs,
+  - the fixture-driven project integration suite now also executes through semantic project snapshots and projects back to legacy slots only at assertion time so the catalog format can remain stable during migration,
   - the Cranelift subset helper now also exposes semantic `RuntimeValue` snapshots as its primary execution API, with the integer-slot form reduced to an explicit compatibility wrapper,
   - the CLI no longer stores a duplicate `Vec<i32>` execution result; `SLOTS:` output is now projected directly from semantic runtime values only at the output edge,
   - the mixed edge/scaling host integration suite now also executes through semantic project snapshots instead of the legacy integer snapshot API,

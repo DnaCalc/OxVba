@@ -10,7 +10,6 @@ use oxvba_hal::model::{
 };
 use oxvba_host::engine::DiagnosticPhase;
 use oxvba_host::{Engine, HostConfig, RuntimeProfileId};
-
 const CATALOG_REL_PATH: &str = "conformance/integration/catalog.psv";
 const CASES_REL_PATH: &str = "conformance/integration/projects";
 
@@ -433,22 +432,33 @@ fn run_case(case: &IntegrationCase, enable_jit: bool) -> Result<(), String> {
         engine.set_unsupported_feature_mode(mode);
     }
 
-    let result = engine.execute_project_with_legacy_snapshot_phased(&manifest);
+    let result = engine.execute_project_with_snapshot_phased(&manifest);
 
     match (&case.expected_status, result) {
-        (ExpectedStatus::Ok, Ok(slots)) => {
-            if slots != case.expected_slots {
+        (ExpectedStatus::Ok, Ok(values)) => {
+            let observed_slots = values
+                .iter()
+                .map(|value| {
+                    value.to_legacy_i32().map_err(|err| {
+                        format!(
+                            "value {:?} cannot be projected into legacy slot lane: {err}",
+                            value
+                        )
+                    })
+                })
+                .collect::<Result<Vec<_>, _>>()?;
+            if observed_slots != case.expected_slots {
                 return Err(format!(
-                    "slot mismatch: expected {:?}, got {:?}",
-                    case.expected_slots, slots
+                    "slot mismatch: expected {:?}, got {:?} from values {:?}",
+                    case.expected_slots, observed_slots, values
                 ));
             }
         }
         (ExpectedStatus::Ok, Err(err)) => {
             return Err(format!("expected success but got error: {}", err.message()));
         }
-        (ExpectedStatus::Error, Ok(slots)) => {
-            return Err(format!("expected error but got slots {:?}", slots));
+        (ExpectedStatus::Error, Ok(values)) => {
+            return Err(format!("expected error but got values {:?}", values));
         }
         (ExpectedStatus::Error, Err(err)) => {
             let expected_phase = match case.expected_phase {

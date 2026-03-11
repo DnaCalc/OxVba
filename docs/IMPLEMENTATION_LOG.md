@@ -1,5 +1,18 @@
 # Implementation Log
 
+## 2026-03-11 - Fixture-driven project integration now executes through semantic snapshots
+
+- Tightened the fixture-driven host project integration suite in [project_integration_suite.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-host\tests\project_integration_suite.rs):
+  - active cases now run through `Engine::execute_project_with_snapshot_phased(...)`,
+  - the existing `conformance/integration/catalog.psv` slot expectations are preserved as a compatibility input format,
+  - semantic `RuntimeValue` results are projected back to legacy slots only at the assertion edge.
+- Net effect:
+  - the suite now validates the semantic execution lane instead of the legacy project snapshot API,
+  - catalog churn is avoided until the fixture format is upgraded to represent semantic values directly,
+  - the remaining migration pressure is now concentrated more clearly in the internal `engine.rs` legacy test/observation estate plus the explicit raw-`i32` HAL compatibility seams.
+- Verification:
+  - `cargo test -p oxvba-host --test project_integration_suite --quiet`
+
 ## 2026-03-11 - COM release and typelib-cache invalidation now default to semantic returns
 
 - Tightened two remaining COM maintenance seams in [traits.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-hal\src\traits.rs):
