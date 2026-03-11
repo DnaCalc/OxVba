@@ -104,9 +104,10 @@ Completed slices:
 38. The large internal `crates/oxvba-host/src/engine.rs` test estate now also executes through semantic source/project snapshot APIs underneath and uses local slot-projection helpers only where slot-shaped assertions remain intentional.
 39. JIT parity tests and the remaining direct VM/JIT equivalence checks now also execute through semantic snapshot helpers underneath, leaving the legacy snapshot APIs largely as explicit public compatibility shims.
 40. The standard Windows COM adapter now treats `create_object(...)`, `release_object(...)`, and `invalidate_typelib_cache(...)` as semantic-primary seams and projects the `*_legacy(...)` variants only at the compatibility edge.
-41. The Cranelift subset helper now exposes semantic `RuntimeValue` snapshots as its primary API, with `execute_bytecode_legacy(...)` retained as the explicit integer compatibility projection.
-42. CLI execution no longer stores duplicate integer snapshots in memory and derives `SLOTS:` output directly from semantic runtime values only at the output edge.
-43. The mixed edge/scaling host integration suite now also executes through semantic project snapshots instead of the legacy integer snapshot API.
+41. The standard-adapter COM regression tests now also use semantic helper paths for activation/release/cache maintenance by default, leaving the corresponding legacy methods mostly to explicit compatibility coverage.
+42. The Cranelift subset helper now exposes semantic `RuntimeValue` snapshots as its primary API, with `execute_bytecode_legacy(...)` retained as the explicit integer compatibility projection.
+43. CLI execution no longer stores duplicate integer snapshots in memory and derives `SLOTS:` output directly from semantic runtime values only at the output edge.
+44. The mixed edge/scaling host integration suite now also executes through semantic project snapshots instead of the legacy integer snapshot API.
 
 Remaining blocker seam:
 1. explicit raw `i32` compatibility signatures still anchor the remaining legacy COM seams,

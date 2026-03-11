@@ -7633,6 +7633,77 @@ mod tests {
         value
     }
 
+    fn expect_object_handle(value: RuntimeValue) -> oxvba_runtime::ObjectHandle {
+        let RuntimeValue::ObjectHandle(handle) = value else {
+            panic!("expected RuntimeValue::ObjectHandle, got {value:?}");
+        };
+        handle
+    }
+
+    fn create_object_test(
+        host: &StandardHostServices,
+        prog_id: i32,
+    ) -> crate::error::HalResult<oxvba_runtime::ObjectHandle> {
+        host.create_object(RuntimeValue::I32(prog_id))
+            .map(expect_object_handle)
+    }
+
+    fn release_object_test(
+        host: &StandardHostServices,
+        object: oxvba_runtime::ObjectHandle,
+    ) -> crate::error::HalResult<i32> {
+        host.release_object(object).map(expect_i32)
+    }
+
+    fn invalidate_typelib_cache_test(
+        host: &StandardHostServices,
+        scope: TypeLibCacheScope,
+        reference_name: Option<&str>,
+    ) -> crate::error::HalResult<i32> {
+        host.invalidate_typelib_cache(scope, reference_name)
+            .map(expect_i32)
+    }
+
+    trait SemanticComTestExt {
+        fn create_object_test(
+            &self,
+            prog_id: i32,
+        ) -> crate::error::HalResult<oxvba_runtime::ObjectHandle>;
+        fn release_object_test(
+            &self,
+            object: oxvba_runtime::ObjectHandle,
+        ) -> crate::error::HalResult<i32>;
+        fn invalidate_typelib_cache_test(
+            &self,
+            scope: TypeLibCacheScope,
+            reference_name: Option<&str>,
+        ) -> crate::error::HalResult<i32>;
+    }
+
+    impl SemanticComTestExt for StandardHostServices {
+        fn create_object_test(
+            &self,
+            prog_id: i32,
+        ) -> crate::error::HalResult<oxvba_runtime::ObjectHandle> {
+            create_object_test(self, prog_id)
+        }
+
+        fn release_object_test(
+            &self,
+            object: oxvba_runtime::ObjectHandle,
+        ) -> crate::error::HalResult<i32> {
+            release_object_test(self, object)
+        }
+
+        fn invalidate_typelib_cache_test(
+            &self,
+            scope: TypeLibCacheScope,
+            reference_name: Option<&str>,
+        ) -> crate::error::HalResult<i32> {
+            invalidate_typelib_cache_test(self, scope, reference_name)
+        }
+    }
+
     fn rv(value: i32) -> RuntimeValue {
         RuntimeValue::I32(value)
     }
@@ -7851,7 +7922,7 @@ mod tests {
             HalErrorKind::PolicyDenied
         );
         assert_eq!(
-            host.create_object_legacy(1).expect_err("com deny").kind,
+            host.create_object_test(1).expect_err("com deny").kind,
             HalErrorKind::PolicyDenied
         );
         assert_eq!(
@@ -7943,7 +8014,7 @@ mod tests {
         };
         assert!(handle.raw() >= 20_001);
         assert_eq!(
-            host.release_object_legacy(handle)
+            host.release_object_test(handle)
                 .expect("release_object should succeed"),
             1
         );
@@ -8312,7 +8383,7 @@ mod tests {
     fn windows_native_com_event_subscription_lifecycle_is_tracked() {
         let host = StandardHostServices::new(HalProfileId::Windows, HostPolicy::interactive_dev());
         let object = host
-            .create_object_legacy(4)
+            .create_object_test(4)
             .expect("create_object should return a token");
         assert!(
             object.raw() >= 20_001,
@@ -8408,7 +8479,7 @@ mod tests {
     fn windows_native_com_event_multi_arg_callback_payload_roundtrips() {
         let host = StandardHostServices::new(HalProfileId::Windows, HostPolicy::interactive_dev());
         let object = host
-            .create_object_legacy(4)
+            .create_object_test(4)
             .expect("create_object should return a token");
         let subscription = host
             .subscribe_event(rv(object.into()), rv(super::TEST_EVENT_CHANGED_PAIR))
@@ -8470,7 +8541,7 @@ mod tests {
     fn windows_native_com_event_poll_returns_structured_payload() {
         let host = StandardHostServices::new(HalProfileId::Windows, HostPolicy::interactive_dev());
         let object = host
-            .create_object_legacy(4)
+            .create_object_test(4)
             .expect("create_object should return a token");
         let subscription = host
             .subscribe_event(rv(object.into()), rv(super::TEST_EVENT_CHANGED_PAIR))
@@ -8507,7 +8578,7 @@ mod tests {
     fn windows_native_com_release_object_clears_subscriptions_and_callbacks() {
         let host = StandardHostServices::new(HalProfileId::Windows, HostPolicy::interactive_dev());
         let object = host
-            .create_object_legacy(4)
+            .create_object_test(4)
             .expect("create_object should return a token");
         let subscription = host
             .subscribe_event(rv(object.into()), rv(1))
@@ -8520,10 +8591,7 @@ mod tests {
             .expect("do_events should pump pending COM callback");
         let callback = expect_i32(callback);
 
-        assert_eq!(
-            host.release_object_legacy(object).expect("release_object"),
-            1
-        );
+        assert_eq!(host.release_object_test(object).expect("release_object"), 1);
         let callback_err = host
             .event_callback_subscription(rv(callback))
             .expect_err("released object callback should be gone");
@@ -8547,7 +8615,7 @@ mod tests {
     fn windows_native_com_event_subscription_rejects_unknown_event_token() {
         let host = StandardHostServices::new(HalProfileId::Windows, HostPolicy::interactive_dev());
         let object = host
-            .create_object_legacy(4)
+            .create_object_test(4)
             .expect("create_object should return a token");
         let err = host
             .subscribe_event(rv(object.into()), rv(7))
@@ -8561,7 +8629,7 @@ mod tests {
     fn windows_native_com_event_subscription_supports_controlled_com_evt_b_source_interface_lane() {
         let host = StandardHostServices::new(HalProfileId::Windows, HostPolicy::interactive_dev());
         let object = host
-            .create_object_legacy(4)
+            .create_object_test(4)
             .expect("create_object should return a token");
         let subscription = host
             .subscribe_event(
@@ -8646,7 +8714,7 @@ mod tests {
     fn windows_native_com_event_callback_arg_index_is_validated() {
         let host = StandardHostServices::new(HalProfileId::Windows, HostPolicy::interactive_dev());
         let object = host
-            .create_object_legacy(4)
+            .create_object_test(4)
             .expect("create_object should return a token");
         let subscription = host
             .subscribe_event(rv(object.into()), rv(1))
@@ -8707,7 +8775,7 @@ mod tests {
     fn windows_native_com_dictionary_lane_executes_when_available() {
         let host = StandardHostServices::new(HalProfileId::Windows, HostPolicy::interactive_dev());
         let object = host
-            .create_object_legacy(4)
+            .create_object_test(4)
             .expect("create_object should return a token");
 
         if object.raw() == 5_004 {
@@ -8735,7 +8803,7 @@ mod tests {
     fn windows_native_controlled_test_dispatch_returns_deterministic_values() {
         let host = StandardHostServices::new(HalProfileId::Windows, HostPolicy::interactive_dev());
         let object = host
-            .create_object_legacy(4)
+            .create_object_test(4)
             .expect("create_object should return a token");
         assert!(
             object.raw() >= 20_001,
@@ -8801,7 +8869,7 @@ mod tests {
     fn windows_native_controlled_test_dispatch_supports_named_method_args_runtime_value_v2() {
         let host = StandardHostServices::new(HalProfileId::Windows, HostPolicy::interactive_dev());
         let object = host
-            .create_object_legacy(4)
+            .create_object_test(4)
             .expect("create_object should return a token");
         let request = ComInvokeRequest {
             object: object.raw().into(),
@@ -8826,7 +8894,7 @@ mod tests {
     fn windows_native_controlled_test_dispatch_supports_named_property_get_args_runtime_value_v2() {
         let host = StandardHostServices::new(HalProfileId::Windows, HostPolicy::interactive_dev());
         let object = host
-            .create_object_legacy(4)
+            .create_object_test(4)
             .expect("create_object should return a token");
         let request = ComInvokeRequest {
             object: object.raw().into(),
@@ -8852,7 +8920,7 @@ mod tests {
     {
         let host = StandardHostServices::new(HalProfileId::Windows, HostPolicy::interactive_dev());
         let object = host
-            .create_object_legacy(4)
+            .create_object_test(4)
             .expect("create_object should return a token");
         let request = ComInvokeRequest {
             object: object.raw().into(),
@@ -8878,7 +8946,7 @@ mod tests {
             .insert(4, "Scripting.Dictionary".to_string());
         let host = StandardHostServices::new(HalProfileId::Windows, policy);
         let object = host
-            .create_object_legacy(4)
+            .create_object_test(4)
             .expect("create_object should return dictionary token");
         let request = ComInvokeRequest {
             object: object.raw().into(),
@@ -8903,7 +8971,7 @@ mod tests {
     fn windows_native_controlled_test_dispatch_preserves_omitted_arg_metadata_v2() {
         let host = StandardHostServices::new(HalProfileId::Windows, HostPolicy::interactive_dev());
         let object = host
-            .create_object_legacy(4)
+            .create_object_test(4)
             .expect("create_object should return a token");
         let request = ComInvokeRequest {
             object: object.raw().into(),
@@ -8923,7 +8991,7 @@ mod tests {
     fn windows_native_controlled_test_dispatch_named_property_put_value_uses_propertyput_lane_v2() {
         let host = StandardHostServices::new(HalProfileId::Windows, HostPolicy::interactive_dev());
         let object = host
-            .create_object_legacy(4)
+            .create_object_test(4)
             .expect("create_object should return a token");
         let request = ComInvokeRequest {
             object: object.raw().into(),
@@ -8943,7 +9011,7 @@ mod tests {
     fn windows_native_controlled_test_dispatch_named_indexed_property_put_reorders_value_last_v2() {
         let host = StandardHostServices::new(HalProfileId::Windows, HostPolicy::interactive_dev());
         let object = host
-            .create_object_legacy(4)
+            .create_object_test(4)
             .expect("create_object should return a token");
         let request = ComInvokeRequest {
             object: object.raw().into(),
@@ -8976,7 +9044,7 @@ mod tests {
      {
         let host = StandardHostServices::new(HalProfileId::Windows, HostPolicy::interactive_dev());
         let object = host
-            .create_object_legacy(4)
+            .create_object_test(4)
             .expect("create_object should return a token");
         let request = ComInvokeRequest {
             object: object.raw().into(),
@@ -9009,7 +9077,7 @@ mod tests {
     fn windows_native_controlled_property_get_with_required_arg_reports_missing_arg_stably() {
         let host = StandardHostServices::new(HalProfileId::Windows, HostPolicy::interactive_dev());
         let object = host
-            .create_object_legacy(4)
+            .create_object_test(4)
             .expect("create_object should return a token");
         let err = host
             .dispatch_invoke_legacy(
@@ -9031,7 +9099,7 @@ mod tests {
     fn windows_native_controlled_exception_surfaces_excepinfo_without_fake_arg_error() {
         let host = StandardHostServices::new(HalProfileId::Windows, HostPolicy::interactive_dev());
         let object = host
-            .create_object_legacy(4)
+            .create_object_test(4)
             .expect("create_object should return a token");
         let err = host
             .dispatch_invoke_legacy(
@@ -9064,7 +9132,7 @@ mod tests {
     fn windows_native_com_binding_keeps_stable_dispatch_identity() {
         let host = StandardHostServices::new(HalProfileId::Windows, HostPolicy::interactive_dev());
         let object = host
-            .create_object_legacy(4)
+            .create_object_test(4)
             .expect("create_object should return a token");
         if object.raw() == 5_004 {
             return;
@@ -9110,7 +9178,7 @@ mod tests {
     fn windows_native_com_member_dispid_cache_populates_for_known_tokens() {
         let host = StandardHostServices::new(HalProfileId::Windows, HostPolicy::interactive_dev());
         let object = host
-            .create_object_legacy(4)
+            .create_object_test(4)
             .expect("create_object should return a token");
         if object.raw() == 5_004 {
             return;
@@ -9166,10 +9234,10 @@ mod tests {
         let vtable_host = StandardHostServices::new(HalProfileId::Windows, vtable_policy);
 
         let dispatch_object = dispatch_host
-            .create_object_legacy(4)
+            .create_object_test(4)
             .expect("dispatch create_object should succeed");
         let vtable_object = vtable_host
-            .create_object_legacy(4)
+            .create_object_test(4)
             .expect("vtable create_object should succeed");
 
         let dispatch_count = dispatch_host
@@ -9220,7 +9288,7 @@ mod tests {
             .expect("second metadata load should succeed");
         assert_eq!(first, second);
         let removed = host
-            .invalidate_typelib_cache_legacy(TypeLibCacheScope::Global, None)
+            .invalidate_typelib_cache_test(TypeLibCacheScope::Global, None)
             .expect("global invalidation should succeed");
         assert!(removed >= 1);
     }
@@ -9257,7 +9325,7 @@ mod tests {
             .expect("beta metadata load should succeed");
 
         let removed = host
-            .invalidate_typelib_cache_legacy(TypeLibCacheScope::Reference, Some("StdOle"))
+            .invalidate_typelib_cache_test(TypeLibCacheScope::Reference, Some("StdOle"))
             .expect("reference invalidation should succeed");
         assert_eq!(removed, 1);
 
@@ -9542,7 +9610,7 @@ mod tests {
     fn windows_native_com_binding_caches_typelib_member_and_event_specs() {
         let host = StandardHostServices::new(HalProfileId::Windows, HostPolicy::interactive_dev());
         let object = host
-            .create_object_legacy(4)
+            .create_object_test(4)
             .expect("create_object should return a token");
         let state = host
             .com_state
@@ -9678,7 +9746,7 @@ mod tests {
     fn windows_native_com_object_descriptor_reports_identity_and_capabilities() {
         let host = StandardHostServices::new(HalProfileId::Windows, HostPolicy::interactive_dev());
         let object = host
-            .create_object_legacy(4)
+            .create_object_test(4)
             .expect("create_object should return a token");
         let descriptor = host
             .describe_object(object)
@@ -9735,7 +9803,7 @@ mod tests {
             .insert(4, "Scripting.Dictionary".to_string());
         let host = StandardHostServices::new(HalProfileId::Windows, policy);
         let object = host
-            .create_object_legacy(4)
+            .create_object_test(4)
             .expect("create_object should return dictionary token");
         let state = host
             .com_state
@@ -9780,7 +9848,7 @@ mod tests {
             .insert(4, "Scripting.Dictionary".to_string());
         let host = StandardHostServices::new(HalProfileId::Windows, policy);
         let object = host
-            .create_object_legacy(4)
+            .create_object_test(4)
             .expect("create_object should return dictionary token");
         let subscription = host
             .subscribe_event(rv(object.into()), rv(super::TEST_EVENT_CHANGED))
@@ -9864,7 +9932,7 @@ mod tests {
             .insert(4, "Scripting.Dictionary".to_string());
         let host = StandardHostServices::new(HalProfileId::Windows, policy);
         let object = host
-            .create_object_legacy(4)
+            .create_object_test(4)
             .expect("policy override should resolve native COM activation");
         assert!(
             object.raw() >= 20_001,
@@ -9881,7 +9949,7 @@ mod tests {
             .insert(4, "OxVba.DoesNotExist.Component".to_string());
         let host = StandardHostServices::new(HalProfileId::Windows, policy);
         let err = host
-            .create_object_legacy(4)
+            .create_object_test(4)
             .expect_err("missing class should fail create_object");
         assert!(
             err.message
@@ -9900,7 +9968,7 @@ mod tests {
     fn release_object_clears_native_subscriptions_and_pending_callbacks() {
         let host = StandardHostServices::new(HalProfileId::Windows, HostPolicy::interactive_dev());
         let object = host
-            .create_object_legacy(4)
+            .create_object_test(4)
             .expect("create_object should return controlled COM object");
         let subscription = host
             .subscribe_event(rv(object.into()), rv(1))
@@ -9920,7 +9988,7 @@ mod tests {
             .dispatch_invoke_legacy(object.into(), 3, 88)
             .expect("second callback should queue");
         assert_eq!(
-            host.release_object_legacy(object)
+            host.release_object_test(object)
                 .expect("release_object should clear tracked COM state"),
             1
         );
@@ -10030,7 +10098,7 @@ mod tests {
                 HalErrorKind::PolicyDenied
             );
             prop_assert_eq!(
-                host.create_object_legacy(prog_id).expect_err("create_object denied").kind,
+                host.create_object_test(prog_id).expect_err("create_object denied").kind,
                 HalErrorKind::PolicyDenied
             );
             prop_assert_eq!(
@@ -10067,7 +10135,7 @@ mod tests {
                 RuntimeValue::from_legacy_i32(shell_expected)
             );
             prop_assert_eq!(
-                host.create_object_legacy(prog_id)
+                host.create_object_test(prog_id)
                     .expect("create_object should succeed")
                     .raw(),
                 5_000i32.saturating_add(prog_id)

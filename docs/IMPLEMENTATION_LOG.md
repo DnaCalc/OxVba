@@ -1,5 +1,16 @@
 # Implementation Log
 
+## 2026-03-11 - Standard adapter COM regression tests now default to semantic helpers
+
+- Tightened the standard-adapter COM regression test estate in [standard.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-hal\src\adapters\standard.rs):
+  - activation/release/cache-maintenance tests now route through semantic helper methods by default,
+  - the remaining direct calls to `create_object_legacy(...)`, `release_object_legacy(...)`, and `invalidate_typelib_cache_legacy(...)` are now confined to the actual compatibility method definitions or deliberate compatibility-specific coverage.
+- Net effect:
+  - the adapter test corpus no longer treats the legacy COM maintenance methods as its default execution path,
+  - the remaining legacy COM wall is narrowed further to the explicit trait compatibility signatures and their deliberate compatibility checks.
+- Verification:
+  - `cargo test -p oxvba-hal --quiet`
+
 ## 2026-03-11 - COM maintenance seams now default to semantic adapter paths
 
 - Tightened the standard Windows COM adapter in [standard.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-hal\src\adapters\standard.rs):
