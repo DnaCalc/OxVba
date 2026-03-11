@@ -1918,3 +1918,8 @@
   - Windows COM `VARIANT` translation now supports BSTR string arguments/results in the supported native late-bound lane
   - native invoke helpers now clear temporary `VARIANT` argument buffers after dispatch so BSTR-backed calls do not leak adapter-owned allocations
   - updated blocker/worklist execution docs to reflect that strings are no longer part of the remaining COM carrier gap; object values and real SAFEARRAY payloads remain open
+- Continued the same carrier migration for semantic object identity on outbound native COM calls:
+  - `oxvba-com` `ComValue` now preserves `ObjectHandle(...)` instead of degrading it back to a plain integer
+  - Windows native COM argument marshalling now resolves `ObjectHandle(...)` through adapter-owned COM binding state and emits `VT_DISPATCH` with balanced `AddRef`/`VariantClear` ownership
+  - added Windows regression coverage for object-handle-to-dispatch-pointer marshalling in the adapter helper layer
+  - object-valued COM results still do not traverse the runtime-facing carrier; that remains open under `BLK-COM-VALUE-TRANSPORT-001`

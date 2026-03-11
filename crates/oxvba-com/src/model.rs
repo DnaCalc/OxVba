@@ -78,6 +78,7 @@ pub enum ComValue {
     I32(i32),
     String(BStr),
     ArrayIntent(SafeArray),
+    ObjectHandle(ComObjectToken),
 }
 
 impl ComValue {
@@ -90,9 +91,7 @@ impl ComValue {
             RuntimeValue::I32(value) => Self::I32(*value),
             RuntimeValue::String(value) => Self::String(value.clone()),
             RuntimeValue::ArrayIntent(array) => Self::ArrayIntent(array.clone()),
-            RuntimeValue::ObjectHandle(_) => {
-                Self::from_runtime_token(value.as_i32_lossy().unwrap_or(EMPTY_TAG))
-            }
+            RuntimeValue::ObjectHandle(handle) => Self::ObjectHandle(ComObjectToken::new(*handle)),
         }
     }
 
@@ -121,6 +120,7 @@ impl ComValue {
             Self::I32(value) => RuntimeValue::I32(*value),
             Self::String(value) => RuntimeValue::String(value.clone()),
             Self::ArrayIntent(array) => RuntimeValue::ArrayIntent(array.clone()),
+            Self::ObjectHandle(handle) => RuntimeValue::ObjectHandle(handle.raw()),
         }
     }
 
@@ -230,7 +230,7 @@ pub struct ComCallbackPayload {
 
 #[cfg(test)]
 mod tests {
-    use super::ComValue;
+    use super::{ComObjectToken, ComValue};
     use oxvba_runtime::{
         RuntimeValue,
         bstr::BStr,
@@ -285,6 +285,14 @@ mod tests {
         assert_eq!(
             ComValue::String(BStr("ABC".to_string())).to_runtime_value(),
             RuntimeValue::String(BStr("ABC".to_string()))
+        );
+        assert_eq!(
+            ComValue::from_runtime_value(&RuntimeValue::ObjectHandle(1234)),
+            ComValue::ObjectHandle(ComObjectToken::new(1234))
+        );
+        assert_eq!(
+            ComValue::ObjectHandle(ComObjectToken::new(1234)).to_runtime_value(),
+            RuntimeValue::ObjectHandle(1234)
         );
         assert!(
             ComValue::String(BStr("ABC".to_string()))

@@ -54,6 +54,10 @@ Status vocabulary:
       - VM `DispatchInvoke` construction now feeds runtime values into `ComValue::from_runtime_value(...)` instead of forcing `read_slot(...)` token conversion,
       - Windows `VARIANT` translation now supports BSTR string arguments/results,
       - temporary invoke `VARIANT` arguments are now cleared after dispatch so BSTR-backed calls do not leak,
+    - widened the same carrier one step further for semantic object identity on outbound native COM calls:
+      - `ComValue` now preserves `ObjectHandle(...)` instead of degrading it back into a plain integer,
+      - Windows native COM argument marshalling now resolves `ObjectHandle(...)` through adapter-owned COM binding state and emits `VT_DISPATCH` with balanced ownership,
+      - added Windows regression coverage that the adapter uses the dispatch-pointer `VARIANT` lane for object-handle arguments,
   - widened the shared COM invoke transport:
     - `ComInvokeRequest.args` now carries per-argument value/name metadata in `oxvba-com`
     - bytecode `IntrinsicDispatchInvokeHost` now preserves per-argument slot/name metadata
@@ -84,12 +88,12 @@ Status vocabulary:
 - Blocker:
   - parity is still blocked by the remaining scope:
     - natural late-bound default-member syntax and non-metadata-backed bindings still lack authoritative default-member identity,
-    - object/interface-pointer and broad `VARIANT`/`SAFEARRAY` marshalling are still below parity target,
+    - object-valued COM results, broader interface-pointer handling, and broad `VARIANT`/`SAFEARRAY` marshalling are still below parity target,
     - broader external `Invoke` error/result fidelity (`VarResult`, richer non-controlled `ExcepInfo`, broader argument-fault coverage) is still below parity target.
   - hard dependency discovered in this pass:
     - the remaining string/object/real-SAFEARRAY closure work is blocked by the still-incomplete canonical value carrier and unified dynamic-object protocol.
 - Next required action:
-  - extend the new `ComValue` slice into object/string/real-SAFEARRAY transport and the shared dynamic-object protocol, then continue full marshalling/error-channel fidelity and the remaining default-member closure work on top of that transport.
+  - extend the new `ComValue` slice into object-result/string/real-SAFEARRAY transport and the shared dynamic-object protocol, then continue full marshalling/error-channel fidelity and the remaining default-member closure work on top of that transport.
 
 ### `IP-04` `oxvba-com` architectural repurpose and HAL COM extraction
 

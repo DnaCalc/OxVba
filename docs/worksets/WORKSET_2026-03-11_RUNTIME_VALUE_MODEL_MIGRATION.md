@@ -57,6 +57,7 @@ Completed slices:
    - COM event subscription/callback helper intrinsics,
    - dynamic-link invoke wrappers.
 10. VM host intrinsic execution for those lanes now reads `RuntimeValue` directly and no longer forces `read_slot(...)` legacy narrowing before the HAL boundary.
+11. The shared COM carrier now preserves runtime strings and `ObjectHandle(...)` semantics on outbound native COM argument marshalling instead of degrading them to plain integer tokens before the Windows `VARIANT` boundary.
 
 Remaining blocker seam:
 1. HAL `ValueToken = i32`,

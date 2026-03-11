@@ -46,8 +46,8 @@ use windows_sys::Win32::System::Com::{
 };
 #[cfg(target_os = "windows")]
 use windows_sys::Win32::System::Variant::{
-    VARIANT, VT_BOOL, VT_BSTR, VT_EMPTY, VT_ERROR, VT_I2, VT_I4, VT_NULL, VT_UI2, VT_UI4,
-    VariantClear,
+    VARIANT, VT_BOOL, VT_BSTR, VT_DISPATCH, VT_EMPTY, VT_ERROR, VT_I2, VT_I4, VT_NULL, VT_UI2,
+    VT_UI4, VariantClear,
 };
 #[cfg(target_os = "windows")]
 use windows_sys::Win32::UI::WindowsAndMessaging::{
@@ -1125,6 +1125,39 @@ impl StandardHostServices {
             .map(|dispatch| dispatch as RawDispatchPtr)
     }
 
+    #[cfg(target_os = "windows")]
+    fn resolve_native_dispatch_for_object_arg(
+        &self,
+        object: ComObjectToken,
+        op: &'static str,
+    ) -> HalResult<*mut RawIDispatch> {
+        let capability = CapabilityId::ComActivationDispatch;
+        let state = self.com_lock(capability, op)?;
+        let binding = state.bindings.get(&object.raw()).ok_or_else(|| {
+            HalError::adapter_fault(
+                self.profile,
+                capability,
+                op,
+                format!(
+                    "COM-E-OBJECT-MISSING: unknown COM object handle {}",
+                    object.raw()
+                ),
+            )
+        })?;
+        if binding.native_dispatch == 0 {
+            return Err(HalError::adapter_fault(
+                self.profile,
+                capability,
+                op,
+                format!(
+                    "COM-E-OBJECT-MARSHAL-UNSUPPORTED: object handle {} is not backed by native IDispatch",
+                    object.raw()
+                ),
+            ));
+        }
+        Ok(binding.native_dispatch as *mut RawIDispatch)
+    }
+
     #[cfg(not(target_os = "windows"))]
     fn native_com_activate_dispatch(&self, _prog_id: &str) -> HalResult<*mut core::ffi::c_void> {
         Err(HalError::adapter_fault(
@@ -1164,10 +1197,16 @@ impl StandardHostServices {
                 "named arguments require a resolved COM member name and remain unsupported for default-member/direct-DISPID dispatch",
             ));
         }
+        let mut resolve_object = |token: ComObjectToken| {
+            self.resolve_native_dispatch_for_object_arg(token, "dispatch_invoke")
+                .map_err(|err| format!("{} [{}] {}", err.stable_code, err.operation, err.message))
+        };
         // SAFETY: `dispatch` is a live IDispatch pointer and `member` is treated as a direct
         // DISPID for the controlled late-bound fallback path.
-        unsafe { raw_dispatch_property_get_i4_args(dispatch, member, args, &[]) }
-            .map_err(|failure| self.com_dispatch_invoke_fault(failure))
+        unsafe {
+            raw_dispatch_property_get_i4_args(dispatch, member, args, &[], &mut resolve_object)
+        }
+        .map_err(|failure| self.com_dispatch_invoke_fault(failure))
     }
 
     #[cfg(target_os = "windows")]
@@ -1226,12 +1265,24 @@ impl StandardHostServices {
                 ));
             }
         } else {
+            let mut resolve_object = |token: ComObjectToken| {
+                self.resolve_native_dispatch_for_object_arg(token, "dispatch_invoke")
+                    .map_err(|err| {
+                        format!("{} [{}] {}", err.stable_code, err.operation, err.message)
+                    })
+            };
             match spec.invoke_kind {
                 TypeLibMemberInvokeKind::PropertyGet => {
                     // SAFETY: `dispatch` is a live IDispatch pointer and `dispid` was resolved for
                     // this member on the same interface.
                     return unsafe {
-                        raw_dispatch_property_get_i4_args(dispatch, dispid, &[], &[])
+                        raw_dispatch_property_get_i4_args(
+                            dispatch,
+                            dispid,
+                            &[],
+                            &[],
+                            &mut resolve_object,
+                        )
                     }
                     .map_err(|failure| self.com_dispatch_invoke_fault(failure));
                 }
@@ -1239,7 +1290,13 @@ impl StandardHostServices {
                     // SAFETY: `dispatch` is a live IDispatch pointer and `dispid` targets a method
                     // on the same interface without arguments.
                     return unsafe {
-                        raw_dispatch_invoke_method_i4_args(dispatch, dispid, &[], &[])
+                        raw_dispatch_invoke_method_i4_args(
+                            dispatch,
+                            dispid,
+                            &[],
+                            &[],
+                            &mut resolve_object,
+                        )
                     }
                     .map_err(|failure| self.com_dispatch_invoke_fault(failure));
                 }
@@ -1253,19 +1310,35 @@ impl StandardHostServices {
                 }
             }
         }
+        let mut resolve_object = |token: ComObjectToken| {
+            self.resolve_native_dispatch_for_object_arg(token, "dispatch_invoke")
+                .map_err(|err| format!("{} [{}] {}", err.stable_code, err.operation, err.message))
+        };
         match spec.invoke_kind {
             // SAFETY: `dispatch` is a live IDispatch pointer and the helper marshals all invoke
             // arguments into stack-owned VARIANT storage for the Invoke call.
             TypeLibMemberInvokeKind::PropertyGet => unsafe {
                 let named_arg_dispids =
                     self.resolve_named_argument_dispids(dispatch, &spec.name, args)?;
-                raw_dispatch_property_get_i4_args(dispatch, dispid, args, &named_arg_dispids)
+                raw_dispatch_property_get_i4_args(
+                    dispatch,
+                    dispid,
+                    args,
+                    &named_arg_dispids,
+                    &mut resolve_object,
+                )
             },
             // SAFETY: Same as above; the helper owns all temporary Automation structures.
             TypeLibMemberInvokeKind::Method => unsafe {
                 let named_arg_dispids =
                     self.resolve_named_argument_dispids(dispatch, &spec.name, args)?;
-                raw_dispatch_invoke_method_i4_args(dispatch, dispid, args, &named_arg_dispids)
+                raw_dispatch_invoke_method_i4_args(
+                    dispatch,
+                    dispid,
+                    args,
+                    &named_arg_dispids,
+                    &mut resolve_object,
+                )
             },
             // SAFETY: Same as above; property-put marshalling uses a stack-local VARIANT.
             TypeLibMemberInvokeKind::PropertyPut => unsafe {
@@ -1274,7 +1347,13 @@ impl StandardHostServices {
                     &spec.name,
                     &args[..args.len() - 1],
                 )?;
-                raw_dispatch_property_put_i4_args(dispatch, dispid, args, &named_arg_dispids)
+                raw_dispatch_property_put_i4_args(
+                    dispatch,
+                    dispid,
+                    args,
+                    &named_arg_dispids,
+                    &mut resolve_object,
+                )
             },
             // SAFETY: Same as above; property-putref uses the same validated pointer and argument.
             TypeLibMemberInvokeKind::PropertyPutRef => unsafe {
@@ -1283,7 +1362,13 @@ impl StandardHostServices {
                     &spec.name,
                     &args[..args.len() - 1],
                 )?;
-                raw_dispatch_property_putref_i4_args(dispatch, dispid, args, &named_arg_dispids)
+                raw_dispatch_property_putref_i4_args(
+                    dispatch,
+                    dispid,
+                    args,
+                    &named_arg_dispids,
+                    &mut resolve_object,
+                )
             },
         }
         .map_err(|failure| self.com_dispatch_invoke_fault(failure))
@@ -1309,15 +1394,33 @@ impl StandardHostServices {
                 ));
             }
         } else {
+            let mut resolve_object = |token: ComObjectToken| {
+                self.resolve_native_dispatch_for_object_arg(token, "dispatch_invoke")
+                    .map_err(|err| {
+                        format!("{} [{}] {}", err.stable_code, err.operation, err.message)
+                    })
+            };
             return match invoke_kind {
                 // SAFETY: `dispatch` is a live IDispatch pointer and `dispid` is treated as a
                 // direct member id for the controlled direct-dispatch path.
                 TypeLibMemberInvokeKind::PropertyGet => unsafe {
-                    raw_dispatch_property_get_i4_args(dispatch, dispid, &[], &[])
+                    raw_dispatch_property_get_i4_args(
+                        dispatch,
+                        dispid,
+                        &[],
+                        &[],
+                        &mut resolve_object,
+                    )
                 },
                 // SAFETY: Same pointer/dispid validity as above for no-arg method invoke.
                 TypeLibMemberInvokeKind::Method => unsafe {
-                    raw_dispatch_invoke_method_i4_args(dispatch, dispid, &[], &[])
+                    raw_dispatch_invoke_method_i4_args(
+                        dispatch,
+                        dispid,
+                        &[],
+                        &[],
+                        &mut resolve_object,
+                    )
                 },
                 TypeLibMemberInvokeKind::PropertyPut | TypeLibMemberInvokeKind::PropertyPutRef => {
                     return Err(HalError::adapter_fault(
@@ -1338,23 +1441,33 @@ impl StandardHostServices {
                 "named arguments require a resolved COM member name and are unsupported for direct-DISPID dispatch",
             ));
         }
+        let mut resolve_object = |token: ComObjectToken| {
+            self.resolve_native_dispatch_for_object_arg(token, "dispatch_invoke")
+                .map_err(|err| format!("{} [{}] {}", err.stable_code, err.operation, err.message))
+        };
         match invoke_kind {
             // SAFETY: `dispatch` is a live IDispatch pointer and the helper owns temporary
             // Automation state for the argument vector.
             TypeLibMemberInvokeKind::PropertyGet => unsafe {
-                raw_dispatch_property_get_i4_args(dispatch, dispid, args, &[])
+                raw_dispatch_property_get_i4_args(dispatch, dispid, args, &[], &mut resolve_object)
             },
             // SAFETY: Same pointer and marshalling guarantees as above.
             TypeLibMemberInvokeKind::Method => unsafe {
-                raw_dispatch_invoke_method_i4_args(dispatch, dispid, args, &[])
+                raw_dispatch_invoke_method_i4_args(dispatch, dispid, args, &[], &mut resolve_object)
             },
             // SAFETY: Same pointer and marshalling guarantees as above.
             TypeLibMemberInvokeKind::PropertyPut => unsafe {
-                raw_dispatch_property_put_i4_args(dispatch, dispid, args, &[])
+                raw_dispatch_property_put_i4_args(dispatch, dispid, args, &[], &mut resolve_object)
             },
             // SAFETY: Same pointer and marshalling guarantees as above.
             TypeLibMemberInvokeKind::PropertyPutRef => unsafe {
-                raw_dispatch_property_putref_i4_args(dispatch, dispid, args, &[])
+                raw_dispatch_property_putref_i4_args(
+                    dispatch,
+                    dispid,
+                    args,
+                    &[],
+                    &mut resolve_object,
+                )
             },
         }
         .map_err(|failure| self.com_dispatch_invoke_fault(failure))
@@ -6085,7 +6198,16 @@ unsafe extern "system" fn oxvba_test_invoke(
                 Ok(value) => value,
                 Err(hr) => return hr,
             };
-            if set_variant_dispatch_arg(pvarresult, &ComValue::from_runtime_token(value)).is_err() {
+            let mut resolve_object = |_token: ComObjectToken| {
+                Err("object dispatch echo unsupported in test helper".to_string())
+            };
+            if set_variant_dispatch_arg(
+                pvarresult,
+                &ComValue::from_runtime_token(value),
+                &mut resolve_object,
+            )
+            .is_err()
+            {
                 return COM_DISP_E_TYPEMISMATCH;
             }
             COM_S_OK
@@ -6395,6 +6517,16 @@ unsafe extern "system" fn oxvba_event_source_interface_sink_changed(
 
 #[cfg(target_os = "windows")]
 #[allow(unsafe_op_in_unsafe_fn)]
+unsafe fn raw_add_ref_dispatch(dispatch: *mut RawIDispatch) -> u32 {
+    if dispatch.is_null() {
+        return 0;
+    }
+    let vtbl = (*dispatch).vtbl;
+    ((*vtbl).unknown.add_ref)(dispatch.cast())
+}
+
+#[cfg(target_os = "windows")]
+#[allow(unsafe_op_in_unsafe_fn)]
 unsafe fn raw_release_dispatch(dispatch: *mut RawIDispatch) {
     if dispatch.is_null() {
         return;
@@ -6635,7 +6767,14 @@ unsafe fn raw_variant_to_com_value(variant: &VARIANT) -> Result<ComValue, String
 
 #[cfg(target_os = "windows")]
 #[allow(unsafe_op_in_unsafe_fn)]
-unsafe fn set_variant_dispatch_arg(variant: *mut VARIANT, value: &ComValue) -> Result<(), String> {
+unsafe fn set_variant_dispatch_arg<F>(
+    variant: *mut VARIANT,
+    value: &ComValue,
+    resolve_object: &mut F,
+) -> Result<(), String>
+where
+    F: FnMut(ComObjectToken) -> Result<*mut RawIDispatch, String>,
+{
     if variant.is_null() {
         return Ok(());
     }
@@ -6666,6 +6805,15 @@ unsafe fn set_variant_dispatch_arg(variant: *mut VARIANT, value: &ComValue) -> R
             (*variant).Anonymous.Anonymous.vt = VT_I4;
             (*variant).Anonymous.Anonymous.Anonymous.lVal = value.to_legacy_dispatch_token()?;
         }
+        ComValue::ObjectHandle(handle) => {
+            let dispatch = resolve_object(*handle)?;
+            if dispatch.is_null() {
+                return Err("object handle resolved to null IDispatch pointer".to_string());
+            }
+            raw_add_ref_dispatch(dispatch);
+            (*variant).Anonymous.Anonymous.vt = VT_DISPATCH;
+            (*variant).Anonymous.Anonymous.Anonymous.pdispVal = dispatch.cast();
+        }
     }
     Ok(())
 }
@@ -6694,21 +6842,21 @@ unsafe fn raw_dispatch_invoke_i4_args(
     args: &[ComInvokeArg],
     named_arg_dispids: &[i32],
     label: &'static str,
+    resolve_object: &mut impl FnMut(ComObjectToken) -> Result<*mut RawIDispatch, String>,
 ) -> Result<i32, ComInvokeFailure> {
     let mut invoke_args: Vec<VARIANT> = Vec::with_capacity(args.len());
     for arg in args.iter().rev() {
         let mut variant: VARIANT = std::mem::zeroed();
         match arg.value {
-            Some(ref value) => set_variant_dispatch_arg(&mut variant, value).map_err(|detail| {
-                ComInvokeFailure {
+            Some(ref value) => set_variant_dispatch_arg(&mut variant, value, resolve_object)
+                .map_err(|detail| ComInvokeFailure {
                     label,
                     dispid,
                     hr: None,
                     arg_err: None,
                     excep: None,
                     detail: Some(detail),
-                }
-            })?,
+                })?,
             None => set_variant_missing_arg(&mut variant),
         }
         invoke_args.push(variant);
@@ -6796,17 +6944,20 @@ unsafe fn raw_dispatch_invoke_i4_args_positional(
     args: &[ComValue],
     property_put_named_arg: bool,
     label: &'static str,
+    resolve_object: &mut impl FnMut(ComObjectToken) -> Result<*mut RawIDispatch, String>,
 ) -> Result<i32, ComInvokeFailure> {
     let mut invoke_args: Vec<VARIANT> = Vec::with_capacity(args.len());
     for arg in args.iter().rev() {
         let mut variant: VARIANT = std::mem::zeroed();
-        set_variant_dispatch_arg(&mut variant, arg).map_err(|detail| ComInvokeFailure {
-            label,
-            dispid,
-            hr: None,
-            arg_err: None,
-            excep: None,
-            detail: Some(detail),
+        set_variant_dispatch_arg(&mut variant, arg, resolve_object).map_err(|detail| {
+            ComInvokeFailure {
+                label,
+                dispid,
+                hr: None,
+                arg_err: None,
+                excep: None,
+                detail: Some(detail),
+            }
         })?;
         invoke_args.push(variant);
     }
@@ -7002,6 +7153,7 @@ unsafe fn raw_dispatch_property_get_i4_args(
     dispid: i32,
     args: &[ComInvokeArg],
     named_arg_dispids: &[i32],
+    resolve_object: &mut impl FnMut(ComObjectToken) -> Result<*mut RawIDispatch, String>,
 ) -> Result<i32, ComInvokeFailure> {
     raw_dispatch_invoke_i4_args(
         dispatch,
@@ -7010,6 +7162,7 @@ unsafe fn raw_dispatch_property_get_i4_args(
         args,
         named_arg_dispids,
         "property-get",
+        resolve_object,
     )
 }
 
@@ -7020,6 +7173,7 @@ unsafe fn raw_dispatch_property_put_i4_args(
     dispid: i32,
     args: &[ComInvokeArg],
     named_arg_dispids: &[i32],
+    resolve_object: &mut impl FnMut(ComObjectToken) -> Result<*mut RawIDispatch, String>,
 ) -> Result<i32, ComInvokeFailure> {
     if named_arg_dispids.is_empty()
         && args
@@ -7042,6 +7196,7 @@ unsafe fn raw_dispatch_property_put_i4_args(
                 &positional_args,
                 true,
                 "property-put",
+                resolve_object,
             );
         }
     }
@@ -7054,6 +7209,7 @@ unsafe fn raw_dispatch_property_put_i4_args(
         args,
         &all_named_arg_dispids,
         "property-put",
+        resolve_object,
     )
 }
 
@@ -7064,6 +7220,7 @@ unsafe fn raw_dispatch_property_putref_i4_args(
     dispid: i32,
     args: &[ComInvokeArg],
     named_arg_dispids: &[i32],
+    resolve_object: &mut impl FnMut(ComObjectToken) -> Result<*mut RawIDispatch, String>,
 ) -> Result<i32, ComInvokeFailure> {
     if named_arg_dispids.is_empty()
         && args
@@ -7086,6 +7243,7 @@ unsafe fn raw_dispatch_property_putref_i4_args(
                 &positional_args,
                 true,
                 "property-putref",
+                resolve_object,
             );
         }
     }
@@ -7098,6 +7256,7 @@ unsafe fn raw_dispatch_property_putref_i4_args(
         args,
         &all_named_arg_dispids,
         "property-putref",
+        resolve_object,
     )
 }
 
@@ -7108,6 +7267,7 @@ unsafe fn raw_dispatch_invoke_method_i4_args(
     dispid: i32,
     args: &[ComInvokeArg],
     named_arg_dispids: &[i32],
+    resolve_object: &mut impl FnMut(ComObjectToken) -> Result<*mut RawIDispatch, String>,
 ) -> Result<i32, ComInvokeFailure> {
     raw_dispatch_invoke_i4_args(
         dispatch,
@@ -7116,6 +7276,7 @@ unsafe fn raw_dispatch_invoke_method_i4_args(
         args,
         named_arg_dispids,
         "method",
+        resolve_object,
     )
 }
 
@@ -7175,9 +7336,12 @@ mod tests {
 
     use super::StandardHostServices;
     #[cfg(target_os = "windows")]
-    use super::{raw_variant_to_com_value, set_variant_dispatch_arg};
+    use super::{
+        ComObjectToken, create_oxvba_test_dispatch, raw_release_dispatch, raw_variant_to_com_value,
+        set_variant_dispatch_arg,
+    };
     #[cfg(target_os = "windows")]
-    use windows_sys::Win32::System::Variant::{VARIANT, VariantClear};
+    use windows_sys::Win32::System::Variant::{VARIANT, VT_DISPATCH, VariantClear};
 
     fn env_lock() -> &'static Mutex<()> {
         static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
@@ -7400,13 +7564,33 @@ mod tests {
     fn com_string_variant_roundtrips_through_adapter_helpers() {
         let mut variant: VARIANT = unsafe { std::mem::zeroed() };
         let value = ComValue::String(BStr("Hello".to_string()));
+        let mut resolve_object =
+            |_token: ComObjectToken| Err("object dispatch resolution not expected".to_string());
         unsafe {
-            set_variant_dispatch_arg(&mut variant, &value).expect("set string variant");
+            set_variant_dispatch_arg(&mut variant, &value, &mut resolve_object)
+                .expect("set string variant");
             assert_eq!(
                 raw_variant_to_com_value(&variant).expect("read string variant"),
                 value
             );
             let _ = VariantClear(&mut variant);
+        }
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn com_object_handle_variant_uses_dispatch_pointer_lane() {
+        let mut variant: VARIANT = unsafe { std::mem::zeroed() };
+        let dispatch = create_oxvba_test_dispatch();
+        let value = ComValue::ObjectHandle(ComObjectToken::new(20_001));
+        let mut resolve_object = |_token: ComObjectToken| Ok(dispatch);
+        unsafe {
+            set_variant_dispatch_arg(&mut variant, &value, &mut resolve_object)
+                .expect("set object-handle variant");
+            assert_eq!(variant.Anonymous.Anonymous.vt, VT_DISPATCH);
+            assert!(!variant.Anonymous.Anonymous.Anonymous.pdispVal.is_null());
+            let _ = VariantClear(&mut variant);
+            raw_release_dispatch(dispatch);
         }
     }
 
