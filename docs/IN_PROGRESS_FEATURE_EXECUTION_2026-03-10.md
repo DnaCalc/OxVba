@@ -128,6 +128,7 @@ Status vocabulary:
     - the first input-side semantic wrapper slice is now in place for active VM host intrinsics (`MsgBox`, `InputBox`, `FreeFile`, `Shell`, `Environ`, `Dir`, `CreateObject`, COM event helper intrinsics, dynamic-link invoke),
     - `FileSystemHal::{open,close,seek,eof,lof,free_file}` now also use direct semantic `RuntimeValue` contracts instead of token-first methods with separate `*_value` wrappers,
     - `ComHal::{subscribe_event,unsubscribe_event,event_callback_subscription,event_callback_arity,event_callback_arg,release_event_callback}` now also use direct semantic `RuntimeValue` contracts instead of token-first methods with separate `*_value` wrappers,
+    - the remaining runtime migration seam is now concentrated in the core `ValueToken = i32` contract plus token-based COM object/binding and dynamic-link binding state,
     - VM host intrinsic execution now reads `RuntimeValue` directly for those lanes instead of narrowing through `read_slot(...)` before the HAL boundary,
     - `EventPumpHal::do_events()` and `TimeLocaleHal::{date_serial_now,time_serial_now,timer_ticks}` now return semantic `RuntimeValue` directly and the corresponding VM time/event host intrinsics consume those results without intermediate `*_value()` wrappers,
     - `UiInteractionHal::{msg_box,input_box}` and `ProcessEnvHal::{shell,environ,dir}` now also use direct semantic `RuntimeValue` contracts and the corresponding VM/conformance/test surfaces consume them without token-first wrapper methods,

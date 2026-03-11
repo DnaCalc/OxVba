@@ -108,10 +108,17 @@ Run context: active parity/compliance execution plus in-progress feature worklis
   - UI/process host intrinsics now likewise read semantic `RuntimeValue` directly from the HAL boundary instead of routing through removed `*_value()` wrappers,
   - dynamic-link host intrinsics and diagnostics/conformance probes now likewise use direct semantic `RuntimeValue` contracts instead of routing through removed `*_value()` wrappers,
   - COM event helper host intrinsics and engine subscription paths now likewise use direct semantic `RuntimeValue` contracts instead of routing through removed `*_value()` wrappers,
+  - the remaining runtime/host boundary holdouts are now concentrated in:
+    - `ValueToken = i32` itself,
+    - `ComHal::{create_object,create_object_value,release_object,describe_object,dispatch_invoke_v2,dispatch_invoke_runtime_value_v2}`,
+    - `DynamicLinkHal::{bind_descriptor,prepare_invoke,invoke_bound}`,
+    - engine/public callers that still observe COM object identity through raw integer tokens,
   - many bytecode execution callers and tests still assume the legacy integer observation surface,
   - the new `ComValue` carrier and generic dynamic-object protocol can live at the COM boundary, but they cannot yet become the single runtime object/value model while the wider execution substrate remains token-only.
 - Exact unblock steps:
   - replace or strictly extend the HAL `ValueToken = i32` contract with the canonical runtime value model or an explicit indirection model,
+  - decide and implement the runtime-facing semantic representation for external object identity/binding handles so `create_object`/`release_object`/`describe_object` and dynamic binding state stop depending on raw integer tokens,
+  - migrate the remaining COM dispatch/dynlink compatibility shims once that object/binding representation exists,
   - plan and execute migration of:
     - the remaining HAL input-side and result-side call seams that still depend on raw tokens,
     - remaining VM read/write helpers and outward runtime APIs,

@@ -1990,3 +1990,10 @@
   - null/wasm/standard adapters and the affected host/adapter regression tests were migrated to the semantic contract
   - verification:
     - `cargo test -p oxvba-hal -p oxvba-vm -p oxvba-host --quiet`
+- Runtime value-model migration stop condition after the filesystem and COM event-helper slices:
+  - the remaining seam is no longer another wrapper cleanup; it is the core `ValueToken = i32` contract plus the token-based COM object/binding and dynamic-link binding state around it
+  - remaining holdouts are concentrated in:
+    - `ComHal::{create_object,create_object_value,release_object,describe_object,dispatch_invoke_v2,dispatch_invoke_runtime_value_v2}`,
+    - `DynamicLinkHal::{bind_descriptor,prepare_invoke,invoke_bound}`,
+    - engine/public callers that still observe COM object identity through raw integer tokens
+  - further honest progress now requires the next planned phase of `WORKSET_2026-03-11_RUNTIME_VALUE_MODEL_MIGRATION.md`: replace or explicitly extend the `ValueToken` contract with the canonical runtime object/value model or indirection model

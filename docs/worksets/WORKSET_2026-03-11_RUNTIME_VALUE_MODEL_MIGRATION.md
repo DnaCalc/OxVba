@@ -70,7 +70,10 @@ Completed slices:
 
 Remaining blocker seam:
 1. HAL `ValueToken = i32` still anchors many remaining seams,
-2. many HAL call inputs and a large share of the remaining file-system and COM seams are still fundamentally integer tokens rather than runtime semantic values, and dynamic-link binding identity plus other compatibility shims still retain legacy token assumptions,
+2. the remaining holdouts are now concentrated in:
+   - `ComHal::{create_object,create_object_value,release_object,describe_object,dispatch_invoke_v2,dispatch_invoke_runtime_value_v2}`,
+   - `DynamicLinkHal::{bind_descriptor,prepare_invoke,invoke_bound}`,
+   - engine/public callers that still observe COM object identity through raw integer tokens,
 3. many public observation APIs still expose the legacy integer lane as the primary compatibility surface,
 4. JIT internals and parity harnesses still observe only the integer slot lane for Cranelift-supported subsets,
 5. many tests still assume integer snapshots as the primary public contract.
