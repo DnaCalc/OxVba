@@ -46,6 +46,20 @@ Stopping rule:
   - a genuine blocker that prevents further progress,
   - a deliberate scope split recorded in the docs so the remaining gap is tracked as a new active in-progress item rather than silently dropped.
 
+### 3.2 External Boundary Ownership Doctrine
+
+Binding architecture rules:
+- OxVba semantic values are the canonical runtime value model.
+- External integration domains translate to and from that model at their boundary crates; they do not redefine the core value model.
+- For Windows COM, `oxvba-com` owns translation to and from COM wire representations, including `VARIANT`, `BSTR`, `SAFEARRAY`, `IDispatch`, connection-point callback payloads, and related metadata/interop helpers.
+- `oxvba-hal` owns capability gating, profile/policy selection, bootstrap, and delegation seams. It must not become the long-term owner of COM dispatch semantics or COM wire-format logic.
+- Do not thread raw external wire types through bytecode, VM slots, or host/runtime APIs as the canonical OxVba value model.
+- Layout compatibility between OxVba runtime values and external wire formats may be used as an implementation optimization, but it does not change semantic ownership or crate responsibility.
+
+Execution consequences:
+- If an external boundary is currently implemented through lossy or boundary-specific tokens, the next closure step is to introduce or refine the canonical OxVba-side carrier before broadening feature claims on top of that boundary.
+- New COM work should preferentially land in `oxvba-com`, with HAL changes limited to delegation or temporary bootstrap seams that contract over time.
+
 ## 4. Change Workflow
 For behavior-affecting changes:
 1. Implement code change.

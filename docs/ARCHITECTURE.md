@@ -21,6 +21,8 @@ High-level execution path:
 - `oxvba-compiler` produces `Bytecode`
 - `oxvba-vm` and `oxvba-jit` execute compiled subsets
 - `oxvba-hal` provides profile/policy-governed host services
+- OxVba semantic values remain the canonical runtime value model for compiler/VM/host coordination
+- `oxvba-com` is the COM boundary crate that should translate those values to and from COM wire representations (`VARIANT`, `BSTR`, `SAFEARRAY`, `IDispatch`, event payload transport)
 - COM-related shared transport/types plus deterministic typelib catalog/metadata construction now begin in `oxvba-com`, while deeper COM execution/state and transitional cache ownership still largely live in `oxvba-hal` pending extraction
 - the surviving HAL-facing COM seam is now narrower:
   - `ComHal` carries current activation/invoke/event/object-description/typelib hooks
@@ -35,12 +37,17 @@ High-level execution path:
 5. Host/runtime event ingress exists in two planes:
 - project/runtime event routing in `oxvba-host`
 - COM callback transport through HAL/adapter state, now with payload-based polling support
+6. The current COM blocker is architectural as well as behavioral:
+- the invoke path still leans on a lossy `i32` value lane,
+- richer COM value transport therefore cannot close honestly until a canonical OxVba-side carrier replaces that lossy path,
+- that carrier should stay semantic-value-oriented rather than becoming raw COM wire types inside the VM/compiler boundary.
 
 ## Intended Near-Term Evolution
 
 Near-term architectural direction remains:
 - contract HAL back toward host/profile/policy/bootstrap concerns
 - extract deeper COM transport/state/metadata ownership from `oxvba-hal` into `oxvba-com`
+- introduce a richer OxVba-side external value carrier so compiler/VM/host stay on semantic values while `oxvba-com` handles COM translation
 - keep compiler/VM/host semantics aligned while that extraction happens in staged slices
 
 The implementation still follows `MACH1000_PLAN.md` sequencing, but this file should describe the current code truth first and the destination second.

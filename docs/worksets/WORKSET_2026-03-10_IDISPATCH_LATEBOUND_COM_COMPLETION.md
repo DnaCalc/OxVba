@@ -17,7 +17,7 @@ This workset is specifically about client-side late binding:
 4. `VARIANT` and `DISPPARAMS` marshalling,
 5. Office-relevant late-bound behavior across supported invoke shapes.
 
-This workset is not the general COM extraction plan and not the COM server/export plan. Those remain related but separate.
+This workset is the client-side completion track inside the broader `oxvba-com` repurpose/extraction program. It is not the whole COM extraction plan and not the COM server/export plan.
 
 ## 2. Current state
 
@@ -40,6 +40,7 @@ Still incomplete for true VBA/Office parity:
 Conclusion:
 1. OxVba now has a meaningful late-bound COM subset.
 2. OxVba does not yet have the full `IDispatch` / late-bound COM scope that VBA in Office supports.
+3. The remaining closure work is blocked by the current lossy `i32` value lane and therefore must start with a value-boundary redesign, not more adapter-local patches.
 
 ## 3. Target outcome
 
@@ -83,7 +84,20 @@ Need:
 Current gap:
 1. current invoke path is widened, but broad named/optional parity is still deferred in spec.
 
-### IDC-02 `VARIANT` marshalling parity
+### IDC-02 Canonical value transport boundary
+
+Need:
+1. a canonical OxVba-side carrier for external-call values,
+2. lossless representation for scalar, string, object, null, error, and supported array payloads,
+3. compiler/VM/host transport that preserves value semantics without adopting raw COM wire structs,
+4. `oxvba-com`-owned translation between that carrier and COM `VARIANT`/`BSTR`/`SAFEARRAY` forms.
+
+Current gap:
+1. the current invoke path still centers on integer-token transport,
+2. richer values are either reduced before the COM boundary or not transportable at all,
+3. additional late-bound parity work would otherwise keep reinforcing the wrong boundary.
+
+### IDC-03 `VARIANT` marshalling parity
 
 Need:
 1. scalar numeric/bool/string parity,
@@ -94,7 +108,7 @@ Need:
 Current gap:
 1. the implemented lane is still centered around integer-token transport and narrow helper coverage.
 
-### IDC-03 Error-channel fidelity
+### IDC-04 Error-channel fidelity
 
 Need:
 1. deterministic translation of `HRESULT`,
@@ -105,7 +119,7 @@ Need:
 Current gap:
 1. error mapping is improved, but still not documented or exercised as a parity-closed broad invoke surface.
 
-### IDC-04 Real automation coverage
+### IDC-05 Real automation coverage
 
 Need:
 1. controlled fixture coverage for exact invoke semantics,
@@ -129,7 +143,18 @@ Primary outputs:
 2. updated `COM_CLIENT_SERVER_SCOPE_V1.md`
 3. updated `COM_CLIENT_SERVER_CONFORMANCE_V1.md`
 
-### Phase B. `DISPPARAMS` and named-arg support
+### Phase B. Canonical value-carrier redesign
+
+Deliverables:
+1. define the canonical OxVba-side external-call value carrier needed by late-bound COM,
+2. thread that carrier through bytecode/VM/host invoke and callback transport without exposing raw COM wire structs as the core value model,
+3. move COM-wire translation responsibility into `oxvba-com`.
+
+Acceptance:
+1. late-bound COM calls are no longer fundamentally limited by the lossy `i32` transport lane,
+2. further COM parity work can proceed without deepening HAL-owned or adapter-local wire handling.
+
+### Phase C. `DISPPARAMS` and named-arg support
 
 Deliverables:
 1. request model extension for named args and omission metadata,
@@ -139,7 +164,7 @@ Deliverables:
 Acceptance:
 1. method/property invoke shapes with named args no longer collapse into positional-only subset semantics.
 
-### Phase C. `VARIANT` / object / array marshalling expansion
+### Phase D. `VARIANT` / object / array marshalling expansion
 
 Deliverables:
 1. supported Automation type matrix for late-bound client calls,
@@ -150,7 +175,7 @@ Deliverables:
 Acceptance:
 1. supported argument/result categories cross the invoke boundary without integer-token-only distortion.
 
-### Phase D. Error-channel and `Err` fidelity
+### Phase E. Error-channel and `Err` fidelity
 
 Deliverables:
 1. stable mapping rules for `HRESULT`, `ArgErr`, `VarResult`, and bounded `ExcepInfo`,
@@ -160,7 +185,7 @@ Deliverables:
 Acceptance:
 1. failure behavior is deterministic and closer to real VBA late-bound expectations.
 
-### Phase E. Real-lane evidence closure
+### Phase F. Real-lane evidence closure
 
 Deliverables:
 1. controlled fixture matrix for:
@@ -206,8 +231,9 @@ The completion pass should cover at minimum:
 
 1. Do not re-expand HAL into the long-term COM home.
 2. New late-bound invoke/marshalling logic should prefer `oxvba-com` ownership wherever practical.
-3. Keep deterministic unsupported behavior on non-Windows profiles.
-4. Do not claim “full VBA parity” until the acceptance matrix and evidence actually support that claim.
+3. Keep compiler/VM/host on canonical OxVba semantic values or a host-neutral carrier rather than raw COM wire types.
+4. Keep deterministic unsupported behavior on non-Windows profiles.
+5. Do not claim “full VBA parity” until the acceptance matrix and evidence actually support that claim.
 
 ## 9. Verification
 
@@ -232,12 +258,13 @@ pwsh -ExecutionPolicy Bypass -File scripts/run-com-registered.ps1
 
 This workset is complete when:
 1. the supported late-bound client invoke matrix is explicitly documented,
-2. named/optional argument support for the chosen subset is real, not deferred text,
-3. object/array/value marshalling covers the supported Automation matrix,
-4. property `get` / `put` / `putref` are evidence-backed,
-5. failure-channel mapping is documented and tested,
-6. controlled and registered lanes demonstrate the supported surface,
-7. repo docs can honestly say OxVba supports the defined Windows late-bound `IDispatch` client scope without hand-waving.
+2. the canonical OxVba-side value carrier replaces the lossy token-only invoke lane for the supported categories,
+3. named/optional argument support for the chosen subset is real, not deferred text,
+4. object/array/value marshalling covers the supported Automation matrix,
+5. property `get` / `put` / `putref` are evidence-backed,
+6. failure-channel mapping is documented and tested,
+7. controlled and registered lanes demonstrate the supported surface,
+8. repo docs can honestly say OxVba supports the defined Windows late-bound `IDispatch` client scope without hand-waving.
 
 ## 11. Related documents
 

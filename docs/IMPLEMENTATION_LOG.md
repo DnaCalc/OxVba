@@ -1750,3 +1750,13 @@
     - `docs/evidence/conformance/oracle_templates/com_early/COM_EARLY_ORACLE_TEMPLATE_LATEST.*`
   - synchronized gate/docs pointers to terminal `v466`:
     - `AGENTS.md`, `docs/AUTORUN_STATE.md`, `README.md`, `docs/README.md`, `docs/profile-status/README.md`.
+- Locked COM value-boundary doctrine and follow-on work planning:
+  - added binding architecture rule that OxVba semantic values remain canonical while `oxvba-com` owns COM wire-format translation (`VARIANT`/`BSTR`/`SAFEARRAY`/`IDispatch`) and HAL contracts toward capability/bootstrap/delegation:
+    - `OPERATIONS.md`
+    - `docs/ARCHITECTURE.md`
+  - updated the `oxvba-com` extraction workset to require a canonical OxVba-side external value carrier before broader COM marshalling expansion:
+    - `docs/worksets/WORKSET_2026-03-09_OXVBA_COM_REPURPOSE_AND_HAL_COM_EXTRACTION.md`
+  - updated the late-bound `IDispatch` completion workset so the next execution phase is the value-carrier redesign rather than further adapter-local patches:
+    - `docs/worksets/WORKSET_2026-03-10_IDISPATCH_LATEBOUND_COM_COMPLETION.md`
+  - aligned the active blocker wording with that doctrine:
+    - `CURRENT_BLOCKERS.md`

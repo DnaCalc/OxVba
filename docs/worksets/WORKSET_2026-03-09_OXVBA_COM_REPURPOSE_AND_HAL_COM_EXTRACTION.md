@@ -19,6 +19,7 @@ Design posture:
 1. Windows-first, COM-first.
 2. Treat COM as a transport/integration domain, not as generic portable HAL behavior.
 3. Keep portability discipline at the HAL boundary, but do not force COM shape into generic host-capability traits where that produces distortion.
+4. Keep OxVba semantic values canonical across compiler, VM, host, and runtime surfaces; `oxvba-com` translates those values to and from COM wire formats rather than making COM wire types the core value model.
 
 ## 2. Problem statement
 
@@ -45,33 +46,39 @@ Required correction:
 ### 3.1 `oxvba-com` owns
 
 `oxvba-com` becomes responsible for:
-1. COM-facing object/value model at the transport boundary:
+1. Boundary translation between OxVba semantic values and COM wire formats:
+   - `VARIANT`,
+   - `BSTR`,
+   - `SAFEARRAY`,
+   - `IDispatch`/interface-pointer carriers,
+   - connection-point callback payload packing/unpacking.
+2. COM-facing object/value model at the transport boundary:
    - object handles/tokens,
    - invoke descriptors,
    - callback payloads,
    - typed event subscription identities.
-2. COM client integration on Windows:
+3. COM client integration on Windows:
    - activation/binding,
    - invoke (`method`, `property get`, `property put`, `property putref`),
    - argument packing/unpacking,
    - HRESULT/EXCEPINFO mapping,
    - connection-point and source-interface event delivery.
-3. COM metadata and type information support:
+4. COM metadata and type information support:
    - typelib resolution/loading,
    - member metadata,
    - dispatch ids,
    - default-member markers,
    - event metadata.
-4. COM state/lifecycle:
+5. COM state/lifecycle:
    - binding tables,
    - subscription tables,
    - callback queues/payload ownership,
    - release/teardown semantics,
    - deterministic cleanup helpers.
-5. COM server/export bridge:
+6. COM server/export bridge:
    - exposing OxVba objects outward as COM-compatible automation objects,
    - later Office-compatible server-side behavior where in scope.
-6. COM-specific test fixtures:
+7. COM-specific test fixtures:
    - controlled in-process test servers,
    - helper factories,
    - COM interop harness utilities.
@@ -98,8 +105,9 @@ Target reduction:
 ### 3.3 `oxvba-host` and runtime own
 
 1. VBA semantics and runtime behavior remain outside `oxvba-com`.
-2. The engine/runtime should consume a transport-neutral object/event model where feasible.
+2. The engine/runtime should consume a transport-neutral or OxVba-semantic object/event/value model where feasible.
 3. `oxvba-com` is the adapter that maps between that engine-facing model and Windows COM.
+4. Layout-level compatibility with COM types may be used internally, but the semantic ownership of values remains on the OxVba side.
 
 ## 4. Boundary rules
 
@@ -112,6 +120,7 @@ Candidate extraction set:
 4. Windows COM raw interop helpers and vtable ownership logic.
 5. Controlled COM test dispatch/server implementation.
 6. Event sink/source-interface implementations.
+7. COM wire-format translation helpers and coercion policy.
 
 ### 4.2 What should stay out of `oxvba-com`
 
@@ -125,28 +134,38 @@ Candidate extraction set:
 During migration:
 1. current behavior may continue to be reachable through HAL-backed call sites,
 2. but new design work should target `oxvba-com` as the long-term owner,
-3. and HAL additions should avoid deepening the generic COM trait surface unless required as an interim bridge.
+3. HAL additions should avoid deepening the generic COM trait surface unless required as an interim bridge,
+4. bytecode/VM/runtime APIs should not adopt raw COM wire structs as their canonical value representation,
+5. and any temporary adapter-local conversion should be treated as debt to be removed once the OxVba-side carrier is in place.
 
 ## 5. Execution plan
 
 ### Phase A. Boundary lock and shared transport types
 
-1. Create the canonical COM-facing transport types in `oxvba-com`:
+1. Define the canonical OxVba-side external value carrier used across compiler, VM, host, and runtime boundaries:
+   - scalar values,
+   - null/error states,
+   - object identity,
+   - string payload intent,
+   - array payload intent.
+2. Create the COM-facing transport and translation types in `oxvba-com`:
    - invoke request/response shape,
    - callback payload,
    - typed tokens/handles,
-   - error mapping helpers.
-2. Update planning/spec docs so this crate role is explicit.
-3. Keep implementation behavior unchanged where possible.
+   - error mapping helpers,
+   - semantic-value <-> COM-wire translators.
+3. Update planning/spec docs so this crate role is explicit.
+4. Keep implementation behavior unchanged where possible.
 
 Primary outcome:
-1. new COM work stops inventing permanent API shape inside HAL.
+1. new COM work stops inventing permanent API shape inside HAL or pushing raw COM wire types into the VM/compiler boundary.
 
 ### Phase B. State and metadata extraction
 
 1. Move COM state containers and metadata-loading logic from `standard.rs` into `oxvba-com`.
-2. Keep Windows-specific execution paths functional through delegation.
-3. Establish a crate-local module structure that separates:
+2. Move COM wire-format translation and coercion policy behind the `oxvba-com` boundary.
+3. Keep Windows-specific execution paths functional through delegation.
+4. Establish a crate-local module structure that separates:
    - client bridge,
    - metadata,
    - events,
@@ -161,7 +180,8 @@ Primary outcome:
 
 1. Move activation/invoke/event subscription/polling logic into `oxvba-com`.
 2. Make `oxvba-hal` delegate or bootstrap rather than implement the details directly.
-3. Close `release_object`, callback payload, and invoke-v2 gaps in the extracted surface.
+3. Replace lossy token-only COM argument/result transport with the canonical OxVba-side carrier.
+4. Close `release_object`, callback payload, and invoke-v2 gaps in the extracted surface.
 
 Primary outcome:
 1. the active COM parity work lands in the correct crate instead of reinforcing the wrong boundary.
@@ -180,6 +200,7 @@ Primary outcome:
 1. Remove or narrow COM-heavy HAL traits/methods once delegation is complete.
 2. Reconcile `HostServices` and any bootstrap seams to reflect the new boundary.
 3. Remove stale scaffold from the old `oxvba-com` layout and drop dead dependencies if no longer needed.
+4. Verify that VM/compiler/host boundaries remain on OxVba semantic values rather than COM wire representations.
 
 Primary outcome:
 1. HAL becomes more coherent as a host/profile layer.
@@ -239,5 +260,6 @@ Required checks for the repurpose/extraction program:
 
 1. Record this decision in review triage and active workset docs.
 2. Treat `oxvba-com` repurpose as the architectural target for the ongoing COM continuation work.
-3. In the next implementation pass, prefer moving new COM transport types into `oxvba-com` instead of deepening HAL-owned COM APIs.
-4. Treat `docs/worksets/WORKSET_2026-03-10_IDISPATCH_LATEBOUND_COM_COMPLETION.md` as the focused client-side completion plan for the remaining late-bound `IDispatch` surface.
+3. In the next implementation pass, define the canonical OxVba-side value carrier before widening more COM marshalling behavior.
+4. Prefer moving new COM transport/translation work into `oxvba-com` instead of deepening HAL-owned COM APIs.
+5. Treat `docs/worksets/WORKSET_2026-03-10_IDISPATCH_LATEBOUND_COM_COMPLETION.md` as the focused client-side completion plan for the remaining late-bound `IDispatch` surface.

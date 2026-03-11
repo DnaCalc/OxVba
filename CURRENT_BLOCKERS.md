@@ -53,17 +53,20 @@ Run context: active parity/compliance execution plus in-progress feature worklis
   - VM slots are still `i32` values and `DispatchInvoke` forwards `ComInvokeArg.value: Option<i32>` through the shared COM request surface,
   - runtime string coercion explicitly still says BSTR boundary allocation is not implemented,
   - array tags are still reduced to a dispatch placeholder before the COM boundary instead of carrying a real SAFEARRAY payload,
-  - object-valued COM arguments/results have no shared transport representation outside the narrow existing object-handle lanes.
+  - object-valued COM arguments/results have no shared transport representation outside the narrow existing object-handle lanes,
+  - the current shape therefore pushes COM-specific transport pressure into the wrong places instead of keeping OxVba semantic values canonical and letting `oxvba-com` perform boundary translation.
 - Exact unblock steps:
-  - introduce a shared `oxvba-com` value carrier that can preserve at least:
+  - define a canonical OxVba-side external-call value carrier that can preserve at least:
     - scalar integer/bool/null/error values,
     - array-tag or real SAFEARRAY payload intent,
     - object identity,
     - future BSTR/string payloads,
-  - thread that carrier through compiler bytecode, VM host invoke construction, and HAL COM dispatch,
+  - thread that carrier through compiler bytecode, VM host invoke construction, and callback transport without making raw COM wire structs the VM/compiler value model,
+  - move `VARIANT`/`BSTR`/`SAFEARRAY`/interface-pointer translation into `oxvba-com`,
+  - contract HAL toward delegation/bootstrap once the new carrier is in place,
   - then reopen practical SAFEARRAY/object/string late-bound COM work on top of that carrier.
 - Recommendation:
-  - treat the next implementation slice as a transport redesign in `oxvba-com`, not another adapter-local patch.
+  - treat the next implementation slice as a semantic-value transport redesign centered on `oxvba-com`, not another adapter-local patch.
 
 ### BLK-COM-BOUNDARY-001: Final `oxvba-com` extraction is blocked on unsettled COM behavior contracts
 - Impact:
