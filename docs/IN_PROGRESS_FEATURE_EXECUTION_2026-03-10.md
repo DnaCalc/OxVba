@@ -36,6 +36,13 @@ Status vocabulary:
   - `docs/worksets/WORKSET_2026-03-10_IDISPATCH_LATEBOUND_COM_COMPLETION.md`
   - `docs/spec/COM_CLIENT_SERVER_SCOPE_V1.md`
 - Progress in this run:
+  - started the shared semantic-value-carrier slice from `WORKSET_2026-03-11_UNIFIED_DYNAMIC_OBJECT_PROTOCOL_AND_VALUE_CARRIER.md`:
+    - added `ComValue` in `oxvba-com` for the currently recoverable semantic subset (`Empty`, `Null`, `CVErr`, integer/bool, array intent),
+    - moved `ComInvokeArg.value` and `ComCallbackPayload.args` off the raw `i32` lane and onto that carrier,
+    - VM `DispatchInvoke` construction now preserves array/null/error shape into the COM boundary instead of flattening arrays before the request is built,
+    - Windows COM invoke/result translation now maps between `ComValue` and `VARIANT` for the supported subset,
+    - callback payload polling now returns semantic COM values and host/runtime ingestion narrows them back into the current runtime token lane only after the COM boundary,
+    - updated VM/host/HAL tests to lock the new preserved array-intent behavior,
   - widened the shared COM invoke transport:
     - `ComInvokeRequest.args` now carries per-argument value/name metadata in `oxvba-com`
     - bytecode `IntrinsicDispatchInvokeHost` now preserves per-argument slot/name metadata
@@ -69,9 +76,9 @@ Status vocabulary:
     - object/interface-pointer and broad `VARIANT`/`SAFEARRAY` marshalling are still below parity target,
     - broader external `Invoke` error/result fidelity (`VarResult`, richer non-controlled `ExcepInfo`, broader argument-fault coverage) is still below parity target.
   - hard dependency discovered in this pass:
-    - the remaining string/object/SAFEARRAY closure work is blocked by the current shared `i32` COM value transport and must move through an `oxvba-com` transport redesign before further practical parity progress is possible.
+    - the remaining string/object/real-SAFEARRAY closure work is blocked by the still-incomplete canonical value carrier and unified dynamic-object protocol.
 - Next required action:
-  - redesign the shared COM value carrier in `oxvba-com`, then continue full marshalling/error-channel fidelity and the remaining default-member closure work on top of that transport.
+  - extend the new `ComValue` slice into object/string/real-SAFEARRAY transport and the shared dynamic-object protocol, then continue full marshalling/error-channel fidelity and the remaining default-member closure work on top of that transport.
 
 ### `IP-04` `oxvba-com` architectural repurpose and HAL COM extraction
 
@@ -79,7 +86,8 @@ Status vocabulary:
 - Owning docs:
   - `docs/worksets/WORKSET_2026-03-09_OXVBA_COM_REPURPOSE_AND_HAL_COM_EXTRACTION.md`
 - Progress in this run:
-  - audited current state against the extraction workset and current code ownership.
+  - audited current state against the extraction workset and current code ownership,
+  - started moving the shared runtime-facing COM boundary into `oxvba-com` by introducing the first semantic value carrier there instead of letting request/callback structs stay raw-token based.
 - Blocker:
   - final extraction is blocked on unresolved behavior closure in:
     - `IP-03` late-bound invoke semantics,

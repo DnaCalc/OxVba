@@ -1,7 +1,7 @@
 # Workset: Unified Dynamic Object Protocol and External Value Carrier
 
 Date: 2026-03-11  
-Status: planned  
+Status: in-progress  
 Primary ladder mapping: `v497..v505`, `v506..v513`, `v524..v526`  
 Secondary ladder mapping: `v534..v539`, `v540..v544`
 
@@ -110,6 +110,11 @@ Deliverables:
 Acceptance:
 1. there is one explicit runtime-facing model for dynamic object calls and callback payloads.
 
+Progress:
+1. first executable semantic carrier slice is now in place in `oxvba-com` as `ComValue`,
+2. shared COM request/callback structs now use that carrier instead of raw `i32` values,
+3. array/null/error intent now survives to the COM boundary before any Windows-specific narrowing occurs.
+
 ### Phase B. Core transport replacement
 
 Deliverables:
@@ -119,6 +124,16 @@ Deliverables:
 
 Acceptance:
 1. supported dynamic calls are no longer fundamentally constrained by the old `i32` lane.
+
+Progress:
+1. VM `DispatchInvoke` construction now preserves recoverable semantic value shape into the shared COM request,
+2. Windows adapter request/result translation now consumes the semantic carrier for the supported subset,
+3. callback payload polling now returns the same carrier family.
+
+Open remainder:
+1. object identity, BSTR/string payloads, and real SAFEARRAY contents still need carrier representation,
+2. wider runtime/host ingestion still narrows back into the old token lane after the COM boundary,
+3. the unified late-bound object protocol itself is not yet executable as the single runtime model.
 
 ### Phase C. COM adaptation alignment
 

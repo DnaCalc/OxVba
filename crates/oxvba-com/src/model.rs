@@ -1,5 +1,12 @@
 pub const DISPATCH_INVOKE_MISSING_ARG_TOKEN: i32 = i32::MIN + 2_048;
 
+use oxvba_runtime::{
+    safe_array::{
+        SafeArray, array_tag_from_safe_array, marshal_dispatch_argument, safe_array_from_tag,
+    },
+    value_tags::{EMPTY_TAG, NULL_TAG, error_code_from_tag, error_tag_from_code, is_error_tag},
+};
+
 macro_rules! define_token {
     ($name:ident) => {
         #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -61,20 +68,86 @@ pub enum ComInvokeKind {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ComValue {
+    Empty,
+    Null,
+    ErrorCode(i32),
+    Bool(bool),
+    I32(i32),
+    ArrayIntent(SafeArray),
+}
+
+impl ComValue {
+    pub fn from_runtime_token(value: i32) -> Self {
+        if value == EMPTY_TAG {
+            return Self::Empty;
+        }
+        if value == NULL_TAG {
+            return Self::Null;
+        }
+        if is_error_tag(value) {
+            return Self::ErrorCode(error_code_from_tag(value).unwrap_or(0));
+        }
+        if let Some(array) = safe_array_from_tag(value) {
+            return Self::ArrayIntent(array);
+        }
+        Self::I32(value)
+    }
+
+    pub fn to_runtime_token(&self) -> Result<i32, String> {
+        match self {
+            Self::Empty => Ok(EMPTY_TAG),
+            Self::Null => Ok(NULL_TAG),
+            Self::ErrorCode(code) => Ok(error_tag_from_code(*code)),
+            Self::Bool(value) => Ok(i32::from(*value)),
+            Self::I32(value) => Ok(*value),
+            Self::ArrayIntent(array) => array_tag_from_safe_array(array)
+                .ok_or_else(|| "unsupported array intent for runtime token transport".to_string()),
+        }
+    }
+
+    pub fn to_legacy_dispatch_token(&self) -> Result<i32, String> {
+        match self {
+            Self::ArrayIntent(array) => {
+                let token = array_tag_from_safe_array(array).ok_or_else(|| {
+                    "unsupported array intent for legacy dispatch transport".to_string()
+                })?;
+                Ok(marshal_dispatch_argument(token))
+            }
+            _ => self.to_runtime_token(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ComInvokeArg {
-    pub value: Option<i32>,
+    pub value: Option<ComValue>,
     pub name: Option<String>,
 }
 
 impl ComInvokeArg {
     pub fn positional(value: i32) -> Self {
         Self {
-            value: Some(value),
+            value: Some(ComValue::from_runtime_token(value)),
             name: None,
         }
     }
 
     pub fn named(value: i32, name: impl Into<String>) -> Self {
+        Self {
+            value: Some(ComValue::from_runtime_token(value)),
+            name: Some(name.into()),
+        }
+    }
+
+    pub fn positional_value(value: ComValue) -> Self {
+        Self {
+            value: Some(value),
+            name: None,
+        }
+    }
+
+    pub fn named_value(value: ComValue, name: impl Into<String>) -> Self {
         Self {
             value: Some(value),
             name: Some(name.into()),
@@ -130,5 +203,43 @@ pub struct ComCallbackPayload {
     pub subscription: ComSubscriptionToken,
     pub object: ComObjectToken,
     pub event: i32,
-    pub args: Vec<i32>,
+    pub args: Vec<ComValue>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::ComValue;
+    use oxvba_runtime::{
+        safe_array::{ARRAY_TAG_BASE, SafeArray},
+        value_tags::{EMPTY_TAG, NULL_TAG, error_tag_from_code},
+    };
+
+    #[test]
+    fn com_value_from_runtime_token_preserves_array_null_error_shape() {
+        assert_eq!(ComValue::from_runtime_token(EMPTY_TAG), ComValue::Empty);
+        assert_eq!(ComValue::from_runtime_token(NULL_TAG), ComValue::Null);
+        assert_eq!(
+            ComValue::from_runtime_token(error_tag_from_code(17)),
+            ComValue::ErrorCode(17)
+        );
+        assert_eq!(
+            ComValue::from_runtime_token(ARRAY_TAG_BASE + 3),
+            ComValue::ArrayIntent(SafeArray::vector(3))
+        );
+    }
+
+    #[test]
+    fn com_value_array_intent_roundtrips_to_runtime_tag() {
+        let value = ComValue::ArrayIntent(SafeArray::vector(4));
+        assert_eq!(
+            value.to_runtime_token().expect("array token"),
+            ARRAY_TAG_BASE + 4
+        );
+        assert_eq!(
+            value
+                .to_legacy_dispatch_token()
+                .expect("legacy dispatch token"),
+            20_004
+        );
+    }
 }

@@ -1,6 +1,6 @@
 use std::{collections::HashMap, sync::Arc};
 
-use oxvba_com::{ComInvokeArg, ComInvokeRequest};
+use oxvba_com::{ComInvokeArg, ComInvokeRequest, ComValue};
 use oxvba_compiler::{Bytecode, Instruction, bytecode::StringCompareMode};
 use oxvba_hal::{
     adapters,
@@ -8,9 +8,7 @@ use oxvba_hal::{
     model::{CapabilityId, HostPolicy, native_host_profile},
     traits::{DynLinkDescriptorView, HostServices},
 };
-use oxvba_runtime::safe_array::{
-    array_len_from_tag, is_array_tag as runtime_is_array_tag, marshal_dispatch_argument,
-};
+use oxvba_runtime::safe_array::{array_len_from_tag, is_array_tag as runtime_is_array_tag};
 use oxvba_runtime::value_tags::{
     EMPTY_TAG, NULL_TAG, error_tag_from_code, is_error_tag as runtime_is_error_tag,
 };
@@ -898,7 +896,7 @@ impl Vm {
                                 .slot
                                 .map(|slot| self.read_slot(slot))
                                 .transpose()?
-                                .map(marshal_dispatch_argument),
+                                .map(ComValue::from_runtime_token),
                             name: arg.name.clone(),
                         });
                     }
@@ -2361,7 +2359,7 @@ mod tests {
     }
 
     #[test]
-    fn dispatch_invoke_marshals_array_argument_payload() {
+    fn dispatch_invoke_preserves_array_argument_intent() {
         let bytecode = Bytecode {
             instructions: vec![
                 Instruction::LoadConstI32 { slot: 0, value: 4 },
@@ -2391,7 +2389,7 @@ mod tests {
         vm.execute(&bytecode).expect("vm should execute bytecode");
         let out = vm.snapshot_slots(5);
         assert_eq!(out[1], 5004);
-        assert_eq!(out[4], 25_013);
+        assert_eq!(out[4], 5004 + 6 + (ARRAY_TAG_BASE + 3));
     }
 
     #[cfg(target_os = "windows")]

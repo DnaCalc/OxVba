@@ -15,10 +15,10 @@ use crate::{
 pub use oxvba_com::DISPATCH_INVOKE_MISSING_ARG_TOKEN;
 use oxvba_com::{
     ComCallbackPayload, ComCallbackToken, ComInvokeArg, ComInvokeRequest, ComObjectDescriptor,
-    ComObjectToken, ComObjectTransportKind, ComSubscriptionToken, build_typelib_metadata,
+    ComObjectToken, ComObjectTransportKind, ComSubscriptionToken, ComValue, build_typelib_metadata,
     known_typelib_identity_for_prog_id_name, resolve_known_typelib_identity,
 };
-use oxvba_runtime::value_tags::{NULL_TAG, error_code_from_tag, error_tag_from_code, is_error_tag};
+use oxvba_runtime::value_tags::{NULL_TAG, error_tag_from_code};
 #[cfg(target_os = "windows")]
 use std::sync::atomic::{AtomicI32, AtomicU32, Ordering};
 use std::{
@@ -887,9 +887,21 @@ impl StandardHostServices {
         None
     }
 
-    fn com_invoke_arg_values(args: &[ComInvokeArg]) -> Vec<i32> {
+    fn com_invoke_arg_values(args: &[ComInvokeArg]) -> HalResult<Vec<i32>> {
         args.iter()
-            .map(|arg| arg.value.unwrap_or(DISPATCH_INVOKE_MISSING_ARG_TOKEN))
+            .map(|arg| match arg.value.as_ref() {
+                Some(value) => value.to_runtime_token().map_err(|detail| {
+                    HalError::adapter_fault(
+                        HalProfileId::Windows,
+                        CapabilityId::ComActivationDispatch,
+                        "dispatch_invoke",
+                        format!(
+                            "COM-E-VALUE-TRANSPORT-UNSUPPORTED: invoke argument cannot enter current runtime token lane: {detail}"
+                        ),
+                    )
+                }),
+                None => Ok(DISPATCH_INVOKE_MISSING_ARG_TOKEN),
+            })
             .collect()
     }
 
@@ -2258,7 +2270,7 @@ impl ComHal for StandardHostServices {
         let object = request.object.raw();
         let member = request.member;
         let args = request.args.as_slice();
-        let positional_values = Self::com_invoke_arg_values(args);
+        let positional_values = Self::com_invoke_arg_values(args)?;
         let capability = CapabilityId::ComActivationDispatch;
         if !self.supports(capability) {
             return Err(self.unsupported(capability, "dispatch_invoke"));
@@ -3409,7 +3421,11 @@ impl ComState {
             subscription: ComSubscriptionToken::from(payload.subscription),
             object: ComObjectToken::from(payload.object),
             event: payload.event,
-            args: payload.args,
+            args: payload
+                .args
+                .into_iter()
+                .map(ComValue::from_runtime_token)
+                .collect(),
         })
     }
 }
@@ -5608,7 +5624,9 @@ unsafe extern "system" fn oxvba_test_invoke(
                 Ok(value) => value,
                 Err(hr) => return hr,
             };
-            set_variant_dispatch_arg(pvarresult, value);
+            if set_variant_dispatch_arg(pvarresult, &ComValue::from_runtime_token(value)).is_err() {
+                return COM_DISP_E_TYPEMISMATCH;
+            }
             COM_S_OK
         }
         TEST_DISPID_RAISE_EXCEPTION => {
@@ -6123,19 +6141,19 @@ unsafe fn raw_get_dispids_by_names(
 
 #[cfg(target_os = "windows")]
 #[allow(unsafe_op_in_unsafe_fn)]
-unsafe fn raw_variant_to_token(variant: &VARIANT) -> Result<i32, String> {
+unsafe fn raw_variant_to_com_value(variant: &VARIANT) -> Result<ComValue, String> {
     let value = match variant.Anonymous.Anonymous.vt {
-        VT_EMPTY => 0,
-        VT_I2 => variant.Anonymous.Anonymous.Anonymous.iVal as i32,
-        VT_I4 => variant.Anonymous.Anonymous.Anonymous.lVal,
-        VT_UI2 => variant.Anonymous.Anonymous.Anonymous.uiVal as i32,
-        VT_UI4 => variant.Anonymous.Anonymous.Anonymous.ulVal as i32,
+        VT_EMPTY => ComValue::Empty,
+        VT_I2 => ComValue::I32(variant.Anonymous.Anonymous.Anonymous.iVal as i32),
+        VT_I4 => ComValue::I32(variant.Anonymous.Anonymous.Anonymous.lVal),
+        VT_UI2 => ComValue::I32(variant.Anonymous.Anonymous.Anonymous.uiVal as i32),
+        VT_UI4 => ComValue::I32(variant.Anonymous.Anonymous.Anonymous.ulVal as i32),
         VT_BOOL => {
             let value: VARIANT_BOOL = variant.Anonymous.Anonymous.Anonymous.boolVal;
-            if value == 0 { 0 } else { 1 }
+            ComValue::Bool(value != 0)
         }
-        VT_NULL => NULL_TAG,
-        VT_ERROR => error_tag_from_code(variant.Anonymous.Anonymous.Anonymous.scode),
+        VT_NULL => ComValue::Null,
+        VT_ERROR => ComValue::ErrorCode(variant.Anonymous.Anonymous.Anonymous.scode),
         vt => {
             return Err(format!("unsupported VARIANT return type vt={vt}"));
         }
@@ -6145,21 +6163,35 @@ unsafe fn raw_variant_to_token(variant: &VARIANT) -> Result<i32, String> {
 
 #[cfg(target_os = "windows")]
 #[allow(unsafe_op_in_unsafe_fn)]
-unsafe fn set_variant_dispatch_arg(variant: *mut VARIANT, value: i32) {
+unsafe fn set_variant_dispatch_arg(variant: *mut VARIANT, value: &ComValue) -> Result<(), String> {
     if variant.is_null() {
-        return;
+        return Ok(());
     }
-    if value == NULL_TAG {
-        (*variant).Anonymous.Anonymous.vt = VT_NULL;
-        return;
+    match value {
+        ComValue::Empty => {
+            (*variant).Anonymous.Anonymous.vt = VT_EMPTY;
+        }
+        ComValue::Null => {
+            (*variant).Anonymous.Anonymous.vt = VT_NULL;
+        }
+        ComValue::ErrorCode(code) => {
+            (*variant).Anonymous.Anonymous.vt = VT_ERROR;
+            (*variant).Anonymous.Anonymous.Anonymous.scode = *code;
+        }
+        ComValue::Bool(value) => {
+            (*variant).Anonymous.Anonymous.vt = VT_BOOL;
+            (*variant).Anonymous.Anonymous.Anonymous.boolVal = if *value { -1 } else { 0 };
+        }
+        ComValue::I32(value) => {
+            (*variant).Anonymous.Anonymous.vt = VT_I4;
+            (*variant).Anonymous.Anonymous.Anonymous.lVal = *value;
+        }
+        ComValue::ArrayIntent(_) => {
+            (*variant).Anonymous.Anonymous.vt = VT_I4;
+            (*variant).Anonymous.Anonymous.Anonymous.lVal = value.to_legacy_dispatch_token()?;
+        }
     }
-    if is_error_tag(value) {
-        (*variant).Anonymous.Anonymous.vt = VT_ERROR;
-        (*variant).Anonymous.Anonymous.Anonymous.scode = error_code_from_tag(value).unwrap_or(0);
-        return;
-    }
-    (*variant).Anonymous.Anonymous.vt = VT_I4;
-    (*variant).Anonymous.Anonymous.Anonymous.lVal = value;
+    Ok(())
 }
 
 #[cfg(target_os = "windows")]
@@ -6183,7 +6215,16 @@ unsafe fn raw_dispatch_invoke_i4_args(
     for arg in args.iter().rev() {
         let mut variant: VARIANT = std::mem::zeroed();
         match arg.value {
-            Some(value) => set_variant_dispatch_arg(&mut variant, value),
+            Some(ref value) => set_variant_dispatch_arg(&mut variant, value).map_err(|detail| {
+                ComInvokeFailure {
+                    label,
+                    dispid,
+                    hr: None,
+                    arg_err: None,
+                    excep: None,
+                    detail: Some(detail),
+                }
+            })?,
             None => set_variant_missing_arg(&mut variant),
         }
         invoke_args.push(variant);
@@ -6230,8 +6271,21 @@ unsafe fn raw_dispatch_invoke_i4_args(
         });
     }
 
-    let token = match raw_variant_to_token(&result) {
-        Ok(token) => token,
+    let token = match raw_variant_to_com_value(&result) {
+        Ok(value) => match value.to_runtime_token() {
+            Ok(token) => token,
+            Err(detail) => {
+                let _ = VariantClear(&mut result);
+                return Err(ComInvokeFailure {
+                    label,
+                    dispid,
+                    hr: None,
+                    arg_err: None,
+                    excep: None,
+                    detail: Some(detail),
+                });
+            }
+        },
         Err(detail) => {
             let _ = VariantClear(&mut result);
             return Err(ComInvokeFailure {
@@ -6254,14 +6308,21 @@ unsafe fn raw_dispatch_invoke_i4_args_positional(
     dispatch: *mut RawIDispatch,
     dispid: i32,
     flags: u16,
-    args: &[i32],
+    args: &[ComValue],
     property_put_named_arg: bool,
     label: &'static str,
 ) -> Result<i32, ComInvokeFailure> {
     let mut invoke_args: Vec<VARIANT> = Vec::with_capacity(args.len());
     for arg in args.iter().rev() {
         let mut variant: VARIANT = std::mem::zeroed();
-        set_variant_dispatch_arg(&mut variant, *arg);
+        set_variant_dispatch_arg(&mut variant, arg).map_err(|detail| ComInvokeFailure {
+            label,
+            dispid,
+            hr: None,
+            arg_err: None,
+            excep: None,
+            detail: Some(detail),
+        })?;
         invoke_args.push(variant);
     }
 
@@ -6305,8 +6366,21 @@ unsafe fn raw_dispatch_invoke_i4_args_positional(
         });
     }
 
-    let token = match raw_variant_to_token(&result) {
-        Ok(token) => token,
+    let token = match raw_variant_to_com_value(&result) {
+        Ok(value) => match value.to_runtime_token() {
+            Ok(token) => token,
+            Err(detail) => {
+                let _ = VariantClear(&mut result);
+                return Err(ComInvokeFailure {
+                    label,
+                    dispid,
+                    hr: None,
+                    arg_err: None,
+                    excep: None,
+                    detail: Some(detail),
+                });
+            }
+        },
         Err(detail) => {
             let _ = VariantClear(&mut result);
             return Err(ComInvokeFailure {
@@ -6466,15 +6540,24 @@ unsafe fn raw_dispatch_property_put_i4_args(
             .iter()
             .all(|arg| arg.name.is_none() && arg.value.is_some())
     {
-        let positional_args: Vec<i32> = args.iter().filter_map(|arg| arg.value).collect();
-        return raw_dispatch_invoke_i4_args_positional(
-            dispatch,
-            dispid,
-            DISPATCH_PROPERTYPUT,
-            &positional_args,
-            true,
-            "property-put",
-        );
+        let positional_args: Result<Vec<ComValue>, String> = args
+            .iter()
+            .filter_map(|arg| arg.value.clone())
+            .map(|value| {
+                value.to_legacy_dispatch_token()?;
+                Ok(value)
+            })
+            .collect();
+        if let Ok(positional_args) = positional_args {
+            return raw_dispatch_invoke_i4_args_positional(
+                dispatch,
+                dispid,
+                DISPATCH_PROPERTYPUT,
+                &positional_args,
+                true,
+                "property-put",
+            );
+        }
     }
     let mut all_named_arg_dispids = named_arg_dispids.to_vec();
     all_named_arg_dispids.push(COM_DISPID_PROPERTYPUT);
@@ -6501,15 +6584,24 @@ unsafe fn raw_dispatch_property_putref_i4_args(
             .iter()
             .all(|arg| arg.name.is_none() && arg.value.is_some())
     {
-        let positional_args: Vec<i32> = args.iter().filter_map(|arg| arg.value).collect();
-        return raw_dispatch_invoke_i4_args_positional(
-            dispatch,
-            dispid,
-            DISPATCH_PROPERTYPUTREF,
-            &positional_args,
-            true,
-            "property-putref",
-        );
+        let positional_args: Result<Vec<ComValue>, String> = args
+            .iter()
+            .filter_map(|arg| arg.value.clone())
+            .map(|value| {
+                value.to_legacy_dispatch_token()?;
+                Ok(value)
+            })
+            .collect();
+        if let Ok(positional_args) = positional_args {
+            return raw_dispatch_invoke_i4_args_positional(
+                dispatch,
+                dispid,
+                DISPATCH_PROPERTYPUTREF,
+                &positional_args,
+                true,
+                "property-putref",
+            );
+        }
     }
     let mut all_named_arg_dispids = named_arg_dispids.to_vec();
     all_named_arg_dispids.push(COM_DISPID_PROPERTYPUT);
@@ -6581,7 +6673,7 @@ fn external_symbol_token(library: &str, alias: &str, name: &str) -> i32 {
 mod tests {
     use std::sync::{Mutex, OnceLock};
 
-    use oxvba_com::{ComInvokeArg, ComInvokeRequest};
+    use oxvba_com::{ComInvokeArg, ComInvokeRequest, ComValue};
     use proptest::prelude::*;
 
     use crate::{
@@ -7269,7 +7361,7 @@ mod tests {
         assert_eq!(payload.subscription.raw(), subscription);
         assert_eq!(payload.object.raw(), object);
         assert_eq!(payload.event, super::TEST_EVENT_CHANGED_PAIR);
-        assert_eq!(payload.args, vec![90, 91]);
+        assert_eq!(payload.args, vec![ComValue::I32(90), ComValue::I32(91)]);
         assert!(
             host.poll_event_callback()
                 .expect("poll_event_callback should succeed when queue is empty")

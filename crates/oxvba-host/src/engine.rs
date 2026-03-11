@@ -605,11 +605,22 @@ impl Engine {
 fn normalize_callback_payload(
     payload: ComCallbackPayload,
 ) -> Result<ComEventCallbackDispatch, PhaseDiagnostic> {
+    let args = payload
+        .args
+        .into_iter()
+        .map(|value| {
+            value.to_runtime_token().map_err(|detail| {
+                PhaseDiagnostic::runtime(format!(
+                    "COM-E-EVENT-CALLBACK-VALUE-UNSUPPORTED: callback payload cannot enter runtime token lane: {detail}"
+                ))
+            })
+        })
+        .collect::<Result<Vec<_>, _>>()?;
     Ok(ComEventCallbackDispatch {
         callback_token: payload.callback.raw(),
         subscription_token: payload.subscription.raw(),
         handler_symbol: String::new(),
-        args: payload.args,
+        args,
     })
 }
 
@@ -1019,7 +1030,10 @@ mod tests {
         let snapshot = engine
             .execute_source_with_snapshot(source)
             .expect("execution should succeed");
-        assert_eq!(snapshot[0], 25_013);
+        assert_eq!(
+            snapshot[0],
+            5004 + 6 + (oxvba_runtime::safe_array::ARRAY_TAG_BASE + 3)
+        );
     }
 
     #[test]
@@ -1029,7 +1043,10 @@ mod tests {
         let snapshot = engine
             .execute_source_with_snapshot(source)
             .expect("execution should succeed");
-        assert_eq!(snapshot[0], 25_008);
+        assert_eq!(
+            snapshot[0],
+            5002 + 4 + (oxvba_runtime::safe_array::ARRAY_TAG_BASE + 2)
+        );
     }
 
     #[test]

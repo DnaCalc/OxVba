@@ -1,6 +1,24 @@
 # Implementation Log
 
 ## 2026-03-11
+- unified COM semantic-value carrier slice:
+  - introduced `ComValue` in `oxvba-com` as the first shared semantic COM request/callback carrier for the currently recoverable subset:
+    - `Empty`
+    - `Null`
+    - `CVErr(...)`
+    - integer/bool
+    - array intent
+  - moved `ComInvokeArg.value` and `ComCallbackPayload.args` off the raw `i32` lane and onto `ComValue`
+  - VM `DispatchInvoke` request construction now preserves array/null/error shape into the COM boundary instead of flattening arrays before the request is built
+  - Windows adapter request/result translation now maps between `ComValue` and `VARIANT` for the supported subset
+  - callback payload polling now returns semantic COM values and host/runtime ingestion narrows only after the COM boundary
+  - updated VM/host/HAL tests to lock the preserved array-intent behavior
+  - remaining blocker:
+    - object identity, BSTR/string payloads, real SAFEARRAY contents, and the unified late-bound object protocol are still unfinished; this slice moves the boundary in the right direction but does not close `BLK-COM-VALUE-TRANSPORT-001`
+  - verification:
+    - `cargo test -p oxvba-com -p oxvba-vm -p oxvba-hal -p oxvba-host --quiet` -> PASS
+    - `./scripts/check-governance.ps1` -> PASS
+    - `./scripts/meta-check.ps1 -Fast -NoArtifacts` -> PASS
 - late-bound COM transport-boundary audit:
   - confirmed the next remaining high-value COM parity work is blocked by the shared `i32` value transport
   - recorded `BLK-COM-VALUE-TRANSPORT-001` because string/object/SAFEARRAY closure now depends on an `oxvba-com` transport redesign, not another adapter-local patch
