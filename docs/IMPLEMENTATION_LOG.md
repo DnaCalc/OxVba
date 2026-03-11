@@ -1,6 +1,13 @@
 # Implementation Log
 
 ## 2026-03-11
+- runtime `WithEvents` semantic-storage slice:
+  - changed VM `WithEvents` binding storage to preserve semantic `RuntimeValue` payloads instead of flattening bound source/object values to raw integers
+  - changed `WithEvents` intrinsic entry/exit paths to read and write semantic values directly, while keeping owner/binding compatibility tokens stable
+  - added VM coverage to lock non-legacy value-shape preservation through `__oxvba_withevents_set/get`
+  - verification:
+    - `cargo test -p oxvba-vm --quiet` -> PASS
+    - `cargo test -p oxvba-host withevents --quiet` -> PASS
 - runtime legacy-snapshot compatibility slice:
   - changed VM/JIT/host legacy snapshot APIs to execute through semantic `RuntimeValue` snapshot paths and project to `Vec<i32>` only at the compatibility edge
   - added host/JIT coverage to lock `CreateObject` compatibility behavior with `enable_jit=true`

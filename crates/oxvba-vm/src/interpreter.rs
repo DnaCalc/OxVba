@@ -27,7 +27,7 @@ pub struct Vm {
     host_services: Arc<dyn HostServices>,
     typed_fastpaths_default: bool,
     call_stack: Vec<usize>,
-    withevents_bindings: HashMap<i64, i32>,
+    withevents_bindings: HashMap<i64, RuntimeValue>,
     withevents_owner_iters: Vec<WithEventsOwnerIterator>,
     on_error_resume_next: bool,
     on_error_goto_label_target: Option<usize>,
@@ -1128,11 +1128,17 @@ impl Vm {
                     owner,
                     binding,
                 } => {
-                    let owner = self.read_slot(*owner)?;
-                    let binding = self.read_slot(*binding)?;
+                    let owner = self.read_value_slot(*owner)?;
+                    let binding = self.read_value_slot(*binding)?;
+                    let owner = Self::withevents_legacy_token(&owner, "owner")?;
+                    let binding = Self::withevents_legacy_token(&binding, "binding")?;
                     let key = Self::withevents_binding_key(owner, binding);
-                    let value = self.withevents_bindings.get(&key).copied().unwrap_or(0);
-                    self.write_slot(*dst, value)?;
+                    let value = self
+                        .withevents_bindings
+                        .get(&key)
+                        .cloned()
+                        .unwrap_or(RuntimeValue::I32(0));
+                    self.write_value_slot(*dst, value)?;
                     pc += 1;
                 }
                 Instruction::IntrinsicWithEventsSet {
@@ -1141,23 +1147,26 @@ impl Vm {
                     binding,
                     value,
                 } => {
-                    let owner = self.read_slot(*owner)?;
-                    let binding = self.read_slot(*binding)?;
-                    let value = self.read_slot(*value)?;
+                    let owner = self.read_value_slot(*owner)?;
+                    let binding = self.read_value_slot(*binding)?;
+                    let value = self.read_value_slot(*value)?;
+                    let owner = Self::withevents_legacy_token(&owner, "owner")?;
+                    let binding = Self::withevents_legacy_token(&binding, "binding")?;
                     let key = Self::withevents_binding_key(owner, binding);
-                    if value == 0 {
+                    if value.to_legacy_i32().ok() == Some(0) {
                         self.withevents_bindings.remove(&key);
                     } else {
-                        self.withevents_bindings.insert(key, value);
+                        self.withevents_bindings.insert(key, value.clone());
                     }
-                    self.write_slot(*dst, value)?;
+                    self.write_value_slot(*dst, value)?;
                     pc += 1;
                 }
                 Instruction::IntrinsicWithEventsClearOwner { dst, owner } => {
-                    let owner = self.read_slot(*owner)?;
+                    let owner = self.read_value_slot(*owner)?;
+                    let owner = Self::withevents_legacy_token(&owner, "owner")?;
                     self.withevents_bindings
                         .retain(|key, _| Self::withevents_owner_from_key(*key) != owner);
-                    self.write_slot(*dst, 0)?;
+                    self.write_value_slot(*dst, RuntimeValue::I32(0))?;
                     pc += 1;
                 }
                 Instruction::IntrinsicWithEventsFirstOwner {
@@ -1165,19 +1174,20 @@ impl Vm {
                     source,
                     binding,
                 } => {
-                    let source = self.read_slot(*source)?;
-                    let binding = self.read_slot(*binding)?;
-                    let mut owners = self.withevents_matching_owners(source, binding);
+                    let source = self.read_value_slot(*source)?;
+                    let binding = self.read_value_slot(*binding)?;
+                    let binding = Self::withevents_legacy_token(&binding, "binding")?;
+                    let mut owners = self.withevents_matching_owners(&source, binding);
                     owners.sort_unstable();
                     if owners.is_empty() {
-                        self.write_slot(*dst, 0)?;
+                        self.write_value_slot(*dst, RuntimeValue::I32(0))?;
                     } else {
                         let first = owners[0];
                         self.withevents_owner_iters.push(WithEventsOwnerIterator {
                             owners,
                             next_index: 1,
                         });
-                        self.write_slot(*dst, first)?;
+                        self.write_value_slot(*dst, RuntimeValue::I32(first))?;
                     }
                     pc += 1;
                 }
@@ -1196,7 +1206,7 @@ impl Vm {
                     if next == 0 {
                         let _ = self.withevents_owner_iters.pop();
                     }
-                    self.write_slot(*dst, next)?;
+                    self.write_value_slot(*dst, RuntimeValue::I32(next))?;
                     pc += 1;
                 }
                 Instruction::CmpEqSlots { dst, lhs, rhs } => {
@@ -1432,14 +1442,20 @@ impl Vm {
         (key >> 32) as i32
     }
 
-    fn withevents_matching_owners(&self, source: i32, binding: i32) -> Vec<i32> {
-        if source == 0 {
+    fn withevents_legacy_token(value: &RuntimeValue, field: &str) -> Result<i32, String> {
+        value.to_legacy_i32().map_err(|detail| {
+            format!("WithEvents intrinsic requires legacy-compatible {field} token: {detail}")
+        })
+    }
+
+    fn withevents_matching_owners(&self, source: &RuntimeValue, binding: i32) -> Vec<i32> {
+        if source.to_legacy_i32().ok() == Some(0) {
             return Vec::new();
         }
         self.withevents_bindings
             .iter()
             .filter_map(|(key, value)| {
-                if *value != source || Self::withevents_binding_from_key(*key) != binding {
+                if value != source || Self::withevents_binding_from_key(*key) != binding {
                     return None;
                 }
                 Some(Self::withevents_owner_from_key(*key))
@@ -3373,6 +3389,41 @@ mod tests {
         assert_eq!(vm.snapshot_slots(12)[9], 11);
         assert_eq!(vm.snapshot_slots(12)[10], 22);
         assert_eq!(vm.snapshot_slots(12)[11], 0);
+    }
+
+    #[test]
+    fn withevents_bindings_preserve_runtime_value_shape() {
+        let bytecode = Bytecode {
+            instructions: vec![
+                Instruction::IntrinsicWithEventsSet {
+                    dst: 3,
+                    owner: 0,
+                    binding: 1,
+                    value: 2,
+                },
+                Instruction::IntrinsicWithEventsGet {
+                    dst: 4,
+                    owner: 0,
+                    binding: 1,
+                },
+                Instruction::Halt,
+            ],
+            external_call_descriptors: Vec::new(),
+            slot_count: 5,
+            user_slot_count: 5,
+        };
+
+        let mut vm = Vm::default();
+        vm.write_value_slot(0, RuntimeValue::I32(11))
+            .expect("owner slot should be writable");
+        vm.write_value_slot(1, RuntimeValue::I32(7))
+            .expect("binding slot should be writable");
+        vm.write_value_slot(2, RuntimeValue::Bool(true))
+            .expect("value slot should be writable");
+
+        vm.execute(&bytecode).expect("vm should execute bytecode");
+        assert_eq!(vm.snapshot_values(5)[4], RuntimeValue::Bool(true));
+        assert_eq!(vm.snapshot_slots(5)[4], 1);
     }
 
     #[test]
