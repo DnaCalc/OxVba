@@ -1,5 +1,20 @@
 # Implementation Log
 
+## 2026-03-11 - VM/JIT parity tests now use semantic snapshot helpers
+
+- Tightened the remaining direct VM/JIT test estate in:
+  - [lib.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-jit\src\lib.rs)
+  - [engine.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-host\src\engine.rs)
+- Changes:
+  - JIT parity/fallback tests now execute through semantic snapshot helpers instead of the legacy integer snapshot helpers,
+  - the small remaining direct VM equivalence checks in the host engine tests now also compare semantic snapshots,
+  - explicit integer snapshot APIs remain in place as compatibility shims rather than as the default test execution path.
+- Net effect:
+  - the repo-wide test harness now uses semantic execution paths by default across host, fixture, JIT, and most VM equivalence surfaces,
+  - the remaining runtime-model wall is now more clearly the explicit compatibility APIs and the legacy COM/HAL shims beneath them.
+- Verification:
+  - `cargo test -p oxvba-jit -p oxvba-host --quiet`
+
 ## 2026-03-11 - Internal host engine tests now run through semantic execution APIs
 
 - Tightened the internal host engine test estate in [engine.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-host\src\engine.rs):

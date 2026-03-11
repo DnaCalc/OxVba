@@ -3039,8 +3039,8 @@ mod tests {
         let optimized = oxvba_compiler::optimize::optimize_module(checked.clone());
         let slow_bc = oxvba_compiler::emit::emit_bytecode(&checked);
         let fast_bc = oxvba_compiler::emit::emit_bytecode(&optimized);
-        let slow = oxvba_vm::execute_and_legacy_snapshot(&slow_bc).expect("slow execution");
-        let fast = oxvba_vm::execute_and_legacy_snapshot(&fast_bc).expect("fast execution");
+        let slow = oxvba_vm::execute_and_snapshot(&slow_bc).expect("slow execution");
+        let fast = oxvba_vm::execute_and_snapshot(&fast_bc).expect("fast execution");
         assert_eq!(fast, slow);
     }
 
@@ -3052,8 +3052,8 @@ mod tests {
         let optimized = oxvba_compiler::optimize::optimize_module(checked.clone());
         let slow_bc = oxvba_compiler::emit::emit_bytecode(&checked);
         let fast_bc = oxvba_compiler::emit::emit_bytecode(&optimized);
-        let slow = oxvba_vm::execute_and_legacy_snapshot(&slow_bc).expect("slow execution");
-        let fast = oxvba_vm::execute_and_legacy_snapshot(&fast_bc).expect("fast execution");
+        let slow = oxvba_vm::execute_and_snapshot(&slow_bc).expect("slow execution");
+        let fast = oxvba_vm::execute_and_snapshot(&fast_bc).expect("fast execution");
         assert_eq!(fast, slow);
     }
 
@@ -3065,8 +3065,8 @@ mod tests {
         let optimized = oxvba_compiler::optimize::optimize_module(checked.clone());
         let slow_bc = oxvba_compiler::emit::emit_bytecode(&checked);
         let fast_bc = oxvba_compiler::emit::emit_bytecode(&optimized);
-        let slow = oxvba_vm::execute_and_legacy_snapshot(&slow_bc).expect("slow execution");
-        let fast = oxvba_vm::execute_and_legacy_snapshot(&fast_bc).expect("fast execution");
+        let slow = oxvba_vm::execute_and_snapshot(&slow_bc).expect("slow execution");
+        let fast = oxvba_vm::execute_and_snapshot(&fast_bc).expect("fast execution");
         assert_eq!(fast, slow);
     }
 
@@ -4921,8 +4921,8 @@ mod tests {
         let optimized = oxvba_compiler::optimize::optimize_module(checked.clone());
         let slow_bc = oxvba_compiler::emit::emit_bytecode(&checked);
         let fast_bc = oxvba_compiler::emit::emit_bytecode(&optimized);
-        let slow = oxvba_vm::execute_and_legacy_snapshot(&slow_bc).expect("slow execution");
-        let fast = oxvba_vm::execute_and_legacy_snapshot(&fast_bc).expect("fast execution");
+        let slow = oxvba_vm::execute_and_snapshot(&slow_bc).expect("slow execution");
+        let fast = oxvba_vm::execute_and_snapshot(&fast_bc).expect("fast execution");
         assert_eq!(fast, slow);
     }
 

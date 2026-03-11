@@ -145,6 +145,7 @@ Run context: active parity/compliance execution plus in-progress feature worklis
   - host-side COM end-to-end, early-binding, and registered-lane integration tests now execute through the semantic snapshot APIs rather than the legacy integer snapshot APIs,
   - the fixture-driven project integration suite now also executes through semantic project snapshots and projects back to legacy slots only at assertion time so the catalog format can remain stable during migration,
   - the large internal `crates/oxvba-host/src/engine.rs` test estate now also executes through semantic source/project snapshot APIs underneath and uses local slot-projection helpers only at assertion edges,
+  - JIT parity tests and the remaining direct VM/JIT equivalence checks now also execute through semantic snapshot helpers underneath, leaving the legacy snapshot APIs largely as explicit public compatibility shims,
   - the Cranelift subset helper now also exposes semantic `RuntimeValue` snapshots as its primary execution API, with the integer-slot form reduced to an explicit compatibility wrapper,
   - the CLI no longer stores a duplicate `Vec<i32>` execution result; `SLOTS:` output is now projected directly from semantic runtime values only at the output edge,
   - the mixed edge/scaling host integration suite now also executes through semantic project snapshots instead of the legacy integer snapshot API,
@@ -154,7 +155,7 @@ Run context: active parity/compliance execution plus in-progress feature worklis
     - the legacy `ComHal::dispatch_invoke(...)` helper over raw member/object/arg tokens,
     - remaining explicit raw `i32` compatibility signatures in the HAL COM seam,
     - remaining direct interpreter/test/caller expectations that still consume the legacy integer observation aliases,
-    - the remaining direct legacy observation surface is now mostly the explicit compatibility API itself plus any callers that deliberately verify that compatibility API,
+    - the remaining direct legacy observation surface is now mostly the explicit public compatibility API itself plus callers that deliberately verify that compatibility API,
   - the new `ComValue` carrier and generic dynamic-object protocol can live at the COM boundary, but they cannot yet become the single runtime object/value model while the wider execution substrate remains token-only.
 - Exact unblock steps:
   - remove the remaining explicit raw `i32` compatibility signatures from the HAL COM seam in favor of the canonical runtime value model or an explicit indirection model,
