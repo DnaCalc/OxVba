@@ -99,6 +99,7 @@ Completed slices:
    - `ComHal::release_object(...)` now returns semantic `RuntimeValue`,
    - `ComHal::invalidate_typelib_cache(...)` now returns semantic `RuntimeValue`,
    - explicit raw-token compatibility is labeled `release_object_legacy(...)` and `invalidate_typelib_cache_legacy(...)`.
+36. Host-side COM end-to-end, early-binding, and registered-lane integration tests now use the semantic host snapshot APIs instead of the legacy integer snapshot APIs.
 
 Remaining blocker seam:
 1. explicit raw `i32` compatibility signatures still anchor the remaining legacy COM seams,

@@ -3,7 +3,7 @@ mod windows_registered_com_lane {
     use oxvba_hal::model::HostPolicy;
     use oxvba_host::engine::DiagnosticPhase;
     use oxvba_host::{Engine, HostConfig};
-    use oxvba_runtime::RuntimeValue;
+    use oxvba_runtime::{ObjectHandle, RuntimeValue};
 
     const OXVBA_TEST_DISPATCH_PROGID: &str = "OxVba.TestDispatch";
 
@@ -146,7 +146,7 @@ mod windows_registered_com_lane {
         read_env_u64("OXVBA_REGISTERED_EVENT_POLL_DELAY_MS", 50)
     }
 
-    fn run_registered_lane_source(source: &str) -> Vec<i32> {
+    fn run_registered_lane_source(source: &str) -> Vec<RuntimeValue> {
         let mut engine = Engine::new(HostConfig {
             enable_jit: false,
             root_object_name: None,
@@ -154,8 +154,15 @@ mod windows_registered_com_lane {
         engine.set_host_policy(HostPolicy::interactive_dev());
         engine.set_com_prog_id_override(4, selected_registered_prog_id());
         engine
-            .execute_source_with_legacy_snapshot_phased(source)
+            .execute_source_with_snapshot_phased(source)
             .expect("registered COM lane source should execute")
+    }
+
+    fn expect_object_handle(value: &RuntimeValue) -> ObjectHandle {
+        match value {
+            RuntimeValue::ObjectHandle(handle) => *handle,
+            other => panic!("expected object handle, got {:?}", other),
+        }
     }
 
     #[test]
@@ -175,14 +182,11 @@ existsValue = DispatchInvoke(obj, "Exists", 42)
 End Sub
 "#,
         );
-        assert!(
-            out[0] >= 20_001,
-            "registered lane should allocate native COM handle, got {:?}",
-            out
-        );
+        assert!(expect_object_handle(&out[0]).raw() >= 20_001);
         if let Some(expected) = flavor.expected_count_value() {
             assert_eq!(
-                out[1], expected,
+                out[1],
+                RuntimeValue::I32(expected),
                 "Count result mismatch for ProgID `{selected_prog_id}`"
             );
         } else {
@@ -192,7 +196,8 @@ End Sub
         }
         if let Some(expected) = flavor.expected_exists_42_value() {
             assert_eq!(
-                out[2], expected,
+                out[2],
+                RuntimeValue::I32(expected),
                 "Exists(42) result mismatch for ProgID `{selected_prog_id}`"
             );
         } else {
@@ -218,13 +223,9 @@ errNo = Err.Number
 End Sub
 "#,
         );
+        assert!(expect_object_handle(&out[0]).raw() >= 20_001);
         assert!(
-            out[0] >= 20_001,
-            "registered lane should allocate native COM handle, got {:?}",
-            out
-        );
-        assert!(
-            out[2] != 0,
+            !matches!(out[2], RuntimeValue::I32(0)),
             "missing argument should set Err.Number under resume-next, got {:?}",
             out
         );
@@ -243,13 +244,10 @@ End Sub
         source.push_str("End Sub\n");
 
         let out = run_registered_lane_source(&source);
-        assert!(
-            out[0] >= 20_001,
-            "registered lane should allocate native COM handle, got {:?}",
-            out
-        );
+        assert!(expect_object_handle(&out[0]).raw() >= 20_001);
         assert_eq!(
-            out[1], 0,
+            out[1],
+            RuntimeValue::I32(0),
             "final Exists(7) should remain deterministic for empty dictionary"
         );
     }
@@ -270,13 +268,9 @@ errNo = Err.Number
 End Sub
 "#,
         );
+        assert!(expect_object_handle(&out[0]).raw() >= 20_001);
         assert!(
-            out[0] >= 20_001,
-            "registered lane should allocate native COM handle, got {:?}",
-            out
-        );
-        assert!(
-            out[2] != 0,
+            !matches!(out[2], RuntimeValue::I32(0)),
             "member-not-found invoke should set Err.Number, got {:?}",
             out
         );
@@ -292,7 +286,7 @@ End Sub
         engine.set_host_policy(HostPolicy::interactive_dev());
         engine.set_com_prog_id_override(4, "OxVba.DoesNotExist.Component");
         let err = engine
-            .execute_source_with_legacy_snapshot_phased(
+            .execute_source_with_snapshot_phased(
                 r#"
 Sub Main()
 Dim obj
@@ -331,7 +325,7 @@ End Sub
         engine.set_host_policy(HostPolicy::interactive_dev());
         engine.set_com_prog_id_override(4, selected_registered_prog_id());
         let out = engine
-            .execute_source_with_legacy_snapshot_phased(
+            .execute_source_with_snapshot_phased(
                 r#"
 Sub Main()
 Dim obj
@@ -340,14 +334,9 @@ End Sub
 "#,
             )
             .expect("registered lane should create COM object");
-        let object = out[0];
-        assert!(
-            object >= 20_001,
-            "registered lane should allocate native COM handle, got {:?}",
-            out
-        );
+        let object = expect_object_handle(&out[0]);
         let err = engine
-            .subscribe_com_event_handler(object.into(), 99, "Sink_OnChanged")
+            .subscribe_com_event_handler(object, 99, "Sink_OnChanged")
             .expect_err("object without event connection-point mapping should fail subscribe");
 
         assert_eq!(err.phase(), DiagnosticPhase::Runtime);
@@ -403,7 +392,7 @@ End Sub
         engine.set_com_prog_id_override(4, &selected_prog_id);
 
         let out = engine
-            .execute_source_with_legacy_snapshot_phased(
+            .execute_source_with_snapshot_phased(
                 r#"
 Sub Main()
 Dim obj
@@ -412,12 +401,7 @@ End Sub
 "#,
             )
             .expect("registered lane should create COM object");
-        let object = out[0];
-        assert!(
-            object >= 20_001,
-            "registered lane should allocate native COM handle, got {:?}",
-            out
-        );
+        let object = expect_object_handle(&out[0]);
 
         let event_token = registered_event_token();
         let trigger_member = registered_event_trigger_member();
@@ -427,7 +411,7 @@ End Sub
         let poll_delay_ms = registered_event_poll_delay_ms();
 
         let subscription = match engine.subscribe_com_event_handler(
-            object.into(),
+            object,
             event_token,
             "SinkA_OnChanged",
         ) {
@@ -450,7 +434,7 @@ End Sub
         let trigger_source = format!(
             "Sub Main()\nDim value\nvalue = DispatchInvoke({object}, {trigger_member}, {trigger_arg})\nEnd Sub\n"
         );
-        let trigger_result = engine.execute_source_with_legacy_snapshot_phased(&trigger_source);
+        let trigger_result = engine.execute_source_with_snapshot_phased(&trigger_source);
         if let Err(err) = trigger_result {
             let _ = engine.unsubscribe_com_event_handler(subscription);
             if require_success {

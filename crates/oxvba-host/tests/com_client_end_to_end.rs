@@ -2,16 +2,24 @@
 mod windows_com_e2e {
     use oxvba_hal::model::HostPolicy;
     use oxvba_host::{Engine, HostConfig};
+    use oxvba_runtime::{ObjectHandle, RuntimeValue};
 
-    fn run_windows_host_backed(source: &str, enable_jit: bool) -> Vec<i32> {
+    fn run_windows_host_backed(source: &str, enable_jit: bool) -> Vec<RuntimeValue> {
         let mut engine = Engine::new(HostConfig {
             enable_jit,
             root_object_name: None,
         });
         engine.set_host_policy(HostPolicy::interactive_dev());
         engine
-            .execute_source_with_legacy_snapshot_phased(source)
+            .execute_source_with_snapshot_phased(source)
             .expect("windows host-backed COM lane should execute")
+    }
+
+    fn expect_object_handle(value: &RuntimeValue) -> ObjectHandle {
+        match value {
+            RuntimeValue::ObjectHandle(handle) => *handle,
+            other => panic!("expected object handle, got {:?}", other),
+        }
     }
 
     #[test]
@@ -30,13 +38,17 @@ End Sub
             false,
         );
 
-        assert!(
-            out[0] >= 20_001,
-            "expected native COM object handle space, got {:?}",
-            out
+        assert!(expect_object_handle(&out[0]).raw() >= 20_001);
+        assert_eq!(
+            out[1],
+            RuntimeValue::I32(7),
+            "controlled COM Count contract mismatch"
         );
-        assert_eq!(out[1], 7, "controlled COM Count contract mismatch");
-        assert_eq!(out[2], 1, "controlled COM Exists(42) contract mismatch");
+        assert_eq!(
+            out[2],
+            RuntimeValue::Bool(true),
+            "controlled COM Exists(42) contract mismatch"
+        );
     }
 
     #[test]
@@ -62,19 +74,25 @@ End Sub
             vm, jit,
             "VM/JIT snapshots diverged on property put/putref path: vm={vm:?} jit={jit:?}"
         );
-        assert!(
-            vm[0] >= 20_001,
-            "expected native COM object handle space, got {:?}",
-            vm
-        );
-        assert_eq!(vm[1], 12, "SetValue should store direct value");
-        assert_eq!(vm[2], 12, "Value getter should reflect SetValue result");
+        assert!(expect_object_handle(&vm[0]).raw() >= 20_001);
         assert_eq!(
-            vm[3], 100_012,
+            vm[1],
+            RuntimeValue::I32(12),
+            "SetValue should store direct value"
+        );
+        assert_eq!(
+            vm[2],
+            RuntimeValue::I32(12),
+            "Value getter should reflect SetValue result"
+        );
+        assert_eq!(
+            vm[3],
+            RuntimeValue::I32(100_012),
             "SetValueRef should take deterministic putref route"
         );
         assert_eq!(
-            vm[4], 100_012,
+            vm[4],
+            RuntimeValue::I32(100_012),
             "Value getter should reflect SetValueRef result"
         );
     }
@@ -106,27 +124,35 @@ End Sub
             vm, jit,
             "VM/JIT snapshots diverged on multi-arg COM path: vm={vm:?} jit={jit:?}"
         );
-        assert!(
-            vm[0] >= 20_001,
-            "expected native COM object handle space, got {:?}",
-            vm
-        );
-        assert_eq!(vm[1], 3_014, "SumPair should preserve both arguments");
-        assert_eq!(vm[2], 205_009, "LookupPair should preserve both arguments");
+        assert!(expect_object_handle(&vm[0]).raw() >= 20_001);
         assert_eq!(
-            vm[3], 307_011,
+            vm[1],
+            RuntimeValue::I32(3_014),
+            "SumPair should preserve both arguments"
+        );
+        assert_eq!(
+            vm[2],
+            RuntimeValue::I32(205_009),
+            "LookupPair should preserve both arguments"
+        );
+        assert_eq!(
+            vm[3],
+            RuntimeValue::I32(307_011),
             "SetIndexedValue should route through multi-arg property put"
         );
         assert_eq!(
-            vm[4], 307_011,
+            vm[4],
+            RuntimeValue::I32(307_011),
             "Value getter should reflect multi-arg property put result"
         );
         assert_eq!(
-            vm[5], 408_013,
+            vm[5],
+            RuntimeValue::I32(408_013),
             "SetIndexedValueRef should route through multi-arg property putref"
         );
         assert_eq!(
-            vm[6], 408_013,
+            vm[6],
+            RuntimeValue::I32(408_013),
             "Value getter should reflect multi-arg property putref result"
         );
     }
@@ -154,25 +180,25 @@ End Sub
             vm, jit,
             "VM/JIT snapshots diverged on named indexed property put path: vm={vm:?} jit={jit:?}"
         );
-        assert!(
-            vm[0] >= 20_001,
-            "expected native COM object handle space, got {:?}",
-            vm
-        );
+        assert!(expect_object_handle(&vm[0]).raw() >= 20_001);
         assert_eq!(
-            vm[1], 307_011,
+            vm[1],
+            RuntimeValue::I32(307_011),
             "SetIndexedValue should accept fully named indexed property put arguments"
         );
         assert_eq!(
-            vm[2], 307_011,
+            vm[2],
+            RuntimeValue::I32(307_011),
             "Value getter should reflect named indexed property put result"
         );
         assert_eq!(
-            vm[3], 408_013,
+            vm[3],
+            RuntimeValue::I32(408_013),
             "SetIndexedValueRef should accept fully named indexed property putref arguments"
         );
         assert_eq!(
-            vm[4], 408_013,
+            vm[4],
+            RuntimeValue::I32(408_013),
             "Value getter should reflect named indexed property putref result"
         );
     }
@@ -196,16 +222,17 @@ End Sub
             vm, jit,
             "VM/JIT snapshots diverged on VT_ERROR/VT_NULL roundtrip path: vm={vm:?} jit={jit:?}"
         );
-        assert!(
-            vm[0] >= 20_001,
-            "expected native COM object handle space, got {:?}",
-            vm
-        );
+        assert!(expect_object_handle(&vm[0]).raw() >= 20_001);
         assert_eq!(
-            vm[1], -899_999_983,
+            vm[1],
+            RuntimeValue::ErrorCode(17),
             "CVErr(17) should roundtrip as an error tag"
         );
-        assert_eq!(vm[2], -1, "Null should roundtrip as the stable null tag");
+        assert_eq!(
+            vm[2],
+            RuntimeValue::Null,
+            "Null should roundtrip as the stable null tag"
+        );
     }
 
     #[test]
@@ -225,13 +252,10 @@ End Sub
             vm, jit,
             "VM/JIT snapshots diverged on named default-member path: vm={vm:?} jit={jit:?}"
         );
-        assert!(
-            vm[0] >= 20_001,
-            "expected native COM object handle space, got {:?}",
-            vm
-        );
+        assert!(expect_object_handle(&vm[0]).raw() >= 20_001);
         assert_eq!(
-            vm[1], 19,
+            vm[1],
+            RuntimeValue::I32(19),
             "named default-member invoke should route to EchoVariant"
         );
     }
@@ -255,17 +279,15 @@ End Sub
             vm, jit,
             "VM/JIT snapshots diverged on VT_I2/VT_UI2 path: vm={vm:?} jit={jit:?}"
         );
-        assert!(
-            vm[0] >= 20_001,
-            "expected native COM object handle space, got {:?}",
-            vm
-        );
+        assert!(expect_object_handle(&vm[0]).raw() >= 20_001);
         assert_eq!(
-            vm[1], 321,
+            vm[1],
+            RuntimeValue::I32(321),
             "VT_I2 result should coerce into the i32 token lane"
         );
         assert_eq!(
-            vm[2], 65_000,
+            vm[2],
+            RuntimeValue::I32(65_000),
             "VT_UI2 result should coerce into the i32 token lane"
         );
     }
@@ -289,14 +311,14 @@ End Sub
             false,
         );
 
-        assert!(
-            out[0] >= 20_001,
-            "expected native COM object handle space, got {:?}",
-            out
+        assert!(expect_object_handle(&out[0]).raw() >= 20_001);
+        assert_eq!(
+            out[1],
+            RuntimeValue::Bool(true),
+            "pre-error call should have succeeded"
         );
-        assert_eq!(out[1], 1, "pre-error call should have succeeded");
         assert!(
-            out[3] != 0,
+            !matches!(out[3], RuntimeValue::I32(0)),
             "missing-argument COM invoke should set Err.Number, got {:?}",
             out
         );
@@ -320,14 +342,14 @@ End Sub
             false,
         );
 
-        assert!(
-            out[0] >= 20_001,
-            "expected native COM object handle space, got {:?}",
-            out
+        assert!(expect_object_handle(&out[0]).raw() >= 20_001);
+        assert_eq!(
+            out[1],
+            RuntimeValue::Bool(true),
+            "pre-exception call should have succeeded"
         );
-        assert_eq!(out[1], 1, "pre-exception call should have succeeded");
         assert!(
-            out[2] != 0,
+            !matches!(out[2], RuntimeValue::I32(0)),
             "exception COM invoke should set Err.Number, got {:?}",
             out
         );
@@ -346,13 +368,10 @@ End Sub
         source.push_str("End Sub\n");
 
         let out = run_windows_host_backed(&source, false);
-        assert!(
-            out[0] >= 20_001,
-            "expected native COM object handle space, got {:?}",
-            out
-        );
+        assert!(expect_object_handle(&out[0]).raw() >= 20_001);
         assert_eq!(
-            out[1], 1,
+            out[1],
+            RuntimeValue::Bool(true),
             "final Exists(42) result should remain stable after repeated dispatch"
         );
     }

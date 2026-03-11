@@ -5,6 +5,7 @@ use oxvba_compiler::{
 use oxvba_hal::model::HostPolicy;
 use oxvba_host::engine::DiagnosticPhase;
 use oxvba_host::{Engine, HostConfig};
+use oxvba_runtime::{ObjectHandle, RuntimeValue};
 
 fn manifest_with_typelib(main_source: &str) -> ProjectManifest {
     let main_module = module_unit_from_source("MainModule", ModuleKind::Procedural, main_source)
@@ -23,15 +24,23 @@ fn manifest_with_typelib(main_source: &str) -> ProjectManifest {
 }
 
 #[cfg(target_os = "windows")]
-fn run_project_windows_hosted(manifest: &ProjectManifest, enable_jit: bool) -> Vec<i32> {
+fn run_project_windows_hosted(manifest: &ProjectManifest, enable_jit: bool) -> Vec<RuntimeValue> {
     let mut engine = Engine::new(HostConfig {
         enable_jit,
         root_object_name: None,
     });
     engine.set_host_policy(HostPolicy::interactive_dev());
     engine
-        .execute_project_with_legacy_snapshot_phased(manifest)
+        .execute_project_with_snapshot_phased(manifest)
         .expect("project should execute")
+}
+
+#[cfg(target_os = "windows")]
+fn expect_object_handle(value: &RuntimeValue) -> ObjectHandle {
+    match value {
+        RuntimeValue::ObjectHandle(handle) => *handle,
+        other => panic!("expected object handle, got {:?}", other),
+    }
 }
 
 #[cfg(target_os = "windows")]
@@ -51,16 +60,15 @@ End Sub
     );
 
     let out = run_project_windows_hosted(&manifest, false);
-    assert!(
-        out[0] >= 20_001,
-        "expected native COM object handle, got {out:?}"
-    );
+    assert!(expect_object_handle(&out[0]).raw() >= 20_001);
     assert_eq!(
-        out[1], 7,
+        out[1],
+        RuntimeValue::I32(7),
         "Count should map through early-bind rewrite lane"
     );
     assert_eq!(
-        out[2], 1,
+        out[2],
+        RuntimeValue::Bool(true),
         "Exists(42) should map through early-bind rewrite lane"
     );
 }
@@ -107,7 +115,7 @@ End Sub
         root_object_name: None,
     });
     let err = engine
-        .execute_project_with_legacy_snapshot_phased(&manifest)
+        .execute_project_with_snapshot_phased(&manifest)
         .expect_err("unsupported member should fail at compile-time");
     assert_eq!(err.phase(), DiagnosticPhase::CompileTime);
     assert!(
@@ -134,7 +142,7 @@ End Sub
     );
 
     let out = run_project_windows_hosted(&manifest, false);
-    assert!(out[0] >= 20_001);
-    assert_eq!(out[1], 7);
-    assert_eq!(out[2], 1);
+    assert!(expect_object_handle(&out[0]).raw() >= 20_001);
+    assert_eq!(out[1], RuntimeValue::I32(7));
+    assert_eq!(out[2], RuntimeValue::Bool(true));
 }
