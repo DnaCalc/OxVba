@@ -1,5 +1,29 @@
 # Implementation Log
 
+## 2026-03-11
+- late-bound COM invoke transport metadata slice:
+  - widened shared COM invoke transport in `crates/oxvba-com`:
+    - added `ComInvokeArg { value, name }`
+    - `ComInvokeRequest.args` now carries per-argument value/name metadata instead of a positional-only `Vec<i32>`
+  - widened bytecode/VM invoke transport:
+    - added compiler bytecode `DispatchInvokeArg { slot, name }`
+    - `IntrinsicDispatchInvokeHost` now preserves per-argument slot/name metadata
+    - VM host invoke construction now forwards named/omitted argument metadata into `ComInvokeRequest`
+  - widened Windows native COM invoke handling:
+    - added general `GetIDsOfNames` multi-name resolution helper
+    - added general `DISPPARAMS`/`rgdispidNamedArgs` packing for member-known method/property-get lanes
+    - omitted-argument metadata now survives to the adapter and yields deterministic required-argument faults
+    - default-member/direct-DISPID fallback no longer drops positional arguments silently; it now forwards positional args and rejects named-argument dispatch when member identity is unresolved
+  - strengthened controlled COM fixture coverage:
+    - named method invoke through `IDispatch::Invoke`
+    - named property-get invoke through `IDispatch::Invoke`
+    - omitted required-argument transport through `dispatch_invoke_v2`
+    - named property-put value-argument route still executes through the legacy `DISPID_PROPERTYPUT` lane while broader named property-put/putref parity remains open
+  - kept one safety gate explicit:
+    - late-bound default-member calls with named arguments remain compile-time blocked until runtime can recover authoritative default-member identity for named COM dispatch
+  - verification:
+    - `cargo test -p oxvba-com -p oxvba-compiler -p oxvba-vm -p oxvba-hal --quiet` -> PASS
+
 ## 2026-03-10
 - in-progress feature execution pass:
   - added `docs/IN_PROGRESS_FEATURE_EXECUTION_2026-03-10.md` as the execution ledger for the active in-progress feature register

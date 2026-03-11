@@ -1,6 +1,6 @@
 # Current Blockers
 
-Date: 2026-03-10  
+Date: 2026-03-11  
 Run context: active parity/compliance execution plus in-progress feature worklist execution pass
 
 ## Status update
@@ -23,16 +23,20 @@ Run context: active parity/compliance execution plus in-progress feature worklis
   - Blocks full closure of `HAL-DYN-008` and parts of `IP-09` declare/marshaling parity.
   - Blocks downstream property/default-member closure work in `IP-02`.
 - Current state:
-  - public invoke transport only carries positional `args`,
-  - bytecode/VM host intrinsic only carries positional arg slots,
-  - native invoke builder only supports the special `DISPID_PROPERTYPUT` named-arg case,
-  - current run corrected one false subset behavior by rejecting late-bound named-arg default-member calls at compile time.
+  - `oxvba-com` invoke transport now carries per-argument name and omission metadata,
+  - bytecode `IntrinsicDispatchInvokeHost` now preserves per-argument slot/name metadata,
+  - VM host invoke construction now forwards that metadata into `ComInvokeRequest`,
+  - Windows native adapter now supports general named-argument `DISPPARAMS` packing for member-known method/property-get lanes,
+  - omitted-argument metadata now survives the invoke request and yields deterministic required-argument faults,
+  - late-bound default-member calls with named arguments remain compile-time blocked because runtime still cannot recover the authoritative default COM member identity for named dispatch,
+  - named property-put/putref semantics are still not parity-complete beyond the legacy `DISPID_PROPERTYPUT` lane,
+  - broad object/interface-pointer and full `VARIANT`/`SAFEARRAY` marshalling remain below parity target.
 - Exact unblock steps:
-  - extend `oxvba-com` invoke transport to carry named-arg and omission metadata,
-  - extend bytecode + VM host invoke path to preserve that metadata,
-  - implement general `DISPPARAMS`/`rgdispidNamedArgs` packing and output-channel handling.
+  - complete named property-put/putref packing and evidence closure,
+  - add an explicit compiler surface for named late-bound transport that does not depend on unresolved default-member identity,
+  - complete full `VARIANT`/object/`SAFEARRAY` marshalling and richer `Invoke` error/result fidelity.
 - Recommendation:
-  - treat this as the next primary COM implementation slice.
+  - continue with the late-bound COM completion workset; the next slice should target named property-put/putref and broader marshalling fidelity.
 
 ### BLK-COM-BOUNDARY-001: Final `oxvba-com` extraction is blocked on unsettled COM behavior contracts
 - Impact:

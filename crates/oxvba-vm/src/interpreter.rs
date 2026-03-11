@@ -1,6 +1,6 @@
 use std::{collections::HashMap, sync::Arc};
 
-use oxvba_com::ComInvokeRequest;
+use oxvba_com::{ComInvokeArg, ComInvokeRequest};
 use oxvba_compiler::{Bytecode, Instruction, bytecode::StringCompareMode};
 use oxvba_hal::{
     adapters,
@@ -892,10 +892,15 @@ impl Vm {
                     let object = self.read_slot(*object)?;
                     let member = self.read_slot(*member)?;
                     let mut request = ComInvokeRequest::new(object.into(), member, Vec::new());
-                    for arg_slot in args {
-                        request
-                            .args
-                            .push(marshal_dispatch_argument(self.read_slot(*arg_slot)?));
+                    for arg in args {
+                        request.args.push(ComInvokeArg {
+                            value: arg
+                                .slot
+                                .map(|slot| self.read_slot(slot))
+                                .transpose()?
+                                .map(marshal_dispatch_argument),
+                            name: arg.name.clone(),
+                        });
                     }
                     match self.host_services.com().dispatch_invoke_v2(&request) {
                         Ok(value) => {
@@ -1818,7 +1823,10 @@ impl Vm {
 #[cfg(test)]
 mod tests {
     use super::Vm;
-    use oxvba_compiler::{Bytecode, Instruction, bytecode::StringCompareMode};
+    use oxvba_compiler::{
+        Bytecode, Instruction,
+        bytecode::{DispatchInvokeArg, StringCompareMode},
+    };
     use oxvba_hal::{
         error::{HalError, HalErrorKind},
         model::CapabilityId,
@@ -2168,7 +2176,10 @@ mod tests {
                     dst: 21,
                     object: 20,
                     member: 4,
-                    args: vec![6],
+                    args: vec![DispatchInvokeArg {
+                        slot: Some(6),
+                        name: None,
+                    }],
                 },
                 Instruction::IntrinsicNpvI32 {
                     dst: 31,
@@ -2364,7 +2375,10 @@ mod tests {
                     dst: 4,
                     object: 1,
                     member: 2,
-                    args: vec![3],
+                    args: vec![DispatchInvokeArg {
+                        slot: Some(3),
+                        name: None,
+                    }],
                 },
                 Instruction::Halt,
             ],
@@ -2399,7 +2413,10 @@ mod tests {
                     dst: 6,
                     object: 1,
                     member: 4,
-                    args: vec![5],
+                    args: vec![DispatchInvokeArg {
+                        slot: Some(5),
+                        name: None,
+                    }],
                 },
                 Instruction::IntrinsicDoEventsHost { dst: 7 },
                 Instruction::IntrinsicComEventCallbackSubscriptionHost {
@@ -2472,7 +2489,10 @@ mod tests {
                     dst: 6,
                     object: 1,
                     member: 4,
-                    args: vec![5],
+                    args: vec![DispatchInvokeArg {
+                        slot: Some(5),
+                        name: None,
+                    }],
                 },
                 Instruction::IntrinsicDoEventsHost { dst: 7 },
                 Instruction::IntrinsicComEventCallbackSubscriptionHost {

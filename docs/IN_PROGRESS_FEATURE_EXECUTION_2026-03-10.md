@@ -36,24 +36,26 @@ Status vocabulary:
   - `docs/worksets/WORKSET_2026-03-10_IDISPATCH_LATEBOUND_COM_COMPLETION.md`
   - `docs/spec/COM_CLIENT_SERVER_SCOPE_V1.md`
 - Progress in this run:
-  - corrected one active subset-misrepresentation:
-    - late-bound default-member calls with named arguments are now rejected at compile time instead of silently erasing argument names before host invoke
-    - files changed:
-      - `crates/oxvba-compiler/src/typecheck.rs`
-      - `crates/oxvba-compiler/src/lib.rs`
+  - widened the shared COM invoke transport:
+    - `ComInvokeRequest.args` now carries per-argument value/name metadata in `oxvba-com`
+    - bytecode `IntrinsicDispatchInvokeHost` now preserves per-argument slot/name metadata
+    - VM invoke construction now forwards named/omitted argument metadata into the HAL request
+  - implemented general named-argument invoke packing for Windows member-known lanes:
+    - named method calls are now executable through `IDispatch::GetIDsOfNames` + `Invoke`
+    - named property-get calls are now executable through the same transport
+    - omitted required arguments now survive the transport and fail deterministically at the adapter boundary
+  - kept one safety gate explicit:
+    - late-bound default-member calls with named arguments remain compile-time blocked because runtime still cannot recover the authoritative default COM member identity for named dispatch
   - verification:
-    - `cargo test -p oxvba-compiler late_bound_named_argument_call_is_rejected_until_transport_supports_names --quiet` -> PASS
-    - `cargo test -p oxvba-compiler compile_named_args_call_is_supported --quiet` -> PASS
-    - `cargo test -p oxvba-compiler --quiet` -> PASS
+    - `cargo test -p oxvba-com -p oxvba-compiler -p oxvba-vm -p oxvba-hal --quiet` -> PASS
 - Blocker:
-  - the current transport cannot preserve named-argument or omission metadata:
-    - `ComInvokeRequest` only carries `object`, `member`, `args`, and optional invoke-kind hint
-    - bytecode `IntrinsicDispatchInvokeHost` only carries positional arg slots
-    - VM host invoke construction only marshals a positional vector
-    - native invoke builder only supports the special `DISPID_PROPERTYPUT` named-arg case, not general `rgdispidNamedArgs`
-  - object/interface-pointer and broad `VARIANT`/`SAFEARRAY` marshalling are also still below parity target.
+  - parity is still blocked by the remaining scope:
+    - named property-put/putref semantics are not fully closed,
+    - default-member named dispatch still lacks authoritative member identity,
+    - explicit compiler/source support for named late-bound transport is still narrow,
+    - object/interface-pointer and broad `VARIANT`/`SAFEARRAY` marshalling are still below parity target.
 - Next required action:
-  - widen the invoke transport in `oxvba-com`/bytecode/VM to carry named-arg and omission metadata, then implement full `DISPPARAMS` packing and richer result/error-channel fidelity.
+  - complete named property-put/putref packing and evidence closure, then finish full marshalling/error-channel fidelity and reopen default-member named dispatch only after runtime member identity is authoritative.
 
 ### `IP-04` `oxvba-com` architectural repurpose and HAL COM extraction
 

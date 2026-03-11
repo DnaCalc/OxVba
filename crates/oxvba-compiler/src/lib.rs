@@ -294,15 +294,14 @@ mod tests {
     }
 
     #[test]
-    fn late_bound_named_argument_call_is_rejected_until_transport_supports_names() {
+    fn late_bound_named_argument_call_is_rejected_until_default_member_identity_is_known() {
         let source = "Sub Main()\nDim obj As Object\nCall obj(x:=1)\nEnd Sub";
         let err = compile(source).expect_err(
-            "late-bound named-arg target should be rejected until names survive transport",
+            "late-bound named-arg target should remain blocked until default-member identity is explicit",
         );
         assert!(
-            err.to_string().contains(
-                "named arguments are not yet supported for late-bound default-member call"
-            )
+            err.to_string()
+                .contains("runtime cannot yet resolve the default COM member identity")
         );
     }
 
@@ -1281,6 +1280,7 @@ mod tests {
             })
             .expect("dispatch invoke instruction should be present");
         assert_eq!(invoke.len(), 2);
+        assert!(invoke.iter().all(|arg| arg.name.is_none()));
     }
 
     #[test]

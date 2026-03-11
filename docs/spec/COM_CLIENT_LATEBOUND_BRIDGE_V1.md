@@ -18,6 +18,10 @@ Define the executable bridge from VBA late-bound call semantics to HAL COM trans
 2. Compiler/VM transport
 - `IntrinsicCreateObjectHost { prog_id }`
 - `IntrinsicDispatchInvokeHost { object, member, args }`
+- invoke-arg transport shape:
+  - each invoke argument now carries:
+    - `slot` (or omission)
+    - optional forwarded COM argument name metadata
 - Known-literal lowering subset:
   - `CreateObject("Scripting.Dictionary") -> prog_id_token=4`
   - `CreateObject("OxVba.TestDispatch") -> prog_id_token=4` (controlled test lane alias)
@@ -32,6 +36,10 @@ Define the executable bridge from VBA late-bound call semantics to HAL COM trans
 - `create_object(prog_id_token) -> object_token`
 - `dispatch_invoke_v2(request) -> result_token`
 - legacy scalar `dispatch_invoke(object_token, member_token, arg_token)` remains as a compatibility shim over `dispatch_invoke_v2`.
+- request argument shape:
+  - `ComInvokeArg { value, name }`
+  - omission metadata survives the VM/HAL boundary
+  - named-argument metadata survives the VM/HAL boundary for member-known dispatch lanes
 
 4. Native COM adapter (Windows host-backed mode)
 - Activation: `CLSIDFromProgID` + `CoCreateInstance`
@@ -48,10 +56,14 @@ Define the executable bridge from VBA late-bound call semantics to HAL COM trans
 6. Omitted argument packs in `DispatchInvoke`:
 - property-get/no-arg member lanes may proceed with an empty argument vector;
 - argument-required member lanes must fail deterministically.
-7. Event-trigger projection consumes the same authoritative argument vector used for invoke, and only synthesizes fallback payload shape when a native callback path is unavailable.
+7. Named-argument transport:
+- member-known method/property-get lanes must preserve forwarded argument names through bytecode, VM, and HAL request transport;
+- default-member/direct-DISPID dispatch must not silently erase named arguments when runtime member identity is unresolved.
+8. Event-trigger projection consumes the same authoritative argument vector used for invoke, and only synthesizes fallback payload shape when a native callback path is unavailable.
 
 ## Deferred Extensions
 
 - Natural VBA member syntax to late-bound dispatch lowering.
-- Named/optional argument parity expansion.
+- Named property-put/putref parity completion.
+- Default-member named-dispatch parity once runtime member identity is authoritative.
 - Full generic ProgID/member-name text selector path through current integer-token VM boundary.

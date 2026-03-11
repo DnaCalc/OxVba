@@ -6,7 +6,9 @@ use oxvba_runtime::{
 };
 
 use crate::{
-    bytecode::{Bytecode, ExternalCallDescriptor, Instruction, StringCompareMode},
+    bytecode::{
+        Bytecode, DispatchInvokeArg, ExternalCallDescriptor, Instruction, StringCompareMode,
+    },
     resolve::{
         BoundCallArg, BoundCaseClause, BoundCompareMode, BoundCond, BoundExpr, BoundExternalDecl,
         BoundModule, BoundParam, BoundProcedure, BoundStmt, CompareOp,
@@ -1054,7 +1056,7 @@ fn emit_late_bound_default_member_call(
         slot: member_slot,
         value: 0,
     });
-    let mut arg_slots = Vec::with_capacity(args.len());
+    let mut invoke_args = Vec::with_capacity(args.len());
     for arg in args {
         let arg_slot = temps.alloc_temp();
         emit_expr_into(
@@ -1065,14 +1067,17 @@ fn emit_late_bound_default_member_call(
             temps,
             instructions,
         );
-        arg_slots.push(arg_slot);
+        invoke_args.push(DispatchInvokeArg {
+            slot: Some(arg_slot),
+            name: arg.name.clone(),
+        });
     }
     let dst = assign_target.unwrap_or_else(|| temps.alloc_temp());
     instructions.push(Instruction::IntrinsicDispatchInvokeHost {
         dst,
         object: object_slot,
         member: member_slot,
-        args: arg_slots,
+        args: invoke_args,
     });
     true
 }
@@ -1921,7 +1926,13 @@ fn emit_expr_into(
                         dst,
                         object: *object,
                         member: *member,
-                        args: args.to_vec(),
+                        args: args
+                            .iter()
+                            .map(|slot| DispatchInvokeArg {
+                                slot: Some(*slot),
+                                name: None,
+                            })
+                            .collect(),
                     })
                 }
                 ("__oxvba_com_subscribe_event", [object, event]) => {

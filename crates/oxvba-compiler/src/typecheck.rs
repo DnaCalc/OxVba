@@ -705,15 +705,10 @@ fn validate_call_site(
     }
 
     if matches!(call_mode, CallMode::Late) {
-        if args.len() > 1 {
-            return Err(format!(
-                "late-bound default-member call supports at most one argument in current executable subset: {name}"
-            ));
-        }
         for arg in args {
             if arg.name.is_some() {
                 return Err(format!(
-                    "named arguments are not yet supported for late-bound default-member call {name}"
+                    "named arguments are not yet supported for late-bound default-member call {name}: runtime cannot yet resolve the default COM member identity for named-argument dispatch"
                 ));
             }
             check_expr(

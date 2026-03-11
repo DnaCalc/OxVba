@@ -10,8 +10,8 @@ pub mod typelib_catalog;
 
 pub use dispatch::{ComDispatch, DispatchResult};
 pub use model::{
-    ComCallbackPayload, ComCallbackToken, ComInvokeKind, ComInvokeRequest, ComObjectDescriptor,
-    ComObjectToken, ComObjectTransportKind, ComSubscriptionToken,
+    ComCallbackPayload, ComCallbackToken, ComInvokeArg, ComInvokeKind, ComInvokeRequest,
+    ComObjectDescriptor, ComObjectToken, ComObjectTransportKind, ComSubscriptionToken,
     DISPATCH_INVOKE_MISSING_ARG_TOKEN,
 };
 pub use refcount::RefCount;

@@ -59,15 +59,51 @@ pub enum ComInvokeKind {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ComInvokeArg {
+    pub value: Option<i32>,
+    pub name: Option<String>,
+}
+
+impl ComInvokeArg {
+    pub fn positional(value: i32) -> Self {
+        Self {
+            value: Some(value),
+            name: None,
+        }
+    }
+
+    pub fn named(value: i32, name: impl Into<String>) -> Self {
+        Self {
+            value: Some(value),
+            name: Some(name.into()),
+        }
+    }
+
+    pub fn omitted() -> Self {
+        Self {
+            value: None,
+            name: None,
+        }
+    }
+
+    pub fn omitted_named(name: impl Into<String>) -> Self {
+        Self {
+            value: None,
+            name: Some(name.into()),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ComInvokeRequest {
     pub object: ComObjectToken,
     pub member: i32,
-    pub args: Vec<i32>,
+    pub args: Vec<ComInvokeArg>,
     pub invoke_kind_hint: Option<ComInvokeKind>,
 }
 
 impl ComInvokeRequest {
-    pub fn new(object: ComObjectToken, member: i32, args: Vec<i32>) -> Self {
+    pub fn new(object: ComObjectToken, member: i32, args: Vec<ComInvokeArg>) -> Self {
         Self {
             object,
             member,
@@ -80,7 +116,7 @@ impl ComInvokeRequest {
         let args = if arg == DISPATCH_INVOKE_MISSING_ARG_TOKEN {
             Vec::new()
         } else {
-            vec![arg]
+            vec![ComInvokeArg::positional(arg)]
         };
         Self::new(ComObjectToken::new(object), member, args)
     }

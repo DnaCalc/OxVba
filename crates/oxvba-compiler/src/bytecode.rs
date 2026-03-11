@@ -20,6 +20,12 @@ pub struct ExternalCallDescriptor {
 }
 
 #[derive(Debug, Clone, Archive, Serialize, Deserialize, PartialEq, Eq)]
+pub struct DispatchInvokeArg {
+    pub slot: Option<usize>,
+    pub name: Option<String>,
+}
+
+#[derive(Debug, Clone, Archive, Serialize, Deserialize, PartialEq, Eq)]
 pub enum Instruction {
     LoadConstI32 {
         slot: usize,
@@ -358,7 +364,7 @@ pub enum Instruction {
         dst: usize,
         object: usize,
         member: usize,
-        args: Vec<usize>,
+        args: Vec<DispatchInvokeArg>,
     },
     IntrinsicComSubscribeEventHost {
         dst: usize,
