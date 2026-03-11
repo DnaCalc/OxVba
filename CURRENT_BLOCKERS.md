@@ -45,6 +45,26 @@ Run context: active parity/compliance execution plus in-progress feature worklis
 - Recommendation:
   - continue with the late-bound COM completion workset; the next slice should target broader `VARIANT`/object/`SAFEARRAY` marshalling plus richer `Invoke` error/result fidelity.
 
+### BLK-COM-VALUE-TRANSPORT-001: Shared COM value transport is still a lossy `i32` lane
+- Impact:
+  - Blocks the remaining high-value closure work in `IP-03` Windows late-bound COM client parity.
+  - Blocks practical SAFEARRAY/object/string COM transport and therefore parts of `IP-04` COM extraction and `IP-09` marshaling parity.
+- Current state:
+  - VM slots are still `i32` values and `DispatchInvoke` forwards `ComInvokeArg.value: Option<i32>` through the shared COM request surface,
+  - runtime string coercion explicitly still says BSTR boundary allocation is not implemented,
+  - array tags are still reduced to a dispatch placeholder before the COM boundary instead of carrying a real SAFEARRAY payload,
+  - object-valued COM arguments/results have no shared transport representation outside the narrow existing object-handle lanes.
+- Exact unblock steps:
+  - introduce a shared `oxvba-com` value carrier that can preserve at least:
+    - scalar integer/bool/null/error values,
+    - array-tag or real SAFEARRAY payload intent,
+    - object identity,
+    - future BSTR/string payloads,
+  - thread that carrier through compiler bytecode, VM host invoke construction, and HAL COM dispatch,
+  - then reopen practical SAFEARRAY/object/string late-bound COM work on top of that carrier.
+- Recommendation:
+  - treat the next implementation slice as a transport redesign in `oxvba-com`, not another adapter-local patch.
+
 ### BLK-COM-BOUNDARY-001: Final `oxvba-com` extraction is blocked on unsettled COM behavior contracts
 - Impact:
   - Blocks `IP-04` final COM ownership extraction from HAL.

@@ -1,6 +1,9 @@
 # Implementation Log
 
 ## 2026-03-11
+- late-bound COM transport-boundary audit:
+  - confirmed the next remaining high-value COM parity work is blocked by the shared `i32` value transport
+  - recorded `BLK-COM-VALUE-TRANSPORT-001` because string/object/SAFEARRAY closure now depends on an `oxvba-com` transport redesign, not another adapter-local patch
 - late-bound COM small-integer variant slice:
   - widened deterministic/native result conversion to accept `VT_I2` and `VT_UI2` into the current integer-token lane
   - added controlled `ReturnSmallInt` / `ReturnUnsignedWord` coverage so those narrower scalar results are exercised end to end

@@ -68,8 +68,10 @@ Status vocabulary:
     - natural late-bound default-member syntax and non-metadata-backed bindings still lack authoritative default-member identity,
     - object/interface-pointer and broad `VARIANT`/`SAFEARRAY` marshalling are still below parity target,
     - broader external `Invoke` error/result fidelity (`VarResult`, richer non-controlled `ExcepInfo`, broader argument-fault coverage) is still below parity target.
+  - hard dependency discovered in this pass:
+    - the remaining string/object/SAFEARRAY closure work is blocked by the current shared `i32` COM value transport and must move through an `oxvba-com` transport redesign before further practical parity progress is possible.
 - Next required action:
-  - finish full marshalling/error-channel fidelity and reopen default-member named dispatch only after runtime member identity is authoritative.
+  - redesign the shared COM value carrier in `oxvba-com`, then continue full marshalling/error-channel fidelity and the remaining default-member closure work on top of that transport.
 
 ### `IP-04` `oxvba-com` architectural repurpose and HAL COM extraction
 
