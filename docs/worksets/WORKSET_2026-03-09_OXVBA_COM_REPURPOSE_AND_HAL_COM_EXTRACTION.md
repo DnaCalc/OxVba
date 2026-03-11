@@ -285,3 +285,6 @@ Required checks for the repurpose/extraction program:
 4. In parallel, define the unified late-bound object protocol and the synthetic reference-facade model so COM lands on OxVba-native contracts.
 5. Prefer moving new COM transport/translation work into `oxvba-com` instead of deepening HAL-owned COM APIs.
 6. Treat `docs/worksets/WORKSET_2026-03-10_IDISPATCH_LATEBOUND_COM_COMPLETION.md` as the focused client-side completion plan for the remaining late-bound `IDispatch` surface.
+7. Use these concrete child worksets for the next cleanup/implementation slices:
+   - `docs/worksets/WORKSET_2026-03-11_UNIFIED_DYNAMIC_OBJECT_PROTOCOL_AND_VALUE_CARRIER.md`
+   - `docs/worksets/WORKSET_2026-03-11_COM_REFERENCE_FACADE_AND_TYPELIB_BINDING_COMPLETION.md`

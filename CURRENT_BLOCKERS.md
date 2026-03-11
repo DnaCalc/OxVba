@@ -43,7 +43,7 @@ Run context: active parity/compliance execution plus in-progress feature worklis
   - complete full `VARIANT`/object/`SAFEARRAY` marshalling,
   - complete broader external `Invoke` error/result fidelity beyond the controlled exception/argument-fault subset.
 - Recommendation:
-  - continue with the late-bound COM completion workset; the next slice should target broader `VARIANT`/object/`SAFEARRAY` marshalling plus richer `Invoke` error/result fidelity.
+  - continue with the late-bound COM completion workset together with the shared dynamic-object protocol/value-carrier workset so broader `VARIANT`/object/`SAFEARRAY` marshalling lands on the right runtime contract.
 
 ### BLK-COM-VALUE-TRANSPORT-001: Shared COM value transport is still a lossy `i32` lane
 - Impact:
@@ -68,7 +68,7 @@ Run context: active parity/compliance execution plus in-progress feature worklis
   - contract HAL toward delegation/bootstrap once the new carrier is in place,
   - then reopen practical SAFEARRAY/object/string late-bound COM work on top of that carrier.
 - Recommendation:
-  - treat the next implementation slice as a semantic-value and dynamic-object-protocol redesign centered on `oxvba-com`, not another adapter-local patch.
+  - treat the next implementation slice as the work defined in `docs/worksets/WORKSET_2026-03-11_UNIFIED_DYNAMIC_OBJECT_PROTOCOL_AND_VALUE_CARRIER.md`, not another adapter-local patch.
 
 ### BLK-COM-BOUNDARY-001: Final `oxvba-com` extraction is blocked on unsettled COM behavior contracts
 - Impact:
@@ -85,7 +85,7 @@ Run context: active parity/compliance execution plus in-progress feature worklis
   - stabilize property/default-member intent model,
   - then extract client -> event -> server slices into `oxvba-com`.
 - Recommendation:
-  - do not force final crate extraction ahead of invoke/property closure.
+  - do not force final crate extraction ahead of invoke/property closure; use the new runtime-protocol and reference-facade worksets as the cleanup spine.
 
 ### BLK-PROP-001: Property/default-member intent model is not yet end-to-end executable
 - Impact:

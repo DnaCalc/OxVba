@@ -85,15 +85,17 @@ Target environment for parity claim:
 Decision set to lock before implementation closure:
 1. `COM-HAL-V2` contract shape for full invoke semantics (method/property put/putref/named args/lcid/excepinfo surface).
 2. Value transport model upgrade for COM boundaries (beyond single `i32` token semantics where required).
-3. Default-member resolution source of truth:
+3. Unified late-bound object protocol for native VBA objects and COM-backed objects.
+4. Synthetic reference-facade model for typelib-backed COM imports.
+5. Default-member resolution source of truth:
    - typelib metadata,
    - Host Project metadata,
    - runtime fallback policy.
-4. Assignment semantics model for `Set`/`Let` in parser/binder/emitter/runtime.
-5. COM strategy policy:
+6. Assignment semantics model for `Set`/`Let` in parser/binder/emitter/runtime.
+7. COM strategy policy:
    - dispatch-first/vtable-first selection,
    - no hidden fallback across compliance lanes.
-6. Compliance claim granularity and allowed residual-scope language.
+8. Compliance claim granularity and allowed residual-scope language.
 
 ## 6. Detailed execution tracks
 
@@ -112,15 +114,17 @@ Decision set to lock before implementation closure:
 2. Implement call-context default member rules and ambiguity diagnostics.
 3. Move early-bound member/property mapping from hardcoded subset to typelib-driven complete model.
 4. Close late-bound classification/arity/named-arg/default-member edges.
+5. Use the synthetic COM reference facade as the authoritative imported-library model for supported compile-time COM binding.
 
 ### Track C - Runtime/object semantics closure
 1. Implement object-reference value model required for true `Set` semantics.
 2. Implement property dispatch intent model at runtime (get/let/set).
 3. Align error routing and resume semantics for COM/host failures.
 4. Validate deterministic teardown and object graph lifecycle parity.
+5. Converge native and COM-backed objects on one internal late-bound object protocol.
 
 ### Track D - COM HAL/runtime closure (client)
-1. Extend COM HAL to carry full invoke descriptors and argument bundles.
+1. Replace the old COM-HAL-v2 framing with `oxvba-com`-owned adaptation behind the unified dynamic-object protocol and external value carrier.
 2. Implement `PROPERTYPUT` and `PROPERTYPUTREF` with named-arg payload.
 3. Implement robust VARIANT marshalling coverage (scalar/object/array/byref/out).
 4. Expand typelib ingestion for member kinds, flags, default markers, optional params, and dispatch ids.
@@ -197,9 +201,14 @@ Execution ladder for this program:
 Targeted follow-on under Track D and Track F:
 - `docs/worksets/WORKSET_2026-03-09_COM_INTEROP_CONTINUATION_MULTIARG_LATEBOUND_AND_EVENT_PROJECTION.md`
 - `docs/worksets/WORKSET_2026-03-09_OXVBA_COM_REPURPOSE_AND_HAL_COM_EXTRACTION.md`
+- `docs/worksets/WORKSET_2026-03-11_UNIFIED_DYNAMIC_OBJECT_PROTOCOL_AND_VALUE_CARRIER.md`
+- `docs/worksets/WORKSET_2026-03-11_COM_REFERENCE_FACADE_AND_TYPELIB_BINDING_COMPLETION.md`
 - `docs/worksets/WORKSET_2026-03-09_HOST_BRIDGE_OBJECT_VALUE_AND_EVENT_INGRESS_CONTRACT.md`
 
 Reason:
 - the external registered COM event lane is now green, but general late-bound COM invoke still remains single-argument at the HAL boundary, and the synthetic pair-event projection path still needs explicit closure.
 - the COM implementation boundary also needs a coherent long-term home so invoke/event/server cleanup does not further entrench Windows COM behavior inside generic HAL traits.
+- the next concrete cleanup/implementation slices are now explicit:
+  - runtime-facing shared dynamic-object protocol + value carrier,
+  - compiler-facing synthetic reference facade + typelib binding completion.
 - the future host/pathfinder work also needs a locked object-value and event-ingress contract so COM transport work and non-COM host semantics converge on one bridge model.

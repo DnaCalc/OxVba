@@ -1771,3 +1771,12 @@
     - `docs/spec/COM_CLIENT_LATEBOUND_BRIDGE_V1.md`
   - tightened blocker sequencing so the next implementation pass is framed as shared protocol/value-boundary work rather than more adapter-local COM special cases:
     - `CURRENT_BLOCKERS.md`
+- Set up concrete implementation worksets for the refined COM direction:
+  - runtime-facing workset for the unified dynamic-object protocol and canonical external value carrier:
+    - `docs/worksets/WORKSET_2026-03-11_UNIFIED_DYNAMIC_OBJECT_PROTOCOL_AND_VALUE_CARRIER.md`
+  - compiler/binder-facing workset for the synthetic COM reference facade and typelib-binding completion:
+    - `docs/worksets/WORKSET_2026-03-11_COM_REFERENCE_FACADE_AND_TYPELIB_BINDING_COMPLETION.md`
+  - wired both worksets into the active compliance program, in-progress feature worklist, and blocker recommendations:
+    - `docs/worksets/WORKSET_2026-03-08_VBA71_WINDOWS_OFFICE_FULL_COMPLIANCE.md`
+    - `docs/IN_PROGRESS_FEATURE_WORKLIST.md`
+    - `CURRENT_BLOCKERS.md`
