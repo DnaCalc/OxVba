@@ -156,8 +156,11 @@ Status vocabulary:
       - explicit integer-slot compatibility is labeled `execute_and_legacy_snapshot*`,
       - `JitEngine::execute_and_snapshot*` now returns semantic `RuntimeValue` snapshots,
       - explicit integer-slot compatibility is labeled `execute_and_legacy_snapshot*`,
+    - the direct `Vm` observation surface is now also value-first by name:
+      - `Vm::snapshot(...)` is the semantic primary,
+      - explicit integer-slot compatibility is labeled `Vm::snapshot_legacy_slots(...)`,
     - CLI execution now uses the semantic snapshot lane by default and derives integer slots from `RuntimeValue` only at the output edge,
-    - the remaining active seam is the actual HAL `ValueToken` contract plus the remaining direct `Vm`/interpreter observation APIs and the still-legacy-heavy caller/test estate around integer snapshots.
+    - the remaining active seam is the actual HAL `ValueToken` contract plus the still-legacy-heavy interpreter/caller/test estate around integer snapshots.
 
 ### `IP-05` Windows early-bound COM and type-library parity
 

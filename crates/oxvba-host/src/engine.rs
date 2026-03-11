@@ -105,8 +105,7 @@ pub struct ProjectRuntimeSession {
 
 impl ProjectRuntimeSession {
     pub fn snapshot(&self) -> Vec<RuntimeValue> {
-        self.vm
-            .snapshot_values(self.compiled.bytecode.user_slot_count)
+        self.vm.snapshot(self.compiled.bytecode.user_slot_count)
     }
 
     pub fn snapshot_values(&self) -> Vec<RuntimeValue> {

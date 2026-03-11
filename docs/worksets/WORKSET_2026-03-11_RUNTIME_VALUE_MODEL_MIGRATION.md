@@ -86,12 +86,15 @@ Completed slices:
    - explicit integer-slot compatibility is labeled `execute_and_legacy_snapshot*`,
    - `JitEngine::execute_and_snapshot*` now returns semantic `RuntimeValue` snapshots,
    - explicit integer-slot compatibility is labeled `execute_and_legacy_snapshot*`.
+32. The direct `Vm` observation surface is now also value-first by name:
+   - `Vm::snapshot(...)` is the semantic primary,
+   - explicit integer-slot compatibility is labeled `Vm::snapshot_legacy_slots(...)`.
 
 Remaining blocker seam:
 1. HAL `ValueToken = i32` still anchors many remaining seams,
 2. the remaining holdouts are now concentrated in:
    - `ComHal::{create_object_value,dispatch_invoke_v2}`,
-   - remaining direct `Vm`/interpreter observation APIs that still expose integer-slot observation as the primary instance-level contract,
+   - remaining interpreter/test/caller expectations that still consume the legacy integer observation aliases,
 3. many interpreter tests and parity expectations still anchor on the legacy integer lane,
 4. JIT internals and parity harnesses still observe only the integer slot lane for Cranelift-supported subsets,
 5. many tests still assume integer snapshots as the primary public contract.

@@ -1,5 +1,20 @@
 # Implementation Log
 
+## 2026-03-11 - Direct Vm observation now defaults to runtime values
+
+- Tightened the direct VM instance observation surface in [interpreter.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-vm\src\interpreter.rs):
+  - `Vm::snapshot(...)` is now the semantic primary,
+  - explicit integer-slot compatibility now lives under `Vm::snapshot_legacy_slots(...)`,
+  - `snapshot_values(...)` and `snapshot_slots(...)` remain as compatibility aliases.
+- Updated VM library and host-session callers to use the primary semantic snapshot name where they were already consuming `RuntimeValue`.
+- Net effect:
+  - the instance-level VM observation surface now matches the value-first naming already used in host/public, VM library, and JIT library APIs,
+  - the remaining runtime-model wall is narrowed further to `ValueToken = i32`, token-bound HAL compatibility seams, and the still-legacy-heavy interpreter/test/caller estate around integer snapshots.
+- Verification:
+  - `cargo test -p oxvba-vm -p oxvba-host --quiet`
+  - `./scripts/check-governance.ps1`
+  - `./scripts/meta-check.ps1 -Fast -NoArtifacts`
+
 ## 2026-03-11 - VM/JIT snapshot helper surfaces now default to runtime values
 
 - Tightened the VM/JIT library snapshot surface:
