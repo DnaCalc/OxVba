@@ -296,7 +296,7 @@ impl TimeLocaleHal for WasmHostServices {
 }
 
 impl DynamicLinkHal for WasmHostServices {
-    fn invoke_bound(&self, _binding: BindingHandle, _arg: i32) -> HalResult<i32> {
+    fn invoke_bound(&self, _binding: BindingHandle, _arg: RuntimeValue) -> HalResult<RuntimeValue> {
         Err(self.unsupported(CapabilityId::DynamicLinking, "invoke_symbol"))
     }
 

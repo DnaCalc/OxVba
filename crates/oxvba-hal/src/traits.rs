@@ -184,28 +184,16 @@ pub trait DynamicLinkHal: Send + Sync {
     }
 
     /// Optional argument normalization/writeback preparation hook.
-    fn prepare_invoke(&self, _binding: BindingHandle, arg: ValueToken) -> HalResult<ValueToken> {
-        Ok(arg)
-    }
-    fn prepare_invoke_value(
+    fn prepare_invoke(
         &self,
-        binding: BindingHandle,
-        arg: ValueToken,
+        _binding: BindingHandle,
+        arg: RuntimeValue,
     ) -> HalResult<RuntimeValue> {
-        self.prepare_invoke(binding, arg)
-            .map(RuntimeValue::from_legacy_i32)
+        Ok(arg)
     }
 
     /// Invokes a previously bound symbol token.
-    fn invoke_bound(&self, binding: BindingHandle, arg: ValueToken) -> HalResult<ValueToken>;
-    fn invoke_bound_value(
-        &self,
-        binding: BindingHandle,
-        arg: ValueToken,
-    ) -> HalResult<RuntimeValue> {
-        self.invoke_bound(binding, arg)
-            .map(RuntimeValue::from_legacy_i32)
-    }
+    fn invoke_bound(&self, binding: BindingHandle, arg: RuntimeValue) -> HalResult<RuntimeValue>;
 
     /// Descriptor-driven invoke path used by VM/host integrations.
     fn invoke_descriptor(

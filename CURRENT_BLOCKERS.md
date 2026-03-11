@@ -134,10 +134,15 @@ Run context: active parity/compliance execution plus in-progress feature worklis
   - the COM activation seam is now also value-first by name:
     - `ComHal::create_object(...)` now takes semantic `RuntimeValue` ProgID input and returns semantic `RuntimeValue::ObjectHandle(...)`,
     - explicit raw-token compatibility is now labeled `ComHal::create_object_legacy(...)`,
+  - the dynamic-link binding/invoke seam is now also semantic on argument/result flow:
+    - `DynamicLinkHal::prepare_invoke(...)` now takes and returns `RuntimeValue`,
+    - `DynamicLinkHal::invoke_bound(...)` now takes and returns `RuntimeValue`,
   - CLI execution now also uses the semantic snapshot lane by default and derives `SLOTS:` output from that value path only when needed,
   - the remaining runtime/host boundary holdouts are now concentrated in:
     - `ValueToken = i32` itself,
     - `ComHal::dispatch_invoke_v2`,
+    - `ComHal::create_object_legacy`, `ComHal::release_object`, and `ComHal::invalidate_typelib_cache`,
+    - the legacy `ComHal::dispatch_invoke(...)` helper over raw member/object/arg tokens,
     - remaining direct interpreter/test/caller expectations that still consume the legacy integer observation aliases,
     - many bytecode execution callers and tests still assume the legacy integer observation surface,
   - the new `ComValue` carrier and generic dynamic-object protocol can live at the COM boundary, but they cannot yet become the single runtime object/value model while the wider execution substrate remains token-only.

@@ -92,11 +92,16 @@ Completed slices:
 33. The COM activation seam is now also value-first by name:
    - `ComHal::create_object(...)` now takes semantic `RuntimeValue` ProgID input and returns semantic `RuntimeValue::ObjectHandle(...)`,
    - explicit raw-token compatibility is labeled `ComHal::create_object_legacy(...)`.
+34. The dynamic-link binding/invoke seam is now also semantic on argument/result flow:
+   - `DynamicLinkHal::prepare_invoke(...)` now takes and returns `RuntimeValue`,
+   - `DynamicLinkHal::invoke_bound(...)` now takes and returns `RuntimeValue`.
 
 Remaining blocker seam:
 1. HAL `ValueToken = i32` still anchors many remaining seams,
 2. the remaining holdouts are now concentrated in:
    - `ComHal::dispatch_invoke_v2`,
+   - `ComHal::{create_object_legacy,release_object,invalidate_typelib_cache}`,
+   - the legacy `ComHal::dispatch_invoke(...)` helper over raw object/member/arg tokens,
    - remaining interpreter/test/caller expectations that still consume the legacy integer observation aliases,
 3. many interpreter tests and parity expectations still anchor on the legacy integer lane,
 4. JIT internals and parity harnesses still observe only the integer slot lane for Cranelift-supported subsets,

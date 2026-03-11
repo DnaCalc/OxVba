@@ -162,6 +162,9 @@ Status vocabulary:
     - the COM activation seam is now also value-first by name:
       - `ComHal::create_object(...)` now takes semantic `RuntimeValue` ProgID input and returns semantic `RuntimeValue::ObjectHandle(...)`,
       - explicit raw-token compatibility is labeled `ComHal::create_object_legacy(...)`,
+    - the dynamic-link binding/invoke seam is now also semantic on argument/result flow:
+      - `DynamicLinkHal::prepare_invoke(...)` now takes and returns `RuntimeValue`,
+      - `DynamicLinkHal::invoke_bound(...)` now takes and returns `RuntimeValue`,
     - CLI execution now uses the semantic snapshot lane by default and derives integer slots from `RuntimeValue` only at the output edge,
     - the remaining active seam is the actual HAL `ValueToken` contract plus the still-legacy-heavy interpreter/caller/test estate around integer snapshots.
 

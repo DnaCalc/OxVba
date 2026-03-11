@@ -3833,11 +3833,15 @@ impl DynamicLinkHal for StandardHostServices {
         Ok(binding)
     }
 
-    fn prepare_invoke(&self, _binding: BindingHandle, arg: i32) -> HalResult<i32> {
+    fn prepare_invoke(
+        &self,
+        _binding: BindingHandle,
+        arg: RuntimeValue,
+    ) -> HalResult<RuntimeValue> {
         Ok(arg)
     }
 
-    fn invoke_bound(&self, binding: BindingHandle, arg: i32) -> HalResult<i32> {
+    fn invoke_bound(&self, binding: BindingHandle, arg: RuntimeValue) -> HalResult<RuntimeValue> {
         let capability = CapabilityId::DynamicLinking;
         if !self.supports(capability) {
             return Err(self.unsupported(capability, "invoke_symbol"));
@@ -3845,15 +3849,16 @@ impl DynamicLinkHal for StandardHostServices {
         if !self.policy.allow_dynamic_link {
             return Err(self.denied(capability, "invoke_symbol"));
         }
+        let arg = self.runtime_value_to_legacy_i32(&arg, capability, "invoke_symbol", "arg")?;
         if self.native_mode_enabled()
             && matches!(self.profile, HalProfileId::Windows | HalProfileId::Linux)
         {
             return match binding.raw() {
                 s if s == external_symbol_token("host", "ping", "hostping") => {
-                    Ok(arg.saturating_add(1))
+                    Ok(RuntimeValue::I32(arg.saturating_add(1)))
                 }
                 s if s == external_symbol_token("host", "double", "hostdouble") => {
-                    Ok(arg.saturating_mul(2))
+                    Ok(RuntimeValue::I32(arg.saturating_mul(2)))
                 }
                 _ => Err(HalError::adapter_fault(
                     self.profile,
@@ -3866,7 +3871,7 @@ impl DynamicLinkHal for StandardHostServices {
                 )),
             };
         }
-        Ok(binding.raw().saturating_add(arg))
+        Ok(RuntimeValue::I32(binding.raw().saturating_add(arg)))
     }
 
     fn invoke_descriptor(
@@ -3874,16 +3879,9 @@ impl DynamicLinkHal for StandardHostServices {
         descriptor: &DynLinkDescriptorView<'_>,
         arg: RuntimeValue,
     ) -> HalResult<RuntimeValue> {
-        let arg = self.runtime_value_to_legacy_i32(
-            &arg,
-            CapabilityId::DynamicLinking,
-            "invoke_descriptor",
-            "arg",
-        )?;
         let binding = self.bind_descriptor(descriptor)?;
         let prepared = self.prepare_invoke(binding, arg)?;
         self.invoke_bound(binding, prepared)
-            .map(RuntimeValue::from_legacy_i32)
     }
 
     fn invoke_symbol(&self, symbol: DynLinkSymbol, arg: RuntimeValue) -> HalResult<RuntimeValue> {

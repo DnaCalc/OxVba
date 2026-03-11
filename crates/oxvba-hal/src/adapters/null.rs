@@ -254,7 +254,7 @@ impl TimeLocaleHal for NullHostServices {
 }
 
 impl DynamicLinkHal for NullHostServices {
-    fn invoke_bound(&self, _binding: BindingHandle, _arg: i32) -> HalResult<i32> {
+    fn invoke_bound(&self, _binding: BindingHandle, _arg: RuntimeValue) -> HalResult<RuntimeValue> {
         Err(self.unsupported(CapabilityId::DynamicLinking, "invoke_symbol"))
     }
 

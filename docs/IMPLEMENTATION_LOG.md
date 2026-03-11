@@ -1,5 +1,17 @@
 # Implementation Log
 
+## 2026-03-11 - Dynamic-link bound invoke now uses semantic runtime values
+
+- Tightened the remaining bound dynamic-link helper seam in [traits.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-hal\src\traits.rs):
+  - `DynamicLinkHal::prepare_invoke(...)` now takes and returns `RuntimeValue`,
+  - `DynamicLinkHal::invoke_bound(...)` now takes and returns `RuntimeValue`.
+- Updated the standard/null/wasm adapters so the semantic boundary now lives at the trait seam and any narrowing to the deterministic integer subset happens only inside the Windows adapter implementation.
+- Net effect:
+  - the dynamic-link path is now consistently semantic end to end at the HAL boundary,
+  - the remaining `ValueToken` pressure is narrowed further to explicit COM compatibility edges and the type alias itself.
+- Verification:
+  - `cargo test -p oxvba-hal -p oxvba-vm -p oxvba-host --quiet`
+
 ## 2026-03-11 - Direct Vm observation now defaults to runtime values
 
 - Tightened the direct VM instance observation surface in [interpreter.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-vm\src\interpreter.rs):
