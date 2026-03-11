@@ -62,7 +62,7 @@ Define the executable bridge from VBA late-bound call semantics to HAL COM trans
 - explicit `DispatchInvoke(obj, 0, ...)` must route through authoritative default-member metadata when that identity is known for the bound COM object;
 - default-member/direct-DISPID dispatch must not silently erase named arguments when runtime member identity is unresolved.
 8. Variant token transport:
-- the controlled and native Windows late-bound lane must preserve stable runtime token meaning for `VT_EMPTY`, `VT_NULL`, `VT_BOOL`, `VT_I4`, `VT_UI4`, and `VT_ERROR`;
+- the controlled and native Windows late-bound lane must preserve stable runtime token meaning for `VT_EMPTY`, `VT_NULL`, `VT_BOOL`, `VT_I2`, `VT_I4`, `VT_UI2`, `VT_UI4`, and `VT_ERROR`;
 - outbound invoke marshalling must emit `VT_NULL` and `VT_ERROR` when runtime null/error-tag values are supplied;
 - unsupported `VARIANT` shapes must fail deterministically and must not silently coerce into incorrect integer tokens.
 9. Event-trigger projection consumes the same authoritative argument vector used for invoke, and only synthesizes fallback payload shape when a native callback path is unavailable.

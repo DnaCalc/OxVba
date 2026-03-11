@@ -49,6 +49,7 @@ Status vocabulary:
   - extended deterministic variant roundtrip coverage in the controlled dispatch lane:
     - `VT_NULL` now roundtrips to the stable runtime null tag
     - `VT_ERROR` now roundtrips to the stable `CVErr(...)` error-tag space
+    - `VT_I2` and `VT_UI2` now roundtrip into the current integer-token lane without adapter failure
     - native invoke marshalling now emits `VT_NULL` / `VT_ERROR` on outbound calls when the runtime token shape requires it
   - tightened invoke failure fidelity in the controlled native lane:
     - invoke failures now treat `ArgErr` as optional output instead of inferring `arg_err=0` on every failing call

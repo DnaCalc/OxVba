@@ -31,6 +31,7 @@ Run context: active parity/compliance execution plus in-progress feature worklis
   - expression-form `DispatchInvoke(...)` assignments now preserve named trailing COM arguments instead of rejecting the statement outright,
   - omitted-argument metadata now survives the invoke request and yields deterministic required-argument faults,
   - controlled `IDispatch` variant roundtrips now cover `VT_NULL` and `VT_ERROR` in addition to the existing scalar subset,
+  - controlled/native result conversion now also accepts `VT_I2` and `VT_UI2` into the current integer-token lane,
   - invoke failure translation now distinguishes real `ArgErr` presence from the previous synthetic `arg_err=0` fallback,
   - controlled `DISP_E_EXCEPTION` lanes now preserve bounded `EXCEPINFO` source/description/scode details in the adapter-fault surface,
   - explicit `DispatchInvoke(obj, 0, name := value)` now routes through authoritative default-member metadata when the binding exposes one,

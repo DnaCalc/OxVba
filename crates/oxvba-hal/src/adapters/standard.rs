@@ -42,7 +42,7 @@ use windows_sys::Win32::System::Com::{
 };
 #[cfg(target_os = "windows")]
 use windows_sys::Win32::System::Variant::{
-    VARIANT, VT_BOOL, VT_EMPTY, VT_ERROR, VT_I4, VT_NULL, VT_UI4, VariantClear,
+    VARIANT, VT_BOOL, VT_EMPTY, VT_ERROR, VT_I2, VT_I4, VT_NULL, VT_UI2, VT_UI4, VariantClear,
 };
 #[cfg(target_os = "windows")]
 use windows_sys::Win32::UI::WindowsAndMessaging::{
@@ -3722,6 +3722,20 @@ fn com_member_spec_for_token(prog_id: &str, member: i32) -> Option<ComMemberSpec
                 parameter_names: Vec::new(),
                 is_default_member: false,
             }),
+            18 => Some(ComMemberSpec {
+                name: "ReturnSmallInt".to_string(),
+                requires_argument: false,
+                invoke_kind: TypeLibMemberInvokeKind::Method,
+                parameter_names: Vec::new(),
+                is_default_member: false,
+            }),
+            19 => Some(ComMemberSpec {
+                name: "ReturnUnsignedWord".to_string(),
+                requires_argument: false,
+                invoke_kind: TypeLibMemberInvokeKind::Method,
+                parameter_names: Vec::new(),
+                is_default_member: false,
+            }),
             _ => None,
         };
     }
@@ -4262,6 +4276,8 @@ const TEST_DISPID_SET_INDEXED_VALUE: i32 = 14;
 const TEST_DISPID_SET_INDEXED_VALUE_REF: i32 = 15;
 const TEST_DISPID_ECHO_VARIANT: i32 = 16;
 const TEST_DISPID_RAISE_EXCEPTION: i32 = 17;
+const TEST_DISPID_RETURN_SMALLINT: i32 = 18;
+const TEST_DISPID_RETURN_UNSIGNED_WORD: i32 = 19;
 const TEST_NAMED_DISPID_LHS: i32 = 101;
 const TEST_NAMED_DISPID_RHS: i32 = 102;
 const TEST_NAMED_DISPID_INDEX: i32 = 103;
@@ -4862,7 +4878,9 @@ unsafe fn raw_variant_token_from_invoke_arg(
         return Err(COM_DISP_E_TYPEMISMATCH);
     }
     match (*variant).Anonymous.Anonymous.vt {
+        VT_I2 => Ok((*variant).Anonymous.Anonymous.Anonymous.iVal as i32),
         VT_I4 => Ok((*variant).Anonymous.Anonymous.Anonymous.lVal),
+        VT_UI2 => Ok((*variant).Anonymous.Anonymous.Anonymous.uiVal as i32),
         VT_UI4 => Ok((*variant).Anonymous.Anonymous.Anonymous.ulVal as i32),
         VT_BOOL => Ok(if (*variant).Anonymous.Anonymous.Anonymous.boolVal == 0 {
             0
@@ -5323,6 +5341,8 @@ unsafe extern "system" fn oxvba_test_get_ids_of_names(
             "setindexedvalueref" => TEST_DISPID_SET_INDEXED_VALUE_REF,
             "echovariant" => TEST_DISPID_ECHO_VARIANT,
             "raiseexception" => TEST_DISPID_RAISE_EXCEPTION,
+            "returnsmallint" => TEST_DISPID_RETURN_SMALLINT,
+            "returnunsignedword" => TEST_DISPID_RETURN_UNSIGNED_WORD,
             "lhs" => TEST_NAMED_DISPID_LHS,
             "rhs" => TEST_NAMED_DISPID_RHS,
             "index" => TEST_NAMED_DISPID_INDEX,
@@ -5602,6 +5622,26 @@ unsafe extern "system" fn oxvba_test_invoke(
                 COM_DISP_E_EXCEPTION,
             );
             COM_DISP_E_EXCEPTION
+        }
+        TEST_DISPID_RETURN_SMALLINT => {
+            if (wflags & DISPATCH_METHOD) == 0 || cargs != 0 {
+                return COM_DISP_E_BADPARAMCOUNT;
+            }
+            if !pvarresult.is_null() {
+                (*pvarresult).Anonymous.Anonymous.vt = VT_I2;
+                (*pvarresult).Anonymous.Anonymous.Anonymous.iVal = 321;
+            }
+            COM_S_OK
+        }
+        TEST_DISPID_RETURN_UNSIGNED_WORD => {
+            if (wflags & DISPATCH_METHOD) == 0 || cargs != 0 {
+                return COM_DISP_E_BADPARAMCOUNT;
+            }
+            if !pvarresult.is_null() {
+                (*pvarresult).Anonymous.Anonymous.vt = VT_UI2;
+                (*pvarresult).Anonymous.Anonymous.Anonymous.uiVal = 65000;
+            }
+            COM_S_OK
         }
         TEST_DISPID_VALUE => {
             if (wflags & DISPATCH_PROPERTYGET) == 0 || cargs != 0 {
@@ -6086,7 +6126,9 @@ unsafe fn raw_get_dispids_by_names(
 unsafe fn raw_variant_to_token(variant: &VARIANT) -> Result<i32, String> {
     let value = match variant.Anonymous.Anonymous.vt {
         VT_EMPTY => 0,
+        VT_I2 => variant.Anonymous.Anonymous.Anonymous.iVal as i32,
         VT_I4 => variant.Anonymous.Anonymous.Anonymous.lVal,
+        VT_UI2 => variant.Anonymous.Anonymous.Anonymous.uiVal as i32,
         VT_UI4 => variant.Anonymous.Anonymous.Anonymous.ulVal as i32,
         VT_BOOL => {
             let value: VARIANT_BOOL = variant.Anonymous.Anonymous.Anonymous.boolVal;
@@ -6387,6 +6429,8 @@ unsafe fn raw_oxvba_test_dispatch_vtable_invoke(
             "IDispatch::Invoke(method) failed with HRESULT {:#010X} excep_description=\"controlled dispatch exception\" excep_scode={:#010X}",
             COM_DISP_E_EXCEPTION as u32, COM_DISP_E_EXCEPTION as u32
         )),
+        TEST_DISPID_RETURN_SMALLINT => Ok(Some(321)),
+        TEST_DISPID_RETURN_UNSIGNED_WORD => Ok(Some(65_000)),
         _ => Ok(None),
     }
 }
@@ -8012,6 +8056,14 @@ mod tests {
                     "RaiseException".to_string(),
                     super::TEST_DISPID_RAISE_EXCEPTION
                 ),
+                (
+                    "ReturnSmallInt".to_string(),
+                    super::TEST_DISPID_RETURN_SMALLINT
+                ),
+                (
+                    "ReturnUnsignedWord".to_string(),
+                    super::TEST_DISPID_RETURN_UNSIGNED_WORD
+                ),
             ]
         );
         let fire_changed_pair = metadata
@@ -8049,6 +8101,16 @@ mod tests {
             super::TypeLibMemberInvokeKind::Method
         );
         assert!(!raise_exception_member.requires_argument);
+        let return_smallint_member = metadata
+            .members
+            .iter()
+            .find(|entry| entry.token == super::TEST_DISPID_RETURN_SMALLINT)
+            .expect("ReturnSmallInt metadata should exist");
+        assert_eq!(
+            return_smallint_member.invoke_kind,
+            super::TypeLibMemberInvokeKind::Method
+        );
+        assert!(!return_smallint_member.requires_argument);
         assert_eq!(
             ping_member.invoke_kind,
             super::TypeLibMemberInvokeKind::Method

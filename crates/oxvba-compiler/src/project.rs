@@ -1897,6 +1897,8 @@ fn known_dispatch_member_token(member_name: &str) -> Option<i32> {
         "setindexedvalueref" => Some(15),
         "echovariant" => Some(16),
         "raiseexception" => Some(17),
+        "returnsmallint" => Some(18),
+        "returnunsignedword" => Some(19),
         _ => None,
     }
 }

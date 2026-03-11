@@ -338,6 +338,22 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
                 parameter_names: Vec::new(),
                 is_default_member: false,
             },
+            TypeLibMemberMetadata {
+                name: "ReturnSmallInt".to_string(),
+                token: 18,
+                requires_argument: false,
+                invoke_kind: TypeLibMemberInvokeKind::Method,
+                parameter_names: Vec::new(),
+                is_default_member: false,
+            },
+            TypeLibMemberMetadata {
+                name: "ReturnUnsignedWord".to_string(),
+                token: 19,
+                requires_argument: false,
+                invoke_kind: TypeLibMemberInvokeKind::Method,
+                parameter_names: Vec::new(),
+                is_default_member: false,
+            },
         ];
         let events = vec![
             TypeLibEventMetadata {

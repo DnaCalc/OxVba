@@ -1,6 +1,11 @@
 # Implementation Log
 
 ## 2026-03-11
+- late-bound COM small-integer variant slice:
+  - widened deterministic/native result conversion to accept `VT_I2` and `VT_UI2` into the current integer-token lane
+  - added controlled `ReturnSmallInt` / `ReturnUnsignedWord` coverage so those narrower scalar results are exercised end to end
+  - verification:
+    - `cargo test -p oxvba-com -p oxvba-hal -p oxvba-host -p oxvba-compiler --quiet` -> PASS
 - late-bound COM default-member identity slice:
   - added authoritative default-member metadata to the deterministic COM typelib catalog and binding/object-descriptor surfaces
   - explicit `DispatchInvoke(obj, 0, name := value)` now routes through the default member when authoritative metadata is present
