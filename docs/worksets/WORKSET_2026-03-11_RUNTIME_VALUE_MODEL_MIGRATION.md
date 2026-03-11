@@ -62,6 +62,7 @@ Completed slices:
 12. The supported native COM runtime-value return seam now binds `VT_DISPATCH` results back into adapter-owned object handles instead of forcing them through the legacy scalar return lane.
 13. The file-system value path now accepts semantic runtime inputs (`open_value`, `close_value`, `seek_value`, `eof_value`, `lof_value`, `free_file_value`) instead of keeping a token-only input contract behind a value-returning facade.
 14. VM `WithEvents` binding storage now preserves semantic `RuntimeValue` payloads instead of flattening bound source/object values to raw integers, and the corresponding intrinsics now read/write semantic values directly.
+15. VM `DispatchInvoke` now reads the object slot from semantic runtime state and preserves object handles before constructing the COM request.
 
 Remaining blocker seam:
 1. HAL `ValueToken = i32`,

@@ -934,9 +934,41 @@ impl Vm {
                     member,
                     args,
                 } => {
-                    let object = self.read_slot(*object)?;
-                    let member = self.read_slot(*member)?;
-                    let mut request = ComInvokeRequest::new(object.into(), member, Vec::new());
+                    let object_value = self.read_value_slot(*object)?;
+                    let object = match Self::runtime_value_to_com_object(
+                        &object_value,
+                        "dispatch_invoke.object",
+                    ) {
+                        Ok(object) => object,
+                        Err(detail) => {
+                            let err = HalError::adapter_fault(
+                                self.host_services.profile(),
+                                CapabilityId::ComActivationDispatch,
+                                "dispatch_invoke",
+                                detail,
+                            );
+                            pc = self.route_host_error(pc, err)?;
+                            continue;
+                        }
+                    };
+                    let member_value = self.read_value_slot(*member)?;
+                    let member = match Self::runtime_value_legacy_token(
+                        &member_value,
+                        "dispatch_invoke.member",
+                    ) {
+                        Ok(member) => member,
+                        Err(detail) => {
+                            let err = HalError::adapter_fault(
+                                self.host_services.profile(),
+                                CapabilityId::ComActivationDispatch,
+                                "dispatch_invoke",
+                                detail,
+                            );
+                            pc = self.route_host_error(pc, err)?;
+                            continue;
+                        }
+                    };
+                    let mut request = ComInvokeRequest::new(object, member, Vec::new());
                     for arg in args {
                         request.args.push(ComInvokeArg {
                             value: arg
@@ -1442,10 +1474,24 @@ impl Vm {
         (key >> 32) as i32
     }
 
+    fn runtime_value_legacy_token(value: &RuntimeValue, field: &str) -> Result<i32, String> {
+        value
+            .to_legacy_i32()
+            .map_err(|detail| format!("{field} requires legacy-compatible token: {detail}"))
+    }
+
+    fn runtime_value_to_com_object(
+        value: &RuntimeValue,
+        field: &str,
+    ) -> Result<oxvba_com::ComObjectToken, String> {
+        match value {
+            RuntimeValue::ObjectHandle(handle) => Ok((*handle).into()),
+            other => Self::runtime_value_legacy_token(other, field).map(Into::into),
+        }
+    }
+
     fn withevents_legacy_token(value: &RuntimeValue, field: &str) -> Result<i32, String> {
-        value.to_legacy_i32().map_err(|detail| {
-            format!("WithEvents intrinsic requires legacy-compatible {field} token: {detail}")
-        })
+        Self::runtime_value_legacy_token(value, &format!("WithEvents {field}"))
     }
 
     fn withevents_matching_owners(&self, source: &RuntimeValue, binding: i32) -> Vec<i32> {
@@ -2600,8 +2646,10 @@ mod tests {
         let mut vm = Vm::default();
         vm.execute(&bytecode).expect("vm should execute bytecode");
         let out = vm.snapshot_slots(5);
+        let values = vm.snapshot_values(5);
         assert_eq!(out[1], 5004);
         assert_eq!(out[4], 5004 + 6 + (ARRAY_TAG_BASE + 3));
+        assert_eq!(values[1], RuntimeValue::ObjectHandle(5004));
     }
 
     #[cfg(target_os = "windows")]

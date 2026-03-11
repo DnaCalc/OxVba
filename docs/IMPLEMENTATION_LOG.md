@@ -1,6 +1,11 @@
 # Implementation Log
 
 ## 2026-03-11
+- runtime COM-dispatch object-entry slice:
+  - changed VM `DispatchInvoke` request construction to read the object slot from semantic runtime state and preserve object handles before building the COM request
+  - added VM coverage to lock object-handle preservation on the dispatch lane
+  - verification:
+    - `cargo test -p oxvba-vm dispatch_invoke --quiet` -> PASS
 - runtime `WithEvents` semantic-storage slice:
   - changed VM `WithEvents` binding storage to preserve semantic `RuntimeValue` payloads instead of flattening bound source/object values to raw integers
   - changed `WithEvents` intrinsic entry/exit paths to read and write semantic values directly, while keeping owner/binding compatibility tokens stable

@@ -130,6 +130,7 @@ Status vocabulary:
     - VM host intrinsic execution now reads `RuntimeValue` directly for those lanes instead of narrowing through `read_slot(...)` before the HAL boundary,
     - legacy public snapshot APIs in VM/JIT/host now route through semantic `RuntimeValue` snapshots and project only at the compatibility edge,
     - VM `WithEvents` binding storage now preserves semantic `RuntimeValue` payloads instead of flattening bound source/object values to raw integers,
+    - VM `DispatchInvoke` now consumes object slots from semantic runtime state and preserves object handles rather than re-reading them through the raw slot lane before COM request construction,
     - the remaining active seam is the actual HAL `ValueToken` contract plus the still-token-bound HAL domains, remaining outward runtime APIs, and the still-legacy-heavy caller/test estate around integer snapshots.
 
 ### `IP-05` Windows early-bound COM and type-library parity
