@@ -154,7 +154,7 @@ mod windows_registered_com_lane {
         engine.set_host_policy(HostPolicy::interactive_dev());
         engine.set_com_prog_id_override(4, selected_registered_prog_id());
         engine
-            .execute_source_with_snapshot_phased(source)
+            .execute_source_with_legacy_snapshot_phased(source)
             .expect("registered COM lane source should execute")
     }
 
@@ -292,7 +292,7 @@ End Sub
         engine.set_host_policy(HostPolicy::interactive_dev());
         engine.set_com_prog_id_override(4, "OxVba.DoesNotExist.Component");
         let err = engine
-            .execute_source_with_snapshot_phased(
+            .execute_source_with_legacy_snapshot_phased(
                 r#"
 Sub Main()
 Dim obj
@@ -331,7 +331,7 @@ End Sub
         engine.set_host_policy(HostPolicy::interactive_dev());
         engine.set_com_prog_id_override(4, selected_registered_prog_id());
         let out = engine
-            .execute_source_with_snapshot_phased(
+            .execute_source_with_legacy_snapshot_phased(
                 r#"
 Sub Main()
 Dim obj
@@ -403,7 +403,7 @@ End Sub
         engine.set_com_prog_id_override(4, &selected_prog_id);
 
         let out = engine
-            .execute_source_with_snapshot_phased(
+            .execute_source_with_legacy_snapshot_phased(
                 r#"
 Sub Main()
 Dim obj
@@ -450,7 +450,7 @@ End Sub
         let trigger_source = format!(
             "Sub Main()\nDim value\nvalue = DispatchInvoke({object}, {trigger_member}, {trigger_arg})\nEnd Sub\n"
         );
-        let trigger_result = engine.execute_source_with_snapshot_phased(&trigger_source);
+        let trigger_result = engine.execute_source_with_legacy_snapshot_phased(&trigger_source);
         if let Err(err) = trigger_result {
             let _ = engine.unsubscribe_com_event_handler(subscription);
             if require_success {

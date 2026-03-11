@@ -104,13 +104,21 @@ pub struct ProjectRuntimeSession {
 }
 
 impl ProjectRuntimeSession {
-    pub fn snapshot_slots(&self) -> Vec<i32> {
-        project_runtime_values_to_legacy_slots(self.snapshot_values())
+    pub fn snapshot(&self) -> Vec<RuntimeValue> {
+        self.vm
+            .snapshot_values(self.compiled.bytecode.user_slot_count)
     }
 
     pub fn snapshot_values(&self) -> Vec<RuntimeValue> {
-        self.vm
-            .snapshot_values(self.compiled.bytecode.user_slot_count)
+        self.snapshot()
+    }
+
+    pub fn snapshot_legacy_slots(&self) -> Vec<i32> {
+        project_runtime_values_to_legacy_slots(self.snapshot())
+    }
+
+    pub fn snapshot_slots(&self) -> Vec<i32> {
+        self.snapshot_legacy_slots()
     }
 }
 
@@ -453,11 +461,11 @@ impl Engine {
     }
 
     pub fn execute_source(&self, source: &str) -> Result<(), String> {
-        let _ = self.execute_source_with_value_snapshot(source)?;
+        let _ = self.execute_source_with_snapshot(source)?;
         Ok(())
     }
 
-    pub fn execute_source_with_snapshot(&self, source: &str) -> Result<Vec<i32>, String> {
+    pub fn execute_source_with_snapshot(&self, source: &str) -> Result<Vec<RuntimeValue>, String> {
         self.execute_source_with_snapshot_phased(source)
             .map_err(|diagnostic| diagnostic.message().to_string())
     }
@@ -466,19 +474,15 @@ impl Engine {
         &self,
         source: &str,
     ) -> Result<Vec<RuntimeValue>, String> {
-        self.execute_source_with_value_snapshot_phased(source)
+        self.execute_source_with_snapshot(source)
+    }
+
+    pub fn execute_source_with_legacy_snapshot(&self, source: &str) -> Result<Vec<i32>, String> {
+        self.execute_source_with_legacy_snapshot_phased(source)
             .map_err(|diagnostic| diagnostic.message().to_string())
     }
 
     pub fn execute_source_with_snapshot_phased(
-        &self,
-        source: &str,
-    ) -> Result<Vec<i32>, PhaseDiagnostic> {
-        self.execute_source_with_value_snapshot_phased(source)
-            .map(project_runtime_values_to_legacy_slots)
-    }
-
-    pub fn execute_source_with_value_snapshot_phased(
         &self,
         source: &str,
     ) -> Result<Vec<RuntimeValue>, PhaseDiagnostic> {
@@ -498,15 +502,22 @@ impl Engine {
             .map_err(PhaseDiagnostic::runtime)
     }
 
-    pub fn execute_project_with_snapshot_phased(
+    pub fn execute_source_with_value_snapshot_phased(
         &self,
-        manifest: &ProjectManifest,
+        source: &str,
+    ) -> Result<Vec<RuntimeValue>, PhaseDiagnostic> {
+        self.execute_source_with_snapshot_phased(source)
+    }
+
+    pub fn execute_source_with_legacy_snapshot_phased(
+        &self,
+        source: &str,
     ) -> Result<Vec<i32>, PhaseDiagnostic> {
-        self.execute_project_with_value_snapshot_phased(manifest)
+        self.execute_source_with_snapshot_phased(source)
             .map(project_runtime_values_to_legacy_slots)
     }
 
-    pub fn execute_project_with_value_snapshot_phased(
+    pub fn execute_project_with_snapshot_phased(
         &self,
         manifest: &ProjectManifest,
     ) -> Result<Vec<RuntimeValue>, PhaseDiagnostic> {
@@ -531,6 +542,21 @@ impl Engine {
 
         execute_and_snapshot_values_with_host(&compiled.bytecode, self.host_services.clone())
             .map_err(PhaseDiagnostic::runtime)
+    }
+
+    pub fn execute_project_with_value_snapshot_phased(
+        &self,
+        manifest: &ProjectManifest,
+    ) -> Result<Vec<RuntimeValue>, PhaseDiagnostic> {
+        self.execute_project_with_snapshot_phased(manifest)
+    }
+
+    pub fn execute_project_with_legacy_snapshot_phased(
+        &self,
+        manifest: &ProjectManifest,
+    ) -> Result<Vec<i32>, PhaseDiagnostic> {
+        self.execute_project_with_snapshot_phased(manifest)
+            .map(project_runtime_values_to_legacy_slots)
     }
 
     fn preflight_host_sensitive_support(&self, bytecode: &Bytecode) -> Result<(), PhaseDiagnostic> {
@@ -778,7 +804,7 @@ mod tests {
 
         let source = "Sub Main()\nDim x\nx = 10\nx = x + 5\nEnd Sub";
         let snapshot = engine
-            .execute_source_with_snapshot(source)
+            .execute_source_with_legacy_snapshot(source)
             .expect("execution should succeed");
         assert_eq!(snapshot, vec![15]);
     }
@@ -792,7 +818,7 @@ mod tests {
 
         let source = "Sub Main()\nDim x\nx = 20\nx = x - 4\nEnd Sub";
         let snapshot = engine
-            .execute_source_with_snapshot(source)
+            .execute_source_with_legacy_snapshot(source)
             .expect("execution should succeed");
         assert_eq!(snapshot, vec![16]);
     }
@@ -805,7 +831,7 @@ mod tests {
                 "Sub Main()\nDim x\nx = {input}\nIf x = 1 Then\nx = 10\nElseIf x = 2 Then\nx = 20\nElse\nx = 30\nEnd If\nEnd Sub"
             );
             let snapshot = engine
-                .execute_source_with_snapshot(&source)
+                .execute_source_with_legacy_snapshot(&source)
                 .expect("execution should succeed");
             assert!(matches!(snapshot[0], 10 | 20 | 30));
         }
@@ -826,7 +852,7 @@ mod tests {
                 "Sub Main()\nDim x\nx = {input}\nIf x = 1 Then\nx = 10\nElseIf x = 2 Then\nx = 20\nElse\nx = 30\nEnd If\nEnd Sub"
             );
             let snapshot = engine
-                .execute_source_with_snapshot(&source)
+                .execute_source_with_legacy_snapshot(&source)
                 .expect("execution should succeed");
             assert_eq!(snapshot[0], expected);
         }
@@ -840,7 +866,7 @@ mod tests {
                 "Sub Main()\nDim x\nDim y\nx = {input}\ny = 0\nIf x = 1 Then\ny = y + 1\nElseIf x = 2 Then\ny = y + 10\nElse\ny = y + 100\nEnd If\nEnd Sub"
             );
             let snapshot = engine
-                .execute_source_with_snapshot(&source)
+                .execute_source_with_legacy_snapshot(&source)
                 .expect("execution should succeed");
             assert!(matches!(snapshot[1], 1 | 10 | 100));
         }
@@ -853,7 +879,7 @@ mod tests {
             let source =
                 format!("Sub Main()\nDim x\nx = 0\nDo While x < {limit}\nx = x + 1\nLoop\nEnd Sub");
             let snapshot = engine
-                .execute_source_with_snapshot(&source)
+                .execute_source_with_legacy_snapshot(&source)
                 .expect("execution should succeed");
             assert_eq!(snapshot[0], limit);
         }
@@ -866,7 +892,7 @@ mod tests {
             let source =
                 format!("Sub Main()\nDim x\nx = 0\nDo\nx = x + 1\nLoop While x < {limit}\nEnd Sub");
             let snapshot = engine
-                .execute_source_with_snapshot(&source)
+                .execute_source_with_legacy_snapshot(&source)
                 .expect("execution should succeed");
             let expected = if limit <= 1 { 1 } else { limit };
             assert_eq!(snapshot[0], expected);
@@ -878,7 +904,7 @@ mod tests {
         let engine = Engine::new(HostConfig::default());
         let source = "Sub Main()\nDim x\nx = 0\nDo While x < 10\nx = x + 1\nIf x = 4 Then\nExit Do\nEnd If\nLoop\nEnd Sub";
         let snapshot = engine
-            .execute_source_with_snapshot(source)
+            .execute_source_with_legacy_snapshot(source)
             .expect("execution should succeed");
         assert_eq!(snapshot[0], 4);
     }
@@ -888,7 +914,7 @@ mod tests {
         let engine = Engine::new(HostConfig::default());
         let source = "Sub Main()\nDim x\nx = 2\nSelect Case x\nCase 2\nx = 20\nCase 2, 3\nx = 99\nCase Else\nx = 0\nEnd Select\nEnd Sub";
         let snapshot = engine
-            .execute_source_with_snapshot(source)
+            .execute_source_with_legacy_snapshot(source)
             .expect("execution should succeed");
         assert_eq!(snapshot[0], 20);
     }
@@ -898,7 +924,7 @@ mod tests {
         let engine = Engine::new(HostConfig::default());
         let source = "Sub Main()\nDim x\nx = 9\nSelect Case x\nCase 1\nx = 10\nCase 2\nx = 20\nCase Else\nx = 99\nEnd Select\nEnd Sub";
         let snapshot = engine
-            .execute_source_with_snapshot(source)
+            .execute_source_with_legacy_snapshot(source)
             .expect("execution should succeed");
         assert_eq!(snapshot[0], 99);
     }
@@ -911,7 +937,7 @@ mod tests {
                 "Sub Main()\nDim x\nx = {input}\nSelect Case x\nCase 1, 3\nx = 30\nCase Else\nx = 0\nEnd Select\nEnd Sub"
             );
             let snapshot = engine
-                .execute_source_with_snapshot(&source)
+                .execute_source_with_legacy_snapshot(&source)
                 .expect("execution should succeed");
             assert_eq!(snapshot[0], 30);
         }
@@ -922,7 +948,7 @@ mod tests {
         let engine = Engine::new(HostConfig::default());
         let source = "Sub Main()\nDim x\nx = 1\nCall Foo\nx = x + 1\nEnd Sub\nSub Foo()\nDim y\ny = 9\nEnd Sub";
         let snapshot = engine
-            .execute_source_with_snapshot(source)
+            .execute_source_with_legacy_snapshot(source)
             .expect("execution should succeed");
         assert_eq!(snapshot[0], 2);
     }
@@ -932,7 +958,7 @@ mod tests {
         let engine = Engine::new(HostConfig::default());
         let source = "Sub Main()\nDim x\nx = 2\nCall Foo\nx = x + 1\nEnd Sub\nSub Foo()\nDim x\nx = 200\nEnd Sub";
         let snapshot = engine
-            .execute_source_with_snapshot(source)
+            .execute_source_with_legacy_snapshot(source)
             .expect("execution should succeed");
         assert_eq!(snapshot[0], 3);
     }
@@ -942,7 +968,7 @@ mod tests {
         let engine = Engine::new(HostConfig::default());
         let source = "Sub Main()\nDim x\nx = 0\nCall A\nx = x + 1\nEnd Sub\nSub A()\nDim y\ny = 1\nCall B\nEnd Sub\nSub B()\nDim z\nz = 2\nEnd Sub";
         let snapshot = engine
-            .execute_source_with_snapshot(source)
+            .execute_source_with_legacy_snapshot(source)
             .expect("execution should succeed");
         assert_eq!(snapshot[0], 1);
     }
@@ -952,7 +978,7 @@ mod tests {
         let engine = Engine::new(HostConfig::default());
         let source = "Sub Main()\nDim x\nx = 1\nCall AddOne(x)\nEnd Sub\nSub AddOne(ByVal a)\na = a + 1\nEnd Sub";
         let snapshot = engine
-            .execute_source_with_snapshot(source)
+            .execute_source_with_legacy_snapshot(source)
             .expect("execution should succeed");
         assert_eq!(snapshot[0], 1);
     }
@@ -962,7 +988,7 @@ mod tests {
         let engine = Engine::new(HostConfig::default());
         let source = "Sub Main()\nDim x\nx = 1\nCall AddOne(x)\nEnd Sub\nSub AddOne(ByRef a)\na = a + 1\nEnd Sub";
         let snapshot = engine
-            .execute_source_with_snapshot(source)
+            .execute_source_with_legacy_snapshot(source)
             .expect("execution should succeed");
         assert_eq!(snapshot[0], 2);
     }
@@ -972,7 +998,7 @@ mod tests {
         let engine = Engine::new(HostConfig::default());
         let source = "Sub Main()\nCall AddOne(1)\nEnd Sub\nSub AddOne(ByRef a)\na = a + 1\nEnd Sub";
         let err = engine
-            .execute_source_with_snapshot(source)
+            .execute_source_with_legacy_snapshot(source)
             .expect_err("byref constant argument should fail");
         assert!(err.contains("ByRef"));
     }
@@ -982,7 +1008,7 @@ mod tests {
         let engine = Engine::new(HostConfig::default());
         let source = "Sub Main()\nDim x\nCall Fill(x)\nEnd Sub\nSub Fill(ByRef target, Optional ByVal value = 7)\ntarget = value\nEnd Sub";
         let snapshot = engine
-            .execute_source_with_snapshot(source)
+            .execute_source_with_legacy_snapshot(source)
             .expect("execution should succeed");
         assert_eq!(snapshot[0], 7);
     }
@@ -992,7 +1018,7 @@ mod tests {
         let engine = Engine::new(HostConfig::default());
         let source = "Sub Main()\nDim x\nCall Fill(x, 9)\nEnd Sub\nSub Fill(ByRef target, Optional ByVal value = 7)\ntarget = value\nEnd Sub";
         let snapshot = engine
-            .execute_source_with_snapshot(source)
+            .execute_source_with_legacy_snapshot(source)
             .expect("execution should succeed");
         assert_eq!(snapshot[0], 9);
     }
@@ -1002,7 +1028,7 @@ mod tests {
         let engine = Engine::new(HostConfig::default());
         let source = "Sub Main()\nCall Fill\nEnd Sub\nSub Fill(ByRef target, Optional ByVal value = 7)\ntarget = value\nEnd Sub";
         let err = engine
-            .execute_source_with_snapshot(source)
+            .execute_source_with_legacy_snapshot(source)
             .expect_err("missing required arg should fail");
         assert!(err.contains("missing required argument"));
     }
@@ -1012,7 +1038,7 @@ mod tests {
         let engine = Engine::new(HostConfig::default());
         let source = "Sub Main()\nDim x\nCall Fill(value := 9, target := x)\nEnd Sub\nSub Fill(ByRef target, Optional ByVal value = 7)\ntarget = value\nEnd Sub";
         let snapshot = engine
-            .execute_source_with_snapshot(source)
+            .execute_source_with_legacy_snapshot(source)
             .expect("execution should succeed");
         assert_eq!(snapshot[0], 9);
     }
@@ -1022,7 +1048,7 @@ mod tests {
         let engine = Engine::new(HostConfig::default());
         let source = "Sub Main()\nDim x\nCall Fill(target := x)\nEnd Sub\nSub Fill(ByRef target, Optional ByVal value = 7)\ntarget = value\nEnd Sub";
         let snapshot = engine
-            .execute_source_with_snapshot(source)
+            .execute_source_with_legacy_snapshot(source)
             .expect("execution should succeed");
         assert_eq!(snapshot[0], 7);
     }
@@ -1032,7 +1058,7 @@ mod tests {
         let engine = Engine::new(HostConfig::default());
         let source = "Sub Main()\nDim x\nCall Fill(value := 9, x)\nEnd Sub\nSub Fill(ByRef target, Optional ByVal value = 7)\ntarget = value\nEnd Sub";
         let err = engine
-            .execute_source_with_snapshot(source)
+            .execute_source_with_legacy_snapshot(source)
             .expect_err("positional-after-named should fail");
         assert!(err.contains("positional argument cannot follow named argument"));
     }
@@ -1042,7 +1068,7 @@ mod tests {
         let engine = Engine::new(HostConfig::default());
         let source = "Sub Main()\nDim x\nCall Capture(x, 5, 7, 9)\nEnd Sub\nSub Capture(ByRef target, ParamArray items() As Variant)\ntarget = UBound(items)\nEnd Sub";
         let snapshot = engine
-            .execute_source_with_snapshot(source)
+            .execute_source_with_legacy_snapshot(source)
             .expect("execution should succeed");
         assert_eq!(snapshot[0], 2);
     }
@@ -1052,7 +1078,7 @@ mod tests {
         let engine = Engine::new(HostConfig::default());
         let source = "Sub Main()\nDim x\nCall Capture(x)\nEnd Sub\nSub Capture(ByRef target, ParamArray items() As Variant)\ntarget = UBound(items)\nEnd Sub";
         let snapshot = engine
-            .execute_source_with_snapshot(source)
+            .execute_source_with_legacy_snapshot(source)
             .expect("execution should succeed");
         assert_eq!(snapshot[0], -1);
     }
@@ -1062,7 +1088,7 @@ mod tests {
         let engine = Engine::new(HostConfig::default());
         let source = "Sub Main()\nDim x\nCall Capture(target := x, items := 5)\nEnd Sub\nSub Capture(ByRef target, ParamArray items() As Variant)\ntarget = UBound(items)\nEnd Sub";
         let err = engine
-            .execute_source_with_snapshot(source)
+            .execute_source_with_legacy_snapshot(source)
             .expect_err("named args for paramarray should fail in current subset");
         assert!(err.contains("ParamArray"));
     }
@@ -1073,7 +1099,7 @@ mod tests {
         let source =
             "Sub Main()\nDim x\nx = DispatchInvoke(CreateObject(4), 6, Array(1, 2, 3))\nEnd Sub";
         let snapshot = engine
-            .execute_source_with_snapshot(source)
+            .execute_source_with_legacy_snapshot(source)
             .expect("execution should succeed");
         assert_eq!(
             snapshot[0],
@@ -1086,7 +1112,7 @@ mod tests {
         let engine = Engine::new(HostConfig::default());
         let source = "Sub Main()\nDim x\nCall InvokePack(x, 5, 7)\nEnd Sub\nSub InvokePack(ByRef target, ParamArray items() As Variant)\ntarget = DispatchInvoke(CreateObject(2), 4, items)\nEnd Sub";
         let snapshot = engine
-            .execute_source_with_snapshot(source)
+            .execute_source_with_legacy_snapshot(source)
             .expect("execution should succeed");
         assert_eq!(
             snapshot[0],
@@ -1125,13 +1151,13 @@ mod tests {
             enable_jit: false,
             root_object_name: None,
         })
-        .execute_source_with_snapshot(source)
+        .execute_source_with_legacy_snapshot(source)
         .expect("vm execution should succeed");
         let jit_out = Engine::new(HostConfig {
             enable_jit: true,
             root_object_name: None,
         })
-        .execute_source_with_snapshot(source)
+        .execute_source_with_legacy_snapshot(source)
         .expect("jit execution should succeed");
         assert_eq!(vm_out, jit_out);
     }
@@ -1146,7 +1172,7 @@ mod tests {
         let engine = Engine::new(HostConfig::default());
         let source = "Sub Main()\nDim x\nx = 1\nGoSub add_two\nx = x + 1\nIf Err.Number = -1 Then\nadd_two:\nx = x + 2\nReturn\nEnd If\nEnd Sub";
         let snapshot = engine
-            .execute_source_with_snapshot(source)
+            .execute_source_with_legacy_snapshot(source)
             .expect("execution should succeed");
         assert_eq!(snapshot[0], 4);
     }
@@ -1156,7 +1182,7 @@ mod tests {
         let engine = Engine::new(HostConfig::default());
         let source = "Sub Main()\nGoSub nope\nEnd Sub";
         let err = engine
-            .execute_source_with_snapshot(source)
+            .execute_source_with_legacy_snapshot(source)
             .expect_err("missing gosub label should fail");
         assert!(err.contains("gosub target label not found"));
     }
@@ -1166,7 +1192,7 @@ mod tests {
         let engine = Engine::new(HostConfig::default());
         let source = "Sub Main()\nDim x\nx = 1\nGoSub add_two\nGoSub add_two\nIf Err.Number = -1 Then\nadd_two:\nx = x + 2\nReturn\nEnd If\nEnd Sub";
         let snapshot = engine
-            .execute_source_with_snapshot(source)
+            .execute_source_with_legacy_snapshot(source)
             .expect("execution should succeed");
         assert_eq!(snapshot[0], 5);
     }
@@ -1176,7 +1202,7 @@ mod tests {
         let engine = Engine::new(HostConfig::default());
         let source = "Sub Main()\nDim x\nx = 1\nOn Error GoTo handler\nError 5\nx = 99\nIf Err.Number = -1 Then\nhandler:\nx = Err.Number\nResume Next\nEnd If\nx = x + 1\nEnd Sub";
         let snapshot = engine
-            .execute_source_with_snapshot(source)
+            .execute_source_with_legacy_snapshot(source)
             .expect("execution should succeed");
         assert_eq!(snapshot[0], 6);
     }
@@ -1186,7 +1212,7 @@ mod tests {
         let engine = Engine::new(HostConfig::default());
         let source = "Sub Main()\nOn Error GoTo handler\nError 5\nEnd Sub";
         let err = engine
-            .execute_source_with_snapshot(source)
+            .execute_source_with_legacy_snapshot(source)
             .expect_err("missing handler label should fail");
         assert!(err.contains("on error goto target label not found"));
     }
@@ -1196,7 +1222,7 @@ mod tests {
         let engine = Engine::new(HostConfig::default());
         let source = "Sub Main()\nOn Error GoTo handler\nOn Error GoTo 0\nError 4\nIf Err.Number = -1 Then\nhandler:\nResume Next\nEnd If\nEnd Sub";
         let err = engine
-            .execute_source_with_snapshot(source)
+            .execute_source_with_legacy_snapshot(source)
             .expect_err("goto 0 should disable label handler");
         assert!(err.contains("runtime error"));
     }
@@ -1207,7 +1233,7 @@ mod tests {
         let source =
             "Sub Main()\nDim a(1)\nDim x\na(0) = 7\nReDim Preserve a(3)\nx = a(0)\nEnd Sub";
         let snapshot = engine
-            .execute_source_with_snapshot(source)
+            .execute_source_with_legacy_snapshot(source)
             .expect("execution should succeed");
         assert_eq!(snapshot[2], 7);
     }
@@ -1217,7 +1243,7 @@ mod tests {
         let engine = Engine::new(HostConfig::default());
         let source = "Sub Main()\nDim a(1)\nDim x\na(0) = 7\nReDim a(3)\nx = a(0)\nEnd Sub";
         let snapshot = engine
-            .execute_source_with_snapshot(source)
+            .execute_source_with_legacy_snapshot(source)
             .expect("execution should succeed");
         assert_eq!(snapshot[2], 0);
     }
@@ -1227,7 +1253,7 @@ mod tests {
         let engine = Engine::new(HostConfig::default());
         let source = "Sub Main()\nDim a(3)\nReDim a(1)\na(2) = 9\nEnd Sub";
         let err = engine
-            .execute_source_with_snapshot(source)
+            .execute_source_with_legacy_snapshot(source)
             .expect_err("out-of-bounds after shrink should fail");
         assert!(!err.trim().is_empty());
     }
@@ -1237,7 +1263,7 @@ mod tests {
         let engine = Engine::new(HostConfig::default());
         let source = "Sub Main()\nDim m(1 To 2, 1 To 2)\nDim x\nm(1, 1) = 7\nReDim Preserve m(1 To 2, 1 To 3)\nx = m(1, 1)\nEnd Sub";
         let snapshot = engine
-            .execute_source_with_snapshot(source)
+            .execute_source_with_legacy_snapshot(source)
             .expect("execution should succeed");
         assert_eq!(snapshot[0], 7);
         assert_eq!(snapshot[4], 7);
@@ -1248,7 +1274,7 @@ mod tests {
         let engine = Engine::new(HostConfig::default());
         let source = "Sub Main()\nDim a(0 To 3)\nDim x\na(3) = 9\nReDim Preserve a(0 To 1)\nReDim Preserve a(0 To 3)\nx = a(3)\nEnd Sub";
         let snapshot = engine
-            .execute_source_with_snapshot(source)
+            .execute_source_with_legacy_snapshot(source)
             .expect("execution should succeed");
         assert_eq!(snapshot[3], 0);
         assert_eq!(snapshot[4], 0);
@@ -1259,7 +1285,7 @@ mod tests {
         let engine = Engine::new(HostConfig::default());
         let source = "Sub Main()\nDim m(1 To 2, 1 To 2)\nReDim Preserve m(1 To 3, 1 To 2)\nEnd Sub";
         let err = engine
-            .execute_source_with_snapshot(source)
+            .execute_source_with_legacy_snapshot(source)
             .expect_err("non-last-dimension preserve resize should fail");
         assert!(err.contains("redim preserve only supports resizing"));
     }
@@ -1269,7 +1295,7 @@ mod tests {
         let engine = Engine::new(HostConfig::default());
         let source = "Const BASE = 5\nSub Main()\nDim x\nx = BASE + 2\nEnd Sub";
         let snapshot = engine
-            .execute_source_with_snapshot(source)
+            .execute_source_with_legacy_snapshot(source)
             .expect("execution should succeed");
         assert_eq!(snapshot, vec![5, 7]);
     }
@@ -1280,7 +1306,7 @@ mod tests {
         let source =
             "Enum Mode\nFast = 3\nSafe\nEnd Enum\nSub Main()\nDim x\nx = Safe + 1\nEnd Sub";
         let snapshot = engine
-            .execute_source_with_snapshot(source)
+            .execute_source_with_legacy_snapshot(source)
             .expect("execution should succeed");
         assert_eq!(snapshot, vec![3, 4, 5]);
     }
@@ -1291,7 +1317,7 @@ mod tests {
         let source =
             "Type Point\nX As Integer\nY As Integer\nEnd Type\nSub Main()\nDim x\nx = 9\nEnd Sub";
         let snapshot = engine
-            .execute_source_with_snapshot(source)
+            .execute_source_with_legacy_snapshot(source)
             .expect("execution should succeed");
         assert_eq!(snapshot, vec![9]);
     }
@@ -1301,7 +1327,7 @@ mod tests {
         let engine = Engine::new(HostConfig::default());
         let source = "Sub Main()\nDim x\nx = 1\nValue = x\nEnd Sub\nProperty Let Value(ByRef target)\ntarget = target + 2\nEnd Property";
         let snapshot = engine
-            .execute_source_with_snapshot(source)
+            .execute_source_with_legacy_snapshot(source)
             .expect("execution should succeed");
         assert_eq!(snapshot, vec![3]);
     }
@@ -1311,7 +1337,7 @@ mod tests {
         let engine = Engine::new(HostConfig::default());
         let source = "Sub Main()\nDim x\nx = 2\nObj = x\nEnd Sub\nProperty Set Obj(ByRef target)\ntarget = target + 5\nEnd Property";
         let snapshot = engine
-            .execute_source_with_snapshot(source)
+            .execute_source_with_legacy_snapshot(source)
             .expect("execution should succeed");
         assert_eq!(snapshot, vec![7]);
     }
@@ -1322,7 +1348,7 @@ mod tests {
         let source =
             "Sub Main()\nDim x\nx = 4\nEnd Sub\nProperty Get Value()\nDim y\ny = 1\nEnd Property";
         let snapshot = engine
-            .execute_source_with_snapshot(source)
+            .execute_source_with_legacy_snapshot(source)
             .expect("execution should succeed");
         assert_eq!(snapshot, vec![4]);
     }
@@ -1332,7 +1358,7 @@ mod tests {
         let engine = Engine::new(HostConfig::default());
         let source = "Sub Main()\nDim x\nx = CInt(5)\nEnd Sub";
         let snapshot = engine
-            .execute_source_with_snapshot(source)
+            .execute_source_with_legacy_snapshot(source)
             .expect("execution should succeed");
         assert_eq!(snapshot, vec![5]);
     }
@@ -1342,7 +1368,7 @@ mod tests {
         let engine = Engine::new(HostConfig::default());
         let source = "Sub Main()\nDim x\nx = CLng(CInt(7))\nEnd Sub";
         let snapshot = engine
-            .execute_source_with_snapshot(source)
+            .execute_source_with_legacy_snapshot(source)
             .expect("execution should succeed");
         assert_eq!(snapshot, vec![7]);
     }
@@ -1352,7 +1378,7 @@ mod tests {
         let engine = Engine::new(HostConfig::default());
         let source = "Sub Main()\nDim x\nx = Val(Str(9))\nEnd Sub";
         let snapshot = engine
-            .execute_source_with_snapshot(source)
+            .execute_source_with_legacy_snapshot(source)
             .expect("execution should succeed");
         assert_eq!(snapshot, vec![9]);
     }
@@ -1362,7 +1388,7 @@ mod tests {
         let engine = Engine::new(HostConfig::default());
         let source = "Sub Main()\nDim x\nx = Len(1234)\nEnd Sub";
         let snapshot = engine
-            .execute_source_with_snapshot(source)
+            .execute_source_with_legacy_snapshot(source)
             .expect("execution should succeed");
         assert_eq!(snapshot, vec![4]);
     }
@@ -1372,7 +1398,7 @@ mod tests {
         let engine = Engine::new(HostConfig::default());
         let source = "Sub Main()\nDim a\nDim b\nDim c\na = Left(12345, 2)\nb = Right(12345, 2)\nc = Mid(12345, 2, 3)\nEnd Sub";
         let snapshot = engine
-            .execute_source_with_snapshot(source)
+            .execute_source_with_legacy_snapshot(source)
             .expect("execution should succeed");
         assert_eq!(snapshot, vec![12, 45, 234]);
     }
@@ -1382,7 +1408,7 @@ mod tests {
         let engine = Engine::new(HostConfig::default());
         let source = "Sub Main()\nDim x\nDim y\nDim z\nx = InStr(12345, 34)\ny = LCase(789)\nz = UCase(654)\nEnd Sub";
         let snapshot = engine
-            .execute_source_with_snapshot(source)
+            .execute_source_with_legacy_snapshot(source)
             .expect("execution should succeed");
         assert_eq!(snapshot, vec![3, 789, 654]);
     }
@@ -1392,7 +1418,7 @@ mod tests {
         let engine = Engine::new(HostConfig::default());
         let source = "Sub Main()\nDim x\nDim y\nx = Split(123231, 23)\ny = Join(789, 0)\nEnd Sub";
         let snapshot = engine
-            .execute_source_with_snapshot(source)
+            .execute_source_with_legacy_snapshot(source)
             .expect("execution should succeed");
         assert_eq!(snapshot, vec![3, 789]);
     }
@@ -1402,7 +1428,7 @@ mod tests {
         let engine = Engine::new(HostConfig::default());
         let source = "Sub Main()\nDim x\nDim y\nDim z\nx = Replace(12345, 23, 67)\ny = Trim(456)\nz = RTrim(321)\nEnd Sub";
         let snapshot = engine
-            .execute_source_with_snapshot(source)
+            .execute_source_with_legacy_snapshot(source)
             .expect("execution should succeed");
         assert_eq!(snapshot, vec![16745, 456, 321]);
     }
@@ -1413,7 +1439,7 @@ mod tests {
         let source =
             "Sub Main()\nDim x\nDim y\nx = StrComp(12, 123)\ny = StrComp(123, 123)\nEnd Sub";
         let snapshot = engine
-            .execute_source_with_snapshot(source)
+            .execute_source_with_legacy_snapshot(source)
             .expect("execution should succeed");
         assert_eq!(snapshot, vec![-1, 0]);
     }
@@ -1424,7 +1450,7 @@ mod tests {
         let source =
             "Sub Main()\nDim x\nDim y\nx = DateSerial(2026, 2, 28)\ny = DateValue(x)\nEnd Sub";
         let snapshot = engine
-            .execute_source_with_snapshot(source)
+            .execute_source_with_legacy_snapshot(source)
             .expect("execution should succeed");
         assert_eq!(snapshot, vec![20260228, 20260228]);
     }
@@ -1434,7 +1460,7 @@ mod tests {
         let engine = Engine::new(HostConfig::default());
         let source = "Sub Main()\nDim x\nDim y\nx = TimeSerial(1, 2, 3)\ny = TimeValue(x)\nEnd Sub";
         let snapshot = engine
-            .execute_source_with_snapshot(source)
+            .execute_source_with_legacy_snapshot(source)
             .expect("execution should succeed");
         assert_eq!(snapshot, vec![3723, 3723]);
     }
@@ -1444,7 +1470,7 @@ mod tests {
         let engine = Engine::new(HostConfig::default());
         let source = "Sub Main()\nDim x\nDim y\nx = DateAdd(1, 3, DateSerial(2026, 2, 28))\ny = DateDiff(1, DateSerial(2026, 2, 28), x)\nEnd Sub";
         let snapshot = engine
-            .execute_source_with_snapshot(source)
+            .execute_source_with_legacy_snapshot(source)
             .expect("execution should succeed");
         assert_eq!(snapshot[1], 3);
     }
@@ -1454,7 +1480,7 @@ mod tests {
         let engine = Engine::new(HostConfig::default());
         let source = "Sub Main()\nDim a\nDim b\nDim c\nDim d\na = Abs(-7)\nb = Sgn(-9)\nc = Sqr(81)\nd = Round(19, -1)\nEnd Sub";
         let snapshot = engine
-            .execute_source_with_snapshot(source)
+            .execute_source_with_legacy_snapshot(source)
             .expect("execution should succeed");
         assert_eq!(snapshot, vec![7, -1, 9, 20]);
     }
@@ -1464,7 +1490,7 @@ mod tests {
         let engine = Engine::new(HostConfig::default());
         let source = "Sub Main()\nDim a\nDim b\nDim c\nDim d\na = Sin(0)\nb = Cos(0)\nc = Log(1)\nd = Exp(0)\nEnd Sub";
         let snapshot = engine
-            .execute_source_with_snapshot(source)
+            .execute_source_with_legacy_snapshot(source)
             .expect("execution should succeed");
         assert_eq!(snapshot, vec![0, 1, 0, 1]);
     }
@@ -1474,7 +1500,7 @@ mod tests {
         let engine = Engine::new(HostConfig::default());
         let source = "Sub Main()\nDim a\nDim b\nDim c\na = FV(0, 3, 2, 5)\nb = PV(0, 3, 2, 5)\nc = PMT(0, 3, 6, 3)\nEnd Sub";
         let snapshot = engine
-            .execute_source_with_snapshot(source)
+            .execute_source_with_legacy_snapshot(source)
             .expect("execution should succeed");
         assert_eq!(snapshot, vec![-11, -11, -3]);
     }
@@ -1484,7 +1510,7 @@ mod tests {
         let engine = Engine::new(HostConfig::default());
         let source = "Sub Main()\nDim a\nDim l\nDim u\na = Array(10, 20, 30)\nl = LBound(a)\nu = UBound(a)\nEnd Sub";
         let snapshot = engine
-            .execute_source_with_snapshot(source)
+            .execute_source_with_legacy_snapshot(source)
             .expect("execution should succeed");
         assert_eq!(snapshot[1], 0);
         assert_eq!(snapshot[2], 2);
@@ -1495,7 +1521,7 @@ mod tests {
         let engine = Engine::new(HostConfig::default());
         let source = "Sub Main()\nDim a\nDim t1\nDim t2\na = Array(1, 2)\nt1 = VarType(a)\nt2 = TypeName(a)\nEnd Sub";
         let snapshot = engine
-            .execute_source_with_snapshot(source)
+            .execute_source_with_legacy_snapshot(source)
             .expect("execution should succeed");
         assert_eq!(snapshot[1], 8204);
         assert_eq!(snapshot[2], 1001);
@@ -1506,7 +1532,7 @@ mod tests {
         let engine = Engine::new(HostConfig::default());
         let source = "Sub Main()\nDim d\nDim n\nDim o\nd = IsDate(DateSerial(2026, 2, 28))\nn = IsNumeric(17)\no = IsObject(17)\nEnd Sub";
         let snapshot = engine
-            .execute_source_with_snapshot(source)
+            .execute_source_with_legacy_snapshot(source)
             .expect("execution should succeed");
         assert_eq!(snapshot, vec![1, 1, 0]);
     }
@@ -1517,7 +1543,7 @@ mod tests {
         let source =
             "Sub Main()\nDim x\nOn Error Resume Next\nErr.Raise 11\nx = Err.Number\nEnd Sub";
         let snapshot = engine
-            .execute_source_with_snapshot(source)
+            .execute_source_with_legacy_snapshot(source)
             .expect("execution should succeed");
         assert_eq!(snapshot, vec![11]);
     }
@@ -1527,7 +1553,7 @@ mod tests {
         let engine = Engine::new(HostConfig::default());
         let source = "Sub Main()\nDim x\nx = CVErr(17)\nEnd Sub";
         let snapshot = engine
-            .execute_source_with_snapshot(source)
+            .execute_source_with_legacy_snapshot(source)
             .expect("execution should succeed");
         assert_eq!(snapshot, vec![error_tag_from_code(17)]);
     }
@@ -1537,7 +1563,7 @@ mod tests {
         let engine = Engine::new(HostConfig::default());
         let source = "Sub Main()\nErr.Raise 9\nEnd Sub";
         let err = engine
-            .execute_source_with_snapshot(source)
+            .execute_source_with_legacy_snapshot(source)
             .expect_err("expected runtime error");
         assert!(err.contains("runtime error"));
     }
@@ -1548,7 +1574,7 @@ mod tests {
         let source =
             "Sub Main()\nDim a\nDim b\nDim c\na = Shell(5)\nb = Environ(9)\nc = Dir(1)\nEnd Sub";
         let snapshot = engine
-            .execute_source_with_snapshot(source)
+            .execute_source_with_legacy_snapshot(source)
             .expect("execution should succeed");
         assert_eq!(snapshot, vec![1, 9, 1]);
     }
@@ -1558,7 +1584,7 @@ mod tests {
         let engine = Engine::new(HostConfig::default());
         let source = "Sub Main()\nDim d\nDim t\nDim n\nDim k\nd = Date()\nt = Time()\nn = Now()\nk = Timer()\nEnd Sub";
         let snapshot = engine
-            .execute_source_with_snapshot(source)
+            .execute_source_with_legacy_snapshot(source)
             .expect("execution should succeed");
         assert_eq!(snapshot, vec![20_260_301, 123_456, 20_260_301, 42]);
     }
@@ -1568,7 +1594,7 @@ mod tests {
         let engine = Engine::new(HostConfig::default());
         let source = "Sub Main()\nDim a\nDim b\na = FreeFile()\nb = FreeFile(1)\nEnd Sub";
         let snapshot = engine
-            .execute_source_with_snapshot(source)
+            .execute_source_with_legacy_snapshot(source)
             .expect("execution should succeed");
         assert_eq!(snapshot, vec![1, 256]);
     }
@@ -1582,7 +1608,7 @@ mod tests {
         engine.set_host_policy(policy);
         let source = "Sub Main()\nDim a\nDim b\nDim c\na = MsgBox(7, 3)\nb = InputBox(9, 4)\nc = DoEvents()\nEnd Sub";
         let snapshot = engine
-            .execute_source_with_snapshot(source)
+            .execute_source_with_legacy_snapshot(source)
             .expect("execution should succeed");
         assert_eq!(snapshot, vec![3, 4, 0]);
     }
@@ -1599,10 +1625,10 @@ mod tests {
         });
         let source = "Sub Main()\nDim a\nDim b\na = Shell(7)\nb = Environ(4)\nEnd Sub";
         let vm_out = vm_engine
-            .execute_source_with_snapshot(source)
+            .execute_source_with_legacy_snapshot(source)
             .expect("vm execution should succeed");
         let jit_out = jit_engine
-            .execute_source_with_snapshot(source)
+            .execute_source_with_legacy_snapshot(source)
             .expect("jit execution should succeed");
         assert_eq!(vm_out, jit_out);
     }
@@ -1612,10 +1638,10 @@ mod tests {
         let engine = Engine::new(HostConfig::default());
         let source = "Sub Main()\nDim x\nx = Shell(0)\nEnd Sub";
         let first = engine
-            .execute_source_with_snapshot(source)
+            .execute_source_with_legacy_snapshot(source)
             .expect("execution should succeed");
         let second = engine
-            .execute_source_with_snapshot(source)
+            .execute_source_with_legacy_snapshot(source)
             .expect("execution should succeed");
         assert_eq!(first, second);
     }
@@ -1625,7 +1651,7 @@ mod tests {
         let engine = Engine::new(HostConfig::default());
         let source = "Sub Main()\nDim c\nDim item\nc = CollectionAdd(0, 9)\nitem = CollectionItem(c, 1)\nEnd Sub";
         let snapshot = engine
-            .execute_source_with_snapshot(source)
+            .execute_source_with_legacy_snapshot(source)
             .expect("execution should succeed");
         assert_eq!(snapshot, vec![1, 1]);
     }
@@ -1636,7 +1662,7 @@ mod tests {
         let source =
             "Sub Main()\nDim c\nc = CollectionAdd(0, 9)\nc = CollectionRemove(c, 1)\nEnd Sub";
         let snapshot = engine
-            .execute_source_with_snapshot(source)
+            .execute_source_with_legacy_snapshot(source)
             .expect("execution should succeed");
         assert_eq!(snapshot, vec![0]);
     }
@@ -1653,10 +1679,10 @@ mod tests {
         });
         let source = "Sub Main()\nDim c\nc = CollectionAdd(0, 2)\nc = CollectionAdd(c, 3)\nEnd Sub";
         let vm_out = vm_engine
-            .execute_source_with_snapshot(source)
+            .execute_source_with_legacy_snapshot(source)
             .expect("vm execution should succeed");
         let jit_out = jit_engine
-            .execute_source_with_snapshot(source)
+            .execute_source_with_legacy_snapshot(source)
             .expect("jit execution should succeed");
         assert_eq!(vm_out, jit_out);
     }
@@ -1667,7 +1693,7 @@ mod tests {
         let source =
             "Sub Main()\nDim x\nx = 1\nEnd Sub\nSub Class_Initialize()\nErr.Raise 77\nEnd Sub";
         let err = engine
-            .execute_source_with_snapshot(source)
+            .execute_source_with_legacy_snapshot(source)
             .expect_err("initializer should run before main");
         assert!(err.contains("runtime error"));
     }
@@ -1678,7 +1704,7 @@ mod tests {
         let source =
             "Sub Main()\nDim x\nx = 1\nEnd Sub\nSub Class_Terminate()\nErr.Raise 88\nEnd Sub";
         let err = engine
-            .execute_source_with_snapshot(source)
+            .execute_source_with_legacy_snapshot(source)
             .expect_err("terminate should run after main");
         assert!(err.contains("runtime error"));
     }
@@ -1695,10 +1721,10 @@ mod tests {
         });
         let source = "Sub Main()\nDim x\nx = 3\nEnd Sub\nSub Class_Initialize()\nOn Error Resume Next\nErr.Raise 5\nEnd Sub\nSub Class_Terminate()\nOn Error Resume Next\nErr.Raise 7\nEnd Sub";
         let vm_out = vm_engine
-            .execute_source_with_snapshot(source)
+            .execute_source_with_legacy_snapshot(source)
             .expect("vm execution should succeed");
         let jit_out = jit_engine
-            .execute_source_with_snapshot(source)
+            .execute_source_with_legacy_snapshot(source)
             .expect("jit execution should succeed");
         assert_eq!(vm_out, jit_out);
     }
@@ -1729,7 +1755,7 @@ mod tests {
         };
 
         let snapshot = engine
-            .execute_project_with_snapshot_phased(&manifest)
+            .execute_project_with_legacy_snapshot_phased(&manifest)
             .expect("project execution should succeed");
         assert_eq!(snapshot[0], 1);
     }
@@ -1765,7 +1791,7 @@ mod tests {
         };
 
         let snapshot = engine
-            .execute_project_with_snapshot_phased(&manifest)
+            .execute_project_with_legacy_snapshot_phased(&manifest)
             .expect("cross-project execution should succeed");
         assert_eq!(snapshot[0], 1);
     }
@@ -1835,7 +1861,7 @@ mod tests {
         };
 
         let err = engine
-            .execute_project_with_snapshot_phased(&manifest)
+            .execute_project_with_legacy_snapshot_phased(&manifest)
             .expect_err("first lowered handler should raise deterministic runtime error");
         assert_eq!(err.phase(), DiagnosticPhase::Runtime);
         assert!(
@@ -1875,7 +1901,7 @@ mod tests {
         };
 
         let _ = engine
-            .execute_project_with_snapshot_phased(&manifest)
+            .execute_project_with_legacy_snapshot_phased(&manifest)
             .expect("project compile/execute should load event bindings");
 
         let handlers = engine.dispatch_host_event("ProjectA", "Emitter", "Changed");
@@ -2292,7 +2318,7 @@ mod tests {
         };
 
         let err = engine
-            .execute_project_with_snapshot_phased(&manifest)
+            .execute_project_with_legacy_snapshot_phased(&manifest)
             .expect_err("event arg should flow to handler and raise deterministic runtime code");
         assert_eq!(err.phase(), DiagnosticPhase::Runtime);
         assert!(err.message().contains("runtime error: 142"));
@@ -2359,7 +2385,7 @@ mod tests {
             "expected IntrinsicWithEventsGet in emitted bytecode"
         );
         let err = engine
-            .execute_project_with_snapshot_phased(&manifest)
+            .execute_project_with_legacy_snapshot_phased(&manifest)
             .expect_err("reassignment lane should emit deterministic parity sentinel");
         assert_eq!(
             err.phase(),
@@ -2405,7 +2431,7 @@ mod tests {
             conditional_constants: std::collections::BTreeMap::new(),
         };
         let err = engine
-            .execute_project_with_snapshot_phased(&manifest)
+            .execute_project_with_legacy_snapshot_phased(&manifest)
             .expect_err("clear/rebind lane should emit deterministic parity sentinel");
         assert_eq!(
             err.phase(),
@@ -2425,7 +2451,7 @@ mod tests {
         let engine = Engine::new(HostConfig::default());
         let source = "Sub Main()\nDim x\nx = __oxvba_withevents_set(0, 2049099222, 42)\nIf __oxvba_withevents_get(0, 2049099222) = 42 Then\nError 13\nElse\nError 77\nEnd If\nEnd Sub";
         let err = engine
-            .execute_source_with_snapshot_phased(source)
+            .execute_source_with_legacy_snapshot_phased(source)
             .expect_err("intrinsic roundtrip should raise deterministic sentinel");
         assert_eq!(err.phase(), DiagnosticPhase::Runtime);
         assert!(
@@ -2440,7 +2466,7 @@ mod tests {
         let engine = Engine::new(HostConfig::default());
         let source = "Sub Main()\nDim a\nDim b\na = __oxvba_withevents_set(11, 2049099222, 41)\nb = __oxvba_withevents_set(22, 2049099222, 52)\nIf __oxvba_withevents_get(11, 2049099222) = 41 And __oxvba_withevents_get(22, 2049099222) = 52 Then\nError 13\nElse\nError 77\nEnd If\nEnd Sub";
         let err = engine
-            .execute_source_with_snapshot_phased(source)
+            .execute_source_with_legacy_snapshot_phased(source)
             .expect_err("owner-scoped intrinsic state should roundtrip deterministically");
         assert_eq!(err.phase(), DiagnosticPhase::Runtime);
         assert!(
@@ -2482,7 +2508,7 @@ mod tests {
         };
 
         let err = engine
-            .execute_project_with_snapshot_phased(&manifest)
+            .execute_project_with_legacy_snapshot_phased(&manifest)
             .expect_err(
                 "Implements-prefixed member call should execute and raise deterministic error",
             );
@@ -2495,7 +2521,7 @@ mod tests {
         let engine = Engine::new(HostConfig::default());
         let source = "Sub Main()\nDim x\nx = DispatchInvoke(CreateObject(11), 2, 3)\nEnd Sub";
         let snapshot = engine
-            .execute_source_with_snapshot(source)
+            .execute_source_with_legacy_snapshot(source)
             .expect("execution should succeed");
         assert_eq!(snapshot, vec![5016]);
     }
@@ -2512,10 +2538,10 @@ mod tests {
         });
         let source = "Sub Main()\nDim x\nx = DispatchInvoke(CreateObject(9), 1, 4)\nEnd Sub";
         let vm_out = vm_engine
-            .execute_source_with_snapshot(source)
+            .execute_source_with_legacy_snapshot(source)
             .expect("vm execution should succeed");
         let jit_out = jit_engine
-            .execute_source_with_snapshot(source)
+            .execute_source_with_legacy_snapshot(source)
             .expect("jit execution should succeed");
         assert_eq!(vm_out, jit_out);
     }
@@ -2525,10 +2551,10 @@ mod tests {
         let engine = Engine::new(HostConfig::default());
         let source = "Sub Main()\nDim x\nx = DispatchInvoke(CreateObject(3), 7, 8)\nEnd Sub";
         let first = engine
-            .execute_source_with_snapshot(source)
+            .execute_source_with_legacy_snapshot(source)
             .expect("execution should succeed");
         let second = engine
-            .execute_source_with_snapshot(source)
+            .execute_source_with_legacy_snapshot(source)
             .expect("execution should succeed");
         assert_eq!(first, second);
     }
@@ -2538,7 +2564,7 @@ mod tests {
         let engine = Engine::new(HostConfig::default());
         let source = "Sub Main()\nDim x\nx = CreateObject(\"OxVba.TestDispatch\")\nEnd Sub";
         let snapshot = engine
-            .execute_source_with_snapshot(source)
+            .execute_source_with_legacy_snapshot(source)
             .expect("execution should succeed");
         assert_eq!(snapshot, vec![5_004]);
     }
@@ -2548,7 +2574,7 @@ mod tests {
         let engine = Engine::new(HostConfig::default());
         let source = "Sub Main()\nDim x\nx = DispatchInvoke(CreateObject(\"OxVba.TestDispatch\"), \"Count\", 0)\nEnd Sub";
         let snapshot = engine
-            .execute_source_with_snapshot(source)
+            .execute_source_with_legacy_snapshot(source)
             .expect("execution should succeed");
         assert_eq!(snapshot, vec![5_005]);
     }
@@ -2558,7 +2584,7 @@ mod tests {
         let engine = Engine::new(HostConfig::default());
         let source = "Sub Main()\nDim x\nx = DispatchInvoke(CreateObject(\"OxVba.TestDispatch\"), \"Count\")\nEnd Sub";
         let snapshot = engine
-            .execute_source_with_snapshot(source)
+            .execute_source_with_legacy_snapshot(source)
             .expect("execution should succeed");
         assert_eq!(snapshot, vec![5_005]);
     }
@@ -2568,7 +2594,7 @@ mod tests {
         let engine = Engine::new(HostConfig::default());
         let source = "Sub Main()\nDim x\nx = DispatchInvoke(CreateObject(\"OxVba.TestDispatch\"), \"SumPair\", 3, 14)\nEnd Sub";
         let snapshot = engine
-            .execute_source_with_snapshot(source)
+            .execute_source_with_legacy_snapshot(source)
             .expect("execution should succeed");
         assert_eq!(snapshot, vec![5_033]);
     }
@@ -2580,7 +2606,7 @@ mod tests {
 
         let source = "Sub Main()\nDim x\nDim e\nOn Error Resume Next\nx = DispatchInvoke(CreateObject(\"OxVba.TestDispatch\"), \"Count\", 0)\ne = Err.Number\nEnd Sub";
         let snapshot = engine
-            .execute_source_with_snapshot(source)
+            .execute_source_with_legacy_snapshot(source)
             .expect("On Error Resume Next should continue");
         assert_eq!(snapshot[0], 0);
         assert_eq!(snapshot[1], 53_051);
@@ -2593,7 +2619,7 @@ mod tests {
         engine.set_host_policy(HostPolicy::interactive_dev());
         engine.set_com_prog_id_override(4, "OxVba.DoesNotExist.Component");
         let err = engine
-            .execute_source_with_snapshot_phased(
+            .execute_source_with_legacy_snapshot_phased(
                 "Sub Main()\nDim x\nx = CreateObject(\"Scripting.Dictionary\")\nEnd Sub",
             )
             .expect_err("invalid override should fail native COM activation");
@@ -2615,7 +2641,7 @@ mod tests {
         let engine = Engine::new(HostConfig::default());
         let source = "Sub Main()\nDim a(2)\nDim x\na(1) = 7\nx = a(1)\nEnd Sub";
         let snapshot = engine
-            .execute_source_with_snapshot(source)
+            .execute_source_with_legacy_snapshot(source)
             .expect("execution should succeed");
         assert_eq!(snapshot.last().copied(), Some(7));
     }
@@ -2625,7 +2651,7 @@ mod tests {
         let engine = Engine::new(HostConfig::default());
         let source = "Sub Main()\nDim a(1)\na(2) = 5\nEnd Sub";
         let err = engine
-            .execute_source_with_snapshot(source)
+            .execute_source_with_legacy_snapshot(source)
             .expect_err("out-of-range access should fail");
         assert!(!err.trim().is_empty());
     }
@@ -2635,7 +2661,7 @@ mod tests {
         let engine = Engine::new(HostConfig::default());
         let source = "Sub Main()\nDim a(2)\nDim x\na(0) = 3\nx = a(0)\nEnd Sub";
         let snapshot = engine
-            .execute_source_with_snapshot(source)
+            .execute_source_with_legacy_snapshot(source)
             .expect("execution should succeed");
         assert_eq!(snapshot.last().copied(), Some(3));
     }
@@ -2645,7 +2671,7 @@ mod tests {
         let engine = Engine::new(HostConfig::default());
         let source = "Sub Main()\nDim x\nOn Error Resume Next\nError 5\nx = Err.Number\nEnd Sub";
         let snapshot = engine
-            .execute_source_with_snapshot(source)
+            .execute_source_with_legacy_snapshot(source)
             .expect("execution should succeed");
         assert_eq!(snapshot[0], 5);
     }
@@ -2655,7 +2681,7 @@ mod tests {
         let engine = Engine::new(HostConfig::default());
         let source = "Sub Main()\nError 9\nEnd Sub";
         let err = engine
-            .execute_source_with_snapshot(source)
+            .execute_source_with_legacy_snapshot(source)
             .expect_err("default error mode should fail");
         assert!(err.contains("runtime error"));
     }
@@ -2665,7 +2691,7 @@ mod tests {
         let engine = Engine::new(HostConfig::default());
         let source = "Sub Main()\nDim x\nOn Error Resume Next\nx = 1\nError 2\nx = x + 1\nEnd Sub";
         let snapshot = engine
-            .execute_source_with_snapshot(source)
+            .execute_source_with_legacy_snapshot(source)
             .expect("execution should succeed");
         assert_eq!(snapshot[0], 2);
     }
@@ -2675,7 +2701,7 @@ mod tests {
         let engine = Engine::new(HostConfig::default());
         let source = "Sub Main()\nOn Error Resume Next\nOn Error GoTo 0\nError 3\nEnd Sub";
         let err = engine
-            .execute_source_with_snapshot(source)
+            .execute_source_with_legacy_snapshot(source)
             .expect_err("goto 0 should restore fail behavior");
         assert!(err.contains("runtime error"));
     }
@@ -2685,7 +2711,7 @@ mod tests {
         let engine = Engine::new(HostConfig::default());
         let source = "Sub Main()\nOn Error Resume Next\nResume Next\nError 2\nEnd Sub";
         let snapshot = engine
-            .execute_source_with_snapshot(source)
+            .execute_source_with_legacy_snapshot(source)
             .expect("resume next statement should not fail");
         assert!(snapshot.is_empty());
     }
@@ -2696,7 +2722,7 @@ mod tests {
         let source =
             "Sub Main()\nDim x\nOn Error Resume Next\nError 2\nResume Next\nx = 1\nEnd Sub";
         let snapshot = engine
-            .execute_source_with_snapshot(source)
+            .execute_source_with_legacy_snapshot(source)
             .expect("execution should succeed");
         assert_eq!(snapshot[0], 1);
     }
@@ -2713,10 +2739,10 @@ mod tests {
         });
         let source = "Sub Main()\nDim x\nx = 1\nx = x + 4\nx = x - 2\nEnd Sub";
         let vm_out = vm_engine
-            .execute_source_with_snapshot(source)
+            .execute_source_with_legacy_snapshot(source)
             .expect("vm execution should succeed");
         let jit_out = jit_engine
-            .execute_source_with_snapshot(source)
+            .execute_source_with_legacy_snapshot(source)
             .expect("jit execution should succeed");
         assert_eq!(vm_out, jit_out);
     }
@@ -2733,10 +2759,10 @@ mod tests {
         });
         let source = "Sub Main()\nDim x\nDim i\nx = 0\nFor i = 1 To 3\nx = x + 1\nNext i\nEnd Sub";
         let vm_out = vm_engine
-            .execute_source_with_snapshot(source)
+            .execute_source_with_legacy_snapshot(source)
             .expect("vm execution should succeed");
         let jit_out = jit_engine
-            .execute_source_with_snapshot(source)
+            .execute_source_with_legacy_snapshot(source)
             .expect("jit execution should succeed");
         assert_eq!(vm_out, jit_out);
     }
@@ -2753,10 +2779,10 @@ mod tests {
         });
         let source = "Sub Main()\nDim x\nOn Error Resume Next\nError 5\nx = Err.Number\nEnd Sub";
         let vm_out = vm_engine
-            .execute_source_with_snapshot(source)
+            .execute_source_with_legacy_snapshot(source)
             .expect("vm execution should succeed");
         let jit_out = jit_engine
-            .execute_source_with_snapshot(source)
+            .execute_source_with_legacy_snapshot(source)
             .expect("jit execution should succeed");
         assert_eq!(vm_out, jit_out);
     }
@@ -2831,7 +2857,7 @@ mod tests {
         let engine = Engine::new(HostConfig::default());
         let source = "Sub Main()\nDim x\nx = 1\nx = x + 1\nEnd Sub";
         let runtime = engine
-            .execute_source_with_snapshot(source)
+            .execute_source_with_legacy_snapshot(source)
             .expect("execution should succeed");
         let spec = vec![2];
         assert_eq!(runtime, spec);
@@ -2842,7 +2868,7 @@ mod tests {
         let engine = Engine::new(HostConfig::default());
         let source = "Sub Main()\nDim x\nx = 1\nIf x = 1 Then\nx = 3\nElse\nx = 4\nEnd If\nEnd Sub";
         let runtime = engine
-            .execute_source_with_snapshot(source)
+            .execute_source_with_legacy_snapshot(source)
             .expect("execution should succeed");
         assert_eq!(runtime, vec![3]);
     }
@@ -2909,13 +2935,13 @@ mod tests {
             enable_jit: false,
             root_object_name: None,
         })
-        .execute_source_with_snapshot(source)
+        .execute_source_with_legacy_snapshot(source)
         .expect("vm execution should succeed");
         let jit_out = Engine::new(HostConfig {
             enable_jit: true,
             root_object_name: None,
         })
-        .execute_source_with_snapshot(source)
+        .execute_source_with_legacy_snapshot(source)
         .expect("jit execution should succeed");
         assert_eq!(vm_out, jit_out);
     }
@@ -2927,13 +2953,13 @@ mod tests {
             enable_jit: false,
             root_object_name: None,
         })
-        .execute_source_with_snapshot(source)
+        .execute_source_with_legacy_snapshot(source)
         .expect("vm execution should succeed");
         let jit_out = Engine::new(HostConfig {
             enable_jit: true,
             root_object_name: None,
         })
-        .execute_source_with_snapshot(source)
+        .execute_source_with_legacy_snapshot(source)
         .expect("jit execution should succeed");
         assert_eq!(vm_out, jit_out);
     }
@@ -2981,13 +3007,13 @@ mod tests {
             enable_jit: false,
             root_object_name: None,
         })
-        .execute_source_with_snapshot(source)
+        .execute_source_with_legacy_snapshot(source)
         .expect("vm execution should succeed");
         let jit_out = Engine::new(HostConfig {
             enable_jit: true,
             root_object_name: None,
         })
-        .execute_source_with_snapshot(source)
+        .execute_source_with_legacy_snapshot(source)
         .expect("jit execution should succeed");
         assert_eq!(vm_out, jit_out);
     }
@@ -3007,13 +3033,13 @@ mod tests {
             enable_jit: false,
             root_object_name: None,
         })
-        .execute_source_with_snapshot(source)
+        .execute_source_with_legacy_snapshot(source)
         .expect("vm execution should succeed");
         let jit_out = Engine::new(HostConfig {
             enable_jit: true,
             root_object_name: None,
         })
-        .execute_source_with_snapshot(source)
+        .execute_source_with_legacy_snapshot(source)
         .expect("jit execution should succeed");
         assert_eq!(vm_out, jit_out);
     }
@@ -3438,7 +3464,7 @@ mod tests {
         let engine = Engine::new(HostConfig::default());
         let source = "Sub Main()\nDim x\nx = 1\nx = x + _\n2\nEnd Sub";
         let snapshot = engine
-            .execute_source_with_snapshot(source)
+            .execute_source_with_legacy_snapshot(source)
             .expect("execution should succeed");
         assert_eq!(snapshot[0], 3);
     }
@@ -3458,7 +3484,7 @@ mod tests {
         let engine = Engine::new(HostConfig::default());
         let source = "Sub Main()\nDim x\nWith x\n.Value = 1\n.Value = .Value + 2\nx = .Value\nEnd With\nEnd Sub";
         let snapshot = engine
-            .execute_source_with_snapshot(source)
+            .execute_source_with_legacy_snapshot(source)
             .expect("execution should succeed");
         assert_eq!(snapshot[0], 3);
     }
@@ -3468,7 +3494,7 @@ mod tests {
         let engine = Engine::new(HostConfig::default());
         let source = "Sub Main()\nDim x\nWith x\nWith .inner\n.Value = 9\nEnd With\nx = .inner_Value\nEnd With\nEnd Sub";
         let snapshot = engine
-            .execute_source_with_snapshot(source)
+            .execute_source_with_legacy_snapshot(source)
             .expect("execution should succeed");
         assert_eq!(snapshot[0], 9);
     }
@@ -3483,7 +3509,7 @@ mod tests {
         let engine = Engine::new(HostConfig::default());
         let source = "#Const ENABLE = True\nSub Main()\nDim x\n#If ENABLE Then\nx = 7\n#Else\nx = 1\n#End If\nEnd Sub";
         let snapshot = engine
-            .execute_source_with_snapshot(source)
+            .execute_source_with_legacy_snapshot(source)
             .expect("execution should succeed");
         assert_eq!(snapshot[0], 7);
     }
@@ -3493,7 +3519,7 @@ mod tests {
         let engine = Engine::new(HostConfig::default());
         let source = "#Const A = False\n#Const B = True\nSub Main()\nDim x\n#If A Then\nx = 1\n#ElseIf B Then\nx = 9\n#Else\nx = 3\n#End If\nEnd Sub";
         let snapshot = engine
-            .execute_source_with_snapshot(source)
+            .execute_source_with_legacy_snapshot(source)
             .expect("execution should succeed");
         assert_eq!(snapshot[0], 9);
     }
@@ -3563,13 +3589,13 @@ mod tests {
             enable_jit: false,
             root_object_name: None,
         })
-        .execute_source_with_snapshot(source)
+        .execute_source_with_legacy_snapshot(source)
         .expect("vm execution should succeed");
         let jit_out = Engine::new(HostConfig {
             enable_jit: true,
             root_object_name: None,
         })
-        .execute_source_with_snapshot(source)
+        .execute_source_with_legacy_snapshot(source)
         .expect("jit execution should succeed");
         assert_eq!(vm_out, jit_out);
     }
@@ -3895,7 +3921,7 @@ mod tests {
             enable_jit: false,
             root_object_name: None,
         })
-        .execute_source_with_snapshot(source)
+        .execute_source_with_legacy_snapshot(source)
         .expect("execution should succeed");
         assert_eq!(out, vec![7, 7]);
     }
@@ -3917,7 +3943,7 @@ mod tests {
             enable_jit: false,
             root_object_name: None,
         })
-        .execute_source_with_snapshot(source)
+        .execute_source_with_legacy_snapshot(source)
         .expect("execution should succeed");
         assert_eq!(out, vec![7, 8, 9, 10]);
     }
@@ -3929,7 +3955,7 @@ mod tests {
             enable_jit: false,
             root_object_name: None,
         })
-        .execute_source_with_snapshot(source)
+        .execute_source_with_legacy_snapshot(source)
         .expect("execution should succeed");
         assert_eq!(out, vec![7]);
     }
@@ -3941,7 +3967,7 @@ mod tests {
             enable_jit: false,
             root_object_name: None,
         })
-        .execute_source_with_snapshot(source)
+        .execute_source_with_legacy_snapshot(source)
         .expect("execution should succeed");
         assert_eq!(out, vec![1, 1, 1, 1]);
     }
@@ -3953,7 +3979,7 @@ mod tests {
             enable_jit: false,
             root_object_name: None,
         })
-        .execute_source_with_snapshot(source)
+        .execute_source_with_legacy_snapshot(source)
         .expect("execution should succeed");
         assert_eq!(out, vec![1, 1, 1, 0, 0]);
     }
@@ -3975,7 +4001,7 @@ mod tests {
             enable_jit: false,
             root_object_name: None,
         })
-        .execute_source_with_snapshot(source)
+        .execute_source_with_legacy_snapshot(source)
         .expect("execution should succeed");
         assert_eq!(out, vec![1, 42, 59, -50, -28, -99, -38]);
     }
@@ -3997,7 +4023,7 @@ mod tests {
             enable_jit: false,
             root_object_name: None,
         })
-        .execute_source_with_snapshot(source)
+        .execute_source_with_legacy_snapshot(source)
         .expect("execution should succeed");
         assert_eq!(out, vec![1, 42, 59, -50, -28, -99, -38]);
     }
@@ -4019,7 +4045,7 @@ mod tests {
             enable_jit: false,
             root_object_name: None,
         })
-        .execute_source_with_snapshot(source)
+        .execute_source_with_legacy_snapshot(source)
         .expect("execution should succeed");
         assert_eq!(
             out,
@@ -4044,7 +4070,7 @@ mod tests {
             enable_jit: false,
             root_object_name: None,
         })
-        .execute_source_with_snapshot_phased(source)
+        .execute_source_with_legacy_snapshot_phased(source)
         .expect_err("compile-time diagnostic should win");
         assert_eq!(err.phase(), DiagnosticPhase::CompileTime);
         assert!(err.message().contains("goto target label not found"));
@@ -4057,7 +4083,7 @@ mod tests {
             enable_jit: false,
             root_object_name: None,
         })
-        .execute_source_with_snapshot_phased(source)
+        .execute_source_with_legacy_snapshot_phased(source)
         .expect_err("runtime diagnostic should be raised");
         assert_eq!(err.phase(), DiagnosticPhase::Runtime);
         assert!(err.message().contains("runtime error"));
@@ -4080,7 +4106,7 @@ mod tests {
             enable_jit: false,
             root_object_name: None,
         })
-        .execute_source_with_snapshot(source)
+        .execute_source_with_legacy_snapshot(source)
         .expect("execution should succeed");
         assert_eq!(
             out,
@@ -4095,7 +4121,7 @@ mod tests {
             enable_jit: false,
             root_object_name: None,
         })
-        .execute_source_with_snapshot(source)
+        .execute_source_with_legacy_snapshot(source)
         .expect("execution should succeed");
         assert_eq!(out, vec![0, 1, 10, 3, 0, 0, 0, 1]);
     }
@@ -4117,13 +4143,13 @@ mod tests {
             enable_jit: false,
             root_object_name: None,
         })
-        .execute_source_with_snapshot(source)
+        .execute_source_with_legacy_snapshot(source)
         .expect("vm execution should succeed");
         let jit_out = Engine::new(HostConfig {
             enable_jit: true,
             root_object_name: None,
         })
-        .execute_source_with_snapshot(source)
+        .execute_source_with_legacy_snapshot(source)
         .expect("jit execution should succeed");
         assert_eq!(vm_out, jit_out);
         assert_eq!(
@@ -4139,13 +4165,13 @@ mod tests {
             enable_jit: false,
             root_object_name: None,
         })
-        .execute_source_with_snapshot(source)
+        .execute_source_with_legacy_snapshot(source)
         .expect("vm execution should succeed");
         let jit_out = Engine::new(HostConfig {
             enable_jit: true,
             root_object_name: None,
         })
-        .execute_source_with_snapshot(source)
+        .execute_source_with_legacy_snapshot(source)
         .expect("jit execution should succeed");
         assert_eq!(vm_out, jit_out);
         assert_eq!(jit_out, vec![0, 1, 10, 3, 0, 0, 0, 1]);
@@ -4168,7 +4194,7 @@ mod tests {
             enable_jit: false,
             root_object_name: None,
         })
-        .execute_source_with_snapshot(source)
+        .execute_source_with_legacy_snapshot(source)
         .expect("execution should succeed");
         assert_eq!(out, vec![0, 0, 0, 0, 0, 0]);
     }
@@ -4180,7 +4206,7 @@ mod tests {
             enable_jit: false,
             root_object_name: None,
         })
-        .execute_source_with_snapshot(string_source)
+        .execute_source_with_legacy_snapshot(string_source)
         .expect("string fixture should execute");
         assert_eq!(string_out, vec![0, 1, 0, 0]);
 
@@ -4189,7 +4215,7 @@ mod tests {
             enable_jit: false,
             root_object_name: None,
         })
-        .execute_source_with_snapshot(udt_source)
+        .execute_source_with_legacy_snapshot(udt_source)
         .expect("udt fixture should execute");
         assert_eq!(udt_out, vec![0, 7, 6, 0, 7, 6]);
 
@@ -4199,7 +4225,7 @@ mod tests {
             enable_jit: false,
             root_object_name: None,
         })
-        .execute_source_with_snapshot(coercion_source)
+        .execute_source_with_legacy_snapshot(coercion_source)
         .expect("coercion fixture should execute");
         assert_eq!(coercion_out, vec![-899999996, -899999996, 1]);
     }
@@ -4224,7 +4250,7 @@ mod tests {
             enable_jit: false,
             root_object_name: None,
         })
-        .execute_source_with_snapshot(source)
+        .execute_source_with_legacy_snapshot(source)
         .expect("execution should succeed");
         assert_eq!(out, vec![59, -50, -28]);
 
@@ -4234,7 +4260,7 @@ mod tests {
             enable_jit: false,
             root_object_name: None,
         })
-        .execute_source_with_snapshot(source)
+        .execute_source_with_legacy_snapshot(source)
         .expect("execution should succeed");
         assert_eq!(out, vec![-99, -38]);
     }
@@ -4246,7 +4272,7 @@ mod tests {
             enable_jit: false,
             root_object_name: None,
         })
-        .execute_source_with_snapshot(source)
+        .execute_source_with_legacy_snapshot(source)
         .expect("execution should succeed");
         assert_eq!(
             out,
@@ -4518,7 +4544,7 @@ mod tests {
             enable_jit: false,
             root_object_name: None,
         })
-        .execute_source_with_snapshot(&source)
+        .execute_source_with_legacy_snapshot(&source)
         .expect("execution should succeed");
         assert_eq!(out, vec![1, 1, 1, 1, 0, 10]);
     }
@@ -4538,7 +4564,7 @@ mod tests {
             enable_jit: false,
             root_object_name: None,
         })
-        .execute_source_with_snapshot(&source)
+        .execute_source_with_legacy_snapshot(&source)
         .expect("execution should succeed");
         assert_eq!(out, vec![5, 0, 0, 6]);
     }
@@ -4643,7 +4669,7 @@ mod tests {
             enable_jit: false,
             root_object_name: None,
         })
-        .execute_source_with_snapshot(&source)
+        .execute_source_with_legacy_snapshot(&source)
         .expect("execution should succeed");
         assert_eq!(out, vec![11, 0, 1, 10, 0]);
 
@@ -4655,7 +4681,7 @@ mod tests {
             enable_jit: false,
             root_object_name: None,
         })
-        .execute_source_with_snapshot(&source)
+        .execute_source_with_legacy_snapshot(&source)
         .expect("execution should succeed");
         assert_eq!(out, vec![1, 1, 0, 0, 0]);
     }
@@ -4770,7 +4796,7 @@ mod tests {
             enable_jit: false,
             root_object_name: None,
         })
-        .execute_source_with_snapshot(source)
+        .execute_source_with_legacy_snapshot(source)
         .expect("execution should succeed");
         assert_eq!(out, vec![1, 3, 4, 5]);
     }
@@ -4782,7 +4808,7 @@ mod tests {
             enable_jit: false,
             root_object_name: None,
         })
-        .execute_source_with_snapshot(source)
+        .execute_source_with_legacy_snapshot(source)
         .expect("execution should succeed");
         assert_eq!(out, vec![9, 9, 0, 0, 0, 0]);
     }
@@ -4804,7 +4830,7 @@ mod tests {
             enable_jit: false,
             root_object_name: None,
         })
-        .execute_source_with_snapshot(source)
+        .execute_source_with_legacy_snapshot(source)
         .expect("execution should succeed");
         assert_eq!(out, vec![0]);
     }
@@ -4816,7 +4842,7 @@ mod tests {
             enable_jit: false,
             root_object_name: None,
         })
-        .execute_source_with_snapshot(source)
+        .execute_source_with_legacy_snapshot(source)
         .expect("execution should succeed");
         assert_eq!(out, vec![0]);
     }
@@ -4833,7 +4859,7 @@ mod tests {
             enable_jit: false,
             root_object_name: None,
         })
-        .execute_source_with_snapshot(source)
+        .execute_source_with_legacy_snapshot(source)
         .expect("execution should succeed");
         let expected_tag = oxvba_runtime::safe_array::ARRAY_TAG_BASE + 3;
         assert_eq!(out, vec![expected_tag, 3]);
@@ -4856,7 +4882,7 @@ mod tests {
             enable_jit: false,
             root_object_name: None,
         })
-        .execute_source_with_snapshot(source)
+        .execute_source_with_legacy_snapshot(source)
         .expect_err("vbNullString assignment to Long should fail");
         assert!(err.contains("type mismatch"));
     }
@@ -4878,7 +4904,7 @@ mod tests {
             enable_jit: false,
             root_object_name: None,
         })
-        .execute_source_with_snapshot(source)
+        .execute_source_with_legacy_snapshot(source)
         .expect("execution should succeed");
         assert_eq!(out, vec![0, 7, 9, 0, 7, 9, 9]);
     }
@@ -4920,13 +4946,13 @@ mod tests {
             enable_jit: false,
             root_object_name: None,
         })
-        .execute_source_with_snapshot("Sub Main()\nDim x\nx = 4\nx = x + 1\nEnd Sub")
+        .execute_source_with_legacy_snapshot("Sub Main()\nDim x\nx = 4\nx = x + 1\nEnd Sub")
         .expect("vm execution should succeed");
         let jit_out = Engine::new(HostConfig {
             enable_jit: true,
             root_object_name: None,
         })
-        .execute_source_with_snapshot("Sub Main()\nDim x\nx = 4\nx = x + 1\nEnd Sub")
+        .execute_source_with_legacy_snapshot("Sub Main()\nDim x\nx = 4\nx = x + 1\nEnd Sub")
         .expect("jit execution should succeed");
         assert_eq!(vm_out, jit_out);
     }
@@ -4953,7 +4979,9 @@ mod tests {
         engine.set_unsupported_feature_mode(UnsupportedFeatureMode::CompileTime);
 
         let err = engine
-            .execute_source_with_snapshot_phased("Sub Main()\nDim x\nx = CreateObject(4)\nEnd Sub")
+            .execute_source_with_legacy_snapshot_phased(
+                "Sub Main()\nDim x\nx = CreateObject(4)\nEnd Sub",
+            )
             .expect_err("compile-time mode should reject unsupported COM capability");
         assert_eq!(err.phase(), DiagnosticPhase::CompileTime);
         assert!(err.message().contains("CreateObject"));
@@ -4966,7 +4994,9 @@ mod tests {
         engine.set_unsupported_feature_mode(UnsupportedFeatureMode::Runtime);
 
         let err = engine
-            .execute_source_with_snapshot_phased("Sub Main()\nDim x\nx = CreateObject(4)\nEnd Sub")
+            .execute_source_with_legacy_snapshot_phased(
+                "Sub Main()\nDim x\nx = CreateObject(4)\nEnd Sub",
+            )
             .expect_err("runtime mode should defer unsupported COM to execution");
         assert_eq!(err.phase(), DiagnosticPhase::Runtime);
         assert!(err.message().contains("HAL-E-CAP-UNAVAILABLE"));
@@ -4980,7 +5010,7 @@ mod tests {
         engine.set_host_policy(policy);
 
         let err = engine
-            .execute_source_with_snapshot_phased("Sub Main()\nDim x\nx = Shell(1)\nEnd Sub")
+            .execute_source_with_legacy_snapshot_phased("Sub Main()\nDim x\nx = Shell(1)\nEnd Sub")
             .expect_err("compile-time mode should fail when shell policy is denied");
         assert_eq!(err.phase(), DiagnosticPhase::CompileTime);
         assert!(err.message().contains("allow_process_spawn=false"));
@@ -4994,7 +5024,7 @@ mod tests {
         engine.set_host_policy(policy);
 
         let err = engine
-            .execute_source_with_snapshot_phased("Sub Main()\nDim x\nx = MsgBox(1)\nEnd Sub")
+            .execute_source_with_legacy_snapshot_phased("Sub Main()\nDim x\nx = MsgBox(1)\nEnd Sub")
             .expect_err("compile-time mode should fail when msgbox policy is denied");
         assert_eq!(err.phase(), DiagnosticPhase::CompileTime);
         assert!(err.message().contains("allow_interaction=false"));
@@ -5009,7 +5039,7 @@ mod tests {
 
         let source = "Declare PtrSafe Function HostPing Lib \"host\" Alias \"ping\" (ByVal x As Long) As Long\nSub Main()\nDim y\ny = HostPing(3)\nEnd Sub";
         let err = engine
-            .execute_source_with_snapshot_phased(source)
+            .execute_source_with_legacy_snapshot_phased(source)
             .expect_err("compile-time mode should fail when declare invoke policy is denied");
         assert_eq!(err.phase(), DiagnosticPhase::CompileTime);
         assert!(err.message().contains("allow_dynamic_link=false"));
@@ -5022,7 +5052,7 @@ mod tests {
 
         let source = "Sub Main()\nDim x\nDim y\nOn Error Resume Next\nx = CreateObject(4)\ny = Err.Number\nEnd Sub";
         let out = engine
-            .execute_source_with_snapshot(source)
+            .execute_source_with_legacy_snapshot(source)
             .expect("runtime mode with On Error Resume Next should continue");
         assert_eq!(out[0], 0);
         assert_eq!(out[1], 53_051);
@@ -5036,7 +5066,7 @@ mod tests {
         engine.set_host_policy(policy);
 
         let err = engine
-            .execute_source_with_snapshot_phased("Sub Main()\nDim x\nx = Shell(1)\nEnd Sub")
+            .execute_source_with_legacy_snapshot_phased("Sub Main()\nDim x\nx = Shell(1)\nEnd Sub")
             .expect_err("runtime policy denial should surface at execution");
         assert_eq!(err.phase(), DiagnosticPhase::Runtime);
         assert!(err.message().contains("HAL-E-POLICY-DENIED"));
@@ -5053,7 +5083,7 @@ mod tests {
         let source =
             "Sub Main()\nDim x\nDim y\nOn Error Resume Next\nx = Shell(1)\ny = Err.Number\nEnd Sub";
         let out = engine
-            .execute_source_with_snapshot(source)
+            .execute_source_with_legacy_snapshot(source)
             .expect("On Error Resume Next should capture host policy failure");
         assert_eq!(out[0], 0);
         assert_eq!(out[1], 53_042);
@@ -5067,7 +5097,7 @@ mod tests {
         engine.set_host_policy(policy);
 
         let err = engine
-            .execute_source_with_snapshot_phased("Sub Main()\nDim x\nx = MsgBox(1)\nEnd Sub")
+            .execute_source_with_legacy_snapshot_phased("Sub Main()\nDim x\nx = MsgBox(1)\nEnd Sub")
             .expect_err("runtime policy denial should surface at execution");
         assert_eq!(err.phase(), DiagnosticPhase::Runtime);
         assert!(err.message().contains("HAL-E-POLICY-DENIED"));
@@ -5083,7 +5113,7 @@ mod tests {
 
         let source = "Declare PtrSafe Function HostPing Lib \"host\" Alias \"ping\" (ByVal x As Long) As Long\nSub Main()\nDim y\ny = HostPing(3)\nEnd Sub";
         let err = engine
-            .execute_source_with_snapshot_phased(source)
+            .execute_source_with_legacy_snapshot_phased(source)
             .expect_err("runtime policy denial should surface for declare invoke");
         assert_eq!(err.phase(), DiagnosticPhase::Runtime);
         assert!(err.message().contains("HAL-E-POLICY-DENIED"));
@@ -5100,7 +5130,7 @@ mod tests {
 
         let source = "Declare PtrSafe Function HostPing Lib \"host\" Alias \"ping\" (ByVal x As Long) As Long\nSub Main()\nDim y\ny = HostPing(3)\nEnd Sub";
         let out = engine
-            .execute_source_with_snapshot(source)
+            .execute_source_with_legacy_snapshot(source)
             .expect("host-backed declare invoke should succeed");
         assert_eq!(out, vec![4]);
     }
@@ -5115,7 +5145,7 @@ mod tests {
 
         let source = "Declare PtrSafe Function HostPing Lib \"HOST\" Alias \"PiNg\" (ByVal x As Long) As Long\nSub Main()\nDim y\ny = HostPing(3)\nEnd Sub";
         let out = engine
-            .execute_source_with_snapshot(source)
+            .execute_source_with_legacy_snapshot(source)
             .expect("host-backed declare invoke should resolve canonicalized lib/alias");
         assert_eq!(out, vec![4]);
     }
@@ -5130,7 +5160,7 @@ mod tests {
 
         let source = "Declare PtrSafe Function HostMissing Lib \"host\" Alias \"missing\" (ByVal x As Long) As Long\nSub Main()\nDim y\ny = HostMissing(3)\nEnd Sub";
         let err = engine
-            .execute_source_with_snapshot_phased(source)
+            .execute_source_with_legacy_snapshot_phased(source)
             .expect_err("unknown symbol should raise deterministic adapter fault");
         assert_eq!(err.phase(), DiagnosticPhase::Runtime);
         assert!(err.message().contains("HAL-E-ADAPTER-FAULT"));
@@ -5147,7 +5177,7 @@ mod tests {
 
         let source = "Declare PtrSafe Function HostMissing Lib \"host\" Alias \"missing\" (ByVal x As Long) As Long\nSub Main()\nDim y\nDim e\nOn Error Resume Next\ny = HostMissing(3)\ne = Err.Number\nEnd Sub";
         let out = engine
-            .execute_source_with_snapshot(source)
+            .execute_source_with_legacy_snapshot(source)
             .expect("On Error Resume Next should capture adapter fault");
         assert_eq!(out[0], 0);
         assert_eq!(out[1], 53_073);
@@ -5167,7 +5197,7 @@ mod tests {
 
         let source = "Sub Main()\nDim x\nOn Error Resume Next\nx = CreateObject(4)\nEnd Sub";
         let err = engine
-            .execute_source_with_snapshot_phased(source)
+            .execute_source_with_legacy_snapshot_phased(source)
             .expect_err("compile-time gate should reject unsupported host intrinsic");
         assert_eq!(err.phase(), DiagnosticPhase::CompileTime);
         assert!(err.message().contains("CreateObject"));
@@ -5422,7 +5452,7 @@ mod tests {
         engine.set_host_policy(HostPolicy::interactive_dev());
 
         let out = engine
-            .execute_source_with_snapshot("Sub Main()\nDim x\nx = CreateObject(4)\nEnd Sub")
+            .execute_source_with_legacy_snapshot("Sub Main()\nDim x\nx = CreateObject(4)\nEnd Sub")
             .expect(
                 "CreateObject legacy snapshot should remain available through value projection",
             );

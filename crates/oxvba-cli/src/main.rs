@@ -46,13 +46,12 @@ fn main() {
     } else {
         engine
             .execute_source_with_snapshot(&source)
-            .map(|slots| ExecutionResult {
-                values: slots
+            .map(|values| ExecutionResult {
+                slots: values
                     .iter()
-                    .copied()
-                    .map(RuntimeValue::from_legacy_i32)
+                    .map(|value| value.to_legacy_i32().unwrap_or(EMPTY_TAG))
                     .collect(),
-                slots,
+                values,
             })
     };
 

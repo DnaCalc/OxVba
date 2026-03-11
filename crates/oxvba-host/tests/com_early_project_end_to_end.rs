@@ -30,7 +30,7 @@ fn run_project_windows_hosted(manifest: &ProjectManifest, enable_jit: bool) -> V
     });
     engine.set_host_policy(HostPolicy::interactive_dev());
     engine
-        .execute_project_with_snapshot_phased(manifest)
+        .execute_project_with_legacy_snapshot_phased(manifest)
         .expect("project should execute")
 }
 
@@ -107,7 +107,7 @@ End Sub
         root_object_name: None,
     });
     let err = engine
-        .execute_project_with_snapshot_phased(&manifest)
+        .execute_project_with_legacy_snapshot_phased(&manifest)
         .expect_err("unsupported member should fail at compile-time");
     assert_eq!(err.phase(), DiagnosticPhase::CompileTime);
     assert!(

@@ -433,7 +433,7 @@ fn run_case(case: &IntegrationCase, enable_jit: bool) -> Result<(), String> {
         engine.set_unsupported_feature_mode(mode);
     }
 
-    let result = engine.execute_project_with_snapshot_phased(&manifest);
+    let result = engine.execute_project_with_legacy_snapshot_phased(&manifest);
 
     match (&case.expected_status, result) {
         (ExpectedStatus::Ok, Ok(slots)) => {

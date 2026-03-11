@@ -55,7 +55,7 @@ End Sub
     );
 
     let snapshot = engine
-        .execute_project_with_snapshot_phased(&manifest)
+        .execute_project_with_legacy_snapshot_phased(&manifest)
         .expect("edge array project should execute");
     contains_value(&snapshot, 26);
 }
@@ -86,7 +86,7 @@ End Sub
     );
 
     let snapshot = engine
-        .execute_project_with_snapshot_phased(&manifest)
+        .execute_project_with_legacy_snapshot_phased(&manifest)
         .expect("policy denial path should execute");
     contains_value(&snapshot, 91);
 }
@@ -111,10 +111,10 @@ fn e2e_scaling_pressure_large_linear_statement_block_vm_jit_parity() {
     });
 
     let vm_snapshot = vm
-        .execute_project_with_snapshot_phased(&manifest)
+        .execute_project_with_legacy_snapshot_phased(&manifest)
         .expect("vm execution should succeed");
     let jit_snapshot = jit
-        .execute_project_with_snapshot_phased(&manifest)
+        .execute_project_with_legacy_snapshot_phased(&manifest)
         .expect("jit execution should succeed");
 
     assert_eq!(
@@ -164,7 +164,7 @@ fn e2e_scaling_pressure_cross_project_many_modules() {
     };
 
     let snapshot = Engine::new(HostConfig::default())
-        .execute_project_with_snapshot_phased(&manifest)
+        .execute_project_with_legacy_snapshot_phased(&manifest)
         .expect("cross-project scaling case should execute");
     contains_value(&snapshot, expected_marker);
 }
@@ -184,7 +184,7 @@ fn e2e_scaling_pressure_many_branches_with_select_case() {
 
     let manifest = source_project("ScaleSelectCase", vec![proc_module("MainModule", &source)]);
     let snapshot = Engine::new(HostConfig::default())
-        .execute_project_with_snapshot_phased(&manifest)
+        .execute_project_with_legacy_snapshot_phased(&manifest)
         .expect("branch-heavy scaling case should execute");
     contains_value(&snapshot, 1746);
 }

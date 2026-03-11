@@ -1,5 +1,23 @@
 # Implementation Log
 
+## 2026-03-11 - Host snapshot/public observation APIs now default to runtime values
+
+- Tightened the host/public runtime observation surface in [engine.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-host\src\engine.rs):
+  - `Engine::execute_source_with_snapshot*` now returns semantic `RuntimeValue` snapshots,
+  - explicit integer-slot compatibility now lives under `execute_source_with_legacy_snapshot*`,
+  - `Engine::execute_project_with_snapshot_phased(...)` now returns semantic `RuntimeValue` snapshots,
+  - explicit integer-slot compatibility now lives under `execute_project_with_legacy_snapshot_phased(...)`,
+  - `ProjectRuntimeSession::snapshot()` is now the semantic primary and `snapshot_legacy_slots()` is the explicit compatibility view.
+- Updated host/CLI/tests to consume the explicit `legacy` names where integer-slot observation is still the intended compatibility contract.
+- Changed the CLI default execution path in [main.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-cli\src\main.rs) to execute through the semantic snapshot lane even when no value dump is requested; `SLOTS:` output is now derived from `RuntimeValue` only at the output edge.
+- Net effect:
+  - semantic runtime values are now the primary host/public snapshot vocabulary,
+  - integer-slot observation remains available, but it is explicitly labeled legacy in the host surface,
+  - the remaining runtime-model wall is further narrowed toward the VM/library `ValueToken = i32` substrate and compatibility APIs.
+- Verification:
+  - `cargo test -p oxvba-host -p oxvba-cli --quiet`
+  - `./scripts/meta-check.ps1 -Fast -NoArtifacts`
+
 ## 2026-03-11 - COM HAL invoke seam now projects from runtime values
 
 - Tightened the COM HAL seam in [traits.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-hal\src\traits.rs) so `dispatch_invoke_runtime_value_v2(...)` is documented as the canonical semantic path and `dispatch_invoke_v2(...)` is explicitly treated as the remaining legacy compatibility projection.

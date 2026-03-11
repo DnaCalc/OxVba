@@ -76,12 +76,17 @@ Completed slices:
 26. Serialized bytecode dynamic-link descriptor and instruction symbol fields now also use `DynLinkSymbol`, so the VM bytecode path no longer reintroduces raw symbol integers at execution time.
 27. The standard Windows COM adapter now treats `dispatch_invoke_runtime_value_v2(...)` as the canonical implementation seam and projects the legacy `dispatch_invoke_v2(...)` result only at the compatibility edge.
 28. The canonical runtime-value COM invoke path now explicitly preserves the working zero-argument native `IDispatch` method/property-get cases, so moving the semantic seam did not regress existing native COM behavior.
+29. Host public execution/session observation APIs are now value-first by name:
+   - `Engine::execute_source_with_snapshot*` now returns semantic `RuntimeValue` snapshots,
+   - explicit integer-slot compatibility is labeled `execute_source_with_legacy_snapshot*`,
+   - `ProjectRuntimeSession::snapshot()` is now the semantic primary and `snapshot_legacy_slots()` is the explicit compatibility view.
+30. CLI execution now uses the semantic snapshot lane by default and derives `SLOTS:` output from that value path only when requested.
 
 Remaining blocker seam:
 1. HAL `ValueToken = i32` still anchors many remaining seams,
 2. the remaining holdouts are now concentrated in:
    - `ComHal::{create_object_value,dispatch_invoke_v2}`,
-   - engine/public callers and legacy compatibility surfaces that still observe COM object identity through raw integer tokens,
+   - remaining VM/library/public compatibility surfaces that still expose integer-slot observation as a primary or strongly-coupled contract,
 3. many public observation APIs still expose the legacy integer lane as the primary compatibility surface,
 4. JIT internals and parity harnesses still observe only the integer slot lane for Cranelift-supported subsets,
 5. many tests still assume integer snapshots as the primary public contract.

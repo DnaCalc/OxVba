@@ -118,10 +118,15 @@ Run context: active parity/compliance execution plus in-progress feature worklis
   - COM event helper host intrinsics and engine subscription paths now likewise use direct semantic `RuntimeValue` contracts instead of routing through removed `*_value()` wrappers,
   - the standard Windows COM adapter now treats `dispatch_invoke_runtime_value_v2(...)` as the canonical implementation seam and projects `dispatch_invoke_v2(...)` from that semantic path only at the compatibility edge,
   - the runtime-value COM invoke path now explicitly preserves the working zero-argument native `IDispatch` method/property-get behavior instead of regressing `DISP_E_BADPARAMCOUNT` on the canonical path,
+  - host public execution/session observation APIs are now value-first by name:
+    - `Engine::execute_source_with_snapshot*` now returns semantic `RuntimeValue` snapshots,
+    - explicit integer-slot compatibility is now labeled `execute_source_with_legacy_snapshot*`,
+    - `ProjectRuntimeSession::snapshot()` is now the semantic primary and `snapshot_legacy_slots()` is the explicit compatibility view,
+  - CLI execution now also uses the semantic snapshot lane by default and derives `SLOTS:` output from that value path only when needed,
   - the remaining runtime/host boundary holdouts are now concentrated in:
     - `ValueToken = i32` itself,
     - `ComHal::{create_object_value,dispatch_invoke_v2}`,
-    - engine/public callers and legacy snapshot/compatibility paths that still observe COM object identity through raw integer tokens,
+    - remaining VM/library/public compatibility paths that still expose integer-slot observation as a primary or strongly-coupled contract,
     - many bytecode execution callers and tests still assume the legacy integer observation surface,
   - the new `ComValue` carrier and generic dynamic-object protocol can live at the COM boundary, but they cannot yet become the single runtime object/value model while the wider execution substrate remains token-only.
 - Exact unblock steps:

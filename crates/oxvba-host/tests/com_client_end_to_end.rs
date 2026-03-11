@@ -10,7 +10,7 @@ mod windows_com_e2e {
         });
         engine.set_host_policy(HostPolicy::interactive_dev());
         engine
-            .execute_source_with_snapshot_phased(source)
+            .execute_source_with_legacy_snapshot_phased(source)
             .expect("windows host-backed COM lane should execute")
     }
 

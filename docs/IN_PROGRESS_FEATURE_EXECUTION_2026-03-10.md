@@ -145,6 +145,13 @@ Status vocabulary:
     - serialized bytecode descriptor/instruction symbol fields now also use `DynLinkSymbol`,
     - the standard Windows COM adapter now treats `dispatch_invoke_runtime_value_v2(...)` as the canonical implementation seam and projects the token-return form only at the compatibility edge,
     - the canonical runtime-value COM invoke path now explicitly preserves the working zero-argument native `IDispatch` method/property-get cases,
+    - host public execution/session observation APIs are now value-first by name:
+      - `Engine::execute_source_with_snapshot*` now returns semantic `RuntimeValue` snapshots,
+      - explicit integer-slot compatibility is labeled `execute_source_with_legacy_snapshot*`,
+      - `Engine::execute_project_with_snapshot_phased(...)` now returns semantic `RuntimeValue` snapshots,
+      - explicit integer-slot compatibility is labeled `execute_project_with_legacy_snapshot_phased(...)`,
+      - `ProjectRuntimeSession::snapshot()` is now the semantic primary and `snapshot_legacy_slots()` is the explicit compatibility view,
+    - CLI execution now uses the semantic snapshot lane by default and derives integer slots from `RuntimeValue` only at the output edge,
     - the remaining active seam is the actual HAL `ValueToken` contract plus remaining outward runtime APIs and the still-legacy-heavy caller/test estate around integer snapshots.
 
 ### `IP-05` Windows early-bound COM and type-library parity
