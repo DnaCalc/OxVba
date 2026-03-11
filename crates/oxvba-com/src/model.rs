@@ -2,6 +2,7 @@ pub const DISPATCH_INVOKE_MISSING_ARG_TOKEN: i32 = i32::MIN + 2_048;
 
 use oxvba_runtime::{
     RuntimeValue,
+    bstr::BStr,
     safe_array::{
         SafeArray, array_tag_from_safe_array, marshal_dispatch_argument, safe_array_from_tag,
     },
@@ -75,6 +76,7 @@ pub enum ComValue {
     ErrorCode(i32),
     Bool(bool),
     I32(i32),
+    String(BStr),
     ArrayIntent(SafeArray),
 }
 
@@ -86,8 +88,9 @@ impl ComValue {
             RuntimeValue::ErrorCode(code) => Self::ErrorCode(*code),
             RuntimeValue::Bool(value) => Self::Bool(*value),
             RuntimeValue::I32(value) => Self::I32(*value),
+            RuntimeValue::String(value) => Self::String(value.clone()),
             RuntimeValue::ArrayIntent(array) => Self::ArrayIntent(array.clone()),
-            RuntimeValue::String(_) | RuntimeValue::ObjectHandle(_) => {
+            RuntimeValue::ObjectHandle(_) => {
                 Self::from_runtime_token(value.as_i32_lossy().unwrap_or(EMPTY_TAG))
             }
         }
@@ -116,6 +119,7 @@ impl ComValue {
             Self::ErrorCode(code) => RuntimeValue::ErrorCode(*code),
             Self::Bool(value) => RuntimeValue::Bool(*value),
             Self::I32(value) => RuntimeValue::I32(*value),
+            Self::String(value) => RuntimeValue::String(value.clone()),
             Self::ArrayIntent(array) => RuntimeValue::ArrayIntent(array.clone()),
         }
     }
@@ -229,6 +233,7 @@ mod tests {
     use super::ComValue;
     use oxvba_runtime::{
         RuntimeValue,
+        bstr::BStr,
         safe_array::{ARRAY_TAG_BASE, SafeArray},
         value_tags::{EMPTY_TAG, NULL_TAG, error_tag_from_code},
     };
@@ -272,6 +277,19 @@ mod tests {
         assert_eq!(
             ComValue::from_runtime_value(&RuntimeValue::Bool(true)),
             ComValue::Bool(true)
+        );
+        assert_eq!(
+            ComValue::from_runtime_value(&RuntimeValue::String(BStr("ABC".to_string()))),
+            ComValue::String(BStr("ABC".to_string()))
+        );
+        assert_eq!(
+            ComValue::String(BStr("ABC".to_string())).to_runtime_value(),
+            RuntimeValue::String(BStr("ABC".to_string()))
+        );
+        assert!(
+            ComValue::String(BStr("ABC".to_string()))
+                .to_runtime_token()
+                .is_err()
         );
     }
 }

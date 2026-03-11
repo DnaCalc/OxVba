@@ -53,17 +53,16 @@ Run context: active parity/compliance execution plus in-progress feature worklis
   - `oxvba-com` now exposes an executable generic dynamic-object protocol API (`DynamicCallRequest`, `DynamicMemberSelector`, `DynamicCallKind`, `DynamicEventPayload`) with conversions from the current COM request/payload structs,
   - `oxvba-com` now owns a first semantic carrier slice via `ComValue`,
   - `ComInvokeArg.value` and `ComCallbackPayload.args` no longer use raw `i32` tokens at the shared COM boundary,
-  - VM `DispatchInvoke` construction now preserves `Empty`/`Null`/`CVErr(...)`/array-intent shape into that carrier instead of flattening array tags before the COM boundary,
-  - Windows COM invoke/result translation now maps that carrier to and from `VARIANT` for the supported subset, and callback payload polling returns the same carrier family,
+  - VM `DispatchInvoke` construction now preserves `Empty`/`Null`/`CVErr(...)`/array-intent shape and runtime strings into that carrier instead of flattening them before the COM boundary,
+  - Windows COM invoke/result translation now maps that carrier to and from `VARIANT` for the supported subset, including BSTR string arguments/results, and callback payload polling returns the same carrier family,
+  - native late-bound COM argument marshalling now clears temporary `VARIANT` invoke arguments after dispatch so BSTR-backed calls do not leak adapter-owned allocations,
   - VM slots and the wider runtime/host value model are still `i32`-backed, so the new carrier currently preserves only the semantically recoverable subset,
-  - runtime string coercion explicitly still says BSTR boundary allocation is not implemented,
   - array intent is now preserved to the COM boundary, but the Windows adapter still has to narrow that intent to the old placeholder integer because real SAFEARRAY payload data is not yet available,
-  - object-valued COM arguments/results and string/BSTR payloads still have no canonical OxVba-side carrier representation,
+  - object-valued COM arguments/results still have no canonical OxVba-side carrier representation,
   - callback ingress into the wider runtime still narrows back into the old runtime token lane after the COM boundary because the unified dynamic-object/value-carrier work is only partially complete.
 - Exact unblock steps:
   - extend the first `ComValue` slice into the full canonical OxVba-side external-call carrier for:
     - object identity,
-    - BSTR/string payloads,
     - real SAFEARRAY payloads,
     - broader scalar/variant categories,
   - thread the new dynamic-object protocol and expanded carrier through compiler bytecode, VM host invoke construction, callback transport, and host runtime ingestion without making raw COM wire structs the VM/compiler value model,

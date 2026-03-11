@@ -941,9 +941,10 @@ impl Vm {
                         request.args.push(ComInvokeArg {
                             value: arg
                                 .slot
-                                .map(|slot| self.read_slot(slot))
+                                .map(|slot| self.read_value_slot(slot))
                                 .transpose()?
-                                .map(ComValue::from_runtime_token),
+                                .as_ref()
+                                .map(ComValue::from_runtime_value),
                             name: arg.name.clone(),
                         });
                     }

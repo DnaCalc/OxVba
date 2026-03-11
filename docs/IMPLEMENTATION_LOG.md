@@ -1912,3 +1912,9 @@
     - `cargo test -p oxvba-host -p oxvba-com --quiet`
     - `./scripts/check-governance.ps1`
     - `./scripts/meta-check.ps1 -Fast -NoArtifacts`
+- Continued the shared runtime/COM carrier migration so runtime strings now survive into late-bound COM transport:
+  - `oxvba-com` `ComValue` now carries `String(BStr)` and roundtrips it back to `RuntimeValue`
+  - VM `DispatchInvoke` request construction now feeds `RuntimeValue` directly into `ComValue::from_runtime_value(...)` instead of narrowing through `read_slot(...)`
+  - Windows COM `VARIANT` translation now supports BSTR string arguments/results in the supported native late-bound lane
+  - native invoke helpers now clear temporary `VARIANT` argument buffers after dispatch so BSTR-backed calls do not leak adapter-owned allocations
+  - updated blocker/worklist execution docs to reflect that strings are no longer part of the remaining COM carrier gap; object values and real SAFEARRAY payloads remain open

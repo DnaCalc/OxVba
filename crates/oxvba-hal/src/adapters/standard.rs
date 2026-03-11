@@ -46,7 +46,8 @@ use windows_sys::Win32::System::Com::{
 };
 #[cfg(target_os = "windows")]
 use windows_sys::Win32::System::Variant::{
-    VARIANT, VT_BOOL, VT_EMPTY, VT_ERROR, VT_I2, VT_I4, VT_NULL, VT_UI2, VT_UI4, VariantClear,
+    VARIANT, VT_BOOL, VT_BSTR, VT_EMPTY, VT_ERROR, VT_I2, VT_I4, VT_NULL, VT_UI2, VT_UI4,
+    VariantClear,
 };
 #[cfg(target_os = "windows")]
 use windows_sys::Win32::UI::WindowsAndMessaging::{
@@ -989,20 +990,11 @@ impl StandardHostServices {
         None
     }
 
-    fn com_invoke_arg_values(args: &[ComInvokeArg]) -> HalResult<Vec<i32>> {
+    fn com_invoke_arg_values_if_legacy(args: &[ComInvokeArg]) -> Option<Vec<i32>> {
         args.iter()
             .map(|arg| match arg.value.as_ref() {
-                Some(value) => value.to_runtime_token().map_err(|detail| {
-                    HalError::adapter_fault(
-                        HalProfileId::Windows,
-                        CapabilityId::ComActivationDispatch,
-                        "dispatch_invoke",
-                        format!(
-                            "COM-E-VALUE-TRANSPORT-UNSUPPORTED: invoke argument cannot enter current runtime token lane: {detail}"
-                        ),
-                    )
-                }),
-                None => Ok(DISPATCH_INVOKE_MISSING_ARG_TOKEN),
+                Some(value) => value.to_runtime_token().ok(),
+                None => Some(DISPATCH_INVOKE_MISSING_ARG_TOKEN),
             })
             .collect()
     }
@@ -1479,8 +1471,22 @@ impl StandardHostServices {
         object: i32,
         binding: &ComBinding,
         member: i32,
-        args: &[i32],
+        args: Option<&[i32]>,
     ) -> HalResult<()> {
+        let Some(trigger_spec) = binding.event_trigger_specs.get(&member).copied() else {
+            return Ok(());
+        };
+        let Some(args) = args else {
+            return Err(HalError::adapter_fault(
+                self.profile,
+                CapabilityId::ComActivationDispatch,
+                "dispatch_invoke",
+                format!(
+                    "COM-E-VALUE-TRANSPORT-UNSUPPORTED: projected event trigger `{}` requires legacy callback argument transport",
+                    trigger_spec.event_token
+                ),
+            ));
+        };
         let Some((event, args)) = com_event_callback_args_from_member_token(binding, member, args)
         else {
             return Ok(());
@@ -1647,7 +1653,7 @@ impl StandardHostServices {
         _object: i32,
         _binding: &ComBinding,
         _member: i32,
-        _args: &[i32],
+        _args: Option<&[i32]>,
     ) -> HalResult<()> {
         Ok(())
     }
@@ -2597,7 +2603,7 @@ impl ComHal for StandardHostServices {
         let object = request.object.raw();
         let member = request.member;
         let args = request.args.as_slice();
-        let positional_values = Self::com_invoke_arg_values(args)?;
+        let positional_values = Self::com_invoke_arg_values_if_legacy(args);
         let capability = CapabilityId::ComActivationDispatch;
         if !self.supports(capability) {
             return Err(self.unsupported(capability, "dispatch_invoke"));
@@ -2656,11 +2662,12 @@ impl ComHal for StandardHostServices {
                     let value = if args
                         .iter()
                         .all(|arg| arg.name.is_none() && arg.value.is_some())
+                        && let Some(positional_values) = positional_values.as_ref()
                         && let Some(value) = self.try_native_com_vtable_invoke(
                             dispatch,
                             &binding.prog_id_name,
                             effective_member,
-                            &positional_values,
+                            positional_values,
                         )? {
                         value
                     } else if let Some((token, spec)) = named_default_member {
@@ -2714,14 +2721,35 @@ impl ComHal for StandardHostServices {
                             args,
                         )?
                     };
-                    self.queue_com_event_callbacks(object, &binding, member, &positional_values)?;
+                    self.queue_com_event_callbacks(
+                        object,
+                        &binding,
+                        member,
+                        positional_values.as_deref(),
+                    )?;
                     return Ok(value);
                 }
+                let positional_values = positional_values.as_ref().ok_or_else(|| {
+                    HalError::adapter_fault(
+                        self.profile,
+                        capability,
+                        "dispatch_invoke",
+                        "COM-E-VALUE-TRANSPORT-UNSUPPORTED: projection dispatch requires legacy runtime-token arguments",
+                    )
+                })?;
                 let value = self.native_com_dispatch_invoke(&binding.prog_id_name, member, args)?;
-                self.queue_com_event_callbacks(object, &binding, member, &positional_values)?;
+                self.queue_com_event_callbacks(object, &binding, member, Some(positional_values))?;
                 return Ok(value);
             }
         }
+        let positional_values = positional_values.ok_or_else(|| {
+            HalError::adapter_fault(
+                self.profile,
+                capability,
+                "dispatch_invoke",
+                "COM-E-VALUE-TRANSPORT-UNSUPPORTED: fallback dispatch lane requires legacy runtime-token arguments",
+            )
+        })?;
         Ok(positional_values
             .iter()
             .fold(object.saturating_add(member), |acc, arg| {
@@ -6585,6 +6613,17 @@ unsafe fn raw_variant_to_com_value(variant: &VARIANT) -> Result<ComValue, String
             let value: VARIANT_BOOL = variant.Anonymous.Anonymous.Anonymous.boolVal;
             ComValue::Bool(value != 0)
         }
+        VT_BSTR => {
+            let bstr = variant.Anonymous.Anonymous.Anonymous.bstrVal;
+            let text = if bstr.is_null() {
+                String::new()
+            } else {
+                let len = usize::try_from(SysStringLen(bstr)).unwrap_or(0);
+                let slice = std::slice::from_raw_parts(bstr, len);
+                String::from_utf16_lossy(slice)
+            };
+            ComValue::String(BStr(text))
+        }
         VT_NULL => ComValue::Null,
         VT_ERROR => ComValue::ErrorCode(variant.Anonymous.Anonymous.Anonymous.scode),
         vt => {
@@ -6619,6 +6658,10 @@ unsafe fn set_variant_dispatch_arg(variant: *mut VARIANT, value: &ComValue) -> R
             (*variant).Anonymous.Anonymous.vt = VT_I4;
             (*variant).Anonymous.Anonymous.Anonymous.lVal = *value;
         }
+        ComValue::String(BStr(value)) => {
+            (*variant).Anonymous.Anonymous.vt = VT_BSTR;
+            (*variant).Anonymous.Anonymous.Anonymous.bstrVal = alloc_bstr(value);
+        }
         ComValue::ArrayIntent(_) => {
             (*variant).Anonymous.Anonymous.vt = VT_I4;
             (*variant).Anonymous.Anonymous.Anonymous.lVal = value.to_legacy_dispatch_token()?;
@@ -6632,6 +6675,14 @@ unsafe fn set_variant_dispatch_arg(variant: *mut VARIANT, value: &ComValue) -> R
 unsafe fn set_variant_missing_arg(variant: &mut VARIANT) {
     variant.Anonymous.Anonymous.vt = VT_ERROR;
     variant.Anonymous.Anonymous.Anonymous.scode = COM_DISP_E_PARAMNOTFOUND;
+}
+
+#[cfg(target_os = "windows")]
+#[allow(unsafe_op_in_unsafe_fn)]
+unsafe fn clear_variant_args(args: &mut [VARIANT]) {
+    for variant in args {
+        let _ = VariantClear(variant);
+    }
 }
 
 #[cfg(target_os = "windows")]
@@ -6693,6 +6744,7 @@ unsafe fn raw_dispatch_invoke_i4_args(
         &mut excep,
         &mut arg_err,
     );
+    clear_variant_args(&mut invoke_args);
     if hr < 0 {
         return Err(ComInvokeFailure {
             label,
@@ -6788,6 +6840,7 @@ unsafe fn raw_dispatch_invoke_i4_args_positional(
         &mut excep,
         &mut arg_err,
     );
+    clear_variant_args(&mut invoke_args);
     if hr < 0 {
         return Err(ComInvokeFailure {
             label,
@@ -7121,6 +7174,10 @@ mod tests {
     };
 
     use super::StandardHostServices;
+    #[cfg(target_os = "windows")]
+    use super::{raw_variant_to_com_value, set_variant_dispatch_arg};
+    #[cfg(target_os = "windows")]
+    use windows_sys::Win32::System::Variant::{VARIANT, VariantClear};
 
     fn env_lock() -> &'static Mutex<()> {
         static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
@@ -7336,6 +7393,21 @@ mod tests {
             .expect("dir_value"),
             RuntimeValue::I32(1)
         );
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn com_string_variant_roundtrips_through_adapter_helpers() {
+        let mut variant: VARIANT = unsafe { std::mem::zeroed() };
+        let value = ComValue::String(BStr("Hello".to_string()));
+        unsafe {
+            set_variant_dispatch_arg(&mut variant, &value).expect("set string variant");
+            assert_eq!(
+                raw_variant_to_com_value(&variant).expect("read string variant"),
+                value
+            );
+            let _ = VariantClear(&mut variant);
+        }
     }
 
     #[test]

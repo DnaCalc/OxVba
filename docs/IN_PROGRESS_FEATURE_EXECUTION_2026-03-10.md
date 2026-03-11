@@ -49,6 +49,11 @@ Status vocabulary:
       - `DynamicEventPayload`
     - current COM request/payload structs now convert into that generic protocol shape for the shared runtime-contract path,
     - updated VM/host/HAL tests to lock the new preserved array-intent behavior,
+    - widened the shared COM carrier and Windows adapter again so runtime strings now survive into the COM boundary:
+      - `ComValue` now carries `String(BStr)`,
+      - VM `DispatchInvoke` construction now feeds runtime values into `ComValue::from_runtime_value(...)` instead of forcing `read_slot(...)` token conversion,
+      - Windows `VARIANT` translation now supports BSTR string arguments/results,
+      - temporary invoke `VARIANT` arguments are now cleared after dispatch so BSTR-backed calls do not leak,
   - widened the shared COM invoke transport:
     - `ComInvokeRequest.args` now carries per-argument value/name metadata in `oxvba-com`
     - bytecode `IntrinsicDispatchInvokeHost` now preserves per-argument slot/name metadata
