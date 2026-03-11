@@ -987,11 +987,7 @@ impl Vm {
                 Instruction::IntrinsicComSubscribeEventHost { dst, object, event } => {
                     let object = self.read_value_slot(*object)?;
                     let event = self.read_value_slot(*event)?;
-                    match self
-                        .host_services
-                        .com()
-                        .subscribe_event_value(object, event)
-                    {
+                    match self.host_services.com().subscribe_event(object, event) {
                         Ok(value) => {
                             self.write_value_slot(*dst, value)?;
                             pc += 1;
@@ -1001,11 +997,7 @@ impl Vm {
                 }
                 Instruction::IntrinsicComUnsubscribeEventHost { dst, subscription } => {
                     let subscription = self.read_value_slot(*subscription)?;
-                    match self
-                        .host_services
-                        .com()
-                        .unsubscribe_event_value(subscription)
-                    {
+                    match self.host_services.com().unsubscribe_event(subscription) {
                         Ok(value) => {
                             self.write_value_slot(*dst, value)?;
                             pc += 1;
@@ -1018,7 +1010,7 @@ impl Vm {
                     match self
                         .host_services
                         .com()
-                        .event_callback_subscription_value(callback)
+                        .event_callback_subscription(callback)
                     {
                         Ok(value) => {
                             self.write_value_slot(*dst, value)?;
@@ -1034,11 +1026,7 @@ impl Vm {
                 } => {
                     let callback = self.read_value_slot(*callback)?;
                     let index = self.read_value_slot(*index)?;
-                    match self
-                        .host_services
-                        .com()
-                        .event_callback_arg_value(callback, index)
-                    {
+                    match self.host_services.com().event_callback_arg(callback, index) {
                         Ok(value) => {
                             self.write_value_slot(*dst, value)?;
                             pc += 1;
@@ -1048,11 +1036,7 @@ impl Vm {
                 }
                 Instruction::IntrinsicComReleaseEventCallbackHost { dst, callback } => {
                     let callback = self.read_value_slot(*callback)?;
-                    match self
-                        .host_services
-                        .com()
-                        .release_event_callback_value(callback)
-                    {
+                    match self.host_services.com().release_event_callback(callback) {
                         Ok(value) => {
                             self.write_value_slot(*dst, value)?;
                             pc += 1;

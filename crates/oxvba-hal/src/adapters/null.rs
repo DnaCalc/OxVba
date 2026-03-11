@@ -162,11 +162,7 @@ impl ComHal for NullHostServices {
         Err(self.unsupported(CapabilityId::ComActivationDispatch, "dispatch_invoke"))
     }
 
-    fn subscribe_event(&self, _object: i32, _event: i32) -> HalResult<i32> {
-        Err(self.unsupported(CapabilityId::ComActivationDispatch, "subscribe_event"))
-    }
-
-    fn subscribe_event_value(
+    fn subscribe_event(
         &self,
         _object: RuntimeValue,
         _event: RuntimeValue,
@@ -174,11 +170,7 @@ impl ComHal for NullHostServices {
         Err(self.unsupported(CapabilityId::ComActivationDispatch, "subscribe_event"))
     }
 
-    fn unsubscribe_event(&self, _subscription: i32) -> HalResult<i32> {
-        Err(self.unsupported(CapabilityId::ComActivationDispatch, "unsubscribe_event"))
-    }
-
-    fn unsubscribe_event_value(&self, _subscription: RuntimeValue) -> HalResult<RuntimeValue> {
+    fn unsubscribe_event(&self, _subscription: RuntimeValue) -> HalResult<RuntimeValue> {
         Err(self.unsupported(CapabilityId::ComActivationDispatch, "unsubscribe_event"))
     }
 
@@ -186,36 +178,18 @@ impl ComHal for NullHostServices {
         Err(self.unsupported(CapabilityId::ComActivationDispatch, "poll_event_callback"))
     }
 
-    fn event_callback_subscription(&self, _callback: i32) -> HalResult<i32> {
+    fn event_callback_subscription(&self, _callback: RuntimeValue) -> HalResult<RuntimeValue> {
         Err(self.unsupported(
             CapabilityId::ComActivationDispatch,
             "event_callback_subscription",
         ))
     }
 
-    fn event_callback_subscription_value(
-        &self,
-        _callback: RuntimeValue,
-    ) -> HalResult<RuntimeValue> {
-        Err(self.unsupported(
-            CapabilityId::ComActivationDispatch,
-            "event_callback_subscription",
-        ))
-    }
-
-    fn event_callback_arity(&self, _callback: i32) -> HalResult<i32> {
+    fn event_callback_arity(&self, _callback: RuntimeValue) -> HalResult<RuntimeValue> {
         Err(self.unsupported(CapabilityId::ComActivationDispatch, "event_callback_arity"))
     }
 
-    fn event_callback_arity_value(&self, _callback: RuntimeValue) -> HalResult<RuntimeValue> {
-        Err(self.unsupported(CapabilityId::ComActivationDispatch, "event_callback_arity"))
-    }
-
-    fn event_callback_arg(&self, _callback: i32, _index: i32) -> HalResult<i32> {
-        Err(self.unsupported(CapabilityId::ComActivationDispatch, "event_callback_arg"))
-    }
-
-    fn event_callback_arg_value(
+    fn event_callback_arg(
         &self,
         _callback: RuntimeValue,
         _index: RuntimeValue,
@@ -223,14 +197,7 @@ impl ComHal for NullHostServices {
         Err(self.unsupported(CapabilityId::ComActivationDispatch, "event_callback_arg"))
     }
 
-    fn release_event_callback(&self, _callback: i32) -> HalResult<i32> {
-        Err(self.unsupported(
-            CapabilityId::ComActivationDispatch,
-            "release_event_callback",
-        ))
-    }
-
-    fn release_event_callback_value(&self, _callback: RuntimeValue) -> HalResult<RuntimeValue> {
+    fn release_event_callback(&self, _callback: RuntimeValue) -> HalResult<RuntimeValue> {
         Err(self.unsupported(
             CapabilityId::ComActivationDispatch,
             "release_event_callback",
@@ -350,37 +317,37 @@ mod tests {
             HalErrorKind::CapabilityUnavailable
         );
         assert_eq!(
-            host.subscribe_event(1, 1)
+            host.subscribe_event(RuntimeValue::I32(1), RuntimeValue::I32(1))
                 .expect_err("subscribe_event")
                 .kind,
             HalErrorKind::CapabilityUnavailable
         );
         assert_eq!(
-            host.unsubscribe_event(1)
+            host.unsubscribe_event(RuntimeValue::I32(1))
                 .expect_err("unsubscribe_event")
                 .kind,
             HalErrorKind::CapabilityUnavailable
         );
         assert_eq!(
-            host.event_callback_subscription(1)
+            host.event_callback_subscription(RuntimeValue::I32(1))
                 .expect_err("event_callback_subscription")
                 .kind,
             HalErrorKind::CapabilityUnavailable
         );
         assert_eq!(
-            host.event_callback_arity(1)
+            host.event_callback_arity(RuntimeValue::I32(1))
                 .expect_err("event_callback_arity")
                 .kind,
             HalErrorKind::CapabilityUnavailable
         );
         assert_eq!(
-            host.event_callback_arg(1, 0)
+            host.event_callback_arg(RuntimeValue::I32(1), RuntimeValue::I32(0))
                 .expect_err("event_callback_arg")
                 .kind,
             HalErrorKind::CapabilityUnavailable
         );
         assert_eq!(
-            host.release_event_callback(1)
+            host.release_event_callback(RuntimeValue::I32(1))
                 .expect_err("release_event_callback")
                 .kind,
             HalErrorKind::CapabilityUnavailable

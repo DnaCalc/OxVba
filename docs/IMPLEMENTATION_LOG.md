@@ -1984,3 +1984,9 @@
   - null/wasm/standard adapters and the affected regression/property tests were migrated to the semantic contract
   - verification:
     - `cargo test -p oxvba-hal -p oxvba-vm --quiet`
+- Continued the runtime HAL semantic-contract migration into COM event helper domains:
+  - `ComHal::{subscribe_event,unsubscribe_event,event_callback_subscription,event_callback_arity,event_callback_arg,release_event_callback}` now use direct `RuntimeValue` contracts instead of token-first methods plus `*_value()` wrappers
+  - VM host intrinsic execution, engine subscription plumbing, and HAL regression tests now consume those direct semantic results
+  - null/wasm/standard adapters and the affected host/adapter regression tests were migrated to the semantic contract
+  - verification:
+    - `cargo test -p oxvba-hal -p oxvba-vm -p oxvba-host --quiet`

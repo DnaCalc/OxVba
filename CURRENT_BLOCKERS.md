@@ -100,12 +100,14 @@ Run context: active parity/compliance execution plus in-progress feature worklis
     - COM event subscription/callback helper intrinsics,
     - dynamic-link invoke wrappers,
   - `FileSystemHal::{open,close,seek,eof,lof,free_file}` now use direct semantic `RuntimeValue` contracts instead of token-first methods plus `*_value` wrappers,
+  - `ComHal::{subscribe_event,unsubscribe_event,event_callback_subscription,event_callback_arity,event_callback_arg,release_event_callback}` now also use direct semantic `RuntimeValue` contracts on the VM/conformance-facing path instead of token-first methods plus `*_value` wrappers,
   - VM host intrinsic execution for those lanes now reads `RuntimeValue` directly instead of forcing `read_slot(...)`/legacy token narrowing on entry,
   - VM `WithEvents` binding state now preserves semantic `RuntimeValue` payloads instead of flattening bound source/object values to raw integers,
   - VM `DispatchInvoke` now reads the object slot from semantic runtime state and preserves object handles instead of re-reading the object through the raw slot lane before constructing the COM request,
   - time/event host intrinsics now also read semantic `RuntimeValue` directly from the HAL boundary instead of routing through removed `*_value()` wrappers,
   - UI/process host intrinsics now likewise read semantic `RuntimeValue` directly from the HAL boundary instead of routing through removed `*_value()` wrappers,
   - dynamic-link host intrinsics and diagnostics/conformance probes now likewise use direct semantic `RuntimeValue` contracts instead of routing through removed `*_value()` wrappers,
+  - COM event helper host intrinsics and engine subscription paths now likewise use direct semantic `RuntimeValue` contracts instead of routing through removed `*_value()` wrappers,
   - many bytecode execution callers and tests still assume the legacy integer observation surface,
   - the new `ComValue` carrier and generic dynamic-object protocol can live at the COM boundary, but they cannot yet become the single runtime object/value model while the wider execution substrate remains token-only.
 - Exact unblock steps:

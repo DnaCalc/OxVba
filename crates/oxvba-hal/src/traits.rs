@@ -133,27 +133,18 @@ pub trait ComHal: Send + Sync {
         let request = ComInvokeRequest::legacy(object, member, arg);
         self.dispatch_invoke_v2(&request)
     }
-    fn subscribe_event(&self, object: ValueToken, event: ValueToken) -> HalResult<ValueToken>;
-    fn subscribe_event_value(
-        &self,
-        object: RuntimeValue,
-        event: RuntimeValue,
-    ) -> HalResult<RuntimeValue>;
-    fn unsubscribe_event(&self, subscription: ValueToken) -> HalResult<ValueToken>;
-    fn unsubscribe_event_value(&self, subscription: RuntimeValue) -> HalResult<RuntimeValue>;
+    fn subscribe_event(&self, object: RuntimeValue, event: RuntimeValue)
+    -> HalResult<RuntimeValue>;
+    fn unsubscribe_event(&self, subscription: RuntimeValue) -> HalResult<RuntimeValue>;
     fn poll_event_callback(&self) -> HalResult<Option<ComCallbackPayload>>;
-    fn event_callback_subscription(&self, callback: ValueToken) -> HalResult<ValueToken>;
-    fn event_callback_subscription_value(&self, callback: RuntimeValue) -> HalResult<RuntimeValue>;
-    fn event_callback_arity(&self, callback: ValueToken) -> HalResult<ValueToken>;
-    fn event_callback_arity_value(&self, callback: RuntimeValue) -> HalResult<RuntimeValue>;
-    fn event_callback_arg(&self, callback: ValueToken, index: ValueToken) -> HalResult<ValueToken>;
-    fn event_callback_arg_value(
+    fn event_callback_subscription(&self, callback: RuntimeValue) -> HalResult<RuntimeValue>;
+    fn event_callback_arity(&self, callback: RuntimeValue) -> HalResult<RuntimeValue>;
+    fn event_callback_arg(
         &self,
         callback: RuntimeValue,
         index: RuntimeValue,
     ) -> HalResult<RuntimeValue>;
-    fn release_event_callback(&self, callback: ValueToken) -> HalResult<ValueToken>;
-    fn release_event_callback_value(&self, callback: RuntimeValue) -> HalResult<RuntimeValue>;
+    fn release_event_callback(&self, callback: RuntimeValue) -> HalResult<RuntimeValue>;
     fn resolve_typelib_reference(
         &self,
         request: &TypeLibResolveRequest,
