@@ -95,6 +95,8 @@ Run context: active parity/compliance execution plus in-progress feature worklis
   - then wire the dynamic-object protocol and expanded value carrier through those seams as the single runtime-facing model.
 - Recommendation:
   - treat this as the real blocker for continuing the first workset beyond the currently landed protocol/carrier boundary slices; do not keep patching COM-specific adapters around it.
+  - execute:
+    - `docs/worksets/WORKSET_2026-03-11_RUNTIME_VALUE_MODEL_MIGRATION.md`
 
 ### BLK-COM-BOUNDARY-001: Final `oxvba-com` extraction is blocked on unsettled COM behavior contracts
 - Impact:

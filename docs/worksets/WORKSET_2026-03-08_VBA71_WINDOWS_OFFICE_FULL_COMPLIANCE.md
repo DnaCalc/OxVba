@@ -203,6 +203,7 @@ Targeted follow-on under Track D and Track F:
 - `docs/worksets/WORKSET_2026-03-09_OXVBA_COM_REPURPOSE_AND_HAL_COM_EXTRACTION.md`
 - `docs/worksets/WORKSET_2026-03-11_UNIFIED_DYNAMIC_OBJECT_PROTOCOL_AND_VALUE_CARRIER.md`
 - `docs/worksets/WORKSET_2026-03-11_COM_REFERENCE_FACADE_AND_TYPELIB_BINDING_COMPLETION.md`
+- `docs/worksets/WORKSET_2026-03-11_RUNTIME_VALUE_MODEL_MIGRATION.md`
 - `docs/worksets/WORKSET_2026-03-09_HOST_BRIDGE_OBJECT_VALUE_AND_EVENT_INGRESS_CONTRACT.md`
 
 Reason:
@@ -210,5 +211,6 @@ Reason:
 - the COM implementation boundary also needs a coherent long-term home so invoke/event/server cleanup does not further entrench Windows COM behavior inside generic HAL traits.
 - the next concrete cleanup/implementation slices are now explicit:
   - runtime-facing shared dynamic-object protocol + value carrier,
+  - runtime value-model migration beneath VM/HAL/host seams,
   - compiler-facing synthetic reference facade + typelib binding completion.
 - the future host/pathfinder work also needs a locked object-value and event-ingress contract so COM transport work and non-COM host semantics converge on one bridge model.

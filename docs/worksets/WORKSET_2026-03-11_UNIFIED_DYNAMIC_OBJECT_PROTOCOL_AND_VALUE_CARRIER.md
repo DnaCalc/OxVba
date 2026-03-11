@@ -143,6 +143,8 @@ Open remainder:
 4. the next execution blocker is now explicit:
    - `BLK-RUNTIME-VALUE-MODEL-001`
    - VM register storage, HAL value tokens, host snapshots, and many execution/test seams are still globally `i32` based.
+5. the blocker now has a dedicated execution owner:
+   - `docs/worksets/WORKSET_2026-03-11_RUNTIME_VALUE_MODEL_MIGRATION.md`
 
 ### Phase C. COM adaptation alignment
 
@@ -195,5 +197,6 @@ This workset is complete when:
 - `docs/spec/COM_REFERENCE_FACADE_AND_DYNAMIC_OBJECT_PROTOCOL_V1.md`
 - `docs/worksets/WORKSET_2026-03-09_OXVBA_COM_REPURPOSE_AND_HAL_COM_EXTRACTION.md`
 - `docs/worksets/WORKSET_2026-03-10_IDISPATCH_LATEBOUND_COM_COMPLETION.md`
+- `docs/worksets/WORKSET_2026-03-11_RUNTIME_VALUE_MODEL_MIGRATION.md`
 - `docs/worksets/WORKSET_2026-03-08_VBA71_WINDOWS_OFFICE_FULL_COMPLIANCE.md`
 - `CURRENT_BLOCKERS.md`

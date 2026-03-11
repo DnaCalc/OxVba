@@ -1,6 +1,14 @@
 # Implementation Log
 
 ## 2026-03-11
+- runtime value-model migration workset setup:
+  - created a dedicated workset for the now-explicit substrate blocker:
+    - `docs/worksets/WORKSET_2026-03-11_RUNTIME_VALUE_MODEL_MIGRATION.md`
+  - linked it from:
+    - `docs/worksets/WORKSET_2026-03-11_UNIFIED_DYNAMIC_OBJECT_PROTOCOL_AND_VALUE_CARRIER.md`
+    - `docs/worksets/WORKSET_2026-03-09_OXVBA_COM_REPURPOSE_AND_HAL_COM_EXTRACTION.md`
+    - `docs/worksets/WORKSET_2026-03-08_VBA71_WINDOWS_OFFICE_FULL_COMPLIANCE.md`
+    - `CURRENT_BLOCKERS.md`
 - unified dynamic-object protocol API slice:
   - added an executable generic dynamic-object protocol surface in `oxvba-com`:
     - `DynamicCallRequest`

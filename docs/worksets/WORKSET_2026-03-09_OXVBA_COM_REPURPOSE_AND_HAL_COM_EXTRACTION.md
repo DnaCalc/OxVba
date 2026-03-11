@@ -283,6 +283,9 @@ Required checks for the repurpose/extraction program:
 2. Treat `oxvba-com` repurpose as the architectural target for the ongoing COM continuation work.
 3. In the next implementation pass, define the canonical OxVba-side value carrier before widening more COM marshalling behavior.
 4. In parallel, define the unified late-bound object protocol and the synthetic reference-facade model so COM lands on OxVba-native contracts.
+5. Execute the dedicated runtime substrate migration in:
+   - `docs/worksets/WORKSET_2026-03-11_RUNTIME_VALUE_MODEL_MIGRATION.md`
+   before attempting final COM ownership extraction out of HAL.
 5. Prefer moving new COM transport/translation work into `oxvba-com` instead of deepening HAL-owned COM APIs.
 6. Treat `docs/worksets/WORKSET_2026-03-10_IDISPATCH_LATEBOUND_COM_COMPLETION.md` as the focused client-side completion plan for the remaining late-bound `IDispatch` surface.
 7. Use these concrete child worksets for the next cleanup/implementation slices:
