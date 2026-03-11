@@ -174,6 +174,7 @@ Status vocabulary:
     - the fixture-driven project integration suite now also executes through semantic project snapshots and projects back to legacy slots only at the assertion edge so the catalog format remains stable during migration,
     - the large internal `crates/oxvba-host/src/engine.rs` test estate now also executes through semantic source/project snapshot APIs underneath and uses local slot-projection helpers only where slot-shaped assertions remain intentional,
     - JIT parity tests and the remaining direct VM/JIT equivalence checks now also execute through semantic snapshot helpers underneath, leaving the legacy snapshot APIs largely as explicit public compatibility shims,
+    - the standard Windows COM adapter now treats `create_object(...)`, `release_object(...)`, and `invalidate_typelib_cache(...)` as semantic-primary seams and projects the `*_legacy(...)` variants only at the compatibility edge,
     - the Cranelift subset helper now also exposes semantic `RuntimeValue` snapshots as its primary API, with an explicit `execute_bytecode_legacy(...)` compatibility projection retained for the integer subset,
     - CLI execution no longer stores duplicate integer snapshots in memory and derives `SLOTS:` output directly from semantic runtime values only when requested,
     - the mixed edge/scaling host integration suite now also executes through semantic project snapshots instead of the legacy integer snapshot API,

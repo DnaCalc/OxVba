@@ -2743,48 +2743,6 @@ impl ProcessEnvHal for StandardHostServices {
 }
 
 impl ComHal for StandardHostServices {
-    fn create_object_legacy(&self, prog_id: i32) -> HalResult<ObjectHandle> {
-        let capability = CapabilityId::ComActivationDispatch;
-        if !self.supports(capability) {
-            return Err(self.unsupported(capability, "create_object"));
-        }
-        if !self.policy.allow_com_activation {
-            return Err(self.denied(capability, "create_object"));
-        }
-        if self.native_com_enabled()
-            && let Some(prog_id_name) = self.resolve_native_com_progid(prog_id)
-        {
-            match self.try_native_com_binding(&prog_id_name) {
-                Ok(native_dispatch) => {
-                    let metadata = self.load_typelib_metadata_for_prog_id_name(&prog_id_name)?;
-                    #[cfg(target_os = "windows")]
-                    let registered_event_override = self
-                        .registered_event_override_for_prog_id_name(
-                            &prog_id_name,
-                            "create_object",
-                        )?;
-                    let mut state = self.com_lock(capability, "create_object")?;
-                    let handle = state.allocate_handle();
-                    let mut binding =
-                        ComBinding::native(prog_id_name, native_dispatch, metadata.as_ref());
-                    #[cfg(target_os = "windows")]
-                    if let Some(override_cfg) = registered_event_override.as_ref() {
-                        self.apply_registered_event_override_to_binding(&mut binding, override_cfg);
-                    }
-                    state.bindings.insert(handle, binding);
-                    self.assert_com_invariants(&state, "create_object");
-                    return Ok(handle.into());
-                }
-                Err(err) => {
-                    if self.has_explicit_native_com_override(prog_id) {
-                        return Err(err);
-                    }
-                }
-            }
-        }
-        Ok(5_000i32.saturating_add(prog_id).into())
-    }
-
     fn create_object(&self, prog_id: RuntimeValue) -> HalResult<RuntimeValue> {
         let capability = CapabilityId::ComActivationDispatch;
         if !self.supports(capability) {
@@ -2841,18 +2799,60 @@ impl ComHal for StandardHostServices {
                 "string ProgID activation requires native COM-enabled Windows host mode",
             ));
         }
-        let token =
+        let prog_id =
             self.runtime_value_to_legacy_i32(&prog_id, capability, "create_object", "prog_id")?;
-        self.create_object_legacy(token)
-            .map(RuntimeValue::ObjectHandle)
+        if self.native_com_enabled()
+            && let Some(prog_id_name) = self.resolve_native_com_progid(prog_id)
+        {
+            match self.try_native_com_binding(&prog_id_name) {
+                Ok(native_dispatch) => {
+                    let metadata = self.load_typelib_metadata_for_prog_id_name(&prog_id_name)?;
+                    #[cfg(target_os = "windows")]
+                    let registered_event_override = self
+                        .registered_event_override_for_prog_id_name(
+                            &prog_id_name,
+                            "create_object",
+                        )?;
+                    let mut state = self.com_lock(capability, "create_object")?;
+                    let handle = state.allocate_handle();
+                    let mut binding =
+                        ComBinding::native(prog_id_name, native_dispatch, metadata.as_ref());
+                    #[cfg(target_os = "windows")]
+                    if let Some(override_cfg) = registered_event_override.as_ref() {
+                        self.apply_registered_event_override_to_binding(&mut binding, override_cfg);
+                    }
+                    state.bindings.insert(handle, binding);
+                    self.assert_com_invariants(&state, "create_object");
+                    return Ok(RuntimeValue::ObjectHandle(handle.into()));
+                }
+                Err(err) => {
+                    if self.has_explicit_native_com_override(prog_id) {
+                        return Err(err);
+                    }
+                }
+            }
+        }
+        Ok(RuntimeValue::ObjectHandle(
+            5_000i32.saturating_add(prog_id).into(),
+        ))
+    }
+
+    fn create_object_legacy(&self, prog_id: i32) -> HalResult<ObjectHandle> {
+        match self.create_object(RuntimeValue::I32(prog_id))? {
+            RuntimeValue::ObjectHandle(handle) => Ok(handle),
+            other => Err(HalError::adapter_fault(
+                self.profile,
+                CapabilityId::ComActivationDispatch,
+                "create_object_legacy",
+                format!(
+                    "semantic create_object returned non-object handle for legacy projection: {:?}",
+                    other
+                ),
+            )),
+        }
     }
 
     fn release_object(&self, object: ObjectHandle) -> HalResult<RuntimeValue> {
-        self.release_object_legacy(object)
-            .map(RuntimeValue::from_legacy_i32)
-    }
-
-    fn release_object_legacy(&self, object: ObjectHandle) -> HalResult<i32> {
         let capability = CapabilityId::ComActivationDispatch;
         if !self.supports(capability) {
             return Err(self.unsupported(capability, "release_object"));
@@ -2862,7 +2862,7 @@ impl ComHal for StandardHostServices {
         }
         let object = object.raw();
         if !self.native_com_enabled() {
-            return Ok(if object == 0 { 0 } else { 1 });
+            return Ok(RuntimeValue::I32(if object == 0 { 0 } else { 1 }));
         }
         let (binding, transports, stale_callbacks) = {
             let mut state = self.com_lock(capability, "release_object")?;
@@ -2940,7 +2940,13 @@ impl ComHal for StandardHostServices {
                 stale_callbacks.len()
             );
         }
-        Ok(1)
+        Ok(RuntimeValue::I32(1))
+    }
+
+    fn release_object_legacy(&self, object: ObjectHandle) -> HalResult<i32> {
+        self.release_object(object)?
+            .to_legacy_i32()
+            .map_err(|message| self.com_dispatch_adapter_fault(message))
     }
 
     fn describe_object(&self, object: ObjectHandle) -> HalResult<Option<ComObjectDescriptor>> {
@@ -3608,15 +3614,6 @@ impl ComHal for StandardHostServices {
         scope: TypeLibCacheScope,
         reference_name: Option<&str>,
     ) -> HalResult<RuntimeValue> {
-        self.invalidate_typelib_cache_legacy(scope, reference_name)
-            .map(RuntimeValue::from_legacy_i32)
-    }
-
-    fn invalidate_typelib_cache_legacy(
-        &self,
-        scope: TypeLibCacheScope,
-        reference_name: Option<&str>,
-    ) -> HalResult<i32> {
         let capability = CapabilityId::ComActivationDispatch;
         if !self.windows_typelib_supported() {
             return Err(self.unsupported(capability, "invalidate_typelib_cache"));
@@ -3648,7 +3645,19 @@ impl ComHal for StandardHostServices {
                 before.saturating_sub(state.metadata.len())
             }
         };
-        Ok(i32::try_from(removed).unwrap_or(i32::MAX))
+        Ok(RuntimeValue::I32(
+            i32::try_from(removed).unwrap_or(i32::MAX),
+        ))
+    }
+
+    fn invalidate_typelib_cache_legacy(
+        &self,
+        scope: TypeLibCacheScope,
+        reference_name: Option<&str>,
+    ) -> HalResult<i32> {
+        self.invalidate_typelib_cache(scope, reference_name)?
+            .to_legacy_i32()
+            .map_err(|message| self.com_dispatch_adapter_fault(message))
     }
 }
 

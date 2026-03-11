@@ -118,6 +118,7 @@ Run context: active parity/compliance execution plus in-progress feature worklis
   - dynamic-link host intrinsics and diagnostics/conformance probes now likewise use direct semantic `RuntimeValue` contracts instead of routing through removed `*_value()` wrappers,
   - COM event helper host intrinsics and engine subscription paths now likewise use direct semantic `RuntimeValue` contracts instead of routing through removed `*_value()` wrappers,
   - the standard Windows COM adapter now treats `dispatch_invoke_runtime_value_v2(...)` as the canonical implementation seam and projects `dispatch_invoke_legacy_v2(...)` from that semantic path only at the compatibility edge,
+  - the standard Windows COM adapter now also treats `create_object(...)`, `release_object(...)`, and `invalidate_typelib_cache(...)` as the canonical semantic seams and projects the corresponding `*_legacy(...)` forms only at the compatibility edge,
   - the runtime-value COM invoke path now explicitly preserves the working zero-argument native `IDispatch` method/property-get behavior instead of regressing `DISP_E_BADPARAMCOUNT` on the canonical path,
   - host public execution/session observation APIs are now value-first by name:
     - `Engine::execute_source_with_snapshot*` now returns semantic `RuntimeValue` snapshots,

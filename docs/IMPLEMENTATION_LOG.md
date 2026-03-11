@@ -1,5 +1,17 @@
 # Implementation Log
 
+## 2026-03-11 - COM maintenance seams now default to semantic adapter paths
+
+- Tightened the standard Windows COM adapter in [standard.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-hal\src\adapters\standard.rs):
+  - `create_object(...)` is now the semantic primary implementation path and `create_object_legacy(...)` is a projection wrapper,
+  - `release_object(...)` is now the semantic primary implementation path and `release_object_legacy(...)` is a projection wrapper,
+  - `invalidate_typelib_cache(...)` is now the semantic primary implementation path and `invalidate_typelib_cache_legacy(...)` is a projection wrapper.
+- Net effect:
+  - the COM HAL seam is more internally consistent with the runtime-value migration,
+  - the remaining legacy COM wall is narrowed further toward the explicit trait compatibility signatures themselves and their deliberate compatibility tests.
+- Verification:
+  - `cargo test -p oxvba-hal --quiet`
+
 ## 2026-03-11 - VM/JIT parity tests now use semantic snapshot helpers
 
 - Tightened the remaining direct VM/JIT test estate in:
