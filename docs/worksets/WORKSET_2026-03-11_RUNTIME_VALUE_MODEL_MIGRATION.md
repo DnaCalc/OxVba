@@ -101,9 +101,10 @@ Completed slices:
    - explicit raw-token compatibility is labeled `release_object_legacy(...)` and `invalidate_typelib_cache_legacy(...)`.
 36. Host-side COM end-to-end, early-binding, and registered-lane integration tests now use the semantic host snapshot APIs instead of the legacy integer snapshot APIs.
 37. The fixture-driven project integration suite now also uses semantic project snapshots, with legacy slot projection retained only at the assertion edge so the existing catalog format stays stable during migration.
-38. The Cranelift subset helper now exposes semantic `RuntimeValue` snapshots as its primary API, with `execute_bytecode_legacy(...)` retained as the explicit integer compatibility projection.
-39. CLI execution no longer stores duplicate integer snapshots in memory and derives `SLOTS:` output directly from semantic runtime values only at the output edge.
-40. The mixed edge/scaling host integration suite now also executes through semantic project snapshots instead of the legacy integer snapshot API.
+38. The large internal `crates/oxvba-host/src/engine.rs` test estate now also executes through semantic source/project snapshot APIs underneath and uses local slot-projection helpers only where slot-shaped assertions remain intentional.
+39. The Cranelift subset helper now exposes semantic `RuntimeValue` snapshots as its primary API, with `execute_bytecode_legacy(...)` retained as the explicit integer compatibility projection.
+40. CLI execution no longer stores duplicate integer snapshots in memory and derives `SLOTS:` output directly from semantic runtime values only at the output edge.
+41. The mixed edge/scaling host integration suite now also executes through semantic project snapshots instead of the legacy integer snapshot API.
 
 Remaining blocker seam:
 1. explicit raw `i32` compatibility signatures still anchor the remaining legacy COM seams,
@@ -112,9 +113,9 @@ Remaining blocker seam:
    - `ComHal::{create_object_legacy,release_object_legacy,invalidate_typelib_cache_legacy}`,
    - the legacy `ComHal::dispatch_invoke(...)` helper over raw object/member/arg tokens,
    - remaining interpreter/test/caller expectations that still consume the legacy integer observation aliases,
-3. many interpreter tests and parity expectations still anchor on the legacy integer lane,
-4. JIT internals and parity harnesses still observe only the integer slot lane for Cranelift-supported subsets,
-5. many tests still assume integer snapshots as the primary public contract.
+3. JIT internals and parity harnesses still observe only the integer slot lane for Cranelift-supported subsets,
+4. the explicit compatibility API remains in place and still needs to be bounded/documented as compatibility rather than primary execution,
+5. any remaining tests that still target integer snapshots should do so deliberately as compatibility checks rather than as the default execution path.
 
 ## 3. Target architecture
 

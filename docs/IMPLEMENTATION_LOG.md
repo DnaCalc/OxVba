@@ -1,5 +1,17 @@
 # Implementation Log
 
+## 2026-03-11 - Internal host engine tests now run through semantic execution APIs
+
+- Tightened the internal host engine test estate in [engine.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-host\src\engine.rs):
+  - added test-only helpers that project semantic `RuntimeValue` results to legacy slots only at the assertion edge,
+  - moved the large `engine.rs` test module off `execute_source_with_legacy_snapshot*` / `execute_project_with_legacy_snapshot_phased(...)` as its default execution path,
+  - kept the explicit legacy public APIs in place for compatibility-specific coverage.
+- Net effect:
+  - the internal host test corpus no longer treats the legacy execution APIs as the primary runtime path,
+  - the remaining legacy observation surface is now mostly the explicit compatibility API itself plus callers that intentionally verify that compatibility.
+- Verification:
+  - `cargo test -p oxvba-host --quiet`
+
 ## 2026-03-11 - Fixture-driven project integration now executes through semantic snapshots
 
 - Tightened the fixture-driven host project integration suite in [project_integration_suite.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-host\tests\project_integration_suite.rs):
