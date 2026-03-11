@@ -3,7 +3,7 @@
 ## Workflow
 1. Read `CHARTER.md`, `OPERATIONS.md`, and relevant sections of `MACH1000_PLAN.md`.
 2. Implement changes with tests.
-3. Run `./scripts/meta-check.ps1`.
+3. Run `./scripts/meta-check.ps1 -Fast -NoArtifacts`.
    - For long Kani/profile formal runs, use `./scripts/run-formal-kani-async.ps1` and attach status/log artifacts.
    - For profile ladder doc generation/edits, also run `./scripts/validate-profile-scaffold.ps1 -FromVersion <start> -ToVersion <end>`.
    - If HAL clause/spec surface changed, run `./scripts/check-hal-clause-drift.ps1`.

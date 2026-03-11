@@ -30,6 +30,13 @@ OxVBA is part of the broader DNA Calc program and aligns with Foundation doctrin
 ./scripts/run-matrix.ps1
 ```
 
+GitHub check-in CI mirrors the stable local gate:
+```powershell
+./scripts/meta-check.ps1 -Fast -NoArtifacts
+```
+
+Heavier conformance, matrix, and formal lanes are retained for explicit/manual execution rather than every push/PR.
+
 Optional:
 ```powershell
 ./scripts/meta-check.ps1 -Fast -Conformance

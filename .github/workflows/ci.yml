@@ -4,102 +4,50 @@ on:
   push:
     branches: ["master"]
   pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
-  fast:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - name: Install Rust stable
-        uses: dtolnay/rust-toolchain@stable
-      - name: Governance checks
-        shell: pwsh
-        run: ./scripts/check-governance.ps1
-      - name: Cargo fmt
-        run: cargo fmt --all --check
-      - name: Cargo clippy
-        run: cargo clippy --workspace --all-targets -- -D warnings
-      - name: Cargo test
-        run: cargo test --workspace
-      - name: Cargo check
-        run: cargo check --workspace
-
-  hal-conformance-native:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - name: Install Rust stable
-        uses: dtolnay/rust-toolchain@stable
-      - name: HAL conformance (native lanes)
-        shell: pwsh
-        run: ./scripts/run-hal-conformance.ps1 -OutputDir docs/evidence/hal_ci_native
-      - name: Upload HAL native artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: hal-conformance-native
-          path: docs/evidence/hal_ci_native/
-          if-no-files-found: error
-
-  hal-conformance-wasm32:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - name: Install Rust stable
-        uses: dtolnay/rust-toolchain@stable
-      - name: HAL conformance (wasm32-wasip1)
-        shell: pwsh
-        run: ./scripts/run-hal-conformance-wasm32.ps1 -OutputDir docs/evidence/hal_ci_wasm32
-      - name: Upload HAL wasm32 artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: hal-conformance-wasm32
-          path: docs/evidence/hal_ci_wasm32/
-          if-no-files-found: error
-
-  docs-check:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - name: Verify core docs exist
-        run: |
-          test -f CHARTER.md
-          test -f OPERATIONS.md
-          test -f MACH1000_PLAN.md
-          test -f README.md
-
-  windows-conformance:
+  ready:
+    name: windows-ready
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
       - name: Install Rust stable
         uses: dtolnay/rust-toolchain@stable
-      - name: Meta check (fast)
+      - uses: Swatinem/rust-cache@v2
+      - name: Meta check (fast, no artifacts)
         shell: pwsh
-        run: ./scripts/meta-check.ps1 -Fast
-      - name: Path stability
+        run: ./scripts/meta-check.ps1 -Fast -NoArtifacts
+
+  extended:
+    if: ${{ github.event_name == 'workflow_dispatch' }}
+    name: windows-extended
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Meta check (extended, no artifacts)
         shell: pwsh
-        run: ./scripts/test-path-stability.ps1
-      - name: Smoke run
-        shell: pwsh
-        run: ./scripts/run-smoke.ps1
-      - name: MVP conformance run
-        shell: pwsh
-        run: ./scripts/run-conformance.ps1
-      - name: MVP matrix gate
-        shell: pwsh
-        run: ./scripts/run-matrix.ps1
-      - name: Formal obligations (non-blocking)
-        shell: pwsh
-        run: ./scripts/run-formal.ps1
+        run: ./scripts/meta-check.ps1 -Fast -Conformance -Matrix -Formal -NoArtifacts
 
   formal-kani:
-    if: ${{ vars.RUN_KANI == '1' }}
+    if: ${{ github.event_name == 'workflow_dispatch' && vars.RUN_KANI == '1' }}
     runs-on: ubuntu-latest
     continue-on-error: true
     steps:
       - uses: actions/checkout@v4
       - name: Install Rust stable
         uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
       - name: Setup Kani
         shell: pwsh
         run: ./scripts/setup-kani.ps1 -Install

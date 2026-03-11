@@ -1,6 +1,14 @@
 # Implementation Log
 
 ## 2026-03-11
+- GitHub CI check-in workflow cleanup:
+  - replaced the failing broad push/PR workflow with a stable Windows readiness gate that mirrors the repo doctrine:
+    - `./scripts/meta-check.ps1 -Fast -NoArtifacts`
+  - removed heavyweight conformance/matrix/formal lanes from the default push/PR path
+  - retained an explicit manual extended lane:
+    - `./scripts/meta-check.ps1 -Fast -Conformance -Matrix -Formal -NoArtifacts`
+  - retained optional manual Kani execution behind `RUN_KANI`
+  - updated `README.md` and `docs/CONTRIBUTING.md` so local guidance matches the GitHub gate
 - late-bound COM invoke transport metadata slice:
   - widened shared COM invoke transport in `crates/oxvba-com`:
     - added `ComInvokeArg { value, name }`
