@@ -143,6 +143,8 @@ Status vocabulary:
     - dynamic-link symbol identity is now explicitly typed as `DynLinkSymbol` at the runtime/HAL seam,
     - `DynLinkDescriptorView.symbol` and `DynamicLinkHal::invoke_symbol(...)` now use that typed symbol directly at the runtime/HAL seam,
     - serialized bytecode descriptor/instruction symbol fields now also use `DynLinkSymbol`,
+    - the standard Windows COM adapter now treats `dispatch_invoke_runtime_value_v2(...)` as the canonical implementation seam and projects the token-return form only at the compatibility edge,
+    - the canonical runtime-value COM invoke path now explicitly preserves the working zero-argument native `IDispatch` method/property-get cases,
     - the remaining active seam is the actual HAL `ValueToken` contract plus remaining outward runtime APIs and the still-legacy-heavy caller/test estate around integer snapshots.
 
 ### `IP-05` Windows early-bound COM and type-library parity

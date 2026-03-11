@@ -1342,117 +1342,6 @@ impl StandardHostServices {
     }
 
     #[cfg(target_os = "windows")]
-    fn native_com_dispatch_invoke_with_direct_dispid(
-        &self,
-        dispatch: *mut RawIDispatch,
-        dispid: i32,
-        invoke_kind: TypeLibMemberInvokeKind,
-        requires_argument: bool,
-        args: &[ComInvokeArg],
-    ) -> HalResult<i32> {
-        self.ensure_thread_com_apartment("dispatch_invoke")?;
-        if requires_argument {
-            if args.iter().all(|arg| arg.value.is_none()) {
-                return Err(HalError::adapter_fault(
-                    self.profile,
-                    CapabilityId::ComActivationDispatch,
-                    "dispatch_invoke",
-                    "member requires argument but DispatchInvoke omitted the third argument",
-                ));
-            }
-        } else {
-            let mut resolve_object = |token: ComObjectToken| {
-                self.resolve_native_dispatch_for_object_arg(token, "dispatch_invoke")
-                    .map_err(|err| {
-                        format!("{} [{}] {}", err.stable_code, err.operation, err.message)
-                    })
-            };
-            return match invoke_kind {
-                // SAFETY: `dispatch` is a live IDispatch pointer and `dispid` is treated as a
-                // direct member id for the controlled direct-dispatch path.
-                TypeLibMemberInvokeKind::PropertyGet => unsafe {
-                    raw_dispatch_property_get_i4_args(
-                        dispatch,
-                        dispid,
-                        &[],
-                        &[],
-                        &mut resolve_object,
-                    )
-                },
-                // SAFETY: Same pointer/dispid validity as above for no-arg method invoke.
-                TypeLibMemberInvokeKind::Method => unsafe {
-                    raw_dispatch_invoke_method_i4_args(
-                        dispatch,
-                        dispid,
-                        &[],
-                        &[],
-                        &mut resolve_object,
-                    )
-                },
-                TypeLibMemberInvokeKind::PropertyPut | TypeLibMemberInvokeKind::PropertyPutRef => {
-                    return Err(HalError::adapter_fault(
-                        self.profile,
-                        CapabilityId::ComActivationDispatch,
-                        "dispatch_invoke",
-                        "member requires argument for property put/putref dispatch",
-                    ));
-                }
-            }
-            .map_err(|failure| self.com_dispatch_invoke_fault(failure));
-        }
-        if args.iter().any(|arg| arg.name.is_some()) {
-            return Err(HalError::adapter_fault(
-                self.profile,
-                CapabilityId::ComActivationDispatch,
-                "dispatch_invoke",
-                "named arguments require a resolved COM member name and are unsupported for direct-DISPID dispatch",
-            ));
-        }
-        let mut resolve_object = |token: ComObjectToken| {
-            self.resolve_native_dispatch_for_object_arg(token, "dispatch_invoke")
-                .map_err(|err| format!("{} [{}] {}", err.stable_code, err.operation, err.message))
-        };
-        match invoke_kind {
-            // SAFETY: `dispatch` is a live IDispatch pointer and the helper owns temporary
-            // Automation state for the argument vector.
-            TypeLibMemberInvokeKind::PropertyGet => unsafe {
-                raw_dispatch_property_get_i4_args(dispatch, dispid, args, &[], &mut resolve_object)
-            },
-            // SAFETY: Same pointer and marshalling guarantees as above.
-            TypeLibMemberInvokeKind::Method => unsafe {
-                raw_dispatch_invoke_method_i4_args(dispatch, dispid, args, &[], &mut resolve_object)
-            },
-            // SAFETY: Same pointer and marshalling guarantees as above.
-            TypeLibMemberInvokeKind::PropertyPut => unsafe {
-                raw_dispatch_property_put_i4_args(dispatch, dispid, args, &[], &mut resolve_object)
-            },
-            // SAFETY: Same pointer and marshalling guarantees as above.
-            TypeLibMemberInvokeKind::PropertyPutRef => unsafe {
-                raw_dispatch_property_putref_i4_args(
-                    dispatch,
-                    dispid,
-                    args,
-                    &[],
-                    &mut resolve_object,
-                )
-            },
-        }
-        .map_err(|failure| self.com_dispatch_invoke_fault(failure))
-    }
-
-    #[cfg(target_os = "windows")]
-    fn native_com_dispatch_invoke_with_bound_dispatch(
-        &self,
-        dispatch: *mut RawIDispatch,
-        prog_id: &str,
-        member: i32,
-        args: &[ComInvokeArg],
-    ) -> HalResult<i32> {
-        self.ensure_thread_com_apartment("dispatch_invoke")?;
-        self.native_com_dispatch_invoke_core(dispatch, prog_id, member, args)
-    }
-
-    #[cfg(target_os = "windows")]
     fn try_native_com_vtable_invoke(
         &self,
         dispatch: *mut RawIDispatch,
@@ -1554,6 +1443,54 @@ impl StandardHostServices {
                 "member requires argument but DispatchInvoke omitted the third argument",
             ));
         }
+        if !spec.requires_argument {
+            let mut resolve_object = |token: ComObjectToken| {
+                self.resolve_native_dispatch_for_object_arg(token, "dispatch_invoke")
+                    .map_err(|err| {
+                        format!("{} [{}] {}", err.stable_code, err.operation, err.message)
+                    })
+            };
+            match spec.invoke_kind {
+                TypeLibMemberInvokeKind::PropertyGet => {
+                    // SAFETY: `dispatch` is a live IDispatch pointer and `dispid` was resolved for
+                    // this member on the same interface.
+                    return unsafe {
+                        raw_dispatch_property_get_i4_args(
+                            dispatch,
+                            dispid,
+                            &[],
+                            &[],
+                            &mut resolve_object,
+                        )
+                    }
+                    .map(RuntimeValue::I32)
+                    .map_err(|failure| self.com_dispatch_invoke_fault(failure));
+                }
+                TypeLibMemberInvokeKind::Method => {
+                    // SAFETY: `dispatch` is a live IDispatch pointer and `dispid` targets a method
+                    // on the same interface without arguments.
+                    return unsafe {
+                        raw_dispatch_invoke_method_i4_args(
+                            dispatch,
+                            dispid,
+                            &[],
+                            &[],
+                            &mut resolve_object,
+                        )
+                    }
+                    .map(RuntimeValue::I32)
+                    .map_err(|failure| self.com_dispatch_invoke_fault(failure));
+                }
+                TypeLibMemberInvokeKind::PropertyPut | TypeLibMemberInvokeKind::PropertyPutRef => {
+                    return Err(HalError::adapter_fault(
+                        self.profile,
+                        CapabilityId::ComActivationDispatch,
+                        "dispatch_invoke",
+                        "member requires argument for property put/putref dispatch",
+                    ));
+                }
+            }
+        }
         match spec.invoke_kind {
             TypeLibMemberInvokeKind::PropertyGet => unsafe {
                 let named_arg_dispids =
@@ -1635,6 +1572,44 @@ impl StandardHostServices {
                 "dispatch_invoke",
                 "member requires argument but DispatchInvoke omitted the third argument",
             ));
+        }
+        if !requires_argument {
+            let mut resolve_object = |token: ComObjectToken| {
+                self.resolve_native_dispatch_for_object_arg(token, "dispatch_invoke")
+                    .map_err(|err| {
+                        format!("{} [{}] {}", err.stable_code, err.operation, err.message)
+                    })
+            };
+            return match invoke_kind {
+                TypeLibMemberInvokeKind::PropertyGet => unsafe {
+                    raw_dispatch_property_get_i4_args(
+                        dispatch,
+                        dispid,
+                        &[],
+                        &[],
+                        &mut resolve_object,
+                    )
+                },
+                TypeLibMemberInvokeKind::Method => unsafe {
+                    raw_dispatch_invoke_method_i4_args(
+                        dispatch,
+                        dispid,
+                        &[],
+                        &[],
+                        &mut resolve_object,
+                    )
+                },
+                TypeLibMemberInvokeKind::PropertyPut | TypeLibMemberInvokeKind::PropertyPutRef => {
+                    return Err(HalError::adapter_fault(
+                        self.profile,
+                        CapabilityId::ComActivationDispatch,
+                        "dispatch_invoke",
+                        "member requires argument for property put/putref dispatch",
+                    ));
+                }
+            }
+            .map(RuntimeValue::I32)
+            .map_err(|failure| self.com_dispatch_invoke_fault(failure));
         }
         if args.iter().any(|arg| arg.name.is_some()) {
             return Err(HalError::adapter_fault(
@@ -3189,161 +3164,9 @@ impl ComHal for StandardHostServices {
     }
 
     fn dispatch_invoke_v2(&self, request: &ComInvokeRequest) -> HalResult<i32> {
-        let object = request.object.raw();
-        let member = request.member;
-        let args = request.args.as_slice();
-        let positional_values = Self::com_invoke_arg_values_if_legacy(args);
-        let capability = CapabilityId::ComActivationDispatch;
-        if !self.supports(capability) {
-            return Err(self.unsupported(capability, "dispatch_invoke"));
-        }
-        if !self.policy.allow_com_activation {
-            return Err(self.denied(capability, "dispatch_invoke"));
-        }
-        if self.native_com_enabled() {
-            #[cfg(target_os = "windows")]
-            let _ = Self::com_invoke_named_arg_count(args)?;
-            let (binding, cached_dispid) = {
-                let state = self.com_lock(capability, "dispatch_invoke")?;
-                self.assert_com_invariants(&state, "dispatch_invoke");
-                let binding = state.bindings.get(&object).cloned();
-                let cached_dispid = binding
-                    .as_ref()
-                    .and_then(|entry| entry.member_dispids.get(&member).copied());
-                (binding, cached_dispid)
-            };
-            if let Some(binding) = binding {
-                #[cfg(target_os = "windows")]
-                if binding.native_dispatch != 0 {
-                    let dispatch = binding.native_dispatch as *mut RawIDispatch;
-                    let named_default_member =
-                        if member == 0 && args.iter().any(|arg| arg.name.is_some()) {
-                            binding.default_member_token.and_then(|token| {
-                                binding
-                                    .member_specs
-                                    .get(&token)
-                                    .cloned()
-                                    .map(|spec| (token, spec))
-                            })
-                        } else {
-                            None
-                        };
-                    if member == 0
-                        && args.iter().any(|arg| arg.name.is_some())
-                        && named_default_member.is_none()
-                    {
-                        return Err(HalError::adapter_fault(
-                            self.profile,
-                            capability,
-                            "dispatch_invoke",
-                            "default member identity unavailable for named late-bound dispatch",
-                        ));
-                    }
-                    let effective_member = named_default_member
-                        .as_ref()
-                        .map(|(token, _)| *token)
-                        .unwrap_or(member);
-                    let effective_cached_dispid = if effective_member == member {
-                        cached_dispid
-                    } else {
-                        binding.member_dispids.get(&effective_member).copied()
-                    };
-                    let value = if args
-                        .iter()
-                        .all(|arg| arg.name.is_none() && arg.value.is_some())
-                        && let Some(positional_values) = positional_values.as_ref()
-                        && let Some(value) = self.try_native_com_vtable_invoke(
-                            dispatch,
-                            &binding.prog_id_name,
-                            effective_member,
-                            positional_values,
-                        )? {
-                        value
-                    } else if let Some((token, spec)) = named_default_member {
-                        let (dispid, spec) = self
-                            .resolve_member_dispid_cached(
-                                object,
-                                dispatch,
-                                &binding,
-                                token,
-                                effective_cached_dispid,
-                            )?
-                            .map(|(dispid, _)| (dispid, spec))
-                            .ok_or_else(|| {
-                                HalError::adapter_fault(
-                                    self.profile,
-                                    capability,
-                                    "dispatch_invoke",
-                                    "default member identity unavailable for named late-bound dispatch",
-                                )
-                            })?;
-                        self.native_com_dispatch_invoke_with_member_spec(
-                            dispatch, dispid, &spec, args,
-                        )?
-                    } else if let Some((dispid, spec)) = self.resolve_member_dispid_cached(
-                        object,
-                        dispatch,
-                        &binding,
-                        effective_member,
-                        effective_cached_dispid,
-                    )? {
-                        self.native_com_dispatch_invoke_with_member_spec(
-                            dispatch, dispid, &spec, args,
-                        )?
-                    } else if let Some(spec) = binding
-                        .direct_dispatch_specs
-                        .get(&effective_member)
-                        .copied()
-                    {
-                        self.native_com_dispatch_invoke_with_direct_dispid(
-                            dispatch,
-                            effective_member,
-                            spec.invoke_kind,
-                            spec.requires_argument,
-                            args,
-                        )?
-                    } else {
-                        self.native_com_dispatch_invoke_with_bound_dispatch(
-                            dispatch,
-                            &binding.prog_id_name,
-                            effective_member,
-                            args,
-                        )?
-                    };
-                    self.queue_com_event_callbacks(
-                        object,
-                        &binding,
-                        member,
-                        positional_values.as_deref(),
-                    )?;
-                    return Ok(value);
-                }
-                let positional_values = positional_values.as_ref().ok_or_else(|| {
-                    HalError::adapter_fault(
-                        self.profile,
-                        capability,
-                        "dispatch_invoke",
-                        "COM-E-VALUE-TRANSPORT-UNSUPPORTED: projection dispatch requires legacy runtime-token arguments",
-                    )
-                })?;
-                let value = self.native_com_dispatch_invoke(&binding.prog_id_name, member, args)?;
-                self.queue_com_event_callbacks(object, &binding, member, Some(positional_values))?;
-                return Ok(value);
-            }
-        }
-        let positional_values = positional_values.ok_or_else(|| {
-            HalError::adapter_fault(
-                self.profile,
-                capability,
-                "dispatch_invoke",
-                "COM-E-VALUE-TRANSPORT-UNSUPPORTED: fallback dispatch lane requires legacy runtime-token arguments",
-            )
-        })?;
-        Ok(positional_values
-            .iter()
-            .fold(object.saturating_add(member), |acc, arg| {
-                acc.saturating_add(*arg)
-            }))
+        self.dispatch_invoke_runtime_value_v2(request)?
+            .to_legacy_i32()
+            .map_err(|message| self.com_dispatch_adapter_fault(message))
     }
 
     fn subscribe_event(
@@ -8947,7 +8770,7 @@ mod tests {
 
     #[cfg(target_os = "windows")]
     #[test]
-    fn windows_native_controlled_test_dispatch_supports_named_method_args_v2() {
+    fn windows_native_controlled_test_dispatch_supports_named_method_args_runtime_value_v2() {
         let host = StandardHostServices::new(HalProfileId::Windows, HostPolicy::interactive_dev());
         let object = host
             .create_object(4)
@@ -8962,15 +8785,17 @@ mod tests {
             invoke_kind_hint: None,
         };
         assert_eq!(
-            host.dispatch_invoke_v2(&request)
-                .expect("named-argument SumPair invoke should succeed"),
+            expect_i32(
+                host.dispatch_invoke_runtime_value_v2(&request)
+                    .expect("named-argument SumPair invoke should succeed")
+            ),
             3_014
         );
     }
 
     #[cfg(target_os = "windows")]
     #[test]
-    fn windows_native_controlled_test_dispatch_supports_named_property_get_args_v2() {
+    fn windows_native_controlled_test_dispatch_supports_named_property_get_args_runtime_value_v2() {
         let host = StandardHostServices::new(HalProfileId::Windows, HostPolicy::interactive_dev());
         let object = host
             .create_object(4)
@@ -8985,15 +8810,18 @@ mod tests {
             invoke_kind_hint: None,
         };
         assert_eq!(
-            host.dispatch_invoke_v2(&request)
-                .expect("named property-get invoke should succeed"),
+            expect_i32(
+                host.dispatch_invoke_runtime_value_v2(&request)
+                    .expect("named property-get invoke should succeed")
+            ),
             203_014
         );
     }
 
     #[cfg(target_os = "windows")]
     #[test]
-    fn windows_native_controlled_test_dispatch_supports_named_default_member_args_v2() {
+    fn windows_native_controlled_test_dispatch_supports_named_default_member_args_runtime_value_v2()
+    {
         let host = StandardHostServices::new(HalProfileId::Windows, HostPolicy::interactive_dev());
         let object = host
             .create_object(4)
@@ -9005,8 +8833,10 @@ mod tests {
             invoke_kind_hint: None,
         };
         assert_eq!(
-            host.dispatch_invoke_v2(&request)
-                .expect("named default-member invoke should succeed"),
+            expect_i32(
+                host.dispatch_invoke_runtime_value_v2(&request)
+                    .expect("named default-member invoke should succeed")
+            ),
             19
         );
     }
@@ -9029,7 +8859,7 @@ mod tests {
             invoke_kind_hint: None,
         };
         let err = host
-            .dispatch_invoke_v2(&request)
+            .dispatch_invoke_runtime_value_v2(&request)
             .expect_err("named default-member invoke should fail without identity");
         assert_eq!(err.kind, HalErrorKind::AdapterFault);
         assert!(

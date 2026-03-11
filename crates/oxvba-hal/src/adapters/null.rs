@@ -158,6 +158,13 @@ impl ComHal for NullHostServices {
         Err(self.unsupported(CapabilityId::ComActivationDispatch, "describe_object"))
     }
 
+    fn dispatch_invoke_runtime_value_v2(
+        &self,
+        _request: &oxvba_com::ComInvokeRequest,
+    ) -> HalResult<RuntimeValue> {
+        Err(self.unsupported(CapabilityId::ComActivationDispatch, "dispatch_invoke"))
+    }
+
     fn dispatch_invoke_v2(&self, _request: &oxvba_com::ComInvokeRequest) -> HalResult<i32> {
         Err(self.unsupported(CapabilityId::ComActivationDispatch, "dispatch_invoke"))
     }

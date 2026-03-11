@@ -116,9 +116,11 @@ Run context: active parity/compliance execution plus in-progress feature worklis
   - UI/process host intrinsics now likewise read semantic `RuntimeValue` directly from the HAL boundary instead of routing through removed `*_value()` wrappers,
   - dynamic-link host intrinsics and diagnostics/conformance probes now likewise use direct semantic `RuntimeValue` contracts instead of routing through removed `*_value()` wrappers,
   - COM event helper host intrinsics and engine subscription paths now likewise use direct semantic `RuntimeValue` contracts instead of routing through removed `*_value()` wrappers,
+  - the standard Windows COM adapter now treats `dispatch_invoke_runtime_value_v2(...)` as the canonical implementation seam and projects `dispatch_invoke_v2(...)` from that semantic path only at the compatibility edge,
+  - the runtime-value COM invoke path now explicitly preserves the working zero-argument native `IDispatch` method/property-get behavior instead of regressing `DISP_E_BADPARAMCOUNT` on the canonical path,
   - the remaining runtime/host boundary holdouts are now concentrated in:
     - `ValueToken = i32` itself,
-    - `ComHal::{create_object_value,dispatch_invoke_v2,dispatch_invoke_runtime_value_v2}`,
+    - `ComHal::{create_object_value,dispatch_invoke_v2}`,
     - engine/public callers and legacy snapshot/compatibility paths that still observe COM object identity through raw integer tokens,
     - many bytecode execution callers and tests still assume the legacy integer observation surface,
   - the new `ComValue` carrier and generic dynamic-object protocol can live at the COM boundary, but they cannot yet become the single runtime object/value model while the wider execution substrate remains token-only.

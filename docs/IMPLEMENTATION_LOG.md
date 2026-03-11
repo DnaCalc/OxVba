@@ -1,5 +1,23 @@
 # Implementation Log
 
+## 2026-03-11 - COM HAL invoke seam now projects from runtime values
+
+- Tightened the COM HAL seam in [traits.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-hal\src\traits.rs) so `dispatch_invoke_runtime_value_v2(...)` is documented as the canonical semantic path and `dispatch_invoke_v2(...)` is explicitly treated as the remaining legacy compatibility projection.
+- Updated null/wasm adapters to expose the runtime-value COM invoke seam directly instead of inheriting it only through the legacy token path.
+- Changed the Windows adapter in [standard.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-hal\src\adapters\standard.rs) so:
+  - `dispatch_invoke_v2(...)` now projects from `dispatch_invoke_runtime_value_v2(...)`,
+  - the duplicate token-first native COM invoke implementation was removed,
+  - the canonical runtime-value path preserves the working zero-argument native `IDispatch` method/property-get cases instead of regressing them behind the broader runtime-value packer.
+- Added direct runtime-path coverage for named method/property-get/default-member dispatch and preserved the existing compatibility tests.
+- Net effect:
+  - the standard COM dispatch seam is now runtime-value first,
+  - the remaining blocker is no longer which COM invoke path is canonical,
+  - it is the deeper `ValueToken = i32` contract and the remaining public legacy observation surfaces.
+- Verification:
+  - `cargo test -p oxvba-hal --quiet`
+  - `./scripts/check-governance.ps1`
+  - `./scripts/meta-check.ps1 -Fast -NoArtifacts`
+
 ## 2026-03-11 - Runtime object identity typed through COM/host seam
 
 - Introduced explicit `ObjectHandle` in [runtime_value.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-runtime\src\runtime_value.rs) and changed `RuntimeValue::ObjectHandle(...)` to carry that typed handle instead of a plain integer payload.

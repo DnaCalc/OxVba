@@ -116,14 +116,18 @@ pub trait ComHal: Send + Sync {
     fn create_object_value(&self, prog_id: RuntimeValue) -> HalResult<RuntimeValue>;
     fn release_object(&self, object: ObjectHandle) -> HalResult<ValueToken>;
     fn describe_object(&self, object: ObjectHandle) -> HalResult<Option<ComObjectDescriptor>>;
-    fn dispatch_invoke_v2(&self, request: &ComInvokeRequest) -> HalResult<ValueToken>;
+    /// Canonical COM invoke seam. Implementations should translate between COM
+    /// wire values and the runtime semantic value model here.
+    ///
+    /// `dispatch_invoke_v2` remains as a legacy compatibility projection while
+    /// the wider runtime still exposes integer observation lanes.
     fn dispatch_invoke_runtime_value_v2(
         &self,
         request: &ComInvokeRequest,
-    ) -> HalResult<RuntimeValue> {
-        self.dispatch_invoke_v2(request)
-            .map(RuntimeValue::from_legacy_i32)
-    }
+    ) -> HalResult<RuntimeValue>;
+    /// Legacy compatibility seam for callers that still observe integer slots.
+    /// This should project the canonical runtime-value result when possible.
+    fn dispatch_invoke_v2(&self, request: &ComInvokeRequest) -> HalResult<ValueToken>;
     fn dispatch_invoke(
         &self,
         object: ValueToken,
