@@ -4,6 +4,37 @@ use crate::{
     value_tags::{EMPTY_TAG, NULL_TAG, error_code_from_tag, error_tag_from_code, is_error_tag},
 };
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
+pub struct ObjectHandle(i32);
+
+impl ObjectHandle {
+    pub const fn new(raw: i32) -> Self {
+        Self(raw)
+    }
+
+    pub const fn raw(self) -> i32 {
+        self.0
+    }
+}
+
+impl core::fmt::Display for ObjectHandle {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
+impl From<i32> for ObjectHandle {
+    fn from(value: i32) -> Self {
+        Self::new(value)
+    }
+}
+
+impl From<ObjectHandle> for i32 {
+    fn from(value: ObjectHandle) -> Self {
+        value.raw()
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub enum RuntimeValue {
     #[default]
@@ -14,7 +45,7 @@ pub enum RuntimeValue {
     Bool(bool),
     String(BStr),
     ArrayIntent(SafeArray),
-    ObjectHandle(i32),
+    ObjectHandle(ObjectHandle),
 }
 
 impl RuntimeValue {
@@ -44,7 +75,7 @@ impl RuntimeValue {
             Self::ArrayIntent(array) => array_tag_from_safe_array(array).ok_or_else(|| {
                 "array intent cannot be represented in current legacy slot tag".to_string()
             }),
-            Self::ObjectHandle(handle) => Ok(*handle),
+            Self::ObjectHandle(handle) => Ok(handle.raw()),
             Self::String(_) => {
                 Err("string cannot be represented in current legacy i32 slot lane".to_string())
             }
@@ -69,7 +100,7 @@ mod tests {
         value_tags::{EMPTY_TAG, NULL_TAG, error_tag_from_code},
     };
 
-    use super::RuntimeValue;
+    use super::{ObjectHandle, RuntimeValue};
 
     #[test]
     fn runtime_value_from_legacy_i32_preserves_tagged_shapes() {
@@ -109,7 +140,7 @@ mod tests {
     #[test]
     fn runtime_value_object_handles_preserve_legacy_shape() {
         assert_eq!(
-            RuntimeValue::ObjectHandle(42)
+            RuntimeValue::ObjectHandle(ObjectHandle::new(42))
                 .to_legacy_i32()
                 .expect("object handle"),
             42

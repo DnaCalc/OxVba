@@ -136,6 +136,8 @@ Status vocabulary:
     - legacy public snapshot APIs in VM/JIT/host now route through semantic `RuntimeValue` snapshots and project only at the compatibility edge,
     - VM `WithEvents` binding storage now preserves semantic `RuntimeValue` payloads instead of flattening bound source/object values to raw integers,
     - VM `DispatchInvoke` now consumes object slots from semantic runtime state and preserves object handles rather than re-reading them through the raw slot lane before COM request construction,
+    - runtime object identity is now explicitly typed as `ObjectHandle` in `oxvba-runtime`,
+    - `ComHal::{create_object,release_object,describe_object}` and engine-side COM event subscription/object-description wrappers now use that typed handle directly instead of raw integer object tokens,
     - the remaining active seam is the actual HAL `ValueToken` contract plus the still-token-bound HAL domains, remaining outward runtime APIs, and the still-legacy-heavy caller/test estate around integer snapshots.
 
 ### `IP-05` Windows early-bound COM and type-library parity

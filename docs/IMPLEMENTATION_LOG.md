@@ -1,5 +1,17 @@
 # Implementation Log
 
+## 2026-03-11 - Runtime object identity typed through COM/host seam
+
+- Introduced explicit `ObjectHandle` in [runtime_value.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-runtime\src\runtime_value.rs) and changed `RuntimeValue::ObjectHandle(...)` to carry that typed handle instead of a plain integer payload.
+- Updated the shared COM carrier in [model.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-com\src\model.rs) so runtime-value conversions preserve the typed handle explicitly.
+- Tightened `ComHal` object-identity APIs in [traits.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-hal\src\traits.rs):
+  - `create_object(...) -> ObjectHandle`
+  - `release_object(ObjectHandle)`
+  - `describe_object(ObjectHandle)`
+- Updated Windows/null/wasm HAL adapters and host wrappers accordingly, including registered COM lane coverage.
+- Verification:
+  - `cargo test -p oxvba-hal -p oxvba-host -p oxvba-vm -p oxvba-com -p oxvba-runtime -p oxvba-jit -p oxvba-cli --quiet`
+
 ## 2026-03-11
 - runtime COM-dispatch object-entry slice:
   - changed VM `DispatchInvoke` request construction to read the object slot from semantic runtime state and preserve object handles before building the COM request

@@ -17,8 +17,8 @@ use oxvba_hal::{
     traits::HostServices,
 };
 use oxvba_jit::JitEngine;
-use oxvba_runtime::RuntimeValue;
 use oxvba_runtime::value_tags::EMPTY_TAG;
+use oxvba_runtime::{ObjectHandle, RuntimeValue};
 use oxvba_vm::{Vm, execute_and_snapshot_values_with_host};
 
 use crate::{
@@ -280,7 +280,7 @@ impl Engine {
 
     pub fn subscribe_com_event_handler(
         &self,
-        object_token: i32,
+        object_token: ObjectHandle,
         event_token: i32,
         handler_symbol: &str,
     ) -> Result<i32, PhaseDiagnostic> {
@@ -335,7 +335,7 @@ impl Engine {
 
     pub fn describe_com_object(
         &self,
-        object_token: i32,
+        object_token: ObjectHandle,
     ) -> Result<Option<ComObjectDescriptor>, PhaseDiagnostic> {
         self.host_services
             .com()
@@ -1900,7 +1900,7 @@ mod tests {
         let _ = engine
             .host_services
             .com()
-            .dispatch_invoke(object, 3, 77)
+            .dispatch_invoke(object.into(), 3, 77)
             .expect("dispatch_invoke should queue callback");
         let callback = engine
             .poll_com_event_callback()
@@ -1935,7 +1935,7 @@ mod tests {
             .expect("describe_com_object should succeed")
             .expect("known COM object should produce a descriptor");
 
-        assert_eq!(descriptor.object.raw(), object);
+        assert_eq!(descriptor.object.raw(), object.raw());
         assert_eq!(descriptor.prog_id_name, "OxVba.TestDispatch");
         assert_eq!(
             descriptor.transport,
@@ -1975,7 +1975,7 @@ mod tests {
         let _ = engine
             .host_services
             .com()
-            .dispatch_invoke(object, 3, 21)
+            .dispatch_invoke(object.into(), 3, 21)
             .expect("dispatch_invoke should queue callback");
 
         let err = engine
@@ -2011,7 +2011,7 @@ mod tests {
         let _ = engine
             .host_services
             .com()
-            .dispatch_invoke(object, 4, 90)
+            .dispatch_invoke(object.into(), 4, 90)
             .expect("dispatch_invoke should queue pair callback");
         let callback = engine
             .poll_com_event_callback()
@@ -2049,7 +2049,7 @@ mod tests {
         let _ = engine
             .host_services
             .com()
-            .dispatch_invoke(object, 11, 55)
+            .dispatch_invoke(object.into(), 11, 55)
             .expect("dispatch_invoke should queue source-interface callback");
         let callback = engine
             .poll_com_event_callback()
@@ -2101,7 +2101,7 @@ mod tests {
         let _ = engine
             .host_services
             .com()
-            .dispatch_invoke(object, 3, 77)
+            .dispatch_invoke(object.into(), 3, 77)
             .expect("dispatch_invoke should queue callback");
 
         let err = engine
@@ -2151,7 +2151,7 @@ mod tests {
         let _ = engine
             .host_services
             .com()
-            .dispatch_invoke(object, 3, 77)
+            .dispatch_invoke(object.into(), 3, 77)
             .expect("dispatch_invoke should queue callback");
 
         let err = engine
@@ -2200,7 +2200,7 @@ mod tests {
         let _ = engine
             .host_services
             .com()
-            .dispatch_invoke(object, 3, 77)
+            .dispatch_invoke(object.into(), 3, 77)
             .expect("dispatch_invoke should queue callback");
 
         let err = engine
@@ -2249,7 +2249,7 @@ mod tests {
         let _ = engine
             .host_services
             .com()
-            .dispatch_invoke(object, 4, 90)
+            .dispatch_invoke(object.into(), 4, 90)
             .expect("dispatch_invoke should queue callback");
 
         let err = engine
@@ -5393,7 +5393,7 @@ mod tests {
             .execute_source_with_value_snapshot("Sub Main()\nDim x\nx = CreateObject(4)\nEnd Sub")
             .expect("CreateObject value snapshot should succeed");
         assert_eq!(out.len(), 1);
-        assert!(matches!(out[0], RuntimeValue::ObjectHandle(handle) if handle > 0));
+        assert!(matches!(out[0], RuntimeValue::ObjectHandle(handle) if handle.raw() > 0));
     }
 
     #[cfg(target_os = "windows")]
@@ -5409,7 +5409,7 @@ mod tests {
             .execute_source_with_value_snapshot("Sub Main()\nDim x\nx = CreateObject(4)\nEnd Sub")
             .expect("CreateObject value snapshot should preserve object handle on JIT fallback");
         assert_eq!(out.len(), 1);
-        assert!(matches!(out[0], RuntimeValue::ObjectHandle(handle) if handle > 0));
+        assert!(matches!(out[0], RuntimeValue::ObjectHandle(handle) if handle.raw() > 0));
     }
 
     #[cfg(target_os = "windows")]

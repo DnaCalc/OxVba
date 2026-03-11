@@ -67,13 +67,15 @@ Completed slices:
 17. `UiInteractionHal::{msg_box,input_box}` and `ProcessEnvHal::{shell,environ,dir}` now also use direct semantic `RuntimeValue` contracts, and the VM/conformance/test surfaces consume those domains without token-first wrapper methods.
 18. `DynamicLinkHal::{invoke_symbol,invoke_descriptor}` and `DiagnosticsHal::emit` now also use direct semantic `RuntimeValue` contracts on the VM/conformance-facing path instead of token-first wrapper methods.
 19. `ComHal::{subscribe_event,unsubscribe_event,event_callback_subscription,event_callback_arity,event_callback_arg,release_event_callback}` now also use direct semantic `RuntimeValue` contracts on the VM/conformance-facing path instead of token-first wrapper methods.
+20. Runtime object identity is now explicitly typed in [runtime_value.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-runtime\src\runtime_value.rs) as `ObjectHandle` rather than existing only as an ambiguous integer payload.
+21. `ComHal::{create_object,release_object,describe_object}` and the corresponding host wrapper surfaces now use `ObjectHandle` directly instead of raw integer object tokens.
 
 Remaining blocker seam:
 1. HAL `ValueToken = i32` still anchors many remaining seams,
 2. the remaining holdouts are now concentrated in:
-   - `ComHal::{create_object,create_object_value,release_object,describe_object,dispatch_invoke_v2,dispatch_invoke_runtime_value_v2}`,
+   - `ComHal::{create_object_value,dispatch_invoke_v2,dispatch_invoke_runtime_value_v2}`,
    - `DynamicLinkHal::{bind_descriptor,prepare_invoke,invoke_bound}`,
-   - engine/public callers that still observe COM object identity through raw integer tokens,
+   - engine/public callers and legacy compatibility surfaces that still observe COM object identity through raw integer tokens,
 3. many public observation APIs still expose the legacy integer lane as the primary compatibility surface,
 4. JIT internals and parity harnesses still observe only the integer slot lane for Cranelift-supported subsets,
 5. many tests still assume integer snapshots as the primary public contract.

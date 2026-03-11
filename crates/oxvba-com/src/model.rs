@@ -1,7 +1,7 @@
 pub const DISPATCH_INVOKE_MISSING_ARG_TOKEN: i32 = i32::MIN + 2_048;
 
 use oxvba_runtime::{
-    RuntimeValue,
+    ObjectHandle, RuntimeValue,
     bstr::BStr,
     safe_array::{
         SafeArray, array_tag_from_safe_array, marshal_dispatch_argument, safe_array_from_tag,
@@ -91,7 +91,9 @@ impl ComValue {
             RuntimeValue::I32(value) => Self::I32(*value),
             RuntimeValue::String(value) => Self::String(value.clone()),
             RuntimeValue::ArrayIntent(array) => Self::ArrayIntent(array.clone()),
-            RuntimeValue::ObjectHandle(handle) => Self::ObjectHandle(ComObjectToken::new(*handle)),
+            RuntimeValue::ObjectHandle(handle) => {
+                Self::ObjectHandle(ComObjectToken::new(handle.raw()))
+            }
         }
     }
 
@@ -120,7 +122,9 @@ impl ComValue {
             Self::I32(value) => RuntimeValue::I32(*value),
             Self::String(value) => RuntimeValue::String(value.clone()),
             Self::ArrayIntent(array) => RuntimeValue::ArrayIntent(array.clone()),
-            Self::ObjectHandle(handle) => RuntimeValue::ObjectHandle(handle.raw()),
+            Self::ObjectHandle(handle) => {
+                RuntimeValue::ObjectHandle(ObjectHandle::new(handle.raw()))
+            }
         }
     }
 
@@ -232,7 +236,7 @@ pub struct ComCallbackPayload {
 mod tests {
     use super::{ComObjectToken, ComValue};
     use oxvba_runtime::{
-        RuntimeValue,
+        ObjectHandle, RuntimeValue,
         bstr::BStr,
         safe_array::{ARRAY_TAG_BASE, SafeArray},
         value_tags::{EMPTY_TAG, NULL_TAG, error_tag_from_code},
@@ -287,12 +291,12 @@ mod tests {
             RuntimeValue::String(BStr("ABC".to_string()))
         );
         assert_eq!(
-            ComValue::from_runtime_value(&RuntimeValue::ObjectHandle(1234)),
+            ComValue::from_runtime_value(&RuntimeValue::ObjectHandle(ObjectHandle::new(1234))),
             ComValue::ObjectHandle(ComObjectToken::new(1234))
         );
         assert_eq!(
             ComValue::ObjectHandle(ComObjectToken::new(1234)).to_runtime_value(),
-            RuntimeValue::ObjectHandle(1234)
+            RuntimeValue::ObjectHandle(ObjectHandle::new(1234))
         );
         assert!(
             ComValue::String(BStr("ABC".to_string()))

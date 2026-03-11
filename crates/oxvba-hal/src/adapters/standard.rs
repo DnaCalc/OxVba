@@ -19,7 +19,7 @@ use oxvba_com::{
     known_typelib_identity_for_prog_id_name, resolve_known_typelib_identity,
 };
 use oxvba_runtime::{
-    RuntimeValue,
+    ObjectHandle, RuntimeValue,
     bstr::BStr,
     value_tags::{NULL_TAG, error_tag_from_code},
 };
@@ -1709,7 +1709,7 @@ impl StandardHostServices {
         op: &'static str,
     ) -> HalResult<RuntimeValue> {
         if dispatch.is_null() {
-            return Ok(RuntimeValue::ObjectHandle(0));
+            return Ok(RuntimeValue::ObjectHandle(0.into()));
         }
         let capability = CapabilityId::ComActivationDispatch;
         let mut state = self.com_lock(capability, op)?;
@@ -1723,7 +1723,7 @@ impl StandardHostServices {
             unsafe {
                 raw_release_dispatch(dispatch);
             }
-            return Ok(RuntimeValue::ObjectHandle(*handle));
+            return Ok(RuntimeValue::ObjectHandle((*handle).into()));
         }
         let handle = state.allocate_handle();
         state.bindings.insert(
@@ -1735,7 +1735,7 @@ impl StandardHostServices {
             ),
         );
         self.assert_com_invariants(&state, op);
-        Ok(RuntimeValue::ObjectHandle(handle))
+        Ok(RuntimeValue::ObjectHandle(handle.into()))
     }
 
     #[cfg(target_os = "windows")]
@@ -2768,7 +2768,7 @@ impl ProcessEnvHal for StandardHostServices {
 }
 
 impl ComHal for StandardHostServices {
-    fn create_object(&self, prog_id: i32) -> HalResult<i32> {
+    fn create_object(&self, prog_id: i32) -> HalResult<ObjectHandle> {
         let capability = CapabilityId::ComActivationDispatch;
         if !self.supports(capability) {
             return Err(self.unsupported(capability, "create_object"));
@@ -2798,7 +2798,7 @@ impl ComHal for StandardHostServices {
                     }
                     state.bindings.insert(handle, binding);
                     self.assert_com_invariants(&state, "create_object");
-                    return Ok(handle);
+                    return Ok(handle.into());
                 }
                 Err(err) => {
                     if self.has_explicit_native_com_override(prog_id) {
@@ -2807,7 +2807,7 @@ impl ComHal for StandardHostServices {
                 }
             }
         }
-        Ok(5_000i32.saturating_add(prog_id))
+        Ok(5_000i32.saturating_add(prog_id).into())
     }
 
     fn create_object_value(&self, prog_id: RuntimeValue) -> HalResult<RuntimeValue> {
@@ -2854,7 +2854,7 @@ impl ComHal for StandardHostServices {
                         }
                         state.bindings.insert(handle, binding);
                         self.assert_com_invariants(&state, "create_object");
-                        return Ok(RuntimeValue::ObjectHandle(handle));
+                        return Ok(RuntimeValue::ObjectHandle(handle.into()));
                     }
                     Err(err) => return Err(err),
                 }
@@ -2871,7 +2871,7 @@ impl ComHal for StandardHostServices {
         self.create_object(token).map(RuntimeValue::ObjectHandle)
     }
 
-    fn release_object(&self, object: i32) -> HalResult<i32> {
+    fn release_object(&self, object: ObjectHandle) -> HalResult<i32> {
         let capability = CapabilityId::ComActivationDispatch;
         if !self.supports(capability) {
             return Err(self.unsupported(capability, "release_object"));
@@ -2879,6 +2879,7 @@ impl ComHal for StandardHostServices {
         if !self.policy.allow_com_activation {
             return Err(self.denied(capability, "release_object"));
         }
+        let object = object.raw();
         if !self.native_com_enabled() {
             return Ok(if object == 0 { 0 } else { 1 });
         }
@@ -2961,7 +2962,7 @@ impl ComHal for StandardHostServices {
         Ok(1)
     }
 
-    fn describe_object(&self, object: i32) -> HalResult<Option<ComObjectDescriptor>> {
+    fn describe_object(&self, object: ObjectHandle) -> HalResult<Option<ComObjectDescriptor>> {
         let capability = CapabilityId::ComActivationDispatch;
         if !self.supports(capability) {
             return Err(self.unsupported(capability, "describe_object"));
@@ -2969,6 +2970,7 @@ impl ComHal for StandardHostServices {
         if !self.policy.allow_com_activation {
             return Err(self.denied(capability, "describe_object"));
         }
+        let object = object.raw();
         let descriptor = if self.native_com_enabled() {
             let state = self.com_lock(capability, "describe_object")?;
             self.assert_com_invariants(&state, "describe_object");
@@ -8089,7 +8091,7 @@ mod tests {
         let RuntimeValue::ObjectHandle(handle) = value else {
             panic!("expected object handle runtime value");
         };
-        assert!(handle >= 20_001);
+        assert!(handle.raw() >= 20_001);
         assert_eq!(
             host.release_object(handle)
                 .expect("release_object should succeed"),
@@ -8460,11 +8462,11 @@ mod tests {
             .create_object(4)
             .expect("create_object should return a token");
         assert!(
-            object >= 20_001,
+            object.raw() >= 20_001,
             "controlled COM lane should bind native object"
         );
         let subscription = host
-            .subscribe_event(rv(object), rv(1))
+            .subscribe_event(rv(object.into()), rv(1))
             .expect("subscribe_event should succeed for controlled event source");
         let subscription = expect_i32(subscription);
         assert!(subscription >= 40_001);
@@ -8487,7 +8489,7 @@ mod tests {
         }
 
         assert_eq!(
-            host.dispatch_invoke(object, 3, 77)
+            host.dispatch_invoke(object.into(), 3, 77)
                 .expect("FireChanged should succeed"),
             77
         );
@@ -8528,7 +8530,7 @@ mod tests {
             rv(1)
         );
         let _ = host
-            .dispatch_invoke(object, 3, 88)
+            .dispatch_invoke(object.into(), 3, 88)
             .expect("FireChanged should remain invokable after unsubscribe");
         assert_eq!(
             host.do_events()
@@ -8556,12 +8558,12 @@ mod tests {
             .create_object(4)
             .expect("create_object should return a token");
         let subscription = host
-            .subscribe_event(rv(object), rv(super::TEST_EVENT_CHANGED_PAIR))
+            .subscribe_event(rv(object.into()), rv(super::TEST_EVENT_CHANGED_PAIR))
             .expect("subscribe_event should succeed for controlled pair-event source");
         let subscription = expect_i32(subscription);
 
         assert_eq!(
-            host.dispatch_invoke(object, super::TEST_DISPID_FIRE_CHANGED_PAIR, 90)
+            host.dispatch_invoke(object.into(), super::TEST_DISPID_FIRE_CHANGED_PAIR, 90)
                 .expect("FireChangedPair should succeed"),
             91
         );
@@ -8618,12 +8620,12 @@ mod tests {
             .create_object(4)
             .expect("create_object should return a token");
         let subscription = host
-            .subscribe_event(rv(object), rv(super::TEST_EVENT_CHANGED_PAIR))
+            .subscribe_event(rv(object.into()), rv(super::TEST_EVENT_CHANGED_PAIR))
             .expect("subscribe_event should succeed for controlled pair-event source");
         let subscription = expect_i32(subscription);
 
         assert_eq!(
-            host.dispatch_invoke(object, super::TEST_DISPID_FIRE_CHANGED_PAIR, 90)
+            host.dispatch_invoke(object.into(), super::TEST_DISPID_FIRE_CHANGED_PAIR, 90)
                 .expect("FireChangedPair should succeed"),
             91
         );
@@ -8637,7 +8639,7 @@ mod tests {
             .expect("callback payload should be available");
         assert_eq!(payload.callback.raw(), callback);
         assert_eq!(payload.subscription.raw(), subscription);
-        assert_eq!(payload.object.raw(), object);
+        assert_eq!(payload.object.raw(), object.raw());
         assert_eq!(payload.event, super::TEST_EVENT_CHANGED_PAIR);
         assert_eq!(payload.args, vec![ComValue::I32(90), ComValue::I32(91)]);
         assert!(
@@ -8655,10 +8657,10 @@ mod tests {
             .create_object(4)
             .expect("create_object should return a token");
         let subscription = host
-            .subscribe_event(rv(object), rv(1))
+            .subscribe_event(rv(object.into()), rv(1))
             .expect("subscribe_event should succeed for controlled event source");
         let subscription = expect_i32(subscription);
-        host.dispatch_invoke(object, 3, 77)
+        host.dispatch_invoke(object.into(), 3, 77)
             .expect("FireChanged should succeed");
         let callback = host
             .do_events()
@@ -8692,7 +8694,7 @@ mod tests {
             .create_object(4)
             .expect("create_object should return a token");
         let err = host
-            .subscribe_event(rv(object), rv(7))
+            .subscribe_event(rv(object.into()), rv(7))
             .expect_err("unknown event token should fail deterministically");
         assert_eq!(err.kind, HalErrorKind::AdapterFault);
         assert!(err.message.contains("COM-E-EVENT-CONNECTIONPOINT-MISSING"));
@@ -8706,7 +8708,10 @@ mod tests {
             .create_object(4)
             .expect("create_object should return a token");
         let subscription = host
-            .subscribe_event(rv(object), rv(super::TEST_EVENT_CHANGED_SOURCE_INTERFACE))
+            .subscribe_event(
+                rv(object.into()),
+                rv(super::TEST_EVENT_CHANGED_SOURCE_INTERFACE),
+            )
             .expect("controlled source-interface event token should subscribe successfully");
         let subscription = expect_i32(subscription);
         assert!(
@@ -8714,8 +8719,12 @@ mod tests {
             "subscription token should be in deterministic range"
         );
         assert_eq!(
-            host.dispatch_invoke(object, super::TEST_DISPID_FIRE_CHANGED_SOURCE_INTERFACE, 77)
-                .expect("FireChangedSourceInterface should succeed"),
+            host.dispatch_invoke(
+                object.into(),
+                super::TEST_DISPID_FIRE_CHANGED_SOURCE_INTERFACE,
+                77
+            )
+            .expect("FireChangedSourceInterface should succeed"),
             77
         );
         let callback = host
@@ -8784,11 +8793,11 @@ mod tests {
             .create_object(4)
             .expect("create_object should return a token");
         let subscription = host
-            .subscribe_event(rv(object), rv(1))
+            .subscribe_event(rv(object.into()), rv(1))
             .expect("subscribe should succeed");
         let subscription = expect_i32(subscription);
         let _ = host
-            .dispatch_invoke(object, 3, 77)
+            .dispatch_invoke(object.into(), 3, 77)
             .expect("FireChanged should succeed");
         let callback = host.do_events().expect("callback token");
         let callback = expect_i32(callback);
@@ -8845,22 +8854,22 @@ mod tests {
             .create_object(4)
             .expect("create_object should return a token");
 
-        if object == 5_004 {
+        if object.raw() == 5_004 {
             // Environment lacks native activation prerequisites; deterministic fallback remains valid.
             return;
         }
 
         assert!(
-            object >= 20_001,
+            object.raw() >= 20_001,
             "native COM handles use COM-state handle space"
         );
         let count = host
-            .dispatch_invoke(object, 1, 0)
+            .dispatch_invoke(object.into(), 1, 0)
             .expect("dictionary Count should be invokable");
         assert!(count >= 0);
 
         let exists = host
-            .dispatch_invoke(object, 2, 42)
+            .dispatch_invoke(object.into(), 2, 42)
             .expect("dictionary Exists should be invokable");
         assert!(exists == 0 || exists == 1);
     }
@@ -8873,42 +8882,42 @@ mod tests {
             .create_object(4)
             .expect("create_object should return a token");
         assert!(
-            object >= 20_001,
+            object.raw() >= 20_001,
             "controlled COM lane should bind native object"
         );
         assert_eq!(
-            host.dispatch_invoke(object, 1, super::DISPATCH_INVOKE_MISSING_ARG_TOKEN)
+            host.dispatch_invoke(object.into(), 1, super::DISPATCH_INVOKE_MISSING_ARG_TOKEN)
                 .expect("Count property-get should succeed"),
             7
         );
         assert_eq!(
-            host.dispatch_invoke(object, 2, 42)
+            host.dispatch_invoke(object.into(), 2, 42)
                 .expect("Exists(42) should succeed"),
             1
         );
         assert_eq!(
-            host.dispatch_invoke(object, 2, 41)
+            host.dispatch_invoke(object.into(), 2, 41)
                 .expect("Exists(41) should succeed"),
             0
         );
         assert_eq!(
-            host.dispatch_invoke(object, super::TEST_DISPID_PING, 999)
+            host.dispatch_invoke(object.into(), super::TEST_DISPID_PING, 999)
                 .expect("Ping no-arg method invoke should succeed"),
             123
         );
         assert_eq!(
-            host.dispatch_invoke(object, super::TEST_DISPID_LOOKUP, 42)
+            host.dispatch_invoke(object.into(), super::TEST_DISPID_LOOKUP, 42)
                 .expect("Lookup property-get with argument should succeed"),
             1_042
         );
         assert_eq!(
-            host.dispatch_invoke(object, super::TEST_DISPID_SET_VALUE, 33)
+            host.dispatch_invoke(object.into(), super::TEST_DISPID_SET_VALUE, 33)
                 .expect("SetValue property-put should succeed"),
             33
         );
         assert_eq!(
             host.dispatch_invoke(
-                object,
+                object.into(),
                 super::TEST_DISPID_VALUE,
                 super::DISPATCH_INVOKE_MISSING_ARG_TOKEN
             )
@@ -8916,13 +8925,13 @@ mod tests {
             33
         );
         assert_eq!(
-            host.dispatch_invoke(object, super::TEST_DISPID_SET_VALUE_REF, 33)
+            host.dispatch_invoke(object.into(), super::TEST_DISPID_SET_VALUE_REF, 33)
                 .expect("SetValueRef property-putref should succeed"),
             100_033
         );
         assert_eq!(
             host.dispatch_invoke(
-                object,
+                object.into(),
                 super::TEST_DISPID_VALUE,
                 super::DISPATCH_INVOKE_MISSING_ARG_TOKEN
             )
@@ -8939,7 +8948,7 @@ mod tests {
             .create_object(4)
             .expect("create_object should return a token");
         let request = ComInvokeRequest {
-            object: object.into(),
+            object: object.raw().into(),
             member: super::TEST_DISPID_SUM_PAIR,
             args: vec![
                 ComInvokeArg::named(14, "rhs"),
@@ -8962,7 +8971,7 @@ mod tests {
             .create_object(4)
             .expect("create_object should return a token");
         let request = ComInvokeRequest {
-            object: object.into(),
+            object: object.raw().into(),
             member: super::TEST_DISPID_LOOKUP_PAIR,
             args: vec![
                 ComInvokeArg::named(14, "rhs"),
@@ -8985,7 +8994,7 @@ mod tests {
             .create_object(4)
             .expect("create_object should return a token");
         let request = ComInvokeRequest {
-            object: object.into(),
+            object: object.raw().into(),
             member: 0,
             args: vec![ComInvokeArg::named(19, "value")],
             invoke_kind_hint: None,
@@ -9009,7 +9018,7 @@ mod tests {
             .create_object(4)
             .expect("create_object should return dictionary token");
         let request = ComInvokeRequest {
-            object: object.into(),
+            object: object.raw().into(),
             member: 0,
             args: vec![ComInvokeArg::named(19, "value")],
             invoke_kind_hint: None,
@@ -9034,7 +9043,7 @@ mod tests {
             .create_object(4)
             .expect("create_object should return a token");
         let request = ComInvokeRequest {
-            object: object.into(),
+            object: object.raw().into(),
             member: super::TEST_DISPID_LOOKUP,
             args: vec![ComInvokeArg::omitted()],
             invoke_kind_hint: None,
@@ -9054,7 +9063,7 @@ mod tests {
             .create_object(4)
             .expect("create_object should return a token");
         let request = ComInvokeRequest {
-            object: object.into(),
+            object: object.raw().into(),
             member: super::TEST_DISPID_SET_INDEXED_VALUE,
             args: vec![ComInvokeArg::positional(7), ComInvokeArg::named(9, "value")],
             invoke_kind_hint: None,
@@ -9074,7 +9083,7 @@ mod tests {
             .create_object(4)
             .expect("create_object should return a token");
         let request = ComInvokeRequest {
-            object: object.into(),
+            object: object.raw().into(),
             member: super::TEST_DISPID_SET_INDEXED_VALUE,
             args: vec![
                 ComInvokeArg::named(9, "value"),
@@ -9089,7 +9098,7 @@ mod tests {
         );
         assert_eq!(
             host.dispatch_invoke(
-                object,
+                object.into(),
                 super::TEST_DISPID_VALUE,
                 super::DISPATCH_INVOKE_MISSING_ARG_TOKEN
             )
@@ -9107,7 +9116,7 @@ mod tests {
             .create_object(4)
             .expect("create_object should return a token");
         let request = ComInvokeRequest {
-            object: object.into(),
+            object: object.raw().into(),
             member: super::TEST_DISPID_SET_INDEXED_VALUE_REF,
             args: vec![
                 ComInvokeArg::named(13, "value"),
@@ -9123,7 +9132,7 @@ mod tests {
         );
         assert_eq!(
             host.dispatch_invoke(
-                object,
+                object.into(),
                 super::TEST_DISPID_VALUE,
                 super::DISPATCH_INVOKE_MISSING_ARG_TOKEN
             )
@@ -9141,7 +9150,7 @@ mod tests {
             .expect("create_object should return a token");
         let err = host
             .dispatch_invoke(
-                object,
+                object.into(),
                 super::TEST_DISPID_LOOKUP,
                 super::DISPATCH_INVOKE_MISSING_ARG_TOKEN,
             )
@@ -9163,7 +9172,7 @@ mod tests {
             .expect("create_object should return a token");
         let err = host
             .dispatch_invoke(
-                object,
+                object.into(),
                 super::TEST_DISPID_RAISE_EXCEPTION,
                 super::DISPATCH_INVOKE_MISSING_ARG_TOKEN,
             )
@@ -9194,7 +9203,7 @@ mod tests {
         let object = host
             .create_object(4)
             .expect("create_object should return a token");
-        if object == 5_004 {
+        if object.raw() == 5_004 {
             return;
         }
 
@@ -9205,7 +9214,7 @@ mod tests {
                 .expect("com state lock should succeed");
             let binding = state
                 .bindings
-                .get(&object)
+                .get(&object.raw())
                 .expect("native object should be tracked");
             assert!(
                 binding.native_dispatch != 0,
@@ -9214,7 +9223,7 @@ mod tests {
             binding.native_dispatch
         };
         let _ = host
-            .dispatch_invoke(object, 1, 0)
+            .dispatch_invoke(object.into(), 1, 0)
             .expect("dispatch invoke should succeed");
         let after = {
             let state = host
@@ -9223,7 +9232,7 @@ mod tests {
                 .expect("com state lock should succeed");
             state
                 .bindings
-                .get(&object)
+                .get(&object.raw())
                 .expect("native object should remain tracked")
                 .native_dispatch
         };
@@ -9240,12 +9249,12 @@ mod tests {
         let object = host
             .create_object(4)
             .expect("create_object should return a token");
-        if object == 5_004 {
+        if object.raw() == 5_004 {
             return;
         }
 
         let _ = host
-            .dispatch_invoke(object, 1, super::DISPATCH_INVOKE_MISSING_ARG_TOKEN)
+            .dispatch_invoke(object.into(), 1, super::DISPATCH_INVOKE_MISSING_ARG_TOKEN)
             .expect("dictionary Count should be invokable");
         let cache_size_after_first = {
             let state = host
@@ -9254,13 +9263,13 @@ mod tests {
                 .expect("com state lock should succeed");
             state
                 .bindings
-                .get(&object)
+                .get(&object.raw())
                 .expect("binding should remain tracked")
                 .member_dispids
                 .len()
         };
         let _ = host
-            .dispatch_invoke(object, 1, super::DISPATCH_INVOKE_MISSING_ARG_TOKEN)
+            .dispatch_invoke(object.into(), 1, super::DISPATCH_INVOKE_MISSING_ARG_TOKEN)
             .expect("dictionary Count should be invokable repeatedly");
         let cache_size_after_second = {
             let state = host
@@ -9269,7 +9278,7 @@ mod tests {
                 .expect("com state lock should succeed");
             state
                 .bindings
-                .get(&object)
+                .get(&object.raw())
                 .expect("binding should remain tracked")
                 .member_dispids
                 .len()
@@ -9301,18 +9310,26 @@ mod tests {
             .expect("vtable create_object should succeed");
 
         let dispatch_count = dispatch_host
-            .dispatch_invoke(dispatch_object, 1, super::DISPATCH_INVOKE_MISSING_ARG_TOKEN)
+            .dispatch_invoke(
+                dispatch_object.into(),
+                1,
+                super::DISPATCH_INVOKE_MISSING_ARG_TOKEN,
+            )
             .expect("dispatch count should succeed");
         let vtable_count = vtable_host
-            .dispatch_invoke(vtable_object, 1, super::DISPATCH_INVOKE_MISSING_ARG_TOKEN)
+            .dispatch_invoke(
+                vtable_object.into(),
+                1,
+                super::DISPATCH_INVOKE_MISSING_ARG_TOKEN,
+            )
             .expect("vtable count should succeed");
         assert_eq!(dispatch_count, vtable_count);
 
         let dispatch_exists = dispatch_host
-            .dispatch_invoke(dispatch_object, 2, 42)
+            .dispatch_invoke(dispatch_object.into(), 2, 42)
             .expect("dispatch exists should succeed");
         let vtable_exists = vtable_host
-            .dispatch_invoke(vtable_object, 2, 42)
+            .dispatch_invoke(vtable_object.into(), 2, 42)
             .expect("vtable exists should succeed");
         assert_eq!(dispatch_exists, vtable_exists);
     }
@@ -9670,7 +9687,7 @@ mod tests {
             .expect("com state lock should succeed");
         let binding = state
             .bindings
-            .get(&object)
+            .get(&object.raw())
             .expect("binding should be present for native object token");
         let member = binding
             .member_specs
@@ -9805,7 +9822,7 @@ mod tests {
             .expect("describe_object should succeed")
             .expect("known COM object should produce a descriptor");
 
-        assert_eq!(descriptor.object.raw(), object);
+        assert_eq!(descriptor.object.raw(), object.raw());
         assert_eq!(descriptor.prog_id_name, "OxVba.TestDispatch");
         assert_eq!(
             descriptor.transport,
@@ -9863,7 +9880,7 @@ mod tests {
             .expect("com state lock should succeed");
         let binding = state
             .bindings
-            .get(&object)
+            .get(&object.raw())
             .expect("binding should be present for dictionary token");
         let exists_member = binding
             .member_specs
@@ -9903,7 +9920,7 @@ mod tests {
             .create_object(4)
             .expect("create_object should return dictionary token");
         let subscription = host
-            .subscribe_event(rv(object), rv(super::TEST_EVENT_CHANGED))
+            .subscribe_event(rv(object.into()), rv(super::TEST_EVENT_CHANGED))
             .expect("subscribe_event should succeed for dictionary projection event");
         let subscription = expect_i32(subscription);
         assert!(
@@ -9928,7 +9945,7 @@ mod tests {
             );
         }
         assert_eq!(
-            host.dispatch_invoke(object, super::TEST_DISPID_EXISTS, 42)
+            host.dispatch_invoke(object.into(), super::TEST_DISPID_EXISTS, 42)
                 .expect("Exists invoke should succeed"),
             0
         );
@@ -9987,7 +10004,7 @@ mod tests {
             .create_object(4)
             .expect("policy override should resolve native COM activation");
         assert!(
-            object >= 20_001,
+            object.raw() >= 20_001,
             "expected native COM object handle from policy override, got {object}"
         );
     }
@@ -10023,11 +10040,11 @@ mod tests {
             .create_object(4)
             .expect("create_object should return controlled COM object");
         let subscription = host
-            .subscribe_event(rv(object), rv(1))
+            .subscribe_event(rv(object.into()), rv(1))
             .expect("subscribe_event should succeed");
         let subscription = expect_i32(subscription);
         let _ = host
-            .dispatch_invoke(object, 3, 77)
+            .dispatch_invoke(object.into(), 3, 77)
             .expect("dispatch_invoke should queue callback");
 
         assert!(
@@ -10037,7 +10054,7 @@ mod tests {
         );
 
         let _ = host
-            .dispatch_invoke(object, 3, 88)
+            .dispatch_invoke(object.into(), 3, 88)
             .expect("second callback should queue");
         assert_eq!(
             host.release_object(object)
@@ -10184,10 +10201,12 @@ mod tests {
             let shell_expected = if shell_cmd == 0 { 0 } else { 1 };
             prop_assert_eq!(
                 host.shell(rv(shell_cmd), rv(0)).expect("shell should succeed"),
-                rv(shell_expected)
+                RuntimeValue::from_legacy_i32(shell_expected)
             );
             prop_assert_eq!(
-                host.create_object(prog_id).expect("create_object should succeed"),
+                host.create_object(prog_id)
+                    .expect("create_object should succeed")
+                    .raw(),
                 5_000i32.saturating_add(prog_id)
             );
             prop_assert_eq!(
@@ -10198,7 +10217,7 @@ mod tests {
             prop_assert_eq!(
                 host.invoke_symbol(symbol, rv(arg))
                     .expect("invoke_symbol should succeed"),
-                rv(symbol.saturating_add(arg))
+                RuntimeValue::from_legacy_i32(symbol.saturating_add(arg))
             );
         }
     }

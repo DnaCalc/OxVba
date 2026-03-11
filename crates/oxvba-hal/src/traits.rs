@@ -17,7 +17,7 @@ pub use oxvba_com::{
     TypeLibCacheScope, TypeLibEventDispatchPath, TypeLibEventMetadata, TypeLibMemberInvokeKind,
     TypeLibMemberMetadata, TypeLibMetadataBlob, TypeLibResolveRequest, TypeLibResolvedIdentity,
 };
-use oxvba_runtime::RuntimeValue;
+use oxvba_runtime::{ObjectHandle, RuntimeValue};
 
 /// VM/runtime value token crossing the current HAL boundary.
 /// This is intentionally `i32` for the current register-window runtime representation.
@@ -112,10 +112,10 @@ pub trait ProcessEnvHal: Send + Sync {
 }
 
 pub trait ComHal: Send + Sync {
-    fn create_object(&self, prog_id: ValueToken) -> HalResult<ValueToken>;
+    fn create_object(&self, prog_id: ValueToken) -> HalResult<ObjectHandle>;
     fn create_object_value(&self, prog_id: RuntimeValue) -> HalResult<RuntimeValue>;
-    fn release_object(&self, object: ValueToken) -> HalResult<ValueToken>;
-    fn describe_object(&self, object: ValueToken) -> HalResult<Option<ComObjectDescriptor>>;
+    fn release_object(&self, object: ObjectHandle) -> HalResult<ValueToken>;
+    fn describe_object(&self, object: ObjectHandle) -> HalResult<Option<ComObjectDescriptor>>;
     fn dispatch_invoke_v2(&self, request: &ComInvokeRequest) -> HalResult<ValueToken>;
     fn dispatch_invoke_runtime_value_v2(
         &self,

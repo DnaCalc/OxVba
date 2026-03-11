@@ -1453,7 +1453,7 @@ impl Vm {
         field: &str,
     ) -> Result<oxvba_com::ComObjectToken, String> {
         match value {
-            RuntimeValue::ObjectHandle(handle) => Ok((*handle).into()),
+            RuntimeValue::ObjectHandle(handle) => Ok(handle.raw().into()),
             other => Self::runtime_value_legacy_token(other, field).map(Into::into),
         }
     }
@@ -2617,7 +2617,7 @@ mod tests {
         let values = vm.snapshot_values(5);
         assert_eq!(out[1], 5004);
         assert_eq!(out[4], 5004 + 6 + (ARRAY_TAG_BASE + 3));
-        assert_eq!(values[1], RuntimeValue::ObjectHandle(5004));
+        assert_eq!(values[1], RuntimeValue::ObjectHandle(5004.into()));
     }
 
     #[cfg(target_os = "windows")]

@@ -347,7 +347,7 @@ End Sub
             out
         );
         let err = engine
-            .subscribe_com_event_handler(object, 99, "Sink_OnChanged")
+            .subscribe_com_event_handler(object.into(), 99, "Sink_OnChanged")
             .expect_err("object without event connection-point mapping should fail subscribe");
 
         assert_eq!(err.phase(), DiagnosticPhase::Runtime);
@@ -427,7 +427,7 @@ End Sub
         let poll_delay_ms = registered_event_poll_delay_ms();
 
         let subscription = match engine.subscribe_com_event_handler(
-            object,
+            object.into(),
             event_token,
             "SinkA_OnChanged",
         ) {

@@ -13,7 +13,7 @@ use crate::{
     },
 };
 use oxvba_com::ComObjectDescriptor;
-use oxvba_runtime::RuntimeValue;
+use oxvba_runtime::{ObjectHandle, RuntimeValue};
 
 #[derive(Debug, Clone)]
 pub struct WasmHostServices {
@@ -184,7 +184,7 @@ impl ProcessEnvHal for WasmHostServices {
 }
 
 impl ComHal for WasmHostServices {
-    fn create_object(&self, _prog_id: i32) -> HalResult<i32> {
+    fn create_object(&self, _prog_id: i32) -> HalResult<ObjectHandle> {
         Err(self.unsupported(CapabilityId::ComActivationDispatch, "create_object"))
     }
 
@@ -192,11 +192,11 @@ impl ComHal for WasmHostServices {
         Err(self.unsupported(CapabilityId::ComActivationDispatch, "create_object"))
     }
 
-    fn release_object(&self, _object: i32) -> HalResult<i32> {
+    fn release_object(&self, _object: ObjectHandle) -> HalResult<i32> {
         Err(self.unsupported(CapabilityId::ComActivationDispatch, "release_object"))
     }
 
-    fn describe_object(&self, _object: i32) -> HalResult<Option<ComObjectDescriptor>> {
+    fn describe_object(&self, _object: ObjectHandle) -> HalResult<Option<ComObjectDescriptor>> {
         Err(self.unsupported(CapabilityId::ComActivationDispatch, "describe_object"))
     }
 
