@@ -33,11 +33,12 @@ Run context: active parity/compliance execution plus in-progress feature worklis
   - controlled `IDispatch` variant roundtrips now cover `VT_NULL` and `VT_ERROR` in addition to the existing scalar subset,
   - invoke failure translation now distinguishes real `ArgErr` presence from the previous synthetic `arg_err=0` fallback,
   - controlled `DISP_E_EXCEPTION` lanes now preserve bounded `EXCEPINFO` source/description/scode details in the adapter-fault surface,
-  - late-bound default-member calls with named arguments remain compile-time blocked because runtime still cannot recover the authoritative default COM member identity for named dispatch,
+  - explicit `DispatchInvoke(obj, 0, name := value)` now routes through authoritative default-member metadata when the binding exposes one,
+  - natural late-bound default-member calls with named arguments remain compile-time blocked because that syntax still does not recover authoritative default-member identity before lowering,
   - broad object/interface-pointer and full `VARIANT`/`SAFEARRAY` marshalling remain below parity target,
   - `Invoke` result fidelity still lacks the broader `VarResult` surface and richer external automation `ExcepInfo`/argument-fault coverage required for Office-style automation parity.
 - Exact unblock steps:
-  - recover authoritative default-member identity for named late-bound dispatch,
+  - recover authoritative default-member identity for natural late-bound syntax and non-metadata-backed bindings,
   - complete full `VARIANT`/object/`SAFEARRAY` marshalling,
   - complete broader external `Invoke` error/result fidelity beyond the controlled exception/argument-fault subset.
 - Recommendation:

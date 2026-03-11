@@ -47,6 +47,8 @@ pub struct ComObjectDescriptor {
     pub supports_events: bool,
     pub known_member_tokens: Vec<i32>,
     pub known_event_tokens: Vec<i32>,
+    pub default_member_token: Option<i32>,
+    pub default_member_name: Option<String>,
     pub typelib_cache_key: Option<String>,
 }
 

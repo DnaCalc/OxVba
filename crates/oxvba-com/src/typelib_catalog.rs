@@ -216,6 +216,7 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
                 requires_argument: false,
                 invoke_kind: TypeLibMemberInvokeKind::PropertyGet,
                 parameter_names: Vec::new(),
+                is_default_member: false,
             },
             TypeLibMemberMetadata {
                 name: "Exists".to_string(),
@@ -223,6 +224,7 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
                 requires_argument: true,
                 invoke_kind: TypeLibMemberInvokeKind::Method,
                 parameter_names: vec!["value".to_string()],
+                is_default_member: false,
             },
             TypeLibMemberMetadata {
                 name: "FireChanged".to_string(),
@@ -230,6 +232,7 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
                 requires_argument: true,
                 invoke_kind: TypeLibMemberInvokeKind::Method,
                 parameter_names: vec!["value".to_string()],
+                is_default_member: false,
             },
             TypeLibMemberMetadata {
                 name: "FireChangedPair".to_string(),
@@ -237,6 +240,7 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
                 requires_argument: true,
                 invoke_kind: TypeLibMemberInvokeKind::Method,
                 parameter_names: vec!["value".to_string()],
+                is_default_member: false,
             },
             TypeLibMemberMetadata {
                 name: "FireChangedSourceInterface".to_string(),
@@ -244,6 +248,7 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
                 requires_argument: true,
                 invoke_kind: TypeLibMemberInvokeKind::Method,
                 parameter_names: vec!["value".to_string()],
+                is_default_member: false,
             },
             TypeLibMemberMetadata {
                 name: "Ping".to_string(),
@@ -251,6 +256,7 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
                 requires_argument: false,
                 invoke_kind: TypeLibMemberInvokeKind::Method,
                 parameter_names: Vec::new(),
+                is_default_member: false,
             },
             TypeLibMemberMetadata {
                 name: "Lookup".to_string(),
@@ -258,6 +264,7 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
                 requires_argument: true,
                 invoke_kind: TypeLibMemberInvokeKind::PropertyGet,
                 parameter_names: vec!["value".to_string()],
+                is_default_member: false,
             },
             TypeLibMemberMetadata {
                 name: "SetValue".to_string(),
@@ -265,6 +272,7 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
                 requires_argument: true,
                 invoke_kind: TypeLibMemberInvokeKind::PropertyPut,
                 parameter_names: vec!["value".to_string()],
+                is_default_member: false,
             },
             TypeLibMemberMetadata {
                 name: "SetValueRef".to_string(),
@@ -272,6 +280,7 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
                 requires_argument: true,
                 invoke_kind: TypeLibMemberInvokeKind::PropertyPutRef,
                 parameter_names: vec!["value".to_string()],
+                is_default_member: false,
             },
             TypeLibMemberMetadata {
                 name: "Value".to_string(),
@@ -279,6 +288,7 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
                 requires_argument: false,
                 invoke_kind: TypeLibMemberInvokeKind::PropertyGet,
                 parameter_names: Vec::new(),
+                is_default_member: false,
             },
             TypeLibMemberMetadata {
                 name: "SumPair".to_string(),
@@ -286,6 +296,7 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
                 requires_argument: true,
                 invoke_kind: TypeLibMemberInvokeKind::Method,
                 parameter_names: vec!["lhs".to_string(), "rhs".to_string()],
+                is_default_member: false,
             },
             TypeLibMemberMetadata {
                 name: "LookupPair".to_string(),
@@ -293,6 +304,7 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
                 requires_argument: true,
                 invoke_kind: TypeLibMemberInvokeKind::PropertyGet,
                 parameter_names: vec!["lhs".to_string(), "rhs".to_string()],
+                is_default_member: false,
             },
             TypeLibMemberMetadata {
                 name: "SetIndexedValue".to_string(),
@@ -300,6 +312,7 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
                 requires_argument: true,
                 invoke_kind: TypeLibMemberInvokeKind::PropertyPut,
                 parameter_names: vec!["lhs".to_string(), "value".to_string()],
+                is_default_member: false,
             },
             TypeLibMemberMetadata {
                 name: "SetIndexedValueRef".to_string(),
@@ -307,6 +320,7 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
                 requires_argument: true,
                 invoke_kind: TypeLibMemberInvokeKind::PropertyPutRef,
                 parameter_names: vec!["lhs".to_string(), "value".to_string()],
+                is_default_member: false,
             },
             TypeLibMemberMetadata {
                 name: "EchoVariant".to_string(),
@@ -314,6 +328,7 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
                 requires_argument: true,
                 invoke_kind: TypeLibMemberInvokeKind::Method,
                 parameter_names: vec!["value".to_string()],
+                is_default_member: true,
             },
             TypeLibMemberMetadata {
                 name: "RaiseException".to_string(),
@@ -321,6 +336,7 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
                 requires_argument: false,
                 invoke_kind: TypeLibMemberInvokeKind::Method,
                 parameter_names: Vec::new(),
+                is_default_member: false,
             },
         ];
         let events = vec![
@@ -365,6 +381,7 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
             requires_argument: false,
             invoke_kind: TypeLibMemberInvokeKind::Method,
             parameter_names: Vec::new(),
+            is_default_member: false,
         }];
         let events = vec![TypeLibEventMetadata {
             name: "Quit".to_string(),
@@ -393,6 +410,7 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
                 requires_argument: false,
                 invoke_kind: TypeLibMemberInvokeKind::Method,
                 parameter_names: Vec::new(),
+                is_default_member: false,
             },
             TypeLibMemberMetadata {
                 name: "FireValueChanged".to_string(),
@@ -400,6 +418,7 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
                 requires_argument: true,
                 invoke_kind: TypeLibMemberInvokeKind::Method,
                 parameter_names: vec!["value".to_string()],
+                is_default_member: false,
             },
             TypeLibMemberMetadata {
                 name: "FirePairChanged".to_string(),
@@ -407,6 +426,7 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
                 requires_argument: true,
                 invoke_kind: TypeLibMemberInvokeKind::Method,
                 parameter_names: vec!["value".to_string()],
+                is_default_member: false,
             },
             TypeLibMemberMetadata {
                 name: "Ping".to_string(),
@@ -414,6 +434,7 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
                 requires_argument: false,
                 invoke_kind: TypeLibMemberInvokeKind::Method,
                 parameter_names: Vec::new(),
+                is_default_member: false,
             },
         ];
         let events = vec![
@@ -459,6 +480,7 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
                 requires_argument: false,
                 invoke_kind: TypeLibMemberInvokeKind::PropertyGet,
                 parameter_names: Vec::new(),
+                is_default_member: false,
             },
             TypeLibMemberMetadata {
                 name: "Exists".to_string(),
@@ -466,6 +488,7 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
                 requires_argument: true,
                 invoke_kind: TypeLibMemberInvokeKind::Method,
                 parameter_names: vec!["value".to_string()],
+                is_default_member: false,
             },
         ];
         let events = vec![TypeLibEventMetadata {

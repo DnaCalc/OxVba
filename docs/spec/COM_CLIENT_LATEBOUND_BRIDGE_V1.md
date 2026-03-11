@@ -59,6 +59,7 @@ Define the executable bridge from VBA late-bound call semantics to HAL COM trans
 7. Named-argument transport:
 - member-known method/property-get lanes must preserve forwarded argument names through bytecode, VM, and HAL request transport;
 - member-known property-put/property-putref lanes must canonicalize named/indexed arguments so the property value uses `DISPID_PROPERTYPUT`/`DISPID_PROPERTYPUTREF` without depending on caller argument order;
+- explicit `DispatchInvoke(obj, 0, ...)` must route through authoritative default-member metadata when that identity is known for the bound COM object;
 - default-member/direct-DISPID dispatch must not silently erase named arguments when runtime member identity is unresolved.
 8. Variant token transport:
 - the controlled and native Windows late-bound lane must preserve stable runtime token meaning for `VT_EMPTY`, `VT_NULL`, `VT_BOOL`, `VT_I4`, `VT_UI4`, and `VT_ERROR`;
@@ -73,6 +74,6 @@ Define the executable bridge from VBA late-bound call semantics to HAL COM trans
 ## Deferred Extensions
 
 - Natural VBA member syntax to late-bound dispatch lowering.
-- Default-member named-dispatch parity once runtime member identity is authoritative.
+- Full natural/default-member named-dispatch parity once runtime member identity is authoritative outside the explicit `DispatchInvoke(obj, 0, ...)` lane.
 - Broad `VARIANT`/object/`SAFEARRAY` parity plus full `Invoke` result/error fidelity (`ArgErr`, `ExcepInfo`, `VarResult`).
 - Full generic ProgID/member-name text selector path through current integer-token VM boundary.

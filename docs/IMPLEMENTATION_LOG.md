@@ -1,6 +1,12 @@
 # Implementation Log
 
 ## 2026-03-11
+- late-bound COM default-member identity slice:
+  - added authoritative default-member metadata to the deterministic COM typelib catalog and binding/object-descriptor surfaces
+  - explicit `DispatchInvoke(obj, 0, name := value)` now routes through the default member when authoritative metadata is present
+  - bindings without authoritative default-member identity now fail with a precise blocker instead of a generic named direct-DISPID rejection
+  - verification:
+    - `cargo test -p oxvba-com -p oxvba-hal -p oxvba-host --quiet` -> PASS
 - late-bound COM invoke error-channel fidelity slice:
   - invoke failures now distinguish real `ArgErr` output from the previous synthetic `arg_err=0` formatting fallback
   - added controlled `RaiseException` dispatch coverage so `DISP_E_EXCEPTION` paths populate bounded `EXCEPINFO` source/description/scode data

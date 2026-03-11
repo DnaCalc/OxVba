@@ -54,13 +54,17 @@ Status vocabulary:
     - invoke failures now treat `ArgErr` as optional output instead of inferring `arg_err=0` on every failing call
     - controlled `DISP_E_EXCEPTION` lanes now populate bounded `EXCEPINFO` source/description/scode details
     - adapter-fault translation preserves those bounded exception details instead of discarding them
+  - added authoritative default-member identity for metadata-backed explicit dispatch:
+    - `DispatchInvoke(obj, 0, value := ...)` now routes through the default member when the COM binding exposes authoritative default-member metadata
+    - object descriptors now report default-member identity for metadata-backed bindings
+    - bindings without authoritative default-member metadata now fail with a precise blocker instead of falling into generic named direct-DISPID rejection
   - kept one safety gate explicit:
-    - late-bound default-member calls with named arguments remain compile-time blocked because runtime still cannot recover the authoritative default COM member identity for named dispatch
+    - natural late-bound default-member calls with named arguments remain compile-time blocked because compiler lowering still lacks authoritative default-member identity
   - verification:
     - `cargo test -p oxvba-runtime -p oxvba-com -p oxvba-hal -p oxvba-compiler -p oxvba-host --quiet` -> PASS
 - Blocker:
   - parity is still blocked by the remaining scope:
-    - default-member named dispatch still lacks authoritative member identity,
+    - natural late-bound default-member syntax and non-metadata-backed bindings still lack authoritative default-member identity,
     - object/interface-pointer and broad `VARIANT`/`SAFEARRAY` marshalling are still below parity target,
     - broader external `Invoke` error/result fidelity (`VarResult`, richer non-controlled `ExcepInfo`, broader argument-fault coverage) is still below parity target.
 - Next required action:

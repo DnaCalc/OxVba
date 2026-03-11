@@ -2226,6 +2226,11 @@ impl ComHal for StandardHostServices {
                     supports_events: !binding.event_specs.is_empty(),
                     known_member_tokens: binding.member_specs.keys().copied().collect(),
                     known_event_tokens: binding.event_specs.keys().copied().collect(),
+                    default_member_token: binding.default_member_token,
+                    default_member_name: binding
+                        .default_member_token
+                        .and_then(|token| binding.member_specs.get(&token))
+                        .map(|spec| spec.name.clone()),
                     typelib_cache_key: known_typelib_identity_for_prog_id_name(
                         &binding.prog_id_name,
                     )
@@ -2241,6 +2246,8 @@ impl ComHal for StandardHostServices {
                 supports_events: false,
                 known_member_tokens: Vec::new(),
                 known_event_tokens: Vec::new(),
+                default_member_token: None,
+                default_member_name: None,
                 typelib_cache_key: None,
             })
         };
@@ -2275,30 +2282,87 @@ impl ComHal for StandardHostServices {
                 #[cfg(target_os = "windows")]
                 if binding.native_dispatch != 0 {
                     let dispatch = binding.native_dispatch as *mut RawIDispatch;
+                    let named_default_member =
+                        if member == 0 && args.iter().any(|arg| arg.name.is_some()) {
+                            binding.default_member_token.and_then(|token| {
+                                binding
+                                    .member_specs
+                                    .get(&token)
+                                    .cloned()
+                                    .map(|spec| (token, spec))
+                            })
+                        } else {
+                            None
+                        };
+                    if member == 0
+                        && args.iter().any(|arg| arg.name.is_some())
+                        && named_default_member.is_none()
+                    {
+                        return Err(HalError::adapter_fault(
+                            self.profile,
+                            capability,
+                            "dispatch_invoke",
+                            "default member identity unavailable for named late-bound dispatch",
+                        ));
+                    }
+                    let effective_member = named_default_member
+                        .as_ref()
+                        .map(|(token, _)| *token)
+                        .unwrap_or(member);
+                    let effective_cached_dispid = if effective_member == member {
+                        cached_dispid
+                    } else {
+                        binding.member_dispids.get(&effective_member).copied()
+                    };
                     let value = if args
                         .iter()
                         .all(|arg| arg.name.is_none() && arg.value.is_some())
                         && let Some(value) = self.try_native_com_vtable_invoke(
                             dispatch,
                             &binding.prog_id_name,
-                            member,
+                            effective_member,
                             &positional_values,
                         )? {
                         value
+                    } else if let Some((token, spec)) = named_default_member {
+                        let (dispid, spec) = self
+                            .resolve_member_dispid_cached(
+                                object,
+                                dispatch,
+                                &binding,
+                                token,
+                                effective_cached_dispid,
+                            )?
+                            .map(|(dispid, _)| (dispid, spec))
+                            .ok_or_else(|| {
+                                HalError::adapter_fault(
+                                    self.profile,
+                                    capability,
+                                    "dispatch_invoke",
+                                    "default member identity unavailable for named late-bound dispatch",
+                                )
+                            })?;
+                        self.native_com_dispatch_invoke_with_member_spec(
+                            dispatch, dispid, &spec, args,
+                        )?
                     } else if let Some((dispid, spec)) = self.resolve_member_dispid_cached(
                         object,
                         dispatch,
                         &binding,
-                        member,
-                        cached_dispid,
+                        effective_member,
+                        effective_cached_dispid,
                     )? {
                         self.native_com_dispatch_invoke_with_member_spec(
                             dispatch, dispid, &spec, args,
                         )?
-                    } else if let Some(spec) = binding.direct_dispatch_specs.get(&member).copied() {
+                    } else if let Some(spec) = binding
+                        .direct_dispatch_specs
+                        .get(&effective_member)
+                        .copied()
+                    {
                         self.native_com_dispatch_invoke_with_direct_dispid(
                             dispatch,
-                            member,
+                            effective_member,
                             spec.invoke_kind,
                             spec.requires_argument,
                             args,
@@ -2307,7 +2371,7 @@ impl ComHal for StandardHostServices {
                         self.native_com_dispatch_invoke_with_bound_dispatch(
                             dispatch,
                             &binding.prog_id_name,
-                            member,
+                            effective_member,
                             args,
                         )?
                     };
@@ -3370,6 +3434,7 @@ struct ComBinding {
     native_dispatch: RawDispatchPtr,
     member_dispids: BTreeMap<i32, i32>,
     member_specs: BTreeMap<i32, ComMemberSpec>,
+    default_member_token: Option<i32>,
     direct_dispatch_specs: BTreeMap<i32, ComDirectDispatchSpec>,
     event_specs: BTreeMap<i32, ComEventSpec>,
     event_trigger_specs: BTreeMap<i32, ComEventTriggerSpec>,
@@ -3388,6 +3453,7 @@ impl ComBinding {
             member_specs: metadata
                 .map(com_member_specs_from_typelib_metadata)
                 .unwrap_or_default(),
+            default_member_token: metadata.and_then(default_member_token_from_typelib_metadata),
             direct_dispatch_specs: BTreeMap::new(),
             event_specs: metadata
                 .map(com_event_specs_from_typelib_metadata)
@@ -3480,6 +3546,7 @@ struct ComMemberSpec {
     requires_argument: bool,
     invoke_kind: TypeLibMemberInvokeKind,
     parameter_names: Vec<String>,
+    is_default_member: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -3517,6 +3584,7 @@ fn com_member_spec_for_token(prog_id: &str, member: i32) -> Option<ComMemberSpec
                 requires_argument: false,
                 invoke_kind: TypeLibMemberInvokeKind::Method,
                 parameter_names: Vec::new(),
+                is_default_member: false,
             }),
             _ => None,
         };
@@ -3528,12 +3596,14 @@ fn com_member_spec_for_token(prog_id: &str, member: i32) -> Option<ComMemberSpec
                 requires_argument: false,
                 invoke_kind: TypeLibMemberInvokeKind::PropertyGet,
                 parameter_names: Vec::new(),
+                is_default_member: false,
             }),
             2 => Some(ComMemberSpec {
                 name: "Exists".to_string(),
                 requires_argument: true,
                 invoke_kind: TypeLibMemberInvokeKind::Method,
                 parameter_names: vec!["value".to_string()],
+                is_default_member: false,
             }),
             _ => None,
         };
@@ -3545,96 +3615,112 @@ fn com_member_spec_for_token(prog_id: &str, member: i32) -> Option<ComMemberSpec
                 requires_argument: false,
                 invoke_kind: TypeLibMemberInvokeKind::PropertyGet,
                 parameter_names: Vec::new(),
+                is_default_member: false,
             }),
             2 => Some(ComMemberSpec {
                 name: "Exists".to_string(),
                 requires_argument: true,
                 invoke_kind: TypeLibMemberInvokeKind::Method,
                 parameter_names: vec!["value".to_string()],
+                is_default_member: false,
             }),
             3 => Some(ComMemberSpec {
                 name: "FireChanged".to_string(),
                 requires_argument: true,
                 invoke_kind: TypeLibMemberInvokeKind::Method,
                 parameter_names: vec!["value".to_string()],
+                is_default_member: false,
             }),
             4 => Some(ComMemberSpec {
                 name: "FireChangedPair".to_string(),
                 requires_argument: true,
                 invoke_kind: TypeLibMemberInvokeKind::Method,
                 parameter_names: vec!["value".to_string()],
+                is_default_member: false,
             }),
             11 => Some(ComMemberSpec {
                 name: "FireChangedSourceInterface".to_string(),
                 requires_argument: true,
                 invoke_kind: TypeLibMemberInvokeKind::Method,
                 parameter_names: vec!["value".to_string()],
+                is_default_member: false,
             }),
             5 => Some(ComMemberSpec {
                 name: "Ping".to_string(),
                 requires_argument: false,
                 invoke_kind: TypeLibMemberInvokeKind::Method,
                 parameter_names: Vec::new(),
+                is_default_member: false,
             }),
             6 => Some(ComMemberSpec {
                 name: "Lookup".to_string(),
                 requires_argument: true,
                 invoke_kind: TypeLibMemberInvokeKind::PropertyGet,
                 parameter_names: vec!["value".to_string()],
+                is_default_member: false,
             }),
             7 => Some(ComMemberSpec {
                 name: "SetValue".to_string(),
                 requires_argument: true,
                 invoke_kind: TypeLibMemberInvokeKind::PropertyPut,
                 parameter_names: vec!["value".to_string()],
+                is_default_member: false,
             }),
             8 => Some(ComMemberSpec {
                 name: "SetValueRef".to_string(),
                 requires_argument: true,
                 invoke_kind: TypeLibMemberInvokeKind::PropertyPutRef,
                 parameter_names: vec!["value".to_string()],
+                is_default_member: false,
             }),
             9 => Some(ComMemberSpec {
                 name: "Value".to_string(),
                 requires_argument: false,
                 invoke_kind: TypeLibMemberInvokeKind::PropertyGet,
                 parameter_names: Vec::new(),
+                is_default_member: false,
             }),
             12 => Some(ComMemberSpec {
                 name: "SumPair".to_string(),
                 requires_argument: true,
                 invoke_kind: TypeLibMemberInvokeKind::Method,
                 parameter_names: vec!["lhs".to_string(), "rhs".to_string()],
+                is_default_member: false,
             }),
             13 => Some(ComMemberSpec {
                 name: "LookupPair".to_string(),
                 requires_argument: true,
                 invoke_kind: TypeLibMemberInvokeKind::PropertyGet,
                 parameter_names: vec!["lhs".to_string(), "rhs".to_string()],
+                is_default_member: false,
             }),
             14 => Some(ComMemberSpec {
                 name: "SetIndexedValue".to_string(),
                 requires_argument: true,
                 invoke_kind: TypeLibMemberInvokeKind::PropertyPut,
                 parameter_names: vec!["lhs".to_string(), "value".to_string()],
+                is_default_member: false,
             }),
             15 => Some(ComMemberSpec {
                 name: "SetIndexedValueRef".to_string(),
                 requires_argument: true,
                 invoke_kind: TypeLibMemberInvokeKind::PropertyPutRef,
                 parameter_names: vec!["lhs".to_string(), "value".to_string()],
+                is_default_member: false,
             }),
             16 => Some(ComMemberSpec {
                 name: "EchoVariant".to_string(),
                 requires_argument: true,
                 invoke_kind: TypeLibMemberInvokeKind::Method,
                 parameter_names: vec!["value".to_string()],
+                is_default_member: true,
             }),
             17 => Some(ComMemberSpec {
                 name: "RaiseException".to_string(),
                 requires_argument: false,
                 invoke_kind: TypeLibMemberInvokeKind::Method,
                 parameter_names: Vec::new(),
+                is_default_member: false,
             }),
             _ => None,
         };
@@ -3762,10 +3848,18 @@ fn com_member_specs_from_typelib_metadata(
                     requires_argument: member.requires_argument,
                     invoke_kind: member.invoke_kind,
                     parameter_names: member.parameter_names.clone(),
+                    is_default_member: member.is_default_member,
                 },
             )
         })
         .collect()
+}
+
+fn default_member_token_from_typelib_metadata(blob: &TypeLibMetadataBlob) -> Option<i32> {
+    blob.members
+        .iter()
+        .find(|member| member.is_default_member)
+        .map(|member| member.token)
 }
 
 fn com_member_spec_for_binding(binding: &ComBinding, member: i32) -> Option<ComMemberSpec> {
@@ -7459,6 +7553,55 @@ mod tests {
 
     #[cfg(target_os = "windows")]
     #[test]
+    fn windows_native_controlled_test_dispatch_supports_named_default_member_args_v2() {
+        let host = StandardHostServices::new(HalProfileId::Windows, HostPolicy::interactive_dev());
+        let object = host
+            .create_object(4)
+            .expect("create_object should return a token");
+        let request = ComInvokeRequest {
+            object: object.into(),
+            member: 0,
+            args: vec![ComInvokeArg::named(19, "value")],
+            invoke_kind_hint: None,
+        };
+        assert_eq!(
+            host.dispatch_invoke_v2(&request)
+                .expect("named default-member invoke should succeed"),
+            19
+        );
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn windows_native_dictionary_named_default_member_requires_identity_v2() {
+        let mut policy = HostPolicy::interactive_dev();
+        policy
+            .com_prog_id_overrides
+            .insert(4, "Scripting.Dictionary".to_string());
+        let host = StandardHostServices::new(HalProfileId::Windows, policy);
+        let object = host
+            .create_object(4)
+            .expect("create_object should return dictionary token");
+        let request = ComInvokeRequest {
+            object: object.into(),
+            member: 0,
+            args: vec![ComInvokeArg::named(19, "value")],
+            invoke_kind_hint: None,
+        };
+        let err = host
+            .dispatch_invoke_v2(&request)
+            .expect_err("named default-member invoke should fail without identity");
+        assert_eq!(err.kind, HalErrorKind::AdapterFault);
+        assert!(
+            err.message
+                .contains("default member identity unavailable for named late-bound dispatch"),
+            "expected precise default-member blocker, got {}",
+            err.message
+        );
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
     fn windows_native_controlled_test_dispatch_preserves_omitted_arg_metadata_v2() {
         let host = StandardHostServices::new(HalProfileId::Windows, HostPolicy::interactive_dev());
         let object = host
@@ -8234,6 +8377,14 @@ mod tests {
             descriptor
                 .known_member_tokens
                 .contains(&super::TEST_DISPID_FIRE_CHANGED_PAIR)
+        );
+        assert_eq!(
+            descriptor.default_member_token,
+            Some(super::TEST_DISPID_ECHO_VARIANT)
+        );
+        assert_eq!(
+            descriptor.default_member_name.as_deref(),
+            Some("EchoVariant")
         );
         assert!(
             descriptor

@@ -209,6 +209,34 @@ End Sub
     }
 
     #[test]
+    fn dispatchinvoke_named_default_member_routes_when_identity_is_known() {
+        let source = r#"
+Sub Main()
+Dim obj
+Dim value
+obj = CreateObject("OxVba.TestDispatch")
+value = DispatchInvoke(obj, 0, value := 19)
+End Sub
+"#;
+
+        let vm = run_windows_host_backed(source, false);
+        let jit = run_windows_host_backed(source, true);
+        assert_eq!(
+            vm, jit,
+            "VM/JIT snapshots diverged on named default-member path: vm={vm:?} jit={jit:?}"
+        );
+        assert!(
+            vm[0] >= 20_001,
+            "expected native COM object handle space, got {:?}",
+            vm
+        );
+        assert_eq!(
+            vm[1], 19,
+            "named default-member invoke should route to EchoVariant"
+        );
+    }
+
+    #[test]
     fn dispatchinvoke_error_path_routes_through_on_error_resume_next() {
         let out = run_windows_host_backed(
             r#"
