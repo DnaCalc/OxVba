@@ -9,4 +9,5 @@ repository.workspace = true
 [dependencies]
 oxvba-host.workspace = true
 oxvba-hal.workspace = true
+oxvba-runtime.workspace = true
 thiserror.workspace = true

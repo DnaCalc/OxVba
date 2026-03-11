@@ -10,6 +10,7 @@ use oxvba_hal::{
     model::{HalProfileId, HostPolicy},
     traits::HostServices,
 };
+use oxvba_runtime::RuntimeValue;
 use oxvba_vm::execute_and_snapshot_with_host;
 use thiserror::Error;
 
@@ -31,6 +32,13 @@ impl JitEngine {
         self.execute_and_snapshot_with_host(bytecode, default_host_services())
     }
 
+    pub fn execute_and_snapshot_values(
+        &self,
+        bytecode: &Bytecode,
+    ) -> Result<Vec<RuntimeValue>, JitError> {
+        self.execute_and_snapshot_values_with_host(bytecode, default_host_services())
+    }
+
     pub fn execute_and_snapshot_with_host(
         &self,
         bytecode: &Bytecode,
@@ -41,6 +49,20 @@ impl JitEngine {
         }
         execute_and_snapshot_with_host(bytecode, host_services).map_err(JitError::Execution)
     }
+
+    pub fn execute_and_snapshot_values_with_host(
+        &self,
+        bytecode: &Bytecode,
+        host_services: Arc<dyn HostServices>,
+    ) -> Result<Vec<RuntimeValue>, JitError> {
+        self.execute_and_snapshot_with_host(bytecode, host_services)
+            .map(|values| {
+                values
+                    .into_iter()
+                    .map(RuntimeValue::from_legacy_i32)
+                    .collect()
+            })
+    }
 }
 
 fn default_host_services() -> Arc<dyn HostServices> {
@@ -50,6 +72,7 @@ fn default_host_services() -> Arc<dyn HostServices> {
 #[cfg(test)]
 mod tests {
     use super::{JitEngine, cranelift};
+    use oxvba_runtime::RuntimeValue;
     use oxvba_runtime::value_tags::error_tag_from_code;
 
     #[test]
@@ -70,6 +93,16 @@ mod tests {
             .execute_and_snapshot(&bytecode)
             .expect("fallback execution should succeed");
         assert!(out.is_empty());
+    }
+
+    #[test]
+    fn execute_and_snapshot_values_projects_legacy_jit_lane_to_runtime_values() {
+        let bytecode = oxvba_compiler::compile("Sub Main()\nDim x\nx = 1\nx = x + 2\nEnd Sub")
+            .expect("compile should succeed");
+        let out = JitEngine
+            .execute_and_snapshot_values(&bytecode)
+            .expect("value snapshot should succeed");
+        assert_eq!(out, vec![RuntimeValue::I32(3)]);
     }
 
     #[test]

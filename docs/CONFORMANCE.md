@@ -80,6 +80,7 @@ PMR oracle runner note:
 At MVP stage, conformance compares:
 - execution status (`ok` / `error`)
 - slot snapshot output (`SLOTS:` line from CLI)
+- semantic value snapshot output when explicitly requested (`VALUES:` line from CLI)
 
 As runtime semantics mature, this will expand to richer structured outputs (error state and object lifecycle signals).
 

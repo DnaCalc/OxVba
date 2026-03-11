@@ -176,6 +176,30 @@ impl Vm {
         self.execute_loop(bytecode, entry_pc, self.typed_fastpaths_default, true)
     }
 
+    pub fn invoke_procedure_with_values(
+        &mut self,
+        bytecode: &Bytecode,
+        entry_pc: usize,
+        arg_slots: &[usize],
+        args: &[RuntimeValue],
+    ) -> Result<(), String> {
+        if arg_slots.len() != args.len() {
+            return Err(format!(
+                "argument shape mismatch: {} slots for {} values",
+                arg_slots.len(),
+                args.len()
+            ));
+        }
+        if entry_pc >= bytecode.instructions.len() {
+            return Err(format!("procedure entry out of range: {entry_pc}"));
+        }
+        self.reset_execution_state(bytecode.slot_count, true);
+        for (slot, value) in arg_slots.iter().zip(args.iter()) {
+            self.write_value_slot(*slot, value.clone())?;
+        }
+        self.execute_loop(bytecode, entry_pc, self.typed_fastpaths_default, true)
+    }
+
     fn reset_execution_state(&mut self, slot_count: usize, preserve_withevents_bindings: bool) {
         self.ensure_slot_count(slot_count);
         self.call_stack.clear();
@@ -2983,6 +3007,29 @@ mod tests {
             .invoke_procedure_with_i32_args(&bytecode, 0, &[0], &[])
             .expect_err("invoke should reject mismatched arg slots and values");
         assert!(err.contains("argument shape mismatch"));
+    }
+
+    #[test]
+    fn invoke_procedure_with_values_dispatches_into_existing_vm_state() {
+        let bytecode = Bytecode {
+            instructions: vec![
+                Instruction::Jump { target_pc: 4 },
+                Instruction::LoadConstI32 { slot: 0, value: 0 },
+                Instruction::Halt,
+                Instruction::Halt,
+                Instruction::CopySlot { dst: 0, src: 1 },
+                Instruction::Halt,
+            ],
+            external_call_descriptors: Vec::new(),
+            slot_count: 2,
+            user_slot_count: 2,
+        };
+
+        let mut vm = Vm::default();
+        vm.invoke_procedure_with_values(&bytecode, 4, &[1], &[RuntimeValue::Bool(true)])
+            .expect("invoke with runtime values");
+        assert_eq!(vm.snapshot_values(2)[1], RuntimeValue::Bool(true));
+        assert_eq!(vm.snapshot_slots(2), vec![1, 1]);
     }
 
     #[test]

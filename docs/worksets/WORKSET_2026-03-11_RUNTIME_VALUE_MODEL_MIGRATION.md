@@ -45,12 +45,14 @@ Completed slices:
 1. `RuntimeValue` now exists in [runtime_value.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-runtime\src\runtime_value.rs) as the first canonical runtime value type.
 2. VM register storage now persists `RuntimeValue` rather than raw `i32`.
 3. VM snapshot APIs now expose both legacy `snapshot_slots(...)` and semantic `snapshot_values(...)`.
-4. Host VM execution now exposes additive value-snapshot APIs while honestly rejecting the unmigrated JIT path.
+4. Host VM execution now exposes additive value-snapshot APIs.
+5. COM callback ingress now hands semantic runtime values into VM procedure dispatch instead of re-narrowing through the legacy token lane.
+6. JIT-backed value snapshots now project the supported legacy subset into `RuntimeValue` for host/public compatibility.
 
 Remaining blocker seam:
 1. HAL `ValueToken = i32`,
-2. callback ingress and other outward runtime APIs still narrow too early,
-3. JIT and parity harnesses still observe only the integer slot lane,
+2. many public observation APIs still expose the legacy integer lane as the primary compatibility surface,
+3. JIT internals and parity harnesses still observe only the integer slot lane,
 4. many tests still assume integer snapshots as the primary public contract.
 
 ## 3. Target architecture
@@ -145,7 +147,9 @@ Acceptance:
 Progress:
 1. `RegisterFile` migration is complete for the VM storage layer.
 2. additive VM/host value snapshot surfaces are in place.
-3. this phase remains open until the broader runtime-facing APIs stop depending on the legacy slot lane as their primary contract.
+3. COM callback procedure ingress now uses semantic runtime values.
+4. JIT-backed value snapshots now participate in the semantic observation surface through compatibility projection.
+5. this phase remains open until the broader runtime-facing APIs stop depending on the legacy slot lane as their primary contract.
 
 ### Phase C. Boundary migration
 
@@ -159,7 +163,7 @@ Acceptance:
 1. runtime-facing external value carriers and dynamic-object protocol can traverse the core seams without early narrowing.
 
 Current blocker:
-1. HAL and callback/JIT/public observation surfaces remain the next required migration seam.
+1. HAL and the remaining legacy public observation surfaces remain the next required migration seam.
 
 ### Phase D. Integration follow-through
 

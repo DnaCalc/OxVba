@@ -1,6 +1,35 @@
 # Implementation Log
 
 ## 2026-03-11
+- runtime public-observation CLI slice:
+  - added `--dump-values` to `oxvba-cli run ...`
+  - CLI now emits a stable `VALUES:` line alongside the existing `SLOTS:` line when requested
+  - the CLI value dump is derived from `RuntimeValue`, not a COM-specific wire model
+  - kept `--dump-slots` unchanged as a compatibility surface
+  - verification:
+    - covered by CLI unit tests plus repo `meta-check`
+- runtime JIT/public-observation compatibility slice:
+  - added `JitEngine::execute_and_snapshot_values*` by projecting the supported legacy JIT subset into `RuntimeValue`
+  - removed the earlier host restriction that blocked `execute_source_with_value_snapshot*` on `enable_jit=true`
+  - added JIT/host tests to lock semantic-value snapshots across the supported JIT subset
+  - narrowed the remaining blocker seam:
+    - HAL `ValueToken = i32`,
+    - legacy outward/public observation contracts,
+    - remaining integer-lane parity harness assumptions
+  - verification:
+    - `cargo test -p oxvba-jit -p oxvba-host -p oxvba-vm -p oxvba-com --quiet` -> PASS
+- runtime callback-ingress migration slice:
+  - added `ComValue <-> RuntimeValue` conversion support in `crates/oxvba-com/src/model.rs`
+  - added `Vm::invoke_procedure_with_values(...)` so runtime procedure dispatch can consume semantic values directly
+  - changed `ComEventCallbackDispatch.args` from `Vec<i32>` to `Vec<RuntimeValue>`
+  - changed host COM callback normalization to preserve semantic values instead of re-narrowing through the token lane
+  - updated host/registered-lane tests to assert callback payloads as `RuntimeValue`
+  - narrowed the remaining blocker seam:
+    - HAL `ValueToken = i32`,
+    - JIT snapshot/public observation compatibility,
+    - remaining outward legacy slot APIs
+  - verification:
+    - `cargo test -p oxvba-com -p oxvba-vm -p oxvba-host --quiet` -> PASS
 - runtime value-model migration slice:
   - added `crates/oxvba-runtime/src/runtime_value.rs` with the first canonical runtime value type:
     - `Empty`

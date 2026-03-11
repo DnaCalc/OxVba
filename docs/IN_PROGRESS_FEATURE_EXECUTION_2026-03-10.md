@@ -109,7 +109,9 @@ Status vocabulary:
     - `RuntimeValue` exists as the first canonical runtime value type,
     - VM register storage now persists semantic values,
     - additive VM and host value-snapshot APIs are now in place,
-    - the remaining active seam is HAL/callback/JIT/public-snapshot migration.
+    - COM callback ingress now dispatches semantic runtime values directly into VM procedure calls,
+    - JIT-backed value snapshots now project into the same semantic observation surface,
+    - the remaining active seam is HAL/public-snapshot migration.
 
 ### `IP-05` Windows early-bound COM and type-library parity
 

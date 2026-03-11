@@ -2,6 +2,7 @@ use oxvba_hal::model::{
     HalRuntimeClass, UiVirtualizationMode, UnsupportedFeatureMode, WasmRuntimeClass,
 };
 use oxvba_host::{Engine, HostConfig, RunnerBootstrapOptions, resolve_runner_bootstrap};
+use oxvba_runtime::{RuntimeValue, bstr::BStr, value_tags::EMPTY_TAG};
 use std::path::PathBuf;
 use std::{env, fs};
 
@@ -29,15 +30,51 @@ fn main() {
         .map(|a| a.source.clone())
         .unwrap_or_else(|| "Sub Main()\nEnd Sub".to_string());
 
-    match engine.execute_source_with_snapshot(&source) {
-        Ok(slots) => {
-            if args.as_ref().map(|a| a.dump_slots).unwrap_or(false) {
-                let payload = slots
+    let dump_slots = args.as_ref().map(|a| a.dump_slots).unwrap_or(false);
+    let dump_values = args.as_ref().map(|a| a.dump_values).unwrap_or(false);
+
+    let execution = if dump_slots || dump_values {
+        engine
+            .execute_source_with_value_snapshot(&source)
+            .map(|values| ExecutionResult {
+                slots: values
+                    .iter()
+                    .map(|value| value.to_legacy_i32().unwrap_or(EMPTY_TAG))
+                    .collect(),
+                values,
+            })
+    } else {
+        engine
+            .execute_source_with_snapshot(&source)
+            .map(|slots| ExecutionResult {
+                values: slots
+                    .iter()
+                    .copied()
+                    .map(RuntimeValue::from_legacy_i32)
+                    .collect(),
+                slots,
+            })
+    };
+
+    match execution {
+        Ok(result) => {
+            if dump_slots {
+                let payload = result
+                    .slots
                     .iter()
                     .map(ToString::to_string)
                     .collect::<Vec<_>>()
                     .join(",");
                 println!("SLOTS:{payload}");
+            }
+            if dump_values {
+                let payload = result
+                    .values
+                    .iter()
+                    .map(format_runtime_value)
+                    .collect::<Vec<_>>()
+                    .join("|");
+                println!("VALUES:{payload}");
             }
         }
         Err(err) => {
@@ -51,9 +88,15 @@ fn main() {
 struct RunArgs {
     source: String,
     dump_slots: bool,
+    dump_values: bool,
     dump_bootstrap: bool,
     enable_jit: bool,
     bootstrap: RunnerBootstrapOptions,
+}
+
+struct ExecutionResult {
+    slots: Vec<i32>,
+    values: Vec<RuntimeValue>,
 }
 
 fn parse_run_args() -> Option<RunArgs> {
@@ -70,6 +113,7 @@ fn parse_run_args_from(args: Vec<String>) -> Option<RunArgs> {
 
     let mut path: Option<String> = None;
     let mut dump_slots = false;
+    let mut dump_values = false;
     let mut dump_bootstrap = false;
     let mut enable_jit = false;
     let mut bootstrap = RunnerBootstrapOptions::default();
@@ -80,6 +124,7 @@ fn parse_run_args_from(args: Vec<String>) -> Option<RunArgs> {
         let arg = &args[index];
         match arg.as_str() {
             "--dump-slots" => dump_slots = true,
+            "--dump-values" => dump_values = true,
             "--dump-bootstrap" => dump_bootstrap = true,
             "--jit" => enable_jit = true,
             "--config" => {
@@ -147,10 +192,24 @@ fn parse_run_args_from(args: Vec<String>) -> Option<RunArgs> {
     Some(RunArgs {
         source,
         dump_slots,
+        dump_values,
         dump_bootstrap,
         enable_jit,
         bootstrap,
     })
+}
+
+fn format_runtime_value(value: &RuntimeValue) -> String {
+    match value {
+        RuntimeValue::Empty => "empty".to_string(),
+        RuntimeValue::Null => "null".to_string(),
+        RuntimeValue::ErrorCode(code) => format!("error:{code}"),
+        RuntimeValue::I32(value) => format!("i32:{value}"),
+        RuntimeValue::Bool(value) => format!("bool:{value}"),
+        RuntimeValue::String(BStr(value)) => format!("string:{value:?}"),
+        RuntimeValue::ArrayIntent(array) => format!("array:{array:?}"),
+        RuntimeValue::ObjectHandle(handle) => format!("object:{handle}"),
+    }
 }
 
 fn parse_bool(value: &str) -> Option<bool> {
@@ -214,10 +273,12 @@ mod tests {
             "run".to_string(),
             path,
             "--dump-slots".to_string(),
+            "--dump-values".to_string(),
             "--jit".to_string(),
         ];
         let parsed = parse_run_args_from(args).expect("args should parse");
         assert!(parsed.dump_slots);
+        assert!(parsed.dump_values);
         assert!(parsed.enable_jit);
     }
 

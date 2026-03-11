@@ -94,7 +94,7 @@ pub struct ComEventCallbackDispatch {
     pub callback_token: i32,
     pub subscription_token: i32,
     pub handler_symbol: String,
-    pub args: Vec<i32>,
+    pub args: Vec<RuntimeValue>,
 }
 
 pub struct ProjectRuntimeSession {
@@ -424,7 +424,7 @@ impl Engine {
         }
         runtime
             .vm
-            .invoke_procedure_with_i32_args(
+            .invoke_procedure_with_values(
                 &runtime.compiled.bytecode,
                 metadata.entry_pc,
                 &metadata.param_slots,
@@ -478,9 +478,13 @@ impl Engine {
         let bytecode = compile(source).map_err(|e| PhaseDiagnostic::compile(e.to_string()))?;
         self.preflight_host_sensitive_support(&bytecode)?;
         if self.config.enable_jit {
-            return Err(PhaseDiagnostic::runtime(
-                "runtime value snapshot requires VM execution path (set enable_jit=false)",
-            ));
+            self.jit
+                .compile_function("main")
+                .map_err(|e| PhaseDiagnostic::runtime(e.to_string()))?;
+            return self
+                .jit
+                .execute_and_snapshot_values_with_host(&bytecode, self.host_services.clone())
+                .map_err(|e| PhaseDiagnostic::runtime(e.to_string()));
         }
 
         execute_and_snapshot_values_with_host(&bytecode, self.host_services.clone())
@@ -522,9 +526,16 @@ impl Engine {
         }
         self.preflight_host_sensitive_support(&compiled.bytecode)?;
         if self.config.enable_jit {
-            return Err(PhaseDiagnostic::runtime(
-                "runtime value snapshot requires VM execution path (set enable_jit=false)",
-            ));
+            self.jit
+                .compile_function("main")
+                .map_err(|e| PhaseDiagnostic::runtime(e.to_string()))?;
+            return self
+                .jit
+                .execute_and_snapshot_values_with_host(
+                    &compiled.bytecode,
+                    self.host_services.clone(),
+                )
+                .map_err(|e| PhaseDiagnostic::runtime(e.to_string()));
         }
 
         execute_and_snapshot_values_with_host(&compiled.bytecode, self.host_services.clone())
@@ -655,22 +666,15 @@ impl Engine {
 fn normalize_callback_payload(
     payload: ComCallbackPayload,
 ) -> Result<ComEventCallbackDispatch, PhaseDiagnostic> {
-    let args = payload
-        .args
-        .into_iter()
-        .map(|value| {
-            value.to_runtime_token().map_err(|detail| {
-                PhaseDiagnostic::runtime(format!(
-                    "COM-E-EVENT-CALLBACK-VALUE-UNSUPPORTED: callback payload cannot enter runtime token lane: {detail}"
-                ))
-            })
-        })
-        .collect::<Result<Vec<_>, _>>()?;
     Ok(ComEventCallbackDispatch {
         callback_token: payload.callback.raw(),
         subscription_token: payload.subscription.raw(),
         handler_symbol: String::new(),
-        args,
+        args: payload
+            .args
+            .into_iter()
+            .map(|value| value.to_runtime_value())
+            .collect(),
     })
 }
 
@@ -1914,7 +1918,7 @@ mod tests {
 
         assert_eq!(callback.subscription_token, subscription);
         assert_eq!(callback.handler_symbol, "sinka_onchanged");
-        assert_eq!(callback.args, vec![77]);
+        assert_eq!(callback.args, vec![RuntimeValue::I32(77)]);
         assert!(callback.callback_token >= 60_001);
         assert!(
             engine
@@ -2018,7 +2022,10 @@ mod tests {
 
         assert_eq!(callback.subscription_token, subscription);
         assert_eq!(callback.handler_symbol, "sinka_onpair");
-        assert_eq!(callback.args, vec![90, 91]);
+        assert_eq!(
+            callback.args,
+            vec![RuntimeValue::I32(90), RuntimeValue::I32(91)]
+        );
         assert!(
             engine
                 .unsubscribe_com_event_handler(subscription)
@@ -2053,7 +2060,7 @@ mod tests {
 
         assert_eq!(callback.subscription_token, subscription);
         assert_eq!(callback.handler_symbol, "sinka_onsourcechanged");
-        assert_eq!(callback.args, vec![55]);
+        assert_eq!(callback.args, vec![RuntimeValue::I32(55)]);
         assert!(
             engine
                 .unsubscribe_com_event_handler(subscription)
@@ -5365,14 +5372,13 @@ mod tests {
     }
 
     #[test]
-    fn runtime_value_snapshot_api_rejects_jit_execution_path() {
-        let err = Engine::new(HostConfig {
+    fn runtime_value_snapshot_api_supports_jit_subset_path() {
+        let out = Engine::new(HostConfig {
             enable_jit: true,
             root_object_name: None,
         })
         .execute_source_with_value_snapshot_phased("Sub Main()\nDim x\nx = 4\nEnd Sub")
-        .expect_err("value snapshot should remain VM-only until JIT migrates");
-        assert_eq!(err.phase(), DiagnosticPhase::Runtime);
-        assert!(err.message().contains("VM execution path"));
+        .expect("value snapshot should project JIT subset into runtime values");
+        assert_eq!(out, vec![RuntimeValue::I32(4)]);
     }
 }

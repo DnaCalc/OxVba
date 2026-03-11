@@ -83,8 +83,8 @@ Run context: active parity/compliance execution plus in-progress feature worklis
   - `crates/oxvba-vm/src/register_file.rs` now stores `Vec<RuntimeValue>`,
   - `crates/oxvba-vm/src/lib.rs` and `crates/oxvba-host/src/engine.rs` now expose additive VM-backed value-snapshot APIs alongside the legacy integer snapshot lane,
   - `crates/oxvba-hal/src/traits.rs` still defines `ValueToken = i32`,
-  - callback ingress and many host/public execution helpers still narrow event/runtime values back to `i32`,
-  - JIT execution and parity harnesses still snapshot through `Vec<i32>`,
+  - COM callback ingress now preserves `RuntimeValue` into the runtime, but many host/public execution helpers still expose or expect the legacy integer observation lane,
+  - JIT-backed value snapshots now project the supported subset into `RuntimeValue`, but JIT internals and many parity harnesses still fundamentally operate over the legacy integer snapshot lane,
   - many bytecode execution paths and tests still assume the legacy integer observation surface,
   - the new `ComValue` carrier and generic dynamic-object protocol can live at the COM boundary, but they cannot yet become the single runtime object/value model while the wider execution substrate remains token-only.
 - Exact unblock steps:
@@ -92,8 +92,8 @@ Run context: active parity/compliance execution plus in-progress feature worklis
   - plan and execute migration of:
     - remaining VM read/write helpers and outward runtime APIs,
     - HAL `ValueToken` seams,
-    - host/runtime snapshot and callback ingress surfaces,
-    - JIT/VM equivalence expectations and affected tests,
+    - remaining host/runtime snapshot and public observation surfaces,
+    - remaining JIT/VM equivalence expectations and affected tests,
   - then wire the dynamic-object protocol and expanded value carrier through those seams as the single runtime-facing model.
 - Recommendation:
   - treat this as the real blocker for continuing the first workset beyond the currently landed protocol/carrier boundary slices; do not keep patching COM-specific adapters around it.

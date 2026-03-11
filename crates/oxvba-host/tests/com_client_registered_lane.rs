@@ -3,6 +3,7 @@ mod windows_registered_com_lane {
     use oxvba_hal::model::HostPolicy;
     use oxvba_host::engine::DiagnosticPhase;
     use oxvba_host::{Engine, HostConfig};
+    use oxvba_runtime::RuntimeValue;
 
     const OXVBA_TEST_DISPATCH_PROGID: &str = "OxVba.TestDispatch";
 
@@ -530,13 +531,14 @@ End Sub
             );
         } else {
             assert_eq!(
-                callback.args[0], trigger_arg,
+                callback.args[0],
+                RuntimeValue::I32(trigger_arg),
                 "callback first-arg mismatch for `{selected_prog_id}`"
             );
             if expected_arg_count == 1 {
                 assert_eq!(
                     callback.args,
-                    vec![trigger_arg],
+                    vec![RuntimeValue::I32(trigger_arg)],
                     "callback payload mismatch for `{selected_prog_id}`"
                 );
             }

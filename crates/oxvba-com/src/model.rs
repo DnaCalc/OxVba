@@ -1,10 +1,11 @@
 pub const DISPATCH_INVOKE_MISSING_ARG_TOKEN: i32 = i32::MIN + 2_048;
 
 use oxvba_runtime::{
+    RuntimeValue,
     safe_array::{
         SafeArray, array_tag_from_safe_array, marshal_dispatch_argument, safe_array_from_tag,
     },
-    value_tags::{EMPTY_TAG, NULL_TAG, error_code_from_tag, error_tag_from_code, is_error_tag},
+    value_tags::{EMPTY_TAG, NULL_TAG, error_code_from_tag, is_error_tag},
 };
 
 macro_rules! define_token {
@@ -78,6 +79,20 @@ pub enum ComValue {
 }
 
 impl ComValue {
+    pub fn from_runtime_value(value: &RuntimeValue) -> Self {
+        match value {
+            RuntimeValue::Empty => Self::Empty,
+            RuntimeValue::Null => Self::Null,
+            RuntimeValue::ErrorCode(code) => Self::ErrorCode(*code),
+            RuntimeValue::Bool(value) => Self::Bool(*value),
+            RuntimeValue::I32(value) => Self::I32(*value),
+            RuntimeValue::ArrayIntent(array) => Self::ArrayIntent(array.clone()),
+            RuntimeValue::String(_) | RuntimeValue::ObjectHandle(_) => {
+                Self::from_runtime_token(value.as_i32_lossy().unwrap_or(EMPTY_TAG))
+            }
+        }
+    }
+
     pub fn from_runtime_token(value: i32) -> Self {
         if value == EMPTY_TAG {
             return Self::Empty;
@@ -94,16 +109,19 @@ impl ComValue {
         Self::I32(value)
     }
 
-    pub fn to_runtime_token(&self) -> Result<i32, String> {
+    pub fn to_runtime_value(&self) -> RuntimeValue {
         match self {
-            Self::Empty => Ok(EMPTY_TAG),
-            Self::Null => Ok(NULL_TAG),
-            Self::ErrorCode(code) => Ok(error_tag_from_code(*code)),
-            Self::Bool(value) => Ok(i32::from(*value)),
-            Self::I32(value) => Ok(*value),
-            Self::ArrayIntent(array) => array_tag_from_safe_array(array)
-                .ok_or_else(|| "unsupported array intent for runtime token transport".to_string()),
+            Self::Empty => RuntimeValue::Empty,
+            Self::Null => RuntimeValue::Null,
+            Self::ErrorCode(code) => RuntimeValue::ErrorCode(*code),
+            Self::Bool(value) => RuntimeValue::Bool(*value),
+            Self::I32(value) => RuntimeValue::I32(*value),
+            Self::ArrayIntent(array) => RuntimeValue::ArrayIntent(array.clone()),
         }
+    }
+
+    pub fn to_runtime_token(&self) -> Result<i32, String> {
+        self.to_runtime_value().to_legacy_i32()
     }
 
     pub fn to_legacy_dispatch_token(&self) -> Result<i32, String> {
@@ -210,6 +228,7 @@ pub struct ComCallbackPayload {
 mod tests {
     use super::ComValue;
     use oxvba_runtime::{
+        RuntimeValue,
         safe_array::{ARRAY_TAG_BASE, SafeArray},
         value_tags::{EMPTY_TAG, NULL_TAG, error_tag_from_code},
     };
@@ -240,6 +259,19 @@ mod tests {
                 .to_legacy_dispatch_token()
                 .expect("legacy dispatch token"),
             20_004
+        );
+    }
+
+    #[test]
+    fn com_value_roundtrips_runtime_value_shape() {
+        let value = ComValue::ArrayIntent(SafeArray::vector(5));
+        assert_eq!(
+            value.to_runtime_value(),
+            RuntimeValue::ArrayIntent(SafeArray::vector(5))
+        );
+        assert_eq!(
+            ComValue::from_runtime_value(&RuntimeValue::Bool(true)),
+            ComValue::Bool(true)
         );
     }
 }
