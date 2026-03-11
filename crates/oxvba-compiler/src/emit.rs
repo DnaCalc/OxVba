@@ -1,6 +1,7 @@
 use std::collections::{BTreeMap, HashMap};
 
 use oxvba_runtime::{
+    DynLinkSymbol,
     safe_array::ARRAY_TAG_BASE,
     value_tags::{EMPTY_TAG, ERROR_TAG_BASE, ERROR_TAG_LIMIT, NULL_TAG},
 };
@@ -253,7 +254,7 @@ fn build_external_call_descriptors(
             library: decl.library,
             alias: decl.alias,
             ordinal_alias: decl.ordinal_alias,
-            symbol,
+            symbol: DynLinkSymbol::new(symbol),
             marshal_lane: "m0-deterministic".to_string(),
             calling_convention: "platform-default".to_string(),
             selection_policy: if decl.ordinal_alias {
@@ -1083,7 +1084,7 @@ fn emit_external_declare_call(
     instructions.push(Instruction::IntrinsicInvokeSymbolHost {
         dst,
         descriptor_id: symbol as u32,
-        symbol,
+        symbol: DynLinkSymbol::new(symbol),
         arg: arg_slot,
     });
     true

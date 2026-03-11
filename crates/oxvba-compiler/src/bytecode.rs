@@ -1,3 +1,4 @@
+use oxvba_runtime::DynLinkSymbol;
 use rkyv::{Archive, Deserialize, Serialize};
 
 #[derive(Debug, Clone, Copy, Archive, Serialize, Deserialize, PartialEq, Eq)]
@@ -13,7 +14,7 @@ pub struct ExternalCallDescriptor {
     pub library: String,
     pub alias: String,
     pub ordinal_alias: bool,
-    pub symbol: i32,
+    pub symbol: DynLinkSymbol,
     pub marshal_lane: String,
     pub calling_convention: String,
     pub selection_policy: String,
@@ -391,7 +392,7 @@ pub enum Instruction {
     IntrinsicInvokeSymbolHost {
         dst: usize,
         descriptor_id: u32,
-        symbol: i32,
+        symbol: DynLinkSymbol,
         arg: usize,
     },
     IntrinsicWithEventsGet {

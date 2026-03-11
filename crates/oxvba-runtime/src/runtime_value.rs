@@ -6,7 +6,22 @@ use crate::{
 
 macro_rules! define_i32_handle {
     ($name:ident) => {
-        #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
+        #[derive(
+            Debug,
+            Clone,
+            Copy,
+            PartialEq,
+            Eq,
+            PartialOrd,
+            Ord,
+            Hash,
+            Default,
+            rkyv::Archive,
+            rkyv::Serialize,
+            rkyv::Deserialize,
+            serde::Serialize,
+            serde::Deserialize,
+        )]
         pub struct $name(i32);
 
         impl $name {

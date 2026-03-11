@@ -73,12 +73,12 @@ Completed slices:
 23. `DynamicLinkHal::{bind_descriptor,prepare_invoke,invoke_bound}` now use `BindingHandle` directly instead of raw integer binding tokens.
 24. Dynamic-link symbol identity is now explicitly typed at the runtime/HAL seam as `DynLinkSymbol` rather than existing there only as an ambiguous integer symbol token.
 25. `DynLinkDescriptorView.symbol` and `DynamicLinkHal::invoke_symbol(...)` now use `DynLinkSymbol` directly at the runtime/HAL seam.
+26. Serialized bytecode dynamic-link descriptor and instruction symbol fields now also use `DynLinkSymbol`, so the VM bytecode path no longer reintroduces raw symbol integers at execution time.
 
 Remaining blocker seam:
 1. HAL `ValueToken = i32` still anchors many remaining seams,
 2. the remaining holdouts are now concentrated in:
    - `ComHal::{create_object_value,dispatch_invoke_v2,dispatch_invoke_runtime_value_v2}`,
-   - serialized bytecode descriptor/instruction symbol fields that still persist legacy `i32` symbol identifiers,
    - engine/public callers and legacy compatibility surfaces that still observe COM object identity through raw integer tokens,
 3. many public observation APIs still expose the legacy integer lane as the primary compatibility surface,
 4. JIT internals and parity harnesses still observe only the integer slot lane for Cranelift-supported subsets,

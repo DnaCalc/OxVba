@@ -1052,11 +1052,7 @@ impl Vm {
                 } => {
                     let arg = self.read_value_slot(*arg)?;
                     if bytecode.external_call_descriptors.is_empty() {
-                        match self
-                            .host_services
-                            .dynlink()
-                            .invoke_symbol((*symbol).into(), arg)
-                        {
+                        match self.host_services.dynlink().invoke_symbol(*symbol, arg) {
                             Ok(value) => {
                                 self.write_value_slot(*dst, value)?;
                                 pc += 1;
@@ -1101,7 +1097,7 @@ impl Vm {
                         library: descriptor.library.as_str(),
                         alias: descriptor.alias.as_str(),
                         ordinal_alias: descriptor.ordinal_alias,
-                        symbol: descriptor.symbol.into(),
+                        symbol: descriptor.symbol,
                         marshal_lane: descriptor.marshal_lane.as_str(),
                         calling_convention: descriptor.calling_convention.as_str(),
                         selection_policy: descriptor.selection_policy.as_str(),
@@ -2788,7 +2784,7 @@ mod tests {
                 Instruction::IntrinsicInvokeSymbolHost {
                     dst: 1,
                     descriptor_id: 1_234,
-                    symbol: 1_234,
+                    symbol: 1_234.into(),
                     arg: 0,
                 },
                 Instruction::Halt,
@@ -2819,7 +2815,7 @@ mod tests {
                 Instruction::IntrinsicInvokeSymbolHost {
                     dst: 1,
                     descriptor_id: symbol as u32,
-                    symbol,
+                    symbol: symbol.into(),
                     arg: 0,
                 },
                 Instruction::Halt,
@@ -2830,7 +2826,7 @@ mod tests {
                 library: "host".to_string(),
                 alias: "ping".to_string(),
                 ordinal_alias: false,
-                symbol,
+                symbol: symbol.into(),
                 marshal_lane: "m0-deterministic".to_string(),
                 calling_convention: "platform-default".to_string(),
                 selection_policy: "case-insensitive-canonical".to_string(),
@@ -2860,7 +2856,7 @@ mod tests {
                 Instruction::IntrinsicInvokeSymbolHost {
                     dst: 1,
                     descriptor_id: 999,
-                    symbol,
+                    symbol: symbol.into(),
                     arg: 0,
                 },
                 Instruction::Halt,
@@ -2871,7 +2867,7 @@ mod tests {
                 library: "host".to_string(),
                 alias: "ping".to_string(),
                 ordinal_alias: false,
-                symbol,
+                symbol: symbol.into(),
                 marshal_lane: "m0-deterministic".to_string(),
                 calling_convention: "platform-default".to_string(),
                 selection_policy: "case-insensitive-canonical".to_string(),
@@ -2902,7 +2898,7 @@ mod tests {
                 Instruction::IntrinsicInvokeSymbolHost {
                     dst: 1,
                     descriptor_id: symbol as u32,
-                    symbol,
+                    symbol: symbol.into(),
                     arg: 0,
                 },
                 Instruction::Halt,
@@ -2913,7 +2909,7 @@ mod tests {
                 library: " ".to_string(),
                 alias: "ping".to_string(),
                 ordinal_alias: false,
-                symbol,
+                symbol: symbol.into(),
                 marshal_lane: "m0-deterministic".to_string(),
                 calling_convention: "platform-default".to_string(),
                 selection_policy: "case-insensitive-canonical".to_string(),
@@ -2945,7 +2941,7 @@ mod tests {
                 Instruction::IntrinsicInvokeSymbolHost {
                     dst: 1,
                     descriptor_id: symbol as u32,
-                    symbol,
+                    symbol: symbol.into(),
                     arg: 0,
                 },
                 Instruction::Halt,
@@ -2956,7 +2952,7 @@ mod tests {
                 library: "host".to_string(),
                 alias: "7".to_string(),
                 ordinal_alias: true,
-                symbol,
+                symbol: symbol.into(),
                 marshal_lane: "m0-deterministic".to_string(),
                 calling_convention: "platform-default".to_string(),
                 selection_policy: "case-insensitive-canonical".to_string(),

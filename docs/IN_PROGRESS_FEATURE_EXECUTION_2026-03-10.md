@@ -142,7 +142,8 @@ Status vocabulary:
     - `DynamicLinkHal::{bind_descriptor,prepare_invoke,invoke_bound}` now use that typed handle directly instead of raw integer binding tokens,
     - dynamic-link symbol identity is now explicitly typed as `DynLinkSymbol` at the runtime/HAL seam,
     - `DynLinkDescriptorView.symbol` and `DynamicLinkHal::invoke_symbol(...)` now use that typed symbol directly at the runtime/HAL seam,
-    - the remaining active seam is the actual HAL `ValueToken` contract plus serialized raw symbol identifiers, remaining outward runtime APIs, and the still-legacy-heavy caller/test estate around integer snapshots.
+    - serialized bytecode descriptor/instruction symbol fields now also use `DynLinkSymbol`,
+    - the remaining active seam is the actual HAL `ValueToken` contract plus remaining outward runtime APIs and the still-legacy-heavy caller/test estate around integer snapshots.
 
 ### `IP-05` Windows early-bound COM and type-library parity
 

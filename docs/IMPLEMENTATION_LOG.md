@@ -31,9 +31,20 @@
   - [interpreter.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-vm\src\interpreter.rs) now converts legacy bytecode symbol fields into `DynLinkSymbol` at the runtime boundary instead of passing raw integers through unchanged.
   - Windows/null/wasm HAL adapters and conformance probes were updated accordingly.
 - Remaining compatibility seam:
-  - serialized bytecode still stores raw `i32` dynamic-link symbol identifiers and converts them into `DynLinkSymbol` at runtime.
+  - after this seam, the main remaining runtime-model wall is no longer raw dynamic-link symbol identity; it is the broader `ValueToken = i32` contract and remaining legacy public observation paths.
 - Verification:
   - `cargo test -p oxvba-runtime -p oxvba-hal -p oxvba-vm --quiet`
+
+## 2026-03-11 - Runtime dynamic-link symbol identity carried through bytecode
+
+- Added `rkyv` support to [Cargo.toml](C:\Work\DnaCalc\OxVba\crates\oxvba-runtime\Cargo.toml) for the typed runtime handle/symbol newtypes so they can cross the serialized bytecode boundary.
+- Updated [bytecode.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-compiler\src\bytecode.rs) so:
+  - `ExternalCallDescriptor.symbol`
+  - `Instruction::IntrinsicInvokeSymbolHost.symbol`
+  now carry `DynLinkSymbol` instead of raw integers.
+- Updated compiler emit and VM execution to preserve that typed symbol end to end instead of converting from a serialized raw integer at runtime.
+- Verification:
+  - `cargo test -p oxvba-runtime -p oxvba-compiler -p oxvba-vm -p oxvba-hal --quiet`
 
 ## 2026-03-11
 - runtime COM-dispatch object-entry slice:

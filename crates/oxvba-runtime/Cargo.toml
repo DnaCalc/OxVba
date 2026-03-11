@@ -9,3 +9,4 @@ repository.workspace = true
 [dependencies]
 thiserror.workspace = true
 serde.workspace = true
+rkyv.workspace = true
