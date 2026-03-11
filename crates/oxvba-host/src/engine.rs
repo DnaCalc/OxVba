@@ -5397,4 +5397,20 @@ mod tests {
         assert_eq!(out.len(), 1);
         assert!(matches!(out[0], RuntimeValue::ObjectHandle(handle) if handle > 0));
     }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn runtime_value_snapshot_createobject_preserves_object_handle_shape_with_jit_enabled() {
+        let mut engine = Engine::new(HostConfig {
+            enable_jit: true,
+            root_object_name: None,
+        });
+        engine.set_host_policy(HostPolicy::interactive_dev());
+
+        let out = engine
+            .execute_source_with_value_snapshot("Sub Main()\nDim x\nx = CreateObject(4)\nEnd Sub")
+            .expect("CreateObject value snapshot should preserve object handle on JIT fallback");
+        assert_eq!(out.len(), 1);
+        assert!(matches!(out[0], RuntimeValue::ObjectHandle(handle) if handle > 0));
+    }
 }

@@ -11,7 +11,7 @@ use oxvba_hal::{
     traits::HostServices,
 };
 use oxvba_runtime::RuntimeValue;
-use oxvba_vm::execute_and_snapshot_with_host;
+use oxvba_vm::{execute_and_snapshot_values_with_host, execute_and_snapshot_with_host};
 use thiserror::Error;
 
 #[derive(Debug, Error)]
@@ -55,13 +55,17 @@ impl JitEngine {
         bytecode: &Bytecode,
         host_services: Arc<dyn HostServices>,
     ) -> Result<Vec<RuntimeValue>, JitError> {
-        self.execute_and_snapshot_with_host(bytecode, host_services)
-            .map(|values| {
-                values
-                    .into_iter()
-                    .map(RuntimeValue::from_legacy_i32)
-                    .collect()
-            })
+        if cranelift::supports_bytecode(bytecode) {
+            return cranelift::execute_bytecode(bytecode)
+                .map(|values| {
+                    values
+                        .into_iter()
+                        .map(RuntimeValue::from_legacy_i32)
+                        .collect()
+                })
+                .map_err(JitError::Execution);
+        }
+        execute_and_snapshot_values_with_host(bytecode, host_services).map_err(JitError::Execution)
     }
 }
 
@@ -72,6 +76,10 @@ fn default_host_services() -> Arc<dyn HostServices> {
 #[cfg(test)]
 mod tests {
     use super::{JitEngine, cranelift};
+    use oxvba_hal::{
+        adapters,
+        model::{HalProfileId, HostPolicy},
+    };
     use oxvba_runtime::RuntimeValue;
     use oxvba_runtime::value_tags::error_tag_from_code;
 
@@ -103,6 +111,22 @@ mod tests {
             .execute_and_snapshot_values(&bytecode)
             .expect("value snapshot should succeed");
         assert_eq!(out, vec![RuntimeValue::I32(3)]);
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn execute_and_snapshot_values_fallback_preserves_non_legacy_runtime_values() {
+        let bytecode = oxvba_compiler::compile("Sub Main()\nDim x\nx = CreateObject(4)\nEnd Sub")
+            .expect("compile should succeed");
+        assert!(!cranelift::supports_bytecode(&bytecode));
+        let host_services =
+            adapters::for_profile(HalProfileId::Windows, HostPolicy::interactive_dev());
+
+        let out = JitEngine
+            .execute_and_snapshot_values_with_host(&bytecode, host_services)
+            .expect("fallback value snapshot should succeed");
+        assert_eq!(out.len(), 1);
+        assert!(matches!(out[0], RuntimeValue::ObjectHandle(handle) if handle > 0));
     }
 
     #[test]

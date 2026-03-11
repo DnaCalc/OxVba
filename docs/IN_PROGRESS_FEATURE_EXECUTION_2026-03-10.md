@@ -122,7 +122,7 @@ Status vocabulary:
     - VM register storage now persists semantic values,
     - additive VM and host value-snapshot APIs are now in place,
     - COM callback ingress now dispatches semantic runtime values directly into VM procedure calls,
-    - JIT-backed value snapshots now project into the same semantic observation surface,
+    - JIT-backed value snapshots now preserve full `RuntimeValue` shape on VM fallback and project the supported Cranelift subset into the same semantic observation surface,
     - `CreateObject` results now enter runtime state as `RuntimeValue::ObjectHandle(...)`,
     - HAL semantic-return helper wrappers are now in place and used by the VM for host-return paths,
     - the first input-side semantic wrapper slice is now in place for active VM host intrinsics (`MsgBox`, `InputBox`, `FreeFile`, `Shell`, `Environ`, `Dir`, `CreateObject`, COM event helper intrinsics, dynamic-link invoke),

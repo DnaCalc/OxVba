@@ -87,7 +87,7 @@ Run context: active parity/compliance execution plus in-progress feature worklis
   - `crates/oxvba-hal/src/traits.rs` still defines `ValueToken = i32`,
   - the runtime now records `CreateObject` results as `RuntimeValue::ObjectHandle(...)` rather than plain integer slots,
   - COM callback ingress now preserves `RuntimeValue` into the runtime, but many host/public execution helpers still expose or expect the legacy integer observation lane,
-  - JIT-backed value snapshots now project the supported subset into `RuntimeValue`, but JIT internals and many parity harnesses still fundamentally operate over the legacy integer snapshot lane,
+  - JIT-backed value snapshots now preserve full `RuntimeValue` shape on VM fallback and project the supported Cranelift subset into `RuntimeValue`, but JIT internals and many parity harnesses still fundamentally operate over the legacy integer snapshot lane,
   - HAL now exposes additive semantic-return helper methods and the VM routes host-return paths through them, but the underlying input/output token contract is still `i32`,
   - the first input-side semantic wrapper migration is now in place for active VM host intrinsics:
     - `MsgBox` / `InputBox`,

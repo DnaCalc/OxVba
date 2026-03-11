@@ -30,7 +30,7 @@ Current structural constraints:
 1. [register_file.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-vm\src\register_file.rs) has now been migrated to `Vec<RuntimeValue>`, but the surrounding execution substrate is still only partially widened.
 2. [traits.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-hal\src\traits.rs) still defines `ValueToken = i32`.
 3. VM read/write helpers and snapshots now have additive value-path support, but much of the interpreter/runtime boundary still assumes the legacy integer lane.
-4. Host execution helpers now expose VM-backed value snapshots, but JIT and many public/test observation paths still assume `Vec<i32>`.
+4. Host execution helpers now expose VM-backed value snapshots, but many public/test observation paths still assume `Vec<i32>` and the Cranelift-supported subset still exposes only integer-slot semantics.
 5. New semantic COM carrier/protocol slices can exist at the boundary, but cannot become the runtime’s authoritative model while these seams stay partially token-only.
 
 Consequences:
@@ -47,7 +47,7 @@ Completed slices:
 3. VM snapshot APIs now expose both legacy `snapshot_slots(...)` and semantic `snapshot_values(...)`.
 4. Host VM execution now exposes additive value-snapshot APIs.
 5. COM callback ingress now hands semantic runtime values into VM procedure dispatch instead of re-narrowing through the legacy token lane.
-6. JIT-backed value snapshots now project the supported legacy subset into `RuntimeValue` for host/public compatibility.
+6. JIT-backed value snapshots now preserve full `RuntimeValue` shape on VM fallback and project the supported Cranelift subset into `RuntimeValue` for host/public compatibility.
 7. `CreateObject` results now enter the runtime as `RuntimeValue::ObjectHandle(...)`.
 8. HAL now exposes additive semantic-return helper methods and VM host-return paths route through them.
 9. The first input-side semantic HAL wrapper slice now exists for active VM host intrinsics:
@@ -66,7 +66,7 @@ Remaining blocker seam:
 1. HAL `ValueToken = i32`,
 2. many HAL call inputs are still fundamentally integer tokens rather than runtime semantic values,
 3. many public observation APIs still expose the legacy integer lane as the primary compatibility surface,
-4. JIT internals and parity harnesses still observe only the integer slot lane,
+4. JIT internals and parity harnesses still observe only the integer slot lane for Cranelift-supported subsets,
 5. many tests still assume integer snapshots as the primary public contract.
 
 ## 3. Target architecture

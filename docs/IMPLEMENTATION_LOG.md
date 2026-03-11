@@ -1,6 +1,16 @@
 # Implementation Log
 
 ## 2026-03-11
+- runtime JIT semantic-fallback slice:
+  - changed `JitEngine::execute_and_snapshot_values*` so unsupported bytecode now falls back through VM `RuntimeValue` snapshots instead of flattening through the legacy `Vec<i32>` lane first
+  - added JIT/host coverage to lock object-handle preservation on value snapshots with `enable_jit=true`
+  - narrowed the remaining blocker seam:
+    - Cranelift-supported subset still exposes only integer-slot semantics,
+    - many public observation APIs still default to legacy snapshots,
+    - HAL `ValueToken = i32` is still the core contract
+  - verification:
+    - `cargo test -p oxvba-jit --quiet` -> PASS
+    - `cargo test -p oxvba-host runtime_value_snapshot_createobject_preserves_object_handle_shape_with_jit_enabled --quiet` -> PASS
 - HAL semantic-return wrapper slice:
   - added additive semantic-return helper methods on HAL domains while keeping the underlying `ValueToken = i32` contract intact
   - changed the VM host-return paths to consume those semantic wrappers instead of re-wrapping legacy integers locally
