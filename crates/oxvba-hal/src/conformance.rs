@@ -1,5 +1,6 @@
 //! HAL conformance probes and report model.
 
+use oxvba_runtime::RuntimeValue;
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 
 use crate::{
@@ -16,6 +17,13 @@ const CLAUSE_CATALOG_CSV_V1: &str =
     include_str!("../../../docs/spec/HAL_CONTRACT_CLAUSE_CATALOG_V1.csv");
 const CLAUSE_CATALOG_MD_V1: &str =
     include_str!("../../../docs/spec/HAL_CONTRACT_CLAUSE_CATALOG_V1.md");
+
+fn runtime_i32(value: &RuntimeValue) -> Option<i32> {
+    match value {
+        RuntimeValue::I32(value) => Some(*value),
+        _ => None,
+    }
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ProbeStatus {
@@ -956,27 +964,49 @@ fn verify_time_host_backed_contract(
         }
     };
 
+    let Some(date_i32) = runtime_i32(&date) else {
+        ok = false;
+        failures.push(format!(
+            "time.date_serial_now probe returned non-integer runtime value: {date:?}"
+        ));
+        return ok;
+    };
+    let Some(time_i32) = runtime_i32(&time) else {
+        ok = false;
+        failures.push(format!(
+            "time.time_serial_now probe returned non-integer runtime value: {time:?}"
+        ));
+        return ok;
+    };
+    let Some(ticks_i32) = runtime_i32(&ticks) else {
+        ok = false;
+        failures.push(format!(
+            "time.timer_ticks probe returned non-integer runtime value: {ticks:?}"
+        ));
+        return ok;
+    };
+
     if host_backed_active {
-        if date < 0 || time < 0 || ticks < 0 {
+        if date_i32 < 0 || time_i32 < 0 || ticks_i32 < 0 {
             ok = false;
             failures.push(format!(
                 "host-backed time probe observed negative tokens: date={}, time={}, ticks={}",
-                date, time, ticks
+                date_i32, time_i32, ticks_i32
             ));
         }
-        if date == 20_260_301 && time == 123_456 && ticks == 42 {
+        if date_i32 == 20_260_301 && time_i32 == 123_456 && ticks_i32 == 42 {
             ok = false;
             failures.push(
                 "host-backed time probe observed deterministic constants; expected system-time-derived values".to_string(),
             );
         }
     } else if host.policy().deterministic_mode
-        && (date != 20_260_301 || time != 123_456 || ticks != 42)
+        && (date_i32 != 20_260_301 || time_i32 != 123_456 || ticks_i32 != 42)
     {
         ok = false;
         failures.push(format!(
             "deterministic time lane expected constants; observed date={}, time={}, ticks={}",
-            date, time, ticks
+            date_i32, time_i32, ticks_i32
         ));
     }
 

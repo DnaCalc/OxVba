@@ -95,10 +95,7 @@ pub trait UiInteractionHal: Send + Sync {
 
 pub trait EventPumpHal: Send + Sync {
     /// Deterministically pumps host events, or reports unsupported behavior.
-    fn do_events(&self) -> HalResult<ValueToken>;
-    fn do_events_value(&self) -> HalResult<RuntimeValue> {
-        self.do_events().map(RuntimeValue::from_legacy_i32)
-    }
+    fn do_events(&self) -> HalResult<RuntimeValue>;
 }
 
 pub trait FileSystemHal: Send + Sync {
@@ -188,18 +185,9 @@ pub trait ComHal: Send + Sync {
 }
 
 pub trait TimeLocaleHal: Send + Sync {
-    fn date_serial_now(&self) -> HalResult<ValueToken>;
-    fn date_serial_now_value(&self) -> HalResult<RuntimeValue> {
-        self.date_serial_now().map(RuntimeValue::from_legacy_i32)
-    }
-    fn time_serial_now(&self) -> HalResult<ValueToken>;
-    fn time_serial_now_value(&self) -> HalResult<RuntimeValue> {
-        self.time_serial_now().map(RuntimeValue::from_legacy_i32)
-    }
-    fn timer_ticks(&self) -> HalResult<ValueToken>;
-    fn timer_ticks_value(&self) -> HalResult<RuntimeValue> {
-        self.timer_ticks().map(RuntimeValue::from_legacy_i32)
-    }
+    fn date_serial_now(&self) -> HalResult<RuntimeValue>;
+    fn time_serial_now(&self) -> HalResult<RuntimeValue>;
+    fn timer_ticks(&self) -> HalResult<RuntimeValue>;
 }
 
 pub trait DynamicLinkHal: Send + Sync {

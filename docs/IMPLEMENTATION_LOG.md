@@ -1960,3 +1960,12 @@
   - `FileSystemHal` value-path methods now accept semantic runtime inputs (`open_value`, `close_value`, `seek_value`, `eof_value`, `lof_value`, `free_file_value`) instead of taking raw tokens behind a value-return facade
   - VM `FreeFile` host execution now reads `RuntimeValue` directly before the HAL boundary
   - added regression coverage that `open_value` accepts runtime string paths and that value-path filesystem calls remain deterministic on the current host subset
+- Continued the runtime HAL result-seam migration into time/event domains:
+  - `EventPumpHal::do_events()` now returns semantic `RuntimeValue` directly instead of a legacy token plus `do_events_value()` facade
+  - `TimeLocaleHal::{date_serial_now,time_serial_now,timer_ticks}` now return semantic `RuntimeValue` directly instead of token-return methods plus `*_value()` facades
+  - VM host intrinsic execution now consumes those direct semantic results for `Date`, `Time`, `Now`, `Timer`, and `DoEvents`
+  - null/wasm/standard adapters and their regression tests were migrated to the semantic-return contract
+  - HAL conformance probes now treat the time-locale domain as a semantic-return lane and explicitly validate that the probed values are integer-shaped runtime values
+  - verification:
+    - `cargo test -p oxvba-hal -p oxvba-vm --quiet`
+    - `./scripts/meta-check.ps1 -Fast -NoArtifacts`

@@ -153,8 +153,8 @@ impl UiInteractionHal for WasmHostServices {
 }
 
 impl EventPumpHal for WasmHostServices {
-    fn do_events(&self) -> HalResult<i32> {
-        Ok(0)
+    fn do_events(&self) -> HalResult<RuntimeValue> {
+        Ok(RuntimeValue::I32(0))
     }
 }
 
@@ -367,16 +367,16 @@ impl ComHal for WasmHostServices {
 }
 
 impl TimeLocaleHal for WasmHostServices {
-    fn date_serial_now(&self) -> HalResult<i32> {
-        Ok(20_260_301)
+    fn date_serial_now(&self) -> HalResult<RuntimeValue> {
+        Ok(RuntimeValue::I32(20_260_301))
     }
 
-    fn time_serial_now(&self) -> HalResult<i32> {
-        Ok(123_456)
+    fn time_serial_now(&self) -> HalResult<RuntimeValue> {
+        Ok(RuntimeValue::I32(123_456))
     }
 
-    fn timer_ticks(&self) -> HalResult<i32> {
-        Ok(42)
+    fn timer_ticks(&self) -> HalResult<RuntimeValue> {
+        Ok(RuntimeValue::I32(42))
     }
 }
 

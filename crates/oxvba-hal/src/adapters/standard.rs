@@ -2399,7 +2399,7 @@ impl UiInteractionHal for StandardHostServices {
 }
 
 impl EventPumpHal for StandardHostServices {
-    fn do_events(&self) -> HalResult<i32> {
+    fn do_events(&self) -> HalResult<RuntimeValue> {
         let capability = CapabilityId::EventPump;
         if !self.supports(capability) {
             return Err(self.unsupported(capability, "do_events"));
@@ -2430,11 +2430,11 @@ impl EventPumpHal for StandardHostServices {
                     );
                 }
                 self.assert_com_invariants(&state, "do_events-post");
-                return Ok(callback);
+                return Ok(RuntimeValue::I32(callback));
             }
             self.assert_com_invariants(&state, "do_events-post");
         }
-        Ok(0)
+        Ok(RuntimeValue::I32(0))
     }
 }
 
@@ -4040,7 +4040,7 @@ impl ComHal for StandardHostServices {
 }
 
 impl TimeLocaleHal for StandardHostServices {
-    fn date_serial_now(&self) -> HalResult<i32> {
+    fn date_serial_now(&self) -> HalResult<RuntimeValue> {
         let capability = CapabilityId::TimeLocale;
         if !self.supports(capability) {
             return Err(self.unsupported(capability, "date_serial_now"));
@@ -4049,12 +4049,12 @@ impl TimeLocaleHal for StandardHostServices {
             let now = SystemTime::now()
                 .duration_since(UNIX_EPOCH)
                 .unwrap_or_default();
-            return Ok(clamp_u64_to_i32(now.as_secs() / 86_400));
+            return Ok(RuntimeValue::I32(clamp_u64_to_i32(now.as_secs() / 86_400)));
         }
-        Ok(20_260_301)
+        Ok(RuntimeValue::I32(20_260_301))
     }
 
-    fn time_serial_now(&self) -> HalResult<i32> {
+    fn time_serial_now(&self) -> HalResult<RuntimeValue> {
         let capability = CapabilityId::TimeLocale;
         if !self.supports(capability) {
             return Err(self.unsupported(capability, "time_serial_now"));
@@ -4063,12 +4063,12 @@ impl TimeLocaleHal for StandardHostServices {
             let now = SystemTime::now()
                 .duration_since(UNIX_EPOCH)
                 .unwrap_or_default();
-            return Ok((now.as_secs() % 86_400) as i32);
+            return Ok(RuntimeValue::I32((now.as_secs() % 86_400) as i32));
         }
-        Ok(123_456)
+        Ok(RuntimeValue::I32(123_456))
     }
 
-    fn timer_ticks(&self) -> HalResult<i32> {
+    fn timer_ticks(&self) -> HalResult<RuntimeValue> {
         let capability = CapabilityId::TimeLocale;
         if !self.supports(capability) {
             return Err(self.unsupported(capability, "timer_ticks"));
@@ -4078,9 +4078,9 @@ impl TimeLocaleHal for StandardHostServices {
                 .duration_since(UNIX_EPOCH)
                 .unwrap_or_default();
             let modulo = i32::MAX as u128;
-            return Ok((now.as_millis() % modulo) as i32);
+            return Ok(RuntimeValue::I32((now.as_millis() % modulo) as i32));
         }
-        Ok(42)
+        Ok(RuntimeValue::I32(42))
     }
 }
 
@@ -8014,6 +8014,13 @@ mod tests {
         LOCK.get_or_init(|| Mutex::new(()))
     }
 
+    fn expect_i32(value: RuntimeValue) -> i32 {
+        let RuntimeValue::I32(value) = value else {
+            panic!("expected RuntimeValue::I32, got {value:?}");
+        };
+        value
+    }
+
     fn current_native_profile() -> Option<HalProfileId> {
         if cfg!(target_os = "windows") {
             Some(HalProfileId::Windows)
@@ -8421,9 +8428,15 @@ mod tests {
     #[test]
     fn time_locale_contract_values_are_stable() {
         let host = StandardHostServices::new(HalProfileId::Windows, HostPolicy::default());
-        assert_eq!(host.date_serial_now().expect("date"), 20_260_301);
-        assert_eq!(host.time_serial_now().expect("time"), 123_456);
-        assert_eq!(host.timer_ticks().expect("timer"), 42);
+        assert_eq!(
+            host.date_serial_now().expect("date"),
+            RuntimeValue::I32(20_260_301)
+        );
+        assert_eq!(
+            host.time_serial_now().expect("time"),
+            RuntimeValue::I32(123_456)
+        );
+        assert_eq!(host.timer_ticks().expect("timer"), RuntimeValue::I32(42));
     }
 
     #[test]
@@ -8459,7 +8472,10 @@ mod tests {
     #[test]
     fn event_pump_supported_and_unsupported_paths() {
         let windows = StandardHostServices::new(HalProfileId::Windows, HostPolicy::default());
-        assert_eq!(windows.do_events().expect("windows do_events"), 0);
+        assert_eq!(
+            windows.do_events().expect("windows do_events"),
+            RuntimeValue::I32(0)
+        );
 
         let null = StandardHostServices::new(HalProfileId::Null, HostPolicy::default());
         let err = null
@@ -8591,9 +8607,9 @@ mod tests {
             return;
         };
         let host = StandardHostServices::new(profile, HostPolicy::interactive_dev());
-        assert!(host.date_serial_now().expect("date") >= 0);
-        assert!(host.time_serial_now().expect("time") >= 0);
-        assert!(host.timer_ticks().expect("ticks") >= 0);
+        assert!(expect_i32(host.date_serial_now().expect("date")) >= 0);
+        assert!(expect_i32(host.time_serial_now().expect("time")) >= 0);
+        assert!(expect_i32(host.timer_ticks().expect("ticks")) >= 0);
     }
 
     #[test]
@@ -8679,6 +8695,7 @@ mod tests {
         let callback = host
             .do_events()
             .expect("do_events should pump pending COM callback");
+        let callback = expect_i32(callback);
         assert!(callback >= 60_001);
         assert_eq!(
             host.event_callback_subscription(callback)
@@ -8702,7 +8719,7 @@ mod tests {
         );
         assert_eq!(
             host.do_events().expect("callback queue should be drained"),
-            0,
+            RuntimeValue::I32(0),
             "native callback lane should not enqueue duplicate projection callbacks"
         );
 
@@ -8717,7 +8734,7 @@ mod tests {
         assert_eq!(
             host.do_events()
                 .expect("callback queue should remain empty after unsubscribe"),
-            0
+            RuntimeValue::I32(0)
         );
         let callback_still_present = {
             let state = host
@@ -8751,6 +8768,7 @@ mod tests {
         let callback = host
             .do_events()
             .expect("do_events should pump pending COM callback");
+        let callback = expect_i32(callback);
         assert!(callback >= 60_001);
         assert_eq!(
             host.event_callback_subscription(callback)
@@ -8811,6 +8829,7 @@ mod tests {
         let callback = host
             .do_events()
             .expect("do_events should pump pending COM callback");
+        let callback = expect_i32(callback);
         let payload = host
             .poll_event_callback()
             .expect("poll_event_callback should succeed")
@@ -8842,6 +8861,7 @@ mod tests {
         let callback = host
             .do_events()
             .expect("do_events should pump pending COM callback");
+        let callback = expect_i32(callback);
 
         assert_eq!(host.release_object(object).expect("release_object"), 1);
         let callback_err = host
@@ -8898,6 +8918,7 @@ mod tests {
         let callback = host
             .do_events()
             .expect("do_events should pump pending source-interface callback");
+        let callback = expect_i32(callback);
         assert_eq!(
             host.event_callback_subscription(callback)
                 .expect("callback subscription lookup should succeed"),
@@ -8966,6 +8987,7 @@ mod tests {
             .dispatch_invoke(object, 3, 77)
             .expect("FireChanged should succeed");
         let callback = host.do_events().expect("callback token");
+        let callback = expect_i32(callback);
         let err = host
             .event_callback_arg(callback, 1)
             .expect_err("only callback arg index 0 should be supported");
@@ -10102,6 +10124,7 @@ mod tests {
         let callback = host
             .do_events()
             .expect("do_events should return queued dictionary callback");
+        let callback = expect_i32(callback);
         assert!(callback >= 60_001, "callback token should be in range");
         assert_eq!(
             host.event_callback_subscription(callback)

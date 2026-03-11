@@ -471,7 +471,7 @@ impl Vm {
                     pc += 1;
                 }
                 Instruction::IntrinsicDateNowHost { dst } => {
-                    match self.host_services.time_locale().date_serial_now_value() {
+                    match self.host_services.time_locale().date_serial_now() {
                         Ok(value) => {
                             self.write_value_slot(*dst, value)?;
                             pc += 1;
@@ -480,7 +480,7 @@ impl Vm {
                     }
                 }
                 Instruction::IntrinsicTimeNowHost { dst } => {
-                    match self.host_services.time_locale().time_serial_now_value() {
+                    match self.host_services.time_locale().time_serial_now() {
                         Ok(value) => {
                             self.write_value_slot(*dst, value)?;
                             pc += 1;
@@ -490,7 +490,7 @@ impl Vm {
                 }
                 Instruction::IntrinsicNowHost { dst } => {
                     // Current token model uses date projection for Now().
-                    match self.host_services.time_locale().date_serial_now_value() {
+                    match self.host_services.time_locale().date_serial_now() {
                         Ok(value) => {
                             self.write_value_slot(*dst, value)?;
                             pc += 1;
@@ -499,7 +499,7 @@ impl Vm {
                     }
                 }
                 Instruction::IntrinsicTimerHost { dst } => {
-                    match self.host_services.time_locale().timer_ticks_value() {
+                    match self.host_services.time_locale().timer_ticks() {
                         Ok(value) => {
                             self.write_value_slot(*dst, value)?;
                             pc += 1;
@@ -563,7 +563,7 @@ impl Vm {
                     }
                 }
                 Instruction::IntrinsicDoEventsHost { dst } => {
-                    match self.host_services.events().do_events_value() {
+                    match self.host_services.events().do_events() {
                         Ok(value) => {
                             self.write_value_slot(*dst, value)?;
                             pc += 1;

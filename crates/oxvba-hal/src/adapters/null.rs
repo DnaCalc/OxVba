@@ -104,7 +104,7 @@ impl UiInteractionHal for NullHostServices {
 }
 
 impl EventPumpHal for NullHostServices {
-    fn do_events(&self) -> HalResult<i32> {
+    fn do_events(&self) -> HalResult<RuntimeValue> {
         Err(self.unsupported(CapabilityId::EventPump, "do_events"))
     }
 }
@@ -318,16 +318,16 @@ impl ComHal for NullHostServices {
 }
 
 impl TimeLocaleHal for NullHostServices {
-    fn date_serial_now(&self) -> HalResult<i32> {
-        Ok(20_260_301)
+    fn date_serial_now(&self) -> HalResult<RuntimeValue> {
+        Ok(RuntimeValue::I32(20_260_301))
     }
 
-    fn time_serial_now(&self) -> HalResult<i32> {
-        Ok(123_456)
+    fn time_serial_now(&self) -> HalResult<RuntimeValue> {
+        Ok(RuntimeValue::I32(123_456))
     }
 
-    fn timer_ticks(&self) -> HalResult<i32> {
-        Ok(42)
+    fn timer_ticks(&self) -> HalResult<RuntimeValue> {
+        Ok(RuntimeValue::I32(42))
     }
 }
 
@@ -361,15 +361,22 @@ mod tests {
         error::HalErrorKind,
         traits::{ComHal, DiagnosticsHal, ProcessEnvHal, TimeLocaleHal, UiInteractionHal},
     };
+    use oxvba_runtime::RuntimeValue;
 
     use super::NullHostServices;
 
     #[test]
     fn null_backend_exposes_deterministic_floor() {
         let host = NullHostServices::new(crate::HostPolicy::default());
-        assert_eq!(host.date_serial_now().expect("date"), 20_260_301);
-        assert_eq!(host.time_serial_now().expect("time"), 123_456);
-        assert_eq!(host.timer_ticks().expect("timer"), 42);
+        assert_eq!(
+            host.date_serial_now().expect("date"),
+            RuntimeValue::I32(20_260_301)
+        );
+        assert_eq!(
+            host.time_serial_now().expect("time"),
+            RuntimeValue::I32(123_456)
+        );
+        assert_eq!(host.timer_ticks().expect("timer"), RuntimeValue::I32(42));
         assert_eq!(host.emit(10, 3).expect("emit"), 13);
     }
 
