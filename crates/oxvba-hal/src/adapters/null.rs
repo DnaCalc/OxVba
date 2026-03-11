@@ -12,7 +12,7 @@ use crate::{
     },
 };
 use oxvba_com::ComObjectDescriptor;
-use oxvba_runtime::{BindingHandle, ObjectHandle, RuntimeValue};
+use oxvba_runtime::{BindingHandle, DynLinkSymbol, ObjectHandle, RuntimeValue};
 
 #[derive(Debug, Clone)]
 pub struct NullHostServices {
@@ -259,7 +259,7 @@ impl DynamicLinkHal for NullHostServices {
         Err(self.unsupported(CapabilityId::DynamicLinking, "invoke_symbol"))
     }
 
-    fn invoke_symbol(&self, _symbol: i32, _arg: RuntimeValue) -> HalResult<RuntimeValue> {
+    fn invoke_symbol(&self, _symbol: DynLinkSymbol, _arg: RuntimeValue) -> HalResult<RuntimeValue> {
         Err(self.unsupported(CapabilityId::DynamicLinking, "invoke_symbol"))
     }
 }

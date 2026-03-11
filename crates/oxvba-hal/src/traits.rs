@@ -17,7 +17,7 @@ pub use oxvba_com::{
     TypeLibCacheScope, TypeLibEventDispatchPath, TypeLibEventMetadata, TypeLibMemberInvokeKind,
     TypeLibMemberMetadata, TypeLibMetadataBlob, TypeLibResolveRequest, TypeLibResolvedIdentity,
 };
-use oxvba_runtime::{BindingHandle, ObjectHandle, RuntimeValue};
+use oxvba_runtime::{BindingHandle, DynLinkSymbol, ObjectHandle, RuntimeValue};
 
 /// VM/runtime value token crossing the current HAL boundary.
 /// This is intentionally `i32` for the current register-window runtime representation.
@@ -30,7 +30,7 @@ pub struct DynLinkDescriptorView<'a> {
     pub library: &'a str,
     pub alias: &'a str,
     pub ordinal_alias: bool,
-    pub symbol: ValueToken,
+    pub symbol: DynLinkSymbol,
     pub marshal_lane: &'a str,
     pub calling_convention: &'a str,
     pub selection_policy: &'a str,
@@ -169,7 +169,7 @@ pub trait TimeLocaleHal: Send + Sync {
 pub trait DynamicLinkHal: Send + Sync {
     /// Resolves descriptor metadata into an invocation binding token.
     fn bind_descriptor(&self, descriptor: &DynLinkDescriptorView<'_>) -> HalResult<BindingHandle> {
-        Ok(descriptor.symbol.into())
+        Ok(descriptor.symbol.raw().into())
     }
     fn bind_descriptor_value(
         &self,
@@ -211,7 +211,7 @@ pub trait DynamicLinkHal: Send + Sync {
     ) -> HalResult<RuntimeValue>;
 
     /// Legacy symbol-token invoke path retained for backward compatibility.
-    fn invoke_symbol(&self, symbol: ValueToken, arg: RuntimeValue) -> HalResult<RuntimeValue>;
+    fn invoke_symbol(&self, symbol: DynLinkSymbol, arg: RuntimeValue) -> HalResult<RuntimeValue>;
 }
 
 pub trait DiagnosticsHal: Send + Sync {
@@ -231,7 +231,7 @@ mod kani_proofs {
             library: "kernel32.dll",
             alias: "GetTickCount",
             ordinal_alias: false,
-            symbol: 100,
+            symbol: 100.into(),
             marshal_lane: "m0-deterministic",
             calling_convention: "platform-default",
             selection_policy: "case-insensitive-canonical",
@@ -247,7 +247,7 @@ mod kani_proofs {
             library: "example.dll",
             alias: "7",
             ordinal_alias: true,
-            symbol: 200,
+            symbol: 200.into(),
             marshal_lane: "m0-deterministic",
             calling_convention: "platform-default",
             selection_policy: "case-insensitive-canonical",

@@ -391,7 +391,7 @@ pub fn run_conformance(host: &dyn HostServices) -> ConformanceReport {
             "HAL-GEN-004",
         ],
         host.dynlink()
-            .invoke_symbol(1, RuntimeValue::I32(2))
+            .invoke_symbol(1.into(), RuntimeValue::I32(2))
             .map(|_| ()),
     );
     let dynlink_descriptor = DynLinkDescriptorView {
@@ -400,7 +400,7 @@ pub fn run_conformance(host: &dyn HostServices) -> ConformanceReport {
         library: "host",
         alias: "ping",
         ordinal_alias: false,
-        symbol: external_symbol_token("host", "ping", "hostping"),
+        symbol: external_symbol_token("host", "ping", "hostping").into(),
         marshal_lane: "m0-deterministic",
         calling_convention: "platform-default",
         selection_policy: "case-insensitive-canonical",
@@ -602,7 +602,7 @@ fn evaluate_dynlink_contract_paths(
         library: "host",
         alias: "ping",
         ordinal_alias: false,
-        symbol: external_symbol_token("host", "ping", "hostping"),
+        symbol: external_symbol_token("host", "ping", "hostping").into(),
         marshal_lane: "m0-deterministic",
         calling_convention: "platform-default",
         selection_policy: "case-insensitive-canonical",

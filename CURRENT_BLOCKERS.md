@@ -106,6 +106,8 @@ Run context: active parity/compliance execution plus in-progress feature worklis
   - `ComHal::{create_object,release_object,describe_object}` and the corresponding host wrapper surface now use `ObjectHandle` directly instead of raw integer object tokens,
   - dynamic-link binding identity is now explicitly typed in `oxvba-runtime` as `BindingHandle` instead of being represented only as an untyped integer binding token,
   - `DynamicLinkHal::{bind_descriptor,prepare_invoke,invoke_bound}` now use `BindingHandle` directly instead of raw integer binding tokens,
+  - dynamic-link symbol identity is now explicitly typed at the runtime/HAL seam as `DynLinkSymbol` instead of being represented only as an untyped integer symbol token,
+  - `DynLinkDescriptorView.symbol` and `DynamicLinkHal::invoke_symbol(...)` now use `DynLinkSymbol` directly at the runtime/HAL seam,
   - VM host intrinsic execution for those lanes now reads `RuntimeValue` directly instead of forcing `read_slot(...)`/legacy token narrowing on entry,
   - VM `WithEvents` binding state now preserves semantic `RuntimeValue` payloads instead of flattening bound source/object values to raw integers,
   - VM `DispatchInvoke` now reads the object slot from semantic runtime state and preserves object handles instead of re-reading the object through the raw slot lane before constructing the COM request,
@@ -116,7 +118,7 @@ Run context: active parity/compliance execution plus in-progress feature worklis
   - the remaining runtime/host boundary holdouts are now concentrated in:
     - `ValueToken = i32` itself,
     - `ComHal::{create_object_value,dispatch_invoke_v2,dispatch_invoke_runtime_value_v2}`,
-    - `DynLinkDescriptorView.symbol` and `DynamicLinkHal::invoke_symbol` legacy symbol identifiers,
+    - serialized bytecode descriptor/instruction symbol fields that still persist legacy `i32` symbol identifiers,
     - engine/public callers and legacy snapshot/compatibility paths that still observe COM object identity through raw integer tokens,
   - many bytecode execution callers and tests still assume the legacy integer observation surface,
   - the new `ComValue` carrier and generic dynamic-object protocol can live at the COM boundary, but they cannot yet become the single runtime object/value model while the wider execution substrate remains token-only.

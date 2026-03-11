@@ -41,6 +41,7 @@ macro_rules! define_i32_handle {
 
 define_i32_handle!(ObjectHandle);
 define_i32_handle!(BindingHandle);
+define_i32_handle!(DynLinkSymbol);
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub enum RuntimeValue {

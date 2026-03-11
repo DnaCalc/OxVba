@@ -140,7 +140,9 @@ Status vocabulary:
     - `ComHal::{create_object,release_object,describe_object}` and engine-side COM event subscription/object-description wrappers now use that typed handle directly instead of raw integer object tokens,
     - dynamic-link binding identity is now explicitly typed as `BindingHandle` in `oxvba-runtime`,
     - `DynamicLinkHal::{bind_descriptor,prepare_invoke,invoke_bound}` now use that typed handle directly instead of raw integer binding tokens,
-    - the remaining active seam is the actual HAL `ValueToken` contract plus legacy raw symbol identifiers, remaining outward runtime APIs, and the still-legacy-heavy caller/test estate around integer snapshots.
+    - dynamic-link symbol identity is now explicitly typed as `DynLinkSymbol` at the runtime/HAL seam,
+    - `DynLinkDescriptorView.symbol` and `DynamicLinkHal::invoke_symbol(...)` now use that typed symbol directly at the runtime/HAL seam,
+    - the remaining active seam is the actual HAL `ValueToken` contract plus serialized raw symbol identifiers, remaining outward runtime APIs, and the still-legacy-heavy caller/test estate around integer snapshots.
 
 ### `IP-05` Windows early-bound COM and type-library parity
 

@@ -19,7 +19,7 @@ use oxvba_com::{
     known_typelib_identity_for_prog_id_name, resolve_known_typelib_identity,
 };
 use oxvba_runtime::{
-    BindingHandle, ObjectHandle, RuntimeValue,
+    BindingHandle, DynLinkSymbol, ObjectHandle, RuntimeValue,
     bstr::BStr,
     value_tags::{NULL_TAG, error_tag_from_code},
 };
@@ -3982,7 +3982,7 @@ impl DynamicLinkHal for StandardHostServices {
             ));
         }
 
-        let binding = BindingHandle::new(descriptor.symbol);
+        let binding = BindingHandle::new(descriptor.symbol.raw());
         let mut table = self.dynlink_bindings.lock().map_err(|_| {
             HalError::adapter_fault(
                 self.profile,
@@ -4062,7 +4062,7 @@ impl DynamicLinkHal for StandardHostServices {
             .map(RuntimeValue::from_legacy_i32)
     }
 
-    fn invoke_symbol(&self, symbol: i32, arg: RuntimeValue) -> HalResult<RuntimeValue> {
+    fn invoke_symbol(&self, symbol: DynLinkSymbol, arg: RuntimeValue) -> HalResult<RuntimeValue> {
         let arg = self.runtime_value_to_legacy_i32(
             &arg,
             CapabilityId::DynamicLinking,
@@ -4070,7 +4070,7 @@ impl DynamicLinkHal for StandardHostServices {
             "arg",
         )?;
         let descriptor = DynLinkDescriptorView {
-            descriptor_id: symbol as u32,
+            descriptor_id: symbol.raw() as u32,
             declared_name: "<legacy>",
             library: "<legacy>",
             alias: "<legacy>",
@@ -8010,7 +8010,9 @@ mod tests {
             HalErrorKind::PolicyDenied
         );
         assert_eq!(
-            host.invoke_symbol(1, rv(2)).expect_err("dynlink deny").kind,
+            host.invoke_symbol(1.into(), rv(2))
+                .expect_err("dynlink deny")
+                .kind,
             HalErrorKind::PolicyDenied
         );
     }
@@ -8117,7 +8119,7 @@ mod tests {
             library: "host",
             alias: "ping",
             ordinal_alias: false,
-            symbol: 7,
+            symbol: 7.into(),
             marshal_lane: "m2-pointer-lpstr",
             calling_convention: "platform-default",
             selection_policy: "case-insensitive-canonical",
@@ -8144,7 +8146,7 @@ mod tests {
             library: "host",
             alias: "ping",
             ordinal_alias: false,
-            symbol: 7,
+            symbol: 7.into(),
             marshal_lane: "m0-deterministic",
             calling_convention: "stdcall",
             selection_policy: "case-insensitive-canonical",
@@ -8171,7 +8173,7 @@ mod tests {
             library: "host",
             alias: "ping",
             ordinal_alias: false,
-            symbol: 7,
+            symbol: 7.into(),
             marshal_lane: "m0-deterministic",
             calling_convention: "platform-default",
             selection_policy: "ordinal-literal-canonical",
@@ -8198,7 +8200,7 @@ mod tests {
             library: "host",
             alias: "ping",
             ordinal_alias: true,
-            symbol: 7,
+            symbol: 7.into(),
             marshal_lane: "m0-deterministic",
             calling_convention: "platform-default",
             selection_policy: "ordinal-literal-canonical",
@@ -10174,7 +10176,7 @@ mod tests {
                 HalErrorKind::PolicyDenied
             );
             prop_assert_eq!(
-                host.invoke_symbol(symbol, rv(arg))
+                host.invoke_symbol(symbol.into(), rv(arg))
                     .expect_err("invoke_symbol denied")
                     .kind,
                 HalErrorKind::PolicyDenied
@@ -10218,7 +10220,7 @@ mod tests {
                 object.saturating_add(member).saturating_add(arg)
             );
             prop_assert_eq!(
-                host.invoke_symbol(symbol, rv(arg))
+                host.invoke_symbol(symbol.into(), rv(arg))
                     .expect("invoke_symbol should succeed"),
                 RuntimeValue::from_legacy_i32(symbol.saturating_add(arg))
             );

@@ -23,6 +23,18 @@
 - Verification:
   - `cargo test -p oxvba-runtime -p oxvba-hal -p oxvba-vm -p oxvba-host --quiet`
 
+## 2026-03-11 - Runtime dynamic-link symbol identity typed at HAL seam
+
+- Introduced explicit `DynLinkSymbol` in [runtime_value.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-runtime\src\runtime_value.rs).
+- Tightened dynamic-link symbol APIs at the runtime/HAL seam:
+  - [traits.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-hal\src\traits.rs) now uses `DynLinkSymbol` for `DynLinkDescriptorView.symbol` and `DynamicLinkHal::invoke_symbol(...)`.
+  - [interpreter.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-vm\src\interpreter.rs) now converts legacy bytecode symbol fields into `DynLinkSymbol` at the runtime boundary instead of passing raw integers through unchanged.
+  - Windows/null/wasm HAL adapters and conformance probes were updated accordingly.
+- Remaining compatibility seam:
+  - serialized bytecode still stores raw `i32` dynamic-link symbol identifiers and converts them into `DynLinkSymbol` at runtime.
+- Verification:
+  - `cargo test -p oxvba-runtime -p oxvba-hal -p oxvba-vm --quiet`
+
 ## 2026-03-11
 - runtime COM-dispatch object-entry slice:
   - changed VM `DispatchInvoke` request construction to read the object slot from semantic runtime state and preserve object handles before building the COM request

@@ -1052,7 +1052,11 @@ impl Vm {
                 } => {
                     let arg = self.read_value_slot(*arg)?;
                     if bytecode.external_call_descriptors.is_empty() {
-                        match self.host_services.dynlink().invoke_symbol(*symbol, arg) {
+                        match self
+                            .host_services
+                            .dynlink()
+                            .invoke_symbol((*symbol).into(), arg)
+                        {
                             Ok(value) => {
                                 self.write_value_slot(*dst, value)?;
                                 pc += 1;
@@ -1097,7 +1101,7 @@ impl Vm {
                         library: descriptor.library.as_str(),
                         alias: descriptor.alias.as_str(),
                         ordinal_alias: descriptor.ordinal_alias,
-                        symbol: descriptor.symbol,
+                        symbol: descriptor.symbol.into(),
                         marshal_lane: descriptor.marshal_lane.as_str(),
                         calling_convention: descriptor.calling_convention.as_str(),
                         selection_policy: descriptor.selection_policy.as_str(),

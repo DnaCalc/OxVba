@@ -11,5 +11,5 @@ pub mod safe_array;
 pub mod value_tags;
 pub mod variant;
 
-pub use runtime_value::{BindingHandle, ObjectHandle, RuntimeValue};
+pub use runtime_value::{BindingHandle, DynLinkSymbol, ObjectHandle, RuntimeValue};
 pub use variant::{VarType, Variant};
