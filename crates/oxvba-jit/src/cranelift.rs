@@ -7,6 +7,7 @@ use cranelift_frontend::{FunctionBuilder, FunctionBuilderContext};
 use cranelift_jit::{JITBuilder, JITModule};
 use cranelift_module::{Linkage, Module};
 use oxvba_compiler::{Bytecode, Instruction};
+use oxvba_runtime::RuntimeValue;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum SegmentTerminal {
@@ -215,7 +216,16 @@ pub fn supports_bytecode(bytecode: &Bytecode) -> bool {
     supports_core(&inlined)
 }
 
-pub fn execute_bytecode(bytecode: &Bytecode) -> Result<Vec<i32>, String> {
+pub fn execute_bytecode(bytecode: &Bytecode) -> Result<Vec<RuntimeValue>, String> {
+    execute_bytecode_legacy(bytecode).map(|values| {
+        values
+            .into_iter()
+            .map(RuntimeValue::from_legacy_i32)
+            .collect()
+    })
+}
+
+pub fn execute_bytecode_legacy(bytecode: &Bytecode) -> Result<Vec<i32>, String> {
     let inlined = inline_bytecode(bytecode)?;
     if !supports_core(&inlined) {
         return Err("unsupported bytecode for cranelift execution".to_string());

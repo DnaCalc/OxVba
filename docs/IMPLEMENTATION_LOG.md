@@ -108,6 +108,7 @@
 
 ## 2026-03-11 - COM HAL invoke seam now projects from runtime values
 
+- Switched the Cranelift subset helper in [cranelift.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-jit\src\cranelift.rs) to a semantic primary API: `execute_bytecode(...) -> Vec<RuntimeValue>`, with `execute_bytecode_legacy(...) -> Vec<i32>` retained as the explicit compatibility projection.
 - Moved the host-side COM end-to-end and early-binding integration tests onto `Engine::{execute_source_with_snapshot_phased,execute_project_with_snapshot_phased}` so the public COM test surface now validates semantic `RuntimeValue` snapshots instead of the legacy integer projection lane.
 - Removed the fake HAL `ValueToken` alias in [traits.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-hal\src\traits.rs) so the remaining raw `i32` COM compatibility signatures are explicit instead of masquerading as a semantic runtime contract.
 - Continued the runtime-value migration at the caller edge by moving host COM engine tests and the HAL conformance `com.create_object` probe onto the semantic `create_object(...)` / `dispatch_invoke_runtime_value_v2(...)` surface rather than the raw-token compatibility helpers.

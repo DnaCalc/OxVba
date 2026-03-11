@@ -143,6 +143,7 @@ Run context: active parity/compliance execution plus in-progress feature worklis
     - explicit raw-token compatibility now lives under `release_object_legacy(...)` and `invalidate_typelib_cache_legacy(...)`,
   - CLI execution now also uses the semantic snapshot lane by default and derives `SLOTS:` output from that value path only when needed,
   - host-side COM end-to-end, early-binding, and registered-lane integration tests now execute through the semantic snapshot APIs rather than the legacy integer snapshot APIs,
+  - the Cranelift subset helper now also exposes semantic `RuntimeValue` snapshots as its primary execution API, with the integer-slot form reduced to an explicit compatibility wrapper,
   - the remaining runtime/host boundary holdouts are now concentrated in:
     - `ComHal::dispatch_invoke_legacy_v2`,
     - `ComHal::{create_object_legacy,release_object_legacy,invalidate_typelib_cache_legacy}`,

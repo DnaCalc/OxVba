@@ -100,6 +100,7 @@ Completed slices:
    - `ComHal::invalidate_typelib_cache(...)` now returns semantic `RuntimeValue`,
    - explicit raw-token compatibility is labeled `release_object_legacy(...)` and `invalidate_typelib_cache_legacy(...)`.
 36. Host-side COM end-to-end, early-binding, and registered-lane integration tests now use the semantic host snapshot APIs instead of the legacy integer snapshot APIs.
+37. The Cranelift subset helper now exposes semantic `RuntimeValue` snapshots as its primary API, with `execute_bytecode_legacy(...)` retained as the explicit integer compatibility projection.
 
 Remaining blocker seam:
 1. explicit raw `i32` compatibility signatures still anchor the remaining legacy COM seams,

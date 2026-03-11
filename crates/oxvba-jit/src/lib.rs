@@ -57,14 +57,7 @@ impl JitEngine {
         host_services: Arc<dyn HostServices>,
     ) -> Result<Vec<RuntimeValue>, JitError> {
         if cranelift::supports_bytecode(bytecode) {
-            return cranelift::execute_bytecode(bytecode)
-                .map(|values| {
-                    values
-                        .into_iter()
-                        .map(RuntimeValue::from_legacy_i32)
-                        .collect()
-                })
-                .map_err(JitError::Execution);
+            return cranelift::execute_bytecode(bytecode).map_err(JitError::Execution);
         }
         execute_and_snapshot_with_host(bytecode, host_services).map_err(JitError::Execution)
     }
