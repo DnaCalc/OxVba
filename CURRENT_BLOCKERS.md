@@ -87,12 +87,19 @@ Run context: active parity/compliance execution plus in-progress feature worklis
   - COM callback ingress now preserves `RuntimeValue` into the runtime, but many host/public execution helpers still expose or expect the legacy integer observation lane,
   - JIT-backed value snapshots now project the supported subset into `RuntimeValue`, but JIT internals and many parity harnesses still fundamentally operate over the legacy integer snapshot lane,
   - HAL now exposes additive semantic-return helper methods and the VM routes host-return paths through them, but the underlying input/output token contract is still `i32`,
+  - the first input-side semantic wrapper migration is now in place for active VM host intrinsics:
+    - `MsgBox` / `InputBox`,
+    - `Shell` / `Environ` / `Dir`,
+    - `CreateObject`,
+    - COM event subscription/callback helper intrinsics,
+    - dynamic-link invoke wrappers,
+  - VM host intrinsic execution for those lanes now reads `RuntimeValue` directly instead of forcing `read_slot(...)`/legacy token narrowing on entry,
   - many bytecode execution paths and tests still assume the legacy integer observation surface,
   - the new `ComValue` carrier and generic dynamic-object protocol can live at the COM boundary, but they cannot yet become the single runtime object/value model while the wider execution substrate remains token-only.
 - Exact unblock steps:
   - replace or strictly extend the HAL `ValueToken = i32` contract with the canonical runtime value model or an explicit indirection model,
   - plan and execute migration of:
-    - HAL input-side and result-side call seams,
+    - the remaining HAL input-side and result-side call seams that still depend on raw tokens,
     - remaining VM read/write helpers and outward runtime APIs,
     - remaining host/runtime snapshot and public observation surfaces,
     - remaining JIT/VM equivalence expectations and affected tests,

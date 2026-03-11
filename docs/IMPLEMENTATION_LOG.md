@@ -1890,3 +1890,25 @@
     - `docs/worksets/WORKSET_2026-03-08_VBA71_WINDOWS_OFFICE_FULL_COMPLIANCE.md`
     - `docs/IN_PROGRESS_FEATURE_WORKLIST.md`
     - `CURRENT_BLOCKERS.md`
+- Continued the runtime value-model migration with the first input-side semantic HAL wrapper slice:
+  - changed additive HAL runtime-value wrapper methods so active VM host intrinsic lanes now accept `RuntimeValue` on entry instead of forcing a legacy token read first:
+    - `MsgBox` / `InputBox`,
+    - `Shell` / `Environ` / `Dir`,
+    - `CreateObject`,
+    - COM event subscription/callback helper intrinsics,
+    - dynamic-link invoke wrappers.
+  - updated VM host intrinsic execution to read `RuntimeValue` directly for those lanes:
+    - `crates/oxvba-vm/src/interpreter.rs`
+  - widened standard/wasm/null adapters to implement the new semantic-input wrappers:
+    - `crates/oxvba-hal/src/adapters/standard.rs`
+    - `crates/oxvba-hal/src/adapters/wasm.rs`
+    - `crates/oxvba-hal/src/adapters/null.rs`
+  - added regression coverage for:
+    - VM `MsgBox` with string runtime prompt,
+    - VM `InputBox` with string runtime default,
+    - deterministic standard-adapter string input handling for UI/process wrapper lanes.
+  - verification:
+    - `cargo test -p oxvba-hal -p oxvba-vm --quiet`
+    - `cargo test -p oxvba-host -p oxvba-com --quiet`
+    - `./scripts/check-governance.ps1`
+    - `./scripts/meta-check.ps1 -Fast -NoArtifacts`

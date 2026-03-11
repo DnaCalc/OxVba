@@ -113,7 +113,9 @@ Status vocabulary:
     - JIT-backed value snapshots now project into the same semantic observation surface,
     - `CreateObject` results now enter runtime state as `RuntimeValue::ObjectHandle(...)`,
     - HAL semantic-return helper wrappers are now in place and used by the VM for host-return paths,
-    - the remaining active seam is the actual HAL `ValueToken` and input-side contract plus the remaining legacy public-snapshot migration.
+    - the first input-side semantic wrapper slice is now in place for active VM host intrinsics (`MsgBox`, `InputBox`, `Shell`, `Environ`, `Dir`, `CreateObject`, COM event helper intrinsics, dynamic-link invoke),
+    - VM host intrinsic execution now reads `RuntimeValue` directly for those lanes instead of narrowing through `read_slot(...)` before the HAL boundary,
+    - the remaining active seam is the actual HAL `ValueToken` contract plus the still-token-bound HAL domains, remaining outward runtime APIs, and the remaining legacy public-snapshot migration.
 
 ### `IP-05` Windows early-bound COM and type-library parity
 

@@ -12,6 +12,7 @@ use crate::{
     },
 };
 use oxvba_com::ComObjectDescriptor;
+use oxvba_runtime::RuntimeValue;
 
 #[derive(Debug, Clone)]
 pub struct NullHostServices {
@@ -81,7 +82,23 @@ impl UiInteractionHal for NullHostServices {
         Err(self.unsupported(CapabilityId::UiInteraction, "msg_box"))
     }
 
+    fn msg_box_value(
+        &self,
+        _prompt: RuntimeValue,
+        _style: RuntimeValue,
+    ) -> HalResult<RuntimeValue> {
+        Err(self.unsupported(CapabilityId::UiInteraction, "msg_box"))
+    }
+
     fn input_box(&self, _prompt: i32, _default_value: i32) -> HalResult<i32> {
+        Err(self.unsupported(CapabilityId::UiInteraction, "input_box"))
+    }
+
+    fn input_box_value(
+        &self,
+        _prompt: RuntimeValue,
+        _default_value: RuntimeValue,
+    ) -> HalResult<RuntimeValue> {
         Err(self.unsupported(CapabilityId::UiInteraction, "input_box"))
     }
 }
@@ -123,17 +140,37 @@ impl ProcessEnvHal for NullHostServices {
         Err(self.unsupported(CapabilityId::ProcessEnv, "shell"))
     }
 
+    fn shell_value(
+        &self,
+        _command: RuntimeValue,
+        _window_style: RuntimeValue,
+    ) -> HalResult<RuntimeValue> {
+        Err(self.unsupported(CapabilityId::ProcessEnv, "shell"))
+    }
+
     fn environ(&self, _key: i32) -> HalResult<i32> {
+        Err(self.unsupported(CapabilityId::ProcessEnv, "environ"))
+    }
+
+    fn environ_value(&self, _key: RuntimeValue) -> HalResult<RuntimeValue> {
         Err(self.unsupported(CapabilityId::ProcessEnv, "environ"))
     }
 
     fn dir(&self, _path: i32, _attrs: i32) -> HalResult<i32> {
         Err(self.unsupported(CapabilityId::ProcessEnv, "dir"))
     }
+
+    fn dir_value(&self, _path: RuntimeValue, _attrs: RuntimeValue) -> HalResult<RuntimeValue> {
+        Err(self.unsupported(CapabilityId::ProcessEnv, "dir"))
+    }
 }
 
 impl ComHal for NullHostServices {
     fn create_object(&self, _prog_id: i32) -> HalResult<i32> {
+        Err(self.unsupported(CapabilityId::ComActivationDispatch, "create_object"))
+    }
+
+    fn create_object_value(&self, _prog_id: RuntimeValue) -> HalResult<RuntimeValue> {
         Err(self.unsupported(CapabilityId::ComActivationDispatch, "create_object"))
     }
 
@@ -153,7 +190,19 @@ impl ComHal for NullHostServices {
         Err(self.unsupported(CapabilityId::ComActivationDispatch, "subscribe_event"))
     }
 
+    fn subscribe_event_value(
+        &self,
+        _object: RuntimeValue,
+        _event: RuntimeValue,
+    ) -> HalResult<RuntimeValue> {
+        Err(self.unsupported(CapabilityId::ComActivationDispatch, "subscribe_event"))
+    }
+
     fn unsubscribe_event(&self, _subscription: i32) -> HalResult<i32> {
+        Err(self.unsupported(CapabilityId::ComActivationDispatch, "unsubscribe_event"))
+    }
+
+    fn unsubscribe_event_value(&self, _subscription: RuntimeValue) -> HalResult<RuntimeValue> {
         Err(self.unsupported(CapabilityId::ComActivationDispatch, "unsubscribe_event"))
     }
 
@@ -168,7 +217,21 @@ impl ComHal for NullHostServices {
         ))
     }
 
+    fn event_callback_subscription_value(
+        &self,
+        _callback: RuntimeValue,
+    ) -> HalResult<RuntimeValue> {
+        Err(self.unsupported(
+            CapabilityId::ComActivationDispatch,
+            "event_callback_subscription",
+        ))
+    }
+
     fn event_callback_arity(&self, _callback: i32) -> HalResult<i32> {
+        Err(self.unsupported(CapabilityId::ComActivationDispatch, "event_callback_arity"))
+    }
+
+    fn event_callback_arity_value(&self, _callback: RuntimeValue) -> HalResult<RuntimeValue> {
         Err(self.unsupported(CapabilityId::ComActivationDispatch, "event_callback_arity"))
     }
 
@@ -176,7 +239,22 @@ impl ComHal for NullHostServices {
         Err(self.unsupported(CapabilityId::ComActivationDispatch, "event_callback_arg"))
     }
 
+    fn event_callback_arg_value(
+        &self,
+        _callback: RuntimeValue,
+        _index: RuntimeValue,
+    ) -> HalResult<RuntimeValue> {
+        Err(self.unsupported(CapabilityId::ComActivationDispatch, "event_callback_arg"))
+    }
+
     fn release_event_callback(&self, _callback: i32) -> HalResult<i32> {
+        Err(self.unsupported(
+            CapabilityId::ComActivationDispatch,
+            "release_event_callback",
+        ))
+    }
+
+    fn release_event_callback_value(&self, _callback: RuntimeValue) -> HalResult<RuntimeValue> {
         Err(self.unsupported(
             CapabilityId::ComActivationDispatch,
             "release_event_callback",
@@ -227,6 +305,18 @@ impl TimeLocaleHal for NullHostServices {
 
 impl DynamicLinkHal for NullHostServices {
     fn invoke_symbol(&self, _symbol: i32, _arg: i32) -> HalResult<i32> {
+        Err(self.unsupported(CapabilityId::DynamicLinking, "invoke_symbol"))
+    }
+
+    fn invoke_descriptor_value(
+        &self,
+        _descriptor: &crate::traits::DynLinkDescriptorView<'_>,
+        _arg: RuntimeValue,
+    ) -> HalResult<RuntimeValue> {
+        Err(self.unsupported(CapabilityId::DynamicLinking, "invoke_descriptor"))
+    }
+
+    fn invoke_symbol_value(&self, _symbol: i32, _arg: RuntimeValue) -> HalResult<RuntimeValue> {
         Err(self.unsupported(CapabilityId::DynamicLinking, "invoke_symbol"))
     }
 }

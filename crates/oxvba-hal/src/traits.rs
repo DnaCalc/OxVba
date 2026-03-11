@@ -83,20 +83,14 @@ pub trait HostServices: Send + Sync {
 pub trait UiInteractionHal: Send + Sync {
     /// Deterministically implements `MsgBox` interaction or a policy/capability error.
     fn msg_box(&self, prompt: ValueToken, style: ValueToken) -> HalResult<ValueToken>;
-    fn msg_box_value(&self, prompt: ValueToken, style: ValueToken) -> HalResult<RuntimeValue> {
-        self.msg_box(prompt, style)
-            .map(RuntimeValue::from_legacy_i32)
-    }
+    fn msg_box_value(&self, prompt: RuntimeValue, style: RuntimeValue) -> HalResult<RuntimeValue>;
     /// Deterministically implements `InputBox` interaction or a policy/capability error.
     fn input_box(&self, prompt: ValueToken, default_value: ValueToken) -> HalResult<ValueToken>;
     fn input_box_value(
         &self,
-        prompt: ValueToken,
-        default_value: ValueToken,
-    ) -> HalResult<RuntimeValue> {
-        self.input_box(prompt, default_value)
-            .map(RuntimeValue::from_legacy_i32)
-    }
+        prompt: RuntimeValue,
+        default_value: RuntimeValue,
+    ) -> HalResult<RuntimeValue>;
 }
 
 pub trait EventPumpHal: Send + Sync {
@@ -140,27 +134,18 @@ pub trait ProcessEnvHal: Send + Sync {
     fn shell(&self, command: ValueToken, window_style: ValueToken) -> HalResult<ValueToken>;
     fn shell_value(
         &self,
-        command: ValueToken,
-        window_style: ValueToken,
-    ) -> HalResult<RuntimeValue> {
-        self.shell(command, window_style)
-            .map(RuntimeValue::from_legacy_i32)
-    }
+        command: RuntimeValue,
+        window_style: RuntimeValue,
+    ) -> HalResult<RuntimeValue>;
     fn environ(&self, key: ValueToken) -> HalResult<ValueToken>;
-    fn environ_value(&self, key: ValueToken) -> HalResult<RuntimeValue> {
-        self.environ(key).map(RuntimeValue::from_legacy_i32)
-    }
+    fn environ_value(&self, key: RuntimeValue) -> HalResult<RuntimeValue>;
     fn dir(&self, path: ValueToken, attrs: ValueToken) -> HalResult<ValueToken>;
-    fn dir_value(&self, path: ValueToken, attrs: ValueToken) -> HalResult<RuntimeValue> {
-        self.dir(path, attrs).map(RuntimeValue::from_legacy_i32)
-    }
+    fn dir_value(&self, path: RuntimeValue, attrs: RuntimeValue) -> HalResult<RuntimeValue>;
 }
 
 pub trait ComHal: Send + Sync {
     fn create_object(&self, prog_id: ValueToken) -> HalResult<ValueToken>;
-    fn create_object_value(&self, prog_id: ValueToken) -> HalResult<RuntimeValue> {
-        self.create_object(prog_id).map(RuntimeValue::ObjectHandle)
-    }
+    fn create_object_value(&self, prog_id: RuntimeValue) -> HalResult<RuntimeValue>;
     fn release_object(&self, object: ValueToken) -> HalResult<ValueToken>;
     fn describe_object(&self, object: ValueToken) -> HalResult<Option<ComObjectDescriptor>>;
     fn dispatch_invoke_v2(&self, request: &ComInvokeRequest) -> HalResult<ValueToken>;
@@ -183,42 +168,24 @@ pub trait ComHal: Send + Sync {
     fn subscribe_event(&self, object: ValueToken, event: ValueToken) -> HalResult<ValueToken>;
     fn subscribe_event_value(
         &self,
-        object: ValueToken,
-        event: ValueToken,
-    ) -> HalResult<RuntimeValue> {
-        self.subscribe_event(object, event)
-            .map(RuntimeValue::from_legacy_i32)
-    }
+        object: RuntimeValue,
+        event: RuntimeValue,
+    ) -> HalResult<RuntimeValue>;
     fn unsubscribe_event(&self, subscription: ValueToken) -> HalResult<ValueToken>;
-    fn unsubscribe_event_value(&self, subscription: ValueToken) -> HalResult<RuntimeValue> {
-        self.unsubscribe_event(subscription)
-            .map(RuntimeValue::from_legacy_i32)
-    }
+    fn unsubscribe_event_value(&self, subscription: RuntimeValue) -> HalResult<RuntimeValue>;
     fn poll_event_callback(&self) -> HalResult<Option<ComCallbackPayload>>;
     fn event_callback_subscription(&self, callback: ValueToken) -> HalResult<ValueToken>;
-    fn event_callback_subscription_value(&self, callback: ValueToken) -> HalResult<RuntimeValue> {
-        self.event_callback_subscription(callback)
-            .map(RuntimeValue::from_legacy_i32)
-    }
+    fn event_callback_subscription_value(&self, callback: RuntimeValue) -> HalResult<RuntimeValue>;
     fn event_callback_arity(&self, callback: ValueToken) -> HalResult<ValueToken>;
-    fn event_callback_arity_value(&self, callback: ValueToken) -> HalResult<RuntimeValue> {
-        self.event_callback_arity(callback)
-            .map(RuntimeValue::from_legacy_i32)
-    }
+    fn event_callback_arity_value(&self, callback: RuntimeValue) -> HalResult<RuntimeValue>;
     fn event_callback_arg(&self, callback: ValueToken, index: ValueToken) -> HalResult<ValueToken>;
     fn event_callback_arg_value(
         &self,
-        callback: ValueToken,
-        index: ValueToken,
-    ) -> HalResult<RuntimeValue> {
-        self.event_callback_arg(callback, index)
-            .map(RuntimeValue::from_legacy_i32)
-    }
+        callback: RuntimeValue,
+        index: RuntimeValue,
+    ) -> HalResult<RuntimeValue>;
     fn release_event_callback(&self, callback: ValueToken) -> HalResult<ValueToken>;
-    fn release_event_callback_value(&self, callback: ValueToken) -> HalResult<RuntimeValue> {
-        self.release_event_callback(callback)
-            .map(RuntimeValue::from_legacy_i32)
-    }
+    fn release_event_callback_value(&self, callback: RuntimeValue) -> HalResult<RuntimeValue>;
     fn resolve_typelib_reference(
         &self,
         request: &TypeLibResolveRequest,
@@ -297,18 +264,13 @@ pub trait DynamicLinkHal: Send + Sync {
     fn invoke_descriptor_value(
         &self,
         descriptor: &DynLinkDescriptorView<'_>,
-        arg: ValueToken,
-    ) -> HalResult<RuntimeValue> {
-        self.invoke_descriptor(descriptor, arg)
-            .map(RuntimeValue::from_legacy_i32)
-    }
+        arg: RuntimeValue,
+    ) -> HalResult<RuntimeValue>;
 
     /// Legacy symbol-token invoke path retained for backward compatibility.
     fn invoke_symbol(&self, symbol: ValueToken, arg: ValueToken) -> HalResult<ValueToken>;
-    fn invoke_symbol_value(&self, symbol: ValueToken, arg: ValueToken) -> HalResult<RuntimeValue> {
-        self.invoke_symbol(symbol, arg)
-            .map(RuntimeValue::from_legacy_i32)
-    }
+    fn invoke_symbol_value(&self, symbol: ValueToken, arg: RuntimeValue)
+    -> HalResult<RuntimeValue>;
 }
 
 pub trait DiagnosticsHal: Send + Sync {

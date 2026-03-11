@@ -50,10 +50,17 @@ Completed slices:
 6. JIT-backed value snapshots now project the supported legacy subset into `RuntimeValue` for host/public compatibility.
 7. `CreateObject` results now enter the runtime as `RuntimeValue::ObjectHandle(...)`.
 8. HAL now exposes additive semantic-return helper methods and VM host-return paths route through them.
+9. The first input-side semantic HAL wrapper slice now exists for active VM host intrinsics:
+   - `MsgBox` / `InputBox`,
+   - `Shell` / `Environ` / `Dir`,
+   - `CreateObject`,
+   - COM event subscription/callback helper intrinsics,
+   - dynamic-link invoke wrappers.
+10. VM host intrinsic execution for those lanes now reads `RuntimeValue` directly and no longer forces `read_slot(...)` legacy narrowing before the HAL boundary.
 
 Remaining blocker seam:
 1. HAL `ValueToken = i32`,
-2. HAL call inputs are still fundamentally integer tokens rather than runtime semantic values,
+2. many HAL call inputs are still fundamentally integer tokens rather than runtime semantic values,
 3. many public observation APIs still expose the legacy integer lane as the primary compatibility surface,
 4. JIT internals and parity harnesses still observe only the integer slot lane,
 5. many tests still assume integer snapshots as the primary public contract.
@@ -168,7 +175,7 @@ Acceptance:
 1. runtime-facing external value carriers and dynamic-object protocol can traverse the core seams without early narrowing.
 
 Current blocker:
-1. the next required migration seam is the actual HAL `ValueToken` contract and input-side host-call surface, plus the remaining legacy public observation contracts.
+1. the next required migration seam is the actual HAL `ValueToken` contract, the remaining token-bound HAL domains beyond the newly widened host intrinsic lanes, and the remaining legacy public observation contracts.
 
 ### Phase D. Integration follow-through
 

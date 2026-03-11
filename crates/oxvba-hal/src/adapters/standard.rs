@@ -18,7 +18,11 @@ use oxvba_com::{
     ComObjectToken, ComObjectTransportKind, ComSubscriptionToken, ComValue, build_typelib_metadata,
     known_typelib_identity_for_prog_id_name, resolve_known_typelib_identity,
 };
-use oxvba_runtime::value_tags::{NULL_TAG, error_tag_from_code};
+use oxvba_runtime::{
+    RuntimeValue,
+    bstr::BStr,
+    value_tags::{NULL_TAG, error_tag_from_code},
+};
 #[cfg(target_os = "windows")]
 use std::sync::atomic::{AtomicI32, AtomicU32, Ordering};
 use std::{
@@ -754,6 +758,57 @@ impl StandardHostServices {
         path
     }
 
+    fn runtime_value_to_legacy_i32(
+        &self,
+        value: &RuntimeValue,
+        capability: CapabilityId,
+        op: &'static str,
+        field: &'static str,
+    ) -> HalResult<i32> {
+        value.to_legacy_i32().map_err(|detail| {
+            HalError::adapter_fault(
+                self.profile,
+                capability,
+                op,
+                format!("{field} cannot enter the legacy runtime token lane: {detail}"),
+            )
+        })
+    }
+
+    fn runtime_value_to_display_text(&self, value: &RuntimeValue) -> String {
+        match value {
+            RuntimeValue::String(BStr(text)) => text.clone(),
+            RuntimeValue::Bool(value) => {
+                if *value {
+                    "True".to_string()
+                } else {
+                    "False".to_string()
+                }
+            }
+            RuntimeValue::Empty => String::new(),
+            RuntimeValue::Null => "Null".to_string(),
+            RuntimeValue::ErrorCode(code) => format!("Error {code}"),
+            RuntimeValue::I32(value) => value.to_string(),
+            RuntimeValue::ArrayIntent(array) => format!("<array:{}>", array.len),
+            RuntimeValue::ObjectHandle(handle) => format!("<object:{handle}>"),
+        }
+    }
+
+    fn runtime_value_to_path(
+        &self,
+        value: &RuntimeValue,
+        capability: CapabilityId,
+        op: &'static str,
+        field: &'static str,
+    ) -> HalResult<PathBuf> {
+        match value {
+            RuntimeValue::String(BStr(path)) => Ok(PathBuf::from(path)),
+            other => self
+                .runtime_value_to_legacy_i32(other, capability, op, field)
+                .map(|token| self.host_path_from_token(token)),
+        }
+    }
+
     #[cfg(target_os = "windows")]
     fn spawn_probe_shell_process(&self, command: i32) -> std::io::Result<std::process::Child> {
         Command::new("cmd")
@@ -761,9 +816,25 @@ impl StandardHostServices {
             .spawn()
     }
 
+    #[cfg(target_os = "windows")]
+    fn spawn_probe_shell_process_text(
+        &self,
+        command: &str,
+    ) -> std::io::Result<std::process::Child> {
+        Command::new("cmd").args(["/C", command]).spawn()
+    }
+
     #[cfg(not(target_os = "windows"))]
     fn spawn_probe_shell_process(&self, _command: i32) -> std::io::Result<std::process::Child> {
         Command::new("sh").arg("-c").arg("true").spawn()
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    fn spawn_probe_shell_process_text(
+        &self,
+        command: &str,
+    ) -> std::io::Result<std::process::Child> {
+        Command::new("sh").arg("-c").arg(command).spawn()
     }
 
     #[cfg(target_os = "windows")]
@@ -794,8 +865,39 @@ impl StandardHostServices {
         Ok(result)
     }
 
+    #[cfg(target_os = "windows")]
+    fn native_windows_msg_box_value(&self, prompt: &RuntimeValue, style: i32) -> HalResult<i32> {
+        let text = self.runtime_value_to_display_text(prompt);
+        let title = "OxVba";
+        let text_w: Vec<u16> = text.encode_utf16().chain(std::iter::once(0)).collect();
+        let title_w: Vec<u16> = title.encode_utf16().chain(std::iter::once(0)).collect();
+        let style_flags = if style == 0 { MB_OK } else { style as u32 };
+        let result = unsafe {
+            MessageBoxW(
+                std::ptr::null_mut(),
+                text_w.as_ptr(),
+                title_w.as_ptr(),
+                style_flags,
+            )
+        };
+        if result <= 0 {
+            return Err(HalError::adapter_fault(
+                self.profile,
+                CapabilityId::UiInteraction,
+                "msg_box",
+                "native MessageBoxW returned failure",
+            ));
+        }
+        Ok(result)
+    }
+
     #[cfg(not(target_os = "windows"))]
     fn native_windows_msg_box(&self, _prompt: i32, _style: i32) -> HalResult<i32> {
+        Ok(1)
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    fn native_windows_msg_box_value(&self, _prompt: &RuntimeValue, _style: i32) -> HalResult<i32> {
         Ok(1)
     }
 
@@ -1685,6 +1787,44 @@ impl UiInteractionHal for StandardHostServices {
         result
     }
 
+    fn msg_box_value(&self, prompt: RuntimeValue, style: RuntimeValue) -> HalResult<RuntimeValue> {
+        let capability = CapabilityId::UiInteraction;
+        let style = self.runtime_value_to_legacy_i32(&style, capability, "msg_box", "style")?;
+        if !self.supports(capability) {
+            return Err(self.unsupported(capability, "msg_box"));
+        }
+        if !self.policy.allow_interaction {
+            return Err(self.denied(capability, "msg_box"));
+        }
+        if self.native_mode_enabled()
+            && self.profile == HalProfileId::Windows
+            && self.runtime_class() == HalRuntimeClass::WindowsGui
+            && self.policy.ui_virtualization == UiVirtualizationMode::Disabled
+        {
+            return self
+                .native_windows_msg_box_value(&prompt, style)
+                .map(RuntimeValue::I32);
+        }
+        if self.native_mode_enabled()
+            && self.profile == HalProfileId::Linux
+            && self.runtime_class() == HalRuntimeClass::LinuxStdio
+            && self.policy.ui_virtualization == UiVirtualizationMode::Disabled
+        {
+            eprintln!(
+                "[oxvba-hal] linux-stdio msg_box prompt={:?} style={style}",
+                prompt
+            );
+            return Ok(RuntimeValue::I32(style.max(1)));
+        }
+        match self.policy.ui_virtualization {
+            UiVirtualizationMode::FailOnPrompt => Err(self.denied(capability, "msg_box")),
+            UiVirtualizationMode::ScriptedResponses => Ok(RuntimeValue::I32(style.max(1))),
+            UiVirtualizationMode::Disabled => Ok(RuntimeValue::I32(
+                prompt.to_legacy_i32().unwrap_or(1).max(1),
+            )),
+        }
+    }
+
     fn input_box(&self, prompt: i32, default_value: i32) -> HalResult<i32> {
         let capability = CapabilityId::UiInteraction;
         if !self.supports(capability) {
@@ -1728,6 +1868,36 @@ impl UiInteractionHal for StandardHostServices {
             }
         }
         result
+    }
+
+    fn input_box_value(
+        &self,
+        prompt: RuntimeValue,
+        default_value: RuntimeValue,
+    ) -> HalResult<RuntimeValue> {
+        let capability = CapabilityId::UiInteraction;
+        if !self.supports(capability) {
+            return Err(self.unsupported(capability, "input_box"));
+        }
+        if !self.policy.allow_interaction {
+            return Err(self.denied(capability, "input_box"));
+        }
+        if self.native_mode_enabled()
+            && self.profile == HalProfileId::Linux
+            && self.runtime_class() == HalRuntimeClass::LinuxStdio
+            && self.policy.ui_virtualization == UiVirtualizationMode::Disabled
+        {
+            eprintln!(
+                "[oxvba-hal] linux-stdio input_box prompt={:?} default={:?}",
+                prompt, default_value
+            );
+            return Ok(default_value);
+        }
+        match self.policy.ui_virtualization {
+            UiVirtualizationMode::FailOnPrompt => Err(self.denied(capability, "input_box")),
+            UiVirtualizationMode::ScriptedResponses => Ok(default_value),
+            UiVirtualizationMode::Disabled => Ok(prompt),
+        }
     }
 }
 
@@ -2028,6 +2198,43 @@ impl ProcessEnvHal for StandardHostServices {
         Ok(if command == 0 { 0 } else { 1 })
     }
 
+    fn shell_value(
+        &self,
+        command: RuntimeValue,
+        _window_style: RuntimeValue,
+    ) -> HalResult<RuntimeValue> {
+        let capability = CapabilityId::ProcessEnv;
+        if !self.supports(capability) {
+            return Err(self.unsupported(capability, "shell"));
+        }
+        if !self.policy.allow_process_spawn {
+            return Err(self.denied(capability, "shell"));
+        }
+        if self.native_process_enabled()
+            && let RuntimeValue::String(BStr(text)) = &command
+            && !text.trim().is_empty()
+        {
+            let mut child = self.spawn_probe_shell_process_text(text).map_err(|err| {
+                HalError::adapter_fault(
+                    self.profile,
+                    capability,
+                    "shell",
+                    format!("failed to spawn probe shell process: {err}"),
+                )
+            })?;
+            let child_id = i32::try_from(child.id()).unwrap_or(i32::MAX).max(1);
+            let _ = child.wait();
+            return Ok(RuntimeValue::I32(child_id));
+        }
+        let command = match &command {
+            RuntimeValue::String(BStr(text)) => i32::from(!text.trim().is_empty()),
+            other => self
+                .runtime_value_to_legacy_i32(other, capability, "shell", "command")
+                .unwrap_or(0),
+        };
+        self.shell(command, 0).map(RuntimeValue::from_legacy_i32)
+    }
+
     fn environ(&self, key: i32) -> HalResult<i32> {
         let capability = CapabilityId::ProcessEnv;
         if !self.supports(capability) {
@@ -2045,6 +2252,28 @@ impl ProcessEnvHal for StandardHostServices {
             return Ok(value_len.min(i32::MAX as usize) as i32);
         }
         Ok(key)
+    }
+
+    fn environ_value(&self, key: RuntimeValue) -> HalResult<RuntimeValue> {
+        let capability = CapabilityId::ProcessEnv;
+        if !self.supports(capability) {
+            return Err(self.unsupported(capability, "environ"));
+        }
+        if self.native_process_enabled()
+            && let RuntimeValue::String(BStr(name)) = &key
+        {
+            let value_len = std::env::var_os(name)
+                .map(|value| value.to_string_lossy().len())
+                .unwrap_or(0);
+            return Ok(RuntimeValue::I32(value_len.min(i32::MAX as usize) as i32));
+        }
+        let key = match &key {
+            RuntimeValue::String(BStr(text)) => text.len().min(i32::MAX as usize) as i32,
+            other => self
+                .runtime_value_to_legacy_i32(other, capability, "environ", "key")
+                .unwrap_or(0),
+        };
+        self.environ(key).map(RuntimeValue::from_legacy_i32)
     }
 
     fn dir(&self, path: i32, _attrs: i32) -> HalResult<i32> {
@@ -2077,6 +2306,43 @@ impl ProcessEnvHal for StandardHostServices {
             });
         }
         Ok(if path == 0 { 0 } else { 1 })
+    }
+
+    fn dir_value(&self, path: RuntimeValue, _attrs: RuntimeValue) -> HalResult<RuntimeValue> {
+        let capability = CapabilityId::ProcessEnv;
+        if !self.supports(capability) {
+            return Err(self.unsupported(capability, "dir"));
+        }
+        if self.native_process_enabled() {
+            let target = match &path {
+                RuntimeValue::Empty | RuntimeValue::Null | RuntimeValue::I32(0) => {
+                    std::env::current_dir().map_err(|err| {
+                        HalError::adapter_fault(
+                            self.profile,
+                            capability,
+                            "dir",
+                            format!("failed to get current directory: {err}"),
+                        )
+                    })?
+                }
+                _ => self.runtime_value_to_path(&path, capability, "dir", "path")?,
+            };
+            let out = match fs::read_dir(target) {
+                Ok(mut entries) => i32::from(entries.next().is_some()),
+                Err(_) => 0,
+            };
+            return Ok(RuntimeValue::I32(out));
+        }
+        let out = match &path {
+            RuntimeValue::Empty | RuntimeValue::Null | RuntimeValue::I32(0) => 0,
+            RuntimeValue::String(BStr(text)) => i32::from(!text.is_empty()),
+            other => i32::from(
+                self.runtime_value_to_legacy_i32(other, capability, "dir", "path")
+                    .unwrap_or(0)
+                    != 0,
+            ),
+        };
+        Ok(RuntimeValue::I32(out))
     }
 }
 
@@ -2121,6 +2387,67 @@ impl ComHal for StandardHostServices {
             }
         }
         Ok(5_000i32.saturating_add(prog_id))
+    }
+
+    fn create_object_value(&self, prog_id: RuntimeValue) -> HalResult<RuntimeValue> {
+        let capability = CapabilityId::ComActivationDispatch;
+        if !self.supports(capability) {
+            return Err(self.unsupported(capability, "create_object"));
+        }
+        if !self.policy.allow_com_activation {
+            return Err(self.denied(capability, "create_object"));
+        }
+        if let RuntimeValue::String(BStr(name)) = &prog_id {
+            let prog_id_name = name.trim();
+            if prog_id_name.is_empty() {
+                return Err(HalError::adapter_fault(
+                    self.profile,
+                    capability,
+                    "create_object",
+                    "string ProgID activation requires a non-empty ProgID",
+                ));
+            }
+            if self.native_com_enabled() {
+                match self.try_native_com_binding(prog_id_name) {
+                    Ok(native_dispatch) => {
+                        let metadata = self.load_typelib_metadata_for_prog_id_name(prog_id_name)?;
+                        #[cfg(target_os = "windows")]
+                        let registered_event_override = self
+                            .registered_event_override_for_prog_id_name(
+                                prog_id_name,
+                                "create_object",
+                            )?;
+                        let mut state = self.com_lock(capability, "create_object")?;
+                        let handle = state.allocate_handle();
+                        let mut binding = ComBinding::native(
+                            prog_id_name.to_string(),
+                            native_dispatch,
+                            metadata.as_ref(),
+                        );
+                        #[cfg(target_os = "windows")]
+                        if let Some(override_cfg) = registered_event_override.as_ref() {
+                            self.apply_registered_event_override_to_binding(
+                                &mut binding,
+                                override_cfg,
+                            );
+                        }
+                        state.bindings.insert(handle, binding);
+                        self.assert_com_invariants(&state, "create_object");
+                        return Ok(RuntimeValue::ObjectHandle(handle));
+                    }
+                    Err(err) => return Err(err),
+                }
+            }
+            return Err(HalError::adapter_fault(
+                self.profile,
+                capability,
+                "create_object",
+                "string ProgID activation requires native COM-enabled Windows host mode",
+            ));
+        }
+        let token =
+            self.runtime_value_to_legacy_i32(&prog_id, capability, "create_object", "prog_id")?;
+        self.create_object(token).map(RuntimeValue::ObjectHandle)
     }
 
     fn release_object(&self, object: i32) -> HalResult<i32> {
@@ -2492,6 +2819,20 @@ impl ComHal for StandardHostServices {
         Ok(subscription)
     }
 
+    fn subscribe_event_value(
+        &self,
+        object: RuntimeValue,
+        event: RuntimeValue,
+    ) -> HalResult<RuntimeValue> {
+        let capability = CapabilityId::ComActivationDispatch;
+        let object =
+            self.runtime_value_to_legacy_i32(&object, capability, "subscribe_event", "object")?;
+        let event =
+            self.runtime_value_to_legacy_i32(&event, capability, "subscribe_event", "event")?;
+        self.subscribe_event(object, event)
+            .map(RuntimeValue::from_legacy_i32)
+    }
+
     fn unsubscribe_event(&self, subscription: i32) -> HalResult<i32> {
         let capability = CapabilityId::ComActivationDispatch;
         if !self.supports(capability) {
@@ -2563,6 +2904,18 @@ impl ComHal for StandardHostServices {
         Ok(1)
     }
 
+    fn unsubscribe_event_value(&self, subscription: RuntimeValue) -> HalResult<RuntimeValue> {
+        let capability = CapabilityId::ComActivationDispatch;
+        let subscription = self.runtime_value_to_legacy_i32(
+            &subscription,
+            capability,
+            "unsubscribe_event",
+            "subscription",
+        )?;
+        self.unsubscribe_event(subscription)
+            .map(RuntimeValue::from_legacy_i32)
+    }
+
     fn poll_event_callback(&self) -> HalResult<Option<ComCallbackPayload>> {
         let capability = CapabilityId::ComActivationDispatch;
         if !self.supports(capability) {
@@ -2610,6 +2963,18 @@ impl ComHal for StandardHostServices {
         Ok(payload.subscription)
     }
 
+    fn event_callback_subscription_value(&self, callback: RuntimeValue) -> HalResult<RuntimeValue> {
+        let capability = CapabilityId::ComActivationDispatch;
+        let callback = self.runtime_value_to_legacy_i32(
+            &callback,
+            capability,
+            "event_callback_subscription",
+            "callback",
+        )?;
+        self.event_callback_subscription(callback)
+            .map(RuntimeValue::from_legacy_i32)
+    }
+
     fn event_callback_arity(&self, callback: i32) -> HalResult<i32> {
         let capability = CapabilityId::ComActivationDispatch;
         if !self.supports(capability) {
@@ -2647,6 +3012,18 @@ impl ComHal for StandardHostServices {
                 ),
             )
         })
+    }
+
+    fn event_callback_arity_value(&self, callback: RuntimeValue) -> HalResult<RuntimeValue> {
+        let capability = CapabilityId::ComActivationDispatch;
+        let callback = self.runtime_value_to_legacy_i32(
+            &callback,
+            capability,
+            "event_callback_arity",
+            "callback",
+        )?;
+        self.event_callback_arity(callback)
+            .map(RuntimeValue::from_legacy_i32)
     }
 
     fn event_callback_arg(&self, callback: i32, index: i32) -> HalResult<i32> {
@@ -2702,6 +3079,24 @@ impl ComHal for StandardHostServices {
         Ok(value)
     }
 
+    fn event_callback_arg_value(
+        &self,
+        callback: RuntimeValue,
+        index: RuntimeValue,
+    ) -> HalResult<RuntimeValue> {
+        let capability = CapabilityId::ComActivationDispatch;
+        let callback = self.runtime_value_to_legacy_i32(
+            &callback,
+            capability,
+            "event_callback_arg",
+            "callback",
+        )?;
+        let index =
+            self.runtime_value_to_legacy_i32(&index, capability, "event_callback_arg", "index")?;
+        self.event_callback_arg(callback, index)
+            .map(RuntimeValue::from_legacy_i32)
+    }
+
     fn release_event_callback(&self, callback: i32) -> HalResult<i32> {
         let capability = CapabilityId::ComActivationDispatch;
         if !self.supports(capability) {
@@ -2734,6 +3129,18 @@ impl ComHal for StandardHostServices {
         }
         self.assert_com_invariants(&state, "release_event_callback-post");
         Ok(1)
+    }
+
+    fn release_event_callback_value(&self, callback: RuntimeValue) -> HalResult<RuntimeValue> {
+        let capability = CapabilityId::ComActivationDispatch;
+        let callback = self.runtime_value_to_legacy_i32(
+            &callback,
+            capability,
+            "release_event_callback",
+            "callback",
+        )?;
+        self.release_event_callback(callback)
+            .map(RuntimeValue::from_legacy_i32)
     }
 
     fn resolve_typelib_reference(
@@ -3076,6 +3483,32 @@ impl DynamicLinkHal for StandardHostServices {
             selection_policy: "legacy-symbol",
         };
         self.invoke_descriptor(&descriptor, arg)
+    }
+
+    fn invoke_descriptor_value(
+        &self,
+        descriptor: &DynLinkDescriptorView<'_>,
+        arg: RuntimeValue,
+    ) -> HalResult<RuntimeValue> {
+        let arg = self.runtime_value_to_legacy_i32(
+            &arg,
+            CapabilityId::DynamicLinking,
+            "invoke_descriptor",
+            "arg",
+        )?;
+        self.invoke_descriptor(descriptor, arg)
+            .map(RuntimeValue::from_legacy_i32)
+    }
+
+    fn invoke_symbol_value(&self, symbol: i32, arg: RuntimeValue) -> HalResult<RuntimeValue> {
+        let arg = self.runtime_value_to_legacy_i32(
+            &arg,
+            CapabilityId::DynamicLinking,
+            "invoke_symbol",
+            "arg",
+        )?;
+        self.invoke_symbol(symbol, arg)
+            .map(RuntimeValue::from_legacy_i32)
     }
 }
 
@@ -6674,6 +7107,7 @@ mod tests {
     use std::sync::{Mutex, OnceLock};
 
     use oxvba_com::{ComInvokeArg, ComInvokeRequest, ComValue};
+    use oxvba_runtime::{RuntimeValue, bstr::BStr};
     use proptest::prelude::*;
 
     use crate::{
@@ -6809,6 +7243,32 @@ mod tests {
     }
 
     #[test]
+    fn ui_value_wrappers_preserve_runtime_string_inputs() {
+        let policy = HostPolicy {
+            allow_interaction: true,
+            ui_virtualization: crate::model::UiVirtualizationMode::ScriptedResponses,
+            ..HostPolicy::default()
+        };
+        let host = StandardHostServices::new(HalProfileId::Windows, policy.clone());
+        assert_eq!(
+            host.msg_box_value(
+                RuntimeValue::String(BStr("Prompt".to_string())),
+                RuntimeValue::I32(3),
+            )
+            .expect("msg_box_value"),
+            RuntimeValue::I32(3)
+        );
+        assert_eq!(
+            host.input_box_value(
+                RuntimeValue::String(BStr("Prompt".to_string())),
+                RuntimeValue::String(BStr("Default".to_string())),
+            )
+            .expect("input_box_value"),
+            RuntimeValue::String(BStr("Default".to_string()))
+        );
+    }
+
+    #[test]
     fn ui_fail_on_prompt_returns_policy_denied() {
         let host = StandardHostServices::new(
             HalProfileId::Windows,
@@ -6849,6 +7309,32 @@ mod tests {
         assert_eq!(
             host.invoke_symbol(1, 2).expect_err("dynlink deny").kind,
             HalErrorKind::PolicyDenied
+        );
+    }
+
+    #[test]
+    fn process_value_wrappers_accept_string_inputs_in_deterministic_mode() {
+        let host = StandardHostServices::new(HalProfileId::Windows, HostPolicy::default());
+        assert_eq!(
+            host.shell_value(
+                RuntimeValue::String(BStr("echo hi".to_string())),
+                RuntimeValue::I32(0),
+            )
+            .expect("shell_value"),
+            RuntimeValue::I32(1)
+        );
+        assert_eq!(
+            host.environ_value(RuntimeValue::String(BStr("PATH".to_string())))
+                .expect("environ_value"),
+            RuntimeValue::I32(4)
+        );
+        assert_eq!(
+            host.dir_value(
+                RuntimeValue::String(BStr("folder".to_string())),
+                RuntimeValue::I32(0),
+            )
+            .expect("dir_value"),
+            RuntimeValue::I32(1)
         );
     }
 

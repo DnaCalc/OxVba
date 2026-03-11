@@ -525,11 +525,11 @@ impl Vm {
                     }
                 }
                 Instruction::IntrinsicMsgBoxHost { dst, prompt, style } => {
-                    let prompt = self.read_slot(*prompt)?;
+                    let prompt = self.read_value_slot(*prompt)?;
                     let style = if let Some(slot) = style {
-                        self.read_slot(*slot)?
+                        self.read_value_slot(*slot)?
                     } else {
-                        1
+                        RuntimeValue::I32(1)
                     };
                     match self.host_services.ui().msg_box_value(prompt, style) {
                         Ok(value) => {
@@ -544,11 +544,11 @@ impl Vm {
                     prompt,
                     default_value,
                 } => {
-                    let prompt = self.read_slot(*prompt)?;
+                    let prompt = self.read_value_slot(*prompt)?;
                     let default_value = if let Some(slot) = default_value {
-                        self.read_slot(*slot)?
+                        self.read_value_slot(*slot)?
                     } else {
-                        0
+                        RuntimeValue::I32(0)
                     };
                     match self
                         .host_services
@@ -853,8 +853,12 @@ impl Vm {
                     pc += 1;
                 }
                 Instruction::IntrinsicShellHost { dst, command } => {
-                    let command = self.read_slot(*command)?;
-                    match self.host_services.process().shell_value(command, 0) {
+                    let command = self.read_value_slot(*command)?;
+                    match self
+                        .host_services
+                        .process()
+                        .shell_value(command, RuntimeValue::I32(0))
+                    {
                         Ok(value) => {
                             self.write_value_slot(*dst, value)?;
                             pc += 1;
@@ -863,7 +867,7 @@ impl Vm {
                     }
                 }
                 Instruction::IntrinsicEnvironHost { dst, key } => {
-                    let key = self.read_slot(*key)?;
+                    let key = self.read_value_slot(*key)?;
                     match self.host_services.process().environ_value(key) {
                         Ok(value) => {
                             self.write_value_slot(*dst, value)?;
@@ -873,8 +877,12 @@ impl Vm {
                     }
                 }
                 Instruction::IntrinsicDirHost { dst, path } => {
-                    let path = self.read_slot(*path)?;
-                    match self.host_services.process().dir_value(path, 0) {
+                    let path = self.read_value_slot(*path)?;
+                    match self
+                        .host_services
+                        .process()
+                        .dir_value(path, RuntimeValue::I32(0))
+                    {
                         Ok(value) => {
                             self.write_value_slot(*dst, value)?;
                             pc += 1;
@@ -911,7 +919,7 @@ impl Vm {
                     pc += 1;
                 }
                 Instruction::IntrinsicCreateObjectHost { dst, prog_id } => {
-                    let prog_id = self.read_slot(*prog_id)?;
+                    let prog_id = self.read_value_slot(*prog_id)?;
                     match self.host_services.com().create_object_value(prog_id) {
                         Ok(value) => {
                             self.write_value_slot(*dst, value)?;
@@ -952,8 +960,8 @@ impl Vm {
                     }
                 }
                 Instruction::IntrinsicComSubscribeEventHost { dst, object, event } => {
-                    let object = self.read_slot(*object)?;
-                    let event = self.read_slot(*event)?;
+                    let object = self.read_value_slot(*object)?;
+                    let event = self.read_value_slot(*event)?;
                     match self
                         .host_services
                         .com()
@@ -967,7 +975,7 @@ impl Vm {
                     }
                 }
                 Instruction::IntrinsicComUnsubscribeEventHost { dst, subscription } => {
-                    let subscription = self.read_slot(*subscription)?;
+                    let subscription = self.read_value_slot(*subscription)?;
                     match self
                         .host_services
                         .com()
@@ -981,7 +989,7 @@ impl Vm {
                     }
                 }
                 Instruction::IntrinsicComEventCallbackSubscriptionHost { dst, callback } => {
-                    let callback = self.read_slot(*callback)?;
+                    let callback = self.read_value_slot(*callback)?;
                     match self
                         .host_services
                         .com()
@@ -999,8 +1007,8 @@ impl Vm {
                     callback,
                     index,
                 } => {
-                    let callback = self.read_slot(*callback)?;
-                    let index = self.read_slot(*index)?;
+                    let callback = self.read_value_slot(*callback)?;
+                    let index = self.read_value_slot(*index)?;
                     match self
                         .host_services
                         .com()
@@ -1014,7 +1022,7 @@ impl Vm {
                     }
                 }
                 Instruction::IntrinsicComReleaseEventCallbackHost { dst, callback } => {
-                    let callback = self.read_slot(*callback)?;
+                    let callback = self.read_value_slot(*callback)?;
                     match self
                         .host_services
                         .com()
@@ -1033,7 +1041,7 @@ impl Vm {
                     symbol,
                     arg,
                 } => {
-                    let arg = self.read_slot(*arg)?;
+                    let arg = self.read_value_slot(*arg)?;
                     if bytecode.external_call_descriptors.is_empty() {
                         match self
                             .host_services
@@ -1974,6 +1982,84 @@ mod tests {
         assert_eq!(
             vm.read_value_slot(0).expect("read runtime value"),
             RuntimeValue::Bool(true)
+        );
+    }
+
+    #[test]
+    fn msg_box_host_accepts_string_runtime_prompt() {
+        let bytecode = Bytecode {
+            instructions: vec![
+                Instruction::IntrinsicMsgBoxHost {
+                    dst: 1,
+                    prompt: 0,
+                    style: None,
+                },
+                Instruction::Halt,
+            ],
+            external_call_descriptors: Vec::new(),
+            slot_count: 2,
+            user_slot_count: 2,
+        };
+
+        let host = oxvba_hal::adapters::for_profile(
+            oxvba_hal::model::HalProfileId::Wasm,
+            oxvba_hal::model::HostPolicy {
+                allow_interaction: true,
+                ui_virtualization: oxvba_hal::UiVirtualizationMode::ScriptedResponses,
+                ..oxvba_hal::model::HostPolicy::interactive_dev()
+            },
+        );
+        let mut vm = Vm::new(host);
+        vm.invoke_procedure_with_values(
+            &bytecode,
+            0,
+            &[0],
+            &[RuntimeValue::String(BStr("Prompt".to_string()))],
+        )
+        .expect("vm should execute msg_box host intrinsic");
+
+        assert_eq!(vm.snapshot_values(2)[1], RuntimeValue::I32(1));
+    }
+
+    #[test]
+    fn input_box_host_preserves_string_runtime_defaults() {
+        let bytecode = Bytecode {
+            instructions: vec![
+                Instruction::IntrinsicInputBoxHost {
+                    dst: 2,
+                    prompt: 0,
+                    default_value: Some(1),
+                },
+                Instruction::Halt,
+            ],
+            external_call_descriptors: Vec::new(),
+            slot_count: 3,
+            user_slot_count: 3,
+        };
+
+        let host = oxvba_hal::adapters::for_profile(
+            oxvba_hal::model::HalProfileId::Wasm,
+            oxvba_hal::model::HostPolicy {
+                allow_interaction: true,
+                ui_virtualization: oxvba_hal::UiVirtualizationMode::ScriptedResponses,
+                ..oxvba_hal::model::HostPolicy::interactive_dev()
+            },
+        );
+        let mut vm = Vm::new(host);
+        vm.invoke_procedure_with_values(
+            &bytecode,
+            0,
+            &[0, 1],
+            &[
+                RuntimeValue::String(BStr("Prompt".to_string())),
+                RuntimeValue::String(BStr("Default".to_string())),
+            ],
+        )
+        .expect("vm should execute input_box host intrinsic");
+
+        assert_eq!(
+            vm.snapshot_values(3)[2],
+            RuntimeValue::String(BStr("Default".to_string()))
         );
     }
 
