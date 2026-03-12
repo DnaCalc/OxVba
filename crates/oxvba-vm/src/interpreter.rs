@@ -3,10 +3,11 @@ use std::{collections::HashMap, sync::Arc};
 use oxvba_com::{
     ComValue, DynamicCallArg, DynamicCallRequest, DynamicMemberSelector, DynamicObjectBridge,
 };
-use oxvba_compiler::{Bytecode, Instruction, bytecode::StringCompareMode};
+use oxvba_compiler::{
+    Bytecode, Instruction, ProjectDynamicObjectRoute, bytecode::StringCompareMode,
+};
 use oxvba_hal::{
-    adapters,
-    HalComDynamicBridge,
+    HalComDynamicBridge, adapters,
     error::{HalError, HalErrorKind},
     model::{CapabilityId, HostPolicy, native_host_profile},
     traits::{DynLinkDescriptorView, HostServices},
@@ -30,6 +31,7 @@ pub struct Vm {
     host_services: Arc<dyn HostServices>,
     typed_fastpaths_default: bool,
     call_stack: Vec<usize>,
+    project_dynamic_objects: HashMap<ObjectHandle, ProjectDynamicObjectRoute>,
     withevents_bindings: HashMap<i64, RuntimeValue>,
     withevents_owner_iters: Vec<WithEventsOwnerIterator>,
     on_error_resume_next: bool,
@@ -61,6 +63,7 @@ impl Vm {
             host_services,
             typed_fastpaths_default: Self::typed_fastpaths_enabled_from_env(),
             call_stack: Vec::new(),
+            project_dynamic_objects: HashMap::new(),
             withevents_bindings: HashMap::new(),
             withevents_owner_iters: Vec::new(),
             on_error_resume_next: false,
@@ -144,6 +147,13 @@ impl Vm {
 
     pub fn snapshot_values(&self, slot_count: usize) -> Vec<RuntimeValue> {
         self.snapshot(slot_count)
+    }
+
+    pub fn set_project_dynamic_objects(&mut self, routes: Vec<ProjectDynamicObjectRoute>) {
+        self.project_dynamic_objects = routes
+            .into_iter()
+            .map(|route| (route.object_handle, route))
+            .collect();
     }
 
     pub fn execute(&mut self, bytecode: &Bytecode) -> Result<(), String> {
@@ -257,8 +267,7 @@ impl Vm {
                         continue;
                     }
                     let lhs = self.read_value_slot(*slot)?;
-                    let out =
-                        Self::legacy_add_const_value(&lhs, -*value, "sub-const operand")?;
+                    let out = Self::legacy_add_const_value(&lhs, -*value, "sub-const operand")?;
                     self.write_value_slot(*slot, out)?;
                     pc += 1;
                 }
@@ -330,7 +339,10 @@ impl Vm {
                 } => {
                     let haystack = self.read_legacy_scalar_slot(*haystack)?;
                     let needle = self.read_legacy_scalar_slot(*needle)?;
-                    self.write_legacy_scalar_slot(*dst, Self::instr_digits(haystack, needle, *mode))?;
+                    self.write_legacy_scalar_slot(
+                        *dst,
+                        Self::instr_digits(haystack, needle, *mode),
+                    )?;
                     pc += 1;
                 }
                 Instruction::IntrinsicInStrRevDigits {
@@ -341,7 +353,10 @@ impl Vm {
                 } => {
                     let haystack = self.read_legacy_scalar_slot(*haystack)?;
                     let needle = self.read_legacy_scalar_slot(*needle)?;
-                    self.write_legacy_scalar_slot(*dst, Self::instrrev_digits(haystack, needle, *mode))?;
+                    self.write_legacy_scalar_slot(
+                        *dst,
+                        Self::instrrev_digits(haystack, needle, *mode),
+                    )?;
                     pc += 1;
                 }
                 Instruction::IntrinsicLowerDigits { dst, src } => {
@@ -361,7 +376,10 @@ impl Vm {
                 } => {
                     let value = self.read_legacy_scalar_slot(*src)?;
                     let delimiter = self.read_legacy_scalar_slot(*delimiter)?;
-                    self.write_legacy_scalar_slot(*dst, Self::split_count_digits(value, delimiter))?;
+                    self.write_legacy_scalar_slot(
+                        *dst,
+                        Self::split_count_digits(value, delimiter),
+                    )?;
                     pc += 1;
                 }
                 Instruction::IntrinsicJoinDigits {
@@ -383,7 +401,10 @@ impl Vm {
                     let value = self.read_legacy_scalar_slot(*src)?;
                     let find = self.read_legacy_scalar_slot(*find)?;
                     let replace = self.read_legacy_scalar_slot(*replace)?;
-                    self.write_legacy_scalar_slot(*dst, Self::replace_digits(value, find, replace))?;
+                    self.write_legacy_scalar_slot(
+                        *dst,
+                        Self::replace_digits(value, find, replace),
+                    )?;
                     pc += 1;
                 }
                 Instruction::IntrinsicTrimDigits { dst, src } => {
@@ -432,7 +453,10 @@ impl Vm {
                     let year = self.read_legacy_scalar_slot(*year)?;
                     let month = self.read_legacy_scalar_slot(*month)?;
                     let day = self.read_legacy_scalar_slot(*day)?;
-                    self.write_legacy_scalar_slot(*dst, Self::date_serial_digits(year, month, day))?;
+                    self.write_legacy_scalar_slot(
+                        *dst,
+                        Self::date_serial_digits(year, month, day),
+                    )?;
                     pc += 1;
                 }
                 Instruction::IntrinsicTimeSerialDigits {
@@ -444,7 +468,10 @@ impl Vm {
                     let hour = self.read_legacy_scalar_slot(*hour)?;
                     let minute = self.read_legacy_scalar_slot(*minute)?;
                     let second = self.read_legacy_scalar_slot(*second)?;
-                    self.write_legacy_scalar_slot(*dst, Self::time_serial_digits(hour, minute, second))?;
+                    self.write_legacy_scalar_slot(
+                        *dst,
+                        Self::time_serial_digits(hour, minute, second),
+                    )?;
                     pc += 1;
                 }
                 Instruction::IntrinsicDateValueDigits { dst, src } => {
@@ -466,7 +493,10 @@ impl Vm {
                     let interval = self.read_legacy_scalar_slot(*interval)?;
                     let number = self.read_legacy_scalar_slot(*number)?;
                     let date = self.read_legacy_scalar_slot(*date)?;
-                    self.write_legacy_scalar_slot(*dst, Self::date_add_digits(interval, number, date))?;
+                    self.write_legacy_scalar_slot(
+                        *dst,
+                        Self::date_add_digits(interval, number, date),
+                    )?;
                     pc += 1;
                 }
                 Instruction::IntrinsicDateDiffDigits {
@@ -478,7 +508,10 @@ impl Vm {
                     let interval = self.read_legacy_scalar_slot(*interval)?;
                     let date1 = self.read_legacy_scalar_slot(*date1)?;
                     let date2 = self.read_legacy_scalar_slot(*date2)?;
-                    self.write_legacy_scalar_slot(*dst, Self::date_diff_digits(interval, date1, date2))?;
+                    self.write_legacy_scalar_slot(
+                        *dst,
+                        Self::date_diff_digits(interval, date1, date2),
+                    )?;
                     pc += 1;
                 }
                 Instruction::IntrinsicDateNowHost { dst } => {
@@ -609,7 +642,10 @@ impl Vm {
                 }
                 Instruction::IntrinsicSqrI32 { dst, src } => {
                     let value = self.read_legacy_scalar_slot(*src)?;
-                    self.write_legacy_scalar_slot(*dst, (value.saturating_abs() as f64).sqrt() as i32)?;
+                    self.write_legacy_scalar_slot(
+                        *dst,
+                        (value.saturating_abs() as f64).sqrt() as i32,
+                    )?;
                     pc += 1;
                 }
                 Instruction::IntrinsicSinI32 { dst, src } => {
@@ -732,7 +768,10 @@ impl Vm {
                     let value = self.read_legacy_scalar_slot(*value)?;
                     let finance_rate = self.read_legacy_scalar_slot(*finance_rate)?;
                     let reinvest_rate = self.read_legacy_scalar_slot(*reinvest_rate)?;
-                    self.write_legacy_scalar_slot(*dst, Self::mirr_i32(value, finance_rate, reinvest_rate))?;
+                    self.write_legacy_scalar_slot(
+                        *dst,
+                        Self::mirr_i32(value, finance_rate, reinvest_rate),
+                    )?;
                     pc += 1;
                 }
                 Instruction::IntrinsicRateI32 {
@@ -759,7 +798,10 @@ impl Vm {
                         Some(slot) => self.read_legacy_scalar_slot(*slot)?,
                         None => 10,
                     };
-                    self.write_legacy_scalar_slot(*dst, Self::rate_i32(nper, pmt, pv, fv, due, guess))?;
+                    self.write_legacy_scalar_slot(
+                        *dst,
+                        Self::rate_i32(nper, pmt, pv, fv, due, guess),
+                    )?;
                     pc += 1;
                 }
                 Instruction::IntrinsicNPerI32 {
@@ -802,7 +844,10 @@ impl Vm {
                 }
                 Instruction::IntrinsicIsArrayTag { dst, src } => {
                     let value = self.read_legacy_scalar_slot(*src)?;
-                    self.write_legacy_scalar_slot(*dst, if Self::is_array_tag(value) { 1 } else { 0 })?;
+                    self.write_legacy_scalar_slot(
+                        *dst,
+                        if Self::is_array_tag(value) { 1 } else { 0 },
+                    )?;
                     pc += 1;
                 }
                 Instruction::IntrinsicVarTypeTag { dst, src } => {
@@ -955,28 +1000,23 @@ impl Vm {
                         }
                     };
                     let member_value = self.read_value_slot(*member)?;
-                    let member = match Self::runtime_value_legacy_token(
-                        &member_value,
-                        "dispatch_invoke.member",
-                    ) {
-                        Ok(member) => member,
-                        Err(detail) => {
-                            let err = HalError::adapter_fault(
-                                self.host_services.profile(),
-                                CapabilityId::ComActivationDispatch,
-                                "dispatch_invoke",
-                                detail,
-                            );
-                            pc = self.route_host_error(pc, err)?;
-                            continue;
-                        }
-                    };
                     let mut request = DynamicCallRequest {
                         object: object.into(),
-                        member: if member == 0 {
-                            DynamicMemberSelector::DefaultMember
-                        } else {
-                            DynamicMemberSelector::Token(member)
+                        member: match Self::runtime_value_to_dynamic_member_selector(
+                            &member_value,
+                            "dispatch_invoke.member",
+                        ) {
+                            Ok(member) => member,
+                            Err(detail) => {
+                                let err = HalError::adapter_fault(
+                                    self.host_services.profile(),
+                                    CapabilityId::ComActivationDispatch,
+                                    "dispatch_invoke",
+                                    detail,
+                                );
+                                pc = self.route_host_error(pc, err)?;
+                                continue;
+                            }
                         },
                         args: Vec::new(),
                         call_kind_hint: None,
@@ -992,8 +1032,28 @@ impl Vm {
                             name: arg.name.clone(),
                         });
                     }
-                    let bridge =
-                        HalComDynamicBridge::new(self.host_services.profile(), self.host_services.com());
+                    match self.try_invoke_project_dynamic(bytecode, typed_fastpaths, &request) {
+                        Ok(Some(value)) => {
+                            self.write_value_slot(*dst, value)?;
+                            pc += 1;
+                            continue;
+                        }
+                        Ok(None) => {}
+                        Err(detail) => {
+                            let err = HalError::adapter_fault(
+                                self.host_services.profile(),
+                                CapabilityId::ComActivationDispatch,
+                                "dispatch_invoke",
+                                detail,
+                            );
+                            pc = self.route_host_error(pc, err)?;
+                            continue;
+                        }
+                    }
+                    let bridge = HalComDynamicBridge::new(
+                        self.host_services.profile(),
+                        self.host_services.com(),
+                    );
                     match bridge.invoke_dynamic(&request) {
                         Ok(value) => {
                             self.write_value_slot(*dst, value.to_runtime_value())?;
@@ -1460,7 +1520,11 @@ impl Vm {
             .map_err(|detail| format!("{field} requires legacy-compatible token: {detail}"))
     }
 
-    fn legacy_compare_values<F>(lhs: &RuntimeValue, rhs: &RuntimeValue, pred: F) -> Result<bool, String>
+    fn legacy_compare_values<F>(
+        lhs: &RuntimeValue,
+        rhs: &RuntimeValue,
+        pred: F,
+    ) -> Result<bool, String>
     where
         F: FnOnce(i32, i32) -> bool,
     {
@@ -1501,6 +1565,155 @@ impl Vm {
             RuntimeValue::ObjectHandle(handle) => Ok(*handle),
             other => Self::runtime_value_legacy_token(other, field).map(Into::into),
         }
+    }
+
+    fn runtime_value_to_dynamic_member_selector(
+        value: &RuntimeValue,
+        field: &str,
+    ) -> Result<DynamicMemberSelector, String> {
+        match value {
+            RuntimeValue::String(text) => Ok(DynamicMemberSelector::Name(text.0.clone())),
+            other => {
+                let token = Self::runtime_value_legacy_token(other, field)?;
+                if token == 0 {
+                    Ok(DynamicMemberSelector::DefaultMember)
+                } else {
+                    Ok(DynamicMemberSelector::Token(token))
+                }
+            }
+        }
+    }
+
+    fn try_invoke_project_dynamic(
+        &mut self,
+        bytecode: &Bytecode,
+        typed_fastpaths: bool,
+        request: &DynamicCallRequest,
+    ) -> Result<Option<RuntimeValue>, String> {
+        let object = ObjectHandle::from(request.object);
+        let Some(route) = self.project_dynamic_objects.get(&object).cloned() else {
+            return Ok(None);
+        };
+        let mut candidates = match &request.member {
+            DynamicMemberSelector::Name(name) => route
+                .members
+                .iter()
+                .filter(|member| {
+                    member.member_name.eq_ignore_ascii_case(name)
+                        && member.visible_param_count == request.args.len()
+                })
+                .cloned()
+                .collect::<Vec<_>>(),
+            DynamicMemberSelector::Token(token) => route
+                .members
+                .iter()
+                .filter(|member| {
+                    member.known_dispatch_token == Some(*token)
+                        && member.visible_param_count == request.args.len()
+                })
+                .cloned()
+                .collect::<Vec<_>>(),
+            DynamicMemberSelector::DefaultMember => {
+                return Err(format!(
+                    "project dynamic dispatch for `{}` object {} does not yet define a default member",
+                    route.module_name, object
+                ));
+            }
+        };
+        let selector_label = match &request.member {
+            DynamicMemberSelector::Name(name) => {
+                format!("name `{}`", name.trim().to_ascii_lowercase())
+            }
+            DynamicMemberSelector::Token(token) => format!("token {}", token),
+            DynamicMemberSelector::DefaultMember => "default member".to_string(),
+        };
+        candidates.sort_by(|lhs, rhs| lhs.lowered_name.cmp(&rhs.lowered_name));
+        let member = match candidates.as_slice() {
+            [] => {
+                return Err(format!(
+                    "project dynamic dispatch target {} on `{}` object {} is unresolved for arity {}",
+                    selector_label,
+                    route.module_name,
+                    object,
+                    request.args.len()
+                ));
+            }
+            [member] => member.clone(),
+            _ => {
+                return Err(format!(
+                    "project dynamic dispatch target {} on `{}` object {} is ambiguous for arity {}",
+                    selector_label,
+                    route.module_name,
+                    object,
+                    request.args.len()
+                ));
+            }
+        };
+        let mut values = Vec::with_capacity(request.args.len() + 1);
+        values.push(RuntimeValue::ObjectHandle(object));
+        for arg in &request.args {
+            if let Some(name) = &arg.name {
+                return Err(format!(
+                    "project dynamic dispatch target {} on `{}` object {} does not yet support named argument `{}`",
+                    selector_label, route.module_name, object, name
+                ));
+            }
+            let Some(value) = &arg.value else {
+                return Err(format!(
+                    "project dynamic dispatch target {} on `{}` object {} does not yet support omitted arguments",
+                    selector_label, route.module_name, object
+                ));
+            };
+            values.push(value.to_runtime_value());
+        }
+        if member.param_slots.len() != values.len() {
+            return Err(format!(
+                "project dynamic dispatch target {} on `{}` object {} expects {} runtime slots but request built {} values",
+                selector_label,
+                route.module_name,
+                object,
+                member.param_slots.len(),
+                values.len()
+            ));
+        }
+        self.invoke_procedure_inline_with_values(
+            bytecode,
+            member.entry_pc,
+            &member.param_slots,
+            &values,
+            typed_fastpaths,
+        )?;
+        Ok(Some(
+            member
+                .return_slot
+                .map(|slot| self.read_value_slot(slot))
+                .transpose()?
+                .unwrap_or(RuntimeValue::Empty),
+        ))
+    }
+
+    fn invoke_procedure_inline_with_values(
+        &mut self,
+        bytecode: &Bytecode,
+        entry_pc: usize,
+        arg_slots: &[usize],
+        args: &[RuntimeValue],
+        typed_fastpaths: bool,
+    ) -> Result<(), String> {
+        if arg_slots.len() != args.len() {
+            return Err(format!(
+                "argument shape mismatch: {} slots for {} values",
+                arg_slots.len(),
+                args.len()
+            ));
+        }
+        if entry_pc >= bytecode.instructions.len() {
+            return Err(format!("procedure entry out of range: {entry_pc}"));
+        }
+        for (slot, value) in arg_slots.iter().zip(args.iter()) {
+            self.write_value_slot(*slot, value.clone())?;
+        }
+        self.execute_loop(bytecode, entry_pc, typed_fastpaths, true)
     }
 
     fn withevents_binding_handle(
@@ -3816,4 +4029,3 @@ mod kani_proofs {
         assert_eq!(vm.snapshot_slots(1)[0], 0);
     }
 }
-

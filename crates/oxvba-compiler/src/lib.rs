@@ -14,9 +14,9 @@ pub use bytecode::{Bytecode, Instruction};
 pub use emit::ProcedureRuntimeMetadata;
 pub use project::{
     CompiledProject, ExportKind, HostProcedureExport, ModuleAttributes, ModuleKind, ModuleUnit,
-    ProjectCompileError, ProjectEventDispatchBinding, ProjectKind, ProjectManifest,
-    ProjectReference, ReferenceKind, ReferencedProjectManifest, compile_project,
-    module_unit_from_source,
+    ProjectCompileError, ProjectDynamicMemberRoute, ProjectDynamicObjectRoute,
+    ProjectEventDispatchBinding, ProjectKind, ProjectManifest, ProjectReference, ReferenceKind,
+    ReferencedProjectManifest, compile_project, module_unit_from_source,
 };
 
 #[derive(Debug, Error)]

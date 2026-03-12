@@ -98,27 +98,38 @@ Run context: active parity/compliance execution plus in-progress feature worklis
 
 ### BLK-DYN-PROTOCOL-001: Unified dynamic-object protocol is still COM-backed only
 - Impact:
+  - Resolved on 2026-03-12.
+- Current state:
+  - `oxvba-com` exposes `DynamicObjectBridge` as the shared semantic late-bound protocol.
+  - COM-backed calls still route through `HalComDynamicBridge`.
+  - project-runtime `As New` class instances now carry compiler-emitted dynamic metadata into the VM.
+  - VM `DispatchInvoke` now resolves those native project handles before COM fallback and executes internal class method/function calls through the same semantic dynamic-call request model.
+- Exact unblock steps:
+  - none for this blocker.
+- Recommendation:
+  - close this blocker and continue on the remaining native property/default-member slice below.
+
+### BLK-DYN-PROTOCOL-002: Native property/default-member intent is still outside the shared dynamic protocol
+- Impact:
   - Blocks full closure of `WORKSET_2026-03-11_UNIFIED_DYNAMIC_OBJECT_PROTOCOL_AND_VALUE_CARRIER.md`.
   - Blocks convergence of `IP-02` property/default-member semantics and `IP-03` late-bound COM parity on one runtime model.
-  - Blocks the final `IP-04` `oxvba-com` extraction because COM-backed objects still have the only executable dynamic-object adapter path.
+  - Blocks the final `IP-04` `oxvba-com` extraction because native property/default-member intent is still not on the same executable dynamic seam as COM-backed calls.
 - Current state:
-  - the runtime value model is now value-first end to end:
-    - VM/JIT/host execution and snapshot APIs are semantic-value first,
-    - `snapshot_slots(...)` survives only as an explicit compatibility projection,
-    - the interpreter loop now executes through `RuntimeValue` and explicit compatibility projections instead of raw slot-int helpers,
-    - `CopySlot` preserves full runtime-value shape.
-  - `oxvba-com` now exposes a `DynamicObjectBridge` trait as the executable shared late-bound protocol seam.
-  - `oxvba-hal` now provides `HalComDynamicBridge`, adapting `ComHal` onto that shared protocol.
-  - VM `DispatchInvoke` now executes through that bridge instead of calling the COM HAL invoke seam directly.
-  - host COM callback polling now also executes through that bridge instead of calling the COM HAL callback seam directly.
-  - the remaining gap is no longer the runtime value model itself; it is the lack of an equivalent native/OxVba object adapter and property/default-member intent model on the same protocol.
+  - the runtime value model is now value-first end to end.
+  - `DynamicObjectBridge` is now exercised by:
+    - COM-backed late-bound calls,
+    - COM callback polling,
+    - project-runtime internal class method/function calls reached through explicit `DispatchInvoke(...)`.
+  - native property/default-member behavior still remains split across:
+    - compile-time property rewrite routes,
+    - rewrite-based internal class call lowering,
+    - missing project-runtime property/default-member metadata in `compile_project(...)`.
 - Exact unblock steps:
-  - define and implement the native/OxVba object adapter on the same `DynamicObjectBridge` semantics,
-  - route property/default-member `Get` / `Let` / `Set` intent through that same protocol,
-  - continue moving COM-backed translation/state behind `oxvba-com` bridge implementations rather than direct HAL/runtime seams,
-  - then continue broader COM/value-carrier closure on that shared protocol.
+  - extend project/runtime metadata to represent `Property Get` / `Let` / `Set` procedures and authoritative default-member identity,
+  - route native property/default-member calls through the shared dynamic protocol instead of rewrite-only subsets,
+  - add end-to-end project-runtime coverage for native method/property/default-member calls on the same protocol.
 - Recommendation:
-  - treat this as the real blocker after the runtime migration closure; continue `WORKSET_2026-03-11_UNIFIED_DYNAMIC_OBJECT_PROTOCOL_AND_VALUE_CARRIER.md` together with the property/default-member work.
+  - continue `WORKSET_2026-03-11_UNIFIED_DYNAMIC_OBJECT_PROTOCOL_AND_VALUE_CARRIER.md` on the native property/default-member slice, not another COM-only bridge slice.
 
 ### BLK-COM-BOUNDARY-001: Final `oxvba-com` extraction is blocked on unsettled COM behavior contracts
 - Impact:

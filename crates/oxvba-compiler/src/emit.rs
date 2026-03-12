@@ -34,6 +34,7 @@ struct EmitProcMeta {
 pub struct ProcedureRuntimeMetadata {
     pub entry_pc: usize,
     pub param_slots: Vec<usize>,
+    pub return_slot: Option<usize>,
 }
 
 pub fn emit_bytecode(module: &BoundModule) -> Bytecode {
@@ -116,6 +117,9 @@ pub fn emit_bytecode_with_runtime_metadata(
                 .iter()
                 .filter_map(|param| proc_slots[entry_idx].get(&param.name).copied())
                 .collect(),
+            return_slot: proc_slots[entry_idx]
+                .get(&procedures[entry_idx].name)
+                .copied(),
         },
     );
     instructions.push(Instruction::ClearErr);
@@ -165,6 +169,7 @@ pub fn emit_bytecode_with_runtime_metadata(
                     .iter()
                     .filter_map(|param| proc_slots[idx].get(&param.name).copied())
                     .collect(),
+                return_slot: proc_slots[idx].get(&proc.name).copied(),
             },
         );
         instructions.push(Instruction::ClearErr);

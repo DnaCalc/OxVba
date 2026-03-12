@@ -2612,4 +2612,15 @@
     - `DynamicLinkHal::{bind_descriptor,prepare_invoke,invoke_bound}`,
     - engine/public callers that still observe COM object identity through raw integer tokens
   - further honest progress now requires the next planned phase of `WORKSET_2026-03-11_RUNTIME_VALUE_MODEL_MIGRATION.md`: replace or explicitly extend the `ValueToken` contract with the canonical runtime object/value model or indirection model
+- Cleared the COM-only dynamic-protocol blocker for native project class method/function calls:
+  - `ProcedureRuntimeMetadata` now includes `return_slot`, so runtime-invoked project functions can return through authoritative compiled metadata instead of ad hoc slot guesses
+  - `CompiledProject` now carries project-dynamic object metadata for internal `As New` class instances plus their callable public member routes
+  - VM `DispatchInvoke` now preserves semantic dynamic-member selectors and first resolves known internal project object handles before COM fallback
+  - explicit `DispatchInvoke(...)` against internal project class instances now executes through the shared semantic dynamic-call request model on the VM path
+  - project runtime execution now seeds dynamic-object metadata into the VM before execution
+  - verification:
+    - `cargo test -p oxvba-compiler -p oxvba-vm -p oxvba-host --quiet`
+- The remaining unified dynamic-protocol blocker is now narrower:
+  - native property/default-member intent is still outside the shared dynamic protocol
+  - `compile_project(...)` still does not surface authoritative property/default-member metadata for project runtime dynamic dispatch
 

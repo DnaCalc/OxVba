@@ -12,8 +12,7 @@ use oxvba_compiler::{
     compile_project,
 };
 use oxvba_hal::{
-    adapters,
-    HalComDynamicBridge,
+    HalComDynamicBridge, adapters,
     model::{
         CapabilityId, HalDescriptor, HalProfileId, HostPolicy, HostPolicyPreset,
         UnsupportedFeatureMode, native_host_profile,
@@ -418,6 +417,7 @@ impl Engine {
         }
         self.preflight_host_sensitive_support(&compiled.bytecode)?;
         let mut vm = Vm::new(self.host_services.clone());
+        vm.set_project_dynamic_objects(compiled.project_dynamic_objects.clone());
         vm.execute(&compiled.bytecode)
             .map_err(PhaseDiagnostic::runtime)?;
         Ok(ProjectRuntimeSession { compiled, vm })
@@ -524,8 +524,11 @@ impl Engine {
                 .map_err(|e| PhaseDiagnostic::runtime(e.to_string()));
         }
 
-        execute_and_snapshot_with_host(&compiled.bytecode, self.host_services.clone())
-            .map_err(PhaseDiagnostic::runtime)
+        let mut vm = Vm::new(self.host_services.clone());
+        vm.set_project_dynamic_objects(compiled.project_dynamic_objects.clone());
+        vm.execute(&compiled.bytecode)
+            .map_err(PhaseDiagnostic::runtime)?;
+        Ok(vm.snapshot_values(compiled.bytecode.user_slot_count))
     }
 
     pub fn execute_project_with_value_snapshot_phased(
@@ -1828,6 +1831,37 @@ mod tests {
             .execute_project_slots_test_phased(&manifest)
             .expect("cross-project execution should succeed");
         assert_eq!(snapshot[0], 1);
+    }
+
+    #[test]
+    fn formal_pmr_dispatchinvoke_routes_internal_class_function_through_native_dynamic_path() {
+        let engine = Engine::new(HostConfig::default());
+        let main_module = module_unit_from_source(
+            "MainModule",
+            ModuleKind::Procedural,
+            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim widget As New Widget\nDim value\nvalue = DispatchInvoke(widget, \"Ping\", 7)\nEnd Sub",
+        )
+        .expect("main module should parse");
+        let widget = module_unit_from_source(
+            "Widget",
+            ModuleKind::Class,
+            "Attribute VB_Name = \"Widget\"\nPublic Function Ping(ByVal n)\nPing = n + 1\nEnd Function",
+        )
+        .expect("widget module should parse");
+        let manifest = ProjectManifest {
+            project_name: "ProjectA".to_string(),
+            project_kind: ProjectKind::Source,
+            modules: vec![main_module, widget],
+            references: Vec::new(),
+            reference_projects: Vec::new(),
+            conditional_constants: std::collections::BTreeMap::new(),
+        };
+
+        let snapshot = engine
+            .execute_project_with_value_snapshot_phased(&manifest)
+            .expect("project execution should succeed");
+        assert_eq!(snapshot[0], RuntimeValue::I32(1));
+        assert_eq!(snapshot[1], RuntimeValue::I32(8));
     }
 
     #[test]

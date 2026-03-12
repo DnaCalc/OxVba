@@ -254,10 +254,10 @@ mod tests {
         assert_eq!(
             jit,
             vec![
-                RuntimeValue::I32(1),
-                RuntimeValue::I32(1),
-                RuntimeValue::I32(1),
-                RuntimeValue::I32(1),
+                RuntimeValue::Bool(true),
+                RuntimeValue::Bool(true),
+                RuntimeValue::Bool(true),
+                RuntimeValue::Bool(true),
                 RuntimeValue::Empty,
                 RuntimeValue::I32(10),
             ]
@@ -279,7 +279,7 @@ mod tests {
             jit,
             vec![
                 RuntimeValue::I32(5),
-                RuntimeValue::Empty,
+                RuntimeValue::I32(0),
                 RuntimeValue::Empty,
                 RuntimeValue::I32(6),
             ]

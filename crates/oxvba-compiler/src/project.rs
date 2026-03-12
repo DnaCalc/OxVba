@@ -1,5 +1,6 @@
 use std::collections::{BTreeMap, BTreeSet};
 
+use oxvba_runtime::ObjectHandle;
 use thiserror::Error;
 
 use crate::{Bytecode, ProcedureRuntimeMetadata, compile_with_runtime_metadata};
@@ -89,6 +90,26 @@ pub struct ProjectEventDispatchBinding {
     pub handler_symbol: String,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ProjectDynamicMemberRoute {
+    pub member_name: String,
+    pub lowered_name: String,
+    pub known_dispatch_token: Option<i32>,
+    pub kind: ExportKind,
+    pub visible_param_count: usize,
+    pub entry_pc: usize,
+    pub param_slots: Vec<usize>,
+    pub return_slot: Option<usize>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ProjectDynamicObjectRoute {
+    pub object_handle: ObjectHandle,
+    pub project_name: String,
+    pub module_name: String,
+    pub members: Vec<ProjectDynamicMemberRoute>,
+}
+
 #[derive(Debug, Clone)]
 pub struct CompiledProject {
     pub bytecode: Bytecode,
@@ -97,6 +118,7 @@ pub struct CompiledProject {
     pub host_exports: Vec<HostProcedureExport>,
     pub reference_visible_exports: Vec<HostProcedureExport>,
     pub event_dispatch_bindings: Vec<ProjectEventDispatchBinding>,
+    pub project_dynamic_objects: Vec<ProjectDynamicObjectRoute>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -281,6 +303,13 @@ struct ProcedureDecl {
     option_private_module: bool,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct ProjectDynamicInstanceBindingDraft {
+    object_handle: ObjectHandle,
+    project_name: String,
+    module_name: String,
+}
+
 pub fn module_unit_from_source(
     module_name: impl Into<String>,
     module_kind: ModuleKind,
@@ -344,7 +373,7 @@ fn compile_project_with_strategy(
     let event_dispatch_plan =
         collect_event_dispatch_plan(manifest, &procedure_index, &reference_order);
 
-    let rewritten_source = lower_project_source(
+    let (rewritten_source, dynamic_instance_bindings) = lower_project_source(
         strategy,
         manifest,
         &active_project,
@@ -363,6 +392,11 @@ fn compile_project_with_strategy(
     let host_exports = collect_host_exports(manifest, &procedure_index);
     let reference_visible_exports = collect_reference_visible_exports(manifest, &procedure_index);
     let event_dispatch_bindings = flatten_event_dispatch_plan(&event_dispatch_plan);
+    let project_dynamic_objects = build_project_dynamic_object_routes(
+        &dynamic_instance_bindings,
+        &procedure_index,
+        &procedure_runtime_metadata,
+    );
     validate_compiled_project_contract(manifest, &host_exports, &reference_visible_exports)
         .map_err(|message| ProjectCompileError::BackendCompile {
             message: format!("PMR-E-INTERNAL-CONTRACT: {message}"),
@@ -374,6 +408,7 @@ fn compile_project_with_strategy(
         host_exports,
         reference_visible_exports,
         event_dispatch_bindings,
+        project_dynamic_objects,
     })
 }
 
@@ -384,9 +419,10 @@ fn lower_project_source(
     procedures: &[ProcedureDecl],
     reference_order: &BTreeMap<String, usize>,
     event_dispatch_plan: &EventDispatchPlan,
-) -> Result<String, ProjectCompileError> {
+) -> Result<(String, Vec<ProjectDynamicInstanceBindingDraft>), ProjectCompileError> {
     let mut lowered_modules = Vec::new();
     let mut next_internal_instance_id = 1i32;
+    let mut dynamic_instance_bindings = Vec::new();
     for module in &manifest.modules {
         let lowered = lower_module_source(
             strategy,
@@ -398,6 +434,7 @@ fn lower_project_source(
             reference_order,
             event_dispatch_plan,
             &mut next_internal_instance_id,
+            &mut dynamic_instance_bindings,
         )?;
         lowered_modules.push(lowered);
     }
@@ -414,11 +451,12 @@ fn lower_project_source(
                 reference_order,
                 event_dispatch_plan,
                 &mut next_internal_instance_id,
+                &mut dynamic_instance_bindings,
             )?;
             lowered_modules.push(lowered);
         }
     }
-    Ok(lowered_modules.join("\n"))
+    Ok((lowered_modules.join("\n"), dynamic_instance_bindings))
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -432,6 +470,7 @@ fn lower_module_source(
     reference_order: &BTreeMap<String, usize>,
     event_dispatch_plan: &EventDispatchPlan,
     next_internal_instance_id: &mut i32,
+    dynamic_instance_bindings: &mut Vec<ProjectDynamicInstanceBindingDraft>,
 ) -> Result<String, ProjectCompileError> {
     match strategy {
         ProjectLoweringStrategy::ModuleAwareBindPlan => lower_module_source_module_aware(
@@ -443,6 +482,7 @@ fn lower_module_source(
             reference_order,
             event_dispatch_plan,
             next_internal_instance_id,
+            dynamic_instance_bindings,
         ),
         ProjectLoweringStrategy::RewriteBridge => rewrite_module_source(
             manifest,
@@ -453,6 +493,7 @@ fn lower_module_source(
             reference_order,
             event_dispatch_plan,
             next_internal_instance_id,
+            dynamic_instance_bindings,
         ),
     }
 }
@@ -1049,6 +1090,7 @@ fn lower_module_source_module_aware(
     reference_order: &BTreeMap<String, usize>,
     event_dispatch_plan: &EventDispatchPlan,
     next_internal_instance_id: &mut i32,
+    dynamic_instance_bindings: &mut Vec<ProjectDynamicInstanceBindingDraft>,
 ) -> Result<String, ProjectCompileError> {
     let current_module = normalize_identifier(&module.module_name);
     let mut out = Vec::new();
@@ -1067,6 +1109,7 @@ fn lower_module_source_module_aware(
             &mut internal_class_bindings,
             &mut withevents_bindings,
             next_internal_instance_id,
+            dynamic_instance_bindings,
         )?;
         for expanded_line in expanded {
             let expanded_line = rewrite_internal_class_set_assignment(
@@ -1158,6 +1201,7 @@ fn expand_bound_source_line(
     internal_class_bindings: &mut BTreeMap<String, InternalClassBinding>,
     withevents_bindings: &mut BTreeSet<String>,
     next_internal_instance_id: &mut i32,
+    dynamic_instance_bindings: &mut Vec<ProjectDynamicInstanceBindingDraft>,
 ) -> Result<Vec<String>, ProjectCompileError> {
     if let Some(dim_decl) = parse_external_dim_declaration(line) {
         let (qualifier, _) = parse_qualified_type_reference(&dim_decl.qualified_type)
@@ -1211,12 +1255,18 @@ fn expand_bound_source_line(
         internal_class_bindings.insert(
             normalize_identifier(&dim_decl.var_name),
             InternalClassBinding {
-                project_name: target_project,
-                module_name: target_module,
+                project_name: target_project.clone(),
+                module_name: target_module.clone(),
             },
         );
         let mut out = vec![format!("{}Dim {}", dim_decl.leading_ws, dim_decl.var_name)];
         if dim_decl.as_new {
+            let object_handle = ObjectHandle::new(*next_internal_instance_id);
+            dynamic_instance_bindings.push(ProjectDynamicInstanceBindingDraft {
+                object_handle,
+                project_name: target_project.clone(),
+                module_name: target_module.clone(),
+            });
             out.push(format!(
                 "{}{} = {}",
                 dim_decl.leading_ws, dim_decl.var_name, *next_internal_instance_id
@@ -1998,6 +2048,52 @@ fn flatten_event_dispatch_plan(plan: &EventDispatchPlan) -> Vec<ProjectEventDisp
     out
 }
 
+fn build_project_dynamic_object_routes(
+    bindings: &[ProjectDynamicInstanceBindingDraft],
+    procedures: &[ProcedureDecl],
+    runtime_metadata: &BTreeMap<String, ProcedureRuntimeMetadata>,
+) -> Vec<ProjectDynamicObjectRoute> {
+    let mut out = Vec::new();
+    for binding in bindings {
+        let mut members = procedures
+            .iter()
+            .filter(|decl| {
+                decl.project_name == binding.project_name
+                    && decl.module_name == binding.module_name
+                    && decl.module_kind == ModuleKind::Class
+                    && decl.is_public
+            })
+            .filter_map(|decl| {
+                runtime_metadata
+                    .get(&decl.lowered_name)
+                    .map(|metadata| ProjectDynamicMemberRoute {
+                        member_name: decl.procedure_name.clone(),
+                        lowered_name: decl.lowered_name.clone(),
+                        known_dispatch_token: known_dispatch_member_token(&decl.procedure_name),
+                        kind: decl.kind,
+                        visible_param_count: decl.param_count,
+                        entry_pc: metadata.entry_pc,
+                        param_slots: metadata.param_slots.clone(),
+                        return_slot: metadata.return_slot,
+                    })
+            })
+            .collect::<Vec<_>>();
+        members.sort_by(|lhs, rhs| {
+            lhs.member_name
+                .cmp(&rhs.member_name)
+                .then(lhs.lowered_name.cmp(&rhs.lowered_name))
+        });
+        out.push(ProjectDynamicObjectRoute {
+            object_handle: binding.object_handle,
+            project_name: binding.project_name.clone(),
+            module_name: binding.module_name.clone(),
+            members,
+        });
+    }
+    out.sort_by_key(|route| route.object_handle);
+    out
+}
+
 fn resolve_event_source_module(
     manifest: &ProjectManifest,
     current_project: &str,
@@ -2508,6 +2604,7 @@ fn rewrite_module_source(
     reference_order: &BTreeMap<String, usize>,
     event_dispatch_plan: &EventDispatchPlan,
     next_internal_instance_id: &mut i32,
+    dynamic_instance_bindings: &mut Vec<ProjectDynamicInstanceBindingDraft>,
 ) -> Result<String, ProjectCompileError> {
     let current_module = normalize_identifier(&module.module_name);
     let mut out = Vec::new();
@@ -2526,6 +2623,7 @@ fn rewrite_module_source(
             &mut internal_class_bindings,
             &mut withevents_bindings,
             next_internal_instance_id,
+            dynamic_instance_bindings,
         )?;
         for expanded_line in expanded {
             let expanded_line = rewrite_internal_class_set_assignment(
