@@ -156,8 +156,16 @@ Run context: active parity/compliance execution plus in-progress feature worklis
     - `subscriptions: BTreeMap<ComSubscriptionToken, ...>`,
     - `callbacks: BTreeMap<ComCallbackToken, ...>`,
     - `pending_callbacks: VecDeque<ComCallbackToken>`,
+  - `ComBinding` now also types its member/event metadata maps by `ComMemberToken` instead of bare integers:
+    - `member_dispids: BTreeMap<ComMemberToken, i32>`,
+    - `member_specs: BTreeMap<ComMemberToken, ...>`,
+    - `default_member_token: Option<ComMemberToken>`,
+    - `direct_dispatch_specs: BTreeMap<ComMemberToken, ...>`,
+    - `event_specs: BTreeMap<ComMemberToken, ...>`,
+    - `event_trigger_specs: BTreeMap<ComMemberToken, ...>`,
+  - queued COM callback payloads now stay in the shared semantic carrier (`Vec<ComValue>`) inside the adapter instead of collapsing back to `Vec<i32>` until poll time,
   - the remaining runtime/host boundary holdouts are now concentrated in:
-    - remaining raw `i32`-backed object/binding representations below those typed surfaces (`ObjectHandle`, `ComObjectToken`, binding handles, callback args),
+    - remaining raw `i32`-backed object/binding representations below those typed surfaces (`ObjectHandle`, `ComObjectToken`, binding handles),
     - remaining direct interpreter/test/caller expectations that still consume the legacy integer observation aliases,
     - the remaining direct legacy observation surface is now mostly the explicit public compatibility API itself plus callers that deliberately verify that compatibility API,
   - the new `ComValue` carrier and generic dynamic-object protocol can live at the COM boundary, but they cannot yet become the single runtime object/value model while the wider execution substrate remains token-only.

@@ -114,11 +114,22 @@ Completed slices:
    - `subscriptions: BTreeMap<ComSubscriptionToken, ...>`,
    - `callbacks: BTreeMap<ComCallbackToken, ...>`,
    - `pending_callbacks: VecDeque<ComCallbackToken>`.
+48. `ComBinding` now also types its member/event metadata maps by `ComMemberToken` instead of bare integers:
+   - `member_dispids: BTreeMap<ComMemberToken, i32>`,
+   - `member_specs: BTreeMap<ComMemberToken, ...>`,
+   - `default_member_token: Option<ComMemberToken>`,
+   - `direct_dispatch_specs: BTreeMap<ComMemberToken, ...>`,
+   - `event_specs: BTreeMap<ComMemberToken, ...>`,
+   - `event_trigger_specs: BTreeMap<ComMemberToken, ...>`.
+49. Queued COM callback payloads now remain on the shared semantic carrier inside the adapter:
+   - `ComEventCallback.args` now stores `Vec<ComValue>`,
+   - native and projection event queueing convert to `ComValue` at queue time,
+   - callback poll/arg recovery now projects from `ComValue` back into `RuntimeValue` instead of reconstructing from raw integer tags.
 
 Remaining blocker seam:
 1. explicit raw `i32` compatibility signatures still anchor the remaining legacy COM seams,
 2. the remaining holdouts are now concentrated in:
-   - raw `i32`-backed object/binding representations (`ObjectHandle`, `ComObjectToken`, binding handles, callback args) below the typed COM surfaces,
+   - raw `i32`-backed object/binding representations (`ObjectHandle`, `ComObjectToken`, binding handles) below the typed COM surfaces,
    - remaining interpreter/test/caller expectations that still consume the legacy integer observation aliases,
 3. JIT internals and parity harnesses still observe only the integer slot lane for Cranelift-supported subsets,
 4. the explicit compatibility API remains in place and still needs to be bounded/documented as compatibility rather than primary execution,

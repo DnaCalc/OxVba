@@ -714,7 +714,7 @@ impl StandardHostServices {
         override_cfg: &RegisteredEventOverrideConfig,
     ) {
         binding.event_specs.insert(
-            override_cfg.event_token,
+            override_cfg.event_token.into(),
             ComEventSpec {
                 callback_arity: override_cfg.callback_arity,
                 path: override_cfg.path,
@@ -724,16 +724,16 @@ impl StandardHostServices {
         );
         if let Some(trigger_member) = override_cfg.trigger_member {
             binding.direct_dispatch_specs.insert(
-                trigger_member,
+                trigger_member.into(),
                 ComDirectDispatchSpec {
                     invoke_kind: override_cfg.trigger_invoke_kind,
                     requires_argument: override_cfg.trigger_requires_argument,
                 },
             );
             binding.event_trigger_specs.insert(
-                trigger_member,
+                trigger_member.into(),
                 ComEventTriggerSpec {
-                    event_token: override_cfg.event_token,
+                    event_token: override_cfg.event_token.into(),
                     callback_arity: override_cfg.callback_arity,
                     second_arg_is_incremented: false,
                 },
@@ -1150,7 +1150,7 @@ impl StandardHostServices {
         member: i32,
         args: &[ComInvokeArg],
     ) -> HalResult<i32> {
-        if let Some(spec) = com_member_spec_for_token(prog_id, member) {
+        if let Some(spec) = com_member_spec_for_token(prog_id, member.into()) {
             // SAFETY: `dispatch` is a live IDispatch pointer owned by this adapter and `spec.name`
             // is converted to a temporary wide buffer inside the helper.
             let dispid = unsafe { raw_get_dispid_by_name(dispatch, &spec.name) }
@@ -1186,6 +1186,7 @@ impl StandardHostServices {
         member: i32,
         cached: Option<i32>,
     ) -> HalResult<Option<(i32, ComMemberSpec)>> {
+        let member = ComMemberToken::new(member);
         let Some(spec) = com_member_spec_for_binding(binding, member)
             .or_else(|| com_member_spec_for_token(&binding.prog_id_name, member))
         else {
@@ -1390,7 +1391,7 @@ impl StandardHostServices {
         member: i32,
         args: &[ComInvokeArg],
     ) -> HalResult<RuntimeValue> {
-        if let Some(spec) = com_member_spec_for_token(prog_id, member) {
+        if let Some(spec) = com_member_spec_for_token(prog_id, member.into()) {
             let dispid = unsafe { raw_get_dispid_by_name(dispatch, &spec.name) }
                 .map_err(|message| self.com_dispatch_adapter_fault(message))?;
             return self.native_com_dispatch_invoke_with_member_spec_runtime_value(
@@ -1907,6 +1908,7 @@ impl StandardHostServices {
         member: i32,
         args: Option<&[i32]>,
     ) -> HalResult<()> {
+        let member = ComMemberToken::new(member);
         let Some(trigger_spec) = binding.event_trigger_specs.get(&member).copied() else {
             return Ok(());
         };
@@ -1960,8 +1962,7 @@ impl StandardHostServices {
         }
         let mut state = self.com_lock(CapabilityId::ComActivationDispatch, "dispatch_invoke")?;
         self.assert_com_invariants(&state, "dispatch_invoke-event-pre");
-        let queued =
-            state.queue_callbacks_for_source_event(object.into(), event.into(), args.as_slice());
+        let queued = state.queue_callbacks_for_source_event(object.into(), event, args.as_slice());
         if com_event_trace_enabled() {
             eprintln!(
                 "[oxvba-hal][com-event] projection-trigger object={} member={} event={} args={:?} queued_subscriptions={}",
@@ -1981,6 +1982,7 @@ impl StandardHostServices {
         event: i32,
         expected_arity: usize,
     ) -> HalResult<ComEventSubscriptionTransport> {
+        let event = ComMemberToken::new(event);
         if binding.native_dispatch == 0 {
             return Ok(ComEventSubscriptionTransport::Projection);
         }
@@ -2024,7 +2026,7 @@ impl StandardHostServices {
             com_state: Arc::clone(&self.com_state),
             subscription,
             object,
-            event_token: event,
+            event_token: event.into(),
             expected_arity,
             sink_mode,
         };
@@ -2955,19 +2957,9 @@ impl ComHal for StandardHostServices {
                         ComObjectTransportKind::Projection
                     },
                     supports_events: !binding.event_specs.is_empty(),
-                    known_member_tokens: binding
-                        .member_specs
-                        .keys()
-                        .copied()
-                        .map(Into::into)
-                        .collect(),
-                    known_event_tokens: binding
-                        .event_specs
-                        .keys()
-                        .copied()
-                        .map(Into::into)
-                        .collect(),
-                    default_member_token: binding.default_member_token.map(Into::into),
+                    known_member_tokens: binding.member_specs.keys().copied().collect(),
+                    known_event_tokens: binding.event_specs.keys().copied().collect(),
+                    default_member_token: binding.default_member_token,
                     default_member_name: binding
                         .default_member_token
                         .and_then(|token| binding.member_specs.get(&token))
@@ -3019,7 +3011,7 @@ impl ComHal for StandardHostServices {
                 let binding = state.bindings.get(&ComObjectToken::new(object)).cloned();
                 let cached_dispid = binding
                     .as_ref()
-                    .and_then(|entry| entry.member_dispids.get(&member).copied());
+                    .and_then(|entry| entry.member_dispids.get(&request.member).copied());
                 (binding, cached_dispid)
             };
             if let Some(binding) = binding {
@@ -3052,8 +3044,8 @@ impl ComHal for StandardHostServices {
                     let effective_member = named_default_member
                         .as_ref()
                         .map(|(token, _)| *token)
-                        .unwrap_or(member);
-                    let effective_cached_dispid = if effective_member == member {
+                        .unwrap_or(request.member);
+                    let effective_cached_dispid = if effective_member == request.member {
                         cached_dispid
                     } else {
                         binding.member_dispids.get(&effective_member).copied()
@@ -3065,7 +3057,7 @@ impl ComHal for StandardHostServices {
                         && let Some(value) = self.try_native_com_vtable_invoke(
                             dispatch,
                             &binding.prog_id_name,
-                            effective_member,
+                            effective_member.raw(),
                             positional_values,
                         )? {
                         RuntimeValue::I32(value)
@@ -3075,7 +3067,7 @@ impl ComHal for StandardHostServices {
                                 object,
                                 dispatch,
                                 &binding,
-                                token,
+                                token.raw(),
                                 effective_cached_dispid,
                             )?
                             .map(|(dispid, _)| (dispid, spec))
@@ -3098,7 +3090,7 @@ impl ComHal for StandardHostServices {
                         object,
                         dispatch,
                         &binding,
-                        effective_member,
+                        effective_member.raw(),
                         effective_cached_dispid,
                     )? {
                         self.native_com_dispatch_invoke_with_member_spec_runtime_value(
@@ -3115,7 +3107,7 @@ impl ComHal for StandardHostServices {
                     {
                         self.native_com_dispatch_invoke_with_direct_dispid_runtime_value(
                             dispatch,
-                            effective_member,
+                            effective_member.raw(),
                             spec.invoke_kind,
                             spec.requires_argument,
                             args,
@@ -3125,7 +3117,7 @@ impl ComHal for StandardHostServices {
                         self.native_com_dispatch_invoke_with_bound_dispatch_runtime_value(
                             dispatch,
                             &binding.prog_id_name,
-                            effective_member,
+                            effective_member.raw(),
                             args,
                         )?
                     };
@@ -3204,7 +3196,8 @@ impl ComHal for StandardHostServices {
                     ),
                 ));
             };
-            let Some(expected_arity) = com_event_signature_arity_for_binding(&binding, event)
+            let Some(expected_arity) =
+                com_event_signature_arity_for_binding(&binding, event.into())
             else {
                 return Err(HalError::adapter_fault(
                     self.profile,
@@ -3499,7 +3492,7 @@ impl ComHal for StandardHostServices {
             ));
         };
         let idx = index as usize;
-        let Some(value) = payload.args.get(idx).copied() else {
+        let Some(value) = payload.args.get(idx).cloned() else {
             return Err(HalError::adapter_fault(
                 self.profile,
                 capability,
@@ -3511,7 +3504,7 @@ impl ComHal for StandardHostServices {
                 ),
             ));
         };
-        Ok(RuntimeValue::from_legacy_i32(value))
+        Ok(value.to_runtime_value())
     }
 
     fn release_event_callback(&self, callback: RuntimeValue) -> HalResult<RuntimeValue> {
@@ -4209,7 +4202,7 @@ impl ComState {
     fn queue_callback_for_subscription(
         &mut self,
         subscription: ComSubscriptionToken,
-        args: &[i32],
+        args: &[ComValue],
     ) -> bool {
         let Some(entry) = self.subscriptions.get(&subscription).cloned() else {
             return false;
@@ -4232,7 +4225,7 @@ impl ComState {
         &mut self,
         object: ComObjectToken,
         event: ComMemberToken,
-        args: &[i32],
+        args: &[ComValue],
     ) -> usize {
         let targets: Vec<ComSubscriptionToken> = self
             .subscriptions
@@ -4272,11 +4265,7 @@ impl ComState {
             subscription: payload.subscription,
             object: payload.object,
             event: payload.event,
-            args: payload
-                .args
-                .into_iter()
-                .map(ComValue::from_runtime_token)
-                .collect(),
+            args: payload.args,
         })
     }
 }
@@ -4299,12 +4288,12 @@ thread_local! {
 struct ComBinding {
     prog_id_name: String,
     native_dispatch: RawDispatchPtr,
-    member_dispids: BTreeMap<i32, i32>,
-    member_specs: BTreeMap<i32, ComMemberSpec>,
-    default_member_token: Option<i32>,
-    direct_dispatch_specs: BTreeMap<i32, ComDirectDispatchSpec>,
-    event_specs: BTreeMap<i32, ComEventSpec>,
-    event_trigger_specs: BTreeMap<i32, ComEventTriggerSpec>,
+    member_dispids: BTreeMap<ComMemberToken, i32>,
+    member_specs: BTreeMap<ComMemberToken, ComMemberSpec>,
+    default_member_token: Option<ComMemberToken>,
+    direct_dispatch_specs: BTreeMap<ComMemberToken, ComDirectDispatchSpec>,
+    event_specs: BTreeMap<ComMemberToken, ComEventSpec>,
+    event_trigger_specs: BTreeMap<ComMemberToken, ComEventTriggerSpec>,
 }
 
 impl ComBinding {
@@ -4390,7 +4379,7 @@ struct ComEventCallback {
     subscription: ComSubscriptionToken,
     object: ComObjectToken,
     event: ComMemberToken,
-    args: Vec<i32>,
+    args: Vec<ComValue>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -4424,7 +4413,7 @@ struct ComDirectDispatchSpec {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct ComEventTriggerSpec {
-    event_token: i32,
+    event_token: ComMemberToken,
     callback_arity: usize,
     second_arg_is_incremented: bool,
 }
@@ -4443,9 +4432,9 @@ struct RegisteredEventOverrideConfig {
 }
 
 #[cfg(target_os = "windows")]
-fn com_member_spec_for_token(prog_id: &str, member: i32) -> Option<ComMemberSpec> {
+fn com_member_spec_for_token(prog_id: &str, member: ComMemberToken) -> Option<ComMemberSpec> {
     if prog_id.eq_ignore_ascii_case(EXCEL_APPLICATION_PROGID) {
-        return match member {
+        return match member.raw() {
             TEST_DISPID_EXCEL_QUIT => Some(ComMemberSpec {
                 name: "Quit".to_string(),
                 requires_argument: false,
@@ -4457,7 +4446,7 @@ fn com_member_spec_for_token(prog_id: &str, member: i32) -> Option<ComMemberSpec
         };
     }
     if prog_id.eq_ignore_ascii_case("Scripting.Dictionary") {
-        return match member {
+        return match member.raw() {
             1 => Some(ComMemberSpec {
                 name: "Count".to_string(),
                 requires_argument: false,
@@ -4476,7 +4465,7 @@ fn com_member_spec_for_token(prog_id: &str, member: i32) -> Option<ComMemberSpec
         };
     }
     if prog_id.eq_ignore_ascii_case(OXVBA_TEST_DISPATCH_PROGID) {
-        return match member {
+        return match member.raw() {
             1 => Some(ComMemberSpec {
                 name: "Count".to_string(),
                 requires_argument: false,
@@ -4610,7 +4599,10 @@ fn com_member_spec_for_token(prog_id: &str, member: i32) -> Option<ComMemberSpec
 }
 
 #[cfg(target_os = "windows")]
-fn com_event_signature_arity_for_binding(binding: &ComBinding, event: i32) -> Option<usize> {
+fn com_event_signature_arity_for_binding(
+    binding: &ComBinding,
+    event: ComMemberToken,
+) -> Option<usize> {
     binding
         .event_specs
         .get(&event)
@@ -4618,7 +4610,7 @@ fn com_event_signature_arity_for_binding(binding: &ComBinding, event: i32) -> Op
 }
 
 #[cfg(target_os = "windows")]
-fn com_event_is_source_interface_only(binding: &ComBinding, event: i32) -> bool {
+fn com_event_is_source_interface_only(binding: &ComBinding, event: ComMemberToken) -> bool {
     matches!(
         binding.event_specs.get(&event),
         Some(ComEventSpec {
@@ -4646,11 +4638,11 @@ fn com_event_is_source_interface_only(_binding: &ComBinding, _event: i32) -> boo
 #[cfg(target_os = "windows")]
 fn com_event_callback_args_from_member_token(
     binding: &ComBinding,
-    member: i32,
+    member: ComMemberToken,
     args: &[i32],
-) -> Option<(i32, Vec<i32>)> {
+) -> Option<(ComMemberToken, Vec<ComValue>)> {
     let spec = binding.event_trigger_specs.get(&member)?;
-    let args = match spec.callback_arity {
+    let args: Vec<i32> = match spec.callback_arity {
         0 => Vec::new(),
         1 => vec![*args.first().unwrap_or(&0)],
         2 if args.len() >= 2 => args[..2].to_vec(),
@@ -4661,12 +4653,15 @@ fn com_event_callback_args_from_member_token(
         n if args.len() >= n => args[..n].to_vec(),
         n => vec![*args.first().unwrap_or(&0); n],
     };
-    Some((spec.event_token, args))
+    Some((
+        spec.event_token,
+        args.into_iter().map(ComValue::from_runtime_token).collect(),
+    ))
 }
 
 fn com_event_trigger_specs_from_typelib_metadata(
     blob: &TypeLibMetadataBlob,
-) -> BTreeMap<i32, ComEventTriggerSpec> {
+) -> BTreeMap<ComMemberToken, ComEventTriggerSpec> {
     let events_by_name: BTreeMap<String, &TypeLibEventMetadata> = blob
         .events
         .iter()
@@ -4683,9 +4678,9 @@ fn com_event_trigger_specs_from_typelib_metadata(
             continue;
         };
         out.insert(
-            member.token,
+            member.token.into(),
             ComEventTriggerSpec {
-                event_token: event.token,
+                event_token: event.token.into(),
                 callback_arity: usize::from(event.callback_arity),
                 second_arg_is_incremented: normalized_member_name.ends_with("pair"),
             },
@@ -4696,12 +4691,12 @@ fn com_event_trigger_specs_from_typelib_metadata(
 
 fn com_event_specs_from_typelib_metadata(
     blob: &TypeLibMetadataBlob,
-) -> BTreeMap<i32, ComEventSpec> {
+) -> BTreeMap<ComMemberToken, ComEventSpec> {
     blob.events
         .iter()
         .map(|event| {
             (
-                event.token,
+                event.token.into(),
                 ComEventSpec {
                     callback_arity: usize::from(event.callback_arity),
                     path: match event.dispatch_path {
@@ -4718,12 +4713,12 @@ fn com_event_specs_from_typelib_metadata(
 
 fn com_member_specs_from_typelib_metadata(
     blob: &TypeLibMetadataBlob,
-) -> BTreeMap<i32, ComMemberSpec> {
+) -> BTreeMap<ComMemberToken, ComMemberSpec> {
     blob.members
         .iter()
         .map(|member| {
             (
-                member.token,
+                member.token.into(),
                 ComMemberSpec {
                     name: member.name.clone(),
                     requires_argument: member.requires_argument,
@@ -4736,14 +4731,19 @@ fn com_member_specs_from_typelib_metadata(
         .collect()
 }
 
-fn default_member_token_from_typelib_metadata(blob: &TypeLibMetadataBlob) -> Option<i32> {
+fn default_member_token_from_typelib_metadata(
+    blob: &TypeLibMetadataBlob,
+) -> Option<ComMemberToken> {
     blob.members
         .iter()
         .find(|member| member.is_default_member)
-        .map(|member| member.token)
+        .map(|member| member.token.into())
 }
 
-fn com_member_spec_for_binding(binding: &ComBinding, member: i32) -> Option<ComMemberSpec> {
+fn com_member_spec_for_binding(
+    binding: &ComBinding,
+    member: ComMemberToken,
+) -> Option<ComMemberSpec> {
     binding.member_specs.get(&member).cloned()
 }
 
@@ -6693,9 +6693,14 @@ unsafe extern "system" fn oxvba_event_sink_invoke(
         && subscription.object == ComObjectToken::new((*sink).object)
         && subscription.event == ComMemberToken::new((*sink).event_token)
     {
+        let callback_args: Vec<ComValue> = args
+            .iter()
+            .copied()
+            .map(ComValue::from_runtime_token)
+            .collect();
         let queued = state.queue_callback_for_subscription(
             ComSubscriptionToken::new((*sink).subscription),
-            args.as_slice(),
+            callback_args.as_slice(),
         );
         if com_event_trace_enabled() {
             eprintln!(
@@ -6783,7 +6788,7 @@ unsafe extern "system" fn oxvba_event_source_interface_sink_changed(
         && subscription.object == ComObjectToken::new((*sink).object)
         && subscription.event == ComMemberToken::new((*sink).event_token)
     {
-        let args = [value];
+        let args = [ComValue::from_runtime_token(value)];
         let queued = state.queue_callback_for_subscription(
             ComSubscriptionToken::new((*sink).subscription),
             &args,
@@ -9675,21 +9680,21 @@ mod tests {
             .expect("binding should be present for native object token");
         let member = binding
             .member_specs
-            .get(&super::TEST_DISPID_FIRE_CHANGED_PAIR)
+            .get(&super::TEST_DISPID_FIRE_CHANGED_PAIR.into())
             .expect("member spec for FireChangedPair should be present");
         assert_eq!(member.name, "FireChangedPair");
         assert!(member.requires_argument);
         assert_eq!(member.invoke_kind, super::TypeLibMemberInvokeKind::Method);
         let ping = binding
             .member_specs
-            .get(&super::TEST_DISPID_PING)
+            .get(&super::TEST_DISPID_PING.into())
             .expect("member spec for Ping should be present");
         assert_eq!(ping.name, "Ping");
         assert!(!ping.requires_argument);
         assert_eq!(ping.invoke_kind, super::TypeLibMemberInvokeKind::Method);
         let fire_changed_source = binding
             .member_specs
-            .get(&super::TEST_DISPID_FIRE_CHANGED_SOURCE_INTERFACE)
+            .get(&super::TEST_DISPID_FIRE_CHANGED_SOURCE_INTERFACE.into())
             .expect("member spec for FireChangedSourceInterface should be present");
         assert_eq!(fire_changed_source.name, "FireChangedSourceInterface");
         assert!(fire_changed_source.requires_argument);
@@ -9699,7 +9704,7 @@ mod tests {
         );
         let lookup = binding
             .member_specs
-            .get(&super::TEST_DISPID_LOOKUP)
+            .get(&super::TEST_DISPID_LOOKUP.into())
             .expect("member spec for Lookup should be present");
         assert_eq!(lookup.name, "Lookup");
         assert!(lookup.requires_argument);
@@ -9709,7 +9714,7 @@ mod tests {
         );
         let set_value = binding
             .member_specs
-            .get(&super::TEST_DISPID_SET_VALUE)
+            .get(&super::TEST_DISPID_SET_VALUE.into())
             .expect("member spec for SetValue should be present");
         assert_eq!(set_value.name, "SetValue");
         assert!(set_value.requires_argument);
@@ -9719,7 +9724,7 @@ mod tests {
         );
         let set_value_ref = binding
             .member_specs
-            .get(&super::TEST_DISPID_SET_VALUE_REF)
+            .get(&super::TEST_DISPID_SET_VALUE_REF.into())
             .expect("member spec for SetValueRef should be present");
         assert_eq!(set_value_ref.name, "SetValueRef");
         assert!(set_value_ref.requires_argument);
@@ -9729,7 +9734,7 @@ mod tests {
         );
         let value = binding
             .member_specs
-            .get(&super::TEST_DISPID_VALUE)
+            .get(&super::TEST_DISPID_VALUE.into())
             .expect("member spec for Value should be present");
         assert_eq!(value.name, "Value");
         assert!(!value.requires_argument);
@@ -9739,7 +9744,7 @@ mod tests {
         );
         let dispatch_event = binding
             .event_specs
-            .get(&super::TEST_EVENT_CHANGED_PAIR)
+            .get(&super::TEST_EVENT_CHANGED_PAIR.into())
             .expect("ChangedPair event spec should be present");
         assert_eq!(dispatch_event.callback_arity, 2);
         assert_eq!(dispatch_event.path, super::ComEventPath::Dispatch);
@@ -9753,7 +9758,7 @@ mod tests {
         );
         let source_interface_event = binding
             .event_specs
-            .get(&super::TEST_EVENT_CHANGED_SOURCE_INTERFACE)
+            .get(&super::TEST_EVENT_CHANGED_SOURCE_INTERFACE.into())
             .expect("source-interface event spec should be present");
         assert_eq!(source_interface_event.callback_arity, 1);
         assert_eq!(
@@ -9767,28 +9772,31 @@ mod tests {
         assert!(source_interface_event.dispatch_member_id.is_none());
         let fire_changed_trigger = binding
             .event_trigger_specs
-            .get(&super::TEST_DISPID_FIRE_CHANGED)
+            .get(&super::TEST_DISPID_FIRE_CHANGED.into())
             .expect("FireChanged trigger spec should be present");
-        assert_eq!(fire_changed_trigger.event_token, super::TEST_EVENT_CHANGED);
+        assert_eq!(
+            fire_changed_trigger.event_token,
+            super::TEST_EVENT_CHANGED.into()
+        );
         assert_eq!(fire_changed_trigger.callback_arity, 1);
         assert!(!fire_changed_trigger.second_arg_is_incremented);
         let fire_changed_pair_trigger = binding
             .event_trigger_specs
-            .get(&super::TEST_DISPID_FIRE_CHANGED_PAIR)
+            .get(&super::TEST_DISPID_FIRE_CHANGED_PAIR.into())
             .expect("FireChangedPair trigger spec should be present");
         assert_eq!(
             fire_changed_pair_trigger.event_token,
-            super::TEST_EVENT_CHANGED_PAIR
+            super::TEST_EVENT_CHANGED_PAIR.into()
         );
         assert_eq!(fire_changed_pair_trigger.callback_arity, 2);
         assert!(fire_changed_pair_trigger.second_arg_is_incremented);
         let fire_changed_source_trigger = binding
             .event_trigger_specs
-            .get(&super::TEST_DISPID_FIRE_CHANGED_SOURCE_INTERFACE)
+            .get(&super::TEST_DISPID_FIRE_CHANGED_SOURCE_INTERFACE.into())
             .expect("FireChangedSourceInterface trigger spec should be present");
         assert_eq!(
             fire_changed_source_trigger.event_token,
-            super::TEST_EVENT_CHANGED_SOURCE_INTERFACE
+            super::TEST_EVENT_CHANGED_SOURCE_INTERFACE.into()
         );
         assert_eq!(fire_changed_source_trigger.callback_arity, 1);
         assert!(!fire_changed_source_trigger.second_arg_is_incremented);
@@ -9868,7 +9876,7 @@ mod tests {
             .expect("binding should be present for dictionary token");
         let exists_member = binding
             .member_specs
-            .get(&super::TEST_DISPID_EXISTS)
+            .get(&super::TEST_DISPID_EXISTS.into())
             .expect("Exists member spec should be present");
         assert_eq!(exists_member.name, "Exists");
         assert!(exists_member.requires_argument);
@@ -9878,16 +9886,16 @@ mod tests {
         );
         let exists_event = binding
             .event_specs
-            .get(&super::TEST_EVENT_CHANGED)
+            .get(&super::TEST_EVENT_CHANGED.into())
             .expect("dictionary projection event spec should be present");
         assert_eq!(exists_event.callback_arity, 1);
         assert_eq!(exists_event.path, super::ComEventPath::Dispatch);
         assert!(exists_event.connection_point_iid.is_none());
         let exists_trigger = binding
             .event_trigger_specs
-            .get(&super::TEST_DISPID_EXISTS)
+            .get(&super::TEST_DISPID_EXISTS.into())
             .expect("Exists member should project callback trigger");
-        assert_eq!(exists_trigger.event_token, super::TEST_EVENT_CHANGED);
+        assert_eq!(exists_trigger.event_token, super::TEST_EVENT_CHANGED.into());
         assert_eq!(exists_trigger.callback_arity, 1);
         assert!(!exists_trigger.second_arg_is_incremented);
     }

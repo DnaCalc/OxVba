@@ -1,5 +1,25 @@
 # Implementation Log
 
+## 2026-03-11 - COM binding metadata and queued callback args stay on typed/shared carriers
+
+- Continued the runtime value-model migration in [standard.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-hal\src\adapters\standard.rs).
+- `ComBinding` now types its member/event metadata maps by `ComMemberToken` instead of bare integers:
+  - `member_dispids: BTreeMap<ComMemberToken, i32>`,
+  - `member_specs: BTreeMap<ComMemberToken, ComMemberSpec>`,
+  - `default_member_token: Option<ComMemberToken>`,
+  - `direct_dispatch_specs: BTreeMap<ComMemberToken, ComDirectDispatchSpec>`,
+  - `event_specs: BTreeMap<ComMemberToken, ComEventSpec>`,
+  - `event_trigger_specs: BTreeMap<ComMemberToken, ComEventTriggerSpec>`.
+- Queued COM event callback arguments now remain in the shared semantic carrier:
+  - `ComEventCallback.args` now stores `Vec<ComValue>`,
+  - native and projection event queueing convert to `ComValue` at queue time,
+  - `event_callback_arg(...)` now returns `RuntimeValue` via `ComValue::to_runtime_value()` instead of reconstructing from raw integer tags on poll.
+- Net effect:
+  - fewer adapter-internal regressions back to untyped integer identity and payload lanes,
+  - the remaining blocker is narrowed further to the runtime-facing handle/binding substrate and the explicit integer compatibility observation APIs.
+- Verification:
+  - `cargo check -p oxvba-hal -p oxvba-com -p oxvba-vm -p oxvba-host`
+
 ## 2026-03-11 - Standard adapter COM state registries now use typed tokens
 
 - Tightened the internal COM state store in [standard.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-hal\src\adapters\standard.rs).
