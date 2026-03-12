@@ -1613,12 +1613,14 @@ impl Vm {
                 })
                 .cloned()
                 .collect::<Vec<_>>(),
-            DynamicMemberSelector::DefaultMember => {
-                return Err(format!(
-                    "project dynamic dispatch for `{}` object {} does not yet define a default member",
-                    route.module_name, object
-                ));
-            }
+            DynamicMemberSelector::DefaultMember => route
+                .members
+                .iter()
+                .filter(|member| {
+                    member.is_default_member && member.visible_param_count == request.args.len()
+                })
+                .cloned()
+                .collect::<Vec<_>>(),
         };
         let selector_label = match &request.member {
             DynamicMemberSelector::Name(name) => {
@@ -1635,13 +1637,14 @@ impl Vm {
                     .iter()
                     .map(|member| {
                         format!(
-                            "{}:{:?}/arity={}",
+                            "{}:{:?}/arity={}/default={}",
                             member
                                 .known_dispatch_token
                                 .map(|token| token.to_string())
                                 .unwrap_or_else(|| "-".to_string()),
                             member.kind,
-                            member.visible_param_count
+                            member.visible_param_count,
+                            member.is_default_member
                         )
                     })
                     .collect::<Vec<_>>()

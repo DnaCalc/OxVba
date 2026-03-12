@@ -137,6 +137,7 @@ pub struct ProjectDynamicMemberRoute {
     pub member_name: String,
     pub lowered_name: String,
     pub known_dispatch_token: Option<i32>,
+    pub is_default_member: bool,
     pub kind: ProjectDynamicMemberKind,
     pub visible_param_count: usize,
     pub entry_pc: usize,
@@ -340,9 +341,15 @@ struct ProcedureDecl {
     lowered_name: String,
     kind: ProcedureDeclKind,
     is_public: bool,
+    is_default_member: bool,
     param_count: usize,
     module_kind: ModuleKind,
     option_private_module: bool,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+struct MemberAttributes {
+    vb_user_mem_id: Option<i32>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -891,6 +898,7 @@ fn collect_project_procedures(manifest: &ProjectManifest) -> Vec<ProcedureDecl> 
     let active_project = normalize_identifier(&manifest.project_name);
     for module in &manifest.modules {
         let module_name = normalize_identifier(&module.module_name);
+        let member_attributes = collect_member_attributes(&module.source);
         for line in module.source.lines() {
             if let Some((name, kind, is_public)) = parse_procedure_signature_line(line) {
                 let param_count = procedure_signature_param_count(line).unwrap_or(0);
@@ -898,10 +906,13 @@ fn collect_project_procedures(manifest: &ProjectManifest) -> Vec<ProcedureDecl> 
                 procedures.push(ProcedureDecl {
                     project_name: active_project.clone(),
                     module_name: module_name.clone(),
-                    procedure_name: name,
+                    procedure_name: name.clone(),
                     lowered_name,
                     kind,
                     is_public,
+                    is_default_member: member_attributes
+                        .get(&name)
+                        .is_some_and(|attrs| attrs.vb_user_mem_id == Some(0)),
                     param_count,
                     module_kind: module.module_kind,
                     option_private_module: module.attributes.option_private_module,
@@ -913,6 +924,7 @@ fn collect_project_procedures(manifest: &ProjectManifest) -> Vec<ProcedureDecl> 
         let project_name = normalize_identifier(&referenced.project_name);
         for module in &referenced.modules {
             let module_name = normalize_identifier(&module.module_name);
+            let member_attributes = collect_member_attributes(&module.source);
             for line in module.source.lines() {
                 if let Some((name, kind, is_public)) = parse_procedure_signature_line(line) {
                     let param_count = procedure_signature_param_count(line).unwrap_or(0);
@@ -921,10 +933,13 @@ fn collect_project_procedures(manifest: &ProjectManifest) -> Vec<ProcedureDecl> 
                     procedures.push(ProcedureDecl {
                         project_name: project_name.clone(),
                         module_name: module_name.clone(),
-                        procedure_name: name,
+                        procedure_name: name.clone(),
                         lowered_name,
                         kind,
                         is_public,
+                        is_default_member: member_attributes
+                            .get(&name)
+                            .is_some_and(|attrs| attrs.vb_user_mem_id == Some(0)),
                         param_count,
                         module_kind: module.module_kind,
                         option_private_module: module.attributes.option_private_module,
@@ -2357,6 +2372,7 @@ fn build_project_dynamic_object_routes(
                         member_name: decl.procedure_name.clone(),
                         lowered_name: decl.lowered_name.clone(),
                         known_dispatch_token: known_dispatch_member_token(&decl.procedure_name),
+                        is_default_member: decl.is_default_member,
                         kind: decl.kind.dynamic_member_kind(),
                         visible_param_count: decl.param_count,
                         entry_pc: metadata.entry_pc,
@@ -3515,6 +3531,34 @@ fn validate_compiled_project_contract(
     }
 
     Ok(())
+}
+
+fn collect_member_attributes(source: &str) -> BTreeMap<String, MemberAttributes> {
+    let mut attributes = BTreeMap::<String, MemberAttributes>::new();
+    for line in source.lines() {
+        let Some((member_name, attr_name, attr_value)) = parse_member_attribute_line(line) else {
+            continue;
+        };
+        let entry = attributes.entry(member_name).or_default();
+        if attr_name.eq_ignore_ascii_case("vb_usermemid") {
+            entry.vb_user_mem_id = attr_value.parse::<i32>().ok();
+        }
+    }
+    attributes
+}
+
+fn parse_member_attribute_line(line: &str) -> Option<(String, String, String)> {
+    let trimmed = line.trim();
+    let payload = trimmed
+        .strip_prefix("Attribute ")
+        .or_else(|| trimmed.strip_prefix("attribute "))?;
+    let (lhs, rhs) = payload.split_once('=')?;
+    let lhs = lhs.trim();
+    let rhs = rhs.trim();
+    let (member_name, attr_name) = lhs.rsplit_once('.')?;
+    let member_name = normalize_procedure_name(member_name.trim())?;
+    let attr_name = normalize_identifier(attr_name.trim());
+    Some((member_name, attr_name, rhs.to_string()))
 }
 
 fn export_key(export: &HostProcedureExport) -> (&str, &str, ExportKind) {

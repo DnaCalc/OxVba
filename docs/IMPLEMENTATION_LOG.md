@@ -2620,9 +2620,11 @@
   - project runtime execution now seeds dynamic-object metadata into the VM before execution
   - verification:
     - `cargo test -p oxvba-compiler -p oxvba-vm -p oxvba-host --quiet`
-- The remaining unified dynamic-protocol blocker is now narrower:
+- Cleared the remaining native dynamic-protocol blocker:
   - native project-class `Property Get` / `Property Let` dispatch now executes on the shared dynamic protocol, with class-instance state backed by runtime object storage
   - `As New` internal project-class construction now runs `Class_Initialize` before first use so stateful native dynamic properties are semantically initialized
-  - the remaining gap is authoritative native default-member identity and dispatch
-  - `compile_project(...)` still does not surface authoritative native default-member metadata for project runtime dynamic dispatch
+  - `compile_project(...)` now parses member-level `VB_UserMemId = 0` attributes into authoritative native default-member metadata
+  - VM project-object dispatch now resolves `DynamicMemberSelector::DefaultMember` through that metadata instead of erroring on native objects
+  - verification:
+    - `cargo test -p oxvba-host formal_pmr_dispatchinvoke_routes_internal_class_default_member_through_native_dynamic_path -- --nocapture`
 
