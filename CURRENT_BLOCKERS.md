@@ -134,6 +134,7 @@ Run context: active parity/compliance execution plus in-progress feature worklis
   - Blocks `IP-05` early-binding completion, `IP-06` server/export parity, and part of `IP-08` hosting parity.
 - Current state:
   - some shared transport/types and typelib catalog logic now live in `oxvba-com`,
+  - the supported Windows wire/value/invoke helper surface now also lives materially in `oxvba-com`,
   - main client/event/type-library runtime state still lives materially in `crates/oxvba-hal/src/adapters/standard.rs`,
   - extracting now would freeze unstable invoke/property/server boundaries.
 - Exact unblock steps:
@@ -144,6 +145,39 @@ Run context: active parity/compliance execution plus in-progress feature worklis
   - then extract client -> event -> server slices into `oxvba-com`.
 - Recommendation:
   - do not force final crate extraction ahead of invoke/property closure; use the new runtime-protocol and reference-facade worksets as the cleanup spine.
+
+### BLK-COM-STATE-OWNERSHIP-001: Remaining COM extraction is now a state/container ownership wall
+- Impact:
+  - Blocks further low-risk incremental helper extraction for `IP-04`.
+  - Blocks the next honest contraction step for HAL in the COM area.
+- Current state:
+  - `oxvba-com` now owns:
+    - shared COM request/callback types,
+    - semantic COM value carrier,
+    - Windows `VARIANT`/SAFEARRAY translation,
+    - Windows result classification,
+    - Windows invoke-failure/`EXCEPINFO` helpers,
+    - the canonical runtime-value `IDispatch::Invoke` helper.
+  - `oxvba-hal::standard` still owns the remaining COM stateful core:
+    - activation/binding tables,
+    - `ComState` / `ComBinding`,
+    - object-handle allocation and release,
+    - type-library cache integration,
+    - connection-point and event-subscription lifecycle,
+    - object descriptor reporting.
+  - Further extraction is no longer another helper move; it requires an `oxvba-com`-owned COM state/container API and explicit ownership transfer for binding/event/cache state.
+- Exact unblock steps:
+  - define the `oxvba-com` state/container surface for:
+    - activation cache,
+    - object binding registry,
+    - event subscription/callback state,
+    - type-library cache integration,
+    - object descriptor queries,
+  - move the state structs and their invariants out of `standard.rs`,
+  - rebind HAL to delegation/bootstrap over that state container,
+  - continue the remaining early-bound/reference-facade and event-lifecycle work on the new ownership boundary.
+- Recommendation:
+  - treat the next step as a larger COM state-ownership refactor, not another local helper extraction.
 
 ### BLK-PROP-001: Property/default-member intent model is not yet end-to-end executable
 - Impact:
