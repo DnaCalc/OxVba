@@ -2653,4 +2653,10 @@
   - broader non-`IDispatch` interface-pointer transport remains open
   - verification:
     - `cargo test -p oxvba-hal unknown_variant_result_binds_runtime_object_handle_when_dispatch_is_available --quiet`
+- Continued the `oxvba-com` extraction by moving the supported Windows wire bridge out of HAL:
+  - added `crates/oxvba-com/src/windows_variant.rs`
+  - the supported scalar/string/one-dimensional-`VT_VARIANT` SAFEARRAY `VARIANT` bridge now lives in `oxvba-com`
+  - `standard.rs` now delegates those translation paths into `oxvba-com` and retains only object-handle/binding-specific dispatch logic
+  - verification:
+    - `cargo test -p oxvba-com -p oxvba-hal --quiet`
 

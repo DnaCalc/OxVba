@@ -72,6 +72,7 @@ Run context: active parity/compliance execution plus in-progress feature worklis
 - Current state:
   - `oxvba-com` now exposes an executable generic dynamic-object protocol API (`DynamicCallRequest`, `DynamicMemberSelector`, `DynamicCallKind`, `DynamicEventPayload`) with conversions from the current COM request/payload structs,
   - `oxvba-com` now owns a first semantic carrier slice via `ComValue`,
+  - `oxvba-com` now also owns the extracted Windows `VARIANT`/one-dimensional `SAFEARRAY` translation bridge for the currently supported scalar/string/array subset,
   - `ComInvokeArg.value` and `ComCallbackPayload.args` no longer use raw `i32` tokens at the shared COM boundary,
   - VM `DispatchInvoke` construction now preserves `Empty`/`Null`/`CVErr(...)`/array-intent shape and runtime strings into that carrier instead of flattening them before the COM boundary,
   - `SafeArray` carrier values can now preserve owned semantic element payloads instead of only length/dimension shape,
@@ -93,6 +94,7 @@ Run context: active parity/compliance execution plus in-progress feature worklis
     - broader scalar/variant categories,
   - thread the new dynamic-object protocol and expanded carrier through compiler bytecode, VM host invoke construction, callback transport, and host runtime ingestion without making raw COM wire structs the VM/compiler value model,
   - move `VARIANT`/`BSTR`/`SAFEARRAY`/interface-pointer translation into `oxvba-com`,
+  - continue extracting the remaining dispatch/object-binding-specific translation and result-binding seams out of `standard.rs`,
   - align COM-backed object calls to the shared late-bound object protocol instead of preserving a COM-special runtime lane,
   - contract HAL toward delegation/bootstrap once the new carrier is in place,
   - then reopen practical SAFEARRAY/object/string late-bound COM work on top of that carrier.

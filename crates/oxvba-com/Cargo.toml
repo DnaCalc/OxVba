@@ -9,3 +9,11 @@ repository.workspace = true
 [dependencies]
 oxvba-runtime.workspace = true
 thiserror.workspace = true
+
+[target.'cfg(target_os = "windows")'.dependencies]
+windows-sys = { version = "0.59", features = [
+    "Win32_Foundation",
+    "Win32_System_Com",
+    "Win32_System_Ole",
+    "Win32_System_Variant",
+] }

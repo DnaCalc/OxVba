@@ -145,7 +145,8 @@ Progress:
 11. project-compiled member metadata now carries authoritative native default-member identity (`VB_UserMemId = 0`),
 12. native `DynamicMemberSelector::DefaultMember` dispatch now resolves through that metadata on the same shared runtime-facing protocol,
 13. owned one-dimensional `VT_ARRAY | VT_VARIANT` payloads now roundtrip across the Windows COM adapter helper boundary and the controlled `EchoVariant` invoke lane,
-14. `VT_UNKNOWN` results now also bind onto the shared runtime-facing object-handle lane when the returned interface exposes `IDispatch`.
+14. `VT_UNKNOWN` results now also bind onto the shared runtime-facing object-handle lane when the returned interface exposes `IDispatch`,
+15. the Windows `VARIANT`/bounded `SAFEARRAY` translation bridge for the supported scalar/string/array subset now lives in `oxvba-com` instead of `standard.rs`.
 
 Open remainder:
 1. broader interface/object identity forms and broader SAFEARRAY wire marshalling still need full carrier-to-boundary completion,

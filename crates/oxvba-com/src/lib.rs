@@ -8,6 +8,8 @@ pub mod platform;
 pub mod refcount;
 pub mod typelib;
 pub mod typelib_catalog;
+#[cfg(target_os = "windows")]
+pub mod windows_variant;
 
 pub use dispatch::{ComDispatch, DispatchResult};
 pub use dynamic_object::{
