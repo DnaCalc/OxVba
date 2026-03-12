@@ -8,17 +8,17 @@ use oxvba_hal::{
     model::{CapabilityId, HostPolicy, native_host_profile},
     traits::{DynLinkDescriptorView, HostServices},
 };
-use oxvba_runtime::RuntimeValue;
 use oxvba_runtime::safe_array::{array_len_from_tag, is_array_tag as runtime_is_array_tag};
 use oxvba_runtime::value_tags::{
     EMPTY_TAG, NULL_TAG, error_tag_from_code, is_error_tag as runtime_is_error_tag,
 };
+use oxvba_runtime::{BindingHandle, ObjectHandle, RuntimeValue};
 
 use crate::register_file::RegisterFile;
 
 #[derive(Debug, Default, Clone)]
 struct WithEventsOwnerIterator {
-    owners: Vec<i32>,
+    owners: Vec<ObjectHandle>,
     next_index: usize,
 }
 
@@ -1134,8 +1134,8 @@ impl Vm {
                 } => {
                     let owner = self.read_value_slot(*owner)?;
                     let binding = self.read_value_slot(*binding)?;
-                    let owner = Self::withevents_legacy_token(&owner, "owner")?;
-                    let binding = Self::withevents_legacy_token(&binding, "binding")?;
+                    let owner = Self::withevents_owner_handle(&owner, "owner")?;
+                    let binding = Self::withevents_binding_handle(&binding, "binding")?;
                     let key = Self::withevents_binding_key(owner, binding);
                     let value = self
                         .withevents_bindings
@@ -1154,8 +1154,8 @@ impl Vm {
                     let owner = self.read_value_slot(*owner)?;
                     let binding = self.read_value_slot(*binding)?;
                     let value = self.read_value_slot(*value)?;
-                    let owner = Self::withevents_legacy_token(&owner, "owner")?;
-                    let binding = Self::withevents_legacy_token(&binding, "binding")?;
+                    let owner = Self::withevents_owner_handle(&owner, "owner")?;
+                    let binding = Self::withevents_binding_handle(&binding, "binding")?;
                     let key = Self::withevents_binding_key(owner, binding);
                     if value.to_legacy_i32().ok() == Some(0) {
                         self.withevents_bindings.remove(&key);
@@ -1167,7 +1167,7 @@ impl Vm {
                 }
                 Instruction::IntrinsicWithEventsClearOwner { dst, owner } => {
                     let owner = self.read_value_slot(*owner)?;
-                    let owner = Self::withevents_legacy_token(&owner, "owner")?;
+                    let owner = Self::withevents_owner_handle(&owner, "owner")?;
                     self.withevents_bindings
                         .retain(|key, _| Self::withevents_owner_from_key(*key) != owner);
                     self.write_value_slot(*dst, RuntimeValue::I32(0))?;
@@ -1180,7 +1180,7 @@ impl Vm {
                 } => {
                     let source = self.read_value_slot(*source)?;
                     let binding = self.read_value_slot(*binding)?;
-                    let binding = Self::withevents_legacy_token(&binding, "binding")?;
+                    let binding = Self::withevents_binding_handle(&binding, "binding")?;
                     let mut owners = self.withevents_matching_owners(&source, binding);
                     owners.sort_unstable();
                     if owners.is_empty() {
@@ -1191,7 +1191,7 @@ impl Vm {
                             owners,
                             next_index: 1,
                         });
-                        self.write_value_slot(*dst, RuntimeValue::I32(first))?;
+                        self.write_value_slot(*dst, RuntimeValue::ObjectHandle(first))?;
                     }
                     pc += 1;
                 }
@@ -1200,17 +1200,21 @@ impl Vm {
                         if iter.next_index < iter.owners.len() {
                             let owner = iter.owners[iter.next_index];
                             iter.next_index += 1;
-                            owner
+                            Some(owner)
                         } else {
-                            0
+                            None
                         }
                     } else {
-                        0
+                        None
                     };
-                    if next == 0 {
+                    if next.is_none() {
                         let _ = self.withevents_owner_iters.pop();
                     }
-                    self.write_value_slot(*dst, RuntimeValue::I32(next))?;
+                    self.write_value_slot(
+                        *dst,
+                        next.map(RuntimeValue::ObjectHandle)
+                            .unwrap_or(RuntimeValue::I32(0)),
+                    )?;
                     pc += 1;
                 }
                 Instruction::CmpEqSlots { dst, lhs, rhs } => {
@@ -1434,16 +1438,16 @@ impl Vm {
             .unwrap_or(true)
     }
 
-    fn withevents_binding_key(owner: i32, binding: i32) -> i64 {
-        ((owner as i64) << 32) | (binding as u32 as i64)
+    fn withevents_binding_key(owner: ObjectHandle, binding: BindingHandle) -> i64 {
+        ((owner.raw() as i64) << 32) | (binding.raw() as u32 as i64)
     }
 
-    fn withevents_binding_from_key(key: i64) -> i32 {
-        (key as u32) as i32
+    fn withevents_binding_from_key(key: i64) -> BindingHandle {
+        BindingHandle::new((key as u32) as i32)
     }
 
-    fn withevents_owner_from_key(key: i64) -> i32 {
-        (key >> 32) as i32
+    fn withevents_owner_from_key(key: i64) -> ObjectHandle {
+        ObjectHandle::new((key >> 32) as i32)
     }
 
     fn runtime_value_legacy_token(value: &RuntimeValue, field: &str) -> Result<i32, String> {
@@ -1455,18 +1459,37 @@ impl Vm {
     fn runtime_value_to_com_object(
         value: &RuntimeValue,
         field: &str,
-    ) -> Result<oxvba_runtime::ObjectHandle, String> {
+    ) -> Result<ObjectHandle, String> {
         match value {
             RuntimeValue::ObjectHandle(handle) => Ok(*handle),
             other => Self::runtime_value_legacy_token(other, field).map(Into::into),
         }
     }
 
-    fn withevents_legacy_token(value: &RuntimeValue, field: &str) -> Result<i32, String> {
-        Self::runtime_value_legacy_token(value, &format!("WithEvents {field}"))
+    fn withevents_binding_handle(
+        value: &RuntimeValue,
+        field: &str,
+    ) -> Result<BindingHandle, String> {
+        match value {
+            RuntimeValue::ObjectHandle(handle) => Ok(BindingHandle::new(handle.raw())),
+            other => Self::runtime_value_legacy_token(other, &format!("WithEvents {field}"))
+                .map(Into::into),
+        }
     }
 
-    fn withevents_matching_owners(&self, source: &RuntimeValue, binding: i32) -> Vec<i32> {
+    fn withevents_owner_handle(value: &RuntimeValue, field: &str) -> Result<ObjectHandle, String> {
+        match value {
+            RuntimeValue::ObjectHandle(handle) => Ok(*handle),
+            other => Self::runtime_value_legacy_token(other, &format!("WithEvents {field}"))
+                .map(Into::into),
+        }
+    }
+
+    fn withevents_matching_owners(
+        &self,
+        source: &RuntimeValue,
+        binding: BindingHandle,
+    ) -> Vec<ObjectHandle> {
         if source.to_legacy_i32().ok() == Some(0) {
             return Vec::new();
         }

@@ -1,5 +1,24 @@
 # Implementation Log
 
+## 2026-03-12 - VM WithEvents and host COM callback paths keep typed identity
+
+- Continued the runtime handle migration in:
+  - [interpreter.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-vm\src\interpreter.rs)
+  - [engine.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-host\src\engine.rs)
+  - [com_client_registered_lane.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-host\tests\com_client_registered_lane.rs)
+- VM `WithEvents` owner iteration no longer flattens owner identity to raw integers during traversal:
+  - owner iteration state now stores `ObjectHandle`,
+  - packed `WithEvents` binding keys now decode to `ObjectHandle` + `BindingHandle` instead of untyped `i32`.
+- Host COM callback dispatch no longer flattens callback and subscription bookkeeping to raw integers:
+  - `ComEventCallbackDispatch` now uses `ComCallbackToken` and `ComSubscriptionToken`,
+  - engine-side COM subscription handler bookkeeping now keys on `ComSubscriptionToken`.
+- Net effect:
+  - more of the active runtime/host execution path now stays on typed semantic identity instead of bouncing back through `i32`,
+  - the remaining blocker is pushed further toward the underlying legacy compatibility surfaces and raw-handle representation itself.
+- Verification:
+  - `cargo test -p oxvba-vm -p oxvba-host --lib --quiet`
+  - `cargo test -p oxvba-host --test com_client_registered_lane --quiet`
+
 ## 2026-03-12 - Standard dynlink binding handles are now opaque
 
 - Continued the runtime handle migration in [standard.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-hal\src\adapters\standard.rs).

@@ -3,7 +3,7 @@ use std::{
     sync::{Arc, Mutex},
 };
 
-use oxvba_com::{ComCallbackPayload, ComObjectDescriptor};
+use oxvba_com::{ComCallbackPayload, ComCallbackToken, ComObjectDescriptor, ComSubscriptionToken};
 use oxvba_compiler::{
     Bytecode, CompiledProject, Instruction, ProcedureRuntimeMetadata, ProjectManifest, compile,
     compile_project,
@@ -85,15 +85,15 @@ pub struct Engine {
     jit: JitEngine,
     root_objects: HashMap<String, String>,
     event_dispatcher: Mutex<EventDispatcher>,
-    com_subscription_handlers: Mutex<HashMap<i32, String>>,
+    com_subscription_handlers: Mutex<HashMap<ComSubscriptionToken, String>>,
     runtime_profile: RuntimeProfileId,
     host_services: Arc<dyn HostServices>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ComEventCallbackDispatch {
-    pub callback_token: i32,
-    pub subscription_token: i32,
+    pub callback_token: ComCallbackToken,
+    pub subscription_token: ComSubscriptionToken,
     pub handler_symbol: String,
     pub args: Vec<RuntimeValue>,
 }
@@ -286,7 +286,7 @@ impl Engine {
         object_token: ObjectHandle,
         event_token: i32,
         handler_symbol: &str,
-    ) -> Result<i32, PhaseDiagnostic> {
+    ) -> Result<ComSubscriptionToken, PhaseDiagnostic> {
         let subscription = self
             .host_services
             .com()
@@ -296,10 +296,11 @@ impl Engine {
             )
             .map_err(|err| PhaseDiagnostic::runtime(err.to_string()))?;
         let subscription = match subscription {
-            RuntimeValue::I32(token) => token,
+            RuntimeValue::I32(token) => ComSubscriptionToken::new(token),
+            RuntimeValue::ObjectHandle(handle) => ComSubscriptionToken::new(handle.raw()),
             other => {
                 return Err(PhaseDiagnostic::runtime(format!(
-                    "COM subscribe_event returned non-integer subscription token: {:?}",
+                    "COM subscribe_event returned non-subscription token shape: {:?}",
                     other
                 )));
             }
@@ -317,11 +318,11 @@ impl Engine {
 
     pub fn unsubscribe_com_event_handler(
         &self,
-        subscription_token: i32,
+        subscription_token: ComSubscriptionToken,
     ) -> Result<bool, PhaseDiagnostic> {
         self.host_services
             .com()
-            .unsubscribe_event(RuntimeValue::I32(subscription_token))
+            .unsubscribe_event(RuntimeValue::I32(subscription_token.raw()))
             .map_err(|err| PhaseDiagnostic::runtime(err.to_string()))?;
         let removed = self
             .com_subscription_handlers
@@ -655,8 +656,8 @@ fn normalize_callback_payload(
     payload: ComCallbackPayload,
 ) -> Result<ComEventCallbackDispatch, PhaseDiagnostic> {
     Ok(ComEventCallbackDispatch {
-        callback_token: payload.callback.raw(),
-        subscription_token: payload.subscription.raw(),
+        callback_token: payload.callback,
+        subscription_token: payload.subscription,
         handler_symbol: String::new(),
         args: payload
             .args
@@ -1957,7 +1958,7 @@ mod tests {
         assert_eq!(callback.subscription_token, subscription);
         assert_eq!(callback.handler_symbol, "sinka_onchanged");
         assert_eq!(callback.args, vec![RuntimeValue::I32(77)]);
-        assert!(callback.callback_token >= 60_001);
+        assert!(callback.callback_token.raw() >= 60_001);
         assert!(
             engine
                 .unsubscribe_com_event_handler(subscription)

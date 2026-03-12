@@ -359,7 +359,7 @@ End Sub
         engine.set_host_policy(HostPolicy::interactive_dev());
 
         let err = engine
-            .unsubscribe_com_event_handler(99_901)
+            .unsubscribe_com_event_handler(99_901.into())
             .expect_err("unsubscribe with unknown token should fail deterministically");
 
         assert_eq!(err.phase(), DiagnosticPhase::Runtime);

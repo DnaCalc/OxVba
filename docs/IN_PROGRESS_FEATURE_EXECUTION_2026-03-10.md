@@ -190,6 +190,8 @@ Status vocabulary:
     - COM token and runtime handle wrappers are now explicitly `repr(transparent)` so that typed bookkeeping no longer depends on accidental layout,
     - the shared runtime-facing COM model now uses `ObjectHandle` for object identity (`ComInvokeRequest.object`, `ComObjectDescriptor.object`, `ComCallbackPayload.object`, `ComValue::ObjectHandle(...)`) and reduces `ComObjectToken` to adapter-internal lookup/state,
     - the standard dynlink binding registry now allocates opaque `BindingHandle` values instead of aliasing them directly to `DynLinkSymbol.raw()`,
+    - VM `WithEvents` owner iteration now preserves `ObjectHandle` identity internally instead of flattening owners back to raw integers during traversal,
+    - host COM callback dispatch and subscription-handler bookkeeping now preserve `ComCallbackToken` / `ComSubscriptionToken` identity instead of normalizing them back to bare `i32`,
     - the remaining active seam is the explicit raw-`i32` HAL compatibility contract plus the still-legacy-heavy interpreter/caller/test estate around integer snapshots.
 
 ### `IP-05` Windows early-bound COM and type-library parity

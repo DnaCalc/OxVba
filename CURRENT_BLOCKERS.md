@@ -178,6 +178,8 @@ Run context: active parity/compliance execution plus in-progress feature worklis
     - descriptor IDs map to adapter-owned `BindingHandle` values,
     - bound handles map back to `DynLinkSymbol` only inside adapter state,
     - `invoke_bound(...)` now resolves the symbol from adapter state instead of treating the binding handle itself as the symbol token,
+  - VM `WithEvents` owner iteration now preserves `ObjectHandle` identity internally instead of flattening owner handles back to raw integers during owner traversal,
+  - host COM callback dispatch plumbing now preserves `ComSubscriptionToken` / `ComCallbackToken` identity instead of normalizing callback and subscription bookkeeping back to bare integers,
   - the remaining runtime/host boundary holdouts are now concentrated in:
     - remaining raw `i32`-backed object/binding representations below those typed surfaces (`ObjectHandle`, `BindingHandle`),
     - remaining direct interpreter/test/caller expectations that still consume the legacy integer observation aliases,
