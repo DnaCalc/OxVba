@@ -14,9 +14,10 @@ use crate::{
 };
 pub use oxvba_com::DISPATCH_INVOKE_MISSING_ARG_TOKEN;
 use oxvba_com::{
-    ComCallbackPayload, ComCallbackToken, ComInvokeArg, ComInvokeRequest, ComObjectDescriptor,
-    ComObjectToken, ComObjectTransportKind, ComSubscriptionToken, ComValue, build_typelib_metadata,
-    known_typelib_identity_for_prog_id_name, resolve_known_typelib_identity,
+    ComCallbackPayload, ComCallbackToken, ComInvokeArg, ComInvokeRequest, ComMemberToken,
+    ComObjectDescriptor, ComObjectToken, ComObjectTransportKind, ComSubscriptionToken, ComValue,
+    build_typelib_metadata, known_typelib_identity_for_prog_id_name,
+    resolve_known_typelib_identity,
 };
 use oxvba_runtime::{
     BindingHandle, DynLinkSymbol, ObjectHandle, RuntimeValue,
@@ -332,7 +333,7 @@ impl StandardHostServices {
         {
             for (handle, binding) in &state.bindings {
                 hal_contract_assert!(
-                    *handle >= 20_001,
+                    handle.raw() >= 20_001,
                     "op={} observed out-of-range COM handle {}",
                     op,
                     handle
@@ -358,7 +359,7 @@ impl StandardHostServices {
             }
             for (subscription, entry) in &state.subscriptions {
                 hal_contract_assert!(
-                    *subscription >= 40_001,
+                    subscription.raw() >= 40_001,
                     "op={} observed out-of-range COM event subscription {}",
                     op,
                     subscription
@@ -398,7 +399,7 @@ impl StandardHostServices {
             }
             for (callback, payload) in &state.callbacks {
                 hal_contract_assert!(
-                    *callback >= 60_001,
+                    callback.raw() >= 60_001,
                     "op={} observed out-of-range callback token {}",
                     op,
                     callback
@@ -1100,7 +1101,7 @@ impl StandardHostServices {
     ) -> HalResult<*mut RawIDispatch> {
         let capability = CapabilityId::ComActivationDispatch;
         let state = self.com_lock(capability, op)?;
-        let binding = state.bindings.get(&object.raw()).ok_or_else(|| {
+        let binding = state.bindings.get(&object).ok_or_else(|| {
             HalError::adapter_fault(
                 self.profile,
                 capability,
@@ -1198,7 +1199,7 @@ impl StandardHostServices {
         let dispid = unsafe { raw_get_dispid_by_name(dispatch, &spec.name) }
             .map_err(|message| self.com_dispatch_adapter_fault(message))?;
         let mut state = self.com_lock(CapabilityId::ComActivationDispatch, "dispatch_invoke")?;
-        if let Some(binding) = state.bindings.get_mut(&object) {
+        if let Some(binding) = state.bindings.get_mut(&ComObjectToken::new(object)) {
             binding.member_dispids.insert(member, dispid);
         }
         self.assert_com_invariants(&state, "dispatch_invoke_cache_update");
@@ -1698,7 +1699,7 @@ impl StandardHostServices {
             unsafe {
                 raw_release_dispatch(dispatch);
             }
-            return Ok(RuntimeValue::ObjectHandle((*handle).into()));
+            return Ok(RuntimeValue::ObjectHandle(ObjectHandle::new(handle.raw())));
         }
         let handle = state.allocate_handle();
         state.bindings.insert(
@@ -1710,7 +1711,7 @@ impl StandardHostServices {
             ),
         );
         self.assert_com_invariants(&state, op);
-        Ok(RuntimeValue::ObjectHandle(handle.into()))
+        Ok(RuntimeValue::ObjectHandle(ObjectHandle::new(handle.raw())))
     }
 
     #[cfg(target_os = "windows")]
@@ -1959,7 +1960,8 @@ impl StandardHostServices {
         }
         let mut state = self.com_lock(CapabilityId::ComActivationDispatch, "dispatch_invoke")?;
         self.assert_com_invariants(&state, "dispatch_invoke-event-pre");
-        let queued = state.queue_callbacks_for_source_event(object, event, args.as_slice());
+        let queued =
+            state.queue_callbacks_for_source_event(object.into(), event.into(), args.as_slice());
         if com_event_trace_enabled() {
             eprintln!(
                 "[oxvba-hal][com-event] projection-trigger object={} member={} event={} args={:?} queued_subscriptions={}",
@@ -2289,7 +2291,7 @@ impl EventPumpHal for StandardHostServices {
                     );
                 }
                 self.assert_com_invariants(&state, "do_events-post");
-                return Ok(RuntimeValue::I32(callback));
+                return Ok(RuntimeValue::I32(callback.into()));
             }
             self.assert_com_invariants(&state, "do_events-post");
         }
@@ -2787,7 +2789,7 @@ impl ComHal for StandardHostServices {
                         }
                         state.bindings.insert(handle, binding);
                         self.assert_com_invariants(&state, "create_object");
-                        return Ok(RuntimeValue::ObjectHandle(handle.into()));
+                        return Ok(RuntimeValue::ObjectHandle(ObjectHandle::new(handle.raw())));
                     }
                     Err(err) => return Err(err),
                 }
@@ -2823,7 +2825,7 @@ impl ComHal for StandardHostServices {
                     }
                     state.bindings.insert(handle, binding);
                     self.assert_com_invariants(&state, "create_object");
-                    return Ok(RuntimeValue::ObjectHandle(handle.into()));
+                    return Ok(RuntimeValue::ObjectHandle(ObjectHandle::new(handle.raw())));
                 }
                 Err(err) => {
                     if self.has_explicit_native_com_override(prog_id) {
@@ -2846,13 +2848,14 @@ impl ComHal for StandardHostServices {
             return Err(self.denied(capability, "release_object"));
         }
         let object = object.raw();
+        let object_token = ComObjectToken::new(object);
         if !self.native_com_enabled() {
             return Ok(RuntimeValue::I32(if object == 0 { 0 } else { 1 }));
         }
         let (binding, transports, stale_callbacks) = {
             let mut state = self.com_lock(capability, "release_object")?;
             self.assert_com_invariants(&state, "release_object-pre");
-            let Some(binding) = state.bindings.remove(&object) else {
+            let Some(binding) = state.bindings.remove(&object_token) else {
                 return Err(HalError::adapter_fault(
                     self.profile,
                     capability,
@@ -2860,11 +2863,11 @@ impl ComHal for StandardHostServices {
                     format!("COM-E-OBJECT-MISSING: unknown COM object token {object}"),
                 ));
             };
-            let subscriptions: Vec<(i32, ComEventSubscription)> = state
+            let subscriptions: Vec<(ComSubscriptionToken, ComEventSubscription)> = state
                 .subscriptions
                 .iter()
                 .filter_map(|(subscription, entry)| {
-                    if entry.object == object {
+                    if entry.object == object_token {
                         Some((*subscription, entry.clone()))
                     } else {
                         None
@@ -2874,11 +2877,11 @@ impl ComHal for StandardHostServices {
             for (subscription, _) in &subscriptions {
                 state.subscriptions.remove(subscription);
             }
-            let stale_callbacks: BTreeSet<i32> = state
+            let stale_callbacks: BTreeSet<ComCallbackToken> = state
                 .callbacks
                 .iter()
                 .filter_map(|(callback, payload)| {
-                    if payload.object == object {
+                    if payload.object == object_token {
                         Some(*callback)
                     } else {
                         None
@@ -2942,7 +2945,7 @@ impl ComHal for StandardHostServices {
             self.assert_com_invariants(&state, "describe_object");
             state
                 .bindings
-                .get(&object)
+                .get(&ComObjectToken::new(object))
                 .map(|binding| ComObjectDescriptor {
                     object: ComObjectToken::new(object),
                     prog_id_name: binding.prog_id_name.clone(),
@@ -3013,7 +3016,7 @@ impl ComHal for StandardHostServices {
             let (binding, cached_dispid) = {
                 let state = self.com_lock(capability, "dispatch_invoke")?;
                 self.assert_com_invariants(&state, "dispatch_invoke");
-                let binding = state.bindings.get(&object).cloned();
+                let binding = state.bindings.get(&ComObjectToken::new(object)).cloned();
                 let cached_dispid = binding
                     .as_ref()
                     .and_then(|entry| entry.member_dispids.get(&member).copied());
@@ -3191,7 +3194,7 @@ impl ComHal for StandardHostServices {
         let (binding, expected_arity, subscription) = {
             let mut state = self.com_lock(capability, "subscribe_event")?;
             self.assert_com_invariants(&state, "subscribe_event-pre");
-            let Some(binding) = state.bindings.get(&object).cloned() else {
+            let Some(binding) = state.bindings.get(&ComObjectToken::new(object)).cloned() else {
                 return Err(HalError::adapter_fault(
                     self.profile,
                     capability,
@@ -3218,14 +3221,14 @@ impl ComHal for StandardHostServices {
         };
         let transport = self.resolve_event_subscription_transport(
             &binding,
-            subscription,
+            subscription.raw(),
             object,
             event,
             expected_arity,
         )?;
         let mut state = self.com_lock(capability, "subscribe_event")?;
         self.assert_com_invariants(&state, "subscribe_event-pre-insert");
-        if !state.bindings.contains_key(&object) {
+        if !state.bindings.contains_key(&ComObjectToken::new(object)) {
             if let Err(err) = self.release_event_subscription_transport(transport) {
                 eprintln!(
                     "[oxvba-hal] failed to release abandoned COM event transport for object {object}: {}",
@@ -3242,8 +3245,8 @@ impl ComHal for StandardHostServices {
         state.subscriptions.insert(
             subscription,
             ComEventSubscription {
-                object,
-                event,
+                object: object.into(),
+                event: event.into(),
                 transport,
             },
         );
@@ -3253,13 +3256,13 @@ impl ComHal for StandardHostServices {
                 "[oxvba-hal][com-event] subscribe object={} event={} subscription={} transport={} arity={}",
                 object,
                 event,
-                subscription,
+                subscription.raw(),
                 transport.kind_label(),
                 expected_arity
             );
         }
         self.assert_com_invariants(&state, "subscribe_event-post");
-        Ok(RuntimeValue::from_legacy_i32(subscription))
+        Ok(RuntimeValue::from_legacy_i32(subscription.into()))
     }
 
     fn unsubscribe_event(&self, subscription: RuntimeValue) -> HalResult<RuntimeValue> {
@@ -3287,7 +3290,10 @@ impl ComHal for StandardHostServices {
         let transport = {
             let state = self.com_lock(capability, "unsubscribe_event")?;
             self.assert_com_invariants(&state, "unsubscribe_event-pre");
-            let Some(entry) = state.subscriptions.get(&subscription) else {
+            let Some(entry) = state
+                .subscriptions
+                .get(&ComSubscriptionToken::new(subscription))
+            else {
                 return Err(HalError::adapter_fault(
                     self.profile,
                     capability,
@@ -3302,7 +3308,10 @@ impl ComHal for StandardHostServices {
         self.release_event_subscription_transport(transport)?;
         let mut state = self.com_lock(capability, "unsubscribe_event")?;
         self.assert_com_invariants(&state, "unsubscribe_event-pre-remove");
-        let Some(entry) = state.subscriptions.remove(&subscription) else {
+        let Some(entry) = state
+            .subscriptions
+            .remove(&ComSubscriptionToken::new(subscription))
+        else {
             return Err(HalError::adapter_fault(
                 self.profile,
                 capability,
@@ -3312,11 +3321,13 @@ impl ComHal for StandardHostServices {
                 ),
             ));
         };
-        let stale_callbacks: BTreeSet<i32> = state
+        let stale_callbacks: BTreeSet<ComCallbackToken> = state
             .callbacks
             .iter()
             .filter_map(|(callback, payload)| {
-                if payload.subscription == subscription && payload.object == entry.object {
+                if payload.subscription == ComSubscriptionToken::new(subscription)
+                    && payload.object == entry.object
+                {
                     Some(*callback)
                 } else {
                     None
@@ -3381,7 +3392,7 @@ impl ComHal for StandardHostServices {
         )?;
         let state = self.com_lock(capability, "event_callback_subscription")?;
         self.assert_com_invariants(&state, "event_callback_subscription");
-        let Some(payload) = state.callbacks.get(&callback) else {
+        let Some(payload) = state.callbacks.get(&ComCallbackToken::new(callback)) else {
             return Err(HalError::adapter_fault(
                 self.profile,
                 capability,
@@ -3389,7 +3400,7 @@ impl ComHal for StandardHostServices {
                 format!("COM-E-EVENT-CALLBACK-MISSING: unknown callback token {callback}"),
             ));
         };
-        Ok(RuntimeValue::from_legacy_i32(payload.subscription))
+        Ok(RuntimeValue::from_legacy_i32(payload.subscription.into()))
     }
 
     fn event_callback_arity(&self, callback: RuntimeValue) -> HalResult<RuntimeValue> {
@@ -3416,7 +3427,7 @@ impl ComHal for StandardHostServices {
         )?;
         let state = self.com_lock(capability, "event_callback_arity")?;
         self.assert_com_invariants(&state, "event_callback_arity");
-        let Some(payload) = state.callbacks.get(&callback) else {
+        let Some(payload) = state.callbacks.get(&ComCallbackToken::new(callback)) else {
             return Err(HalError::adapter_fault(
                 self.profile,
                 capability,
@@ -3479,7 +3490,7 @@ impl ComHal for StandardHostServices {
         }
         let state = self.com_lock(capability, "event_callback_arg")?;
         self.assert_com_invariants(&state, "event_callback_arg");
-        let Some(payload) = state.callbacks.get(&callback) else {
+        let Some(payload) = state.callbacks.get(&ComCallbackToken::new(callback)) else {
             return Err(HalError::adapter_fault(
                 self.profile,
                 capability,
@@ -3527,7 +3538,11 @@ impl ComHal for StandardHostServices {
         )?;
         let mut state = self.com_lock(capability, "release_event_callback")?;
         self.assert_com_invariants(&state, "release_event_callback-pre");
-        if state.callbacks.remove(&callback).is_none() {
+        if state
+            .callbacks
+            .remove(&ComCallbackToken::new(callback))
+            .is_none()
+        {
             return Err(HalError::adapter_fault(
                 self.profile,
                 capability,
@@ -3535,8 +3550,10 @@ impl ComHal for StandardHostServices {
                 format!("COM-E-EVENT-CALLBACK-MISSING: unknown callback token {callback}"),
             ));
         }
-        state.pending_callbacks.retain(|token| *token != callback);
-        if state.last_pumped_callback == Some(callback) {
+        state
+            .pending_callbacks
+            .retain(|token| *token != ComCallbackToken::new(callback));
+        if state.last_pumped_callback == Some(ComCallbackToken::new(callback)) {
             state.last_pumped_callback = None;
         }
         self.assert_com_invariants(&state, "release_event_callback-post");
@@ -4166,30 +4183,34 @@ struct ComState {
     next_handle: i32,
     next_subscription: i32,
     next_callback: i32,
-    bindings: BTreeMap<i32, ComBinding>,
-    subscriptions: BTreeMap<i32, ComEventSubscription>,
-    callbacks: BTreeMap<i32, ComEventCallback>,
-    pending_callbacks: VecDeque<i32>,
-    last_pumped_callback: Option<i32>,
+    bindings: BTreeMap<ComObjectToken, ComBinding>,
+    subscriptions: BTreeMap<ComSubscriptionToken, ComEventSubscription>,
+    callbacks: BTreeMap<ComCallbackToken, ComEventCallback>,
+    pending_callbacks: VecDeque<ComCallbackToken>,
+    last_pumped_callback: Option<ComCallbackToken>,
 }
 
 impl ComState {
-    fn allocate_handle(&mut self) -> i32 {
+    fn allocate_handle(&mut self) -> ComObjectToken {
         self.next_handle = self.next_handle.saturating_add(1).max(1);
-        20_000i32.saturating_add(self.next_handle)
+        ComObjectToken::new(20_000i32.saturating_add(self.next_handle))
     }
 
-    fn allocate_subscription(&mut self) -> i32 {
+    fn allocate_subscription(&mut self) -> ComSubscriptionToken {
         self.next_subscription = self.next_subscription.saturating_add(1).max(1);
-        40_000i32.saturating_add(self.next_subscription)
+        ComSubscriptionToken::new(40_000i32.saturating_add(self.next_subscription))
     }
 
-    fn allocate_callback(&mut self) -> i32 {
+    fn allocate_callback(&mut self) -> ComCallbackToken {
         self.next_callback = self.next_callback.saturating_add(1).max(1);
-        60_000i32.saturating_add(self.next_callback)
+        ComCallbackToken::new(60_000i32.saturating_add(self.next_callback))
     }
 
-    fn queue_callback_for_subscription(&mut self, subscription: i32, args: &[i32]) -> bool {
+    fn queue_callback_for_subscription(
+        &mut self,
+        subscription: ComSubscriptionToken,
+        args: &[i32],
+    ) -> bool {
         let Some(entry) = self.subscriptions.get(&subscription).cloned() else {
             return false;
         };
@@ -4207,8 +4228,13 @@ impl ComState {
         true
     }
 
-    fn queue_callbacks_for_source_event(&mut self, object: i32, event: i32, args: &[i32]) -> usize {
-        let targets: Vec<i32> = self
+    fn queue_callbacks_for_source_event(
+        &mut self,
+        object: ComObjectToken,
+        event: ComMemberToken,
+        args: &[i32],
+    ) -> usize {
+        let targets: Vec<ComSubscriptionToken> = self
             .subscriptions
             .iter()
             .filter_map(|(subscription, entry)| {
@@ -4226,7 +4252,7 @@ impl ComState {
         targets.len()
     }
 
-    fn mark_next_callback_pumped(&mut self) -> Option<i32> {
+    fn mark_next_callback_pumped(&mut self) -> Option<ComCallbackToken> {
         if let Some(callback) = self.last_pumped_callback {
             return Some(callback);
         }
@@ -4242,10 +4268,10 @@ impl ComState {
             .or_else(|| self.pending_callbacks.pop_front())?;
         let payload = self.callbacks.remove(&callback)?;
         Some(ComCallbackPayload {
-            callback: ComCallbackToken::from(callback),
-            subscription: ComSubscriptionToken::from(payload.subscription),
-            object: ComObjectToken::from(payload.object),
-            event: payload.event.into(),
+            callback,
+            subscription: payload.subscription,
+            object: payload.object,
+            event: payload.event,
             args: payload
                 .args
                 .into_iter()
@@ -4308,8 +4334,8 @@ impl ComBinding {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct ComEventSubscription {
-    object: i32,
-    event: i32,
+    object: ComObjectToken,
+    event: ComMemberToken,
     transport: ComEventSubscriptionTransport,
 }
 
@@ -4361,9 +4387,9 @@ struct ComConnectionPointAdviseRequest {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct ComEventCallback {
-    subscription: i32,
-    object: i32,
-    event: i32,
+    subscription: ComSubscriptionToken,
+    object: ComObjectToken,
+    event: ComMemberToken,
     args: Vec<i32>,
 }
 
@@ -6661,11 +6687,16 @@ unsafe extern "system" fn oxvba_event_sink_invoke(
         Ok(guard) => guard,
         Err(poisoned) => poisoned.into_inner(),
     };
-    if let Some(subscription) = state.subscriptions.get(&(*sink).subscription)
-        && subscription.object == (*sink).object
-        && subscription.event == (*sink).event_token
+    if let Some(subscription) = state
+        .subscriptions
+        .get(&ComSubscriptionToken::new((*sink).subscription))
+        && subscription.object == ComObjectToken::new((*sink).object)
+        && subscription.event == ComMemberToken::new((*sink).event_token)
     {
-        let queued = state.queue_callback_for_subscription((*sink).subscription, args.as_slice());
+        let queued = state.queue_callback_for_subscription(
+            ComSubscriptionToken::new((*sink).subscription),
+            args.as_slice(),
+        );
         if com_event_trace_enabled() {
             eprintln!(
                 "[oxvba-hal][com-event] sink-invoke subscription={} object={} event={} dispid={} args={:?} queued={}",
@@ -6746,12 +6777,17 @@ unsafe extern "system" fn oxvba_event_source_interface_sink_changed(
         Ok(guard) => guard,
         Err(poisoned) => poisoned.into_inner(),
     };
-    if let Some(subscription) = state.subscriptions.get(&(*sink).subscription)
-        && subscription.object == (*sink).object
-        && subscription.event == (*sink).event_token
+    if let Some(subscription) = state
+        .subscriptions
+        .get(&ComSubscriptionToken::new((*sink).subscription))
+        && subscription.object == ComObjectToken::new((*sink).object)
+        && subscription.event == ComMemberToken::new((*sink).event_token)
     {
         let args = [value];
-        let queued = state.queue_callback_for_subscription((*sink).subscription, &args);
+        let queued = state.queue_callback_for_subscription(
+            ComSubscriptionToken::new((*sink).subscription),
+            &args,
+        );
         if com_event_trace_enabled() {
             eprintln!(
                 "[oxvba-hal][com-event] source-sink-changed subscription={} object={} event={} value={} queued={}",
@@ -8418,7 +8454,7 @@ mod tests {
                 .expect("com state lock should succeed");
             let registered = state
                 .subscriptions
-                .get(&subscription)
+                .get(&subscription.into())
                 .expect("subscription should be tracked");
             assert!(
                 matches!(
@@ -8483,7 +8519,7 @@ mod tests {
                 .com_state
                 .lock()
                 .expect("com state lock should succeed");
-            state.callbacks.contains_key(&callback)
+            state.callbacks.contains_key(&callback.into())
         };
         assert!(
             !callback_still_present,
@@ -9162,7 +9198,7 @@ mod tests {
                 .expect("com state lock should succeed");
             let binding = state
                 .bindings
-                .get(&object.raw())
+                .get(&ComObjectToken::new(object.raw()))
                 .expect("native object should be tracked");
             assert!(
                 binding.native_dispatch != 0,
@@ -9180,7 +9216,7 @@ mod tests {
                 .expect("com state lock should succeed");
             state
                 .bindings
-                .get(&object.raw())
+                .get(&ComObjectToken::new(object.raw()))
                 .expect("native object should remain tracked")
                 .native_dispatch
         };
@@ -9211,7 +9247,7 @@ mod tests {
                 .expect("com state lock should succeed");
             state
                 .bindings
-                .get(&object.raw())
+                .get(&ComObjectToken::new(object.raw()))
                 .expect("binding should remain tracked")
                 .member_dispids
                 .len()
@@ -9226,7 +9262,7 @@ mod tests {
                 .expect("com state lock should succeed");
             state
                 .bindings
-                .get(&object.raw())
+                .get(&ComObjectToken::new(object.raw()))
                 .expect("binding should remain tracked")
                 .member_dispids
                 .len()
@@ -9635,7 +9671,7 @@ mod tests {
             .expect("com state lock should succeed");
         let binding = state
             .bindings
-            .get(&object.raw())
+            .get(&ComObjectToken::new(object.raw()))
             .expect("binding should be present for native object token");
         let member = binding
             .member_specs
@@ -9828,7 +9864,7 @@ mod tests {
             .expect("com state lock should succeed");
         let binding = state
             .bindings
-            .get(&object.raw())
+            .get(&ComObjectToken::new(object.raw()))
             .expect("binding should be present for dictionary token");
         let exists_member = binding
             .member_specs
@@ -9882,7 +9918,7 @@ mod tests {
                 .expect("com state lock should succeed");
             let registered = state
                 .subscriptions
-                .get(&subscription)
+                .get(&subscription.into())
                 .expect("dictionary projection subscription should be tracked");
             assert!(
                 matches!(

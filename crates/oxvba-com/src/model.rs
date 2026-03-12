@@ -35,6 +35,12 @@ macro_rules! define_token {
                 value.raw()
             }
         }
+
+        impl core::fmt::Display for $name {
+            fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+                write!(f, "{}", self.raw())
+            }
+        }
     };
 }
 

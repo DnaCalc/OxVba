@@ -179,6 +179,11 @@ Status vocabulary:
       - `ComInvokeRequest.member` now carries `ComMemberToken`,
       - `ComCallbackPayload.event` now carries `ComMemberToken`,
       - `ComObjectDescriptor::{known_member_tokens,known_event_tokens,default_member_token}` now carry typed member tokens,
+    - the standard-adapter COM state store now also uses typed identity internally for its active registries:
+      - `bindings: BTreeMap<ComObjectToken, ...>`,
+      - `subscriptions: BTreeMap<ComSubscriptionToken, ...>`,
+      - `callbacks: BTreeMap<ComCallbackToken, ...>`,
+      - `pending_callbacks: VecDeque<ComCallbackToken>`,
     - the remaining active seam is the explicit raw-`i32` HAL compatibility contract plus the still-legacy-heavy interpreter/caller/test estate around integer snapshots.
 
 ### `IP-05` Windows early-bound COM and type-library parity

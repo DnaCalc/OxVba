@@ -109,11 +109,16 @@ Completed slices:
    - `ComInvokeRequest.member` now carries `ComMemberToken`,
    - `ComCallbackPayload.event` now carries `ComMemberToken`,
    - `ComObjectDescriptor::{known_member_tokens,known_event_tokens,default_member_token}` now carry typed member tokens.
+47. The standard-adapter COM state store now also uses typed identity internally for its active registries:
+   - `bindings: BTreeMap<ComObjectToken, ...>`,
+   - `subscriptions: BTreeMap<ComSubscriptionToken, ...>`,
+   - `callbacks: BTreeMap<ComCallbackToken, ...>`,
+   - `pending_callbacks: VecDeque<ComCallbackToken>`.
 
 Remaining blocker seam:
 1. explicit raw `i32` compatibility signatures still anchor the remaining legacy COM seams,
 2. the remaining holdouts are now concentrated in:
-   - raw `i32`-backed COM object/binding identity shapes (`ObjectHandle`, `ComObjectToken`, binding handles) below the semantic dispatch surface,
+   - raw `i32`-backed object/binding representations (`ObjectHandle`, `ComObjectToken`, binding handles, callback args) below the typed COM surfaces,
    - remaining interpreter/test/caller expectations that still consume the legacy integer observation aliases,
 3. JIT internals and parity harnesses still observe only the integer slot lane for Cranelift-supported subsets,
 4. the explicit compatibility API remains in place and still needs to be bounded/documented as compatibility rather than primary execution,

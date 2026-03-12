@@ -1,5 +1,21 @@
 # Implementation Log
 
+## 2026-03-11 - Standard adapter COM state registries now use typed tokens
+
+- Tightened the internal COM state store in [standard.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-hal\src\adapters\standard.rs).
+- The active registries now use typed COM tokens instead of bare integers:
+  - `bindings: BTreeMap<ComObjectToken, ComBinding>`,
+  - `subscriptions: BTreeMap<ComSubscriptionToken, ComEventSubscription>`,
+  - `callbacks: BTreeMap<ComCallbackToken, ComEventCallback>`,
+  - `pending_callbacks: VecDeque<ComCallbackToken>`.
+- Net effect:
+  - the standard adapter no longer treats active object/subscription/callback registry identity as untyped `i32`,
+  - the remaining blocker is pushed further down to the runtime-facing handle/value substrate and the still-integer callback argument lane.
+- Verification:
+  - `cargo test -p oxvba-com --quiet`
+  - `cargo test -p oxvba-hal --quiet`
+  - `cargo test -p oxvba-host --lib --quiet`
+
 ## 2026-03-11 - COM member/event identity typed on the shared boundary
 
 - Tightened the shared COM model and its boundary consumers in:

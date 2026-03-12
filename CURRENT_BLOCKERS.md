@@ -151,13 +151,18 @@ Run context: active parity/compliance execution plus in-progress feature worklis
     - `ComInvokeRequest.member` now carries `ComMemberToken`,
     - `ComCallbackPayload.event` now carries `ComMemberToken`,
     - `ComObjectDescriptor::{known_member_tokens,known_event_tokens,default_member_token}` now carry typed member tokens,
+  - the standard-adapter COM state store now also uses typed identity internally for its active registries:
+    - `bindings: BTreeMap<ComObjectToken, ...>`,
+    - `subscriptions: BTreeMap<ComSubscriptionToken, ...>`,
+    - `callbacks: BTreeMap<ComCallbackToken, ...>`,
+    - `pending_callbacks: VecDeque<ComCallbackToken>`,
   - the remaining runtime/host boundary holdouts are now concentrated in:
-    - remaining raw `i32`-backed COM object/binding identity shapes (`ObjectHandle`, `ComObjectToken`, binding handles) below the semantic dispatch surface,
+    - remaining raw `i32`-backed object/binding representations below those typed surfaces (`ObjectHandle`, `ComObjectToken`, binding handles, callback args),
     - remaining direct interpreter/test/caller expectations that still consume the legacy integer observation aliases,
     - the remaining direct legacy observation surface is now mostly the explicit public compatibility API itself plus callers that deliberately verify that compatibility API,
   - the new `ComValue` carrier and generic dynamic-object protocol can live at the COM boundary, but they cannot yet become the single runtime object/value model while the wider execution substrate remains token-only.
 - Exact unblock steps:
-  - replace the remaining raw `i32`-backed COM object/binding identity shapes below the semantic dispatch surface with the canonical runtime object/value model or an explicit indirection model,
+  - replace the remaining raw `i32`-backed object/binding representations below the typed COM surfaces with the canonical runtime object/value model or an explicit indirection model,
   - decide and implement the runtime-facing semantic representation for external object identity/binding handles so `create_object`/`release_object`/`describe_object` and dynamic binding state stop depending on raw integer tokens,
   - migrate the remaining COM dispatch/dynlink compatibility shims once that object/binding representation exists,
   - plan and execute migration of:
