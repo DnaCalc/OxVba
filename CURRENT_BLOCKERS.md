@@ -174,8 +174,12 @@ Run context: active parity/compliance execution plus in-progress feature worklis
     - `ComCallbackPayload.object` now carries `ObjectHandle`,
     - `ComValue::ObjectHandle(...)` now carries `ObjectHandle`,
     - adapter-native COM helpers now resolve `ObjectHandle` to adapter-internal `ComObjectToken` only at the adapter lookup edge,
+  - the standard-adapter dynlink binding registry now allocates opaque binding handles instead of aliasing `BindingHandle` to `DynLinkSymbol.raw()`:
+    - descriptor IDs map to adapter-owned `BindingHandle` values,
+    - bound handles map back to `DynLinkSymbol` only inside adapter state,
+    - `invoke_bound(...)` now resolves the symbol from adapter state instead of treating the binding handle itself as the symbol token,
   - the remaining runtime/host boundary holdouts are now concentrated in:
-    - remaining raw `i32`-backed object/binding representations below those typed surfaces (`ObjectHandle`, binding handles),
+    - remaining raw `i32`-backed object/binding representations below those typed surfaces (`ObjectHandle`, `BindingHandle`),
     - remaining direct interpreter/test/caller expectations that still consume the legacy integer observation aliases,
     - the remaining direct legacy observation surface is now mostly the explicit public compatibility API itself plus callers that deliberately verify that compatibility API,
   - the new `ComValue` carrier and generic dynamic-object protocol can live at the COM boundary, but they cannot yet become the single runtime object/value model while the wider execution substrate remains token-only.

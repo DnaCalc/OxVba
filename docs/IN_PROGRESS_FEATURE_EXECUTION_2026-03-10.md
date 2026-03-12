@@ -189,6 +189,7 @@ Status vocabulary:
     - native COM event sink/request scaffolding now also preserves typed COM identity end to end (`ComConnectionPointAdviseRequest`, `OxvbaComEventSink`, `OxvbaComEventSourceInterfaceSink`),
     - COM token and runtime handle wrappers are now explicitly `repr(transparent)` so that typed bookkeeping no longer depends on accidental layout,
     - the shared runtime-facing COM model now uses `ObjectHandle` for object identity (`ComInvokeRequest.object`, `ComObjectDescriptor.object`, `ComCallbackPayload.object`, `ComValue::ObjectHandle(...)`) and reduces `ComObjectToken` to adapter-internal lookup/state,
+    - the standard dynlink binding registry now allocates opaque `BindingHandle` values instead of aliasing them directly to `DynLinkSymbol.raw()`,
     - the remaining active seam is the explicit raw-`i32` HAL compatibility contract plus the still-legacy-heavy interpreter/caller/test estate around integer snapshots.
 
 ### `IP-05` Windows early-bound COM and type-library parity

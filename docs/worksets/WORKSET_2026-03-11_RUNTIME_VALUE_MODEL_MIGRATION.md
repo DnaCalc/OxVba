@@ -135,6 +135,10 @@ Completed slices:
    - `ComCallbackPayload.object` now uses `ObjectHandle`,
    - `ComValue::ObjectHandle(...)` now uses `ObjectHandle`,
    - adapter-native COM helpers now resolve `ObjectHandle` to adapter-internal `ComObjectToken` only at lookup/state edges.
+53. The standard dynlink binding registry now allocates opaque `BindingHandle` values instead of aliasing them directly to `DynLinkSymbol.raw()`:
+   - descriptor IDs resolve to adapter-owned binding handles,
+   - binding handles resolve back to `DynLinkSymbol` only inside adapter state,
+   - `invoke_bound(...)` now resolves symbol identity from adapter state instead of treating the binding handle itself as the symbol token.
 
 Remaining blocker seam:
 1. explicit raw `i32` compatibility signatures still anchor the remaining legacy COM seams,

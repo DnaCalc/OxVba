@@ -1,5 +1,18 @@
 # Implementation Log
 
+## 2026-03-12 - Standard dynlink binding handles are now opaque
+
+- Continued the runtime handle migration in [standard.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-hal\src\adapters\standard.rs).
+- The standard adapter no longer aliases `BindingHandle` directly to `DynLinkSymbol.raw()`:
+  - descriptor IDs now resolve to adapter-owned binding handles,
+  - binding handles resolve back to `DynLinkSymbol` only inside adapter state,
+  - `invoke_bound(...)` now resolves symbol identity from adapter state instead of treating the binding handle itself as the symbol token.
+- Net effect:
+  - dynamic-link binding identity is now more consistent with the semantic-handle direction already taken for COM object identity,
+  - the remaining blocker is narrowed further toward the underlying raw handle representation and the legacy integer observation/compatibility lanes.
+- Verification:
+  - `cargo check -p oxvba-hal -p oxvba-vm -p oxvba-host`
+
 ## 2026-03-11 - Shared COM model now uses runtime object handles
 
 - Shifted the shared COM-facing semantic model to runtime object identity in:

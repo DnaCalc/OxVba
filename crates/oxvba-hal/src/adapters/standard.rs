@@ -88,7 +88,7 @@ pub(crate) struct StandardHostServices {
     fs_state: Arc<Mutex<FileSystemState>>,
     com_state: Arc<Mutex<ComState>>,
     typelib_state: Arc<Mutex<TypeLibraryCacheState>>,
-    dynlink_bindings: Arc<Mutex<BTreeMap<u32, BindingHandle>>>,
+    dynlink_state: Arc<Mutex<DynLinkBindingState>>,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -195,7 +195,7 @@ impl StandardHostServices {
             fs_state: Arc::new(Mutex::new(FileSystemState::default())),
             com_state: Arc::new(Mutex::new(ComState::default())),
             typelib_state: Arc::new(Mutex::new(TypeLibraryCacheState::default())),
-            dynlink_bindings: Arc::new(Mutex::new(BTreeMap::new())),
+            dynlink_state: Arc::new(Mutex::new(DynLinkBindingState::default())),
         }
     }
 
@@ -3816,8 +3816,7 @@ impl DynamicLinkHal for StandardHostServices {
             ));
         }
 
-        let binding = BindingHandle::new(descriptor.symbol.raw());
-        let mut table = self.dynlink_bindings.lock().map_err(|_| {
+        let mut state = self.dynlink_state.lock().map_err(|_| {
             HalError::adapter_fault(
                 self.profile,
                 capability,
@@ -3825,21 +3824,34 @@ impl DynamicLinkHal for StandardHostServices {
                 "dynlink binding table lock poisoned",
             )
         })?;
-        if let Some(existing) = table.get(&descriptor.descriptor_id).copied() {
-            if existing != binding {
+        if let Some(existing) = state.descriptors.get(&descriptor.descriptor_id).copied() {
+            let Some(existing_symbol) = state.bindings.get(&existing).copied() else {
                 return Err(HalError::adapter_fault(
                     self.profile,
                     capability,
                     "invoke_symbol",
                     format!(
-                        "descriptor {} binding mismatch: existing={}, new={}",
-                        descriptor.descriptor_id, existing, binding
+                        "descriptor {} binding {} is missing from dynlink registry",
+                        descriptor.descriptor_id, existing
+                    ),
+                ));
+            };
+            if existing_symbol != descriptor.symbol {
+                return Err(HalError::adapter_fault(
+                    self.profile,
+                    capability,
+                    "invoke_symbol",
+                    format!(
+                        "descriptor {} binding mismatch: existing={} resolved_symbol={} new_symbol={}",
+                        descriptor.descriptor_id, existing, existing_symbol, descriptor.symbol
                     ),
                 ));
             }
             return Ok(existing);
         }
-        table.insert(descriptor.descriptor_id, binding);
+        let binding = state.allocate_binding();
+        state.descriptors.insert(descriptor.descriptor_id, binding);
+        state.bindings.insert(binding, descriptor.symbol);
         Ok(binding)
     }
 
@@ -3859,11 +3871,32 @@ impl DynamicLinkHal for StandardHostServices {
         if !self.policy.allow_dynamic_link {
             return Err(self.denied(capability, "invoke_symbol"));
         }
+        let symbol = {
+            let state = self.dynlink_state.lock().map_err(|_| {
+                HalError::adapter_fault(
+                    self.profile,
+                    capability,
+                    "invoke_symbol",
+                    "dynlink binding table lock poisoned",
+                )
+            })?;
+            state.bindings.get(&binding).copied().ok_or_else(|| {
+                HalError::adapter_fault(
+                    self.profile,
+                    capability,
+                    "invoke_symbol",
+                    format!(
+                        "binding handle {} is not resolved in dynlink registry",
+                        binding
+                    ),
+                )
+            })?
+        };
         let arg = self.runtime_value_to_legacy_i32(&arg, capability, "invoke_symbol", "arg")?;
         if self.native_mode_enabled()
             && matches!(self.profile, HalProfileId::Windows | HalProfileId::Linux)
         {
-            return match binding.raw() {
+            return match symbol.raw() {
                 s if s == external_symbol_token("host", "ping", "hostping") => {
                     Ok(RuntimeValue::I32(arg.saturating_add(1)))
                 }
@@ -3875,13 +3908,13 @@ impl DynamicLinkHal for StandardHostServices {
                     capability,
                     "invoke_symbol",
                     format!(
-                        "symbol token {} not resolved in host-backed lane",
-                        binding.raw()
+                        "binding handle {} resolved to unsupported symbol token {} in host-backed lane",
+                        binding, symbol
                     ),
                 )),
             };
         }
-        Ok(RuntimeValue::I32(binding.raw().saturating_add(arg)))
+        Ok(RuntimeValue::I32(symbol.raw().saturating_add(arg)))
     }
 
     fn invoke_descriptor(
@@ -4277,6 +4310,20 @@ impl ComState {
 #[derive(Debug, Default)]
 struct TypeLibraryCacheState {
     metadata: BTreeMap<String, TypeLibMetadataBlob>,
+}
+
+#[derive(Debug, Default)]
+struct DynLinkBindingState {
+    next_binding: i32,
+    descriptors: BTreeMap<u32, BindingHandle>,
+    bindings: BTreeMap<BindingHandle, DynLinkSymbol>,
+}
+
+impl DynLinkBindingState {
+    fn allocate_binding(&mut self) -> BindingHandle {
+        self.next_binding = self.next_binding.saturating_add(1).max(1);
+        BindingHandle::new(80_000i32.saturating_add(self.next_binding))
+    }
 }
 
 type RawDispatchPtr = usize;
