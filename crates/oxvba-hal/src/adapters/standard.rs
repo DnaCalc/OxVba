@@ -2837,21 +2837,6 @@ impl ComHal for StandardHostServices {
         ))
     }
 
-    fn create_object_legacy(&self, prog_id: i32) -> HalResult<ObjectHandle> {
-        match self.create_object(RuntimeValue::I32(prog_id))? {
-            RuntimeValue::ObjectHandle(handle) => Ok(handle),
-            other => Err(HalError::adapter_fault(
-                self.profile,
-                CapabilityId::ComActivationDispatch,
-                "create_object_legacy",
-                format!(
-                    "semantic create_object returned non-object handle for legacy projection: {:?}",
-                    other
-                ),
-            )),
-        }
-    }
-
     fn release_object(&self, object: ObjectHandle) -> HalResult<RuntimeValue> {
         let capability = CapabilityId::ComActivationDispatch;
         if !self.supports(capability) {
@@ -2941,12 +2926,6 @@ impl ComHal for StandardHostServices {
             );
         }
         Ok(RuntimeValue::I32(1))
-    }
-
-    fn release_object_legacy(&self, object: ObjectHandle) -> HalResult<i32> {
-        self.release_object(object)?
-            .to_legacy_i32()
-            .map_err(|message| self.com_dispatch_adapter_fault(message))
     }
 
     fn describe_object(&self, object: ObjectHandle) -> HalResult<Option<ComObjectDescriptor>> {
@@ -3173,12 +3152,6 @@ impl ComHal for StandardHostServices {
                     acc.saturating_add(*arg)
                 }),
         ))
-    }
-
-    fn dispatch_invoke_legacy_v2(&self, request: &ComInvokeRequest) -> HalResult<i32> {
-        self.dispatch_invoke_runtime_value_v2(request)?
-            .to_legacy_i32()
-            .map_err(|message| self.com_dispatch_adapter_fault(message))
     }
 
     fn subscribe_event(
@@ -3648,16 +3621,6 @@ impl ComHal for StandardHostServices {
         Ok(RuntimeValue::I32(
             i32::try_from(removed).unwrap_or(i32::MAX),
         ))
-    }
-
-    fn invalidate_typelib_cache_legacy(
-        &self,
-        scope: TypeLibCacheScope,
-        reference_name: Option<&str>,
-    ) -> HalResult<i32> {
-        self.invalidate_typelib_cache(scope, reference_name)?
-            .to_legacy_i32()
-            .map_err(|message| self.com_dispatch_adapter_fault(message))
     }
 }
 
@@ -7664,6 +7627,24 @@ mod tests {
             .map(expect_i32)
     }
 
+    fn dispatch_invoke_legacy(
+        host: &StandardHostServices,
+        object: i32,
+        member: i32,
+        arg: i32,
+    ) -> crate::error::HalResult<i32> {
+        dispatch_invoke_legacy_v2(host, &ComInvokeRequest::legacy(object, member, arg))
+    }
+
+    fn dispatch_invoke_legacy_v2(
+        host: &StandardHostServices,
+        request: &ComInvokeRequest,
+    ) -> crate::error::HalResult<i32> {
+        host.dispatch_invoke_runtime_value_v2(request)?
+            .to_legacy_i32()
+            .map_err(|message| host.com_dispatch_adapter_fault(message))
+    }
+
     trait SemanticComTestExt {
         fn create_object_test(
             &self,
@@ -7677,6 +7658,16 @@ mod tests {
             &self,
             scope: TypeLibCacheScope,
             reference_name: Option<&str>,
+        ) -> crate::error::HalResult<i32>;
+        fn dispatch_invoke_legacy(
+            &self,
+            object: i32,
+            member: i32,
+            arg: i32,
+        ) -> crate::error::HalResult<i32>;
+        fn dispatch_invoke_legacy_v2(
+            &self,
+            request: &ComInvokeRequest,
         ) -> crate::error::HalResult<i32>;
     }
 
@@ -7701,6 +7692,22 @@ mod tests {
             reference_name: Option<&str>,
         ) -> crate::error::HalResult<i32> {
             invalidate_typelib_cache_test(self, scope, reference_name)
+        }
+
+        fn dispatch_invoke_legacy(
+            &self,
+            object: i32,
+            member: i32,
+            arg: i32,
+        ) -> crate::error::HalResult<i32> {
+            dispatch_invoke_legacy(self, object, member, arg)
+        }
+
+        fn dispatch_invoke_legacy_v2(
+            &self,
+            request: &ComInvokeRequest,
+        ) -> crate::error::HalResult<i32> {
+            dispatch_invoke_legacy_v2(self, request)
         }
     }
 
@@ -10140,15 +10147,21 @@ mod tests {
                     .raw(),
                 5_000i32.saturating_add(prog_id)
             );
+            let request = ComInvokeRequest::legacy(object, member, arg);
+            let semantic = host
+                .dispatch_invoke_runtime_value_v2(&request)
+                .expect("semantic dispatch_invoke should succeed");
             prop_assert_eq!(
-                host.dispatch_invoke_legacy(object, member, arg)
-                    .expect("dispatch_invoke should succeed"),
-                object.saturating_add(member).saturating_add(arg)
+                host.dispatch_invoke_legacy_v2(&request)
+                    .expect("dispatch_invoke legacy projection should succeed"),
+                semantic
+                    .to_legacy_i32()
+                    .expect("semantic dispatch result should project to legacy slot")
             );
             prop_assert_eq!(
                 host.invoke_symbol(symbol.into(), rv(arg))
                     .expect("invoke_symbol should succeed"),
-                RuntimeValue::from_legacy_i32(symbol.saturating_add(arg))
+                RuntimeValue::I32(symbol.saturating_add(arg))
             );
         }
     }

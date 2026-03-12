@@ -143,42 +143,38 @@ Status vocabulary:
     - dynamic-link symbol identity is now explicitly typed as `DynLinkSymbol` at the runtime/HAL seam,
     - `DynLinkDescriptorView.symbol` and `DynamicLinkHal::invoke_symbol(...)` now use that typed symbol directly at the runtime/HAL seam,
     - serialized bytecode descriptor/instruction symbol fields now also use `DynLinkSymbol`,
-    - the standard Windows COM adapter now treats `dispatch_invoke_runtime_value_v2(...)` as the canonical implementation seam and projects the token-return form only at the compatibility edge,
+    - the standard Windows COM adapter now treats `dispatch_invoke_runtime_value_v2(...)` as the canonical implementation seam,
     - the canonical runtime-value COM invoke path now explicitly preserves the working zero-argument native `IDispatch` method/property-get cases,
     - host public execution/session observation APIs are now value-first by name:
       - `Engine::execute_source_with_snapshot*` now returns semantic `RuntimeValue` snapshots,
-      - explicit integer-slot compatibility is labeled `execute_source_with_legacy_snapshot*`,
       - `Engine::execute_project_with_snapshot_phased(...)` now returns semantic `RuntimeValue` snapshots,
-      - explicit integer-slot compatibility is labeled `execute_project_with_legacy_snapshot_phased(...)`,
-      - `ProjectRuntimeSession::snapshot()` is now the semantic primary and `snapshot_legacy_slots()` is the explicit compatibility view,
+      - `ProjectRuntimeSession::snapshot()` is now the semantic primary and `snapshot_slots()` is the remaining explicit integer compatibility view,
     - VM/JIT library snapshot helpers are now also value-first by name:
       - `oxvba_vm::execute_and_snapshot*` now returns semantic `RuntimeValue` snapshots,
-      - explicit integer-slot compatibility is labeled `execute_and_legacy_snapshot*`,
       - `JitEngine::execute_and_snapshot*` now returns semantic `RuntimeValue` snapshots,
-      - explicit integer-slot compatibility is labeled `execute_and_legacy_snapshot*`,
+      - the old VM/JIT/engine legacy snapshot wrapper APIs have been removed,
     - the direct `Vm` observation surface is now also value-first by name:
       - `Vm::snapshot(...)` is the semantic primary,
-      - explicit integer-slot compatibility is labeled `Vm::snapshot_legacy_slots(...)`,
+      - explicit integer-slot compatibility is labeled `Vm::snapshot_slots(...)`,
     - the COM activation seam is now also value-first by name:
       - `ComHal::create_object(...)` now takes semantic `RuntimeValue` ProgID input and returns semantic `RuntimeValue::ObjectHandle(...)`,
-      - explicit raw-token compatibility is labeled `ComHal::create_object_legacy(...)`,
     - the dynamic-link binding/invoke seam is now also semantic on argument/result flow:
       - `DynamicLinkHal::prepare_invoke(...)` now takes and returns `RuntimeValue`,
       - `DynamicLinkHal::invoke_bound(...)` now takes and returns `RuntimeValue`,
     - COM release/cache-maintenance seams are now also semantic on return flow:
       - `ComHal::release_object(...)` now returns semantic `RuntimeValue`,
       - `ComHal::invalidate_typelib_cache(...)` now returns semantic `RuntimeValue`,
-      - explicit raw-token compatibility is labeled `release_object_legacy(...)` and `invalidate_typelib_cache_legacy(...)`,
     - CLI execution now uses the semantic snapshot lane by default and derives integer slots from `RuntimeValue` only at the output edge,
     - host-side COM end-to-end, early-binding, and registered-lane integration tests now execute through the semantic snapshot APIs rather than the legacy integer snapshot APIs,
     - the fixture-driven project integration suite now also executes through semantic project snapshots and projects back to legacy slots only at the assertion edge so the catalog format remains stable during migration,
     - the large internal `crates/oxvba-host/src/engine.rs` test estate now also executes through semantic source/project snapshot APIs underneath and uses local slot-projection helpers only where slot-shaped assertions remain intentional,
-    - JIT parity tests and the remaining direct VM/JIT equivalence checks now also execute through semantic snapshot helpers underneath, leaving the legacy snapshot APIs largely as explicit public compatibility shims,
-    - the standard Windows COM adapter now treats `create_object(...)`, `release_object(...)`, and `invalidate_typelib_cache(...)` as semantic-primary seams and projects the `*_legacy(...)` variants only at the compatibility edge,
-    - the standard-adapter COM regression tests now also use semantic helper paths for activation/release/cache maintenance by default, leaving the corresponding legacy methods mostly to explicit compatibility coverage,
+    - JIT parity tests and the remaining direct VM/JIT equivalence checks now also execute through semantic snapshot helpers underneath,
+    - the standard Windows COM adapter now treats `create_object(...)`, `release_object(...)`, and `invalidate_typelib_cache(...)` as semantic-primary seams, and the old `*_legacy(...)` maintenance wrappers have been removed from the HAL contract,
+    - the standard-adapter COM regression tests now also use semantic helper paths for activation/release/cache maintenance by default,
     - the Cranelift subset helper now also exposes semantic `RuntimeValue` snapshots as its primary API, with an explicit `execute_bytecode_legacy(...)` compatibility projection retained for the integer subset,
     - CLI execution no longer stores duplicate integer snapshots in memory and derives `SLOTS:` output directly from semantic runtime values only when requested,
     - the mixed edge/scaling host integration suite now also executes through semantic project snapshots instead of the legacy integer snapshot API,
+    - the raw scalar `dispatch_invoke_legacy(object, member, arg)` helper and the request-shaped `dispatch_invoke_legacy_v2(...)` compatibility entrypoint have both been removed from the public HAL contract and reduced to test-local helpers inside the standard-adapter regression suite,
     - the remaining active seam is the explicit raw-`i32` HAL compatibility contract plus the still-legacy-heavy interpreter/caller/test estate around integer snapshots.
 
 ### `IP-05` Windows early-bound COM and type-library parity

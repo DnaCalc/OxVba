@@ -109,26 +109,14 @@ pub trait ProcessEnvHal: Send + Sync {
 
 pub trait ComHal: Send + Sync {
     fn create_object(&self, prog_id: RuntimeValue) -> HalResult<RuntimeValue>;
-    fn create_object_legacy(&self, prog_id: i32) -> HalResult<ObjectHandle>;
     fn release_object(&self, object: ObjectHandle) -> HalResult<RuntimeValue>;
-    fn release_object_legacy(&self, object: ObjectHandle) -> HalResult<i32>;
     fn describe_object(&self, object: ObjectHandle) -> HalResult<Option<ComObjectDescriptor>>;
     /// Canonical COM invoke seam. Implementations should translate between COM
     /// wire values and the runtime semantic value model here.
-    ///
-    /// `dispatch_invoke_v2` remains as a legacy compatibility projection while
-    /// the wider runtime still exposes integer observation lanes.
     fn dispatch_invoke_runtime_value_v2(
         &self,
         request: &ComInvokeRequest,
     ) -> HalResult<RuntimeValue>;
-    /// Legacy compatibility seam for callers that still observe integer slots.
-    /// This should project the canonical runtime-value result when possible.
-    fn dispatch_invoke_legacy_v2(&self, request: &ComInvokeRequest) -> HalResult<i32>;
-    fn dispatch_invoke_legacy(&self, object: i32, member: i32, arg: i32) -> HalResult<i32> {
-        let request = ComInvokeRequest::legacy(object, member, arg);
-        self.dispatch_invoke_legacy_v2(&request)
-    }
     fn subscribe_event(&self, object: RuntimeValue, event: RuntimeValue)
     -> HalResult<RuntimeValue>;
     fn unsubscribe_event(&self, subscription: RuntimeValue) -> HalResult<RuntimeValue>;
@@ -154,11 +142,6 @@ pub trait ComHal: Send + Sync {
         scope: TypeLibCacheScope,
         reference_name: Option<&str>,
     ) -> HalResult<RuntimeValue>;
-    fn invalidate_typelib_cache_legacy(
-        &self,
-        scope: TypeLibCacheScope,
-        reference_name: Option<&str>,
-    ) -> HalResult<i32>;
 }
 
 pub trait TimeLocaleHal: Send + Sync {

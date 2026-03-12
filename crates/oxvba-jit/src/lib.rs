@@ -10,7 +10,7 @@ use oxvba_hal::{
     model::{HalProfileId, HostPolicy},
     traits::HostServices,
 };
-use oxvba_runtime::{RuntimeValue, value_tags::EMPTY_TAG};
+use oxvba_runtime::RuntimeValue;
 use oxvba_vm::execute_and_snapshot_with_host;
 use thiserror::Error;
 
@@ -23,7 +23,10 @@ pub enum JitError {
 #[derive(Debug, Default)]
 pub struct JitEngine;
 
+#[cfg(test)]
 fn project_runtime_values_to_legacy_slots(values: Vec<RuntimeValue>) -> Vec<i32> {
+    use oxvba_runtime::value_tags::EMPTY_TAG;
+
     values
         .into_iter()
         .map(|value| value.to_legacy_i32().unwrap_or(EMPTY_TAG))
@@ -46,11 +49,6 @@ impl JitEngine {
         self.execute_and_snapshot(bytecode)
     }
 
-    pub fn execute_and_legacy_snapshot(&self, bytecode: &Bytecode) -> Result<Vec<i32>, JitError> {
-        self.execute_and_snapshot(bytecode)
-            .map(project_runtime_values_to_legacy_slots)
-    }
-
     pub fn execute_and_snapshot_with_host(
         &self,
         bytecode: &Bytecode,
@@ -69,15 +67,6 @@ impl JitEngine {
     ) -> Result<Vec<RuntimeValue>, JitError> {
         self.execute_and_snapshot_with_host(bytecode, host_services)
     }
-
-    pub fn execute_and_legacy_snapshot_with_host(
-        &self,
-        bytecode: &Bytecode,
-        host_services: Arc<dyn HostServices>,
-    ) -> Result<Vec<i32>, JitError> {
-        self.execute_and_snapshot_with_host(bytecode, host_services)
-            .map(project_runtime_values_to_legacy_slots)
-    }
 }
 
 fn default_host_services() -> Arc<dyn HostServices> {
@@ -87,6 +76,8 @@ fn default_host_services() -> Arc<dyn HostServices> {
 #[cfg(test)]
 mod tests {
     use super::{JitEngine, cranelift};
+    #[cfg(target_os = "windows")]
+    use crate::project_runtime_values_to_legacy_slots;
     use oxvba_hal::{
         adapters,
         model::{HalProfileId, HostPolicy},
@@ -148,9 +139,11 @@ mod tests {
         let host_services =
             adapters::for_profile(HalProfileId::Windows, HostPolicy::interactive_dev());
 
-        let out = JitEngine
-            .execute_and_legacy_snapshot_with_host(&bytecode, host_services)
-            .expect("fallback legacy snapshot should succeed");
+        let out = project_runtime_values_to_legacy_slots(
+            JitEngine
+                .execute_and_snapshot_with_host(&bytecode, host_services)
+                .expect("fallback semantic snapshot should succeed"),
+        );
         assert_eq!(out.len(), 1);
         assert!(out[0] > 0);
     }

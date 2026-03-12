@@ -126,16 +126,12 @@ impl Vm {
         }
     }
 
-    pub fn snapshot_legacy_slots(&self, slot_count: usize) -> Vec<i32> {
+    pub fn snapshot_slots(&self, slot_count: usize) -> Vec<i32> {
         let end = slot_count.min(self.registers.registers.len());
         self.registers.registers[..end]
             .iter()
             .map(|value| value.to_legacy_i32().unwrap_or(EMPTY_TAG))
             .collect()
-    }
-
-    pub fn snapshot_slots(&self, slot_count: usize) -> Vec<i32> {
-        self.snapshot_legacy_slots(slot_count)
     }
 
     pub fn snapshot(&self, slot_count: usize) -> Vec<RuntimeValue> {

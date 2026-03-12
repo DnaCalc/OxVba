@@ -142,19 +142,11 @@ impl ProcessEnvHal for NullHostServices {
 }
 
 impl ComHal for NullHostServices {
-    fn create_object_legacy(&self, _prog_id: i32) -> HalResult<ObjectHandle> {
-        Err(self.unsupported(CapabilityId::ComActivationDispatch, "create_object"))
-    }
-
     fn create_object(&self, _prog_id: RuntimeValue) -> HalResult<RuntimeValue> {
         Err(self.unsupported(CapabilityId::ComActivationDispatch, "create_object"))
     }
 
     fn release_object(&self, _object: ObjectHandle) -> HalResult<RuntimeValue> {
-        Err(self.unsupported(CapabilityId::ComActivationDispatch, "release_object"))
-    }
-
-    fn release_object_legacy(&self, _object: ObjectHandle) -> HalResult<i32> {
         Err(self.unsupported(CapabilityId::ComActivationDispatch, "release_object"))
     }
 
@@ -166,10 +158,6 @@ impl ComHal for NullHostServices {
         &self,
         _request: &oxvba_com::ComInvokeRequest,
     ) -> HalResult<RuntimeValue> {
-        Err(self.unsupported(CapabilityId::ComActivationDispatch, "dispatch_invoke"))
-    }
-
-    fn dispatch_invoke_legacy_v2(&self, _request: &oxvba_com::ComInvokeRequest) -> HalResult<i32> {
         Err(self.unsupported(CapabilityId::ComActivationDispatch, "dispatch_invoke"))
     }
 
@@ -236,17 +224,6 @@ impl ComHal for NullHostServices {
         _scope: TypeLibCacheScope,
         _reference_name: Option<&str>,
     ) -> HalResult<RuntimeValue> {
-        Err(self.unsupported(
-            CapabilityId::ComActivationDispatch,
-            "invalidate_typelib_cache",
-        ))
-    }
-
-    fn invalidate_typelib_cache_legacy(
-        &self,
-        _scope: TypeLibCacheScope,
-        _reference_name: Option<&str>,
-    ) -> HalResult<i32> {
         Err(self.unsupported(
             CapabilityId::ComActivationDispatch,
             "invalidate_typelib_cache",

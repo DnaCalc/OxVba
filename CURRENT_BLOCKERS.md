@@ -117,50 +117,43 @@ Run context: active parity/compliance execution plus in-progress feature worklis
   - UI/process host intrinsics now likewise read semantic `RuntimeValue` directly from the HAL boundary instead of routing through removed `*_value()` wrappers,
   - dynamic-link host intrinsics and diagnostics/conformance probes now likewise use direct semantic `RuntimeValue` contracts instead of routing through removed `*_value()` wrappers,
   - COM event helper host intrinsics and engine subscription paths now likewise use direct semantic `RuntimeValue` contracts instead of routing through removed `*_value()` wrappers,
-  - the standard Windows COM adapter now treats `dispatch_invoke_runtime_value_v2(...)` as the canonical implementation seam and projects `dispatch_invoke_legacy_v2(...)` from that semantic path only at the compatibility edge,
+  - the standard Windows COM adapter now treats `dispatch_invoke_runtime_value_v2(...)` as the canonical implementation seam, and the old legacy-projection helper has been reduced to test-local coverage only,
   - the standard Windows COM adapter now also treats `create_object(...)`, `release_object(...)`, and `invalidate_typelib_cache(...)` as the canonical semantic seams and projects the corresponding `*_legacy(...)` forms only at the compatibility edge,
   - the standard-adapter COM regression tests now also use semantic helper paths for activation/release/cache maintenance by default, leaving the corresponding legacy methods mostly to explicit compatibility coverage,
   - the runtime-value COM invoke path now explicitly preserves the working zero-argument native `IDispatch` method/property-get behavior instead of regressing `DISP_E_BADPARAMCOUNT` on the canonical path,
   - host public execution/session observation APIs are now value-first by name:
     - `Engine::execute_source_with_snapshot*` now returns semantic `RuntimeValue` snapshots,
-    - explicit integer-slot compatibility is now labeled `execute_source_with_legacy_snapshot*`,
-    - `ProjectRuntimeSession::snapshot()` is now the semantic primary and `snapshot_legacy_slots()` is the explicit compatibility view,
+    - `ProjectRuntimeSession::snapshot()` is now the semantic primary and `snapshot_slots()` is the remaining explicit integer compatibility view,
   - VM/JIT library snapshot helpers are now value-first by name:
     - `oxvba_vm::execute_and_snapshot*` now returns semantic `RuntimeValue` snapshots,
-    - explicit integer-slot compatibility is now labeled `execute_and_legacy_snapshot*`,
     - `JitEngine::execute_and_snapshot*` now returns semantic `RuntimeValue` snapshots,
-    - explicit integer-slot compatibility is now labeled `execute_and_legacy_snapshot*`,
   - the direct `Vm` observation surface is now also value-first by name:
     - `Vm::snapshot(...)` is the semantic primary,
-    - explicit integer-slot compatibility is now labeled `Vm::snapshot_legacy_slots(...)`,
+    - explicit integer-slot compatibility is now labeled `Vm::snapshot_slots(...)`,
   - the COM activation seam is now also value-first by name:
     - `ComHal::create_object(...)` now takes semantic `RuntimeValue` ProgID input and returns semantic `RuntimeValue::ObjectHandle(...)`,
-    - explicit raw-token compatibility is now labeled `ComHal::create_object_legacy(...)`,
   - the dynamic-link binding/invoke seam is now also semantic on argument/result flow:
     - `DynamicLinkHal::prepare_invoke(...)` now takes and returns `RuntimeValue`,
     - `DynamicLinkHal::invoke_bound(...)` now takes and returns `RuntimeValue`,
   - COM release/cache-maintenance seams are now also semantic on return flow:
     - `ComHal::release_object(...)` now returns semantic `RuntimeValue`,
     - `ComHal::invalidate_typelib_cache(...)` now returns semantic `RuntimeValue`,
-    - explicit raw-token compatibility now lives under `release_object_legacy(...)` and `invalidate_typelib_cache_legacy(...)`,
   - CLI execution now also uses the semantic snapshot lane by default and derives `SLOTS:` output from that value path only when needed,
   - host-side COM end-to-end, early-binding, and registered-lane integration tests now execute through the semantic snapshot APIs rather than the legacy integer snapshot APIs,
   - the fixture-driven project integration suite now also executes through semantic project snapshots and projects back to legacy slots only at assertion time so the catalog format can remain stable during migration,
   - the large internal `crates/oxvba-host/src/engine.rs` test estate now also executes through semantic source/project snapshot APIs underneath and uses local slot-projection helpers only at assertion edges,
-  - JIT parity tests and the remaining direct VM/JIT equivalence checks now also execute through semantic snapshot helpers underneath, leaving the legacy snapshot APIs largely as explicit public compatibility shims,
+  - JIT parity tests and the remaining direct VM/JIT equivalence checks now also execute through semantic snapshot helpers underneath, and the old VM/JIT/engine legacy snapshot wrapper APIs have been removed,
   - the Cranelift subset helper now also exposes semantic `RuntimeValue` snapshots as its primary execution API, with the integer-slot form reduced to an explicit compatibility wrapper,
   - the CLI no longer stores a duplicate `Vec<i32>` execution result; `SLOTS:` output is now projected directly from semantic runtime values only at the output edge,
   - the mixed edge/scaling host integration suite now also executes through semantic project snapshots instead of the legacy integer snapshot API,
+  - the raw scalar `dispatch_invoke_legacy(object, member, arg)` helper and the request-shaped `dispatch_invoke_legacy_v2(...)` compatibility entrypoint have both been removed from the public HAL contract and reduced to test-local helpers inside the standard-adapter regression suite,
   - the remaining runtime/host boundary holdouts are now concentrated in:
-    - `ComHal::dispatch_invoke_legacy_v2`,
-    - `ComHal::{create_object_legacy,release_object_legacy,invalidate_typelib_cache_legacy}`,
-    - the legacy `ComHal::dispatch_invoke(...)` helper over raw member/object/arg tokens,
-    - remaining explicit raw `i32` compatibility signatures in the HAL COM seam,
+    - remaining raw `i32`-backed COM identity/member shapes (`ObjectHandle`, `ComObjectToken`, member DISPIDs) below the semantic dispatch surface,
     - remaining direct interpreter/test/caller expectations that still consume the legacy integer observation aliases,
     - the remaining direct legacy observation surface is now mostly the explicit public compatibility API itself plus callers that deliberately verify that compatibility API,
   - the new `ComValue` carrier and generic dynamic-object protocol can live at the COM boundary, but they cannot yet become the single runtime object/value model while the wider execution substrate remains token-only.
 - Exact unblock steps:
-  - remove the remaining explicit raw `i32` compatibility signatures from the HAL COM seam in favor of the canonical runtime value model or an explicit indirection model,
+  - replace the remaining raw `i32`-backed COM identity/member shapes below the semantic dispatch surface with the canonical runtime object/value model or an explicit indirection model,
   - decide and implement the runtime-facing semantic representation for external object identity/binding handles so `create_object`/`release_object`/`describe_object` and dynamic binding state stop depending on raw integer tokens,
   - migrate the remaining COM dispatch/dynlink compatibility shims once that object/binding representation exists,
   - plan and execute migration of:

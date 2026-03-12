@@ -1,5 +1,84 @@
 # Implementation Log
 
+## 2026-03-11 - Dead `*_legacy_slots()` wrappers removed from VM and host session APIs
+
+- Contracted the remaining dead integer-observation wrappers in:
+  - [interpreter.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-vm\src\interpreter.rs),
+  - [engine.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-host\src\engine.rs).
+- Removed:
+  - `Vm::snapshot_legacy_slots(...)`,
+  - `ProjectRuntimeSession::snapshot_legacy_slots()`.
+- `snapshot_slots(...)` remains as the explicit integer compatibility view where it is still needed.
+- Net effect:
+  - the value-first observation API is narrower and less redundant,
+  - the remaining legacy observation surface is easier to reason about because only one integer projection name remains per runtime/session layer.
+- Verification:
+  - `cargo test -p oxvba-vm -p oxvba-host --quiet`
+
+## 2026-03-11 - Request-shaped legacy COM dispatch removed from HAL contract
+
+- Contracted the HAL COM dispatch surface in:
+  - [traits.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-hal\src\traits.rs),
+  - [standard.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-hal\src\adapters\standard.rs),
+  - [null.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-hal\src\adapters\null.rs),
+  - [wasm.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-hal\src\adapters\wasm.rs).
+- Removed the production `dispatch_invoke_legacy_v2(&ComInvokeRequest)` compatibility entrypoint from `ComHal`.
+- Kept the same standard-adapter regression coverage by moving the projection logic into a test-local helper that projects `dispatch_invoke_runtime_value_v2(...)` back to a legacy slot only inside tests.
+- Net effect:
+  - the public HAL COM dispatch surface is now semantic-only,
+  - the remaining runtime migration wall is below that seam: raw `i32`-backed object/member identity and the broader integer observation estate.
+- Verification:
+  - `cargo test -p oxvba-hal --quiet`
+
+## 2026-03-11 - Raw scalar COM dispatch helper removed from HAL contract
+
+- Contracted the HAL COM dispatch surface in:
+  - [traits.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-hal\src\traits.rs),
+  - [standard.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-hal\src\adapters\standard.rs).
+- Removed the production `dispatch_invoke_legacy(object, member, arg)` helper from `ComHal`.
+- Kept the same readability in the standard-adapter regression suite by replacing it with a test-local helper that builds `ComInvokeRequest::legacy(...)` and calls `dispatch_invoke_legacy_v2(...)`.
+- Net effect:
+  - the public HAL contract no longer exposes raw scalar COM dispatch entrypoints,
+  - the remaining explicit COM compatibility wall is now only the request-shaped `dispatch_invoke_legacy_v2(...)` seam.
+- Verification:
+  - `cargo test -p oxvba-hal --quiet`
+
+## 2026-03-11 - Legacy COM maintenance wrappers removed from HAL
+
+- Contracted the COM HAL surface in:
+  - [traits.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-hal\src\traits.rs),
+  - [standard.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-hal\src\adapters\standard.rs),
+  - [null.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-hal\src\adapters\null.rs),
+  - [wasm.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-hal\src\adapters\wasm.rs).
+- Removed the dead compatibility-only maintenance methods:
+  - `create_object_legacy(...)`,
+  - `release_object_legacy(...)`,
+  - `invalidate_typelib_cache_legacy(...)`.
+- Net effect:
+  - COM maintenance is now semantic-only at the HAL contract level,
+  - the remaining explicit COM raw-token wall is narrowed to dispatch compatibility.
+- Verification:
+  - `cargo test -p oxvba-hal --quiet`
+
+## 2026-03-11 - VM, JIT, and engine legacy snapshot wrappers removed
+
+- Contracted the public execution helpers in:
+  - [lib.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-vm\src\lib.rs),
+  - [lib.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-jit\src\lib.rs),
+  - [engine.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-host\src\engine.rs).
+- Removed the unused wrapper APIs that only reprojected semantic snapshots back to integer slots:
+  - `execute_and_legacy_snapshot*`,
+  - `execute_source_with_legacy_snapshot*`,
+  - `execute_project_with_legacy_snapshot_phased(...)`.
+- Updated the JIT regression coverage to project slots locally at the assertion edge instead of through public wrapper APIs.
+- Net effect:
+  - semantic snapshots are now the only public VM/JIT/engine execution result surface,
+  - integer-slot projection remains a local compatibility/testing concern rather than a first-class runtime API.
+- Verification:
+  - `cargo test -p oxvba-vm -p oxvba-jit -p oxvba-host -p oxvba-hal --quiet`
+  - `./scripts/check-governance.ps1`
+  - `./scripts/meta-check.ps1 -Fast -NoArtifacts`
+
 ## 2026-03-11 - Standard adapter COM regression tests now default to semantic helpers
 
 - Tightened the standard-adapter COM regression test estate in [standard.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-hal\src\adapters\standard.rs):

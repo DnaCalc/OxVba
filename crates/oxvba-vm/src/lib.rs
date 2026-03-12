@@ -13,16 +13,9 @@ use oxvba_hal::{
     model::{HostPolicy, native_host_profile},
     traits::HostServices,
 };
-use oxvba_runtime::{RuntimeValue, value_tags::EMPTY_TAG};
+use oxvba_runtime::RuntimeValue;
 
 pub use interpreter::Vm;
-
-fn project_runtime_values_to_legacy_slots(values: Vec<RuntimeValue>) -> Vec<i32> {
-    values
-        .into_iter()
-        .map(|value| value.to_legacy_i32().unwrap_or(EMPTY_TAG))
-        .collect()
-}
 
 pub fn execute(bytecode: &Bytecode) -> Result<(), String> {
     let mut vm = Vm::new(default_host_services());
@@ -39,10 +32,6 @@ pub fn execute_and_snapshot_values(bytecode: &Bytecode) -> Result<Vec<RuntimeVal
     execute_and_snapshot(bytecode)
 }
 
-pub fn execute_and_legacy_snapshot(bytecode: &Bytecode) -> Result<Vec<i32>, String> {
-    execute_and_snapshot(bytecode).map(project_runtime_values_to_legacy_slots)
-}
-
 pub fn execute_and_snapshot_with_typed_fastpaths(
     bytecode: &Bytecode,
     typed_fastpaths: bool,
@@ -57,14 +46,6 @@ pub fn execute_and_snapshot_values_with_typed_fastpaths(
     typed_fastpaths: bool,
 ) -> Result<Vec<RuntimeValue>, String> {
     execute_and_snapshot_with_typed_fastpaths(bytecode, typed_fastpaths)
-}
-
-pub fn execute_and_legacy_snapshot_with_typed_fastpaths(
-    bytecode: &Bytecode,
-    typed_fastpaths: bool,
-) -> Result<Vec<i32>, String> {
-    execute_and_snapshot_with_typed_fastpaths(bytecode, typed_fastpaths)
-        .map(project_runtime_values_to_legacy_slots)
 }
 
 pub fn execute_with_host(
@@ -91,14 +72,6 @@ pub fn execute_and_snapshot_values_with_host(
     execute_and_snapshot_with_host(bytecode, host_services)
 }
 
-pub fn execute_and_legacy_snapshot_with_host(
-    bytecode: &Bytecode,
-    host_services: Arc<dyn HostServices>,
-) -> Result<Vec<i32>, String> {
-    execute_and_snapshot_with_host(bytecode, host_services)
-        .map(project_runtime_values_to_legacy_slots)
-}
-
 pub fn execute_and_snapshot_with_host_and_typed_fastpaths(
     bytecode: &Bytecode,
     host_services: Arc<dyn HostServices>,
@@ -115,15 +88,6 @@ pub fn execute_and_snapshot_values_with_host_and_typed_fastpaths(
     typed_fastpaths: bool,
 ) -> Result<Vec<RuntimeValue>, String> {
     execute_and_snapshot_with_host_and_typed_fastpaths(bytecode, host_services, typed_fastpaths)
-}
-
-pub fn execute_and_legacy_snapshot_with_host_and_typed_fastpaths(
-    bytecode: &Bytecode,
-    host_services: Arc<dyn HostServices>,
-    typed_fastpaths: bool,
-) -> Result<Vec<i32>, String> {
-    execute_and_snapshot_with_host_and_typed_fastpaths(bytecode, host_services, typed_fastpaths)
-        .map(project_runtime_values_to_legacy_slots)
 }
 
 fn default_host_services() -> Arc<dyn HostServices> {

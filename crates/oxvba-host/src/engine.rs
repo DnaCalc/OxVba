@@ -112,12 +112,8 @@ impl ProjectRuntimeSession {
         self.snapshot()
     }
 
-    pub fn snapshot_legacy_slots(&self) -> Vec<i32> {
-        project_runtime_values_to_legacy_slots(self.snapshot())
-    }
-
     pub fn snapshot_slots(&self) -> Vec<i32> {
-        self.snapshot_legacy_slots()
+        project_runtime_values_to_legacy_slots(self.snapshot())
     }
 }
 
@@ -476,11 +472,6 @@ impl Engine {
         self.execute_source_with_snapshot(source)
     }
 
-    pub fn execute_source_with_legacy_snapshot(&self, source: &str) -> Result<Vec<i32>, String> {
-        self.execute_source_with_legacy_snapshot_phased(source)
-            .map_err(|diagnostic| diagnostic.message().to_string())
-    }
-
     pub fn execute_source_with_snapshot_phased(
         &self,
         source: &str,
@@ -506,14 +497,6 @@ impl Engine {
         source: &str,
     ) -> Result<Vec<RuntimeValue>, PhaseDiagnostic> {
         self.execute_source_with_snapshot_phased(source)
-    }
-
-    pub fn execute_source_with_legacy_snapshot_phased(
-        &self,
-        source: &str,
-    ) -> Result<Vec<i32>, PhaseDiagnostic> {
-        self.execute_source_with_snapshot_phased(source)
-            .map(project_runtime_values_to_legacy_slots)
     }
 
     pub fn execute_project_with_snapshot_phased(
@@ -545,14 +528,6 @@ impl Engine {
         manifest: &ProjectManifest,
     ) -> Result<Vec<RuntimeValue>, PhaseDiagnostic> {
         self.execute_project_with_snapshot_phased(manifest)
-    }
-
-    pub fn execute_project_with_legacy_snapshot_phased(
-        &self,
-        manifest: &ProjectManifest,
-    ) -> Result<Vec<i32>, PhaseDiagnostic> {
-        self.execute_project_with_snapshot_phased(manifest)
-            .map(project_runtime_values_to_legacy_slots)
     }
 
     fn preflight_host_sensitive_support(&self, bytecode: &Bytecode) -> Result<(), PhaseDiagnostic> {
