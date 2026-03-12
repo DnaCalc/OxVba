@@ -65,6 +65,16 @@ At completion:
 Goal:
 1. stop treating `read_slot(...)` / `write_slot(...)` as the semantic execution substrate.
 
+Progress:
+1. first semantic-execution slice completed for:
+   - comparisons,
+   - boolean operations,
+   - `JumpIfZero`,
+   - `IncSlot`.
+2. those instructions now read `RuntimeValue` directly and produce semantic `RuntimeValue::Bool(...)` / `RuntimeValue::I32(...)` results while preserving legacy compatibility projection through `snapshot_slots(...)`.
+3. typed comparator fastpaths were aligned to the same semantic result shape.
+4. remaining Phase A work is now concentrated in the larger scalar/intrinsic arithmetic families that still execute through `read_slot(...)` / `write_slot(...)`.
+
 Deliverables:
 1. semantic helpers for:
    - truthiness,

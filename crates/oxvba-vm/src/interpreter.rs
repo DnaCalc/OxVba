@@ -1222,12 +1222,10 @@ impl Vm {
                         pc += 1;
                         continue;
                     }
-                    let out = if self.read_slot(*lhs)? == self.read_slot(*rhs)? {
-                        1
-                    } else {
-                        0
-                    };
-                    self.write_slot(*dst, out)?;
+                    let lhs = self.read_value_slot(*lhs)?;
+                    let rhs = self.read_value_slot(*rhs)?;
+                    let out = Self::legacy_compare_values(&lhs, &rhs, |l, r| l == r)?;
+                    self.write_value_slot(*dst, RuntimeValue::Bool(out))?;
                     pc += 1;
                 }
                 Instruction::CmpNeSlots { dst, lhs, rhs } => {
@@ -1235,12 +1233,10 @@ impl Vm {
                         pc += 1;
                         continue;
                     }
-                    let out = if self.read_slot(*lhs)? != self.read_slot(*rhs)? {
-                        1
-                    } else {
-                        0
-                    };
-                    self.write_slot(*dst, out)?;
+                    let lhs = self.read_value_slot(*lhs)?;
+                    let rhs = self.read_value_slot(*rhs)?;
+                    let out = Self::legacy_compare_values(&lhs, &rhs, |l, r| l != r)?;
+                    self.write_value_slot(*dst, RuntimeValue::Bool(out))?;
                     pc += 1;
                 }
                 Instruction::CmpLtSlots { dst, lhs, rhs } => {
@@ -1248,12 +1244,10 @@ impl Vm {
                         pc += 1;
                         continue;
                     }
-                    let out = if self.read_slot(*lhs)? < self.read_slot(*rhs)? {
-                        1
-                    } else {
-                        0
-                    };
-                    self.write_slot(*dst, out)?;
+                    let lhs = self.read_value_slot(*lhs)?;
+                    let rhs = self.read_value_slot(*rhs)?;
+                    let out = Self::legacy_compare_values(&lhs, &rhs, |l, r| l < r)?;
+                    self.write_value_slot(*dst, RuntimeValue::Bool(out))?;
                     pc += 1;
                 }
                 Instruction::CmpLeSlots { dst, lhs, rhs } => {
@@ -1261,12 +1255,10 @@ impl Vm {
                         pc += 1;
                         continue;
                     }
-                    let out = if self.read_slot(*lhs)? <= self.read_slot(*rhs)? {
-                        1
-                    } else {
-                        0
-                    };
-                    self.write_slot(*dst, out)?;
+                    let lhs = self.read_value_slot(*lhs)?;
+                    let rhs = self.read_value_slot(*rhs)?;
+                    let out = Self::legacy_compare_values(&lhs, &rhs, |l, r| l <= r)?;
+                    self.write_value_slot(*dst, RuntimeValue::Bool(out))?;
                     pc += 1;
                 }
                 Instruction::CmpGtSlots { dst, lhs, rhs } => {
@@ -1274,12 +1266,10 @@ impl Vm {
                         pc += 1;
                         continue;
                     }
-                    let out = if self.read_slot(*lhs)? > self.read_slot(*rhs)? {
-                        1
-                    } else {
-                        0
-                    };
-                    self.write_slot(*dst, out)?;
+                    let lhs = self.read_value_slot(*lhs)?;
+                    let rhs = self.read_value_slot(*rhs)?;
+                    let out = Self::legacy_compare_values(&lhs, &rhs, |l, r| l > r)?;
+                    self.write_value_slot(*dst, RuntimeValue::Bool(out))?;
                     pc += 1;
                 }
                 Instruction::CmpGeSlots { dst, lhs, rhs } => {
@@ -1287,12 +1277,10 @@ impl Vm {
                         pc += 1;
                         continue;
                     }
-                    let out = if self.read_slot(*lhs)? >= self.read_slot(*rhs)? {
-                        1
-                    } else {
-                        0
-                    };
-                    self.write_slot(*dst, out)?;
+                    let lhs = self.read_value_slot(*lhs)?;
+                    let rhs = self.read_value_slot(*rhs)?;
+                    let out = Self::legacy_compare_values(&lhs, &rhs, |l, r| l >= r)?;
+                    self.write_value_slot(*dst, RuntimeValue::Bool(out))?;
                     pc += 1;
                 }
                 Instruction::LoadErrNumber { slot } => {
@@ -1300,30 +1288,31 @@ impl Vm {
                     pc += 1;
                 }
                 Instruction::BoolNot { dst, src } => {
-                    let out = if self.read_slot(*src)? == 0 { 1 } else { 0 };
-                    self.write_slot(*dst, out)?;
+                    let src = self.read_value_slot(*src)?;
+                    let out = !Self::legacy_truthy_value(&src)?;
+                    self.write_value_slot(*dst, RuntimeValue::Bool(out))?;
                     pc += 1;
                 }
                 Instruction::BoolAnd { dst, lhs, rhs } => {
-                    let lhs_val = self.read_slot(*lhs)?;
-                    let rhs_val = self.read_slot(*rhs)?;
-                    let out = if lhs_val != 0 && rhs_val != 0 { 1 } else { 0 };
-                    self.write_slot(*dst, out)?;
+                    let lhs = self.read_value_slot(*lhs)?;
+                    let rhs = self.read_value_slot(*rhs)?;
+                    let out = Self::legacy_truthy_value(&lhs)? && Self::legacy_truthy_value(&rhs)?;
+                    self.write_value_slot(*dst, RuntimeValue::Bool(out))?;
                     pc += 1;
                 }
                 Instruction::BoolOr { dst, lhs, rhs } => {
-                    let lhs_val = self.read_slot(*lhs)?;
-                    let rhs_val = self.read_slot(*rhs)?;
-                    let out = if lhs_val != 0 || rhs_val != 0 { 1 } else { 0 };
-                    self.write_slot(*dst, out)?;
+                    let lhs = self.read_value_slot(*lhs)?;
+                    let rhs = self.read_value_slot(*rhs)?;
+                    let out = Self::legacy_truthy_value(&lhs)? || Self::legacy_truthy_value(&rhs)?;
+                    self.write_value_slot(*dst, RuntimeValue::Bool(out))?;
                     pc += 1;
                 }
                 Instruction::JumpIfZero {
                     cond_slot,
                     target_pc,
                 } => {
-                    let cond = self.read_slot(*cond_slot)?;
-                    pc = Self::next_pc_for_jump_if_zero(cond, *target_pc, len, pc)?;
+                    let cond = self.read_value_slot(*cond_slot)?;
+                    pc = Self::next_pc_for_jump_if_zero_value(&cond, *target_pc, len, pc)?;
                 }
                 Instruction::Jump { target_pc } => {
                     pc = Self::next_pc_for_jump(*target_pc, len)?;
@@ -1395,8 +1384,9 @@ impl Vm {
                         pc += 1;
                         continue;
                     }
-                    let value = self.read_slot(*slot)?;
-                    self.write_slot(*slot, value + 1)?;
+                    let value = self.read_value_slot(*slot)?;
+                    let out = Self::legacy_increment_value(&value)?;
+                    self.write_value_slot(*slot, out)?;
                     pc += 1;
                 }
                 Instruction::Halt => break,
@@ -1454,6 +1444,24 @@ impl Vm {
         value
             .to_legacy_i32()
             .map_err(|detail| format!("{field} requires legacy-compatible token: {detail}"))
+    }
+
+    fn legacy_compare_values<F>(lhs: &RuntimeValue, rhs: &RuntimeValue, pred: F) -> Result<bool, String>
+    where
+        F: FnOnce(i32, i32) -> bool,
+    {
+        let lhs = Self::runtime_value_legacy_token(lhs, "comparison lhs")?;
+        let rhs = Self::runtime_value_legacy_token(rhs, "comparison rhs")?;
+        Ok(pred(lhs, rhs))
+    }
+
+    fn legacy_truthy_value(value: &RuntimeValue) -> Result<bool, String> {
+        Ok(Self::runtime_value_legacy_token(value, "boolean operand")? != 0)
+    }
+
+    fn legacy_increment_value(value: &RuntimeValue) -> Result<RuntimeValue, String> {
+        let value = Self::runtime_value_legacy_token(value, "increment operand")?;
+        Ok(RuntimeValue::I32(value + 1))
     }
 
     fn runtime_value_to_com_object(
@@ -1549,7 +1557,8 @@ impl Vm {
         let (Some(lhs), Some(rhs)) = (self.fast_read_slot(lhs), self.fast_read_slot(rhs)) else {
             return false;
         };
-        self.fast_write_slot(dst, if pred(lhs, rhs) { 1 } else { 0 })
+        self.write_value_slot(dst, RuntimeValue::Bool(pred(lhs, rhs)))
+            .is_ok()
     }
 
     fn next_pc_for_jump(target_pc: usize, instruction_len: usize) -> Result<usize, String> {
@@ -1570,6 +1579,16 @@ impl Vm {
         } else {
             Ok(current_pc + 1)
         }
+    }
+
+    fn next_pc_for_jump_if_zero_value(
+        cond: &RuntimeValue,
+        target_pc: usize,
+        instruction_len: usize,
+        current_pc: usize,
+    ) -> Result<usize, String> {
+        let cond = Self::runtime_value_legacy_token(cond, "jump condition")?;
+        Self::next_pc_for_jump_if_zero(cond, target_pc, instruction_len, current_pc)
     }
 
     fn len_digits(value: i32) -> i32 {
@@ -3108,6 +3127,13 @@ mod tests {
 
         let mut vm = Vm::default();
         vm.execute(&bytecode).expect("vm should execute bytecode");
+        let values = vm.snapshot_values(8);
+        assert_eq!(values[2], RuntimeValue::Bool(true));
+        assert_eq!(values[3], RuntimeValue::Bool(false));
+        assert_eq!(values[4], RuntimeValue::Bool(true));
+        assert_eq!(values[5], RuntimeValue::Bool(true));
+        assert_eq!(values[6], RuntimeValue::Bool(true));
+        assert_eq!(values[7], RuntimeValue::Bool(true));
         assert_eq!(vm.snapshot_slots(8), vec![5, 3, 1, 0, 1, 1, 1, 1]);
     }
 

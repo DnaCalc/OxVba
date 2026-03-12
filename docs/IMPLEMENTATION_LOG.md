@@ -171,6 +171,33 @@
   - `cargo test -p oxvba-hal --quiet`
   - `cargo test -p oxvba-host --lib --quiet`
 
+## 2026-03-12 - Runtime semantic execution slice covers compare/boolean/jump basics
+
+- Continued [WORKSET_2026-03-12_RUNTIME_REFACTOR_TO_COMPLETION.md](C:\Work\DnaCalc\OxVba\docs\worksets\WORKSET_2026-03-12_RUNTIME_REFACTOR_TO_COMPLETION.md) Phase A in:
+  - [interpreter.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-vm\src\interpreter.rs).
+- Migrated the first core interpreter instruction cluster off `read_slot(...)` / `write_slot(...)` as the primary semantic execution path:
+  - `CmpEqSlots`,
+  - `CmpNeSlots`,
+  - `CmpLtSlots`,
+  - `CmpLeSlots`,
+  - `CmpGtSlots`,
+  - `CmpGeSlots`,
+  - `BoolNot`,
+  - `BoolAnd`,
+  - `BoolOr`,
+  - `JumpIfZero`,
+  - `IncSlot`.
+- Added VM-local semantic helpers that preserve the current legacy-compatible comparison/truthiness/jump behavior while operating on `RuntimeValue`.
+- Comparator outputs now land as `RuntimeValue::Bool(...)` in both the normal and typed-fastpath lanes instead of silently reverting to raw integer-only compare results.
+- Net effect:
+  - the first control/compare boolean slice now executes semantically,
+  - legacy `snapshot_slots(...)` remains the bounded compatibility projection,
+  - the remaining Phase A wall is the larger scalar/arithmetic/intrinsic instruction estate that still executes through the legacy slot helpers.
+- Verification:
+  - `cargo test -p oxvba-vm -p oxvba-host --quiet`
+  - `./scripts/check-governance.ps1`
+  - `./scripts/meta-check.ps1 -Fast -NoArtifacts`
+
 ## 2026-03-11 - COM member/event identity typed on the shared boundary
 
 - Tightened the shared COM model and its boundary consumers in:
