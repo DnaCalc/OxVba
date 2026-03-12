@@ -42,6 +42,16 @@
 - Verification:
   - `cargo test -p oxvba-runtime --quiet`
 
+## 2026-03-12 - Runtime value-model stop condition is now the core interpreter/compatibility contract
+
+- After the latest typed-handle and `RuntimeValue`/`Variant` bridge slices, the remaining runtime migration wall is no longer another local adapter or carrier cleanup.
+- The active holdouts are now:
+  - core interpreter execution paths that still depend on `read_slot(...)` / `write_slot(...)` and therefore on legacy-compatible `i32` projections for comparison/control-flow/arithmetic subsets,
+  - the explicit legacy observation surfaces such as `snapshot_slots(...)` and downstream callers/tests that still intentionally verify those compatibility APIs.
+- Net effect:
+  - further honest progress now requires taking on the broader interpreter/public-compatibility contract migration as the next active implementation program,
+  - not another isolated handle/token cleanup.
+
 ## 2026-03-12 - VM WithEvents and host COM callback paths keep typed identity
 
 - Continued the runtime handle migration in:

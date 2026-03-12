@@ -184,9 +184,10 @@ Run context: active parity/compliance execution plus in-progress feature worklis
   - host COM callback dispatch plumbing now preserves `ComSubscriptionToken` / `ComCallbackToken` identity instead of normalizing callback and subscription bookkeeping back to bare integers,
   - the remaining runtime/host boundary holdouts are now concentrated in:
     - remaining raw `i32`-backed object/binding representations below those typed surfaces (`ObjectHandle`, `BindingHandle`),
+    - core interpreter instruction execution paths that still route through `read_slot(...)` / `write_slot(...)` and therefore require legacy-compatible `i32` projections for comparison, control-flow, and arithmetic subsets,
     - remaining direct interpreter/test/caller expectations that still consume the legacy integer observation aliases,
-    - the remaining direct legacy observation surface is now mostly the explicit public compatibility API itself plus callers that deliberately verify that compatibility API,
-  - the new `ComValue` carrier and generic dynamic-object protocol can live at the COM boundary, but they cannot yet become the single runtime object/value model while the wider execution substrate remains token-only.
+    - the remaining direct legacy observation surface is now mostly the explicit public compatibility API itself (`snapshot_slots(...)` and related projections) plus callers that deliberately verify that compatibility API,
+    - the new `ComValue` carrier and generic dynamic-object protocol can live at the COM boundary, but they cannot yet become the single runtime object/value model while the wider execution substrate remains token-only.
 - Exact unblock steps:
   - replace the remaining raw `i32`-backed object/binding representations below the typed COM surfaces with the canonical runtime object/value model or an explicit indirection model,
   - decide and implement the runtime-facing semantic representation for external object identity/binding handles so `create_object`/`release_object`/`describe_object` and dynamic binding state stop depending on raw integer tokens,
