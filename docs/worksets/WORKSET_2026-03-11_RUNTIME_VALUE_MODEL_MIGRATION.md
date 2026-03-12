@@ -125,6 +125,10 @@ Completed slices:
    - `ComEventCallback.args` now stores `Vec<ComValue>`,
    - native and projection event queueing convert to `ComValue` at queue time,
    - callback poll/arg recovery now projects from `ComValue` back into `RuntimeValue` instead of reconstructing from raw integer tags.
+50. Native COM event sink/request scaffolding now also carries typed COM identity instead of raw integers:
+   - `ComConnectionPointAdviseRequest` now uses `ComSubscriptionToken` / `ComObjectToken` / `ComMemberToken`,
+   - `OxvbaComEventSink` and `OxvbaComEventSourceInterfaceSink` now store those typed tokens directly.
+51. COM token wrappers and runtime handle wrappers are now explicitly `repr(transparent)` so this typed bookkeeping no longer depends on accidental layout.
 
 Remaining blocker seam:
 1. explicit raw `i32` compatibility signatures still anchor the remaining legacy COM seams,

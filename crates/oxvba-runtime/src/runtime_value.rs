@@ -6,6 +6,7 @@ use crate::{
 
 macro_rules! define_i32_handle {
     ($name:ident) => {
+        #[repr(transparent)]
         #[derive(
             Debug,
             Clone,

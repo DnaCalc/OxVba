@@ -164,6 +164,10 @@ Run context: active parity/compliance execution plus in-progress feature worklis
     - `event_specs: BTreeMap<ComMemberToken, ...>`,
     - `event_trigger_specs: BTreeMap<ComMemberToken, ...>`,
   - queued COM callback payloads now stay in the shared semantic carrier (`Vec<ComValue>`) inside the adapter instead of collapsing back to `Vec<i32>` until poll time,
+  - the native COM event sink/request scaffolding now also preserves typed COM identity end to end:
+    - `ComConnectionPointAdviseRequest` now carries `ComSubscriptionToken` / `ComObjectToken` / `ComMemberToken`,
+    - `OxvbaComEventSink` and `OxvbaComEventSourceInterfaceSink` now store typed COM tokens directly,
+    - COM token and runtime handle wrappers are now explicitly `repr(transparent)` so this typed FFI bookkeeping does not depend on accidental layout,
   - the remaining runtime/host boundary holdouts are now concentrated in:
     - remaining raw `i32`-backed object/binding representations below those typed surfaces (`ObjectHandle`, `ComObjectToken`, binding handles),
     - remaining direct interpreter/test/caller expectations that still consume the legacy integer observation aliases,

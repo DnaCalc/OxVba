@@ -186,6 +186,8 @@ Status vocabulary:
       - `pending_callbacks: VecDeque<ComCallbackToken>`,
     - `ComBinding` now also types its member/event metadata maps by `ComMemberToken` instead of bare integers,
     - queued COM callback payloads now stay in the shared semantic carrier (`Vec<ComValue>`) inside the adapter instead of collapsing back to raw integer vectors until poll time,
+    - native COM event sink/request scaffolding now also preserves typed COM identity end to end (`ComConnectionPointAdviseRequest`, `OxvbaComEventSink`, `OxvbaComEventSourceInterfaceSink`),
+    - COM token and runtime handle wrappers are now explicitly `repr(transparent)` so that typed bookkeeping no longer depends on accidental layout,
     - the remaining active seam is the explicit raw-`i32` HAL compatibility contract plus the still-legacy-heavy interpreter/caller/test estate around integer snapshots.
 
 ### `IP-05` Windows early-bound COM and type-library parity

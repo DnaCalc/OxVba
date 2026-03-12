@@ -2024,9 +2024,9 @@ impl StandardHostServices {
         let dispatch = binding.native_dispatch as *mut RawIDispatch;
         let request = ComConnectionPointAdviseRequest {
             com_state: Arc::clone(&self.com_state),
-            subscription,
-            object,
-            event_token: event.into(),
+            subscription: subscription.into(),
+            object: object.into(),
+            event_token: event,
             expected_arity,
             sink_mode,
         };
@@ -4367,9 +4367,9 @@ enum ComConnectionPointSinkMode {
 #[derive(Debug, Clone)]
 struct ComConnectionPointAdviseRequest {
     com_state: Arc<Mutex<ComState>>,
-    subscription: i32,
-    object: i32,
-    event_token: i32,
+    subscription: ComSubscriptionToken,
+    object: ComObjectToken,
+    event_token: ComMemberToken,
     expected_arity: usize,
     sink_mode: ComConnectionPointSinkMode,
 }
@@ -5314,9 +5314,9 @@ struct OxvbaComEventSink {
     dispatch: RawIDispatch,
     ref_count: AtomicU32,
     com_state: Arc<Mutex<ComState>>,
-    subscription: i32,
-    object: i32,
-    event_token: i32,
+    subscription: ComSubscriptionToken,
+    object: ComObjectToken,
+    event_token: ComMemberToken,
     event_dispatch_member: i32,
     expected_arity: usize,
     connection_point_iid: Option<windows_sys::core::GUID>,
@@ -5341,9 +5341,9 @@ struct OxvbaComEventSourceInterfaceSink {
     source: RawOxvbaTestDispatchSourceEvents,
     ref_count: AtomicU32,
     com_state: Arc<Mutex<ComState>>,
-    subscription: i32,
-    object: i32,
-    event_token: i32,
+    subscription: ComSubscriptionToken,
+    object: ComObjectToken,
+    event_token: ComMemberToken,
     expected_arity: usize,
 }
 
@@ -5451,9 +5451,9 @@ fn create_oxvba_test_dispatch() -> *mut RawIDispatch {
 #[cfg(target_os = "windows")]
 fn create_oxvba_com_event_sink(
     com_state: Arc<Mutex<ComState>>,
-    subscription: i32,
-    object: i32,
-    event_token: i32,
+    subscription: ComSubscriptionToken,
+    object: ComObjectToken,
+    event_token: ComMemberToken,
     event_dispatch_member: i32,
     expected_arity: usize,
     connection_point_iid: Option<windows_sys::core::GUID>,
@@ -5477,9 +5477,9 @@ fn create_oxvba_com_event_sink(
 #[cfg(target_os = "windows")]
 fn create_oxvba_com_event_source_interface_sink(
     com_state: Arc<Mutex<ComState>>,
-    subscription: i32,
-    object: i32,
-    event_token: i32,
+    subscription: ComSubscriptionToken,
+    object: ComObjectToken,
+    event_token: ComMemberToken,
     expected_arity: usize,
 ) -> *mut core::ffi::c_void {
     let sink = Box::new(OxvbaComEventSourceInterfaceSink {
@@ -6687,21 +6687,17 @@ unsafe extern "system" fn oxvba_event_sink_invoke(
         Ok(guard) => guard,
         Err(poisoned) => poisoned.into_inner(),
     };
-    if let Some(subscription) = state
-        .subscriptions
-        .get(&ComSubscriptionToken::new((*sink).subscription))
-        && subscription.object == ComObjectToken::new((*sink).object)
-        && subscription.event == ComMemberToken::new((*sink).event_token)
+    if let Some(subscription) = state.subscriptions.get(&(*sink).subscription)
+        && subscription.object == (*sink).object
+        && subscription.event == (*sink).event_token
     {
         let callback_args: Vec<ComValue> = args
             .iter()
             .copied()
             .map(ComValue::from_runtime_token)
             .collect();
-        let queued = state.queue_callback_for_subscription(
-            ComSubscriptionToken::new((*sink).subscription),
-            callback_args.as_slice(),
-        );
+        let queued =
+            state.queue_callback_for_subscription((*sink).subscription, callback_args.as_slice());
         if com_event_trace_enabled() {
             eprintln!(
                 "[oxvba-hal][com-event] sink-invoke subscription={} object={} event={} dispid={} args={:?} queued={}",
@@ -6782,17 +6778,12 @@ unsafe extern "system" fn oxvba_event_source_interface_sink_changed(
         Ok(guard) => guard,
         Err(poisoned) => poisoned.into_inner(),
     };
-    if let Some(subscription) = state
-        .subscriptions
-        .get(&ComSubscriptionToken::new((*sink).subscription))
-        && subscription.object == ComObjectToken::new((*sink).object)
-        && subscription.event == ComMemberToken::new((*sink).event_token)
+    if let Some(subscription) = state.subscriptions.get(&(*sink).subscription)
+        && subscription.object == (*sink).object
+        && subscription.event == (*sink).event_token
     {
         let args = [ComValue::from_runtime_token(value)];
-        let queued = state.queue_callback_for_subscription(
-            ComSubscriptionToken::new((*sink).subscription),
-            &args,
-        );
+        let queued = state.queue_callback_for_subscription((*sink).subscription, &args);
         if com_event_trace_enabled() {
             eprintln!(
                 "[oxvba-hal][com-event] source-sink-changed subscription={} object={} event={} value={} queued={}",

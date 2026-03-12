@@ -11,6 +11,7 @@ use oxvba_runtime::{
 
 macro_rules! define_token {
     ($name:ident) => {
+        #[repr(transparent)]
         #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
         pub struct $name(i32);
 

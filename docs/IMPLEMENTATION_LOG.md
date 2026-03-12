@@ -1,5 +1,24 @@
 # Implementation Log
 
+## 2026-03-11 - Native COM sink/request bookkeeping now keeps typed identity
+
+- Continued the runtime representation cleanup in:
+  - [model.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-com\src\model.rs)
+  - [runtime_value.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-runtime\src\runtime_value.rs)
+  - [standard.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-hal\src\adapters\standard.rs)
+- Token and handle wrappers are now `repr(transparent)`:
+  - COM tokens in `oxvba-com`
+  - runtime handles in `oxvba-runtime`
+- Native COM event sink/request scaffolding now carries typed COM identity instead of raw integers:
+  - `ComConnectionPointAdviseRequest`
+  - `OxvbaComEventSink`
+  - `OxvbaComEventSourceInterfaceSink`
+- Net effect:
+  - native COM callback bookkeeping no longer peels subscription/object/event identity back to raw `i32` just to pass through one more internal layer,
+  - the remaining runtime-model blocker is pushed further toward the canonical runtime handle/binding representation rather than adapter-local transport scaffolding.
+- Verification:
+  - `cargo check -p oxvba-com -p oxvba-runtime -p oxvba-hal -p oxvba-vm -p oxvba-host`
+
 ## 2026-03-11 - COM binding metadata and queued callback args stay on typed/shared carriers
 
 - Continued the runtime value-model migration in [standard.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-hal\src\adapters\standard.rs).
