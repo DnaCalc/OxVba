@@ -1,5 +1,25 @@
 # Implementation Log
 
+## 2026-03-11 - Shared COM model now uses runtime object handles
+
+- Shifted the shared COM-facing semantic model to runtime object identity in:
+  - [model.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-com\src\model.rs)
+  - [dynamic_object.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-com\src\dynamic_object.rs)
+  - [interpreter.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-vm\src\interpreter.rs)
+  - [engine.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-host\src\engine.rs)
+  - [standard.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-hal\src\adapters\standard.rs)
+- Shared COM request/descriptor/payload/value surfaces no longer treat runtime object identity as `ComObjectToken`:
+  - `ComInvokeRequest.object` now uses `ObjectHandle`,
+  - `ComObjectDescriptor.object` now uses `ObjectHandle`,
+  - `ComCallbackPayload.object` now uses `ObjectHandle`,
+  - `ComValue::ObjectHandle(...)` now uses `ObjectHandle`.
+- Net effect:
+  - the runtime-facing COM model now speaks in OxVba semantic object identity,
+  - `ComObjectToken` is pushed down toward adapter-internal state and lookup only,
+  - this removes one of the clearest remaining COM-specific leaks from the shared runtime-facing boundary.
+- Verification:
+  - `cargo check -p oxvba-com -p oxvba-runtime -p oxvba-hal -p oxvba-vm -p oxvba-host`
+
 ## 2026-03-11 - Native COM sink/request bookkeeping now keeps typed identity
 
 - Continued the runtime representation cleanup in:

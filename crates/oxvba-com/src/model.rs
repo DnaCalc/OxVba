@@ -58,7 +58,7 @@ pub enum ComObjectTransportKind {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ComObjectDescriptor {
-    pub object: ComObjectToken,
+    pub object: ObjectHandle,
     pub prog_id_name: String,
     pub transport: ComObjectTransportKind,
     pub supports_events: bool,
@@ -86,7 +86,7 @@ pub enum ComValue {
     I32(i32),
     String(BStr),
     ArrayIntent(SafeArray),
-    ObjectHandle(ComObjectToken),
+    ObjectHandle(ObjectHandle),
 }
 
 impl ComValue {
@@ -99,9 +99,7 @@ impl ComValue {
             RuntimeValue::I32(value) => Self::I32(*value),
             RuntimeValue::String(value) => Self::String(value.clone()),
             RuntimeValue::ArrayIntent(array) => Self::ArrayIntent(array.clone()),
-            RuntimeValue::ObjectHandle(handle) => {
-                Self::ObjectHandle(ComObjectToken::new(handle.raw()))
-            }
+            RuntimeValue::ObjectHandle(handle) => Self::ObjectHandle(*handle),
         }
     }
 
@@ -130,9 +128,7 @@ impl ComValue {
             Self::I32(value) => RuntimeValue::I32(*value),
             Self::String(value) => RuntimeValue::String(value.clone()),
             Self::ArrayIntent(array) => RuntimeValue::ArrayIntent(array.clone()),
-            Self::ObjectHandle(handle) => {
-                RuntimeValue::ObjectHandle(ObjectHandle::new(handle.raw()))
-            }
+            Self::ObjectHandle(handle) => RuntimeValue::ObjectHandle(*handle),
         }
     }
 
@@ -205,14 +201,14 @@ impl ComInvokeArg {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ComInvokeRequest {
-    pub object: ComObjectToken,
+    pub object: ObjectHandle,
     pub member: ComMemberToken,
     pub args: Vec<ComInvokeArg>,
     pub invoke_kind_hint: Option<ComInvokeKind>,
 }
 
 impl ComInvokeRequest {
-    pub fn new(object: ComObjectToken, member: ComMemberToken, args: Vec<ComInvokeArg>) -> Self {
+    pub fn new(object: ObjectHandle, member: ComMemberToken, args: Vec<ComInvokeArg>) -> Self {
         Self {
             object,
             member,
@@ -227,11 +223,7 @@ impl ComInvokeRequest {
         } else {
             vec![ComInvokeArg::positional(arg)]
         };
-        Self::new(
-            ComObjectToken::new(object),
-            ComMemberToken::new(member),
-            args,
-        )
+        Self::new(ObjectHandle::new(object), ComMemberToken::new(member), args)
     }
 }
 
@@ -239,14 +231,14 @@ impl ComInvokeRequest {
 pub struct ComCallbackPayload {
     pub callback: ComCallbackToken,
     pub subscription: ComSubscriptionToken,
-    pub object: ComObjectToken,
+    pub object: ObjectHandle,
     pub event: ComMemberToken,
     pub args: Vec<ComValue>,
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{ComMemberToken, ComObjectToken, ComValue};
+    use super::{ComMemberToken, ComValue};
     use oxvba_runtime::{
         ObjectHandle, RuntimeValue,
         bstr::BStr,
@@ -304,10 +296,10 @@ mod tests {
         );
         assert_eq!(
             ComValue::from_runtime_value(&RuntimeValue::ObjectHandle(ObjectHandle::new(1234))),
-            ComValue::ObjectHandle(ComObjectToken::new(1234))
+            ComValue::ObjectHandle(ObjectHandle::new(1234))
         );
         assert_eq!(
-            ComValue::ObjectHandle(ComObjectToken::new(1234)).to_runtime_value(),
+            ComValue::ObjectHandle(ObjectHandle::new(1234)).to_runtime_value(),
             RuntimeValue::ObjectHandle(ObjectHandle::new(1234))
         );
         assert!(

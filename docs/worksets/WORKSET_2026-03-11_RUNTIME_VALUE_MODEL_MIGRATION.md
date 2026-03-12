@@ -129,11 +129,17 @@ Completed slices:
    - `ComConnectionPointAdviseRequest` now uses `ComSubscriptionToken` / `ComObjectToken` / `ComMemberToken`,
    - `OxvbaComEventSink` and `OxvbaComEventSourceInterfaceSink` now store those typed tokens directly.
 51. COM token wrappers and runtime handle wrappers are now explicitly `repr(transparent)` so this typed bookkeeping no longer depends on accidental layout.
+52. The shared runtime-facing COM model now uses semantic runtime object identity instead of `ComObjectToken`:
+   - `ComInvokeRequest.object` now uses `ObjectHandle`,
+   - `ComObjectDescriptor.object` now uses `ObjectHandle`,
+   - `ComCallbackPayload.object` now uses `ObjectHandle`,
+   - `ComValue::ObjectHandle(...)` now uses `ObjectHandle`,
+   - adapter-native COM helpers now resolve `ObjectHandle` to adapter-internal `ComObjectToken` only at lookup/state edges.
 
 Remaining blocker seam:
 1. explicit raw `i32` compatibility signatures still anchor the remaining legacy COM seams,
 2. the remaining holdouts are now concentrated in:
-   - raw `i32`-backed object/binding representations (`ObjectHandle`, `ComObjectToken`, binding handles) below the typed COM surfaces,
+   - raw `i32`-backed object/binding representations (`ObjectHandle`, binding handles) below the typed semantic surfaces,
    - remaining interpreter/test/caller expectations that still consume the legacy integer observation aliases,
 3. JIT internals and parity harnesses still observe only the integer slot lane for Cranelift-supported subsets,
 4. the explicit compatibility API remains in place and still needs to be bounded/documented as compatibility rather than primary execution,

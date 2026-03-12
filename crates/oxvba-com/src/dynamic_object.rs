@@ -1,7 +1,8 @@
 use crate::{
     ComCallbackPayload, ComCallbackToken, ComInvokeArg, ComInvokeKind, ComInvokeRequest,
-    ComMemberToken, ComObjectToken, ComSubscriptionToken, ComValue,
+    ComMemberToken, ComSubscriptionToken, ComValue,
 };
+use oxvba_runtime::ObjectHandle;
 
 macro_rules! define_dynamic_token {
     ($name:ident) => {
@@ -30,13 +31,13 @@ define_dynamic_token!(DynamicObjectToken);
 define_dynamic_token!(DynamicSubscriptionToken);
 define_dynamic_token!(DynamicCallbackToken);
 
-impl From<ComObjectToken> for DynamicObjectToken {
-    fn from(value: ComObjectToken) -> Self {
+impl From<ObjectHandle> for DynamicObjectToken {
+    fn from(value: ObjectHandle) -> Self {
         Self::new(value.raw())
     }
 }
 
-impl From<DynamicObjectToken> for ComObjectToken {
+impl From<DynamicObjectToken> for ObjectHandle {
     fn from(value: DynamicObjectToken) -> Self {
         Self::new(value.raw())
     }

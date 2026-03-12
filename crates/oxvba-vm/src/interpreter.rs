@@ -1455,9 +1455,9 @@ impl Vm {
     fn runtime_value_to_com_object(
         value: &RuntimeValue,
         field: &str,
-    ) -> Result<oxvba_com::ComObjectToken, String> {
+    ) -> Result<oxvba_runtime::ObjectHandle, String> {
         match value {
-            RuntimeValue::ObjectHandle(handle) => Ok(handle.raw().into()),
+            RuntimeValue::ObjectHandle(handle) => Ok(*handle),
             other => Self::runtime_value_legacy_token(other, field).map(Into::into),
         }
     }

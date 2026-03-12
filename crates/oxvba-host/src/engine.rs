@@ -735,7 +735,7 @@ fn hal_requirement(instruction: &Instruction) -> Option<(&'static str, Capabilit
 #[cfg(test)]
 mod tests {
     use super::{DiagnosticPhase, Engine, HostConfig};
-    use oxvba_com::{ComInvokeArg, ComInvokeRequest, ComObjectToken};
+    use oxvba_com::{ComInvokeArg, ComInvokeRequest};
     use oxvba_compiler::{
         ModuleKind, ProjectKind, ProjectManifest, ProjectReference, ReferenceKind,
         ReferencedProjectManifest, module_unit_from_source,
@@ -776,7 +776,7 @@ mod tests {
         arg: i32,
     ) -> RuntimeValue {
         let request = ComInvokeRequest::new(
-            ComObjectToken::new(object.raw()),
+            object,
             member.into(),
             if arg == oxvba_com::DISPATCH_INVOKE_MISSING_ARG_TOKEN {
                 Vec::new()

@@ -1096,22 +1096,25 @@ impl StandardHostServices {
     #[cfg(target_os = "windows")]
     fn resolve_native_dispatch_for_object_arg(
         &self,
-        object: ComObjectToken,
+        object: ObjectHandle,
         op: &'static str,
     ) -> HalResult<*mut RawIDispatch> {
         let capability = CapabilityId::ComActivationDispatch;
         let state = self.com_lock(capability, op)?;
-        let binding = state.bindings.get(&object).ok_or_else(|| {
-            HalError::adapter_fault(
-                self.profile,
-                capability,
-                op,
-                format!(
-                    "COM-E-OBJECT-MISSING: unknown COM object handle {}",
-                    object.raw()
-                ),
-            )
-        })?;
+        let binding = state
+            .bindings
+            .get(&ComObjectToken::new(object.raw()))
+            .ok_or_else(|| {
+                HalError::adapter_fault(
+                    self.profile,
+                    capability,
+                    op,
+                    format!(
+                        "COM-E-OBJECT-MISSING: unknown COM object handle {}",
+                        object.raw()
+                    ),
+                )
+            })?;
         if binding.native_dispatch == 0 {
             return Err(HalError::adapter_fault(
                 self.profile,
@@ -1165,8 +1168,8 @@ impl StandardHostServices {
                 "named arguments require a resolved COM member name and remain unsupported for default-member/direct-DISPID dispatch",
             ));
         }
-        let mut resolve_object = |token: ComObjectToken| {
-            self.resolve_native_dispatch_for_object_arg(token, "dispatch_invoke")
+        let mut resolve_object = |handle: ObjectHandle| {
+            self.resolve_native_dispatch_for_object_arg(handle, "dispatch_invoke")
                 .map_err(|err| format!("{} [{}] {}", err.stable_code, err.operation, err.message))
         };
         // SAFETY: `dispatch` is a live IDispatch pointer and `member` is treated as a direct
@@ -1234,8 +1237,8 @@ impl StandardHostServices {
                 ));
             }
         } else {
-            let mut resolve_object = |token: ComObjectToken| {
-                self.resolve_native_dispatch_for_object_arg(token, "dispatch_invoke")
+            let mut resolve_object = |handle: ObjectHandle| {
+                self.resolve_native_dispatch_for_object_arg(handle, "dispatch_invoke")
                     .map_err(|err| {
                         format!("{} [{}] {}", err.stable_code, err.operation, err.message)
                     })
@@ -1279,8 +1282,8 @@ impl StandardHostServices {
                 }
             }
         }
-        let mut resolve_object = |token: ComObjectToken| {
-            self.resolve_native_dispatch_for_object_arg(token, "dispatch_invoke")
+        let mut resolve_object = |handle: ObjectHandle| {
+            self.resolve_native_dispatch_for_object_arg(handle, "dispatch_invoke")
                 .map_err(|err| format!("{} [{}] {}", err.stable_code, err.operation, err.message))
         };
         match spec.invoke_kind {
@@ -1446,8 +1449,8 @@ impl StandardHostServices {
             ));
         }
         if !spec.requires_argument {
-            let mut resolve_object = |token: ComObjectToken| {
-                self.resolve_native_dispatch_for_object_arg(token, "dispatch_invoke")
+            let mut resolve_object = |handle: ObjectHandle| {
+                self.resolve_native_dispatch_for_object_arg(handle, "dispatch_invoke")
                     .map_err(|err| {
                         format!("{} [{}] {}", err.stable_code, err.operation, err.message)
                     })
@@ -1576,8 +1579,8 @@ impl StandardHostServices {
             ));
         }
         if !requires_argument {
-            let mut resolve_object = |token: ComObjectToken| {
-                self.resolve_native_dispatch_for_object_arg(token, "dispatch_invoke")
+            let mut resolve_object = |handle: ObjectHandle| {
+                self.resolve_native_dispatch_for_object_arg(handle, "dispatch_invoke")
                     .map_err(|err| {
                         format!("{} [{}] {}", err.stable_code, err.operation, err.message)
                     })
@@ -1769,8 +1772,8 @@ impl StandardHostServices {
         context: (&'static str, &str),
     ) -> Result<RuntimeValue, ComInvokeFailure> {
         let (label, prog_id_hint) = context;
-        let mut resolve_object = |token: ComObjectToken| {
-            self.resolve_native_dispatch_for_object_arg(token, "dispatch_invoke")
+        let mut resolve_object = |handle: ObjectHandle| {
+            self.resolve_native_dispatch_for_object_arg(handle, "dispatch_invoke")
                 .map_err(|err| format!("{} [{}] {}", err.stable_code, err.operation, err.message))
         };
         let mut invoke_args: Vec<VARIANT> = Vec::with_capacity(args.len());
@@ -2941,6 +2944,7 @@ impl ComHal for StandardHostServices {
         if !self.policy.allow_com_activation {
             return Err(self.denied(capability, "describe_object"));
         }
+        let object_handle = object;
         let object = object.raw();
         let descriptor = if self.native_com_enabled() {
             let state = self.com_lock(capability, "describe_object")?;
@@ -2949,7 +2953,7 @@ impl ComHal for StandardHostServices {
                 .bindings
                 .get(&ComObjectToken::new(object))
                 .map(|binding| ComObjectDescriptor {
-                    object: ComObjectToken::new(object),
+                    object: object_handle,
                     prog_id_name: binding.prog_id_name.clone(),
                     transport: if binding.native_dispatch != 0 {
                         ComObjectTransportKind::NativeDispatch
@@ -2973,7 +2977,7 @@ impl ComHal for StandardHostServices {
             None
         } else {
             Some(ComObjectDescriptor {
-                object: ComObjectToken::new(object),
+                object: object_handle,
                 prog_id_name: format!("selector:{object}"),
                 transport: ComObjectTransportKind::Projection,
                 supports_events: false,
@@ -4263,7 +4267,7 @@ impl ComState {
         Some(ComCallbackPayload {
             callback,
             subscription: payload.subscription,
-            object: payload.object,
+            object: ObjectHandle::new(payload.object.raw()),
             event: payload.event,
             args: payload.args,
         })
@@ -6475,7 +6479,7 @@ unsafe extern "system" fn oxvba_test_invoke(
                 Ok(value) => value,
                 Err(hr) => return hr,
             };
-            let mut resolve_object = |_token: ComObjectToken| {
+            let mut resolve_object = |_handle: ObjectHandle| {
                 Err("object dispatch echo unsupported in test helper".to_string())
             };
             if set_variant_dispatch_arg(
@@ -7056,7 +7060,7 @@ unsafe fn set_variant_dispatch_arg<F>(
     resolve_object: &mut F,
 ) -> Result<(), String>
 where
-    F: FnMut(ComObjectToken) -> Result<*mut RawIDispatch, String>,
+    F: FnMut(ObjectHandle) -> Result<*mut RawIDispatch, String>,
 {
     if variant.is_null() {
         return Ok(());
@@ -7125,7 +7129,7 @@ unsafe fn raw_dispatch_invoke_i4_args(
     args: &[ComInvokeArg],
     named_arg_dispids: &[i32],
     label: &'static str,
-    resolve_object: &mut impl FnMut(ComObjectToken) -> Result<*mut RawIDispatch, String>,
+    resolve_object: &mut impl FnMut(ObjectHandle) -> Result<*mut RawIDispatch, String>,
 ) -> Result<i32, ComInvokeFailure> {
     let mut invoke_args: Vec<VARIANT> = Vec::with_capacity(args.len());
     for arg in args.iter().rev() {
@@ -7227,7 +7231,7 @@ unsafe fn raw_dispatch_invoke_i4_args_positional(
     args: &[ComValue],
     property_put_named_arg: bool,
     label: &'static str,
-    resolve_object: &mut impl FnMut(ComObjectToken) -> Result<*mut RawIDispatch, String>,
+    resolve_object: &mut impl FnMut(ObjectHandle) -> Result<*mut RawIDispatch, String>,
 ) -> Result<i32, ComInvokeFailure> {
     let mut invoke_args: Vec<VARIANT> = Vec::with_capacity(args.len());
     for arg in args.iter().rev() {
@@ -7436,7 +7440,7 @@ unsafe fn raw_dispatch_property_get_i4_args(
     dispid: i32,
     args: &[ComInvokeArg],
     named_arg_dispids: &[i32],
-    resolve_object: &mut impl FnMut(ComObjectToken) -> Result<*mut RawIDispatch, String>,
+    resolve_object: &mut impl FnMut(ObjectHandle) -> Result<*mut RawIDispatch, String>,
 ) -> Result<i32, ComInvokeFailure> {
     raw_dispatch_invoke_i4_args(
         dispatch,
@@ -7456,7 +7460,7 @@ unsafe fn raw_dispatch_property_put_i4_args(
     dispid: i32,
     args: &[ComInvokeArg],
     named_arg_dispids: &[i32],
-    resolve_object: &mut impl FnMut(ComObjectToken) -> Result<*mut RawIDispatch, String>,
+    resolve_object: &mut impl FnMut(ObjectHandle) -> Result<*mut RawIDispatch, String>,
 ) -> Result<i32, ComInvokeFailure> {
     if named_arg_dispids.is_empty()
         && args
@@ -7503,7 +7507,7 @@ unsafe fn raw_dispatch_property_putref_i4_args(
     dispid: i32,
     args: &[ComInvokeArg],
     named_arg_dispids: &[i32],
-    resolve_object: &mut impl FnMut(ComObjectToken) -> Result<*mut RawIDispatch, String>,
+    resolve_object: &mut impl FnMut(ObjectHandle) -> Result<*mut RawIDispatch, String>,
 ) -> Result<i32, ComInvokeFailure> {
     if named_arg_dispids.is_empty()
         && args
@@ -7550,7 +7554,7 @@ unsafe fn raw_dispatch_invoke_method_i4_args(
     dispid: i32,
     args: &[ComInvokeArg],
     named_arg_dispids: &[i32],
-    resolve_object: &mut impl FnMut(ComObjectToken) -> Result<*mut RawIDispatch, String>,
+    resolve_object: &mut impl FnMut(ObjectHandle) -> Result<*mut RawIDispatch, String>,
 ) -> Result<i32, ComInvokeFailure> {
     raw_dispatch_invoke_i4_args(
         dispatch,
@@ -7623,6 +7627,8 @@ mod tests {
         ComObjectToken, create_oxvba_test_dispatch, raw_release_dispatch, raw_variant_to_com_value,
         set_variant_dispatch_arg,
     };
+    #[cfg(target_os = "windows")]
+    use oxvba_runtime::ObjectHandle;
     #[cfg(target_os = "windows")]
     use windows_sys::Win32::System::Variant::{VARIANT, VT_DISPATCH, VariantClear};
 
@@ -8014,7 +8020,7 @@ mod tests {
         let mut variant: VARIANT = unsafe { std::mem::zeroed() };
         let value = ComValue::String(BStr("Hello".to_string()));
         let mut resolve_object =
-            |_token: ComObjectToken| Err("object dispatch resolution not expected".to_string());
+            |_handle: ObjectHandle| Err("object dispatch resolution not expected".to_string());
         unsafe {
             set_variant_dispatch_arg(&mut variant, &value, &mut resolve_object)
                 .expect("set string variant");
@@ -8031,8 +8037,8 @@ mod tests {
     fn com_object_handle_variant_uses_dispatch_pointer_lane() {
         let mut variant: VARIANT = unsafe { std::mem::zeroed() };
         let dispatch = create_oxvba_test_dispatch();
-        let value = ComValue::ObjectHandle(ComObjectToken::new(20_001));
-        let mut resolve_object = |_token: ComObjectToken| Ok(dispatch);
+        let value = ComValue::ObjectHandle(ObjectHandle::new(20_001));
+        let mut resolve_object = |_handle: ObjectHandle| Ok(dispatch);
         unsafe {
             set_variant_dispatch_arg(&mut variant, &value, &mut resolve_object)
                 .expect("set object-handle variant");

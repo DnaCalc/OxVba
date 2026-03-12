@@ -168,8 +168,14 @@ Run context: active parity/compliance execution plus in-progress feature worklis
     - `ComConnectionPointAdviseRequest` now carries `ComSubscriptionToken` / `ComObjectToken` / `ComMemberToken`,
     - `OxvbaComEventSink` and `OxvbaComEventSourceInterfaceSink` now store typed COM tokens directly,
     - COM token and runtime handle wrappers are now explicitly `repr(transparent)` so this typed FFI bookkeeping does not depend on accidental layout,
+  - the shared runtime-facing COM model now uses semantic runtime object identity instead of COM object tokens:
+    - `ComInvokeRequest.object` now carries `ObjectHandle`,
+    - `ComObjectDescriptor.object` now carries `ObjectHandle`,
+    - `ComCallbackPayload.object` now carries `ObjectHandle`,
+    - `ComValue::ObjectHandle(...)` now carries `ObjectHandle`,
+    - adapter-native COM helpers now resolve `ObjectHandle` to adapter-internal `ComObjectToken` only at the adapter lookup edge,
   - the remaining runtime/host boundary holdouts are now concentrated in:
-    - remaining raw `i32`-backed object/binding representations below those typed surfaces (`ObjectHandle`, `ComObjectToken`, binding handles),
+    - remaining raw `i32`-backed object/binding representations below those typed surfaces (`ObjectHandle`, binding handles),
     - remaining direct interpreter/test/caller expectations that still consume the legacy integer observation aliases,
     - the remaining direct legacy observation surface is now mostly the explicit public compatibility API itself plus callers that deliberately verify that compatibility API,
   - the new `ComValue` carrier and generic dynamic-object protocol can live at the COM boundary, but they cannot yet become the single runtime object/value model while the wider execution substrate remains token-only.
