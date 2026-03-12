@@ -164,6 +164,18 @@ mod tests {
     }
 
     #[test]
+    fn runtime_value_array_payload_still_projects_legacy_shape_by_length() {
+        let value = RuntimeValue::ArrayIntent(SafeArray::from_values(vec![
+            RuntimeValue::I32(4),
+            RuntimeValue::I32(9),
+        ]));
+        assert_eq!(
+            value.to_legacy_i32().expect("array tag"),
+            ARRAY_TAG_BASE + 2
+        );
+    }
+
+    #[test]
     fn runtime_value_object_handles_preserve_legacy_shape() {
         assert_eq!(
             RuntimeValue::ObjectHandle(ObjectHandle::new(42))

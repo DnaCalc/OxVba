@@ -2627,4 +2627,10 @@
   - VM project-object dispatch now resolves `DynamicMemberSelector::DefaultMember` through that metadata instead of erroring on native objects
   - verification:
     - `cargo test -p oxvba-host formal_pmr_dispatchinvoke_routes_internal_class_default_member_through_native_dynamic_path -- --nocapture`
+- Continued the value-carrier slice for COM array transport:
+  - `SafeArray` can now preserve owned semantic element payloads instead of carrying only length/dimension shape
+  - runtime and COM carrier tests now lock the rule that array payloads survive in the semantic carrier while legacy tag projection still falls back to array length where required
+  - this does not yet claim real COM SAFEARRAY wire marshalling; the Windows adapter still narrows array arguments before `IDispatch::Invoke`
+  - verification:
+    - `cargo test -p oxvba-runtime -p oxvba-com --quiet`
 

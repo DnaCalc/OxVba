@@ -311,6 +311,25 @@ mod tests {
     }
 
     #[test]
+    fn com_value_preserves_safe_array_payload_shape() {
+        let value = ComValue::ArrayIntent(SafeArray::from_values(vec![
+            RuntimeValue::I32(4),
+            RuntimeValue::String(BStr("A".to_string())),
+        ]));
+        assert_eq!(
+            value.to_runtime_value(),
+            RuntimeValue::ArrayIntent(SafeArray::from_values(vec![
+                RuntimeValue::I32(4),
+                RuntimeValue::String(BStr("A".to_string())),
+            ]))
+        );
+        assert_eq!(
+            value.to_runtime_token().expect("array tag"),
+            ARRAY_TAG_BASE + 2
+        );
+    }
+
+    #[test]
     fn com_member_token_roundtrips_raw_dispid() {
         let token = ComMemberToken::new(11);
         assert_eq!(token.raw(), 11);

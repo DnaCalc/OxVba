@@ -65,7 +65,7 @@ Run context: active parity/compliance execution plus in-progress feature worklis
 - Recommendation:
   - continue with the late-bound COM completion workset together with the shared dynamic-object protocol/value-carrier workset so broader `VARIANT`/object/`SAFEARRAY` marshalling lands on the right runtime contract.
 
-### BLK-COM-VALUE-TRANSPORT-001: Shared COM value transport is still a lossy `i32` lane
+### BLK-COM-VALUE-TRANSPORT-001: Shared COM value transport still lacks full COM payload fidelity
 - Impact:
   - Blocks the remaining high-value closure work in `IP-03` Windows late-bound COM client parity.
   - Blocks practical SAFEARRAY/object/string COM transport and therefore parts of `IP-04` COM extraction and `IP-09` marshaling parity.
@@ -74,15 +74,16 @@ Run context: active parity/compliance execution plus in-progress feature worklis
   - `oxvba-com` now owns a first semantic carrier slice via `ComValue`,
   - `ComInvokeArg.value` and `ComCallbackPayload.args` no longer use raw `i32` tokens at the shared COM boundary,
   - VM `DispatchInvoke` construction now preserves `Empty`/`Null`/`CVErr(...)`/array-intent shape and runtime strings into that carrier instead of flattening them before the COM boundary,
+  - `SafeArray` carrier values can now preserve owned semantic element payloads instead of only length/dimension shape,
   - Windows COM invoke/result translation now maps that carrier to and from `VARIANT` for the supported subset, including BSTR string arguments/results, and callback payload polling returns the same carrier family,
   - native late-bound COM argument marshalling now clears temporary `VARIANT` invoke arguments after dispatch so BSTR-backed calls do not leak adapter-owned allocations,
   - `ComValue` now preserves `ObjectHandle(...)` semantically instead of degrading it back into plain integers before the COM boundary,
   - Windows native COM argument marshalling now resolves `ObjectHandle(...)` through adapter-owned binding state and emits `VT_DISPATCH` with balanced `AddRef`/`VariantClear` ownership for native COM-backed objects,
   - Windows native COM invoke result conversion now binds `VT_DISPATCH` results back into adapter-owned object handles on the runtime-value path instead of discarding them into the legacy scalar lane,
-  - VM slots and the wider runtime/host value model are still `i32`-backed, so the new carrier currently preserves only the semantically recoverable subset,
-  - array intent is now preserved to the COM boundary, but the Windows adapter still has to narrow that intent to the old placeholder integer because real SAFEARRAY payload data is not yet available,
+  - the runtime value model itself is now semantic/value-first, but COM wire translation still only covers the currently supported subset,
+  - array payload intent is now preserved in the carrier, but the Windows adapter still has to narrow array arguments to the old placeholder integer because real SAFEARRAY wire marshalling is not yet implemented,
   - broader interface-pointer result forms beyond `VT_DISPATCH` (for example `VT_UNKNOWN`) still do not traverse the shared runtime-facing carrier,
-  - callback ingress into the wider runtime still narrows back into the old runtime token lane after the COM boundary because the unified dynamic-object/value-carrier work is only partially complete.
+  - callback ingress now preserves the shared carrier at the COM boundary, but broader array/object/interface payload fidelity remains partial.
 - Exact unblock steps:
   - extend the first `ComValue` slice into the full canonical OxVba-side external-call carrier for:
     - broader object/interface-pointer result forms and identity roundtrip,

@@ -146,7 +146,7 @@ Progress:
 12. native `DynamicMemberSelector::DefaultMember` dispatch now resolves through that metadata on the same shared runtime-facing protocol.
 
 Open remainder:
-1. object identity, BSTR/string payloads, and real SAFEARRAY contents still need carrier representation,
+1. object identity and real SAFEARRAY wire marshalling still need full carrier-to-boundary completion,
 2. the runtime value-model migration blocker is resolved and no longer owns the next step,
 3. the native dynamic-object protocol blocker is resolved and no longer owns the next step.
 
