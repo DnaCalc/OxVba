@@ -178,15 +178,17 @@ Implementation default:
 
 ### 3.2 Compatible execution strategy
 
-The migration may use one of two acceptable shapes:
-1. replace slot storage with richer runtime values directly,
-2. keep slot-like storage but make it an indirection/index into a richer value arena.
+Chosen migration shape:
+1. direct rich-slot semantic values are the primary execution model,
+2. explicit handle types remain acceptable for identity-bearing lanes (`ObjectHandle`, `BindingHandle`),
+3. arena/indirection may still be used behind specific handle-bearing domains if needed, but not as the primary replacement for semantic runtime values.
 
 The design choice must satisfy:
 1. deterministic behavior,
 2. tractable JIT/VM parity maintenance,
 3. manageable host/HAL boundary migration,
 4. compatibility with the unified late-bound object protocol and external value carrier.
+5. COM-style layout alignment may be used where it reduces marshalling cost, but the semantic model remains OxVba-owned.
 
 ### 3.3 Boundary rule
 

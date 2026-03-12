@@ -43,7 +43,12 @@ High-level execution path:
 - the invoke path still leans on a lossy `i32` value lane,
 - richer COM value transport therefore cannot close honestly until a canonical OxVba-side carrier replaces that lossy path,
 - that carrier should stay semantic-value-oriented rather than becoming raw COM wire types inside the VM/compiler boundary.
-7. The next architectural step is broader than a value-carrier patch:
+7. The runtime value-model migration is now locked to a direct rich-slot semantic-value approach:
+- `RuntimeValue` is the primary execution substrate direction,
+- typed identity carriers such as `ObjectHandle` and `BindingHandle` remain acceptable semantic leaves,
+- COM-style `Variant`/`BSTR` alignment is acceptable where it lowers boundary cost,
+- but COM layout compatibility does not transfer semantic ownership away from OxVba.
+8. The next architectural step is broader than a value-carrier patch:
 - early-bound COM should converge on a synthetic reference facade in the compiler/binder,
 - late-bound COM should converge on the same internal dynamic-object protocol used for VBA objects,
 - `oxvba-com` should sit behind those contracts as the COM adapter rather than defining a separate top-level runtime model.
@@ -54,6 +59,7 @@ Near-term architectural direction remains:
 - contract HAL back toward host/profile/policy/bootstrap concerns
 - extract deeper COM transport/state/metadata ownership from `oxvba-hal` into `oxvba-com`
 - introduce a richer OxVba-side external value carrier so compiler/VM/host stay on semantic values while `oxvba-com` handles COM translation
+- continue converging `RuntimeValue` and the runtime `Variant` model where owned COM-style layout alignment is honest for the supported subset
 - define a unified late-bound object protocol so COM and native VBA objects share one dynamic-call model
 - make typelib-backed COM imports look like synthetic reference/project metadata to the compiler where VBA semantics allow
 - keep compiler/VM/host semantics aligned while that extraction happens in staged slices

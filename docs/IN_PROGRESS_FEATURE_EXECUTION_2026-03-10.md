@@ -193,6 +193,7 @@ Status vocabulary:
     - VM `WithEvents` owner iteration now preserves `ObjectHandle` identity internally instead of flattening owners back to raw integers during traversal,
     - host COM callback dispatch and subscription-handler bookkeeping now preserve `ComCallbackToken` / `ComSubscriptionToken` identity instead of normalizing them back to bare `i32`,
     - `RuntimeValue` now carries `BindingHandle(...)` semantically and `DynamicLinkHal::bind_descriptor_value(...)` returns that semantic binding identity instead of forcing it through plain `I32`,
+    - `oxvba-runtime::Variant` now has an explicit bridge to and from the currently honest `RuntimeValue` subset (`Empty`, `Null`, `I32`, `Bool`), giving the runtime migration an executable COM-style scalar convergence point without handing semantic ownership to COM,
     - the remaining active seam is the explicit raw-`i32` HAL compatibility contract plus the still-legacy-heavy interpreter/caller/test estate around integer snapshots.
 
 ### `IP-05` Windows early-bound COM and type-library parity

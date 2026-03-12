@@ -1,3 +1,5 @@
+use crate::runtime_value::RuntimeValue;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u16)]
 pub enum VarType {
@@ -133,6 +135,10 @@ impl Variant {
         Self::from_bytes(VarType::Empty, [0; 8])
     }
 
+    pub fn null() -> Self {
+        Self::from_bytes(VarType::Null, [0; 8])
+    }
+
     pub fn from_i16(value: i16) -> Self {
         let mut bytes = [0u8; 8];
         bytes[0..2].copy_from_slice(&value.to_le_bytes());
@@ -187,10 +193,64 @@ impl Variant {
         let v = i16::from_le_bytes([bytes[0], bytes[1]]);
         Some(v != 0)
     }
+
+    pub fn from_runtime_value(value: &RuntimeValue) -> Result<Self, String> {
+        match value {
+            RuntimeValue::Empty => Ok(Self::empty()),
+            RuntimeValue::Null => Ok(Self::null()),
+            RuntimeValue::ErrorCode(_) => Err(
+                "error-code runtime values are not yet representable in owned runtime Variant"
+                    .to_string(),
+            ),
+            RuntimeValue::I32(value) => Ok(Self::from_i32(*value)),
+            RuntimeValue::Bool(value) => Ok(Self::from_bool(*value)),
+            RuntimeValue::String(_) => Err(
+                "string runtime values are not yet representable in owned runtime Variant"
+                    .to_string(),
+            ),
+            RuntimeValue::ArrayIntent(_) => Err(
+                "array-intent runtime values are not yet representable in owned runtime Variant"
+                    .to_string(),
+            ),
+            RuntimeValue::ObjectHandle(_) => Err(
+                "object-handle runtime values are not yet representable in owned runtime Variant"
+                    .to_string(),
+            ),
+            RuntimeValue::BindingHandle(_) => Err(
+                "binding-handle runtime values are not part of the runtime Variant subset"
+                    .to_string(),
+            ),
+        }
+    }
+
+    pub fn to_runtime_value(&self) -> Result<RuntimeValue, String> {
+        match self.vtype {
+            VarType::Empty => Ok(RuntimeValue::Empty),
+            VarType::Null => Ok(RuntimeValue::Null),
+            VarType::Integer => self
+                .as_i16()
+                .map(|value| RuntimeValue::I32(value as i32))
+                .ok_or_else(|| "invalid Integer variant payload".to_string()),
+            VarType::Long => self
+                .as_i32()
+                .map(RuntimeValue::I32)
+                .ok_or_else(|| "invalid Long variant payload".to_string()),
+            VarType::Boolean => self
+                .as_bool()
+                .map(RuntimeValue::Bool)
+                .ok_or_else(|| "invalid Boolean variant payload".to_string()),
+            other => Err(format!(
+                "runtime Variant -> RuntimeValue bridge does not yet support {:?}",
+                other
+            )),
+        }
+    }
 }
 
 #[cfg(test)]
 mod tests {
+    use crate::{RuntimeValue, bstr::BStr};
+
     use super::{VarType, Variant, VariantData};
 
     #[test]
@@ -228,6 +288,34 @@ mod tests {
         let roundtrip = Variant::from_wire_bytes(wire).expect("wire roundtrip");
         assert_eq!(roundtrip.vtype, VarType::Long);
         assert_eq!(roundtrip.as_i32(), Some(42));
+    }
+
+    #[test]
+    fn variant_runtime_value_bridge_roundtrips_supported_subset() {
+        let bool_variant = Variant::from_runtime_value(&RuntimeValue::Bool(true))
+            .expect("bool runtime value should bridge to Variant");
+        assert_eq!(
+            bool_variant
+                .to_runtime_value()
+                .expect("bool Variant should bridge back"),
+            RuntimeValue::Bool(true)
+        );
+
+        let null_variant =
+            Variant::from_runtime_value(&RuntimeValue::Null).expect("null runtime value");
+        assert_eq!(
+            null_variant.to_runtime_value().expect("null roundtrip"),
+            RuntimeValue::Null
+        );
+    }
+
+    #[test]
+    fn variant_runtime_value_bridge_rejects_unowned_runtime_shapes() {
+        assert!(Variant::from_runtime_value(&RuntimeValue::BindingHandle(7.into())).is_err());
+        assert!(
+            Variant::from_runtime_value(&RuntimeValue::String(BStr("abc".to_string()))).is_err()
+        );
+        assert!(Variant::from_runtime_value(&RuntimeValue::ErrorCode(7)).is_err());
     }
 }
 

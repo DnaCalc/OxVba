@@ -108,6 +108,7 @@ Run context: active parity/compliance execution plus in-progress feature worklis
   - dynamic-link binding identity is now explicitly typed in `oxvba-runtime` as `BindingHandle` instead of being represented only as an untyped integer binding token,
   - `RuntimeValue::BindingHandle(...)` now carries that typed binding identity semantically instead of forcing dynamic-link binding values to masquerade as plain `I32`,
   - `DynamicLinkHal::{bind_descriptor,prepare_invoke,invoke_bound}` now use `BindingHandle` directly instead of raw integer binding tokens,
+  - `oxvba-runtime::Variant` now has an explicit bridge to and from the currently honest `RuntimeValue` subset (`Empty`, `Null`, `I32`, `Bool`), so the runtime migration has an executable COM-style scalar convergence point without treating COM wire types as the semantic owner,
   - dynamic-link symbol identity is now explicitly typed at the runtime/HAL seam as `DynLinkSymbol` instead of being represented only as an untyped integer symbol token,
   - `DynLinkDescriptorView.symbol` and `DynamicLinkHal::invoke_symbol(...)` now use `DynLinkSymbol` directly at the runtime/HAL seam,
   - serialized bytecode dynamic-link descriptor/instruction symbol fields now also use `DynLinkSymbol`, so the VM no longer re-enters the runtime with raw dynamic-link symbol integers,

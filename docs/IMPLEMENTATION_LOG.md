@@ -17,6 +17,31 @@
 - Verification:
   - `cargo test -p oxvba-runtime -p oxvba-com -p oxvba-hal -p oxvba-vm -p oxvba-cli --quiet`
 
+## 2026-03-12 - RuntimeValue and Variant now have an explicit supported-subset bridge
+
+- Continued the runtime representation convergence in:
+  - [variant.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-runtime\src\variant.rs)
+  - [runtime_value.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-runtime\src\runtime_value.rs)
+  - [WORKSET_2026-03-11_RUNTIME_VALUE_MODEL_MIGRATION.md](C:\Work\DnaCalc\OxVba\docs\worksets\WORKSET_2026-03-11_RUNTIME_VALUE_MODEL_MIGRATION.md)
+  - [ARCHITECTURE.md](C:\Work\DnaCalc\OxVba\docs\ARCHITECTURE.md)
+- The runtime now has an explicit owned `RuntimeValue` <-> `Variant` bridge for the currently honest subset:
+  - `Empty`
+  - `Null`
+  - `I32`
+  - `Bool`
+- The bridge intentionally rejects runtime shapes that are not yet honestly representable in the owned runtime `Variant` model:
+  - `String`
+  - `ArrayIntent`
+  - `ObjectHandle`
+  - `BindingHandle`
+  - `ErrorCode`
+- Net effect:
+  - the runtime migration now has an executable COM-style scalar convergence point,
+  - COM-style layout compatibility is being adopted as an implementation default where it is semantically honest,
+  - but unsupported runtime shapes still remain outside the owned `Variant` subset until their ownership model is defined correctly.
+- Verification:
+  - `cargo test -p oxvba-runtime --quiet`
+
 ## 2026-03-12 - VM WithEvents and host COM callback paths keep typed identity
 
 - Continued the runtime handle migration in:
