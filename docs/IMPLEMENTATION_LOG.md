@@ -1,5 +1,24 @@
 # Implementation Log
 
+## 2026-03-11 - COM member/event identity typed on the shared boundary
+
+- Tightened the shared COM model and its boundary consumers in:
+  - [model.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-com\src\model.rs),
+  - [dynamic_object.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-com\src\dynamic_object.rs),
+  - [standard.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-hal\src\adapters\standard.rs),
+  - [interpreter.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-vm\src\interpreter.rs),
+  - [engine.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-host\src\engine.rs),
+  - [lib.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-com\src\lib.rs).
+- Introduced `ComMemberToken` and moved the shared boundary to typed member/event identity:
+  - `ComInvokeRequest.member`,
+  - `ComCallbackPayload.event`,
+  - `ComObjectDescriptor::{known_member_tokens,known_event_tokens,default_member_token}`.
+- Net effect:
+  - raw DISPIDs are no longer exposed on the public COM request/callback/descriptor boundary,
+  - the remaining blocker is further below the seam: object/binding identity and the wider runtime substrate still use `i32`-backed handles underneath.
+- Verification:
+  - `cargo test -p oxvba-com -p oxvba-hal -p oxvba-vm -p oxvba-host --quiet`
+
 ## 2026-03-11 - Dead `*_legacy_slots()` wrappers removed from VM and host session APIs
 
 - Contracted the remaining dead integer-observation wrappers in:

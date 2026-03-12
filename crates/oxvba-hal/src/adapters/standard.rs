@@ -2952,9 +2952,19 @@ impl ComHal for StandardHostServices {
                         ComObjectTransportKind::Projection
                     },
                     supports_events: !binding.event_specs.is_empty(),
-                    known_member_tokens: binding.member_specs.keys().copied().collect(),
-                    known_event_tokens: binding.event_specs.keys().copied().collect(),
-                    default_member_token: binding.default_member_token,
+                    known_member_tokens: binding
+                        .member_specs
+                        .keys()
+                        .copied()
+                        .map(Into::into)
+                        .collect(),
+                    known_event_tokens: binding
+                        .event_specs
+                        .keys()
+                        .copied()
+                        .map(Into::into)
+                        .collect(),
+                    default_member_token: binding.default_member_token.map(Into::into),
                     default_member_name: binding
                         .default_member_token
                         .and_then(|token| binding.member_specs.get(&token))
@@ -2987,7 +2997,7 @@ impl ComHal for StandardHostServices {
         request: &ComInvokeRequest,
     ) -> HalResult<RuntimeValue> {
         let object = request.object.raw();
-        let member = request.member;
+        let member = request.member.raw();
         let args = request.args.as_slice();
         let positional_values = Self::com_invoke_arg_values_if_legacy(args);
         let capability = CapabilityId::ComActivationDispatch;
@@ -4235,7 +4245,7 @@ impl ComState {
             callback: ComCallbackToken::from(callback),
             subscription: ComSubscriptionToken::from(payload.subscription),
             object: ComObjectToken::from(payload.object),
-            event: payload.event,
+            event: payload.event.into(),
             args: payload
                 .args
                 .into_iter()
@@ -8571,7 +8581,7 @@ mod tests {
         assert_eq!(payload.callback.raw(), callback);
         assert_eq!(payload.subscription.raw(), subscription);
         assert_eq!(payload.object.raw(), object.raw());
-        assert_eq!(payload.event, super::TEST_EVENT_CHANGED_PAIR);
+        assert_eq!(payload.event.raw(), super::TEST_EVENT_CHANGED_PAIR);
         assert_eq!(payload.args, vec![ComValue::I32(90), ComValue::I32(91)]);
         assert!(
             host.poll_event_callback()
@@ -8880,7 +8890,7 @@ mod tests {
             .expect("create_object should return a token");
         let request = ComInvokeRequest {
             object: object.raw().into(),
-            member: super::TEST_DISPID_SUM_PAIR,
+            member: super::TEST_DISPID_SUM_PAIR.into(),
             args: vec![
                 ComInvokeArg::named(14, "rhs"),
                 ComInvokeArg::named(3, "lhs"),
@@ -8905,7 +8915,7 @@ mod tests {
             .expect("create_object should return a token");
         let request = ComInvokeRequest {
             object: object.raw().into(),
-            member: super::TEST_DISPID_LOOKUP_PAIR,
+            member: super::TEST_DISPID_LOOKUP_PAIR.into(),
             args: vec![
                 ComInvokeArg::named(14, "rhs"),
                 ComInvokeArg::named(3, "lhs"),
@@ -8931,7 +8941,7 @@ mod tests {
             .expect("create_object should return a token");
         let request = ComInvokeRequest {
             object: object.raw().into(),
-            member: 0,
+            member: 0.into(),
             args: vec![ComInvokeArg::named(19, "value")],
             invoke_kind_hint: None,
         };
@@ -8957,7 +8967,7 @@ mod tests {
             .expect("create_object should return dictionary token");
         let request = ComInvokeRequest {
             object: object.raw().into(),
-            member: 0,
+            member: 0.into(),
             args: vec![ComInvokeArg::named(19, "value")],
             invoke_kind_hint: None,
         };
@@ -8982,7 +8992,7 @@ mod tests {
             .expect("create_object should return a token");
         let request = ComInvokeRequest {
             object: object.raw().into(),
-            member: super::TEST_DISPID_LOOKUP,
+            member: super::TEST_DISPID_LOOKUP.into(),
             args: vec![ComInvokeArg::omitted()],
             invoke_kind_hint: None,
         };
@@ -9002,7 +9012,7 @@ mod tests {
             .expect("create_object should return a token");
         let request = ComInvokeRequest {
             object: object.raw().into(),
-            member: super::TEST_DISPID_SET_INDEXED_VALUE,
+            member: super::TEST_DISPID_SET_INDEXED_VALUE.into(),
             args: vec![ComInvokeArg::positional(7), ComInvokeArg::named(9, "value")],
             invoke_kind_hint: None,
         };
@@ -9022,7 +9032,7 @@ mod tests {
             .expect("create_object should return a token");
         let request = ComInvokeRequest {
             object: object.raw().into(),
-            member: super::TEST_DISPID_SET_INDEXED_VALUE,
+            member: super::TEST_DISPID_SET_INDEXED_VALUE.into(),
             args: vec![
                 ComInvokeArg::named(9, "value"),
                 ComInvokeArg::named(7, "lhs"),
@@ -9055,7 +9065,7 @@ mod tests {
             .expect("create_object should return a token");
         let request = ComInvokeRequest {
             object: object.raw().into(),
-            member: super::TEST_DISPID_SET_INDEXED_VALUE_REF,
+            member: super::TEST_DISPID_SET_INDEXED_VALUE_REF.into(),
             args: vec![
                 ComInvokeArg::named(13, "value"),
                 ComInvokeArg::named(8, "lhs"),
@@ -9770,16 +9780,16 @@ mod tests {
         assert!(
             descriptor
                 .known_member_tokens
-                .contains(&super::TEST_DISPID_COUNT)
+                .contains(&super::TEST_DISPID_COUNT.into())
         );
         assert!(
             descriptor
                 .known_member_tokens
-                .contains(&super::TEST_DISPID_FIRE_CHANGED_PAIR)
+                .contains(&super::TEST_DISPID_FIRE_CHANGED_PAIR.into())
         );
         assert_eq!(
             descriptor.default_member_token,
-            Some(super::TEST_DISPID_ECHO_VARIANT)
+            Some(super::TEST_DISPID_ECHO_VARIANT.into())
         );
         assert_eq!(
             descriptor.default_member_name.as_deref(),
@@ -9788,12 +9798,12 @@ mod tests {
         assert!(
             descriptor
                 .known_event_tokens
-                .contains(&super::TEST_EVENT_CHANGED)
+                .contains(&super::TEST_EVENT_CHANGED.into())
         );
         assert!(
             descriptor
                 .known_event_tokens
-                .contains(&super::TEST_EVENT_CHANGED_PAIR)
+                .contains(&super::TEST_EVENT_CHANGED_PAIR.into())
         );
         assert_eq!(
             descriptor.typelib_cache_key.as_deref(),

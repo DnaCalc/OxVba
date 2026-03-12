@@ -105,11 +105,15 @@ Completed slices:
 43. CLI execution no longer stores duplicate integer snapshots in memory and derives `SLOTS:` output directly from semantic runtime values only at the output edge.
 44. The mixed edge/scaling host integration suite now also executes through semantic project snapshots instead of the legacy integer snapshot API.
 45. The raw scalar `dispatch_invoke_legacy(object, member, arg)` helper and the request-shaped `dispatch_invoke_legacy_v2(...)` compatibility entrypoint have both been removed from the public HAL contract and reduced to test-local helpers inside the standard-adapter regression suite.
+46. COM member/event identity is now typed on the shared boundary:
+   - `ComInvokeRequest.member` now carries `ComMemberToken`,
+   - `ComCallbackPayload.event` now carries `ComMemberToken`,
+   - `ComObjectDescriptor::{known_member_tokens,known_event_tokens,default_member_token}` now carry typed member tokens.
 
 Remaining blocker seam:
 1. explicit raw `i32` compatibility signatures still anchor the remaining legacy COM seams,
 2. the remaining holdouts are now concentrated in:
-   - raw `i32`-backed COM identity/member shapes (`ObjectHandle`, `ComObjectToken`, member DISPIDs) below the semantic dispatch surface,
+   - raw `i32`-backed COM object/binding identity shapes (`ObjectHandle`, `ComObjectToken`, binding handles) below the semantic dispatch surface,
    - remaining interpreter/test/caller expectations that still consume the legacy integer observation aliases,
 3. JIT internals and parity harnesses still observe only the integer slot lane for Cranelift-supported subsets,
 4. the explicit compatibility API remains in place and still needs to be bounded/documented as compatibility rather than primary execution,

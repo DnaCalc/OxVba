@@ -16,8 +16,8 @@ pub use dynamic_object::{
 };
 pub use model::{
     ComCallbackPayload, ComCallbackToken, ComInvokeArg, ComInvokeKind, ComInvokeRequest,
-    ComObjectDescriptor, ComObjectToken, ComObjectTransportKind, ComSubscriptionToken, ComValue,
-    DISPATCH_INVOKE_MISSING_ARG_TOKEN,
+    ComMemberToken, ComObjectDescriptor, ComObjectToken, ComObjectTransportKind,
+    ComSubscriptionToken, ComValue, DISPATCH_INVOKE_MISSING_ARG_TOKEN,
 };
 pub use refcount::RefCount;
 pub use typelib::{

@@ -777,7 +777,7 @@ mod tests {
     ) -> RuntimeValue {
         let request = ComInvokeRequest::new(
             ComObjectToken::new(object.raw()),
-            member,
+            member.into(),
             if arg == oxvba_com::DISPATCH_INVOKE_MISSING_ARG_TOKEN {
                 Vec::new()
             } else {
@@ -1985,10 +1985,10 @@ mod tests {
             oxvba_com::ComObjectTransportKind::NativeDispatch
         );
         assert!(descriptor.supports_events);
-        assert!(descriptor.known_member_tokens.contains(&1));
-        assert!(descriptor.known_member_tokens.contains(&12));
-        assert!(descriptor.known_event_tokens.contains(&1));
-        assert!(descriptor.known_event_tokens.contains(&3));
+        assert!(descriptor.known_member_tokens.contains(&1.into()));
+        assert!(descriptor.known_member_tokens.contains(&12.into()));
+        assert!(descriptor.known_event_tokens.contains(&1.into()));
+        assert!(descriptor.known_event_tokens.contains(&3.into()));
         assert_eq!(
             descriptor.typelib_cache_key.as_deref(),
             Some("typelib:oxvba-testdispatch:1.0:0")

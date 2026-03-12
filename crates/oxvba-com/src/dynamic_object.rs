@@ -1,6 +1,6 @@
 use crate::{
     ComCallbackPayload, ComCallbackToken, ComInvokeArg, ComInvokeKind, ComInvokeRequest,
-    ComObjectToken, ComSubscriptionToken, ComValue,
+    ComMemberToken, ComObjectToken, ComSubscriptionToken, ComValue,
 };
 
 macro_rules! define_dynamic_token {
@@ -129,10 +129,10 @@ impl From<&ComInvokeRequest> for DynamicCallRequest {
     fn from(value: &ComInvokeRequest) -> Self {
         Self {
             object: value.object.into(),
-            member: if value.member == 0 {
+            member: if value.member.raw() == 0 {
                 DynamicMemberSelector::DefaultMember
             } else {
-                DynamicMemberSelector::Token(value.member)
+                DynamicMemberSelector::Token(value.member.raw())
             },
             args: value.args.clone().into_iter().map(Into::into).collect(),
             call_kind_hint: value.invoke_kind_hint.map(Into::into),
@@ -153,7 +153,7 @@ impl DynamicCallRequest {
         };
         Ok(ComInvokeRequest {
             object: self.object.into(),
-            member,
+            member: ComMemberToken::new(member),
             args: self.args.clone().into_iter().map(Into::into).collect(),
             invoke_kind_hint: self.call_kind_hint.map(Into::into),
         })
@@ -165,7 +165,7 @@ pub struct DynamicEventPayload {
     pub callback: DynamicCallbackToken,
     pub subscription: DynamicSubscriptionToken,
     pub object: DynamicObjectToken,
-    pub event: i32,
+    pub event: ComMemberToken,
     pub args: Vec<DynamicValue>,
 }
 
@@ -191,7 +191,7 @@ mod tests {
     fn com_invoke_request_converts_to_dynamic_default_member_shape() {
         let request = ComInvokeRequest {
             object: 20_004.into(),
-            member: 0,
+            member: 0.into(),
             args: vec![ComInvokeArg::named_value(ComValue::I32(7), "value")],
             invoke_kind_hint: Some(ComInvokeKind::PropertyPut),
         };
@@ -218,7 +218,7 @@ mod tests {
             .try_into_com_invoke_request()
             .expect("token-backed dynamic request should lower");
         assert_eq!(com_request.object.raw(), 20_007);
-        assert_eq!(com_request.member, 11);
+        assert_eq!(com_request.member.raw(), 11);
         assert_eq!(
             com_request.invoke_kind_hint,
             Some(ComInvokeKind::PropertyPutRef)

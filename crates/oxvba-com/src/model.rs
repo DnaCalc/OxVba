@@ -39,6 +39,7 @@ macro_rules! define_token {
 }
 
 define_token!(ComObjectToken);
+define_token!(ComMemberToken);
 define_token!(ComSubscriptionToken);
 define_token!(ComCallbackToken);
 
@@ -54,9 +55,9 @@ pub struct ComObjectDescriptor {
     pub prog_id_name: String,
     pub transport: ComObjectTransportKind,
     pub supports_events: bool,
-    pub known_member_tokens: Vec<i32>,
-    pub known_event_tokens: Vec<i32>,
-    pub default_member_token: Option<i32>,
+    pub known_member_tokens: Vec<ComMemberToken>,
+    pub known_event_tokens: Vec<ComMemberToken>,
+    pub default_member_token: Option<ComMemberToken>,
     pub default_member_name: Option<String>,
     pub typelib_cache_key: Option<String>,
 }
@@ -198,13 +199,13 @@ impl ComInvokeArg {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ComInvokeRequest {
     pub object: ComObjectToken,
-    pub member: i32,
+    pub member: ComMemberToken,
     pub args: Vec<ComInvokeArg>,
     pub invoke_kind_hint: Option<ComInvokeKind>,
 }
 
 impl ComInvokeRequest {
-    pub fn new(object: ComObjectToken, member: i32, args: Vec<ComInvokeArg>) -> Self {
+    pub fn new(object: ComObjectToken, member: ComMemberToken, args: Vec<ComInvokeArg>) -> Self {
         Self {
             object,
             member,
@@ -219,7 +220,11 @@ impl ComInvokeRequest {
         } else {
             vec![ComInvokeArg::positional(arg)]
         };
-        Self::new(ComObjectToken::new(object), member, args)
+        Self::new(
+            ComObjectToken::new(object),
+            ComMemberToken::new(member),
+            args,
+        )
     }
 }
 
@@ -228,13 +233,13 @@ pub struct ComCallbackPayload {
     pub callback: ComCallbackToken,
     pub subscription: ComSubscriptionToken,
     pub object: ComObjectToken,
-    pub event: i32,
+    pub event: ComMemberToken,
     pub args: Vec<ComValue>,
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{ComObjectToken, ComValue};
+    use super::{ComMemberToken, ComObjectToken, ComValue};
     use oxvba_runtime::{
         ObjectHandle, RuntimeValue,
         bstr::BStr,
@@ -303,5 +308,12 @@ mod tests {
                 .to_runtime_token()
                 .is_err()
         );
+    }
+
+    #[test]
+    fn com_member_token_roundtrips_raw_dispid() {
+        let token = ComMemberToken::new(11);
+        assert_eq!(token.raw(), 11);
+        assert_eq!(i32::from(token), 11);
     }
 }

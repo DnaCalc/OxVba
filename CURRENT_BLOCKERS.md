@@ -147,13 +147,17 @@ Run context: active parity/compliance execution plus in-progress feature worklis
   - the CLI no longer stores a duplicate `Vec<i32>` execution result; `SLOTS:` output is now projected directly from semantic runtime values only at the output edge,
   - the mixed edge/scaling host integration suite now also executes through semantic project snapshots instead of the legacy integer snapshot API,
   - the raw scalar `dispatch_invoke_legacy(object, member, arg)` helper and the request-shaped `dispatch_invoke_legacy_v2(...)` compatibility entrypoint have both been removed from the public HAL contract and reduced to test-local helpers inside the standard-adapter regression suite,
+  - COM member/event identity is now typed on the shared boundary:
+    - `ComInvokeRequest.member` now carries `ComMemberToken`,
+    - `ComCallbackPayload.event` now carries `ComMemberToken`,
+    - `ComObjectDescriptor::{known_member_tokens,known_event_tokens,default_member_token}` now carry typed member tokens,
   - the remaining runtime/host boundary holdouts are now concentrated in:
-    - remaining raw `i32`-backed COM identity/member shapes (`ObjectHandle`, `ComObjectToken`, member DISPIDs) below the semantic dispatch surface,
+    - remaining raw `i32`-backed COM object/binding identity shapes (`ObjectHandle`, `ComObjectToken`, binding handles) below the semantic dispatch surface,
     - remaining direct interpreter/test/caller expectations that still consume the legacy integer observation aliases,
     - the remaining direct legacy observation surface is now mostly the explicit public compatibility API itself plus callers that deliberately verify that compatibility API,
   - the new `ComValue` carrier and generic dynamic-object protocol can live at the COM boundary, but they cannot yet become the single runtime object/value model while the wider execution substrate remains token-only.
 - Exact unblock steps:
-  - replace the remaining raw `i32`-backed COM identity/member shapes below the semantic dispatch surface with the canonical runtime object/value model or an explicit indirection model,
+  - replace the remaining raw `i32`-backed COM object/binding identity shapes below the semantic dispatch surface with the canonical runtime object/value model or an explicit indirection model,
   - decide and implement the runtime-facing semantic representation for external object identity/binding handles so `create_object`/`release_object`/`describe_object` and dynamic binding state stop depending on raw integer tokens,
   - migrate the remaining COM dispatch/dynlink compatibility shims once that object/binding representation exists,
   - plan and execute migration of:

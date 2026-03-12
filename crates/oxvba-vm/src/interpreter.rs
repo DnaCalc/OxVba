@@ -964,7 +964,7 @@ impl Vm {
                             continue;
                         }
                     };
-                    let mut request = ComInvokeRequest::new(object, member, Vec::new());
+                    let mut request = ComInvokeRequest::new(object, member.into(), Vec::new());
                     for arg in args {
                         request.args.push(ComInvokeArg {
                             value: arg
