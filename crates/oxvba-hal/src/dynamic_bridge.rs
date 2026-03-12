@@ -22,16 +22,14 @@ impl DynamicObjectBridge for HalComDynamicBridge<'_> {
     type Error = HalError;
 
     fn invoke_dynamic(&self, request: &DynamicCallRequest) -> Result<DynamicValue, Self::Error> {
-        let request = request
-            .try_into_com_invoke_request()
-            .map_err(|detail| {
-                HalError::adapter_fault(
-                    self.profile,
-                    CapabilityId::ComActivationDispatch,
-                    "dispatch_invoke",
-                    format!("dynamic call request cannot lower to COM invoke: {detail}"),
-                )
-            })?;
+        let request = request.try_into_com_invoke_request().map_err(|detail| {
+            HalError::adapter_fault(
+                self.profile,
+                CapabilityId::ComActivationDispatch,
+                "dispatch_invoke",
+                format!("dynamic call request cannot lower to COM invoke: {detail}"),
+            )
+        })?;
         self.com
             .dispatch_invoke_runtime_value_v2(&request)
             .map(|value| oxvba_com::ComValue::from_runtime_value(&value))
