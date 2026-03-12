@@ -53,7 +53,7 @@ use windows_sys::Win32::System::Ole::{
 #[cfg(target_os = "windows")]
 use windows_sys::Win32::System::Variant::{
     VARIANT, VT_ARRAY, VT_BOOL, VT_BSTR, VT_DISPATCH, VT_EMPTY, VT_ERROR, VT_I2, VT_I4, VT_NULL,
-    VT_UI2, VT_UI4, VT_VARIANT, VariantClear,
+    VT_UI2, VT_UI4, VT_UNKNOWN, VT_VARIANT, VariantClear,
 };
 #[cfg(target_os = "windows")]
 use windows_sys::Win32::UI::WindowsAndMessaging::{
@@ -1753,6 +1753,23 @@ impl StandardHostServices {
             }
             // SAFETY: `result` is a valid Invoke-owned VARIANT and may be cleared after copying
             // the dispatch pointer/reference out.
+            unsafe {
+                let _ = VariantClear(result);
+            }
+            return self
+                .bind_native_dispatch_result(dispatch, prog_id_hint, op)
+                .map_err(|err| format!("{} [{}] {}", err.stable_code, err.operation, err.message));
+        }
+        if vt == VT_UNKNOWN {
+            let unknown = unsafe {
+                result
+                    .Anonymous
+                    .Anonymous
+                    .Anonymous
+                    .punkVal
+                    .cast::<RawIUnknown>()
+            };
+            let dispatch = unsafe { raw_query_dispatch_from_unknown(unknown) }?;
             unsafe {
                 let _ = VariantClear(result);
             }
@@ -6910,6 +6927,26 @@ unsafe fn raw_add_ref_dispatch(dispatch: *mut RawIDispatch) -> u32 {
 
 #[cfg(target_os = "windows")]
 #[allow(unsafe_op_in_unsafe_fn)]
+unsafe fn raw_query_dispatch_from_unknown(
+    unknown: *mut RawIUnknown,
+) -> Result<*mut RawIDispatch, String> {
+    if unknown.is_null() {
+        return Err("VT_UNKNOWN result carried null IUnknown pointer".to_string());
+    }
+    let mut dispatch: *mut core::ffi::c_void = std::ptr::null_mut();
+    let vtbl = (*unknown).vtbl;
+    let hr = ((*vtbl).query_interface)(unknown.cast(), &IID_IDISPATCH, &mut dispatch);
+    if hr < 0 || dispatch.is_null() {
+        return Err(format!(
+            "IUnknown::QueryInterface(IDispatch) failed with HRESULT {:#010X}",
+            hr as u32
+        ));
+    }
+    Ok(dispatch.cast())
+}
+
+#[cfg(target_os = "windows")]
+#[allow(unsafe_op_in_unsafe_fn)]
 unsafe fn raw_release_dispatch(dispatch: *mut RawIDispatch) {
     if dispatch.is_null() {
         return;
@@ -7862,7 +7899,7 @@ mod tests {
     use oxvba_runtime::ObjectHandle;
     #[cfg(target_os = "windows")]
     use windows_sys::Win32::System::Variant::{
-        VARIANT, VT_ARRAY, VT_DISPATCH, VT_VARIANT, VariantClear,
+        VARIANT, VT_ARRAY, VT_DISPATCH, VT_UNKNOWN, VT_VARIANT, VariantClear,
     };
 
     fn env_lock() -> &'static Mutex<()> {
@@ -8321,6 +8358,32 @@ mod tests {
                 "dispatch_invoke",
             )
             .expect("runtime value from dispatch result");
+        let RuntimeValue::ObjectHandle(handle) = value else {
+            panic!("expected object handle runtime value");
+        };
+        assert!(handle.raw() >= 20_001);
+        assert_eq!(
+            host.release_object_test(handle)
+                .expect("release_object should succeed"),
+            1
+        );
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn unknown_variant_result_binds_runtime_object_handle_when_dispatch_is_available() {
+        let host = StandardHostServices::new(HalProfileId::Windows, HostPolicy::default());
+        let dispatch = create_oxvba_test_dispatch();
+        let mut variant: VARIANT = unsafe { std::mem::zeroed() };
+        variant.Anonymous.Anonymous.vt = VT_UNKNOWN;
+        variant.Anonymous.Anonymous.Anonymous.punkVal = dispatch.cast();
+        let value = host
+            .runtime_value_from_variant_result(
+                &mut variant,
+                "OxVba.TestDispatch",
+                "dispatch_invoke",
+            )
+            .expect("runtime value from unknown result");
         let RuntimeValue::ObjectHandle(handle) = value else {
             panic!("expected object handle runtime value");
         };

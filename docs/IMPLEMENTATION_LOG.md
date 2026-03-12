@@ -2647,4 +2647,10 @@
   - verification:
     - `cargo test -p oxvba-vm load_const_i32_preserves_tagged_runtime_value_shape --quiet`
     - `cargo test -p oxvba-host --test com_client_end_to_end dispatchinvoke_variant_error_and_null_tokens_roundtrip_deterministically --quiet`
+- Continued bounded interface-pointer result fidelity on the Windows COM lane:
+  - `runtime_value_from_variant_result(...)` now also accepts `VT_UNKNOWN` results when the returned interface exposes `IDispatch`
+  - those results bind onto the same adapter-owned object-handle path used for `VT_DISPATCH` results
+  - broader non-`IDispatch` interface-pointer transport remains open
+  - verification:
+    - `cargo test -p oxvba-hal unknown_variant_result_binds_runtime_object_handle_when_dispatch_is_available --quiet`
 
