@@ -34,6 +34,48 @@ pub enum ExportKind {
     Function,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ProjectDynamicMemberKind {
+    Method,
+    Function,
+    PropertyGet,
+    PropertyLet,
+    PropertySet,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ProcedureDeclKind {
+    Sub,
+    Function,
+    PropertyGet,
+    PropertyLet,
+    PropertySet,
+}
+
+impl ProcedureDeclKind {
+    fn export_kind(self) -> Option<ExportKind> {
+        match self {
+            Self::Sub => Some(ExportKind::Sub),
+            Self::Function => Some(ExportKind::Function),
+            Self::PropertyGet | Self::PropertyLet | Self::PropertySet => None,
+        }
+    }
+
+    fn dynamic_member_kind(self) -> ProjectDynamicMemberKind {
+        match self {
+            Self::Sub => ProjectDynamicMemberKind::Method,
+            Self::Function => ProjectDynamicMemberKind::Function,
+            Self::PropertyGet => ProjectDynamicMemberKind::PropertyGet,
+            Self::PropertyLet => ProjectDynamicMemberKind::PropertyLet,
+            Self::PropertySet => ProjectDynamicMemberKind::PropertySet,
+        }
+    }
+
+    fn has_return_value(self) -> bool {
+        matches!(self, Self::Function | Self::PropertyGet)
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct ModuleAttributes {
     pub vb_name: String,
@@ -95,7 +137,7 @@ pub struct ProjectDynamicMemberRoute {
     pub member_name: String,
     pub lowered_name: String,
     pub known_dispatch_token: Option<i32>,
-    pub kind: ExportKind,
+    pub kind: ProjectDynamicMemberKind,
     pub visible_param_count: usize,
     pub entry_pc: usize,
     pub param_slots: Vec<usize>,
@@ -296,7 +338,7 @@ struct ProcedureDecl {
     module_name: String,
     procedure_name: String,
     lowered_name: String,
-    kind: ExportKind,
+    kind: ProcedureDeclKind,
     is_public: bool,
     param_count: usize,
     module_kind: ModuleKind,
@@ -852,7 +894,7 @@ fn collect_project_procedures(manifest: &ProjectManifest) -> Vec<ProcedureDecl> 
         for line in module.source.lines() {
             if let Some((name, kind, is_public)) = parse_procedure_signature_line(line) {
                 let param_count = procedure_signature_param_count(line).unwrap_or(0);
-                let lowered_name = lowered_proc_symbol(&active_project, &module_name, &name);
+                let lowered_name = lowered_proc_symbol(&active_project, &module_name, &name, kind);
                 procedures.push(ProcedureDecl {
                     project_name: active_project.clone(),
                     module_name: module_name.clone(),
@@ -874,7 +916,8 @@ fn collect_project_procedures(manifest: &ProjectManifest) -> Vec<ProcedureDecl> 
             for line in module.source.lines() {
                 if let Some((name, kind, is_public)) = parse_procedure_signature_line(line) {
                     let param_count = procedure_signature_param_count(line).unwrap_or(0);
-                    let lowered_name = lowered_proc_symbol(&project_name, &module_name, &name);
+                    let lowered_name =
+                        lowered_proc_symbol(&project_name, &module_name, &name, kind);
                     procedures.push(ProcedureDecl {
                         project_name: project_name.clone(),
                         module_name: module_name.clone(),
@@ -962,11 +1005,63 @@ fn ordered_reference_projects(manifest: &ProjectManifest) -> Vec<&ReferencedProj
     refs
 }
 
-fn lowered_proc_symbol(project_name: &str, module_name: &str, procedure_name: &str) -> String {
+fn lowered_proc_symbol(
+    project_name: &str,
+    module_name: &str,
+    procedure_name: &str,
+    kind: ProcedureDeclKind,
+) -> String {
+    let base = lowered_proc_signature_symbol(project_name, module_name, procedure_name);
+    match kind {
+        ProcedureDeclKind::Sub | ProcedureDeclKind::Function => base,
+        ProcedureDeclKind::PropertyGet => format!("property_get_{base}"),
+        ProcedureDeclKind::PropertyLet => format!("property_let_{base}"),
+        ProcedureDeclKind::PropertySet => format!("property_set_{base}"),
+    }
+}
+
+fn lowered_proc_signature_symbol(
+    project_name: &str,
+    module_name: &str,
+    procedure_name: &str,
+) -> String {
     format!("pmr_{project_name}_{module_name}_{procedure_name}")
 }
 
+fn lowered_proc_signature_name(decl: &ProcedureDecl) -> &str {
+    match decl.kind {
+        ProcedureDeclKind::Sub | ProcedureDeclKind::Function => decl.lowered_name.as_str(),
+        ProcedureDeclKind::PropertyGet => decl
+            .lowered_name
+            .strip_prefix("property_get_")
+            .unwrap_or(decl.lowered_name.as_str()),
+        ProcedureDeclKind::PropertyLet => decl
+            .lowered_name
+            .strip_prefix("property_let_")
+            .unwrap_or(decl.lowered_name.as_str()),
+        ProcedureDeclKind::PropertySet => decl
+            .lowered_name
+            .strip_prefix("property_set_")
+            .unwrap_or(decl.lowered_name.as_str()),
+    }
+}
+
 fn find_decl_by_signature<'a>(
+    procedures: &'a [ProcedureDecl],
+    project_name: &str,
+    module_name: &str,
+    procedure_name: &str,
+    kind: ProcedureDeclKind,
+) -> Option<&'a ProcedureDecl> {
+    procedures.iter().find(|decl| {
+        decl.project_name == project_name
+            && decl.module_name == module_name
+            && decl.procedure_name == procedure_name
+            && decl.kind == kind
+    })
+}
+
+fn find_decl_by_name<'a>(
     procedures: &'a [ProcedureDecl],
     project_name: &str,
     module_name: &str,
@@ -1098,6 +1193,8 @@ fn lower_module_source_module_aware(
     let mut early_bound = BTreeMap::<String, EarlyBoundBinding>::new();
     let mut internal_class_bindings = BTreeMap::<String, InternalClassBinding>::new();
     let mut withevents_bindings = BTreeSet::<String>::new();
+    let class_state_bindings =
+        collect_class_state_bindings(module, current_project, &current_module);
     let source_lines = module_source_lines_with_class_terminate_cleanup(module);
     for line in &source_lines {
         let expanded = expand_bound_source_line(
@@ -1105,6 +1202,7 @@ fn lower_module_source_module_aware(
             manifest,
             current_project,
             reference_order,
+            procedures,
             &mut early_bound,
             &mut internal_class_bindings,
             &mut withevents_bindings,
@@ -1119,6 +1217,13 @@ fn lower_module_source_module_aware(
                 &internal_class_bindings,
                 &withevents_bindings,
             );
+            let state_assigned =
+                rewrite_internal_class_state_assignment(&expanded_line, &class_state_bindings);
+            let expanded_line = if state_assigned != expanded_line {
+                state_assigned
+            } else {
+                rewrite_internal_class_state_reads(&state_assigned, &class_state_bindings)
+            };
             let expanded_line = rewrite_internal_class_member_dispatch(
                 &expanded_line,
                 active_project,
@@ -1197,6 +1302,7 @@ fn expand_bound_source_line(
     manifest: &ProjectManifest,
     current_project: &str,
     reference_order: &BTreeMap<String, usize>,
+    procedures: &[ProcedureDecl],
     early_bound: &mut BTreeMap<String, EarlyBoundBinding>,
     internal_class_bindings: &mut BTreeMap<String, InternalClassBinding>,
     withevents_bindings: &mut BTreeSet<String>,
@@ -1271,6 +1377,20 @@ fn expand_bound_source_line(
                 "{}{} = {}",
                 dim_decl.leading_ws, dim_decl.var_name, *next_internal_instance_id
             ));
+            if let Some(class_initialize) = find_decl_by_signature(
+                procedures,
+                &target_project,
+                &target_module,
+                "class_initialize",
+                ProcedureDeclKind::Sub,
+            ) {
+                out.push(format!(
+                    "{}Call {}({})",
+                    dim_decl.leading_ws,
+                    class_initialize.lowered_name,
+                    object_handle.raw()
+                ));
+            }
             *next_internal_instance_id = next_internal_instance_id.saturating_add(1);
         }
         return Ok(out);
@@ -1823,6 +1943,173 @@ fn rewrite_internal_class_set_assignment(
     format!("{}{} = {}", &line[..leading], lhs, rhs)
 }
 
+fn collect_class_state_bindings(
+    module: &ModuleUnit,
+    current_project: &str,
+    current_module: &str,
+) -> BTreeMap<String, i32> {
+    if module.module_kind != ModuleKind::Class {
+        return BTreeMap::new();
+    }
+
+    let mut bindings = BTreeMap::new();
+    let mut in_procedure = false;
+    for line in module.source.lines() {
+        let normalized = normalize_visibility_prefixed_procedure_signature(line);
+        if parse_procedure_signature_line(&normalized).is_some() {
+            in_procedure = true;
+            continue;
+        }
+        let lower = line.trim().to_ascii_lowercase();
+        if lower == "end sub" || lower == "end function" || lower == "end property" {
+            in_procedure = false;
+            continue;
+        }
+        if in_procedure {
+            continue;
+        }
+        for field_name in parse_class_state_field_names(line) {
+            bindings.insert(
+                normalize_identifier(&field_name),
+                class_state_binding_token(current_project, current_module, &field_name),
+            );
+        }
+    }
+    bindings
+}
+
+fn parse_class_state_field_names(line: &str) -> Vec<String> {
+    let trimmed = line.trim();
+    if trimmed.is_empty() {
+        return Vec::new();
+    }
+    let lower = trimmed.to_ascii_lowercase();
+    let payload = if lower.starts_with("private ") {
+        &trimmed[8..]
+    } else if lower.starts_with("public ") {
+        &trimmed[7..]
+    } else if lower.starts_with("dim ") {
+        &trimmed[4..]
+    } else {
+        return Vec::new();
+    };
+    let payload_lower = payload.trim_start().to_ascii_lowercase();
+    if payload_lower.starts_with("withevents ")
+        || payload_lower.starts_with("sub ")
+        || payload_lower.starts_with("function ")
+        || payload_lower.starts_with("property ")
+        || payload_lower.starts_with("event ")
+        || payload_lower.starts_with("declare ")
+        || payload_lower.starts_with("const ")
+    {
+        return Vec::new();
+    }
+    payload
+        .split(',')
+        .filter_map(|part| {
+            let token = part
+                .trim()
+                .split(|ch: char| ch.is_ascii_whitespace() || ch == '(')
+                .next()
+                .unwrap_or_default();
+            normalize_procedure_name(token)
+        })
+        .collect()
+}
+
+fn rewrite_internal_class_state_assignment(
+    line: &str,
+    class_state_bindings: &BTreeMap<String, i32>,
+) -> String {
+    if class_state_bindings.is_empty() || class_state_line_is_non_executable(line) {
+        return line.to_string();
+    }
+    let trimmed = line.trim_start();
+    let leading = line.len().saturating_sub(trimmed.len());
+    let Some(eq_idx) = trimmed.find('=') else {
+        return line.to_string();
+    };
+    let lhs = trimmed[..eq_idx].trim();
+    let rhs = trimmed[eq_idx + 1..].trim();
+    if lhs.is_empty() || rhs.is_empty() {
+        return line.to_string();
+    }
+    let normalized_lhs = normalize_identifier(lhs);
+    let Some(binding_token) = class_state_bindings.get(&normalized_lhs).copied() else {
+        return line.to_string();
+    };
+    let rewritten_rhs = rewrite_internal_class_state_expression_reads(rhs, class_state_bindings);
+    format!(
+        "{}{} = __oxvba_withevents_set(__oxvba_this_instance, {}, {})",
+        &line[..leading],
+        lhs,
+        binding_token,
+        rewritten_rhs
+    )
+}
+
+fn rewrite_internal_class_state_reads(
+    line: &str,
+    class_state_bindings: &BTreeMap<String, i32>,
+) -> String {
+    if class_state_bindings.is_empty() || class_state_line_is_non_executable(line) {
+        return line.to_string();
+    }
+    rewrite_internal_class_state_expression_reads(line, class_state_bindings)
+}
+
+fn rewrite_internal_class_state_expression_reads(
+    text: &str,
+    class_state_bindings: &BTreeMap<String, i32>,
+) -> String {
+    let mut rewritten = text.to_string();
+    for (field_name, binding_token) in class_state_bindings {
+        let replacement = format!(
+            "__oxvba_withevents_get(__oxvba_this_instance, {})",
+            binding_token
+        );
+        rewritten = rewrite_bare_identifier(&rewritten, field_name, &replacement);
+    }
+    rewritten
+}
+
+fn class_state_line_is_non_executable(line: &str) -> bool {
+    let trimmed = line.trim_start();
+    if trimmed.is_empty() {
+        return true;
+    }
+    let lower = trimmed.to_ascii_lowercase();
+    lower.starts_with("attribute ")
+        || lower.starts_with("option ")
+        || lower.starts_with("implements ")
+        || lower.starts_with("public ")
+        || lower.starts_with("private ")
+        || lower.starts_with("dim ")
+        || lower.starts_with("const ")
+        || lower.starts_with("event ")
+        || lower.starts_with("declare ")
+        || lower.starts_with("sub ")
+        || lower.starts_with("function ")
+        || lower.starts_with("property ")
+        || lower.starts_with("end ")
+}
+
+fn class_state_binding_token(project: &str, module: &str, field_name: &str) -> i32 {
+    let mut hash: u32 = 2_166_136_261;
+    let key = format!(
+        "field|{}|{}|{}",
+        normalize_identifier(project),
+        normalize_identifier(module),
+        normalize_identifier(field_name)
+    );
+    for byte in key.bytes() {
+        hash ^= byte as u32;
+        hash = hash.wrapping_mul(16_777_619);
+    }
+    let signed = (hash & 0x7fff_ffff) as i32;
+    if signed == 0 { 1 } else { signed }
+}
+
 fn withevents_binding_token(project: &str, module: &str, var_name: &str) -> i32 {
     let mut hash: u32 = 2_166_136_261;
     let key = format!(
@@ -2070,7 +2357,7 @@ fn build_project_dynamic_object_routes(
                         member_name: decl.procedure_name.clone(),
                         lowered_name: decl.lowered_name.clone(),
                         known_dispatch_token: known_dispatch_member_token(&decl.procedure_name),
-                        kind: decl.kind,
+                        kind: decl.kind.dynamic_member_kind(),
                         visible_param_count: decl.param_count,
                         entry_pc: metadata.entry_pc,
                         param_slots: metadata.param_slots.clone(),
@@ -2377,16 +2664,21 @@ fn build_line_bind_plan(
     }
 
     let normalized = normalize_visibility_prefixed_procedure_signature(line);
-    if let Some((proc_name, _, _)) = parse_procedure_signature_line(&normalized)
-        && let Some(decl) =
-            find_decl_by_signature(procedures, current_project, current_module, &proc_name)
+    if let Some((proc_name, kind, _)) = parse_procedure_signature_line(&normalized)
+        && let Some(decl) = find_decl_by_signature(
+            procedures,
+            current_project,
+            current_module,
+            &proc_name,
+            kind,
+        )
     {
-        let mut rewritten = rewrite_signature_name(&normalized, &decl.lowered_name);
+        let mut rewritten = rewrite_signature_name(&normalized, lowered_proc_signature_name(decl));
         if module.module_kind == ModuleKind::Class {
             rewritten = inject_hidden_instance_param(&rewritten);
             rewritten = strip_signature_param_types(&rewritten);
         }
-        let next_function_result = if decl.kind == ExportKind::Function {
+        let next_function_result = if decl.kind.has_return_value() {
             Some((proc_name, decl.lowered_name.clone()))
         } else {
             None
@@ -2619,6 +2911,7 @@ fn rewrite_module_source(
             manifest,
             current_project,
             reference_order,
+            procedures,
             &mut early_bound,
             &mut internal_class_bindings,
             &mut withevents_bindings,
@@ -2650,16 +2943,22 @@ fn rewrite_module_source(
                 &internal_class_bindings,
             )?;
             let normalized = normalize_visibility_prefixed_procedure_signature(&expanded_line);
-            if let Some((proc_name, _, _)) = parse_procedure_signature_line(&normalized)
-                && let Some(decl) =
-                    find_decl_by_signature(procedures, current_project, &current_module, &proc_name)
+            if let Some((proc_name, kind, _)) = parse_procedure_signature_line(&normalized)
+                && let Some(decl) = find_decl_by_signature(
+                    procedures,
+                    current_project,
+                    &current_module,
+                    &proc_name,
+                    kind,
+                )
             {
-                let mut rewritten = rewrite_signature_name(&normalized, &decl.lowered_name);
+                let mut rewritten =
+                    rewrite_signature_name(&normalized, lowered_proc_signature_name(decl));
                 if module.module_kind == ModuleKind::Class {
                     rewritten = inject_hidden_instance_param(&rewritten);
                     rewritten = strip_signature_param_types(&rewritten);
                 }
-                if decl.kind == ExportKind::Function {
+                if decl.kind.has_return_value() {
                     active_function_result = Some((proc_name, decl.lowered_name.clone()));
                 } else {
                     active_function_result = None;
@@ -2704,7 +3003,7 @@ fn rewrite_module_source(
             if let Some((result_name, lowered_name)) = &active_function_result {
                 rewritten = rewrite_bare_identifier(&rewritten, result_name, lowered_name);
             }
-            if lower.starts_with("end function") {
+            if lower.starts_with("end function") || lower.starts_with("end property") {
                 active_function_result = None;
             }
             out.push(rewritten);
@@ -3010,7 +3309,7 @@ fn resolve_invocation_name(
     if parts.len() == 2 {
         let module_name = &parts[0];
         let proc_name = &parts[1];
-        let decl = find_decl_by_signature(procedures, current_project, module_name, proc_name);
+        let decl = find_decl_by_name(procedures, current_project, module_name, proc_name);
         return match decl {
             Some(decl) => Ok(Some(decl.lowered_name.clone())),
             None => Err(ProjectCompileError::NameResolutionNotFound {
@@ -3048,8 +3347,7 @@ fn resolve_invocation_name(
         }
     }
 
-    let Some(decl) = find_decl_by_signature(procedures, project_name, module_name, proc_name)
-    else {
+    let Some(decl) = find_decl_by_name(procedures, project_name, module_name, proc_name) else {
         return Err(ProjectCompileError::NameResolutionNotFound {
             name: name.to_string(),
         });
@@ -3079,11 +3377,14 @@ fn collect_host_exports(
                 && decl.is_public
                 && decl.module_kind == ModuleKind::Procedural
         }) {
+            let Some(kind) = procedure.kind.export_kind() else {
+                continue;
+            };
             exports.push(HostProcedureExport {
                 project_name: active_project.clone(),
                 module_name: module_name.clone(),
                 procedure_name: procedure.procedure_name.clone(),
-                kind: procedure.kind,
+                kind,
             });
         }
     }
@@ -3119,11 +3420,14 @@ fn collect_reference_visible_exports(
                 && decl.is_public
                 && decl.module_kind == ModuleKind::Procedural
         }) {
+            let Some(kind) = procedure.kind.export_kind() else {
+                continue;
+            };
             exports.push(HostProcedureExport {
                 project_name: active_project.clone(),
                 module_name: module_name.clone(),
                 procedure_name: procedure.procedure_name.clone(),
-                kind: procedure.kind,
+                kind,
             });
         }
     }
@@ -3301,7 +3605,7 @@ fn parse_bool_attribute(value: &str) -> Option<bool> {
     }
 }
 
-fn parse_procedure_signature_line(line: &str) -> Option<(String, ExportKind, bool)> {
+fn parse_procedure_signature_line(line: &str) -> Option<(String, ProcedureDeclKind, bool)> {
     let trimmed = line.trim();
     if trimmed.is_empty() || trimmed.starts_with('\'') {
         return None;
@@ -3316,9 +3620,15 @@ fn parse_procedure_signature_line(line: &str) -> Option<(String, ExportKind, boo
     };
     let lower_tail = tail.to_ascii_lowercase();
     let (kind, remainder) = if lower_tail.starts_with("sub ") {
-        (ExportKind::Sub, tail[4..].trim())
+        (ProcedureDeclKind::Sub, tail[4..].trim())
     } else if lower_tail.starts_with("function ") {
-        (ExportKind::Function, tail[9..].trim())
+        (ProcedureDeclKind::Function, tail[9..].trim())
+    } else if lower_tail.starts_with("property get ") {
+        (ProcedureDeclKind::PropertyGet, tail[13..].trim())
+    } else if lower_tail.starts_with("property let ") {
+        (ProcedureDeclKind::PropertyLet, tail[13..].trim())
+    } else if lower_tail.starts_with("property set ") {
+        (ProcedureDeclKind::PropertySet, tail[13..].trim())
     } else {
         return None;
     };

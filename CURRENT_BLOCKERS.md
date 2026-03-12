@@ -109,27 +109,31 @@ Run context: active parity/compliance execution plus in-progress feature worklis
 - Recommendation:
   - close this blocker and continue on the remaining native property/default-member slice below.
 
-### BLK-DYN-PROTOCOL-002: Native property/default-member intent is still outside the shared dynamic protocol
+### BLK-DYN-PROTOCOL-002: Native default-member identity is still outside the shared dynamic protocol
 - Impact:
   - Blocks full closure of `WORKSET_2026-03-11_UNIFIED_DYNAMIC_OBJECT_PROTOCOL_AND_VALUE_CARRIER.md`.
   - Blocks convergence of `IP-02` property/default-member semantics and `IP-03` late-bound COM parity on one runtime model.
-  - Blocks the final `IP-04` `oxvba-com` extraction because native property/default-member intent is still not on the same executable dynamic seam as COM-backed calls.
+  - Blocks the final `IP-04` `oxvba-com` extraction because native default-member identity is still not on the same executable dynamic seam as COM-backed calls.
 - Current state:
   - the runtime value model is now value-first end to end.
   - `DynamicObjectBridge` is now exercised by:
     - COM-backed late-bound calls,
     - COM callback polling,
-    - project-runtime internal class method/function calls reached through explicit `DispatchInvoke(...)`.
-  - native property/default-member behavior still remains split across:
-    - compile-time property rewrite routes,
-    - rewrite-based internal class call lowering,
-    - missing project-runtime property/default-member metadata in `compile_project(...)`.
+    - project-runtime internal class method/function calls reached through explicit `DispatchInvoke(...)`,
+    - project-runtime internal class `Property Get` / `Property Let` calls reached through explicit `DispatchInvoke(...)`.
+  - native property `Get` / `Let` behavior now executes on the shared dynamic protocol with:
+    - authoritative compiled member-route metadata,
+    - class-instance state backed by runtime object storage,
+    - `Class_Initialize` execution on `As New` internal-class construction.
+  - native default-member behavior still remains split across:
+    - missing authoritative default-member metadata in `compile_project(...)`,
+    - `DynamicMemberSelector::DefaultMember` remaining unresolved on project-runtime native objects.
 - Exact unblock steps:
-  - extend project/runtime metadata to represent `Property Get` / `Let` / `Set` procedures and authoritative default-member identity,
-  - route native property/default-member calls through the shared dynamic protocol instead of rewrite-only subsets,
-  - add end-to-end project-runtime coverage for native method/property/default-member calls on the same protocol.
+  - extend project/runtime metadata to represent authoritative default-member identity for native class members,
+  - route native `DynamicMemberSelector::DefaultMember` calls through that metadata instead of the current unresolved path,
+  - add end-to-end project-runtime coverage for native default-member dispatch on the shared protocol.
 - Recommendation:
-  - continue `WORKSET_2026-03-11_UNIFIED_DYNAMIC_OBJECT_PROTOCOL_AND_VALUE_CARRIER.md` on the native property/default-member slice, not another COM-only bridge slice.
+  - continue `WORKSET_2026-03-11_UNIFIED_DYNAMIC_OBJECT_PROTOCOL_AND_VALUE_CARRIER.md` on the native default-member slice, not another COM-only bridge slice.
 
 ### BLK-COM-BOUNDARY-001: Final `oxvba-com` extraction is blocked on unsettled COM behavior contracts
 - Impact:

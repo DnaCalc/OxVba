@@ -1630,12 +1630,29 @@ impl Vm {
         candidates.sort_by(|lhs, rhs| lhs.lowered_name.cmp(&rhs.lowered_name));
         let member = match candidates.as_slice() {
             [] => {
+                let available = route
+                    .members
+                    .iter()
+                    .map(|member| {
+                        format!(
+                            "{}:{:?}/arity={}",
+                            member
+                                .known_dispatch_token
+                                .map(|token| token.to_string())
+                                .unwrap_or_else(|| "-".to_string()),
+                            member.kind,
+                            member.visible_param_count
+                        )
+                    })
+                    .collect::<Vec<_>>()
+                    .join(", ");
                 return Err(format!(
-                    "project dynamic dispatch target {} on `{}` object {} is unresolved for arity {}",
+                    "project dynamic dispatch target {} on `{}` object {} is unresolved for arity {} (available: [{}])",
                     selector_label,
                     route.module_name,
                     object,
-                    request.args.len()
+                    request.args.len(),
+                    available
                 ));
             }
             [member] => member.clone(),

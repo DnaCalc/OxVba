@@ -2621,6 +2621,8 @@
   - verification:
     - `cargo test -p oxvba-compiler -p oxvba-vm -p oxvba-host --quiet`
 - The remaining unified dynamic-protocol blocker is now narrower:
-  - native property/default-member intent is still outside the shared dynamic protocol
-  - `compile_project(...)` still does not surface authoritative property/default-member metadata for project runtime dynamic dispatch
+  - native project-class `Property Get` / `Property Let` dispatch now executes on the shared dynamic protocol, with class-instance state backed by runtime object storage
+  - `As New` internal project-class construction now runs `Class_Initialize` before first use so stateful native dynamic properties are semantically initialized
+  - the remaining gap is authoritative native default-member identity and dispatch
+  - `compile_project(...)` still does not surface authoritative native default-member metadata for project runtime dynamic dispatch
 

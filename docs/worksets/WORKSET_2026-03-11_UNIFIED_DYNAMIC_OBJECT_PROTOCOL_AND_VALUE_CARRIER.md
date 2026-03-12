@@ -139,12 +139,14 @@ Progress:
 5. `oxvba-hal` now provides `HalComDynamicBridge`, adapting `ComHal` onto that shared protocol,
 6. VM dispatch invoke and host COM callback polling now both route through that shared bridge instead of talking directly to the COM HAL seams,
 7. project-runtime `As New` class instances now carry compiler-emitted dynamic metadata into the VM,
-8. explicit `DispatchInvoke(...)` against internal project class handles now resolves and executes native method/function members through the same semantic dynamic-call request model before COM fallback.
+8. explicit `DispatchInvoke(...)` against internal project class handles now resolves and executes native method/function members through the same semantic dynamic-call request model before COM fallback,
+9. explicit `DispatchInvoke(...)` against internal project class handles now also resolves and executes native `Property Get` / `Property Let` members through that same shared protocol,
+10. internal `As New` project class construction now runs `Class_Initialize` and backs class fields with per-instance runtime object state so native property calls are semantically stateful.
 
 Open remainder:
 1. object identity, BSTR/string payloads, and real SAFEARRAY contents still need carrier representation,
-2. native property/default-member `Get` / `Let` / `Set` intent is not yet routed through the shared protocol,
-3. project-runtime metadata still does not expose authoritative property/default-member identity,
+2. native default-member identity and dispatch are not yet routed through the shared protocol,
+3. project-runtime metadata still does not expose authoritative native default-member identity,
 4. the next execution blocker is now explicit:
    - `BLK-DYN-PROTOCOL-002`
 5. the runtime value-model migration blocker is resolved and no longer owns the next step.
@@ -163,7 +165,8 @@ Progress:
 1. COM-backed dynamic calls now go through `DynamicObjectBridge` via `HalComDynamicBridge` on the VM path,
 2. COM-backed callback polling now also goes through the same bridge on the host path,
 3. COM-backed objects are still special at the adaptation layer, but they are no longer bypassing the shared runtime-facing protocol types and bridge trait,
-4. native project-class method/function calls now also use the shared semantic dynamic-call request model on the VM path.
+4. native project-class method/function calls now also use the shared semantic dynamic-call request model on the VM path,
+5. native project-class `Property Get` / `Property Let` calls now use that same shared runtime-facing protocol before any COM fallback is considered.
 
 ### Phase D. Runtime/property integration
 

@@ -745,8 +745,8 @@ mod tests {
     use super::{DiagnosticPhase, Engine, HostConfig};
     use oxvba_com::{ComInvokeArg, ComInvokeRequest};
     use oxvba_compiler::{
-        ModuleKind, ProjectKind, ProjectManifest, ProjectReference, ReferenceKind,
-        ReferencedProjectManifest, module_unit_from_source,
+        ModuleKind, ProjectDynamicMemberKind, ProjectKind, ProjectManifest, ProjectReference,
+        ReferenceKind, ReferencedProjectManifest, module_unit_from_source,
     };
     use oxvba_hal::model::{
         HalProfileId, HostPolicy, HostPolicyPreset, UiVirtualizationMode, UnsupportedFeatureMode,
@@ -1857,11 +1857,97 @@ mod tests {
             conditional_constants: std::collections::BTreeMap::new(),
         };
 
+        let compiled = oxvba_compiler::compile_project(&manifest).expect("compile should succeed");
+        assert_eq!(compiled.project_dynamic_objects.len(), 1);
+
         let snapshot = engine
             .execute_project_with_value_snapshot_phased(&manifest)
             .expect("project execution should succeed");
         assert_eq!(snapshot[0], RuntimeValue::I32(1));
         assert_eq!(snapshot[1], RuntimeValue::I32(8));
+    }
+
+    #[test]
+    fn formal_pmr_dispatchinvoke_routes_internal_class_property_get_let_through_native_dynamic_path()
+     {
+        let engine = Engine::new(HostConfig::default());
+        let main_module = module_unit_from_source(
+            "MainModule",
+            ModuleKind::Procedural,
+            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim widget As New Widget\nDim beforeValue\nDim setResult\nDim afterValue\nbeforeValue = DispatchInvoke(widget, \"Value\")\nsetResult = DispatchInvoke(widget, \"Value\", 9)\nafterValue = DispatchInvoke(widget, \"Value\")\nEnd Sub",
+        )
+        .expect("main module should parse");
+        let widget = module_unit_from_source(
+            "Widget",
+            ModuleKind::Class,
+            "Attribute VB_Name = \"Widget\"\nPrivate stored\nPublic Sub Class_Initialize()\nstored = 4\nEnd Sub\nPublic Property Get Value()\nValue = stored\nEnd Property\nPublic Property Let Value(ByVal n)\nstored = n\nEnd Property",
+        )
+        .expect("widget module should parse");
+        let manifest = ProjectManifest {
+            project_name: "ProjectA".to_string(),
+            project_kind: ProjectKind::Source,
+            modules: vec![main_module, widget],
+            references: Vec::new(),
+            reference_projects: Vec::new(),
+            conditional_constants: std::collections::BTreeMap::new(),
+        };
+
+        let compiled = oxvba_compiler::compile_project(&manifest).expect("compile should succeed");
+        assert_eq!(compiled.project_dynamic_objects.len(), 1);
+        let lowered = compiled.rewritten_source.to_ascii_lowercase();
+        assert!(
+            lowered.contains("property get pmr_projecta_widget_value"),
+            "expected lowered property get signature in rewritten project source: {lowered}"
+        );
+        assert!(
+            lowered.contains("property let pmr_projecta_widget_value"),
+            "expected lowered property let signature in rewritten project source: {lowered}"
+        );
+        assert!(
+            lowered.contains(
+                "property_get_pmr_projecta_widget_value = __oxvba_withevents_get(__oxvba_this_instance,"
+            ),
+            "expected lowered property get state-backed return assignment in rewritten project source: {lowered}"
+        );
+        assert!(
+            lowered.contains("stored = __oxvba_withevents_set(__oxvba_this_instance,"),
+            "expected lowered class field state write in rewritten project source: {lowered}"
+        );
+        assert!(
+            compiled.project_dynamic_objects[0]
+                .members
+                .iter()
+                .any(|member| member.member_name == "value"),
+            "expected property member metadata for project dynamic object route"
+        );
+        assert!(
+            compiled.project_dynamic_objects[0]
+                .members
+                .iter()
+                .any(|member| {
+                    member.member_name == "value" && member.known_dispatch_token == Some(9)
+                }),
+            "expected property member token metadata for project dynamic object route"
+        );
+        assert!(
+            compiled.project_dynamic_objects[0]
+                .members
+                .iter()
+                .any(|member| {
+                    member.member_name == "value"
+                        && member.kind == ProjectDynamicMemberKind::PropertyGet
+                        && member.return_slot.is_some()
+                }),
+            "expected property get member route with a return slot"
+        );
+
+        let snapshot = engine
+            .execute_project_with_value_snapshot_phased(&manifest)
+            .expect("project execution should succeed");
+        assert_eq!(snapshot[0], RuntimeValue::I32(1));
+        assert_eq!(snapshot[1], RuntimeValue::I32(4));
+        assert_eq!(snapshot[2], RuntimeValue::Empty);
+        assert_eq!(snapshot[3], RuntimeValue::I32(9));
     }
 
     #[test]
