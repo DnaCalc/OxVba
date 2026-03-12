@@ -198,6 +198,28 @@
   - `./scripts/check-governance.ps1`
   - `./scripts/meta-check.ps1 -Fast -NoArtifacts`
 
+## 2026-03-12 - Interpreter loop contracted onto explicit legacy-projection helpers
+
+- Continued [WORKSET_2026-03-12_RUNTIME_REFACTOR_TO_COMPLETION.md](C:\Work\DnaCalc\OxVba\docs\worksets\WORKSET_2026-03-12_RUNTIME_REFACTOR_TO_COMPLETION.md) Phase A in:
+  - [interpreter.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-vm\src\interpreter.rs).
+- Moved the wider interpreter loop off the old helper names:
+  - `read_slot(...)` -> explicit `read_legacy_scalar_slot(...)` projection over `RuntimeValue`,
+  - `write_slot(...)` -> explicit `write_legacy_scalar_slot(...)` projection over `RuntimeValue`.
+- Also migrated the clean scalar arithmetic/load subset to semantic reads/writes:
+  - `LoadConstI32`,
+  - `AddConstI32`,
+  - `AddSlots`,
+  - `SubConstI32`,
+  - `LoadErrNumber`.
+- Net effect:
+  - the interpreter no longer presents raw slot-int reads/writes as its default execution vocabulary,
+  - remaining legacy-scalar behavior is now explicit and easier to retire instruction family by instruction family,
+  - the main unresolved Phase A semantic question is `CopySlot` and the larger intrinsic estate that still intentionally projects to legacy scalars.
+- Verification:
+  - `cargo test -p oxvba-vm -p oxvba-host --quiet`
+  - `./scripts/check-governance.ps1`
+  - `./scripts/meta-check.ps1 -Fast -NoArtifacts`
+
 ## 2026-03-11 - COM member/event identity typed on the shared boundary
 
 - Tightened the shared COM model and its boundary consumers in:

@@ -175,7 +175,7 @@ impl Vm {
         }
         self.reset_execution_state(bytecode.slot_count, true);
         for (slot, value) in arg_slots.iter().zip(args.iter()) {
-            self.write_slot(*slot, *value)?;
+            self.write_legacy_scalar_slot(*slot, *value)?;
         }
         self.execute_loop(bytecode, entry_pc, self.typed_fastpaths_default, true)
     }
@@ -228,7 +228,7 @@ impl Vm {
         while pc < len {
             match &bytecode.instructions[pc] {
                 Instruction::LoadConstI32 { slot, value } => {
-                    self.write_slot(*slot, *value)?;
+                    self.write_value_slot(*slot, RuntimeValue::I32(*value))?;
                     pc += 1;
                 }
                 Instruction::AddConstI32 { slot, value } => {
@@ -236,14 +236,16 @@ impl Vm {
                         pc += 1;
                         continue;
                     }
-                    let lhs = self.read_slot(*slot)?;
-                    self.write_slot(*slot, lhs + *value)?;
+                    let lhs = self.read_value_slot(*slot)?;
+                    let out = Self::legacy_add_const_value(&lhs, *value, "add-const operand")?;
+                    self.write_value_slot(*slot, out)?;
                     pc += 1;
                 }
                 Instruction::AddSlots { dst, lhs, rhs } => {
-                    let lhs = self.read_slot(*lhs)?;
-                    let rhs = self.read_slot(*rhs)?;
-                    self.write_slot(*dst, lhs + rhs)?;
+                    let lhs = self.read_value_slot(*lhs)?;
+                    let rhs = self.read_value_slot(*rhs)?;
+                    let out = Self::legacy_add_values(&lhs, &rhs)?;
+                    self.write_value_slot(*dst, out)?;
                     pc += 1;
                 }
                 Instruction::SubConstI32 { slot, value } => {
@@ -251,8 +253,10 @@ impl Vm {
                         pc += 1;
                         continue;
                     }
-                    let lhs = self.read_slot(*slot)?;
-                    self.write_slot(*slot, lhs - *value)?;
+                    let lhs = self.read_value_slot(*slot)?;
+                    let out =
+                        Self::legacy_add_const_value(&lhs, -*value, "sub-const operand")?;
+                    self.write_value_slot(*slot, out)?;
                     pc += 1;
                 }
                 Instruction::CopySlot { dst, src } => {
@@ -260,25 +264,25 @@ impl Vm {
                         pc += 1;
                         continue;
                     }
-                    let value = self.read_slot(*src)?;
-                    self.write_slot(*dst, value)?;
+                    let value = self.read_legacy_scalar_slot(*src)?;
+                    self.write_legacy_scalar_slot(*dst, value)?;
                     pc += 1;
                 }
                 Instruction::IntrinsicLenDigits { dst, src } => {
-                    let value = self.read_slot(*src)?;
-                    self.write_slot(*dst, Self::len_digits(value))?;
+                    let value = self.read_legacy_scalar_slot(*src)?;
+                    self.write_legacy_scalar_slot(*dst, Self::len_digits(value))?;
                     pc += 1;
                 }
                 Instruction::IntrinsicLeftDigits { dst, src, count } => {
-                    let value = self.read_slot(*src)?;
-                    let count = self.read_slot(*count)?;
-                    self.write_slot(*dst, Self::left_digits(value, count))?;
+                    let value = self.read_legacy_scalar_slot(*src)?;
+                    let count = self.read_legacy_scalar_slot(*count)?;
+                    self.write_legacy_scalar_slot(*dst, Self::left_digits(value, count))?;
                     pc += 1;
                 }
                 Instruction::IntrinsicRightDigits { dst, src, count } => {
-                    let value = self.read_slot(*src)?;
-                    let count = self.read_slot(*count)?;
-                    self.write_slot(*dst, Self::right_digits(value, count))?;
+                    let value = self.read_legacy_scalar_slot(*src)?;
+                    let count = self.read_legacy_scalar_slot(*count)?;
+                    self.write_legacy_scalar_slot(*dst, Self::right_digits(value, count))?;
                     pc += 1;
                 }
                 Instruction::IntrinsicMidDigits {
@@ -287,13 +291,13 @@ impl Vm {
                     start,
                     count,
                 } => {
-                    let value = self.read_slot(*src)?;
-                    let start = self.read_slot(*start)?;
+                    let value = self.read_legacy_scalar_slot(*src)?;
+                    let start = self.read_legacy_scalar_slot(*start)?;
                     let count = match count {
-                        Some(slot) => Some(self.read_slot(*slot)?),
+                        Some(slot) => Some(self.read_legacy_scalar_slot(*slot)?),
                         None => None,
                     };
-                    self.write_slot(*dst, Self::mid_digits(value, start, count))?;
+                    self.write_legacy_scalar_slot(*dst, Self::mid_digits(value, start, count))?;
                     pc += 1;
                 }
                 Instruction::IntrinsicMidStmtDigits {
@@ -302,14 +306,14 @@ impl Vm {
                     count,
                     value,
                 } => {
-                    let target_value = self.read_slot(*target)?;
-                    let start = self.read_slot(*start)?;
+                    let target_value = self.read_legacy_scalar_slot(*target)?;
+                    let start = self.read_legacy_scalar_slot(*start)?;
                     let count = match count {
-                        Some(slot) => Some(self.read_slot(*slot)?),
+                        Some(slot) => Some(self.read_legacy_scalar_slot(*slot)?),
                         None => None,
                     };
-                    let value = self.read_slot(*value)?;
-                    self.write_slot(
+                    let value = self.read_legacy_scalar_slot(*value)?;
+                    self.write_legacy_scalar_slot(
                         *target,
                         Self::mid_stmt_digits(target_value, start, count, value),
                     )?;
@@ -321,9 +325,9 @@ impl Vm {
                     needle,
                     mode,
                 } => {
-                    let haystack = self.read_slot(*haystack)?;
-                    let needle = self.read_slot(*needle)?;
-                    self.write_slot(*dst, Self::instr_digits(haystack, needle, *mode))?;
+                    let haystack = self.read_legacy_scalar_slot(*haystack)?;
+                    let needle = self.read_legacy_scalar_slot(*needle)?;
+                    self.write_legacy_scalar_slot(*dst, Self::instr_digits(haystack, needle, *mode))?;
                     pc += 1;
                 }
                 Instruction::IntrinsicInStrRevDigits {
@@ -332,19 +336,19 @@ impl Vm {
                     needle,
                     mode,
                 } => {
-                    let haystack = self.read_slot(*haystack)?;
-                    let needle = self.read_slot(*needle)?;
-                    self.write_slot(*dst, Self::instrrev_digits(haystack, needle, *mode))?;
+                    let haystack = self.read_legacy_scalar_slot(*haystack)?;
+                    let needle = self.read_legacy_scalar_slot(*needle)?;
+                    self.write_legacy_scalar_slot(*dst, Self::instrrev_digits(haystack, needle, *mode))?;
                     pc += 1;
                 }
                 Instruction::IntrinsicLowerDigits { dst, src } => {
-                    let value = self.read_slot(*src)?;
-                    self.write_slot(*dst, Self::to_lower_digits(value))?;
+                    let value = self.read_legacy_scalar_slot(*src)?;
+                    self.write_legacy_scalar_slot(*dst, Self::to_lower_digits(value))?;
                     pc += 1;
                 }
                 Instruction::IntrinsicUpperDigits { dst, src } => {
-                    let value = self.read_slot(*src)?;
-                    self.write_slot(*dst, Self::to_upper_digits(value))?;
+                    let value = self.read_legacy_scalar_slot(*src)?;
+                    self.write_legacy_scalar_slot(*dst, Self::to_upper_digits(value))?;
                     pc += 1;
                 }
                 Instruction::IntrinsicSplitCountDigits {
@@ -352,9 +356,9 @@ impl Vm {
                     src,
                     delimiter,
                 } => {
-                    let value = self.read_slot(*src)?;
-                    let delimiter = self.read_slot(*delimiter)?;
-                    self.write_slot(*dst, Self::split_count_digits(value, delimiter))?;
+                    let value = self.read_legacy_scalar_slot(*src)?;
+                    let delimiter = self.read_legacy_scalar_slot(*delimiter)?;
+                    self.write_legacy_scalar_slot(*dst, Self::split_count_digits(value, delimiter))?;
                     pc += 1;
                 }
                 Instruction::IntrinsicJoinDigits {
@@ -362,9 +366,9 @@ impl Vm {
                     src,
                     delimiter,
                 } => {
-                    let value = self.read_slot(*src)?;
-                    let delimiter = self.read_slot(*delimiter)?;
-                    self.write_slot(*dst, Self::join_digits(value, delimiter))?;
+                    let value = self.read_legacy_scalar_slot(*src)?;
+                    let delimiter = self.read_legacy_scalar_slot(*delimiter)?;
+                    self.write_legacy_scalar_slot(*dst, Self::join_digits(value, delimiter))?;
                     pc += 1;
                 }
                 Instruction::IntrinsicReplaceDigits {
@@ -373,25 +377,25 @@ impl Vm {
                     find,
                     replace,
                 } => {
-                    let value = self.read_slot(*src)?;
-                    let find = self.read_slot(*find)?;
-                    let replace = self.read_slot(*replace)?;
-                    self.write_slot(*dst, Self::replace_digits(value, find, replace))?;
+                    let value = self.read_legacy_scalar_slot(*src)?;
+                    let find = self.read_legacy_scalar_slot(*find)?;
+                    let replace = self.read_legacy_scalar_slot(*replace)?;
+                    self.write_legacy_scalar_slot(*dst, Self::replace_digits(value, find, replace))?;
                     pc += 1;
                 }
                 Instruction::IntrinsicTrimDigits { dst, src } => {
-                    let value = self.read_slot(*src)?;
-                    self.write_slot(*dst, Self::trim_digits(value))?;
+                    let value = self.read_legacy_scalar_slot(*src)?;
+                    self.write_legacy_scalar_slot(*dst, Self::trim_digits(value))?;
                     pc += 1;
                 }
                 Instruction::IntrinsicLTrimDigits { dst, src } => {
-                    let value = self.read_slot(*src)?;
-                    self.write_slot(*dst, Self::ltrim_digits(value))?;
+                    let value = self.read_legacy_scalar_slot(*src)?;
+                    self.write_legacy_scalar_slot(*dst, Self::ltrim_digits(value))?;
                     pc += 1;
                 }
                 Instruction::IntrinsicRTrimDigits { dst, src } => {
-                    let value = self.read_slot(*src)?;
-                    self.write_slot(*dst, Self::rtrim_digits(value))?;
+                    let value = self.read_legacy_scalar_slot(*src)?;
+                    self.write_legacy_scalar_slot(*dst, Self::rtrim_digits(value))?;
                     pc += 1;
                 }
                 Instruction::IntrinsicStrCompDigits {
@@ -400,9 +404,9 @@ impl Vm {
                     rhs,
                     mode,
                 } => {
-                    let lhs = self.read_slot(*lhs)?;
-                    let rhs = self.read_slot(*rhs)?;
-                    self.write_slot(*dst, Self::strcomp_digits(lhs, rhs, *mode))?;
+                    let lhs = self.read_legacy_scalar_slot(*lhs)?;
+                    let rhs = self.read_legacy_scalar_slot(*rhs)?;
+                    self.write_legacy_scalar_slot(*dst, Self::strcomp_digits(lhs, rhs, *mode))?;
                     pc += 1;
                 }
                 Instruction::IntrinsicLikeDigits {
@@ -411,9 +415,9 @@ impl Vm {
                     pattern,
                     mode,
                 } => {
-                    let lhs = self.read_slot(*lhs)?;
-                    let pattern = self.read_slot(*pattern)?;
-                    self.write_slot(*dst, Self::like_digits(lhs, pattern, *mode))?;
+                    let lhs = self.read_legacy_scalar_slot(*lhs)?;
+                    let pattern = self.read_legacy_scalar_slot(*pattern)?;
+                    self.write_legacy_scalar_slot(*dst, Self::like_digits(lhs, pattern, *mode))?;
                     pc += 1;
                 }
                 Instruction::IntrinsicDateSerialDigits {
@@ -422,10 +426,10 @@ impl Vm {
                     month,
                     day,
                 } => {
-                    let year = self.read_slot(*year)?;
-                    let month = self.read_slot(*month)?;
-                    let day = self.read_slot(*day)?;
-                    self.write_slot(*dst, Self::date_serial_digits(year, month, day))?;
+                    let year = self.read_legacy_scalar_slot(*year)?;
+                    let month = self.read_legacy_scalar_slot(*month)?;
+                    let day = self.read_legacy_scalar_slot(*day)?;
+                    self.write_legacy_scalar_slot(*dst, Self::date_serial_digits(year, month, day))?;
                     pc += 1;
                 }
                 Instruction::IntrinsicTimeSerialDigits {
@@ -434,20 +438,20 @@ impl Vm {
                     minute,
                     second,
                 } => {
-                    let hour = self.read_slot(*hour)?;
-                    let minute = self.read_slot(*minute)?;
-                    let second = self.read_slot(*second)?;
-                    self.write_slot(*dst, Self::time_serial_digits(hour, minute, second))?;
+                    let hour = self.read_legacy_scalar_slot(*hour)?;
+                    let minute = self.read_legacy_scalar_slot(*minute)?;
+                    let second = self.read_legacy_scalar_slot(*second)?;
+                    self.write_legacy_scalar_slot(*dst, Self::time_serial_digits(hour, minute, second))?;
                     pc += 1;
                 }
                 Instruction::IntrinsicDateValueDigits { dst, src } => {
-                    let src = self.read_slot(*src)?;
-                    self.write_slot(*dst, src)?;
+                    let src = self.read_legacy_scalar_slot(*src)?;
+                    self.write_legacy_scalar_slot(*dst, src)?;
                     pc += 1;
                 }
                 Instruction::IntrinsicTimeValueDigits { dst, src } => {
-                    let src = self.read_slot(*src)?;
-                    self.write_slot(*dst, src)?;
+                    let src = self.read_legacy_scalar_slot(*src)?;
+                    self.write_legacy_scalar_slot(*dst, src)?;
                     pc += 1;
                 }
                 Instruction::IntrinsicDateAddDigits {
@@ -456,10 +460,10 @@ impl Vm {
                     number,
                     date,
                 } => {
-                    let interval = self.read_slot(*interval)?;
-                    let number = self.read_slot(*number)?;
-                    let date = self.read_slot(*date)?;
-                    self.write_slot(*dst, Self::date_add_digits(interval, number, date))?;
+                    let interval = self.read_legacy_scalar_slot(*interval)?;
+                    let number = self.read_legacy_scalar_slot(*number)?;
+                    let date = self.read_legacy_scalar_slot(*date)?;
+                    self.write_legacy_scalar_slot(*dst, Self::date_add_digits(interval, number, date))?;
                     pc += 1;
                 }
                 Instruction::IntrinsicDateDiffDigits {
@@ -468,10 +472,10 @@ impl Vm {
                     date1,
                     date2,
                 } => {
-                    let interval = self.read_slot(*interval)?;
-                    let date1 = self.read_slot(*date1)?;
-                    let date2 = self.read_slot(*date2)?;
-                    self.write_slot(*dst, Self::date_diff_digits(interval, date1, date2))?;
+                    let interval = self.read_legacy_scalar_slot(*interval)?;
+                    let date1 = self.read_legacy_scalar_slot(*date1)?;
+                    let date2 = self.read_legacy_scalar_slot(*date2)?;
+                    self.write_legacy_scalar_slot(*dst, Self::date_diff_digits(interval, date1, date2))?;
                     pc += 1;
                 }
                 Instruction::IntrinsicDateNowHost { dst } => {
@@ -572,52 +576,52 @@ impl Vm {
                     }
                 }
                 Instruction::IntrinsicAbsI32 { dst, src } => {
-                    let value = self.read_slot(*src)?;
-                    self.write_slot(*dst, value.saturating_abs())?;
+                    let value = self.read_legacy_scalar_slot(*src)?;
+                    self.write_legacy_scalar_slot(*dst, value.saturating_abs())?;
                     pc += 1;
                 }
                 Instruction::IntrinsicIntI32 { dst, src } => {
-                    let value = self.read_slot(*src)?;
-                    self.write_slot(*dst, value)?;
+                    let value = self.read_legacy_scalar_slot(*src)?;
+                    self.write_legacy_scalar_slot(*dst, value)?;
                     pc += 1;
                 }
                 Instruction::IntrinsicFixI32 { dst, src } => {
-                    let value = self.read_slot(*src)?;
-                    self.write_slot(*dst, value)?;
+                    let value = self.read_legacy_scalar_slot(*src)?;
+                    self.write_legacy_scalar_slot(*dst, value)?;
                     pc += 1;
                 }
                 Instruction::IntrinsicSgnI32 { dst, src } => {
-                    let value = self.read_slot(*src)?;
-                    self.write_slot(*dst, value.signum())?;
+                    let value = self.read_legacy_scalar_slot(*src)?;
+                    self.write_legacy_scalar_slot(*dst, value.signum())?;
                     pc += 1;
                 }
                 Instruction::IntrinsicRoundI32 { dst, src, digits } => {
-                    let value = self.read_slot(*src)?;
+                    let value = self.read_legacy_scalar_slot(*src)?;
                     let digits = match digits {
-                        Some(slot) => self.read_slot(*slot)?,
+                        Some(slot) => self.read_legacy_scalar_slot(*slot)?,
                         None => 0,
                     };
-                    self.write_slot(*dst, Self::round_i32(value, digits))?;
+                    self.write_legacy_scalar_slot(*dst, Self::round_i32(value, digits))?;
                     pc += 1;
                 }
                 Instruction::IntrinsicSqrI32 { dst, src } => {
-                    let value = self.read_slot(*src)?;
-                    self.write_slot(*dst, (value.saturating_abs() as f64).sqrt() as i32)?;
+                    let value = self.read_legacy_scalar_slot(*src)?;
+                    self.write_legacy_scalar_slot(*dst, (value.saturating_abs() as f64).sqrt() as i32)?;
                     pc += 1;
                 }
                 Instruction::IntrinsicSinI32 { dst, src } => {
-                    let value = self.read_slot(*src)?;
-                    self.write_slot(*dst, (value as f64).sin().round() as i32)?;
+                    let value = self.read_legacy_scalar_slot(*src)?;
+                    self.write_legacy_scalar_slot(*dst, (value as f64).sin().round() as i32)?;
                     pc += 1;
                 }
                 Instruction::IntrinsicCosI32 { dst, src } => {
-                    let value = self.read_slot(*src)?;
-                    self.write_slot(*dst, (value as f64).cos().round() as i32)?;
+                    let value = self.read_legacy_scalar_slot(*src)?;
+                    self.write_legacy_scalar_slot(*dst, (value as f64).cos().round() as i32)?;
                     pc += 1;
                 }
                 Instruction::IntrinsicLogI32 { dst, src } => {
-                    let value = self.read_slot(*src)?;
-                    self.write_slot(
+                    let value = self.read_legacy_scalar_slot(*src)?;
+                    self.write_legacy_scalar_slot(
                         *dst,
                         if value > 0 {
                             (value as f64).ln().round() as i32
@@ -628,8 +632,8 @@ impl Vm {
                     pc += 1;
                 }
                 Instruction::IntrinsicExpI32 { dst, src } => {
-                    let value = self.read_slot(*src)?;
-                    self.write_slot(*dst, (value as f64).exp().round() as i32)?;
+                    let value = self.read_legacy_scalar_slot(*src)?;
+                    self.write_legacy_scalar_slot(*dst, (value as f64).exp().round() as i32)?;
                     pc += 1;
                 }
                 Instruction::IntrinsicFvI32 {
@@ -640,18 +644,18 @@ impl Vm {
                     pv,
                     due,
                 } => {
-                    let rate = self.read_slot(*rate)?;
-                    let nper = self.read_slot(*nper)?;
-                    let pmt = self.read_slot(*pmt)?;
+                    let rate = self.read_legacy_scalar_slot(*rate)?;
+                    let nper = self.read_legacy_scalar_slot(*nper)?;
+                    let pmt = self.read_legacy_scalar_slot(*pmt)?;
                     let pv = match pv {
-                        Some(slot) => self.read_slot(*slot)?,
+                        Some(slot) => self.read_legacy_scalar_slot(*slot)?,
                         None => 0,
                     };
                     let due = match due {
-                        Some(slot) => self.read_slot(*slot)?,
+                        Some(slot) => self.read_legacy_scalar_slot(*slot)?,
                         None => 0,
                     };
-                    self.write_slot(*dst, Self::fv_i32(rate, nper, pmt, pv, due))?;
+                    self.write_legacy_scalar_slot(*dst, Self::fv_i32(rate, nper, pmt, pv, due))?;
                     pc += 1;
                 }
                 Instruction::IntrinsicPvI32 {
@@ -662,18 +666,18 @@ impl Vm {
                     fv,
                     due,
                 } => {
-                    let rate = self.read_slot(*rate)?;
-                    let nper = self.read_slot(*nper)?;
-                    let pmt = self.read_slot(*pmt)?;
+                    let rate = self.read_legacy_scalar_slot(*rate)?;
+                    let nper = self.read_legacy_scalar_slot(*nper)?;
+                    let pmt = self.read_legacy_scalar_slot(*pmt)?;
                     let fv = match fv {
-                        Some(slot) => self.read_slot(*slot)?,
+                        Some(slot) => self.read_legacy_scalar_slot(*slot)?,
                         None => 0,
                     };
                     let due = match due {
-                        Some(slot) => self.read_slot(*slot)?,
+                        Some(slot) => self.read_legacy_scalar_slot(*slot)?,
                         None => 0,
                     };
-                    self.write_slot(*dst, Self::pv_i32(rate, nper, pmt, fv, due))?;
+                    self.write_legacy_scalar_slot(*dst, Self::pv_i32(rate, nper, pmt, fv, due))?;
                     pc += 1;
                 }
                 Instruction::IntrinsicPmtI32 {
@@ -684,36 +688,36 @@ impl Vm {
                     fv,
                     due,
                 } => {
-                    let rate = self.read_slot(*rate)?;
-                    let nper = self.read_slot(*nper)?;
-                    let pv = self.read_slot(*pv)?;
+                    let rate = self.read_legacy_scalar_slot(*rate)?;
+                    let nper = self.read_legacy_scalar_slot(*nper)?;
+                    let pv = self.read_legacy_scalar_slot(*pv)?;
                     let fv = match fv {
-                        Some(slot) => self.read_slot(*slot)?,
+                        Some(slot) => self.read_legacy_scalar_slot(*slot)?,
                         None => 0,
                     };
                     let due = match due {
-                        Some(slot) => self.read_slot(*slot)?,
+                        Some(slot) => self.read_legacy_scalar_slot(*slot)?,
                         None => 0,
                     };
-                    self.write_slot(*dst, Self::pmt_i32(rate, nper, pv, fv, due))?;
+                    self.write_legacy_scalar_slot(*dst, Self::pmt_i32(rate, nper, pv, fv, due))?;
                     pc += 1;
                 }
                 Instruction::IntrinsicNpvI32 { dst, rate, values } => {
-                    let rate = self.read_slot(*rate)?;
+                    let rate = self.read_legacy_scalar_slot(*rate)?;
                     let mut cash_flows = Vec::with_capacity(values.len());
                     for slot in values {
-                        cash_flows.push(self.read_slot(*slot)?);
+                        cash_flows.push(self.read_legacy_scalar_slot(*slot)?);
                     }
-                    self.write_slot(*dst, Self::npv_i32(rate, &cash_flows))?;
+                    self.write_legacy_scalar_slot(*dst, Self::npv_i32(rate, &cash_flows))?;
                     pc += 1;
                 }
                 Instruction::IntrinsicIrrI32 { dst, value, guess } => {
-                    let value = self.read_slot(*value)?;
+                    let value = self.read_legacy_scalar_slot(*value)?;
                     let guess = match guess {
-                        Some(slot) => self.read_slot(*slot)?,
+                        Some(slot) => self.read_legacy_scalar_slot(*slot)?,
                         None => 10,
                     };
-                    self.write_slot(*dst, Self::irr_i32(value, guess))?;
+                    self.write_legacy_scalar_slot(*dst, Self::irr_i32(value, guess))?;
                     pc += 1;
                 }
                 Instruction::IntrinsicMirrI32 {
@@ -722,10 +726,10 @@ impl Vm {
                     finance_rate,
                     reinvest_rate,
                 } => {
-                    let value = self.read_slot(*value)?;
-                    let finance_rate = self.read_slot(*finance_rate)?;
-                    let reinvest_rate = self.read_slot(*reinvest_rate)?;
-                    self.write_slot(*dst, Self::mirr_i32(value, finance_rate, reinvest_rate))?;
+                    let value = self.read_legacy_scalar_slot(*value)?;
+                    let finance_rate = self.read_legacy_scalar_slot(*finance_rate)?;
+                    let reinvest_rate = self.read_legacy_scalar_slot(*reinvest_rate)?;
+                    self.write_legacy_scalar_slot(*dst, Self::mirr_i32(value, finance_rate, reinvest_rate))?;
                     pc += 1;
                 }
                 Instruction::IntrinsicRateI32 {
@@ -737,22 +741,22 @@ impl Vm {
                     due,
                     guess,
                 } => {
-                    let nper = self.read_slot(*nper)?;
-                    let pmt = self.read_slot(*pmt)?;
-                    let pv = self.read_slot(*pv)?;
+                    let nper = self.read_legacy_scalar_slot(*nper)?;
+                    let pmt = self.read_legacy_scalar_slot(*pmt)?;
+                    let pv = self.read_legacy_scalar_slot(*pv)?;
                     let fv = match fv {
-                        Some(slot) => self.read_slot(*slot)?,
+                        Some(slot) => self.read_legacy_scalar_slot(*slot)?,
                         None => 0,
                     };
                     let due = match due {
-                        Some(slot) => self.read_slot(*slot)?,
+                        Some(slot) => self.read_legacy_scalar_slot(*slot)?,
                         None => 0,
                     };
                     let guess = match guess {
-                        Some(slot) => self.read_slot(*slot)?,
+                        Some(slot) => self.read_legacy_scalar_slot(*slot)?,
                         None => 10,
                     };
-                    self.write_slot(*dst, Self::rate_i32(nper, pmt, pv, fv, due, guess))?;
+                    self.write_legacy_scalar_slot(*dst, Self::rate_i32(nper, pmt, pv, fv, due, guess))?;
                     pc += 1;
                 }
                 Instruction::IntrinsicNPerI32 {
@@ -763,43 +767,43 @@ impl Vm {
                     fv,
                     due,
                 } => {
-                    let rate = self.read_slot(*rate)?;
-                    let pmt = self.read_slot(*pmt)?;
-                    let pv = self.read_slot(*pv)?;
+                    let rate = self.read_legacy_scalar_slot(*rate)?;
+                    let pmt = self.read_legacy_scalar_slot(*pmt)?;
+                    let pv = self.read_legacy_scalar_slot(*pv)?;
                     let fv = match fv {
-                        Some(slot) => self.read_slot(*slot)?,
+                        Some(slot) => self.read_legacy_scalar_slot(*slot)?,
                         None => 0,
                     };
                     let due = match due {
-                        Some(slot) => self.read_slot(*slot)?,
+                        Some(slot) => self.read_legacy_scalar_slot(*slot)?,
                         None => 0,
                     };
-                    self.write_slot(*dst, Self::nper_i32(rate, pmt, pv, fv, due))?;
+                    self.write_legacy_scalar_slot(*dst, Self::nper_i32(rate, pmt, pv, fv, due))?;
                     pc += 1;
                 }
                 Instruction::IntrinsicLBoundArray { dst, src } => {
-                    let value = self.read_slot(*src)?;
+                    let value = self.read_legacy_scalar_slot(*src)?;
                     let out = if Self::is_array_tag(value) { 0 } else { -1 };
-                    self.write_slot(*dst, out)?;
+                    self.write_legacy_scalar_slot(*dst, out)?;
                     pc += 1;
                 }
                 Instruction::IntrinsicUBoundArray { dst, src } => {
-                    let value = self.read_slot(*src)?;
+                    let value = self.read_legacy_scalar_slot(*src)?;
                     let out = if Self::is_array_tag(value) {
                         Self::array_count(value) - 1
                     } else {
                         -1
                     };
-                    self.write_slot(*dst, out)?;
+                    self.write_legacy_scalar_slot(*dst, out)?;
                     pc += 1;
                 }
                 Instruction::IntrinsicIsArrayTag { dst, src } => {
-                    let value = self.read_slot(*src)?;
-                    self.write_slot(*dst, if Self::is_array_tag(value) { 1 } else { 0 })?;
+                    let value = self.read_legacy_scalar_slot(*src)?;
+                    self.write_legacy_scalar_slot(*dst, if Self::is_array_tag(value) { 1 } else { 0 })?;
                     pc += 1;
                 }
                 Instruction::IntrinsicVarTypeTag { dst, src } => {
-                    let value = self.read_slot(*src)?;
+                    let value = self.read_legacy_scalar_slot(*src)?;
                     let out = if Self::is_array_tag(value) {
                         8192 + 12
                     } else if value == EMPTY_TAG {
@@ -811,21 +815,21 @@ impl Vm {
                     } else {
                         3
                     };
-                    self.write_slot(*dst, out)?;
+                    self.write_legacy_scalar_slot(*dst, out)?;
                     pc += 1;
                 }
                 Instruction::IntrinsicTypeNameTag { dst, src } => {
-                    let value = self.read_slot(*src)?;
+                    let value = self.read_legacy_scalar_slot(*src)?;
                     let out = if Self::is_array_tag(value) {
                         1001
                     } else {
                         1002
                     };
-                    self.write_slot(*dst, out)?;
+                    self.write_legacy_scalar_slot(*dst, out)?;
                     pc += 1;
                 }
                 Instruction::IntrinsicIsNumericTag { dst, src } => {
-                    let value = self.read_slot(*src)?;
+                    let value = self.read_legacy_scalar_slot(*src)?;
                     let out = if Self::is_array_tag(value)
                         || value == EMPTY_TAG
                         || value == NULL_TAG
@@ -835,21 +839,21 @@ impl Vm {
                     } else {
                         1
                     };
-                    self.write_slot(*dst, out)?;
+                    self.write_legacy_scalar_slot(*dst, out)?;
                     pc += 1;
                 }
                 Instruction::IntrinsicIsDateTag { dst, src } => {
-                    let value = self.read_slot(*src)?;
+                    let value = self.read_legacy_scalar_slot(*src)?;
                     let out = if (1_000_000..=99_999_999).contains(&value) {
                         1
                     } else {
                         0
                     };
-                    self.write_slot(*dst, out)?;
+                    self.write_legacy_scalar_slot(*dst, out)?;
                     pc += 1;
                 }
                 Instruction::IntrinsicIsObjectTag { dst, .. } => {
-                    self.write_slot(*dst, 0)?;
+                    self.write_legacy_scalar_slot(*dst, 0)?;
                     pc += 1;
                 }
                 Instruction::IntrinsicShellHost { dst, command } => {
@@ -887,31 +891,31 @@ impl Vm {
                     }
                 }
                 Instruction::IntrinsicCollectionAdd { dst, count, item } => {
-                    let count = self.read_slot(*count)?;
-                    let _item = self.read_slot(*item)?;
-                    self.write_slot(*dst, (count + 1).max(0))?;
+                    let count = self.read_legacy_scalar_slot(*count)?;
+                    let _item = self.read_legacy_scalar_slot(*item)?;
+                    self.write_legacy_scalar_slot(*dst, (count + 1).max(0))?;
                     pc += 1;
                 }
                 Instruction::IntrinsicCollectionItem { dst, count, index } => {
-                    let count = self.read_slot(*count)?;
-                    let index = self.read_slot(*index)?;
+                    let count = self.read_legacy_scalar_slot(*count)?;
+                    let index = self.read_legacy_scalar_slot(*index)?;
                     let out = if index >= 1 && index <= count {
                         index
                     } else {
                         0
                     };
-                    self.write_slot(*dst, out)?;
+                    self.write_legacy_scalar_slot(*dst, out)?;
                     pc += 1;
                 }
                 Instruction::IntrinsicCollectionRemove { dst, count, index } => {
-                    let count = self.read_slot(*count)?;
-                    let _index = self.read_slot(*index)?;
-                    self.write_slot(*dst, (count - 1).max(0))?;
+                    let count = self.read_legacy_scalar_slot(*count)?;
+                    let _index = self.read_legacy_scalar_slot(*index)?;
+                    self.write_legacy_scalar_slot(*dst, (count - 1).max(0))?;
                     pc += 1;
                 }
                 Instruction::IntrinsicCollectionCount { dst, count } => {
-                    let count = self.read_slot(*count)?;
-                    self.write_slot(*dst, count.max(0))?;
+                    let count = self.read_legacy_scalar_slot(*count)?;
+                    self.write_legacy_scalar_slot(*dst, count.max(0))?;
                     pc += 1;
                 }
                 Instruction::IntrinsicCreateObjectHost { dst, prog_id } => {
@@ -1284,7 +1288,7 @@ impl Vm {
                     pc += 1;
                 }
                 Instruction::LoadErrNumber { slot } => {
-                    self.write_slot(*slot, self.last_error)?;
+                    self.write_value_slot(*slot, RuntimeValue::I32(self.last_error))?;
                     pc += 1;
                 }
                 Instruction::BoolNot { dst, src } => {
@@ -1395,7 +1399,7 @@ impl Vm {
         Ok(())
     }
 
-    fn read_slot(&self, slot: usize) -> Result<i32, String> {
+    fn read_legacy_scalar_slot(&self, slot: usize) -> Result<i32, String> {
         self.read_value_slot(slot)?
             .to_legacy_i32()
             .map_err(|detail| {
@@ -1403,7 +1407,7 @@ impl Vm {
             })
     }
 
-    fn write_slot(&mut self, slot: usize, value: i32) -> Result<(), String> {
+    fn write_legacy_scalar_slot(&mut self, slot: usize, value: i32) -> Result<(), String> {
         self.write_value_slot(slot, RuntimeValue::from_legacy_i32(value))
     }
 
@@ -1462,6 +1466,21 @@ impl Vm {
     fn legacy_increment_value(value: &RuntimeValue) -> Result<RuntimeValue, String> {
         let value = Self::runtime_value_legacy_token(value, "increment operand")?;
         Ok(RuntimeValue::I32(value + 1))
+    }
+
+    fn legacy_add_const_value(
+        value: &RuntimeValue,
+        delta: i32,
+        field: &str,
+    ) -> Result<RuntimeValue, String> {
+        let value = Self::runtime_value_legacy_token(value, field)?;
+        Ok(RuntimeValue::I32(value + delta))
+    }
+
+    fn legacy_add_values(lhs: &RuntimeValue, rhs: &RuntimeValue) -> Result<RuntimeValue, String> {
+        let lhs = Self::runtime_value_legacy_token(lhs, "add lhs")?;
+        let rhs = Self::runtime_value_legacy_token(rhs, "add rhs")?;
+        Ok(RuntimeValue::I32(lhs + rhs))
     }
 
     fn runtime_value_to_com_object(
@@ -3759,3 +3778,4 @@ mod kani_proofs {
         assert_eq!(vm.snapshot_slots(1)[0], 0);
     }
 }
+

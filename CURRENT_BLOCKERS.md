@@ -189,9 +189,10 @@ Run context: active parity/compliance execution plus in-progress feature worklis
     - `IncSlot`,
   - those instructions now read `RuntimeValue` directly and write semantic `RuntimeValue::Bool(...)` or `RuntimeValue::I32(...)` results while preserving the legacy integer compatibility projection through `snapshot_slots(...)`,
   - typed comparator fastpaths now also write semantic boolean results instead of silently reintroducing integer-only compare output,
+  - the interpreter loop no longer directly executes through the old `read_slot(...)` / `write_slot(...)` helper names; the remaining scalar/intrinsic instruction estate now runs through explicit legacy-projection helpers over `RuntimeValue`,
   - the remaining runtime/host boundary holdouts are now concentrated in:
     - remaining raw `i32`-backed object/binding representations below those typed surfaces (`ObjectHandle`, `BindingHandle`),
-    - the large remaining interpreter instruction families that still route through `read_slot(...)` / `write_slot(...)`, especially scalar load/add/sub/copy, string/date/math/financial intrinsic subsets, collection/count helpers, and other arithmetic/update paths,
+    - the large remaining interpreter instruction families that still execute with legacy-scalar semantics over `RuntimeValue`, especially string/date/math/financial intrinsic subsets, collection/count helpers, and the still-ambiguous `CopySlot` behavior for non-legacy runtime shapes,
     - remaining direct interpreter/test/caller expectations that still consume the legacy integer observation aliases,
     - the remaining direct legacy observation surface is now mostly the explicit public compatibility API itself (`snapshot_slots(...)` and related projections) plus callers that deliberately verify that compatibility API,
     - the new `ComValue` carrier and generic dynamic-object protocol can live at the COM boundary, but they cannot yet become the single runtime object/value model while the wider execution substrate remains token-only.
