@@ -1471,7 +1471,7 @@ impl Vm {
         field: &str,
     ) -> Result<BindingHandle, String> {
         match value {
-            RuntimeValue::ObjectHandle(handle) => Ok(BindingHandle::new(handle.raw())),
+            RuntimeValue::BindingHandle(handle) => Ok(*handle),
             other => Self::runtime_value_legacy_token(other, &format!("WithEvents {field}"))
                 .map(Into::into),
         }

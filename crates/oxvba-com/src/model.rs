@@ -100,6 +100,7 @@ impl ComValue {
             RuntimeValue::String(value) => Self::String(value.clone()),
             RuntimeValue::ArrayIntent(array) => Self::ArrayIntent(array.clone()),
             RuntimeValue::ObjectHandle(handle) => Self::ObjectHandle(*handle),
+            RuntimeValue::BindingHandle(handle) => Self::I32(handle.raw()),
         }
     }
 

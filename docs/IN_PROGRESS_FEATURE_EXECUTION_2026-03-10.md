@@ -192,6 +192,7 @@ Status vocabulary:
     - the standard dynlink binding registry now allocates opaque `BindingHandle` values instead of aliasing them directly to `DynLinkSymbol.raw()`,
     - VM `WithEvents` owner iteration now preserves `ObjectHandle` identity internally instead of flattening owners back to raw integers during traversal,
     - host COM callback dispatch and subscription-handler bookkeeping now preserve `ComCallbackToken` / `ComSubscriptionToken` identity instead of normalizing them back to bare `i32`,
+    - `RuntimeValue` now carries `BindingHandle(...)` semantically and `DynamicLinkHal::bind_descriptor_value(...)` returns that semantic binding identity instead of forcing it through plain `I32`,
     - the remaining active seam is the explicit raw-`i32` HAL compatibility contract plus the still-legacy-heavy interpreter/caller/test estate around integer snapshots.
 
 ### `IP-05` Windows early-bound COM and type-library parity

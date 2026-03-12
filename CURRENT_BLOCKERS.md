@@ -106,6 +106,7 @@ Run context: active parity/compliance execution plus in-progress feature worklis
   - `RuntimeValue::ObjectHandle(...)` now carries that typed handle and the corresponding COM carrier conversions preserve it semantically,
   - `ComHal::{create_object,release_object,describe_object}` and the corresponding host wrapper surface now use `ObjectHandle` directly instead of raw integer object tokens,
   - dynamic-link binding identity is now explicitly typed in `oxvba-runtime` as `BindingHandle` instead of being represented only as an untyped integer binding token,
+  - `RuntimeValue::BindingHandle(...)` now carries that typed binding identity semantically instead of forcing dynamic-link binding values to masquerade as plain `I32`,
   - `DynamicLinkHal::{bind_descriptor,prepare_invoke,invoke_bound}` now use `BindingHandle` directly instead of raw integer binding tokens,
   - dynamic-link symbol identity is now explicitly typed at the runtime/HAL seam as `DynLinkSymbol` instead of being represented only as an untyped integer symbol token,
   - `DynLinkDescriptorView.symbol` and `DynamicLinkHal::invoke_symbol(...)` now use `DynLinkSymbol` directly at the runtime/HAL seam,

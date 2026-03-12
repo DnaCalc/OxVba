@@ -1,5 +1,22 @@
 # Implementation Log
 
+## 2026-03-12 - Runtime values now carry dynamic-link binding handles semantically
+
+- Continued the runtime value-model migration in:
+  - [runtime_value.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-runtime\src\runtime_value.rs)
+  - [traits.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-hal\src\traits.rs)
+  - [interpreter.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-vm\src\interpreter.rs)
+  - [model.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-com\src\model.rs)
+  - [main.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-cli\src\main.rs)
+- `RuntimeValue` now has an explicit `BindingHandle(...)` variant instead of forcing dynamic-link binding identity through plain `I32`.
+- `DynamicLinkHal::bind_descriptor_value(...)` now returns `RuntimeValue::BindingHandle(...)` on the semantic path.
+- VM `WithEvents` binding-handle recovery no longer reinterprets `ObjectHandle` as binding identity; it now accepts `BindingHandle(...)` semantically and falls back to legacy integers only at the explicit compatibility edge.
+- Net effect:
+  - runtime object identity and runtime binding identity now both have first-class semantic carriers,
+  - the remaining blocker is pushed further toward the underlying raw-handle representation and the still-explicit legacy observation APIs.
+- Verification:
+  - `cargo test -p oxvba-runtime -p oxvba-com -p oxvba-hal -p oxvba-vm -p oxvba-cli --quiet`
+
 ## 2026-03-12 - VM WithEvents and host COM callback paths keep typed identity
 
 - Continued the runtime handle migration in:

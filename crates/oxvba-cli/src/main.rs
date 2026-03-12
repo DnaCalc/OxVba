@@ -195,6 +195,7 @@ fn format_runtime_value(value: &RuntimeValue) -> String {
         RuntimeValue::String(BStr(value)) => format!("string:{value:?}"),
         RuntimeValue::ArrayIntent(array) => format!("array:{array:?}"),
         RuntimeValue::ObjectHandle(handle) => format!("object:{handle}"),
+        RuntimeValue::BindingHandle(handle) => format!("binding:{handle}"),
     }
 }
 

@@ -160,7 +160,7 @@ pub trait DynamicLinkHal: Send + Sync {
         descriptor: &DynLinkDescriptorView<'_>,
     ) -> HalResult<RuntimeValue> {
         self.bind_descriptor(descriptor)
-            .map(|binding| RuntimeValue::from_legacy_i32(binding.raw()))
+            .map(RuntimeValue::BindingHandle)
     }
 
     /// Optional argument normalization/writeback preparation hook.

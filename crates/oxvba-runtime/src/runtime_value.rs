@@ -70,6 +70,7 @@ pub enum RuntimeValue {
     String(BStr),
     ArrayIntent(SafeArray),
     ObjectHandle(ObjectHandle),
+    BindingHandle(BindingHandle),
 }
 
 impl RuntimeValue {
@@ -100,6 +101,7 @@ impl RuntimeValue {
                 "array intent cannot be represented in current legacy slot tag".to_string()
             }),
             Self::ObjectHandle(handle) => Ok(handle.raw()),
+            Self::BindingHandle(handle) => Ok(handle.raw()),
             Self::String(_) => {
                 Err("string cannot be represented in current legacy i32 slot lane".to_string())
             }
@@ -124,7 +126,7 @@ mod tests {
         value_tags::{EMPTY_TAG, NULL_TAG, error_tag_from_code},
     };
 
-    use super::{ObjectHandle, RuntimeValue};
+    use super::{BindingHandle, ObjectHandle, RuntimeValue};
 
     #[test]
     fn runtime_value_from_legacy_i32_preserves_tagged_shapes() {
@@ -168,6 +170,16 @@ mod tests {
                 .to_legacy_i32()
                 .expect("object handle"),
             42
+        );
+    }
+
+    #[test]
+    fn runtime_value_binding_handles_preserve_legacy_shape() {
+        assert_eq!(
+            RuntimeValue::BindingHandle(BindingHandle::new(77))
+                .to_legacy_i32()
+                .expect("binding handle"),
+            77
         );
     }
 }

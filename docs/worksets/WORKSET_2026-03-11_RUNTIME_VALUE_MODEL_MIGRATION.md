@@ -141,6 +141,7 @@ Completed slices:
    - `invoke_bound(...)` now resolves symbol identity from adapter state instead of treating the binding handle itself as the symbol token.
 54. VM `WithEvents` owner iteration now preserves `ObjectHandle` identity internally instead of flattening owner traversal state back to raw integers.
 55. Host COM callback dispatch and subscription-handler bookkeeping now preserve `ComCallbackToken` / `ComSubscriptionToken` identity instead of normalizing those tokens back to bare `i32`.
+56. `RuntimeValue` now carries `BindingHandle(...)` semantically and `DynamicLinkHal::bind_descriptor_value(...)` returns that binding identity on the semantic path instead of flattening it into plain `I32`.
 
 Remaining blocker seam:
 1. explicit raw `i32` compatibility signatures still anchor the remaining legacy COM seams,
