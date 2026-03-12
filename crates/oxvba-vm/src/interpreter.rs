@@ -1,9 +1,12 @@
 use std::{collections::HashMap, sync::Arc};
 
-use oxvba_com::{ComInvokeArg, ComInvokeRequest, ComValue};
+use oxvba_com::{
+    ComValue, DynamicCallArg, DynamicCallRequest, DynamicMemberSelector, DynamicObjectBridge,
+};
 use oxvba_compiler::{Bytecode, Instruction, bytecode::StringCompareMode};
 use oxvba_hal::{
     adapters,
+    HalComDynamicBridge,
     error::{HalError, HalErrorKind},
     model::{CapabilityId, HostPolicy, native_host_profile},
     traits::{DynLinkDescriptorView, HostServices},
@@ -968,9 +971,18 @@ impl Vm {
                             continue;
                         }
                     };
-                    let mut request = ComInvokeRequest::new(object, member.into(), Vec::new());
+                    let mut request = DynamicCallRequest {
+                        object: object.into(),
+                        member: if member == 0 {
+                            DynamicMemberSelector::DefaultMember
+                        } else {
+                            DynamicMemberSelector::Token(member)
+                        },
+                        args: Vec::new(),
+                        call_kind_hint: None,
+                    };
                     for arg in args {
-                        request.args.push(ComInvokeArg {
+                        request.args.push(DynamicCallArg {
                             value: arg
                                 .slot
                                 .map(|slot| self.read_value_slot(slot))
@@ -980,13 +992,11 @@ impl Vm {
                             name: arg.name.clone(),
                         });
                     }
-                    match self
-                        .host_services
-                        .com()
-                        .dispatch_invoke_runtime_value_v2(&request)
-                    {
+                    let bridge =
+                        HalComDynamicBridge::new(self.host_services.profile(), self.host_services.com());
+                    match bridge.invoke_dynamic(&request) {
                         Ok(value) => {
-                            self.write_value_slot(*dst, value)?;
+                            self.write_value_slot(*dst, value.to_runtime_value())?;
                             pc += 1;
                         }
                         Err(err) => pc = self.route_host_error(pc, err)?,

@@ -11,6 +11,7 @@ pub enum VarType {
     Double = 0x0005,
     String = 0x0008,
     Object = 0x0009,
+    Error = 0x000A,
     Boolean = 0x000B,
     Decimal = 0x000E,
     Byte = 0x0011,
@@ -28,6 +29,7 @@ impl VarType {
             0x0005 => Some(Self::Double),
             0x0008 => Some(Self::String),
             0x0009 => Some(Self::Object),
+            0x000A => Some(Self::Error),
             0x000B => Some(Self::Boolean),
             0x000E => Some(Self::Decimal),
             0x0011 => Some(Self::Byte),
@@ -194,14 +196,25 @@ impl Variant {
         Some(v != 0)
     }
 
+    pub fn from_error_code(code: i32) -> Self {
+        let mut bytes = [0u8; 8];
+        bytes[0..4].copy_from_slice(&code.to_le_bytes());
+        Self::from_bytes(VarType::Error, bytes)
+    }
+
+    pub fn as_error_code(&self) -> Option<i32> {
+        if self.vtype != VarType::Error {
+            return None;
+        }
+        let bytes = self.data_bytes();
+        Some(i32::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]))
+    }
+
     pub fn from_runtime_value(value: &RuntimeValue) -> Result<Self, String> {
         match value {
             RuntimeValue::Empty => Ok(Self::empty()),
             RuntimeValue::Null => Ok(Self::null()),
-            RuntimeValue::ErrorCode(_) => Err(
-                "error-code runtime values are not yet representable in owned runtime Variant"
-                    .to_string(),
-            ),
+            RuntimeValue::ErrorCode(code) => Ok(Self::from_error_code(*code)),
             RuntimeValue::I32(value) => Ok(Self::from_i32(*value)),
             RuntimeValue::Bool(value) => Ok(Self::from_bool(*value)),
             RuntimeValue::String(_) => Err(
@@ -239,6 +252,10 @@ impl Variant {
                 .as_bool()
                 .map(RuntimeValue::Bool)
                 .ok_or_else(|| "invalid Boolean variant payload".to_string()),
+            VarType::Error => self
+                .as_error_code()
+                .map(RuntimeValue::ErrorCode)
+                .ok_or_else(|| "invalid Error variant payload".to_string()),
             other => Err(format!(
                 "runtime Variant -> RuntimeValue bridge does not yet support {:?}",
                 other
@@ -307,6 +324,13 @@ mod tests {
             null_variant.to_runtime_value().expect("null roundtrip"),
             RuntimeValue::Null
         );
+
+        let error_variant =
+            Variant::from_runtime_value(&RuntimeValue::ErrorCode(17)).expect("error runtime value");
+        assert_eq!(
+            error_variant.to_runtime_value().expect("error roundtrip"),
+            RuntimeValue::ErrorCode(17)
+        );
     }
 
     #[test]
@@ -315,7 +339,6 @@ mod tests {
         assert!(
             Variant::from_runtime_value(&RuntimeValue::String(BStr("abc".to_string()))).is_err()
         );
-        assert!(Variant::from_runtime_value(&RuntimeValue::ErrorCode(7)).is_err());
     }
 }
 

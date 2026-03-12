@@ -1,7 +1,7 @@
 # Workset: Runtime Value Model Migration
 
 Date: 2026-03-11  
-Status: active  
+Status: complete  
 Primary ladder mapping: `v497..v505`, `v506..v513`  
 Secondary ladder mapping: `v524..v526`, `v540..v544`
 
@@ -19,12 +19,26 @@ This workset exists because the current runtime is still structurally centered o
 2. explicit raw `i32` compatibility signatures still remaining at parts of the HAL seam,
 3. host/runtime snapshots and callback ingress that still carry legacy integer observation pressure.
 
-That model was sufficient for the current subset, but it is now the real blocker for further honest progress.
+That model was sufficient for the current subset, and it was the real blocker for further honest progress until the current migration batch completed.
+
+## 2.0 Closure note
+
+This workset is now complete.
+
+Resolved outcome:
+1. `RuntimeValue` is now the authoritative runtime execution substrate.
+2. VM/JIT/host execution and observation are value-first by default.
+3. Legacy integer-slot observation survives only as an explicit bounded compatibility projection.
+4. The runtime value model no longer blocks unified dynamic-object/value-carrier work.
+
+The remaining active blockers now live above this layer:
+1. `BLK-DYN-PROTOCOL-001`
+2. `BLK-PROP-001`
 
 ## 2. Problem statement
 
-Current blocker:
-1. `BLK-RUNTIME-VALUE-MODEL-001`
+Historical blocker:
+1. `BLK-RUNTIME-VALUE-MODEL-001` (resolved)
 
 Current structural constraints:
 1. [register_file.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-vm\src\register_file.rs) has now been migrated to `Vec<RuntimeValue>`, but the surrounding execution substrate is still only partially widened.
@@ -270,8 +284,8 @@ Deliverables:
 Acceptance:
 1. runtime-facing external value carriers and dynamic-object protocol can traverse the core seams without early narrowing.
 
-Current blocker:
-1. the next required migration seam is the remaining explicit raw-`i32` HAL compatibility contract, the remaining token-bound HAL domains beyond the newly widened host intrinsic lanes, and the remaining legacy public observation contracts.
+Resolved blocker:
+1. the remaining explicit raw-`i32` HAL compatibility contract, token-bound HAL domains, and legacy public observation contracts were the next migration seam and have now been reduced below active-blocker level for this workset.
 
 ### Phase D. Integration follow-through
 

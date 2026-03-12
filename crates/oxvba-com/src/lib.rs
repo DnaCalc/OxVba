@@ -12,7 +12,8 @@ pub mod typelib_catalog;
 pub use dispatch::{ComDispatch, DispatchResult};
 pub use dynamic_object::{
     DynamicCallArg, DynamicCallKind, DynamicCallRequest, DynamicCallbackToken, DynamicEventPayload,
-    DynamicMemberSelector, DynamicObjectToken, DynamicSubscriptionToken, DynamicValue,
+    DynamicMemberSelector, DynamicObjectBridge, DynamicObjectToken, DynamicSubscriptionToken,
+    DynamicValue,
 };
 pub use model::{
     ComCallbackPayload, ComCallbackToken, ComInvokeArg, ComInvokeKind, ComInvokeRequest,

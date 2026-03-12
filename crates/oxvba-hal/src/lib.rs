@@ -2,11 +2,13 @@
 
 pub mod adapters;
 pub mod conformance;
+pub mod dynamic_bridge;
 pub mod error;
 pub mod model;
 pub mod traits;
 
 pub use error::{HalError, HalErrorKind, HalResult};
+pub use dynamic_bridge::HalComDynamicBridge;
 pub use model::{
     CapabilityDescriptor, CapabilityId, CapabilityMaturity, ComInvocationStrategy, HalDescriptor,
     HalProfileId, HalRuntimeClass, HostPolicy, HostPolicyPreset, UiVirtualizationMode,

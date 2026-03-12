@@ -49,13 +49,38 @@ impl From<ComSubscriptionToken> for DynamicSubscriptionToken {
     }
 }
 
+impl From<DynamicSubscriptionToken> for ComSubscriptionToken {
+    fn from(value: DynamicSubscriptionToken) -> Self {
+        Self::new(value.raw())
+    }
+}
+
 impl From<ComCallbackToken> for DynamicCallbackToken {
     fn from(value: ComCallbackToken) -> Self {
         Self::new(value.raw())
     }
 }
 
+impl From<DynamicCallbackToken> for ComCallbackToken {
+    fn from(value: DynamicCallbackToken) -> Self {
+        Self::new(value.raw())
+    }
+}
+
 pub type DynamicValue = ComValue;
+
+pub trait DynamicObjectBridge {
+    type Error;
+
+    fn invoke_dynamic(&self, request: &DynamicCallRequest) -> Result<DynamicValue, Self::Error>;
+
+    fn poll_dynamic_event(&self) -> Result<Option<DynamicEventPayload>, Self::Error>;
+
+    fn release_dynamic_object(
+        &self,
+        object: DynamicObjectToken,
+    ) -> Result<DynamicValue, Self::Error>;
+}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum DynamicMemberSelector {

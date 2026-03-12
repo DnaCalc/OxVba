@@ -134,17 +134,18 @@ Acceptance:
 Progress:
 1. VM `DispatchInvoke` construction now preserves recoverable semantic value shape into the shared COM request,
 2. Windows adapter request/result translation now consumes the semantic carrier for the supported subset,
-3. callback payload polling now returns the same carrier family.
+3. callback payload polling now returns the same carrier family,
+4. `oxvba-com` now exposes `DynamicObjectBridge` as the executable shared protocol seam,
+5. `oxvba-hal` now provides `HalComDynamicBridge`, adapting `ComHal` onto that shared protocol,
+6. VM dispatch invoke and host COM callback polling now both route through that shared bridge instead of talking directly to the COM HAL seams.
 
 Open remainder:
 1. object identity, BSTR/string payloads, and real SAFEARRAY contents still need carrier representation,
-2. wider runtime/host ingestion still narrows back into the old token lane after the COM boundary,
-3. the unified late-bound object protocol is defined in code but is not yet wired through compiler/VM/host as the single runtime model,
+2. the unified late-bound object protocol is still only executable for the COM-backed path; native/OxVba objects do not yet adapt into the same bridge,
+3. property/default-member `Get` / `Let` / `Set` intent is not yet routed through the shared protocol,
 4. the next execution blocker is now explicit:
-   - `BLK-RUNTIME-VALUE-MODEL-001`
-  - VM register storage, additive value snapshots, callback ingress, and JIT-compatible value observation have started migrating, but HAL value tokens, legacy public observation surfaces, and many execution/test seams are still materially `i32` based.
-5. the blocker now has a dedicated execution owner:
-   - `docs/worksets/WORKSET_2026-03-11_RUNTIME_VALUE_MODEL_MIGRATION.md`
+   - `BLK-DYN-PROTOCOL-001`
+5. the runtime value-model migration blocker is resolved and no longer owns the next step.
 
 ### Phase C. COM adaptation alignment
 
@@ -155,6 +156,11 @@ Deliverables:
 
 Acceptance:
 1. COM-backed objects are no longer a special top-level runtime path.
+
+Progress:
+1. COM-backed dynamic calls now go through `DynamicObjectBridge` via `HalComDynamicBridge` on the VM path,
+2. COM-backed callback polling now also goes through the same bridge on the host path,
+3. COM-backed objects are still special at the adaptation layer, but they are no longer bypassing the shared runtime-facing protocol types and bridge trait.
 
 ### Phase D. Runtime/property integration
 

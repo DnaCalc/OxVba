@@ -15,6 +15,26 @@ Run context: active parity/compliance execution plus in-progress feature worklis
   - Wrapper lowering now iterates runtime owner bindings dynamically and dispatches handlers with sink-owner identity.
   - Added/updated compiler/optimizer/VM/host tests to lock deterministic behavior.
 
+### BLK-RUNTIME-VALUE-MODEL-001: Runtime value-model migration
+- Status: resolved in current run.
+- Resolution summary:
+  - VM/register/host execution is now value-first end to end:
+    - register storage persists `RuntimeValue`,
+    - public VM/JIT/host execution APIs are semantic-snapshot first,
+    - `snapshot_slots(...)` survives only as an explicit compatibility projection.
+  - The interpreter loop no longer executes through the old raw slot-helper vocabulary:
+    - core compare/boolean/jump/increment lanes now read/write semantic runtime values,
+    - the wider loop now uses explicit legacy-projection helpers over `RuntimeValue` where scalar compatibility is still intentional,
+    - `CopySlot` now preserves full `RuntimeValue` shape instead of collapsing through the integer lane.
+  - The owned runtime `Variant` bridge now honestly covers the current scalar/error subset:
+    - `Empty`,
+    - `Null`,
+    - `ErrorCode`,
+    - `I32`,
+    - `Bool`.
+  - The remaining blocker has moved up one layer:
+    - unified native/COM dynamic-object semantics and property/default-member intent transport.
+
 ## Active blocker entries
 
 ### BLK-COM-IDISPATCH-001: Late-bound COM parity remains below VBA/Excel `IDispatch` behavior
@@ -76,140 +96,29 @@ Run context: active parity/compliance execution plus in-progress feature worklis
 - Recommendation:
   - treat the next implementation slice as the work defined in `docs/worksets/WORKSET_2026-03-11_UNIFIED_DYNAMIC_OBJECT_PROTOCOL_AND_VALUE_CARRIER.md`, not another adapter-local patch.
 
-### BLK-RUNTIME-VALUE-MODEL-001: VM/register/host execution still assumes `i32` slots end to end
+### BLK-DYN-PROTOCOL-001: Unified dynamic-object protocol is still COM-backed only
 - Impact:
-  - Blocks `WORKSET_2026-03-11_UNIFIED_DYNAMIC_OBJECT_PROTOCOL_AND_VALUE_CARRIER.md` from progressing beyond the current boundary slices.
-  - Blocks full closure of `IP-03` Windows late-bound COM client parity and `IP-04` `oxvba-com` extraction.
-  - Blocks practical object/string/real-SAFEARRAY transport for `IP-08` host object/value bridge follow-through.
+  - Blocks full closure of `WORKSET_2026-03-11_UNIFIED_DYNAMIC_OBJECT_PROTOCOL_AND_VALUE_CARRIER.md`.
+  - Blocks convergence of `IP-02` property/default-member semantics and `IP-03` late-bound COM parity on one runtime model.
+  - Blocks the final `IP-04` `oxvba-com` extraction because COM-backed objects still have the only executable dynamic-object adapter path.
 - Current state:
-  - `crates/oxvba-vm/src/register_file.rs` now stores `Vec<RuntimeValue>`,
-  - `crates/oxvba-vm/src/lib.rs` and `crates/oxvba-host/src/engine.rs` now expose semantic value-snapshot APIs as the primary execution lane, with the legacy integer snapshot surface reduced to compatibility projection over `RuntimeValue`,
-  - `crates/oxvba-jit/src/lib.rs` now also exposes semantic value-snapshot APIs as the primary execution lane, with the legacy integer snapshot surface reduced to compatibility projection over `RuntimeValue`,
-  - the HAL no longer exposes a fake `ValueToken` abstraction; the remaining raw `i32` compatibility seams are now explicit and localized,
-  - the runtime now records `CreateObject` results as `RuntimeValue::ObjectHandle(...)` rather than plain integer slots,
-  - COM callback ingress now preserves `RuntimeValue` into the runtime, but many callers and tests still consume the legacy integer observation lane,
-  - JIT-backed value snapshots now preserve full `RuntimeValue` shape on VM fallback and project the supported Cranelift subset into `RuntimeValue`, but JIT internals and many parity harnesses still fundamentally operate over the legacy integer snapshot lane,
-  - HAL now exposes additive semantic-return helper methods and the VM routes host-return paths through them, but the underlying input/output token contract is still `i32`,
-  - `EventPumpHal::do_events()` and `TimeLocaleHal::{date_serial_now,time_serial_now,timer_ticks}` now return semantic `RuntimeValue` directly and the HAL conformance probes/tests have been migrated to treat those domains as semantic-return lanes rather than integer-token facades,
-  - `UiInteractionHal::{msg_box,input_box}` and `ProcessEnvHal::{shell,environ,dir}` now also use direct semantic `RuntimeValue` contracts, and the VM/conformance/test surfaces no longer rely on token-first wrappers for those host domains,
-  - `DynamicLinkHal::{invoke_symbol,invoke_descriptor}` and `DiagnosticsHal::emit` now also use direct semantic `RuntimeValue` contracts on the VM/conformance-facing path instead of token-first wrapper methods,
-  - the first input-side semantic wrapper migration is now in place for active VM host intrinsics:
-    - `MsgBox` / `InputBox`,
-    - `FreeFile`,
-    - `Shell` / `Environ` / `Dir`,
-    - `CreateObject`,
-    - COM event subscription/callback helper intrinsics,
-    - dynamic-link invoke wrappers,
-  - `FileSystemHal::{open,close,seek,eof,lof,free_file}` now use direct semantic `RuntimeValue` contracts instead of token-first methods plus `*_value` wrappers,
-  - `ComHal::{subscribe_event,unsubscribe_event,event_callback_subscription,event_callback_arity,event_callback_arg,release_event_callback}` now also use direct semantic `RuntimeValue` contracts on the VM/conformance-facing path instead of token-first methods plus `*_value` wrappers,
-  - runtime object identity is now explicitly typed in `oxvba-runtime` as `ObjectHandle` instead of being represented only as an untyped integer payload,
-  - `RuntimeValue::ObjectHandle(...)` now carries that typed handle and the corresponding COM carrier conversions preserve it semantically,
-  - `ComHal::{create_object,release_object,describe_object}` and the corresponding host wrapper surface now use `ObjectHandle` directly instead of raw integer object tokens,
-  - dynamic-link binding identity is now explicitly typed in `oxvba-runtime` as `BindingHandle` instead of being represented only as an untyped integer binding token,
-  - `RuntimeValue::BindingHandle(...)` now carries that typed binding identity semantically instead of forcing dynamic-link binding values to masquerade as plain `I32`,
-  - `DynamicLinkHal::{bind_descriptor,prepare_invoke,invoke_bound}` now use `BindingHandle` directly instead of raw integer binding tokens,
-  - `oxvba-runtime::Variant` now has an explicit bridge to and from the currently honest `RuntimeValue` subset (`Empty`, `Null`, `I32`, `Bool`), so the runtime migration has an executable COM-style scalar convergence point without treating COM wire types as the semantic owner,
-  - dynamic-link symbol identity is now explicitly typed at the runtime/HAL seam as `DynLinkSymbol` instead of being represented only as an untyped integer symbol token,
-  - `DynLinkDescriptorView.symbol` and `DynamicLinkHal::invoke_symbol(...)` now use `DynLinkSymbol` directly at the runtime/HAL seam,
-  - serialized bytecode dynamic-link descriptor/instruction symbol fields now also use `DynLinkSymbol`, so the VM no longer re-enters the runtime with raw dynamic-link symbol integers,
-  - VM host intrinsic execution for those lanes now reads `RuntimeValue` directly instead of forcing `read_slot(...)`/legacy token narrowing on entry,
-  - VM `WithEvents` binding state now preserves semantic `RuntimeValue` payloads instead of flattening bound source/object values to raw integers,
-  - VM `DispatchInvoke` now reads the object slot from semantic runtime state and preserves object handles instead of re-reading the object through the raw slot lane before constructing the COM request,
-  - time/event host intrinsics now also read semantic `RuntimeValue` directly from the HAL boundary instead of routing through removed `*_value()` wrappers,
-  - UI/process host intrinsics now likewise read semantic `RuntimeValue` directly from the HAL boundary instead of routing through removed `*_value()` wrappers,
-  - dynamic-link host intrinsics and diagnostics/conformance probes now likewise use direct semantic `RuntimeValue` contracts instead of routing through removed `*_value()` wrappers,
-  - COM event helper host intrinsics and engine subscription paths now likewise use direct semantic `RuntimeValue` contracts instead of routing through removed `*_value()` wrappers,
-  - the standard Windows COM adapter now treats `dispatch_invoke_runtime_value_v2(...)` as the canonical implementation seam, and the old legacy-projection helper has been reduced to test-local coverage only,
-  - the standard Windows COM adapter now also treats `create_object(...)`, `release_object(...)`, and `invalidate_typelib_cache(...)` as the canonical semantic seams and projects the corresponding `*_legacy(...)` forms only at the compatibility edge,
-  - the standard-adapter COM regression tests now also use semantic helper paths for activation/release/cache maintenance by default, leaving the corresponding legacy methods mostly to explicit compatibility coverage,
-  - the runtime-value COM invoke path now explicitly preserves the working zero-argument native `IDispatch` method/property-get behavior instead of regressing `DISP_E_BADPARAMCOUNT` on the canonical path,
-  - host public execution/session observation APIs are now value-first by name:
-    - `Engine::execute_source_with_snapshot*` now returns semantic `RuntimeValue` snapshots,
-    - `ProjectRuntimeSession::snapshot()` is now the semantic primary and `snapshot_slots()` is the remaining explicit integer compatibility view,
-  - VM/JIT library snapshot helpers are now value-first by name:
-    - `oxvba_vm::execute_and_snapshot*` now returns semantic `RuntimeValue` snapshots,
-    - `JitEngine::execute_and_snapshot*` now returns semantic `RuntimeValue` snapshots,
-  - the direct `Vm` observation surface is now also value-first by name:
-    - `Vm::snapshot(...)` is the semantic primary,
-    - explicit integer-slot compatibility is now labeled `Vm::snapshot_slots(...)`,
-  - the COM activation seam is now also value-first by name:
-    - `ComHal::create_object(...)` now takes semantic `RuntimeValue` ProgID input and returns semantic `RuntimeValue::ObjectHandle(...)`,
-  - the dynamic-link binding/invoke seam is now also semantic on argument/result flow:
-    - `DynamicLinkHal::prepare_invoke(...)` now takes and returns `RuntimeValue`,
-    - `DynamicLinkHal::invoke_bound(...)` now takes and returns `RuntimeValue`,
-  - COM release/cache-maintenance seams are now also semantic on return flow:
-    - `ComHal::release_object(...)` now returns semantic `RuntimeValue`,
-    - `ComHal::invalidate_typelib_cache(...)` now returns semantic `RuntimeValue`,
-  - CLI execution now also uses the semantic snapshot lane by default and derives `SLOTS:` output from that value path only when needed,
-  - host-side COM end-to-end, early-binding, and registered-lane integration tests now execute through the semantic snapshot APIs rather than the legacy integer snapshot APIs,
-  - the fixture-driven project integration suite now also executes through semantic project snapshots and projects back to legacy slots only at assertion time so the catalog format can remain stable during migration,
-  - the large internal `crates/oxvba-host/src/engine.rs` test estate now also executes through semantic source/project snapshot APIs underneath and uses local slot-projection helpers only at assertion edges,
-  - JIT parity tests and the remaining direct VM/JIT equivalence checks now also execute through semantic snapshot helpers underneath, and the old VM/JIT/engine legacy snapshot wrapper APIs have been removed,
-  - the Cranelift subset helper now also exposes semantic `RuntimeValue` snapshots as its primary execution API, with the integer-slot form reduced to an explicit compatibility wrapper,
-  - the CLI no longer stores a duplicate `Vec<i32>` execution result; `SLOTS:` output is now projected directly from semantic runtime values only at the output edge,
-  - the mixed edge/scaling host integration suite now also executes through semantic project snapshots instead of the legacy integer snapshot API,
-  - the raw scalar `dispatch_invoke_legacy(object, member, arg)` helper and the request-shaped `dispatch_invoke_legacy_v2(...)` compatibility entrypoint have both been removed from the public HAL contract and reduced to test-local helpers inside the standard-adapter regression suite,
-  - COM member/event identity is now typed on the shared boundary:
-    - `ComInvokeRequest.member` now carries `ComMemberToken`,
-    - `ComCallbackPayload.event` now carries `ComMemberToken`,
-    - `ComObjectDescriptor::{known_member_tokens,known_event_tokens,default_member_token}` now carry typed member tokens,
-  - the standard-adapter COM state store now also uses typed identity internally for its active registries:
-    - `bindings: BTreeMap<ComObjectToken, ...>`,
-    - `subscriptions: BTreeMap<ComSubscriptionToken, ...>`,
-    - `callbacks: BTreeMap<ComCallbackToken, ...>`,
-    - `pending_callbacks: VecDeque<ComCallbackToken>`,
-  - `ComBinding` now also types its member/event metadata maps by `ComMemberToken` instead of bare integers:
-    - `member_dispids: BTreeMap<ComMemberToken, i32>`,
-    - `member_specs: BTreeMap<ComMemberToken, ...>`,
-    - `default_member_token: Option<ComMemberToken>`,
-    - `direct_dispatch_specs: BTreeMap<ComMemberToken, ...>`,
-    - `event_specs: BTreeMap<ComMemberToken, ...>`,
-    - `event_trigger_specs: BTreeMap<ComMemberToken, ...>`,
-  - queued COM callback payloads now stay in the shared semantic carrier (`Vec<ComValue>`) inside the adapter instead of collapsing back to `Vec<i32>` until poll time,
-  - the native COM event sink/request scaffolding now also preserves typed COM identity end to end:
-    - `ComConnectionPointAdviseRequest` now carries `ComSubscriptionToken` / `ComObjectToken` / `ComMemberToken`,
-    - `OxvbaComEventSink` and `OxvbaComEventSourceInterfaceSink` now store typed COM tokens directly,
-    - COM token and runtime handle wrappers are now explicitly `repr(transparent)` so this typed FFI bookkeeping does not depend on accidental layout,
-  - the shared runtime-facing COM model now uses semantic runtime object identity instead of COM object tokens:
-    - `ComInvokeRequest.object` now carries `ObjectHandle`,
-    - `ComObjectDescriptor.object` now carries `ObjectHandle`,
-    - `ComCallbackPayload.object` now carries `ObjectHandle`,
-    - `ComValue::ObjectHandle(...)` now carries `ObjectHandle`,
-    - adapter-native COM helpers now resolve `ObjectHandle` to adapter-internal `ComObjectToken` only at the adapter lookup edge,
-  - the standard-adapter dynlink binding registry now allocates opaque binding handles instead of aliasing `BindingHandle` to `DynLinkSymbol.raw()`:
-    - descriptor IDs map to adapter-owned `BindingHandle` values,
-    - bound handles map back to `DynLinkSymbol` only inside adapter state,
-    - `invoke_bound(...)` now resolves the symbol from adapter state instead of treating the binding handle itself as the symbol token,
-  - VM `WithEvents` owner iteration now preserves `ObjectHandle` identity internally instead of flattening owner handles back to raw integers during owner traversal,
-  - host COM callback dispatch plumbing now preserves `ComSubscriptionToken` / `ComCallbackToken` identity instead of normalizing callback and subscription bookkeeping back to bare integers,
-  - the first core interpreter semantic-execution slice is now off the legacy slot-read lane for:
-    - `CmpEqSlots` / `CmpNeSlots` / `CmpLtSlots` / `CmpLeSlots` / `CmpGtSlots` / `CmpGeSlots`,
-    - `BoolNot` / `BoolAnd` / `BoolOr`,
-    - `JumpIfZero`,
-    - `IncSlot`,
-  - those instructions now read `RuntimeValue` directly and write semantic `RuntimeValue::Bool(...)` or `RuntimeValue::I32(...)` results while preserving the legacy integer compatibility projection through `snapshot_slots(...)`,
-  - typed comparator fastpaths now also write semantic boolean results instead of silently reintroducing integer-only compare output,
-  - the interpreter loop no longer directly executes through the old `read_slot(...)` / `write_slot(...)` helper names; the remaining scalar/intrinsic instruction estate now runs through explicit legacy-projection helpers over `RuntimeValue`,
-  - the remaining runtime/host boundary holdouts are now concentrated in:
-    - remaining raw `i32`-backed object/binding representations below those typed surfaces (`ObjectHandle`, `BindingHandle`),
-    - the large remaining interpreter instruction families that still execute with legacy-scalar semantics over `RuntimeValue`, especially string/date/math/financial intrinsic subsets and collection/count helpers,
-    - remaining direct interpreter/test/caller expectations that still consume the legacy integer observation aliases,
-    - the remaining direct legacy observation surface is now mostly the explicit public compatibility API itself (`snapshot_slots(...)` and related projections) plus callers that deliberately verify that compatibility API,
-    - the new `ComValue` carrier and generic dynamic-object protocol can live at the COM boundary, but they cannot yet become the single runtime object/value model while the wider execution substrate remains token-only.
+  - the runtime value model is now value-first end to end:
+    - VM/JIT/host execution and snapshot APIs are semantic-value first,
+    - `snapshot_slots(...)` survives only as an explicit compatibility projection,
+    - the interpreter loop now executes through `RuntimeValue` and explicit compatibility projections instead of raw slot-int helpers,
+    - `CopySlot` preserves full runtime-value shape.
+  - `oxvba-com` now exposes a `DynamicObjectBridge` trait as the executable shared late-bound protocol seam.
+  - `oxvba-hal` now provides `HalComDynamicBridge`, adapting `ComHal` onto that shared protocol.
+  - VM `DispatchInvoke` now executes through that bridge instead of calling the COM HAL invoke seam directly.
+  - host COM callback polling now also executes through that bridge instead of calling the COM HAL callback seam directly.
+  - the remaining gap is no longer the runtime value model itself; it is the lack of an equivalent native/OxVba object adapter and property/default-member intent model on the same protocol.
 - Exact unblock steps:
-  - replace the remaining raw `i32`-backed object/binding representations below the typed COM surfaces with the canonical runtime object/value model or an explicit indirection model,
-  - decide and implement the runtime-facing semantic representation for external object identity/binding handles so `create_object`/`release_object`/`describe_object` and dynamic binding state stop depending on raw integer tokens,
-  - migrate the remaining COM dispatch/dynlink compatibility shims once that object/binding representation exists,
-  - plan and execute migration of:
-    - the remaining HAL input-side and result-side call seams that still depend on raw tokens,
-    - remaining VM read/write helpers and outward runtime APIs,
-    - remaining host/runtime snapshot and public observation surfaces,
-    - remaining JIT/VM equivalence expectations and affected tests,
-  - then wire the dynamic-object protocol and expanded value carrier through those seams as the single runtime-facing model.
+  - define and implement the native/OxVba object adapter on the same `DynamicObjectBridge` semantics,
+  - route property/default-member `Get` / `Let` / `Set` intent through that same protocol,
+  - continue moving COM-backed translation/state behind `oxvba-com` bridge implementations rather than direct HAL/runtime seams,
+  - then continue broader COM/value-carrier closure on that shared protocol.
 - Recommendation:
-  - treat this as the real blocker for continuing the first workset beyond the currently landed protocol/carrier boundary slices; do not keep patching COM-specific adapters around it.
-  - execute:
-    - `docs/worksets/WORKSET_2026-03-11_RUNTIME_VALUE_MODEL_MIGRATION.md`
+  - treat this as the real blocker after the runtime migration closure; continue `WORKSET_2026-03-11_UNIFIED_DYNAMIC_OBJECT_PROTOCOL_AND_VALUE_CARRIER.md` together with the property/default-member work.
 
 ### BLK-COM-BOUNDARY-001: Final `oxvba-com` extraction is blocked on unsettled COM behavior contracts
 - Impact:

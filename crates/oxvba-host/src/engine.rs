@@ -3,13 +3,17 @@ use std::{
     sync::{Arc, Mutex},
 };
 
-use oxvba_com::{ComCallbackPayload, ComCallbackToken, ComObjectDescriptor, ComSubscriptionToken};
+use oxvba_com::{
+    ComCallbackToken, ComObjectDescriptor, ComSubscriptionToken, DynamicEventPayload,
+    DynamicObjectBridge,
+};
 use oxvba_compiler::{
     Bytecode, CompiledProject, Instruction, ProcedureRuntimeMetadata, ProjectManifest, compile,
     compile_project,
 };
 use oxvba_hal::{
     adapters,
+    HalComDynamicBridge,
     model::{
         CapabilityId, HalDescriptor, HalProfileId, HostPolicy, HostPolicyPreset,
         UnsupportedFeatureMode, native_host_profile,
@@ -355,10 +359,10 @@ impl Engine {
             .events()
             .do_events()
             .map_err(|err| PhaseDiagnostic::runtime(err.to_string()))?;
-        let Some(payload) = self
-            .host_services
-            .com()
-            .poll_event_callback()
+        let bridge =
+            HalComDynamicBridge::new(self.host_services.profile(), self.host_services.com());
+        let Some(payload) = bridge
+            .poll_dynamic_event()
             .map_err(|err| PhaseDiagnostic::runtime(err.to_string()))?
         else {
             return Ok(None);
@@ -653,11 +657,11 @@ impl Engine {
 }
 
 fn normalize_callback_payload(
-    payload: ComCallbackPayload,
+    payload: DynamicEventPayload,
 ) -> Result<ComEventCallbackDispatch, PhaseDiagnostic> {
     Ok(ComEventCallbackDispatch {
-        callback_token: payload.callback,
-        subscription_token: payload.subscription,
+        callback_token: payload.callback.into(),
+        subscription_token: payload.subscription.into(),
         handler_symbol: String::new(),
         args: payload
             .args

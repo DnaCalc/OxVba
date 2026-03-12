@@ -1,7 +1,7 @@
 # Workset: Runtime Refactor To Completion
 
 Date: 2026-03-12  
-Status: active  
+Status: complete  
 Primary ladder mapping: `v497..v505`, `v506..v513`, `v524..v526`, `v540..v544`  
 Secondary ladder mapping: `v545..v560`
 
@@ -13,6 +13,16 @@ This workset is the end-to-end execution spine from:
 1. the current mixed semantic/legacy runtime substrate,
 2. to a fully semantic execution model,
 3. to the point where COM extraction and broader parity work can continue without structural token-lane blockers.
+
+## 1.1 Closure note
+
+This workset is now complete.
+
+Closure summary:
+1. the runtime representation is now value-first end to end,
+2. compatibility slot projection is explicitly secondary,
+3. the runtime value model no longer appears as the active structural blocker,
+4. remaining work has moved to the unified dynamic-object/property/COM-extraction layers above this substrate.
 
 ## 2. Why this workset exists
 
@@ -109,6 +119,13 @@ Deliverables:
 Acceptance:
 1. integer-slot observation is clearly secondary and compatibility-scoped.
 
+Progress:
+1. repo-wide audit shows `snapshot_slots(...)` is now concentrated almost entirely in:
+   - explicit VM compatibility tests,
+   - the retained `ProjectRuntimeSession::snapshot_slots()` compatibility view,
+   - documentation/workset references to that compatibility surface.
+2. no broad production execution surface outside those explicit compatibility views was found to still depend on slot snapshots as its primary contract.
+
 ### Phase C. RuntimeValue and Variant convergence
 
 Goal:
@@ -121,6 +138,15 @@ Deliverables:
 
 Acceptance:
 1. there is no ambiguous overlap between runtime semantic values and owned `Variant` representation.
+
+Progress:
+1. the owned-runtime `Variant` bridge now honestly covers:
+   - `Empty`,
+   - `Null`,
+   - `ErrorCode`,
+   - `I32`,
+   - `Bool`.
+2. strings, arrays, object handles, and binding handles remain intentionally outside the owned `Variant` subset until their ownership model is correct.
 
 ### Phase D. Dynamic object and external-call follow-through
 

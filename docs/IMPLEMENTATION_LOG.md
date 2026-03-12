@@ -236,6 +236,47 @@
   - `./scripts/check-governance.ps1`
   - `./scripts/meta-check.ps1 -Fast -NoArtifacts`
 
+## 2026-03-12 - Owned runtime Variant bridge now includes ErrorCode
+
+- Continued [WORKSET_2026-03-12_RUNTIME_REFACTOR_TO_COMPLETION.md](C:\Work\DnaCalc\OxVba\docs\worksets\WORKSET_2026-03-12_RUNTIME_REFACTOR_TO_COMPLETION.md) Phase C in:
+  - [variant.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-runtime\src\variant.rs).
+- Extended the owned runtime `Variant` bridge to include `RuntimeValue::ErrorCode(...)` via a real `VarType::Error` lane.
+- Kept strings, arrays, object handles, and binding handles explicitly out of the owned `Variant` subset because their ownership model is still not honest enough to bridge yet.
+- Also audited Phase B snapshot usage:
+  - outside the explicit compatibility APIs and VM compatibility tests, `snapshot_slots(...)` is no longer the primary execution/observation contract.
+- Net effect:
+  - Phase B is now mostly a cleanup/documentation phase rather than a structural blocker,
+  - Phase C has a broader honest scalar/error convergence point for the runtime value model.
+- Verification:
+  - `cargo test -p oxvba-runtime -p oxvba-vm -p oxvba-host --quiet`
+  - `./scripts/check-governance.ps1`
+  - `./scripts/meta-check.ps1 -Fast -NoArtifacts`
+
+## 2026-03-12 - Dynamic object bridge is now executable on the COM-backed path
+
+- Continued the dynamic-object/runtime follow-through in:
+  - [dynamic_object.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-com\src\dynamic_object.rs)
+  - [dynamic_bridge.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-hal\src\dynamic_bridge.rs)
+  - [interpreter.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-vm\src\interpreter.rs)
+  - [engine.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-host\src\engine.rs)
+  - [variant.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-runtime\src\variant.rs)
+- Added `DynamicObjectBridge` as the executable shared late-bound protocol seam in `oxvba-com`.
+- Added `HalComDynamicBridge` in `oxvba-hal` to adapt `ComHal` onto that shared protocol for:
+  - dynamic invoke,
+  - callback polling,
+  - object release.
+- VM late-bound COM dispatch now routes through that bridge instead of calling the COM HAL invoke seam directly.
+- Host COM callback polling now also routes through that bridge instead of calling the COM HAL callback seam directly.
+- Extended the owned runtime `Variant` bridge to include the honest `ErrorCode` lane and confirmed the runtime value-model blocker is no longer the active structural stop.
+- Net effect:
+  - the runtime value-model migration workset can now close honestly,
+  - the next blocker is the remaining gap between COM-backed dynamic objects and native/property/default-member semantics on the same protocol.
+- Verification:
+  - `cargo test -p oxvba-com -p oxvba-hal -p oxvba-vm -p oxvba-host --quiet`
+  - `cargo test -p oxvba-runtime -p oxvba-vm -p oxvba-host --quiet`
+  - `./scripts/check-governance.ps1`
+  - `./scripts/meta-check.ps1 -Fast -NoArtifacts`
+
 ## 2026-03-11 - COM member/event identity typed on the shared boundary
 
 - Tightened the shared COM model and its boundary consumers in:
