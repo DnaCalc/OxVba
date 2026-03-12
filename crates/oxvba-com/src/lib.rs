@@ -9,6 +9,8 @@ pub mod refcount;
 pub mod typelib;
 pub mod typelib_catalog;
 #[cfg(target_os = "windows")]
+pub mod windows_invoke;
+#[cfg(target_os = "windows")]
 pub mod windows_variant;
 
 pub use dispatch::{ComDispatch, DispatchResult};
@@ -30,6 +32,8 @@ pub use typelib::{
 pub use typelib_catalog::{
     build_typelib_metadata, known_typelib_identity_for_prog_id_name, resolve_known_typelib_identity,
 };
+#[cfg(target_os = "windows")]
+pub use windows_invoke::{ComInvokeExceptionInfo, ComInvokeFailure, take_excepinfo};
 #[cfg(target_os = "windows")]
 pub use windows_variant::{
     VariantResultValue, set_variant_from_com_value, take_variant_result_value, variant_to_com_value,

@@ -74,6 +74,7 @@ Run context: active parity/compliance execution plus in-progress feature worklis
   - `oxvba-com` now owns a first semantic carrier slice via `ComValue`,
   - `oxvba-com` now also owns the extracted Windows `VARIANT`/one-dimensional `SAFEARRAY` translation bridge for the currently supported scalar/string/array subset,
   - `oxvba-com` now classifies Invoke-owned Windows result `VARIANT`s into either semantic `ComValue` results or dispatch-capable object pointers before HAL-owned binding state is applied,
+  - `oxvba-com` now also owns shared Windows COM invoke failure and `EXCEPINFO` capture types/helpers, reducing the remaining wire/error mechanics left in HAL,
   - `ComInvokeArg.value` and `ComCallbackPayload.args` no longer use raw `i32` tokens at the shared COM boundary,
   - VM `DispatchInvoke` construction now preserves `Empty`/`Null`/`CVErr(...)`/array-intent shape and runtime strings into that carrier instead of flattening them before the COM boundary,
   - `SafeArray` carrier values can now preserve owned semantic element payloads instead of only length/dimension shape,

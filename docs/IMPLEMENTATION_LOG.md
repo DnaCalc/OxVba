@@ -2669,4 +2669,12 @@
     - `cargo test -p oxvba-com -p oxvba-hal --quiet`
     - `./scripts/check-governance.ps1`
     - `./scripts/meta-check.ps1 -Fast -NoArtifacts`
+- Continued the `oxvba-com` extraction on the invoke-failure surface:
+  - added `crates/oxvba-com/src/windows_invoke.rs`
+  - shared Windows COM invoke failure rendering and `EXCEPINFO` capture now live in `oxvba-com`
+  - `standard.rs` now consumes those shared helpers instead of owning duplicate wire-error types locally
+  - verification:
+    - `cargo test -p oxvba-com -p oxvba-hal --quiet`
+    - `./scripts/check-governance.ps1`
+    - `./scripts/meta-check.ps1 -Fast -NoArtifacts`
 

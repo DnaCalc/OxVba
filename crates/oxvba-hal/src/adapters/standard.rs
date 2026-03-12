@@ -14,16 +14,18 @@ use crate::{
 };
 pub use oxvba_com::DISPATCH_INVOKE_MISSING_ARG_TOKEN;
 #[cfg(target_os = "windows")]
+use oxvba_com::take_excepinfo;
+#[cfg(target_os = "windows")]
 use oxvba_com::windows_variant::{
     set_variant_from_com_value as com_set_variant_from_com_value,
     take_variant_result_value as com_take_variant_result_value,
     variant_to_com_value as com_variant_to_com_value,
 };
 use oxvba_com::{
-    ComCallbackPayload, ComCallbackToken, ComInvokeArg, ComInvokeRequest, ComMemberToken,
-    ComObjectDescriptor, ComObjectToken, ComObjectTransportKind, ComSubscriptionToken, ComValue,
-    VariantResultValue, build_typelib_metadata, known_typelib_identity_for_prog_id_name,
-    resolve_known_typelib_identity,
+    ComCallbackPayload, ComCallbackToken, ComInvokeArg, ComInvokeFailure, ComInvokeRequest,
+    ComMemberToken, ComObjectDescriptor, ComObjectToken, ComObjectTransportKind,
+    ComSubscriptionToken, ComValue, VariantResultValue, build_typelib_metadata,
+    known_typelib_identity_for_prog_id_name, resolve_known_typelib_identity,
 };
 use oxvba_runtime::{
     BindingHandle, DynLinkSymbol, ObjectHandle, RuntimeValue,
@@ -44,7 +46,7 @@ use std::{
 };
 
 #[cfg(target_os = "windows")]
-use windows_sys::Win32::Foundation::{SysAllocString, SysFreeString, SysStringLen};
+use windows_sys::Win32::Foundation::SysAllocString;
 #[cfg(target_os = "windows")]
 use windows_sys::Win32::System::Com::{
     CLSCTX_SERVER, CLSIDFromProgID, COINIT_APARTMENTTHREADED, CoCreateInstance, CoInitializeEx,
@@ -4950,109 +4952,10 @@ fn parse_arg_err(message: &str) -> Option<u32> {
 }
 
 #[cfg(target_os = "windows")]
-#[derive(Debug)]
-struct ComInvokeExceptionInfo {
-    source: Option<String>,
-    description: Option<String>,
-    scode: Option<i32>,
-}
-
-#[cfg(target_os = "windows")]
-#[derive(Debug)]
-struct ComInvokeFailure {
-    label: &'static str,
-    dispid: i32,
-    hr: Option<i32>,
-    arg_err: Option<u32>,
-    excep: Option<ComInvokeExceptionInfo>,
-    detail: Option<String>,
-}
-
-#[cfg(target_os = "windows")]
-impl ComInvokeFailure {
-    fn render(&self) -> String {
-        let mut message = format!(
-            "IDispatch::Invoke({} dispid={}) failed",
-            self.label, self.dispid
-        );
-        if let Some(hr) = self.hr {
-            message.push_str(&format!(" with HRESULT {:#010X}", hr as u32));
-        }
-        if let Some(arg_err) = self.arg_err {
-            message.push_str(&format!(" (arg_err={arg_err})"));
-        }
-        if let Some(excep) = &self.excep {
-            if let Some(source) = &excep.source {
-                message.push_str(&format!(
-                    " excep_source=\"{}\"",
-                    sanitize_error_text(source)
-                ));
-            }
-            if let Some(description) = &excep.description {
-                message.push_str(&format!(
-                    " excep_description=\"{}\"",
-                    sanitize_error_text(description)
-                ));
-            }
-            if let Some(scode) = excep.scode {
-                message.push_str(&format!(" excep_scode={:#010X}", scode as u32));
-            }
-        }
-        if let Some(detail) = &self.detail {
-            message.push_str(&format!(" detail=\"{}\"", sanitize_error_text(detail)));
-        }
-        message
-    }
-}
-
-#[cfg(target_os = "windows")]
-fn sanitize_error_text(text: &str) -> String {
-    text.replace('\\', "\\\\").replace('"', "\\\"")
-}
-
-#[cfg(target_os = "windows")]
 #[allow(unsafe_op_in_unsafe_fn)]
 unsafe fn alloc_bstr(text: &str) -> windows_sys::core::BSTR {
     let wide: Vec<u16> = text.encode_utf16().chain(std::iter::once(0)).collect();
     SysAllocString(wide.as_ptr())
-}
-
-#[cfg(target_os = "windows")]
-#[allow(unsafe_op_in_unsafe_fn)]
-unsafe fn bstr_to_string_and_free(bstr: windows_sys::core::BSTR) -> Option<String> {
-    if bstr.is_null() {
-        return None;
-    }
-    let len = usize::try_from(SysStringLen(bstr)).unwrap_or(0);
-    let slice = std::slice::from_raw_parts(bstr, len);
-    let text = String::from_utf16_lossy(slice);
-    SysFreeString(bstr);
-    Some(text)
-}
-
-#[cfg(target_os = "windows")]
-#[allow(unsafe_op_in_unsafe_fn)]
-unsafe fn take_excepinfo(excep: &mut EXCEPINFO) -> Option<ComInvokeExceptionInfo> {
-    let source = bstr_to_string_and_free(excep.bstrSource);
-    let description = bstr_to_string_and_free(excep.bstrDescription);
-    let _ = bstr_to_string_and_free(excep.bstrHelpFile);
-    excep.bstrSource = std::ptr::null_mut();
-    excep.bstrDescription = std::ptr::null_mut();
-    excep.bstrHelpFile = std::ptr::null_mut();
-    let scode = if excep.scode != 0 {
-        Some(excep.scode)
-    } else {
-        None
-    };
-    if source.is_none() && description.is_none() && scode.is_none() {
-        None
-    } else {
-        Some(ComInvokeExceptionInfo {
-            source,
-            description,
-            scode,
-        })
-    }
 }
 
 #[cfg(target_os = "windows")]

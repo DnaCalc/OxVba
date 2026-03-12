@@ -148,6 +148,7 @@ Progress:
 14. `VT_UNKNOWN` results now also bind onto the shared runtime-facing object-handle lane when the returned interface exposes `IDispatch`,
 15. the Windows `VARIANT`/bounded `SAFEARRAY` translation bridge for the supported scalar/string/array subset now lives in `oxvba-com` instead of `standard.rs`,
 16. Invoke-owned Windows result `VARIANT` classification now also lives in `oxvba-com`, so HAL retains only the dispatch-object binding/state decision after wire-level result decoding.
+17. Windows COM invoke failure and `EXCEPINFO` capture helpers now also live in `oxvba-com`, reducing the remaining wire/error mechanics left in `standard.rs`.
 
 Open remainder:
 1. broader interface/object identity forms and broader SAFEARRAY wire marshalling still need full carrier-to-boundary completion,
