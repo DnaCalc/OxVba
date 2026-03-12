@@ -264,8 +264,8 @@ impl Vm {
                         pc += 1;
                         continue;
                     }
-                    let value = self.read_legacy_scalar_slot(*src)?;
-                    self.write_legacy_scalar_slot(*dst, value)?;
+                    let value = self.read_value_slot(*src)?;
+                    self.write_value_slot(*dst, value)?;
                     pc += 1;
                 }
                 Instruction::IntrinsicLenDigits { dst, src } => {
@@ -1535,11 +1535,6 @@ impl Vm {
         self.registers.registers.get(slot)?.as_i32_lossy()
     }
 
-    fn fast_write_slot(&mut self, slot: usize, value: i32) -> bool {
-        self.write_value_slot(slot, RuntimeValue::from_legacy_i32(value))
-            .is_ok()
-    }
-
     fn fast_add_const(&mut self, slot: usize, value: i32) -> bool {
         let Some(dst) = self.registers.registers.get_mut(slot) else {
             return false;
@@ -1563,10 +1558,10 @@ impl Vm {
     }
 
     fn fast_copy_slot(&mut self, dst: usize, src: usize) -> bool {
-        let Some(value) = self.fast_read_slot(src) else {
+        let Some(value) = self.registers.registers.get(src).cloned() else {
             return false;
         };
-        self.fast_write_slot(dst, value)
+        self.write_value_slot(dst, value).is_ok()
     }
 
     fn fast_cmp_slots<F>(&mut self, dst: usize, lhs: usize, rhs: usize, pred: F) -> bool
@@ -3251,8 +3246,41 @@ mod tests {
         let mut vm = Vm::default();
         vm.invoke_procedure_with_values(&bytecode, 4, &[1], &[RuntimeValue::Bool(true)])
             .expect("invoke with runtime values");
+        assert_eq!(vm.snapshot_values(2)[0], RuntimeValue::Bool(true));
         assert_eq!(vm.snapshot_values(2)[1], RuntimeValue::Bool(true));
         assert_eq!(vm.snapshot_slots(2), vec![1, 1]);
+    }
+
+    #[test]
+    fn copy_slot_preserves_non_legacy_runtime_shape() {
+        let bytecode = Bytecode {
+            instructions: vec![
+                Instruction::Jump { target_pc: 4 },
+                Instruction::Halt,
+                Instruction::Halt,
+                Instruction::Halt,
+                Instruction::CopySlot { dst: 0, src: 1 },
+                Instruction::Halt,
+            ],
+            external_call_descriptors: Vec::new(),
+            slot_count: 2,
+            user_slot_count: 2,
+        };
+
+        let mut vm = Vm::default();
+        vm.invoke_procedure_with_values(
+            &bytecode,
+            4,
+            &[1],
+            &[RuntimeValue::String(BStr("ABC".to_string()))],
+        )
+        .expect("invoke with string runtime value");
+
+        assert_eq!(
+            vm.snapshot_values(2)[0],
+            RuntimeValue::String(BStr("ABC".to_string()))
+        );
+        assert_eq!(vm.snapshot_slots(2), vec![EMPTY_TAG, EMPTY_TAG]);
     }
 
     #[test]

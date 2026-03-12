@@ -76,8 +76,8 @@ Progress:
 4. the wider interpreter loop no longer executes through the old `read_slot(...)` / `write_slot(...)` helper names; the remaining scalar/intrinsic estate now runs through explicit legacy-projection helpers over `RuntimeValue`.
 5. remaining Phase A work is now concentrated in:
    - retiring or narrowing those legacy-projection helpers where full semantic execution is now possible,
-   - deciding and implementing honest `CopySlot` behavior for non-legacy runtime shapes,
    - migrating the larger intrinsic families away from legacy-scalar execution where that is semantically correct.
+6. `CopySlot` now copies full `RuntimeValue` shape, including non-legacy values, instead of collapsing through the integer compatibility lane.
 
 Deliverables:
 1. semantic helpers for:

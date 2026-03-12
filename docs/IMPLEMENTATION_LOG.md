@@ -220,6 +220,22 @@
   - `./scripts/check-governance.ps1`
   - `./scripts/meta-check.ps1 -Fast -NoArtifacts`
 
+## 2026-03-12 - CopySlot now preserves full RuntimeValue shape
+
+- Continued [WORKSET_2026-03-12_RUNTIME_REFACTOR_TO_COMPLETION.md](C:\Work\DnaCalc\OxVba\docs\worksets\WORKSET_2026-03-12_RUNTIME_REFACTOR_TO_COMPLETION.md) Phase A in:
+  - [interpreter.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-vm\src\interpreter.rs).
+- `Instruction::CopySlot` and its typed fastpath now copy the full `RuntimeValue` payload instead of projecting through the legacy integer lane.
+- Added direct regression coverage that a copied runtime string:
+  - remains a `RuntimeValue::String(...)` in semantic snapshots,
+  - still projects to `EMPTY_TAG` at the explicit legacy compatibility edge.
+- Net effect:
+  - one of the last ambiguous Phase A runtime-shape questions is removed,
+  - slot-copy semantics now align with the value-first runtime model instead of the historical token lane.
+- Verification:
+  - `cargo test -p oxvba-vm -p oxvba-host --quiet`
+  - `./scripts/check-governance.ps1`
+  - `./scripts/meta-check.ps1 -Fast -NoArtifacts`
+
 ## 2026-03-11 - COM member/event identity typed on the shared boundary
 
 - Tightened the shared COM model and its boundary consumers in:
