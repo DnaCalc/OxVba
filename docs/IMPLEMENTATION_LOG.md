@@ -2659,4 +2659,14 @@
   - `standard.rs` now delegates those translation paths into `oxvba-com` and retains only object-handle/binding-specific dispatch logic
   - verification:
     - `cargo test -p oxvba-com -p oxvba-hal --quiet`
+- Continued the `oxvba-com` extraction on the result path:
+  - `oxvba-com::windows_variant` now classifies Invoke-owned Windows result `VARIANT`s into either semantic `ComValue` values or dispatch-capable object pointers
+  - `standard.rs` now delegates result-side wire classification into `oxvba-com` and retains only adapter-owned object-handle binding/state logic
+  - added focused unit coverage for:
+    - null `VT_DISPATCH` result classification
+    - deterministic `VT_UNKNOWN` query-error propagation
+  - verification:
+    - `cargo test -p oxvba-com -p oxvba-hal --quiet`
+    - `./scripts/check-governance.ps1`
+    - `./scripts/meta-check.ps1 -Fast -NoArtifacts`
 

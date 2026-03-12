@@ -16,12 +16,13 @@ pub use oxvba_com::DISPATCH_INVOKE_MISSING_ARG_TOKEN;
 #[cfg(target_os = "windows")]
 use oxvba_com::windows_variant::{
     set_variant_from_com_value as com_set_variant_from_com_value,
+    take_variant_result_value as com_take_variant_result_value,
     variant_to_com_value as com_variant_to_com_value,
 };
 use oxvba_com::{
     ComCallbackPayload, ComCallbackToken, ComInvokeArg, ComInvokeRequest, ComMemberToken,
     ComObjectDescriptor, ComObjectToken, ComObjectTransportKind, ComSubscriptionToken, ComValue,
-    build_typelib_metadata, known_typelib_identity_for_prog_id_name,
+    VariantResultValue, build_typelib_metadata, known_typelib_identity_for_prog_id_name,
     resolve_known_typelib_identity,
 };
 use oxvba_runtime::{
@@ -52,8 +53,7 @@ use windows_sys::Win32::System::Com::{
 };
 #[cfg(target_os = "windows")]
 use windows_sys::Win32::System::Variant::{
-    VARIANT, VT_BOOL, VT_DISPATCH, VT_EMPTY, VT_ERROR, VT_I2, VT_I4, VT_NULL, VT_UI2, VT_UI4,
-    VT_UNKNOWN, VariantClear,
+    VARIANT, VT_BOOL, VT_EMPTY, VT_ERROR, VT_I2, VT_I4, VT_NULL, VT_UI2, VT_UI4, VariantClear,
 };
 #[cfg(target_os = "windows")]
 use windows_sys::Win32::UI::WindowsAndMessaging::{
@@ -1734,56 +1734,24 @@ impl StandardHostServices {
         prog_id_hint: &str,
         op: &'static str,
     ) -> Result<RuntimeValue, String> {
-        let vt = unsafe { result.Anonymous.Anonymous.vt };
-        if vt == VT_DISPATCH {
-            let dispatch = unsafe {
-                result
-                    .Anonymous
-                    .Anonymous
-                    .Anonymous
-                    .pdispVal
-                    .cast::<RawIDispatch>()
-            };
-            if !dispatch.is_null() {
-                // SAFETY: Retain one reference for adapter-owned binding state before the result
-                // VARIANT is cleared and releases its invoke-owned reference.
-                unsafe {
-                    raw_add_ref_dispatch(dispatch);
-                }
-            }
-            // SAFETY: `result` is a valid Invoke-owned VARIANT and may be cleared after copying
-            // the dispatch pointer/reference out.
-            unsafe {
-                let _ = VariantClear(result);
-            }
-            return self
-                .bind_native_dispatch_result(dispatch, prog_id_hint, op)
-                .map_err(|err| format!("{} [{}] {}", err.stable_code, err.operation, err.message));
+        let classified = unsafe {
+            com_take_variant_result_value(
+                result,
+                &mut |unknown| {
+                    raw_query_dispatch_from_unknown(unknown.cast::<RawIUnknown>())
+                        .map(|dispatch| dispatch.cast::<core::ffi::c_void>())
+                },
+                &mut |dispatch| {
+                    raw_add_ref_dispatch(dispatch.cast::<RawIDispatch>());
+                },
+            )
+        }?;
+        match classified {
+            VariantResultValue::Value(value) => Ok(value.to_runtime_value()),
+            VariantResultValue::Dispatch(dispatch) => self
+                .bind_native_dispatch_result(dispatch.cast::<RawIDispatch>(), prog_id_hint, op)
+                .map_err(|err| format!("{} [{}] {}", err.stable_code, err.operation, err.message)),
         }
-        if vt == VT_UNKNOWN {
-            let unknown = unsafe {
-                result
-                    .Anonymous
-                    .Anonymous
-                    .Anonymous
-                    .punkVal
-                    .cast::<RawIUnknown>()
-            };
-            let dispatch = unsafe { raw_query_dispatch_from_unknown(unknown) }?;
-            unsafe {
-                let _ = VariantClear(result);
-            }
-            return self
-                .bind_native_dispatch_result(dispatch, prog_id_hint, op)
-                .map_err(|err| format!("{} [{}] {}", err.stable_code, err.operation, err.message));
-        }
-        let value = unsafe { raw_variant_to_com_value(result) }?;
-        // SAFETY: `result` is a valid Invoke-owned VARIANT and may be cleared after converting it
-        // to an owned semantic runtime value.
-        unsafe {
-            let _ = VariantClear(result);
-        }
-        Ok(value.to_runtime_value())
     }
 
     #[cfg(target_os = "windows")]

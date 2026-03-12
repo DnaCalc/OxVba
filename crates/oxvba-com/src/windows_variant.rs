@@ -1,5 +1,6 @@
 use crate::ComValue;
 use oxvba_runtime::{ObjectHandle, bstr::BStr, safe_array::SafeArray};
+use std::ffi::c_void;
 
 #[cfg(target_os = "windows")]
 use windows_sys::Win32::Foundation::{SysAllocString, SysStringLen, VARIANT_BOOL};
@@ -12,9 +13,15 @@ use windows_sys::Win32::System::Ole::{
 };
 #[cfg(target_os = "windows")]
 use windows_sys::Win32::System::Variant::{
-    VARIANT, VT_ARRAY, VT_BOOL, VT_BSTR, VT_EMPTY, VT_ERROR, VT_I2, VT_I4, VT_NULL, VT_UI2, VT_UI4,
-    VT_VARIANT, VariantClear,
+    VARIANT, VT_ARRAY, VT_BOOL, VT_BSTR, VT_DISPATCH, VT_EMPTY, VT_ERROR, VT_I2, VT_I4, VT_NULL,
+    VT_UI2, VT_UI4, VT_UNKNOWN, VT_VARIANT, VariantClear,
 };
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum VariantResultValue {
+    Value(ComValue),
+    Dispatch(*mut c_void),
+}
 
 #[cfg(target_os = "windows")]
 #[allow(unsafe_op_in_unsafe_fn)]
@@ -263,12 +270,56 @@ where
     Ok(())
 }
 
+#[cfg(target_os = "windows")]
+#[allow(unsafe_op_in_unsafe_fn)]
+/// Consume an Invoke-owned result `VARIANT`, clear it, and classify the supported result shape as
+/// either a semantic `ComValue` or a dispatch-capable object pointer for adapter-owned binding.
+///
+/// # Safety
+/// The caller must provide a valid writable `VARIANT` pointer containing an Invoke-owned result
+/// value. `query_dispatch_from_unknown` must apply the correct COM query semantics for `VT_UNKNOWN`
+/// payloads, and `add_ref_dispatch` must retain a stable dispatch reference before the result
+/// variant is cleared when a `VT_DISPATCH` payload is returned.
+pub unsafe fn take_variant_result_value<FQueryDispatch, FAddRefDispatch>(
+    result: &mut VARIANT,
+    query_dispatch_from_unknown: &mut FQueryDispatch,
+    add_ref_dispatch: &mut FAddRefDispatch,
+) -> Result<VariantResultValue, String>
+where
+    FQueryDispatch: FnMut(*mut c_void) -> Result<*mut c_void, String>,
+    FAddRefDispatch: FnMut(*mut c_void),
+{
+    let vt = result.Anonymous.Anonymous.vt;
+    if vt == VT_DISPATCH {
+        let dispatch = result.Anonymous.Anonymous.Anonymous.pdispVal;
+        if !dispatch.is_null() {
+            add_ref_dispatch(dispatch);
+        }
+        let _ = VariantClear(result);
+        return Ok(VariantResultValue::Dispatch(dispatch));
+    }
+    if vt == VT_UNKNOWN {
+        let unknown = result.Anonymous.Anonymous.Anonymous.punkVal;
+        let dispatch = query_dispatch_from_unknown(unknown)?;
+        let _ = VariantClear(result);
+        return Ok(VariantResultValue::Dispatch(dispatch));
+    }
+    let value = variant_to_com_value(result)?;
+    let _ = VariantClear(result);
+    Ok(VariantResultValue::Value(value))
+}
+
 #[cfg(all(test, target_os = "windows"))]
 mod tests {
-    use super::{set_variant_from_com_value, variant_to_com_value};
+    use super::{
+        VariantResultValue, set_variant_from_com_value, take_variant_result_value,
+        variant_to_com_value,
+    };
     use crate::ComValue;
     use oxvba_runtime::{RuntimeValue, bstr::BStr, safe_array::SafeArray};
-    use windows_sys::Win32::System::Variant::{VARIANT, VT_ARRAY, VT_VARIANT, VariantClear};
+    use windows_sys::Win32::System::Variant::{
+        VARIANT, VT_ARRAY, VT_DISPATCH, VT_UNKNOWN, VT_VARIANT, VariantClear,
+    };
 
     #[test]
     fn string_variant_roundtrips_through_windows_bridge() {
@@ -309,6 +360,43 @@ mod tests {
                 value
             );
             let _ = VariantClear(&mut variant);
+        }
+    }
+
+    #[test]
+    fn dispatch_result_classification_preserves_dispatch_pointer() {
+        let mut variant: VARIANT = unsafe { std::mem::zeroed() };
+        let mut add_ref_calls = 0usize;
+        unsafe {
+            variant.Anonymous.Anonymous.vt = VT_DISPATCH;
+            variant.Anonymous.Anonymous.Anonymous.pdispVal = std::ptr::null_mut();
+            let value = take_variant_result_value(
+                &mut variant,
+                &mut |_unknown| Err("unknown query should not be used".to_string()),
+                &mut |_dispatch| add_ref_calls += 1,
+            )
+            .expect("classify dispatch result");
+            assert_eq!(value, VariantResultValue::Dispatch(std::ptr::null_mut()));
+        }
+        assert_eq!(add_ref_calls, 0);
+    }
+
+    #[test]
+    fn unknown_result_classification_propagates_query_error() {
+        let mut variant: VARIANT = unsafe { std::mem::zeroed() };
+        unsafe {
+            variant.Anonymous.Anonymous.vt = VT_UNKNOWN;
+            variant.Anonymous.Anonymous.Anonymous.punkVal = std::ptr::null_mut();
+            let err = take_variant_result_value(
+                &mut variant,
+                &mut |raw_unknown| {
+                    assert_eq!(raw_unknown, std::ptr::null_mut());
+                    Err("null unknown".to_string())
+                },
+                &mut |_dispatch| panic!("dispatch AddRef is not expected on VT_UNKNOWN path"),
+            )
+            .expect_err("null unknown should fail deterministically");
+            assert_eq!(err, "null unknown");
         }
     }
 }
