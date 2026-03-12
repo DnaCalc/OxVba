@@ -2677,4 +2677,20 @@
     - `cargo test -p oxvba-com -p oxvba-hal --quiet`
     - `./scripts/check-governance.ps1`
     - `./scripts/meta-check.ps1 -Fast -NoArtifacts`
+- Continued the `oxvba-com` extraction on the canonical runtime invoke path:
+  - the semantic runtime-value `IDispatch::Invoke` helper for `ComInvokeArg` requests now lives in `oxvba-com::windows_invoke`
+  - that helper now owns:
+    - `DISPPARAMS` assembly,
+    - missing-argument `VT_ERROR/DISP_E_PARAMNOTFOUND` packing,
+    - Invoke execution,
+    - result classification back into the shared semantic carrier
+  - `standard.rs` now supplies only:
+    - object-handle -> dispatch-pointer resolution,
+    - `VT_UNKNOWN` -> `IDispatch` query closure,
+    - dispatch-capable result binding into adapter-owned object handles
+  - the old HAL-side runtime-value result helper was removed, and the affected tests now exercise the extracted `oxvba-com` path directly before binding object handles
+  - verification:
+    - `cargo test -p oxvba-com -p oxvba-hal --quiet`
+    - `./scripts/check-governance.ps1`
+    - `./scripts/meta-check.ps1 -Fast -NoArtifacts`
 

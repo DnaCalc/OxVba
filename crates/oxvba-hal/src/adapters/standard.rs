@@ -16,9 +16,10 @@ pub use oxvba_com::DISPATCH_INVOKE_MISSING_ARG_TOKEN;
 #[cfg(target_os = "windows")]
 use oxvba_com::take_excepinfo;
 #[cfg(target_os = "windows")]
+use oxvba_com::windows_invoke::invoke_dispatch_variant_result as com_invoke_dispatch_variant_result;
+#[cfg(target_os = "windows")]
 use oxvba_com::windows_variant::{
     set_variant_from_com_value as com_set_variant_from_com_value,
-    take_variant_result_value as com_take_variant_result_value,
     variant_to_com_value as com_variant_to_com_value,
 };
 use oxvba_com::{
@@ -1730,33 +1731,6 @@ impl StandardHostServices {
     }
 
     #[cfg(target_os = "windows")]
-    fn runtime_value_from_variant_result(
-        &self,
-        result: &mut VARIANT,
-        prog_id_hint: &str,
-        op: &'static str,
-    ) -> Result<RuntimeValue, String> {
-        let classified = unsafe {
-            com_take_variant_result_value(
-                result,
-                &mut |unknown| {
-                    raw_query_dispatch_from_unknown(unknown.cast::<RawIUnknown>())
-                        .map(|dispatch| dispatch.cast::<core::ffi::c_void>())
-                },
-                &mut |dispatch| {
-                    raw_add_ref_dispatch(dispatch.cast::<RawIDispatch>());
-                },
-            )
-        }?;
-        match classified {
-            VariantResultValue::Value(value) => Ok(value.to_runtime_value()),
-            VariantResultValue::Dispatch(dispatch) => self
-                .bind_native_dispatch_result(dispatch.cast::<RawIDispatch>(), prog_id_hint, op)
-                .map_err(|err| format!("{} [{}] {}", err.stable_code, err.operation, err.message)),
-        }
-    }
-
-    #[cfg(target_os = "windows")]
     #[allow(unsafe_op_in_unsafe_fn)]
     unsafe fn native_dispatch_invoke_runtime_value_args(
         &self,
@@ -1768,82 +1742,46 @@ impl StandardHostServices {
         context: (&'static str, &str),
     ) -> Result<RuntimeValue, ComInvokeFailure> {
         let (label, prog_id_hint) = context;
-        let mut resolve_object = |handle: ObjectHandle| {
-            self.resolve_native_dispatch_for_object_arg(handle, "dispatch_invoke")
-                .map_err(|err| format!("{} [{}] {}", err.stable_code, err.operation, err.message))
-        };
-        let mut invoke_args: Vec<VARIANT> = Vec::with_capacity(args.len());
-        for arg in args.iter().rev() {
-            let mut variant: VARIANT = std::mem::zeroed();
-            match arg.value {
-                Some(ref value) => {
-                    set_variant_dispatch_arg(&mut variant, value, &mut resolve_object).map_err(
-                        |detail| ComInvokeFailure {
-                            label,
-                            dispid,
-                            hr: None,
-                            arg_err: None,
-                            excep: None,
-                            detail: Some(detail),
-                        },
-                    )?
-                }
-                None => set_variant_missing_arg(&mut variant),
-            }
-            invoke_args.push(variant);
-        }
-
-        let mut named_arg_dispids_reversed: Vec<i32> =
-            named_arg_dispids.iter().rev().copied().collect();
-        let mut result: VARIANT = std::mem::zeroed();
-        let mut excep: EXCEPINFO = std::mem::zeroed();
-        let mut arg_err = u32::MAX;
-        let mut params = DISPPARAMS {
-            rgvarg: if invoke_args.is_empty() {
-                std::ptr::null_mut()
-            } else {
-                invoke_args.as_mut_ptr()
-            },
-            rgdispidNamedArgs: if named_arg_dispids_reversed.is_empty() {
-                std::ptr::null_mut()
-            } else {
-                named_arg_dispids_reversed.as_mut_ptr()
-            },
-            cArgs: args.len() as u32,
-            cNamedArgs: named_arg_dispids.len() as u32,
-        };
-        let hr = ((*(*dispatch).vtbl).invoke)(
+        let classified = com_invoke_dispatch_variant_result(
             dispatch.cast(),
             dispid,
-            &IID_NULL,
-            0x0400,
             flags,
-            &mut params,
-            &mut result,
-            &mut excep,
-            &mut arg_err,
-        );
-        clear_variant_args(&mut invoke_args);
-        if hr < 0 {
-            return Err(ComInvokeFailure {
-                label,
-                dispid,
-                hr: Some(hr),
-                arg_err: (arg_err != u32::MAX).then_some(arg_err),
-                excep: take_excepinfo(&mut excep),
-                detail: None,
-            });
+            args,
+            named_arg_dispids,
+            label,
+            &mut |handle| {
+                self.resolve_native_dispatch_for_object_arg(handle, "dispatch_invoke")
+                    .map(|dispatch| dispatch.cast::<core::ffi::c_void>())
+                    .map_err(|err| {
+                        format!("{} [{}] {}", err.stable_code, err.operation, err.message)
+                    })
+            },
+            &mut |unknown| {
+                raw_query_dispatch_from_unknown(unknown.cast::<RawIUnknown>())
+                    .map(|dispatch| dispatch.cast::<core::ffi::c_void>())
+            },
+            &mut |dispatch| {
+                raw_add_ref_dispatch(dispatch.cast::<RawIDispatch>());
+            },
+        )?;
+        match classified {
+            VariantResultValue::Value(value) => Ok(value.to_runtime_value()),
+            VariantResultValue::Dispatch(dispatch) => self
+                .bind_native_dispatch_result(
+                    dispatch.cast::<RawIDispatch>(),
+                    prog_id_hint,
+                    "dispatch_invoke",
+                )
+                .map_err(|err| format!("{} [{}] {}", err.stable_code, err.operation, err.message))
+                .map_err(|detail| ComInvokeFailure {
+                    label,
+                    dispid,
+                    hr: None,
+                    arg_err: None,
+                    excep: None,
+                    detail: Some(detail),
+                }),
         }
-
-        self.runtime_value_from_variant_result(&mut result, prog_id_hint, "dispatch_invoke")
-            .map_err(|detail| ComInvokeFailure {
-                label,
-                dispid,
-                hr: None,
-                arg_err: None,
-                excep: None,
-                detail: Some(detail),
-            })
     }
 
     #[cfg(target_os = "windows")]
@@ -7590,9 +7528,14 @@ mod tests {
     use super::StandardHostServices;
     #[cfg(target_os = "windows")]
     use super::{
-        ComObjectToken, create_oxvba_test_dispatch, raw_release_dispatch, raw_variant_to_com_value,
-        set_variant_dispatch_arg,
+        ComObjectToken, RawIDispatch, RawIUnknown, create_oxvba_test_dispatch,
+        raw_add_ref_dispatch, raw_query_dispatch_from_unknown, raw_release_dispatch,
+        raw_variant_to_com_value, set_variant_dispatch_arg,
     };
+    #[cfg(target_os = "windows")]
+    use oxvba_com::VariantResultValue;
+    #[cfg(target_os = "windows")]
+    use oxvba_com::take_variant_result_value as com_take_variant_result_value;
     #[cfg(target_os = "windows")]
     use oxvba_runtime::ObjectHandle;
     #[cfg(target_os = "windows")]
@@ -8049,13 +7992,29 @@ mod tests {
         let mut variant: VARIANT = unsafe { std::mem::zeroed() };
         variant.Anonymous.Anonymous.vt = VT_DISPATCH;
         variant.Anonymous.Anonymous.Anonymous.pdispVal = dispatch.cast();
-        let value = host
-            .runtime_value_from_variant_result(
+        let classified = unsafe {
+            com_take_variant_result_value(
                 &mut variant,
-                "OxVba.TestDispatch",
-                "dispatch_invoke",
+                &mut |unknown| {
+                    raw_query_dispatch_from_unknown(unknown.cast::<RawIUnknown>())
+                        .map(|dispatch| dispatch.cast::<core::ffi::c_void>())
+                },
+                &mut |dispatch| {
+                    raw_add_ref_dispatch(dispatch.cast::<RawIDispatch>());
+                },
             )
-            .expect("runtime value from dispatch result");
+        }
+        .expect("classify dispatch result");
+        let value = match classified {
+            VariantResultValue::Value(value) => value.to_runtime_value(),
+            VariantResultValue::Dispatch(dispatch) => host
+                .bind_native_dispatch_result(
+                    dispatch.cast::<RawIDispatch>(),
+                    "OxVba.TestDispatch",
+                    "dispatch_invoke",
+                )
+                .expect("bind dispatch result"),
+        };
         let RuntimeValue::ObjectHandle(handle) = value else {
             panic!("expected object handle runtime value");
         };
@@ -8075,13 +8034,29 @@ mod tests {
         let mut variant: VARIANT = unsafe { std::mem::zeroed() };
         variant.Anonymous.Anonymous.vt = VT_UNKNOWN;
         variant.Anonymous.Anonymous.Anonymous.punkVal = dispatch.cast();
-        let value = host
-            .runtime_value_from_variant_result(
+        let classified = unsafe {
+            com_take_variant_result_value(
                 &mut variant,
-                "OxVba.TestDispatch",
-                "dispatch_invoke",
+                &mut |unknown| {
+                    raw_query_dispatch_from_unknown(unknown.cast::<RawIUnknown>())
+                        .map(|dispatch| dispatch.cast::<core::ffi::c_void>())
+                },
+                &mut |dispatch| {
+                    raw_add_ref_dispatch(dispatch.cast::<RawIDispatch>());
+                },
             )
-            .expect("runtime value from unknown result");
+        }
+        .expect("classify unknown result");
+        let value = match classified {
+            VariantResultValue::Value(value) => value.to_runtime_value(),
+            VariantResultValue::Dispatch(dispatch) => host
+                .bind_native_dispatch_result(
+                    dispatch.cast::<RawIDispatch>(),
+                    "OxVba.TestDispatch",
+                    "dispatch_invoke",
+                )
+                .expect("bind unknown-dispatch result"),
+        };
         let RuntimeValue::ObjectHandle(handle) = value else {
             panic!("expected object handle runtime value");
         };
