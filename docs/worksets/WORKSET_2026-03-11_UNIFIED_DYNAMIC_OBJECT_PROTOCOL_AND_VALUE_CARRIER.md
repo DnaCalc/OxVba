@@ -143,10 +143,11 @@ Progress:
 9. explicit `DispatchInvoke(...)` against internal project class handles now also resolves and executes native `Property Get` / `Property Let` members through that same shared protocol,
 10. internal `As New` project class construction now runs `Class_Initialize` and backs class fields with per-instance runtime object state so native property calls are semantically stateful,
 11. project-compiled member metadata now carries authoritative native default-member identity (`VB_UserMemId = 0`),
-12. native `DynamicMemberSelector::DefaultMember` dispatch now resolves through that metadata on the same shared runtime-facing protocol.
+12. native `DynamicMemberSelector::DefaultMember` dispatch now resolves through that metadata on the same shared runtime-facing protocol,
+13. owned one-dimensional `VT_ARRAY | VT_VARIANT` payloads now roundtrip across the Windows COM adapter helper boundary and the controlled `EchoVariant` invoke lane.
 
 Open remainder:
-1. object identity and real SAFEARRAY wire marshalling still need full carrier-to-boundary completion,
+1. broader interface/object identity forms and broader SAFEARRAY wire marshalling still need full carrier-to-boundary completion,
 2. the runtime value-model migration blocker is resolved and no longer owns the next step,
 3. the native dynamic-object protocol blocker is resolved and no longer owns the next step.
 

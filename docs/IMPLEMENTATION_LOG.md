@@ -2633,4 +2633,18 @@
   - this does not yet claim real COM SAFEARRAY wire marshalling; the Windows adapter still narrows array arguments before `IDispatch::Invoke`
   - verification:
     - `cargo test -p oxvba-runtime -p oxvba-com --quiet`
+- Continued the Windows COM value-carrier boundary for bounded SAFEARRAY wire marshalling:
+  - the Windows adapter now marshals owned one-dimensional semantic `SafeArray` payloads as `VT_ARRAY | VT_VARIANT` instead of collapsing them immediately to the legacy placeholder integer lane
+  - the adapter now reads one-dimensional `VT_ARRAY | VT_VARIANT` results back into owned semantic `SafeArray` payloads
+  - the controlled native COM `EchoVariant` fixture now echoes semantic `ComValue` payloads, so bounded SAFEARRAY payloads are covered through the real `DispatchInvoke` path instead of helper conversion alone
+  - length-only array intent still falls back to the legacy placeholder projection, and broader multi-dimensional/non-`VT_VARIANT` SAFEARRAY parity remains open
+  - verification:
+    - `cargo test -p oxvba-hal --quiet`
+- Fixed the tagged-constant execution seam exposed by the new semantic COM lanes:
+  - VM `LoadConstI32` now materializes semantic `RuntimeValue` shapes from the legacy tag space instead of forcing tagged constants through plain `I32`
+  - `Null`, `Empty`, error tags, and array tags now preserve their semantic runtime shape when loaded as bytecode constants
+  - added VM regression coverage for tagged constant materialization and verified the end-to-end COM `Null`/`CVErr` roundtrip lane again
+  - verification:
+    - `cargo test -p oxvba-vm load_const_i32_preserves_tagged_runtime_value_shape --quiet`
+    - `cargo test -p oxvba-host --test com_client_end_to_end dispatchinvoke_variant_error_and_null_tokens_roundtrip_deterministically --quiet`
 

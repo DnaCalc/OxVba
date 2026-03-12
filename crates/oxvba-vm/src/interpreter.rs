@@ -241,7 +241,7 @@ impl Vm {
         while pc < len {
             match &bytecode.instructions[pc] {
                 Instruction::LoadConstI32 { slot, value } => {
-                    self.write_value_slot(*slot, RuntimeValue::I32(*value))?;
+                    self.write_value_slot(*slot, RuntimeValue::from_legacy_i32(*value))?;
                     pc += 1;
                 }
                 Instruction::AddConstI32 { slot, value } => {
@@ -2316,6 +2316,46 @@ mod tests {
         assert_eq!(
             vm.read_value_slot(0).expect("read runtime value"),
             RuntimeValue::Bool(true)
+        );
+    }
+
+    #[test]
+    fn load_const_i32_preserves_tagged_runtime_value_shape() {
+        let bytecode = Bytecode {
+            instructions: vec![
+                Instruction::LoadConstI32 {
+                    slot: 0,
+                    value: NULL_TAG,
+                },
+                Instruction::LoadConstI32 {
+                    slot: 1,
+                    value: error_tag_from_code(17),
+                },
+                Instruction::LoadConstI32 {
+                    slot: 2,
+                    value: EMPTY_TAG,
+                },
+            ],
+            external_call_descriptors: vec![],
+            slot_count: 3,
+            user_slot_count: 3,
+        };
+
+        let mut vm = Vm::default();
+        vm.execute(&bytecode)
+            .expect("vm should execute tagged constants");
+
+        assert_eq!(
+            vm.read_value_slot(0).expect("null slot"),
+            RuntimeValue::Null
+        );
+        assert_eq!(
+            vm.read_value_slot(1).expect("error slot"),
+            RuntimeValue::ErrorCode(17)
+        );
+        assert_eq!(
+            vm.read_value_slot(2).expect("empty slot"),
+            RuntimeValue::Empty
         );
     }
 

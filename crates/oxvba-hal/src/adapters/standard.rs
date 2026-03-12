@@ -43,12 +43,17 @@ use windows_sys::Win32::Foundation::{SysAllocString, SysFreeString, SysStringLen
 use windows_sys::Win32::System::Com::{
     CLSCTX_SERVER, CLSIDFromProgID, COINIT_APARTMENTTHREADED, CoCreateInstance, CoInitializeEx,
     DISPATCH_METHOD, DISPATCH_PROPERTYGET, DISPATCH_PROPERTYPUT, DISPATCH_PROPERTYPUTREF,
-    DISPPARAMS, EXCEPINFO,
+    DISPPARAMS, EXCEPINFO, SAFEARRAY,
+};
+#[cfg(target_os = "windows")]
+use windows_sys::Win32::System::Ole::{
+    SafeArrayCreateVector, SafeArrayDestroy, SafeArrayGetDim, SafeArrayGetElement,
+    SafeArrayGetLBound, SafeArrayGetUBound, SafeArrayGetVartype, SafeArrayPutElement,
 };
 #[cfg(target_os = "windows")]
 use windows_sys::Win32::System::Variant::{
-    VARIANT, VT_BOOL, VT_BSTR, VT_DISPATCH, VT_EMPTY, VT_ERROR, VT_I2, VT_I4, VT_NULL, VT_UI2,
-    VT_UI4, VariantClear,
+    VARIANT, VT_ARRAY, VT_BOOL, VT_BSTR, VT_DISPATCH, VT_EMPTY, VT_ERROR, VT_I2, VT_I4, VT_NULL,
+    VT_UI2, VT_UI4, VT_VARIANT, VariantClear,
 };
 #[cfg(target_os = "windows")]
 use windows_sys::Win32::UI::WindowsAndMessaging::{
@@ -1359,6 +1364,9 @@ impl StandardHostServices {
             return Ok(None);
         }
         if !prog_id.eq_ignore_ascii_case(OXVBA_TEST_DISPATCH_PROGID) {
+            return Ok(None);
+        }
+        if member == TEST_DISPID_ECHO_VARIANT {
             return Ok(None);
         }
         self.ensure_thread_com_apartment("dispatch_invoke")?;
@@ -5817,6 +5825,24 @@ unsafe fn raw_variant_token_from_invoke_arg(
 
 #[cfg(target_os = "windows")]
 #[allow(unsafe_op_in_unsafe_fn)]
+unsafe fn raw_variant_value_from_invoke_arg(
+    variant: *const VARIANT,
+    arg_index: usize,
+) -> Result<ComValue, i32> {
+    if variant.is_null() {
+        return Err(COM_DISP_E_TYPEMISMATCH);
+    }
+    match raw_variant_to_com_value(&*variant) {
+        Ok(value) => Ok(value),
+        Err(_) if (*variant).Anonymous.Anonymous.vt == VT_EMPTY && arg_index == 0 => {
+            Ok(ComValue::I32(0))
+        }
+        Err(_) => Err(COM_DISP_E_TYPEMISMATCH),
+    }
+}
+
+#[cfg(target_os = "windows")]
+#[allow(unsafe_op_in_unsafe_fn)]
 unsafe fn raw_variant_token_from_dispparams(
     pparams: *mut DISPPARAMS,
     logical_index: usize,
@@ -5833,6 +5859,34 @@ unsafe fn raw_variant_token_from_dispparams(
     let raw_index = cargs - 1 - logical_index;
     let arg = params.rgvarg.add(raw_index);
     match raw_variant_token_from_invoke_arg(arg, logical_index) {
+        Ok(value) => Ok(value),
+        Err(hr) => {
+            if !puargerr.is_null() {
+                *puargerr = raw_index as u32;
+            }
+            Err(hr)
+        }
+    }
+}
+
+#[cfg(target_os = "windows")]
+#[allow(unsafe_op_in_unsafe_fn)]
+unsafe fn raw_variant_value_from_dispparams(
+    pparams: *mut DISPPARAMS,
+    logical_index: usize,
+    puargerr: *mut u32,
+) -> Result<ComValue, i32> {
+    if pparams.is_null() {
+        return Err(COM_DISP_E_BADPARAMCOUNT);
+    }
+    let params = &*pparams;
+    let cargs = params.cArgs as usize;
+    if logical_index >= cargs || params.rgvarg.is_null() {
+        return Err(COM_DISP_E_BADPARAMCOUNT);
+    }
+    let raw_index = cargs - 1 - logical_index;
+    let arg = params.rgvarg.add(raw_index);
+    match raw_variant_value_from_invoke_arg(arg, logical_index) {
         Ok(value) => Ok(value),
         Err(hr) => {
             if !puargerr.is_null() {
@@ -6523,20 +6577,14 @@ unsafe extern "system" fn oxvba_test_invoke(
             if (wflags & DISPATCH_METHOD) == 0 || cargs != 1 || rgvarg.is_null() {
                 return COM_DISP_E_BADPARAMCOUNT;
             }
-            let value = match raw_variant_token_from_dispparams(pparams, 0, puargerr) {
+            let value = match raw_variant_value_from_dispparams(pparams, 0, puargerr) {
                 Ok(value) => value,
                 Err(hr) => return hr,
             };
             let mut resolve_object = |_handle: ObjectHandle| {
                 Err("object dispatch echo unsupported in test helper".to_string())
             };
-            if set_variant_dispatch_arg(
-                pvarresult,
-                &ComValue::from_runtime_token(value),
-                &mut resolve_object,
-            )
-            .is_err()
-            {
+            if set_variant_dispatch_arg(pvarresult, &value, &mut resolve_object).is_err() {
                 return COM_DISP_E_TYPEMISMATCH;
             }
             COM_S_OK
@@ -7070,7 +7118,16 @@ unsafe fn raw_get_dispids_by_names(
 #[cfg(target_os = "windows")]
 #[allow(unsafe_op_in_unsafe_fn)]
 unsafe fn raw_variant_to_com_value(variant: &VARIANT) -> Result<ComValue, String> {
-    let value = match variant.Anonymous.Anonymous.vt {
+    let vt = variant.Anonymous.Anonymous.vt;
+    if vt & VT_ARRAY != 0 {
+        let element_vt = vt & !VT_ARRAY;
+        if element_vt != VT_VARIANT {
+            return Err(format!("unsupported VARIANT return type vt={vt}"));
+        }
+        let parray = variant.Anonymous.Anonymous.Anonymous.parray;
+        return raw_safe_array_to_com_value(parray);
+    }
+    let value = match vt {
         VT_EMPTY => ComValue::Empty,
         VT_I2 => ComValue::I32(variant.Anonymous.Anonymous.Anonymous.iVal as i32),
         VT_I4 => ComValue::I32(variant.Anonymous.Anonymous.Anonymous.lVal),
@@ -7098,6 +7155,133 @@ unsafe fn raw_variant_to_com_value(variant: &VARIANT) -> Result<ComValue, String
         }
     };
     Ok(value)
+}
+
+#[cfg(target_os = "windows")]
+#[allow(unsafe_op_in_unsafe_fn)]
+unsafe fn raw_safe_array_to_com_value(psa: *mut SAFEARRAY) -> Result<ComValue, String> {
+    if psa.is_null() {
+        return Err("VT_ARRAY result carried null SAFEARRAY".to_string());
+    }
+    let dims = SafeArrayGetDim(psa.cast_const());
+    if dims != 1 {
+        return Err(format!(
+            "unsupported SAFEARRAY rank {dims}; only one-dimensional VT_VARIANT arrays are supported"
+        ));
+    }
+    let mut element_vt = 0u16;
+    let hr = SafeArrayGetVartype(psa.cast_const(), &mut element_vt);
+    if hr < 0 {
+        return Err(format!(
+            "SafeArrayGetVartype failed with HRESULT {:#010X}",
+            hr as u32
+        ));
+    }
+    if element_vt != VT_VARIANT {
+        return Err(format!(
+            "unsupported SAFEARRAY element vartype {element_vt}; only VT_VARIANT arrays are supported"
+        ));
+    }
+    let mut lower = 0i32;
+    let hr = SafeArrayGetLBound(psa.cast_const(), 1, &mut lower);
+    if hr < 0 {
+        return Err(format!(
+            "SafeArrayGetLBound failed with HRESULT {:#010X}",
+            hr as u32
+        ));
+    }
+    let mut upper = -1i32;
+    let hr = SafeArrayGetUBound(psa.cast_const(), 1, &mut upper);
+    if hr < 0 {
+        return Err(format!(
+            "SafeArrayGetUBound failed with HRESULT {:#010X}",
+            hr as u32
+        ));
+    }
+    let len = if upper < lower {
+        0usize
+    } else {
+        usize::try_from(upper - lower + 1)
+            .map_err(|_| "SAFEARRAY bounds exceed supported usize range".to_string())?
+    };
+    let mut values = Vec::with_capacity(len);
+    for index in lower..=upper {
+        let mut element: VARIANT = std::mem::zeroed();
+        let hr = SafeArrayGetElement(
+            psa.cast_const(),
+            &index,
+            (&mut element as *mut VARIANT).cast(),
+        );
+        if hr < 0 {
+            return Err(format!(
+                "SafeArrayGetElement failed with HRESULT {:#010X} at index {}",
+                hr as u32, index
+            ));
+        }
+        let value = match raw_variant_to_com_value(&element) {
+            Ok(value) => value.to_runtime_value(),
+            Err(detail) => {
+                let _ = VariantClear(&mut element);
+                return Err(detail);
+            }
+        };
+        let _ = VariantClear(&mut element);
+        values.push(value);
+    }
+    Ok(ComValue::ArrayIntent(
+        oxvba_runtime::safe_array::SafeArray::from_values(values),
+    ))
+}
+
+#[cfg(target_os = "windows")]
+#[allow(unsafe_op_in_unsafe_fn)]
+unsafe fn set_variant_dispatch_array_arg<F>(
+    variant: *mut VARIANT,
+    array: &oxvba_runtime::safe_array::SafeArray,
+    resolve_object: &mut F,
+) -> Result<(), String>
+where
+    F: FnMut(ObjectHandle) -> Result<*mut RawIDispatch, String>,
+{
+    let Some(values) = array.elements.as_ref() else {
+        (*variant).Anonymous.Anonymous.vt = VT_I4;
+        (*variant).Anonymous.Anonymous.Anonymous.lVal =
+            ComValue::ArrayIntent(array.clone()).to_legacy_dispatch_token()?;
+        return Ok(());
+    };
+    let len = u32::try_from(values.len())
+        .map_err(|_| "SAFEARRAY payload length exceeds supported u32 range".to_string())?;
+    let psa = SafeArrayCreateVector(VT_VARIANT, 0, len);
+    if psa.is_null() {
+        return Err("SafeArrayCreateVector(VT_VARIANT) returned null".to_string());
+    }
+    for (offset, runtime_value) in values.iter().enumerate() {
+        let mut element: VARIANT = std::mem::zeroed();
+        let value = ComValue::from_runtime_value(runtime_value);
+        if let Err(detail) = set_variant_dispatch_arg(&mut element, &value, resolve_object) {
+            let _ = VariantClear(&mut element);
+            let _ = SafeArrayDestroy(psa.cast_const());
+            return Err(detail);
+        }
+        let index = i32::try_from(offset)
+            .map_err(|_| "SAFEARRAY index exceeds supported i32 range".to_string())?;
+        let hr = SafeArrayPutElement(
+            psa.cast_const(),
+            &index,
+            (&element as *const VARIANT).cast(),
+        );
+        let _ = VariantClear(&mut element);
+        if hr < 0 {
+            let _ = SafeArrayDestroy(psa.cast_const());
+            return Err(format!(
+                "SafeArrayPutElement failed with HRESULT {:#010X} at index {}",
+                hr as u32, index
+            ));
+        }
+    }
+    (*variant).Anonymous.Anonymous.vt = VT_ARRAY | VT_VARIANT;
+    (*variant).Anonymous.Anonymous.Anonymous.parray = psa;
+    Ok(())
 }
 
 #[cfg(target_os = "windows")]
@@ -7136,9 +7320,8 @@ where
             (*variant).Anonymous.Anonymous.vt = VT_BSTR;
             (*variant).Anonymous.Anonymous.Anonymous.bstrVal = alloc_bstr(value);
         }
-        ComValue::ArrayIntent(_) => {
-            (*variant).Anonymous.Anonymous.vt = VT_I4;
-            (*variant).Anonymous.Anonymous.Anonymous.lVal = value.to_legacy_dispatch_token()?;
+        ComValue::ArrayIntent(array) => {
+            set_variant_dispatch_array_arg(variant, array, resolve_object)?;
         }
         ComValue::ObjectHandle(handle) => {
             let dispatch = resolve_object(*handle)?;
@@ -7678,7 +7861,9 @@ mod tests {
     #[cfg(target_os = "windows")]
     use oxvba_runtime::ObjectHandle;
     #[cfg(target_os = "windows")]
-    use windows_sys::Win32::System::Variant::{VARIANT, VT_DISPATCH, VariantClear};
+    use windows_sys::Win32::System::Variant::{
+        VARIANT, VT_ARRAY, VT_DISPATCH, VT_VARIANT, VariantClear,
+    };
 
     fn env_lock() -> &'static Mutex<()> {
         static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
@@ -8094,6 +8279,30 @@ mod tests {
             assert!(!variant.Anonymous.Anonymous.Anonymous.pdispVal.is_null());
             let _ = VariantClear(&mut variant);
             raw_release_dispatch(dispatch);
+        }
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn com_safe_array_variant_roundtrips_through_adapter_helpers() {
+        let mut variant: VARIANT = unsafe { std::mem::zeroed() };
+        let value = ComValue::ArrayIntent(oxvba_runtime::safe_array::SafeArray::from_values(vec![
+            RuntimeValue::I32(4),
+            RuntimeValue::Bool(true),
+            RuntimeValue::String(BStr("Hello".to_string())),
+            RuntimeValue::Null,
+        ]));
+        let mut resolve_object =
+            |_handle: ObjectHandle| Err("object dispatch resolution not expected".to_string());
+        unsafe {
+            set_variant_dispatch_arg(&mut variant, &value, &mut resolve_object)
+                .expect("set SAFEARRAY variant");
+            assert_eq!(variant.Anonymous.Anonymous.vt, VT_ARRAY | VT_VARIANT);
+            assert_eq!(
+                raw_variant_to_com_value(&variant).expect("read SAFEARRAY variant"),
+                value
+            );
+            let _ = VariantClear(&mut variant);
         }
     }
 
@@ -9106,6 +9315,35 @@ mod tests {
             host.dispatch_invoke_legacy_v2(&request)
                 .expect("named value argument should still route through property-put lane"),
             307_009
+        );
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn windows_native_controlled_test_dispatch_roundtrips_semantic_safe_array_payload_v2() {
+        let host = StandardHostServices::new(HalProfileId::Windows, HostPolicy::interactive_dev());
+        let object = host
+            .create_object_test(4)
+            .expect("create_object should return a token");
+        let expected =
+            RuntimeValue::ArrayIntent(oxvba_runtime::safe_array::SafeArray::from_values(vec![
+                RuntimeValue::I32(4),
+                RuntimeValue::Bool(true),
+                RuntimeValue::String(BStr("Hello".to_string())),
+                RuntimeValue::Null,
+            ]));
+        let request = ComInvokeRequest {
+            object: object.raw().into(),
+            member: super::TEST_DISPID_ECHO_VARIANT.into(),
+            args: vec![ComInvokeArg::positional_value(
+                ComValue::from_runtime_value(&expected),
+            )],
+            invoke_kind_hint: Some(oxvba_com::ComInvokeKind::Method),
+        };
+        assert_eq!(
+            host.dispatch_invoke_runtime_value_v2(&request)
+                .expect("semantic SAFEARRAY invoke should succeed"),
+            expected
         );
     }
 

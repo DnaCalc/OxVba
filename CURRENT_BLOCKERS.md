@@ -76,18 +76,19 @@ Run context: active parity/compliance execution plus in-progress feature worklis
   - VM `DispatchInvoke` construction now preserves `Empty`/`Null`/`CVErr(...)`/array-intent shape and runtime strings into that carrier instead of flattening them before the COM boundary,
   - `SafeArray` carrier values can now preserve owned semantic element payloads instead of only length/dimension shape,
   - Windows COM invoke/result translation now maps that carrier to and from `VARIANT` for the supported subset, including BSTR string arguments/results, and callback payload polling returns the same carrier family,
+  - Windows COM invoke/result translation now also supports owned one-dimensional `VT_ARRAY | VT_VARIANT` payloads end to end on the helper and controlled `EchoVariant` invoke lanes,
   - native late-bound COM argument marshalling now clears temporary `VARIANT` invoke arguments after dispatch so BSTR-backed calls do not leak adapter-owned allocations,
   - `ComValue` now preserves `ObjectHandle(...)` semantically instead of degrading it back into plain integers before the COM boundary,
   - Windows native COM argument marshalling now resolves `ObjectHandle(...)` through adapter-owned binding state and emits `VT_DISPATCH` with balanced `AddRef`/`VariantClear` ownership for native COM-backed objects,
   - Windows native COM invoke result conversion now binds `VT_DISPATCH` results back into adapter-owned object handles on the runtime-value path instead of discarding them into the legacy scalar lane,
   - the runtime value model itself is now semantic/value-first, but COM wire translation still only covers the currently supported subset,
-  - array payload intent is now preserved in the carrier, but the Windows adapter still has to narrow array arguments to the old placeholder integer because real SAFEARRAY wire marshalling is not yet implemented,
+  - length-only array intent still falls back to the old placeholder integer projection because only owned semantic array payloads can be marshalled honestly today,
   - broader interface-pointer result forms beyond `VT_DISPATCH` (for example `VT_UNKNOWN`) still do not traverse the shared runtime-facing carrier,
-  - callback ingress now preserves the shared carrier at the COM boundary, but broader array/object/interface payload fidelity remains partial.
+  - callback ingress now preserves the shared carrier at the COM boundary, but broader multi-dimensional/non-`VT_VARIANT` SAFEARRAY, object/interface, and external automation payload fidelity remain partial.
 - Exact unblock steps:
   - extend the first `ComValue` slice into the full canonical OxVba-side external-call carrier for:
     - broader object/interface-pointer result forms and identity roundtrip,
-    - real SAFEARRAY payloads,
+    - broader SAFEARRAY ranks/element vartypes and external automation payloads,
     - broader scalar/variant categories,
   - thread the new dynamic-object protocol and expanded carrier through compiler bytecode, VM host invoke construction, callback transport, and host runtime ingestion without making raw COM wire structs the VM/compiler value model,
   - move `VARIANT`/`BSTR`/`SAFEARRAY`/interface-pointer translation into `oxvba-com`,
