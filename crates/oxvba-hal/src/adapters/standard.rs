@@ -27,8 +27,9 @@ use oxvba_com::{
     ComEventSpec, ComEventSubscription as SharedComEventSubscription, ComEventTriggerSpec,
     ComInvokeArg, ComInvokeFailure, ComInvokeRequest, ComMemberSpec, ComMemberToken,
     ComObjectDescriptor, ComObjectToken, ComObjectTransportKind, ComRuntimeState,
-    ComSubscriptionToken, ComValue, VariantResultValue, build_typelib_metadata,
-    known_typelib_identity_for_prog_id_name, resolve_known_typelib_identity,
+    ComSubscriptionToken, ComValue, TypeLibMetadataCacheState, VariantResultValue,
+    build_typelib_metadata, known_typelib_identity_for_prog_id_name,
+    resolve_known_typelib_identity,
 };
 use oxvba_runtime::{
     BindingHandle, DynLinkSymbol, ObjectHandle, RuntimeValue,
@@ -501,12 +502,9 @@ impl StandardHostServices {
         };
         let capability = CapabilityId::ComActivationDispatch;
         let mut state = self.typelib_lock(capability, "create_object")?;
-        if let Some(cached) = state.metadata.get(&identity.cache_key) {
-            return Ok(Some(cached.clone()));
-        }
-        let blob = self.build_typelib_metadata(&identity);
-        state.metadata.insert(identity.cache_key, blob.clone());
-        Ok(Some(blob))
+        Ok(Some(state.load_or_build(&identity, |identity| {
+            self.build_typelib_metadata(identity)
+        })))
     }
 
     #[cfg(not(target_os = "windows"))]
@@ -3482,14 +3480,7 @@ impl ComHal for StandardHostServices {
             return Err(self.denied(capability, "load_typelib_metadata"));
         }
         let mut state = self.typelib_lock(capability, "load_typelib_metadata")?;
-        if let Some(cached) = state.metadata.get(&identity.cache_key) {
-            return Ok(cached.clone());
-        }
-        let blob = self.build_typelib_metadata(identity);
-        state
-            .metadata
-            .insert(identity.cache_key.clone(), blob.clone());
-        Ok(blob)
+        Ok(state.load_or_build(identity, |identity| self.build_typelib_metadata(identity)))
     }
 
     fn invalidate_typelib_cache(
@@ -3505,29 +3496,9 @@ impl ComHal for StandardHostServices {
             return Err(self.denied(capability, "invalidate_typelib_cache"));
         }
         let mut state = self.typelib_lock(capability, "invalidate_typelib_cache")?;
-        let removed = match scope {
-            TypeLibCacheScope::Global => {
-                let count = state.metadata.len();
-                state.metadata.clear();
-                count
-            }
-            TypeLibCacheScope::Reference => {
-                let Some(reference_name) = reference_name else {
-                    return Err(HalError::adapter_fault(
-                        self.profile,
-                        capability,
-                        "invalidate_typelib_cache",
-                        "reference scope requires reference_name",
-                    ));
-                };
-                let key = normalize_ci_token(reference_name);
-                let before = state.metadata.len();
-                state
-                    .metadata
-                    .retain(|_, blob| normalize_ci_token(&blob.identity.reference_name) != key);
-                before.saturating_sub(state.metadata.len())
-            }
-        };
+        let removed = state.invalidate(scope, reference_name).map_err(|detail| {
+            HalError::adapter_fault(self.profile, capability, "invalidate_typelib_cache", detail)
+        })?;
         Ok(RuntimeValue::I32(
             i32::try_from(removed).unwrap_or(i32::MAX),
         ))
@@ -4096,6 +4067,7 @@ struct FileHandleState {
 
 type SharedComState = ComRuntimeState<ComEventSubscriptionTransport>;
 type ComEventSubscription = SharedComEventSubscription<ComEventSubscriptionTransport>;
+type TypeLibraryCacheState = TypeLibMetadataCacheState;
 
 #[derive(Debug, Default)]
 struct ComState {
@@ -4114,11 +4086,6 @@ impl DerefMut for ComState {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.inner
     }
-}
-
-#[derive(Debug, Default)]
-struct TypeLibraryCacheState {
-    metadata: BTreeMap<String, TypeLibMetadataBlob>,
 }
 
 #[derive(Debug, Default)]

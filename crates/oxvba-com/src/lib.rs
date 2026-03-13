@@ -8,6 +8,7 @@ pub mod platform;
 pub mod refcount;
 pub mod runtime_state;
 pub mod typelib;
+pub mod typelib_cache;
 pub mod typelib_catalog;
 #[cfg(target_os = "windows")]
 pub mod windows_invoke;
@@ -34,6 +35,7 @@ pub use typelib::{
     TypeLibCacheScope, TypeLibEventDispatchPath, TypeLibEventMetadata, TypeLibMemberInvokeKind,
     TypeLibMemberMetadata, TypeLibMetadataBlob, TypeLibResolveRequest, TypeLibResolvedIdentity,
 };
+pub use typelib_cache::TypeLibMetadataCacheState;
 pub use typelib_catalog::{
     build_typelib_metadata, known_typelib_identity_for_prog_id_name, resolve_known_typelib_identity,
 };
