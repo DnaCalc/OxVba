@@ -1,6 +1,7 @@
 use crate::{
     ComCallbackPayload, ComCallbackToken, ComMemberToken, ComObjectDescriptor, ComObjectToken,
-    ComObjectTransportKind, ComSubscriptionToken, ComValue, TypeLibMemberInvokeKind,
+    ComObjectTransportKind, ComSubscriptionToken, ComValue, TypeLibEventDispatchPath,
+    TypeLibEventMetadata, TypeLibMemberInvokeKind, TypeLibMetadataBlob,
 };
 use oxvba_runtime::ObjectHandle;
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
@@ -55,6 +56,110 @@ impl ComBinding {
             typelib_cache_key,
         }
     }
+}
+
+pub fn binding_from_typelib_metadata(
+    prog_id_name: String,
+    native_dispatch: usize,
+    metadata: Option<&TypeLibMetadataBlob>,
+) -> ComBinding {
+    let mut binding = ComBinding::new(prog_id_name, native_dispatch);
+    binding.member_specs = metadata
+        .map(member_specs_from_typelib_metadata)
+        .unwrap_or_default();
+    binding.default_member_token = metadata.and_then(default_member_token_from_typelib_metadata);
+    binding.event_specs = metadata
+        .map(event_specs_from_typelib_metadata)
+        .unwrap_or_default();
+    binding.event_trigger_specs = metadata
+        .map(event_trigger_specs_from_typelib_metadata)
+        .unwrap_or_default();
+    binding
+}
+
+fn normalize_ci_token(input: &str) -> String {
+    input.trim().to_ascii_lowercase()
+}
+
+fn event_trigger_specs_from_typelib_metadata(
+    blob: &TypeLibMetadataBlob,
+) -> BTreeMap<ComMemberToken, ComEventTriggerSpec> {
+    let events_by_name: BTreeMap<String, &TypeLibEventMetadata> = blob
+        .events
+        .iter()
+        .map(|event| (normalize_ci_token(&event.name), event))
+        .collect();
+    let mut out = BTreeMap::new();
+    for member in &blob.members {
+        let normalized_member_name = normalize_ci_token(&member.name);
+        let event_name = normalized_member_name
+            .strip_prefix("fire")
+            .or_else(|| normalized_member_name.strip_prefix("raise"))
+            .unwrap_or(normalized_member_name.as_str());
+        let Some(event) = events_by_name.get(event_name) else {
+            continue;
+        };
+        out.insert(
+            member.token.into(),
+            ComEventTriggerSpec {
+                event_token: event.token.into(),
+                callback_arity: usize::from(event.callback_arity),
+                second_arg_is_incremented: normalized_member_name.ends_with("pair"),
+            },
+        );
+    }
+    out
+}
+
+fn event_specs_from_typelib_metadata(
+    blob: &TypeLibMetadataBlob,
+) -> BTreeMap<ComMemberToken, ComEventSpec> {
+    blob.events
+        .iter()
+        .map(|event| {
+            (
+                event.token.into(),
+                ComEventSpec {
+                    callback_arity: usize::from(event.callback_arity),
+                    path: match event.dispatch_path {
+                        TypeLibEventDispatchPath::Dispatch => ComEventPath::Dispatch,
+                        TypeLibEventDispatchPath::SourceInterface => ComEventPath::SourceInterface,
+                    },
+                    connection_point_iid: event.connection_point_iid.clone(),
+                    dispatch_member_id: event.dispatch_member_id,
+                },
+            )
+        })
+        .collect()
+}
+
+fn member_specs_from_typelib_metadata(
+    blob: &TypeLibMetadataBlob,
+) -> BTreeMap<ComMemberToken, ComMemberSpec> {
+    blob.members
+        .iter()
+        .map(|member| {
+            (
+                member.token.into(),
+                ComMemberSpec {
+                    name: member.name.clone(),
+                    requires_argument: member.requires_argument,
+                    invoke_kind: member.invoke_kind,
+                    parameter_names: member.parameter_names.clone(),
+                    is_default_member: member.is_default_member,
+                },
+            )
+        })
+        .collect()
+}
+
+fn default_member_token_from_typelib_metadata(
+    blob: &TypeLibMetadataBlob,
+) -> Option<ComMemberToken> {
+    blob.members
+        .iter()
+        .find(|member| member.is_default_member)
+        .map(|member| member.token.into())
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

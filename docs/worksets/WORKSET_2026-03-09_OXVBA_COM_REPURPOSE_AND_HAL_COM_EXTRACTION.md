@@ -31,18 +31,27 @@ Completed extraction slices:
 2. deterministic typelib catalog/build logic,
 3. shared COM runtime state and callback/subscription bookkeeping,
 4. typelib metadata cache storage/invalidation,
-5. generic Windows COM client ABI/constants/helpers for activation, GUID parsing, DISPID lookup, and raw reference release,`r`n6. generic dispatch-side connection-point sink lifecycle and callback ingress,`r`n7. the current single-`i32` source-interface sink lifecycle used by the deterministic event lane.
+5. generic Windows COM client ABI/constants/helpers for activation, GUID parsing, DISPID lookup, and raw reference release,
+6. generic dispatch-side connection-point sink lifecycle and callback ingress,
+7. the current single-`i32` source-interface sink lifecycle used by the deterministic event lane,
+8. deterministic known-member/event lookup and source-interface support policy,
+9. metadata-driven `ComBinding` assembly from loaded type-library metadata,
+10. deterministic in-process `OxVba.TestDispatch` fixture ownership.
 
 Remaining extraction wall:
-1. sink object construction,
-2. connection-point advise/unadvise around sink ownership,
-3. callback ingress into the shared COM runtime container,
-4. test-only in-process COM fixture ownership still living in oxvba-hal::standard.
+1. Windows client lifecycle ownership still centered in `oxvba-hal::standard`:
+   - ProgID/CLSID activation,
+   - raw `IDispatch` ownership/release,
+   - DISPID lookup delegation,
+   - advise/unadvise transport,
+   - sink callback ingress wiring into the shared runtime container,
+2. public HAL COM contract contraction/rebinding over `oxvba-com`,
+3. remaining runtime-wide dynamic protocol wiring and parity work that depends on the contracted boundary.
 ## 2. Problem statement
 
 Current state:
 1. Real COM client/event/type-library behavior lives largely in `crates/oxvba-hal/src/adapters/standard.rs`.
-2. `oxvba-com` remains scaffolding from an earlier plan and does not carry the actual COM bridge burden.
+2. `oxvba-com` now carries a substantial part of the actual COM bridge burden, but the Windows client lifecycle and public contract authority are still transitional.
 3. This has pushed a large Windows-specific domain into the HAL surface:
    - COM activation
    - dispatch invoke
@@ -303,4 +312,5 @@ Required checks for the repurpose/extraction program:
 7. Use these concrete child worksets for the next cleanup/implementation slices:
    - `docs/worksets/WORKSET_2026-03-11_UNIFIED_DYNAMIC_OBJECT_PROTOCOL_AND_VALUE_CARRIER.md`
    - `docs/worksets/WORKSET_2026-03-11_COM_REFERENCE_FACADE_AND_TYPELIB_BINDING_COMPLETION.md`
+
 

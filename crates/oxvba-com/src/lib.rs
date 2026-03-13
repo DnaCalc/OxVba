@@ -36,6 +36,7 @@ pub use refcount::RefCount;
 pub use runtime_state::{
     ComBinding, ComDirectDispatchSpec, ComEventCallback, ComEventPath, ComEventSpec,
     ComEventSubscription, ComEventTriggerSpec, ComMemberSpec, ComRuntimeState,
+    binding_from_typelib_metadata,
 };
 pub use typelib::{
     TypeLibCacheScope, TypeLibEventDispatchPath, TypeLibEventMetadata, TypeLibMemberInvokeKind,

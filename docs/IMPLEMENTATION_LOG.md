@@ -1,3 +1,28 @@
+# Implementation Log
+
+## 2026-03-13 - Moved COM binding assembly into oxvba-com
+
+- Continued the COM extraction/contraction slice in:
+  - [runtime_state.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-com\src\runtime_state.rs)
+  - [lib.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-com\src\lib.rs)
+  - [standard.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-hal\src\adapters\standard.rs)
+  - [CURRENT_BLOCKERS.md](C:\Work\DnaCalc\OxVba\CURRENT_BLOCKERS.md)
+  - [IN_PROGRESS_FEATURE_WORKLIST.md](C:\Work\DnaCalc\OxVba\docs\IN_PROGRESS_FEATURE_WORKLIST.md)
+  - [WORKSET_2026-03-09_OXVBA_COM_REPURPOSE_AND_HAL_COM_EXTRACTION.md](C:\Work\DnaCalc\OxVba\docs\worksets\WORKSET_2026-03-09_OXVBA_COM_REPURPOSE_AND_HAL_COM_EXTRACTION.md)
+- `oxvba-com` now owns deterministic construction of runtime-facing `ComBinding` state from loaded type-library metadata, including:
+  - member spec derivation,
+  - default-member token derivation,
+  - event spec derivation,
+  - event-trigger derivation.
+- `oxvba-hal::standard` no longer assembles those binding tables locally after metadata load; it delegates to the shared `oxvba-com` helper.
+- Net effect:
+  - metadata-driven COM binding assembly is now part of the `oxvba-com` boundary,
+  - the remaining COM extraction wall is native lifecycle ownership plus HAL contract contraction, not another round of metadata translation cleanup.
+- Verification:
+  - cargo fmt --all
+  - cargo clippy -p oxvba-hal --all-targets -- -D warnings
+  - cargo test -p oxvba-com -p oxvba-hal --quiet
+  - ./scripts/meta-check.ps1 -Fast -NoArtifacts
 ## 2026-03-13 - Removed HAL-local known COM metadata tables
 
 - Continued the COM extraction/contraction slice in:
@@ -41,7 +66,6 @@
   - cargo test -p oxvba-com -p oxvba-hal --quiet
   - ./scripts/check-governance.ps1
   - ./scripts/meta-check.ps1 -Fast -NoArtifacts
-# Implementation Log
 
 ## 2026-03-13 - Extracted source-interface sink lifecycle into oxvba-com
 
@@ -2822,4 +2846,5 @@
     - `cargo test -p oxvba-com -p oxvba-hal --quiet`
     - `./scripts/check-governance.ps1`
     - `./scripts/meta-check.ps1 -Fast -NoArtifacts`
+
 

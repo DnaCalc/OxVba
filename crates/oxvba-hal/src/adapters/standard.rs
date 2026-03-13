@@ -7,9 +7,8 @@ use crate::{
     },
     traits::{
         ComHal, DiagnosticsHal, DynLinkDescriptorView, DynamicLinkHal, EventPumpHal, FileSystemHal,
-        HostServices, ProcessEnvHal, TimeLocaleHal, TypeLibCacheScope, TypeLibEventDispatchPath,
-        TypeLibEventMetadata, TypeLibMemberInvokeKind, TypeLibMetadataBlob, TypeLibResolveRequest,
-        TypeLibResolvedIdentity, UiInteractionHal,
+        HostServices, ProcessEnvHal, TimeLocaleHal, TypeLibCacheScope, TypeLibMemberInvokeKind,
+        TypeLibMetadataBlob, TypeLibResolveRequest, TypeLibResolvedIdentity, UiInteractionHal,
     },
 };
 pub use oxvba_com::DISPATCH_INVOKE_MISSING_ARG_TOKEN;
@@ -31,7 +30,8 @@ use oxvba_com::{
     DispatchEventSinkConfig, IID_NULL, RawIDispatch, RawIUnknown, TypeLibMetadataCacheState,
     VariantResultValue, WindowsConnectionPointTransport,
     activate_dispatch_by_prog_id as com_activate_dispatch_by_prog_id,
-    add_ref_dispatch as raw_add_ref_dispatch, build_typelib_metadata, create_oxvba_test_dispatch,
+    add_ref_dispatch as raw_add_ref_dispatch, binding_from_typelib_metadata,
+    build_typelib_metadata, create_oxvba_test_dispatch,
     get_dispid_by_name as raw_get_dispid_by_name, get_dispids_by_names as raw_get_dispids_by_names,
     known_typelib_identity_for_prog_id_name, map_com_hresult_label,
     member_spec_from_typelib_metadata,
@@ -1131,7 +1131,7 @@ impl StandardHostServices {
     }
 
     #[cfg(target_os = "windows")]
-    fn try_native_com_binding(&self, prog_id: &str) -> HalResult<RawDispatchPtr> {
+    fn try_binding_from_typelib_metadata(&self, prog_id: &str) -> HalResult<RawDispatchPtr> {
         self.ensure_thread_com_apartment("create_object")?;
         self.native_com_activate_dispatch(prog_id)
             .map(|dispatch| dispatch as RawDispatchPtr)
@@ -1184,7 +1184,7 @@ impl StandardHostServices {
     }
 
     #[cfg(not(target_os = "windows"))]
-    fn try_native_com_binding(&self, prog_id: &str) -> HalResult<RawDispatchPtr> {
+    fn try_binding_from_typelib_metadata(&self, prog_id: &str) -> HalResult<RawDispatchPtr> {
         self.native_com_activate_dispatch(prog_id)
             .map(|dispatch| dispatch as RawDispatchPtr)
     }
@@ -1759,7 +1759,7 @@ impl StandardHostServices {
         let handle = state.allocate_handle();
         state.bindings.insert(
             handle,
-            native_com_binding(
+            binding_from_typelib_metadata(
                 format!("{prog_id_hint}::<invoke-result>"),
                 dispatch as RawDispatchPtr,
                 None,
@@ -2745,7 +2745,7 @@ impl ComHal for StandardHostServices {
                 ));
             }
             if self.native_com_enabled() {
-                match self.try_native_com_binding(prog_id_name) {
+                match self.try_binding_from_typelib_metadata(prog_id_name) {
                     Ok(native_dispatch) => {
                         let metadata = self.load_typelib_metadata_for_prog_id_name(prog_id_name)?;
                         #[cfg(target_os = "windows")]
@@ -2756,7 +2756,7 @@ impl ComHal for StandardHostServices {
                             )?;
                         let mut state = self.com_lock(capability, "create_object")?;
                         let handle = state.allocate_handle();
-                        let mut binding = native_com_binding(
+                        let mut binding = binding_from_typelib_metadata(
                             prog_id_name.to_string(),
                             native_dispatch,
                             metadata.as_ref(),
@@ -2787,7 +2787,7 @@ impl ComHal for StandardHostServices {
         if self.native_com_enabled()
             && let Some(prog_id_name) = self.resolve_native_com_progid(prog_id)
         {
-            match self.try_native_com_binding(&prog_id_name) {
+            match self.try_binding_from_typelib_metadata(&prog_id_name) {
                 Ok(native_dispatch) => {
                     let metadata = self.load_typelib_metadata_for_prog_id_name(&prog_id_name)?;
                     #[cfg(target_os = "windows")]
@@ -2798,8 +2798,11 @@ impl ComHal for StandardHostServices {
                         )?;
                     let mut state = self.com_lock(capability, "create_object")?;
                     let handle = state.allocate_handle();
-                    let mut binding =
-                        native_com_binding(prog_id_name, native_dispatch, metadata.as_ref());
+                    let mut binding = binding_from_typelib_metadata(
+                        prog_id_name,
+                        native_dispatch,
+                        metadata.as_ref(),
+                    );
                     #[cfg(target_os = "windows")]
                     if let Some(override_cfg) = registered_event_override.as_ref() {
                         self.apply_registered_event_override_to_binding(&mut binding, override_cfg);
@@ -4144,25 +4147,6 @@ thread_local! {
     static THREAD_COM_APARTMENT_READY: Cell<bool> = const { Cell::new(false) };
 }
 
-fn native_com_binding(
-    prog_id_name: String,
-    native_dispatch: RawDispatchPtr,
-    metadata: Option<&TypeLibMetadataBlob>,
-) -> ComBinding {
-    let mut binding = ComBinding::new(prog_id_name, native_dispatch);
-    binding.member_specs = metadata
-        .map(com_member_specs_from_typelib_metadata)
-        .unwrap_or_default();
-    binding.default_member_token = metadata.and_then(default_member_token_from_typelib_metadata);
-    binding.event_specs = metadata
-        .map(com_event_specs_from_typelib_metadata)
-        .unwrap_or_default();
-    binding.event_trigger_specs = metadata
-        .map(com_event_trigger_specs_from_typelib_metadata)
-        .unwrap_or_default();
-    binding
-}
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum ComEventSubscriptionTransport {
     Projection,
@@ -4342,87 +4326,6 @@ fn com_event_callback_args_from_member_token(
         spec.event_token,
         args.into_iter().map(ComValue::from_runtime_token).collect(),
     ))
-}
-
-fn com_event_trigger_specs_from_typelib_metadata(
-    blob: &TypeLibMetadataBlob,
-) -> BTreeMap<ComMemberToken, ComEventTriggerSpec> {
-    let events_by_name: BTreeMap<String, &TypeLibEventMetadata> = blob
-        .events
-        .iter()
-        .map(|event| (normalize_ci_token(&event.name), event))
-        .collect();
-    let mut out = BTreeMap::new();
-    for member in &blob.members {
-        let normalized_member_name = normalize_ci_token(&member.name);
-        let event_name = normalized_member_name
-            .strip_prefix("fire")
-            .or_else(|| normalized_member_name.strip_prefix("raise"))
-            .unwrap_or(normalized_member_name.as_str());
-        let Some(event) = events_by_name.get(event_name) else {
-            continue;
-        };
-        out.insert(
-            member.token.into(),
-            ComEventTriggerSpec {
-                event_token: event.token.into(),
-                callback_arity: usize::from(event.callback_arity),
-                second_arg_is_incremented: normalized_member_name.ends_with("pair"),
-            },
-        );
-    }
-    out
-}
-
-fn com_event_specs_from_typelib_metadata(
-    blob: &TypeLibMetadataBlob,
-) -> BTreeMap<ComMemberToken, ComEventSpec> {
-    blob.events
-        .iter()
-        .map(|event| {
-            (
-                event.token.into(),
-                ComEventSpec {
-                    callback_arity: usize::from(event.callback_arity),
-                    path: match event.dispatch_path {
-                        TypeLibEventDispatchPath::Dispatch => ComEventPath::Dispatch,
-                        TypeLibEventDispatchPath::SourceInterface => ComEventPath::SourceInterface,
-                    },
-                    connection_point_iid: event.connection_point_iid.clone(),
-                    dispatch_member_id: event.dispatch_member_id,
-                },
-            )
-        })
-        .collect()
-}
-
-fn com_member_specs_from_typelib_metadata(
-    blob: &TypeLibMetadataBlob,
-) -> BTreeMap<ComMemberToken, ComMemberSpec> {
-    blob.members
-        .iter()
-        .map(|member| {
-            (
-                member.token.into(),
-                ComMemberSpec {
-                    name: member.name.clone(),
-                    requires_argument: member.requires_argument,
-                    invoke_kind: member.invoke_kind,
-                    parameter_names: member.parameter_names.clone(),
-                    is_default_member: member.is_default_member,
-                },
-            )
-        })
-        .collect()
-}
-
-fn default_member_token_from_typelib_metadata(
-    blob: &TypeLibMetadataBlob,
-) -> Option<ComMemberToken> {
-    blob.members
-        .iter()
-        .find(|member| member.is_default_member)
-        .map(|member| member.token.into())
 }
 
 fn com_member_spec_for_binding(
@@ -4994,10 +4897,6 @@ fn pseudo_file_len_from_path_token(path: i32) -> i32 {
 
 fn clamp_u64_to_i32(value: u64) -> i32 {
     value.min(i32::MAX as u64) as i32
-}
-
-fn normalize_ci_token(input: &str) -> String {
-    input.trim().to_ascii_lowercase()
 }
 
 fn external_symbol_token(library: &str, alias: &str, name: &str) -> i32 {
@@ -7118,7 +7017,7 @@ mod tests {
         assert_eq!(source_interface_event.callback_arity, 1);
         assert_eq!(
             source_interface_event.dispatch_path,
-            super::TypeLibEventDispatchPath::SourceInterface
+            oxvba_com::TypeLibEventDispatchPath::SourceInterface
         );
         assert_eq!(
             source_interface_event.connection_point_iid.as_deref(),
@@ -7181,7 +7080,7 @@ mod tests {
         assert_eq!(quit_event.callback_arity, 0);
         assert_eq!(
             quit_event.dispatch_path,
-            super::TypeLibEventDispatchPath::Dispatch
+            oxvba_com::TypeLibEventDispatchPath::Dispatch
         );
         assert_eq!(
             quit_event.connection_point_iid.as_deref(),
