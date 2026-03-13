@@ -13,6 +13,8 @@ pub mod typelib_catalog;
 #[cfg(target_os = "windows")]
 pub mod windows_client;
 #[cfg(target_os = "windows")]
+pub mod windows_connection_point;
+#[cfg(target_os = "windows")]
 pub mod windows_invoke;
 #[cfg(target_os = "windows")]
 pub mod windows_variant;
@@ -52,6 +54,11 @@ pub use windows_client::{
     RawIDispatch, RawIDispatchVtbl, RawIUnknown, RawIUnknownVtbl, activate_dispatch_by_prog_id,
     add_ref_dispatch, get_dispid_by_name, get_dispids_by_names, guid_equals, parse_guid_canonical,
     query_dispatch_from_unknown, release_connection_point, release_dispatch, release_unknown,
+};
+#[cfg(target_os = "windows")]
+pub use windows_connection_point::{
+    DispatchEventSinkConfig, WindowsConnectionPointTransport, try_advise_dispatch_event_sink,
+    unadvise_connection_point,
 };
 #[cfg(target_os = "windows")]
 pub use windows_invoke::{ComInvokeExceptionInfo, ComInvokeFailure, take_excepinfo};

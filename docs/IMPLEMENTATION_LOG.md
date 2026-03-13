@@ -1,5 +1,24 @@
 # Implementation Log
 
+## 2026-03-13 - Extracted generic dispatch-side connection-point sink lifecycle into oxvba-com
+
+- Continued the COM ownership refactor in:
+  - [windows_connection_point.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-com\src\windows_connection_point.rs)
+  - [lib.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-com\src\lib.rs)
+  - [standard.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-hal\src\adapters\standard.rs)
+  - [CURRENT_BLOCKERS.md](C:\Work\DnaCalc\OxVba\CURRENT_BLOCKERS.md)
+- oxvba-com now owns the generic dispatch-side connection-point event sink lifecycle for:
+  - sink object construction,
+  - connection-point advise/unadvise around sink ownership,
+  - IDispatch event callback argument conversion,
+  - callback ingress through a shared semantic ComValue callback surface.
+- oxvba-hal now delegates the generic dispatch event path to oxvba-com and keeps only the current source-interface/test-fixture-specific callback path locally.
+- Net effect:
+  - the remaining COM extraction wall is now fixture-specific source-interface ownership rather than generic dispatch callback lifecycle ownership.
+- Verification:
+  - cargo test -p oxvba-com -p oxvba-hal --quiet
+  - ./scripts/check-governance.ps1
+  - ./scripts/meta-check.ps1 -Fast -NoArtifacts
 ## 2026-03-13 - Extracted generic Windows COM client ABI and helper surface into oxvba-com
 
 - Continued the COM ownership refactor in:
@@ -2742,6 +2761,7 @@
     - `cargo test -p oxvba-com -p oxvba-hal --quiet`
     - `./scripts/check-governance.ps1`
     - `./scripts/meta-check.ps1 -Fast -NoArtifacts`
+
 
 
 
