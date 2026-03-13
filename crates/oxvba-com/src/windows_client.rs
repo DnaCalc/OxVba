@@ -399,3 +399,43 @@ pub unsafe fn get_dispids_by_names(
     }
     Ok(dispids)
 }
+
+#[cfg(target_os = "windows")]
+pub fn activate_runtime_dispatch(
+    prog_id: &str,
+    force_registered_test_dispatch: bool,
+) -> Result<*mut RawIDispatch, String> {
+    if prog_id.eq_ignore_ascii_case(crate::windows_test_dispatch::OXVBA_TEST_DISPATCH_PROGID)
+        && !force_registered_test_dispatch
+    {
+        return Ok(crate::windows_test_dispatch::create_oxvba_test_dispatch());
+    }
+    activate_dispatch_by_prog_id(prog_id)
+}
+
+#[cfg(target_os = "windows")]
+#[allow(unsafe_op_in_unsafe_fn)]
+/// # Safety
+///
+/// `dispatch` must be a valid live `IDispatch` pointer.
+pub unsafe fn resolve_named_argument_dispids(
+    dispatch: *mut RawIDispatch,
+    member_name: &str,
+    args: &[crate::ComInvokeArg],
+) -> Result<Vec<i32>, String> {
+    let mut names = Vec::with_capacity(args.len().saturating_add(1));
+    names.push(member_name.to_string());
+    for arg in args {
+        if let Some(name) = &arg.name {
+            names.push(name.clone());
+        }
+    }
+    if names.len() == 1 {
+        return Ok(Vec::new());
+    }
+    let name_refs: Vec<&str> = names.iter().map(String::as_str).collect();
+    Ok(get_dispids_by_names(dispatch, &name_refs)?
+        .into_iter()
+        .skip(1)
+        .collect())
+}

@@ -134,8 +134,8 @@ Run context: active parity/compliance execution plus in-progress feature worklis
   - Blocks `IP-05` early-binding completion, `IP-06` server/export parity, and part of `IP-08` hosting parity.
 - Current state:
   - shared transport/types, deterministic typelib catalog logic, supported Windows wire/value/invoke helpers, generic callback/subscription runtime state, metadata cache ownership, known-member/event policy, and metadata-driven `ComBinding` assembly now live materially in `oxvba-com`,
-  - `oxvba-hal::standard` still owns the remaining Windows activation/DISPID/object-lifetime lifecycle core and the public COM-facing HAL contract,
-  - the remaining work is HAL rebinding/contraction plus movement of raw activation/DISPID/object-lifetime lifecycle ownership behind an `oxvba-com` surface,
+  - `oxvba-hal::standard` still owns the remaining Windows object-lifetime/native-dispatch lifecycle core and the public COM-facing HAL contract,
+  - the remaining work is HAL rebinding/contraction plus movement of raw object-lifetime/native-dispatch lifecycle ownership behind an `oxvba-com` surface,
   - forcing closure early would freeze a still-transitional contract.
 - Exact unblock steps:
   - continue moving the remaining Windows client lifecycle ownership out of `standard.rs`:
@@ -399,6 +399,7 @@ Run context: active parity/compliance execution plus in-progress feature worklis
 - Previously resolved blockers:
   - `BLK-EVT-001` — resolved (runtime subscription graph)
   - `BLK-COM-001` — resolved (COM event callback parity with external registered server evidence)
+
 
 
 

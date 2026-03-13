@@ -36,10 +36,10 @@ Completed extraction slices:
 7. the current single-`i32` source-interface sink lifecycle used by the deterministic event lane,
 8. deterministic known-member/event lookup and source-interface support policy,
 9. metadata-driven `ComBinding` assembly from loaded type-library metadata,
-10. deterministic in-process `OxVba.TestDispatch` fixture ownership,`r`n11. Windows COM event/callback state wrapper ownership.
+10. deterministic in-process `OxVba.TestDispatch` fixture ownership,`r`n11. Windows COM event/callback state wrapper ownership,`r`n12. higher-level Windows activation and named-DISPID helper ownership.
 
 Remaining extraction wall:
-1. Remaining Windows activation/DISPID/object-lifetime lifecycle ownership still centered in `oxvba-hal::standard`:
+1. Remaining Windows object-lifetime/native-dispatch lifecycle ownership still centered in `oxvba-hal::standard`:
    - ProgID/CLSID activation,
    - raw `IDispatch` ownership/release,
    - DISPID lookup delegation,
@@ -312,6 +312,7 @@ Required checks for the repurpose/extraction program:
 7. Use these concrete child worksets for the next cleanup/implementation slices:
    - `docs/worksets/WORKSET_2026-03-11_UNIFIED_DYNAMIC_OBJECT_PROTOCOL_AND_VALUE_CARRIER.md`
    - `docs/worksets/WORKSET_2026-03-11_COM_REFERENCE_FACADE_AND_TYPELIB_BINDING_COMPLETION.md`
+
 
 
 

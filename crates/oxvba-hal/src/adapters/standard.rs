@@ -28,18 +28,17 @@ use oxvba_com::{
     ComInvokeFailure, ComInvokeRequest, ComMemberSpec, ComMemberToken, ComObjectDescriptor,
     ComObjectToken, ComObjectTransportKind, ComSubscriptionToken, ComValue, IID_NULL, RawIDispatch,
     RawIUnknown, TypeLibMetadataCacheState, VariantResultValue, WindowsComClientState,
-    WindowsComSubscriptionTransport,
-    activate_dispatch_by_prog_id as com_activate_dispatch_by_prog_id,
+    WindowsComSubscriptionTransport, activate_runtime_dispatch as com_activate_runtime_dispatch,
     add_ref_dispatch as raw_add_ref_dispatch, advise_event_subscription,
     binding_from_typelib_metadata, build_typelib_metadata,
-    collect_stale_callbacks_for_subscription, create_oxvba_test_dispatch,
-    event_callback_args_from_member_token, event_is_source_interface_only,
-    event_signature_arity_for_binding, get_dispid_by_name as raw_get_dispid_by_name,
-    get_dispids_by_names as raw_get_dispids_by_names, known_typelib_identity_for_prog_id_name,
+    collect_stale_callbacks_for_subscription, event_callback_args_from_member_token,
+    event_is_source_interface_only, event_signature_arity_for_binding,
+    get_dispid_by_name as raw_get_dispid_by_name, known_typelib_identity_for_prog_id_name,
     map_com_hresult_label, member_spec_from_typelib_metadata,
     query_dispatch_from_unknown as raw_query_dispatch_from_unknown,
     raw_oxvba_test_dispatch_vtable_invoke, release_dispatch as raw_release_dispatch,
     release_subscription_transport, resolve_known_typelib_identity,
+    resolve_named_argument_dispids as com_resolve_named_argument_dispids,
 };
 use oxvba_runtime::{BindingHandle, DynLinkSymbol, ObjectHandle, RuntimeValue, bstr::BStr};
 use std::{
@@ -1076,30 +1075,13 @@ impl StandardHostServices {
         member_name: &str,
         args: &[ComInvokeArg],
     ) -> HalResult<Vec<i32>> {
-        let mut names = Vec::with_capacity(args.len().saturating_add(1));
-        names.push(member_name.to_string());
-        for arg in args {
-            if let Some(name) = &arg.name {
-                names.push(name.clone());
-            }
-        }
-        if names.len() == 1 {
-            return Ok(Vec::new());
-        }
-        let name_refs: Vec<&str> = names.iter().map(String::as_str).collect();
-        let dispids = unsafe { raw_get_dispids_by_names(dispatch, &name_refs) }
-            .map_err(|message| self.com_dispatch_adapter_fault(message))?;
-        Ok(dispids.into_iter().skip(1).collect())
+        unsafe { com_resolve_named_argument_dispids(dispatch, member_name, args) }
+            .map_err(|message| self.com_dispatch_adapter_fault(message))
     }
 
     #[cfg(target_os = "windows")]
     fn native_com_activate_dispatch(&self, prog_id: &str) -> HalResult<*mut RawIDispatch> {
-        if prog_id.eq_ignore_ascii_case(OXVBA_TEST_DISPATCH_PROGID)
-            && !self.force_registered_test_dispatch()
-        {
-            return Ok(create_oxvba_test_dispatch());
-        }
-        com_activate_dispatch_by_prog_id(prog_id)
+        com_activate_runtime_dispatch(prog_id, self.force_registered_test_dispatch())
             .map_err(|message| self.com_createobject_adapter_fault(message))
     }
 
@@ -4701,14 +4683,14 @@ mod tests {
     use super::StandardHostServices;
     #[cfg(target_os = "windows")]
     use super::{
-        ComObjectToken, RawIDispatch, RawIUnknown, create_oxvba_test_dispatch,
-        raw_add_ref_dispatch, raw_query_dispatch_from_unknown, raw_release_dispatch,
-        raw_variant_to_com_value, set_variant_dispatch_arg,
+        ComObjectToken, RawIDispatch, RawIUnknown, raw_add_ref_dispatch,
+        raw_query_dispatch_from_unknown, raw_release_dispatch, raw_variant_to_com_value,
+        set_variant_dispatch_arg,
     };
     #[cfg(target_os = "windows")]
-    use oxvba_com::VariantResultValue;
-    #[cfg(target_os = "windows")]
     use oxvba_com::take_variant_result_value as com_take_variant_result_value;
+    #[cfg(target_os = "windows")]
+    use oxvba_com::{VariantResultValue, create_oxvba_test_dispatch};
     #[cfg(target_os = "windows")]
     use oxvba_runtime::ObjectHandle;
     #[cfg(target_os = "windows")]
