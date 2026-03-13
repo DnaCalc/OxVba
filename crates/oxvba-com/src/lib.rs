@@ -17,6 +17,8 @@ pub mod windows_connection_point;
 #[cfg(target_os = "windows")]
 pub mod windows_invoke;
 #[cfg(target_os = "windows")]
+pub mod windows_test_dispatch;
+#[cfg(target_os = "windows")]
 pub mod windows_variant;
 
 pub use dispatch::{ComDispatch, DispatchResult};
@@ -63,6 +65,20 @@ pub use windows_connection_point::{
 };
 #[cfg(target_os = "windows")]
 pub use windows_invoke::{ComInvokeExceptionInfo, ComInvokeFailure, take_excepinfo};
+#[cfg(target_os = "windows")]
+pub use windows_test_dispatch::{
+    IID_OXVBA_TEST_DISPATCH_EVENTS, IID_OXVBA_TEST_DISPATCH_EVENTS_STR,
+    IID_OXVBA_TEST_DISPATCH_SOURCE_EVENTS, IID_OXVBA_TEST_DISPATCH_SOURCE_EVENTS_STR,
+    OXVBA_TEST_DISPATCH_PROGID, TEST_DISPID_COUNT, TEST_DISPID_ECHO_VARIANT,
+    TEST_DISPID_EXCEL_QUIT, TEST_DISPID_EXISTS, TEST_DISPID_FIRE_CHANGED,
+    TEST_DISPID_FIRE_CHANGED_PAIR, TEST_DISPID_FIRE_CHANGED_SOURCE_INTERFACE, TEST_DISPID_LOOKUP,
+    TEST_DISPID_LOOKUP_PAIR, TEST_DISPID_PING, TEST_DISPID_RAISE_EXCEPTION,
+    TEST_DISPID_RETURN_SMALLINT, TEST_DISPID_RETURN_UNSIGNED_WORD, TEST_DISPID_SET_INDEXED_VALUE,
+    TEST_DISPID_SET_INDEXED_VALUE_REF, TEST_DISPID_SET_VALUE, TEST_DISPID_SET_VALUE_REF,
+    TEST_DISPID_SUM_PAIR, TEST_DISPID_VALUE, TEST_EVENT_CHANGED, TEST_EVENT_CHANGED_PAIR,
+    TEST_NAMED_DISPID_INDEX, TEST_NAMED_DISPID_LHS, TEST_NAMED_DISPID_RHS, TEST_NAMED_DISPID_VALUE,
+    create_oxvba_test_dispatch, map_com_hresult_label, raw_oxvba_test_dispatch_vtable_invoke,
+};
 #[cfg(target_os = "windows")]
 pub use windows_variant::{
     VariantResultValue, set_variant_from_com_value, take_variant_result_value, variant_to_com_value,

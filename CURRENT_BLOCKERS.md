@@ -145,40 +145,7 @@ Run context: active parity/compliance execution plus in-progress feature worklis
   - then extract client -> event -> server slices into `oxvba-com`.
 - Recommendation:
   - do not force final crate extraction ahead of invoke/property closure; use the new runtime-protocol and reference-facade worksets as the cleanup spine.
-
-### BLK-COM-STATE-OWNERSHIP-001: Remaining COM extraction is now an in-process fixture ownership wall
-- Impact:
-  - Blocks the next honest contraction step for HAL in the COM area.
-  - Blocks final closure of `IP-04` and keeps `IP-05`/`IP-06` coupled to the HAL-owned deterministic in-process COM fixture lane.
-- Current state:
-  - `oxvba-com` now owns:
-    - shared COM request/callback types,
-    - semantic COM value carrier,
-    - Windows `VARIANT`/SAFEARRAY translation,
-    - Windows result classification,
-    - Windows invoke-failure/`EXCEPINFO` helpers,
-    - the canonical runtime-value `IDispatch::Invoke` helper,
-    - shared COM binding/spec models,
-    - the generic COM runtime container with callback/subscription queue logic,
-    - object-state release bookkeeping,
-    - object descriptor derivation from binding state,
-    - type-library metadata cache storage and invalidation logic,
-    - the generic Windows COM client ABI/constants/helpers for activation, GUID parsing, DISPID lookup, and raw reference release,
-    - the generic dispatch-side connection-point sink lifecycle and callback ingress surface,
-    - the current single-`i32` source-interface sink lifecycle used by the deterministic event lane.
-  - `oxvba-hal::standard` now mainly owns the remaining deterministic fixture object itself:
-    - the in-process `OxVba.TestDispatch` COM object implementation,
-    - its connection-point container and source/dispatch connection-point test plumbing,
-    - fixture-local event firing helpers and cookie bookkeeping.
-  - Further extraction is no longer about shared COM callback plumbing; it is now about whether the deterministic in-process COM fixture belongs inside `oxvba-com` as a formal fixture surface or remains a HAL-local test harness.
-- Exact unblock steps:
-  - decide whether the in-process deterministic COM fixture becomes `oxvba-com` fixture infrastructure or remains a HAL-local harness by explicit doctrine,
-  - if it moves, extract the `OxVba.TestDispatch` object and connection-point implementation into `oxvba-com`,
-  - if it stays local, document that boundary explicitly and close the HAL extraction workset against the remaining shared COM ownership criteria.
-- Recommendation:
-  - make the in-process deterministic COM fixture an explicit `oxvba-com` fixture surface so the COM crate fully owns the bidirectional event/test plumbing.
-
-### BLK-PROP-001: Property/default-member intent model is not yet end-to-end executable
+`r`n### BLK-PROP-001: Property/default-member intent model is not yet end-to-end executable
 - Impact:
   - Blocks `IP-02` VBA property model and default-member semantics.
   - Blocks part of `IP-06` COM server/export parity and `IP-08` Office-style hosting parity.
@@ -428,6 +395,7 @@ Run context: active parity/compliance execution plus in-progress feature worklis
 - Previously resolved blockers:
   - `BLK-EVT-001` — resolved (runtime subscription graph)
   - `BLK-COM-001` — resolved (COM event callback parity with external registered server evidence)
+
 
 
 

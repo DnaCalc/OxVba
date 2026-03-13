@@ -72,13 +72,7 @@ Why still open:
 2. the scope doc still limits current maturity to C2 runway/subset behavior,
 3. the dedicated `IDispatch` completion workset exists because the parity gap is real and specific.
 
-### `IP-04` `oxvba-com` repurpose and HAL COM extraction
-
-Why still open:
-1. the direction is locked and major extraction slices are already complete, including shared runtime state, typelib cache ownership, the generic Windows client ABI, and both current connection-point sink lifecycles,
-2. HAL now mainly retains the deterministic in-process `OxVba.TestDispatch` fixture object and its connection-point plumbing,
-3. parity-complete crate extraction requires an explicit decision and implementation for whether that fixture surface moves into `oxvba-com` or remains a documented local harness.
-
+### `IP-04` `oxvba-com` repurpose and HAL COM extraction`r`n`r`nWhy still open:`r`n1. major ownership extraction slices are complete, including shared runtime state, typelib cache ownership, the Windows client ABI, both connection-point sink lifecycles, and the deterministic `OxVba.TestDispatch` fixture implementation,`r`n2. HAL still carries the active COM contract surface and bootstrap/delegation seams, so the remaining work is contraction and rebinding rather than ownership extraction,`r`n3. parity-complete closure still depends on moving the remaining COM behavior/contract authority behind the intended `oxvba-com` boundary.`r`n
 ### `IP-05` Windows early-bound COM and type-library parity
 
 Why still open:
@@ -142,3 +136,4 @@ When any feature area above changes:
 2. Is there still any open blocker, deferred gate, oracle gap, or unimplemented parity behavior in scope?
 3. If yes, keep the entry `in-progress`.
 4. If no, update the owning docs first, then remove or mark the entry complete through an explicit documented decision.
+

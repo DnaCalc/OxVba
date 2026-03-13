@@ -218,9 +218,7 @@ Primary outcome:
 Primary outcome:
 1. the active COM parity work lands in the correct crate instead of reinforcing the wrong boundary.
 
-### Phase D. Server/export and fixture extraction
-
-1. Move the controlled COM fixture out of `standard.rs`.
+### Phase D. Server/export and fixture extraction`r`n`r`nCurrent state:`r`n1. The controlled `OxVba.TestDispatch` fixture implementation and vtable fast-path now live in `oxvba-com`; HAL delegates to exported helpers.`r`n`r`n1. Move the controlled COM fixture out of `standard.rs`.
 2. Establish the outward projection model for exposing OxVba objects as COM.
 3. Keep Office-style server expectations and external fixture behavior aligned with the compliance ladder.
 
@@ -305,6 +303,7 @@ Required checks for the repurpose/extraction program:
 7. Use these concrete child worksets for the next cleanup/implementation slices:
    - `docs/worksets/WORKSET_2026-03-11_UNIFIED_DYNAMIC_OBJECT_PROTOCOL_AND_VALUE_CARRIER.md`
    - `docs/worksets/WORKSET_2026-03-11_COM_REFERENCE_FACADE_AND_TYPELIB_BINDING_COMPLETION.md`
+
 
 
 

@@ -1,3 +1,27 @@
+## 2026-03-13 - Extracted deterministic OxVba.TestDispatch fixture ownership into oxvba-com
+
+- Continued the COM ownership refactor in:
+  - [windows_test_dispatch.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-com\src\windows_test_dispatch.rs)
+  - [lib.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-com\src\lib.rs)
+  - [standard.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-hal\src\adapters\standard.rs)
+  - [CURRENT_BLOCKERS.md](C:\Work\DnaCalc\OxVba\CURRENT_BLOCKERS.md)
+  - [IN_PROGRESS_FEATURE_WORKLIST.md](C:\Work\DnaCalc\OxVba\docs\IN_PROGRESS_FEATURE_WORKLIST.md)
+  - [WORKSET_2026-03-09_OXVBA_COM_REPURPOSE_AND_HAL_COM_EXTRACTION.md](C:\Work\DnaCalc\OxVba\docs\worksets\WORKSET_2026-03-09_OXVBA_COM_REPURPOSE_AND_HAL_COM_EXTRACTION.md)
+- `oxvba-com` now owns the deterministic in-process `OxVba.TestDispatch` COM fixture, including:
+  - fixture object creation,
+  - fixture-side connection-point implementation,
+  - event firing helpers,
+  - fixture `IDispatch::Invoke` surface,
+  - the prefer-vtable fast-path helper used by the controlled lane.
+- `oxvba-hal::standard` now delegates fixture activation and fast-path handling to `oxvba-com` and no longer owns the underlying COM object implementation.
+- Reduced HAL-local COM metadata duplication further by resolving known member specs through the `oxvba-com` typelib catalog path instead of keeping a second hardcoded `OxVba.TestDispatch` table in `standard.rs`.
+- Net effect:
+  - the earlier COM state-ownership blocker is resolved,
+  - the remaining `oxvba-com` work is now HAL contract contraction and parity behavior rather than fixture ownership.
+- Verification:
+  - cargo test -p oxvba-com -p oxvba-hal --quiet
+  - ./scripts/check-governance.ps1
+  - ./scripts/meta-check.ps1 -Fast -NoArtifacts
 # Implementation Log
 
 ## 2026-03-13 - Extracted source-interface sink lifecycle into oxvba-com
@@ -2779,6 +2803,7 @@
     - `cargo test -p oxvba-com -p oxvba-hal --quiet`
     - `./scripts/check-governance.ps1`
     - `./scripts/meta-check.ps1 -Fast -NoArtifacts`
+
 
 
 
