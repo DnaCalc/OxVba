@@ -1,5 +1,23 @@
 # Implementation Log
 
+## 2026-03-13 - Extracted source-interface sink lifecycle into oxvba-com
+
+- Continued the COM ownership refactor in:
+  - [windows_connection_point.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-com\src\windows_connection_point.rs)
+  - [lib.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-com\src\lib.rs)
+  - [standard.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-hal\src\adapters\standard.rs)
+  - [CURRENT_BLOCKERS.md](C:\Work\DnaCalc\OxVba\CURRENT_BLOCKERS.md)
+- oxvba-com now owns the current single-i32 source-interface sink lifecycle used by the deterministic event lane, including:
+  - sink object construction,
+  - connection-point advise/unadvise around sink ownership,
+  - callback ingress through the shared semantic ComValue callback surface.
+- oxvba-hal now keeps the deterministic in-process COM fixture object and its connection-point plumbing, but no longer owns the source-interface sink lifecycle itself.
+- Net effect:
+  - the remaining COM extraction wall is now the in-process deterministic fixture object boundary rather than shared callback lifecycle ownership.
+- Verification:
+  - cargo test -p oxvba-com -p oxvba-hal --quiet
+  - ./scripts/check-governance.ps1
+  - ./scripts/meta-check.ps1 -Fast -NoArtifacts
 ## 2026-03-13 - Extracted generic dispatch-side connection-point sink lifecycle into oxvba-com
 
 - Continued the COM ownership refactor in:
@@ -2761,6 +2779,7 @@
     - `cargo test -p oxvba-com -p oxvba-hal --quiet`
     - `./scripts/check-governance.ps1`
     - `./scripts/meta-check.ps1 -Fast -NoArtifacts`
+
 
 
 

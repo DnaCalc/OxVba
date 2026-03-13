@@ -57,7 +57,8 @@ pub use windows_client::{
 };
 #[cfg(target_os = "windows")]
 pub use windows_connection_point::{
-    DispatchEventSinkConfig, WindowsConnectionPointTransport, try_advise_dispatch_event_sink,
+    DispatchEventSinkConfig, RawSingleI32SourceEvents, WindowsConnectionPointTransport,
+    try_advise_dispatch_event_sink, try_advise_single_i32_source_interface_event_sink,
     unadvise_connection_point,
 };
 #[cfg(target_os = "windows")]

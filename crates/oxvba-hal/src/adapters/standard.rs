@@ -32,18 +32,17 @@ use oxvba_com::{
     ComInvokeFailure, ComInvokeRequest, ComMemberSpec, ComMemberToken, ComObjectDescriptor,
     ComObjectToken, ComObjectTransportKind, ComRuntimeState, ComSubscriptionToken, ComValue,
     DispatchEventSinkConfig, IID_ICONNECTIONPOINT, IID_ICONNECTIONPOINTCONTAINER, IID_IDISPATCH,
-    IID_IUNKNOWN, IID_NULL, RawIConnectionPoint, RawIConnectionPointContainer,
-    RawIConnectionPointContainerVtbl, RawIConnectionPointVtbl, RawIDispatch, RawIDispatchVtbl,
-    RawIUnknown, RawIUnknownVtbl, TypeLibMetadataCacheState, VariantResultValue,
-    WindowsConnectionPointTransport,
+    IID_IUNKNOWN, IID_NULL, RawIConnectionPointContainerVtbl, RawIConnectionPointVtbl,
+    RawIDispatch, RawIDispatchVtbl, RawIUnknown, RawIUnknownVtbl, TypeLibMetadataCacheState,
+    VariantResultValue, WindowsConnectionPointTransport,
     activate_dispatch_by_prog_id as com_activate_dispatch_by_prog_id,
     add_ref_dispatch as raw_add_ref_dispatch, build_typelib_metadata,
     get_dispid_by_name as raw_get_dispid_by_name, get_dispids_by_names as raw_get_dispids_by_names,
-    known_typelib_identity_for_prog_id_name, parse_guid_canonical,
+    known_typelib_identity_for_prog_id_name,
     query_dispatch_from_unknown as raw_query_dispatch_from_unknown,
-    release_connection_point as raw_release_connection_point,
     release_dispatch as raw_release_dispatch, release_unknown as raw_release_unknown,
-    resolve_known_typelib_identity, try_advise_dispatch_event_sink, unadvise_connection_point,
+    resolve_known_typelib_identity, try_advise_dispatch_event_sink,
+    try_advise_single_i32_source_interface_event_sink, unadvise_connection_point,
 };
 use oxvba_runtime::{
     BindingHandle, DynLinkSymbol, ObjectHandle, RuntimeValue,
@@ -1994,8 +1993,6 @@ impl StandardHostServices {
         let request = ComConnectionPointAdviseRequest {
             com_state: Arc::clone(&self.com_state),
             subscription: subscription.into(),
-            object: object.into(),
-            event_token: event,
             expected_arity,
             sink_mode,
         };
@@ -4192,8 +4189,6 @@ enum ComConnectionPointSinkMode {
 struct ComConnectionPointAdviseRequest {
     com_state: Arc<Mutex<ComState>>,
     subscription: ComSubscriptionToken,
-    object: ComObjectToken,
-    event_token: ComMemberToken,
     expected_arity: usize,
     sink_mode: ComConnectionPointSinkMode,
 }
@@ -4245,64 +4240,21 @@ unsafe fn raw_try_advise_source_interface_connection_point_event(
     request: ComConnectionPointAdviseRequest,
     connection_point_iid: &str,
 ) -> Result<Option<ComNativeConnectionPointTransport>, String> {
-    if dispatch.is_null() {
-        return Err(
-            "dispatch pointer was null during source-interface connection-point advise".to_string(),
-        );
-    }
-    let event_interface = parse_guid_canonical(connection_point_iid).ok_or_else(|| {
-        format!("invalid connection-point IID `{connection_point_iid}` in event metadata")
-    })?;
-    if !guid_equals(&event_interface, &IID_OXVBA_TEST_DISPATCH_SOURCE_EVENTS) {
-        return Err(format!(
-            "source-interface event sink is unsupported for connection-point IID `{connection_point_iid}` in current lane"
-        ));
-    }
-    let mut cpc_ptr: *mut core::ffi::c_void = std::ptr::null_mut();
-    let hr = ((*(*dispatch).vtbl).unknown.query_interface)(
-        dispatch.cast(),
-        &IID_ICONNECTIONPOINTCONTAINER,
-        &mut cpc_ptr,
-    );
-    if hr < 0 || cpc_ptr.is_null() {
-        return Err(format!(
-            "IUnknown::QueryInterface(IConnectionPointContainer) failed with HRESULT {:#010X}",
-            hr as u32
-        ));
-    }
-    let cpc = cpc_ptr.cast::<RawIConnectionPointContainer>();
-    let mut cp_ptr: *mut core::ffi::c_void = std::ptr::null_mut();
-    let hr = ((*(*cpc).vtbl).find_connection_point)(cpc.cast(), &event_interface, &mut cp_ptr);
-    raw_release_unknown(cpc.cast());
-    if hr < 0 || cp_ptr.is_null() {
-        return Err(format!(
-            "IConnectionPointContainer::FindConnectionPoint failed with HRESULT {:#010X}",
-            hr as u32
-        ));
-    }
-    let connection_point = cp_ptr.cast::<RawIConnectionPoint>();
-    let sink = create_oxvba_com_event_source_interface_sink(
-        request.com_state,
-        request.subscription,
-        request.object,
-        request.event_token,
+    let com_state = Arc::clone(&request.com_state);
+    let subscription = request.subscription;
+    let on_event = Arc::new(move |args: &[ComValue]| {
+        let mut state = match com_state.lock() {
+            Ok(guard) => guard,
+            Err(poisoned) => poisoned.into_inner(),
+        };
+        state.queue_callback_for_subscription(subscription, args)
+    });
+    try_advise_single_i32_source_interface_event_sink(
+        dispatch,
+        connection_point_iid,
         request.expected_arity,
-    );
-    let mut cookie = 0u32;
-    let hr =
-        ((*(*connection_point).vtbl).advise)(connection_point.cast(), sink.cast(), &mut cookie);
-    ((*(*(sink.cast::<RawIUnknown>())).vtbl).release)(sink);
-    if hr < 0 || cookie == 0 {
-        raw_release_connection_point(connection_point);
-        return Err(format!(
-            "IConnectionPoint::Advise failed with HRESULT {:#010X}",
-            hr as u32
-        ));
-    }
-    Ok(Some(ComNativeConnectionPointTransport {
-        connection_point: connection_point as usize,
-        cookie,
-    }))
+        on_event,
+    )
 }
 
 #[cfg(target_os = "windows")]
@@ -4891,18 +4843,6 @@ struct RawOxvbaTestDispatchSourceEvents {
 }
 
 #[cfg(target_os = "windows")]
-#[repr(C)]
-struct OxvbaComEventSourceInterfaceSink {
-    source: RawOxvbaTestDispatchSourceEvents,
-    ref_count: AtomicU32,
-    com_state: Arc<Mutex<ComState>>,
-    subscription: ComSubscriptionToken,
-    object: ComObjectToken,
-    event_token: ComMemberToken,
-    expected_arity: usize,
-}
-
-#[cfg(target_os = "windows")]
 static OXVBA_TEST_DISPATCH_VTBL: RawIDispatchVtbl = RawIDispatchVtbl {
     unknown: RawIUnknownVtbl {
         query_interface: oxvba_test_query_interface,
@@ -4942,17 +4882,6 @@ static OXVBA_TEST_CONNECTIONPOINT_VTBL: RawIConnectionPointVtbl = RawIConnection
 };
 
 #[cfg(target_os = "windows")]
-static OXVBA_COM_EVENT_SOURCE_INTERFACE_SINK_VTBL: RawOxvbaTestDispatchSourceEventsVtbl =
-    RawOxvbaTestDispatchSourceEventsVtbl {
-        unknown: RawIUnknownVtbl {
-            query_interface: oxvba_event_source_interface_sink_query_interface,
-            add_ref: oxvba_event_source_interface_sink_add_ref,
-            release: oxvba_event_source_interface_sink_release,
-        },
-        changed: oxvba_event_source_interface_sink_changed,
-    };
-
-#[cfg(target_os = "windows")]
 fn create_oxvba_test_dispatch() -> *mut RawIDispatch {
     let mut object = Box::new(OxvbaTestDispatchObject {
         dispatch: OxvbaTestDispatchInterface {
@@ -4988,28 +4917,6 @@ fn create_oxvba_test_dispatch() -> *mut RawIDispatch {
         (&mut object.dispatch as *mut OxvbaTestDispatchInterface).cast::<RawIDispatch>();
     let _ = Box::into_raw(object);
     dispatch_ptr
-}
-
-#[cfg(target_os = "windows")]
-fn create_oxvba_com_event_source_interface_sink(
-    com_state: Arc<Mutex<ComState>>,
-    subscription: ComSubscriptionToken,
-    object: ComObjectToken,
-    event_token: ComMemberToken,
-    expected_arity: usize,
-) -> *mut core::ffi::c_void {
-    let sink = Box::new(OxvbaComEventSourceInterfaceSink {
-        source: RawOxvbaTestDispatchSourceEvents {
-            vtbl: &OXVBA_COM_EVENT_SOURCE_INTERFACE_SINK_VTBL,
-        },
-        ref_count: AtomicU32::new(1),
-        com_state,
-        subscription,
-        object,
-        event_token,
-        expected_arity,
-    });
-    Box::into_raw(sink).cast::<core::ffi::c_void>()
 }
 
 #[cfg(target_os = "windows")]
@@ -5073,14 +4980,6 @@ unsafe fn oxvba_test_connection_point_kind(
 ) -> OxvbaTestConnectionPointKind {
     let iface = this.cast::<OxvbaTestConnectionPointInterface>();
     (*iface).kind
-}
-
-#[cfg(target_os = "windows")]
-#[allow(unsafe_op_in_unsafe_fn)]
-unsafe fn as_oxvba_com_event_source_interface_sink(
-    this: *mut core::ffi::c_void,
-) -> *mut OxvbaComEventSourceInterfaceSink {
-    this.cast::<OxvbaComEventSourceInterfaceSink>()
 }
 
 #[cfg(target_os = "windows")]
@@ -6082,91 +5981,6 @@ unsafe extern "system" fn oxvba_test_invoke(
         }
         _ => COM_DISP_E_MEMBERNOTFOUND,
     }
-}
-
-#[cfg(target_os = "windows")]
-#[allow(unsafe_op_in_unsafe_fn)]
-unsafe extern "system" fn oxvba_event_source_interface_sink_query_interface(
-    this: *mut core::ffi::c_void,
-    riid: *const windows_sys::core::GUID,
-    ppv: *mut *mut core::ffi::c_void,
-) -> i32 {
-    if ppv.is_null() {
-        return COM_E_INVALIDARG;
-    }
-    *ppv = std::ptr::null_mut();
-    if guid_equals(riid, &IID_IUNKNOWN) || guid_equals(riid, &IID_OXVBA_TEST_DISPATCH_SOURCE_EVENTS)
-    {
-        *ppv = this;
-        let sink = as_oxvba_com_event_source_interface_sink(this);
-        (*sink).ref_count.fetch_add(1, Ordering::AcqRel);
-        return COM_S_OK;
-    }
-    COM_E_NOINTERFACE
-}
-
-#[cfg(target_os = "windows")]
-#[allow(unsafe_op_in_unsafe_fn)]
-unsafe extern "system" fn oxvba_event_source_interface_sink_add_ref(
-    this: *mut core::ffi::c_void,
-) -> u32 {
-    let sink = as_oxvba_com_event_source_interface_sink(this);
-    (*sink).ref_count.fetch_add(1, Ordering::AcqRel) + 1
-}
-
-#[cfg(target_os = "windows")]
-#[allow(unsafe_op_in_unsafe_fn)]
-unsafe extern "system" fn oxvba_event_source_interface_sink_release(
-    this: *mut core::ffi::c_void,
-) -> u32 {
-    let sink = as_oxvba_com_event_source_interface_sink(this);
-    let prev = (*sink).ref_count.fetch_sub(1, Ordering::AcqRel);
-    let next = prev.saturating_sub(1);
-    if next == 0 {
-        drop(Box::from_raw(sink));
-    }
-    next
-}
-
-#[cfg(target_os = "windows")]
-#[allow(unsafe_op_in_unsafe_fn)]
-unsafe extern "system" fn oxvba_event_source_interface_sink_changed(
-    this: *mut core::ffi::c_void,
-    value: i32,
-) -> i32 {
-    let sink = as_oxvba_com_event_source_interface_sink(this);
-    if (*sink).expected_arity != 1 {
-        if com_event_trace_enabled() {
-            eprintln!(
-                "[oxvba-hal][com-event] source-sink bad-arity subscription={} expected={} actual=1",
-                (*sink).subscription,
-                (*sink).expected_arity
-            );
-        }
-        return COM_DISP_E_BADPARAMCOUNT;
-    }
-    let mut state = match (*sink).com_state.lock() {
-        Ok(guard) => guard,
-        Err(poisoned) => poisoned.into_inner(),
-    };
-    if let Some(subscription) = state.subscriptions.get(&(*sink).subscription)
-        && subscription.object == (*sink).object
-        && subscription.event == (*sink).event_token
-    {
-        let args = [ComValue::from_runtime_token(value)];
-        let queued = state.queue_callback_for_subscription((*sink).subscription, &args);
-        if com_event_trace_enabled() {
-            eprintln!(
-                "[oxvba-hal][com-event] source-sink-changed subscription={} object={} event={} value={} queued={}",
-                (*sink).subscription,
-                (*sink).object,
-                (*sink).event_token,
-                value,
-                queued
-            );
-        }
-    }
-    COM_S_OK
 }
 
 #[cfg(target_os = "windows")]

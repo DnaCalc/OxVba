@@ -302,3 +302,194 @@ unsafe extern "system" fn windows_dispatch_event_sink_invoke(
     let _ = ((*sink).on_event)(args.as_slice());
     COM_S_OK
 }
+
+#[repr(C)]
+pub struct RawSingleI32SourceEventsVtbl {
+    unknown: crate::RawIUnknownVtbl,
+    changed: unsafe extern "system" fn(this: *mut c_void, value: i32) -> i32,
+}
+
+#[repr(C)]
+pub struct RawSingleI32SourceEvents {
+    pub vtbl: *const RawSingleI32SourceEventsVtbl,
+}
+
+#[repr(C)]
+struct WindowsSingleI32SourceEventSink {
+    source: RawSingleI32SourceEvents,
+    ref_count: AtomicU32,
+    expected_arity: usize,
+    connection_point_iid: GUID,
+    on_event: DispatchEventCallback,
+}
+
+static WINDOWS_SINGLE_I32_SOURCE_EVENT_SINK_VTBL: RawSingleI32SourceEventsVtbl =
+    RawSingleI32SourceEventsVtbl {
+        unknown: crate::RawIUnknownVtbl {
+            query_interface: windows_single_i32_source_event_sink_query_interface,
+            add_ref: windows_single_i32_source_event_sink_add_ref,
+            release: windows_single_i32_source_event_sink_release,
+        },
+        changed: windows_single_i32_source_event_sink_changed,
+    };
+
+fn create_single_i32_source_event_sink(
+    expected_arity: usize,
+    connection_point_iid: GUID,
+    on_event: DispatchEventCallback,
+) -> *mut c_void {
+    let sink = Box::new(WindowsSingleI32SourceEventSink {
+        source: RawSingleI32SourceEvents {
+            vtbl: &WINDOWS_SINGLE_I32_SOURCE_EVENT_SINK_VTBL,
+        },
+        ref_count: AtomicU32::new(1),
+        expected_arity,
+        connection_point_iid,
+        on_event,
+    });
+    Box::into_raw(sink).cast::<c_void>()
+}
+
+#[allow(unsafe_op_in_unsafe_fn)]
+unsafe fn as_windows_single_i32_source_event_sink(
+    this: *mut c_void,
+) -> *mut WindowsSingleI32SourceEventSink {
+    this.cast::<WindowsSingleI32SourceEventSink>()
+}
+
+/// # Safety
+///
+/// `dispatch` must be a valid live `IDispatch` pointer. `connection_point_iid` must identify a
+/// source-interface connection point whose callback shape is a single `i32` argument, and the
+/// returned transport must be unadvised exactly once by the caller.
+pub unsafe fn try_advise_single_i32_source_interface_event_sink(
+    dispatch: *mut RawIDispatch,
+    connection_point_iid: &str,
+    expected_arity: usize,
+    on_event: DispatchEventCallback,
+) -> Result<Option<WindowsConnectionPointTransport>, String> {
+    if dispatch.is_null() {
+        return Err(
+            "dispatch pointer was null during source-interface connection-point advise".to_string(),
+        );
+    }
+    let iid = parse_guid_canonical(connection_point_iid)
+        .ok_or_else(|| format!("invalid connection-point IID `{connection_point_iid}`"))?;
+
+    let mut container_ptr: *mut c_void = std::ptr::null_mut();
+    let hr = ((*(*dispatch).vtbl).unknown.query_interface)(
+        dispatch.cast::<c_void>(),
+        &IID_ICONNECTIONPOINTCONTAINER,
+        &mut container_ptr,
+    );
+    if hr == COM_E_NOINTERFACE {
+        return Ok(None);
+    }
+    if hr < 0 {
+        return Err(format!(
+            "QueryInterface(IConnectionPointContainer) failed with HRESULT {:#010X}",
+            hr as u32
+        ));
+    }
+    if container_ptr.is_null() {
+        return Err("QueryInterface(IConnectionPointContainer) returned null".to_string());
+    }
+
+    let container = container_ptr.cast::<RawIConnectionPointContainer>();
+    let mut connection_point_ptr: *mut c_void = std::ptr::null_mut();
+    let find_hr = ((*(*container).vtbl).find_connection_point)(
+        container.cast::<c_void>(),
+        &iid,
+        &mut connection_point_ptr,
+    );
+    ((*(*container).vtbl).unknown.release)(container.cast::<c_void>());
+    if find_hr == COM_E_NOINTERFACE || find_hr == COM_DISP_E_MEMBERNOTFOUND {
+        return Ok(None);
+    }
+    if find_hr < 0 {
+        return Err(format!(
+            "FindConnectionPoint({connection_point_iid}) failed with HRESULT {:#010X}",
+            find_hr as u32
+        ));
+    }
+    if connection_point_ptr.is_null() {
+        return Err("FindConnectionPoint returned null".to_string());
+    }
+
+    let connection_point = connection_point_ptr.cast::<RawIConnectionPoint>();
+    let sink_ptr = create_single_i32_source_event_sink(expected_arity, iid, on_event);
+    let mut cookie = 0u32;
+    let advise_hr = ((*(*connection_point).vtbl).advise)(
+        connection_point.cast::<c_void>(),
+        sink_ptr,
+        &mut cookie,
+    );
+    ((*(*(sink_ptr.cast::<crate::RawIUnknown>())).vtbl).release)(sink_ptr);
+    if advise_hr == COM_CONNECT_E_CANNOTCONNECT || advise_hr == COM_CONNECT_E_NOCONNECTION {
+        release_connection_point(connection_point);
+        return Ok(None);
+    }
+    if advise_hr < 0 || cookie == 0 {
+        release_connection_point(connection_point);
+        return Err(format!(
+            "IConnectionPoint::Advise failed with HRESULT {:#010X}",
+            advise_hr as u32
+        ));
+    }
+    Ok(Some(WindowsConnectionPointTransport {
+        connection_point: connection_point as usize,
+        cookie,
+    }))
+}
+
+#[allow(unsafe_op_in_unsafe_fn)]
+unsafe extern "system" fn windows_single_i32_source_event_sink_query_interface(
+    this: *mut c_void,
+    riid: *const GUID,
+    ppv: *mut *mut c_void,
+) -> i32 {
+    if ppv.is_null() {
+        return COM_E_INVALIDARG;
+    }
+    *ppv = std::ptr::null_mut();
+    let sink = as_windows_single_i32_source_event_sink(this);
+    if crate::guid_equals(riid, &IID_IUNKNOWN)
+        || crate::guid_equals(riid, &(*sink).connection_point_iid)
+    {
+        *ppv = this;
+        (*sink).ref_count.fetch_add(1, Ordering::AcqRel);
+        return COM_S_OK;
+    }
+    COM_E_NOINTERFACE
+}
+
+#[allow(unsafe_op_in_unsafe_fn)]
+unsafe extern "system" fn windows_single_i32_source_event_sink_add_ref(this: *mut c_void) -> u32 {
+    let sink = as_windows_single_i32_source_event_sink(this);
+    (*sink).ref_count.fetch_add(1, Ordering::AcqRel) + 1
+}
+
+#[allow(unsafe_op_in_unsafe_fn)]
+unsafe extern "system" fn windows_single_i32_source_event_sink_release(this: *mut c_void) -> u32 {
+    let sink = as_windows_single_i32_source_event_sink(this);
+    let prev = (*sink).ref_count.fetch_sub(1, Ordering::AcqRel);
+    let next = prev.saturating_sub(1);
+    if next == 0 {
+        drop(Box::from_raw(sink));
+    }
+    next
+}
+
+#[allow(unsafe_op_in_unsafe_fn)]
+unsafe extern "system" fn windows_single_i32_source_event_sink_changed(
+    this: *mut c_void,
+    value: i32,
+) -> i32 {
+    let sink = as_windows_single_i32_source_event_sink(this);
+    if (*sink).expected_arity != 1 {
+        return COM_DISP_E_BADPARAMCOUNT;
+    }
+    let args = [ComValue::I32(value)];
+    let _ = ((*sink).on_event)(&args);
+    COM_S_OK
+}

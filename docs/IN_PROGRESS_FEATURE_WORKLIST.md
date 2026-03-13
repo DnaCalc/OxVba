@@ -75,9 +75,9 @@ Why still open:
 ### `IP-04` `oxvba-com` repurpose and HAL COM extraction
 
 Why still open:
-1. the direction is locked and major extraction slices are already complete, including shared runtime state, typelib cache ownership, the generic Windows client ABI, and the generic dispatch-side connection-point sink lifecycle,
-2. but HAL still owns the source-interface callback path used by the deterministic COM test lane and the in-process COM fixture objects behind that lane,
-3. parity-complete crate extraction requires the shared-vs-fixture boundary for that remaining source-interface/test support to be settled and implemented.
+1. the direction is locked and major extraction slices are already complete, including shared runtime state, typelib cache ownership, the generic Windows client ABI, and both current connection-point sink lifecycles,
+2. HAL now mainly retains the deterministic in-process `OxVba.TestDispatch` fixture object and its connection-point plumbing,
+3. parity-complete crate extraction requires an explicit decision and implementation for whether that fixture surface moves into `oxvba-com` or remains a documented local harness.
 
 ### `IP-05` Windows early-bound COM and type-library parity
 

@@ -31,7 +31,7 @@ Completed extraction slices:
 2. deterministic typelib catalog/build logic,
 3. shared COM runtime state and callback/subscription bookkeeping,
 4. typelib metadata cache storage/invalidation,
-5. generic Windows COM client ABI/constants/helpers for activation, GUID parsing, DISPID lookup, and raw reference release,`r`n6. generic dispatch-side connection-point sink lifecycle and callback ingress.
+5. generic Windows COM client ABI/constants/helpers for activation, GUID parsing, DISPID lookup, and raw reference release,`r`n6. generic dispatch-side connection-point sink lifecycle and callback ingress,`r`n7. the current single-`i32` source-interface sink lifecycle used by the deterministic event lane.
 
 Remaining extraction wall:
 1. sink object construction,
@@ -305,5 +305,6 @@ Required checks for the repurpose/extraction program:
 7. Use these concrete child worksets for the next cleanup/implementation slices:
    - `docs/worksets/WORKSET_2026-03-11_UNIFIED_DYNAMIC_OBJECT_PROTOCOL_AND_VALUE_CARRIER.md`
    - `docs/worksets/WORKSET_2026-03-11_COM_REFERENCE_FACADE_AND_TYPELIB_BINDING_COMPLETION.md`
+
 
 
