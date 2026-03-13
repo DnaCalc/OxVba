@@ -1,3 +1,5 @@
+use crate::ComMemberToken;
+use crate::runtime_state::{ComEventPath, ComEventSpec, ComMemberSpec};
 use crate::typelib::{
     TypeLibEventDispatchPath, TypeLibEventMetadata, TypeLibMemberInvokeKind, TypeLibMemberMetadata,
     TypeLibMetadataBlob, TypeLibResolveRequest, TypeLibResolvedIdentity,
@@ -529,5 +531,89 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
         member_name_to_token,
         members,
         events,
+    }
+}
+pub fn member_spec_from_typelib_metadata(
+    blob: &TypeLibMetadataBlob,
+    member: ComMemberToken,
+) -> Option<ComMemberSpec> {
+    blob.members
+        .iter()
+        .find(|candidate| candidate.token == member.raw())
+        .map(map_member_metadata_to_spec)
+}
+
+pub fn event_spec_from_typelib_metadata(
+    blob: &TypeLibMetadataBlob,
+    event: ComMemberToken,
+) -> Option<ComEventSpec> {
+    blob.events
+        .iter()
+        .find(|candidate| candidate.token == event.raw())
+        .map(map_event_metadata_to_spec)
+}
+
+pub fn source_interface_event_spec_supported(spec: &ComEventSpec) -> bool {
+    matches!(spec.path, ComEventPath::SourceInterface)
+        && spec.callback_arity == 1
+        && spec
+            .connection_point_iid
+            .as_deref()
+            .is_some_and(|iid| iid.eq_ignore_ascii_case(IID_OXVBA_TEST_DISPATCH_SOURCE_EVENTS_STR))
+}
+
+fn map_member_metadata_to_spec(member: &TypeLibMemberMetadata) -> ComMemberSpec {
+    ComMemberSpec {
+        name: member.name.clone(),
+        requires_argument: member.requires_argument,
+        invoke_kind: member.invoke_kind,
+        parameter_names: member.parameter_names.clone(),
+        is_default_member: member.is_default_member,
+    }
+}
+
+fn map_event_metadata_to_spec(event: &TypeLibEventMetadata) -> ComEventSpec {
+    ComEventSpec {
+        callback_arity: usize::from(event.callback_arity),
+        path: match event.dispatch_path {
+            TypeLibEventDispatchPath::Dispatch => ComEventPath::Dispatch,
+            TypeLibEventDispatchPath::SourceInterface => ComEventPath::SourceInterface,
+        },
+        connection_point_iid: event.connection_point_iid.clone(),
+        dispatch_member_id: event.dispatch_member_id,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{
+        build_typelib_metadata, event_spec_from_typelib_metadata,
+        known_typelib_identity_for_prog_id_name, member_spec_from_typelib_metadata,
+        source_interface_event_spec_supported,
+    };
+    use crate::{ComMemberToken, TEST_DISPID_EXISTS, TypeLibMemberInvokeKind};
+
+    #[test]
+    fn member_spec_lookup_uses_catalog_metadata() {
+        let identity = known_typelib_identity_for_prog_id_name("OxVba.TestDispatch").unwrap();
+        let blob = build_typelib_metadata(&identity);
+        let spec =
+            member_spec_from_typelib_metadata(&blob, ComMemberToken::new(TEST_DISPID_EXISTS))
+                .expect("member spec");
+        assert_eq!(spec.name, "Exists");
+        assert_eq!(spec.invoke_kind, TypeLibMemberInvokeKind::Method);
+        assert_eq!(spec.parameter_names, vec!["value".to_string()]);
+    }
+
+    #[test]
+    fn supported_source_interface_event_is_catalog_driven() {
+        let identity = known_typelib_identity_for_prog_id_name("OxVba.TestDispatch").unwrap();
+        let blob = build_typelib_metadata(&identity);
+        let spec = event_spec_from_typelib_metadata(
+            &blob,
+            ComMemberToken::new(super::TEST_EVENT_CHANGED_SOURCE_INTERFACE),
+        )
+        .expect("event spec");
+        assert!(source_interface_event_spec_supported(&spec));
     }
 }

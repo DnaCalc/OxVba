@@ -1,3 +1,22 @@
+## 2026-03-13 - Removed HAL-local known COM metadata tables
+
+- Continued the COM extraction/contraction slice in:
+  - [typelib_catalog.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-com\src\typelib_catalog.rs)
+  - [lib.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-com\src\lib.rs)
+  - [standard.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-hal\src\adapters\standard.rs)
+  - [CURRENT_BLOCKERS.md](C:\Work\DnaCalc\OxVba\CURRENT_BLOCKERS.md)
+  - [IN_PROGRESS_FEATURE_WORKLIST.md](C:\Work\DnaCalc\OxVba\docs\IN_PROGRESS_FEATURE_WORKLIST.md)
+  - [WORKSET_2026-03-09_OXVBA_COM_REPURPOSE_AND_HAL_COM_EXTRACTION.md](C:\Work\DnaCalc\OxVba\docs\worksets\WORKSET_2026-03-09_OXVBA_COM_REPURPOSE_AND_HAL_COM_EXTRACTION.md)
+- `oxvba-com` now owns the deterministic conversion from typelib catalog metadata into runtime-facing `ComMemberSpec` / `ComEventSpec` support data.
+- `oxvba-hal::standard` no longer keeps a second hardcoded known-member table for `Excel.Application`, `Scripting.Dictionary`, or `OxVba.TestDispatch`.
+- Source-interface event support policy is now driven through the shared `oxvba-com` event-spec helper instead of a HAL-local IID whitelist.
+- Net effect:
+  - the remaining COM extraction work is final lifecycle ownership and HAL contract contraction,
+  - not another round of metadata-table duplication cleanup.
+- Verification:
+  - cargo test -p oxvba-com -p oxvba-hal --quiet
+  - ./scripts/check-governance.ps1
+  - ./scripts/meta-check.ps1 -Fast -NoArtifacts
 ## 2026-03-13 - Extracted deterministic OxVba.TestDispatch fixture ownership into oxvba-com
 
 - Continued the COM ownership refactor in:
@@ -2803,10 +2822,4 @@
     - `cargo test -p oxvba-com -p oxvba-hal --quiet`
     - `./scripts/check-governance.ps1`
     - `./scripts/meta-check.ps1 -Fast -NoArtifacts`
-
-
-
-
-
-
 

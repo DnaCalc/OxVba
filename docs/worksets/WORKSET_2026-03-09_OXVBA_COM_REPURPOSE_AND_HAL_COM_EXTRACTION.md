@@ -191,7 +191,7 @@ Primary outcome:
 
 ### Phase B. State and metadata extraction
 
-1. Move COM state containers and metadata-loading logic from `standard.rs` into `oxvba-com`.
+1. Move COM state containers, metadata-loading logic, and deterministic known-member/event support lookups from `standard.rs` into `oxvba-com`.
 2. Move COM wire-format translation and coercion policy behind the `oxvba-com` boundary.
 3. Move synthetic reference-facade generation behind the `oxvba-com` boundary.
 4. Keep Windows-specific execution paths functional through delegation.
@@ -209,7 +209,7 @@ Primary outcome:
 
 ### Phase C. Windows COM client bridge extraction
 
-1. Move activation/invoke/event subscription/polling logic into `oxvba-com`.
+1. Move the remaining activation/invoke/event subscription/polling lifecycle ownership into `oxvba-com`.
 2. Make COM-backed objects implement/adapt the unified internal late-bound object protocol.
 3. Make `oxvba-hal` delegate or bootstrap rather than implement the details directly.
 4. Replace lossy token-only COM argument/result transport with the canonical OxVba-side carrier.
@@ -303,7 +303,4 @@ Required checks for the repurpose/extraction program:
 7. Use these concrete child worksets for the next cleanup/implementation slices:
    - `docs/worksets/WORKSET_2026-03-11_UNIFIED_DYNAMIC_OBJECT_PROTOCOL_AND_VALUE_CARRIER.md`
    - `docs/worksets/WORKSET_2026-03-11_COM_REFERENCE_FACADE_AND_TYPELIB_BINDING_COMPLETION.md`
-
-
-
 

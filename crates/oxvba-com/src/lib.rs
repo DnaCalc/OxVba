@@ -43,7 +43,9 @@ pub use typelib::{
 };
 pub use typelib_cache::TypeLibMetadataCacheState;
 pub use typelib_catalog::{
-    build_typelib_metadata, known_typelib_identity_for_prog_id_name, resolve_known_typelib_identity,
+    build_typelib_metadata, event_spec_from_typelib_metadata,
+    known_typelib_identity_for_prog_id_name, member_spec_from_typelib_metadata,
+    resolve_known_typelib_identity, source_interface_event_spec_supported,
 };
 #[cfg(target_os = "windows")]
 pub use windows_client::{

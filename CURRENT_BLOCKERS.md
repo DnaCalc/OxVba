@@ -145,7 +145,9 @@ Run context: active parity/compliance execution plus in-progress feature worklis
   - then extract client -> event -> server slices into `oxvba-com`.
 - Recommendation:
   - do not force final crate extraction ahead of invoke/property closure; use the new runtime-protocol and reference-facade worksets as the cleanup spine.
-`r`n### BLK-PROP-001: Property/default-member intent model is not yet end-to-end executable
+
+
+### BLK-PROP-001: Property/default-member intent model is not yet end-to-end executable
 - Impact:
   - Blocks `IP-02` VBA property model and default-member semantics.
   - Blocks part of `IP-06` COM server/export parity and `IP-08` Office-style hosting parity.
@@ -395,7 +397,4 @@ Run context: active parity/compliance execution plus in-progress feature worklis
 - Previously resolved blockers:
   - `BLK-EVT-001` — resolved (runtime subscription graph)
   - `BLK-COM-001` — resolved (COM event callback parity with external registered server evidence)
-
-
-
 

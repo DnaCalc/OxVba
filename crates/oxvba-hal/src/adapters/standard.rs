@@ -34,10 +34,12 @@ use oxvba_com::{
     add_ref_dispatch as raw_add_ref_dispatch, build_typelib_metadata, create_oxvba_test_dispatch,
     get_dispid_by_name as raw_get_dispid_by_name, get_dispids_by_names as raw_get_dispids_by_names,
     known_typelib_identity_for_prog_id_name, map_com_hresult_label,
+    member_spec_from_typelib_metadata,
     query_dispatch_from_unknown as raw_query_dispatch_from_unknown,
     raw_oxvba_test_dispatch_vtable_invoke, release_dispatch as raw_release_dispatch,
-    resolve_known_typelib_identity, try_advise_dispatch_event_sink,
-    try_advise_single_i32_source_interface_event_sink, unadvise_connection_point,
+    resolve_known_typelib_identity, source_interface_event_spec_supported,
+    try_advise_dispatch_event_sink, try_advise_single_i32_source_interface_event_sink,
+    unadvise_connection_point,
 };
 use oxvba_runtime::{BindingHandle, DynLinkSymbol, ObjectHandle, RuntimeValue, bstr::BStr};
 use std::{
@@ -85,11 +87,10 @@ macro_rules! hal_contract_assert {
 #[cfg(target_os = "windows")]
 const OXVBA_TEST_DISPATCH_PROGID: &str = "OxVba.TestDispatch";
 #[cfg(target_os = "windows")]
-const EXCEL_APPLICATION_PROGID: &str = "Excel.Application";
-#[cfg(target_os = "windows")]
 #[cfg(test)]
 const IID_OXVBA_TEST_DISPATCH_EVENTS_STR: &str = "11111112-2222-3333-4444-555555555556";
 #[cfg(target_os = "windows")]
+#[cfg(test)]
 const IID_OXVBA_TEST_DISPATCH_SOURCE_EVENTS_STR: &str = "11111113-2222-3333-4444-555555555557";
 #[cfg(target_os = "windows")]
 #[cfg(test)]
@@ -114,6 +115,7 @@ const TEST_DISPID_SET_VALUE: i32 = 7;
 const TEST_DISPID_SET_VALUE_REF: i32 = 8;
 #[cfg(test)]
 const TEST_DISPID_VALUE: i32 = 9;
+#[cfg(test)]
 const TEST_DISPID_EXCEL_QUIT: i32 = 10;
 #[cfg(test)]
 const TEST_DISPID_SUM_PAIR: i32 = 12;
@@ -562,6 +564,27 @@ impl StandardHostServices {
         &self,
         _prog_id_name: &str,
     ) -> HalResult<Option<TypeLibMetadataBlob>> {
+        Ok(None)
+    }
+
+    #[cfg(target_os = "windows")]
+    fn known_member_spec_for_prog_id_name(
+        &self,
+        prog_id_name: &str,
+        member: ComMemberToken,
+    ) -> HalResult<Option<ComMemberSpec>> {
+        Ok(self
+            .load_typelib_metadata_for_prog_id_name(prog_id_name)?
+            .as_ref()
+            .and_then(|blob| member_spec_from_typelib_metadata(blob, member)))
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    fn known_member_spec_for_prog_id_name(
+        &self,
+        _prog_id_name: &str,
+        _member: ComMemberToken,
+    ) -> HalResult<Option<ComMemberSpec>> {
         Ok(None)
     }
 
@@ -1174,7 +1197,7 @@ impl StandardHostServices {
         member: i32,
         args: &[ComInvokeArg],
     ) -> HalResult<i32> {
-        if let Some(spec) = com_member_spec_for_token(prog_id, member.into()) {
+        if let Some(spec) = self.known_member_spec_for_prog_id_name(prog_id, member.into())? {
             // SAFETY: `dispatch` is a live IDispatch pointer owned by this adapter and `spec.name`
             // is converted to a temporary wide buffer inside the helper.
             let dispid = unsafe { raw_get_dispid_by_name(dispatch, &spec.name) }
@@ -1211,9 +1234,13 @@ impl StandardHostServices {
         cached: Option<i32>,
     ) -> HalResult<Option<(i32, ComMemberSpec)>> {
         let member = ComMemberToken::new(member);
-        let Some(spec) = com_member_spec_for_binding(binding, member)
-            .or_else(|| com_member_spec_for_token(&binding.prog_id_name, member))
-        else {
+        let spec = if let Some(spec) = com_member_spec_for_binding(binding, member) {
+            spec
+        } else if let Some(spec) =
+            self.known_member_spec_for_prog_id_name(&binding.prog_id_name, member)?
+        {
+            spec
+        } else {
             return Ok(None);
         };
         if let Some(dispid) = cached {
@@ -1418,7 +1445,7 @@ impl StandardHostServices {
         member: i32,
         args: &[ComInvokeArg],
     ) -> HalResult<RuntimeValue> {
-        if let Some(spec) = com_member_spec_for_token(prog_id, member.into()) {
+        if let Some(spec) = self.known_member_spec_for_prog_id_name(prog_id, member.into())? {
             let dispid = unsafe { raw_get_dispid_by_name(dispatch, &spec.name) }
                 .map_err(|message| self.com_dispatch_adapter_fault(message))?;
             return self.native_com_dispatch_invoke_with_member_spec_runtime_value(
@@ -1961,7 +1988,7 @@ impl StandardHostServices {
                     .unwrap_or(COM_EVENT_DISPATCH_MEMBER_WILDCARD),
             },
             ComEventPath::SourceInterface => {
-                if !source_interface_connection_point_supported(connection_point_iid) {
+                if !source_interface_event_spec_supported(spec) {
                     return Err(HalError::adapter_fault(
                         self.profile,
                         CapabilityId::ComActivationDispatch,
@@ -4113,7 +4140,6 @@ impl DynLinkBindingState {
 
 type RawDispatchPtr = usize;
 #[cfg(target_os = "windows")]
-#[cfg(target_os = "windows")]
 thread_local! {
     static THREAD_COM_APARTMENT_READY: Cell<bool> = const { Cell::new(false) };
 }
@@ -4263,173 +4289,6 @@ struct RegisteredEventOverrideConfig {
 }
 
 #[cfg(target_os = "windows")]
-fn com_member_spec_for_token(prog_id: &str, member: ComMemberToken) -> Option<ComMemberSpec> {
-    if prog_id.eq_ignore_ascii_case(EXCEL_APPLICATION_PROGID) {
-        return match member.raw() {
-            TEST_DISPID_EXCEL_QUIT => Some(ComMemberSpec {
-                name: "Quit".to_string(),
-                requires_argument: false,
-                invoke_kind: TypeLibMemberInvokeKind::Method,
-                parameter_names: Vec::new(),
-                is_default_member: false,
-            }),
-            _ => None,
-        };
-    }
-    if prog_id.eq_ignore_ascii_case("Scripting.Dictionary") {
-        return match member.raw() {
-            1 => Some(ComMemberSpec {
-                name: "Count".to_string(),
-                requires_argument: false,
-                invoke_kind: TypeLibMemberInvokeKind::PropertyGet,
-                parameter_names: Vec::new(),
-                is_default_member: false,
-            }),
-            2 => Some(ComMemberSpec {
-                name: "Exists".to_string(),
-                requires_argument: true,
-                invoke_kind: TypeLibMemberInvokeKind::Method,
-                parameter_names: vec!["value".to_string()],
-                is_default_member: false,
-            }),
-            _ => None,
-        };
-    }
-    if prog_id.eq_ignore_ascii_case(OXVBA_TEST_DISPATCH_PROGID) {
-        return match member.raw() {
-            1 => Some(ComMemberSpec {
-                name: "Count".to_string(),
-                requires_argument: false,
-                invoke_kind: TypeLibMemberInvokeKind::PropertyGet,
-                parameter_names: Vec::new(),
-                is_default_member: false,
-            }),
-            2 => Some(ComMemberSpec {
-                name: "Exists".to_string(),
-                requires_argument: true,
-                invoke_kind: TypeLibMemberInvokeKind::Method,
-                parameter_names: vec!["value".to_string()],
-                is_default_member: false,
-            }),
-            3 => Some(ComMemberSpec {
-                name: "FireChanged".to_string(),
-                requires_argument: true,
-                invoke_kind: TypeLibMemberInvokeKind::Method,
-                parameter_names: vec!["value".to_string()],
-                is_default_member: false,
-            }),
-            4 => Some(ComMemberSpec {
-                name: "FireChangedPair".to_string(),
-                requires_argument: true,
-                invoke_kind: TypeLibMemberInvokeKind::Method,
-                parameter_names: vec!["value".to_string()],
-                is_default_member: false,
-            }),
-            11 => Some(ComMemberSpec {
-                name: "FireChangedSourceInterface".to_string(),
-                requires_argument: true,
-                invoke_kind: TypeLibMemberInvokeKind::Method,
-                parameter_names: vec!["value".to_string()],
-                is_default_member: false,
-            }),
-            5 => Some(ComMemberSpec {
-                name: "Ping".to_string(),
-                requires_argument: false,
-                invoke_kind: TypeLibMemberInvokeKind::Method,
-                parameter_names: Vec::new(),
-                is_default_member: false,
-            }),
-            6 => Some(ComMemberSpec {
-                name: "Lookup".to_string(),
-                requires_argument: true,
-                invoke_kind: TypeLibMemberInvokeKind::PropertyGet,
-                parameter_names: vec!["value".to_string()],
-                is_default_member: false,
-            }),
-            7 => Some(ComMemberSpec {
-                name: "SetValue".to_string(),
-                requires_argument: true,
-                invoke_kind: TypeLibMemberInvokeKind::PropertyPut,
-                parameter_names: vec!["value".to_string()],
-                is_default_member: false,
-            }),
-            8 => Some(ComMemberSpec {
-                name: "SetValueRef".to_string(),
-                requires_argument: true,
-                invoke_kind: TypeLibMemberInvokeKind::PropertyPutRef,
-                parameter_names: vec!["value".to_string()],
-                is_default_member: false,
-            }),
-            9 => Some(ComMemberSpec {
-                name: "Value".to_string(),
-                requires_argument: false,
-                invoke_kind: TypeLibMemberInvokeKind::PropertyGet,
-                parameter_names: Vec::new(),
-                is_default_member: false,
-            }),
-            12 => Some(ComMemberSpec {
-                name: "SumPair".to_string(),
-                requires_argument: true,
-                invoke_kind: TypeLibMemberInvokeKind::Method,
-                parameter_names: vec!["lhs".to_string(), "rhs".to_string()],
-                is_default_member: false,
-            }),
-            13 => Some(ComMemberSpec {
-                name: "LookupPair".to_string(),
-                requires_argument: true,
-                invoke_kind: TypeLibMemberInvokeKind::PropertyGet,
-                parameter_names: vec!["lhs".to_string(), "rhs".to_string()],
-                is_default_member: false,
-            }),
-            14 => Some(ComMemberSpec {
-                name: "SetIndexedValue".to_string(),
-                requires_argument: true,
-                invoke_kind: TypeLibMemberInvokeKind::PropertyPut,
-                parameter_names: vec!["lhs".to_string(), "value".to_string()],
-                is_default_member: false,
-            }),
-            15 => Some(ComMemberSpec {
-                name: "SetIndexedValueRef".to_string(),
-                requires_argument: true,
-                invoke_kind: TypeLibMemberInvokeKind::PropertyPutRef,
-                parameter_names: vec!["lhs".to_string(), "value".to_string()],
-                is_default_member: false,
-            }),
-            16 => Some(ComMemberSpec {
-                name: "EchoVariant".to_string(),
-                requires_argument: true,
-                invoke_kind: TypeLibMemberInvokeKind::Method,
-                parameter_names: vec!["value".to_string()],
-                is_default_member: true,
-            }),
-            17 => Some(ComMemberSpec {
-                name: "RaiseException".to_string(),
-                requires_argument: false,
-                invoke_kind: TypeLibMemberInvokeKind::Method,
-                parameter_names: Vec::new(),
-                is_default_member: false,
-            }),
-            18 => Some(ComMemberSpec {
-                name: "ReturnSmallInt".to_string(),
-                requires_argument: false,
-                invoke_kind: TypeLibMemberInvokeKind::Method,
-                parameter_names: Vec::new(),
-                is_default_member: false,
-            }),
-            19 => Some(ComMemberSpec {
-                name: "ReturnUnsignedWord".to_string(),
-                requires_argument: false,
-                invoke_kind: TypeLibMemberInvokeKind::Method,
-                parameter_names: Vec::new(),
-                is_default_member: false,
-            }),
-            _ => None,
-        };
-    }
-    None
-}
-
-#[cfg(target_os = "windows")]
 fn com_event_signature_arity_for_binding(
     binding: &ComBinding,
     event: ComMemberToken,
@@ -4449,11 +4308,6 @@ fn com_event_is_source_interface_only(binding: &ComBinding, event: ComMemberToke
             ..
         })
     )
-}
-
-#[cfg(target_os = "windows")]
-fn source_interface_connection_point_supported(connection_point_iid: &str) -> bool {
-    connection_point_iid.eq_ignore_ascii_case(IID_OXVBA_TEST_DISPATCH_SOURCE_EVENTS_STR)
 }
 
 #[cfg(not(target_os = "windows"))]
