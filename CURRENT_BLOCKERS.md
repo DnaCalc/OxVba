@@ -429,3 +429,4 @@ Run context: active parity/compliance execution plus in-progress feature worklis
 - Previously resolved blockers:
   - `BLK-EVT-001` — resolved (runtime subscription graph)
   - `BLK-COM-001` — resolved (COM event callback parity with external registered server evidence)
+

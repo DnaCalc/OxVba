@@ -6,6 +6,7 @@ pub mod dynamic_object;
 pub mod model;
 pub mod platform;
 pub mod refcount;
+pub mod runtime_state;
 pub mod typelib;
 pub mod typelib_catalog;
 #[cfg(target_os = "windows")]
@@ -25,6 +26,10 @@ pub use model::{
     ComSubscriptionToken, ComValue, DISPATCH_INVOKE_MISSING_ARG_TOKEN,
 };
 pub use refcount::RefCount;
+pub use runtime_state::{
+    ComBinding, ComDirectDispatchSpec, ComEventCallback, ComEventPath, ComEventSpec,
+    ComEventSubscription, ComEventTriggerSpec, ComMemberSpec, ComRuntimeState,
+};
 pub use typelib::{
     TypeLibCacheScope, TypeLibEventDispatchPath, TypeLibEventMetadata, TypeLibMemberInvokeKind,
     TypeLibMemberMetadata, TypeLibMetadataBlob, TypeLibResolveRequest, TypeLibResolvedIdentity,

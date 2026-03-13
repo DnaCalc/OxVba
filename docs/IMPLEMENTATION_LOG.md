@@ -1,5 +1,28 @@
 # Implementation Log
 
+## 2026-03-13 - Extracted COM binding and runtime-state bookkeeping into oxvba-com
+
+- Continued the COM ownership refactor in:
+  - [runtime_state.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-com\src\runtime_state.rs)
+  - [lib.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-com\src\lib.rs)
+  - [standard.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-hal\src\adapters\standard.rs)
+  - [CURRENT_BLOCKERS.md](C:\Work\DnaCalc\OxVba\CURRENT_BLOCKERS.md)
+- `oxvba-com` now owns the shared COM binding/spec models and the generic runtime container for:
+  - binding registry state,
+  - subscription/callback queue bookkeeping,
+  - object-state release bookkeeping,
+  - descriptor derivation from binding state.
+- `oxvba-hal` now keeps only the HAL-owned wrapper and the native Windows lifecycle pieces that still require host-side ownership:
+  - raw activation/dispatch ownership,
+  - connection-point advise/unadvise transport,
+  - event sink ingress,
+  - final native reference release,
+  - typelib cache storage.
+- Net effect:
+  - the COM extraction moved from helper-only refactoring into shared state ownership,
+  - the remaining blocker is now specifically the native lifecycle/container ownership wall rather than basic binding/spec bookkeeping.
+- Verification:
+  - `cargo test -p oxvba-com -p oxvba-hal --quiet`
 ## 2026-03-12 - Added runtime refactor completion workset
 
 - Added the next-stage execution workset:
@@ -2693,4 +2716,5 @@
     - `cargo test -p oxvba-com -p oxvba-hal --quiet`
     - `./scripts/check-governance.ps1`
     - `./scripts/meta-check.ps1 -Fast -NoArtifacts`
+
 

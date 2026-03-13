@@ -23,8 +23,10 @@ use oxvba_com::windows_variant::{
     variant_to_com_value as com_variant_to_com_value,
 };
 use oxvba_com::{
-    ComCallbackPayload, ComCallbackToken, ComInvokeArg, ComInvokeFailure, ComInvokeRequest,
-    ComMemberToken, ComObjectDescriptor, ComObjectToken, ComObjectTransportKind,
+    ComBinding, ComCallbackPayload, ComCallbackToken, ComDirectDispatchSpec, ComEventPath,
+    ComEventSpec, ComEventSubscription as SharedComEventSubscription, ComEventTriggerSpec,
+    ComInvokeArg, ComInvokeFailure, ComInvokeRequest, ComMemberSpec, ComMemberToken,
+    ComObjectDescriptor, ComObjectToken, ComObjectTransportKind, ComRuntimeState,
     ComSubscriptionToken, ComValue, VariantResultValue, build_typelib_metadata,
     known_typelib_identity_for_prog_id_name, resolve_known_typelib_identity,
 };
@@ -37,8 +39,9 @@ use oxvba_runtime::{
 use std::sync::atomic::{AtomicI32, AtomicU32, Ordering};
 use std::{
     cell::Cell,
-    collections::{BTreeMap, BTreeSet, VecDeque},
+    collections::{BTreeMap, BTreeSet},
     fs::{self, OpenOptions},
+    ops::{Deref, DerefMut},
     path::PathBuf,
     process::Command,
     sync::{Arc, Mutex},
@@ -1720,7 +1723,7 @@ impl StandardHostServices {
         let handle = state.allocate_handle();
         state.bindings.insert(
             handle,
-            ComBinding::native(
+            native_com_binding(
                 format!("{prog_id_hint}::<invoke-result>"),
                 dispatch as RawDispatchPtr,
                 None,
@@ -1899,7 +1902,12 @@ impl StandardHostServices {
         }
         let mut state = self.com_lock(CapabilityId::ComActivationDispatch, "dispatch_invoke")?;
         self.assert_com_invariants(&state, "dispatch_invoke-event-pre");
-        let queued = state.queue_callbacks_for_source_event(object.into(), event, args.as_slice());
+        let queued = state.queue_callbacks_for_source_event(
+            object.into(),
+            event,
+            args.as_slice(),
+            |transport| transport.is_projection(),
+        );
         if com_event_trace_enabled() {
             eprintln!(
                 "[oxvba-hal][com-event] projection-trigger object={} member={} event={} args={:?} queued_subscriptions={}",
@@ -2714,7 +2722,7 @@ impl ComHal for StandardHostServices {
                             )?;
                         let mut state = self.com_lock(capability, "create_object")?;
                         let handle = state.allocate_handle();
-                        let mut binding = ComBinding::native(
+                        let mut binding = native_com_binding(
                             prog_id_name.to_string(),
                             native_dispatch,
                             metadata.as_ref(),
@@ -2757,7 +2765,7 @@ impl ComHal for StandardHostServices {
                     let mut state = self.com_lock(capability, "create_object")?;
                     let handle = state.allocate_handle();
                     let mut binding =
-                        ComBinding::native(prog_id_name, native_dispatch, metadata.as_ref());
+                        native_com_binding(prog_id_name, native_dispatch, metadata.as_ref());
                     #[cfg(target_os = "windows")]
                     if let Some(override_cfg) = registered_event_override.as_ref() {
                         self.apply_registered_event_override_to_binding(&mut binding, override_cfg);
@@ -2794,7 +2802,9 @@ impl ComHal for StandardHostServices {
         let (binding, transports, stale_callbacks) = {
             let mut state = self.com_lock(capability, "release_object")?;
             self.assert_com_invariants(&state, "release_object-pre");
-            let Some(binding) = state.bindings.remove(&object_token) else {
+            let Some((binding, transports, stale_callbacks)) =
+                state.release_object_state(object_token)
+            else {
                 return Err(HalError::adapter_fault(
                     self.profile,
                     capability,
@@ -2802,52 +2812,8 @@ impl ComHal for StandardHostServices {
                     format!("COM-E-OBJECT-MISSING: unknown COM object token {object}"),
                 ));
             };
-            let subscriptions: Vec<(ComSubscriptionToken, ComEventSubscription)> = state
-                .subscriptions
-                .iter()
-                .filter_map(|(subscription, entry)| {
-                    if entry.object == object_token {
-                        Some((*subscription, entry.clone()))
-                    } else {
-                        None
-                    }
-                })
-                .collect();
-            for (subscription, _) in &subscriptions {
-                state.subscriptions.remove(subscription);
-            }
-            let stale_callbacks: BTreeSet<ComCallbackToken> = state
-                .callbacks
-                .iter()
-                .filter_map(|(callback, payload)| {
-                    if payload.object == object_token {
-                        Some(*callback)
-                    } else {
-                        None
-                    }
-                })
-                .collect();
-            for callback in &stale_callbacks {
-                state.callbacks.remove(callback);
-            }
-            state
-                .pending_callbacks
-                .retain(|callback| !stale_callbacks.contains(callback));
-            if state
-                .last_pumped_callback
-                .is_some_and(|callback| stale_callbacks.contains(&callback))
-            {
-                state.last_pumped_callback = None;
-            }
             self.assert_com_invariants(&state, "release_object-post");
-            (
-                binding,
-                subscriptions
-                    .into_iter()
-                    .map(|(_, entry)| entry.transport)
-                    .collect::<Vec<_>>(),
-                stale_callbacks,
-            )
+            (binding, transports, stale_callbacks)
         };
         for transport in transports {
             self.release_event_subscription_transport(transport)?;
@@ -2886,26 +2852,12 @@ impl ComHal for StandardHostServices {
             state
                 .bindings
                 .get(&ComObjectToken::new(object))
-                .map(|binding| ComObjectDescriptor {
-                    object: object_handle,
-                    prog_id_name: binding.prog_id_name.clone(),
-                    transport: if binding.native_dispatch != 0 {
-                        ComObjectTransportKind::NativeDispatch
-                    } else {
-                        ComObjectTransportKind::Projection
-                    },
-                    supports_events: !binding.event_specs.is_empty(),
-                    known_member_tokens: binding.member_specs.keys().copied().collect(),
-                    known_event_tokens: binding.event_specs.keys().copied().collect(),
-                    default_member_token: binding.default_member_token,
-                    default_member_name: binding
-                        .default_member_token
-                        .and_then(|token| binding.member_specs.get(&token))
-                        .map(|spec| spec.name.clone()),
-                    typelib_cache_key: known_typelib_identity_for_prog_id_name(
-                        &binding.prog_id_name,
+                .map(|binding| {
+                    binding.descriptor(
+                        object_handle,
+                        known_typelib_identity_for_prog_id_name(&binding.prog_id_name)
+                            .map(|identity| identity.cache_key),
                     )
-                    .map(|identity| identity.cache_key),
                 })
         } else if object == 0 {
             None
@@ -4142,102 +4094,25 @@ struct FileHandleState {
     host_path: Option<PathBuf>,
 }
 
+type SharedComState = ComRuntimeState<ComEventSubscriptionTransport>;
+type ComEventSubscription = SharedComEventSubscription<ComEventSubscriptionTransport>;
+
 #[derive(Debug, Default)]
 struct ComState {
-    next_handle: i32,
-    next_subscription: i32,
-    next_callback: i32,
-    bindings: BTreeMap<ComObjectToken, ComBinding>,
-    subscriptions: BTreeMap<ComSubscriptionToken, ComEventSubscription>,
-    callbacks: BTreeMap<ComCallbackToken, ComEventCallback>,
-    pending_callbacks: VecDeque<ComCallbackToken>,
-    last_pumped_callback: Option<ComCallbackToken>,
+    inner: SharedComState,
 }
 
-impl ComState {
-    fn allocate_handle(&mut self) -> ComObjectToken {
-        self.next_handle = self.next_handle.saturating_add(1).max(1);
-        ComObjectToken::new(20_000i32.saturating_add(self.next_handle))
-    }
+impl Deref for ComState {
+    type Target = SharedComState;
 
-    fn allocate_subscription(&mut self) -> ComSubscriptionToken {
-        self.next_subscription = self.next_subscription.saturating_add(1).max(1);
-        ComSubscriptionToken::new(40_000i32.saturating_add(self.next_subscription))
+    fn deref(&self) -> &Self::Target {
+        &self.inner
     }
+}
 
-    fn allocate_callback(&mut self) -> ComCallbackToken {
-        self.next_callback = self.next_callback.saturating_add(1).max(1);
-        ComCallbackToken::new(60_000i32.saturating_add(self.next_callback))
-    }
-
-    fn queue_callback_for_subscription(
-        &mut self,
-        subscription: ComSubscriptionToken,
-        args: &[ComValue],
-    ) -> bool {
-        let Some(entry) = self.subscriptions.get(&subscription).cloned() else {
-            return false;
-        };
-        let callback = self.allocate_callback();
-        self.callbacks.insert(
-            callback,
-            ComEventCallback {
-                subscription,
-                object: entry.object,
-                event: entry.event,
-                args: args.to_vec(),
-            },
-        );
-        self.pending_callbacks.push_back(callback);
-        true
-    }
-
-    fn queue_callbacks_for_source_event(
-        &mut self,
-        object: ComObjectToken,
-        event: ComMemberToken,
-        args: &[ComValue],
-    ) -> usize {
-        let targets: Vec<ComSubscriptionToken> = self
-            .subscriptions
-            .iter()
-            .filter_map(|(subscription, entry)| {
-                if entry.object == object && entry.event == event && entry.transport.is_projection()
-                {
-                    Some(*subscription)
-                } else {
-                    None
-                }
-            })
-            .collect();
-        for subscription in &targets {
-            let _ = self.queue_callback_for_subscription(*subscription, args);
-        }
-        targets.len()
-    }
-
-    fn mark_next_callback_pumped(&mut self) -> Option<ComCallbackToken> {
-        if let Some(callback) = self.last_pumped_callback {
-            return Some(callback);
-        }
-        let callback = self.pending_callbacks.pop_front()?;
-        self.last_pumped_callback = Some(callback);
-        Some(callback)
-    }
-
-    fn take_polled_callback(&mut self) -> Option<ComCallbackPayload> {
-        let callback = self
-            .last_pumped_callback
-            .take()
-            .or_else(|| self.pending_callbacks.pop_front())?;
-        let payload = self.callbacks.remove(&callback)?;
-        Some(ComCallbackPayload {
-            callback,
-            subscription: payload.subscription,
-            object: ObjectHandle::new(payload.object.raw()),
-            event: payload.event,
-            args: payload.args,
-        })
+impl DerefMut for ComState {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.inner
     }
 }
 
@@ -4269,48 +4144,23 @@ thread_local! {
     static THREAD_COM_APARTMENT_READY: Cell<bool> = const { Cell::new(false) };
 }
 
-#[derive(Debug, Clone)]
-struct ComBinding {
+fn native_com_binding(
     prog_id_name: String,
     native_dispatch: RawDispatchPtr,
-    member_dispids: BTreeMap<ComMemberToken, i32>,
-    member_specs: BTreeMap<ComMemberToken, ComMemberSpec>,
-    default_member_token: Option<ComMemberToken>,
-    direct_dispatch_specs: BTreeMap<ComMemberToken, ComDirectDispatchSpec>,
-    event_specs: BTreeMap<ComMemberToken, ComEventSpec>,
-    event_trigger_specs: BTreeMap<ComMemberToken, ComEventTriggerSpec>,
-}
-
-impl ComBinding {
-    fn native(
-        prog_id_name: String,
-        native_dispatch: RawDispatchPtr,
-        metadata: Option<&TypeLibMetadataBlob>,
-    ) -> Self {
-        Self {
-            prog_id_name,
-            native_dispatch,
-            member_dispids: BTreeMap::new(),
-            member_specs: metadata
-                .map(com_member_specs_from_typelib_metadata)
-                .unwrap_or_default(),
-            default_member_token: metadata.and_then(default_member_token_from_typelib_metadata),
-            direct_dispatch_specs: BTreeMap::new(),
-            event_specs: metadata
-                .map(com_event_specs_from_typelib_metadata)
-                .unwrap_or_default(),
-            event_trigger_specs: metadata
-                .map(com_event_trigger_specs_from_typelib_metadata)
-                .unwrap_or_default(),
-        }
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-struct ComEventSubscription {
-    object: ComObjectToken,
-    event: ComMemberToken,
-    transport: ComEventSubscriptionTransport,
+    metadata: Option<&TypeLibMetadataBlob>,
+) -> ComBinding {
+    let mut binding = ComBinding::new(prog_id_name, native_dispatch);
+    binding.member_specs = metadata
+        .map(com_member_specs_from_typelib_metadata)
+        .unwrap_or_default();
+    binding.default_member_token = metadata.and_then(default_member_token_from_typelib_metadata);
+    binding.event_specs = metadata
+        .map(com_event_specs_from_typelib_metadata)
+        .unwrap_or_default();
+    binding.event_trigger_specs = metadata
+        .map(com_event_trigger_specs_from_typelib_metadata)
+        .unwrap_or_default();
+    binding
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -4357,50 +4207,6 @@ struct ComConnectionPointAdviseRequest {
     event_token: ComMemberToken,
     expected_arity: usize,
     sink_mode: ComConnectionPointSinkMode,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-struct ComEventCallback {
-    subscription: ComSubscriptionToken,
-    object: ComObjectToken,
-    event: ComMemberToken,
-    args: Vec<ComValue>,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum ComEventPath {
-    Dispatch,
-    SourceInterface,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-struct ComEventSpec {
-    callback_arity: usize,
-    path: ComEventPath,
-    connection_point_iid: Option<String>,
-    dispatch_member_id: Option<i32>,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-struct ComMemberSpec {
-    name: String,
-    requires_argument: bool,
-    invoke_kind: TypeLibMemberInvokeKind,
-    parameter_names: Vec<String>,
-    is_default_member: bool,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-struct ComDirectDispatchSpec {
-    requires_argument: bool,
-    invoke_kind: TypeLibMemberInvokeKind,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-struct ComEventTriggerSpec {
-    event_token: ComMemberToken,
-    callback_arity: usize,
-    second_arg_is_incremented: bool,
 }
 
 #[cfg(target_os = "windows")]
