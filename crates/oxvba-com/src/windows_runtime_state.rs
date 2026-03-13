@@ -348,3 +348,44 @@ pub fn cache_member_dispid(
         binding.member_dispids.insert(member, dispid);
     }
 }
+
+/// # Safety
+///
+/// `dispatch` must be a valid live `IDispatch` pointer for the duration of the resolve/advise path.
+pub unsafe fn resolve_event_subscription_transport(
+    binding: &ComBinding,
+    event: ComMemberToken,
+    dispatch: *mut RawIDispatch,
+    com_state: Arc<Mutex<WindowsComClientState>>,
+    subscription: ComSubscriptionToken,
+    expected_arity: usize,
+) -> Result<WindowsComSubscriptionTransport, String> {
+    if binding.native_dispatch == 0 {
+        return Ok(WindowsComSubscriptionTransport::Projection);
+    }
+    let Some(spec) = binding.event_specs.get(&event) else {
+        return Ok(WindowsComSubscriptionTransport::Projection);
+    };
+    let Some(connection_point_iid) = spec.connection_point_iid.as_deref() else {
+        if matches!(spec.path, ComEventPath::SourceInterface) {
+            return Err(
+                "COM-E-EVENT-PATH-UNSUPPORTED: source-interface COM event callbacks (COM-EVT-B) require connection-point metadata in current lane".to_string(),
+            );
+        }
+        return Ok(WindowsComSubscriptionTransport::Projection);
+    };
+    let advised = unsafe {
+        advise_event_subscription(
+            dispatch,
+            com_state,
+            subscription,
+            spec,
+            expected_arity,
+            connection_point_iid,
+        )
+    }?;
+    Ok(match advised {
+        Some(native) => WindowsComSubscriptionTransport::NativeConnectionPoint(native),
+        None => WindowsComSubscriptionTransport::Projection,
+    })
+}

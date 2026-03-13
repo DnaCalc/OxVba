@@ -133,19 +133,18 @@ Run context: active parity/compliance execution plus in-progress feature worklis
   - Blocks `IP-04` final COM ownership extraction from HAL.
   - Blocks `IP-05` early-binding completion, `IP-06` server/export parity, and part of `IP-08` hosting parity.
 - Current state:
-  - shared transport/types, deterministic typelib catalog logic, supported Windows wire/value/invoke helpers, generic callback/subscription runtime state, metadata cache ownership, known-member/event policy, metadata-driven `ComBinding` assembly, activation-time binding insertion, bound-dispatch lookup/rebinding, DISPID cache mutation, object release bookkeeping, and subscription callback-pruning now live materially in `oxvba-com`,
-  - `oxvba-hal::standard` still owns native invoke-policy sequencing, event transport choice, and the public COM-facing HAL contract,
+  - shared transport/types, deterministic typelib catalog logic, supported Windows wire/value/invoke helpers, generic callback/subscription runtime state, metadata cache ownership, known-member/event policy, metadata-driven `ComBinding` assembly, activation-time binding insertion, bound-dispatch lookup/rebinding, DISPID cache mutation, object release bookkeeping, subscription callback-pruning, and event transport-choice resolution now live materially in `oxvba-com`,
+  - `oxvba-hal::standard` still owns native invoke-policy sequencing and the public COM-facing HAL contract,
   - the remaining work is HAL rebinding/contraction plus movement of invoke-policy authority behind an `oxvba-com` surface,
   - forcing closure early would freeze a still-transitional contract.
 - Exact unblock steps:
   - continue moving the remaining Windows client contract authority out of `standard.rs`:
     - native invoke-policy/default-member/direct-DISPID sequencing,
-    - event transport-choice authority,
     - public HAL COM contract contraction/rebinding,
   - contract the public HAL COM surface down to delegation/bootstrap seams over `oxvba-com`,
   - continue late-bound/property/reference-facade parity work on top of that contracted boundary.
 - Recommendation:
-  - keep using the runtime-protocol, reference-facade, and COM extraction worksets as the cleanup spine; the remaining blocker is now invoke-policy/contract rebinding, not binding-table mutation or raw object-lifetime ownership.
+  - keep using the runtime-protocol, reference-facade, and COM extraction worksets as the cleanup spine; the remaining blocker is now invoke-policy/contract rebinding, not event or binding-table authority.
 
 
 

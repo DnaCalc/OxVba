@@ -42,12 +42,12 @@ Completed extraction slices:
 13. activation-time binding insertion ownership,
 14. bound native-dispatch lookup/rebinding and object-release bookkeeping ownership,
 15. per-object DISPID cache mutation ownership,
-16. subscription lookup/removal callback-pruning ownership.
-
+16. subscription lookup/removal callback-pruning ownership,
+17. event transport-choice resolution ownership.
 Remaining extraction wall:
 1. Remaining Windows invoke-policy authority still centered in `oxvba-hal::standard`:
+1. Remaining Windows invoke-policy authority still centered in `oxvba-hal::standard`:
    - native invoke-policy/default-member/direct-DISPID sequencing,
-   - event transport-choice authority,
 2. public HAL COM contract contraction/rebinding over `oxvba-com`,
 3. remaining runtime-wide dynamic protocol wiring and parity work that depends on the contracted boundary.
 ## 2. Problem statement
