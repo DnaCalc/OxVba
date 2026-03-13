@@ -17,6 +17,8 @@ pub mod windows_connection_point;
 #[cfg(target_os = "windows")]
 pub mod windows_invoke;
 #[cfg(target_os = "windows")]
+pub mod windows_runtime_state;
+#[cfg(target_os = "windows")]
 pub mod windows_test_dispatch;
 #[cfg(target_os = "windows")]
 pub mod windows_variant;
@@ -68,6 +70,13 @@ pub use windows_connection_point::{
 };
 #[cfg(target_os = "windows")]
 pub use windows_invoke::{ComInvokeExceptionInfo, ComInvokeFailure, take_excepinfo};
+#[cfg(target_os = "windows")]
+pub use windows_runtime_state::{
+    WindowsComClientState, WindowsComSubscriptionTransport, advise_event_subscription,
+    collect_stale_callbacks_for_subscription, event_callback_args_from_member_token,
+    event_is_source_interface_only, event_signature_arity_for_binding,
+    release_subscription_transport,
+};
 #[cfg(target_os = "windows")]
 pub use windows_test_dispatch::{
     IID_OXVBA_TEST_DISPATCH_EVENTS, IID_OXVBA_TEST_DISPATCH_EVENTS_STR,

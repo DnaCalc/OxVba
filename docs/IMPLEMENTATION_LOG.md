@@ -1,6 +1,25 @@
-# Implementation Log
+# Implementation Log`r`n`r`n## 2026-03-13 - Moved Windows COM event/callback state wrapper into oxvba-com
 
-## 2026-03-13 - Moved COM binding assembly into oxvba-com
+- Continued the COM extraction/contraction slice in:
+  - [windows_runtime_state.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-com\src\windows_runtime_state.rs)
+  - [lib.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-com\src\lib.rs)
+  - [standard.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-hal\src\adapters\standard.rs)
+  - [CURRENT_BLOCKERS.md](C:\Work\DnaCalc\OxVba\CURRENT_BLOCKERS.md)
+  - [IN_PROGRESS_FEATURE_WORKLIST.md](C:\Work\DnaCalc\OxVba\docs\IN_PROGRESS_FEATURE_WORKLIST.md)
+  - [WORKSET_2026-03-09_OXVBA_COM_REPURPOSE_AND_HAL_COM_EXTRACTION.md](C:\Work\DnaCalc\OxVba\docs\worksets\WORKSET_2026-03-09_OXVBA_COM_REPURPOSE_AND_HAL_COM_EXTRACTION.md)
+- `oxvba-com` now owns the Windows COM event/callback state wrapper, including:
+  - native-vs-projection subscription transport typing,
+  - callback queue teardown semantics,
+  - connection-point advise/unadvise lifecycle delegation,
+  - event-signature and trigger-to-callback payload helpers.
+- `oxvba-hal::standard` now uses that shared wrapper as its COM event state container instead of defining its own transport enum, request glue, and drop-time teardown behavior locally.
+- Net effect:
+  - callback/subscription container ownership is now on the `oxvba-com` side of the boundary,
+  - the remaining COM extraction wall is Windows activation/DISPID/object-lifetime contract authority plus final HAL rebinding.
+- Verification:
+  - cargo fmt --all
+  - cargo clippy -p oxvba-com -p oxvba-hal --all-targets -- -D warnings
+  - cargo test -p oxvba-com -p oxvba-hal --quiet`r`n## 2026-03-13 - Moved COM binding assembly into oxvba-com
 
 - Continued the COM extraction/contraction slice in:
   - [runtime_state.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-com\src\runtime_state.rs)
@@ -2846,5 +2865,6 @@
     - `cargo test -p oxvba-com -p oxvba-hal --quiet`
     - `./scripts/check-governance.ps1`
     - `./scripts/meta-check.ps1 -Fast -NoArtifacts`
+
 
 

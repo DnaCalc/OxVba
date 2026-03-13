@@ -26,27 +26,26 @@ use oxvba_com::{
     ComCallbackToken, ComDirectDispatchSpec, ComEventPath, ComEventSpec,
     ComEventSubscription as SharedComEventSubscription, ComEventTriggerSpec, ComInvokeArg,
     ComInvokeFailure, ComInvokeRequest, ComMemberSpec, ComMemberToken, ComObjectDescriptor,
-    ComObjectToken, ComObjectTransportKind, ComRuntimeState, ComSubscriptionToken, ComValue,
-    DispatchEventSinkConfig, IID_NULL, RawIDispatch, RawIUnknown, TypeLibMetadataCacheState,
-    VariantResultValue, WindowsConnectionPointTransport,
+    ComObjectToken, ComObjectTransportKind, ComSubscriptionToken, ComValue, IID_NULL, RawIDispatch,
+    RawIUnknown, TypeLibMetadataCacheState, VariantResultValue, WindowsComClientState,
+    WindowsComSubscriptionTransport,
     activate_dispatch_by_prog_id as com_activate_dispatch_by_prog_id,
-    add_ref_dispatch as raw_add_ref_dispatch, binding_from_typelib_metadata,
-    build_typelib_metadata, create_oxvba_test_dispatch,
-    get_dispid_by_name as raw_get_dispid_by_name, get_dispids_by_names as raw_get_dispids_by_names,
-    known_typelib_identity_for_prog_id_name, map_com_hresult_label,
-    member_spec_from_typelib_metadata,
+    add_ref_dispatch as raw_add_ref_dispatch, advise_event_subscription,
+    binding_from_typelib_metadata, build_typelib_metadata,
+    collect_stale_callbacks_for_subscription, create_oxvba_test_dispatch,
+    event_callback_args_from_member_token, event_is_source_interface_only,
+    event_signature_arity_for_binding, get_dispid_by_name as raw_get_dispid_by_name,
+    get_dispids_by_names as raw_get_dispids_by_names, known_typelib_identity_for_prog_id_name,
+    map_com_hresult_label, member_spec_from_typelib_metadata,
     query_dispatch_from_unknown as raw_query_dispatch_from_unknown,
     raw_oxvba_test_dispatch_vtable_invoke, release_dispatch as raw_release_dispatch,
-    resolve_known_typelib_identity, source_interface_event_spec_supported,
-    try_advise_dispatch_event_sink, try_advise_single_i32_source_interface_event_sink,
-    unadvise_connection_point,
+    release_subscription_transport, resolve_known_typelib_identity,
 };
 use oxvba_runtime::{BindingHandle, DynLinkSymbol, ObjectHandle, RuntimeValue, bstr::BStr};
 use std::{
     cell::Cell,
     collections::{BTreeMap, BTreeSet},
     fs::{self, OpenOptions},
-    ops::{Deref, DerefMut},
     path::PathBuf,
     process::Command,
     sync::{Arc, Mutex},
@@ -1899,11 +1898,11 @@ impl StandardHostServices {
                 ),
             ));
         };
-        let Some((event, args)) = com_event_callback_args_from_member_token(binding, member, args)
+        let Some((event, args)) = event_callback_args_from_member_token(binding, member, args)
         else {
             return Ok(());
         };
-        let Some(expected_arity) = com_event_signature_arity_for_binding(binding, event) else {
+        let Some(expected_arity) = event_signature_arity_for_binding(binding, event) else {
             return Err(HalError::adapter_fault(
                 self.profile,
                 CapabilityId::ComActivationDispatch,
@@ -1914,7 +1913,7 @@ impl StandardHostServices {
                 ),
             ));
         };
-        if com_event_is_source_interface_only(binding, event) {
+        if event_is_source_interface_only(binding, event) {
             if com_event_trace_enabled() {
                 eprintln!(
                     "[oxvba-hal][com-event] projection-trigger skipped object={} member={} event={} reason=source-interface-native-lane",
@@ -1981,38 +1980,20 @@ impl StandardHostServices {
             }
             return Ok(ComEventSubscriptionTransport::Projection);
         };
-        let sink_mode = match spec.path {
-            ComEventPath::Dispatch => ComConnectionPointSinkMode::Dispatch {
-                event_dispatch_member: spec
-                    .dispatch_member_id
-                    .unwrap_or(COM_EVENT_DISPATCH_MEMBER_WILDCARD),
-            },
-            ComEventPath::SourceInterface => {
-                if !source_interface_event_spec_supported(spec) {
-                    return Err(HalError::adapter_fault(
-                        self.profile,
-                        CapabilityId::ComActivationDispatch,
-                        "subscribe_event",
-                        format!(
-                            "COM-E-EVENT-PATH-UNSUPPORTED: source-interface COM event callbacks (COM-EVT-B) are unsupported for connection-point IID `{connection_point_iid}` in current lane"
-                        ),
-                    ));
-                }
-                ComConnectionPointSinkMode::SourceInterface
-            }
-        };
         self.ensure_thread_com_apartment("subscribe_event")?;
         let dispatch = binding.native_dispatch as *mut RawIDispatch;
-        let request = ComConnectionPointAdviseRequest {
-            com_state: Arc::clone(&self.com_state),
-            subscription: subscription.into(),
-            expected_arity,
-            sink_mode,
-        };
-        // SAFETY: `dispatch` is a live COM object pointer, the request owns/clones all state it
-        // hands to the sink, and `connection_point_iid` was validated from deterministic metadata.
+        // SAFETY: `dispatch` is a live COM object pointer, `spec` and `connection_point_iid`
+        // came from deterministic metadata for this binding, and the cloned shared state is owned
+        // by the adapter for the lifetime of the subscription transport.
         let advised = unsafe {
-            raw_try_advise_connection_point_event(dispatch, request, connection_point_iid)
+            advise_event_subscription(
+                dispatch,
+                Arc::clone(&self.com_state),
+                subscription.into(),
+                spec,
+                expected_arity,
+                connection_point_iid,
+            )
         }
         .map_err(|message| {
             HalError::adapter_fault(
@@ -2051,7 +2032,12 @@ impl StandardHostServices {
             self.ensure_thread_com_apartment("unsubscribe_event")?;
             // SAFETY: `native` came from a successful Advise call in this adapter and is released
             // at most once here or during teardown paths that remove the same subscription.
-            unsafe { raw_unadvise_connection_point(native) }.map_err(|message| {
+            unsafe {
+                release_subscription_transport(
+                    ComEventSubscriptionTransport::NativeConnectionPoint(native),
+                )
+            }
+            .map_err(|message| {
                 HalError::adapter_fault(
                     self.profile,
                     CapabilityId::ComActivationDispatch,
@@ -3123,8 +3109,7 @@ impl ComHal for StandardHostServices {
                     ),
                 ));
             };
-            let Some(expected_arity) =
-                com_event_signature_arity_for_binding(&binding, event.into())
+            let Some(expected_arity) = event_signature_arity_for_binding(&binding, event.into())
             else {
                 return Err(HalError::adapter_fault(
                     self.profile,
@@ -3241,19 +3226,11 @@ impl ComHal for StandardHostServices {
                 ),
             ));
         };
-        let stale_callbacks: BTreeSet<ComCallbackToken> = state
-            .callbacks
-            .iter()
-            .filter_map(|(callback, payload)| {
-                if payload.subscription == ComSubscriptionToken::new(subscription)
-                    && payload.object == entry.object
-                {
-                    Some(*callback)
-                } else {
-                    None
-                }
-            })
-            .collect();
+        let stale_callbacks: BTreeSet<ComCallbackToken> = collect_stale_callbacks_for_subscription(
+            &state,
+            ComSubscriptionToken::new(subscription),
+            entry.object,
+        );
         for callback in &stale_callbacks {
             state.callbacks.remove(callback);
         }
@@ -4104,28 +4081,10 @@ struct FileHandleState {
     host_path: Option<PathBuf>,
 }
 
-type SharedComState = ComRuntimeState<ComEventSubscriptionTransport>;
-type ComEventSubscription = SharedComEventSubscription<ComEventSubscriptionTransport>;
+type ComState = WindowsComClientState;
+type ComEventSubscription = SharedComEventSubscription<WindowsComSubscriptionTransport>;
+type ComEventSubscriptionTransport = WindowsComSubscriptionTransport;
 type TypeLibraryCacheState = TypeLibMetadataCacheState;
-
-#[derive(Debug, Default)]
-struct ComState {
-    inner: SharedComState,
-}
-
-impl Deref for ComState {
-    type Target = SharedComState;
-
-    fn deref(&self) -> &Self::Target {
-        &self.inner
-    }
-}
-
-impl DerefMut for ComState {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.inner
-    }
-}
 
 #[derive(Debug, Default)]
 struct DynLinkBindingState {
@@ -4146,119 +4105,6 @@ type RawDispatchPtr = usize;
 thread_local! {
     static THREAD_COM_APARTMENT_READY: Cell<bool> = const { Cell::new(false) };
 }
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum ComEventSubscriptionTransport {
-    Projection,
-    #[cfg(target_os = "windows")]
-    NativeConnectionPoint(ComNativeConnectionPointTransport),
-}
-
-impl ComEventSubscriptionTransport {
-    const fn is_projection(self) -> bool {
-        matches!(self, Self::Projection)
-    }
-
-    const fn kind_label(self) -> &'static str {
-        match self {
-            Self::Projection => "projection",
-            #[cfg(target_os = "windows")]
-            Self::NativeConnectionPoint(_) => "native-connection-point",
-        }
-    }
-}
-
-#[cfg(target_os = "windows")]
-type ComNativeConnectionPointTransport = WindowsConnectionPointTransport;
-
-#[cfg(target_os = "windows")]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum ComConnectionPointSinkMode {
-    Dispatch { event_dispatch_member: i32 },
-    SourceInterface,
-}
-
-#[cfg(target_os = "windows")]
-#[derive(Debug, Clone)]
-struct ComConnectionPointAdviseRequest {
-    com_state: Arc<Mutex<ComState>>,
-    subscription: ComSubscriptionToken,
-    expected_arity: usize,
-    sink_mode: ComConnectionPointSinkMode,
-}
-#[cfg(target_os = "windows")]
-#[allow(unsafe_op_in_unsafe_fn)]
-unsafe fn raw_try_advise_connection_point_event(
-    dispatch: *mut RawIDispatch,
-    request: ComConnectionPointAdviseRequest,
-    connection_point_iid: &str,
-) -> Result<Option<ComNativeConnectionPointTransport>, String> {
-    match request.sink_mode {
-        ComConnectionPointSinkMode::Dispatch {
-            event_dispatch_member,
-        } => {
-            let com_state = Arc::clone(&request.com_state);
-            let subscription = request.subscription;
-            let on_event = Arc::new(move |args: &[ComValue]| {
-                let mut state = match com_state.lock() {
-                    Ok(guard) => guard,
-                    Err(poisoned) => poisoned.into_inner(),
-                };
-                state.queue_callback_for_subscription(subscription, args)
-            });
-            try_advise_dispatch_event_sink(
-                dispatch,
-                connection_point_iid,
-                DispatchEventSinkConfig {
-                    event_dispatch_member,
-                    expected_arity: request.expected_arity,
-                    connection_point_iid: None,
-                    on_event,
-                },
-            )
-        }
-        ComConnectionPointSinkMode::SourceInterface => {
-            raw_try_advise_source_interface_connection_point_event(
-                dispatch,
-                request,
-                connection_point_iid,
-            )
-        }
-    }
-}
-
-#[cfg(target_os = "windows")]
-#[allow(unsafe_op_in_unsafe_fn)]
-unsafe fn raw_try_advise_source_interface_connection_point_event(
-    dispatch: *mut RawIDispatch,
-    request: ComConnectionPointAdviseRequest,
-    connection_point_iid: &str,
-) -> Result<Option<ComNativeConnectionPointTransport>, String> {
-    let com_state = Arc::clone(&request.com_state);
-    let subscription = request.subscription;
-    let on_event = Arc::new(move |args: &[ComValue]| {
-        let mut state = match com_state.lock() {
-            Ok(guard) => guard,
-            Err(poisoned) => poisoned.into_inner(),
-        };
-        state.queue_callback_for_subscription(subscription, args)
-    });
-    try_advise_single_i32_source_interface_event_sink(
-        dispatch,
-        connection_point_iid,
-        request.expected_arity,
-        on_event,
-    )
-}
-
-#[cfg(target_os = "windows")]
-#[allow(unsafe_op_in_unsafe_fn)]
-unsafe fn raw_unadvise_connection_point(
-    native: ComNativeConnectionPointTransport,
-) -> Result<(), String> {
-    unadvise_connection_point(native)
-}
-
 #[cfg(target_os = "windows")]
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct RegisteredEventOverrideConfig {
@@ -4271,29 +4117,6 @@ struct RegisteredEventOverrideConfig {
     trigger_requires_argument: bool,
     trigger_invoke_kind: TypeLibMemberInvokeKind,
 }
-
-#[cfg(target_os = "windows")]
-fn com_event_signature_arity_for_binding(
-    binding: &ComBinding,
-    event: ComMemberToken,
-) -> Option<usize> {
-    binding
-        .event_specs
-        .get(&event)
-        .map(|spec| spec.callback_arity)
-}
-
-#[cfg(target_os = "windows")]
-fn com_event_is_source_interface_only(binding: &ComBinding, event: ComMemberToken) -> bool {
-    matches!(
-        binding.event_specs.get(&event),
-        Some(ComEventSpec {
-            path: ComEventPath::SourceInterface,
-            ..
-        })
-    )
-}
-
 #[cfg(not(target_os = "windows"))]
 fn com_event_signature_arity_for_binding(_binding: &ComBinding, _event: i32) -> Option<usize> {
     None
@@ -4303,31 +4126,6 @@ fn com_event_signature_arity_for_binding(_binding: &ComBinding, _event: i32) -> 
 fn com_event_is_source_interface_only(_binding: &ComBinding, _event: i32) -> bool {
     false
 }
-
-#[cfg(target_os = "windows")]
-fn com_event_callback_args_from_member_token(
-    binding: &ComBinding,
-    member: ComMemberToken,
-    args: &[i32],
-) -> Option<(ComMemberToken, Vec<ComValue>)> {
-    let spec = binding.event_trigger_specs.get(&member)?;
-    let args: Vec<i32> = match spec.callback_arity {
-        0 => Vec::new(),
-        1 => vec![*args.first().unwrap_or(&0)],
-        2 if args.len() >= 2 => args[..2].to_vec(),
-        2 if spec.second_arg_is_incremented => {
-            let arg = *args.first().unwrap_or(&0);
-            vec![arg, arg.saturating_add(1)]
-        }
-        n if args.len() >= n => args[..n].to_vec(),
-        n => vec![*args.first().unwrap_or(&0); n],
-    };
-    Some((
-        spec.event_token,
-        args.into_iter().map(ComValue::from_runtime_token).collect(),
-    ))
-}
-
 fn com_member_spec_for_binding(
     binding: &ComBinding,
     member: ComMemberToken,
@@ -4421,38 +4219,6 @@ fn com_event_callback_args_from_member_token(
 ) -> Option<(i32, Vec<i32>)> {
     None
 }
-
-#[cfg(target_os = "windows")]
-impl Drop for ComState {
-    fn drop(&mut self) {
-        for subscription in self.subscriptions.values() {
-            if let ComEventSubscriptionTransport::NativeConnectionPoint(native) =
-                subscription.transport
-            {
-                // SAFETY: These native connection points were created by this state object and are
-                // being best-effort unadvised exactly once during teardown.
-                unsafe {
-                    let _ = raw_unadvise_connection_point(native);
-                }
-            }
-        }
-        self.subscriptions.clear();
-        self.callbacks.clear();
-        self.pending_callbacks.clear();
-        for binding in self.bindings.values_mut() {
-            if binding.native_dispatch != 0 {
-                // SAFETY: These dispatch pointers are owned by the binding table and have not been
-                // released yet; teardown balances the adapter-owned reference.
-                unsafe {
-                    raw_release_dispatch(binding.native_dispatch as *mut RawIDispatch);
-                }
-                binding.native_dispatch = 0;
-            }
-        }
-        self.bindings.clear();
-    }
-}
-
 #[cfg(target_os = "windows")]
 fn parse_hresult_hex(message: &str) -> Option<u32> {
     let marker = "HRESULT 0x";
