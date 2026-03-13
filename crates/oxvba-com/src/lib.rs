@@ -74,11 +74,11 @@ pub use windows_invoke::{ComInvokeExceptionInfo, ComInvokeFailure, take_excepinf
 #[cfg(target_os = "windows")]
 pub use windows_runtime_state::{
     ReleasedWindowsComObject, WindowsComClientState, WindowsComSubscriptionTransport,
-    advise_event_subscription, bind_native_dispatch_result,
+    advise_event_subscription, bind_native_dispatch_result, cache_member_dispid,
     collect_stale_callbacks_for_subscription, event_callback_args_from_member_token,
-    event_is_source_interface_only, event_signature_arity_for_binding, release_object_binding,
-    release_subscription_transport, remove_subscription_callbacks, resolve_bound_native_dispatch,
-    resolve_subscription_transport,
+    event_is_source_interface_only, event_signature_arity_for_binding, insert_bound_object_binding,
+    release_object_binding, release_subscription_transport, remove_subscription_callbacks,
+    resolve_bound_native_dispatch, resolve_subscription_transport,
 };
 #[cfg(target_os = "windows")]
 pub use windows_test_dispatch::{

@@ -328,3 +328,23 @@ pub fn remove_subscription_callbacks(
     }
     Ok(stale_callbacks)
 }
+
+pub fn insert_bound_object_binding(
+    state: &mut WindowsComClientState,
+    binding: ComBinding,
+) -> ObjectHandle {
+    let handle = state.allocate_handle();
+    state.bindings.insert(handle, binding);
+    ObjectHandle::new(handle.raw())
+}
+
+pub fn cache_member_dispid(
+    state: &mut WindowsComClientState,
+    object: ObjectHandle,
+    member: ComMemberToken,
+    dispid: i32,
+) {
+    if let Some(binding) = state.bindings.get_mut(&ComObjectToken::new(object.raw())) {
+        binding.member_dispids.insert(member, dispid);
+    }
+}

@@ -39,13 +39,13 @@ Completed extraction slices:
 10. deterministic in-process `OxVba.TestDispatch` fixture ownership,
 11. Windows COM event/callback state wrapper ownership,
 12. higher-level Windows activation and named-DISPID helper ownership,
-13. bound native-dispatch lookup/rebinding and object-release bookkeeping ownership,
-14. subscription lookup/removal callback-pruning ownership.
+13. activation-time binding insertion ownership,
+14. bound native-dispatch lookup/rebinding and object-release bookkeeping ownership,
+15. per-object DISPID cache mutation ownership,
+16. subscription lookup/removal callback-pruning ownership.
 
 Remaining extraction wall:
-1. Remaining Windows activation/binding authority still centered in `oxvba-hal::standard`:
-   - ProgID/CLSID activation and initial binding insertion,
-   - per-object DISPID cache ownership,
+1. Remaining Windows invoke-policy authority still centered in `oxvba-hal::standard`:
    - native invoke-policy/default-member/direct-DISPID sequencing,
    - event transport-choice authority,
 2. public HAL COM contract contraction/rebinding over `oxvba-com`,

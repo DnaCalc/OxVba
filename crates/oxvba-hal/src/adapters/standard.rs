@@ -31,8 +31,10 @@ use oxvba_com::{
     WindowsComSubscriptionTransport, activate_runtime_dispatch as com_activate_runtime_dispatch,
     add_ref_dispatch as raw_add_ref_dispatch, advise_event_subscription,
     bind_native_dispatch_result as com_bind_native_dispatch_result, binding_from_typelib_metadata,
-    build_typelib_metadata, event_callback_args_from_member_token, event_is_source_interface_only,
+    build_typelib_metadata, cache_member_dispid as com_cache_member_dispid,
+    event_callback_args_from_member_token, event_is_source_interface_only,
     event_signature_arity_for_binding, get_dispid_by_name as raw_get_dispid_by_name,
+    insert_bound_object_binding as com_insert_bound_object_binding,
     known_typelib_identity_for_prog_id_name, map_com_hresult_label,
     member_spec_from_typelib_metadata,
     query_dispatch_from_unknown as raw_query_dispatch_from_unknown,
@@ -1208,13 +1210,10 @@ impl StandardHostServices {
             return Ok(Some((dispid, spec)));
         }
         // SAFETY: `dispatch` is a live IDispatch pointer owned by this adapter and `spec.name`
-        // remains valid for the duration of the lookup helper.
         let dispid = unsafe { raw_get_dispid_by_name(dispatch, &spec.name) }
             .map_err(|message| self.com_dispatch_adapter_fault(message))?;
         let mut state = self.com_lock(CapabilityId::ComActivationDispatch, "dispatch_invoke")?;
-        if let Some(binding) = state.bindings.get_mut(&ComObjectToken::new(object)) {
-            binding.member_dispids.insert(member, dispid);
-        }
+        com_cache_member_dispid(&mut state, ObjectHandle::new(object), member, dispid);
         self.assert_com_invariants(&state, "dispatch_invoke_cache_update");
         Ok(Some((dispid, spec)))
     }
@@ -2680,7 +2679,6 @@ impl ComHal for StandardHostServices {
                                 "create_object",
                             )?;
                         let mut state = self.com_lock(capability, "create_object")?;
-                        let handle = state.allocate_handle();
                         let mut binding = binding_from_typelib_metadata(
                             prog_id_name.to_string(),
                             native_dispatch,
@@ -2693,9 +2691,9 @@ impl ComHal for StandardHostServices {
                                 override_cfg,
                             );
                         }
-                        state.bindings.insert(handle, binding);
+                        let handle = com_insert_bound_object_binding(&mut state, binding);
                         self.assert_com_invariants(&state, "create_object");
-                        return Ok(RuntimeValue::ObjectHandle(ObjectHandle::new(handle.raw())));
+                        return Ok(RuntimeValue::ObjectHandle(handle));
                     }
                     Err(err) => return Err(err),
                 }
@@ -2722,7 +2720,6 @@ impl ComHal for StandardHostServices {
                             "create_object",
                         )?;
                     let mut state = self.com_lock(capability, "create_object")?;
-                    let handle = state.allocate_handle();
                     let mut binding = binding_from_typelib_metadata(
                         prog_id_name,
                         native_dispatch,
@@ -2732,9 +2729,9 @@ impl ComHal for StandardHostServices {
                     if let Some(override_cfg) = registered_event_override.as_ref() {
                         self.apply_registered_event_override_to_binding(&mut binding, override_cfg);
                     }
-                    state.bindings.insert(handle, binding);
+                    let handle = com_insert_bound_object_binding(&mut state, binding);
                     self.assert_com_invariants(&state, "create_object");
-                    return Ok(RuntimeValue::ObjectHandle(ObjectHandle::new(handle.raw())));
+                    return Ok(RuntimeValue::ObjectHandle(handle));
                 }
                 Err(err) => {
                     if self.has_explicit_native_com_override(prog_id) {
