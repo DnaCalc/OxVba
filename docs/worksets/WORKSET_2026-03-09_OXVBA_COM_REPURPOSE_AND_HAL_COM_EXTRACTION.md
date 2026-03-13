@@ -36,15 +36,18 @@ Completed extraction slices:
 7. the current single-`i32` source-interface sink lifecycle used by the deterministic event lane,
 8. deterministic known-member/event lookup and source-interface support policy,
 9. metadata-driven `ComBinding` assembly from loaded type-library metadata,
-10. deterministic in-process `OxVba.TestDispatch` fixture ownership,`r`n11. Windows COM event/callback state wrapper ownership,`r`n12. higher-level Windows activation and named-DISPID helper ownership.
+10. deterministic in-process `OxVba.TestDispatch` fixture ownership,
+11. Windows COM event/callback state wrapper ownership,
+12. higher-level Windows activation and named-DISPID helper ownership,
+13. bound native-dispatch lookup/rebinding and object-release bookkeeping ownership,
+14. subscription lookup/removal callback-pruning ownership.
 
 Remaining extraction wall:
-1. Remaining Windows object-lifetime/native-dispatch lifecycle ownership still centered in `oxvba-hal::standard`:
-   - ProgID/CLSID activation,
-   - raw `IDispatch` ownership/release,
-   - DISPID lookup delegation,
-   - advise/unadvise transport,
-   - sink callback ingress wiring into the shared runtime container,
+1. Remaining Windows activation/binding authority still centered in `oxvba-hal::standard`:
+   - ProgID/CLSID activation and initial binding insertion,
+   - per-object DISPID cache ownership,
+   - native invoke-policy/default-member/direct-DISPID sequencing,
+   - event transport-choice authority,
 2. public HAL COM contract contraction/rebinding over `oxvba-com`,
 3. remaining runtime-wide dynamic protocol wiring and parity work that depends on the contracted boundary.
 ## 2. Problem statement
@@ -227,7 +230,12 @@ Primary outcome:
 Primary outcome:
 1. the active COM parity work lands in the correct crate instead of reinforcing the wrong boundary.
 
-### Phase D. Server/export and fixture extraction`r`n`r`nCurrent state:`r`n1. The controlled `OxVba.TestDispatch` fixture implementation and vtable fast-path now live in `oxvba-com`; HAL delegates to exported helpers.`r`n`r`n1. Move the controlled COM fixture out of `standard.rs`.
+### Phase D. Server/export and fixture extraction
+
+Current state:
+1. The controlled `OxVba.TestDispatch` fixture implementation and vtable fast-path now live in `oxvba-com`; HAL delegates to exported helpers.
+
+1. Move the controlled COM fixture out of `standard.rs`.
 2. Establish the outward projection model for exposing OxVba objects as COM.
 3. Keep Office-style server expectations and external fixture behavior aligned with the compliance ladder.
 
@@ -312,6 +320,8 @@ Required checks for the repurpose/extraction program:
 7. Use these concrete child worksets for the next cleanup/implementation slices:
    - `docs/worksets/WORKSET_2026-03-11_UNIFIED_DYNAMIC_OBJECT_PROTOCOL_AND_VALUE_CARRIER.md`
    - `docs/worksets/WORKSET_2026-03-11_COM_REFERENCE_FACADE_AND_TYPELIB_BINDING_COMPLETION.md`
+
+
 
 
 

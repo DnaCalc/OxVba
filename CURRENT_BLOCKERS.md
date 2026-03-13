@@ -133,21 +133,22 @@ Run context: active parity/compliance execution plus in-progress feature worklis
   - Blocks `IP-04` final COM ownership extraction from HAL.
   - Blocks `IP-05` early-binding completion, `IP-06` server/export parity, and part of `IP-08` hosting parity.
 - Current state:
-  - shared transport/types, deterministic typelib catalog logic, supported Windows wire/value/invoke helpers, generic callback/subscription runtime state, metadata cache ownership, known-member/event policy, and metadata-driven `ComBinding` assembly now live materially in `oxvba-com`,
-  - `oxvba-hal::standard` still owns the remaining Windows object-lifetime/native-dispatch lifecycle core and the public COM-facing HAL contract,
-  - the remaining work is HAL rebinding/contraction plus movement of raw object-lifetime/native-dispatch lifecycle ownership behind an `oxvba-com` surface,
+  - shared transport/types, deterministic typelib catalog logic, supported Windows wire/value/invoke helpers, generic callback/subscription runtime state, metadata cache ownership, known-member/event policy, metadata-driven `ComBinding` assembly, bound-dispatch lookup/rebinding, object release bookkeeping, and subscription callback-pruning now live materially in `oxvba-com`,
+  - `oxvba-hal::standard` still owns Windows activation/binding insertion, per-object DISPID cache mutation, native invoke-policy sequencing, event transport choice, and the public COM-facing HAL contract,
+  - the remaining work is HAL rebinding/contraction plus movement of activation/invoke-policy authority behind an `oxvba-com` surface,
   - forcing closure early would freeze a still-transitional contract.
 - Exact unblock steps:
-  - continue moving the remaining Windows client lifecycle ownership out of `standard.rs`:
-    - activation,
-    - DISPID lookup,
-    - advise/unadvise transport,
-    - sink callback ingress,
+  - continue moving the remaining Windows client contract authority out of `standard.rs`:
+    - activation and initial binding insertion,
+    - per-object DISPID cache ownership,
+    - native invoke-policy/default-member/direct-DISPID sequencing,
+    - event transport-choice authority,
   - contract the public HAL COM surface down to delegation/bootstrap seams over `oxvba-com`,
   - continue late-bound/property/reference-facade parity work on top of that contracted boundary.
 - Recommendation:
-  - keep using the runtime-protocol, reference-facade, and COM extraction worksets as the cleanup spine; the remaining blocker is now native lifecycle rebinding, not metadata ownership.
-
+  - keep using the runtime-protocol, reference-facade, and COM extraction worksets as the cleanup spine; the remaining blocker is now activation/invoke contract rebinding, not metadata or raw object-lifetime ownership.
+
+
 
 ### BLK-PROP-001: Property/default-member intent model is not yet end-to-end executable
 - Impact:
@@ -399,6 +400,7 @@ Run context: active parity/compliance execution plus in-progress feature worklis
 - Previously resolved blockers:
   - `BLK-EVT-001` — resolved (runtime subscription graph)
   - `BLK-COM-001` — resolved (COM event callback parity with external registered server evidence)
+
 
 
 

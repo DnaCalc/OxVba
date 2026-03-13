@@ -3,10 +3,11 @@
 use crate::{
     ComBinding, ComCallbackToken, ComEventPath, ComEventSpec, ComMemberToken, ComObjectToken,
     ComRuntimeState, ComSubscriptionToken, ComValue, DispatchEventSinkConfig, RawIDispatch,
-    WindowsConnectionPointTransport, release_dispatch, source_interface_event_spec_supported,
-    try_advise_dispatch_event_sink, try_advise_single_i32_source_interface_event_sink,
-    unadvise_connection_point,
+    WindowsConnectionPointTransport, binding_from_typelib_metadata, release_dispatch,
+    source_interface_event_spec_supported, try_advise_dispatch_event_sink,
+    try_advise_single_i32_source_interface_event_sink, unadvise_connection_point,
 };
+use oxvba_runtime::ObjectHandle;
 use std::collections::BTreeSet;
 use std::ops::{Deref, DerefMut};
 use std::sync::{Arc, Mutex};
@@ -77,6 +78,12 @@ impl Drop for WindowsComClientState {
         }
         self.bindings.clear();
     }
+}
+
+#[derive(Debug, Clone)]
+pub struct ReleasedWindowsComObject {
+    pub transports: Vec<WindowsComSubscriptionTransport>,
+    pub stale_callbacks: BTreeSet<ComCallbackToken>,
 }
 
 fn callback_sink(
@@ -205,4 +212,119 @@ pub fn collect_stale_callbacks_for_subscription(
             }
         })
         .collect()
+}
+
+pub fn resolve_bound_native_dispatch(
+    state: &WindowsComClientState,
+    object: ObjectHandle,
+) -> Result<*mut RawIDispatch, String> {
+    let Some(binding) = state.bindings.get(&ComObjectToken::new(object.raw())) else {
+        return Err(format!(
+            "COM-E-OBJECT-MISSING: unknown COM object handle {}",
+            object.raw()
+        ));
+    };
+    if binding.native_dispatch == 0 {
+        return Err(format!(
+            "COM-E-OBJECT-MARSHAL-UNSUPPORTED: object handle {} is not backed by native IDispatch",
+            object.raw()
+        ));
+    }
+    Ok(binding.native_dispatch as *mut RawIDispatch)
+}
+
+/// # Safety
+///
+/// dispatch must be null or carry one retained IDispatch reference owned by the caller.
+pub unsafe fn bind_native_dispatch_result(
+    state: &mut WindowsComClientState,
+    dispatch: *mut RawIDispatch,
+    prog_id_hint: &str,
+) -> ObjectHandle {
+    if dispatch.is_null() {
+        return ObjectHandle::new(0);
+    }
+    if let Some((handle, _)) = state
+        .bindings
+        .iter()
+        .find(|(_, binding)| binding.native_dispatch == dispatch as usize)
+    {
+        unsafe {
+            release_dispatch(dispatch);
+        }
+        return ObjectHandle::new(handle.raw());
+    }
+    let handle = state.allocate_handle();
+    state.bindings.insert(
+        handle,
+        binding_from_typelib_metadata(
+            format!("{prog_id_hint}::<invoke-result>"),
+            dispatch as usize,
+            None,
+        ),
+    );
+    ObjectHandle::new(handle.raw())
+}
+
+pub fn release_object_binding(
+    state: &mut WindowsComClientState,
+    object: ObjectHandle,
+) -> Result<ReleasedWindowsComObject, String> {
+    let Some((binding, transports, stale_callbacks)) =
+        state.release_object_state(ComObjectToken::new(object.raw()))
+    else {
+        return Err(format!(
+            "COM-E-OBJECT-MISSING: unknown COM object token {}",
+            object.raw()
+        ));
+    };
+    if binding.native_dispatch != 0 {
+        unsafe {
+            release_dispatch(binding.native_dispatch as *mut RawIDispatch);
+        }
+    }
+    Ok(ReleasedWindowsComObject {
+        transports,
+        stale_callbacks,
+    })
+}
+
+pub fn resolve_subscription_transport(
+    state: &WindowsComClientState,
+    subscription: ComSubscriptionToken,
+) -> Result<WindowsComSubscriptionTransport, String> {
+    let Some(entry) = state.subscriptions.get(&subscription) else {
+        return Err(format!(
+            "COM-E-EVENT-ADVISE-FAILED: unknown COM event subscription token {}",
+            subscription.raw()
+        ));
+    };
+    Ok(entry.transport)
+}
+
+pub fn remove_subscription_callbacks(
+    state: &mut WindowsComClientState,
+    subscription: ComSubscriptionToken,
+) -> Result<BTreeSet<ComCallbackToken>, String> {
+    let Some(entry) = state.subscriptions.remove(&subscription) else {
+        return Err(format!(
+            "COM-E-EVENT-ADVISE-FAILED: unknown COM event subscription token {}",
+            subscription.raw()
+        ));
+    };
+    let stale_callbacks =
+        collect_stale_callbacks_for_subscription(state, subscription, entry.object);
+    for callback in &stale_callbacks {
+        state.callbacks.remove(callback);
+    }
+    state
+        .pending_callbacks
+        .retain(|callback| !stale_callbacks.contains(callback));
+    if state
+        .last_pumped_callback
+        .is_some_and(|callback| stale_callbacks.contains(&callback))
+    {
+        state.last_pumped_callback = None;
+    }
+    Ok(stale_callbacks)
 }

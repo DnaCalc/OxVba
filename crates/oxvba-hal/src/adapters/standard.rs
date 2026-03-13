@@ -30,15 +30,19 @@ use oxvba_com::{
     RawIUnknown, TypeLibMetadataCacheState, VariantResultValue, WindowsComClientState,
     WindowsComSubscriptionTransport, activate_runtime_dispatch as com_activate_runtime_dispatch,
     add_ref_dispatch as raw_add_ref_dispatch, advise_event_subscription,
-    binding_from_typelib_metadata, build_typelib_metadata,
-    collect_stale_callbacks_for_subscription, event_callback_args_from_member_token,
-    event_is_source_interface_only, event_signature_arity_for_binding,
-    get_dispid_by_name as raw_get_dispid_by_name, known_typelib_identity_for_prog_id_name,
-    map_com_hresult_label, member_spec_from_typelib_metadata,
+    bind_native_dispatch_result as com_bind_native_dispatch_result, binding_from_typelib_metadata,
+    build_typelib_metadata, event_callback_args_from_member_token, event_is_source_interface_only,
+    event_signature_arity_for_binding, get_dispid_by_name as raw_get_dispid_by_name,
+    known_typelib_identity_for_prog_id_name, map_com_hresult_label,
+    member_spec_from_typelib_metadata,
     query_dispatch_from_unknown as raw_query_dispatch_from_unknown,
     raw_oxvba_test_dispatch_vtable_invoke, release_dispatch as raw_release_dispatch,
-    release_subscription_transport, resolve_known_typelib_identity,
+    release_object_binding as com_release_object_binding, release_subscription_transport,
+    remove_subscription_callbacks as com_remove_subscription_callbacks,
+    resolve_bound_native_dispatch as com_resolve_bound_native_dispatch,
+    resolve_known_typelib_identity,
     resolve_named_argument_dispids as com_resolve_named_argument_dispids,
+    resolve_subscription_transport as com_resolve_subscription_transport,
 };
 use oxvba_runtime::{BindingHandle, DynLinkSymbol, ObjectHandle, RuntimeValue, bstr::BStr};
 use std::{
@@ -1126,32 +1130,8 @@ impl StandardHostServices {
     ) -> HalResult<*mut RawIDispatch> {
         let capability = CapabilityId::ComActivationDispatch;
         let state = self.com_lock(capability, op)?;
-        let binding = state
-            .bindings
-            .get(&ComObjectToken::new(object.raw()))
-            .ok_or_else(|| {
-                HalError::adapter_fault(
-                    self.profile,
-                    capability,
-                    op,
-                    format!(
-                        "COM-E-OBJECT-MISSING: unknown COM object handle {}",
-                        object.raw()
-                    ),
-                )
-            })?;
-        if binding.native_dispatch == 0 {
-            return Err(HalError::adapter_fault(
-                self.profile,
-                capability,
-                op,
-                format!(
-                    "COM-E-OBJECT-MARSHAL-UNSUPPORTED: object handle {} is not backed by native IDispatch",
-                    object.raw()
-                ),
-            ));
-        }
-        Ok(binding.native_dispatch as *mut RawIDispatch)
+        com_resolve_bound_native_dispatch(&state, object)
+            .map_err(|message| HalError::adapter_fault(self.profile, capability, op, message))
     }
 
     #[cfg(not(target_os = "windows"))]
@@ -1720,34 +1700,11 @@ impl StandardHostServices {
         prog_id_hint: &str,
         op: &'static str,
     ) -> HalResult<RuntimeValue> {
-        if dispatch.is_null() {
-            return Ok(RuntimeValue::ObjectHandle(0.into()));
-        }
         let capability = CapabilityId::ComActivationDispatch;
         let mut state = self.com_lock(capability, op)?;
-        if let Some((handle, _)) = state
-            .bindings
-            .iter()
-            .find(|(_, binding)| binding.native_dispatch == dispatch as RawDispatchPtr)
-        {
-            // SAFETY: `dispatch` carries an extra AddRef retained for the result lane and may be
-            // released because an existing binding already owns a stable reference.
-            unsafe {
-                raw_release_dispatch(dispatch);
-            }
-            return Ok(RuntimeValue::ObjectHandle(ObjectHandle::new(handle.raw())));
-        }
-        let handle = state.allocate_handle();
-        state.bindings.insert(
-            handle,
-            binding_from_typelib_metadata(
-                format!("{prog_id_hint}::<invoke-result>"),
-                dispatch as RawDispatchPtr,
-                None,
-            ),
-        );
+        let handle = unsafe { com_bind_native_dispatch_result(&mut state, dispatch, prog_id_hint) };
         self.assert_com_invariants(&state, op);
-        Ok(RuntimeValue::ObjectHandle(ObjectHandle::new(handle.raw())))
+        Ok(RuntimeValue::ObjectHandle(handle))
     }
 
     #[cfg(target_os = "windows")]
@@ -2800,42 +2757,27 @@ impl ComHal for StandardHostServices {
             return Err(self.denied(capability, "release_object"));
         }
         let object = object.raw();
-        let object_token = ComObjectToken::new(object);
         if !self.native_com_enabled() {
             return Ok(RuntimeValue::I32(if object == 0 { 0 } else { 1 }));
         }
-        let (binding, transports, stale_callbacks) = {
+        let released = {
             let mut state = self.com_lock(capability, "release_object")?;
             self.assert_com_invariants(&state, "release_object-pre");
-            let Some((binding, transports, stale_callbacks)) =
-                state.release_object_state(object_token)
-            else {
-                return Err(HalError::adapter_fault(
-                    self.profile,
-                    capability,
-                    "release_object",
-                    format!("COM-E-OBJECT-MISSING: unknown COM object token {object}"),
-                ));
-            };
+            let released = com_release_object_binding(&mut state, ObjectHandle::new(object))
+                .map_err(|message| {
+                    HalError::adapter_fault(self.profile, capability, "release_object", message)
+                })?;
             self.assert_com_invariants(&state, "release_object-post");
-            (binding, transports, stale_callbacks)
+            released
         };
-        for transport in transports {
+        for transport in released.transports {
             self.release_event_subscription_transport(transport)?;
-        }
-        #[cfg(target_os = "windows")]
-        if binding.native_dispatch != 0 {
-            // SAFETY: `binding.native_dispatch` was removed from the binding table above and has
-            // not been released yet; this balances the adapter-owned reference for the object.
-            unsafe {
-                raw_release_dispatch(binding.native_dispatch as *mut RawIDispatch);
-            }
         }
         if com_event_trace_enabled() {
             eprintln!(
                 "[oxvba-hal][com-event] release-object object={} removed_callbacks={}",
                 object,
-                stale_callbacks.len()
+                released.stale_callbacks.len()
             );
         }
         Ok(RuntimeValue::I32(1))
@@ -3177,54 +3119,19 @@ impl ComHal for StandardHostServices {
         let transport = {
             let state = self.com_lock(capability, "unsubscribe_event")?;
             self.assert_com_invariants(&state, "unsubscribe_event-pre");
-            let Some(entry) = state
-                .subscriptions
-                .get(&ComSubscriptionToken::new(subscription))
-            else {
-                return Err(HalError::adapter_fault(
-                    self.profile,
-                    capability,
-                    "unsubscribe_event",
-                    format!(
-                        "COM-E-EVENT-ADVISE-FAILED: unknown COM event subscription token {subscription}"
-                    ),
-                ));
-            };
-            entry.transport
+            com_resolve_subscription_transport(&state, ComSubscriptionToken::new(subscription))
+                .map_err(|message| {
+                    HalError::adapter_fault(self.profile, capability, "unsubscribe_event", message)
+                })?
         };
         self.release_event_subscription_transport(transport)?;
         let mut state = self.com_lock(capability, "unsubscribe_event")?;
         self.assert_com_invariants(&state, "unsubscribe_event-pre-remove");
-        let Some(entry) = state
-            .subscriptions
-            .remove(&ComSubscriptionToken::new(subscription))
-        else {
-            return Err(HalError::adapter_fault(
-                self.profile,
-                capability,
-                "unsubscribe_event",
-                format!(
-                    "COM-E-EVENT-ADVISE-FAILED: unknown COM event subscription token {subscription}"
-                ),
-            ));
-        };
-        let stale_callbacks: BTreeSet<ComCallbackToken> = collect_stale_callbacks_for_subscription(
-            &state,
-            ComSubscriptionToken::new(subscription),
-            entry.object,
-        );
-        for callback in &stale_callbacks {
-            state.callbacks.remove(callback);
-        }
-        state
-            .pending_callbacks
-            .retain(|callback| !stale_callbacks.contains(callback));
-        if state
-            .last_pumped_callback
-            .is_some_and(|callback| stale_callbacks.contains(&callback))
-        {
-            state.last_pumped_callback = None;
-        }
+        let _stale_callbacks =
+            com_remove_subscription_callbacks(&mut state, ComSubscriptionToken::new(subscription))
+                .map_err(|message| {
+                    HalError::adapter_fault(self.profile, capability, "unsubscribe_event", message)
+                })?;
         self.assert_com_invariants(&state, "unsubscribe_event-post-remove");
         Ok(RuntimeValue::from_legacy_i32(1))
     }
