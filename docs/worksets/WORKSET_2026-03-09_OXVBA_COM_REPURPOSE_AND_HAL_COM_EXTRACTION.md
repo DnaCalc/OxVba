@@ -1,7 +1,7 @@
 # Workset: Repurpose `oxvba-com` and Extract COM Out of `oxvba-hal`
 
 Date: 2026-03-09  
-Status: planned  
+Status: in-progress  
 Scope: redefine `oxvba-com` as the Windows-first bidirectional COM bridge for OxVba, move COM-specific state and behavior toward that crate, and shrink `oxvba-hal` back toward profile/policy/bootstrap concerns rather than serving as the long-term COM implementation home.
 
 ## 1. Decision summary
@@ -24,6 +24,20 @@ Design posture:
 4. Keep OxVba semantic values canonical across compiler, VM, host, and runtime surfaces; `oxvba-com` translates those values to and from COM wire formats rather than making COM wire types the core value model.
 5. Prefer one internal dynamic-object model shaped by VBA semantics; COM is an adapter onto that model, not a second dynamic-object execution path.
 
+## Progress snapshot (2026-03-13)
+
+Completed extraction slices:
+1. shared COM request/callback/value models,
+2. deterministic typelib catalog/build logic,
+3. shared COM runtime state and callback/subscription bookkeeping,
+4. typelib metadata cache storage/invalidation,
+5. generic Windows COM client ABI/constants/helpers for activation, GUID parsing, DISPID lookup, and raw reference release.
+
+Remaining extraction wall:
+1. sink object construction,
+2. connection-point advise/unadvise around sink ownership,
+3. callback ingress into the shared COM runtime container,
+4. test-only in-process COM fixture ownership still living in oxvba-hal::standard.
 ## 2. Problem statement
 
 Current state:
@@ -291,3 +305,4 @@ Required checks for the repurpose/extraction program:
 7. Use these concrete child worksets for the next cleanup/implementation slices:
    - `docs/worksets/WORKSET_2026-03-11_UNIFIED_DYNAMIC_OBJECT_PROTOCOL_AND_VALUE_CARRIER.md`
    - `docs/worksets/WORKSET_2026-03-11_COM_REFERENCE_FACADE_AND_TYPELIB_BINDING_COMPLETION.md`
+

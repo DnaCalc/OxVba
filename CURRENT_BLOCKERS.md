@@ -146,10 +146,10 @@ Run context: active parity/compliance execution plus in-progress feature worklis
 - Recommendation:
   - do not force final crate extraction ahead of invoke/property closure; use the new runtime-protocol and reference-facade worksets as the cleanup spine.
 
-### BLK-COM-STATE-OWNERSHIP-001: Remaining COM extraction is now a native lifecycle ownership wall
+### BLK-COM-STATE-OWNERSHIP-001: Remaining COM extraction is now a sink/callback lifecycle wall
 - Impact:
   - Blocks the next honest contraction step for HAL in the COM area.
-  - Blocks final closure of `IP-04` and keeps `IP-05`/`IP-06` coupled to HAL-owned Windows lifecycle code.
+  - Blocks final closure of `IP-04` and keeps `IP-05`/`IP-06` coupled to HAL-owned Windows callback lifecycle code.
 - Current state:
   - `oxvba-com` now owns:
     - shared COM request/callback types,
@@ -162,25 +162,30 @@ Run context: active parity/compliance execution plus in-progress feature worklis
     - the generic COM runtime container with callback/subscription queue logic,
     - object-state release bookkeeping,
     - object descriptor derivation from binding state,
-    - type-library metadata cache storage and invalidation logic.
-  - `oxvba-hal::standard` still owns the remaining Windows-native lifecycle core:
-    - ProgID -> CLSID -> `CoCreateInstance` activation,
-    - raw `IDispatch` reference ownership and final release,
-    - `GetIDsOfNames` / DISPID lookup helpers,
-    - connection-point advise/unadvise transport,
-    - sink object creation and callback ingress into the shared COM runtime state.
-  - Further extraction is no longer another helper move; it requires an `oxvba-com`-owned Windows client lifecycle API for activation and event sinks.
+    - type-library metadata cache storage and invalidation logic,
+    - the generic Windows COM client ABI/constants/helpers for:
+      - activation,
+      - raw dispatch ownership,
+      - GUID parsing/comparison,
+      - DISPID/name lookup,
+      - raw connection-point release.
+  - `oxvba-hal::standard` now mainly owns the remaining Windows callback-side lifecycle:
+    - event sink object construction,
+    - connection-point advise/unadvise orchestration around those sink objects,
+    - sink callback ingress into the shared COM runtime state,
+    - test-only in-process COM fixture objects.
+  - Further extraction is no longer another raw ABI/helper move; it requires an `oxvba-com`-owned sink/callback lifecycle surface that HAL can delegate to cleanly.
 - Exact unblock steps:
-  - define the `oxvba-com` Windows client lifecycle surface for:
-    - activation and raw dispatch ownership,
-    - DISPID/name-resolution helpers,
-    - connection-point transport lifecycle,
-    - sink callback ingress back into the shared runtime container,
-  - move the remaining raw COM ABI structs/helpers and lifecycle invariants out of `standard.rs`,
-  - rebind HAL to delegation/bootstrap over that lifecycle surface,
-  - then continue the remaining early-bound/reference-facade and event-lifecycle work on the new boundary.
+  - define the `oxvba-com` Windows sink/callback lifecycle surface for:
+    - sink object construction,
+    - connection-point advise/unadvise around sink ownership,
+    - callback ingress into the shared runtime container,
+  - move the remaining connection-point sink implementations and callback-lifecycle invariants out of `standard.rs`,
+  - rebind HAL to delegation/bootstrap over that callback lifecycle surface,
+  - then reopen the downstream client/event/server closure work.
 - Recommendation:
-  - treat the next step as a larger Windows COM client lifecycle extraction, not another local helper cleanup.
+  - take the next step as a focused sink/callback extraction rather than another raw COM helper move.
+
 ### BLK-PROP-001: Property/default-member intent model is not yet end-to-end executable
 - Impact:
   - Blocks `IP-02` VBA property model and default-member semantics.

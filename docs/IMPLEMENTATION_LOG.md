@@ -1,5 +1,31 @@
 # Implementation Log
 
+## 2026-03-13 - Extracted generic Windows COM client ABI and helper surface into oxvba-com
+
+- Continued the COM ownership refactor in:
+  - [windows_client.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-com\src\windows_client.rs)
+  - [lib.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-com\src\lib.rs)
+  - [standard.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-hal\src\adapters\standard.rs)
+  - [CURRENT_BLOCKERS.md](C:\Work\DnaCalc\OxVba\CURRENT_BLOCKERS.md)
+- oxvba-com now owns the generic Windows client ABI and helper surface for:
+  - ProgID activation,
+  - raw IDispatch/IUnknown/connection-point ABI structs,
+  - GUID parsing/comparison,
+  - AddRef/Release helpers,
+  - GetIDsOfNames / DISPID lookup helpers.
+- oxvba-hal now depends on that shared client surface instead of defining its own duplicate raw COM ABI and helper implementations.
+- The remaining HAL-owned COM area is narrower:
+  - event sink object construction,
+  - connection-point advise/unadvise orchestration around those sink objects,
+  - sink callback ingress,
+  - test-only in-process COM fixtures.
+- Net effect:
+  - the COM extraction moved past raw activation/name-resolution/helper ownership,
+  - the next honest wall is now the sink/callback lifecycle surface rather than generic Windows client ABI duplication.
+- Verification:
+  - cargo test -p oxvba-com -p oxvba-hal --quiet
+  - ./scripts/check-governance.ps1
+  - ./scripts/meta-check.ps1 -Fast -NoArtifacts
 ## 2026-03-13 - Extracted COM binding and runtime-state bookkeeping into oxvba-com
 
 - Continued the COM ownership refactor in:
@@ -2716,6 +2742,7 @@
     - `cargo test -p oxvba-com -p oxvba-hal --quiet`
     - `./scripts/check-governance.ps1`
     - `./scripts/meta-check.ps1 -Fast -NoArtifacts`
+
 
 
 

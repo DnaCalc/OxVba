@@ -75,9 +75,9 @@ Why still open:
 ### `IP-04` `oxvba-com` repurpose and HAL COM extraction
 
 Why still open:
-1. the direction is locked,
-2. some transport/types, deterministic typelib logic, and the first runtime value-model slices are already extracted or in place,
-3. but the main COM runtime state/behavior still has not fully moved into `oxvba-com`.
+1. the direction is locked and major extraction slices are already complete, including shared runtime state, typelib cache ownership, and the generic Windows client ABI/helper surface,
+2. but HAL still owns event sink construction, connection-point advise/unadvise around sink ownership, callback ingress, and the in-process COM test fixtures,
+3. parity-complete crate extraction requires that remaining callback lifecycle to move behind an `oxvba-com` surface before HAL can contract honestly.
 
 ### `IP-05` Windows early-bound COM and type-library parity
 

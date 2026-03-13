@@ -23,12 +23,25 @@ use oxvba_com::windows_variant::{
     variant_to_com_value as com_variant_to_com_value,
 };
 use oxvba_com::{
-    ComBinding, ComCallbackPayload, ComCallbackToken, ComDirectDispatchSpec, ComEventPath,
-    ComEventSpec, ComEventSubscription as SharedComEventSubscription, ComEventTriggerSpec,
-    ComInvokeArg, ComInvokeFailure, ComInvokeRequest, ComMemberSpec, ComMemberToken,
-    ComObjectDescriptor, ComObjectToken, ComObjectTransportKind, ComRuntimeState,
-    ComSubscriptionToken, ComValue, TypeLibMetadataCacheState, VariantResultValue,
-    build_typelib_metadata, known_typelib_identity_for_prog_id_name,
+    COM_CONNECT_E_CANNOTCONNECT, COM_CONNECT_E_NOCONNECTION, COM_DISP_E_BADPARAMCOUNT,
+    COM_DISP_E_EXCEPTION, COM_DISP_E_MEMBERNOTFOUND, COM_DISP_E_PARAMNOTFOUND,
+    COM_DISP_E_TYPEMISMATCH, COM_DISP_E_UNKNOWNNAME, COM_DISPID_PROPERTYPUT, COM_E_INVALIDARG,
+    COM_E_NOINTERFACE, COM_E_NOTIMPL, COM_S_OK, ComBinding, ComCallbackPayload, ComCallbackToken,
+    ComDirectDispatchSpec, ComEventPath, ComEventSpec,
+    ComEventSubscription as SharedComEventSubscription, ComEventTriggerSpec, ComInvokeArg,
+    ComInvokeFailure, ComInvokeRequest, ComMemberSpec, ComMemberToken, ComObjectDescriptor,
+    ComObjectToken, ComObjectTransportKind, ComRuntimeState, ComSubscriptionToken, ComValue,
+    IID_ICONNECTIONPOINT, IID_ICONNECTIONPOINTCONTAINER, IID_IDISPATCH, IID_IUNKNOWN, IID_NULL,
+    RawIConnectionPoint, RawIConnectionPointContainer, RawIConnectionPointContainerVtbl,
+    RawIConnectionPointVtbl, RawIDispatch, RawIDispatchVtbl, RawIUnknown, RawIUnknownVtbl,
+    TypeLibMetadataCacheState, VariantResultValue,
+    activate_dispatch_by_prog_id as com_activate_dispatch_by_prog_id,
+    add_ref_dispatch as raw_add_ref_dispatch, build_typelib_metadata,
+    get_dispid_by_name as raw_get_dispid_by_name, get_dispids_by_names as raw_get_dispids_by_names,
+    known_typelib_identity_for_prog_id_name, parse_guid_canonical,
+    query_dispatch_from_unknown as raw_query_dispatch_from_unknown,
+    release_connection_point as raw_release_connection_point,
+    release_dispatch as raw_release_dispatch, release_unknown as raw_release_unknown,
     resolve_known_typelib_identity,
 };
 use oxvba_runtime::{
@@ -54,9 +67,8 @@ use std::{
 use windows_sys::Win32::Foundation::SysAllocString;
 #[cfg(target_os = "windows")]
 use windows_sys::Win32::System::Com::{
-    CLSCTX_SERVER, CLSIDFromProgID, COINIT_APARTMENTTHREADED, CoCreateInstance, CoInitializeEx,
-    DISPATCH_METHOD, DISPATCH_PROPERTYGET, DISPATCH_PROPERTYPUT, DISPATCH_PROPERTYPUTREF,
-    DISPPARAMS, EXCEPINFO,
+    COINIT_APARTMENTTHREADED, CoInitializeEx, DISPATCH_METHOD, DISPATCH_PROPERTYGET,
+    DISPATCH_PROPERTYPUT, DISPATCH_PROPERTYPUTREF, DISPPARAMS, EXCEPINFO,
 };
 #[cfg(target_os = "windows")]
 use windows_sys::Win32::System::Variant::{
@@ -89,6 +101,58 @@ macro_rules! hal_contract_assert {
 const OXVBA_TEST_DISPATCH_PROGID: &str = "OxVba.TestDispatch";
 #[cfg(target_os = "windows")]
 const EXCEL_APPLICATION_PROGID: &str = "Excel.Application";
+#[cfg(target_os = "windows")]
+const IID_OXVBA_TEST_DISPATCH_EVENTS: windows_sys::core::GUID = windows_sys::core::GUID {
+    data1: 0x1111_1112,
+    data2: 0x2222,
+    data3: 0x3333,
+    data4: [0x44, 0x44, 0x55, 0x55, 0x55, 0x55, 0x55, 0x56],
+};
+#[cfg(target_os = "windows")]
+#[cfg(test)]
+const IID_OXVBA_TEST_DISPATCH_EVENTS_STR: &str = "11111112-2222-3333-4444-555555555556";
+#[cfg(target_os = "windows")]
+const IID_OXVBA_TEST_DISPATCH_SOURCE_EVENTS: windows_sys::core::GUID = windows_sys::core::GUID {
+    data1: 0x1111_1113,
+    data2: 0x2222,
+    data3: 0x3333,
+    data4: [0x44, 0x44, 0x55, 0x55, 0x55, 0x55, 0x55, 0x57],
+};
+#[cfg(target_os = "windows")]
+const IID_OXVBA_TEST_DISPATCH_SOURCE_EVENTS_STR: &str = "11111113-2222-3333-4444-555555555557";
+#[cfg(target_os = "windows")]
+#[cfg(test)]
+const IID_EXCEL_APPLICATION_EVENTS_STR: &str = "00024413-0000-0000-C000-000000000046";
+const TEST_DISPID_COUNT: i32 = 1;
+const TEST_DISPID_EXISTS: i32 = 2;
+const TEST_DISPID_FIRE_CHANGED: i32 = 3;
+const TEST_DISPID_FIRE_CHANGED_PAIR: i32 = 4;
+const TEST_DISPID_FIRE_CHANGED_SOURCE_INTERFACE: i32 = 11;
+const TEST_DISPID_PING: i32 = 5;
+const TEST_DISPID_LOOKUP: i32 = 6;
+const TEST_DISPID_SET_VALUE: i32 = 7;
+const TEST_DISPID_SET_VALUE_REF: i32 = 8;
+const TEST_DISPID_VALUE: i32 = 9;
+const TEST_DISPID_EXCEL_QUIT: i32 = 10;
+const TEST_DISPID_SUM_PAIR: i32 = 12;
+const TEST_DISPID_LOOKUP_PAIR: i32 = 13;
+const TEST_DISPID_SET_INDEXED_VALUE: i32 = 14;
+const TEST_DISPID_SET_INDEXED_VALUE_REF: i32 = 15;
+const TEST_DISPID_ECHO_VARIANT: i32 = 16;
+const TEST_DISPID_RAISE_EXCEPTION: i32 = 17;
+const TEST_DISPID_RETURN_SMALLINT: i32 = 18;
+const TEST_DISPID_RETURN_UNSIGNED_WORD: i32 = 19;
+const TEST_NAMED_DISPID_LHS: i32 = 101;
+const TEST_NAMED_DISPID_RHS: i32 = 102;
+const TEST_NAMED_DISPID_INDEX: i32 = 103;
+const TEST_NAMED_DISPID_VALUE: i32 = 104;
+const TEST_EVENT_CHANGED: i32 = 1;
+#[cfg(test)]
+const TEST_EVENT_CHANGED_SOURCE_INTERFACE: i32 = 2;
+const TEST_EVENT_CHANGED_PAIR: i32 = 3;
+#[cfg(test)]
+const TEST_EVENT_EXCEL_APP_QUIT: i32 = 10;
+const COM_EVENT_DISPATCH_MEMBER_WILDCARD: i32 = i32::MIN + 3_333;
 
 #[derive(Debug, Clone)]
 pub(crate) struct StandardHostServices {
@@ -1027,47 +1091,8 @@ impl StandardHostServices {
         {
             return Ok(create_oxvba_test_dispatch());
         }
-        let wide: Vec<u16> = prog_id.encode_utf16().chain(std::iter::once(0)).collect();
-        let mut clsid = windows_sys::core::GUID {
-            data1: 0,
-            data2: 0,
-            data3: 0,
-            data4: [0; 8],
-        };
-        // SAFETY: `wide` is a valid nul-terminated UTF-16 ProgID buffer and `clsid` is a valid
-        // out-parameter for CLSIDFromProgID.
-        let hr = unsafe { CLSIDFromProgID(wide.as_ptr(), &mut clsid) };
-        if hr < 0 {
-            return Err(self.com_createobject_adapter_fault(format!(
-                "CLSIDFromProgID failed for `{prog_id}` with HRESULT {:#010X}",
-                hr as u32
-            )));
-        }
-
-        let mut dispatch_ptr: *mut core::ffi::c_void = std::ptr::null_mut();
-        // SAFETY: CLSID/IID pointers are valid, COM apartment is initialized on this thread, and
-        // `dispatch_ptr` is a writable out-parameter for CoCreateInstance.
-        let hr = unsafe {
-            CoCreateInstance(
-                &clsid,
-                std::ptr::null_mut(),
-                CLSCTX_SERVER,
-                &IID_IDISPATCH,
-                &mut dispatch_ptr,
-            )
-        };
-        if hr < 0 {
-            return Err(self.com_createobject_adapter_fault(format!(
-                "CoCreateInstance failed for `{prog_id}` with HRESULT {:#010X}",
-                hr as u32
-            )));
-        }
-        if dispatch_ptr.is_null() {
-            return Err(self.com_createobject_adapter_fault(
-                "CoCreateInstance returned a null IDispatch pointer".to_string(),
-            ));
-        }
-        Ok(dispatch_ptr.cast::<RawIDispatch>())
+        com_activate_dispatch_by_prog_id(prog_id)
+            .map_err(|message| self.com_createobject_adapter_fault(message))
     }
 
     #[cfg(target_os = "windows")]
@@ -4177,6 +4202,137 @@ struct ComConnectionPointAdviseRequest {
 }
 
 #[cfg(target_os = "windows")]
+#[allow(unsafe_op_in_unsafe_fn)]
+unsafe fn raw_try_advise_connection_point_event(
+    dispatch: *mut RawIDispatch,
+    request: ComConnectionPointAdviseRequest,
+    connection_point_iid: &str,
+) -> Result<Option<ComNativeConnectionPointTransport>, String> {
+    if dispatch.is_null() {
+        return Err("dispatch pointer was null during connection-point advise".to_string());
+    }
+    let iid = parse_guid_canonical(connection_point_iid)
+        .ok_or_else(|| format!("invalid connection-point IID `{connection_point_iid}`"))?;
+
+    let mut container_ptr: *mut core::ffi::c_void = std::ptr::null_mut();
+    let hr = ((*(*dispatch).vtbl).unknown.query_interface)(
+        dispatch.cast::<core::ffi::c_void>(),
+        &IID_ICONNECTIONPOINTCONTAINER,
+        &mut container_ptr,
+    );
+    if hr == COM_E_NOINTERFACE {
+        return Ok(None);
+    }
+    if hr < 0 {
+        return Err(format!(
+            "QueryInterface(IConnectionPointContainer) failed with HRESULT {:#010X}",
+            hr as u32
+        ));
+    }
+    if container_ptr.is_null() {
+        return Err("QueryInterface(IConnectionPointContainer) returned null".to_string());
+    }
+
+    let container = container_ptr.cast::<RawIConnectionPointContainer>();
+    let mut connection_point_ptr: *mut core::ffi::c_void = std::ptr::null_mut();
+    let find_hr = ((*(*container).vtbl).find_connection_point)(
+        container.cast::<core::ffi::c_void>(),
+        &iid,
+        &mut connection_point_ptr,
+    );
+    ((*(*container).vtbl).unknown.release)(container.cast::<core::ffi::c_void>());
+    if find_hr == COM_E_NOINTERFACE || find_hr == COM_DISP_E_MEMBERNOTFOUND {
+        return Ok(None);
+    }
+    if find_hr < 0 {
+        return Err(format!(
+            "FindConnectionPoint({connection_point_iid}) failed with HRESULT {:#010X}",
+            find_hr as u32
+        ));
+    }
+    if connection_point_ptr.is_null() {
+        return Err("FindConnectionPoint returned null".to_string());
+    }
+
+    let connection_point = connection_point_ptr.cast::<RawIConnectionPoint>();
+    let sink_ptr = match request.sink_mode {
+        ComConnectionPointSinkMode::Dispatch {
+            event_dispatch_member,
+        } => create_oxvba_com_event_sink(
+            Arc::clone(&request.com_state),
+            request.subscription,
+            request.object,
+            request.event_token,
+            event_dispatch_member,
+            request.expected_arity,
+            Some(iid),
+        ),
+        ComConnectionPointSinkMode::SourceInterface => {
+            create_oxvba_com_event_source_interface_sink(
+                Arc::clone(&request.com_state),
+                request.subscription,
+                request.object,
+                request.event_token,
+                request.expected_arity,
+            )
+        }
+    };
+
+    let mut cookie = 0u32;
+    let advise_hr = ((*(*connection_point).vtbl).advise)(
+        connection_point.cast::<core::ffi::c_void>(),
+        sink_ptr,
+        &mut cookie,
+    );
+    match request.sink_mode {
+        ComConnectionPointSinkMode::Dispatch { .. } => {
+            ((*(*(sink_ptr.cast::<RawIDispatch>())).vtbl).unknown.release)(sink_ptr)
+        }
+        ComConnectionPointSinkMode::SourceInterface => {
+            ((*(*(sink_ptr.cast::<RawIUnknown>())).vtbl).release)(sink_ptr)
+        }
+    };
+    if advise_hr == COM_CONNECT_E_CANNOTCONNECT || advise_hr == COM_CONNECT_E_NOCONNECTION {
+        raw_release_connection_point(connection_point);
+        return Ok(None);
+    }
+    if advise_hr < 0 {
+        raw_release_connection_point(connection_point);
+        return Err(format!(
+            "IConnectionPoint::Advise failed with HRESULT {:#010X}",
+            advise_hr as u32
+        ));
+    }
+    Ok(Some(ComNativeConnectionPointTransport {
+        connection_point: connection_point as usize,
+        cookie,
+    }))
+}
+
+#[cfg(target_os = "windows")]
+#[allow(unsafe_op_in_unsafe_fn)]
+unsafe fn raw_unadvise_connection_point(
+    native: ComNativeConnectionPointTransport,
+) -> Result<(), String> {
+    if native.connection_point == 0 {
+        return Ok(());
+    }
+    let connection_point = native.connection_point as *mut RawIConnectionPoint;
+    let hr = ((*(*connection_point).vtbl).unadvise)(
+        connection_point.cast::<core::ffi::c_void>(),
+        native.cookie,
+    );
+    raw_release_connection_point(connection_point);
+    if hr < 0 && hr != COM_CONNECT_E_NOCONNECTION {
+        return Err(format!(
+            "IConnectionPoint::Unadvise failed with HRESULT {:#010X}",
+            hr as u32
+        ));
+    }
+    Ok(())
+}
+
+#[cfg(target_os = "windows")]
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct RegisteredEventOverrideConfig {
     event_token: i32,
@@ -4695,233 +4851,6 @@ fn map_com_hresult_label(hresult: Option<u32>, arg_err: Option<u32>) -> &'static
         Some(_) => "native-failure",
         None => "fault-unspecified",
     }
-}
-
-#[cfg(target_os = "windows")]
-const IID_IDISPATCH: windows_sys::core::GUID = windows_sys::core::GUID {
-    data1: 0x0002_0400,
-    data2: 0x0000,
-    data3: 0x0000,
-    data4: [0xC0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x46],
-};
-
-#[cfg(target_os = "windows")]
-const IID_NULL: windows_sys::core::GUID = windows_sys::core::GUID {
-    data1: 0,
-    data2: 0,
-    data3: 0,
-    data4: [0; 8],
-};
-
-#[cfg(target_os = "windows")]
-const IID_IUNKNOWN: windows_sys::core::GUID = windows_sys::core::GUID {
-    data1: 0x0000_0000,
-    data2: 0x0000,
-    data3: 0x0000,
-    data4: [0xC0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x46],
-};
-
-#[cfg(target_os = "windows")]
-const IID_ICONNECTIONPOINTCONTAINER: windows_sys::core::GUID = windows_sys::core::GUID {
-    data1: 0xB196_B284,
-    data2: 0xBAB4,
-    data3: 0x101A,
-    data4: [0xB6, 0x9C, 0x00, 0xAA, 0x00, 0x34, 0x1D, 0x07],
-};
-
-#[cfg(target_os = "windows")]
-const IID_ICONNECTIONPOINT: windows_sys::core::GUID = windows_sys::core::GUID {
-    data1: 0xB196_B286,
-    data2: 0xBAB4,
-    data3: 0x101A,
-    data4: [0xB6, 0x9C, 0x00, 0xAA, 0x00, 0x34, 0x1D, 0x07],
-};
-
-#[cfg(target_os = "windows")]
-const IID_OXVBA_TEST_DISPATCH_EVENTS: windows_sys::core::GUID = windows_sys::core::GUID {
-    data1: 0x1111_1112,
-    data2: 0x2222,
-    data3: 0x3333,
-    data4: [0x44, 0x44, 0x55, 0x55, 0x55, 0x55, 0x55, 0x56],
-};
-#[cfg(target_os = "windows")]
-#[cfg(test)]
-const IID_OXVBA_TEST_DISPATCH_EVENTS_STR: &str = "11111112-2222-3333-4444-555555555556";
-#[cfg(target_os = "windows")]
-const IID_OXVBA_TEST_DISPATCH_SOURCE_EVENTS: windows_sys::core::GUID = windows_sys::core::GUID {
-    data1: 0x1111_1113,
-    data2: 0x2222,
-    data3: 0x3333,
-    data4: [0x44, 0x44, 0x55, 0x55, 0x55, 0x55, 0x55, 0x57],
-};
-#[cfg(target_os = "windows")]
-const IID_OXVBA_TEST_DISPATCH_SOURCE_EVENTS_STR: &str = "11111113-2222-3333-4444-555555555557";
-#[cfg(target_os = "windows")]
-#[cfg(test)]
-const IID_EXCEL_APPLICATION_EVENTS_STR: &str = "00024413-0000-0000-C000-000000000046";
-#[cfg(target_os = "windows")]
-const COM_S_OK: i32 = 0;
-#[cfg(target_os = "windows")]
-const COM_E_NOINTERFACE: i32 = 0x8000_4002u32 as i32;
-#[cfg(target_os = "windows")]
-const COM_E_NOTIMPL: i32 = 0x8000_4001u32 as i32;
-#[cfg(target_os = "windows")]
-const COM_E_INVALIDARG: i32 = 0x8007_0057u32 as i32;
-#[cfg(target_os = "windows")]
-const COM_DISP_E_MEMBERNOTFOUND: i32 = 0x8002_0003u32 as i32;
-#[cfg(target_os = "windows")]
-const COM_DISP_E_EXCEPTION: i32 = 0x8002_0009u32 as i32;
-#[cfg(target_os = "windows")]
-const COM_DISP_E_PARAMNOTFOUND: i32 = 0x8002_0004u32 as i32;
-#[cfg(target_os = "windows")]
-const COM_DISP_E_UNKNOWNNAME: i32 = 0x8002_0006u32 as i32;
-#[cfg(target_os = "windows")]
-const COM_DISP_E_BADPARAMCOUNT: i32 = 0x8002_000Eu32 as i32;
-#[cfg(target_os = "windows")]
-const COM_DISP_E_TYPEMISMATCH: i32 = 0x8002_0005u32 as i32;
-#[cfg(target_os = "windows")]
-const COM_DISPID_PROPERTYPUT: i32 = -3;
-#[cfg(target_os = "windows")]
-const COM_CONNECT_E_NOCONNECTION: i32 = 0x8004_0004u32 as i32;
-#[cfg(target_os = "windows")]
-const COM_CONNECT_E_CANNOTCONNECT: i32 = 0x8004_0002u32 as i32;
-const TEST_DISPID_COUNT: i32 = 1;
-const TEST_DISPID_EXISTS: i32 = 2;
-const TEST_DISPID_FIRE_CHANGED: i32 = 3;
-const TEST_DISPID_FIRE_CHANGED_PAIR: i32 = 4;
-const TEST_DISPID_FIRE_CHANGED_SOURCE_INTERFACE: i32 = 11;
-const TEST_DISPID_PING: i32 = 5;
-const TEST_DISPID_LOOKUP: i32 = 6;
-const TEST_DISPID_SET_VALUE: i32 = 7;
-const TEST_DISPID_SET_VALUE_REF: i32 = 8;
-const TEST_DISPID_VALUE: i32 = 9;
-const TEST_DISPID_EXCEL_QUIT: i32 = 10;
-const TEST_DISPID_SUM_PAIR: i32 = 12;
-const TEST_DISPID_LOOKUP_PAIR: i32 = 13;
-const TEST_DISPID_SET_INDEXED_VALUE: i32 = 14;
-const TEST_DISPID_SET_INDEXED_VALUE_REF: i32 = 15;
-const TEST_DISPID_ECHO_VARIANT: i32 = 16;
-const TEST_DISPID_RAISE_EXCEPTION: i32 = 17;
-const TEST_DISPID_RETURN_SMALLINT: i32 = 18;
-const TEST_DISPID_RETURN_UNSIGNED_WORD: i32 = 19;
-const TEST_NAMED_DISPID_LHS: i32 = 101;
-const TEST_NAMED_DISPID_RHS: i32 = 102;
-const TEST_NAMED_DISPID_INDEX: i32 = 103;
-const TEST_NAMED_DISPID_VALUE: i32 = 104;
-const TEST_EVENT_CHANGED: i32 = 1;
-#[cfg(test)]
-const TEST_EVENT_CHANGED_SOURCE_INTERFACE: i32 = 2;
-const TEST_EVENT_CHANGED_PAIR: i32 = 3;
-#[cfg(test)]
-const TEST_EVENT_EXCEL_APP_QUIT: i32 = 10;
-const COM_EVENT_DISPATCH_MEMBER_WILDCARD: i32 = i32::MIN + 3_333;
-
-#[cfg(target_os = "windows")]
-#[repr(C)]
-struct RawIUnknownVtbl {
-    query_interface: unsafe extern "system" fn(
-        this: *mut core::ffi::c_void,
-        riid: *const windows_sys::core::GUID,
-        ppv: *mut *mut core::ffi::c_void,
-    ) -> i32,
-    add_ref: unsafe extern "system" fn(this: *mut core::ffi::c_void) -> u32,
-    release: unsafe extern "system" fn(this: *mut core::ffi::c_void) -> u32,
-}
-
-#[cfg(target_os = "windows")]
-#[repr(C)]
-struct RawIUnknown {
-    vtbl: *const RawIUnknownVtbl,
-}
-
-#[cfg(target_os = "windows")]
-#[repr(C)]
-struct RawIDispatchVtbl {
-    unknown: RawIUnknownVtbl,
-    get_type_info_count:
-        unsafe extern "system" fn(this: *mut core::ffi::c_void, pctinfo: *mut u32) -> i32,
-    get_type_info: unsafe extern "system" fn(
-        this: *mut core::ffi::c_void,
-        itinfo: u32,
-        lcid: u32,
-        pptinfo: *mut *mut core::ffi::c_void,
-    ) -> i32,
-    get_ids_of_names: unsafe extern "system" fn(
-        this: *mut core::ffi::c_void,
-        riid: *const windows_sys::core::GUID,
-        rgsznames: *mut *mut u16,
-        cnames: u32,
-        lcid: u32,
-        rgdispid: *mut i32,
-    ) -> i32,
-    invoke: unsafe extern "system" fn(
-        this: *mut core::ffi::c_void,
-        dispidmember: i32,
-        riid: *const windows_sys::core::GUID,
-        lcid: u32,
-        wflags: u16,
-        pparams: *mut DISPPARAMS,
-        pvarresult: *mut VARIANT,
-        pexcepinfo: *mut EXCEPINFO,
-        puargerr: *mut u32,
-    ) -> i32,
-}
-
-#[cfg(target_os = "windows")]
-#[repr(C)]
-struct RawIDispatch {
-    vtbl: *const RawIDispatchVtbl,
-}
-
-#[cfg(target_os = "windows")]
-#[repr(C)]
-struct RawIConnectionPointContainerVtbl {
-    unknown: RawIUnknownVtbl,
-    enum_connection_points: unsafe extern "system" fn(
-        this: *mut core::ffi::c_void,
-        pp_enum: *mut *mut core::ffi::c_void,
-    ) -> i32,
-    find_connection_point: unsafe extern "system" fn(
-        this: *mut core::ffi::c_void,
-        riid: *const windows_sys::core::GUID,
-        pp_cp: *mut *mut core::ffi::c_void,
-    ) -> i32,
-}
-
-#[cfg(target_os = "windows")]
-#[repr(C)]
-struct RawIConnectionPointContainer {
-    vtbl: *const RawIConnectionPointContainerVtbl,
-}
-
-#[cfg(target_os = "windows")]
-#[repr(C)]
-struct RawIConnectionPointVtbl {
-    unknown: RawIUnknownVtbl,
-    get_connection_interface: unsafe extern "system" fn(
-        this: *mut core::ffi::c_void,
-        p_iid: *mut windows_sys::core::GUID,
-    ) -> i32,
-    get_connection_point_container: unsafe extern "system" fn(
-        this: *mut core::ffi::c_void,
-        pp_cpc: *mut *mut core::ffi::c_void,
-    ) -> i32,
-    advise: unsafe extern "system" fn(
-        this: *mut core::ffi::c_void,
-        p_unk_sink: *mut core::ffi::c_void,
-        pdw_cookie: *mut u32,
-    ) -> i32,
-    unadvise: unsafe extern "system" fn(this: *mut core::ffi::c_void, dw_cookie: u32) -> i32,
-    enum_connections: unsafe extern "system" fn(
-        this: *mut core::ffi::c_void,
-        pp_enum: *mut *mut core::ffi::c_void,
-    ) -> i32,
-}
-
-#[cfg(target_os = "windows")]
-#[repr(C)]
-struct RawIConnectionPoint {
-    vtbl: *const RawIConnectionPointVtbl,
 }
 
 #[cfg(target_os = "windows")]
@@ -6499,243 +6428,6 @@ unsafe extern "system" fn oxvba_event_source_interface_sink_changed(
 
 #[cfg(target_os = "windows")]
 #[allow(unsafe_op_in_unsafe_fn)]
-unsafe fn raw_add_ref_dispatch(dispatch: *mut RawIDispatch) -> u32 {
-    if dispatch.is_null() {
-        return 0;
-    }
-    let vtbl = (*dispatch).vtbl;
-    ((*vtbl).unknown.add_ref)(dispatch.cast())
-}
-
-#[cfg(target_os = "windows")]
-#[allow(unsafe_op_in_unsafe_fn)]
-unsafe fn raw_query_dispatch_from_unknown(
-    unknown: *mut RawIUnknown,
-) -> Result<*mut RawIDispatch, String> {
-    if unknown.is_null() {
-        return Err("VT_UNKNOWN result carried null IUnknown pointer".to_string());
-    }
-    let mut dispatch: *mut core::ffi::c_void = std::ptr::null_mut();
-    let vtbl = (*unknown).vtbl;
-    let hr = ((*vtbl).query_interface)(unknown.cast(), &IID_IDISPATCH, &mut dispatch);
-    if hr < 0 || dispatch.is_null() {
-        return Err(format!(
-            "IUnknown::QueryInterface(IDispatch) failed with HRESULT {:#010X}",
-            hr as u32
-        ));
-    }
-    Ok(dispatch.cast())
-}
-
-#[cfg(target_os = "windows")]
-#[allow(unsafe_op_in_unsafe_fn)]
-unsafe fn raw_release_dispatch(dispatch: *mut RawIDispatch) {
-    if dispatch.is_null() {
-        return;
-    }
-    let vtbl = (*dispatch).vtbl;
-    ((*vtbl).unknown.release)(dispatch.cast());
-}
-
-#[cfg(target_os = "windows")]
-#[allow(unsafe_op_in_unsafe_fn)]
-unsafe fn raw_release_connection_point(connection_point: *mut RawIConnectionPoint) {
-    if connection_point.is_null() {
-        return;
-    }
-    let vtbl = (*connection_point).vtbl;
-    ((*vtbl).unknown.release)(connection_point.cast());
-}
-
-#[cfg(target_os = "windows")]
-#[allow(unsafe_op_in_unsafe_fn)]
-unsafe fn raw_release_unknown(unknown: *mut core::ffi::c_void) {
-    if unknown.is_null() {
-        return;
-    }
-    let unknown = unknown.cast::<RawIUnknown>();
-    let vtbl = (*unknown).vtbl;
-    ((*vtbl).release)(unknown.cast());
-}
-
-#[cfg(target_os = "windows")]
-fn parse_guid_canonical(input: &str) -> Option<windows_sys::core::GUID> {
-    let normalized = normalize_guid_like(input);
-    let parts: Vec<&str> = normalized.split('-').collect();
-    if parts.len() != 5
-        || parts[0].len() != 8
-        || parts[1].len() != 4
-        || parts[2].len() != 4
-        || parts[3].len() != 4
-        || parts[4].len() != 12
-    {
-        return None;
-    }
-    let data1 = u32::from_str_radix(parts[0], 16).ok()?;
-    let data2 = u16::from_str_radix(parts[1], 16).ok()?;
-    let data3 = u16::from_str_radix(parts[2], 16).ok()?;
-    let mut data4 = [0u8; 8];
-    data4[0] = u8::from_str_radix(&parts[3][0..2], 16).ok()?;
-    data4[1] = u8::from_str_radix(&parts[3][2..4], 16).ok()?;
-    for idx in 0..6 {
-        let start = idx * 2;
-        let end = start + 2;
-        data4[idx + 2] = u8::from_str_radix(&parts[4][start..end], 16).ok()?;
-    }
-    Some(windows_sys::core::GUID {
-        data1,
-        data2,
-        data3,
-        data4,
-    })
-}
-
-#[cfg(target_os = "windows")]
-#[allow(unsafe_op_in_unsafe_fn)]
-unsafe fn raw_try_advise_connection_point_event(
-    dispatch: *mut RawIDispatch,
-    request: ComConnectionPointAdviseRequest,
-    connection_point_iid: &str,
-) -> Result<Option<ComNativeConnectionPointTransport>, String> {
-    if dispatch.is_null() {
-        return Ok(None);
-    }
-    let event_interface = parse_guid_canonical(connection_point_iid).ok_or_else(|| {
-        format!("invalid connection-point IID `{connection_point_iid}` in event metadata")
-    })?;
-    let mut cpc_ptr: *mut core::ffi::c_void = std::ptr::null_mut();
-    let hr = ((*(*dispatch).vtbl).unknown.query_interface)(
-        dispatch.cast(),
-        &IID_ICONNECTIONPOINTCONTAINER,
-        &mut cpc_ptr,
-    );
-    if hr < 0 || cpc_ptr.is_null() {
-        return Err(format!(
-            "IUnknown::QueryInterface(IConnectionPointContainer) failed with HRESULT {:#010X}",
-            hr as u32
-        ));
-    }
-    let cpc = cpc_ptr.cast::<RawIConnectionPointContainer>();
-    let mut cp_ptr: *mut core::ffi::c_void = std::ptr::null_mut();
-    let hr = ((*(*cpc).vtbl).find_connection_point)(cpc.cast(), &event_interface, &mut cp_ptr);
-    raw_release_unknown(cpc.cast());
-    if hr < 0 || cp_ptr.is_null() {
-        return Err(format!(
-            "IConnectionPointContainer::FindConnectionPoint failed with HRESULT {:#010X}",
-            hr as u32
-        ));
-    }
-    let connection_point = cp_ptr.cast::<RawIConnectionPoint>();
-    let sink = match request.sink_mode {
-        ComConnectionPointSinkMode::Dispatch {
-            event_dispatch_member,
-        } => create_oxvba_com_event_sink(
-            request.com_state,
-            request.subscription,
-            request.object,
-            request.event_token,
-            event_dispatch_member,
-            request.expected_arity,
-            Some(event_interface),
-        ),
-        ComConnectionPointSinkMode::SourceInterface => {
-            if !guid_equals(&event_interface, &IID_OXVBA_TEST_DISPATCH_SOURCE_EVENTS) {
-                raw_release_connection_point(connection_point);
-                return Err(format!(
-                    "source-interface event sink is unsupported for connection-point IID `{connection_point_iid}` in current lane"
-                ));
-            }
-            create_oxvba_com_event_source_interface_sink(
-                request.com_state,
-                request.subscription,
-                request.object,
-                request.event_token,
-                request.expected_arity,
-            )
-        }
-    };
-    let mut cookie = 0u32;
-    let hr =
-        ((*(*connection_point).vtbl).advise)(connection_point.cast(), sink.cast(), &mut cookie);
-    raw_release_unknown(sink);
-    if hr < 0 || cookie == 0 {
-        raw_release_connection_point(connection_point);
-        return Err(format!(
-            "IConnectionPoint::Advise failed with HRESULT {:#010X}",
-            hr as u32
-        ));
-    }
-    Ok(Some(ComNativeConnectionPointTransport {
-        connection_point: connection_point as usize,
-        cookie,
-    }))
-}
-
-#[cfg(target_os = "windows")]
-#[allow(unsafe_op_in_unsafe_fn)]
-unsafe fn raw_unadvise_connection_point(
-    transport: ComNativeConnectionPointTransport,
-) -> Result<(), String> {
-    if transport.connection_point == 0 {
-        return Ok(());
-    }
-    let connection_point = transport.connection_point as *mut RawIConnectionPoint;
-    let hr = ((*(*connection_point).vtbl).unadvise)(connection_point.cast(), transport.cookie);
-    raw_release_connection_point(connection_point);
-    if hr < 0 {
-        return Err(format!(
-            "IConnectionPoint::Unadvise failed with HRESULT {:#010X}",
-            hr as u32
-        ));
-    }
-    Ok(())
-}
-
-#[cfg(target_os = "windows")]
-#[allow(unsafe_op_in_unsafe_fn)]
-unsafe fn raw_get_dispid_by_name(dispatch: *mut RawIDispatch, name: &str) -> Result<i32, String> {
-    let dispids = raw_get_dispids_by_names(dispatch, &[name])?;
-    Ok(dispids[0])
-}
-
-#[cfg(target_os = "windows")]
-#[allow(unsafe_op_in_unsafe_fn)]
-unsafe fn raw_get_dispids_by_names(
-    dispatch: *mut RawIDispatch,
-    names: &[&str],
-) -> Result<Vec<i32>, String> {
-    if names.is_empty() {
-        return Ok(Vec::new());
-    }
-    let mut wide_names: Vec<Vec<u16>> = names
-        .iter()
-        .map(|name| name.encode_utf16().chain(std::iter::once(0)).collect())
-        .collect();
-    let mut name_ptrs: Vec<*mut u16> = wide_names
-        .iter_mut()
-        .map(|name| name.as_mut_ptr())
-        .collect();
-    let mut dispids = vec![0i32; names.len()];
-    let hr = ((*(*dispatch).vtbl).get_ids_of_names)(
-        dispatch.cast(),
-        &IID_NULL,
-        name_ptrs.as_mut_ptr(),
-        names.len() as u32,
-        0x0400,
-        dispids.as_mut_ptr(),
-    );
-    if hr < 0 {
-        return Err(format!(
-            "IDispatch::GetIDsOfNames failed for `{}` with HRESULT {:#010X}",
-            names.join(", "),
-            hr as u32
-        ));
-    }
-    Ok(dispids)
-}
-
-#[cfg(target_os = "windows")]
-#[allow(unsafe_op_in_unsafe_fn)]
 unsafe fn raw_variant_to_com_value(variant: &VARIANT) -> Result<ComValue, String> {
     com_variant_to_com_value(variant)
 }
@@ -7255,14 +6947,6 @@ fn clamp_u64_to_i32(value: u64) -> i32 {
 
 fn normalize_ci_token(input: &str) -> String {
     input.trim().to_ascii_lowercase()
-}
-
-fn normalize_guid_like(input: &str) -> String {
-    input
-        .trim()
-        .trim_matches('{')
-        .trim_matches('}')
-        .to_ascii_lowercase()
 }
 
 fn external_symbol_token(library: &str, alias: &str, name: &str) -> i32 {
