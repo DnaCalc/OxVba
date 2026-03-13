@@ -146,10 +146,10 @@ Run context: active parity/compliance execution plus in-progress feature worklis
 - Recommendation:
   - do not force final crate extraction ahead of invoke/property closure; use the new runtime-protocol and reference-facade worksets as the cleanup spine.
 
-### BLK-COM-STATE-OWNERSHIP-001: Remaining COM extraction is now a state/container ownership wall
+### BLK-COM-STATE-OWNERSHIP-001: Remaining COM extraction is now a native lifecycle ownership wall
 - Impact:
-  - Blocks further low-risk incremental helper extraction for `IP-04`.
   - Blocks the next honest contraction step for HAL in the COM area.
+  - Blocks final closure of `IP-04` and keeps `IP-05`/`IP-06` coupled to HAL-owned Windows lifecycle code.
 - Current state:
   - `oxvba-com` now owns:
     - shared COM request/callback types,
@@ -157,28 +157,30 @@ Run context: active parity/compliance execution plus in-progress feature worklis
     - Windows `VARIANT`/SAFEARRAY translation,
     - Windows result classification,
     - Windows invoke-failure/`EXCEPINFO` helpers,
-    - the canonical runtime-value `IDispatch::Invoke` helper.
-  - `oxvba-hal::standard` still owns the remaining COM stateful core:
-    - activation/binding tables,
-    - `ComState` / `ComBinding`,
-    - object-handle allocation and release,
-    - type-library cache integration,
-    - connection-point and event-subscription lifecycle,
-    - object descriptor reporting.
-  - Further extraction is no longer another helper move; it requires an `oxvba-com`-owned COM state/container API and explicit ownership transfer for binding/event/cache state.
+    - the canonical runtime-value `IDispatch::Invoke` helper,
+    - shared COM binding/spec models,
+    - the generic COM runtime container with callback/subscription queue logic,
+    - object-state release bookkeeping,
+    - object descriptor derivation from binding state,
+    - type-library metadata cache storage and invalidation logic.
+  - `oxvba-hal::standard` still owns the remaining Windows-native lifecycle core:
+    - ProgID -> CLSID -> `CoCreateInstance` activation,
+    - raw `IDispatch` reference ownership and final release,
+    - `GetIDsOfNames` / DISPID lookup helpers,
+    - connection-point advise/unadvise transport,
+    - sink object creation and callback ingress into the shared COM runtime state.
+  - Further extraction is no longer another helper move; it requires an `oxvba-com`-owned Windows client lifecycle API for activation and event sinks.
 - Exact unblock steps:
-  - define the `oxvba-com` state/container surface for:
-    - activation cache,
-    - object binding registry,
-    - event subscription/callback state,
-    - type-library cache integration,
-    - object descriptor queries,
-  - move the state structs and their invariants out of `standard.rs`,
-  - rebind HAL to delegation/bootstrap over that state container,
-  - continue the remaining early-bound/reference-facade and event-lifecycle work on the new ownership boundary.
+  - define the `oxvba-com` Windows client lifecycle surface for:
+    - activation and raw dispatch ownership,
+    - DISPID/name-resolution helpers,
+    - connection-point transport lifecycle,
+    - sink callback ingress back into the shared runtime container,
+  - move the remaining raw COM ABI structs/helpers and lifecycle invariants out of `standard.rs`,
+  - rebind HAL to delegation/bootstrap over that lifecycle surface,
+  - then continue the remaining early-bound/reference-facade and event-lifecycle work on the new boundary.
 - Recommendation:
-  - treat the next step as a larger COM state-ownership refactor, not another local helper extraction.
-
+  - treat the next step as a larger Windows COM client lifecycle extraction, not another local helper cleanup.
 ### BLK-PROP-001: Property/default-member intent model is not yet end-to-end executable
 - Impact:
   - Blocks `IP-02` VBA property model and default-member semantics.
@@ -429,5 +431,6 @@ Run context: active parity/compliance execution plus in-progress feature worklis
 - Previously resolved blockers:
   - `BLK-EVT-001` — resolved (runtime subscription graph)
   - `BLK-COM-001` — resolved (COM event callback parity with external registered server evidence)
+
 
 
