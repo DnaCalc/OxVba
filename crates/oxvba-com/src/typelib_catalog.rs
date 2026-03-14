@@ -38,6 +38,7 @@ const TEST_DISPID_RETURN_BOOL_ARRAY: i32 = 21;
 const TEST_DISPID_RETURN_STRING_ARRAY: i32 = 22;
 const TEST_DISPID_RETURN_SELF_DISPATCH: i32 = 23;
 const TEST_DISPID_RETURN_SELF_UNKNOWN: i32 = 24;
+const TEST_DISPID_CLASSIFY_VARIANT_ARG: i32 = 25;
 
 const TEST_EVENT_CHANGED: i32 = 1;
 const TEST_EVENT_CHANGED_SOURCE_INTERFACE: i32 = 2;
@@ -403,6 +404,14 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
                 requires_argument: false,
                 invoke_kind: TypeLibMemberInvokeKind::Method,
                 parameter_names: Vec::new(),
+                is_default_member: false,
+            },
+            TypeLibMemberMetadata {
+                name: "ClassifyVariantArg".to_string(),
+                token: TEST_DISPID_CLASSIFY_VARIANT_ARG,
+                requires_argument: true,
+                invoke_kind: TypeLibMemberInvokeKind::Method,
+                parameter_names: vec!["value".to_string()],
                 is_default_member: false,
             },
         ];

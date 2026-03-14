@@ -3279,6 +3279,7 @@ fn map_dispatch_member_literal_token(text: &str) -> Option<i32> {
         "returnstringarray" => Some(22),
         "returnselfdispatch" => Some(23),
         "returnselfunknown" => Some(24),
+        "classifyvariantarg" => Some(25),
         _ => None,
     }
 }

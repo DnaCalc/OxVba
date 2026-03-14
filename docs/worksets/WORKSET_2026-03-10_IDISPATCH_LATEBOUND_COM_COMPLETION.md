@@ -118,7 +118,7 @@ Need:
 4. array/SAFEARRAY parity for practical Office lanes.
 
 Current gap:
-1. the implemented lane is still centered around a constrained semantic carrier and only the current scalar/string/object/one-dimensional SAFEARRAY subset is covered.
+1. the implemented lane is still centered around a constrained semantic carrier and only the current scalar/string/object/one-dimensional SAFEARRAY subset is covered; outbound `Array(...)` expressions still lower to legacy scalar tags before the COM boundary.
 
 ### IDC-04 Error-channel fidelity
 
@@ -301,4 +301,5 @@ This workset is complete when:
 - `docs/spec/COM_CLIENT_SERVER_SCOPE_V1.md`
 - `docs/spec/COM_CLIENT_SERVER_CONFORMANCE_V1.md`
 - `docs/evidence/hal/HAL_IMPLEMENTATION_DEFINED.md`
+
 

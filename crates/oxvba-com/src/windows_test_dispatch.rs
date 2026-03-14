@@ -81,6 +81,7 @@ pub const TEST_DISPID_RETURN_BOOL_ARRAY: i32 = 21;
 pub const TEST_DISPID_RETURN_STRING_ARRAY: i32 = 22;
 pub const TEST_DISPID_RETURN_SELF_DISPATCH: i32 = 23;
 pub const TEST_DISPID_RETURN_SELF_UNKNOWN: i32 = 24;
+pub const TEST_DISPID_CLASSIFY_VARIANT_ARG: i32 = 25;
 pub const TEST_NAMED_DISPID_LHS: i32 = 101;
 pub const TEST_NAMED_DISPID_RHS: i32 = 102;
 pub const TEST_NAMED_DISPID_INDEX: i32 = 103;
@@ -1091,6 +1092,7 @@ unsafe extern "system" fn oxvba_test_get_ids_of_names(
             "returnstringarray" => TEST_DISPID_RETURN_STRING_ARRAY,
             "returnselfdispatch" => TEST_DISPID_RETURN_SELF_DISPATCH,
             "returnselfunknown" => TEST_DISPID_RETURN_SELF_UNKNOWN,
+            "classifyvariantarg" => TEST_DISPID_CLASSIFY_VARIANT_ARG,
             "lhs" => TEST_NAMED_DISPID_LHS,
             "rhs" => TEST_NAMED_DISPID_RHS,
             "index" => TEST_NAMED_DISPID_INDEX,
@@ -1443,6 +1445,14 @@ unsafe extern "system" fn oxvba_test_invoke(
                 (*pvarresult).Anonymous.Anonymous.vt = VT_UNKNOWN;
                 (*pvarresult).Anonymous.Anonymous.Anonymous.punkVal = this.cast();
             }
+            COM_S_OK
+        }
+        TEST_DISPID_CLASSIFY_VARIANT_ARG => {
+            if (wflags & DISPATCH_METHOD) == 0 || cargs != 1 || rgvarg.is_null() {
+                return COM_DISP_E_BADPARAMCOUNT;
+            }
+            let vt = (*rgvarg).Anonymous.Anonymous.vt as i32;
+            set_variant_i32(vt, pvarresult);
             COM_S_OK
         }
         TEST_DISPID_VALUE => {

@@ -1,3 +1,11 @@
+## 2026-03-14 - Late-bound COM object argument evidence and remaining array-argument gap
+
+- Added a controlled raw-variant classifier member to `OxVba.TestDispatch` and end-to-end host coverage proving outbound object-valued COM arguments marshal as `VT_DISPATCH`.
+- The same probe showed that current VBA `Array(...)` expressions still cross the late-bound COM boundary as legacy scalar tags rather than semantic `VT_ARRAY` payloads, so array-argument parity remains open.
+- Verification:
+  - `cargo fmt --all`
+  - `cargo test -p oxvba-compiler -p oxvba-com -p oxvba-host -p oxvba-hal --quiet`
+  - `cargo clippy -p oxvba-com -p oxvba-compiler -p oxvba-host -p oxvba-hal --all-targets -- -D warnings`
 ## 2026-03-14 - Late-bound COM object result rebinding evidence
 
 - Added controlled `OxVba.TestDispatch` members returning `VT_DISPATCH` and `VT_UNKNOWN` results that expose `IDispatch`.
@@ -399,6 +407,7 @@
 
 ## 2026-03-13 - Moved bound-dispatch and subscription teardown ownership into oxvba-com
 ## 2026-03-13 - Moved bound-dispatch and subscription teardown ownership into oxvba-com
+
 
 
 

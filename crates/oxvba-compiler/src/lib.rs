@@ -1258,6 +1258,23 @@ mod tests {
     }
 
     #[test]
+    fn compile_dispatchinvoke_with_variant_classifier_literal_maps_to_member_token_twenty_five() {
+        let source = "Sub Main()\nDim x\nx = DispatchInvoke(CreateObject(\"OxVba.TestDispatch\"), \"ClassifyVariantArg\", 7)\nEnd Sub";
+        let out =
+            compile(source).expect("compile should succeed for variant classifier fixture member");
+        assert!(
+            out.instructions
+                .iter()
+                .any(|i| matches!(i, Instruction::IntrinsicDispatchInvokeHost { .. }))
+        );
+        assert!(
+            out.instructions
+                .iter()
+                .any(|i| matches!(i, Instruction::LoadConstI32 { value: 25, .. }))
+        );
+    }
+
+    #[test]
     fn compile_dispatchinvoke_with_source_interface_event_literal_maps_to_member_token_eleven() {
         let source = "Sub Main()\nDim x\nx = DispatchInvoke(CreateObject(\"OxVba.TestDispatch\"), \"FireChangedSourceInterface\", 7)\nEnd Sub";
         let out =

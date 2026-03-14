@@ -381,6 +381,31 @@ End Sub
     }
 
     #[test]
+    fn dispatchinvoke_classifies_object_arguments_at_com_boundary() {
+        let source = r#"
+Sub Main()
+Dim obj
+Dim objectVt
+obj = CreateObject("OxVba.TestDispatch")
+objectVt = DispatchInvoke(obj, "ClassifyVariantArg", obj)
+End Sub
+"#;
+
+        let vm = run_windows_host_backed(source, false);
+        let jit = run_windows_host_backed(source, true);
+        assert_eq!(
+            vm, jit,
+            "VM/JIT snapshots diverged on object-argument classifier path: vm={vm:?} jit={jit:?}"
+        );
+        assert!(expect_object_handle(&vm[0]).raw() >= 20_001);
+        assert_eq!(
+            vm[1],
+            RuntimeValue::I32(9),
+            "object argument should marshal as VT_DISPATCH"
+        );
+    }
+
+    #[test]
     fn dispatchinvoke_error_path_routes_through_on_error_resume_next() {
         let out = run_windows_host_backed(
             r#"

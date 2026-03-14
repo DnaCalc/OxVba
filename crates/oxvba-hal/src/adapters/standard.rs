@@ -4601,6 +4601,7 @@ mod tests {
                 ("ReturnStringArray".to_string(), 22),
                 ("ReturnSelfDispatch".to_string(), 23),
                 ("ReturnSelfUnknown".to_string(), 24),
+                ("ClassifyVariantArg".to_string(), 25),
             ]
         );
         let fire_changed_pair = metadata
