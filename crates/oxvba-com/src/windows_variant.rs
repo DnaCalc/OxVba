@@ -284,6 +284,40 @@ where
             values.push(value);
             continue;
         }
+        if element_vt == VT_UNKNOWN {
+            let mut unknown: *mut c_void = std::ptr::null_mut();
+            let hr = SafeArrayGetElement(
+                psa.cast_const(),
+                &index,
+                (&mut unknown as *mut *mut c_void).cast(),
+            );
+            if hr < 0 {
+                return Err(format!(
+                    "SafeArrayGetElement failed with HRESULT {:#010X} at index {}",
+                    hr as u32, index
+                ));
+            }
+            let mut element: VARIANT = std::mem::zeroed();
+            element.Anonymous.Anonymous.vt = VT_UNKNOWN;
+            element.Anonymous.Anonymous.Anonymous.punkVal = unknown.cast();
+            let value = match variant_to_runtime_value(
+                &element,
+                query_dispatch_from_unknown,
+                add_ref_dispatch,
+                bind_dispatch_result,
+                prog_id_hint,
+                op,
+            ) {
+                Ok(value) => value,
+                Err(detail) => {
+                    let _ = VariantClear(&mut element);
+                    return Err(detail);
+                }
+            };
+            let _ = VariantClear(&mut element);
+            values.push(value);
+            continue;
+        }
         if element_vt == VT_DISPATCH {
             let mut dispatch: *mut c_void = std::ptr::null_mut();
             let hr = SafeArrayGetElement(

@@ -469,6 +469,13 @@
 
 
 
+## 2026-03-14 - Closed the typed `VT_ARRAY | VT_UNKNOWN` result lane in `IP-03A`
+
+- Continued the adjacent `IP-03A` substrate slice for typed interface SAFEARRAY results where each element arrives as `VT_UNKNOWN` but exposes `IDispatch`.
+- In [windows_test_dispatch.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-com\src\windows_test_dispatch.rs), added the controlled `ReturnSelfTypedUnknownArray` fixture member and implemented one-dimensional `VT_ARRAY | VT_UNKNOWN` result construction using `SafeArrayPutElement(...)` over the live `IUnknown` pointer.
+- In [typelib_catalog.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-com\src\typelib_catalog.rs), extended the synthetic test typelib metadata so the new member is authoritatively classified as a method rather than falling back to a property-get guess.
+- In [windows_variant.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-com\src\windows_variant.rs), routed typed `VT_ARRAY | VT_UNKNOWN` elements through the existing `VT_UNKNOWN` `VARIANT` query-and-bind path so the array lane reuses the already-proven single-result object rebinding semantics.
+- Added focused compiler and host coverage proving `DispatchInvoke(..., "ReturnSelfTypedUnknownArray")` compiles to token `29` and roundtrips a typed unknown SAFEARRAY result into semantic `RuntimeValue::ArrayIntent` with nested `ObjectHandle` elements when the underlying interface exposes `IDispatch`.
 ## 2026-03-14 - Closed the typed `VT_ARRAY | VT_DISPATCH` result lane in `IP-03A`
 
 - Continued the active umbrella COM/property/hosting execution sequence with the next `IP-03A` late-bound COM transport slice.
@@ -568,4 +575,5 @@
   - Let x = 5 plus Set obj = CreateObject(4) executes successfully,
   - Set x = 7 fails deterministically with the expected type error.
 - IP-02 remains in progress: broader typed/object Set vs Let parity, non-authoritative default-member resolution, and wider Office-style call-vs-value context parity are still open.
+
 

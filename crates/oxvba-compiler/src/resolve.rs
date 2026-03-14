@@ -3306,6 +3306,7 @@ fn map_dispatch_member_literal_token(text: &str) -> Option<i32> {
         "classifyvariantarrayfirstelementarg" => Some(26),
         "returnselfdispatcharray" => Some(27),
         "returnselftypeddispatcharray" => Some(28),
+        "returnselftypedunknownarray" => Some(29),
         _ => None,
     }
 }

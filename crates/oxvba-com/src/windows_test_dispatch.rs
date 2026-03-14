@@ -88,6 +88,7 @@ pub const TEST_DISPID_CLASSIFY_VARIANT_ARG: i32 = 25;
 pub const TEST_DISPID_CLASSIFY_VARIANT_ARRAY_FIRST_ELEMENT_ARG: i32 = 26;
 pub const TEST_DISPID_RETURN_SELF_DISPATCH_ARRAY: i32 = 27;
 pub const TEST_DISPID_RETURN_SELF_TYPED_DISPATCH_ARRAY: i32 = 28;
+pub const TEST_DISPID_RETURN_SELF_TYPED_UNKNOWN_ARRAY: i32 = 29;
 pub const TEST_NAMED_DISPID_LHS: i32 = 101;
 pub const TEST_NAMED_DISPID_RHS: i32 = 102;
 pub const TEST_NAMED_DISPID_INDEX: i32 = 103;
@@ -1104,6 +1105,7 @@ unsafe extern "system" fn oxvba_test_get_ids_of_names(
             }
             "returnselfdispatcharray" => TEST_DISPID_RETURN_SELF_DISPATCH_ARRAY,
             "returnselftypeddispatcharray" => TEST_DISPID_RETURN_SELF_TYPED_DISPATCH_ARRAY,
+            "returnselftypedunknownarray" => TEST_DISPID_RETURN_SELF_TYPED_UNKNOWN_ARRAY,
             "lhs" => TEST_NAMED_DISPID_LHS,
             "rhs" => TEST_NAMED_DISPID_RHS,
             "index" => TEST_NAMED_DISPID_INDEX,
@@ -1484,6 +1486,12 @@ unsafe extern "system" fn oxvba_test_invoke(
             }
             set_variant_typed_dispatch_array(this, pvarresult)
         }
+        TEST_DISPID_RETURN_SELF_TYPED_UNKNOWN_ARRAY => {
+            if (wflags & DISPATCH_METHOD) == 0 || cargs != 0 {
+                return COM_DISP_E_BADPARAMCOUNT;
+            }
+            set_variant_typed_unknown_array(this, pvarresult)
+        }
         TEST_DISPID_VALUE => {
             if (wflags & DISPATCH_PROPERTYGET) == 0 || cargs != 0 {
                 return COM_DISP_E_BADPARAMCOUNT;
@@ -1550,6 +1558,32 @@ unsafe fn set_variant_typed_dispatch_array(
     }
     if !pvarresult.is_null() {
         (*pvarresult).Anonymous.Anonymous.vt = VT_ARRAY | VT_DISPATCH;
+        (*pvarresult).Anonymous.Anonymous.Anonymous.parray = psa;
+        return COM_S_OK;
+    }
+    let _ = SafeArrayDestroy(psa.cast_const());
+    COM_S_OK
+}
+
+#[cfg(target_os = "windows")]
+#[allow(unsafe_op_in_unsafe_fn)]
+unsafe fn set_variant_typed_unknown_array(
+    this: *mut core::ffi::c_void,
+    pvarresult: *mut VARIANT,
+) -> i32 {
+    let psa = SafeArrayCreateVector(VT_UNKNOWN, 0, 1);
+    if psa.is_null() {
+        return COM_E_INVALIDARG;
+    }
+    let unknown = this.cast::<RawIUnknown>();
+    let index = 0i32;
+    let hr = SafeArrayPutElement(psa.cast_const(), &index, unknown.cast());
+    if hr < 0 {
+        let _ = SafeArrayDestroy(psa.cast_const());
+        return COM_E_INVALIDARG;
+    }
+    if !pvarresult.is_null() {
+        (*pvarresult).Anonymous.Anonymous.vt = VT_ARRAY | VT_UNKNOWN;
         (*pvarresult).Anonymous.Anonymous.Anonymous.parray = psa;
         return COM_S_OK;
     }

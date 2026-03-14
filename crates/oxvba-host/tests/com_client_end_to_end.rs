@@ -587,6 +587,48 @@ End Sub
     }
 
     #[test]
+    fn dispatchinvoke_accepts_typed_unknown_array_results() {
+        let source = r#"
+Sub Main()
+Dim obj
+Dim returnedArray
+obj = CreateObject("OxVba.TestDispatch")
+returnedArray = DispatchInvoke(obj, "ReturnSelfTypedUnknownArray")
+End Sub
+"#;
+
+        let vm = run_windows_host_backed(source, false);
+        let jit = run_windows_host_backed(source, true);
+        assert_eq!(
+            vm, jit,
+            "VM/JIT snapshots diverged on typed unknown-array result path: vm={vm:?} jit={jit:?}"
+        );
+        assert!(expect_object_handle(&vm[0]).raw() >= 20_001);
+        let RuntimeValue::ArrayIntent(array) = &vm[1] else {
+            panic!("expected SAFEARRAY result, got {:?}", vm[1]);
+        };
+        let elements = array
+            .elements
+            .as_ref()
+            .expect("typed unknown-array result should preserve owned elements");
+        assert_eq!(
+            elements.len(),
+            1,
+            "typed unknown-array result length mismatch"
+        );
+        let RuntimeValue::ObjectHandle(handle) = elements[0] else {
+            panic!(
+                "expected first typed unknown-array element to be an object handle, got {:?}",
+                elements[0]
+            );
+        };
+        assert!(
+            handle.raw() >= 20_001,
+            "typed unknown-array result should preserve nested unknown-exposed dispatch object handles"
+        );
+    }
+
+    #[test]
     fn dispatchinvoke_error_path_routes_through_on_error_resume_next() {
         let out = run_windows_host_backed(
             r#"
