@@ -49,7 +49,7 @@ Remaining extraction wall:
 1. Remaining live Windows COM execution authority still centered in `oxvba-hal::standard`:
    - resolved-member DISPID lookup/cache update,
    - raw `IDispatch` execution routing and final invoke-result rebinding.
-2. public HAL COM contract contraction/rebinding over `oxvba-com`,
+2. public HAL COM contract contraction/rebinding over `oxvba-com`,`r`n3. execute that contraction as a coordinated trait/VM/host migration rather than another helper-only extraction slice,
 3. remaining runtime-wide dynamic protocol wiring and parity work that depends on the contracted boundary.
 ## 2. Problem statement
 
@@ -321,6 +321,7 @@ Required checks for the repurpose/extraction program:
 7. Use these concrete child worksets for the next cleanup/implementation slices:
    - `docs/worksets/WORKSET_2026-03-11_UNIFIED_DYNAMIC_OBJECT_PROTOCOL_AND_VALUE_CARRIER.md`
    - `docs/worksets/WORKSET_2026-03-11_COM_REFERENCE_FACADE_AND_TYPELIB_BINDING_COMPLETION.md`
+
 
 
 

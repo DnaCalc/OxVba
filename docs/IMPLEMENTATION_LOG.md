@@ -1,3 +1,16 @@
+## 2026-03-14 - Reached the public ComHal contraction wall
+
+- After the resolved-member DISPID cache extraction, the next remaining COM/HAL work was tested as a typed-token `ComHal` contraction slice.
+- That attempt showed the remaining boundary is no longer a local helper move:
+  - it touches the public `ComHal` trait,
+  - VM COM host intrinsics,
+  - host COM event helper surfaces,
+  - null/wasm adapter stubs,
+  - and the final result-lifecycle glue still routed through HAL.
+- I reverted the partial uncommitted contract-edit attempt rather than leaving the repo in a half-migrated state.
+- Current conclusion:
+  - the next COM/HAL step must be executed as one coordinated public contract migration program,
+  - not as another incremental helper extraction.
 ## 2026-03-14 - Moved resolved-member DISPID cache lookup/update into oxvba-com
 
 - Continued the COM extraction/contraction slice in:
@@ -130,6 +143,7 @@
 
 ## 2026-03-13 - Moved bound-dispatch and subscription teardown ownership into oxvba-com
 ## 2026-03-13 - Moved bound-dispatch and subscription teardown ownership into oxvba-com
+
 
 
 

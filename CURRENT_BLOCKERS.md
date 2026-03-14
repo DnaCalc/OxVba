@@ -135,7 +135,7 @@ Run context: active parity/compliance execution plus in-progress feature worklis
 - Current state:
   - shared transport/types, deterministic typelib catalog logic, supported Windows wire/value/invoke helpers, generic callback/subscription runtime state, metadata cache ownership, known-member/event policy, metadata-driven ComBinding assembly, activation-time binding insertion, bound-dispatch lookup/rebinding, resolved-member DISPID cache lookup/update, object release bookkeeping, subscription callback-pruning, callback payload polling/metadata access/release helpers, event transport-choice resolution, bound/unbound COM invoke-policy planning, member-spec/direct-DISPID runtime invoke execution helpers, and the generic runtime-value `IDispatch::Invoke` execute/classify helper now live materially in oxvba-com,
   - oxvba-hal::standard no longer owns the high-level default-member/direct-DISPID/member-spec routing rules, but it still owns the live Windows IDispatch execution seam and the public COM-facing HAL contract,
-  - the remaining work is HAL rebinding/contraction plus movement of the last execution/lifecycle authority behind an oxvba-com surface,
+  - the remaining work is HAL rebinding/contraction plus movement of the last execution/lifecycle authority behind an oxvba-com surface,`r`n  - an attempted next slice showed this is now a coordinated public contract migration touching `ComHal`, VM intrinsics, host event helpers, and adapter stubs together rather than another isolated helper extraction,
   - forcing closure early would freeze a still-transitional contract.
 - Exact unblock steps:
   - continue moving the remaining Windows client contract authority out of standard.rs:
@@ -399,6 +399,7 @@ Run context: active parity/compliance execution plus in-progress feature worklis
 - Previously resolved blockers:
   - `BLK-EVT-001` — resolved (runtime subscription graph)
   - `BLK-COM-001` — resolved (COM event callback parity with external registered server evidence)
+
 
 
 
