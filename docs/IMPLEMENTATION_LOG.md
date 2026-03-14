@@ -504,3 +504,11 @@
   - natural indexed default-member syntax: eforeValue = widget(2), widget(2) = 9, fterValue = widget(2) when authoritative VB_UserMemId = 0 metadata exists.
 - In [project.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-compiler\src\project.rs), extended the internal class PMR rewrite helpers so indexed member/default-member assignment and read-assignment forms lower onto the same authoritative property targets instead of falling back to lossy bare assignment semantics.
 - IP-02 remains in progress: broader typed/object Set vs Let intent parity, non-authoritative default-member resolution, and Office-style call-vs-value context behavior are still open.
+## 2026-03-14 - Extended IP-02 indexed native property/default-member set semantics
+
+- Continued the active IP-02A semantic-closure slice and proved that indexed native internal project-class Property Set and indexed authoritative default-member Property Set syntax now execute end to end on the shared PMR/dynamic-object path.
+- Added end-to-end host coverage in [engine.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-host\src\engine.rs) for:
+  - natural indexed member Property Set syntax: Set widget.Value(1) = x,
+  - natural indexed default-member Property Set syntax: Set widget(1) = x when authoritative VB_UserMemId = 0 metadata exists.
+- In [project.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-compiler\src\project.rs), extended the internal class PMR set-assignment rewrite so indexed member/default-member Set forms lower onto the same authoritative property targets instead of falling through to unsupported statement handling.
+- IP-02 remains in progress: broader typed/object Set vs Let intent parity, non-authoritative default-member resolution, and Office-style call-vs-value context behavior are still open.

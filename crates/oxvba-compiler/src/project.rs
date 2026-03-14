@@ -2180,9 +2180,32 @@ fn rewrite_internal_class_set_assignment(
     }
     if let Some(dot_idx) = lhs.find('.') {
         let receiver = normalize_identifier(lhs[..dot_idx].trim());
-        let member = normalize_identifier(lhs[dot_idx + 1..].trim());
+        let member_expr = lhs[dot_idx + 1..].trim();
+        let (member, mut indexed_args) = if let Some(open_idx) = member_expr.find('(') {
+            let Some(close_idx) = find_matching_paren(member_expr, open_idx) else {
+                return Ok(line.to_string());
+            };
+            if close_idx != member_expr.len().saturating_sub(1) {
+                return Ok(line.to_string());
+            }
+            let member_name = normalize_identifier(member_expr[..open_idx].trim());
+            if member_name.is_empty() {
+                return Ok(line.to_string());
+            }
+            let args_raw = member_expr[open_idx + 1..close_idx].trim();
+            let args = split_top_level_args(args_raw)?
+                .into_iter()
+                .filter(|arg| !arg.trim().is_empty())
+                .collect::<Vec<_>>();
+            (member_name, args)
+        } else {
+            let member_name = normalize_identifier(member_expr);
+            if member_name.is_empty() {
+                return Ok(line.to_string());
+            }
+            (member_name, Vec::new())
+        };
         if !receiver.is_empty()
-            && !member.is_empty()
             && let Some((target, instance_arg)) = resolve_internal_class_member_target_of_kinds(
                 &receiver,
                 &member,
@@ -2195,19 +2218,44 @@ fn rewrite_internal_class_set_assignment(
                 &[ProcedureDeclKind::PropertySet],
             )?
         {
+            let mut lowered_args = vec![instance_arg];
+            lowered_args.append(&mut indexed_args);
+            lowered_args.push(rhs.to_string());
             return Ok(format!(
-                "{}{}({}, {})",
+                "{}{}({})",
                 &line[..leading],
                 target,
-                instance_arg,
-                rhs
+                lowered_args.join(", ")
             ));
         }
     }
-    if !internal_class_bindings.contains_key(&normalize_identifier(lhs)) {
+    let (normalized_lhs, mut indexed_args) = if let Some(open_idx) = lhs.find('(') {
+        let Some(close_idx) = find_matching_paren(lhs, open_idx) else {
+            return Ok(line.to_string());
+        };
+        if close_idx != lhs.len().saturating_sub(1) {
+            return Ok(line.to_string());
+        }
+        let receiver_name = normalize_identifier(lhs[..open_idx].trim());
+        if receiver_name.is_empty() {
+            return Ok(line.to_string());
+        }
+        let args_raw = lhs[open_idx + 1..close_idx].trim();
+        let args = split_top_level_args(args_raw)?
+            .into_iter()
+            .filter(|arg| !arg.trim().is_empty())
+            .collect::<Vec<_>>();
+        (receiver_name, args)
+    } else {
+        let receiver_name = normalize_identifier(lhs);
+        if receiver_name.is_empty() {
+            return Ok(line.to_string());
+        }
+        (receiver_name, Vec::new())
+    };
+    if !internal_class_bindings.contains_key(&normalized_lhs) {
         return Ok(line.to_string());
     }
-    let normalized_lhs = normalize_identifier(lhs);
     if withevents_bindings.contains(&normalized_lhs) {
         let binding_token = withevents_binding_token(current_project, current_module, lhs);
         return Ok(format!(
@@ -2227,12 +2275,14 @@ fn rewrite_internal_class_set_assignment(
         internal_class_bindings,
         &[ProcedureDeclKind::PropertySet],
     )? {
+        let mut lowered_args = vec![instance_arg];
+        lowered_args.append(&mut indexed_args);
+        lowered_args.push(rhs.to_string());
         return Ok(format!(
-            "{}{}({}, {})",
+            "{}{}({})",
             &line[..leading],
             target,
-            instance_arg,
-            rhs
+            lowered_args.join(", ")
         ));
     }
     Ok(format!("{}{} = {}", &line[..leading], lhs, rhs))
