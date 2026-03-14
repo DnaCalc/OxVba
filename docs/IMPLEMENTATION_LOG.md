@@ -1,3 +1,35 @@
+## 2026-03-14 - Added dependency-ordered COM/property/hosting execution workset
+
+- Added [WORKSET_2026-03-14_COM_PARITY_PROPERTY_SERVER_HOSTING_EXECUTION_SEQUENCE.md](C:\Work\DnaCalc\OxVba\docs\worksets\WORKSET_2026-03-14_COM_PARITY_PROPERTY_SERVER_HOSTING_EXECUTION_SEQUENCE.md) as the large-program execution map after `IP-04` closure.
+- It orders the remaining feature areas by dependency:
+  - `IP-03`
+  - `IP-02`
+  - `IP-05`
+  - `IP-06`
+  - `IP-08`
+  - with `IP-07` called out where it is a blocking ingress/event dependency.
+- It records:
+  - the dependency spine,
+  - phase-by-phase execution order,
+  - work package split,
+  - planning notes and acceptance expectations,
+  - and the rule that downstream work must not reopen the already-closed `IP-04` boundary work.
+## 2026-03-14 - Added dependency-ordered COM/property/hosting execution workset
+
+- Added [WORKSET_2026-03-14_COM_PARITY_PROPERTY_SERVER_HOSTING_EXECUTION_SEQUENCE.md](C:\Work\DnaCalc\OxVba\docs\worksets\WORKSET_2026-03-14_COM_PARITY_PROPERTY_SERVER_HOSTING_EXECUTION_SEQUENCE.md) as the large-program execution map after `IP-04` closure.
+- It orders the remaining feature areas by dependency:
+  - `IP-03`
+  - `IP-02`
+  - `IP-05`
+  - `IP-06`
+  - `IP-08`
+  - with `IP-07` called out where it is a blocking ingress/event dependency.
+- It records:
+  - the dependency spine,
+  - phase-by-phase execution order,
+  - work package split,
+  - planning notes and acceptance expectations,
+  - and the rule that downstream work must not reopen the already-closed `IP-04` boundary work.
 ## 2026-03-14 - Closed IP-04 oxvba-com / HAL extraction
 
 - Completed the final `IP-04` closure slice in:
@@ -350,6 +382,8 @@
 
 ## 2026-03-13 - Moved bound-dispatch and subscription teardown ownership into oxvba-com
 ## 2026-03-13 - Moved bound-dispatch and subscription teardown ownership into oxvba-com
+
+
 
 
 
