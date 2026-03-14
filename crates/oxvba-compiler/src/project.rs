@@ -2267,8 +2267,32 @@ fn rewrite_internal_class_property_assignment(
         return Ok(line.to_string());
     };
     let receiver = normalize_identifier(lhs[..dot_idx].trim());
-    let member = normalize_identifier(lhs[dot_idx + 1..].trim());
-    if receiver.is_empty() || member.is_empty() {
+    let member_expr = lhs[dot_idx + 1..].trim();
+    let (member, mut indexed_args) = if let Some(open_idx) = member_expr.find('(') {
+        let Some(close_idx) = find_matching_paren(member_expr, open_idx) else {
+            return Ok(line.to_string());
+        };
+        if close_idx != member_expr.len().saturating_sub(1) {
+            return Ok(line.to_string());
+        }
+        let member_name = normalize_identifier(member_expr[..open_idx].trim());
+        if member_name.is_empty() {
+            return Ok(line.to_string());
+        }
+        let args_raw = member_expr[open_idx + 1..close_idx].trim();
+        let args = split_top_level_args(args_raw)?
+            .into_iter()
+            .filter(|arg| !arg.trim().is_empty())
+            .collect::<Vec<_>>();
+        (member_name, args)
+    } else {
+        let member_name = normalize_identifier(member_expr);
+        if member_name.is_empty() {
+            return Ok(line.to_string());
+        }
+        (member_name, Vec::new())
+    };
+    if receiver.is_empty() {
         return Ok(line.to_string());
     }
     let Some((target, instance_arg)) = resolve_internal_class_member_target_of_kinds(
@@ -2285,12 +2309,14 @@ fn rewrite_internal_class_property_assignment(
     else {
         return Ok(line.to_string());
     };
+    let mut lowered_args = vec![instance_arg];
+    lowered_args.append(&mut indexed_args);
+    lowered_args.push(rhs.to_string());
     Ok(format!(
-        "{}{}({}, {})",
+        "{}{}({})",
         &line[..leading],
         target,
-        instance_arg,
-        rhs
+        lowered_args.join(", ")
     ))
 }
 
@@ -2319,11 +2345,35 @@ fn rewrite_internal_class_default_member_assignment(
     if lhs.is_empty() || rhs.is_empty() || lhs.contains('.') {
         return Ok(line.to_string());
     }
-    let receiver = normalize_identifier(lhs);
+    let (receiver, mut indexed_args) = if let Some(open_idx) = lhs.find('(') {
+        let Some(close_idx) = find_matching_paren(lhs, open_idx) else {
+            return Ok(line.to_string());
+        };
+        if close_idx != lhs.len().saturating_sub(1) {
+            return Ok(line.to_string());
+        }
+        let receiver_name = normalize_identifier(lhs[..open_idx].trim());
+        if receiver_name.is_empty() {
+            return Ok(line.to_string());
+        }
+        let args_raw = lhs[open_idx + 1..close_idx].trim();
+        let args = split_top_level_args(args_raw)?
+            .into_iter()
+            .filter(|arg| !arg.trim().is_empty())
+            .collect::<Vec<_>>();
+        (receiver_name, args)
+    } else {
+        let receiver_name = normalize_identifier(lhs);
+        if receiver_name.is_empty() {
+            return Ok(line.to_string());
+        }
+        (receiver_name, Vec::new())
+    };
     if receiver.is_empty() {
         return Ok(line.to_string());
     }
     if let Some(binding) = internal_class_bindings.get(&receiver)
+        && indexed_args.is_empty()
         && let Ok(instance_id) = rhs.parse::<i32>()
         && binding.generated_instance_id == Some(instance_id)
     {
@@ -2341,12 +2391,14 @@ fn rewrite_internal_class_default_member_assignment(
     else {
         return Ok(line.to_string());
     };
+    let mut lowered_args = vec![instance_arg];
+    lowered_args.append(&mut indexed_args);
+    lowered_args.push(rhs.to_string());
     Ok(format!(
-        "{}{}({}, {})",
+        "{}{}({})",
         &line[..leading],
         target,
-        instance_arg,
-        rhs
+        lowered_args.join(", ")
     ))
 }
 
@@ -2375,7 +2427,30 @@ fn rewrite_internal_class_default_member_read_assignment(
     if lhs.is_empty() || rhs.is_empty() || lhs.contains('.') || rhs.contains('.') {
         return Ok(line.to_string());
     }
-    let rhs_name = normalize_identifier(rhs);
+    let (rhs_name, indexed_args) = if let Some(open_idx) = rhs.find('(') {
+        let Some(close_idx) = find_matching_paren(rhs, open_idx) else {
+            return Ok(line.to_string());
+        };
+        if close_idx != rhs.len().saturating_sub(1) {
+            return Ok(line.to_string());
+        }
+        let receiver_name = normalize_identifier(rhs[..open_idx].trim());
+        if receiver_name.is_empty() {
+            return Ok(line.to_string());
+        }
+        let args_raw = rhs[open_idx + 1..close_idx].trim();
+        let args = split_top_level_args(args_raw)?
+            .into_iter()
+            .filter(|arg| !arg.trim().is_empty())
+            .collect::<Vec<_>>();
+        (receiver_name, args)
+    } else {
+        let receiver_name = normalize_identifier(rhs);
+        if receiver_name.is_empty() {
+            return Ok(line.to_string());
+        }
+        (receiver_name, Vec::new())
+    };
     if rhs_name.is_empty() {
         return Ok(line.to_string());
     }
@@ -2391,12 +2466,14 @@ fn rewrite_internal_class_default_member_read_assignment(
     else {
         return Ok(line.to_string());
     };
+    let mut lowered_args = vec![instance_arg];
+    lowered_args.extend(indexed_args);
     Ok(format!(
         "{}{} = {}({})",
         &line[..leading],
         lhs,
         target,
-        instance_arg
+        lowered_args.join(", ")
     ))
 }
 fn collect_class_state_bindings(
