@@ -750,3 +750,134 @@ where
 
     invoke_bound_dispatch(effective_member.raw(), args, &binding.prog_id_name)
 }
+
+#[cfg(target_os = "windows")]
+#[allow(unsafe_op_in_unsafe_fn, clippy::missing_safety_doc)]
+pub unsafe fn invoke_member_spec_runtime_value_with_shared_state(
+    dispatch: *mut core::ffi::c_void,
+    dispid: i32,
+    spec: &crate::ComMemberSpec,
+    args: &[ComInvokeArg],
+    prog_id_hint: &str,
+    com_state: &std::sync::Arc<std::sync::Mutex<crate::WindowsComClientState>>,
+) -> Result<RuntimeValue, ComInvokeFailure> {
+    invoke_member_spec_runtime_value(
+        dispatch,
+        dispid,
+        spec,
+        args,
+        prog_id_hint,
+        &mut |member_name, args| {
+            crate::resolve_named_argument_dispids(
+                dispatch.cast::<crate::RawIDispatch>(),
+                member_name,
+                args,
+            )
+        },
+        &mut |handle| {
+            crate::resolve_bound_native_dispatch_shared(com_state, handle)
+                .map(|dispatch| dispatch.cast::<core::ffi::c_void>())
+        },
+        &mut |unknown: *mut core::ffi::c_void| {
+            crate::query_dispatch_from_unknown(unknown.cast::<crate::RawIUnknown>())
+                .map(|dispatch| dispatch.cast::<core::ffi::c_void>())
+        },
+        &mut |dispatch: *mut core::ffi::c_void| {
+            crate::add_ref_dispatch(dispatch.cast::<crate::RawIDispatch>());
+        },
+        &mut |dispatch: *mut core::ffi::c_void, prog_id_hint: &str, _op: &'static str| unsafe {
+            crate::bind_native_dispatch_result_shared(
+                com_state,
+                dispatch.cast::<crate::RawIDispatch>(),
+                prog_id_hint,
+            )
+            .map(RuntimeValue::ObjectHandle)
+        },
+    )
+}
+
+#[cfg(target_os = "windows")]
+#[allow(unsafe_op_in_unsafe_fn, clippy::missing_safety_doc)]
+pub unsafe fn invoke_direct_dispid_runtime_value_with_shared_state(
+    dispatch: *mut core::ffi::c_void,
+    dispid: i32,
+    invoke_kind: crate::TypeLibMemberInvokeKind,
+    requires_argument: bool,
+    args: &[ComInvokeArg],
+    prog_id_hint: &str,
+    com_state: &std::sync::Arc<std::sync::Mutex<crate::WindowsComClientState>>,
+) -> Result<RuntimeValue, ComInvokeFailure> {
+    invoke_direct_dispid_runtime_value(
+        dispatch,
+        dispid,
+        invoke_kind,
+        requires_argument,
+        args,
+        prog_id_hint,
+        &mut |handle| {
+            crate::resolve_bound_native_dispatch_shared(com_state, handle)
+                .map(|dispatch| dispatch.cast::<core::ffi::c_void>())
+        },
+        &mut |unknown: *mut core::ffi::c_void| {
+            crate::query_dispatch_from_unknown(unknown.cast::<crate::RawIUnknown>())
+                .map(|dispatch| dispatch.cast::<core::ffi::c_void>())
+        },
+        &mut |dispatch: *mut core::ffi::c_void| {
+            crate::add_ref_dispatch(dispatch.cast::<crate::RawIDispatch>());
+        },
+        &mut |dispatch: *mut core::ffi::c_void, prog_id_hint: &str, _op: &'static str| unsafe {
+            crate::bind_native_dispatch_result_shared(
+                com_state,
+                dispatch.cast::<crate::RawIDispatch>(),
+                prog_id_hint,
+            )
+            .map(RuntimeValue::ObjectHandle)
+        },
+    )
+}
+
+#[cfg(target_os = "windows")]
+#[allow(
+    unsafe_op_in_unsafe_fn,
+    clippy::missing_safety_doc,
+    clippy::too_many_arguments
+)]
+pub unsafe fn invoke_dispatch_runtime_value_with_shared_state(
+    dispatch: *mut core::ffi::c_void,
+    dispid: i32,
+    flags: u16,
+    args: &[ComInvokeArg],
+    named_arg_dispids: &[i32],
+    label: &'static str,
+    prog_id_hint: &str,
+    com_state: &std::sync::Arc<std::sync::Mutex<crate::WindowsComClientState>>,
+) -> Result<RuntimeValue, ComInvokeFailure> {
+    invoke_dispatch_runtime_value(
+        dispatch,
+        dispid,
+        flags,
+        args,
+        named_arg_dispids,
+        label,
+        prog_id_hint,
+        &mut |handle| {
+            crate::resolve_bound_native_dispatch_shared(com_state, handle)
+                .map(|dispatch| dispatch.cast::<core::ffi::c_void>())
+        },
+        &mut |unknown: *mut core::ffi::c_void| {
+            crate::query_dispatch_from_unknown(unknown.cast::<crate::RawIUnknown>())
+                .map(|dispatch| dispatch.cast::<core::ffi::c_void>())
+        },
+        &mut |dispatch: *mut core::ffi::c_void| {
+            crate::add_ref_dispatch(dispatch.cast::<crate::RawIDispatch>());
+        },
+        &mut |dispatch: *mut core::ffi::c_void, prog_id_hint: &str, _op: &'static str| {
+            crate::bind_native_dispatch_result_shared(
+                com_state,
+                dispatch.cast::<crate::RawIDispatch>(),
+                prog_id_hint,
+            )
+            .map(RuntimeValue::ObjectHandle)
+        },
+    )
+}

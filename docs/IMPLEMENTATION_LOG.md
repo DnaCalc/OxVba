@@ -1,3 +1,23 @@
+## 2026-03-14 - Moved COM runtime invoke closure wiring into oxvba-com
+
+- Continued the `IP-04` extraction slice in:
+  - [windows_invoke.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-com\src\windows_invoke.rs)
+  - [lib.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-com\src\lib.rs)
+  - [standard.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-hal\src\adapters\standard.rs)
+  - [CURRENT_BLOCKERS.md](C:\Work\DnaCalc\OxVba\CURRENT_BLOCKERS.md)
+  - [IN_PROGRESS_FEATURE_WORKLIST.md](C:\Work\DnaCalc\OxVba\docs\IN_PROGRESS_FEATURE_WORKLIST.md)
+- `oxvba-com` now owns the shared-state runtime invoke wrappers for:
+  - member-spec runtime-value invoke,
+  - direct-DISPID runtime-value invoke,
+  - generic runtime-value `IDispatch::Invoke` execution with shared object-result rebinding.
+- `standard.rs` now delegates those runtime invoke/result closure paths to `oxvba-com` instead of wiring object resolution, `IDispatch` requery, `AddRef`, and invoke-result rebinding locally.
+- Net effect:
+  - HAL no longer owns the direct runtime invoke closure wiring around controlled Windows COM dispatch,
+  - the remaining `IP-04` wall is now activation/event transport authority plus the final public COM/HAL boundary contraction and ownership audit.
+- Verification:
+  - `cargo fmt --all`
+  - `cargo clippy -p oxvba-com -p oxvba-hal --all-targets -- -D warnings`
+  - `cargo test -p oxvba-com -p oxvba-hal --quiet`
 ## 2026-03-14 - Moved shared COM object/result state wrappers into oxvba-com
 
 - Continued the `IP-04` extraction slice in:
@@ -246,6 +266,7 @@
 
 ## 2026-03-13 - Moved bound-dispatch and subscription teardown ownership into oxvba-com
 ## 2026-03-13 - Moved bound-dispatch and subscription teardown ownership into oxvba-com
+
 
 
 

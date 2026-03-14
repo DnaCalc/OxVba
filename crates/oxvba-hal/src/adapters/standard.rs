@@ -14,11 +14,11 @@ use crate::{
 #[cfg(test)]
 pub use oxvba_com::DISPATCH_INVOKE_MISSING_ARG_TOKEN;
 #[cfg(target_os = "windows")]
-use oxvba_com::invoke_direct_dispid_runtime_value as com_invoke_direct_dispid_runtime_value;
+use oxvba_com::invoke_direct_dispid_runtime_value_with_shared_state as com_invoke_direct_dispid_runtime_value_with_shared_state;
 #[cfg(target_os = "windows")]
-use oxvba_com::invoke_dispatch_runtime_value as com_invoke_dispatch_runtime_value;
+use oxvba_com::invoke_dispatch_runtime_value_with_shared_state as com_invoke_dispatch_runtime_value_with_shared_state;
 #[cfg(target_os = "windows")]
-use oxvba_com::invoke_member_spec_runtime_value as com_invoke_member_spec_runtime_value;
+use oxvba_com::invoke_member_spec_runtime_value_with_shared_state as com_invoke_member_spec_runtime_value_with_shared_state;
 #[cfg(target_os = "windows")]
 use oxvba_com::take_excepinfo;
 #[cfg(target_os = "windows")]
@@ -32,12 +32,11 @@ use oxvba_com::{
     ComEventSubscription as SharedComEventSubscription, ComEventTriggerSpec, ComInvokeArg,
     ComInvokeFailure, ComInvokeRequest, ComMemberSpec, ComMemberToken, ComObjectDescriptor,
     ComObjectToken, ComObjectTransportKind, ComSubscriptionToken, ComValue, IID_NULL, RawIDispatch,
-    RawIUnknown, TypeLibMetadataCacheState, WindowsComClientState, WindowsComSubscriptionTransport,
+    TypeLibMetadataCacheState, WindowsComClientState, WindowsComSubscriptionTransport,
     activate_runtime_binding as com_activate_runtime_binding,
     activate_runtime_dispatch as com_activate_runtime_dispatch,
-    add_ref_dispatch as raw_add_ref_dispatch, advise_event_subscription,
-    bind_native_dispatch_result_shared as com_bind_native_dispatch_result_shared,
-    build_typelib_metadata, callback_arg as com_callback_arg, callback_arity as com_callback_arity,
+    add_ref_dispatch as raw_add_ref_dispatch, advise_event_subscription, build_typelib_metadata,
+    callback_arg as com_callback_arg, callback_arity as com_callback_arity,
     callback_subscription_token as com_callback_subscription_token,
     canonicalize_member_known_args as com_canonicalize_member_known_args,
     event_callback_args_from_member_token, event_is_source_interface_only,
@@ -49,7 +48,6 @@ use oxvba_com::{
     legacy_runtime_arg_values as com_legacy_runtime_arg_values, map_com_hresult_label,
     member_spec_from_typelib_metadata,
     plan_unbound_runtime_invoke as com_plan_unbound_runtime_invoke,
-    query_dispatch_from_unknown as raw_query_dispatch_from_unknown,
     raw_oxvba_test_dispatch_vtable_invoke, release_callback as com_release_callback,
     release_dispatch as raw_release_dispatch,
     release_object_binding_shared as com_release_object_binding_shared,
@@ -1427,42 +1425,13 @@ impl StandardHostServices {
     ) -> HalResult<RuntimeValue> {
         self.ensure_thread_com_apartment("dispatch_invoke")?;
         unsafe {
-            com_invoke_member_spec_runtime_value(
+            com_invoke_member_spec_runtime_value_with_shared_state(
                 dispatch.cast(),
                 dispid,
                 spec,
                 args,
                 prog_id_hint,
-                &mut |member_name, args| {
-                    self.resolve_named_argument_dispids(dispatch, member_name, args)
-                        .map_err(|err| {
-                            format!("{} [{}] {}", err.stable_code, err.operation, err.message)
-                        })
-                },
-                &mut |handle| {
-                    self.resolve_native_dispatch_for_object_arg(handle, "dispatch_invoke")
-                        .map(|dispatch| dispatch.cast::<core::ffi::c_void>())
-                        .map_err(|err| {
-                            format!("{} [{}] {}", err.stable_code, err.operation, err.message)
-                        })
-                },
-                &mut |unknown: *mut core::ffi::c_void| {
-                    raw_query_dispatch_from_unknown(unknown.cast::<RawIUnknown>())
-                        .map(|dispatch| dispatch.cast::<core::ffi::c_void>())
-                },
-                &mut |dispatch: *mut core::ffi::c_void| {
-                    raw_add_ref_dispatch(dispatch.cast::<RawIDispatch>());
-                },
-                &mut |dispatch: *mut core::ffi::c_void, prog_id_hint: &str, op: &'static str| {
-                    self.bind_native_dispatch_result(
-                        dispatch.cast::<RawIDispatch>(),
-                        prog_id_hint,
-                        op,
-                    )
-                    .map_err(|err| {
-                        format!("{} [{}] {}", err.stable_code, err.operation, err.message)
-                    })
-                },
+                &self.com_state,
             )
         }
         .map_err(|failure| self.com_dispatch_invoke_fault(failure))
@@ -1480,37 +1449,14 @@ impl StandardHostServices {
     ) -> HalResult<RuntimeValue> {
         self.ensure_thread_com_apartment("dispatch_invoke")?;
         unsafe {
-            com_invoke_direct_dispid_runtime_value(
+            com_invoke_direct_dispid_runtime_value_with_shared_state(
                 dispatch.cast(),
                 dispid,
                 invoke_kind,
                 requires_argument,
                 args,
                 prog_id_hint,
-                &mut |handle| {
-                    self.resolve_native_dispatch_for_object_arg(handle, "dispatch_invoke")
-                        .map(|dispatch| dispatch.cast::<core::ffi::c_void>())
-                        .map_err(|err| {
-                            format!("{} [{}] {}", err.stable_code, err.operation, err.message)
-                        })
-                },
-                &mut |unknown: *mut core::ffi::c_void| {
-                    raw_query_dispatch_from_unknown(unknown.cast::<RawIUnknown>())
-                        .map(|dispatch| dispatch.cast::<core::ffi::c_void>())
-                },
-                &mut |dispatch: *mut core::ffi::c_void| {
-                    raw_add_ref_dispatch(dispatch.cast::<RawIDispatch>());
-                },
-                &mut |dispatch: *mut core::ffi::c_void, prog_id_hint: &str, op: &'static str| {
-                    self.bind_native_dispatch_result(
-                        dispatch.cast::<RawIDispatch>(),
-                        prog_id_hint,
-                        op,
-                    )
-                    .map_err(|err| {
-                        format!("{} [{}] {}", err.stable_code, err.operation, err.message)
-                    })
-                },
+                &self.com_state,
             )
         }
         .map_err(|failure| self.com_dispatch_invoke_fault(failure))
@@ -1529,21 +1475,6 @@ impl StandardHostServices {
     }
 
     #[cfg(target_os = "windows")]
-    fn bind_native_dispatch_result(
-        &self,
-        dispatch: *mut RawIDispatch,
-        prog_id_hint: &str,
-        op: &'static str,
-    ) -> HalResult<RuntimeValue> {
-        let capability = CapabilityId::ComActivationDispatch;
-        let handle = unsafe {
-            com_bind_native_dispatch_result_shared(&self.com_state, dispatch, prog_id_hint)
-        }
-        .map_err(|message| HalError::adapter_fault(self.profile, capability, op, message))?;
-        Ok(RuntimeValue::ObjectHandle(handle))
-    }
-
-    #[cfg(target_os = "windows")]
     #[allow(unsafe_op_in_unsafe_fn)]
     unsafe fn native_dispatch_invoke_runtime_value_args(
         &self,
@@ -1555,7 +1486,7 @@ impl StandardHostServices {
         context: (&'static str, &str),
     ) -> Result<RuntimeValue, ComInvokeFailure> {
         let (label, prog_id_hint) = context;
-        com_invoke_dispatch_runtime_value(
+        com_invoke_dispatch_runtime_value_with_shared_state(
             dispatch.cast(),
             dispid,
             flags,
@@ -1563,26 +1494,7 @@ impl StandardHostServices {
             named_arg_dispids,
             label,
             prog_id_hint,
-            &mut |handle| {
-                self.resolve_native_dispatch_for_object_arg(handle, "dispatch_invoke")
-                    .map(|dispatch| dispatch.cast::<core::ffi::c_void>())
-                    .map_err(|err| {
-                        format!("{} [{}] {}", err.stable_code, err.operation, err.message)
-                    })
-            },
-            &mut |unknown: *mut core::ffi::c_void| {
-                raw_query_dispatch_from_unknown(unknown.cast::<RawIUnknown>())
-                    .map(|dispatch| dispatch.cast::<core::ffi::c_void>())
-            },
-            &mut |dispatch: *mut core::ffi::c_void| {
-                raw_add_ref_dispatch(dispatch.cast::<RawIDispatch>());
-            },
-            &mut |dispatch: *mut core::ffi::c_void, prog_id_hint: &str, op: &'static str| {
-                self.bind_native_dispatch_result(dispatch.cast::<RawIDispatch>(), prog_id_hint, op)
-                    .map_err(|err| {
-                        format!("{} [{}] {}", err.stable_code, err.operation, err.message)
-                    })
-            },
+            &self.com_state,
         )
     }
 
@@ -4198,9 +4110,8 @@ mod tests {
     use super::StandardHostServices;
     #[cfg(target_os = "windows")]
     use super::{
-        ComObjectToken, RawIDispatch, RawIUnknown, raw_add_ref_dispatch,
-        raw_query_dispatch_from_unknown, raw_release_dispatch, raw_variant_to_com_value,
-        set_variant_dispatch_arg,
+        ComObjectToken, RawIDispatch, raw_add_ref_dispatch, raw_release_dispatch,
+        raw_variant_to_com_value, set_variant_dispatch_arg,
     };
     #[cfg(target_os = "windows")]
     use oxvba_com::take_variant_result_value as com_take_variant_result_value;
@@ -4666,7 +4577,7 @@ mod tests {
             com_take_variant_result_value(
                 &mut variant,
                 &mut |unknown: *mut core::ffi::c_void| {
-                    raw_query_dispatch_from_unknown(unknown.cast::<RawIUnknown>())
+                    oxvba_com::query_dispatch_from_unknown(unknown.cast::<oxvba_com::RawIUnknown>())
                         .map(|dispatch| dispatch.cast::<core::ffi::c_void>())
                 },
                 &mut |dispatch: *mut core::ffi::c_void| {
@@ -4708,7 +4619,7 @@ mod tests {
             com_take_variant_result_value(
                 &mut variant,
                 &mut |unknown: *mut core::ffi::c_void| {
-                    raw_query_dispatch_from_unknown(unknown.cast::<RawIUnknown>())
+                    oxvba_com::query_dispatch_from_unknown(unknown.cast::<oxvba_com::RawIUnknown>())
                         .map(|dispatch| dispatch.cast::<core::ffi::c_void>())
                 },
                 &mut |dispatch: *mut core::ffi::c_void| {
@@ -6902,6 +6813,20 @@ mod tests {
 #[cfg(test)]
 #[allow(dead_code, clippy::items_after_test_module)]
 impl StandardHostServices {
+    fn bind_native_dispatch_result(
+        &self,
+        dispatch: *mut RawIDispatch,
+        prog_id_hint: &str,
+        op: &'static str,
+    ) -> HalResult<RuntimeValue> {
+        let capability = CapabilityId::ComActivationDispatch;
+        let handle = unsafe {
+            oxvba_com::bind_native_dispatch_result_shared(&self.com_state, dispatch, prog_id_hint)
+        }
+        .map_err(|message| HalError::adapter_fault(self.profile, capability, op, message))?;
+        Ok(RuntimeValue::ObjectHandle(handle))
+    }
+
     fn legacy_subscribe_event(
         &self,
         object: RuntimeValue,
