@@ -4,6 +4,9 @@ Date: 2026-03-09
 Status: in-progress  
 Scope: redefine `oxvba-com` as the Windows-first bidirectional COM bridge for OxVba, move COM-specific state and behavior toward that crate, and shrink `oxvba-hal` back toward profile/policy/bootstrap concerns rather than serving as the long-term COM implementation home.
 
+Authoritative closure plan:
+1. use `docs/worksets/WORKSET_2026-03-14_IP04_OXVBA_COM_HAL_EXTRACTION_CLOSURE.md` as the end-to-end execution and closure workset for finishing `IP-04`.
+
 ## 1. Decision summary
 
 Decision lock:
@@ -321,6 +324,10 @@ Required checks for the repurpose/extraction program:
 7. Use these concrete child worksets for the next cleanup/implementation slices:
    - `docs/worksets/WORKSET_2026-03-11_UNIFIED_DYNAMIC_OBJECT_PROTOCOL_AND_VALUE_CARRIER.md`
    - `docs/worksets/WORKSET_2026-03-11_COM_REFERENCE_FACADE_AND_TYPELIB_BINDING_COMPLETION.md`
+
+
+
+
 
 
 

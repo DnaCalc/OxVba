@@ -100,6 +100,20 @@
   - public HAL COM contract contraction/rebinding still pending.
 # Implementation Log
 
+## 2026-03-14 - Added explicit IP-04 closure workset
+
+- Added:
+  - [WORKSET_2026-03-14_IP04_OXVBA_COM_HAL_EXTRACTION_CLOSURE.md](C:\Work\DnaCalc\OxVba\docs\worksets\WORKSET_2026-03-14_IP04_OXVBA_COM_HAL_EXTRACTION_CLOSURE.md)
+- Purpose:
+  - turn the approved 1-24 COM/HAL extraction plan into the authoritative end-to-end `IP-04` closure workset,
+  - make explicit what is and is not required to close `IP-04`,
+  - define the final verification and ownership-audit gates needed before `IP-04` can be described as complete.
+- Cross-linked the new closure workset from:
+  - [WORKSET_2026-03-09_OXVBA_COM_REPURPOSE_AND_HAL_COM_EXTRACTION.md](C:\Work\DnaCalc\OxVba\docs\worksets\WORKSET_2026-03-09_OXVBA_COM_REPURPOSE_AND_HAL_COM_EXTRACTION.md)
+  - [IN_PROGRESS_FEATURE_WORKLIST.md](C:\Work\DnaCalc\OxVba\docs\IN_PROGRESS_FEATURE_WORKLIST.md)
+  - [CURRENT_BLOCKERS.md](C:\Work\DnaCalc\OxVba\CURRENT_BLOCKERS.md)
+
+
 ## 2026-03-13 - Moved COM event transport-choice resolution into oxvba-com
 
 - Continued the COM extraction/contraction slice in:
@@ -143,6 +157,7 @@
 
 ## 2026-03-13 - Moved bound-dispatch and subscription teardown ownership into oxvba-com
 ## 2026-03-13 - Moved bound-dispatch and subscription teardown ownership into oxvba-com
+
 
 
 
