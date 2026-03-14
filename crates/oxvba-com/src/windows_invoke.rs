@@ -95,6 +95,29 @@ pub struct ComInvokeFailure {
 }
 
 #[cfg(target_os = "windows")]
+fn render_invoke_fault_message(failure: &ComInvokeFailure) -> String {
+    let label = crate::map_com_hresult_label(failure.hr.map(|hr| hr as u32), failure.arg_err);
+    let mut suffix = String::new();
+    if let Some(hr) = failure.hr {
+        suffix.push_str(&format!("hresult=0x{:08X};", hr as u32));
+    }
+    if let Some(value) = failure.arg_err {
+        suffix.push_str(&format!("arg_err={value};"));
+    }
+    if let Some(excep) = &failure.excep
+        && let Some(scode) = excep.scode
+    {
+        suffix.push_str(&format!("excep_scode=0x{:08X};", scode as u32));
+    }
+    let prefix = if suffix.is_empty() {
+        format!("com-dispatch-{label}")
+    } else {
+        format!("com-dispatch-{label};{suffix}")
+    };
+    format!("{prefix} {}", failure.render())
+}
+
+#[cfg(target_os = "windows")]
 impl ComInvokeFailure {
     pub fn render(&self) -> String {
         let mut message = format!(
@@ -880,4 +903,171 @@ pub unsafe fn invoke_dispatch_runtime_value_with_shared_state(
             .map(RuntimeValue::ObjectHandle)
         },
     )
+}
+
+#[cfg(target_os = "windows")]
+#[allow(clippy::missing_safety_doc)]
+pub unsafe fn invoke_bound_dispatch_runtime_value_with_shared_state<FKnownSpec>(
+    dispatch: *mut crate::RawIDispatch,
+    prog_id: &str,
+    member: crate::ComMemberToken,
+    args: &[ComInvokeArg],
+    com_state: &std::sync::Arc<std::sync::Mutex<crate::WindowsComClientState>>,
+    known_member_spec: &mut FKnownSpec,
+) -> Result<RuntimeValue, String>
+where
+    FKnownSpec:
+        FnMut(&ComBinding, crate::ComMemberToken) -> Result<Option<crate::ComMemberSpec>, String>,
+{
+    let plan = crate::plan_unbound_runtime_invoke(
+        member,
+        args,
+        known_member_spec(
+            &ComBinding::new(prog_id.to_string(), dispatch as usize),
+            member,
+        )?,
+    )?;
+    match plan {
+        crate::UnboundRuntimeInvokePlan::MemberSpec(spec) => {
+            let dispid = unsafe { crate::get_dispid_by_name(dispatch, &spec.name) }?;
+            unsafe {
+                invoke_member_spec_runtime_value_with_shared_state(
+                    dispatch.cast(),
+                    dispid,
+                    &spec,
+                    args,
+                    prog_id,
+                    com_state,
+                )
+            }
+            .map_err(|failure| render_invoke_fault_message(&failure))
+        }
+        crate::UnboundRuntimeInvokePlan::DirectPropertyGet { dispid } => unsafe {
+            invoke_dispatch_runtime_value_with_shared_state(
+                dispatch.cast(),
+                dispid.raw(),
+                windows_sys::Win32::System::Com::DISPATCH_PROPERTYGET,
+                args,
+                &[],
+                "property-get",
+                prog_id,
+                com_state,
+            )
+        }
+        .map_err(|failure| render_invoke_fault_message(&failure)),
+    }
+}
+
+#[cfg(target_os = "windows")]
+#[allow(clippy::too_many_arguments, clippy::missing_safety_doc)]
+pub unsafe fn execute_bound_runtime_value_with_shared_state<FTryVtable, FKnownSpec>(
+    com_state: &std::sync::Arc<std::sync::Mutex<crate::WindowsComClientState>>,
+    request: &ComInvokeRequest,
+    positional_values: Option<&[i32]>,
+    try_vtable_invoke: &mut FTryVtable,
+    known_member_spec: &mut FKnownSpec,
+) -> Result<Option<RuntimeValue>, String>
+where
+    FTryVtable:
+        FnMut(*mut crate::RawIDispatch, &ComBinding, i32, &[i32]) -> Result<Option<i32>, String>,
+    FKnownSpec:
+        FnMut(&ComBinding, crate::ComMemberToken) -> Result<Option<crate::ComMemberSpec>, String>,
+{
+    let (binding, cached_dispid) = {
+        let state = com_state.lock().map_err(|_| {
+            "COM-E-STATE-LOCK-POISONED: dispatch_invoke state lock poisoned".to_string()
+        })?;
+        let binding = state
+            .bindings
+            .get(&crate::ComObjectToken::new(request.object.raw()))
+            .cloned();
+        let cached_dispid = binding
+            .as_ref()
+            .and_then(|entry| entry.member_dispids.get(&request.member).copied());
+        (binding, cached_dispid)
+    };
+    let Some(binding) = binding else {
+        return Ok(None);
+    };
+    if binding.native_dispatch == 0 {
+        return Ok(None);
+    }
+    let dispatch = binding.native_dispatch as *mut crate::RawIDispatch;
+    let mut resolve_member_dispid = |member: i32, _cached_dispid: Option<i32>| {
+        let mut state = com_state.lock().map_err(|_| {
+            "COM-E-STATE-LOCK-POISONED: dispatch_invoke state lock poisoned".to_string()
+        })?;
+        unsafe {
+            crate::resolve_member_dispid_cached(
+                &mut state,
+                dispatch,
+                request.object,
+                &binding,
+                crate::ComMemberToken::new(member),
+                None,
+            )
+        }
+    };
+    let mut invoke_member_spec =
+        |dispid: i32, spec: &crate::ComMemberSpec, invoke_args: &[ComInvokeArg], prog_id: &str| {
+            unsafe {
+                invoke_member_spec_runtime_value_with_shared_state(
+                    dispatch.cast(),
+                    dispid,
+                    spec,
+                    invoke_args,
+                    prog_id,
+                    com_state,
+                )
+            }
+            .map_err(|failure| render_invoke_fault_message(&failure))
+        };
+    let mut invoke_direct_dispid = |member: i32,
+                                    invoke_kind: crate::TypeLibMemberInvokeKind,
+                                    requires_argument: bool,
+                                    invoke_args: &[ComInvokeArg],
+                                    prog_id: &str| {
+        unsafe {
+            invoke_direct_dispid_runtime_value_with_shared_state(
+                dispatch.cast(),
+                member,
+                invoke_kind,
+                requires_argument,
+                invoke_args,
+                prog_id,
+                com_state,
+            )
+        }
+        .map_err(|failure| render_invoke_fault_message(&failure))
+    };
+    let mut invoke_bound_dispatch = |member: i32, invoke_args: &[ComInvokeArg], prog_id: &str| unsafe {
+        invoke_bound_dispatch_runtime_value_with_shared_state(
+            dispatch,
+            prog_id,
+            crate::ComMemberToken::new(member),
+            invoke_args,
+            com_state,
+            known_member_spec,
+        )
+    };
+    let mut try_vtable =
+        |member: i32, positional: &[i32]| try_vtable_invoke(dispatch, &binding, member, positional);
+    let value = execute_bound_runtime_value(
+        &binding,
+        request,
+        cached_dispid,
+        &mut try_vtable,
+        &mut resolve_member_dispid,
+        &mut invoke_member_spec,
+        &mut invoke_direct_dispid,
+        &mut invoke_bound_dispatch,
+    )?;
+    let _ = crate::windows_runtime_state::queue_projection_event_callbacks_shared(
+        com_state,
+        request.object,
+        &binding,
+        request.member,
+        positional_values,
+    )?;
+    Ok(Some(value))
 }

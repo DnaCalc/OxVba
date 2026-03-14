@@ -631,3 +631,49 @@ pub unsafe fn unsubscribe_event_shared(
     let _ = remove_subscription_callbacks(&mut state, subscription)?;
     Ok(())
 }
+
+pub fn queue_projection_event_callbacks_shared(
+    com_state: &Arc<Mutex<WindowsComClientState>>,
+    object: ObjectHandle,
+    binding: &ComBinding,
+    member: ComMemberToken,
+    args: Option<&[i32]>,
+) -> Result<usize, String> {
+    let Some(trigger_spec) = binding.event_trigger_specs.get(&member).copied() else {
+        return Ok(0);
+    };
+    let Some(args) = args else {
+        return Err(format!(
+            "COM-E-VALUE-TRANSPORT-UNSUPPORTED: projected event trigger `{}` requires legacy callback argument transport",
+            trigger_spec.event_token.raw()
+        ));
+    };
+    let Some((event, args)) = event_callback_args_from_member_token(binding, member, args) else {
+        return Ok(0);
+    };
+    let Some(expected_arity) = event_signature_arity_for_binding(binding, event) else {
+        return Err(format!(
+            "COM-E-EVENT-CONNECTIONPOINT-MISSING: object `{}` does not expose event token {}",
+            binding.prog_id_name,
+            event.raw()
+        ));
+    };
+    if event_is_source_interface_only(binding, event) {
+        return Ok(0);
+    }
+    if args.len() != expected_arity {
+        return Err(format!(
+            "COM-E-EVENT-CALLBACK-SIGNATURE-MISMATCH: event token {} expected {} argument(s), queued {}",
+            event.raw(),
+            expected_arity,
+            args.len()
+        ));
+    }
+    let mut state = lock_state(com_state, "queue_projection_event_callbacks")?;
+    Ok(state.queue_callbacks_for_source_event(
+        ComObjectToken::new(object.raw()),
+        event,
+        args.as_slice(),
+        |transport| transport.is_projection(),
+    ))
+}

@@ -1,3 +1,25 @@
+## 2026-03-14 - Moved bound COM dispatch service entry into oxvba-com
+
+- Continued the `IP-04` extraction slice in:
+  - [windows_invoke.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-com\src\windows_invoke.rs)
+  - [windows_runtime_state.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-com\src\windows_runtime_state.rs)
+  - [lib.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-com\src\lib.rs)
+  - [standard.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-hal\src\adapters\standard.rs)
+  - [CURRENT_BLOCKERS.md](C:\Work\DnaCalc\OxVba\CURRENT_BLOCKERS.md)
+  - [IN_PROGRESS_FEATURE_WORKLIST.md](C:\Work\DnaCalc\OxVba\docs\IN_PROGRESS_FEATURE_WORKLIST.md)
+- `oxvba-com` now owns a higher-level bound-dispatch execution service that combines:
+  - binding lookup from shared COM state,
+  - cached DISPID reuse/update,
+  - member-spec/direct-DISPID/unbound dispatch routing over shared-state invoke helpers,
+  - projection callback queueing for the bound native lane.
+- `standard.rs::dispatch_invoke_runtime_value_v2(...)` now delegates the native bound COM object path through that `oxvba-com` service instead of coordinating the bound dispatch pipeline locally.
+- Net effect:
+  - HAL no longer owns the bound COM dispatch service entry,
+  - the remaining `IP-04` wall is now the residual legacy projection invoke lane, teardown-side native transport release, dead transitional helper cleanup, and the final public COM/HAL seam collapse and ownership audit.
+- Verification:
+  - `cargo fmt --all`
+  - `cargo clippy -p oxvba-com -p oxvba-hal --all-targets -- -D warnings`
+  - `cargo test -p oxvba-com -p oxvba-hal --quiet`
 ## 2026-03-14 - Moved COM create-object binding insertion into oxvba-com
 
 - Continued the `IP-04` extraction slice in:
@@ -307,6 +329,7 @@
 
 ## 2026-03-13 - Moved bound-dispatch and subscription teardown ownership into oxvba-com
 ## 2026-03-13 - Moved bound-dispatch and subscription teardown ownership into oxvba-com
+
 
 
 

@@ -80,10 +80,11 @@ pub use windows_connection_point::{
 #[cfg(target_os = "windows")]
 pub use windows_invoke::{
     ComInvokeExceptionInfo, ComInvokeFailure, execute_bound_runtime_value,
-    invoke_direct_dispid_runtime_value, invoke_direct_dispid_runtime_value_with_shared_state,
-    invoke_dispatch_runtime_value, invoke_dispatch_runtime_value_with_shared_state,
-    invoke_member_spec_runtime_value, invoke_member_spec_runtime_value_with_shared_state,
-    take_excepinfo,
+    execute_bound_runtime_value_with_shared_state,
+    invoke_bound_dispatch_runtime_value_with_shared_state, invoke_direct_dispid_runtime_value,
+    invoke_direct_dispid_runtime_value_with_shared_state, invoke_dispatch_runtime_value,
+    invoke_dispatch_runtime_value_with_shared_state, invoke_member_spec_runtime_value,
+    invoke_member_spec_runtime_value_with_shared_state, take_excepinfo,
 };
 #[cfg(target_os = "windows")]
 pub use windows_runtime_state::{

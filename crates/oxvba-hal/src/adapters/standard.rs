@@ -40,7 +40,7 @@ use oxvba_com::{
     canonicalize_member_known_args as com_canonicalize_member_known_args,
     event_callback_args_from_member_token, event_is_source_interface_only,
     event_signature_arity_for_binding,
-    execute_bound_runtime_value as com_execute_bound_runtime_value,
+    execute_bound_runtime_value_with_shared_state as com_execute_bound_runtime_value_with_shared_state,
     get_dispid_by_name as raw_get_dispid_by_name, known_typelib_identity_for_prog_id_name,
     legacy_runtime_arg_values as com_legacy_runtime_arg_values, map_com_hresult_label,
     mark_next_callback_pumped_shared as com_mark_next_callback_pumped_shared,
@@ -1182,6 +1182,7 @@ impl StandardHostServices {
     }
 
     #[cfg(target_os = "windows")]
+    #[allow(dead_code)]
     fn resolve_member_dispid_cached(
         &self,
         object: i32,
@@ -1394,6 +1395,7 @@ impl StandardHostServices {
     }
 
     #[cfg(target_os = "windows")]
+    #[allow(dead_code)]
     fn native_com_dispatch_invoke_core_runtime_value(
         &self,
         dispatch: *mut RawIDispatch,
@@ -1437,6 +1439,7 @@ impl StandardHostServices {
     }
 
     #[cfg(target_os = "windows")]
+    #[allow(dead_code)]
     fn native_com_dispatch_invoke_with_member_spec_runtime_value(
         &self,
         dispatch: *mut RawIDispatch,
@@ -1460,6 +1463,7 @@ impl StandardHostServices {
     }
 
     #[cfg(target_os = "windows")]
+    #[allow(dead_code)]
     fn native_com_dispatch_invoke_with_direct_dispid_runtime_value(
         &self,
         dispatch: *mut RawIDispatch,
@@ -1485,6 +1489,7 @@ impl StandardHostServices {
     }
 
     #[cfg(target_os = "windows")]
+    #[allow(dead_code)]
     fn native_com_dispatch_invoke_with_bound_dispatch_runtime_value(
         &self,
         dispatch: *mut RawIDispatch,
@@ -1498,6 +1503,7 @@ impl StandardHostServices {
 
     #[cfg(target_os = "windows")]
     #[allow(unsafe_op_in_unsafe_fn)]
+    #[allow(dead_code)]
     unsafe fn native_dispatch_invoke_runtime_value_args(
         &self,
         dispatch: *mut RawIDispatch,
@@ -2464,20 +2470,13 @@ impl ComHal for StandardHostServices {
             let _ = com_validate_named_arg_order(args).map_err(|message| {
                 HalError::adapter_fault(self.profile, capability, "dispatch_invoke", message)
             })?;
-            let (binding, cached_dispid) = {
-                let state = self.com_lock(capability, "dispatch_invoke")?;
-                self.assert_com_invariants(&state, "dispatch_invoke");
-                let binding = state.bindings.get(&ComObjectToken::new(object)).cloned();
-                let cached_dispid = binding
-                    .as_ref()
-                    .and_then(|entry| entry.member_dispids.get(&request.member).copied());
-                (binding, cached_dispid)
-            };
-            if let Some(binding) = binding {
-                #[cfg(target_os = "windows")]
-                if binding.native_dispatch != 0 {
-                    let dispatch = binding.native_dispatch as *mut RawIDispatch;
-                    let mut try_vtable_invoke = |member: i32, positional_values: &[i32]| {
+            #[cfg(target_os = "windows")]
+            {
+                let mut try_vtable_invoke =
+                    |dispatch: *mut RawIDispatch,
+                     binding: &ComBinding,
+                     member: i32,
+                     positional_values: &[i32]| {
                         self.try_native_com_vtable_invoke(
                             dispatch,
                             &binding.prog_id_name,
@@ -2486,82 +2485,34 @@ impl ComHal for StandardHostServices {
                         )
                         .map_err(|err| err.to_string())
                     };
-                    let mut resolve_member_dispid = |member: i32, cached_dispid: Option<i32>| {
-                        self.resolve_member_dispid_cached(
-                            object,
-                            dispatch,
-                            &binding,
-                            member,
-                            cached_dispid,
-                        )
-                        .map_err(|err| err.to_string())
-                    };
-                    let mut invoke_member_spec =
-                        |dispid: i32,
-                         spec: &ComMemberSpec,
-                         invoke_args: &[ComInvokeArg],
-                         prog_id: &str| {
-                            self.native_com_dispatch_invoke_with_member_spec_runtime_value(
-                                dispatch,
-                                dispid,
-                                spec,
-                                invoke_args,
-                                prog_id,
-                            )
-                            .map_err(|err| err.to_string())
-                        };
-                    let mut invoke_direct_dispid =
-                        |member: i32,
-                         invoke_kind: TypeLibMemberInvokeKind,
-                         requires_argument: bool,
-                         invoke_args: &[ComInvokeArg],
-                         prog_id: &str| {
-                            self.native_com_dispatch_invoke_with_direct_dispid_runtime_value(
-                                dispatch,
-                                member,
-                                invoke_kind,
-                                requires_argument,
-                                invoke_args,
-                                prog_id,
-                            )
-                            .map_err(|err| err.to_string())
-                        };
-                    let mut invoke_bound_dispatch =
-                        |member: i32, invoke_args: &[ComInvokeArg], prog_id: &str| {
-                            self.native_com_dispatch_invoke_with_bound_dispatch_runtime_value(
-                                dispatch,
-                                prog_id,
-                                member,
-                                invoke_args,
-                            )
-                            .map_err(|err| err.to_string())
-                        };
-                    let value = com_execute_bound_runtime_value(
-                        &binding,
-                        request,
-                        cached_dispid,
-                        &mut try_vtable_invoke,
-                        &mut resolve_member_dispid,
-                        &mut invoke_member_spec,
-                        &mut invoke_direct_dispid,
-                        &mut invoke_bound_dispatch,
+                let mut known_member_spec = |binding: &ComBinding, token: ComMemberToken| {
+                    self.known_member_spec_for_prog_id_name(
+                        &binding.prog_id_name,
+                        token.raw().into(),
                     )
-                    .map_err(|message| {
-                        HalError::adapter_fault(
-                            self.profile,
-                            capability,
-                            "dispatch_invoke",
-                            message,
-                        )
-                    })?;
-                    self.queue_com_event_callbacks(
-                        object,
-                        &binding,
-                        member,
+                    .map_err(|err| err.to_string())
+                };
+                if let Some(value) = unsafe {
+                    com_execute_bound_runtime_value_with_shared_state(
+                        &self.com_state,
+                        request,
                         positional_values.as_deref(),
-                    )?;
+                        &mut try_vtable_invoke,
+                        &mut known_member_spec,
+                    )
+                }
+                .map_err(|message| {
+                    HalError::adapter_fault(self.profile, capability, "dispatch_invoke", message)
+                })? {
                     return Ok(value);
                 }
+            }
+            let binding = {
+                let state = self.com_lock(capability, "dispatch_invoke")?;
+                self.assert_com_invariants(&state, "dispatch_invoke");
+                state.bindings.get(&ComObjectToken::new(object)).cloned()
+            };
+            if let Some(binding) = binding {
                 let positional_values = positional_values.as_ref().ok_or_else(|| {
                     HalError::adapter_fault(
                         self.profile,
