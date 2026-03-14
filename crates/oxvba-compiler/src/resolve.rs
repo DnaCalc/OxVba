@@ -51,11 +51,19 @@ pub struct BoundCallArg {
     pub expr: BoundExpr,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AssignmentIntent {
+    Implicit,
+    Let,
+    Set,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum BoundStmt {
     Assign {
         target: String,
         expr: BoundExpr,
+        intent: AssignmentIntent,
     },
     UdtAssign {
         target: String,
@@ -135,6 +143,7 @@ pub enum BoundStmt {
         target: String,
         name: String,
         args: Vec<BoundCallArg>,
+        intent: AssignmentIntent,
     },
     SelectCase {
         expr: BoundExpr,
@@ -1198,6 +1207,7 @@ fn build_const_prelude(constants: &HashMap<String, i32>) -> Vec<BoundStmt> {
         .map(|(name, value)| BoundStmt::Assign {
             target: name,
             expr: BoundExpr::IntConst(value),
+            intent: AssignmentIntent::Implicit,
         })
         .collect()
 }
@@ -2301,10 +2311,12 @@ fn parse_assign_or_unsupported(
     property_read_routes: &HashMap<String, String>,
 ) -> BoundStmt {
     let lowered = line.trim_start().to_ascii_lowercase();
-    let assignment_line = if lowered.starts_with("set ") || lowered.starts_with("let ") {
-        line.trim_start()[4..].trim_start()
+    let (assignment_intent, assignment_line) = if lowered.starts_with("set ") {
+        (AssignmentIntent::Set, line.trim_start()[4..].trim_start())
+    } else if lowered.starts_with("let ") {
+        (AssignmentIntent::Let, line.trim_start()[4..].trim_start())
     } else {
-        line
+        (AssignmentIntent::Implicit, line)
     };
 
     if let Some(stmt) = parse_mid_assign_stmt(assignment_line, array_bounds) {
@@ -2322,6 +2334,7 @@ fn parse_assign_or_unsupported(
                 target,
                 name: call_name,
                 args,
+                intent: assignment_intent,
             };
         }
         if parse_reference_name(rhs_raw.trim(), array_bounds).is_none()
@@ -2332,7 +2345,12 @@ fn parse_assign_or_unsupported(
                 .get(&call_name)
                 .cloned()
                 .unwrap_or(call_name);
-            return BoundStmt::AssignFromCall { target, name, args };
+            return BoundStmt::AssignFromCall {
+                target,
+                name,
+                args,
+                intent: assignment_intent,
+            };
         }
 
         if let Some(base_name) = normalize_ident(rhs_raw.trim())
@@ -2345,6 +2363,7 @@ fn parse_assign_or_unsupported(
                 target,
                 name: route_proc.clone(),
                 args: Vec::new(),
+                intent: assignment_intent,
             };
         }
 
@@ -2369,7 +2388,11 @@ fn parse_assign_or_unsupported(
                     args: vec![BoundCallArg { name: None, expr }],
                 };
             }
-            return BoundStmt::Assign { target, expr };
+            return BoundStmt::Assign {
+                target,
+                expr,
+                intent: assignment_intent,
+            };
         }
     }
 
@@ -4166,12 +4189,12 @@ mod tests {
         let source =
             "Sub Main()\nDim x\nWith x\n.Value = 1\n.Value = .Value + 2\nEnd With\nEnd Sub";
         let module = resolve_symbols(source);
-        let Some(BoundStmt::Assign { target, expr }) = module.body.first() else {
+        let Some(BoundStmt::Assign { target, expr, .. }) = module.body.first() else {
             panic!("expected assignment");
         };
         assert_eq!(target, "x_value");
         assert_eq!(expr, &BoundExpr::IntConst(1));
-        let Some(BoundStmt::Assign { target, expr }) = module.body.get(1) else {
+        let Some(BoundStmt::Assign { target, expr, .. }) = module.body.get(1) else {
             panic!("expected second assignment");
         };
         assert_eq!(target, "x_value");
@@ -4199,12 +4222,12 @@ mod tests {
     fn resolve_with_block_direct_member_target_assignment() {
         let source = "Sub Main()\nDim x\nWith x.inner\n.Value = 4\n.Value = .Value + 3\nx = .Value\nEnd With\nEnd Sub";
         let module = resolve_symbols(source);
-        let Some(BoundStmt::Assign { target, expr }) = module.body.first() else {
+        let Some(BoundStmt::Assign { target, expr, .. }) = module.body.first() else {
             panic!("expected assignment");
         };
         assert_eq!(target, "x_inner_value");
         assert_eq!(expr, &BoundExpr::IntConst(4));
-        let Some(BoundStmt::Assign { target, expr }) = module.body.get(1) else {
+        let Some(BoundStmt::Assign { target, expr, .. }) = module.body.get(1) else {
             panic!("expected second assignment");
         };
         assert_eq!(target, "x_inner_value");
@@ -4221,7 +4244,7 @@ mod tests {
     fn resolve_conditional_compilation_if_else_branch() {
         let source = "#Const ENABLE = True\nSub Main()\nDim x\n#If ENABLE Then\nx = 7\n#Else\nx = 1\n#End If\nEnd Sub";
         let module = resolve_symbols(source);
-        let Some(BoundStmt::Assign { target, expr }) = module.body.first() else {
+        let Some(BoundStmt::Assign { target, expr, .. }) = module.body.first() else {
             panic!("expected assignment");
         };
         assert_eq!(target, "x");
@@ -4232,7 +4255,7 @@ mod tests {
     fn resolve_conditional_compilation_elseif_branch() {
         let source = "#Const A = False\n#Const B = True\nSub Main()\nDim x\n#If A Then\nx = 1\n#ElseIf B Then\nx = 9\n#Else\nx = 3\n#End If\nEnd Sub";
         let module = resolve_symbols(source);
-        let Some(BoundStmt::Assign { target, expr }) = module.body.first() else {
+        let Some(BoundStmt::Assign { target, expr, .. }) = module.body.first() else {
             panic!("expected assignment");
         };
         assert_eq!(target, "x");
@@ -4243,7 +4266,7 @@ mod tests {
     fn resolve_conditional_compilation_skips_inactive_const_definition() {
         let source = "#Const OUTER = False\n#If OUTER Then\n#Const FLAG = True\n#End If\nSub Main()\nDim x\n#If FLAG Then\nx = 1\n#Else\nx = 5\n#End If\nEnd Sub";
         let module = resolve_symbols(source);
-        let Some(BoundStmt::Assign { target, expr }) = module.body.first() else {
+        let Some(BoundStmt::Assign { target, expr, .. }) = module.body.first() else {
             panic!("expected assignment");
         };
         assert_eq!(target, "x");
@@ -4890,7 +4913,7 @@ mod tests {
         let source = "Const BASE = 5\nSub Main()\nDim x\nx = BASE + 2\nEnd Sub";
         let module = resolve_symbols(source);
         assert!(module.declarations.iter().any(|d| d == "base"));
-        let Some(BoundStmt::Assign { target, expr }) = module.body.first() else {
+        let Some(BoundStmt::Assign { target, expr, .. }) = module.body.first() else {
             panic!("expected const prelude assignment");
         };
         assert_eq!(target, "base");
@@ -4905,7 +4928,7 @@ mod tests {
         assert!(module.declarations.iter().any(|d| d == "fast"));
         assert!(module.declarations.iter().any(|d| d == "safe"));
         assert!(module.body.iter().any(
-            |s| matches!(s, BoundStmt::Assign { target, expr } if target == "safe" && expr == &BoundExpr::IntConst(4))
+            |s| matches!(s, BoundStmt::Assign { target, expr, .. } if target == "safe" && expr == &BoundExpr::IntConst(4))
         ));
     }
 

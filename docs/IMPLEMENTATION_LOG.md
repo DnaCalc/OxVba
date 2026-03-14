@@ -539,3 +539,24 @@
 - Both tests prove the getter executed by mutating hidden class state and then reading the observable state through a separate property.
 - In [project.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-compiler\src\project.rs), extended `rewrite_internal_class_call_statement_without_parens(...)` so dotless authoritative default-member call statements route through the same PMR property-get lowering as dotted member calls.
 - IP-02 remains in progress: broader typed/object Set vs Let intent parity, non-authoritative default-member resolution, and wider Office-style call-vs-value context parity are still open.
+## 2026-03-14 - Extended IP-02 no-parentheses argument property/default-member get semantics
+
+- Continued the active IP-02A call-vs-value closure slice and proved that no-parentheses argument native internal project-class Property Get calls now execute end to end on the shared PMR/dynamic-object path.
+- Added end-to-end host coverage in [engine.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-host\src\engine.rs) for:
+  - `widget.Value x`,
+  - `widget x` when authoritative VB_UserMemId = 0 metadata exists.
+- Both tests use ByRef argument mutation as the observable effect, proving that the getter executed through the statement-form/no-parentheses call path rather than falling back to expression-only rewriting.
+- In [project.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-compiler\src\project.rs), added a dedicated internal-class no-parentheses statement-invoke rewrite and taught the property-expression rewrite to leave that exact statement shape untouched until the targeted invoke rewrite can lower it correctly.
+- IP-02 remains in progress: broader typed/object Set vs Let intent parity, non-authoritative default-member resolution, and wider Office-style call-vs-value context parity are still open.
+## 2026-03-14 - Extended IP-02 bounded Set/Let assignment intent semantics
+
+- Continued the active IP-02A semantic-closure slice and preserved explicit Set / Let keywords through resolver and typecheck for plain assignment and assignment-from-call statements instead of erasing that intent before semantic validation.
+- In [resolve.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-compiler\src\resolve.rs), added AssignmentIntent and threaded it through BoundStmt::Assign / BoundStmt::AssignFromCall so the compiler can distinguish implicit assignment from explicit Let / Set intent.
+- In [typecheck.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-compiler\src\typecheck.rs), added bounded intent validation so:
+  - Let rejects object-only targets,
+  - Set rejects non-object/non-Variant targets,
+  - Set rejects scalar sources while still allowing the current object-carrying Variant source lane used by CreateObject(...).
+- Added end-to-end host coverage in [engine.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-host\src\engine.rs) proving:
+  - Let x = 5 plus Set obj = CreateObject(4) executes successfully,
+  - Set x = 7 fails deterministically with the expected type error.
+- IP-02 remains in progress: broader typed/object Set vs Let parity, non-authoritative default-member resolution, and wider Office-style call-vs-value context parity are still open.

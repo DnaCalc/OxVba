@@ -15,10 +15,15 @@ fn optimize_stmt_list(stmts: Vec<BoundStmt>) -> Vec<BoundStmt> {
     let mut out = Vec::new();
     for stmt in stmts {
         match stmt {
-            BoundStmt::Assign { target, mut expr } => {
+            BoundStmt::Assign {
+                target,
+                mut expr,
+                intent,
+            } => {
                 if let Some(BoundStmt::Assign {
                     target: prev_target,
                     expr: BoundExpr::IntConst(value),
+                    ..
                 }) = out.last()
                     && matches!(&expr, BoundExpr::Var(var) if var == prev_target)
                 {
@@ -49,7 +54,11 @@ fn optimize_stmt_list(stmts: Vec<BoundStmt>) -> Vec<BoundStmt> {
                 }
 
                 if !is_noop {
-                    out.push(BoundStmt::Assign { target, expr });
+                    out.push(BoundStmt::Assign {
+                        target,
+                        expr,
+                        intent,
+                    });
                 }
             }
             BoundStmt::IfCond {
@@ -139,8 +148,18 @@ fn optimize_stmt_list(stmts: Vec<BoundStmt>) -> Vec<BoundStmt> {
                     });
                 }
             }
-            BoundStmt::AssignFromCall { target, name, args } => {
-                out.push(BoundStmt::AssignFromCall { target, name, args });
+            BoundStmt::AssignFromCall {
+                target,
+                name,
+                args,
+                intent,
+            } => {
+                out.push(BoundStmt::AssignFromCall {
+                    target,
+                    name,
+                    args,
+                    intent,
+                });
             }
             other => out.push(other),
         }
@@ -235,7 +254,7 @@ mod tests {
         let module = resolve_symbols("Sub Main()\nDim x\nx = 1\nx = x + 0\nEnd Sub");
         let optimized = optimize_module(module);
         let has_noop = optimized.body.iter().any(|stmt| {
-            matches!(stmt, BoundStmt::Assign { target, expr } if matches!(expr, crate::resolve::BoundExpr::AddConst { var, delta } if var == target && *delta == 0))
+            matches!(stmt, BoundStmt::Assign { target, expr, .. } if matches!(expr, crate::resolve::BoundExpr::AddConst { var, delta } if var == target && *delta == 0))
         });
         assert!(!has_noop);
     }
@@ -384,7 +403,8 @@ mod tests {
                 stmt,
                 BoundStmt::Assign {
                     target,
-                    expr: crate::resolve::BoundExpr::IntConst(7)
+                    expr: crate::resolve::BoundExpr::IntConst(7),
+                    ..
                 } if target == "y"
             )
         }));

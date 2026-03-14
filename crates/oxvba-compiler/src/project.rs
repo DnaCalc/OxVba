@@ -1734,7 +1734,16 @@ fn rewrite_internal_class_member_dispatch(
         out
     };
 
-    rewrite_internal_class_call_statement_without_parens(
+    let rewritten = rewrite_internal_class_call_statement_without_parens(
+        &rewritten,
+        active_project,
+        current_project,
+        current_module,
+        procedures,
+        internal_class_bindings,
+    )?;
+
+    rewrite_internal_class_statement_invoke_without_parentheses(
         &rewritten,
         active_project,
         current_project,
@@ -1852,6 +1861,12 @@ fn rewrite_internal_class_property_expression_reads(
         let mut next = member_end;
         while next < bytes.len() && bytes[next].is_ascii_whitespace() {
             next += 1;
+        }
+        if text[..receiver_start].trim().is_empty()
+            && next < bytes.len()
+            && is_identifier_byte(bytes[next])
+        {
+            continue;
         }
         if next < bytes.len() && (bytes[next] == b'(' || bytes[next] == b'=') {
             continue;
@@ -2124,6 +2139,81 @@ fn rewrite_internal_class_call_statement_without_parens(
         &line[..leading],
         target,
         joined_args
+    ))
+}
+fn rewrite_internal_class_statement_invoke_without_parentheses(
+    line: &str,
+    active_project: &str,
+    current_project: &str,
+    current_module: &str,
+    procedures: &[ProcedureDecl],
+    internal_class_bindings: &BTreeMap<String, InternalClassBinding>,
+) -> Result<String, ProjectCompileError> {
+    let trimmed = line.trim_start();
+    let leading = line.len().saturating_sub(trimmed.len());
+    let lower = trimmed.to_ascii_lowercase();
+    if trimmed.is_empty()
+        || lower.starts_with("call ")
+        || trimmed.contains('(')
+        || trimmed.contains('=')
+    {
+        return Ok(line.to_string());
+    }
+    let callee_end = trimmed.find(char::is_whitespace).unwrap_or(trimmed.len());
+    if callee_end == trimmed.len() {
+        return Ok(line.to_string());
+    }
+    let callee = trimmed[..callee_end].trim();
+    let args_tail = trimmed[callee_end..].trim();
+    if args_tail.is_empty() {
+        return Ok(line.to_string());
+    }
+    let (target, instance_arg) = if let Some(dot_idx) = callee.find('.') {
+        let receiver = normalize_identifier(callee[..dot_idx].trim());
+        let member = normalize_identifier(callee[dot_idx + 1..].trim());
+        if receiver.is_empty() || member.is_empty() {
+            return Ok(line.to_string());
+        }
+        let Some((target, instance_arg)) = resolve_internal_class_member_target_of_kinds(
+            &receiver,
+            &member,
+            callee,
+            active_project,
+            current_project,
+            current_module,
+            procedures,
+            internal_class_bindings,
+            &[ProcedureDeclKind::PropertyGet],
+        )?
+        else {
+            return Ok(line.to_string());
+        };
+        (target, instance_arg)
+    } else {
+        let receiver = normalize_identifier(callee);
+        if receiver.is_empty() {
+            return Ok(line.to_string());
+        }
+        let Some((target, instance_arg)) = resolve_internal_class_default_member_target_of_kinds(
+            &receiver,
+            active_project,
+            current_project,
+            current_module,
+            procedures,
+            internal_class_bindings,
+            &[ProcedureDeclKind::PropertyGet],
+        )?
+        else {
+            return Ok(line.to_string());
+        };
+        (target, instance_arg)
+    };
+    Ok(format!(
+        "{}{}({}, {})",
+        &line[..leading],
+        target,
+        instance_arg,
+        args_tail
     ))
 }
 

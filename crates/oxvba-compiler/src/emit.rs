@@ -329,7 +329,7 @@ fn emit_stmt(
     proc_labels: &mut HashMap<String, usize>,
 ) {
     match stmt {
-        BoundStmt::Assign { target, expr } => {
+        BoundStmt::Assign { target, expr, .. } => {
             if let Some(target_slot) = slot_map.get(target.as_str()).copied() {
                 emit_expr_into(
                     expr,
@@ -855,7 +855,9 @@ fn emit_stmt(
                 );
             }
         }
-        BoundStmt::AssignFromCall { target, name, args } => {
+        BoundStmt::AssignFromCall {
+            target, name, args, ..
+        } => {
             if let Some(target_slot) = slot_map.get(target.as_str()).copied()
                 && !emit_early_call(
                     name,

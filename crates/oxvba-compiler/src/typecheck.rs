@@ -1,7 +1,8 @@
 use std::collections::{HashMap, HashSet};
 
 use crate::resolve::{
-    BoundCallArg, BoundCond, BoundExpr, BoundModule, BoundParam, BoundStmt, BoundType,
+    AssignmentIntent, BoundCallArg, BoundCond, BoundExpr, BoundModule, BoundParam, BoundStmt,
+    BoundType,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -122,7 +123,11 @@ fn check_stmt(
     labels: &HashSet<String>,
 ) -> Result<(), String> {
     match stmt {
-        BoundStmt::Assign { target, expr } => {
+        BoundStmt::Assign {
+            target,
+            expr,
+            intent,
+        } => {
             ensure_declared(
                 target,
                 option_explicit,
@@ -151,7 +156,9 @@ fn check_stmt(
                     target_ty, target
                 ));
             }
-            if can_assign_to(target_ty, expr_ty) {
+            if let Some(message) = validate_assignment_intent(*intent, target_ty, expr_ty, target) {
+                Err(message)
+            } else if can_assign_to(target_ty, expr_ty) {
                 Ok(())
             } else {
                 Err(format!(
@@ -538,7 +545,12 @@ fn check_stmt(
             proc_return_types,
         )
         .map(|_| ()),
-        BoundStmt::AssignFromCall { target, name, args } => {
+        BoundStmt::AssignFromCall {
+            target,
+            name,
+            args,
+            intent,
+        } => {
             ensure_declared(
                 target,
                 option_explicit,
@@ -562,7 +574,10 @@ fn check_stmt(
                 proc_return_types,
             )?;
             let target_ty = *declared_types.get(target).unwrap_or(&BoundType::Variant);
-            if can_assign_to(target_ty, return_ty) {
+            if let Some(message) = validate_assignment_intent(*intent, target_ty, return_ty, target)
+            {
+                Err(message)
+            } else if can_assign_to(target_ty, return_ty) {
                 Ok(())
             } else {
                 Err(format!(
@@ -1161,6 +1176,34 @@ enum CoercionResult {
 
 fn can_assign_to(target: BoundType, source: BoundType) -> bool {
     coercion_result(source, target) == CoercionResult::Ok
+}
+
+fn validate_assignment_intent(
+    intent: AssignmentIntent,
+    target_ty: BoundType,
+    source_ty: BoundType,
+    target: &str,
+) -> Option<String> {
+    match intent {
+        AssignmentIntent::Implicit => None,
+        AssignmentIntent::Let if target_ty == BoundType::Object => Some(format!(
+            "type mismatch in assignment: Let cannot assign to Object variable {}",
+            target
+        )),
+        AssignmentIntent::Set if !matches!(target_ty, BoundType::Object | BoundType::Variant) => {
+            Some(format!(
+                "type mismatch in assignment: Set requires Object or Variant target, got {:?} variable {}",
+                target_ty, target
+            ))
+        }
+        AssignmentIntent::Set if !matches!(source_ty, BoundType::Object | BoundType::Variant) => {
+            Some(format!(
+                "type mismatch in assignment: Set requires object value for variable {}",
+                target
+            ))
+        }
+        _ => None,
+    }
 }
 
 fn call_coercion_result(
