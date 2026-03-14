@@ -156,7 +156,7 @@ Run context: active parity/compliance execution plus in-progress feature worklis
   - Blocks part of `IP-06` COM server/export parity and `IP-08` Office-style hosting parity.
 - Current state:
   - property get/put/putref lanes exist in parts of the COM client path,
-  - native internal project-class `Property Get` / `Property Let` / `Property Set` now execute end to end through the shared PMR/dynamic-object substrate for explicit `DispatchInvoke(...)`, natural member syntax, natural indexed member `Get` / `Let` / `Set` syntax, natural statement-context member `Property Get` calls, natural statement-context bare/indexed default-member `Property Get` calls, and natural bare/indexed default-member `Get` / `Let` / `Set` syntax when authoritative default-member metadata exists,
+  - native internal project-class `Property Get` / `Property Let` / `Property Set` now execute end to end through the shared PMR/dynamic-object substrate for explicit `DispatchInvoke(...)`, natural member syntax, natural indexed member `Get` / `Let` / `Set` syntax, natural statement-context and `Call`-form member `Property Get` calls, natural statement-context and `Call`-form bare/indexed default-member `Property Get` calls, and natural bare/indexed default-member `Get` / `Let` / `Set` syntax when authoritative default-member metadata exists,
   - but there is still no fully closed end-to-end model for `Set` vs `Let` intent parity in broader typed/object contexts, non-authoritative default-member call resolution, and Office-style call-vs-value context parity.
 - Exact unblock steps:
   - continue closing the late-bound invoke/property transport gaps,
@@ -415,6 +415,7 @@ Run context: active parity/compliance execution plus in-progress feature worklis
 - Previously resolved blockers:
   - `BLK-EVT-001` — resolved (runtime subscription graph)
   - `BLK-COM-001` — resolved (COM event callback parity with external registered server evidence)
+
 
 
 

@@ -2075,26 +2075,44 @@ fn rewrite_internal_class_call_statement_without_parens(
     let callee_end = payload.find(char::is_whitespace).unwrap_or(payload.len());
     let callee = payload[..callee_end].trim();
     let args_tail = payload[callee_end..].trim();
-    let Some(dot_idx) = callee.find('.') else {
-        return Ok(line.to_string());
-    };
-    let receiver = normalize_identifier(callee[..dot_idx].trim());
-    let member = normalize_identifier(callee[dot_idx + 1..].trim());
-    if receiver.is_empty() || member.is_empty() {
-        return Ok(line.to_string());
-    }
-    let Some((target, instance_arg)) = resolve_internal_class_member_target(
-        &receiver,
-        &member,
-        callee,
-        active_project,
-        current_project,
-        current_module,
-        procedures,
-        internal_class_bindings,
-    )?
-    else {
-        return Ok(line.to_string());
+    let (target, instance_arg) = if let Some(dot_idx) = callee.find('.') {
+        let receiver = normalize_identifier(callee[..dot_idx].trim());
+        let member = normalize_identifier(callee[dot_idx + 1..].trim());
+        if receiver.is_empty() || member.is_empty() {
+            return Ok(line.to_string());
+        }
+        let Some((target, instance_arg)) = resolve_internal_class_member_target(
+            &receiver,
+            &member,
+            callee,
+            active_project,
+            current_project,
+            current_module,
+            procedures,
+            internal_class_bindings,
+        )?
+        else {
+            return Ok(line.to_string());
+        };
+        (target, instance_arg)
+    } else {
+        let receiver = normalize_identifier(callee);
+        if receiver.is_empty() {
+            return Ok(line.to_string());
+        }
+        let Some((target, instance_arg)) = resolve_internal_class_default_member_target_of_kinds(
+            &receiver,
+            active_project,
+            current_project,
+            current_module,
+            procedures,
+            internal_class_bindings,
+            &[ProcedureDeclKind::PropertyGet],
+        )?
+        else {
+            return Ok(line.to_string());
+        };
+        (target, instance_arg)
     };
     let joined_args = if args_tail.is_empty() {
         instance_arg

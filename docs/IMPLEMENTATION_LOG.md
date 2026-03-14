@@ -530,3 +530,12 @@
 - Both tests use a side-effect-free observation property to prove that the statement-form getter executed and mutated hidden class state before the later observable read.
 - In [project.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-compiler\src\project.rs), extended property-read rewriting with a dedicated authoritative default-member statement-form getter lane so bare internal-class object statements lower onto the same PMR property-get target as expression/default-member reads.
 - IP-02 remains in progress: broader typed/object Set vs Let intent parity, non-authoritative default-member resolution, and wider Office-style call-vs-value context parity are still open.
+## 2026-03-14 - Extended IP-02 Call-form non-indexed property/default-member get semantics
+
+- Continued the active IP-02A call-vs-value closure slice and proved that explicit `Call`-form non-indexed native internal project-class Property Get calls now execute end to end on the shared PMR/dynamic-object path.
+- Added end-to-end host coverage in [engine.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-host\src\engine.rs) for:
+  - `Call widget.Value`,
+  - `Call widget` when authoritative VB_UserMemId = 0 metadata exists.
+- Both tests prove the getter executed by mutating hidden class state and then reading the observable state through a separate property.
+- In [project.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-compiler\src\project.rs), extended `rewrite_internal_class_call_statement_without_parens(...)` so dotless authoritative default-member call statements route through the same PMR property-get lowering as dotted member calls.
+- IP-02 remains in progress: broader typed/object Set vs Let intent parity, non-authoritative default-member resolution, and wider Office-style call-vs-value context parity are still open.
