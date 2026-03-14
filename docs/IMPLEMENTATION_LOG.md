@@ -1,3 +1,15 @@
+## 2026-03-14 - Moved COM invoke-policy planning into oxvba-com
+
+- Added `crates/oxvba-com/src/invoke_policy.rs` as the shared policy surface for:
+  - named-argument ordering validation,
+  - metadata-backed argument canonicalization,
+  - bound default-member/direct-DISPID/member-spec routing,
+  - unbound fallback property-get planning.
+- Rebound `oxvba-hal::standard` so the Windows native dispatch path now asks `oxvba-com` to plan the route before executing raw `IDispatch` calls.
+- This removes the high-level default-member/direct-DISPID/member-spec routing rules from HAL-owned COM authority.
+- The remaining extraction wall is now narrower:
+  - live `IDispatch` execution / DISPID resolution / result rebinding still live in HAL,
+  - public HAL COM contract contraction/rebinding still pending.
 # Implementation Log
 
 ## 2026-03-13 - Moved COM event transport-choice resolution into oxvba-com
@@ -43,3 +55,4 @@
 
 ## 2026-03-13 - Moved bound-dispatch and subscription teardown ownership into oxvba-com
 ## 2026-03-13 - Moved bound-dispatch and subscription teardown ownership into oxvba-com
+

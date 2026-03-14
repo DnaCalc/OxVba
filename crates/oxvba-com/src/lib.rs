@@ -3,6 +3,7 @@
 pub mod cycle_gc;
 pub mod dispatch;
 pub mod dynamic_object;
+pub mod invoke_policy;
 pub mod model;
 pub mod platform;
 pub mod refcount;
@@ -29,6 +30,12 @@ pub use dynamic_object::{
     DynamicMemberSelector, DynamicObjectBridge, DynamicObjectToken, DynamicSubscriptionToken,
     DynamicValue,
 };
+pub use invoke_policy::{
+    BoundRuntimeInvokePlan, UnboundRuntimeInvokePlan, canonicalize_member_known_args,
+    legacy_runtime_arg_values, plan_bound_runtime_invoke, plan_unbound_runtime_invoke,
+    validate_named_arg_order,
+};
+
 pub use model::{
     ComCallbackPayload, ComCallbackToken, ComInvokeArg, ComInvokeKind, ComInvokeRequest,
     ComMemberToken, ComObjectDescriptor, ComObjectToken, ComObjectTransportKind,
