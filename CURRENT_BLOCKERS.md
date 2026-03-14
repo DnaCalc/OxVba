@@ -165,20 +165,6 @@ Run context: active parity/compliance execution plus in-progress feature worklis
 - Recommendation:
   - continue the `IP-02A` semantic closure track on the now-proven native PMR property-get/property-let path.
 
-### BLK-COM-ARRAY-DISPATCH-001: Typed `VT_ARRAY | VT_DISPATCH` result lane crashes in host end-to-end execution
-- Impact:
-  - Blocks the next typed-interface-array slice of `IP-03` late-bound COM parity.
-  - Prevents honest expansion of the supported SAFEARRAY result matrix beyond `VT_ARRAY | VT_VARIANT` nested-dispatch and the currently proven typed scalar arrays.
-- Current state:
-  - the controlled fixture/member metadata/compiler mappings for `ReturnSelfTypedDispatchArray` were prepared locally,
-  - multiple ownership-model fixes were attempted in the fixture/result bridge path,
-  - but the host end-to-end lane still terminates with `STATUS_ACCESS_VIOLATION` when exercising a one-dimensional typed `VT_ARRAY | VT_DISPATCH` result.
-- Exact unblock steps:
-  - isolate the crash to the array construction/clear path versus duplicate object-handle rebinding path,
-  - prove the correct ownership/IID contract for typed interface SAFEARRAY elements in the test fixture and `oxvba-com` result bridge,
-  - reintroduce the typed-dispatch-array fixture/test slice only once the host lane is green.
-- Recommendation:
-  - keep the already-proven `VT_ARRAY | VT_VARIANT` nested-dispatch lane as the supported object-array surface for now, and treat typed `VT_ARRAY | VT_DISPATCH` as blocked rather than partially implemented.
 ### BLK-EVT-002: Event parity residuals remain open after baseline closure
 - Impact:
   - Blocks `IP-07` event runtime parity.
@@ -415,4 +401,5 @@ Run context: active parity/compliance execution plus in-progress feature worklis
 - Previously resolved blockers:
   - `BLK-EVT-001` — resolved (runtime subscription graph)
   - `BLK-COM-001` — resolved (COM event callback parity with external registered server evidence)
+
 

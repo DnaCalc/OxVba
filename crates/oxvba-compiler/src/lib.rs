@@ -1313,6 +1313,24 @@ mod tests {
     }
 
     #[test]
+    fn compile_dispatchinvoke_with_typed_dispatch_array_result_literal_maps_to_member_token_twenty_eight()
+     {
+        let source = "Sub Main()\nDim x\nx = DispatchInvoke(CreateObject(\"OxVba.TestDispatch\"), \"ReturnSelfTypedDispatchArray\")\nEnd Sub";
+        let out = compile(source)
+            .expect("compile should succeed for typed dispatch-array result fixture member");
+        assert!(
+            out.instructions
+                .iter()
+                .any(|i| matches!(i, Instruction::IntrinsicDispatchInvokeHost { .. }))
+        );
+        assert!(
+            out.instructions
+                .iter()
+                .any(|i| matches!(i, Instruction::LoadConstI32 { value: 28, .. }))
+        );
+    }
+
+    #[test]
     fn compile_dispatchinvoke_with_source_interface_event_literal_maps_to_member_token_eleven() {
         let source = "Sub Main()\nDim x\nx = DispatchInvoke(CreateObject(\"OxVba.TestDispatch\"), \"FireChangedSourceInterface\", 7)\nEnd Sub";
         let out =

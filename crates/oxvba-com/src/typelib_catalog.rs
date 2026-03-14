@@ -41,6 +41,7 @@ const TEST_DISPID_RETURN_SELF_UNKNOWN: i32 = 24;
 const TEST_DISPID_CLASSIFY_VARIANT_ARG: i32 = 25;
 const TEST_DISPID_CLASSIFY_VARIANT_ARRAY_FIRST_ELEMENT_ARG: i32 = 26;
 const TEST_DISPID_RETURN_SELF_DISPATCH_ARRAY: i32 = 27;
+const TEST_DISPID_RETURN_SELF_TYPED_DISPATCH_ARRAY: i32 = 28;
 
 const TEST_EVENT_CHANGED: i32 = 1;
 const TEST_EVENT_CHANGED_SOURCE_INTERFACE: i32 = 2;
@@ -427,6 +428,14 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
             TypeLibMemberMetadata {
                 name: "ReturnSelfDispatchArray".to_string(),
                 token: TEST_DISPID_RETURN_SELF_DISPATCH_ARRAY,
+                requires_argument: false,
+                invoke_kind: TypeLibMemberInvokeKind::Method,
+                parameter_names: Vec::new(),
+                is_default_member: false,
+            },
+            TypeLibMemberMetadata {
+                name: "ReturnSelfTypedDispatchArray".to_string(),
+                token: TEST_DISPID_RETURN_SELF_TYPED_DISPATCH_ARRAY,
                 requires_argument: false,
                 invoke_kind: TypeLibMemberInvokeKind::Method,
                 parameter_names: Vec::new(),

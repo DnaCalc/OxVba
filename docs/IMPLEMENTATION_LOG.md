@@ -469,6 +469,14 @@
 
 
 
+## 2026-03-14 - Closed the typed `VT_ARRAY | VT_DISPATCH` result lane in `IP-03A`
+
+- Continued the active umbrella COM/property/hosting execution sequence with the next `IP-03A` late-bound COM transport slice.
+- In [windows_test_dispatch.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-com\src\windows_test_dispatch.rs), added the controlled `ReturnSelfTypedDispatchArray` fixture member and implemented typed `VT_ARRAY | VT_DISPATCH` result construction using `SafeArrayPutElement(...)` on the live `IDispatch` pointer rather than the earlier invalid local-pointer indirection.
+- In [typelib_catalog.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-com\src\typelib_catalog.rs), extended the synthetic test typelib metadata so the new member is authoritatively classified as a method, eliminating the transient property-get misinvoke.
+- In [windows_variant.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-com\src\windows_variant.rs), routed typed `VT_ARRAY | VT_DISPATCH` elements back through the existing `VARIANT`-based object-result binding path so interface-array ownership now matches the already-proven single-value and nested-variant object lanes.
+- Added focused compiler and host coverage proving `DispatchInvoke(..., "ReturnSelfTypedDispatchArray")` compiles to token `28` and roundtrips a one-dimensional typed dispatch SAFEARRAY result into semantic `RuntimeValue::ArrayIntent` with nested `ObjectHandle` elements.
+- Removed `BLK-COM-ARRAY-DISPATCH-001` from [CURRENT_BLOCKERS.md](C:\Work\DnaCalc\OxVba\CURRENT_BLOCKERS.md) now that the host lane is green and the typed-dispatch-array result slice is honest.
 ## 2026-03-14 - Advanced IP-02 native property semantics and bounded typed-dispatch-array COM blocker
 
 - Continued the umbrella COM/property/hosting execution sequence with the first concrete `IP-02A` native property-semantic slice.
@@ -560,3 +568,4 @@
   - Let x = 5 plus Set obj = CreateObject(4) executes successfully,
   - Set x = 7 fails deterministically with the expected type error.
 - IP-02 remains in progress: broader typed/object Set vs Let parity, non-authoritative default-member resolution, and wider Office-style call-vs-value context parity are still open.
+

@@ -3003,6 +3003,7 @@ fn known_dispatch_member_token(member_name: &str) -> Option<i32> {
         "classifyvariantarg" => Some(25),
         "classifyvariantarrayfirstelementarg" => Some(26),
         "returnselfdispatcharray" => Some(27),
+        "returnselftypeddispatcharray" => Some(28),
         _ => None,
     }
 }
