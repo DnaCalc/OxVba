@@ -1665,29 +1665,49 @@ fn rewrite_internal_class_member_dispatch(
             continue;
         };
         let raw_name = line[name_start..name_end].trim();
-        let Some(dot_idx) = raw_name.find('.') else {
-            cursor = close + 1;
-            continue;
-        };
-        let receiver = normalize_identifier(raw_name[..dot_idx].trim());
-        let member = normalize_identifier(raw_name[dot_idx + 1..].trim());
-        if receiver.is_empty() || member.is_empty() {
-            cursor = close + 1;
-            continue;
-        }
-        let Some((target, instance_arg)) = resolve_internal_class_member_target(
-            &receiver,
-            &member,
-            raw_name,
-            active_project,
-            current_project,
-            current_module,
-            procedures,
-            internal_class_bindings,
-        )?
-        else {
-            cursor = close + 1;
-            continue;
+        let (target, instance_arg) = if let Some(dot_idx) = raw_name.find('.') {
+            let receiver = normalize_identifier(raw_name[..dot_idx].trim());
+            let member = normalize_identifier(raw_name[dot_idx + 1..].trim());
+            if receiver.is_empty() || member.is_empty() {
+                cursor = close + 1;
+                continue;
+            }
+            let Some((target, instance_arg)) = resolve_internal_class_member_target(
+                &receiver,
+                &member,
+                raw_name,
+                active_project,
+                current_project,
+                current_module,
+                procedures,
+                internal_class_bindings,
+            )?
+            else {
+                cursor = close + 1;
+                continue;
+            };
+            (target, instance_arg)
+        } else {
+            let receiver = normalize_identifier(raw_name);
+            if receiver.is_empty() {
+                cursor = close + 1;
+                continue;
+            }
+            let Some((target, instance_arg)) =
+                resolve_internal_class_default_member_target_of_kinds(
+                    &receiver,
+                    active_project,
+                    current_project,
+                    current_module,
+                    procedures,
+                    internal_class_bindings,
+                    &[ProcedureDeclKind::PropertyGet],
+                )?
+            else {
+                cursor = close + 1;
+                continue;
+            };
+            (target, instance_arg)
         };
         let args_raw = line[open + 1..close].trim();
         let args = split_top_level_args(args_raw)?;

@@ -512,3 +512,12 @@
   - natural indexed default-member Property Set syntax: Set widget(1) = x when authoritative VB_UserMemId = 0 metadata exists.
 - In [project.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-compiler\src\project.rs), extended the internal class PMR set-assignment rewrite so indexed member/default-member Set forms lower onto the same authoritative property targets instead of falling through to unsupported statement handling.
 - IP-02 remains in progress: broader typed/object Set vs Let intent parity, non-authoritative default-member resolution, and Office-style call-vs-value context behavior are still open.
+## 2026-03-14 - Extended IP-02 statement-context indexed property/default-member get semantics
+
+- Continued the active IP-02A semantic-closure slice and proved that statement-context indexed native internal project-class Property Get calls now execute end to end on the shared PMR/dynamic-object path instead of being silently dropped.
+- Added end-to-end host coverage in [engine.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-host\src\engine.rs) for:
+  - statement-context indexed member syntax: widget.Value(x),
+  - statement-context indexed default-member syntax: widget(x) when authoritative VB_UserMemId = 0 metadata exists.
+- Both tests use ByRef argument mutation as the observable effect, proving that the getter actually executes in statement context and that the effect is visible in caller state.
+- In [project.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-compiler\src\project.rs), extended the internal-class dynamic member-dispatch rewrite so authoritative default-member indexed invocations participate in the same lowering path as named-member indexed getter calls.
+- IP-02 remains in progress: broader typed/object Set vs Let intent parity, non-authoritative default-member resolution, non-indexed statement-context default-member call behavior, and wider Office-style call-vs-value context parity are still open.
