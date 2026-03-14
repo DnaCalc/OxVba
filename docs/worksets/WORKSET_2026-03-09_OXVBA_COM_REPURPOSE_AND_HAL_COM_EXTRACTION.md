@@ -1,11 +1,18 @@
 # Workset: Repurpose `oxvba-com` and Extract COM Out of `oxvba-hal`
 
 Date: 2026-03-09  
-Status: in-progress  
+Status: complete  
 Scope: redefine `oxvba-com` as the Windows-first bidirectional COM bridge for OxVba, move COM-specific state and behavior toward that crate, and shrink `oxvba-hal` back toward profile/policy/bootstrap concerns rather than serving as the long-term COM implementation home.
 
 Authoritative closure plan:
-1. use `docs/worksets/WORKSET_2026-03-14_IP04_OXVBA_COM_HAL_EXTRACTION_CLOSURE.md` as the end-to-end execution and closure workset for finishing `IP-04`.
+1. `docs/worksets/WORKSET_2026-03-14_IP04_OXVBA_COM_HAL_EXTRACTION_CLOSURE.md` completed the end-to-end closure program for `IP-04` on 2026-03-14.
+
+## Completion summary (2026-03-14)
+
+1. IP-04 is complete.
+2. oxvba-com is now the live Windows COM client bridge for current client/runtime ownership.
+3. oxvba-hal now retains only capability/policy/bootstrap/delegation responsibilities for COM.
+4. Downstream COM parity work continues under IP-03, IP-05, IP-06, and IP-08.
 
 ## 1. Decision summary
 
@@ -27,7 +34,7 @@ Design posture:
 4. Keep OxVba semantic values canonical across compiler, VM, host, and runtime surfaces; `oxvba-com` translates those values to and from COM wire formats rather than making COM wire types the core value model.
 5. Prefer one internal dynamic-object model shaped by VBA semantics; COM is an adapter onto that model, not a second dynamic-object execution path.
 
-## Progress snapshot (2026-03-13)
+## Historical progress snapshot (2026-03-13)
 
 Completed extraction slices:
 1. shared COM request/callback/value models,
@@ -47,12 +54,17 @@ Completed extraction slices:
 15. per-object DISPID cache mutation ownership,
 16. subscription lookup/removal callback-pruning ownership,
 17. event transport-choice resolution ownership,
-18. bound/unbound COM invoke-policy planning ownership,`r`n19. generic runtime-value `IDispatch::Invoke` execution helper ownership,`r`n20. callback payload polling, metadata access, and callback-release helper ownership,`r`n21. member-spec/direct-DISPID runtime invoke execution helper ownership,`r`n22. resolved-member DISPID cache lookup/update helper ownership.
-Remaining extraction wall:
+18. bound/unbound COM invoke-policy planning ownership,
+19. generic runtime-value `IDispatch::Invoke` execution helper ownership,
+20. callback payload polling, metadata access, and callback-release helper ownership,
+21. member-spec/direct-DISPID runtime invoke execution helper ownership,
+22. resolved-member DISPID cache lookup/update helper ownership.
+Historical remaining extraction wall at that snapshot:
 1. Remaining live Windows COM execution authority still centered in `oxvba-hal::standard`:
    - resolved-member DISPID lookup/cache update,
    - raw `IDispatch` execution routing and final invoke-result rebinding.
-2. public HAL COM contract contraction/rebinding over `oxvba-com`,`r`n3. execute that contraction as a coordinated trait/VM/host migration rather than another helper-only extraction slice,
+2. public HAL COM contract contraction/rebinding over `oxvba-com`,
+3. execute that contraction as a coordinated trait/VM/host migration rather than another helper-only extraction slice,
 3. remaining runtime-wide dynamic protocol wiring and parity work that depends on the contracted boundary.
 ## 2. Problem statement
 
@@ -324,6 +336,10 @@ Required checks for the repurpose/extraction program:
 7. Use these concrete child worksets for the next cleanup/implementation slices:
    - `docs/worksets/WORKSET_2026-03-11_UNIFIED_DYNAMIC_OBJECT_PROTOCOL_AND_VALUE_CARRIER.md`
    - `docs/worksets/WORKSET_2026-03-11_COM_REFERENCE_FACADE_AND_TYPELIB_BINDING_COMPLETION.md`
+
+
+
+
 
 
 

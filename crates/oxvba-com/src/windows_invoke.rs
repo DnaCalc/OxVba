@@ -400,6 +400,371 @@ fn validation_failure(
 #[cfg(target_os = "windows")]
 #[allow(unsafe_op_in_unsafe_fn)]
 #[allow(clippy::too_many_arguments)]
+/// # Safety
+/// `dispatch` must point to a live `IDispatch` implementation for the duration of the call, and
+/// `resolve_object` must return stable live `IDispatch` pointers for any object-handle arguments.
+pub unsafe fn invoke_dispatch_legacy_i32_result<FResolveObject>(
+    dispatch: *mut core::ffi::c_void,
+    dispid: i32,
+    flags: u16,
+    args: &[ComInvokeArg],
+    named_arg_dispids: &[i32],
+    label: &'static str,
+    resolve_object: &mut FResolveObject,
+) -> Result<i32, ComInvokeFailure>
+where
+    FResolveObject: FnMut(ObjectHandle) -> Result<*mut core::ffi::c_void, String>,
+{
+    let dispatch = dispatch.cast::<RawIDispatch>();
+    let mut invoke_args: Vec<VARIANT> = Vec::with_capacity(args.len());
+    for arg in args.iter().rev() {
+        let mut variant: VARIANT = std::mem::zeroed();
+        match arg.value {
+            Some(ref value) => {
+                let mut add_ref_dispatch = |_dispatch: *mut core::ffi::c_void| {};
+                set_variant_from_com_value(
+                    &mut variant,
+                    value,
+                    resolve_object,
+                    &mut add_ref_dispatch,
+                )
+                .map_err(|detail| ComInvokeFailure {
+                    label,
+                    dispid,
+                    hr: None,
+                    arg_err: None,
+                    excep: None,
+                    detail: Some(detail),
+                })?;
+            }
+            None => set_variant_missing_arg(&mut variant),
+        }
+        invoke_args.push(variant);
+    }
+
+    let mut named_arg_dispids_reversed: Vec<i32> =
+        named_arg_dispids.iter().rev().copied().collect();
+    let mut result: VARIANT = std::mem::zeroed();
+    let mut excep: EXCEPINFO = std::mem::zeroed();
+    let mut arg_err = u32::MAX;
+    let mut params = DISPPARAMS {
+        rgvarg: if invoke_args.is_empty() {
+            std::ptr::null_mut()
+        } else {
+            invoke_args.as_mut_ptr()
+        },
+        rgdispidNamedArgs: if named_arg_dispids_reversed.is_empty() {
+            std::ptr::null_mut()
+        } else {
+            named_arg_dispids_reversed.as_mut_ptr()
+        },
+        cArgs: args.len() as u32,
+        cNamedArgs: named_arg_dispids.len() as u32,
+    };
+    let hr = ((*(*dispatch).vtbl).invoke)(
+        dispatch.cast(),
+        dispid,
+        &IID_NULL,
+        0x0400,
+        flags,
+        &mut params,
+        &mut result,
+        &mut excep,
+        &mut arg_err,
+    );
+    clear_variant_args(&mut invoke_args);
+    if hr < 0 {
+        return Err(ComInvokeFailure {
+            label,
+            dispid,
+            hr: Some(hr),
+            arg_err: (arg_err != u32::MAX).then_some(arg_err),
+            excep: take_excepinfo(&mut excep),
+            detail: None,
+        });
+    }
+
+    let token = match crate::variant_to_com_value(&result) {
+        Ok(value) => match value.to_runtime_token() {
+            Ok(token) => token,
+            Err(detail) => {
+                let _ = windows_sys::Win32::System::Variant::VariantClear(&mut result);
+                return Err(validation_failure(label, dispid, detail));
+            }
+        },
+        Err(detail) => {
+            let _ = windows_sys::Win32::System::Variant::VariantClear(&mut result);
+            return Err(validation_failure(label, dispid, detail));
+        }
+    };
+    let _ = windows_sys::Win32::System::Variant::VariantClear(&mut result);
+    Ok(token)
+}
+
+#[cfg(target_os = "windows")]
+#[allow(unsafe_op_in_unsafe_fn)]
+#[allow(clippy::too_many_arguments)]
+/// # Safety
+/// `dispatch` must point to a live `IDispatch` implementation for the duration of the call, and
+/// `resolve_object` must return stable live `IDispatch` pointers for any object-handle arguments.
+pub unsafe fn invoke_dispatch_legacy_i32_result_positional<FResolveObject>(
+    dispatch: *mut core::ffi::c_void,
+    dispid: i32,
+    flags: u16,
+    args: &[crate::ComValue],
+    property_put_named_arg: bool,
+    label: &'static str,
+    resolve_object: &mut FResolveObject,
+) -> Result<i32, ComInvokeFailure>
+where
+    FResolveObject: FnMut(ObjectHandle) -> Result<*mut core::ffi::c_void, String>,
+{
+    let dispatch = dispatch.cast::<RawIDispatch>();
+    let mut invoke_args: Vec<VARIANT> = Vec::with_capacity(args.len());
+    for arg in args.iter().rev() {
+        let mut variant: VARIANT = std::mem::zeroed();
+        let mut add_ref_dispatch = |_dispatch: *mut core::ffi::c_void| {};
+        set_variant_from_com_value(&mut variant, arg, resolve_object, &mut add_ref_dispatch)
+            .map_err(|detail| validation_failure(label, dispid, detail))?;
+        invoke_args.push(variant);
+    }
+
+    let mut named_arg = crate::COM_DISPID_PROPERTYPUT;
+    let mut result: VARIANT = std::mem::zeroed();
+    let mut excep: EXCEPINFO = std::mem::zeroed();
+    let mut arg_err = u32::MAX;
+    let mut params = DISPPARAMS {
+        rgvarg: if invoke_args.is_empty() {
+            std::ptr::null_mut()
+        } else {
+            invoke_args.as_mut_ptr()
+        },
+        rgdispidNamedArgs: if property_put_named_arg {
+            &mut named_arg
+        } else {
+            std::ptr::null_mut()
+        },
+        cArgs: args.len() as u32,
+        cNamedArgs: if property_put_named_arg { 1 } else { 0 },
+    };
+    let hr = ((*(*dispatch).vtbl).invoke)(
+        dispatch.cast(),
+        dispid,
+        &IID_NULL,
+        0x0400,
+        flags,
+        &mut params,
+        &mut result,
+        &mut excep,
+        &mut arg_err,
+    );
+    clear_variant_args(&mut invoke_args);
+    if hr < 0 {
+        return Err(ComInvokeFailure {
+            label,
+            dispid,
+            hr: Some(hr),
+            arg_err: (arg_err != u32::MAX).then_some(arg_err),
+            excep: take_excepinfo(&mut excep),
+            detail: None,
+        });
+    }
+
+    let token = match crate::variant_to_com_value(&result) {
+        Ok(value) => match value.to_runtime_token() {
+            Ok(token) => token,
+            Err(detail) => {
+                let _ = windows_sys::Win32::System::Variant::VariantClear(&mut result);
+                return Err(validation_failure(label, dispid, detail));
+            }
+        },
+        Err(detail) => {
+            let _ = windows_sys::Win32::System::Variant::VariantClear(&mut result);
+            return Err(validation_failure(label, dispid, detail));
+        }
+    };
+    let _ = windows_sys::Win32::System::Variant::VariantClear(&mut result);
+    Ok(token)
+}
+
+#[cfg(target_os = "windows")]
+#[allow(unsafe_op_in_unsafe_fn)]
+#[allow(clippy::too_many_arguments)]
+/// # Safety
+/// `dispatch` must point to a live `IDispatch` implementation for the duration of the call, and
+/// the callback closures must uphold COM ownership rules for resolved object arguments.
+pub unsafe fn invoke_member_spec_legacy_i32_result<FResolveNamedArgDispids, FResolveObject>(
+    dispatch: *mut core::ffi::c_void,
+    dispid: i32,
+    spec: &crate::ComMemberSpec,
+    args: &[ComInvokeArg],
+    resolve_named_arg_dispids: &mut FResolveNamedArgDispids,
+    resolve_object: &mut FResolveObject,
+) -> Result<i32, ComInvokeFailure>
+where
+    FResolveNamedArgDispids: FnMut(&str, &[ComInvokeArg]) -> Result<Vec<i32>, String>,
+    FResolveObject: FnMut(ObjectHandle) -> Result<*mut core::ffi::c_void, String>,
+{
+    let canonical_args;
+    let args = match spec.invoke_kind {
+        crate::TypeLibMemberInvokeKind::PropertyPut
+        | crate::TypeLibMemberInvokeKind::PropertyPutRef => {
+            canonical_args = crate::invoke_policy::canonicalize_member_known_args(spec, args)
+                .map_err(|detail| validation_failure("dispatch_invoke", dispid, detail))?;
+            canonical_args.as_slice()
+        }
+        _ => args,
+    };
+    if spec.requires_argument && args.iter().all(|arg| arg.value.is_none()) {
+        return Err(validation_failure(
+            "dispatch_invoke",
+            dispid,
+            "member requires argument but DispatchInvoke omitted the third argument",
+        ));
+    }
+    if !spec.requires_argument {
+        return match spec.invoke_kind {
+            crate::TypeLibMemberInvokeKind::PropertyGet => invoke_dispatch_legacy_i32_result(
+                dispatch,
+                dispid,
+                DISPATCH_PROPERTYGET,
+                &[],
+                &[],
+                "property-get",
+                resolve_object,
+            ),
+            crate::TypeLibMemberInvokeKind::Method => invoke_dispatch_legacy_i32_result(
+                dispatch,
+                dispid,
+                DISPATCH_METHOD,
+                &[],
+                &[],
+                "method",
+                resolve_object,
+            ),
+            crate::TypeLibMemberInvokeKind::PropertyPut
+            | crate::TypeLibMemberInvokeKind::PropertyPutRef => Err(validation_failure(
+                "dispatch_invoke",
+                dispid,
+                "member requires argument for property put/putref dispatch",
+            )),
+        };
+    }
+    match spec.invoke_kind {
+        crate::TypeLibMemberInvokeKind::PropertyGet => {
+            let named_arg_dispids = resolve_named_arg_dispids(&spec.name, args)
+                .map_err(|detail| validation_failure("property-get", dispid, detail))?;
+            invoke_dispatch_legacy_i32_result(
+                dispatch,
+                dispid,
+                DISPATCH_PROPERTYGET,
+                args,
+                &named_arg_dispids,
+                "property-get",
+                resolve_object,
+            )
+        }
+        crate::TypeLibMemberInvokeKind::Method => {
+            let named_arg_dispids = resolve_named_arg_dispids(&spec.name, args)
+                .map_err(|detail| validation_failure("method", dispid, detail))?;
+            invoke_dispatch_legacy_i32_result(
+                dispatch,
+                dispid,
+                DISPATCH_METHOD,
+                args,
+                &named_arg_dispids,
+                "method",
+                resolve_object,
+            )
+        }
+        crate::TypeLibMemberInvokeKind::PropertyPut => {
+            let named_arg_dispids =
+                resolve_named_arg_dispids(&spec.name, &args[..args.len().saturating_sub(1)])
+                    .map_err(|detail| validation_failure("property-put", dispid, detail))?;
+            if named_arg_dispids.is_empty()
+                && args
+                    .iter()
+                    .all(|arg| arg.name.is_none() && arg.value.is_some())
+            {
+                let positional_args: Result<Vec<crate::ComValue>, String> = args
+                    .iter()
+                    .filter_map(|arg| arg.value.clone())
+                    .map(|value| {
+                        value.to_legacy_dispatch_token()?;
+                        Ok(value)
+                    })
+                    .collect();
+                if let Ok(positional_args) = positional_args {
+                    return invoke_dispatch_legacy_i32_result_positional(
+                        dispatch,
+                        dispid,
+                        DISPATCH_PROPERTYPUT,
+                        &positional_args,
+                        true,
+                        "property-put",
+                        resolve_object,
+                    );
+                }
+            }
+            let mut all_named = named_arg_dispids;
+            all_named.push(crate::COM_DISPID_PROPERTYPUT);
+            invoke_dispatch_legacy_i32_result(
+                dispatch,
+                dispid,
+                DISPATCH_PROPERTYPUT,
+                args,
+                &all_named,
+                "property-put",
+                resolve_object,
+            )
+        }
+        crate::TypeLibMemberInvokeKind::PropertyPutRef => {
+            let named_arg_dispids =
+                resolve_named_arg_dispids(&spec.name, &args[..args.len().saturating_sub(1)])
+                    .map_err(|detail| validation_failure("property-putref", dispid, detail))?;
+            if named_arg_dispids.is_empty()
+                && args
+                    .iter()
+                    .all(|arg| arg.name.is_none() && arg.value.is_some())
+            {
+                let positional_args: Result<Vec<crate::ComValue>, String> = args
+                    .iter()
+                    .filter_map(|arg| arg.value.clone())
+                    .map(|value| {
+                        value.to_legacy_dispatch_token()?;
+                        Ok(value)
+                    })
+                    .collect();
+                if let Ok(positional_args) = positional_args {
+                    return invoke_dispatch_legacy_i32_result_positional(
+                        dispatch,
+                        dispid,
+                        DISPATCH_PROPERTYPUTREF,
+                        &positional_args,
+                        true,
+                        "property-putref",
+                        resolve_object,
+                    );
+                }
+            }
+            let mut all_named = named_arg_dispids;
+            all_named.push(crate::COM_DISPID_PROPERTYPUT);
+            invoke_dispatch_legacy_i32_result(
+                dispatch,
+                dispid,
+                DISPATCH_PROPERTYPUTREF,
+                args,
+                &all_named,
+                "property-putref",
+                resolve_object,
+            )
+        }
+    }
+}
+
+#[cfg(target_os = "windows")]
+#[allow(unsafe_op_in_unsafe_fn)]
+#[allow(clippy::too_many_arguments)]
 /// Execute a member-metadata-backed Windows `IDispatch::Invoke` call over the shared semantic carrier.
 ///
 /// # Safety
@@ -698,6 +1063,60 @@ where
             bind_dispatch_result,
         ),
     }
+}
+
+#[cfg(target_os = "windows")]
+#[allow(unsafe_op_in_unsafe_fn)]
+/// # Safety
+/// `dispatch` must point to a live `IDispatch` implementation for the duration of the call, and
+/// the callback closures must uphold COM ownership rules for resolved object arguments.
+pub unsafe fn invoke_bound_dispatch_legacy_i32_result<
+    FKnownSpec,
+    FResolveNamedArgDispids,
+    FResolveObject,
+>(
+    dispatch: *mut crate::RawIDispatch,
+    member: crate::ComMemberToken,
+    args: &[ComInvokeArg],
+    known_member_spec: &mut FKnownSpec,
+    resolve_named_arg_dispids: &mut FResolveNamedArgDispids,
+    resolve_object: &mut FResolveObject,
+) -> Result<i32, ComInvokeFailure>
+where
+    FKnownSpec: FnMut(crate::ComMemberToken) -> Result<Option<crate::ComMemberSpec>, String>,
+    FResolveNamedArgDispids: FnMut(&str, &[ComInvokeArg]) -> Result<Vec<i32>, String>,
+    FResolveObject: FnMut(ObjectHandle) -> Result<*mut core::ffi::c_void, String>,
+{
+    if let Some(spec) = known_member_spec(member)
+        .map_err(|detail| validation_failure("dispatch_invoke", member.raw(), detail))?
+    {
+        let dispid = crate::get_dispid_by_name(dispatch, &spec.name)
+            .map_err(|detail| validation_failure("dispatch_invoke", member.raw(), detail))?;
+        return invoke_member_spec_legacy_i32_result(
+            dispatch.cast(),
+            dispid,
+            &spec,
+            args,
+            resolve_named_arg_dispids,
+            resolve_object,
+        );
+    }
+    if args.iter().any(|arg| arg.name.is_some()) {
+        return Err(validation_failure(
+            "dispatch_invoke",
+            member.raw(),
+            "named arguments require a resolved COM member name and remain unsupported for default-member/direct-DISPID dispatch",
+        ));
+    }
+    invoke_dispatch_legacy_i32_result(
+        dispatch.cast(),
+        member.raw(),
+        DISPATCH_PROPERTYGET,
+        args,
+        &[],
+        "property-get",
+        resolve_object,
+    )
 }
 
 #[cfg(target_os = "windows")]

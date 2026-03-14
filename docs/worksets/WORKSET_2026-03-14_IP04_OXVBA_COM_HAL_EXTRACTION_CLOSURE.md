@@ -1,8 +1,9 @@
 # Workset: IP-04 oxvba-com / HAL Extraction Closure
 
 Date: 2026-03-14  
-Status: in-progress  
+Status: complete  
 Scope: complete `IP-04` by finishing the architectural repurpose of `oxvba-com`, moving the remaining substantive Windows COM client ownership out of `oxvba-hal`, contracting the public HAL COM seam to the intended long-term delegation/bootstrap boundary, and removing transitional COM-in-HAL debt.
+Completion: reached on 2026-03-14.
 
 ## 1. Purpose
 
@@ -49,7 +50,7 @@ This workset does not require closure of:
 `IP-04` is an architecture/ownership closure.
 It must leave the repo on the correct long-term boundary so the remaining parity work can proceed without HAL remaining the de facto COM implementation home.
 
-## 4. Current entry state
+## 4. Historical entry state
 
 Completed before this closure workset:
 1. shared COM request/callback/value transport/types,
@@ -66,7 +67,7 @@ Current wall:
 2. the public `ComHal` contract is still broader and more transitional than the intended end-state,
 3. final invoke-result lifecycle ownership and remaining contract authority still need to move behind an `oxvba-com` surface.
 
-Primary active blocker:
+Primary blocker at entry:
 1. `BLK-COM-BOUNDARY-001` in `CURRENT_BLOCKERS.md`
 
 ## 5. Execution plan
@@ -261,3 +262,20 @@ Interaction rule:
 1. do not reduce `IP-04` scope to match a partial implementation state,
 2. instead continue through the remaining steps until the ownership boundary is truly complete,
 3. and let downstream parity work proceed on top of the corrected architecture.
+
+
+## 10. Closure evidence (2026-03-14)
+
+1. `oxvba-com` now exposes `WindowsComBridge` as the live Windows COM client facade.
+2. `standard.rs` now delegates create-object activation, invoke execution, object description/release, event subscription/callback interrogation, and typelib resolve/load/invalidate through that facade.
+3. Native subscription transport teardown for object release now also executes inside `oxvba-com`, so HAL no longer owns the last substantive COM lifecycle seam.
+4. The remaining HAL COM code is limited to capability/policy gating, apartment/bootstrap hooks, selector fallback, delegation, and boundary error mapping.
+5. Final verification passed:
+   - `cargo fmt --all`
+   - `cargo clippy -p oxvba-com -p oxvba-hal --all-targets -- -D warnings`
+   - `cargo test -p oxvba-com -p oxvba-hal -p oxvba-host --quiet`
+   - `./scripts/check-governance.ps1`
+   - `./scripts/meta-check.ps1 -Fast -NoArtifacts`
+6. `BLK-COM-BOUNDARY-001` is resolved and `IP-04` is closed in the canonical blocker/worklist surfaces.
+
+

@@ -1,3 +1,24 @@
+## 2026-03-14 - Closed IP-04 oxvba-com / HAL extraction
+
+- Completed the final `IP-04` closure slice in:
+  - [windows_bridge.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-com\src\windows_bridge.rs)
+  - [lib.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-com\src\lib.rs)
+  - [standard.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-hal\src\adapters\standard.rs)
+  - [CURRENT_BLOCKERS.md](C:\Work\DnaCalc\OxVba\CURRENT_BLOCKERS.md)
+  - [IN_PROGRESS_FEATURE_WORKLIST.md](C:\Work\DnaCalc\OxVba\docs\IN_PROGRESS_FEATURE_WORKLIST.md)
+  - [WORKSET_2026-03-09_OXVBA_COM_REPURPOSE_AND_HAL_COM_EXTRACTION.md](C:\Work\DnaCalc\OxVba\docs\worksets\WORKSET_2026-03-09_OXVBA_COM_REPURPOSE_AND_HAL_COM_EXTRACTION.md)
+  - [WORKSET_2026-03-14_IP04_OXVBA_COM_HAL_EXTRACTION_CLOSURE.md](C:\Work\DnaCalc\OxVba\docs\worksets\WORKSET_2026-03-14_IP04_OXVBA_COM_HAL_EXTRACTION_CLOSURE.md)
+  - [ARCHITECTURE.md](C:\Work\DnaCalc\OxVba\docs\ARCHITECTURE.md)
+- `oxvba-com` now exposes `WindowsComBridge` as the live Windows COM client facade.
+- `standard.rs` now delegates create-object activation, invoke execution, object description/release, event subscription/callback interrogation, and typelib services through that facade.
+- Native subscription transport teardown for object release now also executes inside `oxvba-com`, removing the last substantive COM lifecycle seam from HAL.
+- `BLK-COM-BOUNDARY-001` is resolved and `IP-04` is now closed.
+- Verification:
+  - `cargo fmt --all`
+  - `cargo clippy -p oxvba-com -p oxvba-hal --all-targets -- -D warnings`
+  - `cargo test -p oxvba-com -p oxvba-hal -p oxvba-host --quiet`
+  - `./scripts/check-governance.ps1`
+  - `./scripts/meta-check.ps1 -Fast -NoArtifacts`
 ## 2026-03-14 - Moved bound COM dispatch service entry into oxvba-com
 
 - Continued the `IP-04` extraction slice in:
@@ -329,6 +350,7 @@
 
 ## 2026-03-13 - Moved bound-dispatch and subscription teardown ownership into oxvba-com
 ## 2026-03-13 - Moved bound-dispatch and subscription teardown ownership into oxvba-com
+
 
 
 

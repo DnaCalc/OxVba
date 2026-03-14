@@ -1,4 +1,4 @@
-//! oxvba-com: COM abstraction scaffolding.
+//! oxvba-com: Windows-first COM bridge, metadata facade, and wire translation boundary.
 
 pub mod cycle_gc;
 pub mod dispatch;
@@ -12,6 +12,7 @@ pub mod typelib;
 pub mod typelib_cache;
 pub mod typelib_catalog;
 #[cfg(target_os = "windows")]
+pub mod windows_bridge;
 pub mod windows_client;
 #[cfg(target_os = "windows")]
 pub mod windows_connection_point;
@@ -58,6 +59,7 @@ pub use typelib_catalog::{
     resolve_known_typelib_identity, source_interface_event_spec_supported,
 };
 #[cfg(target_os = "windows")]
+pub use windows_bridge::{WindowsComBridge, WindowsComBridgeDispatchError};
 pub use windows_client::{
     COM_CONNECT_E_CANNOTCONNECT, COM_CONNECT_E_NOCONNECTION, COM_DISP_E_BADPARAMCOUNT,
     COM_DISP_E_EXCEPTION, COM_DISP_E_MEMBERNOTFOUND, COM_DISP_E_PARAMNOTFOUND,
@@ -80,11 +82,13 @@ pub use windows_connection_point::{
 #[cfg(target_os = "windows")]
 pub use windows_invoke::{
     ComInvokeExceptionInfo, ComInvokeFailure, execute_bound_runtime_value,
-    execute_bound_runtime_value_with_shared_state,
+    execute_bound_runtime_value_with_shared_state, invoke_bound_dispatch_legacy_i32_result,
     invoke_bound_dispatch_runtime_value_with_shared_state, invoke_direct_dispid_runtime_value,
-    invoke_direct_dispid_runtime_value_with_shared_state, invoke_dispatch_runtime_value,
-    invoke_dispatch_runtime_value_with_shared_state, invoke_member_spec_runtime_value,
-    invoke_member_spec_runtime_value_with_shared_state, take_excepinfo,
+    invoke_direct_dispid_runtime_value_with_shared_state, invoke_dispatch_legacy_i32_result,
+    invoke_dispatch_legacy_i32_result_positional, invoke_dispatch_runtime_value,
+    invoke_dispatch_runtime_value_with_shared_state, invoke_member_spec_legacy_i32_result,
+    invoke_member_spec_runtime_value, invoke_member_spec_runtime_value_with_shared_state,
+    take_excepinfo,
 };
 #[cfg(target_os = "windows")]
 pub use windows_runtime_state::{
@@ -93,12 +97,12 @@ pub use windows_runtime_state::{
     cache_member_dispid, callback_arg, callback_arity, callback_subscription_token,
     collect_stale_callbacks_for_subscription, event_callback_args_from_member_token,
     event_is_source_interface_only, event_signature_arity_for_binding, insert_bound_object_binding,
-    insert_bound_object_binding_shared, mark_next_callback_pumped_shared, release_callback,
-    release_object_binding, release_object_binding_shared, release_subscription_transport,
-    remove_subscription_callbacks, resolve_bound_native_dispatch,
-    resolve_bound_native_dispatch_shared, resolve_member_dispid_cached,
-    resolve_subscription_transport, subscribe_event_shared, take_polled_callback_payload,
-    unsubscribe_event_shared,
+    insert_bound_object_binding_shared, mark_next_callback_pumped_shared,
+    queue_projection_event_callbacks_shared, release_callback, release_object_binding,
+    release_object_binding_shared, release_subscription_transport, remove_subscription_callbacks,
+    resolve_bound_native_dispatch, resolve_bound_native_dispatch_shared,
+    resolve_member_dispid_cached, resolve_subscription_transport, subscribe_event_shared,
+    take_polled_callback_payload, unsubscribe_event_shared,
 };
 #[cfg(target_os = "windows")]
 pub use windows_test_dispatch::{

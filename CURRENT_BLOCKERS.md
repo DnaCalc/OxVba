@@ -35,6 +35,20 @@ Run context: active parity/compliance execution plus in-progress feature worklis
   - The dynamic-object protocol blocker that followed this migration is now also resolved:
     - native project class methods, properties, and default-member dispatch all execute on the shared dynamic-object protocol.
 
+### BLK-COM-BOUNDARY-001: Final oxvba-com extraction from HAL
+- Status: resolved in current run.
+- Resolution summary:
+  - oxvba-com now exposes WindowsComBridge as the live Windows COM client facade.
+  - standard.rs now delegates create-object activation, invoke execution, object description/release, event subscription/callback access, and typelib resolve/load/invalidate through that bridge.
+  - native subscription transport teardown for object release now also executes inside oxvba-com, removing the last substantive COM lifecycle seam from HAL.
+  - the remaining HAL COM code is limited to capability/policy gating, apartment/bootstrap hooks, selector-based fallback, and error mapping.
+  - the IP-04 closure verification matrix is green:
+    - cargo fmt --all,
+    - cargo clippy -p oxvba-com -p oxvba-hal --all-targets -- -D warnings,
+    - cargo test -p oxvba-com -p oxvba-hal -p oxvba-host --quiet,
+    - ./scripts/check-governance.ps1,
+    - ./scripts/meta-check.ps1 -Fast -NoArtifacts.
+
 ## Active blocker entries
 
 ### BLK-COM-IDISPATCH-001: Late-bound COM parity remains below VBA/Excel `IDispatch` behavior
@@ -68,7 +82,7 @@ Run context: active parity/compliance execution plus in-progress feature worklis
 ### BLK-COM-VALUE-TRANSPORT-001: Shared COM value transport still lacks full COM payload fidelity
 - Impact:
   - Blocks the remaining high-value closure work in `IP-03` Windows late-bound COM client parity.
-  - Blocks practical SAFEARRAY/object/string COM transport and therefore parts of `IP-04` COM extraction and `IP-09` marshaling parity.
+  - Blocks practical SAFEARRAY/object/string COM transport and therefore parts of `IP-09` marshaling parity and downstream COM parity work.
 - Current state:
   - `oxvba-com` now exposes an executable generic dynamic-object protocol API (`DynamicCallRequest`, `DynamicMemberSelector`, `DynamicCallKind`, `DynamicEventPayload`) with conversions from the current COM request/payload structs,
   - `oxvba-com` now owns a first semantic carrier slice via `ComValue`,
@@ -127,30 +141,6 @@ Run context: active parity/compliance execution plus in-progress feature worklis
     - native `Property Get` / `Property Let` dispatch through explicit `DispatchInvoke(...)`,
     - native default-member dispatch through explicit `DispatchInvoke(obj, 0, ...)`,
     - stateful `As New` class construction with `Class_Initialize`.
-
-### BLK-COM-BOUNDARY-001: Final oxvba-com extraction is blocked on the remaining live Windows COM execution seam
-- Impact:
-  - Blocks IP-04 final COM ownership extraction from HAL.
-  - Blocks IP-05 early-binding completion, IP-06 server/export parity, and part of IP-08 hosting parity.
-- Current state:
-  - shared transport/types, deterministic typelib catalog logic, supported Windows wire/value/invoke helpers, generic callback/subscription runtime state, metadata cache ownership, known-member/event policy, metadata-driven ComBinding assembly, activation-time binding creation, bound-dispatch lookup/rebinding, resolved-member DISPID cache lookup/update, object release bookkeeping, subscription callback-pruning, callback payload polling/metadata access/release helpers, event transport-choice resolution, bound/unbound COM invoke-policy planning, member-spec/direct-DISPID runtime invoke execution helpers, the extracted bound-runtime invoke orchestration helper, and the generic runtime-value `IDispatch::Invoke` execute/classify helper now live materially in oxvba-com,
-  - oxvba-hal::standard no longer owns the high-level default-member/direct-DISPID/member-spec routing rules, the direct runtime invoke closure wiring, COM event subscription/unsubscription orchestration, create-object binding insertion, or the bound native dispatch service entry, and the event-side public `ComHal` surface is now typed on `ObjectHandle`/`ComMemberToken`/`ComSubscriptionToken`/`ComCallbackToken` end to end, but HAL still owns the residual legacy projection invoke lane, teardown-side native transport release, dead transitional helper cleanup, and the final public COM/HAL contract contraction,
-  - the remaining work is the final HAL rebinding/contraction plus movement of the last execution/lifecycle authority behind an oxvba-com surface,
-  - an attempted next slice showed this is now a coordinated public contract migration touching `ComHal`, VM intrinsics, host event helpers, and adapter stubs together rather than another isolated helper extraction,
-  - forcing closure early would freeze a still-transitional contract.
-- Exact unblock steps:
-  - continue moving the remaining Windows client contract authority out of standard.rs:
-    - the remaining direct `IDispatch` invoke/result lifecycle glue around COM dispatch results,
-    - final object-handle resolve/bind lifecycle around COM invoke results,
-    - final invoke-result/object-lifecycle glue around COM dispatch results,
-    - final public HAL COM seam collapse from delegated event-side contract to overall bootstrap/delegation role,
-  - contract the public HAL COM surface down to delegation/bootstrap seams over oxvba-com,
-  - continue late-bound/property/reference-facade parity work on top of that contracted boundary,
-  - execute the full closure sequence in docs/worksets/WORKSET_2026-03-14_IP04_OXVBA_COM_HAL_EXTRACTION_CLOSURE.md, including final Windows client facade/service introduction, HAL seam collapse, ownership audit, and closure foldback.
-- Recommendation:
-  - use `docs/worksets/WORKSET_2026-03-14_IP04_OXVBA_COM_HAL_EXTRACTION_CLOSURE.md` as the authoritative unblock/closure plan; the remaining blocker is now the coordinated final ownership and contract migration, not planning/event/binding-table authority.
-
-
 
 ### BLK-PROP-001: Property/default-member intent model is not yet end-to-end executable
 - Impact:
@@ -402,6 +392,10 @@ Run context: active parity/compliance execution plus in-progress feature worklis
 - Previously resolved blockers:
   - `BLK-EVT-001` — resolved (runtime subscription graph)
   - `BLK-COM-001` — resolved (COM event callback parity with external registered server evidence)
+
+
+
+
 
 
 

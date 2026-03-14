@@ -13,51 +13,14 @@ use crate::{
 };
 #[cfg(test)]
 pub use oxvba_com::DISPATCH_INVOKE_MISSING_ARG_TOKEN;
-#[cfg(target_os = "windows")]
-use oxvba_com::invoke_direct_dispid_runtime_value_with_shared_state as com_invoke_direct_dispid_runtime_value_with_shared_state;
-#[cfg(target_os = "windows")]
-use oxvba_com::invoke_dispatch_runtime_value_with_shared_state as com_invoke_dispatch_runtime_value_with_shared_state;
-#[cfg(target_os = "windows")]
-use oxvba_com::invoke_member_spec_runtime_value_with_shared_state as com_invoke_member_spec_runtime_value_with_shared_state;
-#[cfg(target_os = "windows")]
-use oxvba_com::take_excepinfo;
-#[cfg(target_os = "windows")]
-use oxvba_com::windows_variant::{
-    set_variant_from_com_value as com_set_variant_from_com_value,
-    variant_to_com_value as com_variant_to_com_value,
-};
+#[cfg(test)]
+use oxvba_com::RawIDispatch;
 use oxvba_com::{
-    COM_DISP_E_PARAMNOTFOUND, COM_DISPID_PROPERTYPUT, ComBinding, ComCallbackPayload,
-    ComCallbackToken, ComDirectDispatchSpec, ComEventPath, ComEventSpec, ComEventTriggerSpec,
-    ComInvokeArg, ComInvokeFailure, ComInvokeRequest, ComMemberSpec, ComMemberToken,
-    ComObjectDescriptor, ComObjectToken, ComObjectTransportKind, ComSubscriptionToken, ComValue,
-    IID_NULL, RawIDispatch, TypeLibMetadataCacheState, WindowsComClientState,
-    WindowsComSubscriptionTransport, activate_runtime_dispatch as com_activate_runtime_dispatch,
-    activate_runtime_object_binding_shared as com_activate_runtime_object_binding_shared,
-    add_ref_dispatch as raw_add_ref_dispatch, build_typelib_metadata,
-    callback_arg as com_callback_arg, callback_arity as com_callback_arity,
-    callback_subscription_token as com_callback_subscription_token,
-    canonicalize_member_known_args as com_canonicalize_member_known_args,
-    event_callback_args_from_member_token, event_is_source_interface_only,
-    event_signature_arity_for_binding,
-    execute_bound_runtime_value_with_shared_state as com_execute_bound_runtime_value_with_shared_state,
-    get_dispid_by_name as raw_get_dispid_by_name, known_typelib_identity_for_prog_id_name,
+    ComBinding, ComCallbackPayload, ComCallbackToken, ComDirectDispatchSpec, ComEventPath,
+    ComEventSpec, ComEventTriggerSpec, ComInvokeFailure, ComInvokeRequest, ComMemberToken,
+    ComObjectDescriptor, ComObjectTransportKind, ComSubscriptionToken, OXVBA_TEST_DISPATCH_PROGID,
+    WindowsComBridge, WindowsComBridgeDispatchError,
     legacy_runtime_arg_values as com_legacy_runtime_arg_values, map_com_hresult_label,
-    mark_next_callback_pumped_shared as com_mark_next_callback_pumped_shared,
-    member_spec_from_typelib_metadata,
-    plan_unbound_runtime_invoke as com_plan_unbound_runtime_invoke,
-    raw_oxvba_test_dispatch_vtable_invoke, release_callback as com_release_callback,
-    release_dispatch as raw_release_dispatch,
-    release_object_binding_shared as com_release_object_binding_shared,
-    release_subscription_transport,
-    resolve_bound_native_dispatch_shared as com_resolve_bound_native_dispatch_shared,
-    resolve_known_typelib_identity,
-    resolve_member_dispid_cached as com_resolve_member_dispid_cached,
-    resolve_named_argument_dispids as com_resolve_named_argument_dispids,
-    subscribe_event_shared as com_subscribe_event_shared,
-    take_polled_callback_payload as com_take_polled_callback_payload,
-    unsubscribe_event_shared as com_unsubscribe_event_shared,
-    validate_named_arg_order as com_validate_named_arg_order,
 };
 use oxvba_runtime::{BindingHandle, DynLinkSymbol, ObjectHandle, RuntimeValue, bstr::BStr};
 use std::{
@@ -72,12 +35,7 @@ use std::{
 };
 
 #[cfg(target_os = "windows")]
-use windows_sys::Win32::System::Com::{
-    COINIT_APARTMENTTHREADED, CoInitializeEx, DISPATCH_METHOD, DISPATCH_PROPERTYGET,
-    DISPATCH_PROPERTYPUT, DISPATCH_PROPERTYPUTREF, DISPPARAMS, EXCEPINFO,
-};
-#[cfg(target_os = "windows")]
-use windows_sys::Win32::System::Variant::{VARIANT, VT_ERROR, VariantClear};
+use windows_sys::Win32::System::Com::{COINIT_APARTMENTTHREADED, CoInitializeEx};
 #[cfg(target_os = "windows")]
 use windows_sys::Win32::UI::WindowsAndMessaging::{
     DispatchMessageW, MB_OK, MSG, MessageBoxW, PM_REMOVE, PeekMessageW, TranslateMessage,
@@ -101,8 +59,6 @@ macro_rules! hal_contract_assert {
     };
 }
 
-#[cfg(target_os = "windows")]
-const OXVBA_TEST_DISPATCH_PROGID: &str = "OxVba.TestDispatch";
 #[cfg(target_os = "windows")]
 #[cfg(test)]
 const IID_OXVBA_TEST_DISPATCH_EVENTS_STR: &str = "11111112-2222-3333-4444-555555555556";
@@ -142,6 +98,7 @@ const TEST_DISPID_LOOKUP_PAIR: i32 = 13;
 const TEST_DISPID_SET_INDEXED_VALUE: i32 = 14;
 #[cfg(test)]
 const TEST_DISPID_SET_INDEXED_VALUE_REF: i32 = 15;
+#[cfg(test)]
 const TEST_DISPID_ECHO_VARIANT: i32 = 16;
 #[cfg(test)]
 const TEST_DISPID_RAISE_EXCEPTION: i32 = 17;
@@ -166,8 +123,8 @@ pub(crate) struct StandardHostServices {
     policy: HostPolicy,
     env_cache: StandardEnvCache,
     fs_state: Arc<Mutex<FileSystemState>>,
-    com_state: Arc<Mutex<ComState>>,
-    typelib_state: Arc<Mutex<TypeLibraryCacheState>>,
+    #[cfg(target_os = "windows")]
+    com_bridge: Arc<WindowsComBridge>,
     dynlink_state: Arc<Mutex<DynLinkBindingState>>,
 }
 
@@ -266,15 +223,18 @@ impl StandardHostServices {
         runtime_class: HalRuntimeClass,
         policy: HostPolicy,
     ) -> Self {
+        let env_cache = StandardEnvCache::capture();
         Self {
             profile,
             runtime_class,
             descriptor: descriptor_for_profile(profile, runtime_class, &policy),
             policy,
-            env_cache: StandardEnvCache::capture(),
+            #[cfg(target_os = "windows")]
+            com_bridge: Arc::new(WindowsComBridge::new(
+                env_cache.force_registered_testdispatch,
+            )),
+            env_cache,
             fs_state: Arc::new(Mutex::new(FileSystemState::default())),
-            com_state: Arc::new(Mutex::new(ComState::default())),
-            typelib_state: Arc::new(Mutex::new(TypeLibraryCacheState::default())),
             dynlink_state: Arc::new(Mutex::new(DynLinkBindingState::default())),
         }
     }
@@ -319,26 +279,6 @@ impl StandardHostServices {
                 op,
                 "filesystem state lock poisoned",
             )
-        })
-    }
-
-    fn com_lock(
-        &self,
-        capability: CapabilityId,
-        op: &'static str,
-    ) -> HalResult<std::sync::MutexGuard<'_, ComState>> {
-        self.com_state.lock().map_err(|_| {
-            HalError::adapter_fault(self.profile, capability, op, "com state lock poisoned")
-        })
-    }
-
-    fn typelib_lock(
-        &self,
-        capability: CapabilityId,
-        op: &'static str,
-    ) -> HalResult<std::sync::MutexGuard<'_, TypeLibraryCacheState>> {
-        self.typelib_state.lock().map_err(|_| {
-            HalError::adapter_fault(self.profile, capability, op, "typelib state lock poisoned")
         })
     }
 
@@ -407,104 +347,6 @@ impl StandardHostServices {
         }
     }
 
-    // Contract-check scaffold for COM handle-state invariants.
-    fn assert_com_invariants(&self, state: &ComState, op: &'static str) {
-        #[cfg(any(debug_assertions, feature = "hal_contract_checks"))]
-        {
-            for (handle, binding) in &state.bindings {
-                hal_contract_assert!(
-                    handle.raw() >= 20_001,
-                    "op={} observed out-of-range COM handle {}",
-                    op,
-                    handle
-                );
-                for (member, dispid) in &binding.member_dispids {
-                    hal_contract_assert!(
-                        *dispid != 0,
-                        "op={} observed zero DISPID cache entry for handle {} member {}",
-                        op,
-                        handle,
-                        member
-                    );
-                }
-            }
-            #[cfg(not(target_os = "windows"))]
-            for (handle, binding) in &state.bindings {
-                hal_contract_assert!(
-                    binding.native_dispatch == 0,
-                    "op={} non-windows binding {} unexpectedly has native dispatch pointer",
-                    op,
-                    handle
-                );
-            }
-            for (subscription, entry) in &state.subscriptions {
-                hal_contract_assert!(
-                    subscription.raw() >= 40_001,
-                    "op={} observed out-of-range COM event subscription {}",
-                    op,
-                    subscription
-                );
-                hal_contract_assert!(
-                    state.bindings.contains_key(&entry.object),
-                    "op={} observed COM event subscription {} for unknown object {}",
-                    op,
-                    subscription,
-                    entry.object
-                );
-                #[cfg(target_os = "windows")]
-                if let ComEventSubscriptionTransport::NativeConnectionPoint(native) =
-                    entry.transport
-                {
-                    hal_contract_assert!(
-                        native.connection_point != 0,
-                        "op={} observed native COM subscription {} with null connection point",
-                        op,
-                        subscription
-                    );
-                    hal_contract_assert!(
-                        native.cookie != 0,
-                        "op={} observed native COM subscription {} with zero cookie",
-                        op,
-                        subscription
-                    );
-                }
-            }
-            for callback in &state.pending_callbacks {
-                hal_contract_assert!(
-                    state.callbacks.contains_key(callback),
-                    "op={} observed pending callback token {} without payload",
-                    op,
-                    callback
-                );
-            }
-            for (callback, payload) in &state.callbacks {
-                hal_contract_assert!(
-                    callback.raw() >= 60_001,
-                    "op={} observed out-of-range callback token {}",
-                    op,
-                    callback
-                );
-                hal_contract_assert!(
-                    state.subscriptions.contains_key(&payload.subscription),
-                    "op={} observed callback for unknown subscription {}",
-                    op,
-                    payload.subscription
-                );
-                hal_contract_assert!(
-                    payload.args.len() <= 32,
-                    "op={} observed oversized callback args payload (len={})",
-                    op,
-                    payload.args.len()
-                );
-            }
-        }
-
-        #[cfg(not(any(debug_assertions, feature = "hal_contract_checks")))]
-        {
-            let _ = (state, op);
-        }
-    }
-
     fn native_mode_enabled(&self) -> bool {
         host_backed_mode_active(self.profile, &self.policy)
     }
@@ -531,77 +373,6 @@ impl StandardHostServices {
 
     fn windows_typelib_supported(&self) -> bool {
         self.profile == HalProfileId::Windows && self.supports(CapabilityId::ComActivationDispatch)
-    }
-
-    fn resolve_known_typelib_identity(
-        &self,
-        request: &TypeLibResolveRequest,
-    ) -> Option<TypeLibResolvedIdentity> {
-        resolve_known_typelib_identity(request)
-    }
-
-    fn build_typelib_metadata(&self, identity: &TypeLibResolvedIdentity) -> TypeLibMetadataBlob {
-        build_typelib_metadata(identity)
-    }
-
-    #[cfg(target_os = "windows")]
-    fn known_typelib_identity_for_prog_id_name(
-        &self,
-        prog_id_name: &str,
-    ) -> Option<TypeLibResolvedIdentity> {
-        known_typelib_identity_for_prog_id_name(prog_id_name)
-    }
-
-    #[cfg(not(target_os = "windows"))]
-    fn known_typelib_identity_for_prog_id_name(
-        &self,
-        _prog_id_name: &str,
-    ) -> Option<TypeLibResolvedIdentity> {
-        None
-    }
-
-    #[cfg(target_os = "windows")]
-    fn load_typelib_metadata_for_prog_id_name(
-        &self,
-        prog_id_name: &str,
-    ) -> HalResult<Option<TypeLibMetadataBlob>> {
-        let Some(identity) = self.known_typelib_identity_for_prog_id_name(prog_id_name) else {
-            return Ok(None);
-        };
-        let capability = CapabilityId::ComActivationDispatch;
-        let mut state = self.typelib_lock(capability, "create_object")?;
-        Ok(Some(state.load_or_build(&identity, |identity| {
-            self.build_typelib_metadata(identity)
-        })))
-    }
-
-    #[cfg(not(target_os = "windows"))]
-    fn load_typelib_metadata_for_prog_id_name(
-        &self,
-        _prog_id_name: &str,
-    ) -> HalResult<Option<TypeLibMetadataBlob>> {
-        Ok(None)
-    }
-
-    #[cfg(target_os = "windows")]
-    fn known_member_spec_for_prog_id_name(
-        &self,
-        prog_id_name: &str,
-        member: ComMemberToken,
-    ) -> HalResult<Option<ComMemberSpec>> {
-        Ok(self
-            .load_typelib_metadata_for_prog_id_name(prog_id_name)?
-            .as_ref()
-            .and_then(|blob| member_spec_from_typelib_metadata(blob, member)))
-    }
-
-    #[cfg(not(target_os = "windows"))]
-    fn known_member_spec_for_prog_id_name(
-        &self,
-        _prog_id_name: &str,
-        _member: ComMemberToken,
-    ) -> HalResult<Option<ComMemberSpec>> {
-        Ok(None)
     }
 
     #[cfg(target_os = "windows")]
@@ -1062,44 +833,23 @@ impl StandardHostServices {
         &self,
         prog_id_name: &str,
     ) -> HalResult<RuntimeValue> {
-        let metadata = self.load_typelib_metadata_for_prog_id_name(prog_id_name)?;
-        self.ensure_thread_com_apartment("create_object")?;
         let registered_event_override =
             self.registered_event_override_for_prog_id_name(prog_id_name, "create_object")?;
-        let handle = com_activate_runtime_object_binding_shared(
-            &self.com_state,
-            prog_id_name,
-            metadata.as_ref(),
-            self.force_registered_test_dispatch(),
-            |binding| {
+        self.ensure_thread_com_apartment("create_object")?;
+        let handle = self
+            .com_bridge
+            .activate_runtime_object_binding(prog_id_name, |binding| {
                 if let Some(override_cfg) = registered_event_override.as_ref() {
                     self.apply_registered_event_override_to_binding(binding, override_cfg);
                 }
                 Ok(())
-            },
-        )
-        .map_err(|message| self.com_createobject_adapter_fault(message))?;
+            })
+            .map_err(|message| self.com_createobject_adapter_fault(message))?;
         Ok(RuntimeValue::ObjectHandle(handle))
     }
 
     #[cfg(target_os = "windows")]
-    fn resolve_named_argument_dispids(
-        &self,
-        dispatch: *mut RawIDispatch,
-        member_name: &str,
-        args: &[ComInvokeArg],
-    ) -> HalResult<Vec<i32>> {
-        unsafe { com_resolve_named_argument_dispids(dispatch, member_name, args) }
-            .map_err(|message| self.com_dispatch_adapter_fault(message))
-    }
-
-    #[cfg(target_os = "windows")]
-    fn native_com_activate_dispatch(&self, prog_id: &str) -> HalResult<*mut RawIDispatch> {
-        com_activate_runtime_dispatch(prog_id, self.force_registered_test_dispatch())
-            .map_err(|message| self.com_createobject_adapter_fault(message))
-    }
-
-    #[cfg(target_os = "windows")]
+    #[cfg(test)]
     fn force_registered_test_dispatch(&self) -> bool {
         self.env_cache.force_registered_testdispatch
     }
@@ -1125,408 +875,7 @@ impl StandardHostServices {
         )
     }
 
-    #[cfg(target_os = "windows")]
-    fn resolve_native_dispatch_for_object_arg(
-        &self,
-        object: ObjectHandle,
-        op: &'static str,
-    ) -> HalResult<*mut RawIDispatch> {
-        let capability = CapabilityId::ComActivationDispatch;
-        com_resolve_bound_native_dispatch_shared(&self.com_state, object)
-            .map_err(|message| HalError::adapter_fault(self.profile, capability, op, message))
-    }
-
-    #[cfg(not(target_os = "windows"))]
-    fn native_com_activate_dispatch(&self, _prog_id: &str) -> HalResult<*mut core::ffi::c_void> {
-        Err(HalError::adapter_fault(
-            self.profile,
-            CapabilityId::ComActivationDispatch,
-            "create_object",
-            "native COM activation unavailable on this platform",
-        ))
-    }
-
-    #[cfg(target_os = "windows")]
-    fn native_com_dispatch_invoke_core(
-        &self,
-        dispatch: *mut RawIDispatch,
-        prog_id: &str,
-        member: i32,
-        args: &[ComInvokeArg],
-    ) -> HalResult<i32> {
-        if let Some(spec) = self.known_member_spec_for_prog_id_name(prog_id, member.into())? {
-            // SAFETY: `dispatch` is a live IDispatch pointer owned by this adapter and `spec.name`
-            // is converted to a temporary wide buffer inside the helper.
-            let dispid = unsafe { raw_get_dispid_by_name(dispatch, &spec.name) }
-                .map_err(|message| self.com_dispatch_adapter_fault(message))?;
-            return self.native_com_dispatch_invoke_with_member_spec(dispatch, dispid, &spec, args);
-        }
-        if args.iter().any(|arg| arg.name.is_some()) {
-            return Err(HalError::adapter_fault(
-                self.profile,
-                CapabilityId::ComActivationDispatch,
-                "dispatch_invoke",
-                "named arguments require a resolved COM member name and remain unsupported for default-member/direct-DISPID dispatch",
-            ));
-        }
-        let mut resolve_object = |handle: ObjectHandle| {
-            self.resolve_native_dispatch_for_object_arg(handle, "dispatch_invoke")
-                .map_err(|err| format!("{} [{}] {}", err.stable_code, err.operation, err.message))
-        };
-        // SAFETY: `dispatch` is a live IDispatch pointer and `member` is treated as a direct
-        // DISPID for the controlled late-bound fallback path.
-        unsafe {
-            raw_dispatch_property_get_i4_args(dispatch, member, args, &[], &mut resolve_object)
-        }
-        .map_err(|failure| self.com_dispatch_invoke_fault(failure))
-    }
-
-    #[cfg(target_os = "windows")]
-    #[allow(dead_code)]
-    fn resolve_member_dispid_cached(
-        &self,
-        object: i32,
-        dispatch: *mut RawIDispatch,
-        binding: &ComBinding,
-        member: i32,
-        _cached: Option<i32>,
-    ) -> HalResult<Option<(i32, ComMemberSpec)>> {
-        let mut state = self.com_lock(CapabilityId::ComActivationDispatch, "dispatch_invoke")?;
-        let result = unsafe {
-            com_resolve_member_dispid_cached(
-                &mut state,
-                dispatch,
-                ObjectHandle::new(object),
-                binding,
-                ComMemberToken::new(member),
-                self.known_member_spec_for_prog_id_name(&binding.prog_id_name, member.into())?,
-            )
-        }
-        .map_err(|message| self.com_dispatch_adapter_fault(message))?;
-        self.assert_com_invariants(&state, "dispatch_invoke_cache_update");
-        Ok(result)
-    }
-
-    #[cfg(target_os = "windows")]
-    fn native_com_dispatch_invoke_with_member_spec(
-        &self,
-        dispatch: *mut RawIDispatch,
-        dispid: i32,
-        spec: &ComMemberSpec,
-        args: &[ComInvokeArg],
-    ) -> HalResult<i32> {
-        self.ensure_thread_com_apartment("dispatch_invoke")?;
-        let canonical_args;
-        let args = match spec.invoke_kind {
-            TypeLibMemberInvokeKind::PropertyPut | TypeLibMemberInvokeKind::PropertyPutRef => {
-                canonical_args =
-                    com_canonicalize_member_known_args(spec, args).map_err(|message| {
-                        HalError::adapter_fault(
-                            self.profile,
-                            CapabilityId::ComActivationDispatch,
-                            "dispatch_invoke",
-                            message,
-                        )
-                    })?;
-                canonical_args.as_slice()
-            }
-            _ => args,
-        };
-        if spec.requires_argument {
-            if args.iter().all(|arg| arg.value.is_none()) {
-                return Err(HalError::adapter_fault(
-                    self.profile,
-                    CapabilityId::ComActivationDispatch,
-                    "dispatch_invoke",
-                    "member requires argument but DispatchInvoke omitted the third argument",
-                ));
-            }
-        } else {
-            let mut resolve_object = |handle: ObjectHandle| {
-                self.resolve_native_dispatch_for_object_arg(handle, "dispatch_invoke")
-                    .map_err(|err| {
-                        format!("{} [{}] {}", err.stable_code, err.operation, err.message)
-                    })
-            };
-            match spec.invoke_kind {
-                TypeLibMemberInvokeKind::PropertyGet => {
-                    // SAFETY: `dispatch` is a live IDispatch pointer and `dispid` was resolved for
-                    // this member on the same interface.
-                    return unsafe {
-                        raw_dispatch_property_get_i4_args(
-                            dispatch,
-                            dispid,
-                            &[],
-                            &[],
-                            &mut resolve_object,
-                        )
-                    }
-                    .map_err(|failure| self.com_dispatch_invoke_fault(failure));
-                }
-                TypeLibMemberInvokeKind::Method => {
-                    // SAFETY: `dispatch` is a live IDispatch pointer and `dispid` targets a method
-                    // on the same interface without arguments.
-                    return unsafe {
-                        raw_dispatch_invoke_method_i4_args(
-                            dispatch,
-                            dispid,
-                            &[],
-                            &[],
-                            &mut resolve_object,
-                        )
-                    }
-                    .map_err(|failure| self.com_dispatch_invoke_fault(failure));
-                }
-                TypeLibMemberInvokeKind::PropertyPut | TypeLibMemberInvokeKind::PropertyPutRef => {
-                    return Err(HalError::adapter_fault(
-                        self.profile,
-                        CapabilityId::ComActivationDispatch,
-                        "dispatch_invoke",
-                        "member requires argument for property put/putref dispatch",
-                    ));
-                }
-            }
-        }
-        let mut resolve_object = |handle: ObjectHandle| {
-            self.resolve_native_dispatch_for_object_arg(handle, "dispatch_invoke")
-                .map_err(|err| format!("{} [{}] {}", err.stable_code, err.operation, err.message))
-        };
-        match spec.invoke_kind {
-            // SAFETY: `dispatch` is a live IDispatch pointer and the helper marshals all invoke
-            // arguments into stack-owned VARIANT storage for the Invoke call.
-            TypeLibMemberInvokeKind::PropertyGet => unsafe {
-                let named_arg_dispids =
-                    self.resolve_named_argument_dispids(dispatch, &spec.name, args)?;
-                raw_dispatch_property_get_i4_args(
-                    dispatch,
-                    dispid,
-                    args,
-                    &named_arg_dispids,
-                    &mut resolve_object,
-                )
-            },
-            // SAFETY: Same as above; the helper owns all temporary Automation structures.
-            TypeLibMemberInvokeKind::Method => unsafe {
-                let named_arg_dispids =
-                    self.resolve_named_argument_dispids(dispatch, &spec.name, args)?;
-                raw_dispatch_invoke_method_i4_args(
-                    dispatch,
-                    dispid,
-                    args,
-                    &named_arg_dispids,
-                    &mut resolve_object,
-                )
-            },
-            // SAFETY: Same as above; property-put marshalling uses a stack-local VARIANT.
-            TypeLibMemberInvokeKind::PropertyPut => unsafe {
-                let named_arg_dispids = self.resolve_named_argument_dispids(
-                    dispatch,
-                    &spec.name,
-                    &args[..args.len() - 1],
-                )?;
-                raw_dispatch_property_put_i4_args(
-                    dispatch,
-                    dispid,
-                    args,
-                    &named_arg_dispids,
-                    &mut resolve_object,
-                )
-            },
-            // SAFETY: Same as above; property-putref uses the same validated pointer and argument.
-            TypeLibMemberInvokeKind::PropertyPutRef => unsafe {
-                let named_arg_dispids = self.resolve_named_argument_dispids(
-                    dispatch,
-                    &spec.name,
-                    &args[..args.len() - 1],
-                )?;
-                raw_dispatch_property_putref_i4_args(
-                    dispatch,
-                    dispid,
-                    args,
-                    &named_arg_dispids,
-                    &mut resolve_object,
-                )
-            },
-        }
-        .map_err(|failure| self.com_dispatch_invoke_fault(failure))
-    }
-
-    #[cfg(target_os = "windows")]
-    fn try_native_com_vtable_invoke(
-        &self,
-        dispatch: *mut RawIDispatch,
-        prog_id: &str,
-        member: i32,
-        args: &[i32],
-    ) -> HalResult<Option<i32>> {
-        if self.policy.com_invocation_strategy != ComInvocationStrategy::PreferVtable {
-            return Ok(None);
-        }
-        if !prog_id.eq_ignore_ascii_case(OXVBA_TEST_DISPATCH_PROGID) {
-            return Ok(None);
-        }
-        if member == TEST_DISPID_ECHO_VARIANT {
-            return Ok(None);
-        }
-        self.ensure_thread_com_apartment("dispatch_invoke")?;
-        // SAFETY: `dispatch` points at the controlled OxVba.TestDispatch implementation, so the
-        // helper may downcast to the known vtable layout for the prefer-vtable lane.
-        let result = unsafe { raw_oxvba_test_dispatch_vtable_invoke(dispatch, member, args) }
-            .map_err(|message| self.com_dispatch_adapter_fault(message))?;
-        Ok(result)
-    }
-
-    #[cfg(target_os = "windows")]
-    fn native_com_dispatch_invoke(
-        &self,
-        prog_id: &str,
-        member: i32,
-        args: &[ComInvokeArg],
-    ) -> HalResult<i32> {
-        self.ensure_thread_com_apartment("dispatch_invoke")?;
-        let dispatch = self.native_com_activate_dispatch(prog_id)?;
-        let result = self.native_com_dispatch_invoke_core(dispatch, prog_id, member, args);
-        // SAFETY: `dispatch` was returned by native_com_activate_dispatch and has not been
-        // released yet; this balances the adapter-owned AddRef from activation.
-        unsafe {
-            raw_release_dispatch(dispatch);
-        }
-        result
-    }
-
-    #[cfg(target_os = "windows")]
-    #[allow(dead_code)]
-    fn native_com_dispatch_invoke_core_runtime_value(
-        &self,
-        dispatch: *mut RawIDispatch,
-        prog_id: &str,
-        member: i32,
-        args: &[ComInvokeArg],
-    ) -> HalResult<RuntimeValue> {
-        let plan = com_plan_unbound_runtime_invoke(
-            member.into(),
-            args,
-            self.known_member_spec_for_prog_id_name(prog_id, member.into())?,
-        )
-        .map_err(|message| {
-            HalError::adapter_fault(
-                self.profile,
-                CapabilityId::ComActivationDispatch,
-                "dispatch_invoke",
-                message,
-            )
-        })?;
-        match plan {
-            oxvba_com::UnboundRuntimeInvokePlan::MemberSpec(spec) => {
-                let dispid = unsafe { raw_get_dispid_by_name(dispatch, &spec.name) }
-                    .map_err(|message| self.com_dispatch_adapter_fault(message))?;
-                self.native_com_dispatch_invoke_with_member_spec_runtime_value(
-                    dispatch, dispid, &spec, args, prog_id,
-                )
-            }
-            oxvba_com::UnboundRuntimeInvokePlan::DirectPropertyGet { dispid } => unsafe {
-                self.native_dispatch_invoke_runtime_value_args(
-                    dispatch,
-                    dispid.raw(),
-                    DISPATCH_PROPERTYGET,
-                    args,
-                    &[],
-                    ("property-get", prog_id),
-                )
-            }
-            .map_err(|failure| self.com_dispatch_invoke_fault(failure)),
-        }
-    }
-
-    #[cfg(target_os = "windows")]
-    #[allow(dead_code)]
-    fn native_com_dispatch_invoke_with_member_spec_runtime_value(
-        &self,
-        dispatch: *mut RawIDispatch,
-        dispid: i32,
-        spec: &ComMemberSpec,
-        args: &[ComInvokeArg],
-        prog_id_hint: &str,
-    ) -> HalResult<RuntimeValue> {
-        self.ensure_thread_com_apartment("dispatch_invoke")?;
-        unsafe {
-            com_invoke_member_spec_runtime_value_with_shared_state(
-                dispatch.cast(),
-                dispid,
-                spec,
-                args,
-                prog_id_hint,
-                &self.com_state,
-            )
-        }
-        .map_err(|failure| self.com_dispatch_invoke_fault(failure))
-    }
-
-    #[cfg(target_os = "windows")]
-    #[allow(dead_code)]
-    fn native_com_dispatch_invoke_with_direct_dispid_runtime_value(
-        &self,
-        dispatch: *mut RawIDispatch,
-        dispid: i32,
-        invoke_kind: TypeLibMemberInvokeKind,
-        requires_argument: bool,
-        args: &[ComInvokeArg],
-        prog_id_hint: &str,
-    ) -> HalResult<RuntimeValue> {
-        self.ensure_thread_com_apartment("dispatch_invoke")?;
-        unsafe {
-            com_invoke_direct_dispid_runtime_value_with_shared_state(
-                dispatch.cast(),
-                dispid,
-                invoke_kind,
-                requires_argument,
-                args,
-                prog_id_hint,
-                &self.com_state,
-            )
-        }
-        .map_err(|failure| self.com_dispatch_invoke_fault(failure))
-    }
-
-    #[cfg(target_os = "windows")]
-    #[allow(dead_code)]
-    fn native_com_dispatch_invoke_with_bound_dispatch_runtime_value(
-        &self,
-        dispatch: *mut RawIDispatch,
-        prog_id: &str,
-        member: i32,
-        args: &[ComInvokeArg],
-    ) -> HalResult<RuntimeValue> {
-        self.ensure_thread_com_apartment("dispatch_invoke")?;
-        self.native_com_dispatch_invoke_core_runtime_value(dispatch, prog_id, member, args)
-    }
-
-    #[cfg(target_os = "windows")]
-    #[allow(unsafe_op_in_unsafe_fn)]
-    #[allow(dead_code)]
-    unsafe fn native_dispatch_invoke_runtime_value_args(
-        &self,
-        dispatch: *mut RawIDispatch,
-        dispid: i32,
-        flags: u16,
-        args: &[ComInvokeArg],
-        named_arg_dispids: &[i32],
-        context: (&'static str, &str),
-    ) -> Result<RuntimeValue, ComInvokeFailure> {
-        let (label, prog_id_hint) = context;
-        com_invoke_dispatch_runtime_value_with_shared_state(
-            dispatch.cast(),
-            dispid,
-            flags,
-            args,
-            named_arg_dispids,
-            label,
-            prog_id_hint,
-            &self.com_state,
-        )
-    }
-
-    #[cfg(target_os = "windows")]
+    #[cfg(test)]
     fn com_dispatch_adapter_fault(&self, message: String) -> HalError {
         let hresult = parse_hresult_hex(&message);
         let arg_err = parse_arg_err(&message);
@@ -1577,156 +926,6 @@ impl StandardHostServices {
             "dispatch_invoke",
             format!("{prefix} {}", failure.render()),
         )
-    }
-
-    #[cfg(target_os = "windows")]
-    fn queue_com_event_callbacks(
-        &self,
-        object: i32,
-        binding: &ComBinding,
-        member: i32,
-        args: Option<&[i32]>,
-    ) -> HalResult<()> {
-        let member = ComMemberToken::new(member);
-        let Some(trigger_spec) = binding.event_trigger_specs.get(&member).copied() else {
-            return Ok(());
-        };
-        let Some(args) = args else {
-            return Err(HalError::adapter_fault(
-                self.profile,
-                CapabilityId::ComActivationDispatch,
-                "dispatch_invoke",
-                format!(
-                    "COM-E-VALUE-TRANSPORT-UNSUPPORTED: projected event trigger `{}` requires legacy callback argument transport",
-                    trigger_spec.event_token
-                ),
-            ));
-        };
-        let Some((event, args)) = event_callback_args_from_member_token(binding, member, args)
-        else {
-            return Ok(());
-        };
-        let Some(expected_arity) = event_signature_arity_for_binding(binding, event) else {
-            return Err(HalError::adapter_fault(
-                self.profile,
-                CapabilityId::ComActivationDispatch,
-                "dispatch_invoke",
-                format!(
-                    "COM-E-EVENT-CONNECTIONPOINT-MISSING: object `{}` does not expose event token {}",
-                    binding.prog_id_name, event
-                ),
-            ));
-        };
-        if event_is_source_interface_only(binding, event) {
-            if com_event_trace_enabled() {
-                eprintln!(
-                    "[oxvba-hal][com-event] projection-trigger skipped object={} member={} event={} reason=source-interface-native-lane",
-                    object, member, event
-                );
-            }
-            return Ok(());
-        }
-        if args.len() != expected_arity {
-            return Err(HalError::adapter_fault(
-                self.profile,
-                CapabilityId::ComActivationDispatch,
-                "dispatch_invoke",
-                format!(
-                    "COM-E-EVENT-CALLBACK-SIGNATURE-MISMATCH: event token {} expected {} argument(s), queued {}",
-                    event,
-                    expected_arity,
-                    args.len()
-                ),
-            ));
-        }
-        let mut state = self.com_lock(CapabilityId::ComActivationDispatch, "dispatch_invoke")?;
-        self.assert_com_invariants(&state, "dispatch_invoke-event-pre");
-        let queued = state.queue_callbacks_for_source_event(
-            object.into(),
-            event,
-            args.as_slice(),
-            |transport| transport.is_projection(),
-        );
-        if com_event_trace_enabled() {
-            eprintln!(
-                "[oxvba-hal][com-event] projection-trigger object={} member={} event={} args={:?} queued_subscriptions={}",
-                object, member, event, args, queued
-            );
-        }
-        self.assert_com_invariants(&state, "dispatch_invoke-event-post");
-        Ok(())
-    }
-
-    #[cfg(target_os = "windows")]
-    fn release_event_subscription_transport(
-        &self,
-        transport: ComEventSubscriptionTransport,
-    ) -> HalResult<()> {
-        if let ComEventSubscriptionTransport::NativeConnectionPoint(native) = transport {
-            self.ensure_thread_com_apartment("unsubscribe_event")?;
-            // SAFETY: `native` came from a successful Advise call in this adapter and is released
-            // at most once here or during teardown paths that remove the same subscription.
-            unsafe {
-                release_subscription_transport(
-                    ComEventSubscriptionTransport::NativeConnectionPoint(native),
-                )
-            }
-            .map_err(|message| {
-                HalError::adapter_fault(
-                    self.profile,
-                    CapabilityId::ComActivationDispatch,
-                    "unsubscribe_event",
-                    format!("COM-E-EVENT-ADVISE-FAILED: {message}"),
-                )
-            })?;
-        }
-        Ok(())
-    }
-
-    #[cfg(not(target_os = "windows"))]
-    fn queue_com_event_callbacks(
-        &self,
-        _object: i32,
-        _binding: &ComBinding,
-        _member: i32,
-        _args: Option<&[i32]>,
-    ) -> HalResult<()> {
-        Ok(())
-    }
-
-    #[cfg(not(target_os = "windows"))]
-    fn native_com_dispatch_invoke(
-        &self,
-        _prog_id: &str,
-        _member: i32,
-        _args: &[i32],
-    ) -> HalResult<i32> {
-        Err(HalError::adapter_fault(
-            self.profile,
-            CapabilityId::ComActivationDispatch,
-            "dispatch_invoke",
-            "native COM invoke unavailable on this platform",
-        ))
-    }
-
-    #[cfg(not(target_os = "windows"))]
-    fn resolve_event_subscription_transport(
-        &self,
-        _binding: &ComBinding,
-        _subscription: i32,
-        _object: i32,
-        _event: i32,
-        _expected_arity: usize,
-    ) -> HalResult<ComEventSubscriptionTransport> {
-        Ok(ComEventSubscriptionTransport::Projection)
-    }
-
-    #[cfg(not(target_os = "windows"))]
-    fn release_event_subscription_transport(
-        &self,
-        _transport: ComEventSubscriptionTransport,
-    ) -> HalResult<()> {
-        Ok(())
     }
 }
 
@@ -1873,8 +1072,10 @@ impl EventPumpHal for StandardHostServices {
             thread::yield_now();
         }
         if self.native_com_enabled() {
-            let callback =
-                com_mark_next_callback_pumped_shared(&self.com_state).map_err(|message| {
+            let callback = self
+                .com_bridge
+                .mark_next_callback_pumped()
+                .map_err(|message| {
                     HalError::adapter_fault(self.profile, capability, "do_events", message)
                 })?;
             if let Some(callback) = callback {
@@ -2390,15 +1591,11 @@ impl ComHal for StandardHostServices {
         if !self.native_com_enabled() {
             return Ok(RuntimeValue::I32(if object == 0 { 0 } else { 1 }));
         }
-        let released =
-            com_release_object_binding_shared(&self.com_state, ObjectHandle::new(object)).map_err(
-                |message| {
-                    HalError::adapter_fault(self.profile, capability, "release_object", message)
-                },
-            )?;
-        for transport in released.transports {
-            self.release_event_subscription_transport(transport)?;
-        }
+        self.ensure_thread_com_apartment("release_object")?;
+        let released = unsafe { self.com_bridge.release_object(ObjectHandle::new(object)) }
+            .map_err(|message| {
+                HalError::adapter_fault(self.profile, capability, "release_object", message)
+            })?;
         if com_event_trace_enabled() {
             eprintln!(
                 "[oxvba-hal][com-event] release-object object={} removed_callbacks={}",
@@ -2417,22 +1614,14 @@ impl ComHal for StandardHostServices {
         if !self.policy.allow_com_activation {
             return Err(self.denied(capability, "describe_object"));
         }
+        if self.native_com_enabled() {
+            return self.com_bridge.describe_object(object).map_err(|message| {
+                HalError::adapter_fault(self.profile, capability, "describe_object", message)
+            });
+        }
         let object_handle = object;
         let object = object.raw();
-        let descriptor = if self.native_com_enabled() {
-            let state = self.com_lock(capability, "describe_object")?;
-            self.assert_com_invariants(&state, "describe_object");
-            state
-                .bindings
-                .get(&ComObjectToken::new(object))
-                .map(|binding| {
-                    binding.descriptor(
-                        object_handle,
-                        known_typelib_identity_for_prog_id_name(&binding.prog_id_name)
-                            .map(|identity| identity.cache_key),
-                    )
-                })
-        } else if object == 0 {
+        let descriptor = if object == 0 {
             None
         } else {
             Some(ComObjectDescriptor {
@@ -2466,64 +1655,23 @@ impl ComHal for StandardHostServices {
             return Err(self.denied(capability, "dispatch_invoke"));
         }
         if self.native_com_enabled() {
-            #[cfg(target_os = "windows")]
-            let _ = com_validate_named_arg_order(args).map_err(|message| {
-                HalError::adapter_fault(self.profile, capability, "dispatch_invoke", message)
-            })?;
-            #[cfg(target_os = "windows")]
-            {
-                let mut try_vtable_invoke =
-                    |dispatch: *mut RawIDispatch,
-                     binding: &ComBinding,
-                     member: i32,
-                     positional_values: &[i32]| {
-                        self.try_native_com_vtable_invoke(
-                            dispatch,
-                            &binding.prog_id_name,
-                            member,
-                            positional_values,
-                        )
-                        .map_err(|err| err.to_string())
-                    };
-                let mut known_member_spec = |binding: &ComBinding, token: ComMemberToken| {
-                    self.known_member_spec_for_prog_id_name(
-                        &binding.prog_id_name,
-                        token.raw().into(),
-                    )
-                    .map_err(|err| err.to_string())
-                };
-                if let Some(value) = unsafe {
-                    com_execute_bound_runtime_value_with_shared_state(
-                        &self.com_state,
-                        request,
-                        positional_values.as_deref(),
-                        &mut try_vtable_invoke,
-                        &mut known_member_spec,
-                    )
-                }
-                .map_err(|message| {
-                    HalError::adapter_fault(self.profile, capability, "dispatch_invoke", message)
-                })? {
-                    return Ok(value);
-                }
-            }
-            let binding = {
-                let state = self.com_lock(capability, "dispatch_invoke")?;
-                self.assert_com_invariants(&state, "dispatch_invoke");
-                state.bindings.get(&ComObjectToken::new(object)).cloned()
-            };
-            if let Some(binding) = binding {
-                let positional_values = positional_values.as_ref().ok_or_else(|| {
-                    HalError::adapter_fault(
+            match self.com_bridge.dispatch_invoke_runtime_value(
+                request,
+                self.policy.com_invocation_strategy == ComInvocationStrategy::PreferVtable,
+            ) {
+                Ok(Some(value)) => return Ok(value),
+                Ok(None) => {}
+                Err(WindowsComBridgeDispatchError::Message(message)) => {
+                    return Err(HalError::adapter_fault(
                         self.profile,
                         capability,
                         "dispatch_invoke",
-                        "COM-E-VALUE-TRANSPORT-UNSUPPORTED: projection dispatch requires legacy runtime-token arguments",
-                    )
-                })?;
-                let value = self.native_com_dispatch_invoke(&binding.prog_id_name, member, args)?;
-                self.queue_com_event_callbacks(object, &binding, member, Some(positional_values))?;
-                return Ok(RuntimeValue::I32(value));
+                        message,
+                    ));
+                }
+                Err(WindowsComBridgeDispatchError::InvokeFailure(failure)) => {
+                    return Err(self.com_dispatch_invoke_fault(failure));
+                }
             }
         }
         let positional_values = positional_values.ok_or_else(|| {
@@ -2565,11 +1713,9 @@ impl ComHal for StandardHostServices {
         }
         self.ensure_thread_com_apartment("subscribe_event")?;
         let (subscription, transport, expected_arity) =
-            unsafe { com_subscribe_event_shared(&self.com_state, object, event) }.map_err(
-                |message| {
-                    HalError::adapter_fault(self.profile, capability, "subscribe_event", message)
-                },
-            )?;
+            unsafe { self.com_bridge.subscribe_event(object, event) }.map_err(|message| {
+                HalError::adapter_fault(self.profile, capability, "subscribe_event", message)
+            })?;
         #[cfg(target_os = "windows")]
         if com_event_trace_enabled() {
             eprintln!(
@@ -2583,6 +1729,7 @@ impl ComHal for StandardHostServices {
         }
         Ok(subscription)
     }
+
     fn unsubscribe_event(&self, subscription: ComSubscriptionToken) -> HalResult<RuntimeValue> {
         let capability = CapabilityId::ComActivationDispatch;
         if !self.supports(capability) {
@@ -2600,13 +1747,12 @@ impl ComHal for StandardHostServices {
             ));
         }
         self.ensure_thread_com_apartment("unsubscribe_event")?;
-        unsafe { com_unsubscribe_event_shared(&self.com_state, subscription) }.map_err(
-            |message| {
-                HalError::adapter_fault(self.profile, capability, "unsubscribe_event", message)
-            },
-        )?;
+        unsafe { self.com_bridge.unsubscribe_event(subscription) }.map_err(|message| {
+            HalError::adapter_fault(self.profile, capability, "unsubscribe_event", message)
+        })?;
         Ok(RuntimeValue::from_legacy_i32(1))
     }
+
     fn poll_event_callback(&self) -> HalResult<Option<ComCallbackPayload>> {
         let capability = CapabilityId::ComActivationDispatch;
         if !self.supports(capability) {
@@ -2618,11 +1764,9 @@ impl ComHal for StandardHostServices {
         if !self.native_com_enabled() {
             return Ok(None);
         }
-        let mut state = self.com_lock(capability, "poll_event_callback")?;
-        self.assert_com_invariants(&state, "poll_event_callback-pre");
-        let payload = com_take_polled_callback_payload(&mut state);
-        self.assert_com_invariants(&state, "poll_event_callback-post");
-        Ok(payload)
+        self.com_bridge.poll_event_callback().map_err(|message| {
+            HalError::adapter_fault(self.profile, capability, "poll_event_callback", message)
+        })
     }
 
     fn event_callback_subscription(
@@ -2644,17 +1788,18 @@ impl ComHal for StandardHostServices {
                 "COM-E-EVENT-PATH-UNSUPPORTED: native COM event callback lookup requires host-backed Windows native mode",
             ));
         }
-        let state = self.com_lock(capability, "event_callback_subscription")?;
-        self.assert_com_invariants(&state, "event_callback_subscription");
-        com_callback_subscription_token(&state, callback).map_err(|message| {
-            HalError::adapter_fault(
-                self.profile,
-                capability,
-                "event_callback_subscription",
-                message,
-            )
-        })
+        self.com_bridge
+            .event_callback_subscription(callback)
+            .map_err(|message| {
+                HalError::adapter_fault(
+                    self.profile,
+                    capability,
+                    "event_callback_subscription",
+                    message,
+                )
+            })
     }
+
     fn event_callback_arity(&self, callback: ComCallbackToken) -> HalResult<usize> {
         let capability = CapabilityId::ComActivationDispatch;
         if !self.supports(capability) {
@@ -2671,12 +1816,13 @@ impl ComHal for StandardHostServices {
                 "COM-E-EVENT-PATH-UNSUPPORTED: native COM event callback lookup requires host-backed Windows native mode",
             ));
         }
-        let state = self.com_lock(capability, "event_callback_arity")?;
-        self.assert_com_invariants(&state, "event_callback_arity");
-        com_callback_arity(&state, callback).map_err(|message| {
-            HalError::adapter_fault(self.profile, capability, "event_callback_arity", message)
-        })
+        self.com_bridge
+            .event_callback_arity(callback)
+            .map_err(|message| {
+                HalError::adapter_fault(self.profile, capability, "event_callback_arity", message)
+            })
     }
+
     fn event_callback_arg(
         &self,
         callback: ComCallbackToken,
@@ -2697,13 +1843,13 @@ impl ComHal for StandardHostServices {
                 "COM-E-EVENT-PATH-UNSUPPORTED: native COM event callback lookup requires host-backed Windows native mode",
             ));
         }
-        let state = self.com_lock(capability, "event_callback_arg")?;
-        self.assert_com_invariants(&state, "event_callback_arg");
-        let value = com_callback_arg(&state, callback, index).map_err(|message| {
-            HalError::adapter_fault(self.profile, capability, "event_callback_arg", message)
-        })?;
-        Ok(value.to_runtime_value())
+        self.com_bridge
+            .event_callback_arg(callback, index)
+            .map_err(|message| {
+                HalError::adapter_fault(self.profile, capability, "event_callback_arg", message)
+            })
     }
+
     fn release_event_callback(&self, callback: ComCallbackToken) -> HalResult<RuntimeValue> {
         let capability = CapabilityId::ComActivationDispatch;
         if !self.supports(capability) {
@@ -2720,14 +1866,14 @@ impl ComHal for StandardHostServices {
                 "COM-E-EVENT-PATH-UNSUPPORTED: native COM event callback release requires host-backed Windows native mode",
             ));
         }
-        let mut state = self.com_lock(capability, "release_event_callback")?;
-        self.assert_com_invariants(&state, "release_event_callback-pre");
-        com_release_callback(&mut state, callback).map_err(|message| {
-            HalError::adapter_fault(self.profile, capability, "release_event_callback", message)
-        })?;
-        self.assert_com_invariants(&state, "release_event_callback-post");
+        self.com_bridge
+            .release_event_callback(callback)
+            .map_err(|message| {
+                HalError::adapter_fault(self.profile, capability, "release_event_callback", message)
+            })?;
         Ok(RuntimeValue::from_legacy_i32(1))
     }
+
     fn resolve_typelib_reference(
         &self,
         request: &TypeLibResolveRequest,
@@ -2739,20 +1885,16 @@ impl ComHal for StandardHostServices {
         if !self.policy.allow_com_activation {
             return Err(self.denied(capability, "resolve_typelib_reference"));
         }
-        let Some(identity) = self.resolve_known_typelib_identity(request) else {
-            let request_key = request
-                .importlib_hint
-                .as_deref()
-                .or(request.libid_hint.as_deref())
-                .unwrap_or("<missing-identity>");
-            return Err(HalError::adapter_fault(
-                self.profile,
-                capability,
-                "resolve_typelib_reference",
-                format!("no deterministic typelib identity mapping for `{request_key}`"),
-            ));
-        };
-        Ok(identity)
+        self.com_bridge
+            .resolve_typelib_reference(request)
+            .map_err(|message| {
+                HalError::adapter_fault(
+                    self.profile,
+                    capability,
+                    "resolve_typelib_reference",
+                    message,
+                )
+            })
     }
 
     fn load_typelib_metadata(
@@ -2766,8 +1908,11 @@ impl ComHal for StandardHostServices {
         if !self.policy.allow_com_activation {
             return Err(self.denied(capability, "load_typelib_metadata"));
         }
-        let mut state = self.typelib_lock(capability, "load_typelib_metadata")?;
-        Ok(state.load_or_build(identity, |identity| self.build_typelib_metadata(identity)))
+        self.com_bridge
+            .load_typelib_metadata(identity)
+            .map_err(|message| {
+                HalError::adapter_fault(self.profile, capability, "load_typelib_metadata", message)
+            })
     }
 
     fn invalidate_typelib_cache(
@@ -2782,10 +1927,17 @@ impl ComHal for StandardHostServices {
         if !self.policy.allow_com_activation {
             return Err(self.denied(capability, "invalidate_typelib_cache"));
         }
-        let mut state = self.typelib_lock(capability, "invalidate_typelib_cache")?;
-        let removed = state.invalidate(scope, reference_name).map_err(|detail| {
-            HalError::adapter_fault(self.profile, capability, "invalidate_typelib_cache", detail)
-        })?;
+        let removed = self
+            .com_bridge
+            .invalidate_typelib_cache(scope, reference_name)
+            .map_err(|message| {
+                HalError::adapter_fault(
+                    self.profile,
+                    capability,
+                    "invalidate_typelib_cache",
+                    message,
+                )
+            })?;
         Ok(RuntimeValue::I32(
             i32::try_from(removed).unwrap_or(i32::MAX),
         ))
@@ -3352,9 +2504,8 @@ struct FileHandleState {
     host_path: Option<PathBuf>,
 }
 
-type ComState = WindowsComClientState;
-type ComEventSubscriptionTransport = WindowsComSubscriptionTransport;
-type TypeLibraryCacheState = TypeLibMetadataCacheState;
+#[cfg(test)]
+type ComEventSubscriptionTransport = oxvba_com::WindowsComSubscriptionTransport;
 
 #[derive(Debug, Default)]
 struct DynLinkBindingState {
@@ -3421,6 +2572,7 @@ fn com_event_trace_enabled() -> bool {
 }
 
 #[cfg(target_os = "windows")]
+#[cfg(test)]
 fn parse_arg_err(message: &str) -> Option<u32> {
     let marker = "arg_err=";
     let offset = message.find(marker)?;
@@ -3431,404 +2583,6 @@ fn parse_arg_err(message: &str) -> Option<u32> {
         return None;
     }
     digits.parse::<u32>().ok()
-}
-
-#[cfg(target_os = "windows")]
-#[allow(unsafe_op_in_unsafe_fn)]
-unsafe fn raw_variant_to_com_value(variant: &VARIANT) -> Result<ComValue, String> {
-    com_variant_to_com_value(variant)
-}
-
-#[cfg(target_os = "windows")]
-#[allow(unsafe_op_in_unsafe_fn)]
-unsafe fn set_variant_dispatch_arg<F>(
-    variant: *mut VARIANT,
-    value: &ComValue,
-    resolve_object: &mut F,
-) -> Result<(), String>
-where
-    F: FnMut(ObjectHandle) -> Result<*mut RawIDispatch, String>,
-{
-    if variant.is_null() {
-        return Ok(());
-    }
-    let mut resolve_dispatch = |handle: ObjectHandle| {
-        resolve_object(handle).map(|dispatch| dispatch.cast::<core::ffi::c_void>())
-    };
-    let mut add_ref_dispatch = |dispatch: *mut core::ffi::c_void| {
-        raw_add_ref_dispatch(dispatch.cast::<RawIDispatch>());
-    };
-    match value {
-        ComValue::ObjectHandle(_) => com_set_variant_from_com_value(
-            variant,
-            value,
-            &mut resolve_dispatch,
-            &mut add_ref_dispatch,
-        )?,
-        _ => {
-            let mut unexpected_object_resolution = |_handle: ObjectHandle| {
-                Err("object dispatch resolution not expected for non-object COM value".to_string())
-            };
-            let mut unexpected_add_ref = |_dispatch: *mut core::ffi::c_void| {};
-            com_set_variant_from_com_value(
-                variant,
-                value,
-                &mut unexpected_object_resolution,
-                &mut unexpected_add_ref,
-            )?;
-        }
-    }
-    Ok(())
-}
-
-#[cfg(target_os = "windows")]
-#[allow(unsafe_op_in_unsafe_fn)]
-unsafe fn set_variant_missing_arg(variant: &mut VARIANT) {
-    variant.Anonymous.Anonymous.vt = VT_ERROR;
-    variant.Anonymous.Anonymous.Anonymous.scode = COM_DISP_E_PARAMNOTFOUND;
-}
-
-#[cfg(target_os = "windows")]
-#[allow(unsafe_op_in_unsafe_fn)]
-unsafe fn clear_variant_args(args: &mut [VARIANT]) {
-    for variant in args {
-        let _ = VariantClear(variant);
-    }
-}
-
-#[cfg(target_os = "windows")]
-#[allow(unsafe_op_in_unsafe_fn)]
-unsafe fn raw_dispatch_invoke_i4_args(
-    dispatch: *mut RawIDispatch,
-    dispid: i32,
-    flags: u16,
-    args: &[ComInvokeArg],
-    named_arg_dispids: &[i32],
-    label: &'static str,
-    resolve_object: &mut impl FnMut(ObjectHandle) -> Result<*mut RawIDispatch, String>,
-) -> Result<i32, ComInvokeFailure> {
-    let mut invoke_args: Vec<VARIANT> = Vec::with_capacity(args.len());
-    for arg in args.iter().rev() {
-        let mut variant: VARIANT = std::mem::zeroed();
-        match arg.value {
-            Some(ref value) => set_variant_dispatch_arg(&mut variant, value, resolve_object)
-                .map_err(|detail| ComInvokeFailure {
-                    label,
-                    dispid,
-                    hr: None,
-                    arg_err: None,
-                    excep: None,
-                    detail: Some(detail),
-                })?,
-            None => set_variant_missing_arg(&mut variant),
-        }
-        invoke_args.push(variant);
-    }
-
-    let mut named_arg_dispids_reversed: Vec<i32> =
-        named_arg_dispids.iter().rev().copied().collect();
-    let mut result: VARIANT = std::mem::zeroed();
-    let mut excep: EXCEPINFO = std::mem::zeroed();
-    let mut arg_err = u32::MAX;
-    let mut params = DISPPARAMS {
-        rgvarg: if invoke_args.is_empty() {
-            std::ptr::null_mut()
-        } else {
-            invoke_args.as_mut_ptr()
-        },
-        rgdispidNamedArgs: if named_arg_dispids_reversed.is_empty() {
-            std::ptr::null_mut()
-        } else {
-            named_arg_dispids_reversed.as_mut_ptr()
-        },
-        cArgs: args.len() as u32,
-        cNamedArgs: named_arg_dispids.len() as u32,
-    };
-    let hr = ((*(*dispatch).vtbl).invoke)(
-        dispatch.cast(),
-        dispid,
-        &IID_NULL,
-        0x0400,
-        flags,
-        &mut params,
-        &mut result,
-        &mut excep,
-        &mut arg_err,
-    );
-    clear_variant_args(&mut invoke_args);
-    if hr < 0 {
-        return Err(ComInvokeFailure {
-            label,
-            dispid,
-            hr: Some(hr),
-            arg_err: (arg_err != u32::MAX).then_some(arg_err),
-            excep: take_excepinfo(&mut excep),
-            detail: None,
-        });
-    }
-
-    let token = match raw_variant_to_com_value(&result) {
-        Ok(value) => match value.to_runtime_token() {
-            Ok(token) => token,
-            Err(detail) => {
-                let _ = VariantClear(&mut result);
-                return Err(ComInvokeFailure {
-                    label,
-                    dispid,
-                    hr: None,
-                    arg_err: None,
-                    excep: None,
-                    detail: Some(detail),
-                });
-            }
-        },
-        Err(detail) => {
-            let _ = VariantClear(&mut result);
-            return Err(ComInvokeFailure {
-                label,
-                dispid,
-                hr: None,
-                arg_err: None,
-                excep: None,
-                detail: Some(detail),
-            });
-        }
-    };
-    let _ = VariantClear(&mut result);
-    Ok(token)
-}
-
-#[cfg(target_os = "windows")]
-#[allow(unsafe_op_in_unsafe_fn)]
-unsafe fn raw_dispatch_invoke_i4_args_positional(
-    dispatch: *mut RawIDispatch,
-    dispid: i32,
-    flags: u16,
-    args: &[ComValue],
-    property_put_named_arg: bool,
-    label: &'static str,
-    resolve_object: &mut impl FnMut(ObjectHandle) -> Result<*mut RawIDispatch, String>,
-) -> Result<i32, ComInvokeFailure> {
-    let mut invoke_args: Vec<VARIANT> = Vec::with_capacity(args.len());
-    for arg in args.iter().rev() {
-        let mut variant: VARIANT = std::mem::zeroed();
-        set_variant_dispatch_arg(&mut variant, arg, resolve_object).map_err(|detail| {
-            ComInvokeFailure {
-                label,
-                dispid,
-                hr: None,
-                arg_err: None,
-                excep: None,
-                detail: Some(detail),
-            }
-        })?;
-        invoke_args.push(variant);
-    }
-
-    let mut named_arg = COM_DISPID_PROPERTYPUT;
-    let mut result: VARIANT = std::mem::zeroed();
-    let mut excep: EXCEPINFO = std::mem::zeroed();
-    let mut arg_err = u32::MAX;
-    let mut params = DISPPARAMS {
-        rgvarg: if invoke_args.is_empty() {
-            std::ptr::null_mut()
-        } else {
-            invoke_args.as_mut_ptr()
-        },
-        rgdispidNamedArgs: if property_put_named_arg {
-            &mut named_arg
-        } else {
-            std::ptr::null_mut()
-        },
-        cArgs: args.len() as u32,
-        cNamedArgs: if property_put_named_arg { 1 } else { 0 },
-    };
-    let hr = ((*(*dispatch).vtbl).invoke)(
-        dispatch.cast(),
-        dispid,
-        &IID_NULL,
-        0x0400,
-        flags,
-        &mut params,
-        &mut result,
-        &mut excep,
-        &mut arg_err,
-    );
-    clear_variant_args(&mut invoke_args);
-    if hr < 0 {
-        return Err(ComInvokeFailure {
-            label,
-            dispid,
-            hr: Some(hr),
-            arg_err: (arg_err != u32::MAX).then_some(arg_err),
-            excep: take_excepinfo(&mut excep),
-            detail: None,
-        });
-    }
-
-    let token = match raw_variant_to_com_value(&result) {
-        Ok(value) => match value.to_runtime_token() {
-            Ok(token) => token,
-            Err(detail) => {
-                let _ = VariantClear(&mut result);
-                return Err(ComInvokeFailure {
-                    label,
-                    dispid,
-                    hr: None,
-                    arg_err: None,
-                    excep: None,
-                    detail: Some(detail),
-                });
-            }
-        },
-        Err(detail) => {
-            let _ = VariantClear(&mut result);
-            return Err(ComInvokeFailure {
-                label,
-                dispid,
-                hr: None,
-                arg_err: None,
-                excep: None,
-                detail: Some(detail),
-            });
-        }
-    };
-    let _ = VariantClear(&mut result);
-    Ok(token)
-}
-
-#[cfg(target_os = "windows")]
-#[allow(unsafe_op_in_unsafe_fn)]
-unsafe fn raw_dispatch_property_get_i4_args(
-    dispatch: *mut RawIDispatch,
-    dispid: i32,
-    args: &[ComInvokeArg],
-    named_arg_dispids: &[i32],
-    resolve_object: &mut impl FnMut(ObjectHandle) -> Result<*mut RawIDispatch, String>,
-) -> Result<i32, ComInvokeFailure> {
-    raw_dispatch_invoke_i4_args(
-        dispatch,
-        dispid,
-        DISPATCH_PROPERTYGET,
-        args,
-        named_arg_dispids,
-        "property-get",
-        resolve_object,
-    )
-}
-
-#[cfg(target_os = "windows")]
-#[allow(unsafe_op_in_unsafe_fn)]
-unsafe fn raw_dispatch_property_put_i4_args(
-    dispatch: *mut RawIDispatch,
-    dispid: i32,
-    args: &[ComInvokeArg],
-    named_arg_dispids: &[i32],
-    resolve_object: &mut impl FnMut(ObjectHandle) -> Result<*mut RawIDispatch, String>,
-) -> Result<i32, ComInvokeFailure> {
-    if named_arg_dispids.is_empty()
-        && args
-            .iter()
-            .all(|arg| arg.name.is_none() && arg.value.is_some())
-    {
-        let positional_args: Result<Vec<ComValue>, String> = args
-            .iter()
-            .filter_map(|arg| arg.value.clone())
-            .map(|value| {
-                value.to_legacy_dispatch_token()?;
-                Ok(value)
-            })
-            .collect();
-        if let Ok(positional_args) = positional_args {
-            return raw_dispatch_invoke_i4_args_positional(
-                dispatch,
-                dispid,
-                DISPATCH_PROPERTYPUT,
-                &positional_args,
-                true,
-                "property-put",
-                resolve_object,
-            );
-        }
-    }
-    let mut all_named_arg_dispids = named_arg_dispids.to_vec();
-    all_named_arg_dispids.push(COM_DISPID_PROPERTYPUT);
-    raw_dispatch_invoke_i4_args(
-        dispatch,
-        dispid,
-        DISPATCH_PROPERTYPUT,
-        args,
-        &all_named_arg_dispids,
-        "property-put",
-        resolve_object,
-    )
-}
-
-#[cfg(target_os = "windows")]
-#[allow(unsafe_op_in_unsafe_fn)]
-unsafe fn raw_dispatch_property_putref_i4_args(
-    dispatch: *mut RawIDispatch,
-    dispid: i32,
-    args: &[ComInvokeArg],
-    named_arg_dispids: &[i32],
-    resolve_object: &mut impl FnMut(ObjectHandle) -> Result<*mut RawIDispatch, String>,
-) -> Result<i32, ComInvokeFailure> {
-    if named_arg_dispids.is_empty()
-        && args
-            .iter()
-            .all(|arg| arg.name.is_none() && arg.value.is_some())
-    {
-        let positional_args: Result<Vec<ComValue>, String> = args
-            .iter()
-            .filter_map(|arg| arg.value.clone())
-            .map(|value| {
-                value.to_legacy_dispatch_token()?;
-                Ok(value)
-            })
-            .collect();
-        if let Ok(positional_args) = positional_args {
-            return raw_dispatch_invoke_i4_args_positional(
-                dispatch,
-                dispid,
-                DISPATCH_PROPERTYPUTREF,
-                &positional_args,
-                true,
-                "property-putref",
-                resolve_object,
-            );
-        }
-    }
-    let mut all_named_arg_dispids = named_arg_dispids.to_vec();
-    all_named_arg_dispids.push(COM_DISPID_PROPERTYPUT);
-    raw_dispatch_invoke_i4_args(
-        dispatch,
-        dispid,
-        DISPATCH_PROPERTYPUTREF,
-        args,
-        &all_named_arg_dispids,
-        "property-putref",
-        resolve_object,
-    )
-}
-
-#[cfg(target_os = "windows")]
-#[allow(unsafe_op_in_unsafe_fn)]
-unsafe fn raw_dispatch_invoke_method_i4_args(
-    dispatch: *mut RawIDispatch,
-    dispid: i32,
-    args: &[ComInvokeArg],
-    named_arg_dispids: &[i32],
-    resolve_object: &mut impl FnMut(ObjectHandle) -> Result<*mut RawIDispatch, String>,
-) -> Result<i32, ComInvokeFailure> {
-    raw_dispatch_invoke_i4_args(
-        dispatch,
-        dispid,
-        DISPATCH_METHOD,
-        args,
-        named_arg_dispids,
-        "method",
-        resolve_object,
-    )
 }
 
 fn pseudo_file_len_from_path_token(path: i32) -> i32 {
@@ -3859,7 +2613,14 @@ fn external_symbol_token(library: &str, alias: &str, name: &str) -> i32 {
 mod tests {
     use std::sync::{Mutex, OnceLock};
 
-    use oxvba_com::{ComInvokeArg, ComInvokeRequest, ComValue};
+    use oxvba_com::{
+        ComInvokeArg, ComInvokeRequest, ComObjectToken, ComValue, RawIDispatch, VariantResultValue,
+        add_ref_dispatch as raw_add_ref_dispatch, create_oxvba_test_dispatch,
+        release_dispatch as raw_release_dispatch,
+        set_variant_from_com_value as com_set_variant_from_com_value,
+        take_variant_result_value as com_take_variant_result_value,
+        variant_to_com_value as com_variant_to_com_value,
+    };
     use oxvba_runtime::{RuntimeValue, bstr::BStr};
     use proptest::prelude::*;
 
@@ -3874,15 +2635,6 @@ mod tests {
     };
 
     use super::StandardHostServices;
-    #[cfg(target_os = "windows")]
-    use super::{
-        ComObjectToken, RawIDispatch, raw_add_ref_dispatch, raw_release_dispatch,
-        raw_variant_to_com_value, set_variant_dispatch_arg,
-    };
-    #[cfg(target_os = "windows")]
-    use oxvba_com::take_variant_result_value as com_take_variant_result_value;
-    #[cfg(target_os = "windows")]
-    use oxvba_com::{VariantResultValue, create_oxvba_test_dispatch};
     #[cfg(target_os = "windows")]
     use oxvba_runtime::ObjectHandle;
     #[cfg(target_os = "windows")]
@@ -4277,13 +3029,22 @@ mod tests {
     fn com_string_variant_roundtrips_through_adapter_helpers() {
         let mut variant: VARIANT = unsafe { std::mem::zeroed() };
         let value = ComValue::String(BStr("Hello".to_string()));
-        let mut resolve_object =
-            |_handle: ObjectHandle| Err("object dispatch resolution not expected".to_string());
+        let resolve_object = |_handle: ObjectHandle| -> Result<*mut RawIDispatch, String> {
+            Err("object dispatch resolution not expected".to_string())
+        };
         unsafe {
-            set_variant_dispatch_arg(&mut variant, &value, &mut resolve_object)
-                .expect("set string variant");
+            let mut add_ref_dispatch = |_dispatch: *mut core::ffi::c_void| {};
+            com_set_variant_from_com_value(
+                &mut variant,
+                &value,
+                &mut |handle| {
+                    resolve_object(handle).map(|dispatch| dispatch.cast::<core::ffi::c_void>())
+                },
+                &mut add_ref_dispatch,
+            )
+            .expect("set string variant");
             assert_eq!(
-                raw_variant_to_com_value(&variant).expect("read string variant"),
+                com_variant_to_com_value(&variant).expect("read string variant"),
                 value
             );
             let _ = VariantClear(&mut variant);
@@ -4296,10 +3057,21 @@ mod tests {
         let mut variant: VARIANT = unsafe { std::mem::zeroed() };
         let dispatch = create_oxvba_test_dispatch();
         let value = ComValue::ObjectHandle(ObjectHandle::new(20_001));
-        let mut resolve_object = |_handle: ObjectHandle| Ok(dispatch);
+        let resolve_object =
+            |_handle: ObjectHandle| -> Result<*mut RawIDispatch, String> { Ok(dispatch) };
         unsafe {
-            set_variant_dispatch_arg(&mut variant, &value, &mut resolve_object)
-                .expect("set object-handle variant");
+            let mut add_ref_dispatch = |dispatch: *mut core::ffi::c_void| {
+                raw_add_ref_dispatch(dispatch.cast::<RawIDispatch>());
+            };
+            com_set_variant_from_com_value(
+                &mut variant,
+                &value,
+                &mut |handle| {
+                    resolve_object(handle).map(|dispatch| dispatch.cast::<core::ffi::c_void>())
+                },
+                &mut add_ref_dispatch,
+            )
+            .expect("set object-handle variant");
             assert_eq!(variant.Anonymous.Anonymous.vt, VT_DISPATCH);
             assert!(!variant.Anonymous.Anonymous.Anonymous.pdispVal.is_null());
             let _ = VariantClear(&mut variant);
@@ -4317,14 +3089,23 @@ mod tests {
             RuntimeValue::String(BStr("Hello".to_string())),
             RuntimeValue::Null,
         ]));
-        let mut resolve_object =
-            |_handle: ObjectHandle| Err("object dispatch resolution not expected".to_string());
+        let resolve_object = |_handle: ObjectHandle| -> Result<*mut RawIDispatch, String> {
+            Err("object dispatch resolution not expected".to_string())
+        };
         unsafe {
-            set_variant_dispatch_arg(&mut variant, &value, &mut resolve_object)
-                .expect("set SAFEARRAY variant");
+            let mut add_ref_dispatch = |_dispatch: *mut core::ffi::c_void| {};
+            com_set_variant_from_com_value(
+                &mut variant,
+                &value,
+                &mut |handle| {
+                    resolve_object(handle).map(|dispatch| dispatch.cast::<core::ffi::c_void>())
+                },
+                &mut add_ref_dispatch,
+            )
+            .expect("set SAFEARRAY variant");
             assert_eq!(variant.Anonymous.Anonymous.vt, VT_ARRAY | VT_VARIANT);
             assert_eq!(
-                raw_variant_to_com_value(&variant).expect("read SAFEARRAY variant"),
+                com_variant_to_com_value(&variant).expect("read SAFEARRAY variant"),
                 value
             );
             let _ = VariantClear(&mut variant);
@@ -4790,7 +3571,8 @@ mod tests {
         assert!(subscription.raw() >= 40_001);
         {
             let state = host
-                .com_state
+                .com_bridge
+                .shared_state()
                 .lock()
                 .expect("com state lock should succeed");
             let registered = state
@@ -4857,7 +3639,8 @@ mod tests {
         );
         let callback_still_present = {
             let state = host
-                .com_state
+                .com_bridge
+                .shared_state()
                 .lock()
                 .expect("com state lock should succeed");
             state.callbacks.contains_key(&callback.into())
@@ -5555,7 +4338,8 @@ mod tests {
 
         let before = {
             let state = host
-                .com_state
+                .com_bridge
+                .shared_state()
                 .lock()
                 .expect("com state lock should succeed");
             let binding = state
@@ -5573,7 +4357,8 @@ mod tests {
             .expect("dispatch invoke should succeed");
         let after = {
             let state = host
-                .com_state
+                .com_bridge
+                .shared_state()
                 .lock()
                 .expect("com state lock should succeed");
             state
@@ -5604,7 +4389,8 @@ mod tests {
             .expect("dictionary Count should be invokable");
         let cache_size_after_first = {
             let state = host
-                .com_state
+                .com_bridge
+                .shared_state()
                 .lock()
                 .expect("com state lock should succeed");
             state
@@ -5619,7 +4405,8 @@ mod tests {
             .expect("dictionary Count should be invokable repeatedly");
         let cache_size_after_second = {
             let state = host
-                .com_state
+                .com_bridge
+                .shared_state()
                 .lock()
                 .expect("com state lock should succeed");
             state
@@ -6028,7 +4815,8 @@ mod tests {
             .create_object_test(4)
             .expect("create_object should return a token");
         let state = host
-            .com_state
+            .com_bridge
+            .shared_state()
             .lock()
             .expect("com state lock should succeed");
         let binding = state
@@ -6224,7 +5012,8 @@ mod tests {
             .create_object_test(4)
             .expect("create_object should return dictionary token");
         let state = host
-            .com_state
+            .com_bridge
+            .shared_state()
             .lock()
             .expect("com state lock should succeed");
         let binding = state
@@ -6277,7 +5066,8 @@ mod tests {
         );
         {
             let state = host
-                .com_state
+                .com_bridge
+                .shared_state()
                 .lock()
                 .expect("com state lock should succeed");
             let registered = state
@@ -6587,7 +5377,8 @@ impl StandardHostServices {
     ) -> HalResult<RuntimeValue> {
         let capability = CapabilityId::ComActivationDispatch;
         let handle = unsafe {
-            oxvba_com::bind_native_dispatch_result_shared(&self.com_state, dispatch, prog_id_hint)
+            self.com_bridge
+                .bind_native_dispatch_result(dispatch, prog_id_hint)
         }
         .map_err(|message| HalError::adapter_fault(self.profile, capability, op, message))?;
         Ok(RuntimeValue::ObjectHandle(handle))
