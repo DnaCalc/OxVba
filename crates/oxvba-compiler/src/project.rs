@@ -2218,6 +2218,23 @@ fn rewrite_internal_class_set_assignment(
             rhs
         ));
     }
+    if let Some((target, instance_arg)) = resolve_internal_class_default_member_target_of_kinds(
+        &normalized_lhs,
+        active_project,
+        current_project,
+        current_module,
+        procedures,
+        internal_class_bindings,
+        &[ProcedureDeclKind::PropertySet],
+    )? {
+        return Ok(format!(
+            "{}{}({}, {})",
+            &line[..leading],
+            target,
+            instance_arg,
+            rhs
+        ));
+    }
     Ok(format!("{}{} = {}", &line[..leading], lhs, rhs))
 }
 

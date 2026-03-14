@@ -143,11 +143,9 @@ Run context: active parity/compliance execution plus in-progress feature worklis
 - Resolution summary:
   - `compile_project(...)` now parses member-level `Attribute <Member>.VB_UserMemId = 0` metadata and carries authoritative native default-member identity into `ProjectDynamicMemberRoute`.
   - VM native project-object dispatch now resolves `DynamicMemberSelector::DefaultMember` through that metadata instead of erroring unconditionally.
-  - Native project-class method/function/property/default-member calls now all execute on the same shared semantic dynamic-call protocol before any COM fallback.
+  - Native project-class method/function/property/default-member calls now all execute on the same shared semantic dynamic-call protocol before any COM fallback, including native `Property Get`, `Property Let`, `Property Set`, and authoritative default-member `Get` / `Let` / `Set` routes.
   - Added end-to-end host coverage for:
-    - native `Property Get` / `Property Let` dispatch through explicit `DispatchInvoke(...)`,
-    - native default-member dispatch through explicit `DispatchInvoke(obj, 0, ...)`,
-    - natural bare default-member `Get` / `Let` syntax on native internal project-class objects,
+    - native `Property Get` / `Property Let` / `Property Set` dispatch through explicit and natural PMR/native syntax,`r`n    - native default-member dispatch through explicit `DispatchInvoke(obj, 0, ...)`,`r`n    - natural bare default-member `Get` / `Let` / `Set` syntax on native internal project-class objects,
     - stateful `As New` class construction with `Class_Initialize`.
 
 ### BLK-PROP-001: Property/default-member intent model is not yet end-to-end executable
@@ -156,8 +154,8 @@ Run context: active parity/compliance execution plus in-progress feature worklis
   - Blocks part of `IP-06` COM server/export parity and `IP-08` Office-style hosting parity.
 - Current state:
   - property get/put/putref lanes exist in parts of the COM client path,
-  - native internal project-class `Property Get` / `Property Let` now execute end to end through the shared PMR/dynamic-object substrate for explicit `DispatchInvoke(...)`, natural `widget.Value` syntax, and natural bare default-member `Get` / `Let` syntax when authoritative default-member metadata exists,
-  - but there is still no fully closed end-to-end model for `Property Set`, `Set` vs `Let`, indexed/default property behavior beyond the now-proven native default-member subset, and Office-style call-vs-value context parity.
+  - native internal project-class `Property Get` / `Property Let` / `Property Set` now execute end to end through the shared PMR/dynamic-object substrate for explicit `DispatchInvoke(...)`, natural member syntax, and natural bare default-member `Get` / `Let` / `Set` syntax when authoritative default-member metadata exists,
+  - but there is still no fully closed end-to-end model for `indexed/default property behavior beyond the now-proven native subset, `Set` vs `Let` intent parity in broader typed/object contexts, and Office-style call-vs-value context parity.
 - Exact unblock steps:
   - continue closing the late-bound invoke/property transport gaps,
   - lock runtime/binder property intent transport across natural member syntax and explicit dispatch,

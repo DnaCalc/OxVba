@@ -488,3 +488,11 @@
   - while explicitly preserving compiler-generated `Dim ... As New` internal-instance initialization lines instead of misrouting them through default-member `Property Let`.
 - Added end-to-end host coverage in [engine.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-host\src\engine.rs) proving natural bare default-member `Get` / `Let` execution for native internal project-class objects with authoritative `VB_UserMemId = 0` metadata.
 - `IP-02` remains in progress: `Property Set`, `Set` vs `Let`, indexed/default property behavior beyond this proven subset, and Office-style call-vs-value parity are still open.
+## 2026-03-14 - Extended IP-02 native PMR property-set semantics
+
+- Continued the active `IP-02A` semantic-closure slice and proved that native internal project-class `Property Set` semantics now execute end to end on the shared PMR/dynamic-object path.
+- Added end-to-end host coverage in [engine.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-host\src\engine.rs) for:
+  - natural member `Property Set` syntax: `Set widget.Value = x`,
+  - natural bare default-member `Property Set` syntax: `Set widget = x` when authoritative `VB_UserMemId = 0` metadata exists.
+- In [project.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-compiler\src\project.rs), extended `rewrite_internal_class_set_assignment(...)` so bare internal-class `Set lhs = rhs` now routes through the authoritative default-member `Property Set` target instead of falling back to a lossy bare assignment.
+- `IP-02` remains in progress: indexed property behavior, broader typed/object `Set` vs `Let` intent parity, and Office-style call-vs-value context behavior are still open.
