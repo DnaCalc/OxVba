@@ -32,8 +32,8 @@ use oxvba_com::{
     ComInvokeArg, ComInvokeFailure, ComInvokeRequest, ComMemberSpec, ComMemberToken,
     ComObjectDescriptor, ComObjectToken, ComObjectTransportKind, ComSubscriptionToken, ComValue,
     IID_NULL, RawIDispatch, TypeLibMetadataCacheState, WindowsComClientState,
-    WindowsComSubscriptionTransport, activate_runtime_binding as com_activate_runtime_binding,
-    activate_runtime_dispatch as com_activate_runtime_dispatch,
+    WindowsComSubscriptionTransport, activate_runtime_dispatch as com_activate_runtime_dispatch,
+    activate_runtime_object_binding_shared as com_activate_runtime_object_binding_shared,
     add_ref_dispatch as raw_add_ref_dispatch, build_typelib_metadata,
     callback_arg as com_callback_arg, callback_arity as com_callback_arity,
     callback_subscription_token as com_callback_subscription_token,
@@ -41,9 +41,7 @@ use oxvba_com::{
     event_callback_args_from_member_token, event_is_source_interface_only,
     event_signature_arity_for_binding,
     execute_bound_runtime_value as com_execute_bound_runtime_value,
-    get_dispid_by_name as raw_get_dispid_by_name,
-    insert_bound_object_binding_shared as com_insert_bound_object_binding_shared,
-    known_typelib_identity_for_prog_id_name,
+    get_dispid_by_name as raw_get_dispid_by_name, known_typelib_identity_for_prog_id_name,
     legacy_runtime_arg_values as com_legacy_runtime_arg_values, map_com_hresult_label,
     mark_next_callback_pumped_shared as com_mark_next_callback_pumped_shared,
     member_spec_from_typelib_metadata,
@@ -1057,6 +1055,31 @@ impl StandardHostServices {
     #[cfg(not(target_os = "windows"))]
     fn resolve_native_com_progid(&self, _prog_id: i32) -> Option<String> {
         None
+    }
+
+    #[cfg(target_os = "windows")]
+    fn activate_runtime_object_value_for_prog_id_name(
+        &self,
+        prog_id_name: &str,
+    ) -> HalResult<RuntimeValue> {
+        let metadata = self.load_typelib_metadata_for_prog_id_name(prog_id_name)?;
+        self.ensure_thread_com_apartment("create_object")?;
+        let registered_event_override =
+            self.registered_event_override_for_prog_id_name(prog_id_name, "create_object")?;
+        let handle = com_activate_runtime_object_binding_shared(
+            &self.com_state,
+            prog_id_name,
+            metadata.as_ref(),
+            self.force_registered_test_dispatch(),
+            |binding| {
+                if let Some(override_cfg) = registered_event_override.as_ref() {
+                    self.apply_registered_event_override_to_binding(binding, override_cfg);
+                }
+                Ok(())
+            },
+        )
+        .map_err(|message| self.com_createobject_adapter_fault(message))?;
+        Ok(RuntimeValue::ObjectHandle(handle))
     }
 
     #[cfg(target_os = "windows")]
@@ -2321,41 +2344,7 @@ impl ComHal for StandardHostServices {
                 ));
             }
             if self.native_com_enabled() {
-                let metadata = self.load_typelib_metadata_for_prog_id_name(prog_id_name)?;
-                self.ensure_thread_com_apartment("create_object")?;
-                match com_activate_runtime_binding(
-                    prog_id_name,
-                    metadata.as_ref(),
-                    self.force_registered_test_dispatch(),
-                ) {
-                    Ok(mut binding) => {
-                        #[cfg(target_os = "windows")]
-                        let registered_event_override = self
-                            .registered_event_override_for_prog_id_name(
-                                prog_id_name,
-                                "create_object",
-                            )?;
-                        #[cfg(target_os = "windows")]
-                        if let Some(override_cfg) = registered_event_override.as_ref() {
-                            self.apply_registered_event_override_to_binding(
-                                &mut binding,
-                                override_cfg,
-                            );
-                        }
-                        let handle =
-                            com_insert_bound_object_binding_shared(&self.com_state, binding)
-                                .map_err(|message| {
-                                    HalError::adapter_fault(
-                                        self.profile,
-                                        capability,
-                                        "create_object",
-                                        message,
-                                    )
-                                })?;
-                        return Ok(RuntimeValue::ObjectHandle(handle));
-                    }
-                    Err(message) => return Err(self.com_createobject_adapter_fault(message)),
-                }
+                return self.activate_runtime_object_value_for_prog_id_name(prog_id_name);
             }
             return Err(HalError::adapter_fault(
                 self.profile,
@@ -2369,32 +2358,9 @@ impl ComHal for StandardHostServices {
         if self.native_com_enabled()
             && let Some(prog_id_name) = self.resolve_native_com_progid(prog_id)
         {
-            let metadata = self.load_typelib_metadata_for_prog_id_name(&prog_id_name)?;
-            self.ensure_thread_com_apartment("create_object")?;
-            match com_activate_runtime_binding(
-                &prog_id_name,
-                metadata.as_ref(),
-                self.force_registered_test_dispatch(),
-            ) {
-                Ok(mut binding) => {
-                    #[cfg(target_os = "windows")]
-                    let registered_event_override = self
-                        .registered_event_override_for_prog_id_name(
-                            &prog_id_name,
-                            "create_object",
-                        )?;
-                    #[cfg(target_os = "windows")]
-                    if let Some(override_cfg) = registered_event_override.as_ref() {
-                        self.apply_registered_event_override_to_binding(&mut binding, override_cfg);
-                    }
-                    let handle = com_insert_bound_object_binding_shared(&self.com_state, binding)
-                        .map_err(|message| {
-                        HalError::adapter_fault(self.profile, capability, "create_object", message)
-                    })?;
-                    return Ok(RuntimeValue::ObjectHandle(handle));
-                }
-                Err(message) => {
-                    let err = self.com_createobject_adapter_fault(message);
+            match self.activate_runtime_object_value_for_prog_id_name(&prog_id_name) {
+                Ok(value) => return Ok(value),
+                Err(err) => {
                     if self.has_explicit_native_com_override(prog_id) {
                         return Err(err);
                     }

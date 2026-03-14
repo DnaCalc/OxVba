@@ -1,3 +1,24 @@
+## 2026-03-14 - Moved COM create-object binding insertion into oxvba-com
+
+- Continued the `IP-04` extraction slice in:
+  - [windows_client.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-com\src\windows_client.rs)
+  - [lib.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-com\src\lib.rs)
+  - [standard.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-hal\src\adapters\standard.rs)
+  - [CURRENT_BLOCKERS.md](C:\Work\DnaCalc\OxVba\CURRENT_BLOCKERS.md)
+  - [IN_PROGRESS_FEATURE_WORKLIST.md](C:\Work\DnaCalc\OxVba\docs\IN_PROGRESS_FEATURE_WORKLIST.md)
+- `oxvba-com` now owns a higher-level activation service that combines:
+  - runtime dispatch activation,
+  - binding assembly,
+  - caller-supplied binding configuration,
+  - shared-state binding insertion.
+- `standard.rs::create_object(...)` now delegates native COM object creation through that `oxvba-com` service instead of assembling and inserting the binding locally.
+- Net effect:
+  - HAL no longer owns create-object binding insertion,
+  - the remaining `IP-04` wall is now the bound dispatch service entry, projection callback queueing, the residual legacy projection invoke lane, and the final public COM/HAL seam collapse.
+- Verification:
+  - `cargo fmt --all`
+  - `cargo clippy -p oxvba-com -p oxvba-hal --all-targets -- -D warnings`
+  - `cargo test -p oxvba-com -p oxvba-hal --quiet`
 ## 2026-03-14 - Moved COM event transport orchestration into oxvba-com
 
 - Continued the `IP-04` extraction slice in:
@@ -286,6 +307,7 @@
 
 ## 2026-03-13 - Moved bound-dispatch and subscription teardown ownership into oxvba-com
 ## 2026-03-13 - Moved bound-dispatch and subscription teardown ownership into oxvba-com
+
 
 
 

@@ -1,3 +1,5 @@
+use oxvba_runtime::ObjectHandle;
+use std::sync::{Arc, Mutex};
 #[cfg(target_os = "windows")]
 use windows_sys::Win32::System::Com::{CLSCTX_SERVER, CLSIDFromProgID, CoCreateInstance};
 
@@ -425,6 +427,22 @@ pub fn activate_runtime_binding(
         dispatch as usize,
         metadata,
     ))
+}
+
+#[cfg(target_os = "windows")]
+pub fn activate_runtime_object_binding_shared<F>(
+    com_state: &Arc<Mutex<crate::WindowsComClientState>>,
+    prog_id: &str,
+    metadata: Option<&crate::TypeLibMetadataBlob>,
+    force_registered_test_dispatch: bool,
+    mut configure_binding: F,
+) -> Result<ObjectHandle, String>
+where
+    F: FnMut(&mut crate::ComBinding) -> Result<(), String>,
+{
+    let mut binding = activate_runtime_binding(prog_id, metadata, force_registered_test_dispatch)?;
+    configure_binding(&mut binding)?;
+    crate::insert_bound_object_binding_shared(com_state, binding)
 }
 
 #[cfg(target_os = "windows")]
