@@ -12,7 +12,7 @@ use crate::{
 use oxvba_runtime::ObjectHandle;
 use std::collections::BTreeSet;
 use std::ops::{Deref, DerefMut};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, MutexGuard};
 
 const COM_EVENT_DISPATCH_MEMBER_WILDCARD: i32 = i32::MIN + 3_333;
 
@@ -485,4 +485,53 @@ pub unsafe fn resolve_event_subscription_transport(
         Some(native) => WindowsComSubscriptionTransport::NativeConnectionPoint(native),
         None => WindowsComSubscriptionTransport::Projection,
     })
+}
+
+fn lock_state<'a>(
+    com_state: &'a Arc<Mutex<WindowsComClientState>>,
+    op: &'static str,
+) -> Result<MutexGuard<'a, WindowsComClientState>, String> {
+    com_state
+        .lock()
+        .map_err(|_| format!("COM-E-STATE-LOCK-POISONED: {op} state lock poisoned"))
+}
+
+pub fn insert_bound_object_binding_shared(
+    com_state: &Arc<Mutex<WindowsComClientState>>,
+    binding: ComBinding,
+) -> Result<ObjectHandle, String> {
+    let mut state = lock_state(com_state, "insert_bound_object_binding")?;
+    Ok(insert_bound_object_binding(&mut state, binding))
+}
+
+pub fn resolve_bound_native_dispatch_shared(
+    com_state: &Arc<Mutex<WindowsComClientState>>,
+    object: ObjectHandle,
+) -> Result<*mut RawIDispatch, String> {
+    let state = lock_state(com_state, "resolve_bound_native_dispatch")?;
+    resolve_bound_native_dispatch(&state, object)
+}
+
+/// # Safety
+///
+/// dispatch must be null or carry one retained IDispatch reference owned by the caller.
+pub unsafe fn bind_native_dispatch_result_shared(
+    com_state: &Arc<Mutex<WindowsComClientState>>,
+    dispatch: *mut RawIDispatch,
+    prog_id_hint: &str,
+) -> Result<ObjectHandle, String> {
+    let mut state = lock_state(com_state, "bind_native_dispatch_result")?;
+    Ok(bind_native_dispatch_result(
+        &mut state,
+        dispatch,
+        prog_id_hint,
+    ))
+}
+
+pub fn release_object_binding_shared(
+    com_state: &Arc<Mutex<WindowsComClientState>>,
+    object: ObjectHandle,
+) -> Result<ReleasedWindowsComObject, String> {
+    let mut state = lock_state(com_state, "release_object_binding")?;
+    release_object_binding(&mut state, object)
 }

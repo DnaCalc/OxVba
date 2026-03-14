@@ -77,7 +77,7 @@ Why still open:
 Why still open:
 1. major ownership extraction slices are complete, including shared runtime state, typelib cache ownership, deterministic member/event metadata lookup, both connection-point sink lifecycles, the Windows client ABI, the deterministic `OxVba.TestDispatch` fixture implementation, and the Windows COM event/callback state wrapper,
 2. `oxvba-com` now also owns deterministic metadata-driven `ComBinding` assembly, so HAL no longer constructs member/default/event binding tables after metadata load,
-3. the event-side `ComHal` contract is now typed end-to-end across HAL, VM, host, and adapter stubs; bound runtime invoke orchestration and activation-time COM binding creation now also delegate through `oxvba-com`, so the remaining work is no longer callback-token normalization, invoke-policy routing, or activation-time binding assembly but the final shared-state result/object lifecycle extraction.
+3. the event-side `ComHal` contract is now typed end-to-end across HAL, VM, host, and adapter stubs; bound runtime invoke orchestration, activation-time COM binding creation, and the shared-state object/result rebinding wrappers now also delegate through `oxvba-com`, so the remaining work is no longer callback-token normalization, invoke-policy routing, activation-time binding assembly, or host-side state locking but the final direct `IDispatch` invoke/result lifecycle extraction.
 4. HAL still carries the remaining active COM contract/bootstrap seams, so the open work is final contraction and rebinding rather than another metadata extraction slice.
 5. callback payload polling/metadata access now also delegates through `oxvba-com`, further narrowing the remaining live Windows execution seam.
 6. parity-complete closure still depends on moving the remaining COM behavior/contract authority behind the intended `oxvba-com` boundary.
@@ -146,6 +146,7 @@ When any feature area above changes:
 2. Is there still any open blocker, deferred gate, oracle gap, or unimplemented parity behavior in scope?
 3. If yes, keep the entry `in-progress`.
 4. If no, update the owning docs first, then remove or mark the entry complete through an explicit documented decision.
+
 
 
 

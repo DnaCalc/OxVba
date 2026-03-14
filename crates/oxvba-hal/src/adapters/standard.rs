@@ -36,25 +36,26 @@ use oxvba_com::{
     activate_runtime_binding as com_activate_runtime_binding,
     activate_runtime_dispatch as com_activate_runtime_dispatch,
     add_ref_dispatch as raw_add_ref_dispatch, advise_event_subscription,
-    bind_native_dispatch_result as com_bind_native_dispatch_result, build_typelib_metadata,
-    callback_arg as com_callback_arg, callback_arity as com_callback_arity,
+    bind_native_dispatch_result_shared as com_bind_native_dispatch_result_shared,
+    build_typelib_metadata, callback_arg as com_callback_arg, callback_arity as com_callback_arity,
     callback_subscription_token as com_callback_subscription_token,
     canonicalize_member_known_args as com_canonicalize_member_known_args,
     event_callback_args_from_member_token, event_is_source_interface_only,
     event_signature_arity_for_binding,
     execute_bound_runtime_value as com_execute_bound_runtime_value,
     get_dispid_by_name as raw_get_dispid_by_name,
-    insert_bound_object_binding as com_insert_bound_object_binding,
+    insert_bound_object_binding_shared as com_insert_bound_object_binding_shared,
     known_typelib_identity_for_prog_id_name,
     legacy_runtime_arg_values as com_legacy_runtime_arg_values, map_com_hresult_label,
     member_spec_from_typelib_metadata,
     plan_unbound_runtime_invoke as com_plan_unbound_runtime_invoke,
     query_dispatch_from_unknown as raw_query_dispatch_from_unknown,
     raw_oxvba_test_dispatch_vtable_invoke, release_callback as com_release_callback,
-    release_dispatch as raw_release_dispatch, release_object_binding as com_release_object_binding,
+    release_dispatch as raw_release_dispatch,
+    release_object_binding_shared as com_release_object_binding_shared,
     release_subscription_transport,
     remove_subscription_callbacks as com_remove_subscription_callbacks,
-    resolve_bound_native_dispatch as com_resolve_bound_native_dispatch,
+    resolve_bound_native_dispatch_shared as com_resolve_bound_native_dispatch_shared,
     resolve_known_typelib_identity,
     resolve_member_dispid_cached as com_resolve_member_dispid_cached,
     resolve_named_argument_dispids as com_resolve_named_argument_dispids,
@@ -1111,8 +1112,7 @@ impl StandardHostServices {
         op: &'static str,
     ) -> HalResult<*mut RawIDispatch> {
         let capability = CapabilityId::ComActivationDispatch;
-        let state = self.com_lock(capability, op)?;
-        com_resolve_bound_native_dispatch(&state, object)
+        com_resolve_bound_native_dispatch_shared(&self.com_state, object)
             .map_err(|message| HalError::adapter_fault(self.profile, capability, op, message))
     }
 
@@ -1536,9 +1536,10 @@ impl StandardHostServices {
         op: &'static str,
     ) -> HalResult<RuntimeValue> {
         let capability = CapabilityId::ComActivationDispatch;
-        let mut state = self.com_lock(capability, op)?;
-        let handle = unsafe { com_bind_native_dispatch_result(&mut state, dispatch, prog_id_hint) };
-        self.assert_com_invariants(&state, op);
+        let handle = unsafe {
+            com_bind_native_dispatch_result_shared(&self.com_state, dispatch, prog_id_hint)
+        }
+        .map_err(|message| HalError::adapter_fault(self.profile, capability, op, message))?;
         Ok(RuntimeValue::ObjectHandle(handle))
     }
 
@@ -2508,7 +2509,6 @@ impl ComHal for StandardHostServices {
                                 prog_id_name,
                                 "create_object",
                             )?;
-                        let mut state = self.com_lock(capability, "create_object")?;
                         #[cfg(target_os = "windows")]
                         if let Some(override_cfg) = registered_event_override.as_ref() {
                             self.apply_registered_event_override_to_binding(
@@ -2516,8 +2516,16 @@ impl ComHal for StandardHostServices {
                                 override_cfg,
                             );
                         }
-                        let handle = com_insert_bound_object_binding(&mut state, binding);
-                        self.assert_com_invariants(&state, "create_object");
+                        let handle =
+                            com_insert_bound_object_binding_shared(&self.com_state, binding)
+                                .map_err(|message| {
+                                    HalError::adapter_fault(
+                                        self.profile,
+                                        capability,
+                                        "create_object",
+                                        message,
+                                    )
+                                })?;
                         return Ok(RuntimeValue::ObjectHandle(handle));
                     }
                     Err(message) => return Err(self.com_createobject_adapter_fault(message)),
@@ -2549,13 +2557,14 @@ impl ComHal for StandardHostServices {
                             &prog_id_name,
                             "create_object",
                         )?;
-                    let mut state = self.com_lock(capability, "create_object")?;
                     #[cfg(target_os = "windows")]
                     if let Some(override_cfg) = registered_event_override.as_ref() {
                         self.apply_registered_event_override_to_binding(&mut binding, override_cfg);
                     }
-                    let handle = com_insert_bound_object_binding(&mut state, binding);
-                    self.assert_com_invariants(&state, "create_object");
+                    let handle = com_insert_bound_object_binding_shared(&self.com_state, binding)
+                        .map_err(|message| {
+                        HalError::adapter_fault(self.profile, capability, "create_object", message)
+                    })?;
                     return Ok(RuntimeValue::ObjectHandle(handle));
                 }
                 Err(message) => {
@@ -2583,16 +2592,12 @@ impl ComHal for StandardHostServices {
         if !self.native_com_enabled() {
             return Ok(RuntimeValue::I32(if object == 0 { 0 } else { 1 }));
         }
-        let released = {
-            let mut state = self.com_lock(capability, "release_object")?;
-            self.assert_com_invariants(&state, "release_object-pre");
-            let released = com_release_object_binding(&mut state, ObjectHandle::new(object))
-                .map_err(|message| {
+        let released =
+            com_release_object_binding_shared(&self.com_state, ObjectHandle::new(object)).map_err(
+                |message| {
                     HalError::adapter_fault(self.profile, capability, "release_object", message)
-                })?;
-            self.assert_com_invariants(&state, "release_object-post");
-            released
-        };
+                },
+            )?;
         for transport in released.transports {
             self.release_event_subscription_transport(transport)?;
         }

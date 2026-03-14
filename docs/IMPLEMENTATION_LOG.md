@@ -1,3 +1,25 @@
+## 2026-03-14 - Moved shared COM object/result state wrappers into oxvba-com
+
+- Continued the `IP-04` extraction slice in:
+  - [windows_runtime_state.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-com\src\windows_runtime_state.rs)
+  - [lib.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-com\src\lib.rs)
+  - [standard.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-hal\src\adapters\standard.rs)
+  - [CURRENT_BLOCKERS.md](C:\Work\DnaCalc\OxVba\CURRENT_BLOCKERS.md)
+  - [IN_PROGRESS_FEATURE_WORKLIST.md](C:\Work\DnaCalc\OxVba\docs\IN_PROGRESS_FEATURE_WORKLIST.md)
+- `oxvba-com` now owns shared-state helpers for:
+  - inserted binding registration,
+  - bound-dispatch resolution from shared host state,
+  - invoke-result object rebinding into shared host state,
+  - object-release teardown from shared host state.
+- `standard.rs` now delegates those state-locking lifecycle paths into `oxvba-com` instead of managing the COM state lock and mutation flow itself.
+- Net effect:
+  - HAL no longer owns the COM state-locking wrappers around object/result lifecycle,
+  - the remaining `IP-04` wall is narrowed to the last direct Windows `IDispatch` invoke/result lifecycle seam and the final public boundary contraction.
+- Verification:
+  - `cargo clippy -p oxvba-com -p oxvba-hal -p oxvba-vm -p oxvba-host --all-targets -- -D warnings`
+  - `cargo test -p oxvba-com -p oxvba-hal -p oxvba-vm -p oxvba-host --quiet`
+  - `./scripts/check-governance.ps1`
+  - `./scripts/meta-check.ps1 -Fast -NoArtifacts`
 ## 2026-03-14 - Moved activation-time COM binding creation into oxvba-com
 
 - Continued the `IP-04` extraction slice in:
@@ -224,6 +246,7 @@
 
 ## 2026-03-13 - Moved bound-dispatch and subscription teardown ownership into oxvba-com
 ## 2026-03-13 - Moved bound-dispatch and subscription teardown ownership into oxvba-com
+
 
 
 
