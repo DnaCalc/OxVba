@@ -44,7 +44,7 @@ Completed extraction slices:
 15. per-object DISPID cache mutation ownership,
 16. subscription lookup/removal callback-pruning ownership,
 17. event transport-choice resolution ownership,
-18. bound/unbound COM invoke-policy planning ownership,`r`n19. generic runtime-value `IDispatch::Invoke` execution helper ownership.
+18. bound/unbound COM invoke-policy planning ownership,`r`n19. generic runtime-value `IDispatch::Invoke` execution helper ownership,`r`n20. callback payload polling, metadata access, and callback-release helper ownership.
 Remaining extraction wall:
 1. Remaining live Windows COM execution authority still centered in `oxvba-hal::standard`:
    - resolved-member DISPID lookup/cache update,
@@ -55,7 +55,7 @@ Remaining extraction wall:
 
 Current state:
 1. Real COM client/event/type-library behavior lives largely in `crates/oxvba-hal/src/adapters/standard.rs`.
-2. `oxvba-com` now carries a substantial part of the actual COM bridge burden, but the Windows client lifecycle and public contract authority are still transitional.
+2. `oxvba-com` now carries a substantial part of the actual COM bridge burden, but the remaining Windows client execution seam and public contract authority are still transitional.
 3. This has pushed a large Windows-specific domain into the HAL surface:
    - COM activation
    - dispatch invoke
@@ -321,6 +321,7 @@ Required checks for the repurpose/extraction program:
 7. Use these concrete child worksets for the next cleanup/implementation slices:
    - `docs/worksets/WORKSET_2026-03-11_UNIFIED_DYNAMIC_OBJECT_PROTOCOL_AND_VALUE_CARRIER.md`
    - `docs/worksets/WORKSET_2026-03-11_COM_REFERENCE_FACADE_AND_TYPELIB_BINDING_COMPLETION.md`
+
 
 
 

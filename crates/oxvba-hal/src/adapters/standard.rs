@@ -33,6 +33,8 @@ use oxvba_com::{
     add_ref_dispatch as raw_add_ref_dispatch, advise_event_subscription,
     bind_native_dispatch_result as com_bind_native_dispatch_result, binding_from_typelib_metadata,
     build_typelib_metadata, cache_member_dispid as com_cache_member_dispid,
+    callback_arg as com_callback_arg, callback_arity as com_callback_arity,
+    callback_subscription_token as com_callback_subscription_token,
     canonicalize_member_known_args as com_canonicalize_member_known_args,
     event_callback_args_from_member_token, event_is_source_interface_only,
     event_signature_arity_for_binding, get_dispid_by_name as raw_get_dispid_by_name,
@@ -42,13 +44,15 @@ use oxvba_com::{
     member_spec_from_typelib_metadata, plan_bound_runtime_invoke as com_plan_bound_runtime_invoke,
     plan_unbound_runtime_invoke as com_plan_unbound_runtime_invoke,
     query_dispatch_from_unknown as raw_query_dispatch_from_unknown,
-    raw_oxvba_test_dispatch_vtable_invoke, release_dispatch as raw_release_dispatch,
-    release_object_binding as com_release_object_binding, release_subscription_transport,
+    raw_oxvba_test_dispatch_vtable_invoke, release_callback as com_release_callback,
+    release_dispatch as raw_release_dispatch, release_object_binding as com_release_object_binding,
+    release_subscription_transport,
     remove_subscription_callbacks as com_remove_subscription_callbacks,
     resolve_bound_native_dispatch as com_resolve_bound_native_dispatch,
     resolve_known_typelib_identity,
     resolve_named_argument_dispids as com_resolve_named_argument_dispids,
     resolve_subscription_transport as com_resolve_subscription_transport,
+    take_polled_callback_payload as com_take_polled_callback_payload,
     validate_named_arg_order as com_validate_named_arg_order,
 };
 use oxvba_runtime::{BindingHandle, DynLinkSymbol, ObjectHandle, RuntimeValue, bstr::BStr};
@@ -3112,7 +3116,7 @@ impl ComHal for StandardHostServices {
         }
         let mut state = self.com_lock(capability, "poll_event_callback")?;
         self.assert_com_invariants(&state, "poll_event_callback-pre");
-        let payload = state.take_polled_callback();
+        let payload = com_take_polled_callback_payload(&mut state);
         self.assert_com_invariants(&state, "poll_event_callback-post");
         Ok(payload)
     }
@@ -3141,15 +3145,16 @@ impl ComHal for StandardHostServices {
         )?;
         let state = self.com_lock(capability, "event_callback_subscription")?;
         self.assert_com_invariants(&state, "event_callback_subscription");
-        let Some(payload) = state.callbacks.get(&ComCallbackToken::new(callback)) else {
-            return Err(HalError::adapter_fault(
-                self.profile,
-                capability,
-                "event_callback_subscription",
-                format!("COM-E-EVENT-CALLBACK-MISSING: unknown callback token {callback}"),
-            ));
-        };
-        Ok(RuntimeValue::from_legacy_i32(payload.subscription.into()))
+        let subscription = com_callback_subscription_token(&state, ComCallbackToken::new(callback))
+            .map_err(|message| {
+                HalError::adapter_fault(
+                    self.profile,
+                    capability,
+                    "event_callback_subscription",
+                    message,
+                )
+            })?;
+        Ok(RuntimeValue::from_legacy_i32(subscription.into()))
     }
 
     fn event_callback_arity(&self, callback: RuntimeValue) -> HalResult<RuntimeValue> {
@@ -3176,22 +3181,18 @@ impl ComHal for StandardHostServices {
         )?;
         let state = self.com_lock(capability, "event_callback_arity")?;
         self.assert_com_invariants(&state, "event_callback_arity");
-        let Some(payload) = state.callbacks.get(&ComCallbackToken::new(callback)) else {
-            return Err(HalError::adapter_fault(
-                self.profile,
-                capability,
-                "event_callback_arity",
-                format!("COM-E-EVENT-CALLBACK-MISSING: unknown callback token {callback}"),
-            ));
-        };
-        let arity = i32::try_from(payload.args.len()).map_err(|_| {
+        let callback_arity =
+            com_callback_arity(&state, ComCallbackToken::new(callback)).map_err(|message| {
+                HalError::adapter_fault(self.profile, capability, "event_callback_arity", message)
+            })?;
+        let arity = i32::try_from(callback_arity).map_err(|_| {
             HalError::adapter_fault(
                 self.profile,
                 capability,
                 "event_callback_arity",
                 format!(
                     "COM-E-EVENT-CALLBACK-SIGNATURE-MISMATCH: callback arity {} exceeds deterministic token range",
-                    payload.args.len()
+                    callback_arity
                 ),
             )
         })?;
@@ -3239,27 +3240,10 @@ impl ComHal for StandardHostServices {
         }
         let state = self.com_lock(capability, "event_callback_arg")?;
         self.assert_com_invariants(&state, "event_callback_arg");
-        let Some(payload) = state.callbacks.get(&ComCallbackToken::new(callback)) else {
-            return Err(HalError::adapter_fault(
-                self.profile,
-                capability,
-                "event_callback_arg",
-                format!("COM-E-EVENT-CALLBACK-MISSING: unknown callback token {callback}"),
-            ));
-        };
-        let idx = index as usize;
-        let Some(value) = payload.args.get(idx).cloned() else {
-            return Err(HalError::adapter_fault(
-                self.profile,
-                capability,
-                "event_callback_arg",
-                format!(
-                    "COM-E-EVENT-CALLBACK-SIGNATURE-MISMATCH: callback argument index {} exceeds callback arity {}",
-                    index,
-                    payload.args.len()
-                ),
-            ));
-        };
+        let value = com_callback_arg(&state, ComCallbackToken::new(callback), index as usize)
+            .map_err(|message| {
+                HalError::adapter_fault(self.profile, capability, "event_callback_arg", message)
+            })?;
         Ok(value.to_runtime_value())
     }
 
@@ -3287,24 +3271,9 @@ impl ComHal for StandardHostServices {
         )?;
         let mut state = self.com_lock(capability, "release_event_callback")?;
         self.assert_com_invariants(&state, "release_event_callback-pre");
-        if state
-            .callbacks
-            .remove(&ComCallbackToken::new(callback))
-            .is_none()
-        {
-            return Err(HalError::adapter_fault(
-                self.profile,
-                capability,
-                "release_event_callback",
-                format!("COM-E-EVENT-CALLBACK-MISSING: unknown callback token {callback}"),
-            ));
-        }
-        state
-            .pending_callbacks
-            .retain(|token| *token != ComCallbackToken::new(callback));
-        if state.last_pumped_callback == Some(ComCallbackToken::new(callback)) {
-            state.last_pumped_callback = None;
-        }
+        com_release_callback(&mut state, ComCallbackToken::new(callback)).map_err(|message| {
+            HalError::adapter_fault(self.profile, capability, "release_event_callback", message)
+        })?;
         self.assert_com_invariants(&state, "release_event_callback-post");
         Ok(RuntimeValue::from_legacy_i32(1))
     }

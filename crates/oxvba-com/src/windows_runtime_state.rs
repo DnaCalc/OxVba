@@ -302,6 +302,75 @@ pub fn resolve_subscription_transport(
     Ok(entry.transport)
 }
 
+pub fn take_polled_callback_payload(
+    state: &mut WindowsComClientState,
+) -> Option<crate::ComCallbackPayload> {
+    state.take_polled_callback()
+}
+
+pub fn callback_subscription_token(
+    state: &WindowsComClientState,
+    callback: ComCallbackToken,
+) -> Result<ComSubscriptionToken, String> {
+    let Some(payload) = state.callbacks.get(&callback) else {
+        return Err(format!(
+            "COM-E-EVENT-CALLBACK-MISSING: unknown callback token {}",
+            callback.raw()
+        ));
+    };
+    Ok(payload.subscription)
+}
+
+pub fn callback_arity(
+    state: &WindowsComClientState,
+    callback: ComCallbackToken,
+) -> Result<usize, String> {
+    let Some(payload) = state.callbacks.get(&callback) else {
+        return Err(format!(
+            "COM-E-EVENT-CALLBACK-MISSING: unknown callback token {}",
+            callback.raw()
+        ));
+    };
+    Ok(payload.args.len())
+}
+
+pub fn callback_arg(
+    state: &WindowsComClientState,
+    callback: ComCallbackToken,
+    index: usize,
+) -> Result<ComValue, String> {
+    let Some(payload) = state.callbacks.get(&callback) else {
+        return Err(format!(
+            "COM-E-EVENT-CALLBACK-MISSING: unknown callback token {}",
+            callback.raw()
+        ));
+    };
+    payload.args.get(index).cloned().ok_or_else(|| {
+        format!(
+            "COM-E-EVENT-CALLBACK-SIGNATURE-MISMATCH: callback argument index {} exceeds callback arity {}",
+            index,
+            payload.args.len()
+        )
+    })
+}
+
+pub fn release_callback(
+    state: &mut WindowsComClientState,
+    callback: ComCallbackToken,
+) -> Result<(), String> {
+    if state.callbacks.remove(&callback).is_none() {
+        return Err(format!(
+            "COM-E-EVENT-CALLBACK-MISSING: unknown callback token {}",
+            callback.raw()
+        ));
+    }
+    state.pending_callbacks.retain(|token| *token != callback);
+    if state.last_pumped_callback == Some(callback) {
+        state.last_pumped_callback = None;
+    }
+    Ok(())
+}
+
 pub fn remove_subscription_callbacks(
     state: &mut WindowsComClientState,
     subscription: ComSubscriptionToken,

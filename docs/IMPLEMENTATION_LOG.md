@@ -1,3 +1,25 @@
+## 2026-03-14 - Moved callback payload polling and metadata access into oxvba-com
+
+- Continued the COM extraction/contraction slice in:
+  - [windows_runtime_state.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-com\src\windows_runtime_state.rs)
+  - [lib.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-com\src\lib.rs)
+  - [standard.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-hal\src\adapters\standard.rs)
+  - [CURRENT_BLOCKERS.md](C:\Work\DnaCalc\OxVba\CURRENT_BLOCKERS.md)
+  - [IN_PROGRESS_FEATURE_WORKLIST.md](C:\Work\DnaCalc\OxVba\docs\IN_PROGRESS_FEATURE_WORKLIST.md)
+  - [WORKSET_2026-03-09_OXVBA_COM_REPURPOSE_AND_HAL_COM_EXTRACTION.md](C:\Work\DnaCalc\OxVba\docs\worksets\WORKSET_2026-03-09_OXVBA_COM_REPURPOSE_AND_HAL_COM_EXTRACTION.md)
+- `oxvba-com` now owns:
+  - polling the queued callback payload,
+  - resolving callback -> subscription identity,
+  - reporting callback arity and argument payloads,
+  - callback release bookkeeping.
+- `oxvba-hal::standard` now keeps only policy/error mapping around those callback queries.
+- Net effect:
+  - callback interrogation is no longer a HAL-owned COM state concern,
+  - the remaining extraction wall is narrower again and centered on the final invoke/result-lifecycle/contract seam.
+- Verification:
+  - cargo fmt --all
+  - cargo clippy -p oxvba-com -p oxvba-hal --all-targets -- -D warnings
+  - cargo test -p oxvba-com -p oxvba-hal --quiet
 ## 2026-03-14 - Moved COM runtime-value invoke execution helper into oxvba-com
 
 - Extended `crates/oxvba-com/src/windows_invoke.rs` with a higher-level runtime-value `IDispatch::Invoke` helper that:
@@ -66,5 +88,6 @@
 
 ## 2026-03-13 - Moved bound-dispatch and subscription teardown ownership into oxvba-com
 ## 2026-03-13 - Moved bound-dispatch and subscription teardown ownership into oxvba-com
+
 
 
