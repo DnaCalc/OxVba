@@ -12,7 +12,10 @@ use crate::{
     error::HalResult,
     model::{HalDescriptor, HalProfileId, HostPolicy},
 };
-use oxvba_com::{ComCallbackPayload, ComInvokeRequest, ComObjectDescriptor};
+use oxvba_com::{
+    ComCallbackPayload, ComCallbackToken, ComInvokeRequest, ComMemberToken, ComObjectDescriptor,
+    ComSubscriptionToken,
+};
 pub use oxvba_com::{
     TypeLibCacheScope, TypeLibEventDispatchPath, TypeLibEventMetadata, TypeLibMemberInvokeKind,
     TypeLibMemberMetadata, TypeLibMetadataBlob, TypeLibResolveRequest, TypeLibResolvedIdentity,
@@ -117,18 +120,24 @@ pub trait ComHal: Send + Sync {
         &self,
         request: &ComInvokeRequest,
     ) -> HalResult<RuntimeValue>;
-    fn subscribe_event(&self, object: RuntimeValue, event: RuntimeValue)
-    -> HalResult<RuntimeValue>;
-    fn unsubscribe_event(&self, subscription: RuntimeValue) -> HalResult<RuntimeValue>;
+    fn subscribe_event(
+        &self,
+        object: ObjectHandle,
+        event: ComMemberToken,
+    ) -> HalResult<ComSubscriptionToken>;
+    fn unsubscribe_event(&self, subscription: ComSubscriptionToken) -> HalResult<RuntimeValue>;
     fn poll_event_callback(&self) -> HalResult<Option<ComCallbackPayload>>;
-    fn event_callback_subscription(&self, callback: RuntimeValue) -> HalResult<RuntimeValue>;
-    fn event_callback_arity(&self, callback: RuntimeValue) -> HalResult<RuntimeValue>;
+    fn event_callback_subscription(
+        &self,
+        callback: ComCallbackToken,
+    ) -> HalResult<ComSubscriptionToken>;
+    fn event_callback_arity(&self, callback: ComCallbackToken) -> HalResult<usize>;
     fn event_callback_arg(
         &self,
-        callback: RuntimeValue,
-        index: RuntimeValue,
+        callback: ComCallbackToken,
+        index: usize,
     ) -> HalResult<RuntimeValue>;
-    fn release_event_callback(&self, callback: RuntimeValue) -> HalResult<RuntimeValue>;
+    fn release_event_callback(&self, callback: ComCallbackToken) -> HalResult<RuntimeValue>;
     fn resolve_typelib_reference(
         &self,
         request: &TypeLibResolveRequest,

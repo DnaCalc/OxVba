@@ -12,7 +12,7 @@ use crate::{
         TypeLibResolveRequest, TypeLibResolvedIdentity, UiInteractionHal,
     },
 };
-use oxvba_com::ComObjectDescriptor;
+use oxvba_com::{ComCallbackToken, ComMemberToken, ComObjectDescriptor, ComSubscriptionToken};
 use oxvba_runtime::{BindingHandle, DynLinkSymbol, ObjectHandle, RuntimeValue};
 
 #[derive(Debug, Clone)]
@@ -205,13 +205,13 @@ impl ComHal for WasmHostServices {
 
     fn subscribe_event(
         &self,
-        _object: RuntimeValue,
-        _event: RuntimeValue,
-    ) -> HalResult<RuntimeValue> {
+        _object: ObjectHandle,
+        _event: ComMemberToken,
+    ) -> HalResult<ComSubscriptionToken> {
         Err(self.unsupported(CapabilityId::ComActivationDispatch, "subscribe_event"))
     }
 
-    fn unsubscribe_event(&self, _subscription: RuntimeValue) -> HalResult<RuntimeValue> {
+    fn unsubscribe_event(&self, _subscription: ComSubscriptionToken) -> HalResult<RuntimeValue> {
         Err(self.unsupported(CapabilityId::ComActivationDispatch, "unsubscribe_event"))
     }
 
@@ -219,26 +219,29 @@ impl ComHal for WasmHostServices {
         Err(self.unsupported(CapabilityId::ComActivationDispatch, "poll_event_callback"))
     }
 
-    fn event_callback_subscription(&self, _callback: RuntimeValue) -> HalResult<RuntimeValue> {
+    fn event_callback_subscription(
+        &self,
+        _callback: ComCallbackToken,
+    ) -> HalResult<ComSubscriptionToken> {
         Err(self.unsupported(
             CapabilityId::ComActivationDispatch,
             "event_callback_subscription",
         ))
     }
 
-    fn event_callback_arity(&self, _callback: RuntimeValue) -> HalResult<RuntimeValue> {
+    fn event_callback_arity(&self, _callback: ComCallbackToken) -> HalResult<usize> {
         Err(self.unsupported(CapabilityId::ComActivationDispatch, "event_callback_arity"))
     }
 
     fn event_callback_arg(
         &self,
-        _callback: RuntimeValue,
-        _index: RuntimeValue,
+        _callback: ComCallbackToken,
+        _index: usize,
     ) -> HalResult<RuntimeValue> {
         Err(self.unsupported(CapabilityId::ComActivationDispatch, "event_callback_arg"))
     }
 
-    fn release_event_callback(&self, _callback: RuntimeValue) -> HalResult<RuntimeValue> {
+    fn release_event_callback(&self, _callback: ComCallbackToken) -> HalResult<RuntimeValue> {
         Err(self.unsupported(
             CapabilityId::ComActivationDispatch,
             "release_event_callback",
@@ -318,7 +321,7 @@ mod tests {
     use crate::{
         error::HalErrorKind,
         model::{CapabilityId, UiVirtualizationMode, WasmRuntimeClass},
-        traits::{ComHal, HostServices, ProcessEnvHal, UiInteractionHal},
+        traits::{HostServices, ProcessEnvHal, UiInteractionHal},
     };
     use oxvba_runtime::RuntimeValue;
 
@@ -355,37 +358,37 @@ mod tests {
             HalErrorKind::CapabilityUnavailable
         );
         assert_eq!(
-            host.subscribe_event(RuntimeValue::I32(1), RuntimeValue::I32(1))
+            host.legacy_subscribe_event(RuntimeValue::I32(1), RuntimeValue::I32(1))
                 .expect_err("subscribe_event")
                 .kind,
             HalErrorKind::CapabilityUnavailable
         );
         assert_eq!(
-            host.unsubscribe_event(RuntimeValue::I32(1))
+            host.legacy_unsubscribe_event(1.into())
                 .expect_err("unsubscribe_event")
                 .kind,
             HalErrorKind::CapabilityUnavailable
         );
         assert_eq!(
-            host.event_callback_subscription(RuntimeValue::I32(1))
+            host.legacy_event_callback_subscription(1.into())
                 .expect_err("event_callback_subscription")
                 .kind,
             HalErrorKind::CapabilityUnavailable
         );
         assert_eq!(
-            host.event_callback_arity(RuntimeValue::I32(1))
+            host.legacy_event_callback_arity(1.into())
                 .expect_err("event_callback_arity")
                 .kind,
             HalErrorKind::CapabilityUnavailable
         );
         assert_eq!(
-            host.event_callback_arg(RuntimeValue::I32(1), RuntimeValue::I32(0))
+            host.legacy_event_callback_arg(RuntimeValue::I32(1), RuntimeValue::I32(0))
                 .expect_err("event_callback_arg")
                 .kind,
             HalErrorKind::CapabilityUnavailable
         );
         assert_eq!(
-            host.release_event_callback(RuntimeValue::I32(1))
+            host.legacy_release_event_callback(1.into())
                 .expect_err("release_event_callback")
                 .kind,
             HalErrorKind::CapabilityUnavailable
@@ -409,5 +412,141 @@ mod tests {
                 .kind,
             HalErrorKind::CapabilityUnavailable
         );
+    }
+}
+
+#[cfg(test)]
+#[allow(clippy::items_after_test_module)]
+impl WasmHostServices {
+    fn legacy_subscribe_event(
+        &self,
+        object: RuntimeValue,
+        event: RuntimeValue,
+    ) -> HalResult<RuntimeValue> {
+        let object = match object {
+            RuntimeValue::ObjectHandle(handle) => handle,
+            RuntimeValue::I32(value) => ObjectHandle::new(value),
+            other => {
+                return Err(HalError::adapter_fault(
+                    self.profile(),
+                    CapabilityId::ComActivationDispatch,
+                    "subscribe_event",
+                    format!("legacy test helper requires object token, got {other:?}"),
+                ));
+            }
+        };
+        let event = match event.to_legacy_i32() {
+            Ok(value) => ComMemberToken::new(value),
+            Err(detail) => {
+                return Err(HalError::adapter_fault(
+                    self.profile(),
+                    CapabilityId::ComActivationDispatch,
+                    "subscribe_event",
+                    detail,
+                ));
+            }
+        };
+        <Self as ComHal>::subscribe_event(self, object, event)
+            .map(|value| RuntimeValue::I32(value.raw()))
+    }
+
+    fn legacy_unsubscribe_event(&self, subscription: RuntimeValue) -> HalResult<RuntimeValue> {
+        let subscription = subscription
+            .to_legacy_i32()
+            .map(ComSubscriptionToken::new)
+            .map_err(|detail| {
+                HalError::adapter_fault(
+                    self.profile(),
+                    CapabilityId::ComActivationDispatch,
+                    "unsubscribe_event",
+                    detail,
+                )
+            })?;
+        <Self as ComHal>::unsubscribe_event(self, subscription)
+    }
+
+    fn legacy_event_callback_subscription(
+        &self,
+        callback: RuntimeValue,
+    ) -> HalResult<RuntimeValue> {
+        let callback = callback
+            .to_legacy_i32()
+            .map(ComCallbackToken::new)
+            .map_err(|detail| {
+                HalError::adapter_fault(
+                    self.profile(),
+                    CapabilityId::ComActivationDispatch,
+                    "event_callback_subscription",
+                    detail,
+                )
+            })?;
+        <Self as ComHal>::event_callback_subscription(self, callback)
+            .map(|value| RuntimeValue::I32(value.raw()))
+    }
+
+    fn legacy_event_callback_arity(&self, callback: RuntimeValue) -> HalResult<RuntimeValue> {
+        let callback = callback
+            .to_legacy_i32()
+            .map(ComCallbackToken::new)
+            .map_err(|detail| {
+                HalError::adapter_fault(
+                    self.profile(),
+                    CapabilityId::ComActivationDispatch,
+                    "event_callback_arity",
+                    detail,
+                )
+            })?;
+        <Self as ComHal>::event_callback_arity(self, callback)
+            .map(|value| RuntimeValue::I32(i32::try_from(value).unwrap_or(i32::MAX)))
+    }
+
+    fn legacy_event_callback_arg(
+        &self,
+        callback: RuntimeValue,
+        index: RuntimeValue,
+    ) -> HalResult<RuntimeValue> {
+        let callback = callback
+            .to_legacy_i32()
+            .map(ComCallbackToken::new)
+            .map_err(|detail| {
+                HalError::adapter_fault(
+                    self.profile(),
+                    CapabilityId::ComActivationDispatch,
+                    "event_callback_arg",
+                    detail,
+                )
+            })?;
+        let index = index.to_legacy_i32().map_err(|detail| {
+            HalError::adapter_fault(
+                self.profile(),
+                CapabilityId::ComActivationDispatch,
+                "event_callback_arg",
+                detail,
+            )
+        })?;
+        if index < 0 {
+            return Err(HalError::adapter_fault(
+                self.profile(),
+                CapabilityId::ComActivationDispatch,
+                "event_callback_arg",
+                format!("negative index {index}"),
+            ));
+        }
+        <Self as ComHal>::event_callback_arg(self, callback, index as usize)
+    }
+
+    fn legacy_release_event_callback(&self, callback: RuntimeValue) -> HalResult<RuntimeValue> {
+        let callback = callback
+            .to_legacy_i32()
+            .map(ComCallbackToken::new)
+            .map_err(|detail| {
+                HalError::adapter_fault(
+                    self.profile(),
+                    CapabilityId::ComActivationDispatch,
+                    "release_event_callback",
+                    detail,
+                )
+            })?;
+        <Self as ComHal>::release_event_callback(self, callback)
     }
 }

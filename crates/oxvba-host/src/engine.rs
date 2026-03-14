@@ -293,21 +293,9 @@ impl Engine {
         let subscription = self
             .host_services
             .com()
-            .subscribe_event(
-                RuntimeValue::ObjectHandle(object_token),
-                RuntimeValue::I32(event_token),
-            )
+            .subscribe_event(object_token, event_token.into())
             .map_err(|err| PhaseDiagnostic::runtime(err.to_string()))?;
-        let subscription = match subscription {
-            RuntimeValue::I32(token) => ComSubscriptionToken::new(token),
-            RuntimeValue::ObjectHandle(handle) => ComSubscriptionToken::new(handle.raw()),
-            other => {
-                return Err(PhaseDiagnostic::runtime(format!(
-                    "COM subscribe_event returned non-subscription token shape: {:?}",
-                    other
-                )));
-            }
-        };
+
         self.com_subscription_handlers
             .lock()
             .map_err(|_| {
@@ -325,7 +313,7 @@ impl Engine {
     ) -> Result<bool, PhaseDiagnostic> {
         self.host_services
             .com()
-            .unsubscribe_event(RuntimeValue::I32(subscription_token.raw()))
+            .unsubscribe_event(subscription_token)
             .map_err(|err| PhaseDiagnostic::runtime(err.to_string()))?;
         let removed = self
             .com_subscription_handlers
@@ -2189,12 +2177,9 @@ mod tests {
         let subscription = engine
             .host_services
             .com()
-            .subscribe_event(RuntimeValue::ObjectHandle(object), RuntimeValue::I32(1))
+            .subscribe_event(object, 1.into())
             .expect("subscribe_event should succeed");
-        let subscription = match subscription {
-            RuntimeValue::I32(token) => token,
-            other => panic!("expected integer subscription token, got {:?}", other),
-        };
+
         let _ = dispatch_controlled_com_call(&engine, object, 3, 21);
 
         let err = engine
@@ -2206,10 +2191,7 @@ mod tests {
                 .contains("PMR-E-EVENT-DISPATCH-TARGET-MISSING")
         );
 
-        let _ = engine
-            .host_services
-            .com()
-            .unsubscribe_event(RuntimeValue::I32(subscription));
+        let _ = engine.host_services.com().unsubscribe_event(subscription);
     }
 
     #[cfg(target_os = "windows")]

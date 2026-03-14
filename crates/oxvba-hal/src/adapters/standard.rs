@@ -2808,9 +2808,9 @@ impl ComHal for StandardHostServices {
 
     fn subscribe_event(
         &self,
-        object: RuntimeValue,
-        event: RuntimeValue,
-    ) -> HalResult<RuntimeValue> {
+        object: ObjectHandle,
+        event: ComMemberToken,
+    ) -> HalResult<ComSubscriptionToken> {
         let capability = CapabilityId::ComActivationDispatch;
         if !self.supports(capability) {
             return Err(self.unsupported(capability, "subscribe_event"));
@@ -2826,10 +2826,8 @@ impl ComHal for StandardHostServices {
                 "COM-E-EVENT-PATH-UNSUPPORTED: native COM event subscription requires host-backed Windows native mode",
             ));
         }
-        let object =
-            self.runtime_value_to_legacy_i32(&object, capability, "subscribe_event", "object")?;
-        let event =
-            self.runtime_value_to_legacy_i32(&event, capability, "subscribe_event", "event")?;
+        let object = object.raw();
+        let event = event.raw();
         let (binding, expected_arity, subscription) = {
             let mut state = self.com_lock(capability, "subscribe_event")?;
             self.assert_com_invariants(&state, "subscribe_event-pre");
@@ -2901,10 +2899,9 @@ impl ComHal for StandardHostServices {
             );
         }
         self.assert_com_invariants(&state, "subscribe_event-post");
-        Ok(RuntimeValue::from_legacy_i32(subscription.into()))
+        Ok(subscription)
     }
-
-    fn unsubscribe_event(&self, subscription: RuntimeValue) -> HalResult<RuntimeValue> {
+    fn unsubscribe_event(&self, subscription: ComSubscriptionToken) -> HalResult<RuntimeValue> {
         let capability = CapabilityId::ComActivationDispatch;
         if !self.supports(capability) {
             return Err(self.unsupported(capability, "unsubscribe_event"));
@@ -2920,32 +2917,23 @@ impl ComHal for StandardHostServices {
                 "COM-E-EVENT-PATH-UNSUPPORTED: native COM event subscription requires host-backed Windows native mode",
             ));
         }
-        let subscription = self.runtime_value_to_legacy_i32(
-            &subscription,
-            capability,
-            "unsubscribe_event",
-            "subscription",
-        )?;
         let transport = {
             let state = self.com_lock(capability, "unsubscribe_event")?;
             self.assert_com_invariants(&state, "unsubscribe_event-pre");
-            com_resolve_subscription_transport(&state, ComSubscriptionToken::new(subscription))
-                .map_err(|message| {
-                    HalError::adapter_fault(self.profile, capability, "unsubscribe_event", message)
-                })?
+            com_resolve_subscription_transport(&state, subscription).map_err(|message| {
+                HalError::adapter_fault(self.profile, capability, "unsubscribe_event", message)
+            })?
         };
         self.release_event_subscription_transport(transport)?;
         let mut state = self.com_lock(capability, "unsubscribe_event")?;
         self.assert_com_invariants(&state, "unsubscribe_event-pre-remove");
-        let _stale_callbacks =
-            com_remove_subscription_callbacks(&mut state, ComSubscriptionToken::new(subscription))
-                .map_err(|message| {
-                    HalError::adapter_fault(self.profile, capability, "unsubscribe_event", message)
-                })?;
+        let _stale_callbacks = com_remove_subscription_callbacks(&mut state, subscription)
+            .map_err(|message| {
+                HalError::adapter_fault(self.profile, capability, "unsubscribe_event", message)
+            })?;
         self.assert_com_invariants(&state, "unsubscribe_event-post-remove");
         Ok(RuntimeValue::from_legacy_i32(1))
     }
-
     fn poll_event_callback(&self) -> HalResult<Option<ComCallbackPayload>> {
         let capability = CapabilityId::ComActivationDispatch;
         if !self.supports(capability) {
@@ -2964,7 +2952,10 @@ impl ComHal for StandardHostServices {
         Ok(payload)
     }
 
-    fn event_callback_subscription(&self, callback: RuntimeValue) -> HalResult<RuntimeValue> {
+    fn event_callback_subscription(
+        &self,
+        callback: ComCallbackToken,
+    ) -> HalResult<ComSubscriptionToken> {
         let capability = CapabilityId::ComActivationDispatch;
         if !self.supports(capability) {
             return Err(self.unsupported(capability, "event_callback_subscription"));
@@ -2980,27 +2971,18 @@ impl ComHal for StandardHostServices {
                 "COM-E-EVENT-PATH-UNSUPPORTED: native COM event callback lookup requires host-backed Windows native mode",
             ));
         }
-        let callback = self.runtime_value_to_legacy_i32(
-            &callback,
-            capability,
-            "event_callback_subscription",
-            "callback",
-        )?;
         let state = self.com_lock(capability, "event_callback_subscription")?;
         self.assert_com_invariants(&state, "event_callback_subscription");
-        let subscription = com_callback_subscription_token(&state, ComCallbackToken::new(callback))
-            .map_err(|message| {
-                HalError::adapter_fault(
-                    self.profile,
-                    capability,
-                    "event_callback_subscription",
-                    message,
-                )
-            })?;
-        Ok(RuntimeValue::from_legacy_i32(subscription.into()))
+        com_callback_subscription_token(&state, callback).map_err(|message| {
+            HalError::adapter_fault(
+                self.profile,
+                capability,
+                "event_callback_subscription",
+                message,
+            )
+        })
     }
-
-    fn event_callback_arity(&self, callback: RuntimeValue) -> HalResult<RuntimeValue> {
+    fn event_callback_arity(&self, callback: ComCallbackToken) -> HalResult<usize> {
         let capability = CapabilityId::ComActivationDispatch;
         if !self.supports(capability) {
             return Err(self.unsupported(capability, "event_callback_arity"));
@@ -3016,36 +2998,16 @@ impl ComHal for StandardHostServices {
                 "COM-E-EVENT-PATH-UNSUPPORTED: native COM event callback lookup requires host-backed Windows native mode",
             ));
         }
-        let callback = self.runtime_value_to_legacy_i32(
-            &callback,
-            capability,
-            "event_callback_arity",
-            "callback",
-        )?;
         let state = self.com_lock(capability, "event_callback_arity")?;
         self.assert_com_invariants(&state, "event_callback_arity");
-        let callback_arity =
-            com_callback_arity(&state, ComCallbackToken::new(callback)).map_err(|message| {
-                HalError::adapter_fault(self.profile, capability, "event_callback_arity", message)
-            })?;
-        let arity = i32::try_from(callback_arity).map_err(|_| {
-            HalError::adapter_fault(
-                self.profile,
-                capability,
-                "event_callback_arity",
-                format!(
-                    "COM-E-EVENT-CALLBACK-SIGNATURE-MISMATCH: callback arity {} exceeds deterministic token range",
-                    callback_arity
-                ),
-            )
-        })?;
-        Ok(RuntimeValue::from_legacy_i32(arity))
+        com_callback_arity(&state, callback).map_err(|message| {
+            HalError::adapter_fault(self.profile, capability, "event_callback_arity", message)
+        })
     }
-
     fn event_callback_arg(
         &self,
-        callback: RuntimeValue,
-        index: RuntimeValue,
+        callback: ComCallbackToken,
+        index: usize,
     ) -> HalResult<RuntimeValue> {
         let capability = CapabilityId::ComActivationDispatch;
         if !self.supports(capability) {
@@ -3062,35 +3024,14 @@ impl ComHal for StandardHostServices {
                 "COM-E-EVENT-PATH-UNSUPPORTED: native COM event callback lookup requires host-backed Windows native mode",
             ));
         }
-        let callback = self.runtime_value_to_legacy_i32(
-            &callback,
-            capability,
-            "event_callback_arg",
-            "callback",
-        )?;
-        let index =
-            self.runtime_value_to_legacy_i32(&index, capability, "event_callback_arg", "index")?;
-        if index < 0 {
-            return Err(HalError::adapter_fault(
-                self.profile,
-                capability,
-                "event_callback_arg",
-                format!(
-                    "COM-E-EVENT-CALLBACK-SIGNATURE-MISMATCH: callback argument index {} is unsupported in current lane",
-                    index
-                ),
-            ));
-        }
         let state = self.com_lock(capability, "event_callback_arg")?;
         self.assert_com_invariants(&state, "event_callback_arg");
-        let value = com_callback_arg(&state, ComCallbackToken::new(callback), index as usize)
-            .map_err(|message| {
-                HalError::adapter_fault(self.profile, capability, "event_callback_arg", message)
-            })?;
+        let value = com_callback_arg(&state, callback, index).map_err(|message| {
+            HalError::adapter_fault(self.profile, capability, "event_callback_arg", message)
+        })?;
         Ok(value.to_runtime_value())
     }
-
-    fn release_event_callback(&self, callback: RuntimeValue) -> HalResult<RuntimeValue> {
+    fn release_event_callback(&self, callback: ComCallbackToken) -> HalResult<RuntimeValue> {
         let capability = CapabilityId::ComActivationDispatch;
         if !self.supports(capability) {
             return Err(self.unsupported(capability, "release_event_callback"));
@@ -3106,21 +3047,14 @@ impl ComHal for StandardHostServices {
                 "COM-E-EVENT-PATH-UNSUPPORTED: native COM event callback release requires host-backed Windows native mode",
             ));
         }
-        let callback = self.runtime_value_to_legacy_i32(
-            &callback,
-            capability,
-            "release_event_callback",
-            "callback",
-        )?;
         let mut state = self.com_lock(capability, "release_event_callback")?;
         self.assert_com_invariants(&state, "release_event_callback-pre");
-        com_release_callback(&mut state, ComCallbackToken::new(callback)).map_err(|message| {
+        com_release_callback(&mut state, callback).map_err(|message| {
             HalError::adapter_fault(self.profile, capability, "release_event_callback", message)
         })?;
         self.assert_com_invariants(&state, "release_event_callback-post");
         Ok(RuntimeValue::from_legacy_i32(1))
     }
-
     fn resolve_typelib_reference(
         &self,
         request: &TypeLibResolveRequest,
@@ -5131,38 +5065,38 @@ mod tests {
     fn com_event_subscription_lane_requires_native_mode() {
         let host = StandardHostServices::new(HalProfileId::Windows, HostPolicy::default());
         let subscribe = host
-            .subscribe_event(rv(1), rv(1))
+            .subscribe_event(ObjectHandle::new(1), 1.into())
             .expect_err("subscribe_event should require native mode");
         assert_eq!(subscribe.kind, HalErrorKind::AdapterFault);
         assert_eq!(subscribe.operation, "subscribe_event");
         assert!(subscribe.message.contains("COM-E-EVENT-PATH-UNSUPPORTED"));
 
         let unsubscribe = host
-            .unsubscribe_event(rv(1))
+            .legacy_unsubscribe_event(rv(1))
             .expect_err("unsubscribe_event should require native mode");
         assert_eq!(unsubscribe.kind, HalErrorKind::AdapterFault);
         assert_eq!(unsubscribe.operation, "unsubscribe_event");
         assert!(unsubscribe.message.contains("COM-E-EVENT-PATH-UNSUPPORTED"));
         assert!(
-            host.event_callback_subscription(rv(60_001))
+            host.legacy_event_callback_subscription(rv(60_001))
                 .expect_err("event_callback_subscription should require native mode")
                 .message
                 .contains("COM-E-EVENT-PATH-UNSUPPORTED")
         );
         assert!(
-            host.event_callback_arity(rv(60_001))
+            host.legacy_event_callback_arity(rv(60_001))
                 .expect_err("event_callback_arity should require native mode")
                 .message
                 .contains("COM-E-EVENT-PATH-UNSUPPORTED")
         );
         assert!(
-            host.event_callback_arg(rv(60_001), rv(0))
+            host.event_callback_arg(60_001.into(), 0)
                 .expect_err("event_callback_arg should require native mode")
                 .message
                 .contains("COM-E-EVENT-PATH-UNSUPPORTED")
         );
         assert!(
-            host.release_event_callback(rv(60_001))
+            host.release_event_callback(60_001.into())
                 .expect_err("release_event_callback should require native mode")
                 .message
                 .contains("COM-E-EVENT-PATH-UNSUPPORTED")
@@ -5181,10 +5115,9 @@ mod tests {
             "controlled COM lane should bind native object"
         );
         let subscription = host
-            .subscribe_event(rv(object.into()), rv(1))
+            .subscribe_event(object, 1.into())
             .expect("subscribe_event should succeed for controlled event source");
-        let subscription = expect_i32(subscription);
-        assert!(subscription >= 40_001);
+        assert!(subscription.raw() >= 40_001);
         {
             let state = host
                 .com_state
@@ -5192,7 +5125,7 @@ mod tests {
                 .expect("com state lock should succeed");
             let registered = state
                 .subscriptions
-                .get(&subscription.into())
+                .get(&subscription)
                 .expect("subscription should be tracked");
             assert!(
                 matches!(
@@ -5214,22 +5147,22 @@ mod tests {
         let callback = expect_i32(callback);
         assert!(callback >= 60_001);
         assert_eq!(
-            host.event_callback_subscription(rv(callback))
+            host.event_callback_subscription(callback.into())
                 .expect("callback subscription lookup should succeed"),
-            rv(subscription)
+            subscription
         );
         assert_eq!(
-            host.event_callback_arg(rv(callback), rv(0))
+            host.event_callback_arg(callback.into(), 0)
                 .expect("callback arg lookup should succeed"),
             rv(77)
         );
         assert_eq!(
-            host.event_callback_arity(rv(callback))
+            host.event_callback_arity(callback.into())
                 .expect("callback arity lookup should succeed"),
-            rv(1)
+            1
         );
         assert_eq!(
-            host.release_event_callback(rv(callback))
+            host.release_event_callback(callback.into())
                 .expect("callback release should succeed"),
             rv(1)
         );
@@ -5240,7 +5173,7 @@ mod tests {
         );
 
         assert_eq!(
-            host.unsubscribe_event(rv(subscription))
+            host.unsubscribe_event(subscription)
                 .expect("unsubscribe_event should succeed"),
             rv(1)
         );
@@ -5273,9 +5206,8 @@ mod tests {
             .create_object_test(4)
             .expect("create_object should return a token");
         let subscription = host
-            .subscribe_event(rv(object.into()), rv(super::TEST_EVENT_CHANGED_PAIR))
+            .subscribe_event(object, super::TEST_EVENT_CHANGED_PAIR.into())
             .expect("subscribe_event should succeed for controlled pair-event source");
-        let subscription = expect_i32(subscription);
 
         assert_eq!(
             host.dispatch_invoke_legacy(object.into(), super::TEST_DISPID_FIRE_CHANGED_PAIR, 90)
@@ -5288,27 +5220,27 @@ mod tests {
         let callback = expect_i32(callback);
         assert!(callback >= 60_001);
         assert_eq!(
-            host.event_callback_subscription(rv(callback))
+            host.event_callback_subscription(callback.into())
                 .expect("callback subscription lookup should succeed"),
-            rv(subscription)
+            subscription
         );
         assert_eq!(
-            host.event_callback_arity(rv(callback))
+            host.event_callback_arity(callback.into())
                 .expect("callback arity lookup should succeed"),
-            rv(2)
+            2
         );
         assert_eq!(
-            host.event_callback_arg(rv(callback), rv(0))
+            host.event_callback_arg(callback.into(), 0)
                 .expect("callback arg0 lookup should succeed"),
             rv(90)
         );
         assert_eq!(
-            host.event_callback_arg(rv(callback), rv(1))
+            host.event_callback_arg(callback.into(), 1)
                 .expect("callback arg1 lookup should succeed"),
             rv(91)
         );
         let err = host
-            .event_callback_arg(rv(callback), rv(2))
+            .event_callback_arg(callback.into(), 2)
             .expect_err("index beyond callback arity should fail");
         assert_eq!(err.kind, HalErrorKind::AdapterFault);
         assert!(
@@ -5316,12 +5248,12 @@ mod tests {
                 .contains("COM-E-EVENT-CALLBACK-SIGNATURE-MISMATCH")
         );
         assert_eq!(
-            host.release_event_callback(rv(callback))
+            host.release_event_callback(callback.into())
                 .expect("callback release should succeed"),
             rv(1)
         );
         assert_eq!(
-            host.unsubscribe_event(rv(subscription))
+            host.unsubscribe_event(subscription)
                 .expect("unsubscribe_event should succeed"),
             rv(1)
         );
@@ -5335,9 +5267,8 @@ mod tests {
             .create_object_test(4)
             .expect("create_object should return a token");
         let subscription = host
-            .subscribe_event(rv(object.into()), rv(super::TEST_EVENT_CHANGED_PAIR))
+            .subscribe_event(object, super::TEST_EVENT_CHANGED_PAIR.into())
             .expect("subscribe_event should succeed for controlled pair-event source");
-        let subscription = expect_i32(subscription);
 
         assert_eq!(
             host.dispatch_invoke_legacy(object.into(), super::TEST_DISPID_FIRE_CHANGED_PAIR, 90)
@@ -5353,7 +5284,7 @@ mod tests {
             .expect("poll_event_callback should succeed")
             .expect("callback payload should be available");
         assert_eq!(payload.callback.raw(), callback);
-        assert_eq!(payload.subscription.raw(), subscription);
+        assert_eq!(payload.subscription.raw(), subscription.raw());
         assert_eq!(payload.object.raw(), object.raw());
         assert_eq!(payload.event.raw(), super::TEST_EVENT_CHANGED_PAIR);
         assert_eq!(payload.args, vec![ComValue::I32(90), ComValue::I32(91)]);
@@ -5372,9 +5303,8 @@ mod tests {
             .create_object_test(4)
             .expect("create_object should return a token");
         let subscription = host
-            .subscribe_event(rv(object.into()), rv(1))
+            .subscribe_event(object, 1.into())
             .expect("subscribe_event should succeed for controlled event source");
-        let subscription = expect_i32(subscription);
         host.dispatch_invoke_legacy(object.into(), 3, 77)
             .expect("FireChanged should succeed");
         let callback = host
@@ -5384,7 +5314,7 @@ mod tests {
 
         assert_eq!(host.release_object_test(object).expect("release_object"), 1);
         let callback_err = host
-            .event_callback_subscription(rv(callback))
+            .event_callback_subscription(callback.into())
             .expect_err("released object callback should be gone");
         assert!(
             callback_err
@@ -5392,7 +5322,7 @@ mod tests {
                 .contains("COM-E-EVENT-CALLBACK-MISSING")
         );
         let subscription_err = host
-            .unsubscribe_event(rv(subscription))
+            .unsubscribe_event(subscription)
             .expect_err("released object subscription should be gone");
         assert!(
             subscription_err
@@ -5409,7 +5339,7 @@ mod tests {
             .create_object_test(4)
             .expect("create_object should return a token");
         let err = host
-            .subscribe_event(rv(object.into()), rv(7))
+            .subscribe_event(object, 7.into())
             .expect_err("unknown event token should fail deterministically");
         assert_eq!(err.kind, HalErrorKind::AdapterFault);
         assert!(err.message.contains("COM-E-EVENT-CONNECTIONPOINT-MISSING"));
@@ -5423,14 +5353,10 @@ mod tests {
             .create_object_test(4)
             .expect("create_object should return a token");
         let subscription = host
-            .subscribe_event(
-                rv(object.into()),
-                rv(super::TEST_EVENT_CHANGED_SOURCE_INTERFACE),
-            )
+            .subscribe_event(object, super::TEST_EVENT_CHANGED_SOURCE_INTERFACE.into())
             .expect("controlled source-interface event token should subscribe successfully");
-        let subscription = expect_i32(subscription);
         assert!(
-            subscription >= 40_001,
+            subscription.raw() >= 40_001,
             "subscription token should be in deterministic range"
         );
         assert_eq!(
@@ -5447,27 +5373,27 @@ mod tests {
             .expect("do_events should pump pending source-interface callback");
         let callback = expect_i32(callback);
         assert_eq!(
-            host.event_callback_subscription(rv(callback))
+            host.event_callback_subscription(callback.into())
                 .expect("callback subscription lookup should succeed"),
-            rv(subscription)
+            subscription
         );
         assert_eq!(
-            host.event_callback_arity(rv(callback))
+            host.event_callback_arity(callback.into())
                 .expect("callback arity lookup should succeed"),
-            rv(1)
+            1
         );
         assert!(
-            host.event_callback_arg(rv(callback), rv(0))
+            host.event_callback_arg(callback.into(), 0)
                 .expect("callback arg0 lookup should succeed")
                 == rv(77)
         );
         assert_eq!(
-            host.release_event_callback(rv(callback))
+            host.release_event_callback(callback.into())
                 .expect("callback release should succeed"),
             rv(1)
         );
         assert_eq!(
-            host.unsubscribe_event(rv(subscription))
+            host.unsubscribe_event(subscription)
                 .expect("unsubscribe should succeed"),
             rv(1)
         );
@@ -5478,7 +5404,7 @@ mod tests {
     fn windows_native_com_event_unsubscribe_rejects_unknown_subscription() {
         let host = StandardHostServices::new(HalProfileId::Windows, HostPolicy::interactive_dev());
         let err = host
-            .unsubscribe_event(rv(40_999))
+            .unsubscribe_event(40_999.into())
             .expect_err("unknown subscription should fail deterministically");
         assert_eq!(err.kind, HalErrorKind::AdapterFault);
         assert!(err.message.contains("COM-E-EVENT-ADVISE-FAILED"));
@@ -5489,12 +5415,12 @@ mod tests {
     fn windows_native_com_event_callback_lookup_rejects_unknown_callback() {
         let host = StandardHostServices::new(HalProfileId::Windows, HostPolicy::interactive_dev());
         let err = host
-            .event_callback_subscription(rv(60_999))
+            .event_callback_subscription(60_999.into())
             .expect_err("unknown callback should fail deterministically");
         assert_eq!(err.kind, HalErrorKind::AdapterFault);
         assert!(err.message.contains("COM-E-EVENT-CALLBACK-MISSING"));
         let err = host
-            .event_callback_arity(rv(60_999))
+            .event_callback_arity(60_999.into())
             .expect_err("unknown callback arity lookup should fail deterministically");
         assert_eq!(err.kind, HalErrorKind::AdapterFault);
         assert!(err.message.contains("COM-E-EVENT-CALLBACK-MISSING"));
@@ -5508,16 +5434,15 @@ mod tests {
             .create_object_test(4)
             .expect("create_object should return a token");
         let subscription = host
-            .subscribe_event(rv(object.into()), rv(1))
+            .subscribe_event(object, 1.into())
             .expect("subscribe should succeed");
-        let subscription = expect_i32(subscription);
         let _ = host
             .dispatch_invoke_legacy(object.into(), 3, 77)
             .expect("FireChanged should succeed");
         let callback = host.do_events().expect("callback token");
         let callback = expect_i32(callback);
         let err = host
-            .event_callback_arg(rv(callback), rv(1))
+            .event_callback_arg(callback.into(), 1)
             .expect_err("only callback arg index 0 should be supported");
         assert_eq!(err.kind, HalErrorKind::AdapterFault);
         assert!(
@@ -5525,12 +5450,12 @@ mod tests {
                 .contains("COM-E-EVENT-CALLBACK-SIGNATURE-MISMATCH")
         );
         assert_eq!(
-            host.release_event_callback(rv(callback))
+            host.release_event_callback(callback.into())
                 .expect("release callback should succeed"),
             rv(1)
         );
         assert_eq!(
-            host.unsubscribe_event(rv(subscription))
+            host.unsubscribe_event(subscription)
                 .expect("unsubscribe should succeed"),
             rv(1)
         );
@@ -6674,11 +6599,10 @@ mod tests {
             .create_object_test(4)
             .expect("create_object should return dictionary token");
         let subscription = host
-            .subscribe_event(rv(object.into()), rv(super::TEST_EVENT_CHANGED))
+            .subscribe_event(object, super::TEST_EVENT_CHANGED.into())
             .expect("subscribe_event should succeed for dictionary projection event");
-        let subscription = expect_i32(subscription);
         assert!(
-            subscription >= 40_001,
+            subscription.raw() >= 40_001,
             "subscription token should be in deterministic range"
         );
         {
@@ -6688,7 +6612,7 @@ mod tests {
                 .expect("com state lock should succeed");
             let registered = state
                 .subscriptions
-                .get(&subscription.into())
+                .get(&subscription)
                 .expect("dictionary projection subscription should be tracked");
             assert!(
                 matches!(
@@ -6709,18 +6633,18 @@ mod tests {
         let callback = expect_i32(callback);
         assert!(callback >= 60_001, "callback token should be in range");
         assert_eq!(
-            host.event_callback_subscription(rv(callback))
+            host.event_callback_subscription(callback.into())
                 .expect("callback subscription lookup should succeed"),
-            rv(subscription)
+            subscription
         );
         assert_eq!(
-            host.event_callback_arg(rv(callback), rv(0))
+            host.event_callback_arg(callback.into(), 0)
                 .expect("callback arg lookup should succeed"),
             rv(42)
         );
-        host.release_event_callback(rv(callback))
+        host.release_event_callback(callback.into())
             .expect("callback release should succeed");
-        host.unsubscribe_event(rv(subscription))
+        host.unsubscribe_event(subscription)
             .expect("unsubscribe_event should succeed");
     }
 
@@ -6794,9 +6718,8 @@ mod tests {
             .create_object_test(4)
             .expect("create_object should return controlled COM object");
         let subscription = host
-            .subscribe_event(rv(object.into()), rv(1))
+            .subscribe_event(object, 1.into())
             .expect("subscribe_event should succeed");
-        let subscription = expect_i32(subscription);
         let _ = host
             .dispatch_invoke_legacy(object.into(), 3, 77)
             .expect("dispatch_invoke should queue callback");
@@ -6822,7 +6745,7 @@ mod tests {
         );
 
         let err = host
-            .unsubscribe_event(rv(subscription))
+            .unsubscribe_event(subscription)
             .expect_err("released object subscription should already be removed");
         assert_eq!(err.kind, HalErrorKind::AdapterFault);
     }
@@ -6980,5 +6903,141 @@ mod tests {
                 RuntimeValue::I32(symbol.saturating_add(arg))
             );
         }
+    }
+}
+
+#[cfg(test)]
+#[allow(dead_code, clippy::items_after_test_module)]
+impl StandardHostServices {
+    fn legacy_subscribe_event(
+        &self,
+        object: RuntimeValue,
+        event: RuntimeValue,
+    ) -> HalResult<RuntimeValue> {
+        let object = match object {
+            RuntimeValue::ObjectHandle(handle) => handle,
+            RuntimeValue::I32(value) => ObjectHandle::new(value),
+            other => {
+                return Err(HalError::adapter_fault(
+                    self.profile,
+                    CapabilityId::ComActivationDispatch,
+                    "subscribe_event",
+                    format!("legacy test helper requires object token, got {other:?}"),
+                ));
+            }
+        };
+        let event = event
+            .to_legacy_i32()
+            .map(ComMemberToken::new)
+            .map_err(|detail| {
+                HalError::adapter_fault(
+                    self.profile,
+                    CapabilityId::ComActivationDispatch,
+                    "subscribe_event",
+                    detail,
+                )
+            })?;
+        <Self as ComHal>::subscribe_event(self, object, event)
+            .map(|value| RuntimeValue::I32(value.raw()))
+    }
+
+    fn legacy_unsubscribe_event(&self, subscription: RuntimeValue) -> HalResult<RuntimeValue> {
+        let subscription = subscription
+            .to_legacy_i32()
+            .map(ComSubscriptionToken::new)
+            .map_err(|detail| {
+                HalError::adapter_fault(
+                    self.profile,
+                    CapabilityId::ComActivationDispatch,
+                    "unsubscribe_event",
+                    detail,
+                )
+            })?;
+        <Self as ComHal>::unsubscribe_event(self, subscription)
+    }
+
+    fn legacy_event_callback_subscription(
+        &self,
+        callback: RuntimeValue,
+    ) -> HalResult<RuntimeValue> {
+        let callback = callback
+            .to_legacy_i32()
+            .map(ComCallbackToken::new)
+            .map_err(|detail| {
+                HalError::adapter_fault(
+                    self.profile,
+                    CapabilityId::ComActivationDispatch,
+                    "event_callback_subscription",
+                    detail,
+                )
+            })?;
+        <Self as ComHal>::event_callback_subscription(self, callback)
+            .map(|value| RuntimeValue::I32(value.raw()))
+    }
+
+    fn legacy_event_callback_arity(&self, callback: RuntimeValue) -> HalResult<RuntimeValue> {
+        let callback = callback
+            .to_legacy_i32()
+            .map(ComCallbackToken::new)
+            .map_err(|detail| {
+                HalError::adapter_fault(
+                    self.profile,
+                    CapabilityId::ComActivationDispatch,
+                    "event_callback_arity",
+                    detail,
+                )
+            })?;
+        <Self as ComHal>::event_callback_arity(self, callback)
+            .map(|value| RuntimeValue::I32(i32::try_from(value).unwrap_or(i32::MAX)))
+    }
+
+    fn legacy_event_callback_arg(
+        &self,
+        callback: RuntimeValue,
+        index: RuntimeValue,
+    ) -> HalResult<RuntimeValue> {
+        let callback = callback
+            .to_legacy_i32()
+            .map(ComCallbackToken::new)
+            .map_err(|detail| {
+                HalError::adapter_fault(
+                    self.profile,
+                    CapabilityId::ComActivationDispatch,
+                    "event_callback_arg",
+                    detail,
+                )
+            })?;
+        let index = index.to_legacy_i32().map_err(|detail| {
+            HalError::adapter_fault(
+                self.profile,
+                CapabilityId::ComActivationDispatch,
+                "event_callback_arg",
+                detail,
+            )
+        })?;
+        if index < 0 {
+            return Err(HalError::adapter_fault(
+                self.profile,
+                CapabilityId::ComActivationDispatch,
+                "event_callback_arg",
+                format!("negative index {index}"),
+            ));
+        }
+        <Self as ComHal>::event_callback_arg(self, callback, index as usize)
+    }
+
+    fn legacy_release_event_callback(&self, callback: RuntimeValue) -> HalResult<RuntimeValue> {
+        let callback = callback
+            .to_legacy_i32()
+            .map(ComCallbackToken::new)
+            .map_err(|detail| {
+                HalError::adapter_fault(
+                    self.profile,
+                    CapabilityId::ComActivationDispatch,
+                    "release_event_callback",
+                    detail,
+                )
+            })?;
+        <Self as ComHal>::release_event_callback(self, callback)
     }
 }

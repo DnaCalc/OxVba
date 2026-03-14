@@ -1,7 +1,8 @@
 use std::{collections::HashMap, sync::Arc};
 
 use oxvba_com::{
-    ComValue, DynamicCallArg, DynamicCallRequest, DynamicMemberSelector, DynamicObjectBridge,
+    ComCallbackToken, ComMemberToken, ComSubscriptionToken, ComValue, DynamicCallArg,
+    DynamicCallRequest, DynamicMemberSelector, DynamicObjectBridge,
 };
 use oxvba_compiler::{
     Bytecode, Instruction, ProjectDynamicObjectRoute, bytecode::StringCompareMode,
@@ -1065,9 +1066,41 @@ impl Vm {
                 Instruction::IntrinsicComSubscribeEventHost { dst, object, event } => {
                     let object = self.read_value_slot(*object)?;
                     let event = self.read_value_slot(*event)?;
+                    let object = match Self::runtime_value_to_com_object(
+                        &object,
+                        "com_subscribe_event.object",
+                    ) {
+                        Ok(object) => object,
+                        Err(detail) => {
+                            let err = HalError::adapter_fault(
+                                self.host_services.profile(),
+                                CapabilityId::ComActivationDispatch,
+                                "subscribe_event",
+                                detail,
+                            );
+                            pc = self.route_host_error(pc, err)?;
+                            continue;
+                        }
+                    };
+                    let event = match Self::runtime_value_to_com_member_token(
+                        &event,
+                        "com_subscribe_event.event",
+                    ) {
+                        Ok(event) => event,
+                        Err(detail) => {
+                            let err = HalError::adapter_fault(
+                                self.host_services.profile(),
+                                CapabilityId::ComActivationDispatch,
+                                "subscribe_event",
+                                detail,
+                            );
+                            pc = self.route_host_error(pc, err)?;
+                            continue;
+                        }
+                    };
                     match self.host_services.com().subscribe_event(object, event) {
                         Ok(value) => {
-                            self.write_value_slot(*dst, value)?;
+                            self.write_value_slot(*dst, RuntimeValue::I32(value.raw()))?;
                             pc += 1;
                         }
                         Err(err) => pc = self.route_host_error(pc, err)?,
@@ -1075,6 +1108,22 @@ impl Vm {
                 }
                 Instruction::IntrinsicComUnsubscribeEventHost { dst, subscription } => {
                     let subscription = self.read_value_slot(*subscription)?;
+                    let subscription = match Self::runtime_value_to_com_subscription_token(
+                        &subscription,
+                        "com_unsubscribe_event.subscription",
+                    ) {
+                        Ok(subscription) => subscription,
+                        Err(detail) => {
+                            let err = HalError::adapter_fault(
+                                self.host_services.profile(),
+                                CapabilityId::ComActivationDispatch,
+                                "unsubscribe_event",
+                                detail,
+                            );
+                            pc = self.route_host_error(pc, err)?;
+                            continue;
+                        }
+                    };
                     match self.host_services.com().unsubscribe_event(subscription) {
                         Ok(value) => {
                             self.write_value_slot(*dst, value)?;
@@ -1085,13 +1134,29 @@ impl Vm {
                 }
                 Instruction::IntrinsicComEventCallbackSubscriptionHost { dst, callback } => {
                     let callback = self.read_value_slot(*callback)?;
+                    let callback = match Self::runtime_value_to_com_callback_token(
+                        &callback,
+                        "com_event_callback_subscription.callback",
+                    ) {
+                        Ok(callback) => callback,
+                        Err(detail) => {
+                            let err = HalError::adapter_fault(
+                                self.host_services.profile(),
+                                CapabilityId::ComActivationDispatch,
+                                "event_callback_subscription",
+                                detail,
+                            );
+                            pc = self.route_host_error(pc, err)?;
+                            continue;
+                        }
+                    };
                     match self
                         .host_services
                         .com()
                         .event_callback_subscription(callback)
                     {
                         Ok(value) => {
-                            self.write_value_slot(*dst, value)?;
+                            self.write_value_slot(*dst, RuntimeValue::I32(value.raw()))?;
                             pc += 1;
                         }
                         Err(err) => pc = self.route_host_error(pc, err)?,
@@ -1104,6 +1169,38 @@ impl Vm {
                 } => {
                     let callback = self.read_value_slot(*callback)?;
                     let index = self.read_value_slot(*index)?;
+                    let callback = match Self::runtime_value_to_com_callback_token(
+                        &callback,
+                        "com_event_callback_arg.callback",
+                    ) {
+                        Ok(callback) => callback,
+                        Err(detail) => {
+                            let err = HalError::adapter_fault(
+                                self.host_services.profile(),
+                                CapabilityId::ComActivationDispatch,
+                                "event_callback_arg",
+                                detail,
+                            );
+                            pc = self.route_host_error(pc, err)?;
+                            continue;
+                        }
+                    };
+                    let index = match Self::runtime_value_to_usize_index(
+                        &index,
+                        "com_event_callback_arg.index",
+                    ) {
+                        Ok(index) => index,
+                        Err(detail) => {
+                            let err = HalError::adapter_fault(
+                                self.host_services.profile(),
+                                CapabilityId::ComActivationDispatch,
+                                "event_callback_arg",
+                                detail,
+                            );
+                            pc = self.route_host_error(pc, err)?;
+                            continue;
+                        }
+                    };
                     match self.host_services.com().event_callback_arg(callback, index) {
                         Ok(value) => {
                             self.write_value_slot(*dst, value)?;
@@ -1114,6 +1211,22 @@ impl Vm {
                 }
                 Instruction::IntrinsicComReleaseEventCallbackHost { dst, callback } => {
                     let callback = self.read_value_slot(*callback)?;
+                    let callback = match Self::runtime_value_to_com_callback_token(
+                        &callback,
+                        "com_release_event_callback.callback",
+                    ) {
+                        Ok(callback) => callback,
+                        Err(detail) => {
+                            let err = HalError::adapter_fault(
+                                self.host_services.profile(),
+                                CapabilityId::ComActivationDispatch,
+                                "release_event_callback",
+                                detail,
+                            );
+                            pc = self.route_host_error(pc, err)?;
+                            continue;
+                        }
+                    };
                     match self.host_services.com().release_event_callback(callback) {
                         Ok(value) => {
                             self.write_value_slot(*dst, value)?;
@@ -1565,6 +1678,35 @@ impl Vm {
             RuntimeValue::ObjectHandle(handle) => Ok(*handle),
             other => Self::runtime_value_legacy_token(other, field).map(Into::into),
         }
+    }
+
+    fn runtime_value_to_com_member_token(
+        value: &RuntimeValue,
+        field: &str,
+    ) -> Result<ComMemberToken, String> {
+        Self::runtime_value_legacy_token(value, field).map(ComMemberToken::new)
+    }
+
+    fn runtime_value_to_com_subscription_token(
+        value: &RuntimeValue,
+        field: &str,
+    ) -> Result<ComSubscriptionToken, String> {
+        Self::runtime_value_legacy_token(value, field).map(ComSubscriptionToken::new)
+    }
+
+    fn runtime_value_to_com_callback_token(
+        value: &RuntimeValue,
+        field: &str,
+    ) -> Result<ComCallbackToken, String> {
+        Self::runtime_value_legacy_token(value, field).map(ComCallbackToken::new)
+    }
+
+    fn runtime_value_to_usize_index(value: &RuntimeValue, field: &str) -> Result<usize, String> {
+        let index = Self::runtime_value_legacy_token(value, field)?;
+        if index < 0 {
+            return Err(format!("{field} cannot be negative: {index}"));
+        }
+        usize::try_from(index).map_err(|_| format!("{field} exceeds usize range: {index}"))
     }
 
     fn runtime_value_to_dynamic_member_selector(

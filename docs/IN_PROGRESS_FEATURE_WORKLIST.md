@@ -77,10 +77,10 @@ Why still open:
 Why still open:
 1. major ownership extraction slices are complete, including shared runtime state, typelib cache ownership, deterministic member/event metadata lookup, both connection-point sink lifecycles, the Windows client ABI, the deterministic `OxVba.TestDispatch` fixture implementation, and the Windows COM event/callback state wrapper,
 2. `oxvba-com` now also owns deterministic metadata-driven `ComBinding` assembly, so HAL no longer constructs member/default/event binding tables after metadata load,
-3. HAL still carries the active COM contract surface and bootstrap/delegation seams, so the remaining work is contraction and rebinding rather than another metadata extraction slice.
-4. callback payload polling/metadata access now also delegates through `oxvba-com`, further narrowing the remaining live Windows execution seam.
-5. parity-complete closure still depends on moving the remaining COM behavior/contract authority behind the intended `oxvba-com` boundary.
-6. the dedicated closure plan is now recorded in `docs/worksets/WORKSET_2026-03-14_IP04_OXVBA_COM_HAL_EXTRACTION_CLOSURE.md`; `IP-04` remains open until that end-to-end ownership plan is complete.
+3. the event-side `ComHal` contract is now typed end-to-end across HAL, VM, host, and adapter stubs, so the remaining work is no longer callback-token normalization but the final invoke-result and Windows execution-seam extraction.`r`n4. HAL still carries the remaining active COM contract/bootstrap seams, so the open work is final contraction and rebinding rather than another metadata extraction slice.
+5. callback payload polling/metadata access now also delegates through `oxvba-com`, further narrowing the remaining live Windows execution seam.
+6. parity-complete closure still depends on moving the remaining COM behavior/contract authority behind the intended `oxvba-com` boundary.
+7. the dedicated closure plan is now recorded in `docs/worksets/WORKSET_2026-03-14_IP04_OXVBA_COM_HAL_EXTRACTION_CLOSURE.md`; `IP-04` remains open until that end-to-end ownership plan is complete.
 
 ### `IP-05` Windows early-bound COM and type-library parity
 
@@ -145,6 +145,7 @@ When any feature area above changes:
 2. Is there still any open blocker, deferred gate, oracle gap, or unimplemented parity behavior in scope?
 3. If yes, keep the entry `in-progress`.
 4. If no, update the owning docs first, then remove or mark the entry complete through an explicit documented decision.
+
 
 
 

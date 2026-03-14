@@ -1,3 +1,23 @@
+## 2026-03-14 - Contracted the event-side ComHal boundary to typed COM handles
+
+- Completed the first coordinated public `ComHal` migration slice across:
+  - [traits.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-hal\src\traits.rs)
+  - [standard.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-hal\src\adapters\standard.rs)
+  - [null.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-hal\src\adapters\null.rs)
+  - [wasm.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-hal\src\adapters\wasm.rs)
+  - [interpreter.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-vm\src\interpreter.rs)
+  - [engine.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-host\src\engine.rs)
+- `ComHal::{subscribe_event,unsubscribe_event,event_callback_subscription,event_callback_arity,event_callback_arg,release_event_callback}` now use typed COM/object handles on the public seam.
+- VM COM intrinsics and host COM event helpers now decode/encode typed tokens at the edge instead of routing event-side identity through `RuntimeValue` wrappers.
+- Null/wasm adapters now compile against the contracted trait while preserving explicit legacy-only test helpers outside the public trait.
+- Net effect:
+  - the event-side public COM contract is no longer transitional,
+  - the remaining `IP-04` wall is narrowed to the live Windows invoke-result lifecycle seam and the last HAL-to-`oxvba-com` execution delegation work.
+- Verification:
+  - `cargo test -p oxvba-hal -p oxvba-vm -p oxvba-host --quiet`
+  - `cargo clippy -p oxvba-hal -p oxvba-vm -p oxvba-host --all-targets -- -D warnings`
+  - `./scripts/check-governance.ps1`
+  - `./scripts/meta-check.ps1 -Fast -NoArtifacts`
 ## 2026-03-14 - Reached the public ComHal contraction wall
 
 - After the resolved-member DISPID cache extraction, the next remaining COM/HAL work was tested as a typed-token `ComHal` contraction slice.
@@ -157,6 +177,7 @@
 
 ## 2026-03-13 - Moved bound-dispatch and subscription teardown ownership into oxvba-com
 ## 2026-03-13 - Moved bound-dispatch and subscription teardown ownership into oxvba-com
+
 
 
 
