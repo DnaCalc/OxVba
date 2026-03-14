@@ -1172,6 +1172,7 @@ struct EarlyBoundBinding {
 struct InternalClassBinding {
     project_name: String,
     module_name: String,
+    generated_instance_id: Option<i32>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1242,6 +1243,14 @@ fn lower_module_source_module_aware(
                 procedures,
                 &internal_class_bindings,
             )?;
+            let expanded_line = rewrite_internal_class_default_member_assignment(
+                &expanded_line,
+                active_project,
+                current_project,
+                &current_module,
+                procedures,
+                &internal_class_bindings,
+            )?;
             let state_assigned =
                 rewrite_internal_class_state_assignment(&expanded_line, &class_state_bindings);
             let expanded_line = if state_assigned != expanded_line {
@@ -1249,6 +1258,14 @@ fn lower_module_source_module_aware(
             } else {
                 rewrite_internal_class_state_reads(&state_assigned, &class_state_bindings)
             };
+            let expanded_line = rewrite_internal_class_default_member_read_assignment(
+                &expanded_line,
+                active_project,
+                current_project,
+                &current_module,
+                procedures,
+                &internal_class_bindings,
+            )?;
             let expanded_line = rewrite_internal_class_property_reads(
                 &expanded_line,
                 active_project,
@@ -1396,6 +1413,7 @@ fn expand_bound_source_line(
             InternalClassBinding {
                 project_name: target_project.clone(),
                 module_name: target_module.clone(),
+                generated_instance_id: dim_decl.as_new.then_some(*next_internal_instance_id),
             },
         );
         let mut out = vec![format!("{}Dim {}", dim_decl.leading_ws, dim_decl.var_name)];
@@ -1440,6 +1458,7 @@ fn expand_bound_source_line(
             InternalClassBinding {
                 project_name: target_project,
                 module_name: target_module,
+                generated_instance_id: None,
             },
         );
         withevents_bindings.insert(normalize_identifier(&withevents_var));
@@ -1884,6 +1903,67 @@ fn resolve_internal_class_member_target_of_kinds(
 }
 
 #[allow(clippy::too_many_arguments)]
+fn resolve_internal_class_default_member_target_of_kinds(
+    receiver: &str,
+    active_project: &str,
+    current_project: &str,
+    current_module: &str,
+    procedures: &[ProcedureDecl],
+    internal_class_bindings: &BTreeMap<String, InternalClassBinding>,
+    allowed_kinds: &[ProcedureDeclKind],
+) -> Result<Option<(String, String)>, ProjectCompileError> {
+    let Some((target_project, target_module, instance_arg)) = internal_class_bindings
+        .get(receiver)
+        .map(|binding| {
+            (
+                binding.project_name.clone(),
+                binding.module_name.clone(),
+                receiver.to_string(),
+            )
+        })
+        .or_else(|| {
+            procedures
+                .iter()
+                .any(|decl| {
+                    decl.project_name == current_project
+                        && decl.module_name == receiver
+                        && decl.module_kind == ModuleKind::Class
+                })
+                .then(|| {
+                    (
+                        current_project.to_string(),
+                        receiver.to_string(),
+                        "0".to_string(),
+                    )
+                })
+        })
+    else {
+        return Ok(None);
+    };
+
+    let mut candidates = procedures
+        .iter()
+        .filter(|decl| {
+            decl.project_name == target_project
+                && decl.module_name == target_module
+                && decl.is_default_member
+                && (allowed_kinds.is_empty() || allowed_kinds.contains(&decl.kind))
+                && is_visible_from_active_project(
+                    decl,
+                    active_project,
+                    current_project,
+                    current_module,
+                )
+        })
+        .collect::<Vec<_>>();
+    if candidates.is_empty() {
+        return Ok(None);
+    }
+    candidates.sort_by_key(|decl| decl.lowered_name.clone());
+    Ok(Some((candidates[0].lowered_name.clone(), instance_arg)))
+}
+
+#[allow(clippy::too_many_arguments)]
 fn resolve_internal_class_member_target(
     receiver: &str,
     member: &str,
@@ -2194,6 +2274,112 @@ fn rewrite_internal_class_property_assignment(
         target,
         instance_arg,
         rhs
+    ))
+}
+
+#[allow(clippy::too_many_arguments)]
+fn rewrite_internal_class_default_member_assignment(
+    line: &str,
+    active_project: &str,
+    current_project: &str,
+    current_module: &str,
+    procedures: &[ProcedureDecl],
+    internal_class_bindings: &BTreeMap<String, InternalClassBinding>,
+) -> Result<String, ProjectCompileError> {
+    if internal_class_bindings.is_empty() || class_state_line_is_non_executable(line) {
+        return Ok(line.to_string());
+    }
+    let trimmed = line.trim_start();
+    let leading = line.len().saturating_sub(trimmed.len());
+    if trimmed.to_ascii_lowercase().starts_with("set ") {
+        return Ok(line.to_string());
+    }
+    let Some(eq_idx) = trimmed.find('=') else {
+        return Ok(line.to_string());
+    };
+    let lhs = trimmed[..eq_idx].trim();
+    let rhs = trimmed[eq_idx + 1..].trim();
+    if lhs.is_empty() || rhs.is_empty() || lhs.contains('.') {
+        return Ok(line.to_string());
+    }
+    let receiver = normalize_identifier(lhs);
+    if receiver.is_empty() {
+        return Ok(line.to_string());
+    }
+    if let Some(binding) = internal_class_bindings.get(&receiver)
+        && let Ok(instance_id) = rhs.parse::<i32>()
+        && binding.generated_instance_id == Some(instance_id)
+    {
+        return Ok(line.to_string());
+    }
+    let Some((target, instance_arg)) = resolve_internal_class_default_member_target_of_kinds(
+        &receiver,
+        active_project,
+        current_project,
+        current_module,
+        procedures,
+        internal_class_bindings,
+        &[ProcedureDeclKind::PropertyLet],
+    )?
+    else {
+        return Ok(line.to_string());
+    };
+    Ok(format!(
+        "{}{}({}, {})",
+        &line[..leading],
+        target,
+        instance_arg,
+        rhs
+    ))
+}
+
+#[allow(clippy::too_many_arguments)]
+fn rewrite_internal_class_default_member_read_assignment(
+    line: &str,
+    active_project: &str,
+    current_project: &str,
+    current_module: &str,
+    procedures: &[ProcedureDecl],
+    internal_class_bindings: &BTreeMap<String, InternalClassBinding>,
+) -> Result<String, ProjectCompileError> {
+    if internal_class_bindings.is_empty() || class_state_line_is_non_executable(line) {
+        return Ok(line.to_string());
+    }
+    let trimmed = line.trim_start();
+    let leading = line.len().saturating_sub(trimmed.len());
+    if trimmed.to_ascii_lowercase().starts_with("set ") {
+        return Ok(line.to_string());
+    }
+    let Some(eq_idx) = trimmed.find('=') else {
+        return Ok(line.to_string());
+    };
+    let lhs = trimmed[..eq_idx].trim();
+    let rhs = trimmed[eq_idx + 1..].trim();
+    if lhs.is_empty() || rhs.is_empty() || lhs.contains('.') || rhs.contains('.') {
+        return Ok(line.to_string());
+    }
+    let rhs_name = normalize_identifier(rhs);
+    if rhs_name.is_empty() {
+        return Ok(line.to_string());
+    }
+    let Some((target, instance_arg)) = resolve_internal_class_default_member_target_of_kinds(
+        &rhs_name,
+        active_project,
+        current_project,
+        current_module,
+        procedures,
+        internal_class_bindings,
+        &[ProcedureDeclKind::PropertyGet],
+    )?
+    else {
+        return Ok(line.to_string());
+    };
+    Ok(format!(
+        "{}{} = {}({})",
+        &line[..leading],
+        lhs,
+        target,
+        instance_arg
     ))
 }
 fn collect_class_state_bindings(
@@ -3191,6 +3377,22 @@ fn rewrite_module_source(
                 &withevents_bindings,
             )?;
             let expanded_line = rewrite_internal_class_property_assignment(
+                &expanded_line,
+                active_project,
+                current_project,
+                &current_module,
+                procedures,
+                &internal_class_bindings,
+            )?;
+            let expanded_line = rewrite_internal_class_default_member_assignment(
+                &expanded_line,
+                active_project,
+                current_project,
+                &current_module,
+                procedures,
+                &internal_class_bindings,
+            )?;
+            let expanded_line = rewrite_internal_class_default_member_read_assignment(
                 &expanded_line,
                 active_project,
                 current_project,

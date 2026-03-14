@@ -479,3 +479,12 @@
 - Added end-to-end host coverage in [engine.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-host\src\engine.rs) proving natural internal-class `Property Get` / `Property Let` execution through the shared dynamic-object path.
 - In parallel, attempted the next late-bound COM substrate slice for typed `VT_ARRAY | VT_DISPATCH` results and deliberately backed it out after the host lane continued to fault with `STATUS_ACCESS_VIOLATION`.
 - Recorded the unresolved COM array crash as `BLK-COM-ARRAY-DISPATCH-001` rather than leaving an unverified partial slice in the tree.
+## 2026-03-14 - Advanced IP-02 native default-member syntax on the PMR path
+
+- Extended the active `IP-02A` slice so native internal project-class bare default-member syntax now lowers and executes end to end through the same PMR/dynamic-object substrate already used by explicit `DispatchInvoke(...)` and natural `widget.Value` property syntax.
+- In [project.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-compiler\src\project.rs), added bounded lowering for:
+  - `beforeValue = widget` -> native default-member `Property Get`,
+  - `widget = 9` -> native default-member `Property Let`,
+  - while explicitly preserving compiler-generated `Dim ... As New` internal-instance initialization lines instead of misrouting them through default-member `Property Let`.
+- Added end-to-end host coverage in [engine.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-host\src\engine.rs) proving natural bare default-member `Get` / `Let` execution for native internal project-class objects with authoritative `VB_UserMemId = 0` metadata.
+- `IP-02` remains in progress: `Property Set`, `Set` vs `Let`, indexed/default property behavior beyond this proven subset, and Office-style call-vs-value parity are still open.
