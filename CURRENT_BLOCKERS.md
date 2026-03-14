@@ -95,7 +95,7 @@ Run context: active parity/compliance execution plus in-progress feature worklis
   - `oxvba-com` now also owns shared Windows COM invoke failure and `EXCEPINFO` capture types/helpers, reducing the remaining wire/error mechanics left in HAL,
   - the canonical runtime-value `IDispatch::Invoke` helper for the semantic COM request path now also lives in `oxvba-com`, while HAL retains only object-handle resolve/bind state around that call,
   - `ComInvokeArg.value` and `ComCallbackPayload.args` no longer use raw `i32` tokens at the shared COM boundary,
-  - VM `DispatchInvoke` construction now preserves `Empty`/`Null`/`CVErr(...)`/array-intent shape and runtime strings into that carrier instead of flattening them before the COM boundary,
+  - VM `DispatchInvoke` construction now preserves `Empty`/`Null`/`CVErr(...)`/array-intent shape and runtime strings into that carrier instead of flattening them before the COM boundary,`r`n  - compiler lowering now materializes both VBA `Array(...)` literals and `ParamArray` packs as semantic `IntrinsicArrayLiteral` payloads rather than legacy count tags,
   - `SafeArray` carrier values can now preserve owned semantic element payloads instead of only length/dimension shape,
   - Windows COM invoke/result translation now maps that carrier to and from `VARIANT` for the supported subset, including BSTR string arguments/results, and callback payload polling returns the same carrier family,
   - Windows COM invoke/result translation now also supports owned one-dimensional `VT_ARRAY | VT_VARIANT` payloads end to end on the helper and controlled `EchoVariant` invoke lanes,
@@ -396,6 +396,7 @@ Run context: active parity/compliance execution plus in-progress feature worklis
 - Previously resolved blockers:
   - `BLK-EVT-001` — resolved (runtime subscription graph)
   - `BLK-COM-001` — resolved (COM event callback parity with external registered server evidence)
+
 
 
 

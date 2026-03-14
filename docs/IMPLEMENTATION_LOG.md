@@ -1,3 +1,12 @@
+## 2026-03-14 - ParamArray lowering now preserves semantic arrays
+
+- Replaced the compiler''s `ParamArray` count-tag lowering with semantic array-literal construction, so trailing `ParamArray` packs now enter runtime and COM lanes as `RuntimeValue::ArrayIntent(SafeArray::from_values(...))`.
+- Added compiler evidence for `IntrinsicArrayLiteral` emission and VM/JIT/host evidence proving `ParamArray` forwarding into `DispatchInvoke(..., "ClassifyVariantArg", items)` now reaches the controlled COM fixture as `VT_ARRAY | VT_VARIANT`.
+- Remaining gap: broader multi-dimensional and object-valued SAFEARRAY parity is still open.
+- Verification:
+  - `cargo fmt --all`
+  - `cargo test -p oxvba-compiler -p oxvba-host -p oxvba-vm -p oxvba-com -p oxvba-hal --quiet`
+  - `cargo clippy -p oxvba-com -p oxvba-compiler -p oxvba-host -p oxvba-vm -p oxvba-hal --all-targets -- -D warnings`
 ## 2026-03-14 - Natural named late-bound default-member dispatch
 
 - Removed the stale compiler-side rejection for named arguments on natural late-bound default-member syntax and now lower that form onto the same `DispatchInvoke(..., 0, name := ...)` metadata-backed path already used by explicit dispatch.
@@ -425,6 +434,7 @@
 
 ## 2026-03-13 - Moved bound-dispatch and subscription teardown ownership into oxvba-com
 ## 2026-03-13 - Moved bound-dispatch and subscription teardown ownership into oxvba-com
+
 
 
 

@@ -2,7 +2,6 @@ use std::collections::{BTreeMap, HashMap};
 
 use oxvba_runtime::{
     DynLinkSymbol,
-    safe_array::ARRAY_TAG_BASE,
     value_tags::{EMPTY_TAG, ERROR_TAG_BASE, ERROR_TAG_LIMIT, NULL_TAG},
 };
 
@@ -936,10 +935,22 @@ fn emit_early_call(
         };
         if param.param_array {
             let extras_start = param_array_idx.unwrap_or(meta.params.len());
-            let extras_count = args.len().saturating_sub(extras_start);
-            instructions.push(Instruction::LoadConstI32 {
-                slot: param_slot,
-                value: ARRAY_TAG_BASE + extras_count as i32,
+            let mut values = Vec::new();
+            for arg in args.iter().skip(extras_start) {
+                let value_slot = temps.alloc_temp();
+                emit_expr_into(
+                    &arg.expr,
+                    compare_mode,
+                    value_slot,
+                    slot_map,
+                    temps,
+                    instructions,
+                );
+                values.push(value_slot);
+            }
+            instructions.push(Instruction::IntrinsicArrayLiteral {
+                dst: param_slot,
+                values,
             });
             continue;
         }

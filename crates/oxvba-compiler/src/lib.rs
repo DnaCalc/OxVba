@@ -749,6 +749,9 @@ mod tests {
                 .iter()
                 .any(|i| matches!(i, Instruction::IntrinsicUBoundArray { .. }))
         );
+        assert!(out.instructions.iter().any(
+            |i| matches!(i, Instruction::IntrinsicArrayLiteral { values, .. } if values.len() == 3)
+        ));
     }
 
     #[test]

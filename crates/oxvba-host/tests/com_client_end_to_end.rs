@@ -431,6 +431,32 @@ End Sub
     }
 
     #[test]
+    fn paramarray_forwarding_preserves_semantic_array_payloads_at_com_boundary() {
+        let source = r#"
+Sub Main()
+Dim vt
+Call Capture(vt, 5, 7, 9)
+End Sub
+
+Sub Capture(ByRef target, ParamArray items() As Variant)
+    target = DispatchInvoke(CreateObject("OxVba.TestDispatch"), "ClassifyVariantArg", items)
+End Sub
+"#;
+
+        let vm = run_windows_host_backed(source, false);
+        let jit = run_windows_host_backed(source, true);
+        assert_eq!(
+            vm, jit,
+            "VM/JIT snapshots diverged on ParamArray COM forwarding path: vm={vm:?} jit={jit:?}"
+        );
+        assert_eq!(
+            vm[0],
+            RuntimeValue::I32(8204),
+            "ParamArray forwarding should marshal as VT_ARRAY | VT_VARIANT"
+        );
+    }
+
+    #[test]
     fn dispatchinvoke_classifies_array_arguments_at_com_boundary() {
         let source = r#"
 Sub Main()
