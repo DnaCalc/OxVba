@@ -1,12 +1,14 @@
 #![allow(unsafe_op_in_unsafe_fn)]
 
 use crate::{
-    ComBinding, ComCallbackToken, ComEventPath, ComEventSpec, ComMemberToken, ComObjectToken,
-    ComRuntimeState, ComSubscriptionToken, ComValue, DispatchEventSinkConfig, RawIDispatch,
-    WindowsConnectionPointTransport, binding_from_typelib_metadata, release_dispatch,
-    source_interface_event_spec_supported, try_advise_dispatch_event_sink,
-    try_advise_single_i32_source_interface_event_sink, unadvise_connection_point,
+    ComBinding, ComCallbackToken, ComEventPath, ComEventSpec, ComMemberSpec, ComMemberToken,
+    ComObjectToken, ComRuntimeState, ComSubscriptionToken, ComValue, DispatchEventSinkConfig,
+    RawIDispatch, WindowsConnectionPointTransport, binding_from_typelib_metadata,
+    get_dispid_by_name, release_dispatch, source_interface_event_spec_supported,
+    try_advise_dispatch_event_sink, try_advise_single_i32_source_interface_event_sink,
+    unadvise_connection_point,
 };
+
 use oxvba_runtime::ObjectHandle;
 use std::collections::BTreeSet;
 use std::ops::{Deref, DerefMut};
@@ -416,6 +418,32 @@ pub fn cache_member_dispid(
     if let Some(binding) = state.bindings.get_mut(&ComObjectToken::new(object.raw())) {
         binding.member_dispids.insert(member, dispid);
     }
+}
+
+/// # Safety
+///
+/// `dispatch` must be a valid live `IDispatch` pointer for the duration of the lookup.
+pub unsafe fn resolve_member_dispid_cached(
+    state: &mut WindowsComClientState,
+    dispatch: *mut RawIDispatch,
+    object: ObjectHandle,
+    binding: &ComBinding,
+    member: ComMemberToken,
+    fallback_spec: Option<ComMemberSpec>,
+) -> Result<Option<(i32, ComMemberSpec)>, String> {
+    let spec = if let Some(spec) = binding.member_specs.get(&member).cloned() {
+        spec
+    } else if let Some(spec) = fallback_spec {
+        spec
+    } else {
+        return Ok(None);
+    };
+    if let Some(dispid) = binding.member_dispids.get(&member).copied() {
+        return Ok(Some((dispid, spec)));
+    }
+    let dispid = unsafe { get_dispid_by_name(dispatch, &spec.name) }?;
+    cache_member_dispid(state, object, member, dispid);
+    Ok(Some((dispid, spec)))
 }
 
 /// # Safety

@@ -36,8 +36,7 @@ use oxvba_com::{
     activate_runtime_dispatch as com_activate_runtime_dispatch,
     add_ref_dispatch as raw_add_ref_dispatch, advise_event_subscription,
     bind_native_dispatch_result as com_bind_native_dispatch_result, binding_from_typelib_metadata,
-    build_typelib_metadata, cache_member_dispid as com_cache_member_dispid,
-    callback_arg as com_callback_arg, callback_arity as com_callback_arity,
+    build_typelib_metadata, callback_arg as com_callback_arg, callback_arity as com_callback_arity,
     callback_subscription_token as com_callback_subscription_token,
     canonicalize_member_known_args as com_canonicalize_member_known_args,
     event_callback_args_from_member_token, event_is_source_interface_only,
@@ -54,6 +53,7 @@ use oxvba_com::{
     remove_subscription_callbacks as com_remove_subscription_callbacks,
     resolve_bound_native_dispatch as com_resolve_bound_native_dispatch,
     resolve_known_typelib_identity,
+    resolve_member_dispid_cached as com_resolve_member_dispid_cached,
     resolve_named_argument_dispids as com_resolve_named_argument_dispids,
     resolve_subscription_transport as com_resolve_subscription_transport,
     take_polled_callback_payload as com_take_polled_callback_payload,
@@ -1178,28 +1178,22 @@ impl StandardHostServices {
         dispatch: *mut RawIDispatch,
         binding: &ComBinding,
         member: i32,
-        cached: Option<i32>,
+        _cached: Option<i32>,
     ) -> HalResult<Option<(i32, ComMemberSpec)>> {
-        let member = ComMemberToken::new(member);
-        let spec = if let Some(spec) = com_member_spec_for_binding(binding, member) {
-            spec
-        } else if let Some(spec) =
-            self.known_member_spec_for_prog_id_name(&binding.prog_id_name, member)?
-        {
-            spec
-        } else {
-            return Ok(None);
-        };
-        if let Some(dispid) = cached {
-            return Ok(Some((dispid, spec)));
-        }
-        // SAFETY: `dispatch` is a live IDispatch pointer owned by this adapter and `spec.name`
-        let dispid = unsafe { raw_get_dispid_by_name(dispatch, &spec.name) }
-            .map_err(|message| self.com_dispatch_adapter_fault(message))?;
         let mut state = self.com_lock(CapabilityId::ComActivationDispatch, "dispatch_invoke")?;
-        com_cache_member_dispid(&mut state, ObjectHandle::new(object), member, dispid);
+        let result = unsafe {
+            com_resolve_member_dispid_cached(
+                &mut state,
+                dispatch,
+                ObjectHandle::new(object),
+                binding,
+                ComMemberToken::new(member),
+                self.known_member_spec_for_prog_id_name(&binding.prog_id_name, member.into())?,
+            )
+        }
+        .map_err(|message| self.com_dispatch_adapter_fault(message))?;
         self.assert_com_invariants(&state, "dispatch_invoke_cache_update");
-        Ok(Some((dispid, spec)))
+        Ok(result)
     }
 
     #[cfg(target_os = "windows")]
@@ -3796,23 +3790,6 @@ fn com_event_signature_arity_for_binding(_binding: &ComBinding, _event: i32) -> 
 fn com_event_is_source_interface_only(_binding: &ComBinding, _event: i32) -> bool {
     false
 }
-fn com_member_spec_for_binding(
-    binding: &ComBinding,
-    member: ComMemberToken,
-) -> Option<ComMemberSpec> {
-    binding.member_specs.get(&member).cloned()
-}
-
-#[cfg(target_os = "windows")]
-#[cfg(not(target_os = "windows"))]
-fn com_event_callback_args_from_member_token(
-    _binding: &ComBinding,
-    _member: i32,
-    _arg: i32,
-) -> Option<(i32, Vec<i32>)> {
-    None
-}
-#[cfg(target_os = "windows")]
 fn parse_hresult_hex(message: &str) -> Option<u32> {
     let marker = "HRESULT 0x";
     let offset = message.find(marker)?;

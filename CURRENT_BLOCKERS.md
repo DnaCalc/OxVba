@@ -133,7 +133,7 @@ Run context: active parity/compliance execution plus in-progress feature worklis
   - Blocks IP-04 final COM ownership extraction from HAL.
   - Blocks IP-05 early-binding completion, IP-06 server/export parity, and part of IP-08 hosting parity.
 - Current state:
-  - shared transport/types, deterministic typelib catalog logic, supported Windows wire/value/invoke helpers, generic callback/subscription runtime state, metadata cache ownership, known-member/event policy, metadata-driven ComBinding assembly, activation-time binding insertion, bound-dispatch lookup/rebinding, DISPID cache mutation, object release bookkeeping, subscription callback-pruning, callback payload polling/metadata access/release helpers, event transport-choice resolution, bound/unbound COM invoke-policy planning, member-spec/direct-DISPID runtime invoke execution helpers, and the generic runtime-value `IDispatch::Invoke` execute/classify helper now live materially in oxvba-com,
+  - shared transport/types, deterministic typelib catalog logic, supported Windows wire/value/invoke helpers, generic callback/subscription runtime state, metadata cache ownership, known-member/event policy, metadata-driven ComBinding assembly, activation-time binding insertion, bound-dispatch lookup/rebinding, resolved-member DISPID cache lookup/update, object release bookkeeping, subscription callback-pruning, callback payload polling/metadata access/release helpers, event transport-choice resolution, bound/unbound COM invoke-policy planning, member-spec/direct-DISPID runtime invoke execution helpers, and the generic runtime-value `IDispatch::Invoke` execute/classify helper now live materially in oxvba-com,
   - oxvba-hal::standard no longer owns the high-level default-member/direct-DISPID/member-spec routing rules, but it still owns the live Windows IDispatch execution seam and the public COM-facing HAL contract,
   - the remaining work is HAL rebinding/contraction plus movement of the last execution/lifecycle authority behind an oxvba-com surface,
   - forcing closure early would freeze a still-transitional contract.
@@ -399,6 +399,7 @@ Run context: active parity/compliance execution plus in-progress feature worklis
 - Previously resolved blockers:
   - `BLK-EVT-001` — resolved (runtime subscription graph)
   - `BLK-COM-001` — resolved (COM event callback parity with external registered server evidence)
+
 
 
 

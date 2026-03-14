@@ -89,7 +89,8 @@ pub use windows_runtime_state::{
     event_callback_args_from_member_token, event_is_source_interface_only,
     event_signature_arity_for_binding, insert_bound_object_binding, release_callback,
     release_object_binding, release_subscription_transport, remove_subscription_callbacks,
-    resolve_bound_native_dispatch, resolve_subscription_transport, take_polled_callback_payload,
+    resolve_bound_native_dispatch, resolve_member_dispid_cached, resolve_subscription_transport,
+    take_polled_callback_payload,
 };
 #[cfg(target_os = "windows")]
 pub use windows_test_dispatch::{
