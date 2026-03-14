@@ -67,6 +67,7 @@ Run context: active parity/compliance execution plus in-progress feature worklis
   - controlled `IDispatch` variant roundtrips now cover `VT_NULL` and `VT_ERROR` in addition to the existing scalar subset,
   - controlled/native result conversion now also accepts `VT_I2` and `VT_UI2` into the current integer-token lane,
   - controlled/native result conversion now also accepts one-dimensional typed SAFEARRAY results with `VT_I2`, `VT_BOOL`, and `VT_BSTR` element payloads into `RuntimeValue::ArrayIntent`,
+  - controlled/native object result conversion now has end-to-end host evidence for both `VT_DISPATCH` and `VT_UNKNOWN` values that expose `IDispatch`,
   - invoke failure translation now distinguishes real `ArgErr` presence from the previous synthetic `arg_err=0` fallback,
   - controlled `DISP_E_EXCEPTION` lanes now preserve bounded `EXCEPINFO` source/description/scode details in the adapter-fault surface,
   - explicit `DispatchInvoke(obj, 0, name := value)` now routes through authoritative default-member metadata when the binding exposes one,
@@ -393,6 +394,7 @@ Run context: active parity/compliance execution plus in-progress feature worklis
 - Previously resolved blockers:
   - `BLK-EVT-001` — resolved (runtime subscription graph)
   - `BLK-COM-001` — resolved (COM event callback parity with external registered server evidence)
+
 
 
 

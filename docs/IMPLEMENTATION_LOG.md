@@ -1,3 +1,11 @@
+## 2026-03-14 - Late-bound COM object result rebinding evidence
+
+- Added controlled `OxVba.TestDispatch` members returning `VT_DISPATCH` and `VT_UNKNOWN` results that expose `IDispatch`.
+- Added compiler token-table coverage plus VM/JIT end-to-end host coverage showing those results rebind into invokable runtime object handles.
+- Verification:
+  - `cargo fmt --all`
+  - `cargo test -p oxvba-compiler -p oxvba-com -p oxvba-host -p oxvba-hal --quiet`
+  - `cargo clippy -p oxvba-com -p oxvba-compiler -p oxvba-host -p oxvba-hal --all-targets -- -D warnings`
 ## 2026-03-14 - Late-bound COM typed SAFEARRAY result subset
 
 - Extended the Windows `VARIANT` bridge in `oxvba-com` so one-dimensional typed SAFEARRAY results with `VT_I2`, `VT_BOOL`, and `VT_BSTR` elements now map into `RuntimeValue::ArrayIntent`.
@@ -391,6 +399,7 @@
 
 ## 2026-03-13 - Moved bound-dispatch and subscription teardown ownership into oxvba-com
 ## 2026-03-13 - Moved bound-dispatch and subscription teardown ownership into oxvba-com
+
 
 
 

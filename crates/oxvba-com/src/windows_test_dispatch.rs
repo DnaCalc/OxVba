@@ -32,8 +32,8 @@ use windows_sys::Win32::{
         },
         Ole::{SafeArrayCreateVector, SafeArrayDestroy, SafeArrayPutElement},
         Variant::{
-            VARIANT, VT_ARRAY, VT_BOOL, VT_BSTR, VT_EMPTY, VT_ERROR, VT_I2, VT_I4, VT_NULL, VT_UI2,
-            VT_UI4,
+            VARIANT, VT_ARRAY, VT_BOOL, VT_BSTR, VT_DISPATCH, VT_EMPTY, VT_ERROR, VT_I2, VT_I4,
+            VT_NULL, VT_UI2, VT_UI4, VT_UNKNOWN,
         },
     },
 };
@@ -79,6 +79,8 @@ pub const TEST_DISPID_RETURN_UNSIGNED_WORD: i32 = 19;
 pub const TEST_DISPID_RETURN_SMALLINT_ARRAY: i32 = 20;
 pub const TEST_DISPID_RETURN_BOOL_ARRAY: i32 = 21;
 pub const TEST_DISPID_RETURN_STRING_ARRAY: i32 = 22;
+pub const TEST_DISPID_RETURN_SELF_DISPATCH: i32 = 23;
+pub const TEST_DISPID_RETURN_SELF_UNKNOWN: i32 = 24;
 pub const TEST_NAMED_DISPID_LHS: i32 = 101;
 pub const TEST_NAMED_DISPID_RHS: i32 = 102;
 pub const TEST_NAMED_DISPID_INDEX: i32 = 103;
@@ -1087,6 +1089,8 @@ unsafe extern "system" fn oxvba_test_get_ids_of_names(
             "returnsmallintarray" => TEST_DISPID_RETURN_SMALLINT_ARRAY,
             "returnboolarray" => TEST_DISPID_RETURN_BOOL_ARRAY,
             "returnstringarray" => TEST_DISPID_RETURN_STRING_ARRAY,
+            "returnselfdispatch" => TEST_DISPID_RETURN_SELF_DISPATCH,
+            "returnselfunknown" => TEST_DISPID_RETURN_SELF_UNKNOWN,
             "lhs" => TEST_NAMED_DISPID_LHS,
             "rhs" => TEST_NAMED_DISPID_RHS,
             "index" => TEST_NAMED_DISPID_INDEX,
@@ -1418,6 +1422,28 @@ unsafe extern "system" fn oxvba_test_invoke(
                 Ok(()) => COM_S_OK,
                 Err(_) => COM_E_INVALIDARG,
             }
+        }
+        TEST_DISPID_RETURN_SELF_DISPATCH => {
+            if (wflags & DISPATCH_METHOD) == 0 || cargs != 0 {
+                return COM_DISP_E_BADPARAMCOUNT;
+            }
+            if !pvarresult.is_null() {
+                oxvba_test_add_ref(this);
+                (*pvarresult).Anonymous.Anonymous.vt = VT_DISPATCH;
+                (*pvarresult).Anonymous.Anonymous.Anonymous.pdispVal = this.cast();
+            }
+            COM_S_OK
+        }
+        TEST_DISPID_RETURN_SELF_UNKNOWN => {
+            if (wflags & DISPATCH_METHOD) == 0 || cargs != 0 {
+                return COM_DISP_E_BADPARAMCOUNT;
+            }
+            if !pvarresult.is_null() {
+                oxvba_test_add_ref(this);
+                (*pvarresult).Anonymous.Anonymous.vt = VT_UNKNOWN;
+                (*pvarresult).Anonymous.Anonymous.Anonymous.punkVal = this.cast();
+            }
+            COM_S_OK
         }
         TEST_DISPID_VALUE => {
             if (wflags & DISPATCH_PROPERTYGET) == 0 || cargs != 0 {

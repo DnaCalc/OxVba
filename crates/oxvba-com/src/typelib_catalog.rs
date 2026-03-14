@@ -36,6 +36,8 @@ const TEST_DISPID_RETURN_UNSIGNED_WORD: i32 = 19;
 const TEST_DISPID_RETURN_SMALLINT_ARRAY: i32 = 20;
 const TEST_DISPID_RETURN_BOOL_ARRAY: i32 = 21;
 const TEST_DISPID_RETURN_STRING_ARRAY: i32 = 22;
+const TEST_DISPID_RETURN_SELF_DISPATCH: i32 = 23;
+const TEST_DISPID_RETURN_SELF_UNKNOWN: i32 = 24;
 
 const TEST_EVENT_CHANGED: i32 = 1;
 const TEST_EVENT_CHANGED_SOURCE_INTERFACE: i32 = 2;
@@ -382,6 +384,22 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
             TypeLibMemberMetadata {
                 name: "ReturnStringArray".to_string(),
                 token: TEST_DISPID_RETURN_STRING_ARRAY,
+                requires_argument: false,
+                invoke_kind: TypeLibMemberInvokeKind::Method,
+                parameter_names: Vec::new(),
+                is_default_member: false,
+            },
+            TypeLibMemberMetadata {
+                name: "ReturnSelfDispatch".to_string(),
+                token: TEST_DISPID_RETURN_SELF_DISPATCH,
+                requires_argument: false,
+                invoke_kind: TypeLibMemberInvokeKind::Method,
+                parameter_names: Vec::new(),
+                is_default_member: false,
+            },
+            TypeLibMemberMetadata {
+                name: "ReturnSelfUnknown".to_string(),
+                token: TEST_DISPID_RETURN_SELF_UNKNOWN,
                 requires_argument: false,
                 invoke_kind: TypeLibMemberInvokeKind::Method,
                 parameter_names: Vec::new(),

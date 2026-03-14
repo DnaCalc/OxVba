@@ -343,6 +343,44 @@ End Sub
     }
 
     #[test]
+    fn dispatchinvoke_accepts_object_variant_results() {
+        let source = r#"
+Sub Main()
+Dim obj
+Dim returnedDispatch
+Dim returnedUnknown
+Dim dispatchCount
+Dim unknownCount
+obj = CreateObject("OxVba.TestDispatch")
+returnedDispatch = DispatchInvoke(obj, "ReturnSelfDispatch")
+returnedUnknown = DispatchInvoke(obj, "ReturnSelfUnknown")
+dispatchCount = DispatchInvoke(returnedDispatch, "Count")
+unknownCount = DispatchInvoke(returnedUnknown, "Count")
+End Sub
+"#;
+
+        let vm = run_windows_host_backed(source, false);
+        let jit = run_windows_host_backed(source, true);
+        assert_eq!(
+            vm, jit,
+            "VM/JIT snapshots diverged on object-result COM path: vm={vm:?} jit={jit:?}"
+        );
+        assert!(expect_object_handle(&vm[0]).raw() >= 20_001);
+        assert!(expect_object_handle(&vm[1]).raw() >= 20_001);
+        assert!(expect_object_handle(&vm[2]).raw() >= 20_001);
+        assert_eq!(
+            vm[3],
+            RuntimeValue::I32(7),
+            "VT_DISPATCH result should rebind into an invokable object handle"
+        );
+        assert_eq!(
+            vm[4],
+            RuntimeValue::I32(7),
+            "VT_UNKNOWN result exposing IDispatch should rebind into an invokable object handle"
+        );
+    }
+
+    #[test]
     fn dispatchinvoke_error_path_routes_through_on_error_resume_next() {
         let out = run_windows_host_backed(
             r#"

@@ -2254,6 +2254,8 @@ fn known_dispatch_member_token(member_name: &str) -> Option<i32> {
         "returnsmallintarray" => Some(20),
         "returnboolarray" => Some(21),
         "returnstringarray" => Some(22),
+        "returnselfdispatch" => Some(23),
+        "returnselfunknown" => Some(24),
         _ => None,
     }
 }
