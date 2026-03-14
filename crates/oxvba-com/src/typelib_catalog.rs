@@ -29,6 +29,13 @@ const TEST_DISPID_SUM_PAIR: i32 = 12;
 const TEST_DISPID_LOOKUP_PAIR: i32 = 13;
 const TEST_DISPID_SET_INDEXED_VALUE: i32 = 14;
 const TEST_DISPID_SET_INDEXED_VALUE_REF: i32 = 15;
+const TEST_DISPID_ECHO_VARIANT: i32 = 16;
+const TEST_DISPID_RAISE_EXCEPTION: i32 = 17;
+const TEST_DISPID_RETURN_SMALLINT: i32 = 18;
+const TEST_DISPID_RETURN_UNSIGNED_WORD: i32 = 19;
+const TEST_DISPID_RETURN_SMALLINT_ARRAY: i32 = 20;
+const TEST_DISPID_RETURN_BOOL_ARRAY: i32 = 21;
+const TEST_DISPID_RETURN_STRING_ARRAY: i32 = 22;
 
 const TEST_EVENT_CHANGED: i32 = 1;
 const TEST_EVENT_CHANGED_SOURCE_INTERFACE: i32 = 2;
@@ -326,7 +333,7 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
             },
             TypeLibMemberMetadata {
                 name: "EchoVariant".to_string(),
-                token: 16,
+                token: TEST_DISPID_ECHO_VARIANT,
                 requires_argument: true,
                 invoke_kind: TypeLibMemberInvokeKind::Method,
                 parameter_names: vec!["value".to_string()],
@@ -334,7 +341,7 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
             },
             TypeLibMemberMetadata {
                 name: "RaiseException".to_string(),
-                token: 17,
+                token: TEST_DISPID_RAISE_EXCEPTION,
                 requires_argument: false,
                 invoke_kind: TypeLibMemberInvokeKind::Method,
                 parameter_names: Vec::new(),
@@ -342,7 +349,7 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
             },
             TypeLibMemberMetadata {
                 name: "ReturnSmallInt".to_string(),
-                token: 18,
+                token: TEST_DISPID_RETURN_SMALLINT,
                 requires_argument: false,
                 invoke_kind: TypeLibMemberInvokeKind::Method,
                 parameter_names: Vec::new(),
@@ -350,7 +357,31 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
             },
             TypeLibMemberMetadata {
                 name: "ReturnUnsignedWord".to_string(),
-                token: 19,
+                token: TEST_DISPID_RETURN_UNSIGNED_WORD,
+                requires_argument: false,
+                invoke_kind: TypeLibMemberInvokeKind::Method,
+                parameter_names: Vec::new(),
+                is_default_member: false,
+            },
+            TypeLibMemberMetadata {
+                name: "ReturnSmallIntArray".to_string(),
+                token: TEST_DISPID_RETURN_SMALLINT_ARRAY,
+                requires_argument: false,
+                invoke_kind: TypeLibMemberInvokeKind::Method,
+                parameter_names: Vec::new(),
+                is_default_member: false,
+            },
+            TypeLibMemberMetadata {
+                name: "ReturnBoolArray".to_string(),
+                token: TEST_DISPID_RETURN_BOOL_ARRAY,
+                requires_argument: false,
+                invoke_kind: TypeLibMemberInvokeKind::Method,
+                parameter_names: Vec::new(),
+                is_default_member: false,
+            },
+            TypeLibMemberMetadata {
+                name: "ReturnStringArray".to_string(),
+                token: TEST_DISPID_RETURN_STRING_ARRAY,
                 requires_argument: false,
                 invoke_kind: TypeLibMemberInvokeKind::Method,
                 parameter_names: Vec::new(),

@@ -3274,6 +3274,9 @@ fn map_dispatch_member_literal_token(text: &str) -> Option<i32> {
         "raiseexception" => Some(17),
         "returnsmallint" => Some(18),
         "returnunsignedword" => Some(19),
+        "returnsmallintarray" => Some(20),
+        "returnboolarray" => Some(21),
+        "returnstringarray" => Some(22),
         _ => None,
     }
 }

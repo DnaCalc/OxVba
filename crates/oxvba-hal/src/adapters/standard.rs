@@ -4596,6 +4596,9 @@ mod tests {
                     "ReturnUnsignedWord".to_string(),
                     super::TEST_DISPID_RETURN_UNSIGNED_WORD
                 ),
+                ("ReturnSmallIntArray".to_string(), 20),
+                ("ReturnBoolArray".to_string(), 21),
+                ("ReturnStringArray".to_string(), 22),
             ]
         );
         let fire_changed_pair = metadata

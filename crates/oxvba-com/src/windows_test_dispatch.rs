@@ -24,13 +24,17 @@ use std::{
     sync::atomic::{AtomicI32, AtomicU32, Ordering},
 };
 use windows_sys::Win32::{
-    Foundation::SysAllocString,
+    Foundation::{SysAllocString, SysFreeString, VARIANT_BOOL},
     System::{
         Com::{
             DISPATCH_METHOD, DISPATCH_PROPERTYGET, DISPATCH_PROPERTYPUT, DISPATCH_PROPERTYPUTREF,
             DISPPARAMS, EXCEPINFO,
         },
-        Variant::{VARIANT, VT_BOOL, VT_EMPTY, VT_ERROR, VT_I2, VT_I4, VT_NULL, VT_UI2, VT_UI4},
+        Ole::{SafeArrayCreateVector, SafeArrayDestroy, SafeArrayPutElement},
+        Variant::{
+            VARIANT, VT_ARRAY, VT_BOOL, VT_BSTR, VT_EMPTY, VT_ERROR, VT_I2, VT_I4, VT_NULL, VT_UI2,
+            VT_UI4,
+        },
     },
 };
 
@@ -72,6 +76,9 @@ pub const TEST_DISPID_ECHO_VARIANT: i32 = 16;
 pub const TEST_DISPID_RAISE_EXCEPTION: i32 = 17;
 pub const TEST_DISPID_RETURN_SMALLINT: i32 = 18;
 pub const TEST_DISPID_RETURN_UNSIGNED_WORD: i32 = 19;
+pub const TEST_DISPID_RETURN_SMALLINT_ARRAY: i32 = 20;
+pub const TEST_DISPID_RETURN_BOOL_ARRAY: i32 = 21;
+pub const TEST_DISPID_RETURN_STRING_ARRAY: i32 = 22;
 pub const TEST_NAMED_DISPID_LHS: i32 = 101;
 pub const TEST_NAMED_DISPID_RHS: i32 = 102;
 pub const TEST_NAMED_DISPID_INDEX: i32 = 103;
@@ -94,6 +101,104 @@ unsafe fn populate_excepinfo(excep: *mut EXCEPINFO, source: &str, description: &
     (*excep).bstrSource = alloc_bstr(source);
     (*excep).bstrDescription = alloc_bstr(description);
     (*excep).scode = scode;
+}
+
+#[cfg(target_os = "windows")]
+#[allow(unsafe_op_in_unsafe_fn)]
+unsafe fn set_variant_i16_array(values: &[i16], variant: *mut VARIANT) -> Result<(), String> {
+    if variant.is_null() {
+        return Ok(());
+    }
+    let len = u32::try_from(values.len())
+        .map_err(|_| "SAFEARRAY payload length exceeds supported u32 range".to_string())?;
+    let psa = SafeArrayCreateVector(VT_I2, 0, len);
+    if psa.is_null() {
+        return Err("SafeArrayCreateVector(VT_I2) returned null".to_string());
+    }
+    for (offset, value) in values.iter().enumerate() {
+        let index = i32::try_from(offset)
+            .map_err(|_| "SAFEARRAY index exceeds supported i32 range".to_string())?;
+        let hr = SafeArrayPutElement(psa.cast_const(), &index, (value as *const i16).cast());
+        if hr < 0 {
+            let _ = SafeArrayDestroy(psa.cast_const());
+            return Err(format!(
+                "SafeArrayPutElement(VT_I2) failed with HRESULT {:#010X} at index {}",
+                hr as u32, index
+            ));
+        }
+    }
+    (*variant).Anonymous.Anonymous.vt = VT_ARRAY | VT_I2;
+    (*variant).Anonymous.Anonymous.Anonymous.parray = psa;
+    Ok(())
+}
+
+#[cfg(target_os = "windows")]
+#[allow(unsafe_op_in_unsafe_fn)]
+unsafe fn set_variant_bool_array(values: &[bool], variant: *mut VARIANT) -> Result<(), String> {
+    if variant.is_null() {
+        return Ok(());
+    }
+    let len = u32::try_from(values.len())
+        .map_err(|_| "SAFEARRAY payload length exceeds supported u32 range".to_string())?;
+    let psa = SafeArrayCreateVector(VT_BOOL, 0, len);
+    if psa.is_null() {
+        return Err("SafeArrayCreateVector(VT_BOOL) returned null".to_string());
+    }
+    for (offset, value) in values.iter().enumerate() {
+        let index = i32::try_from(offset)
+            .map_err(|_| "SAFEARRAY index exceeds supported i32 range".to_string())?;
+        let raw: VARIANT_BOOL = if *value { -1 } else { 0 };
+        let hr = SafeArrayPutElement(
+            psa.cast_const(),
+            &index,
+            (&raw as *const VARIANT_BOOL).cast(),
+        );
+        if hr < 0 {
+            let _ = SafeArrayDestroy(psa.cast_const());
+            return Err(format!(
+                "SafeArrayPutElement(VT_BOOL) failed with HRESULT {:#010X} at index {}",
+                hr as u32, index
+            ));
+        }
+    }
+    (*variant).Anonymous.Anonymous.vt = VT_ARRAY | VT_BOOL;
+    (*variant).Anonymous.Anonymous.Anonymous.parray = psa;
+    Ok(())
+}
+
+#[cfg(target_os = "windows")]
+#[allow(unsafe_op_in_unsafe_fn)]
+unsafe fn set_variant_bstr_array(values: &[&str], variant: *mut VARIANT) -> Result<(), String> {
+    if variant.is_null() {
+        return Ok(());
+    }
+    let len = u32::try_from(values.len())
+        .map_err(|_| "SAFEARRAY payload length exceeds supported u32 range".to_string())?;
+    let psa = SafeArrayCreateVector(VT_BSTR, 0, len);
+    if psa.is_null() {
+        return Err("SafeArrayCreateVector(VT_BSTR) returned null".to_string());
+    }
+    for (offset, value) in values.iter().enumerate() {
+        let index = i32::try_from(offset)
+            .map_err(|_| "SAFEARRAY index exceeds supported i32 range".to_string())?;
+        let bstr = alloc_bstr(value);
+        if bstr.is_null() {
+            let _ = SafeArrayDestroy(psa.cast_const());
+            return Err("SysAllocString returned null for VT_BSTR SAFEARRAY element".to_string());
+        }
+        let hr = SafeArrayPutElement(psa.cast_const(), &index, bstr.cast());
+        SysFreeString(bstr);
+        if hr < 0 {
+            let _ = SafeArrayDestroy(psa.cast_const());
+            return Err(format!(
+                "SafeArrayPutElement(VT_BSTR) failed with HRESULT {:#010X} at index {}",
+                hr as u32, index
+            ));
+        }
+    }
+    (*variant).Anonymous.Anonymous.vt = VT_ARRAY | VT_BSTR;
+    (*variant).Anonymous.Anonymous.Anonymous.parray = psa;
+    Ok(())
 }
 
 #[cfg(target_os = "windows")]
@@ -979,6 +1084,9 @@ unsafe extern "system" fn oxvba_test_get_ids_of_names(
             "raiseexception" => TEST_DISPID_RAISE_EXCEPTION,
             "returnsmallint" => TEST_DISPID_RETURN_SMALLINT,
             "returnunsignedword" => TEST_DISPID_RETURN_UNSIGNED_WORD,
+            "returnsmallintarray" => TEST_DISPID_RETURN_SMALLINT_ARRAY,
+            "returnboolarray" => TEST_DISPID_RETURN_BOOL_ARRAY,
+            "returnstringarray" => TEST_DISPID_RETURN_STRING_ARRAY,
             "lhs" => TEST_NAMED_DISPID_LHS,
             "rhs" => TEST_NAMED_DISPID_RHS,
             "index" => TEST_NAMED_DISPID_INDEX,
@@ -1283,6 +1391,33 @@ unsafe extern "system" fn oxvba_test_invoke(
                 (*pvarresult).Anonymous.Anonymous.Anonymous.uiVal = 65000;
             }
             COM_S_OK
+        }
+        TEST_DISPID_RETURN_SMALLINT_ARRAY => {
+            if (wflags & DISPATCH_METHOD) == 0 || cargs != 0 {
+                return COM_DISP_E_BADPARAMCOUNT;
+            }
+            match set_variant_i16_array(&[12, -4, 321], pvarresult) {
+                Ok(()) => COM_S_OK,
+                Err(_) => COM_E_INVALIDARG,
+            }
+        }
+        TEST_DISPID_RETURN_BOOL_ARRAY => {
+            if (wflags & DISPATCH_METHOD) == 0 || cargs != 0 {
+                return COM_DISP_E_BADPARAMCOUNT;
+            }
+            match set_variant_bool_array(&[true, false, true], pvarresult) {
+                Ok(()) => COM_S_OK,
+                Err(_) => COM_E_INVALIDARG,
+            }
+        }
+        TEST_DISPID_RETURN_STRING_ARRAY => {
+            if (wflags & DISPATCH_METHOD) == 0 || cargs != 0 {
+                return COM_DISP_E_BADPARAMCOUNT;
+            }
+            match set_variant_bstr_array(&["Alpha", "Beta"], pvarresult) {
+                Ok(()) => COM_S_OK,
+                Err(_) => COM_E_INVALIDARG,
+            }
         }
         TEST_DISPID_VALUE => {
             if (wflags & DISPATCH_PROPERTYGET) == 0 || cargs != 0 {

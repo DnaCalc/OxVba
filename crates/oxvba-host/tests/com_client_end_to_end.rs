@@ -2,7 +2,7 @@
 mod windows_com_e2e {
     use oxvba_hal::model::HostPolicy;
     use oxvba_host::{Engine, HostConfig};
-    use oxvba_runtime::{ObjectHandle, RuntimeValue};
+    use oxvba_runtime::{ObjectHandle, RuntimeValue, bstr::BStr, safe_array::SafeArray};
 
     fn run_windows_host_backed(source: &str, enable_jit: bool) -> Vec<RuntimeValue> {
         let mut engine = Engine::new(HostConfig {
@@ -289,6 +289,56 @@ End Sub
             vm[2],
             RuntimeValue::I32(65_000),
             "VT_UI2 result should coerce into the i32 token lane"
+        );
+    }
+
+    #[test]
+    fn dispatchinvoke_accepts_typed_safe_array_variant_results() {
+        let source = r#"
+Sub Main()
+Dim obj
+Dim smallArray
+Dim boolArray
+Dim stringArray
+obj = CreateObject("OxVba.TestDispatch")
+smallArray = DispatchInvoke(obj, "ReturnSmallIntArray")
+boolArray = DispatchInvoke(obj, "ReturnBoolArray")
+stringArray = DispatchInvoke(obj, "ReturnStringArray")
+End Sub
+"#;
+
+        let vm = run_windows_host_backed(source, false);
+        let jit = run_windows_host_backed(source, true);
+        assert_eq!(
+            vm, jit,
+            "VM/JIT snapshots diverged on typed SAFEARRAY path: vm={vm:?} jit={jit:?}"
+        );
+        assert!(expect_object_handle(&vm[0]).raw() >= 20_001);
+        assert_eq!(
+            vm[1],
+            RuntimeValue::ArrayIntent(SafeArray::from_values(vec![
+                RuntimeValue::I32(12),
+                RuntimeValue::I32(-4),
+                RuntimeValue::I32(321),
+            ])),
+            "VT_ARRAY|VT_I2 result should preserve scalar array elements"
+        );
+        assert_eq!(
+            vm[2],
+            RuntimeValue::ArrayIntent(SafeArray::from_values(vec![
+                RuntimeValue::Bool(true),
+                RuntimeValue::Bool(false),
+                RuntimeValue::Bool(true),
+            ])),
+            "VT_ARRAY|VT_BOOL result should preserve boolean array elements"
+        );
+        assert_eq!(
+            vm[3],
+            RuntimeValue::ArrayIntent(SafeArray::from_values(vec![
+                RuntimeValue::String(BStr("Alpha".to_string())),
+                RuntimeValue::String(BStr("Beta".to_string())),
+            ])),
+            "VT_ARRAY|VT_BSTR result should preserve string array elements"
         );
     }
 

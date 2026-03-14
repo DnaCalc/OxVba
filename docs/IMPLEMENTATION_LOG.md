@@ -1,3 +1,12 @@
+## 2026-03-14 - Late-bound COM typed SAFEARRAY result subset
+
+- Extended the Windows `VARIANT` bridge in `oxvba-com` so one-dimensional typed SAFEARRAY results with `VT_I2`, `VT_BOOL`, and `VT_BSTR` elements now map into `RuntimeValue::ArrayIntent`.
+- Added controlled `OxVba.TestDispatch` methods returning typed SAFEARRAY results and wired the deterministic compiler token tables/catalog so those fixture members lower cleanly.
+- Added unit coverage in `crates/oxvba-com/src/windows_variant.rs`, a compiler token-mapping regression test, and VM/JIT end-to-end host coverage in `crates/oxvba-host/tests/com_client_end_to_end.rs`.
+- Verification:
+  - `cargo fmt --all`
+  - `cargo test -p oxvba-compiler -p oxvba-com -p oxvba-host --quiet`
+  - `cargo clippy -p oxvba-com -p oxvba-compiler -p oxvba-host --all-targets -- -D warnings`
 ## 2026-03-14 - Added dependency-ordered COM/property/hosting execution workset
 
 - Added [WORKSET_2026-03-14_COM_PARITY_PROPERTY_SERVER_HOSTING_EXECUTION_SEQUENCE.md](C:\Work\DnaCalc\OxVba\docs\worksets\WORKSET_2026-03-14_COM_PARITY_PROPERTY_SERVER_HOSTING_EXECUTION_SEQUENCE.md) as the large-program execution map after `IP-04` closure.
@@ -382,6 +391,7 @@
 
 ## 2026-03-13 - Moved bound-dispatch and subscription teardown ownership into oxvba-com
 ## 2026-03-13 - Moved bound-dispatch and subscription teardown ownership into oxvba-com
+
 
 
 

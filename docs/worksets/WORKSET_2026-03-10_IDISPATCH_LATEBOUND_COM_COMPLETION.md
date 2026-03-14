@@ -1,7 +1,7 @@
 # Workset: Complete `IDispatch` / Late-Bound COM Client Support
 
 Date: 2026-03-10  
-Status: planned  
+Status: in-progress  
 Primary ladder mapping: `v506..v526`, `v536..v539`  
 Secondary ladder mapping: `v553..v556`, `v559..v566`  
 Program anchor: `docs/worksets/PROFILE_LADDER_2026-03-08_MACH1000_V467_V620_VBA71_WINDOWS_OFFICE_COMPLIANCE.md`
@@ -34,7 +34,7 @@ Still incomplete for true VBA/Office parity:
 2. optional-argument omission semantics across broad `Invoke` shapes,
 3. broad `VARIANT` coercion and byref/value legality,
 4. object/interface-pointer argument and result handling,
-5. SAFEARRAY argument/result parity beyond the current narrow transport shape,
+5. SAFEARRAY argument/result parity beyond the current one-dimensional `VT_VARIANT` plus scalar/string typed-element subset,
 6. richer `VarResult` / `ExcepInfo` / `ArgErr` translation behavior,
 7. broad Office automation compatibility outside the current fixture set.
 
@@ -118,7 +118,7 @@ Need:
 4. array/SAFEARRAY parity for practical Office lanes.
 
 Current gap:
-1. the implemented lane is still centered around integer-token transport and narrow helper coverage.
+1. the implemented lane is still centered around a constrained semantic carrier and only the current scalar/string/object/one-dimensional SAFEARRAY subset is covered.
 
 ### IDC-04 Error-channel fidelity
 
@@ -301,3 +301,4 @@ This workset is complete when:
 - `docs/spec/COM_CLIENT_SERVER_SCOPE_V1.md`
 - `docs/spec/COM_CLIENT_SERVER_CONFORMANCE_V1.md`
 - `docs/evidence/hal/HAL_IMPLEMENTATION_DEFINED.md`
+

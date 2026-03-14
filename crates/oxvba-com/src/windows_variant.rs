@@ -3,7 +3,7 @@ use oxvba_runtime::{ObjectHandle, bstr::BStr, safe_array::SafeArray};
 use std::ffi::c_void;
 
 #[cfg(target_os = "windows")]
-use windows_sys::Win32::Foundation::{SysAllocString, SysStringLen, VARIANT_BOOL};
+use windows_sys::Win32::Foundation::{SysAllocString, SysFreeString, SysStringLen, VARIANT_BOOL};
 #[cfg(target_os = "windows")]
 use windows_sys::Win32::System::Com::SAFEARRAY;
 #[cfg(target_os = "windows")]
@@ -50,11 +50,7 @@ unsafe fn safe_array_to_com_value(psa: *mut SAFEARRAY) -> Result<ComValue, Strin
             hr as u32
         ));
     }
-    if element_vt != VT_VARIANT {
-        return Err(format!(
-            "unsupported SAFEARRAY element vartype {element_vt}; only VT_VARIANT arrays are supported"
-        ));
-    }
+
     let mut lower = 0i32;
     let hr = SafeArrayGetLBound(psa.cast_const(), 1, &mut lower);
     if hr < 0 {
@@ -79,29 +75,125 @@ unsafe fn safe_array_to_com_value(psa: *mut SAFEARRAY) -> Result<ComValue, Strin
     };
     let mut values = Vec::with_capacity(len);
     for index in lower..=upper {
-        let mut element: VARIANT = std::mem::zeroed();
-        let hr = SafeArrayGetElement(
+        values.push(safe_array_element_to_runtime_value(
             psa.cast_const(),
-            &index,
-            (&mut element as *mut VARIANT).cast(),
-        );
-        if hr < 0 {
-            return Err(format!(
-                "SafeArrayGetElement failed with HRESULT {:#010X} at index {}",
-                hr as u32, index
-            ));
-        }
-        let value = match variant_to_com_value(&element) {
-            Ok(value) => value.to_runtime_value(),
-            Err(detail) => {
-                let _ = VariantClear(&mut element);
-                return Err(detail);
-            }
-        };
-        let _ = VariantClear(&mut element);
-        values.push(value);
+            index,
+            element_vt,
+        )?);
     }
     Ok(ComValue::ArrayIntent(SafeArray::from_values(values)))
+}
+
+#[cfg(target_os = "windows")]
+#[allow(unsafe_op_in_unsafe_fn)]
+unsafe fn safe_array_element_to_runtime_value(
+    psa: *const SAFEARRAY,
+    index: i32,
+    element_vt: u16,
+) -> Result<oxvba_runtime::RuntimeValue, String> {
+    match element_vt {
+        VT_VARIANT => {
+            let mut element: VARIANT = std::mem::zeroed();
+            let hr = SafeArrayGetElement(psa, &index, (&mut element as *mut VARIANT).cast());
+            if hr < 0 {
+                return Err(format!(
+                    "SafeArrayGetElement failed with HRESULT {:#010X} at index {}",
+                    hr as u32, index
+                ));
+            }
+            let value = match variant_to_com_value(&element) {
+                Ok(value) => value.to_runtime_value(),
+                Err(detail) => {
+                    let _ = VariantClear(&mut element);
+                    return Err(detail);
+                }
+            };
+            let _ = VariantClear(&mut element);
+            Ok(value)
+        }
+        VT_I2 => {
+            let mut element = 0i16;
+            let hr = SafeArrayGetElement(psa, &index, (&mut element as *mut i16).cast());
+            if hr < 0 {
+                return Err(format!(
+                    "SafeArrayGetElement failed with HRESULT {:#010X} at index {}",
+                    hr as u32, index
+                ));
+            }
+            Ok(ComValue::I32(element as i32).to_runtime_value())
+        }
+        VT_I4 => {
+            let mut element = 0i32;
+            let hr = SafeArrayGetElement(psa, &index, (&mut element as *mut i32).cast());
+            if hr < 0 {
+                return Err(format!(
+                    "SafeArrayGetElement failed with HRESULT {:#010X} at index {}",
+                    hr as u32, index
+                ));
+            }
+            Ok(ComValue::I32(element).to_runtime_value())
+        }
+        VT_UI2 => {
+            let mut element = 0u16;
+            let hr = SafeArrayGetElement(psa, &index, (&mut element as *mut u16).cast());
+            if hr < 0 {
+                return Err(format!(
+                    "SafeArrayGetElement failed with HRESULT {:#010X} at index {}",
+                    hr as u32, index
+                ));
+            }
+            Ok(ComValue::I32(element as i32).to_runtime_value())
+        }
+        VT_UI4 => {
+            let mut element = 0u32;
+            let hr = SafeArrayGetElement(psa, &index, (&mut element as *mut u32).cast());
+            if hr < 0 {
+                return Err(format!(
+                    "SafeArrayGetElement failed with HRESULT {:#010X} at index {}",
+                    hr as u32, index
+                ));
+            }
+            Ok(ComValue::I32(element as i32).to_runtime_value())
+        }
+        VT_BOOL => {
+            let mut element: VARIANT_BOOL = 0;
+            let hr = SafeArrayGetElement(psa, &index, (&mut element as *mut VARIANT_BOOL).cast());
+            if hr < 0 {
+                return Err(format!(
+                    "SafeArrayGetElement failed with HRESULT {:#010X} at index {}",
+                    hr as u32, index
+                ));
+            }
+            Ok(ComValue::Bool(element != 0).to_runtime_value())
+        }
+        VT_BSTR => {
+            let mut element: windows_sys::core::BSTR = std::ptr::null_mut();
+            let hr = SafeArrayGetElement(
+                psa,
+                &index,
+                (&mut element as *mut windows_sys::core::BSTR).cast(),
+            );
+            if hr < 0 {
+                return Err(format!(
+                    "SafeArrayGetElement failed with HRESULT {:#010X} at index {}",
+                    hr as u32, index
+                ));
+            }
+            let text = if element.is_null() {
+                String::new()
+            } else {
+                let len = usize::try_from(SysStringLen(element)).unwrap_or(0);
+                let slice = std::slice::from_raw_parts(element, len);
+                let text = String::from_utf16_lossy(slice);
+                SysFreeString(element);
+                text
+            };
+            Ok(ComValue::String(BStr(text)).to_runtime_value())
+        }
+        other => Err(format!(
+            "unsupported SAFEARRAY element vartype {other}; supported element vartypes are VT_VARIANT, VT_I2, VT_I4, VT_UI2, VT_UI4, VT_BOOL, and VT_BSTR"
+        )),
+    }
 }
 
 #[cfg(target_os = "windows")]
@@ -161,7 +253,7 @@ where
 
 #[cfg(target_os = "windows")]
 #[allow(unsafe_op_in_unsafe_fn)]
-/// Convert a Windows `VARIANT` carrying the supported scalar/string/one-dimensional-`VT_VARIANT`
+/// Convert a Windows `VARIANT` carrying the supported scalar/string/one-dimensional
 /// SAFEARRAY subset into the shared semantic `ComValue` carrier.
 ///
 /// # Safety
@@ -171,10 +263,6 @@ where
 pub unsafe fn variant_to_com_value(variant: &VARIANT) -> Result<ComValue, String> {
     let vt = variant.Anonymous.Anonymous.vt;
     if vt & VT_ARRAY != 0 {
-        let element_vt = vt & !VT_ARRAY;
-        if element_vt != VT_VARIANT {
-            return Err(format!("unsupported VARIANT return type vt={vt}"));
-        }
         let parray = variant.Anonymous.Anonymous.Anonymous.parray;
         return safe_array_to_com_value(parray);
     }
@@ -211,7 +299,7 @@ pub unsafe fn variant_to_com_value(variant: &VARIANT) -> Result<ComValue, String
 #[cfg(target_os = "windows")]
 #[allow(unsafe_op_in_unsafe_fn)]
 /// Populate a Windows `VARIANT` from the shared semantic `ComValue` carrier for the currently
-/// supported scalar/string/one-dimensional-`VT_VARIANT` SAFEARRAY subset and `VT_DISPATCH`
+/// supported scalar/string/one-dimensional SAFEARRAY subset and `VT_DISPATCH`
 /// object-handle lane.
 ///
 /// # Safety
@@ -317,8 +405,10 @@ mod tests {
     };
     use crate::ComValue;
     use oxvba_runtime::{RuntimeValue, bstr::BStr, safe_array::SafeArray};
+    use windows_sys::Win32::Foundation::{SysAllocString, SysFreeString};
+    use windows_sys::Win32::System::Ole::{SafeArrayCreateVector, SafeArrayPutElement};
     use windows_sys::Win32::System::Variant::{
-        VARIANT, VT_ARRAY, VT_DISPATCH, VT_UNKNOWN, VT_VARIANT, VariantClear,
+        VARIANT, VT_ARRAY, VT_BSTR, VT_DISPATCH, VT_I2, VT_UNKNOWN, VT_VARIANT, VariantClear,
     };
 
     #[test]
@@ -358,6 +448,72 @@ mod tests {
             assert_eq!(
                 variant_to_com_value(&variant).expect("read SAFEARRAY variant"),
                 value
+            );
+            let _ = VariantClear(&mut variant);
+        }
+    }
+
+    #[test]
+    fn typed_i2_safe_array_roundtrips_through_windows_bridge() {
+        let mut variant: VARIANT = unsafe { std::mem::zeroed() };
+        unsafe {
+            let psa = SafeArrayCreateVector(VT_I2, 0, 3);
+            assert!(
+                !psa.is_null(),
+                "SafeArrayCreateVector(VT_I2) should succeed"
+            );
+            for (index, value) in [12i16, -4i16, 321i16].into_iter().enumerate() {
+                let index = i32::try_from(index).expect("index should fit in i32");
+                let hr =
+                    SafeArrayPutElement(psa.cast_const(), &index, (&value as *const i16).cast());
+                assert!(
+                    hr >= 0,
+                    "SafeArrayPutElement(VT_I2) should succeed: {hr:#010X}"
+                );
+            }
+            variant.Anonymous.Anonymous.vt = VT_ARRAY | VT_I2;
+            variant.Anonymous.Anonymous.Anonymous.parray = psa;
+            assert_eq!(
+                variant_to_com_value(&variant).expect("read VT_I2 SAFEARRAY"),
+                ComValue::ArrayIntent(SafeArray::from_values(vec![
+                    RuntimeValue::I32(12),
+                    RuntimeValue::I32(-4),
+                    RuntimeValue::I32(321),
+                ]))
+            );
+            let _ = VariantClear(&mut variant);
+        }
+    }
+
+    #[test]
+    fn typed_bstr_safe_array_roundtrips_through_windows_bridge() {
+        let mut variant: VARIANT = unsafe { std::mem::zeroed() };
+        unsafe {
+            let psa = SafeArrayCreateVector(VT_BSTR, 0, 2);
+            assert!(
+                !psa.is_null(),
+                "SafeArrayCreateVector(VT_BSTR) should succeed"
+            );
+            for (index, value) in ["Alpha", "Beta"].into_iter().enumerate() {
+                let index = i32::try_from(index).expect("index should fit in i32");
+                let wide: Vec<u16> = value.encode_utf16().chain(std::iter::once(0)).collect();
+                let bstr = SysAllocString(wide.as_ptr());
+                assert!(!bstr.is_null(), "SysAllocString should succeed");
+                let hr = SafeArrayPutElement(psa.cast_const(), &index, bstr.cast());
+                SysFreeString(bstr);
+                assert!(
+                    hr >= 0,
+                    "SafeArrayPutElement(VT_BSTR) should succeed: {hr:#010X}"
+                );
+            }
+            variant.Anonymous.Anonymous.vt = VT_ARRAY | VT_BSTR;
+            variant.Anonymous.Anonymous.Anonymous.parray = psa;
+            assert_eq!(
+                variant_to_com_value(&variant).expect("read VT_BSTR SAFEARRAY"),
+                ComValue::ArrayIntent(SafeArray::from_values(vec![
+                    RuntimeValue::String(BStr("Alpha".to_string())),
+                    RuntimeValue::String(BStr("Beta".to_string())),
+                ]))
             );
             let _ = VariantClear(&mut variant);
         }
