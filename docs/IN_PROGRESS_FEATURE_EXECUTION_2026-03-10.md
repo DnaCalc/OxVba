@@ -91,7 +91,7 @@ Status vocabulary:
 - Blocker:
   - parity is still blocked by the remaining scope:
     - natural late-bound default-member syntax and non-metadata-backed bindings still lack authoritative default-member identity,
-    - broader interface-pointer handling beyond the `VT_DISPATCH` lane and broad `VARIANT`/`SAFEARRAY` marshalling are still below parity target,
+    - one-dimensional `VT_ARRAY | VT_VARIANT` payloads with nested `VT_DISPATCH` elements now roundtrip on the controlled fixture lane, but broader interface-pointer handling beyond the `VT_DISPATCH` lane and broader `VARIANT`/`SAFEARRAY` marshalling are still below parity target,
     - broader external `Invoke` error/result fidelity (`VarResult`, richer non-controlled `ExcepInfo`, broader argument-fault coverage) is still below parity target.
   - hard dependency discovered in this pass:
     - the remaining string/object/real-SAFEARRAY closure work is blocked by the still-incomplete canonical value carrier and unified dynamic-object protocol.

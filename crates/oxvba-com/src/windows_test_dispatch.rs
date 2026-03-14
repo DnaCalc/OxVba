@@ -30,10 +30,13 @@ use windows_sys::Win32::{
             DISPATCH_METHOD, DISPATCH_PROPERTYGET, DISPATCH_PROPERTYPUT, DISPATCH_PROPERTYPUTREF,
             DISPPARAMS, EXCEPINFO,
         },
-        Ole::{SafeArrayCreateVector, SafeArrayDestroy, SafeArrayPutElement},
+        Ole::{
+            SafeArrayCreateVector, SafeArrayDestroy, SafeArrayGetDim, SafeArrayGetElement,
+            SafeArrayGetLBound, SafeArrayGetUBound, SafeArrayGetVartype, SafeArrayPutElement,
+        },
         Variant::{
             VARIANT, VT_ARRAY, VT_BOOL, VT_BSTR, VT_DISPATCH, VT_EMPTY, VT_ERROR, VT_I2, VT_I4,
-            VT_NULL, VT_UI2, VT_UI4, VT_UNKNOWN,
+            VT_NULL, VT_UI2, VT_UI4, VT_UNKNOWN, VT_VARIANT, VariantClear,
         },
     },
 };
@@ -82,6 +85,8 @@ pub const TEST_DISPID_RETURN_STRING_ARRAY: i32 = 22;
 pub const TEST_DISPID_RETURN_SELF_DISPATCH: i32 = 23;
 pub const TEST_DISPID_RETURN_SELF_UNKNOWN: i32 = 24;
 pub const TEST_DISPID_CLASSIFY_VARIANT_ARG: i32 = 25;
+pub const TEST_DISPID_CLASSIFY_VARIANT_ARRAY_FIRST_ELEMENT_ARG: i32 = 26;
+pub const TEST_DISPID_RETURN_SELF_DISPATCH_ARRAY: i32 = 27;
 pub const TEST_NAMED_DISPID_LHS: i32 = 101;
 pub const TEST_NAMED_DISPID_RHS: i32 = 102;
 pub const TEST_NAMED_DISPID_INDEX: i32 = 103;
@@ -1093,6 +1098,10 @@ unsafe extern "system" fn oxvba_test_get_ids_of_names(
             "returnselfdispatch" => TEST_DISPID_RETURN_SELF_DISPATCH,
             "returnselfunknown" => TEST_DISPID_RETURN_SELF_UNKNOWN,
             "classifyvariantarg" => TEST_DISPID_CLASSIFY_VARIANT_ARG,
+            "classifyvariantarrayfirstelementarg" => {
+                TEST_DISPID_CLASSIFY_VARIANT_ARRAY_FIRST_ELEMENT_ARG
+            }
+            "returnselfdispatcharray" => TEST_DISPID_RETURN_SELF_DISPATCH_ARRAY,
             "lhs" => TEST_NAMED_DISPID_LHS,
             "rhs" => TEST_NAMED_DISPID_RHS,
             "index" => TEST_NAMED_DISPID_INDEX,
@@ -1455,6 +1464,18 @@ unsafe extern "system" fn oxvba_test_invoke(
             set_variant_i32(vt, pvarresult);
             COM_S_OK
         }
+        TEST_DISPID_CLASSIFY_VARIANT_ARRAY_FIRST_ELEMENT_ARG => {
+            if (wflags & DISPATCH_METHOD) == 0 || cargs != 1 || rgvarg.is_null() {
+                return COM_DISP_E_BADPARAMCOUNT;
+            }
+            classify_variant_array_first_element_vt(rgvarg, pvarresult)
+        }
+        TEST_DISPID_RETURN_SELF_DISPATCH_ARRAY => {
+            if (wflags & DISPATCH_METHOD) == 0 || cargs != 0 {
+                return COM_DISP_E_BADPARAMCOUNT;
+            }
+            set_variant_dispatch_array(this, pvarresult)
+        }
         TEST_DISPID_VALUE => {
             if (wflags & DISPATCH_PROPERTYGET) == 0 || cargs != 0 {
                 return COM_DISP_E_BADPARAMCOUNT;
@@ -1468,6 +1489,93 @@ unsafe extern "system" fn oxvba_test_invoke(
     }
 }
 
+#[cfg(target_os = "windows")]
+#[allow(unsafe_op_in_unsafe_fn)]
+unsafe fn set_variant_dispatch_array(
+    this: *mut core::ffi::c_void,
+    pvarresult: *mut VARIANT,
+) -> i32 {
+    let psa = SafeArrayCreateVector(VT_VARIANT, 0, 1);
+    if psa.is_null() {
+        return COM_E_INVALIDARG;
+    }
+    let mut element: VARIANT = std::mem::zeroed();
+    oxvba_test_add_ref(this);
+    element.Anonymous.Anonymous.vt = VT_DISPATCH;
+    element.Anonymous.Anonymous.Anonymous.pdispVal = this.cast();
+    let index = 0i32;
+    let hr = SafeArrayPutElement(
+        psa.cast_const(),
+        &index,
+        (&element as *const VARIANT).cast(),
+    );
+    let _ = VariantClear(&mut element);
+    if hr < 0 {
+        let _ = SafeArrayDestroy(psa.cast_const());
+        return COM_E_INVALIDARG;
+    }
+    if !pvarresult.is_null() {
+        (*pvarresult).Anonymous.Anonymous.vt = VT_ARRAY | VT_VARIANT;
+        (*pvarresult).Anonymous.Anonymous.Anonymous.parray = psa;
+        return COM_S_OK;
+    }
+    let _ = SafeArrayDestroy(psa.cast_const());
+    COM_S_OK
+}
+
+#[cfg(target_os = "windows")]
+#[allow(unsafe_op_in_unsafe_fn)]
+unsafe fn classify_variant_array_first_element_vt(
+    rgvarg: *const VARIANT,
+    pvarresult: *mut VARIANT,
+) -> i32 {
+    let variant = &*rgvarg;
+    let vt = variant.Anonymous.Anonymous.vt;
+    if (vt & VT_ARRAY) == 0 {
+        return COM_DISP_E_TYPEMISMATCH;
+    }
+    let psa = variant.Anonymous.Anonymous.Anonymous.parray;
+    if psa.is_null() {
+        return COM_E_INVALIDARG;
+    }
+    let dims = SafeArrayGetDim(psa.cast_const());
+    if dims != 1 {
+        return COM_E_INVALIDARG;
+    }
+    let mut lower = 0i32;
+    if SafeArrayGetLBound(psa.cast_const(), 1, &mut lower) < 0 {
+        return COM_E_INVALIDARG;
+    }
+    let mut upper = -1i32;
+    if SafeArrayGetUBound(psa.cast_const(), 1, &mut upper) < 0 {
+        return COM_E_INVALIDARG;
+    }
+    if upper < lower {
+        set_variant_i32(VT_EMPTY as i32, pvarresult);
+        return COM_S_OK;
+    }
+    let mut element_vt = 0u16;
+    if SafeArrayGetVartype(psa.cast_const(), &mut element_vt) < 0 {
+        return COM_E_INVALIDARG;
+    }
+    if element_vt != VT_VARIANT {
+        set_variant_i32(element_vt as i32, pvarresult);
+        return COM_S_OK;
+    }
+    let mut element: VARIANT = std::mem::zeroed();
+    let hr = SafeArrayGetElement(
+        psa.cast_const(),
+        &lower,
+        (&mut element as *mut VARIANT).cast(),
+    );
+    if hr < 0 {
+        return COM_E_INVALIDARG;
+    }
+    let inner_vt = element.Anonymous.Anonymous.vt as i32;
+    let _ = VariantClear(&mut element);
+    set_variant_i32(inner_vt, pvarresult);
+    COM_S_OK
+}
 #[cfg(target_os = "windows")]
 #[allow(unsafe_op_in_unsafe_fn)]
 unsafe fn raw_variant_to_com_value(variant: &VARIANT) -> Result<ComValue, String> {

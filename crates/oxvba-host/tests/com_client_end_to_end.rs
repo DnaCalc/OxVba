@@ -482,6 +482,69 @@ End Sub
     }
 
     #[test]
+    fn dispatchinvoke_classifies_object_elements_inside_variant_arrays_at_com_boundary() {
+        let source = r#"
+Sub Main()
+Dim obj
+Dim nestedVt
+obj = CreateObject("OxVba.TestDispatch")
+nestedVt = DispatchInvoke(obj, "ClassifyVariantArrayFirstElementArg", Array(obj))
+End Sub
+"#;
+
+        let vm = run_windows_host_backed(source, false);
+        let jit = run_windows_host_backed(source, true);
+        assert_eq!(
+            vm, jit,
+            "VM/JIT snapshots diverged on object-array classifier path: vm={vm:?} jit={jit:?}"
+        );
+        assert!(expect_object_handle(&vm[0]).raw() >= 20_001);
+        assert_eq!(
+            vm[1],
+            RuntimeValue::I32(9),
+            "object element inside VT_ARRAY | VT_VARIANT should marshal as VT_DISPATCH"
+        );
+    }
+
+    #[test]
+    fn dispatchinvoke_accepts_dispatch_arrays_with_nested_object_elements() {
+        let source = r#"
+Sub Main()
+Dim obj
+Dim returnedArray
+obj = CreateObject("OxVba.TestDispatch")
+returnedArray = DispatchInvoke(obj, "ReturnSelfDispatchArray")
+End Sub
+"#;
+
+        let vm = run_windows_host_backed(source, false);
+        let jit = run_windows_host_backed(source, true);
+        assert_eq!(
+            vm, jit,
+            "VM/JIT snapshots diverged on dispatch-array result path: vm={vm:?} jit={jit:?}"
+        );
+        assert!(expect_object_handle(&vm[0]).raw() >= 20_001);
+        let RuntimeValue::ArrayIntent(array) = &vm[1] else {
+            panic!("expected SAFEARRAY result, got {:?}", vm[1]);
+        };
+        let elements = array
+            .elements
+            .as_ref()
+            .expect("dispatch-array result should preserve owned elements");
+        assert_eq!(elements.len(), 1, "dispatch-array result length mismatch");
+        let RuntimeValue::ObjectHandle(handle) = elements[0] else {
+            panic!(
+                "expected first dispatch-array element to be an object handle, got {:?}",
+                elements[0]
+            );
+        };
+        assert!(
+            handle.raw() >= 20_001,
+            "dispatch-array result should preserve nested dispatch object handles"
+        );
+    }
+
+    #[test]
     fn dispatchinvoke_error_path_routes_through_on_error_resume_next() {
         let out = run_windows_host_backed(
             r#"

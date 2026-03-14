@@ -1277,6 +1277,42 @@ mod tests {
     }
 
     #[test]
+    fn compile_dispatchinvoke_with_variant_array_classifier_literal_maps_to_member_token_twenty_six()
+     {
+        let source = "Sub Main()\nDim x\nx = DispatchInvoke(CreateObject(\"OxVba.TestDispatch\"), \"ClassifyVariantArrayFirstElementArg\", Array(1))\nEnd Sub";
+        let out = compile(source)
+            .expect("compile should succeed for variant-array classifier fixture member");
+        assert!(
+            out.instructions
+                .iter()
+                .any(|i| matches!(i, Instruction::IntrinsicDispatchInvokeHost { .. }))
+        );
+        assert!(
+            out.instructions
+                .iter()
+                .any(|i| matches!(i, Instruction::LoadConstI32 { value: 26, .. }))
+        );
+    }
+
+    #[test]
+    fn compile_dispatchinvoke_with_dispatch_array_result_literal_maps_to_member_token_twenty_seven()
+    {
+        let source = "Sub Main()\nDim x\nx = DispatchInvoke(CreateObject(\"OxVba.TestDispatch\"), \"ReturnSelfDispatchArray\")\nEnd Sub";
+        let out = compile(source)
+            .expect("compile should succeed for dispatch-array result fixture member");
+        assert!(
+            out.instructions
+                .iter()
+                .any(|i| matches!(i, Instruction::IntrinsicDispatchInvokeHost { .. }))
+        );
+        assert!(
+            out.instructions
+                .iter()
+                .any(|i| matches!(i, Instruction::LoadConstI32 { value: 27, .. }))
+        );
+    }
+
+    #[test]
     fn compile_dispatchinvoke_with_source_interface_event_literal_maps_to_member_token_eleven() {
         let source = "Sub Main()\nDim x\nx = DispatchInvoke(CreateObject(\"OxVba.TestDispatch\"), \"FireChangedSourceInterface\", 7)\nEnd Sub";
         let out =

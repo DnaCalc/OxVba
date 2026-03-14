@@ -1,6 +1,6 @@
 use crate::{
     ComBinding, ComInvokeArg, ComInvokeRequest, VariantResultValue, set_variant_from_com_value,
-    take_variant_result_value,
+    take_variant_result_runtime_value, take_variant_result_value,
 };
 use oxvba_runtime::{ObjectHandle, RuntimeValue};
 #[cfg(target_os = "windows")]
@@ -354,34 +354,79 @@ where
     FBindDispatch:
         FnMut(*mut core::ffi::c_void, &str, &'static str) -> Result<RuntimeValue, String>,
 {
-    match invoke_dispatch_variant_result(
-        dispatch,
+    let mut result = std::mem::zeroed();
+    let mut excep = std::mem::zeroed();
+    let mut arg_err = u32::MAX;
+    let dispatch = dispatch.cast::<RawIDispatch>();
+    let mut invoke_args: Vec<VARIANT> = Vec::with_capacity(args.len());
+    for arg in args.iter().rev() {
+        let mut variant: VARIANT = std::mem::zeroed();
+        match arg.value {
+            Some(ref value) => {
+                set_variant_from_com_value(&mut variant, value, resolve_object, add_ref_dispatch)
+                    .map_err(|detail| validation_failure(label, dispid, detail))?
+            }
+            None => set_variant_missing_arg(&mut variant),
+        }
+        invoke_args.push(variant);
+    }
+    let mut named_arg_dispids_reversed =
+        named_arg_dispids.iter().copied().rev().collect::<Vec<_>>();
+    let mut params = DISPPARAMS {
+        rgvarg: if invoke_args.is_empty() {
+            std::ptr::null_mut()
+        } else {
+            invoke_args.as_mut_ptr()
+        },
+        rgdispidNamedArgs: if named_arg_dispids_reversed.is_empty() {
+            std::ptr::null_mut()
+        } else {
+            named_arg_dispids_reversed.as_mut_ptr()
+        },
+        cArgs: args.len() as u32,
+        cNamedArgs: named_arg_dispids.len() as u32,
+    };
+    let hr = ((*(*dispatch).vtbl).invoke)(
+        dispatch.cast(),
         dispid,
+        &IID_NULL,
+        0x0400,
         flags,
-        args,
-        named_arg_dispids,
-        label,
-        resolve_object,
+        &mut params,
+        &mut result,
+        &mut excep,
+        &mut arg_err,
+    );
+    clear_variant_args(&mut invoke_args);
+    if hr < 0 {
+        return Err(ComInvokeFailure {
+            label,
+            dispid,
+            hr: Some(hr),
+            arg_err: (arg_err != u32::MAX).then_some(arg_err),
+            excep: take_excepinfo(&mut excep),
+            detail: None,
+        });
+    }
+    take_variant_result_runtime_value(
+        &mut result,
         query_dispatch_from_unknown,
         add_ref_dispatch,
-    )? {
-        VariantResultValue::Value(value) => Ok(value.to_runtime_value()),
-        VariantResultValue::Dispatch(dispatch) => {
-            bind_dispatch_result(dispatch, prog_id_hint, "dispatch_invoke").map_err(|detail| {
-                ComInvokeFailure {
-                    label,
-                    dispid,
-                    hr: None,
-                    arg_err: None,
-                    excep: None,
-                    detail: Some(detail),
-                }
-            })
-        }
-    }
+        &mut |dispatch: *mut core::ffi::c_void, prog_id_hint: &str, op: &'static str| {
+            bind_dispatch_result(dispatch, prog_id_hint, op)
+        },
+        prog_id_hint,
+        "dispatch_invoke",
+    )
+    .map_err(|detail| ComInvokeFailure {
+        label,
+        dispid,
+        hr: None,
+        arg_err: None,
+        excep: None,
+        detail: Some(detail),
+    })
 }
-
-#[cfg(target_os = "windows")]
 fn validation_failure(
     label: &'static str,
     dispid: i32,

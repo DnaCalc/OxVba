@@ -1,3 +1,13 @@
+## 2026-03-14 - Late-bound COM object-valued SAFEARRAY variant subset
+
+- Extended the Windows result bridge in `oxvba-com` so one-dimensional `VT_ARRAY | VT_VARIANT` payloads can recursively rebind nested `VT_DISPATCH` and `VT_UNKNOWN` elements that expose `IDispatch` into runtime-owned `ObjectHandle` values.
+- Added controlled `OxVba.TestDispatch` classifier and return-array members proving nested object-valued SAFEARRAY elements now survive both argument and result paths.
+- Added compiler token-table coverage, deterministic typelib metadata entries, and VM/JIT end-to-end host coverage for the new controlled members.
+- Remaining gap: broader non-`IDispatch` interface arrays and multi-dimensional SAFEARRAY parity remain open.
+- Verification:
+  - `cargo fmt --all`
+  - `cargo test -p oxvba-compiler -p oxvba-host -p oxvba-vm -p oxvba-com -p oxvba-hal --quiet`
+  - `cargo clippy -p oxvba-com -p oxvba-compiler -p oxvba-host -p oxvba-vm -p oxvba-hal --all-targets -- -D warnings`
 ## 2026-03-14 - ParamArray lowering now preserves semantic arrays
 
 - Replaced the compiler''s `ParamArray` count-tag lowering with semantic array-literal construction, so trailing `ParamArray` packs now enter runtime and COM lanes as `RuntimeValue::ArrayIntent(SafeArray::from_values(...))`.

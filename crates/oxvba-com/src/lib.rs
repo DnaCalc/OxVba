@@ -120,5 +120,6 @@ pub use windows_test_dispatch::{
 };
 #[cfg(target_os = "windows")]
 pub use windows_variant::{
-    VariantResultValue, set_variant_from_com_value, take_variant_result_value, variant_to_com_value,
+    VariantResultValue, set_variant_from_com_value, take_variant_result_runtime_value,
+    take_variant_result_value, variant_to_com_value, variant_to_runtime_value,
 };

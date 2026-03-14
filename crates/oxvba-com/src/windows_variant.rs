@@ -198,6 +198,105 @@ unsafe fn safe_array_element_to_runtime_value(
 
 #[cfg(target_os = "windows")]
 #[allow(unsafe_op_in_unsafe_fn)]
+unsafe fn safe_array_to_runtime_value<FQueryDispatch, FAddRefDispatch, FBindDispatch>(
+    psa: *mut SAFEARRAY,
+    query_dispatch_from_unknown: &mut FQueryDispatch,
+    add_ref_dispatch: &mut FAddRefDispatch,
+    bind_dispatch_result: &mut FBindDispatch,
+    prog_id_hint: &str,
+    op: &'static str,
+) -> Result<oxvba_runtime::RuntimeValue, String>
+where
+    FQueryDispatch: FnMut(*mut c_void) -> Result<*mut c_void, String>,
+    FAddRefDispatch: FnMut(*mut c_void),
+    FBindDispatch:
+        FnMut(*mut c_void, &str, &'static str) -> Result<oxvba_runtime::RuntimeValue, String>,
+{
+    if psa.is_null() {
+        return Err("VT_ARRAY result carried null SAFEARRAY".to_string());
+    }
+    let dims = SafeArrayGetDim(psa.cast_const());
+    if dims != 1 {
+        return Err(format!(
+            "unsupported SAFEARRAY rank {dims}; only one-dimensional arrays are supported"
+        ));
+    }
+    let mut lower = 0i32;
+    let hr = SafeArrayGetLBound(psa.cast_const(), 1, &mut lower);
+    if hr < 0 {
+        return Err(format!(
+            "SafeArrayGetLBound failed with HRESULT {:#010X}",
+            hr as u32
+        ));
+    }
+    let mut upper = -1i32;
+    let hr = SafeArrayGetUBound(psa.cast_const(), 1, &mut upper);
+    if hr < 0 {
+        return Err(format!(
+            "SafeArrayGetUBound failed with HRESULT {:#010X}",
+            hr as u32
+        ));
+    }
+    let len = if upper < lower {
+        0usize
+    } else {
+        usize::try_from(upper - lower + 1)
+            .map_err(|_| "SAFEARRAY bounds exceed supported usize range".to_string())?
+    };
+    let mut element_vt = 0u16;
+    let hr = SafeArrayGetVartype(psa.cast_const(), &mut element_vt);
+    if hr < 0 {
+        return Err(format!(
+            "SafeArrayGetVartype failed with HRESULT {:#010X}",
+            hr as u32
+        ));
+    }
+    let mut values = Vec::with_capacity(len);
+    for index in lower..=upper {
+        if element_vt == VT_VARIANT {
+            let mut element: VARIANT = std::mem::zeroed();
+            let hr = SafeArrayGetElement(
+                psa.cast_const(),
+                &index,
+                (&mut element as *mut VARIANT).cast(),
+            );
+            if hr < 0 {
+                return Err(format!(
+                    "SafeArrayGetElement failed with HRESULT {:#010X} at index {}",
+                    hr as u32, index
+                ));
+            }
+            let value = match variant_to_runtime_value(
+                &element,
+                query_dispatch_from_unknown,
+                add_ref_dispatch,
+                bind_dispatch_result,
+                prog_id_hint,
+                op,
+            ) {
+                Ok(value) => value,
+                Err(detail) => {
+                    let _ = VariantClear(&mut element);
+                    return Err(detail);
+                }
+            };
+            let _ = VariantClear(&mut element);
+            values.push(value);
+            continue;
+        }
+        values.push(safe_array_element_to_runtime_value(
+            psa.cast_const(),
+            index,
+            element_vt,
+        )?);
+    }
+    Ok(oxvba_runtime::RuntimeValue::ArrayIntent(
+        SafeArray::from_values(values),
+    ))
+}
+
+#[cfg(target_os = "windows")]
+#[allow(unsafe_op_in_unsafe_fn)]
 unsafe fn set_variant_array_arg<FResolve, FAddRef>(
     variant: *mut VARIANT,
     array: &SafeArray,
@@ -293,6 +392,77 @@ pub unsafe fn variant_to_com_value(variant: &VARIANT) -> Result<ComValue, String
             return Err(format!("unsupported VARIANT return type vt={vt}"));
         }
     };
+    Ok(value)
+}
+
+#[cfg(target_os = "windows")]
+#[allow(unsafe_op_in_unsafe_fn, clippy::missing_safety_doc)]
+pub unsafe fn variant_to_runtime_value<FQueryDispatch, FAddRefDispatch, FBindDispatch>(
+    variant: &VARIANT,
+    query_dispatch_from_unknown: &mut FQueryDispatch,
+    add_ref_dispatch: &mut FAddRefDispatch,
+    bind_dispatch_result: &mut FBindDispatch,
+    prog_id_hint: &str,
+    op: &'static str,
+) -> Result<oxvba_runtime::RuntimeValue, String>
+where
+    FQueryDispatch: FnMut(*mut c_void) -> Result<*mut c_void, String>,
+    FAddRefDispatch: FnMut(*mut c_void),
+    FBindDispatch:
+        FnMut(*mut c_void, &str, &'static str) -> Result<oxvba_runtime::RuntimeValue, String>,
+{
+    let vt = variant.Anonymous.Anonymous.vt;
+    if vt & VT_ARRAY != 0 {
+        let parray = variant.Anonymous.Anonymous.Anonymous.parray;
+        return safe_array_to_runtime_value(
+            parray,
+            query_dispatch_from_unknown,
+            add_ref_dispatch,
+            bind_dispatch_result,
+            prog_id_hint,
+            op,
+        );
+    }
+    if vt == VT_DISPATCH {
+        let dispatch = variant.Anonymous.Anonymous.Anonymous.pdispVal;
+        if !dispatch.is_null() {
+            add_ref_dispatch(dispatch.cast());
+        }
+        return bind_dispatch_result(dispatch.cast(), prog_id_hint, op);
+    }
+    if vt == VT_UNKNOWN {
+        let unknown = variant.Anonymous.Anonymous.Anonymous.punkVal;
+        let dispatch = query_dispatch_from_unknown(unknown.cast())?;
+        return bind_dispatch_result(dispatch, prog_id_hint, op);
+    }
+    Ok(variant_to_com_value(variant)?.to_runtime_value())
+}
+
+#[cfg(target_os = "windows")]
+#[allow(unsafe_op_in_unsafe_fn, clippy::missing_safety_doc)]
+pub unsafe fn take_variant_result_runtime_value<FQueryDispatch, FAddRefDispatch, FBindDispatch>(
+    result: &mut VARIANT,
+    query_dispatch_from_unknown: &mut FQueryDispatch,
+    add_ref_dispatch: &mut FAddRefDispatch,
+    bind_dispatch_result: &mut FBindDispatch,
+    prog_id_hint: &str,
+    op: &'static str,
+) -> Result<oxvba_runtime::RuntimeValue, String>
+where
+    FQueryDispatch: FnMut(*mut c_void) -> Result<*mut c_void, String>,
+    FAddRefDispatch: FnMut(*mut c_void),
+    FBindDispatch:
+        FnMut(*mut c_void, &str, &'static str) -> Result<oxvba_runtime::RuntimeValue, String>,
+{
+    let value = variant_to_runtime_value(
+        result,
+        query_dispatch_from_unknown,
+        add_ref_dispatch,
+        bind_dispatch_result,
+        prog_id_hint,
+        op,
+    )?;
+    let _ = VariantClear(result);
     Ok(value)
 }
 
