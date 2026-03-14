@@ -14,7 +14,11 @@ use crate::{
 #[cfg(test)]
 pub use oxvba_com::DISPATCH_INVOKE_MISSING_ARG_TOKEN;
 #[cfg(target_os = "windows")]
+use oxvba_com::invoke_direct_dispid_runtime_value as com_invoke_direct_dispid_runtime_value;
+#[cfg(target_os = "windows")]
 use oxvba_com::invoke_dispatch_runtime_value as com_invoke_dispatch_runtime_value;
+#[cfg(target_os = "windows")]
+use oxvba_com::invoke_member_spec_runtime_value as com_invoke_member_spec_runtime_value;
 #[cfg(target_os = "windows")]
 use oxvba_com::take_excepinfo;
 #[cfg(target_os = "windows")]
@@ -1438,137 +1442,44 @@ impl StandardHostServices {
         prog_id_hint: &str,
     ) -> HalResult<RuntimeValue> {
         self.ensure_thread_com_apartment("dispatch_invoke")?;
-        let canonical_args;
-        let args = match spec.invoke_kind {
-            TypeLibMemberInvokeKind::PropertyPut | TypeLibMemberInvokeKind::PropertyPutRef => {
-                canonical_args =
-                    com_canonicalize_member_known_args(spec, args).map_err(|message| {
-                        HalError::adapter_fault(
-                            self.profile,
-                            CapabilityId::ComActivationDispatch,
-                            "dispatch_invoke",
-                            message,
-                        )
-                    })?;
-                canonical_args.as_slice()
-            }
-            _ => args,
-        };
-        if spec.requires_argument && args.iter().all(|arg| arg.value.is_none()) {
-            return Err(HalError::adapter_fault(
-                self.profile,
-                CapabilityId::ComActivationDispatch,
-                "dispatch_invoke",
-                "member requires argument but DispatchInvoke omitted the third argument",
-            ));
-        }
-        if !spec.requires_argument {
-            let mut resolve_object = |handle: ObjectHandle| {
-                self.resolve_native_dispatch_for_object_arg(handle, "dispatch_invoke")
+        unsafe {
+            com_invoke_member_spec_runtime_value(
+                dispatch.cast(),
+                dispid,
+                spec,
+                args,
+                prog_id_hint,
+                &mut |member_name, args| {
+                    self.resolve_named_argument_dispids(dispatch, member_name, args)
+                        .map_err(|err| {
+                            format!("{} [{}] {}", err.stable_code, err.operation, err.message)
+                        })
+                },
+                &mut |handle| {
+                    self.resolve_native_dispatch_for_object_arg(handle, "dispatch_invoke")
+                        .map(|dispatch| dispatch.cast::<core::ffi::c_void>())
+                        .map_err(|err| {
+                            format!("{} [{}] {}", err.stable_code, err.operation, err.message)
+                        })
+                },
+                &mut |unknown: *mut core::ffi::c_void| {
+                    raw_query_dispatch_from_unknown(unknown.cast::<RawIUnknown>())
+                        .map(|dispatch| dispatch.cast::<core::ffi::c_void>())
+                },
+                &mut |dispatch: *mut core::ffi::c_void| {
+                    raw_add_ref_dispatch(dispatch.cast::<RawIDispatch>());
+                },
+                &mut |dispatch: *mut core::ffi::c_void, prog_id_hint: &str, op: &'static str| {
+                    self.bind_native_dispatch_result(
+                        dispatch.cast::<RawIDispatch>(),
+                        prog_id_hint,
+                        op,
+                    )
                     .map_err(|err| {
                         format!("{} [{}] {}", err.stable_code, err.operation, err.message)
                     })
-            };
-            match spec.invoke_kind {
-                TypeLibMemberInvokeKind::PropertyGet => {
-                    // SAFETY: `dispatch` is a live IDispatch pointer and `dispid` was resolved for
-                    // this member on the same interface.
-                    return unsafe {
-                        raw_dispatch_property_get_i4_args(
-                            dispatch,
-                            dispid,
-                            &[],
-                            &[],
-                            &mut resolve_object,
-                        )
-                    }
-                    .map(RuntimeValue::I32)
-                    .map_err(|failure| self.com_dispatch_invoke_fault(failure));
-                }
-                TypeLibMemberInvokeKind::Method => {
-                    // SAFETY: `dispatch` is a live IDispatch pointer and `dispid` targets a method
-                    // on the same interface without arguments.
-                    return unsafe {
-                        raw_dispatch_invoke_method_i4_args(
-                            dispatch,
-                            dispid,
-                            &[],
-                            &[],
-                            &mut resolve_object,
-                        )
-                    }
-                    .map(RuntimeValue::I32)
-                    .map_err(|failure| self.com_dispatch_invoke_fault(failure));
-                }
-                TypeLibMemberInvokeKind::PropertyPut | TypeLibMemberInvokeKind::PropertyPutRef => {
-                    return Err(HalError::adapter_fault(
-                        self.profile,
-                        CapabilityId::ComActivationDispatch,
-                        "dispatch_invoke",
-                        "member requires argument for property put/putref dispatch",
-                    ));
-                }
-            }
-        }
-        match spec.invoke_kind {
-            TypeLibMemberInvokeKind::PropertyGet => unsafe {
-                let named_arg_dispids =
-                    self.resolve_named_argument_dispids(dispatch, &spec.name, args)?;
-                self.native_dispatch_invoke_runtime_value_args(
-                    dispatch,
-                    dispid,
-                    DISPATCH_PROPERTYGET,
-                    args,
-                    &named_arg_dispids,
-                    ("property-get", prog_id_hint),
-                )
-            },
-            TypeLibMemberInvokeKind::Method => unsafe {
-                let named_arg_dispids =
-                    self.resolve_named_argument_dispids(dispatch, &spec.name, args)?;
-                self.native_dispatch_invoke_runtime_value_args(
-                    dispatch,
-                    dispid,
-                    DISPATCH_METHOD,
-                    args,
-                    &named_arg_dispids,
-                    ("method", prog_id_hint),
-                )
-            },
-            TypeLibMemberInvokeKind::PropertyPut => unsafe {
-                let named_arg_dispids = self.resolve_named_argument_dispids(
-                    dispatch,
-                    &spec.name,
-                    &args[..args.len().saturating_sub(1)],
-                )?;
-                let mut all_named = named_arg_dispids;
-                all_named.push(COM_DISPID_PROPERTYPUT);
-                self.native_dispatch_invoke_runtime_value_args(
-                    dispatch,
-                    dispid,
-                    DISPATCH_PROPERTYPUT,
-                    args,
-                    &all_named,
-                    ("property-put", prog_id_hint),
-                )
-            },
-            TypeLibMemberInvokeKind::PropertyPutRef => unsafe {
-                let named_arg_dispids = self.resolve_named_argument_dispids(
-                    dispatch,
-                    &spec.name,
-                    &args[..args.len().saturating_sub(1)],
-                )?;
-                let mut all_named = named_arg_dispids;
-                all_named.push(COM_DISPID_PROPERTYPUT);
-                self.native_dispatch_invoke_runtime_value_args(
-                    dispatch,
-                    dispid,
-                    DISPATCH_PROPERTYPUTREF,
-                    args,
-                    &all_named,
-                    ("property-putref", prog_id_hint),
-                )
-            },
+                },
+            )
         }
         .map_err(|failure| self.com_dispatch_invoke_fault(failure))
     }
@@ -1584,101 +1495,39 @@ impl StandardHostServices {
         prog_id_hint: &str,
     ) -> HalResult<RuntimeValue> {
         self.ensure_thread_com_apartment("dispatch_invoke")?;
-        if requires_argument && args.iter().all(|arg| arg.value.is_none()) {
-            return Err(HalError::adapter_fault(
-                self.profile,
-                CapabilityId::ComActivationDispatch,
-                "dispatch_invoke",
-                "member requires argument but DispatchInvoke omitted the third argument",
-            ));
-        }
-        if !requires_argument {
-            let mut resolve_object = |handle: ObjectHandle| {
-                self.resolve_native_dispatch_for_object_arg(handle, "dispatch_invoke")
+        unsafe {
+            com_invoke_direct_dispid_runtime_value(
+                dispatch.cast(),
+                dispid,
+                invoke_kind,
+                requires_argument,
+                args,
+                prog_id_hint,
+                &mut |handle| {
+                    self.resolve_native_dispatch_for_object_arg(handle, "dispatch_invoke")
+                        .map(|dispatch| dispatch.cast::<core::ffi::c_void>())
+                        .map_err(|err| {
+                            format!("{} [{}] {}", err.stable_code, err.operation, err.message)
+                        })
+                },
+                &mut |unknown: *mut core::ffi::c_void| {
+                    raw_query_dispatch_from_unknown(unknown.cast::<RawIUnknown>())
+                        .map(|dispatch| dispatch.cast::<core::ffi::c_void>())
+                },
+                &mut |dispatch: *mut core::ffi::c_void| {
+                    raw_add_ref_dispatch(dispatch.cast::<RawIDispatch>());
+                },
+                &mut |dispatch: *mut core::ffi::c_void, prog_id_hint: &str, op: &'static str| {
+                    self.bind_native_dispatch_result(
+                        dispatch.cast::<RawIDispatch>(),
+                        prog_id_hint,
+                        op,
+                    )
                     .map_err(|err| {
                         format!("{} [{}] {}", err.stable_code, err.operation, err.message)
                     })
-            };
-            return match invoke_kind {
-                TypeLibMemberInvokeKind::PropertyGet => unsafe {
-                    raw_dispatch_property_get_i4_args(
-                        dispatch,
-                        dispid,
-                        &[],
-                        &[],
-                        &mut resolve_object,
-                    )
                 },
-                TypeLibMemberInvokeKind::Method => unsafe {
-                    raw_dispatch_invoke_method_i4_args(
-                        dispatch,
-                        dispid,
-                        &[],
-                        &[],
-                        &mut resolve_object,
-                    )
-                },
-                TypeLibMemberInvokeKind::PropertyPut | TypeLibMemberInvokeKind::PropertyPutRef => {
-                    return Err(HalError::adapter_fault(
-                        self.profile,
-                        CapabilityId::ComActivationDispatch,
-                        "dispatch_invoke",
-                        "member requires argument for property put/putref dispatch",
-                    ));
-                }
-            }
-            .map(RuntimeValue::I32)
-            .map_err(|failure| self.com_dispatch_invoke_fault(failure));
-        }
-        if args.iter().any(|arg| arg.name.is_some()) {
-            return Err(HalError::adapter_fault(
-                self.profile,
-                CapabilityId::ComActivationDispatch,
-                "dispatch_invoke",
-                "named arguments require a resolved COM member name and are unsupported for direct-DISPID dispatch",
-            ));
-        }
-        match invoke_kind {
-            TypeLibMemberInvokeKind::PropertyGet => unsafe {
-                self.native_dispatch_invoke_runtime_value_args(
-                    dispatch,
-                    dispid,
-                    DISPATCH_PROPERTYGET,
-                    args,
-                    &[],
-                    ("property-get", prog_id_hint),
-                )
-            },
-            TypeLibMemberInvokeKind::Method => unsafe {
-                self.native_dispatch_invoke_runtime_value_args(
-                    dispatch,
-                    dispid,
-                    DISPATCH_METHOD,
-                    args,
-                    &[],
-                    ("method", prog_id_hint),
-                )
-            },
-            TypeLibMemberInvokeKind::PropertyPut => unsafe {
-                self.native_dispatch_invoke_runtime_value_args(
-                    dispatch,
-                    dispid,
-                    DISPATCH_PROPERTYPUT,
-                    args,
-                    &[COM_DISPID_PROPERTYPUT],
-                    ("property-put", prog_id_hint),
-                )
-            },
-            TypeLibMemberInvokeKind::PropertyPutRef => unsafe {
-                self.native_dispatch_invoke_runtime_value_args(
-                    dispatch,
-                    dispid,
-                    DISPATCH_PROPERTYPUTREF,
-                    args,
-                    &[COM_DISPID_PROPERTYPUT],
-                    ("property-putref", prog_id_hint),
-                )
-            },
+            )
         }
         .map_err(|failure| self.com_dispatch_invoke_fault(failure))
     }
@@ -1736,14 +1585,14 @@ impl StandardHostServices {
                         format!("{} [{}] {}", err.stable_code, err.operation, err.message)
                     })
             },
-            &mut |unknown| {
+            &mut |unknown: *mut core::ffi::c_void| {
                 raw_query_dispatch_from_unknown(unknown.cast::<RawIUnknown>())
                     .map(|dispatch| dispatch.cast::<core::ffi::c_void>())
             },
-            &mut |dispatch| {
+            &mut |dispatch: *mut core::ffi::c_void| {
                 raw_add_ref_dispatch(dispatch.cast::<RawIDispatch>());
             },
-            &mut |dispatch, prog_id_hint, op| {
+            &mut |dispatch: *mut core::ffi::c_void, prog_id_hint: &str, op: &'static str| {
                 self.bind_native_dispatch_result(dispatch.cast::<RawIDispatch>(), prog_id_hint, op)
                     .map_err(|err| {
                         format!("{} [{}] {}", err.stable_code, err.operation, err.message)
@@ -4912,11 +4761,11 @@ mod tests {
         let classified = unsafe {
             com_take_variant_result_value(
                 &mut variant,
-                &mut |unknown| {
+                &mut |unknown: *mut core::ffi::c_void| {
                     raw_query_dispatch_from_unknown(unknown.cast::<RawIUnknown>())
                         .map(|dispatch| dispatch.cast::<core::ffi::c_void>())
                 },
-                &mut |dispatch| {
+                &mut |dispatch: *mut core::ffi::c_void| {
                     raw_add_ref_dispatch(dispatch.cast::<RawIDispatch>());
                 },
             )
@@ -4954,11 +4803,11 @@ mod tests {
         let classified = unsafe {
             com_take_variant_result_value(
                 &mut variant,
-                &mut |unknown| {
+                &mut |unknown: *mut core::ffi::c_void| {
                     raw_query_dispatch_from_unknown(unknown.cast::<RawIUnknown>())
                         .map(|dispatch| dispatch.cast::<core::ffi::c_void>())
                 },
-                &mut |dispatch| {
+                &mut |dispatch: *mut core::ffi::c_void| {
                     raw_add_ref_dispatch(dispatch.cast::<RawIDispatch>());
                 },
             )

@@ -44,7 +44,7 @@ Completed extraction slices:
 15. per-object DISPID cache mutation ownership,
 16. subscription lookup/removal callback-pruning ownership,
 17. event transport-choice resolution ownership,
-18. bound/unbound COM invoke-policy planning ownership,`r`n19. generic runtime-value `IDispatch::Invoke` execution helper ownership,`r`n20. callback payload polling, metadata access, and callback-release helper ownership.
+18. bound/unbound COM invoke-policy planning ownership,`r`n19. generic runtime-value `IDispatch::Invoke` execution helper ownership,`r`n20. callback payload polling, metadata access, and callback-release helper ownership,`r`n21. member-spec/direct-DISPID runtime invoke execution helper ownership.
 Remaining extraction wall:
 1. Remaining live Windows COM execution authority still centered in `oxvba-hal::standard`:
    - resolved-member DISPID lookup/cache update,
@@ -321,6 +321,7 @@ Required checks for the repurpose/extraction program:
 7. Use these concrete child worksets for the next cleanup/implementation slices:
    - `docs/worksets/WORKSET_2026-03-11_UNIFIED_DYNAMIC_OBJECT_PROTOCOL_AND_VALUE_CARRIER.md`
    - `docs/worksets/WORKSET_2026-03-11_COM_REFERENCE_FACADE_AND_TYPELIB_BINDING_COMPLETION.md`
+
 
 
 

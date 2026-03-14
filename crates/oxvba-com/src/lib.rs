@@ -78,7 +78,8 @@ pub use windows_connection_point::{
 };
 #[cfg(target_os = "windows")]
 pub use windows_invoke::{
-    ComInvokeExceptionInfo, ComInvokeFailure, invoke_dispatch_runtime_value, take_excepinfo,
+    ComInvokeExceptionInfo, ComInvokeFailure, invoke_direct_dispid_runtime_value,
+    invoke_dispatch_runtime_value, invoke_member_spec_runtime_value, take_excepinfo,
 };
 #[cfg(target_os = "windows")]
 pub use windows_runtime_state::{

@@ -5,7 +5,10 @@ use oxvba_runtime::{ObjectHandle, RuntimeValue};
 #[cfg(target_os = "windows")]
 use windows_sys::Win32::Foundation::{SysFreeString, SysStringLen};
 #[cfg(target_os = "windows")]
-use windows_sys::Win32::System::Com::{DISPPARAMS, EXCEPINFO};
+use windows_sys::Win32::System::Com::{
+    DISPATCH_METHOD, DISPATCH_PROPERTYGET, DISPATCH_PROPERTYPUT, DISPATCH_PROPERTYPUTREF,
+    DISPPARAMS, EXCEPINFO,
+};
 #[cfg(target_os = "windows")]
 use windows_sys::Win32::System::Variant::{VARIANT, VT_ERROR};
 
@@ -351,5 +354,324 @@ where
                 }
             })
         }
+    }
+}
+
+#[cfg(target_os = "windows")]
+fn validation_failure(
+    label: &'static str,
+    dispid: i32,
+    detail: impl Into<String>,
+) -> ComInvokeFailure {
+    ComInvokeFailure {
+        label,
+        dispid,
+        hr: None,
+        arg_err: None,
+        excep: None,
+        detail: Some(detail.into()),
+    }
+}
+
+#[cfg(target_os = "windows")]
+#[allow(unsafe_op_in_unsafe_fn)]
+#[allow(clippy::too_many_arguments)]
+/// Execute a member-metadata-backed Windows `IDispatch::Invoke` call over the shared semantic carrier.
+///
+/// # Safety
+/// `dispatch` must point to a live `IDispatch` implementation for the duration of the call.
+/// The callback closures must uphold COM ownership and runtime identity guarantees for any object handles or returned interface pointers they touch.
+pub unsafe fn invoke_member_spec_runtime_value<
+    FResolveNamedArgDispids,
+    FResolveObject,
+    FQueryUnknown,
+    FAddRefDispatch,
+    FBindDispatch,
+>(
+    dispatch: *mut core::ffi::c_void,
+    dispid: i32,
+    spec: &crate::ComMemberSpec,
+    args: &[ComInvokeArg],
+    prog_id_hint: &str,
+    resolve_named_arg_dispids: &mut FResolveNamedArgDispids,
+    resolve_object: &mut FResolveObject,
+    query_dispatch_from_unknown: &mut FQueryUnknown,
+    add_ref_dispatch: &mut FAddRefDispatch,
+    bind_dispatch_result: &mut FBindDispatch,
+) -> Result<RuntimeValue, ComInvokeFailure>
+where
+    FResolveNamedArgDispids: FnMut(&str, &[ComInvokeArg]) -> Result<Vec<i32>, String>,
+    FResolveObject: FnMut(ObjectHandle) -> Result<*mut core::ffi::c_void, String>,
+    FQueryUnknown: FnMut(*mut core::ffi::c_void) -> Result<*mut core::ffi::c_void, String>,
+    FAddRefDispatch: FnMut(*mut core::ffi::c_void),
+    FBindDispatch:
+        FnMut(*mut core::ffi::c_void, &str, &'static str) -> Result<RuntimeValue, String>,
+{
+    let canonical_args;
+    let args = match spec.invoke_kind {
+        crate::TypeLibMemberInvokeKind::PropertyPut
+        | crate::TypeLibMemberInvokeKind::PropertyPutRef => {
+            canonical_args = crate::invoke_policy::canonicalize_member_known_args(spec, args)
+                .map_err(|detail| validation_failure("dispatch_invoke", dispid, detail))?;
+            canonical_args.as_slice()
+        }
+        _ => args,
+    };
+    if spec.requires_argument && args.iter().all(|arg| arg.value.is_none()) {
+        return Err(validation_failure(
+            "dispatch_invoke",
+            dispid,
+            "member requires argument but DispatchInvoke omitted the third argument",
+        ));
+    }
+    if !spec.requires_argument {
+        return match spec.invoke_kind {
+            crate::TypeLibMemberInvokeKind::PropertyGet => invoke_dispatch_runtime_value(
+                dispatch,
+                dispid,
+                DISPATCH_PROPERTYGET,
+                &[],
+                &[],
+                "property-get",
+                prog_id_hint,
+                resolve_object,
+                query_dispatch_from_unknown,
+                add_ref_dispatch,
+                bind_dispatch_result,
+            ),
+            crate::TypeLibMemberInvokeKind::Method => invoke_dispatch_runtime_value(
+                dispatch,
+                dispid,
+                DISPATCH_METHOD,
+                &[],
+                &[],
+                "method",
+                prog_id_hint,
+                resolve_object,
+                query_dispatch_from_unknown,
+                add_ref_dispatch,
+                bind_dispatch_result,
+            ),
+            crate::TypeLibMemberInvokeKind::PropertyPut
+            | crate::TypeLibMemberInvokeKind::PropertyPutRef => Err(validation_failure(
+                "dispatch_invoke",
+                dispid,
+                "member requires argument for property put/putref dispatch",
+            )),
+        };
+    }
+    match spec.invoke_kind {
+        crate::TypeLibMemberInvokeKind::PropertyGet => {
+            let named_arg_dispids = resolve_named_arg_dispids(&spec.name, args)
+                .map_err(|detail| validation_failure("property-get", dispid, detail))?;
+            invoke_dispatch_runtime_value(
+                dispatch,
+                dispid,
+                DISPATCH_PROPERTYGET,
+                args,
+                &named_arg_dispids,
+                "property-get",
+                prog_id_hint,
+                resolve_object,
+                query_dispatch_from_unknown,
+                add_ref_dispatch,
+                bind_dispatch_result,
+            )
+        }
+        crate::TypeLibMemberInvokeKind::Method => {
+            let named_arg_dispids = resolve_named_arg_dispids(&spec.name, args)
+                .map_err(|detail| validation_failure("method", dispid, detail))?;
+            invoke_dispatch_runtime_value(
+                dispatch,
+                dispid,
+                DISPATCH_METHOD,
+                args,
+                &named_arg_dispids,
+                "method",
+                prog_id_hint,
+                resolve_object,
+                query_dispatch_from_unknown,
+                add_ref_dispatch,
+                bind_dispatch_result,
+            )
+        }
+        crate::TypeLibMemberInvokeKind::PropertyPut => {
+            let named_arg_dispids =
+                resolve_named_arg_dispids(&spec.name, &args[..args.len().saturating_sub(1)])
+                    .map_err(|detail| validation_failure("property-put", dispid, detail))?;
+            let mut all_named = named_arg_dispids;
+            all_named.push(crate::COM_DISPID_PROPERTYPUT);
+            invoke_dispatch_runtime_value(
+                dispatch,
+                dispid,
+                DISPATCH_PROPERTYPUT,
+                args,
+                &all_named,
+                "property-put",
+                prog_id_hint,
+                resolve_object,
+                query_dispatch_from_unknown,
+                add_ref_dispatch,
+                bind_dispatch_result,
+            )
+        }
+        crate::TypeLibMemberInvokeKind::PropertyPutRef => {
+            let named_arg_dispids =
+                resolve_named_arg_dispids(&spec.name, &args[..args.len().saturating_sub(1)])
+                    .map_err(|detail| validation_failure("property-putref", dispid, detail))?;
+            let mut all_named = named_arg_dispids;
+            all_named.push(crate::COM_DISPID_PROPERTYPUT);
+            invoke_dispatch_runtime_value(
+                dispatch,
+                dispid,
+                DISPATCH_PROPERTYPUTREF,
+                args,
+                &all_named,
+                "property-putref",
+                prog_id_hint,
+                resolve_object,
+                query_dispatch_from_unknown,
+                add_ref_dispatch,
+                bind_dispatch_result,
+            )
+        }
+    }
+}
+
+#[cfg(target_os = "windows")]
+#[allow(unsafe_op_in_unsafe_fn)]
+#[allow(clippy::too_many_arguments)]
+/// Execute a direct-DISPID Windows `IDispatch::Invoke` call over the shared semantic carrier.
+///
+/// # Safety
+/// `dispatch` must point to a live `IDispatch` implementation for the duration of the call.
+/// The callback closures must uphold COM ownership and runtime identity guarantees for any object handles or returned interface pointers they touch.
+pub unsafe fn invoke_direct_dispid_runtime_value<
+    FResolveObject,
+    FQueryUnknown,
+    FAddRefDispatch,
+    FBindDispatch,
+>(
+    dispatch: *mut core::ffi::c_void,
+    dispid: i32,
+    invoke_kind: crate::TypeLibMemberInvokeKind,
+    requires_argument: bool,
+    args: &[ComInvokeArg],
+    prog_id_hint: &str,
+    resolve_object: &mut FResolveObject,
+    query_dispatch_from_unknown: &mut FQueryUnknown,
+    add_ref_dispatch: &mut FAddRefDispatch,
+    bind_dispatch_result: &mut FBindDispatch,
+) -> Result<RuntimeValue, ComInvokeFailure>
+where
+    FResolveObject: FnMut(ObjectHandle) -> Result<*mut core::ffi::c_void, String>,
+    FQueryUnknown: FnMut(*mut core::ffi::c_void) -> Result<*mut core::ffi::c_void, String>,
+    FAddRefDispatch: FnMut(*mut core::ffi::c_void),
+    FBindDispatch:
+        FnMut(*mut core::ffi::c_void, &str, &'static str) -> Result<RuntimeValue, String>,
+{
+    if requires_argument && args.iter().all(|arg| arg.value.is_none()) {
+        return Err(validation_failure(
+            "dispatch_invoke",
+            dispid,
+            "member requires argument but DispatchInvoke omitted the third argument",
+        ));
+    }
+    if !requires_argument {
+        return match invoke_kind {
+            crate::TypeLibMemberInvokeKind::PropertyGet => invoke_dispatch_runtime_value(
+                dispatch,
+                dispid,
+                DISPATCH_PROPERTYGET,
+                &[],
+                &[],
+                "property-get",
+                prog_id_hint,
+                resolve_object,
+                query_dispatch_from_unknown,
+                add_ref_dispatch,
+                bind_dispatch_result,
+            ),
+            crate::TypeLibMemberInvokeKind::Method => invoke_dispatch_runtime_value(
+                dispatch,
+                dispid,
+                DISPATCH_METHOD,
+                &[],
+                &[],
+                "method",
+                prog_id_hint,
+                resolve_object,
+                query_dispatch_from_unknown,
+                add_ref_dispatch,
+                bind_dispatch_result,
+            ),
+            crate::TypeLibMemberInvokeKind::PropertyPut
+            | crate::TypeLibMemberInvokeKind::PropertyPutRef => Err(validation_failure(
+                "dispatch_invoke",
+                dispid,
+                "member requires argument for property put/putref dispatch",
+            )),
+        };
+    }
+    if args.iter().any(|arg| arg.name.is_some()) {
+        return Err(validation_failure(
+            "dispatch_invoke",
+            dispid,
+            "named arguments require a resolved COM member name and are unsupported for direct-DISPID dispatch",
+        ));
+    }
+    match invoke_kind {
+        crate::TypeLibMemberInvokeKind::PropertyGet => invoke_dispatch_runtime_value(
+            dispatch,
+            dispid,
+            DISPATCH_PROPERTYGET,
+            args,
+            &[],
+            "property-get",
+            prog_id_hint,
+            resolve_object,
+            query_dispatch_from_unknown,
+            add_ref_dispatch,
+            bind_dispatch_result,
+        ),
+        crate::TypeLibMemberInvokeKind::Method => invoke_dispatch_runtime_value(
+            dispatch,
+            dispid,
+            DISPATCH_METHOD,
+            args,
+            &[],
+            "method",
+            prog_id_hint,
+            resolve_object,
+            query_dispatch_from_unknown,
+            add_ref_dispatch,
+            bind_dispatch_result,
+        ),
+        crate::TypeLibMemberInvokeKind::PropertyPut => invoke_dispatch_runtime_value(
+            dispatch,
+            dispid,
+            DISPATCH_PROPERTYPUT,
+            args,
+            &[crate::COM_DISPID_PROPERTYPUT],
+            "property-put",
+            prog_id_hint,
+            resolve_object,
+            query_dispatch_from_unknown,
+            add_ref_dispatch,
+            bind_dispatch_result,
+        ),
+        crate::TypeLibMemberInvokeKind::PropertyPutRef => invoke_dispatch_runtime_value(
+            dispatch,
+            dispid,
+            DISPATCH_PROPERTYPUTREF,
+            args,
+            &[crate::COM_DISPID_PROPERTYPUT],
+            "property-putref",
+            prog_id_hint,
+            resolve_object,
+            query_dispatch_from_unknown,
+            add_ref_dispatch,
+            bind_dispatch_result,
+        ),
     }
 }
