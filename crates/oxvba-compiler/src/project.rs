@@ -1756,14 +1756,62 @@ fn rewrite_internal_class_property_reads(
     if internal_class_bindings.is_empty() || class_state_line_is_non_executable(line) {
         return Ok(line.to_string());
     }
-    rewrite_internal_class_property_expression_reads(
+    let rewritten = rewrite_internal_class_property_expression_reads(
         line,
         active_project,
         current_project,
         current_module,
         procedures,
         internal_class_bindings,
+    )?;
+    rewrite_internal_class_default_member_statement_reads(
+        &rewritten,
+        active_project,
+        current_project,
+        current_module,
+        procedures,
+        internal_class_bindings,
     )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn rewrite_internal_class_default_member_statement_reads(
+    line: &str,
+    active_project: &str,
+    current_project: &str,
+    current_module: &str,
+    procedures: &[ProcedureDecl],
+    internal_class_bindings: &BTreeMap<String, InternalClassBinding>,
+) -> Result<String, ProjectCompileError> {
+    let trimmed = line.trim_start();
+    let leading = line.len().saturating_sub(trimmed.len());
+    if trimmed.is_empty()
+        || trimmed.contains(char::is_whitespace)
+        || trimmed.contains('.')
+        || trimmed.contains('=')
+        || trimmed.contains('(')
+        || trimmed.contains(')')
+        || trimmed.contains(',')
+    {
+        return Ok(line.to_string());
+    }
+    let receiver = normalize_identifier(trimmed);
+    if receiver.is_empty() {
+        return Ok(line.to_string());
+    }
+    let Some((target, instance_arg)) = resolve_internal_class_default_member_target_of_kinds(
+        &receiver,
+        active_project,
+        current_project,
+        current_module,
+        procedures,
+        internal_class_bindings,
+        &[ProcedureDeclKind::PropertyGet],
+    )?
+    else {
+        return Ok(line.to_string());
+    };
+    Ok(format!("{}{}({})", &line[..leading], target, instance_arg))
 }
 
 #[allow(clippy::too_many_arguments)]
