@@ -1,5 +1,6 @@
 use crate::{
-    ComInvokeArg, VariantResultValue, set_variant_from_com_value, take_variant_result_value,
+    ComBinding, ComInvokeArg, ComInvokeRequest, VariantResultValue, set_variant_from_com_value,
+    take_variant_result_value,
 };
 use oxvba_runtime::{ObjectHandle, RuntimeValue};
 #[cfg(target_os = "windows")]
@@ -674,4 +675,78 @@ where
             bind_dispatch_result,
         ),
     }
+}
+
+#[cfg(target_os = "windows")]
+#[allow(clippy::too_many_arguments)]
+pub fn execute_bound_runtime_value<
+    FTryVtable,
+    FResolveMember,
+    FInvokeMember,
+    FInvokeDirect,
+    FInvokeBound,
+>(
+    binding: &ComBinding,
+    request: &ComInvokeRequest,
+    cached_dispid: Option<i32>,
+    try_vtable_invoke: &mut FTryVtable,
+    resolve_member_dispid: &mut FResolveMember,
+    invoke_member_spec: &mut FInvokeMember,
+    invoke_direct_dispid: &mut FInvokeDirect,
+    invoke_bound_dispatch: &mut FInvokeBound,
+) -> Result<RuntimeValue, String>
+where
+    FTryVtable: FnMut(i32, &[i32]) -> Result<Option<i32>, String>,
+    FResolveMember: FnMut(i32, Option<i32>) -> Result<Option<(i32, crate::ComMemberSpec)>, String>,
+    FInvokeMember:
+        FnMut(i32, &crate::ComMemberSpec, &[ComInvokeArg], &str) -> Result<RuntimeValue, String>,
+    FInvokeDirect: FnMut(
+        i32,
+        crate::TypeLibMemberInvokeKind,
+        bool,
+        &[ComInvokeArg],
+        &str,
+    ) -> Result<RuntimeValue, String>,
+    FInvokeBound: FnMut(i32, &[ComInvokeArg], &str) -> Result<RuntimeValue, String>,
+{
+    let plan = crate::plan_bound_runtime_invoke(binding, request, cached_dispid)?;
+    let effective_member = plan.effective_member;
+    let effective_cached_dispid = plan.effective_cached_dispid;
+    let named_default_member_spec = plan.named_default_member_spec;
+    let direct_dispatch_spec = plan.direct_dispatch_spec;
+    let legacy_vtable_candidate_args = plan.legacy_vtable_candidate_args;
+    let args = request.args.as_slice();
+
+    if let Some(positional_values) = legacy_vtable_candidate_args.as_ref()
+        && let Some(value) = try_vtable_invoke(effective_member.raw(), positional_values)?
+    {
+        return Ok(RuntimeValue::I32(value));
+    }
+
+    if let Some((token, spec)) = named_default_member_spec {
+        let (dispid, spec) = resolve_member_dispid(token.raw(), effective_cached_dispid)?
+            .map(|(dispid, _)| (dispid, spec))
+            .ok_or_else(|| {
+                "default member identity unavailable for named late-bound dispatch".to_string()
+            })?;
+        return invoke_member_spec(dispid, &spec, args, &binding.prog_id_name);
+    }
+
+    if let Some((dispid, spec)) =
+        resolve_member_dispid(effective_member.raw(), effective_cached_dispid)?
+    {
+        return invoke_member_spec(dispid, &spec, args, &binding.prog_id_name);
+    }
+
+    if let Some(spec) = direct_dispatch_spec {
+        return invoke_direct_dispid(
+            effective_member.raw(),
+            spec.invoke_kind,
+            spec.requires_argument,
+            args,
+            &binding.prog_id_name,
+        );
+    }
+
+    invoke_bound_dispatch(effective_member.raw(), args, &binding.prog_id_name)
 }

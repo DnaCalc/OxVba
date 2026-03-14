@@ -133,16 +133,17 @@ Run context: active parity/compliance execution plus in-progress feature worklis
   - Blocks IP-04 final COM ownership extraction from HAL.
   - Blocks IP-05 early-binding completion, IP-06 server/export parity, and part of IP-08 hosting parity.
 - Current state:
-  - shared transport/types, deterministic typelib catalog logic, supported Windows wire/value/invoke helpers, generic callback/subscription runtime state, metadata cache ownership, known-member/event policy, metadata-driven ComBinding assembly, activation-time binding insertion, bound-dispatch lookup/rebinding, resolved-member DISPID cache lookup/update, object release bookkeeping, subscription callback-pruning, callback payload polling/metadata access/release helpers, event transport-choice resolution, bound/unbound COM invoke-policy planning, member-spec/direct-DISPID runtime invoke execution helpers, and the generic runtime-value `IDispatch::Invoke` execute/classify helper now live materially in oxvba-com,
-  - oxvba-hal::standard no longer owns the high-level default-member/direct-DISPID/member-spec routing rules, and the event-side public `ComHal` surface is now typed on `ObjectHandle`/`ComMemberToken`/`ComSubscriptionToken`/`ComCallbackToken` end to end, but HAL still owns the live Windows `IDispatch` execution seam and final invoke-result lifecycle authority,
+  - shared transport/types, deterministic typelib catalog logic, supported Windows wire/value/invoke helpers, generic callback/subscription runtime state, metadata cache ownership, known-member/event policy, metadata-driven ComBinding assembly, activation-time binding insertion, bound-dispatch lookup/rebinding, resolved-member DISPID cache lookup/update, object release bookkeeping, subscription callback-pruning, callback payload polling/metadata access/release helpers, event transport-choice resolution, bound/unbound COM invoke-policy planning, member-spec/direct-DISPID runtime invoke execution helpers, the extracted bound-runtime invoke orchestration helper, and the generic runtime-value `IDispatch::Invoke` execute/classify helper now live materially in oxvba-com,
+  - oxvba-hal::standard no longer owns the high-level default-member/direct-DISPID/member-spec routing rules, and the event-side public `ComHal` surface is now typed on `ObjectHandle`/`ComMemberToken`/`ComSubscriptionToken`/`ComCallbackToken` end to end, but HAL still owns raw Windows activation, the last direct `IDispatch` lifecycle glue, and final invoke-result/object-binding authority,
   - the remaining work is the final HAL rebinding/contraction plus movement of the last execution/lifecycle authority behind an oxvba-com surface,
   - an attempted next slice showed this is now a coordinated public contract migration touching `ComHal`, VM intrinsics, host event helpers, and adapter stubs together rather than another isolated helper extraction,
   - forcing closure early would freeze a still-transitional contract.
 - Exact unblock steps:
   - continue moving the remaining Windows client contract authority out of standard.rs:
-    - resolved-member DISPID lookup/cache update and raw IDispatch execution routing,
+    - raw Windows activation and binding-entry creation,
     - final object-handle resolve/bind lifecycle around COM invoke results,
-    - final invoke-result/object-lifecycle glue around COM dispatch results,`r`n    - final public HAL COM seam collapse from delegated event-side contract to overall bootstrap/delegation role,
+    - final invoke-result/object-lifecycle glue around COM dispatch results,
+    - final public HAL COM seam collapse from delegated event-side contract to overall bootstrap/delegation role,
   - contract the public HAL COM surface down to delegation/bootstrap seams over oxvba-com,
   - continue late-bound/property/reference-facade parity work on top of that contracted boundary,
   - execute the full closure sequence in docs/worksets/WORKSET_2026-03-14_IP04_OXVBA_COM_HAL_EXTRACTION_CLOSURE.md, including final Windows client facade/service introduction, HAL seam collapse, ownership audit, and closure foldback.
@@ -401,6 +402,9 @@ Run context: active parity/compliance execution plus in-progress feature worklis
 - Previously resolved blockers:
   - `BLK-EVT-001` — resolved (runtime subscription graph)
   - `BLK-COM-001` — resolved (COM event callback parity with external registered server evidence)
+
+
+
 
 
 

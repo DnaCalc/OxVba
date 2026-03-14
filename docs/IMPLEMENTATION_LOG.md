@@ -1,3 +1,26 @@
+## 2026-03-14 - Moved bound runtime invoke orchestration into oxvba-com
+
+- Continued the IP-04 extraction slice in:
+  - [windows_invoke.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-com\src\windows_invoke.rs)
+  - [lib.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-com\src\lib.rs)
+  - [standard.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-hal\src\adapters\standard.rs)
+  - [CURRENT_BLOCKERS.md](C:\Work\DnaCalc\OxVba\CURRENT_BLOCKERS.md)
+  - [IN_PROGRESS_FEATURE_WORKLIST.md](C:\Work\DnaCalc\OxVba\docs\IN_PROGRESS_FEATURE_WORKLIST.md)
+- oxvba-com now owns the high-level bound runtime invoke orchestration helper that chooses between:
+  - legacy vtable fast-path invocation,
+  - named default-member resolution,
+  - metadata-backed member-spec dispatch,
+  - direct-DISPID dispatch,
+  - bound-dispatch fallback.
+- standard.rs now delegates that routing choice to oxvba-com and only supplies the remaining Windows-native execution closures.
+- Net effect:
+  - HAL no longer owns the high-level bound runtime invoke policy,
+  - the remaining IP-04 wall is narrowed further to raw Windows activation plus final invoke-result/object-lifecycle ownership.
+- Verification:
+  - cargo test -p oxvba-com -p oxvba-hal -p oxvba-vm -p oxvba-host --quiet
+  - cargo clippy -p oxvba-com -p oxvba-hal -p oxvba-vm -p oxvba-host --all-targets -- -D warnings
+  - ./scripts/check-governance.ps1
+  - ./scripts/meta-check.ps1 -Fast -NoArtifacts
 ## 2026-03-14 - Contracted the event-side ComHal boundary to typed COM handles
 
 - Completed the first coordinated public `ComHal` migration slice across:
@@ -177,6 +200,7 @@
 
 ## 2026-03-13 - Moved bound-dispatch and subscription teardown ownership into oxvba-com
 ## 2026-03-13 - Moved bound-dispatch and subscription teardown ownership into oxvba-com
+
 
 
 
