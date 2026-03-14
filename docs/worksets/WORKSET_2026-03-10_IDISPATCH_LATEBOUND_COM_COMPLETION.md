@@ -36,7 +36,7 @@ Still incomplete for true VBA/Office parity:
 4. object/interface-pointer argument and result handling,
 5. SAFEARRAY argument/result parity beyond the current one-dimensional `VT_VARIANT` plus scalar/string typed-element subset,
 6. richer `VarResult` / `ExcepInfo` / `ArgErr` translation behavior,
-7. broad Office automation compatibility outside the current fixture set.
+7. natural named default-member syntax now lowers and executes on the metadata-backed COM path when authoritative default-member identity exists,`r`n8. broad Office automation compatibility outside the current fixture set.
 
 Conclusion:
 1. OxVba now has a meaningful late-bound COM subset.
@@ -301,6 +301,7 @@ This workset is complete when:
 - `docs/spec/COM_CLIENT_SERVER_SCOPE_V1.md`
 - `docs/spec/COM_CLIENT_SERVER_CONFORMANCE_V1.md`
 - `docs/evidence/hal/HAL_IMPLEMENTATION_DEFINED.md`
+
 
 
 

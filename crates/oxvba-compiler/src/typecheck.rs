@@ -717,11 +717,12 @@ fn validate_call_site(
     }
 
     if matches!(call_mode, CallMode::Late) {
+        let mut named_started = false;
         for arg in args {
             if arg.name.is_some() {
-                return Err(format!(
-                    "named arguments are not yet supported for late-bound default-member call {name}: runtime cannot yet resolve the default COM member identity for named-argument dispatch"
-                ));
+                named_started = true;
+            } else if named_started {
+                return Err("positional argument cannot follow named argument".to_string());
             }
             check_expr(
                 &arg.expr,

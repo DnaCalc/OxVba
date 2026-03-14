@@ -1,3 +1,12 @@
+## 2026-03-14 - Natural named late-bound default-member dispatch
+
+- Removed the stale compiler-side rejection for named arguments on natural late-bound default-member syntax and now lower that form onto the same `DispatchInvoke(..., 0, name := ...)` metadata-backed path already used by explicit dispatch.
+- Added compiler and VM/JIT/host evidence proving `value = obj(value := 19)` now executes for `OxVba.TestDispatch` when authoritative default-member identity is available on the COM binding.
+- Remaining gap: non-metadata-backed bindings still cannot recover authoritative default-member identity for this syntax, so full Office-style default-member parity remains open.
+- Verification:
+  - `cargo fmt --all`
+  - `cargo test -p oxvba-compiler -p oxvba-host -p oxvba-vm -p oxvba-com -p oxvba-hal --quiet`
+  - `cargo clippy -p oxvba-com -p oxvba-compiler -p oxvba-host -p oxvba-vm -p oxvba-hal --all-targets -- -D warnings`
 ## 2026-03-14 - Late-bound COM semantic array argument marshalling
 
 - Replaced the compiler's legacy `Array(...)` length-tag lowering with a real array-literal instruction that materializes `RuntimeValue::ArrayIntent(SafeArray::from_values(...))` at runtime.
@@ -416,6 +425,7 @@
 
 ## 2026-03-13 - Moved bound-dispatch and subscription teardown ownership into oxvba-com
 ## 2026-03-13 - Moved bound-dispatch and subscription teardown ownership into oxvba-com
+
 
 
 

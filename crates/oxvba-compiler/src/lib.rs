@@ -295,14 +295,15 @@ mod tests {
     }
 
     #[test]
-    fn late_bound_named_argument_call_is_rejected_until_default_member_identity_is_known() {
+    fn late_bound_named_argument_call_preserves_dispatch_lowering() {
         let source = "Sub Main()\nDim obj As Object\nCall obj(x:=1)\nEnd Sub";
-        let err = compile(source).expect_err(
-            "late-bound named-arg target should remain blocked until default-member identity is explicit",
+        let out = compile(source).expect(
+            "late-bound named-arg target should lower into the default-member dispatch path",
         );
         assert!(
-            err.to_string()
-                .contains("runtime cannot yet resolve the default COM member identity")
+            out.instructions
+                .iter()
+                .any(|i| matches!(i, Instruction::IntrinsicDispatchInvokeHost { args, .. } if args.len() == 1 && args[0].name.as_deref() == Some("x")))
         );
     }
 
