@@ -414,6 +414,20 @@ pub fn activate_runtime_dispatch(
 }
 
 #[cfg(target_os = "windows")]
+pub fn activate_runtime_binding(
+    prog_id: &str,
+    metadata: Option<&crate::TypeLibMetadataBlob>,
+    force_registered_test_dispatch: bool,
+) -> Result<crate::ComBinding, String> {
+    let dispatch = activate_runtime_dispatch(prog_id, force_registered_test_dispatch)?;
+    Ok(crate::binding_from_typelib_metadata(
+        prog_id.to_string(),
+        dispatch as usize,
+        metadata,
+    ))
+}
+
+#[cfg(target_os = "windows")]
 #[allow(unsafe_op_in_unsafe_fn)]
 /// # Safety
 ///

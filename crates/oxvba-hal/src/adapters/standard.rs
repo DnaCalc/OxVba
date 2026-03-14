@@ -33,10 +33,11 @@ use oxvba_com::{
     ComInvokeFailure, ComInvokeRequest, ComMemberSpec, ComMemberToken, ComObjectDescriptor,
     ComObjectToken, ComObjectTransportKind, ComSubscriptionToken, ComValue, IID_NULL, RawIDispatch,
     RawIUnknown, TypeLibMetadataCacheState, WindowsComClientState, WindowsComSubscriptionTransport,
+    activate_runtime_binding as com_activate_runtime_binding,
     activate_runtime_dispatch as com_activate_runtime_dispatch,
     add_ref_dispatch as raw_add_ref_dispatch, advise_event_subscription,
-    bind_native_dispatch_result as com_bind_native_dispatch_result, binding_from_typelib_metadata,
-    build_typelib_metadata, callback_arg as com_callback_arg, callback_arity as com_callback_arity,
+    bind_native_dispatch_result as com_bind_native_dispatch_result, build_typelib_metadata,
+    callback_arg as com_callback_arg, callback_arity as com_callback_arity,
     callback_subscription_token as com_callback_subscription_token,
     canonicalize_member_known_args as com_canonicalize_member_known_args,
     event_callback_args_from_member_token, event_is_source_interface_only,
@@ -1104,13 +1105,6 @@ impl StandardHostServices {
     }
 
     #[cfg(target_os = "windows")]
-    fn try_binding_from_typelib_metadata(&self, prog_id: &str) -> HalResult<RawDispatchPtr> {
-        self.ensure_thread_com_apartment("create_object")?;
-        self.native_com_activate_dispatch(prog_id)
-            .map(|dispatch| dispatch as RawDispatchPtr)
-    }
-
-    #[cfg(target_os = "windows")]
     fn resolve_native_dispatch_for_object_arg(
         &self,
         object: ObjectHandle,
@@ -1130,12 +1124,6 @@ impl StandardHostServices {
             "create_object",
             "native COM activation unavailable on this platform",
         ))
-    }
-
-    #[cfg(not(target_os = "windows"))]
-    fn try_binding_from_typelib_metadata(&self, prog_id: &str) -> HalResult<RawDispatchPtr> {
-        self.native_com_activate_dispatch(prog_id)
-            .map(|dispatch| dispatch as RawDispatchPtr)
     }
 
     #[cfg(target_os = "windows")]
@@ -2506,9 +2494,14 @@ impl ComHal for StandardHostServices {
                 ));
             }
             if self.native_com_enabled() {
-                match self.try_binding_from_typelib_metadata(prog_id_name) {
-                    Ok(native_dispatch) => {
-                        let metadata = self.load_typelib_metadata_for_prog_id_name(prog_id_name)?;
+                let metadata = self.load_typelib_metadata_for_prog_id_name(prog_id_name)?;
+                self.ensure_thread_com_apartment("create_object")?;
+                match com_activate_runtime_binding(
+                    prog_id_name,
+                    metadata.as_ref(),
+                    self.force_registered_test_dispatch(),
+                ) {
+                    Ok(mut binding) => {
                         #[cfg(target_os = "windows")]
                         let registered_event_override = self
                             .registered_event_override_for_prog_id_name(
@@ -2516,11 +2509,6 @@ impl ComHal for StandardHostServices {
                                 "create_object",
                             )?;
                         let mut state = self.com_lock(capability, "create_object")?;
-                        let mut binding = binding_from_typelib_metadata(
-                            prog_id_name.to_string(),
-                            native_dispatch,
-                            metadata.as_ref(),
-                        );
                         #[cfg(target_os = "windows")]
                         if let Some(override_cfg) = registered_event_override.as_ref() {
                             self.apply_registered_event_override_to_binding(
@@ -2532,7 +2520,7 @@ impl ComHal for StandardHostServices {
                         self.assert_com_invariants(&state, "create_object");
                         return Ok(RuntimeValue::ObjectHandle(handle));
                     }
-                    Err(err) => return Err(err),
+                    Err(message) => return Err(self.com_createobject_adapter_fault(message)),
                 }
             }
             return Err(HalError::adapter_fault(
@@ -2547,9 +2535,14 @@ impl ComHal for StandardHostServices {
         if self.native_com_enabled()
             && let Some(prog_id_name) = self.resolve_native_com_progid(prog_id)
         {
-            match self.try_binding_from_typelib_metadata(&prog_id_name) {
-                Ok(native_dispatch) => {
-                    let metadata = self.load_typelib_metadata_for_prog_id_name(&prog_id_name)?;
+            let metadata = self.load_typelib_metadata_for_prog_id_name(&prog_id_name)?;
+            self.ensure_thread_com_apartment("create_object")?;
+            match com_activate_runtime_binding(
+                &prog_id_name,
+                metadata.as_ref(),
+                self.force_registered_test_dispatch(),
+            ) {
+                Ok(mut binding) => {
                     #[cfg(target_os = "windows")]
                     let registered_event_override = self
                         .registered_event_override_for_prog_id_name(
@@ -2557,11 +2550,6 @@ impl ComHal for StandardHostServices {
                             "create_object",
                         )?;
                     let mut state = self.com_lock(capability, "create_object")?;
-                    let mut binding = binding_from_typelib_metadata(
-                        prog_id_name,
-                        native_dispatch,
-                        metadata.as_ref(),
-                    );
                     #[cfg(target_os = "windows")]
                     if let Some(override_cfg) = registered_event_override.as_ref() {
                         self.apply_registered_event_override_to_binding(&mut binding, override_cfg);
@@ -2570,7 +2558,8 @@ impl ComHal for StandardHostServices {
                     self.assert_com_invariants(&state, "create_object");
                     return Ok(RuntimeValue::ObjectHandle(handle));
                 }
-                Err(err) => {
+                Err(message) => {
+                    let err = self.com_createobject_adapter_fault(message);
                     if self.has_explicit_native_com_override(prog_id) {
                         return Err(err);
                     }
@@ -3698,7 +3687,6 @@ impl DynLinkBindingState {
     }
 }
 
-type RawDispatchPtr = usize;
 #[cfg(target_os = "windows")]
 thread_local! {
     static THREAD_COM_APARTMENT_READY: Cell<bool> = const { Cell::new(false) };

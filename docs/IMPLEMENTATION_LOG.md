@@ -1,3 +1,27 @@
+## 2026-03-14 - Moved activation-time COM binding creation into oxvba-com
+
+- Continued the `IP-04` extraction slice in:
+  - [windows_client.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-com\src\windows_client.rs)
+  - [lib.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-com\src\lib.rs)
+  - [standard.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-hal\src\adapters\standard.rs)
+  - [CURRENT_BLOCKERS.md](C:\Work\DnaCalc\OxVba\CURRENT_BLOCKERS.md)
+  - [IN_PROGRESS_FEATURE_WORKLIST.md](C:\Work\DnaCalc\OxVba\docs\IN_PROGRESS_FEATURE_WORKLIST.md)
+- `oxvba-com` now owns activation-time COM binding creation through `activate_runtime_binding(...)`, combining:
+  - runtime dispatch activation,
+  - deterministic typelib-backed binding assembly,
+  - the existing registered-test-dispatch selection policy.
+- `standard.rs::create_object(...)` now delegates binding creation to `oxvba-com` and only retains:
+  - apartment readiness,
+  - optional registered-event override application,
+  - insertion of the resulting binding into shared host state.
+- Net effect:
+  - HAL no longer owns activation-time COM binding assembly,
+  - the remaining `IP-04` wall is narrowed to the shared-state object/result rebinding wrappers and the final invoke-result lifecycle authority.
+- Verification:
+  - `cargo clippy -p oxvba-com -p oxvba-hal -p oxvba-vm -p oxvba-host --all-targets -- -D warnings`
+  - `cargo test -p oxvba-com -p oxvba-hal -p oxvba-vm -p oxvba-host --quiet`
+  - `./scripts/check-governance.ps1`
+  - `./scripts/meta-check.ps1 -Fast -NoArtifacts`
 ## 2026-03-14 - Moved bound runtime invoke orchestration into oxvba-com
 
 - Continued the IP-04 extraction slice in:
@@ -200,6 +224,7 @@
 
 ## 2026-03-13 - Moved bound-dispatch and subscription teardown ownership into oxvba-com
 ## 2026-03-13 - Moved bound-dispatch and subscription teardown ownership into oxvba-com
+
 
 
 
