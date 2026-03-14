@@ -1,3 +1,14 @@
+## 2026-03-14 - Moved COM runtime-value invoke execution helper into oxvba-com
+
+- Extended `crates/oxvba-com/src/windows_invoke.rs` with a higher-level runtime-value `IDispatch::Invoke` helper that:
+  - executes the Windows invoke call,
+  - classifies the semantic result,
+  - delegates dispatch-backed result rebinding through caller-provided closures.
+- Rebound `oxvba-hal::standard` so its `native_dispatch_invoke_runtime_value_args(...)` helper is now a thin delegation wrapper over that shared `oxvba-com` surface.
+- This removes the generic raw execute-and-classify path from HAL-owned COM authority.
+- The remaining extraction wall is now narrower again:
+  - resolved-member DISPID lookup/cache update and final object rebinding/lifecycle glue still live in HAL,
+  - public HAL COM contract contraction/rebinding still pending.
 ## 2026-03-14 - Moved COM invoke-policy planning into oxvba-com
 
 - Added `crates/oxvba-com/src/invoke_policy.rs` as the shared policy surface for:
@@ -55,4 +66,5 @@
 
 ## 2026-03-13 - Moved bound-dispatch and subscription teardown ownership into oxvba-com
 ## 2026-03-13 - Moved bound-dispatch and subscription teardown ownership into oxvba-com
+
 

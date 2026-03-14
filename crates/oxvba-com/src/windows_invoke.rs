@@ -1,7 +1,7 @@
 use crate::{
     ComInvokeArg, VariantResultValue, set_variant_from_com_value, take_variant_result_value,
 };
-use oxvba_runtime::ObjectHandle;
+use oxvba_runtime::{ObjectHandle, RuntimeValue};
 #[cfg(target_os = "windows")]
 use windows_sys::Win32::Foundation::{SysFreeString, SysStringLen};
 #[cfg(target_os = "windows")]
@@ -289,4 +289,67 @@ where
             detail: Some(detail),
         },
     )
+}
+
+#[cfg(target_os = "windows")]
+#[allow(unsafe_op_in_unsafe_fn)]
+#[allow(clippy::too_many_arguments)]
+/// Execute a Windows `IDispatch::Invoke` call over the shared semantic COM request carrier and
+/// return the final OxVba runtime-facing value shape, delegating any dispatch-backed result
+/// rebinding to the caller.
+///
+/// # Safety
+/// `dispatch` must point to a live `IDispatch` implementation for the duration of the call.
+/// The callback closures must uphold COM ownership and runtime identity guarantees for any object
+/// handles or returned interface pointers they touch.
+pub unsafe fn invoke_dispatch_runtime_value<
+    FResolveObject,
+    FQueryUnknown,
+    FAddRefDispatch,
+    FBindDispatch,
+>(
+    dispatch: *mut core::ffi::c_void,
+    dispid: i32,
+    flags: u16,
+    args: &[ComInvokeArg],
+    named_arg_dispids: &[i32],
+    label: &'static str,
+    prog_id_hint: &str,
+    resolve_object: &mut FResolveObject,
+    query_dispatch_from_unknown: &mut FQueryUnknown,
+    add_ref_dispatch: &mut FAddRefDispatch,
+    bind_dispatch_result: &mut FBindDispatch,
+) -> Result<RuntimeValue, ComInvokeFailure>
+where
+    FResolveObject: FnMut(ObjectHandle) -> Result<*mut core::ffi::c_void, String>,
+    FQueryUnknown: FnMut(*mut core::ffi::c_void) -> Result<*mut core::ffi::c_void, String>,
+    FAddRefDispatch: FnMut(*mut core::ffi::c_void),
+    FBindDispatch:
+        FnMut(*mut core::ffi::c_void, &str, &'static str) -> Result<RuntimeValue, String>,
+{
+    match invoke_dispatch_variant_result(
+        dispatch,
+        dispid,
+        flags,
+        args,
+        named_arg_dispids,
+        label,
+        resolve_object,
+        query_dispatch_from_unknown,
+        add_ref_dispatch,
+    )? {
+        VariantResultValue::Value(value) => Ok(value.to_runtime_value()),
+        VariantResultValue::Dispatch(dispatch) => {
+            bind_dispatch_result(dispatch, prog_id_hint, "dispatch_invoke").map_err(|detail| {
+                ComInvokeFailure {
+                    label,
+                    dispid,
+                    hr: None,
+                    arg_err: None,
+                    excep: None,
+                    detail: Some(detail),
+                }
+            })
+        }
+    }
 }

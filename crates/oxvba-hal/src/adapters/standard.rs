@@ -14,9 +14,9 @@ use crate::{
 #[cfg(test)]
 pub use oxvba_com::DISPATCH_INVOKE_MISSING_ARG_TOKEN;
 #[cfg(target_os = "windows")]
-use oxvba_com::take_excepinfo;
+use oxvba_com::invoke_dispatch_runtime_value as com_invoke_dispatch_runtime_value;
 #[cfg(target_os = "windows")]
-use oxvba_com::windows_invoke::invoke_dispatch_variant_result as com_invoke_dispatch_variant_result;
+use oxvba_com::take_excepinfo;
 #[cfg(target_os = "windows")]
 use oxvba_com::windows_variant::{
     set_variant_from_com_value as com_set_variant_from_com_value,
@@ -28,8 +28,8 @@ use oxvba_com::{
     ComEventSubscription as SharedComEventSubscription, ComEventTriggerSpec, ComInvokeArg,
     ComInvokeFailure, ComInvokeRequest, ComMemberSpec, ComMemberToken, ComObjectDescriptor,
     ComObjectToken, ComObjectTransportKind, ComSubscriptionToken, ComValue, IID_NULL, RawIDispatch,
-    RawIUnknown, TypeLibMetadataCacheState, VariantResultValue, WindowsComClientState,
-    WindowsComSubscriptionTransport, activate_runtime_dispatch as com_activate_runtime_dispatch,
+    RawIUnknown, TypeLibMetadataCacheState, WindowsComClientState, WindowsComSubscriptionTransport,
+    activate_runtime_dispatch as com_activate_runtime_dispatch,
     add_ref_dispatch as raw_add_ref_dispatch, advise_event_subscription,
     bind_native_dispatch_result as com_bind_native_dispatch_result, binding_from_typelib_metadata,
     build_typelib_metadata, cache_member_dispid as com_cache_member_dispid,
@@ -1717,13 +1717,14 @@ impl StandardHostServices {
         context: (&'static str, &str),
     ) -> Result<RuntimeValue, ComInvokeFailure> {
         let (label, prog_id_hint) = context;
-        let classified = com_invoke_dispatch_variant_result(
+        com_invoke_dispatch_runtime_value(
             dispatch.cast(),
             dispid,
             flags,
             args,
             named_arg_dispids,
             label,
+            prog_id_hint,
             &mut |handle| {
                 self.resolve_native_dispatch_for_object_arg(handle, "dispatch_invoke")
                     .map(|dispatch| dispatch.cast::<core::ffi::c_void>())
@@ -1738,25 +1739,13 @@ impl StandardHostServices {
             &mut |dispatch| {
                 raw_add_ref_dispatch(dispatch.cast::<RawIDispatch>());
             },
-        )?;
-        match classified {
-            VariantResultValue::Value(value) => Ok(value.to_runtime_value()),
-            VariantResultValue::Dispatch(dispatch) => self
-                .bind_native_dispatch_result(
-                    dispatch.cast::<RawIDispatch>(),
-                    prog_id_hint,
-                    "dispatch_invoke",
-                )
-                .map_err(|err| format!("{} [{}] {}", err.stable_code, err.operation, err.message))
-                .map_err(|detail| ComInvokeFailure {
-                    label,
-                    dispid,
-                    hr: None,
-                    arg_err: None,
-                    excep: None,
-                    detail: Some(detail),
-                }),
-        }
+            &mut |dispatch, prog_id_hint, op| {
+                self.bind_native_dispatch_result(dispatch.cast::<RawIDispatch>(), prog_id_hint, op)
+                    .map_err(|err| {
+                        format!("{} [{}] {}", err.stable_code, err.operation, err.message)
+                    })
+            },
+        )
     }
 
     #[cfg(target_os = "windows")]
