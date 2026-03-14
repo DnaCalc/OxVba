@@ -469,3 +469,13 @@
 
 
 
+## 2026-03-14 - Advanced IP-02 native property semantics and bounded typed-dispatch-array COM blocker
+
+- Continued the umbrella COM/property/hosting execution sequence with the first concrete `IP-02A` native property-semantic slice.
+- Compiler/project lowering in [project.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-compiler\src\project.rs) now rewrites natural internal-class property syntax onto the same PMR substrate already used by explicit dynamic dispatch:
+  - `widget.Value` now lowers through the native `Property Get` route,
+  - `widget.Value = 9` now lowers through the native `Property Let` route,
+  - existing internal-class member-call rewriting remains in place.
+- Added end-to-end host coverage in [engine.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-host\src\engine.rs) proving natural internal-class `Property Get` / `Property Let` execution through the shared dynamic-object path.
+- In parallel, attempted the next late-bound COM substrate slice for typed `VT_ARRAY | VT_DISPATCH` results and deliberately backed it out after the host lane continued to fault with `STATUS_ACCESS_VIOLATION`.
+- Recorded the unresolved COM array crash as `BLK-COM-ARRAY-DISPATCH-001` rather than leaving an unverified partial slice in the tree.

@@ -1227,11 +1227,21 @@ fn lower_module_source_module_aware(
         for expanded_line in expanded {
             let expanded_line = rewrite_internal_class_set_assignment(
                 &expanded_line,
+                active_project,
                 current_project,
                 &current_module,
+                procedures,
                 &internal_class_bindings,
                 &withevents_bindings,
-            );
+            )?;
+            let expanded_line = rewrite_internal_class_property_assignment(
+                &expanded_line,
+                active_project,
+                current_project,
+                &current_module,
+                procedures,
+                &internal_class_bindings,
+            )?;
             let state_assigned =
                 rewrite_internal_class_state_assignment(&expanded_line, &class_state_bindings);
             let expanded_line = if state_assigned != expanded_line {
@@ -1239,6 +1249,14 @@ fn lower_module_source_module_aware(
             } else {
                 rewrite_internal_class_state_reads(&state_assigned, &class_state_bindings)
             };
+            let expanded_line = rewrite_internal_class_property_reads(
+                &expanded_line,
+                active_project,
+                current_project,
+                &current_module,
+                procedures,
+                &internal_class_bindings,
+            )?;
             let expanded_line = rewrite_internal_class_member_dispatch(
                 &expanded_line,
                 active_project,
@@ -1688,7 +1706,116 @@ fn rewrite_internal_class_member_dispatch(
 }
 
 #[allow(clippy::too_many_arguments)]
-fn resolve_internal_class_member_target(
+fn rewrite_internal_class_property_reads(
+    line: &str,
+    active_project: &str,
+    current_project: &str,
+    current_module: &str,
+    procedures: &[ProcedureDecl],
+    internal_class_bindings: &BTreeMap<String, InternalClassBinding>,
+) -> Result<String, ProjectCompileError> {
+    if internal_class_bindings.is_empty() || class_state_line_is_non_executable(line) {
+        return Ok(line.to_string());
+    }
+    rewrite_internal_class_property_expression_reads(
+        line,
+        active_project,
+        current_project,
+        current_module,
+        procedures,
+        internal_class_bindings,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn rewrite_internal_class_property_expression_reads(
+    text: &str,
+    active_project: &str,
+    current_project: &str,
+    current_module: &str,
+    procedures: &[ProcedureDecl],
+    internal_class_bindings: &BTreeMap<String, InternalClassBinding>,
+) -> Result<String, ProjectCompileError> {
+    let bytes = text.as_bytes();
+    let mut replacements: Vec<(usize, usize, String)> = Vec::new();
+    let mut index = 0usize;
+    while index < bytes.len() {
+        if !is_identifier_byte(bytes[index]) || (index > 0 && is_identifier_byte(bytes[index - 1]))
+        {
+            index += 1;
+            continue;
+        }
+        let receiver_start = index;
+        while index < bytes.len() && is_identifier_byte(bytes[index]) {
+            index += 1;
+        }
+        let receiver_end = index;
+        if index >= bytes.len() || bytes[index] != b'.' {
+            continue;
+        }
+        let member_start = index + 1;
+        if member_start >= bytes.len() || !is_identifier_byte(bytes[member_start]) {
+            continue;
+        }
+        index = member_start;
+        while index < bytes.len() && is_identifier_byte(bytes[index]) {
+            index += 1;
+        }
+        let member_end = index;
+        let mut next = member_end;
+        while next < bytes.len() && bytes[next].is_ascii_whitespace() {
+            next += 1;
+        }
+        if next < bytes.len() && (bytes[next] == b'(' || bytes[next] == b'=') {
+            continue;
+        }
+        let receiver = normalize_identifier(&text[receiver_start..receiver_end]);
+        let member = normalize_identifier(&text[member_start..member_end]);
+        if receiver.is_empty() || member.is_empty() {
+            continue;
+        }
+        let raw_name = &text[receiver_start..member_end];
+        if let Some((target, instance_arg)) = resolve_internal_class_member_target_of_kinds(
+            &receiver,
+            &member,
+            raw_name,
+            active_project,
+            current_project,
+            current_module,
+            procedures,
+            internal_class_bindings,
+            &[ProcedureDeclKind::PropertyGet],
+        )? {
+            replacements.push((
+                receiver_start,
+                member_end,
+                format!("{}({})", target, instance_arg),
+            ));
+        }
+    }
+    if replacements.is_empty() {
+        return Ok(text.to_string());
+    }
+    let mut out = String::with_capacity(text.len() + 32);
+    let mut previous = 0usize;
+    for (start, end, replacement) in replacements {
+        if start < previous || end > text.len() || start >= end {
+            continue;
+        }
+        out.push_str(&text[previous..start]);
+        out.push_str(&replacement);
+        previous = end;
+    }
+    out.push_str(&text[previous..]);
+    Ok(out)
+}
+
+fn is_identifier_byte(byte: u8) -> bool {
+    byte.is_ascii_alphanumeric() || byte == b'_'
+}
+
+#[allow(clippy::too_many_arguments)]
+fn resolve_internal_class_member_target_of_kinds(
     receiver: &str,
     member: &str,
     raw_name: &str,
@@ -1697,6 +1824,7 @@ fn resolve_internal_class_member_target(
     current_module: &str,
     procedures: &[ProcedureDecl],
     internal_class_bindings: &BTreeMap<String, InternalClassBinding>,
+    allowed_kinds: &[ProcedureDeclKind],
 ) -> Result<Option<(String, String)>, ProjectCompileError> {
     let Some((target_project, target_module, instance_arg)) = internal_class_bindings
         .get(receiver)
@@ -1733,6 +1861,7 @@ fn resolve_internal_class_member_target(
             decl.project_name == target_project
                 && decl.module_name == target_module
                 && decl.procedure_name == member
+                && (allowed_kinds.is_empty() || allowed_kinds.contains(&decl.kind))
                 && is_visible_from_active_project(
                     decl,
                     active_project,
@@ -1742,15 +1871,41 @@ fn resolve_internal_class_member_target(
         })
         .collect::<Vec<_>>();
     if candidates.is_empty() {
-        return Err(ProjectCompileError::NameResolutionNotFound {
-            name: raw_name.to_string(),
-        });
+        return if allowed_kinds.is_empty() {
+            Err(ProjectCompileError::NameResolutionNotFound {
+                name: raw_name.to_string(),
+            })
+        } else {
+            Ok(None)
+        };
     }
     candidates.sort_by_key(|decl| decl.lowered_name.clone());
     Ok(Some((candidates[0].lowered_name.clone(), instance_arg)))
 }
 
 #[allow(clippy::too_many_arguments)]
+fn resolve_internal_class_member_target(
+    receiver: &str,
+    member: &str,
+    raw_name: &str,
+    active_project: &str,
+    current_project: &str,
+    current_module: &str,
+    procedures: &[ProcedureDecl],
+    internal_class_bindings: &BTreeMap<String, InternalClassBinding>,
+) -> Result<Option<(String, String)>, ProjectCompileError> {
+    resolve_internal_class_member_target_of_kinds(
+        receiver,
+        member,
+        raw_name,
+        active_project,
+        current_project,
+        current_module,
+        procedures,
+        internal_class_bindings,
+        &[],
+    )
+}
 fn rewrite_internal_class_call_statement_without_parens(
     line: &str,
     active_project: &str,
@@ -1921,43 +2076,126 @@ fn rewrite_internal_class_self_dispatch(
 
 fn rewrite_internal_class_set_assignment(
     line: &str,
+    active_project: &str,
     current_project: &str,
     current_module: &str,
+    procedures: &[ProcedureDecl],
     internal_class_bindings: &BTreeMap<String, InternalClassBinding>,
     withevents_bindings: &BTreeSet<String>,
-) -> String {
+) -> Result<String, ProjectCompileError> {
     let trimmed = line.trim_start();
     let leading = line.len().saturating_sub(trimmed.len());
     let lower = trimmed.to_ascii_lowercase();
     if !lower.starts_with("set ") {
-        return line.to_string();
+        return Ok(line.to_string());
     }
     let payload = trimmed[4..].trim_start();
     let Some(eq_idx) = payload.find('=') else {
-        return line.to_string();
+        return Ok(line.to_string());
     };
     let lhs = payload[..eq_idx].trim();
     let rhs = payload[eq_idx + 1..].trim();
     if lhs.is_empty() || rhs.is_empty() {
-        return line.to_string();
+        return Ok(line.to_string());
+    }
+    if let Some(dot_idx) = lhs.find('.') {
+        let receiver = normalize_identifier(lhs[..dot_idx].trim());
+        let member = normalize_identifier(lhs[dot_idx + 1..].trim());
+        if !receiver.is_empty()
+            && !member.is_empty()
+            && let Some((target, instance_arg)) = resolve_internal_class_member_target_of_kinds(
+                &receiver,
+                &member,
+                lhs,
+                active_project,
+                current_project,
+                current_module,
+                procedures,
+                internal_class_bindings,
+                &[ProcedureDeclKind::PropertySet],
+            )?
+        {
+            return Ok(format!(
+                "{}{}({}, {})",
+                &line[..leading],
+                target,
+                instance_arg,
+                rhs
+            ));
+        }
     }
     if !internal_class_bindings.contains_key(&normalize_identifier(lhs)) {
-        return line.to_string();
+        return Ok(line.to_string());
     }
     let normalized_lhs = normalize_identifier(lhs);
     if withevents_bindings.contains(&normalized_lhs) {
         let binding_token = withevents_binding_token(current_project, current_module, lhs);
-        return format!(
+        return Ok(format!(
             "{}{} = __oxvba_withevents_set(__oxvba_this_instance, {}, {})",
             &line[..leading],
             lhs,
             binding_token,
             rhs
-        );
+        ));
     }
-    format!("{}{} = {}", &line[..leading], lhs, rhs)
+    Ok(format!("{}{} = {}", &line[..leading], lhs, rhs))
 }
 
+#[allow(clippy::too_many_arguments)]
+fn rewrite_internal_class_property_assignment(
+    line: &str,
+    active_project: &str,
+    current_project: &str,
+    current_module: &str,
+    procedures: &[ProcedureDecl],
+    internal_class_bindings: &BTreeMap<String, InternalClassBinding>,
+) -> Result<String, ProjectCompileError> {
+    if internal_class_bindings.is_empty() || class_state_line_is_non_executable(line) {
+        return Ok(line.to_string());
+    }
+    let trimmed = line.trim_start();
+    let leading = line.len().saturating_sub(trimmed.len());
+    if trimmed.to_ascii_lowercase().starts_with("set ") {
+        return Ok(line.to_string());
+    }
+    let Some(eq_idx) = trimmed.find('=') else {
+        return Ok(line.to_string());
+    };
+    let lhs = trimmed[..eq_idx].trim();
+    let rhs = trimmed[eq_idx + 1..].trim();
+    if lhs.is_empty() || rhs.is_empty() {
+        return Ok(line.to_string());
+    }
+    let Some(dot_idx) = lhs.find('.') else {
+        return Ok(line.to_string());
+    };
+    let receiver = normalize_identifier(lhs[..dot_idx].trim());
+    let member = normalize_identifier(lhs[dot_idx + 1..].trim());
+    if receiver.is_empty() || member.is_empty() {
+        return Ok(line.to_string());
+    }
+    let Some((target, instance_arg)) = resolve_internal_class_member_target_of_kinds(
+        &receiver,
+        &member,
+        lhs,
+        active_project,
+        current_project,
+        current_module,
+        procedures,
+        internal_class_bindings,
+        &[ProcedureDeclKind::PropertyLet],
+    )?
+    else {
+        return Ok(line.to_string());
+    };
+    Ok(format!(
+        "{}{}({}, {})",
+        &line[..leading],
+        target,
+        instance_arg,
+        rhs
+    ))
+}
 fn collect_class_state_bindings(
     module: &ModuleUnit,
     current_project: &str,
@@ -2945,11 +3183,29 @@ fn rewrite_module_source(
         for expanded_line in expanded {
             let expanded_line = rewrite_internal_class_set_assignment(
                 &expanded_line,
+                active_project,
                 current_project,
                 &current_module,
+                procedures,
                 &internal_class_bindings,
                 &withevents_bindings,
-            );
+            )?;
+            let expanded_line = rewrite_internal_class_property_assignment(
+                &expanded_line,
+                active_project,
+                current_project,
+                &current_module,
+                procedures,
+                &internal_class_bindings,
+            )?;
+            let expanded_line = rewrite_internal_class_property_reads(
+                &expanded_line,
+                active_project,
+                current_project,
+                &current_module,
+                procedures,
+                &internal_class_bindings,
+            )?;
             let trimmed = expanded_line.trim();
             let lower = trimmed.to_ascii_lowercase();
             if lower.starts_with("attribute ") || lower == "option private module" {
