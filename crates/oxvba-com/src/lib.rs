@@ -91,10 +91,12 @@ pub use windows_runtime_state::{
     cache_member_dispid, callback_arg, callback_arity, callback_subscription_token,
     collect_stale_callbacks_for_subscription, event_callback_args_from_member_token,
     event_is_source_interface_only, event_signature_arity_for_binding, insert_bound_object_binding,
-    insert_bound_object_binding_shared, release_callback, release_object_binding,
-    release_object_binding_shared, release_subscription_transport, remove_subscription_callbacks,
-    resolve_bound_native_dispatch, resolve_bound_native_dispatch_shared,
-    resolve_member_dispid_cached, resolve_subscription_transport, take_polled_callback_payload,
+    insert_bound_object_binding_shared, mark_next_callback_pumped_shared, release_callback,
+    release_object_binding, release_object_binding_shared, release_subscription_transport,
+    remove_subscription_callbacks, resolve_bound_native_dispatch,
+    resolve_bound_native_dispatch_shared, resolve_member_dispid_cached,
+    resolve_subscription_transport, subscribe_event_shared, take_polled_callback_payload,
+    unsubscribe_event_shared,
 };
 #[cfg(target_os = "windows")]
 pub use windows_test_dispatch::{

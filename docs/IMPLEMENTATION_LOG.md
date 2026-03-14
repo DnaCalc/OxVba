@@ -1,3 +1,23 @@
+## 2026-03-14 - Moved COM event transport orchestration into oxvba-com
+
+- Continued the `IP-04` extraction slice in:
+  - [windows_runtime_state.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-com\src\windows_runtime_state.rs)
+  - [lib.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-com\src\lib.rs)
+  - [standard.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-hal\src\adapters\standard.rs)
+  - [CURRENT_BLOCKERS.md](C:\Work\DnaCalc\OxVba\CURRENT_BLOCKERS.md)
+  - [IN_PROGRESS_FEATURE_WORKLIST.md](C:\Work\DnaCalc\OxVba\docs\IN_PROGRESS_FEATURE_WORKLIST.md)
+- `oxvba-com` now owns shared-state helpers for:
+  - callback-pump token advancement,
+  - event subscription allocation/transport resolution/insertion,
+  - event unsubscription transport release and callback pruning.
+- `standard.rs` now delegates COM event subscription/unsubscription orchestration and callback-pump progression to `oxvba-com` shared services instead of owning that subscription-state workflow locally.
+- Net effect:
+  - HAL no longer owns COM event transport orchestration,
+  - the remaining `IP-04` wall is now activation/create-object entry, dispatch service entry, projection callback queueing, and the final public COM/HAL seam collapse.
+- Verification:
+  - `cargo fmt --all`
+  - `cargo clippy -p oxvba-com -p oxvba-hal --all-targets -- -D warnings`
+  - `cargo test -p oxvba-com -p oxvba-hal --quiet`
 ## 2026-03-14 - Moved COM runtime invoke closure wiring into oxvba-com
 
 - Continued the `IP-04` extraction slice in:
@@ -266,6 +286,7 @@
 
 ## 2026-03-13 - Moved bound-dispatch and subscription teardown ownership into oxvba-com
 ## 2026-03-13 - Moved bound-dispatch and subscription teardown ownership into oxvba-com
+
 
 
 

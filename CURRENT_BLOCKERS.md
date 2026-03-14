@@ -134,7 +134,7 @@ Run context: active parity/compliance execution plus in-progress feature worklis
   - Blocks IP-05 early-binding completion, IP-06 server/export parity, and part of IP-08 hosting parity.
 - Current state:
   - shared transport/types, deterministic typelib catalog logic, supported Windows wire/value/invoke helpers, generic callback/subscription runtime state, metadata cache ownership, known-member/event policy, metadata-driven ComBinding assembly, activation-time binding creation, bound-dispatch lookup/rebinding, resolved-member DISPID cache lookup/update, object release bookkeeping, subscription callback-pruning, callback payload polling/metadata access/release helpers, event transport-choice resolution, bound/unbound COM invoke-policy planning, member-spec/direct-DISPID runtime invoke execution helpers, the extracted bound-runtime invoke orchestration helper, and the generic runtime-value `IDispatch::Invoke` execute/classify helper now live materially in oxvba-com,
-  - oxvba-hal::standard no longer owns the high-level default-member/direct-DISPID/member-spec routing rules or the direct runtime invoke closure wiring, and the event-side public `ComHal` surface is now typed on `ObjectHandle`/`ComMemberToken`/`ComSubscriptionToken`/`ComCallbackToken` end to end, but HAL still owns activation entry, event subscription transport orchestration, the legacy projection invoke lane, and the final public COM/HAL contract contraction,
+  - oxvba-hal::standard no longer owns the high-level default-member/direct-DISPID/member-spec routing rules, the direct runtime invoke closure wiring, or COM event subscription/unsubscription orchestration, and the event-side public `ComHal` surface is now typed on `ObjectHandle`/`ComMemberToken`/`ComSubscriptionToken`/`ComCallbackToken` end to end, but HAL still owns activation/create-object entry, dispatch service entry, projection callback queueing, the legacy projection invoke lane, and the final public COM/HAL contract contraction,
   - the remaining work is the final HAL rebinding/contraction plus movement of the last execution/lifecycle authority behind an oxvba-com surface,
   - an attempted next slice showed this is now a coordinated public contract migration touching `ComHal`, VM intrinsics, host event helpers, and adapter stubs together rather than another isolated helper extraction,
   - forcing closure early would freeze a still-transitional contract.
@@ -402,6 +402,7 @@ Run context: active parity/compliance execution plus in-progress feature worklis
 - Previously resolved blockers:
   - `BLK-EVT-001` — resolved (runtime subscription graph)
   - `BLK-COM-001` — resolved (COM event callback parity with external registered server evidence)
+
 
 
 

@@ -535,3 +535,99 @@ pub fn release_object_binding_shared(
     let mut state = lock_state(com_state, "release_object_binding")?;
     release_object_binding(&mut state, object)
 }
+
+pub fn mark_next_callback_pumped_shared(
+    com_state: &Arc<Mutex<WindowsComClientState>>,
+) -> Result<Option<ComCallbackToken>, String> {
+    let mut state = lock_state(com_state, "mark_next_callback_pumped")?;
+    Ok(state.mark_next_callback_pumped())
+}
+
+/// # Safety
+///
+/// The caller must ensure the current thread is in the required COM apartment
+/// before native connection-point subscription work is attempted.
+pub unsafe fn subscribe_event_shared(
+    com_state: &Arc<Mutex<WindowsComClientState>>,
+    object: ObjectHandle,
+    event: ComMemberToken,
+) -> Result<(ComSubscriptionToken, WindowsComSubscriptionTransport, usize), String> {
+    let (binding, expected_arity, subscription) = {
+        let mut state = lock_state(com_state, "subscribe_event")?;
+        let Some(binding) = state
+            .bindings
+            .get(&ComObjectToken::new(object.raw()))
+            .cloned()
+        else {
+            return Err(format!(
+                "COM-E-EVENT-CONNECTIONPOINT-MISSING: unknown COM object token {}",
+                object.raw()
+            ));
+        };
+        let Some(expected_arity) = event_signature_arity_for_binding(&binding, event) else {
+            return Err(format!(
+                "COM-E-EVENT-CONNECTIONPOINT-MISSING: object `{}` does not expose event token {}",
+                binding.prog_id_name,
+                event.raw()
+            ));
+        };
+        let subscription = state.allocate_subscription();
+        (binding, expected_arity, subscription)
+    };
+    let transport = unsafe {
+        resolve_event_subscription_transport(
+            &binding,
+            event,
+            binding.native_dispatch as *mut RawIDispatch,
+            Arc::clone(com_state),
+            subscription,
+            expected_arity,
+        )
+    }?;
+    let mut state = lock_state(com_state, "subscribe_event_insert")?;
+    if !state
+        .bindings
+        .contains_key(&ComObjectToken::new(object.raw()))
+    {
+        if let WindowsComSubscriptionTransport::NativeConnectionPoint(native) = transport {
+            unsafe {
+                let _ = release_subscription_transport(
+                    WindowsComSubscriptionTransport::NativeConnectionPoint(native),
+                );
+            }
+        }
+        return Err(format!(
+            "COM-E-EVENT-CONNECTIONPOINT-MISSING: unknown COM object token {}",
+            object.raw()
+        ));
+    }
+    state.subscriptions.insert(
+        subscription,
+        crate::ComEventSubscription {
+            object: ComObjectToken::new(object.raw()),
+            event,
+            transport,
+        },
+    );
+    Ok((subscription, transport, expected_arity))
+}
+
+/// # Safety
+///
+/// The caller must ensure the current thread is in the required COM apartment
+/// before native connection-point unsubscription work is attempted.
+pub unsafe fn unsubscribe_event_shared(
+    com_state: &Arc<Mutex<WindowsComClientState>>,
+    subscription: ComSubscriptionToken,
+) -> Result<(), String> {
+    let transport = {
+        let state = lock_state(com_state, "unsubscribe_event_transport")?;
+        resolve_subscription_transport(&state, subscription)?
+    };
+    unsafe {
+        release_subscription_transport(transport)?;
+    }
+    let mut state = lock_state(com_state, "unsubscribe_event_remove")?;
+    let _ = remove_subscription_callbacks(&mut state, subscription)?;
+    Ok(())
+}

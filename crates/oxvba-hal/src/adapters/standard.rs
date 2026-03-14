@@ -28,14 +28,13 @@ use oxvba_com::windows_variant::{
 };
 use oxvba_com::{
     COM_DISP_E_PARAMNOTFOUND, COM_DISPID_PROPERTYPUT, ComBinding, ComCallbackPayload,
-    ComCallbackToken, ComDirectDispatchSpec, ComEventPath, ComEventSpec,
-    ComEventSubscription as SharedComEventSubscription, ComEventTriggerSpec, ComInvokeArg,
-    ComInvokeFailure, ComInvokeRequest, ComMemberSpec, ComMemberToken, ComObjectDescriptor,
-    ComObjectToken, ComObjectTransportKind, ComSubscriptionToken, ComValue, IID_NULL, RawIDispatch,
-    TypeLibMetadataCacheState, WindowsComClientState, WindowsComSubscriptionTransport,
-    activate_runtime_binding as com_activate_runtime_binding,
+    ComCallbackToken, ComDirectDispatchSpec, ComEventPath, ComEventSpec, ComEventTriggerSpec,
+    ComInvokeArg, ComInvokeFailure, ComInvokeRequest, ComMemberSpec, ComMemberToken,
+    ComObjectDescriptor, ComObjectToken, ComObjectTransportKind, ComSubscriptionToken, ComValue,
+    IID_NULL, RawIDispatch, TypeLibMetadataCacheState, WindowsComClientState,
+    WindowsComSubscriptionTransport, activate_runtime_binding as com_activate_runtime_binding,
     activate_runtime_dispatch as com_activate_runtime_dispatch,
-    add_ref_dispatch as raw_add_ref_dispatch, advise_event_subscription, build_typelib_metadata,
+    add_ref_dispatch as raw_add_ref_dispatch, build_typelib_metadata,
     callback_arg as com_callback_arg, callback_arity as com_callback_arity,
     callback_subscription_token as com_callback_subscription_token,
     canonicalize_member_known_args as com_canonicalize_member_known_args,
@@ -46,19 +45,20 @@ use oxvba_com::{
     insert_bound_object_binding_shared as com_insert_bound_object_binding_shared,
     known_typelib_identity_for_prog_id_name,
     legacy_runtime_arg_values as com_legacy_runtime_arg_values, map_com_hresult_label,
+    mark_next_callback_pumped_shared as com_mark_next_callback_pumped_shared,
     member_spec_from_typelib_metadata,
     plan_unbound_runtime_invoke as com_plan_unbound_runtime_invoke,
     raw_oxvba_test_dispatch_vtable_invoke, release_callback as com_release_callback,
     release_dispatch as raw_release_dispatch,
     release_object_binding_shared as com_release_object_binding_shared,
     release_subscription_transport,
-    remove_subscription_callbacks as com_remove_subscription_callbacks,
     resolve_bound_native_dispatch_shared as com_resolve_bound_native_dispatch_shared,
     resolve_known_typelib_identity,
     resolve_member_dispid_cached as com_resolve_member_dispid_cached,
     resolve_named_argument_dispids as com_resolve_named_argument_dispids,
-    resolve_subscription_transport as com_resolve_subscription_transport,
+    subscribe_event_shared as com_subscribe_event_shared,
     take_polled_callback_payload as com_take_polled_callback_payload,
+    unsubscribe_event_shared as com_unsubscribe_event_shared,
     validate_named_arg_order as com_validate_named_arg_order,
 };
 use oxvba_runtime::{BindingHandle, DynLinkSymbol, ObjectHandle, RuntimeValue, bstr::BStr};
@@ -159,7 +159,6 @@ const TEST_EVENT_CHANGED_SOURCE_INTERFACE: i32 = 2;
 const TEST_EVENT_CHANGED_PAIR: i32 = 3;
 #[cfg(test)]
 const TEST_EVENT_EXCEL_APP_QUIT: i32 = 10;
-const COM_EVENT_DISPATCH_MEMBER_WILDCARD: i32 = i32::MIN + 3_333;
 
 #[derive(Debug, Clone)]
 pub(crate) struct StandardHostServices {
@@ -1630,76 +1629,6 @@ impl StandardHostServices {
     }
 
     #[cfg(target_os = "windows")]
-    fn resolve_event_subscription_transport(
-        &self,
-        binding: &ComBinding,
-        subscription: i32,
-        object: i32,
-        event: i32,
-        expected_arity: usize,
-    ) -> HalResult<ComEventSubscriptionTransport> {
-        let event = ComMemberToken::new(event);
-        if binding.native_dispatch == 0 {
-            return Ok(ComEventSubscriptionTransport::Projection);
-        }
-        let Some(spec) = binding.event_specs.get(&event) else {
-            return Ok(ComEventSubscriptionTransport::Projection);
-        };
-        let Some(connection_point_iid) = spec.connection_point_iid.as_deref() else {
-            if matches!(spec.path, ComEventPath::SourceInterface) {
-                return Err(HalError::adapter_fault(
-                    self.profile,
-                    CapabilityId::ComActivationDispatch,
-                    "subscribe_event",
-                    "COM-E-EVENT-PATH-UNSUPPORTED: source-interface COM event callbacks (COM-EVT-B) require connection-point metadata in current lane",
-                ));
-            }
-            return Ok(ComEventSubscriptionTransport::Projection);
-        };
-        self.ensure_thread_com_apartment("subscribe_event")?;
-        let dispatch = binding.native_dispatch as *mut RawIDispatch;
-        // SAFETY: `dispatch` is a live COM object pointer, `spec` and `connection_point_iid`
-        // came from deterministic metadata for this binding, and the cloned shared state is owned
-        // by the adapter for the lifetime of the subscription transport.
-        let advised = unsafe {
-            advise_event_subscription(
-                dispatch,
-                Arc::clone(&self.com_state),
-                subscription.into(),
-                spec,
-                expected_arity,
-                connection_point_iid,
-            )
-        }
-        .map_err(|message| {
-            HalError::adapter_fault(
-                self.profile,
-                CapabilityId::ComActivationDispatch,
-                "subscribe_event",
-                format!("COM-E-EVENT-ADVISE-FAILED: {message}"),
-            )
-        })?;
-        let transport = match advised {
-            Some(native) => ComEventSubscriptionTransport::NativeConnectionPoint(native),
-            None => ComEventSubscriptionTransport::Projection,
-        };
-        if com_event_trace_enabled() {
-            let event_dispatch_member = spec
-                .dispatch_member_id
-                .unwrap_or(COM_EVENT_DISPATCH_MEMBER_WILDCARD);
-            eprintln!(
-                "[oxvba-hal][com-event] resolve-transport object={} event={} iid={} dispatch_member={} resolved={}",
-                object,
-                event,
-                connection_point_iid,
-                event_dispatch_member,
-                transport.kind_label()
-            );
-        }
-        Ok(transport)
-    }
-
-    #[cfg(target_os = "windows")]
     fn release_event_subscription_transport(
         &self,
         transport: ComEventSubscriptionTransport,
@@ -1915,28 +1844,13 @@ impl EventPumpHal for StandardHostServices {
             thread::yield_now();
         }
         if self.native_com_enabled() {
-            let mut state = self.com_state.lock().map_err(|_| {
-                HalError::adapter_fault(
-                    self.profile,
-                    capability,
-                    "do_events",
-                    "com state lock poisoned during event callback pump",
-                )
-            })?;
-            self.assert_com_invariants(&state, "do_events-pre");
-            if let Some(callback) = state.mark_next_callback_pumped() {
-                if com_event_trace_enabled() {
-                    eprintln!(
-                        "[oxvba-hal][com-event] do-events callback={} remaining_pending={} last_pumped={:?}",
-                        callback,
-                        state.pending_callbacks.len(),
-                        state.last_pumped_callback
-                    );
-                }
-                self.assert_com_invariants(&state, "do_events-post");
+            let callback =
+                com_mark_next_callback_pumped_shared(&self.com_state).map_err(|message| {
+                    HalError::adapter_fault(self.profile, capability, "do_events", message)
+                })?;
+            if let Some(callback) = callback {
                 return Ok(RuntimeValue::I32(callback.into()));
             }
-            self.assert_com_invariants(&state, "do_events-post");
         }
         Ok(RuntimeValue::I32(0))
     }
@@ -2732,79 +2646,24 @@ impl ComHal for StandardHostServices {
                 "COM-E-EVENT-PATH-UNSUPPORTED: native COM event subscription requires host-backed Windows native mode",
             ));
         }
-        let object = object.raw();
-        let event = event.raw();
-        let (binding, expected_arity, subscription) = {
-            let mut state = self.com_lock(capability, "subscribe_event")?;
-            self.assert_com_invariants(&state, "subscribe_event-pre");
-            let Some(binding) = state.bindings.get(&ComObjectToken::new(object)).cloned() else {
-                return Err(HalError::adapter_fault(
-                    self.profile,
-                    capability,
-                    "subscribe_event",
-                    format!(
-                        "COM-E-EVENT-CONNECTIONPOINT-MISSING: unknown COM object token {object}"
-                    ),
-                ));
-            };
-            let Some(expected_arity) = event_signature_arity_for_binding(&binding, event.into())
-            else {
-                return Err(HalError::adapter_fault(
-                    self.profile,
-                    capability,
-                    "subscribe_event",
-                    format!(
-                        "COM-E-EVENT-CONNECTIONPOINT-MISSING: object `{}` does not expose event token {}",
-                        binding.prog_id_name, event
-                    ),
-                ));
-            };
-            let subscription = state.allocate_subscription();
-            (binding, expected_arity, subscription)
-        };
-        let transport = self.resolve_event_subscription_transport(
-            &binding,
-            subscription.raw(),
-            object,
-            event,
-            expected_arity,
-        )?;
-        let mut state = self.com_lock(capability, "subscribe_event")?;
-        self.assert_com_invariants(&state, "subscribe_event-pre-insert");
-        if !state.bindings.contains_key(&ComObjectToken::new(object)) {
-            if let Err(err) = self.release_event_subscription_transport(transport) {
-                eprintln!(
-                    "[oxvba-hal] failed to release abandoned COM event transport for object {object}: {}",
-                    err.message
-                );
-            }
-            return Err(HalError::adapter_fault(
-                self.profile,
-                capability,
-                "subscribe_event",
-                format!("COM-E-EVENT-CONNECTIONPOINT-MISSING: unknown COM object token {object}"),
-            ));
-        }
-        state.subscriptions.insert(
-            subscription,
-            ComEventSubscription {
-                object: object.into(),
-                event: event.into(),
-                transport,
-            },
-        );
+        self.ensure_thread_com_apartment("subscribe_event")?;
+        let (subscription, transport, expected_arity) =
+            unsafe { com_subscribe_event_shared(&self.com_state, object, event) }.map_err(
+                |message| {
+                    HalError::adapter_fault(self.profile, capability, "subscribe_event", message)
+                },
+            )?;
         #[cfg(target_os = "windows")]
         if com_event_trace_enabled() {
             eprintln!(
                 "[oxvba-hal][com-event] subscribe object={} event={} subscription={} transport={} arity={}",
-                object,
-                event,
+                object.raw(),
+                event.raw(),
                 subscription.raw(),
                 transport.kind_label(),
                 expected_arity
             );
         }
-        self.assert_com_invariants(&state, "subscribe_event-post");
         Ok(subscription)
     }
     fn unsubscribe_event(&self, subscription: ComSubscriptionToken) -> HalResult<RuntimeValue> {
@@ -2823,21 +2682,12 @@ impl ComHal for StandardHostServices {
                 "COM-E-EVENT-PATH-UNSUPPORTED: native COM event subscription requires host-backed Windows native mode",
             ));
         }
-        let transport = {
-            let state = self.com_lock(capability, "unsubscribe_event")?;
-            self.assert_com_invariants(&state, "unsubscribe_event-pre");
-            com_resolve_subscription_transport(&state, subscription).map_err(|message| {
+        self.ensure_thread_com_apartment("unsubscribe_event")?;
+        unsafe { com_unsubscribe_event_shared(&self.com_state, subscription) }.map_err(
+            |message| {
                 HalError::adapter_fault(self.profile, capability, "unsubscribe_event", message)
-            })?
-        };
-        self.release_event_subscription_transport(transport)?;
-        let mut state = self.com_lock(capability, "unsubscribe_event")?;
-        self.assert_com_invariants(&state, "unsubscribe_event-pre-remove");
-        let _stale_callbacks = com_remove_subscription_callbacks(&mut state, subscription)
-            .map_err(|message| {
-                HalError::adapter_fault(self.profile, capability, "unsubscribe_event", message)
-            })?;
-        self.assert_com_invariants(&state, "unsubscribe_event-post-remove");
+            },
+        )?;
         Ok(RuntimeValue::from_legacy_i32(1))
     }
     fn poll_event_callback(&self) -> HalResult<Option<ComCallbackPayload>> {
@@ -3586,7 +3436,6 @@ struct FileHandleState {
 }
 
 type ComState = WindowsComClientState;
-type ComEventSubscription = SharedComEventSubscription<WindowsComSubscriptionTransport>;
 type ComEventSubscriptionTransport = WindowsComSubscriptionTransport;
 type TypeLibraryCacheState = TypeLibMetadataCacheState;
 
