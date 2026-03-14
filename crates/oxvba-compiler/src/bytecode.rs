@@ -294,6 +294,10 @@ pub enum Instruction {
         fv: Option<usize>,
         due: Option<usize>,
     },
+    IntrinsicArrayLiteral {
+        dst: usize,
+        values: Vec<usize>,
+    },
     IntrinsicLBoundArray {
         dst: usize,
         src: usize,

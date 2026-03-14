@@ -1137,11 +1137,9 @@ mod tests {
                 .iter()
                 .any(|i| matches!(i, Instruction::IntrinsicDispatchInvokeHost { .. }))
         );
-        assert!(
-            out.instructions
-                .iter()
-                .any(|i| matches!(i, Instruction::LoadConstI32 { value, .. } if *value < 0))
-        );
+        assert!(out.instructions.iter().any(
+            |i| matches!(i, Instruction::IntrinsicArrayLiteral { values, .. } if values.len() == 3)
+        ));
     }
 
     #[test]

@@ -1837,9 +1837,9 @@ fn emit_expr_into(
                     })
                 }
                 ("array", args) => {
-                    instructions.push(Instruction::LoadConstI32 {
-                        slot: dst,
-                        value: ARRAY_TAG_BASE + args.len() as i32,
+                    instructions.push(Instruction::IntrinsicArrayLiteral {
+                        dst,
+                        values: args.to_vec(),
                     });
                 }
                 ("lbound", [src]) => {

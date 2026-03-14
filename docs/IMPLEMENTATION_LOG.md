@@ -1,7 +1,16 @@
-## 2026-03-14 - Late-bound COM object argument evidence and remaining array-argument gap
+## 2026-03-14 - Late-bound COM semantic array argument marshalling
+
+- Replaced the compiler's legacy `Array(...)` length-tag lowering with a real array-literal instruction that materializes `RuntimeValue::ArrayIntent(SafeArray::from_values(...))` at runtime.
+- Added end-to-end VM/JIT/host evidence proving `DispatchInvoke(obj, "ClassifyVariantArg", Array(1, 2, 3))` now reaches the controlled COM fixture as `VT_ARRAY | VT_VARIANT`.
+- This closes the specific outbound VBA `Array(...)` argument gap on the current one-dimensional semantic array subset; broader object-valued and multi-dimensional SAFEARRAY parity remains open.
+- Verification:
+  - `cargo fmt --all`
+  - `cargo test -p oxvba-compiler -p oxvba-vm -p oxvba-host -p oxvba-com -p oxvba-hal --quiet`
+  - `cargo clippy -p oxvba-com -p oxvba-compiler -p oxvba-vm -p oxvba-host -p oxvba-hal --all-targets -- -D warnings`
+
+## 2026-03-14 - Late-bound COM object argument evidence
 
 - Added a controlled raw-variant classifier member to `OxVba.TestDispatch` and end-to-end host coverage proving outbound object-valued COM arguments marshal as `VT_DISPATCH`.
-- The same probe showed that current VBA `Array(...)` expressions still cross the late-bound COM boundary as legacy scalar tags rather than semantic `VT_ARRAY` payloads, so array-argument parity remains open.
 - Verification:
   - `cargo fmt --all`
   - `cargo test -p oxvba-compiler -p oxvba-com -p oxvba-host -p oxvba-hal --quiet`
@@ -407,6 +416,8 @@
 
 ## 2026-03-13 - Moved bound-dispatch and subscription teardown ownership into oxvba-com
 ## 2026-03-13 - Moved bound-dispatch and subscription teardown ownership into oxvba-com
+
+
 
 
 

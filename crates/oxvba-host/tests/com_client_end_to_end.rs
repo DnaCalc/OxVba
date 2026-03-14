@@ -406,6 +406,31 @@ End Sub
     }
 
     #[test]
+    fn dispatchinvoke_classifies_array_arguments_at_com_boundary() {
+        let source = r#"
+Sub Main()
+Dim obj
+Dim arrayVt
+obj = CreateObject("OxVba.TestDispatch")
+arrayVt = DispatchInvoke(obj, "ClassifyVariantArg", Array(1, 2, 3))
+End Sub
+"#;
+
+        let vm = run_windows_host_backed(source, false);
+        let jit = run_windows_host_backed(source, true);
+        assert_eq!(
+            vm, jit,
+            "VM/JIT snapshots diverged on array-argument classifier path: vm={vm:?} jit={jit:?}"
+        );
+        assert!(expect_object_handle(&vm[0]).raw() >= 20_001);
+        assert_eq!(
+            vm[1],
+            RuntimeValue::I32(8204),
+            "array argument should marshal as VT_ARRAY | VT_VARIANT"
+        );
+    }
+
+    #[test]
     fn dispatchinvoke_error_path_routes_through_on_error_resume_next() {
         let out = run_windows_host_backed(
             r#"

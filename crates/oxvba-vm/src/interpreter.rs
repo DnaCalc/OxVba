@@ -827,6 +827,19 @@ impl Vm {
                     self.write_legacy_scalar_slot(*dst, Self::nper_i32(rate, pmt, pv, fv, due))?;
                     pc += 1;
                 }
+                Instruction::IntrinsicArrayLiteral { dst, values } => {
+                    let elements = values
+                        .iter()
+                        .map(|slot| self.read_value_slot(*slot))
+                        .collect::<Result<Vec<_>, _>>()?;
+                    self.write_value_slot(
+                        *dst,
+                        RuntimeValue::ArrayIntent(
+                            oxvba_runtime::safe_array::SafeArray::from_values(elements),
+                        ),
+                    )?;
+                    pc += 1;
+                }
                 Instruction::IntrinsicLBoundArray { dst, src } => {
                     let value = self.read_legacy_scalar_slot(*src)?;
                     let out = if Self::is_array_tag(value) { 0 } else { -1 };
@@ -3076,33 +3089,44 @@ mod tests {
                 Instruction::LoadConstI32 { slot: 0, value: 4 },
                 Instruction::IntrinsicCreateObjectHost { dst: 1, prog_id: 0 },
                 Instruction::LoadConstI32 { slot: 2, value: 6 },
-                Instruction::LoadConstI32 {
-                    slot: 3,
-                    value: ARRAY_TAG_BASE + 3,
+                Instruction::LoadConstI32 { slot: 3, value: 11 },
+                Instruction::LoadConstI32 { slot: 4, value: 14 },
+                Instruction::LoadConstI32 { slot: 5, value: 17 },
+                Instruction::IntrinsicArrayLiteral {
+                    dst: 6,
+                    values: vec![3, 4, 5],
                 },
                 Instruction::IntrinsicDispatchInvokeHost {
-                    dst: 4,
+                    dst: 7,
                     object: 1,
                     member: 2,
                     args: vec![DispatchInvokeArg {
-                        slot: Some(3),
+                        slot: Some(6),
                         name: None,
                     }],
                 },
                 Instruction::Halt,
             ],
             external_call_descriptors: Vec::new(),
-            slot_count: 5,
-            user_slot_count: 5,
+            slot_count: 8,
+            user_slot_count: 8,
         };
 
         let mut vm = Vm::default();
         vm.execute(&bytecode).expect("vm should execute bytecode");
-        let out = vm.snapshot_slots(5);
-        let values = vm.snapshot_values(5);
+        let out = vm.snapshot_slots(8);
+        let values = vm.snapshot_values(8);
         assert_eq!(out[1], 5004);
-        assert_eq!(out[4], 5004 + 6 + (ARRAY_TAG_BASE + 3));
+        assert_eq!(out[7], 5004 + 6 + (ARRAY_TAG_BASE + 3));
         assert_eq!(values[1], RuntimeValue::ObjectHandle(5004.into()));
+        assert_eq!(
+            values[6],
+            RuntimeValue::ArrayIntent(oxvba_runtime::safe_array::SafeArray::from_values(vec![
+                RuntimeValue::I32(11),
+                RuntimeValue::I32(14),
+                RuntimeValue::I32(17),
+            ]))
+        );
     }
 
     #[cfg(target_os = "windows")]
