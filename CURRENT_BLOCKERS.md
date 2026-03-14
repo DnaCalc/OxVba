@@ -68,6 +68,7 @@ Run context: active parity/compliance execution plus in-progress feature worklis
   - controlled/native result conversion now also accepts `VT_I2` and `VT_UI2` into the current integer-token lane,
   - controlled/native result conversion now also accepts one-dimensional typed SAFEARRAY results with `VT_I2`, `VT_BOOL`, and `VT_BSTR` element payloads into `RuntimeValue::ArrayIntent`,
   - controlled/native object result conversion now has end-to-end host evidence for both `VT_DISPATCH` and `VT_UNKNOWN` values that expose `IDispatch`,
+  - controlled/native result conversion now also has end-to-end host evidence for one-dimensional typed `VT_ARRAY | VT_DISPATCH` and `VT_ARRAY | VT_UNKNOWN` results when the element interfaces expose `IDispatch`,
   - outbound object-valued COM arguments now have end-to-end host evidence via a controlled raw-variant classifier method,
   - outbound `Array(...)` expressions now have end-to-end host evidence as semantic `VT_ARRAY | VT_VARIANT` payloads via the controlled raw-variant classifier lane,
   - one-dimensional `VT_ARRAY | VT_VARIANT` payloads with nested `VT_DISPATCH` elements now have end-to-end host evidence on both argument and result paths via controlled classifier and return-array fixture members,
@@ -91,7 +92,7 @@ Run context: active parity/compliance execution plus in-progress feature worklis
 - Current state:
   - `oxvba-com` now exposes an executable generic dynamic-object protocol API (`DynamicCallRequest`, `DynamicMemberSelector`, `DynamicCallKind`, `DynamicEventPayload`) with conversions from the current COM request/payload structs,
   - `oxvba-com` now owns a first semantic carrier slice via `ComValue`,
-  - `oxvba-com` now also owns the extracted Windows `VARIANT`/one-dimensional `SAFEARRAY` translation bridge for the currently supported scalar/string/array subset, including typed `VT_I2`, `VT_BOOL`, and `VT_BSTR` SAFEARRAY result elements,
+  - `oxvba-com` now also owns the extracted Windows `VARIANT`/one-dimensional `SAFEARRAY` translation bridge for the currently supported scalar/string/array subset, including typed `VT_I2`, `VT_BOOL`, `VT_BSTR`, `VT_DISPATCH`, and `VT_UNKNOWN` SAFEARRAY result elements on the controlled `IDispatch`-exposing lane,
   - `oxvba-com` now classifies Invoke-owned Windows result `VARIANT`s into either semantic `ComValue` results or dispatch-capable object pointers before HAL-owned binding state is applied,
   - `oxvba-com` now also owns shared Windows COM invoke failure and `EXCEPINFO` capture types/helpers, reducing the remaining wire/error mechanics left in HAL,
   - the canonical runtime-value `IDispatch::Invoke` helper for the semantic COM request path now also lives in `oxvba-com`, while HAL retains only object-handle resolve/bind state around that call,
@@ -110,7 +111,7 @@ Run context: active parity/compliance execution plus in-progress feature worklis
   - the runtime value model itself is now semantic/value-first, but COM wire translation still only covers the currently supported subset,
   - length-only array intent still falls back to the old placeholder integer projection because only owned semantic array payloads can be marshalled honestly today,
   - broader interface-pointer result forms that do not expose `IDispatch` still do not traverse the shared runtime-facing carrier,
-  - callback ingress now preserves the shared carrier at the COM boundary, but broader multi-dimensional SAFEARRAYs, object/interface arrays, non-`IDispatch` interface payloads, and richer external automation payload fidelity remain partial.
+  - callback ingress now preserves the shared carrier at the COM boundary, but broader multi-dimensional SAFEARRAYs, non-`IDispatch` interface arrays/payloads, and richer external automation payload fidelity remain partial.
 - Exact unblock steps:
   - extend the first `ComValue` slice into the full canonical OxVba-side external-call carrier for:
     - broader non-`IDispatch` object/interface-pointer result forms and identity roundtrip,
@@ -401,5 +402,6 @@ Run context: active parity/compliance execution plus in-progress feature worklis
 - Previously resolved blockers:
   - `BLK-EVT-001` — resolved (runtime subscription graph)
   - `BLK-COM-001` — resolved (COM event callback parity with external registered server evidence)
+
 
 
