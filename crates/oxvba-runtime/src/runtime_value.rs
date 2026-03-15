@@ -60,7 +60,6 @@ define_i32_handle!(ObjectHandle);
 define_i32_handle!(BindingHandle);
 define_i32_handle!(DynLinkSymbol);
 
-#[repr(transparent)]
 #[derive(
     Debug,
     Clone,
@@ -77,23 +76,68 @@ define_i32_handle!(DynLinkSymbol);
     serde::Serialize,
     serde::Deserialize,
 )]
-pub struct F64Value(u64);
+pub enum F64Subtype {
+    Single,
+    #[default]
+    Double,
+    Date,
+}
+
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Default,
+    rkyv::Archive,
+    rkyv::Serialize,
+    rkyv::Deserialize,
+    serde::Serialize,
+    serde::Deserialize,
+)]
+pub struct F64Value {
+    bits: u64,
+    subtype: F64Subtype,
+}
 
 impl F64Value {
     pub const fn from_bits(bits: u64) -> Self {
-        Self(bits)
+        Self {
+            bits,
+            subtype: F64Subtype::Double,
+        }
+    }
+
+    pub const fn from_bits_with_subtype(bits: u64, subtype: F64Subtype) -> Self {
+        Self { bits, subtype }
     }
 
     pub fn from_f64(value: f64) -> Self {
-        Self(value.to_bits())
+        Self::from_bits_with_subtype(value.to_bits(), F64Subtype::Double)
+    }
+
+    pub fn from_single_f64(value: f64) -> Self {
+        Self::from_bits_with_subtype(value.to_bits(), F64Subtype::Single)
+    }
+
+    pub fn from_date_f64(value: f64) -> Self {
+        Self::from_bits_with_subtype(value.to_bits(), F64Subtype::Date)
     }
 
     pub const fn bits(self) -> u64 {
-        self.0
+        self.bits
+    }
+
+    pub const fn subtype(self) -> F64Subtype {
+        self.subtype
     }
 
     pub fn as_f64(self) -> f64 {
-        f64::from_bits(self.0)
+        f64::from_bits(self.bits)
     }
 }
 
@@ -234,7 +278,7 @@ mod tests {
         value_tags::{EMPTY_TAG, NULL_TAG, error_tag_from_code},
     };
 
-    use super::{BindingHandle, CurrencyValue, F64Value, ObjectHandle, RuntimeValue};
+    use super::{BindingHandle, CurrencyValue, F64Subtype, F64Value, ObjectHandle, RuntimeValue};
     use crate::decimal::Decimal96;
 
     #[test]
@@ -321,9 +365,13 @@ mod tests {
 
     #[test]
     fn runtime_value_f64_preserves_bit_stable_shape() {
-        let value = F64Value::from_f64(-12.5);
+        let value = F64Value::from_date_f64(-12.5);
         assert_eq!(value.as_f64(), -12.5);
-        assert_eq!(F64Value::from_bits(value.bits()), value);
+        assert_eq!(value.subtype(), F64Subtype::Date);
+        assert_eq!(
+            F64Value::from_bits_with_subtype(value.bits(), value.subtype()),
+            value
+        );
     }
 
     #[test]

@@ -13,6 +13,6 @@ pub mod variant;
 
 pub use decimal::Decimal96;
 pub use runtime_value::{
-    BindingHandle, CurrencyValue, DynLinkSymbol, F64Value, ObjectHandle, RuntimeValue,
+    BindingHandle, CurrencyValue, DynLinkSymbol, F64Subtype, F64Value, ObjectHandle, RuntimeValue,
 };
 pub use variant::{VarType, Variant};

@@ -627,13 +627,13 @@ End Sub
         );
         assert_eq!(
             vm[2],
-            RuntimeValue::F64(F64Value::from_f64(12.5)),
-            "VT_R4 result should widen into the semantic f64 carrier"
+            RuntimeValue::F64(F64Value::from_single_f64(12.5)),
+            "VT_R4 result should preserve the semantic f64 carrier with Single subtype"
         );
         assert_eq!(
             vm[3],
-            RuntimeValue::F64(F64Value::from_f64(45200.25)),
-            "VT_DATE result should preserve the automation date payload on the semantic f64 carrier"
+            RuntimeValue::F64(F64Value::from_date_f64(45200.25)),
+            "VT_DATE result should preserve the automation date payload with Date subtype"
         );
     }
 
@@ -671,20 +671,20 @@ End Sub
         assert_eq!(
             vm[2],
             RuntimeValue::ArrayIntent(SafeArray::from_values(vec![
-                RuntimeValue::F64(F64Value::from_f64(12.5)),
-                RuntimeValue::F64(F64Value::from_f64(-4.25)),
-                RuntimeValue::F64(F64Value::from_f64(321.0)),
+                RuntimeValue::F64(F64Value::from_single_f64(12.5)),
+                RuntimeValue::F64(F64Value::from_single_f64(-4.25)),
+                RuntimeValue::F64(F64Value::from_single_f64(321.0)),
             ])),
-            "VT_ARRAY|VT_R4 result should widen float array elements into the semantic f64 carrier"
+            "VT_ARRAY|VT_R4 result should preserve float array elements with Single subtype"
         );
         assert_eq!(
             vm[3],
             RuntimeValue::ArrayIntent(SafeArray::from_values(vec![
-                RuntimeValue::F64(F64Value::from_f64(45200.25)),
-                RuntimeValue::F64(F64Value::from_f64(12.5)),
-                RuntimeValue::F64(F64Value::from_f64(-4.25)),
+                RuntimeValue::F64(F64Value::from_date_f64(45200.25)),
+                RuntimeValue::F64(F64Value::from_date_f64(12.5)),
+                RuntimeValue::F64(F64Value::from_date_f64(-4.25)),
             ])),
-            "VT_ARRAY|VT_DATE result should preserve automation date payloads on the semantic f64 carrier"
+            "VT_ARRAY|VT_DATE result should preserve automation date payloads with Date subtype"
         );
     }
 
@@ -940,13 +940,13 @@ End Sub
         );
         assert_eq!(
             vm[7],
-            RuntimeValue::I32(5),
-            "Single currently widens back out through the shared VT_R8 semantic f64 lane"
+            RuntimeValue::I32(4),
+            "Single should now preserve VT_R4 on the outward COM boundary"
         );
         assert_eq!(
             vm[8],
-            RuntimeValue::I32(5),
-            "Date currently re-emits through the shared VT_R8 semantic f64 lane"
+            RuntimeValue::I32(7),
+            "Date should now preserve VT_DATE on the outward COM boundary"
         );
         assert_eq!(
             vm[9],

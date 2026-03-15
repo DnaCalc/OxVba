@@ -1,3 +1,6 @@
+## 2026-03-15 - Preserved outward Single and Date COM vartype fidelity on the tagged f64 carrier
+- Added `Single` / `Double` / `Date` subtype tracking on the shared semantic `f64` carrier and threaded it through the owned runtime `Variant` bridge, Windows COM `VARIANT` bridge, typed SAFEARRAY translation, and host VM/JIT parity coverage so outward COM arguments now preserve `VT_R4` and `VT_DATE` instead of re-emitting both lanes as `VT_R8`.
+
 ## 2026-03-15 - Added outbound float, currency, and decimal COM classifier evidence
 - Added direct host VM/JIT evidence that outbound `Double`, `Single`, `Date`, `Currency`, and `Decimal` values classify as `VT_R8`, `VT_R8`, `VT_R8`, `VT_CY`, and `VT_DECIMAL` respectively on the current shared COM carrier, documenting the still-open outward `Single`/`Date` vartype-fidelity gap.
 

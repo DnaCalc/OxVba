@@ -1,6 +1,6 @@
 use crate::ComValue;
 use oxvba_runtime::{
-    CurrencyValue, Decimal96, F64Value, ObjectHandle, bstr::BStr, safe_array::SafeArray,
+    CurrencyValue, Decimal96, F64Subtype, F64Value, ObjectHandle, bstr::BStr, safe_array::SafeArray,
 };
 use std::ffi::c_void;
 
@@ -263,7 +263,7 @@ unsafe fn safe_array_element_to_runtime_value(
                     hr as u32, index
                 ));
             }
-            Ok(ComValue::F64(F64Value::from_f64(element as f64)).to_runtime_value())
+            Ok(ComValue::F64(F64Value::from_single_f64(element as f64)).to_runtime_value())
         }
         VT_R8_VARENUM => {
             let mut element = 0f64;
@@ -299,7 +299,7 @@ unsafe fn safe_array_element_to_runtime_value(
                     hr as u32, index
                 ));
             }
-            Ok(ComValue::F64(F64Value::from_f64(element)).to_runtime_value())
+            Ok(ComValue::F64(F64Value::from_date_f64(element)).to_runtime_value())
         }
         VT_DECIMAL => {
             let mut element: DECIMAL = std::mem::zeroed();
@@ -633,7 +633,7 @@ pub unsafe fn variant_to_com_value(variant: &VARIANT) -> Result<ComValue, String
                     format!("VT_UI8 value {value} exceeds current i32 carrier lane")
                 })?)
             }
-            VT_R4_VARENUM => ComValue::F64(F64Value::from_f64(
+            VT_R4_VARENUM => ComValue::F64(F64Value::from_single_f64(
                 variant.Anonymous.Anonymous.Anonymous.fltVal as f64,
             )),
             VT_R8_VARENUM => ComValue::F64(F64Value::from_f64(
@@ -642,7 +642,7 @@ pub unsafe fn variant_to_com_value(variant: &VARIANT) -> Result<ComValue, String
             VT_CY_VARENUM => ComValue::Currency(CurrencyValue::from_scaled_i64(
                 variant.Anonymous.Anonymous.Anonymous.cyVal.int64,
             )),
-            VT_DATE_VARENUM => ComValue::F64(F64Value::from_f64(
+            VT_DATE_VARENUM => ComValue::F64(F64Value::from_date_f64(
                 variant.Anonymous.Anonymous.Anonymous.dblVal,
             )),
             VT_DECIMAL => ComValue::Decimal(decimal96_from_windows(variant.Anonymous.decVal)),
@@ -789,10 +789,20 @@ where
             (*variant).Anonymous.Anonymous.vt = VT_I4;
             (*variant).Anonymous.Anonymous.Anonymous.lVal = *value;
         }
-        ComValue::F64(value) => {
-            (*variant).Anonymous.Anonymous.vt = VT_R8_VARENUM;
-            (*variant).Anonymous.Anonymous.Anonymous.dblVal = value.as_f64();
-        }
+        ComValue::F64(value) => match value.subtype() {
+            F64Subtype::Single => {
+                (*variant).Anonymous.Anonymous.vt = VT_R4_VARENUM;
+                (*variant).Anonymous.Anonymous.Anonymous.fltVal = value.as_f64() as f32;
+            }
+            F64Subtype::Double => {
+                (*variant).Anonymous.Anonymous.vt = VT_R8_VARENUM;
+                (*variant).Anonymous.Anonymous.Anonymous.dblVal = value.as_f64();
+            }
+            F64Subtype::Date => {
+                (*variant).Anonymous.Anonymous.vt = VT_DATE_VARENUM;
+                (*variant).Anonymous.Anonymous.Anonymous.dblVal = value.as_f64();
+            }
+        },
         ComValue::Decimal(value) => {
             (*variant).Anonymous.decVal = decimal96_to_windows(*value);
             (*variant).Anonymous.decVal.wReserved = VT_DECIMAL;
@@ -907,7 +917,7 @@ mod tests {
             variant.Anonymous.Anonymous.Anonymous.fltVal = 12.5;
             assert_eq!(
                 variant_to_com_value(&variant).expect("read single variant"),
-                ComValue::F64(F64Value::from_f64(12.5))
+                ComValue::F64(F64Value::from_single_f64(12.5))
             );
             let _ = VariantClear(&mut variant);
         }
@@ -921,7 +931,7 @@ mod tests {
             variant.Anonymous.Anonymous.Anonymous.dblVal = 45200.25;
             assert_eq!(
                 variant_to_com_value(&variant).expect("read date variant"),
-                ComValue::F64(F64Value::from_f64(45200.25))
+                ComValue::F64(F64Value::from_date_f64(45200.25))
             );
             let _ = VariantClear(&mut variant);
         }
@@ -966,8 +976,47 @@ mod tests {
         unsafe {
             set_variant_from_com_value(&mut variant, &value, &mut resolve_object, &mut add_ref)
                 .expect("set double variant");
+            assert_eq!(variant.Anonymous.Anonymous.vt, VT_R8_VARENUM);
             assert_eq!(
                 variant_to_com_value(&variant).expect("read double variant"),
+                value
+            );
+            let _ = VariantClear(&mut variant);
+        }
+    }
+
+    #[test]
+    fn scalar_single_variant_roundtrips_through_windows_bridge() {
+        let mut variant: VARIANT = unsafe { std::mem::zeroed() };
+        let value = ComValue::F64(F64Value::from_single_f64(3.5));
+        let mut resolve_object =
+            |_handle| Err("object dispatch resolution not expected".to_string());
+        let mut add_ref = |_dispatch| {};
+        unsafe {
+            set_variant_from_com_value(&mut variant, &value, &mut resolve_object, &mut add_ref)
+                .expect("set single variant");
+            assert_eq!(variant.Anonymous.Anonymous.vt, VT_R4_VARENUM);
+            assert_eq!(
+                variant_to_com_value(&variant).expect("read single variant"),
+                value
+            );
+            let _ = VariantClear(&mut variant);
+        }
+    }
+
+    #[test]
+    fn scalar_date_variant_roundtrips_through_windows_bridge() {
+        let mut variant: VARIANT = unsafe { std::mem::zeroed() };
+        let value = ComValue::F64(F64Value::from_date_f64(45200.25));
+        let mut resolve_object =
+            |_handle| Err("object dispatch resolution not expected".to_string());
+        let mut add_ref = |_dispatch| {};
+        unsafe {
+            set_variant_from_com_value(&mut variant, &value, &mut resolve_object, &mut add_ref)
+                .expect("set date variant");
+            assert_eq!(variant.Anonymous.Anonymous.vt, VT_DATE_VARENUM);
+            assert_eq!(
+                variant_to_com_value(&variant).expect("read date variant"),
                 value
             );
             let _ = VariantClear(&mut variant);
@@ -1089,9 +1138,9 @@ mod tests {
             assert_eq!(
                 variant_to_com_value(&variant).expect("read VT_R4_VARENUM SAFEARRAY"),
                 ComValue::ArrayIntent(SafeArray::from_values(vec![
-                    RuntimeValue::F64(F64Value::from_f64(12.5)),
-                    RuntimeValue::F64(F64Value::from_f64(-4.25)),
-                    RuntimeValue::F64(F64Value::from_f64(321.0)),
+                    RuntimeValue::F64(F64Value::from_single_f64(12.5)),
+                    RuntimeValue::F64(F64Value::from_single_f64(-4.25)),
+                    RuntimeValue::F64(F64Value::from_single_f64(321.0)),
                 ]))
             );
             let _ = VariantClear(&mut variant);
@@ -1200,9 +1249,9 @@ mod tests {
             assert_eq!(
                 variant_to_com_value(&variant).expect("read VT_DATE_VARENUM SAFEARRAY"),
                 ComValue::ArrayIntent(SafeArray::from_values(vec![
-                    RuntimeValue::F64(F64Value::from_f64(45200.25)),
-                    RuntimeValue::F64(F64Value::from_f64(12.5)),
-                    RuntimeValue::F64(F64Value::from_f64(-4.25)),
+                    RuntimeValue::F64(F64Value::from_date_f64(45200.25)),
+                    RuntimeValue::F64(F64Value::from_date_f64(12.5)),
+                    RuntimeValue::F64(F64Value::from_date_f64(-4.25)),
                 ]))
             );
             let _ = VariantClear(&mut variant);

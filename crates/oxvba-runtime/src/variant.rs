@@ -1,6 +1,6 @@
 use crate::{
     Decimal96,
-    runtime_value::{CurrencyValue, F64Value, RuntimeValue},
+    runtime_value::{CurrencyValue, F64Subtype, F64Value, RuntimeValue},
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -281,7 +281,11 @@ impl Variant {
             RuntimeValue::Null => Ok(Self::null()),
             RuntimeValue::ErrorCode(code) => Ok(Self::from_error_code(*code)),
             RuntimeValue::I32(value) => Ok(Self::from_i32(*value)),
-            RuntimeValue::F64(value) => Ok(Self::from_f64(value.as_f64())),
+            RuntimeValue::F64(value) => Ok(match value.subtype() {
+                F64Subtype::Single => Self::from_f32(value.as_f64() as f32),
+                F64Subtype::Double => Self::from_f64(value.as_f64()),
+                F64Subtype::Date => Self::from_date_f64(value.as_f64()),
+            }),
             RuntimeValue::Decimal(value) => Ok(Self::from_decimal96(*value)),
             RuntimeValue::Currency(value) => Ok(Self::from_currency_scaled_i64(value.scaled_i64())),
             RuntimeValue::Bool(value) => Ok(Self::from_bool(*value)),
@@ -318,7 +322,7 @@ impl Variant {
                 .ok_or_else(|| "invalid Long variant payload".to_string()),
             VarType::Single => self
                 .as_f32()
-                .map(|value| RuntimeValue::F64(F64Value::from_f64(value as f64)))
+                .map(|value| RuntimeValue::F64(F64Value::from_single_f64(value as f64)))
                 .ok_or_else(|| "invalid Single variant payload".to_string()),
             VarType::Double => self
                 .as_f64()
@@ -334,7 +338,7 @@ impl Variant {
                 .ok_or_else(|| "invalid Currency variant payload".to_string()),
             VarType::Date => self
                 .as_date_f64()
-                .map(|value| RuntimeValue::F64(F64Value::from_f64(value)))
+                .map(|value| RuntimeValue::F64(F64Value::from_date_f64(value)))
                 .ok_or_else(|| "invalid Date variant payload".to_string()),
             VarType::Boolean => self
                 .as_bool()
@@ -418,7 +422,7 @@ mod tests {
             single_variant
                 .to_runtime_value()
                 .expect("single Variant should bridge into RuntimeValue::F64"),
-            RuntimeValue::F64(F64Value::from_f64(12.5))
+            RuntimeValue::F64(F64Value::from_single_f64(12.5))
         );
     }
 
@@ -430,7 +434,7 @@ mod tests {
             date_variant
                 .to_runtime_value()
                 .expect("date Variant should bridge into RuntimeValue::F64"),
-            RuntimeValue::F64(F64Value::from_f64(45200.25))
+            RuntimeValue::F64(F64Value::from_date_f64(45200.25))
         );
     }
 
@@ -478,6 +482,26 @@ mod tests {
                 .to_runtime_value()
                 .expect("double Variant should bridge back"),
             RuntimeValue::F64(F64Value::from_f64(3.5))
+        );
+
+        let single_variant =
+            Variant::from_runtime_value(&RuntimeValue::F64(F64Value::from_single_f64(3.5)))
+                .expect("single runtime value should bridge to Variant");
+        assert_eq!(
+            single_variant
+                .to_runtime_value()
+                .expect("single Variant should bridge back"),
+            RuntimeValue::F64(F64Value::from_single_f64(3.5))
+        );
+
+        let date_variant =
+            Variant::from_runtime_value(&RuntimeValue::F64(F64Value::from_date_f64(45200.25)))
+                .expect("date runtime value should bridge to Variant");
+        assert_eq!(
+            date_variant
+                .to_runtime_value()
+                .expect("date Variant should bridge back"),
+            RuntimeValue::F64(F64Value::from_date_f64(45200.25))
         );
 
         let currency_variant = Variant::from_runtime_value(&RuntimeValue::Currency(
