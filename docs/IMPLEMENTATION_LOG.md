@@ -469,6 +469,13 @@
 
 
 
+## 2026-03-15 - Added deterministic unsupported multidimensional SAFEARRAY diagnostics in `IP-03A`
+
+- Continued the late-bound COM transport substrate with an explicit unsupported-path coverage slice rather than pretending broader SAFEARRAY rank support already exists.
+- In [windows_test_dispatch.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-com\src\windows_test_dispatch.rs), added the controlled `ReturnSmallIntMatrix` fixture member that returns a rank-2 `VT_ARRAY | VT_I2` payload.
+- In [lib.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-compiler\src\lib.rs), added compiler token coverage proving `DispatchInvoke(..., "ReturnSmallIntMatrix")` lowers to member token `30`.
+- In [com_client_end_to_end.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-host\tests\com_client_end_to_end.rs), added end-to-end VM/JIT coverage proving rank-2 SAFEARRAY results now surface a stable runtime adapter fault containing `unsupported SAFEARRAY rank 2` instead of crashing or drifting semantically.
+- Updated [CURRENT_BLOCKERS.md](C:\Work\DnaCalc\OxVba\CURRENT_BLOCKERS.md) so the remaining multidimensional SAFEARRAY gap is documented as unsupported-but-bounded rather than unproven.
 ## 2026-03-14 - Closed the typed `VT_ARRAY | VT_UNKNOWN` result lane in `IP-03A`
 
 - Continued the adjacent `IP-03A` substrate slice for typed interface SAFEARRAY results where each element arrives as `VT_UNKNOWN` but exposes `IDispatch`.
@@ -575,5 +582,6 @@
   - Let x = 5 plus Set obj = CreateObject(4) executes successfully,
   - Set x = 7 fails deterministically with the expected type error.
 - IP-02 remains in progress: broader typed/object Set vs Let parity, non-authoritative default-member resolution, and wider Office-style call-vs-value context parity are still open.
+
 
 

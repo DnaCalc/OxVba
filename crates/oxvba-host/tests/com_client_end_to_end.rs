@@ -15,6 +15,19 @@ mod windows_com_e2e {
             .expect("windows host-backed COM lane should execute")
     }
 
+    fn run_windows_host_backed_error(source: &str, enable_jit: bool) -> String {
+        let mut engine = Engine::new(HostConfig {
+            enable_jit,
+            root_object_name: None,
+        });
+        engine.set_host_policy(HostPolicy::interactive_dev());
+        engine
+            .execute_source_with_snapshot_phased(source)
+            .expect_err("windows host-backed COM lane should fail deterministically")
+            .message()
+            .to_string()
+    }
+
     fn expect_object_handle(value: &RuntimeValue) -> ObjectHandle {
         match value {
             RuntimeValue::ObjectHandle(handle) => *handle,
@@ -625,6 +638,30 @@ End Sub
         assert!(
             handle.raw() >= 20_001,
             "typed unknown-array result should preserve nested unknown-exposed dispatch object handles"
+        );
+    }
+
+    #[test]
+    fn dispatchinvoke_multidim_smallint_array_results_fail_deterministically() {
+        let source = r#"
+Sub Main()
+Dim obj
+Dim returnedMatrix
+obj = CreateObject("OxVba.TestDispatch")
+returnedMatrix = DispatchInvoke(obj, "ReturnSmallIntMatrix")
+End Sub
+"#;
+
+        let vm = run_windows_host_backed_error(source, false);
+        let jit = run_windows_host_backed_error(source, true);
+        assert!(
+            vm.contains("runtime error: 53053") && jit.contains("runtime error: 53053"),
+            "expected stable runtime fault code across VM/JIT, got vm={vm:?} jit={jit:?}"
+        );
+        assert!(
+            vm.contains("unsupported SAFEARRAY rank 2")
+                && jit.contains("unsupported SAFEARRAY rank 2"),
+            "expected unsupported-rank diagnostic across VM/JIT, got vm={vm:?} jit={jit:?}"
         );
     }
 

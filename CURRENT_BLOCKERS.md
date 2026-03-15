@@ -72,6 +72,7 @@ Run context: active parity/compliance execution plus in-progress feature worklis
   - outbound object-valued COM arguments now have end-to-end host evidence via a controlled raw-variant classifier method,
   - outbound `Array(...)` expressions now have end-to-end host evidence as semantic `VT_ARRAY | VT_VARIANT` payloads via the controlled raw-variant classifier lane,
   - one-dimensional `VT_ARRAY | VT_VARIANT` payloads with nested `VT_DISPATCH` elements now have end-to-end host evidence on both argument and result paths via controlled classifier and return-array fixture members,
+  - controlled host coverage now also proves a stable unsupported-path diagnostic for rank-2 typed SAFEARRAY results instead of an unbounded crash or shape drift,
   - invoke failure translation now distinguishes real `ArgErr` presence from the previous synthetic `arg_err=0` fallback,
   - controlled `DISP_E_EXCEPTION` lanes now preserve bounded `EXCEPINFO` source/description/scode details in the adapter-fault surface,
   - explicit `DispatchInvoke(obj, 0, name := value)` now routes through authoritative default-member metadata when the binding exposes one,
@@ -111,7 +112,7 @@ Run context: active parity/compliance execution plus in-progress feature worklis
   - the runtime value model itself is now semantic/value-first, but COM wire translation still only covers the currently supported subset,
   - length-only array intent still falls back to the old placeholder integer projection because only owned semantic array payloads can be marshalled honestly today,
   - broader interface-pointer result forms that do not expose `IDispatch` still do not traverse the shared runtime-facing carrier,
-  - callback ingress now preserves the shared carrier at the COM boundary, but broader multi-dimensional SAFEARRAYs, non-`IDispatch` interface arrays/payloads, and richer external automation payload fidelity remain partial.
+  - callback ingress now preserves the shared carrier at the COM boundary, and rank-2 SAFEARRAY results now fail with a deterministic unsupported-shape diagnostic on the controlled lane, but broader multi-dimensional SAFEARRAY support, non-`IDispatch` interface arrays/payloads, and richer external automation payload fidelity remain partial.
 - Exact unblock steps:
   - extend the first `ComValue` slice into the full canonical OxVba-side external-call carrier for:
     - broader non-`IDispatch` object/interface-pointer result forms and identity roundtrip,
@@ -402,6 +403,7 @@ Run context: active parity/compliance execution plus in-progress feature worklis
 - Previously resolved blockers:
   - `BLK-EVT-001` — resolved (runtime subscription graph)
   - `BLK-COM-001` — resolved (COM event callback parity with external registered server evidence)
+
 
 
 

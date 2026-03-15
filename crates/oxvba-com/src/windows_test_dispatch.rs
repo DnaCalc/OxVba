@@ -28,11 +28,12 @@ use windows_sys::Win32::{
     System::{
         Com::{
             DISPATCH_METHOD, DISPATCH_PROPERTYGET, DISPATCH_PROPERTYPUT, DISPATCH_PROPERTYPUTREF,
-            DISPPARAMS, EXCEPINFO,
+            DISPPARAMS, EXCEPINFO, SAFEARRAYBOUND,
         },
         Ole::{
-            SafeArrayCreateVector, SafeArrayDestroy, SafeArrayGetDim, SafeArrayGetElement,
-            SafeArrayGetLBound, SafeArrayGetUBound, SafeArrayGetVartype, SafeArrayPutElement,
+            SafeArrayCreate, SafeArrayCreateVector, SafeArrayDestroy, SafeArrayGetDim,
+            SafeArrayGetElement, SafeArrayGetLBound, SafeArrayGetUBound, SafeArrayGetVartype,
+            SafeArrayPutElement,
         },
         Variant::{
             VARIANT, VT_ARRAY, VT_BOOL, VT_BSTR, VT_DISPATCH, VT_EMPTY, VT_ERROR, VT_I2, VT_I4,
@@ -89,6 +90,7 @@ pub const TEST_DISPID_CLASSIFY_VARIANT_ARRAY_FIRST_ELEMENT_ARG: i32 = 26;
 pub const TEST_DISPID_RETURN_SELF_DISPATCH_ARRAY: i32 = 27;
 pub const TEST_DISPID_RETURN_SELF_TYPED_DISPATCH_ARRAY: i32 = 28;
 pub const TEST_DISPID_RETURN_SELF_TYPED_UNKNOWN_ARRAY: i32 = 29;
+pub const TEST_DISPID_RETURN_SMALLINT_MATRIX: i32 = 30;
 pub const TEST_NAMED_DISPID_LHS: i32 = 101;
 pub const TEST_NAMED_DISPID_RHS: i32 = 102;
 pub const TEST_NAMED_DISPID_INDEX: i32 = 103;
@@ -144,6 +146,47 @@ unsafe fn set_variant_i16_array(values: &[i16], variant: *mut VARIANT) -> Result
 
 #[cfg(target_os = "windows")]
 #[allow(unsafe_op_in_unsafe_fn)]
+unsafe fn set_variant_i16_matrix(variant: *mut VARIANT) -> Result<(), String> {
+    if variant.is_null() {
+        return Ok(());
+    }
+    let bounds = [
+        SAFEARRAYBOUND {
+            cElements: 2,
+            lLbound: 0,
+        },
+        SAFEARRAYBOUND {
+            cElements: 2,
+            lLbound: 0,
+        },
+    ];
+    let psa = SafeArrayCreate(VT_I2, 2, bounds.as_ptr());
+    if psa.is_null() {
+        return Err("SafeArrayCreate(VT_I2, rank=2) returned null".to_string());
+    }
+    let values = [[1i16, 2i16], [3i16, 4i16]];
+    for row in 0..2 {
+        for col in 0..2 {
+            let indices = [row, col];
+            let hr = SafeArrayPutElement(
+                psa.cast_const(),
+                indices.as_ptr(),
+                (&values[row as usize][col as usize] as *const i16).cast(),
+            );
+            if hr < 0 {
+                let _ = SafeArrayDestroy(psa.cast_const());
+                return Err(format!(
+                    "SafeArrayPutElement(VT_I2 rank=2) failed with HRESULT {:#010X} at [{}, {}]",
+                    hr as u32, row, col
+                ));
+            }
+        }
+    }
+    (*variant).Anonymous.Anonymous.vt = VT_ARRAY | VT_I2;
+    (*variant).Anonymous.Anonymous.Anonymous.parray = psa;
+    Ok(())
+}
+
 unsafe fn set_variant_bool_array(values: &[bool], variant: *mut VARIANT) -> Result<(), String> {
     if variant.is_null() {
         return Ok(());
@@ -1106,6 +1149,7 @@ unsafe extern "system" fn oxvba_test_get_ids_of_names(
             "returnselfdispatcharray" => TEST_DISPID_RETURN_SELF_DISPATCH_ARRAY,
             "returnselftypeddispatcharray" => TEST_DISPID_RETURN_SELF_TYPED_DISPATCH_ARRAY,
             "returnselftypedunknownarray" => TEST_DISPID_RETURN_SELF_TYPED_UNKNOWN_ARRAY,
+            "returnsmallintmatrix" => TEST_DISPID_RETURN_SMALLINT_MATRIX,
             "lhs" => TEST_NAMED_DISPID_LHS,
             "rhs" => TEST_NAMED_DISPID_RHS,
             "index" => TEST_NAMED_DISPID_INDEX,
@@ -1416,6 +1460,15 @@ unsafe extern "system" fn oxvba_test_invoke(
                 return COM_DISP_E_BADPARAMCOUNT;
             }
             match set_variant_i16_array(&[12, -4, 321], pvarresult) {
+                Ok(()) => COM_S_OK,
+                Err(_) => COM_E_INVALIDARG,
+            }
+        }
+        TEST_DISPID_RETURN_SMALLINT_MATRIX => {
+            if (wflags & DISPATCH_METHOD) == 0 || cargs != 0 {
+                return COM_DISP_E_BADPARAMCOUNT;
+            }
+            match set_variant_i16_matrix(pvarresult) {
                 Ok(()) => COM_S_OK,
                 Err(_) => COM_E_INVALIDARG,
             }
