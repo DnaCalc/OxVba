@@ -18,6 +18,7 @@ use windows_sys::Win32::System::Variant::{
     VariantClear,
 };
 
+const VT_R4_VARENUM: u16 = 4;
 const VT_R8_VARENUM: u16 = 5;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -218,6 +219,17 @@ unsafe fn safe_array_element_to_runtime_value(
                 format!("VT_UI8 SAFEARRAY element {element} exceeds current i32 carrier lane")
             })?;
             Ok(ComValue::I32(narrowed).to_runtime_value())
+        }
+        VT_R4_VARENUM => {
+            let mut element = 0f32;
+            let hr = SafeArrayGetElement(psa, &index, (&mut element as *mut f32).cast());
+            if hr < 0 {
+                return Err(format!(
+                    "SafeArrayGetElement failed with HRESULT {:#010X} at index {}",
+                    hr as u32, index
+                ));
+            }
+            Ok(ComValue::F64(F64Value::from_f64(element as f64)).to_runtime_value())
         }
         VT_R8_VARENUM => {
             let mut element = 0f64;
@@ -543,6 +555,9 @@ pub unsafe fn variant_to_com_value(variant: &VARIANT) -> Result<ComValue, String
                 })?,
             )
         }
+        VT_R4_VARENUM => ComValue::F64(F64Value::from_f64(
+            variant.Anonymous.Anonymous.Anonymous.fltVal as f64,
+        )),
         VT_R8_VARENUM => ComValue::F64(F64Value::from_f64(
             variant.Anonymous.Anonymous.Anonymous.dblVal,
         )),
@@ -750,8 +765,8 @@ where
 #[cfg(all(test, target_os = "windows"))]
 mod tests {
     use super::{
-        VT_R8_VARENUM, VariantResultValue, set_variant_from_com_value, take_variant_result_value,
-        variant_to_com_value,
+        VT_R4_VARENUM, VT_R8_VARENUM, VariantResultValue, set_variant_from_com_value,
+        take_variant_result_value, variant_to_com_value,
     };
     use crate::ComValue;
     use oxvba_runtime::{F64Value, RuntimeValue, bstr::BStr, safe_array::SafeArray};
@@ -774,6 +789,20 @@ mod tests {
             assert_eq!(
                 variant_to_com_value(&variant).expect("read string variant"),
                 value
+            );
+            let _ = VariantClear(&mut variant);
+        }
+    }
+
+    #[test]
+    fn scalar_single_variant_reads_through_windows_bridge() {
+        let mut variant: VARIANT = unsafe { std::mem::zeroed() };
+        unsafe {
+            variant.Anonymous.Anonymous.vt = VT_R4_VARENUM;
+            variant.Anonymous.Anonymous.Anonymous.fltVal = 12.5;
+            assert_eq!(
+                variant_to_com_value(&variant).expect("read single variant"),
+                ComValue::F64(F64Value::from_f64(12.5))
             );
             let _ = VariantClear(&mut variant);
         }
@@ -847,6 +876,38 @@ mod tests {
                     RuntimeValue::I32(12),
                     RuntimeValue::I32(-4),
                     RuntimeValue::I32(321),
+                ]))
+            );
+            let _ = VariantClear(&mut variant);
+        }
+    }
+
+    #[test]
+    fn typed_r4_safe_array_roundtrips_through_windows_bridge() {
+        let mut variant: VARIANT = unsafe { std::mem::zeroed() };
+        unsafe {
+            let psa = SafeArrayCreateVector(VT_R4_VARENUM, 0, 3);
+            assert!(
+                !psa.is_null(),
+                "SafeArrayCreateVector(VT_R4_VARENUM) should succeed"
+            );
+            for (index, value) in [12.5f32, -4.25f32, 321.0f32].into_iter().enumerate() {
+                let index = i32::try_from(index).expect("index should fit in i32");
+                let hr =
+                    SafeArrayPutElement(psa.cast_const(), &index, (&value as *const f32).cast());
+                assert!(
+                    hr >= 0,
+                    "SafeArrayPutElement(VT_R4_VARENUM) should succeed: {hr:#010X}"
+                );
+            }
+            variant.Anonymous.Anonymous.vt = VT_ARRAY | VT_R4_VARENUM;
+            variant.Anonymous.Anonymous.Anonymous.parray = psa;
+            assert_eq!(
+                variant_to_com_value(&variant).expect("read VT_R4_VARENUM SAFEARRAY"),
+                ComValue::ArrayIntent(SafeArray::from_values(vec![
+                    RuntimeValue::F64(F64Value::from_f64(12.5)),
+                    RuntimeValue::F64(F64Value::from_f64(-4.25)),
+                    RuntimeValue::F64(F64Value::from_f64(321.0)),
                 ]))
             );
             let _ = VariantClear(&mut variant);

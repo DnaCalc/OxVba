@@ -1374,6 +1374,22 @@ mod tests {
     }
 
     #[test]
+    fn compile_dispatchinvoke_with_single_result_literal_maps_to_member_token_fifty_one() {
+        let source = "Sub Main()\nDim x\nx = DispatchInvoke(CreateObject(\"OxVba.TestDispatch\"), \"ReturnSingle\")\nEnd Sub";
+        let out = compile(source).expect("compile should succeed for single result fixture member");
+        assert!(
+            out.instructions
+                .iter()
+                .any(|i| matches!(i, Instruction::IntrinsicDispatchInvokeHost { .. }))
+        );
+        assert!(
+            out.instructions
+                .iter()
+                .any(|i| matches!(i, Instruction::LoadConstI32 { value: 51, .. }))
+        );
+    }
+
+    #[test]
     fn compile_dispatchinvoke_with_typed_array_result_literal_maps_to_member_token_twenty() {
         let source = "Sub Main()\nDim x\nx = DispatchInvoke(CreateObject(\"OxVba.TestDispatch\"), \"ReturnSmallIntArray\")\nEnd Sub";
         let out =
@@ -1680,6 +1696,23 @@ mod tests {
             out.instructions
                 .iter()
                 .any(|i| matches!(i, Instruction::LoadConstI32 { value: 50, .. }))
+        );
+    }
+
+    #[test]
+    fn compile_dispatchinvoke_with_single_array_result_literal_maps_to_member_token_fifty_two() {
+        let source = "Sub Main()\nDim x\nx = DispatchInvoke(CreateObject(\"OxVba.TestDispatch\"), \"ReturnSingleArray\")\nEnd Sub";
+        let out =
+            compile(source).expect("compile should succeed for single-array result fixture member");
+        assert!(
+            out.instructions
+                .iter()
+                .any(|i| matches!(i, Instruction::IntrinsicDispatchInvokeHost { .. }))
+        );
+        assert!(
+            out.instructions
+                .iter()
+                .any(|i| matches!(i, Instruction::LoadConstI32 { value: 52, .. }))
         );
     }
 

@@ -2,7 +2,7 @@
 mod windows_com_e2e {
     use oxvba_hal::model::HostPolicy;
     use oxvba_host::{Engine, HostConfig};
-    use oxvba_runtime::{ObjectHandle, RuntimeValue, bstr::BStr, safe_array::SafeArray};
+    use oxvba_runtime::{F64Value, ObjectHandle, RuntimeValue, bstr::BStr, safe_array::SafeArray};
 
     fn run_windows_host_backed(source: &str, enable_jit: bool) -> Vec<RuntimeValue> {
         let mut engine = Engine::new(HostConfig {
@@ -521,6 +521,78 @@ End Sub
                 RuntimeValue::String(BStr("Beta".to_string())),
             ])),
             "VT_ARRAY|VT_BSTR result should preserve string array elements"
+        );
+    }
+
+    #[test]
+    fn dispatchinvoke_accepts_float_variant_results() {
+        let source = r#"
+Sub Main()
+Dim obj
+Dim doubleValue
+Dim singleValue
+obj = CreateObject("OxVba.TestDispatch")
+doubleValue = DispatchInvoke(obj, "ReturnDouble")
+singleValue = DispatchInvoke(obj, "ReturnSingle")
+End Sub
+"#;
+
+        let vm = run_windows_host_backed(source, false);
+        let jit = run_windows_host_backed(source, true);
+        assert_eq!(
+            vm, jit,
+            "VM/JIT snapshots diverged on float VARIANT result path: vm={vm:?} jit={jit:?}"
+        );
+        assert!(expect_object_handle(&vm[0]).raw() >= 20_001);
+        assert_eq!(
+            vm[1],
+            RuntimeValue::F64(F64Value::from_f64(12.5)),
+            "VT_R8 result should preserve the semantic f64 carrier"
+        );
+        assert_eq!(
+            vm[2],
+            RuntimeValue::F64(F64Value::from_f64(12.5)),
+            "VT_R4 result should widen into the semantic f64 carrier"
+        );
+    }
+
+    #[test]
+    fn dispatchinvoke_accepts_typed_float_safe_array_variant_results() {
+        let source = r#"
+Sub Main()
+Dim obj
+Dim doubleArray
+Dim singleArray
+obj = CreateObject("OxVba.TestDispatch")
+doubleArray = DispatchInvoke(obj, "ReturnDoubleArray")
+singleArray = DispatchInvoke(obj, "ReturnSingleArray")
+End Sub
+"#;
+
+        let vm = run_windows_host_backed(source, false);
+        let jit = run_windows_host_backed(source, true);
+        assert_eq!(
+            vm, jit,
+            "VM/JIT snapshots diverged on typed float SAFEARRAY path: vm={vm:?} jit={jit:?}"
+        );
+        assert!(expect_object_handle(&vm[0]).raw() >= 20_001);
+        assert_eq!(
+            vm[1],
+            RuntimeValue::ArrayIntent(SafeArray::from_values(vec![
+                RuntimeValue::F64(F64Value::from_f64(12.5)),
+                RuntimeValue::F64(F64Value::from_f64(-4.25)),
+                RuntimeValue::F64(F64Value::from_f64(321.0)),
+            ])),
+            "VT_ARRAY|VT_R8 result should preserve float array elements on the semantic f64 carrier"
+        );
+        assert_eq!(
+            vm[2],
+            RuntimeValue::ArrayIntent(SafeArray::from_values(vec![
+                RuntimeValue::F64(F64Value::from_f64(12.5)),
+                RuntimeValue::F64(F64Value::from_f64(-4.25)),
+                RuntimeValue::F64(F64Value::from_f64(321.0)),
+            ])),
+            "VT_ARRAY|VT_R4 result should widen float array elements into the semantic f64 carrier"
         );
     }
 

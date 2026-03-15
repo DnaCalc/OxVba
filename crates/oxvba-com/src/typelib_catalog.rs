@@ -62,6 +62,10 @@ const TEST_DISPID_RETURN_HYPER: i32 = 45;
 const TEST_DISPID_RETURN_UNSIGNED_HYPER: i32 = 46;
 const TEST_DISPID_RETURN_HYPER_ARRAY: i32 = 47;
 const TEST_DISPID_RETURN_UNSIGNED_HYPER_ARRAY: i32 = 48;
+const TEST_DISPID_RETURN_DOUBLE: i32 = 49;
+const TEST_DISPID_RETURN_DOUBLE_ARRAY: i32 = 50;
+const TEST_DISPID_RETURN_SINGLE: i32 = 51;
+const TEST_DISPID_RETURN_SINGLE_ARRAY: i32 = 52;
 
 const TEST_EVENT_CHANGED: i32 = 1;
 const TEST_EVENT_CHANGED_SOURCE_INTERFACE: i32 = 2;
@@ -438,6 +442,22 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
                 is_default_member: false,
             },
             TypeLibMemberMetadata {
+                name: "ReturnDouble".to_string(),
+                token: TEST_DISPID_RETURN_DOUBLE,
+                requires_argument: false,
+                invoke_kind: TypeLibMemberInvokeKind::Method,
+                parameter_names: Vec::new(),
+                is_default_member: false,
+            },
+            TypeLibMemberMetadata {
+                name: "ReturnSingle".to_string(),
+                token: TEST_DISPID_RETURN_SINGLE,
+                requires_argument: false,
+                invoke_kind: TypeLibMemberInvokeKind::Method,
+                parameter_names: Vec::new(),
+                is_default_member: false,
+            },
+            TypeLibMemberMetadata {
                 name: "ReturnLong".to_string(),
                 token: TEST_DISPID_RETURN_LONG,
                 requires_argument: false,
@@ -544,6 +564,22 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
             TypeLibMemberMetadata {
                 name: "ReturnUnsignedHyperArray".to_string(),
                 token: TEST_DISPID_RETURN_UNSIGNED_HYPER_ARRAY,
+                requires_argument: false,
+                invoke_kind: TypeLibMemberInvokeKind::Method,
+                parameter_names: Vec::new(),
+                is_default_member: false,
+            },
+            TypeLibMemberMetadata {
+                name: "ReturnDoubleArray".to_string(),
+                token: TEST_DISPID_RETURN_DOUBLE_ARRAY,
+                requires_argument: false,
+                invoke_kind: TypeLibMemberInvokeKind::Method,
+                parameter_names: Vec::new(),
+                is_default_member: false,
+            },
+            TypeLibMemberMetadata {
+                name: "ReturnSingleArray".to_string(),
+                token: TEST_DISPID_RETURN_SINGLE_ARRAY,
                 requires_argument: false,
                 invoke_kind: TypeLibMemberInvokeKind::Method,
                 parameter_names: Vec::new(),

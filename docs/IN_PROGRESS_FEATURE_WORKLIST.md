@@ -9,6 +9,8 @@ This file is the authoritative consolidation point for part-implemented feature 
 Latest execution pass:
 1. `docs/IN_PROGRESS_FEATURE_EXECUTION_2026-03-10.md`
 
+Latest note (2026-03-15): the active `IP-03A` late-bound COM transport subset now includes controlled `VT_R4` / `Single` scalar and one-dimensional typed SAFEARRAY result lanes on the shared semantic `f64` carrier; broader external `VARIANT`, non-`IDispatch` interface, and multi-dimensional SAFEARRAY parity remains `in-progress`.
+
 Use it to answer:
 1. what major behavior areas are still unfinished,
 2. why they are still `in-progress`,

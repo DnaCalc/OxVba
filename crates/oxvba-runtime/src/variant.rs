@@ -169,6 +169,20 @@ impl Variant {
         Some(i32::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]))
     }
 
+    pub fn from_f32(value: f32) -> Self {
+        let mut bytes = [0u8; 8];
+        bytes[0..4].copy_from_slice(&value.to_le_bytes());
+        Self::from_bytes(VarType::Single, bytes)
+    }
+
+    pub fn as_f32(&self) -> Option<f32> {
+        if self.vtype != VarType::Single {
+            return None;
+        }
+        let bytes = self.data_bytes();
+        Some(f32::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]))
+    }
+
     pub fn from_f64(value: f64) -> Self {
         Self::from_bytes(VarType::Double, value.to_le_bytes())
     }
@@ -249,6 +263,10 @@ impl Variant {
                 .as_i32()
                 .map(RuntimeValue::I32)
                 .ok_or_else(|| "invalid Long variant payload".to_string()),
+            VarType::Single => self
+                .as_f32()
+                .map(|value| RuntimeValue::F64(F64Value::from_f64(value as f64)))
+                .ok_or_else(|| "invalid Single variant payload".to_string()),
             VarType::Double => self
                 .as_f64()
                 .map(|value| RuntimeValue::F64(F64Value::from_f64(value)))
@@ -283,6 +301,9 @@ mod tests {
         let i32v = Variant::from_i32(1024);
         assert_eq!(i32v.as_i32(), Some(1024));
 
+        let f32v = Variant::from_f32(3.5);
+        assert_eq!(f32v.as_f32(), Some(3.5));
+
         let f64v = Variant::from_f64(3.5);
         assert_eq!(f64v.as_f64(), Some(3.5));
     }
@@ -310,6 +331,18 @@ mod tests {
         let roundtrip = Variant::from_wire_bytes(wire).expect("wire roundtrip");
         assert_eq!(roundtrip.vtype, VarType::Long);
         assert_eq!(roundtrip.as_i32(), Some(42));
+    }
+
+    #[test]
+    fn single_variant_bridges_to_runtime_f64_lane() {
+        let single_variant = Variant::from_f32(12.5);
+        assert_eq!(single_variant.vtype, VarType::Single);
+        assert_eq!(
+            single_variant
+                .to_runtime_value()
+                .expect("single Variant should bridge into RuntimeValue::F64"),
+            RuntimeValue::F64(F64Value::from_f64(12.5))
+        );
     }
 
     #[test]

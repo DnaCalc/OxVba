@@ -3026,6 +3026,8 @@ fn known_dispatch_member_token(member_name: &str) -> Option<i32> {
         "returnunsignedhyperarray" => Some(48),
         "returndouble" => Some(49),
         "returndoublearray" => Some(50),
+        "returnsingle" => Some(51),
+        "returnsinglearray" => Some(52),
         _ => None,
     }
 }

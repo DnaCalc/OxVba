@@ -1,3 +1,12 @@
+## 2026-03-15 - Added controlled `VT_R4` / `Single` COM result transport evidence in `IP-03A`
+
+- Continued the active late-bound COM value-transport pass by widening COM `Single` payloads into the existing semantic `f64` carrier instead of inventing a second runtime float lane.
+- In [variant.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-runtime\src\variant.rs), extended the owned runtime `Variant` bridge so `VarType::Single` now roundtrips into `RuntimeValue::F64(...)` and added focused bridge coverage.
+- In [windows_variant.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-com\src\windows_variant.rs), added scalar and one-dimensional typed SAFEARRAY `VT_R4` result translation together with focused Windows bridge tests.
+- In [windows_test_dispatch.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-com\src\windows_test_dispatch.rs), added the controlled `ReturnSingle` and `ReturnSingleArray` fixture members.
+- In [typelib_catalog.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-com\src\typelib_catalog.rs), [lib.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-compiler\src\lib.rs), [project.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-compiler\src\project.rs), and [resolve.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-compiler\src\resolve.rs), extended controlled metadata and compiler member-token coverage for `51` and `52`.
+- In [com_client_end_to_end.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-host\tests\com_client_end_to_end.rs), added VM/JIT parity coverage so scalar `VT_R4` and typed `VT_ARRAY | VT_R4` results widen deterministically into the semantic `f64` carrier.
+- Updated [CURRENT_BLOCKERS.md](C:\Work\DnaCalc\OxVba\CURRENT_BLOCKERS.md) and [IN_PROGRESS_FEATURE_WORKLIST.md](C:\Work\DnaCalc\OxVba\docs\IN_PROGRESS_FEATURE_WORKLIST.md) so the supported COM value-transport subset now explicitly includes `Single` alongside `Double` while the broader parity program remains open.
 ## 2026-03-15 - Added first-class `VT_R8` / `Double` COM result transport evidence in `IP-03A`
 
 - Continued the active late-bound COM value-transport work on the next honest scalar category after the checked integer lanes by introducing a first-class bit-stable `f64` carrier instead of narrowing `Double` into the legacy integer lane.

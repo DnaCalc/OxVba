@@ -3328,6 +3328,8 @@ fn map_dispatch_member_literal_token(text: &str) -> Option<i32> {
         "returnunsignedhyperarray" => Some(48),
         "returndouble" => Some(49),
         "returndoublearray" => Some(50),
+        "returnsingle" => Some(51),
+        "returnsinglearray" => Some(52),
         _ => None,
     }
 }
