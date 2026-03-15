@@ -835,6 +835,69 @@ End Sub
     }
 
     #[test]
+    fn dispatchinvoke_classifies_scalar_variant_arguments_at_com_boundary() {
+        let source = r#"
+Sub Main()
+Dim obj
+Dim boolSeed
+Dim stringSeed
+Dim emptySeed
+Dim nullSeed
+Dim errorSeed
+Dim boolVt
+Dim stringVt
+Dim emptyVt
+Dim nullVt
+Dim errorVt
+obj = CreateObject("OxVba.TestDispatch")
+boolSeed = DispatchInvoke(obj, "ReturnBool")
+stringSeed = DispatchInvoke(obj, "ReturnString")
+emptySeed = DispatchInvoke(obj, "ReturnEmpty")
+nullSeed = DispatchInvoke(obj, "ReturnNull")
+errorSeed = DispatchInvoke(obj, "ReturnError")
+boolVt = DispatchInvoke(obj, "ClassifyVariantArg", boolSeed)
+stringVt = DispatchInvoke(obj, "ClassifyVariantArg", stringSeed)
+emptyVt = DispatchInvoke(obj, "ClassifyVariantArg", emptySeed)
+nullVt = DispatchInvoke(obj, "ClassifyVariantArg", nullSeed)
+errorVt = DispatchInvoke(obj, "ClassifyVariantArg", errorSeed)
+End Sub
+"#;
+
+        let vm = run_windows_host_backed(source, false);
+        let jit = run_windows_host_backed(source, true);
+        assert_eq!(
+            vm, jit,
+            "VM/JIT snapshots diverged on scalar-argument classifier path: vm={vm:?} jit={jit:?}"
+        );
+        assert!(expect_object_handle(&vm[0]).raw() >= 20_001);
+        assert_eq!(
+            vm[6],
+            RuntimeValue::I32(11),
+            "True should marshal as VT_BOOL"
+        );
+        assert_eq!(
+            vm[7],
+            RuntimeValue::I32(8),
+            "string argument should marshal as VT_BSTR"
+        );
+        assert_eq!(
+            vm[8],
+            RuntimeValue::I32(0),
+            "uninitialized Variant should marshal as VT_EMPTY"
+        );
+        assert_eq!(
+            vm[9],
+            RuntimeValue::I32(1),
+            "Null should marshal as VT_NULL"
+        );
+        assert_eq!(
+            vm[10],
+            RuntimeValue::I32(10),
+            "CVErr(...) should marshal as VT_ERROR"
+        );
+    }
+
+    #[test]
     fn dispatchinvoke_classifies_object_arguments_at_com_boundary() {
         let source = r#"
 Sub Main()

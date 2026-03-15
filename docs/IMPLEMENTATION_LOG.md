@@ -1,3 +1,6 @@
+## 2026-03-15 - Added outbound scalar COM VARIANT classifier evidence
+- Added direct host VM/JIT evidence that outbound `True`, `BSTR`, `Empty`, `Null`, and `CVErr(...)` arguments marshal to the expected COM `VT_BOOL`, `VT_BSTR`, `VT_EMPTY`, `VT_NULL`, and `VT_ERROR` tags on the controlled classifier lane.
+
 ## 2026-03-15 - Added named scalar VT_EMPTY, VT_NULL, and VT_ERROR COM result evidence
 - Added controlled fixture members, compiler token coverage, HAL metadata expectations, and host VM/JIT evidence for named scalar VT_EMPTY, VT_NULL, and VT_ERROR result lanes.
 
