@@ -2,7 +2,9 @@
 mod windows_com_e2e {
     use oxvba_hal::model::HostPolicy;
     use oxvba_host::{Engine, HostConfig};
-    use oxvba_runtime::{F64Value, ObjectHandle, RuntimeValue, bstr::BStr, safe_array::SafeArray};
+    use oxvba_runtime::{
+        CurrencyValue, F64Value, ObjectHandle, RuntimeValue, bstr::BStr, safe_array::SafeArray,
+    };
 
     fn run_windows_host_backed(source: &str, enable_jit: bool) -> Vec<RuntimeValue> {
         let mut engine = Engine::new(HostConfig {
@@ -611,6 +613,60 @@ End Sub
                 RuntimeValue::F64(F64Value::from_f64(-4.25)),
             ])),
             "VT_ARRAY|VT_DATE result should preserve automation date payloads on the semantic f64 carrier"
+        );
+    }
+
+    #[test]
+    fn dispatchinvoke_accepts_currency_variant_results() {
+        let source = r#"
+Sub Main()
+Dim obj
+Dim currencyValue
+obj = CreateObject("OxVba.TestDispatch")
+currencyValue = DispatchInvoke(obj, "ReturnCurrency")
+End Sub
+"#;
+
+        let vm = run_windows_host_backed(source, false);
+        let jit = run_windows_host_backed(source, true);
+        assert_eq!(
+            vm, jit,
+            "VM/JIT snapshots diverged on currency VARIANT result path: vm={vm:?} jit={jit:?}"
+        );
+        assert!(expect_object_handle(&vm[0]).raw() >= 20_001);
+        assert_eq!(
+            vm[1],
+            RuntimeValue::Currency(CurrencyValue::from_scaled_i64(125_000)),
+            "VT_CY result should preserve the exact scaled currency carrier"
+        );
+    }
+
+    #[test]
+    fn dispatchinvoke_accepts_typed_currency_safe_array_variant_results() {
+        let source = r#"
+Sub Main()
+Dim obj
+Dim currencyArray
+obj = CreateObject("OxVba.TestDispatch")
+currencyArray = DispatchInvoke(obj, "ReturnCurrencyArray")
+End Sub
+"#;
+
+        let vm = run_windows_host_backed(source, false);
+        let jit = run_windows_host_backed(source, true);
+        assert_eq!(
+            vm, jit,
+            "VM/JIT snapshots diverged on typed currency SAFEARRAY path: vm={vm:?} jit={jit:?}"
+        );
+        assert!(expect_object_handle(&vm[0]).raw() >= 20_001);
+        assert_eq!(
+            vm[1],
+            RuntimeValue::ArrayIntent(SafeArray::from_values(vec![
+                RuntimeValue::Currency(CurrencyValue::from_scaled_i64(125_000)),
+                RuntimeValue::Currency(CurrencyValue::from_scaled_i64(-42_500)),
+                RuntimeValue::Currency(CurrencyValue::from_scaled_i64(3_210_000)),
+            ])),
+            "VT_ARRAY|VT_CY result should preserve exact scaled currency elements"
         );
     }
 

@@ -27,8 +27,8 @@ use windows_sys::Win32::{
     Foundation::{SysAllocString, SysFreeString, VARIANT_BOOL},
     System::{
         Com::{
-            DISPATCH_METHOD, DISPATCH_PROPERTYGET, DISPATCH_PROPERTYPUT, DISPATCH_PROPERTYPUTREF,
-            DISPPARAMS, EXCEPINFO, SAFEARRAYBOUND,
+            CY, DISPATCH_METHOD, DISPATCH_PROPERTYGET, DISPATCH_PROPERTYPUT,
+            DISPATCH_PROPERTYPUTREF, DISPPARAMS, EXCEPINFO, SAFEARRAYBOUND,
         },
         Ole::{
             SafeArrayCreate, SafeArrayCreateVector, SafeArrayDestroy, SafeArrayGetDim,
@@ -45,6 +45,7 @@ use windows_sys::Win32::{
 
 const VT_R4_VARENUM: u16 = 4;
 const VT_R8_VARENUM: u16 = 5;
+const VT_CY_VARENUM: u16 = 6;
 const VT_DATE_VARENUM: u16 = 7;
 
 type RawDispatchPtr = usize;
@@ -120,6 +121,8 @@ pub const TEST_DISPID_RETURN_SINGLE: i32 = 51;
 pub const TEST_DISPID_RETURN_SINGLE_ARRAY: i32 = 52;
 pub const TEST_DISPID_RETURN_DATE: i32 = 53;
 pub const TEST_DISPID_RETURN_DATE_ARRAY: i32 = 54;
+pub const TEST_DISPID_RETURN_CURRENCY: i32 = 55;
+pub const TEST_DISPID_RETURN_CURRENCY_ARRAY: i32 = 56;
 pub const TEST_NAMED_DISPID_LHS: i32 = 101;
 pub const TEST_NAMED_DISPID_RHS: i32 = 102;
 pub const TEST_NAMED_DISPID_INDEX: i32 = 103;
@@ -463,6 +466,35 @@ unsafe fn set_variant_date_array(values: &[f64], variant: *mut VARIANT) -> Resul
         }
     }
     (*variant).Anonymous.Anonymous.vt = VT_ARRAY | VT_DATE_VARENUM;
+    (*variant).Anonymous.Anonymous.Anonymous.parray = psa;
+    Ok(())
+}
+#[cfg(target_os = "windows")]
+#[allow(unsafe_op_in_unsafe_fn)]
+unsafe fn set_variant_currency_array(values: &[i64], variant: *mut VARIANT) -> Result<(), String> {
+    if variant.is_null() {
+        return Ok(());
+    }
+    let len = u32::try_from(values.len())
+        .map_err(|_| "SAFEARRAY payload length exceeds supported u32 range".to_string())?;
+    let psa = SafeArrayCreateVector(VT_CY_VARENUM, 0, len);
+    if psa.is_null() {
+        return Err("SafeArrayCreateVector(VT_CY_VARENUM) returned null".to_string());
+    }
+    for (offset, value) in values.iter().enumerate() {
+        let index = i32::try_from(offset)
+            .map_err(|_| "SAFEARRAY index exceeds supported i32 range".to_string())?;
+        let element = CY { int64: *value };
+        let hr = SafeArrayPutElement(psa.cast_const(), &index, (&element as *const CY).cast());
+        if hr < 0 {
+            let _ = SafeArrayDestroy(psa.cast_const());
+            return Err(format!(
+                "SafeArrayPutElement(VT_CY_VARENUM) failed with HRESULT {:#010X} at index {}",
+                hr as u32, index
+            ));
+        }
+    }
+    (*variant).Anonymous.Anonymous.vt = VT_ARRAY | VT_CY_VARENUM;
     (*variant).Anonymous.Anonymous.Anonymous.parray = psa;
     Ok(())
 }
@@ -1592,6 +1624,8 @@ unsafe extern "system" fn oxvba_test_get_ids_of_names(
             "returnsinglearray" => TEST_DISPID_RETURN_SINGLE_ARRAY,
             "returndate" => TEST_DISPID_RETURN_DATE,
             "returndatearray" => TEST_DISPID_RETURN_DATE_ARRAY,
+            "returncurrency" => TEST_DISPID_RETURN_CURRENCY,
+            "returncurrencyarray" => TEST_DISPID_RETURN_CURRENCY_ARRAY,
             "lhs" => TEST_NAMED_DISPID_LHS,
             "rhs" => TEST_NAMED_DISPID_RHS,
             "index" => TEST_NAMED_DISPID_INDEX,
@@ -2007,6 +2041,16 @@ unsafe extern "system" fn oxvba_test_invoke(
             }
             COM_S_OK
         }
+        TEST_DISPID_RETURN_CURRENCY => {
+            if (wflags & DISPATCH_METHOD) == 0 || cargs != 0 {
+                return COM_DISP_E_BADPARAMCOUNT;
+            }
+            if !pvarresult.is_null() {
+                (*pvarresult).Anonymous.Anonymous.vt = VT_CY_VARENUM;
+                (*pvarresult).Anonymous.Anonymous.Anonymous.cyVal.int64 = 125_000;
+            }
+            COM_S_OK
+        }
         TEST_DISPID_RETURN_SMALLINT_ARRAY => {
             if (wflags & DISPATCH_METHOD) == 0 || cargs != 0 {
                 return COM_DISP_E_BADPARAMCOUNT;
@@ -2137,6 +2181,15 @@ unsafe extern "system" fn oxvba_test_invoke(
                 return COM_DISP_E_BADPARAMCOUNT;
             }
             match set_variant_date_array(&[45200.25, 12.5, -4.25], pvarresult) {
+                Ok(()) => COM_S_OK,
+                Err(_) => COM_E_INVALIDARG,
+            }
+        }
+        TEST_DISPID_RETURN_CURRENCY_ARRAY => {
+            if (wflags & DISPATCH_METHOD) == 0 || cargs != 0 {
+                return COM_DISP_E_BADPARAMCOUNT;
+            }
+            match set_variant_currency_array(&[125_000, -42_500, 3_210_000], pvarresult) {
                 Ok(()) => COM_S_OK,
                 Err(_) => COM_E_INVALIDARG,
             }

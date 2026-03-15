@@ -192,6 +192,7 @@ fn format_runtime_value(value: &RuntimeValue) -> String {
         RuntimeValue::ErrorCode(code) => format!("error:{code}"),
         RuntimeValue::I32(value) => format!("i32:{value}"),
         RuntimeValue::F64(value) => format!("f64:{}", value.as_f64()),
+        RuntimeValue::Currency(value) => format!("currency:{}", value),
         RuntimeValue::Bool(value) => format!("bool:{value}"),
         RuntimeValue::String(BStr(value)) => format!("string:{value:?}"),
         RuntimeValue::ArrayIntent(array) => format!("array:{array:?}"),

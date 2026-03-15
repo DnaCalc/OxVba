@@ -3030,6 +3030,8 @@ fn known_dispatch_member_token(member_name: &str) -> Option<i32> {
         "returnsinglearray" => Some(52),
         "returndate" => Some(53),
         "returndatearray" => Some(54),
+        "returncurrency" => Some(55),
+        "returncurrencyarray" => Some(56),
         _ => None,
     }
 }

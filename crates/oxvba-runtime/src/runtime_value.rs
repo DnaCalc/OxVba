@@ -102,6 +102,58 @@ impl core::fmt::Display for F64Value {
     }
 }
 
+#[repr(transparent)]
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Default,
+    rkyv::Archive,
+    rkyv::Serialize,
+    rkyv::Deserialize,
+    serde::Serialize,
+    serde::Deserialize,
+)]
+pub struct CurrencyValue(i64);
+
+impl CurrencyValue {
+    pub const SCALE: i64 = 10_000;
+
+    pub const fn from_scaled_i64(scaled: i64) -> Self {
+        Self(scaled)
+    }
+
+    pub const fn scaled_i64(self) -> i64 {
+        self.0
+    }
+}
+
+impl core::fmt::Display for CurrencyValue {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        let scaled = i128::from(self.0);
+        let negative = scaled < 0;
+        let magnitude = if negative { -scaled } else { scaled };
+        let whole = magnitude / i128::from(Self::SCALE);
+        let fractional = (magnitude % i128::from(Self::SCALE)) as u16;
+        if negative {
+            write!(f, "-")?;
+        }
+        if fractional == 0 {
+            return write!(f, "{whole}");
+        }
+        let mut fractional_text = format!("{fractional:04}");
+        while fractional_text.ends_with('0') {
+            fractional_text.pop();
+        }
+        write!(f, "{whole}.{fractional_text}")
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub enum RuntimeValue {
     #[default]
@@ -110,6 +162,7 @@ pub enum RuntimeValue {
     ErrorCode(i32),
     I32(i32),
     F64(F64Value),
+    Currency(CurrencyValue),
     Bool(bool),
     String(BStr),
     ArrayIntent(SafeArray),
@@ -143,6 +196,9 @@ impl RuntimeValue {
             Self::F64(_) => {
                 Err("f64 cannot be represented in current legacy i32 slot lane".to_string())
             }
+            Self::Currency(_) => {
+                Err("currency cannot be represented in current legacy i32 slot lane".to_string())
+            }
             Self::Bool(value) => Ok(i32::from(*value)),
             Self::ArrayIntent(array) => array_tag_from_safe_array(array).ok_or_else(|| {
                 "array intent cannot be represented in current legacy slot tag".to_string()
@@ -173,7 +229,7 @@ mod tests {
         value_tags::{EMPTY_TAG, NULL_TAG, error_tag_from_code},
     };
 
-    use super::{BindingHandle, F64Value, ObjectHandle, RuntimeValue};
+    use super::{BindingHandle, CurrencyValue, F64Value, ObjectHandle, RuntimeValue};
 
     #[test]
     fn runtime_value_from_legacy_i32_preserves_tagged_shapes() {
@@ -210,6 +266,11 @@ mod tests {
         );
         assert!(
             RuntimeValue::F64(F64Value::from_f64(3.5))
+                .to_legacy_i32()
+                .is_err()
+        );
+        assert!(
+            RuntimeValue::Currency(CurrencyValue::from_scaled_i64(125_000))
                 .to_legacy_i32()
                 .is_err()
         );
@@ -252,5 +313,13 @@ mod tests {
         let value = F64Value::from_f64(-12.5);
         assert_eq!(value.as_f64(), -12.5);
         assert_eq!(F64Value::from_bits(value.bits()), value);
+    }
+
+    #[test]
+    fn runtime_value_currency_preserves_exact_scaled_shape() {
+        let value = CurrencyValue::from_scaled_i64(-42_500);
+        assert_eq!(value.scaled_i64(), -42_500);
+        assert_eq!(value.to_string(), "-4.25");
+        assert_eq!(CurrencyValue::from_scaled_i64(3_210_000).to_string(), "321");
     }
 }

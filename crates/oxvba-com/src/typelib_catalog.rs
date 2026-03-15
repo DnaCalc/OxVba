@@ -68,6 +68,8 @@ const TEST_DISPID_RETURN_SINGLE: i32 = 51;
 const TEST_DISPID_RETURN_SINGLE_ARRAY: i32 = 52;
 const TEST_DISPID_RETURN_DATE: i32 = 53;
 const TEST_DISPID_RETURN_DATE_ARRAY: i32 = 54;
+const TEST_DISPID_RETURN_CURRENCY: i32 = 55;
+const TEST_DISPID_RETURN_CURRENCY_ARRAY: i32 = 56;
 
 const TEST_EVENT_CHANGED: i32 = 1;
 const TEST_EVENT_CHANGED_SOURCE_INTERFACE: i32 = 2;
@@ -468,6 +470,14 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
                 is_default_member: false,
             },
             TypeLibMemberMetadata {
+                name: "ReturnCurrency".to_string(),
+                token: TEST_DISPID_RETURN_CURRENCY,
+                requires_argument: false,
+                invoke_kind: TypeLibMemberInvokeKind::Method,
+                parameter_names: Vec::new(),
+                is_default_member: false,
+            },
+            TypeLibMemberMetadata {
                 name: "ReturnLong".to_string(),
                 token: TEST_DISPID_RETURN_LONG,
                 requires_argument: false,
@@ -598,6 +608,14 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
             TypeLibMemberMetadata {
                 name: "ReturnDateArray".to_string(),
                 token: TEST_DISPID_RETURN_DATE_ARRAY,
+                requires_argument: false,
+                invoke_kind: TypeLibMemberInvokeKind::Method,
+                parameter_names: Vec::new(),
+                is_default_member: false,
+            },
+            TypeLibMemberMetadata {
+                name: "ReturnCurrencyArray".to_string(),
+                token: TEST_DISPID_RETURN_CURRENCY_ARRAY,
                 requires_argument: false,
                 invoke_kind: TypeLibMemberInvokeKind::Method,
                 parameter_names: Vec::new(),

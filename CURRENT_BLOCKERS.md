@@ -65,8 +65,8 @@ Run context: active parity/compliance execution plus in-progress feature worklis
   - expression-form `DispatchInvoke(...)` assignments now preserve named trailing COM arguments instead of rejecting the statement outright,
   - omitted-argument metadata now survives the invoke request and yields deterministic required-argument faults,
   - controlled `IDispatch` variant roundtrips now cover `VT_NULL` and `VT_ERROR` in addition to the existing scalar subset,
-  - controlled/native result conversion now also accepts `VT_I1`, `VT_I2`, `VT_I4`, `VT_I8`, `VT_INT`, `VT_R4`, `VT_R8`, `VT_DATE`, `VT_UI1`, `VT_UI2`, `VT_UI4`, `VT_UI8`, and `VT_UINT`, with `VT_R8` now preserved on a first-class bit-stable `f64` carrier and the integer forms still narrowing into the current `i32` carrier when the payload fits,
-  - controlled/native result conversion now also accepts one-dimensional typed SAFEARRAY results with `VT_I1`, `VT_I2`, `VT_I4`, `VT_I8`, `VT_INT`, `VT_R4`, `VT_R8`, `VT_DATE`, `VT_UI1`, `VT_UI2`, `VT_UI4`, `VT_UI8`, `VT_UINT`, `VT_BOOL`, and `VT_BSTR` element payloads into `RuntimeValue::ArrayIntent`, preserving `VT_R8` elements on the same bit-stable `f64` carrier while the integer payloads still narrow into the current `i32` carrier when they fit,
+  - controlled/native result conversion now also accepts `VT_I1`, `VT_I2`, `VT_I4`, `VT_I8`, `VT_INT`, `VT_R4`, `VT_R8`, `VT_CY`, `VT_DATE`, `VT_UI1`, `VT_UI2`, `VT_UI4`, `VT_UI8`, and `VT_UINT`, with `VT_R4` / `VT_R8` / `VT_DATE` preserved on a first-class semantic `f64` carrier, `VT_CY` preserved on a new exact scaled-`i64` currency carrier, and the integer forms still narrowing into the current `i32` carrier when the payload fits,
+  - controlled/native result conversion now also accepts one-dimensional typed SAFEARRAY results with `VT_I1`, `VT_I2`, `VT_I4`, `VT_I8`, `VT_INT`, `VT_R4`, `VT_R8`, `VT_CY`, `VT_DATE`, `VT_UI1`, `VT_UI2`, `VT_UI4`, `VT_UI8`, `VT_UINT`, `VT_BOOL`, and `VT_BSTR` element payloads into `RuntimeValue::ArrayIntent`, preserving `VT_R4` / `VT_R8` / `VT_DATE` elements on the same semantic `f64` carrier, preserving `VT_CY` elements on the exact scaled-`i64` currency carrier, and still narrowing the integer payloads into the current `i32` carrier when they fit,
   - controlled/native object result conversion now has end-to-end host evidence for both `VT_DISPATCH` and `VT_UNKNOWN` values that expose `IDispatch`,
   - controlled/native result conversion now also has end-to-end host evidence for one-dimensional typed `VT_ARRAY | VT_DISPATCH` and `VT_ARRAY | VT_UNKNOWN` results when the element interfaces expose `IDispatch`,
   - outbound object-valued COM arguments now have end-to-end host evidence via a controlled raw-variant classifier method,
@@ -95,7 +95,7 @@ Run context: active parity/compliance execution plus in-progress feature worklis
 - Current state:
   - `oxvba-com` now exposes an executable generic dynamic-object protocol API (`DynamicCallRequest`, `DynamicMemberSelector`, `DynamicCallKind`, `DynamicEventPayload`) with conversions from the current COM request/payload structs,
   - `oxvba-com` now owns a first semantic carrier slice via `ComValue`,
-  - `oxvba-com` now also owns the extracted Windows `VARIANT`/one-dimensional `SAFEARRAY` translation bridge for the currently supported scalar/string/array subset, including typed `VT_I2`, `VT_I4`, `VT_I8`, `VT_R8`, `VT_UI2`, `VT_UI4`, `VT_UI8`, `VT_BOOL`, `VT_BSTR`, `VT_DISPATCH`, and `VT_UNKNOWN` SAFEARRAY result elements on the controlled `IDispatch`-exposing lane, a first-class bit-stable `f64` result carrier for `VT_R8`, and checked scalar narrowing for the current `RuntimeValue::I32` carrier,
+  - `oxvba-com` now also owns the extracted Windows `VARIANT`/one-dimensional `SAFEARRAY` translation bridge for the currently supported scalar/string/array subset, including typed `VT_I2`, `VT_I4`, `VT_I8`, `VT_R4`, `VT_R8`, `VT_CY`, `VT_DATE`, `VT_UI2`, `VT_UI4`, `VT_UI8`, `VT_BOOL`, `VT_BSTR`, `VT_DISPATCH`, and `VT_UNKNOWN` SAFEARRAY result elements on the controlled `IDispatch`-exposing lane, a semantic `f64` result carrier for float/date payloads, an exact scaled-`i64` carrier for `VT_CY`, and checked scalar narrowing for the current `RuntimeValue::I32` carrier,
   - `oxvba-com` now classifies Invoke-owned Windows result `VARIANT`s into either semantic `ComValue` results or dispatch-capable object pointers before HAL-owned binding state is applied,
   - `oxvba-com` now also owns shared Windows COM invoke failure and `EXCEPINFO` capture types/helpers, reducing the remaining wire/error mechanics left in HAL,
   - the canonical runtime-value `IDispatch::Invoke` helper for the semantic COM request path now also lives in `oxvba-com`, while HAL retains only object-handle resolve/bind state around that call,
@@ -405,6 +405,7 @@ Run context: active parity/compliance execution plus in-progress feature worklis
 - Previously resolved blockers:
   - `BLK-EVT-001` — resolved (runtime subscription graph)
   - `BLK-COM-001` — resolved (COM event callback parity with external registered server evidence)
+
 
 
 

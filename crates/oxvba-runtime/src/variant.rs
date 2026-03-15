@@ -1,4 +1,4 @@
-use crate::runtime_value::{F64Value, RuntimeValue};
+use crate::runtime_value::{CurrencyValue, F64Value, RuntimeValue};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u16)]
@@ -9,6 +9,7 @@ pub enum VarType {
     Long = 0x0003,
     Single = 0x0004,
     Double = 0x0005,
+    Currency = 0x0006,
     Date = 0x0007,
     String = 0x0008,
     Object = 0x0009,
@@ -28,6 +29,7 @@ impl VarType {
             0x0003 => Some(Self::Long),
             0x0004 => Some(Self::Single),
             0x0005 => Some(Self::Double),
+            0x0006 => Some(Self::Currency),
             0x0007 => Some(Self::Date),
             0x0008 => Some(Self::String),
             0x0009 => Some(Self::Object),
@@ -98,8 +100,6 @@ impl Variant {
     }
 
     fn data_bytes(&self) -> [u8; 8] {
-        // SAFETY: `VariantData` is a C union with a `[u8; 8]` member that spans
-        // the full storage of the union.
         unsafe { self.data.bytes }
     }
 
@@ -196,6 +196,17 @@ impl Variant {
         Some(f64::from_le_bytes(self.data_bytes()))
     }
 
+    pub fn from_currency_scaled_i64(value: i64) -> Self {
+        Self::from_bytes(VarType::Currency, value.to_le_bytes())
+    }
+
+    pub fn as_currency_scaled_i64(&self) -> Option<i64> {
+        if self.vtype != VarType::Currency {
+            return None;
+        }
+        Some(i64::from_le_bytes(self.data_bytes()))
+    }
+
     pub fn from_date_f64(value: f64) -> Self {
         Self::from_bytes(VarType::Date, value.to_le_bytes())
     }
@@ -244,6 +255,7 @@ impl Variant {
             RuntimeValue::ErrorCode(code) => Ok(Self::from_error_code(*code)),
             RuntimeValue::I32(value) => Ok(Self::from_i32(*value)),
             RuntimeValue::F64(value) => Ok(Self::from_f64(value.as_f64())),
+            RuntimeValue::Currency(value) => Ok(Self::from_currency_scaled_i64(value.scaled_i64())),
             RuntimeValue::Bool(value) => Ok(Self::from_bool(*value)),
             RuntimeValue::String(_) => Err(
                 "string runtime values are not yet representable in owned runtime Variant"
@@ -284,6 +296,10 @@ impl Variant {
                 .as_f64()
                 .map(|value| RuntimeValue::F64(F64Value::from_f64(value)))
                 .ok_or_else(|| "invalid Double variant payload".to_string()),
+            VarType::Currency => self
+                .as_currency_scaled_i64()
+                .map(|value| RuntimeValue::Currency(CurrencyValue::from_scaled_i64(value)))
+                .ok_or_else(|| "invalid Currency variant payload".to_string()),
             VarType::Date => self
                 .as_date_f64()
                 .map(|value| RuntimeValue::F64(F64Value::from_f64(value)))
@@ -306,7 +322,7 @@ impl Variant {
 
 #[cfg(test)]
 mod tests {
-    use crate::{F64Value, RuntimeValue, bstr::BStr};
+    use crate::{CurrencyValue, F64Value, RuntimeValue, bstr::BStr};
 
     use super::{VarType, Variant, VariantData};
 
@@ -323,6 +339,9 @@ mod tests {
 
         let f64v = Variant::from_f64(3.5);
         assert_eq!(f64v.as_f64(), Some(3.5));
+
+        let cyv = Variant::from_currency_scaled_i64(125_000);
+        assert_eq!(cyv.as_currency_scaled_i64(), Some(125_000));
 
         let datev = Variant::from_date_f64(45200.25);
         assert_eq!(datev.as_date_f64(), Some(45200.25));
@@ -378,6 +397,18 @@ mod tests {
     }
 
     #[test]
+    fn currency_variant_bridges_to_runtime_currency_lane() {
+        let currency_variant = Variant::from_currency_scaled_i64(125_000);
+        assert_eq!(currency_variant.vtype, VarType::Currency);
+        assert_eq!(
+            currency_variant
+                .to_runtime_value()
+                .expect("currency Variant should bridge into RuntimeValue::Currency"),
+            RuntimeValue::Currency(CurrencyValue::from_scaled_i64(125_000))
+        );
+    }
+
+    #[test]
     fn variant_runtime_value_bridge_roundtrips_supported_subset() {
         let bool_variant = Variant::from_runtime_value(&RuntimeValue::Bool(true))
             .expect("bool runtime value should bridge to Variant");
@@ -396,6 +427,17 @@ mod tests {
                 .to_runtime_value()
                 .expect("double Variant should bridge back"),
             RuntimeValue::F64(F64Value::from_f64(3.5))
+        );
+
+        let currency_variant = Variant::from_runtime_value(&RuntimeValue::Currency(
+            CurrencyValue::from_scaled_i64(-42_500),
+        ))
+        .expect("currency runtime value should bridge to Variant");
+        assert_eq!(
+            currency_variant
+                .to_runtime_value()
+                .expect("currency Variant should bridge back"),
+            RuntimeValue::Currency(CurrencyValue::from_scaled_i64(-42_500))
         );
 
         let null_variant =

@@ -1,3 +1,13 @@
+## 2026-03-15 - Added controlled `VT_CY` / `Currency` COM result transport evidence in `IP-03A`
+
+- Continued the active late-bound COM value-transport pass by introducing an exact scaled-`i64` semantic currency carrier instead of widening automation `Currency` payloads into the existing float lane.
+- In [runtime_value.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-runtime\src\runtime_value.rs), added `CurrencyValue` and threaded `RuntimeValue::Currency(...)` through the semantic runtime carrier with exact scaled-value formatting and legacy-slot rejection.
+- In [variant.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-runtime\src\variant.rs) and [model.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-com\src\model.rs), extended the owned runtime `Variant` and semantic `ComValue` bridges so `Currency` values now survive across the shared runtime/COM boundary without degrading to the float or legacy integer lanes.
+- In [windows_variant.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-com\src\windows_variant.rs), added scalar and one-dimensional typed SAFEARRAY `VT_CY` translation in both directions together with focused Windows bridge tests.
+- In [windows_test_dispatch.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-com\src\windows_test_dispatch.rs), added the controlled `ReturnCurrency` and `ReturnCurrencyArray` fixture members.
+- In [typelib_catalog.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-com\src\typelib_catalog.rs), [lib.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-compiler\src\lib.rs), [project.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-compiler\src\project.rs), and [resolve.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-compiler\src\resolve.rs), extended controlled metadata and compiler member-token coverage for `55` and `56`.
+- In [standard.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-hal\src\adapters\standard.rs), [main.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-cli\src\main.rs), and [com_client_end_to_end.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-host\tests\com_client_end_to_end.rs), updated host-facing formatting, HAL metadata expectations, and VM/JIT parity coverage so scalar `VT_CY` and typed `VT_ARRAY | VT_CY` results stay deterministic on the exact currency carrier.
+- Updated [CURRENT_BLOCKERS.md](C:\Work\DnaCalc\OxVba\CURRENT_BLOCKERS.md) and [IN_PROGRESS_FEATURE_WORKLIST.md](C:\Work\DnaCalc\OxVba\docs\IN_PROGRESS_FEATURE_WORKLIST.md) so the supported COM value-transport subset now explicitly includes automation `Currency` alongside the existing float/date subset while the broader parity program remains open.
 ## 2026-03-15 - Added controlled `VT_DATE` COM result transport evidence in `IP-03A`
 
 - Continued the active late-bound COM value-transport pass by routing automation `Date` payloads across the existing semantic `f64` carrier instead of introducing a separate runtime date lane before the broader value-model work closes.
@@ -637,6 +647,7 @@
   - Let x = 5 plus Set obj = CreateObject(4) executes successfully,
   - Set x = 7 fails deterministically with the expected type error.
 - IP-02 remains in progress: broader typed/object Set vs Let parity, non-authoritative default-member resolution, and wider Office-style call-vs-value context parity are still open.
+
 
 
 

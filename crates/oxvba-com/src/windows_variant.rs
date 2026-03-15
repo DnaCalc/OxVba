@@ -1,11 +1,11 @@
 use crate::ComValue;
-use oxvba_runtime::{F64Value, ObjectHandle, bstr::BStr, safe_array::SafeArray};
+use oxvba_runtime::{CurrencyValue, F64Value, ObjectHandle, bstr::BStr, safe_array::SafeArray};
 use std::ffi::c_void;
 
 #[cfg(target_os = "windows")]
 use windows_sys::Win32::Foundation::{SysAllocString, SysFreeString, SysStringLen, VARIANT_BOOL};
 #[cfg(target_os = "windows")]
-use windows_sys::Win32::System::Com::SAFEARRAY;
+use windows_sys::Win32::System::Com::{CY, SAFEARRAY};
 #[cfg(target_os = "windows")]
 use windows_sys::Win32::System::Ole::{
     SafeArrayCreateVector, SafeArrayDestroy, SafeArrayGetDim, SafeArrayGetElement,
@@ -20,6 +20,7 @@ use windows_sys::Win32::System::Variant::{
 
 const VT_R4_VARENUM: u16 = 4;
 const VT_R8_VARENUM: u16 = 5;
+const VT_CY_VARENUM: u16 = 6;
 const VT_DATE_VARENUM: u16 = 7;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -243,6 +244,20 @@ unsafe fn safe_array_element_to_runtime_value(
             }
             Ok(ComValue::F64(F64Value::from_f64(element)).to_runtime_value())
         }
+        VT_CY_VARENUM => {
+            let mut element: CY = std::mem::zeroed();
+            let hr = SafeArrayGetElement(psa, &index, (&mut element as *mut CY).cast());
+            if hr < 0 {
+                return Err(format!(
+                    "SafeArrayGetElement failed with HRESULT {:#010X} at index {}",
+                    hr as u32, index
+                ));
+            }
+            Ok(
+                ComValue::Currency(CurrencyValue::from_scaled_i64(element.int64))
+                    .to_runtime_value(),
+            )
+        }
         VT_DATE_VARENUM => {
             let mut element = 0f64;
             let hr = SafeArrayGetElement(psa, &index, (&mut element as *mut f64).cast());
@@ -301,7 +316,7 @@ unsafe fn safe_array_element_to_runtime_value(
             Ok(ComValue::String(BStr(text)).to_runtime_value())
         }
         other => Err(format!(
-            "unsupported SAFEARRAY element vartype {other}; supported element vartypes are VT_VARIANT, VT_I1, VT_I2, VT_I4, VT_I8, VT_INT, VT_UI1, VT_UI2, VT_UI4, VT_UI8, VT_UINT, VT_BOOL, and VT_BSTR"
+            "unsupported SAFEARRAY element vartype {other}; supported element vartypes are VT_VARIANT, VT_I1, VT_I2, VT_I4, VT_I8, VT_INT, VT_UI1, VT_UI2, VT_UI4, VT_UI8, VT_R4, VT_R8, VT_CY, VT_DATE, VT_UINT, VT_BOOL, and VT_BSTR"
         )),
     }
 }
@@ -573,6 +588,9 @@ pub unsafe fn variant_to_com_value(variant: &VARIANT) -> Result<ComValue, String
         VT_R8_VARENUM => ComValue::F64(F64Value::from_f64(
             variant.Anonymous.Anonymous.Anonymous.dblVal,
         )),
+        VT_CY_VARENUM => ComValue::Currency(CurrencyValue::from_scaled_i64(
+            variant.Anonymous.Anonymous.Anonymous.cyVal.int64,
+        )),
         VT_DATE_VARENUM => ComValue::F64(F64Value::from_f64(
             variant.Anonymous.Anonymous.Anonymous.dblVal,
         )),
@@ -718,6 +736,10 @@ where
             (*variant).Anonymous.Anonymous.vt = VT_R8_VARENUM;
             (*variant).Anonymous.Anonymous.Anonymous.dblVal = value.as_f64();
         }
+        ComValue::Currency(value) => {
+            (*variant).Anonymous.Anonymous.vt = VT_CY_VARENUM;
+            (*variant).Anonymous.Anonymous.Anonymous.cyVal.int64 = value.scaled_i64();
+        }
         ComValue::String(BStr(value)) => {
             (*variant).Anonymous.Anonymous.vt = VT_BSTR;
             (*variant).Anonymous.Anonymous.Anonymous.bstrVal = alloc_bstr(value);
@@ -780,15 +802,18 @@ where
 #[cfg(all(test, target_os = "windows"))]
 mod tests {
     use super::{
-        VT_DATE_VARENUM, VT_R4_VARENUM, VT_R8_VARENUM, VariantResultValue,
+        VT_CY_VARENUM, VT_DATE_VARENUM, VT_R4_VARENUM, VT_R8_VARENUM, VariantResultValue,
         set_variant_from_com_value, take_variant_result_value, variant_to_com_value,
     };
     use crate::ComValue;
-    use oxvba_runtime::{F64Value, RuntimeValue, bstr::BStr, safe_array::SafeArray};
-    use windows_sys::Win32::Foundation::{SysAllocString, SysFreeString};
+    use oxvba_runtime::{CurrencyValue, F64Value, RuntimeValue, bstr::BStr, safe_array::SafeArray};
     use windows_sys::Win32::System::Ole::{SafeArrayCreateVector, SafeArrayPutElement};
     use windows_sys::Win32::System::Variant::{
         VARIANT, VT_ARRAY, VT_BSTR, VT_DISPATCH, VT_I2, VT_UNKNOWN, VT_VARIANT, VariantClear,
+    };
+    use windows_sys::Win32::{
+        Foundation::{SysAllocString, SysFreeString},
+        System::Com::CY,
     };
 
     #[test]
@@ -838,6 +863,20 @@ mod tests {
     }
 
     #[test]
+    fn scalar_currency_variant_reads_through_windows_bridge() {
+        let mut variant: VARIANT = unsafe { std::mem::zeroed() };
+        unsafe {
+            variant.Anonymous.Anonymous.vt = VT_CY_VARENUM;
+            variant.Anonymous.Anonymous.Anonymous.cyVal.int64 = 125_000;
+            assert_eq!(
+                variant_to_com_value(&variant).expect("read currency variant"),
+                ComValue::Currency(CurrencyValue::from_scaled_i64(125_000))
+            );
+            let _ = VariantClear(&mut variant);
+        }
+    }
+
+    #[test]
     fn scalar_double_variant_roundtrips_through_windows_bridge() {
         let mut variant: VARIANT = unsafe { std::mem::zeroed() };
         let value = ComValue::F64(F64Value::from_f64(3.5));
@@ -849,6 +888,24 @@ mod tests {
                 .expect("set double variant");
             assert_eq!(
                 variant_to_com_value(&variant).expect("read double variant"),
+                value
+            );
+            let _ = VariantClear(&mut variant);
+        }
+    }
+
+    #[test]
+    fn scalar_currency_variant_roundtrips_through_windows_bridge() {
+        let mut variant: VARIANT = unsafe { std::mem::zeroed() };
+        let value = ComValue::Currency(CurrencyValue::from_scaled_i64(-42_500));
+        let mut resolve_object =
+            |_handle| Err("object dispatch resolution not expected".to_string());
+        let mut add_ref = |_dispatch| {};
+        unsafe {
+            set_variant_from_com_value(&mut variant, &value, &mut resolve_object, &mut add_ref)
+                .expect("set currency variant");
+            assert_eq!(
+                variant_to_com_value(&variant).expect("read currency variant"),
                 value
             );
             let _ = VariantClear(&mut variant);
@@ -937,6 +994,42 @@ mod tests {
                     RuntimeValue::F64(F64Value::from_f64(12.5)),
                     RuntimeValue::F64(F64Value::from_f64(-4.25)),
                     RuntimeValue::F64(F64Value::from_f64(321.0)),
+                ]))
+            );
+            let _ = VariantClear(&mut variant);
+        }
+    }
+
+    #[test]
+    fn typed_currency_safe_array_roundtrips_through_windows_bridge() {
+        let mut variant: VARIANT = unsafe { std::mem::zeroed() };
+        unsafe {
+            let psa = SafeArrayCreateVector(VT_CY_VARENUM, 0, 3);
+            assert!(
+                !psa.is_null(),
+                "SafeArrayCreateVector(VT_CY_VARENUM) should succeed"
+            );
+            for (index, value) in [125_000i64, -42_500i64, 3_210_000i64]
+                .into_iter()
+                .enumerate()
+            {
+                let index = i32::try_from(index).expect("index should fit in i32");
+                let element = CY { int64: value };
+                let hr =
+                    SafeArrayPutElement(psa.cast_const(), &index, (&element as *const CY).cast());
+                assert!(
+                    hr >= 0,
+                    "SafeArrayPutElement(VT_CY_VARENUM) should succeed: {hr:#010X}"
+                );
+            }
+            variant.Anonymous.Anonymous.vt = VT_ARRAY | VT_CY_VARENUM;
+            variant.Anonymous.Anonymous.Anonymous.parray = psa;
+            assert_eq!(
+                variant_to_com_value(&variant).expect("read VT_CY_VARENUM SAFEARRAY"),
+                ComValue::ArrayIntent(SafeArray::from_values(vec![
+                    RuntimeValue::Currency(CurrencyValue::from_scaled_i64(125_000)),
+                    RuntimeValue::Currency(CurrencyValue::from_scaled_i64(-42_500)),
+                    RuntimeValue::Currency(CurrencyValue::from_scaled_i64(3_210_000)),
                 ]))
             );
             let _ = VariantClear(&mut variant);

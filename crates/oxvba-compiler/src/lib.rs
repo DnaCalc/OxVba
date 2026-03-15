@@ -1406,6 +1406,23 @@ mod tests {
     }
 
     #[test]
+    fn compile_dispatchinvoke_with_currency_result_literal_maps_to_member_token_fifty_five() {
+        let source = "Sub Main()\nDim x\nx = DispatchInvoke(CreateObject(\"OxVba.TestDispatch\"), \"ReturnCurrency\")\nEnd Sub";
+        let out =
+            compile(source).expect("compile should succeed for currency result fixture member");
+        assert!(
+            out.instructions
+                .iter()
+                .any(|i| matches!(i, Instruction::IntrinsicDispatchInvokeHost { .. }))
+        );
+        assert!(
+            out.instructions
+                .iter()
+                .any(|i| matches!(i, Instruction::LoadConstI32 { value: 55, .. }))
+        );
+    }
+
+    #[test]
     fn compile_dispatchinvoke_with_typed_array_result_literal_maps_to_member_token_twenty() {
         let source = "Sub Main()\nDim x\nx = DispatchInvoke(CreateObject(\"OxVba.TestDispatch\"), \"ReturnSmallIntArray\")\nEnd Sub";
         let out =
@@ -1746,6 +1763,23 @@ mod tests {
             out.instructions
                 .iter()
                 .any(|i| matches!(i, Instruction::LoadConstI32 { value: 54, .. }))
+        );
+    }
+
+    #[test]
+    fn compile_dispatchinvoke_with_currency_array_result_literal_maps_to_member_token_fifty_six() {
+        let source = "Sub Main()\nDim x\nx = DispatchInvoke(CreateObject(\"OxVba.TestDispatch\"), \"ReturnCurrencyArray\")\nEnd Sub";
+        let out = compile(source)
+            .expect("compile should succeed for currency-array result fixture member");
+        assert!(
+            out.instructions
+                .iter()
+                .any(|i| matches!(i, Instruction::IntrinsicDispatchInvokeHost { .. }))
+        );
+        assert!(
+            out.instructions
+                .iter()
+                .any(|i| matches!(i, Instruction::LoadConstI32 { value: 56, .. }))
         );
     }
 
