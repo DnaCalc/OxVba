@@ -3322,6 +3322,10 @@ fn map_dispatch_member_literal_token(text: &str) -> Option<i32> {
         "returnplatformuint" => Some(42),
         "returnplatformintarray" => Some(43),
         "returnplatformuintarray" => Some(44),
+        "returnhyper" => Some(45),
+        "returnunsignedhyper" => Some(46),
+        "returnhyperarray" => Some(47),
+        "returnunsignedhyperarray" => Some(48),
         _ => None,
     }
 }

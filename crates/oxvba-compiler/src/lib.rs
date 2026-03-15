@@ -1326,6 +1326,38 @@ mod tests {
         );
     }
     #[test]
+    fn compile_dispatchinvoke_with_hyper_result_literal_maps_to_member_token_forty_five() {
+        let source = "Sub Main()\nDim x\nx = DispatchInvoke(CreateObject(\"OxVba.TestDispatch\"), \"ReturnHyper\")\nEnd Sub";
+        let out = compile(source).expect("compile should succeed for hyper result fixture member");
+        assert!(
+            out.instructions
+                .iter()
+                .any(|i| matches!(i, Instruction::IntrinsicDispatchInvokeHost { .. }))
+        );
+        assert!(
+            out.instructions
+                .iter()
+                .any(|i| matches!(i, Instruction::LoadConstI32 { value: 45, .. }))
+        );
+    }
+
+    #[test]
+    fn compile_dispatchinvoke_with_unsigned_hyper_result_literal_maps_to_member_token_forty_six() {
+        let source = "Sub Main()\nDim x\nx = DispatchInvoke(CreateObject(\"OxVba.TestDispatch\"), \"ReturnUnsignedHyper\")\nEnd Sub";
+        let out = compile(source)
+            .expect("compile should succeed for unsigned-hyper result fixture member");
+        assert!(
+            out.instructions
+                .iter()
+                .any(|i| matches!(i, Instruction::IntrinsicDispatchInvokeHost { .. }))
+        );
+        assert!(
+            out.instructions
+                .iter()
+                .any(|i| matches!(i, Instruction::LoadConstI32 { value: 46, .. }))
+        );
+    }
+    #[test]
     fn compile_dispatchinvoke_with_typed_array_result_literal_maps_to_member_token_twenty() {
         let source = "Sub Main()\nDim x\nx = DispatchInvoke(CreateObject(\"OxVba.TestDispatch\"), \"ReturnSmallIntArray\")\nEnd Sub";
         let out =
@@ -1582,6 +1614,40 @@ mod tests {
             out.instructions
                 .iter()
                 .any(|i| matches!(i, Instruction::LoadConstI32 { value: 44, .. }))
+        );
+    }
+    #[test]
+    fn compile_dispatchinvoke_with_hyper_array_result_literal_maps_to_member_token_forty_seven() {
+        let source = "Sub Main()\nDim x\nx = DispatchInvoke(CreateObject(\"OxVba.TestDispatch\"), \"ReturnHyperArray\")\nEnd Sub";
+        let out =
+            compile(source).expect("compile should succeed for hyper-array result fixture member");
+        assert!(
+            out.instructions
+                .iter()
+                .any(|i| matches!(i, Instruction::IntrinsicDispatchInvokeHost { .. }))
+        );
+        assert!(
+            out.instructions
+                .iter()
+                .any(|i| matches!(i, Instruction::LoadConstI32 { value: 47, .. }))
+        );
+    }
+
+    #[test]
+    fn compile_dispatchinvoke_with_unsigned_hyper_array_result_literal_maps_to_member_token_forty_eight()
+     {
+        let source = "Sub Main()\nDim x\nx = DispatchInvoke(CreateObject(\"OxVba.TestDispatch\"), \"ReturnUnsignedHyperArray\")\nEnd Sub";
+        let out = compile(source)
+            .expect("compile should succeed for unsigned-hyper-array result fixture member");
+        assert!(
+            out.instructions
+                .iter()
+                .any(|i| matches!(i, Instruction::IntrinsicDispatchInvokeHost { .. }))
+        );
+        assert!(
+            out.instructions
+                .iter()
+                .any(|i| matches!(i, Instruction::LoadConstI32 { value: 48, .. }))
         );
     }
     #[test]

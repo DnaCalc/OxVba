@@ -309,6 +309,8 @@ Dim byteValue
 Dim signedByteValue
 Dim platformIntValue
 Dim platformUIntValue
+Dim hyperValue
+Dim unsignedHyperValue
 Dim longValue
 Dim unsignedLongValue
 obj = CreateObject("OxVba.TestDispatch")
@@ -318,6 +320,8 @@ byteValue = DispatchInvoke(obj, "ReturnByte")
 signedByteValue = DispatchInvoke(obj, "ReturnSignedByte")
 platformIntValue = DispatchInvoke(obj, "ReturnPlatformInt")
 platformUIntValue = DispatchInvoke(obj, "ReturnPlatformUInt")
+hyperValue = DispatchInvoke(obj, "ReturnHyper")
+unsignedHyperValue = DispatchInvoke(obj, "ReturnUnsignedHyper")
 longValue = DispatchInvoke(obj, "ReturnLong")
 unsignedLongValue = DispatchInvoke(obj, "ReturnUnsignedLong")
 End Sub
@@ -362,11 +366,21 @@ End Sub
         );
         assert_eq!(
             vm[7],
+            RuntimeValue::I32(-70_000),
+            "VT_I8 result should preserve the current i32 carrier lane when the value fits"
+        );
+        assert_eq!(
+            vm[8],
+            RuntimeValue::I32(70_000),
+            "VT_UI8 result should preserve the current i32 carrier lane when the value fits"
+        );
+        assert_eq!(
+            vm[9],
             RuntimeValue::I32(70_000),
             "VT_I4 result should preserve the current i32 carrier lane"
         );
         assert_eq!(
-            vm[8],
+            vm[10],
             RuntimeValue::I32(70_000),
             "VT_UI4 result should preserve the current i32 carrier lane when the value fits"
         );
@@ -382,6 +396,8 @@ Dim byteArray
 Dim signedByteArray
 Dim platformIntArray
 Dim platformUIntArray
+Dim hyperArray
+Dim unsignedHyperArray
 Dim longArray
 Dim unsignedLongArray
 Dim boolArray
@@ -392,6 +408,8 @@ byteArray = DispatchInvoke(obj, "ReturnByteArray")
 signedByteArray = DispatchInvoke(obj, "ReturnSignedByteArray")
 platformIntArray = DispatchInvoke(obj, "ReturnPlatformIntArray")
 platformUIntArray = DispatchInvoke(obj, "ReturnPlatformUIntArray")
+hyperArray = DispatchInvoke(obj, "ReturnHyperArray")
+unsignedHyperArray = DispatchInvoke(obj, "ReturnUnsignedHyperArray")
 longArray = DispatchInvoke(obj, "ReturnLongArray")
 unsignedLongArray = DispatchInvoke(obj, "ReturnUnsignedLongArray")
 boolArray = DispatchInvoke(obj, "ReturnBoolArray")
@@ -454,11 +472,11 @@ End Sub
         assert_eq!(
             vm[6],
             RuntimeValue::ArrayIntent(SafeArray::from_values(vec![
+                RuntimeValue::I32(-70_000),
+                RuntimeValue::I32(0),
                 RuntimeValue::I32(12),
-                RuntimeValue::I32(-4),
-                RuntimeValue::I32(70_000),
             ])),
-            "VT_ARRAY|VT_I4 result should preserve 32-bit signed array elements"
+            "VT_ARRAY|VT_I8 result should preserve hyper array elements within the current i32 carrier lane"
         );
         assert_eq!(
             vm[7],
@@ -467,10 +485,28 @@ End Sub
                 RuntimeValue::I32(4_096),
                 RuntimeValue::I32(70_000),
             ])),
-            "VT_ARRAY|VT_UI4 result should preserve 32-bit unsigned array elements within the current i32 carrier lane"
+            "VT_ARRAY|VT_UI8 result should preserve unsigned hyper array elements within the current i32 carrier lane"
         );
         assert_eq!(
             vm[8],
+            RuntimeValue::ArrayIntent(SafeArray::from_values(vec![
+                RuntimeValue::I32(12),
+                RuntimeValue::I32(-4),
+                RuntimeValue::I32(70_000),
+            ])),
+            "VT_ARRAY|VT_I4 result should preserve 32-bit signed array elements"
+        );
+        assert_eq!(
+            vm[9],
+            RuntimeValue::ArrayIntent(SafeArray::from_values(vec![
+                RuntimeValue::I32(12),
+                RuntimeValue::I32(4_096),
+                RuntimeValue::I32(70_000),
+            ])),
+            "VT_ARRAY|VT_UI4 result should preserve 32-bit unsigned array elements within the current i32 carrier lane"
+        );
+        assert_eq!(
+            vm[10],
             RuntimeValue::ArrayIntent(SafeArray::from_values(vec![
                 RuntimeValue::Bool(true),
                 RuntimeValue::Bool(false),
@@ -479,7 +515,7 @@ End Sub
             "VT_ARRAY|VT_BOOL result should preserve boolean array elements"
         );
         assert_eq!(
-            vm[9],
+            vm[11],
             RuntimeValue::ArrayIntent(SafeArray::from_values(vec![
                 RuntimeValue::String(BStr("Alpha".to_string())),
                 RuntimeValue::String(BStr("Beta".to_string())),

@@ -37,8 +37,8 @@ use windows_sys::Win32::{
         },
         Variant::{
             VARIANT, VT_ARRAY, VT_BOOL, VT_BSTR, VT_DISPATCH, VT_EMPTY, VT_ERROR, VT_I1, VT_I2,
-            VT_I4, VT_INT, VT_NULL, VT_UI1, VT_UI2, VT_UI4, VT_UINT, VT_UNKNOWN, VT_VARIANT,
-            VariantClear,
+            VT_I4, VT_I8, VT_INT, VT_NULL, VT_UI1, VT_UI2, VT_UI4, VT_UI8, VT_UINT, VT_UNKNOWN,
+            VT_VARIANT, VariantClear,
         },
     },
 };
@@ -106,6 +106,10 @@ pub const TEST_DISPID_RETURN_PLATFORM_INT: i32 = 41;
 pub const TEST_DISPID_RETURN_PLATFORM_UINT: i32 = 42;
 pub const TEST_DISPID_RETURN_PLATFORM_INT_ARRAY: i32 = 43;
 pub const TEST_DISPID_RETURN_PLATFORM_UINT_ARRAY: i32 = 44;
+pub const TEST_DISPID_RETURN_HYPER: i32 = 45;
+pub const TEST_DISPID_RETURN_UNSIGNED_HYPER: i32 = 46;
+pub const TEST_DISPID_RETURN_HYPER_ARRAY: i32 = 47;
+pub const TEST_DISPID_RETURN_UNSIGNED_HYPER_ARRAY: i32 = 48;
 pub const TEST_NAMED_DISPID_LHS: i32 = 101;
 pub const TEST_NAMED_DISPID_RHS: i32 = 102;
 pub const TEST_NAMED_DISPID_INDEX: i32 = 103;
@@ -335,6 +339,64 @@ unsafe fn set_variant_platform_u32_array(
         }
     }
     (*variant).Anonymous.Anonymous.vt = VT_ARRAY | VT_UINT;
+    (*variant).Anonymous.Anonymous.Anonymous.parray = psa;
+    Ok(())
+}
+
+#[cfg(target_os = "windows")]
+#[allow(unsafe_op_in_unsafe_fn)]
+unsafe fn set_variant_i64_array(values: &[i64], variant: *mut VARIANT) -> Result<(), String> {
+    if variant.is_null() {
+        return Ok(());
+    }
+    let len = u32::try_from(values.len())
+        .map_err(|_| "SAFEARRAY payload length exceeds supported u32 range".to_string())?;
+    let psa = SafeArrayCreateVector(VT_I8, 0, len);
+    if psa.is_null() {
+        return Err("SafeArrayCreateVector(VT_I8) returned null".to_string());
+    }
+    for (offset, value) in values.iter().enumerate() {
+        let index = i32::try_from(offset)
+            .map_err(|_| "SAFEARRAY index exceeds supported i32 range".to_string())?;
+        let hr = SafeArrayPutElement(psa.cast_const(), &index, (value as *const i64).cast());
+        if hr < 0 {
+            let _ = SafeArrayDestroy(psa.cast_const());
+            return Err(format!(
+                "SafeArrayPutElement(VT_I8) failed with HRESULT {:#010X} at index {}",
+                hr as u32, index
+            ));
+        }
+    }
+    (*variant).Anonymous.Anonymous.vt = VT_ARRAY | VT_I8;
+    (*variant).Anonymous.Anonymous.Anonymous.parray = psa;
+    Ok(())
+}
+
+#[cfg(target_os = "windows")]
+#[allow(unsafe_op_in_unsafe_fn)]
+unsafe fn set_variant_u64_array(values: &[u64], variant: *mut VARIANT) -> Result<(), String> {
+    if variant.is_null() {
+        return Ok(());
+    }
+    let len = u32::try_from(values.len())
+        .map_err(|_| "SAFEARRAY payload length exceeds supported u32 range".to_string())?;
+    let psa = SafeArrayCreateVector(VT_UI8, 0, len);
+    if psa.is_null() {
+        return Err("SafeArrayCreateVector(VT_UI8) returned null".to_string());
+    }
+    for (offset, value) in values.iter().enumerate() {
+        let index = i32::try_from(offset)
+            .map_err(|_| "SAFEARRAY index exceeds supported i32 range".to_string())?;
+        let hr = SafeArrayPutElement(psa.cast_const(), &index, (value as *const u64).cast());
+        if hr < 0 {
+            let _ = SafeArrayDestroy(psa.cast_const());
+            return Err(format!(
+                "SafeArrayPutElement(VT_UI8) failed with HRESULT {:#010X} at index {}",
+                hr as u32, index
+            ));
+        }
+    }
+    (*variant).Anonymous.Anonymous.vt = VT_ARRAY | VT_UI8;
     (*variant).Anonymous.Anonymous.Anonymous.parray = psa;
     Ok(())
 }
@@ -1428,6 +1490,10 @@ unsafe extern "system" fn oxvba_test_get_ids_of_names(
             "returnplatformuint" => TEST_DISPID_RETURN_PLATFORM_UINT,
             "returnplatformintarray" => TEST_DISPID_RETURN_PLATFORM_INT_ARRAY,
             "returnplatformuintarray" => TEST_DISPID_RETURN_PLATFORM_UINT_ARRAY,
+            "returnhyper" => TEST_DISPID_RETURN_HYPER,
+            "returnunsignedhyper" => TEST_DISPID_RETURN_UNSIGNED_HYPER,
+            "returnhyperarray" => TEST_DISPID_RETURN_HYPER_ARRAY,
+            "returnunsignedhyperarray" => TEST_DISPID_RETURN_UNSIGNED_HYPER_ARRAY,
             "lhs" => TEST_NAMED_DISPID_LHS,
             "rhs" => TEST_NAMED_DISPID_RHS,
             "index" => TEST_NAMED_DISPID_INDEX,
@@ -1793,6 +1859,26 @@ unsafe extern "system" fn oxvba_test_invoke(
             }
             COM_S_OK
         }
+        TEST_DISPID_RETURN_HYPER => {
+            if (wflags & DISPATCH_METHOD) == 0 || cargs != 0 {
+                return COM_DISP_E_BADPARAMCOUNT;
+            }
+            if !pvarresult.is_null() {
+                (*pvarresult).Anonymous.Anonymous.vt = VT_I8;
+                (*pvarresult).Anonymous.Anonymous.Anonymous.llVal = -70_000;
+            }
+            COM_S_OK
+        }
+        TEST_DISPID_RETURN_UNSIGNED_HYPER => {
+            if (wflags & DISPATCH_METHOD) == 0 || cargs != 0 {
+                return COM_DISP_E_BADPARAMCOUNT;
+            }
+            if !pvarresult.is_null() {
+                (*pvarresult).Anonymous.Anonymous.vt = VT_UI8;
+                (*pvarresult).Anonymous.Anonymous.Anonymous.ullVal = 70_000;
+            }
+            COM_S_OK
+        }
         TEST_DISPID_RETURN_SMALLINT_ARRAY => {
             if (wflags & DISPATCH_METHOD) == 0 || cargs != 0 {
                 return COM_DISP_E_BADPARAMCOUNT;
@@ -1878,6 +1964,24 @@ unsafe extern "system" fn oxvba_test_invoke(
                 return COM_DISP_E_BADPARAMCOUNT;
             }
             match set_variant_platform_u32_array(&[12, 4_096, 70_000], pvarresult) {
+                Ok(()) => COM_S_OK,
+                Err(_) => COM_E_INVALIDARG,
+            }
+        }
+        TEST_DISPID_RETURN_HYPER_ARRAY => {
+            if (wflags & DISPATCH_METHOD) == 0 || cargs != 0 {
+                return COM_DISP_E_BADPARAMCOUNT;
+            }
+            match set_variant_i64_array(&[-70_000, 0, 12], pvarresult) {
+                Ok(()) => COM_S_OK,
+                Err(_) => COM_E_INVALIDARG,
+            }
+        }
+        TEST_DISPID_RETURN_UNSIGNED_HYPER_ARRAY => {
+            if (wflags & DISPATCH_METHOD) == 0 || cargs != 0 {
+                return COM_DISP_E_BADPARAMCOUNT;
+            }
+            match set_variant_u64_array(&[12, 4_096, 70_000], pvarresult) {
                 Ok(()) => COM_S_OK,
                 Err(_) => COM_E_INVALIDARG,
             }
