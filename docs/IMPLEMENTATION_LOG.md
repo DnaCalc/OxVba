@@ -476,6 +476,13 @@
 - In [lib.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-compiler\src\lib.rs), added compiler token coverage proving `DispatchInvoke(..., "ReturnSmallIntMatrix")` lowers to member token `30`.
 - In [com_client_end_to_end.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-host\tests\com_client_end_to_end.rs), added end-to-end VM/JIT coverage proving rank-2 SAFEARRAY results now surface a stable runtime adapter fault containing `unsupported SAFEARRAY rank 2` instead of crashing or drifting semantically.
 - Updated [CURRENT_BLOCKERS.md](C:\Work\DnaCalc\OxVba\CURRENT_BLOCKERS.md) so the remaining multidimensional SAFEARRAY gap is documented as unsupported-but-bounded rather than unproven.
+## 2026-03-15 - Locked direct COM failure-detail parity for the bounded `IP-03A` subset
+
+- Continued the late-bound COM fidelity work without overclaiming broader Office-style automation parity.
+- In [com_client_end_to_end.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-host\tests\com_client_end_to_end.rs), added direct error-path VM/JIT parity coverage proving:
+  - `DispatchInvoke(obj, "SumPair", "bad", 42)` preserves a real `DISP_E_TYPEMISMATCH` adapter fault with `arg_err=1`,
+  - `DispatchInvoke(obj, "RaiseException")` preserves bounded `EXCEPINFO` source, description, and scode details without synthesizing a fake `arg_err`.
+- Updated [CURRENT_BLOCKERS.md](C:\Work\DnaCalc\OxVba\CURRENT_BLOCKERS.md) so the remaining external `Invoke` fidelity gap is documented relative to this now-proven controlled subset rather than as an unqualified absence of host-facing error detail.
 ## 2026-03-14 - Closed the typed `VT_ARRAY | VT_UNKNOWN` result lane in `IP-03A`
 
 - Continued the adjacent `IP-03A` substrate slice for typed interface SAFEARRAY results where each element arrives as `VT_UNKNOWN` but exposes `IDispatch`.
@@ -582,6 +589,7 @@
   - Let x = 5 plus Set obj = CreateObject(4) executes successfully,
   - Set x = 7 fails deterministically with the expected type error.
 - IP-02 remains in progress: broader typed/object Set vs Let parity, non-authoritative default-member resolution, and wider Office-style call-vs-value context parity are still open.
+
 
 
 

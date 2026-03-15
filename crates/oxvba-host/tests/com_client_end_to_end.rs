@@ -666,6 +666,65 @@ End Sub
     }
 
     #[test]
+    fn dispatchinvoke_type_mismatch_arg_error_surfaces_deterministically() {
+        let source = r#"
+Sub Main()
+Dim obj
+Dim failed
+obj = CreateObject("OxVba.TestDispatch")
+failed = DispatchInvoke(obj, "SumPair", Array(1), 42)
+End Sub
+"#;
+
+        let vm = run_windows_host_backed_error(source, false);
+        let jit = run_windows_host_backed_error(source, true);
+        assert!(
+            vm.contains("com-dispatch-arg-error;hresult=0x80020005;arg_err=1;")
+                && jit.contains("com-dispatch-arg-error;hresult=0x80020005;arg_err=1;"),
+            "expected stable type-mismatch arg_err surface across VM/JIT, got vm={vm:?} jit={jit:?}"
+        );
+        assert!(
+            vm.contains("IDispatch::Invoke(method dispid=")
+                && vm.contains("failed with HRESULT 0x80020005 (arg_err=1)")
+                && jit.contains("IDispatch::Invoke(method dispid=")
+                && jit.contains("failed with HRESULT 0x80020005 (arg_err=1)"),
+            "expected raw invoke arg_err detail across VM/JIT, got vm={vm:?} jit={jit:?}"
+        );
+    }
+
+    #[test]
+    fn dispatchinvoke_exception_details_surface_deterministically() {
+        let source = r#"
+Sub Main()
+Dim obj
+Dim failed
+obj = CreateObject("OxVba.TestDispatch")
+failed = DispatchInvoke(obj, "RaiseException")
+End Sub
+"#;
+
+        let vm = run_windows_host_backed_error(source, false);
+        let jit = run_windows_host_backed_error(source, true);
+        assert!(
+            vm.contains("com-dispatch-exception-raised;hresult=0x80020009;excep_scode=0x80020009;")
+                && jit.contains(
+                    "com-dispatch-exception-raised;hresult=0x80020009;excep_scode=0x80020009;"
+                ),
+            "expected stable exception prefix across VM/JIT, got vm={vm:?} jit={jit:?}"
+        );
+        assert!(
+            vm.contains("excep_source=\"OxVba.TestDispatch\"")
+                && vm.contains("excep_description=\"controlled dispatch exception\"")
+                && jit.contains("excep_source=\"OxVba.TestDispatch\"")
+                && jit.contains("excep_description=\"controlled dispatch exception\""),
+            "expected EXCEPINFO source/description across VM/JIT, got vm={vm:?} jit={jit:?}"
+        );
+        assert!(
+            !vm.contains("arg_err=") && !jit.contains("arg_err="),
+            "exception path should not synthesize arg_err, got vm={vm:?} jit={jit:?}"
+        );
+    }
+    #[test]
     fn dispatchinvoke_error_path_routes_through_on_error_resume_next() {
         let out = run_windows_host_backed(
             r#"

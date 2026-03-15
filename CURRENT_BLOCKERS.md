@@ -75,6 +75,7 @@ Run context: active parity/compliance execution plus in-progress feature worklis
   - controlled host coverage now also proves a stable unsupported-path diagnostic for rank-2 typed SAFEARRAY results instead of an unbounded crash or shape drift,
   - invoke failure translation now distinguishes real `ArgErr` presence from the previous synthetic `arg_err=0` fallback,
   - controlled `DISP_E_EXCEPTION` lanes now preserve bounded `EXCEPINFO` source/description/scode details in the adapter-fault surface,
+  - controlled direct-error host coverage now also proves VM/JIT parity for both real `arg_err` indexing on `DISP_E_TYPEMISMATCH` and bounded `EXCEPINFO` source/description/scode detail on `DISP_E_EXCEPTION`,
   - explicit `DispatchInvoke(obj, 0, name := value)` now routes through authoritative default-member metadata when the binding exposes one,
   - natural late-bound default-member calls with named arguments now lower and execute when the bound COM object exposes authoritative default-member metadata,
   - broad non-`IDispatch` interface-pointer handling, multi-dimensional SAFEARRAYs, non-`IDispatch` interface arrays, and fuller external `VARIANT` parity remain below target,
@@ -403,6 +404,7 @@ Run context: active parity/compliance execution plus in-progress feature worklis
 - Previously resolved blockers:
   - `BLK-EVT-001` — resolved (runtime subscription graph)
   - `BLK-COM-001` — resolved (COM event callback parity with external registered server evidence)
+
 
 
 
