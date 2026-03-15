@@ -1,7 +1,7 @@
 pub const DISPATCH_INVOKE_MISSING_ARG_TOKEN: i32 = i32::MIN + 2_048;
 
 use oxvba_runtime::{
-    ObjectHandle, RuntimeValue,
+    F64Value, ObjectHandle, RuntimeValue,
     bstr::BStr,
     safe_array::{
         SafeArray, array_tag_from_safe_array, marshal_dispatch_argument, safe_array_from_tag,
@@ -84,6 +84,7 @@ pub enum ComValue {
     ErrorCode(i32),
     Bool(bool),
     I32(i32),
+    F64(F64Value),
     String(BStr),
     ArrayIntent(SafeArray),
     ObjectHandle(ObjectHandle),
@@ -97,6 +98,7 @@ impl ComValue {
             RuntimeValue::ErrorCode(code) => Self::ErrorCode(*code),
             RuntimeValue::Bool(value) => Self::Bool(*value),
             RuntimeValue::I32(value) => Self::I32(*value),
+            RuntimeValue::F64(value) => Self::F64(*value),
             RuntimeValue::String(value) => Self::String(value.clone()),
             RuntimeValue::ArrayIntent(array) => Self::ArrayIntent(array.clone()),
             RuntimeValue::ObjectHandle(handle) => Self::ObjectHandle(*handle),
@@ -127,6 +129,7 @@ impl ComValue {
             Self::ErrorCode(code) => RuntimeValue::ErrorCode(*code),
             Self::Bool(value) => RuntimeValue::Bool(*value),
             Self::I32(value) => RuntimeValue::I32(*value),
+            Self::F64(value) => RuntimeValue::F64(*value),
             Self::String(value) => RuntimeValue::String(value.clone()),
             Self::ArrayIntent(array) => RuntimeValue::ArrayIntent(array.clone()),
             Self::ObjectHandle(handle) => RuntimeValue::ObjectHandle(*handle),
@@ -241,7 +244,7 @@ pub struct ComCallbackPayload {
 mod tests {
     use super::{ComMemberToken, ComValue};
     use oxvba_runtime::{
-        ObjectHandle, RuntimeValue,
+        F64Value, ObjectHandle, RuntimeValue,
         bstr::BStr,
         safe_array::{ARRAY_TAG_BASE, SafeArray},
         value_tags::{EMPTY_TAG, NULL_TAG, error_tag_from_code},
@@ -288,12 +291,20 @@ mod tests {
             ComValue::Bool(true)
         );
         assert_eq!(
+            ComValue::from_runtime_value(&RuntimeValue::F64(F64Value::from_f64(3.5))),
+            ComValue::F64(F64Value::from_f64(3.5))
+        );
+        assert_eq!(
             ComValue::from_runtime_value(&RuntimeValue::String(BStr("ABC".to_string()))),
             ComValue::String(BStr("ABC".to_string()))
         );
         assert_eq!(
             ComValue::String(BStr("ABC".to_string())).to_runtime_value(),
             RuntimeValue::String(BStr("ABC".to_string()))
+        );
+        assert_eq!(
+            ComValue::F64(F64Value::from_f64(3.5)).to_runtime_value(),
+            RuntimeValue::F64(F64Value::from_f64(3.5))
         );
         assert_eq!(
             ComValue::from_runtime_value(&RuntimeValue::ObjectHandle(ObjectHandle::new(1234))),

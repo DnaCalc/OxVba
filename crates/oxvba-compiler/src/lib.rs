@@ -1358,6 +1358,22 @@ mod tests {
         );
     }
     #[test]
+    fn compile_dispatchinvoke_with_double_result_literal_maps_to_member_token_forty_nine() {
+        let source = "Sub Main()\nDim x\nx = DispatchInvoke(CreateObject(\"OxVba.TestDispatch\"), \"ReturnDouble\")\nEnd Sub";
+        let out = compile(source).expect("compile should succeed for double result fixture member");
+        assert!(
+            out.instructions
+                .iter()
+                .any(|i| matches!(i, Instruction::IntrinsicDispatchInvokeHost { .. }))
+        );
+        assert!(
+            out.instructions
+                .iter()
+                .any(|i| matches!(i, Instruction::LoadConstI32 { value: 49, .. }))
+        );
+    }
+
+    #[test]
     fn compile_dispatchinvoke_with_typed_array_result_literal_maps_to_member_token_twenty() {
         let source = "Sub Main()\nDim x\nx = DispatchInvoke(CreateObject(\"OxVba.TestDispatch\"), \"ReturnSmallIntArray\")\nEnd Sub";
         let out =
@@ -1650,6 +1666,23 @@ mod tests {
                 .any(|i| matches!(i, Instruction::LoadConstI32 { value: 48, .. }))
         );
     }
+    #[test]
+    fn compile_dispatchinvoke_with_double_array_result_literal_maps_to_member_token_fifty() {
+        let source = "Sub Main()\nDim x\nx = DispatchInvoke(CreateObject(\"OxVba.TestDispatch\"), \"ReturnDoubleArray\")\nEnd Sub";
+        let out =
+            compile(source).expect("compile should succeed for double-array result fixture member");
+        assert!(
+            out.instructions
+                .iter()
+                .any(|i| matches!(i, Instruction::IntrinsicDispatchInvokeHost { .. }))
+        );
+        assert!(
+            out.instructions
+                .iter()
+                .any(|i| matches!(i, Instruction::LoadConstI32 { value: 50, .. }))
+        );
+    }
+
     #[test]
     fn compile_dispatchinvoke_with_smallint_matrix_result_literal_maps_to_member_token_thirty() {
         let source = "Sub Main()\nDim x\nx = DispatchInvoke(CreateObject(\"OxVba.TestDispatch\"), \"ReturnSmallIntMatrix\")\nEnd Sub";

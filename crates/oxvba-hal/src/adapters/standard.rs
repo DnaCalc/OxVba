@@ -660,6 +660,7 @@ impl StandardHostServices {
             RuntimeValue::Null => "Null".to_string(),
             RuntimeValue::ErrorCode(code) => format!("Error {code}"),
             RuntimeValue::I32(value) => value.to_string(),
+            RuntimeValue::F64(value) => value.as_f64().to_string(),
             RuntimeValue::ArrayIntent(array) => format!("<array:{}>", array.len),
             RuntimeValue::ObjectHandle(handle) => format!("<object:{handle}>"),
             RuntimeValue::BindingHandle(handle) => format!("<binding:{handle}>"),

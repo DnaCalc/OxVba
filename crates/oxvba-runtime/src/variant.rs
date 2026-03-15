@@ -1,4 +1,4 @@
-use crate::runtime_value::RuntimeValue;
+use crate::runtime_value::{F64Value, RuntimeValue};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u16)]
@@ -216,6 +216,7 @@ impl Variant {
             RuntimeValue::Null => Ok(Self::null()),
             RuntimeValue::ErrorCode(code) => Ok(Self::from_error_code(*code)),
             RuntimeValue::I32(value) => Ok(Self::from_i32(*value)),
+            RuntimeValue::F64(value) => Ok(Self::from_f64(value.as_f64())),
             RuntimeValue::Bool(value) => Ok(Self::from_bool(*value)),
             RuntimeValue::String(_) => Err(
                 "string runtime values are not yet representable in owned runtime Variant"
@@ -248,6 +249,10 @@ impl Variant {
                 .as_i32()
                 .map(RuntimeValue::I32)
                 .ok_or_else(|| "invalid Long variant payload".to_string()),
+            VarType::Double => self
+                .as_f64()
+                .map(|value| RuntimeValue::F64(F64Value::from_f64(value)))
+                .ok_or_else(|| "invalid Double variant payload".to_string()),
             VarType::Boolean => self
                 .as_bool()
                 .map(RuntimeValue::Bool)
@@ -266,7 +271,7 @@ impl Variant {
 
 #[cfg(test)]
 mod tests {
-    use crate::{RuntimeValue, bstr::BStr};
+    use crate::{F64Value, RuntimeValue, bstr::BStr};
 
     use super::{VarType, Variant, VariantData};
 
@@ -316,6 +321,16 @@ mod tests {
                 .to_runtime_value()
                 .expect("bool Variant should bridge back"),
             RuntimeValue::Bool(true)
+        );
+
+        let double_variant =
+            Variant::from_runtime_value(&RuntimeValue::F64(F64Value::from_f64(3.5)))
+                .expect("double runtime value should bridge to Variant");
+        assert_eq!(
+            double_variant
+                .to_runtime_value()
+                .expect("double Variant should bridge back"),
+            RuntimeValue::F64(F64Value::from_f64(3.5))
         );
 
         let null_variant =

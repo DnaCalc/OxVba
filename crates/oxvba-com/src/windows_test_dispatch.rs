@@ -43,6 +43,8 @@ use windows_sys::Win32::{
     },
 };
 
+const VT_R8_VARENUM: u16 = 5;
+
 type RawDispatchPtr = usize;
 type RawUnknownPtr = usize;
 
@@ -110,6 +112,8 @@ pub const TEST_DISPID_RETURN_HYPER: i32 = 45;
 pub const TEST_DISPID_RETURN_UNSIGNED_HYPER: i32 = 46;
 pub const TEST_DISPID_RETURN_HYPER_ARRAY: i32 = 47;
 pub const TEST_DISPID_RETURN_UNSIGNED_HYPER_ARRAY: i32 = 48;
+pub const TEST_DISPID_RETURN_DOUBLE: i32 = 49;
+pub const TEST_DISPID_RETURN_DOUBLE_ARRAY: i32 = 50;
 pub const TEST_NAMED_DISPID_LHS: i32 = 101;
 pub const TEST_NAMED_DISPID_RHS: i32 = 102;
 pub const TEST_NAMED_DISPID_INDEX: i32 = 103;
@@ -374,6 +378,32 @@ unsafe fn set_variant_i64_array(values: &[i64], variant: *mut VARIANT) -> Result
 
 #[cfg(target_os = "windows")]
 #[allow(unsafe_op_in_unsafe_fn)]
+unsafe fn set_variant_f64_array(values: &[f64], variant: *mut VARIANT) -> Result<(), String> {
+    if variant.is_null() {
+        return Ok(());
+    }
+    let len = u32::try_from(values.len())
+        .map_err(|_| "SAFEARRAY payload length exceeds supported u32 range".to_string())?;
+    let psa = SafeArrayCreateVector(VT_R8_VARENUM, 0, len);
+    if psa.is_null() {
+        return Err("SafeArrayCreateVector(VT_R8_VARENUM) returned null".to_string());
+    }
+    for (offset, value) in values.iter().enumerate() {
+        let index = i32::try_from(offset)
+            .map_err(|_| "SAFEARRAY index exceeds supported i32 range".to_string())?;
+        let hr = SafeArrayPutElement(psa.cast_const(), &index, (value as *const f64).cast());
+        if hr < 0 {
+            let _ = SafeArrayDestroy(psa.cast_const());
+            return Err(format!(
+                "SafeArrayPutElement(VT_R8_VARENUM) failed with HRESULT {:#010X} at index {}",
+                hr as u32, index
+            ));
+        }
+    }
+    (*variant).Anonymous.Anonymous.vt = VT_ARRAY | VT_R8_VARENUM;
+    (*variant).Anonymous.Anonymous.Anonymous.parray = psa;
+    Ok(())
+}
 unsafe fn set_variant_u64_array(values: &[u64], variant: *mut VARIANT) -> Result<(), String> {
     if variant.is_null() {
         return Ok(());
@@ -1879,6 +1909,16 @@ unsafe extern "system" fn oxvba_test_invoke(
             }
             COM_S_OK
         }
+        TEST_DISPID_RETURN_DOUBLE => {
+            if (wflags & DISPATCH_METHOD) == 0 || cargs != 0 {
+                return COM_DISP_E_BADPARAMCOUNT;
+            }
+            if !pvarresult.is_null() {
+                (*pvarresult).Anonymous.Anonymous.vt = VT_R8_VARENUM;
+                (*pvarresult).Anonymous.Anonymous.Anonymous.dblVal = 12.5;
+            }
+            COM_S_OK
+        }
         TEST_DISPID_RETURN_SMALLINT_ARRAY => {
             if (wflags & DISPATCH_METHOD) == 0 || cargs != 0 {
                 return COM_DISP_E_BADPARAMCOUNT;
@@ -1982,6 +2022,15 @@ unsafe extern "system" fn oxvba_test_invoke(
                 return COM_DISP_E_BADPARAMCOUNT;
             }
             match set_variant_u64_array(&[12, 4_096, 70_000], pvarresult) {
+                Ok(()) => COM_S_OK,
+                Err(_) => COM_E_INVALIDARG,
+            }
+        }
+        TEST_DISPID_RETURN_DOUBLE_ARRAY => {
+            if (wflags & DISPATCH_METHOD) == 0 || cargs != 0 {
+                return COM_DISP_E_BADPARAMCOUNT;
+            }
+            match set_variant_f64_array(&[12.5, -4.25, 321.0], pvarresult) {
                 Ok(()) => COM_S_OK,
                 Err(_) => COM_E_INVALIDARG,
             }

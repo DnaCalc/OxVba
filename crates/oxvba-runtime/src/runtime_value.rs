@@ -59,6 +59,49 @@ define_i32_handle!(ObjectHandle);
 define_i32_handle!(BindingHandle);
 define_i32_handle!(DynLinkSymbol);
 
+#[repr(transparent)]
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Default,
+    rkyv::Archive,
+    rkyv::Serialize,
+    rkyv::Deserialize,
+    serde::Serialize,
+    serde::Deserialize,
+)]
+pub struct F64Value(u64);
+
+impl F64Value {
+    pub const fn from_bits(bits: u64) -> Self {
+        Self(bits)
+    }
+
+    pub fn from_f64(value: f64) -> Self {
+        Self(value.to_bits())
+    }
+
+    pub const fn bits(self) -> u64 {
+        self.0
+    }
+
+    pub fn as_f64(self) -> f64 {
+        f64::from_bits(self.0)
+    }
+}
+
+impl core::fmt::Display for F64Value {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        write!(f, "{}", self.as_f64())
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub enum RuntimeValue {
     #[default]
@@ -66,6 +109,7 @@ pub enum RuntimeValue {
     Null,
     ErrorCode(i32),
     I32(i32),
+    F64(F64Value),
     Bool(bool),
     String(BStr),
     ArrayIntent(SafeArray),
@@ -96,6 +140,9 @@ impl RuntimeValue {
             Self::Null => Ok(NULL_TAG),
             Self::ErrorCode(code) => Ok(error_tag_from_code(*code)),
             Self::I32(value) => Ok(*value),
+            Self::F64(_) => {
+                Err("f64 cannot be represented in current legacy i32 slot lane".to_string())
+            }
             Self::Bool(value) => Ok(i32::from(*value)),
             Self::ArrayIntent(array) => array_tag_from_safe_array(array).ok_or_else(|| {
                 "array intent cannot be represented in current legacy slot tag".to_string()
@@ -126,7 +173,7 @@ mod tests {
         value_tags::{EMPTY_TAG, NULL_TAG, error_tag_from_code},
     };
 
-    use super::{BindingHandle, ObjectHandle, RuntimeValue};
+    use super::{BindingHandle, F64Value, ObjectHandle, RuntimeValue};
 
     #[test]
     fn runtime_value_from_legacy_i32_preserves_tagged_shapes() {
@@ -158,6 +205,11 @@ mod tests {
         );
         assert!(
             RuntimeValue::String(crate::bstr::BStr("ABC".to_string()))
+                .to_legacy_i32()
+                .is_err()
+        );
+        assert!(
+            RuntimeValue::F64(F64Value::from_f64(3.5))
                 .to_legacy_i32()
                 .is_err()
         );
@@ -193,5 +245,12 @@ mod tests {
                 .expect("binding handle"),
             77
         );
+    }
+
+    #[test]
+    fn runtime_value_f64_preserves_bit_stable_shape() {
+        let value = F64Value::from_f64(-12.5);
+        assert_eq!(value.as_f64(), -12.5);
+        assert_eq!(F64Value::from_bits(value.bits()), value);
     }
 }
