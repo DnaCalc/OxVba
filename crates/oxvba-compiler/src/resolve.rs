@@ -3334,6 +3334,8 @@ fn map_dispatch_member_literal_token(text: &str) -> Option<i32> {
         "returndatearray" => Some(54),
         "returncurrency" => Some(55),
         "returncurrencyarray" => Some(56),
+        "returndecimal" => Some(57),
+        "returndecimalarray" => Some(58),
         _ => None,
     }
 }

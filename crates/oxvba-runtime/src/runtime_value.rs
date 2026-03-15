@@ -1,5 +1,6 @@
 use crate::{
     bstr::BStr,
+    decimal::Decimal96,
     safe_array::{SafeArray, array_tag_from_safe_array, safe_array_from_tag},
     value_tags::{EMPTY_TAG, NULL_TAG, error_code_from_tag, error_tag_from_code, is_error_tag},
 };
@@ -162,6 +163,7 @@ pub enum RuntimeValue {
     ErrorCode(i32),
     I32(i32),
     F64(F64Value),
+    Decimal(Decimal96),
     Currency(CurrencyValue),
     Bool(bool),
     String(BStr),
@@ -195,6 +197,9 @@ impl RuntimeValue {
             Self::I32(value) => Ok(*value),
             Self::F64(_) => {
                 Err("f64 cannot be represented in current legacy i32 slot lane".to_string())
+            }
+            Self::Decimal(_) => {
+                Err("decimal cannot be represented in current legacy i32 slot lane".to_string())
             }
             Self::Currency(_) => {
                 Err("currency cannot be represented in current legacy i32 slot lane".to_string())
@@ -230,6 +235,7 @@ mod tests {
     };
 
     use super::{BindingHandle, CurrencyValue, F64Value, ObjectHandle, RuntimeValue};
+    use crate::decimal::Decimal96;
 
     #[test]
     fn runtime_value_from_legacy_i32_preserves_tagged_shapes() {
@@ -266,6 +272,11 @@ mod tests {
         );
         assert!(
             RuntimeValue::F64(F64Value::from_f64(3.5))
+                .to_legacy_i32()
+                .is_err()
+        );
+        assert!(
+            RuntimeValue::Decimal(Decimal96::from_parts(123_450, 0, 0, 3, false))
                 .to_legacy_i32()
                 .is_err()
         );
@@ -321,5 +332,17 @@ mod tests {
         assert_eq!(value.scaled_i64(), -42_500);
         assert_eq!(value.to_string(), "-4.25");
         assert_eq!(CurrencyValue::from_scaled_i64(3_210_000).to_string(), "321");
+    }
+
+    #[test]
+    fn runtime_value_decimal_preserves_exact_shape() {
+        let value = Decimal96::from_parts(123_450, 0, 0, 3, true);
+        assert_eq!(value.scale(), 3);
+        assert!(value.is_negative());
+        assert_eq!(value.to_string(), "-123.45");
+        assert_eq!(
+            RuntimeValue::Decimal(value),
+            RuntimeValue::Decimal(Decimal96::from_scale_sign(123_450, 0, 0, value.scale_sign))
+        );
     }
 }

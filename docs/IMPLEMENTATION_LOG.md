@@ -1,3 +1,12 @@
+## 2026-03-15 - Added controlled `VT_DECIMAL` COM result transport evidence in `IP-03A`
+
+- Continued the active late-bound COM value-transport pass by introducing an exact `Decimal96` semantic carrier instead of degrading automation `Decimal` payloads into the float or legacy integer lanes.
+- In [decimal.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-runtime\src\decimal.rs), [runtime_value.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-runtime\src\runtime_value.rs), and [variant.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-runtime\src\variant.rs), added the exact decimal carrier plus owned runtime `Variant` bridging for `Decimal`.
+- In [model.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-com\src\model.rs) and [windows_variant.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-com\src\windows_variant.rs), extended the semantic `ComValue` bridge and Windows `VARIANT` / typed SAFEARRAY translation so scalar `VT_DECIMAL` and one-dimensional typed `VT_ARRAY | VT_DECIMAL` results now roundtrip on the exact decimal carrier.
+- In [windows_test_dispatch.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-com\src\windows_test_dispatch.rs), added the controlled `ReturnDecimal` and `ReturnDecimalArray` fixture members.
+- In [typelib_catalog.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-com\src\typelib_catalog.rs), [lib.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-compiler\src\lib.rs), [project.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-compiler\src\project.rs), and [resolve.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-compiler\src\resolve.rs), extended controlled metadata and compiler member-token coverage for `57` and `58`.
+- In [standard.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-hal\src\adapters\standard.rs), [main.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-cli\src\main.rs), and [com_client_end_to_end.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-host\tests\com_client_end_to_end.rs), updated host-facing formatting, HAL metadata expectations, and VM/JIT parity coverage so scalar `VT_DECIMAL` and typed `VT_ARRAY | VT_DECIMAL` results stay deterministic on the exact decimal carrier.
+- Updated [CURRENT_BLOCKERS.md](C:\Work\DnaCalc\OxVba\CURRENT_BLOCKERS.md) and [IN_PROGRESS_FEATURE_WORKLIST.md](C:\Work\DnaCalc\OxVba\docs\IN_PROGRESS_FEATURE_WORKLIST.md) so the supported COM value-transport subset now explicitly includes automation `Decimal` while the broader parity program remains open.
 ## 2026-03-15 - Added controlled `VT_CY` / `Currency` COM result transport evidence in `IP-03A`
 
 - Continued the active late-bound COM value-transport pass by introducing an exact scaled-`i64` semantic currency carrier instead of widening automation `Currency` payloads into the existing float lane.
@@ -647,6 +656,7 @@
   - Let x = 5 plus Set obj = CreateObject(4) executes successfully,
   - Set x = 7 fails deterministically with the expected type error.
 - IP-02 remains in progress: broader typed/object Set vs Let parity, non-authoritative default-member resolution, and wider Office-style call-vs-value context parity are still open.
+
 
 
 

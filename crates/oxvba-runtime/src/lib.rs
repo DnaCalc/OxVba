@@ -11,6 +11,7 @@ pub mod safe_array;
 pub mod value_tags;
 pub mod variant;
 
+pub use decimal::Decimal96;
 pub use runtime_value::{
     BindingHandle, CurrencyValue, DynLinkSymbol, F64Value, ObjectHandle, RuntimeValue,
 };

@@ -1,9 +1,13 @@
 use crate::ComValue;
-use oxvba_runtime::{CurrencyValue, F64Value, ObjectHandle, bstr::BStr, safe_array::SafeArray};
+use oxvba_runtime::{
+    CurrencyValue, Decimal96, F64Value, ObjectHandle, bstr::BStr, safe_array::SafeArray,
+};
 use std::ffi::c_void;
 
 #[cfg(target_os = "windows")]
-use windows_sys::Win32::Foundation::{SysAllocString, SysFreeString, SysStringLen, VARIANT_BOOL};
+use windows_sys::Win32::Foundation::{
+    DECIMAL, SysAllocString, SysFreeString, SysStringLen, VARIANT_BOOL,
+};
 #[cfg(target_os = "windows")]
 use windows_sys::Win32::System::Com::{CY, SAFEARRAY};
 #[cfg(target_os = "windows")]
@@ -13,8 +17,8 @@ use windows_sys::Win32::System::Ole::{
 };
 #[cfg(target_os = "windows")]
 use windows_sys::Win32::System::Variant::{
-    VARIANT, VT_ARRAY, VT_BOOL, VT_BSTR, VT_DISPATCH, VT_EMPTY, VT_ERROR, VT_I1, VT_I2, VT_I4,
-    VT_I8, VT_INT, VT_NULL, VT_UI1, VT_UI2, VT_UI4, VT_UI8, VT_UINT, VT_UNKNOWN, VT_VARIANT,
+    VARIANT, VT_ARRAY, VT_BOOL, VT_BSTR, VT_DECIMAL, VT_DISPATCH, VT_EMPTY, VT_ERROR, VT_I1, VT_I2,
+    VT_I4, VT_I8, VT_INT, VT_NULL, VT_UI1, VT_UI2, VT_UI4, VT_UI8, VT_UINT, VT_UNKNOWN, VT_VARIANT,
     VariantClear,
 };
 
@@ -34,6 +38,31 @@ pub enum VariantResultValue {
 unsafe fn alloc_bstr(text: &str) -> windows_sys::core::BSTR {
     let wide: Vec<u16> = text.encode_utf16().chain(std::iter::once(0)).collect();
     SysAllocString(wide.as_ptr())
+}
+
+#[cfg(target_os = "windows")]
+#[allow(unsafe_op_in_unsafe_fn)]
+unsafe fn decimal96_from_windows(decimal: DECIMAL) -> Decimal96 {
+    Decimal96::from_scale_sign(
+        decimal.Anonymous2.Anonymous.Lo32,
+        decimal.Anonymous2.Anonymous.Mid32,
+        decimal.Hi32,
+        (u16::from(decimal.Anonymous1.Anonymous.sign) << 8)
+            | u16::from(decimal.Anonymous1.Anonymous.scale),
+    )
+}
+
+#[cfg(target_os = "windows")]
+#[allow(unsafe_op_in_unsafe_fn)]
+unsafe fn decimal96_to_windows(value: Decimal96) -> DECIMAL {
+    let mut decimal: DECIMAL = std::mem::zeroed();
+    decimal.wReserved = 0;
+    decimal.Anonymous1.Anonymous.scale = value.scale();
+    decimal.Anonymous1.Anonymous.sign = if value.is_negative() { 0x80 } else { 0 };
+    decimal.Hi32 = value.hi;
+    decimal.Anonymous2.Anonymous.Lo32 = value.lo;
+    decimal.Anonymous2.Anonymous.Mid32 = value.mid;
+    decimal
 }
 
 #[cfg(target_os = "windows")]
@@ -268,6 +297,17 @@ unsafe fn safe_array_element_to_runtime_value(
                 ));
             }
             Ok(ComValue::F64(F64Value::from_f64(element)).to_runtime_value())
+        }
+        VT_DECIMAL => {
+            let mut element: DECIMAL = std::mem::zeroed();
+            let hr = SafeArrayGetElement(psa, &index, (&mut element as *mut DECIMAL).cast());
+            if hr < 0 {
+                return Err(format!(
+                    "SafeArrayGetElement failed with HRESULT {:#010X} at index {}",
+                    hr as u32, index
+                ));
+            }
+            Ok(ComValue::Decimal(decimal96_from_windows(element)).to_runtime_value())
         }
         VT_UINT => {
             let mut element = 0u32;
@@ -594,6 +634,7 @@ pub unsafe fn variant_to_com_value(variant: &VARIANT) -> Result<ComValue, String
         VT_DATE_VARENUM => ComValue::F64(F64Value::from_f64(
             variant.Anonymous.Anonymous.Anonymous.dblVal,
         )),
+        VT_DECIMAL => ComValue::Decimal(decimal96_from_windows(variant.Anonymous.decVal)),
         VT_UINT => ComValue::I32(variant.Anonymous.Anonymous.Anonymous.uintVal as i32),
         VT_BOOL => {
             let value: VARIANT_BOOL = variant.Anonymous.Anonymous.Anonymous.boolVal;
@@ -736,6 +777,10 @@ where
             (*variant).Anonymous.Anonymous.vt = VT_R8_VARENUM;
             (*variant).Anonymous.Anonymous.Anonymous.dblVal = value.as_f64();
         }
+        ComValue::Decimal(value) => {
+            (*variant).Anonymous.decVal = decimal96_to_windows(*value);
+            (*variant).Anonymous.decVal.wReserved = VT_DECIMAL;
+        }
         ComValue::Currency(value) => {
             (*variant).Anonymous.Anonymous.vt = VT_CY_VARENUM;
             (*variant).Anonymous.Anonymous.Anonymous.cyVal.int64 = value.scaled_i64();
@@ -803,16 +848,20 @@ where
 mod tests {
     use super::{
         VT_CY_VARENUM, VT_DATE_VARENUM, VT_R4_VARENUM, VT_R8_VARENUM, VariantResultValue,
-        set_variant_from_com_value, take_variant_result_value, variant_to_com_value,
+        decimal96_to_windows, set_variant_from_com_value, take_variant_result_value,
+        variant_to_com_value,
     };
     use crate::ComValue;
-    use oxvba_runtime::{CurrencyValue, F64Value, RuntimeValue, bstr::BStr, safe_array::SafeArray};
+    use oxvba_runtime::{
+        CurrencyValue, Decimal96, F64Value, RuntimeValue, bstr::BStr, safe_array::SafeArray,
+    };
     use windows_sys::Win32::System::Ole::{SafeArrayCreateVector, SafeArrayPutElement};
     use windows_sys::Win32::System::Variant::{
-        VARIANT, VT_ARRAY, VT_BSTR, VT_DISPATCH, VT_I2, VT_UNKNOWN, VT_VARIANT, VariantClear,
+        VARIANT, VT_ARRAY, VT_BSTR, VT_DECIMAL, VT_DISPATCH, VT_I2, VT_UNKNOWN, VT_VARIANT,
+        VariantClear,
     };
     use windows_sys::Win32::{
-        Foundation::{SysAllocString, SysFreeString},
+        Foundation::{DECIMAL, SysAllocString, SysFreeString},
         System::Com::CY,
     };
 
@@ -877,6 +926,21 @@ mod tests {
     }
 
     #[test]
+    fn scalar_decimal_variant_reads_through_windows_bridge() {
+        let mut variant: VARIANT = unsafe { std::mem::zeroed() };
+        unsafe {
+            variant.Anonymous.decVal =
+                decimal96_to_windows(Decimal96::from_parts(123_450, 0, 0, 3, true));
+            variant.Anonymous.decVal.wReserved = VT_DECIMAL;
+            assert_eq!(
+                variant_to_com_value(&variant).expect("read decimal variant"),
+                ComValue::Decimal(Decimal96::from_parts(123_450, 0, 0, 3, true))
+            );
+            let _ = VariantClear(&mut variant);
+        }
+    }
+
+    #[test]
     fn scalar_double_variant_roundtrips_through_windows_bridge() {
         let mut variant: VARIANT = unsafe { std::mem::zeroed() };
         let value = ComValue::F64(F64Value::from_f64(3.5));
@@ -906,6 +970,24 @@ mod tests {
                 .expect("set currency variant");
             assert_eq!(
                 variant_to_com_value(&variant).expect("read currency variant"),
+                value
+            );
+            let _ = VariantClear(&mut variant);
+        }
+    }
+
+    #[test]
+    fn scalar_decimal_variant_roundtrips_through_windows_bridge() {
+        let mut variant: VARIANT = unsafe { std::mem::zeroed() };
+        let value = ComValue::Decimal(Decimal96::from_parts(123_450, 0, 0, 3, false));
+        let mut resolve_object =
+            |_handle| Err("object dispatch resolution not expected".to_string());
+        let mut add_ref = |_dispatch| {};
+        unsafe {
+            set_variant_from_com_value(&mut variant, &value, &mut resolve_object, &mut add_ref)
+                .expect("set decimal variant");
+            assert_eq!(
+                variant_to_com_value(&variant).expect("read decimal variant"),
                 value
             );
             let _ = VariantClear(&mut variant);
@@ -1030,6 +1112,49 @@ mod tests {
                     RuntimeValue::Currency(CurrencyValue::from_scaled_i64(125_000)),
                     RuntimeValue::Currency(CurrencyValue::from_scaled_i64(-42_500)),
                     RuntimeValue::Currency(CurrencyValue::from_scaled_i64(3_210_000)),
+                ]))
+            );
+            let _ = VariantClear(&mut variant);
+        }
+    }
+
+    #[test]
+    fn typed_decimal_safe_array_roundtrips_through_windows_bridge() {
+        let mut variant: VARIANT = unsafe { std::mem::zeroed() };
+        unsafe {
+            let psa = SafeArrayCreateVector(VT_DECIMAL, 0, 3);
+            assert!(
+                !psa.is_null(),
+                "SafeArrayCreateVector(VT_DECIMAL) should succeed"
+            );
+            for (index, value) in [
+                Decimal96::from_parts(123_450, 0, 0, 3, false),
+                Decimal96::from_parts(42_500, 0, 0, 4, true),
+                Decimal96::from_parts(3_210_000, 0, 0, 4, false),
+            ]
+            .into_iter()
+            .enumerate()
+            {
+                let index = i32::try_from(index).expect("index should fit in i32");
+                let element = decimal96_to_windows(value);
+                let hr = SafeArrayPutElement(
+                    psa.cast_const(),
+                    &index,
+                    (&element as *const DECIMAL).cast(),
+                );
+                assert!(
+                    hr >= 0,
+                    "SafeArrayPutElement(VT_DECIMAL) should succeed: {hr:#010X}"
+                );
+            }
+            variant.Anonymous.Anonymous.vt = VT_ARRAY | VT_DECIMAL;
+            variant.Anonymous.Anonymous.Anonymous.parray = psa;
+            assert_eq!(
+                variant_to_com_value(&variant).expect("read VT_DECIMAL SAFEARRAY"),
+                ComValue::ArrayIntent(SafeArray::from_values(vec![
+                    RuntimeValue::Decimal(Decimal96::from_parts(123_450, 0, 0, 3, false)),
+                    RuntimeValue::Decimal(Decimal96::from_parts(42_500, 0, 0, 4, true)),
+                    RuntimeValue::Decimal(Decimal96::from_parts(3_210_000, 0, 0, 4, false)),
                 ]))
             );
             let _ = VariantClear(&mut variant);

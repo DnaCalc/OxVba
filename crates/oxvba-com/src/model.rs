@@ -1,7 +1,7 @@
 pub const DISPATCH_INVOKE_MISSING_ARG_TOKEN: i32 = i32::MIN + 2_048;
 
 use oxvba_runtime::{
-    CurrencyValue, F64Value, ObjectHandle, RuntimeValue,
+    CurrencyValue, Decimal96, F64Value, ObjectHandle, RuntimeValue,
     bstr::BStr,
     safe_array::{
         SafeArray, array_tag_from_safe_array, marshal_dispatch_argument, safe_array_from_tag,
@@ -85,6 +85,7 @@ pub enum ComValue {
     Bool(bool),
     I32(i32),
     F64(F64Value),
+    Decimal(Decimal96),
     Currency(CurrencyValue),
     String(BStr),
     ArrayIntent(SafeArray),
@@ -100,6 +101,7 @@ impl ComValue {
             RuntimeValue::Bool(value) => Self::Bool(*value),
             RuntimeValue::I32(value) => Self::I32(*value),
             RuntimeValue::F64(value) => Self::F64(*value),
+            RuntimeValue::Decimal(value) => Self::Decimal(*value),
             RuntimeValue::Currency(value) => Self::Currency(*value),
             RuntimeValue::String(value) => Self::String(value.clone()),
             RuntimeValue::ArrayIntent(array) => Self::ArrayIntent(array.clone()),
@@ -132,6 +134,7 @@ impl ComValue {
             Self::Bool(value) => RuntimeValue::Bool(*value),
             Self::I32(value) => RuntimeValue::I32(*value),
             Self::F64(value) => RuntimeValue::F64(*value),
+            Self::Decimal(value) => RuntimeValue::Decimal(*value),
             Self::Currency(value) => RuntimeValue::Currency(*value),
             Self::String(value) => RuntimeValue::String(value.clone()),
             Self::ArrayIntent(array) => RuntimeValue::ArrayIntent(array.clone()),
@@ -247,7 +250,7 @@ pub struct ComCallbackPayload {
 mod tests {
     use super::{ComMemberToken, ComValue};
     use oxvba_runtime::{
-        CurrencyValue, F64Value, ObjectHandle, RuntimeValue,
+        CurrencyValue, Decimal96, F64Value, ObjectHandle, RuntimeValue,
         bstr::BStr,
         safe_array::{ARRAY_TAG_BASE, SafeArray},
         value_tags::{EMPTY_TAG, NULL_TAG, error_tag_from_code},
@@ -298,6 +301,12 @@ mod tests {
             ComValue::F64(F64Value::from_f64(3.5))
         );
         assert_eq!(
+            ComValue::from_runtime_value(&RuntimeValue::Decimal(Decimal96::from_parts(
+                123_450, 0, 0, 3, false
+            ))),
+            ComValue::Decimal(Decimal96::from_parts(123_450, 0, 0, 3, false))
+        );
+        assert_eq!(
             ComValue::from_runtime_value(&RuntimeValue::Currency(CurrencyValue::from_scaled_i64(
                 125_000
             ))),
@@ -314,6 +323,10 @@ mod tests {
         assert_eq!(
             ComValue::F64(F64Value::from_f64(3.5)).to_runtime_value(),
             RuntimeValue::F64(F64Value::from_f64(3.5))
+        );
+        assert_eq!(
+            ComValue::Decimal(Decimal96::from_parts(123_450, 0, 0, 3, true)).to_runtime_value(),
+            RuntimeValue::Decimal(Decimal96::from_parts(123_450, 0, 0, 3, true))
         );
         assert_eq!(
             ComValue::Currency(CurrencyValue::from_scaled_i64(-42_500)).to_runtime_value(),

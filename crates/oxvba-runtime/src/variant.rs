@@ -1,4 +1,7 @@
-use crate::runtime_value::{CurrencyValue, F64Value, RuntimeValue};
+use crate::{
+    Decimal96,
+    runtime_value::{CurrencyValue, F64Value, RuntimeValue},
+};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u16)]
@@ -207,6 +210,30 @@ impl Variant {
         Some(i64::from_le_bytes(self.data_bytes()))
     }
 
+    pub fn from_decimal96(value: Decimal96) -> Self {
+        let mut bytes = [0u8; 8];
+        bytes[0..4].copy_from_slice(&value.lo.to_le_bytes());
+        bytes[4..8].copy_from_slice(&value.mid.to_le_bytes());
+        Self {
+            vtype: VarType::Decimal,
+            reserved1: value.scale_sign,
+            reserved2: (value.hi & 0xFFFF) as u16,
+            reserved3: (value.hi >> 16) as u16,
+            data: VariantData { bytes },
+        }
+    }
+
+    pub fn as_decimal96(&self) -> Option<Decimal96> {
+        if self.vtype != VarType::Decimal {
+            return None;
+        }
+        let bytes = self.data_bytes();
+        let lo = u32::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]);
+        let mid = u32::from_le_bytes([bytes[4], bytes[5], bytes[6], bytes[7]]);
+        let hi = u32::from(self.reserved2) | (u32::from(self.reserved3) << 16);
+        Some(Decimal96::from_scale_sign(lo, mid, hi, self.reserved1))
+    }
+
     pub fn from_date_f64(value: f64) -> Self {
         Self::from_bytes(VarType::Date, value.to_le_bytes())
     }
@@ -255,6 +282,7 @@ impl Variant {
             RuntimeValue::ErrorCode(code) => Ok(Self::from_error_code(*code)),
             RuntimeValue::I32(value) => Ok(Self::from_i32(*value)),
             RuntimeValue::F64(value) => Ok(Self::from_f64(value.as_f64())),
+            RuntimeValue::Decimal(value) => Ok(Self::from_decimal96(*value)),
             RuntimeValue::Currency(value) => Ok(Self::from_currency_scaled_i64(value.scaled_i64())),
             RuntimeValue::Bool(value) => Ok(Self::from_bool(*value)),
             RuntimeValue::String(_) => Err(
@@ -296,6 +324,10 @@ impl Variant {
                 .as_f64()
                 .map(|value| RuntimeValue::F64(F64Value::from_f64(value)))
                 .ok_or_else(|| "invalid Double variant payload".to_string()),
+            VarType::Decimal => self
+                .as_decimal96()
+                .map(RuntimeValue::Decimal)
+                .ok_or_else(|| "invalid Decimal variant payload".to_string()),
             VarType::Currency => self
                 .as_currency_scaled_i64()
                 .map(|value| RuntimeValue::Currency(CurrencyValue::from_scaled_i64(value)))
@@ -322,7 +354,7 @@ impl Variant {
 
 #[cfg(test)]
 mod tests {
-    use crate::{CurrencyValue, F64Value, RuntimeValue, bstr::BStr};
+    use crate::{CurrencyValue, Decimal96, F64Value, RuntimeValue, bstr::BStr};
 
     use super::{VarType, Variant, VariantData};
 
@@ -342,6 +374,12 @@ mod tests {
 
         let cyv = Variant::from_currency_scaled_i64(125_000);
         assert_eq!(cyv.as_currency_scaled_i64(), Some(125_000));
+
+        let decv = Variant::from_decimal96(Decimal96::from_parts(123_450, 0, 0, 3, true));
+        assert_eq!(
+            decv.as_decimal96(),
+            Some(Decimal96::from_parts(123_450, 0, 0, 3, true))
+        );
 
         let datev = Variant::from_date_f64(45200.25);
         assert_eq!(datev.as_date_f64(), Some(45200.25));
@@ -409,6 +447,19 @@ mod tests {
     }
 
     #[test]
+    fn decimal_variant_bridges_to_runtime_decimal_lane() {
+        let decimal_variant =
+            Variant::from_decimal96(Decimal96::from_parts(123_450, 0, 0, 3, true));
+        assert_eq!(decimal_variant.vtype, VarType::Decimal);
+        assert_eq!(
+            decimal_variant
+                .to_runtime_value()
+                .expect("decimal Variant should bridge into RuntimeValue::Decimal"),
+            RuntimeValue::Decimal(Decimal96::from_parts(123_450, 0, 0, 3, true))
+        );
+    }
+
+    #[test]
     fn variant_runtime_value_bridge_roundtrips_supported_subset() {
         let bool_variant = Variant::from_runtime_value(&RuntimeValue::Bool(true))
             .expect("bool runtime value should bridge to Variant");
@@ -438,6 +489,17 @@ mod tests {
                 .to_runtime_value()
                 .expect("currency Variant should bridge back"),
             RuntimeValue::Currency(CurrencyValue::from_scaled_i64(-42_500))
+        );
+
+        let decimal_variant = Variant::from_runtime_value(&RuntimeValue::Decimal(
+            Decimal96::from_parts(123_450, 0, 0, 3, false),
+        ))
+        .expect("decimal runtime value should bridge to Variant");
+        assert_eq!(
+            decimal_variant
+                .to_runtime_value()
+                .expect("decimal Variant should bridge back"),
+            RuntimeValue::Decimal(Decimal96::from_parts(123_450, 0, 0, 3, false))
         );
 
         let null_variant =

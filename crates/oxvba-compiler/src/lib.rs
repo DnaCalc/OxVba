@@ -1423,6 +1423,23 @@ mod tests {
     }
 
     #[test]
+    fn compile_dispatchinvoke_with_decimal_result_literal_maps_to_member_token_fifty_seven() {
+        let source = "Sub Main()\nDim x\nx = DispatchInvoke(CreateObject(\"OxVba.TestDispatch\"), \"ReturnDecimal\")\nEnd Sub";
+        let out =
+            compile(source).expect("compile should succeed for decimal result fixture member");
+        assert!(
+            out.instructions
+                .iter()
+                .any(|i| matches!(i, Instruction::IntrinsicDispatchInvokeHost { .. }))
+        );
+        assert!(
+            out.instructions
+                .iter()
+                .any(|i| matches!(i, Instruction::LoadConstI32 { value: 57, .. }))
+        );
+    }
+
+    #[test]
     fn compile_dispatchinvoke_with_typed_array_result_literal_maps_to_member_token_twenty() {
         let source = "Sub Main()\nDim x\nx = DispatchInvoke(CreateObject(\"OxVba.TestDispatch\"), \"ReturnSmallIntArray\")\nEnd Sub";
         let out =
@@ -1780,6 +1797,23 @@ mod tests {
             out.instructions
                 .iter()
                 .any(|i| matches!(i, Instruction::LoadConstI32 { value: 56, .. }))
+        );
+    }
+
+    #[test]
+    fn compile_dispatchinvoke_with_decimal_array_result_literal_maps_to_member_token_fifty_eight() {
+        let source = "Sub Main()\nDim x\nx = DispatchInvoke(CreateObject(\"OxVba.TestDispatch\"), \"ReturnDecimalArray\")\nEnd Sub";
+        let out = compile(source)
+            .expect("compile should succeed for decimal-array result fixture member");
+        assert!(
+            out.instructions
+                .iter()
+                .any(|i| matches!(i, Instruction::IntrinsicDispatchInvokeHost { .. }))
+        );
+        assert!(
+            out.instructions
+                .iter()
+                .any(|i| matches!(i, Instruction::LoadConstI32 { value: 58, .. }))
         );
     }
 

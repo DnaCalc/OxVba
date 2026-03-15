@@ -3,7 +3,8 @@ mod windows_com_e2e {
     use oxvba_hal::model::HostPolicy;
     use oxvba_host::{Engine, HostConfig};
     use oxvba_runtime::{
-        CurrencyValue, F64Value, ObjectHandle, RuntimeValue, bstr::BStr, safe_array::SafeArray,
+        CurrencyValue, Decimal96, F64Value, ObjectHandle, RuntimeValue, bstr::BStr,
+        safe_array::SafeArray,
     };
 
     fn run_windows_host_backed(source: &str, enable_jit: bool) -> Vec<RuntimeValue> {
@@ -667,6 +668,60 @@ End Sub
                 RuntimeValue::Currency(CurrencyValue::from_scaled_i64(3_210_000)),
             ])),
             "VT_ARRAY|VT_CY result should preserve exact scaled currency elements"
+        );
+    }
+
+    #[test]
+    fn dispatchinvoke_accepts_decimal_variant_results() {
+        let source = r#"
+Sub Main()
+Dim obj
+Dim decimalValue
+obj = CreateObject("OxVba.TestDispatch")
+decimalValue = DispatchInvoke(obj, "ReturnDecimal")
+End Sub
+"#;
+
+        let vm = run_windows_host_backed(source, false);
+        let jit = run_windows_host_backed(source, true);
+        assert_eq!(
+            vm, jit,
+            "VM/JIT snapshots diverged on decimal VARIANT result path: vm={vm:?} jit={jit:?}"
+        );
+        assert!(expect_object_handle(&vm[0]).raw() >= 20_001);
+        assert_eq!(
+            vm[1],
+            RuntimeValue::Decimal(Decimal96::from_parts(123_450, 0, 0, 3, true)),
+            "VT_DECIMAL result should preserve the exact decimal carrier"
+        );
+    }
+
+    #[test]
+    fn dispatchinvoke_accepts_typed_decimal_safe_array_variant_results() {
+        let source = r#"
+Sub Main()
+Dim obj
+Dim decimalArray
+obj = CreateObject("OxVba.TestDispatch")
+decimalArray = DispatchInvoke(obj, "ReturnDecimalArray")
+End Sub
+"#;
+
+        let vm = run_windows_host_backed(source, false);
+        let jit = run_windows_host_backed(source, true);
+        assert_eq!(
+            vm, jit,
+            "VM/JIT snapshots diverged on typed decimal SAFEARRAY path: vm={vm:?} jit={jit:?}"
+        );
+        assert!(expect_object_handle(&vm[0]).raw() >= 20_001);
+        assert_eq!(
+            vm[1],
+            RuntimeValue::ArrayIntent(SafeArray::from_values(vec![
+                RuntimeValue::Decimal(Decimal96::from_parts(123_450, 0, 0, 3, false)),
+                RuntimeValue::Decimal(Decimal96::from_parts(42_500, 0, 0, 4, true)),
+                RuntimeValue::Decimal(Decimal96::from_parts(3_210_000, 0, 0, 4, false)),
+            ])),
+            "VT_ARRAY|VT_DECIMAL result should preserve exact decimal elements"
         );
     }
 
