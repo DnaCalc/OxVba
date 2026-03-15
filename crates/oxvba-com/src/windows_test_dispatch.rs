@@ -125,6 +125,10 @@ pub const TEST_DISPID_RETURN_CURRENCY: i32 = 55;
 pub const TEST_DISPID_RETURN_CURRENCY_ARRAY: i32 = 56;
 pub const TEST_DISPID_RETURN_DECIMAL: i32 = 57;
 pub const TEST_DISPID_RETURN_DECIMAL_ARRAY: i32 = 58;
+pub const TEST_DISPID_RETURN_WIDE_UNSIGNED_LONG: i32 = 59;
+pub const TEST_DISPID_RETURN_WIDE_UNSIGNED_LONG_ARRAY: i32 = 60;
+pub const TEST_DISPID_RETURN_WIDE_PLATFORM_UINT: i32 = 61;
+pub const TEST_DISPID_RETURN_WIDE_PLATFORM_UINT_ARRAY: i32 = 62;
 pub const TEST_NAMED_DISPID_LHS: i32 = 101;
 pub const TEST_NAMED_DISPID_RHS: i32 = 102;
 pub const TEST_NAMED_DISPID_INDEX: i32 = 103;
@@ -1675,6 +1679,10 @@ unsafe extern "system" fn oxvba_test_get_ids_of_names(
             "returncurrencyarray" => TEST_DISPID_RETURN_CURRENCY_ARRAY,
             "returndecimal" => TEST_DISPID_RETURN_DECIMAL,
             "returndecimalarray" => TEST_DISPID_RETURN_DECIMAL_ARRAY,
+            "returnwideunsignedlong" => TEST_DISPID_RETURN_WIDE_UNSIGNED_LONG,
+            "returnwideunsignedlongarray" => TEST_DISPID_RETURN_WIDE_UNSIGNED_LONG_ARRAY,
+            "returnwideplatformuint" => TEST_DISPID_RETURN_WIDE_PLATFORM_UINT,
+            "returnwideplatformuintarray" => TEST_DISPID_RETURN_WIDE_PLATFORM_UINT_ARRAY,
             "lhs" => TEST_NAMED_DISPID_LHS,
             "rhs" => TEST_NAMED_DISPID_RHS,
             "index" => TEST_NAMED_DISPID_INDEX,
@@ -2110,6 +2118,26 @@ unsafe extern "system" fn oxvba_test_invoke(
             }
             COM_S_OK
         }
+        TEST_DISPID_RETURN_WIDE_UNSIGNED_LONG => {
+            if (wflags & DISPATCH_METHOD) == 0 || cargs != 0 {
+                return COM_DISP_E_BADPARAMCOUNT;
+            }
+            if !pvarresult.is_null() {
+                (*pvarresult).Anonymous.Anonymous.vt = VT_UI4;
+                (*pvarresult).Anonymous.Anonymous.Anonymous.ulVal = 4_000_000_000;
+            }
+            COM_S_OK
+        }
+        TEST_DISPID_RETURN_WIDE_PLATFORM_UINT => {
+            if (wflags & DISPATCH_METHOD) == 0 || cargs != 0 {
+                return COM_DISP_E_BADPARAMCOUNT;
+            }
+            if !pvarresult.is_null() {
+                (*pvarresult).Anonymous.Anonymous.vt = VT_UINT;
+                (*pvarresult).Anonymous.Anonymous.Anonymous.uintVal = 4_000_000_000;
+            }
+            COM_S_OK
+        }
         TEST_DISPID_RETURN_SMALLINT_ARRAY => {
             if (wflags & DISPATCH_METHOD) == 0 || cargs != 0 {
                 return COM_DISP_E_BADPARAMCOUNT;
@@ -2265,6 +2293,24 @@ unsafe extern "system" fn oxvba_test_invoke(
                 ],
                 pvarresult,
             ) {
+                Ok(()) => COM_S_OK,
+                Err(_) => COM_E_INVALIDARG,
+            }
+        }
+        TEST_DISPID_RETURN_WIDE_UNSIGNED_LONG_ARRAY => {
+            if (wflags & DISPATCH_METHOD) == 0 || cargs != 0 {
+                return COM_DISP_E_BADPARAMCOUNT;
+            }
+            match set_variant_u32_array(&[12, 4_000_000_000, 70_000], pvarresult) {
+                Ok(()) => COM_S_OK,
+                Err(_) => COM_E_INVALIDARG,
+            }
+        }
+        TEST_DISPID_RETURN_WIDE_PLATFORM_UINT_ARRAY => {
+            if (wflags & DISPATCH_METHOD) == 0 || cargs != 0 {
+                return COM_DISP_E_BADPARAMCOUNT;
+            }
+            match set_variant_platform_u32_array(&[12, 4_000_000_000, 70_000], pvarresult) {
                 Ok(()) => COM_S_OK,
                 Err(_) => COM_E_INVALIDARG,
             }

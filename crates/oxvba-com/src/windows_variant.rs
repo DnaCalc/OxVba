@@ -235,7 +235,10 @@ unsafe fn safe_array_element_to_runtime_value(
                     hr as u32, index
                 ));
             }
-            Ok(ComValue::I32(element as i32).to_runtime_value())
+            let narrowed = i32::try_from(element).map_err(|_| {
+                format!("VT_UI4 SAFEARRAY element {element} exceeds current i32 carrier lane")
+            })?;
+            Ok(ComValue::I32(narrowed).to_runtime_value())
         }
         VT_UI8 => {
             let mut element = 0u64;
@@ -318,7 +321,10 @@ unsafe fn safe_array_element_to_runtime_value(
                     hr as u32, index
                 ));
             }
-            Ok(ComValue::I32(element as i32).to_runtime_value())
+            let narrowed = i32::try_from(element).map_err(|_| {
+                format!("VT_UINT SAFEARRAY element {element} exceeds current i32 carrier lane")
+            })?;
+            Ok(ComValue::I32(narrowed).to_runtime_value())
         }
         VT_BOOL => {
             let mut element: VARIANT_BOOL = 0;
@@ -598,65 +604,75 @@ pub unsafe fn variant_to_com_value(variant: &VARIANT) -> Result<ComValue, String
         let parray = variant.Anonymous.Anonymous.Anonymous.parray;
         return safe_array_to_com_value(parray);
     }
-    let value = match vt {
-        VT_EMPTY => ComValue::Empty,
-        VT_I1 => ComValue::I32(variant.Anonymous.Anonymous.Anonymous.cVal as i32),
-        VT_I2 => ComValue::I32(variant.Anonymous.Anonymous.Anonymous.iVal as i32),
-        VT_I4 => ComValue::I32(variant.Anonymous.Anonymous.Anonymous.lVal),
-        VT_I8 => {
-            let value = variant.Anonymous.Anonymous.Anonymous.llVal;
-            ComValue::I32(
-                i32::try_from(value)
-                    .map_err(|_| format!("VT_I8 value {value} exceeds current i32 carrier lane"))?,
-            )
-        }
-        VT_INT => ComValue::I32(variant.Anonymous.Anonymous.Anonymous.intVal),
-        VT_UI1 => ComValue::I32(variant.Anonymous.Anonymous.Anonymous.bVal as i32),
-        VT_UI2 => ComValue::I32(variant.Anonymous.Anonymous.Anonymous.uiVal as i32),
-        VT_UI4 => ComValue::I32(variant.Anonymous.Anonymous.Anonymous.ulVal as i32),
-        VT_UI8 => {
-            let value = variant.Anonymous.Anonymous.Anonymous.ullVal;
-            ComValue::I32(
-                i32::try_from(value).map_err(|_| {
+    let value =
+        match vt {
+            VT_EMPTY => ComValue::Empty,
+            VT_I1 => ComValue::I32(variant.Anonymous.Anonymous.Anonymous.cVal as i32),
+            VT_I2 => ComValue::I32(variant.Anonymous.Anonymous.Anonymous.iVal as i32),
+            VT_I4 => ComValue::I32(variant.Anonymous.Anonymous.Anonymous.lVal),
+            VT_I8 => {
+                let value = variant.Anonymous.Anonymous.Anonymous.llVal;
+                ComValue::I32(
+                    i32::try_from(value).map_err(|_| {
+                        format!("VT_I8 value {value} exceeds current i32 carrier lane")
+                    })?,
+                )
+            }
+            VT_INT => ComValue::I32(variant.Anonymous.Anonymous.Anonymous.intVal),
+            VT_UI1 => ComValue::I32(variant.Anonymous.Anonymous.Anonymous.bVal as i32),
+            VT_UI2 => ComValue::I32(variant.Anonymous.Anonymous.Anonymous.uiVal as i32),
+            VT_UI4 => {
+                let value = variant.Anonymous.Anonymous.Anonymous.ulVal;
+                ComValue::I32(i32::try_from(value).map_err(|_| {
+                    format!("VT_UI4 value {value} exceeds current i32 carrier lane")
+                })?)
+            }
+            VT_UI8 => {
+                let value = variant.Anonymous.Anonymous.Anonymous.ullVal;
+                ComValue::I32(i32::try_from(value).map_err(|_| {
                     format!("VT_UI8 value {value} exceeds current i32 carrier lane")
-                })?,
-            )
-        }
-        VT_R4_VARENUM => ComValue::F64(F64Value::from_f64(
-            variant.Anonymous.Anonymous.Anonymous.fltVal as f64,
-        )),
-        VT_R8_VARENUM => ComValue::F64(F64Value::from_f64(
-            variant.Anonymous.Anonymous.Anonymous.dblVal,
-        )),
-        VT_CY_VARENUM => ComValue::Currency(CurrencyValue::from_scaled_i64(
-            variant.Anonymous.Anonymous.Anonymous.cyVal.int64,
-        )),
-        VT_DATE_VARENUM => ComValue::F64(F64Value::from_f64(
-            variant.Anonymous.Anonymous.Anonymous.dblVal,
-        )),
-        VT_DECIMAL => ComValue::Decimal(decimal96_from_windows(variant.Anonymous.decVal)),
-        VT_UINT => ComValue::I32(variant.Anonymous.Anonymous.Anonymous.uintVal as i32),
-        VT_BOOL => {
-            let value: VARIANT_BOOL = variant.Anonymous.Anonymous.Anonymous.boolVal;
-            ComValue::Bool(value != 0)
-        }
-        VT_BSTR => {
-            let bstr = variant.Anonymous.Anonymous.Anonymous.bstrVal;
-            let text = if bstr.is_null() {
-                String::new()
-            } else {
-                let len = usize::try_from(SysStringLen(bstr)).unwrap_or(0);
-                let slice = std::slice::from_raw_parts(bstr, len);
-                String::from_utf16_lossy(slice)
-            };
-            ComValue::String(BStr(text))
-        }
-        VT_NULL => ComValue::Null,
-        VT_ERROR => ComValue::ErrorCode(variant.Anonymous.Anonymous.Anonymous.scode),
-        vt => {
-            return Err(format!("unsupported VARIANT return type vt={vt}"));
-        }
-    };
+                })?)
+            }
+            VT_R4_VARENUM => ComValue::F64(F64Value::from_f64(
+                variant.Anonymous.Anonymous.Anonymous.fltVal as f64,
+            )),
+            VT_R8_VARENUM => ComValue::F64(F64Value::from_f64(
+                variant.Anonymous.Anonymous.Anonymous.dblVal,
+            )),
+            VT_CY_VARENUM => ComValue::Currency(CurrencyValue::from_scaled_i64(
+                variant.Anonymous.Anonymous.Anonymous.cyVal.int64,
+            )),
+            VT_DATE_VARENUM => ComValue::F64(F64Value::from_f64(
+                variant.Anonymous.Anonymous.Anonymous.dblVal,
+            )),
+            VT_DECIMAL => ComValue::Decimal(decimal96_from_windows(variant.Anonymous.decVal)),
+            VT_UINT => {
+                let value = variant.Anonymous.Anonymous.Anonymous.uintVal;
+                ComValue::I32(i32::try_from(value).map_err(|_| {
+                    format!("VT_UINT value {value} exceeds current i32 carrier lane")
+                })?)
+            }
+            VT_BOOL => {
+                let value: VARIANT_BOOL = variant.Anonymous.Anonymous.Anonymous.boolVal;
+                ComValue::Bool(value != 0)
+            }
+            VT_BSTR => {
+                let bstr = variant.Anonymous.Anonymous.Anonymous.bstrVal;
+                let text = if bstr.is_null() {
+                    String::new()
+                } else {
+                    let len = usize::try_from(SysStringLen(bstr)).unwrap_or(0);
+                    let slice = std::slice::from_raw_parts(bstr, len);
+                    String::from_utf16_lossy(slice)
+                };
+                ComValue::String(BStr(text))
+            }
+            VT_NULL => ComValue::Null,
+            VT_ERROR => ComValue::ErrorCode(variant.Anonymous.Anonymous.Anonymous.scode),
+            vt => {
+                return Err(format!("unsupported VARIANT return type vt={vt}"));
+            }
+        };
     Ok(value)
 }
 

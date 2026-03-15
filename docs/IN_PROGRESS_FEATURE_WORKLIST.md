@@ -9,7 +9,7 @@ This file is the authoritative consolidation point for part-implemented feature 
 Latest execution pass:
 1. `docs/IN_PROGRESS_FEATURE_EXECUTION_2026-03-10.md`
 
-Latest note (2026-03-15): the active `IP-03A` late-bound COM transport subset now includes controlled `VT_R4` / `Single`, `VT_R8` / `Double`, and `VT_DATE` scalar and one-dimensional typed SAFEARRAY result lanes on the shared semantic `f64` carrier plus controlled `VT_CY` / `Currency` scalar and one-dimensional typed SAFEARRAY result lanes on an exact scaled-`i64` currency carrier and controlled `VT_DECIMAL` scalar and one-dimensional typed SAFEARRAY result lanes on an exact `Decimal96` carrier; broader external `VARIANT`, non-`IDispatch` interface, and multi-dimensional SAFEARRAY parity remains `in-progress`.
+Latest note (2026-03-15): the active `IP-03A` late-bound COM transport subset now includes controlled `VT_R4` / `Single`, `VT_R8` / `Double`, and `VT_DATE` scalar and one-dimensional typed SAFEARRAY result lanes on the shared semantic `f64` carrier plus controlled `VT_CY` / `Currency` scalar and one-dimensional typed SAFEARRAY result lanes on an exact scaled-`i64` currency carrier and controlled `VT_DECIMAL` scalar and one-dimensional typed SAFEARRAY result lanes on an exact `Decimal96` carrier; scalar `VT_UI4` / `VT_UINT` values and one-dimensional typed `VT_ARRAY | VT_UI4` / `VT_ARRAY | VT_UINT` overflow now fail with deterministic bounded diagnostics instead of silently wrapping through the current `i32` carrier; broader external `VARIANT`, non-`IDispatch` interface, and multi-dimensional SAFEARRAY parity remains `in-progress`.
 
 Use it to answer:
 1. what major behavior areas are still unfinished,
@@ -147,6 +147,7 @@ When any feature area above changes:
 2. Is there still any open blocker, deferred gate, oracle gap, or unimplemented parity behavior in scope?
 3. If yes, keep the entry `in-progress`.
 4. If no, update the owning docs first, then remove or mark the entry complete through an explicit documented decision.
+
 
 
 

@@ -3034,6 +3034,10 @@ fn known_dispatch_member_token(member_name: &str) -> Option<i32> {
         "returncurrencyarray" => Some(56),
         "returndecimal" => Some(57),
         "returndecimalarray" => Some(58),
+        "returnwideunsignedlong" => Some(59),
+        "returnwideunsignedlongarray" => Some(60),
+        "returnwideplatformuint" => Some(61),
+        "returnwideplatformuintarray" => Some(62),
         _ => None,
     }
 }

@@ -1818,6 +1818,78 @@ mod tests {
     }
 
     #[test]
+    fn compile_dispatchinvoke_with_wide_unsigned_long_result_literal_maps_to_member_token_fifty_nine()
+     {
+        let source = "Sub Main()\nDim x\nx = DispatchInvoke(CreateObject(\"OxVba.TestDispatch\"), \"ReturnWideUnsignedLong\")\nEnd Sub";
+        let out = compile(source)
+            .expect("compile should succeed for wide unsigned-long result fixture member");
+        assert!(
+            out.instructions
+                .iter()
+                .any(|i| matches!(i, Instruction::IntrinsicDispatchInvokeHost { .. }))
+        );
+        assert!(
+            out.instructions
+                .iter()
+                .any(|i| matches!(i, Instruction::LoadConstI32 { value: 59, .. }))
+        );
+    }
+
+    #[test]
+    fn compile_dispatchinvoke_with_wide_unsigned_long_array_result_literal_maps_to_member_token_sixty()
+     {
+        let source = "Sub Main()\nDim x\nx = DispatchInvoke(CreateObject(\"OxVba.TestDispatch\"), \"ReturnWideUnsignedLongArray\")\nEnd Sub";
+        let out = compile(source)
+            .expect("compile should succeed for wide unsigned-long-array result fixture member");
+        assert!(
+            out.instructions
+                .iter()
+                .any(|i| matches!(i, Instruction::IntrinsicDispatchInvokeHost { .. }))
+        );
+        assert!(
+            out.instructions
+                .iter()
+                .any(|i| matches!(i, Instruction::LoadConstI32 { value: 60, .. }))
+        );
+    }
+
+    #[test]
+    fn compile_dispatchinvoke_with_wide_platform_uint_result_literal_maps_to_member_token_sixty_one()
+     {
+        let source = "Sub Main()\nDim x\nx = DispatchInvoke(CreateObject(\"OxVba.TestDispatch\"), \"ReturnWidePlatformUInt\")\nEnd Sub";
+        let out = compile(source)
+            .expect("compile should succeed for wide platform-uint result fixture member");
+        assert!(
+            out.instructions
+                .iter()
+                .any(|i| matches!(i, Instruction::IntrinsicDispatchInvokeHost { .. }))
+        );
+        assert!(
+            out.instructions
+                .iter()
+                .any(|i| matches!(i, Instruction::LoadConstI32 { value: 61, .. }))
+        );
+    }
+
+    #[test]
+    fn compile_dispatchinvoke_with_wide_platform_uint_array_result_literal_maps_to_member_token_sixty_two()
+     {
+        let source = "Sub Main()\nDim x\nx = DispatchInvoke(CreateObject(\"OxVba.TestDispatch\"), \"ReturnWidePlatformUIntArray\")\nEnd Sub";
+        let out = compile(source)
+            .expect("compile should succeed for wide platform-uint-array result fixture member");
+        assert!(
+            out.instructions
+                .iter()
+                .any(|i| matches!(i, Instruction::IntrinsicDispatchInvokeHost { .. }))
+        );
+        assert!(
+            out.instructions
+                .iter()
+                .any(|i| matches!(i, Instruction::LoadConstI32 { value: 62, .. }))
+        );
+    }
+
+    #[test]
     fn compile_dispatchinvoke_with_smallint_matrix_result_literal_maps_to_member_token_thirty() {
         let source = "Sub Main()\nDim x\nx = DispatchInvoke(CreateObject(\"OxVba.TestDispatch\"), \"ReturnSmallIntMatrix\")\nEnd Sub";
         let out = compile(source)

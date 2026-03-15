@@ -72,6 +72,10 @@ const TEST_DISPID_RETURN_CURRENCY: i32 = 55;
 const TEST_DISPID_RETURN_CURRENCY_ARRAY: i32 = 56;
 const TEST_DISPID_RETURN_DECIMAL: i32 = 57;
 const TEST_DISPID_RETURN_DECIMAL_ARRAY: i32 = 58;
+const TEST_DISPID_RETURN_WIDE_UNSIGNED_LONG: i32 = 59;
+const TEST_DISPID_RETURN_WIDE_UNSIGNED_LONG_ARRAY: i32 = 60;
+const TEST_DISPID_RETURN_WIDE_PLATFORM_UINT: i32 = 61;
+const TEST_DISPID_RETURN_WIDE_PLATFORM_UINT_ARRAY: i32 = 62;
 
 const TEST_EVENT_CHANGED: i32 = 1;
 const TEST_EVENT_CHANGED_SOURCE_INTERFACE: i32 = 2;
@@ -634,6 +638,38 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
             TypeLibMemberMetadata {
                 name: "ReturnDecimalArray".to_string(),
                 token: TEST_DISPID_RETURN_DECIMAL_ARRAY,
+                requires_argument: false,
+                invoke_kind: TypeLibMemberInvokeKind::Method,
+                parameter_names: Vec::new(),
+                is_default_member: false,
+            },
+            TypeLibMemberMetadata {
+                name: "ReturnWideUnsignedLong".to_string(),
+                token: TEST_DISPID_RETURN_WIDE_UNSIGNED_LONG,
+                requires_argument: false,
+                invoke_kind: TypeLibMemberInvokeKind::Method,
+                parameter_names: Vec::new(),
+                is_default_member: false,
+            },
+            TypeLibMemberMetadata {
+                name: "ReturnWideUnsignedLongArray".to_string(),
+                token: TEST_DISPID_RETURN_WIDE_UNSIGNED_LONG_ARRAY,
+                requires_argument: false,
+                invoke_kind: TypeLibMemberInvokeKind::Method,
+                parameter_names: Vec::new(),
+                is_default_member: false,
+            },
+            TypeLibMemberMetadata {
+                name: "ReturnWidePlatformUInt".to_string(),
+                token: TEST_DISPID_RETURN_WIDE_PLATFORM_UINT,
+                requires_argument: false,
+                invoke_kind: TypeLibMemberInvokeKind::Method,
+                parameter_names: Vec::new(),
+                is_default_member: false,
+            },
+            TypeLibMemberMetadata {
+                name: "ReturnWidePlatformUIntArray".to_string(),
+                token: TEST_DISPID_RETURN_WIDE_PLATFORM_UINT_ARRAY,
                 requires_argument: false,
                 invoke_kind: TypeLibMemberInvokeKind::Method,
                 parameter_names: Vec::new(),
