@@ -20,6 +20,7 @@ use windows_sys::Win32::System::Variant::{
 
 const VT_R4_VARENUM: u16 = 4;
 const VT_R8_VARENUM: u16 = 5;
+const VT_DATE_VARENUM: u16 = 7;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum VariantResultValue {
@@ -232,6 +233,17 @@ unsafe fn safe_array_element_to_runtime_value(
             Ok(ComValue::F64(F64Value::from_f64(element as f64)).to_runtime_value())
         }
         VT_R8_VARENUM => {
+            let mut element = 0f64;
+            let hr = SafeArrayGetElement(psa, &index, (&mut element as *mut f64).cast());
+            if hr < 0 {
+                return Err(format!(
+                    "SafeArrayGetElement failed with HRESULT {:#010X} at index {}",
+                    hr as u32, index
+                ));
+            }
+            Ok(ComValue::F64(F64Value::from_f64(element)).to_runtime_value())
+        }
+        VT_DATE_VARENUM => {
             let mut element = 0f64;
             let hr = SafeArrayGetElement(psa, &index, (&mut element as *mut f64).cast());
             if hr < 0 {
@@ -561,6 +573,9 @@ pub unsafe fn variant_to_com_value(variant: &VARIANT) -> Result<ComValue, String
         VT_R8_VARENUM => ComValue::F64(F64Value::from_f64(
             variant.Anonymous.Anonymous.Anonymous.dblVal,
         )),
+        VT_DATE_VARENUM => ComValue::F64(F64Value::from_f64(
+            variant.Anonymous.Anonymous.Anonymous.dblVal,
+        )),
         VT_UINT => ComValue::I32(variant.Anonymous.Anonymous.Anonymous.uintVal as i32),
         VT_BOOL => {
             let value: VARIANT_BOOL = variant.Anonymous.Anonymous.Anonymous.boolVal;
@@ -765,8 +780,8 @@ where
 #[cfg(all(test, target_os = "windows"))]
 mod tests {
     use super::{
-        VT_R4_VARENUM, VT_R8_VARENUM, VariantResultValue, set_variant_from_com_value,
-        take_variant_result_value, variant_to_com_value,
+        VT_DATE_VARENUM, VT_R4_VARENUM, VT_R8_VARENUM, VariantResultValue,
+        set_variant_from_com_value, take_variant_result_value, variant_to_com_value,
     };
     use crate::ComValue;
     use oxvba_runtime::{F64Value, RuntimeValue, bstr::BStr, safe_array::SafeArray};
@@ -803,6 +818,20 @@ mod tests {
             assert_eq!(
                 variant_to_com_value(&variant).expect("read single variant"),
                 ComValue::F64(F64Value::from_f64(12.5))
+            );
+            let _ = VariantClear(&mut variant);
+        }
+    }
+
+    #[test]
+    fn scalar_date_variant_reads_through_windows_bridge() {
+        let mut variant: VARIANT = unsafe { std::mem::zeroed() };
+        unsafe {
+            variant.Anonymous.Anonymous.vt = VT_DATE_VARENUM;
+            variant.Anonymous.Anonymous.Anonymous.dblVal = 45200.25;
+            assert_eq!(
+                variant_to_com_value(&variant).expect("read date variant"),
+                ComValue::F64(F64Value::from_f64(45200.25))
             );
             let _ = VariantClear(&mut variant);
         }
@@ -908,6 +937,38 @@ mod tests {
                     RuntimeValue::F64(F64Value::from_f64(12.5)),
                     RuntimeValue::F64(F64Value::from_f64(-4.25)),
                     RuntimeValue::F64(F64Value::from_f64(321.0)),
+                ]))
+            );
+            let _ = VariantClear(&mut variant);
+        }
+    }
+
+    #[test]
+    fn typed_date_safe_array_roundtrips_through_windows_bridge() {
+        let mut variant: VARIANT = unsafe { std::mem::zeroed() };
+        unsafe {
+            let psa = SafeArrayCreateVector(VT_DATE_VARENUM, 0, 3);
+            assert!(
+                !psa.is_null(),
+                "SafeArrayCreateVector(VT_DATE_VARENUM) should succeed"
+            );
+            for (index, value) in [45200.25f64, 12.5f64, -4.25f64].into_iter().enumerate() {
+                let index = i32::try_from(index).expect("index should fit in i32");
+                let hr =
+                    SafeArrayPutElement(psa.cast_const(), &index, (&value as *const f64).cast());
+                assert!(
+                    hr >= 0,
+                    "SafeArrayPutElement(VT_DATE_VARENUM) should succeed: {hr:#010X}"
+                );
+            }
+            variant.Anonymous.Anonymous.vt = VT_ARRAY | VT_DATE_VARENUM;
+            variant.Anonymous.Anonymous.Anonymous.parray = psa;
+            assert_eq!(
+                variant_to_com_value(&variant).expect("read VT_DATE_VARENUM SAFEARRAY"),
+                ComValue::ArrayIntent(SafeArray::from_values(vec![
+                    RuntimeValue::F64(F64Value::from_f64(45200.25)),
+                    RuntimeValue::F64(F64Value::from_f64(12.5)),
+                    RuntimeValue::F64(F64Value::from_f64(-4.25)),
                 ]))
             );
             let _ = VariantClear(&mut variant);

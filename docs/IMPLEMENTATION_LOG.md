@@ -1,3 +1,12 @@
+## 2026-03-15 - Added controlled `VT_DATE` COM result transport evidence in `IP-03A`
+
+- Continued the active late-bound COM value-transport pass by routing automation `Date` payloads across the existing semantic `f64` carrier instead of introducing a separate runtime date lane before the broader value-model work closes.
+- In [variant.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-runtime\src\variant.rs), added `VarType::Date` plus an owned runtime `Variant` bridge from `Date` into `RuntimeValue::F64(...)` with focused coverage.
+- In [windows_variant.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-com\src\windows_variant.rs), added scalar and one-dimensional typed SAFEARRAY `VT_DATE` result translation together with focused Windows bridge tests.
+- In [windows_test_dispatch.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-com\src\windows_test_dispatch.rs), added the controlled `ReturnDate` and `ReturnDateArray` fixture members.
+- In [typelib_catalog.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-com\src\typelib_catalog.rs), [lib.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-compiler\src\lib.rs), [project.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-compiler\src\project.rs), and [resolve.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-compiler\src\resolve.rs), extended controlled metadata and compiler member-token coverage for `53` and `54`.
+- In [standard.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-hal\src\adapters\standard.rs) and [com_client_end_to_end.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-host\tests\com_client_end_to_end.rs), updated HAL metadata expectations and VM/JIT parity coverage so scalar `VT_DATE` and typed `VT_ARRAY | VT_DATE` results stay deterministic on the semantic `f64` carrier.
+- Updated [CURRENT_BLOCKERS.md](C:\Work\DnaCalc\OxVba\CURRENT_BLOCKERS.md) and [IN_PROGRESS_FEATURE_WORKLIST.md](C:\Work\DnaCalc\OxVba\docs\IN_PROGRESS_FEATURE_WORKLIST.md) so the supported COM value-transport subset now explicitly includes automation `Date` alongside the current float subset while the broader parity program remains open.
 ## 2026-03-15 - Added controlled `VT_R4` / `Single` COM result transport evidence in `IP-03A`
 
 - Continued the active late-bound COM value-transport pass by widening COM `Single` payloads into the existing semantic `f64` carrier instead of inventing a second runtime float lane.

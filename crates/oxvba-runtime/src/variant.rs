@@ -9,6 +9,7 @@ pub enum VarType {
     Long = 0x0003,
     Single = 0x0004,
     Double = 0x0005,
+    Date = 0x0007,
     String = 0x0008,
     Object = 0x0009,
     Error = 0x000A,
@@ -27,6 +28,7 @@ impl VarType {
             0x0003 => Some(Self::Long),
             0x0004 => Some(Self::Single),
             0x0005 => Some(Self::Double),
+            0x0007 => Some(Self::Date),
             0x0008 => Some(Self::String),
             0x0009 => Some(Self::Object),
             0x000A => Some(Self::Error),
@@ -194,6 +196,17 @@ impl Variant {
         Some(f64::from_le_bytes(self.data_bytes()))
     }
 
+    pub fn from_date_f64(value: f64) -> Self {
+        Self::from_bytes(VarType::Date, value.to_le_bytes())
+    }
+
+    pub fn as_date_f64(&self) -> Option<f64> {
+        if self.vtype != VarType::Date {
+            return None;
+        }
+        Some(f64::from_le_bytes(self.data_bytes()))
+    }
+
     pub fn from_bool(value: bool) -> Self {
         let mut bytes = [0u8; 8];
         let vb_bool: i16 = if value { -1 } else { 0 };
@@ -271,6 +284,10 @@ impl Variant {
                 .as_f64()
                 .map(|value| RuntimeValue::F64(F64Value::from_f64(value)))
                 .ok_or_else(|| "invalid Double variant payload".to_string()),
+            VarType::Date => self
+                .as_date_f64()
+                .map(|value| RuntimeValue::F64(F64Value::from_f64(value)))
+                .ok_or_else(|| "invalid Date variant payload".to_string()),
             VarType::Boolean => self
                 .as_bool()
                 .map(RuntimeValue::Bool)
@@ -306,6 +323,9 @@ mod tests {
 
         let f64v = Variant::from_f64(3.5);
         assert_eq!(f64v.as_f64(), Some(3.5));
+
+        let datev = Variant::from_date_f64(45200.25);
+        assert_eq!(datev.as_date_f64(), Some(45200.25));
     }
 
     #[test]
@@ -342,6 +362,18 @@ mod tests {
                 .to_runtime_value()
                 .expect("single Variant should bridge into RuntimeValue::F64"),
             RuntimeValue::F64(F64Value::from_f64(12.5))
+        );
+    }
+
+    #[test]
+    fn date_variant_bridges_to_runtime_f64_lane() {
+        let date_variant = Variant::from_date_f64(45200.25);
+        assert_eq!(date_variant.vtype, VarType::Date);
+        assert_eq!(
+            date_variant
+                .to_runtime_value()
+                .expect("date Variant should bridge into RuntimeValue::F64"),
+            RuntimeValue::F64(F64Value::from_f64(45200.25))
         );
     }
 

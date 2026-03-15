@@ -531,9 +531,11 @@ Sub Main()
 Dim obj
 Dim doubleValue
 Dim singleValue
+Dim dateValue
 obj = CreateObject("OxVba.TestDispatch")
 doubleValue = DispatchInvoke(obj, "ReturnDouble")
 singleValue = DispatchInvoke(obj, "ReturnSingle")
+dateValue = DispatchInvoke(obj, "ReturnDate")
 End Sub
 "#;
 
@@ -554,6 +556,11 @@ End Sub
             RuntimeValue::F64(F64Value::from_f64(12.5)),
             "VT_R4 result should widen into the semantic f64 carrier"
         );
+        assert_eq!(
+            vm[3],
+            RuntimeValue::F64(F64Value::from_f64(45200.25)),
+            "VT_DATE result should preserve the automation date payload on the semantic f64 carrier"
+        );
     }
 
     #[test]
@@ -563,9 +570,11 @@ Sub Main()
 Dim obj
 Dim doubleArray
 Dim singleArray
+Dim dateArray
 obj = CreateObject("OxVba.TestDispatch")
 doubleArray = DispatchInvoke(obj, "ReturnDoubleArray")
 singleArray = DispatchInvoke(obj, "ReturnSingleArray")
+dateArray = DispatchInvoke(obj, "ReturnDateArray")
 End Sub
 "#;
 
@@ -593,6 +602,15 @@ End Sub
                 RuntimeValue::F64(F64Value::from_f64(321.0)),
             ])),
             "VT_ARRAY|VT_R4 result should widen float array elements into the semantic f64 carrier"
+        );
+        assert_eq!(
+            vm[3],
+            RuntimeValue::ArrayIntent(SafeArray::from_values(vec![
+                RuntimeValue::F64(F64Value::from_f64(45200.25)),
+                RuntimeValue::F64(F64Value::from_f64(12.5)),
+                RuntimeValue::F64(F64Value::from_f64(-4.25)),
+            ])),
+            "VT_ARRAY|VT_DATE result should preserve automation date payloads on the semantic f64 carrier"
         );
     }
 
