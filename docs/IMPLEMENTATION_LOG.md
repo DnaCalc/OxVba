@@ -483,6 +483,13 @@
   - `DispatchInvoke(obj, "SumPair", "bad", 42)` preserves a real `DISP_E_TYPEMISMATCH` adapter fault with `arg_err=1`,
   - `DispatchInvoke(obj, "RaiseException")` preserves bounded `EXCEPINFO` source, description, and scode details without synthesizing a fake `arg_err`.
 - Updated [CURRENT_BLOCKERS.md](C:\Work\DnaCalc\OxVba\CURRENT_BLOCKERS.md) so the remaining external `Invoke` fidelity gap is documented relative to this now-proven controlled subset rather than as an unqualified absence of host-facing error detail.
+## 2026-03-15 - Locked bounded non-`IDispatch` `VT_UNKNOWN` failure diagnostics in `IP-03A`
+
+- Continued the late-bound COM transport work with another explicit unsupported-but-bounded slice instead of pretending broader non-`IDispatch` interface parity already exists.
+- In [windows_test_dispatch.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-com\src\windows_test_dispatch.rs), added the controlled `ReturnPlainUnknown` fixture member backed by an `IUnknown`-only COM object that intentionally does not expose `IDispatch`.
+- In [lib.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-compiler\src\lib.rs), added compiler token coverage proving `DispatchInvoke(..., "ReturnPlainUnknown")` lowers to member token `31`.
+- In [com_client_end_to_end.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-host\tests\com_client_end_to_end.rs), added VM/JIT parity coverage proving `VT_UNKNOWN` results that do not expose `IDispatch` now fail with a stable native adapter diagnostic containing `IUnknown::QueryInterface(IDispatch) failed with HRESULT 0x80004002`.
+- Updated [CURRENT_BLOCKERS.md](C:\Work\DnaCalc\OxVba\CURRENT_BLOCKERS.md) so the remaining non-`IDispatch` interface-pointer gap is documented as broader parity debt beyond this now-proven bounded failure lane.
 ## 2026-03-14 - Closed the typed `VT_ARRAY | VT_UNKNOWN` result lane in `IP-03A`
 
 - Continued the adjacent `IP-03A` substrate slice for typed interface SAFEARRAY results where each element arrives as `VT_UNKNOWN` but exposes `IDispatch`.

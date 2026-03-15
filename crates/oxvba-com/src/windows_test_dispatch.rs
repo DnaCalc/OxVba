@@ -91,6 +91,7 @@ pub const TEST_DISPID_RETURN_SELF_DISPATCH_ARRAY: i32 = 27;
 pub const TEST_DISPID_RETURN_SELF_TYPED_DISPATCH_ARRAY: i32 = 28;
 pub const TEST_DISPID_RETURN_SELF_TYPED_UNKNOWN_ARRAY: i32 = 29;
 pub const TEST_DISPID_RETURN_SMALLINT_MATRIX: i32 = 30;
+pub const TEST_DISPID_RETURN_PLAIN_UNKNOWN: i32 = 31;
 pub const TEST_NAMED_DISPID_LHS: i32 = 101;
 pub const TEST_NAMED_DISPID_RHS: i32 = 102;
 pub const TEST_NAMED_DISPID_INDEX: i32 = 103;
@@ -316,6 +317,12 @@ struct OxvbaTestDispatchObject {
 
 #[cfg(target_os = "windows")]
 #[repr(C)]
+struct OxvbaTestPlainUnknown {
+    unknown: RawIUnknown,
+    ref_count: AtomicU32,
+}
+#[cfg(target_os = "windows")]
+#[repr(C)]
 struct RawOxvbaTestDispatchSourceEventsVtbl {
     unknown: RawIUnknownVtbl,
     changed: unsafe extern "system" fn(this: *mut core::ffi::c_void, value: i32) -> i32,
@@ -327,6 +334,12 @@ struct RawOxvbaTestDispatchSourceEvents {
     vtbl: *const RawOxvbaTestDispatchSourceEventsVtbl,
 }
 
+#[cfg(target_os = "windows")]
+static OXVBA_TEST_PLAIN_UNKNOWN_VTBL: RawIUnknownVtbl = RawIUnknownVtbl {
+    query_interface: oxvba_test_plain_unknown_query_interface,
+    add_ref: oxvba_test_plain_unknown_add_ref,
+    release: oxvba_test_plain_unknown_release,
+};
 #[cfg(target_os = "windows")]
 static OXVBA_TEST_DISPATCH_VTBL: RawIDispatchVtbl = RawIDispatchVtbl {
     unknown: RawIUnknownVtbl {
@@ -404,6 +417,64 @@ pub fn create_oxvba_test_dispatch() -> *mut RawIDispatch {
     dispatch_ptr
 }
 
+#[cfg(target_os = "windows")]
+pub fn create_oxvba_test_plain_unknown() -> *mut RawIUnknown {
+    let mut object = Box::new(OxvbaTestPlainUnknown {
+        unknown: RawIUnknown {
+            vtbl: &OXVBA_TEST_PLAIN_UNKNOWN_VTBL,
+        },
+        ref_count: AtomicU32::new(1),
+    });
+    let unknown_ptr = (&mut object.unknown as *mut RawIUnknown).cast::<RawIUnknown>();
+    let _ = Box::into_raw(object);
+    unknown_ptr
+}
+
+#[cfg(target_os = "windows")]
+#[allow(unsafe_op_in_unsafe_fn)]
+unsafe fn as_oxvba_test_plain_unknown(this: *mut core::ffi::c_void) -> *mut OxvbaTestPlainUnknown {
+    this.cast::<OxvbaTestPlainUnknown>()
+}
+
+#[cfg(target_os = "windows")]
+#[allow(unsafe_op_in_unsafe_fn)]
+unsafe extern "system" fn oxvba_test_plain_unknown_query_interface(
+    this: *mut core::ffi::c_void,
+    riid: *const windows_sys::core::GUID,
+    ppv: *mut *mut core::ffi::c_void,
+) -> i32 {
+    if ppv.is_null() {
+        return COM_E_INVALIDARG;
+    }
+    *ppv = std::ptr::null_mut();
+    if riid.is_null() {
+        return COM_E_NOINTERFACE;
+    }
+    if guid_equals(riid, &IID_IUNKNOWN) {
+        *ppv = this;
+        let _ = oxvba_test_plain_unknown_add_ref(this);
+        return COM_S_OK;
+    }
+    COM_E_NOINTERFACE
+}
+
+#[cfg(target_os = "windows")]
+#[allow(unsafe_op_in_unsafe_fn)]
+unsafe extern "system" fn oxvba_test_plain_unknown_add_ref(this: *mut core::ffi::c_void) -> u32 {
+    let owner = as_oxvba_test_plain_unknown(this);
+    (*owner).ref_count.fetch_add(1, Ordering::AcqRel) + 1
+}
+
+#[cfg(target_os = "windows")]
+#[allow(unsafe_op_in_unsafe_fn)]
+unsafe extern "system" fn oxvba_test_plain_unknown_release(this: *mut core::ffi::c_void) -> u32 {
+    let owner = as_oxvba_test_plain_unknown(this);
+    let remaining = (*owner).ref_count.fetch_sub(1, Ordering::AcqRel) - 1;
+    if remaining == 0 {
+        drop(Box::from_raw(owner));
+    }
+    remaining
+}
 #[cfg(target_os = "windows")]
 #[allow(unsafe_op_in_unsafe_fn)]
 unsafe fn read_utf16_z(ptr: *const u16) -> Option<String> {
@@ -1150,6 +1221,7 @@ unsafe extern "system" fn oxvba_test_get_ids_of_names(
             "returnselftypeddispatcharray" => TEST_DISPID_RETURN_SELF_TYPED_DISPATCH_ARRAY,
             "returnselftypedunknownarray" => TEST_DISPID_RETURN_SELF_TYPED_UNKNOWN_ARRAY,
             "returnsmallintmatrix" => TEST_DISPID_RETURN_SMALLINT_MATRIX,
+            "returnplainunknown" => TEST_DISPID_RETURN_PLAIN_UNKNOWN,
             "lhs" => TEST_NAMED_DISPID_LHS,
             "rhs" => TEST_NAMED_DISPID_RHS,
             "index" => TEST_NAMED_DISPID_INDEX,
@@ -1472,6 +1544,17 @@ unsafe extern "system" fn oxvba_test_invoke(
                 Ok(()) => COM_S_OK,
                 Err(_) => COM_E_INVALIDARG,
             }
+        }
+        TEST_DISPID_RETURN_PLAIN_UNKNOWN => {
+            if (wflags & DISPATCH_METHOD) == 0 || cargs != 0 {
+                return COM_DISP_E_BADPARAMCOUNT;
+            }
+            if !pvarresult.is_null() {
+                (*pvarresult).Anonymous.Anonymous.vt = VT_UNKNOWN;
+                (*pvarresult).Anonymous.Anonymous.Anonymous.punkVal =
+                    create_oxvba_test_plain_unknown().cast();
+            }
+            COM_S_OK
         }
         TEST_DISPID_RETURN_BOOL_ARRAY => {
             if (wflags & DISPATCH_METHOD) == 0 || cargs != 0 {

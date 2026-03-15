@@ -78,7 +78,8 @@ Run context: active parity/compliance execution plus in-progress feature worklis
   - controlled direct-error host coverage now also proves VM/JIT parity for both real `arg_err` indexing on `DISP_E_TYPEMISMATCH` and bounded `EXCEPINFO` source/description/scode detail on `DISP_E_EXCEPTION`,
   - explicit `DispatchInvoke(obj, 0, name := value)` now routes through authoritative default-member metadata when the binding exposes one,
   - natural late-bound default-member calls with named arguments now lower and execute when the bound COM object exposes authoritative default-member metadata,
-  - broad non-`IDispatch` interface-pointer handling, multi-dimensional SAFEARRAYs, non-`IDispatch` interface arrays, and fuller external `VARIANT` parity remain below target,
+  - controlled host coverage now also proves a bounded native-failure diagnostic when a VT_UNKNOWN result does not expose IDispatch,
+  - broad non-IDispatch interface-pointer handling, multi-dimensional SAFEARRAYs, non-IDispatch interface arrays, and fuller external VARIANT parity remain below target,
   - `Invoke` result fidelity still lacks the broader `VarResult` surface and richer external automation `ExcepInfo`/argument-fault coverage required for Office-style automation parity.
 - Exact unblock steps:
   - recover authoritative default-member identity for natural late-bound syntax and non-metadata-backed bindings,
