@@ -1,3 +1,6 @@
+## 2026-03-15 - Added outbound float, currency, and decimal COM classifier evidence
+- Added direct host VM/JIT evidence that outbound `Double`, `Single`, `Date`, `Currency`, and `Decimal` values classify as `VT_R8`, `VT_R8`, `VT_R8`, `VT_CY`, and `VT_DECIMAL` respectively on the current shared COM carrier, documenting the still-open outward `Single`/`Date` vartype-fidelity gap.
+
 ## 2026-03-15 - Added outbound scalar COM VARIANT classifier evidence
 - Added direct host VM/JIT evidence that outbound `True`, `BSTR`, `Empty`, `Null`, and `CVErr(...)` arguments marshal to the expected COM `VT_BOOL`, `VT_BSTR`, `VT_EMPTY`, `VT_NULL`, and `VT_ERROR` tags on the controlled classifier lane.
 

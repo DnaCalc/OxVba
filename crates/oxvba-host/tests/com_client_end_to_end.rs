@@ -898,6 +898,69 @@ End Sub
     }
 
     #[test]
+    fn dispatchinvoke_classifies_float_currency_and_decimal_arguments_at_com_boundary() {
+        let source = r#"
+Sub Main()
+Dim obj
+Dim doubleSeed
+Dim singleSeed
+Dim dateSeed
+Dim currencySeed
+Dim decimalSeed
+Dim doubleVt
+Dim singleVt
+Dim dateVt
+Dim currencyVt
+Dim decimalVt
+obj = CreateObject("OxVba.TestDispatch")
+doubleSeed = DispatchInvoke(obj, "ReturnDouble")
+singleSeed = DispatchInvoke(obj, "ReturnSingle")
+dateSeed = DispatchInvoke(obj, "ReturnDate")
+currencySeed = DispatchInvoke(obj, "ReturnCurrency")
+decimalSeed = DispatchInvoke(obj, "ReturnDecimal")
+doubleVt = DispatchInvoke(obj, "ClassifyVariantArg", doubleSeed)
+singleVt = DispatchInvoke(obj, "ClassifyVariantArg", singleSeed)
+dateVt = DispatchInvoke(obj, "ClassifyVariantArg", dateSeed)
+currencyVt = DispatchInvoke(obj, "ClassifyVariantArg", currencySeed)
+decimalVt = DispatchInvoke(obj, "ClassifyVariantArg", decimalSeed)
+End Sub
+"#;
+
+        let vm = run_windows_host_backed(source, false);
+        let jit = run_windows_host_backed(source, true);
+        assert_eq!(
+            vm, jit,
+            "VM/JIT snapshots diverged on float/currency/decimal argument classifier path: vm={vm:?} jit={jit:?}"
+        );
+        assert!(expect_object_handle(&vm[0]).raw() >= 20_001);
+        assert_eq!(
+            vm[6],
+            RuntimeValue::I32(5),
+            "Double should marshal as VT_R8"
+        );
+        assert_eq!(
+            vm[7],
+            RuntimeValue::I32(5),
+            "Single currently widens back out through the shared VT_R8 semantic f64 lane"
+        );
+        assert_eq!(
+            vm[8],
+            RuntimeValue::I32(5),
+            "Date currently re-emits through the shared VT_R8 semantic f64 lane"
+        );
+        assert_eq!(
+            vm[9],
+            RuntimeValue::I32(6),
+            "Currency should preserve VT_CY on the exact currency carrier"
+        );
+        assert_eq!(
+            vm[10],
+            RuntimeValue::I32(14),
+            "Decimal should preserve VT_DECIMAL on the exact decimal carrier"
+        );
+    }
+
+    #[test]
     fn dispatchinvoke_classifies_object_arguments_at_com_boundary() {
         let source = r#"
 Sub Main()

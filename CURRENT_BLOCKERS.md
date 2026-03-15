@@ -72,6 +72,7 @@ Run context: active parity/compliance execution plus in-progress feature worklis
   - controlled/native result conversion now also has end-to-end host evidence for one-dimensional typed `VT_ARRAY | VT_DISPATCH` and `VT_ARRAY | VT_UNKNOWN` results when the element interfaces expose `IDispatch`,
   - outbound object-valued COM arguments now have end-to-end host evidence via a controlled raw-variant classifier method,
   - outbound scalar `True`, `BSTR`, `Empty`, `Null`, and `CVErr(...)` COM arguments now also have end-to-end host evidence via the same controlled raw-variant classifier lane,
+  - outbound float/date/currency/decimal host evidence now proves the current shared semantic `f64` lane re-emits both `Single` and `Date` values as `VT_R8` while `Currency` and `Decimal` preserve exact `VT_CY` / `VT_DECIMAL` tags,
   - outbound `Array(...)` expressions now have end-to-end host evidence as semantic `VT_ARRAY | VT_VARIANT` payloads via the controlled raw-variant classifier lane,
   - one-dimensional `VT_ARRAY | VT_VARIANT` payloads with nested `VT_DISPATCH` elements now have end-to-end host evidence on both argument and result paths via controlled classifier and return-array fixture members,
   - controlled host coverage now also proves a stable unsupported-path diagnostic for rank-2 typed SAFEARRAY results instead of an unbounded crash or shape drift,
