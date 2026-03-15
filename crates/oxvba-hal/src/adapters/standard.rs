@@ -4597,6 +4597,7 @@ mod tests {
                     super::TEST_DISPID_RETURN_UNSIGNED_WORD
                 ),
                 ("ReturnByte".to_string(), 37),
+                ("ReturnSignedByte".to_string(), 39),
                 ("ReturnLong".to_string(), 35),
                 ("ReturnUnsignedLong".to_string(), 36),
                 ("ReturnSmallIntArray".to_string(), 20),
@@ -4606,6 +4607,7 @@ mod tests {
                 ("ReturnPlainUnknown".to_string(), 31),
                 ("ReturnPlainUnknownArray".to_string(), 32),
                 ("ReturnByteArray".to_string(), 38),
+                ("ReturnSignedByteArray".to_string(), 40),
                 ("ReturnLongArray".to_string(), 33),
                 ("ReturnUnsignedLongArray".to_string(), 34),
                 ("ReturnSelfDispatch".to_string(), 23),

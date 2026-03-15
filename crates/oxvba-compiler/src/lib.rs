@@ -1274,6 +1274,23 @@ mod tests {
                 .any(|i| matches!(i, Instruction::LoadConstI32 { value: 37, .. }))
         );
     }
+
+    #[test]
+    fn compile_dispatchinvoke_with_signed_byte_result_literal_maps_to_member_token_thirty_nine() {
+        let source = "Sub Main()\nDim x\nx = DispatchInvoke(CreateObject(\"OxVba.TestDispatch\"), \"ReturnSignedByte\")\nEnd Sub";
+        let out =
+            compile(source).expect("compile should succeed for signed-byte result fixture member");
+        assert!(
+            out.instructions
+                .iter()
+                .any(|i| matches!(i, Instruction::IntrinsicDispatchInvokeHost { .. }))
+        );
+        assert!(
+            out.instructions
+                .iter()
+                .any(|i| matches!(i, Instruction::LoadConstI32 { value: 39, .. }))
+        );
+    }
     #[test]
     fn compile_dispatchinvoke_with_typed_array_result_literal_maps_to_member_token_twenty() {
         let source = "Sub Main()\nDim x\nx = DispatchInvoke(CreateObject(\"OxVba.TestDispatch\"), \"ReturnSmallIntArray\")\nEnd Sub";
@@ -1478,6 +1495,23 @@ mod tests {
             out.instructions
                 .iter()
                 .any(|i| matches!(i, Instruction::LoadConstI32 { value: 38, .. }))
+        );
+    }
+
+    #[test]
+    fn compile_dispatchinvoke_with_signed_byte_array_result_literal_maps_to_member_token_forty() {
+        let source = "Sub Main()\nDim x\nx = DispatchInvoke(CreateObject(\"OxVba.TestDispatch\"), \"ReturnSignedByteArray\")\nEnd Sub";
+        let out = compile(source)
+            .expect("compile should succeed for signed-byte-array result fixture member");
+        assert!(
+            out.instructions
+                .iter()
+                .any(|i| matches!(i, Instruction::IntrinsicDispatchInvokeHost { .. }))
+        );
+        assert!(
+            out.instructions
+                .iter()
+                .any(|i| matches!(i, Instruction::LoadConstI32 { value: 40, .. }))
         );
     }
     #[test]

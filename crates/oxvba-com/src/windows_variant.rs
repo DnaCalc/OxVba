@@ -13,8 +13,8 @@ use windows_sys::Win32::System::Ole::{
 };
 #[cfg(target_os = "windows")]
 use windows_sys::Win32::System::Variant::{
-    VARIANT, VT_ARRAY, VT_BOOL, VT_BSTR, VT_DISPATCH, VT_EMPTY, VT_ERROR, VT_I2, VT_I4, VT_NULL,
-    VT_UI1, VT_UI2, VT_UI4, VT_UNKNOWN, VT_VARIANT, VariantClear,
+    VARIANT, VT_ARRAY, VT_BOOL, VT_BSTR, VT_DISPATCH, VT_EMPTY, VT_ERROR, VT_I1, VT_I2, VT_I4,
+    VT_NULL, VT_UI1, VT_UI2, VT_UI4, VT_UNKNOWN, VT_VARIANT, VariantClear,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -111,6 +111,17 @@ unsafe fn safe_array_element_to_runtime_value(
             let _ = VariantClear(&mut element);
             Ok(value)
         }
+        VT_I1 => {
+            let mut element = 0i8;
+            let hr = SafeArrayGetElement(psa, &index, (&mut element as *mut i8).cast());
+            if hr < 0 {
+                return Err(format!(
+                    "SafeArrayGetElement failed with HRESULT {:#010X} at index {}",
+                    hr as u32, index
+                ));
+            }
+            Ok(ComValue::I32(element as i32).to_runtime_value())
+        }
         VT_I2 => {
             let mut element = 0i16;
             let hr = SafeArrayGetElement(psa, &index, (&mut element as *mut i16).cast());
@@ -202,7 +213,7 @@ unsafe fn safe_array_element_to_runtime_value(
             Ok(ComValue::String(BStr(text)).to_runtime_value())
         }
         other => Err(format!(
-            "unsupported SAFEARRAY element vartype {other}; supported element vartypes are VT_VARIANT, VT_I2, VT_I4, VT_UI1, VT_UI2, VT_UI4, VT_BOOL, and VT_BSTR"
+            "unsupported SAFEARRAY element vartype {other}; supported element vartypes are VT_VARIANT, VT_I1, VT_I2, VT_I4, VT_UI1, VT_UI2, VT_UI4, VT_BOOL, and VT_BSTR"
         )),
     }
 }
@@ -446,6 +457,7 @@ pub unsafe fn variant_to_com_value(variant: &VARIANT) -> Result<ComValue, String
     }
     let value = match vt {
         VT_EMPTY => ComValue::Empty,
+        VT_I1 => ComValue::I32(variant.Anonymous.Anonymous.Anonymous.cVal as i32),
         VT_I2 => ComValue::I32(variant.Anonymous.Anonymous.Anonymous.iVal as i32),
         VT_I4 => ComValue::I32(variant.Anonymous.Anonymous.Anonymous.lVal),
         VT_UI1 => ComValue::I32(variant.Anonymous.Anonymous.Anonymous.bVal as i32),
