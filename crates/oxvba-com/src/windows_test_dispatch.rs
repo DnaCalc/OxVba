@@ -136,6 +136,10 @@ pub const TEST_DISPID_RETURN_NULL: i32 = 66;
 pub const TEST_DISPID_RETURN_ERROR: i32 = 67;
 pub const TEST_DISPID_RETURN_BYREF_LONG: i32 = 68;
 pub const TEST_DISPID_RETURN_BYREF_LONG_ARRAY: i32 = 69;
+pub const TEST_DISPID_RETURN_WIDE_HYPER: i32 = 70;
+pub const TEST_DISPID_RETURN_WIDE_HYPER_ARRAY: i32 = 71;
+pub const TEST_DISPID_RETURN_WIDE_UNSIGNED_HYPER: i32 = 72;
+pub const TEST_DISPID_RETURN_WIDE_UNSIGNED_HYPER_ARRAY: i32 = 73;
 pub const TEST_NAMED_DISPID_LHS: i32 = 101;
 
 static mut TEST_BYREF_I32_RESULT: i32 = 321;
@@ -1742,6 +1746,10 @@ unsafe extern "system" fn oxvba_test_get_ids_of_names(
             "returnerror" => TEST_DISPID_RETURN_ERROR,
             "returnbyreflong" => TEST_DISPID_RETURN_BYREF_LONG,
             "returnbyreflongarray" => TEST_DISPID_RETURN_BYREF_LONG_ARRAY,
+            "returnwidehyper" => TEST_DISPID_RETURN_WIDE_HYPER,
+            "returnwidehyperarray" => TEST_DISPID_RETURN_WIDE_HYPER_ARRAY,
+            "returnwideunsignedhyper" => TEST_DISPID_RETURN_WIDE_UNSIGNED_HYPER,
+            "returnwideunsignedhyperarray" => TEST_DISPID_RETURN_WIDE_UNSIGNED_HYPER_ARRAY,
             "lhs" => TEST_NAMED_DISPID_LHS,
             "rhs" => TEST_NAMED_DISPID_RHS,
             "index" => TEST_NAMED_DISPID_INDEX,
@@ -2127,6 +2135,26 @@ unsafe extern "system" fn oxvba_test_invoke(
             }
             COM_S_OK
         }
+        TEST_DISPID_RETURN_WIDE_HYPER => {
+            if (wflags & DISPATCH_METHOD) == 0 || cargs != 0 {
+                return COM_DISP_E_BADPARAMCOUNT;
+            }
+            if !pvarresult.is_null() {
+                (*pvarresult).Anonymous.Anonymous.vt = VT_I8;
+                (*pvarresult).Anonymous.Anonymous.Anonymous.llVal = 5_000_000_000;
+            }
+            COM_S_OK
+        }
+        TEST_DISPID_RETURN_WIDE_UNSIGNED_HYPER => {
+            if (wflags & DISPATCH_METHOD) == 0 || cargs != 0 {
+                return COM_DISP_E_BADPARAMCOUNT;
+            }
+            if !pvarresult.is_null() {
+                (*pvarresult).Anonymous.Anonymous.vt = VT_UI8;
+                (*pvarresult).Anonymous.Anonymous.Anonymous.ullVal = 5_000_000_000;
+            }
+            COM_S_OK
+        }
         TEST_DISPID_RETURN_DOUBLE => {
             if (wflags & DISPATCH_METHOD) == 0 || cargs != 0 {
                 return COM_DISP_E_BADPARAMCOUNT;
@@ -2261,6 +2289,24 @@ unsafe extern "system" fn oxvba_test_invoke(
                 return COM_DISP_E_BADPARAMCOUNT;
             }
             match set_variant_i32_array_byref(pvarresult) {
+                Ok(()) => COM_S_OK,
+                Err(_) => COM_E_INVALIDARG,
+            }
+        }
+        TEST_DISPID_RETURN_WIDE_HYPER_ARRAY => {
+            if (wflags & DISPATCH_METHOD) == 0 || cargs != 0 {
+                return COM_DISP_E_BADPARAMCOUNT;
+            }
+            match set_variant_i64_array(&[12, 5_000_000_000, -4], pvarresult) {
+                Ok(()) => COM_S_OK,
+                Err(_) => COM_E_INVALIDARG,
+            }
+        }
+        TEST_DISPID_RETURN_WIDE_UNSIGNED_HYPER_ARRAY => {
+            if (wflags & DISPATCH_METHOD) == 0 || cargs != 0 {
+                return COM_DISP_E_BADPARAMCOUNT;
+            }
+            match set_variant_u64_array(&[12, 5_000_000_000, 70_000], pvarresult) {
                 Ok(()) => COM_S_OK,
                 Err(_) => COM_E_INVALIDARG,
             }

@@ -1,3 +1,7 @@
+## 2026-03-15 - Bounded VT_I8/VT_UI8 COM overflow transport on the current i32 lane
+- Added controlled `ReturnWideHyper`, `ReturnWideHyperArray`, `ReturnWideUnsignedHyper`, and `ReturnWideUnsignedHyperArray` fixture members together with compiler token coverage, HAL metadata expectations, and host VM/JIT evidence.
+- Extended the current bounded-overflow evidence so scalar `VT_I8` / `VT_UI8` values and one-dimensional typed `VT_ARRAY | VT_I8` / `VT_ARRAY | VT_UI8` elements that exceed the current `i32` carrier lane now fail with deterministic diagnostics instead of silently narrowing.
+
 ## 2026-03-15 - Bounded unsupported VT_BYREF COM result diagnostics
 - Extended the bounded unsupported `VT_BYREF` coverage to include typed `VT_BYREF | VT_ARRAY | VT_I4` result payloads with a controlled `ReturnByRefLongArray` fixture member, compiler/metadata token mapping, COM bridge unit coverage, and host VM/JIT evidence.
 - Added an explicit Windows `VARIANT` bridge guard for `VT_BYREF` result payloads, a controlled `ReturnByRefLong` fixture member, compiler/metadata token mapping, COM bridge unit coverage, and host VM/JIT evidence so unsupported byref result shapes now fail with a deterministic bounded diagnostic instead of an undocumented adapter path.

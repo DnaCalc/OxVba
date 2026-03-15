@@ -1457,6 +1457,126 @@ End Sub
     }
 
     #[test]
+    fn dispatchinvoke_wide_hyper_results_fail_with_bounded_overflow_diagnostic() {
+        let source = r#"
+Sub Main()
+Dim obj
+Dim failed
+obj = CreateObject("OxVba.TestDispatch")
+failed = DispatchInvoke(obj, "ReturnWideHyper")
+End Sub
+"#;
+
+        let vm = run_windows_host_backed_error(source, false);
+        let jit = run_windows_host_backed_error(source, true);
+        assert!(
+            vm.contains("runtime error: 53053") && jit.contains("runtime error: 53053"),
+            "expected stable runtime fault code across VM/JIT, got vm={vm:?} jit={jit:?}"
+        );
+        assert!(
+            vm.contains("VT_I8 value 5000000000 exceeds current i32 carrier lane")
+                && jit.contains("VT_I8 value 5000000000 exceeds current i32 carrier lane"),
+            "expected bounded VT_I8 overflow diagnostic across VM/JIT, got vm={vm:?} jit={jit:?}"
+        );
+        assert!(
+            vm.contains("com-dispatch-fault-unspecified")
+                && jit.contains("com-dispatch-fault-unspecified"),
+            "expected bounded adapter fault prefix across VM/JIT, got vm={vm:?} jit={jit:?}"
+        );
+    }
+
+    #[test]
+    fn dispatchinvoke_wide_hyper_arrays_fail_with_bounded_overflow_diagnostic() {
+        let source = r#"
+Sub Main()
+Dim obj
+Dim failed
+obj = CreateObject("OxVba.TestDispatch")
+failed = DispatchInvoke(obj, "ReturnWideHyperArray")
+End Sub
+"#;
+
+        let vm = run_windows_host_backed_error(source, false);
+        let jit = run_windows_host_backed_error(source, true);
+        assert!(
+            vm.contains("runtime error: 53053") && jit.contains("runtime error: 53053"),
+            "expected stable runtime fault code across VM/JIT, got vm={vm:?} jit={jit:?}"
+        );
+        assert!(
+            vm.contains("VT_I8 SAFEARRAY element 5000000000 exceeds current i32 carrier lane")
+                && jit.contains(
+                    "VT_I8 SAFEARRAY element 5000000000 exceeds current i32 carrier lane"
+                ),
+            "expected bounded VT_I8 SAFEARRAY overflow diagnostic across VM/JIT, got vm={vm:?} jit={jit:?}"
+        );
+        assert!(
+            vm.contains("com-dispatch-fault-unspecified")
+                && jit.contains("com-dispatch-fault-unspecified"),
+            "expected bounded adapter fault prefix across VM/JIT, got vm={vm:?} jit={jit:?}"
+        );
+    }
+
+    #[test]
+    fn dispatchinvoke_wide_unsigned_hyper_results_fail_with_bounded_overflow_diagnostic() {
+        let source = r#"
+Sub Main()
+Dim obj
+Dim failed
+obj = CreateObject("OxVba.TestDispatch")
+failed = DispatchInvoke(obj, "ReturnWideUnsignedHyper")
+End Sub
+"#;
+
+        let vm = run_windows_host_backed_error(source, false);
+        let jit = run_windows_host_backed_error(source, true);
+        assert!(
+            vm.contains("runtime error: 53053") && jit.contains("runtime error: 53053"),
+            "expected stable runtime fault code across VM/JIT, got vm={vm:?} jit={jit:?}"
+        );
+        assert!(
+            vm.contains("VT_UI8 value 5000000000 exceeds current i32 carrier lane")
+                && jit.contains("VT_UI8 value 5000000000 exceeds current i32 carrier lane"),
+            "expected bounded VT_UI8 overflow diagnostic across VM/JIT, got vm={vm:?} jit={jit:?}"
+        );
+        assert!(
+            vm.contains("com-dispatch-fault-unspecified")
+                && jit.contains("com-dispatch-fault-unspecified"),
+            "expected bounded adapter fault prefix across VM/JIT, got vm={vm:?} jit={jit:?}"
+        );
+    }
+
+    #[test]
+    fn dispatchinvoke_wide_unsigned_hyper_arrays_fail_with_bounded_overflow_diagnostic() {
+        let source = r#"
+Sub Main()
+Dim obj
+Dim failed
+obj = CreateObject("OxVba.TestDispatch")
+failed = DispatchInvoke(obj, "ReturnWideUnsignedHyperArray")
+End Sub
+"#;
+
+        let vm = run_windows_host_backed_error(source, false);
+        let jit = run_windows_host_backed_error(source, true);
+        assert!(
+            vm.contains("runtime error: 53053") && jit.contains("runtime error: 53053"),
+            "expected stable runtime fault code across VM/JIT, got vm={vm:?} jit={jit:?}"
+        );
+        assert!(
+            vm.contains("VT_UI8 SAFEARRAY element 5000000000 exceeds current i32 carrier lane")
+                && jit.contains(
+                    "VT_UI8 SAFEARRAY element 5000000000 exceeds current i32 carrier lane"
+                ),
+            "expected bounded VT_UI8 SAFEARRAY overflow diagnostic across VM/JIT, got vm={vm:?} jit={jit:?}"
+        );
+        assert!(
+            vm.contains("com-dispatch-fault-unspecified")
+                && jit.contains("com-dispatch-fault-unspecified"),
+            "expected bounded adapter fault prefix across VM/JIT, got vm={vm:?} jit={jit:?}"
+        );
+    }
+
+    #[test]
     fn dispatchinvoke_error_path_routes_through_on_error_resume_next() {
         let out = run_windows_host_backed(
             r#"

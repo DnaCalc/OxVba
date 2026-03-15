@@ -11,7 +11,6 @@ pub enum ProjectKind {
     Host,
     Library,
 }
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ModuleKind {
     Procedural,
@@ -3045,6 +3044,10 @@ fn known_dispatch_member_token(member_name: &str) -> Option<i32> {
         "returnerror" => Some(67),
         "returnbyreflong" => Some(68),
         "returnbyreflongarray" => Some(69),
+        "returnwidehyper" => Some(70),
+        "returnwidehyperarray" => Some(71),
+        "returnwideunsignedhyper" => Some(72),
+        "returnwideunsignedhyperarray" => Some(73),
         _ => None,
     }
 }

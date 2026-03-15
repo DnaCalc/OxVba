@@ -25,7 +25,6 @@ pub enum BoundExpr {
         args: Vec<BoundCallArg>,
     },
 }
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum BoundType {
     Variant,
@@ -3347,6 +3346,10 @@ fn map_dispatch_member_literal_token(text: &str) -> Option<i32> {
         "returnerror" => Some(67),
         "returnbyreflong" => Some(68),
         "returnbyreflongarray" => Some(69),
+        "returnwidehyper" => Some(70),
+        "returnwidehyperarray" => Some(71),
+        "returnwideunsignedhyper" => Some(72),
+        "returnwideunsignedhyperarray" => Some(73),
         _ => None,
     }
 }

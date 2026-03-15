@@ -83,6 +83,10 @@ const TEST_DISPID_RETURN_NULL: i32 = 66;
 const TEST_DISPID_RETURN_ERROR: i32 = 67;
 const TEST_DISPID_RETURN_BYREF_LONG: i32 = 68;
 const TEST_DISPID_RETURN_BYREF_LONG_ARRAY: i32 = 69;
+const TEST_DISPID_RETURN_WIDE_HYPER: i32 = 70;
+const TEST_DISPID_RETURN_WIDE_HYPER_ARRAY: i32 = 71;
+const TEST_DISPID_RETURN_WIDE_UNSIGNED_HYPER: i32 = 72;
+const TEST_DISPID_RETURN_WIDE_UNSIGNED_HYPER_ARRAY: i32 = 73;
 
 const TEST_EVENT_CHANGED: i32 = 1;
 const TEST_EVENT_CHANGED_SOURCE_INTERFACE: i32 = 2;
@@ -549,6 +553,38 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
             TypeLibMemberMetadata {
                 name: "ReturnByRefLongArray".to_string(),
                 token: TEST_DISPID_RETURN_BYREF_LONG_ARRAY,
+                requires_argument: false,
+                invoke_kind: TypeLibMemberInvokeKind::Method,
+                parameter_names: Vec::new(),
+                is_default_member: false,
+            },
+            TypeLibMemberMetadata {
+                name: "ReturnWideHyper".to_string(),
+                token: TEST_DISPID_RETURN_WIDE_HYPER,
+                requires_argument: false,
+                invoke_kind: TypeLibMemberInvokeKind::Method,
+                parameter_names: Vec::new(),
+                is_default_member: false,
+            },
+            TypeLibMemberMetadata {
+                name: "ReturnWideHyperArray".to_string(),
+                token: TEST_DISPID_RETURN_WIDE_HYPER_ARRAY,
+                requires_argument: false,
+                invoke_kind: TypeLibMemberInvokeKind::Method,
+                parameter_names: Vec::new(),
+                is_default_member: false,
+            },
+            TypeLibMemberMetadata {
+                name: "ReturnWideUnsignedHyper".to_string(),
+                token: TEST_DISPID_RETURN_WIDE_UNSIGNED_HYPER,
+                requires_argument: false,
+                invoke_kind: TypeLibMemberInvokeKind::Method,
+                parameter_names: Vec::new(),
+                is_default_member: false,
+            },
+            TypeLibMemberMetadata {
+                name: "ReturnWideUnsignedHyperArray".to_string(),
+                token: TEST_DISPID_RETURN_WIDE_UNSIGNED_HYPER_ARRAY,
                 requires_argument: false,
                 invoke_kind: TypeLibMemberInvokeKind::Method,
                 parameter_names: Vec::new(),
