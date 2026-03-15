@@ -1208,6 +1208,32 @@ End Sub
     }
 
     #[test]
+    fn dispatchinvoke_multidim_variant_array_results_fail_deterministically() {
+        let source = r#"
+Sub Main()
+Dim obj
+Dim returnedMatrix
+obj = CreateObject("OxVba.TestDispatch")
+returnedMatrix = DispatchInvoke(obj, "ReturnVariantMatrix")
+End Sub
+"#;
+
+        let vm = run_windows_host_backed_error(source, false);
+        let jit = run_windows_host_backed_error(source, true);
+        assert!(
+            vm.contains("runtime error: 53053") && jit.contains("runtime error: 53053"),
+            "expected stable runtime fault code across VM/JIT, got vm={vm:?} jit={jit:?}"
+        );
+        assert!(
+            vm.contains("unsupported SAFEARRAY rank 2; only one-dimensional arrays are supported")
+                && jit.contains(
+                    "unsupported SAFEARRAY rank 2; only one-dimensional arrays are supported"
+                ),
+            "expected unsupported VT_VARIANT-rank diagnostic across VM/JIT, got vm={vm:?} jit={jit:?}"
+        );
+    }
+
+    #[test]
     fn dispatchinvoke_type_mismatch_arg_error_surfaces_deterministically() {
         let source = r#"
 Sub Main()

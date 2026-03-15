@@ -1,3 +1,7 @@
+## 2026-03-15 - Bounded rank-2 VT_ARRAY|VT_VARIANT COM result diagnostics
+- Added a controlled `ReturnVariantMatrix` fixture member together with compiler token coverage, HAL metadata expectations, and host VM/JIT evidence for rank-2 `VT_ARRAY | VT_VARIANT` results.
+- Locked the current adapter contract so multi-dimensional variant SAFEARRAY results now fail with the explicit unsupported-rank bounded diagnostic instead of depending on an undocumented shape path.
+
 ## 2026-03-15 - Bounded VT_I8/VT_UI8 COM overflow transport on the current i32 lane
 - Added controlled `ReturnWideHyper`, `ReturnWideHyperArray`, `ReturnWideUnsignedHyper`, and `ReturnWideUnsignedHyperArray` fixture members together with compiler token coverage, HAL metadata expectations, and host VM/JIT evidence.
 - Extended the current bounded-overflow evidence so scalar `VT_I8` / `VT_UI8` values and one-dimensional typed `VT_ARRAY | VT_I8` / `VT_ARRAY | VT_UI8` elements that exceed the current `i32` carrier lane now fail with deterministic diagnostics instead of silently narrowing.

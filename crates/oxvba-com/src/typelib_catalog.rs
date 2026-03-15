@@ -87,6 +87,7 @@ const TEST_DISPID_RETURN_WIDE_HYPER: i32 = 70;
 const TEST_DISPID_RETURN_WIDE_HYPER_ARRAY: i32 = 71;
 const TEST_DISPID_RETURN_WIDE_UNSIGNED_HYPER: i32 = 72;
 const TEST_DISPID_RETURN_WIDE_UNSIGNED_HYPER_ARRAY: i32 = 73;
+const TEST_DISPID_RETURN_VARIANT_MATRIX: i32 = 74;
 
 const TEST_EVENT_CHANGED: i32 = 1;
 const TEST_EVENT_CHANGED_SOURCE_INTERFACE: i32 = 2;
@@ -585,6 +586,14 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
             TypeLibMemberMetadata {
                 name: "ReturnWideUnsignedHyperArray".to_string(),
                 token: TEST_DISPID_RETURN_WIDE_UNSIGNED_HYPER_ARRAY,
+                requires_argument: false,
+                invoke_kind: TypeLibMemberInvokeKind::Method,
+                parameter_names: Vec::new(),
+                is_default_member: false,
+            },
+            TypeLibMemberMetadata {
+                name: "ReturnVariantMatrix".to_string(),
+                token: TEST_DISPID_RETURN_VARIANT_MATRIX,
                 requires_argument: false,
                 invoke_kind: TypeLibMemberInvokeKind::Method,
                 parameter_names: Vec::new(),

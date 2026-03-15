@@ -140,6 +140,7 @@ pub const TEST_DISPID_RETURN_WIDE_HYPER: i32 = 70;
 pub const TEST_DISPID_RETURN_WIDE_HYPER_ARRAY: i32 = 71;
 pub const TEST_DISPID_RETURN_WIDE_UNSIGNED_HYPER: i32 = 72;
 pub const TEST_DISPID_RETURN_WIDE_UNSIGNED_HYPER_ARRAY: i32 = 73;
+pub const TEST_DISPID_RETURN_VARIANT_MATRIX: i32 = 74;
 pub const TEST_NAMED_DISPID_LHS: i32 = 101;
 
 static mut TEST_BYREF_I32_RESULT: i32 = 321;
@@ -628,6 +629,52 @@ unsafe fn set_variant_i16_matrix(variant: *mut VARIANT) -> Result<(), String> {
         }
     }
     (*variant).Anonymous.Anonymous.vt = VT_ARRAY | VT_I2;
+    (*variant).Anonymous.Anonymous.Anonymous.parray = psa;
+    Ok(())
+}
+
+#[cfg(target_os = "windows")]
+#[allow(unsafe_op_in_unsafe_fn)]
+unsafe fn set_variant_variant_matrix(variant: *mut VARIANT) -> Result<(), String> {
+    if variant.is_null() {
+        return Ok(());
+    }
+    let bounds = [
+        SAFEARRAYBOUND {
+            cElements: 2,
+            lLbound: 0,
+        },
+        SAFEARRAYBOUND {
+            cElements: 2,
+            lLbound: 0,
+        },
+    ];
+    let psa = SafeArrayCreate(VT_VARIANT, 2, bounds.as_ptr());
+    if psa.is_null() {
+        return Err("SafeArrayCreate(VT_VARIANT, rank=2) returned null".to_string());
+    }
+    let values = [[1i32, 2i32], [3i32, 4i32]];
+    for row in 0..2 {
+        for col in 0..2 {
+            let indices = [row, col];
+            let mut element: VARIANT = std::mem::zeroed();
+            set_variant_i32(values[row as usize][col as usize], &mut element);
+            let hr = SafeArrayPutElement(
+                psa.cast_const(),
+                indices.as_ptr(),
+                (&element as *const VARIANT).cast(),
+            );
+            let _ = VariantClear(&mut element);
+            if hr < 0 {
+                let _ = SafeArrayDestroy(psa.cast_const());
+                return Err(format!(
+                    "SafeArrayPutElement(VT_VARIANT rank=2) failed with HRESULT {:#010X} at [{}, {}]",
+                    hr as u32, row, col
+                ));
+            }
+        }
+    }
+    (*variant).Anonymous.Anonymous.vt = VT_ARRAY | VT_VARIANT;
     (*variant).Anonymous.Anonymous.Anonymous.parray = psa;
     Ok(())
 }
@@ -1750,6 +1797,7 @@ unsafe extern "system" fn oxvba_test_get_ids_of_names(
             "returnwidehyperarray" => TEST_DISPID_RETURN_WIDE_HYPER_ARRAY,
             "returnwideunsignedhyper" => TEST_DISPID_RETURN_WIDE_UNSIGNED_HYPER,
             "returnwideunsignedhyperarray" => TEST_DISPID_RETURN_WIDE_UNSIGNED_HYPER_ARRAY,
+            "returnvariantmatrix" => TEST_DISPID_RETURN_VARIANT_MATRIX,
             "lhs" => TEST_NAMED_DISPID_LHS,
             "rhs" => TEST_NAMED_DISPID_RHS,
             "index" => TEST_NAMED_DISPID_INDEX,
@@ -2307,6 +2355,15 @@ unsafe extern "system" fn oxvba_test_invoke(
                 return COM_DISP_E_BADPARAMCOUNT;
             }
             match set_variant_u64_array(&[12, 5_000_000_000, 70_000], pvarresult) {
+                Ok(()) => COM_S_OK,
+                Err(_) => COM_E_INVALIDARG,
+            }
+        }
+        TEST_DISPID_RETURN_VARIANT_MATRIX => {
+            if (wflags & DISPATCH_METHOD) == 0 || cargs != 0 {
+                return COM_DISP_E_BADPARAMCOUNT;
+            }
+            match set_variant_variant_matrix(pvarresult) {
                 Ok(()) => COM_S_OK,
                 Err(_) => COM_E_INVALIDARG,
             }

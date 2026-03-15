@@ -76,7 +76,7 @@ Run context: active parity/compliance execution plus in-progress feature worklis
   - outbound float/date/currency/decimal host evidence now proves the tagged semantic `f64` lane preserves exact outward `VT_R4`, `VT_R8`, and `VT_DATE` tags while `Currency` and `Decimal` preserve exact `VT_CY` / `VT_DECIMAL` tags,
   - outbound `Array(...)` expressions now have end-to-end host evidence as semantic `VT_ARRAY | VT_VARIANT` payloads via the controlled raw-variant classifier lane,
   - one-dimensional `VT_ARRAY | VT_VARIANT` payloads with nested `VT_DISPATCH` elements now have end-to-end host evidence on both argument and result paths via controlled classifier and return-array fixture members,
-  - controlled host coverage now also proves a stable unsupported-path diagnostic for rank-2 typed SAFEARRAY results instead of an unbounded crash or shape drift,
+  - controlled host coverage now also proves a stable unsupported-path diagnostic for both rank-2 typed SAFEARRAY results and rank-2 `VT_ARRAY | VT_VARIANT` results instead of an unbounded crash or shape drift,
   - invoke failure translation now distinguishes real `ArgErr` presence from the previous synthetic `arg_err=0` fallback,
   - controlled `DISP_E_EXCEPTION` lanes now preserve bounded `EXCEPINFO` source/description/scode details in the adapter-fault surface,
   - controlled direct-error host coverage now also proves VM/JIT parity for both real `arg_err` indexing on `DISP_E_TYPEMISMATCH` and bounded `EXCEPINFO` source/description/scode detail on `DISP_E_EXCEPTION`,
