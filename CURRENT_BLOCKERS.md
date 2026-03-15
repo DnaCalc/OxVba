@@ -66,7 +66,7 @@ Run context: active parity/compliance execution plus in-progress feature worklis
   - omitted-argument metadata now survives the invoke request and yields deterministic required-argument faults,
   - controlled `IDispatch` variant roundtrips now cover `VT_NULL` and `VT_ERROR` in addition to the existing scalar subset,
   - controlled/native result conversion now also accepts `VT_I2` and `VT_UI2` into the current integer-token lane,
-  - controlled/native result conversion now also accepts one-dimensional typed SAFEARRAY results with `VT_I2`, `VT_BOOL`, and `VT_BSTR` element payloads into `RuntimeValue::ArrayIntent`,
+  - controlled/native result conversion now also accepts one-dimensional typed SAFEARRAY results with `VT_I2`, `VT_I4`, `VT_UI2`, `VT_UI4`, `VT_BOOL`, and `VT_BSTR` element payloads into `RuntimeValue::ArrayIntent`,
   - controlled/native object result conversion now has end-to-end host evidence for both `VT_DISPATCH` and `VT_UNKNOWN` values that expose `IDispatch`,
   - controlled/native result conversion now also has end-to-end host evidence for one-dimensional typed `VT_ARRAY | VT_DISPATCH` and `VT_ARRAY | VT_UNKNOWN` results when the element interfaces expose `IDispatch`,
   - outbound object-valued COM arguments now have end-to-end host evidence via a controlled raw-variant classifier method,
@@ -95,7 +95,7 @@ Run context: active parity/compliance execution plus in-progress feature worklis
 - Current state:
   - `oxvba-com` now exposes an executable generic dynamic-object protocol API (`DynamicCallRequest`, `DynamicMemberSelector`, `DynamicCallKind`, `DynamicEventPayload`) with conversions from the current COM request/payload structs,
   - `oxvba-com` now owns a first semantic carrier slice via `ComValue`,
-  - `oxvba-com` now also owns the extracted Windows `VARIANT`/one-dimensional `SAFEARRAY` translation bridge for the currently supported scalar/string/array subset, including typed `VT_I2`, `VT_BOOL`, `VT_BSTR`, `VT_DISPATCH`, and `VT_UNKNOWN` SAFEARRAY result elements on the controlled `IDispatch`-exposing lane,
+  - `oxvba-com` now also owns the extracted Windows `VARIANT`/one-dimensional `SAFEARRAY` translation bridge for the currently supported scalar/string/array subset, including typed `VT_I2`, `VT_I4`, `VT_UI2`, `VT_UI4`, `VT_BOOL`, `VT_BSTR`, `VT_DISPATCH`, and `VT_UNKNOWN` SAFEARRAY result elements on the controlled `IDispatch`-exposing lane,
   - `oxvba-com` now classifies Invoke-owned Windows result `VARIANT`s into either semantic `ComValue` results or dispatch-capable object pointers before HAL-owned binding state is applied,
   - `oxvba-com` now also owns shared Windows COM invoke failure and `EXCEPINFO` capture types/helpers, reducing the remaining wire/error mechanics left in HAL,
   - the canonical runtime-value `IDispatch::Invoke` helper for the semantic COM request path now also lives in `oxvba-com`, while HAL retains only object-handle resolve/bind state around that call,
@@ -405,6 +405,7 @@ Run context: active parity/compliance execution plus in-progress feature worklis
 - Previously resolved blockers:
   - `BLK-EVT-001` — resolved (runtime subscription graph)
   - `BLK-COM-001` — resolved (COM event callback parity with external registered server evidence)
+
 
 
 

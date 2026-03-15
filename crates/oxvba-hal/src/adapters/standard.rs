@@ -4602,6 +4602,8 @@ mod tests {
                 ("ReturnSmallIntMatrix".to_string(), 30),
                 ("ReturnPlainUnknown".to_string(), 31),
                 ("ReturnPlainUnknownArray".to_string(), 32),
+                ("ReturnLongArray".to_string(), 33),
+                ("ReturnUnsignedLongArray".to_string(), 34),
                 ("ReturnSelfDispatch".to_string(), 23),
                 ("ReturnSelfUnknown".to_string(), 24),
                 ("ClassifyVariantArg".to_string(), 25),
@@ -5529,3 +5531,4 @@ impl StandardHostServices {
         <Self as ComHal>::release_event_callback(self, callback)
     }
 }
+

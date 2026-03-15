@@ -336,10 +336,14 @@ End Sub
 Sub Main()
 Dim obj
 Dim smallArray
+Dim longArray
+Dim unsignedLongArray
 Dim boolArray
 Dim stringArray
 obj = CreateObject("OxVba.TestDispatch")
 smallArray = DispatchInvoke(obj, "ReturnSmallIntArray")
+longArray = DispatchInvoke(obj, "ReturnLongArray")
+unsignedLongArray = DispatchInvoke(obj, "ReturnUnsignedLongArray")
 boolArray = DispatchInvoke(obj, "ReturnBoolArray")
 stringArray = DispatchInvoke(obj, "ReturnStringArray")
 End Sub
@@ -364,6 +368,24 @@ End Sub
         assert_eq!(
             vm[2],
             RuntimeValue::ArrayIntent(SafeArray::from_values(vec![
+                RuntimeValue::I32(12),
+                RuntimeValue::I32(-4),
+                RuntimeValue::I32(70_000),
+            ])),
+            "VT_ARRAY|VT_I4 result should preserve 32-bit signed array elements"
+        );
+        assert_eq!(
+            vm[3],
+            RuntimeValue::ArrayIntent(SafeArray::from_values(vec![
+                RuntimeValue::I32(12),
+                RuntimeValue::I32(4_096),
+                RuntimeValue::I32(70_000),
+            ])),
+            "VT_ARRAY|VT_UI4 result should preserve 32-bit unsigned array elements within the current i32 carrier lane"
+        );
+        assert_eq!(
+            vm[4],
+            RuntimeValue::ArrayIntent(SafeArray::from_values(vec![
                 RuntimeValue::Bool(true),
                 RuntimeValue::Bool(false),
                 RuntimeValue::Bool(true),
@@ -371,7 +393,7 @@ End Sub
             "VT_ARRAY|VT_BOOL result should preserve boolean array elements"
         );
         assert_eq!(
-            vm[3],
+            vm[5],
             RuntimeValue::ArrayIntent(SafeArray::from_values(vec![
                 RuntimeValue::String(BStr("Alpha".to_string())),
                 RuntimeValue::String(BStr("Beta".to_string())),

@@ -1382,6 +1382,40 @@ mod tests {
         );
     }
     #[test]
+    fn compile_dispatchinvoke_with_long_array_result_literal_maps_to_member_token_thirty_three() {
+        let source = "Sub Main()\nDim x\nx = DispatchInvoke(CreateObject(\"OxVba.TestDispatch\"), \"ReturnLongArray\")\nEnd Sub";
+        let out =
+            compile(source).expect("compile should succeed for long-array result fixture member");
+        assert!(
+            out.instructions
+                .iter()
+                .any(|i| matches!(i, Instruction::IntrinsicDispatchInvokeHost { .. }))
+        );
+        assert!(
+            out.instructions
+                .iter()
+                .any(|i| matches!(i, Instruction::LoadConstI32 { value: 33, .. }))
+        );
+    }
+
+    #[test]
+    fn compile_dispatchinvoke_with_unsigned_long_array_result_literal_maps_to_member_token_thirty_four()
+     {
+        let source = "Sub Main()\nDim x\nx = DispatchInvoke(CreateObject(\"OxVba.TestDispatch\"), \"ReturnUnsignedLongArray\")\nEnd Sub";
+        let out = compile(source)
+            .expect("compile should succeed for unsigned-long-array result fixture member");
+        assert!(
+            out.instructions
+                .iter()
+                .any(|i| matches!(i, Instruction::IntrinsicDispatchInvokeHost { .. }))
+        );
+        assert!(
+            out.instructions
+                .iter()
+                .any(|i| matches!(i, Instruction::LoadConstI32 { value: 34, .. }))
+        );
+    }
+    #[test]
     fn compile_dispatchinvoke_with_smallint_matrix_result_literal_maps_to_member_token_thirty() {
         let source = "Sub Main()\nDim x\nx = DispatchInvoke(CreateObject(\"OxVba.TestDispatch\"), \"ReturnSmallIntMatrix\")\nEnd Sub";
         let out = compile(source)
