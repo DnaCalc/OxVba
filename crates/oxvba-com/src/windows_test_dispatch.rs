@@ -129,6 +129,8 @@ pub const TEST_DISPID_RETURN_WIDE_UNSIGNED_LONG: i32 = 59;
 pub const TEST_DISPID_RETURN_WIDE_UNSIGNED_LONG_ARRAY: i32 = 60;
 pub const TEST_DISPID_RETURN_WIDE_PLATFORM_UINT: i32 = 61;
 pub const TEST_DISPID_RETURN_WIDE_PLATFORM_UINT_ARRAY: i32 = 62;
+pub const TEST_DISPID_RETURN_BOOL: i32 = 63;
+pub const TEST_DISPID_RETURN_STRING: i32 = 64;
 pub const TEST_NAMED_DISPID_LHS: i32 = 101;
 pub const TEST_NAMED_DISPID_RHS: i32 = 102;
 pub const TEST_NAMED_DISPID_INDEX: i32 = 103;
@@ -1683,6 +1685,8 @@ unsafe extern "system" fn oxvba_test_get_ids_of_names(
             "returnwideunsignedlongarray" => TEST_DISPID_RETURN_WIDE_UNSIGNED_LONG_ARRAY,
             "returnwideplatformuint" => TEST_DISPID_RETURN_WIDE_PLATFORM_UINT,
             "returnwideplatformuintarray" => TEST_DISPID_RETURN_WIDE_PLATFORM_UINT_ARRAY,
+            "returnbool" => TEST_DISPID_RETURN_BOOL,
+            "returnstring" => TEST_DISPID_RETURN_STRING,
             "lhs" => TEST_NAMED_DISPID_LHS,
             "rhs" => TEST_NAMED_DISPID_RHS,
             "index" => TEST_NAMED_DISPID_INDEX,
@@ -2135,6 +2139,30 @@ unsafe extern "system" fn oxvba_test_invoke(
             if !pvarresult.is_null() {
                 (*pvarresult).Anonymous.Anonymous.vt = VT_UINT;
                 (*pvarresult).Anonymous.Anonymous.Anonymous.uintVal = 4_000_000_000;
+            }
+            COM_S_OK
+        }
+        TEST_DISPID_RETURN_BOOL => {
+            if (wflags & DISPATCH_METHOD) == 0 || cargs != 0 {
+                return COM_DISP_E_BADPARAMCOUNT;
+            }
+            if !pvarresult.is_null() {
+                (*pvarresult).Anonymous.Anonymous.vt = VT_BOOL;
+                (*pvarresult).Anonymous.Anonymous.Anonymous.boolVal = -1;
+            }
+            COM_S_OK
+        }
+        TEST_DISPID_RETURN_STRING => {
+            if (wflags & DISPATCH_METHOD) == 0 || cargs != 0 {
+                return COM_DISP_E_BADPARAMCOUNT;
+            }
+            if !pvarresult.is_null() {
+                let bstr = alloc_bstr("Scalar BSTR");
+                if bstr.is_null() {
+                    return COM_E_INVALIDARG;
+                }
+                (*pvarresult).Anonymous.Anonymous.vt = VT_BSTR;
+                (*pvarresult).Anonymous.Anonymous.Anonymous.bstrVal = bstr;
             }
             COM_S_OK
         }

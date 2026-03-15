@@ -4610,6 +4610,8 @@ mod tests {
                 ("ReturnDate".to_string(), 53),
                 ("ReturnCurrency".to_string(), 55),
                 ("ReturnDecimal".to_string(), 57),
+                ("ReturnBool".to_string(), 63),
+                ("ReturnString".to_string(), 64),
                 ("ReturnLong".to_string(), 35),
                 ("ReturnUnsignedLong".to_string(), 36),
                 ("ReturnSmallIntArray".to_string(), 20),

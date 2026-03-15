@@ -76,6 +76,8 @@ const TEST_DISPID_RETURN_WIDE_UNSIGNED_LONG: i32 = 59;
 const TEST_DISPID_RETURN_WIDE_UNSIGNED_LONG_ARRAY: i32 = 60;
 const TEST_DISPID_RETURN_WIDE_PLATFORM_UINT: i32 = 61;
 const TEST_DISPID_RETURN_WIDE_PLATFORM_UINT_ARRAY: i32 = 62;
+const TEST_DISPID_RETURN_BOOL: i32 = 63;
+const TEST_DISPID_RETURN_STRING: i32 = 64;
 
 const TEST_EVENT_CHANGED: i32 = 1;
 const TEST_EVENT_CHANGED_SOURCE_INTERFACE: i32 = 2;
@@ -486,6 +488,22 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
             TypeLibMemberMetadata {
                 name: "ReturnDecimal".to_string(),
                 token: TEST_DISPID_RETURN_DECIMAL,
+                requires_argument: false,
+                invoke_kind: TypeLibMemberInvokeKind::Method,
+                parameter_names: Vec::new(),
+                is_default_member: false,
+            },
+            TypeLibMemberMetadata {
+                name: "ReturnBool".to_string(),
+                token: TEST_DISPID_RETURN_BOOL,
+                requires_argument: false,
+                invoke_kind: TypeLibMemberInvokeKind::Method,
+                parameter_names: Vec::new(),
+                is_default_member: false,
+            },
+            TypeLibMemberMetadata {
+                name: "ReturnString".to_string(),
+                token: TEST_DISPID_RETURN_STRING,
                 requires_argument: false,
                 invoke_kind: TypeLibMemberInvokeKind::Method,
                 parameter_names: Vec::new(),

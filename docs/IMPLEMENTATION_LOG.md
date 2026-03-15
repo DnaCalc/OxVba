@@ -1,3 +1,6 @@
+## 2026-03-15 - Added named scalar VT_BOOL and VT_BSTR COM result evidence
+- Added controlled fixture members, compiler token coverage, HAL metadata expectations, and host VM/JIT evidence for named scalar VT_BOOL and VT_BSTR result lanes.
+
 ## 2026-03-15 - Bounded VT_UI4/VT_UINT COM overflow transport on the current i32 lane
 - Fixed the Windows COM bridge so scalar VT_UI4 / VT_UINT values and one-dimensional typed VT_ARRAY | VT_UI4 / VT_ARRAY | VT_UINT elements use checked narrowing instead of lossy s i32 casts.
 - Added controlled fixture members, compiler token coverage, HAL metadata expectations, and host VM/JIT evidence for deterministic overflow diagnostics on both scalar and typed-array lanes.
@@ -660,6 +663,7 @@
   - Let x = 5 plus Set obj = CreateObject(4) executes successfully,
   - Set x = 7 fails deterministically with the expected type error.
 - IP-02 remains in progress: broader typed/object Set vs Let parity, non-authoritative default-member resolution, and wider Office-style call-vs-value context parity are still open.
+
 
 
 

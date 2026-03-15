@@ -1440,6 +1440,38 @@ mod tests {
     }
 
     #[test]
+    fn compile_dispatchinvoke_with_bool_result_literal_maps_to_member_token_sixty_three() {
+        let source = "Sub Main()\nDim x\nx = DispatchInvoke(CreateObject(\"OxVba.TestDispatch\"), \"ReturnBool\")\nEnd Sub";
+        let out = compile(source).expect("compile should succeed for bool result fixture member");
+        assert!(
+            out.instructions
+                .iter()
+                .any(|i| matches!(i, Instruction::IntrinsicDispatchInvokeHost { .. }))
+        );
+        assert!(
+            out.instructions
+                .iter()
+                .any(|i| matches!(i, Instruction::LoadConstI32 { value: 63, .. }))
+        );
+    }
+
+    #[test]
+    fn compile_dispatchinvoke_with_string_result_literal_maps_to_member_token_sixty_four() {
+        let source = "Sub Main()\nDim x\nx = DispatchInvoke(CreateObject(\"OxVba.TestDispatch\"), \"ReturnString\")\nEnd Sub";
+        let out = compile(source).expect("compile should succeed for string result fixture member");
+        assert!(
+            out.instructions
+                .iter()
+                .any(|i| matches!(i, Instruction::IntrinsicDispatchInvokeHost { .. }))
+        );
+        assert!(
+            out.instructions
+                .iter()
+                .any(|i| matches!(i, Instruction::LoadConstI32 { value: 64, .. }))
+        );
+    }
+
+    #[test]
     fn compile_dispatchinvoke_with_typed_array_result_literal_maps_to_member_token_twenty() {
         let source = "Sub Main()\nDim x\nx = DispatchInvoke(CreateObject(\"OxVba.TestDispatch\"), \"ReturnSmallIntArray\")\nEnd Sub";
         let out =

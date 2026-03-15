@@ -3038,6 +3038,8 @@ fn known_dispatch_member_token(member_name: &str) -> Option<i32> {
         "returnwideunsignedlongarray" => Some(60),
         "returnwideplatformuint" => Some(61),
         "returnwideplatformuintarray" => Some(62),
+        "returnbool" => Some(63),
+        "returnstring" => Some(64),
         _ => None,
     }
 }

@@ -528,6 +528,38 @@ End Sub
     }
 
     #[test]
+    fn dispatchinvoke_accepts_bool_and_string_variant_results() {
+        let source = r#"
+Sub Main()
+Dim obj
+Dim boolValue
+Dim stringValue
+obj = CreateObject("OxVba.TestDispatch")
+boolValue = DispatchInvoke(obj, "ReturnBool")
+stringValue = DispatchInvoke(obj, "ReturnString")
+End Sub
+"#;
+
+        let vm = run_windows_host_backed(source, false);
+        let jit = run_windows_host_backed(source, true);
+        assert_eq!(
+            vm, jit,
+            "VM/JIT snapshots diverged on bool/string VARIANT result path: vm={vm:?} jit={jit:?}"
+        );
+        assert!(expect_object_handle(&vm[0]).raw() >= 20_001);
+        assert_eq!(
+            vm[1],
+            RuntimeValue::Bool(true),
+            "VT_BOOL result should preserve the semantic bool carrier"
+        );
+        assert_eq!(
+            vm[2],
+            RuntimeValue::String(BStr("Scalar BSTR".to_string())),
+            "VT_BSTR result should preserve the semantic string carrier"
+        );
+    }
+
+    #[test]
     fn dispatchinvoke_accepts_float_variant_results() {
         let source = r#"
 Sub Main()

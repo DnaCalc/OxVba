@@ -3340,6 +3340,8 @@ fn map_dispatch_member_literal_token(text: &str) -> Option<i32> {
         "returnwideunsignedlongarray" => Some(60),
         "returnwideplatformuint" => Some(61),
         "returnwideplatformuintarray" => Some(62),
+        "returnbool" => Some(63),
+        "returnstring" => Some(64),
         _ => None,
     }
 }
