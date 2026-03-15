@@ -50,6 +50,8 @@ const TEST_DISPID_RETURN_LONG_ARRAY: i32 = 33;
 const TEST_DISPID_RETURN_UNSIGNED_LONG_ARRAY: i32 = 34;
 const TEST_DISPID_RETURN_LONG: i32 = 35;
 const TEST_DISPID_RETURN_UNSIGNED_LONG: i32 = 36;
+const TEST_DISPID_RETURN_BYTE: i32 = 37;
+const TEST_DISPID_RETURN_BYTE_ARRAY: i32 = 38;
 
 const TEST_EVENT_CHANGED: i32 = 1;
 const TEST_EVENT_CHANGED_SOURCE_INTERFACE: i32 = 2;
@@ -378,6 +380,14 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
                 is_default_member: false,
             },
             TypeLibMemberMetadata {
+                name: "ReturnByte".to_string(),
+                token: TEST_DISPID_RETURN_BYTE,
+                requires_argument: false,
+                invoke_kind: TypeLibMemberInvokeKind::Method,
+                parameter_names: Vec::new(),
+                is_default_member: false,
+            },
+            TypeLibMemberMetadata {
                 name: "ReturnLong".to_string(),
                 token: TEST_DISPID_RETURN_LONG,
                 requires_argument: false,
@@ -436,6 +446,14 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
             TypeLibMemberMetadata {
                 name: "ReturnPlainUnknownArray".to_string(),
                 token: TEST_DISPID_RETURN_PLAIN_UNKNOWN_ARRAY,
+                requires_argument: false,
+                invoke_kind: TypeLibMemberInvokeKind::Method,
+                parameter_names: Vec::new(),
+                is_default_member: false,
+            },
+            TypeLibMemberMetadata {
+                name: "ReturnByteArray".to_string(),
+                token: TEST_DISPID_RETURN_BYTE_ARRAY,
                 requires_argument: false,
                 invoke_kind: TypeLibMemberInvokeKind::Method,
                 parameter_names: Vec::new(),

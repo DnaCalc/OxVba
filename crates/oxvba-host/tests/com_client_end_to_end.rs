@@ -299,17 +299,19 @@ End Sub
     }
 
     #[test]
-    fn dispatchinvoke_accepts_i2_and_ui2_variant_results() {
+    fn dispatchinvoke_accepts_integer_variant_results() {
         let source = r#"
 Sub Main()
 Dim obj
 Dim smallValue
 Dim unsignedValue
+Dim byteValue
 Dim longValue
 Dim unsignedLongValue
 obj = CreateObject("OxVba.TestDispatch")
 smallValue = DispatchInvoke(obj, "ReturnSmallInt")
 unsignedValue = DispatchInvoke(obj, "ReturnUnsignedWord")
+byteValue = DispatchInvoke(obj, "ReturnByte")
 longValue = DispatchInvoke(obj, "ReturnLong")
 unsignedLongValue = DispatchInvoke(obj, "ReturnUnsignedLong")
 End Sub
@@ -319,7 +321,7 @@ End Sub
         let jit = run_windows_host_backed(source, true);
         assert_eq!(
             vm, jit,
-            "VM/JIT snapshots diverged on VT_I2/VT_UI2 path: vm={vm:?} jit={jit:?}"
+            "VM/JIT snapshots diverged on integer VARIANT result path: vm={vm:?} jit={jit:?}"
         );
         assert!(expect_object_handle(&vm[0]).raw() >= 20_001);
         assert_eq!(
@@ -334,11 +336,16 @@ End Sub
         );
         assert_eq!(
             vm[3],
+            RuntimeValue::I32(255),
+            "VT_UI1 result should coerce into the i32 token lane"
+        );
+        assert_eq!(
+            vm[4],
             RuntimeValue::I32(70_000),
             "VT_I4 result should preserve the current i32 carrier lane"
         );
         assert_eq!(
-            vm[4],
+            vm[5],
             RuntimeValue::I32(70_000),
             "VT_UI4 result should preserve the current i32 carrier lane when the value fits"
         );
@@ -350,12 +357,14 @@ End Sub
 Sub Main()
 Dim obj
 Dim smallArray
+Dim byteArray
 Dim longArray
 Dim unsignedLongArray
 Dim boolArray
 Dim stringArray
 obj = CreateObject("OxVba.TestDispatch")
 smallArray = DispatchInvoke(obj, "ReturnSmallIntArray")
+byteArray = DispatchInvoke(obj, "ReturnByteArray")
 longArray = DispatchInvoke(obj, "ReturnLongArray")
 unsignedLongArray = DispatchInvoke(obj, "ReturnUnsignedLongArray")
 boolArray = DispatchInvoke(obj, "ReturnBoolArray")
@@ -367,7 +376,7 @@ End Sub
         let jit = run_windows_host_backed(source, true);
         assert_eq!(
             vm, jit,
-            "VM/JIT snapshots diverged on typed SAFEARRAY path: vm={vm:?} jit={jit:?}"
+            "VM/JIT snapshots diverged on typed integer/bool/string SAFEARRAY path: vm={vm:?} jit={jit:?}"
         );
         assert!(expect_object_handle(&vm[0]).raw() >= 20_001);
         assert_eq!(
@@ -382,6 +391,15 @@ End Sub
         assert_eq!(
             vm[2],
             RuntimeValue::ArrayIntent(SafeArray::from_values(vec![
+                RuntimeValue::I32(0),
+                RuntimeValue::I32(12),
+                RuntimeValue::I32(255),
+            ])),
+            "VT_ARRAY|VT_UI1 result should preserve byte array elements on the current i32 carrier lane"
+        );
+        assert_eq!(
+            vm[3],
+            RuntimeValue::ArrayIntent(SafeArray::from_values(vec![
                 RuntimeValue::I32(12),
                 RuntimeValue::I32(-4),
                 RuntimeValue::I32(70_000),
@@ -389,7 +407,7 @@ End Sub
             "VT_ARRAY|VT_I4 result should preserve 32-bit signed array elements"
         );
         assert_eq!(
-            vm[3],
+            vm[4],
             RuntimeValue::ArrayIntent(SafeArray::from_values(vec![
                 RuntimeValue::I32(12),
                 RuntimeValue::I32(4_096),
@@ -398,7 +416,7 @@ End Sub
             "VT_ARRAY|VT_UI4 result should preserve 32-bit unsigned array elements within the current i32 carrier lane"
         );
         assert_eq!(
-            vm[4],
+            vm[5],
             RuntimeValue::ArrayIntent(SafeArray::from_values(vec![
                 RuntimeValue::Bool(true),
                 RuntimeValue::Bool(false),
@@ -407,7 +425,7 @@ End Sub
             "VT_ARRAY|VT_BOOL result should preserve boolean array elements"
         );
         assert_eq!(
-            vm[5],
+            vm[6],
             RuntimeValue::ArrayIntent(SafeArray::from_values(vec![
                 RuntimeValue::String(BStr("Alpha".to_string())),
                 RuntimeValue::String(BStr("Beta".to_string())),

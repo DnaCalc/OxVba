@@ -3314,6 +3314,8 @@ fn map_dispatch_member_literal_token(text: &str) -> Option<i32> {
         "returnunsignedlongarray" => Some(34),
         "returnlong" => Some(35),
         "returnunsignedlong" => Some(36),
+        "returnbyte" => Some(37),
+        "returnbytearray" => Some(38),
         _ => None,
     }
 }

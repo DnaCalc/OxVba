@@ -1258,6 +1258,22 @@ mod tests {
                 .any(|i| matches!(i, Instruction::LoadConstI32 { value: 36, .. }))
         );
     }
+
+    #[test]
+    fn compile_dispatchinvoke_with_byte_result_literal_maps_to_member_token_thirty_seven() {
+        let source = "Sub Main()\nDim x\nx = DispatchInvoke(CreateObject(\"OxVba.TestDispatch\"), \"ReturnByte\")\nEnd Sub";
+        let out = compile(source).expect("compile should succeed for byte result fixture member");
+        assert!(
+            out.instructions
+                .iter()
+                .any(|i| matches!(i, Instruction::IntrinsicDispatchInvokeHost { .. }))
+        );
+        assert!(
+            out.instructions
+                .iter()
+                .any(|i| matches!(i, Instruction::LoadConstI32 { value: 37, .. }))
+        );
+    }
     #[test]
     fn compile_dispatchinvoke_with_typed_array_result_literal_maps_to_member_token_twenty() {
         let source = "Sub Main()\nDim x\nx = DispatchInvoke(CreateObject(\"OxVba.TestDispatch\"), \"ReturnSmallIntArray\")\nEnd Sub";
@@ -1445,6 +1461,23 @@ mod tests {
             out.instructions
                 .iter()
                 .any(|i| matches!(i, Instruction::LoadConstI32 { value: 34, .. }))
+        );
+    }
+
+    #[test]
+    fn compile_dispatchinvoke_with_byte_array_result_literal_maps_to_member_token_thirty_eight() {
+        let source = "Sub Main()\nDim x\nx = DispatchInvoke(CreateObject(\"OxVba.TestDispatch\"), \"ReturnByteArray\")\nEnd Sub";
+        let out =
+            compile(source).expect("compile should succeed for byte-array result fixture member");
+        assert!(
+            out.instructions
+                .iter()
+                .any(|i| matches!(i, Instruction::IntrinsicDispatchInvokeHost { .. }))
+        );
+        assert!(
+            out.instructions
+                .iter()
+                .any(|i| matches!(i, Instruction::LoadConstI32 { value: 38, .. }))
         );
     }
     #[test]
