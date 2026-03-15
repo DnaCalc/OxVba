@@ -78,6 +78,9 @@ const TEST_DISPID_RETURN_WIDE_PLATFORM_UINT: i32 = 61;
 const TEST_DISPID_RETURN_WIDE_PLATFORM_UINT_ARRAY: i32 = 62;
 const TEST_DISPID_RETURN_BOOL: i32 = 63;
 const TEST_DISPID_RETURN_STRING: i32 = 64;
+const TEST_DISPID_RETURN_EMPTY: i32 = 65;
+const TEST_DISPID_RETURN_NULL: i32 = 66;
+const TEST_DISPID_RETURN_ERROR: i32 = 67;
 
 const TEST_EVENT_CHANGED: i32 = 1;
 const TEST_EVENT_CHANGED_SOURCE_INTERFACE: i32 = 2;
@@ -504,6 +507,30 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
             TypeLibMemberMetadata {
                 name: "ReturnString".to_string(),
                 token: TEST_DISPID_RETURN_STRING,
+                requires_argument: false,
+                invoke_kind: TypeLibMemberInvokeKind::Method,
+                parameter_names: Vec::new(),
+                is_default_member: false,
+            },
+            TypeLibMemberMetadata {
+                name: "ReturnEmpty".to_string(),
+                token: TEST_DISPID_RETURN_EMPTY,
+                requires_argument: false,
+                invoke_kind: TypeLibMemberInvokeKind::Method,
+                parameter_names: Vec::new(),
+                is_default_member: false,
+            },
+            TypeLibMemberMetadata {
+                name: "ReturnNull".to_string(),
+                token: TEST_DISPID_RETURN_NULL,
+                requires_argument: false,
+                invoke_kind: TypeLibMemberInvokeKind::Method,
+                parameter_names: Vec::new(),
+                is_default_member: false,
+            },
+            TypeLibMemberMetadata {
+                name: "ReturnError".to_string(),
+                token: TEST_DISPID_RETURN_ERROR,
                 requires_argument: false,
                 invoke_kind: TypeLibMemberInvokeKind::Method,
                 parameter_names: Vec::new(),

@@ -1,3 +1,6 @@
+## 2026-03-15 - Added named scalar VT_EMPTY, VT_NULL, and VT_ERROR COM result evidence
+- Added controlled fixture members, compiler token coverage, HAL metadata expectations, and host VM/JIT evidence for named scalar VT_EMPTY, VT_NULL, and VT_ERROR result lanes.
+
 ## 2026-03-15 - Added named scalar VT_BOOL and VT_BSTR COM result evidence
 - Added controlled fixture members, compiler token coverage, HAL metadata expectations, and host VM/JIT evidence for named scalar VT_BOOL and VT_BSTR result lanes.
 

@@ -560,6 +560,45 @@ End Sub
     }
 
     #[test]
+    fn dispatchinvoke_accepts_empty_null_and_error_variant_results() {
+        let source = r#"
+Sub Main()
+Dim obj
+Dim emptyValue
+Dim nullValue
+Dim errorValue
+obj = CreateObject("OxVba.TestDispatch")
+emptyValue = DispatchInvoke(obj, "ReturnEmpty")
+nullValue = DispatchInvoke(obj, "ReturnNull")
+errorValue = DispatchInvoke(obj, "ReturnError")
+End Sub
+"#;
+
+        let vm = run_windows_host_backed(source, false);
+        let jit = run_windows_host_backed(source, true);
+        assert_eq!(
+            vm, jit,
+            "VM/JIT snapshots diverged on empty/null/error VARIANT result path: vm={vm:?} jit={jit:?}"
+        );
+        assert!(expect_object_handle(&vm[0]).raw() >= 20_001);
+        assert_eq!(
+            vm[1],
+            RuntimeValue::Empty,
+            "VT_EMPTY result should preserve the semantic empty carrier"
+        );
+        assert_eq!(
+            vm[2],
+            RuntimeValue::Null,
+            "VT_NULL result should preserve the semantic null carrier"
+        );
+        assert_eq!(
+            vm[3],
+            RuntimeValue::ErrorCode(17),
+            "VT_ERROR result should preserve the semantic error-code carrier"
+        );
+    }
+
+    #[test]
     fn dispatchinvoke_accepts_float_variant_results() {
         let source = r#"
 Sub Main()
