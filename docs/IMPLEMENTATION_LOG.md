@@ -1,3 +1,6 @@
+## 2026-03-15 - Bounded unsupported VT_BYREF COM result diagnostics
+- Added an explicit Windows `VARIANT` bridge guard for `VT_BYREF` result payloads, a controlled `ReturnByRefLong` fixture member, compiler/metadata token mapping, COM bridge unit coverage, and host VM/JIT evidence so unsupported byref result shapes now fail with a deterministic bounded diagnostic instead of an undocumented adapter path.
+
 ## 2026-03-15 - Preserved outward Single and Date COM vartype fidelity on the tagged f64 carrier
 - Added `Single` / `Double` / `Date` subtype tracking on the shared semantic `f64` carrier and threaded it through the owned runtime `Variant` bridge, Windows COM `VARIANT` bridge, typed SAFEARRAY translation, and host VM/JIT parity coverage so outward COM arguments now preserve `VT_R4` and `VT_DATE` instead of re-emitting both lanes as `VT_R8`.
 
@@ -675,6 +678,7 @@
   - Let x = 5 plus Set obj = CreateObject(4) executes successfully,
   - Set x = 7 fails deterministically with the expected type error.
 - IP-02 remains in progress: broader typed/object Set vs Let parity, non-authoritative default-member resolution, and wider Office-style call-vs-value context parity are still open.
+
 
 
 

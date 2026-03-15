@@ -17,9 +17,9 @@ use windows_sys::Win32::System::Ole::{
 };
 #[cfg(target_os = "windows")]
 use windows_sys::Win32::System::Variant::{
-    VARIANT, VT_ARRAY, VT_BOOL, VT_BSTR, VT_DECIMAL, VT_DISPATCH, VT_EMPTY, VT_ERROR, VT_I1, VT_I2,
-    VT_I4, VT_I8, VT_INT, VT_NULL, VT_UI1, VT_UI2, VT_UI4, VT_UI8, VT_UINT, VT_UNKNOWN, VT_VARIANT,
-    VariantClear,
+    VARIANT, VT_ARRAY, VT_BOOL, VT_BSTR, VT_BYREF, VT_DECIMAL, VT_DISPATCH, VT_EMPTY, VT_ERROR,
+    VT_I1, VT_I2, VT_I4, VT_I8, VT_INT, VT_NULL, VT_UI1, VT_UI2, VT_UI4, VT_UI8, VT_UINT,
+    VT_UNKNOWN, VT_VARIANT, VariantClear,
 };
 
 const VT_R4_VARENUM: u16 = 4;
@@ -600,6 +600,9 @@ where
 /// they must satisfy the ownership rules required by the Windows `Variant`/`SafeArray` APIs.
 pub unsafe fn variant_to_com_value(variant: &VARIANT) -> Result<ComValue, String> {
     let vt = variant.Anonymous.Anonymous.vt;
+    if vt & VT_BYREF != 0 {
+        return Err(format!("unsupported VARIANT BYREF return type vt={vt}"));
+    }
     if vt & VT_ARRAY != 0 {
         let parray = variant.Anonymous.Anonymous.Anonymous.parray;
         return safe_array_to_com_value(parray);
@@ -693,6 +696,9 @@ where
         FnMut(*mut c_void, &str, &'static str) -> Result<oxvba_runtime::RuntimeValue, String>,
 {
     let vt = variant.Anonymous.Anonymous.vt;
+    if vt & VT_BYREF != 0 {
+        return Err(format!("unsupported VARIANT BYREF return type vt={vt}"));
+    }
     if vt & VT_ARRAY != 0 {
         let parray = variant.Anonymous.Anonymous.Anonymous.parray;
         return safe_array_to_runtime_value(
@@ -883,8 +889,8 @@ mod tests {
     };
     use windows_sys::Win32::System::Ole::{SafeArrayCreateVector, SafeArrayPutElement};
     use windows_sys::Win32::System::Variant::{
-        VARIANT, VT_ARRAY, VT_BSTR, VT_DECIMAL, VT_DISPATCH, VT_I2, VT_UNKNOWN, VT_VARIANT,
-        VariantClear,
+        VARIANT, VT_ARRAY, VT_BSTR, VT_BYREF, VT_DECIMAL, VT_DISPATCH, VT_I2, VT_I4, VT_UNKNOWN,
+        VT_VARIANT, VariantClear,
     };
     use windows_sys::Win32::{
         Foundation::{DECIMAL, SysAllocString, SysFreeString},
@@ -962,6 +968,19 @@ mod tests {
                 variant_to_com_value(&variant).expect("read decimal variant"),
                 ComValue::Decimal(Decimal96::from_parts(123_450, 0, 0, 3, true))
             );
+            let _ = VariantClear(&mut variant);
+        }
+    }
+
+    #[test]
+    fn scalar_byref_i32_variant_is_rejected_with_bounded_diagnostic() {
+        let mut variant: VARIANT = unsafe { std::mem::zeroed() };
+        let mut backing = 321i32;
+        unsafe {
+            variant.Anonymous.Anonymous.vt = VT_BYREF | VT_I4;
+            variant.Anonymous.Anonymous.Anonymous.plVal = &mut backing;
+            let err = variant_to_com_value(&variant).expect_err("VT_BYREF should be rejected");
+            assert_eq!(err, "unsupported VARIANT BYREF return type vt=16387");
             let _ = VariantClear(&mut variant);
         }
     }

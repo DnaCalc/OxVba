@@ -3043,6 +3043,7 @@ fn known_dispatch_member_token(member_name: &str) -> Option<i32> {
         "returnempty" => Some(65),
         "returnnull" => Some(66),
         "returnerror" => Some(67),
+        "returnbyreflong" => Some(68),
         _ => None,
     }
 }

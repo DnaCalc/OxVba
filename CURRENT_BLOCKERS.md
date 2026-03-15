@@ -68,6 +68,7 @@ Run context: active parity/compliance execution plus in-progress feature worklis
   - controlled/native result conversion now also accepts `VT_I1`, `VT_I2`, `VT_I4`, `VT_I8`, `VT_INT`, `VT_R4`, `VT_R8`, `VT_CY`, `VT_DATE`, `VT_DECIMAL`, `VT_UI1`, `VT_UI2`, `VT_UI4`, `VT_UI8`, and `VT_UINT`, with `VT_R4` / `VT_R8` / `VT_DATE` preserved on a first-class semantic `f64` carrier, `VT_CY` preserved on a new exact scaled-`i64` currency carrier, `VT_DECIMAL` preserved on a new exact `Decimal96` carrier, and the integer forms still narrowing into the current `i32` carrier when the payload fits,
   - controlled/native result conversion now also accepts one-dimensional typed SAFEARRAY results with `VT_I1`, `VT_I2`, `VT_I4`, `VT_I8`, `VT_INT`, `VT_R4`, `VT_R8`, `VT_CY`, `VT_DATE`, `VT_DECIMAL`, `VT_UI1`, `VT_UI2`, `VT_UI4`, `VT_UI8`, `VT_UINT`, `VT_BOOL`, and `VT_BSTR` element payloads into `RuntimeValue::ArrayIntent`, preserving `VT_R4` / `VT_R8` / `VT_DATE` elements on the same semantic `f64` carrier, preserving `VT_CY` elements on the exact scaled-`i64` currency carrier, preserving `VT_DECIMAL` elements on the exact `Decimal96` carrier, and still narrowing the integer payloads into the current `i32` carrier when they fit,
   - controlled/native host coverage now also proves deterministic bounded diagnostics when scalar VT_UI4 / VT_UINT values or one-dimensional typed VT_ARRAY | VT_UI4 / VT_ARRAY | VT_UINT elements exceed the current i32 carrier lane instead of silently wrapping,
+  - controlled/native host coverage now also proves a stable unsupported-path diagnostic for scalar VT_BYREF result payloads instead of letting undocumented byref shapes drift through the adapter,
   - controlled/native object result conversion now has end-to-end host evidence for both `VT_DISPATCH` and `VT_UNKNOWN` values that expose `IDispatch`,
   - controlled/native result conversion now also has end-to-end host evidence for one-dimensional typed `VT_ARRAY | VT_DISPATCH` and `VT_ARRAY | VT_UNKNOWN` results when the element interfaces expose `IDispatch`,
   - outbound object-valued COM arguments now have end-to-end host evidence via a controlled raw-variant classifier method,
@@ -408,6 +409,7 @@ Run context: active parity/compliance execution plus in-progress feature worklis
 - Previously resolved blockers:
   - `BLK-EVT-001` — resolved (runtime subscription graph)
   - `BLK-COM-001` — resolved (COM event callback parity with external registered server evidence)
+
 
 
 

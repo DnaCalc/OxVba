@@ -36,9 +36,9 @@ use windows_sys::Win32::{
             SafeArrayPutElement,
         },
         Variant::{
-            VARIANT, VT_ARRAY, VT_BOOL, VT_BSTR, VT_DECIMAL, VT_DISPATCH, VT_EMPTY, VT_ERROR,
-            VT_I1, VT_I2, VT_I4, VT_I8, VT_INT, VT_NULL, VT_UI1, VT_UI2, VT_UI4, VT_UI8, VT_UINT,
-            VT_UNKNOWN, VT_VARIANT, VariantClear,
+            VARIANT, VT_ARRAY, VT_BOOL, VT_BSTR, VT_BYREF, VT_DECIMAL, VT_DISPATCH, VT_EMPTY,
+            VT_ERROR, VT_I1, VT_I2, VT_I4, VT_I8, VT_INT, VT_NULL, VT_UI1, VT_UI2, VT_UI4, VT_UI8,
+            VT_UINT, VT_UNKNOWN, VT_VARIANT, VariantClear,
         },
     },
 };
@@ -134,7 +134,10 @@ pub const TEST_DISPID_RETURN_STRING: i32 = 64;
 pub const TEST_DISPID_RETURN_EMPTY: i32 = 65;
 pub const TEST_DISPID_RETURN_NULL: i32 = 66;
 pub const TEST_DISPID_RETURN_ERROR: i32 = 67;
+pub const TEST_DISPID_RETURN_BYREF_LONG: i32 = 68;
 pub const TEST_NAMED_DISPID_LHS: i32 = 101;
+
+static mut TEST_BYREF_I32_RESULT: i32 = 321;
 pub const TEST_NAMED_DISPID_RHS: i32 = 102;
 pub const TEST_NAMED_DISPID_INDEX: i32 = 103;
 pub const TEST_NAMED_DISPID_VALUE: i32 = 104;
@@ -1316,6 +1319,16 @@ unsafe fn set_variant_i32(value: i32, result: *mut VARIANT) {
 
 #[cfg(target_os = "windows")]
 #[allow(unsafe_op_in_unsafe_fn)]
+unsafe fn set_variant_i32_byref(result: *mut VARIANT) {
+    if result.is_null() {
+        return;
+    }
+    (*result).Anonymous.Anonymous.vt = VT_BYREF | VT_I4;
+    (*result).Anonymous.Anonymous.Anonymous.plVal = &raw mut TEST_BYREF_I32_RESULT;
+}
+
+#[cfg(target_os = "windows")]
+#[allow(unsafe_op_in_unsafe_fn)]
 unsafe fn set_variant_bool(value: bool, result: *mut VARIANT) {
     if result.is_null() {
         return;
@@ -1693,6 +1706,7 @@ unsafe extern "system" fn oxvba_test_get_ids_of_names(
             "returnempty" => TEST_DISPID_RETURN_EMPTY,
             "returnnull" => TEST_DISPID_RETURN_NULL,
             "returnerror" => TEST_DISPID_RETURN_ERROR,
+            "returnbyreflong" => TEST_DISPID_RETURN_BYREF_LONG,
             "lhs" => TEST_NAMED_DISPID_LHS,
             "rhs" => TEST_NAMED_DISPID_RHS,
             "index" => TEST_NAMED_DISPID_INDEX,
@@ -2198,6 +2212,13 @@ unsafe extern "system" fn oxvba_test_invoke(
                 (*pvarresult).Anonymous.Anonymous.vt = VT_ERROR;
                 (*pvarresult).Anonymous.Anonymous.Anonymous.scode = 17;
             }
+            COM_S_OK
+        }
+        TEST_DISPID_RETURN_BYREF_LONG => {
+            if (wflags & DISPATCH_METHOD) == 0 || cargs != 0 {
+                return COM_DISP_E_BADPARAMCOUNT;
+            }
+            set_variant_i32_byref(pvarresult);
             COM_S_OK
         }
         TEST_DISPID_RETURN_SMALLINT_ARRAY => {
