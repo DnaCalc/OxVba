@@ -3016,6 +3016,10 @@ fn known_dispatch_member_token(member_name: &str) -> Option<i32> {
         "returnbytearray" => Some(38),
         "returnsignedbyte" => Some(39),
         "returnsignedbytearray" => Some(40),
+        "returnplatformint" => Some(41),
+        "returnplatformuint" => Some(42),
+        "returnplatformintarray" => Some(43),
+        "returnplatformuintarray" => Some(44),
         _ => None,
     }
 }

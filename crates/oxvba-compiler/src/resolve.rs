@@ -3318,6 +3318,10 @@ fn map_dispatch_member_literal_token(text: &str) -> Option<i32> {
         "returnbytearray" => Some(38),
         "returnsignedbyte" => Some(39),
         "returnsignedbytearray" => Some(40),
+        "returnplatformint" => Some(41),
+        "returnplatformuint" => Some(42),
+        "returnplatformintarray" => Some(43),
+        "returnplatformuintarray" => Some(44),
         _ => None,
     }
 }

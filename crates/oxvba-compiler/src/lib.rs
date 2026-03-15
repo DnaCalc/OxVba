@@ -1291,6 +1291,40 @@ mod tests {
                 .any(|i| matches!(i, Instruction::LoadConstI32 { value: 39, .. }))
         );
     }
+
+    #[test]
+    fn compile_dispatchinvoke_with_platform_int_result_literal_maps_to_member_token_forty_one() {
+        let source = "Sub Main()\nDim x\nx = DispatchInvoke(CreateObject(\"OxVba.TestDispatch\"), \"ReturnPlatformInt\")\nEnd Sub";
+        let out =
+            compile(source).expect("compile should succeed for platform-int result fixture member");
+        assert!(
+            out.instructions
+                .iter()
+                .any(|i| matches!(i, Instruction::IntrinsicDispatchInvokeHost { .. }))
+        );
+        assert!(
+            out.instructions
+                .iter()
+                .any(|i| matches!(i, Instruction::LoadConstI32 { value: 41, .. }))
+        );
+    }
+
+    #[test]
+    fn compile_dispatchinvoke_with_platform_uint_result_literal_maps_to_member_token_forty_two() {
+        let source = "Sub Main()\nDim x\nx = DispatchInvoke(CreateObject(\"OxVba.TestDispatch\"), \"ReturnPlatformUInt\")\nEnd Sub";
+        let out = compile(source)
+            .expect("compile should succeed for platform-uint result fixture member");
+        assert!(
+            out.instructions
+                .iter()
+                .any(|i| matches!(i, Instruction::IntrinsicDispatchInvokeHost { .. }))
+        );
+        assert!(
+            out.instructions
+                .iter()
+                .any(|i| matches!(i, Instruction::LoadConstI32 { value: 42, .. }))
+        );
+    }
     #[test]
     fn compile_dispatchinvoke_with_typed_array_result_literal_maps_to_member_token_twenty() {
         let source = "Sub Main()\nDim x\nx = DispatchInvoke(CreateObject(\"OxVba.TestDispatch\"), \"ReturnSmallIntArray\")\nEnd Sub";
@@ -1512,6 +1546,42 @@ mod tests {
             out.instructions
                 .iter()
                 .any(|i| matches!(i, Instruction::LoadConstI32 { value: 40, .. }))
+        );
+    }
+
+    #[test]
+    fn compile_dispatchinvoke_with_platform_int_array_result_literal_maps_to_member_token_forty_three()
+     {
+        let source = "Sub Main()\nDim x\nx = DispatchInvoke(CreateObject(\"OxVba.TestDispatch\"), \"ReturnPlatformIntArray\")\nEnd Sub";
+        let out = compile(source)
+            .expect("compile should succeed for platform-int-array result fixture member");
+        assert!(
+            out.instructions
+                .iter()
+                .any(|i| matches!(i, Instruction::IntrinsicDispatchInvokeHost { .. }))
+        );
+        assert!(
+            out.instructions
+                .iter()
+                .any(|i| matches!(i, Instruction::LoadConstI32 { value: 43, .. }))
+        );
+    }
+
+    #[test]
+    fn compile_dispatchinvoke_with_platform_uint_array_result_literal_maps_to_member_token_forty_four()
+     {
+        let source = "Sub Main()\nDim x\nx = DispatchInvoke(CreateObject(\"OxVba.TestDispatch\"), \"ReturnPlatformUIntArray\")\nEnd Sub";
+        let out = compile(source)
+            .expect("compile should succeed for platform-uint-array result fixture member");
+        assert!(
+            out.instructions
+                .iter()
+                .any(|i| matches!(i, Instruction::IntrinsicDispatchInvokeHost { .. }))
+        );
+        assert!(
+            out.instructions
+                .iter()
+                .any(|i| matches!(i, Instruction::LoadConstI32 { value: 44, .. }))
         );
     }
     #[test]
