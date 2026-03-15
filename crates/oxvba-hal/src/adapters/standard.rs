@@ -4616,6 +4616,7 @@ mod tests {
                 ("ReturnNull".to_string(), 66),
                 ("ReturnError".to_string(), 67),
                 ("ReturnByRefLong".to_string(), 68),
+                ("ReturnByRefLongArray".to_string(), 69),
                 ("ReturnLong".to_string(), 35),
                 ("ReturnUnsignedLong".to_string(), 36),
                 ("ReturnSmallIntArray".to_string(), 20),

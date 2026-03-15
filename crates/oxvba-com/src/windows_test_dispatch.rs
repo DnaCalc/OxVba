@@ -28,7 +28,7 @@ use windows_sys::Win32::{
     System::{
         Com::{
             CY, DISPATCH_METHOD, DISPATCH_PROPERTYGET, DISPATCH_PROPERTYPUT,
-            DISPATCH_PROPERTYPUTREF, DISPPARAMS, EXCEPINFO, SAFEARRAYBOUND,
+            DISPATCH_PROPERTYPUTREF, DISPPARAMS, EXCEPINFO, SAFEARRAY, SAFEARRAYBOUND,
         },
         Ole::{
             SafeArrayCreate, SafeArrayCreateVector, SafeArrayDestroy, SafeArrayGetDim,
@@ -135,9 +135,11 @@ pub const TEST_DISPID_RETURN_EMPTY: i32 = 65;
 pub const TEST_DISPID_RETURN_NULL: i32 = 66;
 pub const TEST_DISPID_RETURN_ERROR: i32 = 67;
 pub const TEST_DISPID_RETURN_BYREF_LONG: i32 = 68;
+pub const TEST_DISPID_RETURN_BYREF_LONG_ARRAY: i32 = 69;
 pub const TEST_NAMED_DISPID_LHS: i32 = 101;
 
 static mut TEST_BYREF_I32_RESULT: i32 = 321;
+static mut TEST_BYREF_I32_ARRAY_RESULT: *mut SAFEARRAY = std::ptr::null_mut();
 pub const TEST_NAMED_DISPID_RHS: i32 = 102;
 pub const TEST_NAMED_DISPID_INDEX: i32 = 103;
 pub const TEST_NAMED_DISPID_VALUE: i32 = 104;
@@ -1329,6 +1331,38 @@ unsafe fn set_variant_i32_byref(result: *mut VARIANT) {
 
 #[cfg(target_os = "windows")]
 #[allow(unsafe_op_in_unsafe_fn)]
+unsafe fn set_variant_i32_array_byref(result: *mut VARIANT) -> Result<(), String> {
+    if TEST_BYREF_I32_ARRAY_RESULT.is_null() {
+        let psa = SafeArrayCreateVector(VT_I4, 0, 3);
+        if psa.is_null() {
+            return Err(
+                "SafeArrayCreateVector(VT_I4) returned null for VT_BYREF array".to_string(),
+            );
+        }
+        for (offset, value) in [12i32, -4i32, 321i32].into_iter().enumerate() {
+            let index = i32::try_from(offset)
+                .map_err(|_| "SAFEARRAY index exceeds supported i32 range".to_string())?;
+            let hr = SafeArrayPutElement(psa.cast_const(), &index, (&value as *const i32).cast());
+            if hr < 0 {
+                let _ = SafeArrayDestroy(psa.cast_const());
+                return Err(format!(
+                    "SafeArrayPutElement(VT_I4) failed with HRESULT {:#010X} at index {}",
+                    hr as u32, offset
+                ));
+            }
+        }
+        TEST_BYREF_I32_ARRAY_RESULT = psa;
+    }
+    if result.is_null() {
+        return Ok(());
+    }
+    (*result).Anonymous.Anonymous.vt = VT_BYREF | VT_ARRAY | VT_I4;
+    (*result).Anonymous.Anonymous.Anonymous.pparray = &raw mut TEST_BYREF_I32_ARRAY_RESULT;
+    Ok(())
+}
+
+#[cfg(target_os = "windows")]
+#[allow(unsafe_op_in_unsafe_fn)]
 unsafe fn set_variant_bool(value: bool, result: *mut VARIANT) {
     if result.is_null() {
         return;
@@ -1707,6 +1741,7 @@ unsafe extern "system" fn oxvba_test_get_ids_of_names(
             "returnnull" => TEST_DISPID_RETURN_NULL,
             "returnerror" => TEST_DISPID_RETURN_ERROR,
             "returnbyreflong" => TEST_DISPID_RETURN_BYREF_LONG,
+            "returnbyreflongarray" => TEST_DISPID_RETURN_BYREF_LONG_ARRAY,
             "lhs" => TEST_NAMED_DISPID_LHS,
             "rhs" => TEST_NAMED_DISPID_RHS,
             "index" => TEST_NAMED_DISPID_INDEX,
@@ -2220,6 +2255,15 @@ unsafe extern "system" fn oxvba_test_invoke(
             }
             set_variant_i32_byref(pvarresult);
             COM_S_OK
+        }
+        TEST_DISPID_RETURN_BYREF_LONG_ARRAY => {
+            if (wflags & DISPATCH_METHOD) == 0 || cargs != 0 {
+                return COM_DISP_E_BADPARAMCOUNT;
+            }
+            match set_variant_i32_array_byref(pvarresult) {
+                Ok(()) => COM_S_OK,
+                Err(_) => COM_E_INVALIDARG,
+            }
         }
         TEST_DISPID_RETURN_SMALLINT_ARRAY => {
             if (wflags & DISPATCH_METHOD) == 0 || cargs != 0 {

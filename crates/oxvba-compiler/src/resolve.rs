@@ -3346,6 +3346,7 @@ fn map_dispatch_member_literal_token(text: &str) -> Option<i32> {
         "returnnull" => Some(66),
         "returnerror" => Some(67),
         "returnbyreflong" => Some(68),
+        "returnbyreflongarray" => Some(69),
         _ => None,
     }
 }

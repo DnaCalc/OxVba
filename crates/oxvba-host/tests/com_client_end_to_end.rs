@@ -1518,6 +1518,35 @@ End Sub
     }
 
     #[test]
+    fn dispatchinvoke_byref_long_array_results_fail_with_bounded_diagnostic() {
+        let source = r#"
+Sub Main()
+Dim obj
+Dim failed
+obj = CreateObject("OxVba.TestDispatch")
+failed = DispatchInvoke(obj, "ReturnByRefLongArray")
+End Sub
+"#;
+
+        let vm = run_windows_host_backed_error(source, false);
+        let jit = run_windows_host_backed_error(source, true);
+        assert!(
+            vm.contains("runtime error: 53053") && jit.contains("runtime error: 53053"),
+            "expected stable runtime fault code across VM/JIT, got vm={vm:?} jit={jit:?}"
+        );
+        assert!(
+            vm.contains("unsupported VARIANT BYREF return type vt=24579")
+                && jit.contains("unsupported VARIANT BYREF return type vt=24579"),
+            "expected bounded VT_BYREF array diagnostic across VM/JIT, got vm={vm:?} jit={jit:?}"
+        );
+        assert!(
+            vm.contains("com-dispatch-fault-unspecified")
+                && jit.contains("com-dispatch-fault-unspecified"),
+            "expected bounded adapter fault prefix across VM/JIT, got vm={vm:?} jit={jit:?}"
+        );
+    }
+
+    #[test]
     fn dispatchinvoke_exception_path_routes_through_on_error_resume_next() {
         let out = run_windows_host_backed(
             r#"

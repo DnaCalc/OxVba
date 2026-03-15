@@ -986,6 +986,20 @@ mod tests {
     }
 
     #[test]
+    fn typed_byref_i32_array_variant_is_rejected_with_bounded_diagnostic() {
+        let mut variant: VARIANT = unsafe { std::mem::zeroed() };
+        let mut psa = std::ptr::null_mut();
+        unsafe {
+            variant.Anonymous.Anonymous.vt = VT_BYREF | VT_ARRAY | VT_I4;
+            variant.Anonymous.Anonymous.Anonymous.pparray = &mut psa;
+            let err =
+                variant_to_com_value(&variant).expect_err("VT_BYREF|VT_ARRAY should be rejected");
+            assert_eq!(err, "unsupported VARIANT BYREF return type vt=24579");
+            let _ = VariantClear(&mut variant);
+        }
+    }
+
+    #[test]
     fn scalar_double_variant_roundtrips_through_windows_bridge() {
         let mut variant: VARIANT = unsafe { std::mem::zeroed() };
         let value = ComValue::F64(F64Value::from_f64(3.5));
