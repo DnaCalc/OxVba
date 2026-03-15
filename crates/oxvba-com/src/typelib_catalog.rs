@@ -45,6 +45,7 @@ const TEST_DISPID_RETURN_SELF_TYPED_DISPATCH_ARRAY: i32 = 28;
 const TEST_DISPID_RETURN_SELF_TYPED_UNKNOWN_ARRAY: i32 = 29;
 const TEST_DISPID_RETURN_SMALLINT_MATRIX: i32 = 30;
 const TEST_DISPID_RETURN_PLAIN_UNKNOWN: i32 = 31;
+const TEST_DISPID_RETURN_PLAIN_UNKNOWN_ARRAY: i32 = 32;
 
 const TEST_EVENT_CHANGED: i32 = 1;
 const TEST_EVENT_CHANGED_SOURCE_INTERFACE: i32 = 2;
@@ -407,6 +408,14 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
             TypeLibMemberMetadata {
                 name: "ReturnPlainUnknown".to_string(),
                 token: TEST_DISPID_RETURN_PLAIN_UNKNOWN,
+                requires_argument: false,
+                invoke_kind: TypeLibMemberInvokeKind::Method,
+                parameter_names: Vec::new(),
+                is_default_member: false,
+            },
+            TypeLibMemberMetadata {
+                name: "ReturnPlainUnknownArray".to_string(),
+                token: TEST_DISPID_RETURN_PLAIN_UNKNOWN_ARRAY,
                 requires_argument: false,
                 invoke_kind: TypeLibMemberInvokeKind::Method,
                 parameter_names: Vec::new(),

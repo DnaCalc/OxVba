@@ -4601,6 +4601,7 @@ mod tests {
                 ("ReturnStringArray".to_string(), 22),
                 ("ReturnSmallIntMatrix".to_string(), 30),
                 ("ReturnPlainUnknown".to_string(), 31),
+                ("ReturnPlainUnknownArray".to_string(), 32),
                 ("ReturnSelfDispatch".to_string(), 23),
                 ("ReturnSelfUnknown".to_string(), 24),
                 ("ClassifyVariantArg".to_string(), 25),

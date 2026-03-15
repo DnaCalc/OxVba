@@ -3309,6 +3309,7 @@ fn map_dispatch_member_literal_token(text: &str) -> Option<i32> {
         "returnselftypedunknownarray" => Some(29),
         "returnsmallintmatrix" => Some(30),
         "returnplainunknown" => Some(31),
+        "returnplainunknownarray" => Some(32),
         _ => None,
     }
 }

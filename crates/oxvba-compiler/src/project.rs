@@ -3007,6 +3007,7 @@ fn known_dispatch_member_token(member_name: &str) -> Option<i32> {
         "returnselftypedunknownarray" => Some(29),
         "returnsmallintmatrix" => Some(30),
         "returnplainunknown" => Some(31),
+        "returnplainunknownarray" => Some(32),
         _ => None,
     }
 }

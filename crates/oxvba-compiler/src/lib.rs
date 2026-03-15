@@ -1365,6 +1365,23 @@ mod tests {
         );
     }
     #[test]
+    fn compile_dispatchinvoke_with_plain_unknown_array_result_literal_maps_to_member_token_thirty_two()
+     {
+        let source = "Sub Main()\nDim x\nx = DispatchInvoke(CreateObject(\"OxVba.TestDispatch\"), \"ReturnPlainUnknownArray\")\nEnd Sub";
+        let out = compile(source)
+            .expect("compile should succeed for plain-unknown-array result fixture member");
+        assert!(
+            out.instructions
+                .iter()
+                .any(|i| matches!(i, Instruction::IntrinsicDispatchInvokeHost { .. }))
+        );
+        assert!(
+            out.instructions
+                .iter()
+                .any(|i| matches!(i, Instruction::LoadConstI32 { value: 32, .. }))
+        );
+    }
+    #[test]
     fn compile_dispatchinvoke_with_smallint_matrix_result_literal_maps_to_member_token_thirty() {
         let source = "Sub Main()\nDim x\nx = DispatchInvoke(CreateObject(\"OxVba.TestDispatch\"), \"ReturnSmallIntMatrix\")\nEnd Sub";
         let out = compile(source)

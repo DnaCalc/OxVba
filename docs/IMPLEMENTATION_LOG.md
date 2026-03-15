@@ -490,6 +490,13 @@
 - In [lib.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-compiler\src\lib.rs), added compiler token coverage proving `DispatchInvoke(..., "ReturnPlainUnknown")` lowers to member token `31`.
 - In [com_client_end_to_end.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-host\tests\com_client_end_to_end.rs), added VM/JIT parity coverage proving `VT_UNKNOWN` results that do not expose `IDispatch` now fail with a stable native adapter diagnostic containing `IUnknown::QueryInterface(IDispatch) failed with HRESULT 0x80004002`.
 - Updated [CURRENT_BLOCKERS.md](C:\Work\DnaCalc\OxVba\CURRENT_BLOCKERS.md) so the remaining non-`IDispatch` interface-pointer gap is documented as broader parity debt beyond this now-proven bounded failure lane.
+## 2026-03-15 - Locked bounded non-`IDispatch` typed `VT_ARRAY | VT_UNKNOWN` failure diagnostics in `IP-03A`
+
+- Continued the adjacent late-bound COM transport work with the array-form version of the non-`IDispatch` interface failure lane.
+- In [windows_test_dispatch.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-com\src\windows_test_dispatch.rs), added the controlled `ReturnPlainUnknownArray` fixture member that returns a one-dimensional typed `VT_ARRAY | VT_UNKNOWN` payload whose element object intentionally does not expose `IDispatch`.
+- In [lib.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-compiler\src\lib.rs), added compiler token coverage proving `DispatchInvoke(..., "ReturnPlainUnknownArray")` lowers to member token `32`.
+- In [com_client_end_to_end.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-host\tests\com_client_end_to_end.rs), added VM/JIT parity coverage proving typed unknown-array elements that do not expose `IDispatch` fail with the same bounded `IUnknown::QueryInterface(IDispatch)` adapter diagnostic as the single-value lane.
+- Updated [CURRENT_BLOCKERS.md](C:\Work\DnaCalc\OxVba\CURRENT_BLOCKERS.md) so the remaining non-`IDispatch` interface-pointer gap is documented beyond both bounded single-value and typed-array failure surfaces.
 ## 2026-03-14 - Closed the typed `VT_ARRAY | VT_UNKNOWN` result lane in `IP-03A`
 
 - Continued the adjacent `IP-03A` substrate slice for typed interface SAFEARRAY results where each element arrives as `VT_UNKNOWN` but exposes `IDispatch`.
