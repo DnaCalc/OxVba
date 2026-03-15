@@ -305,9 +305,13 @@ Sub Main()
 Dim obj
 Dim smallValue
 Dim unsignedValue
+Dim longValue
+Dim unsignedLongValue
 obj = CreateObject("OxVba.TestDispatch")
 smallValue = DispatchInvoke(obj, "ReturnSmallInt")
 unsignedValue = DispatchInvoke(obj, "ReturnUnsignedWord")
+longValue = DispatchInvoke(obj, "ReturnLong")
+unsignedLongValue = DispatchInvoke(obj, "ReturnUnsignedLong")
 End Sub
 "#;
 
@@ -327,6 +331,16 @@ End Sub
             vm[2],
             RuntimeValue::I32(65_000),
             "VT_UI2 result should coerce into the i32 token lane"
+        );
+        assert_eq!(
+            vm[3],
+            RuntimeValue::I32(70_000),
+            "VT_I4 result should preserve the current i32 carrier lane"
+        );
+        assert_eq!(
+            vm[4],
+            RuntimeValue::I32(70_000),
+            "VT_UI4 result should preserve the current i32 carrier lane when the value fits"
         );
     }
 

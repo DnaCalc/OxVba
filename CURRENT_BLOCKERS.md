@@ -65,7 +65,7 @@ Run context: active parity/compliance execution plus in-progress feature worklis
   - expression-form `DispatchInvoke(...)` assignments now preserve named trailing COM arguments instead of rejecting the statement outright,
   - omitted-argument metadata now survives the invoke request and yields deterministic required-argument faults,
   - controlled `IDispatch` variant roundtrips now cover `VT_NULL` and `VT_ERROR` in addition to the existing scalar subset,
-  - controlled/native result conversion now also accepts `VT_I2` and `VT_UI2` into the current integer-token lane,
+  - controlled/native result conversion now also accepts `VT_I2`, `VT_I4`, `VT_UI2`, and `VT_UI4` into the current integer-token lane,
   - controlled/native result conversion now also accepts one-dimensional typed SAFEARRAY results with `VT_I2`, `VT_I4`, `VT_UI2`, `VT_UI4`, `VT_BOOL`, and `VT_BSTR` element payloads into `RuntimeValue::ArrayIntent`,
   - controlled/native object result conversion now has end-to-end host evidence for both `VT_DISPATCH` and `VT_UNKNOWN` values that expose `IDispatch`,
   - controlled/native result conversion now also has end-to-end host evidence for one-dimensional typed `VT_ARRAY | VT_DISPATCH` and `VT_ARRAY | VT_UNKNOWN` results when the element interfaces expose `IDispatch`,
@@ -405,6 +405,7 @@ Run context: active parity/compliance execution plus in-progress feature worklis
 - Previously resolved blockers:
   - `BLK-EVT-001` — resolved (runtime subscription graph)
   - `BLK-COM-001` — resolved (COM event callback parity with external registered server evidence)
+
 
 
 

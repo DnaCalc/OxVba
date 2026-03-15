@@ -4596,6 +4596,8 @@ mod tests {
                     "ReturnUnsignedWord".to_string(),
                     super::TEST_DISPID_RETURN_UNSIGNED_WORD
                 ),
+                ("ReturnLong".to_string(), 35),
+                ("ReturnUnsignedLong".to_string(), 36),
                 ("ReturnSmallIntArray".to_string(), 20),
                 ("ReturnBoolArray".to_string(), 21),
                 ("ReturnStringArray".to_string(), 22),
@@ -5531,4 +5533,3 @@ impl StandardHostServices {
         <Self as ComHal>::release_event_callback(self, callback)
     }
 }
-

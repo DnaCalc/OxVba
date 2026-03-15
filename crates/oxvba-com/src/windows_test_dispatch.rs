@@ -95,6 +95,8 @@ pub const TEST_DISPID_RETURN_PLAIN_UNKNOWN: i32 = 31;
 pub const TEST_DISPID_RETURN_PLAIN_UNKNOWN_ARRAY: i32 = 32;
 pub const TEST_DISPID_RETURN_LONG_ARRAY: i32 = 33;
 pub const TEST_DISPID_RETURN_UNSIGNED_LONG_ARRAY: i32 = 34;
+pub const TEST_DISPID_RETURN_LONG: i32 = 35;
+pub const TEST_DISPID_RETURN_UNSIGNED_LONG: i32 = 36;
 pub const TEST_NAMED_DISPID_LHS: i32 = 101;
 pub const TEST_NAMED_DISPID_RHS: i32 = 102;
 pub const TEST_NAMED_DISPID_INDEX: i32 = 103;
@@ -1285,6 +1287,8 @@ unsafe extern "system" fn oxvba_test_get_ids_of_names(
             "returnplainunknownarray" => TEST_DISPID_RETURN_PLAIN_UNKNOWN_ARRAY,
             "returnlongarray" => TEST_DISPID_RETURN_LONG_ARRAY,
             "returnunsignedlongarray" => TEST_DISPID_RETURN_UNSIGNED_LONG_ARRAY,
+            "returnlong" => TEST_DISPID_RETURN_LONG,
+            "returnunsignedlong" => TEST_DISPID_RETURN_UNSIGNED_LONG,
             "lhs" => TEST_NAMED_DISPID_LHS,
             "rhs" => TEST_NAMED_DISPID_RHS,
             "index" => TEST_NAMED_DISPID_INDEX,
@@ -1587,6 +1591,26 @@ unsafe extern "system" fn oxvba_test_invoke(
             if !pvarresult.is_null() {
                 (*pvarresult).Anonymous.Anonymous.vt = VT_UI2;
                 (*pvarresult).Anonymous.Anonymous.Anonymous.uiVal = 65000;
+            }
+            COM_S_OK
+        }
+        TEST_DISPID_RETURN_LONG => {
+            if (wflags & DISPATCH_METHOD) == 0 || cargs != 0 {
+                return COM_DISP_E_BADPARAMCOUNT;
+            }
+            if !pvarresult.is_null() {
+                (*pvarresult).Anonymous.Anonymous.vt = VT_I4;
+                (*pvarresult).Anonymous.Anonymous.Anonymous.lVal = 70000;
+            }
+            COM_S_OK
+        }
+        TEST_DISPID_RETURN_UNSIGNED_LONG => {
+            if (wflags & DISPATCH_METHOD) == 0 || cargs != 0 {
+                return COM_DISP_E_BADPARAMCOUNT;
+            }
+            if !pvarresult.is_null() {
+                (*pvarresult).Anonymous.Anonymous.vt = VT_UI4;
+                (*pvarresult).Anonymous.Anonymous.Anonymous.ulVal = 70000;
             }
             COM_S_OK
         }

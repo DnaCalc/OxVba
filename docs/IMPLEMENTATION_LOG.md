@@ -1,3 +1,4 @@
+- 2026-03-15: extended controlled COM scalar result evidence to VT_I4 and VT_UI4 via ReturnLong / ReturnUnsignedLong, with compiler member-token coverage (35/36) and host VM/JIT parity on the current RuntimeValue::I32 carrier lane.
 - 2026-03-15: extended controlled COM typed SAFEARRAY result evidence to VT_ARRAY | VT_I4 and VT_ARRAY | VT_UI4 via new ReturnLongArray / ReturnUnsignedLongArray fixture members, compiler member-token coverage (33/34), and host VM/JIT parity assertions on the current RuntimeValue::I32 carrier lane.
 ## 2026-03-14 - Late-bound COM object-valued SAFEARRAY variant subset
 
@@ -604,6 +605,7 @@
   - Let x = 5 plus Set obj = CreateObject(4) executes successfully,
   - Set x = 7 fails deterministically with the expected type error.
 - IP-02 remains in progress: broader typed/object Set vs Let parity, non-authoritative default-member resolution, and wider Office-style call-vs-value context parity are still open.
+
 
 
 
