@@ -1383,6 +1383,52 @@ End Sub
     }
 
     #[test]
+    fn dispatchinvoke_runtime_string_known_member_routes_are_deterministic() {
+        let source = r#"
+Sub Main()
+Dim obj
+Dim methodName
+Dim propertyName
+Dim methodValue
+Dim propertyValue
+obj = CreateObject("OxVba.TestDispatch")
+methodName = DispatchInvoke(obj, "ReturnPingMemberName")
+propertyName = DispatchInvoke(obj, "ReturnLookupMemberName")
+methodValue = DispatchInvoke(obj, methodName)
+propertyValue = DispatchInvoke(obj, propertyName, 42)
+End Sub
+"#;
+
+        let vm = run_windows_host_backed(source, false);
+        let jit = run_windows_host_backed(source, true);
+        assert_eq!(
+            vm, jit,
+            "VM/JIT snapshots diverged on runtime string member dispatch path: vm={vm:?} jit={jit:?}"
+        );
+        assert!(expect_object_handle(&vm[0]).raw() >= 20_001);
+        assert_eq!(
+            vm[1],
+            RuntimeValue::String(BStr("Ping".to_string())),
+            "method selector should remain a runtime string"
+        );
+        assert_eq!(
+            vm[2],
+            RuntimeValue::String(BStr("Lookup".to_string())),
+            "indexed-property selector should remain a runtime string"
+        );
+        assert_eq!(
+            vm[3],
+            RuntimeValue::I32(123),
+            "runtime string zero-arg method should fall through to method dispatch"
+        );
+        assert_eq!(
+            vm[4],
+            RuntimeValue::I32(1_042),
+            "runtime string indexed property-get should fall through to property-get dispatch"
+        );
+    }
+
+    #[test]
     fn dispatchinvoke_plain_unknown_results_fail_with_bounded_nondispatch_diagnostic() {
         let source = r#"
 Sub Main()

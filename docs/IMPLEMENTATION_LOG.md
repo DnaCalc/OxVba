@@ -1,3 +1,13 @@
+## 2026-03-16 - Added bounded runtime-string known-member COM dispatch fallback evidence in `IP-03A`
+
+- Continued the bounded dynamic-name late-bound COM work instead of overclaiming full dynamic-name/property/default-member parity.
+- In [windows_bridge.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-com\src\windows_bridge.rs), widened the runtime string member selector path so native Windows dispatch now retries the opposite invoke flag on `DISP_E_BADPARAMCOUNT`, allowing the current subset to execute both zero-argument methods and indexed property-get members without assuming the initial heuristic is authoritative.
+- In [windows_test_dispatch.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-com\src\windows_test_dispatch.rs), [typelib_catalog.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-com\src\typelib_catalog.rs), [project.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-compiler\src\project.rs), [resolve.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-compiler\src\resolve.rs), [lib.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-compiler\src\lib.rs), and [standard.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-hal\src\adapters\standard.rs), added controlled fixture members plus metadata/token coverage for `ReturnPingMemberName` and `ReturnLookupMemberName` (`77` / `78`) so runtime string selectors can be produced from COM at execution time inside the supported subset.
+- In [com_client_end_to_end.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-host\tests\com_client_end_to_end.rs), added VM/JIT host evidence proving:
+  - `DispatchInvoke(obj, methodName)` executes `Ping` when `methodName` is produced dynamically at runtime,
+  - `DispatchInvoke(obj, propertyName, 42)` executes indexed `Lookup` when `propertyName` is produced dynamically at runtime.
+- `IP-03` remains `in-progress`: this is still only a bounded `DISP_E_BADPARAMCOUNT` invoke-flag fallback on the runtime-string subset; dynamic-name property put/putref intent, default-member recovery, event queue integration, and broader Office automation parity remain open.
+
 ## 2026-03-16 - Added runtime-string `DISP_E_UNKNOWNNAME` host evidence in `IP-03A`
 
 - Continued the bounded late-bound COM invoke-fidelity work instead of overclaiming broader dynamic-name or Office automation parity.

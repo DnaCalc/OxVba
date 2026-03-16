@@ -90,6 +90,8 @@ const TEST_DISPID_RETURN_WIDE_UNSIGNED_HYPER_ARRAY: i32 = 73;
 const TEST_DISPID_RETURN_VARIANT_MATRIX: i32 = 74;
 const TEST_DISPID_RETURN_PLAIN_UNKNOWN_VARIANT_ARRAY: i32 = 75;
 const TEST_DISPID_RETURN_MISSING_MEMBER_NAME: i32 = 76;
+const TEST_DISPID_RETURN_PING_MEMBER_NAME: i32 = 77;
+const TEST_DISPID_RETURN_LOOKUP_MEMBER_NAME: i32 = 78;
 
 const TEST_EVENT_CHANGED: i32 = 1;
 const TEST_EVENT_CHANGED_SOURCE_INTERFACE: i32 = 2;
@@ -524,6 +526,22 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
             TypeLibMemberMetadata {
                 name: "ReturnMissingMemberName".to_string(),
                 token: TEST_DISPID_RETURN_MISSING_MEMBER_NAME,
+                requires_argument: false,
+                invoke_kind: TypeLibMemberInvokeKind::Method,
+                parameter_names: Vec::new(),
+                is_default_member: false,
+            },
+            TypeLibMemberMetadata {
+                name: "ReturnPingMemberName".to_string(),
+                token: TEST_DISPID_RETURN_PING_MEMBER_NAME,
+                requires_argument: false,
+                invoke_kind: TypeLibMemberInvokeKind::Method,
+                parameter_names: Vec::new(),
+                is_default_member: false,
+            },
+            TypeLibMemberMetadata {
+                name: "ReturnLookupMemberName".to_string(),
+                token: TEST_DISPID_RETURN_LOOKUP_MEMBER_NAME,
                 requires_argument: false,
                 invoke_kind: TypeLibMemberInvokeKind::Method,
                 parameter_names: Vec::new(),

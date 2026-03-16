@@ -4643,6 +4643,8 @@ mod tests {
                 ("ReturnBool".to_string(), 63),
                 ("ReturnString".to_string(), 64),
                 ("ReturnMissingMemberName".to_string(), 76),
+                ("ReturnPingMemberName".to_string(), 77),
+                ("ReturnLookupMemberName".to_string(), 78),
                 ("ReturnEmpty".to_string(), 65),
                 ("ReturnNull".to_string(), 66),
                 ("ReturnError".to_string(), 67),
