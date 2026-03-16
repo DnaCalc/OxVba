@@ -7,6 +7,7 @@
   - `Let valueOut = widget.Value(x)`
   - `Let valueOut = widget(x)`
 - In [engine.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-host\src\engine.rs), added bounded project-execution lanes plus lowered-source assertions proving the compiler now preserves the `Let` prefix while rewriting the native PMR getter route.
+- In [project.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-compiler\src\project.rs), added direct compiler rewrite tests for the same four lanes so the explicit-`Let` guarantee is locked at the PMR rewrite boundary instead of only through host integration evidence.
 - `IP-02` remains `in-progress`: broader typed/object `Set` vs `Let` parity, non-authoritative default-member resolution, and wider Office-style call-vs-value context parity are still open.
 
 ## 2026-03-16 - Extended IP-02 explicit Let native property/default-member evidence
