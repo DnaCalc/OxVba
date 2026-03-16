@@ -2828,6 +2828,121 @@ mod tests {
     }
 
     #[test]
+    fn formal_pmr_call_statement_internal_class_parenthesized_property_get_executes_end_to_end() {
+        let engine = Engine::new(HostConfig::default());
+        let main_module = module_unit_from_source(
+            "MainModule",
+            ModuleKind::Procedural,
+            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim widget As New Widget\nDim afterValue\nCall widget.Value()\nafterValue = widget.Observe\nEnd Sub",
+        )
+        .expect("main module should parse");
+        let widget = module_unit_from_source(
+            "Widget",
+            ModuleKind::Class,
+            "Attribute VB_Name = \"Widget\"\nPrivate stored\nPublic Sub Class_Initialize()\nstored = 2\nEnd Sub\nPublic Property Get Value()\nstored = 9\nValue = stored\nEnd Property\nPublic Property Get Observe()\nObserve = stored\nEnd Property",
+        )
+        .expect("widget module should parse");
+        let manifest = ProjectManifest {
+            project_name: "ProjectA".to_string(),
+            project_kind: ProjectKind::Source,
+            modules: vec![main_module, widget],
+            references: Vec::new(),
+            reference_projects: Vec::new(),
+            conditional_constants: std::collections::BTreeMap::new(),
+        };
+
+        let compiled = oxvba_compiler::compile_project(&manifest).expect("compile should succeed");
+        let lowered = compiled.rewritten_source.to_ascii_lowercase();
+        assert!(
+            lowered.contains("call property_get_pmr_projecta_widget_value(widget)"),
+            "{lowered}"
+        );
+
+        let snapshot = engine
+            .execute_project_with_value_snapshot_phased(&manifest)
+            .expect("project execution should succeed");
+        assert_eq!(snapshot[0], RuntimeValue::I32(1));
+        assert_eq!(snapshot[1], RuntimeValue::I32(9));
+    }
+
+    #[test]
+    fn formal_pmr_call_statement_internal_class_parenthesized_default_member_get_executes_end_to_end()
+     {
+        let engine = Engine::new(HostConfig::default());
+        let main_module = module_unit_from_source(
+            "MainModule",
+            ModuleKind::Procedural,
+            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim widget As New Widget\nDim afterValue\nCall widget()\nafterValue = widget.Observe\nEnd Sub",
+        )
+        .expect("main module should parse");
+        let widget = module_unit_from_source(
+            "Widget",
+            ModuleKind::Class,
+            "Attribute VB_Name = \"Widget\"\nPrivate stored\nPublic Sub Class_Initialize()\nstored = 2\nEnd Sub\nPublic Property Get Value()\nstored = 9\nValue = stored\nEnd Property\nPublic Property Get Observe()\nObserve = stored\nEnd Property\nAttribute Value.VB_UserMemId = 0",
+        )
+        .expect("widget module should parse");
+        let manifest = ProjectManifest {
+            project_name: "ProjectA".to_string(),
+            project_kind: ProjectKind::Source,
+            modules: vec![main_module, widget],
+            references: Vec::new(),
+            reference_projects: Vec::new(),
+            conditional_constants: std::collections::BTreeMap::new(),
+        };
+
+        let compiled = oxvba_compiler::compile_project(&manifest).expect("compile should succeed");
+        let lowered = compiled.rewritten_source.to_ascii_lowercase();
+        assert!(
+            lowered.contains("call property_get_pmr_projecta_widget_value(widget)"),
+            "{lowered}"
+        );
+
+        let snapshot = engine
+            .execute_project_with_value_snapshot_phased(&manifest)
+            .expect("project execution should succeed");
+        assert_eq!(snapshot[0], RuntimeValue::I32(1));
+        assert_eq!(snapshot[1], RuntimeValue::I32(9));
+    }
+
+    #[test]
+    fn formal_pmr_call_statement_parenthesized_non_authoritative_single_candidate_default_member_get_executes_end_to_end()
+     {
+        let engine = Engine::new(HostConfig::default());
+        let main_module = module_unit_from_source(
+            "MainModule",
+            ModuleKind::Procedural,
+            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim widget As New Widget\nDim afterValue\nCall widget()\nafterValue = widget.Observe()\nEnd Sub",
+        )
+        .expect("main module should parse");
+        let widget = module_unit_from_source(
+            "Widget",
+            ModuleKind::Class,
+            "Attribute VB_Name = \"Widget\"\nPrivate stored\nPublic Property Get Value()\nstored = 9\nValue = stored\nEnd Property\nPublic Function Observe()\nObserve = stored\nEnd Function",
+        )
+        .expect("widget module should parse");
+        let manifest = ProjectManifest {
+            project_name: "ProjectA".to_string(),
+            project_kind: ProjectKind::Source,
+            modules: vec![main_module, widget],
+            references: Vec::new(),
+            reference_projects: Vec::new(),
+            conditional_constants: std::collections::BTreeMap::new(),
+        };
+
+        let compiled = oxvba_compiler::compile_project(&manifest).expect("compile should succeed");
+        let lowered = compiled.rewritten_source.to_ascii_lowercase();
+        assert!(
+            lowered.contains("call property_get_pmr_projecta_widget_value(widget)"),
+            "{lowered}"
+        );
+
+        let snapshot = engine
+            .execute_project_with_value_snapshot_phased(&manifest)
+            .expect("project execution should succeed");
+        assert_eq!(snapshot.last(), Some(&RuntimeValue::I32(9)));
+    }
+
+    #[test]
     fn formal_pmr_no_paren_call_internal_class_property_get_executes_end_to_end() {
         let engine = Engine::new(HostConfig::default());
         let main_module = module_unit_from_source(

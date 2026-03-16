@@ -1,3 +1,12 @@
+## 2026-03-16 - Extended IP-02 zero-arg parenthesized Call getter evidence
+
+- Continued the active `IP-02A` call-vs-value closure slice and proved that explicit zero-arg parenthesized `Call` form also reaches the existing PMR-backed getter route for native internal project-class property/default-member getters.
+- Added compiler and host evidence for:
+  - `Call widget.Value()`
+  - `Call widget()` when authoritative default-member metadata exists
+  - `Call widget()` under the existing bounded single-visible-candidate non-authoritative fallback
+- This remains bounded: wider Office-style parenthesized call-vs-value recovery and ambiguous non-authoritative cases are still open.
+
 ## 2026-03-16 - Extended bounded non-authoritative default-member fallback into statement-context form
 
 - Continued the active `IP-02A` semantic-closure slice and proved that the existing single-visible-candidate non-authoritative native default-member fallback also reaches statement-context getter execution instead of stopping at assignment and explicit `Call` evidence.
