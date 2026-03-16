@@ -1,3 +1,11 @@
+## 2026-03-16 - Extended bounded non-authoritative default-member fallback into statement-context form
+
+- Continued the active `IP-02A` semantic-closure slice and proved that the existing single-visible-candidate non-authoritative native default-member fallback also reaches statement-context getter execution instead of stopping at assignment and explicit `Call` evidence.
+- Added compiler and host evidence for:
+  - bare `widget` in statement context when a native class exposes exactly one visible `Property Get`
+  - bare `widget(x)` in statement context when a native class exposes exactly one visible indexed `Property Get`
+- This remains bounded, not general non-authoritative closure: ambiguous multi-candidate cases and broader Office-style call-vs-value recovery are still open.
+
 ## 2026-03-16 - Extended bounded non-authoritative default-member fallback into explicit Call form
 
 - Continued the active `IP-02A` semantic-closure slice and proved that the existing single-visible-candidate non-authoritative native default-member fallback also reaches explicit `Call` getter contexts instead of stopping at assignment/read-assignment evidence.
