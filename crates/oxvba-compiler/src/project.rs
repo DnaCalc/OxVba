@@ -5556,6 +5556,41 @@ mod tests {
     }
 
     #[test]
+    fn compile_project_preserves_explicit_set_for_native_indexed_object_property_get_read_assignment()
+     {
+        let main_module = module_unit_from_source(
+            "MainModule",
+            ModuleKind::Procedural,
+            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim widget As New Widget\nDim x\nDim childOut As Object\nx = 5\nSet childOut = widget.Value(x)\nEnd Sub",
+        )
+        .expect("module parses");
+        let widget = module_unit_from_source(
+            "Widget",
+            ModuleKind::Class,
+            "Attribute VB_Name = \"Widget\"\nPublic Property Get Value(ByVal index) As Object\nDim c As New Child\nSet Value = c\nEnd Property",
+        )
+        .expect("module parses");
+        let child =
+            module_unit_from_source("Child", ModuleKind::Class, "Attribute VB_Name = \"Child\"")
+                .expect("module parses");
+        let manifest = ProjectManifest {
+            project_name: "ProjectA".to_string(),
+            project_kind: ProjectKind::Source,
+            modules: vec![main_module, widget, child],
+            references: Vec::new(),
+            reference_projects: Vec::new(),
+            conditional_constants: BTreeMap::new(),
+        };
+
+        let compiled = compile_project(&manifest).expect("rewrite should compile");
+        let lowered = compiled.rewritten_source.to_ascii_lowercase();
+        assert!(
+            lowered.contains("set childout = property_get_pmr_projecta_widget_value(widget, x)"),
+            "{lowered}"
+        );
+    }
+
+    #[test]
     fn compile_project_preserves_explicit_let_for_native_indexed_default_member_get_read_assignment()
      {
         let main_module = module_unit_from_source(

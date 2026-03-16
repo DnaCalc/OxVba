@@ -1,3 +1,10 @@
+## 2026-03-16 - Extended IP-02 explicit Set indexed native object property-get evidence
+
+- Continued the active `IP-02A` assignment-intent closure slice and extended the new object-returning native PMR `Set` read-assignment evidence to the indexed property-get neighbor.
+- Added compiler and host evidence for:
+  - `Set childOut = widget.Value(x)` when `Value` is a native internal-class indexed `Property Get` returning an object
+- `IP-02` remains `in-progress`: broader typed/object `Set` vs `Let` intent parity beyond the now-covered bounded named/indexed property-get object lanes, plus broader non-authoritative default-member resolution and Office-style call-vs-value parity, still remain open.
+
 ## 2026-03-16 - Extended IP-02 explicit Set native object property-get evidence
 
 - Continued the active `IP-02A` assignment-intent closure slice and added a direct native PMR `Set` read-assignment lane for object-returning internal-class properties instead of leaving `Set` parity at plain assignment and property-set-only behavior.
