@@ -1,3 +1,11 @@
+## 2026-03-16 - Extended IP-02 explicit Set default-member object property-get evidence
+
+- Continued the active `IP-02A` assignment-intent closure slice and fixed the default-member read-assignment rewrite so explicit `Set` now follows the same PMR-backed object getter path as the existing implicit and explicit `Let` read-assignment forms.
+- Added compiler and host evidence for:
+  - `Set childOut = widget` when authoritative `VB_UserMemId = 0` metadata marks an object-returning native internal-class default member
+  - `Set childOut = widget(x)` for the indexed authoritative default-member neighbor on the same object-returning path
+- `IP-02` remains `in-progress`: broader typed/object `Set` vs `Let` intent parity beyond the now-covered bounded named/indexed/default-member object lanes, plus broader non-authoritative default-member resolution and Office-style call-vs-value parity, still remain open.
+
 ## 2026-03-16 - Extended IP-02 explicit Set indexed native object property-get evidence
 
 - Continued the active `IP-02A` assignment-intent closure slice and extended the new object-returning native PMR `Set` read-assignment evidence to the indexed property-get neighbor.
