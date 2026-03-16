@@ -1,3 +1,10 @@
+## 2026-03-16 - Extended IP-02 typed Set object-call assignment evidence
+
+- Continued the active `IP-02A` assignment-intent closure slice and proved that the direct `Object` target lane is also accepted for object-producing call results instead of only the previously documented `Variant` target success lane.
+- Added compiler and host evidence for:
+  - `Set obj = CreateObject(4)`
+- `IP-02` remains `in-progress`: broader typed/object `Set` vs `Let` parity beyond the now-covered `Object`/`Variant` object-call success lanes and bounded `Let` rejection lane is still open.
+
 ## 2026-03-16 - Extended IP-02 parenthesized statement-context getter evidence
 
 - Continued the active `IP-02A` call-vs-value closure slice and proved that natural zero-arg parenthesized statement-context getter syntax also reaches the existing PMR-backed getter route for native internal project-class property/default-member getters.

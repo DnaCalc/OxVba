@@ -5599,6 +5599,23 @@ mod tests {
 
     #[cfg(target_os = "windows")]
     #[test]
+    fn formal_v121_set_keyword_accepts_object_target_for_object_call_result() {
+        let mut engine = Engine::new(HostConfig {
+            enable_jit: false,
+            root_object_name: None,
+        });
+        engine.set_host_policy(HostPolicy::interactive_dev());
+
+        let source = "Sub Main()\nDim obj As Object\nSet obj = CreateObject(4)\nEnd Sub";
+        let out = engine
+            .execute_source_with_value_snapshot(source)
+            .expect("Set into Object target should preserve object call result");
+        assert_eq!(out.len(), 1);
+        assert!(matches!(out[0], RuntimeValue::ObjectHandle(handle) if handle.raw() > 0));
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
     fn formal_v121_let_keyword_rejects_object_target_for_object_call_result() {
         let mut engine = Engine::new(HostConfig {
             enable_jit: false,

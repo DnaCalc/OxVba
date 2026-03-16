@@ -348,6 +348,12 @@ mod tests {
     }
 
     #[test]
+    fn set_keyword_accepts_object_target_for_object_call_result() {
+        let source = "Sub Main()\nDim obj As Object\nSet obj = CreateObject(4)\nEnd Sub";
+        compile(source).expect("Set should allow object-producing call result into Object target");
+    }
+
+    #[test]
     fn let_keyword_rejects_object_target_for_object_call_result() {
         let source = "Sub Main()\nDim obj As Object\nLet obj = CreateObject(4)\nEnd Sub";
         let err = compile(source)
