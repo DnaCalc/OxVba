@@ -3049,6 +3049,7 @@ fn known_dispatch_member_token(member_name: &str) -> Option<i32> {
         "returnwideunsignedhyper" => Some(72),
         "returnwideunsignedhyperarray" => Some(73),
         "returnvariantmatrix" => Some(74),
+        "returnplainunknownvariantarray" => Some(75),
         _ => None,
     }
 }

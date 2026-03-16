@@ -1362,6 +1362,42 @@ End Sub
             "expected bounded adapter fault prefix across VM/JIT, got vm={vm:?} jit={jit:?}"
         );
     }
+
+    #[test]
+    fn dispatchinvoke_plain_unknown_variant_arrays_fail_with_bounded_nondispatch_diagnostic() {
+        let source = r#"
+Sub Main()
+Dim obj
+Dim failed
+obj = CreateObject("OxVba.TestDispatch")
+failed = DispatchInvoke(obj, "ReturnPlainUnknownVariantArray")
+End Sub
+"#;
+
+        let vm = run_windows_host_backed_error(source, false);
+        let jit = run_windows_host_backed_error(source, true);
+        assert!(
+            vm.contains("runtime error: 53053") && jit.contains("runtime error: 53053"),
+            "expected stable runtime fault code across VM/JIT, got vm={vm:?} jit={jit:?}"
+        );
+        assert!(
+            vm.contains("IUnknown::QueryInterface(IDispatch) failed with HRESULT 0x80004002")
+                && jit
+                    .contains("IUnknown::QueryInterface(IDispatch) failed with HRESULT 0x80004002"),
+            "expected bounded non-IDispatch VT_VARIANT-array diagnostic across VM/JIT, got vm={vm:?} jit={jit:?}"
+        );
+        assert!(
+            vm.contains("com-dispatch-fault-unspecified")
+                && vm.contains(
+                    "detail=\"IUnknown::QueryInterface(IDispatch) failed with HRESULT 0x80004002\""
+                )
+                && jit.contains("com-dispatch-fault-unspecified")
+                && jit.contains(
+                    "detail=\"IUnknown::QueryInterface(IDispatch) failed with HRESULT 0x80004002\""
+                ),
+            "expected bounded adapter fault prefix across VM/JIT, got vm={vm:?} jit={jit:?}"
+        );
+    }
     #[test]
     fn dispatchinvoke_wide_unsigned_long_results_fail_with_bounded_overflow_diagnostic() {
         let source = r#"

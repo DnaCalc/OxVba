@@ -1,3 +1,7 @@
+## 2026-03-15 - Bounded nested VT_UNKNOWN-in-VT_ARRAY|VT_VARIANT COM result diagnostics
+- Added a controlled `ReturnPlainUnknownVariantArray` fixture member together with compiler token coverage, HAL metadata expectations, and host VM/JIT evidence for one-dimensional `VT_ARRAY | VT_VARIANT` results that contain nested plain `VT_UNKNOWN` elements.
+- Locked the current adapter contract so nested non-`IDispatch` elements inside variant SAFEARRAY results now fail with the explicit bounded `IUnknown::QueryInterface(IDispatch)` diagnostic instead of depending on undocumented nested-object drift.
+
 ## 2026-03-15 - Bounded rank-2 VT_ARRAY|VT_VARIANT COM result diagnostics
 - Added a controlled `ReturnVariantMatrix` fixture member together with compiler token coverage, HAL metadata expectations, and host VM/JIT evidence for rank-2 `VT_ARRAY | VT_VARIANT` results.
 - Locked the current adapter contract so multi-dimensional variant SAFEARRAY results now fail with the explicit unsupported-rank bounded diagnostic instead of depending on an undocumented shape path.

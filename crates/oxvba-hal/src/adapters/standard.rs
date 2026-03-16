@@ -4622,6 +4622,7 @@ mod tests {
                 ("ReturnWideUnsignedHyper".to_string(), 72),
                 ("ReturnWideUnsignedHyperArray".to_string(), 73),
                 ("ReturnVariantMatrix".to_string(), 74),
+                ("ReturnPlainUnknownVariantArray".to_string(), 75),
                 ("ReturnLong".to_string(), 35),
                 ("ReturnUnsignedLong".to_string(), 36),
                 ("ReturnSmallIntArray".to_string(), 20),

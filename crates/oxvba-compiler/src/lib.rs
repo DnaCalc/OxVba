@@ -2111,6 +2111,24 @@ mod tests {
     }
 
     #[test]
+    fn compile_dispatchinvoke_with_plain_unknown_variant_array_result_literal_maps_to_member_token_seventy_five()
+     {
+        let source = "Sub Main()\nDim x\nx = DispatchInvoke(CreateObject(\"OxVba.TestDispatch\"), \"ReturnPlainUnknownVariantArray\")\nEnd Sub";
+        let out = compile(source)
+            .expect("compile should succeed for plain-unknown-variant-array result fixture member");
+        assert!(
+            out.instructions
+                .iter()
+                .any(|i| matches!(i, Instruction::IntrinsicDispatchInvokeHost { .. }))
+        );
+        assert!(
+            out.instructions
+                .iter()
+                .any(|i| matches!(i, Instruction::LoadConstI32 { value: 75, .. }))
+        );
+    }
+
+    #[test]
     fn compile_dispatchinvoke_with_source_interface_event_literal_maps_to_member_token_eleven() {
         let source = "Sub Main()\nDim x\nx = DispatchInvoke(CreateObject(\"OxVba.TestDispatch\"), \"FireChangedSourceInterface\", 7)\nEnd Sub";
         let out =

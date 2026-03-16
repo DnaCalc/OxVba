@@ -141,6 +141,7 @@ pub const TEST_DISPID_RETURN_WIDE_HYPER_ARRAY: i32 = 71;
 pub const TEST_DISPID_RETURN_WIDE_UNSIGNED_HYPER: i32 = 72;
 pub const TEST_DISPID_RETURN_WIDE_UNSIGNED_HYPER_ARRAY: i32 = 73;
 pub const TEST_DISPID_RETURN_VARIANT_MATRIX: i32 = 74;
+pub const TEST_DISPID_RETURN_PLAIN_UNKNOWN_VARIANT_ARRAY: i32 = 75;
 pub const TEST_NAMED_DISPID_LHS: i32 = 101;
 
 static mut TEST_BYREF_I32_RESULT: i32 = 321;
@@ -1798,6 +1799,7 @@ unsafe extern "system" fn oxvba_test_get_ids_of_names(
             "returnwideunsignedhyper" => TEST_DISPID_RETURN_WIDE_UNSIGNED_HYPER,
             "returnwideunsignedhyperarray" => TEST_DISPID_RETURN_WIDE_UNSIGNED_HYPER_ARRAY,
             "returnvariantmatrix" => TEST_DISPID_RETURN_VARIANT_MATRIX,
+            "returnplainunknownvariantarray" => TEST_DISPID_RETURN_PLAIN_UNKNOWN_VARIANT_ARRAY,
             "lhs" => TEST_NAMED_DISPID_LHS,
             "rhs" => TEST_NAMED_DISPID_RHS,
             "index" => TEST_NAMED_DISPID_INDEX,
@@ -2403,6 +2405,12 @@ unsafe extern "system" fn oxvba_test_invoke(
             }
             set_variant_typed_plain_unknown_array(pvarresult)
         }
+        TEST_DISPID_RETURN_PLAIN_UNKNOWN_VARIANT_ARRAY => {
+            if (wflags & DISPATCH_METHOD) == 0 || cargs != 0 {
+                return COM_DISP_E_BADPARAMCOUNT;
+            }
+            set_variant_plain_unknown_in_variant_array(pvarresult)
+        }
         TEST_DISPID_RETURN_LONG_ARRAY => {
             if (wflags & DISPATCH_METHOD) == 0 || cargs != 0 {
                 return COM_DISP_E_BADPARAMCOUNT;
@@ -2644,6 +2652,36 @@ unsafe fn set_variant_dispatch_array(
     oxvba_test_add_ref(this);
     element.Anonymous.Anonymous.vt = VT_DISPATCH;
     element.Anonymous.Anonymous.Anonymous.pdispVal = this.cast();
+    let index = 0i32;
+    let hr = SafeArrayPutElement(
+        psa.cast_const(),
+        &index,
+        (&element as *const VARIANT).cast(),
+    );
+    let _ = VariantClear(&mut element);
+    if hr < 0 {
+        let _ = SafeArrayDestroy(psa.cast_const());
+        return COM_E_INVALIDARG;
+    }
+    if !pvarresult.is_null() {
+        (*pvarresult).Anonymous.Anonymous.vt = VT_ARRAY | VT_VARIANT;
+        (*pvarresult).Anonymous.Anonymous.Anonymous.parray = psa;
+        return COM_S_OK;
+    }
+    let _ = SafeArrayDestroy(psa.cast_const());
+    COM_S_OK
+}
+
+#[cfg(target_os = "windows")]
+#[allow(unsafe_op_in_unsafe_fn)]
+unsafe fn set_variant_plain_unknown_in_variant_array(pvarresult: *mut VARIANT) -> i32 {
+    let psa = SafeArrayCreateVector(VT_VARIANT, 0, 1);
+    if psa.is_null() {
+        return COM_E_INVALIDARG;
+    }
+    let mut element: VARIANT = std::mem::zeroed();
+    element.Anonymous.Anonymous.vt = VT_UNKNOWN;
+    element.Anonymous.Anonymous.Anonymous.punkVal = create_oxvba_test_plain_unknown().cast();
     let index = 0i32;
     let hr = SafeArrayPutElement(
         psa.cast_const(),

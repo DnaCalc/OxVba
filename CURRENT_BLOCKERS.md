@@ -77,6 +77,7 @@ Run context: active parity/compliance execution plus in-progress feature worklis
   - outbound `Array(...)` expressions now have end-to-end host evidence as semantic `VT_ARRAY | VT_VARIANT` payloads via the controlled raw-variant classifier lane,
   - one-dimensional `VT_ARRAY | VT_VARIANT` payloads with nested `VT_DISPATCH` elements now have end-to-end host evidence on both argument and result paths via controlled classifier and return-array fixture members,
   - controlled host coverage now also proves a stable unsupported-path diagnostic for both rank-2 typed SAFEARRAY results and rank-2 `VT_ARRAY | VT_VARIANT` results instead of an unbounded crash or shape drift,
+  - controlled host coverage now also proves a stable unsupported-path diagnostic when one-dimensional `VT_ARRAY | VT_VARIANT` results contain nested `VT_UNKNOWN` elements that do not expose `IDispatch`,
   - invoke failure translation now distinguishes real `ArgErr` presence from the previous synthetic `arg_err=0` fallback,
   - controlled `DISP_E_EXCEPTION` lanes now preserve bounded `EXCEPINFO` source/description/scode details in the adapter-fault surface,
   - controlled direct-error host coverage now also proves VM/JIT parity for both real `arg_err` indexing on `DISP_E_TYPEMISMATCH` and bounded `EXCEPINFO` source/description/scode detail on `DISP_E_EXCEPTION`,
