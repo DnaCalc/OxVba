@@ -425,6 +425,17 @@ mod tests {
     }
 
     #[test]
+    fn implicit_assignment_rejects_object_target_for_scalar_source() {
+        let source = "Sub Main()\nDim obj As Object\nobj = 7\nEnd Sub";
+        let err = compile(source)
+            .expect_err("implicit assignment should reject scalar source on Object target");
+        assert!(
+            err.to_string()
+                .contains("cannot assign Long to Object variable obj")
+        );
+    }
+
+    #[test]
     fn conversion_intrinsic_cint_to_long_assignment_is_allowed() {
         let source = "Sub Main()\nDim x As Long\nx = CInt(5)\nEnd Sub";
         compile(source).expect("typed conversion result should assign to widening numeric target");
