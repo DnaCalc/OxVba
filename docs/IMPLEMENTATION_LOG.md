@@ -1,3 +1,12 @@
+## 2026-03-16 - Added bounded non-authoritative native default-member fallback evidence
+
+- Continued the active `IP-02A` semantic-closure slice and added the first bounded non-authoritative native default-member fallback instead of leaving all non-metadata-backed internal-class default-member syntax unresolved.
+- In [project.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-compiler\src\project.rs), extended `resolve_internal_class_default_member_target_of_kinds(...)` so native project-class resolution now falls back only when there is exactly one visible candidate of the requested kind, preserving bounded ambiguity handling.
+- Added compiler and host evidence for:
+  - `valueOut = widget` when a native class exposes exactly one visible `Property Get`
+  - `widget = 9` plus surrounding reads when a native class exposes exactly one visible `Property Get` and exactly one visible `Property Let`
+- This is still a bounded subset, not full closure: ambiguous non-authoritative cases, broader Office-style default-member recovery, and COM-side non-authoritative recovery remain open.
+
 ## 2026-03-16 - Extended IP-02 explicit Let native property/default-member read evidence
 
 - Continued the active `IP-02A` semantic-closure slice and proved that explicit `Let` also survives the native PMR-backed property/default-member read-assignment route instead of only the property/default-member write-assignment route.

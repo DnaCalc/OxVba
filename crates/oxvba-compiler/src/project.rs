@@ -2039,7 +2039,23 @@ fn resolve_internal_class_default_member_target_of_kinds(
         })
         .collect::<Vec<_>>();
     if candidates.is_empty() {
-        return Ok(None);
+        candidates = procedures
+            .iter()
+            .filter(|decl| {
+                decl.project_name == target_project
+                    && decl.module_name == target_module
+                    && (allowed_kinds.is_empty() || allowed_kinds.contains(&decl.kind))
+                    && is_visible_from_active_project(
+                        decl,
+                        active_project,
+                        current_project,
+                        current_module,
+                    )
+            })
+            .collect::<Vec<_>>();
+        if candidates.len() != 1 {
+            return Ok(None);
+        }
     }
     candidates.sort_by_key(|decl| decl.lowered_name.clone());
     Ok(Some((candidates[0].lowered_name.clone(), instance_arg)))
@@ -5533,6 +5549,76 @@ mod tests {
         let lowered = compiled.rewritten_source.to_ascii_lowercase();
         assert!(
             lowered.contains("let valueout = property_get_pmr_projecta_widget_value(widget, x)"),
+            "{lowered}"
+        );
+    }
+
+    #[test]
+    fn compile_project_infers_non_authoritative_single_candidate_default_member_get() {
+        let main_module = module_unit_from_source(
+            "MainModule",
+            ModuleKind::Procedural,
+            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim widget As New Widget\nDim valueOut\nvalueOut = widget\nEnd Sub",
+        )
+        .expect("module parses");
+        let widget = module_unit_from_source(
+            "Widget",
+            ModuleKind::Class,
+            "Attribute VB_Name = \"Widget\"\nPublic Property Get Value()\nValue = 4\nEnd Property",
+        )
+        .expect("module parses");
+        let manifest = ProjectManifest {
+            project_name: "ProjectA".to_string(),
+            project_kind: ProjectKind::Source,
+            modules: vec![main_module, widget],
+            references: Vec::new(),
+            reference_projects: Vec::new(),
+            conditional_constants: BTreeMap::new(),
+        };
+
+        let compiled = compile_project(&manifest).expect("rewrite should compile");
+        let lowered = compiled.rewritten_source.to_ascii_lowercase();
+        assert!(
+            lowered.contains("valueout = property_get_pmr_projecta_widget_value(widget)"),
+            "{lowered}"
+        );
+    }
+
+    #[test]
+    fn compile_project_infers_non_authoritative_single_candidate_default_member_let() {
+        let main_module = module_unit_from_source(
+            "MainModule",
+            ModuleKind::Procedural,
+            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim widget As New Widget\nDim beforeValue\nDim afterValue\nbeforeValue = widget\nwidget = 9\nafterValue = widget\nEnd Sub",
+        )
+        .expect("module parses");
+        let widget = module_unit_from_source(
+            "Widget",
+            ModuleKind::Class,
+            "Attribute VB_Name = \"Widget\"\nPublic Property Get Value()\nValue = 4\nEnd Property\nPublic Property Let Value(ByVal n)\nEnd Property",
+        )
+        .expect("module parses");
+        let manifest = ProjectManifest {
+            project_name: "ProjectA".to_string(),
+            project_kind: ProjectKind::Source,
+            modules: vec![main_module, widget],
+            references: Vec::new(),
+            reference_projects: Vec::new(),
+            conditional_constants: BTreeMap::new(),
+        };
+
+        let compiled = compile_project(&manifest).expect("rewrite should compile");
+        let lowered = compiled.rewritten_source.to_ascii_lowercase();
+        assert!(
+            lowered.contains("beforevalue = property_get_pmr_projecta_widget_value(widget)"),
+            "{lowered}"
+        );
+        assert!(
+            lowered.contains("property_let_pmr_projecta_widget_value(widget, 9)"),
+            "{lowered}"
+        );
+        assert!(
+            lowered.contains("aftervalue = property_get_pmr_projecta_widget_value(widget)"),
             "{lowered}"
         );
     }
