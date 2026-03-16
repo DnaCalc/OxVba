@@ -33,6 +33,16 @@
 - Fixed the Windows COM bridge so scalar VT_UI4 / VT_UINT values and one-dimensional typed VT_ARRAY | VT_UI4 / VT_ARRAY | VT_UINT elements use checked narrowing instead of lossy s i32 casts.
 - Added controlled fixture members, compiler token coverage, HAL metadata expectations, and host VM/JIT evidence for deterministic overflow diagnostics on both scalar and typed-array lanes.
 
+## 2026-03-16 - Locked additional COM invoke HRESULT classification evidence in `IP-03A`
+
+- Continued the bounded late-bound COM invoke-fidelity work instead of overclaiming broader Office automation error parity.
+- In [windows_test_dispatch.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-com\src\windows_test_dispatch.rs), extended the shared HRESULT label mapping so `DISP_E_UNKNOWNNAME` and `DISP_E_BADPARAMCOUNT` no longer collapse into the generic native-failure bucket.
+- In [com_client_end_to_end.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-host\tests\com_client_end_to_end.rs), added VM/JIT host evidence proving deterministic adapter-fault and raw-detail surfaces for:
+  - `DISP_E_MEMBERNOTFOUND` on bogus numeric DISPID invocation,
+  - `DISP_E_BADPARAMCOUNT` on wrong-arity invocation of a real member.
+- In [standard.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-hal\src\adapters\standard.rs), added adapter-boundary evidence proving raw `IDispatch::GetIDsOfNames` failures now classify stably as `DISP_E_UNKNOWNNAME` instead of falling through to the generic native-failure bucket.
+- `IP-03` remains `in-progress`: broader external `ArgErr` / `ExcepInfo` / `VarResult`, non-`IDispatch` interface transport, and multi-dimensional SAFEARRAY parity are still open.
+
 ## 2026-03-15 - Added controlled `VT_DECIMAL` COM result transport evidence in `IP-03A`
 
 - Continued the active late-bound COM value-transport pass by introducing an exact `Decimal96` semantic carrier instead of degrading automation `Decimal` payloads into the float or legacy integer lanes.

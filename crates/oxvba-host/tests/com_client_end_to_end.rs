@@ -1292,6 +1292,69 @@ End Sub
             "exception path should not synthesize arg_err, got vm={vm:?} jit={jit:?}"
         );
     }
+
+    #[test]
+    fn dispatchinvoke_member_not_found_surfaces_deterministically() {
+        let source = r#"
+Sub Main()
+Dim obj
+Dim failed
+obj = CreateObject("OxVba.TestDispatch")
+failed = DispatchInvoke(obj, 9999)
+End Sub
+"#;
+
+        let vm = run_windows_host_backed_error(source, false);
+        let jit = run_windows_host_backed_error(source, true);
+        assert!(
+            vm.contains("com-dispatch-member-not-found;hresult=0x80020003;")
+                && jit.contains("com-dispatch-member-not-found;hresult=0x80020003;"),
+            "expected stable member-not-found adapter fault prefix across VM/JIT, got vm={vm:?} jit={jit:?}"
+        );
+        assert!(
+            vm.contains("IDispatch::Invoke(")
+                && vm.contains("failed with HRESULT 0x80020003")
+                && jit.contains("IDispatch::Invoke(")
+                && jit.contains("failed with HRESULT 0x80020003"),
+            "expected raw member-not-found detail across VM/JIT, got vm={vm:?} jit={jit:?}"
+        );
+        assert!(
+            !vm.contains("arg_err=") && !jit.contains("arg_err="),
+            "member-not-found path should not synthesize arg_err, got vm={vm:?} jit={jit:?}"
+        );
+    }
+
+    #[test]
+    fn dispatchinvoke_bad_param_count_surfaces_deterministically() {
+        let source = r#"
+Sub Main()
+Dim obj
+Dim failed
+obj = CreateObject("OxVba.TestDispatch")
+failed = DispatchInvoke(obj, "SumPair", 1)
+End Sub
+"#;
+
+        let vm = run_windows_host_backed_error(source, false);
+        let jit = run_windows_host_backed_error(source, true);
+        assert!(
+            vm.contains("com-dispatch-bad-param-count;hresult=0x8002000E;")
+                && jit.contains("com-dispatch-bad-param-count;hresult=0x8002000E;"),
+            "expected stable bad-param-count adapter fault prefix across VM/JIT, got vm={vm:?} jit={jit:?}"
+        );
+        assert!(
+            vm.contains("IDispatch::Invoke(method dispid=")
+                && vm.contains("failed with HRESULT 0x8002000E")
+                && jit.contains("IDispatch::Invoke(method dispid=")
+                && jit.contains("failed with HRESULT 0x8002000E"),
+            "expected raw bad-param-count detail across VM/JIT, got vm={vm:?} jit={jit:?}"
+        );
+        assert!(
+            !vm.contains("arg_err=") && !jit.contains("arg_err="),
+            "bad-param-count path should not synthesize arg_err, got vm={vm:?} jit={jit:?}"
+        );
+    }
+
     #[test]
     fn dispatchinvoke_plain_unknown_results_fail_with_bounded_nondispatch_diagnostic() {
         let source = r#"

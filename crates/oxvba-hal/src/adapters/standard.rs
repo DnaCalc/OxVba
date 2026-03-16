@@ -5179,8 +5179,16 @@ mod tests {
             "member-not-found"
         );
         assert_eq!(
+            super::map_com_hresult_label(Some(0x8002_0006), None),
+            "unknown-name"
+        );
+        assert_eq!(
             super::map_com_hresult_label(Some(0x8004_01F3), None),
             "invalid-class-string"
+        );
+        assert_eq!(
+            super::map_com_hresult_label(Some(0x8002_000E), None),
+            "bad-param-count"
         );
         assert_eq!(super::map_com_hresult_label(None, Some(0)), "arg-error");
         assert_eq!(
@@ -5225,6 +5233,28 @@ mod tests {
                     .contains("com-createobject-invalid-class-string")
                 || err.message.contains("0x80040154"),
             "expected stable class-not-registered label, got {}",
+            err.message
+        );
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn windows_dispatch_unknown_name_failure_includes_stable_label() {
+        let host = StandardHostServices::new(HalProfileId::Windows, HostPolicy::interactive_dev());
+        let err = host.com_dispatch_adapter_fault(
+            "IDispatch::GetIDsOfNames failed for `DefinitelyMissingMember` with HRESULT 0x80020006"
+                .to_string(),
+        );
+        assert!(
+            err.message
+                .contains("com-dispatch-unknown-name;hresult=0x80020006;"),
+            "expected stable unknown-name label, got {}",
+            err.message
+        );
+        assert!(
+            err.message
+                .contains("IDispatch::GetIDsOfNames failed for `DefinitelyMissingMember` with HRESULT 0x80020006"),
+            "expected raw GetIDsOfNames detail, got {}",
             err.message
         );
     }
