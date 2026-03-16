@@ -1,3 +1,14 @@
+## 2026-03-16 - Extended IP-02 explicit Let native property/default-member read evidence
+
+- Continued the active `IP-02A` semantic-closure slice and proved that explicit `Let` also survives the native PMR-backed property/default-member read-assignment route instead of only the property/default-member write-assignment route.
+- Added host rewrite/execution evidence for:
+  - `Let valueOut = widget.Value`
+  - `Let valueOut = widget`
+  - `Let valueOut = widget.Value(x)`
+  - `Let valueOut = widget(x)`
+- In [engine.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-host\src\engine.rs), added bounded project-execution lanes plus lowered-source assertions proving the compiler now preserves the `Let` prefix while rewriting the native PMR getter route.
+- `IP-02` remains `in-progress`: broader typed/object `Set` vs `Let` parity, non-authoritative default-member resolution, and wider Office-style call-vs-value context parity are still open.
+
 ## 2026-03-16 - Extended IP-02 explicit Let native property/default-member evidence
 
 - Continued the active `IP-02A` semantic-closure slice and proved that explicit `Let` on native internal project-class property/default-member assignment routes through the same PMR/dynamic-object execution path as the already-covered implicit property `Let` subset.
