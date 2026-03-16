@@ -1,3 +1,11 @@
+## 2026-03-16 - Extended IP-02 typed Set rejection evidence
+
+- Continued the active `IP-02A` assignment-intent closure slice and proved two additional typed `Set` rejection lanes instead of relying on only the earlier generic `Variant`-target scalar rejection.
+- Added compiler and host evidence for:
+  - `Set obj = 7` rejecting a scalar source on an `Object` target
+  - `Set n = CreateObject(4)` rejecting an object-producing call result on a scalar `Long` target
+- `IP-02` remains `in-progress`: broader typed/object `Set` vs `Let` parity beyond the now-covered bounded success and rejection lanes is still open.
+
 ## 2026-03-16 - Extended IP-02 typed Set object-call assignment evidence
 
 - Continued the active `IP-02A` assignment-intent closure slice and proved that the direct `Object` target lane is also accepted for object-producing call results instead of only the previously documented `Variant` target success lane.

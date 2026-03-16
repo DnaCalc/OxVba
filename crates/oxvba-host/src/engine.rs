@@ -5616,6 +5616,44 @@ mod tests {
 
     #[cfg(target_os = "windows")]
     #[test]
+    fn formal_v121_set_keyword_rejects_object_target_for_scalar_source() {
+        let mut engine = Engine::new(HostConfig {
+            enable_jit: false,
+            root_object_name: None,
+        });
+        engine.set_host_policy(HostPolicy::interactive_dev());
+
+        let source = "Sub Main()\nDim obj As Object\nSet obj = 7\nEnd Sub";
+        let err = engine
+            .execute_source_slots_test(source)
+            .expect_err("Set on an Object target with scalar source should fail");
+        assert!(
+            err.contains("Set requires object value for variable obj"),
+            "{err}"
+        );
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn formal_v121_set_keyword_rejects_scalar_target_for_object_call_result() {
+        let mut engine = Engine::new(HostConfig {
+            enable_jit: false,
+            root_object_name: None,
+        });
+        engine.set_host_policy(HostPolicy::interactive_dev());
+
+        let source = "Sub Main()\nDim n As Long\nSet n = CreateObject(4)\nEnd Sub";
+        let err = engine
+            .execute_source_slots_test(source)
+            .expect_err("Set on a scalar target with object call result should fail");
+        assert!(
+            err.contains("Set requires Object or Variant target, got Long variable n"),
+            "{err}"
+        );
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
     fn formal_v121_let_keyword_rejects_object_target_for_object_call_result() {
         let mut engine = Engine::new(HostConfig {
             enable_jit: false,

@@ -354,6 +354,27 @@ mod tests {
     }
 
     #[test]
+    fn set_keyword_rejects_object_target_for_scalar_source() {
+        let source = "Sub Main()\nDim obj As Object\nSet obj = 7\nEnd Sub";
+        let err = compile(source).expect_err("Set should reject scalar source for Object target");
+        assert!(
+            err.to_string()
+                .contains("Set requires object value for variable obj")
+        );
+    }
+
+    #[test]
+    fn set_keyword_rejects_scalar_target_for_object_call_result() {
+        let source = "Sub Main()\nDim n As Long\nSet n = CreateObject(4)\nEnd Sub";
+        let err = compile(source)
+            .expect_err("Set should reject object-producing call result for scalar target");
+        assert!(
+            err.to_string()
+                .contains("Set requires Object or Variant target, got Long variable n")
+        );
+    }
+
+    #[test]
     fn let_keyword_rejects_object_target_for_object_call_result() {
         let source = "Sub Main()\nDim obj As Object\nLet obj = CreateObject(4)\nEnd Sub";
         let err = compile(source)
