@@ -4645,6 +4645,8 @@ mod tests {
                 ("ReturnMissingMemberName".to_string(), 76),
                 ("ReturnPingMemberName".to_string(), 77),
                 ("ReturnLookupMemberName".to_string(), 78),
+                ("ReturnSumPairMemberName".to_string(), 79),
+                ("ReturnLookupPairMemberName".to_string(), 80),
                 ("ReturnEmpty".to_string(), 65),
                 ("ReturnNull".to_string(), 66),
                 ("ReturnError".to_string(), 67),

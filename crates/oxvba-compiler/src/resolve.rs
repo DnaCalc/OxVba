@@ -3344,6 +3344,8 @@ fn map_dispatch_member_literal_token(text: &str) -> Option<i32> {
         "returnmissingmembername" => Some(76),
         "returnpingmembername" => Some(77),
         "returnlookupmembername" => Some(78),
+        "returnsumpairmembername" => Some(79),
+        "returnlookuppairmembername" => Some(80),
         "returnempty" => Some(65),
         "returnnull" => Some(66),
         "returnerror" => Some(67),
