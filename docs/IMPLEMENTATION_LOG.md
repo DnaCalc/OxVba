@@ -1,3 +1,14 @@
+## 2026-03-16 - Added bounded runtime-string indexed property-put COM dispatch evidence in `IP-03A`
+
+- Continued the bounded dynamic-name late-bound COM work instead of overclaiming full dynamic-name/property/default-member parity.
+- In [windows_test_dispatch.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-com\src\windows_test_dispatch.rs), [typelib_catalog.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-com\src\typelib_catalog.rs), [project.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-compiler\src\project.rs), [resolve.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-compiler\src\resolve.rs), [lib.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-compiler\src\lib.rs), and [standard.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-hal\src\adapters\standard.rs), added controlled fixture members plus metadata/token coverage for `ReturnSetIndexedValueMemberName` and `ReturnSetIndexedValueRefMemberName` (`83` / `84`) so runtime string selectors for indexed property-put and property-putref members can be produced from COM within the supported subset.
+- In [com_client_end_to_end.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-host\tests\com_client_end_to_end.rs), added VM/JIT host evidence proving:
+  - `DispatchInvoke(obj, setIndexedName, 7, 11)` executes `SetIndexedValue` when `setIndexedName` is produced dynamically at runtime,
+  - `DispatchInvoke(obj, "Value")` observes the indexed property-put mutation on the same bound object,
+  - `DispatchInvoke(obj, setIndexedRefName, 8, 13)` executes `SetIndexedValueRef` when `setIndexedRefName` is produced dynamically at runtime,
+  - `DispatchInvoke(obj, "Value")` observes the deterministic indexed property-putref mutation on the same bound object.
+- `IP-03` remains `in-progress`: this slice only proves bounded runtime-string indexed property put/property putref execution when authoritative metadata exists; non-metadata-backed dynamic-name recovery, broader default-member recovery, event queue integration, and broader Office automation parity remain open.
+
 ## 2026-03-16 - Added bounded runtime-string property-put COM dispatch evidence in `IP-03A`
 
 - Continued the bounded dynamic-name late-bound COM work instead of overclaiming full dynamic-name/property/default-member parity.

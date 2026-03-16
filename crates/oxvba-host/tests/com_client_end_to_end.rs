@@ -1535,6 +1535,66 @@ End Sub
     }
 
     #[test]
+    fn dispatchinvoke_runtime_string_indexed_property_put_routes_are_deterministic() {
+        let source = r#"
+Sub Main()
+Dim obj
+Dim setIndexedName
+Dim setIndexedRefName
+Dim setIndexedValueResult
+Dim valueAfterSetIndexed
+Dim setIndexedValueRefResult
+Dim valueAfterSetIndexedRef
+obj = CreateObject("OxVba.TestDispatch")
+setIndexedName = DispatchInvoke(obj, "ReturnSetIndexedValueMemberName")
+setIndexedRefName = DispatchInvoke(obj, "ReturnSetIndexedValueRefMemberName")
+setIndexedValueResult = DispatchInvoke(obj, setIndexedName, 7, 11)
+valueAfterSetIndexed = DispatchInvoke(obj, "Value")
+setIndexedValueRefResult = DispatchInvoke(obj, setIndexedRefName, 8, 13)
+valueAfterSetIndexedRef = DispatchInvoke(obj, "Value")
+End Sub
+"#;
+
+        let vm = run_windows_host_backed(source, false);
+        let jit = run_windows_host_backed(source, true);
+        assert_eq!(
+            vm, jit,
+            "VM/JIT snapshots diverged on runtime string indexed property put/putref path: vm={vm:?} jit={jit:?}"
+        );
+        assert!(expect_object_handle(&vm[0]).raw() >= 20_001);
+        assert_eq!(
+            vm[1],
+            RuntimeValue::String(BStr("SetIndexedValue".to_string())),
+            "indexed property-put selector should remain a runtime string"
+        );
+        assert_eq!(
+            vm[2],
+            RuntimeValue::String(BStr("SetIndexedValueRef".to_string())),
+            "indexed property-putref selector should remain a runtime string"
+        );
+        assert_eq!(
+            vm[3],
+            RuntimeValue::I32(307_011),
+            "runtime string indexed property put should take deterministic put route"
+        );
+        assert_eq!(
+            vm[4],
+            RuntimeValue::I32(307_011),
+            "Value getter should reflect runtime string indexed property put result"
+        );
+        assert_eq!(
+            vm[5],
+            RuntimeValue::I32(408_013),
+            "runtime string indexed property putref should take deterministic putref route"
+        );
+        assert_eq!(
+            vm[6],
+            RuntimeValue::I32(408_013),
+            "Value getter should reflect runtime string indexed property putref result"
+        );
+    }
+
+    #[test]
     fn dispatchinvoke_plain_unknown_results_fail_with_bounded_nondispatch_diagnostic() {
         let source = r#"
 Sub Main()
