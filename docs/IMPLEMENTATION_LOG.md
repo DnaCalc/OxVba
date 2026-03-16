@@ -1,3 +1,10 @@
+## 2026-03-16 - Extended IP-02 typed Variant Set scalar rejection evidence
+
+- Continued the active `IP-02A` assignment-intent closure slice and locked the direct typed `Variant` scalar-source `Set` rejection lane instead of relying on the earlier untyped `Set x = 7` evidence alone.
+- Added compiler and host evidence for:
+  - `Set v = 7` rejecting a scalar source on a `Variant` target
+- `IP-02` remains `in-progress`: broader typed/object `Set` vs `Let` / implicit assignment parity beyond the now-covered bounded typed lanes is still open.
+
 ## 2026-03-16 - Extended IP-02 implicit object/scalar assignment evidence
 
 - Continued the active `IP-02A` assignment-intent closure slice and bounded two implicit assignment neighbors instead of leaving them to drift behind the explicit `Set`/`Let` coverage.

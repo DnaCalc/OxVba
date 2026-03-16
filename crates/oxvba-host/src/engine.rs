@@ -5616,6 +5616,25 @@ mod tests {
 
     #[cfg(target_os = "windows")]
     #[test]
+    fn formal_v121_set_keyword_rejects_variant_target_for_scalar_source() {
+        let mut engine = Engine::new(HostConfig {
+            enable_jit: false,
+            root_object_name: None,
+        });
+        engine.set_host_policy(HostPolicy::interactive_dev());
+
+        let source = "Sub Main()\nDim v As Variant\nSet v = 7\nEnd Sub";
+        let err = engine
+            .execute_source_slots_test(source)
+            .expect_err("Set on a Variant target with scalar source should fail");
+        assert!(
+            err.contains("Set requires object value for variable v"),
+            "{err}"
+        );
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
     fn formal_v121_set_keyword_rejects_object_target_for_scalar_source() {
         let mut engine = Engine::new(HostConfig {
             enable_jit: false,

@@ -354,6 +354,16 @@ mod tests {
     }
 
     #[test]
+    fn set_keyword_rejects_variant_target_for_scalar_source() {
+        let source = "Sub Main()\nDim v As Variant\nSet v = 7\nEnd Sub";
+        let err = compile(source).expect_err("Set should reject scalar source for Variant target");
+        assert!(
+            err.to_string()
+                .contains("Set requires object value for variable v")
+        );
+    }
+
+    #[test]
     fn set_keyword_rejects_object_target_for_scalar_source() {
         let source = "Sub Main()\nDim obj As Object\nSet obj = 7\nEnd Sub";
         let err = compile(source).expect_err("Set should reject scalar source for Object target");
