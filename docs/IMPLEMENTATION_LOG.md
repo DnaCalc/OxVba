@@ -1,3 +1,13 @@
+## 2026-03-16 - Extended IP-02 bounded typed Set/Let call-assignment evidence
+
+- Continued the active `IP-02A` semantic-closure slice and proved two additional end-to-end typed/object assignment-intent lanes instead of leaving the earlier `Set`/`Let` work at plain variable assignment coverage only.
+- Added compiler and host evidence that:
+  - `Set` accepts an object-producing call result for a `Variant` target: `Set v = CreateObject(4)`.
+  - `Let` still rejects an object-producing call result for an `Object` target with a stable bounded diagnostic: `Let obj = CreateObject(4)`.
+- In [engine.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-host\src\engine.rs), added Windows host/JIT-surface tests proving that the `Variant` target preserves the object-handle result shape while the `Let` misuse fails before any runtime drift.
+- In [lib.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-compiler\src\lib.rs), added compile-time evidence for the same two lanes so assignment-intent validation remains aligned across compiler and host surfaces.
+- `IP-02` remains `in-progress`: broader typed/object `Set` vs `Let` parity, non-authoritative default-member resolution, and wider Office-style call-vs-value context parity are still open.
+
 ## 2026-03-16 - Added bounded runtime-string value/default-member-name COM dispatch evidence in `IP-03A`
 
 - Continued the bounded dynamic-name late-bound COM work instead of overclaiming full dynamic-name/property/default-member parity.

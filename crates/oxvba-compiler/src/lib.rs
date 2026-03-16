@@ -342,6 +342,23 @@ mod tests {
     }
 
     #[test]
+    fn set_keyword_accepts_variant_target_for_object_call_result() {
+        let source = "Sub Main()\nDim v As Variant\nSet v = CreateObject(4)\nEnd Sub";
+        compile(source).expect("Set should allow object-producing call result into Variant target");
+    }
+
+    #[test]
+    fn let_keyword_rejects_object_target_for_object_call_result() {
+        let source = "Sub Main()\nDim obj As Object\nLet obj = CreateObject(4)\nEnd Sub";
+        let err = compile(source)
+            .expect_err("Let should reject object-producing call result on Object target");
+        assert!(
+            err.to_string()
+                .contains("Let cannot assign to Object variable obj")
+        );
+    }
+
+    #[test]
     fn conversion_intrinsic_cint_to_long_assignment_is_allowed() {
         let source = "Sub Main()\nDim x As Long\nx = CInt(5)\nEnd Sub";
         compile(source).expect("typed conversion result should assign to widening numeric target");
