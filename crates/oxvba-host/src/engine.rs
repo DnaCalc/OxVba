@@ -6043,7 +6043,7 @@ mod tests {
 
     #[cfg(target_os = "windows")]
     #[test]
-    fn formal_v121_implicit_assignment_accepts_object_target_for_object_call_result() {
+    fn formal_v121_implicit_assignment_rejects_object_target_for_object_call_result_without_set() {
         let mut engine = Engine::new(HostConfig {
             enable_jit: false,
             root_object_name: None,
@@ -6051,11 +6051,13 @@ mod tests {
         engine.set_host_policy(HostPolicy::interactive_dev());
 
         let source = "Sub Main()\nDim obj As Object\nobj = CreateObject(4)\nEnd Sub";
-        let out = engine
-            .execute_source_with_value_snapshot(source)
-            .expect("implicit assignment into Object target should preserve object call result");
-        assert_eq!(out.len(), 1);
-        assert!(matches!(out[0], RuntimeValue::ObjectHandle(handle) if handle.raw() > 0));
+        let err = engine
+            .execute_source_slots_test(source)
+            .expect_err("implicit assignment into Object target should require Set");
+        assert!(
+            err.contains("Set required for Object variable obj"),
+            "{err}"
+        );
     }
 
     #[cfg(target_os = "windows")]

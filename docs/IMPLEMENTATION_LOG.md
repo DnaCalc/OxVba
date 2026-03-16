@@ -1,3 +1,14 @@
+## 2026-03-16 - Tightened bounded implicit Object assignment to require Set
+
+- Continued the active `IP-02A` assignment-intent closure slice and removed the earlier bounded implicit `Object`-target object-call success lane once it was clear that the compiler and project rewriter were still accepting or emitting invalid omitted-`Set` syntax.
+- In [typecheck.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-compiler\src\typecheck.rs), tightened assignment-intent validation so implicit assignment now rejects known object-producing values for `Object` targets with a stable `Set required for Object variable ...` diagnostic while keeping the bounded implicit `Variant` object-result lane intact.
+- In [project.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-compiler\src\project.rs), changed lowered external `As New` initialization to emit `Set obj = CreateObject(...)` so rewrite-based early-bound lowering no longer manufactures invalid implicit object assignment.
+- Updated compiler and host evidence for:
+  - `obj = CreateObject(4)` rejecting on a typed `Object` target with a stable `Set required ...` diagnostic
+  - early-bound external member-call fixtures using explicit `Set obj = CreateObject(4)` instead of the invalid omitted-`Set` form
+  - lowered external `As New` rewrite emitting `Set obj = CreateObject(4)`
+- `IP-02` remains `in-progress`: broader typed/object `Set` vs `Let` parity, ambiguous or broader non-authoritative default-member resolution, and wider Office-style call-vs-value parity still remain open.
+
 ## 2026-03-16 - Extended IP-02 bounded non-authoritative default-member Set read evidence
 
 - Continued the active `IP-02A` default-member closure slice and proved that the existing single-visible-candidate non-authoritative fallback also carries explicit `Set` read-assignment for object-returning native default members instead of only scalar `Get`/`Let` behavior.

@@ -431,10 +431,13 @@ mod tests {
     }
 
     #[test]
-    fn implicit_assignment_accepts_object_target_for_object_call_result() {
+    fn implicit_assignment_rejects_object_target_for_object_call_result_without_set() {
         let source = "Sub Main()\nDim obj As Object\nobj = CreateObject(4)\nEnd Sub";
-        compile(source).expect(
-            "implicit assignment should allow object-producing call result into Object target",
+        let err = compile(source)
+            .expect_err("implicit assignment should require Set for object call result");
+        assert!(
+            err.to_string()
+                .contains("Set required for Object variable obj")
         );
     }
 

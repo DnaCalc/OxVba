@@ -1193,6 +1193,14 @@ fn validate_assignment_intent(
     target: &str,
 ) -> Option<String> {
     match intent {
+        AssignmentIntent::Implicit
+            if target_ty == BoundType::Object && source_ty == BoundType::Object =>
+        {
+            Some(format!(
+                "type mismatch in assignment: Set required for Object variable {}",
+                target
+            ))
+        }
         AssignmentIntent::Implicit => None,
         AssignmentIntent::Let if target_ty == BoundType::Object => Some(format!(
             "type mismatch in assignment: Let cannot assign to Object variable {}",
@@ -1220,8 +1228,21 @@ fn validate_known_object_assignment(
     target: &str,
     context: &str,
 ) -> Option<String> {
-    if matches!(target_ty, BoundType::Variant | BoundType::Object) {
+    if target_ty == BoundType::Variant {
         return None;
+    }
+    if target_ty == BoundType::Object {
+        return match intent {
+            AssignmentIntent::Set => None,
+            AssignmentIntent::Implicit => Some(format!(
+                "type mismatch in assignment{context}: Set required for Object variable {}",
+                target
+            )),
+            AssignmentIntent::Let => Some(format!(
+                "type mismatch in assignment{context}: Let cannot assign to Object variable {}",
+                target
+            )),
+        };
     }
     match intent {
         AssignmentIntent::Implicit | AssignmentIntent::Let => Some(format!(

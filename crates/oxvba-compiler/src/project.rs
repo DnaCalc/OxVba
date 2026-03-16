@@ -1392,7 +1392,7 @@ fn expand_bound_source_line(
                 });
             };
             out.push(format!(
-                "{}{} = CreateObject({selector})",
+                "{}Set {} = CreateObject({selector})",
                 dim_decl.leading_ws, dim_decl.var_name
             ));
         }
@@ -6457,7 +6457,7 @@ mod tests {
         let main_module = module_unit_from_source(
             "MainModule",
             ModuleKind::Procedural,
-            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim obj As OxVba.TestDispatch\nDim x\nobj = CreateObject(4)\nx = obj.Count()\nEnd Sub",
+            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim obj As OxVba.TestDispatch\nDim x\nSet obj = CreateObject(4)\nx = obj.Count()\nEnd Sub",
         )
         .expect("module parses");
         let manifest = ProjectManifest {
@@ -6499,7 +6499,7 @@ mod tests {
         let compiled = compile_project(&manifest).expect("As New rewrite should compile");
         let lowered = compiled.rewritten_source.to_ascii_lowercase();
         assert!(lowered.contains("dim obj as object"));
-        assert!(lowered.contains("obj = createobject(4)"));
+        assert!(lowered.contains("set obj = createobject(4)"));
         assert!(lowered.contains("x = dispatchinvoke(obj, 1)"));
     }
 
@@ -6528,7 +6528,7 @@ mod tests {
         let main_module = module_unit_from_source(
             "MainModule",
             ModuleKind::Procedural,
-            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim obj As OxVba.TestDispatch\nDim x\nobj = CreateObject(4)\nx = obj.UnknownMember()\nEnd Sub",
+            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim obj As OxVba.TestDispatch\nDim x\nSet obj = CreateObject(4)\nx = obj.UnknownMember()\nEnd Sub",
         )
         .expect("module parses");
         let manifest = ProjectManifest {
@@ -6552,7 +6552,7 @@ mod tests {
         let main_module = module_unit_from_source(
             "MainModule",
             ModuleKind::Procedural,
-            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim obj As OxVba.TestDispatch\nDim x\nobj = CreateObject(4)\nx = obj.SumPair(1, 2)\nEnd Sub",
+            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim obj As OxVba.TestDispatch\nDim x\nSet obj = CreateObject(4)\nx = obj.SumPair(1, 2)\nEnd Sub",
         )
         .expect("module parses");
         let manifest = ProjectManifest {
