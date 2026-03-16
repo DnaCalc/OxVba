@@ -9,11 +9,12 @@ use crate::{
     callback_subscription_token, execute_bound_runtime_value_with_shared_state,
     invoke_bound_dispatch_legacy_i32_result, invoke_dispatch_runtime_value_with_shared_state,
     known_typelib_identity_for_prog_id_name, legacy_runtime_arg_values,
-    member_spec_from_typelib_metadata, queue_projection_event_callbacks_shared,
-    raw_oxvba_test_dispatch_vtable_invoke, release_callback, release_object_binding_shared,
-    release_subscription_transport, resolve_bound_native_dispatch_shared,
-    resolve_known_typelib_identity, resolve_named_argument_dispids, subscribe_event_shared,
-    take_polled_callback_payload, unsubscribe_event_shared, validate_named_arg_order,
+    member_spec_from_typelib_metadata, member_token_and_spec_from_typelib_metadata_name,
+    queue_projection_event_callbacks_shared, raw_oxvba_test_dispatch_vtable_invoke,
+    release_callback, release_object_binding_shared, release_subscription_transport,
+    resolve_bound_native_dispatch_shared, resolve_known_typelib_identity,
+    resolve_named_argument_dispids, subscribe_event_shared, take_polled_callback_payload,
+    unsubscribe_event_shared, validate_named_arg_order,
 };
 use oxvba_runtime::{ObjectHandle, RuntimeValue};
 use std::sync::{Arc, Mutex, MutexGuard};
@@ -118,6 +119,17 @@ impl WindowsComBridge {
             .load_typelib_metadata_for_prog_id_name(prog_id_name)?
             .as_ref()
             .and_then(|blob| member_spec_from_typelib_metadata(blob, member)))
+    }
+
+    pub fn known_member_spec_for_prog_id_name_by_name(
+        &self,
+        prog_id_name: &str,
+        member_name: &str,
+    ) -> Result<Option<(ComMemberToken, ComMemberSpec)>, String> {
+        Ok(self
+            .load_typelib_metadata_for_prog_id_name(prog_id_name)?
+            .as_ref()
+            .and_then(|blob| member_token_and_spec_from_typelib_metadata_name(blob, member_name)))
     }
 
     pub fn activate_runtime_dispatch(&self, prog_id: &str) -> Result<*mut RawIDispatch, String> {
@@ -336,9 +348,10 @@ impl WindowsComBridge {
                 "COM-E-VALUE-TRANSPORT-UNSUPPORTED: projection dispatch requires legacy runtime-token arguments".to_string(),
             )
         })?;
-        let dispatch = self
-            .activate_runtime_dispatch(&binding.prog_id_name)
-            .map_err(WindowsComBridgeDispatchError::Message)?;
+        if binding.native_dispatch == 0 {
+            return Ok(None);
+        }
+        let dispatch = binding.native_dispatch as *mut RawIDispatch;
         let invoke_result = unsafe {
             invoke_bound_dispatch_legacy_i32_result(
                 dispatch,
@@ -429,69 +442,83 @@ impl WindowsComBridge {
                 unreachable!()
             }
         };
-        let dispatch = self
-            .activate_runtime_dispatch(&binding.prog_id_name)
-            .map_err(WindowsComBridgeDispatchError::Message)?;
-        let dispid = unsafe { crate::get_dispid_by_name(dispatch, member_name) }
-            .map_err(WindowsComBridgeDispatchError::Message)?;
-        let named_arg_dispids = if args.iter().any(|arg| arg.name.is_some()) {
-            unsafe { self.resolve_named_argument_dispids(dispatch, member_name, args.as_slice()) }
+        if let Some((member_token, _spec)) = self
+            .known_member_spec_for_prog_id_name_by_name(&binding.prog_id_name, member_name)
+            .map_err(WindowsComBridgeDispatchError::Message)?
+        {
+            return self.dispatch_invoke_runtime_value(
+                &ComInvokeRequest {
+                    object: request.object.into(),
+                    member: member_token,
+                    args,
+                    invoke_kind_hint: request.call_kind_hint.map(Into::into),
+                },
+                prefer_vtable,
+            );
+        }
+        let dispatch = binding.native_dispatch as *mut RawIDispatch;
+        let invoke_result = {
+            let dispid = unsafe { crate::get_dispid_by_name(dispatch, member_name) }
+                .map_err(WindowsComBridgeDispatchError::Message)?;
+            let named_arg_dispids = if args.iter().any(|arg| arg.name.is_some()) {
+                unsafe {
+                    self.resolve_named_argument_dispids(dispatch, member_name, args.as_slice())
+                }
                 .map_err(WindowsComBridgeDispatchError::Message)?
-        } else {
-            Vec::new()
-        };
-        let attempt_order = if args.is_empty() {
-            [
-                (
-                    windows_sys::Win32::System::Com::DISPATCH_PROPERTYGET,
-                    "property-get",
-                ),
-                (windows_sys::Win32::System::Com::DISPATCH_METHOD, "method"),
-            ]
-        } else {
-            [
-                (windows_sys::Win32::System::Com::DISPATCH_METHOD, "method"),
-                (
-                    windows_sys::Win32::System::Com::DISPATCH_PROPERTYGET,
-                    "property-get",
-                ),
-            ]
-        };
-        let mut invoke_result = None;
-        for (index, (flags, label)) in attempt_order.into_iter().enumerate() {
-            match unsafe {
-                invoke_dispatch_runtime_value_with_shared_state(
-                    dispatch.cast(),
-                    dispid,
-                    flags,
-                    args.as_slice(),
-                    named_arg_dispids.as_slice(),
-                    label,
-                    &binding.prog_id_name,
-                    &self.state,
-                )
-            } {
-                Ok(value) => {
-                    invoke_result = Some(Ok(value));
-                    break;
-                }
-                Err(failure)
-                    if index + 1 < attempt_order.len()
-                        && failure.hr == Some(crate::COM_DISP_E_BADPARAMCOUNT) =>
-                {
-                    continue;
-                }
-                Err(failure) => {
-                    invoke_result = Some(Err(failure));
-                    break;
+            } else {
+                Vec::new()
+            };
+            let attempt_order = if args.is_empty() {
+                [
+                    (
+                        windows_sys::Win32::System::Com::DISPATCH_PROPERTYGET,
+                        "property-get",
+                    ),
+                    (windows_sys::Win32::System::Com::DISPATCH_METHOD, "method"),
+                ]
+            } else {
+                [
+                    (windows_sys::Win32::System::Com::DISPATCH_METHOD, "method"),
+                    (
+                        windows_sys::Win32::System::Com::DISPATCH_PROPERTYGET,
+                        "property-get",
+                    ),
+                ]
+            };
+            let mut invoke_result = None;
+            for (index, (flags, label)) in attempt_order.into_iter().enumerate() {
+                match unsafe {
+                    invoke_dispatch_runtime_value_with_shared_state(
+                        dispatch.cast(),
+                        dispid,
+                        flags,
+                        args.as_slice(),
+                        named_arg_dispids.as_slice(),
+                        label,
+                        &binding.prog_id_name,
+                        &self.state,
+                    )
+                } {
+                    Ok(value) => {
+                        invoke_result = Some(Ok(value));
+                        break;
+                    }
+                    Err(failure)
+                        if index + 1 < attempt_order.len()
+                            && failure.hr == Some(crate::COM_DISP_E_BADPARAMCOUNT) =>
+                    {
+                        continue;
+                    }
+                    Err(failure) => {
+                        invoke_result = Some(Err(failure));
+                        break;
+                    }
                 }
             }
-        }
-        unsafe {
-            crate::release_dispatch(dispatch);
-        }
+            invoke_result
+                .expect("dynamic-name COM invoke should attempt at least one dispatch flag")
+        };
         invoke_result
-            .expect("dynamic-name COM invoke should attempt at least one dispatch flag")
             .map(Some)
             .map_err(WindowsComBridgeDispatchError::InvokeFailure)
     }

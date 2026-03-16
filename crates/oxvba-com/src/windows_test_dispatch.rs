@@ -147,6 +147,8 @@ pub const TEST_DISPID_RETURN_PING_MEMBER_NAME: i32 = 77;
 pub const TEST_DISPID_RETURN_LOOKUP_MEMBER_NAME: i32 = 78;
 pub const TEST_DISPID_RETURN_SUM_PAIR_MEMBER_NAME: i32 = 79;
 pub const TEST_DISPID_RETURN_LOOKUP_PAIR_MEMBER_NAME: i32 = 80;
+pub const TEST_DISPID_RETURN_SET_VALUE_MEMBER_NAME: i32 = 81;
+pub const TEST_DISPID_RETURN_SET_VALUE_REF_MEMBER_NAME: i32 = 82;
 pub const TEST_NAMED_DISPID_LHS: i32 = 101;
 
 static mut TEST_BYREF_I32_RESULT: i32 = 321;
@@ -1812,6 +1814,8 @@ unsafe extern "system" fn oxvba_test_get_ids_of_names(
             "returnlookupmembername" => TEST_DISPID_RETURN_LOOKUP_MEMBER_NAME,
             "returnsumpairmembername" => TEST_DISPID_RETURN_SUM_PAIR_MEMBER_NAME,
             "returnlookuppairmembername" => TEST_DISPID_RETURN_LOOKUP_PAIR_MEMBER_NAME,
+            "returnsetvaluemembername" => TEST_DISPID_RETURN_SET_VALUE_MEMBER_NAME,
+            "returnsetvaluerefmembername" => TEST_DISPID_RETURN_SET_VALUE_REF_MEMBER_NAME,
             "lhs" => TEST_NAMED_DISPID_LHS,
             "rhs" => TEST_NAMED_DISPID_RHS,
             "index" => TEST_NAMED_DISPID_INDEX,
@@ -2373,6 +2377,34 @@ unsafe extern "system" fn oxvba_test_invoke(
             }
             if !pvarresult.is_null() {
                 let bstr = alloc_bstr("LookupPair");
+                if bstr.is_null() {
+                    return COM_E_INVALIDARG;
+                }
+                (*pvarresult).Anonymous.Anonymous.vt = VT_BSTR;
+                (*pvarresult).Anonymous.Anonymous.Anonymous.bstrVal = bstr;
+            }
+            COM_S_OK
+        }
+        TEST_DISPID_RETURN_SET_VALUE_MEMBER_NAME => {
+            if (wflags & DISPATCH_METHOD) == 0 || cargs != 0 {
+                return COM_DISP_E_BADPARAMCOUNT;
+            }
+            if !pvarresult.is_null() {
+                let bstr = alloc_bstr("SetValue");
+                if bstr.is_null() {
+                    return COM_E_INVALIDARG;
+                }
+                (*pvarresult).Anonymous.Anonymous.vt = VT_BSTR;
+                (*pvarresult).Anonymous.Anonymous.Anonymous.bstrVal = bstr;
+            }
+            COM_S_OK
+        }
+        TEST_DISPID_RETURN_SET_VALUE_REF_MEMBER_NAME => {
+            if (wflags & DISPATCH_METHOD) == 0 || cargs != 0 {
+                return COM_DISP_E_BADPARAMCOUNT;
+            }
+            if !pvarresult.is_null() {
+                let bstr = alloc_bstr("SetValueRef");
                 if bstr.is_null() {
                     return COM_E_INVALIDARG;
                 }

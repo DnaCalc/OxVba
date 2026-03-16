@@ -94,6 +94,8 @@ const TEST_DISPID_RETURN_PING_MEMBER_NAME: i32 = 77;
 const TEST_DISPID_RETURN_LOOKUP_MEMBER_NAME: i32 = 78;
 const TEST_DISPID_RETURN_SUM_PAIR_MEMBER_NAME: i32 = 79;
 const TEST_DISPID_RETURN_LOOKUP_PAIR_MEMBER_NAME: i32 = 80;
+const TEST_DISPID_RETURN_SET_VALUE_MEMBER_NAME: i32 = 81;
+const TEST_DISPID_RETURN_SET_VALUE_REF_MEMBER_NAME: i32 = 82;
 
 const TEST_EVENT_CHANGED: i32 = 1;
 const TEST_EVENT_CHANGED_SOURCE_INTERFACE: i32 = 2;
@@ -560,6 +562,22 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
             TypeLibMemberMetadata {
                 name: "ReturnLookupPairMemberName".to_string(),
                 token: TEST_DISPID_RETURN_LOOKUP_PAIR_MEMBER_NAME,
+                requires_argument: false,
+                invoke_kind: TypeLibMemberInvokeKind::Method,
+                parameter_names: Vec::new(),
+                is_default_member: false,
+            },
+            TypeLibMemberMetadata {
+                name: "ReturnSetValueMemberName".to_string(),
+                token: TEST_DISPID_RETURN_SET_VALUE_MEMBER_NAME,
+                requires_argument: false,
+                invoke_kind: TypeLibMemberInvokeKind::Method,
+                parameter_names: Vec::new(),
+                is_default_member: false,
+            },
+            TypeLibMemberMetadata {
+                name: "ReturnSetValueRefMemberName".to_string(),
+                token: TEST_DISPID_RETURN_SET_VALUE_REF_MEMBER_NAME,
                 requires_argument: false,
                 invoke_kind: TypeLibMemberInvokeKind::Method,
                 parameter_names: Vec::new(),
@@ -1094,6 +1112,21 @@ pub fn member_spec_from_typelib_metadata(
         .iter()
         .find(|candidate| candidate.token == member.raw())
         .map(map_member_metadata_to_spec)
+}
+
+pub fn member_token_and_spec_from_typelib_metadata_name(
+    blob: &TypeLibMetadataBlob,
+    member_name: &str,
+) -> Option<(ComMemberToken, ComMemberSpec)> {
+    blob.members
+        .iter()
+        .find(|candidate| candidate.name.eq_ignore_ascii_case(member_name))
+        .map(|member| {
+            (
+                ComMemberToken::new(member.token),
+                map_member_metadata_to_spec(member),
+            )
+        })
 }
 
 pub fn event_spec_from_typelib_metadata(

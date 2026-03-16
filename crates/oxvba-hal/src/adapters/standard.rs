@@ -4647,6 +4647,8 @@ mod tests {
                 ("ReturnLookupMemberName".to_string(), 78),
                 ("ReturnSumPairMemberName".to_string(), 79),
                 ("ReturnLookupPairMemberName".to_string(), 80),
+                ("ReturnSetValueMemberName".to_string(), 81),
+                ("ReturnSetValueRefMemberName".to_string(), 82),
                 ("ReturnEmpty".to_string(), 65),
                 ("ReturnNull".to_string(), 66),
                 ("ReturnError".to_string(), 67),
