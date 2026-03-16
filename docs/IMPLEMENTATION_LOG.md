@@ -1,3 +1,11 @@
+## 2026-03-16 - Extended IP-02 implicit object-call success evidence
+
+- Continued the active `IP-02A` assignment-intent closure slice and locked the direct implicit object-call success neighbors instead of leaving them implied by broader integration behavior.
+- Added compiler and host evidence for:
+  - `v = CreateObject(4)` succeeding for a `Variant` target
+  - `obj = CreateObject(4)` succeeding for an `Object` target
+- `IP-02` remains `in-progress`: broader typed/object `Set` vs `Let` / implicit assignment parity beyond the now-covered bounded typed lanes is still open.
+
 ## 2026-03-16 - Extended IP-02 typed Variant Set scalar rejection evidence
 
 - Continued the active `IP-02A` assignment-intent closure slice and locked the direct typed `Variant` scalar-source `Set` rejection lane instead of relying on the earlier untyped `Set x = 7` evidence alone.

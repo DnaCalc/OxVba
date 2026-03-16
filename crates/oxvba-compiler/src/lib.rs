@@ -423,6 +423,22 @@ mod tests {
     }
 
     #[test]
+    fn implicit_assignment_accepts_variant_target_for_object_call_result() {
+        let source = "Sub Main()\nDim v As Variant\nv = CreateObject(4)\nEnd Sub";
+        compile(source).expect(
+            "implicit assignment should allow object-producing call result into Variant target",
+        );
+    }
+
+    #[test]
+    fn implicit_assignment_accepts_object_target_for_object_call_result() {
+        let source = "Sub Main()\nDim obj As Object\nobj = CreateObject(4)\nEnd Sub";
+        compile(source).expect(
+            "implicit assignment should allow object-producing call result into Object target",
+        );
+    }
+
+    #[test]
     fn implicit_assignment_rejects_scalar_target_for_object_call_result() {
         let source = "Sub Main()\nDim n As Long\nn = CreateObject(4)\nEnd Sub";
         let err = compile(source).expect_err(

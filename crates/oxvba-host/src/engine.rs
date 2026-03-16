@@ -5747,6 +5747,40 @@ mod tests {
 
     #[cfg(target_os = "windows")]
     #[test]
+    fn formal_v121_implicit_assignment_accepts_variant_target_for_object_call_result() {
+        let mut engine = Engine::new(HostConfig {
+            enable_jit: false,
+            root_object_name: None,
+        });
+        engine.set_host_policy(HostPolicy::interactive_dev());
+
+        let source = "Sub Main()\nDim v As Variant\nv = CreateObject(4)\nEnd Sub";
+        let out = engine
+            .execute_source_with_value_snapshot(source)
+            .expect("implicit assignment into Variant target should preserve object call result");
+        assert_eq!(out.len(), 1);
+        assert!(matches!(out[0], RuntimeValue::ObjectHandle(handle) if handle.raw() > 0));
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn formal_v121_implicit_assignment_accepts_object_target_for_object_call_result() {
+        let mut engine = Engine::new(HostConfig {
+            enable_jit: false,
+            root_object_name: None,
+        });
+        engine.set_host_policy(HostPolicy::interactive_dev());
+
+        let source = "Sub Main()\nDim obj As Object\nobj = CreateObject(4)\nEnd Sub";
+        let out = engine
+            .execute_source_with_value_snapshot(source)
+            .expect("implicit assignment into Object target should preserve object call result");
+        assert_eq!(out.len(), 1);
+        assert!(matches!(out[0], RuntimeValue::ObjectHandle(handle) if handle.raw() > 0));
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
     fn formal_v121_implicit_assignment_rejects_scalar_target_for_object_call_result() {
         let mut engine = Engine::new(HostConfig {
             enable_jit: false,
