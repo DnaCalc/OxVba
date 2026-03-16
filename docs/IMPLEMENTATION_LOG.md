@@ -1,3 +1,11 @@
+## 2026-03-16 - Extended IP-02 typed Let rejection evidence
+
+- Continued the active `IP-02A` assignment-intent closure slice and proved two additional typed `Let` rejection lanes instead of leaving `Let` parity at the `Object`-target object-call rejection case only.
+- Added compiler and host evidence for:
+  - `Let obj = 7` rejecting a scalar source on an `Object` target
+  - `Let n = CreateObject(4)` rejecting an object-producing call result on a scalar `Long` target
+- `IP-02` remains `in-progress`: broader typed/object `Set` vs `Let` parity beyond the now-covered bounded success and rejection lanes is still open.
+
 ## 2026-03-16 - Extended IP-02 typed Let object-call assignment evidence
 
 - Continued the active `IP-02A` assignment-intent closure slice and proved that the bounded `Let` object-call lane also succeeds for `Variant` targets instead of leaving `Let` coverage at the `Object`-target rejection lane only.

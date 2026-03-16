@@ -156,6 +156,15 @@ fn check_stmt(
                     target_ty, target
                 ));
             }
+            if matches!(intent, AssignmentIntent::Let)
+                && is_known_object_producing_expr(expr)
+                && !matches!(target_ty, BoundType::Variant | BoundType::Object)
+            {
+                return Err(format!(
+                    "type mismatch in assignment: cannot assign Object to {:?} variable {}",
+                    target_ty, target
+                ));
+            }
             if let Some(message) = validate_assignment_intent(*intent, target_ty, expr_ty, target) {
                 Err(message)
             } else if can_assign_to(target_ty, expr_ty) {
@@ -574,6 +583,15 @@ fn check_stmt(
                 proc_return_types,
             )?;
             let target_ty = *declared_types.get(target).unwrap_or(&BoundType::Variant);
+            if matches!(intent, AssignmentIntent::Let)
+                && is_known_object_producing_call(name)
+                && !matches!(target_ty, BoundType::Variant | BoundType::Object)
+            {
+                return Err(format!(
+                    "type mismatch in assignment from call: cannot assign Object to {:?} variable {}",
+                    target_ty, target
+                ));
+            }
             if let Some(message) = validate_assignment_intent(*intent, target_ty, return_ty, target)
             {
                 Err(message)
@@ -1251,6 +1269,14 @@ fn intrinsic_result_type(name: &str) -> Option<BoundType> {
         "vbnullstring" => Some(BoundType::String),
         _ => None,
     }
+}
+
+fn is_known_object_producing_call(name: &str) -> bool {
+    name.eq_ignore_ascii_case("createobject")
+}
+
+fn is_known_object_producing_expr(expr: &BoundExpr) -> bool {
+    matches!(expr, BoundExpr::IntrinsicCall { name, .. } if is_known_object_producing_call(name))
 }
 
 fn intrinsic_argument_target_type(name: &str) -> Option<BoundType> {

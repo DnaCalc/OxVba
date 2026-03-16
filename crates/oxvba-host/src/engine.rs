@@ -5688,6 +5688,44 @@ mod tests {
         assert!(matches!(out[0], RuntimeValue::ObjectHandle(handle) if handle.raw() > 0));
     }
 
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn formal_v121_let_keyword_rejects_object_target_for_scalar_source() {
+        let mut engine = Engine::new(HostConfig {
+            enable_jit: false,
+            root_object_name: None,
+        });
+        engine.set_host_policy(HostPolicy::interactive_dev());
+
+        let source = "Sub Main()\nDim obj As Object\nLet obj = 7\nEnd Sub";
+        let err = engine
+            .execute_source_slots_test(source)
+            .expect_err("Let on an Object target with scalar source should fail");
+        assert!(
+            err.contains("Let cannot assign to Object variable obj"),
+            "{err}"
+        );
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn formal_v121_let_keyword_rejects_scalar_target_for_object_call_result() {
+        let mut engine = Engine::new(HostConfig {
+            enable_jit: false,
+            root_object_name: None,
+        });
+        engine.set_host_policy(HostPolicy::interactive_dev());
+
+        let source = "Sub Main()\nDim n As Long\nLet n = CreateObject(4)\nEnd Sub";
+        let err = engine
+            .execute_source_slots_test(source)
+            .expect_err("Let on a scalar target with object call result should fail");
+        assert!(
+            err.contains("cannot assign Object to Long variable n"),
+            "{err}"
+        );
+    }
+
     #[test]
     fn formal_v126_introspection_and_typeof_subset_executes() {
         let source = "Sub Main()\nDim a\nDim b\nDim c\nDim d\nIf TypeOf 5 Is 5 Then\nd = 1\nElse\nd = 0\nEnd If\na = IsEmpty(0)\nb = IsNull(-1)\nc = IsError(CVErr(9))\nEnd Sub";
