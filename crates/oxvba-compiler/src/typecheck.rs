@@ -156,16 +156,11 @@ fn check_stmt(
                     target_ty, target
                 ));
             }
-            if matches!(intent, AssignmentIntent::Let)
-                && is_known_object_producing_expr(expr)
-                && !matches!(target_ty, BoundType::Variant | BoundType::Object)
-            {
-                return Err(format!(
-                    "type mismatch in assignment: cannot assign Object to {:?} variable {}",
-                    target_ty, target
-                ));
-            }
             if let Some(message) = validate_assignment_intent(*intent, target_ty, expr_ty, target) {
+                Err(message)
+            } else if let Some(message) =
+                validate_known_object_expr_assignment(*intent, target_ty, expr, target)
+            {
                 Err(message)
             } else if can_assign_to(target_ty, expr_ty) {
                 Ok(())
@@ -583,16 +578,11 @@ fn check_stmt(
                 proc_return_types,
             )?;
             let target_ty = *declared_types.get(target).unwrap_or(&BoundType::Variant);
-            if matches!(intent, AssignmentIntent::Let)
-                && is_known_object_producing_call(name)
-                && !matches!(target_ty, BoundType::Variant | BoundType::Object)
-            {
-                return Err(format!(
-                    "type mismatch in assignment from call: cannot assign Object to {:?} variable {}",
-                    target_ty, target
-                ));
-            }
             if let Some(message) = validate_assignment_intent(*intent, target_ty, return_ty, target)
+            {
+                Err(message)
+            } else if let Some(message) =
+                validate_known_object_call_assignment(*intent, target_ty, name, target)
             {
                 Err(message)
             } else if can_assign_to(target_ty, return_ty) {
@@ -1222,6 +1212,48 @@ fn validate_assignment_intent(
         }
         _ => None,
     }
+}
+
+fn validate_known_object_assignment(
+    intent: AssignmentIntent,
+    target_ty: BoundType,
+    target: &str,
+    context: &str,
+) -> Option<String> {
+    if matches!(target_ty, BoundType::Variant | BoundType::Object) {
+        return None;
+    }
+    match intent {
+        AssignmentIntent::Implicit | AssignmentIntent::Let => Some(format!(
+            "type mismatch in assignment{context}: CreateObject cannot assign Object to {:?} variable {}",
+            target_ty, target
+        )),
+        AssignmentIntent::Set => None,
+    }
+}
+
+fn validate_known_object_expr_assignment(
+    intent: AssignmentIntent,
+    target_ty: BoundType,
+    expr: &BoundExpr,
+    target: &str,
+) -> Option<String> {
+    if is_known_object_producing_expr(expr) {
+        return validate_known_object_assignment(intent, target_ty, target, "");
+    }
+    None
+}
+
+fn validate_known_object_call_assignment(
+    intent: AssignmentIntent,
+    target_ty: BoundType,
+    name: &str,
+    target: &str,
+) -> Option<String> {
+    if is_known_object_producing_call(name) {
+        return validate_known_object_assignment(intent, target_ty, target, " from call");
+    }
+    None
 }
 
 fn call_coercion_result(

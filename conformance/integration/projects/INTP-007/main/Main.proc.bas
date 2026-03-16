@@ -1,6 +1,6 @@
 Option Explicit
 
 Sub Main()
-Dim x As Long
+Dim x
 x = CreateObject(4)
 End Sub

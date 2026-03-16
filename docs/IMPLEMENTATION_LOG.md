@@ -1,3 +1,11 @@
+## 2026-03-16 - Extended IP-02 implicit scalar object-call assignment evidence
+
+- Continued the active `IP-02A` assignment-intent closure slice and bounded the implicit scalar-assignment neighbor for known object-producing `CreateObject(...)` results instead of leaving that route permissive while only explicit `Set`/`Let` carried typed checks.
+- Added compiler and host evidence for:
+  - `n = CreateObject(4)` rejecting an object-producing call result on a scalar `Long` target
+- This remains intentionally narrow: implicit object-target `CreateObject(...)` assignment still exists as a compiler-managed route for the current early-bound/object-creation subset.
+- `IP-02` remains `in-progress`: broader typed/object `Set` vs `Let` / implicit assignment parity beyond the now-covered bounded scalar `CreateObject(...)` lane is still open.
+
 ## 2026-03-16 - Extended IP-02 typed Let rejection evidence
 
 - Continued the active `IP-02A` assignment-intent closure slice and proved two additional typed `Let` rejection lanes instead of leaving `Let` parity at the `Object`-target object-call rejection case only.
