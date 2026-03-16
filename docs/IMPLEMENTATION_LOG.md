@@ -1,3 +1,11 @@
+## 2026-03-16 - Extended IP-02 bounded non-authoritative default-member Set read evidence
+
+- Continued the active `IP-02A` default-member closure slice and proved that the existing single-visible-candidate non-authoritative fallback also carries explicit `Set` read-assignment for object-returning native default members instead of only scalar `Get`/`Let` behavior.
+- Added compiler and host evidence for:
+  - `Set childOut = widget` with a single visible object-returning `Property Get`
+  - `Set childOut = widget(x)` with a single visible indexed object-returning `Property Get`
+- `IP-02` remains `in-progress`: ambiguous or broader non-authoritative default-member resolution and wider Office-style call-vs-value parity still remain open, along with broader `Set`/`Let` parity outside the bounded lanes now covered.
+
 ## 2026-03-16 - Extended IP-02 explicit Set default-member object property-get evidence
 
 - Continued the active `IP-02A` assignment-intent closure slice and fixed the default-member read-assignment rewrite so explicit `Set` now follows the same PMR-backed object getter path as the existing implicit and explicit `Let` read-assignment forms.
