@@ -98,6 +98,8 @@ const TEST_DISPID_RETURN_SET_VALUE_MEMBER_NAME: i32 = 81;
 const TEST_DISPID_RETURN_SET_VALUE_REF_MEMBER_NAME: i32 = 82;
 const TEST_DISPID_RETURN_SET_INDEXED_VALUE_MEMBER_NAME: i32 = 83;
 const TEST_DISPID_RETURN_SET_INDEXED_VALUE_REF_MEMBER_NAME: i32 = 84;
+const TEST_DISPID_RETURN_VALUE_MEMBER_NAME: i32 = 85;
+const TEST_DISPID_RETURN_DEFAULT_MEMBER_NAME: i32 = 86;
 
 const TEST_EVENT_CHANGED: i32 = 1;
 const TEST_EVENT_CHANGED_SOURCE_INTERFACE: i32 = 2;
@@ -596,6 +598,22 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
             TypeLibMemberMetadata {
                 name: "ReturnSetIndexedValueRefMemberName".to_string(),
                 token: TEST_DISPID_RETURN_SET_INDEXED_VALUE_REF_MEMBER_NAME,
+                requires_argument: false,
+                invoke_kind: TypeLibMemberInvokeKind::Method,
+                parameter_names: Vec::new(),
+                is_default_member: false,
+            },
+            TypeLibMemberMetadata {
+                name: "ReturnValueMemberName".to_string(),
+                token: TEST_DISPID_RETURN_VALUE_MEMBER_NAME,
+                requires_argument: false,
+                invoke_kind: TypeLibMemberInvokeKind::Method,
+                parameter_names: Vec::new(),
+                is_default_member: false,
+            },
+            TypeLibMemberMetadata {
+                name: "ReturnDefaultMemberName".to_string(),
+                token: TEST_DISPID_RETURN_DEFAULT_MEMBER_NAME,
                 requires_argument: false,
                 invoke_kind: TypeLibMemberInvokeKind::Method,
                 parameter_names: Vec::new(),

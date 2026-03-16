@@ -151,6 +151,8 @@ pub const TEST_DISPID_RETURN_SET_VALUE_MEMBER_NAME: i32 = 81;
 pub const TEST_DISPID_RETURN_SET_VALUE_REF_MEMBER_NAME: i32 = 82;
 pub const TEST_DISPID_RETURN_SET_INDEXED_VALUE_MEMBER_NAME: i32 = 83;
 pub const TEST_DISPID_RETURN_SET_INDEXED_VALUE_REF_MEMBER_NAME: i32 = 84;
+pub const TEST_DISPID_RETURN_VALUE_MEMBER_NAME: i32 = 85;
+pub const TEST_DISPID_RETURN_DEFAULT_MEMBER_NAME: i32 = 86;
 pub const TEST_NAMED_DISPID_LHS: i32 = 101;
 
 static mut TEST_BYREF_I32_RESULT: i32 = 321;
@@ -1822,6 +1824,8 @@ unsafe extern "system" fn oxvba_test_get_ids_of_names(
             "returnsetindexedvaluerefmembername" => {
                 TEST_DISPID_RETURN_SET_INDEXED_VALUE_REF_MEMBER_NAME
             }
+            "returnvaluemembername" => TEST_DISPID_RETURN_VALUE_MEMBER_NAME,
+            "returndefaultmembername" => TEST_DISPID_RETURN_DEFAULT_MEMBER_NAME,
             "lhs" => TEST_NAMED_DISPID_LHS,
             "rhs" => TEST_NAMED_DISPID_RHS,
             "index" => TEST_NAMED_DISPID_INDEX,
@@ -2439,6 +2443,34 @@ unsafe extern "system" fn oxvba_test_invoke(
             }
             if !pvarresult.is_null() {
                 let bstr = alloc_bstr("SetIndexedValueRef");
+                if bstr.is_null() {
+                    return COM_E_INVALIDARG;
+                }
+                (*pvarresult).Anonymous.Anonymous.vt = VT_BSTR;
+                (*pvarresult).Anonymous.Anonymous.Anonymous.bstrVal = bstr;
+            }
+            COM_S_OK
+        }
+        TEST_DISPID_RETURN_VALUE_MEMBER_NAME => {
+            if (wflags & DISPATCH_METHOD) == 0 || cargs != 0 {
+                return COM_DISP_E_BADPARAMCOUNT;
+            }
+            if !pvarresult.is_null() {
+                let bstr = alloc_bstr("Value");
+                if bstr.is_null() {
+                    return COM_E_INVALIDARG;
+                }
+                (*pvarresult).Anonymous.Anonymous.vt = VT_BSTR;
+                (*pvarresult).Anonymous.Anonymous.Anonymous.bstrVal = bstr;
+            }
+            COM_S_OK
+        }
+        TEST_DISPID_RETURN_DEFAULT_MEMBER_NAME => {
+            if (wflags & DISPATCH_METHOD) == 0 || cargs != 0 {
+                return COM_DISP_E_BADPARAMCOUNT;
+            }
+            if !pvarresult.is_null() {
+                let bstr = alloc_bstr("EchoVariant");
                 if bstr.is_null() {
                     return COM_E_INVALIDARG;
                 }

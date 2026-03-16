@@ -1636,6 +1636,42 @@ mod tests {
     }
 
     #[test]
+    fn compile_dispatchinvoke_with_value_member_name_result_literal_maps_to_member_token_eighty_five()
+     {
+        let source = "Sub Main()\nDim x\nx = DispatchInvoke(CreateObject(\"OxVba.TestDispatch\"), \"ReturnValueMemberName\")\nEnd Sub";
+        let out = compile(source)
+            .expect("compile should succeed for value-member-name result fixture member");
+        assert!(
+            out.instructions
+                .iter()
+                .any(|i| matches!(i, Instruction::IntrinsicDispatchInvokeHost { .. }))
+        );
+        assert!(
+            out.instructions
+                .iter()
+                .any(|i| matches!(i, Instruction::LoadConstI32 { value: 85, .. }))
+        );
+    }
+
+    #[test]
+    fn compile_dispatchinvoke_with_default_member_name_result_literal_maps_to_member_token_eighty_six()
+     {
+        let source = "Sub Main()\nDim x\nx = DispatchInvoke(CreateObject(\"OxVba.TestDispatch\"), \"ReturnDefaultMemberName\")\nEnd Sub";
+        let out = compile(source)
+            .expect("compile should succeed for default-member-name result fixture member");
+        assert!(
+            out.instructions
+                .iter()
+                .any(|i| matches!(i, Instruction::IntrinsicDispatchInvokeHost { .. }))
+        );
+        assert!(
+            out.instructions
+                .iter()
+                .any(|i| matches!(i, Instruction::LoadConstI32 { value: 86, .. }))
+        );
+    }
+
+    #[test]
     fn compile_dispatchinvoke_with_empty_result_literal_maps_to_member_token_sixty_five() {
         let source = "Sub Main()\nDim x\nx = DispatchInvoke(CreateObject(\"OxVba.TestDispatch\"), \"ReturnEmpty\")\nEnd Sub";
         let out = compile(source).expect("compile should succeed for empty result fixture member");

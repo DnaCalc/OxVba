@@ -3048,6 +3048,8 @@ fn known_dispatch_member_token(member_name: &str) -> Option<i32> {
         "returnsetvaluerefmembername" => Some(82),
         "returnsetindexedvaluemembername" => Some(83),
         "returnsetindexedvaluerefmembername" => Some(84),
+        "returnvaluemembername" => Some(85),
+        "returndefaultmembername" => Some(86),
         "returnempty" => Some(65),
         "returnnull" => Some(66),
         "returnerror" => Some(67),
