@@ -1,18 +1,19 @@
 use crate::{
     ComBinding, ComCallbackPayload, ComCallbackToken, ComInvokeArg, ComInvokeFailure,
     ComInvokeRequest, ComMemberSpec, ComMemberToken, ComObjectDescriptor, ComObjectToken,
-    ComSubscriptionToken, RawIDispatch, ReleasedWindowsComObject, TypeLibCacheScope,
-    TypeLibMetadataBlob, TypeLibMetadataCacheState, TypeLibResolveRequest, TypeLibResolvedIdentity,
-    WindowsComClientState, activate_runtime_dispatch, activate_runtime_object_binding_shared,
+    ComSubscriptionToken, DynamicCallRequest, DynamicMemberSelector, RawIDispatch,
+    ReleasedWindowsComObject, TypeLibCacheScope, TypeLibMetadataBlob, TypeLibMetadataCacheState,
+    TypeLibResolveRequest, TypeLibResolvedIdentity, WindowsComClientState,
+    activate_runtime_dispatch, activate_runtime_object_binding_shared,
     bind_native_dispatch_result_shared, build_typelib_metadata, callback_arg, callback_arity,
     callback_subscription_token, execute_bound_runtime_value_with_shared_state,
-    invoke_bound_dispatch_legacy_i32_result, known_typelib_identity_for_prog_id_name,
-    legacy_runtime_arg_values, member_spec_from_typelib_metadata,
-    queue_projection_event_callbacks_shared, raw_oxvba_test_dispatch_vtable_invoke,
-    release_callback, release_object_binding_shared, release_subscription_transport,
-    resolve_bound_native_dispatch_shared, resolve_known_typelib_identity,
-    resolve_named_argument_dispids, subscribe_event_shared, take_polled_callback_payload,
-    unsubscribe_event_shared, validate_named_arg_order,
+    invoke_bound_dispatch_legacy_i32_result, invoke_dispatch_runtime_value_with_shared_state,
+    known_typelib_identity_for_prog_id_name, legacy_runtime_arg_values,
+    member_spec_from_typelib_metadata, queue_projection_event_callbacks_shared,
+    raw_oxvba_test_dispatch_vtable_invoke, release_callback, release_object_binding_shared,
+    release_subscription_transport, resolve_bound_native_dispatch_shared,
+    resolve_known_typelib_identity, resolve_named_argument_dispids, subscribe_event_shared,
+    take_polled_callback_payload, unsubscribe_event_shared, validate_named_arg_order,
 };
 use oxvba_runtime::{ObjectHandle, RuntimeValue};
 use std::sync::{Arc, Mutex, MutexGuard};
@@ -368,5 +369,104 @@ impl WindowsComBridge {
         )
         .map_err(WindowsComBridgeDispatchError::Message)?;
         Ok(Some(RuntimeValue::I32(value)))
+    }
+
+    pub fn dispatch_invoke_dynamic_runtime_value(
+        &self,
+        request: &DynamicCallRequest,
+        prefer_vtable: bool,
+    ) -> Result<Option<RuntimeValue>, WindowsComBridgeDispatchError> {
+        let _ = prefer_vtable;
+        match &request.member {
+            DynamicMemberSelector::Token(value) => {
+                return self.dispatch_invoke_runtime_value(
+                    &ComInvokeRequest {
+                        object: request.object.into(),
+                        member: ComMemberToken::new(*value),
+                        args: request.args.clone().into_iter().map(Into::into).collect(),
+                        invoke_kind_hint: request.call_kind_hint.map(Into::into),
+                    },
+                    prefer_vtable,
+                );
+            }
+            DynamicMemberSelector::DefaultMember => {
+                return self.dispatch_invoke_runtime_value(
+                    &ComInvokeRequest {
+                        object: request.object.into(),
+                        member: ComMemberToken::new(0),
+                        args: request.args.clone().into_iter().map(Into::into).collect(),
+                        invoke_kind_hint: request.call_kind_hint.map(Into::into),
+                    },
+                    prefer_vtable,
+                );
+            }
+            DynamicMemberSelector::Name(_) => {}
+        }
+
+        let args = request
+            .args
+            .clone()
+            .into_iter()
+            .map(ComInvokeArg::from)
+            .collect::<Vec<_>>();
+        validate_named_arg_order(args.as_slice())
+            .map_err(WindowsComBridgeDispatchError::Message)?;
+        let binding = {
+            let state = self
+                .lock_state("dispatch_invoke_dynamic")
+                .map_err(WindowsComBridgeDispatchError::Message)?;
+            state
+                .bindings
+                .get(&ComObjectToken::new(request.object.raw()))
+                .cloned()
+        };
+        let Some(binding) = binding else {
+            return Ok(None);
+        };
+        let member_name = match &request.member {
+            DynamicMemberSelector::Name(name) => name.as_str(),
+            DynamicMemberSelector::Token(_) | DynamicMemberSelector::DefaultMember => {
+                unreachable!()
+            }
+        };
+        let dispatch = self
+            .activate_runtime_dispatch(&binding.prog_id_name)
+            .map_err(WindowsComBridgeDispatchError::Message)?;
+        let dispid = unsafe { crate::get_dispid_by_name(dispatch, member_name) }
+            .map_err(WindowsComBridgeDispatchError::Message)?;
+        let named_arg_dispids = if args.iter().any(|arg| arg.name.is_some()) {
+            unsafe { self.resolve_named_argument_dispids(dispatch, member_name, args.as_slice()) }
+                .map_err(WindowsComBridgeDispatchError::Message)?
+        } else {
+            Vec::new()
+        };
+        let flags = if args.is_empty() {
+            windows_sys::Win32::System::Com::DISPATCH_PROPERTYGET
+        } else {
+            windows_sys::Win32::System::Com::DISPATCH_METHOD
+        };
+        let label = if args.is_empty() {
+            "property-get"
+        } else {
+            "method"
+        };
+        let invoke_result = unsafe {
+            invoke_dispatch_runtime_value_with_shared_state(
+                dispatch.cast(),
+                dispid,
+                flags,
+                args.as_slice(),
+                named_arg_dispids.as_slice(),
+                label,
+                &binding.prog_id_name,
+                &self.state,
+            )
+        };
+        unsafe {
+            crate::release_dispatch(dispatch);
+        }
+        invoke_result
+            .map(Some)
+            .map_err(WindowsComBridgeDispatchError::InvokeFailure)
     }
 }

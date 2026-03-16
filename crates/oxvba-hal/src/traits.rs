@@ -14,7 +14,7 @@ use crate::{
 };
 use oxvba_com::{
     ComCallbackPayload, ComCallbackToken, ComInvokeRequest, ComMemberToken, ComObjectDescriptor,
-    ComSubscriptionToken,
+    ComSubscriptionToken, DynamicCallRequest,
 };
 pub use oxvba_com::{
     TypeLibCacheScope, TypeLibEventDispatchPath, TypeLibEventMetadata, TypeLibMemberInvokeKind,
@@ -119,6 +119,10 @@ pub trait ComHal: Send + Sync {
     fn dispatch_invoke_runtime_value_v2(
         &self,
         request: &ComInvokeRequest,
+    ) -> HalResult<RuntimeValue>;
+    fn dispatch_invoke_dynamic_runtime_value_v2(
+        &self,
+        request: &DynamicCallRequest,
     ) -> HalResult<RuntimeValue>;
     fn subscribe_event(
         &self,

@@ -142,6 +142,7 @@ pub const TEST_DISPID_RETURN_WIDE_UNSIGNED_HYPER: i32 = 72;
 pub const TEST_DISPID_RETURN_WIDE_UNSIGNED_HYPER_ARRAY: i32 = 73;
 pub const TEST_DISPID_RETURN_VARIANT_MATRIX: i32 = 74;
 pub const TEST_DISPID_RETURN_PLAIN_UNKNOWN_VARIANT_ARRAY: i32 = 75;
+pub const TEST_DISPID_RETURN_MISSING_MEMBER_NAME: i32 = 76;
 pub const TEST_NAMED_DISPID_LHS: i32 = 101;
 
 static mut TEST_BYREF_I32_RESULT: i32 = 321;
@@ -1802,6 +1803,7 @@ unsafe extern "system" fn oxvba_test_get_ids_of_names(
             "returnwideunsignedhyperarray" => TEST_DISPID_RETURN_WIDE_UNSIGNED_HYPER_ARRAY,
             "returnvariantmatrix" => TEST_DISPID_RETURN_VARIANT_MATRIX,
             "returnplainunknownvariantarray" => TEST_DISPID_RETURN_PLAIN_UNKNOWN_VARIANT_ARRAY,
+            "returnmissingmembername" => TEST_DISPID_RETURN_MISSING_MEMBER_NAME,
             "lhs" => TEST_NAMED_DISPID_LHS,
             "rhs" => TEST_NAMED_DISPID_RHS,
             "index" => TEST_NAMED_DISPID_INDEX,
@@ -2293,6 +2295,20 @@ unsafe extern "system" fn oxvba_test_invoke(
             }
             if !pvarresult.is_null() {
                 let bstr = alloc_bstr("Scalar BSTR");
+                if bstr.is_null() {
+                    return COM_E_INVALIDARG;
+                }
+                (*pvarresult).Anonymous.Anonymous.vt = VT_BSTR;
+                (*pvarresult).Anonymous.Anonymous.Anonymous.bstrVal = bstr;
+            }
+            COM_S_OK
+        }
+        TEST_DISPID_RETURN_MISSING_MEMBER_NAME => {
+            if (wflags & DISPATCH_METHOD) == 0 || cargs != 0 {
+                return COM_DISP_E_BADPARAMCOUNT;
+            }
+            if !pvarresult.is_null() {
+                let bstr = alloc_bstr("DefinitelyMissingMember");
                 if bstr.is_null() {
                     return COM_E_INVALIDARG;
                 }

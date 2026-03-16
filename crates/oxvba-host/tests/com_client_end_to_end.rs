@@ -1356,6 +1356,33 @@ End Sub
     }
 
     #[test]
+    fn dispatchinvoke_runtime_string_member_unknown_name_surfaces_deterministically() {
+        let source = r#"
+Sub Main()
+Dim obj
+Dim missingName
+Dim failed
+obj = CreateObject("OxVba.TestDispatch")
+missingName = DispatchInvoke(obj, "ReturnMissingMemberName")
+failed = DispatchInvoke(obj, missingName)
+End Sub
+"#;
+
+        let vm = run_windows_host_backed_error(source, false);
+        let jit = run_windows_host_backed_error(source, true);
+        assert!(
+            vm.contains("com-dispatch-unknown-name;hresult=0x80020006;")
+                && jit.contains("com-dispatch-unknown-name;hresult=0x80020006;"),
+            "expected stable unknown-name adapter fault prefix across VM/JIT, got vm={vm:?} jit={jit:?}"
+        );
+        assert!(
+            vm.contains("IDispatch::GetIDsOfNames failed for `DefinitelyMissingMember` with HRESULT 0x80020006")
+                && jit.contains("IDispatch::GetIDsOfNames failed for `DefinitelyMissingMember` with HRESULT 0x80020006"),
+            "expected raw unknown-name detail across VM/JIT, got vm={vm:?} jit={jit:?}"
+        );
+    }
+
+    #[test]
     fn dispatchinvoke_plain_unknown_results_fail_with_bounded_nondispatch_diagnostic() {
         let source = r#"
 Sub Main()

@@ -161,6 +161,13 @@ impl ComHal for NullHostServices {
         Err(self.unsupported(CapabilityId::ComActivationDispatch, "dispatch_invoke"))
     }
 
+    fn dispatch_invoke_dynamic_runtime_value_v2(
+        &self,
+        _request: &oxvba_com::DynamicCallRequest,
+    ) -> HalResult<RuntimeValue> {
+        Err(self.unsupported(CapabilityId::ComActivationDispatch, "dispatch_invoke"))
+    }
+
     fn subscribe_event(
         &self,
         _object: ObjectHandle,

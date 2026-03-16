@@ -18,8 +18,8 @@ use oxvba_com::RawIDispatch;
 use oxvba_com::{
     ComBinding, ComCallbackPayload, ComCallbackToken, ComDirectDispatchSpec, ComEventPath,
     ComEventSpec, ComEventTriggerSpec, ComInvokeFailure, ComInvokeRequest, ComMemberToken,
-    ComObjectDescriptor, ComObjectTransportKind, ComSubscriptionToken, OXVBA_TEST_DISPATCH_PROGID,
-    WindowsComBridge, WindowsComBridgeDispatchError,
+    ComObjectDescriptor, ComObjectTransportKind, ComSubscriptionToken, DynamicCallRequest,
+    OXVBA_TEST_DISPATCH_PROGID, WindowsComBridge, WindowsComBridgeDispatchError,
     legacy_runtime_arg_values as com_legacy_runtime_arg_values, map_com_hresult_label,
 };
 use oxvba_runtime::{BindingHandle, DynLinkSymbol, ObjectHandle, RuntimeValue, bstr::BStr};
@@ -878,7 +878,6 @@ impl StandardHostServices {
         )
     }
 
-    #[cfg(test)]
     fn com_dispatch_adapter_fault(&self, message: String) -> HalError {
         let hresult = parse_hresult_hex(&message);
         let arg_err = parse_arg_err(&message);
@@ -1665,12 +1664,7 @@ impl ComHal for StandardHostServices {
                 Ok(Some(value)) => return Ok(value),
                 Ok(None) => {}
                 Err(WindowsComBridgeDispatchError::Message(message)) => {
-                    return Err(HalError::adapter_fault(
-                        self.profile,
-                        capability,
-                        "dispatch_invoke",
-                        message,
-                    ));
+                    return Err(self.com_dispatch_adapter_fault(message));
                 }
                 Err(WindowsComBridgeDispatchError::InvokeFailure(failure)) => {
                     return Err(self.com_dispatch_invoke_fault(failure));
@@ -1692,6 +1686,43 @@ impl ComHal for StandardHostServices {
                     acc.saturating_add(*arg)
                 }),
         ))
+    }
+
+    fn dispatch_invoke_dynamic_runtime_value_v2(
+        &self,
+        request: &DynamicCallRequest,
+    ) -> HalResult<RuntimeValue> {
+        let capability = CapabilityId::ComActivationDispatch;
+        if !self.supports(capability) {
+            return Err(self.unsupported(capability, "dispatch_invoke"));
+        }
+        if !self.policy.allow_com_activation {
+            return Err(self.denied(capability, "dispatch_invoke"));
+        }
+        if self.native_com_enabled() {
+            match self.com_bridge.dispatch_invoke_dynamic_runtime_value(
+                request,
+                self.policy.com_invocation_strategy == ComInvocationStrategy::PreferVtable,
+            ) {
+                Ok(Some(value)) => return Ok(value),
+                Ok(None) => {}
+                Err(WindowsComBridgeDispatchError::Message(message)) => {
+                    return Err(self.com_dispatch_adapter_fault(message));
+                }
+                Err(WindowsComBridgeDispatchError::InvokeFailure(failure)) => {
+                    return Err(self.com_dispatch_invoke_fault(failure));
+                }
+            }
+        }
+        let lowered = request.try_into_com_invoke_request().map_err(|detail| {
+            HalError::adapter_fault(
+                self.profile,
+                capability,
+                "dispatch_invoke",
+                format!("dynamic call request cannot lower to COM invoke: {detail}"),
+            )
+        })?;
+        self.dispatch_invoke_runtime_value_v2(&lowered)
     }
 
     fn subscribe_event(
@@ -2575,7 +2606,6 @@ fn com_event_trace_enabled() -> bool {
 }
 
 #[cfg(target_os = "windows")]
-#[cfg(test)]
 fn parse_arg_err(message: &str) -> Option<u32> {
     let marker = "arg_err=";
     let offset = message.find(marker)?;
@@ -4612,6 +4642,7 @@ mod tests {
                 ("ReturnDecimal".to_string(), 57),
                 ("ReturnBool".to_string(), 63),
                 ("ReturnString".to_string(), 64),
+                ("ReturnMissingMemberName".to_string(), 76),
                 ("ReturnEmpty".to_string(), 65),
                 ("ReturnNull".to_string(), 66),
                 ("ReturnError".to_string(), 67),
