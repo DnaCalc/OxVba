@@ -1,3 +1,13 @@
+## 2026-03-16 - Extended IP-02 explicit Call indexed native property/default-member evidence
+
+- Continued the active `IP-02A` semantic-closure slice and proved that explicit `Call ...(...)` form for indexed native internal project-class `Property Get` and indexed default-member `Property Get` executes on the same PMR/dynamic-object route as the already-covered statement-context and no-parentheses forms.
+- Added compiler and host evidence for:
+  - `Call widget.Value(x)`
+  - `Call widget(x)` when authoritative `VB_UserMemId = 0` metadata exists
+- In [project.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-compiler\src\project.rs), added direct lowered-source tests locking the explicit `Call` rewrite boundary for both indexed lanes.
+- In [engine.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-host\src\engine.rs), added end-to-end VM/JIT execution lanes proving the indexed argument is passed and updated through the shared getter path in both explicit `Call` forms.
+- `IP-02` remains `in-progress`: broader typed/object `Set` vs `Let` parity, ambiguous/broader non-authoritative default-member resolution, and wider Office-style call-vs-value context parity are still open.
+
 ## 2026-03-16 - Added bounded non-authoritative native default-member fallback evidence
 
 - Continued the active `IP-02A` semantic-closure slice and added the first bounded non-authoritative native default-member fallback instead of leaving all non-metadata-backed internal-class default-member syntax unresolved.
