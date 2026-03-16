@@ -2477,14 +2477,20 @@ fn rewrite_internal_class_property_assignment(
     }
     let trimmed = line.trim_start();
     let leading = line.len().saturating_sub(trimmed.len());
-    if trimmed.to_ascii_lowercase().starts_with("set ") {
+    let lowered = trimmed.to_ascii_lowercase();
+    if lowered.starts_with("set ") {
         return Ok(line.to_string());
     }
-    let Some(eq_idx) = trimmed.find('=') else {
+    let payload = if lowered.starts_with("let ") {
+        trimmed[4..].trim_start()
+    } else {
+        trimmed
+    };
+    let Some(eq_idx) = payload.find('=') else {
         return Ok(line.to_string());
     };
-    let lhs = trimmed[..eq_idx].trim();
-    let rhs = trimmed[eq_idx + 1..].trim();
+    let lhs = payload[..eq_idx].trim();
+    let rhs = payload[eq_idx + 1..].trim();
     if lhs.is_empty() || rhs.is_empty() {
         return Ok(line.to_string());
     }
@@ -2559,14 +2565,20 @@ fn rewrite_internal_class_default_member_assignment(
     }
     let trimmed = line.trim_start();
     let leading = line.len().saturating_sub(trimmed.len());
-    if trimmed.to_ascii_lowercase().starts_with("set ") {
+    let lowered = trimmed.to_ascii_lowercase();
+    if lowered.starts_with("set ") {
         return Ok(line.to_string());
     }
-    let Some(eq_idx) = trimmed.find('=') else {
+    let payload = if lowered.starts_with("let ") {
+        trimmed[4..].trim_start()
+    } else {
+        trimmed
+    };
+    let Some(eq_idx) = payload.find('=') else {
         return Ok(line.to_string());
     };
-    let lhs = trimmed[..eq_idx].trim();
-    let rhs = trimmed[eq_idx + 1..].trim();
+    let lhs = payload[..eq_idx].trim();
+    let rhs = payload[eq_idx + 1..].trim();
     if lhs.is_empty() || rhs.is_empty() || lhs.contains('.') {
         return Ok(line.to_string());
     }
@@ -2641,14 +2653,21 @@ fn rewrite_internal_class_default_member_read_assignment(
     }
     let trimmed = line.trim_start();
     let leading = line.len().saturating_sub(trimmed.len());
-    if trimmed.to_ascii_lowercase().starts_with("set ") {
+    let lowered = trimmed.to_ascii_lowercase();
+    if lowered.starts_with("set ") {
         return Ok(line.to_string());
     }
-    let Some(eq_idx) = trimmed.find('=') else {
+    let explicit_let = lowered.starts_with("let ");
+    let payload = if explicit_let {
+        trimmed[4..].trim_start()
+    } else {
+        trimmed
+    };
+    let Some(eq_idx) = payload.find('=') else {
         return Ok(line.to_string());
     };
-    let lhs = trimmed[..eq_idx].trim();
-    let rhs = trimmed[eq_idx + 1..].trim();
+    let lhs = payload[..eq_idx].trim();
+    let rhs = payload[eq_idx + 1..].trim();
     if lhs.is_empty() || rhs.is_empty() || lhs.contains('.') || rhs.contains('.') {
         return Ok(line.to_string());
     }
@@ -2694,8 +2713,9 @@ fn rewrite_internal_class_default_member_read_assignment(
     let mut lowered_args = vec![instance_arg];
     lowered_args.extend(indexed_args);
     Ok(format!(
-        "{}{} = {}({})",
+        "{}{}{} = {}({})",
         &line[..leading],
+        if explicit_let { "Let " } else { "" },
         lhs,
         target,
         lowered_args.join(", ")

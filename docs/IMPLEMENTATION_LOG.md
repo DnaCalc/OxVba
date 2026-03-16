@@ -1,3 +1,14 @@
+## 2026-03-16 - Extended IP-02 explicit Let native property/default-member evidence
+
+- Continued the active `IP-02A` semantic-closure slice and proved that explicit `Let` on native internal project-class property/default-member assignment routes through the same PMR/dynamic-object execution path as the already-covered implicit property `Let` subset.
+- Added host end-to-end evidence for:
+  - `Let widget.Value = 9`
+  - `Let widget.Value(2) = 9`
+  - `Let widget = 9` when authoritative `VB_UserMemId = 0` metadata exists
+  - `Let widget(2) = 9` when authoritative `VB_UserMemId = 0` metadata exists
+- In [engine.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-host\src\engine.rs), added the bounded VM/JIT project-execution lanes above and verified that explicit `Let` preserves the same pre/post property-get observations as the implicit syntax.
+- `IP-02` remains `in-progress`: broader typed/object `Set` vs `Let` parity, non-authoritative default-member resolution, and wider Office-style call-vs-value context parity are still open.
+
 ## 2026-03-16 - Extended IP-02 bounded typed Set/Let call-assignment evidence
 
 - Continued the active `IP-02A` semantic-closure slice and proved two additional end-to-end typed/object assignment-intent lanes instead of leaving the earlier `Set`/`Let` work at plain variable assignment coverage only.
