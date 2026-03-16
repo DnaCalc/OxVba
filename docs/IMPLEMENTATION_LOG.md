@@ -1,3 +1,12 @@
+## 2026-03-16 - Added parenthesized explicit Let getter evidence
+
+- Continued the active `IP-02A` read-assignment closure slice and locked the zero-arg parenthesized explicit-`Let` neighbors instead of leaving them implied by the earlier bare/indexed `Let` and parenthesized statement/`Call` getter coverage.
+- Added compiler and host evidence for:
+  - `Let valueOut = widget.Value()`
+  - `Let valueOut = widget()` when authoritative default-member metadata exists
+  - `Let valueOut = widget()` under the existing bounded single-visible-candidate non-authoritative fallback
+- `IP-02` remains `in-progress`: broader typed/object `Set` vs `Let` parity, ambiguous or broader non-authoritative default-member resolution, and wider Office-style call-vs-value parity still remain open.
+
 ## 2026-03-16 - Added parenthesized explicit Set object-getter evidence
 
 - Continued the active `IP-02A` assignment-intent closure slice and locked the zero-arg parenthesized explicit-`Set` read-assignment neighbors instead of leaving them implied by the earlier non-parenthesized and statement-context getter coverage.
