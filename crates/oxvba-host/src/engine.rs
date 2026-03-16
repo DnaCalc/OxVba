@@ -2248,6 +2248,95 @@ mod tests {
     }
 
     #[test]
+    fn formal_pmr_non_authoritative_single_candidate_indexed_default_member_get_executes_end_to_end()
+     {
+        let engine = Engine::new(HostConfig::default());
+        let main_module = module_unit_from_source(
+            "MainModule",
+            ModuleKind::Procedural,
+            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim widget As New Widget\nDim x\nDim valueOut\nx = 2\nvalueOut = widget(x)\nEnd Sub",
+        )
+        .expect("main module should parse");
+        let widget = module_unit_from_source(
+            "Widget",
+            ModuleKind::Class,
+            "Attribute VB_Name = \"Widget\"\nPublic Property Get Value(ByRef index)\nindex = index + 7\nValue = index\nEnd Property",
+        )
+        .expect("widget module should parse");
+        let manifest = ProjectManifest {
+            project_name: "ProjectA".to_string(),
+            project_kind: ProjectKind::Source,
+            modules: vec![main_module, widget],
+            references: Vec::new(),
+            reference_projects: Vec::new(),
+            conditional_constants: std::collections::BTreeMap::new(),
+        };
+
+        let compiled = oxvba_compiler::compile_project(&manifest).expect("compile should succeed");
+        let lowered = compiled.rewritten_source.to_ascii_lowercase();
+        assert!(
+            lowered.contains("valueout = property_get_pmr_projecta_widget_value(widget, x)"),
+            "{lowered}"
+        );
+
+        let snapshot = engine
+            .execute_project_with_value_snapshot_phased(&manifest)
+            .expect("project execution should succeed");
+        assert_eq!(snapshot[0], RuntimeValue::I32(1));
+        assert_eq!(snapshot[1], RuntimeValue::I32(9));
+        assert_eq!(snapshot[2], RuntimeValue::I32(9));
+    }
+
+    #[test]
+    fn formal_pmr_non_authoritative_single_candidate_indexed_default_member_get_let_executes_end_to_end()
+     {
+        let engine = Engine::new(HostConfig::default());
+        let main_module = module_unit_from_source(
+            "MainModule",
+            ModuleKind::Procedural,
+            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim widget As New Widget\nDim x\nDim beforeValue\nDim afterValue\nx = 2\nbeforeValue = widget(x)\nwidget(x) = 9\nafterValue = widget(x)\nEnd Sub",
+        )
+        .expect("main module should parse");
+        let widget = module_unit_from_source(
+            "Widget",
+            ModuleKind::Class,
+            "Attribute VB_Name = \"Widget\"\nPrivate stored\nPublic Sub Class_Initialize()\nstored = 4\nEnd Sub\nPublic Property Get Value(ByVal index)\nValue = stored\nEnd Property\nPublic Property Let Value(ByVal index, ByVal n)\nstored = n\nEnd Property",
+        )
+        .expect("widget module should parse");
+        let manifest = ProjectManifest {
+            project_name: "ProjectA".to_string(),
+            project_kind: ProjectKind::Source,
+            modules: vec![main_module, widget],
+            references: Vec::new(),
+            reference_projects: Vec::new(),
+            conditional_constants: std::collections::BTreeMap::new(),
+        };
+
+        let compiled = oxvba_compiler::compile_project(&manifest).expect("compile should succeed");
+        let lowered = compiled.rewritten_source.to_ascii_lowercase();
+        assert!(
+            lowered.contains("beforevalue = property_get_pmr_projecta_widget_value(widget, x)"),
+            "{lowered}"
+        );
+        assert!(
+            lowered.contains("property_let_pmr_projecta_widget_value(widget, x, 9)"),
+            "{lowered}"
+        );
+        assert!(
+            lowered.contains("aftervalue = property_get_pmr_projecta_widget_value(widget, x)"),
+            "{lowered}"
+        );
+
+        let snapshot = engine
+            .execute_project_with_value_snapshot_phased(&manifest)
+            .expect("project execution should succeed");
+        assert_eq!(snapshot[0], RuntimeValue::I32(1));
+        assert_eq!(snapshot[1], RuntimeValue::I32(2));
+        assert_eq!(snapshot[2], RuntimeValue::I32(4));
+        assert_eq!(snapshot[3], RuntimeValue::I32(9));
+    }
+
+    #[test]
     fn formal_pmr_explicit_let_internal_class_default_member_get_let_executes_end_to_end() {
         let engine = Engine::new(HostConfig::default());
         let main_module = module_unit_from_source(

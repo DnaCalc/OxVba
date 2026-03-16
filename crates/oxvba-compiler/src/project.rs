@@ -5624,6 +5624,76 @@ mod tests {
     }
 
     #[test]
+    fn compile_project_infers_non_authoritative_single_candidate_indexed_default_member_get() {
+        let main_module = module_unit_from_source(
+            "MainModule",
+            ModuleKind::Procedural,
+            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim widget As New Widget\nDim x\nDim valueOut\nx = 2\nvalueOut = widget(x)\nEnd Sub",
+        )
+        .expect("module parses");
+        let widget = module_unit_from_source(
+            "Widget",
+            ModuleKind::Class,
+            "Attribute VB_Name = \"Widget\"\nPublic Property Get Value(ByRef index)\nindex = index + 7\nValue = index\nEnd Property",
+        )
+        .expect("module parses");
+        let manifest = ProjectManifest {
+            project_name: "ProjectA".to_string(),
+            project_kind: ProjectKind::Source,
+            modules: vec![main_module, widget],
+            references: Vec::new(),
+            reference_projects: Vec::new(),
+            conditional_constants: BTreeMap::new(),
+        };
+
+        let compiled = compile_project(&manifest).expect("rewrite should compile");
+        let lowered = compiled.rewritten_source.to_ascii_lowercase();
+        assert!(
+            lowered.contains("valueout = property_get_pmr_projecta_widget_value(widget, x)"),
+            "{lowered}"
+        );
+    }
+
+    #[test]
+    fn compile_project_infers_non_authoritative_single_candidate_indexed_default_member_let() {
+        let main_module = module_unit_from_source(
+            "MainModule",
+            ModuleKind::Procedural,
+            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim widget As New Widget\nDim x\nDim beforeValue\nDim afterValue\nx = 2\nbeforeValue = widget(x)\nwidget(x) = 9\nafterValue = widget(x)\nEnd Sub",
+        )
+        .expect("module parses");
+        let widget = module_unit_from_source(
+            "Widget",
+            ModuleKind::Class,
+            "Attribute VB_Name = \"Widget\"\nPublic Property Get Value(ByVal index)\nValue = 4\nEnd Property\nPublic Property Let Value(ByVal index, ByVal n)\nEnd Property",
+        )
+        .expect("module parses");
+        let manifest = ProjectManifest {
+            project_name: "ProjectA".to_string(),
+            project_kind: ProjectKind::Source,
+            modules: vec![main_module, widget],
+            references: Vec::new(),
+            reference_projects: Vec::new(),
+            conditional_constants: BTreeMap::new(),
+        };
+
+        let compiled = compile_project(&manifest).expect("rewrite should compile");
+        let lowered = compiled.rewritten_source.to_ascii_lowercase();
+        assert!(
+            lowered.contains("beforevalue = property_get_pmr_projecta_widget_value(widget, x)"),
+            "{lowered}"
+        );
+        assert!(
+            lowered.contains("property_let_pmr_projecta_widget_value(widget, x, 9)"),
+            "{lowered}"
+        );
+        assert!(
+            lowered.contains("aftervalue = property_get_pmr_projecta_widget_value(widget, x)"),
+            "{lowered}"
+        );
+    }
+
+    #[test]
     fn compile_project_event_dispatch_bindings_are_sorted_and_stable() {
         let main_module = module_unit_from_source(
             "MainModule",

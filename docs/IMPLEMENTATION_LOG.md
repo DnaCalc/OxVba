@@ -5,6 +5,9 @@
 - Added compiler and host evidence for:
   - `valueOut = widget` when a native class exposes exactly one visible `Property Get`
   - `widget = 9` plus surrounding reads when a native class exposes exactly one visible `Property Get` and exactly one visible `Property Let`
+- Added compiler and host evidence for the indexed form of the same bounded fallback:
+  - `valueOut = widget(x)` when a native class exposes exactly one visible indexed `Property Get`
+  - `widget(x) = 9` plus surrounding reads when a native class exposes exactly one visible indexed `Property Get` and exactly one visible indexed `Property Let`
 - This is still a bounded subset, not full closure: ambiguous non-authoritative cases, broader Office-style default-member recovery, and COM-side non-authoritative recovery remain open.
 
 ## 2026-03-16 - Extended IP-02 explicit Let native property/default-member read evidence
