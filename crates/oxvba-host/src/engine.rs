@@ -5671,6 +5671,23 @@ mod tests {
         );
     }
 
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn formal_v121_let_keyword_accepts_variant_target_for_object_call_result() {
+        let mut engine = Engine::new(HostConfig {
+            enable_jit: false,
+            root_object_name: None,
+        });
+        engine.set_host_policy(HostPolicy::interactive_dev());
+
+        let source = "Sub Main()\nDim v As Variant\nLet v = CreateObject(4)\nEnd Sub";
+        let out = engine
+            .execute_source_with_value_snapshot(source)
+            .expect("Let into Variant target should preserve object call result");
+        assert_eq!(out.len(), 1);
+        assert!(matches!(out[0], RuntimeValue::ObjectHandle(handle) if handle.raw() > 0));
+    }
+
     #[test]
     fn formal_v126_introspection_and_typeof_subset_executes() {
         let source = "Sub Main()\nDim a\nDim b\nDim c\nDim d\nIf TypeOf 5 Is 5 Then\nd = 1\nElse\nd = 0\nEnd If\na = IsEmpty(0)\nb = IsNull(-1)\nc = IsError(CVErr(9))\nEnd Sub";
