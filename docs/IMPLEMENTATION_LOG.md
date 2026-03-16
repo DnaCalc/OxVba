@@ -1,3 +1,11 @@
+## 2026-03-16 - Extended bounded non-authoritative default-member fallback into explicit Call form
+
+- Continued the active `IP-02A` semantic-closure slice and proved that the existing single-visible-candidate non-authoritative native default-member fallback also reaches explicit `Call` getter contexts instead of stopping at assignment/read-assignment evidence.
+- Added compiler and host evidence for:
+  - `Call widget` when a native class exposes exactly one visible `Property Get`
+  - `Call widget(x)` when a native class exposes exactly one visible indexed `Property Get`
+- This remains a bounded subset, not broad non-authoritative closure: ambiguous multi-candidate cases and wider Office-style call-vs-value recovery are still open.
+
 ## 2026-03-16 - Extended IP-02 explicit Call indexed native property/default-member evidence
 
 - Continued the active `IP-02A` semantic-closure slice and proved that explicit `Call ...(...)` form for indexed native internal project-class `Property Get` and indexed default-member `Property Get` executes on the same PMR/dynamic-object route as the already-covered statement-context and no-parentheses forms.
