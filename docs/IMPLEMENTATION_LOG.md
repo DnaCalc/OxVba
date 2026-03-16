@@ -1,3 +1,12 @@
+## 2026-03-16 - Added parenthesized explicit Set object-getter evidence
+
+- Continued the active `IP-02A` assignment-intent closure slice and locked the zero-arg parenthesized explicit-`Set` read-assignment neighbors instead of leaving them implied by the earlier non-parenthesized and statement-context getter coverage.
+- Added compiler and host evidence for:
+  - `Set childOut = widget.Value()`
+  - `Set childOut = widget()` when authoritative default-member metadata exists
+  - `Set childOut = widget()` under the existing bounded single-visible-candidate non-authoritative fallback
+- `IP-02` remains `in-progress`: broader typed/object `Set` vs `Let` parity, ambiguous or broader non-authoritative default-member resolution, and wider Office-style call-vs-value parity still remain open.
+
 ## 2026-03-16 - Tightened bounded implicit Object assignment to require Set
 
 - Continued the active `IP-02A` assignment-intent closure slice and removed the earlier bounded implicit `Object`-target object-call success lane once it was clear that the compiler and project rewriter were still accepting or emitting invalid omitted-`Set` syntax.
