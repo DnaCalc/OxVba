@@ -1,3 +1,11 @@
+## 2026-03-17 - Bounded ambiguous non-authoritative default-member fallback with a PMR diagnostic
+
+- Continued the active `IP-02A` semantic-closure slice and converted ambiguous native non-authoritative default-member fallback from a silent "no rewrite" escape hatch into a deterministic PMR compile-time failure.
+- In [project.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-compiler\src\project.rs), added `PMR-E-DEFAULT-MEMBER-RESOLUTION-AMBIGUOUS` and now raise it when a native internal-class receiver has no authoritative default-member metadata and more than one visible candidate of the requested kind is present.
+- Added compiler and host phased evidence for the bounded ambiguous lane:
+  - `valueOut = widget` now fails at compile time when `Widget` exposes multiple visible `Property Get` candidates without authoritative default-member metadata.
+- `IP-02` remains `in-progress`: this only closes the bounded ambiguous non-authoritative native getter case; broader `Set` vs `Let` parity, broader non-authoritative/default-member resolution, and wider Office-style call-vs-value parity still remain open.
+
 ## 2026-03-16 - Added parenthesized explicit Let getter evidence
 
 - Continued the active `IP-02A` read-assignment closure slice and locked the zero-arg parenthesized explicit-`Let` neighbors instead of leaving them implied by the earlier bare/indexed `Let` and parenthesized statement/`Call` getter coverage.
