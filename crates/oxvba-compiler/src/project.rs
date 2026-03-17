@@ -5878,6 +5878,37 @@ mod tests {
     }
 
     #[test]
+    fn compile_project_infers_non_authoritative_single_candidate_default_member_property_set() {
+        let main_module = module_unit_from_source(
+            "MainModule",
+            ModuleKind::Procedural,
+            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim widget As New Widget\nDim x\nx = 2\nSet widget = x\nafterValue = x\nEnd Sub",
+        )
+        .expect("module parses");
+        let widget = module_unit_from_source(
+            "Widget",
+            ModuleKind::Class,
+            "Attribute VB_Name = \"Widget\"\nPublic Property Set Value(ByRef target)\ntarget = target + 7\nEnd Property",
+        )
+        .expect("module parses");
+        let manifest = ProjectManifest {
+            project_name: "ProjectA".to_string(),
+            project_kind: ProjectKind::Source,
+            modules: vec![main_module, widget],
+            references: Vec::new(),
+            reference_projects: Vec::new(),
+            conditional_constants: BTreeMap::new(),
+        };
+
+        let compiled = compile_project(&manifest).expect("rewrite should compile");
+        let lowered = compiled.rewritten_source.to_ascii_lowercase();
+        assert!(
+            lowered.contains("property_set_pmr_projecta_widget_value(widget, x)"),
+            "{lowered}"
+        );
+    }
+
+    #[test]
     fn compile_project_infers_non_authoritative_single_candidate_parenthesized_default_member_set_read_assignment()
      {
         let main_module = module_unit_from_source(
@@ -6115,6 +6146,38 @@ mod tests {
         let lowered = compiled.rewritten_source.to_ascii_lowercase();
         assert!(
             lowered.contains("set childout = property_get_pmr_projecta_widget_value(widget, x)"),
+            "{lowered}"
+        );
+    }
+
+    #[test]
+    fn compile_project_infers_non_authoritative_single_candidate_indexed_default_member_property_set()
+     {
+        let main_module = module_unit_from_source(
+            "MainModule",
+            ModuleKind::Procedural,
+            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim widget As New Widget\nDim x\nx = 2\nSet widget(1) = x\nafterValue = x\nEnd Sub",
+        )
+        .expect("module parses");
+        let widget = module_unit_from_source(
+            "Widget",
+            ModuleKind::Class,
+            "Attribute VB_Name = \"Widget\"\nPublic Property Set Value(ByVal index, ByRef target)\ntarget = target + 7\nEnd Property",
+        )
+        .expect("module parses");
+        let manifest = ProjectManifest {
+            project_name: "ProjectA".to_string(),
+            project_kind: ProjectKind::Source,
+            modules: vec![main_module, widget],
+            references: Vec::new(),
+            reference_projects: Vec::new(),
+            conditional_constants: BTreeMap::new(),
+        };
+
+        let compiled = compile_project(&manifest).expect("rewrite should compile");
+        let lowered = compiled.rewritten_source.to_ascii_lowercase();
+        assert!(
+            lowered.contains("property_set_pmr_projecta_widget_value(widget, 1, x)"),
             "{lowered}"
         );
     }
