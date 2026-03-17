@@ -2237,6 +2237,42 @@ mod tests {
     }
 
     #[test]
+    fn formal_pmr_ambiguous_non_authoritative_default_member_let_fails_at_compile_time() {
+        let engine = Engine::new(HostConfig::default());
+        let main_module = module_unit_from_source(
+            "MainModule",
+            ModuleKind::Procedural,
+            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim widget As New Widget\nwidget = 9\nEnd Sub",
+        )
+        .expect("main module should parse");
+        let widget = module_unit_from_source(
+            "Widget",
+            ModuleKind::Class,
+            "Attribute VB_Name = \"Widget\"\nPublic Property Let Value(ByVal n)\nEnd Property\nPublic Property Let Observe(ByVal n)\nEnd Property",
+        )
+        .expect("widget module should parse");
+        let manifest = ProjectManifest {
+            project_name: "ProjectA".to_string(),
+            project_kind: ProjectKind::Source,
+            modules: vec![main_module, widget],
+            references: Vec::new(),
+            reference_projects: Vec::new(),
+            conditional_constants: std::collections::BTreeMap::new(),
+        };
+
+        let err = engine
+            .execute_project_with_value_snapshot_phased(&manifest)
+            .expect_err("ambiguous non-authoritative let should fail deterministically");
+        assert_eq!(err.phase(), DiagnosticPhase::CompileTime);
+        assert!(
+            err.message()
+                .contains("PMR-E-DEFAULT-MEMBER-RESOLUTION-AMBIGUOUS"),
+            "{}",
+            err.message()
+        );
+    }
+
+    #[test]
     fn formal_pmr_non_authoritative_single_candidate_default_member_get_let_executes_end_to_end() {
         let engine = Engine::new(HostConfig::default());
         let main_module = module_unit_from_source(

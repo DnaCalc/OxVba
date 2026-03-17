@@ -6528,6 +6528,35 @@ mod tests {
     }
 
     #[test]
+    fn compile_project_rejects_ambiguous_non_authoritative_default_member_let() {
+        let main_module = module_unit_from_source(
+            "MainModule",
+            ModuleKind::Procedural,
+            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim widget As New Widget\nwidget = 9\nEnd Sub",
+        )
+        .expect("main module parses");
+        let widget = module_unit_from_source(
+            "Widget",
+            ModuleKind::Class,
+            "Attribute VB_Name = \"Widget\"\nPublic Property Let Value(ByVal n)\nEnd Property\nPublic Property Let Observe(ByVal n)\nEnd Property",
+        )
+        .expect("widget module parses");
+        let manifest = ProjectManifest {
+            project_name: "ProjectA".to_string(),
+            project_kind: ProjectKind::Source,
+            modules: vec![main_module, widget],
+            references: Vec::new(),
+            reference_projects: Vec::new(),
+            conditional_constants: BTreeMap::new(),
+        };
+
+        let err = compile_project(&manifest)
+            .expect_err("ambiguous non-authoritative default-member let should fail");
+        assert_eq!(err.code(), "PMR-E-DEFAULT-MEMBER-RESOLUTION-AMBIGUOUS");
+        assert!(err.to_string().contains("widget"));
+    }
+
+    #[test]
     fn compile_project_event_dispatch_bindings_are_sorted_and_stable() {
         let main_module = module_unit_from_source(
             "MainModule",
