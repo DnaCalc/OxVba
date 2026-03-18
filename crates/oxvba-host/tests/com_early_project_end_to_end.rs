@@ -54,9 +54,11 @@ Dim obj As New OxVba.TestDispatch
 Dim countValue
 Dim existsValue
 Dim lookupValue
+Dim echoValue
 countValue = obj.Count()
 existsValue = obj.Exists(42)
 lookupValue = obj.Lookup(42)
+echoValue = obj(42)
 End Sub
 "#,
     );
@@ -78,6 +80,11 @@ End Sub
         RuntimeValue::I32(1_042),
         "Lookup(42) should map through metadata-backed property-get lane"
     );
+    assert_eq!(
+        out[4],
+        RuntimeValue::I32(42),
+        "obj(42) should map through metadata-backed default-member lane"
+    );
 }
 
 #[cfg(target_os = "windows")]
@@ -91,9 +98,11 @@ Dim obj As New OxVba.TestDispatch
 Dim countValue
 Dim existsValue
 Dim lookupValue
+Dim echoValue
 countValue = obj.Count()
 existsValue = obj.Exists(41)
 lookupValue = obj.Lookup(41)
+echoValue = obj(41)
 End Sub
 "#,
     );
@@ -182,6 +191,35 @@ End Sub
     let err = engine
         .execute_project_with_snapshot_phased(&manifest)
         .expect_err("wrong-arity member should fail at compile-time");
+    assert_eq!(err.phase(), DiagnosticPhase::CompileTime);
+    assert!(
+        err.message()
+            .contains("BIND-E-TYPELIB-INVOKE-ARITY-UNSUPPORTED"),
+        "unexpected compile diagnostic: {}",
+        err.message()
+    );
+}
+
+#[test]
+fn early_bound_project_reports_compile_error_for_wrong_default_member_arity() {
+    let manifest = manifest_with_typelib(
+        r#"
+Attribute VB_Name = "MainModule"
+Public Sub Main()
+Dim obj As New OxVba.TestDispatch
+Dim value
+value = obj()
+End Sub
+"#,
+    );
+
+    let engine = Engine::new(HostConfig {
+        enable_jit: false,
+        root_object_name: None,
+    });
+    let err = engine
+        .execute_project_with_snapshot_phased(&manifest)
+        .expect_err("wrong default-member arity should fail at compile-time");
     assert_eq!(err.phase(), DiagnosticPhase::CompileTime);
     assert!(
         err.message()

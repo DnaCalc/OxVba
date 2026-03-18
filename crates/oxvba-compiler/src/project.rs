@@ -1720,34 +1720,62 @@ fn rewrite_early_bound_member_dispatch(
             continue;
         };
         let raw_name = line[name_start..name_end].trim();
-        let Some(dot_idx) = raw_name.find('.') else {
-            cursor = close + 1;
-            continue;
-        };
-        let var_name = raw_name[..dot_idx].trim();
-        let member_name = raw_name[dot_idx + 1..].trim();
-        if var_name.is_empty() || member_name.is_empty() {
-            cursor = close + 1;
-            continue;
-        }
-        let key = normalize_identifier(var_name);
-        let Some(binding) = early_bound.get(&key) else {
-            cursor = close + 1;
-            continue;
-        };
-        let Some((member_token, member_spec)) =
-            known_typelib_member_token_and_spec(&binding.qualified_type, member_name)
-        else {
-            return Err(ProjectCompileError::TypeLibraryMemberUnsupported {
-                member_name: member_name.to_string(),
-            });
-        };
+        let (var_name, target_name, member_token, member_spec) =
+            if let Some(dot_idx) = raw_name.find('.') {
+                let var_name = raw_name[..dot_idx].trim();
+                let member_name = raw_name[dot_idx + 1..].trim();
+                if var_name.is_empty() || member_name.is_empty() {
+                    cursor = close + 1;
+                    continue;
+                }
+                let key = normalize_identifier(var_name);
+                let Some(binding) = early_bound.get(&key) else {
+                    cursor = close + 1;
+                    continue;
+                };
+                let Some((member_token, member_spec)) =
+                    known_typelib_member_token_and_spec(&binding.qualified_type, member_name)
+                else {
+                    return Err(ProjectCompileError::TypeLibraryMemberUnsupported {
+                        member_name: member_name.to_string(),
+                    });
+                };
+                (
+                    var_name.to_string(),
+                    format!("{}.{}", binding.qualified_type, member_name),
+                    member_token,
+                    member_spec,
+                )
+            } else {
+                let var_name = raw_name.trim();
+                if var_name.is_empty() {
+                    cursor = close + 1;
+                    continue;
+                }
+                let key = normalize_identifier(var_name);
+                let Some(binding) = early_bound.get(&key) else {
+                    cursor = close + 1;
+                    continue;
+                };
+                let Some((member_token, member_spec)) =
+                    known_typelib_default_member_token_and_spec(&binding.qualified_type)
+                else {
+                    cursor = close + 1;
+                    continue;
+                };
+                (
+                    var_name.to_string(),
+                    format!("{}.{}", binding.qualified_type, member_spec.name),
+                    member_token,
+                    member_spec,
+                )
+            };
         if !matches!(
             member_spec.invoke_kind,
             TypeLibMemberInvokeKind::PropertyGet | TypeLibMemberInvokeKind::Method
         ) {
             return Err(ProjectCompileError::TypeLibraryMemberShapeUnsupported {
-                target: format!("{}.{}", binding.qualified_type, member_name),
+                target: target_name.clone(),
                 shape: render_typelib_invoke_kind(member_spec.invoke_kind).to_string(),
             });
         }
@@ -1757,7 +1785,7 @@ fn rewrite_early_bound_member_dispatch(
         let expected_arity = member_spec.parameter_names.len();
         if actual_arity != expected_arity {
             return Err(ProjectCompileError::TypeLibraryInvokeArityUnsupported {
-                target: format!("{}.{}", binding.qualified_type, member_name),
+                target: target_name,
                 expected: expected_arity,
                 actual: actual_arity,
             });
@@ -3202,6 +3230,23 @@ fn known_typelib_member_token_and_spec(
     let identity = known_typelib_identity_for_prog_id_name(qualified_type)?;
     let metadata = build_typelib_metadata(&identity);
     let (token, spec) = member_token_and_spec_from_typelib_metadata_name(&metadata, member_name)?;
+    Some((token.raw(), spec))
+}
+
+fn known_typelib_default_member_token_and_spec(
+    qualified_type: &str,
+) -> Option<(i32, ComMemberSpec)> {
+    let identity = known_typelib_identity_for_prog_id_name(qualified_type)?;
+    let metadata = build_typelib_metadata(&identity);
+    let mut matches = metadata
+        .members
+        .iter()
+        .filter(|member| member.is_default_member);
+    let member = matches.next()?;
+    if matches.next().is_some() {
+        return None;
+    }
+    let (token, spec) = member_token_and_spec_from_typelib_metadata_name(&metadata, &member.name)?;
     Some((token.raw(), spec))
 }
 
@@ -11968,6 +12013,17 @@ mod tests {
     }
 
     #[test]
+    fn known_typelib_default_member_token_and_spec_reads_external_metadata() {
+        let (token, spec) =
+            super::known_typelib_default_member_token_and_spec("OxVba.TestDispatch")
+                .expect("default member metadata should resolve");
+        assert_eq!(token, 16);
+        assert_eq!(spec.name, "EchoVariant");
+        assert_eq!(spec.invoke_kind, super::TypeLibMemberInvokeKind::Method);
+        assert!(spec.is_default_member);
+    }
+
+    #[test]
     fn known_typelib_create_object_selector_reads_external_activation_metadata() {
         assert_eq!(
             super::known_typelib_create_object_selector("OxVba.TestDispatch"),
@@ -12100,6 +12156,31 @@ mod tests {
     }
 
     #[test]
+    fn compile_project_rewrites_external_default_member_call_to_dispatchinvoke() {
+        let main_module = module_unit_from_source(
+            "MainModule",
+            ModuleKind::Procedural,
+            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim obj As OxVba.TestDispatch\nDim x\nSet obj = CreateObject(4)\nx = obj(41)\nEnd Sub",
+        )
+        .expect("module parses");
+        let manifest = ProjectManifest {
+            project_name: "ProjectA".to_string(),
+            project_kind: ProjectKind::Source,
+            modules: vec![main_module],
+            references: vec![ProjectReference {
+                referenced_project_name: "OxVba".to_string(),
+                reference_kind: ReferenceKind::TypeLibrary,
+            }],
+            reference_projects: Vec::new(),
+            conditional_constants: BTreeMap::new(),
+        };
+        let compiled = compile_project(&manifest)
+            .expect("external default-member call should compile in supported subset");
+        let lowered = compiled.rewritten_source.to_ascii_lowercase();
+        assert!(lowered.contains("dispatchinvoke(obj, 16, 41)"));
+    }
+
+    #[test]
     fn compile_project_rejects_wrong_arity_for_zero_arg_external_member() {
         let main_module = module_unit_from_source(
             "MainModule",
@@ -12144,6 +12225,30 @@ mod tests {
         };
         let err = compile_project(&manifest)
             .expect_err("wrong multi-arg member arity should reject compilation");
+        assert_eq!(err.code(), "BIND-E-TYPELIB-INVOKE-ARITY-UNSUPPORTED");
+    }
+
+    #[test]
+    fn compile_project_rejects_wrong_arity_for_external_default_member() {
+        let main_module = module_unit_from_source(
+            "MainModule",
+            ModuleKind::Procedural,
+            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim obj As OxVba.TestDispatch\nDim x\nSet obj = CreateObject(4)\nx = obj()\nEnd Sub",
+        )
+        .expect("module parses");
+        let manifest = ProjectManifest {
+            project_name: "ProjectA".to_string(),
+            project_kind: ProjectKind::Source,
+            modules: vec![main_module],
+            references: vec![ProjectReference {
+                referenced_project_name: "OxVba".to_string(),
+                reference_kind: ReferenceKind::TypeLibrary,
+            }],
+            reference_projects: Vec::new(),
+            conditional_constants: BTreeMap::new(),
+        };
+        let err = compile_project(&manifest)
+            .expect_err("wrong default-member arity should reject compilation");
         assert_eq!(err.code(), "BIND-E-TYPELIB-INVOKE-ARITY-UNSUPPORTED");
     }
 

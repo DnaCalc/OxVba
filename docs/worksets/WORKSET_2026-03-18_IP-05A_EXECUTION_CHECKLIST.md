@@ -78,6 +78,7 @@ Already evidenced in the repo today:
 - external `As New` lowering now resolves deterministic `CreateObject` selectors through `oxvba-com` synthetic typelib metadata for the current known imported types instead of using the compiler’s hardcoded external selector switch
 - external early-bound call lowering now also enforces argument arity from synthetic typelib metadata in the supported imported-member subset instead of letting wrong-arity calls drift to runtime
 - external early-bound call lowering now also consults imported invoke-kind metadata for the current supported subset, proving required-arg `PropertyGet` lowering directly while rejecting imported `PropertyPut` / `PropertyPutRef` shapes at compile time instead of letting setter-shaped members flow through the generic read-call rewrite
+- external early-bound parenthesized default-member call syntax now resolves authoritative imported default-member identity from metadata for the current supported subset instead of leaving typed external receivers on the generic unresolved call path
 
 ## Remaining checklist by closure domain
 
@@ -91,7 +92,7 @@ Already evidenced in the repo today:
 
 ### B. Binder and lowering integration
 
-- [ ] Prove imported member lookup works through the authoritative metadata path across the supported early-bound execution subset.
+ - [x] Prove imported member lookup works through the authoritative metadata path across the supported early-bound execution subset.
 - [x] Prove metadata-backed argument-arity validation on the current supported external member subset.
 - [ ] Fold invoke kind/member kind/default-member metadata into the binder/lowering path where the current subset still infers them indirectly.
 - [x] Add direct compiler evidence for the supported metadata-driven lowering lanes beyond token lookup alone.
