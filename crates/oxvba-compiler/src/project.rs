@@ -6767,6 +6767,157 @@ mod tests {
     }
 
     #[test]
+    fn compile_project_rejects_missing_non_authoritative_indexed_default_member_get() {
+        let main_module = module_unit_from_source(
+            "MainModule",
+            ModuleKind::Procedural,
+            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim widget As New Widget\nDim x\nDim valueOut\nx = 2\nvalueOut = widget(x)\nEnd Sub",
+        )
+        .expect("main module parses");
+        let widget = module_unit_from_source(
+            "Widget",
+            ModuleKind::Class,
+            "Attribute VB_Name = \"Widget\"\nPublic Sub Touch()\nEnd Sub",
+        )
+        .expect("widget module parses");
+        let manifest = ProjectManifest {
+            project_name: "ProjectA".to_string(),
+            project_kind: ProjectKind::Source,
+            modules: vec![main_module, widget],
+            references: Vec::new(),
+            reference_projects: Vec::new(),
+            conditional_constants: BTreeMap::new(),
+        };
+
+        let err = compile_project(&manifest)
+            .expect_err("missing non-authoritative indexed default-member getter should fail");
+        assert_eq!(err.code(), "PMR-E-DEFAULT-MEMBER-RESOLUTION-MISSING");
+        assert!(err.to_string().contains("widget"));
+    }
+
+    #[test]
+    fn compile_project_rejects_missing_non_authoritative_call_statement_default_member_get() {
+        let main_module = module_unit_from_source(
+            "MainModule",
+            ModuleKind::Procedural,
+            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim widget As New Widget\nCall widget\nEnd Sub",
+        )
+        .expect("main module parses");
+        let widget = module_unit_from_source(
+            "Widget",
+            ModuleKind::Class,
+            "Attribute VB_Name = \"Widget\"\nPublic Sub Touch()\nEnd Sub",
+        )
+        .expect("widget module parses");
+        let manifest = ProjectManifest {
+            project_name: "ProjectA".to_string(),
+            project_kind: ProjectKind::Source,
+            modules: vec![main_module, widget],
+            references: Vec::new(),
+            reference_projects: Vec::new(),
+            conditional_constants: BTreeMap::new(),
+        };
+
+        let err = compile_project(&manifest).expect_err(
+            "missing non-authoritative call-statement default-member getter should fail",
+        );
+        assert_eq!(err.code(), "PMR-E-DEFAULT-MEMBER-RESOLUTION-MISSING");
+        assert!(err.to_string().contains("widget"));
+    }
+
+    #[test]
+    fn compile_project_rejects_missing_non_authoritative_call_statement_indexed_default_member_get()
+    {
+        let main_module = module_unit_from_source(
+            "MainModule",
+            ModuleKind::Procedural,
+            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim widget As New Widget\nDim x\nx = 2\nCall widget(x)\nEnd Sub",
+        )
+        .expect("main module parses");
+        let widget = module_unit_from_source(
+            "Widget",
+            ModuleKind::Class,
+            "Attribute VB_Name = \"Widget\"\nPublic Sub Touch()\nEnd Sub",
+        )
+        .expect("widget module parses");
+        let manifest = ProjectManifest {
+            project_name: "ProjectA".to_string(),
+            project_kind: ProjectKind::Source,
+            modules: vec![main_module, widget],
+            references: Vec::new(),
+            reference_projects: Vec::new(),
+            conditional_constants: BTreeMap::new(),
+        };
+
+        let err = compile_project(&manifest).expect_err(
+            "missing non-authoritative indexed call-statement default-member getter should fail",
+        );
+        assert_eq!(err.code(), "PMR-E-DEFAULT-MEMBER-RESOLUTION-MISSING");
+        assert!(err.to_string().contains("widget"));
+    }
+
+    #[test]
+    fn compile_project_rejects_missing_non_authoritative_statement_context_default_member_get() {
+        let main_module = module_unit_from_source(
+            "MainModule",
+            ModuleKind::Procedural,
+            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim widget As New Widget\nwidget\nEnd Sub",
+        )
+        .expect("main module parses");
+        let widget = module_unit_from_source(
+            "Widget",
+            ModuleKind::Class,
+            "Attribute VB_Name = \"Widget\"\nPublic Sub Touch()\nEnd Sub",
+        )
+        .expect("widget module parses");
+        let manifest = ProjectManifest {
+            project_name: "ProjectA".to_string(),
+            project_kind: ProjectKind::Source,
+            modules: vec![main_module, widget],
+            references: Vec::new(),
+            reference_projects: Vec::new(),
+            conditional_constants: BTreeMap::new(),
+        };
+
+        let err = compile_project(&manifest).expect_err(
+            "missing non-authoritative statement-context default-member getter should fail",
+        );
+        assert_eq!(err.code(), "PMR-E-DEFAULT-MEMBER-RESOLUTION-MISSING");
+        assert!(err.to_string().contains("widget"));
+    }
+
+    #[test]
+    fn compile_project_rejects_missing_non_authoritative_statement_context_indexed_default_member_get()
+     {
+        let main_module = module_unit_from_source(
+            "MainModule",
+            ModuleKind::Procedural,
+            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim widget As New Widget\nDim x\nx = 2\nwidget(x)\nEnd Sub",
+        )
+        .expect("main module parses");
+        let widget = module_unit_from_source(
+            "Widget",
+            ModuleKind::Class,
+            "Attribute VB_Name = \"Widget\"\nPublic Sub Touch()\nEnd Sub",
+        )
+        .expect("widget module parses");
+        let manifest = ProjectManifest {
+            project_name: "ProjectA".to_string(),
+            project_kind: ProjectKind::Source,
+            modules: vec![main_module, widget],
+            references: Vec::new(),
+            reference_projects: Vec::new(),
+            conditional_constants: BTreeMap::new(),
+        };
+
+        let err = compile_project(&manifest).expect_err(
+            "missing non-authoritative indexed statement-context default-member getter should fail",
+        );
+        assert_eq!(err.code(), "PMR-E-DEFAULT-MEMBER-RESOLUTION-MISSING");
+        assert!(err.to_string().contains("widget"));
+    }
+
+    #[test]
     fn compile_project_event_dispatch_bindings_are_sorted_and_stable() {
         let main_module = module_unit_from_source(
             "MainModule",

@@ -1,3 +1,12 @@
+## 2026-03-18 - Expanded missing non-authoritative default-member evidence across getter contexts
+
+- Continued execution from [WORKSET_2026-03-18_IP-02_EXECUTION_CHECKLIST.md](C:\Work\DnaCalc\OxVba\docs\worksets\WORKSET_2026-03-18_IP-02_EXECUTION_CHECKLIST.md) and widened proof coverage for the already-landed `PMR-E-DEFAULT-MEMBER-RESOLUTION-MISSING` path instead of introducing new semantics.
+- Added compiler and host phased evidence proving bounded native non-authoritative default-member `no viable candidate` getter diagnostics now hold for:
+  - indexed read-assignment: `valueOut = widget(x)`,
+  - explicit `Call` scalar and indexed getter forms: `Call widget`, `Call widget(x)`,
+  - statement-context scalar and indexed getter forms: `widget`, `widget(x)`.
+- `IP-02` remains `in-progress`: this extends direct proof coverage for the missing-candidate getter subset, but indexed property-set missing-candidate neighbors, broader ambiguity neighbors, broader `Set` vs `Let` intent parity, and wider Office-style call-vs-value parity still remain open.
+
 ## 2026-03-18 - Added bounded missing non-authoritative default-member diagnostics
 
 - Started execution from the new [WORKSET_2026-03-18_IP-02_EXECUTION_CHECKLIST.md](C:\Work\DnaCalc\OxVba\docs\worksets\WORKSET_2026-03-18_IP-02_EXECUTION_CHECKLIST.md) so `IP-02` progress is now driven by an explicit lane matrix and exit gate rather than ad hoc frontier notes.
