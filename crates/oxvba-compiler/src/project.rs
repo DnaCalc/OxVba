@@ -1,8 +1,8 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use oxvba_com::{
-    build_typelib_metadata, known_typelib_identity_for_prog_id_name,
-    member_token_and_spec_from_typelib_metadata_name,
+    build_typelib_metadata, create_object_selector_from_typelib_metadata,
+    known_typelib_identity_for_prog_id_name, member_token_and_spec_from_typelib_metadata_name,
 };
 use oxvba_runtime::ObjectHandle;
 use thiserror::Error;
@@ -1491,7 +1491,7 @@ fn expand_bound_source_line(
                 qualifier,
             });
         }
-        let selector = known_create_object_selector(&dim_decl.qualified_type);
+        let selector = known_typelib_create_object_selector(&dim_decl.qualified_type);
         early_bound.insert(
             normalize_identifier(&dim_decl.var_name),
             EarlyBoundBinding {
@@ -3144,12 +3144,10 @@ fn split_keyword_ascii_ci<'a>(text: &'a str, keyword: &'a str) -> Option<(&'a st
     Some((&text[..idx], &text[idx + keyword.len()..]))
 }
 
-fn known_create_object_selector(qualified_type: &str) -> Option<i32> {
-    match normalize_identifier(qualified_type).as_str() {
-        "oxvba.testdispatch" => Some(4),
-        "scripting.dictionary" => Some(4),
-        _ => None,
-    }
+fn known_typelib_create_object_selector(qualified_type: &str) -> Option<i32> {
+    let identity = known_typelib_identity_for_prog_id_name(qualified_type)?;
+    let metadata = build_typelib_metadata(&identity);
+    create_object_selector_from_typelib_metadata(&metadata)
 }
 
 fn known_typelib_member_token(qualified_type: &str, member_name: &str) -> Option<i32> {
@@ -11883,6 +11881,18 @@ mod tests {
         );
         assert_eq!(
             super::known_typelib_member_token("OxVba.TestDispatch", "UnknownMember"),
+            None
+        );
+    }
+
+    #[test]
+    fn known_typelib_create_object_selector_reads_external_activation_metadata() {
+        assert_eq!(
+            super::known_typelib_create_object_selector("OxVba.TestDispatch"),
+            Some(4)
+        );
+        assert_eq!(
+            super::known_typelib_create_object_selector("Excel.Application"),
             None
         );
     }

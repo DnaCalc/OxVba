@@ -22,6 +22,7 @@ pub struct TypeLibResolvedIdentity {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TypeLibMetadataBlob {
     pub identity: TypeLibResolvedIdentity,
+    pub create_object_selector: Option<i32>,
     pub member_name_to_token: Vec<(String, i32)>,
     pub members: Vec<TypeLibMemberMetadata>,
     pub events: Vec<TypeLibEventMetadata>,

@@ -75,6 +75,7 @@ Already evidenced in the repo today:
 - imported external type declarations already validate known typelib qualifiers and deterministic `CreateObject` selectors in the supported subset
 - runtime-string selector recovery already uses name-based synthetic typelib lookup inside `oxvba-com`
 - external early-bound member-call lowering now resolves member tokens through `oxvba-com` synthetic typelib metadata for the current known typelibs instead of using the compiler’s hardcoded external member-token switch
+- external `As New` lowering now resolves deterministic `CreateObject` selectors through `oxvba-com` synthetic typelib metadata for the current known imported types instead of using the compiler’s hardcoded external selector switch
 
 ## Remaining checklist by closure domain
 
@@ -82,6 +83,7 @@ Already evidenced in the repo today:
 
 - [x] Start an explicit `IP-05A` checklist and exit gate.
 - [x] Move external early-bound member-token lookup onto `oxvba-com` metadata for the currently supported imported types.
+- [x] Move external `As New` activation-selector lookup onto `oxvba-com` metadata for the currently supported imported types.
 - [ ] Replace remaining supported external lowering assumptions that still derive member shape from compiler-local hardcoded knowledge.
 - [ ] Isolate and document any still-transitional compiler-local token tables that are not part of the external imported-member path anymore.
 

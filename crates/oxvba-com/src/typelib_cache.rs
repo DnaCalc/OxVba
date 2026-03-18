@@ -70,6 +70,7 @@ mod tests {
     fn sample_blob(reference_name: &str, cache_key: &str) -> TypeLibMetadataBlob {
         TypeLibMetadataBlob {
             identity: sample_identity(reference_name, cache_key),
+            create_object_selector: None,
             member_name_to_token: Vec::new(),
             members: Vec::new(),
             events: Vec::new(),

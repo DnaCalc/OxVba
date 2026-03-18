@@ -276,7 +276,7 @@ pub fn known_typelib_identity_for_prog_id_name(
 }
 
 pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMetadataBlob {
-    let (member_name_to_token, members, events) = if identity
+    let (create_object_selector, member_name_to_token, members, events) = if identity
         .importlib
         .eq_ignore_ascii_case("oxvba_testdispatch.tlb")
         || identity.libid.as_deref().is_some_and(|libid: &str| {
@@ -994,7 +994,7 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
             .iter()
             .map(|entry| (entry.name.clone(), entry.token))
             .collect();
-        (member_name_to_token, members, events)
+        (Some(4), member_name_to_token, members, events)
     } else if identity.importlib.eq_ignore_ascii_case("excel.exe")
         || identity.libid.as_deref().is_some_and(|libid: &str| {
             libid.eq_ignore_ascii_case("00020813-0000-0000-C000-000000000046")
@@ -1020,7 +1020,7 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
             .iter()
             .map(|entry| (entry.name.clone(), entry.token))
             .collect();
-        (member_name_to_token, members, events)
+        (None, member_name_to_token, members, events)
     } else if identity
         .importlib
         .eq_ignore_ascii_case("oxvba_testeventserver.tlb")
@@ -1092,7 +1092,7 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
             .iter()
             .map(|entry| (entry.name.clone(), entry.token))
             .collect();
-        (member_name_to_token, members, events)
+        (None, member_name_to_token, members, events)
     } else if identity.importlib.eq_ignore_ascii_case("scrrun.dll")
         || identity.libid.as_deref().is_some_and(|libid: &str| {
             libid.eq_ignore_ascii_case("420B2830-E718-11CF-893D-00A0C9054228")
@@ -1128,17 +1128,22 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
             .iter()
             .map(|entry| (entry.name.clone(), entry.token))
             .collect();
-        (member_name_to_token, members, events)
+        (Some(4), member_name_to_token, members, events)
     } else {
-        (Vec::new(), Vec::new(), Vec::new())
+        (None, Vec::new(), Vec::new(), Vec::new())
     };
 
     TypeLibMetadataBlob {
         identity: identity.clone(),
+        create_object_selector,
         member_name_to_token,
         members,
         events,
     }
+}
+
+pub fn create_object_selector_from_typelib_metadata(blob: &TypeLibMetadataBlob) -> Option<i32> {
+    blob.create_object_selector
 }
 pub fn member_spec_from_typelib_metadata(
     blob: &TypeLibMetadataBlob,
@@ -1209,9 +1214,9 @@ fn map_event_metadata_to_spec(event: &TypeLibEventMetadata) -> ComEventSpec {
 #[cfg(test)]
 mod tests {
     use super::{
-        build_typelib_metadata, event_spec_from_typelib_metadata,
-        known_typelib_identity_for_prog_id_name, member_spec_from_typelib_metadata,
-        source_interface_event_spec_supported,
+        build_typelib_metadata, create_object_selector_from_typelib_metadata,
+        event_spec_from_typelib_metadata, known_typelib_identity_for_prog_id_name,
+        member_spec_from_typelib_metadata, source_interface_event_spec_supported,
     };
     use crate::{ComMemberToken, TEST_DISPID_EXISTS, TypeLibMemberInvokeKind};
 
@@ -1237,5 +1242,24 @@ mod tests {
         )
         .expect("event spec");
         assert!(source_interface_event_spec_supported(&spec));
+    }
+
+    #[test]
+    fn create_object_selector_is_catalog_driven() {
+        let dispatch_identity =
+            known_typelib_identity_for_prog_id_name("OxVba.TestDispatch").expect("identity");
+        let dispatch_blob = build_typelib_metadata(&dispatch_identity);
+        assert_eq!(
+            create_object_selector_from_typelib_metadata(&dispatch_blob),
+            Some(4)
+        );
+
+        let excel_identity =
+            known_typelib_identity_for_prog_id_name("Excel.Application").expect("identity");
+        let excel_blob = build_typelib_metadata(&excel_identity);
+        assert_eq!(
+            create_object_selector_from_typelib_metadata(&excel_blob),
+            None
+        );
     }
 }
