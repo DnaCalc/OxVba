@@ -10537,6 +10537,94 @@ mod tests {
         );
     }
 
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn formal_v121_object_source_assignment_accepts_set_targets_and_variant_let_implicit() {
+        let mut engine = Engine::new(HostConfig {
+            enable_jit: false,
+            root_object_name: None,
+        });
+        engine.set_host_policy(HostPolicy::interactive_dev());
+        let cases = [
+            (
+                "Set Variant target",
+                "Sub Main()\nDim src As Object\nDim v As Variant\nSet src = CreateObject(4)\nSet v = src\nEnd Sub",
+            ),
+            (
+                "Set Object target",
+                "Sub Main()\nDim src As Object\nDim dst As Object\nSet src = CreateObject(4)\nSet dst = src\nEnd Sub",
+            ),
+            (
+                "Let Variant target",
+                "Sub Main()\nDim src As Object\nDim v As Variant\nSet src = CreateObject(4)\nLet v = src\nEnd Sub",
+            ),
+            (
+                "implicit Variant target",
+                "Sub Main()\nDim src As Object\nDim v As Variant\nSet src = CreateObject(4)\nv = src\nEnd Sub",
+            ),
+        ];
+
+        for (label, source) in cases {
+            let out = engine
+                .execute_source_with_value_snapshot(source)
+                .unwrap_or_else(|err| panic!("{label} should execute, got {err}"));
+            assert_eq!(out.len(), 2, "{label}: {out:?}");
+            assert!(
+                matches!(
+                    (&out[0], &out[1]),
+                    (RuntimeValue::ObjectHandle(src), RuntimeValue::ObjectHandle(dst))
+                        if src.raw() > 0 && src.raw() == dst.raw()
+                ),
+                "{label}: {out:?}"
+            );
+        }
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn formal_v121_object_source_assignment_rejects_object_and_scalar_mismatch_lanes() {
+        let mut engine = Engine::new(HostConfig {
+            enable_jit: false,
+            root_object_name: None,
+        });
+        engine.set_host_policy(HostPolicy::interactive_dev());
+        let cases = [
+            (
+                "Let Object target",
+                "Sub Main()\nDim src As Object\nDim dst As Object\nSet src = CreateObject(4)\nLet dst = src\nEnd Sub",
+                "Let cannot assign to Object variable dst",
+            ),
+            (
+                "implicit Object target",
+                "Sub Main()\nDim src As Object\nDim dst As Object\nSet src = CreateObject(4)\ndst = src\nEnd Sub",
+                "Set required for Object variable dst",
+            ),
+            (
+                "Set scalar target",
+                "Sub Main()\nDim src As Object\nDim n As Long\nSet src = CreateObject(4)\nSet n = src\nEnd Sub",
+                "Set requires Object or Variant target, got Long variable n",
+            ),
+            (
+                "Let scalar target",
+                "Sub Main()\nDim src As Object\nDim n As Long\nSet src = CreateObject(4)\nLet n = src\nEnd Sub",
+                "cannot assign Object to Long variable n",
+            ),
+            (
+                "implicit scalar target",
+                "Sub Main()\nDim src As Object\nDim n As Long\nSet src = CreateObject(4)\nn = src\nEnd Sub",
+                "cannot assign Object to Long variable n",
+            ),
+        ];
+
+        for (label, source, expected) in cases {
+            let err = match engine.execute_source_slots_test(source) {
+                Ok(_) => panic!("{label} should reject deterministically"),
+                Err(err) => err,
+            };
+            assert!(err.contains(expected), "{label}: {err}");
+        }
+    }
+
     #[test]
     fn formal_v126_introspection_and_typeof_subset_executes() {
         let source = "Sub Main()\nDim a\nDim b\nDim c\nDim d\nIf TypeOf 5 Is 5 Then\nd = 1\nElse\nd = 0\nEnd If\na = IsEmpty(0)\nb = IsNull(-1)\nc = IsError(CVErr(9))\nEnd Sub";

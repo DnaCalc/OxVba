@@ -1,3 +1,17 @@
+## 2026-03-18 - Added plain object-source assignment intent evidence
+
+- Continued execution from [WORKSET_2026-03-18_IP-02_EXECUTION_CHECKLIST.md](C:\Work\DnaCalc\OxVba\docs\worksets\WORKSET_2026-03-18_IP-02_EXECUTION_CHECKLIST.md) on the explicit source-target matrix instead of leaving plain object-variable sources implied by the earlier `CreateObject(...)` and getter-result lanes.
+- Added compiler and host evidence proving that a plain `Object`-typed source variable now has direct bounded assignment-intent coverage for:
+  - `Set` into `Variant` targets,
+  - `Set` into `Object` targets,
+  - explicit `Let` into `Variant` targets,
+  - implicit assignment into `Variant` targets.
+- Added matching compiler and host evidence proving deterministic rejection for the neighboring mismatch lanes:
+  - explicit `Let` into `Object` targets,
+  - implicit assignment into `Object` targets,
+  - explicit `Set`, explicit `Let`, and implicit assignment into scalar targets.
+- `IP-02` remains `in-progress`: broader `Set`/`Let` source-target parity, broader non-authoritative default-member closure beyond the currently bounded subsets, and wider Office-style call-vs-value parity are still open.
+
 ## 2026-03-18 - Added no-parentheses getter RHS rejection evidence
 
 - Continued execution from [WORKSET_2026-03-18_IP-02_EXECUTION_CHECKLIST.md](C:\Work\DnaCalc\OxVba\docs\worksets\WORKSET_2026-03-18_IP-02_EXECUTION_CHECKLIST.md) on the call-vs-value matrix instead of widening unsupported RHS syntax into execution semantics.

@@ -14,6 +14,7 @@ Latest note (2026-03-18): the active `IP-03A` late-bound COM transport subset no
 Update (2026-03-18, later pass): `IP-02A` now also has direct bounded evidence that ambiguous/missing source-resolution diagnostics apply to non-authoritative object-valued default-member reads under explicit `Let` and implicit assignment to typed `Object` targets across bare, zero-arg parenthesized, and indexed syntax.
 Update (2026-03-18, current pass): `IP-02A` now also has direct bounded evidence that the same ambiguous/missing source-resolution diagnostics apply to typed `Variant` targets under explicit `Let` and implicit assignment across bare, zero-arg parenthesized, and indexed syntax.
 Update (2026-03-18, current pass): no-parentheses getter calls on the native PMR/default-member path now also have direct bounded compile-time rejection evidence in RHS read-assignment contexts across named, authoritative default-member, and single-visible-candidate non-authoritative default-member receivers under both explicit `Let` and implicit assignment.
+Update (2026-03-18, current pass): plain `Object`-typed source variables now also have direct bounded assignment-intent evidence across the current `Object` / `Variant` / scalar target lanes for explicit `Set`, explicit `Let`, and implicit assignment.
 
 Use it to answer:
 1. what major behavior areas are still unfinished,

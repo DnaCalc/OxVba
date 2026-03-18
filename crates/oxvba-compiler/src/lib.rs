@@ -465,6 +465,72 @@ mod tests {
     }
 
     #[test]
+    fn object_source_assignment_accepts_set_targets_and_variant_let_implicit() {
+        let cases = [
+            (
+                "Set Variant target",
+                "Sub Main()\nDim src As Object\nDim v As Variant\nSet src = CreateObject(4)\nSet v = src\nEnd Sub",
+            ),
+            (
+                "Set Object target",
+                "Sub Main()\nDim src As Object\nDim dst As Object\nSet src = CreateObject(4)\nSet dst = src\nEnd Sub",
+            ),
+            (
+                "Let Variant target",
+                "Sub Main()\nDim src As Object\nDim v As Variant\nSet src = CreateObject(4)\nLet v = src\nEnd Sub",
+            ),
+            (
+                "implicit Variant target",
+                "Sub Main()\nDim src As Object\nDim v As Variant\nSet src = CreateObject(4)\nv = src\nEnd Sub",
+            ),
+        ];
+
+        for (label, source) in cases {
+            compile(source).unwrap_or_else(|err| panic!("{label} should compile, got {err}"));
+        }
+    }
+
+    #[test]
+    fn object_source_assignment_rejects_object_and_scalar_mismatch_lanes() {
+        let cases = [
+            (
+                "Let Object target",
+                "Sub Main()\nDim src As Object\nDim dst As Object\nSet src = CreateObject(4)\nLet dst = src\nEnd Sub",
+                "Let cannot assign to Object variable dst",
+            ),
+            (
+                "implicit Object target",
+                "Sub Main()\nDim src As Object\nDim dst As Object\nSet src = CreateObject(4)\ndst = src\nEnd Sub",
+                "Set required for Object variable dst",
+            ),
+            (
+                "Set scalar target",
+                "Sub Main()\nDim src As Object\nDim n As Long\nSet src = CreateObject(4)\nSet n = src\nEnd Sub",
+                "Set requires Object or Variant target, got Long variable n",
+            ),
+            (
+                "Let scalar target",
+                "Sub Main()\nDim src As Object\nDim n As Long\nSet src = CreateObject(4)\nLet n = src\nEnd Sub",
+                "cannot assign Object to Long variable n",
+            ),
+            (
+                "implicit scalar target",
+                "Sub Main()\nDim src As Object\nDim n As Long\nSet src = CreateObject(4)\nn = src\nEnd Sub",
+                "cannot assign Object to Long variable n",
+            ),
+        ];
+
+        for (label, source, expected) in cases {
+            let err = match compile(source) {
+                Ok(_) => panic!("{label} should reject"),
+                Err(err) => err,
+            };
+            let message = err.to_string();
+            assert!(message.contains(expected), "{label}: {message}");
+        }
+    }
+
+    #[test]
     fn conversion_intrinsic_cint_to_long_assignment_is_allowed() {
         let source = "Sub Main()\nDim x As Long\nx = CInt(5)\nEnd Sub";
         compile(source).expect("typed conversion result should assign to widening numeric target");
