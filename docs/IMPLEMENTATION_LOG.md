@@ -1163,6 +1163,13 @@
   - across bare, zero-arg parenthesized, and indexed syntax where applicable.
 - `IP-02` remains `in-progress`: broader `Set`/`Let` source-target parity, broader non-authoritative default-member closure beyond the currently bounded subsets, and wider Office-style call-vs-value parity are still open.
 
+## 2026-03-18 - Remove explicit Set default-member diagnostic escape hatch
+
+- Continued the active `IP-02A` checklist run and removed a real silent-escape path instead of only adding more proof around existing semantics.
+- The native default-member read-assignment rewrite no longer swallows `PMR-E-DEFAULT-MEMBER-RESOLUTION-AMBIGUOUS` or `PMR-E-DEFAULT-MEMBER-RESOLUTION-MISSING` when the RHS is reached through explicit `Set`.
+- Added compiler and VM/JIT host evidence proving that those deterministic diagnostics now directly cover explicit `Set` read-assignment to both typed `Object` and typed `Variant` targets across bare, zero-arg parenthesized, and indexed non-authoritative default-member syntax.
+- `IP-02` remains `in-progress`: broader `Set`/`Let` source-target parity, broader non-authoritative default-member closure beyond the currently bounded subsets, and wider Office-style call-vs-value parity are still open.
+
 
 
 
