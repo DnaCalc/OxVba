@@ -1,3 +1,13 @@
+## 2026-03-18 - Expanded no-parentheses default-member evidence on the bounded native fallback surface
+
+- Continued execution from [WORKSET_2026-03-18_IP-02_EXECUTION_CHECKLIST.md](C:\Work\DnaCalc\OxVba\docs\worksets\WORKSET_2026-03-18_IP-02_EXECUTION_CHECKLIST.md) and closed the next call-vs-value neighbor instead of widening semantics blindly.
+- Added compiler and host phased evidence proving the existing native no-parentheses-argument default-member getter rewrite now also covers the bounded non-authoritative single-visible-candidate lane:
+  - `widget x`
+- Added deterministic diagnostic evidence for the same no-parentheses-argument default-member getter shape when native non-authoritative fallback is not resolvable:
+  - ambiguous candidate set -> `PMR-E-DEFAULT-MEMBER-RESOLUTION-AMBIGUOUS`
+  - no viable candidate -> `PMR-E-DEFAULT-MEMBER-RESOLUTION-MISSING`
+- `IP-02` remains `in-progress`: this closes the bounded no-parentheses default-member getter neighbor, but broader call-vs-value enumeration and broader `Set` vs `Let` parity remain open.
+
 ## 2026-03-18 - Expanded missing and ambiguous non-authoritative default-member evidence
 
 - Continued execution from [WORKSET_2026-03-18_IP-02_EXECUTION_CHECKLIST.md](C:\Work\DnaCalc\OxVba\docs\worksets\WORKSET_2026-03-18_IP-02_EXECUTION_CHECKLIST.md) and widened direct proof for the already-landed non-authoritative diagnostic surface instead of introducing new semantics.

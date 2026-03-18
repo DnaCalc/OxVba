@@ -6340,6 +6340,37 @@ mod tests {
     }
 
     #[test]
+    fn compile_project_rewrites_no_paren_non_authoritative_single_candidate_default_member_get() {
+        let main_module = module_unit_from_source(
+            "MainModule",
+            ModuleKind::Procedural,
+            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim widget As New Widget\nDim x\nx = 2\nwidget x\nEnd Sub",
+        )
+        .expect("module parses");
+        let widget = module_unit_from_source(
+            "Widget",
+            ModuleKind::Class,
+            "Attribute VB_Name = \"Widget\"\nPublic Property Get Value(ByRef index)\nindex = index + 7\nValue = index\nEnd Property",
+        )
+        .expect("module parses");
+        let manifest = ProjectManifest {
+            project_name: "ProjectA".to_string(),
+            project_kind: ProjectKind::Source,
+            modules: vec![main_module, widget],
+            references: Vec::new(),
+            reference_projects: Vec::new(),
+            conditional_constants: BTreeMap::new(),
+        };
+
+        let compiled = compile_project(&manifest).expect("rewrite should compile");
+        let lowered = compiled.rewritten_source.to_ascii_lowercase();
+        assert!(
+            lowered.contains("property_get_pmr_projecta_widget_value(widget, x)"),
+            "{lowered}"
+        );
+    }
+
+    #[test]
     fn compile_project_rewrites_statement_context_non_authoritative_single_candidate_default_member_get()
      {
         let main_module = module_unit_from_source(
@@ -6860,6 +6891,35 @@ mod tests {
     }
 
     #[test]
+    fn compile_project_rejects_ambiguous_non_authoritative_no_paren_default_member_get() {
+        let main_module = module_unit_from_source(
+            "MainModule",
+            ModuleKind::Procedural,
+            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim widget As New Widget\nDim x\nx = 2\nwidget x\nEnd Sub",
+        )
+        .expect("main module parses");
+        let widget = module_unit_from_source(
+            "Widget",
+            ModuleKind::Class,
+            "Attribute VB_Name = \"Widget\"\nPublic Property Get Value(ByVal index)\nValue = index\nEnd Property\nPublic Property Get Observe(ByVal index)\nObserve = index + 1\nEnd Property",
+        )
+        .expect("widget module parses");
+        let manifest = ProjectManifest {
+            project_name: "ProjectA".to_string(),
+            project_kind: ProjectKind::Source,
+            modules: vec![main_module, widget],
+            references: Vec::new(),
+            reference_projects: Vec::new(),
+            conditional_constants: BTreeMap::new(),
+        };
+
+        let err = compile_project(&manifest)
+            .expect_err("ambiguous non-authoritative no-paren default-member getter should fail");
+        assert_eq!(err.code(), "PMR-E-DEFAULT-MEMBER-RESOLUTION-AMBIGUOUS");
+        assert!(err.to_string().contains("widget"));
+    }
+
+    #[test]
     fn compile_project_rejects_ambiguous_non_authoritative_statement_context_default_member_get() {
         let main_module = module_unit_from_source(
             "MainModule",
@@ -7275,6 +7335,35 @@ mod tests {
         let err = compile_project(&manifest).expect_err(
             "missing parenthesized non-authoritative call-statement default-member getter should fail",
         );
+        assert_eq!(err.code(), "PMR-E-DEFAULT-MEMBER-RESOLUTION-MISSING");
+        assert!(err.to_string().contains("widget"));
+    }
+
+    #[test]
+    fn compile_project_rejects_missing_non_authoritative_no_paren_default_member_get() {
+        let main_module = module_unit_from_source(
+            "MainModule",
+            ModuleKind::Procedural,
+            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim widget As New Widget\nDim x\nx = 2\nwidget x\nEnd Sub",
+        )
+        .expect("main module parses");
+        let widget = module_unit_from_source(
+            "Widget",
+            ModuleKind::Class,
+            "Attribute VB_Name = \"Widget\"\nPublic Sub Touch()\nEnd Sub",
+        )
+        .expect("widget module parses");
+        let manifest = ProjectManifest {
+            project_name: "ProjectA".to_string(),
+            project_kind: ProjectKind::Source,
+            modules: vec![main_module, widget],
+            references: Vec::new(),
+            reference_projects: Vec::new(),
+            conditional_constants: BTreeMap::new(),
+        };
+
+        let err = compile_project(&manifest)
+            .expect_err("missing non-authoritative no-paren default-member getter should fail");
         assert_eq!(err.code(), "PMR-E-DEFAULT-MEMBER-RESOLUTION-MISSING");
         assert!(err.to_string().contains("widget"));
     }

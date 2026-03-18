@@ -2535,6 +2535,44 @@ mod tests {
     }
 
     #[test]
+    fn formal_pmr_ambiguous_non_authoritative_no_paren_default_member_get_fails_at_compile_time() {
+        let engine = Engine::new(HostConfig::default());
+        let main_module = module_unit_from_source(
+            "MainModule",
+            ModuleKind::Procedural,
+            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim widget As New Widget\nDim x\nx = 2\nwidget x\nEnd Sub",
+        )
+        .expect("main module should parse");
+        let widget = module_unit_from_source(
+            "Widget",
+            ModuleKind::Class,
+            "Attribute VB_Name = \"Widget\"\nPublic Property Get Value(ByVal index)\nValue = index\nEnd Property\nPublic Property Get Observe(ByVal index)\nObserve = index + 1\nEnd Property",
+        )
+        .expect("widget module should parse");
+        let manifest = ProjectManifest {
+            project_name: "ProjectA".to_string(),
+            project_kind: ProjectKind::Source,
+            modules: vec![main_module, widget],
+            references: Vec::new(),
+            reference_projects: Vec::new(),
+            conditional_constants: std::collections::BTreeMap::new(),
+        };
+
+        let err = engine
+            .execute_project_with_value_snapshot_phased(&manifest)
+            .expect_err(
+                "ambiguous non-authoritative no-paren getter should fail deterministically",
+            );
+        assert_eq!(err.phase(), DiagnosticPhase::CompileTime);
+        assert!(
+            err.message()
+                .contains("PMR-E-DEFAULT-MEMBER-RESOLUTION-AMBIGUOUS"),
+            "{}",
+            err.message()
+        );
+    }
+
+    #[test]
     fn formal_pmr_ambiguous_non_authoritative_statement_context_default_member_get_fails_at_compile_time()
      {
         let engine = Engine::new(HostConfig::default());
@@ -3046,6 +3084,42 @@ mod tests {
             .expect_err(
                 "missing parenthesized non-authoritative call getter should fail deterministically",
             );
+        assert_eq!(err.phase(), DiagnosticPhase::CompileTime);
+        assert!(
+            err.message()
+                .contains("PMR-E-DEFAULT-MEMBER-RESOLUTION-MISSING"),
+            "{}",
+            err.message()
+        );
+    }
+
+    #[test]
+    fn formal_pmr_missing_non_authoritative_no_paren_default_member_get_fails_at_compile_time() {
+        let engine = Engine::new(HostConfig::default());
+        let main_module = module_unit_from_source(
+            "MainModule",
+            ModuleKind::Procedural,
+            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim widget As New Widget\nDim x\nx = 2\nwidget x\nEnd Sub",
+        )
+        .expect("main module should parse");
+        let widget = module_unit_from_source(
+            "Widget",
+            ModuleKind::Class,
+            "Attribute VB_Name = \"Widget\"\nPublic Sub Touch()\nEnd Sub",
+        )
+        .expect("widget module should parse");
+        let manifest = ProjectManifest {
+            project_name: "ProjectA".to_string(),
+            project_kind: ProjectKind::Source,
+            modules: vec![main_module, widget],
+            references: Vec::new(),
+            reference_projects: Vec::new(),
+            conditional_constants: std::collections::BTreeMap::new(),
+        };
+
+        let err = engine
+            .execute_project_with_value_snapshot_phased(&manifest)
+            .expect_err("missing non-authoritative no-paren getter should fail deterministically");
         assert_eq!(err.phase(), DiagnosticPhase::CompileTime);
         assert!(
             err.message()
@@ -4622,6 +4696,46 @@ mod tests {
             "Widget",
             ModuleKind::Class,
             "Attribute VB_Name = \"Widget\"\nPublic Property Get Value(ByRef index)\nindex = index + 7\nValue = index\nEnd Property\nAttribute Value.VB_UserMemId = 0",
+        )
+        .expect("widget module should parse");
+        let manifest = ProjectManifest {
+            project_name: "ProjectA".to_string(),
+            project_kind: ProjectKind::Source,
+            modules: vec![main_module, widget],
+            references: Vec::new(),
+            reference_projects: Vec::new(),
+            conditional_constants: std::collections::BTreeMap::new(),
+        };
+
+        let compiled = oxvba_compiler::compile_project(&manifest).expect("compile should succeed");
+        let lowered = compiled.rewritten_source.to_ascii_lowercase();
+        assert!(
+            lowered.contains("property_get_pmr_projecta_widget_value(widget, x)"),
+            "{lowered}"
+        );
+
+        let snapshot = engine
+            .execute_project_with_value_snapshot_phased(&manifest)
+            .expect("project execution should succeed");
+        assert_eq!(snapshot[0], RuntimeValue::I32(1));
+        assert_eq!(snapshot[1], RuntimeValue::I32(9));
+        assert_eq!(snapshot[2], RuntimeValue::I32(9));
+    }
+
+    #[test]
+    fn formal_pmr_no_paren_call_non_authoritative_single_candidate_default_member_get_executes_end_to_end()
+     {
+        let engine = Engine::new(HostConfig::default());
+        let main_module = module_unit_from_source(
+            "MainModule",
+            ModuleKind::Procedural,
+            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim widget As New Widget\nDim x\nDim afterValue\nx = 2\nwidget x\nafterValue = x\nEnd Sub",
+        )
+        .expect("main module should parse");
+        let widget = module_unit_from_source(
+            "Widget",
+            ModuleKind::Class,
+            "Attribute VB_Name = \"Widget\"\nPublic Property Get Value(ByRef index)\nindex = index + 7\nValue = index\nEnd Property",
         )
         .expect("widget module should parse");
         let manifest = ProjectManifest {

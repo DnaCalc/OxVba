@@ -101,9 +101,9 @@ Already evidenced in the repo today:
 - authoritative statement-context, `Call`, zero-arg parenthesized, and no-parentheses-argument getter routes for the proven native subset
 - bounded explicit `Set` / `Let` preservation through native PMR/default-member read-assignment rewrites
 - bounded `CreateObject(...)` assignment-intent proof surface for explicit `Set`, explicit `Let`, and implicit assignment on current typed `Object` / `Variant` / scalar target lanes
-- non-authoritative single-visible-candidate native default-member fallback for scalar/indexed `Get` / `Let` / `Set`, statement-context getters, explicit `Call` getters, bounded explicit `Set` / `Let` read-assignment, and parenthesized zero-arg getter/read-assignment neighbors where already landed
-- non-authoritative ambiguous native default-member getter / let-assignment / property-set diagnostics via `PMR-E-DEFAULT-MEMBER-RESOLUTION-AMBIGUOUS` across scalar/indexed read-assignment plus statement-context, explicit `Call`, and zero-arg parenthesized getter contexts where applicable
-- non-authoritative missing native default-member getter / let-assignment / property-set diagnostics via `PMR-E-DEFAULT-MEMBER-RESOLUTION-MISSING` across scalar/indexed read-assignment plus statement-context, explicit `Call`, zero-arg parenthesized getter, and indexed `Property Set` contexts where applicable
+- non-authoritative single-visible-candidate native default-member fallback for scalar/indexed `Get` / `Let` / `Set`, statement-context getters, explicit `Call` getters, no-parentheses-argument getters, bounded explicit `Set` / `Let` read-assignment, and parenthesized zero-arg getter/read-assignment neighbors where already landed
+- non-authoritative ambiguous native default-member getter / let-assignment / property-set diagnostics via `PMR-E-DEFAULT-MEMBER-RESOLUTION-AMBIGUOUS` across scalar/indexed read-assignment plus statement-context, explicit `Call`, no-parentheses-argument, and zero-arg parenthesized getter contexts where applicable
+- non-authoritative missing native default-member getter / let-assignment / property-set diagnostics via `PMR-E-DEFAULT-MEMBER-RESOLUTION-MISSING` across scalar/indexed read-assignment plus statement-context, explicit `Call`, no-parentheses-argument, zero-arg parenthesized getter, and indexed `Property Set` contexts where applicable
 
 ## Remaining checklist by closure domain
 
@@ -126,7 +126,7 @@ Already evidenced in the repo today:
 - [ ] Enumerate every native PMR/default-member getter syntax form and mark it `proved-exec` or `proved-diagnostic`.
 - [ ] Verify no silent fallthrough remains for unsupported syntax forms.
 - [ ] Sweep parenthesized/indexed/default-member combinations still only implied by adjacent lanes.
-- [ ] Sweep no-parentheses-argument forms against authoritative and non-authoritative receivers separately.
+- [x] Sweep no-parentheses-argument forms against authoritative and non-authoritative receivers separately.
 - [ ] Record any Office-observed divergence before widening semantics.
 
 ### C. `Set` vs `Let` intent parity
@@ -190,8 +190,8 @@ First checklist-driven target:
 - Landed in the first slice:
   - native non-authoritative default-member `no viable candidate` now fails deterministically with `PMR-E-DEFAULT-MEMBER-RESOLUTION-MISSING`
   - compiler + host evidence exists for scalar/indexed getter, scalar/indexed `Let`, and scalar/indexed `Property Set`
-  - compiler + host evidence also exists for statement-context and explicit `Call` getter forms in scalar/indexed shape plus the zero-arg parenthesized getter neighbors
-  - compiler + host evidence now also exists for ambiguous scalar/indexed getter, `Let`, and `Property Set` diagnostics across read-assignment plus statement-context, explicit `Call`, and zero-arg parenthesized getter contexts where applicable
+  - compiler + host evidence also exists for statement-context, explicit `Call`, and no-parentheses-argument getter forms in scalar/indexed shape plus the zero-arg parenthesized getter neighbors
+  - compiler + host evidence now also exists for ambiguous scalar/indexed getter, `Let`, and `Property Set` diagnostics across read-assignment plus statement-context, explicit `Call`, no-parentheses-argument, and zero-arg parenthesized getter contexts where applicable
 - Next unresolved neighbors:
-  - broader call-vs-value syntax enumeration, especially remaining no-parentheses-argument and receiver-mode distinctions
+  - broader call-vs-value syntax enumeration, especially any remaining silent-fallthrough or receiver-mode distinctions outside the now-proved no-parentheses subset
   - broader `Set` vs `Let` source-target sweep
