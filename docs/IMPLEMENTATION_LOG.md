@@ -1,3 +1,13 @@
+## 2026-03-18 - Expanded missing and ambiguous non-authoritative default-member evidence
+
+- Continued execution from [WORKSET_2026-03-18_IP-02_EXECUTION_CHECKLIST.md](C:\Work\DnaCalc\OxVba\docs\worksets\WORKSET_2026-03-18_IP-02_EXECUTION_CHECKLIST.md) and widened direct proof for the already-landed non-authoritative diagnostic surface instead of introducing new semantics.
+- Added compiler and host phased evidence proving bounded native non-authoritative default-member diagnostics now also hold for:
+  - indexed `Let` assignment in both missing and ambiguous form: `widget(x) = 9`,
+  - ambiguous indexed getter and indexed `Property Set`,
+  - ambiguous statement-context and explicit `Call` getter forms in scalar, indexed, and zero-arg parenthesized shape,
+  - missing statement-context and explicit `Call` zero-arg parenthesized getter forms: `widget()` and `Call widget()`.
+- `IP-02` remains `in-progress`: this closes more bounded diagnostic neighbors on the active checklist, but broader call-vs-value syntax closure and broader `Set` vs `Let` parity remain open.
+
 ## 2026-03-18 - Added indexed property-set evidence for missing non-authoritative default-member diagnostics
 
 - Continued execution from [WORKSET_2026-03-18_IP-02_EXECUTION_CHECKLIST.md](C:\Work\DnaCalc\OxVba\docs\worksets\WORKSET_2026-03-18_IP-02_EXECUTION_CHECKLIST.md) and extended direct proof for the already-landed `PMR-E-DEFAULT-MEMBER-RESOLUTION-MISSING` path onto the indexed default-member `Property Set` neighbor.

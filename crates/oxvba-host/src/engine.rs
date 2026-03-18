@@ -2273,6 +2273,42 @@ mod tests {
     }
 
     #[test]
+    fn formal_pmr_ambiguous_non_authoritative_indexed_default_member_let_fails_at_compile_time() {
+        let engine = Engine::new(HostConfig::default());
+        let main_module = module_unit_from_source(
+            "MainModule",
+            ModuleKind::Procedural,
+            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim widget As New Widget\nDim x\nx = 2\nwidget(x) = 9\nEnd Sub",
+        )
+        .expect("main module should parse");
+        let widget = module_unit_from_source(
+            "Widget",
+            ModuleKind::Class,
+            "Attribute VB_Name = \"Widget\"\nPublic Property Let Value(ByVal index, ByVal n)\nEnd Property\nPublic Property Let Observe(ByVal index, ByVal n)\nEnd Property",
+        )
+        .expect("widget module should parse");
+        let manifest = ProjectManifest {
+            project_name: "ProjectA".to_string(),
+            project_kind: ProjectKind::Source,
+            modules: vec![main_module, widget],
+            references: Vec::new(),
+            reference_projects: Vec::new(),
+            conditional_constants: std::collections::BTreeMap::new(),
+        };
+
+        let err = engine
+            .execute_project_with_value_snapshot_phased(&manifest)
+            .expect_err("ambiguous indexed non-authoritative let should fail deterministically");
+        assert_eq!(err.phase(), DiagnosticPhase::CompileTime);
+        assert!(
+            err.message()
+                .contains("PMR-E-DEFAULT-MEMBER-RESOLUTION-AMBIGUOUS"),
+            "{}",
+            err.message()
+        );
+    }
+
+    #[test]
     fn formal_pmr_ambiguous_non_authoritative_default_member_property_set_fails_at_compile_time() {
         let engine = Engine::new(HostConfig::default());
         let main_module = module_unit_from_source(
@@ -2299,6 +2335,307 @@ mod tests {
         let err = engine
             .execute_project_with_value_snapshot_phased(&manifest)
             .expect_err("ambiguous non-authoritative property set should fail deterministically");
+        assert_eq!(err.phase(), DiagnosticPhase::CompileTime);
+        assert!(
+            err.message()
+                .contains("PMR-E-DEFAULT-MEMBER-RESOLUTION-AMBIGUOUS"),
+            "{}",
+            err.message()
+        );
+    }
+
+    #[test]
+    fn formal_pmr_ambiguous_non_authoritative_indexed_default_member_get_fails_at_compile_time() {
+        let engine = Engine::new(HostConfig::default());
+        let main_module = module_unit_from_source(
+            "MainModule",
+            ModuleKind::Procedural,
+            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim widget As New Widget\nDim x\nDim valueOut\nx = 2\nvalueOut = widget(x)\nEnd Sub",
+        )
+        .expect("main module should parse");
+        let widget = module_unit_from_source(
+            "Widget",
+            ModuleKind::Class,
+            "Attribute VB_Name = \"Widget\"\nPublic Property Get Value(ByVal index)\nValue = index\nEnd Property\nPublic Property Get Observe(ByVal index)\nObserve = index + 1\nEnd Property",
+        )
+        .expect("widget module should parse");
+        let manifest = ProjectManifest {
+            project_name: "ProjectA".to_string(),
+            project_kind: ProjectKind::Source,
+            modules: vec![main_module, widget],
+            references: Vec::new(),
+            reference_projects: Vec::new(),
+            conditional_constants: std::collections::BTreeMap::new(),
+        };
+
+        let err = engine
+            .execute_project_with_value_snapshot_phased(&manifest)
+            .expect_err(
+                "ambiguous indexed non-authoritative fallback should fail deterministically",
+            );
+        assert_eq!(err.phase(), DiagnosticPhase::CompileTime);
+        assert!(
+            err.message()
+                .contains("PMR-E-DEFAULT-MEMBER-RESOLUTION-AMBIGUOUS"),
+            "{}",
+            err.message()
+        );
+    }
+
+    #[test]
+    fn formal_pmr_ambiguous_non_authoritative_indexed_default_member_property_set_fails_at_compile_time()
+     {
+        let engine = Engine::new(HostConfig::default());
+        let main_module = module_unit_from_source(
+            "MainModule",
+            ModuleKind::Procedural,
+            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim widget As New Widget\nDim x\nx = 2\nSet widget(1) = x\nEnd Sub",
+        )
+        .expect("main module should parse");
+        let widget = module_unit_from_source(
+            "Widget",
+            ModuleKind::Class,
+            "Attribute VB_Name = \"Widget\"\nPublic Property Set Value(ByVal index, ByRef target)\nEnd Property\nPublic Property Set Observe(ByVal index, ByRef target)\nEnd Property",
+        )
+        .expect("widget module should parse");
+        let manifest = ProjectManifest {
+            project_name: "ProjectA".to_string(),
+            project_kind: ProjectKind::Source,
+            modules: vec![main_module, widget],
+            references: Vec::new(),
+            reference_projects: Vec::new(),
+            conditional_constants: std::collections::BTreeMap::new(),
+        };
+
+        let err = engine
+            .execute_project_with_value_snapshot_phased(&manifest)
+            .expect_err(
+                "ambiguous indexed non-authoritative property set should fail deterministically",
+            );
+        assert_eq!(err.phase(), DiagnosticPhase::CompileTime);
+        assert!(
+            err.message()
+                .contains("PMR-E-DEFAULT-MEMBER-RESOLUTION-AMBIGUOUS"),
+            "{}",
+            err.message()
+        );
+    }
+
+    #[test]
+    fn formal_pmr_ambiguous_non_authoritative_call_statement_default_member_get_fails_at_compile_time()
+     {
+        let engine = Engine::new(HostConfig::default());
+        let main_module = module_unit_from_source(
+            "MainModule",
+            ModuleKind::Procedural,
+            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim widget As New Widget\nCall widget\nEnd Sub",
+        )
+        .expect("main module should parse");
+        let widget = module_unit_from_source(
+            "Widget",
+            ModuleKind::Class,
+            "Attribute VB_Name = \"Widget\"\nPublic Property Get Value()\nValue = 1\nEnd Property\nPublic Property Get Observe()\nObserve = 2\nEnd Property",
+        )
+        .expect("widget module should parse");
+        let manifest = ProjectManifest {
+            project_name: "ProjectA".to_string(),
+            project_kind: ProjectKind::Source,
+            modules: vec![main_module, widget],
+            references: Vec::new(),
+            reference_projects: Vec::new(),
+            conditional_constants: std::collections::BTreeMap::new(),
+        };
+
+        let err = engine
+            .execute_project_with_value_snapshot_phased(&manifest)
+            .expect_err("ambiguous non-authoritative call getter should fail deterministically");
+        assert_eq!(err.phase(), DiagnosticPhase::CompileTime);
+        assert!(
+            err.message()
+                .contains("PMR-E-DEFAULT-MEMBER-RESOLUTION-AMBIGUOUS"),
+            "{}",
+            err.message()
+        );
+    }
+
+    #[test]
+    fn formal_pmr_ambiguous_non_authoritative_call_statement_indexed_default_member_get_fails_at_compile_time()
+     {
+        let engine = Engine::new(HostConfig::default());
+        let main_module = module_unit_from_source(
+            "MainModule",
+            ModuleKind::Procedural,
+            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim widget As New Widget\nDim x\nx = 2\nCall widget(x)\nEnd Sub",
+        )
+        .expect("main module should parse");
+        let widget = module_unit_from_source(
+            "Widget",
+            ModuleKind::Class,
+            "Attribute VB_Name = \"Widget\"\nPublic Property Get Value(ByVal index)\nValue = index\nEnd Property\nPublic Property Get Observe(ByVal index)\nObserve = index + 1\nEnd Property",
+        )
+        .expect("widget module should parse");
+        let manifest = ProjectManifest {
+            project_name: "ProjectA".to_string(),
+            project_kind: ProjectKind::Source,
+            modules: vec![main_module, widget],
+            references: Vec::new(),
+            reference_projects: Vec::new(),
+            conditional_constants: std::collections::BTreeMap::new(),
+        };
+
+        let err = engine
+            .execute_project_with_value_snapshot_phased(&manifest)
+            .expect_err(
+                "ambiguous indexed non-authoritative call getter should fail deterministically",
+            );
+        assert_eq!(err.phase(), DiagnosticPhase::CompileTime);
+        assert!(
+            err.message()
+                .contains("PMR-E-DEFAULT-MEMBER-RESOLUTION-AMBIGUOUS"),
+            "{}",
+            err.message()
+        );
+    }
+
+    #[test]
+    fn formal_pmr_ambiguous_non_authoritative_call_statement_parenthesized_default_member_get_fails_at_compile_time()
+     {
+        let engine = Engine::new(HostConfig::default());
+        let main_module = module_unit_from_source(
+            "MainModule",
+            ModuleKind::Procedural,
+            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim widget As New Widget\nCall widget()\nEnd Sub",
+        )
+        .expect("main module should parse");
+        let widget = module_unit_from_source(
+            "Widget",
+            ModuleKind::Class,
+            "Attribute VB_Name = \"Widget\"\nPublic Property Get Value()\nValue = 1\nEnd Property\nPublic Property Get Observe()\nObserve = 2\nEnd Property",
+        )
+        .expect("widget module should parse");
+        let manifest = ProjectManifest {
+            project_name: "ProjectA".to_string(),
+            project_kind: ProjectKind::Source,
+            modules: vec![main_module, widget],
+            references: Vec::new(),
+            reference_projects: Vec::new(),
+            conditional_constants: std::collections::BTreeMap::new(),
+        };
+
+        let err = engine.execute_project_with_value_snapshot_phased(&manifest).expect_err(
+            "ambiguous parenthesized non-authoritative call getter should fail deterministically",
+        );
+        assert_eq!(err.phase(), DiagnosticPhase::CompileTime);
+        assert!(
+            err.message()
+                .contains("PMR-E-DEFAULT-MEMBER-RESOLUTION-AMBIGUOUS"),
+            "{}",
+            err.message()
+        );
+    }
+
+    #[test]
+    fn formal_pmr_ambiguous_non_authoritative_statement_context_default_member_get_fails_at_compile_time()
+     {
+        let engine = Engine::new(HostConfig::default());
+        let main_module = module_unit_from_source(
+            "MainModule",
+            ModuleKind::Procedural,
+            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim widget As New Widget\nwidget\nEnd Sub",
+        )
+        .expect("main module should parse");
+        let widget = module_unit_from_source(
+            "Widget",
+            ModuleKind::Class,
+            "Attribute VB_Name = \"Widget\"\nPublic Property Get Value()\nValue = 1\nEnd Property\nPublic Property Get Observe()\nObserve = 2\nEnd Property",
+        )
+        .expect("widget module should parse");
+        let manifest = ProjectManifest {
+            project_name: "ProjectA".to_string(),
+            project_kind: ProjectKind::Source,
+            modules: vec![main_module, widget],
+            references: Vec::new(),
+            reference_projects: Vec::new(),
+            conditional_constants: std::collections::BTreeMap::new(),
+        };
+
+        let err = engine.execute_project_with_value_snapshot_phased(&manifest).expect_err(
+            "ambiguous non-authoritative statement-context getter should fail deterministically",
+        );
+        assert_eq!(err.phase(), DiagnosticPhase::CompileTime);
+        assert!(
+            err.message()
+                .contains("PMR-E-DEFAULT-MEMBER-RESOLUTION-AMBIGUOUS"),
+            "{}",
+            err.message()
+        );
+    }
+
+    #[test]
+    fn formal_pmr_ambiguous_non_authoritative_statement_context_indexed_default_member_get_fails_at_compile_time()
+     {
+        let engine = Engine::new(HostConfig::default());
+        let main_module = module_unit_from_source(
+            "MainModule",
+            ModuleKind::Procedural,
+            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim widget As New Widget\nDim x\nx = 2\nwidget(x)\nEnd Sub",
+        )
+        .expect("main module should parse");
+        let widget = module_unit_from_source(
+            "Widget",
+            ModuleKind::Class,
+            "Attribute VB_Name = \"Widget\"\nPublic Property Get Value(ByVal index)\nValue = index\nEnd Property\nPublic Property Get Observe(ByVal index)\nObserve = index + 1\nEnd Property",
+        )
+        .expect("widget module should parse");
+        let manifest = ProjectManifest {
+            project_name: "ProjectA".to_string(),
+            project_kind: ProjectKind::Source,
+            modules: vec![main_module, widget],
+            references: Vec::new(),
+            reference_projects: Vec::new(),
+            conditional_constants: std::collections::BTreeMap::new(),
+        };
+
+        let err = engine.execute_project_with_value_snapshot_phased(&manifest).expect_err(
+            "ambiguous indexed non-authoritative statement-context getter should fail deterministically",
+        );
+        assert_eq!(err.phase(), DiagnosticPhase::CompileTime);
+        assert!(
+            err.message()
+                .contains("PMR-E-DEFAULT-MEMBER-RESOLUTION-AMBIGUOUS"),
+            "{}",
+            err.message()
+        );
+    }
+
+    #[test]
+    fn formal_pmr_ambiguous_non_authoritative_statement_context_parenthesized_default_member_get_fails_at_compile_time()
+     {
+        let engine = Engine::new(HostConfig::default());
+        let main_module = module_unit_from_source(
+            "MainModule",
+            ModuleKind::Procedural,
+            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim widget As New Widget\nwidget()\nEnd Sub",
+        )
+        .expect("main module should parse");
+        let widget = module_unit_from_source(
+            "Widget",
+            ModuleKind::Class,
+            "Attribute VB_Name = \"Widget\"\nPublic Property Get Value()\nValue = 1\nEnd Property\nPublic Property Get Observe()\nObserve = 2\nEnd Property",
+        )
+        .expect("widget module should parse");
+        let manifest = ProjectManifest {
+            project_name: "ProjectA".to_string(),
+            project_kind: ProjectKind::Source,
+            modules: vec![main_module, widget],
+            references: Vec::new(),
+            reference_projects: Vec::new(),
+            conditional_constants: std::collections::BTreeMap::new(),
+        };
+
+        let err = engine.execute_project_with_value_snapshot_phased(&manifest).expect_err(
+            "ambiguous parenthesized non-authoritative statement-context getter should fail deterministically",
+        );
         assert_eq!(err.phase(), DiagnosticPhase::CompileTime);
         assert!(
             err.message()
@@ -2371,6 +2708,42 @@ mod tests {
         let err = engine
             .execute_project_with_value_snapshot_phased(&manifest)
             .expect_err("missing non-authoritative let should fail deterministically");
+        assert_eq!(err.phase(), DiagnosticPhase::CompileTime);
+        assert!(
+            err.message()
+                .contains("PMR-E-DEFAULT-MEMBER-RESOLUTION-MISSING"),
+            "{}",
+            err.message()
+        );
+    }
+
+    #[test]
+    fn formal_pmr_missing_non_authoritative_indexed_default_member_let_fails_at_compile_time() {
+        let engine = Engine::new(HostConfig::default());
+        let main_module = module_unit_from_source(
+            "MainModule",
+            ModuleKind::Procedural,
+            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim widget As New Widget\nDim x\nx = 2\nwidget(x) = 9\nEnd Sub",
+        )
+        .expect("main module should parse");
+        let widget = module_unit_from_source(
+            "Widget",
+            ModuleKind::Class,
+            "Attribute VB_Name = \"Widget\"\nPublic Property Get Value(ByVal index)\nValue = index\nEnd Property",
+        )
+        .expect("widget module should parse");
+        let manifest = ProjectManifest {
+            project_name: "ProjectA".to_string(),
+            project_kind: ProjectKind::Source,
+            modules: vec![main_module, widget],
+            references: Vec::new(),
+            reference_projects: Vec::new(),
+            conditional_constants: std::collections::BTreeMap::new(),
+        };
+
+        let err = engine
+            .execute_project_with_value_snapshot_phased(&manifest)
+            .expect_err("missing indexed non-authoritative let should fail deterministically");
         assert_eq!(err.phase(), DiagnosticPhase::CompileTime);
         assert!(
             err.message()
@@ -2633,6 +3006,82 @@ mod tests {
 
         let err = engine.execute_project_with_value_snapshot_phased(&manifest).expect_err(
             "missing non-authoritative indexed statement-context getter should fail deterministically",
+        );
+        assert_eq!(err.phase(), DiagnosticPhase::CompileTime);
+        assert!(
+            err.message()
+                .contains("PMR-E-DEFAULT-MEMBER-RESOLUTION-MISSING"),
+            "{}",
+            err.message()
+        );
+    }
+
+    #[test]
+    fn formal_pmr_missing_non_authoritative_call_statement_parenthesized_default_member_get_fails_at_compile_time()
+     {
+        let engine = Engine::new(HostConfig::default());
+        let main_module = module_unit_from_source(
+            "MainModule",
+            ModuleKind::Procedural,
+            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim widget As New Widget\nCall widget()\nEnd Sub",
+        )
+        .expect("main module should parse");
+        let widget = module_unit_from_source(
+            "Widget",
+            ModuleKind::Class,
+            "Attribute VB_Name = \"Widget\"\nPublic Sub Touch()\nEnd Sub",
+        )
+        .expect("widget module should parse");
+        let manifest = ProjectManifest {
+            project_name: "ProjectA".to_string(),
+            project_kind: ProjectKind::Source,
+            modules: vec![main_module, widget],
+            references: Vec::new(),
+            reference_projects: Vec::new(),
+            conditional_constants: std::collections::BTreeMap::new(),
+        };
+
+        let err = engine
+            .execute_project_with_value_snapshot_phased(&manifest)
+            .expect_err(
+                "missing parenthesized non-authoritative call getter should fail deterministically",
+            );
+        assert_eq!(err.phase(), DiagnosticPhase::CompileTime);
+        assert!(
+            err.message()
+                .contains("PMR-E-DEFAULT-MEMBER-RESOLUTION-MISSING"),
+            "{}",
+            err.message()
+        );
+    }
+
+    #[test]
+    fn formal_pmr_missing_non_authoritative_statement_context_parenthesized_default_member_get_fails_at_compile_time()
+     {
+        let engine = Engine::new(HostConfig::default());
+        let main_module = module_unit_from_source(
+            "MainModule",
+            ModuleKind::Procedural,
+            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim widget As New Widget\nwidget()\nEnd Sub",
+        )
+        .expect("main module should parse");
+        let widget = module_unit_from_source(
+            "Widget",
+            ModuleKind::Class,
+            "Attribute VB_Name = \"Widget\"\nPublic Sub Touch()\nEnd Sub",
+        )
+        .expect("widget module should parse");
+        let manifest = ProjectManifest {
+            project_name: "ProjectA".to_string(),
+            project_kind: ProjectKind::Source,
+            modules: vec![main_module, widget],
+            references: Vec::new(),
+            reference_projects: Vec::new(),
+            conditional_constants: std::collections::BTreeMap::new(),
+        };
+
+        let err = engine.execute_project_with_value_snapshot_phased(&manifest).expect_err(
+            "missing parenthesized non-authoritative statement-context getter should fail deterministically",
         );
         assert_eq!(err.phase(), DiagnosticPhase::CompileTime);
         assert!(

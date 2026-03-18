@@ -102,7 +102,8 @@ Already evidenced in the repo today:
 - bounded explicit `Set` / `Let` preservation through native PMR/default-member read-assignment rewrites
 - bounded `CreateObject(...)` assignment-intent proof surface for explicit `Set`, explicit `Let`, and implicit assignment on current typed `Object` / `Variant` / scalar target lanes
 - non-authoritative single-visible-candidate native default-member fallback for scalar/indexed `Get` / `Let` / `Set`, statement-context getters, explicit `Call` getters, bounded explicit `Set` / `Let` read-assignment, and parenthesized zero-arg getter/read-assignment neighbors where already landed
-- non-authoritative ambiguous native default-member getter / let-assignment / property-set diagnostics via `PMR-E-DEFAULT-MEMBER-RESOLUTION-AMBIGUOUS`
+- non-authoritative ambiguous native default-member getter / let-assignment / property-set diagnostics via `PMR-E-DEFAULT-MEMBER-RESOLUTION-AMBIGUOUS` across scalar/indexed read-assignment plus statement-context, explicit `Call`, and zero-arg parenthesized getter contexts where applicable
+- non-authoritative missing native default-member getter / let-assignment / property-set diagnostics via `PMR-E-DEFAULT-MEMBER-RESOLUTION-MISSING` across scalar/indexed read-assignment plus statement-context, explicit `Call`, zero-arg parenthesized getter, and indexed `Property Set` contexts where applicable
 
 ## Remaining checklist by closure domain
 
@@ -111,13 +112,14 @@ Already evidenced in the repo today:
 - [x] Add deterministic `no viable candidate` diagnostics for native non-authoritative default-member use instead of silent rewrite escape.
 - [x] Prove scalar getter `no viable candidate` behavior.
 - [x] Prove indexed getter `no viable candidate` behavior.
-- [x] Prove `Let` assignment `no viable candidate` behavior.
+- [x] Prove scalar and indexed `Let` assignment `no viable candidate` behavior.
 - [x] Prove `Property Set` `no viable candidate` behavior.
 - [x] Prove indexed `Property Set` `no viable candidate` behavior.
 - [x] Prove statement-context getter `no viable candidate` behavior.
 - [x] Prove explicit `Call` getter `no viable candidate` behavior.
-- [ ] Decide and prove indexed ambiguous lanes where not already locked.
-- [ ] Decide and prove call/statement/parenthesized ambiguity neighbors where not already locked.
+- [x] Prove zero-arg parenthesized statement/`Call` getter `no viable candidate` behavior.
+- [x] Decide and prove indexed ambiguous lanes where not already locked.
+- [x] Decide and prove call/statement/parenthesized ambiguity neighbors where not already locked.
 
 ### B. Call-vs-value parity
 
@@ -187,8 +189,9 @@ First checklist-driven target:
 
 - Landed in the first slice:
   - native non-authoritative default-member `no viable candidate` now fails deterministically with `PMR-E-DEFAULT-MEMBER-RESOLUTION-MISSING`
-  - compiler + host evidence exists for scalar getter / indexed getter / scalar `Let` / scalar and indexed `Property Set`
-  - compiler + host evidence also exists for statement-context and explicit `Call` getter forms in both scalar and indexed shape
+  - compiler + host evidence exists for scalar/indexed getter, scalar/indexed `Let`, and scalar/indexed `Property Set`
+  - compiler + host evidence also exists for statement-context and explicit `Call` getter forms in scalar/indexed shape plus the zero-arg parenthesized getter neighbors
+  - compiler + host evidence now also exists for ambiguous scalar/indexed getter, `Let`, and `Property Set` diagnostics across read-assignment plus statement-context, explicit `Call`, and zero-arg parenthesized getter contexts where applicable
 - Next unresolved neighbors:
-  - call/statement/parenthesized ambiguity neighbors
+  - broader call-vs-value syntax enumeration, especially remaining no-parentheses-argument and receiver-mode distinctions
   - broader `Set` vs `Let` source-target sweep
