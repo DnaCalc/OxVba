@@ -6767,6 +6767,36 @@ mod tests {
     }
 
     #[test]
+    fn compile_project_rejects_missing_non_authoritative_indexed_default_member_property_set() {
+        let main_module = module_unit_from_source(
+            "MainModule",
+            ModuleKind::Procedural,
+            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim widget As New Widget\nDim x\nx = 2\nSet widget(1) = x\nEnd Sub",
+        )
+        .expect("main module parses");
+        let widget = module_unit_from_source(
+            "Widget",
+            ModuleKind::Class,
+            "Attribute VB_Name = \"Widget\"\nPublic Property Get Value()\nValue = 1\nEnd Property",
+        )
+        .expect("widget module parses");
+        let manifest = ProjectManifest {
+            project_name: "ProjectA".to_string(),
+            project_kind: ProjectKind::Source,
+            modules: vec![main_module, widget],
+            references: Vec::new(),
+            reference_projects: Vec::new(),
+            conditional_constants: BTreeMap::new(),
+        };
+
+        let err = compile_project(&manifest).expect_err(
+            "missing non-authoritative indexed default-member property set should fail",
+        );
+        assert_eq!(err.code(), "PMR-E-DEFAULT-MEMBER-RESOLUTION-MISSING");
+        assert!(err.to_string().contains("widget"));
+    }
+
+    #[test]
     fn compile_project_rejects_missing_non_authoritative_indexed_default_member_get() {
         let main_module = module_unit_from_source(
             "MainModule",

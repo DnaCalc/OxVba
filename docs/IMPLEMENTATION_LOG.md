@@ -1,3 +1,9 @@
+## 2026-03-18 - Added indexed property-set evidence for missing non-authoritative default-member diagnostics
+
+- Continued execution from [WORKSET_2026-03-18_IP-02_EXECUTION_CHECKLIST.md](C:\Work\DnaCalc\OxVba\docs\worksets\WORKSET_2026-03-18_IP-02_EXECUTION_CHECKLIST.md) and extended direct proof for the already-landed `PMR-E-DEFAULT-MEMBER-RESOLUTION-MISSING` path onto the indexed default-member `Property Set` neighbor.
+- Added compiler and host phased evidence proving `Set widget(1) = x` now fails deterministically at compile time when a native internal-class receiver has no authoritative default-member metadata and no visible `Property Set` candidate of the requested kind exists.
+- `IP-02` remains `in-progress`: this closes the bounded indexed property-set missing-candidate neighbor, but broader ambiguity neighbors, broader `Set` vs `Let` intent parity, and wider Office-style call-vs-value parity still remain open.
+
 ## 2026-03-18 - Expanded missing non-authoritative default-member evidence across getter contexts
 
 - Continued execution from [WORKSET_2026-03-18_IP-02_EXECUTION_CHECKLIST.md](C:\Work\DnaCalc\OxVba\docs\worksets\WORKSET_2026-03-18_IP-02_EXECUTION_CHECKLIST.md) and widened proof coverage for the already-landed `PMR-E-DEFAULT-MEMBER-RESOLUTION-MISSING` path instead of introducing new semantics.

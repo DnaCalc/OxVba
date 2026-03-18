@@ -113,6 +113,7 @@ Already evidenced in the repo today:
 - [x] Prove indexed getter `no viable candidate` behavior.
 - [x] Prove `Let` assignment `no viable candidate` behavior.
 - [x] Prove `Property Set` `no viable candidate` behavior.
+- [x] Prove indexed `Property Set` `no viable candidate` behavior.
 - [x] Prove statement-context getter `no viable candidate` behavior.
 - [x] Prove explicit `Call` getter `no viable candidate` behavior.
 - [ ] Decide and prove indexed ambiguous lanes where not already locked.
@@ -186,9 +187,8 @@ First checklist-driven target:
 
 - Landed in the first slice:
   - native non-authoritative default-member `no viable candidate` now fails deterministically with `PMR-E-DEFAULT-MEMBER-RESOLUTION-MISSING`
-  - compiler + host evidence exists for scalar getter / indexed getter / scalar `Let` / scalar `Property Set`
+  - compiler + host evidence exists for scalar getter / indexed getter / scalar `Let` / scalar and indexed `Property Set`
   - compiler + host evidence also exists for statement-context and explicit `Call` getter forms in both scalar and indexed shape
 - Next unresolved neighbors:
-  - indexed `Property Set` `no viable candidate`
   - call/statement/parenthesized ambiguity neighbors
   - broader `Set` vs `Let` source-target sweep
