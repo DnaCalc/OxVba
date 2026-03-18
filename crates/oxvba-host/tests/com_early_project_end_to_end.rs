@@ -144,7 +144,7 @@ End Sub
 }
 
 #[test]
-fn early_bound_project_reports_compile_error_for_unsupported_member() {
+fn early_bound_project_reports_compile_error_for_missing_member() {
     let manifest = manifest_with_typelib(
         r#"
 Attribute VB_Name = "MainModule"
@@ -162,10 +162,10 @@ End Sub
     });
     let err = engine
         .execute_project_with_snapshot_phased(&manifest)
-        .expect_err("unsupported member should fail at compile-time");
+        .expect_err("missing member should fail at compile-time");
     assert_eq!(err.phase(), DiagnosticPhase::CompileTime);
     assert!(
-        err.message().contains("BIND-E-TYPELIB-MEMBER-UNSUPPORTED"),
+        err.message().contains("BIND-E-TYPELIB-MEMBER-NOT-FOUND"),
         "unexpected compile diagnostic: {}",
         err.message()
     );
@@ -224,6 +224,62 @@ End Sub
     assert!(
         err.message()
             .contains("BIND-E-TYPELIB-INVOKE-ARITY-UNSUPPORTED"),
+        "unexpected compile diagnostic: {}",
+        err.message()
+    );
+}
+
+#[test]
+fn early_bound_project_reports_compile_error_for_missing_default_member() {
+    let manifest = manifest_with_typelib(
+        r#"
+Attribute VB_Name = "MainModule"
+Public Sub Main()
+Dim obj As New OxVba.TestDispatchNoDefault
+Dim value
+value = obj(41)
+End Sub
+"#,
+    );
+
+    let engine = Engine::new(HostConfig {
+        enable_jit: false,
+        root_object_name: None,
+    });
+    let err = engine
+        .execute_project_with_snapshot_phased(&manifest)
+        .expect_err("missing default member should fail at compile-time");
+    assert_eq!(err.phase(), DiagnosticPhase::CompileTime);
+    assert!(
+        err.message().contains("BIND-E-TYPELIB-MEMBER-NOT-FOUND"),
+        "unexpected compile diagnostic: {}",
+        err.message()
+    );
+}
+
+#[test]
+fn early_bound_project_reports_compile_error_for_ambiguous_default_member() {
+    let manifest = manifest_with_typelib(
+        r#"
+Attribute VB_Name = "MainModule"
+Public Sub Main()
+Dim obj As New OxVba.TestDispatchAmbiguousDefault
+Dim value
+value = obj(41)
+End Sub
+"#,
+    );
+
+    let engine = Engine::new(HostConfig {
+        enable_jit: false,
+        root_object_name: None,
+    });
+    let err = engine
+        .execute_project_with_snapshot_phased(&manifest)
+        .expect_err("ambiguous default member should fail at compile-time");
+    assert_eq!(err.phase(), DiagnosticPhase::CompileTime);
+    assert!(
+        err.message().contains("BIND-E-TYPELIB-MEMBER-AMBIGUOUS"),
         "unexpected compile diagnostic: {}",
         err.message()
     );

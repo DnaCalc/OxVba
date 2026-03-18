@@ -4,4 +4,7 @@ PMR-E-TYPELIB-LIBID-AMBIGUOUS,compile-time,pmr-reference-resolution,LIBID hint r
 BIND-E-TYPELIB-QUALIFIER-UNRESOLVED,compile-time,early-bind-binder,external declaration qualifier not present in type-library references,crates/oxvba-compiler/src/project.rs
 BIND-E-TYPELIB-CREATEOBJECT-UNSUPPORTED,compile-time,early-bind-binder,As New type has no deterministic selector mapping in current subset,crates/oxvba-compiler/src/project.rs
 BIND-E-TYPELIB-MEMBER-UNSUPPORTED,compile-time,early-bind-binder,member call outside deterministic early-bind subset,crates/oxvba-compiler/src/project.rs
+BIND-E-TYPELIB-MEMBER-NOT-FOUND,compile-time,early-bind-binder,imported member or default member is absent from authoritative typelib metadata,crates/oxvba-compiler/src/project.rs
+BIND-E-TYPELIB-MEMBER-AMBIGUOUS,compile-time,early-bind-binder,imported member or default member does not resolve uniquely in authoritative typelib metadata,crates/oxvba-compiler/src/project.rs
+BIND-E-TYPELIB-MEMBER-SHAPE-UNSUPPORTED,compile-time,early-bind-binder,imported member shape is outside the supported deterministic early-bind subset,crates/oxvba-compiler/src/project.rs
 BIND-E-TYPELIB-INVOKE-ARITY-UNSUPPORTED,compile-time,early-bind-binder,member invocation arity outside current subset,crates/oxvba-compiler/src/project.rs

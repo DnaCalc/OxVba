@@ -6,6 +6,8 @@ use crate::typelib::{
 };
 
 const OXVBA_TEST_DISPATCH_PROGID: &str = "OxVba.TestDispatch";
+const OXVBA_TEST_DISPATCH_NO_DEFAULT_PROGID: &str = "OxVba.TestDispatchNoDefault";
+const OXVBA_TEST_DISPATCH_AMBIGUOUS_DEFAULT_PROGID: &str = "OxVba.TestDispatchAmbiguousDefault";
 const EXCEL_APPLICATION_PROGID: &str = "Excel.Application";
 const OXVBA_TEST_EVENT_SERVER_PROGID: &str = "OxVba.TestEventServer";
 
@@ -104,6 +106,13 @@ const TEST_DISPID_RETURN_DEFAULT_MEMBER_NAME: i32 = 86;
 const TEST_EVENT_CHANGED: i32 = 1;
 const TEST_EVENT_CHANGED_SOURCE_INTERFACE: i32 = 2;
 const TEST_EVENT_CHANGED_PAIR: i32 = 3;
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum TypeLibMemberLookupResult {
+    Resolved(ComMemberToken, ComMemberSpec),
+    Missing,
+    Ambiguous,
+}
 const TEST_EVENT_EXCEL_APP_QUIT: i32 = 10;
 
 const TEST_EVENT_SERVER_DISPID_FIRE_SIMPLE: i32 = 101;
@@ -272,6 +281,28 @@ pub fn known_typelib_identity_for_prog_id_name(
             cache_key: "typelib:oxvba-testdispatch:1.0:0".to_string(),
         });
     }
+    if prog_id_name.eq_ignore_ascii_case(OXVBA_TEST_DISPATCH_NO_DEFAULT_PROGID) {
+        return Some(TypeLibResolvedIdentity {
+            reference_name: OXVBA_TEST_DISPATCH_NO_DEFAULT_PROGID.to_string(),
+            importlib: "oxvba_testdispatch_nodefault.tlb".to_string(),
+            libid: Some("11111111-2222-3333-4444-555555555556".to_string()),
+            major_version: 1,
+            minor_version: 0,
+            lcid: Some(0),
+            cache_key: "typelib:oxvba-testdispatch-nodefault:1.0:0".to_string(),
+        });
+    }
+    if prog_id_name.eq_ignore_ascii_case(OXVBA_TEST_DISPATCH_AMBIGUOUS_DEFAULT_PROGID) {
+        return Some(TypeLibResolvedIdentity {
+            reference_name: OXVBA_TEST_DISPATCH_AMBIGUOUS_DEFAULT_PROGID.to_string(),
+            importlib: "oxvba_testdispatch_ambiguousdefault.tlb".to_string(),
+            libid: Some("11111111-2222-3333-4444-555555555557".to_string()),
+            major_version: 1,
+            minor_version: 0,
+            lcid: Some(0),
+            cache_key: "typelib:oxvba-testdispatch-ambiguousdefault:1.0:0".to_string(),
+        });
+    }
     None
 }
 
@@ -279,10 +310,18 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
     let (create_object_selector, member_name_to_token, members, events) = if identity
         .importlib
         .eq_ignore_ascii_case("oxvba_testdispatch.tlb")
+        || identity
+            .importlib
+            .eq_ignore_ascii_case("oxvba_testdispatch_nodefault.tlb")
+        || identity
+            .importlib
+            .eq_ignore_ascii_case("oxvba_testdispatch_ambiguousdefault.tlb")
         || identity.libid.as_deref().is_some_and(|libid: &str| {
             libid.eq_ignore_ascii_case("11111111-2222-3333-4444-555555555555")
+                || libid.eq_ignore_ascii_case("11111111-2222-3333-4444-555555555556")
+                || libid.eq_ignore_ascii_case("11111111-2222-3333-4444-555555555557")
         }) {
-        let members = vec![
+        let mut members = vec![
             TypeLibMemberMetadata {
                 name: "Count".to_string(),
                 token: TEST_DISPID_COUNT,
@@ -990,6 +1029,22 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
                 dispatch_member_id: Some(TEST_EVENT_CHANGED_PAIR),
             },
         ];
+        if identity
+            .importlib
+            .eq_ignore_ascii_case("oxvba_testdispatch_nodefault.tlb")
+        {
+            for member in &mut members {
+                member.is_default_member = false;
+            }
+        } else if identity
+            .importlib
+            .eq_ignore_ascii_case("oxvba_testdispatch_ambiguousdefault.tlb")
+        {
+            for member in &mut members {
+                member.is_default_member = member.name.eq_ignore_ascii_case("EchoVariant")
+                    || member.name.eq_ignore_ascii_case("Value");
+            }
+        }
         let member_name_to_token = members
             .iter()
             .map(|entry| (entry.name.clone(), entry.token))
@@ -1159,15 +1214,49 @@ pub fn member_token_and_spec_from_typelib_metadata_name(
     blob: &TypeLibMetadataBlob,
     member_name: &str,
 ) -> Option<(ComMemberToken, ComMemberSpec)> {
-    blob.members
+    match resolve_member_token_and_spec_from_typelib_metadata_name(blob, member_name) {
+        TypeLibMemberLookupResult::Resolved(token, spec) => Some((token, spec)),
+        TypeLibMemberLookupResult::Missing | TypeLibMemberLookupResult::Ambiguous => None,
+    }
+}
+
+pub fn resolve_member_token_and_spec_from_typelib_metadata_name(
+    blob: &TypeLibMetadataBlob,
+    member_name: &str,
+) -> TypeLibMemberLookupResult {
+    let mut matches = blob
+        .members
         .iter()
-        .find(|candidate| candidate.name.eq_ignore_ascii_case(member_name))
-        .map(|member| {
-            (
-                ComMemberToken::new(member.token),
-                map_member_metadata_to_spec(member),
-            )
-        })
+        .filter(|candidate| candidate.name.eq_ignore_ascii_case(member_name));
+    let Some(member) = matches.next() else {
+        return TypeLibMemberLookupResult::Missing;
+    };
+    if matches.next().is_some() {
+        return TypeLibMemberLookupResult::Ambiguous;
+    }
+    TypeLibMemberLookupResult::Resolved(
+        ComMemberToken::new(member.token),
+        map_member_metadata_to_spec(member),
+    )
+}
+
+pub fn resolve_default_member_token_and_spec_from_typelib_metadata(
+    blob: &TypeLibMetadataBlob,
+) -> TypeLibMemberLookupResult {
+    let mut matches = blob
+        .members
+        .iter()
+        .filter(|member| member.is_default_member);
+    let Some(member) = matches.next() else {
+        return TypeLibMemberLookupResult::Missing;
+    };
+    if matches.next().is_some() {
+        return TypeLibMemberLookupResult::Ambiguous;
+    }
+    TypeLibMemberLookupResult::Resolved(
+        ComMemberToken::new(member.token),
+        map_member_metadata_to_spec(member),
+    )
 }
 
 pub fn event_spec_from_typelib_metadata(
@@ -1214,9 +1303,12 @@ fn map_event_metadata_to_spec(event: &TypeLibEventMetadata) -> ComEventSpec {
 #[cfg(test)]
 mod tests {
     use super::{
-        build_typelib_metadata, create_object_selector_from_typelib_metadata,
-        event_spec_from_typelib_metadata, known_typelib_identity_for_prog_id_name,
-        member_spec_from_typelib_metadata, source_interface_event_spec_supported,
+        TypeLibMemberLookupResult, build_typelib_metadata,
+        create_object_selector_from_typelib_metadata, event_spec_from_typelib_metadata,
+        known_typelib_identity_for_prog_id_name, member_spec_from_typelib_metadata,
+        resolve_default_member_token_and_spec_from_typelib_metadata,
+        resolve_member_token_and_spec_from_typelib_metadata_name,
+        source_interface_event_spec_supported,
     };
     use crate::{ComMemberToken, TEST_DISPID_EXISTS, TypeLibMemberInvokeKind};
 
@@ -1260,6 +1352,39 @@ mod tests {
         assert_eq!(
             create_object_selector_from_typelib_metadata(&excel_blob),
             None
+        );
+    }
+
+    #[test]
+    fn default_member_lookup_reports_missing_when_catalog_has_no_default() {
+        let identity = known_typelib_identity_for_prog_id_name("OxVba.TestDispatchNoDefault")
+            .expect("identity");
+        let blob = build_typelib_metadata(&identity);
+        assert_eq!(
+            resolve_default_member_token_and_spec_from_typelib_metadata(&blob),
+            TypeLibMemberLookupResult::Missing
+        );
+    }
+
+    #[test]
+    fn default_member_lookup_reports_ambiguous_when_catalog_has_multiple_defaults() {
+        let identity =
+            known_typelib_identity_for_prog_id_name("OxVba.TestDispatchAmbiguousDefault")
+                .expect("identity");
+        let blob = build_typelib_metadata(&identity);
+        assert_eq!(
+            resolve_default_member_token_and_spec_from_typelib_metadata(&blob),
+            TypeLibMemberLookupResult::Ambiguous
+        );
+    }
+
+    #[test]
+    fn named_member_lookup_reports_missing_for_unknown_imported_member() {
+        let identity = known_typelib_identity_for_prog_id_name("OxVba.TestDispatch").unwrap();
+        let blob = build_typelib_metadata(&identity);
+        assert_eq!(
+            resolve_member_token_and_spec_from_typelib_metadata_name(&blob, "UnknownMember"),
+            TypeLibMemberLookupResult::Missing
         );
     }
 }

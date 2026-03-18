@@ -24,7 +24,7 @@ This document consolidates the current user-facing compiler/typecheck diagnostic
 | Unsupported syntax/semantics | `unsupported statement:` | parsed-but-unsupported statement paths | `crates/oxvba-compiler/src/typecheck.rs` |
 | PMR class/event legality and coverage | See generated list: `docs/generated/PMR_EVENT_DIAGNOSTICS_SNIPPET.md` | project-aware legality and coverage checks for `WithEvents`, `Implements`, and `RaiseEvent` | `crates/oxvba-compiler/src/project.rs` |
 | PMR typelib/importlib binding | `PMR-I-TYPELIB-BOUND` / `PMR-E-TYPELIB-IMPORTLIB-MISSING` / `PMR-E-TYPELIB-IMPORTLIB-UNRESOLVED` / `PMR-E-TYPELIB-IMPORTLIB-AMBIGUOUS` / `PMR-E-TYPELIB-LIBID-UNRESOLVED` / `PMR-E-TYPELIB-LIBID-AMBIGUOUS` | type-library reference binding via explicit importlib/libid identity hints in ProjectGraph host model | `crates/oxvba-host/src/project.rs` |
-| Early-bind subset diagnostics | `BIND-E-TYPELIB-QUALIFIER-UNRESOLVED` / `BIND-E-TYPELIB-CREATEOBJECT-UNSUPPORTED` / `BIND-E-TYPELIB-MEMBER-UNSUPPORTED` / `BIND-E-TYPELIB-INVOKE-ARITY-UNSUPPORTED` | constrained early-binding rewrite subset validation for external declarations and member-call lowering | `crates/oxvba-compiler/src/project.rs` |
+| Early-bind subset diagnostics | `BIND-E-TYPELIB-QUALIFIER-UNRESOLVED` / `BIND-E-TYPELIB-CREATEOBJECT-UNSUPPORTED` / `BIND-E-TYPELIB-MEMBER-UNSUPPORTED` / `BIND-E-TYPELIB-MEMBER-NOT-FOUND` / `BIND-E-TYPELIB-MEMBER-AMBIGUOUS` / `BIND-E-TYPELIB-MEMBER-SHAPE-UNSUPPORTED` / `BIND-E-TYPELIB-INVOKE-ARITY-UNSUPPORTED` | constrained early-binding rewrite subset validation for external declarations and member-call lowering | `crates/oxvba-compiler/src/project.rs` |
 
 ## Rollup Coverage (Track A)
 - `v68`: declaration diagnostics expansion.

@@ -34,6 +34,7 @@ Update (2026-03-18, current pass): the supported external early-bound call rewri
 Update (2026-03-18, current pass): the supported external early-bound rewrite path now also consults imported invoke-kind metadata, so required-argument `PropertyGet` members like `Lookup` have direct compiler+host evidence while imported `PropertyPut` / `PropertyPutRef` shapes fail deterministically at compile time on `BIND-E-TYPELIB-MEMBER-SHAPE-UNSUPPORTED`.
 Update (2026-03-18, current pass): the supported external early-bound rewrite path now also consumes authoritative imported default-member identity for parenthesized call syntax, so `obj(42)` lowers through the metadata-backed `EchoVariant` lane while wrong default-member arity still fails deterministically at compile time.
 Update (2026-03-18, current pass): the only remaining compiler-local member-token switch is now explicitly isolated to native/internal PMR dynamic-object routing, with direct compiler evidence that imported external early-bound lowering no longer depends on that local table.
+Update (2026-03-18, current pass): imported member/default-member metadata lookup now distinguishes deterministic `not found` versus `ambiguous` compile-time failures, and imported default-member call syntax no longer falls through silently when authoritative metadata does not resolve a unique target.
 
 Use it to answer:
 1. what major behavior areas are still unfinished,
