@@ -1,3 +1,12 @@
+## 2026-03-18 - Add imported object-result member-call evidence
+
+- Continued `IP-05B` by widening the proved imported member-result surface on an already-supported transport path instead of inventing new setter or metadata semantics.
+- Added compiler rewrite evidence in [project.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-compiler\src\project.rs) proving imported early-bound object-valued member calls lower through authoritative metadata for:
+  - `Set child = obj.ReturnSelfDispatch()`
+  - `wrapped = obj.ReturnSelfUnknown()`
+- Added Windows host end-to-end and VM/JIT parity evidence in [com_early_project_end_to_end.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-host\tests\com_early_project_end_to_end.rs) proving imported `VT_DISPATCH` and `VT_UNKNOWN` method results rebind into invokable object handles on typed `Object` and `Variant` targets in the current supported subset.
+- `IP-05` remains `in-progress`: broader imported property/default-member syntax, richer imported member coverage beyond the controlled fixture, object-valued imported setter parity, and wider Office/Excel object-model behavior are still open.
+
 ## 2026-03-18 - Add imported zero-arg property-get read-assignment evidence
 
 - Continued `IP-05B` with a bounded imported syntax-lowering slice instead of widening unsupported imported setter/object lanes.

@@ -257,6 +257,70 @@ End Sub
     );
 }
 
+#[cfg(target_os = "windows")]
+#[test]
+fn early_bound_project_executes_imported_object_result_member_calls() {
+    let manifest = manifest_with_typelib(
+        r#"
+Attribute VB_Name = "MainModule"
+Public Sub Main()
+Dim obj As New OxVba.TestDispatch
+Dim child As Object
+Dim wrapped
+Dim childCount
+Dim wrappedCount
+Set child = obj.ReturnSelfDispatch()
+wrapped = obj.ReturnSelfUnknown()
+childCount = DispatchInvoke(child, "Count")
+wrappedCount = DispatchInvoke(wrapped, "Count")
+End Sub
+"#,
+    );
+
+    let out = run_project_windows_hosted(&manifest, false);
+    assert!(expect_object_handle(&out[0]).raw() >= 20_001);
+    assert!(expect_object_handle(&out[1]).raw() >= 20_001);
+    assert!(expect_object_handle(&out[2]).raw() >= 20_001);
+    assert_eq!(
+        out[3],
+        RuntimeValue::I32(7),
+        "VT_DISPATCH imported member result should rebind into an invokable object handle"
+    );
+    assert_eq!(
+        out[4],
+        RuntimeValue::I32(7),
+        "VT_UNKNOWN imported member result should rebind through IDispatch into an invokable object handle"
+    );
+}
+
+#[cfg(target_os = "windows")]
+#[test]
+fn early_bound_project_object_result_member_calls_vm_jit_snapshots_match() {
+    let manifest = manifest_with_typelib(
+        r#"
+Attribute VB_Name = "MainModule"
+Public Sub Main()
+Dim obj As New OxVba.TestDispatch
+Dim child As Object
+Dim wrapped
+Dim childCount
+Dim wrappedCount
+Set child = obj.ReturnSelfDispatch()
+wrapped = obj.ReturnSelfUnknown()
+childCount = DispatchInvoke(child, "Count")
+wrappedCount = DispatchInvoke(wrapped, "Count")
+End Sub
+"#,
+    );
+
+    let vm = run_project_windows_hosted(&manifest, false);
+    let jit = run_project_windows_hosted(&manifest, true);
+    assert_eq!(
+        vm, jit,
+        "VM/JIT snapshots should match for imported object-result member calls"
+    );
+}
+
 #[test]
 fn early_bound_project_reports_compile_error_for_missing_member() {
     let manifest = manifest_with_typelib(

@@ -12556,6 +12556,56 @@ mod tests {
     }
 
     #[test]
+    fn compile_project_rewrites_external_object_member_call_to_dispatchinvoke() {
+        let main_module = module_unit_from_source(
+            "MainModule",
+            ModuleKind::Procedural,
+            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim obj As OxVba.TestDispatch\nDim child As Object\nSet obj = CreateObject(4)\nSet child = obj.ReturnSelfDispatch()\nEnd Sub",
+        )
+        .expect("module parses");
+        let manifest = ProjectManifest {
+            project_name: "ProjectA".to_string(),
+            project_kind: ProjectKind::Source,
+            modules: vec![main_module],
+            references: vec![ProjectReference {
+                referenced_project_name: "OxVba".to_string(),
+                reference_kind: ReferenceKind::TypeLibrary,
+            }],
+            reference_projects: Vec::new(),
+            conditional_constants: BTreeMap::new(),
+        };
+        let compiled = compile_project(&manifest)
+            .expect("object-valued imported member call should compile in supported subset");
+        let lowered = compiled.rewritten_source.to_ascii_lowercase();
+        assert!(lowered.contains("set child = dispatchinvoke(obj, 23)"));
+    }
+
+    #[test]
+    fn compile_project_rewrites_external_unknown_member_call_to_dispatchinvoke() {
+        let main_module = module_unit_from_source(
+            "MainModule",
+            ModuleKind::Procedural,
+            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim obj As OxVba.TestDispatch\nDim wrapped\nSet obj = CreateObject(4)\nwrapped = obj.ReturnSelfUnknown()\nEnd Sub",
+        )
+        .expect("module parses");
+        let manifest = ProjectManifest {
+            project_name: "ProjectA".to_string(),
+            project_kind: ProjectKind::Source,
+            modules: vec![main_module],
+            references: vec![ProjectReference {
+                referenced_project_name: "OxVba".to_string(),
+                reference_kind: ReferenceKind::TypeLibrary,
+            }],
+            reference_projects: Vec::new(),
+            conditional_constants: BTreeMap::new(),
+        };
+        let compiled = compile_project(&manifest)
+            .expect("IUnknown-valued imported member call should compile in supported subset");
+        let lowered = compiled.rewritten_source.to_ascii_lowercase();
+        assert!(lowered.contains("wrapped = dispatchinvoke(obj, 24)"));
+    }
+
+    #[test]
     fn compile_project_rewrites_zero_arg_property_get_external_read_assignment_to_dispatchinvoke() {
         let main_module = module_unit_from_source(
             "MainModule",
