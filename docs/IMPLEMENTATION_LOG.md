@@ -1,3 +1,15 @@
+## 2026-03-18 - Add scalar-typed getter Let and implicit assignment evidence
+
+- Continued execution from [WORKSET_2026-03-18_IP-02_EXECUTION_CHECKLIST.md](C:\Work\DnaCalc\OxVba\docs\worksets\WORKSET_2026-03-18_IP-02_EXECUTION_CHECKLIST.md) on the scalar-typed getter source-target table after locking the explicit-`Set` rejection column.
+- Added compiler and VM/JIT host evidence proving that scalar-typed native property/default-member getter results now have direct bounded coverage for:
+  - explicit `Let` success into typed `Variant` and scalar targets,
+  - implicit assignment success into typed `Variant` and scalar targets,
+  - explicit `Let` rejection on typed `Object` targets,
+  - implicit assignment rejection on typed `Object` targets,
+  - across named, zero-arg parenthesized, indexed, authoritative default-member, and bounded single-visible-candidate non-authoritative default-member syntax.
+- The implicit `Object`-target rejection contract on this surface is the current `cannot assign Long to Object variable ...` assignment-from-call diagnostic, which is now locked as direct evidence instead of inferred from plain scalar-source lanes.
+- `IP-02` remains `in-progress`: broader `Set`/`Let` source-target parity, broader non-authoritative default-member closure beyond the current bounded subsets, and wider Office-style call-vs-value parity are still open.
+
 ## 2026-03-18 - Add scalar-typed getter explicit Set rejection evidence
 
 - Continued execution from [WORKSET_2026-03-18_IP-02_EXECUTION_CHECKLIST.md](C:\Work\DnaCalc\OxVba\docs\worksets\WORKSET_2026-03-18_IP-02_EXECUTION_CHECKLIST.md) on the explicit source-target matrix and corrected the test model before widening semantics: the new lanes now use true scalar-typed `Property Get` declarations instead of omitted-`As` `Variant` returns.

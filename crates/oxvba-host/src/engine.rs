@@ -8259,6 +8259,572 @@ mod tests {
     }
 
     #[test]
+    fn formal_pmr_explicit_let_assignment_from_scalar_getter_result_to_variant_target_executes_end_to_end()
+     {
+        let engine = Engine::new(HostConfig::default());
+        let cases = [
+            (
+                "named property",
+                "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim widget As New Widget\nDim valueOut As Variant\nLet valueOut = widget.Value\nEnd Sub",
+                "Attribute VB_Name = \"Widget\"\nPublic Property Get Value() As Long\nValue = 9\nEnd Property",
+                "let valueout = property_get_pmr_projecta_widget_value(widget)",
+            ),
+            (
+                "parenthesized property",
+                "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim widget As New Widget\nDim valueOut As Variant\nLet valueOut = widget.Value()\nEnd Sub",
+                "Attribute VB_Name = \"Widget\"\nPublic Property Get Value() As Long\nValue = 9\nEnd Property",
+                "let valueout = property_get_pmr_projecta_widget_value(widget)",
+            ),
+            (
+                "indexed property",
+                "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim widget As New Widget\nDim x\nDim valueOut As Variant\nx = 2\nLet valueOut = widget.Value(x)\nEnd Sub",
+                "Attribute VB_Name = \"Widget\"\nPublic Property Get Value(ByRef index) As Long\nindex = index + 7\nValue = index\nEnd Property",
+                "let valueout = property_get_pmr_projecta_widget_value(widget, x)",
+            ),
+            (
+                "authoritative bare default member",
+                "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim widget As New Widget\nDim valueOut As Variant\nLet valueOut = widget\nEnd Sub",
+                "Attribute VB_Name = \"Widget\"\nPublic Property Get Value() As Long\nValue = 9\nEnd Property\nAttribute Value.VB_UserMemId = 0",
+                "let valueout = property_get_pmr_projecta_widget_value(widget)",
+            ),
+            (
+                "authoritative parenthesized default member",
+                "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim widget As New Widget\nDim valueOut As Variant\nLet valueOut = widget()\nEnd Sub",
+                "Attribute VB_Name = \"Widget\"\nPublic Property Get Value() As Long\nValue = 9\nEnd Property\nAttribute Value.VB_UserMemId = 0",
+                "let valueout = property_get_pmr_projecta_widget_value(widget)",
+            ),
+            (
+                "authoritative indexed default member",
+                "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim widget As New Widget\nDim x\nDim valueOut As Variant\nx = 2\nLet valueOut = widget(x)\nEnd Sub",
+                "Attribute VB_Name = \"Widget\"\nPublic Property Get Value(ByRef index) As Long\nindex = index + 7\nValue = index\nEnd Property\nAttribute Value.VB_UserMemId = 0",
+                "let valueout = property_get_pmr_projecta_widget_value(widget, x)",
+            ),
+            (
+                "non-authoritative bare default member",
+                "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim widget As New Widget\nDim valueOut As Variant\nLet valueOut = widget\nEnd Sub",
+                "Attribute VB_Name = \"Widget\"\nPublic Property Get Value() As Long\nValue = 9\nEnd Property",
+                "let valueout = property_get_pmr_projecta_widget_value(widget)",
+            ),
+            (
+                "non-authoritative parenthesized default member",
+                "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim widget As New Widget\nDim valueOut As Variant\nLet valueOut = widget()\nEnd Sub",
+                "Attribute VB_Name = \"Widget\"\nPublic Property Get Value() As Long\nValue = 9\nEnd Property",
+                "let valueout = property_get_pmr_projecta_widget_value(widget)",
+            ),
+            (
+                "non-authoritative indexed default member",
+                "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim widget As New Widget\nDim x\nDim valueOut As Variant\nx = 2\nLet valueOut = widget(x)\nEnd Sub",
+                "Attribute VB_Name = \"Widget\"\nPublic Property Get Value(ByRef index) As Long\nindex = index + 7\nValue = index\nEnd Property",
+                "let valueout = property_get_pmr_projecta_widget_value(widget, x)",
+            ),
+        ];
+
+        for (label, main_source, widget_source, expected_lowered) in cases {
+            let main_module =
+                module_unit_from_source("MainModule", ModuleKind::Procedural, main_source)
+                    .expect("main module should parse");
+            let widget = module_unit_from_source("Widget", ModuleKind::Class, widget_source)
+                .expect("widget module should parse");
+            let manifest = ProjectManifest {
+                project_name: "ProjectA".to_string(),
+                project_kind: ProjectKind::Source,
+                modules: vec![main_module, widget],
+                references: Vec::new(),
+                reference_projects: Vec::new(),
+                conditional_constants: std::collections::BTreeMap::new(),
+            };
+
+            let compiled =
+                oxvba_compiler::compile_project(&manifest).expect("compile should succeed");
+            let lowered = compiled.rewritten_source.to_ascii_lowercase();
+            assert!(lowered.contains(expected_lowered), "{label}: {lowered}");
+
+            let snapshot = engine
+                .execute_project_with_value_snapshot_phased(&manifest)
+                .expect("project execution should succeed");
+            assert_eq!(
+                snapshot.first(),
+                Some(&RuntimeValue::I32(1)),
+                "{label}: {snapshot:?}"
+            );
+            assert_eq!(
+                snapshot.last(),
+                Some(&RuntimeValue::I32(9)),
+                "{label}: {snapshot:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn formal_pmr_explicit_let_assignment_from_scalar_getter_result_to_scalar_target_executes_end_to_end()
+     {
+        let engine = Engine::new(HostConfig::default());
+        let cases = [
+            (
+                "named property",
+                "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim widget As New Widget\nDim n As Long\nLet n = widget.Value\nEnd Sub",
+                "Attribute VB_Name = \"Widget\"\nPublic Property Get Value() As Long\nValue = 9\nEnd Property",
+                "let n = property_get_pmr_projecta_widget_value(widget)",
+            ),
+            (
+                "parenthesized property",
+                "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim widget As New Widget\nDim n As Long\nLet n = widget.Value()\nEnd Sub",
+                "Attribute VB_Name = \"Widget\"\nPublic Property Get Value() As Long\nValue = 9\nEnd Property",
+                "let n = property_get_pmr_projecta_widget_value(widget)",
+            ),
+            (
+                "indexed property",
+                "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim widget As New Widget\nDim x\nDim n As Long\nx = 2\nLet n = widget.Value(x)\nEnd Sub",
+                "Attribute VB_Name = \"Widget\"\nPublic Property Get Value(ByRef index) As Long\nindex = index + 7\nValue = index\nEnd Property",
+                "let n = property_get_pmr_projecta_widget_value(widget, x)",
+            ),
+            (
+                "authoritative bare default member",
+                "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim widget As New Widget\nDim n As Long\nLet n = widget\nEnd Sub",
+                "Attribute VB_Name = \"Widget\"\nPublic Property Get Value() As Long\nValue = 9\nEnd Property\nAttribute Value.VB_UserMemId = 0",
+                "let n = property_get_pmr_projecta_widget_value(widget)",
+            ),
+            (
+                "authoritative parenthesized default member",
+                "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim widget As New Widget\nDim n As Long\nLet n = widget()\nEnd Sub",
+                "Attribute VB_Name = \"Widget\"\nPublic Property Get Value() As Long\nValue = 9\nEnd Property\nAttribute Value.VB_UserMemId = 0",
+                "let n = property_get_pmr_projecta_widget_value(widget)",
+            ),
+            (
+                "authoritative indexed default member",
+                "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim widget As New Widget\nDim x\nDim n As Long\nx = 2\nLet n = widget(x)\nEnd Sub",
+                "Attribute VB_Name = \"Widget\"\nPublic Property Get Value(ByRef index) As Long\nindex = index + 7\nValue = index\nEnd Property\nAttribute Value.VB_UserMemId = 0",
+                "let n = property_get_pmr_projecta_widget_value(widget, x)",
+            ),
+            (
+                "non-authoritative bare default member",
+                "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim widget As New Widget\nDim n As Long\nLet n = widget\nEnd Sub",
+                "Attribute VB_Name = \"Widget\"\nPublic Property Get Value() As Long\nValue = 9\nEnd Property",
+                "let n = property_get_pmr_projecta_widget_value(widget)",
+            ),
+            (
+                "non-authoritative parenthesized default member",
+                "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim widget As New Widget\nDim n As Long\nLet n = widget()\nEnd Sub",
+                "Attribute VB_Name = \"Widget\"\nPublic Property Get Value() As Long\nValue = 9\nEnd Property",
+                "let n = property_get_pmr_projecta_widget_value(widget)",
+            ),
+            (
+                "non-authoritative indexed default member",
+                "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim widget As New Widget\nDim x\nDim n As Long\nx = 2\nLet n = widget(x)\nEnd Sub",
+                "Attribute VB_Name = \"Widget\"\nPublic Property Get Value(ByRef index) As Long\nindex = index + 7\nValue = index\nEnd Property",
+                "let n = property_get_pmr_projecta_widget_value(widget, x)",
+            ),
+        ];
+
+        for (label, main_source, widget_source, expected_lowered) in cases {
+            let main_module =
+                module_unit_from_source("MainModule", ModuleKind::Procedural, main_source)
+                    .expect("main module should parse");
+            let widget = module_unit_from_source("Widget", ModuleKind::Class, widget_source)
+                .expect("widget module should parse");
+            let manifest = ProjectManifest {
+                project_name: "ProjectA".to_string(),
+                project_kind: ProjectKind::Source,
+                modules: vec![main_module, widget],
+                references: Vec::new(),
+                reference_projects: Vec::new(),
+                conditional_constants: std::collections::BTreeMap::new(),
+            };
+
+            let compiled =
+                oxvba_compiler::compile_project(&manifest).expect("compile should succeed");
+            let lowered = compiled.rewritten_source.to_ascii_lowercase();
+            assert!(lowered.contains(expected_lowered), "{label}: {lowered}");
+
+            let snapshot = engine
+                .execute_project_with_value_snapshot_phased(&manifest)
+                .expect("project execution should succeed");
+            assert_eq!(
+                snapshot.first(),
+                Some(&RuntimeValue::I32(1)),
+                "{label}: {snapshot:?}"
+            );
+            assert_eq!(
+                snapshot.last(),
+                Some(&RuntimeValue::I32(9)),
+                "{label}: {snapshot:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn formal_pmr_explicit_let_assignment_from_scalar_getter_result_to_object_target_fails_at_compile_time()
+     {
+        let engine = Engine::new(HostConfig::default());
+        let cases = [
+            (
+                "named property",
+                "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim widget As New Widget\nDim childOut As Object\nLet childOut = widget.Value\nEnd Sub",
+                "Attribute VB_Name = \"Widget\"\nPublic Property Get Value() As Long\nValue = 9\nEnd Property",
+                "Let cannot assign to Object variable childout",
+            ),
+            (
+                "parenthesized property",
+                "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim widget As New Widget\nDim childOut As Object\nLet childOut = widget.Value()\nEnd Sub",
+                "Attribute VB_Name = \"Widget\"\nPublic Property Get Value() As Long\nValue = 9\nEnd Property",
+                "Let cannot assign to Object variable childout",
+            ),
+            (
+                "indexed property",
+                "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim widget As New Widget\nDim x\nDim childOut As Object\nx = 2\nLet childOut = widget.Value(x)\nEnd Sub",
+                "Attribute VB_Name = \"Widget\"\nPublic Property Get Value(ByRef index) As Long\nindex = index + 7\nValue = index\nEnd Property",
+                "Let cannot assign to Object variable childout",
+            ),
+            (
+                "authoritative bare default member",
+                "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim widget As New Widget\nDim childOut As Object\nLet childOut = widget\nEnd Sub",
+                "Attribute VB_Name = \"Widget\"\nPublic Property Get Value() As Long\nValue = 9\nEnd Property\nAttribute Value.VB_UserMemId = 0",
+                "Let cannot assign to Object variable childout",
+            ),
+            (
+                "authoritative parenthesized default member",
+                "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim widget As New Widget\nDim childOut As Object\nLet childOut = widget()\nEnd Sub",
+                "Attribute VB_Name = \"Widget\"\nPublic Property Get Value() As Long\nValue = 9\nEnd Property\nAttribute Value.VB_UserMemId = 0",
+                "Let cannot assign to Object variable childout",
+            ),
+            (
+                "authoritative indexed default member",
+                "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim widget As New Widget\nDim x\nDim childOut As Object\nx = 2\nLet childOut = widget(x)\nEnd Sub",
+                "Attribute VB_Name = \"Widget\"\nPublic Property Get Value(ByRef index) As Long\nindex = index + 7\nValue = index\nEnd Property\nAttribute Value.VB_UserMemId = 0",
+                "Let cannot assign to Object variable childout",
+            ),
+            (
+                "non-authoritative bare default member",
+                "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim widget As New Widget\nDim childOut As Object\nLet childOut = widget\nEnd Sub",
+                "Attribute VB_Name = \"Widget\"\nPublic Property Get Value() As Long\nValue = 9\nEnd Property",
+                "Let cannot assign to Object variable childout",
+            ),
+            (
+                "non-authoritative parenthesized default member",
+                "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim widget As New Widget\nDim childOut As Object\nLet childOut = widget()\nEnd Sub",
+                "Attribute VB_Name = \"Widget\"\nPublic Property Get Value() As Long\nValue = 9\nEnd Property",
+                "Let cannot assign to Object variable childout",
+            ),
+            (
+                "non-authoritative indexed default member",
+                "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim widget As New Widget\nDim x\nDim childOut As Object\nx = 2\nLet childOut = widget(x)\nEnd Sub",
+                "Attribute VB_Name = \"Widget\"\nPublic Property Get Value(ByRef index) As Long\nindex = index + 7\nValue = index\nEnd Property",
+                "Let cannot assign to Object variable childout",
+            ),
+        ];
+
+        for (label, main_source, widget_source, expected_message) in cases {
+            let main_module =
+                module_unit_from_source("MainModule", ModuleKind::Procedural, main_source)
+                    .expect("main module should parse");
+            let widget = module_unit_from_source("Widget", ModuleKind::Class, widget_source)
+                .expect("widget module should parse");
+            let manifest = ProjectManifest {
+                project_name: "ProjectA".to_string(),
+                project_kind: ProjectKind::Source,
+                modules: vec![main_module, widget],
+                references: Vec::new(),
+                reference_projects: Vec::new(),
+                conditional_constants: std::collections::BTreeMap::new(),
+            };
+
+            let err = match engine.execute_project_with_value_snapshot_phased(&manifest) {
+                Ok(_) => panic!("{label} should fail deterministically"),
+                Err(err) => err,
+            };
+            assert_eq!(err.phase(), DiagnosticPhase::CompileTime, "{label}: {err}");
+            assert!(
+                err.message().contains(expected_message),
+                "{label}: {}",
+                err.message()
+            );
+        }
+    }
+
+    #[test]
+    fn formal_pmr_implicit_assignment_from_scalar_getter_result_to_variant_target_executes_end_to_end()
+     {
+        let engine = Engine::new(HostConfig::default());
+        let cases = [
+            (
+                "named property",
+                "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim widget As New Widget\nDim valueOut As Variant\nvalueOut = widget.Value\nEnd Sub",
+                "Attribute VB_Name = \"Widget\"\nPublic Property Get Value() As Long\nValue = 9\nEnd Property",
+                "valueout = property_get_pmr_projecta_widget_value(widget)",
+            ),
+            (
+                "parenthesized property",
+                "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim widget As New Widget\nDim valueOut As Variant\nvalueOut = widget.Value()\nEnd Sub",
+                "Attribute VB_Name = \"Widget\"\nPublic Property Get Value() As Long\nValue = 9\nEnd Property",
+                "valueout = property_get_pmr_projecta_widget_value(widget)",
+            ),
+            (
+                "indexed property",
+                "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim widget As New Widget\nDim x\nDim valueOut As Variant\nx = 2\nvalueOut = widget.Value(x)\nEnd Sub",
+                "Attribute VB_Name = \"Widget\"\nPublic Property Get Value(ByRef index) As Long\nindex = index + 7\nValue = index\nEnd Property",
+                "valueout = property_get_pmr_projecta_widget_value(widget, x)",
+            ),
+            (
+                "authoritative bare default member",
+                "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim widget As New Widget\nDim valueOut As Variant\nvalueOut = widget\nEnd Sub",
+                "Attribute VB_Name = \"Widget\"\nPublic Property Get Value() As Long\nValue = 9\nEnd Property\nAttribute Value.VB_UserMemId = 0",
+                "valueout = property_get_pmr_projecta_widget_value(widget)",
+            ),
+            (
+                "authoritative parenthesized default member",
+                "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim widget As New Widget\nDim valueOut As Variant\nvalueOut = widget()\nEnd Sub",
+                "Attribute VB_Name = \"Widget\"\nPublic Property Get Value() As Long\nValue = 9\nEnd Property\nAttribute Value.VB_UserMemId = 0",
+                "valueout = property_get_pmr_projecta_widget_value(widget)",
+            ),
+            (
+                "authoritative indexed default member",
+                "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim widget As New Widget\nDim x\nDim valueOut As Variant\nx = 2\nvalueOut = widget(x)\nEnd Sub",
+                "Attribute VB_Name = \"Widget\"\nPublic Property Get Value(ByRef index) As Long\nindex = index + 7\nValue = index\nEnd Property\nAttribute Value.VB_UserMemId = 0",
+                "valueout = property_get_pmr_projecta_widget_value(widget, x)",
+            ),
+            (
+                "non-authoritative bare default member",
+                "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim widget As New Widget\nDim valueOut As Variant\nvalueOut = widget\nEnd Sub",
+                "Attribute VB_Name = \"Widget\"\nPublic Property Get Value() As Long\nValue = 9\nEnd Property",
+                "valueout = property_get_pmr_projecta_widget_value(widget)",
+            ),
+            (
+                "non-authoritative parenthesized default member",
+                "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim widget As New Widget\nDim valueOut As Variant\nvalueOut = widget()\nEnd Sub",
+                "Attribute VB_Name = \"Widget\"\nPublic Property Get Value() As Long\nValue = 9\nEnd Property",
+                "valueout = property_get_pmr_projecta_widget_value(widget)",
+            ),
+            (
+                "non-authoritative indexed default member",
+                "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim widget As New Widget\nDim x\nDim valueOut As Variant\nx = 2\nvalueOut = widget(x)\nEnd Sub",
+                "Attribute VB_Name = \"Widget\"\nPublic Property Get Value(ByRef index) As Long\nindex = index + 7\nValue = index\nEnd Property",
+                "valueout = property_get_pmr_projecta_widget_value(widget, x)",
+            ),
+        ];
+
+        for (label, main_source, widget_source, expected_lowered) in cases {
+            let main_module =
+                module_unit_from_source("MainModule", ModuleKind::Procedural, main_source)
+                    .expect("main module should parse");
+            let widget = module_unit_from_source("Widget", ModuleKind::Class, widget_source)
+                .expect("widget module should parse");
+            let manifest = ProjectManifest {
+                project_name: "ProjectA".to_string(),
+                project_kind: ProjectKind::Source,
+                modules: vec![main_module, widget],
+                references: Vec::new(),
+                reference_projects: Vec::new(),
+                conditional_constants: std::collections::BTreeMap::new(),
+            };
+
+            let compiled =
+                oxvba_compiler::compile_project(&manifest).expect("compile should succeed");
+            let lowered = compiled.rewritten_source.to_ascii_lowercase();
+            assert!(lowered.contains(expected_lowered), "{label}: {lowered}");
+
+            let snapshot = engine
+                .execute_project_with_value_snapshot_phased(&manifest)
+                .expect("project execution should succeed");
+            assert_eq!(
+                snapshot.first(),
+                Some(&RuntimeValue::I32(1)),
+                "{label}: {snapshot:?}"
+            );
+            assert_eq!(
+                snapshot.last(),
+                Some(&RuntimeValue::I32(9)),
+                "{label}: {snapshot:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn formal_pmr_implicit_assignment_from_scalar_getter_result_to_scalar_target_executes_end_to_end()
+     {
+        let engine = Engine::new(HostConfig::default());
+        let cases = [
+            (
+                "named property",
+                "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim widget As New Widget\nDim n As Long\nn = widget.Value\nEnd Sub",
+                "Attribute VB_Name = \"Widget\"\nPublic Property Get Value() As Long\nValue = 9\nEnd Property",
+                "n = property_get_pmr_projecta_widget_value(widget)",
+            ),
+            (
+                "parenthesized property",
+                "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim widget As New Widget\nDim n As Long\nn = widget.Value()\nEnd Sub",
+                "Attribute VB_Name = \"Widget\"\nPublic Property Get Value() As Long\nValue = 9\nEnd Property",
+                "n = property_get_pmr_projecta_widget_value(widget)",
+            ),
+            (
+                "indexed property",
+                "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim widget As New Widget\nDim x\nDim n As Long\nx = 2\nn = widget.Value(x)\nEnd Sub",
+                "Attribute VB_Name = \"Widget\"\nPublic Property Get Value(ByRef index) As Long\nindex = index + 7\nValue = index\nEnd Property",
+                "n = property_get_pmr_projecta_widget_value(widget, x)",
+            ),
+            (
+                "authoritative bare default member",
+                "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim widget As New Widget\nDim n As Long\nn = widget\nEnd Sub",
+                "Attribute VB_Name = \"Widget\"\nPublic Property Get Value() As Long\nValue = 9\nEnd Property\nAttribute Value.VB_UserMemId = 0",
+                "n = property_get_pmr_projecta_widget_value(widget)",
+            ),
+            (
+                "authoritative parenthesized default member",
+                "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim widget As New Widget\nDim n As Long\nn = widget()\nEnd Sub",
+                "Attribute VB_Name = \"Widget\"\nPublic Property Get Value() As Long\nValue = 9\nEnd Property\nAttribute Value.VB_UserMemId = 0",
+                "n = property_get_pmr_projecta_widget_value(widget)",
+            ),
+            (
+                "authoritative indexed default member",
+                "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim widget As New Widget\nDim x\nDim n As Long\nx = 2\nn = widget(x)\nEnd Sub",
+                "Attribute VB_Name = \"Widget\"\nPublic Property Get Value(ByRef index) As Long\nindex = index + 7\nValue = index\nEnd Property\nAttribute Value.VB_UserMemId = 0",
+                "n = property_get_pmr_projecta_widget_value(widget, x)",
+            ),
+            (
+                "non-authoritative bare default member",
+                "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim widget As New Widget\nDim n As Long\nn = widget\nEnd Sub",
+                "Attribute VB_Name = \"Widget\"\nPublic Property Get Value() As Long\nValue = 9\nEnd Property",
+                "n = property_get_pmr_projecta_widget_value(widget)",
+            ),
+            (
+                "non-authoritative parenthesized default member",
+                "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim widget As New Widget\nDim n As Long\nn = widget()\nEnd Sub",
+                "Attribute VB_Name = \"Widget\"\nPublic Property Get Value() As Long\nValue = 9\nEnd Property",
+                "n = property_get_pmr_projecta_widget_value(widget)",
+            ),
+            (
+                "non-authoritative indexed default member",
+                "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim widget As New Widget\nDim x\nDim n As Long\nx = 2\nn = widget(x)\nEnd Sub",
+                "Attribute VB_Name = \"Widget\"\nPublic Property Get Value(ByRef index) As Long\nindex = index + 7\nValue = index\nEnd Property",
+                "n = property_get_pmr_projecta_widget_value(widget, x)",
+            ),
+        ];
+
+        for (label, main_source, widget_source, expected_lowered) in cases {
+            let main_module =
+                module_unit_from_source("MainModule", ModuleKind::Procedural, main_source)
+                    .expect("main module should parse");
+            let widget = module_unit_from_source("Widget", ModuleKind::Class, widget_source)
+                .expect("widget module should parse");
+            let manifest = ProjectManifest {
+                project_name: "ProjectA".to_string(),
+                project_kind: ProjectKind::Source,
+                modules: vec![main_module, widget],
+                references: Vec::new(),
+                reference_projects: Vec::new(),
+                conditional_constants: std::collections::BTreeMap::new(),
+            };
+
+            let compiled =
+                oxvba_compiler::compile_project(&manifest).expect("compile should succeed");
+            let lowered = compiled.rewritten_source.to_ascii_lowercase();
+            assert!(lowered.contains(expected_lowered), "{label}: {lowered}");
+
+            let snapshot = engine
+                .execute_project_with_value_snapshot_phased(&manifest)
+                .expect("project execution should succeed");
+            assert_eq!(
+                snapshot.first(),
+                Some(&RuntimeValue::I32(1)),
+                "{label}: {snapshot:?}"
+            );
+            assert_eq!(
+                snapshot.last(),
+                Some(&RuntimeValue::I32(9)),
+                "{label}: {snapshot:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn formal_pmr_implicit_assignment_from_scalar_getter_result_to_object_target_fails_at_compile_time()
+     {
+        let engine = Engine::new(HostConfig::default());
+        let cases = [
+            (
+                "named property",
+                "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim widget As New Widget\nDim childOut As Object\nchildOut = widget.Value\nEnd Sub",
+                "Attribute VB_Name = \"Widget\"\nPublic Property Get Value() As Long\nValue = 9\nEnd Property",
+                "cannot assign Long to Object variable childout",
+            ),
+            (
+                "parenthesized property",
+                "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim widget As New Widget\nDim childOut As Object\nchildOut = widget.Value()\nEnd Sub",
+                "Attribute VB_Name = \"Widget\"\nPublic Property Get Value() As Long\nValue = 9\nEnd Property",
+                "cannot assign Long to Object variable childout",
+            ),
+            (
+                "indexed property",
+                "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim widget As New Widget\nDim x\nDim childOut As Object\nx = 2\nchildOut = widget.Value(x)\nEnd Sub",
+                "Attribute VB_Name = \"Widget\"\nPublic Property Get Value(ByRef index) As Long\nindex = index + 7\nValue = index\nEnd Property",
+                "cannot assign Long to Object variable childout",
+            ),
+            (
+                "authoritative bare default member",
+                "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim widget As New Widget\nDim childOut As Object\nchildOut = widget\nEnd Sub",
+                "Attribute VB_Name = \"Widget\"\nPublic Property Get Value() As Long\nValue = 9\nEnd Property\nAttribute Value.VB_UserMemId = 0",
+                "cannot assign Long to Object variable childout",
+            ),
+            (
+                "authoritative parenthesized default member",
+                "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim widget As New Widget\nDim childOut As Object\nchildOut = widget()\nEnd Sub",
+                "Attribute VB_Name = \"Widget\"\nPublic Property Get Value() As Long\nValue = 9\nEnd Property\nAttribute Value.VB_UserMemId = 0",
+                "cannot assign Long to Object variable childout",
+            ),
+            (
+                "authoritative indexed default member",
+                "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim widget As New Widget\nDim x\nDim childOut As Object\nx = 2\nchildOut = widget(x)\nEnd Sub",
+                "Attribute VB_Name = \"Widget\"\nPublic Property Get Value(ByRef index) As Long\nindex = index + 7\nValue = index\nEnd Property\nAttribute Value.VB_UserMemId = 0",
+                "cannot assign Long to Object variable childout",
+            ),
+            (
+                "non-authoritative bare default member",
+                "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim widget As New Widget\nDim childOut As Object\nchildOut = widget\nEnd Sub",
+                "Attribute VB_Name = \"Widget\"\nPublic Property Get Value() As Long\nValue = 9\nEnd Property",
+                "cannot assign Long to Object variable childout",
+            ),
+            (
+                "non-authoritative parenthesized default member",
+                "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim widget As New Widget\nDim childOut As Object\nchildOut = widget()\nEnd Sub",
+                "Attribute VB_Name = \"Widget\"\nPublic Property Get Value() As Long\nValue = 9\nEnd Property",
+                "cannot assign Long to Object variable childout",
+            ),
+            (
+                "non-authoritative indexed default member",
+                "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim widget As New Widget\nDim x\nDim childOut As Object\nx = 2\nchildOut = widget(x)\nEnd Sub",
+                "Attribute VB_Name = \"Widget\"\nPublic Property Get Value(ByRef index) As Long\nindex = index + 7\nValue = index\nEnd Property",
+                "cannot assign Long to Object variable childout",
+            ),
+        ];
+
+        for (label, main_source, widget_source, expected_message) in cases {
+            let main_module =
+                module_unit_from_source("MainModule", ModuleKind::Procedural, main_source)
+                    .expect("main module should parse");
+            let widget = module_unit_from_source("Widget", ModuleKind::Class, widget_source)
+                .expect("widget module should parse");
+            let manifest = ProjectManifest {
+                project_name: "ProjectA".to_string(),
+                project_kind: ProjectKind::Source,
+                modules: vec![main_module, widget],
+                references: Vec::new(),
+                reference_projects: Vec::new(),
+                conditional_constants: std::collections::BTreeMap::new(),
+            };
+
+            let err = match engine.execute_project_with_value_snapshot_phased(&manifest) {
+                Ok(_) => panic!("{label} should fail deterministically"),
+                Err(err) => err,
+            };
+            assert_eq!(err.phase(), DiagnosticPhase::CompileTime, "{label}: {err}");
+            assert!(
+                err.message().contains(expected_message),
+                "{label}: {}",
+                err.message()
+            );
+        }
+    }
+
+    #[test]
     fn formal_pmr_non_authoritative_single_candidate_indexed_default_member_property_set_executes_end_to_end()
      {
         let engine = Engine::new(HostConfig::default());
