@@ -1944,7 +1944,12 @@ fn rewrite_early_bound_property_assignment(
                 });
             }
         };
-    if explicit_set || member_spec.invoke_kind != TypeLibMemberInvokeKind::PropertyPut {
+    let supported_assignment_shape = if explicit_set {
+        member_spec.invoke_kind == TypeLibMemberInvokeKind::PropertyPutRef
+    } else {
+        member_spec.invoke_kind == TypeLibMemberInvokeKind::PropertyPut
+    };
+    if !supported_assignment_shape {
         return Err(ProjectCompileError::TypeLibraryMemberShapeUnsupported {
             target: format!("{}.{}", binding.qualified_type, member_spec.name),
             shape: render_typelib_invoke_kind(member_spec.invoke_kind).to_string(),
@@ -13001,7 +13006,7 @@ mod tests {
     }
 
     #[test]
-    fn compile_project_rejects_property_putref_external_assignment_shape() {
+    fn compile_project_rewrites_property_putref_external_assignment_to_dispatchinvoke() {
         let main_module = module_unit_from_source(
             "MainModule",
             ModuleKind::Procedural,
@@ -13019,9 +13024,10 @@ mod tests {
             reference_projects: Vec::new(),
             conditional_constants: BTreeMap::new(),
         };
-        let err = compile_project(&manifest)
-            .expect_err("property-putref imported assignment should reject in current subset");
-        assert_eq!(err.code(), "BIND-E-TYPELIB-MEMBER-SHAPE-UNSUPPORTED");
+        let compiled =
+            compile_project(&manifest).expect("property-putref imported assignment should compile");
+        let lowered = compiled.rewritten_source.to_ascii_lowercase();
+        assert!(lowered.contains("call dispatchinvoke(obj, 8, other)"));
     }
 
     #[test]
@@ -13076,7 +13082,7 @@ mod tests {
     }
 
     #[test]
-    fn compile_project_rejects_indexed_property_putref_external_assignment_shape() {
+    fn compile_project_rewrites_indexed_property_putref_external_assignment_to_dispatchinvoke() {
         let main_module = module_unit_from_source(
             "MainModule",
             ModuleKind::Procedural,
@@ -13094,14 +13100,14 @@ mod tests {
             reference_projects: Vec::new(),
             conditional_constants: BTreeMap::new(),
         };
-        let err = compile_project(&manifest).expect_err(
-            "indexed property-putref imported assignment should reject in current subset",
-        );
-        assert_eq!(err.code(), "BIND-E-TYPELIB-MEMBER-SHAPE-UNSUPPORTED");
+        let compiled = compile_project(&manifest)
+            .expect("indexed property-putref imported assignment should compile");
+        let lowered = compiled.rewritten_source.to_ascii_lowercase();
+        assert!(lowered.contains("call dispatchinvoke(obj, 15, 8, other)"));
     }
 
     #[test]
-    fn compile_project_rejects_named_arg_indexed_property_putref_external_assignment_shape() {
+    fn compile_project_rewrites_named_arg_indexed_property_putref_external_assignment_shape() {
         let main_module = module_unit_from_source(
             "MainModule",
             ModuleKind::Procedural,
@@ -13119,10 +13125,10 @@ mod tests {
             reference_projects: Vec::new(),
             conditional_constants: BTreeMap::new(),
         };
-        let err = compile_project(&manifest).expect_err(
-            "named-argument indexed property-putref imported assignment should reject in current subset",
-        );
-        assert_eq!(err.code(), "BIND-E-TYPELIB-MEMBER-SHAPE-UNSUPPORTED");
+        let compiled = compile_project(&manifest)
+            .expect("named-argument indexed property-putref imported assignment should compile");
+        let lowered = compiled.rewritten_source.to_ascii_lowercase();
+        assert!(lowered.contains("call dispatchinvoke(obj, 15, lhs := 8, value := other)"));
     }
 
     #[test]

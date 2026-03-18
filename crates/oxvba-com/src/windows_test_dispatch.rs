@@ -1226,6 +1226,27 @@ unsafe fn raw_variant_token_from_invoke_arg(
 
 #[cfg(target_os = "windows")]
 #[allow(unsafe_op_in_unsafe_fn)]
+unsafe fn raw_variant_property_put_token_from_invoke_arg(
+    variant: *const VARIANT,
+    arg_index: usize,
+) -> Result<i32, i32> {
+    if variant.is_null() {
+        return Err(COM_DISP_E_TYPEMISMATCH);
+    }
+    if (*variant).Anonymous.Anonymous.vt == VT_DISPATCH {
+        let dispatch = (*variant).Anonymous.Anonymous.Anonymous.pdispVal;
+        if dispatch.is_null() {
+            return Err(COM_DISP_E_TYPEMISMATCH);
+        }
+        return raw_oxvba_test_dispatch_vtable_invoke(dispatch.cast(), TEST_DISPID_COUNT, &[])
+            .map_err(|_| COM_DISP_E_TYPEMISMATCH)?
+            .ok_or(COM_DISP_E_TYPEMISMATCH);
+    }
+    raw_variant_token_from_invoke_arg(variant, arg_index)
+}
+
+#[cfg(target_os = "windows")]
+#[allow(unsafe_op_in_unsafe_fn)]
 unsafe fn raw_variant_value_from_invoke_arg(
     variant: *const VARIANT,
     arg_index: usize,
@@ -1341,6 +1362,7 @@ unsafe fn raw_property_put_args_from_params(
         return Err(COM_DISP_E_BADPARAMCOUNT);
     }
     let params = &*pparams;
+    let cargs = params.cArgs as usize;
     if params.cArgs != expected_count as u32
         || params.cNamedArgs == 0
         || params.rgvarg.is_null()
@@ -1360,11 +1382,17 @@ unsafe fn raw_property_put_args_from_params(
     }
     let mut values = Vec::with_capacity(expected_count);
     for logical_index in 0..expected_count {
-        values.push(raw_variant_token_from_dispparams(
-            pparams,
-            logical_index,
-            puargerr,
-        )?);
+        let raw_index = cargs - 1 - logical_index;
+        let arg = params.rgvarg.add(raw_index);
+        match raw_variant_property_put_token_from_invoke_arg(arg, logical_index) {
+            Ok(value) => values.push(value),
+            Err(hr) => {
+                if !puargerr.is_null() {
+                    *puargerr = raw_index as u32;
+                }
+                return Err(hr);
+            }
+        }
     }
     Ok(values)
 }

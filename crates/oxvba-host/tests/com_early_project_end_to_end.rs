@@ -248,32 +248,65 @@ End Sub
     );
 }
 
+#[cfg(target_os = "windows")]
 #[test]
-fn early_bound_project_reports_compile_error_for_named_argument_property_putref_assignment_shape() {
+fn early_bound_project_executes_imported_named_argument_property_putref_assignments() {
     let manifest = manifest_with_typelib(
         r#"
 Attribute VB_Name = "MainModule"
 Public Sub Main()
 Dim obj As New OxVba.TestDispatch
 Dim other As New OxVba.TestDispatch
+Dim otherCount
+Dim afterSetIndexedValueRef
+otherCount = DispatchInvoke(other, "Count")
 Set obj.SetIndexedValueRef(lhs := 8) = other
+afterSetIndexedValueRef = DispatchInvoke(obj, "Value")
 End Sub
 "#,
     );
 
-    let engine = Engine::new(HostConfig {
-        enable_jit: false,
-        root_object_name: None,
-    });
-    let err = engine
-        .execute_project_with_snapshot_phased(&manifest)
-        .expect_err("named-argument property-putref assignment should fail at compile-time");
-    assert_eq!(err.phase(), DiagnosticPhase::CompileTime);
+    let out = run_project_windows_hosted(&manifest, false);
     assert!(
-        err.message()
-            .contains("BIND-E-TYPELIB-MEMBER-SHAPE-UNSUPPORTED"),
-        "unexpected compile diagnostic: {}",
-        err.message()
+        expect_object_handle(&out[0]).raw() >= 20_001,
+        "receiver should remain a controlled object handle"
+    );
+    assert!(expect_object_handle(&out[1]).raw() >= 20_001);
+    assert_eq!(
+        out[2],
+        RuntimeValue::I32(7),
+        "controlled property-putref object lane should interrogate the bound object deterministically"
+    );
+    assert_eq!(
+        out[3],
+        RuntimeValue::I32(408_007),
+        "named-argument property-putref assignment should preserve index and bounded object-derived token"
+    );
+}
+
+#[cfg(target_os = "windows")]
+#[test]
+fn early_bound_project_named_argument_property_putref_assignment_vm_jit_snapshots_match() {
+    let manifest = manifest_with_typelib(
+        r#"
+Attribute VB_Name = "MainModule"
+Public Sub Main()
+Dim obj As New OxVba.TestDispatch
+Dim other As New OxVba.TestDispatch
+Dim otherCount
+Dim afterSetIndexedValueRef
+otherCount = DispatchInvoke(other, "Count")
+Set obj.SetIndexedValueRef(lhs := 8) = other
+afterSetIndexedValueRef = DispatchInvoke(obj, "Value")
+End Sub
+"#,
+    );
+
+    let vm = run_project_windows_hosted(&manifest, false);
+    let jit = run_project_windows_hosted(&manifest, true);
+    assert_eq!(
+        vm, jit,
+        "VM/JIT snapshots should match for imported named-argument property-putref assignment syntax"
     );
 }
 
@@ -608,32 +641,65 @@ End Sub
     );
 }
 
+#[cfg(target_os = "windows")]
 #[test]
-fn early_bound_project_reports_compile_error_for_unsupported_property_putref_assignment_shape() {
+fn early_bound_project_executes_imported_property_putref_assignments_subset() {
     let manifest = manifest_with_typelib(
         r#"
 Attribute VB_Name = "MainModule"
 Public Sub Main()
 Dim obj As New OxVba.TestDispatch
 Dim other As New OxVba.TestDispatch
+Dim otherCount
+Dim afterSetValueRef
+otherCount = DispatchInvoke(other, "Count")
 Set obj.SetValueRef = other
+afterSetValueRef = DispatchInvoke(obj, "Value")
 End Sub
 "#,
     );
 
-    let engine = Engine::new(HostConfig {
-        enable_jit: false,
-        root_object_name: None,
-    });
-    let err = engine
-        .execute_project_with_snapshot_phased(&manifest)
-        .expect_err("unsupported property-putref assignment should fail at compile-time");
-    assert_eq!(err.phase(), DiagnosticPhase::CompileTime);
+    let out = run_project_windows_hosted(&manifest, false);
     assert!(
-        err.message()
-            .contains("BIND-E-TYPELIB-MEMBER-SHAPE-UNSUPPORTED"),
-        "unexpected compile diagnostic: {}",
-        err.message()
+        expect_object_handle(&out[0]).raw() >= 20_001,
+        "receiver should remain a controlled object handle"
+    );
+    assert!(expect_object_handle(&out[1]).raw() >= 20_001);
+    assert_eq!(
+        out[2],
+        RuntimeValue::I32(7),
+        "controlled property-putref object lane should interrogate the bound object deterministically"
+    );
+    assert_eq!(
+        out[3],
+        RuntimeValue::I32(100_007),
+        "property-putref assignment should preserve bounded object-derived token on the deterministic setter lane"
+    );
+}
+
+#[cfg(target_os = "windows")]
+#[test]
+fn early_bound_project_property_putref_assignment_vm_jit_snapshots_match() {
+    let manifest = manifest_with_typelib(
+        r#"
+Attribute VB_Name = "MainModule"
+Public Sub Main()
+Dim obj As New OxVba.TestDispatch
+Dim other As New OxVba.TestDispatch
+Dim otherCount
+Dim afterSetValueRef
+otherCount = DispatchInvoke(other, "Count")
+Set obj.SetValueRef = other
+afterSetValueRef = DispatchInvoke(obj, "Value")
+End Sub
+"#,
+    );
+
+    let vm = run_project_windows_hosted(&manifest, false);
+    let jit = run_project_windows_hosted(&manifest, true);
+    assert_eq!(
+        vm, jit,
+        "VM/JIT snapshots should match for imported property-putref assignment syntax"
     );
 }
 

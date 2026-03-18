@@ -1,3 +1,14 @@
+## 2026-03-18 - Add imported property-putref assignment evidence
+
+- Continued `IP-05B` by widening the imported setter surface into the first bounded object-valued assignment lane instead of leaving assignment-form `PropertyPutRef` entirely outside the metadata-backed subset.
+- In [project.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-compiler\src\project.rs), widened imported property-assignment lowering so explicit `Set` now admits authoritative imported `PropertyPutRef` assignment syntax while plain assignment remains the `PropertyPut` lane:
+  - `Set obj.SetValueRef = other`
+  - `Set obj.SetIndexedValueRef(8) = other`
+  - `Set obj.SetIndexedValueRef(lhs := 8) = other`
+- In [windows_test_dispatch.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-com\src\windows_test_dispatch.rs), widened the controlled `PropertyPutRef` fixture to accept bounded `VT_DISPATCH` payloads from the shared object-argument transport and derive a deterministic token from the controlled target object instead of rejecting all object-valued setter inputs as raw scalar mismatches.
+- Added compiler rewrite evidence plus Windows host end-to-end and VM/JIT parity evidence in [com_early_project_end_to_end.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-host\tests\com_early_project_end_to_end.rs) proving the bounded imported `PropertyPutRef` assignment subset now executes across both scalar and named-argument indexed setter forms with deterministic object-valued RHS behavior.
+- `IP-05` remains `in-progress`: broader imported property/default-member syntax, richer imported member coverage beyond the controlled fixture, and wider Office/Excel object-model behavior are still open.
+
 ## 2026-03-18 - Add imported explicit-Let named-argument call evidence
 
 - Continued `IP-05B` by widening the proved imported assignment-intent surface on the already-supported metadata-backed named-argument call path instead of inventing broader imported setter or event semantics.
