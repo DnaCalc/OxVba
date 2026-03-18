@@ -8902,6 +8902,76 @@ mod tests {
     }
 
     #[test]
+    fn compile_project_rejects_ambiguous_non_authoritative_object_target_default_member_read_assignment_lanes()
+     {
+        let cases = [
+            (
+                "bare Let to Object target",
+                "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim widget As New Widget\nDim childOut As Object\nLet childOut = widget\nEnd Sub",
+                "Attribute VB_Name = \"Widget\"\nPublic Property Get Value() As Object\nDim c As New Child\nSet Value = c\nEnd Property\nPublic Property Get Observe() As Object\nDim c As New Child\nSet Observe = c\nEnd Property",
+            ),
+            (
+                "bare implicit to Object target",
+                "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim widget As New Widget\nDim childOut As Object\nchildOut = widget\nEnd Sub",
+                "Attribute VB_Name = \"Widget\"\nPublic Property Get Value() As Object\nDim c As New Child\nSet Value = c\nEnd Property\nPublic Property Get Observe() As Object\nDim c As New Child\nSet Observe = c\nEnd Property",
+            ),
+            (
+                "parenthesized Let to Object target",
+                "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim widget As New Widget\nDim childOut As Object\nLet childOut = widget()\nEnd Sub",
+                "Attribute VB_Name = \"Widget\"\nPublic Property Get Value() As Object\nDim c As New Child\nSet Value = c\nEnd Property\nPublic Property Get Observe() As Object\nDim c As New Child\nSet Observe = c\nEnd Property",
+            ),
+            (
+                "parenthesized implicit to Object target",
+                "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim widget As New Widget\nDim childOut As Object\nchildOut = widget()\nEnd Sub",
+                "Attribute VB_Name = \"Widget\"\nPublic Property Get Value() As Object\nDim c As New Child\nSet Value = c\nEnd Property\nPublic Property Get Observe() As Object\nDim c As New Child\nSet Observe = c\nEnd Property",
+            ),
+            (
+                "indexed Let to Object target",
+                "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim widget As New Widget\nDim x\nDim childOut As Object\nx = 2\nLet childOut = widget(x)\nEnd Sub",
+                "Attribute VB_Name = \"Widget\"\nPublic Property Get Value(ByVal index) As Object\nDim c As New Child\nSet Value = c\nEnd Property\nPublic Property Get Observe(ByVal index) As Object\nDim c As New Child\nSet Observe = c\nEnd Property",
+            ),
+            (
+                "indexed implicit to Object target",
+                "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim widget As New Widget\nDim x\nDim childOut As Object\nx = 2\nchildOut = widget(x)\nEnd Sub",
+                "Attribute VB_Name = \"Widget\"\nPublic Property Get Value(ByVal index) As Object\nDim c As New Child\nSet Value = c\nEnd Property\nPublic Property Get Observe(ByVal index) As Object\nDim c As New Child\nSet Observe = c\nEnd Property",
+            ),
+        ];
+
+        for (label, main_source, widget_source) in cases {
+            let main_module =
+                module_unit_from_source("MainModule", ModuleKind::Procedural, main_source)
+                    .expect("main module parses");
+            let widget = module_unit_from_source("Widget", ModuleKind::Class, widget_source)
+                .expect("widget module parses");
+            let child = module_unit_from_source(
+                "Child",
+                ModuleKind::Class,
+                "Attribute VB_Name = \"Child\"",
+            )
+            .expect("child module parses");
+            let manifest = ProjectManifest {
+                project_name: "ProjectA".to_string(),
+                project_kind: ProjectKind::Source,
+                modules: vec![main_module, widget, child],
+                references: Vec::new(),
+                reference_projects: Vec::new(),
+                conditional_constants: BTreeMap::new(),
+            };
+
+            let err = match compile_project(&manifest) {
+                Ok(_) => panic!("{label} should fail deterministically"),
+                Err(err) => err,
+            };
+            assert_eq!(
+                err.code(),
+                "PMR-E-DEFAULT-MEMBER-RESOLUTION-AMBIGUOUS",
+                "{label}: {err}"
+            );
+            assert!(err.to_string().contains("widget"), "{label}: {err}");
+        }
+    }
+
+    #[test]
     fn compile_project_rejects_ambiguous_non_authoritative_call_statement_default_member_get() {
         let main_module = module_unit_from_source(
             "MainModule",
@@ -9432,6 +9502,70 @@ mod tests {
             .expect_err("missing non-authoritative indexed default-member getter should fail");
         assert_eq!(err.code(), "PMR-E-DEFAULT-MEMBER-RESOLUTION-MISSING");
         assert!(err.to_string().contains("widget"));
+    }
+
+    #[test]
+    fn compile_project_rejects_missing_non_authoritative_object_target_default_member_read_assignment_lanes()
+     {
+        let cases = [
+            (
+                "bare Let to Object target",
+                "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim widget As New Widget\nDim childOut As Object\nLet childOut = widget\nEnd Sub",
+                "Attribute VB_Name = \"Widget\"\nPublic Sub Touch()\nEnd Sub",
+            ),
+            (
+                "bare implicit to Object target",
+                "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim widget As New Widget\nDim childOut As Object\nchildOut = widget\nEnd Sub",
+                "Attribute VB_Name = \"Widget\"\nPublic Sub Touch()\nEnd Sub",
+            ),
+            (
+                "parenthesized Let to Object target",
+                "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim widget As New Widget\nDim childOut As Object\nLet childOut = widget()\nEnd Sub",
+                "Attribute VB_Name = \"Widget\"\nPublic Sub Touch()\nEnd Sub",
+            ),
+            (
+                "parenthesized implicit to Object target",
+                "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim widget As New Widget\nDim childOut As Object\nchildOut = widget()\nEnd Sub",
+                "Attribute VB_Name = \"Widget\"\nPublic Sub Touch()\nEnd Sub",
+            ),
+            (
+                "indexed Let to Object target",
+                "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim widget As New Widget\nDim x\nDim childOut As Object\nx = 2\nLet childOut = widget(x)\nEnd Sub",
+                "Attribute VB_Name = \"Widget\"\nPublic Sub Touch()\nEnd Sub",
+            ),
+            (
+                "indexed implicit to Object target",
+                "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim widget As New Widget\nDim x\nDim childOut As Object\nx = 2\nchildOut = widget(x)\nEnd Sub",
+                "Attribute VB_Name = \"Widget\"\nPublic Sub Touch()\nEnd Sub",
+            ),
+        ];
+
+        for (label, main_source, widget_source) in cases {
+            let main_module =
+                module_unit_from_source("MainModule", ModuleKind::Procedural, main_source)
+                    .expect("main module parses");
+            let widget = module_unit_from_source("Widget", ModuleKind::Class, widget_source)
+                .expect("widget module parses");
+            let manifest = ProjectManifest {
+                project_name: "ProjectA".to_string(),
+                project_kind: ProjectKind::Source,
+                modules: vec![main_module, widget],
+                references: Vec::new(),
+                reference_projects: Vec::new(),
+                conditional_constants: BTreeMap::new(),
+            };
+
+            let err = match compile_project(&manifest) {
+                Ok(_) => panic!("{label} should fail deterministically"),
+                Err(err) => err,
+            };
+            assert_eq!(
+                err.code(),
+                "PMR-E-DEFAULT-MEMBER-RESOLUTION-MISSING",
+                "{label}: {err}"
+            );
+            assert!(err.to_string().contains("widget"), "{label}: {err}");
+        }
     }
 
     #[test]

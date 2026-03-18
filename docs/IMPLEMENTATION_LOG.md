@@ -1099,6 +1099,15 @@
   - Set x = 7 fails deterministically with the expected type error.
 - IP-02 remains in progress: broader typed/object Set vs Let parity, non-authoritative default-member resolution, and wider Office-style call-vs-value context parity are still open.
 
+## 2026-03-18 - Add non-authoritative object-target read-assignment diagnostic evidence
+
+- Continued the active `IP-02A` checklist run without widening semantics and added direct bounded evidence for non-authoritative object-valued default-member source-resolution failures on typed `Object` targets.
+- Added compiler and VM/JIT host evidence proving that ambiguous and `no viable candidate` non-authoritative default-member resolution diagnostics now directly cover:
+  - explicit `Let childOut = widget`,
+  - implicit `childOut = widget`,
+  - the same typed-`Object` target lanes across zero-arg parenthesized and indexed syntax.
+- `IP-02` remains `in-progress`: broader `Set`/`Let` source-target parity, broader non-authoritative default-member closure beyond the currently bounded subsets, and wider Office-style call-vs-value parity are still open.
+
 
 
 
