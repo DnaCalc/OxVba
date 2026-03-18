@@ -1884,7 +1884,7 @@ fn rewrite_early_bound_property_assignment(
     } else {
         trimmed
     };
-    let Some(eq_idx) = payload.find('=') else {
+    let Some(eq_idx) = find_top_level_assignment_eq(payload) else {
         return Ok(line.to_string());
     };
     let lhs = payload[..eq_idx].trim();
@@ -1950,7 +1950,17 @@ fn rewrite_early_bound_property_assignment(
             shape: render_typelib_invoke_kind(member_spec.invoke_kind).to_string(),
         });
     }
-    args.push(rhs.to_string());
+    let has_named_args = args.iter().any(|arg| arg.contains(":="));
+    if has_named_args {
+        let value_name = member_spec
+            .parameter_names
+            .last()
+            .cloned()
+            .unwrap_or_else(|| "value".to_string());
+        args.push(format!("{value_name} := {rhs}"));
+    } else {
+        args.push(rhs.to_string());
+    }
     let actual_arity = args.iter().filter(|arg| !arg.trim().is_empty()).count();
     let expected_arity = member_spec.parameter_names.len();
     if actual_arity != expected_arity {
@@ -3394,6 +3404,39 @@ fn split_top_level_args(args: &str) -> Result<Vec<String>, ProjectCompileError> 
     }
     out.push(args[start..].trim().to_string());
     Ok(out)
+}
+
+fn find_top_level_assignment_eq(text: &str) -> Option<usize> {
+    let bytes = text.as_bytes();
+    let mut depth = 0i32;
+    let mut in_string = false;
+    let mut idx = 0usize;
+    while idx < bytes.len() {
+        let ch = bytes[idx] as char;
+        if ch == '"' {
+            in_string = !in_string;
+            idx += 1;
+            continue;
+        }
+        if in_string {
+            idx += 1;
+            continue;
+        }
+        match ch {
+            '(' => depth += 1,
+            ')' => depth -= 1,
+            '=' if depth == 0 => {
+                if idx > 0 && bytes[idx - 1] == b':' {
+                    idx += 1;
+                    continue;
+                }
+                return Some(idx);
+            }
+            _ => {}
+        }
+        idx += 1;
+    }
+    None
 }
 
 fn find_matching_paren(text: &str, open_idx: usize) -> Option<usize> {
@@ -12926,6 +12969,32 @@ mod tests {
     }
 
     #[test]
+    fn compile_project_rewrites_named_arg_indexed_property_put_external_assignment_to_dispatchinvoke()
+     {
+        let main_module = module_unit_from_source(
+            "MainModule",
+            ModuleKind::Procedural,
+            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim obj As OxVba.TestDispatch\nSet obj = CreateObject(4)\nobj.SetIndexedValue(lhs := 7) = 11\nEnd Sub",
+        )
+        .expect("module parses");
+        let manifest = ProjectManifest {
+            project_name: "ProjectA".to_string(),
+            project_kind: ProjectKind::Source,
+            modules: vec![main_module],
+            references: vec![ProjectReference {
+                referenced_project_name: "OxVba".to_string(),
+                reference_kind: ReferenceKind::TypeLibrary,
+            }],
+            reference_projects: Vec::new(),
+            conditional_constants: BTreeMap::new(),
+        };
+        let compiled = compile_project(&manifest)
+            .expect("named-argument indexed property-put imported assignment should compile");
+        let lowered = compiled.rewritten_source.to_ascii_lowercase();
+        assert!(lowered.contains("call dispatchinvoke(obj, 14, lhs := 7, value := 11)"));
+    }
+
+    #[test]
     fn compile_project_rejects_indexed_property_putref_external_assignment_shape() {
         let main_module = module_unit_from_source(
             "MainModule",
@@ -12946,6 +13015,31 @@ mod tests {
         };
         let err = compile_project(&manifest).expect_err(
             "indexed property-putref imported assignment should reject in current subset",
+        );
+        assert_eq!(err.code(), "BIND-E-TYPELIB-MEMBER-SHAPE-UNSUPPORTED");
+    }
+
+    #[test]
+    fn compile_project_rejects_named_arg_indexed_property_putref_external_assignment_shape() {
+        let main_module = module_unit_from_source(
+            "MainModule",
+            ModuleKind::Procedural,
+            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim obj As OxVba.TestDispatch\nDim other As OxVba.TestDispatch\nSet obj = CreateObject(4)\nSet other = CreateObject(4)\nSet obj.SetIndexedValueRef(lhs := 8) = other\nEnd Sub",
+        )
+        .expect("module parses");
+        let manifest = ProjectManifest {
+            project_name: "ProjectA".to_string(),
+            project_kind: ProjectKind::Source,
+            modules: vec![main_module],
+            references: vec![ProjectReference {
+                referenced_project_name: "OxVba".to_string(),
+                reference_kind: ReferenceKind::TypeLibrary,
+            }],
+            reference_projects: Vec::new(),
+            conditional_constants: BTreeMap::new(),
+        };
+        let err = compile_project(&manifest).expect_err(
+            "named-argument indexed property-putref imported assignment should reject in current subset",
         );
         assert_eq!(err.code(), "BIND-E-TYPELIB-MEMBER-SHAPE-UNSUPPORTED");
     }

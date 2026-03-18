@@ -203,6 +203,82 @@ End Sub
 
 #[cfg(target_os = "windows")]
 #[test]
+fn early_bound_project_executes_imported_named_argument_property_put_assignments() {
+    let manifest = manifest_with_typelib(
+        r#"
+Attribute VB_Name = "MainModule"
+Public Sub Main()
+Dim obj As New OxVba.TestDispatch
+Dim afterSetIndexedValue
+obj.SetIndexedValue(lhs := 7) = 11
+afterSetIndexedValue = DispatchInvoke(obj, "Value")
+End Sub
+"#,
+    );
+
+    let out = run_project_windows_hosted(&manifest, false);
+    assert!(expect_object_handle(&out[0]).raw() >= 20_001);
+    assert_eq!(
+        out[1],
+        RuntimeValue::I32(307_011),
+        "imported named-argument property-put assignment should preserve metadata-backed parameter naming"
+    );
+}
+
+#[cfg(target_os = "windows")]
+#[test]
+fn early_bound_project_named_argument_property_put_assignment_vm_jit_snapshots_match() {
+    let manifest = manifest_with_typelib(
+        r#"
+Attribute VB_Name = "MainModule"
+Public Sub Main()
+Dim obj As New OxVba.TestDispatch
+Dim afterSetIndexedValue
+obj.SetIndexedValue(lhs := 7) = 11
+afterSetIndexedValue = DispatchInvoke(obj, "Value")
+End Sub
+"#,
+    );
+
+    let vm = run_project_windows_hosted(&manifest, false);
+    let jit = run_project_windows_hosted(&manifest, true);
+    assert_eq!(
+        vm, jit,
+        "VM/JIT snapshots should match for imported named-argument property-put assignment syntax"
+    );
+}
+
+#[test]
+fn early_bound_project_reports_compile_error_for_named_argument_property_putref_assignment_shape() {
+    let manifest = manifest_with_typelib(
+        r#"
+Attribute VB_Name = "MainModule"
+Public Sub Main()
+Dim obj As New OxVba.TestDispatch
+Dim other As New OxVba.TestDispatch
+Set obj.SetIndexedValueRef(lhs := 8) = other
+End Sub
+"#,
+    );
+
+    let engine = Engine::new(HostConfig {
+        enable_jit: false,
+        root_object_name: None,
+    });
+    let err = engine
+        .execute_project_with_snapshot_phased(&manifest)
+        .expect_err("named-argument property-putref assignment should fail at compile-time");
+    assert_eq!(err.phase(), DiagnosticPhase::CompileTime);
+    assert!(
+        err.message()
+            .contains("BIND-E-TYPELIB-MEMBER-SHAPE-UNSUPPORTED"),
+        "unexpected compile diagnostic: {}",
+        err.message()
+    );
+}
+
+#[cfg(target_os = "windows")]
+#[test]
 fn early_bound_project_executes_imported_zero_arg_property_get_read_assignments() {
     let manifest = manifest_with_typelib(
         r#"

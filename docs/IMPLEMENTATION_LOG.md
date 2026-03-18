@@ -1,3 +1,14 @@
+## 2026-03-18 - Add imported named-argument property-put evidence
+
+- Continued `IP-05B` by widening the proved imported setter syntax matrix on the existing metadata-backed dispatch path instead of inventing broader imported object-setter parity.
+- In [project.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-compiler\src\project.rs), extended imported `PropertyPut` assignment lowering so named index arguments now preserve authoritative typelib parameter names when the synthesized setter value is appended, proving the supported lane:
+  - `obj.SetIndexedValue(lhs := 7) = 11`
+  rewrites as a stable metadata-backed named-argument `DispatchInvoke(...)` setter call instead of mixing named and positional arguments in an invalid order.
+- Added direct compiler rejection evidence that the neighboring named-argument imported `PropertyPutRef` assignment shape remains intentionally out of subset:
+  - `Set obj.SetIndexedValueRef(lhs := 8) = other`
+- Added Windows host end-to-end and VM/JIT parity evidence in [com_early_project_end_to_end.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-host\tests\com_early_project_end_to_end.rs) proving the supported named-argument imported setter lane executes and the neighboring named-argument `PropertyPutRef` shape fails deterministically at compile time.
+- `IP-05` remains `in-progress`: broader imported property/default-member syntax, richer imported member coverage beyond the controlled fixture, object-valued imported setter parity, and wider Office/Excel object-model behavior are still open.
+
 ## 2026-03-18 - Add imported named-argument early-bound call evidence
 
 - Continued `IP-05B` by widening the proved imported call matrix on the existing metadata-backed dispatch path instead of inventing new transport or setter semantics.
