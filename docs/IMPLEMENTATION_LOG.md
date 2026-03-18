@@ -14,6 +14,7 @@
 - Added direct compiler evidence proving the isolated local token switch still owns only native/internal dynamic-object member metadata while the imported external path stays on `oxvba-com` metadata authority.
 - In [typelib_catalog.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-com\src\typelib_catalog.rs) and [project.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-compiler\src\project.rs), moved imported member/default-member uniqueness resolution onto metadata-backed lookup results so compiler lowering can distinguish deterministic `not found` versus `ambiguous` imported-member failures instead of collapsing them into a generic unsupported path.
 - In [project.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-compiler\src\project.rs) and [com_early_project_end_to_end.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-host\tests\com_early_project_end_to_end.rs), added direct compiler + host evidence that imported parenthesized default-member call syntax now fails deterministically for both missing-default and ambiguous-default metadata instead of escaping the early-bind rewrite silently.
+- In [project.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-compiler\src\project.rs), widened `EarlyBoundBinding` so supported imported declarations now carry their authoritative `TypeLibMetadataBlob` through the compiler binding/lowering path, and the current imported member/default-member rewrite subset now consumes that bound metadata directly instead of re-resolving supported imported types by string at each call site.
 
 ## 2026-03-18 - Add DISP_E_PARAMNOTFOUND host fault classification evidence
 

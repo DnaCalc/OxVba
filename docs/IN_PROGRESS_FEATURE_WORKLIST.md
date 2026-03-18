@@ -35,6 +35,7 @@ Update (2026-03-18, current pass): the supported external early-bound rewrite pa
 Update (2026-03-18, current pass): the supported external early-bound rewrite path now also consumes authoritative imported default-member identity for parenthesized call syntax, so `obj(42)` lowers through the metadata-backed `EchoVariant` lane while wrong default-member arity still fails deterministically at compile time.
 Update (2026-03-18, current pass): the only remaining compiler-local member-token switch is now explicitly isolated to native/internal PMR dynamic-object routing, with direct compiler evidence that imported external early-bound lowering no longer depends on that local table.
 Update (2026-03-18, current pass): imported member/default-member metadata lookup now distinguishes deterministic `not found` versus `ambiguous` compile-time failures, and imported default-member call syntax no longer falls through silently when authoritative metadata does not resolve a unique target.
+Update (2026-03-18, current pass): supported imported early-bound bindings now carry their authoritative typelib metadata blob inside the compiler binding/lowering path, so imported member/default-member rewrite no longer re-resolves supported types from a side-channel string lookup at each call site.
 
 Use it to answer:
 1. what major behavior areas are still unfinished,

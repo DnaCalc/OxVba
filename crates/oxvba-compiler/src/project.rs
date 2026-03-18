@@ -1,8 +1,9 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use oxvba_com::{
-    ComMemberSpec, TypeLibMemberInvokeKind, TypeLibMemberLookupResult, build_typelib_metadata,
-    create_object_selector_from_typelib_metadata, known_typelib_identity_for_prog_id_name,
+    ComMemberSpec, TypeLibMemberInvokeKind, TypeLibMemberLookupResult, TypeLibMetadataBlob,
+    build_typelib_metadata, create_object_selector_from_typelib_metadata,
+    known_typelib_identity_for_prog_id_name,
     resolve_default_member_token_and_spec_from_typelib_metadata,
     resolve_member_token_and_spec_from_typelib_metadata_name,
 };
@@ -1286,6 +1287,7 @@ struct EventDispatchRoute {
 struct EarlyBoundBinding {
     qualified_type: String,
     create_selector: Option<i32>,
+    typelib_metadata: Option<TypeLibMetadataBlob>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1514,12 +1516,17 @@ fn expand_bound_source_line(
                 qualifier,
             });
         }
-        let selector = known_typelib_create_object_selector(&dim_decl.qualified_type);
+        let typelib_metadata = known_typelib_identity_for_prog_id_name(&dim_decl.qualified_type)
+            .map(|identity| build_typelib_metadata(&identity));
+        let selector = typelib_metadata
+            .as_ref()
+            .and_then(create_object_selector_from_typelib_metadata);
         early_bound.insert(
             normalize_identifier(&dim_decl.var_name),
             EarlyBoundBinding {
                 qualified_type: dim_decl.qualified_type.clone(),
                 create_selector: selector,
+                typelib_metadata,
             },
         );
         let mut out = Vec::new();
@@ -1731,85 +1738,82 @@ fn rewrite_early_bound_member_dispatch(
             continue;
         };
         let raw_name = line[name_start..name_end].trim();
-        let (var_name, target_name, member_token, member_spec) = if let Some(dot_idx) =
-            raw_name.find('.')
-        {
-            let var_name = raw_name[..dot_idx].trim();
-            let member_name = raw_name[dot_idx + 1..].trim();
-            if var_name.is_empty() || member_name.is_empty() {
-                cursor = close + 1;
-                continue;
-            }
-            let key = normalize_identifier(var_name);
-            let Some(binding) = early_bound.get(&key) else {
-                cursor = close + 1;
-                continue;
-            };
-            let target_name = format!("{}.{}", binding.qualified_type, member_name);
-            let (member_token, member_spec) = match resolve_known_typelib_member_token_and_spec(
-                &binding.qualified_type,
-                member_name,
-            ) {
-                KnownTypeLibMemberResolution::Resolved(member_token, member_spec) => {
-                    (member_token, member_spec)
+        let (var_name, target_name, member_token, member_spec) =
+            if let Some(dot_idx) = raw_name.find('.') {
+                let var_name = raw_name[..dot_idx].trim();
+                let member_name = raw_name[dot_idx + 1..].trim();
+                if var_name.is_empty() || member_name.is_empty() {
+                    cursor = close + 1;
+                    continue;
                 }
-                KnownTypeLibMemberResolution::Unsupported => {
-                    return Err(ProjectCompileError::TypeLibraryMemberUnsupported {
-                        member_name: member_name.to_string(),
-                    });
-                }
-                KnownTypeLibMemberResolution::Missing => {
-                    return Err(ProjectCompileError::TypeLibraryMemberNotFound {
-                        target: target_name,
-                    });
-                }
-                KnownTypeLibMemberResolution::Ambiguous => {
-                    return Err(ProjectCompileError::TypeLibraryMemberAmbiguous {
-                        target: target_name,
-                    });
-                }
-            };
-            (var_name.to_string(), target_name, member_token, member_spec)
-        } else {
-            let var_name = raw_name.trim();
-            if var_name.is_empty() {
-                cursor = close + 1;
-                continue;
-            }
-            let key = normalize_identifier(var_name);
-            let Some(binding) = early_bound.get(&key) else {
-                cursor = close + 1;
-                continue;
-            };
-            let default_target = format!("{}.<default>", binding.qualified_type);
-            let (member_token, member_spec) =
-                match resolve_known_typelib_default_member_token_and_spec(&binding.qualified_type) {
-                    KnownTypeLibMemberResolution::Resolved(member_token, member_spec) => {
-                        (member_token, member_spec)
-                    }
-                    KnownTypeLibMemberResolution::Unsupported => {
-                        return Err(ProjectCompileError::TypeLibraryMemberUnsupported {
-                            member_name: default_target,
-                        });
-                    }
-                    KnownTypeLibMemberResolution::Missing => {
-                        return Err(ProjectCompileError::TypeLibraryMemberNotFound {
-                            target: default_target,
-                        });
-                    }
-                    KnownTypeLibMemberResolution::Ambiguous => {
-                        return Err(ProjectCompileError::TypeLibraryMemberAmbiguous {
-                            target: default_target,
-                        });
-                    }
+                let key = normalize_identifier(var_name);
+                let Some(binding) = early_bound.get(&key) else {
+                    cursor = close + 1;
+                    continue;
                 };
-            (
-                var_name.to_string(),
-                format!("{}.{}", binding.qualified_type, member_spec.name),
-                member_token,
-                member_spec,
-            )
-        };
+                let target_name = format!("{}.{}", binding.qualified_type, member_name);
+                let (member_token, member_spec) =
+                    match resolve_early_bound_binding_member_token_and_spec(binding, member_name) {
+                        KnownTypeLibMemberResolution::Resolved(member_token, member_spec) => {
+                            (member_token, member_spec)
+                        }
+                        KnownTypeLibMemberResolution::Unsupported => {
+                            return Err(ProjectCompileError::TypeLibraryMemberUnsupported {
+                                member_name: member_name.to_string(),
+                            });
+                        }
+                        KnownTypeLibMemberResolution::Missing => {
+                            return Err(ProjectCompileError::TypeLibraryMemberNotFound {
+                                target: target_name,
+                            });
+                        }
+                        KnownTypeLibMemberResolution::Ambiguous => {
+                            return Err(ProjectCompileError::TypeLibraryMemberAmbiguous {
+                                target: target_name,
+                            });
+                        }
+                    };
+                (var_name.to_string(), target_name, member_token, member_spec)
+            } else {
+                let var_name = raw_name.trim();
+                if var_name.is_empty() {
+                    cursor = close + 1;
+                    continue;
+                }
+                let key = normalize_identifier(var_name);
+                let Some(binding) = early_bound.get(&key) else {
+                    cursor = close + 1;
+                    continue;
+                };
+                let default_target = format!("{}.<default>", binding.qualified_type);
+                let (member_token, member_spec) =
+                    match resolve_early_bound_binding_default_member_token_and_spec(binding) {
+                        KnownTypeLibMemberResolution::Resolved(member_token, member_spec) => {
+                            (member_token, member_spec)
+                        }
+                        KnownTypeLibMemberResolution::Unsupported => {
+                            return Err(ProjectCompileError::TypeLibraryMemberUnsupported {
+                                member_name: default_target,
+                            });
+                        }
+                        KnownTypeLibMemberResolution::Missing => {
+                            return Err(ProjectCompileError::TypeLibraryMemberNotFound {
+                                target: default_target,
+                            });
+                        }
+                        KnownTypeLibMemberResolution::Ambiguous => {
+                            return Err(ProjectCompileError::TypeLibraryMemberAmbiguous {
+                                target: default_target,
+                            });
+                        }
+                    };
+                (
+                    var_name.to_string(),
+                    format!("{}.{}", binding.qualified_type, member_spec.name),
+                    member_token,
+                    member_spec,
+                )
+            };
         if !matches!(
             member_spec.invoke_kind,
             TypeLibMemberInvokeKind::PropertyGet | TypeLibMemberInvokeKind::Method
@@ -3243,6 +3247,7 @@ fn split_keyword_ascii_ci<'a>(text: &'a str, keyword: &'a str) -> Option<(&'a st
     Some((&text[..idx], &text[idx + keyword.len()..]))
 }
 
+#[cfg(test)]
 fn known_typelib_create_object_selector(qualified_type: &str) -> Option<i32> {
     let identity = known_typelib_identity_for_prog_id_name(qualified_type)?;
     let metadata = build_typelib_metadata(&identity);
@@ -3254,6 +3259,37 @@ enum KnownTypeLibMemberResolution {
     Unsupported,
     Missing,
     Ambiguous,
+}
+
+fn resolve_early_bound_binding_member_token_and_spec(
+    binding: &EarlyBoundBinding,
+    member_name: &str,
+) -> KnownTypeLibMemberResolution {
+    let Some(metadata) = binding.typelib_metadata.as_ref() else {
+        return KnownTypeLibMemberResolution::Unsupported;
+    };
+    match resolve_member_token_and_spec_from_typelib_metadata_name(metadata, member_name) {
+        TypeLibMemberLookupResult::Resolved(token, spec) => {
+            KnownTypeLibMemberResolution::Resolved(token.raw(), spec)
+        }
+        TypeLibMemberLookupResult::Missing => KnownTypeLibMemberResolution::Missing,
+        TypeLibMemberLookupResult::Ambiguous => KnownTypeLibMemberResolution::Ambiguous,
+    }
+}
+
+fn resolve_early_bound_binding_default_member_token_and_spec(
+    binding: &EarlyBoundBinding,
+) -> KnownTypeLibMemberResolution {
+    let Some(metadata) = binding.typelib_metadata.as_ref() else {
+        return KnownTypeLibMemberResolution::Unsupported;
+    };
+    match resolve_default_member_token_and_spec_from_typelib_metadata(metadata) {
+        TypeLibMemberLookupResult::Resolved(token, spec) => {
+            KnownTypeLibMemberResolution::Resolved(token.raw(), spec)
+        }
+        TypeLibMemberLookupResult::Missing => KnownTypeLibMemberResolution::Missing,
+        TypeLibMemberLookupResult::Ambiguous => KnownTypeLibMemberResolution::Ambiguous,
+    }
 }
 
 fn render_typelib_invoke_kind(invoke_kind: TypeLibMemberInvokeKind) -> &'static str {
@@ -3270,6 +3306,7 @@ fn known_typelib_member_token(qualified_type: &str, member_name: &str) -> Option
     known_typelib_member_token_and_arity(qualified_type, member_name).map(|(token, _)| token)
 }
 
+#[cfg(test)]
 fn resolve_known_typelib_member_token_and_spec(
     qualified_type: &str,
     member_name: &str,
@@ -3300,6 +3337,7 @@ fn known_typelib_member_token_and_spec(
     }
 }
 
+#[cfg(test)]
 fn resolve_known_typelib_default_member_token_and_spec(
     qualified_type: &str,
 ) -> KnownTypeLibMemberResolution {
@@ -4990,9 +5028,9 @@ mod tests {
         ExportKind, ModuleKind, ProjectCompileError, ProjectEventDispatchBinding, ProjectKind,
         ProjectLoweringStrategy, ProjectManifest, ProjectReference, ReferenceKind,
         ReferencedProjectManifest, compile_project, compile_project_with_strategy,
-        module_unit_from_source, validate_compiled_project_contract,
+        expand_bound_source_line, module_unit_from_source, validate_compiled_project_contract,
     };
-    use std::collections::BTreeMap;
+    use std::collections::{BTreeMap, BTreeSet};
 
     fn base_manifest() -> ProjectManifest {
         let module = module_unit_from_source(
@@ -12151,6 +12189,61 @@ mod tests {
                         && member.known_dispatch_token == Some(9)
                 }),
             "expected native internal dynamic route to keep its transitional token table"
+        );
+    }
+
+    #[test]
+    fn expand_bound_source_line_stores_imported_typelib_metadata_in_early_bound_binding() {
+        let manifest = ProjectManifest {
+            project_name: "ProjectA".to_string(),
+            project_kind: ProjectKind::Source,
+            modules: Vec::new(),
+            references: vec![ProjectReference {
+                referenced_project_name: "OxVba".to_string(),
+                reference_kind: ReferenceKind::TypeLibrary,
+            }],
+            reference_projects: Vec::new(),
+            conditional_constants: BTreeMap::new(),
+        };
+        let mut early_bound = BTreeMap::new();
+        let mut internal_class_bindings = BTreeMap::new();
+        let mut withevents_bindings = BTreeSet::new();
+        let mut next_internal_instance_id = 1;
+        let mut dynamic_instance_bindings = Vec::new();
+        let expanded = expand_bound_source_line(
+            "Dim obj As New OxVba.TestDispatch",
+            &manifest,
+            "projecta",
+            &BTreeMap::new(),
+            &[],
+            &mut early_bound,
+            &mut internal_class_bindings,
+            &mut withevents_bindings,
+            &mut next_internal_instance_id,
+            &mut dynamic_instance_bindings,
+        )
+        .expect("external dim should bind through metadata");
+
+        assert_eq!(
+            expanded,
+            vec![
+                "Dim obj As Object".to_string(),
+                "Set obj = CreateObject(4)".to_string()
+            ]
+        );
+        let binding = early_bound.get("obj").expect("binding should be recorded");
+        assert_eq!(binding.qualified_type, "OxVba.TestDispatch");
+        assert_eq!(binding.create_selector, Some(4));
+        let metadata = binding
+            .typelib_metadata
+            .as_ref()
+            .expect("supported imported binding should carry metadata");
+        assert!(
+            metadata
+                .members
+                .iter()
+                .any(|member| member.name == "EchoVariant" && member.is_default_member),
+            "expected imported binding metadata to carry authoritative default-member identity"
         );
     }
 

@@ -81,6 +81,7 @@ Already evidenced in the repo today:
 - external early-bound parenthesized default-member call syntax now resolves authoritative imported default-member identity from metadata for the current supported subset instead of leaving typed external receivers on the generic unresolved call path
 - the remaining compiler-local token table is now explicitly isolated to native/internal PMR dynamic-object routing and is no longer part of the imported external member-lowering path
 - imported member lookup now distinguishes metadata-backed missing versus ambiguous member/default-member identity, and imported default-member parenthesized call syntax no longer escapes lowering silently when authoritative metadata does not resolve a unique default member
+- supported imported early-bound bindings now carry their authoritative metadata blob through the compiler binding/lowering path, so the active rewrite subset consumes bound metadata directly instead of re-resolving imported type identity by string at each member-call rewrite
 
 ## Remaining checklist by closure domain
 
@@ -96,12 +97,12 @@ Already evidenced in the repo today:
 
  - [x] Prove imported member lookup works through the authoritative metadata path across the supported early-bound execution subset.
 - [x] Prove metadata-backed argument-arity validation on the current supported external member subset.
-- [ ] Fold invoke kind/member kind/default-member metadata into the binder/lowering path where the current subset still infers them indirectly.
+- [x] Fold invoke kind/member kind/default-member metadata into the binder/lowering path where the current subset still infers them indirectly.
 - [x] Add direct compiler evidence for the supported metadata-driven lowering lanes beyond token lookup alone.
 - [x] Keep unsupported external members/shapes on deterministic compile-time diagnostics.
 
 ### C. Reference-facade cleanup
 
-- [ ] Expand compiler-visible imported metadata so supported COM imports behave like synthetic reference-owned symbols rather than a side-channel rewrite hint.
+- [x] Expand compiler-visible imported metadata so supported COM imports behave like synthetic reference-owned symbols rather than a side-channel rewrite hint.
 - [ ] Narrow docs and blocker language so the remaining `IP-05` gap is the real residual parity surface, not already-landed metadata authority work.
 - [ ] Define the exact handoff boundary between `IP-05A` metadata authority and `IP-05B` broader early-bound parity.
