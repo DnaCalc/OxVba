@@ -2566,6 +2566,78 @@ mod tests {
     }
 
     #[test]
+    fn formal_pmr_ambiguous_non_authoritative_scalar_target_default_member_read_assignment_lanes_fail_at_compile_time()
+     {
+        let engine = Engine::new(HostConfig::default());
+        let cases = [
+            (
+                "bare Let to scalar target",
+                "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim widget As New Widget\nDim n As Long\nLet n = widget\nEnd Sub",
+                "Attribute VB_Name = \"Widget\"\nPublic Property Get Value() As Object\nDim c As New Child\nSet Value = c\nEnd Property\nPublic Property Get Observe() As Object\nDim c As New Child\nSet Observe = c\nEnd Property",
+            ),
+            (
+                "bare implicit to scalar target",
+                "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim widget As New Widget\nDim n As Long\nn = widget\nEnd Sub",
+                "Attribute VB_Name = \"Widget\"\nPublic Property Get Value() As Object\nDim c As New Child\nSet Value = c\nEnd Property\nPublic Property Get Observe() As Object\nDim c As New Child\nSet Observe = c\nEnd Property",
+            ),
+            (
+                "parenthesized Let to scalar target",
+                "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim widget As New Widget\nDim n As Long\nLet n = widget()\nEnd Sub",
+                "Attribute VB_Name = \"Widget\"\nPublic Property Get Value() As Object\nDim c As New Child\nSet Value = c\nEnd Property\nPublic Property Get Observe() As Object\nDim c As New Child\nSet Observe = c\nEnd Property",
+            ),
+            (
+                "parenthesized implicit to scalar target",
+                "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim widget As New Widget\nDim n As Long\nn = widget()\nEnd Sub",
+                "Attribute VB_Name = \"Widget\"\nPublic Property Get Value() As Object\nDim c As New Child\nSet Value = c\nEnd Property\nPublic Property Get Observe() As Object\nDim c As New Child\nSet Observe = c\nEnd Property",
+            ),
+            (
+                "indexed Let to scalar target",
+                "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim widget As New Widget\nDim x\nDim n As Long\nx = 2\nLet n = widget(x)\nEnd Sub",
+                "Attribute VB_Name = \"Widget\"\nPublic Property Get Value(ByVal index) As Object\nDim c As New Child\nSet Value = c\nEnd Property\nPublic Property Get Observe(ByVal index) As Object\nDim c As New Child\nSet Observe = c\nEnd Property",
+            ),
+            (
+                "indexed implicit to scalar target",
+                "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim widget As New Widget\nDim x\nDim n As Long\nx = 2\nn = widget(x)\nEnd Sub",
+                "Attribute VB_Name = \"Widget\"\nPublic Property Get Value(ByVal index) As Object\nDim c As New Child\nSet Value = c\nEnd Property\nPublic Property Get Observe(ByVal index) As Object\nDim c As New Child\nSet Observe = c\nEnd Property",
+            ),
+        ];
+
+        for (label, main_source, widget_source) in cases {
+            let main_module =
+                module_unit_from_source("MainModule", ModuleKind::Procedural, main_source)
+                    .expect("main module should parse");
+            let widget = module_unit_from_source("Widget", ModuleKind::Class, widget_source)
+                .expect("widget module should parse");
+            let child = module_unit_from_source(
+                "Child",
+                ModuleKind::Class,
+                "Attribute VB_Name = \"Child\"",
+            )
+            .expect("child module should parse");
+            let manifest = ProjectManifest {
+                project_name: "ProjectA".to_string(),
+                project_kind: ProjectKind::Source,
+                modules: vec![main_module, widget, child],
+                references: Vec::new(),
+                reference_projects: Vec::new(),
+                conditional_constants: std::collections::BTreeMap::new(),
+            };
+
+            let err = match engine.execute_project_with_value_snapshot_phased(&manifest) {
+                Ok(_) => panic!("{label} should fail deterministically"),
+                Err(err) => err,
+            };
+            assert_eq!(err.phase(), DiagnosticPhase::CompileTime, "{label}: {err}");
+            assert!(
+                err.message()
+                    .contains("PMR-E-DEFAULT-MEMBER-RESOLUTION-AMBIGUOUS"),
+                "{label}: {}",
+                err.message()
+            );
+        }
+    }
+
+    #[test]
     fn formal_pmr_ambiguous_non_authoritative_explicit_set_object_target_default_member_read_assignment_lanes_fail_at_compile_time()
      {
         let engine = Engine::new(HostConfig::default());
@@ -3316,6 +3388,72 @@ mod tests {
             (
                 "indexed implicit to Variant target",
                 "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim widget As New Widget\nDim x\nDim valueOut As Variant\nx = 2\nvalueOut = widget(x)\nEnd Sub",
+                "Attribute VB_Name = \"Widget\"\nPublic Sub Touch()\nEnd Sub",
+            ),
+        ];
+
+        for (label, main_source, widget_source) in cases {
+            let main_module =
+                module_unit_from_source("MainModule", ModuleKind::Procedural, main_source)
+                    .expect("main module should parse");
+            let widget = module_unit_from_source("Widget", ModuleKind::Class, widget_source)
+                .expect("widget module should parse");
+            let manifest = ProjectManifest {
+                project_name: "ProjectA".to_string(),
+                project_kind: ProjectKind::Source,
+                modules: vec![main_module, widget],
+                references: Vec::new(),
+                reference_projects: Vec::new(),
+                conditional_constants: std::collections::BTreeMap::new(),
+            };
+
+            let err = match engine.execute_project_with_value_snapshot_phased(&manifest) {
+                Ok(_) => panic!("{label} should fail deterministically"),
+                Err(err) => err,
+            };
+            assert_eq!(err.phase(), DiagnosticPhase::CompileTime, "{label}: {err}");
+            assert!(
+                err.message()
+                    .contains("PMR-E-DEFAULT-MEMBER-RESOLUTION-MISSING"),
+                "{label}: {}",
+                err.message()
+            );
+        }
+    }
+
+    #[test]
+    fn formal_pmr_missing_non_authoritative_scalar_target_default_member_read_assignment_lanes_fail_at_compile_time()
+     {
+        let engine = Engine::new(HostConfig::default());
+        let cases = [
+            (
+                "bare Let to scalar target",
+                "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim widget As New Widget\nDim n As Long\nLet n = widget\nEnd Sub",
+                "Attribute VB_Name = \"Widget\"\nPublic Sub Touch()\nEnd Sub",
+            ),
+            (
+                "bare implicit to scalar target",
+                "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim widget As New Widget\nDim n As Long\nn = widget\nEnd Sub",
+                "Attribute VB_Name = \"Widget\"\nPublic Sub Touch()\nEnd Sub",
+            ),
+            (
+                "parenthesized Let to scalar target",
+                "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim widget As New Widget\nDim n As Long\nLet n = widget()\nEnd Sub",
+                "Attribute VB_Name = \"Widget\"\nPublic Sub Touch()\nEnd Sub",
+            ),
+            (
+                "parenthesized implicit to scalar target",
+                "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim widget As New Widget\nDim n As Long\nn = widget()\nEnd Sub",
+                "Attribute VB_Name = \"Widget\"\nPublic Sub Touch()\nEnd Sub",
+            ),
+            (
+                "indexed Let to scalar target",
+                "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim widget As New Widget\nDim x\nDim n As Long\nx = 2\nLet n = widget(x)\nEnd Sub",
+                "Attribute VB_Name = \"Widget\"\nPublic Sub Touch()\nEnd Sub",
+            ),
+            (
+                "indexed implicit to scalar target",
+                "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim widget As New Widget\nDim x\nDim n As Long\nx = 2\nn = widget(x)\nEnd Sub",
                 "Attribute VB_Name = \"Widget\"\nPublic Sub Touch()\nEnd Sub",
             ),
         ];

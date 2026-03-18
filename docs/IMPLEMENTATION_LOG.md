@@ -1176,6 +1176,12 @@
 - Added compiler and VM/JIT host evidence proving that explicit `Set n = widget`, `Set n = widget()`, and `Set n = widget(x)` now prefer `PMR-E-DEFAULT-MEMBER-RESOLUTION-AMBIGUOUS` / `PMR-E-DEFAULT-MEMBER-RESOLUTION-MISSING` over downstream target-mismatch diagnostics when the non-authoritative default-member source itself cannot be resolved.
 - `IP-02` remains `in-progress`: broader `Set`/`Let` source-target parity, broader non-authoritative default-member closure beyond the currently bounded subsets, and wider Office-style call-vs-value parity are still open.
 
+## 2026-03-18 - Add scalar-target default-member source-resolution evidence for Let and implicit assignment
+
+- Continued the active `IP-02A` checklist run without widening semantics and filled the remaining scalar-target precedence gap for the non-authoritative object-valued read-assignment surface outside explicit `Set`.
+- Added compiler and VM/JIT host evidence proving that `Let n = widget`, `n = widget`, and their zero-arg parenthesized/indexed counterparts now prefer `PMR-E-DEFAULT-MEMBER-RESOLUTION-AMBIGUOUS` / `PMR-E-DEFAULT-MEMBER-RESOLUTION-MISSING` over downstream scalar target-mismatch diagnostics when the non-authoritative default-member source itself cannot be resolved.
+- `IP-02` remains `in-progress`: broader `Set`/`Let` source-target parity, broader non-authoritative default-member closure beyond the currently bounded subsets, and wider Office-style call-vs-value parity are still open.
+
 
 
 
