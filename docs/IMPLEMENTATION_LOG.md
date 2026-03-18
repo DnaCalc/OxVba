@@ -1,3 +1,13 @@
+## 2026-03-18 - Expanded non-authoritative object-default-member Variant-target assignment evidence
+
+- Continued execution from [WORKSET_2026-03-18_IP-02_EXECUTION_CHECKLIST.md](C:\Work\DnaCalc\OxVba\docs\worksets\WORKSET_2026-03-18_IP-02_EXECUTION_CHECKLIST.md) on the remaining `Set`/`Let` object-getter matrix instead of stopping after the authoritative syntax surface.
+- Added compiler and host phased evidence proving the bounded single-visible-candidate non-authoritative native default-member fallback now also preserves the `Variant`-target success lanes for explicit `Set`, explicit `Let`, and implicit assignment across:
+  - bare default-member syntax: `widget`,
+  - zero-arg parenthesized syntax: `widget()`,
+  - indexed syntax: `widget(x)`.
+- This locks the current fallback contract where the dynamic member resolver already has exactly one viable object-returning default-member candidate and confirms that the same legacy `RuntimeValue::I32(...)` handle shape is preserved on the phased host snapshot surface.
+- `IP-02` remains `in-progress`: this closes the bounded non-authoritative object-default-member `Variant` neighbors, but broader `Set` vs `Let` intent parity, broader fallback/recovery parity, and wider Office-style call-vs-value closure remain open.
+
 ## 2026-03-18 - Expanded authoritative object-getter Variant-target assignment evidence
 
 - Continued execution from [WORKSET_2026-03-18_IP-02_EXECUTION_CHECKLIST.md](C:\Work\DnaCalc\OxVba\docs\worksets\WORKSET_2026-03-18_IP-02_EXECUTION_CHECKLIST.md) on the `Set`/`Let` source-target matrix instead of leaving the remaining `Variant` object-getter lanes implied by adjacent `Object`-target coverage.
