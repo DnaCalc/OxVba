@@ -335,6 +335,63 @@ End Sub
 
 #[cfg(target_os = "windows")]
 #[test]
+fn early_bound_project_executes_imported_parenthesized_zero_arg_property_get_read_assignments() {
+    let manifest = manifest_with_typelib(
+        r#"
+Attribute VB_Name = "MainModule"
+Public Sub Main()
+Dim obj As New OxVba.TestDispatch
+Dim implicitValue
+Dim explicitValue
+obj.SetValue = 9
+implicitValue = obj.Value()
+Let explicitValue = obj.Value()
+End Sub
+"#,
+    );
+
+    let out = run_project_windows_hosted(&manifest, false);
+    assert!(expect_object_handle(&out[0]).raw() >= 20_001);
+    assert_eq!(
+        out[1],
+        RuntimeValue::I32(9),
+        "imported parenthesized zero-arg property-get read-assignment should lower through metadata-backed getter syntax"
+    );
+    assert_eq!(
+        out[2],
+        RuntimeValue::I32(9),
+        "explicit Let should preserve imported parenthesized zero-arg property-get read-assignment syntax"
+    );
+}
+
+#[cfg(target_os = "windows")]
+#[test]
+fn early_bound_project_parenthesized_zero_arg_property_get_read_assignment_vm_jit_snapshots_match()
+{
+    let manifest = manifest_with_typelib(
+        r#"
+Attribute VB_Name = "MainModule"
+Public Sub Main()
+Dim obj As New OxVba.TestDispatch
+Dim implicitValue
+Dim explicitValue
+obj.SetValue = 9
+implicitValue = obj.Value()
+Let explicitValue = obj.Value()
+End Sub
+"#,
+    );
+
+    let vm = run_project_windows_hosted(&manifest, false);
+    let jit = run_project_windows_hosted(&manifest, true);
+    assert_eq!(
+        vm, jit,
+        "VM/JIT snapshots should match for imported parenthesized zero-arg property-get read-assignment syntax"
+    );
+}
+
+#[cfg(target_os = "windows")]
+#[test]
 fn early_bound_project_executes_imported_object_result_member_calls() {
     let manifest = manifest_with_typelib(
         r#"

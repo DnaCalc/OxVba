@@ -1,3 +1,12 @@
+## 2026-03-18 - Add imported parenthesized zero-arg property-get evidence
+
+- Continued `IP-05B` by widening the proved imported property syntax matrix on the existing metadata-backed getter path instead of widening unsupported imported setter or event semantics.
+- Added compiler rewrite evidence in [project.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-compiler\src\project.rs) proving imported zero-arg `PropertyGet` read-assignment syntax also remains executable in parenthesized form for both:
+  - `x = obj.Value()`
+  - `Let x = obj.Value()`
+- Added Windows host end-to-end and VM/JIT parity evidence in [com_early_project_end_to_end.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-host\tests\com_early_project_end_to_end.rs) proving the parenthesized zero-arg imported getter lane executes through the same deterministic metadata-backed `DispatchInvoke` route after the supported setter lane establishes state.
+- `IP-05` remains `in-progress`: broader imported property/default-member syntax, richer imported member coverage beyond the controlled fixture, object-valued imported setter parity, and wider Office/Excel object-model behavior are still open.
+
 ## 2026-03-18 - Add imported named-argument property-put evidence
 
 - Continued `IP-05B` by widening the proved imported setter syntax matrix on the existing metadata-backed dispatch path instead of inventing broader imported object-setter parity.
