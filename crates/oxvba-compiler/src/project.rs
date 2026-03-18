@@ -263,6 +263,10 @@ pub enum ProjectCompileError {
     )]
     DefaultMemberResolutionAmbiguous { name: String },
     #[error(
+        "PMR-E-DEFAULT-MEMBER-RESOLUTION-MISSING: non-authoritative default-member target `{name}` has no visible candidate of the required kind"
+    )]
+    DefaultMemberResolutionMissing { name: String },
+    #[error(
         "PMR-E-PROJECT-QUALIFICATION-INVALID: call target `{name}` uses unknown project qualifier"
     )]
     ProjectQualificationInvalid { name: String },
@@ -321,6 +325,9 @@ impl ProjectCompileError {
             Self::NameResolutionAmbiguous { .. } => "PMR-E-NAME-RESOLUTION-AMBIGUOUS",
             Self::DefaultMemberResolutionAmbiguous { .. } => {
                 "PMR-E-DEFAULT-MEMBER-RESOLUTION-AMBIGUOUS"
+            }
+            Self::DefaultMemberResolutionMissing { .. } => {
+                "PMR-E-DEFAULT-MEMBER-RESOLUTION-MISSING"
             }
             Self::ProjectQualificationInvalid { .. } => "PMR-E-PROJECT-QUALIFICATION-INVALID",
             Self::CrossProjectReferenceUnsupported { .. } => {
@@ -2061,7 +2068,9 @@ fn resolve_internal_class_default_member_target_of_kinds(
             })
             .collect::<Vec<_>>();
         if candidates.is_empty() {
-            return Ok(None);
+            return Err(ProjectCompileError::DefaultMemberResolutionMissing {
+                name: receiver.to_string(),
+            });
         }
         if candidates.len() != 1 {
             return Err(ProjectCompileError::DefaultMemberResolutionAmbiguous {
@@ -2610,6 +2619,9 @@ fn rewrite_internal_class_default_member_assignment(
     if lhs.is_empty() || rhs.is_empty() || lhs.contains('.') {
         return Ok(line.to_string());
     }
+    if rhs.starts_with("__oxvba_withevents_set(") {
+        return Ok(line.to_string());
+    }
     let (receiver, mut indexed_args) = if let Some(open_idx) = lhs.find('(') {
         let Some(close_idx) = find_matching_paren(lhs, open_idx) else {
             return Ok(line.to_string());
@@ -2724,16 +2736,35 @@ fn rewrite_internal_class_default_member_read_assignment(
     if rhs_name.is_empty() {
         return Ok(line.to_string());
     }
-    let Some((target, instance_arg)) = resolve_internal_class_default_member_target_of_kinds(
-        &rhs_name,
-        active_project,
-        current_project,
-        current_module,
-        procedures,
-        internal_class_bindings,
-        &[ProcedureDeclKind::PropertyGet],
-    )?
-    else {
+    let resolved_target = if explicit_set {
+        match resolve_internal_class_default_member_target_of_kinds(
+            &rhs_name,
+            active_project,
+            current_project,
+            current_module,
+            procedures,
+            internal_class_bindings,
+            &[ProcedureDeclKind::PropertyGet],
+        ) {
+            Ok(resolved) => resolved,
+            Err(ProjectCompileError::DefaultMemberResolutionAmbiguous { .. })
+            | Err(ProjectCompileError::DefaultMemberResolutionMissing { .. }) => {
+                return Ok(line.to_string());
+            }
+            Err(err) => return Err(err),
+        }
+    } else {
+        resolve_internal_class_default_member_target_of_kinds(
+            &rhs_name,
+            active_project,
+            current_project,
+            current_module,
+            procedures,
+            internal_class_bindings,
+            &[ProcedureDeclKind::PropertyGet],
+        )?
+    };
+    let Some((target, instance_arg)) = resolved_target else {
         return Ok(line.to_string());
     };
     let mut lowered_args = vec![instance_arg];
@@ -6645,6 +6676,93 @@ mod tests {
         let err = compile_project(&manifest)
             .expect_err("ambiguous non-authoritative default-member property set should fail");
         assert_eq!(err.code(), "PMR-E-DEFAULT-MEMBER-RESOLUTION-AMBIGUOUS");
+        assert!(err.to_string().contains("widget"));
+    }
+
+    #[test]
+    fn compile_project_rejects_missing_non_authoritative_default_member_get() {
+        let main_module = module_unit_from_source(
+            "MainModule",
+            ModuleKind::Procedural,
+            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim widget As New Widget\nDim valueOut\nvalueOut = widget\nEnd Sub",
+        )
+        .expect("main module parses");
+        let widget = module_unit_from_source(
+            "Widget",
+            ModuleKind::Class,
+            "Attribute VB_Name = \"Widget\"\nPublic Sub Touch()\nEnd Sub",
+        )
+        .expect("widget module parses");
+        let manifest = ProjectManifest {
+            project_name: "ProjectA".to_string(),
+            project_kind: ProjectKind::Source,
+            modules: vec![main_module, widget],
+            references: Vec::new(),
+            reference_projects: Vec::new(),
+            conditional_constants: BTreeMap::new(),
+        };
+
+        let err = compile_project(&manifest)
+            .expect_err("missing non-authoritative default-member getter should fail");
+        assert_eq!(err.code(), "PMR-E-DEFAULT-MEMBER-RESOLUTION-MISSING");
+        assert!(err.to_string().contains("widget"));
+    }
+
+    #[test]
+    fn compile_project_rejects_missing_non_authoritative_default_member_let() {
+        let main_module = module_unit_from_source(
+            "MainModule",
+            ModuleKind::Procedural,
+            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim widget As New Widget\nwidget = 9\nEnd Sub",
+        )
+        .expect("main module parses");
+        let widget = module_unit_from_source(
+            "Widget",
+            ModuleKind::Class,
+            "Attribute VB_Name = \"Widget\"\nPublic Property Get Value()\nValue = 1\nEnd Property",
+        )
+        .expect("widget module parses");
+        let manifest = ProjectManifest {
+            project_name: "ProjectA".to_string(),
+            project_kind: ProjectKind::Source,
+            modules: vec![main_module, widget],
+            references: Vec::new(),
+            reference_projects: Vec::new(),
+            conditional_constants: BTreeMap::new(),
+        };
+
+        let err = compile_project(&manifest)
+            .expect_err("missing non-authoritative default-member let should fail");
+        assert_eq!(err.code(), "PMR-E-DEFAULT-MEMBER-RESOLUTION-MISSING");
+        assert!(err.to_string().contains("widget"));
+    }
+
+    #[test]
+    fn compile_project_rejects_missing_non_authoritative_default_member_property_set() {
+        let main_module = module_unit_from_source(
+            "MainModule",
+            ModuleKind::Procedural,
+            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim widget As New Widget\nDim x\nx = 2\nSet widget = x\nEnd Sub",
+        )
+        .expect("main module parses");
+        let widget = module_unit_from_source(
+            "Widget",
+            ModuleKind::Class,
+            "Attribute VB_Name = \"Widget\"\nPublic Property Get Value()\nValue = 1\nEnd Property",
+        )
+        .expect("widget module parses");
+        let manifest = ProjectManifest {
+            project_name: "ProjectA".to_string(),
+            project_kind: ProjectKind::Source,
+            modules: vec![main_module, widget],
+            references: Vec::new(),
+            reference_projects: Vec::new(),
+            conditional_constants: BTreeMap::new(),
+        };
+
+        let err = compile_project(&manifest)
+            .expect_err("missing non-authoritative default-member property set should fail");
+        assert_eq!(err.code(), "PMR-E-DEFAULT-MEMBER-RESOLUTION-MISSING");
         assert!(err.to_string().contains("widget"));
     }
 

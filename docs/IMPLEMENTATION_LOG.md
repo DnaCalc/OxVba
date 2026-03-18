@@ -1,3 +1,14 @@
+## 2026-03-18 - Added bounded missing non-authoritative default-member diagnostics
+
+- Started execution from the new [WORKSET_2026-03-18_IP-02_EXECUTION_CHECKLIST.md](C:\Work\DnaCalc\OxVba\docs\worksets\WORKSET_2026-03-18_IP-02_EXECUTION_CHECKLIST.md) so `IP-02` progress is now driven by an explicit lane matrix and exit gate rather than ad hoc frontier notes.
+- Continued the active `IP-02A` semantic-closure slice and converted bounded native non-authoritative default-member `no viable candidate` cases from silent "no rewrite" escape into deterministic PMR compile-time failure.
+- In [project.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-compiler\src\project.rs), added `PMR-E-DEFAULT-MEMBER-RESOLUTION-MISSING` and now raise it when a native internal-class receiver has no authoritative default-member metadata and no visible candidate of the requested kind exists.
+- Added compiler and host phased evidence for the initial bounded missing-candidate lanes:
+  - `valueOut = widget` now fails at compile time when `Widget` exposes no visible `Property Get` candidate without authoritative default-member metadata.
+  - `widget = 9` now fails at compile time when `Widget` exposes no visible `Property Let` candidate without authoritative default-member metadata.
+  - `Set widget = x` now fails at compile time when `Widget` exposes no visible `Property Set` candidate without authoritative default-member metadata.
+- `IP-02` remains `in-progress`: this only closes the first scalar getter/let/property-set `no viable candidate` diagnostics in the bounded non-authoritative native subset; indexed/call/statement neighbors, broader `Set` vs `Let` parity, broader non-authoritative/default-member resolution, and wider Office-style call-vs-value parity still remain open.
+
 ## 2026-03-17 - Bounded ambiguous non-authoritative default-member fallback with a PMR diagnostic
 
 - Continued the active `IP-02A` semantic-closure slice and converted ambiguous native non-authoritative default-member fallback from a silent "no rewrite" escape hatch into a deterministic PMR compile-time failure.
