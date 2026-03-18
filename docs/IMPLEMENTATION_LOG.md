@@ -1,3 +1,18 @@
+## 2026-03-18 - Close IP-02 native/property/default-member scope
+
+- Completed the checklist audit in [WORKSET_2026-03-18_IP-02_EXECUTION_CHECKLIST.md](C:\Work\DnaCalc\OxVba\docs\worksets\WORKSET_2026-03-18_IP-02_EXECUTION_CHECKLIST.md) instead of leaving `IP-02` open behind generic “broader/wider” wording.
+- Explicitly classified the remaining native getter syntax surface as either:
+  - executable in the supported native scope, or
+  - intentionally unsupported with deterministic diagnostics.
+- Explicitly closed the assignment-intent table for:
+  - plain scalar sources,
+  - plain `Object` sources,
+  - object-producing call results,
+  - declared-`Variant` sources with runtime payload validation,
+  - scalar/object native property/default-member getter results.
+- Updated [CURRENT_BLOCKERS.md](C:\Work\DnaCalc\OxVba\CURRENT_BLOCKERS.md) and [IN_PROGRESS_FEATURE_WORKLIST.md](C:\Work\DnaCalc\OxVba\docs\IN_PROGRESS_FEATURE_WORKLIST.md) so `IP-02` is no longer described as an active semantic gap.
+- `IP-02` is now closed for the scoped native/property/default-member `DG-03` target. Remaining late-bound COM default-member parity continues under `IP-03`, and broader oracle/formal program work continues under `IP-10` / `IP-11`.
+
 ## 2026-03-18 - Add runtime-validated plain Variant-source assignment intent evidence
 
 - Continued execution from [WORKSET_2026-03-18_IP-02_EXECUTION_CHECKLIST.md](C:\Work\DnaCalc\OxVba\docs\worksets\WORKSET_2026-03-18_IP-02_EXECUTION_CHECKLIST.md) on the explicit `Set`/`Let` source-target table instead of leaving declared `Variant` sources as a runtime blind spot.

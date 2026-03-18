@@ -58,6 +58,10 @@ Short version:
 4. then expose OxVba outward as COM,
 5. then finish the Office-style hosting model.
 
+Current execution note (2026-03-18):
+1. step 2 is now complete for the scoped native/property/default-member `DG-03` target via [WORKSET_2026-03-18_IP-02_EXECUTION_CHECKLIST.md](C:\Work\DnaCalc\OxVba\docs\worksets\WORKSET_2026-03-18_IP-02_EXECUTION_CHECKLIST.md),
+2. the remaining program still runs in the same order for `IP-03`, `IP-05`, `IP-06`, `IP-07`, and `IP-08`.
+
 ## 4. Why this order is correct
 
 ### 4.1 Why `IP-03` foundation comes first
@@ -174,6 +178,10 @@ Planning notes:
 
 ### Phase B. Property/default-member semantic closure foundation (`IP-02A`)
 
+Status:
+1. completed on 2026-03-18 for the scoped native/property/default-member `DG-03` target tracked in [WORKSET_2026-03-18_IP-02_EXECUTION_CHECKLIST.md](C:\Work\DnaCalc\OxVba\docs\worksets\WORKSET_2026-03-18_IP-02_EXECUTION_CHECKLIST.md).
+2. remaining late-bound default-member recovery/parity is downstream `IP-03` work, not residual `IP-02` work.
+
 Primary target:
 1. lock the end-to-end semantics for `Property Get/Let/Set`, default members, and call-vs-value context.
 
@@ -203,6 +211,7 @@ Key dependencies:
 Acceptance:
 1. property/default-member behavior is no longer described as partial/shared debt in `CURRENT_BLOCKERS.md`,
 2. `IP-02` has a coherent end-to-end model even if some downstream parity areas still consume it incrementally.
+3. this acceptance was satisfied on 2026-03-18 for the scoped native/property/default-member target.
 
 Planning notes:
 1. this phase likely resolves the biggest remaining semantic ambiguity shared by `IP-03`, `IP-05`, `IP-06`, and `IP-08`.

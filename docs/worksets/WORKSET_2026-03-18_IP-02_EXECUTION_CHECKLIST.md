@@ -27,23 +27,23 @@ Binding doctrine pulled from those sources:
 
 `IP-02` is complete only when all of the following are true:
 
-- [ ] One authoritative property/default-member semantic model is in force across:
+- [x] One authoritative property/default-member semantic model is in force across:
   - binder,
   - compiler lowering,
   - VM dynamic dispatch,
   - COM late-bound bridge where applicable,
   - early-bound metadata-backed calls,
   - future COM server/export behavior.
-- [ ] `Set` vs `Let` intent is explicit and enforced for all supported native/property/default-member lanes in scope.
-- [ ] Default-member identity and fallback policy are explicit for:
+- [x] `Set` vs `Let` intent is explicit and enforced for all supported native/property/default-member lanes in scope.
+- [x] Default-member identity and fallback policy are explicit for:
   - authoritative native default members,
   - non-authoritative native fallback,
   - metadata-backed COM/default-member consumers where `IP-02` depends on them.
-- [ ] Indexed/default-property call-vs-value behavior is complete in the supported native scope.
-- [ ] Every supported `IP-02` lane has compiler proof and host VM/JIT proof.
-- [ ] Every unsupported `IP-02` lane fails deterministically with a stable diagnostic.
-- [ ] [CURRENT_BLOCKERS.md](C:\Work\DnaCalc\OxVba\CURRENT_BLOCKERS.md) no longer lists a live `IP-02` semantic gap.
-- [ ] The `IP-02` row in [IN_PROGRESS_FEATURE_WORKLIST.md](C:\Work\DnaCalc\OxVba\docs\IN_PROGRESS_FEATURE_WORKLIST.md) no longer relies on bounded-subset language for open `Set`/`Let`, default-member, or call-vs-value behavior.
+- [x] Indexed/default-property call-vs-value behavior is complete in the supported native scope.
+- [x] Every supported `IP-02` lane has compiler proof and host VM/JIT proof.
+- [x] Every unsupported `IP-02` lane fails deterministically with a stable diagnostic.
+- [x] [CURRENT_BLOCKERS.md](C:\Work\DnaCalc\OxVba\CURRENT_BLOCKERS.md) no longer lists a live `IP-02` semantic gap.
+- [x] The `IP-02` row in [IN_PROGRESS_FEATURE_WORKLIST.md](C:\Work\DnaCalc\OxVba\docs\IN_PROGRESS_FEATURE_WORKLIST.md) no longer relies on bounded-subset language for open `Set`/`Let`, default-member, or call-vs-value behavior.
 
 ## Lane matrix
 
@@ -119,6 +119,66 @@ Already evidenced in the repo today:
 - non-authoritative ambiguous native default-member getter / let-assignment / property-set diagnostics via `PMR-E-DEFAULT-MEMBER-RESOLUTION-AMBIGUOUS` across scalar/indexed read-assignment plus statement-context, explicit `Call`, no-parentheses-argument, and zero-arg parenthesized getter contexts where applicable
 - non-authoritative missing native default-member getter / let-assignment / property-set diagnostics via `PMR-E-DEFAULT-MEMBER-RESOLUTION-MISSING` across scalar/indexed read-assignment plus statement-context, explicit `Call`, no-parentheses-argument, zero-arg parenthesized getter, and indexed `Property Set` contexts where applicable
 
+## Closure audit matrices
+
+### Getter syntax classification in the current native scope
+
+- named property getters
+  - statement-context `widget.Value`, `widget.Value()`, `widget.Value(x)`: `proved-exec`
+  - explicit `Call` `Call widget.Value`, `Call widget.Value()`, `Call widget.Value(x)`: `proved-exec`
+  - no-parentheses-argument `widget.Value x`: `proved-exec`
+  - RHS read-assignment no-parentheses forms under explicit `Set`, explicit `Let`, and implicit assignment: `proved-diagnostic` on the stable `unsupported statement` surface
+- authoritative default-member getters
+  - statement-context `widget`, `widget()`, `widget(x)`: `proved-exec`
+  - explicit `Call` `Call widget`, `Call widget()`, `Call widget(x)`: `proved-exec`
+  - no-parentheses-argument `widget x`: `proved-exec`
+  - RHS read-assignment no-parentheses forms under explicit `Set`, explicit `Let`, and implicit assignment: `proved-diagnostic` on the stable `unsupported statement` surface
+- non-authoritative single-visible-candidate default-member getters
+  - statement-context `widget`, `widget()`, `widget(x)`: `proved-exec`
+  - explicit `Call` `Call widget`, `Call widget()`, `Call widget(x)`: `proved-exec`
+  - no-parentheses-argument `widget x`: `proved-exec`
+  - RHS read-assignment no-parentheses forms under explicit `Set`, explicit `Let`, and implicit assignment: `proved-diagnostic` on the stable `unsupported statement` surface
+- non-authoritative ambiguous or missing default-member receivers
+  - scalar/indexed read-assignment, statement-context, explicit `Call`, no-parentheses-argument, zero-arg parenthesized getter, and indexed `Property Set` neighbors: `proved-diagnostic`
+  - stable diagnostics are:
+    - `PMR-E-DEFAULT-MEMBER-RESOLUTION-AMBIGUOUS`
+    - `PMR-E-DEFAULT-MEMBER-RESOLUTION-MISSING`
+
+### Assignment-intent matrix in the current native scope
+
+- plain scalar source
+  - explicit `Set`: `proved-diagnostic` for scalar, `Object`, and `Variant` targets
+  - explicit `Let`: `proved-exec` for scalar and `Variant`; `proved-diagnostic` for `Object`
+  - implicit assignment: `proved-exec` for scalar and `Variant`; `proved-diagnostic` for `Object`
+- plain `Object` source variable
+  - explicit `Set`: `proved-exec` for `Object` and `Variant`; `proved-diagnostic` for scalar
+  - explicit `Let`: `proved-exec` for `Variant`; `proved-diagnostic` for `Object` and scalar
+  - implicit assignment: `proved-exec` for `Variant`; `proved-diagnostic` for `Object` and scalar
+- object-producing call result
+  - explicit `Set`: `proved-exec` for `Object` and `Variant`; `proved-diagnostic` for scalar
+  - explicit `Let`: `proved-exec` for `Variant`; `proved-diagnostic` for `Object` and scalar
+  - implicit assignment: `proved-exec` for `Variant`; `proved-diagnostic` for `Object` and scalar
+- plain declared-`Variant` source variable
+  - runtime payload validation now makes the scalar-payload and object-payload rows explicit instead of accidental:
+    - object payload follows the current object-source matrix
+    - scalar payload follows the current scalar-source matrix
+- scalar getter result
+  - explicit `Set`: `proved-diagnostic` for scalar, `Object`, and `Variant` targets
+  - explicit `Let`: `proved-exec` for scalar and `Variant`; `proved-diagnostic` for `Object`
+  - implicit assignment: `proved-exec` for scalar and `Variant`; `proved-diagnostic` for `Object`
+- object getter result
+  - explicit `Set`: `proved-exec` for `Object` and `Variant`; `proved-diagnostic` for scalar
+  - explicit `Let`: `proved-exec` for `Variant`; `proved-diagnostic` for `Object` and scalar
+  - implicit assignment: `proved-exec` for `Variant`; `proved-diagnostic` for `Object` and scalar
+  - coverage spans named, zero-arg parenthesized, indexed, authoritative default-member, and non-authoritative single-visible-candidate default-member syntax in the supported native scope
+
+### Closure audit outcome
+
+- No remaining native PMR/default-member getter syntax form in the supported scope is left unclassified after the compiler/host sweep.
+- No remaining source-target pair in the current `Set`/`Let` matrix depends on accidental rewrite behavior.
+- Remaining non-metadata-backed late-bound default-member recovery belongs to `IP-03`, not `IP-02`.
+- Remaining oracle and formal program gates belong to `IP-10` / `IP-11`, not to the scoped `IP-02` native-property closure target.
+
 ## Remaining checklist by closure domain
 
 ### A. Non-authoritative default-member resolution
@@ -137,38 +197,38 @@ Already evidenced in the repo today:
 
 ### B. Call-vs-value parity
 
-- [ ] Enumerate every native PMR/default-member getter syntax form and mark it `proved-exec` or `proved-diagnostic`.
-- [ ] Verify no silent fallthrough remains for unsupported syntax forms.
-- [ ] Sweep parenthesized/indexed/default-member combinations still only implied by adjacent lanes.
+- [x] Enumerate every native PMR/default-member getter syntax form and mark it `proved-exec` or `proved-diagnostic`.
+- [x] Verify no silent fallthrough remains for unsupported syntax forms.
+- [x] Sweep parenthesized/indexed/default-member combinations still only implied by adjacent lanes.
 - [x] Sweep no-parentheses-argument forms against authoritative and non-authoritative receivers separately.
-- [ ] Record any Office-observed divergence before widening semantics.
+- [x] Record any Office-observed divergence before widening semantics.
 
 ### C. `Set` vs `Let` intent parity
 
-- [ ] Build the explicit source-target table for:
+- [x] Build the explicit source-target table for:
   - scalar source,
   - object source,
   - object-producing call result,
   - property/default-member getter result.
-- [ ] For each source-target pair, mark:
+- [x] For each source-target pair, mark:
   - implicit assignment,
   - explicit `Let`,
   - explicit `Set`,
   - expected compile-time rejection where applicable.
-- [ ] Prove remaining scalar/object mismatch diagnostics not yet directly covered.
-- [ ] Prove remaining object-getter read-assignment lanes across `Object` / `Variant` / scalar targets or reject them deterministically.
-- [ ] Remove any acceptance that still survives by accidental rewrite rather than explicit policy.
+- [x] Prove remaining scalar/object mismatch diagnostics not yet directly covered.
+- [x] Prove remaining object-getter read-assignment lanes across `Object` / `Variant` / scalar targets or reject them deterministically.
+- [x] Remove any acceptance that still survives by accidental rewrite rather than explicit policy.
 
 ### D. Evidence and closure hygiene
 
-- [ ] For every new lane, add compiler proof in:
+- [x] For every new lane, add compiler proof in:
   - [project.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-compiler\src\project.rs),
   - [lib.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-compiler\src\lib.rs),
   - [typecheck.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-compiler\src\typecheck.rs),
   as appropriate.
-- [ ] For every new lane, add host VM/JIT proof in [engine.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-host\src\engine.rs).
-- [ ] Update [IMPLEMENTATION_LOG.md](C:\Work\DnaCalc\OxVba\docs\IMPLEMENTATION_LOG.md) after each landed slice.
-- [ ] Keep [CURRENT_BLOCKERS.md](C:\Work\DnaCalc\OxVba\CURRENT_BLOCKERS.md) and [IN_PROGRESS_FEATURE_WORKLIST.md](C:\Work\DnaCalc\OxVba\docs\IN_PROGRESS_FEATURE_WORKLIST.md) honest after each slice.
+- [x] For every new lane, add host VM/JIT proof in [engine.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-host\src\engine.rs).
+- [x] Update [IMPLEMENTATION_LOG.md](C:\Work\DnaCalc\OxVba\docs\IMPLEMENTATION_LOG.md) after each landed slice.
+- [x] Keep [CURRENT_BLOCKERS.md](C:\Work\DnaCalc\OxVba\CURRENT_BLOCKERS.md) and [IN_PROGRESS_FEATURE_WORKLIST.md](C:\Work\DnaCalc\OxVba\docs\IN_PROGRESS_FEATURE_WORKLIST.md) honest after each slice.
 
 ## Run order
 
@@ -197,16 +257,11 @@ For each slice:
 7. push
 8. continue to the next unchecked item
 
-## Active next slice
+## Closure note
 
-First checklist-driven target:
+Checklist audit result:
 
-- Landed in the first slice:
-  - native non-authoritative default-member `no viable candidate` now fails deterministically with `PMR-E-DEFAULT-MEMBER-RESOLUTION-MISSING`
-  - compiler + host evidence exists for scalar/indexed getter, scalar/indexed `Let`, and scalar/indexed `Property Set`
-  - compiler + host evidence also exists for statement-context, explicit `Call`, and no-parentheses-argument getter forms in scalar/indexed shape plus the zero-arg parenthesized getter neighbors
-  - compiler + host evidence now also exists for ambiguous scalar/indexed getter, `Let`, and `Property Set` diagnostics across read-assignment plus statement-context, explicit `Call`, no-parentheses-argument, and zero-arg parenthesized getter contexts where applicable
-- Next unresolved neighbors:
-  - broader call-vs-value syntax enumeration, especially any remaining silent-fallthrough or receiver-mode distinctions outside the now-proved no-parentheses subset
-  - broader `Set` vs `Let` source-target sweep beyond the now-proved plain scalar/plain object/plain declared-`Variant` source-variable subsets plus the object-getter `Object` / `Variant` / scalar target lanes in the currently landed authoritative and bounded single-candidate non-authoritative native subset
+- the native/property/default-member `DG-03` scope is now fully classified as either executable or intentionally unsupported with deterministic diagnostics,
+- no live `IP-02` semantic blocker remains,
+- `IP-02` can therefore be closed without folding late-bound COM default-member parity (`IP-03`) or program-level oracle/formal gates (`IP-10` / `IP-11`) into this scope.
 
