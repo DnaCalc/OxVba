@@ -1,3 +1,12 @@
+## 2026-03-18 - Added non-authoritative Variant-target read-assignment diagnostic evidence
+
+- Continued execution from [WORKSET_2026-03-18_IP-02_EXECUTION_CHECKLIST.md](C:\Work\DnaCalc\OxVba\docs\worksets\WORKSET_2026-03-18_IP-02_EXECUTION_CHECKLIST.md) without widening semantics and added the missing typed-`Variant` diagnostic neighbors on the non-authoritative object-valued default-member source-resolution path.
+- Added compiler and host phased evidence proving that ambiguous and `no viable candidate` non-authoritative default-member resolution diagnostics now directly cover:
+  - explicit `Let valueOut = widget`,
+  - implicit `valueOut = widget`,
+  - the same typed-`Variant` target lanes across zero-arg parenthesized and indexed syntax.
+- `IP-02` remains `in-progress`: broader `Set`/`Let` source-target parity, broader non-authoritative default-member closure beyond the currently bounded subsets, and wider Office-style call-vs-value parity are still open.
+
 ## 2026-03-18 - Added bounded non-authoritative Object-target rejection evidence for object-valued default members
 
 - Continued execution from [WORKSET_2026-03-18_IP-02_EXECUTION_CHECKLIST.md](C:\Work\DnaCalc\OxVba\docs\worksets\WORKSET_2026-03-18_IP-02_EXECUTION_CHECKLIST.md) on the remaining object-getter source-target matrix instead of treating the bounded single-visible-candidate non-authoritative `Object`-target column as implied by the already-landed `Variant`-target and scalar-target neighbors.
