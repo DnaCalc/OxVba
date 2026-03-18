@@ -1702,11 +1702,11 @@ End Sub
             "expected bounded non-IDispatch VT_UNKNOWN diagnostic across VM/JIT, got vm={vm:?} jit={jit:?}"
         );
         assert!(
-            vm.contains("com-dispatch-fault-unspecified")
+            vm.contains("com-dispatch-no-interface;hresult=0x80004002;")
                 && vm.contains(
                     "detail=\"IUnknown::QueryInterface(IDispatch) failed with HRESULT 0x80004002\""
                 )
-                && jit.contains("com-dispatch-fault-unspecified")
+                && jit.contains("com-dispatch-no-interface;hresult=0x80004002;")
                 && jit.contains(
                     "detail=\"IUnknown::QueryInterface(IDispatch) failed with HRESULT 0x80004002\""
                 ),
@@ -1737,11 +1737,11 @@ End Sub
             "expected bounded non-IDispatch VT_UNKNOWN array diagnostic across VM/JIT, got vm={vm:?} jit={jit:?}"
         );
         assert!(
-            vm.contains("com-dispatch-fault-unspecified")
+            vm.contains("com-dispatch-no-interface;hresult=0x80004002;")
                 && vm.contains(
                     "detail=\"IUnknown::QueryInterface(IDispatch) failed with HRESULT 0x80004002\""
                 )
-                && jit.contains("com-dispatch-fault-unspecified")
+                && jit.contains("com-dispatch-no-interface;hresult=0x80004002;")
                 && jit.contains(
                     "detail=\"IUnknown::QueryInterface(IDispatch) failed with HRESULT 0x80004002\""
                 ),
@@ -1773,11 +1773,11 @@ End Sub
             "expected bounded non-IDispatch VT_VARIANT-array diagnostic across VM/JIT, got vm={vm:?} jit={jit:?}"
         );
         assert!(
-            vm.contains("com-dispatch-fault-unspecified")
+            vm.contains("com-dispatch-no-interface;hresult=0x80004002;")
                 && vm.contains(
                     "detail=\"IUnknown::QueryInterface(IDispatch) failed with HRESULT 0x80004002\""
                 )
-                && jit.contains("com-dispatch-fault-unspecified")
+                && jit.contains("com-dispatch-no-interface;hresult=0x80004002;")
                 && jit.contains(
                     "detail=\"IUnknown::QueryInterface(IDispatch) failed with HRESULT 0x80004002\""
                 ),

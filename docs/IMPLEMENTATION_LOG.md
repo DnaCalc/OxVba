@@ -6,6 +6,14 @@
 - Updated [CURRENT_BLOCKERS.md](C:\Work\DnaCalc\OxVba\CURRENT_BLOCKERS.md) and [IN_PROGRESS_FEATURE_WORKLIST.md](C:\Work\DnaCalc\OxVba\docs\IN_PROGRESS_FEATURE_WORKLIST.md) so the bounded direct-error register reflects the newly covered fault lane honestly.
 - `IP-03` remains `in-progress`: broader non-`IDispatch` interface transport, broader multi-dimensional SAFEARRAY parity, fuller external `VARIANT` parity, and richer external automation `VarResult` / `ExcepInfo` / argument-fault coverage are still open.
 
+## 2026-03-18 - Classify bounded E_NOINTERFACE non-IDispatch faults
+
+- Continued the same `IP-03A` late-bound COM fault-surface sweep instead of widening non-`IDispatch` transport.
+- Promoted bounded `IUnknown::QueryInterface(IDispatch)` rejection from the generic `com-dispatch-fault-unspecified` bucket into a stable `com-dispatch-no-interface` classification.
+- Reused the existing plain `VT_UNKNOWN`, typed `VT_UNKNOWN` SAFEARRAY, and `VT_VARIANT` SAFEARRAY lanes that intentionally return non-`IDispatch` payloads, so the slice remains classification-only rather than a carrier expansion.
+- Updated [CURRENT_BLOCKERS.md](C:\Work\DnaCalc\OxVba\CURRENT_BLOCKERS.md) and [IN_PROGRESS_FEATURE_WORKLIST.md](C:\Work\DnaCalc\OxVba\docs\IN_PROGRESS_FEATURE_WORKLIST.md) so the bounded non-`IDispatch` rejection register is explicit.
+- `IP-03` remains `in-progress`: broader non-`IDispatch` interface transport, broader multi-dimensional SAFEARRAY parity, fuller external `VARIANT` parity, and richer external automation `VarResult` / `ExcepInfo` / argument-fault coverage are still open.
+
 ## 2026-03-18 - Close IP-02 native/property/default-member scope
 
 - Completed the checklist audit in [WORKSET_2026-03-18_IP-02_EXECUTION_CHECKLIST.md](C:\Work\DnaCalc\OxVba\docs\worksets\WORKSET_2026-03-18_IP-02_EXECUTION_CHECKLIST.md) instead of leaving `IP-02` open behind generic “broader/wider” wording.
