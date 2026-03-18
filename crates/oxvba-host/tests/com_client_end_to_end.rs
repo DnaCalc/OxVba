@@ -1807,8 +1807,8 @@ End Sub
             "expected bounded VT_UI4 overflow diagnostic across VM/JIT, got vm={vm:?} jit={jit:?}"
         );
         assert!(
-            vm.contains("com-dispatch-fault-unspecified")
-                && jit.contains("com-dispatch-fault-unspecified"),
+            vm.contains("com-dispatch-carrier-overflow")
+                && jit.contains("com-dispatch-carrier-overflow"),
             "expected bounded adapter fault prefix across VM/JIT, got vm={vm:?} jit={jit:?}"
         );
     }
@@ -1838,8 +1838,8 @@ End Sub
             "expected bounded VT_UI4 SAFEARRAY overflow diagnostic across VM/JIT, got vm={vm:?} jit={jit:?}"
         );
         assert!(
-            vm.contains("com-dispatch-fault-unspecified")
-                && jit.contains("com-dispatch-fault-unspecified"),
+            vm.contains("com-dispatch-carrier-overflow")
+                && jit.contains("com-dispatch-carrier-overflow"),
             "expected bounded adapter fault prefix across VM/JIT, got vm={vm:?} jit={jit:?}"
         );
     }
@@ -1867,8 +1867,8 @@ End Sub
             "expected bounded VT_UINT overflow diagnostic across VM/JIT, got vm={vm:?} jit={jit:?}"
         );
         assert!(
-            vm.contains("com-dispatch-fault-unspecified")
-                && jit.contains("com-dispatch-fault-unspecified"),
+            vm.contains("com-dispatch-carrier-overflow")
+                && jit.contains("com-dispatch-carrier-overflow"),
             "expected bounded adapter fault prefix across VM/JIT, got vm={vm:?} jit={jit:?}"
         );
     }
@@ -1898,8 +1898,8 @@ End Sub
             "expected bounded VT_UINT SAFEARRAY overflow diagnostic across VM/JIT, got vm={vm:?} jit={jit:?}"
         );
         assert!(
-            vm.contains("com-dispatch-fault-unspecified")
-                && jit.contains("com-dispatch-fault-unspecified"),
+            vm.contains("com-dispatch-carrier-overflow")
+                && jit.contains("com-dispatch-carrier-overflow"),
             "expected bounded adapter fault prefix across VM/JIT, got vm={vm:?} jit={jit:?}"
         );
     }
@@ -1927,8 +1927,8 @@ End Sub
             "expected bounded VT_I8 overflow diagnostic across VM/JIT, got vm={vm:?} jit={jit:?}"
         );
         assert!(
-            vm.contains("com-dispatch-fault-unspecified")
-                && jit.contains("com-dispatch-fault-unspecified"),
+            vm.contains("com-dispatch-carrier-overflow")
+                && jit.contains("com-dispatch-carrier-overflow"),
             "expected bounded adapter fault prefix across VM/JIT, got vm={vm:?} jit={jit:?}"
         );
     }
@@ -1958,8 +1958,8 @@ End Sub
             "expected bounded VT_I8 SAFEARRAY overflow diagnostic across VM/JIT, got vm={vm:?} jit={jit:?}"
         );
         assert!(
-            vm.contains("com-dispatch-fault-unspecified")
-                && jit.contains("com-dispatch-fault-unspecified"),
+            vm.contains("com-dispatch-carrier-overflow")
+                && jit.contains("com-dispatch-carrier-overflow"),
             "expected bounded adapter fault prefix across VM/JIT, got vm={vm:?} jit={jit:?}"
         );
     }
@@ -1987,8 +1987,8 @@ End Sub
             "expected bounded VT_UI8 overflow diagnostic across VM/JIT, got vm={vm:?} jit={jit:?}"
         );
         assert!(
-            vm.contains("com-dispatch-fault-unspecified")
-                && jit.contains("com-dispatch-fault-unspecified"),
+            vm.contains("com-dispatch-carrier-overflow")
+                && jit.contains("com-dispatch-carrier-overflow"),
             "expected bounded adapter fault prefix across VM/JIT, got vm={vm:?} jit={jit:?}"
         );
     }
@@ -2018,8 +2018,8 @@ End Sub
             "expected bounded VT_UI8 SAFEARRAY overflow diagnostic across VM/JIT, got vm={vm:?} jit={jit:?}"
         );
         assert!(
-            vm.contains("com-dispatch-fault-unspecified")
-                && jit.contains("com-dispatch-fault-unspecified"),
+            vm.contains("com-dispatch-carrier-overflow")
+                && jit.contains("com-dispatch-carrier-overflow"),
             "expected bounded adapter fault prefix across VM/JIT, got vm={vm:?} jit={jit:?}"
         );
     }
@@ -2079,8 +2079,8 @@ End Sub
             "expected bounded VT_BYREF diagnostic across VM/JIT, got vm={vm:?} jit={jit:?}"
         );
         assert!(
-            vm.contains("com-dispatch-fault-unspecified")
-                && jit.contains("com-dispatch-fault-unspecified"),
+            vm.contains("com-dispatch-unsupported-byref-return")
+                && jit.contains("com-dispatch-unsupported-byref-return"),
             "expected bounded adapter fault prefix across VM/JIT, got vm={vm:?} jit={jit:?}"
         );
     }
@@ -2108,8 +2108,8 @@ End Sub
             "expected bounded VT_BYREF array diagnostic across VM/JIT, got vm={vm:?} jit={jit:?}"
         );
         assert!(
-            vm.contains("com-dispatch-fault-unspecified")
-                && jit.contains("com-dispatch-fault-unspecified"),
+            vm.contains("com-dispatch-unsupported-byref-return")
+                && jit.contains("com-dispatch-unsupported-byref-return"),
             "expected bounded adapter fault prefix across VM/JIT, got vm={vm:?} jit={jit:?}"
         );
     }

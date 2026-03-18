@@ -14,6 +14,16 @@
 - Updated [CURRENT_BLOCKERS.md](C:\Work\DnaCalc\OxVba\CURRENT_BLOCKERS.md) and [IN_PROGRESS_FEATURE_WORKLIST.md](C:\Work\DnaCalc\OxVba\docs\IN_PROGRESS_FEATURE_WORKLIST.md) so the bounded non-`IDispatch` rejection register is explicit.
 - `IP-03` remains `in-progress`: broader non-`IDispatch` interface transport, broader multi-dimensional SAFEARRAY parity, fuller external `VARIANT` parity, and richer external automation `VarResult` / `ExcepInfo` / argument-fault coverage are still open.
 
+## 2026-03-18 - Classify bounded internal dispatch conversion faults
+
+- Continued the `IP-03A` host fault-surface sweep on the remaining deterministic dispatch faults that were still rendered as `com-dispatch-fault-unspecified`.
+- Added stable internal labels for the two current no-HRESULT conversion families:
+  - `com-dispatch-carrier-overflow` for out-of-lane integer result conversions that exceed the current `i32` carrier,
+  - `com-dispatch-unsupported-byref-return` for intentionally unsupported `VT_BYREF` return payloads.
+- Reused the existing controlled wide-integer and `VT_BYREF` fixtures, so the slice stays classification-only and does not widen the supported automation carrier.
+- Updated [CURRENT_BLOCKERS.md](C:\Work\DnaCalc\OxVba\CURRENT_BLOCKERS.md) and [IN_PROGRESS_FEATURE_WORKLIST.md](C:\Work\DnaCalc\OxVba\docs\IN_PROGRESS_FEATURE_WORKLIST.md) so the bounded internal-failure surface is explicit instead of hidden behind the unspecified bucket.
+- `IP-03` remains `in-progress`: broader non-`IDispatch` interface transport, broader multi-dimensional SAFEARRAY parity, fuller external `VARIANT` parity, and richer external automation `VarResult` / `ExcepInfo` / argument-fault coverage are still open.
+
 ## 2026-03-18 - Close IP-02 native/property/default-member scope
 
 - Completed the checklist audit in [WORKSET_2026-03-18_IP-02_EXECUTION_CHECKLIST.md](C:\Work\DnaCalc\OxVba\docs\worksets\WORKSET_2026-03-18_IP-02_EXECUTION_CHECKLIST.md) instead of leaving `IP-02` open behind generic “broader/wider” wording.

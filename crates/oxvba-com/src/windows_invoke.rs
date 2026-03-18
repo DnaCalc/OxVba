@@ -96,7 +96,7 @@ pub struct ComInvokeFailure {
 
 #[cfg(target_os = "windows")]
 fn render_invoke_fault_message(failure: &ComInvokeFailure) -> String {
-    let label = crate::map_com_hresult_label(failure.hr.map(|hr| hr as u32), failure.arg_err);
+    let label = failure.classification_label();
     let mut suffix = String::new();
     if let Some(hr) = failure.hr {
         suffix.push_str(&format!("hresult=0x{:08X};", hr as u32));
@@ -119,6 +119,16 @@ fn render_invoke_fault_message(failure: &ComInvokeFailure) -> String {
 
 #[cfg(target_os = "windows")]
 impl ComInvokeFailure {
+    pub fn classification_label(&self) -> &'static str {
+        if self.hr.is_none()
+            && self.arg_err.is_none()
+            && let Some(label) = classify_invoke_detail_label(self.detail.as_deref())
+        {
+            return label;
+        }
+        crate::map_com_hresult_label(self.hr.map(|hr| hr as u32), self.arg_err)
+    }
+
     pub fn render(&self) -> String {
         let mut message = format!(
             "IDispatch::Invoke({} dispid={}) failed",
@@ -152,6 +162,18 @@ impl ComInvokeFailure {
         }
         message
     }
+}
+
+#[cfg(target_os = "windows")]
+fn classify_invoke_detail_label(detail: Option<&str>) -> Option<&'static str> {
+    let detail = detail?;
+    if detail.contains("exceeds current i32 carrier lane") {
+        return Some("carrier-overflow");
+    }
+    if detail.starts_with("unsupported VARIANT BYREF return type vt=") {
+        return Some("unsupported-byref-return");
+    }
+    None
 }
 
 #[cfg(target_os = "windows")]

@@ -904,7 +904,7 @@ impl StandardHostServices {
 
     #[cfg(target_os = "windows")]
     fn com_dispatch_invoke_fault(&self, failure: ComInvokeFailure) -> HalError {
-        let label = map_com_hresult_label(failure.hr.map(|hr| hr as u32), failure.arg_err);
+        let label = failure.classification_label();
         let mut suffix = String::new();
         if let Some(hr) = failure.hr {
             suffix.push_str(&format!("hresult=0x{:08X};", hr as u32));
