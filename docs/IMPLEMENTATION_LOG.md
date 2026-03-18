@@ -1,3 +1,14 @@
+## 2026-03-18 - Add scalar-typed getter explicit Set rejection evidence
+
+- Continued execution from [WORKSET_2026-03-18_IP-02_EXECUTION_CHECKLIST.md](C:\Work\DnaCalc\OxVba\docs\worksets\WORKSET_2026-03-18_IP-02_EXECUTION_CHECKLIST.md) on the explicit source-target matrix and corrected the test model before widening semantics: the new lanes now use true scalar-typed `Property Get` declarations instead of omitted-`As` `Variant` returns.
+- Added compiler and VM/JIT host evidence proving that scalar-typed native property/default-member getter results reject explicit `Set` across typed `Variant`, `Object`, and scalar targets for:
+  - named property syntax,
+  - zero-arg parenthesized syntax,
+  - indexed syntax,
+  - authoritative default-member syntax,
+  - bounded single-visible-candidate non-authoritative default-member syntax.
+- `IP-02` remains `in-progress`: broader `Set`/`Let` source-target parity, broader non-authoritative default-member closure beyond the current bounded subsets, and wider Office-style call-vs-value parity are still open.
+
 ## 2026-03-18 - Expand no-paren getter rejection target-matrix evidence
 
 - Continued the active `IP-02A` checklist run on the call-vs-value sweep without widening semantics.
