@@ -100,7 +100,7 @@ Already evidenced in the repo today:
 - authoritative indexed member/default-member `Get` / `Let` / `Set`
 - authoritative statement-context, `Call`, zero-arg parenthesized, and no-parentheses-argument getter routes for the proven native subset
 - bounded explicit `Set` / `Let` preservation through native PMR/default-member read-assignment rewrites
-- bounded named object-returning native property-get read-assignment into `Variant` targets for explicit `Set`, explicit `Let`, and implicit assignment
+- bounded authoritative object-returning native property/default-member getter read-assignment into `Variant` targets for explicit `Set`, explicit `Let`, and implicit assignment across named, zero-arg parenthesized, indexed, and authoritative default-member syntax
 - bounded `CreateObject(...)` assignment-intent proof surface for explicit `Set`, explicit `Let`, and implicit assignment on current typed `Object` / `Variant` / scalar target lanes
 - non-authoritative single-visible-candidate native default-member fallback for scalar/indexed `Get` / `Let` / `Set`, statement-context getters, explicit `Call` getters, no-parentheses-argument getters, bounded explicit `Set` / `Let` read-assignment, and parenthesized zero-arg getter/read-assignment neighbors where already landed
 - non-authoritative ambiguous native default-member getter / let-assignment / property-set diagnostics via `PMR-E-DEFAULT-MEMBER-RESOLUTION-AMBIGUOUS` across scalar/indexed read-assignment plus statement-context, explicit `Call`, no-parentheses-argument, and zero-arg parenthesized getter contexts where applicable

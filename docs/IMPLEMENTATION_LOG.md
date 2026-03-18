@@ -1,3 +1,13 @@
+## 2026-03-18 - Expanded authoritative object-getter Variant-target assignment evidence
+
+- Continued execution from [WORKSET_2026-03-18_IP-02_EXECUTION_CHECKLIST.md](C:\Work\DnaCalc\OxVba\docs\worksets\WORKSET_2026-03-18_IP-02_EXECUTION_CHECKLIST.md) on the `Set`/`Let` source-target matrix instead of leaving the remaining `Variant` object-getter lanes implied by adjacent `Object`-target coverage.
+- Added compiler and host phased evidence proving authoritative object-returning native property/default-member getters now preserve the bounded `Variant`-target success lanes for explicit `Set`, explicit `Let`, and implicit assignment across:
+  - named zero-arg parenthesized member syntax: `widget.Value()`,
+  - indexed member syntax: `widget.Value(x)`,
+  - authoritative default-member syntax: `widget`, `widget()`, and `widget(x)`.
+- The current phased host snapshot contract remains stable across these lanes: the receiver/object result still surfaces through the same legacy `RuntimeValue::I32(...)` handle shape already used by the neighboring object-target PMR evidence.
+- `IP-02` remains `in-progress`: this closes the authoritative object-getter `Variant` syntax matrix, but non-authoritative `Variant` object-getter neighbors, broader `Set` vs `Let` parity, and wider Office-style call-vs-value closure remain open.
+
 ## 2026-03-18 - Added named object-property-get Variant-target assignment evidence
 
 - Continued execution from [WORKSET_2026-03-18_IP-02_EXECUTION_CHECKLIST.md](C:\Work\DnaCalc\OxVba\docs\worksets\WORKSET_2026-03-18_IP-02_EXECUTION_CHECKLIST.md) on the `Set`/`Let` source-target matrix instead of adding more syntax-only examples.
