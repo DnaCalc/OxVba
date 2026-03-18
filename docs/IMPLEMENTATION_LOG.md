@@ -1,3 +1,11 @@
+## 2026-03-18 - Add DISP_E_PARAMNOTFOUND host fault classification evidence
+
+- Continued the active `IP-03A` late-bound COM fault-surface sweep instead of widening transport semantics.
+- Added a controlled dispatch fixture lane that returns `DISP_E_PARAMNOTFOUND` without synthetic `arg_err`, and wired host VM/JIT end-to-end evidence through runtime-string `DispatchInvoke(...)`.
+- The adapter fault prefix now classifies this HRESULT as `com-dispatch-param-not-found` instead of dropping it into the generic native-failure bucket.
+- Updated [CURRENT_BLOCKERS.md](C:\Work\DnaCalc\OxVba\CURRENT_BLOCKERS.md) and [IN_PROGRESS_FEATURE_WORKLIST.md](C:\Work\DnaCalc\OxVba\docs\IN_PROGRESS_FEATURE_WORKLIST.md) so the bounded direct-error register reflects the newly covered fault lane honestly.
+- `IP-03` remains `in-progress`: broader non-`IDispatch` interface transport, broader multi-dimensional SAFEARRAY parity, fuller external `VARIANT` parity, and richer external automation `VarResult` / `ExcepInfo` / argument-fault coverage are still open.
+
 ## 2026-03-18 - Close IP-02 native/property/default-member scope
 
 - Completed the checklist audit in [WORKSET_2026-03-18_IP-02_EXECUTION_CHECKLIST.md](C:\Work\DnaCalc\OxVba\docs\worksets\WORKSET_2026-03-18_IP-02_EXECUTION_CHECKLIST.md) instead of leaving `IP-02` open behind generic “broader/wider” wording.

@@ -25,6 +25,7 @@ Update (2026-03-18, current pass): the same ambiguous/missing explicit-`Set` sou
 Update (2026-03-18, current pass): ambiguous/missing non-authoritative object-valued default-member source-resolution diagnostics now also have direct bounded scalar-target evidence for explicit `Let` and implicit assignment across bare, zero-arg parenthesized, and indexed syntax.
 Update (2026-03-18, current pass): no-parentheses getter RHS read-assignment rejection now also has direct bounded compile-time evidence across typed `Variant`, `Object`, and scalar targets under explicit `Set`, explicit `Let`, and implicit assignment for named, authoritative default-member, and single-visible-candidate non-authoritative default-member receivers.
 Update (2026-03-18, closure pass): the `IP-02` checklist audit found no remaining unclassified lane in the supported native/property/default-member `DG-03` scope, so `IP-02` is now closed. Remaining late-bound default-member parity continues under `IP-03`, and wider oracle/formal program obligations continue under `IP-10` / `IP-11`.
+Update (2026-03-18, current pass): bounded invoke-failure evidence now also covers stable `DISP_E_PARAMNOTFOUND` classification on the host fault surface.
 
 Use it to answer:
 1. what major behavior areas are still unfinished,

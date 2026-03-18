@@ -2,11 +2,12 @@
 
 use crate::windows_client::{
     COM_CONNECT_E_CANNOTCONNECT, COM_CONNECT_E_NOCONNECTION, COM_DISP_E_BADPARAMCOUNT,
-    COM_DISP_E_EXCEPTION, COM_DISP_E_MEMBERNOTFOUND, COM_DISP_E_TYPEMISMATCH,
-    COM_DISP_E_UNKNOWNNAME, COM_E_INVALIDARG, COM_E_NOINTERFACE, COM_E_NOTIMPL, COM_S_OK,
-    IID_ICONNECTIONPOINT, IID_ICONNECTIONPOINTCONTAINER, IID_IDISPATCH, IID_IUNKNOWN, IID_NULL,
-    RawIConnectionPointContainerVtbl, RawIConnectionPointVtbl, RawIDispatch, RawIDispatchVtbl,
-    RawIUnknown, RawIUnknownVtbl, add_ref_dispatch as raw_add_ref_dispatch, guid_equals,
+    COM_DISP_E_EXCEPTION, COM_DISP_E_MEMBERNOTFOUND, COM_DISP_E_PARAMNOTFOUND,
+    COM_DISP_E_TYPEMISMATCH, COM_DISP_E_UNKNOWNNAME, COM_E_INVALIDARG, COM_E_NOINTERFACE,
+    COM_E_NOTIMPL, COM_S_OK, IID_ICONNECTIONPOINT, IID_ICONNECTIONPOINTCONTAINER, IID_IDISPATCH,
+    IID_IUNKNOWN, IID_NULL, RawIConnectionPointContainerVtbl, RawIConnectionPointVtbl,
+    RawIDispatch, RawIDispatchVtbl, RawIUnknown, RawIUnknownVtbl,
+    add_ref_dispatch as raw_add_ref_dispatch, guid_equals,
     release_dispatch as raw_release_dispatch, release_unknown as raw_release_unknown,
 };
 use crate::windows_variant::{
@@ -84,6 +85,7 @@ pub const TEST_DISPID_SET_INDEXED_VALUE: i32 = 14;
 pub const TEST_DISPID_SET_INDEXED_VALUE_REF: i32 = 15;
 pub const TEST_DISPID_ECHO_VARIANT: i32 = 16;
 pub const TEST_DISPID_RAISE_EXCEPTION: i32 = 17;
+pub const TEST_DISPID_RAISE_PARAM_NOT_FOUND: i32 = 87;
 pub const TEST_DISPID_RETURN_SMALLINT: i32 = 18;
 pub const TEST_DISPID_RETURN_UNSIGNED_WORD: i32 = 19;
 pub const TEST_DISPID_RETURN_SMALLINT_ARRAY: i32 = 20;
@@ -767,6 +769,7 @@ pub fn map_com_hresult_label(hresult: Option<u32>, arg_err: Option<u32>) -> &'st
         Some(0x8004_0154) => "class-not-registered",
         Some(0x8004_01F3) => "invalid-class-string",
         Some(0x8002_0003) => "member-not-found",
+        Some(0x8002_0004) => "param-not-found",
         Some(0x8002_0006) => "unknown-name",
         Some(0x8002_0005) => "type-mismatch",
         Some(0x8002_000E) => "bad-param-count",
@@ -1826,6 +1829,7 @@ unsafe extern "system" fn oxvba_test_get_ids_of_names(
             }
             "returnvaluemembername" => TEST_DISPID_RETURN_VALUE_MEMBER_NAME,
             "returndefaultmembername" => TEST_DISPID_RETURN_DEFAULT_MEMBER_NAME,
+            "raiseparamnotfound" => TEST_DISPID_RAISE_PARAM_NOT_FOUND,
             "lhs" => TEST_NAMED_DISPID_LHS,
             "rhs" => TEST_NAMED_DISPID_RHS,
             "index" => TEST_NAMED_DISPID_INDEX,
@@ -2110,6 +2114,12 @@ unsafe extern "system" fn oxvba_test_invoke(
                 COM_DISP_E_EXCEPTION,
             );
             COM_DISP_E_EXCEPTION
+        }
+        TEST_DISPID_RAISE_PARAM_NOT_FOUND => {
+            if (wflags & (DISPATCH_METHOD | DISPATCH_PROPERTYGET)) == 0 || cargs != 0 {
+                return COM_DISP_E_BADPARAMCOUNT;
+            }
+            COM_DISP_E_PARAMNOTFOUND
         }
         TEST_DISPID_RETURN_SMALLINT => {
             if (wflags & DISPATCH_METHOD) == 0 || cargs != 0 {

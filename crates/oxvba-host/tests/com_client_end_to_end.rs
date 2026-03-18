@@ -1356,6 +1356,37 @@ End Sub
     }
 
     #[test]
+    fn dispatchinvoke_param_not_found_surfaces_deterministically() {
+        let source = r#"
+Sub Main()
+Dim obj
+Dim failed
+obj = CreateObject("OxVba.TestDispatch")
+failed = DispatchInvoke(obj, 87)
+End Sub
+"#;
+
+        let vm = run_windows_host_backed_error(source, false);
+        let jit = run_windows_host_backed_error(source, true);
+        assert!(
+            vm.contains("com-dispatch-param-not-found;hresult=0x80020004;")
+                && jit.contains("com-dispatch-param-not-found;hresult=0x80020004;"),
+            "expected stable param-not-found adapter fault prefix across VM/JIT, got vm={vm:?} jit={jit:?}"
+        );
+        assert!(
+            vm.contains("IDispatch::Invoke(")
+                && vm.contains("failed with HRESULT 0x80020004")
+                && jit.contains("IDispatch::Invoke(")
+                && jit.contains("failed with HRESULT 0x80020004"),
+            "expected raw param-not-found detail across VM/JIT, got vm={vm:?} jit={jit:?}"
+        );
+        assert!(
+            !vm.contains("arg_err=") && !jit.contains("arg_err="),
+            "param-not-found path should not synthesize arg_err, got vm={vm:?} jit={jit:?}"
+        );
+    }
+
+    #[test]
     fn dispatchinvoke_runtime_string_member_unknown_name_surfaces_deterministically() {
         let source = r#"
 Sub Main()
