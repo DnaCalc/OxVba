@@ -3259,7 +3259,11 @@ fn known_typelib_member_token_and_arity(
         .map(|(token, spec)| (token, spec.parameter_names.len()))
 }
 
-fn known_dispatch_member_token(member_name: &str) -> Option<i32> {
+/// Transitional native/internal PMR token map.
+///
+/// Imported COM early-bound lowering must not route through this helper; the external path now
+/// resolves authoritative member tokens from `oxvba-com` synthetic typelib metadata instead.
+fn known_internal_dynamic_dispatch_member_token(member_name: &str) -> Option<i32> {
     match normalize_identifier(member_name).as_str() {
         "count" => Some(1),
         "exists" => Some(2),
@@ -3467,7 +3471,9 @@ fn build_project_dynamic_object_routes(
                     .map(|metadata| ProjectDynamicMemberRoute {
                         member_name: decl.procedure_name.clone(),
                         lowered_name: decl.lowered_name.clone(),
-                        known_dispatch_token: known_dispatch_member_token(&decl.procedure_name),
+                        known_dispatch_token: known_internal_dynamic_dispatch_member_token(
+                            &decl.procedure_name,
+                        ),
                         is_default_member: decl.is_default_member,
                         kind: decl.kind.dynamic_member_kind(),
                         visible_param_count: decl.param_count,
@@ -12032,6 +12038,41 @@ mod tests {
         assert_eq!(
             super::known_typelib_create_object_selector("Excel.Application"),
             None
+        );
+    }
+
+    #[test]
+    fn compile_project_internal_dynamic_routes_use_internal_dispatch_token_table() {
+        let main_module = module_unit_from_source(
+            "MainModule",
+            ModuleKind::Procedural,
+            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim widget As New Widget\nEnd Sub",
+        )
+        .expect("main module parses");
+        let widget = module_unit_from_source(
+            "Widget",
+            ModuleKind::Class,
+            "Attribute VB_Name = \"Widget\"\nPublic Property Get Value()\nValue = 9\nEnd Property",
+        )
+        .expect("widget module parses");
+        let manifest = ProjectManifest {
+            project_name: "ProjectA".to_string(),
+            project_kind: ProjectKind::Source,
+            modules: vec![main_module, widget],
+            references: Vec::new(),
+            reference_projects: Vec::new(),
+            conditional_constants: BTreeMap::new(),
+        };
+        let compiled = compile_project(&manifest).expect("native internal route should compile");
+        assert!(
+            compiled.project_dynamic_objects[0]
+                .members
+                .iter()
+                .any(|member| {
+                    member.member_name.eq_ignore_ascii_case("Value")
+                        && member.known_dispatch_token == Some(9)
+                }),
+            "expected native internal dynamic route to keep its transitional token table"
         );
     }
 

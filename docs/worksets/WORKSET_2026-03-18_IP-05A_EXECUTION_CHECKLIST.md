@@ -79,6 +79,7 @@ Already evidenced in the repo today:
 - external early-bound call lowering now also enforces argument arity from synthetic typelib metadata in the supported imported-member subset instead of letting wrong-arity calls drift to runtime
 - external early-bound call lowering now also consults imported invoke-kind metadata for the current supported subset, proving required-arg `PropertyGet` lowering directly while rejecting imported `PropertyPut` / `PropertyPutRef` shapes at compile time instead of letting setter-shaped members flow through the generic read-call rewrite
 - external early-bound parenthesized default-member call syntax now resolves authoritative imported default-member identity from metadata for the current supported subset instead of leaving typed external receivers on the generic unresolved call path
+- the remaining compiler-local token table is now explicitly isolated to native/internal PMR dynamic-object routing and is no longer part of the imported external member-lowering path
 
 ## Remaining checklist by closure domain
 
@@ -88,7 +89,7 @@ Already evidenced in the repo today:
 - [x] Move external early-bound member-token lookup onto `oxvba-com` metadata for the currently supported imported types.
 - [x] Move external `As New` activation-selector lookup onto `oxvba-com` metadata for the currently supported imported types.
 - [ ] Replace remaining supported external lowering assumptions that still derive member shape from compiler-local hardcoded knowledge.
-- [ ] Isolate and document any still-transitional compiler-local token tables that are not part of the external imported-member path anymore.
+- [x] Isolate and document any still-transitional compiler-local token tables that are not part of the external imported-member path anymore.
 
 ### B. Binder and lowering integration
 

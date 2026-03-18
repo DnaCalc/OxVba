@@ -10,6 +10,8 @@
 - In [project.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-compiler\src\project.rs) and [com_early_project_end_to_end.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-host\tests\com_early_project_end_to_end.rs), added direct compiler + host evidence for the supported required-argument imported `PropertyGet` lane (`Lookup`) so the metadata-backed early-bind subset is now proved across zero-arg property-get, required-arg property-get, and method call shapes instead of only token resolution plus arity guards.
 - In [project.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-compiler\src\project.rs), folded authoritative imported default-member identity into the parenthesized external early-bound call rewrite path, so typed receivers like `obj(42)` now lower through the metadata-backed `EchoVariant` lane instead of remaining outside the imported-member rewrite boundary.
 - In [project.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-compiler\src\project.rs) and [com_early_project_end_to_end.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-host\tests\com_early_project_end_to_end.rs), added direct compiler + host evidence proving both successful external default-member execution (`obj(42)`) and deterministic metadata-backed wrong-arity rejection for `obj()`.
+- In [project.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-compiler\src\project.rs), renamed the remaining compiler-local member-token switch to an explicitly native/internal PMR helper and documented that imported COM early-bound lowering must not route through it.
+- Added direct compiler evidence proving the isolated local token switch still owns only native/internal dynamic-object member metadata while the imported external path stays on `oxvba-com` metadata authority.
 
 ## 2026-03-18 - Add DISP_E_PARAMNOTFOUND host fault classification evidence
 
