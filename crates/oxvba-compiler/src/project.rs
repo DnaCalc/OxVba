@@ -12626,6 +12626,34 @@ mod tests {
     }
 
     #[test]
+    fn compile_project_preserves_explicit_let_for_named_arg_external_member_calls_to_dispatchinvoke()
+     {
+        let main_module = module_unit_from_source(
+            "MainModule",
+            ModuleKind::Procedural,
+            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim obj As OxVba.TestDispatch\nDim sumPair\nDim lookupPair\nDim echoValue\nSet obj = CreateObject(4)\nLet sumPair = obj.SumPair(rhs := 14, lhs := 3)\nLet lookupPair = obj.LookupPair(rhs := 9, lhs := 5)\nLet echoValue = obj(value := 41)\nEnd Sub",
+        )
+        .expect("module parses");
+        let manifest = ProjectManifest {
+            project_name: "ProjectA".to_string(),
+            project_kind: ProjectKind::Source,
+            modules: vec![main_module],
+            references: vec![ProjectReference {
+                referenced_project_name: "OxVba".to_string(),
+                reference_kind: ReferenceKind::TypeLibrary,
+            }],
+            reference_projects: Vec::new(),
+            conditional_constants: BTreeMap::new(),
+        };
+        let compiled = compile_project(&manifest)
+            .expect("explicit Let named-argument imported member calls should compile");
+        let lowered = compiled.rewritten_source.to_ascii_lowercase();
+        assert!(lowered.contains("let sumpair = dispatchinvoke(obj, 12, rhs := 14, lhs := 3)"));
+        assert!(lowered.contains("let lookuppair = dispatchinvoke(obj, 13, rhs := 9, lhs := 5)"));
+        assert!(lowered.contains("let echovalue = dispatchinvoke(obj, 16, value := 41)"));
+    }
+
+    #[test]
     fn compile_project_rewrites_external_object_member_call_to_dispatchinvoke() {
         let main_module = module_unit_from_source(
             "MainModule",

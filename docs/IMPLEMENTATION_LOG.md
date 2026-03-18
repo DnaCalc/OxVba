@@ -1,3 +1,13 @@
+## 2026-03-18 - Add imported explicit-Let named-argument call evidence
+
+- Continued `IP-05B` by widening the proved imported assignment-intent surface on the already-supported metadata-backed named-argument call path instead of inventing broader imported setter or event semantics.
+- Added compiler rewrite evidence in [project.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-compiler\src\project.rs) proving explicit `Let` preserves metadata-backed lowering for the current named-argument imported call subset:
+  - `Let sumPair = obj.SumPair(rhs := 14, lhs := 3)`
+  - `Let lookupPair = obj.LookupPair(rhs := 9, lhs := 5)`
+  - `Let echoValue = obj(value := 41)`
+- Added Windows host end-to-end and VM/JIT parity evidence in [com_early_project_end_to_end.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-host\tests\com_early_project_end_to_end.rs) proving explicit `Let` preserves named-argument canonicalization across the current imported method, indexed `PropertyGet`, and authoritative default-member call subset.
+- `IP-05` remains `in-progress`: broader imported property/default-member syntax, richer imported member coverage beyond the controlled fixture, object-valued imported setter parity, and wider Office/Excel object-model behavior are still open.
+
 ## 2026-03-18 - Add imported parenthesized zero-arg property-get evidence
 
 - Continued `IP-05B` by widening the proved imported property syntax matrix on the existing metadata-backed getter path instead of widening unsupported imported setter or event semantics.

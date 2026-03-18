@@ -491,6 +491,69 @@ End Sub
 
 #[cfg(target_os = "windows")]
 #[test]
+fn early_bound_project_executes_imported_explicit_let_named_argument_calls() {
+    let manifest = manifest_with_typelib(
+        r#"
+Attribute VB_Name = "MainModule"
+Public Sub Main()
+Dim obj As New OxVba.TestDispatch
+Dim sumPair
+Dim lookupPair
+Dim echoValue
+Let sumPair = obj.SumPair(rhs := 14, lhs := 3)
+Let lookupPair = obj.LookupPair(rhs := 9, lhs := 5)
+Let echoValue = obj(value := 41)
+End Sub
+"#,
+    );
+
+    let out = run_project_windows_hosted(&manifest, false);
+    assert!(expect_object_handle(&out[0]).raw() >= 20_001);
+    assert_eq!(
+        out[1],
+        RuntimeValue::I32(3_014),
+        "explicit Let imported method call should preserve named-argument canonicalization through metadata-backed dispatch"
+    );
+    assert_eq!(
+        out[2],
+        RuntimeValue::I32(205_009),
+        "explicit Let imported property-get call should preserve named-argument canonicalization through metadata-backed dispatch"
+    );
+    assert_eq!(
+        out[3],
+        RuntimeValue::I32(41),
+        "explicit Let imported default-member call should preserve named-argument canonicalization through metadata-backed dispatch"
+    );
+}
+
+#[cfg(target_os = "windows")]
+#[test]
+fn early_bound_project_explicit_let_named_argument_calls_vm_jit_snapshots_match() {
+    let manifest = manifest_with_typelib(
+        r#"
+Attribute VB_Name = "MainModule"
+Public Sub Main()
+Dim obj As New OxVba.TestDispatch
+Dim sumPair
+Dim lookupPair
+Dim echoValue
+Let sumPair = obj.SumPair(rhs := 14, lhs := 3)
+Let lookupPair = obj.LookupPair(rhs := 9, lhs := 5)
+Let echoValue = obj(value := 41)
+End Sub
+"#,
+    );
+
+    let vm = run_project_windows_hosted(&manifest, false);
+    let jit = run_project_windows_hosted(&manifest, true);
+    assert_eq!(
+        vm, jit,
+        "VM/JIT snapshots should match for explicit Let imported named-argument calls"
+    );
+}
+
+#[cfg(target_os = "windows")]
+#[test]
 fn early_bound_project_object_result_member_calls_vm_jit_snapshots_match() {
     let manifest = manifest_with_typelib(
         r#"
