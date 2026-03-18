@@ -53,8 +53,10 @@ Public Sub Main()
 Dim obj As New OxVba.TestDispatch
 Dim countValue
 Dim existsValue
+Dim lookupValue
 countValue = obj.Count()
 existsValue = obj.Exists(42)
+lookupValue = obj.Lookup(42)
 End Sub
 "#,
     );
@@ -71,6 +73,11 @@ End Sub
         RuntimeValue::Bool(true),
         "Exists(42) should map through early-bind rewrite lane"
     );
+    assert_eq!(
+        out[3],
+        RuntimeValue::I32(1_042),
+        "Lookup(42) should map through metadata-backed property-get lane"
+    );
 }
 
 #[cfg(target_os = "windows")]
@@ -83,8 +90,10 @@ Public Sub Main()
 Dim obj As New OxVba.TestDispatch
 Dim countValue
 Dim existsValue
+Dim lookupValue
 countValue = obj.Count()
 existsValue = obj.Exists(41)
+lookupValue = obj.Lookup(41)
 End Sub
 "#,
     );
@@ -94,6 +103,34 @@ End Sub
     assert_eq!(
         vm, jit,
         "VM/JIT snapshots should match for early-binding subset"
+    );
+}
+
+#[test]
+fn early_bound_project_reports_compile_error_for_unsupported_member_shape() {
+    let manifest = manifest_with_typelib(
+        r#"
+Attribute VB_Name = "MainModule"
+Public Sub Main()
+Dim obj As New OxVba.TestDispatch
+Call obj.SetValue(9)
+End Sub
+"#,
+    );
+
+    let engine = Engine::new(HostConfig {
+        enable_jit: false,
+        root_object_name: None,
+    });
+    let err = engine
+        .execute_project_with_snapshot_phased(&manifest)
+        .expect_err("unsupported member shape should fail at compile-time");
+    assert_eq!(err.phase(), DiagnosticPhase::CompileTime);
+    assert!(
+        err.message()
+            .contains("BIND-E-TYPELIB-MEMBER-SHAPE-UNSUPPORTED"),
+        "unexpected compile diagnostic: {}",
+        err.message()
     );
 }
 

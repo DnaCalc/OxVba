@@ -1,8 +1,9 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use oxvba_com::{
-    build_typelib_metadata, create_object_selector_from_typelib_metadata,
-    known_typelib_identity_for_prog_id_name, member_token_and_spec_from_typelib_metadata_name,
+    ComMemberSpec, TypeLibMemberInvokeKind, build_typelib_metadata,
+    create_object_selector_from_typelib_metadata, known_typelib_identity_for_prog_id_name,
+    member_token_and_spec_from_typelib_metadata_name,
 };
 use oxvba_runtime::ObjectHandle;
 use thiserror::Error;
@@ -301,6 +302,10 @@ pub enum ProjectCompileError {
         expected: usize,
         actual: usize,
     },
+    #[error(
+        "BIND-E-TYPELIB-MEMBER-SHAPE-UNSUPPORTED: external invoke target `{target}` uses unsupported imported member shape `{shape}` in the current deterministic early-bind subset"
+    )]
+    TypeLibraryMemberShapeUnsupported { target: String, shape: String },
     #[error("PMR-E-BACKEND-COMPILE: {message}")]
     BackendCompile { message: String },
 }
@@ -348,6 +353,9 @@ impl ProjectCompileError {
             Self::TypeLibraryMemberUnsupported { .. } => "BIND-E-TYPELIB-MEMBER-UNSUPPORTED",
             Self::TypeLibraryInvokeArityUnsupported { .. } => {
                 "BIND-E-TYPELIB-INVOKE-ARITY-UNSUPPORTED"
+            }
+            Self::TypeLibraryMemberShapeUnsupported { .. } => {
+                "BIND-E-TYPELIB-MEMBER-SHAPE-UNSUPPORTED"
             }
             Self::BackendCompile { .. } => "PMR-E-BACKEND-COMPILE",
         }
@@ -1727,16 +1735,26 @@ fn rewrite_early_bound_member_dispatch(
             cursor = close + 1;
             continue;
         };
-        let Some((member_token, expected_arity)) =
-            known_typelib_member_token_and_arity(&binding.qualified_type, member_name)
+        let Some((member_token, member_spec)) =
+            known_typelib_member_token_and_spec(&binding.qualified_type, member_name)
         else {
             return Err(ProjectCompileError::TypeLibraryMemberUnsupported {
                 member_name: member_name.to_string(),
             });
         };
+        if !matches!(
+            member_spec.invoke_kind,
+            TypeLibMemberInvokeKind::PropertyGet | TypeLibMemberInvokeKind::Method
+        ) {
+            return Err(ProjectCompileError::TypeLibraryMemberShapeUnsupported {
+                target: format!("{}.{}", binding.qualified_type, member_name),
+                shape: render_typelib_invoke_kind(member_spec.invoke_kind).to_string(),
+            });
+        }
         let args_raw = line[open + 1..close].trim();
         let args = split_top_level_args(args_raw)?;
         let actual_arity = args.iter().filter(|arg| !arg.trim().is_empty()).count();
+        let expected_arity = member_spec.parameter_names.len();
         if actual_arity != expected_arity {
             return Err(ProjectCompileError::TypeLibraryInvokeArityUnsupported {
                 target: format!("{}.{}", binding.qualified_type, member_name),
@@ -3163,19 +3181,37 @@ fn known_typelib_create_object_selector(qualified_type: &str) -> Option<i32> {
     create_object_selector_from_typelib_metadata(&metadata)
 }
 
+fn render_typelib_invoke_kind(invoke_kind: TypeLibMemberInvokeKind) -> &'static str {
+    match invoke_kind {
+        TypeLibMemberInvokeKind::PropertyGet => "property-get",
+        TypeLibMemberInvokeKind::Method => "method",
+        TypeLibMemberInvokeKind::PropertyPut => "property-put",
+        TypeLibMemberInvokeKind::PropertyPutRef => "property-putref",
+    }
+}
+
 #[cfg(test)]
 fn known_typelib_member_token(qualified_type: &str, member_name: &str) -> Option<i32> {
     known_typelib_member_token_and_arity(qualified_type, member_name).map(|(token, _)| token)
 }
 
+fn known_typelib_member_token_and_spec(
+    qualified_type: &str,
+    member_name: &str,
+) -> Option<(i32, ComMemberSpec)> {
+    let identity = known_typelib_identity_for_prog_id_name(qualified_type)?;
+    let metadata = build_typelib_metadata(&identity);
+    let (token, spec) = member_token_and_spec_from_typelib_metadata_name(&metadata, member_name)?;
+    Some((token.raw(), spec))
+}
+
+#[cfg(test)]
 fn known_typelib_member_token_and_arity(
     qualified_type: &str,
     member_name: &str,
 ) -> Option<(i32, usize)> {
-    let identity = known_typelib_identity_for_prog_id_name(qualified_type)?;
-    let metadata = build_typelib_metadata(&identity);
-    let (token, spec) = member_token_and_spec_from_typelib_metadata_name(&metadata, member_name)?;
-    Some((token.raw(), spec.parameter_names.len()))
+    known_typelib_member_token_and_spec(qualified_type, member_name)
+        .map(|(token, spec)| (token, spec.parameter_names.len()))
 }
 
 fn known_dispatch_member_token(member_name: &str) -> Option<i32> {
@@ -11919,6 +11955,19 @@ mod tests {
     }
 
     #[test]
+    fn known_typelib_member_token_and_spec_reads_external_member_shape_metadata() {
+        let (token, spec) =
+            super::known_typelib_member_token_and_spec("OxVba.TestDispatch", "SetValueRef")
+                .expect("setter shape metadata should resolve");
+        assert_eq!(token, 8);
+        assert_eq!(
+            spec.invoke_kind,
+            super::TypeLibMemberInvokeKind::PropertyPutRef
+        );
+        assert_eq!(spec.parameter_names, vec!["value".to_string()]);
+    }
+
+    #[test]
     fn known_typelib_create_object_selector_reads_external_activation_metadata() {
         assert_eq!(
             super::known_typelib_create_object_selector("OxVba.TestDispatch"),
@@ -12026,6 +12075,31 @@ mod tests {
     }
 
     #[test]
+    fn compile_project_rewrites_property_get_external_member_call_to_dispatchinvoke() {
+        let main_module = module_unit_from_source(
+            "MainModule",
+            ModuleKind::Procedural,
+            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim obj As OxVba.TestDispatch\nDim x\nSet obj = CreateObject(4)\nx = obj.Lookup(41)\nEnd Sub",
+        )
+        .expect("module parses");
+        let manifest = ProjectManifest {
+            project_name: "ProjectA".to_string(),
+            project_kind: ProjectKind::Source,
+            modules: vec![main_module],
+            references: vec![ProjectReference {
+                referenced_project_name: "OxVba".to_string(),
+                reference_kind: ReferenceKind::TypeLibrary,
+            }],
+            reference_projects: Vec::new(),
+            conditional_constants: BTreeMap::new(),
+        };
+        let compiled = compile_project(&manifest)
+            .expect("property-get external member call should compile in supported subset");
+        let lowered = compiled.rewritten_source.to_ascii_lowercase();
+        assert!(lowered.contains("dispatchinvoke(obj, 6, 41)"));
+    }
+
+    #[test]
     fn compile_project_rejects_wrong_arity_for_zero_arg_external_member() {
         let main_module = module_unit_from_source(
             "MainModule",
@@ -12071,6 +12145,54 @@ mod tests {
         let err = compile_project(&manifest)
             .expect_err("wrong multi-arg member arity should reject compilation");
         assert_eq!(err.code(), "BIND-E-TYPELIB-INVOKE-ARITY-UNSUPPORTED");
+    }
+
+    #[test]
+    fn compile_project_rejects_property_put_external_member_shape() {
+        let main_module = module_unit_from_source(
+            "MainModule",
+            ModuleKind::Procedural,
+            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim obj As OxVba.TestDispatch\nSet obj = CreateObject(4)\nCall obj.SetValue(9)\nEnd Sub",
+        )
+        .expect("module parses");
+        let manifest = ProjectManifest {
+            project_name: "ProjectA".to_string(),
+            project_kind: ProjectKind::Source,
+            modules: vec![main_module],
+            references: vec![ProjectReference {
+                referenced_project_name: "OxVba".to_string(),
+                reference_kind: ReferenceKind::TypeLibrary,
+            }],
+            reference_projects: Vec::new(),
+            conditional_constants: BTreeMap::new(),
+        };
+        let err = compile_project(&manifest)
+            .expect_err("property-put imported member shape should reject compilation");
+        assert_eq!(err.code(), "BIND-E-TYPELIB-MEMBER-SHAPE-UNSUPPORTED");
+    }
+
+    #[test]
+    fn compile_project_rejects_property_putref_external_member_shape() {
+        let main_module = module_unit_from_source(
+            "MainModule",
+            ModuleKind::Procedural,
+            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim obj As OxVba.TestDispatch\nDim other As OxVba.TestDispatch\nSet obj = CreateObject(4)\nSet other = CreateObject(4)\nCall obj.SetValueRef(other)\nEnd Sub",
+        )
+        .expect("module parses");
+        let manifest = ProjectManifest {
+            project_name: "ProjectA".to_string(),
+            project_kind: ProjectKind::Source,
+            modules: vec![main_module],
+            references: vec![ProjectReference {
+                referenced_project_name: "OxVba".to_string(),
+                reference_kind: ReferenceKind::TypeLibrary,
+            }],
+            reference_projects: Vec::new(),
+            conditional_constants: BTreeMap::new(),
+        };
+        let err = compile_project(&manifest)
+            .expect_err("property-putref imported member shape should reject compilation");
+        assert_eq!(err.code(), "BIND-E-TYPELIB-MEMBER-SHAPE-UNSUPPORTED");
     }
 
     #[test]
