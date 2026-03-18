@@ -1,3 +1,14 @@
+## 2026-03-18 - Added no-parentheses getter RHS rejection evidence
+
+- Continued execution from [WORKSET_2026-03-18_IP-02_EXECUTION_CHECKLIST.md](C:\Work\DnaCalc\OxVba\docs\worksets\WORKSET_2026-03-18_IP-02_EXECUTION_CHECKLIST.md) on the call-vs-value matrix instead of widening unsupported RHS syntax into execution semantics.
+- Added compiler and host phased evidence proving that no-parentheses getter calls remain unsupported in read-assignment RHS contexts and fail deterministically on the current compile-time surface for:
+  - named property receivers,
+  - authoritative default-member receivers,
+  - bounded single-visible-candidate non-authoritative default-member receivers,
+  - under both explicit `Let` and implicit assignment.
+- The current rejection contract is the existing compile-time `unsupported statement` surface after the partial receiver rewrite; this is now locked as direct evidence instead of leaving the family implied by adjacent statement-context and `Call`-statement support.
+- `IP-02` remains `in-progress`: broader `Set`/`Let` source-target parity, broader non-authoritative default-member closure beyond the currently bounded subsets, and wider Office-style call-vs-value parity are still open.
+
 ## 2026-03-18 - Added non-authoritative Variant-target read-assignment diagnostic evidence
 
 - Continued execution from [WORKSET_2026-03-18_IP-02_EXECUTION_CHECKLIST.md](C:\Work\DnaCalc\OxVba\docs\worksets\WORKSET_2026-03-18_IP-02_EXECUTION_CHECKLIST.md) without widening semantics and added the missing typed-`Variant` diagnostic neighbors on the non-authoritative object-valued default-member source-resolution path.
