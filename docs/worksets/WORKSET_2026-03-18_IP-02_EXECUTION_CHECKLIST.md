@@ -108,7 +108,7 @@ Already evidenced in the repo today:
 - bounded no-parentheses getter RHS read-assignment rejection via the compile-time `unsupported statement` surface across named, authoritative default-member, and single-visible-candidate non-authoritative default-member receivers under explicit `Let` and implicit assignment
 - bounded plain scalar-source assignment-intent proof surface for explicit `Set`, explicit `Let`, and implicit assignment on current typed scalar / `Variant` / `Object` target lanes
 - bounded plain object-source assignment-intent proof surface for explicit `Set`, explicit `Let`, and implicit assignment on current typed `Object` / `Variant` / scalar target lanes
-- bounded scalar-target rejection for object-returning native property/default-member getter read-assignment across named, zero-arg parenthesized, indexed, authoritative default-member, and landed single-candidate non-authoritative default-member syntax for explicit `Let` and implicit assignment
+- bounded scalar-target rejection for object-returning native property/default-member getter read-assignment across named, zero-arg parenthesized, indexed, authoritative default-member, and landed single-candidate non-authoritative default-member syntax for explicit `Set`, explicit `Let`, and implicit assignment
 - bounded `CreateObject(...)` assignment-intent proof surface for explicit `Set`, explicit `Let`, and implicit assignment on current typed `Object` / `Variant` / scalar target lanes
 - non-authoritative single-visible-candidate native default-member fallback for scalar/indexed `Get` / `Let` / `Set`, statement-context getters, explicit `Call` getters, no-parentheses-argument getters, bounded explicit `Set` / `Let` read-assignment, bare/parenthesized/indexed object-returning `Variant`-target read-assignment neighbors, and parenthesized zero-arg getter/read-assignment neighbors where already landed
 - non-authoritative ambiguous native default-member getter / let-assignment / property-set diagnostics via `PMR-E-DEFAULT-MEMBER-RESOLUTION-AMBIGUOUS` across scalar/indexed read-assignment plus statement-context, explicit `Call`, no-parentheses-argument, and zero-arg parenthesized getter contexts where applicable
@@ -203,5 +203,5 @@ First checklist-driven target:
   - compiler + host evidence now also exists for ambiguous scalar/indexed getter, `Let`, and `Property Set` diagnostics across read-assignment plus statement-context, explicit `Call`, no-parentheses-argument, and zero-arg parenthesized getter contexts where applicable
 - Next unresolved neighbors:
   - broader call-vs-value syntax enumeration, especially any remaining silent-fallthrough or receiver-mode distinctions outside the now-proved no-parentheses subset
-  - broader `Set` vs `Let` source-target sweep beyond the now-proved named object-property-get `Variant` lanes
+  - broader `Set` vs `Let` source-target sweep beyond the now-proved object-getter `Object` / `Variant` / scalar target lanes in the currently landed authoritative and bounded single-candidate non-authoritative native subset
 

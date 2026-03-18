@@ -8285,6 +8285,168 @@ mod tests {
     }
 
     #[test]
+    fn compile_project_rejects_explicit_set_for_native_object_property_get_read_assignment_to_scalar_target_lanes()
+     {
+        let cases = [
+            (
+                "named property",
+                "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim widget As New Widget\nDim n As Long\nSet n = widget.Value\nEnd Sub",
+                "Attribute VB_Name = \"Widget\"\nPublic Property Get Value() As Object\nDim c As New Child\nSet Value = c\nEnd Property",
+            ),
+            (
+                "parenthesized property",
+                "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim widget As New Widget\nDim n As Long\nSet n = widget.Value()\nEnd Sub",
+                "Attribute VB_Name = \"Widget\"\nPublic Property Get Value() As Object\nDim c As New Child\nSet Value = c\nEnd Property",
+            ),
+            (
+                "indexed property",
+                "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim widget As New Widget\nDim x\nDim n As Long\nx = 2\nSet n = widget.Value(x)\nEnd Sub",
+                "Attribute VB_Name = \"Widget\"\nPublic Property Get Value(ByRef index) As Object\nindex = index + 7\nDim c As New Child\nSet Value = c\nEnd Property",
+            ),
+        ];
+
+        for (label, main_source, widget_source) in cases {
+            let main_module =
+                module_unit_from_source("MainModule", ModuleKind::Procedural, main_source)
+                    .expect("module parses");
+            let widget = module_unit_from_source("Widget", ModuleKind::Class, widget_source)
+                .expect("module parses");
+            let child = module_unit_from_source(
+                "Child",
+                ModuleKind::Class,
+                "Attribute VB_Name = \"Child\"",
+            )
+            .expect("module parses");
+            let manifest = ProjectManifest {
+                project_name: "ProjectA".to_string(),
+                project_kind: ProjectKind::Source,
+                modules: vec![main_module, widget, child],
+                references: Vec::new(),
+                reference_projects: Vec::new(),
+                conditional_constants: BTreeMap::new(),
+            };
+
+            let err = match compile_project(&manifest) {
+                Ok(_) => panic!("{label} should reject deterministically"),
+                Err(err) => err,
+            };
+            assert!(
+                err.to_string()
+                    .contains("Set requires Object or Variant target, got Long variable n"),
+                "{label}: {err}"
+            );
+        }
+    }
+
+    #[test]
+    fn compile_project_rejects_explicit_set_for_native_object_default_member_get_read_assignment_to_scalar_target_lanes()
+     {
+        let cases = [
+            (
+                "bare default member",
+                "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim widget As New Widget\nDim n As Long\nSet n = widget\nEnd Sub",
+                "Attribute VB_Name = \"Widget\"\nPublic Property Get Value() As Object\nDim c As New Child\nSet Value = c\nEnd Property\nAttribute Value.VB_UserMemId = 0",
+            ),
+            (
+                "parenthesized default member",
+                "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim widget As New Widget\nDim n As Long\nSet n = widget()\nEnd Sub",
+                "Attribute VB_Name = \"Widget\"\nPublic Property Get Value() As Object\nDim c As New Child\nSet Value = c\nEnd Property\nAttribute Value.VB_UserMemId = 0",
+            ),
+            (
+                "indexed default member",
+                "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim widget As New Widget\nDim x\nDim n As Long\nx = 2\nSet n = widget(x)\nEnd Sub",
+                "Attribute VB_Name = \"Widget\"\nPublic Property Get Value(ByRef index) As Object\nindex = index + 7\nDim c As New Child\nSet Value = c\nEnd Property\nAttribute Value.VB_UserMemId = 0",
+            ),
+        ];
+
+        for (label, main_source, widget_source) in cases {
+            let main_module =
+                module_unit_from_source("MainModule", ModuleKind::Procedural, main_source)
+                    .expect("module parses");
+            let widget = module_unit_from_source("Widget", ModuleKind::Class, widget_source)
+                .expect("module parses");
+            let child = module_unit_from_source(
+                "Child",
+                ModuleKind::Class,
+                "Attribute VB_Name = \"Child\"",
+            )
+            .expect("module parses");
+            let manifest = ProjectManifest {
+                project_name: "ProjectA".to_string(),
+                project_kind: ProjectKind::Source,
+                modules: vec![main_module, widget, child],
+                references: Vec::new(),
+                reference_projects: Vec::new(),
+                conditional_constants: BTreeMap::new(),
+            };
+
+            let err = match compile_project(&manifest) {
+                Ok(_) => panic!("{label} should reject deterministically"),
+                Err(err) => err,
+            };
+            assert!(
+                err.to_string()
+                    .contains("Set requires Object or Variant target, got Long variable n"),
+                "{label}: {err}"
+            );
+        }
+    }
+
+    #[test]
+    fn compile_project_rejects_non_authoritative_single_candidate_default_member_set_read_assignment_to_scalar_target_lanes()
+     {
+        let cases = [
+            (
+                "bare default member",
+                "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim widget As New Widget\nDim n As Long\nSet n = widget\nEnd Sub",
+                "Attribute VB_Name = \"Widget\"\nPublic Property Get Value() As Object\nDim c As New Child\nSet Value = c\nEnd Property",
+            ),
+            (
+                "parenthesized default member",
+                "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim widget As New Widget\nDim n As Long\nSet n = widget()\nEnd Sub",
+                "Attribute VB_Name = \"Widget\"\nPublic Property Get Value() As Object\nDim c As New Child\nSet Value = c\nEnd Property",
+            ),
+            (
+                "indexed default member",
+                "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim widget As New Widget\nDim x\nDim n As Long\nx = 2\nSet n = widget(x)\nEnd Sub",
+                "Attribute VB_Name = \"Widget\"\nPublic Property Get Value(ByRef index) As Object\nindex = index + 7\nDim c As New Child\nSet Value = c\nEnd Property",
+            ),
+        ];
+
+        for (label, main_source, widget_source) in cases {
+            let main_module =
+                module_unit_from_source("MainModule", ModuleKind::Procedural, main_source)
+                    .expect("module parses");
+            let widget = module_unit_from_source("Widget", ModuleKind::Class, widget_source)
+                .expect("module parses");
+            let child = module_unit_from_source(
+                "Child",
+                ModuleKind::Class,
+                "Attribute VB_Name = \"Child\"",
+            )
+            .expect("module parses");
+            let manifest = ProjectManifest {
+                project_name: "ProjectA".to_string(),
+                project_kind: ProjectKind::Source,
+                modules: vec![main_module, widget, child],
+                references: Vec::new(),
+                reference_projects: Vec::new(),
+                conditional_constants: BTreeMap::new(),
+            };
+
+            let err = match compile_project(&manifest) {
+                Ok(_) => panic!("{label} should reject deterministically"),
+                Err(err) => err,
+            };
+            assert!(
+                err.to_string()
+                    .contains("Set requires Object or Variant target, got Long variable n"),
+                "{label}: {err}"
+            );
+        }
+    }
+
+    #[test]
     fn compile_project_infers_non_authoritative_single_candidate_indexed_default_member_property_set()
      {
         let main_module = module_unit_from_source(

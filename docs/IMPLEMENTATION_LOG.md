@@ -1153,6 +1153,16 @@
   - the same typed-`Object` target lanes across zero-arg parenthesized and indexed syntax.
 - `IP-02` remains `in-progress`: broader `Set`/`Let` source-target parity, broader non-authoritative default-member closure beyond the currently bounded subsets, and wider Office-style call-vs-value parity are still open.
 
+## 2026-03-18 - Add explicit Set scalar-target getter rejection evidence
+
+- Continued the active `IP-02A` checklist run without widening semantics and added the missing direct bounded `Set`-intent rejection evidence for object-valued native getter/default-member reads targeting a scalar variable.
+- Added compiler and VM/JIT host evidence proving that `Set requires Object or Variant target, got Long variable n` now directly covers:
+  - named object-returning native property getters,
+  - authoritative object-returning native default-member getters,
+  - bounded single-visible-candidate non-authoritative object-returning native default-member getters,
+  - across bare, zero-arg parenthesized, and indexed syntax where applicable.
+- `IP-02` remains `in-progress`: broader `Set`/`Let` source-target parity, broader non-authoritative default-member closure beyond the currently bounded subsets, and wider Office-style call-vs-value parity are still open.
+
 
 
 
