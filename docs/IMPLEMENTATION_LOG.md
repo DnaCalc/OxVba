@@ -1,3 +1,16 @@
+## 2026-03-18 - Added authoritative Object-target rejection evidence for object-valued native getters
+
+- Continued execution from [WORKSET_2026-03-18_IP-02_EXECUTION_CHECKLIST.md](C:\Work\DnaCalc\OxVba\docs\worksets\WORKSET_2026-03-18_IP-02_EXECUTION_CHECKLIST.md) on the remaining object-getter source-target matrix instead of assuming the `Object`-target rejection column was already implied by the earlier `CreateObject(...)` and explicit-`Set` coverage.
+- Added compiler and host phased evidence proving object-returning authoritative native property/default-member getter read-assignment now also fails deterministically for typed `Object` targets when the assignment intent is not explicit `Set`, across:
+  - named member syntax: `Let childOut = widget.Value` and `childOut = widget.Value`,
+  - named zero-arg parenthesized member syntax: `Let childOut = widget.Value()` and `childOut = widget.Value()`,
+  - indexed member syntax: `Let childOut = widget.Value(x)` and `childOut = widget.Value(x)`,
+  - authoritative default-member syntax: `Let childOut = widget`, `childOut = widget`, `Let childOut = widget()`, `childOut = widget()`, `Let childOut = widget(x)`, and `childOut = widget(x)`.
+- The current rejection contract is now locked at both compiler and host levels:
+  - explicit `Let` fails with `Let cannot assign to Object variable childOut`,
+  - implicit assignment fails with `Set required for Object variable childOut`.
+- `IP-02` remains `in-progress`: this closes the authoritative `Object`-target rejection column for object-valued native getters, but the bounded non-authoritative `Object`-target neighbors, broader `Set` vs `Let` intent parity, broader fallback/recovery parity, and wider Office-style call-vs-value closure remain open.
+
 ## 2026-03-18 - Expanded scalar-target rejection evidence for object-valued native getters
 
 - Continued execution from [WORKSET_2026-03-18_IP-02_EXECUTION_CHECKLIST.md](C:\Work\DnaCalc\OxVba\docs\worksets\WORKSET_2026-03-18_IP-02_EXECUTION_CHECKLIST.md) on the remaining object-getter source-target matrix instead of moving on with the parenthesized/indexed scalar-target neighbors still implied by adjacent lanes.

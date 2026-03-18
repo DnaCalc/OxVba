@@ -3629,6 +3629,90 @@ mod tests {
     }
 
     #[test]
+    fn formal_pmr_explicit_let_assignment_from_internal_class_object_property_get_to_object_target_fails_at_compile_time()
+     {
+        let engine = Engine::new(HostConfig::default());
+        let main_module = module_unit_from_source(
+            "MainModule",
+            ModuleKind::Procedural,
+            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim widget As New Widget\nDim childOut As Object\nLet childOut = widget.Value\nEnd Sub",
+        )
+        .expect("main module should parse");
+        let widget = module_unit_from_source(
+            "Widget",
+            ModuleKind::Class,
+            "Attribute VB_Name = \"Widget\"\nPublic Property Get Value() As Object\nDim c As New Child\nSet Value = c\nEnd Property",
+        )
+        .expect("widget module should parse");
+        let child =
+            module_unit_from_source("Child", ModuleKind::Class, "Attribute VB_Name = \"Child\"")
+                .expect("child module should parse");
+        let manifest = ProjectManifest {
+            project_name: "ProjectA".to_string(),
+            project_kind: ProjectKind::Source,
+            modules: vec![main_module, widget, child],
+            references: Vec::new(),
+            reference_projects: Vec::new(),
+            conditional_constants: std::collections::BTreeMap::new(),
+        };
+
+        let err = engine
+            .execute_project_with_value_snapshot_phased(&manifest)
+            .expect_err("Let should reject object property-get result on Object target");
+        assert_eq!(err.phase(), DiagnosticPhase::CompileTime);
+        assert!(
+            err.message()
+                .to_ascii_lowercase()
+                .contains("let cannot assign to object variable childout"),
+            "{}",
+            err.message()
+        );
+    }
+
+    #[test]
+    fn formal_pmr_implicit_assignment_from_internal_class_object_property_get_to_object_target_fails_at_compile_time()
+     {
+        let engine = Engine::new(HostConfig::default());
+        let main_module = module_unit_from_source(
+            "MainModule",
+            ModuleKind::Procedural,
+            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim widget As New Widget\nDim childOut As Object\nchildOut = widget.Value\nEnd Sub",
+        )
+        .expect("main module should parse");
+        let widget = module_unit_from_source(
+            "Widget",
+            ModuleKind::Class,
+            "Attribute VB_Name = \"Widget\"\nPublic Property Get Value() As Object\nDim c As New Child\nSet Value = c\nEnd Property",
+        )
+        .expect("widget module should parse");
+        let child =
+            module_unit_from_source("Child", ModuleKind::Class, "Attribute VB_Name = \"Child\"")
+                .expect("child module should parse");
+        let manifest = ProjectManifest {
+            project_name: "ProjectA".to_string(),
+            project_kind: ProjectKind::Source,
+            modules: vec![main_module, widget, child],
+            references: Vec::new(),
+            reference_projects: Vec::new(),
+            conditional_constants: std::collections::BTreeMap::new(),
+        };
+
+        let err = engine
+            .execute_project_with_value_snapshot_phased(&manifest)
+            .expect_err(
+                "implicit assignment should reject object property-get result on Object target",
+            );
+        assert_eq!(err.phase(), DiagnosticPhase::CompileTime);
+        assert!(
+            err.message()
+                .to_ascii_lowercase()
+                .contains("set required for object variable childout"),
+            "{}",
+            err.message()
+        );
+    }
+
+    #[test]
     fn formal_pmr_explicit_let_assignment_from_internal_class_object_property_get_to_scalar_target_fails_at_compile_time()
      {
         let engine = Engine::new(HostConfig::default());
@@ -3892,6 +3976,90 @@ mod tests {
             "{snapshot:?}"
         );
         assert_eq!(snapshot.get(1), Some(&RuntimeValue::I32(2)), "{snapshot:?}");
+    }
+
+    #[test]
+    fn formal_pmr_explicit_let_assignment_from_internal_class_parenthesized_object_property_get_to_object_target_fails_at_compile_time()
+     {
+        let engine = Engine::new(HostConfig::default());
+        let main_module = module_unit_from_source(
+            "MainModule",
+            ModuleKind::Procedural,
+            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim widget As New Widget\nDim childOut As Object\nLet childOut = widget.Value()\nEnd Sub",
+        )
+        .expect("main module should parse");
+        let widget = module_unit_from_source(
+            "Widget",
+            ModuleKind::Class,
+            "Attribute VB_Name = \"Widget\"\nPublic Property Get Value() As Object\nDim c As New Child\nSet Value = c\nEnd Property",
+        )
+        .expect("widget module should parse");
+        let child =
+            module_unit_from_source("Child", ModuleKind::Class, "Attribute VB_Name = \"Child\"")
+                .expect("child module should parse");
+        let manifest = ProjectManifest {
+            project_name: "ProjectA".to_string(),
+            project_kind: ProjectKind::Source,
+            modules: vec![main_module, widget, child],
+            references: Vec::new(),
+            reference_projects: Vec::new(),
+            conditional_constants: std::collections::BTreeMap::new(),
+        };
+
+        let err = engine
+            .execute_project_with_value_snapshot_phased(&manifest)
+            .expect_err(
+                "Let should reject parenthesized object property-get result on Object target",
+            );
+        assert_eq!(err.phase(), DiagnosticPhase::CompileTime);
+        assert!(
+            err.message()
+                .to_ascii_lowercase()
+                .contains("let cannot assign to object variable childout"),
+            "{}",
+            err.message()
+        );
+    }
+
+    #[test]
+    fn formal_pmr_implicit_assignment_from_internal_class_parenthesized_object_property_get_to_object_target_fails_at_compile_time()
+     {
+        let engine = Engine::new(HostConfig::default());
+        let main_module = module_unit_from_source(
+            "MainModule",
+            ModuleKind::Procedural,
+            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim widget As New Widget\nDim childOut As Object\nchildOut = widget.Value()\nEnd Sub",
+        )
+        .expect("main module should parse");
+        let widget = module_unit_from_source(
+            "Widget",
+            ModuleKind::Class,
+            "Attribute VB_Name = \"Widget\"\nPublic Property Get Value() As Object\nDim c As New Child\nSet Value = c\nEnd Property",
+        )
+        .expect("widget module should parse");
+        let child =
+            module_unit_from_source("Child", ModuleKind::Class, "Attribute VB_Name = \"Child\"")
+                .expect("child module should parse");
+        let manifest = ProjectManifest {
+            project_name: "ProjectA".to_string(),
+            project_kind: ProjectKind::Source,
+            modules: vec![main_module, widget, child],
+            references: Vec::new(),
+            reference_projects: Vec::new(),
+            conditional_constants: std::collections::BTreeMap::new(),
+        };
+
+        let err = engine
+            .execute_project_with_value_snapshot_phased(&manifest)
+            .expect_err("implicit assignment should reject parenthesized object property-get result on Object target");
+        assert_eq!(err.phase(), DiagnosticPhase::CompileTime);
+        assert!(
+            err.message()
+                .to_ascii_lowercase()
+                .contains("set required for object variable childout"),
+            "{}",
+            err.message()
+        );
     }
 
     #[test]
@@ -4284,6 +4452,88 @@ mod tests {
     }
 
     #[test]
+    fn formal_pmr_explicit_let_assignment_from_internal_class_indexed_object_property_get_to_object_target_fails_at_compile_time()
+     {
+        let engine = Engine::new(HostConfig::default());
+        let main_module = module_unit_from_source(
+            "MainModule",
+            ModuleKind::Procedural,
+            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim widget As New Widget\nDim x\nDim childOut As Object\nx = 5\nLet childOut = widget.Value(x)\nEnd Sub",
+        )
+        .expect("main module should parse");
+        let widget = module_unit_from_source(
+            "Widget",
+            ModuleKind::Class,
+            "Attribute VB_Name = \"Widget\"\nPublic Property Get Value(ByVal index) As Object\nDim c As New Child\nSet Value = c\nEnd Property",
+        )
+        .expect("widget module should parse");
+        let child =
+            module_unit_from_source("Child", ModuleKind::Class, "Attribute VB_Name = \"Child\"")
+                .expect("child module should parse");
+        let manifest = ProjectManifest {
+            project_name: "ProjectA".to_string(),
+            project_kind: ProjectKind::Source,
+            modules: vec![main_module, widget, child],
+            references: Vec::new(),
+            reference_projects: Vec::new(),
+            conditional_constants: std::collections::BTreeMap::new(),
+        };
+
+        let err = engine
+            .execute_project_with_value_snapshot_phased(&manifest)
+            .expect_err("Let should reject indexed object property-get result on Object target");
+        assert_eq!(err.phase(), DiagnosticPhase::CompileTime);
+        assert!(
+            err.message()
+                .to_ascii_lowercase()
+                .contains("let cannot assign to object variable childout"),
+            "{}",
+            err.message()
+        );
+    }
+
+    #[test]
+    fn formal_pmr_implicit_assignment_from_internal_class_indexed_object_property_get_to_object_target_fails_at_compile_time()
+     {
+        let engine = Engine::new(HostConfig::default());
+        let main_module = module_unit_from_source(
+            "MainModule",
+            ModuleKind::Procedural,
+            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim widget As New Widget\nDim x\nDim childOut As Object\nx = 5\nchildOut = widget.Value(x)\nEnd Sub",
+        )
+        .expect("main module should parse");
+        let widget = module_unit_from_source(
+            "Widget",
+            ModuleKind::Class,
+            "Attribute VB_Name = \"Widget\"\nPublic Property Get Value(ByVal index) As Object\nDim c As New Child\nSet Value = c\nEnd Property",
+        )
+        .expect("widget module should parse");
+        let child =
+            module_unit_from_source("Child", ModuleKind::Class, "Attribute VB_Name = \"Child\"")
+                .expect("child module should parse");
+        let manifest = ProjectManifest {
+            project_name: "ProjectA".to_string(),
+            project_kind: ProjectKind::Source,
+            modules: vec![main_module, widget, child],
+            references: Vec::new(),
+            reference_projects: Vec::new(),
+            conditional_constants: std::collections::BTreeMap::new(),
+        };
+
+        let err = engine
+            .execute_project_with_value_snapshot_phased(&manifest)
+            .expect_err("implicit assignment should reject indexed object property-get result on Object target");
+        assert_eq!(err.phase(), DiagnosticPhase::CompileTime);
+        assert!(
+            err.message()
+                .to_ascii_lowercase()
+                .contains("set required for object variable childout"),
+            "{}",
+            err.message()
+        );
+    }
+
+    #[test]
     fn formal_pmr_explicit_let_assignment_from_internal_class_indexed_object_property_get_to_scalar_target_fails_at_compile_time()
      {
         let engine = Engine::new(HostConfig::default());
@@ -4550,6 +4800,90 @@ mod tests {
     }
 
     #[test]
+    fn formal_pmr_explicit_let_assignment_from_internal_class_object_default_member_get_to_object_target_fails_at_compile_time()
+     {
+        let engine = Engine::new(HostConfig::default());
+        let main_module = module_unit_from_source(
+            "MainModule",
+            ModuleKind::Procedural,
+            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim widget As New Widget\nDim childOut As Object\nLet childOut = widget\nEnd Sub",
+        )
+        .expect("main module should parse");
+        let widget = module_unit_from_source(
+            "Widget",
+            ModuleKind::Class,
+            "Attribute VB_Name = \"Widget\"\nPublic Property Get Value() As Object\nDim c As New Child\nSet Value = c\nEnd Property\nAttribute Value.VB_UserMemId = 0",
+        )
+        .expect("widget module should parse");
+        let child =
+            module_unit_from_source("Child", ModuleKind::Class, "Attribute VB_Name = \"Child\"")
+                .expect("child module should parse");
+        let manifest = ProjectManifest {
+            project_name: "ProjectA".to_string(),
+            project_kind: ProjectKind::Source,
+            modules: vec![main_module, widget, child],
+            references: Vec::new(),
+            reference_projects: Vec::new(),
+            conditional_constants: std::collections::BTreeMap::new(),
+        };
+
+        let err = engine
+            .execute_project_with_value_snapshot_phased(&manifest)
+            .expect_err("Let should reject object default-member result on Object target");
+        assert_eq!(err.phase(), DiagnosticPhase::CompileTime);
+        assert!(
+            err.message()
+                .to_ascii_lowercase()
+                .contains("let cannot assign to object variable childout"),
+            "{}",
+            err.message()
+        );
+    }
+
+    #[test]
+    fn formal_pmr_implicit_assignment_from_internal_class_object_default_member_get_to_object_target_fails_at_compile_time()
+     {
+        let engine = Engine::new(HostConfig::default());
+        let main_module = module_unit_from_source(
+            "MainModule",
+            ModuleKind::Procedural,
+            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim widget As New Widget\nDim childOut As Object\nchildOut = widget\nEnd Sub",
+        )
+        .expect("main module should parse");
+        let widget = module_unit_from_source(
+            "Widget",
+            ModuleKind::Class,
+            "Attribute VB_Name = \"Widget\"\nPublic Property Get Value() As Object\nDim c As New Child\nSet Value = c\nEnd Property\nAttribute Value.VB_UserMemId = 0",
+        )
+        .expect("widget module should parse");
+        let child =
+            module_unit_from_source("Child", ModuleKind::Class, "Attribute VB_Name = \"Child\"")
+                .expect("child module should parse");
+        let manifest = ProjectManifest {
+            project_name: "ProjectA".to_string(),
+            project_kind: ProjectKind::Source,
+            modules: vec![main_module, widget, child],
+            references: Vec::new(),
+            reference_projects: Vec::new(),
+            conditional_constants: std::collections::BTreeMap::new(),
+        };
+
+        let err = engine
+            .execute_project_with_value_snapshot_phased(&manifest)
+            .expect_err(
+                "implicit assignment should reject object default-member result on Object target",
+            );
+        assert_eq!(err.phase(), DiagnosticPhase::CompileTime);
+        assert!(
+            err.message()
+                .to_ascii_lowercase()
+                .contains("set required for object variable childout"),
+            "{}",
+            err.message()
+        );
+    }
+
+    #[test]
     fn formal_pmr_explicit_let_assignment_from_internal_class_object_default_member_get_to_scalar_target_fails_at_compile_time()
      {
         let engine = Engine::new(HostConfig::default());
@@ -4813,6 +5147,90 @@ mod tests {
             "{snapshot:?}"
         );
         assert_eq!(snapshot.get(1), Some(&RuntimeValue::I32(2)), "{snapshot:?}");
+    }
+
+    #[test]
+    fn formal_pmr_explicit_let_assignment_from_internal_class_parenthesized_object_default_member_get_to_object_target_fails_at_compile_time()
+     {
+        let engine = Engine::new(HostConfig::default());
+        let main_module = module_unit_from_source(
+            "MainModule",
+            ModuleKind::Procedural,
+            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim widget As New Widget\nDim childOut As Object\nLet childOut = widget()\nEnd Sub",
+        )
+        .expect("main module should parse");
+        let widget = module_unit_from_source(
+            "Widget",
+            ModuleKind::Class,
+            "Attribute VB_Name = \"Widget\"\nPublic Property Get Value() As Object\nDim c As New Child\nSet Value = c\nEnd Property\nAttribute Value.VB_UserMemId = 0",
+        )
+        .expect("widget module should parse");
+        let child =
+            module_unit_from_source("Child", ModuleKind::Class, "Attribute VB_Name = \"Child\"")
+                .expect("child module should parse");
+        let manifest = ProjectManifest {
+            project_name: "ProjectA".to_string(),
+            project_kind: ProjectKind::Source,
+            modules: vec![main_module, widget, child],
+            references: Vec::new(),
+            reference_projects: Vec::new(),
+            conditional_constants: std::collections::BTreeMap::new(),
+        };
+
+        let err = engine
+            .execute_project_with_value_snapshot_phased(&manifest)
+            .expect_err(
+                "Let should reject parenthesized object default-member result on Object target",
+            );
+        assert_eq!(err.phase(), DiagnosticPhase::CompileTime);
+        assert!(
+            err.message()
+                .to_ascii_lowercase()
+                .contains("let cannot assign to object variable childout"),
+            "{}",
+            err.message()
+        );
+    }
+
+    #[test]
+    fn formal_pmr_implicit_assignment_from_internal_class_parenthesized_object_default_member_get_to_object_target_fails_at_compile_time()
+     {
+        let engine = Engine::new(HostConfig::default());
+        let main_module = module_unit_from_source(
+            "MainModule",
+            ModuleKind::Procedural,
+            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim widget As New Widget\nDim childOut As Object\nchildOut = widget()\nEnd Sub",
+        )
+        .expect("main module should parse");
+        let widget = module_unit_from_source(
+            "Widget",
+            ModuleKind::Class,
+            "Attribute VB_Name = \"Widget\"\nPublic Property Get Value() As Object\nDim c As New Child\nSet Value = c\nEnd Property\nAttribute Value.VB_UserMemId = 0",
+        )
+        .expect("widget module should parse");
+        let child =
+            module_unit_from_source("Child", ModuleKind::Class, "Attribute VB_Name = \"Child\"")
+                .expect("child module should parse");
+        let manifest = ProjectManifest {
+            project_name: "ProjectA".to_string(),
+            project_kind: ProjectKind::Source,
+            modules: vec![main_module, widget, child],
+            references: Vec::new(),
+            reference_projects: Vec::new(),
+            conditional_constants: std::collections::BTreeMap::new(),
+        };
+
+        let err = engine
+            .execute_project_with_value_snapshot_phased(&manifest)
+            .expect_err("implicit assignment should reject parenthesized object default-member result on Object target");
+        assert_eq!(err.phase(), DiagnosticPhase::CompileTime);
+        assert!(
+            err.message()
+                .to_ascii_lowercase()
+                .contains("set required for object variable childout"),
+            "{}",
+            err.message()
+        );
     }
 
     #[test]
@@ -5085,6 +5503,88 @@ mod tests {
         );
         assert_eq!(snapshot.get(1), Some(&RuntimeValue::I32(5)), "{snapshot:?}");
         assert_eq!(snapshot.get(2), Some(&RuntimeValue::I32(2)), "{snapshot:?}");
+    }
+
+    #[test]
+    fn formal_pmr_explicit_let_assignment_from_internal_class_indexed_object_default_member_get_to_object_target_fails_at_compile_time()
+     {
+        let engine = Engine::new(HostConfig::default());
+        let main_module = module_unit_from_source(
+            "MainModule",
+            ModuleKind::Procedural,
+            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim widget As New Widget\nDim x\nDim childOut As Object\nx = 5\nLet childOut = widget(x)\nEnd Sub",
+        )
+        .expect("main module should parse");
+        let widget = module_unit_from_source(
+            "Widget",
+            ModuleKind::Class,
+            "Attribute VB_Name = \"Widget\"\nPublic Property Get Value(ByVal index) As Object\nDim c As New Child\nSet Value = c\nEnd Property\nAttribute Value.VB_UserMemId = 0",
+        )
+        .expect("widget module should parse");
+        let child =
+            module_unit_from_source("Child", ModuleKind::Class, "Attribute VB_Name = \"Child\"")
+                .expect("child module should parse");
+        let manifest = ProjectManifest {
+            project_name: "ProjectA".to_string(),
+            project_kind: ProjectKind::Source,
+            modules: vec![main_module, widget, child],
+            references: Vec::new(),
+            reference_projects: Vec::new(),
+            conditional_constants: std::collections::BTreeMap::new(),
+        };
+
+        let err = engine
+            .execute_project_with_value_snapshot_phased(&manifest)
+            .expect_err("Let should reject indexed object default-member result on Object target");
+        assert_eq!(err.phase(), DiagnosticPhase::CompileTime);
+        assert!(
+            err.message()
+                .to_ascii_lowercase()
+                .contains("let cannot assign to object variable childout"),
+            "{}",
+            err.message()
+        );
+    }
+
+    #[test]
+    fn formal_pmr_implicit_assignment_from_internal_class_indexed_object_default_member_get_to_object_target_fails_at_compile_time()
+     {
+        let engine = Engine::new(HostConfig::default());
+        let main_module = module_unit_from_source(
+            "MainModule",
+            ModuleKind::Procedural,
+            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim widget As New Widget\nDim x\nDim childOut As Object\nx = 5\nchildOut = widget(x)\nEnd Sub",
+        )
+        .expect("main module should parse");
+        let widget = module_unit_from_source(
+            "Widget",
+            ModuleKind::Class,
+            "Attribute VB_Name = \"Widget\"\nPublic Property Get Value(ByVal index) As Object\nDim c As New Child\nSet Value = c\nEnd Property\nAttribute Value.VB_UserMemId = 0",
+        )
+        .expect("widget module should parse");
+        let child =
+            module_unit_from_source("Child", ModuleKind::Class, "Attribute VB_Name = \"Child\"")
+                .expect("child module should parse");
+        let manifest = ProjectManifest {
+            project_name: "ProjectA".to_string(),
+            project_kind: ProjectKind::Source,
+            modules: vec![main_module, widget, child],
+            references: Vec::new(),
+            reference_projects: Vec::new(),
+            conditional_constants: std::collections::BTreeMap::new(),
+        };
+
+        let err = engine
+            .execute_project_with_value_snapshot_phased(&manifest)
+            .expect_err("implicit assignment should reject indexed object default-member result on Object target");
+        assert_eq!(err.phase(), DiagnosticPhase::CompileTime);
+        assert!(
+            err.message()
+                .to_ascii_lowercase()
+                .contains("set required for object variable childout"),
+            "{}",
+            err.message()
+        );
     }
 
     #[test]
