@@ -1,3 +1,13 @@
+## 2026-03-18 - Added scalar-target rejection evidence for object-valued native getters
+
+- Continued execution from [WORKSET_2026-03-18_IP-02_EXECUTION_CHECKLIST.md](C:\Work\DnaCalc\OxVba\docs\worksets\WORKSET_2026-03-18_IP-02_EXECUTION_CHECKLIST.md) on the `Set`/`Let` source-target matrix instead of widening the PMR object-getter surface again.
+- Added compiler and host phased evidence proving object-returning native property/default-member getter read-assignment still rejects scalar targets with the current deterministic compile-time diagnostic across:
+  - named member syntax: `Let n = widget.Value` and `n = widget.Value`,
+  - authoritative bare default-member syntax: `Let n = widget` and `n = widget`,
+  - bounded single-visible-candidate non-authoritative bare default-member syntax: `Let n = widget` and `n = widget`.
+- This locks the current typechecking contract where object-valued PMR/default-member getter results do not silently narrow into typed scalar targets and instead fail with `cannot assign Object to Long variable n`.
+- `IP-02` remains `in-progress`: this closes another bounded object-getter rejection neighbor, but broader `Set` vs `Let` intent parity, broader fallback/recovery parity, and wider Office-style call-vs-value closure remain open.
+
 ## 2026-03-18 - Expanded non-authoritative object-default-member Variant-target assignment evidence
 
 - Continued execution from [WORKSET_2026-03-18_IP-02_EXECUTION_CHECKLIST.md](C:\Work\DnaCalc\OxVba\docs\worksets\WORKSET_2026-03-18_IP-02_EXECUTION_CHECKLIST.md) on the remaining `Set`/`Let` object-getter matrix instead of stopping after the authoritative syntax surface.
