@@ -1,3 +1,16 @@
+## 2026-03-18 - Add runtime-validated plain Variant-source assignment intent evidence
+
+- Continued execution from [WORKSET_2026-03-18_IP-02_EXECUTION_CHECKLIST.md](C:\Work\DnaCalc\OxVba\docs\worksets\WORKSET_2026-03-18_IP-02_EXECUTION_CHECKLIST.md) on the explicit `Set`/`Let` source-target table instead of leaving declared `Variant` sources as a runtime blind spot.
+- Added a bytecode-level runtime assignment validator so plain declared-`Variant` source variables now have direct bounded assignment-intent coverage across the current `Variant` / `Object` / scalar target lanes for both scalar-payload and object-payload shapes:
+  - `Set` now requires an object payload even when the source is only declared `Variant`,
+  - implicit assignment to typed `Object` targets now distinguishes runtime object payloads (`Set required ...`) from runtime scalar payloads (`cannot assign Long ...`),
+  - explicit `Let` / implicit assignment to scalar targets now reject runtime object payloads instead of silently storing them.
+- Added compiler proof that the lowered bytecode now preserves this validation on both explicit-`Set` `Variant` targets and implicit typed-`Object` targets, and removed an optimizer rewrite that had been unsafely collapsing post-typecheck `Variant`-source assignments into semantically different constant-source assignments.
+- Added VM/JIT host evidence for both payload families:
+  - scalar-payload `Variant` sources now execute only on the supported `Let` / implicit scalar-or-`Variant` lanes and fail deterministically on explicit `Set` or typed-`Object` mismatch lanes,
+  - object-payload `Variant` sources now execute on the supported explicit-`Set` / `Variant` lanes and fail deterministically on omitted-`Set` typed-`Object` and scalar-target mismatch lanes.
+- `IP-02` remains `in-progress`: broader `Set`/`Let` source-target parity beyond the now-proved plain scalar/object/declared-`Variant` source variable subsets, broader non-authoritative default-member closure beyond the currently bounded subsets, and wider Office-style call-vs-value parity are still open.
+
 ## 2026-03-18 - Add scalar-typed getter Let and implicit assignment evidence
 
 - Continued execution from [WORKSET_2026-03-18_IP-02_EXECUTION_CHECKLIST.md](C:\Work\DnaCalc\OxVba\docs\worksets\WORKSET_2026-03-18_IP-02_EXECUTION_CHECKLIST.md) on the scalar-typed getter source-target table after locking the explicit-`Set` rejection column.

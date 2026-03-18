@@ -43,6 +43,22 @@ pub fn compile_with_runtime_metadata(
     ),
     CompileError,
 > {
+    compile_with_runtime_metadata_object_locals(source, &std::collections::BTreeMap::new())
+}
+
+pub(crate) fn compile_with_runtime_metadata_object_locals(
+    source: &str,
+    forced_object_locals_by_proc: &std::collections::BTreeMap<
+        String,
+        std::collections::BTreeSet<String>,
+    >,
+) -> Result<
+    (
+        Bytecode,
+        std::collections::BTreeMap<String, ProcedureRuntimeMetadata>,
+    ),
+    CompileError,
+> {
     if source.trim().is_empty() {
         return Err(CompileError::EmptySource);
     }
@@ -59,6 +75,16 @@ pub fn compile_with_runtime_metadata(
     } else {
         optimize::optimize_module(checked)
     };
+    let mut optimized = optimized;
+    for proc in &mut optimized.procedures {
+        let Some(vars) = forced_object_locals_by_proc.get(&proc.name) else {
+            continue;
+        };
+        for var in vars {
+            proc.declaration_types
+                .insert(var.clone(), resolve::BoundType::Object);
+        }
+    }
     let _hir = lower_to_hir::lower_to_hir(&optimized);
     Ok(emit::emit_bytecode_with_runtime_metadata(&optimized))
 }
@@ -66,7 +92,9 @@ pub fn compile_with_runtime_metadata(
 #[cfg(test)]
 mod tests {
     use super::{Instruction, compile, compile_with_runtime_metadata};
-    use crate::bytecode::StringCompareMode;
+    use crate::bytecode::{
+        RuntimeAssignmentIntent, RuntimeAssignmentTargetKind, StringCompareMode,
+    };
     use oxvba_runtime::value_tags::ERROR_TAG_BASE;
 
     #[test]
@@ -562,6 +590,166 @@ mod tests {
             let message = err.to_string();
             assert!(message.contains(expected), "{label}: {message}");
         }
+    }
+
+    #[test]
+    fn variant_source_scalar_payload_assignment_accepts_runtime_checked_lanes() {
+        let cases = [
+            (
+                "Set Object target",
+                "Sub Main()\nDim src As Variant\nDim dst As Object\nsrc = 7\nSet dst = src\nEnd Sub",
+            ),
+            (
+                "Let Variant target",
+                "Sub Main()\nDim src As Variant\nDim v As Variant\nsrc = 7\nLet v = src\nEnd Sub",
+            ),
+            (
+                "Let scalar target",
+                "Sub Main()\nDim src As Variant\nDim n As Long\nsrc = 7\nLet n = src\nEnd Sub",
+            ),
+            (
+                "implicit Variant target",
+                "Sub Main()\nDim src As Variant\nDim v As Variant\nsrc = 7\nv = src\nEnd Sub",
+            ),
+            (
+                "implicit Object target",
+                "Sub Main()\nDim src As Variant\nDim dst As Object\nsrc = 7\ndst = src\nEnd Sub",
+            ),
+            (
+                "implicit scalar target",
+                "Sub Main()\nDim src As Variant\nDim n As Long\nsrc = 7\nn = src\nEnd Sub",
+            ),
+        ];
+
+        for (label, source) in cases {
+            compile(source).unwrap_or_else(|err| panic!("{label} should compile, got {err}"));
+        }
+    }
+
+    #[test]
+    fn variant_source_scalar_payload_assignment_rejects_compile_time_mismatch_lanes() {
+        let cases = [
+            (
+                "Let Object target",
+                "Sub Main()\nDim src As Variant\nDim dst As Object\nsrc = 7\nLet dst = src\nEnd Sub",
+                "Let cannot assign to Object variable dst",
+            ),
+            (
+                "Set scalar target",
+                "Sub Main()\nDim src As Variant\nDim n As Long\nsrc = 7\nSet n = src\nEnd Sub",
+                "Set requires Object or Variant target, got Long variable n",
+            ),
+        ];
+
+        for (label, source, expected) in cases {
+            let err = match compile(source) {
+                Ok(_) => panic!("{label} should reject"),
+                Err(err) => err,
+            };
+            let message = err.to_string();
+            assert!(message.contains(expected), "{label}: {message}");
+        }
+    }
+
+    #[test]
+    fn variant_source_object_payload_assignment_accepts_runtime_checked_lanes() {
+        let cases = [
+            (
+                "Set Variant target",
+                "Sub Main()\nDim src As Variant\nDim v As Variant\nSet src = CreateObject(4)\nSet v = src\nEnd Sub",
+            ),
+            (
+                "Set Object target",
+                "Sub Main()\nDim src As Variant\nDim dst As Object\nSet src = CreateObject(4)\nSet dst = src\nEnd Sub",
+            ),
+            (
+                "Let Variant target",
+                "Sub Main()\nDim src As Variant\nDim v As Variant\nSet src = CreateObject(4)\nLet v = src\nEnd Sub",
+            ),
+            (
+                "implicit Variant target",
+                "Sub Main()\nDim src As Variant\nDim v As Variant\nSet src = CreateObject(4)\nv = src\nEnd Sub",
+            ),
+            (
+                "implicit Object target",
+                "Sub Main()\nDim src As Variant\nDim dst As Object\nSet src = CreateObject(4)\ndst = src\nEnd Sub",
+            ),
+            (
+                "Let scalar target",
+                "Sub Main()\nDim src As Variant\nDim n As Long\nSet src = CreateObject(4)\nLet n = src\nEnd Sub",
+            ),
+            (
+                "implicit scalar target",
+                "Sub Main()\nDim src As Variant\nDim n As Long\nSet src = CreateObject(4)\nn = src\nEnd Sub",
+            ),
+        ];
+
+        for (label, source) in cases {
+            compile(source).unwrap_or_else(|err| panic!("{label} should compile, got {err}"));
+        }
+    }
+
+    #[test]
+    fn variant_source_object_payload_assignment_rejects_compile_time_mismatch_lanes() {
+        let cases = [
+            (
+                "Let Object target",
+                "Sub Main()\nDim src As Variant\nDim dst As Object\nSet src = CreateObject(4)\nLet dst = src\nEnd Sub",
+                "Let cannot assign to Object variable dst",
+            ),
+            (
+                "Set scalar target",
+                "Sub Main()\nDim src As Variant\nDim n As Long\nSet src = CreateObject(4)\nSet n = src\nEnd Sub",
+                "Set requires Object or Variant target, got Long variable n",
+            ),
+        ];
+
+        for (label, source, expected) in cases {
+            let err = match compile(source) {
+                Ok(_) => panic!("{label} should reject"),
+                Err(err) => err,
+            };
+            let message = err.to_string();
+            assert!(message.contains(expected), "{label}: {message}");
+        }
+    }
+
+    #[test]
+    fn variant_source_set_assignment_emits_runtime_validation() {
+        let out = compile(
+            "Sub Main()\nDim src As Variant\nDim v As Variant\nsrc = 7\nSet v = src\nEnd Sub",
+        )
+        .expect("compile should succeed");
+        assert!(out.instructions.iter().any(|instruction| {
+            matches!(
+                instruction,
+                Instruction::ValidateRuntimeAssignment {
+                    intent: RuntimeAssignmentIntent::Set,
+                    target_kind: RuntimeAssignmentTargetKind::Variant,
+                    target_name,
+                    ..
+                } if target_name == "v"
+            )
+        }));
+    }
+
+    #[test]
+    fn variant_source_implicit_object_assignment_emits_runtime_validation() {
+        let out = compile(
+            "Sub Main()\nDim src As Variant\nDim dst As Object\nsrc = 7\ndst = src\nEnd Sub",
+        )
+        .expect("compile should succeed");
+        assert!(out.instructions.iter().any(|instruction| {
+            matches!(
+                instruction,
+                Instruction::ValidateRuntimeAssignment {
+                    intent: RuntimeAssignmentIntent::Implicit,
+                    target_kind: RuntimeAssignmentTargetKind::Object,
+                    target_name,
+                    ..
+                } if target_name == "dst"
+            )
+        }));
     }
 
     #[test]

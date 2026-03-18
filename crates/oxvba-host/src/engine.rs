@@ -12362,6 +12362,175 @@ mod tests {
     }
 
     #[test]
+    fn formal_v121_variant_source_scalar_payload_assignment_executes_supported_lanes() {
+        let engine = Engine::new(HostConfig {
+            enable_jit: false,
+            root_object_name: None,
+        });
+        let cases = [
+            (
+                "Let Variant target",
+                "Sub Main()\nDim src As Variant\nDim v As Variant\nsrc = 7\nLet v = src\nEnd Sub",
+            ),
+            (
+                "Let scalar target",
+                "Sub Main()\nDim src As Variant\nDim n As Long\nsrc = 7\nLet n = src\nEnd Sub",
+            ),
+            (
+                "implicit Variant target",
+                "Sub Main()\nDim src As Variant\nDim v As Variant\nsrc = 7\nv = src\nEnd Sub",
+            ),
+            (
+                "implicit scalar target",
+                "Sub Main()\nDim src As Variant\nDim n As Long\nsrc = 7\nn = src\nEnd Sub",
+            ),
+        ];
+
+        for (label, source) in cases {
+            let out = engine
+                .execute_source_slots_test(source)
+                .unwrap_or_else(|err| panic!("{label} should execute, got {err}"));
+            assert_eq!(out, vec![7, 7], "{label}: {out:?}");
+        }
+    }
+
+    #[test]
+    fn formal_v121_variant_source_scalar_payload_assignment_rejects_runtime_mismatch_lanes() {
+        let engine = Engine::new(HostConfig {
+            enable_jit: false,
+            root_object_name: None,
+        });
+        let cases = [
+            (
+                "Set Variant target",
+                "Sub Main()\nDim src As Variant\nDim v As Variant\nsrc = 7\nSet v = src\nEnd Sub",
+                "Set requires object value for variable v",
+            ),
+            (
+                "Set Object target",
+                "Sub Main()\nDim src As Variant\nDim dst As Object\nsrc = 7\nSet dst = src\nEnd Sub",
+                "Set requires object value for variable dst",
+            ),
+            (
+                "implicit Object target",
+                "Sub Main()\nDim src As Variant\nDim dst As Object\nsrc = 7\ndst = src\nEnd Sub",
+                "cannot assign Long to Object variable dst",
+            ),
+        ];
+
+        for (label, source, expected) in cases {
+            let err = match engine.execute_source_slots_test(source) {
+                Ok(_) => panic!("{label} should reject deterministically"),
+                Err(err) => err,
+            };
+            assert!(err.contains(expected), "{label}: {err}");
+        }
+    }
+
+    #[test]
+    fn formal_v121_variant_source_scalar_payload_rejects_compile_time_mismatch_lanes() {
+        let cases = [
+            (
+                "Let Object target",
+                "Sub Main()\nDim src As Variant\nDim dst As Object\nsrc = 7\nLet dst = src\nEnd Sub",
+                "Let cannot assign to Object variable dst",
+            ),
+            (
+                "Set scalar target",
+                "Sub Main()\nDim src As Variant\nDim n As Long\nsrc = 7\nSet n = src\nEnd Sub",
+                "Set requires Object or Variant target, got Long variable n",
+            ),
+        ];
+
+        for (label, source, expected) in cases {
+            let err = match Engine::new(HostConfig {
+                enable_jit: false,
+                root_object_name: None,
+            })
+            .execute_source_slots_test(source)
+            {
+                Ok(_) => panic!("{label} should reject deterministically"),
+                Err(err) => err,
+            };
+            assert!(err.contains(expected), "{label}: {err}");
+        }
+    }
+
+    #[test]
+    fn formal_v121_variant_source_object_payload_assignment_executes_supported_lanes() {
+        let engine = Engine::new(HostConfig {
+            enable_jit: false,
+            root_object_name: None,
+        });
+        let cases = [
+            (
+                "Set Variant target",
+                "Sub Main()\nDim src As Variant\nDim v As Variant\nSet src = CreateObject(4)\nSet v = src\nEnd Sub",
+            ),
+            (
+                "Set Object target",
+                "Sub Main()\nDim src As Variant\nDim dst As Object\nSet src = CreateObject(4)\nSet dst = src\nEnd Sub",
+            ),
+            (
+                "Let Variant target",
+                "Sub Main()\nDim src As Variant\nDim v As Variant\nSet src = CreateObject(4)\nLet v = src\nEnd Sub",
+            ),
+            (
+                "implicit Variant target",
+                "Sub Main()\nDim src As Variant\nDim v As Variant\nSet src = CreateObject(4)\nv = src\nEnd Sub",
+            ),
+        ];
+
+        for (label, source) in cases {
+            let out = engine
+                .execute_source_with_value_snapshot(source)
+                .unwrap_or_else(|err| panic!("{label} should execute, got {err}"));
+            assert_eq!(out.len(), 2, "{label}: {out:?}");
+            assert!(
+                matches!(
+                    (&out[0], &out[1]),
+                    (RuntimeValue::ObjectHandle(src), RuntimeValue::ObjectHandle(dst))
+                        if src.raw() > 0 && src.raw() == dst.raw()
+                ),
+                "{label}: {out:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn formal_v121_variant_source_object_payload_assignment_rejects_runtime_mismatch_lanes() {
+        let engine = Engine::new(HostConfig {
+            enable_jit: false,
+            root_object_name: None,
+        });
+        let cases = [
+            (
+                "implicit Object target",
+                "Sub Main()\nDim src As Variant\nDim dst As Object\nSet src = CreateObject(4)\ndst = src\nEnd Sub",
+                "Set required for Object variable dst",
+            ),
+            (
+                "Let scalar target",
+                "Sub Main()\nDim src As Variant\nDim n As Long\nSet src = CreateObject(4)\nLet n = src\nEnd Sub",
+                "cannot assign Object to Long variable n",
+            ),
+            (
+                "implicit scalar target",
+                "Sub Main()\nDim src As Variant\nDim n As Long\nSet src = CreateObject(4)\nn = src\nEnd Sub",
+                "cannot assign Object to Long variable n",
+            ),
+        ];
+
+        for (label, source, expected) in cases {
+            let err = match engine.execute_source_slots_test(source) {
+                Ok(_) => panic!("{label} should reject deterministically"),
+                Err(err) => err,
+            };
+            assert!(err.contains(expected), "{label}: {err}");
+        }
+    }
+
+    #[test]
     fn formal_v126_introspection_and_typeof_subset_executes() {
         let source = "Sub Main()\nDim a\nDim b\nDim c\nDim d\nIf TypeOf 5 Is 5 Then\nd = 1\nElse\nd = 0\nEnd If\na = IsEmpty(0)\nb = IsNull(-1)\nc = IsError(CVErr(9))\nEnd Sub";
         let out = Engine::new(HostConfig {

@@ -5,7 +5,8 @@ use oxvba_com::{
     DynamicCallRequest, DynamicMemberSelector, DynamicObjectBridge,
 };
 use oxvba_compiler::{
-    Bytecode, Instruction, ProjectDynamicObjectRoute, bytecode::StringCompareMode,
+    Bytecode, Instruction, ProjectDynamicObjectRoute,
+    bytecode::{RuntimeAssignmentIntent, RuntimeAssignmentTargetKind, StringCompareMode},
 };
 use oxvba_hal::{
     HalComDynamicBridge, adapters,
@@ -918,6 +919,23 @@ impl Vm {
                     self.write_legacy_scalar_slot(*dst, 0)?;
                     pc += 1;
                 }
+                Instruction::ValidateRuntimeAssignment {
+                    src,
+                    intent,
+                    target_kind,
+                    target_name,
+                    target_type_name,
+                } => {
+                    let value = self.read_value_slot(*src)?;
+                    Self::validate_runtime_assignment(
+                        &value,
+                        *intent,
+                        *target_kind,
+                        target_name,
+                        target_type_name,
+                    )?;
+                    pc += 1;
+                }
                 Instruction::IntrinsicShellHost { dst, command } => {
                     let command = self.read_value_slot(*command)?;
                     match self
@@ -1736,6 +1754,81 @@ impl Vm {
                     Ok(DynamicMemberSelector::Token(token))
                 }
             }
+        }
+    }
+
+    fn validate_runtime_assignment(
+        value: &RuntimeValue,
+        intent: RuntimeAssignmentIntent,
+        target_kind: RuntimeAssignmentTargetKind,
+        target_name: &str,
+        target_type_name: &str,
+    ) -> Result<(), String> {
+        match (intent, target_kind) {
+            (RuntimeAssignmentIntent::Set, RuntimeAssignmentTargetKind::Variant)
+            | (RuntimeAssignmentIntent::Set, RuntimeAssignmentTargetKind::Object) => {
+                if Self::runtime_value_is_object(value) {
+                    Ok(())
+                } else {
+                    Err(format!(
+                        "Set requires object value for variable {target_name}"
+                    ))
+                }
+            }
+            (RuntimeAssignmentIntent::Implicit, RuntimeAssignmentTargetKind::Object) => {
+                if Self::runtime_value_is_object(value) {
+                    Err(format!("Set required for Object variable {target_name}"))
+                } else {
+                    Err(format!(
+                        "cannot assign {} to Object variable {target_name}",
+                        Self::runtime_assignment_value_label(value)
+                    ))
+                }
+            }
+            (RuntimeAssignmentIntent::Let, RuntimeAssignmentTargetKind::Object) => Err(format!(
+                "Let cannot assign to Object variable {target_name}"
+            )),
+            (
+                RuntimeAssignmentIntent::Implicit | RuntimeAssignmentIntent::Let,
+                RuntimeAssignmentTargetKind::Scalar,
+            ) => {
+                if Self::runtime_value_is_object(value) {
+                    Err(format!(
+                        "cannot assign Object to {target_type_name} variable {target_name}"
+                    ))
+                } else {
+                    Ok(())
+                }
+            }
+            _ => Ok(()),
+        }
+    }
+
+    fn runtime_value_is_object(value: &RuntimeValue) -> bool {
+        matches!(
+            value,
+            RuntimeValue::ObjectHandle(_) | RuntimeValue::BindingHandle(_)
+        )
+    }
+
+    fn runtime_assignment_value_label(value: &RuntimeValue) -> &'static str {
+        match value {
+            RuntimeValue::Empty => "Empty",
+            RuntimeValue::Null => "Null",
+            RuntimeValue::ErrorCode(_) => "Error",
+            RuntimeValue::I32(_) => "Long",
+            RuntimeValue::F64(value) => match value.subtype() {
+                oxvba_runtime::F64Subtype::Single => "Single",
+                oxvba_runtime::F64Subtype::Double => "Double",
+                oxvba_runtime::F64Subtype::Date => "Date",
+            },
+            RuntimeValue::Decimal(_) => "Decimal",
+            RuntimeValue::Currency(_) => "Currency",
+            RuntimeValue::Bool(_) => "Boolean",
+            RuntimeValue::String(_) => "String",
+            RuntimeValue::ArrayIntent(_) => "Array",
+            RuntimeValue::ObjectHandle(_) => "Object",
+            RuntimeValue::BindingHandle(_) => "Object",
         }
     }
 

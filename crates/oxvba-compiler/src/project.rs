@@ -3,7 +3,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use oxvba_runtime::ObjectHandle;
 use thiserror::Error;
 
-use crate::{Bytecode, ProcedureRuntimeMetadata, compile_with_runtime_metadata};
+use crate::{Bytecode, ProcedureRuntimeMetadata, compile_with_runtime_metadata_object_locals};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ProjectKind {
@@ -372,6 +372,13 @@ struct ProjectDynamicInstanceBindingDraft {
     module_name: String,
 }
 
+type ForcedObjectLocalsByProc = BTreeMap<String, BTreeSet<String>>;
+type LoweredProjectSource = (
+    String,
+    Vec<ProjectDynamicInstanceBindingDraft>,
+    ForcedObjectLocalsByProc,
+);
+
 pub fn module_unit_from_source(
     module_name: impl Into<String>,
     module_kind: ModuleKind,
@@ -435,20 +442,22 @@ fn compile_project_with_strategy(
     let event_dispatch_plan =
         collect_event_dispatch_plan(manifest, &procedure_index, &reference_order);
 
-    let (rewritten_source, dynamic_instance_bindings) = lower_project_source(
-        strategy,
-        manifest,
-        &active_project,
-        &procedure_index,
-        &reference_order,
-        &event_dispatch_plan,
-    )?;
+    let (rewritten_source, dynamic_instance_bindings, forced_object_locals_by_proc) =
+        lower_project_source(
+            strategy,
+            manifest,
+            &active_project,
+            &procedure_index,
+            &reference_order,
+            &event_dispatch_plan,
+        )?;
 
-    let (bytecode, procedure_runtime_metadata) = compile_with_runtime_metadata(&rewritten_source)
-        .map_err(|e| {
-        ProjectCompileError::BackendCompile {
-            message: e.to_string(),
-        }
+    let (bytecode, procedure_runtime_metadata) = compile_with_runtime_metadata_object_locals(
+        &rewritten_source,
+        &forced_object_locals_by_proc,
+    )
+    .map_err(|e| ProjectCompileError::BackendCompile {
+        message: e.to_string(),
     })?;
 
     let host_exports = collect_host_exports(manifest, &procedure_index);
@@ -481,12 +490,13 @@ fn lower_project_source(
     procedures: &[ProcedureDecl],
     reference_order: &BTreeMap<String, usize>,
     event_dispatch_plan: &EventDispatchPlan,
-) -> Result<(String, Vec<ProjectDynamicInstanceBindingDraft>), ProjectCompileError> {
+) -> Result<LoweredProjectSource, ProjectCompileError> {
     let mut lowered_modules = Vec::new();
     let mut next_internal_instance_id = 1i32;
     let mut dynamic_instance_bindings = Vec::new();
+    let mut forced_object_locals_by_proc = BTreeMap::<String, BTreeSet<String>>::new();
     for module in &manifest.modules {
-        let lowered = lower_module_source(
+        let (lowered, object_locals) = lower_module_source(
             strategy,
             manifest,
             active_project,
@@ -499,11 +509,12 @@ fn lower_project_source(
             &mut dynamic_instance_bindings,
         )?;
         lowered_modules.push(lowered);
+        merge_forced_object_locals(&mut forced_object_locals_by_proc, object_locals);
     }
     for referenced in ordered_reference_projects(manifest) {
         let project_name = normalize_identifier(&referenced.project_name);
         for module in &referenced.modules {
-            let lowered = lower_module_source(
+            let (lowered, object_locals) = lower_module_source(
                 strategy,
                 manifest,
                 active_project,
@@ -516,9 +527,14 @@ fn lower_project_source(
                 &mut dynamic_instance_bindings,
             )?;
             lowered_modules.push(lowered);
+            merge_forced_object_locals(&mut forced_object_locals_by_proc, object_locals);
         }
     }
-    Ok((lowered_modules.join("\n"), dynamic_instance_bindings))
+    Ok((
+        lowered_modules.join("\n"),
+        dynamic_instance_bindings,
+        forced_object_locals_by_proc,
+    ))
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -533,7 +549,7 @@ fn lower_module_source(
     event_dispatch_plan: &EventDispatchPlan,
     next_internal_instance_id: &mut i32,
     dynamic_instance_bindings: &mut Vec<ProjectDynamicInstanceBindingDraft>,
-) -> Result<String, ProjectCompileError> {
+) -> Result<(String, ForcedObjectLocalsByProc), ProjectCompileError> {
     match strategy {
         ProjectLoweringStrategy::ModuleAwareBindPlan => lower_module_source_module_aware(
             manifest,
@@ -557,6 +573,70 @@ fn lower_module_source(
             next_internal_instance_id,
             dynamic_instance_bindings,
         ),
+    }
+}
+
+fn merge_forced_object_locals(
+    target: &mut ForcedObjectLocalsByProc,
+    source: ForcedObjectLocalsByProc,
+) {
+    for (proc_name, vars) in source {
+        target.entry(proc_name).or_default().extend(vars);
+    }
+}
+
+fn record_internal_class_object_local(
+    forced_object_locals_by_proc: &mut ForcedObjectLocalsByProc,
+    active_procedure_name: &Option<String>,
+    line: &str,
+    manifest: &ProjectManifest,
+    current_project: &str,
+    reference_order: &BTreeMap<String, usize>,
+) {
+    let Some(proc_name) = active_procedure_name else {
+        return;
+    };
+    let Some(dim_decl) = parse_internal_class_dim_declaration(line) else {
+        return;
+    };
+    if resolve_interface_module(
+        manifest,
+        current_project,
+        &dim_decl.type_name,
+        reference_order,
+    )
+    .is_none()
+    {
+        return;
+    }
+    forced_object_locals_by_proc
+        .entry(proc_name.clone())
+        .or_default()
+        .insert(normalize_identifier(&dim_decl.var_name));
+}
+
+fn lowered_procedure_binding_for_line(
+    line: &str,
+    procedures: &[ProcedureDecl],
+    current_project: &str,
+    current_module: &str,
+) -> Option<String> {
+    let normalized = normalize_visibility_prefixed_procedure_signature(line);
+    let (proc_name, kind, _) = parse_procedure_signature_line(&normalized)?;
+    let decl = find_decl_by_signature(
+        procedures,
+        current_project,
+        current_module,
+        &proc_name,
+        kind,
+    )?;
+    Some(decl.lowered_name.clone())
+}
+
+fn clear_active_procedure_name_if_end(active_procedure_name: &mut Option<String>, line: &str) {
+    let lower = line.trim().to_ascii_lowercase();
+    if lower == "end sub" || lower == "end function" || lower == "end property" {
+        *active_procedure_name = None;
     }
 }
 
@@ -1215,17 +1295,27 @@ fn lower_module_source_module_aware(
     event_dispatch_plan: &EventDispatchPlan,
     next_internal_instance_id: &mut i32,
     dynamic_instance_bindings: &mut Vec<ProjectDynamicInstanceBindingDraft>,
-) -> Result<String, ProjectCompileError> {
+) -> Result<(String, BTreeMap<String, BTreeSet<String>>), ProjectCompileError> {
     let current_module = normalize_identifier(&module.module_name);
     let mut out = Vec::new();
     let mut active_function_result: Option<(String, String)> = None;
+    let mut active_procedure_name: Option<String> = None;
     let mut early_bound = BTreeMap::<String, EarlyBoundBinding>::new();
     let mut internal_class_bindings = BTreeMap::<String, InternalClassBinding>::new();
+    let mut forced_object_locals_by_proc = ForcedObjectLocalsByProc::new();
     let mut withevents_bindings = BTreeSet::<String>::new();
     let class_state_bindings =
         collect_class_state_bindings(module, current_project, &current_module);
     let source_lines = module_source_lines_with_class_terminate_cleanup(module);
     for line in &source_lines {
+        record_internal_class_object_local(
+            &mut forced_object_locals_by_proc,
+            &active_procedure_name,
+            line,
+            manifest,
+            current_project,
+            reference_order,
+        );
         let expanded = expand_bound_source_line(
             line,
             manifest,
@@ -1295,6 +1385,12 @@ fn lower_module_source_module_aware(
                 procedures,
                 &internal_class_bindings,
             )?;
+            let next_active_procedure_name = lowered_procedure_binding_for_line(
+                &expanded_line,
+                procedures,
+                current_project,
+                &current_module,
+            );
             let (plan, next_function_result) = build_line_bind_plan(
                 manifest,
                 active_project,
@@ -1312,7 +1408,12 @@ fn lower_module_source_module_aware(
             if plan.drop_line {
                 continue;
             }
-            out.push(plan.lowered_line);
+            out.push(plan.lowered_line.clone());
+            if let Some(proc_name) = next_active_procedure_name {
+                active_procedure_name = Some(proc_name);
+            } else {
+                clear_active_procedure_name_if_end(&mut active_procedure_name, &plan.lowered_line);
+            }
         }
     }
     out.extend(emit_event_guard_wrappers_for_module(
@@ -1322,7 +1423,7 @@ fn lower_module_source_module_aware(
         procedures,
         &withevents_bindings,
     ));
-    Ok(out.join("\n"))
+    Ok((out.join("\n"), forced_object_locals_by_proc))
 }
 
 fn module_source_lines_with_class_terminate_cleanup(module: &ModuleUnit) -> Vec<String> {
@@ -3796,15 +3897,25 @@ fn rewrite_module_source(
     event_dispatch_plan: &EventDispatchPlan,
     next_internal_instance_id: &mut i32,
     dynamic_instance_bindings: &mut Vec<ProjectDynamicInstanceBindingDraft>,
-) -> Result<String, ProjectCompileError> {
+) -> Result<(String, BTreeMap<String, BTreeSet<String>>), ProjectCompileError> {
     let current_module = normalize_identifier(&module.module_name);
     let mut out = Vec::new();
     let mut active_function_result: Option<(String, String)> = None;
+    let mut active_procedure_name: Option<String> = None;
     let mut early_bound = BTreeMap::<String, EarlyBoundBinding>::new();
     let mut internal_class_bindings = BTreeMap::<String, InternalClassBinding>::new();
+    let mut forced_object_locals_by_proc = ForcedObjectLocalsByProc::new();
     let mut withevents_bindings = BTreeSet::<String>::new();
     let source_lines = module_source_lines_with_class_terminate_cleanup(module);
     for line in &source_lines {
+        record_internal_class_object_local(
+            &mut forced_object_locals_by_proc,
+            &active_procedure_name,
+            line,
+            manifest,
+            current_project,
+            reference_order,
+        );
         let expanded = expand_bound_source_line(
             line,
             manifest,
@@ -3896,6 +4007,7 @@ fn rewrite_module_source(
                 } else {
                     active_function_result = None;
                 }
+                active_procedure_name = Some(decl.lowered_name.clone());
                 out.push(rewritten);
                 continue;
             }
@@ -3939,6 +4051,7 @@ fn rewrite_module_source(
             if lower.starts_with("end function") || lower.starts_with("end property") {
                 active_function_result = None;
             }
+            clear_active_procedure_name_if_end(&mut active_procedure_name, &rewritten);
             out.push(rewritten);
         }
     }
@@ -3949,7 +4062,7 @@ fn rewrite_module_source(
         procedures,
         &withevents_bindings,
     ));
-    Ok(out.join("\n"))
+    Ok((out.join("\n"), forced_object_locals_by_proc))
 }
 
 fn rewrite_bare_identifier(line: &str, identifier: &str, replacement: &str) -> String {
@@ -5562,6 +5675,48 @@ mod tests {
         assert!(
             lowered.contains("set valueout = property_get_pmr_projecta_widget_value(widget)"),
             "{lowered}"
+        );
+    }
+
+    #[test]
+    fn compile_project_does_not_inject_runtime_validation_for_rewritten_internal_class_object_locals()
+     {
+        let main_module = module_unit_from_source(
+            "MainModule",
+            ModuleKind::Procedural,
+            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim widget As New Widget\nDim childOut As Object\nSet childOut = widget.Value\nEnd Sub",
+        )
+        .expect("module parses");
+        let widget = module_unit_from_source(
+            "Widget",
+            ModuleKind::Class,
+            "Attribute VB_Name = \"Widget\"\nPublic Property Get Value() As Object\nDim c As New Child\nSet Value = c\nEnd Property",
+        )
+        .expect("module parses");
+        let child =
+            module_unit_from_source("Child", ModuleKind::Class, "Attribute VB_Name = \"Child\"")
+                .expect("module parses");
+        let manifest = ProjectManifest {
+            project_name: "ProjectA".to_string(),
+            project_kind: ProjectKind::Source,
+            modules: vec![main_module, widget, child],
+            references: Vec::new(),
+            reference_projects: Vec::new(),
+            conditional_constants: BTreeMap::new(),
+        };
+
+        let compiled = compile_project(&manifest).expect("rewrite should compile");
+        assert!(
+            !compiled.bytecode.instructions.iter().any(|instruction| {
+                matches!(
+                    instruction,
+                    crate::bytecode::Instruction::ValidateRuntimeAssignment {
+                        target_name,
+                        ..
+                    } if target_name == "property_get_pmr_projecta_widget_value"
+                )
+            }),
+            "rewritten internal-class object locals should preserve object typing instead of injecting runtime Variant validation"
         );
     }
 

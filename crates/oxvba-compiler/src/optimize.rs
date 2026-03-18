@@ -17,19 +17,9 @@ fn optimize_stmt_list(stmts: Vec<BoundStmt>) -> Vec<BoundStmt> {
         match stmt {
             BoundStmt::Assign {
                 target,
-                mut expr,
+                expr,
                 intent,
             } => {
-                if let Some(BoundStmt::Assign {
-                    target: prev_target,
-                    expr: BoundExpr::IntConst(value),
-                    ..
-                }) = out.last()
-                    && matches!(&expr, BoundExpr::Var(var) if var == prev_target)
-                {
-                    expr = BoundExpr::IntConst(*value);
-                }
-
                 let is_noop = matches!(
                     &expr,
                     BoundExpr::AddConst { var, delta } if *delta == 0 && var == &target
@@ -395,17 +385,19 @@ mod tests {
     }
 
     #[test]
-    fn formal_v19_immediate_const_copy_is_propagated() {
-        let module = resolve_symbols("Sub Main()\nDim x\nDim y\nx = 7\ny = x\nEnd Sub");
+    fn formal_v19_variant_source_assignment_intent_is_not_constant_folded() {
+        let module = resolve_symbols(
+            "Sub Main()\nDim src As Variant\nDim v As Variant\nsrc = 7\nSet v = src\nEnd Sub",
+        );
         let optimized = optimize_module(module);
         assert!(optimized.body.iter().any(|stmt| {
             matches!(
                 stmt,
                 BoundStmt::Assign {
                     target,
-                    expr: crate::resolve::BoundExpr::IntConst(7),
-                    ..
-                } if target == "y"
+                    expr: crate::resolve::BoundExpr::Var(source),
+                    intent: crate::resolve::AssignmentIntent::Set,
+                } if target == "v" && source == "src"
             )
         }));
     }

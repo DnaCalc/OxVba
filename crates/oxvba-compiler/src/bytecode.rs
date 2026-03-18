@@ -26,6 +26,20 @@ pub struct DispatchInvokeArg {
     pub name: Option<String>,
 }
 
+#[derive(Debug, Clone, Copy, Archive, Serialize, Deserialize, PartialEq, Eq)]
+pub enum RuntimeAssignmentIntent {
+    Implicit,
+    Let,
+    Set,
+}
+
+#[derive(Debug, Clone, Copy, Archive, Serialize, Deserialize, PartialEq, Eq)]
+pub enum RuntimeAssignmentTargetKind {
+    Variant,
+    Object,
+    Scalar,
+}
+
 #[derive(Debug, Clone, Archive, Serialize, Deserialize, PartialEq, Eq)]
 pub enum Instruction {
     LoadConstI32 {
@@ -329,6 +343,13 @@ pub enum Instruction {
     IntrinsicIsObjectTag {
         dst: usize,
         src: usize,
+    },
+    ValidateRuntimeAssignment {
+        src: usize,
+        intent: RuntimeAssignmentIntent,
+        target_kind: RuntimeAssignmentTargetKind,
+        target_name: String,
+        target_type_name: String,
     },
     IntrinsicShellHost {
         dst: usize,

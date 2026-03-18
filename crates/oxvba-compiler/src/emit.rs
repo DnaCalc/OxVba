@@ -7,11 +7,13 @@ use oxvba_runtime::{
 
 use crate::{
     bytecode::{
-        Bytecode, DispatchInvokeArg, ExternalCallDescriptor, Instruction, StringCompareMode,
+        Bytecode, DispatchInvokeArg, ExternalCallDescriptor, Instruction, RuntimeAssignmentIntent,
+        RuntimeAssignmentTargetKind, StringCompareMode,
     },
     resolve::{
-        BoundCallArg, BoundCaseClause, BoundCompareMode, BoundCond, BoundExpr, BoundExternalDecl,
-        BoundModule, BoundParam, BoundProcedure, BoundStmt, CompareOp,
+        AssignmentIntent, BoundCallArg, BoundCaseClause, BoundCompareMode, BoundCond, BoundExpr,
+        BoundExternalDecl, BoundModule, BoundParam, BoundProcedure, BoundStmt, BoundType,
+        CompareOp,
     },
 };
 
@@ -27,6 +29,8 @@ struct EmitProcMeta {
     params: Vec<BoundParam>,
     slots: HashMap<String, usize>,
     return_slot: Option<usize>,
+    return_type: BoundType,
+    declaration_types: HashMap<String, BoundType>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -95,6 +99,8 @@ pub fn emit_bytecode_with_runtime_metadata(
                 params: proc.params.clone(),
                 slots: proc_slots[idx].clone(),
                 return_slot: proc_slots[idx].get(&proc.name).copied(),
+                return_type: proc.return_type,
+                declaration_types: proc.declaration_types.clone(),
             },
         );
     }
@@ -329,16 +335,54 @@ fn emit_stmt(
     proc_labels: &mut HashMap<String, usize>,
 ) {
     match stmt {
-        BoundStmt::Assign { target, expr, .. } => {
+        BoundStmt::Assign {
+            target,
+            expr,
+            intent,
+        } => {
             if let Some(target_slot) = slot_map.get(target.as_str()).copied() {
-                emit_expr_into(
-                    expr,
-                    compare_mode,
-                    target_slot,
-                    slot_map,
-                    temps,
-                    instructions,
-                );
+                let current_meta = proc_meta
+                    .get(current_proc_name)
+                    .expect("current procedure metadata should exist");
+                let target_ty = current_meta
+                    .declaration_types
+                    .get(target.as_str())
+                    .copied()
+                    .unwrap_or(BoundType::Variant);
+                let source_ty = expr_bound_type(expr, current_meta, proc_meta, external_decls);
+                if let Some((intent, target_kind)) =
+                    runtime_assignment_validation(*intent, target_ty, source_ty)
+                {
+                    let value_slot = temps.alloc_temp();
+                    emit_expr_into(
+                        expr,
+                        compare_mode,
+                        value_slot,
+                        slot_map,
+                        temps,
+                        instructions,
+                    );
+                    instructions.push(Instruction::ValidateRuntimeAssignment {
+                        src: value_slot,
+                        intent,
+                        target_kind,
+                        target_name: target.clone(),
+                        target_type_name: bound_type_display_name(target_ty).to_string(),
+                    });
+                    instructions.push(Instruction::CopySlot {
+                        dst: target_slot,
+                        src: value_slot,
+                    });
+                } else {
+                    emit_expr_into(
+                        expr,
+                        compare_mode,
+                        target_slot,
+                        slot_map,
+                        temps,
+                        instructions,
+                    );
+                }
             }
         }
         BoundStmt::UdtAssign {
@@ -856,10 +900,59 @@ fn emit_stmt(
             }
         }
         BoundStmt::AssignFromCall {
-            target, name, args, ..
+            target,
+            name,
+            args,
+            intent,
         } => {
-            if let Some(target_slot) = slot_map.get(target.as_str()).copied()
-                && !emit_early_call(
+            if let Some(target_slot) = slot_map.get(target.as_str()).copied() {
+                let current_meta = proc_meta
+                    .get(current_proc_name)
+                    .expect("current procedure metadata should exist");
+                let target_ty = current_meta
+                    .declaration_types
+                    .get(target.as_str())
+                    .copied()
+                    .unwrap_or(BoundType::Variant);
+                let source_ty = call_bound_type(name, proc_meta, external_decls);
+                if let Some((runtime_intent, target_kind)) =
+                    runtime_assignment_validation(*intent, target_ty, source_ty)
+                {
+                    let value_slot = temps.alloc_temp();
+                    if !emit_early_call(
+                        name,
+                        args,
+                        compare_mode,
+                        slot_map,
+                        temps,
+                        instructions,
+                        call_patches,
+                        proc_meta,
+                        external_decls,
+                        Some(value_slot),
+                    ) {
+                        let _ = emit_late_bound_default_member_call(
+                            name,
+                            args,
+                            compare_mode,
+                            slot_map,
+                            temps,
+                            instructions,
+                            Some(value_slot),
+                        );
+                    }
+                    instructions.push(Instruction::ValidateRuntimeAssignment {
+                        src: value_slot,
+                        intent: runtime_intent,
+                        target_kind,
+                        target_name: target.clone(),
+                        target_type_name: bound_type_display_name(target_ty).to_string(),
+                    });
+                    instructions.push(Instruction::CopySlot {
+                        dst: target_slot,
+                        src: value_slot,
+                    });
+                } else if !emit_early_call(
                     name,
                     args,
                     compare_mode,
@@ -870,20 +963,113 @@ fn emit_stmt(
                     proc_meta,
                     external_decls,
                     Some(target_slot),
-                )
-            {
-                let _ = emit_late_bound_default_member_call(
-                    name,
-                    args,
-                    compare_mode,
-                    slot_map,
-                    temps,
-                    instructions,
-                    Some(target_slot),
-                );
+                ) {
+                    let _ = emit_late_bound_default_member_call(
+                        name,
+                        args,
+                        compare_mode,
+                        slot_map,
+                        temps,
+                        instructions,
+                        Some(target_slot),
+                    );
+                }
             }
         }
         BoundStmt::Unsupported { .. } => {}
+    }
+}
+
+fn runtime_assignment_validation(
+    intent: AssignmentIntent,
+    target_ty: BoundType,
+    source_ty: BoundType,
+) -> Option<(RuntimeAssignmentIntent, RuntimeAssignmentTargetKind)> {
+    if source_ty != BoundType::Variant {
+        return None;
+    }
+
+    let runtime_intent = match intent {
+        AssignmentIntent::Implicit => RuntimeAssignmentIntent::Implicit,
+        AssignmentIntent::Let => RuntimeAssignmentIntent::Let,
+        AssignmentIntent::Set => RuntimeAssignmentIntent::Set,
+    };
+    let target_kind = match target_ty {
+        BoundType::Variant => RuntimeAssignmentTargetKind::Variant,
+        BoundType::Object => RuntimeAssignmentTargetKind::Object,
+        _ => RuntimeAssignmentTargetKind::Scalar,
+    };
+
+    match (runtime_intent, target_kind) {
+        (RuntimeAssignmentIntent::Set, RuntimeAssignmentTargetKind::Variant)
+        | (RuntimeAssignmentIntent::Set, RuntimeAssignmentTargetKind::Object)
+        | (RuntimeAssignmentIntent::Implicit, RuntimeAssignmentTargetKind::Object)
+        | (RuntimeAssignmentIntent::Let, RuntimeAssignmentTargetKind::Object)
+        | (RuntimeAssignmentIntent::Implicit, RuntimeAssignmentTargetKind::Scalar)
+        | (RuntimeAssignmentIntent::Let, RuntimeAssignmentTargetKind::Scalar) => {
+            Some((runtime_intent, target_kind))
+        }
+        _ => None,
+    }
+}
+
+fn expr_bound_type(
+    expr: &BoundExpr,
+    current_meta: &EmitProcMeta,
+    proc_meta: &HashMap<String, EmitProcMeta>,
+    external_decls: &HashMap<String, BoundExternalDecl>,
+) -> BoundType {
+    match expr {
+        BoundExpr::IntConst(_) | BoundExpr::AddConst { .. } | BoundExpr::SubConst { .. } => {
+            BoundType::Long
+        }
+        BoundExpr::Var(name) => current_meta
+            .declaration_types
+            .get(name.as_str())
+            .copied()
+            .unwrap_or(BoundType::Variant),
+        BoundExpr::IntrinsicCall { name, .. } | BoundExpr::ProcCall { name, .. } => {
+            call_bound_type(name, proc_meta, external_decls)
+        }
+    }
+}
+
+fn call_bound_type(
+    name: &str,
+    proc_meta: &HashMap<String, EmitProcMeta>,
+    external_decls: &HashMap<String, BoundExternalDecl>,
+) -> BoundType {
+    if name.eq_ignore_ascii_case("createobject") {
+        return BoundType::Object;
+    }
+    if name.eq_ignore_ascii_case("dispatchinvoke")
+        || external_decls.contains_key(&name.to_ascii_lowercase())
+    {
+        return BoundType::Variant;
+    }
+    proc_meta
+        .get(name)
+        .map(|meta| meta.return_type)
+        .unwrap_or(BoundType::Variant)
+}
+
+fn bound_type_display_name(ty: BoundType) -> &'static str {
+    match ty {
+        BoundType::Variant => "Variant",
+        BoundType::Integer => "Integer",
+        BoundType::Long => "Long",
+        BoundType::LongLong => "LongLong",
+        BoundType::LongPtr => "LongPtr",
+        BoundType::Byte => "Byte",
+        BoundType::Single => "Single",
+        BoundType::Double => "Double",
+        BoundType::Currency => "Currency",
+        BoundType::Decimal => "Decimal",
+        BoundType::Date => "Date",
+        BoundType::String => "String",
+        BoundType::Boolean => "Boolean",
+        BoundType::Object => "Object",
+        BoundType::Array => "Array",
     }
 }
 

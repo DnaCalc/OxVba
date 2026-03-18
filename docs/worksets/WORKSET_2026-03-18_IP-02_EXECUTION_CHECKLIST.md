@@ -109,6 +109,7 @@ Already evidenced in the repo today:
 - bounded no-parentheses getter RHS read-assignment rejection via the compile-time `unsupported statement` surface across named, authoritative default-member, and single-visible-candidate non-authoritative default-member receivers under explicit `Set`, explicit `Let`, and implicit assignment for typed `Variant`, `Object`, and scalar targets
 - bounded plain scalar-source assignment-intent proof surface for explicit `Set`, explicit `Let`, and implicit assignment on current typed scalar / `Variant` / `Object` target lanes
 - bounded plain object-source assignment-intent proof surface for explicit `Set`, explicit `Let`, and implicit assignment on current typed `Object` / `Variant` / scalar target lanes
+- bounded plain declared-`Variant` source assignment-intent proof surface with runtime payload validation across the current typed `Variant` / `Object` / scalar target lanes for both scalar-payload and object-payload shapes
 - bounded scalar-target rejection for object-returning native property/default-member getter read-assignment across named, zero-arg parenthesized, indexed, authoritative default-member, and landed single-candidate non-authoritative default-member syntax for explicit `Set`, explicit `Let`, and implicit assignment
 - bounded scalar-typed native property/default-member getter read-assignment rejection for explicit `Set` across named, zero-arg parenthesized, indexed, authoritative default-member, and landed single-candidate non-authoritative default-member syntax for typed `Variant`, `Object`, and scalar targets
 - bounded scalar-typed native property/default-member getter read-assignment execution for explicit `Let` and implicit assignment into typed `Variant` and scalar targets across named, zero-arg parenthesized, indexed, authoritative default-member, and landed single-candidate non-authoritative default-member syntax
@@ -207,5 +208,5 @@ First checklist-driven target:
   - compiler + host evidence now also exists for ambiguous scalar/indexed getter, `Let`, and `Property Set` diagnostics across read-assignment plus statement-context, explicit `Call`, no-parentheses-argument, and zero-arg parenthesized getter contexts where applicable
 - Next unresolved neighbors:
   - broader call-vs-value syntax enumeration, especially any remaining silent-fallthrough or receiver-mode distinctions outside the now-proved no-parentheses subset
-  - broader `Set` vs `Let` source-target sweep beyond the now-proved object-getter `Object` / `Variant` / scalar target lanes in the currently landed authoritative and bounded single-candidate non-authoritative native subset
+  - broader `Set` vs `Let` source-target sweep beyond the now-proved plain scalar/plain object/plain declared-`Variant` source-variable subsets plus the object-getter `Object` / `Variant` / scalar target lanes in the currently landed authoritative and bounded single-candidate non-authoritative native subset
 
