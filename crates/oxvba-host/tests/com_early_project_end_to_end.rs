@@ -125,6 +125,35 @@ End Sub
     );
 }
 
+#[test]
+fn early_bound_project_reports_compile_error_for_wrong_arity() {
+    let manifest = manifest_with_typelib(
+        r#"
+Attribute VB_Name = "MainModule"
+Public Sub Main()
+Dim obj As New OxVba.TestDispatch
+Dim value
+value = obj.Exists()
+End Sub
+"#,
+    );
+
+    let engine = Engine::new(HostConfig {
+        enable_jit: false,
+        root_object_name: None,
+    });
+    let err = engine
+        .execute_project_with_snapshot_phased(&manifest)
+        .expect_err("wrong-arity member should fail at compile-time");
+    assert_eq!(err.phase(), DiagnosticPhase::CompileTime);
+    assert!(
+        err.message()
+            .contains("BIND-E-TYPELIB-INVOKE-ARITY-UNSUPPORTED"),
+        "unexpected compile diagnostic: {}",
+        err.message()
+    );
+}
+
 #[cfg(target_os = "windows")]
 #[test]
 fn early_and_late_dispatch_paths_can_mix_in_one_project() {

@@ -294,9 +294,13 @@ pub enum ProjectCompileError {
     )]
     TypeLibraryMemberUnsupported { member_name: String },
     #[error(
-        "BIND-E-TYPELIB-INVOKE-ARITY-UNSUPPORTED: external invoke target `{target}` exceeds current supported arity subset (0 or 1 args)"
+        "BIND-E-TYPELIB-INVOKE-ARITY-UNSUPPORTED: external invoke target `{target}` expects {expected} args from typelib metadata, got {actual}"
     )]
-    TypeLibraryInvokeArityUnsupported { target: String },
+    TypeLibraryInvokeArityUnsupported {
+        target: String,
+        expected: usize,
+        actual: usize,
+    },
     #[error("PMR-E-BACKEND-COMPILE: {message}")]
     BackendCompile { message: String },
 }
@@ -1723,7 +1727,8 @@ fn rewrite_early_bound_member_dispatch(
             cursor = close + 1;
             continue;
         };
-        let Some(member_token) = known_typelib_member_token(&binding.qualified_type, member_name)
+        let Some((member_token, expected_arity)) =
+            known_typelib_member_token_and_arity(&binding.qualified_type, member_name)
         else {
             return Err(ProjectCompileError::TypeLibraryMemberUnsupported {
                 member_name: member_name.to_string(),
@@ -1731,6 +1736,14 @@ fn rewrite_early_bound_member_dispatch(
         };
         let args_raw = line[open + 1..close].trim();
         let args = split_top_level_args(args_raw)?;
+        let actual_arity = args.iter().filter(|arg| !arg.trim().is_empty()).count();
+        if actual_arity != expected_arity {
+            return Err(ProjectCompileError::TypeLibraryInvokeArityUnsupported {
+                target: format!("{}.{}", binding.qualified_type, member_name),
+                expected: expected_arity,
+                actual: actual_arity,
+            });
+        }
         let replacement = if args.is_empty() || args.iter().all(|arg| arg.trim().is_empty()) {
             format!("DispatchInvoke({var_name}, {member_token})")
         } else {
@@ -3150,11 +3163,19 @@ fn known_typelib_create_object_selector(qualified_type: &str) -> Option<i32> {
     create_object_selector_from_typelib_metadata(&metadata)
 }
 
+#[cfg(test)]
 fn known_typelib_member_token(qualified_type: &str, member_name: &str) -> Option<i32> {
+    known_typelib_member_token_and_arity(qualified_type, member_name).map(|(token, _)| token)
+}
+
+fn known_typelib_member_token_and_arity(
+    qualified_type: &str,
+    member_name: &str,
+) -> Option<(i32, usize)> {
     let identity = known_typelib_identity_for_prog_id_name(qualified_type)?;
     let metadata = build_typelib_metadata(&identity);
-    let (token, _) = member_token_and_spec_from_typelib_metadata_name(&metadata, member_name)?;
-    Some(token.raw())
+    let (token, spec) = member_token_and_spec_from_typelib_metadata_name(&metadata, member_name)?;
+    Some((token.raw(), spec.parameter_names.len()))
 }
 
 fn known_dispatch_member_token(member_name: &str) -> Option<i32> {
@@ -11886,6 +11907,18 @@ mod tests {
     }
 
     #[test]
+    fn known_typelib_member_token_and_arity_reads_external_member_metadata() {
+        assert_eq!(
+            super::known_typelib_member_token_and_arity("OxVba.TestDispatch", "Count"),
+            Some((1, 0))
+        );
+        assert_eq!(
+            super::known_typelib_member_token_and_arity("OxVba.TestDispatch", "SumPair"),
+            Some((12, 2))
+        );
+    }
+
+    #[test]
     fn known_typelib_create_object_selector_reads_external_activation_metadata() {
         assert_eq!(
             super::known_typelib_create_object_selector("OxVba.TestDispatch"),
@@ -11990,6 +12023,54 @@ mod tests {
             .expect("multi-arg external member call should compile in widened subset");
         let lowered = compiled.rewritten_source.to_ascii_lowercase();
         assert!(lowered.contains("dispatchinvoke(obj, 12, 1, 2)"));
+    }
+
+    #[test]
+    fn compile_project_rejects_wrong_arity_for_zero_arg_external_member() {
+        let main_module = module_unit_from_source(
+            "MainModule",
+            ModuleKind::Procedural,
+            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim obj As OxVba.TestDispatch\nDim x\nSet obj = CreateObject(4)\nx = obj.Count(1)\nEnd Sub",
+        )
+        .expect("module parses");
+        let manifest = ProjectManifest {
+            project_name: "ProjectA".to_string(),
+            project_kind: ProjectKind::Source,
+            modules: vec![main_module],
+            references: vec![ProjectReference {
+                referenced_project_name: "OxVba".to_string(),
+                reference_kind: ReferenceKind::TypeLibrary,
+            }],
+            reference_projects: Vec::new(),
+            conditional_constants: BTreeMap::new(),
+        };
+        let err = compile_project(&manifest)
+            .expect_err("wrong zero-arg member arity should reject compilation");
+        assert_eq!(err.code(), "BIND-E-TYPELIB-INVOKE-ARITY-UNSUPPORTED");
+    }
+
+    #[test]
+    fn compile_project_rejects_wrong_arity_for_multi_arg_external_member() {
+        let main_module = module_unit_from_source(
+            "MainModule",
+            ModuleKind::Procedural,
+            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim obj As OxVba.TestDispatch\nDim x\nSet obj = CreateObject(4)\nx = obj.SumPair(1)\nEnd Sub",
+        )
+        .expect("module parses");
+        let manifest = ProjectManifest {
+            project_name: "ProjectA".to_string(),
+            project_kind: ProjectKind::Source,
+            modules: vec![main_module],
+            references: vec![ProjectReference {
+                referenced_project_name: "OxVba".to_string(),
+                reference_kind: ReferenceKind::TypeLibrary,
+            }],
+            reference_projects: Vec::new(),
+            conditional_constants: BTreeMap::new(),
+        };
+        let err = compile_project(&manifest)
+            .expect_err("wrong multi-arg member arity should reject compilation");
+        assert_eq!(err.code(), "BIND-E-TYPELIB-INVOKE-ARITY-UNSUPPORTED");
     }
 
     #[test]
