@@ -1,7 +1,7 @@
-## 2026-03-18 - Add no-paren getter rejection target-matrix evidence
+## 2026-03-18 - Expand no-paren getter rejection target-matrix evidence
 
 - Continued the active `IP-02A` checklist run on the call-vs-value sweep without widening semantics.
-- Added compiler and VM/JIT host evidence proving that no-parentheses getter RHS read-assignment remains on the current compile-time `unsupported statement` surface for typed `Object` and scalar targets, not just `Variant` targets, across named property, authoritative default-member, and bounded single-candidate non-authoritative default-member receivers under both explicit `Let` and implicit assignment.
+- Added compiler and VM/JIT host evidence proving that no-parentheses getter RHS read-assignment remains on the current compile-time `unsupported statement` surface across typed `Variant`, `Object`, and scalar targets for explicit `Set`, explicit `Let`, and implicit assignment on named property, authoritative default-member, and bounded single-candidate non-authoritative default-member receivers.
 - `IP-02` remains in-progress: broader `Set`/`Let` source-target parity, broader non-authoritative default-member closure beyond the current bounded subsets, and wider Office-style call-vs-value parity are still open.
 
 ## 2026-03-18 - Added plain scalar-source assignment intent evidence

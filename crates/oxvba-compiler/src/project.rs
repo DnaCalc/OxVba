@@ -8812,6 +8812,83 @@ mod tests {
     }
 
     #[test]
+    fn compile_project_rejects_no_paren_getter_explicit_set_read_assignment_lanes() {
+        let cases = [
+            (
+                "named property Variant target",
+                "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim widget As New Widget\nDim x\nDim valueOut As Variant\nx = 2\nSet valueOut = widget.Value x\nEnd Sub",
+                "Attribute VB_Name = \"Widget\"\nPublic Property Get Value(ByRef index)\nindex = index + 7\nValue = index\nEnd Property",
+            ),
+            (
+                "named property Object target",
+                "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim widget As New Widget\nDim x\nDim childOut As Object\nx = 2\nSet childOut = widget.Value x\nEnd Sub",
+                "Attribute VB_Name = \"Widget\"\nPublic Property Get Value(ByRef index)\nindex = index + 7\nValue = index\nEnd Property",
+            ),
+            (
+                "named property scalar target",
+                "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim widget As New Widget\nDim x\nDim n As Long\nx = 2\nSet n = widget.Value x\nEnd Sub",
+                "Attribute VB_Name = \"Widget\"\nPublic Property Get Value(ByRef index)\nindex = index + 7\nValue = index\nEnd Property",
+            ),
+            (
+                "authoritative default member Variant target",
+                "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim widget As New Widget\nDim x\nDim valueOut As Variant\nx = 2\nSet valueOut = widget x\nEnd Sub",
+                "Attribute VB_Name = \"Widget\"\nPublic Property Get Value(ByRef index)\nindex = index + 7\nValue = index\nEnd Property\nAttribute Value.VB_UserMemId = 0",
+            ),
+            (
+                "authoritative default member Object target",
+                "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim widget As New Widget\nDim x\nDim childOut As Object\nx = 2\nSet childOut = widget x\nEnd Sub",
+                "Attribute VB_Name = \"Widget\"\nPublic Property Get Value(ByRef index)\nindex = index + 7\nValue = index\nEnd Property\nAttribute Value.VB_UserMemId = 0",
+            ),
+            (
+                "authoritative default member scalar target",
+                "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim widget As New Widget\nDim x\nDim n As Long\nx = 2\nSet n = widget x\nEnd Sub",
+                "Attribute VB_Name = \"Widget\"\nPublic Property Get Value(ByRef index)\nindex = index + 7\nValue = index\nEnd Property\nAttribute Value.VB_UserMemId = 0",
+            ),
+            (
+                "non-authoritative default member Variant target",
+                "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim widget As New Widget\nDim x\nDim valueOut As Variant\nx = 2\nSet valueOut = widget x\nEnd Sub",
+                "Attribute VB_Name = \"Widget\"\nPublic Property Get Value(ByRef index)\nindex = index + 7\nValue = index\nEnd Property",
+            ),
+            (
+                "non-authoritative default member Object target",
+                "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim widget As New Widget\nDim x\nDim childOut As Object\nx = 2\nSet childOut = widget x\nEnd Sub",
+                "Attribute VB_Name = \"Widget\"\nPublic Property Get Value(ByRef index)\nindex = index + 7\nValue = index\nEnd Property",
+            ),
+            (
+                "non-authoritative default member scalar target",
+                "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim widget As New Widget\nDim x\nDim n As Long\nx = 2\nSet n = widget x\nEnd Sub",
+                "Attribute VB_Name = \"Widget\"\nPublic Property Get Value(ByRef index)\nindex = index + 7\nValue = index\nEnd Property",
+            ),
+        ];
+
+        for (label, main_source, widget_source) in cases {
+            let main_module =
+                module_unit_from_source("MainModule", ModuleKind::Procedural, main_source)
+                    .expect("main module parses");
+            let widget = module_unit_from_source("Widget", ModuleKind::Class, widget_source)
+                .expect("widget module parses");
+            let manifest = ProjectManifest {
+                project_name: "ProjectA".to_string(),
+                project_kind: ProjectKind::Source,
+                modules: vec![main_module, widget],
+                references: Vec::new(),
+                reference_projects: Vec::new(),
+                conditional_constants: BTreeMap::new(),
+            };
+
+            let err = match compile_project(&manifest) {
+                Ok(_) => panic!("{label} should reject deterministically"),
+                Err(err) => err,
+            };
+            let message = err.to_string().to_ascii_lowercase();
+            assert!(
+                message.contains("unsupported statement"),
+                "{label}: {message}"
+            );
+        }
+    }
+
+    #[test]
     fn compile_project_rewrites_statement_context_non_authoritative_single_candidate_default_member_get()
      {
         let main_module = module_unit_from_source(

@@ -20,7 +20,7 @@ Update (2026-03-18, current pass): object-returning native property/default-memb
 Update (2026-03-18, current pass): ambiguous/missing non-authoritative object-valued default-member source-resolution diagnostics now also have direct bounded explicit-`Set` evidence on both typed `Object` and typed `Variant` targets across bare, zero-arg parenthesized, and indexed syntax.
 Update (2026-03-18, current pass): the same ambiguous/missing explicit-`Set` source-resolution diagnostics now also have direct bounded scalar-target precedence evidence across bare, zero-arg parenthesized, and indexed syntax.
 Update (2026-03-18, current pass): ambiguous/missing non-authoritative object-valued default-member source-resolution diagnostics now also have direct bounded scalar-target evidence for explicit `Let` and implicit assignment across bare, zero-arg parenthesized, and indexed syntax.
-Update (2026-03-18, current pass): no-parentheses getter RHS read-assignment rejection now also has direct bounded compile-time evidence for typed `Object` and scalar targets, not just `Variant` targets, across named, authoritative default-member, and single-visible-candidate non-authoritative default-member receivers under explicit `Let` and implicit assignment.
+Update (2026-03-18, current pass): no-parentheses getter RHS read-assignment rejection now also has direct bounded compile-time evidence across typed `Variant`, `Object`, and scalar targets under explicit `Set`, explicit `Let`, and implicit assignment for named, authoritative default-member, and single-visible-candidate non-authoritative default-member receivers.
 
 Use it to answer:
 1. what major behavior areas are still unfinished,
