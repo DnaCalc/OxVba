@@ -5,10 +5,11 @@
 - Added compiler and host phased evidence for the bounded ambiguous lanes:
   - `valueOut = widget` now fails at compile time when `Widget` exposes multiple visible `Property Get` candidates without authoritative default-member metadata.
   - `widget = 9` now fails at compile time when `Widget` exposes multiple visible `Property Let` candidates without authoritative default-member metadata.
+  - `Set widget = x` now fails at compile time when `Widget` exposes multiple visible `Property Set` candidates without authoritative default-member metadata.
 - Added compiler and host evidence for the bounded single-candidate non-authoritative native default-member `Property Set` lanes:
   - `Set widget = x`
   - `Set widget(1) = x`
-- `IP-02` remains `in-progress`: this only extends the bounded non-authoritative native subset through getter/let ambiguity diagnostics plus single-candidate `Property Set`; broader `Set` vs `Let` parity, broader non-authoritative/default-member resolution, and wider Office-style call-vs-value parity still remain open.
+- `IP-02` remains `in-progress`: this only extends the bounded non-authoritative native subset through getter/let/set ambiguity diagnostics plus single-candidate `Property Set`; broader `Set` vs `Let` parity, broader non-authoritative/default-member resolution, and wider Office-style call-vs-value parity still remain open.
 
 ## 2026-03-16 - Added parenthesized explicit Let getter evidence
 
