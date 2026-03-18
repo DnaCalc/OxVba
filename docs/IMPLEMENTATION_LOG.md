@@ -1,3 +1,13 @@
+## 2026-03-18 - Added named object-property-get Variant-target assignment evidence
+
+- Continued execution from [WORKSET_2026-03-18_IP-02_EXECUTION_CHECKLIST.md](C:\Work\DnaCalc\OxVba\docs\worksets\WORKSET_2026-03-18_IP-02_EXECUTION_CHECKLIST.md) on the `Set`/`Let` source-target matrix instead of adding more syntax-only examples.
+- Added compiler and host phased evidence proving named object-returning native `Property Get` results now preserve the bounded `Variant`-target success lanes for:
+  - explicit `Set valueOut = widget.Value`,
+  - explicit `Let valueOut = widget.Value`,
+  - implicit `valueOut = widget.Value`.
+- On the current phased host snapshot surface these lanes project the same stable object-handle shape already used by the existing object-target PMR evidence, so the new tests lock the actual contract instead of assuming a different snapshot API.
+- `IP-02` remains `in-progress`: this closes the named non-indexed object-property-get `Variant` neighbor, but indexed/default-member object-getter lanes and broader `Set` vs `Let` parity remain open.
+
 ## 2026-03-18 - Expanded no-parentheses default-member evidence on the bounded native fallback surface
 
 - Continued execution from [WORKSET_2026-03-18_IP-02_EXECUTION_CHECKLIST.md](C:\Work\DnaCalc\OxVba\docs\worksets\WORKSET_2026-03-18_IP-02_EXECUTION_CHECKLIST.md) and closed the next call-vs-value neighbor instead of widening semantics blindly.

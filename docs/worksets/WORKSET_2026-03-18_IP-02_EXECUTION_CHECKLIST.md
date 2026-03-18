@@ -100,6 +100,7 @@ Already evidenced in the repo today:
 - authoritative indexed member/default-member `Get` / `Let` / `Set`
 - authoritative statement-context, `Call`, zero-arg parenthesized, and no-parentheses-argument getter routes for the proven native subset
 - bounded explicit `Set` / `Let` preservation through native PMR/default-member read-assignment rewrites
+- bounded named object-returning native property-get read-assignment into `Variant` targets for explicit `Set`, explicit `Let`, and implicit assignment
 - bounded `CreateObject(...)` assignment-intent proof surface for explicit `Set`, explicit `Let`, and implicit assignment on current typed `Object` / `Variant` / scalar target lanes
 - non-authoritative single-visible-candidate native default-member fallback for scalar/indexed `Get` / `Let` / `Set`, statement-context getters, explicit `Call` getters, no-parentheses-argument getters, bounded explicit `Set` / `Let` read-assignment, and parenthesized zero-arg getter/read-assignment neighbors where already landed
 - non-authoritative ambiguous native default-member getter / let-assignment / property-set diagnostics via `PMR-E-DEFAULT-MEMBER-RESOLUTION-AMBIGUOUS` across scalar/indexed read-assignment plus statement-context, explicit `Call`, no-parentheses-argument, and zero-arg parenthesized getter contexts where applicable
@@ -194,4 +195,4 @@ First checklist-driven target:
   - compiler + host evidence now also exists for ambiguous scalar/indexed getter, `Let`, and `Property Set` diagnostics across read-assignment plus statement-context, explicit `Call`, no-parentheses-argument, and zero-arg parenthesized getter contexts where applicable
 - Next unresolved neighbors:
   - broader call-vs-value syntax enumeration, especially any remaining silent-fallthrough or receiver-mode distinctions outside the now-proved no-parentheses subset
-  - broader `Set` vs `Let` source-target sweep
+  - broader `Set` vs `Let` source-target sweep beyond the now-proved named object-property-get `Variant` lanes
