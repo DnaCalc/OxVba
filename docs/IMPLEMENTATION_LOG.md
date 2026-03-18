@@ -1170,6 +1170,12 @@
 - Added compiler and VM/JIT host evidence proving that those deterministic diagnostics now directly cover explicit `Set` read-assignment to both typed `Object` and typed `Variant` targets across bare, zero-arg parenthesized, and indexed non-authoritative default-member syntax.
 - `IP-02` remains `in-progress`: broader `Set`/`Let` source-target parity, broader non-authoritative default-member closure beyond the currently bounded subsets, and wider Office-style call-vs-value parity are still open.
 
+## 2026-03-18 - Add explicit Set scalar-target source-resolution precedence evidence
+
+- Continued the active `IP-02A` checklist run without widening semantics and locked the remaining scalar-target precedence neighbors on the new explicit-`Set` source-resolution surface.
+- Added compiler and VM/JIT host evidence proving that explicit `Set n = widget`, `Set n = widget()`, and `Set n = widget(x)` now prefer `PMR-E-DEFAULT-MEMBER-RESOLUTION-AMBIGUOUS` / `PMR-E-DEFAULT-MEMBER-RESOLUTION-MISSING` over downstream target-mismatch diagnostics when the non-authoritative default-member source itself cannot be resolved.
+- `IP-02` remains `in-progress`: broader `Set`/`Let` source-target parity, broader non-authoritative default-member closure beyond the currently bounded subsets, and wider Office-style call-vs-value parity are still open.
+
 
 
 
