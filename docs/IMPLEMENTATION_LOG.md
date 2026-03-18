@@ -1,3 +1,14 @@
+## 2026-03-18 - Add imported zero-arg property-get read-assignment evidence
+
+- Continued `IP-05B` with a bounded imported syntax-lowering slice instead of widening unsupported imported setter/object lanes.
+- In [project.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-compiler\src\project.rs), added a dedicated imported early-bound property-read-assignment rewrite for direct zero-arg `PropertyGet` syntax, so metadata-backed imported receivers now lower:
+  - `x = obj.Value`
+  - `Let x = obj.Value`
+  into deterministic `DispatchInvoke(obj, <token>)` getter calls when the imported member is an authoritative zero-arg `PropertyGet`.
+- Added matching compiler rewrite tests proving the direct zero-arg `PropertyGet` imported read-assignment lane for both implicit assignment and explicit `Let`.
+- Added Windows host end-to-end and VM/JIT parity evidence in [com_early_project_end_to_end.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-host\tests\com_early_project_end_to_end.rs) showing imported zero-arg `PropertyGet` read-assignment now executes after the already-supported imported setter lane establishes state.
+- `IP-05` remains `in-progress`: broader imported property/default-member syntax, richer imported member coverage, object-valued imported setter parity, and wider Office/Excel object-model behavior are still open.
+
 ## 2026-03-18 - Add imported early-bound property-put assignment evidence
 
 - Continued `IP-05B` from the completed metadata-authority floor instead of widening reference ownership again.

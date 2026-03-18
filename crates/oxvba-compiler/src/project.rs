@@ -1614,6 +1614,7 @@ fn expand_bound_source_line(
     }
 
     let rewritten = rewrite_early_bound_property_assignment(line, early_bound)?;
+    let rewritten = rewrite_early_bound_property_read_assignment(&rewritten, early_bound)?;
     let rewritten = rewrite_early_bound_member_dispatch(&rewritten, early_bound)?;
     Ok(vec![rewritten])
 }
@@ -1971,6 +1972,85 @@ fn rewrite_early_bound_property_assignment(
         var_name,
         member_token,
         rendered_args
+    ))
+}
+
+fn rewrite_early_bound_property_read_assignment(
+    line: &str,
+    early_bound: &BTreeMap<String, EarlyBoundBinding>,
+) -> Result<String, ProjectCompileError> {
+    if early_bound.is_empty() || class_state_line_is_non_executable(line) {
+        return Ok(line.to_string());
+    }
+    let trimmed = line.trim_start();
+    let leading = line.len().saturating_sub(trimmed.len());
+    let lowered = trimmed.to_ascii_lowercase();
+    let explicit_set = lowered.starts_with("set ");
+    let explicit_let = lowered.starts_with("let ");
+    let payload = if explicit_set || explicit_let {
+        trimmed[4..].trim_start()
+    } else {
+        trimmed
+    };
+    let Some(eq_idx) = payload.find('=') else {
+        return Ok(line.to_string());
+    };
+    let lhs = payload[..eq_idx].trim();
+    let rhs = payload[eq_idx + 1..].trim();
+    if lhs.is_empty() || rhs.is_empty() || rhs.contains('(') || rhs.contains(char::is_whitespace) {
+        return Ok(line.to_string());
+    }
+    let Some(dot_idx) = rhs.find('.') else {
+        return Ok(line.to_string());
+    };
+    let var_name = rhs[..dot_idx].trim();
+    let Some(binding) = early_bound.get(&normalize_identifier(var_name)) else {
+        return Ok(line.to_string());
+    };
+    let member_name = rhs[dot_idx + 1..].trim();
+    if member_name.is_empty() {
+        return Ok(line.to_string());
+    }
+    let target_name = format!("{}.{}", binding.qualified_type, member_name);
+    let (member_token, member_spec) =
+        match resolve_early_bound_binding_member_token_and_spec(binding, member_name) {
+            KnownTypeLibMemberResolution::Resolved(member_token, member_spec) => {
+                (member_token, member_spec)
+            }
+            KnownTypeLibMemberResolution::Unsupported => {
+                return Err(ProjectCompileError::TypeLibraryMemberUnsupported {
+                    member_name: member_name.to_string(),
+                });
+            }
+            KnownTypeLibMemberResolution::Missing => {
+                return Err(ProjectCompileError::TypeLibraryMemberNotFound {
+                    target: target_name,
+                });
+            }
+            KnownTypeLibMemberResolution::Ambiguous => {
+                return Err(ProjectCompileError::TypeLibraryMemberAmbiguous {
+                    target: target_name,
+                });
+            }
+        };
+    if member_spec.invoke_kind != TypeLibMemberInvokeKind::PropertyGet
+        || !member_spec.parameter_names.is_empty()
+    {
+        return Ok(line.to_string());
+    }
+    Ok(format!(
+        "{}{}{} = DispatchInvoke({}, {})",
+        &line[..leading],
+        if explicit_set {
+            "Set "
+        } else if explicit_let {
+            "Let "
+        } else {
+            ""
+        },
+        lhs,
+        var_name,
+        member_token
     ))
 }
 
@@ -12473,6 +12553,56 @@ mod tests {
             .expect("property-get external member call should compile in supported subset");
         let lowered = compiled.rewritten_source.to_ascii_lowercase();
         assert!(lowered.contains("dispatchinvoke(obj, 6, 41)"));
+    }
+
+    #[test]
+    fn compile_project_rewrites_zero_arg_property_get_external_read_assignment_to_dispatchinvoke() {
+        let main_module = module_unit_from_source(
+            "MainModule",
+            ModuleKind::Procedural,
+            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim obj As OxVba.TestDispatch\nDim x\nSet obj = CreateObject(4)\nx = obj.Value\nEnd Sub",
+        )
+        .expect("module parses");
+        let manifest = ProjectManifest {
+            project_name: "ProjectA".to_string(),
+            project_kind: ProjectKind::Source,
+            modules: vec![main_module],
+            references: vec![ProjectReference {
+                referenced_project_name: "OxVba".to_string(),
+                reference_kind: ReferenceKind::TypeLibrary,
+            }],
+            reference_projects: Vec::new(),
+            conditional_constants: BTreeMap::new(),
+        };
+        let compiled = compile_project(&manifest)
+            .expect("zero-arg property-get imported read-assignment should compile");
+        let lowered = compiled.rewritten_source.to_ascii_lowercase();
+        assert!(lowered.contains("x = dispatchinvoke(obj, 9)"));
+    }
+
+    #[test]
+    fn compile_project_preserves_explicit_let_for_zero_arg_property_get_external_read_assignment() {
+        let main_module = module_unit_from_source(
+            "MainModule",
+            ModuleKind::Procedural,
+            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim obj As OxVba.TestDispatch\nDim x\nSet obj = CreateObject(4)\nLet x = obj.Value\nEnd Sub",
+        )
+        .expect("module parses");
+        let manifest = ProjectManifest {
+            project_name: "ProjectA".to_string(),
+            project_kind: ProjectKind::Source,
+            modules: vec![main_module],
+            references: vec![ProjectReference {
+                referenced_project_name: "OxVba".to_string(),
+                reference_kind: ReferenceKind::TypeLibrary,
+            }],
+            reference_projects: Vec::new(),
+            conditional_constants: BTreeMap::new(),
+        };
+        let compiled = compile_project(&manifest)
+            .expect("explicit Let zero-arg property-get imported read-assignment should compile");
+        let lowered = compiled.rewritten_source.to_ascii_lowercase();
+        assert!(lowered.contains("let x = dispatchinvoke(obj, 9)"));
     }
 
     #[test]
