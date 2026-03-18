@@ -1,5 +1,9 @@
 use std::collections::{BTreeMap, BTreeSet};
 
+use oxvba_com::{
+    build_typelib_metadata, known_typelib_identity_for_prog_id_name,
+    member_token_and_spec_from_typelib_metadata_name,
+};
 use oxvba_runtime::ObjectHandle;
 use thiserror::Error;
 
@@ -1715,11 +1719,12 @@ fn rewrite_early_bound_member_dispatch(
             continue;
         }
         let key = normalize_identifier(var_name);
-        if !early_bound.contains_key(&key) {
+        let Some(binding) = early_bound.get(&key) else {
             cursor = close + 1;
             continue;
-        }
-        let Some(member_token) = known_dispatch_member_token(member_name) else {
+        };
+        let Some(member_token) = known_typelib_member_token(&binding.qualified_type, member_name)
+        else {
             return Err(ProjectCompileError::TypeLibraryMemberUnsupported {
                 member_name: member_name.to_string(),
             });
@@ -3145,6 +3150,13 @@ fn known_create_object_selector(qualified_type: &str) -> Option<i32> {
         "scripting.dictionary" => Some(4),
         _ => None,
     }
+}
+
+fn known_typelib_member_token(qualified_type: &str, member_name: &str) -> Option<i32> {
+    let identity = known_typelib_identity_for_prog_id_name(qualified_type)?;
+    let metadata = build_typelib_metadata(&identity);
+    let (token, _) = member_token_and_spec_from_typelib_metadata_name(&metadata, member_name)?;
+    Some(token.raw())
 }
 
 fn known_dispatch_member_token(member_name: &str) -> Option<i32> {
@@ -11861,6 +11873,18 @@ mod tests {
         let lowered = compiled.rewritten_source.to_ascii_lowercase();
         assert!(lowered.contains("dim obj as object"));
         assert!(lowered.contains("x = dispatchinvoke(obj, 1)"));
+    }
+
+    #[test]
+    fn known_typelib_member_token_reads_external_member_metadata() {
+        assert_eq!(
+            super::known_typelib_member_token("OxVba.TestDispatch", "Count"),
+            Some(1)
+        );
+        assert_eq!(
+            super::known_typelib_member_token("OxVba.TestDispatch", "UnknownMember"),
+            None
+        );
     }
 
     #[test]

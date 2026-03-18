@@ -1,3 +1,9 @@
+## 2026-03-18 - Start IP-05A metadata-authority checklist
+
+- Started execution from [WORKSET_2026-03-18_IP-05A_EXECUTION_CHECKLIST.md](C:\Work\DnaCalc\OxVba\docs\worksets\WORKSET_2026-03-18_IP-05A_EXECUTION_CHECKLIST.md) so the COM reference-facade phase now runs against an explicit metadata-authority contract instead of open-ended early-bind frontier notes.
+- In [project.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-compiler\src\project.rs), changed the supported external early-bound member-call rewrite path to resolve member tokens from `oxvba-com` synthetic typelib metadata via `known_typelib_identity_for_prog_id_name(...)`, `build_typelib_metadata(...)`, and `member_token_and_spec_from_typelib_metadata_name(...)` instead of the compiler-local hardcoded external member-token switch.
+- In [project.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-compiler\src\project.rs), added direct compiler proof that the metadata-backed lookup returns the expected controlled token for `OxVba.TestDispatch.Count` while still rejecting unsupported external members deterministically.
+
 ## 2026-03-18 - Add DISP_E_PARAMNOTFOUND host fault classification evidence
 
 - Continued the active `IP-03A` late-bound COM fault-surface sweep instead of widening transport semantics.
