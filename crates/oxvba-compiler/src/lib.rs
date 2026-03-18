@@ -374,6 +374,16 @@ mod tests {
     }
 
     #[test]
+    fn set_keyword_rejects_scalar_target_for_scalar_source() {
+        let source = "Sub Main()\nDim n As Long\nSet n = 7\nEnd Sub";
+        let err = compile(source).expect_err("Set should reject scalar source for scalar target");
+        assert!(
+            err.to_string()
+                .contains("Set requires Object or Variant target, got Long variable n")
+        );
+    }
+
+    #[test]
     fn set_keyword_rejects_scalar_target_for_object_call_result() {
         let source = "Sub Main()\nDim n As Long\nSet n = CreateObject(4)\nEnd Sub";
         let err = compile(source)
@@ -409,6 +419,18 @@ mod tests {
             err.to_string()
                 .contains("Let cannot assign to Object variable obj")
         );
+    }
+
+    #[test]
+    fn let_keyword_accepts_variant_target_for_scalar_source() {
+        let source = "Sub Main()\nDim v As Variant\nLet v = 7\nEnd Sub";
+        compile(source).expect("Let should allow scalar source on Variant target");
+    }
+
+    #[test]
+    fn let_keyword_accepts_scalar_target_for_scalar_source() {
+        let source = "Sub Main()\nDim n As Long\nLet n = 7\nEnd Sub";
+        compile(source).expect("Let should allow scalar source on scalar target");
     }
 
     #[test]
@@ -462,6 +484,18 @@ mod tests {
             err.to_string()
                 .contains("cannot assign Long to Object variable obj")
         );
+    }
+
+    #[test]
+    fn implicit_assignment_accepts_variant_target_for_scalar_source() {
+        let source = "Sub Main()\nDim v As Variant\nv = 7\nEnd Sub";
+        compile(source).expect("implicit assignment should allow scalar source on Variant target");
+    }
+
+    #[test]
+    fn implicit_assignment_accepts_scalar_target_for_scalar_source() {
+        let source = "Sub Main()\nDim n As Long\nn = 7\nEnd Sub";
+        compile(source).expect("implicit assignment should allow scalar source on scalar target");
     }
 
     #[test]

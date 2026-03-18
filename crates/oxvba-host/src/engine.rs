@@ -10370,6 +10370,21 @@ mod tests {
         );
     }
 
+    #[test]
+    fn formal_v121_set_keyword_rejects_scalar_target_for_scalar_source() {
+        let source = "Sub Main()\nDim n As Long\nSet n = 7\nEnd Sub";
+        let err = Engine::new(HostConfig {
+            enable_jit: false,
+            root_object_name: None,
+        })
+        .execute_source_slots_test(source)
+        .expect_err("Set on a scalar target with scalar source should fail");
+        assert!(
+            err.contains("Set requires Object or Variant target, got Long variable n"),
+            "{err}"
+        );
+    }
+
     #[cfg(target_os = "windows")]
     #[test]
     fn formal_v121_set_keyword_rejects_scalar_target_for_object_call_result() {
@@ -10442,6 +10457,30 @@ mod tests {
             err.contains("Let cannot assign to Object variable obj"),
             "{err}"
         );
+    }
+
+    #[test]
+    fn formal_v121_let_keyword_accepts_variant_target_for_scalar_source() {
+        let source = "Sub Main()\nDim v As Variant\nLet v = 7\nEnd Sub";
+        let out = Engine::new(HostConfig {
+            enable_jit: false,
+            root_object_name: None,
+        })
+        .execute_source_slots_test(source)
+        .expect("Let on a Variant target with scalar source should succeed");
+        assert_eq!(out, vec![7]);
+    }
+
+    #[test]
+    fn formal_v121_let_keyword_accepts_scalar_target_for_scalar_source() {
+        let source = "Sub Main()\nDim n As Long\nLet n = 7\nEnd Sub";
+        let out = Engine::new(HostConfig {
+            enable_jit: false,
+            root_object_name: None,
+        })
+        .execute_source_slots_test(source)
+        .expect("Let on a scalar target with scalar source should succeed");
+        assert_eq!(out, vec![7]);
     }
 
     #[cfg(target_os = "windows")]
@@ -10535,6 +10574,30 @@ mod tests {
             err.contains("cannot assign Long to Object variable obj"),
             "{err}"
         );
+    }
+
+    #[test]
+    fn formal_v121_implicit_assignment_accepts_variant_target_for_scalar_source() {
+        let source = "Sub Main()\nDim v As Variant\nv = 7\nEnd Sub";
+        let out = Engine::new(HostConfig {
+            enable_jit: false,
+            root_object_name: None,
+        })
+        .execute_source_slots_test(source)
+        .expect("implicit assignment on a Variant target with scalar source should succeed");
+        assert_eq!(out, vec![7]);
+    }
+
+    #[test]
+    fn formal_v121_implicit_assignment_accepts_scalar_target_for_scalar_source() {
+        let source = "Sub Main()\nDim n As Long\nn = 7\nEnd Sub";
+        let out = Engine::new(HostConfig {
+            enable_jit: false,
+            root_object_name: None,
+        })
+        .execute_source_slots_test(source)
+        .expect("implicit assignment on a scalar target with scalar source should succeed");
+        assert_eq!(out, vec![7]);
     }
 
     #[cfg(target_os = "windows")]

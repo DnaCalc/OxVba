@@ -15,6 +15,7 @@ Update (2026-03-18, later pass): `IP-02A` now also has direct bounded evidence t
 Update (2026-03-18, current pass): `IP-02A` now also has direct bounded evidence that the same ambiguous/missing source-resolution diagnostics apply to typed `Variant` targets under explicit `Let` and implicit assignment across bare, zero-arg parenthesized, and indexed syntax.
 Update (2026-03-18, current pass): no-parentheses getter calls on the native PMR/default-member path now also have direct bounded compile-time rejection evidence in RHS read-assignment contexts across named, authoritative default-member, and single-visible-candidate non-authoritative default-member receivers under both explicit `Let` and implicit assignment.
 Update (2026-03-18, current pass): plain `Object`-typed source variables now also have direct bounded assignment-intent evidence across the current `Object` / `Variant` / scalar target lanes for explicit `Set`, explicit `Let`, and implicit assignment.
+Update (2026-03-18, current pass): plain scalar sources now also have direct bounded assignment-intent evidence across the current typed scalar / `Variant` / `Object` target lanes for explicit `Set`, explicit `Let`, and implicit assignment.
 
 Use it to answer:
 1. what major behavior areas are still unfinished,

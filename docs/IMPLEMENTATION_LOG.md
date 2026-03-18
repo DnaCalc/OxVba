@@ -1,3 +1,14 @@
+## 2026-03-18 - Added plain scalar-source assignment intent evidence
+
+- Continued execution from [WORKSET_2026-03-18_IP-02_EXECUTION_CHECKLIST.md](C:\Work\DnaCalc\OxVba\docs\worksets\WORKSET_2026-03-18_IP-02_EXECUTION_CHECKLIST.md) on the explicit source-target matrix instead of leaving the plain scalar lanes partially implied by generic arithmetic coverage and the earlier object-source/object-result slices.
+- Added compiler and host evidence proving that plain scalar sources now have direct bounded assignment-intent coverage for:
+  - explicit `Let` into `Variant` targets,
+  - explicit `Let` into scalar targets,
+  - implicit assignment into `Variant` targets,
+  - implicit assignment into scalar targets,
+  - explicit `Set` rejection on typed scalar targets in addition to the already-proved `Variant` and `Object` target rejection lanes.
+- `IP-02` remains `in-progress`: broader `Set`/`Let` source-target parity, broader non-authoritative default-member closure beyond the currently bounded subsets, and wider Office-style call-vs-value parity are still open.
+
 ## 2026-03-18 - Added plain object-source assignment intent evidence
 
 - Continued execution from [WORKSET_2026-03-18_IP-02_EXECUTION_CHECKLIST.md](C:\Work\DnaCalc\OxVba\docs\worksets\WORKSET_2026-03-18_IP-02_EXECUTION_CHECKLIST.md) on the explicit source-target matrix instead of leaving plain object-variable sources implied by the earlier `CreateObject(...)` and getter-result lanes.
