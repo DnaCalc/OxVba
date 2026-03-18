@@ -219,6 +219,9 @@ Planning notes:
 
 ### Phase C. COM reference facade and metadata authority (`IP-05A`)
 
+Status:
+1. completed on 2026-03-18 for the metadata-authority target tracked in [WORKSET_2026-03-18_IP-05A_EXECUTION_CHECKLIST.md](C:\Work\DnaCalc\OxVba\docs\worksets\WORKSET_2026-03-18_IP-05A_EXECUTION_CHECKLIST.md).
+
 Primary target:
 1. make COM type-library imports behave like real referenced-library metadata to the compiler.
 
@@ -244,6 +247,7 @@ Acceptance:
 Planning notes:
 1. this is the compiler-facing complement to the now-closed `IP-04` runtime ownership work.
 2. expect this phase to flush out more exact VBA/Excel precedence and ambiguity rules.
+3. broader early-bound member/property/event/default-member parity remains downstream `IP-05B` work; it is not residual `IP-05A` authority ambiguity anymore.
 
 ### Phase D. Broad late-bound COM parity closure (`IP-03B`)
 

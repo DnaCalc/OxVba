@@ -27,12 +27,12 @@ Binding doctrine pulled from those sources:
 
 `IP-05A` is complete only when all of the following are true:
 
-- [ ] `oxvba-com` exposes one authoritative synthetic metadata path for the supported imported COM types and members.
-- [ ] Compiler early-bound lowering consumes that metadata path for supported external member resolution instead of compiler-local hardcoded external token tables.
+- [x] `oxvba-com` exposes one authoritative synthetic metadata path for the supported imported COM types and members.
+- [x] Compiler early-bound lowering consumes that metadata path for supported external member resolution instead of compiler-local hardcoded external token tables.
 - [x] Supported early-bound diagnostics for unresolved qualifiers, missing/ambiguous imported members, unsupported out-of-subset members, and unsupported shapes remain deterministic after the metadata handoff.
-- [ ] Binder/lowering evidence shows imported COM members are treated more like referenced-library metadata than an ad hoc side-domain in the supported scope.
-- [ ] [IN_PROGRESS_FEATURE_WORKLIST.md](C:\Work\DnaCalc\OxVba\docs\IN_PROGRESS_FEATURE_WORKLIST.md) no longer describes the `IP-05` current floor as only a rewrite-based subset with typelib identity hints.
-- [ ] Remaining transitional hardcoded routes are isolated and documented explicitly as post-`IP-05A` work.
+- [x] Binder/lowering evidence shows imported COM members are treated more like referenced-library metadata than an ad hoc side-domain in the supported scope.
+- [x] [IN_PROGRESS_FEATURE_WORKLIST.md](C:\Work\DnaCalc\OxVba\docs\IN_PROGRESS_FEATURE_WORKLIST.md) no longer describes the `IP-05` current floor as only a rewrite-based subset with typelib identity hints.
+- [x] Remaining transitional hardcoded routes are isolated and documented explicitly as post-`IP-05A` work.
 
 ## Lane matrix
 
@@ -83,6 +83,20 @@ Already evidenced in the repo today:
 - imported member lookup now distinguishes metadata-backed missing versus ambiguous member/default-member identity, and imported default-member parenthesized call syntax no longer escapes lowering silently when authoritative metadata does not resolve a unique default member
 - supported imported early-bound bindings now carry their authoritative metadata blob through the compiler binding/lowering path, so the active rewrite subset consumes bound metadata directly instead of re-resolving imported type identity by string at each member-call rewrite
 
+## `IP-05A` / `IP-05B` handoff boundary
+
+`IP-05A` is the metadata-authority phase. It is complete when:
+- supported imported type declarations bind through one authoritative synthetic typelib metadata path in `oxvba-com`
+- supported imported member/default-member lowering consumes bound metadata directly inside the compiler path
+- deterministic compile-time diagnostics cover unresolved qualifiers, missing/ambiguous imported member identity, unsupported out-of-subset members, unsupported shapes, and wrong arity
+- the remaining compiler-local token switch is explicitly isolated to native/internal PMR routing rather than imported COM lowering
+
+`IP-05B` starts where broader early-bound parity begins. It owns:
+- the broader imported member/property/event/default-member lowering matrix beyond the current supported call subset
+- richer typelib/member coverage beyond the controlled imported fixture surface
+- stronger Office/Excel object-model parity and broader conformance evidence
+- any remaining broader reference-facade symbol exposure and parity work that is no longer about establishing metadata authority itself
+
 ## Remaining checklist by closure domain
 
 ### A. Facade authority
@@ -90,7 +104,7 @@ Already evidenced in the repo today:
 - [x] Start an explicit `IP-05A` checklist and exit gate.
 - [x] Move external early-bound member-token lookup onto `oxvba-com` metadata for the currently supported imported types.
 - [x] Move external `As New` activation-selector lookup onto `oxvba-com` metadata for the currently supported imported types.
-- [ ] Replace remaining supported external lowering assumptions that still derive member shape from compiler-local hardcoded knowledge.
+- [x] Replace remaining supported external lowering assumptions that still derive member shape from compiler-local hardcoded knowledge.
 - [x] Isolate and document any still-transitional compiler-local token tables that are not part of the external imported-member path anymore.
 
 ### B. Binder and lowering integration
@@ -104,5 +118,5 @@ Already evidenced in the repo today:
 ### C. Reference-facade cleanup
 
 - [x] Expand compiler-visible imported metadata so supported COM imports behave like synthetic reference-owned symbols rather than a side-channel rewrite hint.
-- [ ] Narrow docs and blocker language so the remaining `IP-05` gap is the real residual parity surface, not already-landed metadata authority work.
-- [ ] Define the exact handoff boundary between `IP-05A` metadata authority and `IP-05B` broader early-bound parity.
+- [x] Narrow docs and blocker language so the remaining `IP-05` gap is the real residual parity surface, not already-landed metadata authority work.
+- [x] Define the exact handoff boundary between `IP-05A` metadata authority and `IP-05B` broader early-bound parity.
