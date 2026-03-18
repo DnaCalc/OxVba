@@ -143,6 +143,64 @@ End Sub
     );
 }
 
+#[cfg(target_os = "windows")]
+#[test]
+fn early_bound_project_executes_imported_property_put_assignments_subset() {
+    let manifest = manifest_with_typelib(
+        r#"
+Attribute VB_Name = "MainModule"
+Public Sub Main()
+Dim obj As New OxVba.TestDispatch
+Dim afterSetValue
+Dim afterSetIndexedValue
+obj.SetValue = 9
+afterSetValue = DispatchInvoke(obj, "Value")
+obj.SetIndexedValue(7) = 11
+afterSetIndexedValue = DispatchInvoke(obj, "Value")
+End Sub
+"#,
+    );
+
+    let out = run_project_windows_hosted(&manifest, false);
+    assert!(expect_object_handle(&out[0]).raw() >= 20_001);
+    assert_eq!(
+        out[1],
+        RuntimeValue::I32(9),
+        "imported property-put assignment should lower into the deterministic setter lane"
+    );
+    assert_eq!(
+        out[2],
+        RuntimeValue::I32(307_011),
+        "imported indexed property-put assignment should preserve index and value"
+    );
+}
+
+#[cfg(target_os = "windows")]
+#[test]
+fn early_bound_project_property_put_assignment_vm_jit_snapshots_match() {
+    let manifest = manifest_with_typelib(
+        r#"
+Attribute VB_Name = "MainModule"
+Public Sub Main()
+Dim obj As New OxVba.TestDispatch
+Dim afterSetValue
+Dim afterSetIndexedValue
+obj.SetValue = 9
+afterSetValue = DispatchInvoke(obj, "Value")
+obj.SetIndexedValue(7) = 11
+afterSetIndexedValue = DispatchInvoke(obj, "Value")
+End Sub
+"#,
+    );
+
+    let vm = run_project_windows_hosted(&manifest, false);
+    let jit = run_project_windows_hosted(&manifest, true);
+    assert_eq!(
+        vm, jit,
+        "VM/JIT snapshots should match for imported property-put assignment subset"
+    );
+}
+
 #[test]
 fn early_bound_project_reports_compile_error_for_missing_member() {
     let manifest = manifest_with_typelib(
@@ -166,6 +224,63 @@ End Sub
     assert_eq!(err.phase(), DiagnosticPhase::CompileTime);
     assert!(
         err.message().contains("BIND-E-TYPELIB-MEMBER-NOT-FOUND"),
+        "unexpected compile diagnostic: {}",
+        err.message()
+    );
+}
+
+#[test]
+fn early_bound_project_reports_compile_error_for_unsupported_property_putref_assignment_shape() {
+    let manifest = manifest_with_typelib(
+        r#"
+Attribute VB_Name = "MainModule"
+Public Sub Main()
+Dim obj As New OxVba.TestDispatch
+Dim other As New OxVba.TestDispatch
+Set obj.SetValueRef = other
+End Sub
+"#,
+    );
+
+    let engine = Engine::new(HostConfig {
+        enable_jit: false,
+        root_object_name: None,
+    });
+    let err = engine
+        .execute_project_with_snapshot_phased(&manifest)
+        .expect_err("unsupported property-putref assignment should fail at compile-time");
+    assert_eq!(err.phase(), DiagnosticPhase::CompileTime);
+    assert!(
+        err.message()
+            .contains("BIND-E-TYPELIB-MEMBER-SHAPE-UNSUPPORTED"),
+        "unexpected compile diagnostic: {}",
+        err.message()
+    );
+}
+
+#[test]
+fn early_bound_project_reports_compile_error_for_wrong_property_put_arity() {
+    let manifest = manifest_with_typelib(
+        r#"
+Attribute VB_Name = "MainModule"
+Public Sub Main()
+Dim obj As New OxVba.TestDispatch
+obj.SetIndexedValue = 11
+End Sub
+"#,
+    );
+
+    let engine = Engine::new(HostConfig {
+        enable_jit: false,
+        root_object_name: None,
+    });
+    let err = engine
+        .execute_project_with_snapshot_phased(&manifest)
+        .expect_err("wrong property-put arity should fail at compile-time");
+    assert_eq!(err.phase(), DiagnosticPhase::CompileTime);
+    assert!(
+        err.message()
+            .contains("BIND-E-TYPELIB-INVOKE-ARITY-UNSUPPORTED"),
         "unexpected compile diagnostic: {}",
         err.message()
     );

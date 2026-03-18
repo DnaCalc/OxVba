@@ -1,3 +1,16 @@
+## 2026-03-18 - Add imported early-bound property-put assignment evidence
+
+- Continued `IP-05B` from the completed metadata-authority floor instead of widening reference ownership again.
+- In [project.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-compiler\src\project.rs), added imported setter-assignment lowering ahead of the existing imported member-call rewrite so metadata-backed external receivers can now lower supported `PropertyPut` assignment syntax into deterministic `Call DispatchInvoke(...)` setter lanes.
+- The controlled imported setter subset now has direct compiler evidence for:
+  - `obj.SetValue = 9`
+  - `obj.SetIndexedValue(7) = 11`
+  - deterministic compile-time rejection for:
+    - unsupported imported `PropertyPutRef` assignment syntax,
+    - indexed setter arity drift such as `obj.SetIndexedValue = 11`
+- In [com_early_project_end_to_end.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-host\tests\com_early_project_end_to_end.rs), added Windows VM/JIT end-to-end evidence for the supported imported `PropertyPut` assignment subset plus compile-time host evidence for the unsupported `PropertyPutRef` assignment and wrong-arity setter neighbors.
+- This remains intentionally bounded `IP-05B` work: object-valued imported `PropertyPutRef` assignment parity, broader imported property/default-member syntax, richer typelib/member coverage, and wider Office/Excel object-model behavior remain `in-progress`.
+
 ## 2026-03-18 - Start IP-05A metadata-authority checklist
 
 - Started execution from [WORKSET_2026-03-18_IP-05A_EXECUTION_CHECKLIST.md](C:\Work\DnaCalc\OxVba\docs\worksets\WORKSET_2026-03-18_IP-05A_EXECUTION_CHECKLIST.md) so the COM reference-facade phase now runs against an explicit metadata-authority contract instead of open-ended early-bind frontier notes.
