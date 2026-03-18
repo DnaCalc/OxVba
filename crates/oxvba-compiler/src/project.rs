@@ -5857,6 +5857,78 @@ mod tests {
     }
 
     #[test]
+    fn compile_project_rejects_explicit_let_for_native_parenthesized_object_property_get_read_assignment_to_scalar_target()
+     {
+        let main_module = module_unit_from_source(
+            "MainModule",
+            ModuleKind::Procedural,
+            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim widget As New Widget\nDim n As Long\nLet n = widget.Value()\nEnd Sub",
+        )
+        .expect("module parses");
+        let widget = module_unit_from_source(
+            "Widget",
+            ModuleKind::Class,
+            "Attribute VB_Name = \"Widget\"\nPublic Property Get Value() As Object\nDim c As New Child\nSet Value = c\nEnd Property",
+        )
+        .expect("module parses");
+        let child =
+            module_unit_from_source("Child", ModuleKind::Class, "Attribute VB_Name = \"Child\"")
+                .expect("module parses");
+        let manifest = ProjectManifest {
+            project_name: "ProjectA".to_string(),
+            project_kind: ProjectKind::Source,
+            modules: vec![main_module, widget, child],
+            references: Vec::new(),
+            reference_projects: Vec::new(),
+            conditional_constants: BTreeMap::new(),
+        };
+
+        let err = compile_project(&manifest).expect_err(
+            "Let should reject parenthesized object property-get result on scalar target",
+        );
+        assert!(
+            err.to_string()
+                .contains("cannot assign Object to Long variable n")
+        );
+    }
+
+    #[test]
+    fn compile_project_rejects_implicit_assignment_for_native_parenthesized_object_property_get_read_assignment_to_scalar_target()
+     {
+        let main_module = module_unit_from_source(
+            "MainModule",
+            ModuleKind::Procedural,
+            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim widget As New Widget\nDim n As Long\nn = widget.Value()\nEnd Sub",
+        )
+        .expect("module parses");
+        let widget = module_unit_from_source(
+            "Widget",
+            ModuleKind::Class,
+            "Attribute VB_Name = \"Widget\"\nPublic Property Get Value() As Object\nDim c As New Child\nSet Value = c\nEnd Property",
+        )
+        .expect("module parses");
+        let child =
+            module_unit_from_source("Child", ModuleKind::Class, "Attribute VB_Name = \"Child\"")
+                .expect("module parses");
+        let manifest = ProjectManifest {
+            project_name: "ProjectA".to_string(),
+            project_kind: ProjectKind::Source,
+            modules: vec![main_module, widget, child],
+            references: Vec::new(),
+            reference_projects: Vec::new(),
+            conditional_constants: BTreeMap::new(),
+        };
+
+        let err = compile_project(&manifest).expect_err(
+            "implicit assignment should reject parenthesized object property-get result on scalar target",
+        );
+        assert!(
+            err.to_string()
+                .contains("cannot assign Object to Long variable n")
+        );
+    }
+
+    #[test]
     fn compile_project_preserves_explicit_let_for_native_default_member_get_read_assignment() {
         let main_module = module_unit_from_source(
             "MainModule",
@@ -6119,6 +6191,77 @@ mod tests {
         assert!(
             lowered.contains("valueout = property_get_pmr_projecta_widget_value(widget, x)"),
             "{lowered}"
+        );
+    }
+
+    #[test]
+    fn compile_project_rejects_explicit_let_for_native_indexed_object_property_get_read_assignment_to_scalar_target()
+     {
+        let main_module = module_unit_from_source(
+            "MainModule",
+            ModuleKind::Procedural,
+            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim widget As New Widget\nDim x\nDim n As Long\nx = 5\nLet n = widget.Value(x)\nEnd Sub",
+        )
+        .expect("module parses");
+        let widget = module_unit_from_source(
+            "Widget",
+            ModuleKind::Class,
+            "Attribute VB_Name = \"Widget\"\nPublic Property Get Value(ByVal index) As Object\nDim c As New Child\nSet Value = c\nEnd Property",
+        )
+        .expect("module parses");
+        let child =
+            module_unit_from_source("Child", ModuleKind::Class, "Attribute VB_Name = \"Child\"")
+                .expect("module parses");
+        let manifest = ProjectManifest {
+            project_name: "ProjectA".to_string(),
+            project_kind: ProjectKind::Source,
+            modules: vec![main_module, widget, child],
+            references: Vec::new(),
+            reference_projects: Vec::new(),
+            conditional_constants: BTreeMap::new(),
+        };
+
+        let err = compile_project(&manifest)
+            .expect_err("Let should reject indexed object property-get result on scalar target");
+        assert!(
+            err.to_string()
+                .contains("cannot assign Object to Long variable n")
+        );
+    }
+
+    #[test]
+    fn compile_project_rejects_implicit_assignment_for_native_indexed_object_property_get_read_assignment_to_scalar_target()
+     {
+        let main_module = module_unit_from_source(
+            "MainModule",
+            ModuleKind::Procedural,
+            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim widget As New Widget\nDim x\nDim n As Long\nx = 5\nn = widget.Value(x)\nEnd Sub",
+        )
+        .expect("module parses");
+        let widget = module_unit_from_source(
+            "Widget",
+            ModuleKind::Class,
+            "Attribute VB_Name = \"Widget\"\nPublic Property Get Value(ByVal index) As Object\nDim c As New Child\nSet Value = c\nEnd Property",
+        )
+        .expect("module parses");
+        let child =
+            module_unit_from_source("Child", ModuleKind::Class, "Attribute VB_Name = \"Child\"")
+                .expect("module parses");
+        let manifest = ProjectManifest {
+            project_name: "ProjectA".to_string(),
+            project_kind: ProjectKind::Source,
+            modules: vec![main_module, widget, child],
+            references: Vec::new(),
+            reference_projects: Vec::new(),
+            conditional_constants: BTreeMap::new(),
+        };
+
+        let err = compile_project(&manifest).expect_err(
+            "implicit assignment should reject indexed object property-get result on scalar target",
+        );
+        assert!(
+            err.to_string()
+                .contains("cannot assign Object to Long variable n")
         );
     }
 
@@ -6506,6 +6649,78 @@ mod tests {
     }
 
     #[test]
+    fn compile_project_rejects_explicit_let_for_native_parenthesized_object_default_member_get_read_assignment_to_scalar_target()
+     {
+        let main_module = module_unit_from_source(
+            "MainModule",
+            ModuleKind::Procedural,
+            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim widget As New Widget\nDim n As Long\nLet n = widget()\nEnd Sub",
+        )
+        .expect("module parses");
+        let widget = module_unit_from_source(
+            "Widget",
+            ModuleKind::Class,
+            "Attribute VB_Name = \"Widget\"\nPublic Property Get Value() As Object\nDim c As New Child\nSet Value = c\nEnd Property\nAttribute Value.VB_UserMemId = 0",
+        )
+        .expect("module parses");
+        let child =
+            module_unit_from_source("Child", ModuleKind::Class, "Attribute VB_Name = \"Child\"")
+                .expect("module parses");
+        let manifest = ProjectManifest {
+            project_name: "ProjectA".to_string(),
+            project_kind: ProjectKind::Source,
+            modules: vec![main_module, widget, child],
+            references: Vec::new(),
+            reference_projects: Vec::new(),
+            conditional_constants: BTreeMap::new(),
+        };
+
+        let err = compile_project(&manifest).expect_err(
+            "Let should reject parenthesized object default-member result on scalar target",
+        );
+        assert!(
+            err.to_string()
+                .contains("cannot assign Object to Long variable n")
+        );
+    }
+
+    #[test]
+    fn compile_project_rejects_implicit_assignment_for_native_parenthesized_object_default_member_get_read_assignment_to_scalar_target()
+     {
+        let main_module = module_unit_from_source(
+            "MainModule",
+            ModuleKind::Procedural,
+            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim widget As New Widget\nDim n As Long\nn = widget()\nEnd Sub",
+        )
+        .expect("module parses");
+        let widget = module_unit_from_source(
+            "Widget",
+            ModuleKind::Class,
+            "Attribute VB_Name = \"Widget\"\nPublic Property Get Value() As Object\nDim c As New Child\nSet Value = c\nEnd Property\nAttribute Value.VB_UserMemId = 0",
+        )
+        .expect("module parses");
+        let child =
+            module_unit_from_source("Child", ModuleKind::Class, "Attribute VB_Name = \"Child\"")
+                .expect("module parses");
+        let manifest = ProjectManifest {
+            project_name: "ProjectA".to_string(),
+            project_kind: ProjectKind::Source,
+            modules: vec![main_module, widget, child],
+            references: Vec::new(),
+            reference_projects: Vec::new(),
+            conditional_constants: BTreeMap::new(),
+        };
+
+        let err = compile_project(&manifest).expect_err(
+            "implicit assignment should reject parenthesized object default-member result on scalar target",
+        );
+        assert!(
+            err.to_string()
+                .contains("cannot assign Object to Long variable n")
+        );
+    }
+
+    #[test]
     fn compile_project_preserves_explicit_set_for_native_indexed_default_member_get_read_assignment()
      {
         let main_module = module_unit_from_source(
@@ -6642,6 +6857,77 @@ mod tests {
         assert!(
             lowered.contains("valueout = property_get_pmr_projecta_widget_value(widget, x)"),
             "{lowered}"
+        );
+    }
+
+    #[test]
+    fn compile_project_rejects_explicit_let_for_native_indexed_default_member_get_read_assignment_to_scalar_target()
+     {
+        let main_module = module_unit_from_source(
+            "MainModule",
+            ModuleKind::Procedural,
+            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim widget As New Widget\nDim x\nDim n As Long\nx = 5\nLet n = widget(x)\nEnd Sub",
+        )
+        .expect("module parses");
+        let widget = module_unit_from_source(
+            "Widget",
+            ModuleKind::Class,
+            "Attribute VB_Name = \"Widget\"\nPublic Property Get Value(ByVal index) As Object\nDim c As New Child\nSet Value = c\nEnd Property\nAttribute Value.VB_UserMemId = 0",
+        )
+        .expect("module parses");
+        let child =
+            module_unit_from_source("Child", ModuleKind::Class, "Attribute VB_Name = \"Child\"")
+                .expect("module parses");
+        let manifest = ProjectManifest {
+            project_name: "ProjectA".to_string(),
+            project_kind: ProjectKind::Source,
+            modules: vec![main_module, widget, child],
+            references: Vec::new(),
+            reference_projects: Vec::new(),
+            conditional_constants: BTreeMap::new(),
+        };
+
+        let err = compile_project(&manifest)
+            .expect_err("Let should reject indexed object default-member result on scalar target");
+        assert!(
+            err.to_string()
+                .contains("cannot assign Object to Long variable n")
+        );
+    }
+
+    #[test]
+    fn compile_project_rejects_implicit_assignment_for_native_indexed_default_member_get_read_assignment_to_scalar_target()
+     {
+        let main_module = module_unit_from_source(
+            "MainModule",
+            ModuleKind::Procedural,
+            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim widget As New Widget\nDim x\nDim n As Long\nx = 5\nn = widget(x)\nEnd Sub",
+        )
+        .expect("module parses");
+        let widget = module_unit_from_source(
+            "Widget",
+            ModuleKind::Class,
+            "Attribute VB_Name = \"Widget\"\nPublic Property Get Value(ByVal index) As Object\nDim c As New Child\nSet Value = c\nEnd Property\nAttribute Value.VB_UserMemId = 0",
+        )
+        .expect("module parses");
+        let child =
+            module_unit_from_source("Child", ModuleKind::Class, "Attribute VB_Name = \"Child\"")
+                .expect("module parses");
+        let manifest = ProjectManifest {
+            project_name: "ProjectA".to_string(),
+            project_kind: ProjectKind::Source,
+            modules: vec![main_module, widget, child],
+            references: Vec::new(),
+            reference_projects: Vec::new(),
+            conditional_constants: BTreeMap::new(),
+        };
+
+        let err = compile_project(&manifest).expect_err(
+            "implicit assignment should reject indexed object default-member result on scalar target",
+        );
+        assert!(
+            err.to_string()
+                .contains("cannot assign Object to Long variable n")
         );
     }
 
@@ -7341,6 +7627,78 @@ mod tests {
     }
 
     #[test]
+    fn compile_project_rejects_non_authoritative_single_candidate_indexed_default_member_let_read_assignment_to_scalar_target()
+     {
+        let main_module = module_unit_from_source(
+            "MainModule",
+            ModuleKind::Procedural,
+            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim widget As New Widget\nDim x\nDim n As Long\nx = 5\nLet n = widget(x)\nEnd Sub",
+        )
+        .expect("module parses");
+        let widget = module_unit_from_source(
+            "Widget",
+            ModuleKind::Class,
+            "Attribute VB_Name = \"Widget\"\nPublic Property Get Value(ByVal index) As Object\nDim c As New Child\nSet Value = c\nEnd Property",
+        )
+        .expect("module parses");
+        let child =
+            module_unit_from_source("Child", ModuleKind::Class, "Attribute VB_Name = \"Child\"")
+                .expect("module parses");
+        let manifest = ProjectManifest {
+            project_name: "ProjectA".to_string(),
+            project_kind: ProjectKind::Source,
+            modules: vec![main_module, widget, child],
+            references: Vec::new(),
+            reference_projects: Vec::new(),
+            conditional_constants: BTreeMap::new(),
+        };
+
+        let err = compile_project(&manifest).expect_err(
+            "Let should reject non-authoritative indexed object default-member result on scalar target",
+        );
+        assert!(
+            err.to_string()
+                .contains("cannot assign Object to Long variable n")
+        );
+    }
+
+    #[test]
+    fn compile_project_rejects_non_authoritative_single_candidate_indexed_default_member_implicit_read_assignment_to_scalar_target()
+     {
+        let main_module = module_unit_from_source(
+            "MainModule",
+            ModuleKind::Procedural,
+            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim widget As New Widget\nDim x\nDim n As Long\nx = 5\nn = widget(x)\nEnd Sub",
+        )
+        .expect("module parses");
+        let widget = module_unit_from_source(
+            "Widget",
+            ModuleKind::Class,
+            "Attribute VB_Name = \"Widget\"\nPublic Property Get Value(ByVal index) As Object\nDim c As New Child\nSet Value = c\nEnd Property",
+        )
+        .expect("module parses");
+        let child =
+            module_unit_from_source("Child", ModuleKind::Class, "Attribute VB_Name = \"Child\"")
+                .expect("module parses");
+        let manifest = ProjectManifest {
+            project_name: "ProjectA".to_string(),
+            project_kind: ProjectKind::Source,
+            modules: vec![main_module, widget, child],
+            references: Vec::new(),
+            reference_projects: Vec::new(),
+            conditional_constants: BTreeMap::new(),
+        };
+
+        let err = compile_project(&manifest).expect_err(
+            "implicit assignment should reject non-authoritative indexed object default-member result on scalar target",
+        );
+        assert!(
+            err.to_string()
+                .contains("cannot assign Object to Long variable n")
+        );
+    }
+
+    #[test]
     fn compile_project_infers_non_authoritative_single_candidate_indexed_default_member_property_set()
      {
         let main_module = module_unit_from_source(
@@ -8016,6 +8374,78 @@ mod tests {
         );
         assert_eq!(err.code(), "PMR-E-DEFAULT-MEMBER-RESOLUTION-AMBIGUOUS");
         assert!(err.to_string().contains("widget"));
+    }
+
+    #[test]
+    fn compile_project_rejects_non_authoritative_single_candidate_parenthesized_default_member_let_read_assignment_to_scalar_target()
+     {
+        let main_module = module_unit_from_source(
+            "MainModule",
+            ModuleKind::Procedural,
+            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim widget As New Widget\nDim n As Long\nLet n = widget()\nEnd Sub",
+        )
+        .expect("module parses");
+        let widget = module_unit_from_source(
+            "Widget",
+            ModuleKind::Class,
+            "Attribute VB_Name = \"Widget\"\nPublic Property Get Value() As Object\nDim c As New Child\nSet Value = c\nEnd Property",
+        )
+        .expect("module parses");
+        let child =
+            module_unit_from_source("Child", ModuleKind::Class, "Attribute VB_Name = \"Child\"")
+                .expect("module parses");
+        let manifest = ProjectManifest {
+            project_name: "ProjectA".to_string(),
+            project_kind: ProjectKind::Source,
+            modules: vec![main_module, widget, child],
+            references: Vec::new(),
+            reference_projects: Vec::new(),
+            conditional_constants: BTreeMap::new(),
+        };
+
+        let err = compile_project(&manifest).expect_err(
+            "Let should reject non-authoritative parenthesized object default-member result on scalar target",
+        );
+        assert!(
+            err.to_string()
+                .contains("cannot assign Object to Long variable n")
+        );
+    }
+
+    #[test]
+    fn compile_project_rejects_non_authoritative_single_candidate_parenthesized_default_member_implicit_read_assignment_to_scalar_target()
+     {
+        let main_module = module_unit_from_source(
+            "MainModule",
+            ModuleKind::Procedural,
+            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim widget As New Widget\nDim n As Long\nn = widget()\nEnd Sub",
+        )
+        .expect("module parses");
+        let widget = module_unit_from_source(
+            "Widget",
+            ModuleKind::Class,
+            "Attribute VB_Name = \"Widget\"\nPublic Property Get Value() As Object\nDim c As New Child\nSet Value = c\nEnd Property",
+        )
+        .expect("module parses");
+        let child =
+            module_unit_from_source("Child", ModuleKind::Class, "Attribute VB_Name = \"Child\"")
+                .expect("module parses");
+        let manifest = ProjectManifest {
+            project_name: "ProjectA".to_string(),
+            project_kind: ProjectKind::Source,
+            modules: vec![main_module, widget, child],
+            references: Vec::new(),
+            reference_projects: Vec::new(),
+            conditional_constants: BTreeMap::new(),
+        };
+
+        let err = compile_project(&manifest).expect_err(
+            "implicit assignment should reject non-authoritative parenthesized object default-member result on scalar target",
+        );
+        assert!(
+            err.to_string()
+                .contains("cannot assign Object to Long variable n")
+        );
     }
 
     #[test]

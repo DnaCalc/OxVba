@@ -1,3 +1,14 @@
+## 2026-03-18 - Expanded scalar-target rejection evidence for object-valued native getters
+
+- Continued execution from [WORKSET_2026-03-18_IP-02_EXECUTION_CHECKLIST.md](C:\Work\DnaCalc\OxVba\docs\worksets\WORKSET_2026-03-18_IP-02_EXECUTION_CHECKLIST.md) on the remaining object-getter source-target matrix instead of moving on with the parenthesized/indexed scalar-target neighbors still implied by adjacent lanes.
+- Added compiler and host phased evidence proving object-returning native property/default-member getter read-assignment still rejects typed scalar targets with the current deterministic compile-time diagnostic across:
+  - named zero-arg parenthesized member syntax: `Let n = widget.Value()` and `n = widget.Value()`,
+  - indexed member syntax: `Let n = widget.Value(x)` and `n = widget.Value(x)`,
+  - authoritative zero-arg parenthesized and indexed default-member syntax: `Let n = widget()`, `n = widget()`, `Let n = widget(x)`, and `n = widget(x)`,
+  - bounded single-visible-candidate non-authoritative zero-arg parenthesized and indexed default-member syntax: `Let n = widget()`, `n = widget()`, `Let n = widget(x)`, and `n = widget(x)`.
+- This confirms the current PMR/default-member typechecking contract is stable across the widened syntax matrix: object-valued getter results still fail with `cannot assign Object to Long variable n` instead of silently narrowing or escaping rewrite.
+- `IP-02` remains `in-progress`: this closes the remaining parenthesized/indexed scalar-target object-getter rejection neighbors on the current native/default-member surface, but broader `Set` vs `Let` intent parity, broader fallback/recovery parity, and wider Office-style call-vs-value closure remain open.
+
 ## 2026-03-18 - Added scalar-target rejection evidence for object-valued native getters
 
 - Continued execution from [WORKSET_2026-03-18_IP-02_EXECUTION_CHECKLIST.md](C:\Work\DnaCalc\OxVba\docs\worksets\WORKSET_2026-03-18_IP-02_EXECUTION_CHECKLIST.md) on the `Set`/`Let` source-target matrix instead of widening the PMR object-getter surface again.
