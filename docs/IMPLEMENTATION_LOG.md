@@ -1,3 +1,14 @@
+## 2026-03-18 - Added bounded non-authoritative Object-target rejection evidence for object-valued default members
+
+- Continued execution from [WORKSET_2026-03-18_IP-02_EXECUTION_CHECKLIST.md](C:\Work\DnaCalc\OxVba\docs\worksets\WORKSET_2026-03-18_IP-02_EXECUTION_CHECKLIST.md) on the remaining object-getter source-target matrix instead of treating the bounded single-visible-candidate non-authoritative `Object`-target column as implied by the already-landed `Variant`-target and scalar-target neighbors.
+- Added compiler and host phased evidence proving object-returning bounded single-visible-candidate non-authoritative native default-member getter read-assignment also fails deterministically for typed `Object` targets when the assignment intent is not explicit `Set`, across:
+  - bare default-member syntax: `Let childOut = widget` and `childOut = widget`,
+  - zero-arg parenthesized default-member syntax: `Let childOut = widget()` and `childOut = widget()`,
+  - indexed default-member syntax: `Let childOut = widget(x)` and `childOut = widget(x)`.
+- The current rejection contract is now locked at both compiler and host levels for the bounded non-authoritative object-getter subset:
+  - explicit `Let` fails with `Let cannot assign to Object variable childOut`,
+  - implicit assignment fails with `Set required for Object variable childOut`.
+- `IP-02` remains `in-progress`: this closes the bounded single-visible-candidate non-authoritative `Object`-target rejection neighbors for object-valued native default members, but broader `Set` vs `Let` intent parity, broader fallback/recovery parity, and wider Office-style call-vs-value closure remain open.
 ## 2026-03-18 - Added authoritative Object-target rejection evidence for object-valued native getters
 
 - Continued execution from [WORKSET_2026-03-18_IP-02_EXECUTION_CHECKLIST.md](C:\Work\DnaCalc\OxVba\docs\worksets\WORKSET_2026-03-18_IP-02_EXECUTION_CHECKLIST.md) on the remaining object-getter source-target matrix instead of assuming the `Object`-target rejection column was already implied by the earlier `CreateObject(...)` and explicit-`Set` coverage.
@@ -1087,6 +1098,7 @@
   - Let x = 5 plus Set obj = CreateObject(4) executes successfully,
   - Set x = 7 fails deterministically with the expected type error.
 - IP-02 remains in progress: broader typed/object Set vs Let parity, non-authoritative default-member resolution, and wider Office-style call-vs-value context parity are still open.
+
 
 
 

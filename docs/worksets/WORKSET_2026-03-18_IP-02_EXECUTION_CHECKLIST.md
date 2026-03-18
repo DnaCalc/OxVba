@@ -102,6 +102,7 @@ Already evidenced in the repo today:
 - bounded explicit `Set` / `Let` preservation through native PMR/default-member read-assignment rewrites
 - bounded authoritative object-returning native property/default-member getter read-assignment into `Variant` targets for explicit `Set`, explicit `Let`, and implicit assignment across named, zero-arg parenthesized, indexed, and authoritative default-member syntax
 - bounded authoritative `Object`-target rejection for object-returning native property/default-member getter read-assignment on explicit `Let` and implicit assignment across named, zero-arg parenthesized, indexed, and authoritative default-member syntax
+- bounded single-visible-candidate non-authoritative Object-target rejection for object-returning native default-member getter read-assignment on explicit Let and implicit assignment across bare, zero-arg parenthesized, and indexed syntax
 - bounded scalar-target rejection for object-returning native property/default-member getter read-assignment across named, zero-arg parenthesized, indexed, authoritative default-member, and landed single-candidate non-authoritative default-member syntax for explicit `Let` and implicit assignment
 - bounded `CreateObject(...)` assignment-intent proof surface for explicit `Set`, explicit `Let`, and implicit assignment on current typed `Object` / `Variant` / scalar target lanes
 - non-authoritative single-visible-candidate native default-member fallback for scalar/indexed `Get` / `Let` / `Set`, statement-context getters, explicit `Call` getters, no-parentheses-argument getters, bounded explicit `Set` / `Let` read-assignment, bare/parenthesized/indexed object-returning `Variant`-target read-assignment neighbors, and parenthesized zero-arg getter/read-assignment neighbors where already landed
@@ -198,3 +199,4 @@ First checklist-driven target:
 - Next unresolved neighbors:
   - broader call-vs-value syntax enumeration, especially any remaining silent-fallthrough or receiver-mode distinctions outside the now-proved no-parentheses subset
   - broader `Set` vs `Let` source-target sweep beyond the now-proved named object-property-get `Variant` lanes
+

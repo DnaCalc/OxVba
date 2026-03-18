@@ -7512,6 +7512,79 @@ mod tests {
     }
 
     #[test]
+    fn compile_project_rejects_non_authoritative_single_candidate_default_member_let_read_assignment_to_object_target()
+     {
+        let main_module = module_unit_from_source(
+            "MainModule",
+            ModuleKind::Procedural,
+            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim widget As New Widget\nDim childOut As Object\nLet childOut = widget\nEnd Sub",
+        )
+        .expect("module parses");
+        let widget = module_unit_from_source(
+            "Widget",
+            ModuleKind::Class,
+            "Attribute VB_Name = \"Widget\"\nPublic Property Get Value() As Object\nDim c As New Child\nSet Value = c\nEnd Property",
+        )
+        .expect("module parses");
+        let child =
+            module_unit_from_source("Child", ModuleKind::Class, "Attribute VB_Name = \"Child\"")
+                .expect("module parses");
+        let manifest = ProjectManifest {
+            project_name: "ProjectA".to_string(),
+            project_kind: ProjectKind::Source,
+            modules: vec![main_module, widget, child],
+            references: Vec::new(),
+            reference_projects: Vec::new(),
+            conditional_constants: BTreeMap::new(),
+        };
+
+        let err = compile_project(&manifest).expect_err(
+            "Let should reject non-authoritative object default-member result on Object target",
+        );
+        assert!(
+            err.to_string()
+                .to_ascii_lowercase()
+                .contains("let cannot assign to object variable childout")
+        );
+    }
+
+    #[test]
+    fn compile_project_rejects_non_authoritative_single_candidate_default_member_implicit_read_assignment_to_object_target()
+     {
+        let main_module = module_unit_from_source(
+            "MainModule",
+            ModuleKind::Procedural,
+            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim widget As New Widget\nDim childOut As Object\nchildOut = widget\nEnd Sub",
+        )
+        .expect("module parses");
+        let widget = module_unit_from_source(
+            "Widget",
+            ModuleKind::Class,
+            "Attribute VB_Name = \"Widget\"\nPublic Property Get Value() As Object\nDim c As New Child\nSet Value = c\nEnd Property",
+        )
+        .expect("module parses");
+        let child =
+            module_unit_from_source("Child", ModuleKind::Class, "Attribute VB_Name = \"Child\"")
+                .expect("module parses");
+        let manifest = ProjectManifest {
+            project_name: "ProjectA".to_string(),
+            project_kind: ProjectKind::Source,
+            modules: vec![main_module, widget, child],
+            references: Vec::new(),
+            reference_projects: Vec::new(),
+            conditional_constants: BTreeMap::new(),
+        };
+
+        let err = compile_project(&manifest).expect_err(
+            "implicit assignment should reject non-authoritative object default-member result on Object target",
+        );
+        assert!(
+            err.to_string()
+                .to_ascii_lowercase()
+                .contains("set required for object variable childout")
+        );
+    }
+    #[test]
     fn compile_project_rejects_non_authoritative_single_candidate_default_member_let_read_assignment_to_scalar_target()
      {
         let main_module = module_unit_from_source(
@@ -8066,6 +8139,79 @@ mod tests {
         );
     }
 
+    #[test]
+    fn compile_project_rejects_non_authoritative_single_candidate_indexed_default_member_let_read_assignment_to_object_target()
+     {
+        let main_module = module_unit_from_source(
+            "MainModule",
+            ModuleKind::Procedural,
+            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim widget As New Widget\nDim x\nDim childOut As Object\nx = 5\nLet childOut = widget(x)\nEnd Sub",
+        )
+        .expect("module parses");
+        let widget = module_unit_from_source(
+            "Widget",
+            ModuleKind::Class,
+            "Attribute VB_Name = \"Widget\"\nPublic Property Get Value(ByVal index) As Object\nDim c As New Child\nSet Value = c\nEnd Property",
+        )
+        .expect("module parses");
+        let child =
+            module_unit_from_source("Child", ModuleKind::Class, "Attribute VB_Name = \"Child\"")
+                .expect("module parses");
+        let manifest = ProjectManifest {
+            project_name: "ProjectA".to_string(),
+            project_kind: ProjectKind::Source,
+            modules: vec![main_module, widget, child],
+            references: Vec::new(),
+            reference_projects: Vec::new(),
+            conditional_constants: BTreeMap::new(),
+        };
+
+        let err = compile_project(&manifest).expect_err(
+            "Let should reject non-authoritative indexed object default-member result on Object target",
+        );
+        assert!(
+            err.to_string()
+                .to_ascii_lowercase()
+                .contains("let cannot assign to object variable childout")
+        );
+    }
+
+    #[test]
+    fn compile_project_rejects_non_authoritative_single_candidate_indexed_default_member_implicit_read_assignment_to_object_target()
+     {
+        let main_module = module_unit_from_source(
+            "MainModule",
+            ModuleKind::Procedural,
+            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim widget As New Widget\nDim x\nDim childOut As Object\nx = 5\nchildOut = widget(x)\nEnd Sub",
+        )
+        .expect("module parses");
+        let widget = module_unit_from_source(
+            "Widget",
+            ModuleKind::Class,
+            "Attribute VB_Name = \"Widget\"\nPublic Property Get Value(ByVal index) As Object\nDim c As New Child\nSet Value = c\nEnd Property",
+        )
+        .expect("module parses");
+        let child =
+            module_unit_from_source("Child", ModuleKind::Class, "Attribute VB_Name = \"Child\"")
+                .expect("module parses");
+        let manifest = ProjectManifest {
+            project_name: "ProjectA".to_string(),
+            project_kind: ProjectKind::Source,
+            modules: vec![main_module, widget, child],
+            references: Vec::new(),
+            reference_projects: Vec::new(),
+            conditional_constants: BTreeMap::new(),
+        };
+
+        let err = compile_project(&manifest).expect_err(
+            "implicit assignment should reject non-authoritative indexed object default-member result on Object target",
+        );
+        assert!(
+            err.to_string()
+                .to_ascii_lowercase()
+                .contains("set required for object variable childout")
+        );
+    }
     #[test]
     fn compile_project_rejects_non_authoritative_single_candidate_indexed_default_member_let_read_assignment_to_scalar_target()
      {
@@ -8816,6 +8962,79 @@ mod tests {
         assert!(err.to_string().contains("widget"));
     }
 
+    #[test]
+    fn compile_project_rejects_non_authoritative_single_candidate_parenthesized_default_member_let_read_assignment_to_object_target()
+     {
+        let main_module = module_unit_from_source(
+            "MainModule",
+            ModuleKind::Procedural,
+            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim widget As New Widget\nDim childOut As Object\nLet childOut = widget()\nEnd Sub",
+        )
+        .expect("module parses");
+        let widget = module_unit_from_source(
+            "Widget",
+            ModuleKind::Class,
+            "Attribute VB_Name = \"Widget\"\nPublic Property Get Value() As Object\nDim c As New Child\nSet Value = c\nEnd Property",
+        )
+        .expect("module parses");
+        let child =
+            module_unit_from_source("Child", ModuleKind::Class, "Attribute VB_Name = \"Child\"")
+                .expect("module parses");
+        let manifest = ProjectManifest {
+            project_name: "ProjectA".to_string(),
+            project_kind: ProjectKind::Source,
+            modules: vec![main_module, widget, child],
+            references: Vec::new(),
+            reference_projects: Vec::new(),
+            conditional_constants: BTreeMap::new(),
+        };
+
+        let err = compile_project(&manifest).expect_err(
+            "Let should reject non-authoritative parenthesized object default-member result on Object target",
+        );
+        assert!(
+            err.to_string()
+                .to_ascii_lowercase()
+                .contains("let cannot assign to object variable childout")
+        );
+    }
+
+    #[test]
+    fn compile_project_rejects_non_authoritative_single_candidate_parenthesized_default_member_implicit_read_assignment_to_object_target()
+     {
+        let main_module = module_unit_from_source(
+            "MainModule",
+            ModuleKind::Procedural,
+            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim widget As New Widget\nDim childOut As Object\nchildOut = widget()\nEnd Sub",
+        )
+        .expect("module parses");
+        let widget = module_unit_from_source(
+            "Widget",
+            ModuleKind::Class,
+            "Attribute VB_Name = \"Widget\"\nPublic Property Get Value() As Object\nDim c As New Child\nSet Value = c\nEnd Property",
+        )
+        .expect("module parses");
+        let child =
+            module_unit_from_source("Child", ModuleKind::Class, "Attribute VB_Name = \"Child\"")
+                .expect("module parses");
+        let manifest = ProjectManifest {
+            project_name: "ProjectA".to_string(),
+            project_kind: ProjectKind::Source,
+            modules: vec![main_module, widget, child],
+            references: Vec::new(),
+            reference_projects: Vec::new(),
+            conditional_constants: BTreeMap::new(),
+        };
+
+        let err = compile_project(&manifest).expect_err(
+            "implicit assignment should reject non-authoritative parenthesized object default-member result on Object target",
+        );
+        assert!(
+            err.to_string()
+                .to_ascii_lowercase()
+                .contains("set required for object variable childout")
+        );
+    }
     #[test]
     fn compile_project_rejects_non_authoritative_single_candidate_parenthesized_default_member_let_read_assignment_to_scalar_target()
      {
