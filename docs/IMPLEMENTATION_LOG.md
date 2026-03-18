@@ -24,6 +24,11 @@
 - Updated [CURRENT_BLOCKERS.md](C:\Work\DnaCalc\OxVba\CURRENT_BLOCKERS.md) and [IN_PROGRESS_FEATURE_WORKLIST.md](C:\Work\DnaCalc\OxVba\docs\IN_PROGRESS_FEATURE_WORKLIST.md) so the bounded internal-failure surface is explicit instead of hidden behind the unspecified bucket.
 - `IP-03` remains `in-progress`: broader non-`IDispatch` interface transport, broader multi-dimensional SAFEARRAY parity, fuller external `VARIANT` parity, and richer external automation `VarResult` / `ExcepInfo` / argument-fault coverage are still open.
 
+## 2026-03-18 - Lock bounded dispatch fault labels with direct unit evidence
+
+- Added direct Windows HAL unit coverage for `ComInvokeFailure::classification_label()` so the new detail-based `carrier-overflow` and `unsupported-byref-return` labels are not protected only by end-to-end host tests.
+- Corrected the stale blocker wording that still described bounded non-`IDispatch` `VT_UNKNOWN` rejection as a generic native-failure path even though the host surface now classifies it as `E_NOINTERFACE`.
+
 ## 2026-03-18 - Close IP-02 native/property/default-member scope
 
 - Completed the checklist audit in [WORKSET_2026-03-18_IP-02_EXECUTION_CHECKLIST.md](C:\Work\DnaCalc\OxVba\docs\worksets\WORKSET_2026-03-18_IP-02_EXECUTION_CHECKLIST.md) instead of leaving `IP-02` open behind generic “broader/wider” wording.

@@ -2647,8 +2647,8 @@ mod tests {
     use std::sync::{Mutex, OnceLock};
 
     use oxvba_com::{
-        ComInvokeArg, ComInvokeRequest, ComObjectToken, ComValue, RawIDispatch, VariantResultValue,
-        add_ref_dispatch as raw_add_ref_dispatch, create_oxvba_test_dispatch,
+        ComInvokeArg, ComInvokeFailure, ComInvokeRequest, ComObjectToken, ComValue, RawIDispatch,
+        VariantResultValue, add_ref_dispatch as raw_add_ref_dispatch, create_oxvba_test_dispatch,
         release_dispatch as raw_release_dispatch,
         set_variant_from_com_value as com_set_variant_from_com_value,
         take_variant_result_value as com_take_variant_result_value,
@@ -5236,6 +5236,40 @@ mod tests {
             super::map_com_hresult_label(None, None),
             "fault-unspecified"
         );
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn com_invoke_failure_detail_labels_are_stable() {
+        let overflow = ComInvokeFailure {
+            label: "method",
+            dispid: 91,
+            hr: None,
+            arg_err: None,
+            excep: None,
+            detail: Some("VT_UI8 value 5000000000 exceeds current i32 carrier lane".to_string()),
+        };
+        assert_eq!(overflow.classification_label(), "carrier-overflow");
+
+        let byref = ComInvokeFailure {
+            label: "method",
+            dispid: 92,
+            hr: None,
+            arg_err: None,
+            excep: None,
+            detail: Some("unsupported VARIANT BYREF return type vt=16387".to_string()),
+        };
+        assert_eq!(byref.classification_label(), "unsupported-byref-return");
+
+        let unspecified = ComInvokeFailure {
+            label: "method",
+            dispid: 93,
+            hr: None,
+            arg_err: None,
+            excep: None,
+            detail: Some("unclassified internal dispatch conversion fault".to_string()),
+        };
+        assert_eq!(unspecified.classification_label(), "fault-unspecified");
     }
 
     #[cfg(target_os = "windows")]
