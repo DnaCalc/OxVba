@@ -1,3 +1,11 @@
+## 2026-03-19 - Bound imported Implements directives
+
+- Continued `IP-05B` by closing another silent imported interface hole instead of widening unsupported COM interface semantics.
+- In [project.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-compiler\src\project.rs), changed `Implements` validation to inspect the raw directive target before normalization so both qualified and bounded unqualified imported typelib names now fail deterministically on `BIND-E-TYPELIB-IMPLEMENTS-UNSUPPORTED` instead of disappearing through class-module lowering.
+- Added compiler and host phased evidence for both imported `Implements OxVba.TestDispatch` and bounded unqualified `Implements TestDispatch`, plus a native-shadow proof showing local class-module interfaces still win when they share the same name as an imported typelib class.
+- This keeps the imported interface boundary honest: native and reference-project `Implements` remain the supported subset, while imported typelib interface/class targets remain explicitly outside the current deterministic early-bind scope.
+- `IP-05` remains `in-progress`: richer typelib/member coverage, broader imported property/event/default-member parity beyond the controlled fixture, and wider Office/Excel object-model behavior are still open.
+
 ## 2026-03-19 - Bound imported procedure-signature declarations
 
 - Continued `IP-05B` by closing another silent imported declaration hole instead of widening imported event or Office-object-model semantics prematurely.

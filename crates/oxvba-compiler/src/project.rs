@@ -293,6 +293,10 @@ pub enum ProjectCompileError {
     )]
     TypeLibraryWithEventsUnsupported { type_name: String },
     #[error(
+        "BIND-E-TYPELIB-IMPLEMENTS-UNSUPPORTED: external Implements target `{type_name}` is outside the current deterministic imported-interface subset"
+    )]
+    TypeLibraryImplementsUnsupported { type_name: String },
+    #[error(
         "BIND-E-TYPELIB-MODULE-DECL-UNSUPPORTED: module-scope external type `{type_name}` is outside the current deterministic early-bind declaration subset"
     )]
     TypeLibraryModuleDeclarationUnsupported { type_name: String },
@@ -375,6 +379,9 @@ impl ProjectCompileError {
             Self::TypeLibraryQualifierUnresolved { .. } => "BIND-E-TYPELIB-QUALIFIER-UNRESOLVED",
             Self::TypeLibraryWithEventsUnsupported { .. } => {
                 "BIND-E-TYPELIB-WITHEVENTS-UNSUPPORTED"
+            }
+            Self::TypeLibraryImplementsUnsupported { .. } => {
+                "BIND-E-TYPELIB-IMPLEMENTS-UNSUPPORTED"
             }
             Self::TypeLibraryModuleDeclarationUnsupported { .. } => {
                 "BIND-E-TYPELIB-MODULE-DECL-UNSUPPORTED"
@@ -830,12 +837,24 @@ fn validate_event_semantics(
                 });
             }
 
-            if let Some(interface_name) = parse_implements_directive(line) {
+            if let Some(interface_target) = parse_implements_target(line) {
                 if module.module_kind != ModuleKind::Class {
                     return Err(ProjectCompileError::ImplementsModuleKind {
                         module_name: module_name.clone(),
                     });
                 }
+
+                let Some(interface_name) = normalize_procedure_name(&interface_target) else {
+                    if is_referenced_typelib_type_reference(manifest, &interface_target) {
+                        return Err(ProjectCompileError::TypeLibraryImplementsUnsupported {
+                            type_name: interface_target,
+                        });
+                    }
+                    return Err(ProjectCompileError::ImplementsInterfaceNotFound {
+                        module_name: module_name.clone(),
+                        interface_name: interface_target,
+                    });
+                };
 
                 let Some((iface_project, iface_module)) = resolve_interface_module(
                     manifest,
@@ -843,6 +862,11 @@ fn validate_event_semantics(
                     &interface_name,
                     reference_order,
                 ) else {
+                    if is_referenced_typelib_type_reference(manifest, &interface_target) {
+                        return Err(ProjectCompileError::TypeLibraryImplementsUnsupported {
+                            type_name: interface_target,
+                        });
+                    }
                     return Err(ProjectCompileError::ImplementsInterfaceNotFound {
                         module_name: module_name.clone(),
                         interface_name,
@@ -1049,15 +1073,18 @@ fn collect_declared_events(module: &ModuleUnit) -> BTreeSet<String> {
     out
 }
 
-fn parse_implements_directive(line: &str) -> Option<String> {
+fn parse_implements_target(line: &str) -> Option<String> {
     let trimmed = line.trim();
     let lower = trimmed.to_ascii_lowercase();
-    let rest = if lower.starts_with("implements ") {
-        trimmed[11..].trim()
-    } else {
+    if !lower.starts_with("implements ") {
         return None;
-    };
-    normalize_procedure_name(rest)
+    }
+    let rest = trimmed[11..].trim();
+    if rest.is_empty() {
+        None
+    } else {
+        Some(rest.to_string())
+    }
 }
 
 fn parse_event_declaration(line: &str) -> Option<String> {
@@ -12812,6 +12839,83 @@ mod tests {
         };
         let err = compile_project(&manifest).expect_err("unknown interface should fail");
         assert_eq!(err.code(), "PMR-E-IMPLEMENTS-INTERFACE-NOT-FOUND");
+    }
+
+    #[test]
+    fn compile_project_rejects_imported_implements_directive() {
+        let class_impl = module_unit_from_source(
+            "ThingImpl",
+            ModuleKind::Class,
+            "Attribute VB_Name = \"ThingImpl\"\nImplements OxVba.TestDispatch\nPublic Sub Main()\nEnd Sub",
+        )
+        .expect("module parses");
+        let manifest = ProjectManifest {
+            project_name: "ProjectA".to_string(),
+            project_kind: ProjectKind::Source,
+            modules: vec![class_impl],
+            references: vec![ProjectReference {
+                referenced_project_name: "OxVba".to_string(),
+                reference_kind: ReferenceKind::TypeLibrary,
+            }],
+            reference_projects: Vec::new(),
+            conditional_constants: BTreeMap::new(),
+        };
+        let err = compile_project(&manifest)
+            .expect_err("imported Implements target should reject deterministically");
+        assert_eq!(err.code(), "BIND-E-TYPELIB-IMPLEMENTS-UNSUPPORTED");
+    }
+
+    #[test]
+    fn compile_project_rejects_unqualified_imported_implements_directive() {
+        let class_impl = module_unit_from_source(
+            "ThingImpl",
+            ModuleKind::Class,
+            "Attribute VB_Name = \"ThingImpl\"\nImplements TestDispatch\nPublic Sub Main()\nEnd Sub",
+        )
+        .expect("module parses");
+        let manifest = ProjectManifest {
+            project_name: "ProjectA".to_string(),
+            project_kind: ProjectKind::Source,
+            modules: vec![class_impl],
+            references: vec![ProjectReference {
+                referenced_project_name: "OxVba".to_string(),
+                reference_kind: ReferenceKind::TypeLibrary,
+            }],
+            reference_projects: Vec::new(),
+            conditional_constants: BTreeMap::new(),
+        };
+        let err = compile_project(&manifest)
+            .expect_err("unqualified imported Implements target should reject deterministically");
+        assert_eq!(err.code(), "BIND-E-TYPELIB-IMPLEMENTS-UNSUPPORTED");
+    }
+
+    #[test]
+    fn compile_project_prefers_native_implements_target_over_imported_type_name_match() {
+        let class_interface = module_unit_from_source(
+            "TestDispatch",
+            ModuleKind::Class,
+            "Attribute VB_Name = \"TestDispatch\"\nPublic Sub Ping()\nEnd Sub",
+        )
+        .expect("module parses");
+        let class_impl = module_unit_from_source(
+            "ThingImpl",
+            ModuleKind::Class,
+            "Attribute VB_Name = \"ThingImpl\"\nImplements TestDispatch\nPrivate Sub TestDispatch_Ping()\nEnd Sub",
+        )
+        .expect("module parses");
+        let manifest = ProjectManifest {
+            project_name: "ProjectA".to_string(),
+            project_kind: ProjectKind::Source,
+            modules: vec![class_interface, class_impl],
+            references: vec![ProjectReference {
+                referenced_project_name: "OxVba".to_string(),
+                reference_kind: ReferenceKind::TypeLibrary,
+            }],
+            reference_projects: Vec::new(),
+            conditional_constants: BTreeMap::new(),
+        };
+        compile_project(&manifest)
+            .expect("native Implements target should win over imported type-name match");
     }
 
     #[test]
