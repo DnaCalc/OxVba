@@ -1,3 +1,10 @@
+## 2026-03-19 - Prove host roots can return COM-backed objects
+
+- Continued `IP-08A` by widening the host/COM coexistence floor from non-routing handle separation into a real mixed object-model execution lane.
+- In [project.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-compiler\src\project.rs), added compiler evidence that a host-injected `Application.Value` getter may lower through the host-root path while returning `CreateObject(4)` and feeding that object into `DispatchInvoke`.
+- In [engine.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-host\src\engine.rs), added live runtime evidence that the same host-root getter returns the deterministic COM-backed handle `5004` and that `DispatchInvoke` on that returned object executes on the shared object/value model with result `5009`.
+- This raises the honest `IP-08A` host/COM coexistence floor from handle non-aliasing into bounded execution of host roots returning COM-backed objects; broader mixed host/COM parity is still open.
+
 ## 2026-03-19 - Bound host event routing against COM handle neighbors
 
 - Continued `IP-08A` by making one more shared-`ObjectHandle` boundary explicit instead of leaving host event routing adjacent to COM object creation unproved.

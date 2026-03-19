@@ -16073,6 +16073,59 @@ mod tests {
     }
 
     #[test]
+    fn compile_project_rewrites_host_injected_root_returning_com_object_for_dispatch_invoke() {
+        let cases = [
+            ("predeclared", "Attribute VB_PredeclaredId = True"),
+            ("global namespace", "Attribute VB_GlobalNamespace = True"),
+        ];
+
+        for (label, exposure_attr) in cases {
+            let main_module = module_unit_from_source(
+                "MainModule",
+                ModuleKind::Procedural,
+                "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim obj As Object\nDim x\nSet obj = Application.Value\nx = DispatchInvoke(obj, 1, 4)\nEnd Sub",
+            )
+            .expect("main module parses");
+            let host_application = module_unit_from_source(
+                "Application",
+                ModuleKind::Class,
+                format!(
+                    "Attribute VB_Name = \"Application\"\n{exposure_attr}\nPublic Property Get Value() As Object\nSet Value = CreateObject(4)\nEnd Property"
+                ),
+            )
+            .expect("host application parses");
+            let manifest = ProjectManifest {
+                project_name: "ProjectA".to_string(),
+                project_kind: ProjectKind::Source,
+                modules: vec![main_module],
+                references: vec![ProjectReference {
+                    referenced_project_name: "HostProject".to_string(),
+                    reference_kind: ReferenceKind::HostInjected,
+                }],
+                reference_projects: vec![ReferencedProjectManifest {
+                    project_name: "HostProject".to_string(),
+                    modules: vec![host_application],
+                }],
+                conditional_constants: BTreeMap::new(),
+            };
+            let compiled = compile_project(&manifest).unwrap_or_else(|err| {
+                panic!("{label} host-injected COM-returning root should compile: {err}")
+            });
+            let lowered = compiled.rewritten_source.to_ascii_lowercase();
+            assert!(
+                lowered.contains("set obj = property_get_pmr_hostproject_application_value(0)"),
+                "{label}: expected host-root property-get rewrite before COM dispatch, got: {lowered}"
+            );
+            assert!(
+                lowered.contains(
+                    "set property_get_pmr_hostproject_application_value = createobject(4)"
+                ),
+                "{label}: expected COM object creation to remain inside the host-root getter, got: {lowered}"
+            );
+        }
+    }
+
+    #[test]
     fn compile_project_rewrites_host_injected_predeclared_default_member_receiver() {
         let main_module = module_unit_from_source(
             "MainModule",
