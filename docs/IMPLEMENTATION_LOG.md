@@ -1,3 +1,10 @@
+## 2026-03-19 - Bound host-injected type precedence over plain project matches
+
+- Continued `IP-08A` by making one host object-identity boundary explicit instead of leaving conflicting referenced class names dependent on reference order.
+- In [project.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-compiler\src\project.rs), changed referenced class-type resolution so `HostInjected` projects win ahead of plain project references for conflicting class names, and added compiler evidence that a host-backed `WithEvents em As Emitter` binding still resolves to `HostProject.Emitter` even when `PlainProject.Emitter` appears earlier in the reference list.
+- In [engine.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-host\src\engine.rs), added live runtime evidence that the same conflicting-name case routes host event ingress only on `HostProject.Emitter`, while `PlainProject.Emitter` stays non-routing for the bound host-backed source handle.
+- This removes one real host-vs-plain-project identity ambiguity from the honest `IP-08A` frontier; the remaining identity gap is broader than conflicting-name reference precedence and still includes COM-backed host-object coexistence.
+
 ## 2026-03-19 - Add live host-backed callback routing evidence
 
 - Continued `IP-08A` by proving that the live host-event ingress path is keyed to the snapped source handle of a host-backed object, not only to synthetic dispatch inputs.

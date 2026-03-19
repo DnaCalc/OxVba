@@ -1085,10 +1085,14 @@ fn resolve_interface_module(
 
     let mut referenced = manifest.reference_projects.iter().collect::<Vec<_>>();
     referenced.sort_by_key(|entry| {
-        reference_order
-            .get(&normalize_identifier(&entry.project_name))
-            .copied()
-            .unwrap_or(usize::MAX)
+        let normalized_project_name = normalize_identifier(&entry.project_name);
+        (
+            reference_kind_resolution_priority(manifest, &normalized_project_name),
+            reference_order
+                .get(&normalized_project_name)
+                .copied()
+                .unwrap_or(usize::MAX),
+        )
     });
     for entry in referenced {
         for module in &entry.modules {
@@ -1104,6 +1108,19 @@ fn resolve_interface_module(
     }
 
     None
+}
+
+fn reference_kind_resolution_priority(manifest: &ProjectManifest, project_name: &str) -> usize {
+    manifest
+        .references
+        .iter()
+        .find(|reference| normalize_identifier(&reference.referenced_project_name) == project_name)
+        .map(|reference| match reference.reference_kind {
+            ReferenceKind::HostInjected => 0,
+            ReferenceKind::Project => 1,
+            ReferenceKind::TypeLibrary => 2,
+        })
+        .unwrap_or(usize::MAX)
 }
 
 fn collect_declared_events(module: &ModuleUnit) -> BTreeSet<String> {
@@ -15919,6 +15936,82 @@ mod tests {
                 "{label}: unexpected host-backed event binding metadata"
             );
         }
+    }
+
+    #[test]
+    fn compile_project_prefers_host_injected_withevents_source_over_plain_project_name_match() {
+        let main_module = module_unit_from_source(
+            "MainModule",
+            ModuleKind::Procedural,
+            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim bound As Object\nDim s As New Sink\nSet bound = Application.Value\nCall s.Attach(bound)\nEnd Sub",
+        )
+        .expect("main module parses");
+        let sink = module_unit_from_source(
+            "Sink",
+            ModuleKind::Class,
+            "Attribute VB_Name = \"Sink\"\nPrivate WithEvents em As Emitter\nPublic Sub Attach(ByVal e As Object)\nSet em = e\nEnd Sub\nPrivate Sub em_changed()\nEnd Sub",
+        )
+        .expect("sink module parses");
+        let host_application = module_unit_from_source(
+            "Application",
+            ModuleKind::Class,
+            "Attribute VB_Name = \"Application\"\nAttribute VB_PredeclaredId = True\nPublic Property Get Value() As Object\nDim e As New Emitter\nSet Value = e\nEnd Property",
+        )
+        .expect("host application parses");
+        let host_emitter = module_unit_from_source(
+            "Emitter",
+            ModuleKind::Class,
+            "Attribute VB_Name = \"Emitter\"\nPublic Event Changed()\n",
+        )
+        .expect("host emitter parses");
+        let plain_emitter = module_unit_from_source(
+            "Emitter",
+            ModuleKind::Class,
+            "Attribute VB_Name = \"Emitter\"\nPublic Event Changed()\n",
+        )
+        .expect("plain emitter parses");
+        let manifest = ProjectManifest {
+            project_name: "ProjectA".to_string(),
+            project_kind: ProjectKind::Source,
+            modules: vec![main_module, sink],
+            references: vec![
+                ProjectReference {
+                    referenced_project_name: "PlainProject".to_string(),
+                    reference_kind: ReferenceKind::Project,
+                },
+                ProjectReference {
+                    referenced_project_name: "HostProject".to_string(),
+                    reference_kind: ReferenceKind::HostInjected,
+                },
+            ],
+            reference_projects: vec![
+                ReferencedProjectManifest {
+                    project_name: "PlainProject".to_string(),
+                    modules: vec![plain_emitter],
+                },
+                ReferencedProjectManifest {
+                    project_name: "HostProject".to_string(),
+                    modules: vec![host_application, host_emitter],
+                },
+            ],
+            conditional_constants: BTreeMap::new(),
+        };
+        let compiled = compile_project(&manifest)
+            .expect("host-injected event source should win over plain project type-name match");
+        assert_eq!(
+            compiled.event_dispatch_bindings,
+            vec![ProjectEventDispatchBinding {
+                source_project_name: "hostproject".to_string(),
+                source_module_name: "emitter".to_string(),
+                event_name: "changed".to_string(),
+                handler_symbol: "pmr_projecta_sink_em_changed".to_string(),
+                guard_symbol_zero_arg: "pmr_evtguard_hostproject_emitter_changed_sink_em_a0"
+                    .to_string(),
+                guard_symbol_one_arg: "pmr_evtguard_hostproject_emitter_changed_sink_em_a1"
+                    .to_string(),
+            }],
+            "host-injected source must own the conflicting WithEvents binding"
+        );
     }
 
     #[test]
