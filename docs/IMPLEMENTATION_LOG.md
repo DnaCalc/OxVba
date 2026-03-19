@@ -1,3 +1,11 @@
+## 2026-03-19 - Bound imported event declaration types
+
+- Continued `IP-05B`/`IP-07` honestly by closing another silent imported event-surface hole instead of widening unsupported event transport semantics.
+- In [project.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-compiler\src\project.rs), added a pre-lowering validator for `Event` declarations so imported typelib object types inside event parameter lists now reject deterministically on `BIND-E-TYPELIB-EVENT-DECL-UNSUPPORTED`.
+- Added compiler and host phased evidence for both qualified and bounded unqualified imported event parameter types, plus a native-shadow proof showing local class-module types still win when they share the same name as an imported typelib class.
+- This keeps the imported event boundary honest: native event declarations remain allowed, while imported typed event public surfaces remain explicitly outside the current deterministic subset until real imported COM event parity exists.
+- `IP-05` and `IP-07` remain `in-progress`: richer typelib/member coverage, broader imported property/event/default-member parity beyond the controlled fixture, and wider Office/Excel object-model behavior are still open.
+
 ## 2026-03-19 - Bound imported Implements directives
 
 - Continued `IP-05B` by closing another silent imported interface hole instead of widening unsupported COM interface semantics.

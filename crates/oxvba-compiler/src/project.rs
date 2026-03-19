@@ -297,6 +297,10 @@ pub enum ProjectCompileError {
     )]
     TypeLibraryImplementsUnsupported { type_name: String },
     #[error(
+        "BIND-E-TYPELIB-EVENT-DECL-UNSUPPORTED: event declaration external type `{type_name}` is outside the current deterministic imported-event subset"
+    )]
+    TypeLibraryEventDeclarationUnsupported { type_name: String },
+    #[error(
         "BIND-E-TYPELIB-MODULE-DECL-UNSUPPORTED: module-scope external type `{type_name}` is outside the current deterministic early-bind declaration subset"
     )]
     TypeLibraryModuleDeclarationUnsupported { type_name: String },
@@ -382,6 +386,9 @@ impl ProjectCompileError {
             }
             Self::TypeLibraryImplementsUnsupported { .. } => {
                 "BIND-E-TYPELIB-IMPLEMENTS-UNSUPPORTED"
+            }
+            Self::TypeLibraryEventDeclarationUnsupported { .. } => {
+                "BIND-E-TYPELIB-EVENT-DECL-UNSUPPORTED"
             }
             Self::TypeLibraryModuleDeclarationUnsupported { .. } => {
                 "BIND-E-TYPELIB-MODULE-DECL-UNSUPPORTED"
@@ -504,6 +511,7 @@ fn compile_project_with_strategy(
     validate_event_semantics(manifest, &procedure_index, &reference_order)?;
     validate_imported_module_scope_declarations(manifest, &reference_order)?;
     validate_imported_procedure_signatures(manifest, &reference_order)?;
+    validate_imported_event_declarations(manifest, &reference_order)?;
     let event_dispatch_plan =
         collect_event_dispatch_plan(manifest, &procedure_index, &reference_order);
 
@@ -991,6 +999,31 @@ fn validate_imported_procedure_signatures(
     Ok(())
 }
 
+fn validate_imported_event_declarations(
+    manifest: &ProjectManifest,
+    reference_order: &BTreeMap<String, usize>,
+) -> Result<(), ProjectCompileError> {
+    for (project_name, module) in iter_all_modules(manifest, reference_order) {
+        let project_key = normalize_identifier(project_name);
+        for line in module.source.lines() {
+            for type_name in parse_event_declaration_type_references(line) {
+                if resolve_interface_module(manifest, &project_key, &type_name, reference_order)
+                    .is_some()
+                {
+                    continue;
+                }
+                if is_referenced_typelib_type_reference(manifest, &type_name) {
+                    return Err(
+                        ProjectCompileError::TypeLibraryEventDeclarationUnsupported { type_name },
+                    );
+                }
+            }
+        }
+    }
+
+    Ok(())
+}
+
 fn iter_all_modules<'a>(
     manifest: &'a ProjectManifest,
     reference_order: &'a BTreeMap<String, usize>,
@@ -1104,6 +1137,36 @@ fn parse_event_declaration(line: &str) -> Option<String> {
         .next()
         .unwrap_or_default();
     normalize_procedure_name(token)
+}
+
+fn parse_event_declaration_type_references(line: &str) -> Vec<String> {
+    let trimmed = line.trim();
+    let lower = trimmed.to_ascii_lowercase();
+    let payload = if lower.starts_with("event ") {
+        trimmed[6..].trim()
+    } else if lower.starts_with("public event ") {
+        trimmed[13..].trim()
+    } else if lower.starts_with("private event ") {
+        trimmed[14..].trim()
+    } else {
+        return Vec::new();
+    };
+    let Some(open_idx) = payload.find('(') else {
+        return Vec::new();
+    };
+    let Some(close_idx) = find_matching_paren(payload, open_idx) else {
+        return Vec::new();
+    };
+    let args_raw = payload[open_idx + 1..close_idx].trim();
+    let Ok(args) = split_top_level_args(args_raw) else {
+        return Vec::new();
+    };
+    args.into_iter()
+        .filter_map(|arg| {
+            let (_, rhs) = split_keyword_ascii_ci(arg.trim(), " as ")?;
+            extract_signature_type_name(rhs)
+        })
+        .collect()
 }
 
 fn parse_withevents_declaration(line: &str) -> Option<String> {
@@ -12916,6 +12979,84 @@ mod tests {
         };
         compile_project(&manifest)
             .expect("native Implements target should win over imported type-name match");
+    }
+
+    #[test]
+    fn compile_project_rejects_imported_event_declaration_type() {
+        let class_module = module_unit_from_source(
+            "Emitter",
+            ModuleKind::Class,
+            "Attribute VB_Name = \"Emitter\"\nPublic Event Changed(ByVal value As OxVba.TestDispatch)\n",
+        )
+        .expect("module parses");
+        let manifest = ProjectManifest {
+            project_name: "ProjectA".to_string(),
+            project_kind: ProjectKind::Source,
+            modules: vec![class_module],
+            references: vec![ProjectReference {
+                referenced_project_name: "OxVba".to_string(),
+                reference_kind: ReferenceKind::TypeLibrary,
+            }],
+            reference_projects: Vec::new(),
+            conditional_constants: BTreeMap::new(),
+        };
+        let err = compile_project(&manifest)
+            .expect_err("imported event declaration type should reject deterministically");
+        assert_eq!(err.code(), "BIND-E-TYPELIB-EVENT-DECL-UNSUPPORTED");
+    }
+
+    #[test]
+    fn compile_project_rejects_unqualified_imported_event_declaration_type() {
+        let class_module = module_unit_from_source(
+            "Emitter",
+            ModuleKind::Class,
+            "Attribute VB_Name = \"Emitter\"\nPublic Event Changed(ByVal value As TestDispatch)\n",
+        )
+        .expect("module parses");
+        let manifest = ProjectManifest {
+            project_name: "ProjectA".to_string(),
+            project_kind: ProjectKind::Source,
+            modules: vec![class_module],
+            references: vec![ProjectReference {
+                referenced_project_name: "OxVba".to_string(),
+                reference_kind: ReferenceKind::TypeLibrary,
+            }],
+            reference_projects: Vec::new(),
+            conditional_constants: BTreeMap::new(),
+        };
+        let err = compile_project(&manifest).expect_err(
+            "unqualified imported event declaration type should reject deterministically",
+        );
+        assert_eq!(err.code(), "BIND-E-TYPELIB-EVENT-DECL-UNSUPPORTED");
+    }
+
+    #[test]
+    fn compile_project_prefers_native_event_declaration_type_over_imported_type_name_match() {
+        let source_module = module_unit_from_source(
+            "TestDispatch",
+            ModuleKind::Class,
+            "Attribute VB_Name = \"TestDispatch\"\nPublic Sub Ping()\nEnd Sub",
+        )
+        .expect("source module parses");
+        let class_module = module_unit_from_source(
+            "Emitter",
+            ModuleKind::Class,
+            "Attribute VB_Name = \"Emitter\"\nPublic Event Changed(ByVal value As TestDispatch)\n",
+        )
+        .expect("module parses");
+        let manifest = ProjectManifest {
+            project_name: "ProjectA".to_string(),
+            project_kind: ProjectKind::Source,
+            modules: vec![class_module, source_module],
+            references: vec![ProjectReference {
+                referenced_project_name: "OxVba".to_string(),
+                reference_kind: ReferenceKind::TypeLibrary,
+            }],
+            reference_projects: Vec::new(),
+            conditional_constants: BTreeMap::new(),
+        };
+        compile_project(&manifest)
+            .expect("native event declaration type should win over imported type-name match");
     }
 
     #[test]
