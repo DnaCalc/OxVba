@@ -1,3 +1,14 @@
+## 2026-03-19 - Add host-injected predeclared root receiver support
+
+- Started the executable `IP-08A` host-project foundation pass and captured its exit discipline in [WORKSET_2026-03-19_IP-08A_EXECUTION_CHECKLIST.md](C:\Work\DnaCalc\OxVba\docs\worksets\WORKSET_2026-03-19_IP-08A_EXECUTION_CHECKLIST.md).
+- In [project.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-compiler\src\project.rs), widened native PMR/default-member receiver discovery so host-injected referenced class modules marked `VB_PredeclaredId` or `VB_GlobalNamespace` participate in bounded implicit receiver lowering for property/default-member read lanes.
+- Added compiler evidence proving:
+  - `Application.Value` lowers through the host-injected predeclared root path,
+  - bare `Application` lowers through the same path when authoritative default-member metadata exists,
+  - plain project references do not gain this host-root rewrite and remain on the ordinary unresolved-name path.
+- Added host runtime evidence in [engine.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-host\src\engine.rs) proving the same bounded host-injected read lanes execute end to end while the plain-project-reference neighbor stays on the normal empty-variant path instead of silently acquiring Office-style root behavior.
+- This is still not `IP-08` closure: broader host root/global exposure rules, supported write/statement-call host-root behavior, host object identity/callback routing, and the wider Office-style host matrix remain open.
+
 ## 2026-03-19 - Execute host event ingress into runtime sessions
 
 - Continued the `IP-07` dependency-clearing path by upgrading host event ingress from passive handler lookup into executable runtime dispatch.

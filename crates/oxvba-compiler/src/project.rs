@@ -430,6 +430,8 @@ struct ProcedureDecl {
     param_count: usize,
     module_kind: ModuleKind,
     option_private_module: bool,
+    implicit_receiver: bool,
+    implicit_receiver_precedence: usize,
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -1207,6 +1209,7 @@ fn parse_raiseevent_name(line: &str) -> Option<String> {
 fn collect_project_procedures(manifest: &ProjectManifest) -> Vec<ProcedureDecl> {
     let mut procedures = Vec::new();
     let active_project = normalize_identifier(&manifest.project_name);
+    let reference_order = build_reference_order_map(manifest);
     for module in &manifest.modules {
         let module_name = normalize_identifier(&module.module_name);
         let member_attributes = collect_member_attributes(&module.source);
@@ -1227,12 +1230,27 @@ fn collect_project_procedures(manifest: &ProjectManifest) -> Vec<ProcedureDecl> 
                     param_count,
                     module_kind: module.module_kind,
                     option_private_module: module.attributes.option_private_module,
+                    implicit_receiver: module.module_kind == ModuleKind::Class,
+                    implicit_receiver_precedence: 0,
                 });
             }
         }
     }
     for referenced in &manifest.reference_projects {
         let project_name = normalize_identifier(&referenced.project_name);
+        let reference_kind = manifest
+            .references
+            .iter()
+            .find(|reference| {
+                normalize_identifier(&reference.referenced_project_name) == project_name
+            })
+            .map(|reference| reference.reference_kind)
+            .unwrap_or(ReferenceKind::Project);
+        let implicit_receiver_precedence = reference_order
+            .get(&project_name)
+            .copied()
+            .unwrap_or(usize::MAX - 1)
+            .saturating_add(1);
         for module in &referenced.modules {
             let module_name = normalize_identifier(&module.module_name);
             let member_attributes = collect_member_attributes(&module.source);
@@ -1254,12 +1272,44 @@ fn collect_project_procedures(manifest: &ProjectManifest) -> Vec<ProcedureDecl> 
                         param_count,
                         module_kind: module.module_kind,
                         option_private_module: module.attributes.option_private_module,
+                        implicit_receiver: reference_kind == ReferenceKind::HostInjected
+                            && module.module_kind == ModuleKind::Class
+                            && (module.attributes.vb_predeclared_id
+                                || module.attributes.vb_global_namespace),
+                        implicit_receiver_precedence,
                     });
                 }
             }
         }
     }
     procedures
+}
+
+fn resolve_implicit_class_receiver_binding(
+    receiver: &str,
+    procedures: &[ProcedureDecl],
+) -> Option<(String, String, String)> {
+    let mut candidates = procedures
+        .iter()
+        .filter(|decl| decl.module_name == receiver && decl.implicit_receiver)
+        .map(|decl| {
+            (
+                decl.implicit_receiver_precedence,
+                decl.project_name.clone(),
+                decl.module_name.clone(),
+            )
+        })
+        .collect::<Vec<_>>();
+    candidates.sort();
+    candidates.dedup();
+    candidates
+        .into_iter()
+        .next()
+        .map(|(_, project_name, module_name)| (project_name, module_name, "0".to_string()))
+}
+
+fn has_implicit_class_receivers(procedures: &[ProcedureDecl]) -> bool {
+    procedures.iter().any(|decl| decl.implicit_receiver)
 }
 
 fn validate_modules_for_project(
@@ -2639,7 +2689,9 @@ fn rewrite_internal_class_property_reads(
     procedures: &[ProcedureDecl],
     internal_class_bindings: &BTreeMap<String, InternalClassBinding>,
 ) -> Result<String, ProjectCompileError> {
-    if internal_class_bindings.is_empty() || class_state_line_is_non_executable(line) {
+    if (internal_class_bindings.is_empty() && !has_implicit_class_receivers(procedures))
+        || class_state_line_is_non_executable(line)
+    {
         return Ok(line.to_string());
     }
     let rewritten = rewrite_internal_class_property_expression_reads(
@@ -2814,22 +2866,7 @@ fn resolve_internal_class_member_target_of_kinds(
                 receiver.to_string(),
             )
         })
-        .or_else(|| {
-            procedures
-                .iter()
-                .any(|decl| {
-                    decl.project_name == current_project
-                        && decl.module_name == receiver
-                        && decl.module_kind == ModuleKind::Class
-                })
-                .then(|| {
-                    (
-                        current_project.to_string(),
-                        receiver.to_string(),
-                        "0".to_string(),
-                    )
-                })
-        })
+        .or_else(|| resolve_implicit_class_receiver_binding(receiver, procedures))
     else {
         return Ok(None);
     };
@@ -2881,22 +2918,7 @@ fn resolve_internal_class_default_member_target_of_kinds(
                 receiver.to_string(),
             )
         })
-        .or_else(|| {
-            procedures
-                .iter()
-                .any(|decl| {
-                    decl.project_name == current_project
-                        && decl.module_name == receiver
-                        && decl.module_kind == ModuleKind::Class
-                })
-                .then(|| {
-                    (
-                        current_project.to_string(),
-                        receiver.to_string(),
-                        "0".to_string(),
-                    )
-                })
-        })
+        .or_else(|| resolve_implicit_class_receiver_binding(receiver, procedures))
     else {
         return Ok(None);
     };
@@ -3329,7 +3351,9 @@ fn rewrite_internal_class_set_assignment(
         }
         (receiver_name, Vec::new())
     };
-    if !internal_class_bindings.contains_key(&normalized_lhs) {
+    if !internal_class_bindings.contains_key(&normalized_lhs)
+        && resolve_implicit_class_receiver_binding(&normalized_lhs, procedures).is_none()
+    {
         return Ok(line.to_string());
     }
     if withevents_bindings.contains(&normalized_lhs) {
@@ -3373,7 +3397,9 @@ fn rewrite_internal_class_property_assignment(
     procedures: &[ProcedureDecl],
     internal_class_bindings: &BTreeMap<String, InternalClassBinding>,
 ) -> Result<String, ProjectCompileError> {
-    if internal_class_bindings.is_empty() || class_state_line_is_non_executable(line) {
+    if (internal_class_bindings.is_empty() && !has_implicit_class_receivers(procedures))
+        || class_state_line_is_non_executable(line)
+    {
         return Ok(line.to_string());
     }
     let trimmed = line.trim_start();
@@ -3461,7 +3487,9 @@ fn rewrite_internal_class_default_member_assignment(
     procedures: &[ProcedureDecl],
     internal_class_bindings: &BTreeMap<String, InternalClassBinding>,
 ) -> Result<String, ProjectCompileError> {
-    if internal_class_bindings.is_empty() || class_state_line_is_non_executable(line) {
+    if (internal_class_bindings.is_empty() && !has_implicit_class_receivers(procedures))
+        || class_state_line_is_non_executable(line)
+    {
         return Ok(line.to_string());
     }
     let trimmed = line.trim_start();
@@ -3552,7 +3580,9 @@ fn rewrite_internal_class_default_member_read_assignment(
     procedures: &[ProcedureDecl],
     internal_class_bindings: &BTreeMap<String, InternalClassBinding>,
 ) -> Result<String, ProjectCompileError> {
-    if internal_class_bindings.is_empty() || class_state_line_is_non_executable(line) {
+    if (internal_class_bindings.is_empty() && !has_implicit_class_receivers(procedures))
+        || class_state_line_is_non_executable(line)
+    {
         return Ok(line.to_string());
     }
     let trimmed = line.trim_start();
@@ -15445,6 +15475,121 @@ mod tests {
             rewrite_bridge
                 .to_string()
                 .contains("unknown procedure: hidden")
+        );
+    }
+
+    #[test]
+    fn compile_project_rewrites_host_injected_predeclared_property_get_receiver() {
+        let main_module = module_unit_from_source(
+            "MainModule",
+            ModuleKind::Procedural,
+            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim valueOut\nvalueOut = Application.Value\nEnd Sub",
+        )
+        .expect("module parses");
+        let host_application = module_unit_from_source(
+            "Application",
+            ModuleKind::Class,
+            "Attribute VB_Name = \"Application\"\nAttribute VB_PredeclaredId = True\nPublic Property Get Value()\nValue = 41\nEnd Property",
+        )
+        .expect("module parses");
+        let manifest = ProjectManifest {
+            project_name: "ProjectA".to_string(),
+            project_kind: ProjectKind::Source,
+            modules: vec![main_module],
+            references: vec![ProjectReference {
+                referenced_project_name: "HostProject".to_string(),
+                reference_kind: ReferenceKind::HostInjected,
+            }],
+            reference_projects: vec![ReferencedProjectManifest {
+                project_name: "HostProject".to_string(),
+                modules: vec![host_application],
+            }],
+            conditional_constants: BTreeMap::new(),
+        };
+        let compiled = compile_project(&manifest)
+            .expect("host-injected predeclared property-get receiver should compile");
+        let lowered = compiled.rewritten_source.to_ascii_lowercase();
+        assert!(
+            lowered.contains("valueout = property_get_pmr_hostproject_application_value(0)"),
+            "unexpected lowered source: {lowered}"
+        );
+    }
+
+    #[test]
+    fn compile_project_rewrites_host_injected_predeclared_default_member_receiver() {
+        let main_module = module_unit_from_source(
+            "MainModule",
+            ModuleKind::Procedural,
+            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim valueOut As Variant\nLet valueOut = Application\nEnd Sub",
+        )
+        .expect("module parses");
+        let host_application = module_unit_from_source(
+            "Application",
+            ModuleKind::Class,
+            "Attribute VB_Name = \"Application\"\nAttribute VB_PredeclaredId = True\nPublic Property Get Value()\nValue = 41\nEnd Property\nAttribute Value.VB_UserMemId = 0",
+        )
+        .expect("module parses");
+        let manifest = ProjectManifest {
+            project_name: "ProjectA".to_string(),
+            project_kind: ProjectKind::Source,
+            modules: vec![main_module],
+            references: vec![ProjectReference {
+                referenced_project_name: "HostProject".to_string(),
+                reference_kind: ReferenceKind::HostInjected,
+            }],
+            reference_projects: vec![ReferencedProjectManifest {
+                project_name: "HostProject".to_string(),
+                modules: vec![host_application],
+            }],
+            conditional_constants: BTreeMap::new(),
+        };
+        let compiled = compile_project(&manifest)
+            .expect("host-injected predeclared default-member receiver should compile");
+        let lowered = compiled.rewritten_source.to_ascii_lowercase();
+        assert!(
+            lowered.contains("let valueout = property_get_pmr_hostproject_application_value(0)"),
+            "unexpected lowered source: {lowered}"
+        );
+    }
+
+    #[test]
+    fn compile_project_does_not_rewrite_plain_project_reference_into_implicit_host_receiver() {
+        let main_module = module_unit_from_source(
+            "MainModule",
+            ModuleKind::Procedural,
+            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim valueOut As Variant\nLet valueOut = Application\nEnd Sub",
+        )
+        .expect("module parses");
+        let host_application = module_unit_from_source(
+            "Application",
+            ModuleKind::Class,
+            "Attribute VB_Name = \"Application\"\nAttribute VB_PredeclaredId = True\nPublic Property Get Value()\nValue = 41\nEnd Property\nAttribute Value.VB_UserMemId = 0",
+        )
+        .expect("module parses");
+        let manifest = ProjectManifest {
+            project_name: "ProjectA".to_string(),
+            project_kind: ProjectKind::Source,
+            modules: vec![main_module],
+            references: vec![ProjectReference {
+                referenced_project_name: "HostProject".to_string(),
+                reference_kind: ReferenceKind::Project,
+            }],
+            reference_projects: vec![ReferencedProjectManifest {
+                project_name: "HostProject".to_string(),
+                modules: vec![host_application],
+            }],
+            conditional_constants: BTreeMap::new(),
+        };
+        let compiled = compile_project(&manifest)
+            .expect("plain project reference should remain on the ordinary name path");
+        let lowered = compiled.rewritten_source.to_ascii_lowercase();
+        assert!(
+            lowered.contains("let valueout = application"),
+            "plain project reference should stay unrevised: {lowered}"
+        );
+        assert!(
+            !lowered.contains("property_get_pmr_hostproject_application_value(0)"),
+            "plain project reference must not gain implicit host receiver lowering: {lowered}"
         );
     }
 
