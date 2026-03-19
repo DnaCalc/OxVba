@@ -1,3 +1,10 @@
+## 2026-03-19 - Prove host-returned COM objects support imported property-putref traffic
+
+- Continued `IP-08A` by widening the bounded host/COM coexistence floor from imported scalar `PropertyPut`/`PropertyGet` and exception lanes into assignment-form imported `PropertyPutRef` traffic on the same host-returned COM object.
+- In [project.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-compiler\src\project.rs), added compiler evidence that a host-injected `Application.Value` getter may return `CreateObject(4)` into `Dim obj As OxVba.TestDispatch`, preserve object-valued RHS setup through `Set other = CreateObject(4)`, lower `Set obj.SetValueRef = other` through the imported `PropertyPutRef` lane, and still lower `afterSetValueRef = obj.Value` through the imported getter lane.
+- In [engine.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-host\src\engine.rs), added live runtime evidence that the same lane executes on the bounded shared object/value model with deterministic snapshot `[ObjectHandle(5004), ObjectHandle(5004), I32(5013)]`, and that a conflicting same-name plain-project `Application` reference does not steal that imported `PropertyPutRef` handoff by reference order.
+- This raises the honest `IP-08A` host/COM coexistence floor from imported property/default-member/object-result/object-property/exception traffic to the same floor plus assignment-form imported `PropertyPutRef` traffic on host-returned COM objects; broader host object identity closure remains open.
+
 ## 2026-03-19 - Prove host-returned COM objects preserve imported object-result rebinding
 
 - Continued `IP-08A` by widening the bounded host/COM coexistence floor beyond imported scalar method/property/default-member traffic into imported object-result assignment-intent traffic on the same host-returned COM object.
