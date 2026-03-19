@@ -12688,6 +12688,62 @@ mod tests {
     }
 
     #[test]
+    fn compile_project_rewrites_call_statements_for_positional_external_member_invokes() {
+        let main_module = module_unit_from_source(
+            "MainModule",
+            ModuleKind::Procedural,
+            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim obj As OxVba.TestDispatch\nSet obj = CreateObject(4)\nCall obj.Count()\nCall obj.Exists(42)\nCall obj.Lookup(42)\nCall obj.Value()\nCall obj(42)\nEnd Sub",
+        )
+        .expect("module parses");
+        let manifest = ProjectManifest {
+            project_name: "ProjectA".to_string(),
+            project_kind: ProjectKind::Source,
+            modules: vec![main_module],
+            references: vec![ProjectReference {
+                referenced_project_name: "OxVba".to_string(),
+                reference_kind: ReferenceKind::TypeLibrary,
+            }],
+            reference_projects: Vec::new(),
+            conditional_constants: BTreeMap::new(),
+        };
+        let compiled = compile_project(&manifest)
+            .expect("Call-form positional imported member invokes should compile");
+        let lowered = compiled.rewritten_source.to_ascii_lowercase();
+        assert!(lowered.contains("call dispatchinvoke(obj, 1)"));
+        assert!(lowered.contains("call dispatchinvoke(obj, 2, 42)"));
+        assert!(lowered.contains("call dispatchinvoke(obj, 6, 42)"));
+        assert!(lowered.contains("call dispatchinvoke(obj, 9)"));
+        assert!(lowered.contains("call dispatchinvoke(obj, 16, 42)"));
+    }
+
+    #[test]
+    fn compile_project_rewrites_call_statements_for_named_arg_external_member_invokes() {
+        let main_module = module_unit_from_source(
+            "MainModule",
+            ModuleKind::Procedural,
+            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim obj As OxVba.TestDispatch\nSet obj = CreateObject(4)\nCall obj.SumPair(rhs := 14, lhs := 3)\nCall obj.LookupPair(rhs := 9, lhs := 5)\nCall obj(value := 41)\nEnd Sub",
+        )
+        .expect("module parses");
+        let manifest = ProjectManifest {
+            project_name: "ProjectA".to_string(),
+            project_kind: ProjectKind::Source,
+            modules: vec![main_module],
+            references: vec![ProjectReference {
+                referenced_project_name: "OxVba".to_string(),
+                reference_kind: ReferenceKind::TypeLibrary,
+            }],
+            reference_projects: Vec::new(),
+            conditional_constants: BTreeMap::new(),
+        };
+        let compiled = compile_project(&manifest)
+            .expect("Call-form named-argument imported member invokes should compile");
+        let lowered = compiled.rewritten_source.to_ascii_lowercase();
+        assert!(lowered.contains("call dispatchinvoke(obj, 12, rhs := 14, lhs := 3)"));
+        assert!(lowered.contains("call dispatchinvoke(obj, 13, rhs := 9, lhs := 5)"));
+        assert!(lowered.contains("call dispatchinvoke(obj, 16, value := 41)"));
+    }
+
+    #[test]
     fn compile_project_rewrites_external_object_member_call_to_dispatchinvoke() {
         let main_module = module_unit_from_source(
             "MainModule",

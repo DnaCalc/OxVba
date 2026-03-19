@@ -116,6 +116,111 @@ End Sub
 }
 
 #[test]
+fn early_bound_project_executes_imported_call_statements_subset() {
+    let manifest = manifest_with_typelib(
+        r#"
+Attribute VB_Name = "MainModule"
+Public Sub Main()
+Dim obj As New OxVba.TestDispatch
+Dim afterValue
+Call obj.Count()
+Call obj.Exists(42)
+Call obj.Lookup(42)
+Call obj.Value()
+Call obj(42)
+afterValue = 19
+End Sub
+"#,
+    );
+
+    let out = run_project_windows_hosted(&manifest, false);
+    assert!(expect_object_handle(&out[0]).raw() >= 20_001);
+    assert_eq!(
+        out[1],
+        RuntimeValue::I32(19),
+        "Call-form imported positional method/property/default-member invokes should execute without degrading the metadata-backed subset"
+    );
+}
+
+#[cfg(target_os = "windows")]
+#[test]
+fn early_bound_project_call_statement_subset_vm_jit_snapshots_match() {
+    let manifest = manifest_with_typelib(
+        r#"
+Attribute VB_Name = "MainModule"
+Public Sub Main()
+Dim obj As New OxVba.TestDispatch
+Dim afterValue
+Call obj.Count()
+Call obj.Exists(42)
+Call obj.Lookup(42)
+Call obj.Value()
+Call obj(42)
+afterValue = 19
+End Sub
+"#,
+    );
+
+    let vm = run_project_windows_hosted(&manifest, false);
+    let jit = run_project_windows_hosted(&manifest, true);
+    assert_eq!(
+        vm, jit,
+        "VM/JIT snapshots should match for imported Call-form positional member invokes"
+    );
+}
+
+#[cfg(target_os = "windows")]
+#[test]
+fn early_bound_project_executes_imported_named_argument_call_statements() {
+    let manifest = manifest_with_typelib(
+        r#"
+Attribute VB_Name = "MainModule"
+Public Sub Main()
+Dim obj As New OxVba.TestDispatch
+Dim afterValue
+Call obj.SumPair(rhs := 14, lhs := 3)
+Call obj.LookupPair(rhs := 9, lhs := 5)
+Call obj(value := 41)
+afterValue = 29
+End Sub
+"#,
+    );
+
+    let out = run_project_windows_hosted(&manifest, false);
+    assert!(expect_object_handle(&out[0]).raw() >= 20_001);
+    assert_eq!(
+        out[1],
+        RuntimeValue::I32(29),
+        "Call-form imported named-argument method/property/default-member invokes should execute without degrading metadata-backed canonicalization"
+    );
+}
+
+#[cfg(target_os = "windows")]
+#[test]
+fn early_bound_project_named_argument_call_statements_vm_jit_snapshots_match() {
+    let manifest = manifest_with_typelib(
+        r#"
+Attribute VB_Name = "MainModule"
+Public Sub Main()
+Dim obj As New OxVba.TestDispatch
+Dim afterValue
+Call obj.SumPair(rhs := 14, lhs := 3)
+Call obj.LookupPair(rhs := 9, lhs := 5)
+Call obj(value := 41)
+afterValue = 29
+End Sub
+"#,
+    );
+
+    let vm = run_project_windows_hosted(&manifest, false);
+    let jit = run_project_windows_hosted(&manifest, true);
+    assert_eq!(
+        vm, jit,
+        "VM/JIT snapshots should match for imported Call-form named-argument member invokes"
+    );
+}
+
+#[test]
 fn early_bound_project_reports_compile_error_for_unsupported_member_shape() {
     let manifest = manifest_with_typelib(
         r#"

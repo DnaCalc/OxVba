@@ -1,3 +1,20 @@
+## 2026-03-19 - Add imported Call-statement member evidence
+
+- Continued `IP-05B` on the broader imported syntax matrix instead of widening the fixture surface again.
+- Added compiler rewrite evidence in [project.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-compiler\src\project.rs) proving `Call`-form imported member invocations now have direct coverage on the existing metadata-backed method/property-get/default-member path:
+  - positional:
+    - `Call obj.Count()`
+    - `Call obj.Exists(42)`
+    - `Call obj.Lookup(42)`
+    - `Call obj.Value()`
+    - `Call obj(42)`
+  - named-argument:
+    - `Call obj.SumPair(rhs := 14, lhs := 3)`
+    - `Call obj.LookupPair(rhs := 9, lhs := 5)`
+    - `Call obj(value := 41)`
+- Added Windows host end-to-end and VM/JIT parity evidence in [com_early_project_end_to_end.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-host\tests\com_early_project_end_to_end.rs) proving those imported `Call` forms execute without degrading the existing authoritative metadata-backed lowering.
+- `IP-05` remains `in-progress`: richer typelib/member coverage, broader imported property/event/default-member parity beyond the controlled fixture, and wider Office/Excel object-model behavior are still open.
+
 ## 2026-03-19 - Complete imported object-valued property-get assignment evidence
 
 - Continued `IP-05B` by widening the controlled imported member surface itself instead of only adding more proof around the existing method lanes.
