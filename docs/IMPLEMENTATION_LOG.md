@@ -1,3 +1,13 @@
+## 2026-03-19 - Add host-injected child parenthesized getter evidence
+
+- Continued `IP-08A` by widening the returned-child host object-model floor into parenthesized zero-arg getter syntax instead of leaving that syntax implied by the non-parenthesized child rows.
+- In [project.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-compiler\src\project.rs), added direct compiler evidence that typed child locals produced by `Set child = Application.Value` now preserve authoritative named/default-member parenthesized zero-arg getter lowering across both exposure modes for:
+  - read-assignment syntax such as `afterValue = child.Value()` and `afterValue = child()`
+  - explicit `Call` syntax such as `Call child.Value()` and `Call child()`
+  - bare statement-context syntax such as `child.Value()` and `child()`
+- In [engine.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-host\src\engine.rs), added matching host runtime evidence proving those parenthesized getter forms execute against the same returned child handle and yield the expected snapshots `[1, 9]` for read-assignment and `[1, 7]` for explicit-`Call` / statement-context execution.
+- This raises the bounded `IP-08A` host object-model floor from non-parenthesized child read/invoke/write navigation to the same floor plus parenthesized zero-arg getter syntax; broader indexed and object-write/default-member breadth remains open.
+
 ## 2026-03-19 - Add host-injected child property-let evidence
 
 - Continued `IP-08A` by widening the returned-child host object-model floor from read/invoke traffic into scalar write traffic.
