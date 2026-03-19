@@ -10,6 +10,16 @@
 - Added Windows host runtime-error and VM/JIT parity evidence in [com_early_project_end_to_end.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-host\tests\com_early_project_end_to_end.rs) proving those four imported statement forms now execute through the metadata-backed early-bind path and preserve bounded `com-dispatch-exception-raised` / `EXCEPINFO` detail instead of falling through to local unknown-procedure resolution.
 - `IP-05` remains `in-progress`: richer typelib/member coverage, broader imported property/event/default-member parity beyond the controlled fixture, and wider Office/Excel object-model behavior are still open.
 
+## 2026-03-19 - Add imported no-paren default-member diagnostic evidence
+
+- Continued `IP-05B` without widening semantics and filled the nearby imported default-member diagnostic row that still depended on assignment-context inference.
+- Added compiler and host phased evidence proving:
+  - `Call obj` and bare `obj` reject on `BIND-E-TYPELIB-INVOKE-ARITY-UNSUPPORTED` when the authoritative imported default member requires one argument (`OxVba.TestDispatch`),
+  - `Call obj 41` and bare `obj 41` reject on `BIND-E-TYPELIB-MEMBER-NOT-FOUND` when the imported binding exposes no default member (`OxVba.TestDispatchNoDefault`),
+  - `Call obj 41` and bare `obj 41` reject on `BIND-E-TYPELIB-MEMBER-AMBIGUOUS` when imported default-member metadata resolves ambiguously (`OxVba.TestDispatchAmbiguousDefault`).
+- This closes the no-parentheses statement/`Call` diagnostic neighbors directly instead of assuming they match the already-landed assignment-form imported default-member diagnostics.
+- `IP-05` remains `in-progress`: richer typelib/member coverage, broader imported property/event/default-member parity beyond the controlled fixture, and wider Office/Excel object-model behavior are still open.
+
 ## 2026-03-19 - Add imported zero-arg method read-assignment evidence
 
 - Continued `IP-05B` by closing a direct imported call-vs-value hole on the already-supported metadata-backed subset instead of widening typelib or event scope.

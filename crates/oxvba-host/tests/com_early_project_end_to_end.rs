@@ -1897,6 +1897,172 @@ End Sub
     );
 }
 
+#[test]
+fn early_bound_project_reports_compile_error_for_wrong_default_member_arity_no_paren_call_statement()
+ {
+    let manifest = manifest_with_typelib(
+        r#"
+Attribute VB_Name = "MainModule"
+Public Sub Main()
+Dim obj As New OxVba.TestDispatch
+Call obj
+End Sub
+"#,
+    );
+
+    let engine = Engine::new(HostConfig {
+        enable_jit: false,
+        root_object_name: None,
+    });
+    let err = engine
+        .execute_project_with_snapshot_phased(&manifest)
+        .expect_err("wrong zero-arg no-paren Call default-member arity should fail");
+    assert_eq!(err.phase(), DiagnosticPhase::CompileTime);
+    assert!(
+        err.message()
+            .contains("BIND-E-TYPELIB-INVOKE-ARITY-UNSUPPORTED"),
+        "unexpected compile diagnostic: {}",
+        err.message()
+    );
+}
+
+#[test]
+fn early_bound_project_reports_compile_error_for_wrong_default_member_arity_no_paren_statement() {
+    let manifest = manifest_with_typelib(
+        r#"
+Attribute VB_Name = "MainModule"
+Public Sub Main()
+Dim obj As New OxVba.TestDispatch
+obj
+End Sub
+"#,
+    );
+
+    let engine = Engine::new(HostConfig {
+        enable_jit: false,
+        root_object_name: None,
+    });
+    let err = engine
+        .execute_project_with_snapshot_phased(&manifest)
+        .expect_err("wrong zero-arg no-paren statement default-member arity should fail");
+    assert_eq!(err.phase(), DiagnosticPhase::CompileTime);
+    assert!(
+        err.message()
+            .contains("BIND-E-TYPELIB-INVOKE-ARITY-UNSUPPORTED"),
+        "unexpected compile diagnostic: {}",
+        err.message()
+    );
+}
+
+#[test]
+fn early_bound_project_reports_compile_error_for_missing_default_member_no_paren_call_statement() {
+    let manifest = manifest_with_typelib(
+        r#"
+Attribute VB_Name = "MainModule"
+Public Sub Main()
+Dim obj As New OxVba.TestDispatchNoDefault
+Call obj 41
+End Sub
+"#,
+    );
+
+    let engine = Engine::new(HostConfig {
+        enable_jit: false,
+        root_object_name: None,
+    });
+    let err = engine
+        .execute_project_with_snapshot_phased(&manifest)
+        .expect_err("missing no-paren Call default member should fail");
+    assert_eq!(err.phase(), DiagnosticPhase::CompileTime);
+    assert!(
+        err.message().contains("BIND-E-TYPELIB-MEMBER-NOT-FOUND"),
+        "unexpected compile diagnostic: {}",
+        err.message()
+    );
+}
+
+#[test]
+fn early_bound_project_reports_compile_error_for_missing_default_member_no_paren_statement() {
+    let manifest = manifest_with_typelib(
+        r#"
+Attribute VB_Name = "MainModule"
+Public Sub Main()
+Dim obj As New OxVba.TestDispatchNoDefault
+obj 41
+End Sub
+"#,
+    );
+
+    let engine = Engine::new(HostConfig {
+        enable_jit: false,
+        root_object_name: None,
+    });
+    let err = engine
+        .execute_project_with_snapshot_phased(&manifest)
+        .expect_err("missing no-paren statement default member should fail");
+    assert_eq!(err.phase(), DiagnosticPhase::CompileTime);
+    assert!(
+        err.message().contains("BIND-E-TYPELIB-MEMBER-NOT-FOUND"),
+        "unexpected compile diagnostic: {}",
+        err.message()
+    );
+}
+
+#[test]
+fn early_bound_project_reports_compile_error_for_ambiguous_default_member_no_paren_call_statement()
+{
+    let manifest = manifest_with_typelib(
+        r#"
+Attribute VB_Name = "MainModule"
+Public Sub Main()
+Dim obj As New OxVba.TestDispatchAmbiguousDefault
+Call obj 41
+End Sub
+"#,
+    );
+
+    let engine = Engine::new(HostConfig {
+        enable_jit: false,
+        root_object_name: None,
+    });
+    let err = engine
+        .execute_project_with_snapshot_phased(&manifest)
+        .expect_err("ambiguous no-paren Call default member should fail");
+    assert_eq!(err.phase(), DiagnosticPhase::CompileTime);
+    assert!(
+        err.message().contains("BIND-E-TYPELIB-MEMBER-AMBIGUOUS"),
+        "unexpected compile diagnostic: {}",
+        err.message()
+    );
+}
+
+#[test]
+fn early_bound_project_reports_compile_error_for_ambiguous_default_member_no_paren_statement() {
+    let manifest = manifest_with_typelib(
+        r#"
+Attribute VB_Name = "MainModule"
+Public Sub Main()
+Dim obj As New OxVba.TestDispatchAmbiguousDefault
+obj 41
+End Sub
+"#,
+    );
+
+    let engine = Engine::new(HostConfig {
+        enable_jit: false,
+        root_object_name: None,
+    });
+    let err = engine
+        .execute_project_with_snapshot_phased(&manifest)
+        .expect_err("ambiguous no-paren statement default member should fail");
+    assert_eq!(err.phase(), DiagnosticPhase::CompileTime);
+    assert!(
+        err.message().contains("BIND-E-TYPELIB-MEMBER-AMBIGUOUS"),
+        "unexpected compile diagnostic: {}",
+        err.message()
+    );
+}
+
 #[cfg(target_os = "windows")]
 #[test]
 fn early_and_late_dispatch_paths_can_mix_in_one_project() {
