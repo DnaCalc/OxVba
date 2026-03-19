@@ -5040,6 +5040,105 @@ mod tests {
     }
 
     #[test]
+    fn formal_host_project_root_returned_com_object_exception_invoke_forms_win_over_same_name_plain_project_match()
+     {
+        let engine = Engine::new(HostConfig::default());
+        let cases = [
+            ("predeclared", "Attribute VB_PredeclaredId = True"),
+            ("global namespace", "Attribute VB_GlobalNamespace = True"),
+        ];
+        let invoke_cases = [
+            ("call parenthesized", "Call obj.RaiseException()"),
+            ("statement parenthesized", "obj.RaiseException()"),
+            ("call no-paren", "Call obj.RaiseException"),
+            ("statement no-paren", "obj.RaiseException"),
+        ];
+
+        for (label, exposure_attr) in cases {
+            for (invoke_label, invoke_line) in invoke_cases {
+                let main_module = module_unit_from_source(
+                    "MainModule",
+                    ModuleKind::Procedural,
+                    format!(
+                        "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim obj As OxVba.TestDispatch\nSet obj = Application.Value\n{invoke_line}\nEnd Sub"
+                    ),
+                )
+                .expect("main module should parse");
+                let plain_application = module_unit_from_source(
+                    "Application",
+                    ModuleKind::Class,
+                    "Attribute VB_Name = \"Application\"\nPublic Property Get Value()\nValue = 41\nEnd Property",
+                )
+                .expect("plain application module should parse");
+                let host_application = module_unit_from_source(
+                    "Application",
+                    ModuleKind::Class,
+                    format!(
+                        "Attribute VB_Name = \"Application\"\n{exposure_attr}\nPublic Property Get Value() As Object\nSet Value = CreateObject(4)\nEnd Property"
+                    ),
+                )
+                .expect("host application module should parse");
+                let manifest = ProjectManifest {
+                    project_name: "ProjectA".to_string(),
+                    project_kind: ProjectKind::Source,
+                    modules: vec![main_module],
+                    references: vec![
+                        ProjectReference {
+                            referenced_project_name: "PlainProject".to_string(),
+                            reference_kind: ReferenceKind::Project,
+                        },
+                        ProjectReference {
+                            referenced_project_name: "HostProject".to_string(),
+                            reference_kind: ReferenceKind::HostInjected,
+                        },
+                        ProjectReference {
+                            referenced_project_name: "OxVba".to_string(),
+                            reference_kind: ReferenceKind::TypeLibrary,
+                        },
+                    ],
+                    reference_projects: vec![
+                        ReferencedProjectManifest {
+                            project_name: "PlainProject".to_string(),
+                            modules: vec![plain_application],
+                        },
+                        ReferencedProjectManifest {
+                            project_name: "HostProject".to_string(),
+                            modules: vec![host_application],
+                        },
+                    ],
+                    conditional_constants: std::collections::BTreeMap::new(),
+                };
+
+                let err = engine
+                    .execute_project_with_value_snapshot_phased(&manifest)
+                    .expect_err("imported exception invoke should fail deterministically");
+                assert_eq!(
+                    err.phase(),
+                    DiagnosticPhase::Runtime,
+                    "{label} {invoke_label}: expected runtime diagnostic, got: {}",
+                    err.message()
+                );
+                assert!(
+                    err.message().contains(
+                        "com-dispatch-exception-raised;hresult=0x80020009;excep_scode=0x80020009;"
+                    ),
+                    "{label} {invoke_label}: expected stable imported exception prefix after host-root precedence over same-name plain project, got: {}",
+                    err.message()
+                );
+                assert!(
+                    err.message()
+                        .contains("excep_source=\"OxVba.TestDispatch\"")
+                        && err
+                            .message()
+                            .contains("excep_description=\"controlled dispatch exception\""),
+                    "{label} {invoke_label}: expected imported EXCEPINFO source/description after host-root precedence over same-name plain project, got: {}",
+                    err.message()
+                );
+            }
+        }
+    }
+
+    #[test]
     fn formal_runtime_procedure_call_expression_in_condition_executes() {
         let engine = Engine::new(HostConfig::default());
         let source = "Function GetValue()\nGetValue = 4\nEnd Function\nSub Main()\nIf GetValue() = 4 Then\nError 104\nElse\nError 101\nEnd If\nEnd Sub";

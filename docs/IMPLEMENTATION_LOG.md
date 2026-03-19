@@ -1848,3 +1848,10 @@
 - In [standard.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-hal\src\adapters\standard.rs), added a bounded deterministic fallback adapter-fault lane for dispid `17` so the shared host/COM projection path now surfaces `com-dispatch-exception-raised` with the controlled `EXCEPINFO` payload instead of silently succeeding.
 - In [engine.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-host\src\engine.rs), added matching host runtime evidence proving those four imported invoke forms on the host-returned COM-backed object now fail deterministically with the expected exception classification and payload.
 - This raises the honest `IP-08A` host/COM coexistence floor from imported read/write/object-property traffic alone to that same bounded subset plus observable imported method-invoke exception forms on the host-returned receiver; broader host identity boundaries and wider imported breadth still remain open.
+
+# 2026-03-19 - Same-name plain-project precedence for imported exception forms on host-returned COM objects
+
+- Continued `IP-08A` by tightening the host identity register around the newly-proved imported exception-form subset instead of widening behavior again.
+- In [project.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-compiler\src\project.rs), added direct compiler evidence that a conflicting same-name plain-project `Application` class does not steal any of the four bounded imported `RaiseException` invoke forms after the host-injected `Application.Value -> CreateObject(4)` handoff.
+- In [engine.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-host\src\engine.rs), added matching host runtime evidence proving the same-name plain-project shadow still leaves the host-root COM-backed object in control and preserves the controlled `com-dispatch-exception-raised` fault across those four imported invoke forms.
+- This narrows the remaining `IP-08A` host identity frontier again: the current imported exception subset is no longer missing same-name plain-project precedence evidence, while broader host/project identity boundaries still remain open.
