@@ -1,3 +1,15 @@
+## 2026-03-19 - Add imported object-valued property-get evidence
+
+- Continued `IP-05B` by widening the controlled imported member surface itself instead of only adding more proof around the existing method lanes.
+- In [typelib_catalog.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-com\src\typelib_catalog.rs) and [windows_test_dispatch.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-com\src\windows_test_dispatch.rs), added controlled zero-arg imported `PropertyGet` aliases `SelfDispatch` and `SelfUnknown` over the existing object-result transport so the supported imported getter subset now includes object-valued members, not only scalar getters.
+- Added compiler rewrite evidence in [project.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-compiler\src\project.rs) proving both direct and parenthesized object-valued imported getter read-assignment syntax lower through authoritative metadata:
+  - `Set child = obj.SelfDispatch`
+  - `wrapped = obj.SelfUnknown`
+  - `Set child = obj.SelfDispatch()`
+  - `Let wrapped = obj.SelfUnknown()`
+- Added Windows host end-to-end and VM/JIT parity evidence in [com_early_project_end_to_end.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-host\tests\com_early_project_end_to_end.rs) proving both `VT_DISPATCH` and `VT_UNKNOWN` object-valued imported getter results now execute through the metadata-backed direct and parenthesized zero-arg `PropertyGet` read-assignment path in the controlled fixture.
+- `IP-05` remains `in-progress`: broader imported property/default-member syntax, richer imported member coverage beyond the controlled fixture, and wider Office/Excel object-model behavior are still open.
+
 ## 2026-03-19 - Extend imported object-result assignment-intent evidence
 
 - Continued `IP-05B` by widening the proved imported object-result assignment matrix instead of inventing broader imported event or richer object-model behavior.

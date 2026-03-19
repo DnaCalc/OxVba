@@ -1791,7 +1791,9 @@ unsafe extern "system" fn oxvba_test_get_ids_of_names(
             "returnboolarray" => TEST_DISPID_RETURN_BOOL_ARRAY,
             "returnstringarray" => TEST_DISPID_RETURN_STRING_ARRAY,
             "returnselfdispatch" => TEST_DISPID_RETURN_SELF_DISPATCH,
+            "selfdispatch" => TEST_DISPID_RETURN_SELF_DISPATCH,
             "returnselfunknown" => TEST_DISPID_RETURN_SELF_UNKNOWN,
+            "selfunknown" => TEST_DISPID_RETURN_SELF_UNKNOWN,
             "classifyvariantarg" => TEST_DISPID_CLASSIFY_VARIANT_ARG,
             "classifyvariantarrayfirstelementarg" => {
                 TEST_DISPID_CLASSIFY_VARIANT_ARRAY_FIRST_ELEMENT_ARG
@@ -2791,7 +2793,7 @@ unsafe extern "system" fn oxvba_test_invoke(
             }
         }
         TEST_DISPID_RETURN_SELF_DISPATCH => {
-            if (wflags & DISPATCH_METHOD) == 0 || cargs != 0 {
+            if (wflags & (DISPATCH_METHOD | DISPATCH_PROPERTYGET)) == 0 || cargs != 0 {
                 return COM_DISP_E_BADPARAMCOUNT;
             }
             if !pvarresult.is_null() {
@@ -2802,7 +2804,7 @@ unsafe extern "system" fn oxvba_test_invoke(
             COM_S_OK
         }
         TEST_DISPID_RETURN_SELF_UNKNOWN => {
-            if (wflags & DISPATCH_METHOD) == 0 || cargs != 0 {
+            if (wflags & (DISPATCH_METHOD | DISPATCH_PROPERTYGET)) == 0 || cargs != 0 {
                 return COM_DISP_E_BADPARAMCOUNT;
             }
             if !pvarresult.is_null() {

@@ -12767,6 +12767,60 @@ mod tests {
     }
 
     #[test]
+    fn compile_project_rewrites_object_property_get_external_read_assignment_to_dispatchinvoke() {
+        let main_module = module_unit_from_source(
+            "MainModule",
+            ModuleKind::Procedural,
+            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim obj As OxVba.TestDispatch\nDim child As Object\nDim wrapped\nSet obj = CreateObject(4)\nSet child = obj.SelfDispatch\nwrapped = obj.SelfUnknown\nEnd Sub",
+        )
+        .expect("module parses");
+        let manifest = ProjectManifest {
+            project_name: "ProjectA".to_string(),
+            project_kind: ProjectKind::Source,
+            modules: vec![main_module],
+            references: vec![ProjectReference {
+                referenced_project_name: "OxVba".to_string(),
+                reference_kind: ReferenceKind::TypeLibrary,
+            }],
+            reference_projects: Vec::new(),
+            conditional_constants: BTreeMap::new(),
+        };
+        let compiled = compile_project(&manifest)
+            .expect("object-valued imported property-get read-assignment should compile");
+        let lowered = compiled.rewritten_source.to_ascii_lowercase();
+        assert!(lowered.contains("set child = dispatchinvoke(obj, 23)"));
+        assert!(lowered.contains("wrapped = dispatchinvoke(obj, 24)"));
+    }
+
+    #[test]
+    fn compile_project_rewrites_parenthesized_object_property_get_external_read_assignment_to_dispatchinvoke()
+     {
+        let main_module = module_unit_from_source(
+            "MainModule",
+            ModuleKind::Procedural,
+            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim obj As OxVba.TestDispatch\nDim child As Object\nDim wrapped\nSet obj = CreateObject(4)\nSet child = obj.SelfDispatch()\nLet wrapped = obj.SelfUnknown()\nEnd Sub",
+        )
+        .expect("module parses");
+        let manifest = ProjectManifest {
+            project_name: "ProjectA".to_string(),
+            project_kind: ProjectKind::Source,
+            modules: vec![main_module],
+            references: vec![ProjectReference {
+                referenced_project_name: "OxVba".to_string(),
+                reference_kind: ReferenceKind::TypeLibrary,
+            }],
+            reference_projects: Vec::new(),
+            conditional_constants: BTreeMap::new(),
+        };
+        let compiled = compile_project(&manifest).expect(
+            "parenthesized object-valued imported property-get read-assignment should compile",
+        );
+        let lowered = compiled.rewritten_source.to_ascii_lowercase();
+        assert!(lowered.contains("set child = dispatchinvoke(obj, 23)"));
+        assert!(lowered.contains("let wrapped = dispatchinvoke(obj, 24)"));
+    }
+
+    #[test]
     fn compile_project_rewrites_zero_arg_property_get_external_read_assignment_to_dispatchinvoke() {
         let main_module = module_unit_from_source(
             "MainModule",

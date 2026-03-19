@@ -425,6 +425,134 @@ End Sub
 
 #[cfg(target_os = "windows")]
 #[test]
+fn early_bound_project_executes_imported_object_property_get_read_assignments() {
+    let manifest = manifest_with_typelib(
+        r#"
+Attribute VB_Name = "MainModule"
+Public Sub Main()
+Dim obj As New OxVba.TestDispatch
+Dim child As Object
+Dim wrapped
+Dim childCount
+Dim wrappedCount
+Set child = obj.SelfDispatch
+wrapped = obj.SelfUnknown
+childCount = DispatchInvoke(child, "Count")
+wrappedCount = DispatchInvoke(wrapped, "Count")
+End Sub
+"#,
+    );
+
+    let out = run_project_windows_hosted(&manifest, false);
+    assert!(expect_object_handle(&out[0]).raw() >= 20_001);
+    assert!(expect_object_handle(&out[1]).raw() >= 20_001);
+    assert!(expect_object_handle(&out[2]).raw() >= 20_001);
+    assert_eq!(
+        out[3],
+        RuntimeValue::I32(7),
+        "imported object-valued property-get should preserve VT_DISPATCH rebinding on Object targets"
+    );
+    assert_eq!(
+        out[4],
+        RuntimeValue::I32(7),
+        "imported object-valued property-get should preserve VT_UNKNOWN rebinding on Variant targets"
+    );
+}
+
+#[cfg(target_os = "windows")]
+#[test]
+fn early_bound_project_object_property_get_read_assignment_vm_jit_snapshots_match() {
+    let manifest = manifest_with_typelib(
+        r#"
+Attribute VB_Name = "MainModule"
+Public Sub Main()
+Dim obj As New OxVba.TestDispatch
+Dim child As Object
+Dim wrapped
+Dim childCount
+Dim wrappedCount
+Set child = obj.SelfDispatch
+wrapped = obj.SelfUnknown
+childCount = DispatchInvoke(child, "Count")
+wrappedCount = DispatchInvoke(wrapped, "Count")
+End Sub
+"#,
+    );
+
+    let vm = run_project_windows_hosted(&manifest, false);
+    let jit = run_project_windows_hosted(&manifest, true);
+    assert_eq!(
+        vm, jit,
+        "VM/JIT snapshots should match for imported object-valued property-get read-assignment syntax"
+    );
+}
+
+#[cfg(target_os = "windows")]
+#[test]
+fn early_bound_project_executes_imported_parenthesized_object_property_get_read_assignments() {
+    let manifest = manifest_with_typelib(
+        r#"
+Attribute VB_Name = "MainModule"
+Public Sub Main()
+Dim obj As New OxVba.TestDispatch
+Dim child As Object
+Dim wrapped
+Dim childCount
+Dim wrappedCount
+Set child = obj.SelfDispatch()
+Let wrapped = obj.SelfUnknown()
+childCount = DispatchInvoke(child, "Count")
+wrappedCount = DispatchInvoke(wrapped, "Count")
+End Sub
+"#,
+    );
+
+    let out = run_project_windows_hosted(&manifest, false);
+    assert!(expect_object_handle(&out[0]).raw() >= 20_001);
+    assert!(expect_object_handle(&out[1]).raw() >= 20_001);
+    assert!(expect_object_handle(&out[2]).raw() >= 20_001);
+    assert_eq!(
+        out[3],
+        RuntimeValue::I32(7),
+        "parenthesized imported object-valued property-get should preserve VT_DISPATCH rebinding on Object targets"
+    );
+    assert_eq!(
+        out[4],
+        RuntimeValue::I32(7),
+        "parenthesized imported object-valued property-get should preserve VT_UNKNOWN rebinding on Variant targets"
+    );
+}
+
+#[cfg(target_os = "windows")]
+#[test]
+fn early_bound_project_parenthesized_object_property_get_read_assignment_vm_jit_snapshots_match() {
+    let manifest = manifest_with_typelib(
+        r#"
+Attribute VB_Name = "MainModule"
+Public Sub Main()
+Dim obj As New OxVba.TestDispatch
+Dim child As Object
+Dim wrapped
+Dim childCount
+Dim wrappedCount
+Set child = obj.SelfDispatch()
+Let wrapped = obj.SelfUnknown()
+childCount = DispatchInvoke(child, "Count")
+wrappedCount = DispatchInvoke(wrapped, "Count")
+End Sub
+"#,
+    );
+
+    let vm = run_project_windows_hosted(&manifest, false);
+    let jit = run_project_windows_hosted(&manifest, true);
+    assert_eq!(
+        vm, jit,
+        "VM/JIT snapshots should match for parenthesized imported object-valued property-get read-assignment syntax"
+    );
+}
+
+#[cfg(target_os = "windows")]
+#[test]
 fn early_bound_project_executes_imported_object_result_member_calls() {
     let manifest = manifest_with_typelib(
         r#"
