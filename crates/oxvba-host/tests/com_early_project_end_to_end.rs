@@ -221,6 +221,111 @@ End Sub
 }
 
 #[test]
+fn early_bound_project_executes_imported_statement_context_subset() {
+    let manifest = manifest_with_typelib(
+        r#"
+Attribute VB_Name = "MainModule"
+Public Sub Main()
+Dim obj As New OxVba.TestDispatch
+Dim afterValue
+obj.Count()
+obj.Exists(42)
+obj.Lookup(42)
+obj.Value()
+obj(42)
+afterValue = 31
+End Sub
+"#,
+    );
+
+    let out = run_project_windows_hosted(&manifest, false);
+    assert!(expect_object_handle(&out[0]).raw() >= 20_001);
+    assert_eq!(
+        out[1],
+        RuntimeValue::I32(31),
+        "statement-context imported positional method/property/default-member invokes should execute without degrading the metadata-backed subset"
+    );
+}
+
+#[cfg(target_os = "windows")]
+#[test]
+fn early_bound_project_statement_context_subset_vm_jit_snapshots_match() {
+    let manifest = manifest_with_typelib(
+        r#"
+Attribute VB_Name = "MainModule"
+Public Sub Main()
+Dim obj As New OxVba.TestDispatch
+Dim afterValue
+obj.Count()
+obj.Exists(42)
+obj.Lookup(42)
+obj.Value()
+obj(42)
+afterValue = 31
+End Sub
+"#,
+    );
+
+    let vm = run_project_windows_hosted(&manifest, false);
+    let jit = run_project_windows_hosted(&manifest, true);
+    assert_eq!(
+        vm, jit,
+        "VM/JIT snapshots should match for imported statement-context positional member invokes"
+    );
+}
+
+#[cfg(target_os = "windows")]
+#[test]
+fn early_bound_project_executes_imported_named_argument_statement_context() {
+    let manifest = manifest_with_typelib(
+        r#"
+Attribute VB_Name = "MainModule"
+Public Sub Main()
+Dim obj As New OxVba.TestDispatch
+Dim afterValue
+obj.SumPair(rhs := 14, lhs := 3)
+obj.LookupPair(rhs := 9, lhs := 5)
+obj(value := 41)
+afterValue = 37
+End Sub
+"#,
+    );
+
+    let out = run_project_windows_hosted(&manifest, false);
+    assert!(expect_object_handle(&out[0]).raw() >= 20_001);
+    assert_eq!(
+        out[1],
+        RuntimeValue::I32(37),
+        "statement-context imported named-argument method/property/default-member invokes should execute without degrading metadata-backed canonicalization"
+    );
+}
+
+#[cfg(target_os = "windows")]
+#[test]
+fn early_bound_project_named_argument_statement_context_vm_jit_snapshots_match() {
+    let manifest = manifest_with_typelib(
+        r#"
+Attribute VB_Name = "MainModule"
+Public Sub Main()
+Dim obj As New OxVba.TestDispatch
+Dim afterValue
+obj.SumPair(rhs := 14, lhs := 3)
+obj.LookupPair(rhs := 9, lhs := 5)
+obj(value := 41)
+afterValue = 37
+End Sub
+"#,
+    );
+
+    let vm = run_project_windows_hosted(&manifest, false);
+    let jit = run_project_windows_hosted(&manifest, true);
+    assert_eq!(
+        vm, jit,
+        "VM/JIT snapshots should match for imported statement-context named-argument member invokes"
+    );
+}
+
+#[test]
 fn early_bound_project_reports_compile_error_for_unsupported_member_shape() {
     let manifest = manifest_with_typelib(
         r#"

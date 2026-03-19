@@ -1,3 +1,20 @@
+## 2026-03-19 - Add imported statement-context member evidence
+
+- Continued `IP-05B` on the broader imported syntax matrix by taking the bare statement-context row adjacent to the newly-proved `Call` row.
+- Added compiler rewrite evidence in [project.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-compiler\src\project.rs) proving bare statement-context imported member invocations now have direct coverage on the existing metadata-backed method/property-get/default-member path:
+  - positional:
+    - `obj.Count()`
+    - `obj.Exists(42)`
+    - `obj.Lookup(42)`
+    - `obj.Value()`
+    - `obj(42)`
+  - named-argument:
+    - `obj.SumPair(rhs := 14, lhs := 3)`
+    - `obj.LookupPair(rhs := 9, lhs := 5)`
+    - `obj(value := 41)`
+- Added Windows host end-to-end and VM/JIT parity evidence in [com_early_project_end_to_end.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-host\tests\com_early_project_end_to_end.rs) proving those imported statement-context forms execute without requiring explicit `Call`.
+- `IP-05` remains `in-progress`: richer typelib/member coverage, broader imported property/event/default-member parity beyond the controlled fixture, and wider Office/Excel object-model behavior are still open.
+
 ## 2026-03-19 - Add imported Call-statement member evidence
 
 - Continued `IP-05B` on the broader imported syntax matrix instead of widening the fixture surface again.
