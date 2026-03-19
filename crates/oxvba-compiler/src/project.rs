@@ -13842,6 +13842,151 @@ mod tests {
     }
 
     #[test]
+    fn compile_project_rejects_wrong_arity_for_external_default_member_parenthesized_call_statement()
+     {
+        let main_module = module_unit_from_source(
+            "MainModule",
+            ModuleKind::Procedural,
+            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim obj As OxVba.TestDispatch\nSet obj = CreateObject(4)\nCall obj()\nEnd Sub",
+        )
+        .expect("module parses");
+        let manifest = ProjectManifest {
+            project_name: "ProjectA".to_string(),
+            project_kind: ProjectKind::Source,
+            modules: vec![main_module],
+            references: vec![ProjectReference {
+                referenced_project_name: "OxVba".to_string(),
+                reference_kind: ReferenceKind::TypeLibrary,
+            }],
+            reference_projects: Vec::new(),
+            conditional_constants: BTreeMap::new(),
+        };
+        let err = compile_project(&manifest)
+            .expect_err("zero-arg parenthesized Call default-member arity should reject");
+        assert_eq!(err.code(), "BIND-E-TYPELIB-INVOKE-ARITY-UNSUPPORTED");
+    }
+
+    #[test]
+    fn compile_project_rejects_wrong_arity_for_external_default_member_parenthesized_statement() {
+        let main_module = module_unit_from_source(
+            "MainModule",
+            ModuleKind::Procedural,
+            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim obj As OxVba.TestDispatch\nSet obj = CreateObject(4)\nobj()\nEnd Sub",
+        )
+        .expect("module parses");
+        let manifest = ProjectManifest {
+            project_name: "ProjectA".to_string(),
+            project_kind: ProjectKind::Source,
+            modules: vec![main_module],
+            references: vec![ProjectReference {
+                referenced_project_name: "OxVba".to_string(),
+                reference_kind: ReferenceKind::TypeLibrary,
+            }],
+            reference_projects: Vec::new(),
+            conditional_constants: BTreeMap::new(),
+        };
+        let err = compile_project(&manifest)
+            .expect_err("zero-arg parenthesized statement default-member arity should reject");
+        assert_eq!(err.code(), "BIND-E-TYPELIB-INVOKE-ARITY-UNSUPPORTED");
+    }
+
+    #[test]
+    fn compile_project_rejects_missing_external_default_member_parenthesized_call_statement() {
+        let main_module = module_unit_from_source(
+            "MainModule",
+            ModuleKind::Procedural,
+            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim obj As OxVba.TestDispatchNoDefault\nSet obj = CreateObject(4)\nCall obj(41)\nEnd Sub",
+        )
+        .expect("module parses");
+        let manifest = ProjectManifest {
+            project_name: "ProjectA".to_string(),
+            project_kind: ProjectKind::Source,
+            modules: vec![main_module],
+            references: vec![ProjectReference {
+                referenced_project_name: "OxVba".to_string(),
+                reference_kind: ReferenceKind::TypeLibrary,
+            }],
+            reference_projects: Vec::new(),
+            conditional_constants: BTreeMap::new(),
+        };
+        let err = compile_project(&manifest)
+            .expect_err("missing parenthesized Call default member should reject");
+        assert_eq!(err.code(), "BIND-E-TYPELIB-MEMBER-NOT-FOUND");
+    }
+
+    #[test]
+    fn compile_project_rejects_missing_external_default_member_parenthesized_statement() {
+        let main_module = module_unit_from_source(
+            "MainModule",
+            ModuleKind::Procedural,
+            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim obj As OxVba.TestDispatchNoDefault\nSet obj = CreateObject(4)\nobj(41)\nEnd Sub",
+        )
+        .expect("module parses");
+        let manifest = ProjectManifest {
+            project_name: "ProjectA".to_string(),
+            project_kind: ProjectKind::Source,
+            modules: vec![main_module],
+            references: vec![ProjectReference {
+                referenced_project_name: "OxVba".to_string(),
+                reference_kind: ReferenceKind::TypeLibrary,
+            }],
+            reference_projects: Vec::new(),
+            conditional_constants: BTreeMap::new(),
+        };
+        let err = compile_project(&manifest)
+            .expect_err("missing parenthesized statement default member should reject");
+        assert_eq!(err.code(), "BIND-E-TYPELIB-MEMBER-NOT-FOUND");
+    }
+
+    #[test]
+    fn compile_project_rejects_ambiguous_external_default_member_parenthesized_call_statement() {
+        let main_module = module_unit_from_source(
+            "MainModule",
+            ModuleKind::Procedural,
+            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim obj As OxVba.TestDispatchAmbiguousDefault\nSet obj = CreateObject(4)\nCall obj(41)\nEnd Sub",
+        )
+        .expect("module parses");
+        let manifest = ProjectManifest {
+            project_name: "ProjectA".to_string(),
+            project_kind: ProjectKind::Source,
+            modules: vec![main_module],
+            references: vec![ProjectReference {
+                referenced_project_name: "OxVba".to_string(),
+                reference_kind: ReferenceKind::TypeLibrary,
+            }],
+            reference_projects: Vec::new(),
+            conditional_constants: BTreeMap::new(),
+        };
+        let err = compile_project(&manifest)
+            .expect_err("ambiguous parenthesized Call default member should reject");
+        assert_eq!(err.code(), "BIND-E-TYPELIB-MEMBER-AMBIGUOUS");
+    }
+
+    #[test]
+    fn compile_project_rejects_ambiguous_external_default_member_parenthesized_statement() {
+        let main_module = module_unit_from_source(
+            "MainModule",
+            ModuleKind::Procedural,
+            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim obj As OxVba.TestDispatchAmbiguousDefault\nSet obj = CreateObject(4)\nobj(41)\nEnd Sub",
+        )
+        .expect("module parses");
+        let manifest = ProjectManifest {
+            project_name: "ProjectA".to_string(),
+            project_kind: ProjectKind::Source,
+            modules: vec![main_module],
+            references: vec![ProjectReference {
+                referenced_project_name: "OxVba".to_string(),
+                reference_kind: ReferenceKind::TypeLibrary,
+            }],
+            reference_projects: Vec::new(),
+            conditional_constants: BTreeMap::new(),
+        };
+        let err = compile_project(&manifest)
+            .expect_err("ambiguous parenthesized statement default member should reject");
+        assert_eq!(err.code(), "BIND-E-TYPELIB-MEMBER-AMBIGUOUS");
+    }
+
+    #[test]
     fn compile_project_rejects_property_put_external_member_shape() {
         let main_module = module_unit_from_source(
             "MainModule",

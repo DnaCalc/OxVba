@@ -20,6 +20,16 @@
 - This closes the no-parentheses statement/`Call` diagnostic neighbors directly instead of assuming they match the already-landed assignment-form imported default-member diagnostics.
 - `IP-05` remains `in-progress`: richer typelib/member coverage, broader imported property/event/default-member parity beyond the controlled fixture, and wider Office/Excel object-model behavior are still open.
 
+## 2026-03-19 - Add imported parenthesized default-member diagnostic evidence
+
+- Continued `IP-05B` on the same controlled imported default-member matrix instead of jumping to wider typelib or event scope with nearby statement-form diagnostics still only implied.
+- Added compiler and host phased evidence proving:
+  - `Call obj()` and bare `obj()` reject on `BIND-E-TYPELIB-INVOKE-ARITY-UNSUPPORTED` when the authoritative imported default member requires one argument (`OxVba.TestDispatch`),
+  - `Call obj(41)` and bare `obj(41)` reject on `BIND-E-TYPELIB-MEMBER-NOT-FOUND` when the imported binding exposes no default member (`OxVba.TestDispatchNoDefault`),
+  - `Call obj(41)` and bare `obj(41)` reject on `BIND-E-TYPELIB-MEMBER-AMBIGUOUS` when imported default-member metadata resolves ambiguously (`OxVba.TestDispatchAmbiguousDefault`).
+- This closes the parenthesized statement/`Call` diagnostic neighbors directly instead of assuming they match the existing assignment-form and no-parentheses imported default-member diagnostics.
+- `IP-05` remains `in-progress`: richer typelib/member coverage, broader imported property/event/default-member parity beyond the controlled fixture, and wider Office/Excel object-model behavior are still open.
+
 ## 2026-03-19 - Add imported zero-arg method read-assignment evidence
 
 - Continued `IP-05B` by closing a direct imported call-vs-value hole on the already-supported metadata-backed subset instead of widening typelib or event scope.
