@@ -1,3 +1,10 @@
+## 2026-03-19 - Bound plain-project precedence on host-root COM return
+
+- Continued `IP-08A` by making the first host-root-to-imported COM lane explicit against the nearby same-name plain-project neighbor instead of leaving host/plain precedence implicit outside the `WithEvents` subset.
+- In [project.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-compiler\src\project.rs), added compiler evidence that a conflicting `PlainProject.Application` does not steal `HostProject.Application.Value` when the host root returns `CreateObject(4)` into `Dim obj As OxVba.TestDispatch`, and the imported `obj.Count()` rewrite still lowers through the host-root PMR path.
+- In [engine.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-host\src\engine.rs), added live runtime evidence that the same conflicting-name case still executes as the host-root COM-return lane with deterministic snapshot `[ObjectHandle(5004), I32(5005)]`.
+- This narrows one more real `IP-08A` identity gap: same-name plain-project references no longer remain unproved on the first imported host-root COM handoff, even though broader host object identity closure is still open.
+
 ## 2026-03-19 - Prove host-returned COM objects support imported default-member traffic
 
 - Continued `IP-08A` by widening the bounded host/COM coexistence floor from imported method and named-property traffic into imported authoritative default-member traffic on the same host-returned COM object.
