@@ -1,3 +1,14 @@
+## 2026-03-19 - Add host-injected child indexed scalar evidence
+
+- Continued `IP-08A` by widening the returned-child host object-model floor into indexed scalar traffic instead of leaving indexed routing outside the proved host-child subset.
+- In [project.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-compiler\src\project.rs), added direct compiler evidence that typed child locals produced by `Set child = Application.Value` now preserve named/default-member indexed lowering across both exposure modes for:
+  - read-assignment syntax such as `afterValue = child.Value(2)` and `afterValue = child(2)`
+  - explicit `Call` syntax such as `Call child.Value(2)` and `Call child(2)`
+  - bare statement-context syntax such as `child.Value(2)` and `child(2)`
+  - indexed `Property Let` syntax such as `child.Value(2) = 11` and `child(2) = 11`
+- In [engine.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-host\src\engine.rs), added matching host runtime evidence proving those indexed scalar forms execute against the same returned child handle and yield the expected snapshots `[1, 9]` for indexed getter/invoke lanes and `[1, 11]` for indexed setter lanes.
+- This raises the bounded `IP-08A` host object-model floor from plain plus parenthesized child scalar navigation to the same floor plus indexed scalar getter/invoke/write syntax; broader object-valued follow-on write/default-member breadth remains open.
+
 ## 2026-03-19 - Add host-injected child parenthesized getter evidence
 
 - Continued `IP-08A` by widening the returned-child host object-model floor into parenthesized zero-arg getter syntax instead of leaving that syntax implied by the non-parenthesized child rows.

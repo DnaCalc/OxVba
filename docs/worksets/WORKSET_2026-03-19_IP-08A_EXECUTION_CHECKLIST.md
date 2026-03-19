@@ -100,6 +100,8 @@ Already evidenced in the repo today:
   - `VB_GlobalNamespace` named object-valued host-root `Property Get` assignment into a typed child local followed by authoritative default-member traffic such as `Dim child As Child : Set child = Application.Value : afterValue = child`
   - `VB_PredeclaredId` typed child-local parenthesized zero-arg getter traffic after host-root object return for both named and authoritative default-member forms such as `afterValue = child.Value()` and `afterValue = child()`
   - `VB_GlobalNamespace` typed child-local parenthesized zero-arg getter traffic after host-root object return for both named and authoritative default-member forms such as `afterValue = child.Value()` and `afterValue = child()`
+  - `VB_PredeclaredId` typed child-local indexed getter traffic after host-root object return for both named and authoritative default-member forms such as `afterValue = child.Value(2)` and `afterValue = child(2)`
+  - `VB_GlobalNamespace` typed child-local indexed getter traffic after host-root object return for both named and authoritative default-member forms such as `afterValue = child.Value(2)` and `afterValue = child(2)`
 - the proved host-injected child-invoke floor currently covers:
   - `VB_PredeclaredId` typed child-local explicit `Call` traffic after host-root object return for both named and authoritative default-member zero-arg getter forms such as `Call child.Value` and `Call child`
   - `VB_PredeclaredId` typed child-local bare statement-context traffic after host-root object return for both named and authoritative default-member zero-arg getter forms such as `child.Value` and `child`
@@ -107,11 +109,15 @@ Already evidenced in the repo today:
   - `VB_GlobalNamespace` typed child-local bare statement-context traffic after host-root object return for both named and authoritative default-member zero-arg getter forms such as `child.Value` and `child`
   - `VB_PredeclaredId` typed child-local parenthesized explicit `Call` and bare statement-context traffic after host-root object return for both named and authoritative default-member zero-arg getter forms such as `Call child.Value()`, `Call child()`, `child.Value()`, and `child()`
   - `VB_GlobalNamespace` typed child-local parenthesized explicit `Call` and bare statement-context traffic after host-root object return for both named and authoritative default-member zero-arg getter forms such as `Call child.Value()`, `Call child()`, `child.Value()`, and `child()`
+  - `VB_PredeclaredId` typed child-local indexed explicit `Call` and bare statement-context traffic after host-root object return for both named and authoritative default-member forms such as `Call child.Value(2)`, `Call child(2)`, `child.Value(2)`, and `child(2)`
+  - `VB_GlobalNamespace` typed child-local indexed explicit `Call` and bare statement-context traffic after host-root object return for both named and authoritative default-member forms such as `Call child.Value(2)`, `Call child(2)`, `child.Value(2)`, and `child(2)`
 - the proved host-injected child-write floor currently covers:
   - `VB_PredeclaredId` typed child-local named `Property Let` and authoritative default-member `Property Let` traffic after host-root object return such as `child.Value = 9` and `child = 9`
   - `VB_GlobalNamespace` typed child-local named `Property Let` and authoritative default-member `Property Let` traffic after host-root object return such as `child.Value = 9` and `child = 9`
+  - `VB_PredeclaredId` typed child-local indexed `Property Let` and authoritative indexed default-member `Property Let` traffic after host-root object return such as `child.Value(2) = 11` and `child(2) = 11`
+  - `VB_GlobalNamespace` typed child-local indexed `Property Let` and authoritative indexed default-member `Property Let` traffic after host-root object return such as `child.Value(2) = 11` and `child(2) = 11`
 - plain project references do not gain this host-root behavior; they remain on the ordinary unresolved-name / implicit-variant path in the current language mode
-- broader follow-on member traffic on those returned host-root object handles is still open in the bounded subset; this checklist currently proves handle return plus named/default-member child read, parenthesized zero-arg getter syntax, zero-arg invoke, and scalar write navigation, not full child-object navigation parity
+- broader follow-on member traffic on those returned host-root object handles is still open in the bounded subset; this checklist currently proves handle return plus named/default-member child read, parenthesized zero-arg getter syntax, indexed scalar getter/invoke/write syntax, zero-arg invoke, and scalar write navigation, not full child-object navigation parity
 
 ## Remaining checklist by closure domain
 
@@ -125,7 +131,7 @@ Already evidenced in the repo today:
 
 ### B. Host project model
 
-- [ ] Make the host project object model executable beyond bounded implicit receiver reads, bounded object-handle return, and the current named/default-member child read/parenthesized/invoke/scalar-write navigation slice.
+- [ ] Make the host project object model executable beyond bounded implicit receiver reads, bounded object-handle return, and the current named/default-member child read/parenthesized/indexed/invoke/scalar-write navigation slice.
 - [ ] Prove project/object identity rules for host roots versus plain project references.
 - [ ] Prove the supported host project lifecycle and session ownership behavior.
 
