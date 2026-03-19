@@ -124,6 +124,7 @@ Already evidenced in the repo today:
 - plain project references do not gain this host-root behavior; they remain on the ordinary unresolved-name / implicit-variant path in the current language mode
 - host-looking names backed by `HostInjected` class modules that are present but not exposed through `VB_PredeclaredId=True` or `VB_GlobalNamespace=True` now fail deterministically across bounded read/write/`Call` forms with `PMR-E-HOST-ROOT-NOT-EXPOSED`
 - the proved host runtime-session floor now also covers per-runtime host-root state isolation across live event ingress for both exposure modes in the current named-property subset, so repeated callbacks mutate only the owning runtime session and fresh sessions restart from the host baseline
+- the proved host-backed callback floor now also covers live snapped source-handle routing on referenced `HostInjected` event sources, so `WithEvents` bindings remain keyed to the referenced host project/module identity and only the bound host-backed source handle routes the callback while sibling handles of the same referenced source type no-op deterministically
 - broader follow-on member traffic on those returned host-root object handles is still open in the bounded subset; this checklist currently proves handle return plus named/default-member child read, parenthesized zero-arg getter syntax, indexed scalar getter/invoke/write syntax, zero-arg invoke, scalar write navigation, and the current named/indexed `Property Set` navigation slice, not full host-foundation closure
 
 ## Remaining checklist by closure domain
@@ -144,8 +145,8 @@ Already evidenced in the repo today:
 
 ### C. Event/callback integration
 
-- [ ] Connect host object identity to the now-executable host event ingress path where the foundation requires it.
-- [ ] Prove the supported callback/event routing path against live host-backed objects rather than only synthetic project/runtime state.
+- [x] Connect host object identity to the now-executable host event ingress path where the foundation requires it.
+- [x] Prove the supported callback/event routing path against live host-backed objects rather than only synthetic project/runtime state.
 
 ### D. Handoff to `IP-08B`
 

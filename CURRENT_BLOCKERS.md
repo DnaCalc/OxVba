@@ -218,10 +218,10 @@ Run context: active parity/compliance execution plus in-progress feature worklis
   - plain project references still remain on the ordinary unresolved-name path and do not gain implicit host-root behavior,
   - host-looking names backed by `HostInjected` class modules that are present but not exposed through `VB_PredeclaredId=True` or `VB_GlobalNamespace=True` now fail deterministically with `PMR-E-HOST-ROOT-NOT-EXPOSED`,
   - supported live runtime sessions now also have direct executable evidence that host-injected root state remains isolated per runtime across event ingress for both exposure modes,
-  - broader host project/root/global exposure rules, host object identity, and host-backed callback routing are still missing from the executable host model.
+  - host-backed `WithEvents` routing now also has direct executable evidence on referenced `HostInjected` event sources, with event ingress routing only for the snapped bound source handle while sibling handles of the same referenced source type no-op deterministically,
+  - broader host project/root/global exposure rules and broader host object identity boundaries are still missing from the executable host model.
 - Exact unblock steps:
-  - make host project object identity explicit in executable behavior beyond the current per-runtime host-root state model,
-  - connect host-backed object identity to the live callback/event ingress path where the host foundation requires it,
+  - make host project object identity boundaries explicit across host roots, plain project references, and COM-backed host objects beyond the current bounded host-backed callback path,
   - continue through the checklist in [WORKSET_2026-03-19_IP-08A_EXECUTION_CHECKLIST.md](C:\Work\DnaCalc\OxVba\docs\worksets\WORKSET_2026-03-19_IP-08A_EXECUTION_CHECKLIST.md).
 - Recommendation:
   - keep `IP-08` focused on executable host substrate first, then widen parity breadth only after the foundation matrix is covered.

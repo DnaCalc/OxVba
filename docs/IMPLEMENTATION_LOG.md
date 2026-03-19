@@ -1,3 +1,10 @@
+## 2026-03-19 - Add live host-backed callback routing evidence
+
+- Continued `IP-08A` by proving that the live host-event ingress path is keyed to the snapped source handle of a host-backed object, not only to synthetic dispatch inputs.
+- In [project.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-compiler\src\project.rs), added compiler evidence that `WithEvents` bindings sourced from host-injected referenced class types retain the referenced host project/module identity in `event_dispatch_bindings` and still lower through the runtime `WithEvents` binding intrinsics.
+- In [engine.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-host\src\engine.rs), added host runtime evidence that a sink bound to one host-root-returned referenced emitter only receives event ingress for that snapped source handle while a sibling emitter handle from the same referenced host source type no-ops deterministically.
+- This removes missing live host-backed callback routing from the honest `IP-08A` frontier; the next remaining foundation gap is broader host object identity boundaries, not whether host-backed callbacks can route at all in the supported subset.
+
 ## 2026-03-19 - Add host-root comparison and runtime-session isolation evidence
 
 - Continued `IP-08A` by removing a real host-root read escape in class-procedure comparisons and by proving that live host-root state is owned by the runtime session that receives the callback.

@@ -15849,6 +15849,79 @@ mod tests {
     }
 
     #[test]
+    fn compile_project_tracks_host_injected_withevents_binding_on_referenced_source_type() {
+        let cases = [
+            ("predeclared", "Attribute VB_PredeclaredId = True"),
+            ("global namespace", "Attribute VB_GlobalNamespace = True"),
+        ];
+
+        for (label, exposure_attr) in cases {
+            let main_module = module_unit_from_source(
+                "MainModule",
+                ModuleKind::Procedural,
+                "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim bound As Object\nDim s As New Sink\nSet bound = Application.Value\nCall s.Attach(bound)\nEnd Sub",
+            )
+            .expect("main module parses");
+            let sink = module_unit_from_source(
+                "Sink",
+                ModuleKind::Class,
+                "Attribute VB_Name = \"Sink\"\nPrivate WithEvents em As Emitter\nPublic Sub Attach(ByVal e As Object)\nSet em = e\nEnd Sub\nPrivate Sub em_changed()\nEnd Sub",
+            )
+            .expect("sink module parses");
+            let host_application = module_unit_from_source(
+                "Application",
+                ModuleKind::Class,
+                format!(
+                    "Attribute VB_Name = \"Application\"\n{exposure_attr}\nPublic Property Get Value() As Object\nDim e As New Emitter\nSet Value = e\nEnd Property"
+                ),
+            )
+            .expect("host application parses");
+            let host_emitter = module_unit_from_source(
+                "Emitter",
+                ModuleKind::Class,
+                "Attribute VB_Name = \"Emitter\"\nPublic Event Changed()\n",
+            )
+            .expect("host emitter parses");
+            let manifest = ProjectManifest {
+                project_name: "ProjectA".to_string(),
+                project_kind: ProjectKind::Source,
+                modules: vec![main_module, sink],
+                references: vec![ProjectReference {
+                    referenced_project_name: "HostProject".to_string(),
+                    reference_kind: ReferenceKind::HostInjected,
+                }],
+                reference_projects: vec![ReferencedProjectManifest {
+                    project_name: "HostProject".to_string(),
+                    modules: vec![host_application, host_emitter],
+                }],
+                conditional_constants: BTreeMap::new(),
+            };
+            let compiled = compile_project(&manifest).unwrap_or_else(|err| {
+                panic!("{label} host-backed WithEvents binding should compile: {err}")
+            });
+            let lowered = compiled.rewritten_source.to_ascii_lowercase();
+            assert!(
+                lowered.contains("__oxvba_withevents_set(__oxvba_this_instance,"),
+                "{label}: expected runtime WithEvents binding setter, got: {lowered}"
+            );
+            assert_eq!(
+                compiled.event_dispatch_bindings,
+                vec![ProjectEventDispatchBinding {
+                    source_project_name: "hostproject".to_string(),
+                    source_module_name: "emitter".to_string(),
+                    event_name: "changed".to_string(),
+                    handler_symbol: "pmr_projecta_sink_em_changed".to_string(),
+                    guard_symbol_zero_arg: "pmr_evtguard_hostproject_emitter_changed_sink_em_a0"
+                        .to_string(),
+                    guard_symbol_one_arg: "pmr_evtguard_hostproject_emitter_changed_sink_em_a1"
+                        .to_string(),
+                }],
+                "{label}: unexpected host-backed event binding metadata"
+            );
+        }
+    }
+
+    #[test]
     fn compile_project_rewrites_host_injected_predeclared_default_member_receiver() {
         let main_module = module_unit_from_source(
             "MainModule",
