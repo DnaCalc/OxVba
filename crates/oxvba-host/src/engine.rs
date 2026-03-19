@@ -4500,6 +4500,69 @@ mod tests {
     }
 
     #[test]
+    fn formal_host_project_root_returned_com_object_supports_imported_default_member_call() {
+        let engine = Engine::new(HostConfig::default());
+        let cases = [
+            ("predeclared", "Attribute VB_PredeclaredId = True"),
+            ("global namespace", "Attribute VB_GlobalNamespace = True"),
+        ];
+
+        for (label, exposure_attr) in cases {
+            let main_module = module_unit_from_source(
+                "MainModule",
+                ModuleKind::Procedural,
+                "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim obj As OxVba.TestDispatch\nDim echoValue\nSet obj = Application.Value\nechoValue = obj(41)\nEnd Sub",
+            )
+            .expect("main module should parse");
+            let host_application = module_unit_from_source(
+                "Application",
+                ModuleKind::Class,
+                format!(
+                    "Attribute VB_Name = \"Application\"\n{exposure_attr}\nPublic Property Get Value() As Object\nSet Value = CreateObject(4)\nEnd Property"
+                ),
+            )
+            .expect("host application module should parse");
+            let manifest = ProjectManifest {
+                project_name: "ProjectA".to_string(),
+                project_kind: ProjectKind::Source,
+                modules: vec![main_module],
+                references: vec![
+                    ProjectReference {
+                        referenced_project_name: "HostProject".to_string(),
+                        reference_kind: ReferenceKind::HostInjected,
+                    },
+                    ProjectReference {
+                        referenced_project_name: "OxVba".to_string(),
+                        reference_kind: ReferenceKind::TypeLibrary,
+                    },
+                ],
+                reference_projects: vec![ReferencedProjectManifest {
+                    project_name: "HostProject".to_string(),
+                    modules: vec![host_application],
+                }],
+                conditional_constants: std::collections::BTreeMap::new(),
+            };
+
+            let snapshot = engine
+                .execute_project_with_value_snapshot_phased(&manifest)
+                .unwrap_or_else(|err| {
+                    panic!(
+                        "{label} host root should support imported default-member traffic on the returned COM object: {err}"
+                    )
+                });
+            match snapshot.as_slice() {
+                [
+                    RuntimeValue::ObjectHandle(handle),
+                    RuntimeValue::I32(result),
+                ] if handle.raw() == 5_004 && *result == 5_061 => {}
+                other => panic!(
+                    "{label}: expected COM-backed object handle 5004 and shared-model imported default-member result 5061 on the returned COM object, got: {other:?}"
+                ),
+            }
+        }
+    }
+
+    #[test]
     fn formal_runtime_procedure_call_expression_in_condition_executes() {
         let engine = Engine::new(HostConfig::default());
         let source = "Function GetValue()\nGetValue = 4\nEnd Function\nSub Main()\nIf GetValue() = 4 Then\nError 104\nElse\nError 101\nEnd If\nEnd Sub";

@@ -1,3 +1,10 @@
+## 2026-03-19 - Prove host-returned COM objects support imported default-member traffic
+
+- Continued `IP-08A` by widening the bounded host/COM coexistence floor from imported method and named-property traffic into imported authoritative default-member traffic on the same host-returned COM object.
+- In [project.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-compiler\src\project.rs), added compiler evidence that a host-injected `Application.Value` getter may return `CreateObject(4)` into a typed imported receiver and then lower `echoValue = obj(41)` through the imported authoritative default-member member path.
+- In [engine.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-host\src\engine.rs), added live runtime evidence that the same lane executes on the bounded shared object/value model with deterministic snapshot `[ObjectHandle(5004), I32(5061)]`.
+- This raises the honest `IP-08A` host/COM coexistence floor from bounded imported method/property traffic to the same floor plus imported default-member call traffic on host-returned COM objects; broader imported breadth and host object identity closure remain open.
+
 ## 2026-03-19 - Prove host-returned COM objects support imported property traffic
 
 - Continued `IP-08A` by widening the bounded host/COM coexistence floor beyond one imported method call into imported setter/getter property traffic on the same host-returned COM object.

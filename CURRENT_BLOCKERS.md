@@ -224,6 +224,7 @@ Run context: active parity/compliance execution plus in-progress feature worklis
   - host-injected root getters now also have direct executable evidence that they may return a COM-backed object and feed that returned object through bounded `DispatchInvoke` on the shared object/value model,
   - the same bounded host/COM coexistence floor now also has direct executable evidence that a host-injected root getter may return a COM-backed object into a typed imported early-bound receiver and execute metadata-backed `Count()` traffic on that returned object,
   - the same bounded host/COM coexistence floor now also has direct executable evidence for imported `PropertyPut` plus zero-arg `PropertyGet` traffic on the same host-returned COM-backed object under the shared object/value model,
+  - the same bounded host/COM coexistence floor now also has direct executable evidence for imported authoritative default-member call traffic on the same host-returned COM-backed object under the shared object/value model,
   - broader host project/root/global exposure rules and broader host object identity boundaries are still missing from the executable host model.
 - Exact unblock steps:
   - make the remaining host project object identity boundaries explicit across host roots and COM-backed host objects beyond the now-proved non-routing, raw-dispatch, and bounded imported member/property coexistence paths,
