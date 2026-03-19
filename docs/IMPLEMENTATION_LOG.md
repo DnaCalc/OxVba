@@ -38,6 +38,14 @@
 - This does not widen imported COM event support yet; it only makes the current boundary explicit while true imported `WithEvents` subscription/callback lowering remains downstream work.
 - `IP-05` remains `in-progress`: richer typelib/member coverage, broader imported property/event/default-member parity beyond the controlled fixture, and wider Office/Excel object-model behavior are still open.
 
+## 2026-03-19 - Extend imported WithEvents diagnostic coverage to unqualified type names
+
+- Continued the same `IP-05B`/`IP-07` honesty boundary instead of widening into true imported COM event support.
+- In [project.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-compiler\src\project.rs), moved the imported `WithEvents` rejection to run after native/reference-project source resolution and widened imported-type detection so bounded unqualified imported names from referenced typelibs also reject deterministically.
+- Added compiler and host phased evidence for `Private WithEvents src As TestEventServer` when `OxVba` is referenced as a typelib, proving unqualified imported event-source declarations no longer compile as silent plain-object declarations.
+- Added compiler evidence that a local class module named `TestEventServer` still wins over the imported typelib name, so the new guard does not break the native `WithEvents` path when local source resolution is available.
+- `IP-05` remains `in-progress`: this only closes another diagnostic hole on the imported event boundary; true imported COM `WithEvents` subscription/callback lowering, richer typelib/member coverage, and wider Office/Excel object-model behavior are still open.
+
 ## 2026-03-19 - Add imported zero-arg method read-assignment evidence
 
 - Continued `IP-05B` by closing a direct imported call-vs-value hole on the already-supported metadata-backed subset instead of widening typelib or event scope.

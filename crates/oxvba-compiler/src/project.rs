@@ -1603,11 +1603,6 @@ fn expand_bound_source_line(
     }
 
     if let Some((withevents_var, source_type)) = parse_withevents_declaration_binding(line) {
-        if is_typelib_qualified_type_reference(manifest, &source_type) {
-            return Err(ProjectCompileError::TypeLibraryWithEventsUnsupported {
-                type_name: source_type,
-            });
-        }
         if let Some((target_project, target_module)) =
             resolve_event_source_module(manifest, current_project, &source_type, reference_order)
         {
@@ -1623,6 +1618,11 @@ fn expand_bound_source_line(
             );
             withevents_bindings.insert(normalize_identifier(&withevents_var));
             return Ok(vec![format!("{leading_ws}Public {withevents_var}")]);
+        }
+        if is_referenced_typelib_type_reference(manifest, &source_type) {
+            return Err(ProjectCompileError::TypeLibraryWithEventsUnsupported {
+                type_name: source_type,
+            });
         }
     }
 
@@ -1747,6 +1747,24 @@ fn is_typelib_qualified_type_reference(manifest: &ProjectManifest, type_text: &s
         reference.reference_kind == ReferenceKind::TypeLibrary
             && normalize_identifier(&reference.referenced_project_name)
                 == normalize_identifier(qualifier)
+    })
+}
+
+fn is_referenced_typelib_type_reference(manifest: &ProjectManifest, type_text: &str) -> bool {
+    if is_typelib_qualified_type_reference(manifest, type_text) {
+        return true;
+    }
+    let raw = type_text.trim();
+    if !is_valid_vba_identifier(raw) {
+        return false;
+    }
+    manifest.references.iter().any(|reference| {
+        reference.reference_kind == ReferenceKind::TypeLibrary
+            && known_typelib_identity_for_prog_id_name(&format!(
+                "{}.{}",
+                reference.referenced_project_name, raw
+            ))
+            .is_some()
     })
 }
 
@@ -6121,6 +6139,71 @@ mod tests {
         let err = compile_project(&manifest)
             .expect_err("imported WithEvents source should reject deterministically");
         assert_eq!(err.code(), "BIND-E-TYPELIB-WITHEVENTS-UNSUPPORTED");
+    }
+
+    #[test]
+    fn compile_project_rejects_unqualified_imported_withevents_source_in_class_module() {
+        let class_module = module_unit_from_source(
+            "Sink",
+            ModuleKind::Class,
+            "Attribute VB_Name = \"Sink\"\nPrivate WithEvents src As TestEventServer\nPublic Sub Attach()\nEnd Sub",
+        )
+        .expect("module parses");
+        let main_module = module_unit_from_source(
+            "MainModule",
+            ModuleKind::Procedural,
+            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nEnd Sub",
+        )
+        .expect("module parses");
+        let manifest = ProjectManifest {
+            project_name: "ProjectA".to_string(),
+            project_kind: ProjectKind::Source,
+            modules: vec![main_module, class_module],
+            references: vec![ProjectReference {
+                referenced_project_name: "OxVba".to_string(),
+                reference_kind: ReferenceKind::TypeLibrary,
+            }],
+            reference_projects: Vec::new(),
+            conditional_constants: BTreeMap::new(),
+        };
+        let err = compile_project(&manifest)
+            .expect_err("unqualified imported WithEvents source should reject deterministically");
+        assert_eq!(err.code(), "BIND-E-TYPELIB-WITHEVENTS-UNSUPPORTED");
+    }
+
+    #[test]
+    fn compile_project_prefers_native_withevents_source_over_imported_type_name_match() {
+        let source_module = module_unit_from_source(
+            "TestEventServer",
+            ModuleKind::Class,
+            "Attribute VB_Name = \"TestEventServer\"\nPublic Event Changed()\n",
+        )
+        .expect("source module parses");
+        let sink_module = module_unit_from_source(
+            "Sink",
+            ModuleKind::Class,
+            "Attribute VB_Name = \"Sink\"\nPrivate WithEvents src As TestEventServer\nPublic Sub Attach(ByVal value As TestEventServer)\nSet src = value\nEnd Sub\nPublic Sub src_Changed()\nEnd Sub",
+        )
+        .expect("sink module parses");
+        let main_module = module_unit_from_source(
+            "MainModule",
+            ModuleKind::Procedural,
+            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nEnd Sub",
+        )
+        .expect("module parses");
+        let manifest = ProjectManifest {
+            project_name: "ProjectA".to_string(),
+            project_kind: ProjectKind::Source,
+            modules: vec![main_module, sink_module, source_module],
+            references: vec![ProjectReference {
+                referenced_project_name: "OxVba".to_string(),
+                reference_kind: ReferenceKind::TypeLibrary,
+            }],
+            reference_projects: Vec::new(),
+            conditional_constants: BTreeMap::new(),
+        };
+        compile_project(&manifest)
+            .expect("native WithEvents source should win over imported type-name match");
     }
 
     #[test]

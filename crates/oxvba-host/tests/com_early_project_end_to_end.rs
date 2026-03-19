@@ -1893,6 +1893,57 @@ End Sub
 }
 
 #[test]
+fn early_bound_project_reports_compile_error_for_unqualified_imported_withevents_source() {
+    let class_module = module_unit_from_source(
+        "Sink",
+        ModuleKind::Class,
+        r#"
+Attribute VB_Name = "Sink"
+Private WithEvents src As TestEventServer
+Public Sub Attach()
+End Sub
+"#,
+    )
+    .expect("class module should parse");
+    let main_module = module_unit_from_source(
+        "MainModule",
+        ModuleKind::Procedural,
+        r#"
+Attribute VB_Name = "MainModule"
+Public Sub Main()
+End Sub
+"#,
+    )
+    .expect("main module should parse");
+    let manifest = ProjectManifest {
+        project_name: "ProjectA".to_string(),
+        project_kind: ProjectKind::Source,
+        modules: vec![main_module, class_module],
+        references: vec![ProjectReference {
+            referenced_project_name: "OxVba".to_string(),
+            reference_kind: ReferenceKind::TypeLibrary,
+        }],
+        reference_projects: Vec::new(),
+        conditional_constants: std::collections::BTreeMap::new(),
+    };
+
+    let engine = Engine::new(HostConfig {
+        enable_jit: false,
+        root_object_name: None,
+    });
+    let err = engine
+        .execute_project_with_snapshot_phased(&manifest)
+        .expect_err("unqualified imported WithEvents source should fail at compile-time");
+    assert_eq!(err.phase(), DiagnosticPhase::CompileTime);
+    assert!(
+        err.message()
+            .contains("BIND-E-TYPELIB-WITHEVENTS-UNSUPPORTED"),
+        "unexpected compile diagnostic: {}",
+        err.message()
+    );
+}
+
+#[test]
 fn early_bound_project_reports_compile_error_for_missing_default_member() {
     let manifest = manifest_with_typelib(
         r#"
