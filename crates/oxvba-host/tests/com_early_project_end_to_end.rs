@@ -431,14 +431,22 @@ fn early_bound_project_executes_imported_object_property_get_read_assignments() 
 Attribute VB_Name = "MainModule"
 Public Sub Main()
 Dim obj As New OxVba.TestDispatch
-Dim child As Object
-Dim wrapped
-Dim childCount
-Dim wrappedCount
-Set child = obj.SelfDispatch
-wrapped = obj.SelfUnknown
-childCount = DispatchInvoke(child, "Count")
-wrappedCount = DispatchInvoke(wrapped, "Count")
+Dim childDispatch As Object
+Dim childUnknown As Object
+Dim wrappedDispatch
+Dim wrappedUnknown
+Dim childDispatchCount
+Dim childUnknownCount
+Dim wrappedDispatchCount
+Dim wrappedUnknownCount
+Set childDispatch = obj.SelfDispatch
+Set childUnknown = obj.SelfUnknown
+wrappedDispatch = obj.SelfDispatch
+Let wrappedUnknown = obj.SelfUnknown
+childDispatchCount = DispatchInvoke(childDispatch, "Count")
+childUnknownCount = DispatchInvoke(childUnknown, "Count")
+wrappedDispatchCount = DispatchInvoke(wrappedDispatch, "Count")
+wrappedUnknownCount = DispatchInvoke(wrappedUnknown, "Count")
 End Sub
 "#,
     );
@@ -447,15 +455,27 @@ End Sub
     assert!(expect_object_handle(&out[0]).raw() >= 20_001);
     assert!(expect_object_handle(&out[1]).raw() >= 20_001);
     assert!(expect_object_handle(&out[2]).raw() >= 20_001);
+    assert!(expect_object_handle(&out[3]).raw() >= 20_001);
+    assert!(expect_object_handle(&out[4]).raw() >= 20_001);
     assert_eq!(
-        out[3],
+        out[5],
         RuntimeValue::I32(7),
-        "imported object-valued property-get should preserve VT_DISPATCH rebinding on Object targets"
+        "direct imported object-valued property-get should preserve VT_DISPATCH rebinding on Object targets"
     );
     assert_eq!(
-        out[4],
+        out[6],
         RuntimeValue::I32(7),
-        "imported object-valued property-get should preserve VT_UNKNOWN rebinding on Variant targets"
+        "direct imported object-valued property-get should preserve VT_UNKNOWN rebinding on Object targets"
+    );
+    assert_eq!(
+        out[7],
+        RuntimeValue::I32(7),
+        "direct imported object-valued property-get should preserve VT_DISPATCH rebinding on Variant targets"
+    );
+    assert_eq!(
+        out[8],
+        RuntimeValue::I32(7),
+        "direct imported object-valued property-get should preserve VT_UNKNOWN rebinding on explicit-Let Variant targets"
     );
 }
 
@@ -467,14 +487,22 @@ fn early_bound_project_object_property_get_read_assignment_vm_jit_snapshots_matc
 Attribute VB_Name = "MainModule"
 Public Sub Main()
 Dim obj As New OxVba.TestDispatch
-Dim child As Object
-Dim wrapped
-Dim childCount
-Dim wrappedCount
-Set child = obj.SelfDispatch
-wrapped = obj.SelfUnknown
-childCount = DispatchInvoke(child, "Count")
-wrappedCount = DispatchInvoke(wrapped, "Count")
+Dim childDispatch As Object
+Dim childUnknown As Object
+Dim wrappedDispatch
+Dim wrappedUnknown
+Dim childDispatchCount
+Dim childUnknownCount
+Dim wrappedDispatchCount
+Dim wrappedUnknownCount
+Set childDispatch = obj.SelfDispatch
+Set childUnknown = obj.SelfUnknown
+wrappedDispatch = obj.SelfDispatch
+Let wrappedUnknown = obj.SelfUnknown
+childDispatchCount = DispatchInvoke(childDispatch, "Count")
+childUnknownCount = DispatchInvoke(childUnknown, "Count")
+wrappedDispatchCount = DispatchInvoke(wrappedDispatch, "Count")
+wrappedUnknownCount = DispatchInvoke(wrappedUnknown, "Count")
 End Sub
 "#,
     );
@@ -495,14 +523,22 @@ fn early_bound_project_executes_imported_parenthesized_object_property_get_read_
 Attribute VB_Name = "MainModule"
 Public Sub Main()
 Dim obj As New OxVba.TestDispatch
-Dim child As Object
-Dim wrapped
-Dim childCount
-Dim wrappedCount
-Set child = obj.SelfDispatch()
-Let wrapped = obj.SelfUnknown()
-childCount = DispatchInvoke(child, "Count")
-wrappedCount = DispatchInvoke(wrapped, "Count")
+Dim childDispatch As Object
+Dim childUnknown As Object
+Dim wrappedDispatch
+Dim wrappedUnknown
+Dim childDispatchCount
+Dim childUnknownCount
+Dim wrappedDispatchCount
+Dim wrappedUnknownCount
+Set childDispatch = obj.SelfDispatch()
+Set childUnknown = obj.SelfUnknown()
+wrappedDispatch = obj.SelfDispatch()
+Let wrappedUnknown = obj.SelfUnknown()
+childDispatchCount = DispatchInvoke(childDispatch, "Count")
+childUnknownCount = DispatchInvoke(childUnknown, "Count")
+wrappedDispatchCount = DispatchInvoke(wrappedDispatch, "Count")
+wrappedUnknownCount = DispatchInvoke(wrappedUnknown, "Count")
 End Sub
 "#,
     );
@@ -511,15 +547,27 @@ End Sub
     assert!(expect_object_handle(&out[0]).raw() >= 20_001);
     assert!(expect_object_handle(&out[1]).raw() >= 20_001);
     assert!(expect_object_handle(&out[2]).raw() >= 20_001);
+    assert!(expect_object_handle(&out[3]).raw() >= 20_001);
+    assert!(expect_object_handle(&out[4]).raw() >= 20_001);
     assert_eq!(
-        out[3],
+        out[5],
         RuntimeValue::I32(7),
         "parenthesized imported object-valued property-get should preserve VT_DISPATCH rebinding on Object targets"
     );
     assert_eq!(
-        out[4],
+        out[6],
         RuntimeValue::I32(7),
-        "parenthesized imported object-valued property-get should preserve VT_UNKNOWN rebinding on Variant targets"
+        "parenthesized imported object-valued property-get should preserve VT_UNKNOWN rebinding on Object targets"
+    );
+    assert_eq!(
+        out[7],
+        RuntimeValue::I32(7),
+        "parenthesized imported object-valued property-get should preserve VT_DISPATCH rebinding on Variant targets"
+    );
+    assert_eq!(
+        out[8],
+        RuntimeValue::I32(7),
+        "parenthesized imported object-valued property-get should preserve VT_UNKNOWN rebinding on explicit-Let Variant targets"
     );
 }
 
@@ -531,14 +579,22 @@ fn early_bound_project_parenthesized_object_property_get_read_assignment_vm_jit_
 Attribute VB_Name = "MainModule"
 Public Sub Main()
 Dim obj As New OxVba.TestDispatch
-Dim child As Object
-Dim wrapped
-Dim childCount
-Dim wrappedCount
-Set child = obj.SelfDispatch()
-Let wrapped = obj.SelfUnknown()
-childCount = DispatchInvoke(child, "Count")
-wrappedCount = DispatchInvoke(wrapped, "Count")
+Dim childDispatch As Object
+Dim childUnknown As Object
+Dim wrappedDispatch
+Dim wrappedUnknown
+Dim childDispatchCount
+Dim childUnknownCount
+Dim wrappedDispatchCount
+Dim wrappedUnknownCount
+Set childDispatch = obj.SelfDispatch()
+Set childUnknown = obj.SelfUnknown()
+wrappedDispatch = obj.SelfDispatch()
+Let wrappedUnknown = obj.SelfUnknown()
+childDispatchCount = DispatchInvoke(childDispatch, "Count")
+childUnknownCount = DispatchInvoke(childUnknown, "Count")
+wrappedDispatchCount = DispatchInvoke(wrappedDispatch, "Count")
+wrappedUnknownCount = DispatchInvoke(wrappedUnknown, "Count")
 End Sub
 "#,
     );

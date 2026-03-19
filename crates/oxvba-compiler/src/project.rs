@@ -12771,7 +12771,7 @@ mod tests {
         let main_module = module_unit_from_source(
             "MainModule",
             ModuleKind::Procedural,
-            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim obj As OxVba.TestDispatch\nDim child As Object\nDim wrapped\nSet obj = CreateObject(4)\nSet child = obj.SelfDispatch\nwrapped = obj.SelfUnknown\nEnd Sub",
+            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim obj As OxVba.TestDispatch\nDim childDispatch As Object\nDim childUnknown As Object\nDim wrappedDispatch\nDim wrappedUnknown\nSet obj = CreateObject(4)\nSet childDispatch = obj.SelfDispatch\nSet childUnknown = obj.SelfUnknown\nwrappedDispatch = obj.SelfDispatch\nLet wrappedUnknown = obj.SelfUnknown\nEnd Sub",
         )
         .expect("module parses");
         let manifest = ProjectManifest {
@@ -12788,8 +12788,10 @@ mod tests {
         let compiled = compile_project(&manifest)
             .expect("object-valued imported property-get read-assignment should compile");
         let lowered = compiled.rewritten_source.to_ascii_lowercase();
-        assert!(lowered.contains("set child = dispatchinvoke(obj, 23)"));
-        assert!(lowered.contains("wrapped = dispatchinvoke(obj, 24)"));
+        assert!(lowered.contains("set childdispatch = dispatchinvoke(obj, 23)"));
+        assert!(lowered.contains("set childunknown = dispatchinvoke(obj, 24)"));
+        assert!(lowered.contains("wrappeddispatch = dispatchinvoke(obj, 23)"));
+        assert!(lowered.contains("let wrappedunknown = dispatchinvoke(obj, 24)"));
     }
 
     #[test]
@@ -12798,7 +12800,7 @@ mod tests {
         let main_module = module_unit_from_source(
             "MainModule",
             ModuleKind::Procedural,
-            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim obj As OxVba.TestDispatch\nDim child As Object\nDim wrapped\nSet obj = CreateObject(4)\nSet child = obj.SelfDispatch()\nLet wrapped = obj.SelfUnknown()\nEnd Sub",
+            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim obj As OxVba.TestDispatch\nDim childDispatch As Object\nDim childUnknown As Object\nDim wrappedDispatch\nDim wrappedUnknown\nSet obj = CreateObject(4)\nSet childDispatch = obj.SelfDispatch()\nSet childUnknown = obj.SelfUnknown()\nwrappedDispatch = obj.SelfDispatch()\nLet wrappedUnknown = obj.SelfUnknown()\nEnd Sub",
         )
         .expect("module parses");
         let manifest = ProjectManifest {
@@ -12816,8 +12818,10 @@ mod tests {
             "parenthesized object-valued imported property-get read-assignment should compile",
         );
         let lowered = compiled.rewritten_source.to_ascii_lowercase();
-        assert!(lowered.contains("set child = dispatchinvoke(obj, 23)"));
-        assert!(lowered.contains("let wrapped = dispatchinvoke(obj, 24)"));
+        assert!(lowered.contains("set childdispatch = dispatchinvoke(obj, 23)"));
+        assert!(lowered.contains("set childunknown = dispatchinvoke(obj, 24)"));
+        assert!(lowered.contains("wrappeddispatch = dispatchinvoke(obj, 23)"));
+        assert!(lowered.contains("let wrappedunknown = dispatchinvoke(obj, 24)"));
     }
 
     #[test]
