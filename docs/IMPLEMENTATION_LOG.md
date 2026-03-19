@@ -1,3 +1,11 @@
+## 2026-03-19 - Bound imported procedure-signature declarations
+
+- Continued `IP-05B` by closing another silent imported declaration hole instead of widening imported event or Office-object-model semantics prematurely.
+- In [project.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-compiler\src\project.rs), added a pre-lowering validator for procedure signatures so imported typelib object types now reject deterministically in both parameter and return positions on `BIND-E-TYPELIB-PROCEDURE-SIGNATURE-UNSUPPORTED`.
+- Added compiler and host phased evidence for both qualified and bounded unqualified imported signature types, and added a native-shadow proof showing local class-module types still win when they share the same name as an imported typelib class.
+- This keeps the imported declaration floor honest: procedure-local imported object variables remain the supported declaration entry point, while imported typed public API signatures remain explicitly outside the current deterministic subset.
+- `IP-05` remains `in-progress`: richer typelib/member coverage, broader imported property/event/default-member parity beyond the controlled fixture, and wider Office/Excel object-model behavior are still open.
+
 ## 2026-03-19 - Add imported zero-arg method statement exception evidence
 
 - Continued `IP-05B` by turning the imported zero-arg statement-form method rows into observable execution evidence instead of leaving them protected only by successful-compilation proofs.

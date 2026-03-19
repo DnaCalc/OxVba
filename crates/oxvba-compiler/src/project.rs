@@ -297,6 +297,10 @@ pub enum ProjectCompileError {
     )]
     TypeLibraryModuleDeclarationUnsupported { type_name: String },
     #[error(
+        "BIND-E-TYPELIB-PROCEDURE-SIGNATURE-UNSUPPORTED: procedure-signature external type `{type_name}` is outside the current deterministic early-bind declaration subset"
+    )]
+    TypeLibraryProcedureSignatureUnsupported { type_name: String },
+    #[error(
         "BIND-E-TYPELIB-UNQUALIFIED-TYPE-UNSUPPORTED: external type `{type_name}` requires explicit typelib qualification in the current deterministic early-bind subset"
     )]
     TypeLibraryUnqualifiedTypeUnsupported { type_name: String },
@@ -374,6 +378,9 @@ impl ProjectCompileError {
             }
             Self::TypeLibraryModuleDeclarationUnsupported { .. } => {
                 "BIND-E-TYPELIB-MODULE-DECL-UNSUPPORTED"
+            }
+            Self::TypeLibraryProcedureSignatureUnsupported { .. } => {
+                "BIND-E-TYPELIB-PROCEDURE-SIGNATURE-UNSUPPORTED"
             }
             Self::TypeLibraryUnqualifiedTypeUnsupported { .. } => {
                 "BIND-E-TYPELIB-UNQUALIFIED-TYPE-UNSUPPORTED"
@@ -489,6 +496,7 @@ fn compile_project_with_strategy(
     let active_project = normalize_identifier(&manifest.project_name);
     validate_event_semantics(manifest, &procedure_index, &reference_order)?;
     validate_imported_module_scope_declarations(manifest, &reference_order)?;
+    validate_imported_procedure_signatures(manifest, &reference_order)?;
     let event_dispatch_plan =
         collect_event_dispatch_plan(manifest, &procedure_index, &reference_order);
 
@@ -921,6 +929,35 @@ fn validate_imported_module_scope_declarations(
                 if is_referenced_typelib_type_reference(manifest, &type_name) {
                     return Err(
                         ProjectCompileError::TypeLibraryModuleDeclarationUnsupported { type_name },
+                    );
+                }
+            }
+        }
+    }
+
+    Ok(())
+}
+
+fn validate_imported_procedure_signatures(
+    manifest: &ProjectManifest,
+    reference_order: &BTreeMap<String, usize>,
+) -> Result<(), ProjectCompileError> {
+    for (project_name, module) in iter_all_modules(manifest, reference_order) {
+        let project_key = normalize_identifier(project_name);
+        for line in module.source.lines() {
+            let normalized = normalize_visibility_prefixed_procedure_signature(line);
+            if parse_procedure_signature_line(&normalized).is_none() {
+                continue;
+            }
+            for type_name in parse_procedure_signature_type_references(&normalized) {
+                if resolve_interface_module(manifest, &project_key, &type_name, reference_order)
+                    .is_some()
+                {
+                    continue;
+                }
+                if is_referenced_typelib_type_reference(manifest, &type_name) {
+                    return Err(
+                        ProjectCompileError::TypeLibraryProcedureSignatureUnsupported { type_name },
                     );
                 }
             }
@@ -3628,6 +3665,94 @@ fn parse_module_scope_typed_declaration_types(line: &str) -> Vec<String> {
             Some(token.to_string())
         })
         .collect()
+}
+
+fn parse_procedure_signature_type_references(line: &str) -> Vec<String> {
+    let trimmed = line.trim();
+    if trimmed.is_empty() {
+        return Vec::new();
+    }
+    let lower = trimmed.to_ascii_lowercase();
+    let tail = if lower.starts_with("public ") {
+        trimmed[7..].trim()
+    } else if lower.starts_with("private ") {
+        trimmed[8..].trim()
+    } else {
+        trimmed
+    };
+    let lower_tail = tail.to_ascii_lowercase();
+    let remainder = if lower_tail.starts_with("sub ") {
+        tail[4..].trim()
+    } else if lower_tail.starts_with("function ") {
+        tail[9..].trim()
+    } else if lower_tail.starts_with("property get ")
+        || lower_tail.starts_with("property let ")
+        || lower_tail.starts_with("property set ")
+    {
+        tail[13..].trim()
+    } else {
+        return Vec::new();
+    };
+
+    let mut out = Vec::new();
+    if let Some(open_idx) = remainder.find('(') {
+        let Some(close_idx) = find_matching_paren(remainder, open_idx) else {
+            return Vec::new();
+        };
+        let payload = remainder[open_idx + 1..close_idx].trim();
+        if let Ok(params) = split_top_level_args(payload) {
+            for param in params {
+                if let Some((_, rhs)) = split_keyword_ascii_ci(param.trim(), " as ")
+                    && let Some(type_name) = extract_signature_type_name(rhs)
+                {
+                    out.push(type_name);
+                }
+            }
+        }
+        if let Some(type_name) =
+            extract_signature_return_type_name(remainder[close_idx + 1..].trim())
+        {
+            out.push(type_name);
+        }
+        return out;
+    }
+
+    if let Some(type_name) = extract_signature_return_type_name(remainder) {
+        out.push(type_name);
+    }
+    out
+}
+
+fn extract_signature_type_name(type_text: &str) -> Option<String> {
+    let mut type_text = type_text.trim();
+    if type_text.is_empty() {
+        return None;
+    }
+    if let Some((lhs, _)) = type_text.split_once('=') {
+        type_text = lhs.trim();
+    }
+    if type_text.len() >= 4 && type_text[..4].eq_ignore_ascii_case("new ") {
+        type_text = type_text[4..].trim();
+    }
+    let token = type_text
+        .split(|ch: char| ch.is_ascii_whitespace() || ch == '(' || ch == '=')
+        .next()
+        .unwrap_or_default()
+        .trim();
+    if token.is_empty() {
+        None
+    } else {
+        Some(token.to_string())
+    }
+}
+
+fn extract_signature_return_type_name(text: &str) -> Option<String> {
+    let trimmed = text.trim();
+    if trimmed.len() >= 3 && trimmed[..3].eq_ignore_ascii_case("as ") {
+        return extract_signature_type_name(trimmed[3..].trim());
+    }
+    let (_, rhs) = split_keyword_ascii_ci(trimmed, " as ")?;
+    extract_signature_type_name(rhs)
 }
 
 fn rewrite_internal_class_state_assignment(
@@ -13100,6 +13225,131 @@ mod tests {
         let err = compile_project(&manifest)
             .expect_err("module-scope imported declaration should reject");
         assert_eq!(err.code(), "BIND-E-TYPELIB-MODULE-DECL-UNSUPPORTED");
+    }
+
+    #[test]
+    fn compile_project_rejects_imported_procedure_param_type_signature() {
+        let class_module = module_unit_from_source(
+            "Widget",
+            ModuleKind::Class,
+            "Attribute VB_Name = \"Widget\"\nPublic Sub Observe(ByVal obj As OxVba.TestDispatch)\nEnd Sub",
+        )
+        .expect("module parses");
+        let manifest = ProjectManifest {
+            project_name: "ProjectA".to_string(),
+            project_kind: ProjectKind::Source,
+            modules: vec![class_module],
+            references: vec![ProjectReference {
+                referenced_project_name: "OxVba".to_string(),
+                reference_kind: ReferenceKind::TypeLibrary,
+            }],
+            reference_projects: Vec::new(),
+            conditional_constants: BTreeMap::new(),
+        };
+        let err =
+            compile_project(&manifest).expect_err("imported procedure param type should reject");
+        assert_eq!(err.code(), "BIND-E-TYPELIB-PROCEDURE-SIGNATURE-UNSUPPORTED");
+    }
+
+    #[test]
+    fn compile_project_rejects_imported_procedure_return_type_signature() {
+        let class_module = module_unit_from_source(
+            "Widget",
+            ModuleKind::Class,
+            "Attribute VB_Name = \"Widget\"\nPublic Function Make() As OxVba.TestDispatch\nEnd Function",
+        )
+        .expect("module parses");
+        let manifest = ProjectManifest {
+            project_name: "ProjectA".to_string(),
+            project_kind: ProjectKind::Source,
+            modules: vec![class_module],
+            references: vec![ProjectReference {
+                referenced_project_name: "OxVba".to_string(),
+                reference_kind: ReferenceKind::TypeLibrary,
+            }],
+            reference_projects: Vec::new(),
+            conditional_constants: BTreeMap::new(),
+        };
+        let err =
+            compile_project(&manifest).expect_err("imported procedure return type should reject");
+        assert_eq!(err.code(), "BIND-E-TYPELIB-PROCEDURE-SIGNATURE-UNSUPPORTED");
+    }
+
+    #[test]
+    fn compile_project_rejects_unqualified_imported_procedure_param_type_signature() {
+        let class_module = module_unit_from_source(
+            "Widget",
+            ModuleKind::Class,
+            "Attribute VB_Name = \"Widget\"\nPublic Sub Observe(ByVal obj As TestDispatch)\nEnd Sub",
+        )
+        .expect("module parses");
+        let manifest = ProjectManifest {
+            project_name: "ProjectA".to_string(),
+            project_kind: ProjectKind::Source,
+            modules: vec![class_module],
+            references: vec![ProjectReference {
+                referenced_project_name: "OxVba".to_string(),
+                reference_kind: ReferenceKind::TypeLibrary,
+            }],
+            reference_projects: Vec::new(),
+            conditional_constants: BTreeMap::new(),
+        };
+        let err = compile_project(&manifest)
+            .expect_err("unqualified imported procedure param type should reject");
+        assert_eq!(err.code(), "BIND-E-TYPELIB-PROCEDURE-SIGNATURE-UNSUPPORTED");
+    }
+
+    #[test]
+    fn compile_project_rejects_unqualified_imported_procedure_return_type_signature() {
+        let class_module = module_unit_from_source(
+            "Widget",
+            ModuleKind::Class,
+            "Attribute VB_Name = \"Widget\"\nPublic Function Make() As TestDispatch\nEnd Function",
+        )
+        .expect("module parses");
+        let manifest = ProjectManifest {
+            project_name: "ProjectA".to_string(),
+            project_kind: ProjectKind::Source,
+            modules: vec![class_module],
+            references: vec![ProjectReference {
+                referenced_project_name: "OxVba".to_string(),
+                reference_kind: ReferenceKind::TypeLibrary,
+            }],
+            reference_projects: Vec::new(),
+            conditional_constants: BTreeMap::new(),
+        };
+        let err = compile_project(&manifest)
+            .expect_err("unqualified imported procedure return type should reject");
+        assert_eq!(err.code(), "BIND-E-TYPELIB-PROCEDURE-SIGNATURE-UNSUPPORTED");
+    }
+
+    #[test]
+    fn compile_project_prefers_native_procedure_signature_type_over_imported_type_name_match() {
+        let source_module = module_unit_from_source(
+            "TestDispatch",
+            ModuleKind::Class,
+            "Attribute VB_Name = \"TestDispatch\"\nPublic Sub Ping()\nEnd Sub",
+        )
+        .expect("source module parses");
+        let class_module = module_unit_from_source(
+            "Widget",
+            ModuleKind::Class,
+            "Attribute VB_Name = \"Widget\"\nPublic Sub Observe(ByVal obj As TestDispatch)\nEnd Sub",
+        )
+        .expect("module parses");
+        let manifest = ProjectManifest {
+            project_name: "ProjectA".to_string(),
+            project_kind: ProjectKind::Source,
+            modules: vec![class_module, source_module],
+            references: vec![ProjectReference {
+                referenced_project_name: "OxVba".to_string(),
+                reference_kind: ReferenceKind::TypeLibrary,
+            }],
+            reference_projects: Vec::new(),
+            conditional_constants: BTreeMap::new(),
+        };
+        compile_project(&manifest)
+            .expect("native procedure signature type should win over imported type-name match");
     }
 
     #[test]

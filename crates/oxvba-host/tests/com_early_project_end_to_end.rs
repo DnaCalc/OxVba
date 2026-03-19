@@ -2039,6 +2039,87 @@ End Sub
 }
 
 #[test]
+fn early_bound_project_reports_compile_error_for_imported_procedure_param_type_signature() {
+    let class_module = module_unit_from_source(
+        "Widget",
+        ModuleKind::Class,
+        r#"
+Attribute VB_Name = "Widget"
+Public Sub Observe(ByVal obj As OxVba.TestDispatch)
+End Sub
+"#,
+    )
+    .expect("class module should parse");
+    let manifest = ProjectManifest {
+        project_name: "ProjectA".to_string(),
+        project_kind: ProjectKind::Source,
+        modules: vec![class_module],
+        references: vec![ProjectReference {
+            referenced_project_name: "OxVba".to_string(),
+            reference_kind: ReferenceKind::TypeLibrary,
+        }],
+        reference_projects: Vec::new(),
+        conditional_constants: std::collections::BTreeMap::new(),
+    };
+
+    let engine = Engine::new(HostConfig {
+        enable_jit: false,
+        root_object_name: None,
+    });
+    let err = engine
+        .execute_project_with_snapshot_phased(&manifest)
+        .expect_err("imported procedure param type should fail at compile-time");
+    assert_eq!(err.phase(), DiagnosticPhase::CompileTime);
+    assert!(
+        err.message()
+            .contains("BIND-E-TYPELIB-PROCEDURE-SIGNATURE-UNSUPPORTED"),
+        "unexpected compile diagnostic: {}",
+        err.message()
+    );
+}
+
+#[test]
+fn early_bound_project_reports_compile_error_for_unqualified_imported_procedure_return_type_signature()
+ {
+    let class_module = module_unit_from_source(
+        "Widget",
+        ModuleKind::Class,
+        r#"
+Attribute VB_Name = "Widget"
+Public Function Make() As TestDispatch
+End Function
+"#,
+    )
+    .expect("class module should parse");
+    let manifest = ProjectManifest {
+        project_name: "ProjectA".to_string(),
+        project_kind: ProjectKind::Source,
+        modules: vec![class_module],
+        references: vec![ProjectReference {
+            referenced_project_name: "OxVba".to_string(),
+            reference_kind: ReferenceKind::TypeLibrary,
+        }],
+        reference_projects: Vec::new(),
+        conditional_constants: std::collections::BTreeMap::new(),
+    };
+
+    let engine = Engine::new(HostConfig {
+        enable_jit: false,
+        root_object_name: None,
+    });
+    let err = engine
+        .execute_project_with_snapshot_phased(&manifest)
+        .expect_err("unqualified imported procedure return type should fail at compile-time");
+    assert_eq!(err.phase(), DiagnosticPhase::CompileTime);
+    assert!(
+        err.message()
+            .contains("BIND-E-TYPELIB-PROCEDURE-SIGNATURE-UNSUPPORTED"),
+        "unexpected compile diagnostic: {}",
+        err.message()
+    );
+}
+
+#[test]
 fn early_bound_project_reports_compile_error_for_unqualified_imported_module_scope_declaration() {
     let class_module = module_unit_from_source(
         "Widget",
