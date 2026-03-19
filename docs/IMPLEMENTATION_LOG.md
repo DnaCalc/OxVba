@@ -1815,3 +1815,10 @@
 - fixed `rewrite_internal_class_set_assignment(...)` precedence so explicit object assignment keeps `Set child = Application.Value` intact even when the returned child type also exposes an authoritative default-member `Property Set`
 - added direct compiler and host evidence for typed child-local named and indexed `Property Set` plus authoritative default-member `Property Set` traffic after host-root object return across both `VB_PredeclaredId` and `VB_GlobalNamespace`
 - narrowed `IP-08A` remaining scope: the host-foundation gap is no longer child `Property Set` breadth, but host identity/session/callback substrate and invalid-root diagnostics
+
+# 2026-03-19 - Host-returned imported object property-get assignment intents
+
+- Continued `IP-08A` by widening the bounded host/COM coexistence floor from imported scalar/default-member/object-result traffic into imported object-valued zero-arg `PropertyGet` traffic on the same host-returned COM-backed object.
+- In [project.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-compiler\src\project.rs), added direct compiler evidence that a host-injected root getter may return `CreateObject(4)` into a typed imported receiver and then preserve assignment intent across imported `SelfDispatch` / `SelfUnknown` property-get aliases for explicit `Set` on `Object` targets plus implicit / explicit-`Let` assignment on `Variant` targets.
+- In [engine.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-host\src\engine.rs), added matching host runtime evidence proving those imported object-valued property gets return live rebound handles on the shared object/value model and still support follow-on `Count` traffic.
+- This raises the honest `IP-08A` host/COM coexistence floor from imported scalar/default-member/object-result traffic alone to that same bounded subset plus imported object-valued property-get assignment-intent traffic; broader host object identity boundaries and wider imported breadth on host-returned COM-backed objects still remain open.

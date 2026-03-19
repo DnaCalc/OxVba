@@ -4717,6 +4717,81 @@ mod tests {
     }
 
     #[test]
+    fn formal_host_project_root_returned_com_object_supports_imported_object_property_get_assignment_intents()
+     {
+        let engine = Engine::new(HostConfig::default());
+        let cases = [
+            ("predeclared", "Attribute VB_PredeclaredId = True"),
+            ("global namespace", "Attribute VB_GlobalNamespace = True"),
+        ];
+
+        for (label, exposure_attr) in cases {
+            let main_module = module_unit_from_source(
+                "MainModule",
+                ModuleKind::Procedural,
+                "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim obj As OxVba.TestDispatch\nDim childDispatch As Object\nDim childUnknown As Object\nDim wrappedDispatch\nDim wrappedUnknown\nDim childDispatchCount\nDim childUnknownCount\nDim wrappedDispatchCount\nDim wrappedUnknownCount\nSet obj = Application.Value\nSet childDispatch = obj.SelfDispatch\nSet childUnknown = obj.SelfUnknown\nwrappedDispatch = obj.SelfDispatch\nLet wrappedUnknown = obj.SelfUnknown\nchildDispatchCount = DispatchInvoke(childDispatch, \"Count\")\nchildUnknownCount = DispatchInvoke(childUnknown, \"Count\")\nwrappedDispatchCount = DispatchInvoke(wrappedDispatch, \"Count\")\nwrappedUnknownCount = DispatchInvoke(wrappedUnknown, \"Count\")\nEnd Sub",
+            )
+            .expect("main module should parse");
+            let host_application = module_unit_from_source(
+                "Application",
+                ModuleKind::Class,
+                format!(
+                    "Attribute VB_Name = \"Application\"\n{exposure_attr}\nPublic Property Get Value() As Object\nSet Value = CreateObject(4)\nEnd Property"
+                ),
+            )
+            .expect("host application module should parse");
+            let manifest = ProjectManifest {
+                project_name: "ProjectA".to_string(),
+                project_kind: ProjectKind::Source,
+                modules: vec![main_module],
+                references: vec![
+                    ProjectReference {
+                        referenced_project_name: "HostProject".to_string(),
+                        reference_kind: ReferenceKind::HostInjected,
+                    },
+                    ProjectReference {
+                        referenced_project_name: "OxVba".to_string(),
+                        reference_kind: ReferenceKind::TypeLibrary,
+                    },
+                ],
+                reference_projects: vec![ReferencedProjectManifest {
+                    project_name: "HostProject".to_string(),
+                    modules: vec![host_application],
+                }],
+                conditional_constants: std::collections::BTreeMap::new(),
+            };
+
+            let snapshot = engine
+                .execute_project_with_value_snapshot_phased(&manifest)
+                .unwrap_or_else(|err| {
+                    panic!(
+                        "{label} host root should preserve imported object property-get rebinding on the returned COM object: {err}"
+                    )
+                });
+            match snapshot.as_slice() {
+                [
+                    RuntimeValue::ObjectHandle(root),
+                    RuntimeValue::ObjectHandle(child_dispatch),
+                    RuntimeValue::ObjectHandle(child_unknown),
+                    RuntimeValue::ObjectHandle(wrapped_dispatch),
+                    RuntimeValue::ObjectHandle(wrapped_unknown),
+                    RuntimeValue::I32(child_dispatch_count),
+                    RuntimeValue::I32(child_unknown_count),
+                    RuntimeValue::I32(wrapped_dispatch_count),
+                    RuntimeValue::I32(wrapped_unknown_count),
+                ] if root.raw() == 5_004
+                    && *child_dispatch_count == child_dispatch.raw() + 1
+                    && *child_unknown_count == child_unknown.raw() + 1
+                    && *wrapped_dispatch_count == wrapped_dispatch.raw() + 1
+                    && *wrapped_unknown_count == wrapped_unknown.raw() + 1 => {}
+                other => panic!(
+                    "{label}: expected host-root object property-get rebinding to preserve object handles plus Count() results tied to each returned handle, got: {other:?}"
+                ),
+            }
+        }
+    }
+
+    #[test]
     fn formal_runtime_procedure_call_expression_in_condition_executes() {
         let engine = Engine::new(HostConfig::default());
         let source = "Function GetValue()\nGetValue = 4\nEnd Function\nSub Main()\nIf GetValue() = 4 Then\nError 104\nElse\nError 101\nEnd If\nEnd Sub";
