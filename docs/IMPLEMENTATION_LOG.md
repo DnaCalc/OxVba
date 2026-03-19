@@ -1,3 +1,12 @@
+## 2026-03-19 - Add host-injected global-namespace root receiver evidence
+
+- Continued the bounded `IP-08A` root/global floor by proving the implementation-backed `VB_GlobalNamespace` path instead of relying on the same code branch without direct evidence.
+- In [project.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-compiler\src\project.rs), added direct compiler evidence that host-injected referenced class modules marked `VB_GlobalNamespace = True` lower through the same bounded implicit receiver path for:
+  - named property-get reads such as `Application.Value`
+  - authoritative default-member reads such as `Application`
+- In [engine.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-host\src\engine.rs), added matching host runtime evidence proving those `VB_GlobalNamespace` host-root reads execute end to end on the current bounded subset.
+- This strengthens the `IP-08A` root/global claim to cover both `VB_PredeclaredId` and `VB_GlobalNamespace` for the current read-only host-root slice, but supported write/statement-call host-root behavior and broader host project semantics remain open.
+
 ## 2026-03-19 - Add host-injected predeclared root receiver support
 
 - Started the executable `IP-08A` host-project foundation pass and captured its exit discipline in [WORKSET_2026-03-19_IP-08A_EXECUTION_CHECKLIST.md](C:\Work\DnaCalc\OxVba\docs\worksets\WORKSET_2026-03-19_IP-08A_EXECUTION_CHECKLIST.md).
