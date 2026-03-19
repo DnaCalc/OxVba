@@ -1616,6 +1616,9 @@ fn expand_bound_source_line(
     let rewritten = rewrite_early_bound_property_assignment(line, early_bound)?;
     let rewritten = rewrite_early_bound_property_read_assignment(&rewritten, early_bound)?;
     let rewritten = rewrite_early_bound_member_dispatch(&rewritten, early_bound)?;
+    let rewritten = rewrite_early_bound_call_statement_without_parens(&rewritten, early_bound)?;
+    let rewritten =
+        rewrite_early_bound_statement_invoke_without_parentheses(&rewritten, early_bound)?;
     Ok(vec![rewritten])
 }
 
@@ -1865,6 +1868,219 @@ fn rewrite_early_bound_member_dispatch(
     }
     out.push_str(&line[previous..]);
     Ok(out)
+}
+
+fn resolve_early_bound_invoke_target(
+    raw_name: &str,
+    early_bound: &BTreeMap<String, EarlyBoundBinding>,
+) -> Result<Option<(String, String, i32, ComMemberSpec)>, ProjectCompileError> {
+    if let Some(dot_idx) = raw_name.find('.') {
+        let var_name = raw_name[..dot_idx].trim();
+        let member_name = raw_name[dot_idx + 1..].trim();
+        if var_name.is_empty() || member_name.is_empty() {
+            return Ok(None);
+        }
+        let key = normalize_identifier(var_name);
+        let Some(binding) = early_bound.get(&key) else {
+            return Ok(None);
+        };
+        let target_name = format!("{}.{}", binding.qualified_type, member_name);
+        let (member_token, member_spec) =
+            match resolve_early_bound_binding_member_token_and_spec(binding, member_name) {
+                KnownTypeLibMemberResolution::Resolved(member_token, member_spec) => {
+                    (member_token, member_spec)
+                }
+                KnownTypeLibMemberResolution::Unsupported => {
+                    return Err(ProjectCompileError::TypeLibraryMemberUnsupported {
+                        member_name: member_name.to_string(),
+                    });
+                }
+                KnownTypeLibMemberResolution::Missing => {
+                    return Err(ProjectCompileError::TypeLibraryMemberNotFound {
+                        target: target_name,
+                    });
+                }
+                KnownTypeLibMemberResolution::Ambiguous => {
+                    return Err(ProjectCompileError::TypeLibraryMemberAmbiguous {
+                        target: target_name,
+                    });
+                }
+            };
+        Ok(Some((
+            var_name.to_string(),
+            format!("{}.{}", binding.qualified_type, member_spec.name),
+            member_token,
+            member_spec,
+        )))
+    } else {
+        let var_name = raw_name.trim();
+        if var_name.is_empty() {
+            return Ok(None);
+        }
+        let key = normalize_identifier(var_name);
+        let Some(binding) = early_bound.get(&key) else {
+            return Ok(None);
+        };
+        let default_target = format!("{}.<default>", binding.qualified_type);
+        let (member_token, member_spec) =
+            match resolve_early_bound_binding_default_member_token_and_spec(binding) {
+                KnownTypeLibMemberResolution::Resolved(member_token, member_spec) => {
+                    (member_token, member_spec)
+                }
+                KnownTypeLibMemberResolution::Unsupported => {
+                    return Err(ProjectCompileError::TypeLibraryMemberUnsupported {
+                        member_name: default_target,
+                    });
+                }
+                KnownTypeLibMemberResolution::Missing => {
+                    return Err(ProjectCompileError::TypeLibraryMemberNotFound {
+                        target: default_target,
+                    });
+                }
+                KnownTypeLibMemberResolution::Ambiguous => {
+                    return Err(ProjectCompileError::TypeLibraryMemberAmbiguous {
+                        target: default_target,
+                    });
+                }
+            };
+        Ok(Some((
+            var_name.to_string(),
+            format!("{}.{}", binding.qualified_type, member_spec.name),
+            member_token,
+            member_spec,
+        )))
+    }
+}
+
+fn validate_early_bound_invoke_shape(
+    target_name: &str,
+    member_spec: ComMemberSpec,
+    actual_arity: usize,
+) -> Result<(), ProjectCompileError> {
+    if !matches!(
+        member_spec.invoke_kind,
+        TypeLibMemberInvokeKind::PropertyGet | TypeLibMemberInvokeKind::Method
+    ) {
+        return Err(ProjectCompileError::TypeLibraryMemberShapeUnsupported {
+            target: target_name.to_string(),
+            shape: render_typelib_invoke_kind(member_spec.invoke_kind).to_string(),
+        });
+    }
+    let expected_arity = member_spec.parameter_names.len();
+    if actual_arity != expected_arity {
+        return Err(ProjectCompileError::TypeLibraryInvokeArityUnsupported {
+            target: target_name.to_string(),
+            expected: expected_arity,
+            actual: actual_arity,
+        });
+    }
+    Ok(())
+}
+
+fn render_dispatch_invoke(var_name: &str, member_token: i32, args: &[String]) -> String {
+    if args.is_empty() {
+        format!("DispatchInvoke({var_name}, {member_token})")
+    } else {
+        let rendered_args = args
+            .iter()
+            .map(|arg| arg.trim())
+            .filter(|arg| !arg.is_empty())
+            .collect::<Vec<_>>()
+            .join(", ");
+        format!("DispatchInvoke({var_name}, {member_token}, {rendered_args})")
+    }
+}
+
+fn rewrite_early_bound_call_statement_without_parens(
+    line: &str,
+    early_bound: &BTreeMap<String, EarlyBoundBinding>,
+) -> Result<String, ProjectCompileError> {
+    if early_bound.is_empty() {
+        return Ok(line.to_string());
+    }
+    let trimmed = line.trim_start();
+    let leading = line.len().saturating_sub(trimmed.len());
+    let lower = trimmed.to_ascii_lowercase();
+    if !lower.starts_with("call ") {
+        return Ok(line.to_string());
+    }
+    let payload = trimmed[5..].trim_start();
+    if payload.is_empty()
+        || payload.contains('(')
+        || find_top_level_assignment_eq(payload).is_some()
+    {
+        return Ok(line.to_string());
+    }
+    let callee_end = payload.find(char::is_whitespace).unwrap_or(payload.len());
+    let callee = payload[..callee_end].trim();
+    if callee.is_empty() {
+        return Ok(line.to_string());
+    }
+    let args_tail = payload[callee_end..].trim();
+    let Some((var_name, target_name, member_token, member_spec)) =
+        resolve_early_bound_invoke_target(callee, early_bound)?
+    else {
+        return Ok(line.to_string());
+    };
+    let args = if args_tail.is_empty() {
+        Vec::new()
+    } else {
+        split_top_level_args(args_tail)?
+            .into_iter()
+            .map(|arg| arg.trim().to_string())
+            .filter(|arg| !arg.is_empty())
+            .collect::<Vec<_>>()
+    };
+    validate_early_bound_invoke_shape(&target_name, member_spec, args.len())?;
+    Ok(format!(
+        "{}Call {}",
+        &line[..leading],
+        render_dispatch_invoke(&var_name, member_token, &args)
+    ))
+}
+
+fn rewrite_early_bound_statement_invoke_without_parentheses(
+    line: &str,
+    early_bound: &BTreeMap<String, EarlyBoundBinding>,
+) -> Result<String, ProjectCompileError> {
+    if early_bound.is_empty() {
+        return Ok(line.to_string());
+    }
+    let trimmed = line.trim_start();
+    let leading = line.len().saturating_sub(trimmed.len());
+    let lower = trimmed.to_ascii_lowercase();
+    if trimmed.is_empty()
+        || lower.starts_with("call ")
+        || trimmed.contains('(')
+        || find_top_level_assignment_eq(trimmed).is_some()
+    {
+        return Ok(line.to_string());
+    }
+    let callee_end = trimmed.find(char::is_whitespace).unwrap_or(trimmed.len());
+    if callee_end == trimmed.len() {
+        return Ok(line.to_string());
+    }
+    let callee = trimmed[..callee_end].trim();
+    let args_tail = trimmed[callee_end..].trim();
+    if callee.is_empty() || args_tail.is_empty() {
+        return Ok(line.to_string());
+    }
+    let Some((var_name, target_name, member_token, member_spec)) =
+        resolve_early_bound_invoke_target(callee, early_bound)?
+    else {
+        return Ok(line.to_string());
+    };
+    let args = split_top_level_args(args_tail)?
+        .into_iter()
+        .map(|arg| arg.trim().to_string())
+        .filter(|arg| !arg.is_empty())
+        .collect::<Vec<_>>();
+    validate_early_bound_invoke_shape(&target_name, member_spec, args.len())?;
+    Ok(format!(
+        "{}{}",
+        &line[..leading],
+        render_dispatch_invoke(&var_name, member_token, &args)
+    ))
 }
 
 fn rewrite_early_bound_property_assignment(
@@ -12744,6 +12960,62 @@ mod tests {
     }
 
     #[test]
+    fn compile_project_rewrites_no_paren_call_statements_for_external_member_invokes() {
+        let main_module = module_unit_from_source(
+            "MainModule",
+            ModuleKind::Procedural,
+            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim obj As OxVba.TestDispatch\nSet obj = CreateObject(4)\nCall obj.Count\nCall obj.Exists 42\nCall obj.Lookup 42\nCall obj.Value\nCall obj 42\nEnd Sub",
+        )
+        .expect("module parses");
+        let manifest = ProjectManifest {
+            project_name: "ProjectA".to_string(),
+            project_kind: ProjectKind::Source,
+            modules: vec![main_module],
+            references: vec![ProjectReference {
+                referenced_project_name: "OxVba".to_string(),
+                reference_kind: ReferenceKind::TypeLibrary,
+            }],
+            reference_projects: Vec::new(),
+            conditional_constants: BTreeMap::new(),
+        };
+        let compiled = compile_project(&manifest)
+            .expect("no-paren Call-form imported member invokes should compile");
+        let lowered = compiled.rewritten_source.to_ascii_lowercase();
+        assert!(lowered.contains("call dispatchinvoke(obj, 1)"));
+        assert!(lowered.contains("call dispatchinvoke(obj, 2, 42)"));
+        assert!(lowered.contains("call dispatchinvoke(obj, 6, 42)"));
+        assert!(lowered.contains("call dispatchinvoke(obj, 9)"));
+        assert!(lowered.contains("call dispatchinvoke(obj, 16, 42)"));
+    }
+
+    #[test]
+    fn compile_project_rewrites_no_paren_named_arg_call_statements_for_external_member_invokes() {
+        let main_module = module_unit_from_source(
+            "MainModule",
+            ModuleKind::Procedural,
+            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim obj As OxVba.TestDispatch\nSet obj = CreateObject(4)\nCall obj.SumPair rhs := 14, lhs := 3\nCall obj.LookupPair rhs := 9, lhs := 5\nCall obj value := 41\nEnd Sub",
+        )
+        .expect("module parses");
+        let manifest = ProjectManifest {
+            project_name: "ProjectA".to_string(),
+            project_kind: ProjectKind::Source,
+            modules: vec![main_module],
+            references: vec![ProjectReference {
+                referenced_project_name: "OxVba".to_string(),
+                reference_kind: ReferenceKind::TypeLibrary,
+            }],
+            reference_projects: Vec::new(),
+            conditional_constants: BTreeMap::new(),
+        };
+        let compiled = compile_project(&manifest)
+            .expect("no-paren named-argument Call-form imported member invokes should compile");
+        let lowered = compiled.rewritten_source.to_ascii_lowercase();
+        assert!(lowered.contains("call dispatchinvoke(obj, 12, rhs := 14, lhs := 3)"));
+        assert!(lowered.contains("call dispatchinvoke(obj, 13, rhs := 9, lhs := 5)"));
+        assert!(lowered.contains("call dispatchinvoke(obj, 16, value := 41)"));
+    }
+
+    #[test]
     fn compile_project_rewrites_statement_context_for_positional_external_member_invokes() {
         let main_module = module_unit_from_source(
             "MainModule",
@@ -12793,6 +13065,61 @@ mod tests {
         };
         let compiled = compile_project(&manifest)
             .expect("statement-context named-argument imported member invokes should compile");
+        let lowered = compiled.rewritten_source.to_ascii_lowercase();
+        assert!(lowered.contains("dispatchinvoke(obj, 12, rhs := 14, lhs := 3)"));
+        assert!(lowered.contains("dispatchinvoke(obj, 13, rhs := 9, lhs := 5)"));
+        assert!(lowered.contains("dispatchinvoke(obj, 16, value := 41)"));
+    }
+
+    #[test]
+    fn compile_project_rewrites_no_paren_statement_context_for_external_member_invokes() {
+        let main_module = module_unit_from_source(
+            "MainModule",
+            ModuleKind::Procedural,
+            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim obj As OxVba.TestDispatch\nSet obj = CreateObject(4)\nobj.Exists 42\nobj.Lookup 42\nobj 42\nEnd Sub",
+        )
+        .expect("module parses");
+        let manifest = ProjectManifest {
+            project_name: "ProjectA".to_string(),
+            project_kind: ProjectKind::Source,
+            modules: vec![main_module],
+            references: vec![ProjectReference {
+                referenced_project_name: "OxVba".to_string(),
+                reference_kind: ReferenceKind::TypeLibrary,
+            }],
+            reference_projects: Vec::new(),
+            conditional_constants: BTreeMap::new(),
+        };
+        let compiled = compile_project(&manifest)
+            .expect("no-paren statement-context positional imported member invokes should compile");
+        let lowered = compiled.rewritten_source.to_ascii_lowercase();
+        assert!(lowered.contains("dispatchinvoke(obj, 2, 42)"));
+        assert!(lowered.contains("dispatchinvoke(obj, 6, 42)"));
+        assert!(lowered.contains("dispatchinvoke(obj, 16, 42)"));
+    }
+
+    #[test]
+    fn compile_project_rewrites_no_paren_named_arg_statement_context_for_external_member_invokes() {
+        let main_module = module_unit_from_source(
+            "MainModule",
+            ModuleKind::Procedural,
+            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim obj As OxVba.TestDispatch\nSet obj = CreateObject(4)\nobj.SumPair rhs := 14, lhs := 3\nobj.LookupPair rhs := 9, lhs := 5\nobj value := 41\nEnd Sub",
+        )
+        .expect("module parses");
+        let manifest = ProjectManifest {
+            project_name: "ProjectA".to_string(),
+            project_kind: ProjectKind::Source,
+            modules: vec![main_module],
+            references: vec![ProjectReference {
+                referenced_project_name: "OxVba".to_string(),
+                reference_kind: ReferenceKind::TypeLibrary,
+            }],
+            reference_projects: Vec::new(),
+            conditional_constants: BTreeMap::new(),
+        };
+        let compiled = compile_project(&manifest).expect(
+            "no-paren statement-context named-argument imported member invokes should compile",
+        );
         let lowered = compiled.rewritten_source.to_ascii_lowercase();
         assert!(lowered.contains("dispatchinvoke(obj, 12, rhs := 14, lhs := 3)"));
         assert!(lowered.contains("dispatchinvoke(obj, 13, rhs := 9, lhs := 5)"));

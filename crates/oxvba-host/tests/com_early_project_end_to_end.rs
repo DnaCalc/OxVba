@@ -221,6 +221,111 @@ End Sub
 }
 
 #[test]
+fn early_bound_project_executes_imported_no_paren_call_statements_subset() {
+    let manifest = manifest_with_typelib(
+        r#"
+Attribute VB_Name = "MainModule"
+Public Sub Main()
+Dim obj As New OxVba.TestDispatch
+Dim afterValue
+Call obj.Count
+Call obj.Exists 42
+Call obj.Lookup 42
+Call obj.Value
+Call obj 42
+afterValue = 43
+End Sub
+"#,
+    );
+
+    let out = run_project_windows_hosted(&manifest, false);
+    assert!(expect_object_handle(&out[0]).raw() >= 20_001);
+    assert_eq!(
+        out[1],
+        RuntimeValue::I32(43),
+        "no-paren Call-form imported positional method/property/default-member invokes should execute on the metadata-backed subset"
+    );
+}
+
+#[cfg(target_os = "windows")]
+#[test]
+fn early_bound_project_no_paren_call_statement_subset_vm_jit_snapshots_match() {
+    let manifest = manifest_with_typelib(
+        r#"
+Attribute VB_Name = "MainModule"
+Public Sub Main()
+Dim obj As New OxVba.TestDispatch
+Dim afterValue
+Call obj.Count
+Call obj.Exists 42
+Call obj.Lookup 42
+Call obj.Value
+Call obj 42
+afterValue = 43
+End Sub
+"#,
+    );
+
+    let vm = run_project_windows_hosted(&manifest, false);
+    let jit = run_project_windows_hosted(&manifest, true);
+    assert_eq!(
+        vm, jit,
+        "VM/JIT snapshots should match for imported no-paren Call-form positional member invokes"
+    );
+}
+
+#[cfg(target_os = "windows")]
+#[test]
+fn early_bound_project_executes_imported_no_paren_named_argument_call_statements() {
+    let manifest = manifest_with_typelib(
+        r#"
+Attribute VB_Name = "MainModule"
+Public Sub Main()
+Dim obj As New OxVba.TestDispatch
+Dim afterValue
+Call obj.SumPair rhs := 14, lhs := 3
+Call obj.LookupPair rhs := 9, lhs := 5
+Call obj value := 41
+afterValue = 47
+End Sub
+"#,
+    );
+
+    let out = run_project_windows_hosted(&manifest, false);
+    assert!(expect_object_handle(&out[0]).raw() >= 20_001);
+    assert_eq!(
+        out[1],
+        RuntimeValue::I32(47),
+        "no-paren Call-form imported named-argument method/property/default-member invokes should execute on the metadata-backed subset"
+    );
+}
+
+#[cfg(target_os = "windows")]
+#[test]
+fn early_bound_project_no_paren_named_argument_call_statements_vm_jit_snapshots_match() {
+    let manifest = manifest_with_typelib(
+        r#"
+Attribute VB_Name = "MainModule"
+Public Sub Main()
+Dim obj As New OxVba.TestDispatch
+Dim afterValue
+Call obj.SumPair rhs := 14, lhs := 3
+Call obj.LookupPair rhs := 9, lhs := 5
+Call obj value := 41
+afterValue = 47
+End Sub
+"#,
+    );
+
+    let vm = run_project_windows_hosted(&manifest, false);
+    let jit = run_project_windows_hosted(&manifest, true);
+    assert_eq!(
+        vm, jit,
+        "VM/JIT snapshots should match for imported no-paren Call-form named-argument member invokes"
+    );
+}
+
+#[test]
 fn early_bound_project_executes_imported_statement_context_subset() {
     let manifest = manifest_with_typelib(
         r#"
@@ -322,6 +427,107 @@ End Sub
     assert_eq!(
         vm, jit,
         "VM/JIT snapshots should match for imported statement-context named-argument member invokes"
+    );
+}
+
+#[test]
+fn early_bound_project_executes_imported_no_paren_statement_context_subset() {
+    let manifest = manifest_with_typelib(
+        r#"
+Attribute VB_Name = "MainModule"
+Public Sub Main()
+Dim obj As New OxVba.TestDispatch
+Dim afterValue
+obj.Exists 42
+obj.Lookup 42
+obj 42
+afterValue = 53
+End Sub
+"#,
+    );
+
+    let out = run_project_windows_hosted(&manifest, false);
+    assert!(expect_object_handle(&out[0]).raw() >= 20_001);
+    assert_eq!(
+        out[1],
+        RuntimeValue::I32(53),
+        "no-paren statement-context imported positional method/property/default-member invokes should execute on the metadata-backed subset"
+    );
+}
+
+#[cfg(target_os = "windows")]
+#[test]
+fn early_bound_project_no_paren_statement_context_subset_vm_jit_snapshots_match() {
+    let manifest = manifest_with_typelib(
+        r#"
+Attribute VB_Name = "MainModule"
+Public Sub Main()
+Dim obj As New OxVba.TestDispatch
+Dim afterValue
+obj.Exists 42
+obj.Lookup 42
+obj 42
+afterValue = 53
+End Sub
+"#,
+    );
+
+    let vm = run_project_windows_hosted(&manifest, false);
+    let jit = run_project_windows_hosted(&manifest, true);
+    assert_eq!(
+        vm, jit,
+        "VM/JIT snapshots should match for imported no-paren statement-context positional member invokes"
+    );
+}
+
+#[cfg(target_os = "windows")]
+#[test]
+fn early_bound_project_executes_imported_no_paren_named_argument_statement_context() {
+    let manifest = manifest_with_typelib(
+        r#"
+Attribute VB_Name = "MainModule"
+Public Sub Main()
+Dim obj As New OxVba.TestDispatch
+Dim afterValue
+obj.SumPair rhs := 14, lhs := 3
+obj.LookupPair rhs := 9, lhs := 5
+obj value := 41
+afterValue = 59
+End Sub
+"#,
+    );
+
+    let out = run_project_windows_hosted(&manifest, false);
+    assert!(expect_object_handle(&out[0]).raw() >= 20_001);
+    assert_eq!(
+        out[1],
+        RuntimeValue::I32(59),
+        "no-paren statement-context imported named-argument method/property/default-member invokes should execute on the metadata-backed subset"
+    );
+}
+
+#[cfg(target_os = "windows")]
+#[test]
+fn early_bound_project_no_paren_named_argument_statement_context_vm_jit_snapshots_match() {
+    let manifest = manifest_with_typelib(
+        r#"
+Attribute VB_Name = "MainModule"
+Public Sub Main()
+Dim obj As New OxVba.TestDispatch
+Dim afterValue
+obj.SumPair rhs := 14, lhs := 3
+obj.LookupPair rhs := 9, lhs := 5
+obj value := 41
+afterValue = 59
+End Sub
+"#,
+    );
+
+    let vm = run_project_windows_hosted(&manifest, false);
+    let jit = run_project_windows_hosted(&manifest, true);
+    assert_eq!(
+        vm, jit,
+        "VM/JIT snapshots should match for imported no-paren statement-context named-argument member invokes"
     );
 }
 

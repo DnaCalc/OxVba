@@ -1,3 +1,25 @@
+## 2026-03-19 - Add imported no-parentheses invoke evidence
+
+- Continued `IP-05B` by taking the remaining imported call-vs-value syntax row on the already-supported metadata-backed method/property-get/default-member subset instead of widening typelib scope again.
+- In [project.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-compiler\src\project.rs), added dedicated imported no-parentheses invoke rewrites for both explicit `Call` and bare statement-context syntax on the supported imported subset, with authoritative invoke-kind and arity validation preserved:
+  - `Call obj.Count`
+  - `Call obj.Exists 42`
+  - `Call obj.Lookup 42`
+  - `Call obj.Value`
+  - `Call obj 42`
+  - `Call obj.SumPair rhs := 14, lhs := 3`
+  - `Call obj.LookupPair rhs := 9, lhs := 5`
+  - `Call obj value := 41`
+  - `obj.Exists 42`
+  - `obj.Lookup 42`
+  - `obj 42`
+  - `obj.SumPair rhs := 14, lhs := 3`
+  - `obj.LookupPair rhs := 9, lhs := 5`
+  - `obj value := 41`
+- Added compiler rewrite evidence in the same file proving named-argument no-parentheses forms stay on the metadata-backed invoke path instead of being misclassified as assignment because of `:=`.
+- Added Windows host end-to-end and VM/JIT parity evidence in [com_early_project_end_to_end.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-host\tests\com_early_project_end_to_end.rs) proving those imported no-parentheses `Call` and bare statement-context forms execute on the existing authoritative metadata-backed method/property-get/default-member path.
+- `IP-05` remains `in-progress`: richer typelib/member coverage, broader imported property/event/default-member parity beyond the controlled fixture, and wider Office/Excel object-model behavior are still open.
+
 ## 2026-03-19 - Add imported statement-context member evidence
 
 - Continued `IP-05B` on the broader imported syntax matrix by taking the bare statement-context row adjacent to the newly-proved `Call` row.
