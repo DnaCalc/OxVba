@@ -18895,6 +18895,79 @@ mod tests {
     }
 
     #[test]
+    fn compile_project_prefers_active_project_application_over_host_injected_root_receiver() {
+        let cases = [
+            (
+                "host predeclared",
+                "Attribute VB_PredeclaredId = True",
+                "Attribute VB_PredeclaredId = True",
+            ),
+            (
+                "host global namespace",
+                "Attribute VB_PredeclaredId = True",
+                "Attribute VB_GlobalNamespace = True",
+            ),
+        ];
+
+        for (label, local_attr, host_attr) in cases {
+            let main_module = module_unit_from_source(
+                "MainModule",
+                ModuleKind::Procedural,
+                "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nApplication.Value = 9\nDim afterValue\nafterValue = Application.Value\nEnd Sub",
+            )
+            .expect("module parses");
+            let local_application = module_unit_from_source(
+                "Application",
+                ModuleKind::Class,
+                format!(
+                    "Attribute VB_Name = \"Application\"\n{local_attr}\nPrivate stored\nPublic Sub Class_Initialize()\nstored = 4\nEnd Sub\nPublic Property Get Value()\nValue = stored\nEnd Property\nPublic Property Let Value(ByVal n)\nstored = n\nEnd Property"
+                ),
+            )
+            .expect("local application parses");
+            let host_application = module_unit_from_source(
+                "Application",
+                ModuleKind::Class,
+                format!(
+                    "Attribute VB_Name = \"Application\"\n{host_attr}\nPublic Property Get Value()\nValue = 41\nEnd Property"
+                ),
+            )
+            .expect("host application parses");
+            let manifest = ProjectManifest {
+                project_name: "ProjectA".to_string(),
+                project_kind: ProjectKind::Source,
+                modules: vec![main_module, local_application],
+                references: vec![ProjectReference {
+                    referenced_project_name: "HostProject".to_string(),
+                    reference_kind: ReferenceKind::HostInjected,
+                }],
+                reference_projects: vec![ReferencedProjectManifest {
+                    project_name: "HostProject".to_string(),
+                    modules: vec![host_application],
+                }],
+                conditional_constants: BTreeMap::new(),
+            };
+            let compiled = compile_project(&manifest).unwrap_or_else(|err| {
+                panic!(
+                    "{label} active-project Application should outrank same-name host-injected root: {err}"
+                )
+            });
+            let lowered = compiled.rewritten_source.to_ascii_lowercase();
+            assert!(
+                lowered.contains("property_let_pmr_projecta_application_value(0, 9)"),
+                "{label}: expected active-project Application property-let rewrite, got: {lowered}"
+            );
+            assert!(
+                lowered.contains("aftervalue = property_get_pmr_projecta_application_value(0)"),
+                "{label}: expected active-project Application property-get rewrite, got: {lowered}"
+            );
+            assert!(
+                !lowered.contains("aftervalue = property_get_pmr_hostproject_application_value(0)"),
+                "{label}: host-injected Application should not own the same-name active-project property-get lane, got: {lowered}"
+            );
+        }
+    }
+
+    #[test]
     fn compile_project_rewrites_host_injected_predeclared_default_member_let_receiver() {
         let main_module = module_unit_from_source(
             "MainModule",

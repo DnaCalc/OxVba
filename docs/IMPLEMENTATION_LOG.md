@@ -1,3 +1,10 @@
+## 2026-03-19 - Close IP-08A host foundation boundary
+
+- Continued `IP-08A` by proving the last missing supported host identity neighbor instead of leaving the active-project-versus-host-root precedence boundary implicit.
+- In [project.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-compiler\src\project.rs), added direct compiler evidence that an active-project `Application` class module outranks a same-name host-injected `Application` root on the supported named-property write/read subset across both host exposure modes, so `Application.Value = 9 : afterValue = Application.Value` stays project-owned instead of drifting into the referenced host root.
+- In [engine.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-host\src\engine.rs), added matching host runtime evidence proving the same precedence boundary executes end to end on the supported subset.
+- This completes the bounded `IP-08A` host identity register across active-project, plain referenced-project, host-injected, and COM-backed host-object neighbors; the remaining `IP-08` work is now broader `IP-08B` parity breadth rather than missing host-foundation semantics.
+
 ## 2026-03-19 - Bound host root indexed setter precedence
 
 - Continued `IP-08A` by widening the bounded host/COM coexistence floor from host-returned invoke traffic into the matching indexed imported setter lanes on returned COM objects.

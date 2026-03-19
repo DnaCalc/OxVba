@@ -348,6 +348,10 @@ Planning notes:
 
 ### Phase H. Host project / Office-style hosting foundation (`IP-08A`)
 
+Status:
+1. completed on 2026-03-19 for the bounded host-foundation target tracked in [WORKSET_2026-03-19_IP-08A_EXECUTION_CHECKLIST.md](C:\Work\DnaCalc\OxVba\docs\worksets\WORKSET_2026-03-19_IP-08A_EXECUTION_CHECKLIST.md).
+2. remaining host work is now `IP-08B` parity breadth, not missing foundation semantics.
+
 Primary target:
 1. turn the host/project model from design contract into executable host behavior.
 

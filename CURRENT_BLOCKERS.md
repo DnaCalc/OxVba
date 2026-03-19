@@ -243,12 +243,12 @@ Run context: active parity/compliance execution plus in-progress feature worklis
   - the same bounded host/COM coexistence floor now also has direct executable evidence for imported named-argument `Call` plus bare statement-context invocation subsets across both parenthesized and no-paren forms on the same host-returned COM-backed object, and the same bounded host identity floor now also proves a conflicting same-name plain-project `Application` reference does not steal those named-argument invoke neighbors by reference order,
   - the same bounded host/COM coexistence floor now also has direct executable evidence for imported indexed `PropertyPut` plus indexed `PropertyPutRef` traffic across both positional and named-argument forms on the same host-returned COM-backed object, and the same bounded host identity floor now also proves a conflicting same-name plain-project `Application` reference does not steal those indexed setter neighbors by reference order,
   - the same bounded host identity floor now also has direct executable evidence that a conflicting same-name plain-project `Application` reference does not steal parenthesized imported object-valued `PropertyGet` traffic on the same host-returned COM-backed object by reference order,
-  - broader host project/root/global exposure rules and broader host object identity boundaries are still missing from the executable host model.
+  - the bounded `IP-08A` host foundation is now executable, but broader Office-style hosting parity breadth is still open under `IP-08B`.
 - Exact unblock steps:
-  - make the remaining host project object identity boundaries explicit across host roots and COM-backed host objects beyond the now-proved plain-project precedence, non-routing, raw-dispatch, and bounded imported member/property/property-putref/default-member/object-result/object-property/parenthesized-object-property/exception-invoke/exception-precedence coexistence paths,
-  - continue through the checklist in [WORKSET_2026-03-19_IP-08A_EXECUTION_CHECKLIST.md](C:\Work\DnaCalc\OxVba\docs\worksets\WORKSET_2026-03-19_IP-08A_EXECUTION_CHECKLIST.md).
+  - widen from the completed `IP-08A` host foundation into the broader `IP-08B` parity matrix: richer root/global/project behavior, broader imported member/property/default-member breadth on host-returned COM objects, and final integration with the completed COM/property/event model,
+  - keep the `IP-08A` checklist as the completed foundation floor and open the next bounded `IP-08B` execution checklist against the remaining parity-breadth rows.
 - Recommendation:
-  - keep `IP-08` focused on executable host substrate first, then widen parity breadth only after the foundation matrix is covered.
+  - treat `IP-08A` as closed host substrate and spend the next cycles only on `IP-08B` parity breadth.
 
 ### BLK-ORACLE-001: Oracle closure depends on unfinished implementation areas and external captures
 - Impact:

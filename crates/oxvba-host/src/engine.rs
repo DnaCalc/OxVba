@@ -2136,6 +2136,76 @@ mod tests {
     }
 
     #[test]
+    fn formal_host_project_active_project_application_wins_over_host_injected_root_receiver() {
+        let engine = Engine::new(HostConfig::default());
+        let cases = [
+            (
+                "host predeclared",
+                "Attribute VB_PredeclaredId = True",
+                "Attribute VB_PredeclaredId = True",
+            ),
+            (
+                "host global namespace",
+                "Attribute VB_PredeclaredId = True",
+                "Attribute VB_GlobalNamespace = True",
+            ),
+        ];
+
+        for (label, local_attr, host_attr) in cases {
+            let main_module = module_unit_from_source(
+                "MainModule",
+                ModuleKind::Procedural,
+                "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nApplication.Value = 9\nDim afterValue\nafterValue = Application.Value\nEnd Sub",
+            )
+            .expect("main module should parse");
+            let local_application = module_unit_from_source(
+                "Application",
+                ModuleKind::Class,
+                format!(
+                    "Attribute VB_Name = \"Application\"\n{local_attr}\nPrivate stored\nPublic Sub Class_Initialize()\nstored = 4\nEnd Sub\nPublic Property Get Value()\nValue = stored\nEnd Property\nPublic Property Let Value(ByVal n)\nstored = n\nEnd Property"
+                ),
+            )
+            .expect("local application module should parse");
+            let host_application = module_unit_from_source(
+                "Application",
+                ModuleKind::Class,
+                format!(
+                    "Attribute VB_Name = \"Application\"\n{host_attr}\nPublic Property Get Value()\nValue = 41\nEnd Property"
+                ),
+            )
+            .expect("host application module should parse");
+            let manifest = ProjectManifest {
+                project_name: "ProjectA".to_string(),
+                project_kind: ProjectKind::Source,
+                modules: vec![main_module, local_application],
+                references: vec![ProjectReference {
+                    referenced_project_name: "HostProject".to_string(),
+                    reference_kind: ReferenceKind::HostInjected,
+                }],
+                reference_projects: vec![ReferencedProjectManifest {
+                    project_name: "HostProject".to_string(),
+                    modules: vec![host_application],
+                }],
+                conditional_constants: std::collections::BTreeMap::new(),
+            };
+
+            let snapshot = engine
+                .execute_project_with_value_snapshot_phased(&manifest)
+                .unwrap_or_else(|err| {
+                    panic!(
+                        "{label} active-project Application should outrank same-name host-injected root at runtime: {err}"
+                    )
+                });
+            assert_eq!(
+                snapshot[0],
+                RuntimeValue::I32(9),
+                "{label}: active-project Application should own same-name receiver traffic, snapshot: {:?}",
+                snapshot
+            );
+        }
+    }
+
+    #[test]
     fn formal_host_project_host_injected_global_namespace_property_let_executes() {
         let engine = Engine::new(HostConfig::default());
         let main_module = module_unit_from_source(

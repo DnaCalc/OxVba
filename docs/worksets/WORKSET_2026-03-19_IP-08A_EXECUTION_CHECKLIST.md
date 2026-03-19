@@ -29,8 +29,8 @@ Binding doctrine pulled from those sources:
 - [x] Office-style root/global exposure rules are explicit in the supported host subset.
 - [x] Host project objects participate in the shared property/default-member model for the supported host subset.
 - [x] Host runtime session lifecycle and callback/event ingress have an implementation-backed path that matches the supported host object model.
-- [ ] Object identity boundaries between native host objects, referenced projects, and COM-backed host objects are explicit for the supported host subset.
-- [ ] Remaining `IP-08` work is narrowed honestly to broader host parity closure (`IP-08B`), not missing foundation behavior.
+- [x] Object identity boundaries between native host objects, referenced projects, and COM-backed host objects are explicit for the supported host subset.
+- [x] Remaining `IP-08` work is narrowed honestly to broader host parity closure (`IP-08B`), not missing foundation behavior.
 
 ## Lane matrix
 
@@ -145,6 +145,7 @@ Already evidenced in the repo today:
 - the same bounded host identity floor now also proves that a conflicting same-name plain-project `Application` reference does not steal those imported named-argument invoke lanes by reference order; `HostProject.Application.Value` still wins, returns `CreateObject(4)`, and preserves the same bounded parenthesized and no-paren named-argument subsets
 - the same bounded host/COM coexistence floor now also covers imported indexed `PropertyPut` plus indexed `PropertyPutRef` traffic on that returned COM object across both positional and named-argument forms; a supported `Application.Value` getter may return `CreateObject(4)` into `Dim obj As OxVba.TestDispatch`, and `obj.SetIndexedValue(7) = 11`, `obj.SetIndexedValue(lhs := 7) = 11`, `Set obj.SetIndexedValueRef(8) = other`, and `Set obj.SetIndexedValueRef(lhs := 8) = other` now execute through the same imported metadata-backed setter path on the shared object/value model
 - the same bounded host identity floor now also proves that a conflicting same-name plain-project `Application` reference does not steal those imported indexed setter lanes by reference order; `HostProject.Application.Value` still wins, returns `CreateObject(4)`, and preserves the same bounded positional and named-argument indexed setter subsets
+- the same bounded host identity floor now also proves that an active-project `Application` class module outranks a same-name host-injected `Application` root on the supported named-property write/read subset, so direct `Application.Value = 9 : afterValue = Application.Value` traffic stays owned by the active project instead of drifting into the referenced host root
 - the same bounded host/COM coexistence floor now also covers assignment-form imported `PropertyPutRef` traffic on that returned COM object; a supported `Application.Value` getter may return `CreateObject(4)` into `Dim obj As OxVba.TestDispatch`, execute `Set other = CreateObject(4)`, execute `Set obj.SetValueRef = other`, and then preserve the deterministic shared-model getter witness `afterSetValueRef = obj.Value`
 - the same bounded host/COM coexistence floor now also proves that a conflicting same-name plain-project `Application` reference does not steal that imported `PropertyPutRef` handoff by reference order; `HostProject.Application.Value` still wins, returns `CreateObject(4)`, and preserves the same bounded `Set obj.SetValueRef = other` lane
 - the same bounded host identity floor now also proves that a conflicting same-name plain-project `Application` reference does not steal imported property-put/get traffic on that returned COM object by reference order; `HostProject.Application.Value` still wins, returns `CreateObject(4)`, and preserves the bounded `obj.SetValue = 9 : afterValue = obj.Value` lane
@@ -154,7 +155,7 @@ Already evidenced in the repo today:
 - host-looking names backed by `HostInjected` class modules that are present but not exposed through `VB_PredeclaredId=True` or `VB_GlobalNamespace=True` now fail deterministically across bounded read/write/`Call` forms with `PMR-E-HOST-ROOT-NOT-EXPOSED`
 - the proved host runtime-session floor now also covers per-runtime host-root state isolation across live event ingress for both exposure modes in the current named-property subset, so repeated callbacks mutate only the owning runtime session and fresh sessions restart from the host baseline
 - the proved host-backed callback floor now also covers live snapped source-handle routing on referenced `HostInjected` event sources, so `WithEvents` bindings remain keyed to the referenced host project/module identity and only the bound host-backed source handle routes the callback while sibling handles of the same referenced source type no-op deterministically
-- broader follow-on member traffic on those returned host-root object handles is still open in the bounded subset; this checklist currently proves handle return plus named/default-member child read, parenthesized zero-arg getter syntax, indexed scalar getter/invoke/write syntax, zero-arg invoke, scalar write navigation, the current named/indexed `Property Set` navigation slice, and the current imported scalar/named-argument/indexed-setter/property-putref/default-member/object-result/object-property/parenthesized-object-property/exception-invoke traffic plus same-name plain-project precedence on host-returned COM-backed objects, not full host-foundation closure
+- broader follow-on member traffic on those returned host-root object handles is still open in the bounded subset; this checklist currently proves handle return plus named/default-member child read, parenthesized zero-arg getter syntax, indexed scalar getter/invoke/write syntax, zero-arg invoke, scalar write navigation, the current named/indexed `Property Set` navigation slice, and the current imported scalar/named-argument/indexed-setter/property-putref/default-member/object-result/object-property/parenthesized-object-property/exception-invoke traffic plus explicit host-vs-project precedence on host-returned COM-backed objects, which is sufficient to close `IP-08A` as host foundation rather than parity breadth
 
 ## Remaining checklist by closure domain
 
@@ -168,8 +169,8 @@ Already evidenced in the repo today:
 
 ### B. Host project model
 
-- [ ] Make the host project object model executable beyond bounded implicit receiver reads, bounded object-handle return, and the current named/default-member child read/parenthesized/indexed/invoke/scalar-write navigation slice.
-- [ ] Prove project/object identity rules for host roots versus plain project references.
+- [x] Make the host project object model executable beyond bounded implicit receiver reads, bounded object-handle return, and the current named/default-member child read/parenthesized/indexed/invoke/scalar-write navigation slice.
+- [x] Prove project/object identity rules for host roots versus plain project references.
 - [x] Prove the supported host project lifecycle and session ownership behavior.
 
 ### C. Event/callback integration
@@ -179,5 +180,5 @@ Already evidenced in the repo today:
 
 ### D. Handoff to `IP-08B`
 
-- [ ] Narrow the remaining gap so `IP-08B` owns broader Office-style parity, not missing foundation semantics.
-- [ ] Update blockers/worklists so the remaining host gap is described as parity breadth rather than absent host substrate.
+- [x] Narrow the remaining gap so `IP-08B` owns broader Office-style parity, not missing foundation semantics.
+- [x] Update blockers/worklists so the remaining host gap is described as parity breadth rather than absent host substrate.
