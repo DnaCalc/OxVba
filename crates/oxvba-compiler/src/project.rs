@@ -12659,6 +12659,35 @@ mod tests {
     }
 
     #[test]
+    fn compile_project_preserves_explicit_let_for_positional_external_member_calls_to_dispatchinvoke()
+     {
+        let main_module = module_unit_from_source(
+            "MainModule",
+            ModuleKind::Procedural,
+            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim obj As OxVba.TestDispatch\nDim countValue\nDim existsValue\nDim lookupValue\nDim echoValue\nSet obj = CreateObject(4)\nLet countValue = obj.Count()\nLet existsValue = obj.Exists(42)\nLet lookupValue = obj.Lookup(42)\nLet echoValue = obj(42)\nEnd Sub",
+        )
+        .expect("module parses");
+        let manifest = ProjectManifest {
+            project_name: "ProjectA".to_string(),
+            project_kind: ProjectKind::Source,
+            modules: vec![main_module],
+            references: vec![ProjectReference {
+                referenced_project_name: "OxVba".to_string(),
+                reference_kind: ReferenceKind::TypeLibrary,
+            }],
+            reference_projects: Vec::new(),
+            conditional_constants: BTreeMap::new(),
+        };
+        let compiled = compile_project(&manifest)
+            .expect("explicit Let imported positional calls should compile");
+        let lowered = compiled.rewritten_source.to_ascii_lowercase();
+        assert!(lowered.contains("let countvalue = dispatchinvoke(obj, 1)"));
+        assert!(lowered.contains("let existsvalue = dispatchinvoke(obj, 2, 42)"));
+        assert!(lowered.contains("let lookupvalue = dispatchinvoke(obj, 6, 42)"));
+        assert!(lowered.contains("let echovalue = dispatchinvoke(obj, 16, 42)"));
+    }
+
+    #[test]
     fn compile_project_rewrites_external_object_member_call_to_dispatchinvoke() {
         let main_module = module_unit_from_source(
             "MainModule",

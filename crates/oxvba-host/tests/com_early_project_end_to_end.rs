@@ -587,6 +587,78 @@ End Sub
 
 #[cfg(target_os = "windows")]
 #[test]
+fn early_bound_project_executes_imported_explicit_let_positional_calls() {
+    let manifest = manifest_with_typelib(
+        r#"
+Attribute VB_Name = "MainModule"
+Public Sub Main()
+Dim obj As New OxVba.TestDispatch
+Dim countValue
+Dim existsValue
+Dim lookupValue
+Dim echoValue
+Let countValue = obj.Count()
+Let existsValue = obj.Exists(42)
+Let lookupValue = obj.Lookup(42)
+Let echoValue = obj(42)
+End Sub
+"#,
+    );
+
+    let out = run_project_windows_hosted(&manifest, false);
+    assert!(expect_object_handle(&out[0]).raw() >= 20_001);
+    assert_eq!(
+        out[1],
+        RuntimeValue::I32(7),
+        "explicit Let imported zero-arg call should preserve metadata-backed lowering"
+    );
+    assert_eq!(
+        out[2],
+        RuntimeValue::Bool(true),
+        "explicit Let imported method call should preserve metadata-backed lowering"
+    );
+    assert_eq!(
+        out[3],
+        RuntimeValue::I32(1_042),
+        "explicit Let imported property-get call should preserve metadata-backed lowering"
+    );
+    assert_eq!(
+        out[4],
+        RuntimeValue::I32(42),
+        "explicit Let imported default-member call should preserve metadata-backed lowering"
+    );
+}
+
+#[cfg(target_os = "windows")]
+#[test]
+fn early_bound_project_explicit_let_positional_calls_vm_jit_snapshots_match() {
+    let manifest = manifest_with_typelib(
+        r#"
+Attribute VB_Name = "MainModule"
+Public Sub Main()
+Dim obj As New OxVba.TestDispatch
+Dim countValue
+Dim existsValue
+Dim lookupValue
+Dim echoValue
+Let countValue = obj.Count()
+Let existsValue = obj.Exists(42)
+Let lookupValue = obj.Lookup(42)
+Let echoValue = obj(42)
+End Sub
+"#,
+    );
+
+    let vm = run_project_windows_hosted(&manifest, false);
+    let jit = run_project_windows_hosted(&manifest, true);
+    assert_eq!(
+        vm, jit,
+        "VM/JIT snapshots should match for explicit Let imported positional calls"
+    );
+}
+
+#[cfg(target_os = "windows")]
+#[test]
 fn early_bound_project_object_result_member_calls_vm_jit_snapshots_match() {
     let manifest = manifest_with_typelib(
         r#"

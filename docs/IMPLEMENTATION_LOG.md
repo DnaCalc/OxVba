@@ -1,3 +1,14 @@
+## 2026-03-19 - Add imported explicit-Let positional call evidence
+
+- Continued `IP-05B` by widening the proved imported assignment-intent surface on the existing metadata-backed positional call path instead of widening unsupported event or richer object-model semantics.
+- Added compiler rewrite evidence in [project.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-compiler\src\project.rs) proving explicit `Let` preserves metadata-backed lowering for the current positional imported call subset:
+  - `Let countValue = obj.Count()`
+  - `Let existsValue = obj.Exists(42)`
+  - `Let lookupValue = obj.Lookup(42)`
+  - `Let echoValue = obj(42)`
+- Added Windows host end-to-end and VM/JIT parity evidence in [com_early_project_end_to_end.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-host\tests\com_early_project_end_to_end.rs) proving explicit `Let` preserves the same metadata-backed lowering across zero-arg method, positional method, positional `PropertyGet`, and authoritative default-member call syntax in the current imported subset.
+- `IP-05` remains `in-progress`: broader imported property/default-member syntax, richer imported member coverage beyond the controlled fixture, and wider Office/Excel object-model behavior are still open.
+
 ## 2026-03-18 - Add imported property-putref assignment evidence
 
 - Continued `IP-05B` by widening the imported setter surface into the first bounded object-valued assignment lane instead of leaving assignment-form `PropertyPutRef` entirely outside the metadata-backed subset.
