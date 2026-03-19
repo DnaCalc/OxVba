@@ -16675,6 +16675,94 @@ mod tests {
     }
 
     #[test]
+    fn compile_project_prefers_host_injected_root_returning_com_object_results_over_plain_project_name_match()
+     {
+        let cases = [
+            ("predeclared", "Attribute VB_PredeclaredId = True"),
+            ("global namespace", "Attribute VB_GlobalNamespace = True"),
+        ];
+
+        for (label, exposure_attr) in cases {
+            let main_module = module_unit_from_source(
+                "MainModule",
+                ModuleKind::Procedural,
+                "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim obj As OxVba.TestDispatch\nDim childDispatch As Object\nDim childUnknown As Object\nDim wrappedDispatch\nDim wrappedUnknown\nDim childDispatchCount\nDim childUnknownCount\nDim wrappedDispatchCount\nDim wrappedUnknownCount\nSet obj = Application.Value\nSet childDispatch = obj.ReturnSelfDispatch()\nSet childUnknown = obj.ReturnSelfUnknown()\nwrappedDispatch = obj.ReturnSelfDispatch()\nLet wrappedUnknown = obj.ReturnSelfUnknown()\nchildDispatchCount = DispatchInvoke(childDispatch, \"Count\")\nchildUnknownCount = DispatchInvoke(childUnknown, \"Count\")\nwrappedDispatchCount = DispatchInvoke(wrappedDispatch, \"Count\")\nwrappedUnknownCount = DispatchInvoke(wrappedUnknown, \"Count\")\nEnd Sub",
+            )
+            .expect("main module parses");
+            let plain_application = module_unit_from_source(
+                "Application",
+                ModuleKind::Class,
+                "Attribute VB_Name = \"Application\"\nPublic Property Get Value()\nValue = 41\nEnd Property",
+            )
+            .expect("plain application parses");
+            let host_application = module_unit_from_source(
+                "Application",
+                ModuleKind::Class,
+                format!(
+                    "Attribute VB_Name = \"Application\"\n{exposure_attr}\nPublic Property Get Value() As Object\nSet Value = CreateObject(4)\nEnd Property"
+                ),
+            )
+            .expect("host application parses");
+            let manifest = ProjectManifest {
+                project_name: "ProjectA".to_string(),
+                project_kind: ProjectKind::Source,
+                modules: vec![main_module],
+                references: vec![
+                    ProjectReference {
+                        referenced_project_name: "PlainProject".to_string(),
+                        reference_kind: ReferenceKind::Project,
+                    },
+                    ProjectReference {
+                        referenced_project_name: "HostProject".to_string(),
+                        reference_kind: ReferenceKind::HostInjected,
+                    },
+                    ProjectReference {
+                        referenced_project_name: "OxVba".to_string(),
+                        reference_kind: ReferenceKind::TypeLibrary,
+                    },
+                ],
+                reference_projects: vec![
+                    ReferencedProjectManifest {
+                        project_name: "PlainProject".to_string(),
+                        modules: vec![plain_application],
+                    },
+                    ReferencedProjectManifest {
+                        project_name: "HostProject".to_string(),
+                        modules: vec![host_application],
+                    },
+                ],
+                conditional_constants: BTreeMap::new(),
+            };
+            let compiled = compile_project(&manifest).unwrap_or_else(|err| {
+                panic!(
+                    "{label} same-name plain project reference must not steal the host-root imported object-result lane: {err}"
+                )
+            });
+            let lowered = compiled.rewritten_source.to_ascii_lowercase();
+            assert!(
+                lowered.contains("set obj = property_get_pmr_hostproject_application_value(0)"),
+                "{label}: expected host-injected root to win over same-name plain project application before imported object-result traffic, got: {lowered}"
+            );
+            assert!(
+                lowered.contains("set childdispatch = dispatchinvoke(obj, 23)"),
+                "{label}: expected VT_DISPATCH object-result rewrite after host-root COM return, got: {lowered}"
+            );
+            assert!(
+                lowered.contains("set childunknown = dispatchinvoke(obj, 24)"),
+                "{label}: expected VT_UNKNOWN object-result rewrite after host-root COM return, got: {lowered}"
+            );
+            assert!(
+                lowered.contains("wrappeddispatch = dispatchinvoke(obj, 23)"),
+                "{label}: expected Variant-target VT_DISPATCH object-result rewrite after host-root COM return, got: {lowered}"
+            );
+            assert!(
+                lowered.contains("let wrappedunknown = dispatchinvoke(obj, 24)"),
+                "{label}: expected explicit Let Variant-target VT_UNKNOWN object-result rewrite after host-root COM return, got: {lowered}"
+            );
+        }
+    }
+
+    #[test]
     fn compile_project_rewrites_host_injected_root_returning_com_object_for_imported_object_property_gets()
      {
         let cases = [
