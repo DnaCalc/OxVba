@@ -2057,12 +2057,9 @@ fn rewrite_early_bound_statement_invoke_without_parentheses(
         return Ok(line.to_string());
     }
     let callee_end = trimmed.find(char::is_whitespace).unwrap_or(trimmed.len());
-    if callee_end == trimmed.len() {
-        return Ok(line.to_string());
-    }
     let callee = trimmed[..callee_end].trim();
     let args_tail = trimmed[callee_end..].trim();
-    if callee.is_empty() || args_tail.is_empty() {
+    if callee.is_empty() {
         return Ok(line.to_string());
     }
     let Some((var_name, target_name, member_token, member_spec)) =
@@ -2070,11 +2067,15 @@ fn rewrite_early_bound_statement_invoke_without_parentheses(
     else {
         return Ok(line.to_string());
     };
-    let args = split_top_level_args(args_tail)?
-        .into_iter()
-        .map(|arg| arg.trim().to_string())
-        .filter(|arg| !arg.is_empty())
-        .collect::<Vec<_>>();
+    let args = if args_tail.is_empty() {
+        Vec::new()
+    } else {
+        split_top_level_args(args_tail)?
+            .into_iter()
+            .map(|arg| arg.trim().to_string())
+            .filter(|arg| !arg.is_empty())
+            .collect::<Vec<_>>()
+    };
     validate_early_bound_invoke_shape(&target_name, member_spec, args.len())?;
     Ok(format!(
         "{}{}",
@@ -12962,6 +12963,31 @@ mod tests {
     }
 
     #[test]
+    fn compile_project_rewrites_call_statement_for_zero_arg_external_method_exception_lane() {
+        let main_module = module_unit_from_source(
+            "MainModule",
+            ModuleKind::Procedural,
+            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim obj As OxVba.TestDispatch\nSet obj = CreateObject(4)\nCall obj.RaiseException()\nEnd Sub",
+        )
+        .expect("module parses");
+        let manifest = ProjectManifest {
+            project_name: "ProjectA".to_string(),
+            project_kind: ProjectKind::Source,
+            modules: vec![main_module],
+            references: vec![ProjectReference {
+                referenced_project_name: "OxVba".to_string(),
+                reference_kind: ReferenceKind::TypeLibrary,
+            }],
+            reference_projects: Vec::new(),
+            conditional_constants: BTreeMap::new(),
+        };
+        let compiled = compile_project(&manifest)
+            .expect("Call-form zero-arg imported exception method should compile");
+        let lowered = compiled.rewritten_source.to_ascii_lowercase();
+        assert!(lowered.contains("call dispatchinvoke(obj, 17)"));
+    }
+
+    #[test]
     fn compile_project_rewrites_no_paren_call_statements_for_external_member_invokes() {
         let main_module = module_unit_from_source(
             "MainModule",
@@ -12988,6 +13014,32 @@ mod tests {
         assert!(lowered.contains("call dispatchinvoke(obj, 6, 42)"));
         assert!(lowered.contains("call dispatchinvoke(obj, 9)"));
         assert!(lowered.contains("call dispatchinvoke(obj, 16, 42)"));
+    }
+
+    #[test]
+    fn compile_project_rewrites_no_paren_call_statement_for_zero_arg_external_method_exception_lane()
+     {
+        let main_module = module_unit_from_source(
+            "MainModule",
+            ModuleKind::Procedural,
+            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim obj As OxVba.TestDispatch\nSet obj = CreateObject(4)\nCall obj.RaiseException\nEnd Sub",
+        )
+        .expect("module parses");
+        let manifest = ProjectManifest {
+            project_name: "ProjectA".to_string(),
+            project_kind: ProjectKind::Source,
+            modules: vec![main_module],
+            references: vec![ProjectReference {
+                referenced_project_name: "OxVba".to_string(),
+                reference_kind: ReferenceKind::TypeLibrary,
+            }],
+            reference_projects: Vec::new(),
+            conditional_constants: BTreeMap::new(),
+        };
+        let compiled = compile_project(&manifest)
+            .expect("no-paren Call-form zero-arg imported exception method should compile");
+        let lowered = compiled.rewritten_source.to_ascii_lowercase();
+        assert!(lowered.contains("call dispatchinvoke(obj, 17)"));
     }
 
     #[test]
@@ -13074,6 +13126,31 @@ mod tests {
     }
 
     #[test]
+    fn compile_project_rewrites_statement_context_for_zero_arg_external_method_exception_lane() {
+        let main_module = module_unit_from_source(
+            "MainModule",
+            ModuleKind::Procedural,
+            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim obj As OxVba.TestDispatch\nSet obj = CreateObject(4)\nobj.RaiseException()\nEnd Sub",
+        )
+        .expect("module parses");
+        let manifest = ProjectManifest {
+            project_name: "ProjectA".to_string(),
+            project_kind: ProjectKind::Source,
+            modules: vec![main_module],
+            references: vec![ProjectReference {
+                referenced_project_name: "OxVba".to_string(),
+                reference_kind: ReferenceKind::TypeLibrary,
+            }],
+            reference_projects: Vec::new(),
+            conditional_constants: BTreeMap::new(),
+        };
+        let compiled = compile_project(&manifest)
+            .expect("statement-context zero-arg imported exception method should compile");
+        let lowered = compiled.rewritten_source.to_ascii_lowercase();
+        assert!(lowered.contains("dispatchinvoke(obj, 17)"));
+    }
+
+    #[test]
     fn compile_project_rewrites_no_paren_statement_context_for_external_member_invokes() {
         let main_module = module_unit_from_source(
             "MainModule",
@@ -13098,6 +13175,32 @@ mod tests {
         assert!(lowered.contains("dispatchinvoke(obj, 2, 42)"));
         assert!(lowered.contains("dispatchinvoke(obj, 6, 42)"));
         assert!(lowered.contains("dispatchinvoke(obj, 16, 42)"));
+    }
+
+    #[test]
+    fn compile_project_rewrites_no_paren_statement_context_for_zero_arg_external_method_exception_lane()
+     {
+        let main_module = module_unit_from_source(
+            "MainModule",
+            ModuleKind::Procedural,
+            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim obj As OxVba.TestDispatch\nSet obj = CreateObject(4)\nobj.RaiseException\nEnd Sub",
+        )
+        .expect("module parses");
+        let manifest = ProjectManifest {
+            project_name: "ProjectA".to_string(),
+            project_kind: ProjectKind::Source,
+            modules: vec![main_module],
+            references: vec![ProjectReference {
+                referenced_project_name: "OxVba".to_string(),
+                reference_kind: ReferenceKind::TypeLibrary,
+            }],
+            reference_projects: Vec::new(),
+            conditional_constants: BTreeMap::new(),
+        };
+        let compiled = compile_project(&manifest)
+            .expect("no-paren statement-context zero-arg imported exception method should compile");
+        let lowered = compiled.rewritten_source.to_ascii_lowercase();
+        assert!(lowered.contains("dispatchinvoke(obj, 17)"));
     }
 
     #[test]

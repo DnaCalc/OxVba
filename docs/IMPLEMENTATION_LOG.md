@@ -1,3 +1,15 @@
+## 2026-03-19 - Add imported zero-arg method statement exception evidence
+
+- Continued `IP-05B` by turning the imported zero-arg statement-form method rows into observable execution evidence instead of leaving them protected only by successful-compilation proofs.
+- In [project.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-compiler\src\project.rs), widened imported no-parentheses bare statement lowering so zero-arg imported members no longer require a trailing whitespace-delimited argument tail before metadata-backed resolution can occur.
+- Added direct compiler rewrite evidence for the controlled zero-arg exception method across all four statement forms:
+  - `Call obj.RaiseException()`
+  - `obj.RaiseException()`
+  - `Call obj.RaiseException`
+  - `obj.RaiseException`
+- Added Windows host runtime-error and VM/JIT parity evidence in [com_early_project_end_to_end.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-host\tests\com_early_project_end_to_end.rs) proving those four imported statement forms now execute through the metadata-backed early-bind path and preserve bounded `com-dispatch-exception-raised` / `EXCEPINFO` detail instead of falling through to local unknown-procedure resolution.
+- `IP-05` remains `in-progress`: richer typelib/member coverage, broader imported property/event/default-member parity beyond the controlled fixture, and wider Office/Excel object-model behavior are still open.
+
 ## 2026-03-19 - Add imported zero-arg method read-assignment evidence
 
 - Continued `IP-05B` by closing a direct imported call-vs-value hole on the already-supported metadata-backed subset instead of widening typelib or event scope.

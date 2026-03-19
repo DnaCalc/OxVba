@@ -36,6 +36,20 @@ fn run_project_windows_hosted(manifest: &ProjectManifest, enable_jit: bool) -> V
 }
 
 #[cfg(target_os = "windows")]
+fn run_project_windows_hosted_error(manifest: &ProjectManifest, enable_jit: bool) -> String {
+    let mut engine = Engine::new(HostConfig {
+        enable_jit,
+        root_object_name: None,
+    });
+    engine.set_host_policy(HostPolicy::interactive_dev());
+    let err = engine
+        .execute_project_with_snapshot_phased(manifest)
+        .expect_err("project should fail deterministically");
+    assert_eq!(err.phase(), DiagnosticPhase::Runtime);
+    err.message().to_string()
+}
+
+#[cfg(target_os = "windows")]
 fn expect_object_handle(value: &RuntimeValue) -> ObjectHandle {
     match value {
         RuntimeValue::ObjectHandle(handle) => *handle,
@@ -528,6 +542,132 @@ End Sub
     assert_eq!(
         vm, jit,
         "VM/JIT snapshots should match for imported no-paren statement-context named-argument member invokes"
+    );
+}
+
+#[cfg(target_os = "windows")]
+#[test]
+fn early_bound_project_reports_runtime_error_for_imported_raise_exception_call_statement() {
+    let manifest = manifest_with_typelib(
+        r#"
+Attribute VB_Name = "MainModule"
+Public Sub Main()
+Dim obj As New OxVba.TestDispatch
+Call obj.RaiseException()
+End Sub
+"#,
+    );
+
+    let vm = run_project_windows_hosted_error(&manifest, false);
+    let jit = run_project_windows_hosted_error(&manifest, true);
+    assert!(
+        vm.contains("com-dispatch-exception-raised;hresult=0x80020009;excep_scode=0x80020009;")
+            && jit.contains(
+                "com-dispatch-exception-raised;hresult=0x80020009;excep_scode=0x80020009;"
+            ),
+        "expected stable imported exception prefix across VM/JIT, got vm={vm:?} jit={jit:?}"
+    );
+    assert!(
+        vm.contains("excep_source=\"OxVba.TestDispatch\"")
+            && vm.contains("excep_description=\"controlled dispatch exception\"")
+            && jit.contains("excep_source=\"OxVba.TestDispatch\"")
+            && jit.contains("excep_description=\"controlled dispatch exception\""),
+        "expected imported EXCEPINFO source/description across VM/JIT, got vm={vm:?} jit={jit:?}"
+    );
+}
+
+#[cfg(target_os = "windows")]
+#[test]
+fn early_bound_project_reports_runtime_error_for_imported_raise_exception_statement_context() {
+    let manifest = manifest_with_typelib(
+        r#"
+Attribute VB_Name = "MainModule"
+Public Sub Main()
+Dim obj As New OxVba.TestDispatch
+obj.RaiseException()
+End Sub
+"#,
+    );
+
+    let vm = run_project_windows_hosted_error(&manifest, false);
+    let jit = run_project_windows_hosted_error(&manifest, true);
+    assert!(
+        vm.contains("com-dispatch-exception-raised;hresult=0x80020009;excep_scode=0x80020009;")
+            && jit.contains(
+                "com-dispatch-exception-raised;hresult=0x80020009;excep_scode=0x80020009;"
+            ),
+        "expected stable imported exception prefix across VM/JIT, got vm={vm:?} jit={jit:?}"
+    );
+    assert!(
+        vm.contains("excep_source=\"OxVba.TestDispatch\"")
+            && vm.contains("excep_description=\"controlled dispatch exception\"")
+            && jit.contains("excep_source=\"OxVba.TestDispatch\"")
+            && jit.contains("excep_description=\"controlled dispatch exception\""),
+        "expected imported EXCEPINFO source/description across VM/JIT, got vm={vm:?} jit={jit:?}"
+    );
+}
+
+#[cfg(target_os = "windows")]
+#[test]
+fn early_bound_project_reports_runtime_error_for_imported_no_paren_raise_exception_call_statement()
+{
+    let manifest = manifest_with_typelib(
+        r#"
+Attribute VB_Name = "MainModule"
+Public Sub Main()
+Dim obj As New OxVba.TestDispatch
+Call obj.RaiseException
+End Sub
+"#,
+    );
+
+    let vm = run_project_windows_hosted_error(&manifest, false);
+    let jit = run_project_windows_hosted_error(&manifest, true);
+    assert!(
+        vm.contains("com-dispatch-exception-raised;hresult=0x80020009;excep_scode=0x80020009;")
+            && jit.contains(
+                "com-dispatch-exception-raised;hresult=0x80020009;excep_scode=0x80020009;"
+            ),
+        "expected stable imported exception prefix across VM/JIT, got vm={vm:?} jit={jit:?}"
+    );
+    assert!(
+        vm.contains("excep_source=\"OxVba.TestDispatch\"")
+            && vm.contains("excep_description=\"controlled dispatch exception\"")
+            && jit.contains("excep_source=\"OxVba.TestDispatch\"")
+            && jit.contains("excep_description=\"controlled dispatch exception\""),
+        "expected imported EXCEPINFO source/description across VM/JIT, got vm={vm:?} jit={jit:?}"
+    );
+}
+
+#[cfg(target_os = "windows")]
+#[test]
+fn early_bound_project_reports_runtime_error_for_imported_no_paren_raise_exception_statement_context()
+ {
+    let manifest = manifest_with_typelib(
+        r#"
+Attribute VB_Name = "MainModule"
+Public Sub Main()
+Dim obj As New OxVba.TestDispatch
+obj.RaiseException
+End Sub
+"#,
+    );
+
+    let vm = run_project_windows_hosted_error(&manifest, false);
+    let jit = run_project_windows_hosted_error(&manifest, true);
+    assert!(
+        vm.contains("com-dispatch-exception-raised;hresult=0x80020009;excep_scode=0x80020009;")
+            && jit.contains(
+                "com-dispatch-exception-raised;hresult=0x80020009;excep_scode=0x80020009;"
+            ),
+        "expected stable imported exception prefix across VM/JIT, got vm={vm:?} jit={jit:?}"
+    );
+    assert!(
+        vm.contains("excep_source=\"OxVba.TestDispatch\"")
+            && vm.contains("excep_description=\"controlled dispatch exception\"")
+            && jit.contains("excep_source=\"OxVba.TestDispatch\"")
+            && jit.contains("excep_description=\"controlled dispatch exception\""),
+        "expected imported EXCEPINFO source/description across VM/JIT, got vm={vm:?} jit={jit:?}"
     );
 }
 
