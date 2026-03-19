@@ -2300,6 +2300,88 @@ mod tests {
     }
 
     #[test]
+    fn formal_host_project_host_injected_global_namespace_call_statement_property_get_executes() {
+        let engine = Engine::new(HostConfig::default());
+        let main_module = module_unit_from_source(
+            "MainModule",
+            ModuleKind::Procedural,
+            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nCall Application.Value\nDim afterValue\nafterValue = Application.Observe\nEnd Sub",
+        )
+        .expect("main module should parse");
+        let host_application = module_unit_from_source(
+            "Application",
+            ModuleKind::Class,
+            "Attribute VB_Name = \"Application\"\nAttribute VB_GlobalNamespace = True\nPrivate stored\nPublic Sub Class_Initialize()\nstored = 4\nEnd Sub\nPublic Property Get Value()\nstored = 7\nValue = stored\nEnd Property\nPublic Property Get Observe()\nObserve = stored\nEnd Property",
+        )
+        .expect("host application module should parse");
+        let manifest = ProjectManifest {
+            project_name: "ProjectA".to_string(),
+            project_kind: ProjectKind::Source,
+            modules: vec![main_module],
+            references: vec![ProjectReference {
+                referenced_project_name: "HostProject".to_string(),
+                reference_kind: ReferenceKind::HostInjected,
+            }],
+            reference_projects: vec![ReferencedProjectManifest {
+                project_name: "HostProject".to_string(),
+                modules: vec![host_application],
+            }],
+            conditional_constants: std::collections::BTreeMap::new(),
+        };
+
+        let snapshot = engine
+            .execute_project_with_value_snapshot_phased(&manifest)
+            .expect("host-injected global-namespace call statement property get should execute");
+        assert_eq!(
+            snapshot[0],
+            RuntimeValue::I32(7),
+            "snapshot: {:?}",
+            snapshot
+        );
+    }
+
+    #[test]
+    fn formal_host_project_host_injected_global_namespace_call_statement_default_member_executes() {
+        let engine = Engine::new(HostConfig::default());
+        let main_module = module_unit_from_source(
+            "MainModule",
+            ModuleKind::Procedural,
+            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nCall Application\nDim afterValue\nafterValue = Application.Observe\nEnd Sub",
+        )
+        .expect("main module should parse");
+        let host_application = module_unit_from_source(
+            "Application",
+            ModuleKind::Class,
+            "Attribute VB_Name = \"Application\"\nAttribute VB_GlobalNamespace = True\nPrivate stored\nPublic Sub Class_Initialize()\nstored = 4\nEnd Sub\nPublic Property Get Value()\nstored = 7\nValue = stored\nEnd Property\nAttribute Value.VB_UserMemId = 0\nPublic Property Get Observe()\nObserve = stored\nEnd Property",
+        )
+        .expect("host application module should parse");
+        let manifest = ProjectManifest {
+            project_name: "ProjectA".to_string(),
+            project_kind: ProjectKind::Source,
+            modules: vec![main_module],
+            references: vec![ProjectReference {
+                referenced_project_name: "HostProject".to_string(),
+                reference_kind: ReferenceKind::HostInjected,
+            }],
+            reference_projects: vec![ReferencedProjectManifest {
+                project_name: "HostProject".to_string(),
+                modules: vec![host_application],
+            }],
+            conditional_constants: std::collections::BTreeMap::new(),
+        };
+
+        let snapshot = engine
+            .execute_project_with_value_snapshot_phased(&manifest)
+            .expect("host-injected global-namespace call statement default member should execute");
+        assert_eq!(
+            snapshot[0],
+            RuntimeValue::I32(7),
+            "snapshot: {:?}",
+            snapshot
+        );
+    }
+
+    #[test]
     fn formal_host_project_host_injected_predeclared_statement_context_property_get_executes() {
         let engine = Engine::new(HostConfig::default());
         let main_module = module_unit_from_source(
@@ -2373,6 +2455,92 @@ mod tests {
         let snapshot = engine
             .execute_project_with_value_snapshot_phased(&manifest)
             .expect("host-injected predeclared statement-context default member should execute");
+        assert_eq!(
+            snapshot[0],
+            RuntimeValue::I32(7),
+            "snapshot: {:?}",
+            snapshot
+        );
+    }
+
+    #[test]
+    fn formal_host_project_host_injected_global_namespace_statement_context_property_get_executes()
+    {
+        let engine = Engine::new(HostConfig::default());
+        let main_module = module_unit_from_source(
+            "MainModule",
+            ModuleKind::Procedural,
+            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nApplication.Value\nDim afterValue\nafterValue = Application.Observe\nEnd Sub",
+        )
+        .expect("main module should parse");
+        let host_application = module_unit_from_source(
+            "Application",
+            ModuleKind::Class,
+            "Attribute VB_Name = \"Application\"\nAttribute VB_GlobalNamespace = True\nPrivate stored\nPublic Sub Class_Initialize()\nstored = 4\nEnd Sub\nPublic Property Get Value()\nstored = 7\nValue = stored\nEnd Property\nPublic Property Get Observe()\nObserve = stored\nEnd Property",
+        )
+        .expect("host application module should parse");
+        let manifest = ProjectManifest {
+            project_name: "ProjectA".to_string(),
+            project_kind: ProjectKind::Source,
+            modules: vec![main_module],
+            references: vec![ProjectReference {
+                referenced_project_name: "HostProject".to_string(),
+                reference_kind: ReferenceKind::HostInjected,
+            }],
+            reference_projects: vec![ReferencedProjectManifest {
+                project_name: "HostProject".to_string(),
+                modules: vec![host_application],
+            }],
+            conditional_constants: std::collections::BTreeMap::new(),
+        };
+
+        let snapshot = engine
+            .execute_project_with_value_snapshot_phased(&manifest)
+            .expect("host-injected global-namespace statement-context property get should execute");
+        assert_eq!(
+            snapshot[0],
+            RuntimeValue::I32(7),
+            "snapshot: {:?}",
+            snapshot
+        );
+    }
+
+    #[test]
+    fn formal_host_project_host_injected_global_namespace_statement_context_default_member_executes()
+     {
+        let engine = Engine::new(HostConfig::default());
+        let main_module = module_unit_from_source(
+            "MainModule",
+            ModuleKind::Procedural,
+            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nApplication\nDim afterValue\nafterValue = Application.Observe\nEnd Sub",
+        )
+        .expect("main module should parse");
+        let host_application = module_unit_from_source(
+            "Application",
+            ModuleKind::Class,
+            "Attribute VB_Name = \"Application\"\nAttribute VB_GlobalNamespace = True\nPrivate stored\nPublic Sub Class_Initialize()\nstored = 4\nEnd Sub\nPublic Property Get Value()\nstored = 7\nValue = stored\nEnd Property\nAttribute Value.VB_UserMemId = 0\nPublic Property Get Observe()\nObserve = stored\nEnd Property",
+        )
+        .expect("host application module should parse");
+        let manifest = ProjectManifest {
+            project_name: "ProjectA".to_string(),
+            project_kind: ProjectKind::Source,
+            modules: vec![main_module],
+            references: vec![ProjectReference {
+                referenced_project_name: "HostProject".to_string(),
+                reference_kind: ReferenceKind::HostInjected,
+            }],
+            reference_projects: vec![ReferencedProjectManifest {
+                project_name: "HostProject".to_string(),
+                modules: vec![host_application],
+            }],
+            conditional_constants: std::collections::BTreeMap::new(),
+        };
+
+        let snapshot = engine
+            .execute_project_with_value_snapshot_phased(&manifest)
+            .expect(
+                "host-injected global-namespace statement-context default member should execute",
+            );
         assert_eq!(
             snapshot[0],
             RuntimeValue::I32(7),

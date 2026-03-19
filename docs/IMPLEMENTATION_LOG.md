@@ -1,3 +1,14 @@
+## 2026-03-19 - Add host-injected global-namespace invoke evidence
+
+- Continued `IP-08A` by removing the last exposure-mode asymmetry in the bounded host-root invoke floor.
+- In [project.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-compiler\src\project.rs), added direct compiler evidence that host-injected referenced class modules marked `VB_GlobalNamespace = True` lower through the same native invoke paths already proved for the predeclared subset:
+  - named zero-arg property-get `Call` syntax such as `Call Application.Value`
+  - authoritative default-member zero-arg `Call` syntax such as `Call Application`
+  - named zero-arg property-get bare statement syntax such as `Application.Value`
+  - authoritative default-member zero-arg bare statement syntax such as `Application`
+- In [engine.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-host\src\engine.rs), added matching host runtime evidence proving those `VB_GlobalNamespace` invoke forms execute against the same host-injected root instance and mutate observable state before a follow-up `Observe` read.
+- This closes the bounded read/write/invoke symmetry between `VB_PredeclaredId` and `VB_GlobalNamespace`; the next honest `IP-08A` frontier is host object identity, callback routing, and deterministic diagnostics for invalid host-looking roots.
+
 ## 2026-03-19 - Add host-injected predeclared root statement-context evidence
 
 - Continued `IP-08A` by proving the bare statement-context neighbor next to the already-landed explicit-`Call` host-root row.

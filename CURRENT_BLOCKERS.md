@@ -201,14 +201,14 @@ Run context: active parity/compliance execution plus in-progress feature worklis
   - explicit host-event ingress now dispatches bound handlers into live runtime sessions for the current zero/one-argument subset,
   - host-injected referenced class modules marked `VB_PredeclaredId` or `VB_GlobalNamespace` now participate in bounded implicit receiver lowering for property/default-member read lanes,
   - the same host-injected root path now also has bounded executable `Property Let` coverage for named and authoritative default-member write lanes across both `VB_PredeclaredId` and `VB_GlobalNamespace`,
-  - the bounded host-root invoke floor now also includes explicit `Call` on zero-arg `VB_PredeclaredId` named property-get and authoritative default-member forms,
-  - the bounded host-root invoke floor now also includes bare statement-context execution on the same zero-arg `VB_PredeclaredId` named property-get and authoritative default-member forms,
+  - the bounded host-root invoke floor now also includes explicit `Call` on zero-arg named property-get and authoritative default-member forms across both `VB_PredeclaredId` and `VB_GlobalNamespace`,
+  - the bounded host-root invoke floor now also includes bare statement-context execution on the same zero-arg named property-get and authoritative default-member forms across both exposure modes,
   - plain project references still remain on the ordinary unresolved-name path and do not gain implicit host-root behavior,
-  - broader host project/root/global exposure rules, host object identity, callback routing, and wider statement/write behavior are still missing from the executable host model.
+  - broader host project/root/global exposure rules, host object identity, callback routing, and deterministic diagnostics for invalid host-looking roots are still missing from the executable host model.
 - Exact unblock steps:
-  - extend the host-injected root/global rules across the supported write and statement-call lanes where intended,
   - make host project object identity and runtime session ownership explicit in executable behavior,
   - connect host-backed object identity to the live callback/event ingress path where the host foundation requires it,
+  - classify deterministic diagnostics for host-looking names that are outside the supported root/global subset,
   - continue through the checklist in [WORKSET_2026-03-19_IP-08A_EXECUTION_CHECKLIST.md](C:\Work\DnaCalc\OxVba\docs\worksets\WORKSET_2026-03-19_IP-08A_EXECUTION_CHECKLIST.md).
 - Recommendation:
   - keep `IP-08` focused on executable host substrate first, then widen parity breadth only after the foundation matrix is covered.

@@ -15867,6 +15867,84 @@ mod tests {
     }
 
     #[test]
+    fn compile_project_rewrites_host_injected_global_namespace_call_statement_property_get_receiver()
+     {
+        let main_module = module_unit_from_source(
+            "MainModule",
+            ModuleKind::Procedural,
+            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nCall Application.Value\nEnd Sub",
+        )
+        .expect("module parses");
+        let host_application = module_unit_from_source(
+            "Application",
+            ModuleKind::Class,
+            "Attribute VB_Name = \"Application\"\nAttribute VB_GlobalNamespace = True\nPrivate stored\nPublic Sub Class_Initialize()\nstored = 4\nEnd Sub\nPublic Property Get Value()\nstored = 7\nValue = stored\nEnd Property",
+        )
+        .expect("module parses");
+        let manifest = ProjectManifest {
+            project_name: "ProjectA".to_string(),
+            project_kind: ProjectKind::Source,
+            modules: vec![main_module],
+            references: vec![ProjectReference {
+                referenced_project_name: "HostProject".to_string(),
+                reference_kind: ReferenceKind::HostInjected,
+            }],
+            reference_projects: vec![ReferencedProjectManifest {
+                project_name: "HostProject".to_string(),
+                modules: vec![host_application],
+            }],
+            conditional_constants: BTreeMap::new(),
+        };
+        let compiled = compile_project(&manifest).expect(
+            "host-injected global-namespace call statement property-get receiver should compile",
+        );
+        let lowered = compiled.rewritten_source.to_ascii_lowercase();
+        assert!(
+            lowered.contains("call property_get_pmr_hostproject_application_value(0)"),
+            "unexpected lowered source: {lowered}"
+        );
+    }
+
+    #[test]
+    fn compile_project_rewrites_host_injected_global_namespace_call_statement_default_member_receiver()
+     {
+        let main_module = module_unit_from_source(
+            "MainModule",
+            ModuleKind::Procedural,
+            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nCall Application\nEnd Sub",
+        )
+        .expect("module parses");
+        let host_application = module_unit_from_source(
+            "Application",
+            ModuleKind::Class,
+            "Attribute VB_Name = \"Application\"\nAttribute VB_GlobalNamespace = True\nPrivate stored\nPublic Sub Class_Initialize()\nstored = 4\nEnd Sub\nPublic Property Get Value()\nstored = 7\nValue = stored\nEnd Property\nAttribute Value.VB_UserMemId = 0",
+        )
+        .expect("module parses");
+        let manifest = ProjectManifest {
+            project_name: "ProjectA".to_string(),
+            project_kind: ProjectKind::Source,
+            modules: vec![main_module],
+            references: vec![ProjectReference {
+                referenced_project_name: "HostProject".to_string(),
+                reference_kind: ReferenceKind::HostInjected,
+            }],
+            reference_projects: vec![ReferencedProjectManifest {
+                project_name: "HostProject".to_string(),
+                modules: vec![host_application],
+            }],
+            conditional_constants: BTreeMap::new(),
+        };
+        let compiled = compile_project(&manifest).expect(
+            "host-injected global-namespace call statement default-member receiver should compile",
+        );
+        let lowered = compiled.rewritten_source.to_ascii_lowercase();
+        assert!(
+            lowered.contains("call property_get_pmr_hostproject_application_value(0)"),
+            "unexpected lowered source: {lowered}"
+        );
+    }
+
+    #[test]
     fn compile_project_rewrites_host_injected_predeclared_statement_context_property_get_receiver()
     {
         let main_module = module_unit_from_source(
@@ -15936,6 +16014,84 @@ mod tests {
         };
         let compiled = compile_project(&manifest).expect(
             "host-injected predeclared statement-context default-member receiver should compile",
+        );
+        let lowered = compiled.rewritten_source.to_ascii_lowercase();
+        assert!(
+            lowered.contains("property_get_pmr_hostproject_application_value(0)"),
+            "unexpected lowered source: {lowered}"
+        );
+    }
+
+    #[test]
+    fn compile_project_rewrites_host_injected_global_namespace_statement_context_property_get_receiver()
+     {
+        let main_module = module_unit_from_source(
+            "MainModule",
+            ModuleKind::Procedural,
+            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nApplication.Value\nEnd Sub",
+        )
+        .expect("module parses");
+        let host_application = module_unit_from_source(
+            "Application",
+            ModuleKind::Class,
+            "Attribute VB_Name = \"Application\"\nAttribute VB_GlobalNamespace = True\nPrivate stored\nPublic Sub Class_Initialize()\nstored = 4\nEnd Sub\nPublic Property Get Value()\nstored = 7\nValue = stored\nEnd Property",
+        )
+        .expect("module parses");
+        let manifest = ProjectManifest {
+            project_name: "ProjectA".to_string(),
+            project_kind: ProjectKind::Source,
+            modules: vec![main_module],
+            references: vec![ProjectReference {
+                referenced_project_name: "HostProject".to_string(),
+                reference_kind: ReferenceKind::HostInjected,
+            }],
+            reference_projects: vec![ReferencedProjectManifest {
+                project_name: "HostProject".to_string(),
+                modules: vec![host_application],
+            }],
+            conditional_constants: BTreeMap::new(),
+        };
+        let compiled = compile_project(&manifest).expect(
+            "host-injected global-namespace statement-context property-get receiver should compile",
+        );
+        let lowered = compiled.rewritten_source.to_ascii_lowercase();
+        assert!(
+            lowered.contains("property_get_pmr_hostproject_application_value(0)"),
+            "unexpected lowered source: {lowered}"
+        );
+    }
+
+    #[test]
+    fn compile_project_rewrites_host_injected_global_namespace_statement_context_default_member_receiver()
+     {
+        let main_module = module_unit_from_source(
+            "MainModule",
+            ModuleKind::Procedural,
+            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nApplication\nEnd Sub",
+        )
+        .expect("module parses");
+        let host_application = module_unit_from_source(
+            "Application",
+            ModuleKind::Class,
+            "Attribute VB_Name = \"Application\"\nAttribute VB_GlobalNamespace = True\nPrivate stored\nPublic Sub Class_Initialize()\nstored = 4\nEnd Sub\nPublic Property Get Value()\nstored = 7\nValue = stored\nEnd Property\nAttribute Value.VB_UserMemId = 0",
+        )
+        .expect("module parses");
+        let manifest = ProjectManifest {
+            project_name: "ProjectA".to_string(),
+            project_kind: ProjectKind::Source,
+            modules: vec![main_module],
+            references: vec![ProjectReference {
+                referenced_project_name: "HostProject".to_string(),
+                reference_kind: ReferenceKind::HostInjected,
+            }],
+            reference_projects: vec![ReferencedProjectManifest {
+                project_name: "HostProject".to_string(),
+                modules: vec![host_application],
+            }],
+            conditional_constants: BTreeMap::new(),
+        };
+        let compiled = compile_project(&manifest).expect(
+            "host-injected global-namespace statement-context default-member receiver should compile",
         );
         let lowered = compiled.rewritten_source.to_ascii_lowercase();
         assert!(
