@@ -1,3 +1,10 @@
+## 2026-03-19 - Prove host roots can return imported COM-capable objects
+
+- Continued `IP-08A` by widening the bounded host/COM coexistence floor from raw `DispatchInvoke` on host-returned COM objects into metadata-backed imported early-bound member traffic.
+- In [project.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-compiler\src\project.rs), added compiler evidence that a host-injected `Application.Value` getter may lower through the host-root path while returning `CreateObject(4)` into a typed imported receiver `Dim obj As OxVba.TestDispatch`, and then lower `obj.Count()` through the imported metadata-backed member path.
+- In [engine.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-host\src\engine.rs), added live runtime evidence that the same lane returns deterministic COM-backed object handle `5004` and then executes the imported early-bound `Count()` member with result `5005`.
+- This raises the honest `IP-08A` host/COM coexistence floor from raw invoke on host-returned COM objects to bounded imported early-bound member execution on those returned objects; broader mixed host/COM identity and parity remain open.
+
 ## 2026-03-19 - Prove host roots can return COM-backed objects
 
 - Continued `IP-08A` by widening the host/COM coexistence floor from non-routing handle separation into a real mixed object-model execution lane.

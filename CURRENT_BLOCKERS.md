@@ -222,9 +222,10 @@ Run context: active parity/compliance execution plus in-progress feature worklis
   - conflicting same-name plain-project class references now also have direct executable evidence that they do not steal `HostInjected` `WithEvents` source ownership by reference order,
   - neighboring COM-backed object handles now also have direct executable evidence that they do not perturb host-backed `WithEvents` ownership or route host event ingress for the bound host-backed source,
   - host-injected root getters now also have direct executable evidence that they may return a COM-backed object and feed that returned object through bounded `DispatchInvoke` on the shared object/value model,
+  - the same bounded host/COM coexistence floor now also has direct executable evidence that a host-injected root getter may return a COM-backed object into a typed imported early-bound receiver and execute metadata-backed `Count()` traffic on that returned object,
   - broader host project/root/global exposure rules and broader host object identity boundaries are still missing from the executable host model.
 - Exact unblock steps:
-  - make the remaining host project object identity boundaries explicit across host roots and COM-backed host objects beyond the now-proved non-routing and COM-return execution coexistence paths,
+  - make the remaining host project object identity boundaries explicit across host roots and COM-backed host objects beyond the now-proved non-routing, raw-dispatch, and imported-early-bind coexistence paths,
   - continue through the checklist in [WORKSET_2026-03-19_IP-08A_EXECUTION_CHECKLIST.md](C:\Work\DnaCalc\OxVba\docs\worksets\WORKSET_2026-03-19_IP-08A_EXECUTION_CHECKLIST.md).
 - Recommendation:
   - keep `IP-08` focused on executable host substrate first, then widen parity breadth only after the foundation matrix is covered.
