@@ -1,3 +1,12 @@
+## 2026-03-19 - Add host-injected predeclared root call-statement evidence
+
+- Continued `IP-08A` by proving the first host-root invocation row beyond read/write assignment contexts.
+- In [project.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-compiler\src\project.rs), added direct compiler evidence that host-injected referenced class modules marked `VB_PredeclaredId = True` lower through the native internal-class call-statement path for:
+  - named zero-arg property-get `Call` syntax such as `Call Application.Value`
+  - authoritative default-member zero-arg `Call` syntax such as `Call Application`
+- In [engine.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-host\src\engine.rs), added matching host runtime evidence proving those `Call` forms execute against the host-injected root instance and mutate observable state before a follow-up `Observe` read.
+- This still leaves bare statement-context host-root behavior, wider `VB_GlobalNamespace` invoke parity, and the broader host object identity/callback substrate open under `IP-08A`.
+
 ## 2026-03-19 - Add host-injected global-namespace root write evidence
 
 - Continued `IP-08A` by removing the remaining exposure-mode asymmetry in the bounded host-root write floor.
