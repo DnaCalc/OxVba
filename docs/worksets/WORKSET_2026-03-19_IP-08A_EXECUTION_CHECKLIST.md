@@ -83,6 +83,9 @@ Already evidenced in the repo today:
 - the proved host-injected explicit-`Call` lanes currently cover:
   - `VB_PredeclaredId` named property-get `Call` forms such as `Call Application.Value`
   - `VB_PredeclaredId` authoritative default-member `Call` forms such as `Call Application`
+- the proved host-injected statement-context lanes currently cover:
+  - `VB_PredeclaredId` named property-get statement forms such as `Application.Value`
+  - `VB_PredeclaredId` authoritative default-member statement forms such as `Application`
 - plain project references do not gain this host-root behavior; they remain on the ordinary unresolved-name / implicit-variant path in the current language mode
 
 ## Remaining checklist by closure domain
