@@ -289,6 +289,10 @@ pub enum ProjectCompileError {
         qualifier: String,
     },
     #[error(
+        "BIND-E-TYPELIB-WITHEVENTS-UNSUPPORTED: external `WithEvents` source `{type_name}` is outside the current deterministic imported-event subset"
+    )]
+    TypeLibraryWithEventsUnsupported { type_name: String },
+    #[error(
         "BIND-E-TYPELIB-CREATEOBJECT-UNSUPPORTED: `As New` external type `{type_name}` has no deterministic CreateObject selector mapping"
     )]
     TypeLibraryCreateObjectUnsupported { type_name: String },
@@ -357,6 +361,9 @@ impl ProjectCompileError {
                 "PMR-E-REFERENCE-CROSS-PROJECT-UNSUPPORTED"
             }
             Self::TypeLibraryQualifierUnresolved { .. } => "BIND-E-TYPELIB-QUALIFIER-UNRESOLVED",
+            Self::TypeLibraryWithEventsUnsupported { .. } => {
+                "BIND-E-TYPELIB-WITHEVENTS-UNSUPPORTED"
+            }
             Self::TypeLibraryCreateObjectUnsupported { .. } => {
                 "BIND-E-TYPELIB-CREATEOBJECT-UNSUPPORTED"
             }
@@ -1595,22 +1602,28 @@ fn expand_bound_source_line(
         return Ok(out);
     }
 
-    if let Some((withevents_var, source_type)) = parse_withevents_declaration_binding(line)
-        && let Some((target_project, target_module)) =
+    if let Some((withevents_var, source_type)) = parse_withevents_declaration_binding(line) {
+        if is_typelib_qualified_type_reference(manifest, &source_type) {
+            return Err(ProjectCompileError::TypeLibraryWithEventsUnsupported {
+                type_name: source_type,
+            });
+        }
+        if let Some((target_project, target_module)) =
             resolve_event_source_module(manifest, current_project, &source_type, reference_order)
-    {
-        let leading_ws_len = line.len().saturating_sub(line.trim_start().len());
-        let leading_ws = &line[..leading_ws_len];
-        internal_class_bindings.insert(
-            normalize_identifier(&withevents_var),
-            InternalClassBinding {
-                project_name: target_project,
-                module_name: target_module,
-                generated_instance_id: None,
-            },
-        );
-        withevents_bindings.insert(normalize_identifier(&withevents_var));
-        return Ok(vec![format!("{leading_ws}Public {withevents_var}")]);
+        {
+            let leading_ws_len = line.len().saturating_sub(line.trim_start().len());
+            let leading_ws = &line[..leading_ws_len];
+            internal_class_bindings.insert(
+                normalize_identifier(&withevents_var),
+                InternalClassBinding {
+                    project_name: target_project,
+                    module_name: target_module,
+                    generated_instance_id: None,
+                },
+            );
+            withevents_bindings.insert(normalize_identifier(&withevents_var));
+            return Ok(vec![format!("{leading_ws}Public {withevents_var}")]);
+        }
     }
 
     let rewritten = rewrite_early_bound_property_assignment(line, early_bound)?;
@@ -1724,6 +1737,17 @@ fn parse_qualified_type_reference(type_text: &str) -> Option<(&str, String)> {
         return None;
     }
     Some((qualifier, normalized.join(".")))
+}
+
+fn is_typelib_qualified_type_reference(manifest: &ProjectManifest, type_text: &str) -> bool {
+    let Some((qualifier, _)) = parse_qualified_type_reference(type_text) else {
+        return false;
+    };
+    manifest.references.iter().any(|reference| {
+        reference.reference_kind == ReferenceKind::TypeLibrary
+            && normalize_identifier(&reference.referenced_project_name)
+                == normalize_identifier(qualifier)
+    })
 }
 
 fn rewrite_early_bound_member_dispatch(
@@ -4077,7 +4101,18 @@ fn resolve_event_source_module(
     source_type: &str,
     reference_order: &BTreeMap<String, usize>,
 ) -> Option<(String, String)> {
-    resolve_interface_module(manifest, current_project, source_type, reference_order)
+    let normalized_source_type = parse_qualified_type_reference(source_type)
+        .map(|(_, normalized)| normalized)
+        .unwrap_or_else(|| normalize_identifier(source_type));
+    if normalized_source_type.is_empty() {
+        return None;
+    }
+    resolve_interface_module(
+        manifest,
+        current_project,
+        &normalized_source_type,
+        reference_order,
+    )
 }
 
 fn parse_withevents_declaration_binding(line: &str) -> Option<(String, String)> {
@@ -4109,15 +4144,11 @@ fn parse_withevents_declaration_binding(line: &str) -> Option<(String, String)> 
         .split(|ch: char| ch.is_ascii_whitespace() || ch == '(')
         .next()
         .unwrap_or_default();
-    let mut type_name = type_token
-        .split('.')
-        .next_back()
-        .map(normalize_identifier)?;
+    let type_name = type_token.trim();
     if type_name.is_empty() {
         return None;
     }
-    type_name = normalize_identifier(&type_name);
-    Some((var_name, type_name))
+    Some((var_name, type_name.to_string()))
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -6060,6 +6091,36 @@ mod tests {
             conditional_constants: BTreeMap::new(),
         };
         compile_project(&manifest).expect("WithEvents in class module should compile");
+    }
+
+    #[test]
+    fn compile_project_rejects_imported_withevents_source_in_class_module() {
+        let class_module = module_unit_from_source(
+            "Sink",
+            ModuleKind::Class,
+            "Attribute VB_Name = \"Sink\"\nPrivate WithEvents src As OxVba.TestEventServer\nPublic Sub Attach()\nEnd Sub",
+        )
+        .expect("module parses");
+        let main_module = module_unit_from_source(
+            "MainModule",
+            ModuleKind::Procedural,
+            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nEnd Sub",
+        )
+        .expect("module parses");
+        let manifest = ProjectManifest {
+            project_name: "ProjectA".to_string(),
+            project_kind: ProjectKind::Source,
+            modules: vec![main_module, class_module],
+            references: vec![ProjectReference {
+                referenced_project_name: "OxVba".to_string(),
+                reference_kind: ReferenceKind::TypeLibrary,
+            }],
+            reference_projects: Vec::new(),
+            conditional_constants: BTreeMap::new(),
+        };
+        let err = compile_project(&manifest)
+            .expect_err("imported WithEvents source should reject deterministically");
+        assert_eq!(err.code(), "BIND-E-TYPELIB-WITHEVENTS-UNSUPPORTED");
     }
 
     #[test]

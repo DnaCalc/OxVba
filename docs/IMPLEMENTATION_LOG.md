@@ -30,6 +30,14 @@
 - This closes the parenthesized statement/`Call` diagnostic neighbors directly instead of assuming they match the existing assignment-form and no-parentheses imported default-member diagnostics.
 - `IP-05` remains `in-progress`: richer typelib/member coverage, broader imported property/event/default-member parity beyond the controlled fixture, and wider Office/Excel object-model behavior are still open.
 
+## 2026-03-19 - Bound imported WithEvents declarations to a deterministic diagnostic
+
+- Continued `IP-05B`/`IP-07` honestly by removing a silent non-feature instead of pretending imported COM event declarations participate in the current runtime.
+- In [project.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-compiler\src\project.rs), taught module-aware lowering to recognize typelib-qualified `WithEvents` declarations and reject them on a stable `BIND-E-TYPELIB-WITHEVENTS-UNSUPPORTED` diagnostic before they can degrade into plain object declarations.
+- Added compiler and host phased evidence for `Private WithEvents src As OxVba.TestEventServer`, proving the imported declaration now fails deterministically at compile time instead of compiling without any event-subscription semantics.
+- This does not widen imported COM event support yet; it only makes the current boundary explicit while true imported `WithEvents` subscription/callback lowering remains downstream work.
+- `IP-05` remains `in-progress`: richer typelib/member coverage, broader imported property/event/default-member parity beyond the controlled fixture, and wider Office/Excel object-model behavior are still open.
+
 ## 2026-03-19 - Add imported zero-arg method read-assignment evidence
 
 - Continued `IP-05B` by closing a direct imported call-vs-value hole on the already-supported metadata-backed subset instead of widening typelib or event scope.
