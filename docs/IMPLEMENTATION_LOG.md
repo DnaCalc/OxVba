@@ -1,3 +1,13 @@
+## 2026-03-19 - Add host-injected child property-let evidence
+
+- Continued `IP-08A` by widening the returned-child host object-model floor from read/invoke traffic into scalar write traffic.
+- In [project.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-compiler\src\project.rs), added direct compiler evidence that typed child locals produced by `Set child = Application.Value` now rewrite through the host-injected PMR path for:
+  - named `Property Let` traffic such as `child.Value = 9`
+  - authoritative default-member `Property Let` traffic such as `child = 9`
+  - across both `VB_PredeclaredId` and `VB_GlobalNamespace`
+- In [engine.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-host\src\engine.rs), added matching host runtime evidence proving those returned-child write forms execute against the same child handle and persist observable state before a follow-up `Observe` read yields the expected snapshot `[1, 9]`.
+- This raises the bounded `IP-08A` host object-model floor from child read plus zero-arg invoke navigation to child read, zero-arg invoke, and scalar write navigation; broader child indexed/parenthesized/object-write/default-member breadth remains open.
+
 ## 2026-03-19 - Add host-injected child invoke evidence
 
 - Continued `IP-08A` by widening the returned-child floor from read-assignment into zero-arg invocation syntax.

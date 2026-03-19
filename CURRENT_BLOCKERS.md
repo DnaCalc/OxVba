@@ -206,11 +206,12 @@ Run context: active parity/compliance execution plus in-progress feature worklis
   - named object-valued host-root `Property Get` members now also return live object handles on the bounded assignment floor across both exposure modes when assigned through explicit `Set` into `Object` targets,
   - the same bounded host-root object-return floor now also has direct executable evidence for typed child-local follow-on named property-get and authoritative default-member read traffic across both exposure modes after `Set child = Application.Value`,
   - the same bounded host-root object-return floor now also has direct executable evidence for typed child-local explicit `Call` plus bare statement-context traffic on named and authoritative default-member zero-arg getter forms across both exposure modes after `Set child = Application.Value`,
+  - the same bounded host-root object-return floor now also has direct executable evidence for typed child-local named `Property Let` plus authoritative default-member `Property Let` traffic across both exposure modes after `Set child = Application.Value`,
   - plain project references still remain on the ordinary unresolved-name path and do not gain implicit host-root behavior,
-  - broader host project/root/global exposure rules, broader child-object write/indexed/parenthesized/default-member breadth after host-root handle return, host object identity, callback routing, and deterministic diagnostics for invalid host-looking roots are still missing from the executable host model.
+  - broader host project/root/global exposure rules, broader child-object indexed/parenthesized/object-write/default-member breadth after host-root handle return, host object identity, callback routing, and deterministic diagnostics for invalid host-looking roots are still missing from the executable host model.
 - Exact unblock steps:
   - make host project object identity and runtime session ownership explicit in executable behavior,
-  - widen host-root object-return lanes beyond the current typed-local named/default-member read plus zero-arg invoke slice into the intended follow-on write/indexed/parenthesized/default-member traffic,
+  - widen host-root object-return lanes beyond the current typed-local named/default-member read, zero-arg invoke, and scalar-write slice into the intended follow-on indexed/parenthesized/object-write/default-member traffic,
   - connect host-backed object identity to the live callback/event ingress path where the host foundation requires it,
   - classify deterministic diagnostics for host-looking names that are outside the supported root/global subset,
   - continue through the checklist in [WORKSET_2026-03-19_IP-08A_EXECUTION_CHECKLIST.md](C:\Work\DnaCalc\OxVba\docs\worksets\WORKSET_2026-03-19_IP-08A_EXECUTION_CHECKLIST.md).

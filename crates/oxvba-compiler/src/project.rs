@@ -16553,6 +16553,86 @@ mod tests {
     }
 
     #[test]
+    fn compile_project_rewrites_host_injected_child_property_let_after_object_root_get() {
+        let cases = [
+            (
+                "predeclared named property",
+                "Attribute VB_PredeclaredId = True",
+                "child.Value = 9",
+            ),
+            (
+                "predeclared default member",
+                "Attribute VB_PredeclaredId = True",
+                "child = 9",
+            ),
+            (
+                "global named property",
+                "Attribute VB_GlobalNamespace = True",
+                "child.Value = 9",
+            ),
+            (
+                "global default member",
+                "Attribute VB_GlobalNamespace = True",
+                "child = 9",
+            ),
+        ];
+
+        for (label, exposure_attr, write_line) in cases {
+            let main_module = module_unit_from_source(
+                "MainModule",
+                ModuleKind::Procedural,
+                format!(
+                    "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim child As Child\nSet child = Application.Value\n{write_line}\nDim afterValue\nafterValue = child.Observe\nEnd Sub"
+                ),
+            )
+            .expect("module parses");
+            let host_application = module_unit_from_source(
+                "Application",
+                ModuleKind::Class,
+                format!(
+                    "Attribute VB_Name = \"Application\"\n{exposure_attr}\nPublic Property Get Value() As Object\nDim c As New Child\nSet Value = c\nEnd Property"
+                ),
+            )
+            .expect("module parses");
+            let host_child = module_unit_from_source(
+                "Child",
+                ModuleKind::Class,
+                "Attribute VB_Name = \"Child\"\nPrivate stored\nPublic Sub Class_Initialize()\nstored = 4\nEnd Sub\nPublic Property Let Value(ByVal n)\nstored = n\nEnd Property\nAttribute Value.VB_UserMemId = 0\nPublic Property Get Observe()\nObserve = stored\nEnd Property",
+            )
+            .expect("module parses");
+            let manifest = ProjectManifest {
+                project_name: "ProjectA".to_string(),
+                project_kind: ProjectKind::Source,
+                modules: vec![main_module],
+                references: vec![ProjectReference {
+                    referenced_project_name: "HostProject".to_string(),
+                    reference_kind: ReferenceKind::HostInjected,
+                }],
+                reference_projects: vec![ReferencedProjectManifest {
+                    project_name: "HostProject".to_string(),
+                    modules: vec![host_application, host_child],
+                }],
+                conditional_constants: BTreeMap::new(),
+            };
+            let compiled = compile_project(&manifest)
+                .unwrap_or_else(|err| panic!("{label} should compile: {err:?}"));
+            let lowered = compiled.rewritten_source.to_ascii_lowercase();
+            assert!(
+                lowered.contains("set child = property_get_pmr_hostproject_application_value(0)"),
+                "{label}: unexpected lowered source: {lowered}"
+            );
+            assert!(
+                lowered.contains("property_let_pmr_hostproject_child_value(child, 9)"),
+                "{label}: unexpected lowered source: {lowered}"
+            );
+            assert!(
+                lowered.contains("aftervalue = property_get_pmr_hostproject_child_observe(child)"),
+                "{label}: unexpected lowered source: {lowered}"
+            );
+        }
+    }
+
+    #[test]
     fn compile_project_does_not_rewrite_plain_project_reference_into_implicit_host_receiver() {
         let main_module = module_unit_from_source(
             "MainModule",

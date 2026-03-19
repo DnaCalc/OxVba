@@ -103,8 +103,11 @@ Already evidenced in the repo today:
   - `VB_PredeclaredId` typed child-local bare statement-context traffic after host-root object return for both named and authoritative default-member zero-arg getter forms such as `child.Value` and `child`
   - `VB_GlobalNamespace` typed child-local explicit `Call` traffic after host-root object return for both named and authoritative default-member zero-arg getter forms such as `Call child.Value` and `Call child`
   - `VB_GlobalNamespace` typed child-local bare statement-context traffic after host-root object return for both named and authoritative default-member zero-arg getter forms such as `child.Value` and `child`
+- the proved host-injected child-write floor currently covers:
+  - `VB_PredeclaredId` typed child-local named `Property Let` and authoritative default-member `Property Let` traffic after host-root object return such as `child.Value = 9` and `child = 9`
+  - `VB_GlobalNamespace` typed child-local named `Property Let` and authoritative default-member `Property Let` traffic after host-root object return such as `child.Value = 9` and `child = 9`
 - plain project references do not gain this host-root behavior; they remain on the ordinary unresolved-name / implicit-variant path in the current language mode
-- broader follow-on member traffic on those returned host-root object handles is still open in the bounded subset; this checklist currently proves handle return plus named/default-member child read and zero-arg invoke navigation, not full child-object navigation parity
+- broader follow-on member traffic on those returned host-root object handles is still open in the bounded subset; this checklist currently proves handle return plus named/default-member child read, zero-arg invoke, and scalar write navigation, not full child-object navigation parity
 
 ## Remaining checklist by closure domain
 
@@ -118,7 +121,7 @@ Already evidenced in the repo today:
 
 ### B. Host project model
 
-- [ ] Make the host project object model executable beyond bounded implicit receiver reads, bounded object-handle return, and the current named/default-member child read/invoke navigation slice.
+- [ ] Make the host project object model executable beyond bounded implicit receiver reads, bounded object-handle return, and the current named/default-member child read/invoke/scalar-write navigation slice.
 - [ ] Prove project/object identity rules for host roots versus plain project references.
 - [ ] Prove the supported host project lifecycle and session ownership behavior.
 
