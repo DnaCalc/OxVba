@@ -361,6 +361,9 @@ fn emit_stmt(
                         slot_map,
                         temps,
                         instructions,
+                        call_patches,
+                        proc_meta,
+                        external_decls,
                     );
                     instructions.push(Instruction::ValidateRuntimeAssignment {
                         src: value_slot,
@@ -381,6 +384,9 @@ fn emit_stmt(
                         slot_map,
                         temps,
                         instructions,
+                        call_patches,
+                        proc_meta,
+                        external_decls,
                     );
                 }
             }
@@ -416,10 +422,23 @@ fn emit_stmt(
                     slot_map,
                     temps,
                     instructions,
+                    call_patches,
+                    proc_meta,
+                    external_decls,
                 );
                 let count_slot = if let Some(count) = count {
                     let slot = temps.alloc_temp();
-                    emit_expr_into(count, compare_mode, slot, slot_map, temps, instructions);
+                    emit_expr_into(
+                        count,
+                        compare_mode,
+                        slot,
+                        slot_map,
+                        temps,
+                        instructions,
+                        call_patches,
+                        proc_meta,
+                        external_decls,
+                    );
                     Some(slot)
                 } else {
                     None
@@ -432,6 +451,9 @@ fn emit_stmt(
                     slot_map,
                     temps,
                     instructions,
+                    call_patches,
+                    proc_meta,
+                    external_decls,
                 );
                 instructions.push(Instruction::IntrinsicMidStmtDigits {
                     target: target_slot,
@@ -447,7 +469,17 @@ fn emit_stmt(
             else_body,
         } => {
             let cond_slot = temps.alloc_temp();
-            emit_cond_into(cond, compare_mode, cond_slot, slot_map, temps, instructions);
+            emit_cond_into(
+                cond,
+                compare_mode,
+                cond_slot,
+                slot_map,
+                temps,
+                instructions,
+                call_patches,
+                proc_meta,
+                external_decls,
+            );
             let jump_patch = instructions.len();
             instructions.push(Instruction::JumpIfZero {
                 cond_slot,
@@ -513,7 +545,17 @@ fn emit_stmt(
             body,
         } => {
             if let Some(var_slot) = slot_map.get(var.as_str()).copied() {
-                emit_expr_into(start, compare_mode, var_slot, slot_map, temps, instructions);
+                emit_expr_into(
+                    start,
+                    compare_mode,
+                    var_slot,
+                    slot_map,
+                    temps,
+                    instructions,
+                    call_patches,
+                    proc_meta,
+                    external_decls,
+                );
                 let end_slot = temps.alloc_temp();
                 let step_slot = temps.alloc_temp();
                 let zero_slot = temps.alloc_temp();
@@ -524,8 +566,28 @@ fn emit_stmt(
                 let upper_cond_slot = temps.alloc_temp();
                 let lower_cond_slot = temps.alloc_temp();
                 let cond_slot = temps.alloc_temp();
-                emit_expr_into(end, compare_mode, end_slot, slot_map, temps, instructions);
-                emit_expr_into(step, compare_mode, step_slot, slot_map, temps, instructions);
+                emit_expr_into(
+                    end,
+                    compare_mode,
+                    end_slot,
+                    slot_map,
+                    temps,
+                    instructions,
+                    call_patches,
+                    proc_meta,
+                    external_decls,
+                );
+                emit_expr_into(
+                    step,
+                    compare_mode,
+                    step_slot,
+                    slot_map,
+                    temps,
+                    instructions,
+                    call_patches,
+                    proc_meta,
+                    external_decls,
+                );
                 instructions.push(Instruction::LoadConstI32 {
                     slot: zero_slot,
                     value: 0,
@@ -613,7 +675,17 @@ fn emit_stmt(
         BoundStmt::ForEach { var, items, body } => {
             if let Some(var_slot) = slot_map.get(var.as_str()).copied() {
                 for item in items {
-                    emit_expr_into(item, compare_mode, var_slot, slot_map, temps, instructions);
+                    emit_expr_into(
+                        item,
+                        compare_mode,
+                        var_slot,
+                        slot_map,
+                        temps,
+                        instructions,
+                        call_patches,
+                        proc_meta,
+                        external_decls,
+                    );
                     emit_stmt_list(
                         body,
                         compare_mode,
@@ -669,7 +741,17 @@ fn emit_stmt(
             let mut entry_exit_patch: Option<usize> = None;
 
             if !post_check {
-                emit_cond_into(cond, compare_mode, cond_slot, slot_map, temps, instructions);
+                emit_cond_into(
+                    cond,
+                    compare_mode,
+                    cond_slot,
+                    slot_map,
+                    temps,
+                    instructions,
+                    call_patches,
+                    proc_meta,
+                    external_decls,
+                );
                 let exit_patch = instructions.len();
                 instructions.push(Instruction::JumpIfZero {
                     cond_slot,
@@ -697,7 +779,17 @@ fn emit_stmt(
                 proc_labels,
             );
 
-            emit_cond_into(cond, compare_mode, cond_slot, slot_map, temps, instructions);
+            emit_cond_into(
+                cond,
+                compare_mode,
+                cond_slot,
+                slot_map,
+                temps,
+                instructions,
+                call_patches,
+                proc_meta,
+                external_decls,
+            );
             let post_exit_patch = instructions.len();
             instructions.push(Instruction::JumpIfZero {
                 cond_slot,
@@ -769,7 +861,17 @@ fn emit_stmt(
         BoundStmt::RaiseEvent { args, .. } => {
             for arg in args {
                 let temp = temps.alloc_temp();
-                emit_expr_into(&arg.expr, compare_mode, temp, slot_map, temps, instructions);
+                emit_expr_into(
+                    &arg.expr,
+                    compare_mode,
+                    temp,
+                    slot_map,
+                    temps,
+                    instructions,
+                    call_patches,
+                    proc_meta,
+                    external_decls,
+                );
             }
         }
         BoundStmt::ErrClear => {
@@ -800,7 +902,17 @@ fn emit_stmt(
             else_body,
         } => {
             let expr_slot = temps.alloc_temp();
-            emit_expr_into(expr, compare_mode, expr_slot, slot_map, temps, instructions);
+            emit_expr_into(
+                expr,
+                compare_mode,
+                expr_slot,
+                slot_map,
+                temps,
+                instructions,
+                call_patches,
+                proc_meta,
+                external_decls,
+            );
             let mut end_patches: Vec<usize> = Vec::new();
 
             for (clauses, body) in arms {
@@ -811,8 +923,15 @@ fn emit_stmt(
                 });
 
                 for clause in clauses {
-                    let cmp_slot =
-                        emit_select_case_clause_match(expr_slot, clause, temps, instructions);
+                    let cmp_slot = emit_select_case_clause_match(
+                        expr_slot,
+                        clause,
+                        temps,
+                        instructions,
+                        call_patches,
+                        proc_meta,
+                        external_decls,
+                    );
                     instructions.push(Instruction::BoolOr {
                         dst: aggregate_slot,
                         lhs: aggregate_slot,
@@ -895,6 +1014,9 @@ fn emit_stmt(
                     slot_map,
                     temps,
                     instructions,
+                    call_patches,
+                    proc_meta,
+                    external_decls,
                     None,
                 );
             }
@@ -938,6 +1060,9 @@ fn emit_stmt(
                             slot_map,
                             temps,
                             instructions,
+                            call_patches,
+                            proc_meta,
+                            external_decls,
                             Some(value_slot),
                         );
                     }
@@ -971,6 +1096,9 @@ fn emit_stmt(
                         slot_map,
                         temps,
                         instructions,
+                        call_patches,
+                        proc_meta,
+                        external_decls,
                         Some(target_slot),
                     );
                 }
@@ -1093,6 +1221,9 @@ fn emit_early_call(
             slot_map,
             temps,
             instructions,
+            call_patches,
+            proc_meta,
+            external_decls,
             assign_target,
         );
     }
@@ -1106,6 +1237,9 @@ fn emit_early_call(
             slot_map,
             temps,
             instructions,
+            call_patches,
+            proc_meta,
+            external_decls,
             assign_target,
         );
     }
@@ -1133,6 +1267,9 @@ fn emit_early_call(
                     slot_map,
                     temps,
                     instructions,
+                    call_patches,
+                    proc_meta,
+                    external_decls,
                 );
                 values.push(value_slot);
             }
@@ -1170,6 +1307,9 @@ fn emit_early_call(
             slot_map,
             temps,
             instructions,
+            call_patches,
+            proc_meta,
+            external_decls,
         );
     }
 
@@ -1196,12 +1336,16 @@ fn emit_early_call(
     true
 }
 
+#[allow(clippy::too_many_arguments)]
 fn emit_dispatch_invoke_call(
     args: &[BoundCallArg],
     compare_mode: StringCompareMode,
     slot_map: &HashMap<String, usize>,
     temps: &mut TempSlotAllocator,
     instructions: &mut Vec<Instruction>,
+    call_patches: &mut Vec<(usize, String)>,
+    proc_meta: &HashMap<String, EmitProcMeta>,
+    external_decls: &HashMap<String, BoundExternalDecl>,
     assign_target: Option<usize>,
 ) -> bool {
     let [object, member, invoke_args @ ..] = args else {
@@ -1215,6 +1359,9 @@ fn emit_dispatch_invoke_call(
         slot_map,
         temps,
         instructions,
+        call_patches,
+        proc_meta,
+        external_decls,
     );
     let member_slot = temps.alloc_temp();
     emit_expr_into(
@@ -1224,6 +1371,9 @@ fn emit_dispatch_invoke_call(
         slot_map,
         temps,
         instructions,
+        call_patches,
+        proc_meta,
+        external_decls,
     );
     let mut bytecode_args = Vec::with_capacity(invoke_args.len());
     for arg in invoke_args {
@@ -1235,6 +1385,9 @@ fn emit_dispatch_invoke_call(
             slot_map,
             temps,
             instructions,
+            call_patches,
+            proc_meta,
+            external_decls,
         );
         bytecode_args.push(DispatchInvokeArg {
             slot: Some(arg_slot),
@@ -1260,6 +1413,9 @@ fn emit_external_declare_call(
     slot_map: &HashMap<String, usize>,
     temps: &mut TempSlotAllocator,
     instructions: &mut Vec<Instruction>,
+    call_patches: &mut Vec<(usize, String)>,
+    proc_meta: &HashMap<String, EmitProcMeta>,
+    external_decls: &HashMap<String, BoundExternalDecl>,
     assign_target: Option<usize>,
 ) -> bool {
     let dst = assign_target.unwrap_or_else(|| temps.alloc_temp());
@@ -1272,6 +1428,9 @@ fn emit_external_declare_call(
             slot_map,
             temps,
             instructions,
+            call_patches,
+            proc_meta,
+            external_decls,
         );
         slot
     } else {
@@ -1317,6 +1476,9 @@ fn emit_late_bound_default_member_call(
     slot_map: &HashMap<String, usize>,
     temps: &mut TempSlotAllocator,
     instructions: &mut Vec<Instruction>,
+    call_patches: &mut Vec<(usize, String)>,
+    proc_meta: &HashMap<String, EmitProcMeta>,
+    external_decls: &HashMap<String, BoundExternalDecl>,
     assign_target: Option<usize>,
 ) -> bool {
     let Some(object_slot) = slot_map.get(name).copied() else {
@@ -1337,6 +1499,9 @@ fn emit_late_bound_default_member_call(
             slot_map,
             temps,
             instructions,
+            call_patches,
+            proc_meta,
+            external_decls,
         );
         invoke_args.push(DispatchInvokeArg {
             slot: Some(arg_slot),
@@ -1358,6 +1523,9 @@ fn emit_select_case_clause_match(
     clause: &BoundCaseClause,
     temps: &mut TempSlotAllocator,
     instructions: &mut Vec<Instruction>,
+    _call_patches: &mut Vec<(usize, String)>,
+    _proc_meta: &HashMap<String, EmitProcMeta>,
+    _external_decls: &HashMap<String, BoundExternalDecl>,
 ) -> usize {
     match clause {
         BoundCaseClause::Value(value) => {
@@ -1455,6 +1623,7 @@ fn emit_select_case_clause_match(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn emit_cond_into(
     cond: &BoundCond,
     compare_mode: StringCompareMode,
@@ -1462,13 +1631,36 @@ fn emit_cond_into(
     slot_map: &HashMap<String, usize>,
     temps: &mut TempSlotAllocator,
     instructions: &mut Vec<Instruction>,
+    call_patches: &mut Vec<(usize, String)>,
+    proc_meta: &HashMap<String, EmitProcMeta>,
+    external_decls: &HashMap<String, BoundExternalDecl>,
 ) {
     match cond {
         BoundCond::Compare { op, lhs, rhs } => {
             let lhs_slot = temps.alloc_temp();
             let rhs_slot = temps.alloc_temp();
-            emit_expr_into(lhs, compare_mode, lhs_slot, slot_map, temps, instructions);
-            emit_expr_into(rhs, compare_mode, rhs_slot, slot_map, temps, instructions);
+            emit_expr_into(
+                lhs,
+                compare_mode,
+                lhs_slot,
+                slot_map,
+                temps,
+                instructions,
+                call_patches,
+                proc_meta,
+                external_decls,
+            );
+            emit_expr_into(
+                rhs,
+                compare_mode,
+                rhs_slot,
+                slot_map,
+                temps,
+                instructions,
+                call_patches,
+                proc_meta,
+                external_decls,
+            );
             match op {
                 CompareOp::Eq => instructions.push(Instruction::CmpEqSlots {
                     dst,
@@ -1511,7 +1703,17 @@ fn emit_cond_into(
         BoundCond::Truthy(expr) => {
             let expr_slot = temps.alloc_temp();
             let zero_slot = temps.alloc_temp();
-            emit_expr_into(expr, compare_mode, expr_slot, slot_map, temps, instructions);
+            emit_expr_into(
+                expr,
+                compare_mode,
+                expr_slot,
+                slot_map,
+                temps,
+                instructions,
+                call_patches,
+                proc_meta,
+                external_decls,
+            );
             instructions.push(Instruction::LoadConstI32 {
                 slot: zero_slot,
                 value: 0,
@@ -1531,6 +1733,9 @@ fn emit_cond_into(
                 slot_map,
                 temps,
                 instructions,
+                call_patches,
+                proc_meta,
+                external_decls,
             );
             instructions.push(Instruction::BoolNot {
                 dst,
@@ -1540,8 +1745,28 @@ fn emit_cond_into(
         BoundCond::And(lhs, rhs) => {
             let lhs_slot = temps.alloc_temp();
             let rhs_slot = temps.alloc_temp();
-            emit_cond_into(lhs, compare_mode, lhs_slot, slot_map, temps, instructions);
-            emit_cond_into(rhs, compare_mode, rhs_slot, slot_map, temps, instructions);
+            emit_cond_into(
+                lhs,
+                compare_mode,
+                lhs_slot,
+                slot_map,
+                temps,
+                instructions,
+                call_patches,
+                proc_meta,
+                external_decls,
+            );
+            emit_cond_into(
+                rhs,
+                compare_mode,
+                rhs_slot,
+                slot_map,
+                temps,
+                instructions,
+                call_patches,
+                proc_meta,
+                external_decls,
+            );
             instructions.push(Instruction::BoolAnd {
                 dst,
                 lhs: lhs_slot,
@@ -1551,8 +1776,28 @@ fn emit_cond_into(
         BoundCond::Or(lhs, rhs) => {
             let lhs_slot = temps.alloc_temp();
             let rhs_slot = temps.alloc_temp();
-            emit_cond_into(lhs, compare_mode, lhs_slot, slot_map, temps, instructions);
-            emit_cond_into(rhs, compare_mode, rhs_slot, slot_map, temps, instructions);
+            emit_cond_into(
+                lhs,
+                compare_mode,
+                lhs_slot,
+                slot_map,
+                temps,
+                instructions,
+                call_patches,
+                proc_meta,
+                external_decls,
+            );
+            emit_cond_into(
+                rhs,
+                compare_mode,
+                rhs_slot,
+                slot_map,
+                temps,
+                instructions,
+                call_patches,
+                proc_meta,
+                external_decls,
+            );
             instructions.push(Instruction::BoolOr {
                 dst,
                 lhs: lhs_slot,
@@ -1562,6 +1807,7 @@ fn emit_cond_into(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn emit_expr_into(
     expr: &BoundExpr,
     compare_mode: StringCompareMode,
@@ -1569,6 +1815,9 @@ fn emit_expr_into(
     slot_map: &HashMap<String, usize>,
     temps: &mut TempSlotAllocator,
     instructions: &mut Vec<Instruction>,
+    call_patches: &mut Vec<(usize, String)>,
+    proc_meta: &HashMap<String, EmitProcMeta>,
+    external_decls: &HashMap<String, BoundExternalDecl>,
 ) {
     match expr {
         BoundExpr::IntConst(value) => instructions.push(Instruction::LoadConstI32 {
@@ -1620,7 +1869,17 @@ fn emit_expr_into(
             let mut arg_slots = Vec::with_capacity(args.len());
             for arg in args {
                 let slot = temps.alloc_temp();
-                emit_expr_into(arg, compare_mode, slot, slot_map, temps, instructions);
+                emit_expr_into(
+                    arg,
+                    compare_mode,
+                    slot,
+                    slot_map,
+                    temps,
+                    instructions,
+                    call_patches,
+                    proc_meta,
+                    external_decls,
+                );
                 arg_slots.push(slot);
             }
 
@@ -2268,11 +2527,32 @@ fn emit_expr_into(
                 _ => {}
             }
         }
-        BoundExpr::ProcCall { .. } => {
-            instructions.push(Instruction::LoadConstI32 {
-                slot: dst,
-                value: 0,
-            });
+        BoundExpr::ProcCall { name, args } => {
+            if !emit_early_call(
+                name,
+                args,
+                compare_mode,
+                slot_map,
+                temps,
+                instructions,
+                call_patches,
+                proc_meta,
+                external_decls,
+                Some(dst),
+            ) {
+                let _ = emit_late_bound_default_member_call(
+                    name,
+                    args,
+                    compare_mode,
+                    slot_map,
+                    temps,
+                    instructions,
+                    call_patches,
+                    proc_meta,
+                    external_decls,
+                    Some(dst),
+                );
+            }
         }
     }
 }

@@ -3002,7 +3002,13 @@ fn rewrite_internal_class_property_expression_reads(
         {
             continue;
         }
-        if next < bytes.len() && (bytes[next] == b'(' || bytes[next] == b'=') {
+        if next < bytes.len() && bytes[next] == b'(' {
+            continue;
+        }
+        if next < bytes.len()
+            && bytes[next] == b'='
+            && property_expression_read_is_assignment_lhs(text, receiver_start)
+        {
             continue;
         }
         let receiver = normalize_identifier(&text[receiver_start..receiver_end]);
@@ -3049,6 +3055,15 @@ fn rewrite_internal_class_property_expression_reads(
 
 fn is_identifier_byte(byte: u8) -> bool {
     byte.is_ascii_alphanumeric() || byte == b'_'
+}
+
+fn property_expression_read_is_assignment_lhs(text: &str, receiver_start: usize) -> bool {
+    let prefix = text[..receiver_start].trim();
+    if prefix.is_empty() {
+        return true;
+    }
+
+    matches!(prefix.to_ascii_lowercase().as_str(), "let" | "set")
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -15777,6 +15792,60 @@ mod tests {
             lowered.contains("valueout = property_get_pmr_hostproject_application_value(0)"),
             "unexpected lowered source: {lowered}"
         );
+    }
+
+    #[test]
+    fn compile_project_rewrites_host_injected_property_get_receiver_inside_class_module_condition()
+    {
+        let cases = [
+            ("predeclared", "Attribute VB_PredeclaredId = True"),
+            ("global namespace", "Attribute VB_GlobalNamespace = True"),
+        ];
+
+        for (label, exposure_attr) in cases {
+            let main_module = module_unit_from_source(
+                "MainModule",
+                ModuleKind::Procedural,
+                "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nEnd Sub",
+            )
+            .expect("main module parses");
+            let sink = module_unit_from_source(
+                "Sink",
+                ModuleKind::Class,
+                "Attribute VB_Name = \"Sink\"\nPublic Sub Check()\nIf Application.Value = 4 Then\nError 104\nEnd If\nEnd Sub",
+            )
+            .expect("sink module parses");
+            let host_application = module_unit_from_source(
+                "Application",
+                ModuleKind::Class,
+                format!(
+                    "Attribute VB_Name = \"Application\"\n{exposure_attr}\nPublic Property Get Value()\nValue = 41\nEnd Property"
+                ),
+            )
+            .expect("host application parses");
+            let manifest = ProjectManifest {
+                project_name: "ProjectA".to_string(),
+                project_kind: ProjectKind::Source,
+                modules: vec![main_module, sink],
+                references: vec![ProjectReference {
+                    referenced_project_name: "HostProject".to_string(),
+                    reference_kind: ReferenceKind::HostInjected,
+                }],
+                reference_projects: vec![ReferencedProjectManifest {
+                    project_name: "HostProject".to_string(),
+                    modules: vec![host_application],
+                }],
+                conditional_constants: BTreeMap::new(),
+            };
+            let compiled = compile_project(&manifest).unwrap_or_else(|err| {
+                panic!("{label} class-module condition should compile: {err}")
+            });
+            let lowered = compiled.rewritten_source.to_ascii_lowercase();
+            assert!(
+                lowered.contains("if property_get_pmr_hostproject_application_value(0) = 4 then"),
+                "{label}: unexpected lowered source: {lowered}"
+            );
+        }
     }
 
     #[test]

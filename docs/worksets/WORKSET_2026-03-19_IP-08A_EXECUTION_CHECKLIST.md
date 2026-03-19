@@ -25,10 +25,10 @@ Binding doctrine pulled from those sources:
 
 `IP-08A` is complete only when all of the following are true:
 
-- [ ] The repo has an executable host-project model, not only a design contract.
-- [ ] Office-style root/global exposure rules are explicit in the supported host subset.
-- [ ] Host project objects participate in the shared property/default-member model for the supported host subset.
-- [ ] Host runtime session lifecycle and callback/event ingress have an implementation-backed path that matches the supported host object model.
+- [x] The repo has an executable host-project model, not only a design contract.
+- [x] Office-style root/global exposure rules are explicit in the supported host subset.
+- [x] Host project objects participate in the shared property/default-member model for the supported host subset.
+- [x] Host runtime session lifecycle and callback/event ingress have an implementation-backed path that matches the supported host object model.
 - [ ] Object identity boundaries between native host objects, referenced projects, and COM-backed host objects are explicit for the supported host subset.
 - [ ] Remaining `IP-08` work is narrowed honestly to broader host parity closure (`IP-08B`), not missing foundation behavior.
 
@@ -75,6 +75,7 @@ Already evidenced in the repo today:
 - the proved host-injected read lanes currently cover:
   - named property-get reads such as `Application.Value`
   - authoritative default-member reads such as `Application`
+- the proved host-injected read floor now also covers class-procedure comparison expressions on named property-get lanes such as `If Application.Value = 4 Then` across both exposure modes, so the host-root receiver is lowered as a read instead of being misclassified as an assignment LHS
 - the proved host-injected write lanes currently cover:
   - `VB_PredeclaredId` named `Property Let` writes such as `Application.Value = 9`
   - `VB_PredeclaredId` authoritative default-member `Property Let` writes such as `Application = 9`
@@ -122,6 +123,7 @@ Already evidenced in the repo today:
   - `VB_GlobalNamespace` typed child-local indexed `Property Set` and authoritative indexed default-member `Property Set` traffic after host-root object return such as `Set child.Value(1) = x` and `Set child(1) = x`
 - plain project references do not gain this host-root behavior; they remain on the ordinary unresolved-name / implicit-variant path in the current language mode
 - host-looking names backed by `HostInjected` class modules that are present but not exposed through `VB_PredeclaredId=True` or `VB_GlobalNamespace=True` now fail deterministically across bounded read/write/`Call` forms with `PMR-E-HOST-ROOT-NOT-EXPOSED`
+- the proved host runtime-session floor now also covers per-runtime host-root state isolation across live event ingress for both exposure modes in the current named-property subset, so repeated callbacks mutate only the owning runtime session and fresh sessions restart from the host baseline
 - broader follow-on member traffic on those returned host-root object handles is still open in the bounded subset; this checklist currently proves handle return plus named/default-member child read, parenthesized zero-arg getter syntax, indexed scalar getter/invoke/write syntax, zero-arg invoke, scalar write navigation, and the current named/indexed `Property Set` navigation slice, not full host-foundation closure
 
 ## Remaining checklist by closure domain
@@ -138,7 +140,7 @@ Already evidenced in the repo today:
 
 - [ ] Make the host project object model executable beyond bounded implicit receiver reads, bounded object-handle return, and the current named/default-member child read/parenthesized/indexed/invoke/scalar-write navigation slice.
 - [ ] Prove project/object identity rules for host roots versus plain project references.
-- [ ] Prove the supported host project lifecycle and session ownership behavior.
+- [x] Prove the supported host project lifecycle and session ownership behavior.
 
 ### C. Event/callback integration
 

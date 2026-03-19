@@ -3840,6 +3840,152 @@ mod tests {
     }
 
     #[test]
+    fn formal_host_project_runtime_sessions_isolate_host_injected_root_state() {
+        let engine = Engine::new(HostConfig::default());
+        let cases = [
+            ("predeclared", "Attribute VB_PredeclaredId = True"),
+            ("global namespace", "Attribute VB_GlobalNamespace = True"),
+        ];
+
+        for (label, exposure_attr) in cases {
+            let main_module = module_unit_from_source(
+                "MainModule",
+                ModuleKind::Procedural,
+                "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim e As New Emitter\nDim s As New Sink\nCall s.Attach(e)\nEnd Sub",
+            )
+            .expect("main module should parse");
+            let emitter = module_unit_from_source(
+                "Emitter",
+                ModuleKind::Class,
+                "Attribute VB_Name = \"Emitter\"\nPublic Event Changed()\n",
+            )
+            .expect("emitter module should parse");
+            let sink = module_unit_from_source(
+                "Sink",
+                ModuleKind::Class,
+                "Attribute VB_Name = \"Sink\"\nPrivate WithEvents em As Emitter\nPublic Sub Attach(ByVal e As Emitter)\nSet em = e\nEnd Sub\nPrivate Sub em_changed()\nIf Application.Value = 4 Then\nApplication.Value = 9\nError 104\nElseIf Application.Value = 9 Then\nError 109\nElse\nError 101\nEnd If\nEnd Sub",
+            )
+            .expect("sink module should parse");
+            let host_application = module_unit_from_source(
+                "Application",
+                ModuleKind::Class,
+                format!(
+                    "Attribute VB_Name = \"Application\"\n{exposure_attr}\nPrivate stored\nPublic Property Get Value()\nIf stored = 0 Then\nstored = 4\nEnd If\nValue = stored\nEnd Property\nPublic Property Let Value(ByVal n)\nstored = n\nEnd Property"
+                ),
+            )
+            .expect("host application module should parse");
+            let manifest = ProjectManifest {
+                project_name: "ProjectA".to_string(),
+                project_kind: ProjectKind::Source,
+                modules: vec![main_module, emitter, sink],
+                references: vec![ProjectReference {
+                    referenced_project_name: "HostProject".to_string(),
+                    reference_kind: ReferenceKind::HostInjected,
+                }],
+                reference_projects: vec![ReferencedProjectManifest {
+                    project_name: "HostProject".to_string(),
+                    modules: vec![host_application],
+                }],
+                conditional_constants: std::collections::BTreeMap::new(),
+            };
+
+            let mut runtime_a = engine
+                .start_project_runtime_session(&manifest)
+                .unwrap_or_else(|err| panic!("{label} runtime A should start: {err}"));
+            let mut runtime_b = engine
+                .start_project_runtime_session(&manifest)
+                .unwrap_or_else(|err| panic!("{label} runtime B should start: {err}"));
+
+            let err_a = engine
+                .dispatch_host_event_into_runtime(
+                    &mut runtime_a,
+                    "ProjectA",
+                    "Emitter",
+                    "Changed",
+                    ObjectHandle::new(1),
+                    &[],
+                )
+                .expect_err("runtime A first event should raise its baseline branch");
+            assert_eq!(err_a.phase(), DiagnosticPhase::Runtime);
+            assert!(
+                err_a.message().contains("runtime error: 104"),
+                "{label}: runtime A should observe its baseline host-root state on first event, got: {}",
+                err_a.message()
+            );
+
+            let err_a_follow_up = engine
+                .dispatch_host_event_into_runtime(
+                    &mut runtime_a,
+                    "ProjectA",
+                    "Emitter",
+                    "Changed",
+                    ObjectHandle::new(1),
+                    &[],
+                )
+                .expect_err("runtime A second event should see its mutated host-root state");
+            assert_eq!(err_a_follow_up.phase(), DiagnosticPhase::Runtime);
+            assert!(
+                err_a_follow_up.message().contains("runtime error: 109"),
+                "{label}: runtime A should retain host-root mutation across event ingress, got: {}",
+                err_a_follow_up.message()
+            );
+
+            let err_b = engine
+                .dispatch_host_event_into_runtime(
+                    &mut runtime_b,
+                    "ProjectA",
+                    "Emitter",
+                    "Changed",
+                    ObjectHandle::new(1),
+                    &[],
+                )
+                .expect_err("runtime B first event should raise its own baseline branch");
+            assert_eq!(err_b.phase(), DiagnosticPhase::Runtime);
+            assert!(
+                err_b.message().contains("runtime error: 104"),
+                "{label}: runtime B should retain its own host-root baseline, got: {}",
+                err_b.message()
+            );
+
+            let mut runtime_c = engine
+                .start_project_runtime_session(&manifest)
+                .unwrap_or_else(|err| panic!("{label} runtime C should start: {err}"));
+            let err_c = engine
+                .dispatch_host_event_into_runtime(
+                    &mut runtime_c,
+                    "ProjectA",
+                    "Emitter",
+                    "Changed",
+                    ObjectHandle::new(1),
+                    &[],
+                )
+                .expect_err("runtime C first event should raise its own baseline branch");
+            assert_eq!(err_c.phase(), DiagnosticPhase::Runtime);
+            assert!(
+                err_c.message().contains("runtime error: 104"),
+                "{label}: fresh runtime sessions should reset host-root state, got: {}",
+                err_c.message()
+            );
+        }
+    }
+
+    #[test]
+    fn formal_runtime_procedure_call_expression_in_condition_executes() {
+        let engine = Engine::new(HostConfig::default());
+        let source = "Function GetValue()\nGetValue = 4\nEnd Function\nSub Main()\nIf GetValue() = 4 Then\nError 104\nElse\nError 101\nEnd If\nEnd Sub";
+
+        let err = engine
+            .execute_source_with_snapshot_phased(source)
+            .expect_err("procedure call expression in condition should execute deterministically");
+        assert_eq!(err.phase(), DiagnosticPhase::Runtime);
+        assert!(
+            err.message().contains("runtime error: 104"),
+            "procedure call expression should drive the true branch, got: {}",
+            err.message()
+        );
+    }
+
+    #[test]
     fn formal_pmr_dispatchinvoke_routes_internal_class_function_through_native_dynamic_path() {
         let engine = Engine::new(HostConfig::default());
         let main_module = module_unit_from_source(

@@ -1,3 +1,11 @@
+## 2026-03-19 - Add host-root comparison and runtime-session isolation evidence
+
+- Continued `IP-08A` by removing a real host-root read escape in class-procedure comparisons and by proving that live host-root state is owned by the runtime session that receives the callback.
+- In [project.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-compiler\src\project.rs), fixed internal-class property-expression rewriting so named host-injected property-get reads such as `If Application.Value = 4 Then` are no longer misclassified as assignment LHS syntax when they appear inside class procedures, and added compiler evidence for both `VB_PredeclaredId` and `VB_GlobalNamespace`.
+- In [typecheck.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-compiler\src\typecheck.rs) and [emit.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-compiler\src\emit.rs), promoted procedure-call expressions onto the shared validated/emitted call path instead of the old direct-assignment-only subset so comparison expressions can execute through the normal runtime call machinery.
+- In [engine.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-host\src\engine.rs), added host runtime evidence that repeated event ingress mutates host-injected root state only inside the owning runtime session, while sibling and freshly started runtime sessions retain their own baseline state across both `VB_PredeclaredId` and `VB_GlobalNamespace`.
+- This narrows the next honest `IP-08A` frontier to host object identity and host-backed callback routing, not class-procedure comparison lowering or bounded runtime-session ownership.
+
 ## 2026-03-19 - Add invalid host-root diagnostics
 
 - Continued `IP-08A` by classifying the invalid host-looking root neighbor instead of letting non-exposed host-injected class modules drift through the ordinary unresolved-name path.

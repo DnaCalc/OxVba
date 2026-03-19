@@ -12,6 +12,12 @@ enum CallMode {
     Mixed,
 }
 
+struct TypecheckProcContext<'a> {
+    proc_names: &'a HashSet<String>,
+    proc_params: &'a HashMap<String, Vec<BoundParam>>,
+    proc_return_types: &'a HashMap<String, BoundType>,
+}
+
 pub fn check_types(module: BoundModule) -> Result<BoundModule, String> {
     let mut module = module;
     let default_type_table = module.default_type_table;
@@ -26,6 +32,11 @@ pub fn check_types(module: BoundModule) -> Result<BoundModule, String> {
         .iter()
         .map(|p| (p.name.clone(), p.return_type))
         .collect();
+    let proc_context = TypecheckProcContext {
+        proc_names: &proc_names,
+        proc_params: &proc_params,
+        proc_return_types: &proc_return_types,
+    };
 
     for procedure in &mut module.procedures {
         let mut declared: HashSet<String> = procedure.declarations.iter().cloned().collect();
@@ -54,9 +65,7 @@ pub fn check_types(module: BoundModule) -> Result<BoundModule, String> {
             &mut declared_types,
             &mut procedure.declarations,
             &mut procedure.declaration_types,
-            &proc_names,
-            &proc_params,
-            &proc_return_types,
+            &proc_context,
             &labels,
         )?;
     }
@@ -85,9 +94,7 @@ fn check_stmt_list(
     declared_types: &mut HashMap<String, BoundType>,
     declarations: &mut Vec<String>,
     declaration_types: &mut HashMap<String, BoundType>,
-    proc_names: &HashSet<String>,
-    proc_params: &HashMap<String, Vec<BoundParam>>,
-    proc_return_types: &HashMap<String, BoundType>,
+    proc_context: &TypecheckProcContext<'_>,
     labels: &HashSet<String>,
 ) -> Result<(), String> {
     for stmt in stmts {
@@ -99,9 +106,7 @@ fn check_stmt_list(
             declared_types,
             declarations,
             declaration_types,
-            proc_names,
-            proc_params,
-            proc_return_types,
+            proc_context,
             labels,
         )?;
     }
@@ -117,9 +122,7 @@ fn check_stmt(
     declared_types: &mut HashMap<String, BoundType>,
     declarations: &mut Vec<String>,
     declaration_types: &mut HashMap<String, BoundType>,
-    proc_names: &HashSet<String>,
-    proc_params: &HashMap<String, Vec<BoundParam>>,
-    proc_return_types: &HashMap<String, BoundType>,
+    proc_context: &TypecheckProcContext<'_>,
     labels: &HashSet<String>,
 ) -> Result<(), String> {
     match stmt {
@@ -145,6 +148,7 @@ fn check_stmt(
                 declared_types,
                 declarations,
                 declaration_types,
+                proc_context,
             )?;
             let expr_ty = infer_expr_type(expr, declared_types);
             let target_ty = *declared_types.get(target).unwrap_or(&BoundType::Variant);
@@ -228,6 +232,7 @@ fn check_stmt(
                 declared_types,
                 declarations,
                 declaration_types,
+                proc_context,
             )?;
             if let Some(count) = count {
                 check_expr(
@@ -238,6 +243,7 @@ fn check_stmt(
                     declared_types,
                     declarations,
                     declaration_types,
+                    proc_context,
                 )?;
             }
             check_expr(
@@ -248,6 +254,7 @@ fn check_stmt(
                 declared_types,
                 declarations,
                 declaration_types,
+                proc_context,
             )?;
 
             let target_ty = *declared_types.get(target).unwrap_or(&BoundType::Variant);
@@ -296,6 +303,7 @@ fn check_stmt(
                 declared_types,
                 declarations,
                 declaration_types,
+                proc_context,
             )?;
             check_stmt_list(
                 then_body,
@@ -305,9 +313,7 @@ fn check_stmt(
                 declared_types,
                 declarations,
                 declaration_types,
-                proc_names,
-                proc_params,
-                proc_return_types,
+                proc_context,
                 labels,
             )?;
             check_stmt_list(
@@ -318,9 +324,7 @@ fn check_stmt(
                 declared_types,
                 declarations,
                 declaration_types,
-                proc_names,
-                proc_params,
-                proc_return_types,
+                proc_context,
                 labels,
             )
         }
@@ -348,6 +352,7 @@ fn check_stmt(
                 declared_types,
                 declarations,
                 declaration_types,
+                proc_context,
             )?;
             check_expr(
                 end,
@@ -357,6 +362,7 @@ fn check_stmt(
                 declared_types,
                 declarations,
                 declaration_types,
+                proc_context,
             )?;
             check_expr(
                 step,
@@ -366,6 +372,7 @@ fn check_stmt(
                 declared_types,
                 declarations,
                 declaration_types,
+                proc_context,
             )?;
             if matches!(step, BoundExpr::IntConst(0)) {
                 return Err("for loop step cannot be zero".to_string());
@@ -378,9 +385,7 @@ fn check_stmt(
                 declared_types,
                 declarations,
                 declaration_types,
-                proc_names,
-                proc_params,
-                proc_return_types,
+                proc_context,
                 labels,
             )
         }
@@ -404,6 +409,7 @@ fn check_stmt(
                     declared_types,
                     declarations,
                     declaration_types,
+                    proc_context,
                 )?;
                 let item_ty = infer_expr_type(item, declared_types);
                 if !can_assign_to(target_ty, item_ty) {
@@ -421,9 +427,7 @@ fn check_stmt(
                 declared_types,
                 declarations,
                 declaration_types,
-                proc_names,
-                proc_params,
-                proc_return_types,
+                proc_context,
                 labels,
             )
         }
@@ -468,6 +472,7 @@ fn check_stmt(
                 declared_types,
                 declarations,
                 declaration_types,
+                proc_context,
             )?;
             check_stmt_list(
                 body,
@@ -477,9 +482,7 @@ fn check_stmt(
                 declared_types,
                 declarations,
                 declaration_types,
-                proc_names,
-                proc_params,
-                proc_return_types,
+                proc_context,
                 labels,
             )
         }
@@ -514,6 +517,7 @@ fn check_stmt(
                     declared_types,
                     declarations,
                     declaration_types,
+                    proc_context,
                 )?;
             }
             Ok(())
@@ -544,9 +548,7 @@ fn check_stmt(
             declared_types,
             declarations,
             declaration_types,
-            proc_names,
-            proc_params,
-            proc_return_types,
+            proc_context,
         )
         .map(|_| ()),
         BoundStmt::AssignFromCall {
@@ -573,9 +575,7 @@ fn check_stmt(
                 declared_types,
                 declarations,
                 declaration_types,
-                proc_names,
-                proc_params,
-                proc_return_types,
+                proc_context,
             )?;
             let target_ty = *declared_types.get(target).unwrap_or(&BoundType::Variant);
             if let Some(message) = validate_assignment_intent(*intent, target_ty, return_ty, target)
@@ -607,6 +607,7 @@ fn check_stmt(
                 declared_types,
                 declarations,
                 declaration_types,
+                proc_context,
             )?;
             for (_, body) in arms {
                 check_stmt_list(
@@ -617,9 +618,7 @@ fn check_stmt(
                     declared_types,
                     declarations,
                     declaration_types,
-                    proc_names,
-                    proc_params,
-                    proc_return_types,
+                    proc_context,
                     labels,
                 )?;
             }
@@ -631,9 +630,7 @@ fn check_stmt(
                 declared_types,
                 declarations,
                 declaration_types,
-                proc_names,
-                proc_params,
-                proc_return_types,
+                proc_context,
                 labels,
             )
         }
@@ -651,9 +648,7 @@ fn validate_call_site(
     declared_types: &mut HashMap<String, BoundType>,
     declarations: &mut Vec<String>,
     declaration_types: &mut HashMap<String, BoundType>,
-    proc_names: &HashSet<String>,
-    proc_params: &HashMap<String, Vec<BoundParam>>,
-    proc_return_types: &HashMap<String, BoundType>,
+    proc_context: &TypecheckProcContext<'_>,
 ) -> Result<BoundType, String> {
     if name.eq_ignore_ascii_case("dispatchinvoke") {
         return validate_dispatch_invoke_call_site(
@@ -664,12 +659,19 @@ fn validate_call_site(
             declared_types,
             declarations,
             declaration_types,
+            proc_context,
         );
     }
 
-    let call_mode = classify_call_mode(name, args, proc_names, proc_params, declared_types)?;
+    let call_mode = classify_call_mode(
+        name,
+        args,
+        proc_context.proc_names,
+        proc_context.proc_params,
+        declared_types,
+    )?;
 
-    if let Some(params) = proc_params.get(name) {
+    if let Some(params) = proc_context.proc_params.get(name) {
         let mapped_args = map_call_args_to_params(name, args, params)?;
         let param_array_idx = params.iter().position(|p| p.param_array);
         for (idx, param) in params.iter().enumerate() {
@@ -684,6 +686,7 @@ fn validate_call_site(
                         declared_types,
                         declarations,
                         declaration_types,
+                        proc_context,
                     )?;
                 }
                 continue;
@@ -706,6 +709,7 @@ fn validate_call_site(
                 declared_types,
                 declarations,
                 declaration_types,
+                proc_context,
             )?;
             let arg_ty = infer_expr_type(&arg.expr, declared_types);
             if is_vbnullstring_expr(&arg.expr)
@@ -733,7 +737,8 @@ fn validate_call_site(
                 ));
             }
         }
-        return Ok(proc_return_types
+        return Ok(proc_context
+            .proc_return_types
             .get(name)
             .copied()
             .unwrap_or(BoundType::Variant));
@@ -755,6 +760,7 @@ fn validate_call_site(
                 declared_types,
                 declarations,
                 declaration_types,
+                proc_context,
             )?;
             let arg_ty = infer_expr_type(&arg.expr, declared_types);
             if call_coercion_result(CallMode::Late, None, arg_ty) != CoercionResult::Ok {
@@ -770,6 +776,7 @@ fn validate_call_site(
     Err(format!("call to unknown procedure: {name}"))
 }
 
+#[allow(clippy::too_many_arguments)]
 fn validate_dispatch_invoke_call_site(
     args: &[BoundCallArg],
     option_explicit: bool,
@@ -778,6 +785,7 @@ fn validate_dispatch_invoke_call_site(
     declared_types: &mut HashMap<String, BoundType>,
     declarations: &mut Vec<String>,
     declaration_types: &mut HashMap<String, BoundType>,
+    proc_context: &TypecheckProcContext<'_>,
 ) -> Result<BoundType, String> {
     if args.len() < 2 {
         return Err("DispatchInvoke expects at least object and member arguments".to_string());
@@ -802,6 +810,7 @@ fn validate_dispatch_invoke_call_site(
             declared_types,
             declarations,
             declaration_types,
+            proc_context,
         )?;
     }
     for arg in args.iter().skip(2) {
@@ -816,6 +825,7 @@ fn validate_dispatch_invoke_call_site(
     Ok(BoundType::Variant)
 }
 
+#[allow(clippy::too_many_arguments)]
 fn check_condition(
     cond: &BoundCond,
     option_explicit: bool,
@@ -824,6 +834,7 @@ fn check_condition(
     declared_types: &mut HashMap<String, BoundType>,
     declarations: &mut Vec<String>,
     declaration_types: &mut HashMap<String, BoundType>,
+    proc_context: &TypecheckProcContext<'_>,
 ) -> Result<(), String> {
     match cond {
         BoundCond::Compare { lhs, rhs, .. } => {
@@ -835,6 +846,7 @@ fn check_condition(
                 declared_types,
                 declarations,
                 declaration_types,
+                proc_context,
             )?;
             check_expr(
                 rhs,
@@ -844,6 +856,7 @@ fn check_condition(
                 declared_types,
                 declarations,
                 declaration_types,
+                proc_context,
             )?;
             let lhs_ty = infer_expr_type(lhs, declared_types);
             let rhs_ty = infer_expr_type(rhs, declared_types);
@@ -864,6 +877,7 @@ fn check_condition(
             declared_types,
             declarations,
             declaration_types,
+            proc_context,
         ),
         BoundCond::Not(inner) => check_condition(
             inner,
@@ -873,6 +887,7 @@ fn check_condition(
             declared_types,
             declarations,
             declaration_types,
+            proc_context,
         ),
         BoundCond::And(lhs, rhs) | BoundCond::Or(lhs, rhs) => {
             check_condition(
@@ -883,6 +898,7 @@ fn check_condition(
                 declared_types,
                 declarations,
                 declaration_types,
+                proc_context,
             )?;
             check_condition(
                 rhs,
@@ -892,11 +908,13 @@ fn check_condition(
                 declared_types,
                 declarations,
                 declaration_types,
+                proc_context,
             )
         }
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn check_expr(
     expr: &BoundExpr,
     option_explicit: bool,
@@ -905,6 +923,7 @@ fn check_expr(
     declared_types: &mut HashMap<String, BoundType>,
     declarations: &mut Vec<String>,
     declaration_types: &mut HashMap<String, BoundType>,
+    proc_context: &TypecheckProcContext<'_>,
 ) -> Result<(), String> {
     match expr {
         BoundExpr::IntConst(_) => Ok(()),
@@ -946,6 +965,7 @@ fn check_expr(
                     declared_types,
                     declarations,
                     declaration_types,
+                    proc_context,
                 )?;
             }
             if let Some(target_type) = intrinsic_argument_target_type(name) {
@@ -965,10 +985,18 @@ fn check_expr(
             }
             Ok(())
         }
-        BoundExpr::ProcCall { .. } => Err(
-            "procedure call expression is only supported as a direct assignment RHS in the current subset"
-                .to_string(),
-        ),
+        BoundExpr::ProcCall { name, args } => validate_call_site(
+            name,
+            args,
+            option_explicit,
+            default_type_table,
+            declared,
+            declared_types,
+            declarations,
+            declaration_types,
+            proc_context,
+        )
+        .map(|_| ()),
     }
 }
 

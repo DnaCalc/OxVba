@@ -203,6 +203,7 @@ Run context: active parity/compliance execution plus in-progress feature worklis
   - the same host-injected root path now also has bounded executable `Property Let` coverage for named and authoritative default-member write lanes across both `VB_PredeclaredId` and `VB_GlobalNamespace`,
   - the bounded host-root invoke floor now also includes explicit `Call` on zero-arg named property-get and authoritative default-member forms across both `VB_PredeclaredId` and `VB_GlobalNamespace`,
   - the bounded host-root invoke floor now also includes bare statement-context execution on the same zero-arg named property-get and authoritative default-member forms across both exposure modes,
+  - bounded named host-root property-get comparisons inside class procedures now also lower through the same host-root read path across both exposure modes instead of drifting into assignment-LHS parsing,
   - named object-valued host-root `Property Get` members now also return live object handles on the bounded assignment floor across both exposure modes when assigned through explicit `Set` into `Object` targets,
   - the same bounded host-root object-return floor now also has direct executable evidence for typed child-local follow-on named property-get and authoritative default-member read traffic across both exposure modes after `Set child = Application.Value`,
   - the same bounded host-root object-return floor now also has direct executable evidence for typed child-local parenthesized zero-arg getter traffic on named and authoritative default-member forms across both exposure modes after `Set child = Application.Value`,
@@ -216,9 +217,10 @@ Run context: active parity/compliance execution plus in-progress feature worklis
   - the same bounded host-root object-return floor now also has direct executable evidence for typed child-local indexed `Property Set` plus authoritative indexed default-member `Property Set` traffic across both exposure modes after `Set child = Application.Value`,
   - plain project references still remain on the ordinary unresolved-name path and do not gain implicit host-root behavior,
   - host-looking names backed by `HostInjected` class modules that are present but not exposed through `VB_PredeclaredId=True` or `VB_GlobalNamespace=True` now fail deterministically with `PMR-E-HOST-ROOT-NOT-EXPOSED`,
-  - broader host project/root/global exposure rules, host object identity, callback routing, and runtime session ownership are still missing from the executable host model.
+  - supported live runtime sessions now also have direct executable evidence that host-injected root state remains isolated per runtime across event ingress for both exposure modes,
+  - broader host project/root/global exposure rules, host object identity, and host-backed callback routing are still missing from the executable host model.
 - Exact unblock steps:
-  - make host project object identity and runtime session ownership explicit in executable behavior,
+  - make host project object identity explicit in executable behavior beyond the current per-runtime host-root state model,
   - connect host-backed object identity to the live callback/event ingress path where the host foundation requires it,
   - continue through the checklist in [WORKSET_2026-03-19_IP-08A_EXECUTION_CHECKLIST.md](C:\Work\DnaCalc\OxVba\docs\worksets\WORKSET_2026-03-19_IP-08A_EXECUTION_CHECKLIST.md).
 - Recommendation:
