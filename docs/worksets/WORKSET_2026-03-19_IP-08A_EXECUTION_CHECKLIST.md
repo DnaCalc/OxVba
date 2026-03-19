@@ -90,7 +90,11 @@ Already evidenced in the repo today:
   - `VB_PredeclaredId` authoritative default-member statement forms such as `Application`
   - `VB_GlobalNamespace` named property-get statement forms such as `Application.Value`
   - `VB_GlobalNamespace` authoritative default-member statement forms such as `Application`
+- the proved host-injected object-return floor currently covers:
+  - `VB_PredeclaredId` named object-valued `Property Get` assignment into an `Object` target such as `Set child = Application.Value`
+  - `VB_GlobalNamespace` named object-valued `Property Get` assignment into an `Object` target such as `Set child = Application.Value`
 - plain project references do not gain this host-root behavior; they remain on the ordinary unresolved-name / implicit-variant path in the current language mode
+- follow-on member traffic on those returned host-root object handles is still open in the bounded subset; this checklist currently proves handle return, not full child-object navigation parity
 
 ## Remaining checklist by closure domain
 
@@ -104,7 +108,7 @@ Already evidenced in the repo today:
 
 ### B. Host project model
 
-- [ ] Make the host project object model executable beyond bounded implicit receiver reads.
+- [ ] Make the host project object model executable beyond bounded implicit receiver reads and bounded object-handle return.
 - [ ] Prove project/object identity rules for host roots versus plain project references.
 - [ ] Prove the supported host project lifecycle and session ownership behavior.
 

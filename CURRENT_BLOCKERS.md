@@ -203,10 +203,12 @@ Run context: active parity/compliance execution plus in-progress feature worklis
   - the same host-injected root path now also has bounded executable `Property Let` coverage for named and authoritative default-member write lanes across both `VB_PredeclaredId` and `VB_GlobalNamespace`,
   - the bounded host-root invoke floor now also includes explicit `Call` on zero-arg named property-get and authoritative default-member forms across both `VB_PredeclaredId` and `VB_GlobalNamespace`,
   - the bounded host-root invoke floor now also includes bare statement-context execution on the same zero-arg named property-get and authoritative default-member forms across both exposure modes,
+  - named object-valued host-root `Property Get` members now also return live object handles on the bounded assignment floor across both exposure modes when assigned through explicit `Set` into `Object` targets,
   - plain project references still remain on the ordinary unresolved-name path and do not gain implicit host-root behavior,
-  - broader host project/root/global exposure rules, host object identity, callback routing, and deterministic diagnostics for invalid host-looking roots are still missing from the executable host model.
+  - broader host project/root/global exposure rules, child-object navigation after host-root handle return, host object identity, callback routing, and deterministic diagnostics for invalid host-looking roots are still missing from the executable host model.
 - Exact unblock steps:
   - make host project object identity and runtime session ownership explicit in executable behavior,
+  - widen host-root object-return lanes from handle capture into supported follow-on member/property/default-member traffic where intended,
   - connect host-backed object identity to the live callback/event ingress path where the host foundation requires it,
   - classify deterministic diagnostics for host-looking names that are outside the supported root/global subset,
   - continue through the checklist in [WORKSET_2026-03-19_IP-08A_EXECUTION_CHECKLIST.md](C:\Work\DnaCalc\OxVba\docs\worksets\WORKSET_2026-03-19_IP-08A_EXECUTION_CHECKLIST.md).

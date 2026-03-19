@@ -1,3 +1,12 @@
+## 2026-03-19 - Add host-injected object-handle return evidence
+
+- Continued `IP-08A` by taking the first bounded host object-model slice beyond root-only scalar read/write/invoke traffic.
+- In [project.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-compiler\src\project.rs), added direct compiler evidence that named object-valued host-root `Property Get` members now lower through the same host-injected root rewrite path across both exposure modes for the bounded assignment shape:
+  - `Set child = Application.Value` with `VB_PredeclaredId = True`
+  - `Set child = Application.Value` with `VB_GlobalNamespace = True`
+- In [engine.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-host\src\engine.rs), added matching host runtime evidence proving those object-valued host-root getters return live object handles on the bounded assignment floor rather than collapsing to `Empty`.
+- I also probed the stronger follow-on child-navigation lane in-cycle and left it open honestly: subsequent member traffic on those returned host-root handles is not yet part of the proved subset and remains the next host object-model frontier.
+
 ## 2026-03-19 - Add host-injected global-namespace invoke evidence
 
 - Continued `IP-08A` by removing the last exposure-mode asymmetry in the bounded host-root invoke floor.
