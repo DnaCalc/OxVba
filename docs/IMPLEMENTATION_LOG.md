@@ -1,3 +1,10 @@
+## 2026-03-19 - Prove host-returned COM objects support imported property traffic
+
+- Continued `IP-08A` by widening the bounded host/COM coexistence floor beyond one imported method call into imported setter/getter property traffic on the same host-returned COM object.
+- In [project.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-compiler\src\project.rs), added compiler evidence that a host-injected `Application.Value` getter may return `CreateObject(4)` into a typed imported receiver, preserve imported `PropertyPut` lowering for `obj.SetValue = 9`, and then preserve imported zero-arg `PropertyGet` lowering for `afterValue = obj.Value`.
+- In [engine.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-host\src\engine.rs), added live runtime evidence that the same lane executes on the bounded shared object/value model with deterministic snapshot `[ObjectHandle(5004), I32(5013)]`.
+- This raises the honest `IP-08A` host/COM coexistence floor from a single imported `Count()` call to bounded imported property-put plus property-get traffic on host-returned COM objects; broader imported member/property/default-member breadth on those objects remains open.
+
 ## 2026-03-19 - Prove host roots can return imported COM-capable objects
 
 - Continued `IP-08A` by widening the bounded host/COM coexistence floor from raw `DispatchInvoke` on host-returned COM objects into metadata-backed imported early-bound member traffic.
