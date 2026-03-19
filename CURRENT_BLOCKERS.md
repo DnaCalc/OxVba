@@ -200,7 +200,7 @@ Run context: active parity/compliance execution plus in-progress feature worklis
   - host bridge and tooling contracts are defined,
   - explicit host-event ingress now dispatches bound handlers into live runtime sessions for the current zero/one-argument subset,
   - host-injected referenced class modules marked `VB_PredeclaredId` or `VB_GlobalNamespace` now participate in bounded implicit receiver lowering for property/default-member read lanes,
-  - the same host-injected root path now also has bounded executable `VB_PredeclaredId` `Property Let` coverage for named and authoritative default-member write lanes,
+  - the same host-injected root path now also has bounded executable `Property Let` coverage for named and authoritative default-member write lanes across both `VB_PredeclaredId` and `VB_GlobalNamespace`,
   - plain project references still remain on the ordinary unresolved-name path and do not gain implicit host-root behavior,
   - broader host project/root/global exposure rules, host object identity, callback routing, and wider statement/write behavior are still missing from the executable host model.
 - Exact unblock steps:

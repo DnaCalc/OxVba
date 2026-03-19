@@ -1,3 +1,12 @@
+## 2026-03-19 - Add host-injected global-namespace root write evidence
+
+- Continued `IP-08A` by removing the remaining exposure-mode asymmetry in the bounded host-root write floor.
+- In [project.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-compiler\src\project.rs), added direct compiler evidence that host-injected referenced class modules marked `VB_GlobalNamespace = True` already lower through the native PMR property/default-member assignment path for:
+  - named `Property Let` writes such as `Application.Value = 9`
+  - authoritative default-member `Property Let` writes such as `Application = 9`
+- In [engine.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-host\src\engine.rs), added matching host runtime evidence proving those `VB_GlobalNamespace` writes mutate the host-injected root instance and read back as `9`.
+- This leaves the next honest `IP-08A` frontier on statement-context / `Call` host-root behavior and the wider host project identity/callback substrate, not on read/write asymmetry between `VB_PredeclaredId` and `VB_GlobalNamespace`.
+
 ## 2026-03-19 - Add host-injected predeclared root write evidence
 
 - Continued `IP-08A` by taking the first executable host-root write row instead of leaving host-injected roots as read-only aliases.
