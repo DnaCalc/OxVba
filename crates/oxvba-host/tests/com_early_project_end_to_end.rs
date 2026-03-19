@@ -685,6 +685,98 @@ End Sub
     );
 }
 
+#[cfg(target_os = "windows")]
+#[test]
+fn early_bound_project_executes_imported_object_result_assignment_intents() {
+    let manifest = manifest_with_typelib(
+        r#"
+Attribute VB_Name = "MainModule"
+Public Sub Main()
+Dim obj As New OxVba.TestDispatch
+Dim childDispatch As Object
+Dim childUnknown As Object
+Dim wrappedDispatch
+Dim wrappedUnknown
+Dim childDispatchCount
+Dim childUnknownCount
+Dim wrappedDispatchCount
+Dim wrappedUnknownCount
+Set childDispatch = obj.ReturnSelfDispatch()
+Set childUnknown = obj.ReturnSelfUnknown()
+wrappedDispatch = obj.ReturnSelfDispatch()
+Let wrappedUnknown = obj.ReturnSelfUnknown()
+childDispatchCount = DispatchInvoke(childDispatch, "Count")
+childUnknownCount = DispatchInvoke(childUnknown, "Count")
+wrappedDispatchCount = DispatchInvoke(wrappedDispatch, "Count")
+wrappedUnknownCount = DispatchInvoke(wrappedUnknown, "Count")
+End Sub
+"#,
+    );
+
+    let out = run_project_windows_hosted(&manifest, false);
+    assert!(expect_object_handle(&out[0]).raw() >= 20_001);
+    assert!(expect_object_handle(&out[1]).raw() >= 20_001);
+    assert!(expect_object_handle(&out[2]).raw() >= 20_001);
+    assert!(expect_object_handle(&out[3]).raw() >= 20_001);
+    assert!(expect_object_handle(&out[4]).raw() >= 20_001);
+    assert_eq!(
+        out[5],
+        RuntimeValue::I32(7),
+        "explicit Set should preserve VT_DISPATCH object-result rebinding on Object targets"
+    );
+    assert_eq!(
+        out[6],
+        RuntimeValue::I32(7),
+        "explicit Set should preserve VT_UNKNOWN object-result rebinding on Object targets"
+    );
+    assert_eq!(
+        out[7],
+        RuntimeValue::I32(7),
+        "implicit Variant-target assignment should preserve VT_DISPATCH object-result rebinding"
+    );
+    assert_eq!(
+        out[8],
+        RuntimeValue::I32(7),
+        "explicit Let Variant-target assignment should preserve VT_UNKNOWN object-result rebinding"
+    );
+}
+
+#[cfg(target_os = "windows")]
+#[test]
+fn early_bound_project_object_result_assignment_intents_vm_jit_snapshots_match() {
+    let manifest = manifest_with_typelib(
+        r#"
+Attribute VB_Name = "MainModule"
+Public Sub Main()
+Dim obj As New OxVba.TestDispatch
+Dim childDispatch As Object
+Dim childUnknown As Object
+Dim wrappedDispatch
+Dim wrappedUnknown
+Dim childDispatchCount
+Dim childUnknownCount
+Dim wrappedDispatchCount
+Dim wrappedUnknownCount
+Set childDispatch = obj.ReturnSelfDispatch()
+Set childUnknown = obj.ReturnSelfUnknown()
+wrappedDispatch = obj.ReturnSelfDispatch()
+Let wrappedUnknown = obj.ReturnSelfUnknown()
+childDispatchCount = DispatchInvoke(childDispatch, "Count")
+childUnknownCount = DispatchInvoke(childUnknown, "Count")
+wrappedDispatchCount = DispatchInvoke(wrappedDispatch, "Count")
+wrappedUnknownCount = DispatchInvoke(wrappedUnknown, "Count")
+End Sub
+"#,
+    );
+
+    let vm = run_project_windows_hosted(&manifest, false);
+    let jit = run_project_windows_hosted(&manifest, true);
+    assert_eq!(
+        vm, jit,
+        "VM/JIT snapshots should match for imported object-result assignment-intent lanes"
+    );
+}
+
 #[test]
 fn early_bound_project_reports_compile_error_for_missing_member() {
     let manifest = manifest_with_typelib(

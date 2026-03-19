@@ -12738,6 +12738,35 @@ mod tests {
     }
 
     #[test]
+    fn compile_project_preserves_imported_object_result_assignment_intents_across_dispatch_and_unknown_members()
+     {
+        let main_module = module_unit_from_source(
+            "MainModule",
+            ModuleKind::Procedural,
+            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim obj As OxVba.TestDispatch\nDim childDispatch As Object\nDim childUnknown As Object\nDim wrappedDispatch\nDim wrappedUnknown\nSet obj = CreateObject(4)\nSet childDispatch = obj.ReturnSelfDispatch()\nSet childUnknown = obj.ReturnSelfUnknown()\nwrappedDispatch = obj.ReturnSelfDispatch()\nLet wrappedUnknown = obj.ReturnSelfUnknown()\nEnd Sub",
+        )
+        .expect("module parses");
+        let manifest = ProjectManifest {
+            project_name: "ProjectA".to_string(),
+            project_kind: ProjectKind::Source,
+            modules: vec![main_module],
+            references: vec![ProjectReference {
+                referenced_project_name: "OxVba".to_string(),
+                reference_kind: ReferenceKind::TypeLibrary,
+            }],
+            reference_projects: Vec::new(),
+            conditional_constants: BTreeMap::new(),
+        };
+        let compiled = compile_project(&manifest)
+            .expect("imported object-result assignment-intent lanes should compile");
+        let lowered = compiled.rewritten_source.to_ascii_lowercase();
+        assert!(lowered.contains("set childdispatch = dispatchinvoke(obj, 23)"));
+        assert!(lowered.contains("set childunknown = dispatchinvoke(obj, 24)"));
+        assert!(lowered.contains("wrappeddispatch = dispatchinvoke(obj, 23)"));
+        assert!(lowered.contains("let wrappedunknown = dispatchinvoke(obj, 24)"));
+    }
+
+    #[test]
     fn compile_project_rewrites_zero_arg_property_get_external_read_assignment_to_dispatchinvoke() {
         let main_module = module_unit_from_source(
             "MainModule",

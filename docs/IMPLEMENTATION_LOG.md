@@ -1,3 +1,14 @@
+## 2026-03-19 - Extend imported object-result assignment-intent evidence
+
+- Continued `IP-05B` by widening the proved imported object-result assignment matrix instead of inventing broader imported event or richer object-model behavior.
+- Added compiler rewrite evidence in [project.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-compiler\src\project.rs) proving the current imported object-result subset preserves the expected assignment intents across both controlled object carriers:
+  - `Set childDispatch = obj.ReturnSelfDispatch()`
+  - `Set childUnknown = obj.ReturnSelfUnknown()`
+  - `wrappedDispatch = obj.ReturnSelfDispatch()`
+  - `Let wrappedUnknown = obj.ReturnSelfUnknown()`
+- Added Windows host end-to-end and VM/JIT parity evidence in [com_early_project_end_to_end.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-host\tests\com_early_project_end_to_end.rs) proving both `VT_DISPATCH` and `VT_UNKNOWN` imported member results now have direct evidence across explicit `Set` on typed `Object` targets plus implicit and explicit-`Let` assignment on `Variant` targets in the controlled fixture.
+- `IP-05` remains `in-progress`: broader imported property/default-member syntax, richer imported member coverage beyond the controlled fixture, and wider Office/Excel object-model behavior are still open.
+
 ## 2026-03-19 - Add imported explicit-Let positional call evidence
 
 - Continued `IP-05B` by widening the proved imported assignment-intent surface on the existing metadata-backed positional call path instead of widening unsupported event or richer object-model semantics.
