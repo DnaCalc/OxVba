@@ -1829,3 +1829,10 @@
 - In [project.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-compiler\src\project.rs), added direct compiler evidence that a conflicting same-name plain-project `Application` class does not steal the host-injected `Application.Value -> CreateObject(4)` handoff before imported `SelfDispatch` / `SelfUnknown` property-get lowering.
 - In [engine.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-host\src\engine.rs), added matching host runtime evidence proving the same-name plain-project shadow still leaves the host-root COM-backed object in control and preserves the returned object handles plus follow-on `Count` traffic from those imported property-get results.
 - This narrows the remaining `IP-08A` host identity frontier further: the current imported object-property subset is no longer missing same-name plain-project precedence evidence, while broader host/project identity boundaries still remain open.
+
+# 2026-03-19 - Parenthesized imported object property gets on host-returned COM objects
+
+- Continued `IP-08A` by widening the bounded host/COM coexistence floor from the non-parenthesized imported object-valued property-get subset into its parenthesized zero-arg neighbor.
+- In [project.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-compiler\src\project.rs), added direct compiler evidence that `SelfDispatch()` / `SelfUnknown()` preserve the same host-root `Application.Value -> CreateObject(4)` handoff and assignment-intent lowering as the already-proved non-parenthesized forms.
+- In [engine.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-host\src\engine.rs), added matching host runtime evidence proving those parenthesized imported object-valued property gets return live rebound handles on the shared object/value model and still support follow-on `Count` traffic.
+- This raises the honest `IP-08A` host/COM coexistence floor from non-parenthesized imported object-property traffic alone to that same bounded subset plus the parenthesized zero-arg neighbor; broader host object identity boundaries and wider imported breadth on host-returned COM-backed objects still remain open.
