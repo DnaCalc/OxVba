@@ -1998,6 +1998,88 @@ End Sub
 }
 
 #[test]
+fn early_bound_project_reports_compile_error_for_imported_module_scope_declaration() {
+    let class_module = module_unit_from_source(
+        "Widget",
+        ModuleKind::Class,
+        r#"
+Attribute VB_Name = "Widget"
+Private obj As OxVba.TestDispatch
+Public Sub Main()
+End Sub
+"#,
+    )
+    .expect("class module should parse");
+    let manifest = ProjectManifest {
+        project_name: "ProjectA".to_string(),
+        project_kind: ProjectKind::Source,
+        modules: vec![class_module],
+        references: vec![ProjectReference {
+            referenced_project_name: "OxVba".to_string(),
+            reference_kind: ReferenceKind::TypeLibrary,
+        }],
+        reference_projects: Vec::new(),
+        conditional_constants: std::collections::BTreeMap::new(),
+    };
+
+    let engine = Engine::new(HostConfig {
+        enable_jit: false,
+        root_object_name: None,
+    });
+    let err = engine
+        .execute_project_with_snapshot_phased(&manifest)
+        .expect_err("module-scope imported declaration should fail at compile-time");
+    assert_eq!(err.phase(), DiagnosticPhase::CompileTime);
+    assert!(
+        err.message()
+            .contains("BIND-E-TYPELIB-MODULE-DECL-UNSUPPORTED"),
+        "unexpected compile diagnostic: {}",
+        err.message()
+    );
+}
+
+#[test]
+fn early_bound_project_reports_compile_error_for_unqualified_imported_module_scope_declaration() {
+    let class_module = module_unit_from_source(
+        "Widget",
+        ModuleKind::Class,
+        r#"
+Attribute VB_Name = "Widget"
+Private obj As TestDispatch
+Public Sub Main()
+End Sub
+"#,
+    )
+    .expect("class module should parse");
+    let manifest = ProjectManifest {
+        project_name: "ProjectA".to_string(),
+        project_kind: ProjectKind::Source,
+        modules: vec![class_module],
+        references: vec![ProjectReference {
+            referenced_project_name: "OxVba".to_string(),
+            reference_kind: ReferenceKind::TypeLibrary,
+        }],
+        reference_projects: Vec::new(),
+        conditional_constants: std::collections::BTreeMap::new(),
+    };
+
+    let engine = Engine::new(HostConfig {
+        enable_jit: false,
+        root_object_name: None,
+    });
+    let err = engine
+        .execute_project_with_snapshot_phased(&manifest)
+        .expect_err("unqualified module-scope imported declaration should fail at compile-time");
+    assert_eq!(err.phase(), DiagnosticPhase::CompileTime);
+    assert!(
+        err.message()
+            .contains("BIND-E-TYPELIB-MODULE-DECL-UNSUPPORTED"),
+        "unexpected compile diagnostic: {}",
+        err.message()
+    );
+}
+
+#[test]
 fn early_bound_project_reports_compile_error_for_missing_default_member() {
     let manifest = manifest_with_typelib(
         r#"

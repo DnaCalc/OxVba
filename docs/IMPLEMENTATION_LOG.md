@@ -54,6 +54,14 @@
 - Added compiler evidence that a local class module named `TestDispatch` still wins over the imported typelib name, so the new guard does not break native internal-class declarations when a same-name source module exists.
 - `IP-05` remains `in-progress`: this only makes the declaration boundary explicit; broader imported property/event/default-member parity, richer typelib/member coverage, and wider Office/Excel object-model behavior remain open.
 
+## 2026-03-19 - Bound imported module-scope declarations to deterministic diagnostics
+
+- Continued `IP-05B` on the same declaration-scope boundary by removing another silent fallthrough neighbor instead of widening the supported imported declaration floor.
+- In [project.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-compiler\src\project.rs), added `BIND-E-TYPELIB-MODULE-DECL-UNSUPPORTED` and a dedicated validator for module-scope typed declarations, so imported typelib object fields on `Private` / `Public` / top-level `Dim` lines now reject after native/reference-project source resolution fails.
+- Added compiler and host phased evidence proving both `Private obj As OxVba.TestDispatch` and bounded unqualified `Private obj As TestDispatch` now fail deterministically at compile time instead of drifting through class-state/module-field parsing without early-bind semantics.
+- Added compiler evidence that a local class module named `TestDispatch` still wins over the imported typelib name, so the new guard does not break same-name native declarations when local source resolution is available.
+- `IP-05` remains `in-progress`: this only tightens the declaration boundary; broader imported property/event/default-member parity, richer typelib/member coverage, and wider Office/Excel object-model behavior remain open.
+
 ## 2026-03-19 - Add imported zero-arg method read-assignment evidence
 
 - Continued `IP-05B` by closing a direct imported call-vs-value hole on the already-supported metadata-backed subset instead of widening typelib or event scope.

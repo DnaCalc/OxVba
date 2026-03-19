@@ -293,6 +293,10 @@ pub enum ProjectCompileError {
     )]
     TypeLibraryWithEventsUnsupported { type_name: String },
     #[error(
+        "BIND-E-TYPELIB-MODULE-DECL-UNSUPPORTED: module-scope external type `{type_name}` is outside the current deterministic early-bind declaration subset"
+    )]
+    TypeLibraryModuleDeclarationUnsupported { type_name: String },
+    #[error(
         "BIND-E-TYPELIB-UNQUALIFIED-TYPE-UNSUPPORTED: external type `{type_name}` requires explicit typelib qualification in the current deterministic early-bind subset"
     )]
     TypeLibraryUnqualifiedTypeUnsupported { type_name: String },
@@ -367,6 +371,9 @@ impl ProjectCompileError {
             Self::TypeLibraryQualifierUnresolved { .. } => "BIND-E-TYPELIB-QUALIFIER-UNRESOLVED",
             Self::TypeLibraryWithEventsUnsupported { .. } => {
                 "BIND-E-TYPELIB-WITHEVENTS-UNSUPPORTED"
+            }
+            Self::TypeLibraryModuleDeclarationUnsupported { .. } => {
+                "BIND-E-TYPELIB-MODULE-DECL-UNSUPPORTED"
             }
             Self::TypeLibraryUnqualifiedTypeUnsupported { .. } => {
                 "BIND-E-TYPELIB-UNQUALIFIED-TYPE-UNSUPPORTED"
@@ -481,6 +488,7 @@ fn compile_project_with_strategy(
     let reference_order = build_reference_order_map(manifest);
     let active_project = normalize_identifier(&manifest.project_name);
     validate_event_semantics(manifest, &procedure_index, &reference_order)?;
+    validate_imported_module_scope_declarations(manifest, &reference_order)?;
     let event_dispatch_plan =
         collect_event_dispatch_plan(manifest, &procedure_index, &reference_order);
 
@@ -875,6 +883,45 @@ fn validate_event_semantics(
                         module_name: module_name.clone(),
                         event_name,
                     });
+                }
+            }
+        }
+    }
+
+    Ok(())
+}
+
+fn validate_imported_module_scope_declarations(
+    manifest: &ProjectManifest,
+    reference_order: &BTreeMap<String, usize>,
+) -> Result<(), ProjectCompileError> {
+    for (project_name, module) in iter_all_modules(manifest, reference_order) {
+        let project_key = normalize_identifier(project_name);
+        let mut in_procedure = false;
+        for line in module.source.lines() {
+            let normalized = normalize_visibility_prefixed_procedure_signature(line);
+            if parse_procedure_signature_line(&normalized).is_some() {
+                in_procedure = true;
+                continue;
+            }
+            let lower = line.trim().to_ascii_lowercase();
+            if lower == "end sub" || lower == "end function" || lower == "end property" {
+                in_procedure = false;
+                continue;
+            }
+            if in_procedure {
+                continue;
+            }
+            for type_name in parse_module_scope_typed_declaration_types(line) {
+                if resolve_interface_module(manifest, &project_key, &type_name, reference_order)
+                    .is_some()
+                {
+                    continue;
+                }
+                if is_referenced_typelib_type_reference(manifest, &type_name) {
+                    return Err(
+                        ProjectCompileError::TypeLibraryModuleDeclarationUnsupported { type_name },
+                    );
                 }
             }
         }
@@ -3532,6 +3579,53 @@ fn parse_class_state_field_names(line: &str) -> Vec<String> {
                 .next()
                 .unwrap_or_default();
             normalize_procedure_name(token)
+        })
+        .collect()
+}
+
+fn parse_module_scope_typed_declaration_types(line: &str) -> Vec<String> {
+    let trimmed = line.trim();
+    if trimmed.is_empty() {
+        return Vec::new();
+    }
+    let lower = trimmed.to_ascii_lowercase();
+    let payload = if lower.starts_with("private ") {
+        &trimmed[8..]
+    } else if lower.starts_with("public ") {
+        &trimmed[7..]
+    } else if lower.starts_with("dim ") {
+        &trimmed[4..]
+    } else {
+        return Vec::new();
+    };
+    let payload_lower = payload.trim_start().to_ascii_lowercase();
+    if payload_lower.starts_with("withevents ")
+        || payload_lower.starts_with("sub ")
+        || payload_lower.starts_with("function ")
+        || payload_lower.starts_with("property ")
+        || payload_lower.starts_with("event ")
+        || payload_lower.starts_with("declare ")
+        || payload_lower.starts_with("const ")
+    {
+        return Vec::new();
+    }
+    payload
+        .split(',')
+        .filter_map(|part| {
+            let (_, rhs) = split_keyword_ascii_ci(part.trim(), " as ")?;
+            let mut type_text = rhs.trim();
+            if type_text.len() >= 4 && type_text[..4].eq_ignore_ascii_case("new ") {
+                type_text = type_text[4..].trim();
+            }
+            let token = type_text
+                .split(|ch: char| ch.is_ascii_whitespace() || ch == '(')
+                .next()
+                .unwrap_or_default()
+                .trim();
+            if token.is_empty() {
+                return None;
+            }
+            Some(token.to_string())
         })
         .collect()
 }
@@ -12982,6 +13076,83 @@ mod tests {
         };
         compile_project(&manifest)
             .expect("native internal-class declaration should win over imported type-name match");
+    }
+
+    #[test]
+    fn compile_project_rejects_imported_module_scope_declaration() {
+        let class_module = module_unit_from_source(
+            "Widget",
+            ModuleKind::Class,
+            "Attribute VB_Name = \"Widget\"\nPrivate obj As OxVba.TestDispatch\nPublic Sub Main()\nEnd Sub",
+        )
+        .expect("module parses");
+        let manifest = ProjectManifest {
+            project_name: "ProjectA".to_string(),
+            project_kind: ProjectKind::Source,
+            modules: vec![class_module],
+            references: vec![ProjectReference {
+                referenced_project_name: "OxVba".to_string(),
+                reference_kind: ReferenceKind::TypeLibrary,
+            }],
+            reference_projects: Vec::new(),
+            conditional_constants: BTreeMap::new(),
+        };
+        let err = compile_project(&manifest)
+            .expect_err("module-scope imported declaration should reject");
+        assert_eq!(err.code(), "BIND-E-TYPELIB-MODULE-DECL-UNSUPPORTED");
+    }
+
+    #[test]
+    fn compile_project_rejects_unqualified_imported_module_scope_declaration() {
+        let class_module = module_unit_from_source(
+            "Widget",
+            ModuleKind::Class,
+            "Attribute VB_Name = \"Widget\"\nPrivate obj As TestDispatch\nPublic Sub Main()\nEnd Sub",
+        )
+        .expect("module parses");
+        let manifest = ProjectManifest {
+            project_name: "ProjectA".to_string(),
+            project_kind: ProjectKind::Source,
+            modules: vec![class_module],
+            references: vec![ProjectReference {
+                referenced_project_name: "OxVba".to_string(),
+                reference_kind: ReferenceKind::TypeLibrary,
+            }],
+            reference_projects: Vec::new(),
+            conditional_constants: BTreeMap::new(),
+        };
+        let err = compile_project(&manifest)
+            .expect_err("unqualified module-scope imported declaration should reject");
+        assert_eq!(err.code(), "BIND-E-TYPELIB-MODULE-DECL-UNSUPPORTED");
+    }
+
+    #[test]
+    fn compile_project_prefers_native_module_scope_declaration_over_imported_type_name_match() {
+        let source_module = module_unit_from_source(
+            "TestDispatch",
+            ModuleKind::Class,
+            "Attribute VB_Name = \"TestDispatch\"\nPublic Sub Ping()\nEnd Sub",
+        )
+        .expect("source module parses");
+        let class_module = module_unit_from_source(
+            "Widget",
+            ModuleKind::Class,
+            "Attribute VB_Name = \"Widget\"\nPrivate obj As TestDispatch\nPublic Sub Main()\nEnd Sub",
+        )
+        .expect("module parses");
+        let manifest = ProjectManifest {
+            project_name: "ProjectA".to_string(),
+            project_kind: ProjectKind::Source,
+            modules: vec![class_module, source_module],
+            references: vec![ProjectReference {
+                referenced_project_name: "OxVba".to_string(),
+                reference_kind: ReferenceKind::TypeLibrary,
+            }],
+            reference_projects: Vec::new(),
+            conditional_constants: BTreeMap::new(),
+        };
+        compile_project(&manifest)
+            .expect("native module-scope declaration should win over imported type-name match");
     }
 
     #[test]
