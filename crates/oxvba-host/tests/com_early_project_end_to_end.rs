@@ -759,6 +759,60 @@ End Sub
 
 #[cfg(target_os = "windows")]
 #[test]
+fn early_bound_project_executes_imported_zero_arg_method_read_assignments() {
+    let manifest = manifest_with_typelib(
+        r#"
+Attribute VB_Name = "MainModule"
+Public Sub Main()
+Dim obj As New OxVba.TestDispatch
+Dim implicitValue
+Dim explicitValue
+implicitValue = obj.Ping
+Let explicitValue = obj.Ping
+End Sub
+"#,
+    );
+
+    let out = run_project_windows_hosted(&manifest, false);
+    assert!(expect_object_handle(&out[0]).raw() >= 20_001);
+    assert_eq!(
+        out[1],
+        RuntimeValue::I32(123),
+        "imported zero-arg method read-assignment should lower through metadata-backed invoke syntax"
+    );
+    assert_eq!(
+        out[2],
+        RuntimeValue::I32(123),
+        "explicit Let should preserve imported zero-arg method read-assignment syntax"
+    );
+}
+
+#[cfg(target_os = "windows")]
+#[test]
+fn early_bound_project_zero_arg_method_read_assignment_vm_jit_snapshots_match() {
+    let manifest = manifest_with_typelib(
+        r#"
+Attribute VB_Name = "MainModule"
+Public Sub Main()
+Dim obj As New OxVba.TestDispatch
+Dim implicitValue
+Dim explicitValue
+implicitValue = obj.Ping
+Let explicitValue = obj.Ping
+End Sub
+"#,
+    );
+
+    let vm = run_project_windows_hosted(&manifest, false);
+    let jit = run_project_windows_hosted(&manifest, true);
+    assert_eq!(
+        vm, jit,
+        "VM/JIT snapshots should match for imported zero-arg method read-assignment syntax"
+    );
+}
+
+#[cfg(target_os = "windows")]
+#[test]
 fn early_bound_project_zero_arg_property_get_read_assignment_vm_jit_snapshots_match() {
     let manifest = manifest_with_typelib(
         r#"
@@ -1338,6 +1392,100 @@ End Sub
         out[8],
         RuntimeValue::I32(7),
         "explicit Let Variant-target assignment should preserve VT_UNKNOWN object-result rebinding"
+    );
+}
+
+#[cfg(target_os = "windows")]
+#[test]
+fn early_bound_project_executes_imported_zero_arg_object_result_assignment_intents_without_parentheses()
+ {
+    let manifest = manifest_with_typelib(
+        r#"
+Attribute VB_Name = "MainModule"
+Public Sub Main()
+Dim obj As New OxVba.TestDispatch
+Dim childDispatch As Object
+Dim childUnknown As Object
+Dim wrappedDispatch
+Dim wrappedUnknown
+Dim childDispatchCount
+Dim childUnknownCount
+Dim wrappedDispatchCount
+Dim wrappedUnknownCount
+Set childDispatch = obj.ReturnSelfDispatch
+Set childUnknown = obj.ReturnSelfUnknown
+wrappedDispatch = obj.ReturnSelfDispatch
+Let wrappedUnknown = obj.ReturnSelfUnknown
+childDispatchCount = DispatchInvoke(childDispatch, "Count")
+childUnknownCount = DispatchInvoke(childUnknown, "Count")
+wrappedDispatchCount = DispatchInvoke(wrappedDispatch, "Count")
+wrappedUnknownCount = DispatchInvoke(wrappedUnknown, "Count")
+End Sub
+"#,
+    );
+
+    let out = run_project_windows_hosted(&manifest, false);
+    assert!(expect_object_handle(&out[0]).raw() >= 20_001);
+    assert!(expect_object_handle(&out[1]).raw() >= 20_001);
+    assert!(expect_object_handle(&out[2]).raw() >= 20_001);
+    assert!(expect_object_handle(&out[3]).raw() >= 20_001);
+    assert!(expect_object_handle(&out[4]).raw() >= 20_001);
+    assert_eq!(
+        out[5],
+        RuntimeValue::I32(7),
+        "explicit Set should preserve VT_DISPATCH zero-arg method rebinding on Object targets without parentheses"
+    );
+    assert_eq!(
+        out[6],
+        RuntimeValue::I32(7),
+        "explicit Set should preserve VT_UNKNOWN zero-arg method rebinding on Object targets without parentheses"
+    );
+    assert_eq!(
+        out[7],
+        RuntimeValue::I32(7),
+        "implicit Variant-target assignment should preserve VT_DISPATCH zero-arg method rebinding without parentheses"
+    );
+    assert_eq!(
+        out[8],
+        RuntimeValue::I32(7),
+        "explicit Let Variant-target assignment should preserve VT_UNKNOWN zero-arg method rebinding without parentheses"
+    );
+}
+
+#[cfg(target_os = "windows")]
+#[test]
+fn early_bound_project_zero_arg_object_result_assignment_intents_without_parentheses_vm_jit_snapshots_match()
+ {
+    let manifest = manifest_with_typelib(
+        r#"
+Attribute VB_Name = "MainModule"
+Public Sub Main()
+Dim obj As New OxVba.TestDispatch
+Dim childDispatch As Object
+Dim childUnknown As Object
+Dim wrappedDispatch
+Dim wrappedUnknown
+Dim childDispatchCount
+Dim childUnknownCount
+Dim wrappedDispatchCount
+Dim wrappedUnknownCount
+Set childDispatch = obj.ReturnSelfDispatch
+Set childUnknown = obj.ReturnSelfUnknown
+wrappedDispatch = obj.ReturnSelfDispatch
+Let wrappedUnknown = obj.ReturnSelfUnknown
+childDispatchCount = DispatchInvoke(childDispatch, "Count")
+childUnknownCount = DispatchInvoke(childUnknown, "Count")
+wrappedDispatchCount = DispatchInvoke(wrappedDispatch, "Count")
+wrappedUnknownCount = DispatchInvoke(wrappedUnknown, "Count")
+End Sub
+"#,
+    );
+
+    let vm = run_project_windows_hosted(&manifest, false);
+    let jit = run_project_windows_hosted(&manifest, true);
+    assert_eq!(
+        vm, jit,
+        "VM/JIT snapshots should match for imported zero-arg object-result assignment intents without parentheses"
     );
 }
 

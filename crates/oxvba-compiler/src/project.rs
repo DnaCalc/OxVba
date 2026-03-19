@@ -2264,8 +2264,10 @@ fn rewrite_early_bound_property_read_assignment(
                 });
             }
         };
-    if member_spec.invoke_kind != TypeLibMemberInvokeKind::PropertyGet
-        || !member_spec.parameter_names.is_empty()
+    if !matches!(
+        member_spec.invoke_kind,
+        TypeLibMemberInvokeKind::PropertyGet | TypeLibMemberInvokeKind::Method
+    ) || !member_spec.parameter_names.is_empty()
     {
         return Ok(line.to_string());
     }
@@ -13206,6 +13208,36 @@ mod tests {
     }
 
     #[test]
+    fn compile_project_preserves_imported_zero_arg_object_result_assignment_intents_without_parentheses()
+     {
+        let main_module = module_unit_from_source(
+            "MainModule",
+            ModuleKind::Procedural,
+            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim obj As OxVba.TestDispatch\nDim childDispatch As Object\nDim childUnknown As Object\nDim wrappedDispatch\nDim wrappedUnknown\nSet obj = CreateObject(4)\nSet childDispatch = obj.ReturnSelfDispatch\nSet childUnknown = obj.ReturnSelfUnknown\nwrappedDispatch = obj.ReturnSelfDispatch\nLet wrappedUnknown = obj.ReturnSelfUnknown\nEnd Sub",
+        )
+        .expect("module parses");
+        let manifest = ProjectManifest {
+            project_name: "ProjectA".to_string(),
+            project_kind: ProjectKind::Source,
+            modules: vec![main_module],
+            references: vec![ProjectReference {
+                referenced_project_name: "OxVba".to_string(),
+                reference_kind: ReferenceKind::TypeLibrary,
+            }],
+            reference_projects: Vec::new(),
+            conditional_constants: BTreeMap::new(),
+        };
+        let compiled = compile_project(&manifest).expect(
+            "imported zero-arg object-result assignment intents without parentheses should compile",
+        );
+        let lowered = compiled.rewritten_source.to_ascii_lowercase();
+        assert!(lowered.contains("set childdispatch = dispatchinvoke(obj, 23)"));
+        assert!(lowered.contains("set childunknown = dispatchinvoke(obj, 24)"));
+        assert!(lowered.contains("wrappeddispatch = dispatchinvoke(obj, 23)"));
+        assert!(lowered.contains("let wrappedunknown = dispatchinvoke(obj, 24)"));
+    }
+
+    #[test]
     fn compile_project_rewrites_object_property_get_external_read_assignment_to_dispatchinvoke() {
         let main_module = module_unit_from_source(
             "MainModule",
@@ -13289,6 +13321,31 @@ mod tests {
     }
 
     #[test]
+    fn compile_project_rewrites_zero_arg_method_external_read_assignment_to_dispatchinvoke() {
+        let main_module = module_unit_from_source(
+            "MainModule",
+            ModuleKind::Procedural,
+            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim obj As OxVba.TestDispatch\nDim x\nSet obj = CreateObject(4)\nx = obj.Ping\nEnd Sub",
+        )
+        .expect("module parses");
+        let manifest = ProjectManifest {
+            project_name: "ProjectA".to_string(),
+            project_kind: ProjectKind::Source,
+            modules: vec![main_module],
+            references: vec![ProjectReference {
+                referenced_project_name: "OxVba".to_string(),
+                reference_kind: ReferenceKind::TypeLibrary,
+            }],
+            reference_projects: Vec::new(),
+            conditional_constants: BTreeMap::new(),
+        };
+        let compiled = compile_project(&manifest)
+            .expect("zero-arg method imported read-assignment should compile");
+        let lowered = compiled.rewritten_source.to_ascii_lowercase();
+        assert!(lowered.contains("x = dispatchinvoke(obj, 5)"));
+    }
+
+    #[test]
     fn compile_project_rewrites_parenthesized_zero_arg_property_get_external_read_assignment_to_dispatchinvoke()
      {
         let main_module = module_unit_from_source(
@@ -13337,6 +13394,31 @@ mod tests {
             .expect("explicit Let zero-arg property-get imported read-assignment should compile");
         let lowered = compiled.rewritten_source.to_ascii_lowercase();
         assert!(lowered.contains("let x = dispatchinvoke(obj, 9)"));
+    }
+
+    #[test]
+    fn compile_project_preserves_explicit_let_for_zero_arg_method_external_read_assignment() {
+        let main_module = module_unit_from_source(
+            "MainModule",
+            ModuleKind::Procedural,
+            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim obj As OxVba.TestDispatch\nDim x\nSet obj = CreateObject(4)\nLet x = obj.Ping\nEnd Sub",
+        )
+        .expect("module parses");
+        let manifest = ProjectManifest {
+            project_name: "ProjectA".to_string(),
+            project_kind: ProjectKind::Source,
+            modules: vec![main_module],
+            references: vec![ProjectReference {
+                referenced_project_name: "OxVba".to_string(),
+                reference_kind: ReferenceKind::TypeLibrary,
+            }],
+            reference_projects: Vec::new(),
+            conditional_constants: BTreeMap::new(),
+        };
+        let compiled = compile_project(&manifest)
+            .expect("explicit Let zero-arg method imported read-assignment should compile");
+        let lowered = compiled.rewritten_source.to_ascii_lowercase();
+        assert!(lowered.contains("let x = dispatchinvoke(obj, 5)"));
     }
 
     #[test]

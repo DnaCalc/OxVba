@@ -1,3 +1,19 @@
+## 2026-03-19 - Add imported zero-arg method read-assignment evidence
+
+- Continued `IP-05B` by closing a direct imported call-vs-value hole on the already-supported metadata-backed subset instead of widening typelib or event scope.
+- In [project.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-compiler\src\project.rs), widened imported direct read-assignment lowering from zero-arg `PropertyGet` only to the full zero-arg imported read-result subset for `PropertyGet` and `Method`, while still refusing argument-bearing expression syntax.
+- Added direct compiler rewrite evidence for:
+  - `x = obj.Ping`
+  - `Let x = obj.Ping`
+  - `Set childDispatch = obj.ReturnSelfDispatch`
+  - `Set childUnknown = obj.ReturnSelfUnknown`
+  - `wrappedDispatch = obj.ReturnSelfDispatch`
+  - `Let wrappedUnknown = obj.ReturnSelfUnknown`
+- Added Windows host end-to-end and VM/JIT parity evidence in [com_early_project_end_to_end.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-host\tests\com_early_project_end_to_end.rs) proving direct zero-arg imported method reads now preserve:
+  - scalar result transport for `Ping`,
+  - object-result rebinding across explicit `Set` on typed `Object` targets and implicit / explicit-`Let` assignment on `Variant` targets for `ReturnSelfDispatch` / `ReturnSelfUnknown`.
+- `IP-05` remains `in-progress`: richer typelib/member coverage, broader imported property/event/default-member parity beyond the controlled fixture, and wider Office/Excel object-model behavior are still open.
+
 ## 2026-03-19 - Add imported no-parentheses invoke evidence
 
 - Continued `IP-05B` by taking the remaining imported call-vs-value syntax row on the already-supported metadata-backed method/property-get/default-member subset instead of widening typelib scope again.
