@@ -1,3 +1,10 @@
+## 2026-03-19 - Bound host root indexed setter precedence
+
+- Continued `IP-08A` by widening the bounded host/COM coexistence floor from host-returned invoke traffic into the matching indexed imported setter lanes on returned COM objects.
+- In [project.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-compiler\src\project.rs), added direct compiler evidence that `obj.SetIndexedValue(7) = 11`, `obj.SetIndexedValue(lhs := 7) = 11`, `Set obj.SetIndexedValueRef(8) = other`, and `Set obj.SetIndexedValueRef(lhs := 8) = other` preserve the same host-root `Application.Value -> CreateObject(4)` handoff and imported dispatch-token lowering on the returned COM object.
+- In [engine.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-host\src\engine.rs), added matching host runtime evidence proving those indexed setter lanes execute end to end on the returned COM-backed object and that a conflicting same-name plain-project `Application` reference still does not steal any of those indexed setter lanes by reference order.
+- This raises the honest `IP-08A` host/COM coexistence floor from host-returned invoke traffic alone to that same bounded subset plus indexed imported setter traffic, while narrowing the same-name plain-project identity frontier again without overclaiming broader host object identity closure.
+
 ## 2026-03-19 - Bound host root named-argument invoke precedence
 
 - Continued `IP-08A` by widening the bounded host/COM coexistence floor from positional imported invoke traffic into the matching named-argument `Call` plus bare statement-context subsets across both parenthesized and no-paren forms on host-returned COM objects.
