@@ -1,3 +1,10 @@
+## 2026-03-19 - Bound plain-project precedence on host-returned imported property and default-member traffic
+
+- Continued `IP-08A` by making two more host identity neighbors explicit instead of leaving same-name plain-project precedence implied only on imported `Count()`, object-property, exception, and `PropertyPutRef` lanes.
+- In [project.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-compiler\src\project.rs), added compiler evidence that a conflicting `PlainProject.Application` does not steal `HostProject.Application.Value` when the host root returns `CreateObject(4)` into `Dim obj As OxVba.TestDispatch` and the caller then executes imported `obj.SetValue = 9 : afterValue = obj.Value` or imported authoritative default-member traffic `echoValue = obj(41)`.
+- In [engine.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-host\src\engine.rs), added live runtime evidence that the same conflicting-name cases still execute as the host-root COM-return lane with deterministic snapshots `[ObjectHandle(5004), I32(5013)]` for imported property traffic and `[ObjectHandle(5004), I32(5061)]` for imported authoritative default-member traffic.
+- This narrows the remaining `IP-08A` host identity frontier again: same-name plain-project precedence is now explicit across imported method, property-put/get, property-putref, default-member, object-property, and exception lanes on host-returned COM objects, even though broader host object identity closure is still open.
+
 ## 2026-03-19 - Prove host-returned COM objects support imported property-putref traffic
 
 - Continued `IP-08A` by widening the bounded host/COM coexistence floor from imported scalar `PropertyPut`/`PropertyGet` and exception lanes into assignment-form imported `PropertyPutRef` traffic on the same host-returned COM object.
