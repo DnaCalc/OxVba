@@ -276,6 +276,10 @@ pub enum ProjectCompileError {
     )]
     DefaultMemberResolutionMissing { name: String },
     #[error(
+        "PMR-E-HOST-ROOT-NOT-EXPOSED: host-injected class module `{name}` is not exposed as an implicit root (requires VB_PredeclaredId=True or VB_GlobalNamespace=True)"
+    )]
+    HostRootNotExposed { name: String },
+    #[error(
         "PMR-E-PROJECT-QUALIFICATION-INVALID: call target `{name}` uses unknown project qualifier"
     )]
     ProjectQualificationInvalid { name: String },
@@ -378,6 +382,7 @@ impl ProjectCompileError {
             Self::DefaultMemberResolutionMissing { .. } => {
                 "PMR-E-DEFAULT-MEMBER-RESOLUTION-MISSING"
             }
+            Self::HostRootNotExposed { .. } => "PMR-E-HOST-ROOT-NOT-EXPOSED",
             Self::ProjectQualificationInvalid { .. } => "PMR-E-PROJECT-QUALIFICATION-INVALID",
             Self::CrossProjectReferenceUnsupported { .. } => {
                 "PMR-E-REFERENCE-CROSS-PROJECT-UNSUPPORTED"
@@ -430,6 +435,7 @@ struct ProcedureDecl {
     param_count: usize,
     module_kind: ModuleKind,
     option_private_module: bool,
+    reference_kind: Option<ReferenceKind>,
     implicit_receiver: bool,
     implicit_receiver_precedence: usize,
 }
@@ -1230,6 +1236,7 @@ fn collect_project_procedures(manifest: &ProjectManifest) -> Vec<ProcedureDecl> 
                     param_count,
                     module_kind: module.module_kind,
                     option_private_module: module.attributes.option_private_module,
+                    reference_kind: None,
                     implicit_receiver: module.module_kind == ModuleKind::Class,
                     implicit_receiver_precedence: 0,
                 });
@@ -1272,6 +1279,7 @@ fn collect_project_procedures(manifest: &ProjectManifest) -> Vec<ProcedureDecl> 
                         param_count,
                         module_kind: module.module_kind,
                         option_private_module: module.attributes.option_private_module,
+                        reference_kind: Some(reference_kind),
                         implicit_receiver: reference_kind == ReferenceKind::HostInjected
                             && module.module_kind == ModuleKind::Class
                             && (module.attributes.vb_predeclared_id
@@ -1288,7 +1296,11 @@ fn collect_project_procedures(manifest: &ProjectManifest) -> Vec<ProcedureDecl> 
 fn resolve_implicit_class_receiver_binding(
     receiver: &str,
     procedures: &[ProcedureDecl],
-) -> Option<(String, String, String)> {
+    shadowed_identifiers: &BTreeSet<String>,
+) -> Result<Option<(String, String, String)>, ProjectCompileError> {
+    if shadowed_identifiers.contains(receiver) {
+        return Ok(None);
+    }
     let mut candidates = procedures
         .iter()
         .filter(|decl| decl.module_name == receiver && decl.implicit_receiver)
@@ -1302,14 +1314,180 @@ fn resolve_implicit_class_receiver_binding(
         .collect::<Vec<_>>();
     candidates.sort();
     candidates.dedup();
-    candidates
-        .into_iter()
-        .next()
-        .map(|(_, project_name, module_name)| (project_name, module_name, "0".to_string()))
+    if let Some((_, project_name, module_name)) = candidates.into_iter().next() {
+        return Ok(Some((project_name, module_name, "0".to_string())));
+    }
+    if procedures.iter().any(|decl| {
+        decl.module_name == receiver
+            && decl.module_kind == ModuleKind::Class
+            && decl.reference_kind == Some(ReferenceKind::HostInjected)
+    }) {
+        return Err(ProjectCompileError::HostRootNotExposed {
+            name: receiver.to_string(),
+        });
+    }
+    Ok(None)
 }
 
 fn has_implicit_class_receivers(procedures: &[ProcedureDecl]) -> bool {
-    procedures.iter().any(|decl| decl.implicit_receiver)
+    procedures.iter().any(|decl| {
+        decl.implicit_receiver
+            || (decl.module_kind == ModuleKind::Class
+                && decl.reference_kind == Some(ReferenceKind::HostInjected))
+    })
+}
+
+fn parse_declared_identifier_names(line: &str) -> Vec<String> {
+    let trimmed = line.trim();
+    if trimmed.is_empty() || trimmed.starts_with('\'') {
+        return Vec::new();
+    }
+    let lower = trimmed.to_ascii_lowercase();
+    let mut tail = if lower.starts_with("dim ") {
+        trimmed[4..].trim_start()
+    } else if lower.starts_with("static ") {
+        trimmed[7..].trim_start()
+    } else if lower.starts_with("private ") {
+        trimmed[8..].trim_start()
+    } else if lower.starts_with("public ") {
+        trimmed[7..].trim_start()
+    } else if lower.starts_with("const ") {
+        trimmed[6..].trim_start()
+    } else {
+        return Vec::new();
+    };
+    let lower_tail = tail.to_ascii_lowercase();
+    if lower_tail.starts_with("sub ")
+        || lower_tail.starts_with("function ")
+        || lower_tail.starts_with("property ")
+        || lower_tail.starts_with("event ")
+        || lower_tail.starts_with("declare ")
+        || lower_tail.starts_with("enum ")
+        || lower_tail.starts_with("type ")
+        || lower_tail.starts_with("implements ")
+    {
+        return Vec::new();
+    }
+    if lower_tail.starts_with("withevents ") {
+        tail = tail[11..].trim_start();
+    }
+    let Ok(parts) = split_top_level_args(tail) else {
+        return Vec::new();
+    };
+    parts
+        .into_iter()
+        .filter_map(|part| {
+            let token = part
+                .trim()
+                .split(|ch: char| ch.is_ascii_whitespace() || ch == '(' || ch == '=' || ch == ':')
+                .next()
+                .unwrap_or_default();
+            normalize_procedure_name(token)
+        })
+        .collect()
+}
+
+fn parse_signature_parameter_names(line: &str) -> Vec<String> {
+    let trimmed = line.trim();
+    let Some(open_idx) = trimmed.find('(') else {
+        return Vec::new();
+    };
+    let Some(close_idx) = find_matching_paren(trimmed, open_idx) else {
+        return Vec::new();
+    };
+    let payload = trimmed[open_idx + 1..close_idx].trim();
+    if payload.is_empty() {
+        return Vec::new();
+    }
+    let Ok(parts) = split_top_level_args(payload) else {
+        return Vec::new();
+    };
+    parts
+        .into_iter()
+        .filter_map(|part| {
+            let mut remainder = part.trim();
+            loop {
+                let lower = remainder.to_ascii_lowercase();
+                if lower.starts_with("optional ") {
+                    remainder = remainder[9..].trim_start();
+                } else if lower.starts_with("byval ") || lower.starts_with("byref ") {
+                    remainder = remainder[6..].trim_start();
+                } else if lower.starts_with("paramarray ") {
+                    remainder = remainder[11..].trim_start();
+                } else {
+                    break;
+                }
+            }
+            let token = remainder
+                .split(|ch: char| ch.is_ascii_whitespace() || ch == '(' || ch == '=' || ch == ':')
+                .next()
+                .unwrap_or_default();
+            normalize_procedure_name(token)
+        })
+        .collect()
+}
+
+fn collect_module_shadowed_identifiers(
+    module: &ModuleUnit,
+) -> (BTreeSet<String>, BTreeMap<String, BTreeSet<String>>) {
+    let mut module_shadowed = BTreeSet::new();
+    let mut shadowed_by_proc = BTreeMap::<String, BTreeSet<String>>::new();
+    let mut active_procedure_name: Option<String> = None;
+    for line in module_source_lines_with_class_terminate_cleanup(module) {
+        let normalized = normalize_visibility_prefixed_procedure_signature(&line);
+        if let Some((proc_name, _, _)) = parse_procedure_signature_line(&normalized) {
+            let entry = shadowed_by_proc.entry(proc_name.clone()).or_default();
+            entry.insert(proc_name.clone());
+            entry.extend(parse_signature_parameter_names(&normalized));
+            active_procedure_name = Some(proc_name);
+            continue;
+        }
+        let lower = normalized.trim().to_ascii_lowercase();
+        if lower == "end sub" || lower == "end function" || lower == "end property" {
+            active_procedure_name = None;
+            continue;
+        }
+        let declared = parse_declared_identifier_names(&line);
+        if declared.is_empty() {
+            continue;
+        }
+        if let Some(proc_name) = &active_procedure_name {
+            shadowed_by_proc
+                .entry(proc_name.clone())
+                .or_default()
+                .extend(declared);
+        } else {
+            module_shadowed.extend(declared);
+        }
+    }
+    (module_shadowed, shadowed_by_proc)
+}
+
+fn visible_shadowed_identifiers(
+    module_shadowed: &BTreeSet<String>,
+    shadowed_by_proc: &BTreeMap<String, BTreeSet<String>>,
+    procedures: &[ProcedureDecl],
+    current_project: &str,
+    current_module: &str,
+    active_procedure_name: Option<&str>,
+) -> BTreeSet<String> {
+    let mut visible = module_shadowed.clone();
+    if let Some(proc_name) = active_procedure_name {
+        if let Some(proc_shadowed) = shadowed_by_proc.get(proc_name) {
+            visible.extend(proc_shadowed.iter().cloned());
+        } else if let Some(proc_shadowed) = procedures
+            .iter()
+            .find(|decl| {
+                decl.project_name.eq_ignore_ascii_case(current_project)
+                    && decl.module_name.eq_ignore_ascii_case(current_module)
+                    && decl.lowered_name.eq_ignore_ascii_case(proc_name)
+            })
+            .and_then(|decl| shadowed_by_proc.get(&normalize_identifier(&decl.procedure_name)))
+        {
+            visible.extend(proc_shadowed.iter().cloned());
+        }
+    }
+    visible
 }
 
 fn validate_modules_for_project(
@@ -1573,6 +1751,8 @@ fn lower_module_source_module_aware(
     let mut internal_class_bindings = BTreeMap::<String, InternalClassBinding>::new();
     let mut forced_object_locals_by_proc = ForcedObjectLocalsByProc::new();
     let mut withevents_bindings = BTreeSet::<String>::new();
+    let (module_shadowed_identifiers, shadowed_identifiers_by_proc) =
+        collect_module_shadowed_identifiers(module);
     let class_state_bindings =
         collect_class_state_bindings(module, current_project, &current_module);
     let source_lines = module_source_lines_with_class_terminate_cleanup(module);
@@ -1598,6 +1778,14 @@ fn lower_module_source_module_aware(
             dynamic_instance_bindings,
         )?;
         for expanded_line in expanded {
+            let shadowed_identifiers = visible_shadowed_identifiers(
+                &module_shadowed_identifiers,
+                &shadowed_identifiers_by_proc,
+                procedures,
+                current_project,
+                &current_module,
+                active_procedure_name.as_deref(),
+            );
             let expanded_line = rewrite_internal_class_set_assignment(
                 &expanded_line,
                 active_project,
@@ -1605,6 +1793,7 @@ fn lower_module_source_module_aware(
                 &current_module,
                 procedures,
                 &internal_class_bindings,
+                &shadowed_identifiers,
                 &withevents_bindings,
             )?;
             let expanded_line = rewrite_internal_class_property_assignment(
@@ -1614,6 +1803,7 @@ fn lower_module_source_module_aware(
                 &current_module,
                 procedures,
                 &internal_class_bindings,
+                &shadowed_identifiers,
             )?;
             let expanded_line = rewrite_internal_class_default_member_assignment(
                 &expanded_line,
@@ -1622,6 +1812,7 @@ fn lower_module_source_module_aware(
                 &current_module,
                 procedures,
                 &internal_class_bindings,
+                &shadowed_identifiers,
             )?;
             let state_assigned =
                 rewrite_internal_class_state_assignment(&expanded_line, &class_state_bindings);
@@ -1637,6 +1828,7 @@ fn lower_module_source_module_aware(
                 &current_module,
                 procedures,
                 &internal_class_bindings,
+                &shadowed_identifiers,
             )?;
             let expanded_line = rewrite_internal_class_property_reads(
                 &expanded_line,
@@ -1645,6 +1837,7 @@ fn lower_module_source_module_aware(
                 &current_module,
                 procedures,
                 &internal_class_bindings,
+                &shadowed_identifiers,
             )?;
             let expanded_line = rewrite_internal_class_member_dispatch(
                 &expanded_line,
@@ -1653,6 +1846,7 @@ fn lower_module_source_module_aware(
                 &current_module,
                 procedures,
                 &internal_class_bindings,
+                &shadowed_identifiers,
             )?;
             let next_active_procedure_name = lowered_procedure_binding_for_line(
                 &expanded_line,
@@ -2578,6 +2772,7 @@ fn rewrite_internal_class_member_dispatch(
     current_module: &str,
     procedures: &[ProcedureDecl],
     internal_class_bindings: &BTreeMap<String, InternalClassBinding>,
+    shadowed_identifiers: &BTreeSet<String>,
 ) -> Result<String, ProjectCompileError> {
     let mut replacements: Vec<(usize, usize, String)> = Vec::new();
     let mut cursor = 0usize;
@@ -2608,6 +2803,7 @@ fn rewrite_internal_class_member_dispatch(
                 current_module,
                 procedures,
                 internal_class_bindings,
+                shadowed_identifiers,
             )?
             else {
                 cursor = close + 1;
@@ -2628,6 +2824,7 @@ fn rewrite_internal_class_member_dispatch(
                     current_module,
                     procedures,
                     internal_class_bindings,
+                    shadowed_identifiers,
                     &[ProcedureDeclKind::PropertyGet],
                 )?
             else {
@@ -2668,6 +2865,7 @@ fn rewrite_internal_class_member_dispatch(
         current_module,
         procedures,
         internal_class_bindings,
+        shadowed_identifiers,
     )?;
 
     rewrite_internal_class_statement_invoke_without_parentheses(
@@ -2677,6 +2875,7 @@ fn rewrite_internal_class_member_dispatch(
         current_module,
         procedures,
         internal_class_bindings,
+        shadowed_identifiers,
     )
 }
 
@@ -2688,6 +2887,7 @@ fn rewrite_internal_class_property_reads(
     current_module: &str,
     procedures: &[ProcedureDecl],
     internal_class_bindings: &BTreeMap<String, InternalClassBinding>,
+    shadowed_identifiers: &BTreeSet<String>,
 ) -> Result<String, ProjectCompileError> {
     if (internal_class_bindings.is_empty() && !has_implicit_class_receivers(procedures))
         || class_state_line_is_non_executable(line)
@@ -2701,6 +2901,7 @@ fn rewrite_internal_class_property_reads(
         current_module,
         procedures,
         internal_class_bindings,
+        shadowed_identifiers,
     )?;
     rewrite_internal_class_default_member_statement_reads(
         &rewritten,
@@ -2709,6 +2910,7 @@ fn rewrite_internal_class_property_reads(
         current_module,
         procedures,
         internal_class_bindings,
+        shadowed_identifiers,
     )
 }
 
@@ -2720,6 +2922,7 @@ fn rewrite_internal_class_default_member_statement_reads(
     current_module: &str,
     procedures: &[ProcedureDecl],
     internal_class_bindings: &BTreeMap<String, InternalClassBinding>,
+    shadowed_identifiers: &BTreeSet<String>,
 ) -> Result<String, ProjectCompileError> {
     let trimmed = line.trim_start();
     let leading = line.len().saturating_sub(trimmed.len());
@@ -2744,6 +2947,7 @@ fn rewrite_internal_class_default_member_statement_reads(
         current_module,
         procedures,
         internal_class_bindings,
+        shadowed_identifiers,
         &[ProcedureDeclKind::PropertyGet],
     )?
     else {
@@ -2760,6 +2964,7 @@ fn rewrite_internal_class_property_expression_reads(
     current_module: &str,
     procedures: &[ProcedureDecl],
     internal_class_bindings: &BTreeMap<String, InternalClassBinding>,
+    shadowed_identifiers: &BTreeSet<String>,
 ) -> Result<String, ProjectCompileError> {
     let bytes = text.as_bytes();
     let mut replacements: Vec<(usize, usize, String)> = Vec::new();
@@ -2815,6 +3020,7 @@ fn rewrite_internal_class_property_expression_reads(
             current_module,
             procedures,
             internal_class_bindings,
+            shadowed_identifiers,
             &[ProcedureDeclKind::PropertyGet],
         )? {
             replacements.push((
@@ -2855,18 +3061,19 @@ fn resolve_internal_class_member_target_of_kinds(
     current_module: &str,
     procedures: &[ProcedureDecl],
     internal_class_bindings: &BTreeMap<String, InternalClassBinding>,
+    shadowed_identifiers: &BTreeSet<String>,
     allowed_kinds: &[ProcedureDeclKind],
 ) -> Result<Option<(String, String)>, ProjectCompileError> {
-    let Some((target_project, target_module, instance_arg)) = internal_class_bindings
-        .get(receiver)
-        .map(|binding| {
-            (
+    let Some((target_project, target_module, instance_arg)) =
+        (if let Some(binding) = internal_class_bindings.get(receiver) {
+            Some((
                 binding.project_name.clone(),
                 binding.module_name.clone(),
                 receiver.to_string(),
-            )
+            ))
+        } else {
+            resolve_implicit_class_receiver_binding(receiver, procedures, shadowed_identifiers)?
         })
-        .or_else(|| resolve_implicit_class_receiver_binding(receiver, procedures))
     else {
         return Ok(None);
     };
@@ -2907,18 +3114,19 @@ fn resolve_internal_class_default_member_target_of_kinds(
     current_module: &str,
     procedures: &[ProcedureDecl],
     internal_class_bindings: &BTreeMap<String, InternalClassBinding>,
+    shadowed_identifiers: &BTreeSet<String>,
     allowed_kinds: &[ProcedureDeclKind],
 ) -> Result<Option<(String, String)>, ProjectCompileError> {
-    let Some((target_project, target_module, instance_arg)) = internal_class_bindings
-        .get(receiver)
-        .map(|binding| {
-            (
+    let Some((target_project, target_module, instance_arg)) =
+        (if let Some(binding) = internal_class_bindings.get(receiver) {
+            Some((
                 binding.project_name.clone(),
                 binding.module_name.clone(),
                 receiver.to_string(),
-            )
+            ))
+        } else {
+            resolve_implicit_class_receiver_binding(receiver, procedures, shadowed_identifiers)?
         })
-        .or_else(|| resolve_implicit_class_receiver_binding(receiver, procedures))
     else {
         return Ok(None);
     };
@@ -2978,6 +3186,7 @@ fn resolve_internal_class_member_target(
     current_module: &str,
     procedures: &[ProcedureDecl],
     internal_class_bindings: &BTreeMap<String, InternalClassBinding>,
+    shadowed_identifiers: &BTreeSet<String>,
 ) -> Result<Option<(String, String)>, ProjectCompileError> {
     resolve_internal_class_member_target_of_kinds(
         receiver,
@@ -2988,6 +3197,7 @@ fn resolve_internal_class_member_target(
         current_module,
         procedures,
         internal_class_bindings,
+        shadowed_identifiers,
         &[],
     )
 }
@@ -2998,6 +3208,7 @@ fn rewrite_internal_class_call_statement_without_parens(
     current_module: &str,
     procedures: &[ProcedureDecl],
     internal_class_bindings: &BTreeMap<String, InternalClassBinding>,
+    shadowed_identifiers: &BTreeSet<String>,
 ) -> Result<String, ProjectCompileError> {
     let trimmed = line.trim_start();
     let leading = line.len().saturating_sub(trimmed.len());
@@ -3027,6 +3238,7 @@ fn rewrite_internal_class_call_statement_without_parens(
             current_module,
             procedures,
             internal_class_bindings,
+            shadowed_identifiers,
         )?
         else {
             return Ok(line.to_string());
@@ -3044,6 +3256,7 @@ fn rewrite_internal_class_call_statement_without_parens(
             current_module,
             procedures,
             internal_class_bindings,
+            shadowed_identifiers,
             &[ProcedureDeclKind::PropertyGet],
         )?
         else {
@@ -3070,6 +3283,7 @@ fn rewrite_internal_class_statement_invoke_without_parentheses(
     current_module: &str,
     procedures: &[ProcedureDecl],
     internal_class_bindings: &BTreeMap<String, InternalClassBinding>,
+    shadowed_identifiers: &BTreeSet<String>,
 ) -> Result<String, ProjectCompileError> {
     let trimmed = line.trim_start();
     let leading = line.len().saturating_sub(trimmed.len());
@@ -3105,6 +3319,7 @@ fn rewrite_internal_class_statement_invoke_without_parentheses(
             current_module,
             procedures,
             internal_class_bindings,
+            shadowed_identifiers,
             &[ProcedureDeclKind::PropertyGet],
         )?
         else {
@@ -3123,6 +3338,7 @@ fn rewrite_internal_class_statement_invoke_without_parentheses(
             current_module,
             procedures,
             internal_class_bindings,
+            shadowed_identifiers,
             &[ProcedureDeclKind::PropertyGet],
         )?
         else {
@@ -3252,6 +3468,7 @@ fn rewrite_internal_class_self_dispatch(
     ))
 }
 
+#[allow(clippy::too_many_arguments)]
 fn rewrite_internal_class_set_assignment(
     line: &str,
     active_project: &str,
@@ -3259,6 +3476,7 @@ fn rewrite_internal_class_set_assignment(
     current_module: &str,
     procedures: &[ProcedureDecl],
     internal_class_bindings: &BTreeMap<String, InternalClassBinding>,
+    shadowed_identifiers: &BTreeSet<String>,
     withevents_bindings: &BTreeSet<String>,
 ) -> Result<String, ProjectCompileError> {
     let trimmed = line.trim_start();
@@ -3313,6 +3531,7 @@ fn rewrite_internal_class_set_assignment(
                 current_module,
                 procedures,
                 internal_class_bindings,
+                shadowed_identifiers,
                 &[ProcedureDeclKind::PropertySet],
             )?
         {
@@ -3352,7 +3571,12 @@ fn rewrite_internal_class_set_assignment(
         (receiver_name, Vec::new())
     };
     if !internal_class_bindings.contains_key(&normalized_lhs)
-        && resolve_implicit_class_receiver_binding(&normalized_lhs, procedures).is_none()
+        && resolve_implicit_class_receiver_binding(
+            &normalized_lhs,
+            procedures,
+            shadowed_identifiers,
+        )?
+        .is_none()
     {
         return Ok(line.to_string());
     }
@@ -3379,6 +3603,7 @@ fn rewrite_internal_class_set_assignment(
         current_module,
         procedures,
         internal_class_bindings,
+        shadowed_identifiers,
         &[ProcedureDeclKind::PropertySet],
     ) {
         Ok(Some((target, instance_arg))) => {
@@ -3413,6 +3638,7 @@ fn rewrite_internal_class_property_assignment(
     current_module: &str,
     procedures: &[ProcedureDecl],
     internal_class_bindings: &BTreeMap<String, InternalClassBinding>,
+    shadowed_identifiers: &BTreeSet<String>,
 ) -> Result<String, ProjectCompileError> {
     if (internal_class_bindings.is_empty() && !has_implicit_class_receivers(procedures))
         || class_state_line_is_non_executable(line)
@@ -3479,6 +3705,7 @@ fn rewrite_internal_class_property_assignment(
         current_module,
         procedures,
         internal_class_bindings,
+        shadowed_identifiers,
         &[ProcedureDeclKind::PropertyLet],
     )?
     else {
@@ -3503,6 +3730,7 @@ fn rewrite_internal_class_default_member_assignment(
     current_module: &str,
     procedures: &[ProcedureDecl],
     internal_class_bindings: &BTreeMap<String, InternalClassBinding>,
+    shadowed_identifiers: &BTreeSet<String>,
 ) -> Result<String, ProjectCompileError> {
     if (internal_class_bindings.is_empty() && !has_implicit_class_receivers(procedures))
         || class_state_line_is_non_executable(line)
@@ -3572,6 +3800,7 @@ fn rewrite_internal_class_default_member_assignment(
         current_module,
         procedures,
         internal_class_bindings,
+        shadowed_identifiers,
         &[ProcedureDeclKind::PropertyLet],
     )?
     else {
@@ -3596,6 +3825,7 @@ fn rewrite_internal_class_default_member_read_assignment(
     current_module: &str,
     procedures: &[ProcedureDecl],
     internal_class_bindings: &BTreeMap<String, InternalClassBinding>,
+    shadowed_identifiers: &BTreeSet<String>,
 ) -> Result<String, ProjectCompileError> {
     if (internal_class_bindings.is_empty() && !has_implicit_class_receivers(procedures))
         || class_state_line_is_non_executable(line)
@@ -3663,6 +3893,7 @@ fn rewrite_internal_class_default_member_read_assignment(
         current_module,
         procedures,
         internal_class_bindings,
+        shadowed_identifiers,
         &[ProcedureDeclKind::PropertyGet],
     )?;
     let Some((target, instance_arg)) = resolved_target else {
@@ -5031,6 +5262,8 @@ fn rewrite_module_source(
     let mut internal_class_bindings = BTreeMap::<String, InternalClassBinding>::new();
     let mut forced_object_locals_by_proc = ForcedObjectLocalsByProc::new();
     let mut withevents_bindings = BTreeSet::<String>::new();
+    let (module_shadowed_identifiers, shadowed_identifiers_by_proc) =
+        collect_module_shadowed_identifiers(module);
     let source_lines = module_source_lines_with_class_terminate_cleanup(module);
     for line in &source_lines {
         record_internal_class_object_local(
@@ -5054,6 +5287,14 @@ fn rewrite_module_source(
             dynamic_instance_bindings,
         )?;
         for expanded_line in expanded {
+            let shadowed_identifiers = visible_shadowed_identifiers(
+                &module_shadowed_identifiers,
+                &shadowed_identifiers_by_proc,
+                procedures,
+                current_project,
+                &current_module,
+                active_procedure_name.as_deref(),
+            );
             let expanded_line = rewrite_internal_class_set_assignment(
                 &expanded_line,
                 active_project,
@@ -5061,6 +5302,7 @@ fn rewrite_module_source(
                 &current_module,
                 procedures,
                 &internal_class_bindings,
+                &shadowed_identifiers,
                 &withevents_bindings,
             )?;
             let expanded_line = rewrite_internal_class_property_assignment(
@@ -5070,6 +5312,7 @@ fn rewrite_module_source(
                 &current_module,
                 procedures,
                 &internal_class_bindings,
+                &shadowed_identifiers,
             )?;
             let expanded_line = rewrite_internal_class_default_member_assignment(
                 &expanded_line,
@@ -5078,6 +5321,7 @@ fn rewrite_module_source(
                 &current_module,
                 procedures,
                 &internal_class_bindings,
+                &shadowed_identifiers,
             )?;
             let expanded_line = rewrite_internal_class_default_member_read_assignment(
                 &expanded_line,
@@ -5086,6 +5330,7 @@ fn rewrite_module_source(
                 &current_module,
                 procedures,
                 &internal_class_bindings,
+                &shadowed_identifiers,
             )?;
             let expanded_line = rewrite_internal_class_property_reads(
                 &expanded_line,
@@ -5094,6 +5339,7 @@ fn rewrite_module_source(
                 &current_module,
                 procedures,
                 &internal_class_bindings,
+                &shadowed_identifiers,
             )?;
             let trimmed = expanded_line.trim();
             let lower = trimmed.to_ascii_lowercase();
@@ -5110,6 +5356,7 @@ fn rewrite_module_source(
                 &current_module,
                 procedures,
                 &internal_class_bindings,
+                &shadowed_identifiers,
             )?;
             let normalized = normalize_visibility_prefixed_procedure_signature(&expanded_line);
             if let Some((proc_name, kind, _)) = parse_procedure_signature_line(&normalized)
@@ -17392,6 +17639,59 @@ mod tests {
             !lowered.contains("property_get_pmr_hostproject_application_value(0)"),
             "plain project reference must not gain implicit host receiver lowering: {lowered}"
         );
+    }
+
+    #[test]
+    fn compile_project_rejects_host_injected_invalid_root_without_exposure_attribute() {
+        let cases = [
+            ("named property read", "Let valueOut = Application.Value"),
+            ("default member read", "Let valueOut = Application"),
+            ("call statement", "Call Application.Value"),
+            ("property let write", "Application.Value = 9"),
+        ];
+
+        for (label, statement) in cases {
+            let main_module = module_unit_from_source(
+                "MainModule",
+                ModuleKind::Procedural,
+                format!(
+                    "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim valueOut As Variant\n{statement}\nEnd Sub"
+                ),
+            )
+            .expect("main module parses");
+            let host_application = module_unit_from_source(
+                "Application",
+                ModuleKind::Class,
+                "Attribute VB_Name = \"Application\"\nPublic Property Get Value()\nValue = 41\nEnd Property\nPublic Property Let Value(ByVal n)\nEnd Property\nAttribute Value.VB_UserMemId = 0",
+            )
+            .expect("host application module parses");
+            let manifest = ProjectManifest {
+                project_name: "ProjectA".to_string(),
+                project_kind: ProjectKind::Source,
+                modules: vec![main_module],
+                references: vec![ProjectReference {
+                    referenced_project_name: "HostProject".to_string(),
+                    reference_kind: ReferenceKind::HostInjected,
+                }],
+                reference_projects: vec![ReferencedProjectManifest {
+                    project_name: "HostProject".to_string(),
+                    modules: vec![host_application],
+                }],
+                conditional_constants: BTreeMap::new(),
+            };
+
+            let err = compile_project(&manifest)
+                .expect_err(&format!("{label} should fail with host-root diagnostic"));
+            assert_eq!(
+                err.code(),
+                "PMR-E-HOST-ROOT-NOT-EXPOSED",
+                "{label}: unexpected code: {err:?}"
+            );
+            assert!(
+                err.to_string().to_ascii_lowercase().contains("application"),
+                "{label}: unexpected message: {err}"
+            );
+        }
     }
 
     #[test]

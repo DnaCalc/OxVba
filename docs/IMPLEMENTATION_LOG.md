@@ -1,3 +1,11 @@
+## 2026-03-19 - Add invalid host-root diagnostics
+
+- Continued `IP-08A` by classifying the invalid host-looking root neighbor instead of letting non-exposed host-injected class modules drift through the ordinary unresolved-name path.
+- In [project.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-compiler\src\project.rs), added the stable compiler diagnostic `PMR-E-HOST-ROOT-NOT-EXPOSED` and threaded referenced-module provenance through implicit-receiver collection so `HostInjected` class modules that are present but do not expose `VB_PredeclaredId = True` or `VB_GlobalNamespace = True` fail deterministically across bounded read, write, and `Call` root forms.
+- In [engine.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-host\src\engine.rs), added matching host phased evidence proving those same invalid host-looking root forms now fail at compile time with the same stable diagnostic instead of collapsing into ordinary unresolved-name behavior.
+- Plain `Project` references remain unchanged and still follow the ordinary unresolved-name path; this slice only narrows the `HostInjected` non-exposed root case.
+- This removes root-name drift from the honest `IP-08A` gap; the next foundation frontier is host object identity, runtime session ownership, and callback routing.
+
 ## 2026-03-19 - Add host-injected child indexed scalar evidence
 
 - Continued `IP-08A` by widening the returned-child host object-model floor into indexed scalar traffic instead of leaving indexed routing outside the proved host-child subset.

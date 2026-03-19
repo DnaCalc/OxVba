@@ -215,11 +215,11 @@ Run context: active parity/compliance execution plus in-progress feature worklis
   - the same bounded host-root object-return floor now also has direct executable evidence for typed child-local named `Property Set` plus authoritative default-member `Property Set` traffic across both exposure modes after `Set child = Application.Value`,
   - the same bounded host-root object-return floor now also has direct executable evidence for typed child-local indexed `Property Set` plus authoritative indexed default-member `Property Set` traffic across both exposure modes after `Set child = Application.Value`,
   - plain project references still remain on the ordinary unresolved-name path and do not gain implicit host-root behavior,
-  - broader host project/root/global exposure rules, host object identity, callback routing, runtime session ownership, and deterministic diagnostics for invalid host-looking roots are still missing from the executable host model.
+  - host-looking names backed by `HostInjected` class modules that are present but not exposed through `VB_PredeclaredId=True` or `VB_GlobalNamespace=True` now fail deterministically with `PMR-E-HOST-ROOT-NOT-EXPOSED`,
+  - broader host project/root/global exposure rules, host object identity, callback routing, and runtime session ownership are still missing from the executable host model.
 - Exact unblock steps:
   - make host project object identity and runtime session ownership explicit in executable behavior,
   - connect host-backed object identity to the live callback/event ingress path where the host foundation requires it,
-  - classify deterministic diagnostics for host-looking names that are outside the supported root/global subset,
   - continue through the checklist in [WORKSET_2026-03-19_IP-08A_EXECUTION_CHECKLIST.md](C:\Work\DnaCalc\OxVba\docs\worksets\WORKSET_2026-03-19_IP-08A_EXECUTION_CHECKLIST.md).
 - Recommendation:
   - keep `IP-08` focused on executable host substrate first, then widen parity breadth only after the foundation matrix is covered.

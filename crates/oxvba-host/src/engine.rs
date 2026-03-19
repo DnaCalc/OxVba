@@ -3788,6 +3788,58 @@ mod tests {
     }
 
     #[test]
+    fn formal_host_project_invalid_host_root_without_exposure_attribute_fails_deterministically() {
+        let engine = Engine::new(HostConfig::default());
+        let cases = [
+            ("named property read", "Let valueOut = Application.Value"),
+            ("default member read", "Let valueOut = Application"),
+            ("call statement", "Call Application.Value"),
+            ("property let write", "Application.Value = 9"),
+        ];
+
+        for (label, statement) in cases {
+            let main_module = module_unit_from_source(
+                "MainModule",
+                ModuleKind::Procedural,
+                format!(
+                    "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim valueOut As Variant\n{statement}\nEnd Sub"
+                ),
+            )
+            .expect("main module should parse");
+            let host_application = module_unit_from_source(
+                "Application",
+                ModuleKind::Class,
+                "Attribute VB_Name = \"Application\"\nPublic Property Get Value()\nValue = 41\nEnd Property\nPublic Property Let Value(ByVal n)\nEnd Property\nAttribute Value.VB_UserMemId = 0",
+            )
+            .expect("host application module should parse");
+            let manifest = ProjectManifest {
+                project_name: "ProjectA".to_string(),
+                project_kind: ProjectKind::Source,
+                modules: vec![main_module],
+                references: vec![ProjectReference {
+                    referenced_project_name: "HostProject".to_string(),
+                    reference_kind: ReferenceKind::HostInjected,
+                }],
+                reference_projects: vec![ReferencedProjectManifest {
+                    project_name: "HostProject".to_string(),
+                    modules: vec![host_application],
+                }],
+                conditional_constants: std::collections::BTreeMap::new(),
+            };
+
+            let err = engine
+                .execute_project_with_value_snapshot_phased(&manifest)
+                .expect_err(&format!("{label} should fail with host-root diagnostic"));
+            assert_eq!(err.phase(), DiagnosticPhase::CompileTime);
+            assert!(
+                err.message().contains("PMR-E-HOST-ROOT-NOT-EXPOSED"),
+                "{label}: unexpected diagnostic: {}",
+                err.message()
+            );
+        }
+    }
+
+    #[test]
     fn formal_pmr_dispatchinvoke_routes_internal_class_function_through_native_dynamic_path() {
         let engine = Engine::new(HostConfig::default());
         let main_module = module_unit_from_source(

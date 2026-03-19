@@ -121,6 +121,7 @@ Already evidenced in the repo today:
   - `VB_PredeclaredId` typed child-local indexed `Property Set` and authoritative indexed default-member `Property Set` traffic after host-root object return such as `Set child.Value(1) = x` and `Set child(1) = x`
   - `VB_GlobalNamespace` typed child-local indexed `Property Set` and authoritative indexed default-member `Property Set` traffic after host-root object return such as `Set child.Value(1) = x` and `Set child(1) = x`
 - plain project references do not gain this host-root behavior; they remain on the ordinary unresolved-name / implicit-variant path in the current language mode
+- host-looking names backed by `HostInjected` class modules that are present but not exposed through `VB_PredeclaredId=True` or `VB_GlobalNamespace=True` now fail deterministically across bounded read/write/`Call` forms with `PMR-E-HOST-ROOT-NOT-EXPOSED`
 - broader follow-on member traffic on those returned host-root object handles is still open in the bounded subset; this checklist currently proves handle return plus named/default-member child read, parenthesized zero-arg getter syntax, indexed scalar getter/invoke/write syntax, zero-arg invoke, scalar write navigation, and the current named/indexed `Property Set` navigation slice, not full host-foundation closure
 
 ## Remaining checklist by closure domain
@@ -131,7 +132,7 @@ Already evidenced in the repo today:
 - [x] Prove bounded host-injected predeclared/global implicit receiver reads.
 - [x] Extend the same host-injected root/global rules to the supported write lanes where intended.
 - [x] Extend the same host-injected root/global rules to statement-context and `Call` forms where intended.
-- [ ] Classify deterministic diagnostics for host-looking names that are not valid host roots in the supported subset.
+- [x] Classify deterministic diagnostics for host-looking names that are not valid host roots in the supported subset.
 
 ### B. Host project model
 
