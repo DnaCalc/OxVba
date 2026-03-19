@@ -1,3 +1,10 @@
+## 2026-03-19 - Bound plain-project precedence on host-returned no-paren object results
+
+- Continued `IP-08A` by widening the bounded host/COM coexistence floor from parenthesized imported zero-arg object-result rebinding into the matching no-parentheses neighbor on host-returned COM objects.
+- In [project.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-compiler\src\project.rs), added direct compiler evidence that `ReturnSelfDispatch` / `ReturnSelfUnknown` preserve the same host-root `Application.Value -> CreateObject(4)` handoff and assignment-intent lowering as the already-proved parenthesized forms.
+- In [engine.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-host\src\engine.rs), added matching host runtime evidence proving the returned handles and follow-on `Count` traffic remain stable on that no-paren object-result subset, and that a conflicting same-name plain-project `Application` reference still does not steal that lane by reference order.
+- This raises the honest `IP-08A` host/COM coexistence floor from parenthesized zero-arg object-result traffic alone to that same bounded subset plus the no-parentheses neighbor, while narrowing the same-name plain-project identity frontier again without overclaiming broader host object identity closure.
+
 ## 2026-03-19 - Bound plain-project precedence on host-returned parenthesized object property gets
 
 - Continued `IP-08A` by extending the same-name plain-project precedence register from non-parenthesized imported object-valued `PropertyGet` traffic into the matching parenthesized zero-arg object-property subset on host-returned COM objects.

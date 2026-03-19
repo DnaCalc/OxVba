@@ -5032,6 +5032,172 @@ mod tests {
     }
 
     #[test]
+    fn formal_host_project_root_returned_com_object_supports_imported_zero_arg_object_result_assignment_intents_without_parentheses()
+     {
+        let engine = Engine::new(HostConfig::default());
+        let cases = [
+            ("predeclared", "Attribute VB_PredeclaredId = True"),
+            ("global namespace", "Attribute VB_GlobalNamespace = True"),
+        ];
+
+        for (label, exposure_attr) in cases {
+            let main_module = module_unit_from_source(
+                "MainModule",
+                ModuleKind::Procedural,
+                "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim obj As OxVba.TestDispatch\nDim childDispatch As Object\nDim childUnknown As Object\nDim wrappedDispatch\nDim wrappedUnknown\nDim childDispatchCount\nDim childUnknownCount\nDim wrappedDispatchCount\nDim wrappedUnknownCount\nSet obj = Application.Value\nSet childDispatch = obj.ReturnSelfDispatch\nSet childUnknown = obj.ReturnSelfUnknown\nwrappedDispatch = obj.ReturnSelfDispatch\nLet wrappedUnknown = obj.ReturnSelfUnknown\nchildDispatchCount = DispatchInvoke(childDispatch, \"Count\")\nchildUnknownCount = DispatchInvoke(childUnknown, \"Count\")\nwrappedDispatchCount = DispatchInvoke(wrappedDispatch, \"Count\")\nwrappedUnknownCount = DispatchInvoke(wrappedUnknown, \"Count\")\nEnd Sub",
+            )
+            .expect("main module should parse");
+            let host_application = module_unit_from_source(
+                "Application",
+                ModuleKind::Class,
+                format!(
+                    "Attribute VB_Name = \"Application\"\n{exposure_attr}\nPublic Property Get Value() As Object\nSet Value = CreateObject(4)\nEnd Property"
+                ),
+            )
+            .expect("host application module should parse");
+            let manifest = ProjectManifest {
+                project_name: "ProjectA".to_string(),
+                project_kind: ProjectKind::Source,
+                modules: vec![main_module],
+                references: vec![
+                    ProjectReference {
+                        referenced_project_name: "HostProject".to_string(),
+                        reference_kind: ReferenceKind::HostInjected,
+                    },
+                    ProjectReference {
+                        referenced_project_name: "OxVba".to_string(),
+                        reference_kind: ReferenceKind::TypeLibrary,
+                    },
+                ],
+                reference_projects: vec![ReferencedProjectManifest {
+                    project_name: "HostProject".to_string(),
+                    modules: vec![host_application],
+                }],
+                conditional_constants: std::collections::BTreeMap::new(),
+            };
+
+            let snapshot = engine
+                .execute_project_with_value_snapshot_phased(&manifest)
+                .unwrap_or_else(|err| {
+                    panic!(
+                        "{label} host root should preserve imported zero-arg object-result rebinding without parentheses on the returned COM object: {err}"
+                    )
+                });
+            match snapshot.as_slice() {
+                [
+                    RuntimeValue::ObjectHandle(root),
+                    RuntimeValue::ObjectHandle(child_dispatch),
+                    RuntimeValue::ObjectHandle(child_unknown),
+                    RuntimeValue::ObjectHandle(wrapped_dispatch),
+                    RuntimeValue::ObjectHandle(wrapped_unknown),
+                    RuntimeValue::I32(child_dispatch_count),
+                    RuntimeValue::I32(child_unknown_count),
+                    RuntimeValue::I32(wrapped_dispatch_count),
+                    RuntimeValue::I32(wrapped_unknown_count),
+                ] if root.raw() == 5_004
+                    && *child_dispatch_count == child_dispatch.raw() + 1
+                    && *child_unknown_count == child_unknown.raw() + 1
+                    && *wrapped_dispatch_count == wrapped_dispatch.raw() + 1
+                    && *wrapped_unknown_count == wrapped_unknown.raw() + 1 => {}
+                other => panic!(
+                    "{label}: expected host-root zero-arg COM object-result rebinding without parentheses to preserve object handles plus Count() results tied to each returned handle, got: {other:?}"
+                ),
+            }
+        }
+    }
+
+    #[test]
+    fn formal_host_project_root_returned_no_paren_com_object_results_win_over_same_name_plain_project_match()
+     {
+        let engine = Engine::new(HostConfig::default());
+        let cases = [
+            ("predeclared", "Attribute VB_PredeclaredId = True"),
+            ("global namespace", "Attribute VB_GlobalNamespace = True"),
+        ];
+
+        for (label, exposure_attr) in cases {
+            let main_module = module_unit_from_source(
+                "MainModule",
+                ModuleKind::Procedural,
+                "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim obj As OxVba.TestDispatch\nDim childDispatch As Object\nDim childUnknown As Object\nDim wrappedDispatch\nDim wrappedUnknown\nDim childDispatchCount\nDim childUnknownCount\nDim wrappedDispatchCount\nDim wrappedUnknownCount\nSet obj = Application.Value\nSet childDispatch = obj.ReturnSelfDispatch\nSet childUnknown = obj.ReturnSelfUnknown\nwrappedDispatch = obj.ReturnSelfDispatch\nLet wrappedUnknown = obj.ReturnSelfUnknown\nchildDispatchCount = DispatchInvoke(childDispatch, \"Count\")\nchildUnknownCount = DispatchInvoke(childUnknown, \"Count\")\nwrappedDispatchCount = DispatchInvoke(wrappedDispatch, \"Count\")\nwrappedUnknownCount = DispatchInvoke(wrappedUnknown, \"Count\")\nEnd Sub",
+            )
+            .expect("main module should parse");
+            let plain_application = module_unit_from_source(
+                "Application",
+                ModuleKind::Class,
+                "Attribute VB_Name = \"Application\"\nPublic Property Get Value()\nValue = 41\nEnd Property",
+            )
+            .expect("plain application module should parse");
+            let host_application = module_unit_from_source(
+                "Application",
+                ModuleKind::Class,
+                format!(
+                    "Attribute VB_Name = \"Application\"\n{exposure_attr}\nPublic Property Get Value() As Object\nSet Value = CreateObject(4)\nEnd Property"
+                ),
+            )
+            .expect("host application module should parse");
+            let manifest = ProjectManifest {
+                project_name: "ProjectA".to_string(),
+                project_kind: ProjectKind::Source,
+                modules: vec![main_module],
+                references: vec![
+                    ProjectReference {
+                        referenced_project_name: "PlainProject".to_string(),
+                        reference_kind: ReferenceKind::Project,
+                    },
+                    ProjectReference {
+                        referenced_project_name: "HostProject".to_string(),
+                        reference_kind: ReferenceKind::HostInjected,
+                    },
+                    ProjectReference {
+                        referenced_project_name: "OxVba".to_string(),
+                        reference_kind: ReferenceKind::TypeLibrary,
+                    },
+                ],
+                reference_projects: vec![
+                    ReferencedProjectManifest {
+                        project_name: "PlainProject".to_string(),
+                        modules: vec![plain_application],
+                    },
+                    ReferencedProjectManifest {
+                        project_name: "HostProject".to_string(),
+                        modules: vec![host_application],
+                    },
+                ],
+                conditional_constants: std::collections::BTreeMap::new(),
+            };
+
+            let snapshot = engine
+                .execute_project_with_value_snapshot_phased(&manifest)
+                .unwrap_or_else(|err| {
+                    panic!(
+                        "{label} same-name plain project reference must not steal the host-root imported zero-arg object-result lane without parentheses: {err}"
+                    )
+                });
+            match snapshot.as_slice() {
+                [
+                    RuntimeValue::ObjectHandle(root),
+                    RuntimeValue::ObjectHandle(child_dispatch),
+                    RuntimeValue::ObjectHandle(child_unknown),
+                    RuntimeValue::ObjectHandle(wrapped_dispatch),
+                    RuntimeValue::ObjectHandle(wrapped_unknown),
+                    RuntimeValue::I32(child_dispatch_count),
+                    RuntimeValue::I32(child_unknown_count),
+                    RuntimeValue::I32(wrapped_dispatch_count),
+                    RuntimeValue::I32(wrapped_unknown_count),
+                ] if root.raw() == 5_004
+                    && *child_dispatch_count == child_dispatch.raw() + 1
+                    && *child_unknown_count == child_unknown.raw() + 1
+                    && *wrapped_dispatch_count == wrapped_dispatch.raw() + 1
+                    && *wrapped_unknown_count == wrapped_unknown.raw() + 1 => {}
+                other => panic!(
+                    "{label}: expected host-injected Application.Value to win over the same-name plain project and preserve imported zero-arg object-result rebinding without parentheses plus Count() results tied to each returned handle, got: {other:?}"
+                ),
+            }
+        }
+    }
+
+    #[test]
     fn formal_host_project_root_returned_com_object_supports_imported_object_property_get_assignment_intents()
      {
         let engine = Engine::new(HostConfig::default());
