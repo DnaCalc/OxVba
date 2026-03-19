@@ -15627,6 +15627,88 @@ mod tests {
     }
 
     #[test]
+    fn compile_project_rewrites_host_injected_predeclared_property_let_receiver() {
+        let main_module = module_unit_from_source(
+            "MainModule",
+            ModuleKind::Procedural,
+            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nApplication.Value = 9\nDim afterValue\nafterValue = Application.Value\nEnd Sub",
+        )
+        .expect("module parses");
+        let host_application = module_unit_from_source(
+            "Application",
+            ModuleKind::Class,
+            "Attribute VB_Name = \"Application\"\nAttribute VB_PredeclaredId = True\nPrivate stored\nPublic Sub Class_Initialize()\nstored = 4\nEnd Sub\nPublic Property Get Value()\nValue = stored\nEnd Property\nPublic Property Let Value(ByVal n)\nstored = n\nEnd Property",
+        )
+        .expect("module parses");
+        let manifest = ProjectManifest {
+            project_name: "ProjectA".to_string(),
+            project_kind: ProjectKind::Source,
+            modules: vec![main_module],
+            references: vec![ProjectReference {
+                referenced_project_name: "HostProject".to_string(),
+                reference_kind: ReferenceKind::HostInjected,
+            }],
+            reference_projects: vec![ReferencedProjectManifest {
+                project_name: "HostProject".to_string(),
+                modules: vec![host_application],
+            }],
+            conditional_constants: BTreeMap::new(),
+        };
+        let compiled = compile_project(&manifest)
+            .expect("host-injected predeclared property-let receiver should compile");
+        let lowered = compiled.rewritten_source.to_ascii_lowercase();
+        assert!(
+            lowered.contains("property_let_pmr_hostproject_application_value(0, 9)"),
+            "unexpected lowered source: {lowered}"
+        );
+        assert!(
+            lowered.contains("aftervalue = property_get_pmr_hostproject_application_value(0)"),
+            "unexpected lowered source: {lowered}"
+        );
+    }
+
+    #[test]
+    fn compile_project_rewrites_host_injected_predeclared_default_member_let_receiver() {
+        let main_module = module_unit_from_source(
+            "MainModule",
+            ModuleKind::Procedural,
+            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nApplication = 9\nDim afterValue As Variant\nafterValue = Application\nEnd Sub",
+        )
+        .expect("module parses");
+        let host_application = module_unit_from_source(
+            "Application",
+            ModuleKind::Class,
+            "Attribute VB_Name = \"Application\"\nAttribute VB_PredeclaredId = True\nPrivate stored\nPublic Sub Class_Initialize()\nstored = 4\nEnd Sub\nPublic Property Get Value()\nValue = stored\nEnd Property\nPublic Property Let Value(ByVal n)\nstored = n\nEnd Property\nAttribute Value.VB_UserMemId = 0",
+        )
+        .expect("module parses");
+        let manifest = ProjectManifest {
+            project_name: "ProjectA".to_string(),
+            project_kind: ProjectKind::Source,
+            modules: vec![main_module],
+            references: vec![ProjectReference {
+                referenced_project_name: "HostProject".to_string(),
+                reference_kind: ReferenceKind::HostInjected,
+            }],
+            reference_projects: vec![ReferencedProjectManifest {
+                project_name: "HostProject".to_string(),
+                modules: vec![host_application],
+            }],
+            conditional_constants: BTreeMap::new(),
+        };
+        let compiled = compile_project(&manifest)
+            .expect("host-injected predeclared default-member let receiver should compile");
+        let lowered = compiled.rewritten_source.to_ascii_lowercase();
+        assert!(
+            lowered.contains("property_let_pmr_hostproject_application_value(0, 9)"),
+            "unexpected lowered source: {lowered}"
+        );
+        assert!(
+            lowered.contains("aftervalue = property_get_pmr_hostproject_application_value(0)"),
+            "unexpected lowered source: {lowered}"
+        );
+    }
+
+    #[test]
     fn compile_project_does_not_rewrite_plain_project_reference_into_implicit_host_receiver() {
         let main_module = module_unit_from_source(
             "MainModule",

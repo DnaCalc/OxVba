@@ -1,3 +1,12 @@
+## 2026-03-19 - Add host-injected predeclared root write evidence
+
+- Continued `IP-08A` by taking the first executable host-root write row instead of leaving host-injected roots as read-only aliases.
+- In [project.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-compiler\src\project.rs), added direct compiler evidence that host-injected referenced class modules marked `VB_PredeclaredId = True` already lower through the native PMR property/default-member assignment path for:
+  - named `Property Let` writes such as `Application.Value = 9`
+  - authoritative default-member `Property Let` writes such as `Application = 9`
+- In [engine.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-host\src\engine.rs), added matching host runtime evidence proving those writes mutate the host-injected root instance and read back as `9` instead of degrading into the ordinary name path.
+- This is still a bounded host-root write slice: `VB_GlobalNamespace` write neighbors, statement-context / `Call` host-root behavior, and broader host project identity/callback routing remain open.
+
 ## 2026-03-19 - Add host-injected global-namespace root receiver evidence
 
 - Continued the bounded `IP-08A` root/global floor by proving the implementation-backed `VB_GlobalNamespace` path instead of relying on the same code branch without direct evidence.

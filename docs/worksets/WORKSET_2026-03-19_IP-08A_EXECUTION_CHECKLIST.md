@@ -75,6 +75,9 @@ Already evidenced in the repo today:
 - the proved host-injected read lanes currently cover:
   - named property-get reads such as `Application.Value`
   - authoritative default-member reads such as `Application`
+- the proved host-injected write lanes currently cover:
+  - `VB_PredeclaredId` named `Property Let` writes such as `Application.Value = 9`
+  - `VB_PredeclaredId` authoritative default-member `Property Let` writes such as `Application = 9`
 - plain project references do not gain this host-root behavior; they remain on the ordinary unresolved-name / implicit-variant path in the current language mode
 
 ## Remaining checklist by closure domain
