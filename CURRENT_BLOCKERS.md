@@ -226,9 +226,10 @@ Run context: active parity/compliance execution plus in-progress feature worklis
   - the same bounded host/COM coexistence floor now also has direct executable evidence that a conflicting same-name plain-project `Application` reference does not steal that host-root imported `Count()` handoff by reference order,
   - the same bounded host/COM coexistence floor now also has direct executable evidence for imported `PropertyPut` plus zero-arg `PropertyGet` traffic on the same host-returned COM-backed object under the shared object/value model,
   - the same bounded host/COM coexistence floor now also has direct executable evidence for imported authoritative default-member call traffic on the same host-returned COM-backed object under the shared object/value model,
+  - the same bounded host/COM coexistence floor now also has direct executable evidence for imported `VT_DISPATCH` / `VT_UNKNOWN` object-result assignment-intent traffic on the same host-returned COM-backed object under the shared object/value model,
   - broader host project/root/global exposure rules and broader host object identity boundaries are still missing from the executable host model.
 - Exact unblock steps:
-  - make the remaining host project object identity boundaries explicit across host roots and COM-backed host objects beyond the now-proved plain-project precedence, non-routing, raw-dispatch, and bounded imported member/property coexistence paths,
+  - make the remaining host project object identity boundaries explicit across host roots and COM-backed host objects beyond the now-proved plain-project precedence, non-routing, raw-dispatch, and bounded imported member/property/object-result coexistence paths,
   - continue through the checklist in [WORKSET_2026-03-19_IP-08A_EXECUTION_CHECKLIST.md](C:\Work\DnaCalc\OxVba\docs\worksets\WORKSET_2026-03-19_IP-08A_EXECUTION_CHECKLIST.md).
 - Recommendation:
   - keep `IP-08` focused on executable host substrate first, then widen parity breadth only after the foundation matrix is covered.

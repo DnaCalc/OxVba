@@ -1,3 +1,11 @@
+## 2026-03-19 - Prove host-returned COM objects preserve imported object-result rebinding
+
+- Continued `IP-08A` by widening the bounded host/COM coexistence floor beyond imported scalar method/property/default-member traffic into imported object-result assignment-intent traffic on the same host-returned COM object.
+- In [standard.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-hal\src\adapters\standard.rs), fixed the deterministic projection fallback for `CreateObject(4)` so the controlled self-object members behind DISPIDs `23` and `24` now return bounded object handles instead of collapsing into arithmetic scalars on the shared object/value path, and added a HAL unit witness for that projection contract.
+- In [project.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-compiler\src\project.rs), added compiler evidence that a host-injected `Application.Value` getter may return `CreateObject(4)` into `Dim obj As OxVba.TestDispatch` and then preserve imported `ReturnSelfDispatch()` / `ReturnSelfUnknown()` rewrites across explicit `Set` on `Object` targets plus implicit / explicit-`Let` assignment on `Variant` targets.
+- In [engine.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-host\src\engine.rs), added live runtime evidence that the same lane now preserves bounded object handles plus follow-up `DispatchInvoke(..., "Count")` results derived from each returned handle instead of failing on `Set requires object value`.
+- This raises the honest `IP-08A` host/COM coexistence floor from bounded imported scalar traffic to the same floor plus bounded imported object-result rebinding on host-returned COM objects; broader imported breadth and full host identity closure remain open.
+
 ## 2026-03-19 - Bound plain-project precedence on host-root COM return
 
 - Continued `IP-08A` by making the first host-root-to-imported COM lane explicit against the nearby same-name plain-project neighbor instead of leaving host/plain precedence implicit outside the `WithEvents` subset.

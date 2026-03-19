@@ -1679,6 +1679,19 @@ impl ComHal for StandardHostServices {
                 "COM-E-VALUE-TRANSPORT-UNSUPPORTED: fallback dispatch lane requires legacy runtime-token arguments",
             )
         })?;
+        if args.is_empty() {
+            match member {
+                // Preserve a bounded object-result lane on the deterministic projection path
+                // so host-returned CreateObject fallback handles can still roundtrip the
+                // controlled self-object members instead of collapsing them into scalars.
+                23 | 24 => {
+                    return Ok(RuntimeValue::ObjectHandle(
+                        object.saturating_add(member).into(),
+                    ));
+                }
+                _ => {}
+            }
+        }
         Ok(RuntimeValue::I32(
             positional_values
                 .iter()
@@ -3365,6 +3378,38 @@ mod tests {
         assert_eq!(
             host.dispatch_invoke_legacy(10, 20, 30).expect("dispatch"),
             60
+        );
+    }
+
+    #[test]
+    fn dispatch_invoke_projection_preserves_controlled_self_object_members() {
+        let host = StandardHostServices::new(HalProfileId::Windows, HostPolicy::default());
+        let object = host
+            .create_object_test(4)
+            .expect("create_object should return deterministic projection handle");
+        let dispatch = host
+            .dispatch_invoke_runtime_value_v2(&ComInvokeRequest {
+                object: object.raw().into(),
+                member: 23.into(),
+                args: Vec::new(),
+                invoke_kind_hint: None,
+            })
+            .expect("ReturnSelfDispatch projection should succeed");
+        let unknown = host
+            .dispatch_invoke_runtime_value_v2(&ComInvokeRequest {
+                object: object.raw().into(),
+                member: 24.into(),
+                args: Vec::new(),
+                invoke_kind_hint: None,
+            })
+            .expect("ReturnSelfUnknown projection should succeed");
+        assert_eq!(
+            dispatch,
+            RuntimeValue::ObjectHandle(object.raw().saturating_add(23).into())
+        );
+        assert_eq!(
+            unknown,
+            RuntimeValue::ObjectHandle(object.raw().saturating_add(24).into())
         );
     }
 
