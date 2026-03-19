@@ -1,3 +1,10 @@
+## 2026-03-19 - Bound plain-project precedence on host-returned no-paren invoke subsets
+
+- Continued `IP-08A` by widening the bounded host/COM coexistence floor from imported exception and object-result neighbors into imported no-paren positional `Call` plus bare statement-context invocation subsets on host-returned COM objects.
+- In [project.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-compiler\src\project.rs), added direct compiler evidence that `Call obj.Count`, `Call obj.Exists 42`, `Call obj.Lookup 42`, `Call obj.Value`, `Call obj 42`, `obj.Exists 42`, `obj.Lookup 42`, and `obj 42` preserve the same host-root `Application.Value -> CreateObject(4)` handoff and imported dispatch-token lowering as the already-proved direct imported subset.
+- In [engine.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-host\src\engine.rs), added matching host runtime evidence proving those no-paren imported invoke subsets execute end to end on the returned COM-backed object and that a conflicting same-name plain-project `Application` reference still does not steal either no-paren invoke lane by reference order.
+- This raises the honest `IP-08A` host/COM coexistence floor from read/write/object-result/object-property/exception traffic alone to that same bounded subset plus no-paren positional invoke forms, while narrowing the same-name plain-project identity frontier again without overclaiming broader host object identity closure.
+
 ## 2026-03-19 - Bound plain-project precedence on host-returned no-paren object results
 
 - Continued `IP-08A` by widening the bounded host/COM coexistence floor from parenthesized imported zero-arg object-result rebinding into the matching no-parentheses neighbor on host-returned COM objects.
