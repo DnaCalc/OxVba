@@ -93,8 +93,11 @@ Already evidenced in the repo today:
 - the proved host-injected object-return floor currently covers:
   - `VB_PredeclaredId` named object-valued `Property Get` assignment into an `Object` target such as `Set child = Application.Value`
   - `VB_GlobalNamespace` named object-valued `Property Get` assignment into an `Object` target such as `Set child = Application.Value`
+- the proved host-injected child-navigation floor currently covers:
+  - `VB_PredeclaredId` named object-valued host-root `Property Get` assignment into a typed child local followed by named property-get member traffic such as `Dim child As Child : Set child = Application.Value : afterValue = child.Value`
+  - `VB_GlobalNamespace` named object-valued host-root `Property Get` assignment into a typed child local followed by named property-get member traffic such as `Dim child As Child : Set child = Application.Value : afterValue = child.Value`
 - plain project references do not gain this host-root behavior; they remain on the ordinary unresolved-name / implicit-variant path in the current language mode
-- follow-on member traffic on those returned host-root object handles is still open in the bounded subset; this checklist currently proves handle return, not full child-object navigation parity
+- broader follow-on member traffic on those returned host-root object handles is still open in the bounded subset; this checklist currently proves handle return plus named property-get child navigation, not full child-object navigation parity
 
 ## Remaining checklist by closure domain
 
@@ -108,7 +111,7 @@ Already evidenced in the repo today:
 
 ### B. Host project model
 
-- [ ] Make the host project object model executable beyond bounded implicit receiver reads and bounded object-handle return.
+- [ ] Make the host project object model executable beyond bounded implicit receiver reads, bounded object-handle return, and the current named child-navigation slice.
 - [ ] Prove project/object identity rules for host roots versus plain project references.
 - [ ] Prove the supported host project lifecycle and session ownership behavior.
 

@@ -3366,7 +3366,7 @@ fn rewrite_internal_class_set_assignment(
             rhs
         ));
     }
-    if let Some((target, instance_arg)) = resolve_internal_class_default_member_target_of_kinds(
+    match resolve_internal_class_default_member_target_of_kinds(
         &normalized_lhs,
         active_project,
         current_project,
@@ -3374,16 +3374,27 @@ fn rewrite_internal_class_set_assignment(
         procedures,
         internal_class_bindings,
         &[ProcedureDeclKind::PropertySet],
-    )? {
-        let mut lowered_args = vec![instance_arg];
-        lowered_args.append(&mut indexed_args);
-        lowered_args.push(rhs.to_string());
-        return Ok(format!(
-            "{}{}({})",
-            &line[..leading],
-            target,
-            lowered_args.join(", ")
-        ));
+    ) {
+        Ok(Some((target, instance_arg))) => {
+            let mut lowered_args = vec![instance_arg];
+            lowered_args.append(&mut indexed_args);
+            lowered_args.push(rhs.to_string());
+            return Ok(format!(
+                "{}{}({})",
+                &line[..leading],
+                target,
+                lowered_args.join(", ")
+            ));
+        }
+        Ok(None) => {}
+        Err(ProjectCompileError::DefaultMemberResolutionMissing { .. })
+            if indexed_args.is_empty()
+                && internal_class_bindings.contains_key(&normalized_lhs)
+                && (rhs.contains('.') || rhs.contains('(')) =>
+        {
+            return Ok(line.to_string());
+        }
+        Err(err) => return Err(err),
     }
     Ok(format!("{}{} = {}", &line[..leading], lhs, rhs))
 }
@@ -16182,6 +16193,103 @@ mod tests {
         let lowered = compiled.rewritten_source.to_ascii_lowercase();
         assert!(
             lowered.contains("set child = property_get_pmr_hostproject_application_value(0)"),
+            "unexpected lowered source: {lowered}"
+        );
+    }
+
+    #[test]
+    fn compile_project_rewrites_host_injected_predeclared_child_navigation_after_object_root_get() {
+        let main_module = module_unit_from_source(
+            "MainModule",
+            ModuleKind::Procedural,
+            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim child As Child\nSet child = Application.Value\nDim afterValue\nafterValue = child.Value\nEnd Sub",
+        )
+        .expect("module parses");
+        let host_application = module_unit_from_source(
+            "Application",
+            ModuleKind::Class,
+            "Attribute VB_Name = \"Application\"\nAttribute VB_PredeclaredId = True\nPublic Property Get Value() As Object\nDim c As New Child\nSet Value = c\nEnd Property",
+        )
+        .expect("module parses");
+        let host_child = module_unit_from_source(
+            "Child",
+            ModuleKind::Class,
+            "Attribute VB_Name = \"Child\"\nPublic Property Get Value()\nValue = 9\nEnd Property",
+        )
+        .expect("module parses");
+        let manifest = ProjectManifest {
+            project_name: "ProjectA".to_string(),
+            project_kind: ProjectKind::Source,
+            modules: vec![main_module],
+            references: vec![ProjectReference {
+                referenced_project_name: "HostProject".to_string(),
+                reference_kind: ReferenceKind::HostInjected,
+            }],
+            reference_projects: vec![ReferencedProjectManifest {
+                project_name: "HostProject".to_string(),
+                modules: vec![host_application, host_child],
+            }],
+            conditional_constants: BTreeMap::new(),
+        };
+        let compiled = compile_project(&manifest).expect(
+            "host-injected predeclared child navigation after object root get should compile",
+        );
+        let lowered = compiled.rewritten_source.to_ascii_lowercase();
+        assert!(
+            lowered.contains("set child = property_get_pmr_hostproject_application_value(0)"),
+            "unexpected lowered source: {lowered}"
+        );
+        assert!(
+            lowered.contains("aftervalue = property_get_pmr_hostproject_child_value(child)"),
+            "unexpected lowered source: {lowered}"
+        );
+    }
+
+    #[test]
+    fn compile_project_rewrites_host_injected_global_namespace_child_navigation_after_object_root_get()
+     {
+        let main_module = module_unit_from_source(
+            "MainModule",
+            ModuleKind::Procedural,
+            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim child As Child\nSet child = Application.Value\nDim afterValue\nafterValue = child.Value\nEnd Sub",
+        )
+        .expect("module parses");
+        let host_application = module_unit_from_source(
+            "Application",
+            ModuleKind::Class,
+            "Attribute VB_Name = \"Application\"\nAttribute VB_GlobalNamespace = True\nPublic Property Get Value() As Object\nDim c As New Child\nSet Value = c\nEnd Property",
+        )
+        .expect("module parses");
+        let host_child = module_unit_from_source(
+            "Child",
+            ModuleKind::Class,
+            "Attribute VB_Name = \"Child\"\nPublic Property Get Value()\nValue = 9\nEnd Property",
+        )
+        .expect("module parses");
+        let manifest = ProjectManifest {
+            project_name: "ProjectA".to_string(),
+            project_kind: ProjectKind::Source,
+            modules: vec![main_module],
+            references: vec![ProjectReference {
+                referenced_project_name: "HostProject".to_string(),
+                reference_kind: ReferenceKind::HostInjected,
+            }],
+            reference_projects: vec![ReferencedProjectManifest {
+                project_name: "HostProject".to_string(),
+                modules: vec![host_application, host_child],
+            }],
+            conditional_constants: BTreeMap::new(),
+        };
+        let compiled = compile_project(&manifest).expect(
+            "host-injected global-namespace child navigation after object root get should compile",
+        );
+        let lowered = compiled.rewritten_source.to_ascii_lowercase();
+        assert!(
+            lowered.contains("set child = property_get_pmr_hostproject_application_value(0)"),
+            "unexpected lowered source: {lowered}"
+        );
+        assert!(
+            lowered.contains("aftervalue = property_get_pmr_hostproject_child_value(child)"),
             "unexpected lowered source: {lowered}"
         );
     }

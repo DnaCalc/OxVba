@@ -1,3 +1,13 @@
+## 2026-03-19 - Add host-injected child navigation evidence
+
+- Continued `IP-08A` by taking the next bounded host object-model step after pure handle return.
+- In [project.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-compiler\src\project.rs), added direct compiler evidence that host-injected object-valued root getters now support the bounded typed-child follow-on lane across both exposure modes:
+  - `Dim child As Child : Set child = Application.Value : afterValue = child.Value` with `VB_PredeclaredId = True`
+  - `Dim child As Child : Set child = Application.Value : afterValue = child.Value` with `VB_GlobalNamespace = True`
+- The same change also corrected the rewrite boundary so plain typed internal-class object assignment no longer falls through into default-member `Property Let` lowering after a missing `Property Set` candidate; the compiler now preserves plain `Set` assignment in that bounded case and lets the later named member read rewrite proceed.
+- In [engine.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-host\src\engine.rs), added matching host runtime evidence proving the returned host-root child handle can immediately participate in named property-get member traffic and yields the expected snapshot `[1, 9]` across both exposure modes.
+- This raises the honest `IP-08A` floor from handle return alone to handle return plus typed named child navigation; broader child-object default-member/setter/callback traffic remains open.
+
 ## 2026-03-19 - Add host-injected object-handle return evidence
 
 - Continued `IP-08A` by taking the first bounded host object-model slice beyond root-only scalar read/write/invoke traffic.

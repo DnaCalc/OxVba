@@ -2643,6 +2643,102 @@ mod tests {
     }
 
     #[test]
+    fn formal_host_project_host_injected_predeclared_child_navigation_after_object_root_get_executes()
+     {
+        let engine = Engine::new(HostConfig::default());
+        let main_module = module_unit_from_source(
+            "MainModule",
+            ModuleKind::Procedural,
+            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim child As Child\nSet child = Application.Value\nDim afterValue\nafterValue = child.Value\nEnd Sub",
+        )
+        .expect("main module should parse");
+        let host_application = module_unit_from_source(
+            "Application",
+            ModuleKind::Class,
+            "Attribute VB_Name = \"Application\"\nAttribute VB_PredeclaredId = True\nPublic Property Get Value() As Object\nDim c As New Child\nSet Value = c\nEnd Property",
+        )
+        .expect("host application module should parse");
+        let host_child = module_unit_from_source(
+            "Child",
+            ModuleKind::Class,
+            "Attribute VB_Name = \"Child\"\nPublic Property Get Value()\nValue = 9\nEnd Property",
+        )
+        .expect("host child module should parse");
+        let manifest = ProjectManifest {
+            project_name: "ProjectA".to_string(),
+            project_kind: ProjectKind::Source,
+            modules: vec![main_module],
+            references: vec![ProjectReference {
+                referenced_project_name: "HostProject".to_string(),
+                reference_kind: ReferenceKind::HostInjected,
+            }],
+            reference_projects: vec![ReferencedProjectManifest {
+                project_name: "HostProject".to_string(),
+                modules: vec![host_application, host_child],
+            }],
+            conditional_constants: std::collections::BTreeMap::new(),
+        };
+
+        let snapshot = engine
+            .execute_project_with_value_snapshot_phased(&manifest)
+            .expect(
+                "host-injected predeclared child navigation after object root get should execute",
+            );
+        assert_eq!(
+            snapshot,
+            [RuntimeValue::I32(1), RuntimeValue::I32(9)],
+            "{snapshot:?}"
+        );
+    }
+
+    #[test]
+    fn formal_host_project_host_injected_global_namespace_child_navigation_after_object_root_get_executes()
+     {
+        let engine = Engine::new(HostConfig::default());
+        let main_module = module_unit_from_source(
+            "MainModule",
+            ModuleKind::Procedural,
+            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim child As Child\nSet child = Application.Value\nDim afterValue\nafterValue = child.Value\nEnd Sub",
+        )
+        .expect("main module should parse");
+        let host_application = module_unit_from_source(
+            "Application",
+            ModuleKind::Class,
+            "Attribute VB_Name = \"Application\"\nAttribute VB_GlobalNamespace = True\nPublic Property Get Value() As Object\nDim c As New Child\nSet Value = c\nEnd Property",
+        )
+        .expect("host application module should parse");
+        let host_child = module_unit_from_source(
+            "Child",
+            ModuleKind::Class,
+            "Attribute VB_Name = \"Child\"\nPublic Property Get Value()\nValue = 9\nEnd Property",
+        )
+        .expect("host child module should parse");
+        let manifest = ProjectManifest {
+            project_name: "ProjectA".to_string(),
+            project_kind: ProjectKind::Source,
+            modules: vec![main_module],
+            references: vec![ProjectReference {
+                referenced_project_name: "HostProject".to_string(),
+                reference_kind: ReferenceKind::HostInjected,
+            }],
+            reference_projects: vec![ReferencedProjectManifest {
+                project_name: "HostProject".to_string(),
+                modules: vec![host_application, host_child],
+            }],
+            conditional_constants: std::collections::BTreeMap::new(),
+        };
+
+        let snapshot = engine.execute_project_with_value_snapshot_phased(&manifest).expect(
+            "host-injected global-namespace child navigation after object root get should execute",
+        );
+        assert_eq!(
+            snapshot,
+            [RuntimeValue::I32(1), RuntimeValue::I32(9)],
+            "{snapshot:?}"
+        );
+    }
+
+    #[test]
     fn formal_host_project_plain_project_reference_does_not_gain_implicit_receiver() {
         let engine = Engine::new(HostConfig::default());
         let main_module = module_unit_from_source(
