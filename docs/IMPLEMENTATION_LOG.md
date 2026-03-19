@@ -1,3 +1,22 @@
+## 2026-03-19 - Add host-injected child invoke evidence
+
+- Continued `IP-08A` by widening the returned-child floor from read-assignment into zero-arg invocation syntax.
+- In [project.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-compiler\src\project.rs), added direct compiler evidence that a host-root-returned typed child handle now supports both explicit `Call` and bare statement-context execution across:
+  - named zero-arg getter syntax such as `Call child.Value` and `child.Value`
+  - authoritative default-member zero-arg getter syntax such as `Call child` and `child`
+  - both `VB_PredeclaredId` and `VB_GlobalNamespace` exposure modes on the originating host root
+- In [engine.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-host\src\engine.rs), added matching host runtime evidence proving those returned-child invoke forms execute against the same child handle and mutate observable child state before a follow-up `Observe` read yields the expected snapshot `[1, 7]`.
+- This raises the bounded `IP-08A` host object-model floor from child read navigation alone to child read plus zero-arg invoke navigation; broader child write/indexed/parenthesized/default-member breadth remains open.
+
+## 2026-03-19 - Add host-injected child default-member evidence
+
+- Continued `IP-08A` by widening the new returned-child floor from named property reads into authoritative default-member reads.
+- In [project.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-compiler\src\project.rs), added direct compiler evidence that host-injected object-valued root getters now support the bounded typed-child default-member lane across both exposure modes:
+  - `Dim child As Child : Set child = Application.Value : afterValue = child` with `VB_PredeclaredId = True`
+  - `Dim child As Child : Set child = Application.Value : afterValue = child` with `VB_GlobalNamespace = True`
+- In [engine.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-host\src\engine.rs), added matching host runtime evidence proving those authoritative child default-member reads execute against the returned host-root child handle and yield the expected snapshot `[1, 9]`.
+- This raises the bounded `IP-08A` host object-model floor from named child-read navigation to named plus authoritative-default-member child-read navigation; broader invoke/write/default-member breadth on returned child handles remains open.
+
 ## 2026-03-19 - Add host-injected child navigation evidence
 
 - Continued `IP-08A` by taking the next bounded host object-model step after pure handle return.

@@ -95,9 +95,16 @@ Already evidenced in the repo today:
   - `VB_GlobalNamespace` named object-valued `Property Get` assignment into an `Object` target such as `Set child = Application.Value`
 - the proved host-injected child-navigation floor currently covers:
   - `VB_PredeclaredId` named object-valued host-root `Property Get` assignment into a typed child local followed by named property-get member traffic such as `Dim child As Child : Set child = Application.Value : afterValue = child.Value`
+  - `VB_PredeclaredId` named object-valued host-root `Property Get` assignment into a typed child local followed by authoritative default-member traffic such as `Dim child As Child : Set child = Application.Value : afterValue = child`
   - `VB_GlobalNamespace` named object-valued host-root `Property Get` assignment into a typed child local followed by named property-get member traffic such as `Dim child As Child : Set child = Application.Value : afterValue = child.Value`
+  - `VB_GlobalNamespace` named object-valued host-root `Property Get` assignment into a typed child local followed by authoritative default-member traffic such as `Dim child As Child : Set child = Application.Value : afterValue = child`
+- the proved host-injected child-invoke floor currently covers:
+  - `VB_PredeclaredId` typed child-local explicit `Call` traffic after host-root object return for both named and authoritative default-member zero-arg getter forms such as `Call child.Value` and `Call child`
+  - `VB_PredeclaredId` typed child-local bare statement-context traffic after host-root object return for both named and authoritative default-member zero-arg getter forms such as `child.Value` and `child`
+  - `VB_GlobalNamespace` typed child-local explicit `Call` traffic after host-root object return for both named and authoritative default-member zero-arg getter forms such as `Call child.Value` and `Call child`
+  - `VB_GlobalNamespace` typed child-local bare statement-context traffic after host-root object return for both named and authoritative default-member zero-arg getter forms such as `child.Value` and `child`
 - plain project references do not gain this host-root behavior; they remain on the ordinary unresolved-name / implicit-variant path in the current language mode
-- broader follow-on member traffic on those returned host-root object handles is still open in the bounded subset; this checklist currently proves handle return plus named property-get child navigation, not full child-object navigation parity
+- broader follow-on member traffic on those returned host-root object handles is still open in the bounded subset; this checklist currently proves handle return plus named/default-member child read and zero-arg invoke navigation, not full child-object navigation parity
 
 ## Remaining checklist by closure domain
 
@@ -111,7 +118,7 @@ Already evidenced in the repo today:
 
 ### B. Host project model
 
-- [ ] Make the host project object model executable beyond bounded implicit receiver reads, bounded object-handle return, and the current named child-navigation slice.
+- [ ] Make the host project object model executable beyond bounded implicit receiver reads, bounded object-handle return, and the current named/default-member child read/invoke navigation slice.
 - [ ] Prove project/object identity rules for host roots versus plain project references.
 - [ ] Prove the supported host project lifecycle and session ownership behavior.
 
