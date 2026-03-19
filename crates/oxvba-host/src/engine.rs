@@ -3588,6 +3588,165 @@ mod tests {
     }
 
     #[test]
+    fn formal_host_project_host_injected_child_property_set_after_object_root_get_executes() {
+        let engine = Engine::new(HostConfig::default());
+        let cases = [
+            (
+                "predeclared named property",
+                "Attribute VB_PredeclaredId = True",
+                "Set child.Value = x",
+            ),
+            (
+                "predeclared default member",
+                "Attribute VB_PredeclaredId = True",
+                "Set child = x",
+            ),
+            (
+                "global named property",
+                "Attribute VB_GlobalNamespace = True",
+                "Set child.Value = x",
+            ),
+            (
+                "global default member",
+                "Attribute VB_GlobalNamespace = True",
+                "Set child = x",
+            ),
+        ];
+
+        for (label, exposure_attr, write_line) in cases {
+            let main_module = module_unit_from_source(
+                "MainModule",
+                ModuleKind::Procedural,
+                format!(
+                    "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim child As Child\nDim x\nDim afterValue\nSet child = Application.Value\nx = 2\n{write_line}\nafterValue = x\nEnd Sub"
+                ),
+            )
+            .expect("main module should parse");
+            let host_application = module_unit_from_source(
+                "Application",
+                ModuleKind::Class,
+                format!(
+                    "Attribute VB_Name = \"Application\"\n{exposure_attr}\nPublic Property Get Value() As Object\nDim c As New Child\nSet Value = c\nEnd Property"
+                ),
+            )
+            .expect("host application module should parse");
+            let host_child = module_unit_from_source(
+                "Child",
+                ModuleKind::Class,
+                "Attribute VB_Name = \"Child\"\nPublic Property Set Value(ByRef target)\ntarget = target + 7\nEnd Property\nAttribute Value.VB_UserMemId = 0",
+            )
+            .expect("host child module should parse");
+            let manifest = ProjectManifest {
+                project_name: "ProjectA".to_string(),
+                project_kind: ProjectKind::Source,
+                modules: vec![main_module],
+                references: vec![ProjectReference {
+                    referenced_project_name: "HostProject".to_string(),
+                    reference_kind: ReferenceKind::HostInjected,
+                }],
+                reference_projects: vec![ReferencedProjectManifest {
+                    project_name: "HostProject".to_string(),
+                    modules: vec![host_application, host_child],
+                }],
+                conditional_constants: std::collections::BTreeMap::new(),
+            };
+
+            let snapshot = engine
+                .execute_project_with_value_snapshot_phased(&manifest)
+                .unwrap_or_else(|err| panic!("{label} should execute: {err}"));
+            assert_eq!(
+                snapshot,
+                [
+                    RuntimeValue::I32(1),
+                    RuntimeValue::I32(9),
+                    RuntimeValue::I32(9)
+                ],
+                "{label}: {snapshot:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn formal_host_project_host_injected_child_indexed_property_set_after_object_root_get_executes()
+    {
+        let engine = Engine::new(HostConfig::default());
+        let cases = [
+            (
+                "predeclared named property",
+                "Attribute VB_PredeclaredId = True",
+                "Set child.Value(1) = x",
+            ),
+            (
+                "predeclared default member",
+                "Attribute VB_PredeclaredId = True",
+                "Set child(1) = x",
+            ),
+            (
+                "global named property",
+                "Attribute VB_GlobalNamespace = True",
+                "Set child.Value(1) = x",
+            ),
+            (
+                "global default member",
+                "Attribute VB_GlobalNamespace = True",
+                "Set child(1) = x",
+            ),
+        ];
+
+        for (label, exposure_attr, write_line) in cases {
+            let main_module = module_unit_from_source(
+                "MainModule",
+                ModuleKind::Procedural,
+                format!(
+                    "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim child As Child\nDim x\nDim afterValue\nSet child = Application.Value\nx = 2\n{write_line}\nafterValue = x\nEnd Sub"
+                ),
+            )
+            .expect("main module should parse");
+            let host_application = module_unit_from_source(
+                "Application",
+                ModuleKind::Class,
+                format!(
+                    "Attribute VB_Name = \"Application\"\n{exposure_attr}\nPublic Property Get Value() As Object\nDim c As New Child\nSet Value = c\nEnd Property"
+                ),
+            )
+            .expect("host application module should parse");
+            let host_child = module_unit_from_source(
+                "Child",
+                ModuleKind::Class,
+                "Attribute VB_Name = \"Child\"\nPublic Property Set Value(ByVal index, ByRef target)\ntarget = target + 7\nEnd Property\nAttribute Value.VB_UserMemId = 0",
+            )
+            .expect("host child module should parse");
+            let manifest = ProjectManifest {
+                project_name: "ProjectA".to_string(),
+                project_kind: ProjectKind::Source,
+                modules: vec![main_module],
+                references: vec![ProjectReference {
+                    referenced_project_name: "HostProject".to_string(),
+                    reference_kind: ReferenceKind::HostInjected,
+                }],
+                reference_projects: vec![ReferencedProjectManifest {
+                    project_name: "HostProject".to_string(),
+                    modules: vec![host_application, host_child],
+                }],
+                conditional_constants: std::collections::BTreeMap::new(),
+            };
+
+            let snapshot = engine
+                .execute_project_with_value_snapshot_phased(&manifest)
+                .unwrap_or_else(|err| panic!("{label} should execute: {err}"));
+            assert_eq!(
+                snapshot,
+                [
+                    RuntimeValue::I32(1),
+                    RuntimeValue::I32(9),
+                    RuntimeValue::I32(9)
+                ],
+                "{label}: {snapshot:?}"
+            );
+        }
+    }
+
+    #[test]
     fn formal_host_project_plain_project_reference_does_not_gain_implicit_receiver() {
         let engine = Engine::new(HostConfig::default());
         let main_module = module_unit_from_source(

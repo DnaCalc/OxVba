@@ -116,8 +116,12 @@ Already evidenced in the repo today:
   - `VB_GlobalNamespace` typed child-local named `Property Let` and authoritative default-member `Property Let` traffic after host-root object return such as `child.Value = 9` and `child = 9`
   - `VB_PredeclaredId` typed child-local indexed `Property Let` and authoritative indexed default-member `Property Let` traffic after host-root object return such as `child.Value(2) = 11` and `child(2) = 11`
   - `VB_GlobalNamespace` typed child-local indexed `Property Let` and authoritative indexed default-member `Property Let` traffic after host-root object return such as `child.Value(2) = 11` and `child(2) = 11`
+  - `VB_PredeclaredId` typed child-local named `Property Set` and authoritative default-member `Property Set` traffic after host-root object return such as `Set child.Value = x` and `Set child = x`
+  - `VB_GlobalNamespace` typed child-local named `Property Set` and authoritative default-member `Property Set` traffic after host-root object return such as `Set child.Value = x` and `Set child = x`
+  - `VB_PredeclaredId` typed child-local indexed `Property Set` and authoritative indexed default-member `Property Set` traffic after host-root object return such as `Set child.Value(1) = x` and `Set child(1) = x`
+  - `VB_GlobalNamespace` typed child-local indexed `Property Set` and authoritative indexed default-member `Property Set` traffic after host-root object return such as `Set child.Value(1) = x` and `Set child(1) = x`
 - plain project references do not gain this host-root behavior; they remain on the ordinary unresolved-name / implicit-variant path in the current language mode
-- broader follow-on member traffic on those returned host-root object handles is still open in the bounded subset; this checklist currently proves handle return plus named/default-member child read, parenthesized zero-arg getter syntax, indexed scalar getter/invoke/write syntax, zero-arg invoke, and scalar write navigation, not full child-object navigation parity
+- broader follow-on member traffic on those returned host-root object handles is still open in the bounded subset; this checklist currently proves handle return plus named/default-member child read, parenthesized zero-arg getter syntax, indexed scalar getter/invoke/write syntax, zero-arg invoke, scalar write navigation, and the current named/indexed `Property Set` navigation slice, not full host-foundation closure
 
 ## Remaining checklist by closure domain
 

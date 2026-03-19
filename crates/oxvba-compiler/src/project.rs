@@ -3366,6 +3366,12 @@ fn rewrite_internal_class_set_assignment(
             rhs
         ));
     }
+    if indexed_args.is_empty()
+        && internal_class_bindings.contains_key(&normalized_lhs)
+        && (rhs.contains('.') || rhs.contains('('))
+    {
+        return Ok(line.to_string());
+    }
     match resolve_internal_class_default_member_target_of_kinds(
         &normalized_lhs,
         active_project,
@@ -17182,6 +17188,166 @@ mod tests {
             );
             assert!(
                 lowered.contains("aftervalue = property_get_pmr_hostproject_child_observe(child)"),
+                "{label}: unexpected lowered source: {lowered}"
+            );
+        }
+    }
+
+    #[test]
+    fn compile_project_rewrites_host_injected_child_property_set_after_object_root_get() {
+        let cases = [
+            (
+                "predeclared named property",
+                "Attribute VB_PredeclaredId = True",
+                "Set child.Value = x",
+            ),
+            (
+                "predeclared default member",
+                "Attribute VB_PredeclaredId = True",
+                "Set child = x",
+            ),
+            (
+                "global named property",
+                "Attribute VB_GlobalNamespace = True",
+                "Set child.Value = x",
+            ),
+            (
+                "global default member",
+                "Attribute VB_GlobalNamespace = True",
+                "Set child = x",
+            ),
+        ];
+
+        for (label, exposure_attr, write_line) in cases {
+            let main_module = module_unit_from_source(
+                "MainModule",
+                ModuleKind::Procedural,
+                format!(
+                    "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim child As Child\nDim x\nDim afterValue\nSet child = Application.Value\nx = 2\n{write_line}\nafterValue = x\nEnd Sub"
+                ),
+            )
+            .expect("module parses");
+            let host_application = module_unit_from_source(
+                "Application",
+                ModuleKind::Class,
+                format!(
+                    "Attribute VB_Name = \"Application\"\n{exposure_attr}\nPublic Property Get Value() As Object\nDim c As New Child\nSet Value = c\nEnd Property"
+                ),
+            )
+            .expect("module parses");
+            let host_child = module_unit_from_source(
+                "Child",
+                ModuleKind::Class,
+                "Attribute VB_Name = \"Child\"\nPublic Property Set Value(ByRef target)\ntarget = target + 7\nEnd Property\nAttribute Value.VB_UserMemId = 0",
+            )
+            .expect("module parses");
+            let manifest = ProjectManifest {
+                project_name: "ProjectA".to_string(),
+                project_kind: ProjectKind::Source,
+                modules: vec![main_module],
+                references: vec![ProjectReference {
+                    referenced_project_name: "HostProject".to_string(),
+                    reference_kind: ReferenceKind::HostInjected,
+                }],
+                reference_projects: vec![ReferencedProjectManifest {
+                    project_name: "HostProject".to_string(),
+                    modules: vec![host_application, host_child],
+                }],
+                conditional_constants: BTreeMap::new(),
+            };
+            let compiled = compile_project(&manifest)
+                .unwrap_or_else(|err| panic!("{label} should compile: {err:?}"));
+            let lowered = compiled.rewritten_source.to_ascii_lowercase();
+            assert!(
+                lowered.contains("set child = property_get_pmr_hostproject_application_value(0)"),
+                "{label}: unexpected lowered source: {lowered}"
+            );
+            assert!(
+                lowered.contains("property_set_pmr_hostproject_child_value(child, x)"),
+                "{label}: unexpected lowered source: {lowered}"
+            );
+            assert!(
+                lowered.contains("aftervalue = x"),
+                "{label}: unexpected lowered source: {lowered}"
+            );
+        }
+    }
+
+    #[test]
+    fn compile_project_rewrites_host_injected_child_indexed_property_set_after_object_root_get() {
+        let cases = [
+            (
+                "predeclared named property",
+                "Attribute VB_PredeclaredId = True",
+                "Set child.Value(1) = x",
+            ),
+            (
+                "predeclared default member",
+                "Attribute VB_PredeclaredId = True",
+                "Set child(1) = x",
+            ),
+            (
+                "global named property",
+                "Attribute VB_GlobalNamespace = True",
+                "Set child.Value(1) = x",
+            ),
+            (
+                "global default member",
+                "Attribute VB_GlobalNamespace = True",
+                "Set child(1) = x",
+            ),
+        ];
+
+        for (label, exposure_attr, write_line) in cases {
+            let main_module = module_unit_from_source(
+                "MainModule",
+                ModuleKind::Procedural,
+                format!(
+                    "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim child As Child\nDim x\nDim afterValue\nSet child = Application.Value\nx = 2\n{write_line}\nafterValue = x\nEnd Sub"
+                ),
+            )
+            .expect("module parses");
+            let host_application = module_unit_from_source(
+                "Application",
+                ModuleKind::Class,
+                format!(
+                    "Attribute VB_Name = \"Application\"\n{exposure_attr}\nPublic Property Get Value() As Object\nDim c As New Child\nSet Value = c\nEnd Property"
+                ),
+            )
+            .expect("module parses");
+            let host_child = module_unit_from_source(
+                "Child",
+                ModuleKind::Class,
+                "Attribute VB_Name = \"Child\"\nPublic Property Set Value(ByVal index, ByRef target)\ntarget = target + 7\nEnd Property\nAttribute Value.VB_UserMemId = 0",
+            )
+            .expect("module parses");
+            let manifest = ProjectManifest {
+                project_name: "ProjectA".to_string(),
+                project_kind: ProjectKind::Source,
+                modules: vec![main_module],
+                references: vec![ProjectReference {
+                    referenced_project_name: "HostProject".to_string(),
+                    reference_kind: ReferenceKind::HostInjected,
+                }],
+                reference_projects: vec![ReferencedProjectManifest {
+                    project_name: "HostProject".to_string(),
+                    modules: vec![host_application, host_child],
+                }],
+                conditional_constants: BTreeMap::new(),
+            };
+            let compiled = compile_project(&manifest)
+                .unwrap_or_else(|err| panic!("{label} should compile: {err:?}"));
+            let lowered = compiled.rewritten_source.to_ascii_lowercase();
+            assert!(
+                lowered.contains("set child = property_get_pmr_hostproject_application_value(0)"),
+                "{label}: unexpected lowered source: {lowered}"
+            );
+            assert!(
+                lowered.contains("property_set_pmr_hostproject_child_value(child, 1, x)"),
+                "{label}: unexpected lowered source: {lowered}"
+            );
+            assert!(
+                lowered.contains("aftervalue = x"),
                 "{label}: unexpected lowered source: {lowered}"
             );
         }

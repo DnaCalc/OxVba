@@ -1730,3 +1730,8 @@
 
 
 
+# 2026-03-19 - Host-injected child Property Set after root object return
+
+- fixed `rewrite_internal_class_set_assignment(...)` precedence so explicit object assignment keeps `Set child = Application.Value` intact even when the returned child type also exposes an authoritative default-member `Property Set`
+- added direct compiler and host evidence for typed child-local named and indexed `Property Set` plus authoritative default-member `Property Set` traffic after host-root object return across both `VB_PredeclaredId` and `VB_GlobalNamespace`
+- narrowed `IP-08A` remaining scope: the host-foundation gap is no longer child `Property Set` breadth, but host identity/session/callback substrate and invalid-root diagnostics
