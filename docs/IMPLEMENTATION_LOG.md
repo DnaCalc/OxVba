@@ -46,6 +46,14 @@
 - Added compiler evidence that a local class module named `TestEventServer` still wins over the imported typelib name, so the new guard does not break the native `WithEvents` path when local source resolution is available.
 - `IP-05` remains `in-progress`: this only closes another diagnostic hole on the imported event boundary; true imported COM `WithEvents` subscription/callback lowering, richer typelib/member coverage, and wider Office/Excel object-model behavior are still open.
 
+## 2026-03-19 - Bound unqualified imported type declarations to deterministic diagnostics
+
+- Continued `IP-05B` on the same imported-type honesty boundary instead of widening the supported early-bind subset beyond the current explicit qualification rule.
+- In [project.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-compiler\src\project.rs), added `BIND-E-TYPELIB-UNQUALIFIED-TYPE-UNSUPPORTED` and taught module-aware declaration lowering to reject unqualified imported typelib object declarations after native/reference-project source resolution fails.
+- Added compiler and host phased evidence proving both `Dim obj As TestDispatch` and `Dim obj As New TestDispatch` now fail deterministically at compile time instead of compiling outside the supported metadata-backed imported declaration subset.
+- Added compiler evidence that a local class module named `TestDispatch` still wins over the imported typelib name, so the new guard does not break native internal-class declarations when a same-name source module exists.
+- `IP-05` remains `in-progress`: this only makes the declaration boundary explicit; broader imported property/event/default-member parity, richer typelib/member coverage, and wider Office/Excel object-model behavior remain open.
+
 ## 2026-03-19 - Add imported zero-arg method read-assignment evidence
 
 - Continued `IP-05B` by closing a direct imported call-vs-value hole on the already-supported metadata-backed subset instead of widening typelib or event scope.

@@ -293,6 +293,10 @@ pub enum ProjectCompileError {
     )]
     TypeLibraryWithEventsUnsupported { type_name: String },
     #[error(
+        "BIND-E-TYPELIB-UNQUALIFIED-TYPE-UNSUPPORTED: external type `{type_name}` requires explicit typelib qualification in the current deterministic early-bind subset"
+    )]
+    TypeLibraryUnqualifiedTypeUnsupported { type_name: String },
+    #[error(
         "BIND-E-TYPELIB-CREATEOBJECT-UNSUPPORTED: `As New` external type `{type_name}` has no deterministic CreateObject selector mapping"
     )]
     TypeLibraryCreateObjectUnsupported { type_name: String },
@@ -363,6 +367,9 @@ impl ProjectCompileError {
             Self::TypeLibraryQualifierUnresolved { .. } => "BIND-E-TYPELIB-QUALIFIER-UNRESOLVED",
             Self::TypeLibraryWithEventsUnsupported { .. } => {
                 "BIND-E-TYPELIB-WITHEVENTS-UNSUPPORTED"
+            }
+            Self::TypeLibraryUnqualifiedTypeUnsupported { .. } => {
+                "BIND-E-TYPELIB-UNQUALIFIED-TYPE-UNSUPPORTED"
             }
             Self::TypeLibraryCreateObjectUnsupported { .. } => {
                 "BIND-E-TYPELIB-CREATEOBJECT-UNSUPPORTED"
@@ -1600,6 +1607,13 @@ fn expand_bound_source_line(
             *next_internal_instance_id = next_internal_instance_id.saturating_add(1);
         }
         return Ok(out);
+    }
+    if let Some(dim_decl) = parse_internal_class_dim_declaration(line)
+        && is_referenced_typelib_type_reference(manifest, &dim_decl.type_name)
+    {
+        return Err(ProjectCompileError::TypeLibraryUnqualifiedTypeUnsupported {
+            type_name: dim_decl.type_name,
+        });
     }
 
     if let Some((withevents_var, source_type)) = parse_withevents_declaration_binding(line) {
@@ -12891,6 +12905,83 @@ mod tests {
         };
         let err = compile_project(&manifest).expect_err("unknown typelib qualifier should fail");
         assert_eq!(err.code(), "BIND-E-TYPELIB-QUALIFIER-UNRESOLVED");
+    }
+
+    #[test]
+    fn compile_project_rejects_unqualified_imported_type_declaration() {
+        let main_module = module_unit_from_source(
+            "MainModule",
+            ModuleKind::Procedural,
+            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim obj As TestDispatch\nEnd Sub",
+        )
+        .expect("module parses");
+        let manifest = ProjectManifest {
+            project_name: "ProjectA".to_string(),
+            project_kind: ProjectKind::Source,
+            modules: vec![main_module],
+            references: vec![ProjectReference {
+                referenced_project_name: "OxVba".to_string(),
+                reference_kind: ReferenceKind::TypeLibrary,
+            }],
+            reference_projects: Vec::new(),
+            conditional_constants: BTreeMap::new(),
+        };
+        let err = compile_project(&manifest)
+            .expect_err("unqualified imported type declaration should reject");
+        assert_eq!(err.code(), "BIND-E-TYPELIB-UNQUALIFIED-TYPE-UNSUPPORTED");
+    }
+
+    #[test]
+    fn compile_project_rejects_unqualified_imported_as_new_declaration() {
+        let main_module = module_unit_from_source(
+            "MainModule",
+            ModuleKind::Procedural,
+            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim obj As New TestDispatch\nEnd Sub",
+        )
+        .expect("module parses");
+        let manifest = ProjectManifest {
+            project_name: "ProjectA".to_string(),
+            project_kind: ProjectKind::Source,
+            modules: vec![main_module],
+            references: vec![ProjectReference {
+                referenced_project_name: "OxVba".to_string(),
+                reference_kind: ReferenceKind::TypeLibrary,
+            }],
+            reference_projects: Vec::new(),
+            conditional_constants: BTreeMap::new(),
+        };
+        let err = compile_project(&manifest)
+            .expect_err("unqualified imported As New declaration should reject");
+        assert_eq!(err.code(), "BIND-E-TYPELIB-UNQUALIFIED-TYPE-UNSUPPORTED");
+    }
+
+    #[test]
+    fn compile_project_prefers_native_type_declaration_over_imported_type_name_match() {
+        let source_module = module_unit_from_source(
+            "TestDispatch",
+            ModuleKind::Class,
+            "Attribute VB_Name = \"TestDispatch\"\nPublic Sub Ping()\nEnd Sub",
+        )
+        .expect("source module parses");
+        let main_module = module_unit_from_source(
+            "MainModule",
+            ModuleKind::Procedural,
+            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim obj As TestDispatch\nEnd Sub",
+        )
+        .expect("module parses");
+        let manifest = ProjectManifest {
+            project_name: "ProjectA".to_string(),
+            project_kind: ProjectKind::Source,
+            modules: vec![main_module, source_module],
+            references: vec![ProjectReference {
+                referenced_project_name: "OxVba".to_string(),
+                reference_kind: ReferenceKind::TypeLibrary,
+            }],
+            reference_projects: Vec::new(),
+            conditional_constants: BTreeMap::new(),
+        };
+        compile_project(&manifest)
+            .expect("native internal-class declaration should win over imported type-name match");
     }
 
     #[test]

@@ -1944,6 +1944,60 @@ End Sub
 }
 
 #[test]
+fn early_bound_project_reports_compile_error_for_unqualified_imported_type_declaration() {
+    let manifest = manifest_with_typelib(
+        r#"
+Attribute VB_Name = "MainModule"
+Public Sub Main()
+Dim obj As TestDispatch
+End Sub
+"#,
+    );
+
+    let engine = Engine::new(HostConfig {
+        enable_jit: false,
+        root_object_name: None,
+    });
+    let err = engine
+        .execute_project_with_snapshot_phased(&manifest)
+        .expect_err("unqualified imported type declaration should fail at compile-time");
+    assert_eq!(err.phase(), DiagnosticPhase::CompileTime);
+    assert!(
+        err.message()
+            .contains("BIND-E-TYPELIB-UNQUALIFIED-TYPE-UNSUPPORTED"),
+        "unexpected compile diagnostic: {}",
+        err.message()
+    );
+}
+
+#[test]
+fn early_bound_project_reports_compile_error_for_unqualified_imported_as_new_declaration() {
+    let manifest = manifest_with_typelib(
+        r#"
+Attribute VB_Name = "MainModule"
+Public Sub Main()
+Dim obj As New TestDispatch
+End Sub
+"#,
+    );
+
+    let engine = Engine::new(HostConfig {
+        enable_jit: false,
+        root_object_name: None,
+    });
+    let err = engine
+        .execute_project_with_snapshot_phased(&manifest)
+        .expect_err("unqualified imported As New declaration should fail at compile-time");
+    assert_eq!(err.phase(), DiagnosticPhase::CompileTime);
+    assert!(
+        err.message()
+            .contains("BIND-E-TYPELIB-UNQUALIFIED-TYPE-UNSUPPORTED"),
+        "unexpected compile diagnostic: {}",
+        err.message()
+    );
+}
+
+#[test]
 fn early_bound_project_reports_compile_error_for_missing_default_member() {
     let manifest = manifest_with_typelib(
         r#"
