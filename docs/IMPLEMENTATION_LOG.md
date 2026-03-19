@@ -1836,3 +1836,15 @@
 - In [project.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-compiler\src\project.rs), added direct compiler evidence that `SelfDispatch()` / `SelfUnknown()` preserve the same host-root `Application.Value -> CreateObject(4)` handoff and assignment-intent lowering as the already-proved non-parenthesized forms.
 - In [engine.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-host\src\engine.rs), added matching host runtime evidence proving those parenthesized imported object-valued property gets return live rebound handles on the shared object/value model and still support follow-on `Count` traffic.
 - This raises the honest `IP-08A` host/COM coexistence floor from non-parenthesized imported object-property traffic alone to that same bounded subset plus the parenthesized zero-arg neighbor; broader host object identity boundaries and wider imported breadth on host-returned COM-backed objects still remain open.
+
+# 2026-03-19 - Imported exception invoke forms on host-returned COM objects
+
+- Continued `IP-08A` by widening the bounded host/COM coexistence floor into the observable imported method-invoke rows on the host-returned receiver, using the existing `RaiseException` oracle instead of inventing a new side effect.
+- In [project.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-compiler\src\project.rs), added direct compiler evidence that all four bounded zero-arg imported exception invoke forms after `Set obj = Application.Value` lower through the same metadata-backed imported receiver path:
+  - `Call obj.RaiseException()`
+  - `obj.RaiseException()`
+  - `Call obj.RaiseException`
+  - `obj.RaiseException`
+- In [standard.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-hal\src\adapters\standard.rs), added a bounded deterministic fallback adapter-fault lane for dispid `17` so the shared host/COM projection path now surfaces `com-dispatch-exception-raised` with the controlled `EXCEPINFO` payload instead of silently succeeding.
+- In [engine.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-host\src\engine.rs), added matching host runtime evidence proving those four imported invoke forms on the host-returned COM-backed object now fail deterministically with the expected exception classification and payload.
+- This raises the honest `IP-08A` host/COM coexistence floor from imported read/write/object-property traffic alone to that same bounded subset plus observable imported method-invoke exception forms on the host-returned receiver; broader host identity boundaries and wider imported breadth still remain open.

@@ -16683,6 +16683,92 @@ mod tests {
     }
 
     #[test]
+    fn compile_project_rewrites_host_injected_root_returning_com_object_for_imported_exception_invoke_forms()
+     {
+        let cases = [
+            ("predeclared", "Attribute VB_PredeclaredId = True"),
+            ("global namespace", "Attribute VB_GlobalNamespace = True"),
+        ];
+        let invoke_cases = [
+            (
+                "call parenthesized",
+                "Call obj.RaiseException()",
+                "call dispatchinvoke(obj, 17)",
+            ),
+            (
+                "statement parenthesized",
+                "obj.RaiseException()",
+                "dispatchinvoke(obj, 17)",
+            ),
+            (
+                "call no-paren",
+                "Call obj.RaiseException",
+                "call dispatchinvoke(obj, 17)",
+            ),
+            (
+                "statement no-paren",
+                "obj.RaiseException",
+                "dispatchinvoke(obj, 17)",
+            ),
+        ];
+
+        for (label, exposure_attr) in cases {
+            for (invoke_label, invoke_line, expected_lowered) in invoke_cases {
+                let main_module = module_unit_from_source(
+                    "MainModule",
+                    ModuleKind::Procedural,
+                    format!(
+                        "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim obj As OxVba.TestDispatch\nSet obj = Application.Value\n{invoke_line}\nEnd Sub"
+                    ),
+                )
+                .expect("main module parses");
+                let host_application = module_unit_from_source(
+                    "Application",
+                    ModuleKind::Class,
+                    format!(
+                        "Attribute VB_Name = \"Application\"\n{exposure_attr}\nPublic Property Get Value() As Object\nSet Value = CreateObject(4)\nEnd Property"
+                    ),
+                )
+                .expect("host application parses");
+                let manifest = ProjectManifest {
+                    project_name: "ProjectA".to_string(),
+                    project_kind: ProjectKind::Source,
+                    modules: vec![main_module],
+                    references: vec![
+                        ProjectReference {
+                            referenced_project_name: "HostProject".to_string(),
+                            reference_kind: ReferenceKind::HostInjected,
+                        },
+                        ProjectReference {
+                            referenced_project_name: "OxVba".to_string(),
+                            reference_kind: ReferenceKind::TypeLibrary,
+                        },
+                    ],
+                    reference_projects: vec![ReferencedProjectManifest {
+                        project_name: "HostProject".to_string(),
+                        modules: vec![host_application],
+                    }],
+                    conditional_constants: BTreeMap::new(),
+                };
+                let compiled = compile_project(&manifest).unwrap_or_else(|err| {
+                    panic!(
+                        "{label} {invoke_label} host-root imported exception invoke should compile: {err}"
+                    )
+                });
+                let lowered = compiled.rewritten_source.to_ascii_lowercase();
+                assert!(
+                    lowered.contains("set obj = property_get_pmr_hostproject_application_value(0)"),
+                    "{label} {invoke_label}: expected host-root property-get rewrite before imported exception invoke, got: {lowered}"
+                );
+                assert!(
+                    lowered.contains(expected_lowered),
+                    "{label} {invoke_label}: expected imported exception invoke rewrite on the host-returned COM object, got: {lowered}"
+                );
+            }
+        }
+    }
+
+    #[test]
     fn compile_project_rewrites_host_injected_predeclared_default_member_receiver() {
         let main_module = module_unit_from_source(
             "MainModule",

@@ -929,6 +929,17 @@ impl StandardHostServices {
             format!("{prefix} {}", failure.render()),
         )
     }
+
+    fn controlled_dispatch_exception_fault(&self, dispid: i32) -> HalError {
+        HalError::adapter_fault(
+            self.profile,
+            CapabilityId::ComActivationDispatch,
+            "dispatch_invoke",
+            format!(
+                "com-dispatch-exception-raised;hresult=0x80020009;excep_scode=0x80020009; IDispatch::Invoke(method dispid={dispid}) failed with HRESULT 0x80020009 excep_source=\"OxVba.TestDispatch\" excep_description=\"controlled dispatch exception\""
+            ),
+        )
+    }
 }
 
 impl HostServices for StandardHostServices {
@@ -1681,6 +1692,12 @@ impl ComHal for StandardHostServices {
         })?;
         if args.is_empty() {
             match member {
+                // Preserve the controlled imported RaiseException lane on the deterministic
+                // projection path so host-returned CreateObject fallback handles can surface
+                // the same bounded adapter fault instead of silently collapsing into success.
+                17 => {
+                    return Err(self.controlled_dispatch_exception_fault(member));
+                }
                 // Preserve a bounded object-result lane on the deterministic projection path
                 // so host-returned CreateObject fallback handles can still roundtrip the
                 // controlled self-object members instead of collapsing them into scalars.
@@ -3410,6 +3427,35 @@ mod tests {
         assert_eq!(
             unknown,
             RuntimeValue::ObjectHandle(object.raw().saturating_add(24).into())
+        );
+    }
+
+    #[test]
+    fn dispatch_invoke_projection_surfaces_controlled_raise_exception_fault() {
+        let host = StandardHostServices::new(HalProfileId::Windows, HostPolicy::default());
+        let object = host
+            .create_object_test(4)
+            .expect("create_object should return deterministic projection handle");
+        let err = host
+            .dispatch_invoke_runtime_value_v2(&ComInvokeRequest {
+                object: object.raw().into(),
+                member: super::TEST_DISPID_RAISE_EXCEPTION.into(),
+                args: Vec::new(),
+                invoke_kind_hint: None,
+            })
+            .expect_err("RaiseException projection should surface an adapter fault");
+        assert!(
+            err.message.contains("com-dispatch-exception-raised"),
+            "expected stable exception classification, got {}",
+            err.message
+        );
+        assert!(
+            err.message.contains("excep_source=\"OxVba.TestDispatch\"")
+                && err
+                    .message
+                    .contains("excep_description=\"controlled dispatch exception\""),
+            "expected EXCEPINFO source/description in {}",
+            err.message
         );
     }
 
