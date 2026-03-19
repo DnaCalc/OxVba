@@ -1,3 +1,10 @@
+## 2026-03-19 - Bound host root named-argument invoke precedence
+
+- Continued `IP-08A` by widening the bounded host/COM coexistence floor from positional imported invoke traffic into the matching named-argument `Call` plus bare statement-context subsets across both parenthesized and no-paren forms on host-returned COM objects.
+- In [project.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-compiler\src\project.rs), added direct compiler evidence that `Call obj.SumPair(rhs := 14, lhs := 3)`, `Call obj.LookupPair(rhs := 9, lhs := 5)`, `Call obj(value := 41)`, `obj.SumPair(rhs := 14, lhs := 3)`, `obj.LookupPair(rhs := 9, lhs := 5)`, `obj(value := 41)`, and the matching no-paren named-argument forms preserve the same host-root `Application.Value -> CreateObject(4)` handoff and imported dispatch-token lowering as the already-proved direct imported subset.
+- In [engine.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-host\src\engine.rs), added matching host runtime evidence proving those named-argument imported invoke subsets execute end to end on the returned COM-backed object and that a conflicting same-name plain-project `Application` reference still does not steal any of those named-argument invoke lanes by reference order.
+- This raises the honest `IP-08A` host/COM coexistence floor from positional imported invoke forms alone to that same bounded subset plus the matching named-argument invoke forms, while narrowing the same-name plain-project identity frontier again without overclaiming broader host object identity closure.
+
 ## 2026-03-19 - Bound plain-project precedence on host-returned parenthesized invoke subsets
 
 - Continued `IP-08A` by widening the bounded host/COM coexistence floor from no-paren positional invokes into the matching parenthesized positional `Call` plus bare statement-context invocation subsets on host-returned COM objects.

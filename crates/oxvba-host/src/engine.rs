@@ -6363,6 +6363,582 @@ mod tests {
     }
 
     #[test]
+    fn formal_host_project_root_returned_com_object_supports_imported_named_argument_call_statements()
+     {
+        let engine = Engine::new(HostConfig::default());
+        let cases = [
+            ("predeclared", "Attribute VB_PredeclaredId = True"),
+            ("global namespace", "Attribute VB_GlobalNamespace = True"),
+        ];
+
+        for (label, exposure_attr) in cases {
+            let main_module = module_unit_from_source(
+                "MainModule",
+                ModuleKind::Procedural,
+                "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim obj As OxVba.TestDispatch\nDim afterValue\nSet obj = Application.Value\nCall obj.SumPair(rhs := 14, lhs := 3)\nCall obj.LookupPair(rhs := 9, lhs := 5)\nCall obj(value := 41)\nafterValue = 59\nEnd Sub",
+            )
+            .expect("main module should parse");
+            let host_application = module_unit_from_source(
+                "Application",
+                ModuleKind::Class,
+                format!(
+                    "Attribute VB_Name = \"Application\"\n{exposure_attr}\nPublic Property Get Value() As Object\nSet Value = CreateObject(4)\nEnd Property"
+                ),
+            )
+            .expect("host application module should parse");
+            let manifest = ProjectManifest {
+                project_name: "ProjectA".to_string(),
+                project_kind: ProjectKind::Source,
+                modules: vec![main_module],
+                references: vec![
+                    ProjectReference {
+                        referenced_project_name: "HostProject".to_string(),
+                        reference_kind: ReferenceKind::HostInjected,
+                    },
+                    ProjectReference {
+                        referenced_project_name: "OxVba".to_string(),
+                        reference_kind: ReferenceKind::TypeLibrary,
+                    },
+                ],
+                reference_projects: vec![ReferencedProjectManifest {
+                    project_name: "HostProject".to_string(),
+                    modules: vec![host_application],
+                }],
+                conditional_constants: std::collections::BTreeMap::new(),
+            };
+
+            let snapshot = engine
+                .execute_project_with_value_snapshot_phased(&manifest)
+                .unwrap_or_else(|err| {
+                    panic!(
+                        "{label} host root should preserve imported named-argument Call-form traffic on the returned COM object: {err}"
+                    )
+                });
+            match snapshot.as_slice() {
+                [
+                    RuntimeValue::ObjectHandle(root),
+                    RuntimeValue::I32(after_value),
+                ] if root.raw() == 5_004 && *after_value == 59 => {}
+                other => panic!(
+                    "{label}: expected host-root named-argument Call-form traffic to execute and preserve sentinel 59, got: {other:?}"
+                ),
+            }
+        }
+    }
+
+    #[test]
+    fn formal_host_project_root_returned_named_argument_call_statements_win_over_same_name_plain_project_match()
+     {
+        let engine = Engine::new(HostConfig::default());
+        let cases = [
+            ("predeclared", "Attribute VB_PredeclaredId = True"),
+            ("global namespace", "Attribute VB_GlobalNamespace = True"),
+        ];
+
+        for (label, exposure_attr) in cases {
+            let main_module = module_unit_from_source(
+                "MainModule",
+                ModuleKind::Procedural,
+                "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim obj As OxVba.TestDispatch\nDim afterValue\nSet obj = Application.Value\nCall obj.SumPair(rhs := 14, lhs := 3)\nCall obj.LookupPair(rhs := 9, lhs := 5)\nCall obj(value := 41)\nafterValue = 59\nEnd Sub",
+            )
+            .expect("main module should parse");
+            let plain_application = module_unit_from_source(
+                "Application",
+                ModuleKind::Class,
+                "Attribute VB_Name = \"Application\"\nPublic Property Get Value()\nValue = 41\nEnd Property",
+            )
+            .expect("plain application module should parse");
+            let host_application = module_unit_from_source(
+                "Application",
+                ModuleKind::Class,
+                format!(
+                    "Attribute VB_Name = \"Application\"\n{exposure_attr}\nPublic Property Get Value() As Object\nSet Value = CreateObject(4)\nEnd Property"
+                ),
+            )
+            .expect("host application module should parse");
+            let manifest = ProjectManifest {
+                project_name: "ProjectA".to_string(),
+                project_kind: ProjectKind::Source,
+                modules: vec![main_module],
+                references: vec![
+                    ProjectReference {
+                        referenced_project_name: "PlainProject".to_string(),
+                        reference_kind: ReferenceKind::Project,
+                    },
+                    ProjectReference {
+                        referenced_project_name: "HostProject".to_string(),
+                        reference_kind: ReferenceKind::HostInjected,
+                    },
+                    ProjectReference {
+                        referenced_project_name: "OxVba".to_string(),
+                        reference_kind: ReferenceKind::TypeLibrary,
+                    },
+                ],
+                reference_projects: vec![
+                    ReferencedProjectManifest {
+                        project_name: "PlainProject".to_string(),
+                        modules: vec![plain_application],
+                    },
+                    ReferencedProjectManifest {
+                        project_name: "HostProject".to_string(),
+                        modules: vec![host_application],
+                    },
+                ],
+                conditional_constants: std::collections::BTreeMap::new(),
+            };
+
+            let snapshot = engine
+                .execute_project_with_value_snapshot_phased(&manifest)
+                .unwrap_or_else(|err| {
+                    panic!(
+                        "{label} same-name plain project reference must not steal the host-root imported named-argument Call-form lane: {err}"
+                    )
+                });
+            match snapshot.as_slice() {
+                [
+                    RuntimeValue::ObjectHandle(root),
+                    RuntimeValue::I32(after_value),
+                ] if root.raw() == 5_004 && *after_value == 59 => {}
+                other => panic!(
+                    "{label}: expected host-injected Application.Value to win over the same-name plain project and preserve imported named-argument Call-form traffic with sentinel 59, got: {other:?}"
+                ),
+            }
+        }
+    }
+
+    #[test]
+    fn formal_host_project_root_returned_com_object_supports_imported_named_argument_statement_context()
+     {
+        let engine = Engine::new(HostConfig::default());
+        let cases = [
+            ("predeclared", "Attribute VB_PredeclaredId = True"),
+            ("global namespace", "Attribute VB_GlobalNamespace = True"),
+        ];
+
+        for (label, exposure_attr) in cases {
+            let main_module = module_unit_from_source(
+                "MainModule",
+                ModuleKind::Procedural,
+                "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim obj As OxVba.TestDispatch\nDim afterValue\nSet obj = Application.Value\nobj.SumPair(rhs := 14, lhs := 3)\nobj.LookupPair(rhs := 9, lhs := 5)\nobj(value := 41)\nafterValue = 61\nEnd Sub",
+            )
+            .expect("main module should parse");
+            let host_application = module_unit_from_source(
+                "Application",
+                ModuleKind::Class,
+                format!(
+                    "Attribute VB_Name = \"Application\"\n{exposure_attr}\nPublic Property Get Value() As Object\nSet Value = CreateObject(4)\nEnd Property"
+                ),
+            )
+            .expect("host application module should parse");
+            let manifest = ProjectManifest {
+                project_name: "ProjectA".to_string(),
+                project_kind: ProjectKind::Source,
+                modules: vec![main_module],
+                references: vec![
+                    ProjectReference {
+                        referenced_project_name: "HostProject".to_string(),
+                        reference_kind: ReferenceKind::HostInjected,
+                    },
+                    ProjectReference {
+                        referenced_project_name: "OxVba".to_string(),
+                        reference_kind: ReferenceKind::TypeLibrary,
+                    },
+                ],
+                reference_projects: vec![ReferencedProjectManifest {
+                    project_name: "HostProject".to_string(),
+                    modules: vec![host_application],
+                }],
+                conditional_constants: std::collections::BTreeMap::new(),
+            };
+
+            let snapshot = engine
+                .execute_project_with_value_snapshot_phased(&manifest)
+                .unwrap_or_else(|err| {
+                    panic!(
+                        "{label} host root should preserve imported named-argument statement-context traffic on the returned COM object: {err}"
+                    )
+                });
+            match snapshot.as_slice() {
+                [
+                    RuntimeValue::ObjectHandle(root),
+                    RuntimeValue::I32(after_value),
+                ] if root.raw() == 5_004 && *after_value == 61 => {}
+                other => panic!(
+                    "{label}: expected host-root named-argument statement-context traffic to execute and preserve sentinel 61, got: {other:?}"
+                ),
+            }
+        }
+    }
+
+    #[test]
+    fn formal_host_project_root_returned_named_argument_statement_context_win_over_same_name_plain_project_match()
+     {
+        let engine = Engine::new(HostConfig::default());
+        let cases = [
+            ("predeclared", "Attribute VB_PredeclaredId = True"),
+            ("global namespace", "Attribute VB_GlobalNamespace = True"),
+        ];
+
+        for (label, exposure_attr) in cases {
+            let main_module = module_unit_from_source(
+                "MainModule",
+                ModuleKind::Procedural,
+                "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim obj As OxVba.TestDispatch\nDim afterValue\nSet obj = Application.Value\nobj.SumPair(rhs := 14, lhs := 3)\nobj.LookupPair(rhs := 9, lhs := 5)\nobj(value := 41)\nafterValue = 61\nEnd Sub",
+            )
+            .expect("main module should parse");
+            let plain_application = module_unit_from_source(
+                "Application",
+                ModuleKind::Class,
+                "Attribute VB_Name = \"Application\"\nPublic Property Get Value()\nValue = 41\nEnd Property",
+            )
+            .expect("plain application module should parse");
+            let host_application = module_unit_from_source(
+                "Application",
+                ModuleKind::Class,
+                format!(
+                    "Attribute VB_Name = \"Application\"\n{exposure_attr}\nPublic Property Get Value() As Object\nSet Value = CreateObject(4)\nEnd Property"
+                ),
+            )
+            .expect("host application module should parse");
+            let manifest = ProjectManifest {
+                project_name: "ProjectA".to_string(),
+                project_kind: ProjectKind::Source,
+                modules: vec![main_module],
+                references: vec![
+                    ProjectReference {
+                        referenced_project_name: "PlainProject".to_string(),
+                        reference_kind: ReferenceKind::Project,
+                    },
+                    ProjectReference {
+                        referenced_project_name: "HostProject".to_string(),
+                        reference_kind: ReferenceKind::HostInjected,
+                    },
+                    ProjectReference {
+                        referenced_project_name: "OxVba".to_string(),
+                        reference_kind: ReferenceKind::TypeLibrary,
+                    },
+                ],
+                reference_projects: vec![
+                    ReferencedProjectManifest {
+                        project_name: "PlainProject".to_string(),
+                        modules: vec![plain_application],
+                    },
+                    ReferencedProjectManifest {
+                        project_name: "HostProject".to_string(),
+                        modules: vec![host_application],
+                    },
+                ],
+                conditional_constants: std::collections::BTreeMap::new(),
+            };
+
+            let snapshot = engine
+                .execute_project_with_value_snapshot_phased(&manifest)
+                .unwrap_or_else(|err| {
+                    panic!(
+                        "{label} same-name plain project reference must not steal the host-root imported named-argument statement-context lane: {err}"
+                    )
+                });
+            match snapshot.as_slice() {
+                [
+                    RuntimeValue::ObjectHandle(root),
+                    RuntimeValue::I32(after_value),
+                ] if root.raw() == 5_004 && *after_value == 61 => {}
+                other => panic!(
+                    "{label}: expected host-injected Application.Value to win over the same-name plain project and preserve imported named-argument statement-context traffic with sentinel 61, got: {other:?}"
+                ),
+            }
+        }
+    }
+
+    #[test]
+    fn formal_host_project_root_returned_com_object_supports_imported_no_paren_named_argument_call_statements()
+     {
+        let engine = Engine::new(HostConfig::default());
+        let cases = [
+            ("predeclared", "Attribute VB_PredeclaredId = True"),
+            ("global namespace", "Attribute VB_GlobalNamespace = True"),
+        ];
+
+        for (label, exposure_attr) in cases {
+            let main_module = module_unit_from_source(
+                "MainModule",
+                ModuleKind::Procedural,
+                "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim obj As OxVba.TestDispatch\nDim afterValue\nSet obj = Application.Value\nCall obj.SumPair rhs := 14, lhs := 3\nCall obj.LookupPair rhs := 9, lhs := 5\nCall obj value := 41\nafterValue = 67\nEnd Sub",
+            )
+            .expect("main module should parse");
+            let host_application = module_unit_from_source(
+                "Application",
+                ModuleKind::Class,
+                format!(
+                    "Attribute VB_Name = \"Application\"\n{exposure_attr}\nPublic Property Get Value() As Object\nSet Value = CreateObject(4)\nEnd Property"
+                ),
+            )
+            .expect("host application module should parse");
+            let manifest = ProjectManifest {
+                project_name: "ProjectA".to_string(),
+                project_kind: ProjectKind::Source,
+                modules: vec![main_module],
+                references: vec![
+                    ProjectReference {
+                        referenced_project_name: "HostProject".to_string(),
+                        reference_kind: ReferenceKind::HostInjected,
+                    },
+                    ProjectReference {
+                        referenced_project_name: "OxVba".to_string(),
+                        reference_kind: ReferenceKind::TypeLibrary,
+                    },
+                ],
+                reference_projects: vec![ReferencedProjectManifest {
+                    project_name: "HostProject".to_string(),
+                    modules: vec![host_application],
+                }],
+                conditional_constants: std::collections::BTreeMap::new(),
+            };
+
+            let snapshot = engine
+                .execute_project_with_value_snapshot_phased(&manifest)
+                .unwrap_or_else(|err| {
+                    panic!(
+                        "{label} host root should preserve imported no-paren named-argument Call-form traffic on the returned COM object: {err}"
+                    )
+                });
+            match snapshot.as_slice() {
+                [
+                    RuntimeValue::ObjectHandle(root),
+                    RuntimeValue::I32(after_value),
+                ] if root.raw() == 5_004 && *after_value == 67 => {}
+                other => panic!(
+                    "{label}: expected host-root no-paren named-argument Call-form traffic to execute and preserve sentinel 67, got: {other:?}"
+                ),
+            }
+        }
+    }
+
+    #[test]
+    fn formal_host_project_root_returned_no_paren_named_argument_call_statements_win_over_same_name_plain_project_match()
+     {
+        let engine = Engine::new(HostConfig::default());
+        let cases = [
+            ("predeclared", "Attribute VB_PredeclaredId = True"),
+            ("global namespace", "Attribute VB_GlobalNamespace = True"),
+        ];
+
+        for (label, exposure_attr) in cases {
+            let main_module = module_unit_from_source(
+                "MainModule",
+                ModuleKind::Procedural,
+                "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim obj As OxVba.TestDispatch\nDim afterValue\nSet obj = Application.Value\nCall obj.SumPair rhs := 14, lhs := 3\nCall obj.LookupPair rhs := 9, lhs := 5\nCall obj value := 41\nafterValue = 67\nEnd Sub",
+            )
+            .expect("main module should parse");
+            let plain_application = module_unit_from_source(
+                "Application",
+                ModuleKind::Class,
+                "Attribute VB_Name = \"Application\"\nPublic Property Get Value()\nValue = 41\nEnd Property",
+            )
+            .expect("plain application module should parse");
+            let host_application = module_unit_from_source(
+                "Application",
+                ModuleKind::Class,
+                format!(
+                    "Attribute VB_Name = \"Application\"\n{exposure_attr}\nPublic Property Get Value() As Object\nSet Value = CreateObject(4)\nEnd Property"
+                ),
+            )
+            .expect("host application module should parse");
+            let manifest = ProjectManifest {
+                project_name: "ProjectA".to_string(),
+                project_kind: ProjectKind::Source,
+                modules: vec![main_module],
+                references: vec![
+                    ProjectReference {
+                        referenced_project_name: "PlainProject".to_string(),
+                        reference_kind: ReferenceKind::Project,
+                    },
+                    ProjectReference {
+                        referenced_project_name: "HostProject".to_string(),
+                        reference_kind: ReferenceKind::HostInjected,
+                    },
+                    ProjectReference {
+                        referenced_project_name: "OxVba".to_string(),
+                        reference_kind: ReferenceKind::TypeLibrary,
+                    },
+                ],
+                reference_projects: vec![
+                    ReferencedProjectManifest {
+                        project_name: "PlainProject".to_string(),
+                        modules: vec![plain_application],
+                    },
+                    ReferencedProjectManifest {
+                        project_name: "HostProject".to_string(),
+                        modules: vec![host_application],
+                    },
+                ],
+                conditional_constants: std::collections::BTreeMap::new(),
+            };
+
+            let snapshot = engine
+                .execute_project_with_value_snapshot_phased(&manifest)
+                .unwrap_or_else(|err| {
+                    panic!(
+                        "{label} same-name plain project reference must not steal the host-root imported no-paren named-argument Call-form lane: {err}"
+                    )
+                });
+            match snapshot.as_slice() {
+                [
+                    RuntimeValue::ObjectHandle(root),
+                    RuntimeValue::I32(after_value),
+                ] if root.raw() == 5_004 && *after_value == 67 => {}
+                other => panic!(
+                    "{label}: expected host-injected Application.Value to win over the same-name plain project and preserve imported no-paren named-argument Call-form traffic with sentinel 67, got: {other:?}"
+                ),
+            }
+        }
+    }
+
+    #[test]
+    fn formal_host_project_root_returned_com_object_supports_imported_no_paren_named_argument_statement_context()
+     {
+        let engine = Engine::new(HostConfig::default());
+        let cases = [
+            ("predeclared", "Attribute VB_PredeclaredId = True"),
+            ("global namespace", "Attribute VB_GlobalNamespace = True"),
+        ];
+
+        for (label, exposure_attr) in cases {
+            let main_module = module_unit_from_source(
+                "MainModule",
+                ModuleKind::Procedural,
+                "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim obj As OxVba.TestDispatch\nDim afterValue\nSet obj = Application.Value\nobj.SumPair rhs := 14, lhs := 3\nobj.LookupPair rhs := 9, lhs := 5\nobj value := 41\nafterValue = 71\nEnd Sub",
+            )
+            .expect("main module should parse");
+            let host_application = module_unit_from_source(
+                "Application",
+                ModuleKind::Class,
+                format!(
+                    "Attribute VB_Name = \"Application\"\n{exposure_attr}\nPublic Property Get Value() As Object\nSet Value = CreateObject(4)\nEnd Property"
+                ),
+            )
+            .expect("host application module should parse");
+            let manifest = ProjectManifest {
+                project_name: "ProjectA".to_string(),
+                project_kind: ProjectKind::Source,
+                modules: vec![main_module],
+                references: vec![
+                    ProjectReference {
+                        referenced_project_name: "HostProject".to_string(),
+                        reference_kind: ReferenceKind::HostInjected,
+                    },
+                    ProjectReference {
+                        referenced_project_name: "OxVba".to_string(),
+                        reference_kind: ReferenceKind::TypeLibrary,
+                    },
+                ],
+                reference_projects: vec![ReferencedProjectManifest {
+                    project_name: "HostProject".to_string(),
+                    modules: vec![host_application],
+                }],
+                conditional_constants: std::collections::BTreeMap::new(),
+            };
+
+            let snapshot = engine
+                .execute_project_with_value_snapshot_phased(&manifest)
+                .unwrap_or_else(|err| {
+                    panic!(
+                        "{label} host root should preserve imported no-paren named-argument statement-context traffic on the returned COM object: {err}"
+                    )
+                });
+            match snapshot.as_slice() {
+                [
+                    RuntimeValue::ObjectHandle(root),
+                    RuntimeValue::I32(after_value),
+                ] if root.raw() == 5_004 && *after_value == 71 => {}
+                other => panic!(
+                    "{label}: expected host-root no-paren named-argument statement-context traffic to execute and preserve sentinel 71, got: {other:?}"
+                ),
+            }
+        }
+    }
+
+    #[test]
+    fn formal_host_project_root_returned_no_paren_named_argument_statement_context_win_over_same_name_plain_project_match()
+     {
+        let engine = Engine::new(HostConfig::default());
+        let cases = [
+            ("predeclared", "Attribute VB_PredeclaredId = True"),
+            ("global namespace", "Attribute VB_GlobalNamespace = True"),
+        ];
+
+        for (label, exposure_attr) in cases {
+            let main_module = module_unit_from_source(
+                "MainModule",
+                ModuleKind::Procedural,
+                "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim obj As OxVba.TestDispatch\nDim afterValue\nSet obj = Application.Value\nobj.SumPair rhs := 14, lhs := 3\nobj.LookupPair rhs := 9, lhs := 5\nobj value := 41\nafterValue = 71\nEnd Sub",
+            )
+            .expect("main module should parse");
+            let plain_application = module_unit_from_source(
+                "Application",
+                ModuleKind::Class,
+                "Attribute VB_Name = \"Application\"\nPublic Property Get Value()\nValue = 41\nEnd Property",
+            )
+            .expect("plain application module should parse");
+            let host_application = module_unit_from_source(
+                "Application",
+                ModuleKind::Class,
+                format!(
+                    "Attribute VB_Name = \"Application\"\n{exposure_attr}\nPublic Property Get Value() As Object\nSet Value = CreateObject(4)\nEnd Property"
+                ),
+            )
+            .expect("host application module should parse");
+            let manifest = ProjectManifest {
+                project_name: "ProjectA".to_string(),
+                project_kind: ProjectKind::Source,
+                modules: vec![main_module],
+                references: vec![
+                    ProjectReference {
+                        referenced_project_name: "PlainProject".to_string(),
+                        reference_kind: ReferenceKind::Project,
+                    },
+                    ProjectReference {
+                        referenced_project_name: "HostProject".to_string(),
+                        reference_kind: ReferenceKind::HostInjected,
+                    },
+                    ProjectReference {
+                        referenced_project_name: "OxVba".to_string(),
+                        reference_kind: ReferenceKind::TypeLibrary,
+                    },
+                ],
+                reference_projects: vec![
+                    ReferencedProjectManifest {
+                        project_name: "PlainProject".to_string(),
+                        modules: vec![plain_application],
+                    },
+                    ReferencedProjectManifest {
+                        project_name: "HostProject".to_string(),
+                        modules: vec![host_application],
+                    },
+                ],
+                conditional_constants: std::collections::BTreeMap::new(),
+            };
+
+            let snapshot = engine
+                .execute_project_with_value_snapshot_phased(&manifest)
+                .unwrap_or_else(|err| {
+                    panic!(
+                        "{label} same-name plain project reference must not steal the host-root imported no-paren named-argument statement-context lane: {err}"
+                    )
+                });
+            match snapshot.as_slice() {
+                [
+                    RuntimeValue::ObjectHandle(root),
+                    RuntimeValue::I32(after_value),
+                ] if root.raw() == 5_004 && *after_value == 71 => {}
+                other => panic!(
+                    "{label}: expected host-injected Application.Value to win over the same-name plain project and preserve imported no-paren named-argument statement-context traffic with sentinel 71, got: {other:?}"
+                ),
+            }
+        }
+    }
+
+    #[test]
     fn formal_runtime_procedure_call_expression_in_condition_executes() {
         let engine = Engine::new(HostConfig::default());
         let source = "Function GetValue()\nGetValue = 4\nEnd Function\nSub Main()\nIf GetValue() = 4 Then\nError 104\nElse\nError 101\nEnd If\nEnd Sub";
