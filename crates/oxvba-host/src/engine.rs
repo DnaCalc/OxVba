@@ -284,6 +284,74 @@ impl Engine {
             .unwrap_or_default()
     }
 
+    pub fn dispatch_host_event_into_runtime(
+        &self,
+        runtime: &mut ProjectRuntimeSession,
+        project_name: &str,
+        module_name: &str,
+        event_name: &str,
+        source_instance: ObjectHandle,
+        args: &[RuntimeValue],
+    ) -> Result<bool, PhaseDiagnostic> {
+        let bindings = self
+            .event_dispatcher
+            .lock()
+            .map(|dispatcher| {
+                dispatcher.dispatch_bindings(&EventSourceKey::new(
+                    project_name,
+                    module_name,
+                    event_name,
+                ))
+            })
+            .unwrap_or_default();
+        if bindings.is_empty() {
+            return Ok(false);
+        }
+        if args.len() > 1 {
+            return Err(PhaseDiagnostic::runtime(format!(
+                "PMR-E-HOST-EVENT-ARITY-UNSUPPORTED: host event ingress for `{project_name}.{module_name}.{event_name}` supports at most 1 forwarded argument in the current deterministic subset, got {}",
+                args.len()
+            )));
+        }
+        for binding in bindings {
+            let target_symbol = match args.len() {
+                0 => binding.guard_symbol_zero_arg.as_deref(),
+                1 => binding.guard_symbol_one_arg.as_deref(),
+                _ => None,
+            }
+            .unwrap_or(&binding.handler_symbol);
+            let (resolved_symbol, metadata) =
+                self.resolve_runtime_handler_metadata(runtime, target_symbol)?;
+            let actual_args = if binding.guard_symbol_zero_arg.is_some()
+                || binding.guard_symbol_one_arg.is_some()
+            {
+                let mut actual_args = vec![RuntimeValue::I32(source_instance.raw())];
+                actual_args.extend_from_slice(args);
+                actual_args
+            } else {
+                args.to_vec()
+            };
+            let expected_arity = metadata.param_slots.len();
+            let actual_arity = actual_args.len();
+            if expected_arity != actual_arity {
+                return Err(PhaseDiagnostic::runtime(format!(
+                    "PMR-E-HOST-EVENT-SIGNATURE-MISMATCH: host event dispatch target `{}` expects {} arguments but ingress supplied {}",
+                    resolved_symbol, expected_arity, actual_arity
+                )));
+            }
+            runtime
+                .vm
+                .invoke_procedure_with_values(
+                    &runtime.compiled.bytecode,
+                    metadata.entry_pc,
+                    &metadata.param_slots,
+                    actual_args.as_slice(),
+                )
+                .map_err(PhaseDiagnostic::runtime)?;
+        }
+        Ok(true)
+    }
+
     pub fn subscribe_com_event_handler(
         &self,
         object_token: ObjectHandle,
@@ -739,7 +807,7 @@ mod tests {
     use oxvba_hal::model::{
         HalProfileId, HostPolicy, HostPolicyPreset, UiVirtualizationMode, UnsupportedFeatureMode,
     };
-    use oxvba_runtime::{RuntimeValue, value_tags::error_tag_from_code};
+    use oxvba_runtime::{ObjectHandle, RuntimeValue, value_tags::error_tag_from_code};
     use std::collections::HashSet;
     use std::path::{Path, PathBuf};
 
@@ -9977,6 +10045,212 @@ mod tests {
 
         let handlers = engine.dispatch_host_event("ProjectA", "Emitter", "Changed");
         assert_eq!(handlers, vec!["pmr_projecta_sinka_em_changed".to_string()]);
+    }
+
+    #[test]
+    fn formal_event_runtime_host_event_ingress_invokes_bound_handler_in_stable_order() {
+        let engine = Engine::new(HostConfig::default());
+        let main_module = module_unit_from_source(
+            "MainModule",
+            ModuleKind::Procedural,
+            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim e As New Emitter\nDim a As New SinkA\nDim b As New SinkB\nCall a.Attach(e)\nCall b.Attach(e)\nEnd Sub",
+        )
+        .expect("main module should parse");
+        let emitter = module_unit_from_source(
+            "Emitter",
+            ModuleKind::Class,
+            "Attribute VB_Name = \"Emitter\"\nPublic Event Changed()\n",
+        )
+        .expect("class module should parse");
+        let sink_b = module_unit_from_source(
+            "SinkB",
+            ModuleKind::Class,
+            "Attribute VB_Name = \"SinkB\"\nPrivate WithEvents em As Emitter\nPublic Sub Attach(ByVal e As Emitter)\nSet em = e\nEnd Sub\nPublic Sub em_changed()\nErr.Raise 202\nEnd Sub",
+        )
+        .expect("sink module should parse");
+        let sink_a = module_unit_from_source(
+            "SinkA",
+            ModuleKind::Class,
+            "Attribute VB_Name = \"SinkA\"\nPrivate WithEvents em As Emitter\nPublic Sub Attach(ByVal e As Emitter)\nSet em = e\nEnd Sub\nPublic Sub em_changed()\nErr.Raise 101\nEnd Sub",
+        )
+        .expect("sink module should parse");
+        let manifest = ProjectManifest {
+            project_name: "ProjectA".to_string(),
+            project_kind: ProjectKind::Source,
+            modules: vec![main_module, emitter, sink_b, sink_a],
+            references: Vec::new(),
+            reference_projects: Vec::new(),
+            conditional_constants: std::collections::BTreeMap::new(),
+        };
+
+        let mut runtime = engine
+            .start_project_runtime_session(&manifest)
+            .expect("project runtime session should start");
+        let err = engine
+            .dispatch_host_event_into_runtime(
+                &mut runtime,
+                "ProjectA",
+                "Emitter",
+                "Changed",
+                ObjectHandle::new(1),
+                &[],
+            )
+            .expect_err("first bound handler should raise deterministic runtime error");
+        assert_eq!(err.phase(), DiagnosticPhase::Runtime);
+        assert!(
+            err.message().contains("runtime error: 101"),
+            "expected first handler (SinkA) to run before SinkB, got: {}",
+            err.message()
+        );
+    }
+
+    #[test]
+    fn formal_event_runtime_host_event_ingress_forwards_single_event_arg() {
+        let engine = Engine::new(HostConfig::default());
+        let main_module = module_unit_from_source(
+            "MainModule",
+            ModuleKind::Procedural,
+            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim e As New Emitter\nDim s As New SinkA\nCall s.Attach(e)\nEnd Sub",
+        )
+        .expect("main module should parse");
+        let emitter = module_unit_from_source(
+            "Emitter",
+            ModuleKind::Class,
+            "Attribute VB_Name = \"Emitter\"\nPublic Event Changed(ByVal n As Integer)\n",
+        )
+        .expect("class module should parse");
+        let sink = module_unit_from_source(
+            "SinkA",
+            ModuleKind::Class,
+            "Attribute VB_Name = \"SinkA\"\nPrivate WithEvents em As Emitter\nPublic Sub Attach(ByVal e As Emitter)\nSet em = e\nEnd Sub\nPublic Sub em_changed(ByVal n)\nIf n = 42 Then\nError 142\nElse\nError 141\nEnd If\nEnd Sub",
+        )
+        .expect("sink module should parse");
+        let manifest = ProjectManifest {
+            project_name: "ProjectA".to_string(),
+            project_kind: ProjectKind::Source,
+            modules: vec![main_module, emitter, sink],
+            references: Vec::new(),
+            reference_projects: Vec::new(),
+            conditional_constants: std::collections::BTreeMap::new(),
+        };
+
+        let mut runtime = engine
+            .start_project_runtime_session(&manifest)
+            .expect("project runtime session should start");
+        let err = engine
+            .dispatch_host_event_into_runtime(
+                &mut runtime,
+                "ProjectA",
+                "Emitter",
+                "Changed",
+                ObjectHandle::new(1),
+                &[RuntimeValue::I32(42)],
+            )
+            .expect_err("host ingress should forward deterministic event arg to handler");
+        assert_eq!(err.phase(), DiagnosticPhase::Runtime);
+        assert!(
+            err.message().contains("runtime error: 142"),
+            "expected forwarded event arg to reach handler, got: {}",
+            err.message()
+        );
+    }
+
+    #[test]
+    fn formal_event_runtime_host_event_ingress_rejects_more_than_one_forwarded_arg() {
+        let engine = Engine::new(HostConfig::default());
+        let main_module = module_unit_from_source(
+            "MainModule",
+            ModuleKind::Procedural,
+            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim e As New Emitter\nDim s As New SinkA\nCall s.Attach(e)\nEnd Sub",
+        )
+        .expect("main module should parse");
+        let emitter = module_unit_from_source(
+            "Emitter",
+            ModuleKind::Class,
+            "Attribute VB_Name = \"Emitter\"\nPublic Event Changed(ByVal n As Integer)\n",
+        )
+        .expect("class module should parse");
+        let sink = module_unit_from_source(
+            "SinkA",
+            ModuleKind::Class,
+            "Attribute VB_Name = \"SinkA\"\nPrivate WithEvents em As Emitter\nPublic Sub Attach(ByVal e As Emitter)\nSet em = e\nEnd Sub\nPublic Sub em_changed(ByVal n)\nEnd Sub",
+        )
+        .expect("sink module should parse");
+        let manifest = ProjectManifest {
+            project_name: "ProjectA".to_string(),
+            project_kind: ProjectKind::Source,
+            modules: vec![main_module, emitter, sink],
+            references: Vec::new(),
+            reference_projects: Vec::new(),
+            conditional_constants: std::collections::BTreeMap::new(),
+        };
+
+        let mut runtime = engine
+            .start_project_runtime_session(&manifest)
+            .expect("project runtime session should start");
+        let err = engine
+            .dispatch_host_event_into_runtime(
+                &mut runtime,
+                "ProjectA",
+                "Emitter",
+                "Changed",
+                ObjectHandle::new(1),
+                &[RuntimeValue::I32(1), RuntimeValue::I32(2)],
+            )
+            .expect_err("host ingress should reject more than one forwarded arg");
+        assert_eq!(err.phase(), DiagnosticPhase::Runtime);
+        assert!(
+            err.message().contains("PMR-E-HOST-EVENT-ARITY-UNSUPPORTED"),
+            "unexpected host ingress diagnostic: {}",
+            err.message()
+        );
+    }
+
+    #[test]
+    fn formal_event_runtime_host_event_ingress_reports_missing_handler() {
+        let engine = Engine::new(HostConfig::default());
+        let main_module = module_unit_from_source(
+            "MainModule",
+            ModuleKind::Procedural,
+            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nEnd Sub",
+        )
+        .expect("main module should parse");
+        let emitter = module_unit_from_source(
+            "Emitter",
+            ModuleKind::Class,
+            "Attribute VB_Name = \"Emitter\"\nPublic Event Changed()\n",
+        )
+        .expect("class module should parse");
+        let manifest = ProjectManifest {
+            project_name: "ProjectA".to_string(),
+            project_kind: ProjectKind::Source,
+            modules: vec![main_module, emitter],
+            references: Vec::new(),
+            reference_projects: Vec::new(),
+            conditional_constants: std::collections::BTreeMap::new(),
+        };
+
+        let mut runtime = engine
+            .start_project_runtime_session(&manifest)
+            .expect("project runtime session should start");
+        engine.subscribe_host_event_handler("ProjectA", "Emitter", "Changed", "MissingHandler");
+        let err = engine
+            .dispatch_host_event_into_runtime(
+                &mut runtime,
+                "ProjectA",
+                "Emitter",
+                "Changed",
+                ObjectHandle::new(1),
+                &[],
+            )
+            .expect_err("missing handler should fail deterministically");
+        assert_eq!(err.phase(), DiagnosticPhase::Runtime);
+        assert!(
+            err.message()
+                .contains("PMR-E-EVENT-DISPATCH-TARGET-MISSING"),
+            "unexpected host ingress diagnostic: {}",
+            err.message()
+        );
     }
 
     #[cfg(target_os = "windows")]

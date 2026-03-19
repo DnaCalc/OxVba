@@ -136,6 +136,8 @@ pub struct ProjectEventDispatchBinding {
     pub source_module_name: String,
     pub event_name: String,
     pub handler_symbol: String,
+    pub guard_symbol_zero_arg: String,
+    pub guard_symbol_one_arg: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -4381,6 +4383,20 @@ fn flatten_event_dispatch_plan(plan: &EventDispatchPlan) -> Vec<ProjectEventDisp
                 source_module_name: module_name.clone(),
                 event_name: event_name.clone(),
                 handler_symbol: route.handler_symbol.clone(),
+                guard_symbol_zero_arg: event_guard_wrapper_symbol(
+                    project_name,
+                    module_name,
+                    event_name,
+                    route,
+                    0,
+                ),
+                guard_symbol_one_arg: event_guard_wrapper_symbol(
+                    project_name,
+                    module_name,
+                    event_name,
+                    route,
+                    1,
+                ),
             });
         }
     }
@@ -6649,6 +6665,10 @@ mod tests {
                 source_module_name: "emitter".to_string(),
                 event_name: "changed".to_string(),
                 handler_symbol: "pmr_projecta_sinka_em_changed".to_string(),
+                guard_symbol_zero_arg: "pmr_evtguard_projecta_emitter_changed_sinka_em_a0"
+                    .to_string(),
+                guard_symbol_one_arg: "pmr_evtguard_projecta_emitter_changed_sinka_em_a1"
+                    .to_string(),
             }]
         );
         for binding in &compiled.event_dispatch_bindings {

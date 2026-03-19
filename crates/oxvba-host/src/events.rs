@@ -25,7 +25,14 @@ impl EventSourceKey {
 
 #[derive(Debug, Clone, Default)]
 pub struct EventDispatcher {
-    handlers: BTreeMap<EventSourceKey, Vec<String>>,
+    handlers: BTreeMap<EventSourceKey, Vec<EventHandlerBinding>>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct EventHandlerBinding {
+    pub handler_symbol: String,
+    pub guard_symbol_zero_arg: Option<String>,
+    pub guard_symbol_one_arg: Option<String>,
 }
 
 impl EventDispatcher {
@@ -36,21 +43,38 @@ impl EventDispatcher {
     pub fn apply_bindings(&mut self, bindings: &[ProjectEventDispatchBinding]) {
         self.handlers.clear();
         for binding in bindings {
-            self.subscribe(
+            self.subscribe_binding(
                 &EventSourceKey::new(
                     &binding.source_project_name,
                     &binding.source_module_name,
                     &binding.event_name,
                 ),
-                binding.handler_symbol.clone(),
+                EventHandlerBinding {
+                    handler_symbol: normalize(binding.handler_symbol.clone()),
+                    guard_symbol_zero_arg: Some(normalize(binding.guard_symbol_zero_arg.clone())),
+                    guard_symbol_one_arg: Some(normalize(binding.guard_symbol_one_arg.clone())),
+                },
             );
         }
     }
 
     pub fn subscribe(&mut self, source: &EventSourceKey, handler_symbol: impl Into<String>) {
-        let handler = normalize(handler_symbol.into());
+        self.subscribe_binding(
+            source,
+            EventHandlerBinding {
+                handler_symbol: normalize(handler_symbol.into()),
+                guard_symbol_zero_arg: None,
+                guard_symbol_one_arg: None,
+            },
+        );
+    }
+
+    pub fn subscribe_binding(&mut self, source: &EventSourceKey, handler: EventHandlerBinding) {
         let entry = self.handlers.entry(source.clone()).or_default();
-        if !entry.iter().any(|existing| existing == &handler) {
+        if !entry
+            .iter()
+            .any(|existing| existing.handler_symbol == handler.handler_symbol)
+        {
             entry.push(handler);
         }
     }
@@ -61,7 +85,7 @@ impl EventDispatcher {
         };
         let handler = normalize(handler_symbol.to_string());
         let initial_len = entry.len();
-        entry.retain(|existing| existing != &handler);
+        entry.retain(|existing| existing.handler_symbol != handler);
         let removed = entry.len() != initial_len;
         if entry.is_empty() {
             self.handlers.remove(source);
@@ -70,6 +94,16 @@ impl EventDispatcher {
     }
 
     pub fn dispatch(&self, source: &EventSourceKey) -> Vec<String> {
+        self.handlers
+            .get(source)
+            .cloned()
+            .unwrap_or_default()
+            .into_iter()
+            .map(|binding| binding.handler_symbol)
+            .collect()
+    }
+
+    pub fn dispatch_bindings(&self, source: &EventSourceKey) -> Vec<EventHandlerBinding> {
         self.handlers.get(source).cloned().unwrap_or_default()
     }
 }
@@ -92,12 +126,16 @@ mod tests {
                 source_module_name: "Emitter".to_string(),
                 event_name: "Changed".to_string(),
                 handler_symbol: "pmr_projecta_sinka_changed".to_string(),
+                guard_symbol_zero_arg: "pmr_evtguard_projecta_emitter_changed_sinka_a0".to_string(),
+                guard_symbol_one_arg: "pmr_evtguard_projecta_emitter_changed_sinka_a1".to_string(),
             },
             ProjectEventDispatchBinding {
                 source_project_name: "ProjectA".to_string(),
                 source_module_name: "Emitter".to_string(),
                 event_name: "Changed".to_string(),
                 handler_symbol: "pmr_projecta_sinkb_changed".to_string(),
+                guard_symbol_zero_arg: "pmr_evtguard_projecta_emitter_changed_sinkb_a0".to_string(),
+                guard_symbol_one_arg: "pmr_evtguard_projecta_emitter_changed_sinkb_a1".to_string(),
             },
         ]);
 

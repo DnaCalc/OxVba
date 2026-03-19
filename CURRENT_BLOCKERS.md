@@ -181,6 +181,7 @@ Run context: active parity/compliance execution plus in-progress feature worklis
   - Blocks part of `IP-08` host project / Office-style hosting parity.
 - Current state:
   - baseline event runtime work is stronger, but open residuals remain:
+    - explicit host-event ingress now executes bound handlers directly into live runtime sessions through source-instance-aware guard wrappers with deterministic ordering, bounded zero/one-argument forwarding, and bounded missing-target/arity diagnostics,
     - `DIV-0004`
     - `ODG-038`
     - `ODG-039`

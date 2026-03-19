@@ -1,3 +1,14 @@
+## 2026-03-19 - Execute host event ingress into runtime sessions
+
+- Continued the `IP-07` dependency-clearing path by upgrading host event ingress from passive handler lookup into executable runtime dispatch.
+- In [engine.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-host\src\engine.rs), added a source-instance-aware `dispatch_host_event_into_runtime(...)` path so host-driven project/module/event dispatch now routes through compiler-generated event guard wrappers, resolves the live runtime target metadata, and invokes those handlers directly on the running VM session.
+- Added host tests proving:
+  - stable handler ordering under host ingress,
+  - single-argument event payload forwarding through the current wrapper lane,
+  - deterministic `PMR-E-HOST-EVENT-ARITY-UNSUPPORTED` diagnostics when host ingress exceeds the current zero/one-argument subset,
+  - deterministic `PMR-E-EVENT-DISPATCH-TARGET-MISSING` diagnostics when the dispatcher carries a missing handler symbol.
+- This is still not full `IP-07` closure: broader sink-instance graph parity, complete host/COM ingress unification, and the remaining divergence/oracle work stay open.
+
 ## 2026-03-19 - Bound imported event declaration types
 
 - Continued `IP-05B`/`IP-07` honestly by closing another silent imported event-surface hole instead of widening unsupported event transport semantics.
