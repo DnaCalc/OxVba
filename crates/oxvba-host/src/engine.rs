@@ -4206,6 +4206,121 @@ mod tests {
     }
 
     #[test]
+    fn formal_host_project_event_ingress_does_not_route_com_object_handle() {
+        let engine = Engine::new(HostConfig::default());
+        let cases = [
+            ("predeclared", "Attribute VB_PredeclaredId = True"),
+            ("global namespace", "Attribute VB_GlobalNamespace = True"),
+        ];
+
+        for (label, exposure_attr) in cases {
+            let main_module = module_unit_from_source(
+                "MainModule",
+                ModuleKind::Procedural,
+                "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim bound As Object\nDim comObj As Object\nDim s As New Sink\nSet bound = Application.Value\nSet comObj = CreateObject(4)\nCall s.Attach(bound)\nEnd Sub",
+            )
+            .expect("main module should parse");
+            let sink = module_unit_from_source(
+                "Sink",
+                ModuleKind::Class,
+                "Attribute VB_Name = \"Sink\"\nPrivate WithEvents em As Emitter\nPublic Sub Attach(ByVal e As Object)\nSet em = e\nEnd Sub\nPrivate Sub em_changed()\nError 204\nEnd Sub",
+            )
+            .expect("sink module should parse");
+            let host_application = module_unit_from_source(
+                "Application",
+                ModuleKind::Class,
+                format!(
+                    "Attribute VB_Name = \"Application\"\n{exposure_attr}\nPublic Property Get Value() As Object\nDim e As New Emitter\nSet Value = e\nEnd Property"
+                ),
+            )
+            .expect("host application module should parse");
+            let host_emitter = module_unit_from_source(
+                "Emitter",
+                ModuleKind::Class,
+                "Attribute VB_Name = \"Emitter\"\nPublic Event Changed()\n",
+            )
+            .expect("host emitter module should parse");
+            let manifest = ProjectManifest {
+                project_name: "ProjectA".to_string(),
+                project_kind: ProjectKind::Source,
+                modules: vec![main_module, sink],
+                references: vec![ProjectReference {
+                    referenced_project_name: "HostProject".to_string(),
+                    reference_kind: ReferenceKind::HostInjected,
+                }],
+                reference_projects: vec![ReferencedProjectManifest {
+                    project_name: "HostProject".to_string(),
+                    modules: vec![host_application, host_emitter],
+                }],
+                conditional_constants: std::collections::BTreeMap::new(),
+            };
+
+            let mut runtime = engine
+                .start_project_runtime_session(&manifest)
+                .unwrap_or_else(|err| panic!("{label} runtime should start: {err}"));
+            let snapshot = runtime.snapshot_values();
+            let snapshot_handle = |value: &RuntimeValue| match value {
+                RuntimeValue::ObjectHandle(handle) if handle.raw() > 0 => Some(*handle),
+                RuntimeValue::I32(raw) if *raw > 0 => Some(ObjectHandle::new(*raw)),
+                _ => None,
+            };
+            let (bound_handle, com_handle) = match snapshot.as_slice() {
+                [bound, com_obj, _sink] => {
+                    let bound_handle = snapshot_handle(bound);
+                    let com_handle = snapshot_handle(com_obj);
+                    match (bound_handle, com_handle) {
+                        (Some(bound_handle), Some(com_handle))
+                            if bound_handle.raw() != com_handle.raw() =>
+                        {
+                            (bound_handle, com_handle)
+                        }
+                        _ => panic!(
+                            "{label} should snapshot distinct host-backed and COM-backed object handles: {snapshot:?}"
+                        ),
+                    }
+                }
+                _ => panic!(
+                    "{label} should snapshot bound host-backed object, COM-backed object, and sink instance: {snapshot:?}"
+                ),
+            };
+
+            let unmatched = engine
+                .dispatch_host_event_into_runtime(
+                    &mut runtime,
+                    "HostProject",
+                    "Emitter",
+                    "Changed",
+                    com_handle,
+                    &[],
+                )
+                .unwrap_or_else(|err| {
+                    panic!("{label} COM-backed object should not fail host event ingress: {err}")
+                });
+            assert!(
+                unmatched,
+                "{label}: host-backed binding set should still exist while COM-backed handle stays non-routing"
+            );
+
+            let err = engine
+                .dispatch_host_event_into_runtime(
+                    &mut runtime,
+                    "HostProject",
+                    "Emitter",
+                    "Changed",
+                    bound_handle,
+                    &[],
+                )
+                .expect_err("bound host-backed source should still own the event route");
+            assert_eq!(err.phase(), DiagnosticPhase::Runtime);
+            assert!(
+                err.message().contains("runtime error: 204"),
+                "{label}: host-backed source should route callback, got: {}",
+                err.message()
+            );
+        }
+    }
+
+    #[test]
     fn formal_runtime_procedure_call_expression_in_condition_executes() {
         let engine = Engine::new(HostConfig::default());
         let source = "Function GetValue()\nGetValue = 4\nEnd Function\nSub Main()\nIf GetValue() = 4 Then\nError 104\nElse\nError 101\nEnd If\nEnd Sub";

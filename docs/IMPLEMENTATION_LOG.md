@@ -1,3 +1,10 @@
+## 2026-03-19 - Bound host event routing against COM handle neighbors
+
+- Continued `IP-08A` by making one more shared-`ObjectHandle` boundary explicit instead of leaving host event routing adjacent to COM object creation unproved.
+- In [project.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-compiler\src\project.rs), added compiler evidence that a neighboring `CreateObject(4)` lane does not perturb a host-backed `WithEvents` binding sourced from `HostProject.Emitter`.
+- In [engine.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-host\src\engine.rs), added live runtime evidence that `dispatch_host_event_into_runtime(...)` does not route a host event through a COM-backed handle captured beside the bound host-backed source, while the bound host-backed handle still routes the callback.
+- This narrows the honest `IP-08A` host/COM coexistence frontier from raw handle non-aliasing into the broader remaining semantics around mixed host/COM object-model behavior.
+
 ## 2026-03-19 - Bound host-injected type precedence over plain project matches
 
 - Continued `IP-08A` by making one host object-identity boundary explicit instead of leaving conflicting referenced class names dependent on reference order.

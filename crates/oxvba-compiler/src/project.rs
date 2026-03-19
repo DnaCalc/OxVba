@@ -16015,6 +16015,64 @@ mod tests {
     }
 
     #[test]
+    fn compile_project_preserves_host_injected_withevents_binding_with_com_object_neighbor() {
+        let main_module = module_unit_from_source(
+            "MainModule",
+            ModuleKind::Procedural,
+            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim bound As Object\nDim comObj As Object\nDim s As New Sink\nSet bound = Application.Value\nSet comObj = CreateObject(4)\nCall s.Attach(bound)\nEnd Sub",
+        )
+        .expect("main module parses");
+        let sink = module_unit_from_source(
+            "Sink",
+            ModuleKind::Class,
+            "Attribute VB_Name = \"Sink\"\nPrivate WithEvents em As Emitter\nPublic Sub Attach(ByVal e As Object)\nSet em = e\nEnd Sub\nPrivate Sub em_changed()\nEnd Sub",
+        )
+        .expect("sink module parses");
+        let host_application = module_unit_from_source(
+            "Application",
+            ModuleKind::Class,
+            "Attribute VB_Name = \"Application\"\nAttribute VB_PredeclaredId = True\nPublic Property Get Value() As Object\nDim e As New Emitter\nSet Value = e\nEnd Property",
+        )
+        .expect("host application parses");
+        let host_emitter = module_unit_from_source(
+            "Emitter",
+            ModuleKind::Class,
+            "Attribute VB_Name = \"Emitter\"\nPublic Event Changed()\n",
+        )
+        .expect("host emitter parses");
+        let manifest = ProjectManifest {
+            project_name: "ProjectA".to_string(),
+            project_kind: ProjectKind::Source,
+            modules: vec![main_module, sink],
+            references: vec![ProjectReference {
+                referenced_project_name: "HostProject".to_string(),
+                reference_kind: ReferenceKind::HostInjected,
+            }],
+            reference_projects: vec![ReferencedProjectManifest {
+                project_name: "HostProject".to_string(),
+                modules: vec![host_application, host_emitter],
+            }],
+            conditional_constants: BTreeMap::new(),
+        };
+        let compiled = compile_project(&manifest)
+            .expect("host-backed WithEvents binding should survive a neighboring COM object");
+        assert_eq!(
+            compiled.event_dispatch_bindings,
+            vec![ProjectEventDispatchBinding {
+                source_project_name: "hostproject".to_string(),
+                source_module_name: "emitter".to_string(),
+                event_name: "changed".to_string(),
+                handler_symbol: "pmr_projecta_sink_em_changed".to_string(),
+                guard_symbol_zero_arg: "pmr_evtguard_hostproject_emitter_changed_sink_em_a0"
+                    .to_string(),
+                guard_symbol_one_arg: "pmr_evtguard_hostproject_emitter_changed_sink_em_a1"
+                    .to_string(),
+            }],
+            "neighboring COM object creation must not perturb host-backed WithEvents binding metadata"
+        );
+    }
+
+    #[test]
     fn compile_project_rewrites_host_injected_predeclared_default_member_receiver() {
         let main_module = module_unit_from_source(
             "MainModule",
