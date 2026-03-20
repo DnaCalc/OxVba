@@ -20339,6 +20339,77 @@ mod tests {
     }
 
     #[test]
+    fn compile_project_prefers_active_project_application_returning_com_object_property_put_and_get_over_host_injected_root()
+     {
+        let cases = [
+            ("host predeclared", "Attribute VB_PredeclaredId = True"),
+            (
+                "host global namespace",
+                "Attribute VB_GlobalNamespace = True",
+            ),
+        ];
+
+        for (label, host_attr) in cases {
+            let main_module = module_unit_from_source(
+                "MainModule",
+                ModuleKind::Procedural,
+                "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim obj As OxVba.TestDispatch\nDim afterValue\nSet obj = Application.Value\nobj.SetValue = 9\nafterValue = obj.Value\nEnd Sub",
+            )
+            .expect("main module parses");
+            let local_application = module_unit_from_source(
+                "Application",
+                ModuleKind::Class,
+                "Attribute VB_Name = \"Application\"\nAttribute VB_PredeclaredId = True\nPublic Property Get Value() As Object\nSet Value = CreateObject(4)\nEnd Property",
+            )
+            .expect("local application parses");
+            let host_application = module_unit_from_source(
+                "Application",
+                ModuleKind::Class,
+                format!(
+                    "Attribute VB_Name = \"Application\"\n{host_attr}\nPublic Property Get Value()\nValue = 41\nEnd Property"
+                ),
+            )
+            .expect("host application parses");
+            let manifest = ProjectManifest {
+                project_name: "ProjectA".to_string(),
+                project_kind: ProjectKind::Source,
+                modules: vec![main_module, local_application],
+                references: vec![
+                    ProjectReference {
+                        referenced_project_name: "HostProject".to_string(),
+                        reference_kind: ReferenceKind::HostInjected,
+                    },
+                    ProjectReference {
+                        referenced_project_name: "OxVba".to_string(),
+                        reference_kind: ReferenceKind::TypeLibrary,
+                    },
+                ],
+                reference_projects: vec![ReferencedProjectManifest {
+                    project_name: "HostProject".to_string(),
+                    modules: vec![host_application],
+                }],
+                conditional_constants: BTreeMap::new(),
+            };
+            let compiled = compile_project(&manifest).unwrap_or_else(|err| {
+                panic!(
+                    "{label} active-project Application should outrank same-name host-injected root on host-returned COM property-put/get traffic: {err}"
+                )
+            });
+            let lowered = compiled.rewritten_source.to_ascii_lowercase();
+            assert!(
+                lowered.contains("set obj = property_get_pmr_projecta_application_value(0)"),
+                "{label}: expected active-project Application root rewrite before imported property-put/get traffic, got: {lowered}"
+            );
+            assert!(
+                !lowered.contains("set obj = property_get_pmr_hostproject_application_value(0)"),
+                "{label}: host-injected Application should not own the returned COM property-put/get handoff, got: {lowered}"
+            );
+            assert!(lowered.contains("call dispatchinvoke(obj, 7, 9)"));
+            assert!(lowered.contains("aftervalue = dispatchinvoke(obj, 9)"));
+        }
+    }
+
+    #[test]
     fn compile_project_rewrites_host_injected_predeclared_default_member_let_receiver() {
         let main_module = module_unit_from_source(
             "MainModule",
