@@ -1,3 +1,10 @@
+## 2026-03-19 - Extend IP-08B host-root parenthesized default-member object return
+
+- Continued `IP-08B` by widening the host-root object-return syntax breadth from direct authoritative default-member assignment into the matching parenthesized zero-arg neighbor.
+- In [project.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-compiler\src\project.rs), added direct compiler evidence that `Set valueOut = Application()`, `Let valueOut = Application()`, and `valueOut = Application()` preserve the same host-root default-member rewrite on both `VB_PredeclaredId` and `VB_GlobalNamespace` roots when the exposed default member returns an object.
+- In [engine.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-host\src\engine.rs), added matching host runtime evidence proving those six parenthesized authoritative default-member `Variant` lanes execute end to end and preserve the same bounded object-handle witness as the already-proved direct default-member neighbor.
+- This completes the current bounded host-root object-return syntax floor across direct and parenthesized zero-arg named-property and authoritative default-member forms.
+
 ## 2026-03-19 - Extend IP-08B host-root default-member object return
 
 - Continued `IP-08B` by widening the host-root object-return breadth from named-property forms into the matching authoritative default-member assignment-intent lanes.
