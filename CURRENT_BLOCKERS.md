@@ -257,19 +257,47 @@ Run context: active parity/compliance execution plus in-progress feature worklis
 ### BLK-EVT-002: Event parity residuals remain open after baseline closure
 - Impact:
   - Blocks `IP-07` event runtime parity.
-- Current state:
-  - baseline event runtime work is stronger, but open residuals remain:
-    - explicit host-event ingress on referenced `HostInjected` sources now has direct compiler and host evidence for source-instance-aware zero/one-argument routing across both `VB_PredeclaredId` and `VB_GlobalNamespace`, plus same-name plain-project precedence on one-argument routes and deterministic higher-arity rejection on live host-backed source handles,
-    - `DIV-0004`
-    - `ODG-038`
-    - `ODG-039`
-    - remaining COM adapter parity lanes
+- Current state (tabular evidence matrix):
+
+  **Design decisions (all resolved 2026-03-20):**
+
+  | decision | topic                    | resolution                                    |
+  |----------|--------------------------|-----------------------------------------------|
+  | EPD-01   | subscription key model   | hybrid owner+binding key as i64               |
+  | EPD-02   | ordering model           | sorted by ObjectHandle; subscription order     |
+  | EPD-03   | reentrancy policy        | synchronous dispatch-to-completion             |
+  | EPD-04   | host-event ingress       | canonical dispatch_host_event_into_runtime     |
+  | EPD-05   | COM parity tiering       | COM-EVT-A required; COM-EVT-B deferred         |
+
+  **Proved event lanes:**
+
+  | lane                                | status       |
+  |-------------------------------------|--------------|
+  | compile-time WithEvents/RaiseEvent  | proved-exec  |
+  | runtime dispatch binding extraction | proved-exec  |
+  | runtime owner-iteration dispatch    | proved-exec  |
+  | WithEvents reassignment/clear       | proved-exec  |
+  | host-event ingress (0/1-arg)        | proved-exec  |
+  | source-instance-aware routing       | proved-exec  |
+  | same-name plain-project precedence  | proved-exec  |
+  | higher-arity rejection              | proved-exec  |
+  | COM connection-point subscription   | proved-exec  |
+
+  **Remaining gaps:**
+
+  | gap                                         | status |
+  |-----------------------------------------------|--------|
+  | full sink-instance graph lifetime parity      | open   |
+  | advanced multi-interface oracle (ODG-038)      | open   |
+  | COM-EVT-A required lanes completion            | open   |
+  | higher-arity event argument support            | open   |
+
 - Exact unblock steps:
-  - finish the remaining event-runtime parity outside the now-explicit host-backed ingress subset,
-  - close remaining COM callback/event transport residuals,
-  - resolve or bound the remaining divergence/oracle topics.
+  - close remaining COM-EVT-A connection-point event lanes,
+  - close full object-lifecycle parity for sink-instance graph,
+  - resolve or bound ODG-038/ODG-039.
 - Recommendation:
-  - keep the remaining event residuals under `IP-07`; they no longer need to be carried as an `IP-08` host-foundation ambiguity.
+  - EPD decisions are now resolved; proceed directly to COM-EVT-A implementation and wider arity support.
 
 ### BLK-HOST-001: Host project / Office-style host model remains below parity target
 - Impact:
