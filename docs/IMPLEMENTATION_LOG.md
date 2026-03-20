@@ -1,3 +1,10 @@
+## 2026-03-20 - Extend IP-08B active-project precedence through host-returned COM reads
+
+- Continued `IP-08B` by making one more host root/global/project identity neighbor explicit instead of leaving active-project precedence implied only on the earlier named-property root floor.
+- In [project.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-compiler\src\project.rs), added direct compiler evidence that an active-project same-name `Application` class module outranks the host-injected root when the winning root returns a COM-backed object and the caller then executes imported scalar, named-argument, and positional read-assignment lanes.
+- In [engine.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-host\src\engine.rs), added matching host runtime evidence proving the same precedence boundary executes end to end even when the same-name host root only offers a scalar `Value` getter, so the returned COM handle and all follow-on imported read witnesses stay project-owned instead of drifting back to the host root.
+- This narrows the remaining `IP-08B` root/global/project frontier again: active-project precedence is now explicit through the current host-returned imported read-assignment subset, not only on the simpler root property read/write floor.
+
 ## 2026-03-20 - Extend IP-08B host-root imported diagnostics
 
 - Continued `IP-08B` by widening the host-returned COM-object breadth into the matching imported compile-time diagnostic subset.
