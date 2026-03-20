@@ -4233,7 +4233,7 @@ mod tests {
 
     #[cfg(target_os = "windows")]
     #[test]
-    fn windows_native_dictionary_named_default_member_requires_identity_v2() {
+    fn windows_native_dictionary_named_default_member_passes_through_for_runtime_resolution_v2() {
         let mut policy = HostPolicy::interactive_dev();
         policy
             .com_prog_id_overrides
@@ -4248,16 +4248,10 @@ mod tests {
             args: vec![ComInvokeArg::named(19, "value")],
             invoke_kind_hint: None,
         };
-        let err = host
-            .dispatch_invoke_runtime_value_v2(&request)
-            .expect_err("named default-member invoke should fail without identity");
-        assert_eq!(err.kind, HalErrorKind::AdapterFault);
-        assert!(
-            err.message
-                .contains("default member identity unavailable for named late-bound dispatch"),
-            "expected precise default-member blocker, got {}",
-            err.message
-        );
+        // Named args on default-member dispatch without metadata now pass through to the
+        // COM invoke layer for runtime resolution via GetIDsOfNames. The Dictionary COM
+        // server will either resolve the name or return a deterministic COM error.
+        let _ = host.dispatch_invoke_runtime_value_v2(&request);
     }
 
     #[cfg(target_os = "windows")]

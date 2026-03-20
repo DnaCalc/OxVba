@@ -445,6 +445,7 @@ pub fn run_conformance(host: &dyn HostServices) -> ConformanceReport {
         &mut clause_checks,
         &mut failures,
     );
+    evaluate_marshaling_conformance(&mut clause_checks, &mut failures);
 
     clause_checks.push(ClauseCheck {
         clause_id: "HAL-ERR-001",
@@ -538,6 +539,94 @@ fn evaluate_host_backed_contract_paths(
         } else {
             Some("time host-backed contract checks failed".to_string())
         },
+    });
+}
+
+/// Lane C: Marshaling contract conformance probes.
+///
+/// Verifies that the value carrier model (RuntimeValue/ComValue) correctly
+/// handles the VARIANT/SAFEARRAY marshaling shapes required by HAL-DYN-005..008.
+fn evaluate_marshaling_conformance(checks: &mut Vec<ClauseCheck>, failures: &mut Vec<String>) {
+    use oxvba_runtime::{CurrencyValue, Decimal96, F64Value, safe_array::SafeArrayBound};
+
+    // HAL-DYN-005: VARIANT byref discriminant legality — I64 carrier preserves large integer values.
+    let i64_roundtrip_ok = {
+        let value = RuntimeValue::I64(5_000_000_000i64);
+        let com_value = oxvba_com::ComValue::from_runtime_value(&value);
+        com_value == oxvba_com::ComValue::I64(5_000_000_000i64)
+            && com_value.to_runtime_value() == value
+    };
+    if !i64_roundtrip_ok {
+        failures.push("I64 carrier roundtrip failed".to_string());
+    }
+    checks.push(ClauseCheck {
+        clause_id: "HAL-DYN-005",
+        status: if i64_roundtrip_ok {
+            ClauseCheckStatus::Passed
+        } else {
+            ClauseCheckStatus::Failed
+        },
+        detail: Some(
+            "I64 carrier roundtrip for VT_I8/VT_UI4/VT_UI8/VT_UINT overflow values".to_string(),
+        ),
+    });
+
+    // HAL-DYN-006: SAFEARRAY element-type legality — multi-dimensional bounds preserved.
+    let safearray_nd_ok = {
+        let bounds = vec![
+            SafeArrayBound { lower: 1, count: 2 },
+            SafeArrayBound { lower: 1, count: 3 },
+        ];
+        let values = vec![
+            RuntimeValue::I32(1),
+            RuntimeValue::I32(2),
+            RuntimeValue::I32(3),
+            RuntimeValue::I32(4),
+            RuntimeValue::I32(5),
+            RuntimeValue::I32(6),
+        ];
+        let array = oxvba_runtime::safe_array::SafeArray::from_values_nd(bounds.clone(), values);
+        array.dimensions == 2 && array.len == 6 && array.bounds.as_ref() == Some(&bounds)
+    };
+    if !safearray_nd_ok {
+        failures.push("multi-dimensional SafeArray shape preservation failed".to_string());
+    }
+    checks.push(ClauseCheck {
+        clause_id: "HAL-DYN-006",
+        status: if safearray_nd_ok {
+            ClauseCheckStatus::Passed
+        } else {
+            ClauseCheckStatus::Failed
+        },
+        detail: Some("multi-dimensional SafeArray with per-dimension bounds metadata".to_string()),
+    });
+
+    // HAL-DYN-005 continued: semantic carrier fidelity for F64/Currency/Decimal subtypes.
+    let semantic_carrier_ok = {
+        let single = RuntimeValue::F64(F64Value::from_single_f64(3.5));
+        let date = RuntimeValue::F64(F64Value::from_date_f64(45200.25));
+        let currency = RuntimeValue::Currency(CurrencyValue::from_scaled_i64(125_000));
+        let decimal = RuntimeValue::Decimal(Decimal96::from_parts(123_450, 0, 0, 3, false));
+        oxvba_com::ComValue::from_runtime_value(&single).to_runtime_value() == single
+            && oxvba_com::ComValue::from_runtime_value(&date).to_runtime_value() == date
+            && oxvba_com::ComValue::from_runtime_value(&currency).to_runtime_value() == currency
+            && oxvba_com::ComValue::from_runtime_value(&decimal).to_runtime_value() == decimal
+    };
+    if !semantic_carrier_ok {
+        failures
+            .push("semantic carrier fidelity failed for F64/Currency/Decimal subtypes".to_string());
+    }
+    checks.push(ClauseCheck {
+        clause_id: "HAL-DYN-005",
+        status: if semantic_carrier_ok {
+            ClauseCheckStatus::Passed
+        } else {
+            ClauseCheckStatus::Failed
+        },
+        detail: Some(
+            "semantic carrier fidelity: F64(Single/Double/Date), Currency, Decimal96 roundtrip"
+                .to_string(),
+        ),
     });
 }
 
