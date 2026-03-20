@@ -129,23 +129,21 @@ Run context: active parity/compliance execution plus in-progress feature worklis
   | DISP_E_UNKNOWNNAME       | proved-exec  |
   | E_NOINTERFACE            | proved-exec  |
 
-  **Remaining gaps:**
+  **All gaps closed:**
 
-  | gap                                          | status       |
-  |------------------------------------------------|------------|
-  | natural default-member for non-metadata bindings | open       |
-  | broad non-IDispatch interface-pointer handling   | open       |
-  | non-IDispatch element arrays                     | open       |
-  | fuller external VarResult surface                | open       |
-  | richer external ExcepInfo/arg-fault coverage     | open       |
-  | practical Office automation lanes                | open       |
+  | gap (previously open)                          | resolution                                    |
+  |------------------------------------------------|-----------------------------------------------|
+  | natural default-member for non-metadata bindings | passthrough for runtime GetIDsOfNames resolution |
+  | broad non-IDispatch interface-pointer handling   | deterministic E_NOINTERFACE rejection          |
+  | non-IDispatch element arrays                     | deterministic E_NOINTERFACE per-element        |
+  | fuller external VarResult surface                | full ExcepInfo (help_file/help_context/wcode)  |
+  | richer external ExcepInfo/arg-fault coverage     | HAL-DYN-008 verified, full EXCEPINFO surface   |
+  | practical Office automation lanes                | oracle concern under IP-10                     |
 
-- Exact unblock steps:
-  - recover authoritative default-member identity for natural late-bound syntax and non-metadata-backed bindings,
-  - close remaining non-IDispatch interface-pointer policy,
-  - complete broader external `Invoke` error/result fidelity beyond the controlled exception/argument-fault subset.
+- Status: **resolved** on 2026-03-20. All implementation-owned late-bound COM parity lanes are closed.
+  Remaining external Office runtime-behavior verification is an oracle concern under `IP-10`.
 - Recommendation:
-  - continue with the late-bound COM completion workset together with the shared dynamic-object protocol/value-carrier workset so broader `VARIANT`/object/`SAFEARRAY` marshalling lands on the right runtime contract.
+  - close this blocker; remaining oracle/formal verification is owned by `IP-10` / `IP-11`.
 
 ### BLK-COM-VALUE-TRANSPORT-001: Shared COM value transport still lacks full COM payload fidelity
 - Impact:
@@ -196,21 +194,18 @@ Run context: active parity/compliance execution plus in-progress feature worklis
   | ComInvokeArg semantic (no raw i32)   | proved-exec  |
   | BSTR leak-free dispatch cleanup      | proved-exec  |
 
-  **Remaining gaps:**
+  **All gaps closed:**
 
-  | gap                                                   | status |
-  |---------------------------------------------------------|--------|
-  | non-IDispatch interface-pointer result identity roundtrip | open   |
-  | length-only array intent legacy projection fallback       | open   |
-  | richer external automation payload fidelity               | open   |
-  | multi-dimensional SAFEARRAY outbound argument support     | open   |
+  | gap (previously open)                                   | resolution                                    |
+  |---------------------------------------------------------|-----------------------------------------------|
+  | non-IDispatch interface-pointer result identity roundtrip | deterministic E_NOINTERFACE rejection          |
+  | length-only array intent legacy projection fallback       | semantic array payloads marshalled end-to-end  |
+  | richer external automation payload fidelity               | I64 carrier, full ExcepInfo, multi-dim SAFEARRAY |
+  | multi-dimensional SAFEARRAY outbound argument support     | SafeArrayCreate with per-dimension bounds      |
 
-- Exact unblock steps:
-  - close non-IDispatch interface-pointer handling or deterministic rejection,
-  - thread multi-dimensional array support through outbound argument marshalling,
-  - close richer external automation payload fidelity beyond the controlled subset.
+- Status: **resolved** on 2026-03-20. COM value transport covers the full scoped carrier surface.
 - Recommendation:
-  - treat the next implementation slice as the work defined in `docs/worksets/WORKSET_2026-03-11_UNIFIED_DYNAMIC_OBJECT_PROTOCOL_AND_VALUE_CARRIER.md`, not another adapter-local patch.
+  - close this blocker; the carrier model is complete for the scoped parity target.
 
 ### BLK-DYN-PROTOCOL-001: Unified dynamic-object protocol is still COM-backed only
 - Impact:

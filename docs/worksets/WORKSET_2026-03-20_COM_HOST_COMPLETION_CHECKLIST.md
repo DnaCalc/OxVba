@@ -85,7 +85,7 @@ Why this order:
 
 This checklist is complete only when all of the following are true:
 
-- [ ] `IP-03` is marked `closed` in [IN_PROGRESS_FEATURE_WORKLIST.md](C:\Work\DnaCalc\OxVba\docs\IN_PROGRESS_FEATURE_WORKLIST.md)
+- [x] `IP-03` is marked `closed` in [IN_PROGRESS_FEATURE_WORKLIST.md](C:\Work\DnaCalc\OxVba\docs\IN_PROGRESS_FEATURE_WORKLIST.md)
 - [ ] `IP-05` is marked `closed` in [IN_PROGRESS_FEATURE_WORKLIST.md](C:\Work\DnaCalc\OxVba\docs\IN_PROGRESS_FEATURE_WORKLIST.md)
 - [ ] `IP-06` is marked `closed` in [IN_PROGRESS_FEATURE_WORKLIST.md](C:\Work\DnaCalc\OxVba\docs\IN_PROGRESS_FEATURE_WORKLIST.md)
 - [ ] `IP-07` is marked `closed` in [IN_PROGRESS_FEATURE_WORKLIST.md](C:\Work\DnaCalc\OxVba\docs\IN_PROGRESS_FEATURE_WORKLIST.md)
@@ -132,19 +132,25 @@ Unblocks:
 
 Closeout checklist:
 
-- [ ] close remaining natural/default-member syntax gaps for non-metadata-backed late-bound bindings
-- [ ] close the remaining non-`IDispatch` interface-pointer handling policy:
-  - support the intended lanes, or
-  - reject them deterministically with stable diagnostics
-- [ ] close remaining SAFEARRAY legality gaps:
-  - non-`IDispatch` element handling
-  - multi-dimensional handling
-  - unsupported typed-array handling
-- [ ] close remaining `ArgErr` / `ExcepInfo` / `VarResult` fidelity gaps for external/native lanes
-- [ ] close the remaining practical Office automation lanes that still keep the area described as a subset
-- [ ] ensure runtime-string member/default-member/property intent is either executable or diagnostic across the scoped parity target
-- [ ] remove bounded-subset language from the `IP-03` row and blockers for any lane that still belongs to `IP-03`
-- [ ] record only oracle/formal residuals, if any, under `IP-10` / `IP-11`
+- [x] close remaining natural/default-member syntax gaps for non-metadata-backed late-bound bindings
+  - Named args on default-member/unbound dispatch now pass through for runtime resolution via GetIDsOfNames (commit 6e1f9ee)
+- [x] close the remaining non-`IDispatch` interface-pointer handling policy:
+  - Deterministic E_NOINTERFACE rejection for non-IDispatch VT_UNKNOWN, matching VBA 7.1 behavior (commit c8ba818)
+- [x] close remaining SAFEARRAY legality gaps:
+  - non-`IDispatch` element handling: deterministic E_NOINTERFACE per-element
+  - multi-dimensional handling: rank-N inbound and outbound marshalling (commit 7a0e5b0, c8ba818)
+  - unsupported typed-array handling: deterministic diagnostic listing supported element vartypes
+- [x] close remaining `ArgErr` / `ExcepInfo` / `VarResult` fidelity gaps for external/native lanes
+  - Full ExcepInfo surface (source, description, help_file, help_context, scode, wcode) (commit 1fa93c5)
+  - HAL-DYN-008 verified: VarResult always provided, ArgErr sentinel-distinguished
+- [x] close the remaining practical Office automation lanes that still keep the area described as a subset
+  - Excel.Application and Scripting.Dictionary typelib metadata extended with real member shapes and DISPIDs (commit e16b75a)
+  - External runtime-behavior verification against live Office is an oracle concern under IP-10
+- [x] ensure runtime-string member/default-member/property intent is either executable or diagnostic across the scoped parity target
+  - 9 runtime-string test functions covering zero-arg/indexed/named method, property-put/putref, indexed property-put/putref, value/default-member name, unknown-name diagnostic
+- [x] remove bounded-subset language from the `IP-03` row and blockers for any lane that still belongs to `IP-03`
+- [x] record only oracle/formal residuals, if any, under `IP-10` / `IP-11`
+  - External Office runtime-behavior verification is an oracle concern under IP-10
 
 Closure test for `IP-03`:
 
