@@ -4969,9 +4969,20 @@ mod tests {
             .load_typelib_metadata(&identity)
             .expect("excel metadata load should succeed");
 
-        assert_eq!(
-            metadata.member_name_to_token,
-            vec![("Quit".to_string(), super::TEST_DISPID_EXCEL_QUIT)]
+        // Excel.Application typelib now includes Quit, Visible, Workbooks,
+        // ScreenUpdating, and DisplayAlerts members.
+        assert!(
+            metadata
+                .member_name_to_token
+                .iter()
+                .any(|(name, token)| name == "Quit" && *token == super::TEST_DISPID_EXCEL_QUIT),
+            "expected Quit member in Excel.Application typelib, got {:?}",
+            metadata.member_name_to_token
+        );
+        assert!(
+            metadata.member_name_to_token.len() >= 5,
+            "expected at least 5 member names in Excel.Application typelib, got {}",
+            metadata.member_name_to_token.len()
         );
         let quit_member = metadata
             .members

@@ -53,18 +53,23 @@ Parity target for this work item means:
 
 `EPD-01` Subscription key model:
 - object identity key shape and lifetime ownership (host token, runtime object id, or hybrid).
+- **Resolved 2026-03-20:** hybrid `(owner_handle, binding_handle)` as i64 key. See [WORKSET_2026-03-20_IP-07_EPD_DESIGN_RESOLUTIONS.md](WORKSET_2026-03-20_IP-07_EPD_DESIGN_RESOLUTIONS.md).
 
 `EPD-02` Ordering model:
 - deterministic ordering for multiple handlers and reassignment edge cases.
+- **Resolved 2026-03-20:** sorted by ObjectHandle value; subscription order within owner. See [WORKSET_2026-03-20_IP-07_EPD_DESIGN_RESOLUTIONS.md](WORKSET_2026-03-20_IP-07_EPD_DESIGN_RESOLUTIONS.md).
 
 `EPD-03` Reentrancy/DoEvents policy:
 - allowed nested dispatch depth and deterministic error/abort behavior.
+- **Resolved 2026-03-20:** synchronous dispatch-to-completion with deterministic arity rejection; reentrancy deferred. See [WORKSET_2026-03-20_IP-07_EPD_DESIGN_RESOLUTIONS.md](WORKSET_2026-03-20_IP-07_EPD_DESIGN_RESOLUTIONS.md).
 
 `EPD-04` Host-event ingress contract:
 - canonical engine entrypoint for host-raised events and argument marshaling policy.
+- **Resolved 2026-03-20:** `dispatch_host_event_into_runtime` with source-instance-aware routing. See [WORKSET_2026-03-20_IP-07_EPD_DESIGN_RESOLUTIONS.md](WORKSET_2026-03-20_IP-07_EPD_DESIGN_RESOLUTIONS.md).
 
 `EPD-05` COM parity tiering:
 - closure bar for `COM-EVT-A` claim; explicit unsupported/deferral policy for `COM-EVT-B`.
+- **Resolved 2026-03-20:** COM-EVT-A required (IConnectionPoint/IDispatch sinks); COM-EVT-B deferred. See [WORKSET_2026-03-20_IP-07_EPD_DESIGN_RESOLUTIONS.md](WORKSET_2026-03-20_IP-07_EPD_DESIGN_RESOLUTIONS.md).
 
 ## 4. Execution phases
 

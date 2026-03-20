@@ -27,6 +27,19 @@ const TEST_DISPID_SET_VALUE: i32 = 7;
 const TEST_DISPID_SET_VALUE_REF: i32 = 8;
 const TEST_DISPID_VALUE: i32 = 9;
 const TEST_DISPID_EXCEL_QUIT: i32 = 10;
+// Real Excel.Application DISPIDs from the Excel type library.
+// Real Scripting.Dictionary DISPIDs from the Scripting type library.
+const DICT_DISPID_ITEM: i32 = 0; // default member
+const DICT_DISPID_ADD: i32 = 0x60020001u32 as i32;
+const DICT_DISPID_REMOVE: i32 = 0x60020003u32 as i32;
+const DICT_DISPID_REMOVEALL: i32 = 0x60020005u32 as i32;
+const DICT_DISPID_KEYS: i32 = 0x60020007u32 as i32;
+const DICT_DISPID_ITEMS: i32 = 0x60020008u32 as i32;
+// Real Excel.Application DISPIDs from the Excel type library.
+const EXCEL_DISPID_VISIBLE: i32 = 558;
+const EXCEL_DISPID_WORKBOOKS: i32 = 572;
+const EXCEL_DISPID_SCREEN_UPDATING: i32 = 382;
+const EXCEL_DISPID_DISPLAY_ALERTS: i32 = 343;
 const TEST_DISPID_SUM_PAIR: i32 = 12;
 const TEST_DISPID_LOOKUP_PAIR: i32 = 13;
 const TEST_DISPID_SET_INDEXED_VALUE: i32 = 14;
@@ -1080,14 +1093,72 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
             libid.eq_ignore_ascii_case("00020813-0000-0000-C000-000000000046")
         })
     {
-        let members = vec![TypeLibMemberMetadata {
-            name: "Quit".to_string(),
-            token: TEST_DISPID_EXCEL_QUIT,
-            requires_argument: false,
-            invoke_kind: TypeLibMemberInvokeKind::Method,
-            parameter_names: Vec::new(),
-            is_default_member: false,
-        }];
+        let members = vec![
+            TypeLibMemberMetadata {
+                name: "Quit".to_string(),
+                token: TEST_DISPID_EXCEL_QUIT,
+                requires_argument: false,
+                invoke_kind: TypeLibMemberInvokeKind::Method,
+                parameter_names: Vec::new(),
+                is_default_member: false,
+            },
+            TypeLibMemberMetadata {
+                name: "Visible".to_string(),
+                token: EXCEL_DISPID_VISIBLE,
+                requires_argument: false,
+                invoke_kind: TypeLibMemberInvokeKind::PropertyGet,
+                parameter_names: Vec::new(),
+                is_default_member: false,
+            },
+            TypeLibMemberMetadata {
+                name: "Visible".to_string(),
+                token: EXCEL_DISPID_VISIBLE,
+                requires_argument: true,
+                invoke_kind: TypeLibMemberInvokeKind::PropertyPut,
+                parameter_names: vec!["RHS".to_string()],
+                is_default_member: false,
+            },
+            TypeLibMemberMetadata {
+                name: "Workbooks".to_string(),
+                token: EXCEL_DISPID_WORKBOOKS,
+                requires_argument: false,
+                invoke_kind: TypeLibMemberInvokeKind::PropertyGet,
+                parameter_names: Vec::new(),
+                is_default_member: false,
+            },
+            TypeLibMemberMetadata {
+                name: "ScreenUpdating".to_string(),
+                token: EXCEL_DISPID_SCREEN_UPDATING,
+                requires_argument: false,
+                invoke_kind: TypeLibMemberInvokeKind::PropertyGet,
+                parameter_names: Vec::new(),
+                is_default_member: false,
+            },
+            TypeLibMemberMetadata {
+                name: "ScreenUpdating".to_string(),
+                token: EXCEL_DISPID_SCREEN_UPDATING,
+                requires_argument: true,
+                invoke_kind: TypeLibMemberInvokeKind::PropertyPut,
+                parameter_names: vec!["RHS".to_string()],
+                is_default_member: false,
+            },
+            TypeLibMemberMetadata {
+                name: "DisplayAlerts".to_string(),
+                token: EXCEL_DISPID_DISPLAY_ALERTS,
+                requires_argument: false,
+                invoke_kind: TypeLibMemberInvokeKind::PropertyGet,
+                parameter_names: Vec::new(),
+                is_default_member: false,
+            },
+            TypeLibMemberMetadata {
+                name: "DisplayAlerts".to_string(),
+                token: EXCEL_DISPID_DISPLAY_ALERTS,
+                requires_argument: true,
+                invoke_kind: TypeLibMemberInvokeKind::PropertyPut,
+                parameter_names: vec!["RHS".to_string()],
+                is_default_member: false,
+            },
+        ];
         let events = vec![TypeLibEventMetadata {
             name: "Quit".to_string(),
             token: TEST_EVENT_EXCEL_APP_QUIT,
@@ -1192,7 +1263,63 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
                 token: TEST_DISPID_EXISTS,
                 requires_argument: true,
                 invoke_kind: TypeLibMemberInvokeKind::Method,
-                parameter_names: vec!["value".to_string()],
+                parameter_names: vec!["Key".to_string()],
+                is_default_member: false,
+            },
+            TypeLibMemberMetadata {
+                name: "Item".to_string(),
+                token: DICT_DISPID_ITEM,
+                requires_argument: true,
+                invoke_kind: TypeLibMemberInvokeKind::PropertyGet,
+                parameter_names: vec!["Key".to_string()],
+                is_default_member: true,
+            },
+            TypeLibMemberMetadata {
+                name: "Item".to_string(),
+                token: DICT_DISPID_ITEM,
+                requires_argument: true,
+                invoke_kind: TypeLibMemberInvokeKind::PropertyPut,
+                parameter_names: vec!["Key".to_string(), "pRetItem".to_string()],
+                is_default_member: true,
+            },
+            TypeLibMemberMetadata {
+                name: "Add".to_string(),
+                token: DICT_DISPID_ADD,
+                requires_argument: true,
+                invoke_kind: TypeLibMemberInvokeKind::Method,
+                parameter_names: vec!["Key".to_string(), "Item".to_string()],
+                is_default_member: false,
+            },
+            TypeLibMemberMetadata {
+                name: "Remove".to_string(),
+                token: DICT_DISPID_REMOVE,
+                requires_argument: true,
+                invoke_kind: TypeLibMemberInvokeKind::Method,
+                parameter_names: vec!["Key".to_string()],
+                is_default_member: false,
+            },
+            TypeLibMemberMetadata {
+                name: "RemoveAll".to_string(),
+                token: DICT_DISPID_REMOVEALL,
+                requires_argument: false,
+                invoke_kind: TypeLibMemberInvokeKind::Method,
+                parameter_names: Vec::new(),
+                is_default_member: false,
+            },
+            TypeLibMemberMetadata {
+                name: "Keys".to_string(),
+                token: DICT_DISPID_KEYS,
+                requires_argument: false,
+                invoke_kind: TypeLibMemberInvokeKind::Method,
+                parameter_names: Vec::new(),
+                is_default_member: false,
+            },
+            TypeLibMemberMetadata {
+                name: "Items".to_string(),
+                token: DICT_DISPID_ITEMS,
+                requires_argument: false,
+                invoke_kind: TypeLibMemberInvokeKind::Method,
+                parameter_names: Vec::new(),
                 is_default_member: false,
             },
         ];
