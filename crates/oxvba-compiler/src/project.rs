@@ -20481,6 +20481,79 @@ mod tests {
     }
 
     #[test]
+    fn compile_project_prefers_active_project_application_returning_com_object_indexed_property_setters_over_host_injected_root()
+     {
+        let cases = [
+            ("host predeclared", "Attribute VB_PredeclaredId = True"),
+            (
+                "host global namespace",
+                "Attribute VB_GlobalNamespace = True",
+            ),
+        ];
+
+        for (label, host_attr) in cases {
+            let main_module = module_unit_from_source(
+                "MainModule",
+                ModuleKind::Procedural,
+                "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim obj As OxVba.TestDispatch\nDim other As OxVba.TestDispatch\nDim otherCount\nDim afterSetIndexedValue\nDim afterSetNamedIndexedValue\nDim afterSetIndexedValueRef\nDim afterSetNamedIndexedValueRef\nSet obj = Application.Value\nobj.SetIndexedValue(7) = 11\nafterSetIndexedValue = DispatchInvoke(obj, \"Value\")\nobj.SetIndexedValue(lhs := 7) = 11\nafterSetNamedIndexedValue = DispatchInvoke(obj, \"Value\")\nSet other = CreateObject(4)\notherCount = DispatchInvoke(other, \"Count\")\nSet obj.SetIndexedValueRef(8) = other\nafterSetIndexedValueRef = DispatchInvoke(obj, \"Value\")\nSet obj.SetIndexedValueRef(lhs := 8) = other\nafterSetNamedIndexedValueRef = DispatchInvoke(obj, \"Value\")\nEnd Sub",
+            )
+            .expect("main module parses");
+            let local_application = module_unit_from_source(
+                "Application",
+                ModuleKind::Class,
+                "Attribute VB_Name = \"Application\"\nAttribute VB_PredeclaredId = True\nPublic Property Get Value() As Object\nSet Value = CreateObject(4)\nEnd Property",
+            )
+            .expect("local application parses");
+            let host_application = module_unit_from_source(
+                "Application",
+                ModuleKind::Class,
+                format!(
+                    "Attribute VB_Name = \"Application\"\n{host_attr}\nPublic Property Get Value()\nValue = 41\nEnd Property"
+                ),
+            )
+            .expect("host application parses");
+            let manifest = ProjectManifest {
+                project_name: "ProjectA".to_string(),
+                project_kind: ProjectKind::Source,
+                modules: vec![main_module, local_application],
+                references: vec![
+                    ProjectReference {
+                        referenced_project_name: "HostProject".to_string(),
+                        reference_kind: ReferenceKind::HostInjected,
+                    },
+                    ProjectReference {
+                        referenced_project_name: "OxVba".to_string(),
+                        reference_kind: ReferenceKind::TypeLibrary,
+                    },
+                ],
+                reference_projects: vec![ReferencedProjectManifest {
+                    project_name: "HostProject".to_string(),
+                    modules: vec![host_application],
+                }],
+                conditional_constants: BTreeMap::new(),
+            };
+            let compiled = compile_project(&manifest).unwrap_or_else(|err| {
+                panic!(
+                    "{label} active-project Application should outrank same-name host-injected root on host-returned COM indexed setter traffic: {err}"
+                )
+            });
+            let lowered = compiled.rewritten_source.to_ascii_lowercase();
+            assert!(
+                lowered.contains("set obj = property_get_pmr_projecta_application_value(0)"),
+                "{label}: expected active-project Application root rewrite before imported indexed setter traffic, got: {lowered}"
+            );
+            assert!(
+                !lowered.contains("set obj = property_get_pmr_hostproject_application_value(0)"),
+                "{label}: host-injected Application should not own the returned COM indexed setter handoff, got: {lowered}"
+            );
+            assert!(lowered.contains("call dispatchinvoke(obj, 14, 7, 11)"));
+            assert!(lowered.contains("call dispatchinvoke(obj, 14, lhs := 7, value := 11)"));
+            assert!(lowered.contains("call dispatchinvoke(obj, 15, 8, other)"));
+            assert!(lowered.contains("call dispatchinvoke(obj, 15, lhs := 8, value := other)"));
+        }
+    }
+
+    #[test]
     fn compile_project_rewrites_host_injected_predeclared_default_member_let_receiver() {
         let main_module = module_unit_from_source(
             "MainModule",
