@@ -81,3 +81,8 @@ Current event/callback boundary:
 - the host-backed callback floor now has direct compiler and host evidence for zero/one-argument ingress on referenced `HostInjected` event sources across both `VB_PredeclaredId` and `VB_GlobalNamespace`,
 - the same floor now also proves source-instance routing, same-name plain-project precedence on one-argument routes, and deterministic rejection of higher-arity forwarded host ingress on live host-backed source handles,
 - remaining event-runtime residuals stay under `IP-07` (`DIV-0004`, `ODG-038`, `ODG-039`, and the remaining COM event parity lanes), not under `IP-08`.
+
+Current host-returned COM breadth boundary:
+
+- same-name plain-project precedence is now explicit for the currently proved imported scalar read-assignment, named-argument read-assignment, positional read-assignment, and compile-time diagnostic lanes on host-returned COM-backed objects,
+- the remaining `IP-08B` COM breadth is therefore narrower than the original frontier: richer imported member/property/default-member rows may still remain, but these newer read/diagnostic neighbors are no longer only implied by earlier precedence evidence.

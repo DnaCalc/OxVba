@@ -16804,6 +16804,211 @@ mod tests {
     }
 
     #[test]
+    fn compile_project_prefers_host_injected_root_returning_com_object_read_assignments_over_plain_project_name_match()
+     {
+        let cases = [
+            ("predeclared", "Attribute VB_PredeclaredId = True"),
+            ("global namespace", "Attribute VB_GlobalNamespace = True"),
+        ];
+
+        for (label, exposure_attr) in cases {
+            let main_module = module_unit_from_source(
+                "MainModule",
+                ModuleKind::Procedural,
+                "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim obj As OxVba.TestDispatch\nDim implicitValue\nDim explicitParenValue\nDim sumPair\nDim lookupPair\nDim countValue\nDim existsValue\nDim lookupValue\nDim echoValue\nSet obj = Application.Value\nobj.SetValue = 9\nimplicitValue = obj.Value\nLet explicitParenValue = obj.Value()\nsumPair = obj.SumPair(rhs := 14, lhs := 3)\nlookupPair = obj.LookupPair(rhs := 9, lhs := 5)\ncountValue = obj.Count()\nexistsValue = obj.Exists(42)\nlookupValue = obj.Lookup(42)\nechoValue = obj(42)\nEnd Sub",
+            )
+            .expect("main module parses");
+            let plain_application = module_unit_from_source(
+                "Application",
+                ModuleKind::Class,
+                "Attribute VB_Name = \"Application\"\nPublic Property Get Value()\nValue = 41\nEnd Property",
+            )
+            .expect("plain application parses");
+            let host_application = module_unit_from_source(
+                "Application",
+                ModuleKind::Class,
+                format!(
+                    "Attribute VB_Name = \"Application\"\n{exposure_attr}\nPublic Property Get Value() As Object\nSet Value = CreateObject(4)\nEnd Property"
+                ),
+            )
+            .expect("host application parses");
+            let manifest = ProjectManifest {
+                project_name: "ProjectA".to_string(),
+                project_kind: ProjectKind::Source,
+                modules: vec![main_module],
+                references: vec![
+                    ProjectReference {
+                        referenced_project_name: "PlainProject".to_string(),
+                        reference_kind: ReferenceKind::Project,
+                    },
+                    ProjectReference {
+                        referenced_project_name: "HostProject".to_string(),
+                        reference_kind: ReferenceKind::HostInjected,
+                    },
+                    ProjectReference {
+                        referenced_project_name: "OxVba".to_string(),
+                        reference_kind: ReferenceKind::TypeLibrary,
+                    },
+                ],
+                reference_projects: vec![
+                    ReferencedProjectManifest {
+                        project_name: "PlainProject".to_string(),
+                        modules: vec![plain_application],
+                    },
+                    ReferencedProjectManifest {
+                        project_name: "HostProject".to_string(),
+                        modules: vec![host_application],
+                    },
+                ],
+                conditional_constants: BTreeMap::new(),
+            };
+            let compiled = compile_project(&manifest).unwrap_or_else(|err| {
+                panic!(
+                    "{label} same-name plain project reference must not steal imported read-assignment lanes after the host-root COM return: {err}"
+                )
+            });
+            let lowered = compiled.rewritten_source.to_ascii_lowercase();
+            assert!(
+                lowered.contains("set obj = property_get_pmr_hostproject_application_value(0)"),
+                "{label}: expected host-injected root to win over same-name plain project application, got: {lowered}"
+            );
+            assert!(
+                lowered.contains("call dispatchinvoke(obj, 7, 9)"),
+                "{label}: expected imported property-put rewrite on the host-returned COM object, got: {lowered}"
+            );
+            assert!(
+                lowered.contains("implicitvalue = dispatchinvoke(obj, 9)"),
+                "{label}: expected imported scalar getter read-assignment rewrite, got: {lowered}"
+            );
+            assert!(
+                lowered.contains("let explicitparenvalue = dispatchinvoke(obj, 9)"),
+                "{label}: expected imported parenthesized scalar getter explicit Let rewrite, got: {lowered}"
+            );
+            assert!(
+                lowered.contains("sumpair = dispatchinvoke(obj, 12, rhs := 14, lhs := 3)"),
+                "{label}: expected imported named-argument method rewrite, got: {lowered}"
+            );
+            assert!(
+                lowered.contains("lookuppair = dispatchinvoke(obj, 13, rhs := 9, lhs := 5)"),
+                "{label}: expected imported named-argument property-get rewrite, got: {lowered}"
+            );
+            assert!(
+                lowered.contains("countvalue = dispatchinvoke(obj, 1)"),
+                "{label}: expected imported positional zero-arg method rewrite, got: {lowered}"
+            );
+            assert!(
+                lowered.contains("existsvalue = dispatchinvoke(obj, 2, 42)"),
+                "{label}: expected imported positional method rewrite, got: {lowered}"
+            );
+            assert!(
+                lowered.contains("lookupvalue = dispatchinvoke(obj, 6, 42)"),
+                "{label}: expected imported positional property-get rewrite, got: {lowered}"
+            );
+            assert!(
+                lowered.contains("echovalue = dispatchinvoke(obj, 16, 42)"),
+                "{label}: expected imported positional default-member rewrite, got: {lowered}"
+            );
+        }
+    }
+
+    #[test]
+    fn compile_project_preserves_host_injected_root_returning_com_object_imported_diagnostics_over_plain_project_name_match()
+     {
+        let exposure_cases = [
+            ("predeclared", "Attribute VB_PredeclaredId = True"),
+            ("global namespace", "Attribute VB_GlobalNamespace = True"),
+        ];
+        let diagnostic_cases = [
+            (
+                "missing member",
+                "Dim value\nvalue = obj.UnknownMember()",
+                "BIND-E-TYPELIB-MEMBER-NOT-FOUND",
+            ),
+            (
+                "wrong method arity",
+                "Dim value\nvalue = obj.Exists()",
+                "BIND-E-TYPELIB-INVOKE-ARITY-UNSUPPORTED",
+            ),
+            (
+                "wrong default-member arity",
+                "Dim value\nvalue = obj()",
+                "BIND-E-TYPELIB-INVOKE-ARITY-UNSUPPORTED",
+            ),
+            (
+                "wrong property-put arity",
+                "obj.SetIndexedValue = 11",
+                "BIND-E-TYPELIB-INVOKE-ARITY-UNSUPPORTED",
+            ),
+        ];
+
+        for (exposure_label, exposure_attr) in exposure_cases {
+            for (diagnostic_label, problem_lines, expected_code) in diagnostic_cases {
+                let main_module = module_unit_from_source(
+                    "MainModule",
+                    ModuleKind::Procedural,
+                    format!(
+                        "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim obj As OxVba.TestDispatch\nSet obj = Application.Value\n{problem_lines}\nEnd Sub"
+                    ),
+                )
+                .expect("main module parses");
+                let plain_application = module_unit_from_source(
+                    "Application",
+                    ModuleKind::Class,
+                    "Attribute VB_Name = \"Application\"\nPublic Property Get Value()\nValue = 41\nEnd Property",
+                )
+                .expect("plain application parses");
+                let host_application = module_unit_from_source(
+                    "Application",
+                    ModuleKind::Class,
+                    format!(
+                        "Attribute VB_Name = \"Application\"\n{exposure_attr}\nPublic Property Get Value() As Object\nSet Value = CreateObject(4)\nEnd Property"
+                    ),
+                )
+                .expect("host application parses");
+                let manifest = ProjectManifest {
+                    project_name: "ProjectA".to_string(),
+                    project_kind: ProjectKind::Source,
+                    modules: vec![main_module],
+                    references: vec![
+                        ProjectReference {
+                            referenced_project_name: "PlainProject".to_string(),
+                            reference_kind: ReferenceKind::Project,
+                        },
+                        ProjectReference {
+                            referenced_project_name: "HostProject".to_string(),
+                            reference_kind: ReferenceKind::HostInjected,
+                        },
+                        ProjectReference {
+                            referenced_project_name: "OxVba".to_string(),
+                            reference_kind: ReferenceKind::TypeLibrary,
+                        },
+                    ],
+                    reference_projects: vec![
+                        ReferencedProjectManifest {
+                            project_name: "PlainProject".to_string(),
+                            modules: vec![plain_application],
+                        },
+                        ReferencedProjectManifest {
+                            project_name: "HostProject".to_string(),
+                            modules: vec![host_application],
+                        },
+                    ],
+                    conditional_constants: BTreeMap::new(),
+                };
+
+                let err = compile_project(&manifest).expect_err(&format!(
+                    "{exposure_label} {diagnostic_label} should preserve imported COM diagnostics despite the same-name plain project shadow"
+                ));
+                assert_eq!(
+                    err.code(),
+                    expected_code,
+                    "{exposure_label} {diagnostic_label}: unexpected diagnostic {err}"
+                );
+            }
+        }
+    }
+
+    #[test]
     fn compile_project_rewrites_host_injected_root_returning_com_object_for_imported_property_putref_and_get()
      {
         let cases = [

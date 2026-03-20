@@ -1991,3 +1991,10 @@
   - preserves same-name plain-project precedence on the live one-argument route,
   - rejects higher-arity forwarded ingress deterministically on the live host-backed source path.
 - This moves the remaining event-runtime residuals back under `IP-07`: the current `IP-08` host surface no longer carries an unresolved host-owned callback/event gap above the completed `IP-08A` substrate, while broader host-returned COM breadth and richer root/global/project behavior remain open under `IP-08B`.
+
+# 2026-03-20 - Extend host-returned COM precedence through newer imported read and diagnostic lanes
+
+- Continued `IP-08B` by tightening the host identity register around the newer imported read/diagnostic neighbors instead of leaving them implied by earlier host-returned COM precedence slices.
+- In [project.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-compiler\src\project.rs), added direct compiler evidence that a conflicting same-name plain-project `Application` class does not steal the host-injected `Application.Value -> CreateObject(4)` handoff before the newer imported scalar read-assignment, named-argument read-assignment, positional read-assignment, and compile-time diagnostic lanes.
+- In [engine.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-host\src\engine.rs), added matching host runtime evidence proving the same-name plain-project shadow still leaves the host-root COM-backed object in control and preserves the expected scalar/named/positional witnesses plus the expected imported compile-time diagnostics on those newer lanes.
+- This narrows the remaining `IP-08B` host-returned COM breadth again: the newer imported read/diagnostic neighbors are no longer only implied by older precedence evidence, while broader imported member/property/default-member breadth still remains open.
