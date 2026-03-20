@@ -281,6 +281,12 @@ impl Variant {
             RuntimeValue::Null => Ok(Self::null()),
             RuntimeValue::ErrorCode(code) => Ok(Self::from_error_code(*code)),
             RuntimeValue::I32(value) => Ok(Self::from_i32(*value)),
+            RuntimeValue::I64(value) => {
+                let narrowed = i32::try_from(*value).map_err(|_| {
+                    format!("i64 value {value} exceeds current owned runtime Variant i32 carrier")
+                })?;
+                Ok(Self::from_i32(narrowed))
+            }
             RuntimeValue::F64(value) => Ok(match value.subtype() {
                 F64Subtype::Single => Self::from_f32(value.as_f64() as f32),
                 F64Subtype::Double => Self::from_f64(value.as_f64()),

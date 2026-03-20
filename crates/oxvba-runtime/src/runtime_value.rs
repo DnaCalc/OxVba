@@ -206,6 +206,7 @@ pub enum RuntimeValue {
     Null,
     ErrorCode(i32),
     I32(i32),
+    I64(i64),
     F64(F64Value),
     Decimal(Decimal96),
     Currency(CurrencyValue),
@@ -239,6 +240,9 @@ impl RuntimeValue {
             Self::Null => Ok(NULL_TAG),
             Self::ErrorCode(code) => Ok(error_tag_from_code(*code)),
             Self::I32(value) => Ok(*value),
+            Self::I64(value) => i32::try_from(*value).map_err(|_| {
+                format!("i64 value {value} cannot be represented in current legacy i32 slot lane")
+            }),
             Self::F64(_) => {
                 Err("f64 cannot be represented in current legacy i32 slot lane".to_string())
             }
@@ -392,5 +396,26 @@ mod tests {
             RuntimeValue::Decimal(value),
             RuntimeValue::Decimal(Decimal96::from_scale_sign(123_450, 0, 0, value.scale_sign))
         );
+    }
+
+    #[test]
+    fn runtime_value_i64_to_legacy_i32_narrows_when_fits() {
+        assert_eq!(RuntimeValue::I64(42).to_legacy_i32().expect("fits i32"), 42);
+        assert_eq!(
+            RuntimeValue::I64(-100).to_legacy_i32().expect("fits i32"),
+            -100
+        );
+        assert_eq!(
+            RuntimeValue::I64(i32::MAX as i64)
+                .to_legacy_i32()
+                .expect("fits i32"),
+            i32::MAX
+        );
+    }
+
+    #[test]
+    fn runtime_value_i64_to_legacy_i32_rejects_overflow() {
+        assert!(RuntimeValue::I64(5_000_000_000).to_legacy_i32().is_err());
+        assert!(RuntimeValue::I64(i64::MIN).to_legacy_i32().is_err());
     }
 }

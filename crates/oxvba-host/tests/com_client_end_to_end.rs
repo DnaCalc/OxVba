@@ -1184,7 +1184,7 @@ End Sub
     }
 
     #[test]
-    fn dispatchinvoke_multidim_smallint_array_results_fail_deterministically() {
+    fn dispatchinvoke_multidim_smallint_array_results_preserve_two_dimensional_shape() {
         let source = r#"
 Sub Main()
 Dim obj
@@ -1194,21 +1194,24 @@ returnedMatrix = DispatchInvoke(obj, "ReturnSmallIntMatrix")
 End Sub
 "#;
 
-        let vm = run_windows_host_backed_error(source, false);
-        let jit = run_windows_host_backed_error(source, true);
-        assert!(
-            vm.contains("runtime error: 53053") && jit.contains("runtime error: 53053"),
-            "expected stable runtime fault code across VM/JIT, got vm={vm:?} jit={jit:?}"
+        let vm = run_windows_host_backed(source, false);
+        let jit = run_windows_host_backed(source, true);
+        assert_eq!(
+            vm, jit,
+            "VM/JIT snapshots diverged on multidim typed array path: vm={vm:?} jit={jit:?}"
         );
-        assert!(
-            vm.contains("unsupported SAFEARRAY rank 2")
-                && jit.contains("unsupported SAFEARRAY rank 2"),
-            "expected unsupported-rank diagnostic across VM/JIT, got vm={vm:?} jit={jit:?}"
-        );
+        match &vm[1] {
+            RuntimeValue::ArrayIntent(array) => {
+                assert_eq!(array.dimensions, 2, "expected rank-2 array");
+                assert_eq!(array.len, 4, "expected 2x2=4 elements");
+                assert!(array.bounds.is_some(), "expected per-dimension bounds");
+            }
+            other => panic!("expected ArrayIntent, got {other:?}"),
+        }
     }
 
     #[test]
-    fn dispatchinvoke_multidim_variant_array_results_fail_deterministically() {
+    fn dispatchinvoke_multidim_variant_array_results_preserve_two_dimensional_shape() {
         let source = r#"
 Sub Main()
 Dim obj
@@ -1218,19 +1221,20 @@ returnedMatrix = DispatchInvoke(obj, "ReturnVariantMatrix")
 End Sub
 "#;
 
-        let vm = run_windows_host_backed_error(source, false);
-        let jit = run_windows_host_backed_error(source, true);
-        assert!(
-            vm.contains("runtime error: 53053") && jit.contains("runtime error: 53053"),
-            "expected stable runtime fault code across VM/JIT, got vm={vm:?} jit={jit:?}"
+        let vm = run_windows_host_backed(source, false);
+        let jit = run_windows_host_backed(source, true);
+        assert_eq!(
+            vm, jit,
+            "VM/JIT snapshots diverged on multidim variant array path: vm={vm:?} jit={jit:?}"
         );
-        assert!(
-            vm.contains("unsupported SAFEARRAY rank 2; only one-dimensional arrays are supported")
-                && jit.contains(
-                    "unsupported SAFEARRAY rank 2; only one-dimensional arrays are supported"
-                ),
-            "expected unsupported VT_VARIANT-rank diagnostic across VM/JIT, got vm={vm:?} jit={jit:?}"
-        );
+        match &vm[1] {
+            RuntimeValue::ArrayIntent(array) => {
+                assert_eq!(array.dimensions, 2, "expected rank-2 array");
+                assert_eq!(array.len, 4, "expected 2x2=4 elements");
+                assert!(array.bounds.is_some(), "expected per-dimension bounds");
+            }
+            other => panic!("expected ArrayIntent, got {other:?}"),
+        }
     }
 
     #[test]
@@ -1785,243 +1789,215 @@ End Sub
         );
     }
     #[test]
-    fn dispatchinvoke_wide_unsigned_long_results_fail_with_bounded_overflow_diagnostic() {
+    fn dispatchinvoke_wide_unsigned_long_results_preserve_i64_carrier() {
         let source = r#"
 Sub Main()
 Dim obj
-Dim failed
+Dim wideValue
 obj = CreateObject("OxVba.TestDispatch")
-failed = DispatchInvoke(obj, "ReturnWideUnsignedLong")
+wideValue = DispatchInvoke(obj, "ReturnWideUnsignedLong")
 End Sub
 "#;
 
-        let vm = run_windows_host_backed_error(source, false);
-        let jit = run_windows_host_backed_error(source, true);
-        assert!(
-            vm.contains("runtime error: 53053") && jit.contains("runtime error: 53053"),
-            "expected stable runtime fault code across VM/JIT, got vm={vm:?} jit={jit:?}"
+        let vm = run_windows_host_backed(source, false);
+        let jit = run_windows_host_backed(source, true);
+        assert_eq!(
+            vm, jit,
+            "VM/JIT snapshots diverged on VT_UI4 I64 carrier path: vm={vm:?} jit={jit:?}"
         );
-        assert!(
-            vm.contains("VT_UI4 value 4000000000 exceeds current i32 carrier lane")
-                && jit.contains("VT_UI4 value 4000000000 exceeds current i32 carrier lane"),
-            "expected bounded VT_UI4 overflow diagnostic across VM/JIT, got vm={vm:?} jit={jit:?}"
-        );
-        assert!(
-            vm.contains("com-dispatch-carrier-overflow")
-                && jit.contains("com-dispatch-carrier-overflow"),
-            "expected bounded adapter fault prefix across VM/JIT, got vm={vm:?} jit={jit:?}"
+        assert_eq!(
+            vm[1],
+            RuntimeValue::I64(4_000_000_000),
+            "expected VT_UI4 value preserved on I64 carrier"
         );
     }
 
     #[test]
-    fn dispatchinvoke_wide_unsigned_long_arrays_fail_with_bounded_overflow_diagnostic() {
+    fn dispatchinvoke_wide_unsigned_long_arrays_preserve_i64_carrier() {
         let source = r#"
 Sub Main()
 Dim obj
-Dim failed
+Dim wideArray
 obj = CreateObject("OxVba.TestDispatch")
-failed = DispatchInvoke(obj, "ReturnWideUnsignedLongArray")
+wideArray = DispatchInvoke(obj, "ReturnWideUnsignedLongArray")
 End Sub
 "#;
 
-        let vm = run_windows_host_backed_error(source, false);
-        let jit = run_windows_host_backed_error(source, true);
-        assert!(
-            vm.contains("runtime error: 53053") && jit.contains("runtime error: 53053"),
-            "expected stable runtime fault code across VM/JIT, got vm={vm:?} jit={jit:?}"
+        let vm = run_windows_host_backed(source, false);
+        let jit = run_windows_host_backed(source, true);
+        assert_eq!(
+            vm, jit,
+            "VM/JIT snapshots diverged on VT_UI4 array I64 carrier path: vm={vm:?} jit={jit:?}"
         );
-        assert!(
-            vm.contains("VT_UI4 SAFEARRAY element 4000000000 exceeds current i32 carrier lane")
-                && jit.contains(
-                    "VT_UI4 SAFEARRAY element 4000000000 exceeds current i32 carrier lane"
-                ),
-            "expected bounded VT_UI4 SAFEARRAY overflow diagnostic across VM/JIT, got vm={vm:?} jit={jit:?}"
+        match &vm[1] {
+            RuntimeValue::ArrayIntent(array) => {
+                let values = array.elements.as_ref().expect("array should have elements");
+                assert!(
+                    values.contains(&RuntimeValue::I64(4_000_000_000)),
+                    "expected VT_UI4 array element preserved on I64 carrier, got {values:?}"
+                );
+            }
+            other => panic!("expected ArrayIntent, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn dispatchinvoke_wide_platform_uint_results_preserve_i64_carrier() {
+        let source = r#"
+Sub Main()
+Dim obj
+Dim wideValue
+obj = CreateObject("OxVba.TestDispatch")
+wideValue = DispatchInvoke(obj, "ReturnWidePlatformUInt")
+End Sub
+"#;
+
+        let vm = run_windows_host_backed(source, false);
+        let jit = run_windows_host_backed(source, true);
+        assert_eq!(
+            vm, jit,
+            "VM/JIT snapshots diverged on VT_UINT I64 carrier path: vm={vm:?} jit={jit:?}"
         );
-        assert!(
-            vm.contains("com-dispatch-carrier-overflow")
-                && jit.contains("com-dispatch-carrier-overflow"),
-            "expected bounded adapter fault prefix across VM/JIT, got vm={vm:?} jit={jit:?}"
+        assert_eq!(
+            vm[1],
+            RuntimeValue::I64(4_000_000_000),
+            "expected VT_UINT value preserved on I64 carrier"
         );
     }
 
     #[test]
-    fn dispatchinvoke_wide_platform_uint_results_fail_with_bounded_overflow_diagnostic() {
+    fn dispatchinvoke_wide_platform_uint_arrays_preserve_i64_carrier() {
         let source = r#"
 Sub Main()
 Dim obj
-Dim failed
+Dim wideArray
 obj = CreateObject("OxVba.TestDispatch")
-failed = DispatchInvoke(obj, "ReturnWidePlatformUInt")
+wideArray = DispatchInvoke(obj, "ReturnWidePlatformUIntArray")
 End Sub
 "#;
 
-        let vm = run_windows_host_backed_error(source, false);
-        let jit = run_windows_host_backed_error(source, true);
-        assert!(
-            vm.contains("runtime error: 53053") && jit.contains("runtime error: 53053"),
-            "expected stable runtime fault code across VM/JIT, got vm={vm:?} jit={jit:?}"
+        let vm = run_windows_host_backed(source, false);
+        let jit = run_windows_host_backed(source, true);
+        assert_eq!(
+            vm, jit,
+            "VM/JIT snapshots diverged on VT_UINT array I64 carrier path: vm={vm:?} jit={jit:?}"
         );
-        assert!(
-            vm.contains("VT_UINT value 4000000000 exceeds current i32 carrier lane")
-                && jit.contains("VT_UINT value 4000000000 exceeds current i32 carrier lane"),
-            "expected bounded VT_UINT overflow diagnostic across VM/JIT, got vm={vm:?} jit={jit:?}"
+        match &vm[1] {
+            RuntimeValue::ArrayIntent(array) => {
+                let values = array.elements.as_ref().expect("array should have elements");
+                assert!(
+                    values.contains(&RuntimeValue::I64(4_000_000_000)),
+                    "expected VT_UINT array element preserved on I64 carrier, got {values:?}"
+                );
+            }
+            other => panic!("expected ArrayIntent, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn dispatchinvoke_wide_hyper_results_preserve_i64_carrier() {
+        let source = r#"
+Sub Main()
+Dim obj
+Dim wideValue
+obj = CreateObject("OxVba.TestDispatch")
+wideValue = DispatchInvoke(obj, "ReturnWideHyper")
+End Sub
+"#;
+
+        let vm = run_windows_host_backed(source, false);
+        let jit = run_windows_host_backed(source, true);
+        assert_eq!(
+            vm, jit,
+            "VM/JIT snapshots diverged on VT_I8 I64 carrier path: vm={vm:?} jit={jit:?}"
         );
-        assert!(
-            vm.contains("com-dispatch-carrier-overflow")
-                && jit.contains("com-dispatch-carrier-overflow"),
-            "expected bounded adapter fault prefix across VM/JIT, got vm={vm:?} jit={jit:?}"
+        assert_eq!(
+            vm[1],
+            RuntimeValue::I64(5_000_000_000),
+            "expected VT_I8 value preserved on I64 carrier"
         );
     }
 
     #[test]
-    fn dispatchinvoke_wide_platform_uint_arrays_fail_with_bounded_overflow_diagnostic() {
+    fn dispatchinvoke_wide_hyper_arrays_preserve_i64_carrier() {
         let source = r#"
 Sub Main()
 Dim obj
-Dim failed
+Dim wideArray
 obj = CreateObject("OxVba.TestDispatch")
-failed = DispatchInvoke(obj, "ReturnWidePlatformUIntArray")
+wideArray = DispatchInvoke(obj, "ReturnWideHyperArray")
 End Sub
 "#;
 
-        let vm = run_windows_host_backed_error(source, false);
-        let jit = run_windows_host_backed_error(source, true);
-        assert!(
-            vm.contains("runtime error: 53053") && jit.contains("runtime error: 53053"),
-            "expected stable runtime fault code across VM/JIT, got vm={vm:?} jit={jit:?}"
+        let vm = run_windows_host_backed(source, false);
+        let jit = run_windows_host_backed(source, true);
+        assert_eq!(
+            vm, jit,
+            "VM/JIT snapshots diverged on VT_I8 array I64 carrier path: vm={vm:?} jit={jit:?}"
         );
-        assert!(
-            vm.contains("VT_UINT SAFEARRAY element 4000000000 exceeds current i32 carrier lane")
-                && jit.contains(
-                    "VT_UINT SAFEARRAY element 4000000000 exceeds current i32 carrier lane"
-                ),
-            "expected bounded VT_UINT SAFEARRAY overflow diagnostic across VM/JIT, got vm={vm:?} jit={jit:?}"
+        match &vm[1] {
+            RuntimeValue::ArrayIntent(array) => {
+                let values = array.elements.as_ref().expect("array should have elements");
+                assert!(
+                    values.contains(&RuntimeValue::I64(5_000_000_000)),
+                    "expected VT_I8 array element preserved on I64 carrier, got {values:?}"
+                );
+            }
+            other => panic!("expected ArrayIntent, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn dispatchinvoke_wide_unsigned_hyper_results_preserve_i64_carrier() {
+        let source = r#"
+Sub Main()
+Dim obj
+Dim wideValue
+obj = CreateObject("OxVba.TestDispatch")
+wideValue = DispatchInvoke(obj, "ReturnWideUnsignedHyper")
+End Sub
+"#;
+
+        let vm = run_windows_host_backed(source, false);
+        let jit = run_windows_host_backed(source, true);
+        assert_eq!(
+            vm, jit,
+            "VM/JIT snapshots diverged on VT_UI8 I64 carrier path: vm={vm:?} jit={jit:?}"
         );
-        assert!(
-            vm.contains("com-dispatch-carrier-overflow")
-                && jit.contains("com-dispatch-carrier-overflow"),
-            "expected bounded adapter fault prefix across VM/JIT, got vm={vm:?} jit={jit:?}"
+        assert_eq!(
+            vm[1],
+            RuntimeValue::I64(5_000_000_000),
+            "expected VT_UI8 value preserved on I64 carrier"
         );
     }
 
     #[test]
-    fn dispatchinvoke_wide_hyper_results_fail_with_bounded_overflow_diagnostic() {
+    fn dispatchinvoke_wide_unsigned_hyper_arrays_preserve_i64_carrier() {
         let source = r#"
 Sub Main()
 Dim obj
-Dim failed
+Dim wideArray
 obj = CreateObject("OxVba.TestDispatch")
-failed = DispatchInvoke(obj, "ReturnWideHyper")
+wideArray = DispatchInvoke(obj, "ReturnWideUnsignedHyperArray")
 End Sub
 "#;
 
-        let vm = run_windows_host_backed_error(source, false);
-        let jit = run_windows_host_backed_error(source, true);
-        assert!(
-            vm.contains("runtime error: 53053") && jit.contains("runtime error: 53053"),
-            "expected stable runtime fault code across VM/JIT, got vm={vm:?} jit={jit:?}"
+        let vm = run_windows_host_backed(source, false);
+        let jit = run_windows_host_backed(source, true);
+        assert_eq!(
+            vm, jit,
+            "VM/JIT snapshots diverged on VT_UI8 array I64 carrier path: vm={vm:?} jit={jit:?}"
         );
-        assert!(
-            vm.contains("VT_I8 value 5000000000 exceeds current i32 carrier lane")
-                && jit.contains("VT_I8 value 5000000000 exceeds current i32 carrier lane"),
-            "expected bounded VT_I8 overflow diagnostic across VM/JIT, got vm={vm:?} jit={jit:?}"
-        );
-        assert!(
-            vm.contains("com-dispatch-carrier-overflow")
-                && jit.contains("com-dispatch-carrier-overflow"),
-            "expected bounded adapter fault prefix across VM/JIT, got vm={vm:?} jit={jit:?}"
-        );
-    }
-
-    #[test]
-    fn dispatchinvoke_wide_hyper_arrays_fail_with_bounded_overflow_diagnostic() {
-        let source = r#"
-Sub Main()
-Dim obj
-Dim failed
-obj = CreateObject("OxVba.TestDispatch")
-failed = DispatchInvoke(obj, "ReturnWideHyperArray")
-End Sub
-"#;
-
-        let vm = run_windows_host_backed_error(source, false);
-        let jit = run_windows_host_backed_error(source, true);
-        assert!(
-            vm.contains("runtime error: 53053") && jit.contains("runtime error: 53053"),
-            "expected stable runtime fault code across VM/JIT, got vm={vm:?} jit={jit:?}"
-        );
-        assert!(
-            vm.contains("VT_I8 SAFEARRAY element 5000000000 exceeds current i32 carrier lane")
-                && jit.contains(
-                    "VT_I8 SAFEARRAY element 5000000000 exceeds current i32 carrier lane"
-                ),
-            "expected bounded VT_I8 SAFEARRAY overflow diagnostic across VM/JIT, got vm={vm:?} jit={jit:?}"
-        );
-        assert!(
-            vm.contains("com-dispatch-carrier-overflow")
-                && jit.contains("com-dispatch-carrier-overflow"),
-            "expected bounded adapter fault prefix across VM/JIT, got vm={vm:?} jit={jit:?}"
-        );
-    }
-
-    #[test]
-    fn dispatchinvoke_wide_unsigned_hyper_results_fail_with_bounded_overflow_diagnostic() {
-        let source = r#"
-Sub Main()
-Dim obj
-Dim failed
-obj = CreateObject("OxVba.TestDispatch")
-failed = DispatchInvoke(obj, "ReturnWideUnsignedHyper")
-End Sub
-"#;
-
-        let vm = run_windows_host_backed_error(source, false);
-        let jit = run_windows_host_backed_error(source, true);
-        assert!(
-            vm.contains("runtime error: 53053") && jit.contains("runtime error: 53053"),
-            "expected stable runtime fault code across VM/JIT, got vm={vm:?} jit={jit:?}"
-        );
-        assert!(
-            vm.contains("VT_UI8 value 5000000000 exceeds current i32 carrier lane")
-                && jit.contains("VT_UI8 value 5000000000 exceeds current i32 carrier lane"),
-            "expected bounded VT_UI8 overflow diagnostic across VM/JIT, got vm={vm:?} jit={jit:?}"
-        );
-        assert!(
-            vm.contains("com-dispatch-carrier-overflow")
-                && jit.contains("com-dispatch-carrier-overflow"),
-            "expected bounded adapter fault prefix across VM/JIT, got vm={vm:?} jit={jit:?}"
-        );
-    }
-
-    #[test]
-    fn dispatchinvoke_wide_unsigned_hyper_arrays_fail_with_bounded_overflow_diagnostic() {
-        let source = r#"
-Sub Main()
-Dim obj
-Dim failed
-obj = CreateObject("OxVba.TestDispatch")
-failed = DispatchInvoke(obj, "ReturnWideUnsignedHyperArray")
-End Sub
-"#;
-
-        let vm = run_windows_host_backed_error(source, false);
-        let jit = run_windows_host_backed_error(source, true);
-        assert!(
-            vm.contains("runtime error: 53053") && jit.contains("runtime error: 53053"),
-            "expected stable runtime fault code across VM/JIT, got vm={vm:?} jit={jit:?}"
-        );
-        assert!(
-            vm.contains("VT_UI8 SAFEARRAY element 5000000000 exceeds current i32 carrier lane")
-                && jit.contains(
-                    "VT_UI8 SAFEARRAY element 5000000000 exceeds current i32 carrier lane"
-                ),
-            "expected bounded VT_UI8 SAFEARRAY overflow diagnostic across VM/JIT, got vm={vm:?} jit={jit:?}"
-        );
-        assert!(
-            vm.contains("com-dispatch-carrier-overflow")
-                && jit.contains("com-dispatch-carrier-overflow"),
-            "expected bounded adapter fault prefix across VM/JIT, got vm={vm:?} jit={jit:?}"
-        );
+        match &vm[1] {
+            RuntimeValue::ArrayIntent(array) => {
+                let values = array.elements.as_ref().expect("array should have elements");
+                assert!(
+                    values.contains(&RuntimeValue::I64(5_000_000_000)),
+                    "expected VT_UI8 array element preserved on I64 carrier, got {values:?}"
+                );
+            }
+            other => panic!("expected ArrayIntent, got {other:?}"),
+        }
     }
 
     #[test]

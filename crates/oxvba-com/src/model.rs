@@ -84,6 +84,7 @@ pub enum ComValue {
     ErrorCode(i32),
     Bool(bool),
     I32(i32),
+    I64(i64),
     F64(F64Value),
     Decimal(Decimal96),
     Currency(CurrencyValue),
@@ -100,6 +101,7 @@ impl ComValue {
             RuntimeValue::ErrorCode(code) => Self::ErrorCode(*code),
             RuntimeValue::Bool(value) => Self::Bool(*value),
             RuntimeValue::I32(value) => Self::I32(*value),
+            RuntimeValue::I64(value) => Self::I64(*value),
             RuntimeValue::F64(value) => Self::F64(*value),
             RuntimeValue::Decimal(value) => Self::Decimal(*value),
             RuntimeValue::Currency(value) => Self::Currency(*value),
@@ -133,6 +135,7 @@ impl ComValue {
             Self::ErrorCode(code) => RuntimeValue::ErrorCode(*code),
             Self::Bool(value) => RuntimeValue::Bool(*value),
             Self::I32(value) => RuntimeValue::I32(*value),
+            Self::I64(value) => RuntimeValue::I64(*value),
             Self::F64(value) => RuntimeValue::F64(*value),
             Self::Decimal(value) => RuntimeValue::Decimal(*value),
             Self::Currency(value) => RuntimeValue::Currency(*value),
@@ -364,6 +367,32 @@ mod tests {
             value.to_runtime_token().expect("array tag"),
             ARRAY_TAG_BASE + 2
         );
+    }
+
+    #[test]
+    fn com_value_i64_roundtrips_runtime_value() {
+        let large: i64 = 5_000_000_000;
+        assert_eq!(
+            ComValue::from_runtime_value(&RuntimeValue::I64(large)),
+            ComValue::I64(large)
+        );
+        assert_eq!(
+            ComValue::I64(large).to_runtime_value(),
+            RuntimeValue::I64(large)
+        );
+        // I64 that fits in i32 stays I64 (no auto-narrowing at ComValue level)
+        assert_eq!(
+            ComValue::from_runtime_value(&RuntimeValue::I64(42)),
+            ComValue::I64(42)
+        );
+    }
+
+    #[test]
+    fn com_value_i64_to_legacy_token_narrows_when_possible() {
+        // Fits in i32
+        assert_eq!(ComValue::I64(42).to_runtime_token().expect("fits i32"), 42);
+        // Does not fit
+        assert!(ComValue::I64(5_000_000_000).to_runtime_token().is_err());
     }
 
     #[test]

@@ -55,39 +55,94 @@ Run context: active parity/compliance execution plus in-progress feature worklis
 - Impact:
   - Blocks `IP-03` Windows late-bound COM client parity.
   - Blocks full closure of `HAL-DYN-008` and parts of `IP-09` declare/marshaling parity.
-- Current state:
-  - `oxvba-com` invoke transport now carries per-argument name and omission metadata,
-  - bytecode `IntrinsicDispatchInvokeHost` now preserves per-argument slot/name metadata,
-  - VM host invoke construction now forwards that metadata into `ComInvokeRequest`,
-  - Windows native adapter now supports general named-argument `DISPPARAMS` packing for member-known method/property-get lanes,
-  - member-known property-put/property-putref lanes now canonicalize fully named/indexed arguments so the property value does not depend on caller argument order,
-  - expression-form `DispatchInvoke(...)` assignments now preserve named trailing COM arguments instead of rejecting the statement outright,
-  - omitted-argument metadata now survives the invoke request and yields deterministic required-argument faults,
-  - controlled `IDispatch` variant roundtrips now cover `VT_NULL` and `VT_ERROR` in addition to the existing scalar subset,
-  - controlled/native result conversion now also accepts `VT_I1`, `VT_I2`, `VT_I4`, `VT_I8`, `VT_INT`, `VT_R4`, `VT_R8`, `VT_CY`, `VT_DATE`, `VT_DECIMAL`, `VT_UI1`, `VT_UI2`, `VT_UI4`, `VT_UI8`, and `VT_UINT`, with `VT_R4` / `VT_R8` / `VT_DATE` preserved on a first-class semantic `f64` carrier, `VT_CY` preserved on a new exact scaled-`i64` currency carrier, `VT_DECIMAL` preserved on a new exact `Decimal96` carrier, and the integer forms still narrowing into the current `i32` carrier when the payload fits,
-  - controlled/native result conversion now also accepts one-dimensional typed SAFEARRAY results with `VT_I1`, `VT_I2`, `VT_I4`, `VT_I8`, `VT_INT`, `VT_R4`, `VT_R8`, `VT_CY`, `VT_DATE`, `VT_DECIMAL`, `VT_UI1`, `VT_UI2`, `VT_UI4`, `VT_UI8`, `VT_UINT`, `VT_BOOL`, and `VT_BSTR` element payloads into `RuntimeValue::ArrayIntent`, preserving `VT_R4` / `VT_R8` / `VT_DATE` elements on the same semantic `f64` carrier, preserving `VT_CY` elements on the exact scaled-`i64` currency carrier, preserving `VT_DECIMAL` elements on the exact `Decimal96` carrier, and still narrowing the integer payloads into the current `i32` carrier when they fit,
-  - controlled/native host coverage now also proves deterministic bounded diagnostics when scalar VT_I8 / VT_UI4 / VT_UI8 / VT_UINT values or one-dimensional typed VT_ARRAY | VT_I8 / VT_UI4 / VT_UI8 / VT_UINT elements exceed the current i32 carrier lane instead of silently wrapping,
-  - controlled/native host coverage now also proves a stable unsupported-path diagnostic for scalar and typed-array VT_BYREF result payloads instead of letting undocumented byref shapes drift through the adapter,
-  - controlled/native object result conversion now has end-to-end host evidence for both `VT_DISPATCH` and `VT_UNKNOWN` values that expose `IDispatch`,
-  - controlled/native result conversion now also has end-to-end host evidence for one-dimensional typed `VT_ARRAY | VT_DISPATCH` and `VT_ARRAY | VT_UNKNOWN` results when the element interfaces expose `IDispatch`,
-  - outbound object-valued COM arguments now have end-to-end host evidence via a controlled raw-variant classifier method,
-  - outbound scalar `True`, `BSTR`, `Empty`, `Null`, and `CVErr(...)` COM arguments now also have end-to-end host evidence via the same controlled raw-variant classifier lane,
-  - outbound float/date/currency/decimal host evidence now proves the tagged semantic `f64` lane preserves exact outward `VT_R4`, `VT_R8`, and `VT_DATE` tags while `Currency` and `Decimal` preserve exact `VT_CY` / `VT_DECIMAL` tags,
-  - outbound `Array(...)` expressions now have end-to-end host evidence as semantic `VT_ARRAY | VT_VARIANT` payloads via the controlled raw-variant classifier lane,
-  - one-dimensional `VT_ARRAY | VT_VARIANT` payloads with nested `VT_DISPATCH` elements now have end-to-end host evidence on both argument and result paths via controlled classifier and return-array fixture members,
-  - controlled host coverage now also proves a stable unsupported-path diagnostic for both rank-2 typed SAFEARRAY results and rank-2 `VT_ARRAY | VT_VARIANT` results instead of an unbounded crash or shape drift,
-  - controlled host coverage now also proves a stable unsupported-path diagnostic when one-dimensional `VT_ARRAY | VT_VARIANT` results contain nested `VT_UNKNOWN` elements that do not expose `IDispatch`,
-  - invoke failure translation now distinguishes real `ArgErr` presence from the previous synthetic `arg_err=0` fallback,
-  - controlled `DISP_E_EXCEPTION` lanes now preserve bounded `EXCEPINFO` source/description/scode details in the adapter-fault surface,
-  - controlled direct-error coverage now also proves VM/JIT host parity for real `arg_err` indexing on `DISP_E_TYPEMISMATCH`, bounded `EXCEPINFO` source/description/scode detail on `DISP_E_EXCEPTION`, stable `DISP_E_BADPARAMCOUNT` classification, stable `DISP_E_PARAMNOTFOUND` classification, stable `DISP_E_MEMBERNOTFOUND` classification, stable `DISP_E_UNKNOWNNAME` classification for runtime string member selectors, stable bounded `E_NOINTERFACE` classification for non-`IDispatch` `IUnknown::QueryInterface(IDispatch)` rejection, stable bounded internal carrier-overflow classification for out-of-lane integer automation results, stable bounded unsupported-`VT_BYREF` return classification, bounded runtime-string success for zero-arg method plus zero-arg/indexed property-get selectors via `DISP_E_BADPARAMCOUNT` flag fallback, bounded runtime-string named-argument success for method plus indexed property-get selectors, and bounded metadata-backed runtime-string default-member-name, property-put/property-putref, and indexed property-put/property-putref execution on the existing bound member path, while the adapter boundary also preserves the same stable `DISP_E_UNKNOWNNAME` classification for raw `GetIDsOfNames` failures,
-  - explicit `DispatchInvoke(obj, 0, name := value)` now routes through authoritative default-member metadata when the binding exposes one,
-  - natural late-bound default-member calls with named arguments now lower and execute when the bound COM object exposes authoritative default-member metadata,
-  - controlled host coverage now also proves stable bounded `E_NOINTERFACE` classification when both single-value `VT_UNKNOWN` results and typed `VT_ARRAY | VT_UNKNOWN` elements do not expose `IDispatch`,
-  - broad non-IDispatch interface-pointer handling, multi-dimensional SAFEARRAYs, non-IDispatch interface arrays, and fuller external VARIANT parity remain below target,
-  - `Invoke` result fidelity still lacks the broader `VarResult` surface and richer external automation `ExcepInfo`/argument-fault coverage required for Office-style automation parity.
+- Current state (tabular evidence matrix):
+
+  **Invoke transport:**
+
+  | lane                          | status       | evidence                              |
+  |-------------------------------|--------------|---------------------------------------|
+  | named/omitted arg metadata    | proved-exec  | ComInvokeRequest carries per-arg name |
+  | named-arg DISPPARAMS packing  | proved-exec  | method/property-get lanes             |
+  | property-put/putref canonical | proved-exec  | indexed/named arg canonicalization     |
+  | omitted-arg fault             | proved-exec  | deterministic required-arg faults      |
+
+  **Scalar result conversion:**
+
+  | VT code   | carrier        | status       |
+  |-----------|----------------|--------------|
+  | VT_EMPTY  | Empty          | proved-exec  |
+  | VT_NULL   | Null           | proved-exec  |
+  | VT_ERROR  | ErrorCode      | proved-exec  |
+  | VT_BOOL   | Bool           | proved-exec  |
+  | VT_I1..I4 | I32            | proved-exec  |
+  | VT_I8     | I32 or I64     | proved-exec  |
+  | VT_UI1..2 | I32            | proved-exec  |
+  | VT_UI4    | I32 or I64     | proved-exec  |
+  | VT_UI8    | I32 or I64     | proved-exec  |
+  | VT_INT    | I32            | proved-exec  |
+  | VT_UINT   | I32 or I64     | proved-exec  |
+  | VT_R4     | F64(Single)    | proved-exec  |
+  | VT_R8     | F64(Double)    | proved-exec  |
+  | VT_DATE   | F64(Date)      | proved-exec  |
+  | VT_CY     | Currency       | proved-exec  |
+  | VT_DECIMAL| Decimal96      | proved-exec  |
+  | VT_BSTR   | String         | proved-exec  |
+  | VT_DISPATCH| ObjectHandle  | proved-exec  |
+  | VT_UNKNOWN (IDispatch)| ObjectHandle | proved-exec |
+  | VT_UNKNOWN (no IDispatch)| — | deterministic E_NOINTERFACE |
+  | VT_BYREF  | —              | deterministic unsupported diagnostic |
+
+  **SAFEARRAY result conversion:**
+
+  | element VT    | rank | carrier              | status       |
+  |---------------|------|----------------------|--------------|
+  | 17 typed VTs  | 1    | matching scalar      | proved-exec  |
+  | VT_VARIANT    | 1    | nested scalar/object | proved-exec  |
+  | VT_DISPATCH   | 1    | ObjectHandle         | proved-exec  |
+  | VT_UNKNOWN (IDispatch)| 1 | ObjectHandle  | proved-exec  |
+  | VT_UNKNOWN (no IDispatch)| 1 | —           | deterministic E_NOINTERFACE |
+  | typed VTs     | 2+   | matching scalar + bounds | proved-exec |
+  | VT_VARIANT    | 2+   | nested scalar + bounds   | proved-exec |
+
+  **Outbound argument conversion:**
+
+  | value shape     | VT out      | status       |
+  |-----------------|-------------|--------------|
+  | Bool(True)      | VT_BOOL     | proved-exec  |
+  | String/BSTR     | VT_BSTR     | proved-exec  |
+  | Empty/Null/CVErr| matching VT | proved-exec  |
+  | ObjectHandle    | VT_DISPATCH | proved-exec  |
+  | F64(Single/Double/Date)| VT_R4/R8/DATE | proved-exec |
+  | Currency/Decimal| VT_CY/DECIMAL | proved-exec |
+  | Array(...)      | VT_ARRAY\|VT_VARIANT | proved-exec |
+  | I64             | VT_I8       | proved-exec  |
+
+  **Invoke error classification:**
+
+  | error shape              | status       |
+  |--------------------------|--------------|
+  | DISP_E_TYPEMISMATCH+ArgErr | proved-exec |
+  | DISP_E_EXCEPTION+ExcepInfo | proved-exec |
+  | DISP_E_BADPARAMCOUNT     | proved-exec  |
+  | DISP_E_PARAMNOTFOUND     | proved-exec  |
+  | DISP_E_MEMBERNOTFOUND    | proved-exec  |
+  | DISP_E_UNKNOWNNAME       | proved-exec  |
+  | E_NOINTERFACE            | proved-exec  |
+
+  **Remaining gaps:**
+
+  | gap                                          | status       |
+  |------------------------------------------------|------------|
+  | natural default-member for non-metadata bindings | open       |
+  | broad non-IDispatch interface-pointer handling   | open       |
+  | non-IDispatch element arrays                     | open       |
+  | fuller external VarResult surface                | open       |
+  | richer external ExcepInfo/arg-fault coverage     | open       |
+  | practical Office automation lanes                | open       |
+
 - Exact unblock steps:
   - recover authoritative default-member identity for natural late-bound syntax and non-metadata-backed bindings,
-  - complete full `VARIANT`/object/`SAFEARRAY` marshalling,
+  - close remaining non-IDispatch interface-pointer policy,
   - complete broader external `Invoke` error/result fidelity beyond the controlled exception/argument-fault subset.
 - Recommendation:
   - continue with the late-bound COM completion workset together with the shared dynamic-object protocol/value-carrier workset so broader `VARIANT`/object/`SAFEARRAY` marshalling lands on the right runtime contract.
@@ -96,40 +151,64 @@ Run context: active parity/compliance execution plus in-progress feature worklis
 - Impact:
   - Blocks the remaining high-value closure work in `IP-03` Windows late-bound COM client parity.
   - Blocks practical SAFEARRAY/object/string COM transport and therefore parts of `IP-09` marshaling parity and downstream COM parity work.
-- Current state:
-  - `oxvba-com` now exposes an executable generic dynamic-object protocol API (`DynamicCallRequest`, `DynamicMemberSelector`, `DynamicCallKind`, `DynamicEventPayload`) with conversions from the current COM request/payload structs,
-  - `oxvba-com` now owns a first semantic carrier slice via `ComValue`,
-  - `oxvba-com` now also owns the extracted Windows `VARIANT`/one-dimensional `SAFEARRAY` translation bridge for the currently supported scalar/string/array subset, including typed `VT_I2`, `VT_I4`, `VT_I8`, `VT_R4`, `VT_R8`, `VT_CY`, `VT_DATE`, `VT_DECIMAL`, `VT_UI2`, `VT_UI4`, `VT_UI8`, `VT_BOOL`, `VT_BSTR`, `VT_DISPATCH`, and `VT_UNKNOWN` SAFEARRAY result elements on the controlled `IDispatch`-exposing lane, a semantic `f64` result carrier for float/date payloads, an exact scaled-`i64` carrier for `VT_CY`, an exact `Decimal96` carrier for `VT_DECIMAL`, and checked scalar narrowing for the current `RuntimeValue::I32` carrier,
-  - `oxvba-com` now classifies Invoke-owned Windows result `VARIANT`s into either semantic `ComValue` results or dispatch-capable object pointers before HAL-owned binding state is applied,
-  - `oxvba-com` now also owns shared Windows COM invoke failure and `EXCEPINFO` capture types/helpers, reducing the remaining wire/error mechanics left in HAL,
-  - the canonical runtime-value `IDispatch::Invoke` helper for the semantic COM request path now also lives in `oxvba-com`, while HAL retains only object-handle resolve/bind state around that call,
-  - `ComInvokeArg.value` and `ComCallbackPayload.args` no longer use raw `i32` tokens at the shared COM boundary,
-  - VM `DispatchInvoke` construction now preserves `Empty`/`Null`/`CVErr(...)`/array-intent shape and runtime strings into that carrier instead of flattening them before the COM boundary,
-  - compiler lowering now materializes both VBA `Array(...)` literals and `ParamArray` packs as semantic `IntrinsicArrayLiteral` payloads rather than legacy count tags,
-  - `SafeArray` carrier values can now preserve owned semantic element payloads instead of only length/dimension shape,
-  - Windows COM invoke/result translation now maps that carrier to and from `VARIANT` for the supported subset, including BSTR string arguments/results, and callback payload polling returns the same carrier family,
-  - Windows COM invoke/result translation now also supports owned one-dimensional `VT_ARRAY | VT_VARIANT` payloads end to end on the helper and controlled `EchoVariant` invoke lanes,
-  - native late-bound COM argument marshalling now clears temporary `VARIANT` invoke arguments after dispatch so BSTR-backed calls do not leak adapter-owned allocations,
-  - `ComValue` now preserves `ObjectHandle(...)` semantically instead of degrading it back into plain integers before the COM boundary,
-  - Windows native COM argument marshalling now resolves `ObjectHandle(...)` through adapter-owned binding state and emits `VT_DISPATCH` with balanced `AddRef`/`VariantClear` ownership for native COM-backed objects,
-  - Windows native COM invoke result conversion now binds `VT_DISPATCH` results back into adapter-owned object handles on the runtime-value path instead of discarding them into the legacy scalar lane,
-  - Windows native COM invoke result conversion now also binds `VT_UNKNOWN` results back into adapter-owned object handles when the returned interface exposes `IDispatch`,
-  - Windows native COM invoke/result translation now also preserves one-dimensional `VT_ARRAY | VT_VARIANT` payloads with nested `VT_DISPATCH` elements into runtime-owned `ArrayIntent` values on the controlled fixture lane,
-  - the runtime value model itself is now semantic/value-first, but COM wire translation still only covers the currently supported subset,
-  - length-only array intent still falls back to the old placeholder integer projection because only owned semantic array payloads can be marshalled honestly today,
-  - broader interface-pointer result forms that do not expose `IDispatch` still do not traverse the shared runtime-facing carrier,
-  - callback ingress now preserves the shared carrier at the COM boundary, and rank-2 SAFEARRAY results now fail with a deterministic unsupported-shape diagnostic on the controlled lane, but broader multi-dimensional SAFEARRAY support, non-`IDispatch` interface arrays/payloads, and richer external automation payload fidelity remain partial.
+- Current state (tabular evidence matrix):
+
+  **ComValue carrier coverage:**
+
+  | carrier          | runtime mapping   | outbound VT   | status       |
+  |------------------|-------------------|---------------|--------------|
+  | Empty            | RuntimeValue::Empty | VT_EMPTY    | proved-exec  |
+  | Null             | RuntimeValue::Null  | VT_NULL     | proved-exec  |
+  | ErrorCode(i32)   | RuntimeValue::ErrorCode | VT_ERROR | proved-exec |
+  | Bool(bool)       | RuntimeValue::Bool  | VT_BOOL     | proved-exec  |
+  | I32(i32)         | RuntimeValue::I32   | VT_I4       | proved-exec  |
+  | I64(i64)         | RuntimeValue::I64   | VT_I8       | proved-exec  |
+  | F64(Single)      | RuntimeValue::F64   | VT_R4       | proved-exec  |
+  | F64(Double)      | RuntimeValue::F64   | VT_R8       | proved-exec  |
+  | F64(Date)        | RuntimeValue::F64   | VT_DATE     | proved-exec  |
+  | Decimal(Decimal96)| RuntimeValue::Decimal | VT_DECIMAL | proved-exec |
+  | Currency         | RuntimeValue::Currency | VT_CY     | proved-exec  |
+  | String(BStr)     | RuntimeValue::String | VT_BSTR    | proved-exec  |
+  | ArrayIntent      | RuntimeValue::ArrayIntent | VT_ARRAY | proved-exec |
+  | ObjectHandle     | RuntimeValue::ObjectHandle | VT_DISPATCH | proved-exec |
+
+  **SAFEARRAY transport:**
+
+  | dimension | element vartypes          | direction | status       |
+  |-----------|---------------------------|-----------|--------------|
+  | rank-1    | 17 typed scalar VTs       | result    | proved-exec  |
+  | rank-1    | VT_VARIANT (nested)       | both      | proved-exec  |
+  | rank-1    | VT_DISPATCH/VT_UNKNOWN    | result    | proved-exec  |
+  | rank-2+   | typed scalar VTs          | result    | proved-exec  |
+  | rank-2+   | VT_VARIANT (nested)       | result    | proved-exec  |
+  | rank-1    | VT_VARIANT + VT_DISPATCH  | argument  | proved-exec  |
+  | rank-2+   | any                       | argument  | not yet      |
+
+  **Ownership model:**
+
+  | concern                              | status       |
+  |--------------------------------------|--------------|
+  | oxvba-com owns VARIANT translation   | proved-exec  |
+  | oxvba-com owns EXCEPINFO capture     | proved-exec  |
+  | oxvba-com owns IDispatch::Invoke     | proved-exec  |
+  | HAL retains handle resolve/bind only | proved-exec  |
+  | DynamicObjectBridge shared protocol  | proved-exec  |
+  | ComInvokeArg semantic (no raw i32)   | proved-exec  |
+  | BSTR leak-free dispatch cleanup      | proved-exec  |
+
+  **Remaining gaps:**
+
+  | gap                                                   | status |
+  |---------------------------------------------------------|--------|
+  | non-IDispatch interface-pointer result identity roundtrip | open   |
+  | length-only array intent legacy projection fallback       | open   |
+  | richer external automation payload fidelity               | open   |
+  | multi-dimensional SAFEARRAY outbound argument support     | open   |
+
 - Exact unblock steps:
-  - extend the first `ComValue` slice into the full canonical OxVba-side external-call carrier for:
-    - broader non-`IDispatch` object/interface-pointer result forms and identity roundtrip,
-    - broader SAFEARRAY ranks/element vartypes and external automation payloads,
-    - broader scalar/variant categories,
-  - thread the new dynamic-object protocol and expanded carrier through compiler bytecode, VM host invoke construction, callback transport, and host runtime ingestion without making raw COM wire structs the VM/compiler value model,
-  - move `VARIANT`/`BSTR`/`SAFEARRAY`/interface-pointer translation into `oxvba-com`,
-  - continue extracting the remaining dispatch/object-binding-specific binding and state seams out of `standard.rs`,
-  - align COM-backed object calls to the shared late-bound object protocol instead of preserving a COM-special runtime lane,
-  - contract HAL toward delegation/bootstrap once the new carrier is in place,
-  - then reopen practical SAFEARRAY/object/string late-bound COM work on top of that carrier.
+  - close non-IDispatch interface-pointer handling or deterministic rejection,
+  - thread multi-dimensional array support through outbound argument marshalling,
+  - close richer external automation payload fidelity beyond the controlled subset.
 - Recommendation:
   - treat the next implementation slice as the work defined in `docs/worksets/WORKSET_2026-03-11_UNIFIED_DYNAMIC_OBJECT_PROTOCOL_AND_VALUE_CARRIER.md`, not another adapter-local patch.
 
@@ -195,73 +274,82 @@ Run context: active parity/compliance execution plus in-progress feature worklis
 ### BLK-HOST-001: Host project / Office-style host model remains below parity target
 - Impact:
   - Blocks `IP-08` host project / Office-style hosting parity.
-- Current state:
-  - host bridge and tooling contracts are defined,
-  - explicit host-event ingress now dispatches bound handlers into live runtime sessions for the current zero/one-argument subset,
-  - host-injected referenced class modules marked `VB_PredeclaredId` or `VB_GlobalNamespace` now participate in bounded implicit receiver lowering for property/default-member read lanes,
-  - the same host-injected root path now also has bounded executable `Property Let` coverage for named and authoritative default-member write lanes across both `VB_PredeclaredId` and `VB_GlobalNamespace`,
-  - the bounded host-root invoke floor now also includes explicit `Call` on zero-arg named property-get and authoritative default-member forms across both `VB_PredeclaredId` and `VB_GlobalNamespace`,
-  - the bounded host-root invoke floor now also includes bare statement-context execution on the same zero-arg named property-get and authoritative default-member forms across both exposure modes,
-  - bounded named host-root property-get comparisons inside class procedures now also lower through the same host-root read path across both exposure modes instead of drifting into assignment-LHS parsing,
-  - named object-valued host-root `Property Get` members now also return live object handles on the bounded assignment floor across both exposure modes when assigned through explicit `Set` into `Object` targets,
-  - the same bounded host-root object-return floor now also has direct executable evidence for typed child-local follow-on named property-get and authoritative default-member read traffic across both exposure modes after `Set child = Application.Value`,
-  - the same bounded host-root object-return floor now also has direct executable evidence for typed child-local parenthesized zero-arg getter traffic on named and authoritative default-member forms across both exposure modes after `Set child = Application.Value`,
-  - the same bounded host-root object-return floor now also has direct executable evidence for typed child-local indexed getter traffic on named and authoritative default-member forms across both exposure modes after `Set child = Application.Value`,
-  - the same bounded host-root object-return floor now also has direct executable evidence for typed child-local explicit `Call` plus bare statement-context traffic on named and authoritative default-member zero-arg getter forms across both exposure modes after `Set child = Application.Value`,
-  - the same bounded host-root object-return floor now also has direct executable evidence for typed child-local parenthesized explicit `Call` plus bare statement-context traffic on named and authoritative default-member zero-arg getter forms across both exposure modes after `Set child = Application.Value`,
-  - the same bounded host-root object-return floor now also has direct executable evidence for typed child-local indexed explicit `Call` plus bare statement-context traffic on named and authoritative default-member forms across both exposure modes after `Set child = Application.Value`,
-  - the same bounded host-root object-return floor now also has direct executable evidence for typed child-local named `Property Let` plus authoritative default-member `Property Let` traffic across both exposure modes after `Set child = Application.Value`,
-  - the same bounded host-root object-return floor now also has direct executable evidence for typed child-local indexed `Property Let` plus authoritative indexed default-member `Property Let` traffic across both exposure modes after `Set child = Application.Value`,
-  - the same bounded host-root object-return floor now also has direct executable evidence for typed child-local named `Property Set` plus authoritative default-member `Property Set` traffic across both exposure modes after `Set child = Application.Value`,
-  - the same bounded host-root object-return floor now also has direct executable evidence for typed child-local indexed `Property Set` plus authoritative indexed default-member `Property Set` traffic across both exposure modes after `Set child = Application.Value`,
-  - plain project references still remain on the ordinary unresolved-name path and do not gain implicit host-root behavior,
-  - host-looking names backed by `HostInjected` class modules that are present but not exposed through `VB_PredeclaredId=True` or `VB_GlobalNamespace=True` now fail deterministically with `PMR-E-HOST-ROOT-NOT-EXPOSED`,
-  - supported live runtime sessions now also have direct executable evidence that host-injected root state remains isolated per runtime across event ingress for both exposure modes,
-  - host-backed `WithEvents` routing now also has direct executable evidence on referenced `HostInjected` event sources, with event ingress routing only for the snapped bound source handle while sibling handles of the same referenced source type no-op deterministically,
-  - the same bounded host-backed callback floor now also has direct compiler and host evidence for one-argument event ingress on referenced `HostInjected` sources across both exposure modes, including same-name plain-project precedence on those one-argument routes and deterministic rejection of higher-arity forwarded ingress on the live bound source handle,
-  - conflicting same-name plain-project class references now also have direct executable evidence that they do not steal `HostInjected` `WithEvents` source ownership by reference order,
-  - neighboring COM-backed object handles now also have direct executable evidence that they do not perturb host-backed `WithEvents` ownership or route host event ingress for the bound host-backed source,
-  - host-injected root getters now also have direct executable evidence that they may return a COM-backed object and feed that returned object through bounded `DispatchInvoke` on the shared object/value model,
-  - the same bounded host/COM coexistence floor now also has direct executable evidence that a host-injected root getter may return a COM-backed object into a typed imported early-bound receiver and execute metadata-backed `Count()` traffic on that returned object,
-  - the same bounded host/COM coexistence floor now also has direct executable evidence that a conflicting same-name plain-project `Application` reference does not steal that host-root imported `Count()` handoff by reference order,
-  - the same bounded host/COM coexistence floor now also has direct executable evidence for imported `PropertyPut` plus zero-arg `PropertyGet` traffic on the same host-returned COM-backed object under the shared object/value model,
-  - the same bounded host/COM coexistence floor now also has direct executable evidence for imported authoritative default-member call traffic on the same host-returned COM-backed object under the shared object/value model,
-  - the same bounded host/COM coexistence floor now also has direct executable evidence for imported `VT_DISPATCH` / `VT_UNKNOWN` object-result assignment-intent traffic on the same host-returned COM-backed object under the shared object/value model,
-  - the same bounded host/COM coexistence floor now also has direct executable evidence for imported object-valued zero-arg `PropertyGet` assignment-intent traffic on the same host-returned COM-backed object under the shared object/value model,
-  - the same bounded host/COM coexistence floor now also has direct executable evidence that a conflicting same-name plain-project `Application` reference does not steal that imported object-valued `PropertyGet` handoff by reference order,
-  - the same bounded host/COM coexistence floor now also has direct executable evidence for parenthesized imported object-valued zero-arg `PropertyGet` assignment-intent traffic on the same host-returned COM-backed object under the shared object/value model,
-  - the same bounded host/COM coexistence floor now also has direct executable evidence for imported `RaiseException` `Call` plus bare statement forms on the same host-returned COM-backed object under the shared object/value model,
-  - the same bounded host/COM coexistence floor now also has direct executable evidence that a conflicting same-name plain-project `Application` reference does not steal those imported `RaiseException` invoke forms by reference order,
-  - the same bounded host/COM coexistence floor now also has direct executable evidence for assignment-form imported `PropertyPutRef` traffic on the same host-returned COM-backed object under the shared object/value model,
-  - the same bounded host/COM coexistence floor now also has direct executable evidence that a conflicting same-name plain-project `Application` reference does not steal that imported `PropertyPutRef` handoff by reference order,
-  - the same bounded host identity floor now also has direct executable evidence that a conflicting same-name plain-project `Application` reference does not steal imported property-put/get traffic on the same host-returned COM-backed object by reference order,
-  - the same bounded host identity floor now also has direct executable evidence that a conflicting same-name plain-project `Application` reference does not steal imported authoritative default-member traffic on the same host-returned COM-backed object by reference order,
-  - the same bounded host identity floor now also has direct executable evidence that a conflicting same-name plain-project `Application` reference does not steal imported object-result rebinding on the same host-returned COM-backed object by reference order,
-  - the same bounded host/COM coexistence floor now also has direct executable evidence for imported zero-arg object-result rebinding without parentheses on the same host-returned COM-backed object, and the same bounded host identity floor now also proves a conflicting same-name plain-project `Application` reference does not steal that no-paren neighbor by reference order,
-  - the same bounded host/COM coexistence floor now also has direct executable evidence for imported no-paren positional `Call` plus bare statement-context invocation subsets on the same host-returned COM-backed object, and the same bounded host identity floor now also proves a conflicting same-name plain-project `Application` reference does not steal those no-paren invoke neighbors by reference order,
-  - the same bounded host identity floor now also has direct compiler and host evidence that a conflicting same-name plain-project `Application` reference does not steal the newer imported scalar read-assignment, named-argument read-assignment, positional read-assignment, or compile-time diagnostic lanes on the same host-returned COM-backed object by reference order,
-  - the same bounded host identity floor now also has direct compiler and host evidence that an active-project same-name `Application` class module outranks the host-injected root on the matching imported scalar read-assignment, named-argument read-assignment, and positional read-assignment lanes on the same host-returned COM-backed object,
-  - the same bounded host identity floor now also has direct compiler and host evidence that the same active-project same-name `Application` class module outranks the host-injected root on the current imported explicit-`Call` positional/default-member subset on the same host-returned COM-backed object,
-  - the same bounded host identity floor now also has direct compiler and host evidence that the same active-project same-name `Application` class module outranks the host-injected root on the current imported no-paren explicit-`Call` positional/default-member subset on the same host-returned COM-backed object,
-  - the same bounded host identity floor now also has direct compiler and host evidence that the same active-project same-name `Application` class module outranks the host-injected root on the current imported bare statement-context positional/default-member subset on the same host-returned COM-backed object,
-  - the same bounded host identity floor now also has direct compiler and host evidence that the same active-project same-name `Application` class module outranks the host-injected root on the current imported no-paren bare statement-context positional/default-member subset on the same host-returned COM-backed object,
-  - the same bounded host identity floor now also has direct compiler and host evidence that the same active-project same-name `Application` class module outranks the host-injected root on the current imported parenthesized named-argument explicit-`Call` subset on the same host-returned COM-backed object,
-  - the same bounded host identity floor now also has direct compiler and host evidence that the same active-project same-name `Application` class module outranks the host-injected root on the current imported parenthesized named-argument bare statement-context subset on the same host-returned COM-backed object,
-  - the same bounded host identity floor now also has direct compiler and host evidence that the same active-project same-name `Application` class module outranks the host-injected root on the current imported no-paren named-argument explicit-`Call` subset on the same host-returned COM-backed object,
-  - the same bounded host identity floor now also has direct compiler and host evidence that the same active-project same-name `Application` class module outranks the host-injected root on the current imported no-paren named-argument bare statement-context subset on the same host-returned COM-backed object,
-  - the same bounded host identity floor now also has direct compiler and host evidence that the same active-project same-name `Application` class module outranks the host-injected root on the current imported property-put/get lane on the same host-returned COM-backed object,
-  - the same bounded host identity floor now also has direct compiler and host evidence that the same active-project same-name `Application` class module outranks the host-injected root on the current imported property-putref lane on the same host-returned COM-backed object,
-  - the same bounded host identity floor now also has direct compiler and host evidence that the same active-project same-name `Application` class module outranks the host-injected root on the current imported indexed setter lanes on the same host-returned COM-backed object,
-  - the same bounded host identity floor now also has direct compiler and host evidence that the same active-project same-name `Application` class module outranks the host-injected root on the current imported exception invoke forms on the same host-returned COM-backed object,
-  - the same bounded host identity floor now also has direct compiler and host evidence that the same active-project same-name `Application` class module outranks the host-injected root on the current imported object property-get assignment-intent lane on the same host-returned COM-backed object,
-  - the same bounded host/COM coexistence floor now also has direct executable evidence for imported parenthesized positional `Call` plus bare statement-context invocation subsets on the same host-returned COM-backed object, and the same bounded host identity floor now also proves a conflicting same-name plain-project `Application` reference does not steal those parenthesized invoke neighbors by reference order,
-  - the same bounded host/COM coexistence floor now also has direct executable evidence for imported named-argument `Call` plus bare statement-context invocation subsets across both parenthesized and no-paren forms on the same host-returned COM-backed object, and the same bounded host identity floor now also proves a conflicting same-name plain-project `Application` reference does not steal those named-argument invoke neighbors by reference order,
-  - the same bounded host/COM coexistence floor now also has direct executable evidence for imported indexed `PropertyPut` plus indexed `PropertyPutRef` traffic across both positional and named-argument forms on the same host-returned COM-backed object, and the same bounded host identity floor now also proves a conflicting same-name plain-project `Application` reference does not steal those indexed setter neighbors by reference order,
-  - the same bounded host identity floor now also has direct executable evidence that a conflicting same-name plain-project `Application` reference does not steal parenthesized imported object-valued `PropertyGet` traffic on the same host-returned COM-backed object by reference order,
-  - the bounded `IP-08A` host foundation is now executable, but broader Office-style hosting parity breadth is still open under `IP-08B`.
+- Current state (tabular evidence matrix):
+
+  **IP-08A host foundation (closed):**
+
+  | receiver      | member shape           | syntax          | paren | exposure modes | status       |
+  |---------------|------------------------|-----------------|-------|----------------|--------------|
+  | host-root     | named prop get         | read            | no    | both           | proved-exec  |
+  | host-root     | default-member get     | read            | no    | both           | proved-exec  |
+  | host-root     | named prop let         | write           | no    | both           | proved-exec  |
+  | host-root     | default-member let     | write           | no    | both           | proved-exec  |
+  | host-root     | named prop get         | Call            | no    | both           | proved-exec  |
+  | host-root     | default-member get     | Call            | no    | both           | proved-exec  |
+  | host-root     | named prop get         | statement       | no    | both           | proved-exec  |
+  | host-root     | default-member get     | statement       | no    | both           | proved-exec  |
+  | host-root     | object return          | Set assignment  | no    | both           | proved-exec  |
+  | host-returned | named prop get         | read            | no/yes| both           | proved-exec  |
+  | host-returned | default-member get     | read            | no/yes| both           | proved-exec  |
+  | host-returned | indexed get            | read            | yes   | both           | proved-exec  |
+  | host-returned | named prop let         | write           | no    | both           | proved-exec  |
+  | host-returned | indexed let            | write           | yes   | both           | proved-exec  |
+  | host-returned | named prop set         | write           | no    | both           | proved-exec  |
+  | host-returned | indexed set            | write           | yes   | both           | proved-exec  |
+  | host-returned | Call/statement         | invoke          | no/yes| both           | proved-exec  |
+
+  **Host diagnostics and isolation:**
+
+  | concern                                        | status       |
+  |------------------------------------------------|--------------|
+  | PMR-E-HOST-ROOT-NOT-EXPOSED                    | proved-exec  |
+  | per-runtime state isolation across event ingress| proved-exec  |
+  | WithEvents snapped source handle routing        | proved-exec  |
+  | same-name plain-project does not steal WithEvents| proved-exec |
+  | COM neighbor does not perturb host events        | proved-exec  |
+
+  **IP-08B precedence matrix (proved on current COM subset):**
+
+  | precedence pair           | member shape           | syntax variants              | status       |
+  |---------------------------|------------------------|------------------------------|--------------|
+  | active-project > host-root| scalar read-assignment | positional/named/default     | proved-exec  |
+  | active-project > host-root| Call                   | paren/no-paren/positional/default | proved-exec |
+  | active-project > host-root| statement-context      | paren/no-paren/positional/default | proved-exec |
+  | active-project > host-root| named-arg Call/stmt    | paren/no-paren               | proved-exec  |
+  | active-project > host-root| property-put/get       | —                            | proved-exec  |
+  | active-project > host-root| property-putref        | —                            | proved-exec  |
+  | active-project > host-root| indexed setter         | positional/named             | proved-exec  |
+  | active-project > host-root| exception invoke       | Call/statement               | proved-exec  |
+  | active-project > host-root| object prop-get        | assignment-intent            | proved-exec  |
+  | plain-project !> host-root| all above lanes        | all variants                 | proved-exec  |
+
+  **Host/COM coexistence (proved on current imported subset):**
+
+  | lane                                 | status       |
+  |--------------------------------------|--------------|
+  | host root returns COM object         | proved-exec  |
+  | imported Count() on host-returned    | proved-exec  |
+  | imported PropertyPut/Get             | proved-exec  |
+  | imported default-member Call         | proved-exec  |
+  | imported object-result assignment    | proved-exec  |
+  | imported PropertyPutRef              | proved-exec  |
+  | imported RaiseException invoke       | proved-exec  |
+  | imported indexed Put/PutRef          | proved-exec  |
+  | imported no-paren/paren Call/stmt    | proved-exec  |
+  | imported named-arg Call/stmt         | proved-exec  |
+  | imported paren object PropertyGet    | proved-exec  |
+
+  **Remaining gaps (IP-08B exit gates unchecked):**
+
+  | gap                                                  | status |
+  |------------------------------------------------------|--------|
+  | host root/global/project behavior matrix explicit     | open   |
+  | host-returned COM-object matrix wider imported breadth| open   |
+  | blocker/worklist language cleanup                      | open   |
+
 - Exact unblock steps:
-  - continue through [WORKSET_2026-03-19_IP-08B_EXECUTION_CHECKLIST.md](C:\Work\DnaCalc\OxVba\docs\worksets\WORKSET_2026-03-19_IP-08B_EXECUTION_CHECKLIST.md) from the completed `IP-08A` host foundation into the broader parity matrix: richer root/global/project behavior, broader imported member/property/default-member breadth on host-returned COM objects, and final integration with the completed COM/property/event model,
-  - keep [WORKSET_2026-03-19_IP-08A_EXECUTION_CHECKLIST.md](C:\Work\DnaCalc\OxVba\docs\worksets\WORKSET_2026-03-19_IP-08A_EXECUTION_CHECKLIST.md) as the completed foundation floor and use the `IP-08B` checklist for the remaining parity-breadth rows.
+  - continue through [WORKSET_2026-03-19_IP-08B_EXECUTION_CHECKLIST.md](C:\Work\DnaCalc\OxVba\docs\worksets\WORKSET_2026-03-19_IP-08B_EXECUTION_CHECKLIST.md) from the completed `IP-08A` host foundation into the broader parity matrix,
+  - widen host-returned COM imported breadth once IP-03 and IP-05 COM substrate is wider.
 - Recommendation:
   - treat `IP-08A` as closed host substrate and spend the next cycles only on `IP-08B` parity breadth.
 

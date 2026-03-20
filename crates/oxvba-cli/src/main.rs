@@ -191,6 +191,7 @@ fn format_runtime_value(value: &RuntimeValue) -> String {
         RuntimeValue::Null => "null".to_string(),
         RuntimeValue::ErrorCode(code) => format!("error:{code}"),
         RuntimeValue::I32(value) => format!("i32:{value}"),
+        RuntimeValue::I64(value) => format!("i64:{value}"),
         RuntimeValue::F64(value) => format!("f64:{}", value.as_f64()),
         RuntimeValue::Decimal(value) => format!("decimal:{}", value),
         RuntimeValue::Currency(value) => format!("currency:{}", value),

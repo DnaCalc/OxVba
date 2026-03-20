@@ -4,10 +4,20 @@ pub const ARRAY_TAG_BASE: i32 = -1_000_000_000;
 pub const ARRAY_TAG_LIMIT: i32 = ARRAY_TAG_BASE + 1_000_000;
 const DISPATCH_ARRAY_PAYLOAD_BASE: i32 = 20_000;
 
+/// Per-dimension bound metadata for multi-dimensional SAFEARRAYs.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SafeArrayBound {
+    pub lower: i32,
+    pub count: u32,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SafeArray {
     pub dimensions: u8,
     pub len: usize,
+    /// Per-dimension bounds (innermost dimension first, matching SAFEARRAY convention).
+    /// Only populated for multi-dimensional arrays received from COM.
+    pub bounds: Option<Vec<SafeArrayBound>>,
     pub elements: Option<Vec<RuntimeValue>>,
 }
 
@@ -16,6 +26,7 @@ impl SafeArray {
         Self {
             dimensions: 1,
             len,
+            bounds: None,
             elements: None,
         }
     }
@@ -24,6 +35,21 @@ impl SafeArray {
         Self {
             dimensions: 1,
             len: values.len(),
+            bounds: None,
+            elements: Some(values),
+        }
+    }
+
+    /// Create a multi-dimensional array with explicit per-dimension bounds.
+    /// Elements are stored in column-major order (first dimension varies fastest),
+    /// matching the Windows SAFEARRAY convention.
+    pub fn from_values_nd(bounds: Vec<SafeArrayBound>, values: Vec<RuntimeValue>) -> Self {
+        let dims = bounds.len() as u8;
+        let len = values.len();
+        Self {
+            dimensions: dims,
+            len,
+            bounds: Some(bounds),
             elements: Some(values),
         }
     }
@@ -107,5 +133,36 @@ mod tests {
             Some(vec![RuntimeValue::I32(4), RuntimeValue::I32(9)])
         );
         assert_eq!(array_tag_from_safe_array(&array), Some(ARRAY_TAG_BASE + 2));
+    }
+
+    #[test]
+    fn safe_array_from_values_nd_preserves_multi_dimensional_shape() {
+        use super::SafeArrayBound;
+        let bounds = vec![
+            SafeArrayBound { lower: 1, count: 3 },
+            SafeArrayBound { lower: 1, count: 2 },
+        ];
+        let values = vec![
+            RuntimeValue::I32(1),
+            RuntimeValue::I32(2),
+            RuntimeValue::I32(3),
+            RuntimeValue::I32(4),
+            RuntimeValue::I32(5),
+            RuntimeValue::I32(6),
+        ];
+        let array = super::SafeArray::from_values_nd(bounds.clone(), values.clone());
+        assert_eq!(array.dimensions, 2);
+        assert_eq!(array.len, 6);
+        assert_eq!(array.effective_len(), 6);
+        assert_eq!(array.bounds.as_ref(), Some(&bounds));
+        assert_eq!(array.elements.as_ref(), Some(&values));
+    }
+
+    #[test]
+    fn safe_array_vector_has_no_bounds_metadata() {
+        let array = super::SafeArray::vector(5);
+        assert_eq!(array.dimensions, 1);
+        assert_eq!(array.bounds, None);
+        assert_eq!(array.elements, None);
     }
 }

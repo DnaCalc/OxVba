@@ -660,6 +660,7 @@ impl StandardHostServices {
             RuntimeValue::Null => "Null".to_string(),
             RuntimeValue::ErrorCode(code) => format!("Error {code}"),
             RuntimeValue::I32(value) => value.to_string(),
+            RuntimeValue::I64(value) => value.to_string(),
             RuntimeValue::F64(value) => value.as_f64().to_string(),
             RuntimeValue::Decimal(value) => value.to_string(),
             RuntimeValue::Currency(value) => value.to_string(),

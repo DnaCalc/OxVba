@@ -1817,6 +1817,7 @@ impl Vm {
             RuntimeValue::Null => "Null",
             RuntimeValue::ErrorCode(_) => "Error",
             RuntimeValue::I32(_) => "Long",
+            RuntimeValue::I64(_) => "LongLong",
             RuntimeValue::F64(value) => match value.subtype() {
                 oxvba_runtime::F64Subtype::Single => "Single",
                 oxvba_runtime::F64Subtype::Double => "Double",

@@ -1,6 +1,8 @@
 use crate::ComValue;
 use oxvba_runtime::{
-    CurrencyValue, Decimal96, F64Subtype, F64Value, ObjectHandle, bstr::BStr, safe_array::SafeArray,
+    CurrencyValue, Decimal96, F64Subtype, F64Value, ObjectHandle,
+    bstr::BStr,
+    safe_array::{SafeArray, SafeArrayBound},
 };
 use std::ffi::c_void;
 
@@ -72,10 +74,8 @@ unsafe fn safe_array_to_com_value(psa: *mut SAFEARRAY) -> Result<ComValue, Strin
         return Err("VT_ARRAY result carried null SAFEARRAY".to_string());
     }
     let dims = SafeArrayGetDim(psa.cast_const());
-    if dims != 1 {
-        return Err(format!(
-            "unsupported SAFEARRAY rank {dims}; only one-dimensional VT_VARIANT arrays are supported"
-        ));
+    if dims < 1 {
+        return Err("VT_ARRAY result carried SAFEARRAY with zero dimensions".to_string());
     }
     let mut element_vt = 0u16;
     let hr = SafeArrayGetVartype(psa.cast_const(), &mut element_vt);
@@ -86,37 +86,215 @@ unsafe fn safe_array_to_com_value(psa: *mut SAFEARRAY) -> Result<ComValue, Strin
         ));
     }
 
-    let mut lower = 0i32;
-    let hr = SafeArrayGetLBound(psa.cast_const(), 1, &mut lower);
-    if hr < 0 {
-        return Err(format!(
-            "SafeArrayGetLBound failed with HRESULT {:#010X}",
-            hr as u32
-        ));
+    // Collect per-dimension bounds (dimension indices are 1-based in SafeArray API).
+    let mut bounds = Vec::with_capacity(dims as usize);
+    let mut total_len: usize = 1;
+    for dim in 1..=dims {
+        let mut lower = 0i32;
+        let hr = SafeArrayGetLBound(psa.cast_const(), dim, &mut lower);
+        if hr < 0 {
+            return Err(format!(
+                "SafeArrayGetLBound(dim={dim}) failed with HRESULT {:#010X}",
+                hr as u32
+            ));
+        }
+        let mut upper = -1i32;
+        let hr = SafeArrayGetUBound(psa.cast_const(), dim, &mut upper);
+        if hr < 0 {
+            return Err(format!(
+                "SafeArrayGetUBound(dim={dim}) failed with HRESULT {:#010X}",
+                hr as u32
+            ));
+        }
+        let count = if upper < lower {
+            0u32
+        } else {
+            u32::try_from(upper - lower + 1)
+                .map_err(|_| "SAFEARRAY dimension bounds exceed supported u32 range".to_string())?
+        };
+        total_len = total_len.checked_mul(count as usize).ok_or_else(|| {
+            "SAFEARRAY total element count exceeds supported usize range".to_string()
+        })?;
+        bounds.push(SafeArrayBound { lower, count });
     }
-    let mut upper = -1i32;
-    let hr = SafeArrayGetUBound(psa.cast_const(), 1, &mut upper);
-    if hr < 0 {
-        return Err(format!(
-            "SafeArrayGetUBound failed with HRESULT {:#010X}",
-            hr as u32
-        ));
-    }
-    let len = if upper < lower {
-        0usize
+
+    if dims == 1 {
+        // Single-dimension fast path: iterate directly by index.
+        let lower = bounds[0].lower;
+        let upper = lower + bounds[0].count as i32 - 1;
+        let mut values = Vec::with_capacity(total_len);
+        for index in lower..=upper {
+            values.push(safe_array_element_to_runtime_value(
+                psa.cast_const(),
+                index,
+                element_vt,
+            )?);
+        }
+        Ok(ComValue::ArrayIntent(SafeArray::from_values(values)))
     } else {
-        usize::try_from(upper - lower + 1)
-            .map_err(|_| "SAFEARRAY bounds exceed supported usize range".to_string())?
-    };
-    let mut values = Vec::with_capacity(len);
-    for index in lower..=upper {
-        values.push(safe_array_element_to_runtime_value(
-            psa.cast_const(),
-            index,
-            element_vt,
-        )?);
+        // Multi-dimensional path: iterate in column-major order (first dimension varies fastest).
+        // Use SafeArrayGetElement with a multi-dimensional index array.
+        let mut values = Vec::with_capacity(total_len);
+        let mut indices: Vec<i32> = bounds.iter().map(|b| b.lower).collect();
+
+        for _ in 0..total_len {
+            let value = safe_array_element_nd(psa.cast_const(), &indices, element_vt)?;
+            values.push(value);
+
+            // Increment indices in column-major order (first dimension varies fastest).
+            let mut carry = true;
+            for (dim_idx, bound) in bounds.iter().enumerate() {
+                if !carry {
+                    break;
+                }
+                indices[dim_idx] += 1;
+                if indices[dim_idx] >= bound.lower + bound.count as i32 {
+                    indices[dim_idx] = bound.lower;
+                } else {
+                    carry = false;
+                }
+            }
+        }
+        Ok(ComValue::ArrayIntent(SafeArray::from_values_nd(
+            bounds, values,
+        )))
     }
-    Ok(ComValue::ArrayIntent(SafeArray::from_values(values)))
+}
+
+#[cfg(target_os = "windows")]
+#[allow(unsafe_op_in_unsafe_fn)]
+unsafe fn safe_array_element_nd(
+    psa: *const SAFEARRAY,
+    indices: &[i32],
+    element_vt: u16,
+) -> Result<oxvba_runtime::RuntimeValue, String> {
+    // SafeArrayGetElement accepts a pointer to an array of i32 indices for multi-dim access.
+    if element_vt == VT_VARIANT {
+        let mut element: VARIANT = std::mem::zeroed();
+        let hr = SafeArrayGetElement(psa, indices.as_ptr(), (&mut element as *mut VARIANT).cast());
+        if hr < 0 {
+            return Err(format!(
+                "SafeArrayGetElement failed with HRESULT {:#010X} at indices {indices:?}",
+                hr as u32
+            ));
+        }
+        let value = match variant_to_com_value(&element) {
+            Ok(value) => value.to_runtime_value(),
+            Err(detail) => {
+                let _ = VariantClear(&mut element);
+                return Err(detail);
+            }
+        };
+        let _ = VariantClear(&mut element);
+        return Ok(value);
+    }
+    // For non-VARIANT typed arrays, delegate to single-element extraction with a flat index.
+    // Multi-dimensional typed SAFEARRAYs still use sequential flat indexing internally.
+    // SafeArrayGetElement with a single i32 pointer works for the innermost dimension
+    // for typed arrays, but for true multi-dim typed access we use the indices array.
+    // For typed elements that are scalar, SafeArrayGetElement with indices works directly.
+    safe_array_element_typed_nd(psa, indices, element_vt)
+}
+
+#[cfg(target_os = "windows")]
+#[allow(unsafe_op_in_unsafe_fn)]
+unsafe fn safe_array_element_typed_nd(
+    psa: *const SAFEARRAY,
+    indices: &[i32],
+    element_vt: u16,
+) -> Result<oxvba_runtime::RuntimeValue, String> {
+    macro_rules! get_element {
+        ($ty:ty, $indices:expr) => {{
+            let mut element: $ty = std::mem::zeroed();
+            let hr = SafeArrayGetElement(psa, $indices.as_ptr(), (&mut element as *mut $ty).cast());
+            if hr < 0 {
+                return Err(format!(
+                    "SafeArrayGetElement failed with HRESULT {:#010X} at indices {:?}",
+                    hr as u32, $indices
+                ));
+            }
+            element
+        }};
+    }
+    match element_vt {
+        VT_I1 => Ok(ComValue::I32(get_element!(i8, indices) as i32).to_runtime_value()),
+        VT_I2 => Ok(ComValue::I32(get_element!(i16, indices) as i32).to_runtime_value()),
+        VT_I4 => Ok(ComValue::I32(get_element!(i32, indices)).to_runtime_value()),
+        VT_I8 => {
+            let val = get_element!(i64, indices);
+            match i32::try_from(val) {
+                Ok(n) => Ok(ComValue::I32(n).to_runtime_value()),
+                Err(_) => Ok(ComValue::I64(val).to_runtime_value()),
+            }
+        }
+        VT_INT => Ok(ComValue::I32(get_element!(i32, indices)).to_runtime_value()),
+        VT_UI1 => Ok(ComValue::I32(get_element!(u8, indices) as i32).to_runtime_value()),
+        VT_UI2 => Ok(ComValue::I32(get_element!(u16, indices) as i32).to_runtime_value()),
+        VT_UI4 => {
+            let val = get_element!(u32, indices);
+            match i32::try_from(val) {
+                Ok(n) => Ok(ComValue::I32(n).to_runtime_value()),
+                Err(_) => Ok(ComValue::I64(val as i64).to_runtime_value()),
+            }
+        }
+        VT_UI8 => {
+            let val = get_element!(u64, indices);
+            match i32::try_from(val) {
+                Ok(n) => Ok(ComValue::I32(n).to_runtime_value()),
+                Err(_) => match i64::try_from(val) {
+                    Ok(n) => Ok(ComValue::I64(n).to_runtime_value()),
+                    Err(_) => Err(format!(
+                        "VT_UI8 SAFEARRAY element {val} exceeds i64 carrier range"
+                    )),
+                },
+            }
+        }
+        VT_R4_VARENUM => Ok(ComValue::F64(F64Value::from_single_f64(
+            get_element!(f32, indices) as f64
+        ))
+        .to_runtime_value()),
+        VT_R8_VARENUM => {
+            Ok(ComValue::F64(F64Value::from_f64(get_element!(f64, indices))).to_runtime_value())
+        }
+        VT_CY_VARENUM => {
+            let cy: CY = get_element!(CY, indices);
+            Ok(ComValue::Currency(CurrencyValue::from_scaled_i64(cy.int64)).to_runtime_value())
+        }
+        VT_DATE_VARENUM => Ok(
+            ComValue::F64(F64Value::from_date_f64(get_element!(f64, indices))).to_runtime_value(),
+        ),
+        VT_DECIMAL => {
+            let dec: DECIMAL = get_element!(DECIMAL, indices);
+            Ok(ComValue::Decimal(decimal96_from_windows(dec)).to_runtime_value())
+        }
+        VT_UINT => {
+            let val = get_element!(u32, indices);
+            match i32::try_from(val) {
+                Ok(n) => Ok(ComValue::I32(n).to_runtime_value()),
+                Err(_) => Ok(ComValue::I64(val as i64).to_runtime_value()),
+            }
+        }
+        VT_BOOL => {
+            let val = get_element!(VARIANT_BOOL, indices);
+            Ok(ComValue::Bool(val != 0).to_runtime_value())
+        }
+        VT_BSTR => {
+            let bstr: windows_sys::core::BSTR = get_element!(windows_sys::core::BSTR, indices);
+            let text = if bstr.is_null() {
+                String::new()
+            } else {
+                let len = usize::try_from(SysStringLen(bstr)).unwrap_or(0);
+                let slice = std::slice::from_raw_parts(bstr, len);
+                let text = String::from_utf16_lossy(slice);
+                SysFreeString(bstr);
+                text
+            };
+            Ok(ComValue::String(BStr(text)).to_runtime_value())
+        }
+        other => Err(format!(
+            "unsupported SAFEARRAY element vartype {other} in multi-dimensional array"
+        )),
+    }
 }
 
 #[cfg(target_os = "windows")]
@@ -188,10 +366,10 @@ unsafe fn safe_array_element_to_runtime_value(
                     hr as u32, index
                 ));
             }
-            let narrowed = i32::try_from(element).map_err(|_| {
-                format!("VT_I8 SAFEARRAY element {element} exceeds current i32 carrier lane")
-            })?;
-            Ok(ComValue::I32(narrowed).to_runtime_value())
+            match i32::try_from(element) {
+                Ok(narrowed) => Ok(ComValue::I32(narrowed).to_runtime_value()),
+                Err(_) => Ok(ComValue::I64(element).to_runtime_value()),
+            }
         }
         VT_INT => {
             let mut element = 0i32;
@@ -235,10 +413,10 @@ unsafe fn safe_array_element_to_runtime_value(
                     hr as u32, index
                 ));
             }
-            let narrowed = i32::try_from(element).map_err(|_| {
-                format!("VT_UI4 SAFEARRAY element {element} exceeds current i32 carrier lane")
-            })?;
-            Ok(ComValue::I32(narrowed).to_runtime_value())
+            match i32::try_from(element) {
+                Ok(narrowed) => Ok(ComValue::I32(narrowed).to_runtime_value()),
+                Err(_) => Ok(ComValue::I64(element as i64).to_runtime_value()),
+            }
         }
         VT_UI8 => {
             let mut element = 0u64;
@@ -249,10 +427,15 @@ unsafe fn safe_array_element_to_runtime_value(
                     hr as u32, index
                 ));
             }
-            let narrowed = i32::try_from(element).map_err(|_| {
-                format!("VT_UI8 SAFEARRAY element {element} exceeds current i32 carrier lane")
-            })?;
-            Ok(ComValue::I32(narrowed).to_runtime_value())
+            match i32::try_from(element) {
+                Ok(narrowed) => Ok(ComValue::I32(narrowed).to_runtime_value()),
+                Err(_) => match i64::try_from(element) {
+                    Ok(narrowed) => Ok(ComValue::I64(narrowed).to_runtime_value()),
+                    Err(_) => Err(format!(
+                        "VT_UI8 SAFEARRAY element {element} exceeds i64 carrier range"
+                    )),
+                },
+            }
         }
         VT_R4_VARENUM => {
             let mut element = 0f32;
@@ -321,10 +504,10 @@ unsafe fn safe_array_element_to_runtime_value(
                     hr as u32, index
                 ));
             }
-            let narrowed = i32::try_from(element).map_err(|_| {
-                format!("VT_UINT SAFEARRAY element {element} exceeds current i32 carrier lane")
-            })?;
-            Ok(ComValue::I32(narrowed).to_runtime_value())
+            match i32::try_from(element) {
+                Ok(narrowed) => Ok(ComValue::I32(narrowed).to_runtime_value()),
+                Err(_) => Ok(ComValue::I64(element as i64).to_runtime_value()),
+            }
         }
         VT_BOOL => {
             let mut element: VARIANT_BOOL = 0;
@@ -387,33 +570,9 @@ where
         return Err("VT_ARRAY result carried null SAFEARRAY".to_string());
     }
     let dims = SafeArrayGetDim(psa.cast_const());
-    if dims != 1 {
-        return Err(format!(
-            "unsupported SAFEARRAY rank {dims}; only one-dimensional arrays are supported"
-        ));
+    if dims < 1 {
+        return Err("VT_ARRAY result carried SAFEARRAY with zero dimensions".to_string());
     }
-    let mut lower = 0i32;
-    let hr = SafeArrayGetLBound(psa.cast_const(), 1, &mut lower);
-    if hr < 0 {
-        return Err(format!(
-            "SafeArrayGetLBound failed with HRESULT {:#010X}",
-            hr as u32
-        ));
-    }
-    let mut upper = -1i32;
-    let hr = SafeArrayGetUBound(psa.cast_const(), 1, &mut upper);
-    if hr < 0 {
-        return Err(format!(
-            "SafeArrayGetUBound failed with HRESULT {:#010X}",
-            hr as u32
-        ));
-    }
-    let len = if upper < lower {
-        0usize
-    } else {
-        usize::try_from(upper - lower + 1)
-            .map_err(|_| "SAFEARRAY bounds exceed supported usize range".to_string())?
-    };
     let mut element_vt = 0u16;
     let hr = SafeArrayGetVartype(psa.cast_const(), &mut element_vt);
     if hr < 0 {
@@ -422,19 +581,52 @@ where
             hr as u32
         ));
     }
-    let mut values = Vec::with_capacity(len);
-    for index in lower..=upper {
+
+    // Collect per-dimension bounds.
+    let mut bounds = Vec::with_capacity(dims as usize);
+    let mut total_len: usize = 1;
+    for dim in 1..=dims {
+        let mut lower = 0i32;
+        let hr = SafeArrayGetLBound(psa.cast_const(), dim, &mut lower);
+        if hr < 0 {
+            return Err(format!(
+                "SafeArrayGetLBound(dim={dim}) failed with HRESULT {:#010X}",
+                hr as u32
+            ));
+        }
+        let mut upper = -1i32;
+        let hr = SafeArrayGetUBound(psa.cast_const(), dim, &mut upper);
+        if hr < 0 {
+            return Err(format!(
+                "SafeArrayGetUBound(dim={dim}) failed with HRESULT {:#010X}",
+                hr as u32
+            ));
+        }
+        let count = if upper < lower {
+            0u32
+        } else {
+            u32::try_from(upper - lower + 1)
+                .map_err(|_| "SAFEARRAY dimension bounds exceed supported u32 range".to_string())?
+        };
+        total_len = total_len.checked_mul(count as usize).ok_or_else(|| {
+            "SAFEARRAY total element count exceeds supported usize range".to_string()
+        })?;
+        bounds.push(SafeArrayBound { lower, count });
+    }
+
+    // Helper closure: extract one element by indices for variant/dispatch/unknown/typed paths.
+    let mut extract_element = |indices: &[i32]| -> Result<oxvba_runtime::RuntimeValue, String> {
         if element_vt == VT_VARIANT {
             let mut element: VARIANT = std::mem::zeroed();
             let hr = SafeArrayGetElement(
                 psa.cast_const(),
-                &index,
+                indices.as_ptr(),
                 (&mut element as *mut VARIANT).cast(),
             );
             if hr < 0 {
                 return Err(format!(
-                    "SafeArrayGetElement failed with HRESULT {:#010X} at index {}",
-                    hr as u32, index
+                    "SafeArrayGetElement failed with HRESULT {:#010X} at indices {indices:?}",
+                    hr as u32
                 ));
             }
             let value = match variant_to_runtime_value(
@@ -452,20 +644,19 @@ where
                 }
             };
             let _ = VariantClear(&mut element);
-            values.push(value);
-            continue;
+            return Ok(value);
         }
         if element_vt == VT_UNKNOWN {
             let mut unknown: *mut c_void = std::ptr::null_mut();
             let hr = SafeArrayGetElement(
                 psa.cast_const(),
-                &index,
+                indices.as_ptr(),
                 (&mut unknown as *mut *mut c_void).cast(),
             );
             if hr < 0 {
                 return Err(format!(
-                    "SafeArrayGetElement failed with HRESULT {:#010X} at index {}",
-                    hr as u32, index
+                    "SafeArrayGetElement failed with HRESULT {:#010X} at indices {indices:?}",
+                    hr as u32
                 ));
             }
             let mut element: VARIANT = std::mem::zeroed();
@@ -486,20 +677,19 @@ where
                 }
             };
             let _ = VariantClear(&mut element);
-            values.push(value);
-            continue;
+            return Ok(value);
         }
         if element_vt == VT_DISPATCH {
             let mut dispatch: *mut c_void = std::ptr::null_mut();
             let hr = SafeArrayGetElement(
                 psa.cast_const(),
-                &index,
+                indices.as_ptr(),
                 (&mut dispatch as *mut *mut c_void).cast(),
             );
             if hr < 0 {
                 return Err(format!(
-                    "SafeArrayGetElement failed with HRESULT {:#010X} at index {}",
-                    hr as u32, index
+                    "SafeArrayGetElement failed with HRESULT {:#010X} at indices {indices:?}",
+                    hr as u32
                 ));
             }
             let mut element: VARIANT = std::mem::zeroed();
@@ -520,18 +710,41 @@ where
                 }
             };
             let _ = VariantClear(&mut element);
-            values.push(value);
-            continue;
+            return Ok(value);
         }
-        values.push(safe_array_element_to_runtime_value(
-            psa.cast_const(),
-            index,
-            element_vt,
-        )?);
+        safe_array_element_typed_nd(psa.cast_const(), indices, element_vt)
+    };
+
+    let mut values = Vec::with_capacity(total_len);
+    let mut indices: Vec<i32> = bounds.iter().map(|b| b.lower).collect();
+
+    for _ in 0..total_len {
+        values.push(extract_element(&indices)?);
+
+        // Increment indices in column-major order (first dimension varies fastest).
+        let mut carry = true;
+        for (dim_idx, bound) in bounds.iter().enumerate() {
+            if !carry {
+                break;
+            }
+            indices[dim_idx] += 1;
+            if indices[dim_idx] >= bound.lower + bound.count as i32 {
+                indices[dim_idx] = bound.lower;
+            } else {
+                carry = false;
+            }
+        }
     }
-    Ok(oxvba_runtime::RuntimeValue::ArrayIntent(
-        SafeArray::from_values(values),
-    ))
+
+    if dims == 1 {
+        Ok(oxvba_runtime::RuntimeValue::ArrayIntent(
+            SafeArray::from_values(values),
+        ))
+    } else {
+        Ok(oxvba_runtime::RuntimeValue::ArrayIntent(
+            SafeArray::from_values_nd(bounds, values),
+        ))
+    }
 }
 
 #[cfg(target_os = "windows")]
@@ -607,75 +820,81 @@ pub unsafe fn variant_to_com_value(variant: &VARIANT) -> Result<ComValue, String
         let parray = variant.Anonymous.Anonymous.Anonymous.parray;
         return safe_array_to_com_value(parray);
     }
-    let value =
-        match vt {
-            VT_EMPTY => ComValue::Empty,
-            VT_I1 => ComValue::I32(variant.Anonymous.Anonymous.Anonymous.cVal as i32),
-            VT_I2 => ComValue::I32(variant.Anonymous.Anonymous.Anonymous.iVal as i32),
-            VT_I4 => ComValue::I32(variant.Anonymous.Anonymous.Anonymous.lVal),
-            VT_I8 => {
-                let value = variant.Anonymous.Anonymous.Anonymous.llVal;
-                ComValue::I32(
-                    i32::try_from(value).map_err(|_| {
-                        format!("VT_I8 value {value} exceeds current i32 carrier lane")
-                    })?,
-                )
+    let value = match vt {
+        VT_EMPTY => ComValue::Empty,
+        VT_I1 => ComValue::I32(variant.Anonymous.Anonymous.Anonymous.cVal as i32),
+        VT_I2 => ComValue::I32(variant.Anonymous.Anonymous.Anonymous.iVal as i32),
+        VT_I4 => ComValue::I32(variant.Anonymous.Anonymous.Anonymous.lVal),
+        VT_I8 => {
+            let value = variant.Anonymous.Anonymous.Anonymous.llVal;
+            match i32::try_from(value) {
+                Ok(narrowed) => ComValue::I32(narrowed),
+                Err(_) => ComValue::I64(value),
             }
-            VT_INT => ComValue::I32(variant.Anonymous.Anonymous.Anonymous.intVal),
-            VT_UI1 => ComValue::I32(variant.Anonymous.Anonymous.Anonymous.bVal as i32),
-            VT_UI2 => ComValue::I32(variant.Anonymous.Anonymous.Anonymous.uiVal as i32),
-            VT_UI4 => {
-                let value = variant.Anonymous.Anonymous.Anonymous.ulVal;
-                ComValue::I32(i32::try_from(value).map_err(|_| {
-                    format!("VT_UI4 value {value} exceeds current i32 carrier lane")
-                })?)
+        }
+        VT_INT => ComValue::I32(variant.Anonymous.Anonymous.Anonymous.intVal),
+        VT_UI1 => ComValue::I32(variant.Anonymous.Anonymous.Anonymous.bVal as i32),
+        VT_UI2 => ComValue::I32(variant.Anonymous.Anonymous.Anonymous.uiVal as i32),
+        VT_UI4 => {
+            let value = variant.Anonymous.Anonymous.Anonymous.ulVal;
+            match i32::try_from(value) {
+                Ok(narrowed) => ComValue::I32(narrowed),
+                Err(_) => ComValue::I64(value as i64),
             }
-            VT_UI8 => {
-                let value = variant.Anonymous.Anonymous.Anonymous.ullVal;
-                ComValue::I32(i32::try_from(value).map_err(|_| {
-                    format!("VT_UI8 value {value} exceeds current i32 carrier lane")
-                })?)
+        }
+        VT_UI8 => {
+            let value = variant.Anonymous.Anonymous.Anonymous.ullVal;
+            match i32::try_from(value) {
+                Ok(narrowed) => ComValue::I32(narrowed),
+                Err(_) => match i64::try_from(value) {
+                    Ok(narrowed) => ComValue::I64(narrowed),
+                    Err(_) => {
+                        return Err(format!("VT_UI8 value {value} exceeds i64 carrier range"));
+                    }
+                },
             }
-            VT_R4_VARENUM => ComValue::F64(F64Value::from_single_f64(
-                variant.Anonymous.Anonymous.Anonymous.fltVal as f64,
-            )),
-            VT_R8_VARENUM => ComValue::F64(F64Value::from_f64(
-                variant.Anonymous.Anonymous.Anonymous.dblVal,
-            )),
-            VT_CY_VARENUM => ComValue::Currency(CurrencyValue::from_scaled_i64(
-                variant.Anonymous.Anonymous.Anonymous.cyVal.int64,
-            )),
-            VT_DATE_VARENUM => ComValue::F64(F64Value::from_date_f64(
-                variant.Anonymous.Anonymous.Anonymous.dblVal,
-            )),
-            VT_DECIMAL => ComValue::Decimal(decimal96_from_windows(variant.Anonymous.decVal)),
-            VT_UINT => {
-                let value = variant.Anonymous.Anonymous.Anonymous.uintVal;
-                ComValue::I32(i32::try_from(value).map_err(|_| {
-                    format!("VT_UINT value {value} exceeds current i32 carrier lane")
-                })?)
+        }
+        VT_R4_VARENUM => ComValue::F64(F64Value::from_single_f64(
+            variant.Anonymous.Anonymous.Anonymous.fltVal as f64,
+        )),
+        VT_R8_VARENUM => ComValue::F64(F64Value::from_f64(
+            variant.Anonymous.Anonymous.Anonymous.dblVal,
+        )),
+        VT_CY_VARENUM => ComValue::Currency(CurrencyValue::from_scaled_i64(
+            variant.Anonymous.Anonymous.Anonymous.cyVal.int64,
+        )),
+        VT_DATE_VARENUM => ComValue::F64(F64Value::from_date_f64(
+            variant.Anonymous.Anonymous.Anonymous.dblVal,
+        )),
+        VT_DECIMAL => ComValue::Decimal(decimal96_from_windows(variant.Anonymous.decVal)),
+        VT_UINT => {
+            let value = variant.Anonymous.Anonymous.Anonymous.uintVal;
+            match i32::try_from(value) {
+                Ok(narrowed) => ComValue::I32(narrowed),
+                Err(_) => ComValue::I64(value as i64),
             }
-            VT_BOOL => {
-                let value: VARIANT_BOOL = variant.Anonymous.Anonymous.Anonymous.boolVal;
-                ComValue::Bool(value != 0)
-            }
-            VT_BSTR => {
-                let bstr = variant.Anonymous.Anonymous.Anonymous.bstrVal;
-                let text = if bstr.is_null() {
-                    String::new()
-                } else {
-                    let len = usize::try_from(SysStringLen(bstr)).unwrap_or(0);
-                    let slice = std::slice::from_raw_parts(bstr, len);
-                    String::from_utf16_lossy(slice)
-                };
-                ComValue::String(BStr(text))
-            }
-            VT_NULL => ComValue::Null,
-            VT_ERROR => ComValue::ErrorCode(variant.Anonymous.Anonymous.Anonymous.scode),
-            vt => {
-                return Err(format!("unsupported VARIANT return type vt={vt}"));
-            }
-        };
+        }
+        VT_BOOL => {
+            let value: VARIANT_BOOL = variant.Anonymous.Anonymous.Anonymous.boolVal;
+            ComValue::Bool(value != 0)
+        }
+        VT_BSTR => {
+            let bstr = variant.Anonymous.Anonymous.Anonymous.bstrVal;
+            let text = if bstr.is_null() {
+                String::new()
+            } else {
+                let len = usize::try_from(SysStringLen(bstr)).unwrap_or(0);
+                let slice = std::slice::from_raw_parts(bstr, len);
+                String::from_utf16_lossy(slice)
+            };
+            ComValue::String(BStr(text))
+        }
+        VT_NULL => ComValue::Null,
+        VT_ERROR => ComValue::ErrorCode(variant.Anonymous.Anonymous.Anonymous.scode),
+        vt => {
+            return Err(format!("unsupported VARIANT return type vt={vt}"));
+        }
+    };
     Ok(value)
 }
 
@@ -794,6 +1013,10 @@ where
         ComValue::I32(value) => {
             (*variant).Anonymous.Anonymous.vt = VT_I4;
             (*variant).Anonymous.Anonymous.Anonymous.lVal = *value;
+        }
+        ComValue::I64(value) => {
+            (*variant).Anonymous.Anonymous.vt = VT_I8;
+            (*variant).Anonymous.Anonymous.Anonymous.llVal = *value;
         }
         ComValue::F64(value) => match value.subtype() {
             F64Subtype::Single => {
