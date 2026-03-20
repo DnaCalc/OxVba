@@ -1,3 +1,10 @@
+## 2026-03-19 - Extend IP-08B host-root object-return syntax breadth
+
+- Continued `IP-08B` by taking the first syntax-breadth neighbor next to the newly landed direct `Variant` assignment matrix for host-injected object-valued root getters.
+- In [project.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-compiler\src\project.rs), added direct compiler evidence that `Set valueOut = Application.Value()`, `Let valueOut = Application.Value()`, and `valueOut = Application.Value()` preserve the same host-root `Property Get` rewrite on both `VB_PredeclaredId` and `VB_GlobalNamespace` roots.
+- In [engine.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-host\src\engine.rs), added matching host runtime evidence proving those six parenthesized zero-arg `Variant` lanes execute end to end and preserve the same bounded object-handle witness as the direct named-property neighbor.
+- This extends the current `IP-08B` host-root object-return floor from direct named-property `Variant` assignment only to that same bounded matrix plus the parenthesized zero-arg named-property neighbor.
+
 ## 2026-03-19 - Start IP-08B host-root Variant assignment breadth
 
 - Started `IP-08B` from the completed `IP-08A` host foundation by creating [WORKSET_2026-03-19_IP-08B_EXECUTION_CHECKLIST.md](C:\Work\DnaCalc\OxVba\docs\worksets\WORKSET_2026-03-19_IP-08B_EXECUTION_CHECKLIST.md).
