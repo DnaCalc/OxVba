@@ -292,6 +292,14 @@ pub unsafe fn add_ref_dispatch(dispatch: *mut RawIDispatch) -> u32 {
 
 #[cfg(target_os = "windows")]
 #[allow(unsafe_op_in_unsafe_fn)]
+/// Attempt to obtain an `IDispatch` pointer from a raw `IUnknown` via `QueryInterface`.
+///
+/// **Non-IDispatch interface-pointer policy:** VBA's late-bound object model requires
+/// `IDispatch`. COM objects that only expose `IUnknown` (without `IDispatch`) are
+/// deterministically rejected with a stable diagnostic containing the failing HRESULT.
+/// This matches VBA 7.1 behavior where non-`IDispatch` COM objects cannot participate
+/// in late-bound dispatch, property access, or event subscription.
+///
 /// # Safety
 ///
 /// `unknown` must be a valid live COM interface pointer whose `IUnknown` vtable can be called.
