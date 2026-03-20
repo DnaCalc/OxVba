@@ -16321,6 +16321,90 @@ mod tests {
     }
 
     #[test]
+    fn compile_project_rewrites_host_injected_root_returning_com_object_for_imported_scalar_read_assignments()
+     {
+        let cases = [
+            ("predeclared", "Attribute VB_PredeclaredId = True"),
+            ("global namespace", "Attribute VB_GlobalNamespace = True"),
+        ];
+
+        for (label, exposure_attr) in cases {
+            let main_module = module_unit_from_source(
+                "MainModule",
+                ModuleKind::Procedural,
+                "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim obj As OxVba.TestDispatch\nDim implicitValue\nDim explicitValue\nDim implicitParenValue\nDim explicitParenValue\nDim implicitPing\nDim explicitPing\nSet obj = Application.Value\nobj.SetValue = 9\nimplicitValue = obj.Value\nLet explicitValue = obj.Value\nimplicitParenValue = obj.Value()\nLet explicitParenValue = obj.Value()\nimplicitPing = obj.Ping\nLet explicitPing = obj.Ping\nEnd Sub",
+            )
+            .expect("main module parses");
+            let host_application = module_unit_from_source(
+                "Application",
+                ModuleKind::Class,
+                format!(
+                    "Attribute VB_Name = \"Application\"\n{exposure_attr}\nPublic Property Get Value() As Object\nSet Value = CreateObject(4)\nEnd Property"
+                ),
+            )
+            .expect("host application parses");
+            let manifest = ProjectManifest {
+                project_name: "ProjectA".to_string(),
+                project_kind: ProjectKind::Source,
+                modules: vec![main_module],
+                references: vec![
+                    ProjectReference {
+                        referenced_project_name: "HostProject".to_string(),
+                        reference_kind: ReferenceKind::HostInjected,
+                    },
+                    ProjectReference {
+                        referenced_project_name: "OxVba".to_string(),
+                        reference_kind: ReferenceKind::TypeLibrary,
+                    },
+                ],
+                reference_projects: vec![ReferencedProjectManifest {
+                    project_name: "HostProject".to_string(),
+                    modules: vec![host_application],
+                }],
+                conditional_constants: BTreeMap::new(),
+            };
+            let compiled = compile_project(&manifest).unwrap_or_else(|err| {
+                panic!(
+                    "{label} host root returning COM object should preserve imported scalar read-assignment rewrites: {err}"
+                )
+            });
+            let lowered = compiled.rewritten_source.to_ascii_lowercase();
+            assert!(
+                lowered.contains("set obj = property_get_pmr_hostproject_application_value(0)"),
+                "{label}: expected host-root property-get rewrite before imported scalar read-assignment traffic, got: {lowered}"
+            );
+            assert!(
+                lowered.contains("call dispatchinvoke(obj, 7, 9)"),
+                "{label}: expected imported property-put rewrite before getter read-assignment traffic, got: {lowered}"
+            );
+            assert!(
+                lowered.contains("implicitvalue = dispatchinvoke(obj, 9)"),
+                "{label}: expected imported zero-arg property-get implicit read-assignment rewrite, got: {lowered}"
+            );
+            assert!(
+                lowered.contains("let explicitvalue = dispatchinvoke(obj, 9)"),
+                "{label}: expected imported zero-arg property-get explicit Let rewrite, got: {lowered}"
+            );
+            assert!(
+                lowered.contains("implicitparenvalue = dispatchinvoke(obj, 9)"),
+                "{label}: expected imported parenthesized zero-arg property-get implicit rewrite, got: {lowered}"
+            );
+            assert!(
+                lowered.contains("let explicitparenvalue = dispatchinvoke(obj, 9)"),
+                "{label}: expected imported parenthesized zero-arg property-get explicit Let rewrite, got: {lowered}"
+            );
+            assert!(
+                lowered.contains("implicitping = dispatchinvoke(obj, 5)"),
+                "{label}: expected imported zero-arg method implicit read-assignment rewrite, got: {lowered}"
+            );
+            assert!(
+                lowered.contains("let explicitping = dispatchinvoke(obj, 5)"),
+                "{label}: expected imported zero-arg method explicit Let rewrite, got: {lowered}"
+            );
+        }
+    }
+
+    #[test]
     fn compile_project_rewrites_host_injected_root_returning_com_object_for_imported_property_putref_and_get()
      {
         let cases = [

@@ -1,3 +1,10 @@
+## 2026-03-20 - Extend IP-08B host-root imported scalar read assignments
+
+- Continued `IP-08B` by widening the host-returned COM-object breadth from setter/object/default-member/invoke lanes into the matching imported scalar read-assignment subset.
+- In [project.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-compiler\src\project.rs), added direct compiler evidence that host-returned COM objects preserve imported zero-arg property-get, parenthesized zero-arg property-get, and zero-arg method read-assignment rewrites after `Set obj = Application.Value` across both `VB_PredeclaredId` and `VB_GlobalNamespace`.
+- In [engine.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-host\src\engine.rs), added matching host runtime evidence proving those imported scalar read-assignment lanes execute end to end with deterministic getter and method witnesses on the returned COM object.
+- This widens the bounded host/COM coexistence floor beyond invoke-only coverage for those members and makes the imported scalar read-assignment subset explicit on host-returned COM objects.
+
 ## 2026-03-19 - Extend IP-08B host-root parenthesized default-member object return
 
 - Continued `IP-08B` by widening the host-root object-return syntax breadth from direct authoritative default-member assignment into the matching parenthesized zero-arg neighbor.

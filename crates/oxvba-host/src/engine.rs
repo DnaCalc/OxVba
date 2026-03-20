@@ -5077,6 +5077,80 @@ mod tests {
     }
 
     #[test]
+    fn formal_host_project_root_returned_com_object_supports_imported_scalar_read_assignments() {
+        let engine = Engine::new(HostConfig::default());
+        let cases = [
+            ("predeclared", "Attribute VB_PredeclaredId = True"),
+            ("global namespace", "Attribute VB_GlobalNamespace = True"),
+        ];
+
+        for (label, exposure_attr) in cases {
+            let main_module = module_unit_from_source(
+                "MainModule",
+                ModuleKind::Procedural,
+                "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim obj As OxVba.TestDispatch\nDim implicitValue\nDim explicitValue\nDim implicitParenValue\nDim explicitParenValue\nDim implicitPing\nDim explicitPing\nSet obj = Application.Value\nobj.SetValue = 9\nimplicitValue = obj.Value\nLet explicitValue = obj.Value\nimplicitParenValue = obj.Value()\nLet explicitParenValue = obj.Value()\nimplicitPing = obj.Ping\nLet explicitPing = obj.Ping\nEnd Sub",
+            )
+            .expect("main module should parse");
+            let host_application = module_unit_from_source(
+                "Application",
+                ModuleKind::Class,
+                format!(
+                    "Attribute VB_Name = \"Application\"\n{exposure_attr}\nPublic Property Get Value() As Object\nSet Value = CreateObject(4)\nEnd Property"
+                ),
+            )
+            .expect("host application module should parse");
+            let manifest = ProjectManifest {
+                project_name: "ProjectA".to_string(),
+                project_kind: ProjectKind::Source,
+                modules: vec![main_module],
+                references: vec![
+                    ProjectReference {
+                        referenced_project_name: "HostProject".to_string(),
+                        reference_kind: ReferenceKind::HostInjected,
+                    },
+                    ProjectReference {
+                        referenced_project_name: "OxVba".to_string(),
+                        reference_kind: ReferenceKind::TypeLibrary,
+                    },
+                ],
+                reference_projects: vec![ReferencedProjectManifest {
+                    project_name: "HostProject".to_string(),
+                    modules: vec![host_application],
+                }],
+                conditional_constants: std::collections::BTreeMap::new(),
+            };
+
+            let snapshot = engine
+                .execute_project_with_value_snapshot_phased(&manifest)
+                .unwrap_or_else(|err| {
+                    panic!(
+                        "{label} host root should preserve imported scalar read-assignment traffic on the returned COM object: {err}"
+                    )
+                });
+            match snapshot.as_slice() {
+                [
+                    RuntimeValue::ObjectHandle(root),
+                    RuntimeValue::I32(implicit_value),
+                    RuntimeValue::I32(explicit_value),
+                    RuntimeValue::I32(implicit_paren_value),
+                    RuntimeValue::I32(explicit_paren_value),
+                    RuntimeValue::I32(implicit_ping),
+                    RuntimeValue::I32(explicit_ping),
+                ] if root.raw() == 5_004
+                    && *implicit_value == 5_013
+                    && *explicit_value == 5_013
+                    && *implicit_paren_value == 5_013
+                    && *explicit_paren_value == 5_013
+                    && *implicit_ping == 5_009
+                    && *explicit_ping == 5_009 => {}
+                other => panic!(
+                    "{label}: expected host-root imported scalar read-assignment traffic to preserve setter-backed getter witnesses and Ping sentinels on the returned COM object, got: {other:?}"
+                ),
+            }
+        }
+    }
+
+    #[test]
     fn formal_host_project_root_returned_com_object_supports_imported_property_putref_and_get() {
         let engine = Engine::new(HostConfig::default());
         let cases = [
