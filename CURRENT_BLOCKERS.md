@@ -178,20 +178,19 @@ Run context: active parity/compliance execution plus in-progress feature worklis
 ### BLK-EVT-002: Event parity residuals remain open after baseline closure
 - Impact:
   - Blocks `IP-07` event runtime parity.
-  - Blocks part of `IP-08` host project / Office-style hosting parity.
 - Current state:
   - baseline event runtime work is stronger, but open residuals remain:
-    - explicit host-event ingress now executes bound handlers directly into live runtime sessions through source-instance-aware guard wrappers with deterministic ordering, bounded zero/one-argument forwarding, and bounded missing-target/arity diagnostics,
+    - explicit host-event ingress on referenced `HostInjected` sources now has direct compiler and host evidence for source-instance-aware zero/one-argument routing across both `VB_PredeclaredId` and `VB_GlobalNamespace`, plus same-name plain-project precedence on one-argument routes and deterministic higher-arity rejection on live host-backed source handles,
     - `DIV-0004`
     - `ODG-038`
     - `ODG-039`
     - remaining COM adapter parity lanes
 - Exact unblock steps:
-  - finish unified host ingress behavior,
+  - finish the remaining event-runtime parity outside the now-explicit host-backed ingress subset,
   - close remaining COM callback/event transport residuals,
   - resolve or bound the remaining divergence/oracle topics.
 - Recommendation:
-  - continue after host/object/event ingress and COM transport work are stable.
+  - keep the remaining event residuals under `IP-07`; they no longer need to be carried as an `IP-08` host-foundation ambiguity.
 
 ### BLK-HOST-001: Host project / Office-style host model remains below parity target
 - Impact:
@@ -219,6 +218,7 @@ Run context: active parity/compliance execution plus in-progress feature worklis
   - host-looking names backed by `HostInjected` class modules that are present but not exposed through `VB_PredeclaredId=True` or `VB_GlobalNamespace=True` now fail deterministically with `PMR-E-HOST-ROOT-NOT-EXPOSED`,
   - supported live runtime sessions now also have direct executable evidence that host-injected root state remains isolated per runtime across event ingress for both exposure modes,
   - host-backed `WithEvents` routing now also has direct executable evidence on referenced `HostInjected` event sources, with event ingress routing only for the snapped bound source handle while sibling handles of the same referenced source type no-op deterministically,
+  - the same bounded host-backed callback floor now also has direct compiler and host evidence for one-argument event ingress on referenced `HostInjected` sources across both exposure modes, including same-name plain-project precedence on those one-argument routes and deterministic rejection of higher-arity forwarded ingress on the live bound source handle,
   - conflicting same-name plain-project class references now also have direct executable evidence that they do not steal `HostInjected` `WithEvents` source ownership by reference order,
   - neighboring COM-backed object handles now also have direct executable evidence that they do not perturb host-backed `WithEvents` ownership or route host event ingress for the bound host-backed source,
   - host-injected root getters now also have direct executable evidence that they may return a COM-backed object and feed that returned object through bounded `DispatchInvoke` on the shared object/value model,

@@ -1981,3 +1981,13 @@
 - In [project.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-compiler\src\project.rs), added direct compiler evidence that a conflicting same-name plain-project `Application` class does not steal any of the four bounded imported `RaiseException` invoke forms after the host-injected `Application.Value -> CreateObject(4)` handoff.
 - In [engine.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-host\src\engine.rs), added matching host runtime evidence proving the same-name plain-project shadow still leaves the host-root COM-backed object in control and preserves the controlled `com-dispatch-exception-raised` fault across those four imported invoke forms.
 - This narrows the remaining `IP-08A` host identity frontier again: the current imported exception subset is no longer missing same-name plain-project precedence evidence, while broader host/project identity boundaries still remain open.
+
+# 2026-03-20 - Make host-backed one-argument event ingress explicit for IP-08B
+
+- Continued `IP-08B` by proving the remaining host-owned event rows instead of continuing to carry them as a vague shared residual with the general event program.
+- In [project.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-compiler\src\project.rs), added direct compiler evidence that referenced `HostInjected` one-argument `WithEvents` bindings stay keyed to `HostProject.Emitter` across both `VB_PredeclaredId` and `VB_GlobalNamespace`, and that the same-name plain-project `Emitter` neighbor still does not steal those one-argument bindings by reference order.
+- In [engine.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-host\src\engine.rs), added matching host runtime evidence that one-argument host-event ingress:
+  - routes only on the snapped bound host-backed source handle while sibling handles of the same referenced source type stay non-routing,
+  - preserves same-name plain-project precedence on the live one-argument route,
+  - rejects higher-arity forwarded ingress deterministically on the live host-backed source path.
+- This moves the remaining event-runtime residuals back under `IP-07`: the current `IP-08` host surface no longer carries an unresolved host-owned callback/event gap above the completed `IP-08A` substrate, while broader host-returned COM breadth and richer root/global/project behavior remain open under `IP-08B`.

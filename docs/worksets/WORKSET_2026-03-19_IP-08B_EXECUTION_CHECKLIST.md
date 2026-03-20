@@ -17,7 +17,7 @@ Purpose: turn the completed `IP-08A` host foundation into an explicit `IP-08B` p
 
 - [ ] The supported host root/global/project behavior matrix is explicit across assignment intent, invoke shape, and precedence rules for the scoped hosting target.
 - [ ] The supported host-returned COM-object matrix is explicit across the intended imported member/property/default-member breadth for the scoped hosting target.
-- [ ] Host callback / event behavior no longer carries `IP-08`-owned parity gaps that belong above the completed `IP-08A` substrate.
+- [x] Host callback / event behavior no longer carries `IP-08`-owned parity gaps that belong above the completed `IP-08A` substrate.
 - [ ] `CURRENT_BLOCKERS.md` and `IN_PROGRESS_FEATURE_WORKLIST.md` describe only the truly remaining host parity breadth, not missing host foundation semantics.
 
 ## Lane matrix
@@ -74,4 +74,10 @@ The next bounded executable neighbors after `IP-08A` are:
 - [x] widen host-root authoritative default-member object-get assignment-intent evidence into the `Variant` matrix
 - [x] widen host-root object-valued getter syntax breadth through the parenthesized authoritative default-member `Variant` neighbor
 - [ ] widen host-returned COM imported breadth beyond the currently proved bounded member/property/default-member subset where parity requires it
-- [ ] capture the remaining host callback / event breadth that still belongs to `IP-08` rather than `IP-07`
+- [x] capture the remaining host callback / event breadth that still belongs to `IP-08` rather than `IP-07`
+
+Current event/callback boundary:
+
+- the host-backed callback floor now has direct compiler and host evidence for zero/one-argument ingress on referenced `HostInjected` event sources across both `VB_PredeclaredId` and `VB_GlobalNamespace`,
+- the same floor now also proves source-instance routing, same-name plain-project precedence on one-argument routes, and deterministic rejection of higher-arity forwarded host ingress on live host-backed source handles,
+- remaining event-runtime residuals stay under `IP-07` (`DIV-0004`, `ODG-038`, `ODG-039`, and the remaining COM event parity lanes), not under `IP-08`.

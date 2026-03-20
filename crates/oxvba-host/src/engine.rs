@@ -4819,6 +4819,337 @@ mod tests {
     }
 
     #[test]
+    fn formal_host_project_one_arg_event_ingress_routes_only_bound_host_backed_source_handle() {
+        let engine = Engine::new(HostConfig::default());
+        let cases = [
+            ("predeclared", "Attribute VB_PredeclaredId = True"),
+            ("global namespace", "Attribute VB_GlobalNamespace = True"),
+        ];
+
+        for (label, exposure_attr) in cases {
+            let main_module = module_unit_from_source(
+                "MainModule",
+                ModuleKind::Procedural,
+                "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim bound As Object\nDim other As Object\nDim s As New Sink\nSet bound = Application.Value\nSet other = Application.OtherValue\nCall s.Attach(bound)\nEnd Sub",
+            )
+            .expect("main module should parse");
+            let sink = module_unit_from_source(
+                "Sink",
+                ModuleKind::Class,
+                "Attribute VB_Name = \"Sink\"\nPrivate WithEvents em As Emitter\nPublic Sub Attach(ByVal e As Object)\nSet em = e\nEnd Sub\nPrivate Sub em_changed(ByVal n)\nIf n = 42 Then\nError 242\nElse\nError 241\nEnd If\nEnd Sub",
+            )
+            .expect("sink module should parse");
+            let host_application = module_unit_from_source(
+                "Application",
+                ModuleKind::Class,
+                format!(
+                    "Attribute VB_Name = \"Application\"\n{exposure_attr}\nPublic Property Get Value() As Object\nDim e As New Emitter\nSet Value = e\nEnd Property\nPublic Property Get OtherValue() As Object\nDim e As New Emitter\nSet OtherValue = e\nEnd Property"
+                ),
+            )
+            .expect("host application module should parse");
+            let host_emitter = module_unit_from_source(
+                "Emitter",
+                ModuleKind::Class,
+                "Attribute VB_Name = \"Emitter\"\nPublic Event Changed(ByVal n As Integer)\n",
+            )
+            .expect("host emitter module should parse");
+            let manifest = ProjectManifest {
+                project_name: "ProjectA".to_string(),
+                project_kind: ProjectKind::Source,
+                modules: vec![main_module, sink],
+                references: vec![ProjectReference {
+                    referenced_project_name: "HostProject".to_string(),
+                    reference_kind: ReferenceKind::HostInjected,
+                }],
+                reference_projects: vec![ReferencedProjectManifest {
+                    project_name: "HostProject".to_string(),
+                    modules: vec![host_application, host_emitter],
+                }],
+                conditional_constants: std::collections::BTreeMap::new(),
+            };
+
+            let mut runtime = engine
+                .start_project_runtime_session(&manifest)
+                .unwrap_or_else(|err| panic!("{label} runtime should start: {err}"));
+            let snapshot = runtime.snapshot_values();
+            let snapshot_handle = |value: &RuntimeValue| match value {
+                RuntimeValue::ObjectHandle(handle) if handle.raw() > 0 => Some(*handle),
+                RuntimeValue::I32(raw) if *raw > 0 => Some(ObjectHandle::new(*raw)),
+                _ => None,
+            };
+            let (bound_handle, other_handle) = match snapshot.as_slice() {
+                [bound, other, _sink] => {
+                    let bound_handle = snapshot_handle(bound);
+                    let other_handle = snapshot_handle(other);
+                    match (bound_handle, other_handle) {
+                        (Some(bound_handle), Some(other_handle))
+                            if bound_handle.raw() != other_handle.raw() =>
+                        {
+                            (bound_handle, other_handle)
+                        }
+                        _ => panic!(
+                            "{label} should snapshot distinct bound and unbound one-arg host-backed emitters: {snapshot:?}"
+                        ),
+                    }
+                }
+                _ => panic!(
+                    "{label} should snapshot bound and unbound one-arg host-backed emitters: {snapshot:?}"
+                ),
+            };
+
+            let unmatched = engine
+                .dispatch_host_event_into_runtime(
+                    &mut runtime,
+                    "HostProject",
+                    "Emitter",
+                    "Changed",
+                    other_handle,
+                    &[RuntimeValue::I32(42)],
+                )
+                .unwrap_or_else(|err| {
+                    panic!(
+                        "{label} unmatched one-arg host-backed event should not fail ingress: {err}"
+                    )
+                });
+            assert!(
+                unmatched,
+                "{label}: one-arg host-backed event source should still resolve a binding set"
+            );
+
+            let err = engine
+                .dispatch_host_event_into_runtime(
+                    &mut runtime,
+                    "HostProject",
+                    "Emitter",
+                    "Changed",
+                    bound_handle,
+                    &[RuntimeValue::I32(42)],
+                )
+                .expect_err("bound one-arg host-backed event should route to the sink handler");
+            assert_eq!(err.phase(), DiagnosticPhase::Runtime);
+            assert!(
+                err.message().contains("runtime error: 242"),
+                "{label}: bound one-arg host-backed source should route callback with its forwarded argument, got: {}",
+                err.message()
+            );
+        }
+    }
+
+    #[test]
+    fn formal_host_project_one_arg_withevents_prefers_host_injected_source_over_plain_project_name_match()
+     {
+        let engine = Engine::new(HostConfig::default());
+        let cases = [
+            ("predeclared", "Attribute VB_PredeclaredId = True"),
+            ("global namespace", "Attribute VB_GlobalNamespace = True"),
+        ];
+
+        for (label, exposure_attr) in cases {
+            let main_module = module_unit_from_source(
+                "MainModule",
+                ModuleKind::Procedural,
+                "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim bound As Object\nDim s As New Sink\nSet bound = Application.Value\nCall s.Attach(bound)\nEnd Sub",
+            )
+            .expect("main module should parse");
+            let sink = module_unit_from_source(
+                "Sink",
+                ModuleKind::Class,
+                "Attribute VB_Name = \"Sink\"\nPrivate WithEvents em As Emitter\nPublic Sub Attach(ByVal e As Object)\nSet em = e\nEnd Sub\nPrivate Sub em_changed(ByVal n)\nIf n = 42 Then\nError 244\nElse\nError 241\nEnd If\nEnd Sub",
+            )
+            .expect("sink module should parse");
+            let host_application = module_unit_from_source(
+                "Application",
+                ModuleKind::Class,
+                format!(
+                    "Attribute VB_Name = \"Application\"\n{exposure_attr}\nPublic Property Get Value() As Object\nDim e As New Emitter\nSet Value = e\nEnd Property"
+                ),
+            )
+            .expect("host application module should parse");
+            let host_emitter = module_unit_from_source(
+                "Emitter",
+                ModuleKind::Class,
+                "Attribute VB_Name = \"Emitter\"\nPublic Event Changed(ByVal n As Integer)\n",
+            )
+            .expect("host emitter module should parse");
+            let plain_emitter = module_unit_from_source(
+                "Emitter",
+                ModuleKind::Class,
+                "Attribute VB_Name = \"Emitter\"\nPublic Event Changed(ByVal n As Integer)\n",
+            )
+            .expect("plain emitter module should parse");
+            let manifest = ProjectManifest {
+                project_name: "ProjectA".to_string(),
+                project_kind: ProjectKind::Source,
+                modules: vec![main_module, sink],
+                references: vec![
+                    ProjectReference {
+                        referenced_project_name: "PlainProject".to_string(),
+                        reference_kind: ReferenceKind::Project,
+                    },
+                    ProjectReference {
+                        referenced_project_name: "HostProject".to_string(),
+                        reference_kind: ReferenceKind::HostInjected,
+                    },
+                ],
+                reference_projects: vec![
+                    ReferencedProjectManifest {
+                        project_name: "PlainProject".to_string(),
+                        modules: vec![plain_emitter],
+                    },
+                    ReferencedProjectManifest {
+                        project_name: "HostProject".to_string(),
+                        modules: vec![host_application, host_emitter],
+                    },
+                ],
+                conditional_constants: std::collections::BTreeMap::new(),
+            };
+
+            let mut runtime = engine
+                .start_project_runtime_session(&manifest)
+                .unwrap_or_else(|err| panic!("{label} runtime should start: {err}"));
+            let snapshot = runtime.snapshot_values();
+            let bound_handle = match snapshot.as_slice() {
+                [bound, _sink] => match bound {
+                    RuntimeValue::ObjectHandle(handle) if handle.raw() > 0 => *handle,
+                    RuntimeValue::I32(raw) if *raw > 0 => ObjectHandle::new(*raw),
+                    _ => panic!(
+                        "{label} should snapshot a bound one-arg host-backed emitter handle: {snapshot:?}"
+                    ),
+                },
+                _ => panic!(
+                    "{label} should snapshot bound one-arg host-backed emitter plus sink instance: {snapshot:?}"
+                ),
+            };
+
+            let plain_project_routed = engine
+                .dispatch_host_event_into_runtime(
+                    &mut runtime,
+                    "PlainProject",
+                    "Emitter",
+                    "Changed",
+                    bound_handle,
+                    &[RuntimeValue::I32(42)],
+                )
+                .unwrap_or_else(|err| {
+                    panic!(
+                        "{label} plain project one-arg event ingress should stay non-routing: {err}"
+                    )
+                });
+            assert!(
+                !plain_project_routed,
+                "{label}: plain project type-name match must not own one-arg host-backed WithEvents routing"
+            );
+
+            let err = engine
+                .dispatch_host_event_into_runtime(
+                    &mut runtime,
+                    "HostProject",
+                    "Emitter",
+                    "Changed",
+                    bound_handle,
+                    &[RuntimeValue::I32(42)],
+                )
+                .expect_err(
+                    "host-injected one-arg source should own the conflicting WithEvents route",
+                );
+            assert_eq!(err.phase(), DiagnosticPhase::Runtime);
+            assert!(
+                err.message().contains("runtime error: 244"),
+                "{label}: host-injected one-arg source should route callback, got: {}",
+                err.message()
+            );
+        }
+    }
+
+    #[test]
+    fn formal_host_project_one_arg_event_ingress_rejects_more_than_one_forwarded_arg() {
+        let engine = Engine::new(HostConfig::default());
+        let cases = [
+            ("predeclared", "Attribute VB_PredeclaredId = True"),
+            ("global namespace", "Attribute VB_GlobalNamespace = True"),
+        ];
+
+        for (label, exposure_attr) in cases {
+            let main_module = module_unit_from_source(
+                "MainModule",
+                ModuleKind::Procedural,
+                "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim bound As Object\nDim s As New Sink\nSet bound = Application.Value\nCall s.Attach(bound)\nEnd Sub",
+            )
+            .expect("main module should parse");
+            let sink = module_unit_from_source(
+                "Sink",
+                ModuleKind::Class,
+                "Attribute VB_Name = \"Sink\"\nPrivate WithEvents em As Emitter\nPublic Sub Attach(ByVal e As Object)\nSet em = e\nEnd Sub\nPrivate Sub em_changed(ByVal n)\nEnd Sub",
+            )
+            .expect("sink module should parse");
+            let host_application = module_unit_from_source(
+                "Application",
+                ModuleKind::Class,
+                format!(
+                    "Attribute VB_Name = \"Application\"\n{exposure_attr}\nPublic Property Get Value() As Object\nDim e As New Emitter\nSet Value = e\nEnd Property"
+                ),
+            )
+            .expect("host application module should parse");
+            let host_emitter = module_unit_from_source(
+                "Emitter",
+                ModuleKind::Class,
+                "Attribute VB_Name = \"Emitter\"\nPublic Event Changed(ByVal n As Integer)\n",
+            )
+            .expect("host emitter module should parse");
+            let manifest = ProjectManifest {
+                project_name: "ProjectA".to_string(),
+                project_kind: ProjectKind::Source,
+                modules: vec![main_module, sink],
+                references: vec![ProjectReference {
+                    referenced_project_name: "HostProject".to_string(),
+                    reference_kind: ReferenceKind::HostInjected,
+                }],
+                reference_projects: vec![ReferencedProjectManifest {
+                    project_name: "HostProject".to_string(),
+                    modules: vec![host_application, host_emitter],
+                }],
+                conditional_constants: std::collections::BTreeMap::new(),
+            };
+
+            let mut runtime = engine
+                .start_project_runtime_session(&manifest)
+                .unwrap_or_else(|err| panic!("{label} runtime should start: {err}"));
+            let snapshot = runtime.snapshot_values();
+            let bound_handle = match snapshot.as_slice() {
+                [bound, _sink] => match bound {
+                    RuntimeValue::ObjectHandle(handle) if handle.raw() > 0 => *handle,
+                    RuntimeValue::I32(raw) if *raw > 0 => ObjectHandle::new(*raw),
+                    _ => panic!(
+                        "{label} should snapshot a bound one-arg host-backed emitter handle: {snapshot:?}"
+                    ),
+                },
+                _ => panic!(
+                    "{label} should snapshot bound one-arg host-backed emitter plus sink instance: {snapshot:?}"
+                ),
+            };
+
+            let err = engine
+                .dispatch_host_event_into_runtime(
+                    &mut runtime,
+                    "HostProject",
+                    "Emitter",
+                    "Changed",
+                    bound_handle,
+                    &[RuntimeValue::I32(1), RuntimeValue::I32(2)],
+                )
+                .expect_err(
+                    "host-backed one-arg event ingress should reject more than one forwarded arg",
+                );
+            assert_eq!(err.phase(), DiagnosticPhase::Runtime);
+            assert!(
+                err.message().contains("PMR-E-HOST-EVENT-ARITY-UNSUPPORTED"),
+                "{label}: unexpected host-backed one-arg ingress diagnostic: {}",
+                err.message()
+            );
+        }
+    }
+
+    #[test]
     fn formal_host_project_root_can_return_com_backed_object_for_dispatch_invoke() {
         let engine = Engine::new(HostConfig::default());
         let cases = [
