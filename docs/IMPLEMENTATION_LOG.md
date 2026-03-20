@@ -1,3 +1,10 @@
+## 2026-03-20 - Extend IP-08B host-root imported positional reads
+
+- Continued `IP-08B` by widening the host-returned COM-object breadth from statement-only positional invoke lanes into the matching imported read-assignment subset.
+- In [project.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-compiler\src\project.rs), added direct compiler evidence that host-returned COM objects preserve imported positional method/property/default-member read-assignment rewrites with both implicit and explicit-`Let` syntax after `Set obj = Application.Value` across both `VB_PredeclaredId` and `VB_GlobalNamespace`.
+- In [engine.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-host\src\engine.rs), added matching host runtime evidence proving those imported positional read-assignment lanes execute end to end with deterministic method/property/default-member witnesses on the returned COM object.
+- This widens the bounded host/COM coexistence floor beyond statement-only positional coverage and makes the imported positional read-assignment subset explicit on host-returned COM objects.
+
 ## 2026-03-20 - Extend IP-08B host-root imported named-argument reads
 
 - Continued `IP-08B` by widening the host-returned COM-object breadth from statement-context named-argument invoke lanes into the matching imported read-assignment subset.
