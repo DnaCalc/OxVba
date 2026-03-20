@@ -100,17 +100,14 @@ pub fn canonicalize_member_known_args(
 
 pub fn plan_unbound_runtime_invoke(
     member: ComMemberToken,
-    args: &[ComInvokeArg],
+    _args: &[ComInvokeArg],
     known_spec: Option<ComMemberSpec>,
 ) -> Result<UnboundRuntimeInvokePlan, String> {
     if let Some(spec) = known_spec {
         return Ok(UnboundRuntimeInvokePlan::MemberSpec(spec));
     }
-    if args.iter().any(|arg| arg.name.is_some()) {
-        return Err(
-            "named arguments require a resolved COM member name and remain unsupported for default-member/direct-DISPID dispatch".to_string(),
-        );
-    }
+    // Named args without metadata are allowed to pass through. The Windows adapter
+    // resolves named arg DISPIDs at runtime via GetIDsOfNames on the IDispatch interface.
     Ok(UnboundRuntimeInvokePlan::DirectPropertyGet { dispid: member })
 }
 
@@ -133,11 +130,10 @@ pub fn plan_bound_runtime_invoke(
     } else {
         None
     };
-    if request.member.raw() == 0 && has_named_args && named_default_member_spec.is_none() {
-        return Err(
-            "default member identity unavailable for named late-bound dispatch".to_string(),
-        );
-    }
+    // When the default member has no metadata-backed spec but named args are present,
+    // allow the request to pass through with DISPID 0. The Windows adapter will resolve
+    // named arg DISPIDs at runtime via GetIDsOfNames, matching VBA 7.1 late-bound behavior
+    // where default-member named args work without compile-time typelib metadata.
     let effective_member = named_default_member_spec
         .as_ref()
         .map(|(token, _)| *token)
@@ -177,8 +173,8 @@ mod tests {
     use oxvba_runtime::ObjectHandle;
 
     use super::{
-        canonicalize_member_known_args, legacy_runtime_arg_values, plan_bound_runtime_invoke,
-        plan_unbound_runtime_invoke, validate_named_arg_order,
+        UnboundRuntimeInvokePlan, canonicalize_member_known_args, legacy_runtime_arg_values,
+        plan_bound_runtime_invoke, plan_unbound_runtime_invoke, validate_named_arg_order,
     };
 
     #[test]
@@ -211,14 +207,19 @@ mod tests {
     }
 
     #[test]
-    fn plan_unbound_runtime_invoke_rejects_named_args_without_known_member() {
-        let err = plan_unbound_runtime_invoke(
+    fn plan_unbound_runtime_invoke_allows_named_args_for_runtime_resolution() {
+        let plan = plan_unbound_runtime_invoke(
             ComMemberToken::new(9),
             &[ComInvokeArg::named_value(ComValue::I32(5), "value")],
             None,
         )
-        .expect_err("named unbound dispatch without metadata should fail");
-        assert!(err.contains("resolved COM member name"));
+        .expect("named unbound dispatch should pass through for runtime resolution");
+        match plan {
+            UnboundRuntimeInvokePlan::DirectPropertyGet { dispid } => {
+                assert_eq!(dispid.raw(), 9);
+            }
+            _ => panic!("expected DirectPropertyGet plan"),
+        }
     }
 
     #[test]
@@ -248,7 +249,8 @@ mod tests {
     }
 
     #[test]
-    fn plan_bound_runtime_invoke_rejects_named_default_member_without_identity() {
+    fn plan_bound_runtime_invoke_allows_named_default_member_without_identity_for_runtime_resolution()
+     {
         let binding = ComBinding::new("Test.Dispatch".to_string(), 1);
         let request = ComInvokeRequest {
             object: ObjectHandle::new(20_001),
@@ -256,9 +258,10 @@ mod tests {
             args: vec![ComInvokeArg::named_value(ComValue::I32(19), "value")],
             invoke_kind_hint: None,
         };
-        let err = plan_bound_runtime_invoke(&binding, &request, None)
-            .expect_err("missing default identity should fail");
-        assert!(err.contains("default member identity unavailable"));
+        let plan = plan_bound_runtime_invoke(&binding, &request, None)
+            .expect("named default-member dispatch should pass through for runtime resolution");
+        assert_eq!(plan.effective_member.raw(), 0);
+        assert!(plan.named_default_member_spec.is_none());
     }
 
     #[test]
