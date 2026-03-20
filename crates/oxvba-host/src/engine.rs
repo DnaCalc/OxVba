@@ -5151,6 +5151,81 @@ mod tests {
     }
 
     #[test]
+    fn formal_host_project_root_returned_com_object_supports_imported_named_argument_read_assignments()
+     {
+        let engine = Engine::new(HostConfig::default());
+        let cases = [
+            ("predeclared", "Attribute VB_PredeclaredId = True"),
+            ("global namespace", "Attribute VB_GlobalNamespace = True"),
+        ];
+
+        for (label, exposure_attr) in cases {
+            let main_module = module_unit_from_source(
+                "MainModule",
+                ModuleKind::Procedural,
+                "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim obj As OxVba.TestDispatch\nDim sumPair\nDim lookupPair\nDim echoValue\nDim letSumPair\nDim letLookupPair\nDim letEchoValue\nSet obj = Application.Value\nsumPair = obj.SumPair(rhs := 14, lhs := 3)\nlookupPair = obj.LookupPair(rhs := 9, lhs := 5)\nechoValue = obj(value := 41)\nLet letSumPair = obj.SumPair(rhs := 14, lhs := 3)\nLet letLookupPair = obj.LookupPair(rhs := 9, lhs := 5)\nLet letEchoValue = obj(value := 41)\nEnd Sub",
+            )
+            .expect("main module should parse");
+            let host_application = module_unit_from_source(
+                "Application",
+                ModuleKind::Class,
+                format!(
+                    "Attribute VB_Name = \"Application\"\n{exposure_attr}\nPublic Property Get Value() As Object\nSet Value = CreateObject(4)\nEnd Property"
+                ),
+            )
+            .expect("host application module should parse");
+            let manifest = ProjectManifest {
+                project_name: "ProjectA".to_string(),
+                project_kind: ProjectKind::Source,
+                modules: vec![main_module],
+                references: vec![
+                    ProjectReference {
+                        referenced_project_name: "HostProject".to_string(),
+                        reference_kind: ReferenceKind::HostInjected,
+                    },
+                    ProjectReference {
+                        referenced_project_name: "OxVba".to_string(),
+                        reference_kind: ReferenceKind::TypeLibrary,
+                    },
+                ],
+                reference_projects: vec![ReferencedProjectManifest {
+                    project_name: "HostProject".to_string(),
+                    modules: vec![host_application],
+                }],
+                conditional_constants: std::collections::BTreeMap::new(),
+            };
+
+            let snapshot = engine
+                .execute_project_with_value_snapshot_phased(&manifest)
+                .unwrap_or_else(|err| {
+                    panic!(
+                        "{label} host root should preserve imported named-argument read-assignment traffic on the returned COM object: {err}"
+                    )
+                });
+            match snapshot.as_slice() {
+                [
+                    RuntimeValue::ObjectHandle(root),
+                    RuntimeValue::I32(sum_pair),
+                    RuntimeValue::I32(lookup_pair),
+                    RuntimeValue::I32(echo_value),
+                    RuntimeValue::I32(let_sum_pair),
+                    RuntimeValue::I32(let_lookup_pair),
+                    RuntimeValue::I32(let_echo_value),
+                ] if root.raw() == 5_004
+                    && *sum_pair == 5_033
+                    && *lookup_pair == 5_031
+                    && *echo_value == 5_061
+                    && *let_sum_pair == 5_033
+                    && *let_lookup_pair == 5_031
+                    && *let_echo_value == 5_061 => {}
+                other => panic!(
+                    "{label}: expected host-root imported named-argument read-assignment traffic to preserve method/property/default-member witnesses on the returned COM object, got: {other:?}"
+                ),
+            }
+        }
+    }
+
+    #[test]
     fn formal_host_project_root_returned_com_object_supports_imported_property_putref_and_get() {
         let engine = Engine::new(HostConfig::default());
         let cases = [

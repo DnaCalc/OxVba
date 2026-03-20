@@ -16405,6 +16405,86 @@ mod tests {
     }
 
     #[test]
+    fn compile_project_rewrites_host_injected_root_returning_com_object_for_imported_named_argument_read_assignments()
+     {
+        let cases = [
+            ("predeclared", "Attribute VB_PredeclaredId = True"),
+            ("global namespace", "Attribute VB_GlobalNamespace = True"),
+        ];
+
+        for (label, exposure_attr) in cases {
+            let main_module = module_unit_from_source(
+                "MainModule",
+                ModuleKind::Procedural,
+                "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim obj As OxVba.TestDispatch\nDim sumPair\nDim lookupPair\nDim echoValue\nDim letSumPair\nDim letLookupPair\nDim letEchoValue\nSet obj = Application.Value\nsumPair = obj.SumPair(rhs := 14, lhs := 3)\nlookupPair = obj.LookupPair(rhs := 9, lhs := 5)\nechoValue = obj(value := 41)\nLet letSumPair = obj.SumPair(rhs := 14, lhs := 3)\nLet letLookupPair = obj.LookupPair(rhs := 9, lhs := 5)\nLet letEchoValue = obj(value := 41)\nEnd Sub",
+            )
+            .expect("main module parses");
+            let host_application = module_unit_from_source(
+                "Application",
+                ModuleKind::Class,
+                format!(
+                    "Attribute VB_Name = \"Application\"\n{exposure_attr}\nPublic Property Get Value() As Object\nSet Value = CreateObject(4)\nEnd Property"
+                ),
+            )
+            .expect("host application parses");
+            let manifest = ProjectManifest {
+                project_name: "ProjectA".to_string(),
+                project_kind: ProjectKind::Source,
+                modules: vec![main_module],
+                references: vec![
+                    ProjectReference {
+                        referenced_project_name: "HostProject".to_string(),
+                        reference_kind: ReferenceKind::HostInjected,
+                    },
+                    ProjectReference {
+                        referenced_project_name: "OxVba".to_string(),
+                        reference_kind: ReferenceKind::TypeLibrary,
+                    },
+                ],
+                reference_projects: vec![ReferencedProjectManifest {
+                    project_name: "HostProject".to_string(),
+                    modules: vec![host_application],
+                }],
+                conditional_constants: BTreeMap::new(),
+            };
+            let compiled = compile_project(&manifest).unwrap_or_else(|err| {
+                panic!(
+                    "{label} host root returning COM object should preserve imported named-argument read-assignment rewrites: {err}"
+                )
+            });
+            let lowered = compiled.rewritten_source.to_ascii_lowercase();
+            assert!(
+                lowered.contains("set obj = property_get_pmr_hostproject_application_value(0)"),
+                "{label}: expected host-root property-get rewrite before imported named-argument read-assignment traffic, got: {lowered}"
+            );
+            assert!(
+                lowered.contains("sumpair = dispatchinvoke(obj, 12, rhs := 14, lhs := 3)"),
+                "{label}: expected imported named-argument method implicit read-assignment rewrite, got: {lowered}"
+            );
+            assert!(
+                lowered.contains("lookuppair = dispatchinvoke(obj, 13, rhs := 9, lhs := 5)"),
+                "{label}: expected imported named-argument property-get implicit read-assignment rewrite, got: {lowered}"
+            );
+            assert!(
+                lowered.contains("echovalue = dispatchinvoke(obj, 16, value := 41)"),
+                "{label}: expected imported named-argument default-member implicit read-assignment rewrite, got: {lowered}"
+            );
+            assert!(
+                lowered.contains("let letsumpair = dispatchinvoke(obj, 12, rhs := 14, lhs := 3)"),
+                "{label}: expected imported named-argument method explicit Let rewrite, got: {lowered}"
+            );
+            assert!(
+                lowered.contains("let letlookuppair = dispatchinvoke(obj, 13, rhs := 9, lhs := 5)"),
+                "{label}: expected imported named-argument property-get explicit Let rewrite, got: {lowered}"
+            );
+            assert!(
+                lowered.contains("let letechovalue = dispatchinvoke(obj, 16, value := 41)"),
+                "{label}: expected imported named-argument default-member explicit Let rewrite, got: {lowered}"
+            );
+        }
+    }
+
+    #[test]
     fn compile_project_rewrites_host_injected_root_returning_com_object_for_imported_property_putref_and_get()
      {
         let cases = [
