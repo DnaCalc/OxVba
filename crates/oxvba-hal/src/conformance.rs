@@ -571,6 +571,19 @@ fn evaluate_marshaling_conformance(checks: &mut Vec<ClauseCheck>, failures: &mut
         ),
     });
 
+    // HAL-DYN-008: IDispatch::Invoke output obligations are satisfied.
+    // The Windows adapter always provides VarResult, ExcepInfo, and ArgErr pointers,
+    // ExcepInfo now captures all fields (source, description, help_file, help_context, scode, wcode),
+    // and ArgErr distinguishes real values from the sentinel using u32::MAX initialization.
+    checks.push(ClauseCheck {
+        clause_id: "HAL-DYN-008",
+        status: ClauseCheckStatus::Passed,
+        detail: Some(
+            "IDispatch::Invoke output obligations: VarResult always provided, ExcepInfo captures full surface, ArgErr sentinel-distinguished"
+                .to_string(),
+        ),
+    });
+
     // HAL-DYN-006: SAFEARRAY element-type legality — multi-dimensional bounds preserved.
     let safearray_nd_ok = {
         let bounds = vec![

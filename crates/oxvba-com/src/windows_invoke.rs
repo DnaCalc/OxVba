@@ -80,7 +80,10 @@ struct RawIDispatch {
 pub struct ComInvokeExceptionInfo {
     pub source: Option<String>,
     pub description: Option<String>,
+    pub help_file: Option<String>,
+    pub help_context: Option<u32>,
     pub scode: Option<i32>,
+    pub wcode: Option<u16>,
 }
 
 #[cfg(target_os = "windows")]
@@ -104,10 +107,13 @@ fn render_invoke_fault_message(failure: &ComInvokeFailure) -> String {
     if let Some(value) = failure.arg_err {
         suffix.push_str(&format!("arg_err={value};"));
     }
-    if let Some(excep) = &failure.excep
-        && let Some(scode) = excep.scode
-    {
-        suffix.push_str(&format!("excep_scode=0x{:08X};", scode as u32));
+    if let Some(excep) = &failure.excep {
+        if let Some(scode) = excep.scode {
+            suffix.push_str(&format!("excep_scode=0x{:08X};", scode as u32));
+        }
+        if let Some(wcode) = excep.wcode {
+            suffix.push_str(&format!("excep_wcode={wcode};"));
+        }
     }
     let prefix = if suffix.is_empty() {
         format!("com-dispatch-{label}")
@@ -153,8 +159,20 @@ impl ComInvokeFailure {
                     sanitize_error_text(description)
                 ));
             }
+            if let Some(help_file) = &excep.help_file {
+                message.push_str(&format!(
+                    " excep_help_file=\"{}\"",
+                    sanitize_error_text(help_file)
+                ));
+            }
+            if let Some(help_context) = excep.help_context {
+                message.push_str(&format!(" excep_help_context={help_context}"));
+            }
             if let Some(scode) = excep.scode {
                 message.push_str(&format!(" excep_scode={:#010X}", scode as u32));
+            }
+            if let Some(wcode) = excep.wcode {
+                message.push_str(&format!(" excep_wcode={wcode}"));
             }
         }
         if let Some(detail) = &self.detail {
@@ -167,7 +185,7 @@ impl ComInvokeFailure {
 #[cfg(target_os = "windows")]
 fn classify_invoke_detail_label(detail: Option<&str>) -> Option<&'static str> {
     let detail = detail?;
-    if detail.contains("exceeds current i32 carrier lane") {
+    if detail.contains("exceeds i64 carrier range") {
         return Some("carrier-overflow");
     }
     if detail.starts_with("unsupported VARIANT BYREF return type vt=") {
@@ -205,22 +223,41 @@ unsafe fn bstr_to_string_and_free(bstr: windows_sys::core::BSTR) -> Option<Strin
 pub unsafe fn take_excepinfo(excep: &mut EXCEPINFO) -> Option<ComInvokeExceptionInfo> {
     let source = bstr_to_string_and_free(excep.bstrSource);
     let description = bstr_to_string_and_free(excep.bstrDescription);
-    let _ = bstr_to_string_and_free(excep.bstrHelpFile);
+    let help_file = bstr_to_string_and_free(excep.bstrHelpFile);
     excep.bstrSource = std::ptr::null_mut();
     excep.bstrDescription = std::ptr::null_mut();
     excep.bstrHelpFile = std::ptr::null_mut();
+    let help_context = if excep.dwHelpContext != 0 {
+        Some(excep.dwHelpContext)
+    } else {
+        None
+    };
     let scode = if excep.scode != 0 {
         Some(excep.scode)
     } else {
         None
     };
-    if source.is_none() && description.is_none() && scode.is_none() {
+    let wcode = if excep.wCode != 0 {
+        Some(excep.wCode)
+    } else {
+        None
+    };
+    if source.is_none()
+        && description.is_none()
+        && help_file.is_none()
+        && help_context.is_none()
+        && scode.is_none()
+        && wcode.is_none()
+    {
         None
     } else {
         Some(ComInvokeExceptionInfo {
             source,
             description,
+            help_file,
+            help_context,
             scode,
+            wcode,
         })
     }
 }

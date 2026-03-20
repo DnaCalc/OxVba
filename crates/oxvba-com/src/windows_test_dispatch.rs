@@ -86,6 +86,7 @@ pub const TEST_DISPID_SET_INDEXED_VALUE_REF: i32 = 15;
 pub const TEST_DISPID_ECHO_VARIANT: i32 = 16;
 pub const TEST_DISPID_RAISE_EXCEPTION: i32 = 17;
 pub const TEST_DISPID_RAISE_PARAM_NOT_FOUND: i32 = 87;
+pub const TEST_DISPID_RAISE_RICH_EXCEPTION: i32 = 88;
 pub const TEST_DISPID_RETURN_SMALLINT: i32 = 18;
 pub const TEST_DISPID_RETURN_UNSIGNED_WORD: i32 = 19;
 pub const TEST_DISPID_RETURN_SMALLINT_ARRAY: i32 = 20;
@@ -179,6 +180,28 @@ unsafe fn populate_excepinfo(excep: *mut EXCEPINFO, source: &str, description: &
     }
     (*excep).bstrSource = alloc_bstr(source);
     (*excep).bstrDescription = alloc_bstr(description);
+    (*excep).scode = scode;
+}
+
+#[cfg(target_os = "windows")]
+#[allow(unsafe_op_in_unsafe_fn)]
+unsafe fn populate_rich_excepinfo(
+    excep: *mut EXCEPINFO,
+    source: &str,
+    description: &str,
+    help_file: &str,
+    help_context: u32,
+    scode: i32,
+    wcode: u16,
+) {
+    if excep.is_null() {
+        return;
+    }
+    (*excep).wCode = wcode;
+    (*excep).bstrSource = alloc_bstr(source);
+    (*excep).bstrDescription = alloc_bstr(description);
+    (*excep).bstrHelpFile = alloc_bstr(help_file);
+    (*excep).dwHelpContext = help_context;
     (*excep).scode = scode;
 }
 
@@ -1785,6 +1808,7 @@ unsafe extern "system" fn oxvba_test_get_ids_of_names(
             "setindexedvalueref" => TEST_DISPID_SET_INDEXED_VALUE_REF,
             "echovariant" => TEST_DISPID_ECHO_VARIANT,
             "raiseexception" => TEST_DISPID_RAISE_EXCEPTION,
+            "raiserichexception" => TEST_DISPID_RAISE_RICH_EXCEPTION,
             "returnsmallint" => TEST_DISPID_RETURN_SMALLINT,
             "returnunsignedword" => TEST_DISPID_RETURN_UNSIGNED_WORD,
             "returnsmallintarray" => TEST_DISPID_RETURN_SMALLINT_ARRAY,
@@ -2143,6 +2167,21 @@ unsafe extern "system" fn oxvba_test_invoke(
                 OXVBA_TEST_DISPATCH_PROGID,
                 "controlled dispatch exception",
                 COM_DISP_E_EXCEPTION,
+            );
+            COM_DISP_E_EXCEPTION
+        }
+        TEST_DISPID_RAISE_RICH_EXCEPTION => {
+            if (wflags & DISPATCH_METHOD) == 0 || cargs != 0 {
+                return COM_DISP_E_BADPARAMCOUNT;
+            }
+            populate_rich_excepinfo(
+                _pexcepinfo,
+                OXVBA_TEST_DISPATCH_PROGID,
+                "controlled rich exception with full ExcepInfo surface",
+                "OxVba.TestDispatch.hlp",
+                1001,
+                COM_DISP_E_EXCEPTION,
+                42,
             );
             COM_DISP_E_EXCEPTION
         }
@@ -3208,6 +3247,10 @@ pub unsafe fn raw_oxvba_test_dispatch_vtable_invoke(
         }
         TEST_DISPID_RAISE_EXCEPTION => Err(format!(
             "IDispatch::Invoke(method) failed with HRESULT {:#010X} excep_description=\"controlled dispatch exception\" excep_scode={:#010X}",
+            COM_DISP_E_EXCEPTION as u32, COM_DISP_E_EXCEPTION as u32
+        )),
+        TEST_DISPID_RAISE_RICH_EXCEPTION => Err(format!(
+            "IDispatch::Invoke(method) failed with HRESULT {:#010X} excep_description=\"controlled rich exception with full ExcepInfo surface\" excep_help_file=\"OxVba.TestDispatch.hlp\" excep_help_context=1001 excep_scode={:#010X} excep_wcode=42",
             COM_DISP_E_EXCEPTION as u32, COM_DISP_E_EXCEPTION as u32
         )),
         TEST_DISPID_RETURN_SMALLINT => Ok(Some(321)),

@@ -33,6 +33,7 @@ const TEST_DISPID_SET_INDEXED_VALUE: i32 = 14;
 const TEST_DISPID_SET_INDEXED_VALUE_REF: i32 = 15;
 const TEST_DISPID_ECHO_VARIANT: i32 = 16;
 const TEST_DISPID_RAISE_EXCEPTION: i32 = 17;
+const TEST_DISPID_RAISE_RICH_EXCEPTION: i32 = 88;
 const TEST_DISPID_RETURN_SMALLINT: i32 = 18;
 const TEST_DISPID_RETURN_UNSIGNED_WORD: i32 = 19;
 const TEST_DISPID_RETURN_SMALLINT_ARRAY: i32 = 20;
@@ -445,6 +446,14 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
             TypeLibMemberMetadata {
                 name: "RaiseException".to_string(),
                 token: TEST_DISPID_RAISE_EXCEPTION,
+                requires_argument: false,
+                invoke_kind: TypeLibMemberInvokeKind::Method,
+                parameter_names: Vec::new(),
+                is_default_member: false,
+            },
+            TypeLibMemberMetadata {
+                name: "RaiseRichException".to_string(),
+                token: TEST_DISPID_RAISE_RICH_EXCEPTION,
                 requires_argument: false,
                 invoke_kind: TypeLibMemberInvokeKind::Method,
                 parameter_names: Vec::new(),

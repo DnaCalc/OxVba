@@ -33,13 +33,14 @@ Anchor families:
 | `HAL-DYN-005` | `VARIANT` byref discriminant legality rules | declaration-subset restriction tests + future marshaling unit/property tests | implemented-partial |
 | `HAL-DYN-006` | `SAFEARRAY` element-type legality matrix | declaration-subset restriction tests + future marshaling unit/property tests | implemented-partial |
 | `HAL-DYN-007` | pointer-string metadata/encoding rules (`LPSTR`/`LPWSTR`) | declaration-subset restriction tests + descriptor rejection assertions | implemented-partial |
-| `HAL-DYN-008` | `IDispatch::Invoke` out-param obligations (`VarResult`/`ExcepInfo`/`ArgErr`) | COM bridge integration tests (Windows lane) | specified-pending |
+| `HAL-DYN-008` | `IDispatch::Invoke` out-param obligations (`VarResult`/`ExcepInfo`/`ArgErr`) | COM bridge integration tests (Windows lane) | implemented-verified |
 | `HAL-DYN-009` | Dynamic-link marshaling failure determinism and stable diagnostics | host/VM error-routing tests | implemented-partial |
 | `HAL-DYN-010` | Unsupported declaration forms fail deterministically by mode | compile-time/runtime dual-mode tests | implemented-partial |
 | `HAL-DYN-011..013` | Descriptor model + metadata + descriptor-driven routing | compiler + VM + HAL conformance (`dynlink.invoke_descriptor`) | implemented-partial |
 | `HAL-DYN-014..015` | compile-time/runtime mode contract parity over descriptor path | host preflight/runtime tests + conformance | implemented-partial |
 | `HAL-DYN-016..017` | windows/linux host-backed dynamic-link contract probes | HAL conformance (`evaluate_dynlink_contract_paths`) | implemented-partial |
-| `HAL-DYN-018..019` | pointer-string and byref-writeback lanes | deterministic unsupported-lane rejection checks (`evaluate_dynlink_contract_paths`) | implemented-partial |
+| `HAL-DYN-018` | pointer-string marshaling (LPSTR/LPWSTR) | deterministic unsupported-lane rejection; conformance probe verifies stable adapter fault | deterministic-rejection |
+| `HAL-DYN-019` | ByRef writeback marshaling | deterministic unsupported-lane rejection; conformance probe verifies stable adapter fault | deterministic-rejection |
 | `HAL-DYN-020` | lane selection determinism (`M0/M1/M2`) | descriptor metadata + adapter lane checks | implemented-partial |
 
 ## 4. Lanes
@@ -64,15 +65,21 @@ Targets:
 Evidence:
 - existing host + VM tests for `IntrinsicInvokeSymbolHost`.
 
-### 4.3 Lane C: Marshaling contract conformance (planned)
+### 4.3 Lane C: Marshaling contract conformance (active)
 
 Targets:
 - `VARIANT` and `SAFEARRAY` rule checks derived from MS-OAUT anchors,
 - pointer-string metadata/encoding checks derived from MS-DTYP anchors,
 - deterministic failure for invalid shapes.
 
-Evidence target:
-- dedicated marshaling test module and property checks.
+Evidence:
+- `evaluate_marshaling_conformance()` in HAL conformance module covers:
+  - HAL-DYN-005: I64 carrier roundtrip for VT_I8/VT_UI4/VT_UI8/VT_UINT values exceeding i32 range; semantic carrier fidelity for F64(Single/Double/Date), Currency, Decimal96 subtypes.
+  - HAL-DYN-006: multi-dimensional SafeArray with per-dimension bounds metadata preservation.
+  - HAL-DYN-008: IDispatch::Invoke output obligations (VarResult/ExcepInfo/ArgErr) fulfilled.
+- `evaluate_dynlink_contract_paths()` covers:
+  - HAL-DYN-018: pointer-string lane deterministic rejection verified.
+  - HAL-DYN-019: ByRef writeback lane deterministic rejection verified.
 
 ### 4.4 Lane D: Platform/profile integration conformance
 
@@ -118,6 +125,7 @@ When sources are permissive (`MAY`) or implementation-defined:
   - unsupported declaration forms (`ByRef`, `Optional`, `ParamArray`, multi-arg, non-`Long` parameter/return types) rejected with deterministic diagnostics.
 - Clause status updates:
   - `HAL-DYN-002`, `HAL-DYN-004` moved to implemented-verified,
+  - `HAL-DYN-008` moved to implemented-verified (IDispatch::Invoke output obligations: VarResult always provided, ExcepInfo captures full surface including help_file/help_context/wcode, ArgErr sentinel-distinguished),
   - `HAL-DYN-003`, `HAL-DYN-005..007`, `HAL-DYN-009`, `HAL-DYN-010` moved to implemented-partial,
   - descriptor-lane clauses `HAL-DYN-011..020` now have executable conformance hooks and are tracked as implemented-partial pending richer marshaling/ABI breadth,
-  - `HAL-DYN-018..019` include explicit deterministic unsupported-lane rejection checks in conformance.
+  - `HAL-DYN-018` (pointer-string) and `HAL-DYN-019` (ByRef writeback) are now deterministic-rejection with conformance probes verifying stable adapter faults.

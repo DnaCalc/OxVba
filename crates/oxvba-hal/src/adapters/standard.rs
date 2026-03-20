@@ -103,6 +103,8 @@ const TEST_DISPID_ECHO_VARIANT: i32 = 16;
 #[cfg(test)]
 const TEST_DISPID_RAISE_EXCEPTION: i32 = 17;
 #[cfg(test)]
+const TEST_DISPID_RAISE_RICH_EXCEPTION: i32 = 88;
+#[cfg(test)]
 const TEST_DISPID_RETURN_SMALLINT: i32 = 18;
 #[cfg(test)]
 const TEST_DISPID_RETURN_UNSIGNED_WORD: i32 = 19;
@@ -4708,6 +4710,10 @@ mod tests {
                     super::TEST_DISPID_RAISE_EXCEPTION
                 ),
                 (
+                    "RaiseRichException".to_string(),
+                    super::TEST_DISPID_RAISE_RICH_EXCEPTION
+                ),
+                (
                     "ReturnSmallInt".to_string(),
                     super::TEST_DISPID_RETURN_SMALLINT
                 ),
@@ -5335,7 +5341,7 @@ mod tests {
             hr: None,
             arg_err: None,
             excep: None,
-            detail: Some("VT_UI8 value 5000000000 exceeds current i32 carrier lane".to_string()),
+            detail: Some("VT_UI8 value 18446744073709551615 exceeds i64 carrier range".to_string()),
         };
         assert_eq!(overflow.classification_label(), "carrier-overflow");
 

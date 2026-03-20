@@ -2122,6 +2122,75 @@ End Sub
     }
 
     #[test]
+    fn dispatchinvoke_rich_exception_preserves_full_excepinfo_surface() {
+        let source = r#"
+Sub Main()
+Dim obj
+Dim errNo
+Dim unused
+On Error Resume Next
+obj = CreateObject("OxVba.TestDispatch")
+unused = DispatchInvoke(obj, 88)
+errNo = Err.Number
+End Sub
+"#;
+
+        let vm_err = run_windows_host_backed_error(
+            r#"
+Sub Main()
+Dim obj
+Dim unused
+obj = CreateObject("OxVba.TestDispatch")
+unused = DispatchInvoke(obj, 88)
+End Sub
+"#,
+            false,
+        );
+        let jit_err = run_windows_host_backed_error(
+            r#"
+Sub Main()
+Dim obj
+Dim unused
+obj = CreateObject("OxVba.TestDispatch")
+unused = DispatchInvoke(obj, 88)
+End Sub
+"#,
+            true,
+        );
+        // Verify the rich ExcepInfo fields appear in the error message.
+        for (label, err) in [("VM", &vm_err), ("JIT", &jit_err)] {
+            assert!(
+                err.contains("excep_help_file=\"OxVba.TestDispatch.hlp\""),
+                "{label} error should contain help_file, got: {err}"
+            );
+            assert!(
+                err.contains("excep_help_context=1001"),
+                "{label} error should contain help_context, got: {err}"
+            );
+            assert!(
+                err.contains("excep_wcode=42"),
+                "{label} error should contain wcode, got: {err}"
+            );
+            assert!(
+                err.contains("controlled rich exception"),
+                "{label} error should contain description, got: {err}"
+            );
+        }
+        // Verify On Error Resume Next path works.
+        let vm_resume = run_windows_host_backed(source, false);
+        let jit_resume = run_windows_host_backed(source, true);
+        assert_eq!(
+            vm_resume, jit_resume,
+            "VM/JIT snapshots diverged on rich exception resume path"
+        );
+        assert!(
+            !matches!(vm_resume[2], RuntimeValue::I32(0)),
+            "rich exception should set Err.Number, got {:?}",
+            vm_resume
+        );
+    }
+
+    #[test]
     fn repeated_dispatch_calls_stay_stable_under_pressure() {
         let mut source = String::from(
             "Sub Main()\nDim obj\nDim value\nobj = CreateObject(\"OxVba.TestDispatch\")\n",
