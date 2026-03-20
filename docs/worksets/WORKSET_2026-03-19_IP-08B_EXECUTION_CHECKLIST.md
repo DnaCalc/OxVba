@@ -71,6 +71,7 @@ The next bounded executable neighbors after `IP-08A` are:
 
 - [x] widen host-root object-valued getter assignment-intent evidence beyond typed `Object` targets into the `Variant` matrix
 - [x] widen host-root object-valued getter syntax breadth into parenthesized zero-arg named-property getter `Variant` lanes
-- [ ] widen host-root object-valued getter syntax breadth beyond the current named non-indexed plus parenthesized zero-arg floor where parity requires it
+- [x] widen host-root authoritative default-member object-get assignment-intent evidence into the `Variant` matrix
+- [ ] widen host-root object-valued getter syntax breadth beyond the current named direct, named parenthesized, and authoritative default-member floor where parity requires it
 - [ ] widen host-returned COM imported breadth beyond the currently proved bounded member/property/default-member subset where parity requires it
 - [ ] capture the remaining host callback / event breadth that still belongs to `IP-08` rather than `IP-07`

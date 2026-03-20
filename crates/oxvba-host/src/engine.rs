@@ -2925,6 +2925,114 @@ mod tests {
     }
 
     #[test]
+    fn formal_host_project_host_injected_object_default_member_variant_assignment_intents_execute()
+    {
+        let engine = Engine::new(HostConfig::default());
+        let cases = [
+            (
+                "predeclared explicit set",
+                "Attribute VB_PredeclaredId = True",
+                "Set valueOut = Application",
+                "set valueout = property_get_pmr_hostproject_application_value(0)",
+            ),
+            (
+                "predeclared explicit let",
+                "Attribute VB_PredeclaredId = True",
+                "Let valueOut = Application",
+                "let valueout = property_get_pmr_hostproject_application_value(0)",
+            ),
+            (
+                "predeclared implicit",
+                "Attribute VB_PredeclaredId = True",
+                "valueOut = Application",
+                "valueout = property_get_pmr_hostproject_application_value(0)",
+            ),
+            (
+                "global namespace explicit set",
+                "Attribute VB_GlobalNamespace = True",
+                "Set valueOut = Application",
+                "set valueout = property_get_pmr_hostproject_application_value(0)",
+            ),
+            (
+                "global namespace explicit let",
+                "Attribute VB_GlobalNamespace = True",
+                "Let valueOut = Application",
+                "let valueout = property_get_pmr_hostproject_application_value(0)",
+            ),
+            (
+                "global namespace implicit",
+                "Attribute VB_GlobalNamespace = True",
+                "valueOut = Application",
+                "valueout = property_get_pmr_hostproject_application_value(0)",
+            ),
+        ];
+
+        for (label, exposure_attr, assignment_line, expected_line) in cases {
+            let main_module = module_unit_from_source(
+                "MainModule",
+                ModuleKind::Procedural,
+                format!(
+                    "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim valueOut As Variant\n{assignment_line}\nEnd Sub"
+                ),
+            )
+            .expect("main module should parse");
+            let host_application = module_unit_from_source(
+                "Application",
+                ModuleKind::Class,
+                format!(
+                    "Attribute VB_Name = \"Application\"\n{exposure_attr}\nPublic Property Get Value() As Object\nDim c As New Child\nSet Value = c\nEnd Property\nAttribute Value.VB_UserMemId = 0"
+                ),
+            )
+            .expect("host application module should parse");
+            let host_child = module_unit_from_source(
+                "Child",
+                ModuleKind::Class,
+                "Attribute VB_Name = \"Child\"",
+            )
+            .expect("host child module should parse");
+            let manifest = ProjectManifest {
+                project_name: "ProjectA".to_string(),
+                project_kind: ProjectKind::Source,
+                modules: vec![main_module],
+                references: vec![ProjectReference {
+                    referenced_project_name: "HostProject".to_string(),
+                    reference_kind: ReferenceKind::HostInjected,
+                }],
+                reference_projects: vec![ReferencedProjectManifest {
+                    project_name: "HostProject".to_string(),
+                    modules: vec![host_application, host_child],
+                }],
+                conditional_constants: std::collections::BTreeMap::new(),
+            };
+
+            let compiled =
+                oxvba_compiler::compile_project(&manifest).unwrap_or_else(|err| {
+                    panic!(
+                        "{label} host-injected object default-member get to Variant should compile: {err}"
+                    )
+                });
+            let lowered = compiled.rewritten_source.to_ascii_lowercase();
+            assert!(
+                lowered.contains(expected_line),
+                "{label}: unexpected lowered source: {lowered}"
+            );
+
+            let snapshot = engine
+                .execute_project_with_value_snapshot_phased(&manifest)
+                .unwrap_or_else(|err| {
+                    panic!(
+                        "{label} host-injected object default-member get to Variant should execute: {err}"
+                    )
+                });
+            assert_eq!(
+                snapshot.first(),
+                Some(&RuntimeValue::I32(1)),
+                "{label}: {snapshot:?}"
+            );
+        }
+    }
+
+    #[test]
     fn formal_host_project_host_injected_predeclared_child_navigation_after_object_root_get_executes()
      {
         let engine = Engine::new(HostConfig::default());
