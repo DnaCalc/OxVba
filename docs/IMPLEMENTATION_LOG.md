@@ -1,3 +1,10 @@
+## 2026-03-20 - Extend IP-08B active-project precedence through host-returned COM named-argument invoke forms
+
+- Continued `IP-08B` by widening the active-project-versus-host-root identity register from the positional invoke subset into the matching parenthesized named-argument invoke subset on host-returned COM-backed objects.
+- In [project.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-compiler\src\project.rs), added direct compiler evidence that an active-project same-name `Application` class module outranks the host-injected root when the winning root returns a COM-backed object and the caller then executes imported parenthesized named-argument explicit-`Call` and bare statement-context method/property/default-member lanes.
+- In [engine.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-host\src\engine.rs), added matching host runtime evidence proving the same precedence boundary executes end to end even when the same-name host root only offers a scalar `Value` getter, so the imported parenthesized named-argument invoke subset completes on the project-owned COM object instead of failing during the root handoff.
+- This narrows the remaining `IP-08B` root/global/project frontier again: active-project precedence is now explicit through the current positional invoke subset across both parenthesized and no-paren forms plus the current parenthesized named-argument invoke subset, while broader imported breadth and the remaining no-paren named-argument neighbors still remain open.
+
 ## 2026-03-20 - Extend IP-08B active-project precedence through host-returned COM no-paren statement-context forms
 
 - Continued `IP-08B` by widening the active-project-versus-host-root identity register from imported read assignments plus the current explicit `Call` subsets into the matching no-paren bare statement-context invoke subset on host-returned COM-backed objects.
