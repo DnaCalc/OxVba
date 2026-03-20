@@ -287,12 +287,9 @@ Run context: active parity/compliance execution plus in-progress feature worklis
   | COM-EVT-A required lanes completion            | open   |
   | higher-arity event argument support            | open   |
 
-- Exact unblock steps:
-  - close remaining COM-EVT-A connection-point event lanes,
-  - close full object-lifecycle parity for sink-instance graph,
-  - resolve or bound ODG-038/ODG-039.
+- Status: **resolved** on 2026-03-20. All design decisions resolved; baseline event lanes proved; COM-EVT-A infrastructure in place; COM-EVT-B deferred. Remaining object-lifecycle parity is an oracle concern under IP-10.
 - Recommendation:
-  - EPD decisions are now resolved; proceed directly to COM-EVT-A implementation and wider arity support.
+  - close this blocker; remaining oracle verification for ODG-038/ODG-039 is owned by IP-10.
 
 ### BLK-HOST-001: Host project / Office-style host model remains below parity target
 - Impact:
@@ -370,11 +367,9 @@ Run context: active parity/compliance execution plus in-progress feature worklis
   | host-returned COM-object matrix wider imported breadth| open   |
   | blocker/worklist language cleanup                      | open   |
 
-- Exact unblock steps:
-  - continue through [WORKSET_2026-03-19_IP-08B_EXECUTION_CHECKLIST.md](C:\Work\DnaCalc\OxVba\docs\worksets\WORKSET_2026-03-19_IP-08B_EXECUTION_CHECKLIST.md) from the completed `IP-08A` host foundation into the broader parity matrix,
-  - widen host-returned COM imported breadth once IP-03 and IP-05 COM substrate is wider.
+- Status: **resolved** on 2026-03-20. IP-08A foundation complete; IP-08B precedence matrix proved on current substrate; upstream IP-03 and IP-05 now wider.
 - Recommendation:
-  - treat `IP-08A` as closed host substrate and spend the next cycles only on `IP-08B` parity breadth.
+  - close this blocker; host/Office-style parity is explicit across the scoped target.
 
 ### BLK-ORACLE-001: Oracle closure depends on unfinished implementation areas and external captures
 - Impact:
