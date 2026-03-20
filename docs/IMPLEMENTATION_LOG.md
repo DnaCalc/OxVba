@@ -1,3 +1,10 @@
+## 2026-03-19 - Start IP-08B host-root Variant assignment breadth
+
+- Started `IP-08B` from the completed `IP-08A` host foundation by creating [WORKSET_2026-03-19_IP-08B_EXECUTION_CHECKLIST.md](C:\Work\DnaCalc\OxVba\docs\worksets\WORKSET_2026-03-19_IP-08B_EXECUTION_CHECKLIST.md).
+- In [project.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-compiler\src\project.rs), added direct compiler evidence that host-injected object-valued root getters preserve `Variant` targets across explicit `Set`, explicit `Let`, and implicit assignment on both `VB_PredeclaredId` and `VB_GlobalNamespace` roots.
+- In [engine.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-host\src\engine.rs), added matching host runtime evidence proving those six host-root object-getter assignment-intent lanes execute end to end and preserve the bounded object-handle witness instead of collapsing into a scalar path.
+- This opens `IP-08B` with a real parity-breadth row rather than a planning-only handoff: the current host-root object-return matrix is no longer limited to typed `Object` targets on the named non-indexed subset.
+
 ## 2026-03-19 - Close IP-08A host foundation boundary
 
 - Continued `IP-08A` by proving the last missing supported host identity neighbor instead of leaving the active-project-versus-host-root precedence boundary implicit.

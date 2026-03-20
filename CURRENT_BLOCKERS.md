@@ -245,8 +245,8 @@ Run context: active parity/compliance execution plus in-progress feature worklis
   - the same bounded host identity floor now also has direct executable evidence that a conflicting same-name plain-project `Application` reference does not steal parenthesized imported object-valued `PropertyGet` traffic on the same host-returned COM-backed object by reference order,
   - the bounded `IP-08A` host foundation is now executable, but broader Office-style hosting parity breadth is still open under `IP-08B`.
 - Exact unblock steps:
-  - widen from the completed `IP-08A` host foundation into the broader `IP-08B` parity matrix: richer root/global/project behavior, broader imported member/property/default-member breadth on host-returned COM objects, and final integration with the completed COM/property/event model,
-  - keep the `IP-08A` checklist as the completed foundation floor and open the next bounded `IP-08B` execution checklist against the remaining parity-breadth rows.
+  - continue through [WORKSET_2026-03-19_IP-08B_EXECUTION_CHECKLIST.md](C:\Work\DnaCalc\OxVba\docs\worksets\WORKSET_2026-03-19_IP-08B_EXECUTION_CHECKLIST.md) from the completed `IP-08A` host foundation into the broader parity matrix: richer root/global/project behavior, broader imported member/property/default-member breadth on host-returned COM objects, and final integration with the completed COM/property/event model,
+  - keep [WORKSET_2026-03-19_IP-08A_EXECUTION_CHECKLIST.md](C:\Work\DnaCalc\OxVba\docs\worksets\WORKSET_2026-03-19_IP-08A_EXECUTION_CHECKLIST.md) as the completed foundation floor and use the `IP-08B` checklist for the remaining parity-breadth rows.
 - Recommendation:
   - treat `IP-08A` as closed host substrate and spend the next cycles only on `IP-08B` parity breadth.
 

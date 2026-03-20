@@ -19487,6 +19487,96 @@ mod tests {
     }
 
     #[test]
+    fn compile_project_rewrites_host_injected_object_property_get_variant_assignment_intents() {
+        let cases = [
+            (
+                "predeclared explicit set",
+                "Attribute VB_PredeclaredId = True",
+                "Set valueOut = Application.Value",
+                "set valueout = property_get_pmr_hostproject_application_value(0)",
+            ),
+            (
+                "predeclared explicit let",
+                "Attribute VB_PredeclaredId = True",
+                "Let valueOut = Application.Value",
+                "let valueout = property_get_pmr_hostproject_application_value(0)",
+            ),
+            (
+                "predeclared implicit",
+                "Attribute VB_PredeclaredId = True",
+                "valueOut = Application.Value",
+                "valueout = property_get_pmr_hostproject_application_value(0)",
+            ),
+            (
+                "global namespace explicit set",
+                "Attribute VB_GlobalNamespace = True",
+                "Set valueOut = Application.Value",
+                "set valueout = property_get_pmr_hostproject_application_value(0)",
+            ),
+            (
+                "global namespace explicit let",
+                "Attribute VB_GlobalNamespace = True",
+                "Let valueOut = Application.Value",
+                "let valueout = property_get_pmr_hostproject_application_value(0)",
+            ),
+            (
+                "global namespace implicit",
+                "Attribute VB_GlobalNamespace = True",
+                "valueOut = Application.Value",
+                "valueout = property_get_pmr_hostproject_application_value(0)",
+            ),
+        ];
+
+        for (label, exposure_attr, assignment_line, expected_line) in cases {
+            let main_module = module_unit_from_source(
+                "MainModule",
+                ModuleKind::Procedural,
+                format!(
+                    "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim valueOut As Variant\n{assignment_line}\nEnd Sub"
+                ),
+            )
+            .expect("module parses");
+            let host_application = module_unit_from_source(
+                "Application",
+                ModuleKind::Class,
+                format!(
+                    "Attribute VB_Name = \"Application\"\n{exposure_attr}\nPublic Property Get Value() As Object\nDim c As New Child\nSet Value = c\nEnd Property"
+                ),
+            )
+            .expect("module parses");
+            let host_child = module_unit_from_source(
+                "Child",
+                ModuleKind::Class,
+                "Attribute VB_Name = \"Child\"",
+            )
+            .expect("module parses");
+            let manifest = ProjectManifest {
+                project_name: "ProjectA".to_string(),
+                project_kind: ProjectKind::Source,
+                modules: vec![main_module],
+                references: vec![ProjectReference {
+                    referenced_project_name: "HostProject".to_string(),
+                    reference_kind: ReferenceKind::HostInjected,
+                }],
+                reference_projects: vec![ReferencedProjectManifest {
+                    project_name: "HostProject".to_string(),
+                    modules: vec![host_application, host_child],
+                }],
+                conditional_constants: BTreeMap::new(),
+            };
+
+            let compiled = compile_project(&manifest).unwrap_or_else(|err| {
+                panic!("{label} host-injected object property-get to Variant should compile: {err}")
+            });
+            let lowered = compiled.rewritten_source.to_ascii_lowercase();
+            assert!(
+                lowered.contains(expected_line),
+                "{label}: unexpected lowered source: {lowered}"
+            );
+        }
+    }
+
+    #[test]
     fn compile_project_rewrites_host_injected_predeclared_child_navigation_after_object_root_get() {
         let main_module = module_unit_from_source(
             "MainModule",

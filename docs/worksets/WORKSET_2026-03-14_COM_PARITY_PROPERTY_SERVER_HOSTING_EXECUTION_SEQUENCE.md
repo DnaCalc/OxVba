@@ -379,6 +379,9 @@ Planning notes:
 
 ### Phase I. Office-style hosting parity closure (`IP-08B`)
 
+Status:
+1. in progress from 2026-03-19 via [WORKSET_2026-03-19_IP-08B_EXECUTION_CHECKLIST.md](C:\Work\DnaCalc\OxVba\docs\worksets\WORKSET_2026-03-19_IP-08B_EXECUTION_CHECKLIST.md).
+
 Primary target:
 1. close the scoped host/project parity area.
 
