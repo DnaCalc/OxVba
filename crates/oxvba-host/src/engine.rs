@@ -5305,6 +5305,90 @@ mod tests {
     }
 
     #[test]
+    fn formal_host_project_root_returned_com_object_reports_imported_compile_diagnostics() {
+        let engine = Engine::new(HostConfig::default());
+        let exposure_cases = [
+            ("predeclared", "Attribute VB_PredeclaredId = True"),
+            ("global namespace", "Attribute VB_GlobalNamespace = True"),
+        ];
+        let diagnostic_cases = [
+            (
+                "missing member",
+                "Dim value\nvalue = obj.UnknownMember()",
+                "BIND-E-TYPELIB-MEMBER-NOT-FOUND",
+            ),
+            (
+                "wrong method arity",
+                "Dim value\nvalue = obj.Exists()",
+                "BIND-E-TYPELIB-INVOKE-ARITY-UNSUPPORTED",
+            ),
+            (
+                "wrong default-member arity",
+                "Dim value\nvalue = obj()",
+                "BIND-E-TYPELIB-INVOKE-ARITY-UNSUPPORTED",
+            ),
+            (
+                "wrong property-put arity",
+                "obj.SetIndexedValue = 11",
+                "BIND-E-TYPELIB-INVOKE-ARITY-UNSUPPORTED",
+            ),
+        ];
+
+        for (exposure_label, exposure_attr) in exposure_cases {
+            for (diagnostic_label, problem_lines, expected_code) in diagnostic_cases {
+                let main_module = module_unit_from_source(
+                    "MainModule",
+                    ModuleKind::Procedural,
+                    format!(
+                        "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim obj As OxVba.TestDispatch\nSet obj = Application.Value\n{problem_lines}\nEnd Sub"
+                    ),
+                )
+                .expect("main module should parse");
+                let host_application = module_unit_from_source(
+                    "Application",
+                    ModuleKind::Class,
+                    format!(
+                        "Attribute VB_Name = \"Application\"\n{exposure_attr}\nPublic Property Get Value() As Object\nSet Value = CreateObject(4)\nEnd Property"
+                    ),
+                )
+                .expect("host application module should parse");
+                let manifest = ProjectManifest {
+                    project_name: "ProjectA".to_string(),
+                    project_kind: ProjectKind::Source,
+                    modules: vec![main_module],
+                    references: vec![
+                        ProjectReference {
+                            referenced_project_name: "HostProject".to_string(),
+                            reference_kind: ReferenceKind::HostInjected,
+                        },
+                        ProjectReference {
+                            referenced_project_name: "OxVba".to_string(),
+                            reference_kind: ReferenceKind::TypeLibrary,
+                        },
+                    ],
+                    reference_projects: vec![ReferencedProjectManifest {
+                        project_name: "HostProject".to_string(),
+                        modules: vec![host_application],
+                    }],
+                    conditional_constants: std::collections::BTreeMap::new(),
+                };
+
+                let err = engine
+                    .execute_project_with_value_snapshot_phased(&manifest)
+                    .expect_err(&format!(
+                        "{exposure_label} {diagnostic_label} should fail at compile-time on host-returned COM import diagnostics"
+                    ));
+                assert_eq!(err.phase(), DiagnosticPhase::CompileTime);
+                assert!(
+                    err.message().contains(expected_code),
+                    "{exposure_label} {diagnostic_label}: unexpected diagnostic {}",
+                    err.message()
+                );
+            }
+        }
+    }
+
+    #[test]
     fn formal_host_project_root_returned_com_object_supports_imported_property_putref_and_get() {
         let engine = Engine::new(HostConfig::default());
         let cases = [

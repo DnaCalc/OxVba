@@ -16573,6 +16573,86 @@ mod tests {
     }
 
     #[test]
+    fn compile_project_rejects_host_injected_root_returning_com_object_imported_diagnostic_lanes() {
+        let exposure_cases = [
+            ("predeclared", "Attribute VB_PredeclaredId = True"),
+            ("global namespace", "Attribute VB_GlobalNamespace = True"),
+        ];
+        let diagnostic_cases = [
+            (
+                "missing member",
+                "Dim value\nvalue = obj.UnknownMember()",
+                "BIND-E-TYPELIB-MEMBER-NOT-FOUND",
+            ),
+            (
+                "wrong method arity",
+                "Dim value\nvalue = obj.Exists()",
+                "BIND-E-TYPELIB-INVOKE-ARITY-UNSUPPORTED",
+            ),
+            (
+                "wrong default-member arity",
+                "Dim value\nvalue = obj()",
+                "BIND-E-TYPELIB-INVOKE-ARITY-UNSUPPORTED",
+            ),
+            (
+                "wrong property-put arity",
+                "obj.SetIndexedValue = 11",
+                "BIND-E-TYPELIB-INVOKE-ARITY-UNSUPPORTED",
+            ),
+        ];
+
+        for (exposure_label, exposure_attr) in exposure_cases {
+            for (diagnostic_label, problem_lines, expected_code) in diagnostic_cases {
+                let main_module = module_unit_from_source(
+                    "MainModule",
+                    ModuleKind::Procedural,
+                    format!(
+                        "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim obj As OxVba.TestDispatch\nSet obj = Application.Value\n{problem_lines}\nEnd Sub"
+                    ),
+                )
+                .expect("main module parses");
+                let host_application = module_unit_from_source(
+                    "Application",
+                    ModuleKind::Class,
+                    format!(
+                        "Attribute VB_Name = \"Application\"\n{exposure_attr}\nPublic Property Get Value() As Object\nSet Value = CreateObject(4)\nEnd Property"
+                    ),
+                )
+                .expect("host application parses");
+                let manifest = ProjectManifest {
+                    project_name: "ProjectA".to_string(),
+                    project_kind: ProjectKind::Source,
+                    modules: vec![main_module],
+                    references: vec![
+                        ProjectReference {
+                            referenced_project_name: "HostProject".to_string(),
+                            reference_kind: ReferenceKind::HostInjected,
+                        },
+                        ProjectReference {
+                            referenced_project_name: "OxVba".to_string(),
+                            reference_kind: ReferenceKind::TypeLibrary,
+                        },
+                    ],
+                    reference_projects: vec![ReferencedProjectManifest {
+                        project_name: "HostProject".to_string(),
+                        modules: vec![host_application],
+                    }],
+                    conditional_constants: BTreeMap::new(),
+                };
+
+                let err = compile_project(&manifest).expect_err(&format!(
+                    "{exposure_label} {diagnostic_label} should fail on host-returned COM import diagnostics"
+                ));
+                assert_eq!(
+                    err.code(),
+                    expected_code,
+                    "{exposure_label} {diagnostic_label}: unexpected diagnostic {err}"
+                );
+            }
+        }
+    }
+
+    #[test]
     fn compile_project_rewrites_host_injected_root_returning_com_object_for_imported_property_putref_and_get()
      {
         let cases = [

@@ -1,3 +1,10 @@
+## 2026-03-20 - Extend IP-08B host-root imported diagnostics
+
+- Continued `IP-08B` by widening the host-returned COM-object breadth into the matching imported compile-time diagnostic subset.
+- In [project.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-compiler\src\project.rs), added direct compiler evidence that missing-member, wrong-method-arity, wrong-default-member-arity, and wrong-property-put-arity lanes on COM objects returned from host roots fail on the same stable typelib-backed diagnostics across both `VB_PredeclaredId` and `VB_GlobalNamespace`.
+- In [engine.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-host\src\engine.rs), added matching host phased evidence proving those lanes fail at compile time instead of drifting past the host-root rewrite or degrading into a later runtime fault.
+- This widens the bounded host/COM coexistence floor beyond success-only lanes and makes the imported diagnostic subset explicit on host-returned COM objects.
+
 ## 2026-03-20 - Extend IP-08B host-root imported positional reads
 
 - Continued `IP-08B` by widening the host-returned COM-object breadth from statement-only positional invoke lanes into the matching imported read-assignment subset.
