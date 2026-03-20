@@ -3201,6 +3201,90 @@ mod tests {
     }
 
     #[test]
+    fn formal_host_project_active_project_application_returning_com_object_property_gets_win_over_host_injected_root()
+     {
+        let engine = Engine::new(HostConfig::default());
+        let cases = [
+            ("host predeclared", "Attribute VB_PredeclaredId = True"),
+            (
+                "host global namespace",
+                "Attribute VB_GlobalNamespace = True",
+            ),
+        ];
+
+        for (label, host_attr) in cases {
+            let main_module = module_unit_from_source(
+                "MainModule",
+                ModuleKind::Procedural,
+                "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim obj As OxVba.TestDispatch\nDim childDispatch As Object\nDim childUnknown As Object\nDim wrappedDispatch\nDim wrappedUnknown\nDim childDispatchCount\nDim childUnknownCount\nDim wrappedDispatchCount\nDim wrappedUnknownCount\nSet obj = Application.Value\nSet childDispatch = obj.SelfDispatch\nSet childUnknown = obj.SelfUnknown\nwrappedDispatch = obj.SelfDispatch\nLet wrappedUnknown = obj.SelfUnknown\nchildDispatchCount = DispatchInvoke(childDispatch, \"Count\")\nchildUnknownCount = DispatchInvoke(childUnknown, \"Count\")\nwrappedDispatchCount = DispatchInvoke(wrappedDispatch, \"Count\")\nwrappedUnknownCount = DispatchInvoke(wrappedUnknown, \"Count\")\nEnd Sub",
+            )
+            .expect("main module should parse");
+            let local_application = module_unit_from_source(
+                "Application",
+                ModuleKind::Class,
+                "Attribute VB_Name = \"Application\"\nAttribute VB_PredeclaredId = True\nPublic Property Get Value() As Object\nSet Value = CreateObject(4)\nEnd Property",
+            )
+            .expect("local application module should parse");
+            let host_application = module_unit_from_source(
+                "Application",
+                ModuleKind::Class,
+                format!(
+                    "Attribute VB_Name = \"Application\"\n{host_attr}\nPublic Property Get Value()\nValue = 41\nEnd Property"
+                ),
+            )
+            .expect("host application module should parse");
+            let manifest = ProjectManifest {
+                project_name: "ProjectA".to_string(),
+                project_kind: ProjectKind::Source,
+                modules: vec![main_module, local_application],
+                references: vec![
+                    ProjectReference {
+                        referenced_project_name: "HostProject".to_string(),
+                        reference_kind: ReferenceKind::HostInjected,
+                    },
+                    ProjectReference {
+                        referenced_project_name: "OxVba".to_string(),
+                        reference_kind: ReferenceKind::TypeLibrary,
+                    },
+                ],
+                reference_projects: vec![ReferencedProjectManifest {
+                    project_name: "HostProject".to_string(),
+                    modules: vec![host_application],
+                }],
+                conditional_constants: std::collections::BTreeMap::new(),
+            };
+
+            let snapshot = engine
+                .execute_project_with_value_snapshot_phased(&manifest)
+                .unwrap_or_else(|err| {
+                    panic!(
+                        "{label} active-project Application should outrank same-name host-injected root on host-returned COM object property-get traffic: {err}"
+                    )
+                });
+            match snapshot.as_slice() {
+                [
+                    RuntimeValue::ObjectHandle(root),
+                    RuntimeValue::ObjectHandle(child_dispatch),
+                    RuntimeValue::ObjectHandle(child_unknown),
+                    RuntimeValue::ObjectHandle(wrapped_dispatch),
+                    RuntimeValue::ObjectHandle(wrapped_unknown),
+                    RuntimeValue::I32(child_dispatch_count),
+                    RuntimeValue::I32(child_unknown_count),
+                    RuntimeValue::I32(wrapped_dispatch_count),
+                    RuntimeValue::I32(wrapped_unknown_count),
+                ] if root.raw() == 5_004
+                    && *child_dispatch_count == child_dispatch.raw() + 1
+                    && *child_unknown_count == child_unknown.raw() + 1
+                    && *wrapped_dispatch_count == wrapped_dispatch.raw() + 1
+                    && *wrapped_unknown_count == wrapped_unknown.raw() + 1 => {}
+                other => panic!(
+                    "{label}: expected active-project Application to own the returned COM object property-get handoff and preserve rebinding plus Count() results tied to each returned handle instead of failing on the scalar host root, got: {other:?}"
+                ),
+            }
+        }
+    }
+
+    #[test]
     fn formal_host_project_host_injected_global_namespace_property_let_executes() {
         let engine = Engine::new(HostConfig::default());
         let main_module = module_unit_from_source(
