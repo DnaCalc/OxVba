@@ -92,7 +92,13 @@ Each clause includes:
 | `HAL-FS-004` | `eof(handle)` | valid handle | returns 1 when `position >= len` else 0 | invalid handle -> `AdapterFault` | implemented-verified | `file_open_seek_eof_lof_close_roundtrip` |
 | `HAL-FS-005` | `lof(handle)` | valid handle | returns logical length token | invalid handle -> `AdapterFault` | implemented-verified | `file_open_seek_eof_lof_close_roundtrip` |
 | `HAL-FS-006` | `free_file(range_selector)` | capability supported | returns first free handle in `[1..255]` or `[256..511]` | no free handle -> `AdapterFault` | implemented-verified | `free_file_respects_low_and_high_ranges`; `free_file_low_range_tracks_allocated_handles`; `prop_free_file_low_range_tracks_open_count` |
-| `HAL-FS-007` | v1 file model guarantees deterministic in-memory handle semantics; host-matching Windows/Linux non-deterministic mode may additionally map tokens to temporary host files. | none | deterministic floor always available; host-backed mode is policy/host contingent | n/a | implemented-verified | conformance host-backed probe (`verify_fs_host_backed_contract`) |
+| `HAL-FS-007` | `read_bytes(handle, count)` | valid handle | reads count bytes from position, returns string | invalid handle -> `AdapterFault` | implemented-verified | conformance probe `fs.read_bytes` |
+| `HAL-FS-008` | `write_bytes(handle, data)` | valid handle, mutation allowed | writes data at position, returns bytes written | policy denied / invalid handle | implemented-verified | conformance probe `fs.write_bytes` |
+| `HAL-FS-009` | `print_line(handle, data)` | valid handle, mutation allowed | writes text with CRLF delimiter | policy denied / invalid handle | implemented-verified | conformance probe `fs.print_line` |
+| `HAL-FS-010` | `input_fields(handle, count)` | valid handle | parses comma-delimited fields | invalid handle -> `AdapterFault` | implemented-verified | conformance probe `fs.input_fields` |
+| `HAL-FS-011` | `line_input(handle)` | valid handle | reads until newline or EOF | invalid handle -> `AdapterFault` | implemented-verified | conformance probe `fs.line_input` |
+| `HAL-FS-012` | `loc(handle)` | valid handle | returns current byte position | invalid handle -> `AdapterFault` | implemented-verified | conformance probe `fs.loc` |
+| `HAL-FS-013` | v2 file model guarantees deterministic in-memory handle semantics; host-matching Windows/Linux non-deterministic mode may additionally map tokens to temporary host files. | none | deterministic floor always available; host-backed mode is policy/host contingent | n/a | implemented-verified | conformance host-backed probe (`verify_fs_host_backed_contract`) |
 
 ### 6.4 `ProcessEnvHal`
 

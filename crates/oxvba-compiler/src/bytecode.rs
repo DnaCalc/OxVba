@@ -7,6 +7,23 @@ pub enum StringCompareMode {
     Text,
 }
 
+#[derive(Debug, Clone, Copy, Archive, Serialize, Deserialize, PartialEq, Eq)]
+pub enum DeclareParamType {
+    Long,
+    Integer,
+    String,
+    Boolean,
+    Double,
+    Single,
+    Currency,
+    Date,
+    Byte,
+    LongLong,
+    LongPtr,
+    Variant,
+    Any,
+}
+
 #[derive(Debug, Clone, Archive, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ExternalCallDescriptor {
     pub descriptor_id: u32,
@@ -18,6 +35,9 @@ pub struct ExternalCallDescriptor {
     pub marshal_lane: String,
     pub calling_convention: String,
     pub selection_policy: String,
+    pub param_count: usize,
+    pub param_types: Vec<DeclareParamType>,
+    pub return_type: Option<DeclareParamType>,
 }
 
 #[derive(Debug, Clone, Archive, Serialize, Deserialize, PartialEq, Eq)]
@@ -46,6 +66,14 @@ pub enum Instruction {
         slot: usize,
         value: i32,
     },
+    LoadConstString {
+        slot: usize,
+        value: String,
+    },
+    LoadConstF64 {
+        slot: usize,
+        bits: u64,
+    },
     AddConstI32 {
         slot: usize,
         value: i32,
@@ -58,6 +86,45 @@ pub enum Instruction {
     SubConstI32 {
         slot: usize,
         value: i32,
+    },
+    SubSlots {
+        dst: usize,
+        lhs: usize,
+        rhs: usize,
+    },
+    MulSlots {
+        dst: usize,
+        lhs: usize,
+        rhs: usize,
+    },
+    DivSlots {
+        dst: usize,
+        lhs: usize,
+        rhs: usize,
+    },
+    IntDivSlots {
+        dst: usize,
+        lhs: usize,
+        rhs: usize,
+    },
+    ModSlots {
+        dst: usize,
+        lhs: usize,
+        rhs: usize,
+    },
+    PowSlots {
+        dst: usize,
+        lhs: usize,
+        rhs: usize,
+    },
+    ConcatSlots {
+        dst: usize,
+        lhs: usize,
+        rhs: usize,
+    },
+    NegSlot {
+        dst: usize,
+        src: usize,
     },
     CopySlot {
         dst: usize,
@@ -181,6 +248,18 @@ pub enum Instruction {
         date1: usize,
         date2: usize,
     },
+    IntrinsicYearDigits {
+        dst: usize,
+        src: usize,
+    },
+    IntrinsicMonthDigits {
+        dst: usize,
+        src: usize,
+    },
+    IntrinsicDayDigits {
+        dst: usize,
+        src: usize,
+    },
     IntrinsicDateNowHost {
         dst: usize,
     },
@@ -196,6 +275,34 @@ pub enum Instruction {
     IntrinsicFreeFileHost {
         dst: usize,
         range_selector: Option<usize>,
+    },
+    IntrinsicFileReadHost {
+        dst: usize,
+        handle: usize,
+        count: usize,
+    },
+    IntrinsicFileWriteHost {
+        dst: usize,
+        handle: usize,
+        data: usize,
+    },
+    IntrinsicFilePrintHost {
+        dst: usize,
+        handle: usize,
+        data: usize,
+    },
+    IntrinsicFileInputHost {
+        dst: usize,
+        handle: usize,
+        count: usize,
+    },
+    IntrinsicFileLineInputHost {
+        dst: usize,
+        handle: usize,
+    },
+    IntrinsicFileLocHost {
+        dst: usize,
+        handle: usize,
     },
     IntrinsicMsgBoxHost {
         dst: usize,
@@ -248,6 +355,69 @@ pub enum Instruction {
         src: usize,
     },
     IntrinsicExpI32 {
+        dst: usize,
+        src: usize,
+    },
+    IntrinsicAtnI32 {
+        dst: usize,
+        src: usize,
+    },
+    IntrinsicTanI32 {
+        dst: usize,
+        src: usize,
+    },
+    IntrinsicChrDigits {
+        dst: usize,
+        src: usize,
+    },
+    IntrinsicAscDigits {
+        dst: usize,
+        src: usize,
+    },
+    IntrinsicSpaceDigits {
+        dst: usize,
+        count: usize,
+    },
+    IntrinsicStringRepeatDigits {
+        dst: usize,
+        count: usize,
+        ch: usize,
+    },
+    IntrinsicHexDigits {
+        dst: usize,
+        src: usize,
+    },
+    IntrinsicOctDigits {
+        dst: usize,
+        src: usize,
+    },
+    IntrinsicStrConvDigits {
+        dst: usize,
+        src: usize,
+        conversion: usize,
+    },
+    IntrinsicRndDigits {
+        dst: usize,
+        seed: Option<usize>,
+    },
+    IntrinsicRandomizeDigits {
+        dst: usize,
+        seed: Option<usize>,
+    },
+    IntrinsicFormatDigits {
+        dst: usize,
+        value: usize,
+        format_string: Option<usize>,
+    },
+    IntrinsicStrReverseDigits {
+        dst: usize,
+        src: usize,
+    },
+    IntrinsicWeekdayDigits {
+        dst: usize,
+        src: usize,
+    },
+    IntrinsicMonthNameDigits {
         dst: usize,
         src: usize,
     },
@@ -328,11 +498,26 @@ pub enum Instruction {
         dst: usize,
         src: usize,
     },
+    /// Typed VarType: returns standard VBA type codes from RuntimeValue.
+    IntrinsicVarType {
+        dst: usize,
+        src: usize,
+    },
     IntrinsicTypeNameTag {
         dst: usize,
         src: usize,
     },
     IntrinsicIsNumericTag {
+        dst: usize,
+        src: usize,
+    },
+    /// Typed IsNumeric: checks whether a RuntimeValue is numeric.
+    IntrinsicIsNumeric {
+        dst: usize,
+        src: usize,
+    },
+    /// Typed IsError: checks whether a RuntimeValue is an error value.
+    IntrinsicIsError {
         dst: usize,
         src: usize,
     },
@@ -418,7 +603,8 @@ pub enum Instruction {
         dst: usize,
         descriptor_id: u32,
         symbol: DynLinkSymbol,
-        arg: usize,
+        args: Vec<usize>,
+        writeback_slots: Vec<(usize, usize)>,
     },
     IntrinsicWithEventsGet {
         dst: usize,
@@ -447,33 +633,61 @@ pub enum Instruction {
         dst: usize,
         lhs: usize,
         rhs: usize,
+        mode: StringCompareMode,
     },
     CmpNeSlots {
         dst: usize,
         lhs: usize,
         rhs: usize,
+        mode: StringCompareMode,
     },
     CmpLtSlots {
         dst: usize,
         lhs: usize,
         rhs: usize,
+        mode: StringCompareMode,
     },
     CmpLeSlots {
         dst: usize,
         lhs: usize,
         rhs: usize,
+        mode: StringCompareMode,
     },
     CmpGtSlots {
         dst: usize,
         lhs: usize,
         rhs: usize,
+        mode: StringCompareMode,
     },
     CmpGeSlots {
         dst: usize,
         lhs: usize,
         rhs: usize,
+        mode: StringCompareMode,
     },
     LoadErrNumber {
+        slot: usize,
+    },
+    LoadErrDescription {
+        slot: usize,
+    },
+    LoadErrSource {
+        slot: usize,
+    },
+    /// Identity check: tests whether a value is Null (not equality — Null = Null
+    /// yields Null under VBA semantics, so IsNull needs a dedicated path).
+    IntrinsicIsNull {
+        dst: usize,
+        src: usize,
+    },
+    /// Identity check: tests whether a value is Empty (uninitialized Variant).
+    IntrinsicIsEmpty {
+        dst: usize,
+        src: usize,
+    },
+    /// Loads `RuntimeValue::Null` into a slot — distinct from `LoadConstI32 { value: -1 }`
+    /// which produces `RuntimeValue::I32(-1)`.
+    LoadNull {
         slot: usize,
     },
     BoolNot {

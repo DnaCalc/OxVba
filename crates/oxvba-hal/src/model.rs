@@ -106,6 +106,7 @@ pub enum UiVirtualizationMode {
     Disabled,
     ScriptedResponses,
     FailOnPrompt,
+    HostCallback,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

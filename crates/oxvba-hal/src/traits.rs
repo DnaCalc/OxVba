@@ -18,7 +18,8 @@ use oxvba_com::{
 };
 pub use oxvba_com::{
     TypeLibCacheScope, TypeLibEventDispatchPath, TypeLibEventMetadata, TypeLibMemberInvokeKind,
-    TypeLibMemberMetadata, TypeLibMetadataBlob, TypeLibResolveRequest, TypeLibResolvedIdentity,
+    TypeLibMemberMetadata, TypeLibMetadataBlob, TypeLibParamType, TypeLibResolveRequest,
+    TypeLibResolvedIdentity,
 };
 use oxvba_runtime::{BindingHandle, DynLinkSymbol, ObjectHandle, RuntimeValue};
 
@@ -33,6 +34,9 @@ pub struct DynLinkDescriptorView<'a> {
     pub marshal_lane: &'a str,
     pub calling_convention: &'a str,
     pub selection_policy: &'a str,
+    pub param_count: usize,
+    pub param_types: &'a [String],
+    pub return_type: Option<&'a str>,
 }
 
 impl DynLinkDescriptorView<'_> {
@@ -46,8 +50,8 @@ impl DynLinkDescriptorView<'_> {
         if self.alias.trim().is_empty() {
             return Some("alias is empty");
         }
-        if self.marshal_lane != "m0-deterministic" {
-            return Some("marshal_lane is not m0-deterministic");
+        if self.marshal_lane != "m0-deterministic" && self.marshal_lane != "m1-native-ffi" {
+            return Some("marshal_lane is not m0-deterministic or m1-native-ffi");
         }
         if self.calling_convention != "platform-default" {
             return Some("calling_convention is not platform-default");
@@ -102,6 +106,18 @@ pub trait FileSystemHal: Send + Sync {
     fn eof(&self, handle: RuntimeValue) -> HalResult<RuntimeValue>;
     fn lof(&self, handle: RuntimeValue) -> HalResult<RuntimeValue>;
     fn free_file(&self, range_selector: RuntimeValue) -> HalResult<RuntimeValue>;
+    /// Binary read: reads `count` bytes from the current position (VBA `Get #`).
+    fn read_bytes(&self, handle: RuntimeValue, count: RuntimeValue) -> HalResult<RuntimeValue>;
+    /// Binary write: writes `data` bytes at the current position (VBA `Put #`).
+    fn write_bytes(&self, handle: RuntimeValue, data: RuntimeValue) -> HalResult<RuntimeValue>;
+    /// Formatted text output with delimiter semantics (VBA `Print #`).
+    fn print_line(&self, handle: RuntimeValue, data: RuntimeValue) -> HalResult<RuntimeValue>;
+    /// Delimited field parsing from stream (VBA `Input #`).
+    fn input_fields(&self, handle: RuntimeValue, count: RuntimeValue) -> HalResult<RuntimeValue>;
+    /// Line-oriented read until newline or EOF (VBA `Line Input #`).
+    fn line_input(&self, handle: RuntimeValue) -> HalResult<RuntimeValue>;
+    /// Returns current byte position in the file (VBA `Loc()`).
+    fn loc(&self, handle: RuntimeValue) -> HalResult<RuntimeValue>;
 }
 
 pub trait ProcessEnvHal: Send + Sync {
@@ -185,8 +201,21 @@ pub trait DynamicLinkHal: Send + Sync {
         Ok(arg)
     }
 
-    /// Invokes a previously bound symbol token.
+    /// Invokes a previously bound symbol token (single-arg legacy path).
     fn invoke_bound(&self, binding: BindingHandle, arg: RuntimeValue) -> HalResult<RuntimeValue>;
+
+    /// Invokes a previously bound symbol with multiple arguments.
+    /// Returns `(return_value, writeback_values)` where writeback_values contains
+    /// modified ByRef argument values to write back to caller slots.
+    fn invoke_bound_multi(
+        &self,
+        binding: BindingHandle,
+        args: &[RuntimeValue],
+    ) -> HalResult<(RuntimeValue, Vec<RuntimeValue>)> {
+        let arg = args.first().cloned().unwrap_or(RuntimeValue::I32(0));
+        self.invoke_bound(binding, arg)
+            .map(|rv| (rv, Vec::new()))
+    }
 
     /// Descriptor-driven invoke path used by VM/host integrations.
     fn invoke_descriptor(
@@ -194,6 +223,17 @@ pub trait DynamicLinkHal: Send + Sync {
         descriptor: &DynLinkDescriptorView<'_>,
         arg: RuntimeValue,
     ) -> HalResult<RuntimeValue>;
+
+    /// Descriptor-driven multi-arg invoke path.
+    fn invoke_descriptor_multi(
+        &self,
+        descriptor: &DynLinkDescriptorView<'_>,
+        args: &[RuntimeValue],
+    ) -> HalResult<(RuntimeValue, Vec<RuntimeValue>)> {
+        let arg = args.first().cloned().unwrap_or(RuntimeValue::I32(0));
+        self.invoke_descriptor(descriptor, arg)
+            .map(|rv| (rv, Vec::new()))
+    }
 
     /// Legacy symbol-token invoke path retained for backward compatibility.
     fn invoke_symbol(&self, symbol: DynLinkSymbol, arg: RuntimeValue) -> HalResult<RuntimeValue>;
@@ -220,6 +260,9 @@ mod kani_proofs {
             marshal_lane: "m0-deterministic",
             calling_convention: "platform-default",
             selection_policy: "case-insensitive-canonical",
+            param_count: 0,
+            param_types: &[],
+            return_type: None,
         };
         assert_eq!(descriptor.contract_violation(), None);
     }
@@ -236,6 +279,9 @@ mod kani_proofs {
             marshal_lane: "m0-deterministic",
             calling_convention: "platform-default",
             selection_policy: "case-insensitive-canonical",
+            param_count: 0,
+            param_types: &[],
+            return_type: None,
         };
         assert_eq!(
             descriptor.contract_violation(),

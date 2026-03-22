@@ -121,6 +121,34 @@ impl FileSystemHal for NullHostServices {
     fn free_file(&self, _range_selector: RuntimeValue) -> HalResult<RuntimeValue> {
         Err(self.unsupported(CapabilityId::FileSystemIo, "free_file"))
     }
+
+    fn read_bytes(&self, _handle: RuntimeValue, _count: RuntimeValue) -> HalResult<RuntimeValue> {
+        Err(self.unsupported(CapabilityId::FileSystemIo, "read_bytes"))
+    }
+
+    fn write_bytes(&self, _handle: RuntimeValue, _data: RuntimeValue) -> HalResult<RuntimeValue> {
+        Err(self.unsupported(CapabilityId::FileSystemIo, "write_bytes"))
+    }
+
+    fn print_line(&self, _handle: RuntimeValue, _data: RuntimeValue) -> HalResult<RuntimeValue> {
+        Err(self.unsupported(CapabilityId::FileSystemIo, "print_line"))
+    }
+
+    fn input_fields(
+        &self,
+        _handle: RuntimeValue,
+        _count: RuntimeValue,
+    ) -> HalResult<RuntimeValue> {
+        Err(self.unsupported(CapabilityId::FileSystemIo, "input_fields"))
+    }
+
+    fn line_input(&self, _handle: RuntimeValue) -> HalResult<RuntimeValue> {
+        Err(self.unsupported(CapabilityId::FileSystemIo, "line_input"))
+    }
+
+    fn loc(&self, _handle: RuntimeValue) -> HalResult<RuntimeValue> {
+        Err(self.unsupported(CapabilityId::FileSystemIo, "loc"))
+    }
 }
 
 impl ProcessEnvHal for NullHostServices {

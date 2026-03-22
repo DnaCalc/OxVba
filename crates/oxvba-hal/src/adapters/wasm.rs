@@ -106,7 +106,9 @@ impl UiInteractionHal for WasmHostServices {
             )
         })?;
         match self.policy.ui_virtualization {
-            UiVirtualizationMode::ScriptedResponses => Ok(RuntimeValue::I32(style.max(1))),
+            UiVirtualizationMode::ScriptedResponses | UiVirtualizationMode::HostCallback => {
+                Ok(RuntimeValue::I32(style.max(1)))
+            }
             UiVirtualizationMode::FailOnPrompt | UiVirtualizationMode::Disabled => {
                 Err(self.denied(CapabilityId::UiInteraction, "msg_box"))
             }
@@ -125,7 +127,9 @@ impl UiInteractionHal for WasmHostServices {
             return Err(self.denied(CapabilityId::UiInteraction, "input_box"));
         }
         match self.policy.ui_virtualization {
-            UiVirtualizationMode::ScriptedResponses => Ok(default_value),
+            UiVirtualizationMode::ScriptedResponses | UiVirtualizationMode::HostCallback => {
+                Ok(default_value)
+            }
             UiVirtualizationMode::FailOnPrompt | UiVirtualizationMode::Disabled => {
                 Err(self.denied(CapabilityId::UiInteraction, "input_box"))
             }
@@ -162,6 +166,34 @@ impl FileSystemHal for WasmHostServices {
 
     fn free_file(&self, _range_selector: RuntimeValue) -> HalResult<RuntimeValue> {
         Err(self.unsupported(CapabilityId::FileSystemIo, "free_file"))
+    }
+
+    fn read_bytes(&self, _handle: RuntimeValue, _count: RuntimeValue) -> HalResult<RuntimeValue> {
+        Err(self.unsupported(CapabilityId::FileSystemIo, "read_bytes"))
+    }
+
+    fn write_bytes(&self, _handle: RuntimeValue, _data: RuntimeValue) -> HalResult<RuntimeValue> {
+        Err(self.unsupported(CapabilityId::FileSystemIo, "write_bytes"))
+    }
+
+    fn print_line(&self, _handle: RuntimeValue, _data: RuntimeValue) -> HalResult<RuntimeValue> {
+        Err(self.unsupported(CapabilityId::FileSystemIo, "print_line"))
+    }
+
+    fn input_fields(
+        &self,
+        _handle: RuntimeValue,
+        _count: RuntimeValue,
+    ) -> HalResult<RuntimeValue> {
+        Err(self.unsupported(CapabilityId::FileSystemIo, "input_fields"))
+    }
+
+    fn line_input(&self, _handle: RuntimeValue) -> HalResult<RuntimeValue> {
+        Err(self.unsupported(CapabilityId::FileSystemIo, "line_input"))
+    }
+
+    fn loc(&self, _handle: RuntimeValue) -> HalResult<RuntimeValue> {
+        Err(self.unsupported(CapabilityId::FileSystemIo, "loc"))
     }
 }
 

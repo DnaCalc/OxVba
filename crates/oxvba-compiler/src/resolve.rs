@@ -4,9 +4,24 @@ type ArrayBoundsMap = HashMap<String, Vec<(i32, i32)>>;
 type ParsedArrayDecl = (String, Option<BoundType>, Vec<(i32, i32)>);
 type UdtDefMap = HashMap<String, Vec<(String, BoundType)>>;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ArithOp {
+    Add,
+    Sub,
+    Mul,
+    Div,
+    IntDiv,
+    Mod,
+    Pow,
+    Concat,
+    Neg,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum BoundExpr {
     IntConst(i32),
+    FloatConst(u64),
+    StringConst(String),
     Var(String),
     AddConst {
         var: String,
@@ -15,6 +30,15 @@ pub enum BoundExpr {
     SubConst {
         var: String,
         delta: i32,
+    },
+    BinaryOp {
+        op: ArithOp,
+        lhs: Box<BoundExpr>,
+        rhs: Box<BoundExpr>,
+    },
+    UnaryOp {
+        op: ArithOp,
+        operand: Box<BoundExpr>,
     },
     IntrinsicCall {
         name: String,
@@ -48,6 +72,9 @@ pub enum BoundType {
 pub struct BoundCallArg {
     pub name: Option<String>,
     pub expr: BoundExpr,
+    /// When true, the argument was parenthesized at statement level (e.g.
+    /// `Foo (x)`) and must be passed ByVal even if the parameter is ByRef.
+    pub force_byval: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -196,6 +223,7 @@ pub enum BoundCond {
 pub struct BoundModule {
     pub source: String,
     pub option_explicit: bool,
+    pub is_class_module: bool,
     pub compare_mode: BoundCompareMode,
     pub default_type_table: [BoundType; 26],
     pub resolution_diagnostics: Vec<String>,
@@ -244,6 +272,9 @@ pub struct BoundExternalDecl {
     pub alias: String,
     pub ptr_safe: bool,
     pub ordinal_alias: bool,
+    pub params: Vec<BoundParam>,
+    pub return_type: BoundType,
+    pub is_function: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -376,6 +407,7 @@ pub fn resolve_symbols(source: &str) -> BoundModule {
     BoundModule {
         source: source.to_string(),
         option_explicit,
+        is_class_module: false,
         compare_mode,
         default_type_table,
         resolution_diagnostics,
@@ -923,13 +955,25 @@ fn parse_procedures(
         let mut declarations: Vec<String> = params.iter().map(|p| p.name.clone()).collect();
         let mut declaration_types: HashMap<String, BoundType> =
             params.iter().map(|p| (p.name.clone(), p.ty)).collect();
-        if matches!(kind, ProcKind::Function | ProcKind::PropertyGet)
-            && !declarations
+        if matches!(kind, ProcKind::Function | ProcKind::PropertyGet) {
+            // For Property Get, the return-value slot must use the base name
+            // (e.g. "value") so that assignments like `Value = 9` inside the
+            // body write to the correct slot.  For plain Functions the
+            // canonical name equals the base name already.
+            let return_decl_name = match kind {
+                ProcKind::PropertyGet => name
+                    .strip_prefix("property_get_")
+                    .unwrap_or(&name)
+                    .to_string(),
+                _ => name.clone(),
+            };
+            if !declarations
                 .iter()
-                .any(|existing| existing.eq_ignore_ascii_case(&name))
-        {
-            declarations.push(name.clone());
-            declaration_types.insert(name.clone(), return_type);
+                .any(|existing| existing.eq_ignore_ascii_case(&return_decl_name))
+            {
+                declarations.push(return_decl_name.clone());
+                declaration_types.insert(return_decl_name, return_type);
+            }
         }
         let mut duplicate_declarations: Vec<String> = Vec::new();
         for (name, _) in sorted_module_constants(module_constants) {
@@ -1309,6 +1353,7 @@ fn collect_declared_external_procedures(
             declarations.push(name.clone());
             declaration_types.insert(name.clone(), return_type);
         }
+        let external_params = params.clone();
         procedures.push(BoundProcedure {
             name,
             return_type,
@@ -1327,6 +1372,9 @@ fn collect_declared_external_procedures(
                 alias: declare.alias,
                 ptr_safe: declare.ptr_safe,
                 ordinal_alias: declare.ordinal_alias,
+                params: external_params,
+                return_type,
+                is_function: declare.is_function,
             },
         );
     }
@@ -1378,6 +1426,7 @@ struct ParsedDeclareSignature {
     name: String,
     params: Vec<BoundParam>,
     return_type: BoundType,
+    is_function: bool,
     library: String,
     alias: String,
     ptr_safe: bool,
@@ -1463,43 +1512,6 @@ fn parse_declare_signature_line(
             "external procedure declaration rejected: unable to parse signature".to_string()
         })?;
 
-    if params.iter().any(|param| param.param_array) {
-        return Err(
-            "external procedure declaration rejected: ParamArray is not supported in dynamic-link subset"
-                .to_string(),
-        );
-    }
-    if params.iter().any(|param| param.optional) {
-        return Err(
-            "external procedure declaration rejected: Optional parameters are not supported in dynamic-link subset"
-                .to_string(),
-        );
-    }
-    if params.iter().any(|param| param.by_ref) {
-        return Err(
-            "external procedure declaration rejected: ByRef parameters are not supported in dynamic-link subset"
-                .to_string(),
-        );
-    }
-    if params.len() > 1 {
-        return Err(
-            "external procedure declaration rejected: only one argument is supported in dynamic-link subset"
-                .to_string(),
-        );
-    }
-    if params.iter().any(|param| param.ty != BoundType::Long) {
-        return Err(
-            "external procedure declaration rejected: only `Long` parameter type is supported in dynamic-link subset"
-                .to_string(),
-        );
-    }
-    if matches!(kind, ProcKind::Function) && return_type != BoundType::Long {
-        return Err(
-            "external procedure declaration rejected: only `Long` return type is supported in dynamic-link subset"
-                .to_string(),
-        );
-    }
-
     let lib = extract_quoted_after_keyword(tail, "lib").ok_or_else(|| {
         "external procedure declaration rejected: missing `Lib \"...\"` clause".to_string()
     })?;
@@ -1510,6 +1522,7 @@ fn parse_declare_signature_line(
         name,
         params,
         return_type,
+        is_function: matches!(kind, ProcKind::Function),
         library: lib.trim().to_ascii_lowercase(),
         alias,
         ptr_safe,
@@ -1872,6 +1885,29 @@ fn parse_block(
                     line: line.to_string(),
                 });
             }
+            *index += 1;
+            continue;
+        }
+
+        if lower == "randomize" || lower.starts_with("randomize ") {
+            let args = if lower == "randomize" {
+                Vec::new()
+            } else {
+                let raw = line[10..].trim();
+                if let Some(expr) = parse_expr(raw, array_bounds) {
+                    vec![BoundCallArg {
+                        name: None,
+                        expr,
+                        force_byval: true,
+                    }]
+                } else {
+                    Vec::new()
+                }
+            };
+            out.push(BoundStmt::Call {
+                name: "randomize".to_string(),
+                args,
+            });
             *index += 1;
             continue;
         }
@@ -2384,7 +2420,13 @@ fn parse_assign_or_unsupported(
             {
                 return BoundStmt::Call {
                     name: route_proc.clone(),
-                    args: vec![BoundCallArg { name: None, expr }],
+                    args: vec![BoundCallArg {
+                        name: None,
+                        expr,
+                        // Property Let/Set value parameter must not write back
+                        // through ByRef — the assigned value is always by-value.
+                        force_byval: true,
+                    }],
                 };
             }
             return BoundStmt::Assign {
@@ -2395,7 +2437,8 @@ fn parse_assign_or_unsupported(
         }
     }
 
-    let call_token = if assignment_line.to_ascii_lowercase().starts_with("call ") {
+    let has_call_keyword = assignment_line.to_ascii_lowercase().starts_with("call ");
+    let call_token = if has_call_keyword {
         assignment_line[5..].trim()
     } else {
         assignment_line.trim()
@@ -2403,7 +2446,13 @@ fn parse_assign_or_unsupported(
     if let Some((name, args)) = parse_dispatch_invoke_call_invocation(call_token, array_bounds) {
         return BoundStmt::Call { name, args };
     }
-    if let Some((name, args)) = parse_call_invocation(call_token, array_bounds) {
+    if let Some((name, mut args)) = parse_call_invocation(call_token, array_bounds) {
+        // VBA rule: at statement level (no Call keyword), parentheses around a
+        // single argument force ByVal evaluation.  E.g. `AddOne (x)` passes x
+        // ByVal, while `Call AddOne(x)` passes x ByRef.
+        if !has_call_keyword && args.len() == 1 {
+            args[0].force_byval = true;
+        }
         return BoundStmt::Call { name, args };
     }
     if let Some(name) = normalize_ident(call_token).or_else(|| parse_member_reference(call_token)) {
@@ -2518,11 +2567,13 @@ fn parse_call_invocation(
             args.push(BoundCallArg {
                 name: Some(normalize_ident(lhs)?),
                 expr: parse_expr(rhs.trim(), array_bounds)?,
+                force_byval: false,
             });
         } else {
             args.push(BoundCallArg {
                 name: None,
                 expr: parse_expr(trimmed, array_bounds)?,
+                force_byval: false,
             });
         }
     }
@@ -2551,10 +2602,12 @@ fn parse_dispatch_invoke_call_invocation(
     args.push(BoundCallArg {
         name: None,
         expr: parse_expr(args_text[0], array_bounds)?,
+        force_byval: false,
     });
     args.push(BoundCallArg {
         name: None,
         expr: parse_dispatch_member_arg(args_text[1], array_bounds)?,
+        force_byval: false,
     });
     for token in &args_text[2..] {
         let trimmed = token.trim();
@@ -2562,11 +2615,13 @@ fn parse_dispatch_invoke_call_invocation(
             args.push(BoundCallArg {
                 name: Some(normalize_ident(lhs)?),
                 expr: parse_expr(rhs.trim(), array_bounds)?,
+                force_byval: false,
             });
         } else {
             args.push(BoundCallArg {
                 name: None,
                 expr: parse_expr(trimmed, array_bounds)?,
+                force_byval: false,
             });
         }
     }
@@ -2598,11 +2653,13 @@ fn parse_raiseevent_invocation(
                 args.push(BoundCallArg {
                     name: Some(normalize_ident(lhs)?),
                     expr: parse_expr(rhs.trim(), array_bounds)?,
+                    force_byval: false,
                 });
             } else {
                 args.push(BoundCallArg {
                     name: None,
                     expr: parse_expr(trimmed, array_bounds)?,
+                    force_byval: false,
                 });
             }
         }
@@ -3017,6 +3074,139 @@ fn parse_case_is_clause(token: &str) -> Option<BoundCaseClause> {
     None
 }
 
+/// Scan right-to-left at paren depth 0, quote-aware, to find the operator
+/// with the lowest precedence.  Precedence (low→high):
+///   `&`  →  `+`/`-`  →  `Mod`  →  `\`  →  `*`/`/`  →  `^`
+/// Returns `(ArithOp, byte-position-of-operator)` or `None`.
+fn split_at_lowest_precedence_op(expr: &str) -> Option<(ArithOp, usize)> {
+    fn precedence(op: ArithOp) -> u8 {
+        match op {
+            ArithOp::Concat => 1,
+            ArithOp::Add | ArithOp::Sub => 2,
+            ArithOp::Mod => 3,
+            ArithOp::IntDiv => 4,
+            ArithOp::Mul | ArithOp::Div => 5,
+            ArithOp::Pow => 6,
+            ArithOp::Neg => 7,
+        }
+    }
+
+    let bytes = expr.as_bytes();
+    let len = bytes.len();
+    let mut best: Option<(ArithOp, usize)> = None;
+    let mut depth: i32 = 0;
+    let mut in_string = false;
+    let mut i = len;
+
+    while i > 0 {
+        i -= 1;
+        let ch = bytes[i];
+
+        if ch == b'"' {
+            in_string = !in_string;
+            continue;
+        }
+        if in_string {
+            continue;
+        }
+
+        if ch == b')' {
+            depth += 1;
+            continue;
+        }
+        if ch == b'(' {
+            depth -= 1;
+            continue;
+        }
+        if depth != 0 {
+            continue;
+        }
+
+        let candidate = match ch {
+            b'^' => Some((ArithOp::Pow, i)),
+            b'*' => Some((ArithOp::Mul, i)),
+            b'/' => Some((ArithOp::Div, i)),
+            b'\\' => Some((ArithOp::IntDiv, i)),
+            b'+' => {
+                // Guard: unary `+` at position 0 or after another operator — skip
+                let before = expr[..i].trim_end();
+                if before.is_empty() {
+                    None
+                } else {
+                    Some((ArithOp::Add, i))
+                }
+            }
+            b'-' => {
+                // Guard: unary `-` at position 0 or after another operator — skip
+                let before = expr[..i].trim_end();
+                if before.is_empty() {
+                    None
+                } else {
+                    let last = before.as_bytes()[before.len() - 1];
+                    if matches!(last, b'+' | b'-' | b'*' | b'/' | b'\\' | b'^' | b'(') {
+                        None // unary minus after operator or open-paren
+                    } else {
+                        Some((ArithOp::Sub, i))
+                    }
+                }
+            }
+            b'&' => {
+                // Guard: `&H`, `&O`, `&B` hex/octal/binary literal prefixes
+                if i + 1 < len && matches!(bytes[i + 1], b'H' | b'h' | b'O' | b'o' | b'B' | b'b') {
+                    None
+                } else {
+                    Some((ArithOp::Concat, i))
+                }
+            }
+            _ => None,
+        };
+
+        // Check for `Mod` keyword (case-insensitive, requires word boundaries)
+        if candidate.is_none() && i + 3 <= len {
+            let slice = &expr[i..i + 3];
+            if slice.eq_ignore_ascii_case("mod") {
+                let before_ok = i == 0 || !bytes[i - 1].is_ascii_alphanumeric();
+                let after_ok = i + 3 >= len || !bytes[i + 3].is_ascii_alphanumeric();
+                if before_ok && after_ok {
+                    let mod_candidate = Some((ArithOp::Mod, i));
+                    if let Some((op, _)) = mod_candidate {
+                        let p = precedence(op);
+                        if best.map_or(true, |(b_op, _)| p <= precedence(b_op)) {
+                            best = mod_candidate;
+                        }
+                    }
+                    continue;
+                }
+            }
+        }
+
+        if let Some((op, _)) = candidate {
+            let p = precedence(op);
+            if best.map_or(true, |(b_op, _)| p <= precedence(b_op)) {
+                best = candidate;
+            }
+        }
+    }
+
+    // Only return a split if both sides are non-empty
+    if let Some((op, pos)) = best {
+        let left = expr[..pos].trim();
+        let right_start = match op {
+            ArithOp::Mod => pos + 3,
+            _ => pos + 1,
+        };
+        let right = if right_start <= expr.len() {
+            expr[right_start..].trim()
+        } else {
+            ""
+        };
+        if !left.is_empty() && !right.is_empty() {
+            return Some((op, pos));
+        }
+    }
+    None
+}
+
 fn parse_expr(text: &str, array_bounds: &ArrayBoundsMap) -> Option<BoundExpr> {
     let expr = text.trim();
     if expr.eq_ignore_ascii_case("vbnullstring") {
@@ -3029,13 +3219,67 @@ fn parse_expr(text: &str, array_bounds: &ArrayBoundsMap) -> Option<BoundExpr> {
         return Some(BoundExpr::IntConst(0));
     }
     if expr.eq_ignore_ascii_case("null") {
-        return Some(BoundExpr::IntConst(-1));
+        return Some(BoundExpr::IntrinsicCall {
+            name: "__null".to_string(),
+            args: Vec::new(),
+        });
     }
     if expr.eq_ignore_ascii_case("nothing") {
         return Some(BoundExpr::IntConst(0));
     }
     if let Ok(value) = expr.parse::<i32>() {
         return Some(BoundExpr::IntConst(value));
+    }
+    if expr.contains('.') || expr.contains('e') || expr.contains('E') {
+        if let Ok(value) = expr.parse::<f64>() {
+            return Some(BoundExpr::FloatConst(value.to_bits()));
+        }
+    }
+
+    // String literals: "hello", "he""llo" (escaped quotes)
+    if let Some(s) = parse_quoted_string_literal(expr) {
+        return Some(BoundExpr::StringConst(s));
+    }
+
+    // Boolean keywords: True = -1, False = 0 (VBA convention)
+    if expr.eq_ignore_ascii_case("true") {
+        return Some(BoundExpr::IntConst(-1));
+    }
+    if expr.eq_ignore_ascii_case("false") {
+        return Some(BoundExpr::IntConst(0));
+    }
+
+    // Hex literals: &HFF → 255, &O77 → 63
+    if let Some(hex_val) = parse_numeric_prefix_literal(expr) {
+        return Some(BoundExpr::IntConst(hex_val));
+    }
+
+    // Bare parenthesized expression: `(expr)` — strip and recurse
+    if expr.starts_with('(') && expr.ends_with(')') {
+        let inner = &expr[1..expr.len() - 1];
+        // Only strip if the parens are balanced (not a function call)
+        let mut depth = 0i32;
+        let mut balanced = true;
+        for (idx, ch) in inner.char_indices() {
+            match ch {
+                '(' => depth += 1,
+                ')' => {
+                    depth -= 1;
+                    if depth < 0 {
+                        balanced = false;
+                        break;
+                    }
+                }
+                _ => {}
+            }
+            // If we close all parens before the end, these aren't wrapping parens
+            let _ = idx;
+        }
+        if balanced && depth == 0 {
+            if let Some(parsed) = parse_expr(inner, array_bounds) {
+                return Some(parsed);
+            }
+        }
     }
 
     if let Some(inner) = parse_intrinsic_conversion_expr(expr, array_bounds) {
@@ -3051,16 +3295,47 @@ fn parse_expr(text: &str, array_bounds: &ArrayBoundsMap) -> Option<BoundExpr> {
         return Some(BoundExpr::ProcCall { name, args });
     }
 
-    if let Some((left_raw, right_raw)) = expr.split_once('+') {
-        let var = parse_reference_name(left_raw, array_bounds)?;
-        let delta = right_raw.trim().parse::<i32>().ok()?;
-        return Some(BoundExpr::AddConst { var, delta });
+    if let Some((op, split_pos)) = split_at_lowest_precedence_op(expr) {
+        let left_raw = &expr[..split_pos];
+        let right_raw = match op {
+            ArithOp::Mod => &expr[split_pos + 3..],    // "Mod" is 3 chars
+            ArithOp::Concat => &expr[split_pos + 1..], // "&"
+            _ => &expr[split_pos + 1..],
+        };
+
+        // Preserve AddConst/SubConst fast-path for simple `var + const` / `var - const`
+        if matches!(op, ArithOp::Add | ArithOp::Sub) {
+            if let Some(var) = parse_reference_name(left_raw, array_bounds) {
+                if let Ok(delta) = right_raw.trim().parse::<i32>() {
+                    return match op {
+                        ArithOp::Add => Some(BoundExpr::AddConst { var, delta }),
+                        ArithOp::Sub => Some(BoundExpr::SubConst { var, delta }),
+                        _ => unreachable!(),
+                    };
+                }
+            }
+        }
+
+        let lhs = parse_expr(left_raw, array_bounds)?;
+        let rhs = parse_expr(right_raw, array_bounds)?;
+        return Some(BoundExpr::BinaryOp {
+            op,
+            lhs: Box::new(lhs),
+            rhs: Box::new(rhs),
+        });
     }
 
-    if let Some((left_raw, right_raw)) = expr.split_once('-') {
-        let var = parse_reference_name(left_raw, array_bounds)?;
-        let delta = right_raw.trim().parse::<i32>().ok()?;
-        return Some(BoundExpr::SubConst { var, delta });
+    // Unary negation: starts with `-` and the remainder is a valid expression
+    if let Some(rest) = expr.strip_prefix('-') {
+        let rest = rest.trim();
+        if !rest.is_empty() {
+            if let Some(operand) = parse_expr(rest, array_bounds) {
+                return Some(BoundExpr::UnaryOp {
+                    op: ArithOp::Neg,
+                    operand: Box::new(operand),
+                });
+            }
+        }
     }
 
     parse_reference_name(expr, array_bounds).map(BoundExpr::Var)
@@ -3149,7 +3424,7 @@ fn intrinsic_spec(name: &str) -> Option<IntrinsicSpec> {
         | "atn" | "tan" | "year" | "month" | "day" | "weekday" | "space" | "chr" | "asc"
         | "lbound" | "ubound" | "isarray" | "vartype" | "typename" | "isnumeric" | "isdate"
         | "isobject" | "isempty" | "isnull" | "iserror" | "monthname" | "collectioncount"
-        | "eof" | "lof" | "seek" => Some(IntrinsicSpec::fixed(1, DeterministicCore)),
+        | "eof" | "lof" | "loc" | "seek" | "strreverse" => Some(IntrinsicSpec::fixed(1, DeterministicCore)),
         "format" => Some(IntrinsicSpec::range(1, 2, DeterministicCore)),
         "strconv" => Some(IntrinsicSpec::range(2, 3, DeterministicCore)),
         "left" | "right" | "instr" | "instrrev" | "split" | "join" | "strcomp" => {
@@ -3223,21 +3498,21 @@ fn parse_stdlib_intrinsic_call_expr(
 }
 
 fn parse_createobject_arg(arg: &str, array_bounds: &ArrayBoundsMap) -> Option<BoundExpr> {
-    if let Some(expr) = parse_expr(arg, array_bounds) {
-        return Some(expr);
+    // Quoted strings must map to a known createobject token; unknown ProgIDs are rejected
+    if let Some(literal) = parse_quoted_string_literal(arg) {
+        let token = map_createobject_literal_token(literal.as_str())?;
+        return Some(BoundExpr::IntConst(token));
     }
-    let literal = parse_quoted_string_literal(arg)?;
-    let token = map_createobject_literal_token(literal.as_str())?;
-    Some(BoundExpr::IntConst(token))
+    parse_expr(arg, array_bounds)
 }
 
 fn parse_dispatch_member_arg(arg: &str, array_bounds: &ArrayBoundsMap) -> Option<BoundExpr> {
-    if let Some(expr) = parse_expr(arg, array_bounds) {
-        return Some(expr);
+    // Quoted strings must map to a known dispatch member token
+    if let Some(literal) = parse_quoted_string_literal(arg) {
+        let token = map_dispatch_member_literal_token(literal.as_str())?;
+        return Some(BoundExpr::IntConst(token));
     }
-    let literal = parse_quoted_string_literal(arg)?;
-    let token = map_dispatch_member_literal_token(literal.as_str())?;
-    Some(BoundExpr::IntConst(token))
+    parse_expr(arg, array_bounds)
 }
 
 fn parse_dispatch_invoke_args(
@@ -3262,7 +3537,38 @@ fn parse_quoted_string_literal(text: &str) -> Option<String> {
         return None;
     }
     let body = &trimmed[1..trimmed.len() - 1];
-    Some(body.replace("\"\"", "\""))
+    // Validate: every `"` inside must be doubled (`""`)
+    let bytes = body.as_bytes();
+    let mut i = 0;
+    let mut result = String::new();
+    while i < bytes.len() {
+        if bytes[i] == b'"' {
+            if i + 1 < bytes.len() && bytes[i + 1] == b'"' {
+                result.push('"');
+                i += 2;
+            } else {
+                return None; // unescaped quote — not a valid string literal
+            }
+        } else {
+            result.push(bytes[i] as char);
+            i += 1;
+        }
+    }
+    Some(result)
+}
+
+fn parse_numeric_prefix_literal(text: &str) -> Option<i32> {
+    let t = text.trim();
+    if t.len() < 3 || !t.starts_with('&') {
+        return None;
+    }
+    let prefix = t.as_bytes()[1].to_ascii_lowercase();
+    let digits = &t[2..];
+    match prefix {
+        b'h' => i32::from_str_radix(digits, 16).ok(),
+        b'o' => i32::from_str_radix(digits, 8).ok(),
+        _ => None,
+    }
 }
 
 fn map_createobject_literal_token(text: &str) -> Option<i32> {
@@ -4186,7 +4492,7 @@ fn strip_keyword_prefix_ci<'a>(text: &'a str, keyword: &str) -> Option<&'a str> 
 #[cfg(test)]
 mod tests {
     use super::{
-        BoundCompareMode, BoundCond, BoundExpr, BoundStmt, CompareOp, IntrinsicSurface,
+        ArithOp, BoundCompareMode, BoundCond, BoundExpr, BoundStmt, CompareOp, IntrinsicSurface,
         intrinsic_surface, resolve_symbols,
     };
 
@@ -5399,16 +5705,12 @@ mod tests {
     }
 
     #[test]
-    fn resolve_declare_byref_parameter_adds_resolution_diagnostic() {
+    fn resolve_declare_byref_parameter_succeeds() {
         let source = "Declare PtrSafe Function HostPing Lib \"host\" Alias \"ping\" (ByRef x As Long) As Long\nSub Main()\nEnd Sub";
         let module = resolve_symbols(source);
-        assert_eq!(module.external_declarations.len(), 0);
-        assert!(
-            module
-                .resolution_diagnostics
-                .iter()
-                .any(|diag| diag.contains("ByRef parameters are not supported"))
-        );
+        assert_eq!(module.external_declarations.len(), 1);
+        let decl = &module.external_declarations["hostping"];
+        assert!(decl.params[0].by_ref);
     }
 
     #[test]
@@ -5435,5 +5737,175 @@ mod tests {
             stmt,
             BoundStmt::RaiseEvent { name, args } if name == "tick" && args.is_empty()
         )));
+    }
+
+    #[test]
+    fn parse_expr_mul_const() {
+        let source = "Sub Main()\nDim x\nx = 3 * 4\nEnd Sub";
+        let module = resolve_symbols(source);
+        let Some(BoundStmt::Assign { expr, .. }) = module.body.first() else {
+            panic!("expected assignment");
+        };
+        assert_eq!(
+            expr,
+            &BoundExpr::BinaryOp {
+                op: ArithOp::Mul,
+                lhs: Box::new(BoundExpr::IntConst(3)),
+                rhs: Box::new(BoundExpr::IntConst(4)),
+            }
+        );
+    }
+
+    #[test]
+    fn parse_expr_div_var() {
+        let source = "Sub Main()\nDim x\nDim y\nx = y / 2\nEnd Sub";
+        let module = resolve_symbols(source);
+        let Some(BoundStmt::Assign { expr, .. }) = module.body.first() else {
+            panic!("expected assignment");
+        };
+        assert_eq!(
+            expr,
+            &BoundExpr::BinaryOp {
+                op: ArithOp::Div,
+                lhs: Box::new(BoundExpr::Var("y".to_string())),
+                rhs: Box::new(BoundExpr::IntConst(2)),
+            }
+        );
+    }
+
+    #[test]
+    fn parse_expr_precedence() {
+        // a + b * c → splits at `+` first (lower precedence)
+        let source = "Sub Main()\nDim a\nDim b\nDim c\nDim x\nx = a + b * c\nEnd Sub";
+        let module = resolve_symbols(source);
+        let Some(BoundStmt::Assign { expr, .. }) = module.body.first() else {
+            panic!("expected assignment");
+        };
+        // Should be Add(a, Mul(b, c))
+        match expr {
+            BoundExpr::BinaryOp {
+                op: ArithOp::Add,
+                rhs,
+                ..
+            } => {
+                assert!(matches!(
+                    rhs.as_ref(),
+                    BoundExpr::BinaryOp {
+                        op: ArithOp::Mul,
+                        ..
+                    }
+                ));
+            }
+            other => panic!("expected BinaryOp::Add, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn parse_expr_paren_override() {
+        // (a + b) * c → splits at `*` (parens protect `+`)
+        let source = "Sub Main()\nDim a\nDim b\nDim c\nDim x\nx = (a + b) * c\nEnd Sub";
+        let module = resolve_symbols(source);
+        let Some(BoundStmt::Assign { expr, .. }) = module.body.first() else {
+            panic!("expected assignment");
+        };
+        match expr {
+            BoundExpr::BinaryOp {
+                op: ArithOp::Mul,
+                lhs,
+                ..
+            } => {
+                // lhs should be Add(a, b) — but AddConst since a + b where b is not const...
+                // Actually: (a + b) where a and b are vars → BinaryOp::Add
+                assert!(matches!(
+                    lhs.as_ref(),
+                    BoundExpr::BinaryOp {
+                        op: ArithOp::Add,
+                        ..
+                    }
+                ));
+            }
+            other => panic!("expected BinaryOp::Mul, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn parse_expr_mod_keyword() {
+        let source = "Sub Main()\nDim x\nx = 17 Mod 3\nEnd Sub";
+        let module = resolve_symbols(source);
+        let Some(BoundStmt::Assign { expr, .. }) = module.body.first() else {
+            panic!("expected assignment");
+        };
+        assert_eq!(
+            expr,
+            &BoundExpr::BinaryOp {
+                op: ArithOp::Mod,
+                lhs: Box::new(BoundExpr::IntConst(17)),
+                rhs: Box::new(BoundExpr::IntConst(3)),
+            }
+        );
+    }
+
+    #[test]
+    fn parse_expr_concat() {
+        let source = "Sub Main()\nDim x\nDim y\nx = x & y\nEnd Sub";
+        let module = resolve_symbols(source);
+        let Some(BoundStmt::Assign { expr, .. }) = module.body.first() else {
+            panic!("expected assignment");
+        };
+        assert_eq!(
+            expr,
+            &BoundExpr::BinaryOp {
+                op: ArithOp::Concat,
+                lhs: Box::new(BoundExpr::Var("x".to_string())),
+                rhs: Box::new(BoundExpr::Var("y".to_string())),
+            }
+        );
+    }
+
+    #[test]
+    fn parse_expr_string_literal() {
+        let source = "Sub Main()\nDim x\nx = \"hello\"\nEnd Sub";
+        let module = resolve_symbols(source);
+        let Some(BoundStmt::Assign { expr, .. }) = module.body.first() else {
+            panic!("expected assignment");
+        };
+        assert_eq!(expr, &BoundExpr::StringConst("hello".to_string()));
+    }
+
+    #[test]
+    fn parse_expr_string_escaped_quote() {
+        let source = "Sub Main()\nDim x\nx = \"he\"\"llo\"\nEnd Sub";
+        let module = resolve_symbols(source);
+        let Some(BoundStmt::Assign { expr, .. }) = module.body.first() else {
+            panic!("expected assignment");
+        };
+        assert_eq!(expr, &BoundExpr::StringConst("he\"llo".to_string()));
+    }
+
+    #[test]
+    fn parse_expr_empty_string() {
+        let source = "Sub Main()\nDim x\nx = \"\"\nEnd Sub";
+        let module = resolve_symbols(source);
+        let Some(BoundStmt::Assign { expr, .. }) = module.body.first() else {
+            panic!("expected assignment");
+        };
+        assert_eq!(expr, &BoundExpr::StringConst("".to_string()));
+    }
+
+    #[test]
+    fn parse_expr_string_concat_literals() {
+        let source = "Sub Main()\nDim x\nx = \"a\" & \"b\"\nEnd Sub";
+        let module = resolve_symbols(source);
+        let Some(BoundStmt::Assign { expr, .. }) = module.body.first() else {
+            panic!("expected assignment");
+        };
+        assert_eq!(
+            expr,
+            &BoundExpr::BinaryOp {
+                op: ArithOp::Concat,
+                lhs: Box::new(BoundExpr::StringConst("a".to_string())),
+                rhs: Box::new(BoundExpr::StringConst("b".to_string())),
+            }
+        );
     }
 }

@@ -326,6 +326,98 @@ pub fn run_conformance(host: &dyn HostServices) -> ConformanceReport {
         &["HAL-FS-006", "HAL-DES-004", "HAL-GEN-001", "HAL-GEN-003"],
         host.fs().free_file(RuntimeValue::I32(0)).map(|_| ()),
     );
+    // Data-transfer probes: open a handle first, probe each method, close.
+    // If open fails (unsupported/denied), downstream probes inherit that status.
+    let fs_data_probe_handle = host.fs().open(RuntimeValue::I32(99_990), RuntimeValue::I32(0));
+    let fs_probe_h = match &fs_data_probe_handle {
+        Ok(h) => Some(h.clone()),
+        Err(_) => None,
+    };
+    let fs_probe_handle_val = fs_probe_h.unwrap_or(RuntimeValue::I32(0));
+    let fs_open_ok = fs_data_probe_handle.is_ok();
+
+    probe(
+        CapabilityId::FileSystemIo,
+        "fs.read_bytes",
+        &["HAL-FS-007", "HAL-DES-004", "HAL-GEN-001", "HAL-GEN-003"],
+        if fs_open_ok {
+            host.fs()
+                .read_bytes(fs_probe_handle_val.clone(), RuntimeValue::I32(0))
+                .map(|_| ())
+        } else {
+            fs_data_probe_handle.clone().map(|_| ())
+        },
+    );
+    probe(
+        CapabilityId::FileSystemIo,
+        "fs.write_bytes",
+        &["HAL-FS-008", "HAL-DES-004", "HAL-GEN-001", "HAL-GEN-003"],
+        if fs_open_ok {
+            host.fs()
+                .write_bytes(
+                    fs_probe_handle_val.clone(),
+                    RuntimeValue::String(oxvba_runtime::bstr::BStr(String::new())),
+                )
+                .map(|_| ())
+        } else {
+            fs_data_probe_handle.clone().map(|_| ())
+        },
+    );
+    probe(
+        CapabilityId::FileSystemIo,
+        "fs.print_line",
+        &["HAL-FS-009", "HAL-DES-004", "HAL-GEN-001", "HAL-GEN-003"],
+        if fs_open_ok {
+            host.fs()
+                .print_line(
+                    fs_probe_handle_val.clone(),
+                    RuntimeValue::String(oxvba_runtime::bstr::BStr(String::new())),
+                )
+                .map(|_| ())
+        } else {
+            fs_data_probe_handle.clone().map(|_| ())
+        },
+    );
+    probe(
+        CapabilityId::FileSystemIo,
+        "fs.input_fields",
+        &["HAL-FS-010", "HAL-DES-004", "HAL-GEN-001", "HAL-GEN-003"],
+        if fs_open_ok {
+            host.fs()
+                .input_fields(fs_probe_handle_val.clone(), RuntimeValue::I32(1))
+                .map(|_| ())
+        } else {
+            fs_data_probe_handle.clone().map(|_| ())
+        },
+    );
+    probe(
+        CapabilityId::FileSystemIo,
+        "fs.line_input",
+        &["HAL-FS-011", "HAL-DES-004", "HAL-GEN-001", "HAL-GEN-003"],
+        if fs_open_ok {
+            host.fs()
+                .line_input(fs_probe_handle_val.clone())
+                .map(|_| ())
+        } else {
+            fs_data_probe_handle.clone().map(|_| ())
+        },
+    );
+    probe(
+        CapabilityId::FileSystemIo,
+        "fs.loc",
+        &["HAL-FS-012", "HAL-DES-004", "HAL-GEN-001", "HAL-GEN-003"],
+        if fs_open_ok {
+            host.fs()
+                .loc(fs_probe_handle_val.clone())
+                .map(|_| ())
+        } else {
+            fs_data_probe_handle.clone().map(|_| ())
+        },
+    );
+    // Close the probe handle.
+    if fs_open_ok {
+        let _ = host.fs().close(fs_probe_handle_val);
+    }
     probe(
         CapabilityId::ProcessEnv,
         "process.shell",
@@ -404,6 +496,9 @@ pub fn run_conformance(host: &dyn HostServices) -> ConformanceReport {
         marshal_lane: "m0-deterministic",
         calling_convention: "platform-default",
         selection_policy: "case-insensitive-canonical",
+        param_count: 0,
+        param_types: &[],
+        return_type: None,
     };
     probe(
         CapabilityId::DynamicLinking,
@@ -497,7 +592,7 @@ fn evaluate_host_backed_contract_paths(
 ) {
     let fs_ok = verify_fs_host_backed_contract(host, descriptor, host_backed_active, failures);
     checks.push(ClauseCheck {
-        clause_id: "HAL-FS-007",
+        clause_id: "HAL-FS-013",
         status: if fs_ok {
             ClauseCheckStatus::Passed
         } else {
@@ -708,6 +803,9 @@ fn evaluate_dynlink_contract_paths(
         marshal_lane: "m0-deterministic",
         calling_convention: "platform-default",
         selection_policy: "case-insensitive-canonical",
+        param_count: 0,
+        param_types: &[],
+        return_type: None,
     };
     let mut win_ok = true;
     let mut linux_ok = true;
@@ -763,6 +861,9 @@ fn evaluate_dynlink_contract_paths(
         marshal_lane: "m2-pointer-lpstr",
         calling_convention: "platform-default",
         selection_policy: "case-insensitive-canonical",
+        param_count: 0,
+        param_types: &[],
+        return_type: None,
     };
     match host
         .dynlink()
@@ -796,6 +897,9 @@ fn evaluate_dynlink_contract_paths(
         marshal_lane: "m2-byref-writeback",
         calling_convention: "platform-default",
         selection_policy: "case-insensitive-canonical",
+        param_count: 0,
+        param_types: &[],
+        return_type: None,
     };
     match host
         .dynlink()
@@ -1343,6 +1447,7 @@ const fn is_policy_gated(capability: CapabilityId) -> bool {
     matches!(
         capability,
         CapabilityId::UiInteraction
+            | CapabilityId::FileSystemIo
             | CapabilityId::ProcessEnv
             | CapabilityId::ComActivationDispatch
             | CapabilityId::DynamicLinking

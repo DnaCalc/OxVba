@@ -1,9 +1,11 @@
 //! oxvba-hal: host abstraction contracts, profile adapters, and conformance harness.
 
 pub mod adapters;
+pub mod callbacks;
 pub mod conformance;
 pub mod dynamic_bridge;
 pub mod error;
+pub mod journal;
 pub mod model;
 pub mod traits;
 

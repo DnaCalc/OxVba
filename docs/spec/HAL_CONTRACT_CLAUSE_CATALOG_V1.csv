@@ -28,7 +28,13 @@ HAL-FS-003,file-system,implemented-verified,host-tests,seek_negative_returns_ada
 HAL-FS-004,file-system,implemented-verified,host-tests,file_open_seek_eof_lof_close_roundtrip
 HAL-FS-005,file-system,implemented-verified,host-tests,file_open_seek_eof_lof_close_roundtrip
 HAL-FS-006,file-system,implemented-verified,conformance,fs.free_file
-HAL-FS-007,file-system,implemented-verified,conformance,verify_fs_host_backed_contract
+HAL-FS-007,file-system,implemented-verified,conformance,fs.read_bytes
+HAL-FS-008,file-system,implemented-verified,conformance,fs.write_bytes
+HAL-FS-009,file-system,implemented-verified,conformance,fs.print_line
+HAL-FS-010,file-system,implemented-verified,conformance,fs.input_fields
+HAL-FS-011,file-system,implemented-verified,conformance,fs.line_input
+HAL-FS-012,file-system,implemented-verified,conformance,fs.loc
+HAL-FS-013,file-system,implemented-verified,conformance,verify_fs_host_backed_contract
 HAL-PROC-001,process-env,implemented-verified,conformance,process.shell
 HAL-PROC-002,process-env,implemented-verified,host-tests,process_env_deterministic_projection_contract
 HAL-PROC-003,process-env,implemented-verified,host-tests,process_env_deterministic_projection_contract

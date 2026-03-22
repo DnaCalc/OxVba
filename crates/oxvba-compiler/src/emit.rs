@@ -2,18 +2,18 @@ use std::collections::{BTreeMap, HashMap};
 
 use oxvba_runtime::{
     DynLinkSymbol,
-    value_tags::{EMPTY_TAG, ERROR_TAG_BASE, ERROR_TAG_LIMIT, NULL_TAG},
+    value_tags::ERROR_TAG_BASE,
 };
 
 use crate::{
     bytecode::{
-        Bytecode, DispatchInvokeArg, ExternalCallDescriptor, Instruction, RuntimeAssignmentIntent,
-        RuntimeAssignmentTargetKind, StringCompareMode,
+        Bytecode, DeclareParamType, DispatchInvokeArg, ExternalCallDescriptor, Instruction,
+        RuntimeAssignmentIntent, RuntimeAssignmentTargetKind, StringCompareMode,
     },
     resolve::{
-        AssignmentIntent, BoundCallArg, BoundCaseClause, BoundCompareMode, BoundCond, BoundExpr,
-        BoundExternalDecl, BoundModule, BoundParam, BoundProcedure, BoundStmt, BoundType,
-        CompareOp,
+        ArithOp, AssignmentIntent, BoundCallArg, BoundCaseClause, BoundCompareMode, BoundCond,
+        BoundExpr, BoundExternalDecl, BoundModule, BoundParam, BoundProcedure, BoundStmt,
+        BoundType, CompareOp,
     },
 };
 
@@ -91,27 +91,46 @@ pub fn emit_bytecode_with_runtime_metadata(
     let mut procedure_runtime_metadata = BTreeMap::<String, ProcedureRuntimeMetadata>::new();
     let mut proc_meta: HashMap<String, EmitProcMeta> = HashMap::new();
     let external_decls = module.external_declarations.clone();
-    let external_call_descriptors = build_external_call_descriptors(&external_decls);
+    let external_call_descriptors = build_external_call_descriptors(&external_decls, false);
     for (idx, proc) in procedures.iter().enumerate() {
         proc_meta.insert(
             proc.name.clone(),
             EmitProcMeta {
                 params: proc.params.clone(),
                 slots: proc_slots[idx].clone(),
-                return_slot: proc_slots[idx].get(&proc.name).copied(),
+                return_slot: proc_slots[idx]
+                    .get(&proc.name)
+                    .or_else(|| {
+                        // For Property Get, the return slot is declared under
+                        // the base name (e.g. "value"), not the canonical name.
+                        proc.name
+                            .strip_prefix("property_get_")
+                            .and_then(|base| proc_slots[idx].get(base))
+                    })
+                    .copied(),
                 return_type: proc.return_type,
                 declaration_types: proc.declaration_types.clone(),
             },
         );
     }
-    let class_init_proc = procedures
-        .iter()
-        .find(|p| p.name.eq_ignore_ascii_case("class_initialize"))
-        .map(|p| p.name.clone());
-    let class_terminate_proc = procedures
-        .iter()
-        .find(|p| p.name.eq_ignore_ascii_case("class_terminate"))
-        .map(|p| p.name.clone());
+    // Only invoke Class_Initialize/Terminate as lifecycle methods in class
+    // modules.  In standard modules they are ordinary Subs.
+    let class_init_proc = if module.is_class_module {
+        procedures
+            .iter()
+            .find(|p| p.name.eq_ignore_ascii_case("class_initialize"))
+            .map(|p| p.name.clone())
+    } else {
+        None
+    };
+    let class_terminate_proc = if module.is_class_module {
+        procedures
+            .iter()
+            .find(|p| p.name.eq_ignore_ascii_case("class_terminate"))
+            .map(|p| p.name.clone())
+    } else {
+        None
+    };
     proc_labels.insert(procedures[entry_idx].name.clone(), 0);
     procedure_runtime_metadata.insert(
         procedures[entry_idx].name.to_ascii_lowercase(),
@@ -124,6 +143,12 @@ pub fn emit_bytecode_with_runtime_metadata(
                 .collect(),
             return_slot: proc_slots[entry_idx]
                 .get(&procedures[entry_idx].name)
+                .or_else(|| {
+                    procedures[entry_idx]
+                        .name
+                        .strip_prefix("property_get_")
+                        .and_then(|base| proc_slots[entry_idx].get(base))
+                })
                 .copied(),
         },
     );
@@ -174,7 +199,14 @@ pub fn emit_bytecode_with_runtime_metadata(
                     .iter()
                     .filter_map(|param| proc_slots[idx].get(&param.name).copied())
                     .collect(),
-                return_slot: proc_slots[idx].get(&proc.name).copied(),
+                return_slot: proc_slots[idx]
+                    .get(&proc.name)
+                    .or_else(|| {
+                        proc.name
+                            .strip_prefix("property_get_")
+                            .and_then(|base| proc_slots[idx].get(base))
+                    })
+                    .copied(),
             },
         );
         instructions.push(Instruction::ClearErr);
@@ -244,6 +276,7 @@ pub fn emit_bytecode_with_runtime_metadata(
 
 fn build_external_call_descriptors(
     external_decls: &HashMap<String, BoundExternalDecl>,
+    native_ffi_available: bool,
 ) -> Vec<ExternalCallDescriptor> {
     let mut decls: Vec<_> = external_decls.values().cloned().collect();
     decls.sort_by(|lhs, rhs| {
@@ -258,6 +291,24 @@ fn build_external_call_descriptors(
             decl.alias.as_str(),
             decl.name.as_str(),
         );
+        let param_count = decl.params.len();
+        let param_types = decl
+            .params
+            .iter()
+            .map(|p| bound_type_to_declare_param_type(&p.ty))
+            .collect();
+        let return_type = if decl.is_function {
+            Some(bound_type_to_declare_param_type(&decl.return_type))
+        } else {
+            None
+        };
+        let marshal_lane = if native_ffi_available
+            && decl.library.to_ascii_lowercase() != "host"
+        {
+            "m1-native-ffi".to_string()
+        } else {
+            "m0-deterministic".to_string()
+        };
         out.push(ExternalCallDescriptor {
             descriptor_id: symbol as u32,
             declared_name: decl.name,
@@ -265,13 +316,16 @@ fn build_external_call_descriptors(
             alias: decl.alias,
             ordinal_alias: decl.ordinal_alias,
             symbol: DynLinkSymbol::new(symbol),
-            marshal_lane: "m0-deterministic".to_string(),
+            marshal_lane,
             calling_convention: "platform-default".to_string(),
             selection_policy: if decl.ordinal_alias {
                 "ordinal-literal-canonical".to_string()
             } else {
                 "case-insensitive-canonical".to_string()
             },
+            param_count,
+            param_types,
+            return_type,
         });
     }
     out
@@ -598,16 +652,19 @@ fn emit_stmt(
                     dst: step_non_negative_slot,
                     lhs: step_slot,
                     rhs: zero_slot,
+                    mode: compare_mode,
                 });
                 instructions.push(Instruction::CmpLeSlots {
                     dst: cmp_le_slot,
                     lhs: var_slot,
                     rhs: end_slot,
+                    mode: compare_mode,
                 });
                 instructions.push(Instruction::CmpGeSlots {
                     dst: cmp_ge_slot,
                     lhs: var_slot,
                     rhs: end_slot,
+                    mode: compare_mode,
                 });
                 instructions.push(Instruction::BoolNot {
                     dst: step_negative_slot,
@@ -674,6 +731,7 @@ fn emit_stmt(
         }
         BoundStmt::ForEach { var, items, body } => {
             if let Some(var_slot) = slot_map.get(var.as_str()).copied() {
+                for_exit_stack.push(Vec::new());
                 for item in items {
                     emit_expr_into(
                         item,
@@ -703,6 +761,14 @@ fn emit_stmt(
                         current_proc_name,
                         proc_labels,
                     );
+                }
+                let exit_target = instructions.len();
+                if let Some(exit_patches) = for_exit_stack.pop() {
+                    for patch in exit_patches {
+                        if let Instruction::Jump { target_pc } = &mut instructions[patch] {
+                            *target_pc = exit_target;
+                        }
+                    }
                 }
             }
         }
@@ -995,7 +1061,17 @@ fn emit_stmt(
             }
         }
         BoundStmt::Call { name, args } => {
-            if !emit_early_call(
+            if name.eq_ignore_ascii_case("randomize") {
+                let dst = temps.alloc_temp();
+                let seed = if args.is_empty() {
+                    None
+                } else {
+                    let seed_slot = temps.alloc_temp();
+                    emit_expr_into(&args[0].expr, compare_mode, seed_slot, slot_map, temps, instructions, call_patches, proc_meta, external_decls);
+                    Some(seed_slot)
+                };
+                instructions.push(Instruction::IntrinsicRandomizeDigits { dst, seed });
+            } else if !emit_early_call(
                 name,
                 args,
                 compare_mode,
@@ -1151,6 +1227,9 @@ fn expr_bound_type(
         BoundExpr::IntConst(_) | BoundExpr::AddConst { .. } | BoundExpr::SubConst { .. } => {
             BoundType::Long
         }
+        BoundExpr::FloatConst(_) => BoundType::Double,
+        BoundExpr::StringConst(_) => BoundType::String,
+        BoundExpr::BinaryOp { .. } | BoundExpr::UnaryOp { .. } => BoundType::Variant,
         BoundExpr::Var(name) => current_meta
             .declaration_types
             .get(name.as_str())
@@ -1287,6 +1366,7 @@ fn emit_early_call(
         };
 
         if param.by_ref
+            && !arg.force_byval
             && let BoundExpr::Var(var_name) = &arg.expr
             && let Some(src_slot) = slot_map.get(var_name.as_str()).copied()
         {
@@ -1419,10 +1499,12 @@ fn emit_external_declare_call(
     assign_target: Option<usize>,
 ) -> bool {
     let dst = assign_target.unwrap_or_else(|| temps.alloc_temp());
-    let arg_slot = if let Some(first_arg) = args.first() {
+    let mut arg_slots = Vec::new();
+    let mut writeback_slots = Vec::new();
+    for (arg_index, arg) in args.iter().enumerate() {
         let slot = temps.alloc_temp();
         emit_expr_into(
-            &first_arg.expr,
+            &arg.expr,
             compare_mode,
             slot,
             slot_map,
@@ -1432,12 +1514,25 @@ fn emit_external_declare_call(
             proc_meta,
             external_decls,
         );
-        slot
-    } else {
+        // Track ByRef parameters for writeback after the call.
+        if let Some(param) = external_decl.params.get(arg_index) {
+            if param.by_ref && !arg.force_byval {
+                if let BoundExpr::Var(ref ident_name) = arg.expr {
+                    if let Some(&source_slot) =
+                        slot_map.get(&ident_name.to_ascii_lowercase())
+                    {
+                        writeback_slots.push((arg_index, source_slot));
+                    }
+                }
+            }
+        }
+        arg_slots.push(slot);
+    }
+    if arg_slots.is_empty() {
         let slot = temps.alloc_temp();
         instructions.push(Instruction::LoadConstI32 { slot, value: 0 });
-        slot
-    };
+        arg_slots.push(slot);
+    }
 
     let symbol = external_symbol_token(
         external_decl.library.as_str(),
@@ -1448,7 +1543,8 @@ fn emit_external_declare_call(
         dst,
         descriptor_id: symbol as u32,
         symbol: DynLinkSymbol::new(symbol),
-        arg: arg_slot,
+        args: arg_slots,
+        writeback_slots,
     });
     true
 }
@@ -1466,6 +1562,25 @@ fn external_symbol_token(library: &str, alias: &str, name: &str) -> i32 {
         hash = hash.wrapping_mul(16_777_619);
     }
     (hash & 0x7fff_ffff).max(1) as i32
+}
+
+fn bound_type_to_declare_param_type(ty: &BoundType) -> DeclareParamType {
+    match ty {
+        BoundType::Long => DeclareParamType::Long,
+        BoundType::Integer => DeclareParamType::Integer,
+        BoundType::String => DeclareParamType::String,
+        BoundType::Boolean => DeclareParamType::Boolean,
+        BoundType::Double => DeclareParamType::Double,
+        BoundType::Single => DeclareParamType::Single,
+        BoundType::Currency => DeclareParamType::Currency,
+        BoundType::Date => DeclareParamType::Date,
+        BoundType::Byte => DeclareParamType::Byte,
+        BoundType::LongLong => DeclareParamType::LongLong,
+        BoundType::LongPtr => DeclareParamType::LongPtr,
+        BoundType::Variant | BoundType::Object | BoundType::Array | BoundType::Decimal => {
+            DeclareParamType::Variant
+        }
+    }
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -1539,6 +1654,7 @@ fn emit_select_case_clause_match(
                 dst: cmp_slot,
                 lhs: expr_slot,
                 rhs: const_slot,
+                mode: StringCompareMode::Binary,
             });
             cmp_slot
         }
@@ -1554,31 +1670,37 @@ fn emit_select_case_clause_match(
                     dst: cmp_slot,
                     lhs: expr_slot,
                     rhs: const_slot,
+                    mode: StringCompareMode::Binary,
                 }),
                 CompareOp::Ne => instructions.push(Instruction::CmpNeSlots {
                     dst: cmp_slot,
                     lhs: expr_slot,
                     rhs: const_slot,
+                    mode: StringCompareMode::Binary,
                 }),
                 CompareOp::Lt => instructions.push(Instruction::CmpLtSlots {
                     dst: cmp_slot,
                     lhs: expr_slot,
                     rhs: const_slot,
+                    mode: StringCompareMode::Binary,
                 }),
                 CompareOp::Le => instructions.push(Instruction::CmpLeSlots {
                     dst: cmp_slot,
                     lhs: expr_slot,
                     rhs: const_slot,
+                    mode: StringCompareMode::Binary,
                 }),
                 CompareOp::Gt => instructions.push(Instruction::CmpGtSlots {
                     dst: cmp_slot,
                     lhs: expr_slot,
                     rhs: const_slot,
+                    mode: StringCompareMode::Binary,
                 }),
                 CompareOp::Ge => instructions.push(Instruction::CmpGeSlots {
                     dst: cmp_slot,
                     lhs: expr_slot,
                     rhs: const_slot,
+                    mode: StringCompareMode::Binary,
                 }),
                 CompareOp::Like => instructions.push(Instruction::IntrinsicLikeDigits {
                     dst: cmp_slot,
@@ -1607,11 +1729,13 @@ fn emit_select_case_clause_match(
                 dst: ge_slot,
                 lhs: expr_slot,
                 rhs: start_slot,
+                mode: StringCompareMode::Binary,
             });
             instructions.push(Instruction::CmpLeSlots {
                 dst: le_slot,
                 lhs: expr_slot,
                 rhs: end_slot,
+                mode: StringCompareMode::Binary,
             });
             instructions.push(Instruction::BoolAnd {
                 dst: cmp_slot,
@@ -1666,31 +1790,37 @@ fn emit_cond_into(
                     dst,
                     lhs: lhs_slot,
                     rhs: rhs_slot,
+                    mode: compare_mode,
                 }),
                 CompareOp::Ne => instructions.push(Instruction::CmpNeSlots {
                     dst,
                     lhs: lhs_slot,
                     rhs: rhs_slot,
+                    mode: compare_mode,
                 }),
                 CompareOp::Lt => instructions.push(Instruction::CmpLtSlots {
                     dst,
                     lhs: lhs_slot,
                     rhs: rhs_slot,
+                    mode: compare_mode,
                 }),
                 CompareOp::Le => instructions.push(Instruction::CmpLeSlots {
                     dst,
                     lhs: lhs_slot,
                     rhs: rhs_slot,
+                    mode: compare_mode,
                 }),
                 CompareOp::Gt => instructions.push(Instruction::CmpGtSlots {
                     dst,
                     lhs: lhs_slot,
                     rhs: rhs_slot,
+                    mode: compare_mode,
                 }),
                 CompareOp::Ge => instructions.push(Instruction::CmpGeSlots {
                     dst,
                     lhs: lhs_slot,
                     rhs: rhs_slot,
+                    mode: compare_mode,
                 }),
                 CompareOp::Like => instructions.push(Instruction::IntrinsicLikeDigits {
                     dst,
@@ -1722,6 +1852,7 @@ fn emit_cond_into(
                 dst,
                 lhs: expr_slot,
                 rhs: zero_slot,
+                mode: compare_mode,
             });
         }
         BoundCond::Not(inner) => {
@@ -1824,6 +1955,14 @@ fn emit_expr_into(
             slot: dst,
             value: *value,
         }),
+        BoundExpr::FloatConst(bits) => instructions.push(Instruction::LoadConstF64 {
+            slot: dst,
+            bits: *bits,
+        }),
+        BoundExpr::StringConst(s) => instructions.push(Instruction::LoadConstString {
+            slot: dst,
+            value: s.clone(),
+        }),
         BoundExpr::Var(name) => {
             if let Some(src) = slot_map.get(name.as_str()).copied()
                 && src != dst
@@ -1865,6 +2004,96 @@ fn emit_expr_into(
                 });
             }
         }
+        BoundExpr::BinaryOp { op, lhs, rhs } => {
+            let lhs_slot = temps.alloc_temp();
+            emit_expr_into(
+                lhs,
+                compare_mode,
+                lhs_slot,
+                slot_map,
+                temps,
+                instructions,
+                call_patches,
+                proc_meta,
+                external_decls,
+            );
+            let rhs_slot = temps.alloc_temp();
+            emit_expr_into(
+                rhs,
+                compare_mode,
+                rhs_slot,
+                slot_map,
+                temps,
+                instructions,
+                call_patches,
+                proc_meta,
+                external_decls,
+            );
+            let instr = match op {
+                ArithOp::Add => Instruction::AddSlots {
+                    dst,
+                    lhs: lhs_slot,
+                    rhs: rhs_slot,
+                },
+                ArithOp::Sub => Instruction::SubSlots {
+                    dst,
+                    lhs: lhs_slot,
+                    rhs: rhs_slot,
+                },
+                ArithOp::Mul => Instruction::MulSlots {
+                    dst,
+                    lhs: lhs_slot,
+                    rhs: rhs_slot,
+                },
+                ArithOp::Div => Instruction::DivSlots {
+                    dst,
+                    lhs: lhs_slot,
+                    rhs: rhs_slot,
+                },
+                ArithOp::IntDiv => Instruction::IntDivSlots {
+                    dst,
+                    lhs: lhs_slot,
+                    rhs: rhs_slot,
+                },
+                ArithOp::Mod => Instruction::ModSlots {
+                    dst,
+                    lhs: lhs_slot,
+                    rhs: rhs_slot,
+                },
+                ArithOp::Pow => Instruction::PowSlots {
+                    dst,
+                    lhs: lhs_slot,
+                    rhs: rhs_slot,
+                },
+                ArithOp::Concat => Instruction::ConcatSlots {
+                    dst,
+                    lhs: lhs_slot,
+                    rhs: rhs_slot,
+                },
+                ArithOp::Neg => unreachable!("Neg is unary"),
+            };
+            instructions.push(instr);
+        }
+        BoundExpr::UnaryOp { op, operand } => {
+            let src_slot = temps.alloc_temp();
+            emit_expr_into(
+                operand,
+                compare_mode,
+                src_slot,
+                slot_map,
+                temps,
+                instructions,
+                call_patches,
+                proc_meta,
+                external_decls,
+            );
+            match op {
+                ArithOp::Neg => {
+                    instructions.push(Instruction::NegSlot { dst, src: src_slot });
+                }
+                _ => unreachable!("only Neg is a unary ArithOp"),
+            }
+        }
         BoundExpr::IntrinsicCall { name, args } => {
             let mut arg_slots = Vec::with_capacity(args.len());
             for arg in args {
@@ -1884,9 +2113,12 @@ fn emit_expr_into(
             }
 
             match (name.as_str(), arg_slots.as_slice()) {
-                ("vbnullstring", []) => instructions.push(Instruction::LoadConstI32 {
+                ("__null", []) => {
+                    instructions.push(Instruction::LoadNull { slot: dst });
+                }
+                ("vbnullstring", []) => instructions.push(Instruction::LoadConstString {
                     slot: dst,
-                    value: EMPTY_TAG,
+                    value: String::new(),
                 }),
                 ("cverr", [src]) => {
                     instructions.push(Instruction::CopySlot { dst, src: *src });
@@ -1902,14 +2134,12 @@ fn emit_expr_into(
                 // projects to date token until composite date-time value lowering lands.
                 ("now", []) => instructions.push(Instruction::IntrinsicNowHost { dst }),
                 ("timer", []) => instructions.push(Instruction::IntrinsicTimerHost { dst }),
-                ("rnd", []) => instructions.push(Instruction::LoadConstI32 {
-                    slot: dst,
-                    value: 1,
-                }),
-                ("randomize", []) => instructions.push(Instruction::LoadConstI32 {
-                    slot: dst,
-                    value: 0,
-                }),
+                ("rnd", []) => {
+                    instructions.push(Instruction::IntrinsicRndDigits { dst, seed: None })
+                }
+                ("randomize", []) => {
+                    instructions.push(Instruction::IntrinsicRandomizeDigits { dst, seed: None })
+                }
                 ("freefile", []) => instructions.push(Instruction::IntrinsicFreeFileHost {
                     dst,
                     range_selector: None,
@@ -2030,19 +2260,49 @@ fn emit_expr_into(
                     rhs: *rhs,
                     mode: compare_mode,
                 }),
-                ("space", [count]) => instructions.push(Instruction::CopySlot { dst, src: *count }),
-                ("string", [count, _ch]) => {
-                    instructions.push(Instruction::CopySlot { dst, src: *count })
+                ("space", [count]) => {
+                    instructions.push(Instruction::IntrinsicSpaceDigits { dst, count: *count })
                 }
-                ("chr", [src]) | ("asc", [src]) => {
-                    instructions.push(Instruction::CopySlot { dst, src: *src })
+                ("string", [count, ch]) => {
+                    instructions.push(Instruction::IntrinsicStringRepeatDigits {
+                        dst,
+                        count: *count,
+                        ch: *ch,
+                    })
                 }
-                ("strconv", [value, ..]) => {
-                    instructions.push(Instruction::CopySlot { dst, src: *value })
+                ("chr", [src]) => {
+                    instructions.push(Instruction::IntrinsicChrDigits { dst, src: *src })
                 }
-                ("format", [value, ..]) => {
-                    instructions.push(Instruction::CopySlot { dst, src: *value })
+                ("asc", [src]) => {
+                    instructions.push(Instruction::IntrinsicAscDigits { dst, src: *src })
                 }
+                ("strreverse", [src]) => {
+                    instructions.push(Instruction::IntrinsicStrReverseDigits { dst, src: *src })
+                }
+                ("strconv", [value, conversion]) => {
+                    instructions.push(Instruction::IntrinsicStrConvDigits {
+                        dst,
+                        src: *value,
+                        conversion: *conversion,
+                    })
+                }
+                ("strconv", [value, conversion, _lcid]) => {
+                    instructions.push(Instruction::IntrinsicStrConvDigits {
+                        dst,
+                        src: *value,
+                        conversion: *conversion,
+                    })
+                }
+                ("format", [value]) => instructions.push(Instruction::IntrinsicFormatDigits {
+                    dst,
+                    value: *value,
+                    format_string: None,
+                }),
+                ("format", [value, fmt]) => instructions.push(Instruction::IntrinsicFormatDigits {
+                    dst,
+                    value: *value,
+                    format_string: Some(*fmt),
+                }),
                 ("dateserial", [year, month, day]) => {
                     instructions.push(Instruction::IntrinsicDateSerialDigits {
                         dst,
@@ -2118,13 +2378,33 @@ fn emit_expr_into(
                 ("exp", [src]) => {
                     instructions.push(Instruction::IntrinsicExpI32 { dst, src: *src })
                 }
-                ("hex", [src]) | ("oct", [src]) | ("atn", [src]) | ("tan", [src]) => {
-                    instructions.push(Instruction::CopySlot { dst, src: *src })
+                ("atn", [src]) => {
+                    instructions.push(Instruction::IntrinsicAtnI32 { dst, src: *src })
                 }
-                ("year", [src]) | ("month", [src]) | ("day", [src]) | ("weekday", [src]) => {
-                    instructions.push(Instruction::CopySlot { dst, src: *src })
+                ("tan", [src]) => {
+                    instructions.push(Instruction::IntrinsicTanI32 { dst, src: *src })
                 }
-                ("monthname", [src]) => instructions.push(Instruction::CopySlot { dst, src: *src }),
+                ("hex", [src]) => {
+                    instructions.push(Instruction::IntrinsicHexDigits { dst, src: *src })
+                }
+                ("oct", [src]) => {
+                    instructions.push(Instruction::IntrinsicOctDigits { dst, src: *src })
+                }
+                ("year", [src]) => {
+                    instructions.push(Instruction::IntrinsicYearDigits { dst, src: *src })
+                }
+                ("month", [src]) => {
+                    instructions.push(Instruction::IntrinsicMonthDigits { dst, src: *src })
+                }
+                ("day", [src]) => {
+                    instructions.push(Instruction::IntrinsicDayDigits { dst, src: *src })
+                }
+                ("weekday", [src]) => {
+                    instructions.push(Instruction::IntrinsicWeekdayDigits { dst, src: *src })
+                }
+                ("monthname", [src]) => {
+                    instructions.push(Instruction::IntrinsicMonthNameDigits { dst, src: *src })
+                }
                 ("fv", [rate, nper, pmt]) => instructions.push(Instruction::IntrinsicFvI32 {
                     dst,
                     rate: *rate,
@@ -2310,13 +2590,13 @@ fn emit_expr_into(
                     instructions.push(Instruction::IntrinsicIsArrayTag { dst, src: *src })
                 }
                 ("vartype", [src]) => {
-                    instructions.push(Instruction::IntrinsicVarTypeTag { dst, src: *src })
+                    instructions.push(Instruction::IntrinsicVarType { dst, src: *src })
                 }
                 ("typename", [src]) => {
                     instructions.push(Instruction::IntrinsicTypeNameTag { dst, src: *src })
                 }
                 ("isnumeric", [src]) => {
-                    instructions.push(Instruction::IntrinsicIsNumericTag { dst, src: *src })
+                    instructions.push(Instruction::IntrinsicIsNumeric { dst, src: *src })
                 }
                 ("isdate", [src]) => {
                     instructions.push(Instruction::IntrinsicIsDateTag { dst, src: *src })
@@ -2325,69 +2605,31 @@ fn emit_expr_into(
                     instructions.push(Instruction::IntrinsicIsObjectTag { dst, src: *src })
                 }
                 ("isempty", [src]) => {
-                    let zero = temps.alloc_temp();
-                    instructions.push(Instruction::LoadConstI32 {
-                        slot: zero,
-                        value: EMPTY_TAG,
-                    });
-                    instructions.push(Instruction::CmpEqSlots {
-                        dst,
-                        lhs: *src,
-                        rhs: zero,
-                    });
+                    instructions.push(Instruction::IntrinsicIsEmpty { dst, src: *src });
                 }
                 ("isnull", [src]) => {
-                    let null_slot = temps.alloc_temp();
-                    instructions.push(Instruction::LoadConstI32 {
-                        slot: null_slot,
-                        value: NULL_TAG,
-                    });
-                    instructions.push(Instruction::CmpEqSlots {
-                        dst,
-                        lhs: *src,
-                        rhs: null_slot,
-                    });
+                    instructions.push(Instruction::IntrinsicIsNull { dst, src: *src });
                 }
                 ("iserror", [src]) => {
-                    let base = temps.alloc_temp();
-                    let limit = temps.alloc_temp();
-                    let ge = temps.alloc_temp();
-                    let le = temps.alloc_temp();
-                    instructions.push(Instruction::LoadConstI32 {
-                        slot: base,
-                        value: ERROR_TAG_BASE,
-                    });
-                    instructions.push(Instruction::LoadConstI32 {
-                        slot: limit,
-                        value: ERROR_TAG_LIMIT,
-                    });
-                    instructions.push(Instruction::CmpGeSlots {
-                        dst: ge,
-                        lhs: *src,
-                        rhs: base,
-                    });
-                    instructions.push(Instruction::CmpLeSlots {
-                        dst: le,
-                        lhs: *src,
-                        rhs: limit,
-                    });
-                    instructions.push(Instruction::BoolAnd {
-                        dst,
-                        lhs: ge,
-                        rhs: le,
-                    });
+                    instructions.push(Instruction::IntrinsicIsError { dst, src: *src });
                 }
                 ("typeofis", [lhs, rhs]) => {
                     instructions.push(Instruction::CmpEqSlots {
                         dst,
                         lhs: *lhs,
                         rhs: *rhs,
+                        mode: compare_mode,
                     });
                 }
-                ("rnd", [seed]) | ("randomize", [seed]) => {
-                    instructions.push(Instruction::CopySlot { dst, src: *seed })
-                }
-                ("eof", [src]) | ("lof", [src]) | ("seek", [src]) => {
+                ("rnd", [seed]) => instructions.push(Instruction::IntrinsicRndDigits {
+                    dst,
+                    seed: Some(*seed),
+                }),
+                ("randomize", [seed]) => instructions.push(Instruction::IntrinsicRandomizeDigits {
+                    dst,
+                    seed: Some(*seed),
+                }),
+                ("eof", [src]) | ("lof", [src]) | ("loc", [src]) | ("seek", [src]) => {
                     instructions.push(Instruction::CopySlot { dst, src: *src })
                 }
                 ("shell", [command]) => instructions.push(Instruction::IntrinsicShellHost {
@@ -2559,11 +2801,19 @@ fn emit_expr_into(
 
 fn emit_err_member_value(name: &str, dst: usize, instructions: &mut Vec<Instruction>) -> bool {
     match name.to_ascii_lowercase().as_str() {
-        "err_number" | "err_description" => {
+        "err_number" => {
             instructions.push(Instruction::LoadErrNumber { slot: dst });
             true
         }
-        "err_source" | "err_helpcontext" | "err_helpfile" | "err_lastdllerror" => {
+        "err_description" => {
+            instructions.push(Instruction::LoadErrDescription { slot: dst });
+            true
+        }
+        "err_source" => {
+            instructions.push(Instruction::LoadErrSource { slot: dst });
+            true
+        }
+        "err_helpcontext" | "err_helpfile" | "err_lastdllerror" => {
             instructions.push(Instruction::LoadConstI32 {
                 slot: dst,
                 value: 0,

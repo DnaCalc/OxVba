@@ -209,6 +209,7 @@ pub fn resolve_runner_bootstrap(
                 UiVirtualizationMode::Disabled => "disabled",
                 UiVirtualizationMode::ScriptedResponses => "scripted-responses",
                 UiVirtualizationMode::FailOnPrompt => "fail-on-prompt",
+                UiVirtualizationMode::HostCallback => "host-callback",
             }
             .to_string(),
         );
