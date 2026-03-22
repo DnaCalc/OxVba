@@ -20,6 +20,10 @@ impl FileSystemState {
         let in_use: BTreeSet<i32> = self.handles.keys().copied().collect();
         (start..=end).find(|candidate| !in_use.contains(candidate))
     }
+
+    pub(super) fn is_handle_in_use(&self, handle: i32) -> bool {
+        self.handles.contains_key(&handle)
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -46,20 +50,37 @@ impl FileSystemHal for StandardHostServices {
         if !self.supports(capability) {
             return Err(self.unsupported(capability, "open"));
         }
-        let mode = self.runtime_value_to_legacy_i32(&mode, capability, "open", "mode")?;
+        let mode_raw = self.runtime_value_to_legacy_i32(&mode, capability, "open", "mode")?;
+        // Upper 16 bits may carry a requested file number from the VBA Open statement.
+        let requested_handle = mode_raw >> 16;
+        let mode = mode_raw & 0xFFFF;
         if mode != 0 && !self.policy.allow_filesystem_mutation {
             return Err(self.denied(capability, "open"));
         }
         if let RuntimeValue::String(BStr(path_text)) = &path {
             let mut state = self.fs_lock(capability, "open")?;
             self.assert_fs_invariants(&state, "open-pre");
-            let Some(handle) = state.first_free_in(1, 511) else {
-                return Err(HalError::adapter_fault(
-                    self.profile,
-                    capability,
-                    "open",
-                    "no free file handles available in supported range",
-                ));
+            let handle = if requested_handle > 0 && requested_handle <= 511 {
+                // VBA Open ... As #N — use the requested handle if available.
+                if state.is_handle_in_use(requested_handle) {
+                    return Err(HalError::adapter_fault(
+                        self.profile,
+                        capability,
+                        "open",
+                        format!("file handle #{requested_handle} is already in use"),
+                    ));
+                }
+                requested_handle
+            } else {
+                // Auto-allocate (legacy path / FreeFile-based callers).
+                state.first_free_in(1, 511).ok_or_else(|| {
+                    HalError::adapter_fault(
+                        self.profile,
+                        capability,
+                        "open",
+                        "no free file handles available in supported range",
+                    )
+                })?
             };
             let host_path = if self.native_fs_enabled() {
                 let host_path = PathBuf::from(path_text);
@@ -198,7 +219,13 @@ impl FileSystemHal for StandardHostServices {
         let handle = self.runtime_value_to_legacy_i32(&handle, capability, "close", "handle")?;
         let mut state = self.fs_lock(capability, "close")?;
         self.assert_fs_invariants(&state, "close-pre");
-        if state.handles.remove(&handle).is_some() {
+        if handle == 0 {
+            // VBA `Close` with no arguments: close all open files.
+            let count = state.handles.len() as i32;
+            state.handles.clear();
+            self.assert_fs_invariants(&state, "close-all-post");
+            Ok(RuntimeValue::I32(count))
+        } else if state.handles.remove(&handle).is_some() {
             self.assert_fs_invariants(&state, "close-post");
             Ok(RuntimeValue::I32(1))
         } else {

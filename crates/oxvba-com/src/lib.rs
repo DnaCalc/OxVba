@@ -45,6 +45,7 @@ pub use model::{
     ComMemberToken, ComObjectDescriptor, ComObjectToken, ComObjectTransportKind,
     ComSubscriptionToken, ComValue, DISPATCH_INVOKE_MISSING_ARG_TOKEN,
 };
+pub use platform::portable::PortableComProjection;
 pub use refcount::RefCount;
 pub use runtime_state::{
     ComBinding, ComDirectDispatchSpec, ComEventCallback, ComEventPath, ComEventSpec,

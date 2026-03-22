@@ -627,6 +627,11 @@ fn check_stmt(
                 labels,
             )
         }
+        BoundStmt::FileOpen { .. }
+        | BoundStmt::FileClose { .. }
+        | BoundStmt::FilePrint { .. }
+        | BoundStmt::FileInput { .. }
+        | BoundStmt::FileLineInput { .. } => Ok(()),
         BoundStmt::Unsupported { line } => Err(format!("unsupported statement: {line}")),
     }
 }

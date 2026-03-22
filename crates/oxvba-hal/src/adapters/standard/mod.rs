@@ -51,6 +51,7 @@ use oxvba_com::{
     ComEventSpec, ComEventTriggerSpec, ComInvokeFailure, ComInvokeRequest, ComMemberToken,
     ComObjectDescriptor, ComSubscriptionToken, OXVBA_TEST_DISPATCH_PROGID, WindowsComBridge,
     map_com_hresult_label,
+    platform::portable::PortableComProjection,
 };
 use oxvba_runtime::{ObjectHandle, RuntimeValue, bstr::BStr};
 use std::{
@@ -137,6 +138,7 @@ pub(crate) struct StandardHostServices {
     #[cfg(target_os = "windows")]
     com_bridge: Arc<WindowsComBridge>,
     dynlink_state: Arc<Mutex<DynLinkBindingState>>,
+    portable_objects: Option<Arc<PortableComProjection>>,
     callbacks: Option<Arc<dyn crate::callbacks::HostCallbacks>>,
 }
 
@@ -258,6 +260,7 @@ impl StandardHostServices {
             env_cache,
             fs_state: Arc::new(Mutex::new(FileSystemState::default())),
             dynlink_state: Arc::new(Mutex::new(DynLinkBindingState::default())),
+            portable_objects: None,
             callbacks: None,
         }
     }
@@ -267,6 +270,14 @@ impl StandardHostServices {
         callbacks: Arc<dyn crate::callbacks::HostCallbacks>,
     ) -> Self {
         self.callbacks = Some(callbacks);
+        self
+    }
+
+    pub(crate) fn with_portable_objects(
+        mut self,
+        projection: Arc<PortableComProjection>,
+    ) -> Self {
+        self.portable_objects = Some(projection);
         self
     }
 

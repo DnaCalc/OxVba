@@ -35,6 +35,18 @@ impl ComHal for StandardHostServices {
                     "string ProgID activation requires a non-empty ProgID",
                 ));
             }
+            if let Some(projection) = &self.portable_objects {
+                if let Some(_dispatch) = projection.create_object(prog_id_name) {
+                    // Portable registry matched: return a synthetic object handle.
+                    // The handle base mirrors the existing fallback convention.
+                    let hash = prog_id_name
+                        .bytes()
+                        .fold(0i32, |acc, b| acc.wrapping_add(b as i32));
+                    return Ok(RuntimeValue::ObjectHandle(
+                        10_000i32.saturating_add(hash).into(),
+                    ));
+                }
+            }
             if self.native_com_enabled() {
                 return self.activate_runtime_object_value_for_prog_id_name(prog_id_name);
             }
@@ -42,7 +54,7 @@ impl ComHal for StandardHostServices {
                 self.profile,
                 capability,
                 "create_object",
-                "string ProgID activation requires native COM-enabled Windows host mode",
+                "string ProgID activation requires native COM-enabled Windows host mode or a portable object registration",
             ));
         }
         let prog_id =

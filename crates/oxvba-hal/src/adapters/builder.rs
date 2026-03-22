@@ -2,13 +2,15 @@
 
 use std::sync::Arc;
 
+use oxvba_com::PortableComProjection;
+
 use crate::{
     callbacks::HostCallbacks,
     model::{HalProfileId, HalRuntimeClass, HostPolicy},
     traits::HostServices,
 };
 
-use super::{null, standard, wasm};
+use super::{null, recording::RecordingHostServices, standard, wasm};
 
 /// Builder for constructing host service instances with optional components.
 pub struct HostBuilder {
@@ -16,6 +18,8 @@ pub struct HostBuilder {
     runtime_class: Option<HalRuntimeClass>,
     policy: HostPolicy,
     callbacks: Option<Arc<dyn HostCallbacks>>,
+    portable_objects: Option<Arc<PortableComProjection>>,
+    recording: bool,
 }
 
 impl HostBuilder {
@@ -25,6 +29,8 @@ impl HostBuilder {
             runtime_class: None,
             policy: HostPolicy::default(),
             callbacks: None,
+            portable_objects: None,
+            recording: false,
         }
     }
 
@@ -48,12 +54,24 @@ impl HostBuilder {
         self
     }
 
+    /// Set a portable COM projection for host-registered objects.
+    pub fn portable_objects(mut self, projection: Arc<PortableComProjection>) -> Self {
+        self.portable_objects = Some(projection);
+        self
+    }
+
+    /// Enable recording of HAL interactions into a journal.
+    pub fn recording(mut self, enable: bool) -> Self {
+        self.recording = enable;
+        self
+    }
+
     pub fn build(self) -> Arc<dyn HostServices> {
         let runtime_class = self.runtime_class.unwrap_or_else(|| {
             HalRuntimeClass::default_for(self.profile, self.policy.wasm_runtime_class)
         });
 
-        match self.profile {
+        let host: Arc<dyn HostServices> = match self.profile {
             HalProfileId::Windows | HalProfileId::Linux | HalProfileId::MacOs => {
                 let mut host = standard::StandardHostServices::new_with_runtime_class(
                     self.profile,
@@ -63,10 +81,19 @@ impl HostBuilder {
                 if let Some(cb) = self.callbacks {
                     host = host.with_callbacks(cb);
                 }
+                if let Some(projection) = self.portable_objects {
+                    host = host.with_portable_objects(projection);
+                }
                 Arc::new(host)
             }
             HalProfileId::Wasm => wasm::WasmHostServices::boxed(self.policy),
             HalProfileId::Null => null::NullHostServices::boxed(self.policy),
+        };
+
+        if self.recording {
+            Arc::new(RecordingHostServices::new(host))
+        } else {
+            host
         }
     }
 }

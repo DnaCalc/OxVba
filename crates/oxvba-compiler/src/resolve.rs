@@ -176,6 +176,26 @@ pub enum BoundStmt {
         arms: Vec<(Vec<BoundCaseClause>, Vec<BoundStmt>)>,
         else_body: Vec<BoundStmt>,
     },
+    FileOpen {
+        path: BoundExpr,
+        mode: i32,
+        file_number: BoundExpr,
+    },
+    FileClose {
+        file_number: Option<BoundExpr>,
+    },
+    FilePrint {
+        file_number: BoundExpr,
+        data: BoundExpr,
+    },
+    FileInput {
+        file_number: BoundExpr,
+        targets: Vec<String>,
+    },
+    FileLineInput {
+        file_number: BoundExpr,
+        target: String,
+    },
     Unsupported {
         line: String,
     },
@@ -2084,6 +2104,73 @@ fn parse_block(
             continue;
         }
 
+        // VBA file I/O statements
+        if lower.starts_with("open ") {
+            if let Some(stmt) = parse_file_open_stmt(line, array_bounds) {
+                out.push(stmt);
+            } else {
+                out.push(BoundStmt::Unsupported {
+                    line: line.to_string(),
+                });
+            }
+            *index += 1;
+            continue;
+        }
+
+        if lower == "close" {
+            out.push(BoundStmt::FileClose { file_number: None });
+            *index += 1;
+            continue;
+        }
+
+        if lower.starts_with("close ") {
+            if let Some(stmt) = parse_file_close_stmt(line, array_bounds) {
+                out.push(stmt);
+            } else {
+                out.push(BoundStmt::Unsupported {
+                    line: line.to_string(),
+                });
+            }
+            *index += 1;
+            continue;
+        }
+
+        if lower.starts_with("print #") {
+            if let Some(stmt) = parse_file_print_stmt(line, array_bounds) {
+                out.push(stmt);
+            } else {
+                out.push(BoundStmt::Unsupported {
+                    line: line.to_string(),
+                });
+            }
+            *index += 1;
+            continue;
+        }
+
+        if lower.starts_with("line input #") {
+            if let Some(stmt) = parse_file_line_input_stmt(line, array_bounds) {
+                out.push(stmt);
+            } else {
+                out.push(BoundStmt::Unsupported {
+                    line: line.to_string(),
+                });
+            }
+            *index += 1;
+            continue;
+        }
+
+        if lower.starts_with("input #") {
+            if let Some(stmt) = parse_file_input_stmt(line, array_bounds) {
+                out.push(stmt);
+            } else {
+                out.push(BoundStmt::Unsupported {
+                    line: line.to_string(),
+                });
+            }
+            *index += 1;
+            continue;
+        }
+
         out.push(parse_assign_or_unsupported(
             line,
             declarations,
@@ -2869,6 +2956,105 @@ fn parse_for_each_header(
         items.push(BoundExpr::Var(format!("{base}_{idx}")));
     }
     Some((var, items))
+}
+
+/// Parse `Open path For mode As [#]filenum`
+fn parse_file_open_stmt(line: &str, array_bounds: &ArrayBoundsMap) -> Option<BoundStmt> {
+    let lower = line.to_ascii_lowercase();
+    // Find " for " separator
+    let for_pos = lower.find(" for ")?;
+    let path_raw = line[5..for_pos].trim();
+    let after_for = &line[for_pos + 5..];
+    let after_for_lower = after_for.to_ascii_lowercase();
+    // Find " as " separator
+    let as_pos = after_for_lower.find(" as ")?;
+    let mode_raw = after_for[..as_pos].trim();
+    let filenum_raw = after_for[as_pos + 4..].trim();
+
+    let path = parse_expr(path_raw, array_bounds)?;
+
+    let mode = match mode_raw.to_ascii_lowercase().as_str() {
+        "input" => 0,
+        "output" => 1,
+        "append" => 2,
+        "binary" => 3,
+        "random" => 4,
+        _ => return None,
+    };
+
+    let filenum_clean = filenum_raw.strip_prefix('#').unwrap_or(filenum_raw).trim();
+    let file_number = parse_expr(filenum_clean, array_bounds)?;
+
+    Some(BoundStmt::FileOpen {
+        path,
+        mode,
+        file_number,
+    })
+}
+
+/// Parse `Close [#filenum]`
+fn parse_file_close_stmt(line: &str, array_bounds: &ArrayBoundsMap) -> Option<BoundStmt> {
+    let rest = line[6..].trim();
+    let clean = rest.strip_prefix('#').unwrap_or(rest).trim();
+    let file_number = parse_expr(clean, array_bounds)?;
+    Some(BoundStmt::FileClose {
+        file_number: Some(file_number),
+    })
+}
+
+/// Parse `Print #filenum, data`
+fn parse_file_print_stmt(line: &str, array_bounds: &ArrayBoundsMap) -> Option<BoundStmt> {
+    let after_print = line[7..].trim(); // skip "Print #"
+    let comma_pos = after_print.find(',')?;
+    let filenum_raw = after_print[..comma_pos].trim();
+    let data_raw = after_print[comma_pos + 1..].trim();
+
+    let file_number = parse_expr(filenum_raw, array_bounds)?;
+    let data = if data_raw.is_empty() {
+        BoundExpr::StringConst(String::new())
+    } else {
+        parse_expr(data_raw, array_bounds)?
+    };
+
+    Some(BoundStmt::FilePrint { file_number, data })
+}
+
+/// Parse `Input #filenum, var1[, var2, ...]`
+fn parse_file_input_stmt(line: &str, array_bounds: &ArrayBoundsMap) -> Option<BoundStmt> {
+    let after_input = line[7..].trim(); // skip "Input #"
+    let comma_pos = after_input.find(',')?;
+    let filenum_raw = after_input[..comma_pos].trim();
+    let targets_raw = after_input[comma_pos + 1..].trim();
+
+    let file_number = parse_expr(filenum_raw, array_bounds)?;
+    let targets: Vec<String> = targets_raw
+        .split(',')
+        .filter_map(|t| normalize_ident(t.trim()))
+        .collect();
+    if targets.is_empty() {
+        return None;
+    }
+
+    Some(BoundStmt::FileInput {
+        file_number,
+        targets,
+    })
+}
+
+/// Parse `Line Input #filenum, var`
+fn parse_file_line_input_stmt(line: &str, array_bounds: &ArrayBoundsMap) -> Option<BoundStmt> {
+    let after_li = line[12..].trim(); // skip "Line Input #"
+    let comma_pos = after_li.find(',')?;
+    let filenum_raw = after_li[..comma_pos].trim();
+    let target_raw = after_li[comma_pos + 1..].trim();
+
+    let file_number = parse_expr(filenum_raw, array_bounds)?;
+    let target = normalize_ident(target_raw)?;
+
+    Some(BoundStmt::FileLineInput {
+        file_number,
+        target,
+    })
 }
 
 fn parse_redim_stmt(

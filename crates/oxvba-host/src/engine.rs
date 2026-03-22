@@ -184,6 +184,37 @@ impl Engine {
         self
     }
 
+    /// Wrap the current host services in a recording layer.
+    pub fn with_recording(mut self) -> Self {
+        self.host_services = Arc::new(
+            oxvba_hal::adapters::recording::RecordingHostServices::new(
+                self.host_services.clone(),
+            ),
+        );
+        self
+    }
+
+    /// Create an engine that replays from a recorded journal.
+    pub fn from_replay(
+        config: HostConfig,
+        journal: oxvba_hal::journal::HalJournal,
+    ) -> Self {
+        let policy = HostPolicy::deterministic_runtime();
+        let host_services: Arc<dyn HostServices> = Arc::new(
+            oxvba_hal::adapters::replay::ReplayHostServices::new(journal, policy),
+        );
+        let runtime_profile = RuntimeProfileId::default_for_hal_profile(HalProfileId::Null);
+        Self {
+            config,
+            jit: JitEngine,
+            root_objects: HashMap::new(),
+            event_dispatcher: Mutex::new(EventDispatcher::default()),
+            com_subscription_handlers: Mutex::new(HashMap::new()),
+            runtime_profile,
+            host_services,
+        }
+    }
+
     pub fn set_host_policy(&mut self, policy: HostPolicy) {
         let profile = self.host_services.profile();
         let runtime_class = policy
@@ -21307,6 +21338,63 @@ mod tests {
         .execute_source_slots_test(source)
         .expect("execution should succeed");
         assert_eq!(out, vec![1, 3, 4, 5]);
+    }
+
+    #[test]
+    fn file_io_open_print_close_statement_compile_and_execute() {
+        let mut engine = Engine::new(HostConfig::default());
+        let mut policy = HostPolicy::deterministic_runtime();
+        policy.allow_filesystem_mutation = true;
+        engine.set_host_policy(policy);
+        let source = "Sub Main()\n\
+            Dim f\n\
+            f = FreeFile()\n\
+            Open \"test_output.txt\" For Output As #1\n\
+            Print #1, \"hello\"\n\
+            Close #1\n\
+            End Sub";
+        let out = engine
+            .execute_source_slots_test(source)
+            .expect("file I/O statements should compile and execute");
+        // f = FreeFile() returns 1 (first available handle), but Open also
+        // allocates handle 1 internally so f keeps its snapshot value.
+        assert_eq!(out[0], 1);
+    }
+
+    #[test]
+    fn file_io_input_line_input_statement_compile_and_execute() {
+        let mut engine = Engine::new(HostConfig::default());
+        let mut policy = HostPolicy::deterministic_runtime();
+        policy.allow_filesystem_mutation = true;
+        engine.set_host_policy(policy);
+        let source = "Sub Main()\n\
+            Dim a\n\
+            Dim b\n\
+            Open \"test_input.txt\" For Output As #1\n\
+            Print #1, \"world\"\n\
+            Close #1\n\
+            Open \"test_input.txt\" For Input As #2\n\
+            Input #2, a\n\
+            Line Input #2, b\n\
+            Close #2\n\
+            End Sub";
+        // This verifies that Input/LineInput statements parse and compile
+        // without panicking.  The HAL in-memory buffer may produce different
+        // values, so we only check the execution completes.
+        let _out = engine
+            .execute_source_slots_test(source)
+            .expect("file I/O input statements should compile and execute");
+    }
+
+    #[test]
+    fn file_io_close_all_statement_compiles() {
+        let engine = Engine::new(HostConfig::default());
+        let source = "Sub Main()\n\
+            Close\n\
+            End Sub";
+        engine
+            .execute_source_slots_test(source)
+            .expect("Close statement without file number should compile and execute");
     }
 
     #[test]

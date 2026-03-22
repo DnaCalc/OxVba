@@ -276,6 +276,16 @@ pub enum Instruction {
         dst: usize,
         range_selector: Option<usize>,
     },
+    IntrinsicFileOpenHost {
+        dst: usize,
+        path: usize,
+        mode: usize,
+        file_number: usize,
+    },
+    IntrinsicFileCloseHost {
+        dst: usize,
+        handle: usize,
+    },
     IntrinsicFileReadHost {
         dst: usize,
         handle: usize,

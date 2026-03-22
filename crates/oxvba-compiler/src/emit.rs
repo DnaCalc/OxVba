@@ -1180,6 +1180,169 @@ fn emit_stmt(
                 }
             }
         }
+        BoundStmt::FileOpen {
+            path,
+            mode,
+            file_number,
+        } => {
+            let dst = temps.alloc_temp();
+            let path_slot = temps.alloc_temp();
+            let mode_slot = temps.alloc_temp();
+            let filenum_slot = temps.alloc_temp();
+            emit_expr_into(
+                path,
+                compare_mode,
+                path_slot,
+                slot_map,
+                temps,
+                instructions,
+                call_patches,
+                proc_meta,
+                external_decls,
+            );
+            instructions.push(Instruction::LoadConstI32 {
+                slot: mode_slot,
+                value: *mode,
+            });
+            emit_expr_into(
+                file_number,
+                compare_mode,
+                filenum_slot,
+                slot_map,
+                temps,
+                instructions,
+                call_patches,
+                proc_meta,
+                external_decls,
+            );
+            instructions.push(Instruction::IntrinsicFileOpenHost {
+                dst,
+                path: path_slot,
+                mode: mode_slot,
+                file_number: filenum_slot,
+            });
+        }
+        BoundStmt::FileClose { file_number } => {
+            let dst = temps.alloc_temp();
+            if let Some(fnum_expr) = file_number {
+                let handle_slot = temps.alloc_temp();
+                emit_expr_into(
+                    fnum_expr,
+                    compare_mode,
+                    handle_slot,
+                    slot_map,
+                    temps,
+                    instructions,
+                    call_patches,
+                    proc_meta,
+                    external_decls,
+                );
+                instructions.push(Instruction::IntrinsicFileCloseHost {
+                    dst,
+                    handle: handle_slot,
+                });
+            } else {
+                // Close all: pass handle = 0
+                let handle_slot = temps.alloc_temp();
+                instructions.push(Instruction::LoadConstI32 {
+                    slot: handle_slot,
+                    value: 0,
+                });
+                instructions.push(Instruction::IntrinsicFileCloseHost {
+                    dst,
+                    handle: handle_slot,
+                });
+            }
+        }
+        BoundStmt::FilePrint {
+            file_number,
+            data,
+        } => {
+            let dst = temps.alloc_temp();
+            let handle_slot = temps.alloc_temp();
+            let data_slot = temps.alloc_temp();
+            emit_expr_into(
+                file_number,
+                compare_mode,
+                handle_slot,
+                slot_map,
+                temps,
+                instructions,
+                call_patches,
+                proc_meta,
+                external_decls,
+            );
+            emit_expr_into(
+                data,
+                compare_mode,
+                data_slot,
+                slot_map,
+                temps,
+                instructions,
+                call_patches,
+                proc_meta,
+                external_decls,
+            );
+            instructions.push(Instruction::IntrinsicFilePrintHost {
+                dst,
+                handle: handle_slot,
+                data: data_slot,
+            });
+        }
+        BoundStmt::FileInput {
+            file_number,
+            targets,
+        } => {
+            let handle_slot = temps.alloc_temp();
+            let count_slot = temps.alloc_temp();
+            emit_expr_into(
+                file_number,
+                compare_mode,
+                handle_slot,
+                slot_map,
+                temps,
+                instructions,
+                call_patches,
+                proc_meta,
+                external_decls,
+            );
+            instructions.push(Instruction::LoadConstI32 {
+                slot: count_slot,
+                value: 1,
+            });
+            for target in targets {
+                if let Some(&target_slot) = slot_map.get(target.as_str()) {
+                    instructions.push(Instruction::IntrinsicFileInputHost {
+                        dst: target_slot,
+                        handle: handle_slot,
+                        count: count_slot,
+                    });
+                }
+            }
+        }
+        BoundStmt::FileLineInput {
+            file_number,
+            target,
+        } => {
+            let handle_slot = temps.alloc_temp();
+            emit_expr_into(
+                file_number,
+                compare_mode,
+                handle_slot,
+                slot_map,
+                temps,
+                instructions,
+                call_patches,
+                proc_meta,
+                external_decls,
+            );
+            if let Some(&target_slot) = slot_map.get(target.as_str()) {
+                instructions.push(Instruction::IntrinsicFileLineInputHost {
+                    dst: target_slot,
+                    handle: handle_slot,
+                });
+            }
+        }
         BoundStmt::Unsupported { .. } => {}
     }
 }

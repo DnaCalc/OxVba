@@ -885,6 +885,39 @@ impl Vm {
                         Err(err) => pc = self.route_host_error(pc, err)?,
                     }
                 }
+                Instruction::IntrinsicFileOpenHost {
+                    dst,
+                    path,
+                    mode,
+                    file_number,
+                } => {
+                    let path = self.read_value_slot(*path)?;
+                    let mode_val = self.read_value_slot(*mode)?;
+                    let file_num = self.read_value_slot(*file_number)?;
+                    // Encode file_number into upper 16 bits of mode so the HAL
+                    // can allocate the specific handle requested by the VBA source.
+                    let mode_i32 = mode_val.to_legacy_i32().unwrap_or(0);
+                    let fnum_i32 = file_num.to_legacy_i32().unwrap_or(0);
+                    let combined_mode =
+                        RuntimeValue::I32(mode_i32 | (fnum_i32 << 16));
+                    match self.host_services.fs().open(path, combined_mode) {
+                        Ok(value) => {
+                            self.write_value_slot(*dst, value)?;
+                            pc += 1;
+                        }
+                        Err(err) => pc = self.route_host_error(pc, err)?,
+                    }
+                }
+                Instruction::IntrinsicFileCloseHost { dst, handle } => {
+                    let handle = self.read_value_slot(*handle)?;
+                    match self.host_services.fs().close(handle) {
+                        Ok(value) => {
+                            self.write_value_slot(*dst, value)?;
+                            pc += 1;
+                        }
+                        Err(err) => pc = self.route_host_error(pc, err)?,
+                    }
+                }
                 Instruction::IntrinsicFreeFileHost {
                     dst,
                     range_selector,

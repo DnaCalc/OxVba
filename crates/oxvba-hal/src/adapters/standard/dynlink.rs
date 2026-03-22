@@ -382,15 +382,119 @@ fn invoke_m1_native(
 #[cfg(not(target_os = "windows"))]
 fn invoke_m1_native(
     host: &StandardHostServices,
-    _descriptor: &DynLinkDescriptorView<'_>,
-    _args: &[RuntimeValue],
+    descriptor: &DynLinkDescriptorView<'_>,
+    args: &[RuntimeValue],
 ) -> HalResult<(RuntimeValue, Vec<RuntimeValue>)> {
-    Err(HalError::adapter_fault(
-        host.profile,
-        CapabilityId::DynamicLinking,
-        "invoke_symbol",
-        "m1-native-ffi is not yet supported on this platform",
-    ))
+    use oxvba_com::windows_ffi_bridge::{
+        FfiArg, FfiReturnType, get_proc_address, invoke_stdcall, load_library,
+    };
+
+    let capability = CapabilityId::DynamicLinking;
+
+    if descriptor.ordinal_alias {
+        return Err(HalError::adapter_fault(
+            host.profile,
+            capability,
+            "invoke_symbol",
+            format!(
+                "ordinal-based symbol resolution (alias `{}`) is not supported on Unix platforms",
+                descriptor.alias
+            ),
+        ));
+    }
+
+    let module = load_library(descriptor.library).map_err(|msg| {
+        HalError::adapter_fault(host.profile, capability, "invoke_symbol", msg)
+    })?;
+
+    let proc_addr = get_proc_address(module, descriptor.alias).map_err(|msg| {
+        HalError::adapter_fault(host.profile, capability, "invoke_symbol", msg)
+    })?;
+
+    let ffi_args: Vec<FfiArg> = args
+        .iter()
+        .enumerate()
+        .map(|(i, rv)| {
+            let param_type = descriptor
+                .param_types
+                .get(i)
+                .map(|s| s.as_str())
+                .unwrap_or("Long");
+            marshal_runtime_to_ffi_unix(rv, param_type)
+        })
+        .collect();
+
+    let return_type = match descriptor.return_type.as_deref() {
+        None => FfiReturnType::Void,
+        Some("Long") => FfiReturnType::Long,
+        Some("Integer") => FfiReturnType::Integer,
+        Some("Byte") => FfiReturnType::Byte,
+        Some("Boolean") => FfiReturnType::Boolean,
+        Some("Double") => FfiReturnType::Double,
+        Some("Single") => FfiReturnType::Single,
+        Some("LongLong") => FfiReturnType::LongLong,
+        Some("LongPtr") => FfiReturnType::LongPtr,
+        Some(_) => FfiReturnType::Long,
+    };
+
+    let raw_result = invoke_stdcall(proc_addr, &ffi_args, return_type).map_err(|msg| {
+        HalError::adapter_fault(host.profile, capability, "invoke_symbol", msg)
+    })?;
+
+    let result = unmarshal_ffi_to_runtime(raw_result, descriptor.return_type.as_deref());
+    Ok((result, Vec::new()))
+}
+
+#[cfg(not(target_os = "windows"))]
+fn marshal_runtime_to_ffi_unix(
+    value: &RuntimeValue,
+    param_type: &str,
+) -> oxvba_com::windows_ffi_bridge::FfiArg {
+    use oxvba_com::windows_ffi_bridge::FfiArg;
+
+    match param_type {
+        "Long" => FfiArg::Long(value.to_legacy_i32().unwrap_or(0)),
+        "Integer" => FfiArg::Integer(value.to_legacy_i32().unwrap_or(0) as i16),
+        "Byte" => FfiArg::Byte(value.to_legacy_i32().unwrap_or(0) as u8),
+        "Boolean" => FfiArg::Boolean(if value.to_legacy_i32().unwrap_or(0) != 0 {
+            -1
+        } else {
+            0
+        }),
+        "Double" => {
+            let f = match value {
+                RuntimeValue::F64(bits) => bits.as_f64(),
+                _ => value.to_legacy_i32().unwrap_or(0) as f64,
+            };
+            FfiArg::Double(f)
+        }
+        "Single" => {
+            let f = match value {
+                RuntimeValue::F64(bits) => bits.as_f64() as f32,
+                _ => value.to_legacy_i32().unwrap_or(0) as f32,
+            };
+            FfiArg::Single(f)
+        }
+        "LongLong" | "LongPtr" => {
+            let v = match value {
+                RuntimeValue::I64(v) => *v,
+                _ => value.to_legacy_i32().unwrap_or(0) as i64,
+            };
+            FfiArg::LongLong(v)
+        }
+        "String" => {
+            let text = match value {
+                RuntimeValue::String(s) => s.0.clone(),
+                _ => String::new(),
+            };
+            // On Unix, we still marshal as wide string for API compatibility.
+            // Individual native functions that expect UTF-8 would need a separate
+            // marshaling path in the future.
+            let wide: Vec<u16> = text.encode_utf16().chain(std::iter::once(0)).collect();
+            FfiArg::String(wide)
+        }
+        _ => FfiArg::Long(value.to_legacy_i32().unwrap_or(0)),
+    }
 }
 
 #[cfg(target_os = "windows")]
