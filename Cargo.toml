@@ -10,6 +10,7 @@ members = [
     "crates/oxvba-com",
     "crates/oxvba-host",
     "crates/oxvba-cli",
+    "crates/oxvba-launcher",
 ]
 resolver = "2"
 

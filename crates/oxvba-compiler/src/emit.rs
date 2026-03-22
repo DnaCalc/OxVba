@@ -33,7 +33,7 @@ struct EmitProcMeta {
     declaration_types: HashMap<String, BoundType>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
 pub struct ProcedureRuntimeMetadata {
     pub entry_pc: usize,
     pub param_slots: Vec<usize>,

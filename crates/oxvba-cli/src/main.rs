@@ -7,7 +7,60 @@ use std::path::PathBuf;
 use std::{env, fs};
 
 fn main() {
-    let args = parse_run_args();
+    let cli_args: Vec<String> = env::args().skip(1).collect();
+    let subcommand = cli_args.first().map(|s| s.as_str());
+
+    match subcommand {
+        Some("compile") => run_compile(cli_args),
+        _ => run_execute(cli_args),
+    }
+}
+
+fn run_compile(args: Vec<String>) {
+    let compile_args = parse_compile_args(args).unwrap_or_else(|| {
+        eprintln!("usage: oxvba compile <input.vb> [-o <output.oxb>]");
+        std::process::exit(2);
+    });
+
+    let source = fs::read_to_string(&compile_args.input_path).unwrap_or_else(|err| {
+        eprintln!(
+            "oxvba: cannot read {}: {err}",
+            compile_args.input_path.display()
+        );
+        std::process::exit(1);
+    });
+
+    let (bytecode, metadata) =
+        oxvba_compiler::compile_with_runtime_metadata(&source).unwrap_or_else(|err| {
+            eprintln!("oxvba: compile failed: {err}");
+            std::process::exit(1);
+        });
+
+    let bundle = oxvba_compiler::OxBundle::new(bytecode, metadata);
+    let bytes = bundle.serialize_to_bytes().unwrap_or_else(|err| {
+        eprintln!("oxvba: bundle serialization failed: {err}");
+        std::process::exit(1);
+    });
+
+    let output_path = compile_args
+        .output_path
+        .unwrap_or_else(|| compile_args.input_path.with_extension("oxb"));
+
+    fs::write(&output_path, &bytes).unwrap_or_else(|err| {
+        eprintln!("oxvba: cannot write {}: {err}", output_path.display());
+        std::process::exit(1);
+    });
+
+    println!(
+        "compiled {} → {} ({} bytes)",
+        compile_args.input_path.display(),
+        output_path.display(),
+        bytes.len()
+    );
+}
+
+fn run_execute(cli_args: Vec<String>) {
+    let args = parse_run_args_from(cli_args);
     let config = HostConfig {
         enable_jit: args.as_ref().map(|a| a.enable_jit).unwrap_or(false),
         root_object_name: Some("Application".to_string()),
@@ -85,9 +138,39 @@ struct ExecutionResult {
     values: Vec<RuntimeValue>,
 }
 
-fn parse_run_args() -> Option<RunArgs> {
-    let args = env::args().skip(1).collect::<Vec<_>>();
-    parse_run_args_from(args)
+#[derive(Debug)]
+struct CompileArgs {
+    input_path: PathBuf,
+    output_path: Option<PathBuf>,
+}
+
+fn parse_compile_args(args: Vec<String>) -> Option<CompileArgs> {
+    let mut iter = args.into_iter();
+    let _cmd = iter.next()?; // "compile"
+
+    let mut input_path: Option<PathBuf> = None;
+    let mut output_path: Option<PathBuf> = None;
+
+    let collected: Vec<String> = iter.collect();
+    let mut i = 0;
+    while i < collected.len() {
+        match collected[i].as_str() {
+            "-o" | "--output" => {
+                i += 1;
+                output_path = Some(PathBuf::from(collected.get(i)?));
+            }
+            arg if !arg.starts_with('-') && input_path.is_none() => {
+                input_path = Some(PathBuf::from(arg));
+            }
+            _ => return None,
+        }
+        i += 1;
+    }
+
+    Some(CompileArgs {
+        input_path: input_path?,
+        output_path,
+    })
 }
 
 fn parse_run_args_from(args: Vec<String>) -> Option<RunArgs> {

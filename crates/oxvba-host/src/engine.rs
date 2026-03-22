@@ -21117,7 +21117,7 @@ mod tests {
         let text = std::fs::read_to_string(repo_path("crates/oxvba-jit/src/lib.rs"))
             .expect("jit source exists");
         assert!(text.contains("falls_back_for_cverr_range_predicates_and_matches_vm"));
-        assert!(text.contains("falls_back_for_nested_error_mode_transitions_and_matches_vm"));
+        assert!(text.contains("nested_error_mode_transitions_run_through_jit_and_match_vm"));
     }
 
     #[test]

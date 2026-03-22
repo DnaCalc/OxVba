@@ -1,5 +1,6 @@
 //! oxvba-compiler: semantic analysis and bytecode emission scaffolding.
 
+pub mod bundle;
 pub mod bytecode;
 pub mod emit;
 pub mod lower_to_hir;
@@ -10,6 +11,7 @@ pub mod typecheck;
 
 use thiserror::Error;
 
+pub use bundle::OxBundle;
 pub use bytecode::{Bytecode, Instruction};
 pub use emit::ProcedureRuntimeMetadata;
 pub use project::{

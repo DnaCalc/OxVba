@@ -4,6 +4,7 @@ pub mod broadword;
 pub mod error_state;
 pub mod interpreter;
 pub mod register_file;
+pub mod semantics;
 
 use std::sync::Arc;
 
