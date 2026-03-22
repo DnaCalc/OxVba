@@ -45,16 +45,9 @@ pub fn check_types(module: BoundModule) -> Result<BoundModule, String> {
             return Err(format!("duplicate declaration: {duplicate}"));
         }
 
-        for declared_name in &procedure.declarations {
-            if declared_name.eq_ignore_ascii_case(&procedure.name) {
-                continue;
-            }
-            if proc_names.contains(declared_name) {
-                return Err(format!(
-                    "name collision between variable and procedure: {declared_name}"
-                ));
-            }
-        }
+        // VBA allows a local variable to share its name with another procedure
+        // in the same module (the variable shadows the proc name within its scope).
+        // Only reject true duplicates within the same declaration list.
 
         let labels = collect_labels(&procedure.body)?;
         check_stmt_list(
@@ -663,6 +656,23 @@ fn validate_call_site(
         );
     }
 
+    // Intrinsic statements that bypass normal procedure lookup
+    if name.eq_ignore_ascii_case("randomize") {
+        for arg in args {
+            check_expr(
+                &arg.expr,
+                option_explicit,
+                default_type_table,
+                declared,
+                declared_types,
+                declarations,
+                declaration_types,
+                proc_context,
+            )?;
+        }
+        return Ok(BoundType::Variant);
+    }
+
     let call_mode = classify_call_mode(
         name,
         args,
@@ -695,12 +705,10 @@ fn validate_call_site(
                 continue;
             };
 
-            if param.by_ref && !matches!(arg.expr, BoundExpr::Var(_)) {
-                return Err(format!(
-                    "ByRef parameter {} requires variable argument",
-                    param.name
-                ));
-            }
+            // VBA allows literals/expressions for ByRef parameters — the callee
+            // receives a temporary copy and no copy-back occurs.  The emit
+            // layer already handles this by only inserting copy-back for
+            // BoundExpr::Var arguments.
             check_expr(
                 &arg.expr,
                 option_explicit,
@@ -926,7 +934,7 @@ fn check_expr(
     proc_context: &TypecheckProcContext<'_>,
 ) -> Result<(), String> {
     match expr {
-        BoundExpr::IntConst(_) => Ok(()),
+        BoundExpr::IntConst(_) | BoundExpr::FloatConst(_) | BoundExpr::StringConst(_) => Ok(()),
         BoundExpr::Var(name) => ensure_declared(
             name,
             option_explicit,
@@ -997,6 +1005,38 @@ fn check_expr(
             proc_context,
         )
         .map(|_| ()),
+        BoundExpr::BinaryOp { lhs, rhs, .. } => {
+            check_expr(
+                lhs,
+                option_explicit,
+                default_type_table,
+                declared,
+                declared_types,
+                declarations,
+                declaration_types,
+                proc_context,
+            )?;
+            check_expr(
+                rhs,
+                option_explicit,
+                default_type_table,
+                declared,
+                declared_types,
+                declarations,
+                declaration_types,
+                proc_context,
+            )
+        }
+        BoundExpr::UnaryOp { operand, .. } => check_expr(
+            operand,
+            option_explicit,
+            default_type_table,
+            declared,
+            declared_types,
+            declarations,
+            declaration_types,
+            proc_context,
+        ),
     }
 }
 
@@ -1073,6 +1113,8 @@ fn default_type_for_name(name: &str, default_type_table: &[BoundType; 26]) -> Bo
 fn infer_expr_type(expr: &BoundExpr, declared_types: &HashMap<String, BoundType>) -> BoundType {
     match expr {
         BoundExpr::IntConst(_) => BoundType::Long,
+        BoundExpr::FloatConst(_) => BoundType::Double,
+        BoundExpr::StringConst(_) => BoundType::String,
         BoundExpr::Var(name) => *declared_types.get(name).unwrap_or(&BoundType::Variant),
         BoundExpr::AddConst { var, .. } | BoundExpr::SubConst { var, .. } => {
             let lhs_ty = *declared_types.get(var).unwrap_or(&BoundType::Variant);
@@ -1085,6 +1127,7 @@ fn infer_expr_type(expr: &BoundExpr, declared_types: &HashMap<String, BoundType>
             intrinsic_result_type(name).unwrap_or(BoundType::Variant)
         }
         BoundExpr::ProcCall { .. } => BoundType::Variant,
+        BoundExpr::BinaryOp { .. } | BoundExpr::UnaryOp { .. } => BoundType::Variant,
     }
 }
 
@@ -2037,6 +2080,7 @@ mod tests {
         let args = vec![BoundCallArg {
             name: None,
             expr: BoundExpr::IntConst(1),
+            force_byval: false,
         }];
         assert_eq!(
             classify_call_mode("work", &args, &proc_names, &proc_params, &declared_types)
@@ -2063,6 +2107,7 @@ mod tests {
         let args = vec![BoundCallArg {
             name: None,
             expr: BoundExpr::IntConst(1),
+            force_byval: false,
         }];
         assert_eq!(
             classify_call_mode("work", &args, &proc_names, &proc_params, &declared_types)
@@ -2079,6 +2124,7 @@ mod tests {
         let args = vec![BoundCallArg {
             name: None,
             expr: BoundExpr::IntConst(1),
+            force_byval: false,
         }];
         assert_eq!(
             classify_call_mode("obj", &args, &proc_names, &proc_params, &declared_types)

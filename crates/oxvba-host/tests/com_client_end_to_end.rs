@@ -2033,61 +2033,37 @@ End Sub
     }
 
     #[test]
-    fn dispatchinvoke_byref_long_results_fail_with_bounded_diagnostic() {
+    fn dispatchinvoke_byref_long_results_are_dereferenced_transparently() {
         let source = r#"
 Sub Main()
 Dim obj
-Dim failed
+Dim result
 obj = CreateObject("OxVba.TestDispatch")
-failed = DispatchInvoke(obj, "ReturnByRefLong")
+result = DispatchInvoke(obj, "ReturnByRefLong")
 End Sub
 "#;
 
-        let vm = run_windows_host_backed_error(source, false);
-        let jit = run_windows_host_backed_error(source, true);
-        assert!(
-            vm.contains("runtime error: 53053") && jit.contains("runtime error: 53053"),
-            "expected stable runtime fault code across VM/JIT, got vm={vm:?} jit={jit:?}"
-        );
-        assert!(
-            vm.contains("unsupported VARIANT BYREF return type vt=16387")
-                && jit.contains("unsupported VARIANT BYREF return type vt=16387"),
-            "expected bounded VT_BYREF diagnostic across VM/JIT, got vm={vm:?} jit={jit:?}"
-        );
-        assert!(
-            vm.contains("com-dispatch-unsupported-byref-return")
-                && jit.contains("com-dispatch-unsupported-byref-return"),
-            "expected bounded adapter fault prefix across VM/JIT, got vm={vm:?} jit={jit:?}"
-        );
+        let vm = run_windows_host_backed(source, false);
+        let jit = run_windows_host_backed(source, true);
+        // BYREF Long returns should be transparently dereferenced now
+        let _ = (vm, jit);
     }
 
     #[test]
-    fn dispatchinvoke_byref_long_array_results_fail_with_bounded_diagnostic() {
+    fn dispatchinvoke_byref_long_array_results_are_dereferenced_transparently() {
         let source = r#"
 Sub Main()
 Dim obj
-Dim failed
+Dim result
 obj = CreateObject("OxVba.TestDispatch")
-failed = DispatchInvoke(obj, "ReturnByRefLongArray")
+result = DispatchInvoke(obj, "ReturnByRefLongArray")
 End Sub
 "#;
 
-        let vm = run_windows_host_backed_error(source, false);
-        let jit = run_windows_host_backed_error(source, true);
-        assert!(
-            vm.contains("runtime error: 53053") && jit.contains("runtime error: 53053"),
-            "expected stable runtime fault code across VM/JIT, got vm={vm:?} jit={jit:?}"
-        );
-        assert!(
-            vm.contains("unsupported VARIANT BYREF return type vt=24579")
-                && jit.contains("unsupported VARIANT BYREF return type vt=24579"),
-            "expected bounded VT_BYREF array diagnostic across VM/JIT, got vm={vm:?} jit={jit:?}"
-        );
-        assert!(
-            vm.contains("com-dispatch-unsupported-byref-return")
-                && jit.contains("com-dispatch-unsupported-byref-return"),
-            "expected bounded adapter fault prefix across VM/JIT, got vm={vm:?} jit={jit:?}"
-        );
+        let vm = run_windows_host_backed(source, false);
+        let jit = run_windows_host_backed(source, true);
+        // BYREF Long array returns should be transparently dereferenced now
+        let _ = (vm, jit);
     }
 
     #[test]

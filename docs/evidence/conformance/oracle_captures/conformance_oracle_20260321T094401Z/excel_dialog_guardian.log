@@ -1,0 +1,79 @@
+2026-03-21T11:44:04.415+02:00 start excel_pid=68588 poll_ms=250 max_seconds=1800 stop_file=C:\Work\DnaCalc\OxVba\docs\evidence\conformance\oracle_captures\conformance_oracle_20260321T094401Z\excel_dialog_guardian.stop
+2026-03-21T11:44:13.957+02:00 start excel_pid=49612 poll_ms=250 max_seconds=1800 stop_file=C:\Work\DnaCalc\OxVba\docs\evidence\conformance\oracle_captures\conformance_oracle_20260321T094401Z\excel_dialog_guardian.stop
+2026-03-21T11:44:17.447+02:00 stop file observed; exiting
+2026-03-21T11:44:17.459+02:00 exit
+2026-03-21T11:44:20.318+02:00 start excel_pid=53396 poll_ms=250 max_seconds=1800 stop_file=C:\Work\DnaCalc\OxVba\docs\evidence\conformance\oracle_captures\conformance_oracle_20260321T094401Z\excel_dialog_guardian.stop
+2026-03-21T11:44:33.098+02:00 stop file observed; exiting
+2026-03-21T11:44:33.107+02:00 exit
+2026-03-21T11:44:35.954+02:00 start excel_pid=55916 poll_ms=250 max_seconds=1800 stop_file=C:\Work\DnaCalc\OxVba\docs\evidence\conformance\oracle_captures\conformance_oracle_20260321T094401Z\excel_dialog_guardian.stop
+2026-03-21T11:44:39.270+02:00 stop file observed; exiting
+2026-03-21T11:44:39.282+02:00 exit
+2026-03-21T11:44:41.947+02:00 start excel_pid=80996 poll_ms=250 max_seconds=1800 stop_file=C:\Work\DnaCalc\OxVba\docs\evidence\conformance\oracle_captures\conformance_oracle_20260321T094401Z\excel_dialog_guardian.stop
+2026-03-21T11:44:47.728+02:00 stop file observed; exiting
+2026-03-21T11:44:47.739+02:00 exit
+2026-03-21T11:44:50.262+02:00 start excel_pid=29216 poll_ms=250 max_seconds=1800 stop_file=C:\Work\DnaCalc\OxVba\docs\evidence\conformance\oracle_captures\conformance_oracle_20260321T094401Z\excel_dialog_guardian.stop
+2026-03-21T11:44:53.656+02:00 stop file observed; exiting
+2026-03-21T11:44:56.171+02:00 start excel_pid=84944 poll_ms=250 max_seconds=1800 stop_file=C:\Work\DnaCalc\OxVba\docs\evidence\conformance\oracle_captures\conformance_oracle_20260321T094401Z\excel_dialog_guardian.stop
+2026-03-21T11:45:16.562+02:00 excel process exited; guardian stopping
+2026-03-21T11:45:16.574+02:00 exit
+2026-03-21T11:45:20.084+02:00 start excel_pid=66024 poll_ms=250 max_seconds=1800 stop_file=C:\Work\DnaCalc\OxVba\docs\evidence\conformance\oracle_captures\conformance_oracle_20260321T094401Z\excel_dialog_guardian.stop
+2026-03-21T11:45:41.619+02:00 excel process exited; guardian stopping
+2026-03-21T11:45:41.629+02:00 exit
+2026-03-21T11:45:45.152+02:00 start excel_pid=89420 poll_ms=250 max_seconds=1800 stop_file=C:\Work\DnaCalc\OxVba\docs\evidence\conformance\oracle_captures\conformance_oracle_20260321T094401Z\excel_dialog_guardian.stop
+2026-03-21T11:45:50.322+02:00 stop file observed; exiting
+2026-03-21T11:45:50.334+02:00 exit
+2026-03-21T11:45:53.031+02:00 start excel_pid=51180 poll_ms=250 max_seconds=1800 stop_file=C:\Work\DnaCalc\OxVba\docs\evidence\conformance\oracle_captures\conformance_oracle_20260321T094401Z\excel_dialog_guardian.stop
+2026-03-21T11:46:00.447+02:00 start excel_pid=71096 poll_ms=250 max_seconds=1800 stop_file=C:\Work\DnaCalc\OxVba\docs\evidence\conformance\oracle_captures\conformance_oracle_20260321T094401Z\excel_dialog_guardian.stop
+2026-03-21T11:46:12.746+02:00 start excel_pid=50808 poll_ms=250 max_seconds=1800 stop_file=C:\Work\DnaCalc\OxVba\docs\evidence\conformance\oracle_captures\conformance_oracle_20260321T094401Z\excel_dialog_guardian.stop
+2026-03-21T11:46:16.387+02:00 stop file observed; exiting
+2026-03-21T11:46:16.400+02:00 exit
+2026-03-21T11:46:18.817+02:00 start excel_pid=46064 poll_ms=250 max_seconds=1800 stop_file=C:\Work\DnaCalc\OxVba\docs\evidence\conformance\oracle_captures\conformance_oracle_20260321T094401Z\excel_dialog_guardian.stop
+2026-03-21T11:46:27.277+02:00 start excel_pid=44252 poll_ms=250 max_seconds=1800 stop_file=C:\Work\DnaCalc\OxVba\docs\evidence\conformance\oracle_captures\conformance_oracle_20260321T094401Z\excel_dialog_guardian.stop
+2026-03-21T11:46:44.704+02:00 excel process exited; guardian stopping
+2026-03-21T11:46:44.717+02:00 exit
+2026-03-21T11:46:48.577+02:00 start excel_pid=21980 poll_ms=250 max_seconds=1800 stop_file=C:\Work\DnaCalc\OxVba\docs\evidence\conformance\oracle_captures\conformance_oracle_20260321T094401Z\excel_dialog_guardian.stop
+2026-03-21T11:47:05.399+02:00 excel process exited; guardian stopping
+2026-03-21T11:47:05.408+02:00 exit
+2026-03-21T11:47:08.922+02:00 start excel_pid=35788 poll_ms=250 max_seconds=1800 stop_file=C:\Work\DnaCalc\OxVba\docs\evidence\conformance\oracle_captures\conformance_oracle_20260321T094401Z\excel_dialog_guardian.stop
+2026-03-21T11:47:17.245+02:00 start excel_pid=49416 poll_ms=250 max_seconds=1800 stop_file=C:\Work\DnaCalc\OxVba\docs\evidence\conformance\oracle_captures\conformance_oracle_20260321T094401Z\excel_dialog_guardian.stop
+2026-03-21T11:47:23.943+02:00 stop file observed; exiting
+2026-03-21T11:47:23.954+02:00 exit
+2026-03-21T11:47:26.565+02:00 start excel_pid=81624 poll_ms=250 max_seconds=1800 stop_file=C:\Work\DnaCalc\OxVba\docs\evidence\conformance\oracle_captures\conformance_oracle_20260321T094401Z\excel_dialog_guardian.stop
+2026-03-21T11:47:34.376+02:00 start excel_pid=45384 poll_ms=250 max_seconds=1800 stop_file=C:\Work\DnaCalc\OxVba\docs\evidence\conformance\oracle_captures\conformance_oracle_20260321T094401Z\excel_dialog_guardian.stop
+2026-03-21T11:47:42.529+02:00 start excel_pid=78640 poll_ms=250 max_seconds=1800 stop_file=C:\Work\DnaCalc\OxVba\docs\evidence\conformance\oracle_captures\conformance_oracle_20260321T094401Z\excel_dialog_guardian.stop
+2026-03-21T11:47:45.828+02:00 stop file observed; exiting
+2026-03-21T11:47:45.841+02:00 exit
+2026-03-21T11:47:48.640+02:00 start excel_pid=87984 poll_ms=250 max_seconds=1800 stop_file=C:\Work\DnaCalc\OxVba\docs\evidence\conformance\oracle_captures\conformance_oracle_20260321T094401Z\excel_dialog_guardian.stop
+2026-03-21T11:47:56.230+02:00 start excel_pid=58080 poll_ms=250 max_seconds=1800 stop_file=C:\Work\DnaCalc\OxVba\docs\evidence\conformance\oracle_captures\conformance_oracle_20260321T094401Z\excel_dialog_guardian.stop
+2026-03-21T11:47:59.589+02:00 stop file observed; exiting
+2026-03-21T11:47:59.601+02:00 exit
+2026-03-21T11:48:02.470+02:00 start excel_pid=40556 poll_ms=250 max_seconds=1800 stop_file=C:\Work\DnaCalc\OxVba\docs\evidence\conformance\oracle_captures\conformance_oracle_20260321T094401Z\excel_dialog_guardian.stop
+2026-03-21T11:48:05.813+02:00 stop file observed; exiting
+2026-03-21T11:48:05.824+02:00 exit
+2026-03-21T11:48:08.535+02:00 start excel_pid=28316 poll_ms=250 max_seconds=1800 stop_file=C:\Work\DnaCalc\OxVba\docs\evidence\conformance\oracle_captures\conformance_oracle_20260321T094401Z\excel_dialog_guardian.stop
+2026-03-21T11:48:14.600+02:00 start excel_pid=46244 poll_ms=250 max_seconds=1800 stop_file=C:\Work\DnaCalc\OxVba\docs\evidence\conformance\oracle_captures\conformance_oracle_20260321T094401Z\excel_dialog_guardian.stop
+2026-03-21T11:48:17.726+02:00 stop file observed; exiting
+2026-03-21T11:48:17.737+02:00 exit
+2026-03-21T11:48:20.398+02:00 start excel_pid=42612 poll_ms=250 max_seconds=1800 stop_file=C:\Work\DnaCalc\OxVba\docs\evidence\conformance\oracle_captures\conformance_oracle_20260321T094401Z\excel_dialog_guardian.stop
+2026-03-21T11:48:23.726+02:00 stop file observed; exiting
+2026-03-21T11:48:23.739+02:00 exit
+2026-03-21T11:48:26.439+02:00 start excel_pid=41348 poll_ms=250 max_seconds=1800 stop_file=C:\Work\DnaCalc\OxVba\docs\evidence\conformance\oracle_captures\conformance_oracle_20260321T094401Z\excel_dialog_guardian.stop
+2026-03-21T11:48:32.525+02:00 start excel_pid=28188 poll_ms=250 max_seconds=1800 stop_file=C:\Work\DnaCalc\OxVba\docs\evidence\conformance\oracle_captures\conformance_oracle_20260321T094401Z\excel_dialog_guardian.stop
+2026-03-21T11:48:35.829+02:00 stop file observed; exiting
+2026-03-21T11:48:35.841+02:00 exit
+2026-03-21T11:48:38.446+02:00 start excel_pid=46276 poll_ms=250 max_seconds=1800 stop_file=C:\Work\DnaCalc\OxVba\docs\evidence\conformance\oracle_captures\conformance_oracle_20260321T094401Z\excel_dialog_guardian.stop
+2026-03-21T11:48:57.584+02:00 start excel_pid=81428 poll_ms=250 max_seconds=1800 stop_file=C:\Work\DnaCalc\OxVba\docs\evidence\conformance\oracle_captures\conformance_oracle_20260321T094401Z\excel_dialog_guardian.stop
+2026-03-21T11:49:00.933+02:00 stop file observed; exiting
+2026-03-21T11:49:00.944+02:00 exit
+2026-03-21T11:49:03.475+02:00 start excel_pid=75340 poll_ms=250 max_seconds=1800 stop_file=C:\Work\DnaCalc\OxVba\docs\evidence\conformance\oracle_captures\conformance_oracle_20260321T094401Z\excel_dialog_guardian.stop
+2026-03-21T11:49:21.497+02:00 excel process exited; guardian stopping
+2026-03-21T11:49:21.505+02:00 exit
+2026-03-21T11:49:25.011+02:00 start excel_pid=90220 poll_ms=250 max_seconds=1800 stop_file=C:\Work\DnaCalc\OxVba\docs\evidence\conformance\oracle_captures\conformance_oracle_20260321T094401Z\excel_dialog_guardian.stop
+2026-03-21T11:49:39.504+02:00 start excel_pid=48712 poll_ms=250 max_seconds=1800 stop_file=C:\Work\DnaCalc\OxVba\docs\evidence\conformance\oracle_captures\conformance_oracle_20260321T094401Z\excel_dialog_guardian.stop
+2026-03-21T11:49:43.187+02:00 stop file observed; exiting
+2026-03-21T11:49:43.200+02:00 exit
+2026-03-21T11:49:45.908+02:00 start excel_pid=29152 poll_ms=250 max_seconds=1800 stop_file=C:\Work\DnaCalc\OxVba\docs\evidence\conformance\oracle_captures\conformance_oracle_20260321T094401Z\excel_dialog_guardian.stop
+2026-03-21T11:49:49.795+02:00 stop file observed; exiting
+2026-03-21T11:49:49.807+02:00 exit
+2026-03-21T11:49:52.531+02:00 start excel_pid=51060 poll_ms=250 max_seconds=1800 stop_file=C:\Work\DnaCalc\OxVba\docs\evidence\conformance\oracle_captures\conformance_oracle_20260321T094401Z\excel_dialog_guardian.stop
+2026-03-21T11:50:00.749+02:00 start excel_pid=67052 poll_ms=250 max_seconds=1800 stop_file=C:\Work\DnaCalc\OxVba\docs\evidence\conformance\oracle_captures\conformance_oracle_20260321T094401Z\excel_dialog_guardian.stop

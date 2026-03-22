@@ -1,6 +1,7 @@
 Sub Main()
 Dim a
 Dim b
+Randomize 1
 a = Int(Rnd() * 100)
-b = NPV(0, 10, 20, 30)
+b = Int(Rnd() * 100)
 End Sub

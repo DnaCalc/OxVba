@@ -8,11 +8,14 @@ pub mod model;
 pub mod platform;
 pub mod refcount;
 pub mod runtime_state;
+pub mod stub_bridge;
 pub mod typelib;
 pub mod typelib_cache;
 pub mod typelib_catalog;
 #[cfg(target_os = "windows")]
 pub mod windows_bridge;
+pub mod windows_ffi_bridge;
+pub mod windows_typelib_loader;
 pub mod windows_client;
 #[cfg(target_os = "windows")]
 pub mod windows_connection_point;
@@ -50,7 +53,8 @@ pub use runtime_state::{
 };
 pub use typelib::{
     TypeLibCacheScope, TypeLibEventDispatchPath, TypeLibEventMetadata, TypeLibMemberInvokeKind,
-    TypeLibMemberMetadata, TypeLibMetadataBlob, TypeLibResolveRequest, TypeLibResolvedIdentity,
+    TypeLibMemberMetadata, TypeLibMetadataBlob, TypeLibParamType, TypeLibResolveRequest,
+    TypeLibResolvedIdentity,
 };
 pub use typelib_cache::TypeLibMetadataCacheState;
 pub use typelib_catalog::{

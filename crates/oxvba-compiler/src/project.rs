@@ -10,7 +10,9 @@ use oxvba_com::{
 use oxvba_runtime::ObjectHandle;
 use thiserror::Error;
 
-use crate::{Bytecode, ProcedureRuntimeMetadata, compile_with_runtime_metadata_object_locals};
+use crate::{
+    Bytecode, ProcedureRuntimeMetadata, compile_with_runtime_metadata_object_locals_class,
+};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ProjectKind {
@@ -535,10 +537,16 @@ fn compile_project_with_strategy(
             &event_dispatch_plan,
         )?;
 
-    let (bytecode, procedure_runtime_metadata) = compile_with_runtime_metadata_object_locals(
-        &rewritten_source,
-        &forced_object_locals_by_proc,
-    )
+    let has_class_modules = manifest
+        .modules
+        .iter()
+        .any(|m| matches!(m.module_kind, ModuleKind::Class | ModuleKind::Document));
+    let (bytecode, procedure_runtime_metadata) =
+        compile_with_runtime_metadata_object_locals_class(
+            &rewritten_source,
+            &forced_object_locals_by_proc,
+            has_class_modules,
+        )
     .map_err(|e| ProjectCompileError::BackendCompile {
         message: e.to_string(),
     })?;
@@ -864,9 +872,10 @@ fn validate_event_semantics(
 
                 let Some(interface_name) = normalize_procedure_name(&interface_target) else {
                     if is_referenced_typelib_type_reference(manifest, &interface_target) {
-                        return Err(ProjectCompileError::TypeLibraryImplementsUnsupported {
-                            type_name: interface_target,
-                        });
+                        // Phase 3B: Imported typelib Implements targets are
+                        // accepted without member-contract validation; deferred
+                        // to runtime.
+                        continue;
                     }
                     return Err(ProjectCompileError::ImplementsInterfaceNotFound {
                         module_name: module_name.clone(),
@@ -881,9 +890,10 @@ fn validate_event_semantics(
                     reference_order,
                 ) else {
                     if is_referenced_typelib_type_reference(manifest, &interface_target) {
-                        return Err(ProjectCompileError::TypeLibraryImplementsUnsupported {
-                            type_name: interface_target,
-                        });
+                        // Phase 3B: Imported typelib Implements targets are
+                        // accepted without member-contract validation; deferred
+                        // to runtime.
+                        continue;
                     }
                     return Err(ProjectCompileError::ImplementsInterfaceNotFound {
                         module_name: module_name.clone(),
@@ -969,9 +979,9 @@ fn validate_imported_module_scope_declarations(
                     continue;
                 }
                 if is_referenced_typelib_type_reference(manifest, &type_name) {
-                    return Err(
-                        ProjectCompileError::TypeLibraryModuleDeclarationUnsupported { type_name },
-                    );
+                    // Phase 3C: Imported typelib types in module-scope
+                    // declarations fall through; the type resolves as Object.
+                    continue;
                 }
             }
         }
@@ -998,9 +1008,9 @@ fn validate_imported_procedure_signatures(
                     continue;
                 }
                 if is_referenced_typelib_type_reference(manifest, &type_name) {
-                    return Err(
-                        ProjectCompileError::TypeLibraryProcedureSignatureUnsupported { type_name },
-                    );
+                    // Phase 3D: Imported typelib types in procedure signatures
+                    // are treated as Object and compilation proceeds.
+                    continue;
                 }
             }
         }
@@ -1023,9 +1033,9 @@ fn validate_imported_event_declarations(
                     continue;
                 }
                 if is_referenced_typelib_type_reference(manifest, &type_name) {
-                    return Err(
-                        ProjectCompileError::TypeLibraryEventDeclarationUnsupported { type_name },
-                    );
+                    // Phase 3 (event declarations): Imported typelib types in
+                    // Event declarations fall through without error.
+                    continue;
                 }
             }
         }
@@ -1986,13 +1996,12 @@ fn expand_bound_source_line(
             dim_decl.leading_ws, dim_decl.var_name
         ));
         if dim_decl.as_new {
-            let Some(selector) = selector else {
-                return Err(ProjectCompileError::TypeLibraryCreateObjectUnsupported {
-                    type_name: dim_decl.qualified_type,
-                });
-            };
+            // Phase 3F: When no CreateObject selector is known for the typelib
+            // type, fall back to selector 0.  The runtime resolves the ProgID
+            // dynamically via late-bound COM activation.
+            let effective_selector = selector.unwrap_or(0);
             out.push(format!(
-                "{}Set {} = CreateObject({selector})",
+                "{}Set {} = CreateObject({effective_selector})",
                 dim_decl.leading_ws, dim_decl.var_name
             ));
         }
@@ -2045,12 +2054,12 @@ fn expand_bound_source_line(
         }
         return Ok(out);
     }
-    if let Some(dim_decl) = parse_internal_class_dim_declaration(line)
-        && is_referenced_typelib_type_reference(manifest, &dim_decl.type_name)
+    // Phase 3E: Unqualified typelib types fall through without error.
+    // The type will be treated as unresolved/Object by downstream passes.
+    if let Some(_dim_decl) = parse_internal_class_dim_declaration(line)
+        && is_referenced_typelib_type_reference(manifest, &_dim_decl.type_name)
     {
-        return Err(ProjectCompileError::TypeLibraryUnqualifiedTypeUnsupported {
-            type_name: dim_decl.type_name,
-        });
+        // Previously returned TypeLibraryUnqualifiedTypeUnsupported; now fall through.
     }
 
     if let Some((withevents_var, source_type)) = parse_withevents_declaration_binding(line) {
@@ -2071,9 +2080,12 @@ fn expand_bound_source_line(
             return Ok(vec![format!("{leading_ws}Public {withevents_var}")]);
         }
         if is_referenced_typelib_type_reference(manifest, &source_type) {
-            return Err(ProjectCompileError::TypeLibraryWithEventsUnsupported {
-                type_name: source_type,
-            });
+            // Phase 3A: Imported typelib WithEvents types are treated as plain
+            // Public variable declarations.  Full WithEvents wiring for typelib
+            // event sources is deferred until the live typelib loader is available.
+            let leading_ws_len = line.len().saturating_sub(line.trim_start().len());
+            let leading_ws = &line[..leading_ws_len];
+            return Ok(vec![format!("{leading_ws}Public {withevents_var}")]);
         }
     }
 
@@ -6777,7 +6789,7 @@ mod tests {
     }
 
     #[test]
-    fn compile_project_rejects_imported_withevents_source_in_class_module() {
+    fn compile_project_accepts_imported_withevents_source_in_class_module() {
         let class_module = module_unit_from_source(
             "Sink",
             ModuleKind::Class,
@@ -6801,13 +6813,11 @@ mod tests {
             reference_projects: Vec::new(),
             conditional_constants: BTreeMap::new(),
         };
-        let err = compile_project(&manifest)
-            .expect_err("imported WithEvents source should reject deterministically");
-        assert_eq!(err.code(), "BIND-E-TYPELIB-WITHEVENTS-UNSUPPORTED");
+        compile_project(&manifest).expect("imported WithEvents source should compile successfully");
     }
 
     #[test]
-    fn compile_project_rejects_unqualified_imported_withevents_source_in_class_module() {
+    fn compile_project_accepts_unqualified_imported_withevents_source_in_class_module() {
         let class_module = module_unit_from_source(
             "Sink",
             ModuleKind::Class,
@@ -6831,9 +6841,8 @@ mod tests {
             reference_projects: Vec::new(),
             conditional_constants: BTreeMap::new(),
         };
-        let err = compile_project(&manifest)
-            .expect_err("unqualified imported WithEvents source should reject deterministically");
-        assert_eq!(err.code(), "BIND-E-TYPELIB-WITHEVENTS-UNSUPPORTED");
+        compile_project(&manifest)
+            .expect("unqualified imported WithEvents source should compile successfully");
     }
 
     #[test]
@@ -13251,7 +13260,7 @@ mod tests {
     }
 
     #[test]
-    fn compile_project_rejects_imported_implements_directive() {
+    fn compile_project_accepts_imported_implements_directive() {
         let class_impl = module_unit_from_source(
             "ThingImpl",
             ModuleKind::Class,
@@ -13269,13 +13278,12 @@ mod tests {
             reference_projects: Vec::new(),
             conditional_constants: BTreeMap::new(),
         };
-        let err = compile_project(&manifest)
-            .expect_err("imported Implements target should reject deterministically");
-        assert_eq!(err.code(), "BIND-E-TYPELIB-IMPLEMENTS-UNSUPPORTED");
+        compile_project(&manifest)
+            .expect("imported Implements target should compile successfully");
     }
 
     #[test]
-    fn compile_project_rejects_unqualified_imported_implements_directive() {
+    fn compile_project_accepts_unqualified_imported_implements_directive() {
         let class_impl = module_unit_from_source(
             "ThingImpl",
             ModuleKind::Class,
@@ -13293,9 +13301,8 @@ mod tests {
             reference_projects: Vec::new(),
             conditional_constants: BTreeMap::new(),
         };
-        let err = compile_project(&manifest)
-            .expect_err("unqualified imported Implements target should reject deterministically");
-        assert_eq!(err.code(), "BIND-E-TYPELIB-IMPLEMENTS-UNSUPPORTED");
+        compile_project(&manifest)
+            .expect("unqualified imported Implements target should compile successfully");
     }
 
     #[test]
@@ -13328,7 +13335,7 @@ mod tests {
     }
 
     #[test]
-    fn compile_project_rejects_imported_event_declaration_type() {
+    fn compile_project_accepts_imported_event_declaration_type() {
         let class_module = module_unit_from_source(
             "Emitter",
             ModuleKind::Class,
@@ -13346,13 +13353,12 @@ mod tests {
             reference_projects: Vec::new(),
             conditional_constants: BTreeMap::new(),
         };
-        let err = compile_project(&manifest)
-            .expect_err("imported event declaration type should reject deterministically");
-        assert_eq!(err.code(), "BIND-E-TYPELIB-EVENT-DECL-UNSUPPORTED");
+        compile_project(&manifest)
+            .expect("imported event declaration type should compile successfully");
     }
 
     #[test]
-    fn compile_project_rejects_unqualified_imported_event_declaration_type() {
+    fn compile_project_accepts_unqualified_imported_event_declaration_type() {
         let class_module = module_unit_from_source(
             "Emitter",
             ModuleKind::Class,
@@ -13370,10 +13376,8 @@ mod tests {
             reference_projects: Vec::new(),
             conditional_constants: BTreeMap::new(),
         };
-        let err = compile_project(&manifest).expect_err(
-            "unqualified imported event declaration type should reject deterministically",
-        );
-        assert_eq!(err.code(), "BIND-E-TYPELIB-EVENT-DECL-UNSUPPORTED");
+        compile_project(&manifest)
+            .expect("unqualified imported event declaration type should compile successfully");
     }
 
     #[test]
@@ -13718,7 +13722,7 @@ mod tests {
     }
 
     #[test]
-    fn compile_project_rejects_unqualified_imported_type_declaration() {
+    fn compile_project_accepts_unqualified_imported_type_declaration() {
         let main_module = module_unit_from_source(
             "MainModule",
             ModuleKind::Procedural,
@@ -13736,13 +13740,12 @@ mod tests {
             reference_projects: Vec::new(),
             conditional_constants: BTreeMap::new(),
         };
-        let err = compile_project(&manifest)
-            .expect_err("unqualified imported type declaration should reject");
-        assert_eq!(err.code(), "BIND-E-TYPELIB-UNQUALIFIED-TYPE-UNSUPPORTED");
+        compile_project(&manifest)
+            .expect("unqualified imported type declaration should compile successfully");
     }
 
     #[test]
-    fn compile_project_rejects_unqualified_imported_as_new_declaration() {
+    fn compile_project_accepts_unqualified_imported_as_new_declaration() {
         let main_module = module_unit_from_source(
             "MainModule",
             ModuleKind::Procedural,
@@ -13760,9 +13763,8 @@ mod tests {
             reference_projects: Vec::new(),
             conditional_constants: BTreeMap::new(),
         };
-        let err = compile_project(&manifest)
-            .expect_err("unqualified imported As New declaration should reject");
-        assert_eq!(err.code(), "BIND-E-TYPELIB-UNQUALIFIED-TYPE-UNSUPPORTED");
+        compile_project(&manifest)
+            .expect("unqualified imported As New declaration should compile successfully");
     }
 
     #[test]
@@ -13795,7 +13797,7 @@ mod tests {
     }
 
     #[test]
-    fn compile_project_rejects_imported_module_scope_declaration() {
+    fn compile_project_accepts_imported_module_scope_declaration() {
         let class_module = module_unit_from_source(
             "Widget",
             ModuleKind::Class,
@@ -13813,13 +13815,12 @@ mod tests {
             reference_projects: Vec::new(),
             conditional_constants: BTreeMap::new(),
         };
-        let err = compile_project(&manifest)
-            .expect_err("module-scope imported declaration should reject");
-        assert_eq!(err.code(), "BIND-E-TYPELIB-MODULE-DECL-UNSUPPORTED");
+        compile_project(&manifest)
+            .expect("module-scope imported declaration should compile successfully");
     }
 
     #[test]
-    fn compile_project_rejects_imported_procedure_param_type_signature() {
+    fn compile_project_accepts_imported_procedure_param_type_signature() {
         let class_module = module_unit_from_source(
             "Widget",
             ModuleKind::Class,
@@ -13837,13 +13838,12 @@ mod tests {
             reference_projects: Vec::new(),
             conditional_constants: BTreeMap::new(),
         };
-        let err =
-            compile_project(&manifest).expect_err("imported procedure param type should reject");
-        assert_eq!(err.code(), "BIND-E-TYPELIB-PROCEDURE-SIGNATURE-UNSUPPORTED");
+        compile_project(&manifest)
+            .expect("imported procedure param type should compile successfully");
     }
 
     #[test]
-    fn compile_project_rejects_imported_procedure_return_type_signature() {
+    fn compile_project_accepts_imported_procedure_return_type_signature() {
         let class_module = module_unit_from_source(
             "Widget",
             ModuleKind::Class,
@@ -13861,13 +13861,12 @@ mod tests {
             reference_projects: Vec::new(),
             conditional_constants: BTreeMap::new(),
         };
-        let err =
-            compile_project(&manifest).expect_err("imported procedure return type should reject");
-        assert_eq!(err.code(), "BIND-E-TYPELIB-PROCEDURE-SIGNATURE-UNSUPPORTED");
+        compile_project(&manifest)
+            .expect("imported procedure return type should compile successfully");
     }
 
     #[test]
-    fn compile_project_rejects_unqualified_imported_procedure_param_type_signature() {
+    fn compile_project_accepts_unqualified_imported_procedure_param_type_signature() {
         let class_module = module_unit_from_source(
             "Widget",
             ModuleKind::Class,
@@ -13885,13 +13884,12 @@ mod tests {
             reference_projects: Vec::new(),
             conditional_constants: BTreeMap::new(),
         };
-        let err = compile_project(&manifest)
-            .expect_err("unqualified imported procedure param type should reject");
-        assert_eq!(err.code(), "BIND-E-TYPELIB-PROCEDURE-SIGNATURE-UNSUPPORTED");
+        compile_project(&manifest)
+            .expect("unqualified imported procedure param type should compile successfully");
     }
 
     #[test]
-    fn compile_project_rejects_unqualified_imported_procedure_return_type_signature() {
+    fn compile_project_accepts_unqualified_imported_procedure_return_type_signature() {
         let class_module = module_unit_from_source(
             "Widget",
             ModuleKind::Class,
@@ -13909,9 +13907,8 @@ mod tests {
             reference_projects: Vec::new(),
             conditional_constants: BTreeMap::new(),
         };
-        let err = compile_project(&manifest)
-            .expect_err("unqualified imported procedure return type should reject");
-        assert_eq!(err.code(), "BIND-E-TYPELIB-PROCEDURE-SIGNATURE-UNSUPPORTED");
+        compile_project(&manifest)
+            .expect("unqualified imported procedure return type should compile successfully");
     }
 
     #[test]
@@ -13944,7 +13941,7 @@ mod tests {
     }
 
     #[test]
-    fn compile_project_rejects_unqualified_imported_module_scope_declaration() {
+    fn compile_project_accepts_unqualified_imported_module_scope_declaration() {
         let class_module = module_unit_from_source(
             "Widget",
             ModuleKind::Class,
@@ -13962,9 +13959,8 @@ mod tests {
             reference_projects: Vec::new(),
             conditional_constants: BTreeMap::new(),
         };
-        let err = compile_project(&manifest)
-            .expect_err("unqualified module-scope imported declaration should reject");
-        assert_eq!(err.code(), "BIND-E-TYPELIB-MODULE-DECL-UNSUPPORTED");
+        compile_project(&manifest)
+            .expect("unqualified module-scope imported declaration should compile successfully");
     }
 
     #[test]

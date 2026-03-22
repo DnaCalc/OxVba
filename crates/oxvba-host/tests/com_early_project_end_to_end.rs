@@ -1842,7 +1842,7 @@ End Sub
 }
 
 #[test]
-fn early_bound_project_reports_compile_error_for_imported_withevents_source() {
+fn early_bound_project_accepts_imported_withevents_source() {
     let class_module = module_unit_from_source(
         "Sink",
         ModuleKind::Class,
@@ -1880,20 +1880,13 @@ End Sub
         enable_jit: false,
         root_object_name: None,
     });
-    let err = engine
+    engine
         .execute_project_with_snapshot_phased(&manifest)
-        .expect_err("imported WithEvents source should fail at compile-time");
-    assert_eq!(err.phase(), DiagnosticPhase::CompileTime);
-    assert!(
-        err.message()
-            .contains("BIND-E-TYPELIB-WITHEVENTS-UNSUPPORTED"),
-        "unexpected compile diagnostic: {}",
-        err.message()
-    );
+        .expect("should compile");
 }
 
 #[test]
-fn early_bound_project_reports_compile_error_for_unqualified_imported_withevents_source() {
+fn early_bound_project_accepts_unqualified_imported_withevents_source() {
     let class_module = module_unit_from_source(
         "Sink",
         ModuleKind::Class,
@@ -1931,20 +1924,13 @@ End Sub
         enable_jit: false,
         root_object_name: None,
     });
-    let err = engine
+    engine
         .execute_project_with_snapshot_phased(&manifest)
-        .expect_err("unqualified imported WithEvents source should fail at compile-time");
-    assert_eq!(err.phase(), DiagnosticPhase::CompileTime);
-    assert!(
-        err.message()
-            .contains("BIND-E-TYPELIB-WITHEVENTS-UNSUPPORTED"),
-        "unexpected compile diagnostic: {}",
-        err.message()
-    );
+        .expect("should compile");
 }
 
 #[test]
-fn early_bound_project_reports_compile_error_for_unqualified_imported_type_declaration() {
+fn early_bound_project_accepts_unqualified_imported_type_declaration() {
     let manifest = manifest_with_typelib(
         r#"
 Attribute VB_Name = "MainModule"
@@ -1958,20 +1944,13 @@ End Sub
         enable_jit: false,
         root_object_name: None,
     });
-    let err = engine
+    engine
         .execute_project_with_snapshot_phased(&manifest)
-        .expect_err("unqualified imported type declaration should fail at compile-time");
-    assert_eq!(err.phase(), DiagnosticPhase::CompileTime);
-    assert!(
-        err.message()
-            .contains("BIND-E-TYPELIB-UNQUALIFIED-TYPE-UNSUPPORTED"),
-        "unexpected compile diagnostic: {}",
-        err.message()
-    );
+        .expect("should compile");
 }
 
 #[test]
-fn early_bound_project_reports_compile_error_for_unqualified_imported_as_new_declaration() {
+fn early_bound_project_accepts_unqualified_imported_as_new_declaration() {
     let manifest = manifest_with_typelib(
         r#"
 Attribute VB_Name = "MainModule"
@@ -1985,20 +1964,13 @@ End Sub
         enable_jit: false,
         root_object_name: None,
     });
-    let err = engine
+    engine
         .execute_project_with_snapshot_phased(&manifest)
-        .expect_err("unqualified imported As New declaration should fail at compile-time");
-    assert_eq!(err.phase(), DiagnosticPhase::CompileTime);
-    assert!(
-        err.message()
-            .contains("BIND-E-TYPELIB-UNQUALIFIED-TYPE-UNSUPPORTED"),
-        "unexpected compile diagnostic: {}",
-        err.message()
-    );
+        .expect("should compile");
 }
 
 #[test]
-fn early_bound_project_reports_compile_error_for_imported_module_scope_declaration() {
+fn early_bound_project_accepts_imported_module_scope_declaration() {
     let class_module = module_unit_from_source(
         "Widget",
         ModuleKind::Class,
@@ -2026,20 +1998,13 @@ End Sub
         enable_jit: false,
         root_object_name: None,
     });
-    let err = engine
+    engine
         .execute_project_with_snapshot_phased(&manifest)
-        .expect_err("module-scope imported declaration should fail at compile-time");
-    assert_eq!(err.phase(), DiagnosticPhase::CompileTime);
-    assert!(
-        err.message()
-            .contains("BIND-E-TYPELIB-MODULE-DECL-UNSUPPORTED"),
-        "unexpected compile diagnostic: {}",
-        err.message()
-    );
+        .expect("should compile");
 }
 
 #[test]
-fn early_bound_project_reports_compile_error_for_imported_procedure_param_type_signature() {
+fn early_bound_project_accepts_imported_procedure_param_type_signature() {
     let class_module = module_unit_from_source(
         "Widget",
         ModuleKind::Class,
@@ -2066,20 +2031,13 @@ End Sub
         enable_jit: false,
         root_object_name: None,
     });
-    let err = engine
+    engine
         .execute_project_with_snapshot_phased(&manifest)
-        .expect_err("imported procedure param type should fail at compile-time");
-    assert_eq!(err.phase(), DiagnosticPhase::CompileTime);
-    assert!(
-        err.message()
-            .contains("BIND-E-TYPELIB-PROCEDURE-SIGNATURE-UNSUPPORTED"),
-        "unexpected compile diagnostic: {}",
-        err.message()
-    );
+        .expect("should compile");
 }
 
 #[test]
-fn early_bound_project_reports_compile_error_for_imported_implements_directive() {
+fn early_bound_project_accepts_imported_implements_directive() {
     let class_module = module_unit_from_source(
         "ThingImpl",
         ModuleKind::Class,
@@ -2107,20 +2065,13 @@ End Sub
         enable_jit: false,
         root_object_name: None,
     });
-    let err = engine
+    engine
         .execute_project_with_snapshot_phased(&manifest)
-        .expect_err("imported Implements target should fail at compile-time");
-    assert_eq!(err.phase(), DiagnosticPhase::CompileTime);
-    assert!(
-        err.message()
-            .contains("BIND-E-TYPELIB-IMPLEMENTS-UNSUPPORTED"),
-        "unexpected compile diagnostic: {}",
-        err.message()
-    );
+        .expect("should compile");
 }
 
 #[test]
-fn early_bound_project_reports_compile_error_for_unqualified_imported_implements_directive() {
+fn early_bound_project_accepts_unqualified_imported_implements_directive() {
     let class_module = module_unit_from_source(
         "ThingImpl",
         ModuleKind::Class,
@@ -2148,20 +2099,13 @@ End Sub
         enable_jit: false,
         root_object_name: None,
     });
-    let err = engine
+    engine
         .execute_project_with_snapshot_phased(&manifest)
-        .expect_err("unqualified imported Implements target should fail at compile-time");
-    assert_eq!(err.phase(), DiagnosticPhase::CompileTime);
-    assert!(
-        err.message()
-            .contains("BIND-E-TYPELIB-IMPLEMENTS-UNSUPPORTED"),
-        "unexpected compile diagnostic: {}",
-        err.message()
-    );
+        .expect("should compile");
 }
 
 #[test]
-fn early_bound_project_reports_compile_error_for_imported_event_declaration_type() {
+fn early_bound_project_accepts_imported_event_declaration_type() {
     let class_module = module_unit_from_source(
         "Emitter",
         ModuleKind::Class,
@@ -2187,20 +2131,13 @@ Public Event Changed(ByVal value As OxVba.TestDispatch)
         enable_jit: false,
         root_object_name: None,
     });
-    let err = engine
+    engine
         .execute_project_with_snapshot_phased(&manifest)
-        .expect_err("imported event declaration type should fail at compile-time");
-    assert_eq!(err.phase(), DiagnosticPhase::CompileTime);
-    assert!(
-        err.message()
-            .contains("BIND-E-TYPELIB-EVENT-DECL-UNSUPPORTED"),
-        "unexpected compile diagnostic: {}",
-        err.message()
-    );
+        .expect("should compile");
 }
 
 #[test]
-fn early_bound_project_reports_compile_error_for_unqualified_imported_event_declaration_type() {
+fn early_bound_project_accepts_unqualified_imported_event_declaration_type() {
     let class_module = module_unit_from_source(
         "Emitter",
         ModuleKind::Class,
@@ -2226,21 +2163,13 @@ Public Event Changed(ByVal value As TestDispatch)
         enable_jit: false,
         root_object_name: None,
     });
-    let err = engine
+    engine
         .execute_project_with_snapshot_phased(&manifest)
-        .expect_err("unqualified imported event declaration type should fail at compile-time");
-    assert_eq!(err.phase(), DiagnosticPhase::CompileTime);
-    assert!(
-        err.message()
-            .contains("BIND-E-TYPELIB-EVENT-DECL-UNSUPPORTED"),
-        "unexpected compile diagnostic: {}",
-        err.message()
-    );
+        .expect("should compile");
 }
 
 #[test]
-fn early_bound_project_reports_compile_error_for_unqualified_imported_procedure_return_type_signature()
- {
+fn early_bound_project_accepts_unqualified_imported_procedure_return_type_signature() {
     let class_module = module_unit_from_source(
         "Widget",
         ModuleKind::Class,
@@ -2267,20 +2196,13 @@ End Function
         enable_jit: false,
         root_object_name: None,
     });
-    let err = engine
+    engine
         .execute_project_with_snapshot_phased(&manifest)
-        .expect_err("unqualified imported procedure return type should fail at compile-time");
-    assert_eq!(err.phase(), DiagnosticPhase::CompileTime);
-    assert!(
-        err.message()
-            .contains("BIND-E-TYPELIB-PROCEDURE-SIGNATURE-UNSUPPORTED"),
-        "unexpected compile diagnostic: {}",
-        err.message()
-    );
+        .expect("should compile");
 }
 
 #[test]
-fn early_bound_project_reports_compile_error_for_unqualified_imported_module_scope_declaration() {
+fn early_bound_project_accepts_unqualified_imported_module_scope_declaration() {
     let class_module = module_unit_from_source(
         "Widget",
         ModuleKind::Class,
@@ -2308,16 +2230,9 @@ End Sub
         enable_jit: false,
         root_object_name: None,
     });
-    let err = engine
+    engine
         .execute_project_with_snapshot_phased(&manifest)
-        .expect_err("unqualified module-scope imported declaration should fail at compile-time");
-    assert_eq!(err.phase(), DiagnosticPhase::CompileTime);
-    assert!(
-        err.message()
-            .contains("BIND-E-TYPELIB-MODULE-DECL-UNSUPPORTED"),
-        "unexpected compile diagnostic: {}",
-        err.message()
-    );
+        .expect("should compile");
 }
 
 #[test]

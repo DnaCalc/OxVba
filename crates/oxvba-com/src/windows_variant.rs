@@ -881,7 +881,66 @@ where
 pub unsafe fn variant_to_com_value(variant: &VARIANT) -> Result<ComValue, String> {
     let vt = variant.Anonymous.Anonymous.vt;
     if vt & VT_BYREF != 0 {
-        return Err(format!("unsupported VARIANT BYREF return type vt={vt}"));
+        let base_vt = vt & !VT_BYREF;
+        // VT_BYREF | VT_ARRAY: dereference the pointer-to-pointer to get the SAFEARRAY*.
+        if base_vt & VT_ARRAY != 0 {
+            let pparray = variant.Anonymous.Anonymous.Anonymous.pparray;
+            if pparray.is_null() {
+                return Err("VT_BYREF|VT_ARRAY carried null pparray pointer".to_string());
+            }
+            let parray = *pparray;
+            return safe_array_to_com_value(parray);
+        }
+        // VT_BYREF | VT_VARIANT: dereference to the pointed-to VARIANT and recurse.
+        if base_vt == VT_VARIANT {
+            let pvar = variant.Anonymous.Anonymous.Anonymous.pvarVal;
+            if pvar.is_null() {
+                return Err("VT_BYREF|VT_VARIANT carried null pvarVal pointer".to_string());
+            }
+            return variant_to_com_value(&*pvar);
+        }
+        // Scalar BYREF types: dereference the pointer to recover the underlying value.
+        let value = match base_vt {
+            VT_I2 => ComValue::I32(*variant.Anonymous.Anonymous.Anonymous.piVal as i32),
+            VT_I4 => ComValue::I32(*variant.Anonymous.Anonymous.Anonymous.plVal),
+            VT_R4_VARENUM => ComValue::F64(F64Value::from_single_f64(
+                *variant.Anonymous.Anonymous.Anonymous.pfltVal as f64,
+            )),
+            VT_R8_VARENUM => ComValue::F64(F64Value::from_f64(
+                *variant.Anonymous.Anonymous.Anonymous.pdblVal,
+            )),
+            VT_CY_VARENUM => ComValue::Currency(CurrencyValue::from_scaled_i64(
+                (*variant.Anonymous.Anonymous.Anonymous.pcyVal).int64,
+            )),
+            VT_BOOL => {
+                let val: VARIANT_BOOL = *variant.Anonymous.Anonymous.Anonymous.pboolVal;
+                ComValue::Bool(val != 0)
+            }
+            VT_BSTR => {
+                let bstr = *variant.Anonymous.Anonymous.Anonymous.pbstrVal;
+                let text = if bstr.is_null() {
+                    String::new()
+                } else {
+                    let len = usize::try_from(SysStringLen(bstr)).unwrap_or(0);
+                    let slice = std::slice::from_raw_parts(bstr, len);
+                    String::from_utf16_lossy(slice)
+                };
+                ComValue::String(BStr(text))
+            }
+            VT_DISPATCH => {
+                let dispatch = *variant.Anonymous.Anonymous.Anonymous.ppdispVal;
+                return Err(format!(
+                    "VT_BYREF|VT_DISPATCH dereferences to raw dispatch {dispatch:?}; \
+                     use variant_to_runtime_value for object binding"
+                ));
+            }
+            _ => {
+                return Err(format!(
+                    "unsupported VARIANT BYREF scalar type vt={vt} (base_vt={base_vt})"
+                ));
+            }
+        };
+        return Ok(value);
     }
     if vt & VT_ARRAY != 0 {
         let parray = variant.Anonymous.Anonymous.Anonymous.parray;
@@ -983,7 +1042,52 @@ where
 {
     let vt = variant.Anonymous.Anonymous.vt;
     if vt & VT_BYREF != 0 {
-        return Err(format!("unsupported VARIANT BYREF return type vt={vt}"));
+        let base_vt = vt & !VT_BYREF;
+        // VT_BYREF | VT_ARRAY: dereference pparray then delegate to the full runtime path.
+        if base_vt & VT_ARRAY != 0 {
+            let pparray = variant.Anonymous.Anonymous.Anonymous.pparray;
+            if pparray.is_null() {
+                return Err("VT_BYREF|VT_ARRAY carried null pparray pointer".to_string());
+            }
+            let parray = *pparray;
+            return safe_array_to_runtime_value(
+                parray,
+                query_dispatch_from_unknown,
+                add_ref_dispatch,
+                bind_dispatch_result,
+                prog_id_hint,
+                op,
+            );
+        }
+        // VT_BYREF | VT_VARIANT: dereference to the inner VARIANT and recurse.
+        if base_vt == VT_VARIANT {
+            let pvar = variant.Anonymous.Anonymous.Anonymous.pvarVal;
+            if pvar.is_null() {
+                return Err("VT_BYREF|VT_VARIANT carried null pvarVal pointer".to_string());
+            }
+            return variant_to_runtime_value(
+                &*pvar,
+                query_dispatch_from_unknown,
+                add_ref_dispatch,
+                bind_dispatch_result,
+                prog_id_hint,
+                op,
+            );
+        }
+        // VT_BYREF | VT_DISPATCH: dereference the double-pointer and bind.
+        if base_vt == VT_DISPATCH {
+            let ppdispatch = variant.Anonymous.Anonymous.Anonymous.ppdispVal;
+            if ppdispatch.is_null() {
+                return Err("VT_BYREF|VT_DISPATCH carried null ppdispVal pointer".to_string());
+            }
+            let dispatch = *ppdispatch;
+            if !dispatch.is_null() {
+                add_ref_dispatch(dispatch.cast());
+            }
+            return bind_dispatch_result(dispatch.cast(), prog_id_hint, op);
+        }
+        // Other scalar BYREF types: delegate to variant_to_com_value which handles them.
+        return Ok(variant_to_com_value(variant)?.to_runtime_value());
     }
     if vt & VT_ARRAY != 0 {
         let parray = variant.Anonymous.Anonymous.Anonymous.parray;
@@ -1263,29 +1367,29 @@ mod tests {
     }
 
     #[test]
-    fn scalar_byref_i32_variant_is_rejected_with_bounded_diagnostic() {
+    fn scalar_byref_i32_variant_dereferences_to_underlying_value() {
         let mut variant: VARIANT = unsafe { std::mem::zeroed() };
         let mut backing = 321i32;
         unsafe {
             variant.Anonymous.Anonymous.vt = VT_BYREF | VT_I4;
             variant.Anonymous.Anonymous.Anonymous.plVal = &mut backing;
-            let err = variant_to_com_value(&variant).expect_err("VT_BYREF should be rejected");
-            assert_eq!(err, "unsupported VARIANT BYREF return type vt=16387");
-            let _ = VariantClear(&mut variant);
+            let value =
+                variant_to_com_value(&variant).expect("VT_BYREF|VT_I4 should dereference");
+            assert_eq!(value, ComValue::I32(321));
         }
     }
 
     #[test]
-    fn typed_byref_i32_array_variant_is_rejected_with_bounded_diagnostic() {
+    fn typed_byref_i32_array_variant_dereferences_pparray_and_rejects_null_safearray() {
         let mut variant: VARIANT = unsafe { std::mem::zeroed() };
         let mut psa = std::ptr::null_mut();
         unsafe {
             variant.Anonymous.Anonymous.vt = VT_BYREF | VT_ARRAY | VT_I4;
             variant.Anonymous.Anonymous.Anonymous.pparray = &mut psa;
-            let err =
-                variant_to_com_value(&variant).expect_err("VT_BYREF|VT_ARRAY should be rejected");
-            assert_eq!(err, "unsupported VARIANT BYREF return type vt=24579");
-            let _ = VariantClear(&mut variant);
+            // Now dereferences pparray successfully but finds a null SAFEARRAY inside.
+            let err = variant_to_com_value(&variant)
+                .expect_err("VT_BYREF|VT_ARRAY with null SAFEARRAY should error");
+            assert_eq!(err, "VT_ARRAY result carried null SAFEARRAY");
         }
     }
 

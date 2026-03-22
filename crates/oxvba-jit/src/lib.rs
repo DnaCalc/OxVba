@@ -228,14 +228,14 @@ mod tests {
         assert_eq!(
             jit,
             vec![
-                RuntimeValue::Empty,
+                RuntimeValue::I32(8),    // VarType(vbNullString) = vbString
                 RuntimeValue::I32(1),
                 RuntimeValue::I32(10),
-                RuntimeValue::I32(3),
-                RuntimeValue::Empty,
-                RuntimeValue::Empty,
-                RuntimeValue::Empty,
-                RuntimeValue::I32(1),
+                RuntimeValue::I32(2),
+                RuntimeValue::Bool(false), // IsNumeric(vbNullString) = False
+                RuntimeValue::Bool(false), // IsNumeric(Null) = False
+                RuntimeValue::Bool(false), // IsNumeric(CVErr) = False
+                RuntimeValue::Bool(true),  // IsNumeric(7) = True
             ]
         );
     }
@@ -258,7 +258,7 @@ mod tests {
                 RuntimeValue::Bool(true),
                 RuntimeValue::Bool(true),
                 RuntimeValue::Bool(true),
-                RuntimeValue::Empty,
+                RuntimeValue::Bool(false), // IsNumeric(CVErr) = False
                 RuntimeValue::I32(10),
             ]
         );
@@ -279,8 +279,8 @@ mod tests {
             jit,
             vec![
                 RuntimeValue::I32(5),
-                RuntimeValue::I32(0),
-                RuntimeValue::Empty,
+                RuntimeValue::I32(20), // Resume Next without pending error = error 20
+                RuntimeValue::I32(0),  // Resume Next in handler jumps back; Err.Number=0 after clear
                 RuntimeValue::I32(6),
             ]
         );

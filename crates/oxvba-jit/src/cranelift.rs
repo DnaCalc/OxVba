@@ -370,7 +370,7 @@ pub fn execute_bytecode_legacy(bytecode: &Bytecode) -> Result<Vec<i32>, String> 
                 write_slot(&mut builder, slots_ptr, *dst, signed)?;
                 builder.ins().jump(next_block, &[]);
             }
-            Instruction::CmpEqSlots { dst, lhs, rhs } => {
+            Instruction::CmpEqSlots { dst, lhs, rhs, .. } => {
                 let lhs = read_slot(&mut builder, slots_ptr, *lhs)?;
                 let rhs = read_slot(&mut builder, slots_ptr, *rhs)?;
                 let pred = builder.ins().icmp(IntCC::Equal, lhs, rhs);
@@ -378,7 +378,7 @@ pub fn execute_bytecode_legacy(bytecode: &Bytecode) -> Result<Vec<i32>, String> 
                 write_slot(&mut builder, slots_ptr, *dst, out)?;
                 builder.ins().jump(next_block, &[]);
             }
-            Instruction::CmpNeSlots { dst, lhs, rhs } => {
+            Instruction::CmpNeSlots { dst, lhs, rhs, .. } => {
                 let lhs = read_slot(&mut builder, slots_ptr, *lhs)?;
                 let rhs = read_slot(&mut builder, slots_ptr, *rhs)?;
                 let pred = builder.ins().icmp(IntCC::NotEqual, lhs, rhs);
@@ -386,7 +386,7 @@ pub fn execute_bytecode_legacy(bytecode: &Bytecode) -> Result<Vec<i32>, String> 
                 write_slot(&mut builder, slots_ptr, *dst, out)?;
                 builder.ins().jump(next_block, &[]);
             }
-            Instruction::CmpLtSlots { dst, lhs, rhs } => {
+            Instruction::CmpLtSlots { dst, lhs, rhs, .. } => {
                 let lhs = read_slot(&mut builder, slots_ptr, *lhs)?;
                 let rhs = read_slot(&mut builder, slots_ptr, *rhs)?;
                 let pred = builder.ins().icmp(IntCC::SignedLessThan, lhs, rhs);
@@ -394,7 +394,7 @@ pub fn execute_bytecode_legacy(bytecode: &Bytecode) -> Result<Vec<i32>, String> 
                 write_slot(&mut builder, slots_ptr, *dst, out)?;
                 builder.ins().jump(next_block, &[]);
             }
-            Instruction::CmpLeSlots { dst, lhs, rhs } => {
+            Instruction::CmpLeSlots { dst, lhs, rhs, .. } => {
                 let lhs = read_slot(&mut builder, slots_ptr, *lhs)?;
                 let rhs = read_slot(&mut builder, slots_ptr, *rhs)?;
                 let pred = builder.ins().icmp(IntCC::SignedLessThanOrEqual, lhs, rhs);
@@ -402,7 +402,7 @@ pub fn execute_bytecode_legacy(bytecode: &Bytecode) -> Result<Vec<i32>, String> 
                 write_slot(&mut builder, slots_ptr, *dst, out)?;
                 builder.ins().jump(next_block, &[]);
             }
-            Instruction::CmpGtSlots { dst, lhs, rhs } => {
+            Instruction::CmpGtSlots { dst, lhs, rhs, .. } => {
                 let lhs = read_slot(&mut builder, slots_ptr, *lhs)?;
                 let rhs = read_slot(&mut builder, slots_ptr, *rhs)?;
                 let pred = builder.ins().icmp(IntCC::SignedGreaterThan, lhs, rhs);
@@ -410,7 +410,7 @@ pub fn execute_bytecode_legacy(bytecode: &Bytecode) -> Result<Vec<i32>, String> 
                 write_slot(&mut builder, slots_ptr, *dst, out)?;
                 builder.ins().jump(next_block, &[]);
             }
-            Instruction::CmpGeSlots { dst, lhs, rhs } => {
+            Instruction::CmpGeSlots { dst, lhs, rhs, .. } => {
                 let lhs = read_slot(&mut builder, slots_ptr, *lhs)?;
                 let rhs = read_slot(&mut builder, slots_ptr, *rhs)?;
                 let pred = builder

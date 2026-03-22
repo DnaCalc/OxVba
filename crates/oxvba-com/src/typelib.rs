@@ -28,6 +28,38 @@ pub struct TypeLibMetadataBlob {
     pub events: Vec<TypeLibEventMetadata>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TypeLibParamType {
+    Variant,
+    Long,
+    Integer,
+    String,
+    Boolean,
+    Double,
+    Single,
+    Currency,
+    Date,
+    Decimal,
+    Object,
+    Byte,
+    LongLong,
+    LongPtr,
+    ByRefVariant,
+    ByRefLong,
+    ByRefInteger,
+    ByRefString,
+    ByRefDouble,
+    ByRefSingle,
+    ByRefCurrency,
+    ByRefDate,
+    ByRefDecimal,
+    ByRefObject,
+    ByRefByte,
+    ByRefBoolean,
+    ByRefLongLong,
+    ByRefLongPtr,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TypeLibMemberMetadata {
     pub name: String,
@@ -36,6 +68,8 @@ pub struct TypeLibMemberMetadata {
     pub invoke_kind: TypeLibMemberInvokeKind,
     pub parameter_names: Vec<String>,
     pub is_default_member: bool,
+    pub parameter_types: Vec<TypeLibParamType>,
+    pub return_type: Option<TypeLibParamType>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

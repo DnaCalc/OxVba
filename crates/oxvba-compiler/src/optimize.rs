@@ -160,6 +160,7 @@ fn optimize_stmt_list(stmts: Vec<BoundStmt>) -> Vec<BoundStmt> {
 fn eval_const_expr(expr: &BoundExpr) -> Option<i32> {
     match expr {
         BoundExpr::IntConst(v) => Some(*v),
+        BoundExpr::FloatConst(_) => None,
         _ => None,
     }
 }
@@ -169,9 +170,11 @@ fn expr_uses_var(expr: &BoundExpr, var: &str) -> bool {
         BoundExpr::Var(name) => name == var,
         BoundExpr::AddConst { var: name, .. } => name == var,
         BoundExpr::SubConst { var: name, .. } => name == var,
-        BoundExpr::IntConst(_) => false,
+        BoundExpr::IntConst(_) | BoundExpr::FloatConst(_) | BoundExpr::StringConst(_) => false,
         BoundExpr::IntrinsicCall { args, .. } => args.iter().any(|arg| expr_uses_var(arg, var)),
         BoundExpr::ProcCall { args, .. } => args.iter().any(|arg| expr_uses_var(&arg.expr, var)),
+        BoundExpr::BinaryOp { lhs, rhs, .. } => expr_uses_var(lhs, var) || expr_uses_var(rhs, var),
+        BoundExpr::UnaryOp { operand, .. } => expr_uses_var(operand, var),
     }
 }
 
@@ -192,7 +195,13 @@ fn expr_has_observable_effect(expr: &BoundExpr) -> bool {
         BoundExpr::Var(_)
         | BoundExpr::AddConst { .. }
         | BoundExpr::SubConst { .. }
-        | BoundExpr::IntConst(_) => false,
+        | BoundExpr::IntConst(_)
+        | BoundExpr::FloatConst(_)
+        | BoundExpr::StringConst(_) => false,
+        BoundExpr::BinaryOp { lhs, rhs, .. } => {
+            expr_has_observable_effect(lhs) || expr_has_observable_effect(rhs)
+        }
+        BoundExpr::UnaryOp { operand, .. } => expr_has_observable_effect(operand),
     }
 }
 

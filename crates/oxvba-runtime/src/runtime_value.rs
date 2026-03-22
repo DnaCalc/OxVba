@@ -169,6 +169,12 @@ pub struct CurrencyValue(i64);
 impl CurrencyValue {
     pub const SCALE: i64 = 10_000;
 
+    /// Minimum representable Currency value: -922,337,203,685,477.5808
+    pub const MIN_SCALED: i64 = i64::MIN;
+
+    /// Maximum representable Currency value:  922,337,203,685,477.5807
+    pub const MAX_SCALED: i64 = i64::MAX;
+
     pub const fn from_scaled_i64(scaled: i64) -> Self {
         Self(scaled)
     }
@@ -176,6 +182,26 @@ impl CurrencyValue {
     pub const fn scaled_i64(self) -> i64 {
         self.0
     }
+
+    /// Validates that a floating-point value is within the Currency range
+    /// before scaling.  Returns `Err` on overflow.
+    pub fn validate_from_f64(value: f64) -> Result<Self, String> {
+        let scaled = value * Self::SCALE as f64;
+        if scaled < Self::MIN_SCALED as f64 || scaled > Self::MAX_SCALED as f64 || scaled.is_nan() {
+            return Err(format!("Currency overflow: {value}"));
+        }
+        Ok(Self(scaled as i64))
+    }
+}
+
+/// VBA Date serial range: 100-Jan-1 (serial −657434) to 9999-Dec-31 (serial 2958465).
+pub fn validate_date_range(serial: f64) -> Result<f64, String> {
+    const DATE_MIN: f64 = -657_434.0;
+    const DATE_MAX: f64 = 2_958_465.0;
+    if serial.is_nan() || serial < DATE_MIN || serial > DATE_MAX {
+        return Err(format!("Date overflow: {serial}"));
+    }
+    Ok(serial)
 }
 
 impl core::fmt::Display for CurrencyValue {

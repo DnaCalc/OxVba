@@ -59,11 +59,33 @@ pub(crate) fn compile_with_runtime_metadata_object_locals(
     ),
     CompileError,
 > {
+    compile_with_runtime_metadata_object_locals_class(
+        source,
+        forced_object_locals_by_proc,
+        false,
+    )
+}
+
+pub(crate) fn compile_with_runtime_metadata_object_locals_class(
+    source: &str,
+    forced_object_locals_by_proc: &std::collections::BTreeMap<
+        String,
+        std::collections::BTreeSet<String>,
+    >,
+    has_class_modules: bool,
+) -> Result<
+    (
+        Bytecode,
+        std::collections::BTreeMap<String, ProcedureRuntimeMetadata>,
+    ),
+    CompileError,
+> {
     if source.trim().is_empty() {
         return Err(CompileError::EmptySource);
     }
 
-    let bound = resolve::resolve_symbols(source);
+    let mut bound = resolve::resolve_symbols(source);
+    bound.is_class_module = has_class_modules;
     if !bound.resolution_diagnostics.is_empty() {
         return Err(CompileError::ResolveError(
             bound.resolution_diagnostics.join("; "),
@@ -236,13 +258,10 @@ mod tests {
     }
 
     #[test]
-    fn declaration_collision_with_other_procedure_is_rejected() {
+    fn declaration_same_name_as_other_procedure_is_allowed() {
+        // VBA allows a local variable to have the same name as another procedure.
         let source = "Sub Main()\nDim helper\nhelper = 1\nEnd Sub\nSub Helper()\nEnd Sub";
-        let err = compile(source).expect_err("declaration/procedure collision should fail");
-        assert!(
-            err.to_string()
-                .contains("name collision between variable and procedure")
-        );
+        compile(source).expect("variable sharing name with another procedure should compile");
     }
 
     #[test]
@@ -880,10 +899,14 @@ mod tests {
     }
 
     #[test]
-    fn reject_unsupported_statement() {
+    fn compile_mul_expression() {
         let source = "Sub Main()\nDim x\nx = x * 2\nEnd Sub";
-        let err = compile(source).expect_err("typecheck should fail");
-        assert!(err.to_string().contains("unsupported statement"));
+        let out = compile(source).expect("multiply expression should compile");
+        assert!(
+            out.instructions
+                .iter()
+                .any(|i| matches!(i, Instruction::MulSlots { .. }))
+        );
     }
 
     #[test]
@@ -2897,7 +2920,12 @@ mod tests {
         assert!(
             out.instructions
                 .iter()
-                .any(|i| matches!(i, Instruction::LoadErrNumber { .. }))
+                .any(|i| matches!(i, Instruction::LoadErrDescription { .. }))
+        );
+        assert!(
+            out.instructions
+                .iter()
+                .any(|i| matches!(i, Instruction::LoadErrSource { .. }))
         );
         assert!(
             out.instructions
@@ -3065,24 +3093,25 @@ mod tests {
     }
 
     #[test]
-    fn compile_declare_with_multiple_arguments_is_rejected() {
+    fn compile_declare_with_multiple_arguments_succeeds() {
         let source = "Declare PtrSafe Function HostPing Lib \"host\" Alias \"ping\" (ByVal x As Long, ByVal y As Long) As Long\nSub Main()\nDim z\nz = HostPing(3, 4)\nEnd Sub";
-        let err = compile(source).expect_err("multiple declare args should be rejected");
-        assert!(err.to_string().contains("only one argument is supported"));
+        let out = compile(source).expect("multi-arg declare should compile");
+        assert_eq!(out.external_call_descriptors.len(), 1);
+        assert_eq!(out.external_call_descriptors[0].param_count, 2);
     }
 
     #[test]
-    fn compile_declare_with_non_long_parameter_is_rejected() {
+    fn compile_declare_with_non_long_parameter_succeeds() {
         let source = "Declare PtrSafe Function HostPing Lib \"host\" Alias \"ping\" (ByVal x As String) As Long\nSub Main()\nDim y\ny = HostPing(3)\nEnd Sub";
-        let err = compile(source).expect_err("non-Long declare param should be rejected");
-        assert!(err.to_string().contains("only `Long` parameter type"));
+        let out = compile(source).expect("non-Long declare param should compile");
+        assert_eq!(out.external_call_descriptors.len(), 1);
     }
 
     #[test]
-    fn compile_declare_with_variant_parameter_is_rejected() {
+    fn compile_declare_with_variant_parameter_succeeds() {
         let source = "Declare PtrSafe Function HostPing Lib \"host\" Alias \"ping\" (ByVal x As Variant) As Long\nSub Main()\nDim y\ny = HostPing(3)\nEnd Sub";
-        let err = compile(source).expect_err("Variant declare param should be rejected in M0 lane");
-        assert!(err.to_string().contains("only `Long` parameter type"));
+        let out = compile(source).expect("Variant declare param should compile");
+        assert_eq!(out.external_call_descriptors.len(), 1);
     }
 
     #[test]
@@ -3097,10 +3126,10 @@ mod tests {
     }
 
     #[test]
-    fn compile_declare_with_non_long_return_is_rejected() {
+    fn compile_declare_with_non_long_return_succeeds() {
         let source = "Declare PtrSafe Function HostPing Lib \"host\" Alias \"ping\" (ByVal x As Long) As String\nSub Main()\nDim y\ny = HostPing(3)\nEnd Sub";
-        let err = compile(source).expect_err("non-Long declare return should be rejected");
-        assert!(err.to_string().contains("only `Long` return type"));
+        let out = compile(source).expect("non-Long declare return should compile");
+        assert_eq!(out.external_call_descriptors.len(), 1);
     }
 
     #[test]
