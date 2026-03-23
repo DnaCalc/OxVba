@@ -54,11 +54,24 @@ pub fn load_basproj_from_str(
     // (they were collected during parse but we need to resolve and merge them)
     process_imports(&mut basproj, xml, project_dir)?;
 
-    build_loaded_project(&basproj, project_dir)
+    let mut loaded = build_loaded_project(&basproj, project_dir)?;
+
+    // Resolve project references (recursive with cycle detection)
+    if !basproj.project_references.is_empty() {
+        let mut ancestors = std::collections::HashSet::new();
+        let mut seen = std::collections::HashSet::new();
+        loaded.manifest.reference_projects =
+            resolve::resolve_project_references(&basproj, project_dir, &mut ancestors, &mut seen)
+                .unwrap_or_default();
+    }
+
+    Ok(loaded)
 }
 
 /// Build a `LoadedProject` from a fully-parsed (imports merged) `BasProj`.
-fn build_loaded_project(
+/// Does **not** resolve project references — the caller is responsible for
+/// populating `manifest.reference_projects` afterwards.
+pub(crate) fn build_loaded_project(
     basproj: &BasProj,
     project_dir: &Path,
 ) -> Result<LoadedProject, BasProjError> {
@@ -195,22 +208,16 @@ fn build_loaded_project(
         }
     }
 
-    // Resolve project references (recursive with cycle detection)
-    let reference_projects = if basproj.project_references.is_empty() {
-        Vec::new()
-    } else {
-        let mut ancestors = std::collections::HashSet::new();
-        let mut seen = std::collections::HashSet::new();
-        resolve::resolve_project_references(basproj, project_dir, &mut ancestors, &mut seen)
-            .unwrap_or_default()
-    };
+    // Note: project references are resolved by the caller (load_basproj_from_str)
+    // so that resolve_project_references can call build_loaded_project without
+    // triggering re-entrant resolution with fresh ancestor/seen sets.
 
     let manifest = ProjectManifest {
         project_name,
         project_kind,
         modules,
         references,
-        reference_projects,
+        reference_projects: Vec::new(),
         conditional_constants,
     };
 
@@ -239,7 +246,7 @@ fn build_loaded_project(
 
 /// Process `<Import>` elements by re-scanning the XML for them, loading the
 /// imported files, and merging their items into the parent `BasProj`.
-fn process_imports(
+pub(crate) fn process_imports(
     basproj: &mut BasProj,
     xml: &str,
     project_dir: &Path,

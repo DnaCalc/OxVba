@@ -1248,6 +1248,82 @@ fn resolve_diamond_dependency() {
 }
 
 // ---------------------------------------------------------------------------
+// Cyclic project reference detection
+// ---------------------------------------------------------------------------
+
+#[test]
+fn resolve_cyclic_reference_detected() {
+    let base = std::env::temp_dir().join("oxvba_test_cyclic_ref");
+    let _ = std::fs::remove_dir_all(&base);
+
+    // ProjA references ProjB, ProjB references ProjA → cycle
+    let proj_a = base.join("ProjA");
+    let proj_b = base.join("ProjB");
+    std::fs::create_dir_all(&proj_a).unwrap();
+    std::fs::create_dir_all(&proj_b).unwrap();
+
+    std::fs::write(
+        proj_a.join("ProjA.basproj"),
+        r#"<Project Sdk="OxVba.Sdk/0.1.0">
+  <PropertyGroup>
+    <OutputType>Library</OutputType>
+    <ProjectName>ProjA</ProjectName>
+  </PropertyGroup>
+  <ItemGroup>
+    <Module Include="ModA.bas" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\ProjB\ProjB.basproj" />
+  </ItemGroup>
+</Project>"#,
+    )
+    .unwrap();
+    std::fs::write(proj_a.join("ModA.bas"), "Public Sub A()\nEnd Sub\n").unwrap();
+
+    std::fs::write(
+        proj_b.join("ProjB.basproj"),
+        r#"<Project Sdk="OxVba.Sdk/0.1.0">
+  <PropertyGroup>
+    <OutputType>Library</OutputType>
+    <ProjectName>ProjB</ProjectName>
+  </PropertyGroup>
+  <ItemGroup>
+    <Module Include="ModB.bas" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\ProjA\ProjA.basproj" />
+  </ItemGroup>
+</Project>"#,
+    )
+    .unwrap();
+    std::fs::write(proj_b.join("ModB.bas"), "Public Sub B()\nEnd Sub\n").unwrap();
+
+    // Call resolve_project_references directly (load_basproj swallows the error)
+    let xml = std::fs::read_to_string(proj_a.join("ProjA.basproj")).unwrap();
+    let basproj = oxvba_project::parse_basproj_xml(&xml).unwrap();
+    let mut ancestors = std::collections::HashSet::new();
+    let mut seen = std::collections::HashSet::new();
+    let canonical = proj_a.join("ProjA.basproj").canonicalize().unwrap();
+    ancestors.insert(canonical);
+
+    let result = oxvba_project::resolve::resolve_project_references(
+        &basproj,
+        &proj_a,
+        &mut ancestors,
+        &mut seen,
+    );
+
+    assert!(result.is_err(), "expected cyclic reference error");
+    let err = result.unwrap_err().to_string();
+    assert!(
+        err.contains("cyclic project reference"),
+        "expected cyclic error, got: {err}"
+    );
+
+    let _ = std::fs::remove_dir_all(&base);
+}
+
+// ---------------------------------------------------------------------------
 // Missing project reference error
 // ---------------------------------------------------------------------------
 

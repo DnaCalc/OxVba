@@ -10,7 +10,6 @@ use oxvba_compiler::ReferencedProjectManifest;
 use oxvba_host::TypeLibraryCatalogEntry;
 
 use crate::error::BasProjError;
-use crate::load::load_basproj;
 use crate::model::*;
 
 /// Resolve `<ProjectReference>` items by loading each referenced `.basproj`
@@ -54,16 +53,20 @@ pub fn resolve_project_references(
         seen.insert(canonical.clone());
         ancestors.insert(canonical.clone());
 
-        let loaded = load_basproj(&canonical)?;
-
-        // Recursively resolve the referenced project's own references
+        // Read, parse, and process imports for the referenced project
         let ref_project_dir = crate::model::project_dir(&canonical);
         let ref_basproj_xml =
             std::fs::read_to_string(&canonical).map_err(|e| BasProjError::Io {
                 path: canonical.display().to_string(),
                 source: e,
             })?;
-        let ref_basproj = crate::parse::parse_basproj_xml(&ref_basproj_xml)?;
+        let mut ref_basproj = crate::parse::parse_basproj_xml(&ref_basproj_xml)?;
+        crate::load::process_imports(&mut ref_basproj, &ref_basproj_xml, &ref_project_dir)?;
+
+        // Build the loaded project (without reference resolution)
+        let loaded = crate::load::build_loaded_project(&ref_basproj, &ref_project_dir)?;
+
+        // Recursively resolve the referenced project's own references
         let nested =
             resolve_project_references(&ref_basproj, &ref_project_dir, ancestors, seen)?;
         results.extend(nested);
