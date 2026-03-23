@@ -35,7 +35,7 @@ use crate::{
     error::{HalError, HalResult},
     model::{
         CapabilityId, HalDescriptor, HalProfileId, HalRuntimeClass, HostPolicy,
-        UiVirtualizationMode, host_backed_mode_active,
+        host_backed_mode_active,
     },
     traits::{
         ComHal, DiagnosticsHal, DynamicLinkHal, EventPumpHal, FileSystemHal, HostServices,
@@ -47,13 +47,17 @@ pub use oxvba_com::DISPATCH_INVOKE_MISSING_ARG_TOKEN;
 #[cfg(test)]
 use oxvba_com::RawIDispatch;
 use oxvba_com::{
-    ComBinding, ComCallbackPayload, ComCallbackToken, ComDirectDispatchSpec, ComEventPath,
-    ComEventSpec, ComEventTriggerSpec, ComInvokeFailure, ComInvokeRequest, ComMemberToken,
-    ComObjectDescriptor, ComSubscriptionToken, OXVBA_TEST_DISPATCH_PROGID, WindowsComBridge,
+    ComBinding, ComDirectDispatchSpec, ComEventPath,
+    ComEventSpec, ComEventTriggerSpec, ComInvokeFailure,
+    OXVBA_TEST_DISPATCH_PROGID, WindowsComBridge,
     map_com_hresult_label,
     platform::portable::PortableComProjection,
 };
-use oxvba_runtime::{ObjectHandle, RuntimeValue, bstr::BStr};
+#[cfg(test)]
+use oxvba_com::{ComCallbackToken, ComMemberToken, ComSubscriptionToken};
+use oxvba_runtime::{RuntimeValue, bstr::BStr};
+#[cfg(test)]
+use oxvba_runtime::ObjectHandle;
 use std::{
     cell::Cell,
     collections::BTreeMap,

@@ -9,7 +9,7 @@ use std::sync::Arc;
 
 use oxvba_compiler::Bytecode;
 use oxvba_hal::{
-    adapters,
+    adapters::builder::HostBuilder,
     model::{HalProfileId, HostPolicy},
     traits::HostServices,
 };
@@ -86,7 +86,10 @@ impl JitEngine {
 }
 
 fn default_host_services() -> Arc<dyn HostServices> {
-    adapters::for_profile(HalProfileId::Windows, HostPolicy::deterministic_runtime())
+    HostBuilder::new()
+        .profile(HalProfileId::Windows)
+        .policy(HostPolicy::deterministic_runtime())
+        .build()
 }
 
 #[cfg(test)]
@@ -95,7 +98,7 @@ mod tests {
     #[cfg(target_os = "windows")]
     use crate::project_runtime_values_to_legacy_slots;
     use oxvba_hal::{
-        adapters,
+        adapters::builder::HostBuilder,
         model::{HalProfileId, HostPolicy},
     };
     use oxvba_runtime::RuntimeValue;
@@ -137,7 +140,10 @@ mod tests {
             .expect("compile should succeed");
         assert!(!cranelift::supports_bytecode(&bytecode));
         let host_services =
-            adapters::for_profile(HalProfileId::Windows, HostPolicy::interactive_dev());
+            HostBuilder::new()
+            .profile(HalProfileId::Windows)
+            .policy(HostPolicy::interactive_dev())
+            .build();
 
         let out = JitEngine
             .execute_and_snapshot_values_with_host(&bytecode, host_services)
@@ -153,7 +159,10 @@ mod tests {
             .expect("compile should succeed");
         assert!(!cranelift::supports_bytecode(&bytecode));
         let host_services =
-            adapters::for_profile(HalProfileId::Windows, HostPolicy::interactive_dev());
+            HostBuilder::new()
+            .profile(HalProfileId::Windows)
+            .policy(HostPolicy::interactive_dev())
+            .build();
 
         let out = project_runtime_values_to_legacy_slots(
             JitEngine

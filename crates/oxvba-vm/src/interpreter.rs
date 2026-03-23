@@ -9,7 +9,8 @@ use oxvba_compiler::{
     bytecode::{RuntimeAssignmentIntent, RuntimeAssignmentTargetKind, StringCompareMode},
 };
 use oxvba_hal::{
-    HalComDynamicBridge, adapters,
+    HalComDynamicBridge,
+    adapters::builder::HostBuilder,
     error::{HalError, HalErrorKind},
     model::{CapabilityId, HostPolicy, native_host_profile},
     traits::{DynLinkDescriptorView, HostServices},
@@ -19,7 +20,7 @@ use oxvba_runtime::value_tags::{
     EMPTY_TAG, NULL_TAG, error_tag_from_code, is_error_tag as runtime_is_error_tag,
 };
 use oxvba_runtime::{
-    BindingHandle, CurrencyValue, F64Value, ObjectHandle, RuntimeValue, bstr::BStr,
+    BindingHandle, F64Value, ObjectHandle, RuntimeValue, bstr::BStr,
 };
 
 use crate::register_file::RegisterFile;
@@ -65,7 +66,10 @@ const FIN_RATE_ERROR_CODE: i32 = 2001;
 const FIN_NPER_ERROR_CODE: i32 = 2002;
 
 fn default_host_services() -> Arc<dyn HostServices> {
-    adapters::for_profile(native_host_profile(), HostPolicy::deterministic_runtime())
+    HostBuilder::new()
+        .profile(native_host_profile())
+        .policy(HostPolicy::deterministic_runtime())
+        .build()
 }
 
 impl Default for Vm {
@@ -2574,24 +2578,6 @@ impl Vm {
         crate::semantics::either_null(lhs, rhs)
     }
 
-    #[allow(dead_code)]
-    fn legacy_compare_values<F>(
-        lhs: &RuntimeValue,
-        rhs: &RuntimeValue,
-        pred: F,
-    ) -> Result<bool, String>
-    where
-        F: FnOnce(i32, i32) -> bool,
-    {
-        // VBA: Null compared to anything yields Null (falsy).
-        if Self::either_null(lhs, rhs) {
-            return Ok(false);
-        }
-        let lhs = Self::runtime_value_legacy_token(lhs, "comparison lhs")?;
-        let rhs = Self::runtime_value_legacy_token(rhs, "comparison rhs")?;
-        Ok(pred(lhs, rhs))
-    }
-
     fn typed_compare_values(
         lhs: &RuntimeValue,
         rhs: &RuntimeValue,
@@ -2605,10 +2591,6 @@ impl Vm {
         crate::semantics::runtime_value_as_f64(value)
     }
 
-    fn either_is_f64(lhs: &RuntimeValue, rhs: &RuntimeValue) -> bool {
-        crate::semantics::either_is_f64(lhs, rhs)
-    }
-
     fn runtime_value_to_usize(value: &RuntimeValue) -> Result<usize, String> {
         crate::semantics::runtime_value_to_usize(value)
     }
@@ -2619,10 +2601,6 @@ impl Vm {
 
     fn legacy_increment_value(value: &RuntimeValue) -> Result<RuntimeValue, String> {
         crate::semantics::legacy_increment_value(value)
-    }
-
-    fn either_error(lhs: &RuntimeValue, rhs: &RuntimeValue) -> bool {
-        crate::semantics::either_error(lhs, rhs)
     }
 
     fn legacy_add_const_value(
@@ -2704,14 +2682,6 @@ impl Vm {
         target_type_name: &str,
     ) -> Result<(), String> {
         crate::semantics::validate_runtime_assignment(value, intent, target_kind, target_name, target_type_name)
-    }
-
-    fn runtime_value_is_object(value: &RuntimeValue) -> bool {
-        crate::semantics::runtime_value_is_object(value)
-    }
-
-    fn runtime_assignment_value_label(value: &RuntimeValue) -> &'static str {
-        crate::semantics::runtime_assignment_value_label(value)
     }
 
     fn try_invoke_project_dynamic(
@@ -3516,14 +3486,14 @@ mod tests {
             user_slot_count: 2,
         };
 
-        let host = oxvba_hal::adapters::for_profile(
-            oxvba_hal::model::HalProfileId::Wasm,
-            oxvba_hal::model::HostPolicy {
+        let host = oxvba_hal::adapters::builder::HostBuilder::new()
+            .profile(oxvba_hal::model::HalProfileId::Wasm)
+            .policy(oxvba_hal::model::HostPolicy {
                 allow_interaction: true,
                 ui_virtualization: oxvba_hal::UiVirtualizationMode::ScriptedResponses,
                 ..oxvba_hal::model::HostPolicy::interactive_dev()
-            },
-        );
+            })
+            .build();
         let mut vm = Vm::new(host);
         vm.invoke_procedure_with_values(
             &bytecode,
@@ -3552,14 +3522,14 @@ mod tests {
             user_slot_count: 3,
         };
 
-        let host = oxvba_hal::adapters::for_profile(
-            oxvba_hal::model::HalProfileId::Wasm,
-            oxvba_hal::model::HostPolicy {
+        let host = oxvba_hal::adapters::builder::HostBuilder::new()
+            .profile(oxvba_hal::model::HalProfileId::Wasm)
+            .policy(oxvba_hal::model::HostPolicy {
                 allow_interaction: true,
                 ui_virtualization: oxvba_hal::UiVirtualizationMode::ScriptedResponses,
                 ..oxvba_hal::model::HostPolicy::interactive_dev()
-            },
-        );
+            })
+            .build();
         let mut vm = Vm::new(host);
         vm.invoke_procedure_with_values(
             &bytecode,
@@ -4166,10 +4136,10 @@ mod tests {
             user_slot_count: 13,
         };
 
-        let mut vm = Vm::new(oxvba_hal::adapters::for_profile(
-            oxvba_hal::model::HalProfileId::Windows,
-            oxvba_hal::model::HostPolicy::interactive_dev(),
-        ));
+        let mut vm = Vm::new(oxvba_hal::adapters::builder::HostBuilder::new()
+            .profile(oxvba_hal::model::HalProfileId::Windows)
+            .policy(oxvba_hal::model::HostPolicy::interactive_dev())
+            .build());
         vm.execute(&bytecode)
             .expect("vm should execute COM event subscribe/unsubscribe flow");
         let out = vm.snapshot_slots(13);
@@ -4248,10 +4218,10 @@ mod tests {
             user_slot_count: 15,
         };
 
-        let mut vm = Vm::new(oxvba_hal::adapters::for_profile(
-            oxvba_hal::model::HalProfileId::Windows,
-            oxvba_hal::model::HostPolicy::interactive_dev(),
-        ));
+        let mut vm = Vm::new(oxvba_hal::adapters::builder::HostBuilder::new()
+            .profile(oxvba_hal::model::HalProfileId::Windows)
+            .policy(oxvba_hal::model::HostPolicy::interactive_dev())
+            .build());
         vm.execute(&bytecode)
             .expect("vm should execute COM event subscribe/unsubscribe flow");
         let out = vm.snapshot_slots(15);
@@ -4291,13 +4261,13 @@ mod tests {
             user_slot_count: 2,
         };
 
-        let mut vm = Vm::new(oxvba_hal::adapters::for_profile(
-            oxvba_hal::model::HalProfileId::Windows,
-            oxvba_hal::model::HostPolicy {
+        let mut vm = Vm::new(oxvba_hal::adapters::builder::HostBuilder::new()
+            .profile(oxvba_hal::model::HalProfileId::Windows)
+            .policy(oxvba_hal::model::HostPolicy {
                 allow_dynamic_link: true,
                 ..oxvba_hal::model::HostPolicy::deterministic_runtime()
-            },
-        ));
+            })
+            .build());
         vm.execute(&bytecode).expect("vm should execute bytecode");
         let out = vm.snapshot_slots(2);
         assert_eq!(out[1], 1_237);
@@ -4336,13 +4306,13 @@ mod tests {
             user_slot_count: 2,
         };
 
-        let mut vm = Vm::new(oxvba_hal::adapters::for_profile(
-            oxvba_hal::model::HalProfileId::Windows,
-            oxvba_hal::model::HostPolicy {
+        let mut vm = Vm::new(oxvba_hal::adapters::builder::HostBuilder::new()
+            .profile(oxvba_hal::model::HalProfileId::Windows)
+            .policy(oxvba_hal::model::HostPolicy {
                 allow_dynamic_link: true,
                 ..oxvba_hal::model::HostPolicy::deterministic_runtime()
-            },
-        ));
+            })
+            .build());
         vm.execute(&bytecode).expect("vm should execute bytecode");
         let out = vm.snapshot_slots(2);
         assert_eq!(out[1], 2_348);
@@ -4381,13 +4351,13 @@ mod tests {
             user_slot_count: 2,
         };
 
-        let mut vm = Vm::new(oxvba_hal::adapters::for_profile(
-            oxvba_hal::model::HalProfileId::Windows,
-            oxvba_hal::model::HostPolicy {
+        let mut vm = Vm::new(oxvba_hal::adapters::builder::HostBuilder::new()
+            .profile(oxvba_hal::model::HalProfileId::Windows)
+            .policy(oxvba_hal::model::HostPolicy {
                 allow_dynamic_link: true,
                 ..oxvba_hal::model::HostPolicy::deterministic_runtime()
-            },
-        ));
+            })
+            .build());
         let err = vm
             .execute(&bytecode)
             .expect_err("descriptor mismatch should be reported");
@@ -4427,13 +4397,13 @@ mod tests {
             user_slot_count: 2,
         };
 
-        let mut vm = Vm::new(oxvba_hal::adapters::for_profile(
-            oxvba_hal::model::HalProfileId::Windows,
-            oxvba_hal::model::HostPolicy {
+        let mut vm = Vm::new(oxvba_hal::adapters::builder::HostBuilder::new()
+            .profile(oxvba_hal::model::HalProfileId::Windows)
+            .policy(oxvba_hal::model::HostPolicy {
                 allow_dynamic_link: true,
                 ..oxvba_hal::model::HostPolicy::deterministic_runtime()
-            },
-        ));
+            })
+            .build());
         let err = vm
             .execute(&bytecode)
             .expect_err("contract violation should be reported");
@@ -4474,13 +4444,13 @@ mod tests {
             user_slot_count: 2,
         };
 
-        let mut vm = Vm::new(oxvba_hal::adapters::for_profile(
-            oxvba_hal::model::HalProfileId::Windows,
-            oxvba_hal::model::HostPolicy {
+        let mut vm = Vm::new(oxvba_hal::adapters::builder::HostBuilder::new()
+            .profile(oxvba_hal::model::HalProfileId::Windows)
+            .policy(oxvba_hal::model::HostPolicy {
                 allow_dynamic_link: true,
                 ..oxvba_hal::model::HostPolicy::deterministic_runtime()
-            },
-        ));
+            })
+            .build());
         let err = vm
             .execute(&bytecode)
             .expect_err("selection policy mismatch should be reported");

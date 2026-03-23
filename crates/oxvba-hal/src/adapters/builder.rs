@@ -109,7 +109,6 @@ mod tests {
     use super::*;
     use crate::callbacks::DefaultHostCallbacks;
     use crate::model::HostPolicy;
-    use crate::traits::HostServices;
 
     #[test]
     fn builder_creates_windows_host() {

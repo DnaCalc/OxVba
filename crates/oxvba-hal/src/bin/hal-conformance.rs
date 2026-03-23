@@ -6,7 +6,7 @@ use std::{
 };
 
 use oxvba_hal::{
-    adapters::for_profile,
+    adapters::builder::HostBuilder,
     conformance::run_conformance,
     model::{HalProfileId, HostPolicy, WasmRuntimeClass},
 };
@@ -70,7 +70,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                 if profile == HalProfileId::Wasm {
                     policy = policy.with_wasm_runtime_class(*wasm_runtime_class);
                 }
-                let host = for_profile(profile, policy);
+                let host = HostBuilder::new().profile(profile).policy(policy).build();
                 let report = run_conformance(host.as_ref());
                 let clause_coverage = report.clause_coverage_against_catalog();
                 let clause_total = clause_coverage.len();

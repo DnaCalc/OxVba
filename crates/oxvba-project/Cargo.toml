@@ -1,5 +1,5 @@
 [package]
-name = "oxvba-cli"
+name = "oxvba-project"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -9,7 +9,8 @@ repository.workspace = true
 [dependencies]
 oxvba-compiler.workspace = true
 oxvba-host.workspace = true
-oxvba-hal.workspace = true
-oxvba-project.workspace = true
-oxvba-runtime.workspace = true
+quick-xml.workspace = true
 thiserror.workspace = true
+
+[dev-dependencies]
+oxvba-runtime.workspace = true

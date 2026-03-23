@@ -4,12 +4,11 @@
 //!   oxvba-run <bundle.oxb>              — execute a compiled bundle
 //!   oxvba-run <bundle.oxb> --jit        — execute with JIT compilation
 
-use std::sync::Arc;
 use std::{env, fs, process};
 
 use oxvba_compiler::OxBundle;
 use oxvba_hal::{
-    adapters,
+    adapters::builder::HostBuilder,
     model::{HostPolicy, native_host_profile},
 };
 use oxvba_jit::JitEngine;
@@ -37,7 +36,10 @@ fn main() {
     });
 
     let host_services =
-        adapters::for_profile(native_host_profile(), HostPolicy::deterministic_runtime());
+        HostBuilder::new()
+        .profile(native_host_profile())
+        .policy(HostPolicy::deterministic_runtime())
+        .build();
 
     let result: Result<Vec<RuntimeValue>, String> = if use_jit {
         let jit = JitEngine;

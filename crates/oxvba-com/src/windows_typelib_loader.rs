@@ -105,6 +105,7 @@ struct ELEMDESC {
 
 #[cfg(target_os = "windows")]
 #[repr(C)]
+#[allow(non_snake_case)]
 struct FUNCDESC {
     memid: i32,
     lprgscode: *mut i32,
@@ -114,9 +115,7 @@ struct FUNCDESC {
     callconv: u32,
     cparams: i16,
     cparams_opt: i16,
-    #[allow(non_snake_case)]
     oVft: i16,
-    #[allow(non_snake_case)]
     cScodes: i16,
     elemdescfunc: ELEMDESC,
     wfuncdescflags: u16,

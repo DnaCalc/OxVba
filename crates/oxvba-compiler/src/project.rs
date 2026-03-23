@@ -36,13 +36,13 @@ pub enum ReferenceKind {
     HostInjected,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
 pub enum ExportKind {
     Sub,
     Function,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
 pub enum ProjectDynamicMemberKind {
     Method,
     Function,
@@ -124,7 +124,7 @@ pub struct ProjectManifest {
     pub conditional_constants: BTreeMap<String, i32>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
 pub struct HostProcedureExport {
     pub project_name: String,
     pub module_name: String,
@@ -132,7 +132,7 @@ pub struct HostProcedureExport {
     pub kind: ExportKind,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
 pub struct ProjectEventDispatchBinding {
     pub source_project_name: String,
     pub source_module_name: String,
@@ -142,7 +142,7 @@ pub struct ProjectEventDispatchBinding {
     pub guard_symbol_one_arg: String,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
 pub struct ProjectDynamicMemberRoute {
     pub member_name: String,
     pub lowered_name: String,
@@ -155,7 +155,7 @@ pub struct ProjectDynamicMemberRoute {
     pub return_slot: Option<usize>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
 pub struct ProjectDynamicObjectRoute {
     pub object_handle: ObjectHandle,
     pub project_name: String,

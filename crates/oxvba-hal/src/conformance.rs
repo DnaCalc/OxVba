@@ -1474,7 +1474,7 @@ mod tests {
     use std::collections::BTreeSet;
 
     use crate::{
-        adapters::for_profile,
+        adapters::builder::HostBuilder,
         model::{
             CapabilityId, HalProfileId, HostPolicy, WasmRuntimeClass,
             host_backed_profile_matches_host,
@@ -1494,7 +1494,7 @@ mod tests {
             HalProfileId::Wasm,
             HalProfileId::Null,
         ] {
-            let host = for_profile(profile, HostPolicy::deterministic_runtime());
+            let host = HostBuilder::new().profile(profile).policy(HostPolicy::deterministic_runtime()).build();
             let report = run_conformance(host.as_ref());
             assert!(
                 report.passed,
@@ -1506,7 +1506,7 @@ mod tests {
 
     #[test]
     fn windows_declares_com_supported_only_on_windows() {
-        let windows = for_profile(HalProfileId::Windows, HostPolicy::deterministic_runtime());
+        let windows = HostBuilder::new().profile(HalProfileId::Windows).policy(HostPolicy::deterministic_runtime()).build();
         assert!(
             windows
                 .descriptor()
@@ -1520,7 +1520,7 @@ mod tests {
             HalProfileId::Wasm,
             HalProfileId::Null,
         ] {
-            let host = for_profile(profile, HostPolicy::deterministic_runtime());
+            let host = HostBuilder::new().profile(profile).policy(HostPolicy::deterministic_runtime()).build();
             assert!(
                 !host
                     .descriptor()
@@ -1540,7 +1540,7 @@ mod tests {
             HalProfileId::Wasm,
             HalProfileId::Null,
         ] {
-            let host = for_profile(profile, HostPolicy::deterministic_compile_time());
+            let host = HostBuilder::new().profile(profile).policy(HostPolicy::deterministic_compile_time()).build();
             let report = run_conformance(host.as_ref());
             assert!(
                 report.passed,
@@ -1552,7 +1552,7 @@ mod tests {
 
     #[test]
     fn conformance_report_exposes_clause_coverage_map() {
-        let host = for_profile(HalProfileId::Windows, HostPolicy::deterministic_runtime());
+        let host = HostBuilder::new().profile(HalProfileId::Windows).policy(HostPolicy::deterministic_runtime()).build();
         let report = run_conformance(host.as_ref());
         let coverage = report.clause_coverage();
         assert_eq!(coverage.get("HAL-DES-001"), Some(&true));
@@ -1577,7 +1577,7 @@ mod tests {
 
     #[test]
     fn conformance_catalog_scoped_coverage_is_available() {
-        let host = for_profile(HalProfileId::Windows, HostPolicy::deterministic_runtime());
+        let host = HostBuilder::new().profile(HalProfileId::Windows).policy(HostPolicy::deterministic_runtime()).build();
         let report = run_conformance(host.as_ref());
         let coverage = report.clause_coverage_against_catalog();
         assert!(
@@ -1590,7 +1590,7 @@ mod tests {
 
     #[test]
     fn governance_rules_are_executable_and_non_blocking() {
-        let host = for_profile(HalProfileId::MacOs, HostPolicy::deterministic_runtime());
+        let host = HostBuilder::new().profile(HalProfileId::MacOs).policy(HostPolicy::deterministic_runtime()).build();
         let report = run_conformance(host.as_ref());
         assert!(
             report.passed,
@@ -1610,7 +1610,7 @@ mod tests {
 
     #[test]
     fn conformance_probe_records_clause_ids() {
-        let host = for_profile(HalProfileId::Windows, HostPolicy::deterministic_runtime());
+        let host = HostBuilder::new().profile(HalProfileId::Windows).policy(HostPolicy::deterministic_runtime()).build();
         let report = run_conformance(host.as_ref());
         let probe = report
             .probes
@@ -1634,7 +1634,7 @@ mod tests {
         } else {
             HalProfileId::Linux
         };
-        let host = for_profile(profile, HostPolicy::interactive_dev());
+        let host = HostBuilder::new().profile(profile).policy(HostPolicy::interactive_dev()).build();
         let report = run_conformance(host.as_ref());
         let expected = host_backed_profile_matches_host(profile);
         assert_eq!(report.host_backed_eligible, expected);
@@ -1643,7 +1643,7 @@ mod tests {
 
     #[test]
     fn conformance_descriptor_dynlink_clauses_are_emitted() {
-        let host = for_profile(HalProfileId::Windows, HostPolicy::interactive_dev());
+        let host = HostBuilder::new().profile(HalProfileId::Windows).policy(HostPolicy::interactive_dev()).build();
         let report = run_conformance(host.as_ref());
         let coverage = report.clause_coverage();
         assert_eq!(coverage.get("HAL-DYN-011"), Some(&true));
@@ -1654,11 +1654,13 @@ mod tests {
 
     #[test]
     fn wasm_runtime_class_is_reported_in_descriptor() {
-        let host = for_profile(
-            HalProfileId::Wasm,
-            HostPolicy::deterministic_runtime()
-                .with_wasm_runtime_class(WasmRuntimeClass::BrowserSandbox),
-        );
+        let host = HostBuilder::new()
+            .profile(HalProfileId::Wasm)
+            .policy(
+                HostPolicy::deterministic_runtime()
+                    .with_wasm_runtime_class(WasmRuntimeClass::BrowserSandbox),
+            )
+            .build();
         let report = run_conformance(host.as_ref());
         assert_eq!(report.descriptor.runtime_class, "browser-sandbox");
     }

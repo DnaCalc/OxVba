@@ -1727,7 +1727,7 @@ fn external_symbol_token(library: &str, alias: &str, name: &str) -> i32 {
     (hash & 0x7fff_ffff).max(1) as i32
 }
 
-fn bound_type_to_declare_param_type(ty: &BoundType) -> DeclareParamType {
+pub fn bound_type_to_declare_param_type(ty: &BoundType) -> DeclareParamType {
     match ty {
         BoundType::Long => DeclareParamType::Long,
         BoundType::Integer => DeclareParamType::Integer,

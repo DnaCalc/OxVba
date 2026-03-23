@@ -10,7 +10,7 @@ use std::sync::Arc;
 
 use oxvba_compiler::Bytecode;
 use oxvba_hal::{
-    adapters,
+    adapters::builder::HostBuilder,
     model::{HostPolicy, native_host_profile},
     traits::HostServices,
 };
@@ -92,7 +92,10 @@ pub fn execute_and_snapshot_values_with_host_and_typed_fastpaths(
 }
 
 fn default_host_services() -> Arc<dyn HostServices> {
-    adapters::for_profile(native_host_profile(), HostPolicy::deterministic_runtime())
+    HostBuilder::new()
+        .profile(native_host_profile())
+        .policy(HostPolicy::deterministic_runtime())
+        .build()
 }
 
 #[cfg(test)]

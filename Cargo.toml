@@ -11,6 +11,9 @@ members = [
     "crates/oxvba-host",
     "crates/oxvba-cli",
     "crates/oxvba-launcher",
+    "crates/oxvba-project",
+    "crates/oxvba-build",
+    "crates/oxvba-languageservice",
 ]
 resolver = "2"
 
@@ -31,7 +34,11 @@ oxvba-vm = { path = "crates/oxvba-vm" }
 oxvba-jit = { path = "crates/oxvba-jit" }
 oxvba-com = { path = "crates/oxvba-com" }
 oxvba-host = { path = "crates/oxvba-host" }
+oxvba-project = { path = "crates/oxvba-project" }
+oxvba-build = { path = "crates/oxvba-build" }
+oxvba-languageservice = { path = "crates/oxvba-languageservice" }
 rkyv = "0.8"
+quick-xml = "0.37"
 thiserror = "2"
 proptest = { version = "1", default-features = false, features = ["std", "bit-set"] }
 serde = { version = "1", features = ["derive"] }

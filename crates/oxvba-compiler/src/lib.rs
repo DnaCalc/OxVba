@@ -4,6 +4,7 @@ pub mod bundle;
 pub mod bytecode;
 pub mod emit;
 pub mod lower_to_hir;
+pub mod lsp_support;
 pub mod optimize;
 pub mod project;
 pub mod resolve;
@@ -11,9 +12,9 @@ pub mod typecheck;
 
 use thiserror::Error;
 
-pub use bundle::OxBundle;
-pub use bytecode::{Bytecode, Instruction};
-pub use emit::ProcedureRuntimeMetadata;
+pub use bundle::{ComClassExportEntry, OxBundle};
+pub use bytecode::{Bytecode, DeclareParamType, Instruction};
+pub use emit::{ProcedureRuntimeMetadata, bound_type_to_declare_param_type};
 pub use project::{
     CompiledProject, ExportKind, HostProcedureExport, ModuleAttributes, ModuleKind, ModuleUnit,
     ProjectCompileError, ProjectDynamicMemberKind, ProjectDynamicMemberRoute,

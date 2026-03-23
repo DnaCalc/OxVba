@@ -12,7 +12,8 @@ use oxvba_compiler::{
     compile_project,
 };
 use oxvba_hal::{
-    HalComDynamicBridge, adapters,
+    HalComDynamicBridge,
+    adapters::builder::HostBuilder,
     model::{
         CapabilityId, HalDescriptor, HalProfileId, HostPolicy, HostPolicyPreset,
         UnsupportedFeatureMode, native_host_profile,
@@ -118,6 +119,21 @@ impl ProjectRuntimeSession {
     pub fn snapshot_slots(&self) -> Vec<i32> {
         project_runtime_values_to_legacy_slots(self.snapshot())
     }
+
+    pub fn compiled(&self) -> &CompiledProject {
+        &self.compiled
+    }
+
+    pub fn read_slot(&self, slot: usize) -> RuntimeValue {
+        let values = self.vm.snapshot(slot + 1);
+        values.into_iter().nth(slot).unwrap_or(RuntimeValue::Empty)
+    }
+
+    pub fn procedure_metadata(
+        &self,
+    ) -> &std::collections::BTreeMap<String, ProcedureRuntimeMetadata> {
+        &self.compiled.procedure_runtime_metadata
+    }
 }
 
 impl Default for Engine {
@@ -145,11 +161,11 @@ impl Engine {
             event_dispatcher: Mutex::new(EventDispatcher::default()),
             com_subscription_handlers: Mutex::new(HashMap::new()),
             runtime_profile,
-            host_services: adapters::for_profile_with_runtime_class(
-                runtime_profile.hal_profile(),
-                runtime_profile.runtime_class(),
-                policy,
-            ),
+            host_services: HostBuilder::new()
+                .profile(runtime_profile.hal_profile())
+                .runtime_class(runtime_profile.runtime_class())
+                .policy(policy)
+                .build(),
         }
     }
 
@@ -159,19 +175,22 @@ impl Engine {
         let runtime_class = policy
             .runtime_class
             .unwrap_or(self.runtime_profile.runtime_class());
-        self.host_services =
-            adapters::for_profile_with_runtime_class(profile, runtime_class, policy);
+        self.host_services = HostBuilder::new()
+            .profile(profile)
+            .runtime_class(runtime_class)
+            .policy(policy)
+            .build();
     }
 
     pub fn set_runtime_profile(&mut self, runtime_profile: RuntimeProfileId) {
         self.runtime_profile = runtime_profile;
         let mut policy = self.host_services.policy().clone();
         policy.runtime_class = Some(runtime_profile.runtime_class());
-        self.host_services = adapters::for_profile_with_runtime_class(
-            runtime_profile.hal_profile(),
-            runtime_profile.runtime_class(),
-            policy,
-        );
+        self.host_services = HostBuilder::new()
+            .profile(runtime_profile.hal_profile())
+            .runtime_class(runtime_profile.runtime_class())
+            .policy(policy)
+            .build();
     }
 
     pub fn with_runtime_profile(mut self, runtime_profile: RuntimeProfileId) -> Self {
@@ -220,8 +239,11 @@ impl Engine {
         let runtime_class = policy
             .runtime_class
             .unwrap_or(self.runtime_profile.runtime_class());
-        self.host_services =
-            adapters::for_profile_with_runtime_class(profile, runtime_class, policy);
+        self.host_services = HostBuilder::new()
+            .profile(profile)
+            .runtime_class(runtime_class)
+            .policy(policy)
+            .build();
     }
 
     pub fn set_host_policy_preset(&mut self, preset: HostPolicyPreset) {
@@ -510,6 +532,196 @@ impl Engine {
         Ok(ProjectRuntimeSession { compiled, vm })
     }
 
+    /// Compile a project manifest and prepare a runtime session.
+    ///
+    /// Executes module-level initialization code (variable declarations, etc.)
+    /// but does not require an entry point. The session can then be used
+    /// with `invoke_procedure` for individual procedure calls.
+    pub fn compile_and_prepare_session(
+        &self,
+        manifest: &ProjectManifest,
+    ) -> Result<ProjectRuntimeSession, PhaseDiagnostic> {
+        let compiled =
+            compile_project(manifest).map_err(|e| PhaseDiagnostic::compile(e.to_string()))?;
+        if let Ok(mut dispatcher) = self.event_dispatcher.lock() {
+            dispatcher.apply_bindings(&compiled.event_dispatch_bindings);
+        }
+        self.preflight_host_sensitive_support(&compiled.bytecode)?;
+        let mut vm = Vm::new(self.host_services.clone());
+        vm.set_project_dynamic_objects(compiled.project_dynamic_objects.clone());
+        // Execute initialization code (module-level Dim, etc.)
+        vm.execute(&compiled.bytecode)
+            .map_err(PhaseDiagnostic::runtime)?;
+        Ok(ProjectRuntimeSession { compiled, vm })
+    }
+
+    /// Invoke a specific procedure by module and name on an existing session.
+    pub fn invoke_procedure(
+        &self,
+        session: &mut ProjectRuntimeSession,
+        module: &str,
+        procedure: &str,
+        args: &[RuntimeValue],
+    ) -> Result<RuntimeValue, PhaseDiagnostic> {
+        // The procedure_runtime_metadata keys use the `pmr_{project}_{module}_{procedure}` format.
+        // Try the full key first, then fall back to suffix matching.
+        let suffix = format!(
+            "_{}_{}",
+            module.to_ascii_lowercase(),
+            procedure.to_ascii_lowercase()
+        );
+
+        let metadata = session
+            .compiled
+            .procedure_runtime_metadata
+            .iter()
+            .find(|(k, _)| k.ends_with(&suffix))
+            .map(|(_, v)| v.clone())
+            .ok_or_else(|| {
+                PhaseDiagnostic::runtime(format!(
+                    "procedure not found: {module}.{procedure}"
+                ))
+            })?;
+
+        let expected = metadata.param_slots.len();
+        if args.len() != expected {
+            return Err(PhaseDiagnostic::runtime(format!(
+                "arity mismatch for {module}.{procedure}: expected {expected} args, got {}",
+                args.len()
+            )));
+        }
+
+        session
+            .vm
+            .invoke_procedure_with_values(
+                &session.compiled.bytecode,
+                metadata.entry_pc,
+                &metadata.param_slots,
+                args,
+            )
+            .map_err(PhaseDiagnostic::runtime)?;
+
+        // Read return value from return_slot if present
+        match metadata.return_slot {
+            Some(slot) => Ok(session.read_slot(slot)),
+            None => Ok(RuntimeValue::Empty),
+        }
+    }
+
+    /// Create a new instance of a class module in the runtime session.
+    pub fn create_class_instance(
+        &self,
+        session: &mut ProjectRuntimeSession,
+        class_name: &str,
+    ) -> Result<ObjectHandle, PhaseDiagnostic> {
+        let lowered = class_name.to_ascii_lowercase();
+
+        // Find the dynamic object route for this class
+        let route = session
+            .compiled
+            .project_dynamic_objects
+            .iter()
+            .find(|r| r.module_name.to_ascii_lowercase() == lowered)
+            .ok_or_else(|| {
+                PhaseDiagnostic::runtime(format!("class not found: {class_name}"))
+            })?;
+
+        let handle = route.object_handle;
+
+        // Try to invoke Class_Initialize if present
+        let init_suffix = format!("_{}_class_initialize", lowered);
+        if let Some(metadata) = session
+            .compiled
+            .procedure_runtime_metadata
+            .iter()
+            .find(|(k, _)| k.ends_with(&init_suffix))
+            .map(|(_, v)| v.clone())
+        {
+            session
+                .vm
+                .invoke_procedure_with_values(
+                    &session.compiled.bytecode,
+                    metadata.entry_pc,
+                    &metadata.param_slots,
+                    &[],
+                )
+                .map_err(PhaseDiagnostic::runtime)?;
+        }
+
+        Ok(handle)
+    }
+
+    /// Invoke a method on a class object instance.
+    pub fn invoke_member_on_object(
+        &self,
+        session: &mut ProjectRuntimeSession,
+        object: ObjectHandle,
+        member: &str,
+        args: &[RuntimeValue],
+    ) -> Result<RuntimeValue, PhaseDiagnostic> {
+        // Find the dynamic object route for this handle
+        let route = session
+            .compiled
+            .project_dynamic_objects
+            .iter()
+            .find(|r| r.object_handle == object)
+            .ok_or_else(|| {
+                PhaseDiagnostic::runtime(format!(
+                    "object handle {} not found in project dynamic objects",
+                    object
+                ))
+            })?;
+
+        // Find the member by name (lowered_name is the full PMR key, not
+        // the bare member name — match against member_name instead)
+        let member_route = route
+            .members
+            .iter()
+            .find(|m| m.member_name.eq_ignore_ascii_case(member))
+            .ok_or_else(|| {
+                PhaseDiagnostic::runtime(format!(
+                    "member `{member}` not found on object {}",
+                    route.module_name
+                ))
+            })?;
+
+        let expected = member_route.visible_param_count;
+        if args.len() != expected {
+            return Err(PhaseDiagnostic::runtime(format!(
+                "arity mismatch for {}.{}: expected {expected} args, got {}",
+                route.module_name,
+                member,
+                args.len()
+            )));
+        }
+
+        // Class members have an implicit `Me` parameter in slot 0.
+        // Prepend an ObjectHandle value for it, then the caller-supplied args.
+        let has_implicit_me = member_route.param_slots.len() > args.len();
+        let full_args: Vec<RuntimeValue> = if has_implicit_me {
+            let mut v = vec![RuntimeValue::ObjectHandle(object)];
+            v.extend_from_slice(args);
+            v
+        } else {
+            args.to_vec()
+        };
+
+        session
+            .vm
+            .invoke_procedure_with_values(
+                &session.compiled.bytecode,
+                member_route.entry_pc,
+                &member_route.param_slots,
+                &full_args,
+            )
+            .map_err(PhaseDiagnostic::runtime)?;
+
+        match member_route.return_slot {
+            Some(slot) => Ok(session.read_slot(slot)),
+            None => Ok(RuntimeValue::Empty),
+        }
+    }
+
     pub fn poll_and_dispatch_next_com_event_callback(
         &self,
         runtime: &mut ProjectRuntimeSession,
@@ -623,6 +835,69 @@ impl Engine {
         manifest: &ProjectManifest,
     ) -> Result<Vec<RuntimeValue>, PhaseDiagnostic> {
         self.execute_project_with_snapshot_phased(manifest)
+    }
+
+    /// Prepare a runtime session from a deserialized OxBundle (no recompilation).
+    ///
+    /// Used by DLL shims that need to invoke individual procedures from the
+    /// embedded bundle.
+    pub fn compile_and_prepare_session_from_bundle(
+        &self,
+        bundle: &oxvba_compiler::OxBundle,
+    ) -> Result<ProjectRuntimeSession, PhaseDiagnostic> {
+        if let Some(ref bindings) = bundle.event_dispatch_bindings {
+            if let Ok(mut dispatcher) = self.event_dispatcher.lock() {
+                dispatcher.apply_bindings(bindings);
+            }
+        }
+        self.preflight_host_sensitive_support(&bundle.bytecode)?;
+        let compiled = CompiledProject {
+            bytecode: bundle.bytecode.clone(),
+            procedure_runtime_metadata: bundle.procedure_metadata.clone(),
+            rewritten_source: String::new(),
+            host_exports: bundle
+                .export_inventory
+                .as_ref()
+                .map(|ei| ei.host_exports.clone())
+                .unwrap_or_default(),
+            reference_visible_exports: Vec::new(),
+            event_dispatch_bindings: bundle
+                .event_dispatch_bindings
+                .clone()
+                .unwrap_or_default(),
+            project_dynamic_objects: bundle
+                .dynamic_object_routes
+                .clone()
+                .unwrap_or_default(),
+        };
+        let mut vm = Vm::new(self.host_services.clone());
+        vm.set_project_dynamic_objects(compiled.project_dynamic_objects.clone());
+        vm.execute(&compiled.bytecode)
+            .map_err(PhaseDiagnostic::runtime)?;
+        Ok(ProjectRuntimeSession { compiled, vm })
+    }
+
+    /// Execute a pre-compiled OxBundle, returning the final slot values.
+    ///
+    /// This is the entry point used by generated EXE/DLL shims that embed a
+    /// serialized bundle via `include_bytes!`.
+    pub fn execute_bundle_with_snapshot(
+        &self,
+        bundle: &oxvba_compiler::OxBundle,
+    ) -> Result<Vec<RuntimeValue>, PhaseDiagnostic> {
+        if let Some(ref bindings) = bundle.event_dispatch_bindings {
+            if let Ok(mut dispatcher) = self.event_dispatcher.lock() {
+                dispatcher.apply_bindings(bindings);
+            }
+        }
+        self.preflight_host_sensitive_support(&bundle.bytecode)?;
+        let mut vm = Vm::new(self.host_services.clone());
+        if let Some(ref routes) = bundle.dynamic_object_routes {
+            vm.set_project_dynamic_objects(routes.clone());
+        }
+        vm.execute(&bundle.bytecode)
+            .map_err(PhaseDiagnostic::runtime)?;
+        Ok(vm.snapshot_values(bundle.bytecode.user_slot_count))
     }
 
     fn preflight_host_sensitive_support(&self, bytecode: &Bytecode) -> Result<(), PhaseDiagnostic> {
@@ -19679,7 +19954,7 @@ mod tests {
 
     #[test]
     fn formal_v86_phase12_status_targets_v86_scope() {
-        let text = std::fs::read_to_string(repo_path("docs/PHASE12_STATUS.md"))
+        let text = std::fs::read_to_string(repo_path("docs/archive/PHASE12_STATUS.md"))
             .expect("phase status doc exists");
         assert!(text.contains("mvp-full-v146") || text.contains("mvp-profile-v386"));
         assert!(

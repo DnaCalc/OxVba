@@ -12,9 +12,383 @@ fn main() {
 
     match subcommand {
         Some("compile") => run_compile(cli_args),
+        Some("build") => run_build(cli_args),
+        Some("run-project") => run_project(cli_args),
+        Some("init") => run_init(cli_args),
+        Some("import-vbp") => run_import_vbp(cli_args),
         _ => run_execute(cli_args),
     }
 }
+
+// ---------------------------------------------------------------------------
+// build subcommand: .basproj → compile → .oxb
+// ---------------------------------------------------------------------------
+
+fn run_build(args: Vec<String>) {
+    let mut iter = args.into_iter();
+    let _ = iter.next(); // "build"
+
+    let mut input_path: Option<PathBuf> = None;
+    let mut output_path: Option<PathBuf> = None;
+    let collected: Vec<String> = iter.collect();
+    let mut i = 0;
+    while i < collected.len() {
+        match collected[i].as_str() {
+            "-o" | "--output" => {
+                i += 1;
+                output_path = collected.get(i).map(|s| PathBuf::from(s));
+            }
+            arg if !arg.starts_with('-') && input_path.is_none() => {
+                input_path = Some(PathBuf::from(arg));
+            }
+            _ => {
+                eprintln!("oxvba build: unknown argument: {}", collected[i]);
+                std::process::exit(2);
+            }
+        }
+        i += 1;
+    }
+
+    let input = input_path.unwrap_or_else(|| {
+        // Try to find a .basproj in current directory
+        discover_basproj(".").unwrap_or_else(|| {
+            eprintln!("usage: oxvba build [<project.basproj>] [-o <output.oxb>]");
+            std::process::exit(2);
+        })
+    });
+
+    let mut loaded = oxvba_project::load_basproj(&input).unwrap_or_else(|err| {
+        eprintln!("oxvba build: {err}");
+        std::process::exit(1);
+    });
+
+    let compiled =
+        oxvba_compiler::compile_project(&loaded.manifest).unwrap_or_else(|err| {
+            eprintln!("oxvba build: compile failed: {err}");
+            std::process::exit(1);
+        });
+
+    // Post-compilation validation: enrich native export descriptors
+    if !loaded.native_exports.is_empty() {
+        oxvba_project::validate::validate_native_exports(&mut loaded.native_exports, &compiled)
+            .unwrap_or_else(|err| {
+                eprintln!("oxvba build: export validation failed: {err}");
+                std::process::exit(1);
+            });
+    }
+
+    // Validate COM class exports for ComServer/ComExe projects
+    let com_class_exports = if matches!(
+        loaded.output_type,
+        oxvba_project::OutputType::ComServer | oxvba_project::OutputType::ComExe
+    ) {
+        // Build BasProjModule proxies from the manifest for validation
+        let modules_for_validation: Vec<oxvba_project::BasProjModule> = loaded
+            .manifest
+            .modules
+            .iter()
+            .map(|m| oxvba_project::BasProjModule {
+                kind: match m.module_kind {
+                    oxvba_compiler::ModuleKind::Class => oxvba_project::BasProjModuleKind::ClassModule,
+                    oxvba_compiler::ModuleKind::Document => oxvba_project::BasProjModuleKind::DocumentModule,
+                    _ => oxvba_project::BasProjModuleKind::Module,
+                },
+                include: format!("{}.cls", m.module_name),
+                vb_predeclared_id: m.attributes.vb_predeclared_id,
+                vb_exposed: m.attributes.vb_exposed,
+                vb_global_namespace: m.attributes.vb_global_namespace,
+                vb_creatable: m.attributes.vb_creatable,
+                host_document_type: None,
+                instancing: None,
+                prog_id: None,
+                description: None,
+            })
+            .collect();
+        oxvba_project::validate::validate_com_class_exports(
+            &modules_for_validation,
+            &compiled,
+            &loaded.class_module_metadata,
+            &loaded.manifest.project_name,
+        )
+        .unwrap_or_else(|err| {
+            eprintln!("oxvba build: COM class validation failed: {err}");
+            std::process::exit(1);
+        })
+    } else {
+        Vec::new()
+    };
+
+    let mut bundle =
+        oxvba_compiler::OxBundle::from_compiled_project(&compiled, &loaded.manifest.project_name);
+
+    // Store COM class exports in the bundle's export inventory
+    if !com_class_exports.is_empty() {
+        if let Some(ref mut inventory) = bundle.export_inventory {
+            inventory.com_class_exports = com_class_exports
+                .iter()
+                .map(|c| oxvba_compiler::ComClassExportEntry {
+                    class_name: c.class_name.clone(),
+                    prog_id: c.prog_id.clone(),
+                    instancing: c.instancing.map(|i| format!("{i:?}")),
+                    clsid: None,
+                    description: c.description.clone(),
+                })
+                .collect();
+        }
+    }
+    let bytes = bundle.serialize_to_bytes().unwrap_or_else(|err| {
+        eprintln!("oxvba build: bundle serialization failed: {err}");
+        std::process::exit(1);
+    });
+
+    let out = output_path.unwrap_or_else(|| {
+        input
+            .parent()
+            .unwrap_or(std::path::Path::new("."))
+            .join(format!("{}.oxb", loaded.manifest.project_name))
+    });
+
+    fs::write(&out, &bytes).unwrap_or_else(|err| {
+        eprintln!("oxvba build: cannot write {}: {err}", out.display());
+        std::process::exit(1);
+    });
+
+    println!(
+        "built {} → {} ({} bytes)",
+        input.display(),
+        out.display(),
+        bytes.len()
+    );
+}
+
+// ---------------------------------------------------------------------------
+// run-project subcommand
+// ---------------------------------------------------------------------------
+
+fn run_project(args: Vec<String>) {
+    let mut iter = args.into_iter();
+    let _ = iter.next(); // "run-project"
+
+    let mut input_path: Option<PathBuf> = None;
+    let mut enable_jit = false;
+    let mut dump_values = false;
+    let mut dump_slots = false;
+    let mut bootstrap = RunnerBootstrapOptions::default();
+
+    let collected: Vec<String> = iter.collect();
+    let mut i = 0;
+    while i < collected.len() {
+        match collected[i].as_str() {
+            "--jit" => enable_jit = true,
+            "--dump-values" => dump_values = true,
+            "--dump-slots" => dump_slots = true,
+            "--profile" => {
+                i += 1;
+                bootstrap.profile = collected.get(i).cloned();
+            }
+            "--policy" => {
+                i += 1;
+                bootstrap.policy_preset = collected.get(i).cloned();
+            }
+            arg if !arg.starts_with('-') && input_path.is_none() => {
+                input_path = Some(PathBuf::from(arg));
+            }
+            _ => {
+                eprintln!("oxvba run-project: unknown argument: {}", collected[i]);
+                std::process::exit(2);
+            }
+        }
+        i += 1;
+    }
+
+    let input = input_path.unwrap_or_else(|| {
+        discover_basproj(".").unwrap_or_else(|| {
+            eprintln!("usage: oxvba run-project [<project.basproj>] [--jit] [--dump-values] [--dump-slots]");
+            std::process::exit(2);
+        })
+    });
+
+    let loaded = oxvba_project::load_basproj(&input).unwrap_or_else(|err| {
+        eprintln!("oxvba run-project: {err}");
+        std::process::exit(1);
+    });
+
+    let config = HostConfig {
+        enable_jit,
+        root_object_name: Some(loaded.default_root_object.clone()),
+    };
+    let mut engine = Engine::new(config);
+
+    let resolved = resolve_runner_bootstrap(&bootstrap, |key| env::var(key).ok())
+        .unwrap_or_else(|err| {
+            eprintln!("oxvba run-project: bootstrap failed: {err}");
+            std::process::exit(2);
+        });
+    engine.set_runtime_profile(resolved.runtime_profile);
+    engine.set_host_policy(resolved.policy.clone());
+
+    let result = engine.execute_project_with_snapshot_phased(&loaded.manifest);
+
+    match result {
+        Ok(values) => {
+            if dump_slots {
+                let payload = values
+                    .iter()
+                    .map(|v| v.to_legacy_i32().unwrap_or(EMPTY_TAG).to_string())
+                    .collect::<Vec<_>>()
+                    .join(",");
+                println!("SLOTS:{payload}");
+            }
+            if dump_values {
+                let payload = values
+                    .iter()
+                    .map(format_runtime_value)
+                    .collect::<Vec<_>>()
+                    .join("|");
+                println!("VALUES:{payload}");
+            }
+        }
+        Err(err) => {
+            eprintln!("oxvba run-project: {err}");
+            std::process::exit(1);
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// init subcommand
+// ---------------------------------------------------------------------------
+
+fn run_init(args: Vec<String>) {
+    let mut iter = args.into_iter();
+    let _ = iter.next(); // "init"
+
+    let target_dir = iter.next().map(PathBuf::from).unwrap_or_else(|| {
+        env::current_dir().unwrap_or_else(|_| PathBuf::from("."))
+    });
+
+    let project_name = target_dir
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or("NewProject")
+        .to_string();
+
+    fs::create_dir_all(&target_dir).unwrap_or_else(|err| {
+        eprintln!("oxvba init: cannot create directory: {err}");
+        std::process::exit(1);
+    });
+
+    let basproj_content = format!(
+        r#"<Project Sdk="OxVba.Sdk/0.1.0">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <ProjectName>{project_name}</ProjectName>
+    <EntryPoint>Module1.Main</EntryPoint>
+  </PropertyGroup>
+  <ItemGroup>
+    <Module Include="Module1.bas" />
+  </ItemGroup>
+</Project>
+"#
+    );
+
+    let module_content = "Attribute VB_Name = \"Module1\"\n\nPublic Sub Main()\n    ' Your code here\nEnd Sub\n";
+
+    let basproj_path = target_dir.join(format!("{project_name}.basproj"));
+    let module_path = target_dir.join("Module1.bas");
+
+    if basproj_path.exists() {
+        eprintln!(
+            "oxvba init: {} already exists",
+            basproj_path.display()
+        );
+        std::process::exit(1);
+    }
+
+    fs::write(&basproj_path, basproj_content).unwrap_or_else(|err| {
+        eprintln!("oxvba init: {err}");
+        std::process::exit(1);
+    });
+    fs::write(&module_path, module_content).unwrap_or_else(|err| {
+        eprintln!("oxvba init: {err}");
+        std::process::exit(1);
+    });
+
+    println!("created {} + Module1.bas", basproj_path.display());
+}
+
+// ---------------------------------------------------------------------------
+// import-vbp subcommand
+// ---------------------------------------------------------------------------
+
+fn run_import_vbp(args: Vec<String>) {
+    let mut iter = args.into_iter();
+    let _ = iter.next(); // "import-vbp"
+
+    let input_path = iter.next().map(PathBuf::from).unwrap_or_else(|| {
+        eprintln!("usage: oxvba import-vbp <input.vbp> [-o <output.basproj>]");
+        std::process::exit(2);
+    });
+
+    let mut output_path: Option<PathBuf> = None;
+    let collected: Vec<String> = iter.collect();
+    let mut i = 0;
+    while i < collected.len() {
+        match collected[i].as_str() {
+            "-o" | "--output" => {
+                i += 1;
+                output_path = collected.get(i).map(|s| PathBuf::from(s));
+            }
+            _ => {}
+        }
+        i += 1;
+    }
+
+    let content = fs::read_to_string(&input_path).unwrap_or_else(|err| {
+        eprintln!("oxvba import-vbp: cannot read {}: {err}", input_path.display());
+        std::process::exit(1);
+    });
+
+    let basproj = oxvba_project::vbp::parse_vbp(&content).unwrap_or_else(|err| {
+        eprintln!("oxvba import-vbp: parse failed: {err}");
+        std::process::exit(1);
+    });
+
+    let xml = oxvba_project::vbp::generate_basproj_from_vbp(&basproj);
+
+    let out = output_path.unwrap_or_else(|| input_path.with_extension("basproj"));
+
+    fs::write(&out, &xml).unwrap_or_else(|err| {
+        eprintln!("oxvba import-vbp: cannot write {}: {err}", out.display());
+        std::process::exit(1);
+    });
+
+    println!(
+        "imported {} → {}",
+        input_path.display(),
+        out.display()
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+fn discover_basproj(dir: &str) -> Option<PathBuf> {
+    let dir = std::path::Path::new(dir);
+    let entries = fs::read_dir(dir).ok()?;
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.extension().and_then(|e| e.to_str()) == Some("basproj") {
+            return Some(path);
+        }
+    }
+    None
+}
+
+// ---------------------------------------------------------------------------
+// Existing compile subcommand
+// ---------------------------------------------------------------------------
 
 fn run_compile(args: Vec<String>) {
     let compile_args = parse_compile_args(args).unwrap_or_else(|| {

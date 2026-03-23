@@ -298,7 +298,7 @@ pub struct BoundExternalDecl {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum ProcKind {
+pub enum ProcKind {
     Sub,
     Function,
     PropertyGet,
@@ -1071,7 +1071,7 @@ impl ProcKind {
     }
 }
 
-fn detect_proc_kind(lower: &str) -> Option<ProcKind> {
+pub fn detect_proc_kind(lower: &str) -> Option<ProcKind> {
     if lower.starts_with("sub ") {
         Some(ProcKind::Sub)
     } else if lower.starts_with("function ") {
@@ -1099,7 +1099,7 @@ fn parse_proc_base_name(line: &str, kind: ProcKind) -> Option<String> {
     normalize_ident(name_token)
 }
 
-fn parse_proc_signature(
+pub fn parse_proc_signature(
     line: &str,
     kind: ProcKind,
     default_type_table: &[BoundType; 26],
@@ -3563,10 +3563,10 @@ fn parse_intrinsic_conversion_expr(expr: &str, array_bounds: &ArrayBoundsMap) ->
 }
 
 #[derive(Debug, Clone, Copy)]
-struct IntrinsicSpec {
-    min_arity: usize,
-    max_arity: usize,
-    surface: IntrinsicSurface,
+pub struct IntrinsicSpec {
+    pub min_arity: usize,
+    pub max_arity: usize,
+    pub surface: IntrinsicSurface,
 }
 
 impl IntrinsicSpec {
@@ -3596,7 +3596,7 @@ pub fn intrinsic_surface(name: &str) -> Option<IntrinsicSurface> {
     intrinsic_spec(normalized.as_str()).map(|spec| spec.surface)
 }
 
-fn intrinsic_spec(name: &str) -> Option<IntrinsicSpec> {
+pub fn intrinsic_spec(name: &str) -> Option<IntrinsicSpec> {
     use IntrinsicSurface::{DeterministicCore, HostSensitive};
 
     match name {
@@ -4233,7 +4233,7 @@ fn normalize_member_chain(text: &str) -> Option<String> {
     Some(parts.join("_"))
 }
 
-fn normalize_ident(text: &str) -> Option<String> {
+pub fn normalize_ident(text: &str) -> Option<String> {
     normalize_ident_with_type_char(text).map(|(name, _)| name)
 }
 
