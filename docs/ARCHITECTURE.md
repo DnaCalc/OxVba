@@ -12,6 +12,7 @@ Workspace crates and current roles:
 - `oxvba-hal`: host/profile/policy boundary plus shared adapter/bootstrap core
 - `oxvba-com`: live Windows COM bridge crate; owns COM client bridge services, COM wire translation, runtime state/metadata, and the compiler-facing COM reference facade direction
 - `oxvba-host`: engine orchestration, host policy, project runtime sessions, event dispatch
+- `oxvba-launcher`: standalone launcher for direct VBA script execution
 - `oxvba-cli`: CLI bootstrap/run surface
 
 ## Current Dependency Shape
@@ -19,7 +20,7 @@ Workspace crates and current roles:
 High-level execution path:
 - source/project inputs enter through `oxvba-host` or `oxvba-cli`
 - `oxvba-compiler` produces `Bytecode`
-- `oxvba-vm` and `oxvba-jit` execute compiled subsets
+- `oxvba-vm` and `oxvba-jit` execute compiled code (JIT has full instruction parity with the interpreter)
 - `oxvba-hal` provides profile/policy-governed host services
 - OxVba semantic values remain the canonical runtime value model for compiler/VM/host coordination
 - `oxvba-com` is the COM boundary crate that should translate those values to and from COM wire representations (`VARIANT`, `BSTR`, `SAFEARRAY`, `IDispatch`, event payload transport)

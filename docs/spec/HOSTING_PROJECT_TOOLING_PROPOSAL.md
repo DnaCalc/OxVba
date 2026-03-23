@@ -32,7 +32,7 @@ Related docs:
    - 3.4 [UC-D: Top-Level Code Extension](#34-uc-d-top-level-code-extension)
    - 3.5 [UC-E: WebAssembly Hosting](#35-uc-e-webassembly-hosting)
 4. [Cross-Cutting Design](#4-cross-cutting-design)
-   - 4.1 [Project File Format: `oxvba.toml`](#41-project-file-format-oxvbatoml)
+   - 4.1 [Project File Format: `.basproj`](#41-project-file-format-basproj-msbuild-compatible-xml)
    - 4.2 [Directory-as-Project Convention](#42-directory-as-project-convention)
    - 4.3 [`.vbp` Adapter](#43-vbp-adapter)
    - 4.4 [Artifact Format: `*.oxvbapkg` (A0)](#44-artifact-format-oxvbapkg-a0)
@@ -185,7 +185,7 @@ No project-level commands exist.
 ### 2.7 What does NOT exist yet
 
 - `.vbp` parser or adapter
-- `oxvba.toml` project file format
+- `.basproj` project file format
 - Compiled artifact format or packaging
 - Wrapper EXE/DLL build commands
 - Project-level CLI commands (`run-project`, `build`, `pack`, etc.)
@@ -427,7 +427,7 @@ For the future separate DNA VbCalc repository, the first baseline host shell is:
 1. Tauri desktop shell,
 2. Rust backend,
 3. web UI frontend,
-4. `oxvba.toml` project open path at startup and via UI,
+4. `.basproj` project open path at startup and via UI,
 5. debug/immediate-style shell as the first user-facing interaction surface,
 6. full reset + recompile on reload,
 7. non-COM host-bridge path first.
@@ -648,8 +648,8 @@ Examples:
 ```
 oxvba run-project [PATH] [options]
 
-Run an OxVBA project from oxvba.toml or .vbp file.
-If PATH is a directory, looks for oxvba.toml in that directory.
+Run an OxVBA project from .basproj or .vbp file.
+If PATH is a directory, looks for a .basproj file in that directory.
 If PATH is omitted, uses the current directory.
 
 Usage:
@@ -673,7 +673,7 @@ Examples:
 ```
 oxvba init [PATH] [options]
 
-Initialize a new OxVBA project with oxvba.toml and directory structure.
+Initialize a new OxVBA project with .basproj and directory structure.
 
 Usage:
   oxvba init [PATH] [options]
@@ -750,19 +750,19 @@ Examples:
 ```
 oxvba import-vbp <file.vbp> [options]
 
-Import a VB6 .vbp project file into oxvba.toml format.
+Import a VB6 .vbp project file into .basproj format.
 
 Usage:
   oxvba import-vbp <file.vbp> [options]
 
 Options:
-  --out <path>              Output oxvba.toml path (default: ./oxvba.toml)
+  --out <path>              Output .basproj path (default: ./<ProjectName>.basproj)
   --strict                  Fail on unknown keys (default)
   --compat                  Warn on unknown keys instead of failing
   --format <text|json>      Output format
 
 Examples:
-  oxvba import-vbp legacy/Project1.vbp --out ./oxvba.toml
+  oxvba import-vbp legacy/Project1.vbp --out ./FinanceCalc.basproj
   oxvba import-vbp legacy/Project1.vbp --compat
 ```
 
@@ -845,7 +845,7 @@ Pi squared = 9.8696...
 **3. Directory-first project run:**
 ```powershell
 $ ls my-project/
-oxvba.toml  src/Main.bas  src/Utils.bas  src/MathLib.cls
+MyProject.basproj  src/Main.bas  src/Utils.bas  src/MathLib.cls
 
 $ oxvba run-project my-project/ --jit
 [project output]
@@ -862,7 +862,7 @@ $ oxvba run-artifact dist/finance.oxvbapkg --profile windows-headless
 
 **5. Legacy import:**
 ```powershell
-$ oxvba import-vbp legacy/FinanceCalc.vbp --out ./oxvba.toml
+$ oxvba import-vbp legacy/FinanceCalc.vbp --out ./FinanceCalc.basproj
 oxvba: imported 5 modules, 2 references
 oxvba: 1 unsupported key ignored: Form=frmMain; frmMain.frm (VBP-E-UNSUPPORTED-FORM)
 
@@ -954,7 +954,7 @@ This is explicitly not standard VBA behavior. It is an opt-in extension that mak
 | Approach | Mechanism | Pros | Cons |
 |----------|-----------|------|------|
 | **A: File marker** | `'!oxvba:top-level` comment at file start | Self-documenting files | Non-standard syntax; grep-unfriendly |
-| **B: Command/project mode** | `--top-level` flag or `top_level = true` in `oxvba.toml` | No source modification; clean VBA | Requires flag on every invocation |
+| **B: Command/project mode** | `--top-level` flag or `<TopLevelCode>True</TopLevelCode>` in `.basproj` | No source modification; clean VBA | Requires flag on every invocation |
 | **C: File extension** | `.oxvba` files treated as top-level | Automatic via convention | New extension; breaks existing tooling |
 
 **Recommendation: Option B (command/project mode).**
@@ -963,7 +963,7 @@ Rationale:
 - Source files remain valid VBA syntax (module-level declarations + executable statements are syntactically parseable).
 - No non-standard comments or file extensions needed.
 - The mode is explicit — no ambiguity about whether a file is top-level.
-- In `oxvba.toml`, configured as `[extensions] top_level = true`.
+- In `.basproj`, configured as `<TopLevelCode>True</TopLevelCode>` in a `<PropertyGroup>`.
 
 #### 3.4.3 Semantic rules for top-level code
 
@@ -1073,104 +1073,101 @@ oxvba.exports.oxvba_execute(encodeString(source));
 
 ## 4. Cross-Cutting Design
 
-### 4.1 Project File Format: `oxvba.toml`
+### 4.1 Project File Format: `.basproj` (MSBuild-Compatible XML)
+
+> **Superseded:** The `oxvba.toml` format previously proposed in this section has been replaced by the `.basproj` XML format. See `docs/spec/BASPROJ_SPEC_V1.md` for the full normative specification.
 
 #### 4.1.1 Design principles
 
-- **Not VB6 baseline.** The canonical project format is a modern TOML file, not a `.vbp` derivative. `.vbp` support is an adapter/import path.
-- **Directory-first compatible.** Works naturally with source files in subdirectories.
-- **Covers all use cases.** Application, library, add-in, document projects.
-- **Explicit over implicit.** All build, policy, and reference configuration is visible and versionable.
+- **MSBuild SDK-style compatibility.** Uses `<Project Sdk="...">` root, `<PropertyGroup>` for scalars, `<ItemGroup>` for collections — the same conventions as .NET SDK-style projects. This preserves the option for future MSBuild integration.
+- **XML-centric ecosystem fit.** Excel/Office file formats are XML-centric — `.basproj` fits naturally inside or beside those containers.
+- **Not VB6 baseline.** `.vbp` support is an adapter/import path, not the canonical format.
+- **Covers all use cases.** HostModule, Library (DLL with native exports), Exe, and Addin output types.
+- **Explicit over implicit.** All build, policy, and reference configuration is visible and versionable. Auto-discovery is opt-in (when no modules are declared).
 
-#### 4.1.2 Full annotated schema
+#### 4.1.2 Format overview
 
-```toml
-# Required: schema version for forward compatibility
-schema_version = 1
-
-[project]
-name = "FinanceTools"               # Project name (default: directory name)
-kind = "addin"                      # application | library | document | addin
-scope = "process"                   # process | document (default: document)
-entry = "MainModule.Main"           # Entry point (required for application/addin)
-language_version = "vba7.1"         # VBA language version (default: vba7.1)
-
-[layout]
-auto_discover = true                # Auto-discover .bas/.cls files in project dir
-include = ["src/**/*.bas", "src/**/*.cls"]   # Include globs (when auto_discover=false)
-exclude = ["**/*.generated.bas", "**/*.test.bas"]  # Exclude globs
-
-[host]
-default_root_object = "Application" # Well-known root object name
-runtime_profile = "windows-headless"  # Default runtime profile
-policy_preset = "deterministic-runtime"  # Default policy preset
-
-# Project references
-[[references.project]]
-name = "CoreLib"
-path = "../CoreLib/oxvba.toml"
-
-# Type library references
-[[references.typelib]]
-importlib = "Scripting"
-libid = "{420B2830-E718-11CF-893D-00A0C9054228}"
-major = 1
-minor = 0
-lcid = 0
-
-# Native library references (for Declare statements)
-[[references.native]]
-kind = "declare-lib"
-name = "host"
-path = "build/hostbridge.dll"
-symbols = "build/hostbridge.symbols.json"   # optional symbol metadata
-
-[build]
-default_target = "artifact"         # artifact | exe | dll
-flavor = "lite"                     # lite (VM-only) | jit (VM+JIT)
-out_dir = "dist"                    # Output directory
-deterministic = true                # Deterministic build mode
-
-[build.hooks]
-prebuild = ["cmake --build build --config Release"]   # Commands to run before build
-
-[extensions]
-top_level = false                   # Enable top-level code (OxVBA extension)
-
-[conditional_constants]
-DEBUG = 1                           # Conditional compilation constants
-VBA7 = 1
+```xml
+<Project Sdk="OxVba.Sdk/0.1.0">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <ProjectName>FinanceTools</ProjectName>
+    <EntryPoint>MainModule.Main</EntryPoint>
+    <RuntimeFlavor>Jit</RuntimeFlavor>
+    <DefaultRuntimeProfile>windows-headless</DefaultRuntimeProfile>
+    <DefaultPolicyPreset>deterministic-runtime</DefaultPolicyPreset>
+    <DefaultRootObject>Application</DefaultRootObject>
+    <DefineConstants>VBA7=1;WIN64=1;DEBUG</DefineConstants>
+  </PropertyGroup>
+  <ItemGroup>
+    <Module Include="MainModule.bas" />
+    <ClassModule Include="Calculator.cls">
+      <VBExposed>True</VBExposed>
+      <VBPredeclaredId>True</VBPredeclaredId>
+    </ClassModule>
+    <DocumentModule Include="Sheet1.cls">
+      <HostDocumentType>Worksheet</HostDocumentType>
+    </DocumentModule>
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\CoreLib\CoreLib.basproj" />
+    <COMReference Include="Scripting">
+      <Guid>{420B2830-E718-11CF-893D-00A0C9054228}</Guid>
+      <VersionMajor>1</VersionMajor>
+      <VersionMinor>0</VersionMinor>
+      <Lcid>0</Lcid>
+      <ImportLib>scrrun.dll</ImportLib>
+    </COMReference>
+  </ItemGroup>
+  <ItemGroup>
+    <NativeExport Include="CalcBlackScholes">
+      <Module>PricingFunctions</Module>
+      <Procedure>BlackScholes</Procedure>
+      <CallingConvention>Stdcall</CallingConvention>
+    </NativeExport>
+  </ItemGroup>
+  <Import Project="NativeExports.items" />
+</Project>
 ```
 
-#### 4.1.3 Schema evolution policy
+Full property/item type reference, mapping rules, and examples for all three use cases (embedded host, library DLL, standalone exe) are in `docs/spec/BASPROJ_SPEC_V1.md`.
 
-- `schema_version` is a monotonically increasing integer.
-- Parsers MUST reject schemas with a version higher than they support.
-- New optional fields are added without incrementing the schema version.
-- Removing or changing the semantics of existing fields increments the schema version.
+#### 4.1.3 Implementation
+
+The `oxvba-project` crate (`crates/oxvba-project/`) provides:
+- `parse_basproj_xml(xml) → BasProj` — XML to intermediate model
+- `load_basproj(path) → LoadedProject` — filesystem-aware loading producing `ProjectManifest` + `Vec<NativeExportDescriptor>`
+- `generate_basproj_xml(manifest, ...) → String` — round-trip XML generation
+- Module auto-discovery, `<Import>` file merging, conditional constant parsing
+
+#### 4.1.4 Schema evolution policy
+
+- The `Sdk` version attribute (`OxVba.Sdk/<semver>`) controls schema compatibility.
+- Parsers MUST reject SDK versions with a major version they do not support.
+- New optional properties/items may be added within a minor version.
+- Removing or changing semantics of existing elements requires a major version bump.
 
 ### 4.2 Directory-as-Project Convention
 
 Modern language tools use the containing directory as the project scope. OxVBA adopts this convention:
 
-**With `oxvba.toml` (explicit mode):**
-- The directory containing `oxvba.toml` is the project root.
-- `[layout]` section controls file discovery.
-- Project name, kind, entry point, and references are explicit.
+**With `.basproj` (explicit mode):**
+- The directory containing the `.basproj` file is the project root.
+- Module items (`<Module>`, `<ClassModule>`, `<DocumentModule>`) control file discovery.
+- Project name, output type, entry point, and references are explicit.
 
-**Without `oxvba.toml` (convention mode):**
-- All `.bas` and `.cls` files in the directory are compiled.
-- Directory name becomes the project name.
-- `ProjectKind::Source` is assumed.
-- Entry point lookup: `Sub Main` in any module (error if not found or ambiguous).
-- No references, no policy overrides (defaults apply).
+**Without `.basproj` (convention mode / minimal `.basproj`):**
+- A `.basproj` with no module items auto-discovers all `.bas` and `.cls` files in the directory (recursive).
+- Directory name becomes the project name when `<ProjectName>` is omitted.
+- Entry point lookup: `Sub Main` in any module (error if not found or ambiguous for `OutputType=Exe`).
 
 **Discovery order for `oxvba run-project [PATH]`:**
 
 1. If PATH is a `.vbp` file: use VBP-S0 adapter.
-2. If PATH is a directory containing `oxvba.toml`: use `oxvba.toml`.
-3. If PATH is a directory without `oxvba.toml`: use convention mode.
-4. If PATH is omitted: use current directory and repeat steps 2-3.
+2. If PATH is a `.basproj` file: use `.basproj` parser.
+3. If PATH is a directory containing a `.basproj` file: use that `.basproj`.
+4. If PATH is a directory without `.basproj`: use convention mode (all `.bas`/`.cls` files).
+5. If PATH is omitted: use current directory and repeat steps 3-4.
 
 ### 4.3 `.vbp` Adapter
 
@@ -1201,7 +1198,7 @@ Module=Main; Main.bas
 Module=Utils; Utils.bas
 Class=Calculator; Calculator.cls
 
-$ oxvba import-vbp legacy/Project1.vbp --out ./oxvba.toml
+$ oxvba import-vbp legacy/Project1.vbp --out ./FinanceCalc.basproj
 oxvba: imported 3 modules (2 procedural, 1 class), 0 references
 ```
 
@@ -1241,7 +1238,7 @@ Embeds OxVBA runtime + compiled project artifact into a standalone executable.
 | `jit`  | VM + Cranelift JIT + artifact | ~4.93 MiB + artifact |
 
 Requirements for EXE target:
-- Project MUST have an entry point: configured `entry` in `oxvba.toml`, `Startup` in `.vbp`, or a unique `Sub Main` found by convention.
+- Project MUST have an entry point: configured `<EntryPoint>` in `.basproj`, `Startup` in `.vbp`, or a unique `Sub Main` found by convention.
 - Top-level code files can serve as entry points when the extension is enabled.
 
 **Wrapper DLL (in-process COM server):**
@@ -1264,7 +1261,7 @@ Requirements for EXE target:
 
 **Scenario:** A project builds a native `.dll` or COM server with a type library externally (e.g., using CMake, MSBuild, or a Makefile), then references the resulting artifacts from VBA code.
 
-**Configuration in `oxvba.toml`:**
+**Configuration (previously in `oxvba.toml`, now superseded by `.basproj`):**
 
 ```toml
 [build.hooks]
@@ -1286,7 +1283,7 @@ path = "build/Release/MyNativeLib.dll"
 2. Prebuild hook failures abort the build with a deterministic error.
 3. Referenced artifacts (`tlb_path`, `path`) are checked for existence after prebuild.
 4. Source hash computation includes referenced artifact hashes for staleness detection.
-5. No hidden mutable global state — all external dependencies are declared in `oxvba.toml`.
+5. No hidden mutable global state — all external dependencies are declared in `.basproj`.
 
 ### 4.7 Event Model Closure
 
@@ -1385,16 +1382,16 @@ pub trait LanguageServiceProvider {
 | ID | Question | Options | Recommendation | Status |
 |----|----------|---------|---------------|--------|
 | D-01 | Top-level code activation mechanism | A: file marker / B: command/project mode / C: file extension | **B: command/project mode** (`--top-level` flag or `[extensions] top_level=true`) | Proposed |
-| D-02 | Default behavior for `oxvba run-project .` | A: auto-detect project vs script / B: require oxvba.toml | **Auto-detect:** if `oxvba.toml` exists, use it; else convention mode (all files, find `Sub Main`) | Proposed |
+| D-02 | Default behavior for `oxvba run-project .` | A: auto-detect project vs script / B: require `.basproj` | **Auto-detect:** if `.basproj` exists, use it; else convention mode (all files, find `Sub Main`) | Proposed |
 | D-03 | Artifact portability | A: profile-locked / B: profile-portable | **A: profile-locked by default** (safer determinism; portable mode as explicit opt-in) | Proposed |
 | D-04 | Process-global registration collision policy | A: fail / B: shadow / C: namespace-prefix | **A: fail by default** (explicit collision error; shadow/prefix as opt-in) | Proposed |
 | D-05 | Wrapper DLL COM activation | A: registry-free first / B: dual lane from day one | **A: registry-free first** (simpler deployment; registry lane added later) | Proposed |
 | D-06 | XLL architecture default | A: per-project (B1) / B: shared host (B2) | **A: per-project (B1) first** (simpler; B2 follow-up based on data) | Proposed |
 | D-07 | Language service transport | A: direct Rust API / B: LSP-first | **A: direct Rust API first** (lowest latency for in-process hosts; LSP wrapper second) | Proposed |
-| D-08 | `oxvba.toml` schema version policy | A: semver / B: integer monotonic | **B: integer monotonic** (simpler; no minor/patch ambiguity) | Proposed |
+| D-08 | `.basproj` schema version policy | A: semver / B: Sdk version attribute | **B: Sdk version attribute** (`OxVba.Sdk/<semver>`) — standard MSBuild pattern | Decided |
 | D-09 | Top-level code `Option` placement | A: before executable only / B: interspersed | **A: before executable only** (matches module-level VBA rules) | Proposed |
 | D-10 | WASM default deny scope | A: all HAL capabilities / B: selective | **A: all deny by default** (security-first; explicit allowlist for approved bridges) | Proposed |
-| D-11 | EXE entry point requirement | A: strict `Sub Main` / B: auto-detect / C: configurable | **C: configurable** (`entry` in `oxvba.toml`; `Sub Main` fallback if unconfigured) | Proposed |
+| D-11 | EXE entry point requirement | A: strict `Sub Main` / B: auto-detect / C: configurable | **C: configurable** (`<EntryPoint>` in `.basproj`; `Sub Main` fallback if unconfigured) | Proposed |
 | D-12 | Unknown `.vbp` keys policy | A: strict (fail) / B: compat (warn) | **A: strict by default** in CI; `--compat` flag for migration workflows | Proposed |
 | D-13 | DNA VbCalc persistence format | A: XML-in-ZIP / B: SQLite / C: flat directory | **A: XML-in-ZIP** (Office-inspired simplicity; embedded project support) | Proposed |
 
@@ -1416,8 +1413,8 @@ pub trait LanguageServiceProvider {
 ### Phase P2: Canonical Project Format and Directory Workflows
 
 **Deliverables:**
-- `oxvba.toml` parser/validator.
-- Project discovery (`run-project .` with `oxvba.toml` and convention mode).
+- `.basproj` parser/validator (`oxvba-project` crate — **implemented**).
+- Project discovery (`run-project .` with `.basproj` and convention mode).
 - Include/exclude glob evaluation.
 - Entry point discovery and validation.
 - `init` command for project scaffolding.
@@ -1549,7 +1546,7 @@ Parallelism opportunities:
 
 1. **`DESIGN-LOCK-V2`** — Lock decisions from this document, publish clause catalog, derive acceptance test seeds. (P1)
 
-2. **`PROJECT-FORMAT-V1`** — `oxvba.toml` schema, parser, validator, directory discovery, `init` command. (P2)
+2. **`PROJECT-FORMAT-V1`** — `.basproj` schema (`BASPROJ_SPEC_V1.md`), parser/validator (`oxvba-project` crate — **Phase 1 implemented**), directory discovery, `init` command. (P2)
 
 3. **`VBP-S0-EXEC`** — Execute `WORKSET_2026-03-05_VBP_SUBSET_AND_ARTIFACT_PLAN.md` phases VBP1-VBP3. (P3)
 
