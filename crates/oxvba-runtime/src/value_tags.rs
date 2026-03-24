@@ -58,3 +58,33 @@ mod tests {
         assert_eq!(error_code_from_tag(EMPTY_TAG), None);
     }
 }
+
+#[cfg(test)]
+mod proptests {
+    use super::{ERROR_TAG_BASE, ERROR_TAG_LIMIT, error_code_from_tag, error_tag_from_code};
+    use proptest::prelude::*;
+
+    proptest! {
+        #[test]
+        fn prop_error_tag_encoding_always_in_reserved_band(code: i32) {
+            let tag = error_tag_from_code(code);
+            prop_assert!(
+                (ERROR_TAG_BASE..=ERROR_TAG_LIMIT).contains(&tag),
+                "tag {} from code {} is outside the reserved error band {}..={}",
+                tag, code, ERROR_TAG_BASE, ERROR_TAG_LIMIT,
+            );
+        }
+
+        #[test]
+        fn prop_error_tag_roundtrip(code in 0..=999_999i32) {
+            let tag = error_tag_from_code(code);
+            let recovered = error_code_from_tag(tag);
+            prop_assert_eq!(
+                recovered,
+                Some(code.abs()),
+                "roundtrip failed: code={}, tag={}, recovered={:?}",
+                code, tag, recovered,
+            );
+        }
+    }
+}

@@ -256,6 +256,8 @@ fn supports_rtslot_instruction(instruction: &Instruction) -> bool {
             | Instruction::Resume
             | Instruction::ResumeNext
             | Instruction::ResumeLabel { .. }
+            // Note: IntrinsicTypeOfIs not supported — requires project_dynamic_objects in
+            // JitContext (tracked gap). Functions using TypeOf...Is fall back to interpreter.
     )
 }
 

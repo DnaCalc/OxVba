@@ -20769,8 +20769,9 @@ mod tests {
 
     #[test]
     fn formal_v126_introspection_and_typeof_subset_executes() {
-        // IsNull(-1) is now correctly False (integer -1 ≠ Null).
-        // IsNull(Null) is tested by v153.
+        // TypeOf 5 Is 5 correctly yields False: 5 is not an object, and "5" is not
+        // a valid type name. TypeOf...Is now uses IntrinsicTypeOfIs which checks
+        // object identity and Implements lists.
         let source = "Sub Main()\nDim a\nDim b\nDim c\nDim d\nIf TypeOf 5 Is 5 Then\nd = 1\nElse\nd = 0\nEnd If\na = IsEmpty(0)\nb = IsNull(Null)\nc = IsError(CVErr(9))\nEnd Sub";
         let out = Engine::new(HostConfig {
             enable_jit: false,
@@ -20778,7 +20779,7 @@ mod tests {
         })
         .execute_source_slots_test(source)
         .expect("execution should succeed");
-        assert_eq!(out, vec![1, 1, 1, 1]);
+        assert_eq!(out, vec![1, 1, 1, 0]);
     }
 
     #[test]
@@ -23761,6 +23762,287 @@ mod tests {
         assert_eq!(
             snapshot,
             vec![RuntimeValue::String(BStr("olleH".to_string()))]
+        );
+    }
+
+    // ── Item 3: Integration tests for A1 (Implements dispatch), A2 (TypeOf...Is), A3 (Nested UDT) ──
+
+    #[test]
+    fn implements_dispatch_through_interface_variable() {
+        // A1: Dispatch through Implements-prefixed member reaches the class-internal implementation.
+        // The class calls its own IThing_Ping implementation via a public Fire method.
+        let engine = Engine::new(HostConfig::default());
+        let main_module = module_unit_from_source(
+            "MainModule",
+            ModuleKind::Procedural,
+            "Attribute VB_Name = \"MainModule\"\n\
+             Public Sub Main()\n\
+               Call ThingImpl.Fire\n\
+             End Sub",
+        )
+        .expect("main module should parse");
+        let iface_module = module_unit_from_source(
+            "IThing",
+            ModuleKind::Class,
+            "Attribute VB_Name = \"IThing\"\nPublic Sub Ping()\nEnd Sub",
+        )
+        .expect("interface module should parse");
+        let impl_module = module_unit_from_source(
+            "ThingImpl",
+            ModuleKind::Class,
+            "Attribute VB_Name = \"ThingImpl\"\n\
+             Implements IThing\n\
+             Private Sub IThing_Ping()\n\
+               Err.Raise 707\n\
+             End Sub\n\
+             Public Sub Fire()\n\
+               Call IThing_Ping\n\
+             End Sub",
+        )
+        .expect("impl module should parse");
+
+        let manifest = ProjectManifest {
+            project_name: "TestProject".to_string(),
+            project_kind: ProjectKind::Source,
+            modules: vec![main_module, iface_module, impl_module],
+            references: Vec::new(),
+            reference_projects: Vec::new(),
+            conditional_constants: std::collections::BTreeMap::new(),
+        };
+
+        // ThingImpl.Fire calls IThing_Ping which raises 707
+        let err = engine
+            .execute_project_slots_test_phased(&manifest)
+            .expect_err("dispatch through Implements member should reach implementation and raise error");
+        assert_eq!(err.phase(), DiagnosticPhase::Runtime);
+        assert!(
+            err.message().contains("runtime error: 707"),
+            "expected error 707, got: {}",
+            err.message()
+        );
+    }
+
+    #[test]
+    fn typeof_object_class_match() {
+        // A2: TypeOf obj Is ThingImpl → True
+        let engine = Engine::new(HostConfig::default());
+        let main_module = module_unit_from_source(
+            "MainModule",
+            ModuleKind::Procedural,
+            "Attribute VB_Name = \"MainModule\"\n\
+             Public Sub Main()\n\
+               Dim obj As New ThingImpl\n\
+               Dim result\n\
+               If TypeOf obj Is ThingImpl Then\n\
+                 result = 1\n\
+               Else\n\
+                 result = 0\n\
+               End If\n\
+             End Sub",
+        )
+        .expect("main module should parse");
+        let impl_module = module_unit_from_source(
+            "ThingImpl",
+            ModuleKind::Class,
+            "Attribute VB_Name = \"ThingImpl\"\n\
+             Public Function GetValue() As Variant\n\
+               GetValue = 42\n\
+             End Function",
+        )
+        .expect("class module should parse");
+
+        let manifest = ProjectManifest {
+            project_name: "TestProject".to_string(),
+            project_kind: ProjectKind::Source,
+            modules: vec![main_module, impl_module],
+            references: Vec::new(),
+            reference_projects: Vec::new(),
+            conditional_constants: std::collections::BTreeMap::new(),
+        };
+
+        let snapshot = engine
+            .execute_project_slots_test_phased(&manifest)
+            .expect("TypeOf class match should succeed");
+        // result slot should be 1 (True branch)
+        assert!(
+            snapshot.contains(&1),
+            "TypeOf obj Is ThingImpl should be True, got: {:?}",
+            snapshot
+        );
+    }
+
+    #[test]
+    fn typeof_object_implements_match() {
+        // A2: TypeOf obj Is IThing → True (when ThingImpl Implements IThing)
+        let engine = Engine::new(HostConfig::default());
+        let main_module = module_unit_from_source(
+            "MainModule",
+            ModuleKind::Procedural,
+            "Attribute VB_Name = \"MainModule\"\n\
+             Public Sub Main()\n\
+               Dim obj As New ThingImpl\n\
+               Dim result\n\
+               If TypeOf obj Is IThing Then\n\
+                 result = 1\n\
+               Else\n\
+                 result = 0\n\
+               End If\n\
+             End Sub",
+        )
+        .expect("main module should parse");
+        let iface_module = module_unit_from_source(
+            "IThing",
+            ModuleKind::Class,
+            "Attribute VB_Name = \"IThing\"\nPublic Sub Ping()\nEnd Sub",
+        )
+        .expect("interface module should parse");
+        let impl_module = module_unit_from_source(
+            "ThingImpl",
+            ModuleKind::Class,
+            "Attribute VB_Name = \"ThingImpl\"\n\
+             Implements IThing\n\
+             Private Sub IThing_Ping()\n\
+             End Sub",
+        )
+        .expect("impl module should parse");
+
+        let manifest = ProjectManifest {
+            project_name: "TestProject".to_string(),
+            project_kind: ProjectKind::Source,
+            modules: vec![main_module, iface_module, impl_module],
+            references: Vec::new(),
+            reference_projects: Vec::new(),
+            conditional_constants: std::collections::BTreeMap::new(),
+        };
+
+        let snapshot = engine
+            .execute_project_slots_test_phased(&manifest)
+            .expect("TypeOf implements match should succeed");
+        assert!(
+            snapshot.contains(&1),
+            "TypeOf obj Is IThing should be True via Implements, got: {:?}",
+            snapshot
+        );
+    }
+
+    #[test]
+    fn typeof_object_non_match() {
+        // A2: TypeOf obj Is SomeOtherClass → False
+        let engine = Engine::new(HostConfig::default());
+        let main_module = module_unit_from_source(
+            "MainModule",
+            ModuleKind::Procedural,
+            "Attribute VB_Name = \"MainModule\"\n\
+             Public Sub Main()\n\
+               Dim obj As New ThingImpl\n\
+               Dim result\n\
+               If TypeOf obj Is OtherClass Then\n\
+                 result = 1\n\
+               Else\n\
+                 result = 0\n\
+               End If\n\
+             End Sub",
+        )
+        .expect("main module should parse");
+        let impl_module = module_unit_from_source(
+            "ThingImpl",
+            ModuleKind::Class,
+            "Attribute VB_Name = \"ThingImpl\"\n\
+             Public Function GetValue() As Variant\n\
+               GetValue = 42\n\
+             End Function",
+        )
+        .expect("impl module should parse");
+        let other_module = module_unit_from_source(
+            "OtherClass",
+            ModuleKind::Class,
+            "Attribute VB_Name = \"OtherClass\"\n\
+             Public Sub DoSomething()\n\
+             End Sub",
+        )
+        .expect("other class module should parse");
+
+        let manifest = ProjectManifest {
+            project_name: "TestProject".to_string(),
+            project_kind: ProjectKind::Source,
+            modules: vec![main_module, impl_module, other_module],
+            references: Vec::new(),
+            reference_projects: Vec::new(),
+            conditional_constants: std::collections::BTreeMap::new(),
+        };
+
+        let snapshot = engine
+            .execute_project_slots_test_phased(&manifest)
+            .expect("TypeOf non-match should succeed");
+        assert!(
+            snapshot.contains(&0),
+            "TypeOf obj Is OtherClass should be False, got: {:?}",
+            snapshot
+        );
+    }
+
+    #[test]
+    fn nested_udt_field_access_integration() {
+        // A3: Nested UDT field access through dot notation.
+        let engine = Engine::new(HostConfig::default());
+        let source = "\
+            Type Point\n\
+            X As Integer\n\
+            Y As Integer\n\
+            End Type\n\
+            Type Rect\n\
+            TopLeft As Point\n\
+            BottomRight As Point\n\
+            End Type\n\
+            Sub Main()\n\
+            Dim r As Rect\n\
+            r.TopLeft_X = 1\n\
+            r.TopLeft_Y = 2\n\
+            r.BottomRight_X = 3\n\
+            r.BottomRight_Y = 4\n\
+            End Sub";
+        let snapshot = engine
+            .execute_source_slots_test_phased(source)
+            .expect("nested UDT field access should succeed");
+        // Slots: r, r_topleft, r_topleft_x(=1), r_topleft_y(=2),
+        //        r_bottomright, r_bottomright_x(=3), r_bottomright_y(=4)
+        assert!(
+            snapshot.contains(&1) && snapshot.contains(&2)
+                && snapshot.contains(&3) && snapshot.contains(&4),
+            "nested UDT fields should have values 1,2,3,4 — got: {:?}",
+            snapshot
+        );
+    }
+
+    #[test]
+    fn nested_udt_cross_type_rejection() {
+        // A3: Same field names, different UDT types — whole assignment should NOT emit UdtAssign.
+        let engine = Engine::new(HostConfig::default());
+        let source = "\
+            Type Point\n\
+            X As Integer\n\
+            Y As Integer\n\
+            End Type\n\
+            Type Size\n\
+            X As Integer\n\
+            Y As Integer\n\
+            End Type\n\
+            Sub Main()\n\
+            Dim p As Point\n\
+            Dim s As Size\n\
+            p.X = 5\n\
+            p.Y = 6\n\
+            s = p\n\
+            End Sub";
+        let snapshot = engine
+            .execute_source_slots_test_phased(source)
+            .expect("cross-type assignment should not crash");
+        // s.X should remain 0 (the UdtAssign should not fire for mismatched types),
+        // while p.X=5, p.Y=6 should be present.
+        assert!(
+            snapshot.contains(&5) && snapshot.contains(&6),
+            "Point fields should have values 5,6 — got: {:?}",
+            snapshot
         );
     }
 }

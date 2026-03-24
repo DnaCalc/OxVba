@@ -10,3 +10,6 @@ repository.workspace = true
 thiserror.workspace = true
 serde.workspace = true
 rkyv.workspace = true
+
+[dev-dependencies]
+proptest.workspace = true

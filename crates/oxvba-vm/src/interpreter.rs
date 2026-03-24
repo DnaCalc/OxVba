@@ -2265,6 +2265,31 @@ impl Vm {
                     self.write_value_slot(*slot, RuntimeValue::String(BStr(text)))?;
                     pc += 1;
                 }
+                Instruction::IntrinsicTypeOfIs {
+                    dst,
+                    object_slot,
+                    type_name,
+                } => {
+                    let val = self.read_value_slot(*object_slot)?;
+                    let is_match = match &val {
+                        RuntimeValue::ObjectHandle(handle) => {
+                            if let Some(route) =
+                                self.project_dynamic_objects.get(handle)
+                            {
+                                route.module_name.eq_ignore_ascii_case(type_name)
+                                    || route
+                                        .implements_interfaces
+                                        .iter()
+                                        .any(|iface| iface.eq_ignore_ascii_case(type_name))
+                            } else {
+                                false
+                            }
+                        }
+                        _ => false,
+                    };
+                    self.write_value_slot(*dst, RuntimeValue::Bool(is_match))?;
+                    pc += 1;
+                }
                 Instruction::IntrinsicIsNull { dst, src } => {
                     let val = self.read_value_slot(*src)?;
                     self.write_value_slot(

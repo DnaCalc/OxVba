@@ -183,7 +183,8 @@ impl JitContext {
     /// # Safety
     /// The slot index must be within bounds, and slots_ptr must be valid.
     pub unsafe fn read_slot(&self, slot: u32) -> RuntimeValue {
-        debug_assert!(slot < self.slot_count);
+        debug_assert!(!self.slots_ptr.is_null(), "JitContext::read_slot: null slots_ptr");
+        debug_assert!(slot < self.slot_count, "JitContext::read_slot: slot {} >= count {}", slot, self.slot_count);
         let rt_slot = unsafe { &*self.slots_ptr.add(slot as usize) };
         unsafe { rt_slot.to_runtime_value() }
     }
@@ -193,7 +194,8 @@ impl JitContext {
     /// # Safety
     /// The slot index must be within bounds, and slots_ptr must be valid.
     pub unsafe fn write_slot(&mut self, slot: u32, value: RuntimeValue) {
-        debug_assert!(slot < self.slot_count);
+        debug_assert!(!self.slots_ptr.is_null(), "JitContext::write_slot: null slots_ptr");
+        debug_assert!(slot < self.slot_count, "JitContext::write_slot: slot {} >= count {}", slot, self.slot_count);
         let rt_slot = unsafe { &mut *self.slots_ptr.add(slot as usize) };
         // Drop old heap data if present.
         if rt_slot.is_heap_type() {
@@ -207,6 +209,10 @@ impl JitContext {
     /// # Safety
     /// host_services_box_ptr must be a valid pointer to a Box<Arc<dyn HostServices>>.
     pub unsafe fn host_services(&self) -> &Arc<dyn HostServices> {
+        debug_assert!(
+            !self.host_services_box_ptr.is_null(),
+            "JitContext::host_services: null host_services_box_ptr"
+        );
         unsafe { &*(self.host_services_box_ptr as *const Arc<dyn HostServices>) }
     }
 
@@ -215,6 +221,10 @@ impl JitContext {
     /// # Safety
     /// host_state_ptr must be a valid pointer to a JitHostState.
     pub unsafe fn host_state(&self) -> &JitHostState {
+        debug_assert!(
+            !self.host_state_ptr.is_null(),
+            "JitContext::host_state: null host_state_ptr"
+        );
         unsafe { &*(self.host_state_ptr as *const JitHostState) }
     }
 
@@ -224,6 +234,10 @@ impl JitContext {
     /// host_state_ptr must be a valid pointer to a JitHostState,
     /// and no other references to it must exist.
     pub unsafe fn host_state_mut(&mut self) -> &mut JitHostState {
+        debug_assert!(
+            !self.host_state_ptr.is_null(),
+            "JitContext::host_state_mut: null host_state_ptr"
+        );
         unsafe { &mut *(self.host_state_ptr as *mut JitHostState) }
     }
 }

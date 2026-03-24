@@ -445,3 +445,36 @@ mod tests {
         assert!(RuntimeValue::I64(i64::MIN).to_legacy_i32().is_err());
     }
 }
+
+#[cfg(test)]
+mod proptests {
+    use super::{CurrencyValue, RuntimeValue};
+    use crate::value_tags::{is_error_tag, EMPTY_TAG, NULL_TAG};
+    use crate::safe_array::is_array_tag;
+    use proptest::prelude::*;
+
+    proptest! {
+        #[test]
+        fn prop_runtime_value_legacy_i32_roundtrip(v: i32) {
+            // Values that land in reserved tag bands (empty, null, error, array)
+            // get decoded into a different RuntimeValue variant, so they won't
+            // roundtrip as I32. We only test the plain-integer domain.
+            prop_assume!(v != EMPTY_TAG);
+            prop_assume!(v != NULL_TAG);
+            prop_assume!(!is_error_tag(v));
+            prop_assume!(!is_array_tag(v));
+
+            let rt = RuntimeValue::from_legacy_i32(v);
+            let back = rt.to_legacy_i32().expect("plain i32 should roundtrip");
+            prop_assert_eq!(back, v);
+        }
+
+        #[test]
+        fn prop_currency_display_roundtrip(scaled: i64) {
+            let cv = CurrencyValue::from_scaled_i64(scaled);
+            // The display implementation must not panic for any i64 input.
+            let text = cv.to_string();
+            prop_assert!(!text.is_empty(), "display produced empty string for scaled={}", scaled);
+        }
+    }
+}

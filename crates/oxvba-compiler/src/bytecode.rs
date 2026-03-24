@@ -684,6 +684,12 @@ pub enum Instruction {
     LoadErrSource {
         slot: usize,
     },
+    /// TypeOf x Is TypeName — checks class identity and Implements list.
+    IntrinsicTypeOfIs {
+        dst: usize,
+        object_slot: usize,
+        type_name: String,
+    },
     /// Identity check: tests whether a value is Null (not equality — Null = Null
     /// yields Null under VBA semantics, so IsNull needs a dedicated path).
     IntrinsicIsNull {

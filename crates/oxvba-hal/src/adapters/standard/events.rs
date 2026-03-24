@@ -20,6 +20,7 @@ impl EventPumpHal for StandardHostServices {
             }
             thread::yield_now();
         }
+        #[cfg(target_os = "windows")]
         if self.native_com_enabled() {
             let callback = self
                 .com_bridge

@@ -166,3 +166,26 @@ mod tests {
         assert_eq!(array.elements, None);
     }
 }
+
+#[cfg(test)]
+mod proptests {
+    use super::{ARRAY_TAG_BASE, ARRAY_TAG_LIMIT, array_tag_from_safe_array, safe_array_from_tag};
+    use proptest::prelude::*;
+
+    proptest! {
+        #[test]
+        fn prop_safe_array_tag_roundtrip(len in 0..=1_000_000usize) {
+            let tag = ARRAY_TAG_BASE + len as i32;
+            prop_assert!((ARRAY_TAG_BASE..=ARRAY_TAG_LIMIT).contains(&tag));
+
+            let array = safe_array_from_tag(tag)
+                .expect("tag in valid range should decode to SafeArray");
+            prop_assert_eq!(array.len, len);
+            prop_assert_eq!(array.dimensions, 1);
+
+            let recovered_tag = array_tag_from_safe_array(&array)
+                .expect("decoded SafeArray should encode back to a tag");
+            prop_assert_eq!(recovered_tag, tag);
+        }
+    }
+}

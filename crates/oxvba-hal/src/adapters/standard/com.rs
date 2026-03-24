@@ -9,9 +9,10 @@ use crate::{
 use oxvba_com::{
     ComCallbackPayload, ComCallbackToken, ComInvokeRequest, ComMemberToken,
     ComObjectDescriptor, ComObjectTransportKind, ComSubscriptionToken, DynamicCallRequest,
-    WindowsComBridgeDispatchError,
     legacy_runtime_arg_values as com_legacy_runtime_arg_values,
 };
+#[cfg(target_os = "windows")]
+use oxvba_com::WindowsComBridgeDispatchError;
 use oxvba_runtime::{ObjectHandle, RuntimeValue, bstr::BStr};
 
 use super::StandardHostServices;
@@ -89,18 +90,23 @@ impl ComHal for StandardHostServices {
             return Ok(RuntimeValue::I32(if object == 0 { 0 } else { 1 }));
         }
         self.ensure_thread_com_apartment("release_object")?;
-        let released = unsafe { self.com_bridge.release_object(ObjectHandle::new(object)) }
-            .map_err(|message| {
-                HalError::adapter_fault(self.profile, capability, "release_object", message)
-            })?;
-        if super::com_event_trace_enabled() {
-            eprintln!(
-                "[oxvba-hal][com-event] release-object object={} removed_callbacks={}",
-                object,
-                released.stale_callbacks.len()
-            );
+        #[cfg(target_os = "windows")]
+        {
+            let released = unsafe { self.com_bridge.release_object(ObjectHandle::new(object)) }
+                .map_err(|message| {
+                    HalError::adapter_fault(self.profile, capability, "release_object", message)
+                })?;
+            if super::com_event_trace_enabled() {
+                eprintln!(
+                    "[oxvba-hal][com-event] release-object object={} removed_callbacks={}",
+                    object,
+                    released.stale_callbacks.len()
+                );
+            }
+            return Ok(RuntimeValue::I32(1));
         }
-        Ok(RuntimeValue::I32(1))
+        #[cfg(not(target_os = "windows"))]
+        unreachable!("native COM is not available on this platform")
     }
 
     fn describe_object(&self, object: ObjectHandle) -> HalResult<Option<ComObjectDescriptor>> {
@@ -111,6 +117,7 @@ impl ComHal for StandardHostServices {
         if !self.policy.allow_com_activation {
             return Err(self.denied(capability, "describe_object"));
         }
+        #[cfg(target_os = "windows")]
         if self.native_com_enabled() {
             return self.com_bridge.describe_object(object).map_err(|message| {
                 HalError::adapter_fault(self.profile, capability, "describe_object", message)
@@ -151,6 +158,7 @@ impl ComHal for StandardHostServices {
         if !self.policy.allow_com_activation {
             return Err(self.denied(capability, "dispatch_invoke"));
         }
+        #[cfg(target_os = "windows")]
         if self.native_com_enabled() {
             match self.com_bridge.dispatch_invoke_runtime_value(
                 request,
@@ -213,6 +221,7 @@ impl ComHal for StandardHostServices {
         if !self.policy.allow_com_activation {
             return Err(self.denied(capability, "dispatch_invoke"));
         }
+        #[cfg(target_os = "windows")]
         if self.native_com_enabled() {
             match self.com_bridge.dispatch_invoke_dynamic_runtime_value(
                 request,
@@ -260,22 +269,26 @@ impl ComHal for StandardHostServices {
             ));
         }
         self.ensure_thread_com_apartment("subscribe_event")?;
-        let (subscription, transport, expected_arity) =
-            unsafe { self.com_bridge.subscribe_event(object, event) }.map_err(|message| {
-                HalError::adapter_fault(self.profile, capability, "subscribe_event", message)
-            })?;
         #[cfg(target_os = "windows")]
-        if super::com_event_trace_enabled() {
-            eprintln!(
-                "[oxvba-hal][com-event] subscribe object={} event={} subscription={} transport={} arity={}",
-                object.raw(),
-                event.raw(),
-                subscription.raw(),
-                transport.kind_label(),
-                expected_arity
-            );
+        {
+            let (subscription, transport, expected_arity) =
+                unsafe { self.com_bridge.subscribe_event(object, event) }.map_err(|message| {
+                    HalError::adapter_fault(self.profile, capability, "subscribe_event", message)
+                })?;
+            if super::com_event_trace_enabled() {
+                eprintln!(
+                    "[oxvba-hal][com-event] subscribe object={} event={} subscription={} transport={} arity={}",
+                    object.raw(),
+                    event.raw(),
+                    subscription.raw(),
+                    transport.kind_label(),
+                    expected_arity
+                );
+            }
+            return Ok(subscription);
         }
-        Ok(subscription)
+        #[cfg(not(target_os = "windows"))]
+        unreachable!("native COM is not available on this platform")
     }
 
     fn unsubscribe_event(&self, subscription: ComSubscriptionToken) -> HalResult<RuntimeValue> {
@@ -295,10 +308,15 @@ impl ComHal for StandardHostServices {
             ));
         }
         self.ensure_thread_com_apartment("unsubscribe_event")?;
-        unsafe { self.com_bridge.unsubscribe_event(subscription) }.map_err(|message| {
-            HalError::adapter_fault(self.profile, capability, "unsubscribe_event", message)
-        })?;
-        Ok(RuntimeValue::from_legacy_i32(1))
+        #[cfg(target_os = "windows")]
+        {
+            unsafe { self.com_bridge.unsubscribe_event(subscription) }.map_err(|message| {
+                HalError::adapter_fault(self.profile, capability, "unsubscribe_event", message)
+            })?;
+            return Ok(RuntimeValue::from_legacy_i32(1));
+        }
+        #[cfg(not(target_os = "windows"))]
+        unreachable!("native COM is not available on this platform")
     }
 
     fn poll_event_callback(&self) -> HalResult<Option<ComCallbackPayload>> {
@@ -312,9 +330,14 @@ impl ComHal for StandardHostServices {
         if !self.native_com_enabled() {
             return Ok(None);
         }
-        self.com_bridge.poll_event_callback().map_err(|message| {
-            HalError::adapter_fault(self.profile, capability, "poll_event_callback", message)
-        })
+        #[cfg(target_os = "windows")]
+        {
+            return self.com_bridge.poll_event_callback().map_err(|message| {
+                HalError::adapter_fault(self.profile, capability, "poll_event_callback", message)
+            });
+        }
+        #[cfg(not(target_os = "windows"))]
+        unreachable!("native COM is not available on this platform")
     }
 
     fn event_callback_subscription(
@@ -336,16 +359,22 @@ impl ComHal for StandardHostServices {
                 "COM-E-EVENT-PATH-UNSUPPORTED: native COM event callback lookup requires host-backed Windows native mode",
             ));
         }
-        self.com_bridge
-            .event_callback_subscription(callback)
-            .map_err(|message| {
-                HalError::adapter_fault(
-                    self.profile,
-                    capability,
-                    "event_callback_subscription",
-                    message,
-                )
-            })
+        #[cfg(target_os = "windows")]
+        {
+            return self
+                .com_bridge
+                .event_callback_subscription(callback)
+                .map_err(|message| {
+                    HalError::adapter_fault(
+                        self.profile,
+                        capability,
+                        "event_callback_subscription",
+                        message,
+                    )
+                });
+        }
+        #[cfg(not(target_os = "windows"))]
+        unreachable!("native COM is not available on this platform")
     }
 
     fn event_callback_arity(&self, callback: ComCallbackToken) -> HalResult<usize> {
@@ -364,11 +393,22 @@ impl ComHal for StandardHostServices {
                 "COM-E-EVENT-PATH-UNSUPPORTED: native COM event callback lookup requires host-backed Windows native mode",
             ));
         }
-        self.com_bridge
-            .event_callback_arity(callback)
-            .map_err(|message| {
-                HalError::adapter_fault(self.profile, capability, "event_callback_arity", message)
-            })
+        #[cfg(target_os = "windows")]
+        {
+            return self
+                .com_bridge
+                .event_callback_arity(callback)
+                .map_err(|message| {
+                    HalError::adapter_fault(
+                        self.profile,
+                        capability,
+                        "event_callback_arity",
+                        message,
+                    )
+                });
+        }
+        #[cfg(not(target_os = "windows"))]
+        unreachable!("native COM is not available on this platform")
     }
 
     fn event_callback_arg(
@@ -391,11 +431,22 @@ impl ComHal for StandardHostServices {
                 "COM-E-EVENT-PATH-UNSUPPORTED: native COM event callback lookup requires host-backed Windows native mode",
             ));
         }
-        self.com_bridge
-            .event_callback_arg(callback, index)
-            .map_err(|message| {
-                HalError::adapter_fault(self.profile, capability, "event_callback_arg", message)
-            })
+        #[cfg(target_os = "windows")]
+        {
+            return self
+                .com_bridge
+                .event_callback_arg(callback, index)
+                .map_err(|message| {
+                    HalError::adapter_fault(
+                        self.profile,
+                        capability,
+                        "event_callback_arg",
+                        message,
+                    )
+                });
+        }
+        #[cfg(not(target_os = "windows"))]
+        unreachable!("native COM is not available on this platform")
     }
 
     fn release_event_callback(&self, callback: ComCallbackToken) -> HalResult<RuntimeValue> {
@@ -414,12 +465,22 @@ impl ComHal for StandardHostServices {
                 "COM-E-EVENT-PATH-UNSUPPORTED: native COM event callback release requires host-backed Windows native mode",
             ));
         }
-        self.com_bridge
-            .release_event_callback(callback)
-            .map_err(|message| {
-                HalError::adapter_fault(self.profile, capability, "release_event_callback", message)
-            })?;
-        Ok(RuntimeValue::from_legacy_i32(1))
+        #[cfg(target_os = "windows")]
+        {
+            self.com_bridge
+                .release_event_callback(callback)
+                .map_err(|message| {
+                    HalError::adapter_fault(
+                        self.profile,
+                        capability,
+                        "release_event_callback",
+                        message,
+                    )
+                })?;
+            return Ok(RuntimeValue::from_legacy_i32(1));
+        }
+        #[cfg(not(target_os = "windows"))]
+        unreachable!("native COM is not available on this platform")
     }
 
     fn resolve_typelib_reference(
@@ -433,16 +494,22 @@ impl ComHal for StandardHostServices {
         if !self.policy.allow_com_activation {
             return Err(self.denied(capability, "resolve_typelib_reference"));
         }
-        self.com_bridge
-            .resolve_typelib_reference(request)
-            .map_err(|message| {
-                HalError::adapter_fault(
-                    self.profile,
-                    capability,
-                    "resolve_typelib_reference",
-                    message,
-                )
-            })
+        #[cfg(target_os = "windows")]
+        {
+            return self
+                .com_bridge
+                .resolve_typelib_reference(request)
+                .map_err(|message| {
+                    HalError::adapter_fault(
+                        self.profile,
+                        capability,
+                        "resolve_typelib_reference",
+                        message,
+                    )
+                });
+        }
+        #[cfg(not(target_os = "windows"))]
+        unreachable!("typelib resolution is not available on this platform")
     }
 
     fn load_typelib_metadata(
@@ -456,11 +523,22 @@ impl ComHal for StandardHostServices {
         if !self.policy.allow_com_activation {
             return Err(self.denied(capability, "load_typelib_metadata"));
         }
-        self.com_bridge
-            .load_typelib_metadata(identity)
-            .map_err(|message| {
-                HalError::adapter_fault(self.profile, capability, "load_typelib_metadata", message)
-            })
+        #[cfg(target_os = "windows")]
+        {
+            return self
+                .com_bridge
+                .load_typelib_metadata(identity)
+                .map_err(|message| {
+                    HalError::adapter_fault(
+                        self.profile,
+                        capability,
+                        "load_typelib_metadata",
+                        message,
+                    )
+                });
+        }
+        #[cfg(not(target_os = "windows"))]
+        unreachable!("typelib resolution is not available on this platform")
     }
 
     fn invalidate_typelib_cache(
@@ -475,19 +553,24 @@ impl ComHal for StandardHostServices {
         if !self.policy.allow_com_activation {
             return Err(self.denied(capability, "invalidate_typelib_cache"));
         }
-        let removed = self
-            .com_bridge
-            .invalidate_typelib_cache(scope, reference_name)
-            .map_err(|message| {
-                HalError::adapter_fault(
-                    self.profile,
-                    capability,
-                    "invalidate_typelib_cache",
-                    message,
-                )
-            })?;
-        Ok(RuntimeValue::I32(
-            i32::try_from(removed).unwrap_or(i32::MAX),
-        ))
+        #[cfg(target_os = "windows")]
+        {
+            let removed = self
+                .com_bridge
+                .invalidate_typelib_cache(scope, reference_name)
+                .map_err(|message| {
+                    HalError::adapter_fault(
+                        self.profile,
+                        capability,
+                        "invalidate_typelib_cache",
+                        message,
+                    )
+                })?;
+            return Ok(RuntimeValue::I32(
+                i32::try_from(removed).unwrap_or(i32::MAX),
+            ));
+        }
+        #[cfg(not(target_os = "windows"))]
+        unreachable!("typelib resolution is not available on this platform")
     }
 }

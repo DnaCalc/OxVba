@@ -106,3 +106,27 @@ mod tests {
         );
     }
 }
+
+#[cfg(test)]
+mod proptests {
+    use super::Decimal96;
+    use proptest::prelude::*;
+
+    proptest! {
+        #[test]
+        fn prop_decimal96_from_parts_accessor_roundtrip(
+            lo: u32,
+            mid: u32,
+            hi: u32,
+            scale in 0u8..=28u8,
+            negative: bool,
+        ) {
+            let d = Decimal96::from_parts(lo, mid, hi, scale, negative);
+            prop_assert_eq!(d.lo, lo);
+            prop_assert_eq!(d.mid, mid);
+            prop_assert_eq!(d.hi, hi);
+            prop_assert_eq!(d.scale(), scale);
+            prop_assert_eq!(d.is_negative(), negative);
+        }
+    }
+}

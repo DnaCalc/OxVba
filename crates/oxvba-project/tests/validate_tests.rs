@@ -258,6 +258,7 @@ fn com_class_exported_when_exposed_and_creatable() {
             param_slots: vec![1, 2],
             return_slot: Some(3),
         }],
+        implements_interfaces: Vec::new(),
     }];
 
     let compiled = make_compiled_project(Vec::new(), BTreeMap::new(), dynamic_objects);
@@ -393,6 +394,7 @@ fn com_class_with_multiple_members() {
                 return_slot: None,
             },
         ],
+        implements_interfaces: Vec::new(),
     }];
 
     let compiled = make_compiled_project(Vec::new(), BTreeMap::new(), dynamic_objects);

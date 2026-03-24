@@ -1094,6 +1094,11 @@ fn com_event_trace_enabled() -> bool {
         .unwrap_or(false)
 }
 
+#[cfg(not(target_os = "windows"))]
+fn com_event_trace_enabled() -> bool {
+    false
+}
+
 #[cfg(target_os = "windows")]
 fn parse_arg_err(message: &str) -> Option<u32> {
     let marker = "arg_err=";
@@ -4081,6 +4086,7 @@ mod tests {
 }
 
 #[cfg(test)]
+#[cfg(target_os = "windows")]
 #[allow(dead_code, clippy::items_after_test_module)]
 impl StandardHostServices {
     fn bind_native_dispatch_result(

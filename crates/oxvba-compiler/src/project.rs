@@ -161,6 +161,7 @@ pub struct ProjectDynamicObjectRoute {
     pub project_name: String,
     pub module_name: String,
     pub members: Vec<ProjectDynamicMemberRoute>,
+    pub implements_interfaces: Vec<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -517,6 +518,31 @@ fn compile_project_with_strategy(
     strategy: ProjectLoweringStrategy,
 ) -> Result<CompiledProject, ProjectCompileError> {
     validate_manifest(manifest)?;
+
+    // Augment reference_projects with synthetic manifests for TypeLibrary references.
+    let mut augmented_refs = manifest.reference_projects.clone();
+    for reference in &manifest.references {
+        if reference.reference_kind == ReferenceKind::TypeLibrary {
+            if let Some(identity) = known_typelib_identity_for_prog_id_name(
+                &reference.referenced_project_name,
+            ) {
+                let blob = build_typelib_metadata(&identity);
+                let synthetic = project_typelib_as_manifest(&blob);
+                let key = normalize_identifier(&synthetic.project_name);
+                if !augmented_refs
+                    .iter()
+                    .any(|r| normalize_identifier(&r.project_name) == key)
+                {
+                    augmented_refs.push(synthetic);
+                }
+            }
+        }
+    }
+    let manifest = &ProjectManifest {
+        reference_projects: augmented_refs,
+        ..manifest.clone()
+    };
+
     let procedure_index = collect_project_procedures(manifest);
     let reference_order = build_reference_order_map(manifest);
     let active_project = normalize_identifier(&manifest.project_name);
@@ -554,10 +580,12 @@ fn compile_project_with_strategy(
     let host_exports = collect_host_exports(manifest, &procedure_index);
     let reference_visible_exports = collect_reference_visible_exports(manifest, &procedure_index);
     let event_dispatch_bindings = flatten_event_dispatch_plan(&event_dispatch_plan);
+    let implements_map = collect_class_implements_map(manifest, &procedure_index, &reference_order);
     let project_dynamic_objects = build_project_dynamic_object_routes(
         &dynamic_instance_bindings,
         &procedure_index,
         &procedure_runtime_metadata,
+        &implements_map,
     );
     validate_compiled_project_contract(manifest, &host_exports, &reference_visible_exports)
         .map_err(|message| ProjectCompileError::BackendCompile {
@@ -1157,6 +1185,65 @@ fn parse_implements_target(line: &str) -> Option<String> {
     }
 }
 
+/// Collect, for each class module, which interfaces it `Implements` and what public members
+/// each interface declares. Returns a map from `(project_name, module_name)` to a vec of
+/// `(interface_name, vec_of_interface_member_names)`.
+fn collect_class_implements_map(
+    manifest: &ProjectManifest,
+    procedures: &[ProcedureDecl],
+    reference_order: &BTreeMap<String, usize>,
+) -> BTreeMap<(String, String), Vec<(String, Vec<String>)>> {
+    // Collect public members of all class modules (mirrors validate_event_semantics).
+    let mut class_public_members = BTreeMap::<(String, String), BTreeSet<String>>::new();
+    for decl in procedures {
+        if decl.module_kind == ModuleKind::Class && decl.is_public {
+            class_public_members
+                .entry((decl.project_name.clone(), decl.module_name.clone()))
+                .or_default()
+                .insert(decl.procedure_name.clone());
+        }
+    }
+
+    let mut result = BTreeMap::new();
+
+    for (project_name, module) in iter_all_modules(manifest, reference_order) {
+        if module.module_kind != ModuleKind::Class {
+            continue;
+        }
+        let project_key = normalize_identifier(project_name);
+        let module_key = normalize_identifier(&module.module_name);
+
+        let mut interfaces = Vec::new();
+        for line in module.source.lines() {
+            if let Some(interface_target) = parse_implements_target(line) {
+                let Some(interface_name) = normalize_procedure_name(&interface_target) else {
+                    continue;
+                };
+                let Some((iface_project, iface_module)) = resolve_interface_module(
+                    manifest,
+                    &project_key,
+                    &interface_name,
+                    reference_order,
+                ) else {
+                    continue;
+                };
+                let members: Vec<String> = class_public_members
+                    .get(&(iface_project, iface_module))
+                    .cloned()
+                    .unwrap_or_default()
+                    .into_iter()
+                    .collect();
+                interfaces.push((normalize_identifier(&interface_name), members));
+            }
+        }
+        if !interfaces.is_empty() {
+            result.insert((project_key, module_key), interfaces);
+        }
+    }
+
+    result
+}
+
 fn parse_event_declaration(line: &str) -> Option<String> {
     let trimmed = line.trim();
     let lower = trimmed.to_ascii_lowercase();
@@ -1563,6 +1650,105 @@ fn validate_modules_for_project(
         }
     }
     Ok(())
+}
+
+/// Project a `TypeLibMetadataBlob` as a synthetic VBA `ReferencedProjectManifest`.
+///
+/// Each COM interface/CoClass becomes a class module with public method/property stubs.
+/// Enums (if present) become a procedural module with `Public Enum` blocks.
+/// This allows the existing project-reference resolution infrastructure to handle
+/// COM type libraries uniformly.
+pub fn project_typelib_as_manifest(
+    blob: &TypeLibMetadataBlob,
+) -> ReferencedProjectManifest {
+    let lib_name = blob.identity.reference_name.clone();
+
+    // Collect all members and group them by a common "interface" name.
+    // For now, all members belong to the same default interface (the CoClass itself).
+    let mut source_lines = Vec::new();
+    source_lines.push(format!("Attribute VB_Name = \"{}\"", lib_name));
+    source_lines.push("' Synthetic class projected from COM type library".to_string());
+
+    for member in &blob.members {
+        let decl = match member.invoke_kind {
+            TypeLibMemberInvokeKind::Method => {
+                if member.return_type.is_some() {
+                    format!(
+                        "Public Function {}({}) As Variant",
+                        member.name,
+                        build_param_list(&member.parameter_names)
+                    )
+                } else {
+                    format!(
+                        "Public Sub {}({})",
+                        member.name,
+                        build_param_list(&member.parameter_names)
+                    )
+                }
+            }
+            TypeLibMemberInvokeKind::PropertyGet => {
+                format!(
+                    "Public Property Get {}({}) As Variant",
+                    member.name,
+                    build_param_list(&member.parameter_names)
+                )
+            }
+            TypeLibMemberInvokeKind::PropertyPut | TypeLibMemberInvokeKind::PropertyPutRef => {
+                format!(
+                    "Public Property Let {}({})",
+                    member.name,
+                    build_param_list_with_value(&member.parameter_names)
+                )
+            }
+        };
+        source_lines.push(decl.clone());
+        // Stub body with End
+        let end_keyword = match member.invoke_kind {
+            TypeLibMemberInvokeKind::Method if member.return_type.is_some() => "End Function",
+            TypeLibMemberInvokeKind::Method => "End Sub",
+            TypeLibMemberInvokeKind::PropertyGet => "End Property",
+            TypeLibMemberInvokeKind::PropertyPut | TypeLibMemberInvokeKind::PropertyPutRef => {
+                "End Property"
+            }
+        };
+        source_lines.push(end_keyword.to_string());
+    }
+
+    let class_source = source_lines.join("\n");
+    let class_module = ModuleUnit {
+        module_name: lib_name.clone(),
+        module_kind: ModuleKind::Class,
+        attributes: ModuleAttributes {
+            vb_name: lib_name.clone(),
+            ..ModuleAttributes::default()
+        },
+        source: class_source,
+    };
+
+    // If events exist, they get appended as Event declarations.
+    // (Events are part of the same class module source for now.)
+
+    ReferencedProjectManifest {
+        project_name: lib_name,
+        modules: vec![class_module],
+    }
+}
+
+fn build_param_list(params: &[String]) -> String {
+    params
+        .iter()
+        .map(|p| format!("ByVal {} As Variant", p))
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
+fn build_param_list_with_value(params: &[String]) -> String {
+    let mut parts: Vec<String> = params
+        .iter()
+        .map(|p| format!("ByVal {} As Variant", p))
+        .collect();
+    parts.push("ByVal value As Variant".to_string());
+    parts.join(", ")
 }
 
 fn build_reference_order_map(manifest: &ProjectManifest) -> BTreeMap<String, usize> {
@@ -4729,6 +4915,7 @@ fn build_project_dynamic_object_routes(
     bindings: &[ProjectDynamicInstanceBindingDraft],
     procedures: &[ProcedureDecl],
     runtime_metadata: &BTreeMap<String, ProcedureRuntimeMetadata>,
+    implements_map: &BTreeMap<(String, String), Vec<(String, Vec<String>)>>,
 ) -> Vec<ProjectDynamicObjectRoute> {
     let mut out = Vec::new();
     for binding in bindings {
@@ -4758,6 +4945,50 @@ fn build_project_dynamic_object_routes(
                     })
             })
             .collect::<Vec<_>>();
+
+        // Inject interface alias members for Implements directives.
+        let key = (binding.project_name.clone(), binding.module_name.clone());
+        let mut implements_interfaces = Vec::new();
+        if let Some(interfaces) = implements_map.get(&key) {
+            for (interface_name, interface_members) in interfaces {
+                implements_interfaces.push(interface_name.clone());
+                for member_name in interface_members {
+                    // The implementation procedure is named InterfaceName_MemberName (private).
+                    let impl_proc_name =
+                        format!("{}_{}", interface_name, normalize_identifier(member_name));
+                    // Find the implementation procedure (may be private).
+                    let impl_decl = procedures.iter().find(|decl| {
+                        decl.project_name == binding.project_name
+                            && decl.module_name == binding.module_name
+                            && decl.module_kind == ModuleKind::Class
+                            && normalize_identifier(&decl.procedure_name) == impl_proc_name
+                    });
+                    if let Some(decl) = impl_decl {
+                        if let Some(metadata) = runtime_metadata.get(&decl.lowered_name) {
+                            // Only add alias if no public member with the same name already exists.
+                            let alias_name = normalize_identifier(member_name);
+                            let already_exists = members.iter().any(|m| {
+                                normalize_identifier(&m.member_name) == alias_name
+                            });
+                            if !already_exists {
+                                members.push(ProjectDynamicMemberRoute {
+                                    member_name: member_name.clone(),
+                                    lowered_name: decl.lowered_name.clone(),
+                                    known_dispatch_token: None,
+                                    is_default_member: false,
+                                    kind: decl.kind.dynamic_member_kind(),
+                                    visible_param_count: decl.param_count,
+                                    entry_pc: metadata.entry_pc,
+                                    param_slots: metadata.param_slots.clone(),
+                                    return_slot: metadata.return_slot,
+                                });
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
         members.sort_by(|lhs, rhs| {
             lhs.member_name
                 .cmp(&rhs.member_name)
@@ -4768,6 +4999,7 @@ fn build_project_dynamic_object_routes(
             project_name: binding.project_name.clone(),
             module_name: binding.module_name.clone(),
             members,
+            implements_interfaces,
         });
     }
     out.sort_by_key(|route| route.object_handle);

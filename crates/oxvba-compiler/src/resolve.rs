@@ -2,7 +2,14 @@ use std::collections::{HashMap, HashSet};
 
 type ArrayBoundsMap = HashMap<String, Vec<(i32, i32)>>;
 type ParsedArrayDecl = (String, Option<BoundType>, Vec<(i32, i32)>);
-type UdtDefMap = HashMap<String, Vec<(String, BoundType)>>;
+#[derive(Debug, Clone)]
+struct UdtFieldDef {
+    name: String,
+    bound_type: BoundType,
+    nested_udt_name: Option<String>,
+    array_bounds: Option<Vec<(i32, i32)>>,
+}
+type UdtDefMap = HashMap<String, Vec<UdtFieldDef>>;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ArithOp {
@@ -1585,6 +1592,33 @@ fn normalize_external_alias(alias: &str) -> Result<(String, bool), String> {
     Ok((alias.to_ascii_lowercase(), false))
 }
 
+/// Parse UDT field array bounds from a parenthesized expression like `(10)` or `(1 To 5)`.
+/// Returns `Some(vec![(lo, hi)])` on success, `None` if unparseable.
+fn parse_udt_field_array_bounds(bounds_str: &str) -> Option<Vec<(i32, i32)>> {
+    let inner = bounds_str.trim().strip_prefix('(')?.strip_suffix(')')?.trim();
+    if inner.is_empty() {
+        return None;
+    }
+    let mut result = Vec::new();
+    for dim in inner.split(',') {
+        let dim = dim.trim();
+        let lower_dim = dim.to_ascii_lowercase();
+        if let Some((lo_str, hi_str)) = lower_dim.split_once(" to ") {
+            let lo: i32 = lo_str.trim().parse().ok()?;
+            let hi: i32 = hi_str.trim().parse().ok()?;
+            result.push((lo, hi));
+        } else {
+            let hi: i32 = dim.parse().ok()?;
+            result.push((0, hi));
+        }
+    }
+    if result.is_empty() {
+        None
+    } else {
+        Some(result)
+    }
+}
+
 fn collect_udt_definitions(lines: &[String], default_type_table: &[BoundType; 26]) -> UdtDefMap {
     let mut defs = HashMap::new();
     let mut index = 0usize;
@@ -1604,22 +1638,47 @@ fn collect_udt_definitions(lines: &[String], default_type_table: &[BoundType; 26
         while index < lines.len() && !lines[index].eq_ignore_ascii_case("end type") {
             let raw = lines[index].trim();
             if !raw.is_empty() {
-                let (field_name_raw, explicit_ty) =
+                let (field_name_raw, explicit_ty, nested_udt_name) =
                     if let Some((lhs, rhs)) = split_keyword_ci(raw, "as") {
+                        let rhs_trimmed = rhs.trim();
+                        let primitive = parse_declared_type(rhs_trimmed);
+                        let nested_name = if primitive.is_none() {
+                            normalize_ident(rhs_trimmed)
+                        } else {
+                            None
+                        };
                         (
                             lhs.trim(),
-                            parse_declared_type(rhs.trim()).unwrap_or(BoundType::Variant),
+                            primitive.unwrap_or(BoundType::Variant),
+                            nested_name,
                         )
                     } else {
-                        (raw, BoundType::Variant)
+                        (raw, BoundType::Variant, None)
                     };
-                if let Some(field_name) = normalize_ident(field_name_raw) {
-                    let field_ty = if explicit_ty == BoundType::Variant {
+                // Strip array bounds from field name if present, e.g. "Items(10)" → "Items"
+                let (field_name_clean, field_array_bounds) =
+                    if let Some(paren_pos) = field_name_raw.find('(') {
+                        let name_part = field_name_raw[..paren_pos].trim();
+                        let bounds_part = field_name_raw[paren_pos..].trim();
+                        let parsed = parse_udt_field_array_bounds(bounds_part);
+                        (name_part, parsed)
+                    } else {
+                        (field_name_raw, None)
+                    };
+                if let Some(field_name) = normalize_ident(field_name_clean) {
+                    let field_ty = if explicit_ty == BoundType::Variant
+                        && nested_udt_name.is_none()
+                    {
                         default_type_for_name(&field_name, default_type_table)
                     } else {
                         explicit_ty
                     };
-                    fields.push((field_name, field_ty));
+                    fields.push(UdtFieldDef {
+                        name: field_name,
+                        bound_type: field_ty,
+                        nested_udt_name: nested_udt_name.clone(),
+                        array_bounds: field_array_bounds,
+                    });
                 }
             }
             index += 1;
@@ -1629,7 +1688,50 @@ fn collect_udt_definitions(lines: &[String], default_type_table: &[BoundType; 26
             index += 1;
         }
     }
+    // Expand nested UDT fields: if a field's type matches another UDT name,
+    // recursively flatten its fields as sub-fields.
+    expand_nested_udt_fields(&mut defs);
     defs
+}
+
+/// Recursively expand nested UDT fields. If type `Rect` has field `TopLeft As Point` and
+/// `Point` has fields `X, Y`, then `Rect` gets expanded to include `topleft_x`, `topleft_y`
+/// alongside the original `topleft` field.
+fn expand_nested_udt_fields(defs: &mut UdtDefMap) {
+    // Snapshot UDT names for nested lookup.
+    let udt_names: Vec<String> = defs.keys().cloned().collect();
+    let snapshot: HashMap<String, Vec<UdtFieldDef>> = defs.clone();
+    for udt_name in &udt_names {
+        let mut expanded = Vec::new();
+        let fields = match snapshot.get(udt_name) {
+            Some(f) => f.clone(),
+            None => continue,
+        };
+        for field in &fields {
+            expanded.push(field.clone());
+            // Use the explicit nested_udt_name (from "As SomeType") to look up nested fields,
+            // rather than the field name itself, which was a bug.
+            let lookup_key = match &field.nested_udt_name {
+                Some(name) => name,
+                None => continue,
+            };
+            if let Some(nested_fields) = snapshot.get(lookup_key) {
+                // Skip self-referential types to avoid infinite recursion.
+                if lookup_key == udt_name {
+                    continue;
+                }
+                for sub_field in nested_fields {
+                    expanded.push(UdtFieldDef {
+                        name: format!("{}_{}", field.name, sub_field.name),
+                        bound_type: sub_field.bound_type,
+                        nested_udt_name: sub_field.nested_udt_name.clone(),
+                        array_bounds: sub_field.array_bounds.clone(),
+                    });
+                }
+            }
+        }
+        defs.insert(udt_name.clone(), expanded);
+    }
 }
 
 fn parse_enum_block(lines: &[String], index: &mut usize, constants: &mut HashMap<String, i32>) {
@@ -2177,6 +2279,7 @@ fn parse_block(
             array_bounds,
             property_write_routes,
             property_read_routes,
+            udt_defs,
         ));
         *index += 1;
     }
@@ -2431,6 +2534,7 @@ fn parse_assign_or_unsupported(
     array_bounds: &ArrayBoundsMap,
     property_write_routes: &HashMap<String, String>,
     property_read_routes: &HashMap<String, String>,
+    udt_defs: &UdtDefMap,
 ) -> BoundStmt {
     let lowered = line.trim_start().to_ascii_lowercase();
     let (assignment_intent, assignment_line) = if lowered.starts_with("set ") {
@@ -2492,7 +2596,7 @@ fn parse_assign_or_unsupported(
         if let Some(expr) = parse_expr(rhs_raw, array_bounds) {
             if let BoundExpr::Var(source) = &expr
                 && let Some(fields) =
-                    shared_udt_fields_for_assignment(&target, source, declarations)
+                    shared_udt_fields_for_assignment(&target, source, declarations, udt_defs)
             {
                 return BoundStmt::UdtAssign {
                     target,
@@ -2558,6 +2662,7 @@ fn shared_udt_fields_for_assignment(
     target: &str,
     source: &str,
     declarations: &[String],
+    udt_defs: &UdtDefMap,
 ) -> Option<Vec<String>> {
     let target_fields = collect_udt_field_suffixes(target, declarations);
     if target_fields.is_empty() {
@@ -2567,7 +2672,32 @@ fn shared_udt_fields_for_assignment(
     if source_fields.is_empty() || source_fields != target_fields {
         return None;
     }
+    // Infer UDT type names from definitions and reject cross-type assignments.
+    let target_type = infer_udt_type_from_fields(&target_fields, udt_defs);
+    let source_type = infer_udt_type_from_fields(&source_fields, udt_defs);
+    if let (Some(ref tt), Some(ref st)) = (target_type, source_type) {
+        if !tt.eq_ignore_ascii_case(st) {
+            return None;
+        }
+    }
     Some(target_fields)
+}
+
+/// Infer which UDT type a variable belongs to by matching its field suffixes
+/// against known UDT definitions.
+fn infer_udt_type_from_fields(fields: &[String], udt_defs: &UdtDefMap) -> Option<String> {
+    for (type_name, type_fields) in udt_defs {
+        let mut def_field_names: Vec<String> = type_fields
+            .iter()
+            .map(|f| f.name.to_ascii_lowercase())
+            .collect();
+        def_field_names.sort();
+        def_field_names.dedup();
+        if def_field_names == *fields {
+            return Some(type_name.clone());
+        }
+    }
+    None
 }
 
 fn collect_udt_field_suffixes(base: &str, declarations: &[String]) -> Vec<String> {
@@ -3935,7 +4065,10 @@ fn parse_compare_condition(text: &str, array_bounds: &ArrayBoundsMap) -> Option<
         && let Some((lhs_raw, rhs_raw)) = split_keyword_ci(rest, "is")
     {
         let lhs = parse_expr(lhs_raw, array_bounds)?;
-        let rhs = parse_expr(rhs_raw, array_bounds)?;
+        // VBA requires a literal type name after Is — treat RHS as a string constant,
+        // not an evaluated expression.
+        let type_name = rhs_raw.trim().to_string();
+        let rhs = BoundExpr::StringConst(type_name);
         return Some(BoundCond::Truthy(BoundExpr::IntrinsicCall {
             name: "typeofis".to_string(),
             args: vec![lhs, rhs],
@@ -4046,17 +4179,35 @@ fn parse_declaration(
         if let Some(udt_name) = explicit_udt_name
             && let Some(fields) = udt_defs.get(&udt_name)
         {
-            for (field_name, field_ty) in fields {
-                let alias = format!("{name}_{field_name}");
-                if declarations
-                    .iter()
-                    .any(|existing| existing.eq_ignore_ascii_case(&alias))
-                {
-                    duplicate_declarations.push(alias);
-                    continue;
+            for field in fields {
+                if let Some(ref bounds) = field.array_bounds {
+                    // Expand array-bounded UDT fields as indexed slot aliases.
+                    for &(lo, hi) in bounds {
+                        for idx in lo..=hi {
+                            let alias = format!("{name}_{}_{idx}", field.name);
+                            if declarations
+                                .iter()
+                                .any(|existing| existing.eq_ignore_ascii_case(&alias))
+                            {
+                                duplicate_declarations.push(alias);
+                                continue;
+                            }
+                            declarations.push(alias.clone());
+                            declaration_types.insert(alias, field.bound_type);
+                        }
+                    }
+                } else {
+                    let alias = format!("{name}_{}", field.name);
+                    if declarations
+                        .iter()
+                        .any(|existing| existing.eq_ignore_ascii_case(&alias))
+                    {
+                        duplicate_declarations.push(alias);
+                        continue;
+                    }
+                    declarations.push(alias.clone());
+                    declaration_types.insert(alias, field.bound_type);
                 }
-                declarations.push(alias.clone());
-                declaration_types.insert(alias, *field_ty);
             }
         }
     }
@@ -6092,6 +6243,58 @@ mod tests {
                 lhs: Box::new(BoundExpr::StringConst("a".to_string())),
                 rhs: Box::new(BoundExpr::StringConst("b".to_string())),
             }
+        );
+    }
+
+    #[test]
+    fn resolve_nested_udt_expansion_uses_explicit_type_name() {
+        // Item 1 regression: TopLeft As Point should expand using the "Point" type name,
+        // not the "topleft" field name.
+        let source = "Type Point\nX As Integer\nY As Integer\nEnd Type\nType Rect\nTopLeft As Point\nBottomRight As Point\nEnd Type\nSub Main()\nDim r As Rect\nr.TopLeft_X = 1\nr.TopLeft_Y = 2\nr.BottomRight_X = 3\nr.BottomRight_Y = 4\nEnd Sub";
+        let module = resolve_symbols(source);
+        // Verify that all nested fields are declared
+        for expected in &[
+            "r", "r_topleft", "r_topleft_x", "r_topleft_y",
+            "r_bottomright", "r_bottomright_x", "r_bottomright_y",
+        ] {
+            assert!(
+                module.declarations.iter().any(|d| d == expected),
+                "expected declaration '{}' not found in {:?}",
+                expected,
+                module.declarations
+            );
+        }
+    }
+
+    #[test]
+    fn resolve_nested_udt_no_expansion_for_non_udt_type() {
+        // If a field says "Foo As Bar" and Bar is not a known UDT, no sub-fields should expand.
+        let source = "Type MyType\nFoo As String\nEnd Type\nSub Main()\nDim m As MyType\nEnd Sub";
+        let module = resolve_symbols(source);
+        assert!(module.declarations.iter().any(|d| d == "m"));
+        assert!(module.declarations.iter().any(|d| d == "m_foo"));
+        // Should NOT have any sub-fields of foo
+        assert!(
+            !module.declarations.iter().any(|d| d.starts_with("m_foo_")),
+            "non-UDT field should not have sub-field expansion"
+        );
+    }
+
+    #[test]
+    fn resolve_udt_array_field_parses_without_error() {
+        let source = "Type Scores\nItems(10) As Integer\nEnd Type\nSub Main()\nDim s As Scores\nEnd Sub";
+        let module = resolve_symbols(source);
+        assert!(module.declarations.iter().any(|d| d == "s"));
+        // Array field Items(10) should create indexed aliases s_items_0 through s_items_10
+        assert!(
+            module.declarations.iter().any(|d| d == "s_items_0"),
+            "expected s_items_0 in {:?}",
+            module.declarations
+        );
+        assert!(
+            module.declarations.iter().any(|d| d == "s_items_10"),
+            "expected s_items_10 in {:?}",
+            module.declarations
         );
     }
 }

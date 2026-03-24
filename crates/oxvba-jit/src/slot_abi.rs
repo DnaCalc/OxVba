@@ -163,6 +163,20 @@ impl RtSlot {
     /// # Safety
     /// For TAG_STRING, the payload must be a valid pointer to a Box<BStr>.
     pub unsafe fn to_runtime_value(&self) -> RuntimeValue {
+        debug_assert!(
+            self.tag <= TAG_BINDING,
+            "RtSlot::to_runtime_value: invalid tag {}",
+            self.tag
+        );
+        // For heap tags, payload must be a valid pointer or null.
+        debug_assert!(
+            !matches!(self.tag, TAG_STRING | TAG_DECIMAL | TAG_ARRAY)
+                || self.payload == 0
+                || self.payload >= 0x1000, // heuristic: reject low non-null values
+            "RtSlot::to_runtime_value: suspicious heap payload {:#x} for tag {}",
+            self.payload,
+            self.tag
+        );
         match self.tag {
             TAG_EMPTY => RuntimeValue::Empty,
             TAG_NULL => RuntimeValue::Null,
@@ -215,6 +229,11 @@ impl RtSlot {
     /// # Safety
     /// Must only be called once per slot, and only when the slot owns heap data.
     pub unsafe fn drop_heap(&mut self) {
+        debug_assert!(
+            self.is_heap_type(),
+            "RtSlot::drop_heap called on non-heap tag {}",
+            self.tag
+        );
         match self.tag {
             TAG_STRING => {
                 let ptr = self.payload as *mut BStr;
@@ -279,6 +298,187 @@ pub fn rtslot_from_runtime_value(value: &RuntimeValue) -> RtSlot {
                 _pad: 0,
                 payload: ptr as u64,
             }
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn rtslot_layout_is_16_bytes() {
+        assert_eq!(std::mem::size_of::<RtSlot>(), 16);
+        assert_eq!(std::mem::align_of::<RtSlot>(), 8);
+    }
+
+    #[test]
+    fn rtslot_field_offsets_match_constants() {
+        assert_eq!(SLOT_TAG_OFFSET, 0);
+        assert_eq!(SLOT_PAYLOAD_OFFSET, 8);
+        assert_eq!(SLOT_SIZE, 16);
+        // Verify actual struct layout matches constants.
+        assert_eq!(
+            memoffset_tag(),
+            SLOT_TAG_OFFSET as usize,
+        );
+        assert_eq!(
+            memoffset_payload(),
+            SLOT_PAYLOAD_OFFSET as usize,
+        );
+    }
+
+    fn memoffset_tag() -> usize {
+        let slot = RtSlot::default();
+        let base = &slot as *const _ as usize;
+        let tag = &slot.tag as *const _ as usize;
+        tag - base
+    }
+
+    fn memoffset_payload() -> usize {
+        let slot = RtSlot::default();
+        let base = &slot as *const _ as usize;
+        let payload = &slot.payload as *const _ as usize;
+        payload - base
+    }
+
+    #[test]
+    fn tag_constants_are_all_distinct() {
+        let tags = [
+            TAG_EMPTY, TAG_NULL, TAG_I32, TAG_F64, TAG_STRING, TAG_ERROR,
+            TAG_BOOL, TAG_OBJECT, TAG_ARRAY, TAG_I64, TAG_CURRENCY, TAG_DECIMAL,
+            TAG_BINDING,
+        ];
+        for i in 0..tags.len() {
+            for j in (i + 1)..tags.len() {
+                assert_ne!(tags[i], tags[j], "tag constants at index {} and {} collide", i, j);
+            }
+        }
+    }
+
+    #[test]
+    fn scalar_roundtrip_i32() {
+        let slot = RtSlot::from_i32(42);
+        let value = unsafe { slot.to_runtime_value() };
+        assert_eq!(value, RuntimeValue::I32(42));
+    }
+
+    #[test]
+    fn scalar_roundtrip_f64() {
+        let slot = RtSlot::from_f64(3.14);
+        let value = unsafe { slot.to_runtime_value() };
+        match value {
+            RuntimeValue::F64(v) => assert!((v.as_f64() - 3.14).abs() < f64::EPSILON),
+            other => panic!("expected F64, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn heap_roundtrip_string() {
+        let original = BStr("hello".to_string());
+        let slot = RtSlot::from_string_box(Box::new(original.clone()));
+        let value = unsafe { slot.to_runtime_value() };
+        assert_eq!(value, RuntimeValue::String(original));
+        // Clean up the heap allocation.
+        let mut slot = slot;
+        unsafe { slot.drop_heap() };
+    }
+
+    #[test]
+    fn rtslot_from_runtime_value_roundtrips() {
+        let cases = vec![
+            RuntimeValue::Empty,
+            RuntimeValue::Null,
+            RuntimeValue::I32(-1),
+            RuntimeValue::Bool(true),
+            RuntimeValue::ErrorCode(13),
+            RuntimeValue::I64(i64::MAX),
+            RuntimeValue::Currency(CurrencyValue::from_scaled_i64(12345)),
+        ];
+        for original in cases {
+            let slot = rtslot_from_runtime_value(&original);
+            let recovered = unsafe { slot.to_runtime_value() };
+            assert_eq!(recovered, original, "roundtrip failed for {original:?}");
+        }
+    }
+
+    // ── proptest harnesses ──────────────────────────────────────────────
+
+    use proptest::prelude::*;
+
+    proptest! {
+        #[test]
+        fn prop_scalar_roundtrip_i32(v: i32) {
+            let slot = RtSlot::from_i32(v);
+            let recovered = unsafe { slot.to_runtime_value() };
+            prop_assert_eq!(recovered, RuntimeValue::I32(v));
+        }
+
+        #[test]
+        fn prop_scalar_roundtrip_f64(v in prop::num::f64::ANY) {
+            let slot = RtSlot::from_f64(v);
+            let recovered = unsafe { slot.to_runtime_value() };
+            match recovered {
+                RuntimeValue::F64(f) => {
+                    if v.is_nan() {
+                        prop_assert!(f.as_f64().is_nan(), "expected NaN, got {:?}", f.as_f64());
+                    } else {
+                        prop_assert_eq!(f.as_f64().to_bits(), v.to_bits());
+                    }
+                }
+                other => prop_assert!(false, "expected F64, got {:?}", other),
+            }
+        }
+
+        #[test]
+        fn prop_scalar_roundtrip_bool(v: bool) {
+            let slot = RtSlot::from_bool(v);
+            let recovered = unsafe { slot.to_runtime_value() };
+            prop_assert_eq!(recovered, RuntimeValue::Bool(v));
+        }
+
+        #[test]
+        fn prop_scalar_roundtrip_i64(v: i64) {
+            let slot = RtSlot::from_i64(v);
+            let recovered = unsafe { slot.to_runtime_value() };
+            prop_assert_eq!(recovered, RuntimeValue::I64(v));
+        }
+
+        #[test]
+        fn prop_scalar_roundtrip_currency(v: i64) {
+            let slot = RtSlot::from_currency(v);
+            let recovered = unsafe { slot.to_runtime_value() };
+            prop_assert_eq!(recovered, RuntimeValue::Currency(CurrencyValue::from_scaled_i64(v)));
+        }
+
+        #[test]
+        fn prop_heap_roundtrip_string(s in ".*") {
+            let original = BStr(s);
+            let slot = RtSlot::from_string_box(Box::new(original.clone()));
+            let recovered = unsafe { slot.to_runtime_value() };
+            prop_assert_eq!(recovered, RuntimeValue::String(original));
+            // Clean up the heap allocation.
+            let mut slot = slot;
+            unsafe { slot.drop_heap() };
+        }
+
+        #[test]
+        fn prop_rtslot_from_runtime_value_roundtrip_scalars(
+            variant in 0u8..4,
+            i32_val: i32,
+            bool_val: bool,
+            err_val: i32,
+            i64_val: i64,
+        ) {
+            let original = match variant {
+                0 => RuntimeValue::I32(i32_val),
+                1 => RuntimeValue::Bool(bool_val),
+                2 => RuntimeValue::ErrorCode(err_val),
+                _ => RuntimeValue::I64(i64_val),
+            };
+            let slot = rtslot_from_runtime_value(&original);
+            let recovered = unsafe { slot.to_runtime_value() };
+            prop_assert_eq!(recovered, original);
         }
     }
 }

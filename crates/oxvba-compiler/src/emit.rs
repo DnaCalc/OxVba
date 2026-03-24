@@ -2258,6 +2258,33 @@ fn emit_expr_into(
             }
         }
         BoundExpr::IntrinsicCall { name, args } => {
+            // Special case: TypeOf...Is embeds the type name string directly in the
+            // instruction rather than materializing it as a runtime slot value.
+            if name == "typeofis" && args.len() == 2 {
+                let object_slot = temps.alloc_temp();
+                emit_expr_into(
+                    &args[0],
+                    compare_mode,
+                    object_slot,
+                    slot_map,
+                    temps,
+                    instructions,
+                    call_patches,
+                    proc_meta,
+                    external_decls,
+                );
+                let type_name = match &args[1] {
+                    BoundExpr::StringConst(s) => s.clone(),
+                    _ => String::new(),
+                };
+                instructions.push(Instruction::IntrinsicTypeOfIs {
+                    dst,
+                    object_slot,
+                    type_name,
+                });
+                return;
+            }
+
             let mut arg_slots = Vec::with_capacity(args.len());
             for arg in args {
                 let slot = temps.alloc_temp();
@@ -2776,13 +2803,9 @@ fn emit_expr_into(
                 ("iserror", [src]) => {
                     instructions.push(Instruction::IntrinsicIsError { dst, src: *src });
                 }
-                ("typeofis", [lhs, rhs]) => {
-                    instructions.push(Instruction::CmpEqSlots {
-                        dst,
-                        lhs: *lhs,
-                        rhs: *rhs,
-                        mode: compare_mode,
-                    });
+                ("typeofis", _) => {
+                    // Handled by the special case above; should never reach here.
+                    unreachable!("typeofis is handled before arg materialization");
                 }
                 ("rnd", [seed]) => instructions.push(Instruction::IntrinsicRndDigits {
                     dst,

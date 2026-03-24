@@ -29,15 +29,17 @@ const ERR_RUNTIME: i32 = -1; // Generic runtime error (fatal)
 // ── Macro for common helper pattern ───────────────────────────────────
 
 macro_rules! read_slot {
-    ($ctx:expr, $slot:expr) => {
+    ($ctx:expr, $slot:expr) => {{
+        debug_assert!(!$ctx.is_null(), "read_slot: null JitContext pointer");
         unsafe { (*$ctx).read_slot($slot) }
-    };
+    }};
 }
 
 macro_rules! write_slot {
-    ($ctx:expr, $slot:expr, $value:expr) => {
+    ($ctx:expr, $slot:expr, $value:expr) => {{
+        debug_assert!(!$ctx.is_null(), "write_slot: null JitContext pointer");
         unsafe { (*$ctx).write_slot($slot, $value) }
-    };
+    }};
 }
 
 // ── Arithmetic helpers ────────────────────────────────────────────────
