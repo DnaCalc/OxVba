@@ -156,6 +156,14 @@ pub struct ProjectEventDispatchBinding {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
+pub struct ProjectDynamicParamRoute {
+    pub name: String,
+    pub optional: bool,
+    pub param_array: bool,
+    pub default_value: Option<i32>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
 pub struct ProjectDynamicMemberRoute {
     pub member_name: String,
     pub lowered_name: String,
@@ -163,6 +171,7 @@ pub struct ProjectDynamicMemberRoute {
     pub is_default_member: bool,
     pub kind: ProjectDynamicMemberKind,
     pub visible_param_count: usize,
+    pub params: Vec<ProjectDynamicParamRoute>,
     pub entry_pc: usize,
     pub param_slots: Vec<usize>,
     pub return_slot: Option<usize>,
@@ -448,6 +457,7 @@ struct ProcedureDecl {
     kind: ProcedureDeclKind,
     is_public: bool,
     is_default_member: bool,
+    params: Vec<ProjectDynamicParamRoute>,
     param_count: usize,
     module_kind: ModuleKind,
     option_private_module: bool,
@@ -1361,7 +1371,8 @@ fn collect_project_procedures(manifest: &ProjectManifest) -> Vec<ProcedureDecl> 
         let member_attributes = collect_member_attributes(&module.source);
         for line in module.source.lines() {
             if let Some((name, kind, is_public)) = parse_procedure_signature_line(line) {
-                let param_count = procedure_signature_param_count(line).unwrap_or(0);
+                let params = procedure_signature_params(line).unwrap_or_default();
+                let param_count = params.len();
                 let lowered_name = lowered_proc_symbol(&active_project, &module_name, &name, kind);
                 procedures.push(ProcedureDecl {
                     project_name: active_project.clone(),
@@ -1373,6 +1384,7 @@ fn collect_project_procedures(manifest: &ProjectManifest) -> Vec<ProcedureDecl> 
                     is_default_member: member_attributes
                         .get(&name)
                         .is_some_and(|attrs| attrs.vb_user_mem_id == Some(0)),
+                    params,
                     param_count,
                     module_kind: module.module_kind,
                     option_private_module: module.attributes.option_private_module,
@@ -1403,7 +1415,8 @@ fn collect_project_procedures(manifest: &ProjectManifest) -> Vec<ProcedureDecl> 
             let member_attributes = collect_member_attributes(&module.source);
             for line in module.source.lines() {
                 if let Some((name, kind, is_public)) = parse_procedure_signature_line(line) {
-                    let param_count = procedure_signature_param_count(line).unwrap_or(0);
+                    let params = procedure_signature_params(line).unwrap_or_default();
+                    let param_count = params.len();
                     let lowered_name =
                         lowered_proc_symbol(&project_name, &module_name, &name, kind);
                     procedures.push(ProcedureDecl {
@@ -1416,6 +1429,7 @@ fn collect_project_procedures(manifest: &ProjectManifest) -> Vec<ProcedureDecl> 
                         is_default_member: member_attributes
                             .get(&name)
                             .is_some_and(|attrs| attrs.vb_user_mem_id == Some(0)),
+                        params,
                         param_count,
                         module_kind: module.module_kind,
                         option_private_module: module.attributes.option_private_module,
@@ -4963,6 +4977,7 @@ fn build_project_dynamic_object_routes(
                         is_default_member: decl.is_default_member,
                         kind: decl.kind.dynamic_member_kind(),
                         visible_param_count: decl.param_count,
+                        params: decl.params.clone(),
                         entry_pc: metadata.entry_pc,
                         param_slots: metadata.param_slots.clone(),
                         return_slot: metadata.return_slot,
@@ -5002,6 +5017,7 @@ fn build_project_dynamic_object_routes(
                                     is_default_member: false,
                                     kind: decl.kind.dynamic_member_kind(),
                                     visible_param_count: decl.param_count,
+                                    params: decl.params.clone(),
                                     entry_pc: metadata.entry_pc,
                                     param_slots: metadata.param_slots.clone(),
                                     return_slot: metadata.return_slot,
@@ -6386,18 +6402,29 @@ fn parse_procedure_signature_line(line: &str) -> Option<(String, ProcedureDeclKi
     Some((name, kind, is_public))
 }
 
-fn procedure_signature_param_count(line: &str) -> Option<usize> {
+fn procedure_signature_params(line: &str) -> Option<Vec<ProjectDynamicParamRoute>> {
     let trimmed = line.trim();
     let open = trimmed.find('(')?;
     let close = find_matching_paren(trimmed, open)?;
     let payload = trimmed[open + 1..close].trim();
     if payload.is_empty() {
-        return Some(0);
+        return Some(Vec::new());
     }
+
+    let args = split_signature_args(payload)?;
+    let mut params = Vec::with_capacity(args.len());
+    for arg in args {
+        params.push(parse_procedure_signature_param(arg)?);
+    }
+    Some(params)
+}
+
+fn split_signature_args(payload: &str) -> Option<Vec<&str>> {
     let mut depth = 0i32;
-    let mut count = 1usize;
     let mut in_string = false;
-    for ch in payload.chars() {
+    let mut start = 0usize;
+    let mut parts = Vec::new();
+    for (idx, ch) in payload.char_indices() {
         if ch == '"' {
             in_string = !in_string;
             continue;
@@ -6408,11 +6435,74 @@ fn procedure_signature_param_count(line: &str) -> Option<usize> {
         match ch {
             '(' => depth += 1,
             ')' => depth -= 1,
-            ',' if depth == 0 => count += 1,
+            ',' if depth == 0 => {
+                let part = payload[start..idx].trim();
+                if part.is_empty() {
+                    return None;
+                }
+                parts.push(part);
+                start = idx + 1;
+            }
             _ => {}
         }
     }
-    Some(count)
+    if depth != 0 {
+        return None;
+    }
+    let tail = payload[start..].trim();
+    if tail.is_empty() {
+        return None;
+    }
+    parts.push(tail);
+    Some(parts)
+}
+
+fn parse_procedure_signature_param(raw: &str) -> Option<ProjectDynamicParamRoute> {
+    let mut token = raw.trim();
+    if token.is_empty() {
+        return None;
+    }
+    let mut lower = token.to_ascii_lowercase();
+
+    let mut optional = false;
+    if lower.starts_with("optional ") {
+        optional = true;
+        token = token[9..].trim();
+        lower = token.to_ascii_lowercase();
+    }
+
+    let mut param_array = false;
+    if lower.starts_with("paramarray ") {
+        param_array = true;
+        token = token[11..].trim();
+        lower = token.to_ascii_lowercase();
+    }
+
+    if !param_array {
+        if lower.starts_with("byval ") || lower.starts_with("byref ") {
+            token = token[6..].trim();
+        }
+    }
+
+    let (decl_text, default_value) = if let Some((lhs, rhs)) = token.split_once('=') {
+        let parsed_default = rhs.trim().parse::<i32>().ok()?;
+        (lhs.trim(), Some(parsed_default))
+    } else {
+        (token, None)
+    };
+
+    let name_token = decl_text
+        .split_ascii_whitespace()
+        .next()
+        .map(|name| name.trim_end_matches("()"))?;
+    let name = normalize_procedure_name(name_token)?;
+
+    Some(ProjectDynamicParamRoute {
+        name,
+        optional,
+        param_array,
+        default_value,
+    })
 }
 
 fn normalize_procedure_name(token: &str) -> Option<String> {

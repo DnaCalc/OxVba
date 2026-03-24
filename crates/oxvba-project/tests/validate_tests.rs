@@ -5,7 +5,7 @@ use std::collections::BTreeMap;
 use oxvba_compiler::{
     Bytecode, CompiledProject, DeclareParamType, ExportKind, HostProcedureExport,
     ProcedureRuntimeMetadata, ProjectDynamicMemberKind, ProjectDynamicMemberRoute,
-    ProjectDynamicObjectRoute,
+    ProjectDynamicObjectRoute, ProjectDynamicParamRoute,
 };
 use oxvba_project::validate::{validate_com_class_exports, validate_native_exports};
 use oxvba_project::{
@@ -250,6 +250,20 @@ fn com_class_exported_when_exposed_and_creatable() {
             is_default_member: false,
             kind: ProjectDynamicMemberKind::Function,
             visible_param_count: 2,
+            params: vec![
+                ProjectDynamicParamRoute {
+                    name: "lhs".to_string(),
+                    optional: false,
+                    param_array: false,
+                    default_value: None,
+                },
+                ProjectDynamicParamRoute {
+                    name: "rhs".to_string(),
+                    optional: false,
+                    param_array: false,
+                    default_value: None,
+                },
+            ],
             entry_pc: 0,
             param_slots: vec![1, 2],
             return_slot: Some(3),
@@ -357,6 +371,7 @@ fn com_class_with_multiple_members() {
                 is_default_member: false,
                 kind: ProjectDynamicMemberKind::PropertyGet,
                 visible_param_count: 0,
+                params: Vec::new(),
                 entry_pc: 0,
                 param_slots: Vec::new(),
                 return_slot: Some(0),
@@ -368,6 +383,12 @@ fn com_class_with_multiple_members() {
                 is_default_member: false,
                 kind: ProjectDynamicMemberKind::PropertyLet,
                 visible_param_count: 1,
+                params: vec![ProjectDynamicParamRoute {
+                    name: "value".to_string(),
+                    optional: false,
+                    param_array: false,
+                    default_value: None,
+                }],
                 entry_pc: 10,
                 param_slots: vec![1],
                 return_slot: None,
@@ -379,6 +400,7 @@ fn com_class_with_multiple_members() {
                 is_default_member: false,
                 kind: ProjectDynamicMemberKind::Method,
                 visible_param_count: 0,
+                params: Vec::new(),
                 entry_pc: 20,
                 param_slots: Vec::new(),
                 return_slot: None,

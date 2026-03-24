@@ -70,6 +70,12 @@ pub struct GreenNodeBuilder {
     stack: Vec<(SyntaxKind, Vec<GreenChild>)>,
 }
 
+impl Default for GreenNodeBuilder {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl GreenNodeBuilder {
     pub fn new() -> Self {
         GreenNodeBuilder { stack: Vec::new() }

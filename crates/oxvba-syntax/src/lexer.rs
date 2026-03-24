@@ -297,10 +297,6 @@ mod tests {
         tokenize(source).into_iter().map(|(k, _)| k).collect()
     }
 
-    fn texts(source: &str) -> Vec<&str> {
-        tokenize(source).into_iter().map(|(_, t)| t).collect()
-    }
-
     #[test]
     fn round_trip_lossless() {
         let sources = vec![

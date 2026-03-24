@@ -69,7 +69,7 @@ Owned items:
 
 - [x] Single-line `If` with statement
 - [x] ParamArray named arguments
-- [ ] Dynamic dispatch named/omitted args
+- [x] Dynamic dispatch named/omitted args
 
 Execution order:
 
@@ -85,8 +85,8 @@ Why this order:
 
 Acceptance:
 
-- [ ] Each engine item has at least one focused compiler or host regression test.
-- [ ] Any residual unsupported subset is explicit and narrow rather than a silent fallback.
+- [x] Each engine item has at least one focused compiler or host regression test.
+- [x] Any residual unsupported subset is explicit and narrow rather than a silent fallback.
 
 ## Current execution notes
 
@@ -125,9 +125,9 @@ Current gap:
 
 Planned closure:
 
-- [ ] teach project dynamic routing to canonicalize named and omitted arguments against the selected member metadata,
-- [ ] preserve current ambiguity and arity diagnostics,
-- [ ] verify shared behavior on native project objects and host-returned object paths that use the same route.
+- [x] teach project dynamic routing to canonicalize named and omitted arguments against the selected member metadata,
+- [x] preserve current ambiguity and arity diagnostics,
+- [x] verify shared behavior on native project objects and host-returned object paths that use the same route.
 
 ## Verification lanes
 

@@ -9909,6 +9909,70 @@ mod tests {
     }
 
     #[test]
+    fn formal_pmr_dispatchinvoke_routes_internal_class_function_named_arg_through_native_dynamic_path()
+     {
+        let engine = Engine::new(HostConfig::default());
+        let main_module = module_unit_from_source(
+            "MainModule",
+            ModuleKind::Procedural,
+            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim widget As New Widget\nDim value\nvalue = DispatchInvoke(widget, \"Ping\", n := 7)\nEnd Sub",
+        )
+        .expect("main module should parse");
+        let widget = module_unit_from_source(
+            "Widget",
+            ModuleKind::Class,
+            "Attribute VB_Name = \"Widget\"\nPublic Function Ping(ByVal n)\nPing = n + 1\nEnd Function",
+        )
+        .expect("widget module should parse");
+        let manifest = ProjectManifest {
+            project_name: "ProjectA".to_string(),
+            project_kind: ProjectKind::Source,
+            modules: vec![main_module, widget],
+            references: Vec::new(),
+            reference_projects: Vec::new(),
+            conditional_constants: std::collections::BTreeMap::new(),
+        };
+
+        let snapshot = engine
+            .execute_project_with_value_snapshot_phased(&manifest)
+            .expect("project execution should succeed");
+        assert_eq!(snapshot[0], RuntimeValue::I32(1));
+        assert_eq!(snapshot[1], RuntimeValue::I32(8));
+    }
+
+    #[test]
+    fn formal_pmr_dispatchinvoke_routes_internal_class_function_optional_default_through_native_dynamic_path()
+     {
+        let engine = Engine::new(HostConfig::default());
+        let main_module = module_unit_from_source(
+            "MainModule",
+            ModuleKind::Procedural,
+            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim widget As New Widget\nDim value\nvalue = DispatchInvoke(widget, \"Ping\")\nEnd Sub",
+        )
+        .expect("main module should parse");
+        let widget = module_unit_from_source(
+            "Widget",
+            ModuleKind::Class,
+            "Attribute VB_Name = \"Widget\"\nPublic Function Ping(Optional ByVal n = 7)\nPing = n + 1\nEnd Function",
+        )
+        .expect("widget module should parse");
+        let manifest = ProjectManifest {
+            project_name: "ProjectA".to_string(),
+            project_kind: ProjectKind::Source,
+            modules: vec![main_module, widget],
+            references: Vec::new(),
+            reference_projects: Vec::new(),
+            conditional_constants: std::collections::BTreeMap::new(),
+        };
+
+        let snapshot = engine
+            .execute_project_with_value_snapshot_phased(&manifest)
+            .expect("project execution should succeed");
+        assert_eq!(snapshot[0], RuntimeValue::I32(1));
+        assert_eq!(snapshot[1], RuntimeValue::I32(8));
+    }
+
+    #[test]
     fn formal_pmr_dispatchinvoke_routes_internal_class_property_get_let_through_native_dynamic_path()
      {
         let engine = Engine::new(HostConfig::default());
@@ -9981,6 +10045,40 @@ mod tests {
                 }),
             "expected property get member route with a return slot"
         );
+
+        let snapshot = engine
+            .execute_project_with_value_snapshot_phased(&manifest)
+            .expect("project execution should succeed");
+        assert_eq!(snapshot[0], RuntimeValue::I32(1));
+        assert_eq!(snapshot[1], RuntimeValue::I32(4));
+        assert_eq!(snapshot[2], RuntimeValue::Empty);
+        assert_eq!(snapshot[3], RuntimeValue::I32(9));
+    }
+
+    #[test]
+    fn formal_pmr_dispatchinvoke_routes_internal_class_property_let_named_arg_through_native_dynamic_path()
+     {
+        let engine = Engine::new(HostConfig::default());
+        let main_module = module_unit_from_source(
+            "MainModule",
+            ModuleKind::Procedural,
+            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim widget As New Widget\nDim beforeValue\nDim setResult\nDim afterValue\nbeforeValue = DispatchInvoke(widget, \"Value\")\nsetResult = DispatchInvoke(widget, \"Value\", n := 9)\nafterValue = DispatchInvoke(widget, \"Value\")\nEnd Sub",
+        )
+        .expect("main module should parse");
+        let widget = module_unit_from_source(
+            "Widget",
+            ModuleKind::Class,
+            "Attribute VB_Name = \"Widget\"\nPrivate stored\nPublic Sub Class_Initialize()\nstored = 4\nEnd Sub\nPublic Property Get Value()\nValue = stored\nEnd Property\nPublic Property Let Value(ByVal n)\nstored = n\nEnd Property",
+        )
+        .expect("widget module should parse");
+        let manifest = ProjectManifest {
+            project_name: "ProjectA".to_string(),
+            project_kind: ProjectKind::Source,
+            modules: vec![main_module, widget],
+            references: Vec::new(),
+            reference_projects: Vec::new(),
+            conditional_constants: std::collections::BTreeMap::new(),
+        };
 
         let snapshot = engine
             .execute_project_with_value_snapshot_phased(&manifest)

@@ -80,23 +80,6 @@ impl<'a> Parser<'a> {
             .unwrap_or(SyntaxKind::Eof)
     }
 
-    fn current_text(&self) -> &'a str {
-        self.tokens.get(self.pos).map(|(_, t)| *t).unwrap_or("")
-    }
-
-    /// Peek at the next non-trivia token kind.
-    fn peek_non_trivia(&self) -> SyntaxKind {
-        let mut j = self.pos + 1;
-        while j < self.tokens.len() {
-            let k = self.tokens[j].0;
-            if !k.is_trivia() {
-                return k;
-            }
-            j += 1;
-        }
-        SyntaxKind::Eof
-    }
-
     fn at(&self, kind: SyntaxKind) -> bool {
         self.current() == kind
     }
@@ -162,12 +145,6 @@ impl<'a> Parser<'a> {
 
     fn eat_to_eol(&mut self) {
         while !self.at_eof() && !self.at(SyntaxKind::Newline) {
-            self.bump();
-        }
-    }
-
-    fn eat_newlines(&mut self) {
-        while self.at(SyntaxKind::Newline) || self.at(SyntaxKind::Comment) {
             self.bump();
         }
     }

@@ -238,8 +238,7 @@ mod tests {
                 "ok" => {
                     // Coercion may succeed or fail for unimplemented paths;
                     // track but don't hard-fail on unimplemented.
-                    if result.is_err() {
-                        let msg = result.unwrap_err();
+                    if let Err(msg) = result {
                         if msg.contains("not yet implemented")
                             || msg.contains("unsupported coercion")
                             || msg.contains("cannot hold heap strings")

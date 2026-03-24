@@ -2,10 +2,11 @@ use std::{collections::HashMap, sync::Arc};
 
 use oxvba_com::{
     ComCallbackToken, ComMemberToken, ComSubscriptionToken, ComValue, DynamicCallArg,
-    DynamicCallRequest, DynamicMemberSelector, DynamicObjectBridge,
+    DynamicCallKind, DynamicCallRequest, DynamicMemberSelector, DynamicObjectBridge,
 };
 use oxvba_compiler::{
-    Bytecode, Instruction, ProjectDynamicObjectRoute,
+    Bytecode, Instruction, ProjectDynamicMemberKind, ProjectDynamicMemberRoute,
+    ProjectDynamicObjectRoute, ProjectDynamicParamRoute,
     bytecode::{RuntimeAssignmentIntent, RuntimeAssignmentTargetKind, StringCompareMode},
 };
 use oxvba_hal::{
@@ -15,7 +16,9 @@ use oxvba_hal::{
     model::{CapabilityId, HostPolicy, native_host_profile},
     traits::{DynLinkDescriptorView, HostServices},
 };
-use oxvba_runtime::safe_array::{array_len_from_tag, is_array_tag as runtime_is_array_tag};
+use oxvba_runtime::safe_array::{
+    SafeArray, array_len_from_tag, is_array_tag as runtime_is_array_tag,
+};
 use oxvba_runtime::value_tags::{
     EMPTY_TAG, NULL_TAG, error_tag_from_code, is_error_tag as runtime_is_error_tag,
 };
@@ -2829,6 +2832,137 @@ impl Vm {
         )
     }
 
+    fn project_dynamic_member_matches_hint(
+        member: &ProjectDynamicMemberRoute,
+        hint: DynamicCallKind,
+    ) -> bool {
+        match hint {
+            DynamicCallKind::Method => matches!(
+                member.kind,
+                ProjectDynamicMemberKind::Method | ProjectDynamicMemberKind::Function
+            ),
+            DynamicCallKind::PropertyGet => member.kind == ProjectDynamicMemberKind::PropertyGet,
+            DynamicCallKind::PropertyLet => member.kind == ProjectDynamicMemberKind::PropertyLet,
+            DynamicCallKind::PropertySet => member.kind == ProjectDynamicMemberKind::PropertySet,
+        }
+    }
+
+    fn default_project_dynamic_param_value(param: &ProjectDynamicParamRoute) -> RuntimeValue {
+        RuntimeValue::from_legacy_i32(param.default_value.unwrap_or(0))
+    }
+
+    fn bind_project_dynamic_member_args(
+        member: &ProjectDynamicMemberRoute,
+        request_args: &[DynamicCallArg],
+    ) -> Result<Vec<RuntimeValue>, String> {
+        if member.params.len() != member.visible_param_count {
+            return Err(format!(
+                "member metadata mismatch: {} visible params but {} param routes",
+                member.visible_param_count,
+                member.params.len()
+            ));
+        }
+
+        let mut bound: Vec<Option<RuntimeValue>> = vec![None; member.params.len()];
+        let mut param_array_items = Vec::new();
+        let param_array_index = member.params.iter().position(|param| param.param_array);
+        let mut next_positional = 0usize;
+        let mut named_seen = false;
+
+        for arg in request_args {
+            if let Some(name) = &arg.name {
+                named_seen = true;
+                let Some(index) = member
+                    .params
+                    .iter()
+                    .position(|param| param.name.eq_ignore_ascii_case(name))
+                else {
+                    return Err(format!("unknown named argument `{name}`"));
+                };
+                let param = &member.params[index];
+                if param.param_array {
+                    return Err(format!(
+                        "named arguments are not supported for ParamArray parameter `{}`",
+                        param.name
+                    ));
+                }
+                if bound[index].is_some() {
+                    return Err(format!("argument `{}` is bound more than once", param.name));
+                }
+                bound[index] = Some(match &arg.value {
+                    Some(value) => value.to_runtime_value(),
+                    None if param.optional => Self::default_project_dynamic_param_value(param),
+                    None => {
+                        return Err(format!(
+                            "required argument `{}` cannot be omitted",
+                            param.name
+                        ));
+                    }
+                });
+                continue;
+            }
+
+            if named_seen {
+                return Err("positional argument cannot follow named argument".to_string());
+            }
+
+            let Some(index) = (next_positional..member.params.len())
+                .find(|&idx| member.params[idx].param_array || bound[idx].is_none())
+            else {
+                return Err(format!(
+                    "too many arguments: request supplied {} visible args for {} parameters",
+                    request_args.len(),
+                    member.params.len()
+                ));
+            };
+            let param = &member.params[index];
+            if param.param_array {
+                let Some(value) = &arg.value else {
+                    return Err(format!(
+                        "ParamArray parameter `{}` does not support omitted elements",
+                        param.name
+                    ));
+                };
+                param_array_items.push(value.to_runtime_value());
+                next_positional = index;
+                continue;
+            }
+
+            bound[index] = Some(match &arg.value {
+                Some(value) => value.to_runtime_value(),
+                None if param.optional => Self::default_project_dynamic_param_value(param),
+                None => {
+                    return Err(format!(
+                        "required argument `{}` cannot be omitted",
+                        param.name
+                    ));
+                }
+            });
+            next_positional = index + 1;
+        }
+
+        if let Some(index) = param_array_index {
+            bound[index] = Some(RuntimeValue::ArrayIntent(SafeArray::from_values(
+                param_array_items,
+            )));
+        }
+
+        for (index, param) in member.params.iter().enumerate() {
+            if bound[index].is_some() {
+                continue;
+            }
+            bound[index] = Some(if param.param_array {
+                RuntimeValue::ArrayIntent(SafeArray::from_values(Vec::new()))
+            } else if param.optional {
+                Self::default_project_dynamic_param_value(param)
+            } else {
+                return Err(format!("missing required argument `{}`", param.name));
+            });
+        }
+
+        Ok(bound.into_iter().flatten().collect())
+    }
+
     fn try_invoke_project_dynamic(
         &mut self,
         bytecode: &Bytecode,
@@ -2843,30 +2977,25 @@ impl Vm {
             DynamicMemberSelector::Name(name) => route
                 .members
                 .iter()
-                .filter(|member| {
-                    member.member_name.eq_ignore_ascii_case(name)
-                        && member.visible_param_count == request.args.len()
-                })
+                .filter(|member| member.member_name.eq_ignore_ascii_case(name))
                 .cloned()
                 .collect::<Vec<_>>(),
             DynamicMemberSelector::Token(token) => route
                 .members
                 .iter()
-                .filter(|member| {
-                    member.known_dispatch_token == Some(*token)
-                        && member.visible_param_count == request.args.len()
-                })
+                .filter(|member| member.known_dispatch_token == Some(*token))
                 .cloned()
                 .collect::<Vec<_>>(),
             DynamicMemberSelector::DefaultMember => route
                 .members
                 .iter()
-                .filter(|member| {
-                    member.is_default_member && member.visible_param_count == request.args.len()
-                })
+                .filter(|member| member.is_default_member)
                 .cloned()
                 .collect::<Vec<_>>(),
         };
+        if let Some(hint) = request.call_kind_hint {
+            candidates.retain(|member| Self::project_dynamic_member_matches_hint(member, hint));
+        }
         let selector_label = match &request.member {
             DynamicMemberSelector::Name(name) => {
                 format!("name `{}`", name.trim().to_ascii_lowercase())
@@ -2874,8 +3003,20 @@ impl Vm {
             DynamicMemberSelector::Token(token) => format!("token {}", token),
             DynamicMemberSelector::DefaultMember => "default member".to_string(),
         };
-        candidates.sort_by(|lhs, rhs| lhs.lowered_name.cmp(&rhs.lowered_name));
-        let member = match candidates.as_slice() {
+        candidates.sort_by(|lhs, rhs| {
+            lhs.lowered_name
+                .cmp(&rhs.lowered_name)
+                .then(lhs.entry_pc.cmp(&rhs.entry_pc))
+        });
+        let mut bound_candidates = Vec::new();
+        let mut binding_failures = Vec::new();
+        for member in candidates {
+            match Self::bind_project_dynamic_member_args(&member, &request.args) {
+                Ok(values) => bound_candidates.push((member, values)),
+                Err(detail) => binding_failures.push(format!("{:?}: {detail}", member.kind)),
+            }
+        }
+        let (member, mut values) = match bound_candidates.as_slice() {
             [] => {
                 let available = route
                     .members
@@ -2894,19 +3035,25 @@ impl Vm {
                     })
                     .collect::<Vec<_>>()
                     .join(", ");
+                let binding_context = if binding_failures.is_empty() {
+                    String::new()
+                } else {
+                    format!("; binding failures: [{}]", binding_failures.join("; "))
+                };
                 return Err(format!(
-                    "project dynamic dispatch target {} on `{}` object {} is unresolved for arity {} (available: [{}])",
+                    "project dynamic dispatch target {} on `{}` object {} is unresolved for {} explicit args (available: [{}]{})",
                     selector_label,
                     route.module_name,
                     object,
                     request.args.len(),
-                    available
+                    available,
+                    binding_context
                 ));
             }
-            [member] => member.clone(),
+            [(member, values)] => (member.clone(), values.clone()),
             _ => {
                 return Err(format!(
-                    "project dynamic dispatch target {} on `{}` object {} is ambiguous for arity {}",
+                    "project dynamic dispatch target {} on `{}` object {} is ambiguous for {} explicit args",
                     selector_label,
                     route.module_name,
                     object,
@@ -2914,23 +3061,7 @@ impl Vm {
                 ));
             }
         };
-        let mut values = Vec::with_capacity(request.args.len() + 1);
-        values.push(RuntimeValue::ObjectHandle(object));
-        for arg in &request.args {
-            if let Some(name) = &arg.name {
-                return Err(format!(
-                    "project dynamic dispatch target {} on `{}` object {} does not yet support named argument `{}`",
-                    selector_label, route.module_name, object, name
-                ));
-            }
-            let Some(value) = &arg.value else {
-                return Err(format!(
-                    "project dynamic dispatch target {} on `{}` object {} does not yet support omitted arguments",
-                    selector_label, route.module_name, object
-                ));
-            };
-            values.push(value.to_runtime_value());
-        }
+        values.insert(0, RuntimeValue::ObjectHandle(object));
         if member.param_slots.len() != values.len() {
             return Err(format!(
                 "project dynamic dispatch target {} on `{}` object {} expects {} runtime slots but request built {} values",
@@ -3564,8 +3695,10 @@ impl Vm {
 #[cfg(test)]
 mod tests {
     use super::Vm;
+    use oxvba_com::{ComValue, DynamicCallArg, DynamicCallRequest, DynamicMemberSelector};
     use oxvba_compiler::{
-        Bytecode, Instruction,
+        Bytecode, Instruction, ProjectDynamicMemberKind, ProjectDynamicMemberRoute,
+        ProjectDynamicObjectRoute, ProjectDynamicParamRoute,
         bytecode::{DispatchInvokeArg, StringCompareMode},
     };
     use oxvba_hal::{
@@ -3573,7 +3706,11 @@ mod tests {
         model::CapabilityId,
     };
     use oxvba_runtime::value_tags::{EMPTY_TAG, NULL_TAG, error_tag_from_code};
-    use oxvba_runtime::{RuntimeValue, bstr::BStr, safe_array::ARRAY_TAG_BASE};
+    use oxvba_runtime::{
+        ObjectHandle, RuntimeValue,
+        bstr::BStr,
+        safe_array::{ARRAY_TAG_BASE, SafeArray},
+    };
 
     #[test]
     fn executes_load_and_add_sequence() {
@@ -4288,6 +4425,202 @@ mod tests {
                 RuntimeValue::I32(11),
                 RuntimeValue::I32(14),
                 RuntimeValue::I32(17),
+            ]))
+        );
+    }
+
+    #[test]
+    fn project_dynamic_dispatch_binds_named_args() {
+        let object = ObjectHandle::new(71);
+        let bytecode = Bytecode {
+            instructions: vec![
+                Instruction::CopySlot { dst: 2, src: 1 },
+                Instruction::AddConstI32 { slot: 2, value: 1 },
+                Instruction::Return,
+            ],
+            external_call_descriptors: Vec::new(),
+            slot_count: 3,
+            user_slot_count: 3,
+        };
+        let member = ProjectDynamicMemberRoute {
+            member_name: "ping".to_string(),
+            lowered_name: "ping".to_string(),
+            known_dispatch_token: Some(77),
+            is_default_member: false,
+            kind: ProjectDynamicMemberKind::Function,
+            visible_param_count: 1,
+            params: vec![ProjectDynamicParamRoute {
+                name: "n".to_string(),
+                optional: false,
+                param_array: false,
+                default_value: None,
+            }],
+            entry_pc: 0,
+            param_slots: vec![0, 1],
+            return_slot: Some(2),
+        };
+        let route = ProjectDynamicObjectRoute {
+            object_handle: object,
+            project_name: "ProjectA".to_string(),
+            module_name: "Widget".to_string(),
+            members: vec![member],
+            implements_interfaces: Vec::new(),
+        };
+        let request = DynamicCallRequest {
+            object: object.into(),
+            member: DynamicMemberSelector::Name("Ping".to_string()),
+            args: vec![DynamicCallArg {
+                value: Some(ComValue::from_runtime_value(&RuntimeValue::I32(7))),
+                name: Some("n".to_string()),
+            }],
+            call_kind_hint: None,
+        };
+
+        let mut vm = Vm::default();
+        vm.reset_execution_state(bytecode.slot_count, false);
+        vm.set_project_dynamic_objects(vec![route]);
+        let value = vm
+            .try_invoke_project_dynamic(&bytecode, false, &request)
+            .expect("dispatch should bind")
+            .expect("project-dynamic route should match");
+
+        assert_eq!(value, RuntimeValue::I32(8));
+    }
+
+    #[test]
+    fn project_dynamic_dispatch_applies_optional_defaults_for_missing_and_omitted_args() {
+        let object = ObjectHandle::new(72);
+        let bytecode = Bytecode {
+            instructions: vec![
+                Instruction::CopySlot { dst: 2, src: 1 },
+                Instruction::Return,
+            ],
+            external_call_descriptors: Vec::new(),
+            slot_count: 3,
+            user_slot_count: 3,
+        };
+        let member = ProjectDynamicMemberRoute {
+            member_name: "ping".to_string(),
+            lowered_name: "ping".to_string(),
+            known_dispatch_token: Some(77),
+            is_default_member: false,
+            kind: ProjectDynamicMemberKind::Function,
+            visible_param_count: 1,
+            params: vec![ProjectDynamicParamRoute {
+                name: "n".to_string(),
+                optional: true,
+                param_array: false,
+                default_value: Some(7),
+            }],
+            entry_pc: 0,
+            param_slots: vec![0, 1],
+            return_slot: Some(2),
+        };
+        let route = ProjectDynamicObjectRoute {
+            object_handle: object,
+            project_name: "ProjectA".to_string(),
+            module_name: "Widget".to_string(),
+            members: vec![member],
+            implements_interfaces: Vec::new(),
+        };
+        let mut vm = Vm::default();
+        vm.reset_execution_state(bytecode.slot_count, false);
+        vm.set_project_dynamic_objects(vec![route.clone()]);
+
+        let omitted_request = DynamicCallRequest {
+            object: object.into(),
+            member: DynamicMemberSelector::Name("Ping".to_string()),
+            args: vec![],
+            call_kind_hint: None,
+        };
+        let omitted_value = vm
+            .try_invoke_project_dynamic(&bytecode, false, &omitted_request)
+            .expect("dispatch should bind omitted optional")
+            .expect("project-dynamic route should match");
+        assert_eq!(omitted_value, RuntimeValue::I32(7));
+
+        vm.set_project_dynamic_objects(vec![route]);
+        let explicit_omitted_request = DynamicCallRequest {
+            object: object.into(),
+            member: DynamicMemberSelector::Name("Ping".to_string()),
+            args: vec![DynamicCallArg {
+                value: None,
+                name: None,
+            }],
+            call_kind_hint: None,
+        };
+        let explicit_omitted_value = vm
+            .try_invoke_project_dynamic(&bytecode, false, &explicit_omitted_request)
+            .expect("dispatch should bind explicit omitted optional")
+            .expect("project-dynamic route should match");
+        assert_eq!(explicit_omitted_value, RuntimeValue::I32(7));
+    }
+
+    #[test]
+    fn project_dynamic_dispatch_packs_paramarray_values() {
+        let object = ObjectHandle::new(73);
+        let bytecode = Bytecode {
+            instructions: vec![
+                Instruction::CopySlot { dst: 2, src: 1 },
+                Instruction::Return,
+            ],
+            external_call_descriptors: Vec::new(),
+            slot_count: 3,
+            user_slot_count: 3,
+        };
+        let member = ProjectDynamicMemberRoute {
+            member_name: "capture".to_string(),
+            lowered_name: "capture".to_string(),
+            known_dispatch_token: Some(78),
+            is_default_member: false,
+            kind: ProjectDynamicMemberKind::Function,
+            visible_param_count: 1,
+            params: vec![ProjectDynamicParamRoute {
+                name: "items".to_string(),
+                optional: false,
+                param_array: true,
+                default_value: None,
+            }],
+            entry_pc: 0,
+            param_slots: vec![0, 1],
+            return_slot: Some(2),
+        };
+        let route = ProjectDynamicObjectRoute {
+            object_handle: object,
+            project_name: "ProjectA".to_string(),
+            module_name: "Widget".to_string(),
+            members: vec![member],
+            implements_interfaces: Vec::new(),
+        };
+        let request = DynamicCallRequest {
+            object: object.into(),
+            member: DynamicMemberSelector::Name("Capture".to_string()),
+            args: vec![
+                DynamicCallArg {
+                    value: Some(ComValue::from_runtime_value(&RuntimeValue::I32(11))),
+                    name: None,
+                },
+                DynamicCallArg {
+                    value: Some(ComValue::from_runtime_value(&RuntimeValue::I32(14))),
+                    name: None,
+                },
+            ],
+            call_kind_hint: None,
+        };
+
+        let mut vm = Vm::default();
+        vm.reset_execution_state(bytecode.slot_count, false);
+        vm.set_project_dynamic_objects(vec![route]);
+        let value = vm
+            .try_invoke_project_dynamic(&bytecode, false, &request)
+            .expect("dispatch should bind paramarray")
+            .expect("project-dynamic route should match");
+
+        assert_eq!(
+            value,
+            RuntimeValue::ArrayIntent(SafeArray::from_values(vec![
+                RuntimeValue::I32(11),
+                RuntimeValue::I32(14),
             ]))
         );
     }

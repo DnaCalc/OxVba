@@ -1,6 +1,6 @@
 # OxVba Initial Scope Status — 2026-03-24
 
-**Test count:** 2247 passing, 0 failures
+**Test count:** 2258 passing, 0 failures
 **Integration fixtures:** 14 active (including newly unblocked INTP-016), 3 deferred, 3 not-created
 **Formal gates:** 30 folded, 1 running, 19 deferred with rationale
 **Divergences:** 0 open (4 tracked, all closed or narrowed)
@@ -17,7 +17,7 @@
 | **Single-line If with statement** | Medium | Done |
 | **RuntimeValue <-> Variant bridge** | Medium | Partially done |
 | **ParamArray named arguments** | Medium | Done |
-| **Dynamic dispatch named/omitted args** | Medium | Open |
+| **Dynamic dispatch named/omitted args** | Medium | Done |
 
 ### Completed this session
 
@@ -27,11 +27,12 @@
 - [x] **Class module `As New` in project execution** — Root cause was module ordering: class modules sorted alphabetically before `Main.proc.bas`, placing class helper functions at bytecode pc=0 instead of the entry point. Fixed by emitting procedural modules before class modules in `lower_project_source()`. INTP-016 integration fixture promoted to active and passing.
 - [x] **Single-line If with statement** — The project resolver now parses single-line `If cond Then stmt` forms instead of treating them as unsupported multiline headers. Added compiler regression coverage for inline assignment-form lowering and host/project regression coverage for `If 1 = 1 Then Err.Raise 104`.
 - [x] **ParamArray named arguments** — Calls to ParamArray procedures no longer reject named fixed parameters wholesale. Named fixed parameters now bind correctly while trailing positional arguments still pack into the ParamArray. The oracle-matched rejection for naming the ParamArray target itself (`items := ...`) remains intact and tested.
+- [x] **Dynamic dispatch named/omitted args** — Native project-object `DispatchInvoke` now binds named arguments against project member metadata, applies optional defaults when trailing arguments are omitted, preserves explicit omitted-arg semantics at the VM request seam, and packs `ParamArray` values for project-dynamic routing. Added VM route-binding regressions plus host/project regressions for named function and property-let dispatch and omitted optional-default dispatch.
 - [x] **RuntimeValue <-> Variant bridge (partial)** — String coercion is now handled at the RuntimeValue level via the new `runtime_value_to_vba_string`. Added Byte (`from_u8`/`as_u8`) accessors. Remaining gaps (ArrayIntent, ObjectHandle in Variant) are architecturally blocked by the Copy-able 16-byte Variant struct and correctly handled through RuntimeValue directly.
 
 ### Remaining for Initial Scope
 
-- [ ] **Dynamic dispatch named/omitted args** — Named arguments and omitted arguments for COM-dispatched method calls not supported at `interpreter.rs:2802-2808`. Medium severity, COM interop limitation.
+- No remaining repo-fixable engine gaps are open for initial scope.
 
 ---
 
@@ -173,7 +174,6 @@ These are post-Initial Scope items. No action needed for v620 closure.
 
 ### Should-do (high value, not strictly blocking)
 
-- [ ] Dynamic dispatch named/omitted args — medium severity COM limitation
 - [ ] Type coercion proptest expansion — catches bugs without external dependencies
 - [ ] Consider wiring Miri and Linux full test into CI
 

@@ -18,8 +18,8 @@ pub use emit::{ProcedureRuntimeMetadata, bound_type_to_declare_param_type};
 pub use project::{
     CompiledProject, ExportKind, HostProcedureExport, ModuleAttributes, ModuleKind, ModuleUnit,
     ProjectCompileError, ProjectDynamicMemberKind, ProjectDynamicMemberRoute,
-    ProjectDynamicObjectRoute, ProjectEventDispatchBinding, ProjectKind, ProjectManifest,
-    ProjectReference, ReferenceKind, ReferencedProjectManifest, compile_project,
+    ProjectDynamicObjectRoute, ProjectDynamicParamRoute, ProjectEventDispatchBinding, ProjectKind,
+    ProjectManifest, ProjectReference, ReferenceKind, ReferencedProjectManifest, compile_project,
     module_unit_from_source,
 };
 

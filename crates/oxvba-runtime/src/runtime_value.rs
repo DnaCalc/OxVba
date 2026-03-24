@@ -198,7 +198,7 @@ impl CurrencyValue {
 pub fn validate_date_range(serial: f64) -> Result<f64, String> {
     const DATE_MIN: f64 = -657_434.0;
     const DATE_MAX: f64 = 2_958_465.0;
-    if serial.is_nan() || serial < DATE_MIN || serial > DATE_MAX {
+    if serial.is_nan() || !(DATE_MIN..=DATE_MAX).contains(&serial) {
         return Err(format!("Date overflow: {serial}"));
     }
     Ok(serial)
