@@ -29,16 +29,16 @@ pub fn resolve_project_references(
 
     for pr in &basproj.project_references {
         let ref_path = project_dir.join(&pr.include);
-        let canonical = ref_path.canonicalize().map_err(|_| {
-            BasProjError::ProjectReferenceNotFound {
-                include: pr.include.clone(),
-            }
-        })?;
+        let canonical =
+            ref_path
+                .canonicalize()
+                .map_err(|_| BasProjError::ProjectReferenceNotFound {
+                    include: pr.include.clone(),
+                })?;
 
         // Cycle detection: is this project an ancestor in the current chain?
         if ancestors.contains(&canonical) {
-            let cycle: Vec<String> =
-                ancestors.iter().map(|p| p.display().to_string()).collect();
+            let cycle: Vec<String> = ancestors.iter().map(|p| p.display().to_string()).collect();
             return Err(BasProjError::CyclicProjectReference {
                 path: canonical.display().to_string(),
                 cycle,
@@ -67,8 +67,7 @@ pub fn resolve_project_references(
         let loaded = crate::load::build_loaded_project(&ref_basproj, &ref_project_dir)?;
 
         // Recursively resolve the referenced project's own references
-        let nested =
-            resolve_project_references(&ref_basproj, &ref_project_dir, ancestors, seen)?;
+        let nested = resolve_project_references(&ref_basproj, &ref_project_dir, ancestors, seen)?;
         results.extend(nested);
 
         // Remove from ancestors after recursion (no longer on the current path)
@@ -80,8 +79,7 @@ pub fn resolve_project_references(
             .modules
             .into_iter()
             .filter(|m| {
-                m.attributes.vb_exposed
-                    || m.module_kind == oxvba_compiler::ModuleKind::Procedural
+                m.attributes.vb_exposed || m.module_kind == oxvba_compiler::ModuleKind::Procedural
             })
             .collect();
 
@@ -95,9 +93,7 @@ pub fn resolve_project_references(
 }
 
 /// Bridge `BasProjComReference` items to `TypeLibraryCatalogEntry` values.
-pub fn resolve_com_references(
-    com_refs: &[BasProjComReference],
-) -> Vec<TypeLibraryCatalogEntry> {
+pub fn resolve_com_references(com_refs: &[BasProjComReference]) -> Vec<TypeLibraryCatalogEntry> {
     com_refs
         .iter()
         .map(|cr| TypeLibraryCatalogEntry {

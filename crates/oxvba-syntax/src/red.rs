@@ -1,5 +1,5 @@
-use crate::green::{GreenChild, GreenNode};
 use crate::SyntaxKind;
+use crate::green::{GreenChild, GreenNode};
 
 /// A position-aware view over a green node.
 ///
@@ -271,7 +271,11 @@ mod tests {
         assert_eq!(params.len(), 2, "expected 2 params, got {}", params.len());
 
         let ret = func.return_type().expect("expected return TypeRef");
-        assert!(ret.text().contains("Long"), "return type should contain Long, got: {}", ret.text());
+        assert!(
+            ret.text().contains("Long"),
+            "return type should contain Long, got: {}",
+            ret.text()
+        );
     }
 
     #[test]
@@ -287,7 +291,11 @@ mod tests {
         let body = sub_decl.body_block().expect("expected body Block");
         assert_eq!(body.kind(), SyntaxKind::Block);
         let stmts = body.statements();
-        assert!(stmts.len() >= 2, "expected at least 2 statements, got {}", stmts.len());
+        assert!(
+            stmts.len() >= 2,
+            "expected at least 2 statements, got {}",
+            stmts.len()
+        );
     }
 
     #[test]
@@ -308,7 +316,8 @@ mod tests {
 
     #[test]
     fn typed_accessor_params_from_paramlist() {
-        let src = "Sub Multi(a As Long, Optional b As String, ParamArray c() As Variant)\nEnd Sub\n";
+        let src =
+            "Sub Multi(a As Long, Optional b As String, ParamArray c() As Variant)\nEnd Sub\n";
         let p = crate::parser::parse(src);
         let root = p.syntax();
         let sub_decl = root

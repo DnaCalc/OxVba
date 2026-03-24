@@ -251,11 +251,7 @@ fn create_class_and_invoke_sub_member() {
     );
 
     // Driver uses `New Counter` to trigger dynamic object route registration
-    let driver_source = concat!(
-        "Public Sub Main()\n",
-        "Dim c As New Counter\n",
-        "End Sub\n",
-    );
+    let driver_source = concat!("Public Sub Main()\n", "Dim c As New Counter\n", "End Sub\n",);
 
     let manifest = make_manifest(vec![
         make_module("Driver", driver_source),

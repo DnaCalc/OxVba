@@ -62,11 +62,7 @@ pub(crate) fn compile_with_runtime_metadata_object_locals(
     ),
     CompileError,
 > {
-    compile_with_runtime_metadata_object_locals_class(
-        source,
-        forced_object_locals_by_proc,
-        false,
-    )
+    compile_with_runtime_metadata_object_locals_class(source, forced_object_locals_by_proc, false)
 }
 
 pub(crate) fn compile_with_runtime_metadata_object_locals_class(

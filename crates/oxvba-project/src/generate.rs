@@ -105,22 +105,16 @@ pub fn generate_basproj_xml(
                             xml_escape(&filename)
                         ));
                         if attrs.vb_predeclared_id {
-                            xml.push_str(
-                                "      <VBPredeclaredId>True</VBPredeclaredId>\n",
-                            );
+                            xml.push_str("      <VBPredeclaredId>True</VBPredeclaredId>\n");
                         }
                         if attrs.vb_exposed {
                             xml.push_str("      <VBExposed>True</VBExposed>\n");
                         }
                         if attrs.vb_global_namespace {
-                            xml.push_str(
-                                "      <VBGlobalNamespace>True</VBGlobalNamespace>\n",
-                            );
+                            xml.push_str("      <VBGlobalNamespace>True</VBGlobalNamespace>\n");
                         }
                         if attrs.vb_creatable {
-                            xml.push_str(
-                                "      <VBCreatable>True</VBCreatable>\n",
-                            );
+                            xml.push_str("      <VBCreatable>True</VBCreatable>\n");
                         }
                         if let Some(meta) = extra {
                             if let Some(inst) = meta.instancing {
@@ -182,8 +176,7 @@ pub fn generate_basproj_xml(
                     "    <ProjectReference Include=\"{}\" />\n",
                     xml_escape(&format!(
                         "..\\{}\\{}.basproj",
-                        reference.referenced_project_name,
-                        reference.referenced_project_name
+                        reference.referenced_project_name, reference.referenced_project_name
                     ))
                 ));
             }
@@ -194,10 +187,7 @@ pub fn generate_basproj_xml(
                 xml_escape(&catalog_entry.library_name)
             ));
             if let Some(ref libid) = catalog_entry.libid {
-                xml.push_str(&format!(
-                    "      <Guid>{}</Guid>\n",
-                    xml_escape(libid)
-                ));
+                xml.push_str(&format!("      <Guid>{}</Guid>\n", xml_escape(libid)));
             }
             xml.push_str(&format!(
                 "      <VersionMajor>{}</VersionMajor>\n",
@@ -243,10 +233,7 @@ pub fn generate_basproj_xml(
                 xml.push_str(&format!("      <Ordinal>{ord}</Ordinal>\n"));
             }
             if let Some(ref cat) = export.category {
-                xml.push_str(&format!(
-                    "      <Category>{}</Category>\n",
-                    xml_escape(cat)
-                ));
+                xml.push_str(&format!("      <Category>{}</Category>\n", xml_escape(cat)));
             }
             if let Some(ref desc) = export.description {
                 xml.push_str(&format!(

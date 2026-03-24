@@ -449,8 +449,8 @@ mod tests {
 #[cfg(test)]
 mod proptests {
     use super::{CurrencyValue, RuntimeValue};
-    use crate::value_tags::{is_error_tag, EMPTY_TAG, NULL_TAG};
     use crate::safe_array::is_array_tag;
+    use crate::value_tags::{EMPTY_TAG, NULL_TAG, is_error_tag};
     use proptest::prelude::*;
 
     proptest! {

@@ -261,6 +261,19 @@ impl Variant {
         Some(v != 0)
     }
 
+    pub fn from_u8(value: u8) -> Self {
+        let mut bytes = [0u8; 8];
+        bytes[0] = value;
+        Self::from_bytes(VarType::Byte, bytes)
+    }
+
+    pub fn as_u8(&self) -> Option<u8> {
+        if self.vtype != VarType::Byte {
+            return None;
+        }
+        Some(self.data_bytes()[0])
+    }
+
     pub fn from_error_code(code: i32) -> Self {
         let mut bytes = [0u8; 8];
         bytes[0..4].copy_from_slice(&code.to_le_bytes());

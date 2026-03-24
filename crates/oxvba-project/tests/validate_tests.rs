@@ -61,11 +61,7 @@ fn make_native_export(
 
 /// Helper: build a `BasProjModule` for a class module with the given
 /// `vb_exposed` and `vb_creatable` flags.
-fn make_class_module(
-    include: &str,
-    vb_exposed: bool,
-    vb_creatable: bool,
-) -> BasProjModule {
+fn make_class_module(include: &str, vb_exposed: bool, vb_creatable: bool) -> BasProjModule {
     BasProjModule {
         kind: BasProjModuleKind::ClassModule,
         include: include.to_string(),
@@ -264,8 +260,7 @@ fn com_class_exported_when_exposed_and_creatable() {
     let compiled = make_compiled_project(Vec::new(), BTreeMap::new(), dynamic_objects);
     let class_metadata: BTreeMap<String, ClassModuleMetadata> = BTreeMap::new();
 
-    let result =
-        validate_com_class_exports(&modules, &compiled, &class_metadata, "TestProject");
+    let result = validate_com_class_exports(&modules, &compiled, &class_metadata, "TestProject");
     assert!(result.is_ok());
 
     let descriptors = result.unwrap();
@@ -291,16 +286,12 @@ fn com_class_carries_prog_id_from_module() {
     let compiled = make_compiled_project(Vec::new(), BTreeMap::new(), Vec::new());
     let class_metadata: BTreeMap<String, ClassModuleMetadata> = BTreeMap::new();
 
-    let result =
-        validate_com_class_exports(&modules, &compiled, &class_metadata, "TestProject");
+    let result = validate_com_class_exports(&modules, &compiled, &class_metadata, "TestProject");
     assert!(result.is_ok());
 
     let descriptors = result.unwrap();
     assert_eq!(descriptors.len(), 1);
-    assert_eq!(
-        descriptors[0].prog_id,
-        Some("TestLib.Widget".to_string())
-    );
+    assert_eq!(descriptors[0].prog_id, Some("TestLib.Widget".to_string()));
     assert_eq!(descriptors[0].instancing, Some(Instancing::MultiUse));
     assert_eq!(
         descriptors[0].description,
@@ -328,8 +319,7 @@ fn com_class_metadata_overrides_module_fields() {
         },
     );
 
-    let result =
-        validate_com_class_exports(&modules, &compiled, &class_metadata, "TestProject");
+    let result = validate_com_class_exports(&modules, &compiled, &class_metadata, "TestProject");
     assert!(result.is_ok());
 
     let descriptors = result.unwrap();
@@ -400,8 +390,7 @@ fn com_class_with_multiple_members() {
     let compiled = make_compiled_project(Vec::new(), BTreeMap::new(), dynamic_objects);
     let class_metadata: BTreeMap<String, ClassModuleMetadata> = BTreeMap::new();
 
-    let result =
-        validate_com_class_exports(&modules, &compiled, &class_metadata, "TestProject");
+    let result = validate_com_class_exports(&modules, &compiled, &class_metadata, "TestProject");
     assert!(result.is_ok());
 
     let descriptors = result.unwrap();
@@ -424,8 +413,7 @@ fn class_without_vb_exposed_is_skipped() {
     let compiled = make_compiled_project(Vec::new(), BTreeMap::new(), Vec::new());
     let class_metadata: BTreeMap<String, ClassModuleMetadata> = BTreeMap::new();
 
-    let result =
-        validate_com_class_exports(&modules, &compiled, &class_metadata, "TestProject");
+    let result = validate_com_class_exports(&modules, &compiled, &class_metadata, "TestProject");
     assert!(result.is_ok());
 
     let descriptors = result.unwrap();
@@ -442,8 +430,7 @@ fn class_without_vb_creatable_is_skipped() {
     let compiled = make_compiled_project(Vec::new(), BTreeMap::new(), Vec::new());
     let class_metadata: BTreeMap<String, ClassModuleMetadata> = BTreeMap::new();
 
-    let result =
-        validate_com_class_exports(&modules, &compiled, &class_metadata, "TestProject");
+    let result = validate_com_class_exports(&modules, &compiled, &class_metadata, "TestProject");
     assert!(result.is_ok());
 
     let descriptors = result.unwrap();
@@ -471,8 +458,7 @@ fn procedural_module_is_skipped_for_com_class_export() {
     let compiled = make_compiled_project(Vec::new(), BTreeMap::new(), Vec::new());
     let class_metadata: BTreeMap<String, ClassModuleMetadata> = BTreeMap::new();
 
-    let result =
-        validate_com_class_exports(&modules, &compiled, &class_metadata, "TestProject");
+    let result = validate_com_class_exports(&modules, &compiled, &class_metadata, "TestProject");
     assert!(result.is_ok());
 
     let descriptors = result.unwrap();
@@ -605,7 +591,10 @@ fn multiple_native_exports_all_resolve() {
     assert!(result.is_ok());
 
     assert_eq!(exports[0].kind, Some(ExportKind::Function));
-    assert_eq!(exports[0].param_types, Some(vec![DeclareParamType::Variant]));
+    assert_eq!(
+        exports[0].param_types,
+        Some(vec![DeclareParamType::Variant])
+    );
     assert_eq!(
         exports[0].return_type,
         Some(Some(DeclareParamType::Variant))
@@ -648,8 +637,7 @@ fn com_class_with_no_dynamic_route_has_empty_members() {
     let compiled = make_compiled_project(Vec::new(), BTreeMap::new(), Vec::new());
     let class_metadata: BTreeMap<String, ClassModuleMetadata> = BTreeMap::new();
 
-    let result =
-        validate_com_class_exports(&modules, &compiled, &class_metadata, "TestProject");
+    let result = validate_com_class_exports(&modules, &compiled, &class_metadata, "TestProject");
     assert!(result.is_ok());
 
     let descriptors = result.unwrap();

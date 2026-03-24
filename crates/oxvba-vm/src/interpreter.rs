@@ -19,9 +19,7 @@ use oxvba_runtime::safe_array::{array_len_from_tag, is_array_tag as runtime_is_a
 use oxvba_runtime::value_tags::{
     EMPTY_TAG, NULL_TAG, error_tag_from_code, is_error_tag as runtime_is_error_tag,
 };
-use oxvba_runtime::{
-    BindingHandle, F64Value, ObjectHandle, RuntimeValue, bstr::BStr,
-};
+use oxvba_runtime::{BindingHandle, F64Value, ObjectHandle, RuntimeValue, bstr::BStr};
 
 use crate::register_file::RegisterFile;
 
@@ -242,11 +240,62 @@ impl Vm {
         if entry_pc >= bytecode.instructions.len() {
             return Err(format!("procedure entry out of range: {entry_pc}"));
         }
+
+        // Save caller's error frame so cross-module calls preserve the caller's
+        // On Error handler. This is critical for VBA parity: On Error Resume Next
+        // in the caller must catch Err.Raise from called procedures.
+        let saved = ErrorFrame {
+            on_error_resume_next: self.on_error_resume_next,
+            on_error_goto_label_target: self.on_error_goto_label_target,
+            last_error: self.last_error,
+            last_error_pc: self.last_error_pc,
+            last_error_description: self.last_error_description.take(),
+            last_error_source: self.last_error_source.take(),
+        };
+
         self.reset_execution_state(bytecode.slot_count, true);
         for (slot, value) in arg_slots.iter().zip(args.iter()) {
             self.write_value_slot(*slot, value.clone())?;
         }
-        self.execute_loop(bytecode, entry_pc, self.typed_fastpaths_default, true)
+
+        let result = self.execute_loop(bytecode, entry_pc, self.typed_fastpaths_default, true);
+
+        // Restore caller's error handling mode.
+        self.on_error_resume_next = saved.on_error_resume_next;
+        self.on_error_goto_label_target = saved.on_error_goto_label_target;
+
+        match result {
+            Ok(()) => {
+                if self.last_error == 0 {
+                    self.last_error = saved.last_error;
+                    self.last_error_pc = saved.last_error_pc;
+                    self.last_error_description = saved.last_error_description;
+                    self.last_error_source = saved.last_error_source;
+                }
+                Ok(())
+            }
+            Err(msg) => {
+                if saved.on_error_resume_next {
+                    let code = msg
+                        .strip_prefix("runtime error: ")
+                        .and_then(|rest| {
+                            rest.split(|c: char| !c.is_ascii_digit() && c != '-')
+                                .next()
+                                .and_then(|s| s.parse::<i32>().ok())
+                        })
+                        .unwrap_or(5);
+                    self.last_error = code;
+                    self.last_error_pc = None;
+                    self.last_error_description = Some(msg);
+                    self.last_error_source = None;
+                    Ok(())
+                } else {
+                    self.last_error_description = saved.last_error_description;
+                    self.last_error_source = saved.last_error_source;
+                    Err(msg)
+                }
+            }
+        }
     }
 
     fn reset_execution_state(&mut self, slot_count: usize, preserve_withevents_bindings: bool) {
@@ -902,8 +951,7 @@ impl Vm {
                     // can allocate the specific handle requested by the VBA source.
                     let mode_i32 = mode_val.to_legacy_i32().unwrap_or(0);
                     let fnum_i32 = file_num.to_legacy_i32().unwrap_or(0);
-                    let combined_mode =
-                        RuntimeValue::I32(mode_i32 | (fnum_i32 << 16));
+                    let combined_mode = RuntimeValue::I32(mode_i32 | (fnum_i32 << 16));
                     match self.host_services.fs().open(path, combined_mode) {
                         Ok(value) => {
                             self.write_value_slot(*dst, value)?;
@@ -939,11 +987,7 @@ impl Vm {
                         Err(err) => pc = self.route_host_error(pc, err)?,
                     }
                 }
-                Instruction::IntrinsicFileReadHost {
-                    dst,
-                    handle,
-                    count,
-                } => {
+                Instruction::IntrinsicFileReadHost { dst, handle, count } => {
                     let handle = self.read_value_slot(*handle)?;
                     let count = self.read_value_slot(*count)?;
                     match self.host_services.fs().read_bytes(handle, count) {
@@ -954,11 +998,7 @@ impl Vm {
                         Err(err) => pc = self.route_host_error(pc, err)?,
                     }
                 }
-                Instruction::IntrinsicFileWriteHost {
-                    dst,
-                    handle,
-                    data,
-                } => {
+                Instruction::IntrinsicFileWriteHost { dst, handle, data } => {
                     let handle = self.read_value_slot(*handle)?;
                     let data = self.read_value_slot(*data)?;
                     match self.host_services.fs().write_bytes(handle, data) {
@@ -969,11 +1009,7 @@ impl Vm {
                         Err(err) => pc = self.route_host_error(pc, err)?,
                     }
                 }
-                Instruction::IntrinsicFilePrintHost {
-                    dst,
-                    handle,
-                    data,
-                } => {
+                Instruction::IntrinsicFilePrintHost { dst, handle, data } => {
                     let handle = self.read_value_slot(*handle)?;
                     let data = self.read_value_slot(*data)?;
                     match self.host_services.fs().print_line(handle, data) {
@@ -984,11 +1020,7 @@ impl Vm {
                         Err(err) => pc = self.route_host_error(pc, err)?,
                     }
                 }
-                Instruction::IntrinsicFileInputHost {
-                    dst,
-                    handle,
-                    count,
-                } => {
+                Instruction::IntrinsicFileInputHost { dst, handle, count } => {
                     let handle = self.read_value_slot(*handle)?;
                     let count = self.read_value_slot(*count)?;
                     match self.host_services.fs().input_fields(handle, count) {
@@ -1200,6 +1232,102 @@ impl Vm {
                     };
                     let result = c.to_string().repeat(n.max(0) as usize);
                     self.write_value_slot(*dst, RuntimeValue::String(BStr(result)))?;
+                    pc += 1;
+                }
+                Instruction::IntrinsicCStrDigits { dst, src } => {
+                    let src_val = self.read_value_slot(*src)?;
+                    match oxvba_runtime::runtime_value_to_vba_string(&src_val) {
+                        Ok(result) => {
+                            self.write_value_slot(*dst, result)?;
+                            pc += 1;
+                        }
+                        Err(msg) => {
+                            pc = self.route_runtime_error(pc, 13, Some(&msg))?;
+                        }
+                    }
+                }
+                Instruction::IntrinsicStrFuncDigits { dst, src } => {
+                    let src_val = self.read_value_slot(*src)?;
+                    match oxvba_runtime::runtime_value_to_vba_str(&src_val) {
+                        Ok(result) => {
+                            self.write_value_slot(*dst, result)?;
+                            pc += 1;
+                        }
+                        Err(msg) => {
+                            pc = self.route_runtime_error(pc, 13, Some(&msg))?;
+                        }
+                    }
+                }
+                Instruction::IntrinsicValDigits { dst, src } => {
+                    let src_val = self.read_value_slot(*src)?;
+                    let result = match &src_val {
+                        RuntimeValue::String(BStr(s)) => {
+                            let trimmed = s.trim();
+                            if trimmed.is_empty() {
+                                RuntimeValue::I32(0)
+                            } else if let Ok(n) = trimmed.parse::<i64>() {
+                                if n >= i32::MIN as i64 && n <= i32::MAX as i64 {
+                                    RuntimeValue::I32(n as i32)
+                                } else {
+                                    RuntimeValue::F64(F64Value::from_f64(n as f64))
+                                }
+                            } else if let Ok(f) = trimmed.parse::<f64>() {
+                                if f == f.trunc() && f >= i32::MIN as f64 && f <= i32::MAX as f64 {
+                                    RuntimeValue::I32(f as i32)
+                                } else {
+                                    RuntimeValue::F64(F64Value::from_f64(f))
+                                }
+                            } else {
+                                // VBA Val: parse leading numeric portion, return 0 if none
+                                let mut end = 0;
+                                let bytes = trimmed.as_bytes();
+                                if !bytes.is_empty()
+                                    && (bytes[0] == b'-'
+                                        || bytes[0] == b'+'
+                                        || bytes[0].is_ascii_digit())
+                                {
+                                    end = 1;
+                                    let mut has_dot = false;
+                                    while end < bytes.len() {
+                                        if bytes[end].is_ascii_digit() {
+                                            end += 1;
+                                        } else if bytes[end] == b'.' && !has_dot {
+                                            has_dot = true;
+                                            end += 1;
+                                        } else {
+                                            break;
+                                        }
+                                    }
+                                }
+                                if end > 0 {
+                                    if let Ok(f) = trimmed[..end].parse::<f64>() {
+                                        if f == f.trunc()
+                                            && f >= i32::MIN as f64
+                                            && f <= i32::MAX as f64
+                                        {
+                                            RuntimeValue::I32(f as i32)
+                                        } else {
+                                            RuntimeValue::F64(F64Value::from_f64(f))
+                                        }
+                                    } else {
+                                        RuntimeValue::I32(0)
+                                    }
+                                } else {
+                                    RuntimeValue::I32(0)
+                                }
+                            }
+                        }
+                        // For numeric values, Val is identity
+                        RuntimeValue::I32(_) | RuntimeValue::I64(_) | RuntimeValue::F64(_) => {
+                            src_val
+                        }
+                        RuntimeValue::Empty => RuntimeValue::I32(0),
+                        _ => {
+                            let v = Self::runtime_value_legacy_token(&src_val, "Val src")?;
+                            RuntimeValue::I32(v)
+                        }
+                    };
+                    self.write_value_slot(*dst, result)?;
                     pc += 1;
                 }
                 Instruction::IntrinsicHexDigits { dst, src } => {
@@ -1455,23 +1583,23 @@ impl Vm {
                 Instruction::IntrinsicVarType { dst, src } => {
                     let val = self.read_value_slot(*src)?;
                     let code = match &val {
-                        RuntimeValue::Empty => 0,       // vbEmpty
-                        RuntimeValue::Null => 1,        // vbNull
+                        RuntimeValue::Empty => 0, // vbEmpty
+                        RuntimeValue::Null => 1,  // vbNull
                         // Heuristic: values in i16 range report as vbInteger(2);
                         // a full fix would track declared type through emit.
                         RuntimeValue::I32(v) if *v >= -32768 && *v <= 32767 => 2, // vbInteger
-                        RuntimeValue::I32(_) => 3,      // vbLong
-                        RuntimeValue::I64(_) => 3,      // vbLong (closest)
+                        RuntimeValue::I32(_) => 3,                                // vbLong
+                        RuntimeValue::I64(_) => 3, // vbLong (closest)
                         RuntimeValue::F64(v) => match v.subtype() {
                             oxvba_runtime::F64Subtype::Single => 4, // vbSingle
                             oxvba_runtime::F64Subtype::Double => 5, // vbDouble
                             oxvba_runtime::F64Subtype::Date => 7,   // vbDate
                         },
-                        RuntimeValue::Currency(_) => 6,  // vbCurrency
-                        RuntimeValue::Bool(_) => 11,     // vbBoolean
-                        RuntimeValue::String(_) => 8,    // vbString
+                        RuntimeValue::Currency(_) => 6, // vbCurrency
+                        RuntimeValue::Bool(_) => 11,    // vbBoolean
+                        RuntimeValue::String(_) => 8,   // vbString
                         RuntimeValue::ErrorCode(_) => 10, // vbError
-                        RuntimeValue::Decimal(_) => 14,  // vbDecimal
+                        RuntimeValue::Decimal(_) => 14, // vbDecimal
                         RuntimeValue::ObjectHandle(_) => 9, // vbObject
                         RuntimeValue::BindingHandle(_) => 9, // vbObject
                         RuntimeValue::ArrayIntent(_) => 8192 + 12, // vbArray + vbVariant
@@ -1514,10 +1642,7 @@ impl Vm {
                             | RuntimeValue::Decimal(_)
                             | RuntimeValue::Bool(_)
                     );
-                    self.write_value_slot(
-                        *dst,
-                        RuntimeValue::Bool(is_numeric),
-                    )?;
+                    self.write_value_slot(*dst, RuntimeValue::Bool(is_numeric))?;
                     pc += 1;
                 }
                 Instruction::IntrinsicIsError { dst, src } => {
@@ -1983,16 +2108,12 @@ impl Vm {
                         selection_policy: descriptor.selection_policy.as_str(),
                         param_count: descriptor.param_count,
                         param_types: &param_type_strings,
-                        return_type: descriptor
-                            .return_type
-                            .as_ref()
-                            .map(|rt| {
-                                // Use a leaked string for the view lifetime — this is bounded
-                                // by descriptor cardinality (small, finite).
-                                let s: &str =
-                                    Box::leak(format!("{:?}", rt).into_boxed_str());
-                                s
-                            }),
+                        return_type: descriptor.return_type.as_ref().map(|rt| {
+                            // Use a leaked string for the view lifetime — this is bounded
+                            // by descriptor cardinality (small, finite).
+                            let s: &str = Box::leak(format!("{:?}", rt).into_boxed_str());
+                            s
+                        }),
                     };
                     if let Some(violation) = view.contract_violation() {
                         let err = HalError::adapter_fault(
@@ -2020,14 +2141,9 @@ impl Vm {
                                     writeback_slots.iter().enumerate()
                                 {
                                     if let Some(wb_val) = wb_values.get(wb_idx) {
-                                        if let Some(target_slot) =
-                                            args.get(*arg_index)
-                                        {
+                                        if let Some(target_slot) = args.get(*arg_index) {
                                             let _ = source_slot; // source_slot reserved for future use
-                                            self.write_value_slot(
-                                                *target_slot,
-                                                wb_val.clone(),
-                                            )?;
+                                            self.write_value_slot(*target_slot, wb_val.clone())?;
                                         }
                                     }
                                 }
@@ -2273,9 +2389,7 @@ impl Vm {
                     let val = self.read_value_slot(*object_slot)?;
                     let is_match = match &val {
                         RuntimeValue::ObjectHandle(handle) => {
-                            if let Some(route) =
-                                self.project_dynamic_objects.get(handle)
-                            {
+                            if let Some(route) = self.project_dynamic_objects.get(handle) {
                                 route.module_name.eq_ignore_ascii_case(type_name)
                                     || route
                                         .implements_interfaces
@@ -2706,7 +2820,13 @@ impl Vm {
         target_name: &str,
         target_type_name: &str,
     ) -> Result<(), String> {
-        crate::semantics::validate_runtime_assignment(value, intent, target_kind, target_name, target_type_name)
+        crate::semantics::validate_runtime_assignment(
+            value,
+            intent,
+            target_kind,
+            target_name,
+            target_type_name,
+        )
     }
 
     fn try_invoke_project_dynamic(
@@ -2855,10 +2975,71 @@ impl Vm {
         if entry_pc >= bytecode.instructions.len() {
             return Err(format!("procedure entry out of range: {entry_pc}"));
         }
+
+        // Save caller's error frame — each procedure has its own error context.
+        let saved = ErrorFrame {
+            on_error_resume_next: self.on_error_resume_next,
+            on_error_goto_label_target: self.on_error_goto_label_target,
+            last_error: self.last_error,
+            last_error_pc: self.last_error_pc,
+            last_error_description: self.last_error_description.take(),
+            last_error_source: self.last_error_source.take(),
+        };
+
+        // Callee starts with no error handler (VBA semantics).
+        self.on_error_resume_next = false;
+        self.on_error_goto_label_target = None;
+        self.clear_error_state();
+
         for (slot, value) in arg_slots.iter().zip(args.iter()) {
             self.write_value_slot(*slot, value.clone())?;
         }
-        self.execute_loop(bytecode, entry_pc, typed_fastpaths, true)
+
+        let result = self.execute_loop(bytecode, entry_pc, typed_fastpaths, true);
+
+        // Restore caller's error handling mode.
+        self.on_error_resume_next = saved.on_error_resume_next;
+        self.on_error_goto_label_target = saved.on_error_goto_label_target;
+
+        match result {
+            Ok(()) => {
+                // Callee succeeded. If the callee set an error (e.g., via On Error
+                // Resume Next + Err.Raise inside the callee), preserve the callee's
+                // error state for the caller's Err.Number. Otherwise restore the
+                // caller's prior error state.
+                if self.last_error == 0 {
+                    self.last_error = saved.last_error;
+                    self.last_error_pc = saved.last_error_pc;
+                    self.last_error_description = saved.last_error_description;
+                    self.last_error_source = saved.last_error_source;
+                }
+                Ok(())
+            }
+            Err(msg) => {
+                // Callee raised an unhandled error. Check if the caller can catch it.
+                if saved.on_error_resume_next {
+                    // Caller's On Error Resume Next absorbs the error.
+                    let code = msg
+                        .strip_prefix("runtime error: ")
+                        .and_then(|rest| {
+                            rest.split(|c: char| !c.is_ascii_digit() && c != '-')
+                                .next()
+                                .and_then(|s| s.parse::<i32>().ok())
+                        })
+                        .unwrap_or(5);
+                    self.last_error = code;
+                    self.last_error_pc = None;
+                    self.last_error_description = Some(msg);
+                    self.last_error_source = None;
+                    Ok(())
+                } else {
+                    // No error handler in caller — propagate.
+                    self.last_error_description = saved.last_error_description;
+                    self.last_error_source = saved.last_error_source;
+                    Err(msg)
+                }
+            }
+        }
     }
 
     fn withevents_binding_handle(
@@ -4161,10 +4342,12 @@ mod tests {
             user_slot_count: 13,
         };
 
-        let mut vm = Vm::new(oxvba_hal::adapters::builder::HostBuilder::new()
-            .profile(oxvba_hal::model::HalProfileId::Windows)
-            .policy(oxvba_hal::model::HostPolicy::interactive_dev())
-            .build());
+        let mut vm = Vm::new(
+            oxvba_hal::adapters::builder::HostBuilder::new()
+                .profile(oxvba_hal::model::HalProfileId::Windows)
+                .policy(oxvba_hal::model::HostPolicy::interactive_dev())
+                .build(),
+        );
         vm.execute(&bytecode)
             .expect("vm should execute COM event subscribe/unsubscribe flow");
         let out = vm.snapshot_slots(13);
@@ -4243,10 +4426,12 @@ mod tests {
             user_slot_count: 15,
         };
 
-        let mut vm = Vm::new(oxvba_hal::adapters::builder::HostBuilder::new()
-            .profile(oxvba_hal::model::HalProfileId::Windows)
-            .policy(oxvba_hal::model::HostPolicy::interactive_dev())
-            .build());
+        let mut vm = Vm::new(
+            oxvba_hal::adapters::builder::HostBuilder::new()
+                .profile(oxvba_hal::model::HalProfileId::Windows)
+                .policy(oxvba_hal::model::HostPolicy::interactive_dev())
+                .build(),
+        );
         vm.execute(&bytecode)
             .expect("vm should execute COM event subscribe/unsubscribe flow");
         let out = vm.snapshot_slots(15);
@@ -4286,13 +4471,15 @@ mod tests {
             user_slot_count: 2,
         };
 
-        let mut vm = Vm::new(oxvba_hal::adapters::builder::HostBuilder::new()
-            .profile(oxvba_hal::model::HalProfileId::Windows)
-            .policy(oxvba_hal::model::HostPolicy {
-                allow_dynamic_link: true,
-                ..oxvba_hal::model::HostPolicy::deterministic_runtime()
-            })
-            .build());
+        let mut vm = Vm::new(
+            oxvba_hal::adapters::builder::HostBuilder::new()
+                .profile(oxvba_hal::model::HalProfileId::Windows)
+                .policy(oxvba_hal::model::HostPolicy {
+                    allow_dynamic_link: true,
+                    ..oxvba_hal::model::HostPolicy::deterministic_runtime()
+                })
+                .build(),
+        );
         vm.execute(&bytecode).expect("vm should execute bytecode");
         let out = vm.snapshot_slots(2);
         assert_eq!(out[1], 1_237);
@@ -4331,13 +4518,15 @@ mod tests {
             user_slot_count: 2,
         };
 
-        let mut vm = Vm::new(oxvba_hal::adapters::builder::HostBuilder::new()
-            .profile(oxvba_hal::model::HalProfileId::Windows)
-            .policy(oxvba_hal::model::HostPolicy {
-                allow_dynamic_link: true,
-                ..oxvba_hal::model::HostPolicy::deterministic_runtime()
-            })
-            .build());
+        let mut vm = Vm::new(
+            oxvba_hal::adapters::builder::HostBuilder::new()
+                .profile(oxvba_hal::model::HalProfileId::Windows)
+                .policy(oxvba_hal::model::HostPolicy {
+                    allow_dynamic_link: true,
+                    ..oxvba_hal::model::HostPolicy::deterministic_runtime()
+                })
+                .build(),
+        );
         vm.execute(&bytecode).expect("vm should execute bytecode");
         let out = vm.snapshot_slots(2);
         assert_eq!(out[1], 2_348);
@@ -4376,13 +4565,15 @@ mod tests {
             user_slot_count: 2,
         };
 
-        let mut vm = Vm::new(oxvba_hal::adapters::builder::HostBuilder::new()
-            .profile(oxvba_hal::model::HalProfileId::Windows)
-            .policy(oxvba_hal::model::HostPolicy {
-                allow_dynamic_link: true,
-                ..oxvba_hal::model::HostPolicy::deterministic_runtime()
-            })
-            .build());
+        let mut vm = Vm::new(
+            oxvba_hal::adapters::builder::HostBuilder::new()
+                .profile(oxvba_hal::model::HalProfileId::Windows)
+                .policy(oxvba_hal::model::HostPolicy {
+                    allow_dynamic_link: true,
+                    ..oxvba_hal::model::HostPolicy::deterministic_runtime()
+                })
+                .build(),
+        );
         let err = vm
             .execute(&bytecode)
             .expect_err("descriptor mismatch should be reported");
@@ -4422,13 +4613,15 @@ mod tests {
             user_slot_count: 2,
         };
 
-        let mut vm = Vm::new(oxvba_hal::adapters::builder::HostBuilder::new()
-            .profile(oxvba_hal::model::HalProfileId::Windows)
-            .policy(oxvba_hal::model::HostPolicy {
-                allow_dynamic_link: true,
-                ..oxvba_hal::model::HostPolicy::deterministic_runtime()
-            })
-            .build());
+        let mut vm = Vm::new(
+            oxvba_hal::adapters::builder::HostBuilder::new()
+                .profile(oxvba_hal::model::HalProfileId::Windows)
+                .policy(oxvba_hal::model::HostPolicy {
+                    allow_dynamic_link: true,
+                    ..oxvba_hal::model::HostPolicy::deterministic_runtime()
+                })
+                .build(),
+        );
         let err = vm
             .execute(&bytecode)
             .expect_err("contract violation should be reported");
@@ -4469,13 +4662,15 @@ mod tests {
             user_slot_count: 2,
         };
 
-        let mut vm = Vm::new(oxvba_hal::adapters::builder::HostBuilder::new()
-            .profile(oxvba_hal::model::HalProfileId::Windows)
-            .policy(oxvba_hal::model::HostPolicy {
-                allow_dynamic_link: true,
-                ..oxvba_hal::model::HostPolicy::deterministic_runtime()
-            })
-            .build());
+        let mut vm = Vm::new(
+            oxvba_hal::adapters::builder::HostBuilder::new()
+                .profile(oxvba_hal::model::HalProfileId::Windows)
+                .policy(oxvba_hal::model::HostPolicy {
+                    allow_dynamic_link: true,
+                    ..oxvba_hal::model::HostPolicy::deterministic_runtime()
+                })
+                .build(),
+        );
         let err = vm
             .execute(&bytecode)
             .expect_err("selection policy mismatch should be reported");

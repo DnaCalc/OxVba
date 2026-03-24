@@ -44,10 +44,7 @@ pub fn load_basproj(path: &Path) -> Result<LoadedProject, BasProjError> {
 
 /// Load a `.basproj` from an XML string with a given project directory for
 /// resolving relative paths.
-pub fn load_basproj_from_str(
-    xml: &str,
-    project_dir: &Path,
-) -> Result<LoadedProject, BasProjError> {
+pub fn load_basproj_from_str(xml: &str, project_dir: &Path) -> Result<LoadedProject, BasProjError> {
     let mut basproj = parse_basproj_xml(xml)?;
 
     // Process <Import> elements by re-parsing the XML to find them
@@ -158,19 +155,22 @@ pub(crate) fn build_loaded_project(
         if !seen_export_names.insert(ne.include.clone()) {
             return Err(BasProjError::DuplicateExportName(ne.include.clone()));
         }
-        let module = ne.module.as_ref().ok_or_else(|| BasProjError::MissingMetadata {
-            element: "NativeExport".to_string(),
-            include: ne.include.clone(),
-            metadata: "Module".to_string(),
-        })?;
-        let procedure =
-            ne.procedure
-                .as_ref()
-                .ok_or_else(|| BasProjError::MissingMetadata {
-                    element: "NativeExport".to_string(),
-                    include: ne.include.clone(),
-                    metadata: "Procedure".to_string(),
-                })?;
+        let module = ne
+            .module
+            .as_ref()
+            .ok_or_else(|| BasProjError::MissingMetadata {
+                element: "NativeExport".to_string(),
+                include: ne.include.clone(),
+                metadata: "Module".to_string(),
+            })?;
+        let procedure = ne
+            .procedure
+            .as_ref()
+            .ok_or_else(|| BasProjError::MissingMetadata {
+                element: "NativeExport".to_string(),
+                include: ne.include.clone(),
+                metadata: "Procedure".to_string(),
+            })?;
         native_exports.push(NativeExportDescriptor {
             exported_name: ne.include.clone(),
             module_name: module.clone(),
@@ -257,11 +257,10 @@ pub(crate) fn process_imports(
         if !abs_path.exists() {
             return Err(BasProjError::ImportFileNotFound(rel_path));
         }
-        let import_xml =
-            std::fs::read_to_string(&abs_path).map_err(|e| BasProjError::Io {
-                path: abs_path.display().to_string(),
-                source: e,
-            })?;
+        let import_xml = std::fs::read_to_string(&abs_path).map_err(|e| BasProjError::Io {
+            path: abs_path.display().to_string(),
+            source: e,
+        })?;
         let imported = parse_basproj_xml(&import_xml)?;
         merge_import(basproj, imported);
     }
@@ -274,16 +273,14 @@ fn collect_import_paths(xml: &str) -> Result<Vec<String>, BasProjError> {
     let mut paths = Vec::new();
     loop {
         match reader.read_event() {
-            Ok(quick_xml::events::Event::Empty(ref e)) | Ok(quick_xml::events::Event::Start(ref e)) => {
+            Ok(quick_xml::events::Event::Empty(ref e))
+            | Ok(quick_xml::events::Event::Start(ref e)) => {
                 let tag = String::from_utf8_lossy(e.name().as_ref()).to_string();
                 if tag == "Import" {
                     for attr in e.attributes().flatten() {
-                        let key =
-                            String::from_utf8_lossy(attr.key.as_ref()).to_string();
+                        let key = String::from_utf8_lossy(attr.key.as_ref()).to_string();
                         if key == "Project" {
-                            paths.push(
-                                String::from_utf8_lossy(&attr.value).to_string(),
-                            );
+                            paths.push(String::from_utf8_lossy(&attr.value).to_string());
                         }
                     }
                 }
@@ -338,11 +335,10 @@ fn discover_modules_recursive(
                     .and_then(|s| s.to_str())
                     .unwrap_or("Unknown")
                     .to_string();
-                let source =
-                    std::fs::read_to_string(&path).map_err(|e| BasProjError::Io {
-                        path: path.display().to_string(),
-                        source: e,
-                    })?;
+                let source = std::fs::read_to_string(&path).map_err(|e| BasProjError::Io {
+                    path: path.display().to_string(),
+                    source: e,
+                })?;
                 modules.push(ModuleUnit {
                     module_name,
                     module_kind: kind,
@@ -363,11 +359,10 @@ fn load_explicit_modules(
     let mut modules = Vec::new();
     for bm in basproj_modules {
         let source_path = project_dir.join(&bm.include);
-        let source =
-            std::fs::read_to_string(&source_path).map_err(|e| BasProjError::Io {
-                path: source_path.display().to_string(),
-                source: e,
-            })?;
+        let source = std::fs::read_to_string(&source_path).map_err(|e| BasProjError::Io {
+            path: source_path.display().to_string(),
+            source: e,
+        })?;
         let module_name = Path::new(&bm.include)
             .file_stem()
             .and_then(|s| s.to_str())

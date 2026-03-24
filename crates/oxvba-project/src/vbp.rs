@@ -132,7 +132,10 @@ pub fn generate_basproj_from_vbp(vbp: &VbpProject) -> String {
     xml.push_str("<Project Sdk=\"OxVba.Sdk/0.1.0\">\n");
 
     xml.push_str("  <PropertyGroup>\n");
-    xml.push_str(&format!("    <OutputType>{}</OutputType>\n", vbp.project_type));
+    xml.push_str(&format!(
+        "    <OutputType>{}</OutputType>\n",
+        vbp.project_type
+    ));
     xml.push_str(&format!(
         "    <ProjectName>{}</ProjectName>\n",
         xml_escape(&vbp.project_name)
@@ -172,10 +175,7 @@ pub fn generate_basproj_from_vbp(vbp: &VbpProject) -> String {
                 "    <COMReference Include=\"{}\">\n",
                 xml_escape(&r.name)
             ));
-            xml.push_str(&format!(
-                "      <Guid>{}</Guid>\n",
-                xml_escape(&r.guid)
-            ));
+            xml.push_str(&format!("      <Guid>{}</Guid>\n", xml_escape(&r.guid)));
             if let Some((major, minor)) = r.version.split_once('.') {
                 xml.push_str(&format!("      <VersionMajor>{major}</VersionMajor>\n"));
                 xml.push_str(&format!("      <VersionMinor>{minor}</VersionMinor>\n"));

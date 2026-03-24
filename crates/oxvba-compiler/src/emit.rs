@@ -1,9 +1,6 @@
 use std::collections::{BTreeMap, HashMap};
 
-use oxvba_runtime::{
-    DynLinkSymbol,
-    value_tags::ERROR_TAG_BASE,
-};
+use oxvba_runtime::{DynLinkSymbol, value_tags::ERROR_TAG_BASE};
 
 use crate::{
     bytecode::{
@@ -302,9 +299,7 @@ fn build_external_call_descriptors(
         } else {
             None
         };
-        let marshal_lane = if native_ffi_available
-            && decl.library.to_ascii_lowercase() != "host"
-        {
+        let marshal_lane = if native_ffi_available && decl.library.to_ascii_lowercase() != "host" {
             "m1-native-ffi".to_string()
         } else {
             "m0-deterministic".to_string()
@@ -1067,7 +1062,17 @@ fn emit_stmt(
                     None
                 } else {
                     let seed_slot = temps.alloc_temp();
-                    emit_expr_into(&args[0].expr, compare_mode, seed_slot, slot_map, temps, instructions, call_patches, proc_meta, external_decls);
+                    emit_expr_into(
+                        &args[0].expr,
+                        compare_mode,
+                        seed_slot,
+                        slot_map,
+                        temps,
+                        instructions,
+                        call_patches,
+                        proc_meta,
+                        external_decls,
+                    );
                     Some(seed_slot)
                 };
                 instructions.push(Instruction::IntrinsicRandomizeDigits { dst, seed });
@@ -1254,10 +1259,7 @@ fn emit_stmt(
                 });
             }
         }
-        BoundStmt::FilePrint {
-            file_number,
-            data,
-        } => {
+        BoundStmt::FilePrint { file_number, data } => {
             let dst = temps.alloc_temp();
             let handle_slot = temps.alloc_temp();
             let data_slot = temps.alloc_temp();
@@ -1679,9 +1681,7 @@ fn emit_external_declare_call(
         if let Some(param) = external_decl.params.get(arg_index) {
             if param.by_ref && !arg.force_byval {
                 if let BoundExpr::Var(ref ident_name) = arg.expr {
-                    if let Some(&source_slot) =
-                        slot_map.get(&ident_name.to_ascii_lowercase())
-                    {
+                    if let Some(&source_slot) = slot_map.get(&ident_name.to_ascii_lowercase()) {
                         writeback_slots.push((arg_index, source_slot));
                     }
                 }
@@ -2571,6 +2571,15 @@ fn emit_expr_into(
                 }
                 ("tan", [src]) => {
                     instructions.push(Instruction::IntrinsicTanI32 { dst, src: *src })
+                }
+                ("cstr", [src]) => {
+                    instructions.push(Instruction::IntrinsicCStrDigits { dst, src: *src })
+                }
+                ("str", [src]) => {
+                    instructions.push(Instruction::IntrinsicStrFuncDigits { dst, src: *src })
+                }
+                ("val", [src]) => {
+                    instructions.push(Instruction::IntrinsicValDigits { dst, src: *src })
                 }
                 ("hex", [src]) => {
                     instructions.push(Instruction::IntrinsicHexDigits { dst, src: *src })

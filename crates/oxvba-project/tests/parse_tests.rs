@@ -139,10 +139,7 @@ fn parse_use_case_b_library_exports() {
         basproj.properties.project_name.as_deref(),
         Some("FinanceAddIn")
     );
-    assert_eq!(
-        basproj.properties.runtime_flavor,
-        Some(RuntimeFlavor::Jit)
-    );
+    assert_eq!(basproj.properties.runtime_flavor, Some(RuntimeFlavor::Jit));
 
     // Modules
     assert_eq!(basproj.modules.len(), 3);
@@ -220,10 +217,7 @@ fn parse_use_case_c_exe() {
         basproj.properties.project_name.as_deref(),
         Some("ReportGenerator")
     );
-    assert_eq!(
-        basproj.properties.entry_point.as_deref(),
-        Some("Main.Main")
-    );
+    assert_eq!(basproj.properties.entry_point.as_deref(), Some("Main.Main"));
 
     assert_eq!(basproj.modules.len(), 3);
     assert_eq!(basproj.com_references.len(), 1);
@@ -259,8 +253,7 @@ fn parse_minimal_project() {
 
 #[test]
 fn parse_define_constants() {
-    let constants =
-        oxvba_project::model::parse_define_constants("VBA7=1;WIN64=1;DEBUG");
+    let constants = oxvba_project::model::parse_define_constants("VBA7=1;WIN64=1;DEBUG");
     assert_eq!(constants.len(), 3);
     assert_eq!(constants["VBA7"], 1);
     assert_eq!(constants["WIN64"], 1);
@@ -269,8 +262,7 @@ fn parse_define_constants() {
 
 #[test]
 fn parse_define_constants_with_spaces() {
-    let constants =
-        oxvba_project::model::parse_define_constants(" KEY1 = 42 ; KEY2 = -1 ; FLAG ");
+    let constants = oxvba_project::model::parse_define_constants(" KEY1 = 42 ; KEY2 = -1 ; FLAG ");
     assert_eq!(constants.len(), 3);
     assert_eq!(constants["KEY1"], 42);
     assert_eq!(constants["KEY2"], -1);
@@ -382,7 +374,10 @@ fn load_use_case_a_from_str() {
     assert_eq!(loaded.manifest.project_name, "VBAProject");
     assert_eq!(loaded.manifest.project_kind, ProjectKind::Host);
     assert_eq!(loaded.manifest.modules.len(), 4);
-    assert_eq!(loaded.manifest.modules[0].module_kind, ModuleKind::Procedural);
+    assert_eq!(
+        loaded.manifest.modules[0].module_kind,
+        ModuleKind::Procedural
+    );
     assert_eq!(loaded.manifest.modules[1].module_kind, ModuleKind::Class);
     assert_eq!(loaded.manifest.modules[2].module_kind, ModuleKind::Document);
     assert_eq!(loaded.manifest.modules[3].module_kind, ModuleKind::Document);
@@ -393,8 +388,14 @@ fn load_use_case_a_from_str() {
 
     // References
     assert_eq!(loaded.manifest.references.len(), 1);
-    assert_eq!(loaded.manifest.references[0].reference_kind, ReferenceKind::TypeLibrary);
-    assert_eq!(loaded.manifest.references[0].referenced_project_name, "Excel");
+    assert_eq!(
+        loaded.manifest.references[0].reference_kind,
+        ReferenceKind::TypeLibrary
+    );
+    assert_eq!(
+        loaded.manifest.references[0].referenced_project_name,
+        "Excel"
+    );
 
     // Type library catalog
     assert_eq!(loaded.type_library_catalog.len(), 1);
@@ -616,11 +617,7 @@ fn round_trip_host_module() {
     std::fs::create_dir_all(&tmp).unwrap();
 
     // Write module source files that the loader will read
-    std::fs::write(
-        tmp.join("Module1.bas"),
-        "Public Sub Hello()\nEnd Sub\n",
-    )
-    .unwrap();
+    std::fs::write(tmp.join("Module1.bas"), "Public Sub Hello()\nEnd Sub\n").unwrap();
     std::fs::write(
         tmp.join("Calculator.cls"),
         "Public Function Add(a As Long, b As Long) As Long\n  Add = a + b\nEnd Function\n",
@@ -664,14 +661,8 @@ fn round_trip_host_module() {
     let loaded2 = load_basproj_from_str(&generated_xml, &tmp).unwrap();
 
     // Step 4: Compare
-    assert_eq!(
-        loaded1.manifest.project_name,
-        loaded2.manifest.project_name
-    );
-    assert_eq!(
-        loaded1.manifest.project_kind,
-        loaded2.manifest.project_kind
-    );
+    assert_eq!(loaded1.manifest.project_name, loaded2.manifest.project_name);
+    assert_eq!(loaded1.manifest.project_kind, loaded2.manifest.project_kind);
     assert_eq!(
         loaded1.manifest.modules.len(),
         loaded2.manifest.modules.len()
@@ -685,14 +676,12 @@ fn round_trip_host_module() {
         assert_eq!(m1.module_name, m2.module_name);
         assert_eq!(m1.module_kind, m2.module_kind);
         assert_eq!(
-            m1.attributes.vb_exposed,
-            m2.attributes.vb_exposed,
+            m1.attributes.vb_exposed, m2.attributes.vb_exposed,
             "vb_exposed mismatch for {}",
             m1.module_name
         );
         assert_eq!(
-            m1.attributes.vb_predeclared_id,
-            m2.attributes.vb_predeclared_id,
+            m1.attributes.vb_predeclared_id, m2.attributes.vb_predeclared_id,
             "vb_predeclared_id mismatch for {}",
             m1.module_name
         );
@@ -702,10 +691,7 @@ fn round_trip_host_module() {
         loaded2.manifest.conditional_constants
     );
     assert_eq!(loaded1.output_type, loaded2.output_type);
-    assert_eq!(
-        loaded1.default_root_object,
-        loaded2.default_root_object
-    );
+    assert_eq!(loaded1.default_root_object, loaded2.default_root_object);
 
     let _ = std::fs::remove_dir_all(&tmp);
 }
@@ -720,11 +706,7 @@ fn round_trip_library_with_exports() {
     let _ = std::fs::remove_dir_all(&tmp);
     std::fs::create_dir_all(&tmp).unwrap();
 
-    std::fs::write(
-        tmp.join("Mod1.bas"),
-        "Public Sub Proc1()\nEnd Sub\n",
-    )
-    .unwrap();
+    std::fs::write(tmp.join("Mod1.bas"), "Public Sub Proc1()\nEnd Sub\n").unwrap();
 
     let xml = r#"<Project Sdk="OxVba.Sdk/0.1.0">
   <PropertyGroup>
@@ -854,10 +836,7 @@ fn multiple_property_groups_merge() {
 
     let basproj = parse_basproj_xml(xml).unwrap();
     // Last write wins for ProjectName
-    assert_eq!(
-        basproj.properties.project_name.as_deref(),
-        Some("Second")
-    );
+    assert_eq!(basproj.properties.project_name.as_deref(), Some("Second"));
     // OutputType from first group persists
     assert_eq!(basproj.properties.output_type, Some(OutputType::Exe));
 }
@@ -925,10 +904,7 @@ fn parse_com_server_output_type() {
     let basproj = parse_basproj_xml(COM_SERVER_XML).unwrap();
 
     assert_eq!(basproj.properties.output_type, Some(OutputType::ComServer));
-    assert_eq!(
-        basproj.properties.project_name.as_deref(),
-        Some("MyComLib")
-    );
+    assert_eq!(basproj.properties.project_name.as_deref(), Some("MyComLib"));
 
     // Modules
     assert_eq!(basproj.modules.len(), 3);
@@ -939,10 +915,7 @@ fn parse_com_server_output_type() {
     assert_eq!(widget.kind, BasProjModuleKind::ClassModule);
     assert!(widget.vb_exposed);
     assert!(widget.vb_creatable);
-    assert_eq!(
-        widget.instancing,
-        Some(oxvba_project::Instancing::MultiUse)
-    );
+    assert_eq!(widget.instancing, Some(oxvba_project::Instancing::MultiUse));
     assert_eq!(widget.prog_id.as_deref(), Some("MyComLib.Widget"));
     assert_eq!(
         widget.description.as_deref(),
@@ -965,16 +938,8 @@ fn load_com_server_project() {
     let _ = std::fs::remove_dir_all(&tmp);
     std::fs::create_dir_all(&tmp).unwrap();
 
-    std::fs::write(
-        tmp.join("Helpers.bas"),
-        "Public Sub Helper()\nEnd Sub\n",
-    )
-    .unwrap();
-    std::fs::write(
-        tmp.join("Widget.cls"),
-        "Public Sub DoWork()\nEnd Sub\n",
-    )
-    .unwrap();
+    std::fs::write(tmp.join("Helpers.bas"), "Public Sub Helper()\nEnd Sub\n").unwrap();
+    std::fs::write(tmp.join("Widget.cls"), "Public Sub DoWork()\nEnd Sub\n").unwrap();
     std::fs::write(
         tmp.join("Factory.cls"),
         "Public Function Create() As Object\nEnd Function\n",
@@ -1068,11 +1033,17 @@ fn round_trip_com_server_with_instancing() {
 fn all_instancing_variants_parse() {
     for (name, expected) in [
         ("Private", oxvba_project::Instancing::Private),
-        ("PublicNotCreatable", oxvba_project::Instancing::PublicNotCreatable),
+        (
+            "PublicNotCreatable",
+            oxvba_project::Instancing::PublicNotCreatable,
+        ),
         ("MultiUse", oxvba_project::Instancing::MultiUse),
         ("GlobalMultiUse", oxvba_project::Instancing::GlobalMultiUse),
         ("SingleUse", oxvba_project::Instancing::SingleUse),
-        ("GlobalSingleUse", oxvba_project::Instancing::GlobalSingleUse),
+        (
+            "GlobalSingleUse",
+            oxvba_project::Instancing::GlobalSingleUse,
+        ),
     ] {
         let xml = format!(
             r#"<Project Sdk="OxVba.Sdk/0.1.0">

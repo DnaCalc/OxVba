@@ -401,6 +401,21 @@ pub enum Instruction {
         dst: usize,
         src: usize,
     },
+    /// CStr() — convert value to string (no leading space).
+    IntrinsicCStrDigits {
+        dst: usize,
+        src: usize,
+    },
+    /// Str() — convert numeric value to string (leading space for positive).
+    IntrinsicStrFuncDigits {
+        dst: usize,
+        src: usize,
+    },
+    /// Val() — parse numeric value from string.
+    IntrinsicValDigits {
+        dst: usize,
+        src: usize,
+    },
     IntrinsicStrConvDigits {
         dst: usize,
         src: usize,

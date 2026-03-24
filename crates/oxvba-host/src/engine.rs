@@ -205,19 +205,14 @@ impl Engine {
 
     /// Wrap the current host services in a recording layer.
     pub fn with_recording(mut self) -> Self {
-        self.host_services = Arc::new(
-            oxvba_hal::adapters::recording::RecordingHostServices::new(
-                self.host_services.clone(),
-            ),
-        );
+        self.host_services = Arc::new(oxvba_hal::adapters::recording::RecordingHostServices::new(
+            self.host_services.clone(),
+        ));
         self
     }
 
     /// Create an engine that replays from a recorded journal.
-    pub fn from_replay(
-        config: HostConfig,
-        journal: oxvba_hal::journal::HalJournal,
-    ) -> Self {
+    pub fn from_replay(config: HostConfig, journal: oxvba_hal::journal::HalJournal) -> Self {
         let policy = HostPolicy::deterministic_runtime();
         let host_services: Arc<dyn HostServices> = Arc::new(
             oxvba_hal::adapters::replay::ReplayHostServices::new(journal, policy),
@@ -578,9 +573,7 @@ impl Engine {
             .find(|(k, _)| k.ends_with(&suffix))
             .map(|(_, v)| v.clone())
             .ok_or_else(|| {
-                PhaseDiagnostic::runtime(format!(
-                    "procedure not found: {module}.{procedure}"
-                ))
+                PhaseDiagnostic::runtime(format!("procedure not found: {module}.{procedure}"))
             })?;
 
         let expected = metadata.param_slots.len();
@@ -622,9 +615,7 @@ impl Engine {
             .project_dynamic_objects
             .iter()
             .find(|r| r.module_name.to_ascii_lowercase() == lowered)
-            .ok_or_else(|| {
-                PhaseDiagnostic::runtime(format!("class not found: {class_name}"))
-            })?;
+            .ok_or_else(|| PhaseDiagnostic::runtime(format!("class not found: {class_name}")))?;
 
         let handle = route.object_handle;
 
@@ -861,14 +852,8 @@ impl Engine {
                 .map(|ei| ei.host_exports.clone())
                 .unwrap_or_default(),
             reference_visible_exports: Vec::new(),
-            event_dispatch_bindings: bundle
-                .event_dispatch_bindings
-                .clone()
-                .unwrap_or_default(),
-            project_dynamic_objects: bundle
-                .dynamic_object_routes
-                .clone()
-                .unwrap_or_default(),
+            event_dispatch_bindings: bundle.event_dispatch_bindings.clone().unwrap_or_default(),
+            project_dynamic_objects: bundle.dynamic_object_routes.clone().unwrap_or_default(),
         };
         let mut vm = Vm::new(self.host_services.clone());
         vm.set_project_dynamic_objects(compiled.project_dynamic_objects.clone());
@@ -22684,7 +22669,10 @@ mod tests {
         let snapshot = engine
             .execute_source_slots_test(source)
             .expect("OERN→OEGL transition should succeed");
-        assert_eq!(snapshot[0], 99, "Resume Next in handler jumps to statement after error source");
+        assert_eq!(
+            snapshot[0], 99,
+            "Resume Next in handler jumps to statement after error source"
+        );
     }
 
     // ── Domain 4: Type Coercion Matrix (ODG-014..017) ──────────────────
@@ -23852,7 +23840,9 @@ mod tests {
         // ThingImpl.Fire calls IThing_Ping which raises 707
         let err = engine
             .execute_project_slots_test_phased(&manifest)
-            .expect_err("dispatch through Implements member should reach implementation and raise error");
+            .expect_err(
+                "dispatch through Implements member should reach implementation and raise error",
+            );
         assert_eq!(err.phase(), DiagnosticPhase::Runtime);
         assert!(
             err.message().contains("runtime error: 707"),
@@ -24046,8 +24036,10 @@ mod tests {
         // Slots: r, r_topleft, r_topleft_x(=1), r_topleft_y(=2),
         //        r_bottomright, r_bottomright_x(=3), r_bottomright_y(=4)
         assert!(
-            snapshot.contains(&1) && snapshot.contains(&2)
-                && snapshot.contains(&3) && snapshot.contains(&4),
+            snapshot.contains(&1)
+                && snapshot.contains(&2)
+                && snapshot.contains(&3)
+                && snapshot.contains(&4),
             "nested UDT fields should have values 1,2,3,4 — got: {:?}",
             snapshot
         );

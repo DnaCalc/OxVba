@@ -336,10 +336,7 @@ mod tests {
     #[test]
     fn hex_and_oct_literals() {
         assert_eq!(kinds("&HFF"), vec![SyntaxKind::HexLiteral, SyntaxKind::Eof]);
-        assert_eq!(
-            kinds("&O77"),
-            vec![SyntaxKind::OctLiteral, SyntaxKind::Eof]
-        );
+        assert_eq!(kinds("&O77"), vec![SyntaxKind::OctLiteral, SyntaxKind::Eof]);
         assert_eq!(
             kinds("&HFF&"),
             vec![SyntaxKind::HexLiteral, SyntaxKind::Eof]
@@ -445,7 +442,10 @@ mod kani_proofs {
 
         let tokens = tokenize(&source);
         assert!(!tokens.is_empty());
-        assert!(matches!(tokens.last().map(|(k, _)| *k), Some(SyntaxKind::Eof)));
+        assert!(matches!(
+            tokens.last().map(|(k, _)| *k),
+            Some(SyntaxKind::Eof)
+        ));
     }
 
     #[kani::proof]

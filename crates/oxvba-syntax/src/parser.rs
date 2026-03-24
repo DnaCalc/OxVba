@@ -81,10 +81,7 @@ impl<'a> Parser<'a> {
     }
 
     fn current_text(&self) -> &'a str {
-        self.tokens
-            .get(self.pos)
-            .map(|(_, t)| *t)
-            .unwrap_or("")
+        self.tokens.get(self.pos).map(|(_, t)| *t).unwrap_or("")
     }
 
     /// Peek at the next non-trivia token kind.
@@ -281,10 +278,7 @@ impl<'a> Parser<'a> {
         match kind {
             SyntaxKind::Eof => true,
             SyntaxKind::Newline | SyntaxKind::Comment if self.paren_depth == 0 => true,
-            SyntaxKind::KwThen
-            | SyntaxKind::KwTo
-            | SyntaxKind::KwStep
-            | SyntaxKind::Colon => true,
+            SyntaxKind::KwThen | SyntaxKind::KwTo | SyntaxKind::KwStep | SyntaxKind::Colon => true,
             _ => false,
         }
     }
@@ -966,7 +960,11 @@ impl<'a> Parser<'a> {
         self.eat_trivia();
 
         // Modifiers
-        while self.at_any(&[SyntaxKind::KwPublic, SyntaxKind::KwPrivate, SyntaxKind::KwConst]) {
+        while self.at_any(&[
+            SyntaxKind::KwPublic,
+            SyntaxKind::KwPrivate,
+            SyntaxKind::KwConst,
+        ]) {
             self.bump();
             self.eat_whitespace();
         }
@@ -1726,7 +1724,8 @@ mod tests {
 
     #[test]
     fn round_trip_function_with_return_type() {
-        let src = "Public Function GetValue(x As Long) As Double\n    GetValue = x * 1.5\nEnd Function\n";
+        let src =
+            "Public Function GetValue(x As Long) As Double\n    GetValue = x * 1.5\nEnd Function\n";
         let p = parse(src);
         assert_eq!(p.syntax().text(), src);
     }
@@ -1849,10 +1848,7 @@ mod tests {
     // ── Expression parser tests ─────────────────────────────
 
     /// Collect all descendant nodes of the given kind.
-    fn collect_nodes(
-        node: &crate::red::SyntaxNode<'_>,
-        kind: SyntaxKind,
-    ) -> Vec<String> {
+    fn collect_nodes(node: &crate::red::SyntaxNode<'_>, kind: SyntaxKind) -> Vec<String> {
         let mut result = Vec::new();
         collect_nodes_recursive(node, kind, &mut result);
         result
@@ -1887,10 +1883,22 @@ mod tests {
         assert_eq!(p.syntax().text(), src);
 
         let binaries = collect_nodes(&p.syntax(), SyntaxKind::BinaryExpr);
-        assert!(binaries.len() >= 2, "expected nested BinaryExpr, got {:?}", binaries);
+        assert!(
+            binaries.len() >= 2,
+            "expected nested BinaryExpr, got {:?}",
+            binaries
+        );
         // The outer binary should be addition
-        assert!(binaries.iter().any(|s| s.contains('+')), "expected + binary: {:?}", binaries);
-        assert!(binaries.iter().any(|s| s.contains('*')), "expected * binary: {:?}", binaries);
+        assert!(
+            binaries.iter().any(|s| s.contains('+')),
+            "expected + binary: {:?}",
+            binaries
+        );
+        assert!(
+            binaries.iter().any(|s| s.contains('*')),
+            "expected * binary: {:?}",
+            binaries
+        );
     }
 
     #[test]
@@ -1901,7 +1909,11 @@ mod tests {
         assert_eq!(p.syntax().text(), src);
 
         let binaries = collect_nodes(&p.syntax(), SyntaxKind::BinaryExpr);
-        assert!(binaries.len() >= 2, "expected nested ^ exprs, got {:?}", binaries);
+        assert!(
+            binaries.len() >= 2,
+            "expected nested ^ exprs, got {:?}",
+            binaries
+        );
     }
 
     #[test]
@@ -1909,8 +1921,14 @@ mod tests {
         let src = "Sub T()\nIf Not x And y Then\nEnd If\nEnd Sub\n";
         let p = parse(src);
         assert_eq!(p.syntax().text(), src);
-        assert!(has_node_kind(&p.syntax(), SyntaxKind::UnaryExpr), "expected UnaryExpr for Not");
-        assert!(has_node_kind(&p.syntax(), SyntaxKind::BinaryExpr), "expected BinaryExpr for And");
+        assert!(
+            has_node_kind(&p.syntax(), SyntaxKind::UnaryExpr),
+            "expected UnaryExpr for Not"
+        );
+        assert!(
+            has_node_kind(&p.syntax(), SyntaxKind::BinaryExpr),
+            "expected BinaryExpr for And"
+        );
     }
 
     #[test]
@@ -1919,7 +1937,11 @@ mod tests {
         let p = parse(src);
         assert_eq!(p.syntax().text(), src);
         let members = collect_nodes(&p.syntax(), SyntaxKind::MemberExpr);
-        assert!(members.len() >= 2, "expected chained MemberExpr, got {:?}", members);
+        assert!(
+            members.len() >= 2,
+            "expected chained MemberExpr, got {:?}",
+            members
+        );
     }
 
     #[test]
@@ -1927,8 +1949,14 @@ mod tests {
         let src = "Sub T()\n    x = f(a, b)\nEnd Sub\n";
         let p = parse(src);
         assert_eq!(p.syntax().text(), src);
-        assert!(has_node_kind(&p.syntax(), SyntaxKind::IndexExpr), "expected IndexExpr for f(a,b)");
-        assert!(has_node_kind(&p.syntax(), SyntaxKind::ArgList), "expected ArgList");
+        assert!(
+            has_node_kind(&p.syntax(), SyntaxKind::IndexExpr),
+            "expected IndexExpr for f(a,b)"
+        );
+        assert!(
+            has_node_kind(&p.syntax(), SyntaxKind::ArgList),
+            "expected ArgList"
+        );
     }
 
     #[test]
@@ -1990,11 +2018,16 @@ mod tests {
     #[test]
     fn expr_keyword_operators() {
         // Test And, Or, Xor, Mod, Like, Is, Imp, Eqv
-        let src = "Sub T()\n    x = a And b\n    y = a Or b\n    z = a Xor b\n    w = a Mod b\nEnd Sub\n";
+        let src =
+            "Sub T()\n    x = a And b\n    y = a Or b\n    z = a Xor b\n    w = a Mod b\nEnd Sub\n";
         let p = parse(src);
         assert_eq!(p.syntax().text(), src);
         let binaries = collect_nodes(&p.syntax(), SyntaxKind::BinaryExpr);
-        assert!(binaries.len() >= 4, "expected 4 BinaryExpr nodes, got {}", binaries.len());
+        assert!(
+            binaries.len() >= 4,
+            "expected 4 BinaryExpr nodes, got {}",
+            binaries.len()
+        );
     }
 
     #[test]
@@ -2011,7 +2044,10 @@ mod tests {
         let src = "Sub T()\n    x = (a + b\nEnd Sub\n";
         let p = parse(src);
         assert_eq!(p.syntax().text(), src);
-        assert!(!p.errors().is_empty(), "expected parse errors for unclosed paren");
+        assert!(
+            !p.errors().is_empty(),
+            "expected parse errors for unclosed paren"
+        );
     }
 
     #[test]

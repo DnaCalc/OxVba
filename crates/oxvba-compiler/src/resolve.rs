@@ -1595,7 +1595,11 @@ fn normalize_external_alias(alias: &str) -> Result<(String, bool), String> {
 /// Parse UDT field array bounds from a parenthesized expression like `(10)` or `(1 To 5)`.
 /// Returns `Some(vec![(lo, hi)])` on success, `None` if unparseable.
 fn parse_udt_field_array_bounds(bounds_str: &str) -> Option<Vec<(i32, i32)>> {
-    let inner = bounds_str.trim().strip_prefix('(')?.strip_suffix(')')?.trim();
+    let inner = bounds_str
+        .trim()
+        .strip_prefix('(')?
+        .strip_suffix(')')?
+        .trim();
     if inner.is_empty() {
         return None;
     }
@@ -1666,8 +1670,7 @@ fn collect_udt_definitions(lines: &[String], default_type_table: &[BoundType; 26
                         (field_name_raw, None)
                     };
                 if let Some(field_name) = normalize_ident(field_name_clean) {
-                    let field_ty = if explicit_ty == BoundType::Variant
-                        && nested_udt_name.is_none()
+                    let field_ty = if explicit_ty == BoundType::Variant && nested_udt_name.is_none()
                     {
                         default_type_for_name(&field_name, default_type_table)
                     } else {
@@ -3792,7 +3795,7 @@ fn parse_intrinsic_conversion_expr(expr: &str, array_bounds: &ArrayBoundsMap) ->
         return None;
     }
     let inner = parse_expr(expr[open + 1..close].trim(), array_bounds)?;
-    if name == "cverr" {
+    if matches!(name.as_str(), "cverr" | "cstr" | "str" | "val") {
         return Some(BoundExpr::IntrinsicCall {
             name,
             args: vec![inner],
@@ -3849,7 +3852,9 @@ pub fn intrinsic_spec(name: &str) -> Option<IntrinsicSpec> {
         | "atn" | "tan" | "year" | "month" | "day" | "weekday" | "space" | "chr" | "asc"
         | "lbound" | "ubound" | "isarray" | "vartype" | "typename" | "isnumeric" | "isdate"
         | "isobject" | "isempty" | "isnull" | "iserror" | "monthname" | "collectioncount"
-        | "eof" | "lof" | "loc" | "seek" | "strreverse" => Some(IntrinsicSpec::fixed(1, DeterministicCore)),
+        | "eof" | "lof" | "loc" | "seek" | "strreverse" => {
+            Some(IntrinsicSpec::fixed(1, DeterministicCore))
+        }
         "format" => Some(IntrinsicSpec::range(1, 2, DeterministicCore)),
         "strconv" => Some(IntrinsicSpec::range(2, 3, DeterministicCore)),
         "left" | "right" | "instr" | "instrrev" | "split" | "join" | "strcomp" => {
@@ -6382,8 +6387,13 @@ mod tests {
         let module = resolve_symbols(source);
         // Verify that all nested fields are declared
         for expected in &[
-            "r", "r_topleft", "r_topleft_x", "r_topleft_y",
-            "r_bottomright", "r_bottomright_x", "r_bottomright_y",
+            "r",
+            "r_topleft",
+            "r_topleft_x",
+            "r_topleft_y",
+            "r_bottomright",
+            "r_bottomright_x",
+            "r_bottomright_y",
         ] {
             assert!(
                 module.declarations.iter().any(|d| d == expected),
@@ -6410,7 +6420,8 @@ mod tests {
 
     #[test]
     fn resolve_udt_array_field_parses_without_error() {
-        let source = "Type Scores\nItems(10) As Integer\nEnd Type\nSub Main()\nDim s As Scores\nEnd Sub";
+        let source =
+            "Type Scores\nItems(10) As Integer\nEnd Type\nSub Main()\nDim s As Scores\nEnd Sub";
         let module = resolve_symbols(source);
         assert!(module.declarations.iter().any(|d| d == "s"));
         // Array field Items(10) should create indexed aliases s_items_0 through s_items_10

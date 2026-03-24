@@ -7,7 +7,9 @@ use oxvba_com::{ComCallbackToken, ComMemberToken, ComSubscriptionToken, DynamicM
 use oxvba_compiler::bytecode::{
     RuntimeAssignmentIntent, RuntimeAssignmentTargetKind, StringCompareMode,
 };
-use oxvba_runtime::{BindingHandle, CurrencyValue, F64Value, ObjectHandle, RuntimeValue, bstr::BStr};
+use oxvba_runtime::{
+    BindingHandle, CurrencyValue, F64Value, ObjectHandle, RuntimeValue, bstr::BStr,
+};
 
 // ── Coercion & Type Checks ────────────────────────────────────────────
 
@@ -550,10 +552,7 @@ pub fn withevents_binding_handle(
     }
 }
 
-pub fn withevents_owner_handle(
-    value: &RuntimeValue,
-    field: &str,
-) -> Result<ObjectHandle, String> {
+pub fn withevents_owner_handle(value: &RuntimeValue, field: &str) -> Result<ObjectHandle, String> {
     match value {
         RuntimeValue::ObjectHandle(handle) => Ok(*handle),
         other => runtime_value_legacy_token(other, &format!("WithEvents {field}")).map(Into::into),

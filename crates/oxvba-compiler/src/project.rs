@@ -36,7 +36,18 @@ pub enum ReferenceKind {
     HostInjected,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    rkyv::Archive,
+    rkyv::Serialize,
+    rkyv::Deserialize,
+)]
 pub enum ExportKind {
     Sub,
     Function,
@@ -132,7 +143,9 @@ pub struct HostProcedureExport {
     pub kind: ExportKind,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
+#[derive(
+    Debug, Clone, PartialEq, Eq, PartialOrd, Ord, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize,
+)]
 pub struct ProjectEventDispatchBinding {
     pub source_project_name: String,
     pub source_module_name: String,
@@ -523,9 +536,9 @@ fn compile_project_with_strategy(
     let mut augmented_refs = manifest.reference_projects.clone();
     for reference in &manifest.references {
         if reference.reference_kind == ReferenceKind::TypeLibrary {
-            if let Some(identity) = known_typelib_identity_for_prog_id_name(
-                &reference.referenced_project_name,
-            ) {
+            if let Some(identity) =
+                known_typelib_identity_for_prog_id_name(&reference.referenced_project_name)
+            {
                 let blob = build_typelib_metadata(&identity);
                 let synthetic = project_typelib_as_manifest(&blob);
                 let key = normalize_identifier(&synthetic.project_name);
@@ -567,12 +580,11 @@ fn compile_project_with_strategy(
         .modules
         .iter()
         .any(|m| matches!(m.module_kind, ModuleKind::Class | ModuleKind::Document));
-    let (bytecode, procedure_runtime_metadata) =
-        compile_with_runtime_metadata_object_locals_class(
-            &rewritten_source,
-            &forced_object_locals_by_proc,
-            has_class_modules,
-        )
+    let (bytecode, procedure_runtime_metadata) = compile_with_runtime_metadata_object_locals_class(
+        &rewritten_source,
+        &forced_object_locals_by_proc,
+        has_class_modules,
+    )
     .map_err(|e| ProjectCompileError::BackendCompile {
         message: e.to_string(),
     })?;
@@ -614,7 +626,21 @@ fn lower_project_source(
     let mut next_internal_instance_id = 1i32;
     let mut dynamic_instance_bindings = Vec::new();
     let mut forced_object_locals_by_proc = BTreeMap::<String, BTreeSet<String>>::new();
-    for module in &manifest.modules {
+    // Emit procedural modules before class modules so the bytecode entry
+    // point (pc=0) lands in a procedural module rather than in a class
+    // module helper function.  Within each category, preserve the original
+    // module order (which is typically alphabetical from the filesystem).
+    let module_order: Vec<usize> = {
+        let procedural: Vec<usize> = (0..manifest.modules.len())
+            .filter(|&i| manifest.modules[i].module_kind == ModuleKind::Procedural)
+            .collect();
+        let non_procedural: Vec<usize> = (0..manifest.modules.len())
+            .filter(|&i| manifest.modules[i].module_kind != ModuleKind::Procedural)
+            .collect();
+        procedural.into_iter().chain(non_procedural).collect()
+    };
+    for &idx in &module_order {
+        let module = &manifest.modules[idx];
         let (lowered, object_locals) = lower_module_source(
             strategy,
             manifest,
@@ -1658,9 +1684,7 @@ fn validate_modules_for_project(
 /// Enums (if present) become a procedural module with `Public Enum` blocks.
 /// This allows the existing project-reference resolution infrastructure to handle
 /// COM type libraries uniformly.
-pub fn project_typelib_as_manifest(
-    blob: &TypeLibMetadataBlob,
-) -> ReferencedProjectManifest {
+pub fn project_typelib_as_manifest(blob: &TypeLibMetadataBlob) -> ReferencedProjectManifest {
     let lib_name = blob.identity.reference_name.clone();
 
     // Collect all members and group them by a common "interface" name.
@@ -4967,9 +4991,9 @@ fn build_project_dynamic_object_routes(
                         if let Some(metadata) = runtime_metadata.get(&decl.lowered_name) {
                             // Only add alias if no public member with the same name already exists.
                             let alias_name = normalize_identifier(member_name);
-                            let already_exists = members.iter().any(|m| {
-                                normalize_identifier(&m.member_name) == alias_name
-                            });
+                            let already_exists = members
+                                .iter()
+                                .any(|m| normalize_identifier(&m.member_name) == alias_name);
                             if !already_exists {
                                 members.push(ProjectDynamicMemberRoute {
                                     member_name: member_name.clone(),
@@ -13510,8 +13534,7 @@ mod tests {
             reference_projects: Vec::new(),
             conditional_constants: BTreeMap::new(),
         };
-        compile_project(&manifest)
-            .expect("imported Implements target should compile successfully");
+        compile_project(&manifest).expect("imported Implements target should compile successfully");
     }
 
     #[test]

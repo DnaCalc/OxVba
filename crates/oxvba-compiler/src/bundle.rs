@@ -10,10 +10,7 @@ use rkyv::{Archive, Deserialize, Serialize};
 
 use crate::bytecode::Bytecode;
 use crate::emit::ProcedureRuntimeMetadata;
-use crate::project::{
-    HostProcedureExport, ProjectDynamicObjectRoute,
-    ProjectEventDispatchBinding,
-};
+use crate::project::{HostProcedureExport, ProjectDynamicObjectRoute, ProjectEventDispatchBinding};
 
 /// Magic header bytes for the OxBundle binary format.
 const MAGIC: [u8; 4] = *b"OXVB";
@@ -156,8 +153,8 @@ impl OxBundle {
         let payload =
             rkyv::to_bytes::<rkyv::rancor::Error>(self).map_err(|e| format!("serialize: {e}"))?;
 
-        let payload_len = u32::try_from(payload.len())
-            .map_err(|_| "bundle payload exceeds 4 GiB".to_string())?;
+        let payload_len =
+            u32::try_from(payload.len()).map_err(|_| "bundle payload exceeds 4 GiB".to_string())?;
 
         let mut out = Vec::with_capacity(HEADER_SIZE + payload.len());
         out.extend_from_slice(&MAGIC);
@@ -191,8 +188,7 @@ impl OxBundle {
         }
 
         // Read payload length.
-        let payload_len =
-            u32::from_le_bytes([data[8], data[9], data[10], data[11]]) as usize;
+        let payload_len = u32::from_le_bytes([data[8], data[9], data[10], data[11]]) as usize;
         if data.len() < HEADER_SIZE + payload_len {
             return Err(format!(
                 "bundle truncated: expected {} payload bytes, got {}",
@@ -215,9 +211,8 @@ impl OxBundle {
                     .map_err(|e| format!("deserialize v1: {e}"))?;
             Ok(OxBundle::new(legacy.bytecode, legacy.procedure_metadata))
         } else {
-            let bundle: OxBundle =
-                rkyv::from_bytes::<OxBundle, rkyv::rancor::Error>(&aligned)
-                    .map_err(|e| format!("deserialize: {e}"))?;
+            let bundle: OxBundle = rkyv::from_bytes::<OxBundle, rkyv::rancor::Error>(&aligned)
+                .map_err(|e| format!("deserialize: {e}"))?;
             Ok(bundle)
         }
     }
@@ -319,8 +314,7 @@ mod tests {
             bytecode,
             procedure_metadata: metadata,
         };
-        let payload =
-            rkyv::to_bytes::<rkyv::rancor::Error>(&legacy).expect("serialize legacy");
+        let payload = rkyv::to_bytes::<rkyv::rancor::Error>(&legacy).expect("serialize legacy");
         let payload_len = payload.len() as u32;
 
         let mut data = Vec::with_capacity(HEADER_SIZE + payload.len());
@@ -386,8 +380,7 @@ mod tests {
     #[test]
     fn compile_and_bundle_roundtrip() {
         let source = "Sub Main()\nDim x\nx = 1\nx = x + 2\nEnd Sub";
-        let (bytecode, metadata) = crate::compile_with_runtime_metadata(source)
-            .expect("compile");
+        let (bytecode, metadata) = crate::compile_with_runtime_metadata(source).expect("compile");
         let bundle = OxBundle::new(bytecode, metadata);
         let bytes = bundle.serialize_to_bytes().expect("serialize");
         let restored = OxBundle::deserialize_from_bytes(&bytes).expect("deserialize");

@@ -34,8 +34,7 @@ pub fn parse_basproj_xml(xml: &str) -> Result<BasProj, BasProjError> {
                     "Project" => {
                         in_project = true;
                         for attr in e.attributes().flatten() {
-                            let key =
-                                String::from_utf8_lossy(attr.key.as_ref()).to_string();
+                            let key = String::from_utf8_lossy(attr.key.as_ref()).to_string();
                             if key == "Sdk" {
                                 sdk = String::from_utf8_lossy(&attr.value).to_string();
                             }
@@ -74,12 +73,10 @@ pub fn parse_basproj_xml(xml: &str) -> Result<BasProj, BasProjError> {
                     "Import" if in_project => {
                         // Collect import paths for later processing
                         for attr in e.attributes().flatten() {
-                            let key =
-                                String::from_utf8_lossy(attr.key.as_ref()).to_string();
+                            let key = String::from_utf8_lossy(attr.key.as_ref()).to_string();
                             if key == "Project" {
-                                imports_to_process.push(
-                                    String::from_utf8_lossy(&attr.value).to_string(),
-                                );
+                                imports_to_process
+                                    .push(String::from_utf8_lossy(&attr.value).to_string());
                             }
                         }
                     }
@@ -160,9 +157,7 @@ pub fn parse_basproj_xml(xml: &str) -> Result<BasProj, BasProjError> {
             }
             Ok(Event::Eof) => break,
             Err(e) => {
-                return Err(BasProjError::XmlParse(format!(
-                    "XML parse error: {e}"
-                )));
+                return Err(BasProjError::XmlParse(format!("XML parse error: {e}")));
             }
             _ => {}
         }
@@ -186,7 +181,9 @@ pub fn parse_basproj_xml(xml: &str) -> Result<BasProj, BasProjError> {
 /// Merge items from an imported `BasProj` into a parent `BasProj`.
 pub fn merge_import(parent: &mut BasProj, imported: BasProj) {
     parent.modules.extend(imported.modules);
-    parent.project_references.extend(imported.project_references);
+    parent
+        .project_references
+        .extend(imported.project_references);
     parent.com_references.extend(imported.com_references);
     parent.native_references.extend(imported.native_references);
     parent.native_exports.extend(imported.native_exports);
@@ -238,9 +235,7 @@ impl ItemContext {
     }
 }
 
-fn extract_include_attr(
-    e: &quick_xml::events::BytesStart<'_>,
-) -> Result<String, BasProjError> {
+fn extract_include_attr(e: &quick_xml::events::BytesStart<'_>) -> Result<String, BasProjError> {
     for attr in e.attributes().flatten() {
         let key = String::from_utf8_lossy(attr.key.as_ref()).to_string();
         if key == "Include" {
@@ -276,15 +271,9 @@ fn apply_property(props: &mut BasProjProperties, name: &str, value: &str) {
                 _ => None,
             };
         }
-        "DefaultRuntimeProfile" => {
-            props.default_runtime_profile = Some(value.to_string())
-        }
-        "DefaultPolicyPreset" => {
-            props.default_policy_preset = Some(value.to_string())
-        }
-        "DefaultRootObject" => {
-            props.default_root_object = Some(value.to_string())
-        }
+        "DefaultRuntimeProfile" => props.default_runtime_profile = Some(value.to_string()),
+        "DefaultPolicyPreset" => props.default_policy_preset = Some(value.to_string()),
+        "DefaultRootObject" => props.default_root_object = Some(value.to_string()),
         "DefineConstants" => props.define_constants = Some(value.to_string()),
         _ => {} // Unknown properties are silently ignored
     }
@@ -385,11 +374,13 @@ fn emit_item(
             });
         }
         "NativeExport" => {
-            let cc = ctx.meta_str("CallingConvention").and_then(|s| match s.as_str() {
-                "Stdcall" => Some(CallingConvention::Stdcall),
-                "Cdecl" => Some(CallingConvention::Cdecl),
-                _ => None,
-            });
+            let cc = ctx
+                .meta_str("CallingConvention")
+                .and_then(|s| match s.as_str() {
+                    "Stdcall" => Some(CallingConvention::Stdcall),
+                    "Cdecl" => Some(CallingConvention::Cdecl),
+                    _ => None,
+                });
             let module = ctx.meta_str("Module");
             let procedure = ctx.meta_str("Procedure");
             let ordinal = ctx.meta_u16("Ordinal");

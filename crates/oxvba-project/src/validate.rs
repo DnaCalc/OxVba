@@ -39,7 +39,9 @@ pub fn validate_native_exports(
             .iter()
             .find(|he| {
                 he.module_name.eq_ignore_ascii_case(&export.module_name)
-                    && he.procedure_name.eq_ignore_ascii_case(&export.procedure_name)
+                    && he
+                        .procedure_name
+                        .eq_ignore_ascii_case(&export.procedure_name)
             })
             .ok_or_else(|| BasProjError::ExportProcedureNotFound {
                 exported_name: export.exported_name.clone(),
@@ -124,10 +126,10 @@ pub fn validate_com_class_exports(
         let meta = class_metadata.get(&module_name);
         results.push(ComClassExportDescriptor {
             class_name: module_name,
-            prog_id: meta.and_then(|m| m.prog_id.clone()).or_else(|| bm.prog_id.clone()),
-            instancing: meta
-                .and_then(|m| m.instancing)
-                .or(bm.instancing),
+            prog_id: meta
+                .and_then(|m| m.prog_id.clone())
+                .or_else(|| bm.prog_id.clone()),
+            instancing: meta.and_then(|m| m.instancing).or(bm.instancing),
             description: meta
                 .and_then(|m| m.description.clone())
                 .or_else(|| bm.description.clone()),

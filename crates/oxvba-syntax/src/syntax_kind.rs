@@ -128,9 +128,9 @@ pub enum SyntaxKind {
     Eq,        // =
     Lt,        // <
     Gt,        // >
-    LtEq,     // <=
-    GtEq,     // >=
-    LtGt,     // <>
+    LtEq,      // <=
+    GtEq,      // >=
+    LtGt,      // <>
     ColonEq,   // :=
 
     // ── Punctuation ──────────────────────────────────────────
@@ -214,8 +214,7 @@ impl SyntaxKind {
 
     /// True if this kind is a keyword.
     pub fn is_keyword(self) -> bool {
-        (self as u16) >= (SyntaxKind::KwSub as u16)
-            && (self as u16) <= (SyntaxKind::KwName as u16)
+        (self as u16) >= (SyntaxKind::KwSub as u16) && (self as u16) <= (SyntaxKind::KwName as u16)
     }
 
     /// True if this kind represents a composite (interior) node.
