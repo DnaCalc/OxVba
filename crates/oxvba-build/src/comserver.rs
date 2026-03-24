@@ -54,7 +54,7 @@ const CLASS_E_NOAGGREGATION: i32 = 0x80040110_u32 as i32;
     source.push_str(&generate_guid_definitions(project_name, classes));
 
     // IUnknown / IDispatch / IClassFactory vtable structs
-    source.push_str(&generate_vtable_structs());
+    source.push_str(generate_vtable_structs());
 
     // DllMain
     source.push_str(
@@ -94,10 +94,10 @@ pub extern "system" fn DllCanUnloadNow() -> i32 {
     source.push_str(&generate_registration_exports(project_name, classes));
 
     // IClassFactory implementation
-    source.push_str(&generate_class_factory_impl());
+    source.push_str(generate_class_factory_impl());
 
     // IDispatch instance implementation
-    source.push_str(&generate_dispatch_instance_impl());
+    source.push_str(generate_dispatch_instance_impl());
 
     source
 }

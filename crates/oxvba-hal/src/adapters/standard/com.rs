@@ -36,17 +36,17 @@ impl ComHal for StandardHostServices {
                     "string ProgID activation requires a non-empty ProgID",
                 ));
             }
-            if let Some(projection) = &self.portable_objects {
-                if let Some(_dispatch) = projection.create_object(prog_id_name) {
-                    // Portable registry matched: return a synthetic object handle.
-                    // The handle base mirrors the existing fallback convention.
-                    let hash = prog_id_name
-                        .bytes()
-                        .fold(0i32, |acc, b| acc.wrapping_add(b as i32));
-                    return Ok(RuntimeValue::ObjectHandle(
-                        10_000i32.saturating_add(hash).into(),
-                    ));
-                }
+            if let Some(projection) = &self.portable_objects
+                && let Some(_dispatch) = projection.create_object(prog_id_name)
+            {
+                // Portable registry matched: return a synthetic object handle.
+                // The handle base mirrors the existing fallback convention.
+                let hash = prog_id_name
+                    .bytes()
+                    .fold(0i32, |acc, b| acc.wrapping_add(b as i32));
+                return Ok(RuntimeValue::ObjectHandle(
+                    10_000i32.saturating_add(hash).into(),
+                ));
             }
             if self.native_com_enabled() {
                 return self.activate_runtime_object_value_for_prog_id_name(prog_id_name);
@@ -103,7 +103,7 @@ impl ComHal for StandardHostServices {
                     released.stale_callbacks.len()
                 );
             }
-            return Ok(RuntimeValue::I32(1));
+            Ok(RuntimeValue::I32(1))
         }
         #[cfg(not(target_os = "windows"))]
         unreachable!("native COM is not available on this platform")
@@ -285,7 +285,7 @@ impl ComHal for StandardHostServices {
                     expected_arity
                 );
             }
-            return Ok(subscription);
+            Ok(subscription)
         }
         #[cfg(not(target_os = "windows"))]
         unreachable!("native COM is not available on this platform")
@@ -313,7 +313,7 @@ impl ComHal for StandardHostServices {
             unsafe { self.com_bridge.unsubscribe_event(subscription) }.map_err(|message| {
                 HalError::adapter_fault(self.profile, capability, "unsubscribe_event", message)
             })?;
-            return Ok(RuntimeValue::from_legacy_i32(1));
+            Ok(RuntimeValue::from_legacy_i32(1))
         }
         #[cfg(not(target_os = "windows"))]
         unreachable!("native COM is not available on this platform")
@@ -332,9 +332,9 @@ impl ComHal for StandardHostServices {
         }
         #[cfg(target_os = "windows")]
         {
-            return self.com_bridge.poll_event_callback().map_err(|message| {
+            self.com_bridge.poll_event_callback().map_err(|message| {
                 HalError::adapter_fault(self.profile, capability, "poll_event_callback", message)
-            });
+            })
         }
         #[cfg(not(target_os = "windows"))]
         unreachable!("native COM is not available on this platform")
@@ -361,8 +361,7 @@ impl ComHal for StandardHostServices {
         }
         #[cfg(target_os = "windows")]
         {
-            return self
-                .com_bridge
+            self.com_bridge
                 .event_callback_subscription(callback)
                 .map_err(|message| {
                     HalError::adapter_fault(
@@ -371,7 +370,7 @@ impl ComHal for StandardHostServices {
                         "event_callback_subscription",
                         message,
                     )
-                });
+                })
         }
         #[cfg(not(target_os = "windows"))]
         unreachable!("native COM is not available on this platform")
@@ -395,8 +394,7 @@ impl ComHal for StandardHostServices {
         }
         #[cfg(target_os = "windows")]
         {
-            return self
-                .com_bridge
+            self.com_bridge
                 .event_callback_arity(callback)
                 .map_err(|message| {
                     HalError::adapter_fault(
@@ -405,7 +403,7 @@ impl ComHal for StandardHostServices {
                         "event_callback_arity",
                         message,
                     )
-                });
+                })
         }
         #[cfg(not(target_os = "windows"))]
         unreachable!("native COM is not available on this platform")
@@ -433,12 +431,11 @@ impl ComHal for StandardHostServices {
         }
         #[cfg(target_os = "windows")]
         {
-            return self
-                .com_bridge
+            self.com_bridge
                 .event_callback_arg(callback, index)
                 .map_err(|message| {
                     HalError::adapter_fault(self.profile, capability, "event_callback_arg", message)
-                });
+                })
         }
         #[cfg(not(target_os = "windows"))]
         unreachable!("native COM is not available on this platform")
@@ -472,7 +469,7 @@ impl ComHal for StandardHostServices {
                         message,
                     )
                 })?;
-            return Ok(RuntimeValue::from_legacy_i32(1));
+            Ok(RuntimeValue::from_legacy_i32(1))
         }
         #[cfg(not(target_os = "windows"))]
         unreachable!("native COM is not available on this platform")
@@ -491,8 +488,7 @@ impl ComHal for StandardHostServices {
         }
         #[cfg(target_os = "windows")]
         {
-            return self
-                .com_bridge
+            self.com_bridge
                 .resolve_typelib_reference(request)
                 .map_err(|message| {
                     HalError::adapter_fault(
@@ -501,7 +497,7 @@ impl ComHal for StandardHostServices {
                         "resolve_typelib_reference",
                         message,
                     )
-                });
+                })
         }
         #[cfg(not(target_os = "windows"))]
         unreachable!("typelib resolution is not available on this platform")
@@ -520,8 +516,7 @@ impl ComHal for StandardHostServices {
         }
         #[cfg(target_os = "windows")]
         {
-            return self
-                .com_bridge
+            self.com_bridge
                 .load_typelib_metadata(identity)
                 .map_err(|message| {
                     HalError::adapter_fault(
@@ -530,7 +525,7 @@ impl ComHal for StandardHostServices {
                         "load_typelib_metadata",
                         message,
                     )
-                });
+                })
         }
         #[cfg(not(target_os = "windows"))]
         unreachable!("typelib resolution is not available on this platform")
@@ -561,9 +556,9 @@ impl ComHal for StandardHostServices {
                         message,
                     )
                 })?;
-            return Ok(RuntimeValue::I32(
+            Ok(RuntimeValue::I32(
                 i32::try_from(removed).unwrap_or(i32::MAX),
-            ));
+            ))
         }
         #[cfg(not(target_os = "windows"))]
         unreachable!("typelib resolution is not available on this platform")

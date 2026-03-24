@@ -1,3 +1,5 @@
+#![allow(clippy::result_large_err)]
+
 use crate::{
     ComBinding, ComInvokeArg, ComInvokeRequest, VariantResultValue, set_variant_from_com_value,
     take_variant_result_runtime_value, take_variant_result_value,

@@ -231,7 +231,7 @@ fn correlate_procedures(root: &SyntaxNode<'_>, bound: &BoundModule, symbols: &mu
                 .procedures
                 .iter()
                 .find(|p| p.name.to_ascii_lowercase() == name_lower)
-                .map(|p| p.return_type.clone())
+                .map(|p| p.return_type)
                 .unwrap_or(BoundType::Variant);
 
             let sym_kind = match child.kind() {
@@ -281,7 +281,7 @@ fn correlate_params(
             if let Some(name_tok) = find_name_token(&param_node) {
                 let param_type = bound_proc
                     .and_then(|p| p.params.get(param_idx))
-                    .map(|bp| bp.ty.clone())
+                    .map(|bp| bp.ty)
                     .unwrap_or(BoundType::Variant);
 
                 symbols.push(SymbolInfo {

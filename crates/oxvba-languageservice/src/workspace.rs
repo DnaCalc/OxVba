@@ -19,6 +19,12 @@ pub struct Workspace {
     cross_module_exports: HashMap<String, Vec<SymbolInfo>>,
 }
 
+impl Default for Workspace {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Workspace {
     pub fn new() -> Self {
         Workspace {

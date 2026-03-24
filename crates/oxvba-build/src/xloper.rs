@@ -39,7 +39,7 @@ pub fn build_type_string(
     if let Some(ret) = return_type {
         s.push_str(declare_param_type_to_excel_letter(ret));
     } else {
-        s.push_str("J"); // Default to Long for void/Sub
+        s.push('J'); // Default to Long for void/Sub
     }
     // Parameter types
     for param in param_types {

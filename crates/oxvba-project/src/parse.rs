@@ -108,10 +108,10 @@ pub fn parse_basproj_xml(xml: &str) -> Result<BasProj, BasProjError> {
                     if let Some(ref prop_name) = current_property {
                         apply_property(&mut properties, prop_name, &text);
                     }
-                    if let Some(ref meta_name) = current_item_metadata_name {
-                        if let Some(ref mut ctx) = current_item {
-                            ctx.set_metadata(meta_name, &text);
-                        }
+                    if let Some(ref meta_name) = current_item_metadata_name
+                        && let Some(ref mut ctx) = current_item
+                    {
+                        ctx.set_metadata(meta_name, &text);
                     }
                 }
             }
@@ -137,18 +137,18 @@ pub fn parse_basproj_xml(xml: &str) -> Result<BasProj, BasProjError> {
                         }
                         _ if current_item.is_some() => {
                             // Closing tag matches the item element
-                            if let Some(ref ctx) = current_item {
-                                if ctx.tag == tag {
-                                    let ctx = current_item.take().unwrap();
-                                    emit_item(
-                                        ctx,
-                                        &mut modules,
-                                        &mut project_references,
-                                        &mut com_references,
-                                        &mut native_references,
-                                        &mut native_exports,
-                                    );
-                                }
+                            if let Some(ref ctx) = current_item
+                                && ctx.tag == tag
+                            {
+                                let ctx = current_item.take().unwrap();
+                                emit_item(
+                                    ctx,
+                                    &mut modules,
+                                    &mut project_references,
+                                    &mut com_references,
+                                    &mut native_references,
+                                    &mut native_exports,
+                                );
                             }
                         }
                         _ => {}

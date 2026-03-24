@@ -1,5 +1,7 @@
 //! Generate `.basproj` XML from a `ProjectManifest` and associated metadata.
 
+#![allow(clippy::too_many_arguments)]
+
 use std::collections::BTreeMap;
 
 use oxvba_compiler::{ModuleKind, ProjectManifest, ReferenceKind};

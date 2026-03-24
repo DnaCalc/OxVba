@@ -44,21 +44,6 @@ fn main() {{
     )
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn exe_shim_contains_project_name() {
-        // We can't easily create a LoadedProject in tests without filesystem,
-        // so test the output format indirectly
-        let source = generate_exe_shim_template("TestApp", "bundle.oxb", "Main.Main");
-        assert!(source.contains("TestApp"));
-        assert!(source.contains("bundle.oxb"));
-        assert!(source.contains("include_bytes!"));
-    }
-}
-
 /// Template-based generation for testing.
 pub fn generate_exe_shim_template(
     project_name: &str,
@@ -78,4 +63,19 @@ fn main() {{
 }}
 "#
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn exe_shim_contains_project_name() {
+        // We can't easily create a LoadedProject in tests without filesystem,
+        // so test the output format indirectly
+        let source = generate_exe_shim_template("TestApp", "bundle.oxb", "Main.Main");
+        assert!(source.contains("TestApp"));
+        assert!(source.contains("bundle.oxb"));
+        assert!(source.contains("include_bytes!"));
+    }
 }

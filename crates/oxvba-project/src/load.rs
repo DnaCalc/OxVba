@@ -307,7 +307,7 @@ fn discover_modules(project_dir: &Path) -> Result<Vec<ModuleUnit>, BasProjError>
 }
 
 fn discover_modules_recursive(
-    base_dir: &Path,
+    _base_dir: &Path,
     dir: &Path,
     modules: &mut Vec<ModuleUnit>,
 ) -> Result<(), BasProjError> {
@@ -322,7 +322,7 @@ fn discover_modules_recursive(
         })?;
         let path = entry.path();
         if path.is_dir() {
-            discover_modules_recursive(base_dir, &path, modules)?;
+            discover_modules_recursive(_base_dir, &path, modules)?;
         } else if let Some(ext) = path.extension().and_then(|e| e.to_str()) {
             let module_kind = match ext {
                 "bas" => Some(ModuleKind::Procedural),

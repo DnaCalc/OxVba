@@ -767,68 +767,65 @@ where
     };
 
     // Multi-dimensional path: use SafeArrayCreate with per-dimension bounds.
-    if let Some(bounds) = array.bounds.as_ref() {
-        if bounds.len() > 1 {
-            let dims = u32::try_from(bounds.len())
-                .map_err(|_| "SAFEARRAY dimension count exceeds supported u32 range".to_string())?;
-            // SAFEARRAYBOUND array in reverse order (SAFEARRAY expects rightmost dimension first).
-            let sa_bounds: Vec<SAFEARRAYBOUND> = bounds
-                .iter()
-                .map(|b| SAFEARRAYBOUND {
-                    cElements: b.count,
-                    lLbound: b.lower,
-                })
-                .collect();
-            let psa = SafeArrayCreate(VT_VARIANT, dims, sa_bounds.as_ptr());
-            if psa.is_null() {
-                return Err("SafeArrayCreate(VT_VARIANT) returned null".to_string());
-            }
-            // Iterate in column-major order matching the bounds.
-            let mut indices: Vec<i32> = bounds.iter().map(|b| b.lower).collect();
-            for runtime_value in values.iter() {
-                let mut element: VARIANT = std::mem::zeroed();
-                let value = ComValue::from_runtime_value(runtime_value);
-                if let Err(detail) = set_variant_from_com_value(
-                    &mut element,
-                    &value,
-                    resolve_object,
-                    add_ref_dispatch,
-                ) {
-                    let _ = VariantClear(&mut element);
-                    let _ = SafeArrayDestroy(psa.cast_const());
-                    return Err(detail);
-                }
-                let hr = SafeArrayPutElement(
-                    psa.cast_const(),
-                    indices.as_ptr(),
-                    (&element as *const VARIANT).cast(),
-                );
-                let _ = VariantClear(&mut element);
-                if hr < 0 {
-                    let _ = SafeArrayDestroy(psa.cast_const());
-                    return Err(format!(
-                        "SafeArrayPutElement failed with HRESULT {:#010X} at indices {indices:?}",
-                        hr as u32
-                    ));
-                }
-                // Increment indices in column-major order.
-                let mut carry = true;
-                for (dim_idx, bound) in bounds.iter().enumerate() {
-                    if !carry {
-                        break;
-                    }
-                    indices[dim_idx] += 1;
-                    if indices[dim_idx] >= bound.lower + bound.count as i32 {
-                        indices[dim_idx] = bound.lower;
-                    } else {
-                        carry = false;
-                    }
-                }
-            }
-            (*variant).Anonymous.Anonymous.vt = VT_ARRAY | VT_VARIANT;
-            (*variant).Anonymous.Anonymous.Anonymous.parray = psa;
-            return Ok(());
+    if let Some(bounds) = array.bounds.as_ref()
+        && bounds.len() > 1
+    {
+        let dims = u32::try_from(bounds.len())
+            .map_err(|_| "SAFEARRAY dimension count exceeds supported u32 range".to_string())?;
+        // SAFEARRAYBOUND array in reverse order (SAFEARRAY expects rightmost dimension first).
+        let sa_bounds: Vec<SAFEARRAYBOUND> = bounds
+            .iter()
+            .map(|b| SAFEARRAYBOUND {
+                cElements: b.count,
+                lLbound: b.lower,
+            })
+            .collect();
+        let psa = SafeArrayCreate(VT_VARIANT, dims, sa_bounds.as_ptr());
+        if psa.is_null() {
+            return Err("SafeArrayCreate(VT_VARIANT) returned null".to_string());
         }
+        // Iterate in column-major order matching the bounds.
+        let mut indices: Vec<i32> = bounds.iter().map(|b| b.lower).collect();
+        for runtime_value in values.iter() {
+            let mut element: VARIANT = std::mem::zeroed();
+            let value = ComValue::from_runtime_value(runtime_value);
+            if let Err(detail) =
+                set_variant_from_com_value(&mut element, &value, resolve_object, add_ref_dispatch)
+            {
+                let _ = VariantClear(&mut element);
+                let _ = SafeArrayDestroy(psa.cast_const());
+                return Err(detail);
+            }
+            let hr = SafeArrayPutElement(
+                psa.cast_const(),
+                indices.as_ptr(),
+                (&element as *const VARIANT).cast(),
+            );
+            let _ = VariantClear(&mut element);
+            if hr < 0 {
+                let _ = SafeArrayDestroy(psa.cast_const());
+                return Err(format!(
+                    "SafeArrayPutElement failed with HRESULT {:#010X} at indices {indices:?}",
+                    hr as u32
+                ));
+            }
+            // Increment indices in column-major order.
+            let mut carry = true;
+            for (dim_idx, bound) in bounds.iter().enumerate() {
+                if !carry {
+                    break;
+                }
+                indices[dim_idx] += 1;
+                if indices[dim_idx] >= bound.lower + bound.count as i32 {
+                    indices[dim_idx] = bound.lower;
+                } else {
+                    carry = false;
+                }
+            }
+        }
+        (*variant).Anonymous.Anonymous.vt = VT_ARRAY | VT_VARIANT;
+        (*variant).Anonymous.Anonymous.Anonymous.parray = psa;
+        return Ok(());
     }
 
     // Single-dimensional path.

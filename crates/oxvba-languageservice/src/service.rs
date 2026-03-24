@@ -373,7 +373,7 @@ impl LanguageService {
                                 SymbolKind::Property => CompletionKind::Property,
                                 _ => CompletionKind::Variable,
                             },
-                            detail: Some(format!("{} ({})", format!("{:?}", sym.bound_type), id)),
+                            detail: Some(format!("{:?} ({})", sym.bound_type, id)),
                         });
                     }
                 }

@@ -1,3 +1,5 @@
+#![allow(clippy::not_unsafe_ptr_arg_deref)]
+
 //! Runtime helper functions for JIT-compiled VBA code.
 //!
 //! Each helper is an `extern "C"` function registered with Cranelift's
@@ -1341,7 +1343,7 @@ pub extern "C" fn oxrt_month_name(ctx: *mut JitContext, dst: u32, src: u32) -> i
         "November",
         "December",
     ];
-    let name = if month >= 1 && month <= 12 {
+    let name = if (1..=12).contains(&month) {
         names[(month - 1) as usize]
     } else {
         ""
@@ -2980,10 +2982,10 @@ pub extern "C" fn oxrt_host_invoke_symbol(
                 for (wb_idx, pair) in writeback_slots.iter().enumerate() {
                     let arg_index = pair[0];
                     // pair[1] is source_slot, reserved for future use
-                    if let Some(wb_val) = wb_values.get(wb_idx) {
-                        if let Some(target_slot) = arg_slots.get(arg_index) {
-                            write_slot!(ctx, *target_slot as u32, wb_val.clone());
-                        }
+                    if let Some(wb_val) = wb_values.get(wb_idx)
+                        && let Some(target_slot) = arg_slots.get(arg_index)
+                    {
+                        write_slot!(ctx, *target_slot as u32, wb_val.clone());
                     }
                 }
                 OK
@@ -3061,12 +3063,11 @@ fn route_hal_error(ctx: *mut JitContext, err: HalError) -> i32 {
 /// convert it to a proper ErrorCode. This matches the VM's implicit normalization
 /// through from_legacy_i32.
 fn normalize_com_result(value: RuntimeValue) -> RuntimeValue {
-    if let RuntimeValue::I32(v) = &value {
-        if runtime_is_error_tag(*v) {
-            if let Some(code) = oxvba_runtime::value_tags::error_code_from_tag(*v) {
-                return RuntimeValue::ErrorCode(code);
-            }
-        }
+    if let RuntimeValue::I32(v) = &value
+        && runtime_is_error_tag(*v)
+        && let Some(code) = oxvba_runtime::value_tags::error_code_from_tag(*v)
+    {
+        return RuntimeValue::ErrorCode(code);
     }
     value
 }

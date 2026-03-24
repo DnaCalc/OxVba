@@ -1,4 +1,5 @@
 #![allow(unsafe_op_in_unsafe_fn)]
+#![allow(clippy::not_unsafe_ptr_arg_deref, clippy::upper_case_acronyms)]
 //! Live ITypeLib/ITypeInfo COM loading for arbitrary typelib resolution.
 //!
 //! This module provides real COM-based type library loading as a fallback
@@ -601,9 +602,9 @@ unsafe fn extract_members_from_typeinfo(
         // Skip IUnknown/IDispatch inherited methods (FUNCKIND_DISPATCH with
         // DISPIDs in the hidden-member range 0x60000000..0x60010000).
         if (memid as u32) >= 0x6000_0000 && (memid as u32) < 0x6001_0000 && invkind == INVOKE_FUNC {
-            for j in 1..name_count as usize {
-                if !names[j].is_null() {
-                    SysFreeString(names[j]);
+            for name in names.iter().take(name_count as usize).skip(1) {
+                if !name.is_null() {
+                    SysFreeString(*name);
                 }
             }
             ((*vtbl).release_func_desc)(ptinfo, pfuncdesc);
@@ -611,8 +612,8 @@ unsafe fn extract_members_from_typeinfo(
         }
 
         let mut parameter_names = Vec::new();
-        for j in 1..name_count as usize {
-            let pname = bstr_to_string_and_free(names[j]).unwrap_or_default();
+        for name in names.iter().take(name_count as usize).skip(1) {
+            let pname = bstr_to_string_and_free(*name).unwrap_or_default();
             parameter_names.push(pname);
         }
 
@@ -845,6 +846,9 @@ pub fn build_metadata_blob_from_typelib(
 
 /// Releases an ITypeLib pointer obtained from `load_typelib_from_registry` or `load_typelib_from_path`.
 #[cfg(target_os = "windows")]
+/// # Safety
+/// `ptlib` must be a live `ITypeLib*` previously obtained from this module's load helpers and
+/// not yet released. Passing any other pointer, or releasing the same pointer twice, is invalid.
 pub unsafe fn release_typelib(ptlib: *mut c_void) {
     if !ptlib.is_null() {
         let vtbl = *(ptlib as *const *const ITypeLibVtbl);

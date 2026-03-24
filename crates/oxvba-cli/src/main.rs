@@ -36,7 +36,7 @@ fn run_build(args: Vec<String>) {
         match collected[i].as_str() {
             "-o" | "--output" => {
                 i += 1;
-                output_path = collected.get(i).map(|s| PathBuf::from(s));
+                output_path = collected.get(i).map(PathBuf::from);
             }
             arg if !arg.starts_with('-') && input_path.is_none() => {
                 input_path = Some(PathBuf::from(arg));
@@ -125,19 +125,19 @@ fn run_build(args: Vec<String>) {
         oxvba_compiler::OxBundle::from_compiled_project(&compiled, &loaded.manifest.project_name);
 
     // Store COM class exports in the bundle's export inventory
-    if !com_class_exports.is_empty() {
-        if let Some(ref mut inventory) = bundle.export_inventory {
-            inventory.com_class_exports = com_class_exports
-                .iter()
-                .map(|c| oxvba_compiler::ComClassExportEntry {
-                    class_name: c.class_name.clone(),
-                    prog_id: c.prog_id.clone(),
-                    instancing: c.instancing.map(|i| format!("{i:?}")),
-                    clsid: None,
-                    description: c.description.clone(),
-                })
-                .collect();
-        }
+    if !com_class_exports.is_empty()
+        && let Some(ref mut inventory) = bundle.export_inventory
+    {
+        inventory.com_class_exports = com_class_exports
+            .iter()
+            .map(|c| oxvba_compiler::ComClassExportEntry {
+                class_name: c.class_name.clone(),
+                prog_id: c.prog_id.clone(),
+                instancing: c.instancing.map(|i| format!("{i:?}")),
+                clsid: None,
+                description: c.description.clone(),
+            })
+            .collect();
     }
     let bytes = bundle.serialize_to_bytes().unwrap_or_else(|err| {
         eprintln!("oxvba build: bundle serialization failed: {err}");
@@ -339,7 +339,7 @@ fn run_import_vbp(args: Vec<String>) {
         match collected[i].as_str() {
             "-o" | "--output" => {
                 i += 1;
-                output_path = collected.get(i).map(|s| PathBuf::from(s));
+                output_path = collected.get(i).map(PathBuf::from);
             }
             _ => {}
         }

@@ -1,3 +1,5 @@
+#![allow(clippy::too_many_arguments)]
+
 use std::collections::HashMap;
 use std::convert::TryFrom;
 use std::sync::Arc;
@@ -3605,7 +3607,7 @@ impl HelperFuncIds {
         *self
             .extras
             .get(name)
-            .expect(&format!("missing helper: {name}"))
+            .unwrap_or_else(|| panic!("missing helper: {name}"))
     }
 }
 

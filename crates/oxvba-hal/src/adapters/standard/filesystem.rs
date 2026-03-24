@@ -495,9 +495,7 @@ impl FileSystemHal for StandardHostServices {
             fields.push(trimmed.to_string());
             consumed += field.len() + 1; // +1 for comma
         }
-        if consumed > 0 {
-            consumed -= 1; // remove trailing comma count
-        }
+        consumed = consumed.saturating_sub(1); // remove trailing comma count
         entry.position += consumed as i32;
         let result = fields.join(",");
         Ok(RuntimeValue::String(BStr(result)))

@@ -299,7 +299,7 @@ fn build_external_call_descriptors(
         } else {
             None
         };
-        let marshal_lane = if native_ffi_available && decl.library.to_ascii_lowercase() != "host" {
+        let marshal_lane = if native_ffi_available && !decl.library.eq_ignore_ascii_case("host") {
             "m1-native-ffi".to_string()
         } else {
             "m0-deterministic".to_string()
@@ -1678,14 +1678,13 @@ fn emit_external_declare_call(
             external_decls,
         );
         // Track ByRef parameters for writeback after the call.
-        if let Some(param) = external_decl.params.get(arg_index) {
-            if param.by_ref && !arg.force_byval {
-                if let BoundExpr::Var(ref ident_name) = arg.expr {
-                    if let Some(&source_slot) = slot_map.get(&ident_name.to_ascii_lowercase()) {
-                        writeback_slots.push((arg_index, source_slot));
-                    }
-                }
-            }
+        if let Some(param) = external_decl.params.get(arg_index)
+            && param.by_ref
+            && !arg.force_byval
+            && let BoundExpr::Var(ref ident_name) = arg.expr
+            && let Some(&source_slot) = slot_map.get(&ident_name.to_ascii_lowercase())
+        {
+            writeback_slots.push((arg_index, source_slot));
         }
         arg_slots.push(slot);
     }

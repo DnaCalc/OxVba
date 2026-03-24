@@ -290,14 +290,15 @@ mod tests {
 
     #[test]
     fn miri_variant_f64_roundtrip() {
+        let expected = std::f64::consts::PI;
         let mut v = MockVariant::empty();
-        v.set_f64(3.14, VT_R8);
+        v.set_f64(expected, VT_R8);
         assert_eq!(v.vt, VT_R8);
 
         let cv = mock_variant_to_com_value(&v).unwrap();
         match cv {
             ComValue::F64(f) => {
-                assert!((f.as_f64() - 3.14).abs() < 1e-10);
+                assert!((f.as_f64() - expected).abs() < 1e-10);
                 assert_eq!(f.subtype(), F64Subtype::Double);
             }
             _ => panic!("Expected F64"),
@@ -385,11 +386,12 @@ mod tests {
 
     #[test]
     fn miri_variant_com_value_roundtrip_f64() {
-        let cv = ComValue::F64(F64Value::from_f64(2.718));
+        let expected = std::f64::consts::E;
+        let cv = ComValue::F64(F64Value::from_f64(expected));
         let v = mock_com_value_to_variant(&cv);
         let back = mock_variant_to_com_value(&v).unwrap();
         match back {
-            ComValue::F64(f) => assert!((f.as_f64() - 2.718).abs() < 1e-10),
+            ComValue::F64(f) => assert!((f.as_f64() - expected).abs() < 1e-10),
             _ => panic!("Expected F64"),
         }
     }

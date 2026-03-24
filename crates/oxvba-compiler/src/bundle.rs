@@ -175,7 +175,7 @@ impl OxBundle {
         }
 
         // Validate magic.
-        if &data[0..4] != &MAGIC {
+        if data[0..4] != MAGIC {
             return Err("invalid bundle magic (expected OXVB)".to_string());
         }
 

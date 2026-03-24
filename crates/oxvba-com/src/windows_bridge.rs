@@ -1,3 +1,5 @@
+#![allow(clippy::result_large_err)]
+
 use crate::{
     ComBinding, ComCallbackPayload, ComCallbackToken, ComInvokeArg, ComInvokeFailure,
     ComInvokeRequest, ComMemberSpec, ComMemberToken, ComObjectDescriptor, ComObjectToken,

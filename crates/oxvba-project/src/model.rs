@@ -182,10 +182,10 @@ pub fn parse_define_constants(raw: &str) -> BTreeMap<String, i32> {
         if let Some((key, val)) = part.split_once('=') {
             let key = key.trim();
             let val = val.trim();
-            if !key.is_empty() {
-                if let Ok(v) = val.parse::<i32>() {
-                    map.insert(key.to_string(), v);
-                }
+            if !key.is_empty()
+                && let Ok(v) = val.parse::<i32>()
+            {
+                map.insert(key.to_string(), v);
             }
         } else {
             // Key without value defaults to 1

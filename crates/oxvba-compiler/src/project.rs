@@ -545,19 +545,18 @@ fn compile_project_with_strategy(
     // Augment reference_projects with synthetic manifests for TypeLibrary references.
     let mut augmented_refs = manifest.reference_projects.clone();
     for reference in &manifest.references {
-        if reference.reference_kind == ReferenceKind::TypeLibrary {
-            if let Some(identity) =
+        if reference.reference_kind == ReferenceKind::TypeLibrary
+            && let Some(identity) =
                 known_typelib_identity_for_prog_id_name(&reference.referenced_project_name)
+        {
+            let blob = build_typelib_metadata(&identity);
+            let synthetic = project_typelib_as_manifest(&blob);
+            let key = normalize_identifier(&synthetic.project_name);
+            if !augmented_refs
+                .iter()
+                .any(|r| normalize_identifier(&r.project_name) == key)
             {
-                let blob = build_typelib_metadata(&identity);
-                let synthetic = project_typelib_as_manifest(&blob);
-                let key = normalize_identifier(&synthetic.project_name);
-                if !augmented_refs
-                    .iter()
-                    .any(|r| normalize_identifier(&r.project_name) == key)
-                {
-                    augmented_refs.push(synthetic);
-                }
+                augmented_refs.push(synthetic);
             }
         }
     }
@@ -1224,11 +1223,14 @@ fn parse_implements_target(line: &str) -> Option<String> {
 /// Collect, for each class module, which interfaces it `Implements` and what public members
 /// each interface declares. Returns a map from `(project_name, module_name)` to a vec of
 /// `(interface_name, vec_of_interface_member_names)`.
+type ClassImplementsEntry = Vec<(String, Vec<String>)>;
+type ClassImplementsMap = BTreeMap<(String, String), ClassImplementsEntry>;
+
 fn collect_class_implements_map(
     manifest: &ProjectManifest,
     procedures: &[ProcedureDecl],
     reference_order: &BTreeMap<String, usize>,
-) -> BTreeMap<(String, String), Vec<(String, Vec<String>)>> {
+) -> ClassImplementsMap {
     // Collect public members of all class modules (mirrors validate_event_semantics).
     let mut class_public_members = BTreeMap::<(String, String), BTreeSet<String>>::new();
     for decl in procedures {
@@ -4953,7 +4955,7 @@ fn build_project_dynamic_object_routes(
     bindings: &[ProjectDynamicInstanceBindingDraft],
     procedures: &[ProcedureDecl],
     runtime_metadata: &BTreeMap<String, ProcedureRuntimeMetadata>,
-    implements_map: &BTreeMap<(String, String), Vec<(String, Vec<String>)>>,
+    implements_map: &ClassImplementsMap,
 ) -> Vec<ProjectDynamicObjectRoute> {
     let mut out = Vec::new();
     for binding in bindings {
@@ -5002,27 +5004,27 @@ fn build_project_dynamic_object_routes(
                             && decl.module_kind == ModuleKind::Class
                             && normalize_identifier(&decl.procedure_name) == impl_proc_name
                     });
-                    if let Some(decl) = impl_decl {
-                        if let Some(metadata) = runtime_metadata.get(&decl.lowered_name) {
-                            // Only add alias if no public member with the same name already exists.
-                            let alias_name = normalize_identifier(member_name);
-                            let already_exists = members
-                                .iter()
-                                .any(|m| normalize_identifier(&m.member_name) == alias_name);
-                            if !already_exists {
-                                members.push(ProjectDynamicMemberRoute {
-                                    member_name: member_name.clone(),
-                                    lowered_name: decl.lowered_name.clone(),
-                                    known_dispatch_token: None,
-                                    is_default_member: false,
-                                    kind: decl.kind.dynamic_member_kind(),
-                                    visible_param_count: decl.param_count,
-                                    params: decl.params.clone(),
-                                    entry_pc: metadata.entry_pc,
-                                    param_slots: metadata.param_slots.clone(),
-                                    return_slot: metadata.return_slot,
-                                });
-                            }
+                    if let Some(decl) = impl_decl
+                        && let Some(metadata) = runtime_metadata.get(&decl.lowered_name)
+                    {
+                        // Only add alias if no public member with the same name already exists.
+                        let alias_name = normalize_identifier(member_name);
+                        let already_exists = members
+                            .iter()
+                            .any(|m| normalize_identifier(&m.member_name) == alias_name);
+                        if !already_exists {
+                            members.push(ProjectDynamicMemberRoute {
+                                member_name: member_name.clone(),
+                                lowered_name: decl.lowered_name.clone(),
+                                known_dispatch_token: None,
+                                is_default_member: false,
+                                kind: decl.kind.dynamic_member_kind(),
+                                visible_param_count: decl.param_count,
+                                params: decl.params.clone(),
+                                entry_pc: metadata.entry_pc,
+                                param_slots: metadata.param_slots.clone(),
+                                return_slot: metadata.return_slot,
+                            });
                         }
                     }
                 }
@@ -6478,10 +6480,8 @@ fn parse_procedure_signature_param(raw: &str) -> Option<ProjectDynamicParamRoute
         lower = token.to_ascii_lowercase();
     }
 
-    if !param_array {
-        if lower.starts_with("byval ") || lower.starts_with("byref ") {
-            token = token[6..].trim();
-        }
+    if !param_array && (lower.starts_with("byval ") || lower.starts_with("byref ")) {
+        token = token[6..].trim();
     }
 
     let (decl_text, default_value) = if let Some((lhs, rhs)) = token.split_once('=') {

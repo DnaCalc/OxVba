@@ -836,10 +836,10 @@ impl Engine {
         &self,
         bundle: &oxvba_compiler::OxBundle,
     ) -> Result<ProjectRuntimeSession, PhaseDiagnostic> {
-        if let Some(ref bindings) = bundle.event_dispatch_bindings {
-            if let Ok(mut dispatcher) = self.event_dispatcher.lock() {
-                dispatcher.apply_bindings(bindings);
-            }
+        if let Some(ref bindings) = bundle.event_dispatch_bindings
+            && let Ok(mut dispatcher) = self.event_dispatcher.lock()
+        {
+            dispatcher.apply_bindings(bindings);
         }
         self.preflight_host_sensitive_support(&bundle.bytecode)?;
         let compiled = CompiledProject {
@@ -870,10 +870,10 @@ impl Engine {
         &self,
         bundle: &oxvba_compiler::OxBundle,
     ) -> Result<Vec<RuntimeValue>, PhaseDiagnostic> {
-        if let Some(ref bindings) = bundle.event_dispatch_bindings {
-            if let Ok(mut dispatcher) = self.event_dispatcher.lock() {
-                dispatcher.apply_bindings(bindings);
-            }
+        if let Some(ref bindings) = bundle.event_dispatch_bindings
+            && let Ok(mut dispatcher) = self.event_dispatcher.lock()
+        {
+            dispatcher.apply_bindings(bindings);
         }
         self.preflight_host_sensitive_support(&bundle.bytecode)?;
         let mut vm = Vm::new(self.host_services.clone());
@@ -23040,12 +23040,16 @@ mod tests {
 
     #[test]
     fn formal_v504_float_literal_pi() {
+        let expected = std::f64::consts::PI;
         let engine = Engine::new(HostConfig::default());
-        let source = "Sub Main()\nDim x\nx = 3.14\nEnd Sub";
+        let source = "Sub Main()\nDim x\nx = 3.141592653589793\nEnd Sub";
         let snapshot = engine
             .execute_source_with_value_snapshot(source)
             .expect("execution should succeed");
-        assert_eq!(snapshot, vec![RuntimeValue::F64(F64Value::from_f64(3.14))]);
+        assert_eq!(
+            snapshot,
+            vec![RuntimeValue::F64(F64Value::from_f64(expected))]
+        );
     }
 
     #[test]

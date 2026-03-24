@@ -212,7 +212,7 @@ impl RtSlot {
                 if ptr.is_null() {
                     RuntimeValue::Empty
                 } else {
-                    RuntimeValue::Decimal(unsafe { &*ptr }.clone())
+                    RuntimeValue::Decimal(*unsafe { &*ptr })
                 }
             }
             TAG_ARRAY => {
@@ -286,7 +286,7 @@ pub fn rtslot_from_runtime_value(value: &RuntimeValue) -> RtSlot {
         RuntimeValue::Currency(c) => RtSlot::from_currency(c.scaled_i64()),
         RuntimeValue::String(s) => RtSlot::from_string_box(Box::new(s.clone())),
         RuntimeValue::Decimal(d) => {
-            let ptr = Box::into_raw(Box::new(d.clone()));
+            let ptr = Box::into_raw(Box::new(*d));
             RtSlot {
                 tag: TAG_DECIMAL,
                 _pad: 0,
@@ -375,10 +375,11 @@ mod tests {
 
     #[test]
     fn scalar_roundtrip_f64() {
-        let slot = RtSlot::from_f64(3.14);
+        let expected = std::f64::consts::PI;
+        let slot = RtSlot::from_f64(expected);
         let value = unsafe { slot.to_runtime_value() };
         match value {
-            RuntimeValue::F64(v) => assert!((v.as_f64() - 3.14).abs() < f64::EPSILON),
+            RuntimeValue::F64(v) => assert!((v.as_f64() - expected).abs() < f64::EPSILON),
             other => panic!("expected F64, got {other:?}"),
         }
     }

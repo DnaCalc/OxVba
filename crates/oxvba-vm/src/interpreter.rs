@@ -1371,7 +1371,7 @@ impl Vm {
                         "November",
                         "December",
                     ];
-                    let name = if month >= 1 && month <= 12 {
+                    let name = if (1..=12).contains(&month) {
                         names[(month - 1) as usize]
                     } else {
                         ""
@@ -2143,11 +2143,11 @@ impl Vm {
                                 for (wb_idx, (arg_index, source_slot)) in
                                     writeback_slots.iter().enumerate()
                                 {
-                                    if let Some(wb_val) = wb_values.get(wb_idx) {
-                                        if let Some(target_slot) = args.get(*arg_index) {
-                                            let _ = source_slot; // source_slot reserved for future use
-                                            self.write_value_slot(*target_slot, wb_val.clone())?;
-                                        }
+                                    if let Some(wb_val) = wb_values.get(wb_idx)
+                                        && let Some(target_slot) = args.get(*arg_index)
+                                    {
+                                        let _ = source_slot; // source_slot reserved for future use
+                                        self.write_value_slot(*target_slot, wb_val.clone())?;
                                     }
                                 }
                                 pc += 1;
@@ -3252,10 +3252,9 @@ impl Vm {
         if let (Some(l), Some(r)) = (
             self.registers.registers.get(lhs),
             self.registers.registers.get(rhs),
-        ) {
-            if matches!(l, RuntimeValue::Null) || matches!(r, RuntimeValue::Null) {
-                return false; // fall through to legacy_compare_values
-            }
+        ) && (matches!(l, RuntimeValue::Null) || matches!(r, RuntimeValue::Null))
+        {
+            return false; // fall through to legacy_compare_values
         }
         let (Some(lhs), Some(rhs)) = (self.fast_read_slot(lhs), self.fast_read_slot(rhs)) else {
             return false;

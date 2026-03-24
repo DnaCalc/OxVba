@@ -360,7 +360,7 @@ fn invoke_m1_native(
         })
         .collect();
 
-    let return_type = match descriptor.return_type.as_deref() {
+    let return_type = match descriptor.return_type {
         None => FfiReturnType::Void,
         Some("Long") => FfiReturnType::Long,
         Some("Integer") => FfiReturnType::Integer,
@@ -376,7 +376,7 @@ fn invoke_m1_native(
     let raw_result = invoke_stdcall(proc_addr, &ffi_args, return_type)
         .map_err(|msg| HalError::adapter_fault(host.profile, capability, "invoke_symbol", msg))?;
 
-    let result = unmarshal_ffi_to_runtime(raw_result, descriptor.return_type.as_deref());
+    let result = unmarshal_ffi_to_runtime(raw_result, descriptor.return_type);
     Ok((result, Vec::new()))
 }
 

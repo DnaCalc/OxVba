@@ -2787,10 +2787,10 @@ fn shared_udt_fields_for_assignment(
     // Infer UDT type names from definitions and reject cross-type assignments.
     let target_type = infer_udt_type_from_fields(&target_fields, udt_defs);
     let source_type = infer_udt_type_from_fields(&source_fields, udt_defs);
-    if let (Some(ref tt), Some(ref st)) = (target_type, source_type) {
-        if !tt.eq_ignore_ascii_case(st) {
-            return None;
-        }
+    if let (Some(ref tt), Some(ref st)) = (target_type, source_type)
+        && !tt.eq_ignore_ascii_case(st)
+    {
+        return None;
     }
     Some(target_fields)
 }
@@ -3599,7 +3599,7 @@ fn split_at_lowest_precedence_op(expr: &str) -> Option<(ArithOp, usize)> {
                     let mod_candidate = Some((ArithOp::Mod, i));
                     if let Some((op, _)) = mod_candidate {
                         let p = precedence(op);
-                        if best.map_or(true, |(b_op, _)| p <= precedence(b_op)) {
+                        if best.is_none_or(|(b_op, _)| p <= precedence(b_op)) {
                             best = mod_candidate;
                         }
                     }
@@ -3610,7 +3610,7 @@ fn split_at_lowest_precedence_op(expr: &str) -> Option<(ArithOp, usize)> {
 
         if let Some((op, _)) = candidate {
             let p = precedence(op);
-            if best.map_or(true, |(b_op, _)| p <= precedence(b_op)) {
+            if best.is_none_or(|(b_op, _)| p <= precedence(b_op)) {
                 best = candidate;
             }
         }
@@ -3658,10 +3658,10 @@ fn parse_expr(text: &str, array_bounds: &ArrayBoundsMap) -> Option<BoundExpr> {
     if let Ok(value) = expr.parse::<i32>() {
         return Some(BoundExpr::IntConst(value));
     }
-    if expr.contains('.') || expr.contains('e') || expr.contains('E') {
-        if let Ok(value) = expr.parse::<f64>() {
-            return Some(BoundExpr::FloatConst(value.to_bits()));
-        }
+    if (expr.contains('.') || expr.contains('e') || expr.contains('E'))
+        && let Ok(value) = expr.parse::<f64>()
+    {
+        return Some(BoundExpr::FloatConst(value.to_bits()));
     }
 
     // String literals: "hello", "he""llo" (escaped quotes)
@@ -3703,10 +3703,11 @@ fn parse_expr(text: &str, array_bounds: &ArrayBoundsMap) -> Option<BoundExpr> {
             // If we close all parens before the end, these aren't wrapping parens
             let _ = idx;
         }
-        if balanced && depth == 0 {
-            if let Some(parsed) = parse_expr(inner, array_bounds) {
-                return Some(parsed);
-            }
+        if balanced
+            && depth == 0
+            && let Some(parsed) = parse_expr(inner, array_bounds)
+        {
+            return Some(parsed);
         }
     }
 
@@ -3732,16 +3733,15 @@ fn parse_expr(text: &str, array_bounds: &ArrayBoundsMap) -> Option<BoundExpr> {
         };
 
         // Preserve AddConst/SubConst fast-path for simple `var + const` / `var - const`
-        if matches!(op, ArithOp::Add | ArithOp::Sub) {
-            if let Some(var) = parse_reference_name(left_raw, array_bounds) {
-                if let Ok(delta) = right_raw.trim().parse::<i32>() {
-                    return match op {
-                        ArithOp::Add => Some(BoundExpr::AddConst { var, delta }),
-                        ArithOp::Sub => Some(BoundExpr::SubConst { var, delta }),
-                        _ => unreachable!(),
-                    };
-                }
-            }
+        if matches!(op, ArithOp::Add | ArithOp::Sub)
+            && let Some(var) = parse_reference_name(left_raw, array_bounds)
+            && let Ok(delta) = right_raw.trim().parse::<i32>()
+        {
+            return match op {
+                ArithOp::Add => Some(BoundExpr::AddConst { var, delta }),
+                ArithOp::Sub => Some(BoundExpr::SubConst { var, delta }),
+                _ => unreachable!(),
+            };
         }
 
         let lhs = parse_expr(left_raw, array_bounds)?;
@@ -3756,13 +3756,13 @@ fn parse_expr(text: &str, array_bounds: &ArrayBoundsMap) -> Option<BoundExpr> {
     // Unary negation: starts with `-` and the remainder is a valid expression
     if let Some(rest) = expr.strip_prefix('-') {
         let rest = rest.trim();
-        if !rest.is_empty() {
-            if let Some(operand) = parse_expr(rest, array_bounds) {
-                return Some(BoundExpr::UnaryOp {
-                    op: ArithOp::Neg,
-                    operand: Box::new(operand),
-                });
-            }
+        if !rest.is_empty()
+            && let Some(operand) = parse_expr(rest, array_bounds)
+        {
+            return Some(BoundExpr::UnaryOp {
+                op: ArithOp::Neg,
+                operand: Box::new(operand),
+            });
         }
     }
 
