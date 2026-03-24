@@ -139,8 +139,7 @@ mod tests {
         let bytecode = oxvba_compiler::compile("Sub Main()\nDim x\nx = CreateObject(4)\nEnd Sub")
             .expect("compile should succeed");
         assert!(!cranelift::supports_bytecode(&bytecode));
-        let host_services =
-            HostBuilder::new()
+        let host_services = HostBuilder::new()
             .profile(HalProfileId::Windows)
             .policy(HostPolicy::interactive_dev())
             .build();
@@ -158,8 +157,7 @@ mod tests {
         let bytecode = oxvba_compiler::compile("Sub Main()\nDim x\nx = CreateObject(4)\nEnd Sub")
             .expect("compile should succeed");
         assert!(!cranelift::supports_bytecode(&bytecode));
-        let host_services =
-            HostBuilder::new()
+        let host_services = HostBuilder::new()
             .profile(HalProfileId::Windows)
             .policy(HostPolicy::interactive_dev())
             .build();
@@ -253,7 +251,7 @@ mod tests {
         assert_eq!(
             jit,
             vec![
-                RuntimeValue::I32(8),    // VarType(vbNullString) = vbString
+                RuntimeValue::I32(8), // VarType(vbNullString) = vbString
                 RuntimeValue::I32(1),
                 RuntimeValue::I32(10),
                 RuntimeValue::I32(2),
@@ -306,7 +304,7 @@ mod tests {
             vec![
                 RuntimeValue::I32(5),
                 RuntimeValue::I32(20), // Resume Next without pending error = error 20
-                RuntimeValue::I32(0),  // Resume Next in handler jumps back; Err.Number=0 after clear
+                RuntimeValue::I32(0), // Resume Next in handler jumps back; Err.Number=0 after clear
                 RuntimeValue::I32(6),
             ]
         );
@@ -409,7 +407,8 @@ mod tests {
 
     #[test]
     fn resume_without_error_gives_error_20_and_matches_vm() {
-        let source = "Sub Main()\nDim a\nOn Error Resume Next\nResume Next\na = Err.Number\nEnd Sub";
+        let source =
+            "Sub Main()\nDim a\nOn Error Resume Next\nResume Next\na = Err.Number\nEnd Sub";
         let bytecode = oxvba_compiler::compile(source).expect("compile should succeed");
         assert!(cranelift::supports_bytecode_rtslot(&bytecode));
         let vm = oxvba_vm::execute_and_snapshot(&bytecode).expect("vm should execute");

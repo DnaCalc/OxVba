@@ -8,10 +8,7 @@ use oxvba_project::LoadedProject;
 /// an Engine, deserializes the bundle, and executes it.
 pub fn generate_exe_shim(loaded: &LoadedProject, oxb_path: &str) -> String {
     let project_name = &loaded.manifest.project_name;
-    let _entry_point = loaded
-        .entry_point
-        .as_deref()
-        .unwrap_or("Main.Main");
+    let _entry_point = loaded.entry_point.as_deref().unwrap_or("Main.Main");
 
     format!(
         r#"//! Auto-generated OxVBA executable shim for project "{project_name}".

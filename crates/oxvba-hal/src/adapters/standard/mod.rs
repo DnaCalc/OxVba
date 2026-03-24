@@ -47,17 +47,15 @@ pub use oxvba_com::DISPATCH_INVOKE_MISSING_ARG_TOKEN;
 #[cfg(test)]
 use oxvba_com::RawIDispatch;
 use oxvba_com::{
-    ComBinding, ComDirectDispatchSpec, ComEventPath,
-    ComEventSpec, ComEventTriggerSpec, ComInvokeFailure,
-    OXVBA_TEST_DISPATCH_PROGID, WindowsComBridge,
-    map_com_hresult_label,
+    ComBinding, ComDirectDispatchSpec, ComEventPath, ComEventSpec, ComEventTriggerSpec,
+    ComInvokeFailure, OXVBA_TEST_DISPATCH_PROGID, WindowsComBridge, map_com_hresult_label,
     platform::portable::PortableComProjection,
 };
 #[cfg(test)]
 use oxvba_com::{ComCallbackToken, ComMemberToken, ComSubscriptionToken};
-use oxvba_runtime::{RuntimeValue, bstr::BStr};
 #[cfg(test)]
 use oxvba_runtime::ObjectHandle;
+use oxvba_runtime::{RuntimeValue, bstr::BStr};
 use std::{
     cell::Cell,
     collections::BTreeMap,
@@ -277,10 +275,7 @@ impl StandardHostServices {
         self
     }
 
-    pub(crate) fn with_portable_objects(
-        mut self,
-        projection: Arc<PortableComProjection>,
-    ) -> Self {
+    pub(crate) fn with_portable_objects(mut self, projection: Arc<PortableComProjection>) -> Self {
         self.portable_objects = Some(projection);
         self
     }
@@ -1035,14 +1030,8 @@ impl HostServices for StandardHostServices {
     }
 }
 
-
-
-
-
-
 #[cfg(test)]
 type ComEventSubscriptionTransport = oxvba_com::WindowsComSubscriptionTransport;
-
 
 #[cfg(target_os = "windows")]
 thread_local! {
@@ -1111,7 +1100,6 @@ fn parse_arg_err(message: &str) -> Option<u32> {
     }
     digits.parse::<u32>().ok()
 }
-
 
 #[cfg(test)]
 mod tests {

@@ -70,9 +70,7 @@ impl Workspace {
 
     /// Get the semantic snapshot for a document.
     pub fn snapshot(&self, id: &DocumentId) -> Option<&Arc<SemanticSnapshot>> {
-        self.documents
-            .get(id)
-            .and_then(|d| d.snapshot.as_ref())
+        self.documents.get(id).and_then(|d| d.snapshot.as_ref())
     }
 
     /// Iterate over all document IDs.
@@ -151,7 +149,10 @@ mod tests {
         ws.open_document(DocumentId::new("Mod2"), "Sub Helper()\nEnd Sub\n");
 
         let exports = ws.cross_module_symbols("dowork");
-        assert!(!exports.is_empty(), "expected cross-module export for DoWork");
+        assert!(
+            !exports.is_empty(),
+            "expected cross-module export for DoWork"
+        );
     }
 
     #[test]

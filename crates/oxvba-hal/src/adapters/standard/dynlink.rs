@@ -325,12 +325,14 @@ fn invoke_m1_native(
     };
 
     let capability = CapabilityId::DynamicLinking;
-    let module = load_library(descriptor.library).map_err(|msg| {
-        HalError::adapter_fault(host.profile, capability, "invoke_symbol", msg)
-    })?;
+    let module = load_library(descriptor.library)
+        .map_err(|msg| HalError::adapter_fault(host.profile, capability, "invoke_symbol", msg))?;
 
     let proc_addr = if descriptor.ordinal_alias {
-        let ordinal_str = descriptor.alias.strip_prefix('#').unwrap_or(descriptor.alias);
+        let ordinal_str = descriptor
+            .alias
+            .strip_prefix('#')
+            .unwrap_or(descriptor.alias);
         let ordinal: u16 = ordinal_str.parse().map_err(|_| {
             HalError::adapter_fault(
                 host.profile,
@@ -371,9 +373,8 @@ fn invoke_m1_native(
         Some(_) => FfiReturnType::Long,
     };
 
-    let raw_result = invoke_stdcall(proc_addr, &ffi_args, return_type).map_err(|msg| {
-        HalError::adapter_fault(host.profile, capability, "invoke_symbol", msg)
-    })?;
+    let raw_result = invoke_stdcall(proc_addr, &ffi_args, return_type)
+        .map_err(|msg| HalError::adapter_fault(host.profile, capability, "invoke_symbol", msg))?;
 
     let result = unmarshal_ffi_to_runtime(raw_result, descriptor.return_type.as_deref());
     Ok((result, Vec::new()))
@@ -403,13 +404,11 @@ fn invoke_m1_native(
         ));
     }
 
-    let module = load_library(descriptor.library).map_err(|msg| {
-        HalError::adapter_fault(host.profile, capability, "invoke_symbol", msg)
-    })?;
+    let module = load_library(descriptor.library)
+        .map_err(|msg| HalError::adapter_fault(host.profile, capability, "invoke_symbol", msg))?;
 
-    let proc_addr = get_proc_address(module, descriptor.alias).map_err(|msg| {
-        HalError::adapter_fault(host.profile, capability, "invoke_symbol", msg)
-    })?;
+    let proc_addr = get_proc_address(module, descriptor.alias)
+        .map_err(|msg| HalError::adapter_fault(host.profile, capability, "invoke_symbol", msg))?;
 
     let ffi_args: Vec<FfiArg> = args
         .iter()
@@ -437,9 +436,8 @@ fn invoke_m1_native(
         Some(_) => FfiReturnType::Long,
     };
 
-    let raw_result = invoke_stdcall(proc_addr, &ffi_args, return_type).map_err(|msg| {
-        HalError::adapter_fault(host.profile, capability, "invoke_symbol", msg)
-    })?;
+    let raw_result = invoke_stdcall(proc_addr, &ffi_args, return_type)
+        .map_err(|msg| HalError::adapter_fault(host.profile, capability, "invoke_symbol", msg))?;
 
     let result = unmarshal_ffi_to_runtime(raw_result, descriptor.return_type.as_deref());
     Ok((result, Vec::new()))
@@ -556,9 +554,9 @@ fn unmarshal_ffi_to_runtime(raw: i64, return_type: Option<&str>) -> RuntimeValue
         Some("Double") => RuntimeValue::F64(oxvba_runtime::F64Value::from_f64(f64::from_bits(
             raw as u64,
         ))),
-        Some("Single") => RuntimeValue::F64(oxvba_runtime::F64Value::from_f64(
-            f32::from_bits(raw as u32) as f64,
-        )),
+        Some("Single") => RuntimeValue::F64(oxvba_runtime::F64Value::from_f64(f32::from_bits(
+            raw as u32,
+        ) as f64)),
         Some("LongLong") | Some("LongPtr") => RuntimeValue::I64(raw),
         Some(_) => RuntimeValue::I32(raw as i32),
     }

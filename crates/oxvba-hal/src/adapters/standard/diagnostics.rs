@@ -1,8 +1,4 @@
-use crate::{
-    error::HalResult,
-    model::CapabilityId,
-    traits::DiagnosticsHal,
-};
+use crate::{error::HalResult, model::CapabilityId, traits::DiagnosticsHal};
 use oxvba_runtime::RuntimeValue;
 
 use super::StandardHostServices;

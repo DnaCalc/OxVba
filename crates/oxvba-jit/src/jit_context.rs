@@ -183,8 +183,16 @@ impl JitContext {
     /// # Safety
     /// The slot index must be within bounds, and slots_ptr must be valid.
     pub unsafe fn read_slot(&self, slot: u32) -> RuntimeValue {
-        debug_assert!(!self.slots_ptr.is_null(), "JitContext::read_slot: null slots_ptr");
-        debug_assert!(slot < self.slot_count, "JitContext::read_slot: slot {} >= count {}", slot, self.slot_count);
+        debug_assert!(
+            !self.slots_ptr.is_null(),
+            "JitContext::read_slot: null slots_ptr"
+        );
+        debug_assert!(
+            slot < self.slot_count,
+            "JitContext::read_slot: slot {} >= count {}",
+            slot,
+            self.slot_count
+        );
         let rt_slot = unsafe { &*self.slots_ptr.add(slot as usize) };
         unsafe { rt_slot.to_runtime_value() }
     }
@@ -194,8 +202,16 @@ impl JitContext {
     /// # Safety
     /// The slot index must be within bounds, and slots_ptr must be valid.
     pub unsafe fn write_slot(&mut self, slot: u32, value: RuntimeValue) {
-        debug_assert!(!self.slots_ptr.is_null(), "JitContext::write_slot: null slots_ptr");
-        debug_assert!(slot < self.slot_count, "JitContext::write_slot: slot {} >= count {}", slot, self.slot_count);
+        debug_assert!(
+            !self.slots_ptr.is_null(),
+            "JitContext::write_slot: null slots_ptr"
+        );
+        debug_assert!(
+            slot < self.slot_count,
+            "JitContext::write_slot: slot {} >= count {}",
+            slot,
+            self.slot_count
+        );
         let rt_slot = unsafe { &mut *self.slots_ptr.add(slot as usize) };
         // Drop old heap data if present.
         if rt_slot.is_heap_type() {

@@ -53,10 +53,7 @@ pub extern "system" fn xlAutoFree12(p: *mut u8) {
     source
 }
 
-fn generate_xl_auto_open(
-    project_name: &str,
-    exports: &[NativeExportDescriptor],
-) -> String {
+fn generate_xl_auto_open(project_name: &str, exports: &[NativeExportDescriptor]) -> String {
     let mut source = String::from(
         r#"#[no_mangle]
 pub extern "system" fn xlAutoOpen() -> i32 {

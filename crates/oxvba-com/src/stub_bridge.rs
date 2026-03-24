@@ -4,8 +4,7 @@
 //! allowing `cargo check --target x86_64-unknown-linux-gnu` to compile.
 
 use crate::dynamic_object::{
-    DynamicCallRequest, DynamicEventPayload, DynamicObjectBridge,
-    DynamicObjectToken, DynamicValue,
+    DynamicCallRequest, DynamicEventPayload, DynamicObjectBridge, DynamicObjectToken, DynamicValue,
 };
 
 /// A stub DynamicObjectBridge that returns errors for all operations.
@@ -15,10 +14,7 @@ pub struct StubDynamicObjectBridge;
 impl DynamicObjectBridge for StubDynamicObjectBridge {
     type Error = String;
 
-    fn invoke_dynamic(
-        &self,
-        request: &DynamicCallRequest,
-    ) -> Result<DynamicValue, Self::Error> {
+    fn invoke_dynamic(&self, request: &DynamicCallRequest) -> Result<DynamicValue, Self::Error> {
         Err(format!(
             "COM not available on this platform: cannot invoke on object {:?}",
             request.object

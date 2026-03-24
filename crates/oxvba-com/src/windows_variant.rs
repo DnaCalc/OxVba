@@ -1373,8 +1373,7 @@ mod tests {
         unsafe {
             variant.Anonymous.Anonymous.vt = VT_BYREF | VT_I4;
             variant.Anonymous.Anonymous.Anonymous.plVal = &mut backing;
-            let value =
-                variant_to_com_value(&variant).expect("VT_BYREF|VT_I4 should dereference");
+            let value = variant_to_com_value(&variant).expect("VT_BYREF|VT_I4 should dereference");
             assert_eq!(value, ComValue::I32(321));
         }
     }

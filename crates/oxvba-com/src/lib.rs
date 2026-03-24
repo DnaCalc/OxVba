@@ -4,6 +4,7 @@ pub mod cycle_gc;
 pub mod dispatch;
 pub mod dynamic_object;
 pub mod invoke_policy;
+pub mod miri_variant_mock;
 pub mod model;
 pub mod platform;
 pub mod refcount;
@@ -14,17 +15,17 @@ pub mod typelib_cache;
 pub mod typelib_catalog;
 #[cfg(target_os = "windows")]
 pub mod windows_bridge;
-pub mod windows_ffi_bridge;
-pub mod windows_typelib_loader;
 pub mod windows_client;
 #[cfg(target_os = "windows")]
 pub mod windows_connection_point;
+pub mod windows_ffi_bridge;
 #[cfg(target_os = "windows")]
 pub mod windows_invoke;
 #[cfg(target_os = "windows")]
 pub mod windows_runtime_state;
 #[cfg(target_os = "windows")]
 pub mod windows_test_dispatch;
+pub mod windows_typelib_loader;
 #[cfg(target_os = "windows")]
 pub mod windows_variant;
 

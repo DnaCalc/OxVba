@@ -1586,11 +1586,8 @@ fn try_live_typelib_metadata(identity: &TypeLibResolvedIdentity) -> Option<TypeL
             identity.lcid.unwrap_or(0),
         )
         .ok()?;
-        let blob = windows_typelib_loader::build_metadata_blob_from_typelib(
-            ptlib,
-            identity.clone(),
-        )
-        .ok();
+        let blob =
+            windows_typelib_loader::build_metadata_blob_from_typelib(ptlib, identity.clone()).ok();
         unsafe { windows_typelib_loader::release_typelib(ptlib) };
         return blob;
     }

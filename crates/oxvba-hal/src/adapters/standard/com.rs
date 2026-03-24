@@ -6,13 +6,13 @@ use crate::{
         TypeLibResolvedIdentity,
     },
 };
-use oxvba_com::{
-    ComCallbackPayload, ComCallbackToken, ComInvokeRequest, ComMemberToken,
-    ComObjectDescriptor, ComObjectTransportKind, ComSubscriptionToken, DynamicCallRequest,
-    legacy_runtime_arg_values as com_legacy_runtime_arg_values,
-};
 #[cfg(target_os = "windows")]
 use oxvba_com::WindowsComBridgeDispatchError;
+use oxvba_com::{
+    ComCallbackPayload, ComCallbackToken, ComInvokeRequest, ComMemberToken, ComObjectDescriptor,
+    ComObjectTransportKind, ComSubscriptionToken, DynamicCallRequest,
+    legacy_runtime_arg_values as com_legacy_runtime_arg_values,
+};
 use oxvba_runtime::{ObjectHandle, RuntimeValue, bstr::BStr};
 
 use super::StandardHostServices;
@@ -437,12 +437,7 @@ impl ComHal for StandardHostServices {
                 .com_bridge
                 .event_callback_arg(callback, index)
                 .map_err(|message| {
-                    HalError::adapter_fault(
-                        self.profile,
-                        capability,
-                        "event_callback_arg",
-                        message,
-                    )
+                    HalError::adapter_fault(self.profile, capability, "event_callback_arg", message)
                 });
         }
         #[cfg(not(target_os = "windows"))]

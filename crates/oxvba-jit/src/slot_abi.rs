@@ -196,7 +196,9 @@ impl RtSlot {
                 RuntimeValue::BindingHandle(BindingHandle::new(self.payload as i64 as i32))
             }
             TAG_I64 => RuntimeValue::I64(self.payload as i64),
-            TAG_CURRENCY => RuntimeValue::Currency(CurrencyValue::from_scaled_i64(self.payload as i64)),
+            TAG_CURRENCY => {
+                RuntimeValue::Currency(CurrencyValue::from_scaled_i64(self.payload as i64))
+            }
             TAG_STRING => {
                 let ptr = self.payload as *const BStr;
                 if ptr.is_null() {
@@ -318,14 +320,8 @@ mod tests {
         assert_eq!(SLOT_PAYLOAD_OFFSET, 8);
         assert_eq!(SLOT_SIZE, 16);
         // Verify actual struct layout matches constants.
-        assert_eq!(
-            memoffset_tag(),
-            SLOT_TAG_OFFSET as usize,
-        );
-        assert_eq!(
-            memoffset_payload(),
-            SLOT_PAYLOAD_OFFSET as usize,
-        );
+        assert_eq!(memoffset_tag(), SLOT_TAG_OFFSET as usize,);
+        assert_eq!(memoffset_payload(), SLOT_PAYLOAD_OFFSET as usize,);
     }
 
     fn memoffset_tag() -> usize {
@@ -345,13 +341,27 @@ mod tests {
     #[test]
     fn tag_constants_are_all_distinct() {
         let tags = [
-            TAG_EMPTY, TAG_NULL, TAG_I32, TAG_F64, TAG_STRING, TAG_ERROR,
-            TAG_BOOL, TAG_OBJECT, TAG_ARRAY, TAG_I64, TAG_CURRENCY, TAG_DECIMAL,
+            TAG_EMPTY,
+            TAG_NULL,
+            TAG_I32,
+            TAG_F64,
+            TAG_STRING,
+            TAG_ERROR,
+            TAG_BOOL,
+            TAG_OBJECT,
+            TAG_ARRAY,
+            TAG_I64,
+            TAG_CURRENCY,
+            TAG_DECIMAL,
             TAG_BINDING,
         ];
         for i in 0..tags.len() {
             for j in (i + 1)..tags.len() {
-                assert_ne!(tags[i], tags[j], "tag constants at index {} and {} collide", i, j);
+                assert_ne!(
+                    tags[i], tags[j],
+                    "tag constants at index {} and {} collide",
+                    i, j
+                );
             }
         }
     }

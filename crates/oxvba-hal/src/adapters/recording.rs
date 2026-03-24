@@ -80,13 +80,8 @@ impl RecordingHostServices {
     ) {
         if let Ok(RuntimeValue::String(s)) = result {
             let seq = self.next_sequence();
-            let entry = HalJournalEntry::new(
-                seq,
-                capability,
-                operation,
-                family,
-                serde_json::json!(s.0),
-            );
+            let entry =
+                HalJournalEntry::new(seq, capability, operation, family, serde_json::json!(s.0));
             self.journal
                 .lock()
                 .expect("journal lock not poisoned")
@@ -213,11 +208,7 @@ impl FileSystemHal for RecordingHostServices {
         self.inner.fs().print_line(handle, data)
     }
 
-    fn input_fields(
-        &self,
-        handle: RuntimeValue,
-        count: RuntimeValue,
-    ) -> HalResult<RuntimeValue> {
+    fn input_fields(&self, handle: RuntimeValue, count: RuntimeValue) -> HalResult<RuntimeValue> {
         // Complex field data — delegate without recording.
         self.inner.fs().input_fields(handle, count)
     }
@@ -342,7 +333,9 @@ impl ComHal for RecordingHostServices {
         scope: TypeLibCacheScope,
         reference_name: Option<&str>,
     ) -> HalResult<RuntimeValue> {
-        self.inner.com().invalidate_typelib_cache(scope, reference_name)
+        self.inner
+            .com()
+            .invalidate_typelib_cache(scope, reference_name)
     }
 }
 
@@ -367,11 +360,7 @@ impl TimeLocaleHal for RecordingHostServices {
 }
 
 impl DynamicLinkHal for RecordingHostServices {
-    fn invoke_bound(
-        &self,
-        binding: BindingHandle,
-        arg: RuntimeValue,
-    ) -> HalResult<RuntimeValue> {
+    fn invoke_bound(&self, binding: BindingHandle, arg: RuntimeValue) -> HalResult<RuntimeValue> {
         self.inner.dynlink().invoke_bound(binding, arg)
     }
 
@@ -383,11 +372,7 @@ impl DynamicLinkHal for RecordingHostServices {
         self.inner.dynlink().invoke_descriptor(descriptor, arg)
     }
 
-    fn invoke_symbol(
-        &self,
-        symbol: DynLinkSymbol,
-        arg: RuntimeValue,
-    ) -> HalResult<RuntimeValue> {
+    fn invoke_symbol(&self, symbol: DynLinkSymbol, arg: RuntimeValue) -> HalResult<RuntimeValue> {
         self.inner.dynlink().invoke_symbol(symbol, arg)
     }
 }

@@ -255,9 +255,8 @@ fn supports_rtslot_instruction(instruction: &Instruction) -> bool {
             // Phase 5: Resume
             | Instruction::Resume
             | Instruction::ResumeNext
-            | Instruction::ResumeLabel { .. }
-            // Note: IntrinsicTypeOfIs not supported — requires project_dynamic_objects in
-            // JitContext (tracked gap). Functions using TypeOf...Is fall back to interpreter.
+            | Instruction::ResumeLabel { .. } // Note: IntrinsicTypeOfIs not supported — requires project_dynamic_objects in
+                                              // JitContext (tracked gap). Functions using TypeOf...Is fall back to interpreter.
     )
 }
 
@@ -580,7 +579,16 @@ pub fn execute_bytecode_rtslot(
     };
 
     // Import helper functions
-    let helpers = HelperFuncIds::declare(&mut module, &sig_3slot, &sig_2slot, &sig_slot_i32, &sig_1slot, &sig_cmp, &sig_load_str, &sig_load_f64)?;
+    let helpers = HelperFuncIds::declare(
+        &mut module,
+        &sig_3slot,
+        &sig_2slot,
+        &sig_slot_i32,
+        &sig_1slot,
+        &sig_cmp,
+        &sig_load_str,
+        &sig_load_f64,
+    )?;
 
     // ── Build IR ──────────────────────────────────────────────────────
     let mut builder_ctx = FunctionBuilderContext::new();
@@ -614,9 +622,7 @@ pub fn execute_bytecode_rtslot(
 
     // Load slots_ptr from JitContext (first field at offset 0)
     let slots_ptr_var = builder.declare_var(ptr_ty);
-    let slots_ptr = builder
-        .ins()
-        .load(ptr_ty, MemFlags::new(), ctx_ptr, 0);
+    let slots_ptr = builder.ins().load(ptr_ty, MemFlags::new(), ctx_ptr, 0);
     builder.def_var(slots_ptr_var, slots_ptr);
 
     if let Some(first_block) = pc_blocks.first() {
@@ -667,8 +673,8 @@ pub fn execute_bytecode_rtslot(
         };
 
         let read_payload_i64 = |builder: &mut FunctionBuilder,
-                                 slots_ptr: cranelift_codegen::ir::Value,
-                                 slot: usize|
+                                slots_ptr: cranelift_codegen::ir::Value,
+                                slot: usize|
          -> Result<cranelift_codegen::ir::Value, String> {
             let offset = rtslot_payload_offset(slot)?;
             let addr = builder.ins().iadd_imm(slots_ptr, offset);
@@ -676,10 +682,10 @@ pub fn execute_bytecode_rtslot(
         };
 
         let write_tag_payload = |builder: &mut FunctionBuilder,
-                                  slots_ptr: cranelift_codegen::ir::Value,
-                                  slot: usize,
-                                  tag: i64,
-                                  payload: cranelift_codegen::ir::Value|
+                                 slots_ptr: cranelift_codegen::ir::Value,
+                                 slot: usize,
+                                 tag: i64,
+                                 payload: cranelift_codegen::ir::Value|
          -> Result<(), String> {
             let tag_off = rtslot_tag_offset(slot)?;
             let pay_off = rtslot_payload_offset(slot)?;
@@ -687,9 +693,7 @@ pub fn execute_bytecode_rtslot(
             let pay_addr = builder.ins().iadd_imm(slots_ptr, pay_off);
             let tag_val = builder.ins().iconst(types::I32, tag);
             builder.ins().store(MemFlags::new(), tag_val, tag_addr, 0);
-            builder
-                .ins()
-                .store(MemFlags::new(), payload, pay_addr, 0);
+            builder.ins().store(MemFlags::new(), payload, pay_addr, 0);
             Ok(())
         };
 
@@ -705,7 +709,9 @@ pub fn execute_bytecode_rtslot(
                 let is_ok = builder.ins().icmp_imm(IntCC::Equal, rc, 0);
                 let pc_imm = builder.ins().iconst(types::I32, pc as i64);
                 let err_args = [BlockArg::Value(pc_imm), BlockArg::Value(rc)];
-                builder.ins().brif(is_ok, next, &[], error_dispatch_block, &err_args);
+                builder
+                    .ins()
+                    .brif(is_ok, next, &[], error_dispatch_block, &err_args);
             };
 
         match instruction {
@@ -746,9 +752,7 @@ pub fn execute_bytecode_rtslot(
                 let func_ref = module.declare_func_in_func(helpers.load_string, builder.func);
                 let dst_val = builder.ins().iconst(types::I32, *slot as i64);
                 let str_data = &string_boxes[string_idx];
-                let str_ptr = builder
-                    .ins()
-                    .iconst(ptr_ty, str_data.as_ptr() as i64);
+                let str_ptr = builder.ins().iconst(ptr_ty, str_data.as_ptr() as i64);
                 let str_len = builder.ins().iconst(types::I32, str_data.len() as i64);
                 emit_helper_call_and_check(
                     &mut builder,
@@ -772,16 +776,12 @@ pub fn execute_bytecode_rtslot(
             Instruction::AddConstI32 { slot, value } => {
                 // Inline i32 fast path: check tag == I32, then add directly.
                 let tag = read_tag(&mut builder, slots_ptr, *slot)?;
-                let is_i32 = builder
-                    .ins()
-                    .icmp_imm(IntCC::Equal, tag, TAG_I32 as i64);
+                let is_i32 = builder.ins().icmp_imm(IntCC::Equal, tag, TAG_I32 as i64);
 
                 let fast_block = builder.create_block();
                 let slow_block = builder.create_block();
 
-                builder
-                    .ins()
-                    .brif(is_i32, fast_block, &[], slow_block, &[]);
+                builder.ins().brif(is_i32, fast_block, &[], slow_block, &[]);
 
                 // Fast path: inline i32 add
                 builder.switch_to_block(fast_block);
@@ -790,13 +790,7 @@ pub fn execute_bytecode_rtslot(
                 let payload_i32 = builder.ins().ireduce(types::I32, payload);
                 let result = builder.ins().iadd_imm(payload_i32, i64::from(*value));
                 let result_i64 = builder.ins().sextend(types::I64, result);
-                write_tag_payload(
-                    &mut builder,
-                    slots_ptr_f,
-                    *slot,
-                    TAG_I32 as i64,
-                    result_i64,
-                )?;
+                write_tag_payload(&mut builder, slots_ptr_f, *slot, TAG_I32 as i64, result_i64)?;
                 builder.ins().jump(next_block, &[]);
 
                 // Slow path: call helper
@@ -814,16 +808,12 @@ pub fn execute_bytecode_rtslot(
             }
             Instruction::SubConstI32 { slot, value } => {
                 let tag = read_tag(&mut builder, slots_ptr, *slot)?;
-                let is_i32 = builder
-                    .ins()
-                    .icmp_imm(IntCC::Equal, tag, TAG_I32 as i64);
+                let is_i32 = builder.ins().icmp_imm(IntCC::Equal, tag, TAG_I32 as i64);
 
                 let fast_block = builder.create_block();
                 let slow_block = builder.create_block();
 
-                builder
-                    .ins()
-                    .brif(is_i32, fast_block, &[], slow_block, &[]);
+                builder.ins().brif(is_i32, fast_block, &[], slow_block, &[]);
 
                 builder.switch_to_block(fast_block);
                 let slots_ptr_f = builder.use_var(slots_ptr_var);
@@ -832,13 +822,7 @@ pub fn execute_bytecode_rtslot(
                 let delta = builder.ins().iconst(types::I32, i64::from(*value));
                 let result = builder.ins().isub(payload_i32, delta);
                 let result_i64 = builder.ins().sextend(types::I64, result);
-                write_tag_payload(
-                    &mut builder,
-                    slots_ptr_f,
-                    *slot,
-                    TAG_I32 as i64,
-                    result_i64,
-                )?;
+                write_tag_payload(&mut builder, slots_ptr_f, *slot, TAG_I32 as i64, result_i64)?;
                 builder.ins().jump(next_block, &[]);
 
                 builder.switch_to_block(slow_block);
@@ -1015,23 +999,131 @@ pub fn execute_bytecode_rtslot(
                     next_block,
                 );
             }
-            Instruction::CmpEqSlots { dst, lhs, rhs, mode } => {
-                emit_cmp_helper(&mut builder, &mut module, &helpers, ctx_ptr, *dst, *lhs, *rhs, *mode, "oxrt_cmp_eq", pc, next_block, error_dispatch_block)?;
+            Instruction::CmpEqSlots {
+                dst,
+                lhs,
+                rhs,
+                mode,
+            } => {
+                emit_cmp_helper(
+                    &mut builder,
+                    &mut module,
+                    &helpers,
+                    ctx_ptr,
+                    *dst,
+                    *lhs,
+                    *rhs,
+                    *mode,
+                    "oxrt_cmp_eq",
+                    pc,
+                    next_block,
+                    error_dispatch_block,
+                )?;
             }
-            Instruction::CmpNeSlots { dst, lhs, rhs, mode } => {
-                emit_cmp_helper(&mut builder, &mut module, &helpers, ctx_ptr, *dst, *lhs, *rhs, *mode, "oxrt_cmp_ne", pc, next_block, error_dispatch_block)?;
+            Instruction::CmpNeSlots {
+                dst,
+                lhs,
+                rhs,
+                mode,
+            } => {
+                emit_cmp_helper(
+                    &mut builder,
+                    &mut module,
+                    &helpers,
+                    ctx_ptr,
+                    *dst,
+                    *lhs,
+                    *rhs,
+                    *mode,
+                    "oxrt_cmp_ne",
+                    pc,
+                    next_block,
+                    error_dispatch_block,
+                )?;
             }
-            Instruction::CmpLtSlots { dst, lhs, rhs, mode } => {
-                emit_cmp_helper(&mut builder, &mut module, &helpers, ctx_ptr, *dst, *lhs, *rhs, *mode, "oxrt_cmp_lt", pc, next_block, error_dispatch_block)?;
+            Instruction::CmpLtSlots {
+                dst,
+                lhs,
+                rhs,
+                mode,
+            } => {
+                emit_cmp_helper(
+                    &mut builder,
+                    &mut module,
+                    &helpers,
+                    ctx_ptr,
+                    *dst,
+                    *lhs,
+                    *rhs,
+                    *mode,
+                    "oxrt_cmp_lt",
+                    pc,
+                    next_block,
+                    error_dispatch_block,
+                )?;
             }
-            Instruction::CmpLeSlots { dst, lhs, rhs, mode } => {
-                emit_cmp_helper(&mut builder, &mut module, &helpers, ctx_ptr, *dst, *lhs, *rhs, *mode, "oxrt_cmp_le", pc, next_block, error_dispatch_block)?;
+            Instruction::CmpLeSlots {
+                dst,
+                lhs,
+                rhs,
+                mode,
+            } => {
+                emit_cmp_helper(
+                    &mut builder,
+                    &mut module,
+                    &helpers,
+                    ctx_ptr,
+                    *dst,
+                    *lhs,
+                    *rhs,
+                    *mode,
+                    "oxrt_cmp_le",
+                    pc,
+                    next_block,
+                    error_dispatch_block,
+                )?;
             }
-            Instruction::CmpGtSlots { dst, lhs, rhs, mode } => {
-                emit_cmp_helper(&mut builder, &mut module, &helpers, ctx_ptr, *dst, *lhs, *rhs, *mode, "oxrt_cmp_gt", pc, next_block, error_dispatch_block)?;
+            Instruction::CmpGtSlots {
+                dst,
+                lhs,
+                rhs,
+                mode,
+            } => {
+                emit_cmp_helper(
+                    &mut builder,
+                    &mut module,
+                    &helpers,
+                    ctx_ptr,
+                    *dst,
+                    *lhs,
+                    *rhs,
+                    *mode,
+                    "oxrt_cmp_gt",
+                    pc,
+                    next_block,
+                    error_dispatch_block,
+                )?;
             }
-            Instruction::CmpGeSlots { dst, lhs, rhs, mode } => {
-                emit_cmp_helper(&mut builder, &mut module, &helpers, ctx_ptr, *dst, *lhs, *rhs, *mode, "oxrt_cmp_ge", pc, next_block, error_dispatch_block)?;
+            Instruction::CmpGeSlots {
+                dst,
+                lhs,
+                rhs,
+                mode,
+            } => {
+                emit_cmp_helper(
+                    &mut builder,
+                    &mut module,
+                    &helpers,
+                    ctx_ptr,
+                    *dst,
+                    *lhs,
+                    *rhs,
+                    *mode,
+                    "oxrt_cmp_ge",
+                    pc,
+                    next_block,
+                    error_dispatch_block,
+                )?;
             }
             Instruction::BoolNot { dst, src } => {
                 let func_ref = module.declare_func_in_func(helpers.bool_not, builder.func);
@@ -1068,13 +1160,14 @@ pub fn execute_bytecode_rtslot(
                     next_block,
                 );
             }
-            Instruction::JumpIfZero { cond_slot, target_pc } => {
+            Instruction::JumpIfZero {
+                cond_slot,
+                target_pc,
+            } => {
                 // Read the tag+payload to determine truthiness.
                 // Fast path: if tag == I32, check payload == 0.
                 let tag = read_tag(&mut builder, slots_ptr, *cond_slot)?;
-                let is_i32_tag = builder
-                    .ins()
-                    .icmp_imm(IntCC::Equal, tag, TAG_I32 as i64);
+                let is_i32_tag = builder.ins().icmp_imm(IntCC::Equal, tag, TAG_I32 as i64);
                 let payload = read_payload_i64(&mut builder, slots_ptr, *cond_slot)?;
                 let payload_i32 = builder.ins().ireduce(types::I32, payload);
 
@@ -1082,7 +1175,9 @@ pub fn execute_bytecode_rtslot(
                 // If tag!=I32: tag==TAG_EMPTY (0) counts as zero.
                 let payload_is_zero = builder.ins().icmp_imm(IntCC::Equal, payload_i32, 0);
                 let tag_is_empty = builder.ins().icmp_imm(IntCC::Equal, tag, 0);
-                let is_zero = builder.ins().select(is_i32_tag, payload_is_zero, tag_is_empty);
+                let is_zero = builder
+                    .ins()
+                    .select(is_i32_tag, payload_is_zero, tag_is_empty);
 
                 let true_block = if *target_pc < pc_blocks.len() {
                     pc_blocks[*target_pc]
@@ -1102,7 +1197,8 @@ pub fn execute_bytecode_rtslot(
                 builder.ins().jump(jump_block, &[]);
             }
             Instruction::ClearErr => {
-                let func_ref = module.declare_func_in_func(helpers.extra("oxrt_clear_err"), builder.func);
+                let func_ref =
+                    module.declare_func_in_func(helpers.extra("oxrt_clear_err"), builder.func);
                 emit_helper_call_and_check(&mut builder, func_ref, &[ctx_ptr], next_block);
             }
             Instruction::Halt => {
@@ -1110,200 +1206,1001 @@ pub fn execute_bytecode_rtslot(
             }
             // ── Phase 2: String ops ──────────────────────────────────
             Instruction::IntrinsicLenDigits { dst, src } => {
-                emit_extra_2slot(&mut builder, &mut module, &helpers, "oxrt_len", ctx_ptr, *dst, *src, pc, next_block, error_dispatch_block);
+                emit_extra_2slot(
+                    &mut builder,
+                    &mut module,
+                    &helpers,
+                    "oxrt_len",
+                    ctx_ptr,
+                    *dst,
+                    *src,
+                    pc,
+                    next_block,
+                    error_dispatch_block,
+                );
             }
             Instruction::IntrinsicLeftDigits { dst, src, count } => {
-                emit_extra_3slot(&mut builder, &mut module, &helpers, "oxrt_left", ctx_ptr, *dst, *src, *count, pc, next_block, error_dispatch_block);
+                emit_extra_3slot(
+                    &mut builder,
+                    &mut module,
+                    &helpers,
+                    "oxrt_left",
+                    ctx_ptr,
+                    *dst,
+                    *src,
+                    *count,
+                    pc,
+                    next_block,
+                    error_dispatch_block,
+                );
             }
             Instruction::IntrinsicRightDigits { dst, src, count } => {
-                emit_extra_3slot(&mut builder, &mut module, &helpers, "oxrt_right", ctx_ptr, *dst, *src, *count, pc, next_block, error_dispatch_block);
+                emit_extra_3slot(
+                    &mut builder,
+                    &mut module,
+                    &helpers,
+                    "oxrt_right",
+                    ctx_ptr,
+                    *dst,
+                    *src,
+                    *count,
+                    pc,
+                    next_block,
+                    error_dispatch_block,
+                );
             }
-            Instruction::IntrinsicMidDigits { dst, src, start, count } => {
+            Instruction::IntrinsicMidDigits {
+                dst,
+                src,
+                start,
+                count,
+            } => {
                 let count_val = count.map(|c| c as i64).unwrap_or(u32::MAX as i64);
-                emit_extra_4slot(&mut builder, &mut module, &helpers, "oxrt_mid", ctx_ptr, *dst, *src, *start, count_val, pc, next_block, error_dispatch_block);
+                emit_extra_4slot(
+                    &mut builder,
+                    &mut module,
+                    &helpers,
+                    "oxrt_mid",
+                    ctx_ptr,
+                    *dst,
+                    *src,
+                    *start,
+                    count_val,
+                    pc,
+                    next_block,
+                    error_dispatch_block,
+                );
             }
-            Instruction::IntrinsicMidStmtDigits { target, start, count, value } => {
+            Instruction::IntrinsicMidStmtDigits {
+                target,
+                start,
+                count,
+                value,
+            } => {
                 let count_val = count.map(|c| c as i64).unwrap_or(u32::MAX as i64);
-                emit_extra_4slot_i(&mut builder, &mut module, &helpers, "oxrt_mid_stmt", ctx_ptr, *target as i64, *start as i64, count_val, *value as i64, pc, next_block, error_dispatch_block);
+                emit_extra_4slot_i(
+                    &mut builder,
+                    &mut module,
+                    &helpers,
+                    "oxrt_mid_stmt",
+                    ctx_ptr,
+                    *target as i64,
+                    *start as i64,
+                    count_val,
+                    *value as i64,
+                    pc,
+                    next_block,
+                    error_dispatch_block,
+                );
             }
-            Instruction::IntrinsicInStrDigits { dst, haystack, needle, mode } => {
-                let mode_val = match mode { StringCompareMode::Text => 1, _ => 0 };
-                emit_extra_4slot_i(&mut builder, &mut module, &helpers, "oxrt_instr", ctx_ptr, *dst as i64, *haystack as i64, *needle as i64, mode_val, pc, next_block, error_dispatch_block);
+            Instruction::IntrinsicInStrDigits {
+                dst,
+                haystack,
+                needle,
+                mode,
+            } => {
+                let mode_val = match mode {
+                    StringCompareMode::Text => 1,
+                    _ => 0,
+                };
+                emit_extra_4slot_i(
+                    &mut builder,
+                    &mut module,
+                    &helpers,
+                    "oxrt_instr",
+                    ctx_ptr,
+                    *dst as i64,
+                    *haystack as i64,
+                    *needle as i64,
+                    mode_val,
+                    pc,
+                    next_block,
+                    error_dispatch_block,
+                );
             }
-            Instruction::IntrinsicInStrRevDigits { dst, haystack, needle, mode } => {
-                let mode_val = match mode { StringCompareMode::Text => 1, _ => 0 };
-                emit_extra_4slot_i(&mut builder, &mut module, &helpers, "oxrt_instrrev", ctx_ptr, *dst as i64, *haystack as i64, *needle as i64, mode_val, pc, next_block, error_dispatch_block);
+            Instruction::IntrinsicInStrRevDigits {
+                dst,
+                haystack,
+                needle,
+                mode,
+            } => {
+                let mode_val = match mode {
+                    StringCompareMode::Text => 1,
+                    _ => 0,
+                };
+                emit_extra_4slot_i(
+                    &mut builder,
+                    &mut module,
+                    &helpers,
+                    "oxrt_instrrev",
+                    ctx_ptr,
+                    *dst as i64,
+                    *haystack as i64,
+                    *needle as i64,
+                    mode_val,
+                    pc,
+                    next_block,
+                    error_dispatch_block,
+                );
             }
             Instruction::IntrinsicLowerDigits { dst, src } => {
-                emit_extra_2slot(&mut builder, &mut module, &helpers, "oxrt_lower", ctx_ptr, *dst, *src, pc, next_block, error_dispatch_block);
+                emit_extra_2slot(
+                    &mut builder,
+                    &mut module,
+                    &helpers,
+                    "oxrt_lower",
+                    ctx_ptr,
+                    *dst,
+                    *src,
+                    pc,
+                    next_block,
+                    error_dispatch_block,
+                );
             }
             Instruction::IntrinsicUpperDigits { dst, src } => {
-                emit_extra_2slot(&mut builder, &mut module, &helpers, "oxrt_upper", ctx_ptr, *dst, *src, pc, next_block, error_dispatch_block);
+                emit_extra_2slot(
+                    &mut builder,
+                    &mut module,
+                    &helpers,
+                    "oxrt_upper",
+                    ctx_ptr,
+                    *dst,
+                    *src,
+                    pc,
+                    next_block,
+                    error_dispatch_block,
+                );
             }
-            Instruction::IntrinsicSplitCountDigits { dst, src, delimiter } => {
-                emit_extra_3slot(&mut builder, &mut module, &helpers, "oxrt_split", ctx_ptr, *dst, *src, *delimiter, pc, next_block, error_dispatch_block);
+            Instruction::IntrinsicSplitCountDigits {
+                dst,
+                src,
+                delimiter,
+            } => {
+                emit_extra_3slot(
+                    &mut builder,
+                    &mut module,
+                    &helpers,
+                    "oxrt_split",
+                    ctx_ptr,
+                    *dst,
+                    *src,
+                    *delimiter,
+                    pc,
+                    next_block,
+                    error_dispatch_block,
+                );
             }
-            Instruction::IntrinsicJoinDigits { dst, src, delimiter } => {
-                emit_extra_3slot(&mut builder, &mut module, &helpers, "oxrt_join", ctx_ptr, *dst, *src, *delimiter, pc, next_block, error_dispatch_block);
+            Instruction::IntrinsicJoinDigits {
+                dst,
+                src,
+                delimiter,
+            } => {
+                emit_extra_3slot(
+                    &mut builder,
+                    &mut module,
+                    &helpers,
+                    "oxrt_join",
+                    ctx_ptr,
+                    *dst,
+                    *src,
+                    *delimiter,
+                    pc,
+                    next_block,
+                    error_dispatch_block,
+                );
             }
-            Instruction::IntrinsicReplaceDigits { dst, src, find, replace } => {
-                emit_extra_4slot(&mut builder, &mut module, &helpers, "oxrt_replace", ctx_ptr, *dst, *src, *find, *replace as i64, pc, next_block, error_dispatch_block);
+            Instruction::IntrinsicReplaceDigits {
+                dst,
+                src,
+                find,
+                replace,
+            } => {
+                emit_extra_4slot(
+                    &mut builder,
+                    &mut module,
+                    &helpers,
+                    "oxrt_replace",
+                    ctx_ptr,
+                    *dst,
+                    *src,
+                    *find,
+                    *replace as i64,
+                    pc,
+                    next_block,
+                    error_dispatch_block,
+                );
             }
             Instruction::IntrinsicTrimDigits { dst, src } => {
-                emit_extra_2slot(&mut builder, &mut module, &helpers, "oxrt_trim", ctx_ptr, *dst, *src, pc, next_block, error_dispatch_block);
+                emit_extra_2slot(
+                    &mut builder,
+                    &mut module,
+                    &helpers,
+                    "oxrt_trim",
+                    ctx_ptr,
+                    *dst,
+                    *src,
+                    pc,
+                    next_block,
+                    error_dispatch_block,
+                );
             }
             Instruction::IntrinsicLTrimDigits { dst, src } => {
-                emit_extra_2slot(&mut builder, &mut module, &helpers, "oxrt_ltrim", ctx_ptr, *dst, *src, pc, next_block, error_dispatch_block);
+                emit_extra_2slot(
+                    &mut builder,
+                    &mut module,
+                    &helpers,
+                    "oxrt_ltrim",
+                    ctx_ptr,
+                    *dst,
+                    *src,
+                    pc,
+                    next_block,
+                    error_dispatch_block,
+                );
             }
             Instruction::IntrinsicRTrimDigits { dst, src } => {
-                emit_extra_2slot(&mut builder, &mut module, &helpers, "oxrt_rtrim", ctx_ptr, *dst, *src, pc, next_block, error_dispatch_block);
+                emit_extra_2slot(
+                    &mut builder,
+                    &mut module,
+                    &helpers,
+                    "oxrt_rtrim",
+                    ctx_ptr,
+                    *dst,
+                    *src,
+                    pc,
+                    next_block,
+                    error_dispatch_block,
+                );
             }
-            Instruction::IntrinsicStrCompDigits { dst, lhs, rhs, mode } => {
-                let mode_val = match mode { StringCompareMode::Text => 1, _ => 0 };
-                emit_extra_4slot_i(&mut builder, &mut module, &helpers, "oxrt_strcomp", ctx_ptr, *dst as i64, *lhs as i64, *rhs as i64, mode_val, pc, next_block, error_dispatch_block);
+            Instruction::IntrinsicStrCompDigits {
+                dst,
+                lhs,
+                rhs,
+                mode,
+            } => {
+                let mode_val = match mode {
+                    StringCompareMode::Text => 1,
+                    _ => 0,
+                };
+                emit_extra_4slot_i(
+                    &mut builder,
+                    &mut module,
+                    &helpers,
+                    "oxrt_strcomp",
+                    ctx_ptr,
+                    *dst as i64,
+                    *lhs as i64,
+                    *rhs as i64,
+                    mode_val,
+                    pc,
+                    next_block,
+                    error_dispatch_block,
+                );
             }
-            Instruction::IntrinsicLikeDigits { dst, lhs, pattern, mode } => {
-                let mode_val = match mode { StringCompareMode::Text => 1, _ => 0 };
-                emit_extra_4slot_i(&mut builder, &mut module, &helpers, "oxrt_like", ctx_ptr, *dst as i64, *lhs as i64, *pattern as i64, mode_val, pc, next_block, error_dispatch_block);
+            Instruction::IntrinsicLikeDigits {
+                dst,
+                lhs,
+                pattern,
+                mode,
+            } => {
+                let mode_val = match mode {
+                    StringCompareMode::Text => 1,
+                    _ => 0,
+                };
+                emit_extra_4slot_i(
+                    &mut builder,
+                    &mut module,
+                    &helpers,
+                    "oxrt_like",
+                    ctx_ptr,
+                    *dst as i64,
+                    *lhs as i64,
+                    *pattern as i64,
+                    mode_val,
+                    pc,
+                    next_block,
+                    error_dispatch_block,
+                );
             }
-            Instruction::IntrinsicStrConvDigits { dst, src, conversion } => {
-                emit_extra_3slot(&mut builder, &mut module, &helpers, "oxrt_strconv", ctx_ptr, *dst, *src, *conversion, pc, next_block, error_dispatch_block);
+            Instruction::IntrinsicStrConvDigits {
+                dst,
+                src,
+                conversion,
+            } => {
+                emit_extra_3slot(
+                    &mut builder,
+                    &mut module,
+                    &helpers,
+                    "oxrt_strconv",
+                    ctx_ptr,
+                    *dst,
+                    *src,
+                    *conversion,
+                    pc,
+                    next_block,
+                    error_dispatch_block,
+                );
             }
             // ── Phase 2: Char/format ─────────────────────────────────
             Instruction::IntrinsicChrDigits { dst, src } => {
-                emit_extra_2slot(&mut builder, &mut module, &helpers, "oxrt_chr", ctx_ptr, *dst, *src, pc, next_block, error_dispatch_block);
+                emit_extra_2slot(
+                    &mut builder,
+                    &mut module,
+                    &helpers,
+                    "oxrt_chr",
+                    ctx_ptr,
+                    *dst,
+                    *src,
+                    pc,
+                    next_block,
+                    error_dispatch_block,
+                );
             }
             Instruction::IntrinsicAscDigits { dst, src } => {
-                emit_extra_2slot(&mut builder, &mut module, &helpers, "oxrt_asc", ctx_ptr, *dst, *src, pc, next_block, error_dispatch_block);
+                emit_extra_2slot(
+                    &mut builder,
+                    &mut module,
+                    &helpers,
+                    "oxrt_asc",
+                    ctx_ptr,
+                    *dst,
+                    *src,
+                    pc,
+                    next_block,
+                    error_dispatch_block,
+                );
             }
             Instruction::IntrinsicSpaceDigits { dst, count } => {
-                emit_extra_2slot(&mut builder, &mut module, &helpers, "oxrt_space", ctx_ptr, *dst, *count, pc, next_block, error_dispatch_block);
+                emit_extra_2slot(
+                    &mut builder,
+                    &mut module,
+                    &helpers,
+                    "oxrt_space",
+                    ctx_ptr,
+                    *dst,
+                    *count,
+                    pc,
+                    next_block,
+                    error_dispatch_block,
+                );
             }
             Instruction::IntrinsicStringRepeatDigits { dst, count, ch } => {
-                emit_extra_3slot(&mut builder, &mut module, &helpers, "oxrt_string_repeat", ctx_ptr, *dst, *count, *ch, pc, next_block, error_dispatch_block);
+                emit_extra_3slot(
+                    &mut builder,
+                    &mut module,
+                    &helpers,
+                    "oxrt_string_repeat",
+                    ctx_ptr,
+                    *dst,
+                    *count,
+                    *ch,
+                    pc,
+                    next_block,
+                    error_dispatch_block,
+                );
             }
             Instruction::IntrinsicHexDigits { dst, src } => {
-                emit_extra_2slot(&mut builder, &mut module, &helpers, "oxrt_hex", ctx_ptr, *dst, *src, pc, next_block, error_dispatch_block);
+                emit_extra_2slot(
+                    &mut builder,
+                    &mut module,
+                    &helpers,
+                    "oxrt_hex",
+                    ctx_ptr,
+                    *dst,
+                    *src,
+                    pc,
+                    next_block,
+                    error_dispatch_block,
+                );
             }
             Instruction::IntrinsicOctDigits { dst, src } => {
-                emit_extra_2slot(&mut builder, &mut module, &helpers, "oxrt_oct", ctx_ptr, *dst, *src, pc, next_block, error_dispatch_block);
+                emit_extra_2slot(
+                    &mut builder,
+                    &mut module,
+                    &helpers,
+                    "oxrt_oct",
+                    ctx_ptr,
+                    *dst,
+                    *src,
+                    pc,
+                    next_block,
+                    error_dispatch_block,
+                );
             }
-            Instruction::IntrinsicFormatDigits { dst, value, format_string } => {
+            Instruction::IntrinsicFormatDigits {
+                dst,
+                value,
+                format_string,
+            } => {
                 let fmt_slot = format_string.map(|s| s as i64).unwrap_or(u32::MAX as i64);
-                emit_extra_3slot_i(&mut builder, &mut module, &helpers, "oxrt_format", ctx_ptr, *dst as i64, *value as i64, fmt_slot, pc, next_block, error_dispatch_block);
+                emit_extra_3slot_i(
+                    &mut builder,
+                    &mut module,
+                    &helpers,
+                    "oxrt_format",
+                    ctx_ptr,
+                    *dst as i64,
+                    *value as i64,
+                    fmt_slot,
+                    pc,
+                    next_block,
+                    error_dispatch_block,
+                );
             }
             Instruction::IntrinsicStrReverseDigits { dst, src } => {
-                emit_extra_2slot(&mut builder, &mut module, &helpers, "oxrt_strreverse", ctx_ptr, *dst, *src, pc, next_block, error_dispatch_block);
+                emit_extra_2slot(
+                    &mut builder,
+                    &mut module,
+                    &helpers,
+                    "oxrt_strreverse",
+                    ctx_ptr,
+                    *dst,
+                    *src,
+                    pc,
+                    next_block,
+                    error_dispatch_block,
+                );
             }
             // ── Phase 2: Date/time ───────────────────────────────────
-            Instruction::IntrinsicDateSerialDigits { dst, year, month, day } => {
-                emit_extra_4slot(&mut builder, &mut module, &helpers, "oxrt_date_serial", ctx_ptr, *dst, *year, *month, *day as i64, pc, next_block, error_dispatch_block);
+            Instruction::IntrinsicDateSerialDigits {
+                dst,
+                year,
+                month,
+                day,
+            } => {
+                emit_extra_4slot(
+                    &mut builder,
+                    &mut module,
+                    &helpers,
+                    "oxrt_date_serial",
+                    ctx_ptr,
+                    *dst,
+                    *year,
+                    *month,
+                    *day as i64,
+                    pc,
+                    next_block,
+                    error_dispatch_block,
+                );
             }
-            Instruction::IntrinsicTimeSerialDigits { dst, hour, minute, second } => {
-                emit_extra_4slot(&mut builder, &mut module, &helpers, "oxrt_time_serial", ctx_ptr, *dst, *hour, *minute, *second as i64, pc, next_block, error_dispatch_block);
+            Instruction::IntrinsicTimeSerialDigits {
+                dst,
+                hour,
+                minute,
+                second,
+            } => {
+                emit_extra_4slot(
+                    &mut builder,
+                    &mut module,
+                    &helpers,
+                    "oxrt_time_serial",
+                    ctx_ptr,
+                    *dst,
+                    *hour,
+                    *minute,
+                    *second as i64,
+                    pc,
+                    next_block,
+                    error_dispatch_block,
+                );
             }
             Instruction::IntrinsicDateValueDigits { dst, src } => {
-                emit_extra_2slot(&mut builder, &mut module, &helpers, "oxrt_date_value", ctx_ptr, *dst, *src, pc, next_block, error_dispatch_block);
+                emit_extra_2slot(
+                    &mut builder,
+                    &mut module,
+                    &helpers,
+                    "oxrt_date_value",
+                    ctx_ptr,
+                    *dst,
+                    *src,
+                    pc,
+                    next_block,
+                    error_dispatch_block,
+                );
             }
             Instruction::IntrinsicTimeValueDigits { dst, src } => {
-                emit_extra_2slot(&mut builder, &mut module, &helpers, "oxrt_time_value", ctx_ptr, *dst, *src, pc, next_block, error_dispatch_block);
+                emit_extra_2slot(
+                    &mut builder,
+                    &mut module,
+                    &helpers,
+                    "oxrt_time_value",
+                    ctx_ptr,
+                    *dst,
+                    *src,
+                    pc,
+                    next_block,
+                    error_dispatch_block,
+                );
             }
-            Instruction::IntrinsicDateAddDigits { dst, interval, number, date } => {
-                emit_extra_4slot(&mut builder, &mut module, &helpers, "oxrt_date_add", ctx_ptr, *dst, *interval, *number, *date as i64, pc, next_block, error_dispatch_block);
+            Instruction::IntrinsicDateAddDigits {
+                dst,
+                interval,
+                number,
+                date,
+            } => {
+                emit_extra_4slot(
+                    &mut builder,
+                    &mut module,
+                    &helpers,
+                    "oxrt_date_add",
+                    ctx_ptr,
+                    *dst,
+                    *interval,
+                    *number,
+                    *date as i64,
+                    pc,
+                    next_block,
+                    error_dispatch_block,
+                );
             }
-            Instruction::IntrinsicDateDiffDigits { dst, interval, date1, date2 } => {
-                emit_extra_4slot(&mut builder, &mut module, &helpers, "oxrt_date_diff", ctx_ptr, *dst, *interval, *date1, *date2 as i64, pc, next_block, error_dispatch_block);
+            Instruction::IntrinsicDateDiffDigits {
+                dst,
+                interval,
+                date1,
+                date2,
+            } => {
+                emit_extra_4slot(
+                    &mut builder,
+                    &mut module,
+                    &helpers,
+                    "oxrt_date_diff",
+                    ctx_ptr,
+                    *dst,
+                    *interval,
+                    *date1,
+                    *date2 as i64,
+                    pc,
+                    next_block,
+                    error_dispatch_block,
+                );
             }
             Instruction::IntrinsicYearDigits { dst, src } => {
-                emit_extra_2slot(&mut builder, &mut module, &helpers, "oxrt_year", ctx_ptr, *dst, *src, pc, next_block, error_dispatch_block);
+                emit_extra_2slot(
+                    &mut builder,
+                    &mut module,
+                    &helpers,
+                    "oxrt_year",
+                    ctx_ptr,
+                    *dst,
+                    *src,
+                    pc,
+                    next_block,
+                    error_dispatch_block,
+                );
             }
             Instruction::IntrinsicMonthDigits { dst, src } => {
-                emit_extra_2slot(&mut builder, &mut module, &helpers, "oxrt_month", ctx_ptr, *dst, *src, pc, next_block, error_dispatch_block);
+                emit_extra_2slot(
+                    &mut builder,
+                    &mut module,
+                    &helpers,
+                    "oxrt_month",
+                    ctx_ptr,
+                    *dst,
+                    *src,
+                    pc,
+                    next_block,
+                    error_dispatch_block,
+                );
             }
             Instruction::IntrinsicDayDigits { dst, src } => {
-                emit_extra_2slot(&mut builder, &mut module, &helpers, "oxrt_day", ctx_ptr, *dst, *src, pc, next_block, error_dispatch_block);
+                emit_extra_2slot(
+                    &mut builder,
+                    &mut module,
+                    &helpers,
+                    "oxrt_day",
+                    ctx_ptr,
+                    *dst,
+                    *src,
+                    pc,
+                    next_block,
+                    error_dispatch_block,
+                );
             }
             Instruction::IntrinsicWeekdayDigits { dst, src } => {
-                emit_extra_2slot(&mut builder, &mut module, &helpers, "oxrt_weekday", ctx_ptr, *dst, *src, pc, next_block, error_dispatch_block);
+                emit_extra_2slot(
+                    &mut builder,
+                    &mut module,
+                    &helpers,
+                    "oxrt_weekday",
+                    ctx_ptr,
+                    *dst,
+                    *src,
+                    pc,
+                    next_block,
+                    error_dispatch_block,
+                );
             }
             Instruction::IntrinsicMonthNameDigits { dst, src } => {
-                emit_extra_2slot(&mut builder, &mut module, &helpers, "oxrt_month_name", ctx_ptr, *dst, *src, pc, next_block, error_dispatch_block);
+                emit_extra_2slot(
+                    &mut builder,
+                    &mut module,
+                    &helpers,
+                    "oxrt_month_name",
+                    ctx_ptr,
+                    *dst,
+                    *src,
+                    pc,
+                    next_block,
+                    error_dispatch_block,
+                );
             }
             // ── Phase 2: Math ────────────────────────────────────────
             Instruction::IntrinsicRoundI32 { dst, src, digits } => {
                 let dig_slot = digits.map(|d| d as i64).unwrap_or(u32::MAX as i64);
-                emit_extra_3slot_i(&mut builder, &mut module, &helpers, "oxrt_round", ctx_ptr, *dst as i64, *src as i64, dig_slot, pc, next_block, error_dispatch_block);
+                emit_extra_3slot_i(
+                    &mut builder,
+                    &mut module,
+                    &helpers,
+                    "oxrt_round",
+                    ctx_ptr,
+                    *dst as i64,
+                    *src as i64,
+                    dig_slot,
+                    pc,
+                    next_block,
+                    error_dispatch_block,
+                );
             }
             Instruction::IntrinsicSqrI32 { dst, src } => {
-                emit_extra_2slot(&mut builder, &mut module, &helpers, "oxrt_sqr", ctx_ptr, *dst, *src, pc, next_block, error_dispatch_block);
+                emit_extra_2slot(
+                    &mut builder,
+                    &mut module,
+                    &helpers,
+                    "oxrt_sqr",
+                    ctx_ptr,
+                    *dst,
+                    *src,
+                    pc,
+                    next_block,
+                    error_dispatch_block,
+                );
             }
             Instruction::IntrinsicSinI32 { dst, src } => {
-                emit_extra_2slot(&mut builder, &mut module, &helpers, "oxrt_sin", ctx_ptr, *dst, *src, pc, next_block, error_dispatch_block);
+                emit_extra_2slot(
+                    &mut builder,
+                    &mut module,
+                    &helpers,
+                    "oxrt_sin",
+                    ctx_ptr,
+                    *dst,
+                    *src,
+                    pc,
+                    next_block,
+                    error_dispatch_block,
+                );
             }
             Instruction::IntrinsicCosI32 { dst, src } => {
-                emit_extra_2slot(&mut builder, &mut module, &helpers, "oxrt_cos", ctx_ptr, *dst, *src, pc, next_block, error_dispatch_block);
+                emit_extra_2slot(
+                    &mut builder,
+                    &mut module,
+                    &helpers,
+                    "oxrt_cos",
+                    ctx_ptr,
+                    *dst,
+                    *src,
+                    pc,
+                    next_block,
+                    error_dispatch_block,
+                );
             }
             Instruction::IntrinsicLogI32 { dst, src } => {
-                emit_extra_2slot(&mut builder, &mut module, &helpers, "oxrt_log", ctx_ptr, *dst, *src, pc, next_block, error_dispatch_block);
+                emit_extra_2slot(
+                    &mut builder,
+                    &mut module,
+                    &helpers,
+                    "oxrt_log",
+                    ctx_ptr,
+                    *dst,
+                    *src,
+                    pc,
+                    next_block,
+                    error_dispatch_block,
+                );
             }
             Instruction::IntrinsicExpI32 { dst, src } => {
-                emit_extra_2slot(&mut builder, &mut module, &helpers, "oxrt_exp", ctx_ptr, *dst, *src, pc, next_block, error_dispatch_block);
+                emit_extra_2slot(
+                    &mut builder,
+                    &mut module,
+                    &helpers,
+                    "oxrt_exp",
+                    ctx_ptr,
+                    *dst,
+                    *src,
+                    pc,
+                    next_block,
+                    error_dispatch_block,
+                );
             }
             Instruction::IntrinsicAtnI32 { dst, src } => {
-                emit_extra_2slot(&mut builder, &mut module, &helpers, "oxrt_atn", ctx_ptr, *dst, *src, pc, next_block, error_dispatch_block);
+                emit_extra_2slot(
+                    &mut builder,
+                    &mut module,
+                    &helpers,
+                    "oxrt_atn",
+                    ctx_ptr,
+                    *dst,
+                    *src,
+                    pc,
+                    next_block,
+                    error_dispatch_block,
+                );
             }
             Instruction::IntrinsicTanI32 { dst, src } => {
-                emit_extra_2slot(&mut builder, &mut module, &helpers, "oxrt_tan", ctx_ptr, *dst, *src, pc, next_block, error_dispatch_block);
+                emit_extra_2slot(
+                    &mut builder,
+                    &mut module,
+                    &helpers,
+                    "oxrt_tan",
+                    ctx_ptr,
+                    *dst,
+                    *src,
+                    pc,
+                    next_block,
+                    error_dispatch_block,
+                );
             }
             // ── Phase 2: Type checking ───────────────────────────────
             Instruction::IntrinsicVarTypeTag { dst, src } => {
-                emit_extra_2slot(&mut builder, &mut module, &helpers, "oxrt_vartype_tag", ctx_ptr, *dst, *src, pc, next_block, error_dispatch_block);
+                emit_extra_2slot(
+                    &mut builder,
+                    &mut module,
+                    &helpers,
+                    "oxrt_vartype_tag",
+                    ctx_ptr,
+                    *dst,
+                    *src,
+                    pc,
+                    next_block,
+                    error_dispatch_block,
+                );
             }
             Instruction::IntrinsicVarType { dst, src } => {
-                emit_extra_2slot(&mut builder, &mut module, &helpers, "oxrt_vartype", ctx_ptr, *dst, *src, pc, next_block, error_dispatch_block);
+                emit_extra_2slot(
+                    &mut builder,
+                    &mut module,
+                    &helpers,
+                    "oxrt_vartype",
+                    ctx_ptr,
+                    *dst,
+                    *src,
+                    pc,
+                    next_block,
+                    error_dispatch_block,
+                );
             }
             Instruction::IntrinsicTypeNameTag { dst, src } => {
-                emit_extra_2slot(&mut builder, &mut module, &helpers, "oxrt_typename_tag", ctx_ptr, *dst, *src, pc, next_block, error_dispatch_block);
+                emit_extra_2slot(
+                    &mut builder,
+                    &mut module,
+                    &helpers,
+                    "oxrt_typename_tag",
+                    ctx_ptr,
+                    *dst,
+                    *src,
+                    pc,
+                    next_block,
+                    error_dispatch_block,
+                );
             }
             Instruction::IntrinsicIsNumericTag { dst, src } => {
-                emit_extra_2slot(&mut builder, &mut module, &helpers, "oxrt_is_numeric_tag", ctx_ptr, *dst, *src, pc, next_block, error_dispatch_block);
+                emit_extra_2slot(
+                    &mut builder,
+                    &mut module,
+                    &helpers,
+                    "oxrt_is_numeric_tag",
+                    ctx_ptr,
+                    *dst,
+                    *src,
+                    pc,
+                    next_block,
+                    error_dispatch_block,
+                );
             }
             Instruction::IntrinsicIsNumeric { dst, src } => {
-                emit_extra_2slot(&mut builder, &mut module, &helpers, "oxrt_is_numeric", ctx_ptr, *dst, *src, pc, next_block, error_dispatch_block);
+                emit_extra_2slot(
+                    &mut builder,
+                    &mut module,
+                    &helpers,
+                    "oxrt_is_numeric",
+                    ctx_ptr,
+                    *dst,
+                    *src,
+                    pc,
+                    next_block,
+                    error_dispatch_block,
+                );
             }
             Instruction::IntrinsicIsError { dst, src } => {
-                emit_extra_2slot(&mut builder, &mut module, &helpers, "oxrt_is_error", ctx_ptr, *dst, *src, pc, next_block, error_dispatch_block);
+                emit_extra_2slot(
+                    &mut builder,
+                    &mut module,
+                    &helpers,
+                    "oxrt_is_error",
+                    ctx_ptr,
+                    *dst,
+                    *src,
+                    pc,
+                    next_block,
+                    error_dispatch_block,
+                );
             }
             Instruction::IntrinsicIsDateTag { dst, src } => {
-                emit_extra_2slot(&mut builder, &mut module, &helpers, "oxrt_is_date_tag", ctx_ptr, *dst, *src, pc, next_block, error_dispatch_block);
+                emit_extra_2slot(
+                    &mut builder,
+                    &mut module,
+                    &helpers,
+                    "oxrt_is_date_tag",
+                    ctx_ptr,
+                    *dst,
+                    *src,
+                    pc,
+                    next_block,
+                    error_dispatch_block,
+                );
             }
             Instruction::IntrinsicIsObjectTag { dst, src } => {
-                emit_extra_2slot(&mut builder, &mut module, &helpers, "oxrt_is_object_tag", ctx_ptr, *dst, *src, pc, next_block, error_dispatch_block);
+                emit_extra_2slot(
+                    &mut builder,
+                    &mut module,
+                    &helpers,
+                    "oxrt_is_object_tag",
+                    ctx_ptr,
+                    *dst,
+                    *src,
+                    pc,
+                    next_block,
+                    error_dispatch_block,
+                );
             }
             Instruction::IntrinsicIsNull { dst, src } => {
-                emit_extra_2slot(&mut builder, &mut module, &helpers, "oxrt_is_null", ctx_ptr, *dst, *src, pc, next_block, error_dispatch_block);
+                emit_extra_2slot(
+                    &mut builder,
+                    &mut module,
+                    &helpers,
+                    "oxrt_is_null",
+                    ctx_ptr,
+                    *dst,
+                    *src,
+                    pc,
+                    next_block,
+                    error_dispatch_block,
+                );
             }
             Instruction::IntrinsicIsEmpty { dst, src } => {
-                emit_extra_2slot(&mut builder, &mut module, &helpers, "oxrt_is_empty", ctx_ptr, *dst, *src, pc, next_block, error_dispatch_block);
+                emit_extra_2slot(
+                    &mut builder,
+                    &mut module,
+                    &helpers,
+                    "oxrt_is_empty",
+                    ctx_ptr,
+                    *dst,
+                    *src,
+                    pc,
+                    next_block,
+                    error_dispatch_block,
+                );
             }
             Instruction::IntrinsicIsArrayTag { dst, src } => {
-                emit_extra_2slot(&mut builder, &mut module, &helpers, "oxrt_is_array_tag", ctx_ptr, *dst, *src, pc, next_block, error_dispatch_block);
+                emit_extra_2slot(
+                    &mut builder,
+                    &mut module,
+                    &helpers,
+                    "oxrt_is_array_tag",
+                    ctx_ptr,
+                    *dst,
+                    *src,
+                    pc,
+                    next_block,
+                    error_dispatch_block,
+                );
             }
             // ── Phase 2: Financial ───────────────────────────────────
-            Instruction::IntrinsicFvI32 { dst, rate, nper, pmt, pv, due } => {
+            Instruction::IntrinsicFvI32 {
+                dst,
+                rate,
+                nper,
+                pmt,
+                pv,
+                due,
+            } => {
                 let pv_slot = pv.map(|s| s as i64).unwrap_or(u32::MAX as i64);
                 let due_slot = due.map(|s| s as i64).unwrap_or(u32::MAX as i64);
-                emit_extra_nslot_i(&mut builder, &mut module, &helpers, "oxrt_fv", ctx_ptr, &[*dst as i64, *rate as i64, *nper as i64, *pmt as i64, pv_slot, due_slot], pc, next_block, error_dispatch_block);
+                emit_extra_nslot_i(
+                    &mut builder,
+                    &mut module,
+                    &helpers,
+                    "oxrt_fv",
+                    ctx_ptr,
+                    &[
+                        *dst as i64,
+                        *rate as i64,
+                        *nper as i64,
+                        *pmt as i64,
+                        pv_slot,
+                        due_slot,
+                    ],
+                    pc,
+                    next_block,
+                    error_dispatch_block,
+                );
             }
-            Instruction::IntrinsicPvI32 { dst, rate, nper, pmt, fv, due } => {
+            Instruction::IntrinsicPvI32 {
+                dst,
+                rate,
+                nper,
+                pmt,
+                fv,
+                due,
+            } => {
                 let fv_slot = fv.map(|s| s as i64).unwrap_or(u32::MAX as i64);
                 let due_slot = due.map(|s| s as i64).unwrap_or(u32::MAX as i64);
-                emit_extra_nslot_i(&mut builder, &mut module, &helpers, "oxrt_pv", ctx_ptr, &[*dst as i64, *rate as i64, *nper as i64, *pmt as i64, fv_slot, due_slot], pc, next_block, error_dispatch_block);
+                emit_extra_nslot_i(
+                    &mut builder,
+                    &mut module,
+                    &helpers,
+                    "oxrt_pv",
+                    ctx_ptr,
+                    &[
+                        *dst as i64,
+                        *rate as i64,
+                        *nper as i64,
+                        *pmt as i64,
+                        fv_slot,
+                        due_slot,
+                    ],
+                    pc,
+                    next_block,
+                    error_dispatch_block,
+                );
             }
-            Instruction::IntrinsicPmtI32 { dst, rate, nper, pv, fv, due } => {
+            Instruction::IntrinsicPmtI32 {
+                dst,
+                rate,
+                nper,
+                pv,
+                fv,
+                due,
+            } => {
                 let fv_slot = fv.map(|s| s as i64).unwrap_or(u32::MAX as i64);
                 let due_slot = due.map(|s| s as i64).unwrap_or(u32::MAX as i64);
-                emit_extra_nslot_i(&mut builder, &mut module, &helpers, "oxrt_pmt", ctx_ptr, &[*dst as i64, *rate as i64, *nper as i64, *pv as i64, fv_slot, due_slot], pc, next_block, error_dispatch_block);
+                emit_extra_nslot_i(
+                    &mut builder,
+                    &mut module,
+                    &helpers,
+                    "oxrt_pmt",
+                    ctx_ptr,
+                    &[
+                        *dst as i64,
+                        *rate as i64,
+                        *nper as i64,
+                        *pv as i64,
+                        fv_slot,
+                        due_slot,
+                    ],
+                    pc,
+                    next_block,
+                    error_dispatch_block,
+                );
             }
             Instruction::IntrinsicNpvI32 { dst, rate, values } => {
                 // Pass slot indices as a boxed array on the heap
@@ -1314,26 +2211,111 @@ pub fn execute_bytecode_rtslot(
                 let dst_val = builder.ins().iconst(types::I32, *dst as i64);
                 let rate_val = builder.ins().iconst(types::I32, *rate as i64);
                 let func_ref = module.declare_func_in_func(helpers.extra("oxrt_npv"), builder.func);
-                emit_helper_call_and_check(&mut builder, func_ref, &[ctx_ptr, dst_val, rate_val, ptr_val, len_val], next_block);
+                emit_helper_call_and_check(
+                    &mut builder,
+                    func_ref,
+                    &[ctx_ptr, dst_val, rate_val, ptr_val, len_val],
+                    next_block,
+                );
                 std::mem::forget(boxed); // Keep alive; leaked for simplicity
             }
             Instruction::IntrinsicIrrI32 { dst, value, guess } => {
                 let guess_slot = guess.map(|s| s as i64).unwrap_or(u32::MAX as i64);
-                emit_extra_3slot_i(&mut builder, &mut module, &helpers, "oxrt_irr", ctx_ptr, *dst as i64, *value as i64, guess_slot, pc, next_block, error_dispatch_block);
+                emit_extra_3slot_i(
+                    &mut builder,
+                    &mut module,
+                    &helpers,
+                    "oxrt_irr",
+                    ctx_ptr,
+                    *dst as i64,
+                    *value as i64,
+                    guess_slot,
+                    pc,
+                    next_block,
+                    error_dispatch_block,
+                );
             }
-            Instruction::IntrinsicMirrI32 { dst, value, finance_rate, reinvest_rate } => {
-                emit_extra_4slot(&mut builder, &mut module, &helpers, "oxrt_mirr", ctx_ptr, *dst, *value, *finance_rate, *reinvest_rate as i64, pc, next_block, error_dispatch_block);
+            Instruction::IntrinsicMirrI32 {
+                dst,
+                value,
+                finance_rate,
+                reinvest_rate,
+            } => {
+                emit_extra_4slot(
+                    &mut builder,
+                    &mut module,
+                    &helpers,
+                    "oxrt_mirr",
+                    ctx_ptr,
+                    *dst,
+                    *value,
+                    *finance_rate,
+                    *reinvest_rate as i64,
+                    pc,
+                    next_block,
+                    error_dispatch_block,
+                );
             }
-            Instruction::IntrinsicRateI32 { dst, nper, pmt, pv, fv, due, guess } => {
+            Instruction::IntrinsicRateI32 {
+                dst,
+                nper,
+                pmt,
+                pv,
+                fv,
+                due,
+                guess,
+            } => {
                 let fv_slot = fv.map(|s| s as i64).unwrap_or(u32::MAX as i64);
                 let due_slot = due.map(|s| s as i64).unwrap_or(u32::MAX as i64);
                 let guess_slot = guess.map(|s| s as i64).unwrap_or(u32::MAX as i64);
-                emit_extra_nslot_i(&mut builder, &mut module, &helpers, "oxrt_rate", ctx_ptr, &[*dst as i64, *nper as i64, *pmt as i64, *pv as i64, fv_slot, due_slot, guess_slot], pc, next_block, error_dispatch_block);
+                emit_extra_nslot_i(
+                    &mut builder,
+                    &mut module,
+                    &helpers,
+                    "oxrt_rate",
+                    ctx_ptr,
+                    &[
+                        *dst as i64,
+                        *nper as i64,
+                        *pmt as i64,
+                        *pv as i64,
+                        fv_slot,
+                        due_slot,
+                        guess_slot,
+                    ],
+                    pc,
+                    next_block,
+                    error_dispatch_block,
+                );
             }
-            Instruction::IntrinsicNPerI32 { dst, rate, pmt, pv, fv, due } => {
+            Instruction::IntrinsicNPerI32 {
+                dst,
+                rate,
+                pmt,
+                pv,
+                fv,
+                due,
+            } => {
                 let fv_slot = fv.map(|s| s as i64).unwrap_or(u32::MAX as i64);
                 let due_slot = due.map(|s| s as i64).unwrap_or(u32::MAX as i64);
-                emit_extra_nslot_i(&mut builder, &mut module, &helpers, "oxrt_nper", ctx_ptr, &[*dst as i64, *rate as i64, *pmt as i64, *pv as i64, fv_slot, due_slot], pc, next_block, error_dispatch_block);
+                emit_extra_nslot_i(
+                    &mut builder,
+                    &mut module,
+                    &helpers,
+                    "oxrt_nper",
+                    ctx_ptr,
+                    &[
+                        *dst as i64,
+                        *rate as i64,
+                        *pmt as i64,
+                        *pv as i64,
+                        fv_slot,
+                        due_slot,
+                    ],
+                    pc,
+                    next_block,
+                    error_dispatch_block,
+                );
             }
             // ── Phase 2: Array ───────────────────────────────────────
             Instruction::IntrinsicArrayLiteral { dst, values } => {
@@ -1342,75 +2324,204 @@ pub fn execute_bytecode_rtslot(
                 let ptr_val = builder.ins().iconst(ptr_ty, boxed.as_ptr() as i64);
                 let len_val = builder.ins().iconst(types::I32, boxed.len() as i64);
                 let dst_val = builder.ins().iconst(types::I32, *dst as i64);
-                let func_ref = module.declare_func_in_func(helpers.extra("oxrt_array_literal"), builder.func);
-                emit_helper_call_and_check(&mut builder, func_ref, &[ctx_ptr, dst_val, ptr_val, len_val], next_block);
+                let func_ref =
+                    module.declare_func_in_func(helpers.extra("oxrt_array_literal"), builder.func);
+                emit_helper_call_and_check(
+                    &mut builder,
+                    func_ref,
+                    &[ctx_ptr, dst_val, ptr_val, len_val],
+                    next_block,
+                );
                 std::mem::forget(boxed);
             }
             Instruction::IntrinsicLBoundArray { dst, src } => {
-                emit_extra_2slot(&mut builder, &mut module, &helpers, "oxrt_lbound", ctx_ptr, *dst, *src, pc, next_block, error_dispatch_block);
+                emit_extra_2slot(
+                    &mut builder,
+                    &mut module,
+                    &helpers,
+                    "oxrt_lbound",
+                    ctx_ptr,
+                    *dst,
+                    *src,
+                    pc,
+                    next_block,
+                    error_dispatch_block,
+                );
             }
             Instruction::IntrinsicUBoundArray { dst, src } => {
-                emit_extra_2slot(&mut builder, &mut module, &helpers, "oxrt_ubound", ctx_ptr, *dst, *src, pc, next_block, error_dispatch_block);
+                emit_extra_2slot(
+                    &mut builder,
+                    &mut module,
+                    &helpers,
+                    "oxrt_ubound",
+                    ctx_ptr,
+                    *dst,
+                    *src,
+                    pc,
+                    next_block,
+                    error_dispatch_block,
+                );
             }
             // ── Phase 2: Collection ──────────────────────────────────
             Instruction::IntrinsicCollectionAdd { dst, count, item } => {
-                emit_extra_3slot(&mut builder, &mut module, &helpers, "oxrt_collection_add", ctx_ptr, *dst, *count, *item, pc, next_block, error_dispatch_block);
+                emit_extra_3slot(
+                    &mut builder,
+                    &mut module,
+                    &helpers,
+                    "oxrt_collection_add",
+                    ctx_ptr,
+                    *dst,
+                    *count,
+                    *item,
+                    pc,
+                    next_block,
+                    error_dispatch_block,
+                );
             }
             Instruction::IntrinsicCollectionItem { dst, count, index } => {
-                emit_extra_3slot(&mut builder, &mut module, &helpers, "oxrt_collection_item", ctx_ptr, *dst, *count, *index, pc, next_block, error_dispatch_block);
+                emit_extra_3slot(
+                    &mut builder,
+                    &mut module,
+                    &helpers,
+                    "oxrt_collection_item",
+                    ctx_ptr,
+                    *dst,
+                    *count,
+                    *index,
+                    pc,
+                    next_block,
+                    error_dispatch_block,
+                );
             }
             Instruction::IntrinsicCollectionRemove { dst, count, index } => {
-                emit_extra_3slot(&mut builder, &mut module, &helpers, "oxrt_collection_remove", ctx_ptr, *dst, *count, *index, pc, next_block, error_dispatch_block);
+                emit_extra_3slot(
+                    &mut builder,
+                    &mut module,
+                    &helpers,
+                    "oxrt_collection_remove",
+                    ctx_ptr,
+                    *dst,
+                    *count,
+                    *index,
+                    pc,
+                    next_block,
+                    error_dispatch_block,
+                );
             }
             Instruction::IntrinsicCollectionCount { dst, count } => {
-                emit_extra_2slot(&mut builder, &mut module, &helpers, "oxrt_collection_count", ctx_ptr, *dst, *count, pc, next_block, error_dispatch_block);
+                emit_extra_2slot(
+                    &mut builder,
+                    &mut module,
+                    &helpers,
+                    "oxrt_collection_count",
+                    ctx_ptr,
+                    *dst,
+                    *count,
+                    pc,
+                    next_block,
+                    error_dispatch_block,
+                );
             }
             // ── Phase 2: Random ──────────────────────────────────────
             Instruction::IntrinsicRndDigits { dst, seed } => {
                 let seed_slot = seed.map(|s| s as i64).unwrap_or(u32::MAX as i64);
-                emit_extra_2slot_i(&mut builder, &mut module, &helpers, "oxrt_rnd", ctx_ptr, *dst as i64, seed_slot, pc, next_block, error_dispatch_block);
+                emit_extra_2slot_i(
+                    &mut builder,
+                    &mut module,
+                    &helpers,
+                    "oxrt_rnd",
+                    ctx_ptr,
+                    *dst as i64,
+                    seed_slot,
+                    pc,
+                    next_block,
+                    error_dispatch_block,
+                );
             }
             Instruction::IntrinsicRandomizeDigits { dst, seed } => {
                 let seed_slot = seed.map(|s| s as i64).unwrap_or(u32::MAX as i64);
-                emit_extra_2slot_i(&mut builder, &mut module, &helpers, "oxrt_randomize", ctx_ptr, *dst as i64, seed_slot, pc, next_block, error_dispatch_block);
+                emit_extra_2slot_i(
+                    &mut builder,
+                    &mut module,
+                    &helpers,
+                    "oxrt_randomize",
+                    ctx_ptr,
+                    *dst as i64,
+                    seed_slot,
+                    pc,
+                    next_block,
+                    error_dispatch_block,
+                );
             }
             // ── Phase 2: Assignment ──────────────────────────────────
-            Instruction::ValidateRuntimeAssignment { src: _, intent: _, target_kind: _, target_name: _, target_type_name: _ } => {
+            Instruction::ValidateRuntimeAssignment {
+                src: _,
+                intent: _,
+                target_kind: _,
+                target_name: _,
+                target_type_name: _,
+            } => {
                 // This is a complex helper - skip it in JIT (no-op pass through)
                 // The VM handles validation; JIT trusts the compiler output.
                 builder.ins().jump(next_block, &[]);
             }
             // ── Phase 3: Error handling ──────────────────────────────
             Instruction::SetOnErrorResumeNext => {
-                let func_ref = module.declare_func_in_func(helpers.extra("oxrt_set_on_error_resume_next"), builder.func);
+                let func_ref = module.declare_func_in_func(
+                    helpers.extra("oxrt_set_on_error_resume_next"),
+                    builder.func,
+                );
                 emit_helper_call_and_check(&mut builder, func_ref, &[ctx_ptr], next_block);
             }
             Instruction::SetOnErrorGoto0 => {
-                let func_ref = module.declare_func_in_func(helpers.extra("oxrt_set_on_error_goto0"), builder.func);
+                let func_ref = module
+                    .declare_func_in_func(helpers.extra("oxrt_set_on_error_goto0"), builder.func);
                 emit_helper_call_and_check(&mut builder, func_ref, &[ctx_ptr], next_block);
             }
             Instruction::SetOnErrorGotoLabel { target_pc } => {
-                let func_ref = module.declare_func_in_func(helpers.extra("oxrt_set_on_error_goto_label"), builder.func);
+                let func_ref = module.declare_func_in_func(
+                    helpers.extra("oxrt_set_on_error_goto_label"),
+                    builder.func,
+                );
                 let pc_val = builder.ins().iconst(types::I32, *target_pc as i64);
                 emit_helper_call_and_check(&mut builder, func_ref, &[ctx_ptr, pc_val], next_block);
             }
             Instruction::LoadErrNumber { slot } => {
-                let func_ref = module.declare_func_in_func(helpers.extra("oxrt_load_err_number"), builder.func);
+                let func_ref = module
+                    .declare_func_in_func(helpers.extra("oxrt_load_err_number"), builder.func);
                 let slot_val = builder.ins().iconst(types::I32, *slot as i64);
-                emit_helper_call_and_check(&mut builder, func_ref, &[ctx_ptr, slot_val], next_block);
+                emit_helper_call_and_check(
+                    &mut builder,
+                    func_ref,
+                    &[ctx_ptr, slot_val],
+                    next_block,
+                );
             }
             Instruction::LoadErrDescription { slot } => {
-                let func_ref = module.declare_func_in_func(helpers.extra("oxrt_load_err_description"), builder.func);
+                let func_ref = module
+                    .declare_func_in_func(helpers.extra("oxrt_load_err_description"), builder.func);
                 let slot_val = builder.ins().iconst(types::I32, *slot as i64);
-                emit_helper_call_and_check(&mut builder, func_ref, &[ctx_ptr, slot_val], next_block);
+                emit_helper_call_and_check(
+                    &mut builder,
+                    func_ref,
+                    &[ctx_ptr, slot_val],
+                    next_block,
+                );
             }
             Instruction::LoadErrSource { slot } => {
-                let func_ref = module.declare_func_in_func(helpers.extra("oxrt_load_err_source"), builder.func);
+                let func_ref = module
+                    .declare_func_in_func(helpers.extra("oxrt_load_err_source"), builder.func);
                 let slot_val = builder.ins().iconst(types::I32, *slot as i64);
-                emit_helper_call_and_check(&mut builder, func_ref, &[ctx_ptr, slot_val], next_block);
+                emit_helper_call_and_check(
+                    &mut builder,
+                    func_ref,
+                    &[ctx_ptr, slot_val],
+                    next_block,
+                );
             }
             Instruction::RaiseError { code } => {
-                let func_ref = module.declare_func_in_func(helpers.extra("oxrt_raise_error"), builder.func);
+                let func_ref =
+                    module.declare_func_in_func(helpers.extra("oxrt_raise_error"), builder.func);
                 let code_val = builder.ins().iconst(types::I32, i64::from(*code));
                 let pc_val = builder.ins().iconst(types::I32, pc as i64);
                 let call = builder.ins().call(func_ref, &[ctx_ptr, code_val, pc_val]);
@@ -1420,185 +2531,589 @@ pub fn execute_bytecode_rtslot(
                 // negative = fatal → fatal_block
                 let is_oern = builder.ins().icmp_imm(IntCC::Equal, rc, 0);
                 let nonzero_block = builder.create_block();
-                builder.ins().brif(is_oern, next_block, &[], nonzero_block, &[]);
+                builder
+                    .ins()
+                    .brif(is_oern, next_block, &[], nonzero_block, &[]);
                 builder.switch_to_block(nonzero_block);
                 let is_goto = builder.ins().icmp_imm(IntCC::SignedGreaterThan, rc, 0);
-                builder.ins().brif(is_goto, pc_dispatch_block, &[BlockArg::Value(rc)], fatal_block, &[]);
+                builder.ins().brif(
+                    is_goto,
+                    pc_dispatch_block,
+                    &[BlockArg::Value(rc)],
+                    fatal_block,
+                    &[],
+                );
             }
             // ── Phase 4: Host services ───────────────────────────────
-            Instruction::IntrinsicFreeFileHost { dst, range_selector } => {
+            Instruction::IntrinsicFreeFileHost {
+                dst,
+                range_selector,
+            } => {
                 let range_slot = range_selector.map(|s| s as i64).unwrap_or(u32::MAX as i64);
-                emit_extra_2slot_i(&mut builder, &mut module, &helpers, "oxrt_host_free_file", ctx_ptr, *dst as i64, range_slot, pc, next_block, error_dispatch_block);
+                emit_extra_2slot_i(
+                    &mut builder,
+                    &mut module,
+                    &helpers,
+                    "oxrt_host_free_file",
+                    ctx_ptr,
+                    *dst as i64,
+                    range_slot,
+                    pc,
+                    next_block,
+                    error_dispatch_block,
+                );
             }
-            Instruction::IntrinsicFileOpenHost { dst, path, mode, file_number } => {
-                emit_extra_4slot(&mut builder, &mut module, &helpers, "oxrt_host_file_open", ctx_ptr, *dst, *path, *mode, *file_number as i64, pc, next_block, error_dispatch_block);
+            Instruction::IntrinsicFileOpenHost {
+                dst,
+                path,
+                mode,
+                file_number,
+            } => {
+                emit_extra_4slot(
+                    &mut builder,
+                    &mut module,
+                    &helpers,
+                    "oxrt_host_file_open",
+                    ctx_ptr,
+                    *dst,
+                    *path,
+                    *mode,
+                    *file_number as i64,
+                    pc,
+                    next_block,
+                    error_dispatch_block,
+                );
             }
             Instruction::IntrinsicFileCloseHost { dst, handle } => {
-                emit_extra_2slot(&mut builder, &mut module, &helpers, "oxrt_host_file_close", ctx_ptr, *dst, *handle, pc, next_block, error_dispatch_block);
+                emit_extra_2slot(
+                    &mut builder,
+                    &mut module,
+                    &helpers,
+                    "oxrt_host_file_close",
+                    ctx_ptr,
+                    *dst,
+                    *handle,
+                    pc,
+                    next_block,
+                    error_dispatch_block,
+                );
             }
             Instruction::IntrinsicFileReadHost { dst, handle, count } => {
-                emit_extra_3slot(&mut builder, &mut module, &helpers, "oxrt_host_file_read", ctx_ptr, *dst, *handle, *count, pc, next_block, error_dispatch_block);
+                emit_extra_3slot(
+                    &mut builder,
+                    &mut module,
+                    &helpers,
+                    "oxrt_host_file_read",
+                    ctx_ptr,
+                    *dst,
+                    *handle,
+                    *count,
+                    pc,
+                    next_block,
+                    error_dispatch_block,
+                );
             }
             Instruction::IntrinsicFileWriteHost { dst, handle, data } => {
-                emit_extra_3slot(&mut builder, &mut module, &helpers, "oxrt_host_file_write", ctx_ptr, *dst, *handle, *data, pc, next_block, error_dispatch_block);
+                emit_extra_3slot(
+                    &mut builder,
+                    &mut module,
+                    &helpers,
+                    "oxrt_host_file_write",
+                    ctx_ptr,
+                    *dst,
+                    *handle,
+                    *data,
+                    pc,
+                    next_block,
+                    error_dispatch_block,
+                );
             }
             Instruction::IntrinsicFilePrintHost { dst, handle, data } => {
-                emit_extra_3slot(&mut builder, &mut module, &helpers, "oxrt_host_file_print", ctx_ptr, *dst, *handle, *data, pc, next_block, error_dispatch_block);
+                emit_extra_3slot(
+                    &mut builder,
+                    &mut module,
+                    &helpers,
+                    "oxrt_host_file_print",
+                    ctx_ptr,
+                    *dst,
+                    *handle,
+                    *data,
+                    pc,
+                    next_block,
+                    error_dispatch_block,
+                );
             }
             Instruction::IntrinsicFileInputHost { dst, handle, count } => {
-                emit_extra_3slot(&mut builder, &mut module, &helpers, "oxrt_host_file_input", ctx_ptr, *dst, *handle, *count, pc, next_block, error_dispatch_block);
+                emit_extra_3slot(
+                    &mut builder,
+                    &mut module,
+                    &helpers,
+                    "oxrt_host_file_input",
+                    ctx_ptr,
+                    *dst,
+                    *handle,
+                    *count,
+                    pc,
+                    next_block,
+                    error_dispatch_block,
+                );
             }
             Instruction::IntrinsicFileLineInputHost { dst, handle } => {
-                emit_extra_2slot(&mut builder, &mut module, &helpers, "oxrt_host_file_line_input", ctx_ptr, *dst, *handle, pc, next_block, error_dispatch_block);
+                emit_extra_2slot(
+                    &mut builder,
+                    &mut module,
+                    &helpers,
+                    "oxrt_host_file_line_input",
+                    ctx_ptr,
+                    *dst,
+                    *handle,
+                    pc,
+                    next_block,
+                    error_dispatch_block,
+                );
             }
             Instruction::IntrinsicFileLocHost { dst, handle } => {
-                emit_extra_2slot(&mut builder, &mut module, &helpers, "oxrt_host_file_loc", ctx_ptr, *dst, *handle, pc, next_block, error_dispatch_block);
+                emit_extra_2slot(
+                    &mut builder,
+                    &mut module,
+                    &helpers,
+                    "oxrt_host_file_loc",
+                    ctx_ptr,
+                    *dst,
+                    *handle,
+                    pc,
+                    next_block,
+                    error_dispatch_block,
+                );
             }
             Instruction::IntrinsicCreateObjectHost { dst, prog_id } => {
-                emit_extra_2slot(&mut builder, &mut module, &helpers, "oxrt_host_create_object", ctx_ptr, *dst, *prog_id, pc, next_block, error_dispatch_block);
+                emit_extra_2slot(
+                    &mut builder,
+                    &mut module,
+                    &helpers,
+                    "oxrt_host_create_object",
+                    ctx_ptr,
+                    *dst,
+                    *prog_id,
+                    pc,
+                    next_block,
+                    error_dispatch_block,
+                );
             }
-            Instruction::IntrinsicDispatchInvokeHost { dst, object, member, args } => {
-                let func_ref = module.declare_func_in_func(helpers.extra("oxrt_host_dispatch_invoke"), builder.func);
+            Instruction::IntrinsicDispatchInvokeHost {
+                dst,
+                object,
+                member,
+                args,
+            } => {
+                let func_ref = module
+                    .declare_func_in_func(helpers.extra("oxrt_host_dispatch_invoke"), builder.func);
                 let dst_val = builder.ins().iconst(types::I32, *dst as i64);
                 let obj_val = builder.ins().iconst(types::I32, *object as i64);
                 let mem_val = builder.ins().iconst(types::I32, *member as i64);
                 let (aptr, alen) = if args.is_empty() {
-                    (builder.ins().iconst(ptr_ty, 0i64), builder.ins().iconst(types::I32, 0i64))
+                    (
+                        builder.ins().iconst(ptr_ty, 0i64),
+                        builder.ins().iconst(types::I32, 0i64),
+                    )
                 } else {
-                    (builder.ins().iconst(ptr_ty, args.as_ptr() as i64), builder.ins().iconst(types::I32, args.len() as i64))
+                    (
+                        builder.ins().iconst(ptr_ty, args.as_ptr() as i64),
+                        builder.ins().iconst(types::I32, args.len() as i64),
+                    )
                 };
-                emit_helper_call_and_check(&mut builder, func_ref, &[ctx_ptr, dst_val, obj_val, mem_val, aptr, alen], next_block);
+                emit_helper_call_and_check(
+                    &mut builder,
+                    func_ref,
+                    &[ctx_ptr, dst_val, obj_val, mem_val, aptr, alen],
+                    next_block,
+                );
             }
             Instruction::IntrinsicComSubscribeEventHost { dst, object, event } => {
-                emit_extra_3slot(&mut builder, &mut module, &helpers, "oxrt_host_com_subscribe", ctx_ptr, *dst, *object, *event, pc, next_block, error_dispatch_block);
+                emit_extra_3slot(
+                    &mut builder,
+                    &mut module,
+                    &helpers,
+                    "oxrt_host_com_subscribe",
+                    ctx_ptr,
+                    *dst,
+                    *object,
+                    *event,
+                    pc,
+                    next_block,
+                    error_dispatch_block,
+                );
             }
             Instruction::IntrinsicComUnsubscribeEventHost { dst, subscription } => {
-                emit_extra_2slot(&mut builder, &mut module, &helpers, "oxrt_host_com_unsubscribe", ctx_ptr, *dst, *subscription, pc, next_block, error_dispatch_block);
+                emit_extra_2slot(
+                    &mut builder,
+                    &mut module,
+                    &helpers,
+                    "oxrt_host_com_unsubscribe",
+                    ctx_ptr,
+                    *dst,
+                    *subscription,
+                    pc,
+                    next_block,
+                    error_dispatch_block,
+                );
             }
             Instruction::IntrinsicComEventCallbackSubscriptionHost { dst, callback } => {
-                emit_extra_2slot(&mut builder, &mut module, &helpers, "oxrt_host_com_event_callback_sub", ctx_ptr, *dst, *callback, pc, next_block, error_dispatch_block);
+                emit_extra_2slot(
+                    &mut builder,
+                    &mut module,
+                    &helpers,
+                    "oxrt_host_com_event_callback_sub",
+                    ctx_ptr,
+                    *dst,
+                    *callback,
+                    pc,
+                    next_block,
+                    error_dispatch_block,
+                );
             }
-            Instruction::IntrinsicComEventCallbackArgHost { dst, callback, index } => {
-                emit_extra_3slot(&mut builder, &mut module, &helpers, "oxrt_host_com_event_callback_arg", ctx_ptr, *dst, *callback, *index, pc, next_block, error_dispatch_block);
+            Instruction::IntrinsicComEventCallbackArgHost {
+                dst,
+                callback,
+                index,
+            } => {
+                emit_extra_3slot(
+                    &mut builder,
+                    &mut module,
+                    &helpers,
+                    "oxrt_host_com_event_callback_arg",
+                    ctx_ptr,
+                    *dst,
+                    *callback,
+                    *index,
+                    pc,
+                    next_block,
+                    error_dispatch_block,
+                );
             }
             Instruction::IntrinsicComReleaseEventCallbackHost { dst, callback } => {
-                emit_extra_2slot(&mut builder, &mut module, &helpers, "oxrt_host_com_release_event_callback", ctx_ptr, *dst, *callback, pc, next_block, error_dispatch_block);
+                emit_extra_2slot(
+                    &mut builder,
+                    &mut module,
+                    &helpers,
+                    "oxrt_host_com_release_event_callback",
+                    ctx_ptr,
+                    *dst,
+                    *callback,
+                    pc,
+                    next_block,
+                    error_dispatch_block,
+                );
             }
-            Instruction::IntrinsicWithEventsGet { dst, owner, binding } => {
-                emit_extra_3slot(&mut builder, &mut module, &helpers, "oxrt_host_withevents_get", ctx_ptr, *dst, *owner, *binding, pc, next_block, error_dispatch_block);
+            Instruction::IntrinsicWithEventsGet {
+                dst,
+                owner,
+                binding,
+            } => {
+                emit_extra_3slot(
+                    &mut builder,
+                    &mut module,
+                    &helpers,
+                    "oxrt_host_withevents_get",
+                    ctx_ptr,
+                    *dst,
+                    *owner,
+                    *binding,
+                    pc,
+                    next_block,
+                    error_dispatch_block,
+                );
             }
-            Instruction::IntrinsicWithEventsSet { dst, owner, binding, value } => {
-                emit_extra_4slot(&mut builder, &mut module, &helpers, "oxrt_host_withevents_set", ctx_ptr, *dst, *owner, *binding, *value as i64, pc, next_block, error_dispatch_block);
+            Instruction::IntrinsicWithEventsSet {
+                dst,
+                owner,
+                binding,
+                value,
+            } => {
+                emit_extra_4slot(
+                    &mut builder,
+                    &mut module,
+                    &helpers,
+                    "oxrt_host_withevents_set",
+                    ctx_ptr,
+                    *dst,
+                    *owner,
+                    *binding,
+                    *value as i64,
+                    pc,
+                    next_block,
+                    error_dispatch_block,
+                );
             }
             Instruction::IntrinsicWithEventsClearOwner { dst, owner } => {
-                emit_extra_2slot(&mut builder, &mut module, &helpers, "oxrt_host_withevents_clear_owner", ctx_ptr, *dst, *owner, pc, next_block, error_dispatch_block);
+                emit_extra_2slot(
+                    &mut builder,
+                    &mut module,
+                    &helpers,
+                    "oxrt_host_withevents_clear_owner",
+                    ctx_ptr,
+                    *dst,
+                    *owner,
+                    pc,
+                    next_block,
+                    error_dispatch_block,
+                );
             }
-            Instruction::IntrinsicWithEventsFirstOwner { dst, source, binding } => {
-                emit_extra_3slot(&mut builder, &mut module, &helpers, "oxrt_host_withevents_first_owner", ctx_ptr, *dst, *source, *binding, pc, next_block, error_dispatch_block);
+            Instruction::IntrinsicWithEventsFirstOwner {
+                dst,
+                source,
+                binding,
+            } => {
+                emit_extra_3slot(
+                    &mut builder,
+                    &mut module,
+                    &helpers,
+                    "oxrt_host_withevents_first_owner",
+                    ctx_ptr,
+                    *dst,
+                    *source,
+                    *binding,
+                    pc,
+                    next_block,
+                    error_dispatch_block,
+                );
             }
             Instruction::IntrinsicWithEventsNextOwner { dst } => {
-                let func_ref = module.declare_func_in_func(helpers.extra("oxrt_host_withevents_next_owner"), builder.func);
+                let func_ref = module.declare_func_in_func(
+                    helpers.extra("oxrt_host_withevents_next_owner"),
+                    builder.func,
+                );
                 let dst_val = builder.ins().iconst(types::I32, *dst as i64);
                 emit_helper_call_and_check(&mut builder, func_ref, &[ctx_ptr, dst_val], next_block);
             }
             Instruction::IntrinsicMsgBoxHost { dst, prompt, style } => {
                 let style_slot = style.map(|s| s as i64).unwrap_or(u32::MAX as i64);
-                emit_extra_3slot_i(&mut builder, &mut module, &helpers, "oxrt_host_msgbox", ctx_ptr, *dst as i64, *prompt as i64, style_slot, pc, next_block, error_dispatch_block);
+                emit_extra_3slot_i(
+                    &mut builder,
+                    &mut module,
+                    &helpers,
+                    "oxrt_host_msgbox",
+                    ctx_ptr,
+                    *dst as i64,
+                    *prompt as i64,
+                    style_slot,
+                    pc,
+                    next_block,
+                    error_dispatch_block,
+                );
             }
-            Instruction::IntrinsicInputBoxHost { dst, prompt, default_value } => {
+            Instruction::IntrinsicInputBoxHost {
+                dst,
+                prompt,
+                default_value,
+            } => {
                 let default_slot = default_value.map(|s| s as i64).unwrap_or(u32::MAX as i64);
-                emit_extra_3slot_i(&mut builder, &mut module, &helpers, "oxrt_host_inputbox", ctx_ptr, *dst as i64, *prompt as i64, default_slot, pc, next_block, error_dispatch_block);
+                emit_extra_3slot_i(
+                    &mut builder,
+                    &mut module,
+                    &helpers,
+                    "oxrt_host_inputbox",
+                    ctx_ptr,
+                    *dst as i64,
+                    *prompt as i64,
+                    default_slot,
+                    pc,
+                    next_block,
+                    error_dispatch_block,
+                );
             }
             Instruction::IntrinsicDoEventsHost { dst } => {
-                let func_ref = module.declare_func_in_func(helpers.extra("oxrt_host_do_events"), builder.func);
+                let func_ref =
+                    module.declare_func_in_func(helpers.extra("oxrt_host_do_events"), builder.func);
                 let dst_val = builder.ins().iconst(types::I32, *dst as i64);
                 emit_helper_call_and_check(&mut builder, func_ref, &[ctx_ptr, dst_val], next_block);
             }
             Instruction::IntrinsicShellHost { dst, command } => {
-                emit_extra_2slot(&mut builder, &mut module, &helpers, "oxrt_host_shell", ctx_ptr, *dst, *command, pc, next_block, error_dispatch_block);
+                emit_extra_2slot(
+                    &mut builder,
+                    &mut module,
+                    &helpers,
+                    "oxrt_host_shell",
+                    ctx_ptr,
+                    *dst,
+                    *command,
+                    pc,
+                    next_block,
+                    error_dispatch_block,
+                );
             }
             Instruction::IntrinsicEnvironHost { dst, key } => {
-                emit_extra_2slot(&mut builder, &mut module, &helpers, "oxrt_host_environ", ctx_ptr, *dst, *key, pc, next_block, error_dispatch_block);
+                emit_extra_2slot(
+                    &mut builder,
+                    &mut module,
+                    &helpers,
+                    "oxrt_host_environ",
+                    ctx_ptr,
+                    *dst,
+                    *key,
+                    pc,
+                    next_block,
+                    error_dispatch_block,
+                );
             }
             Instruction::IntrinsicDirHost { dst, path } => {
-                emit_extra_2slot(&mut builder, &mut module, &helpers, "oxrt_host_dir", ctx_ptr, *dst, *path, pc, next_block, error_dispatch_block);
+                emit_extra_2slot(
+                    &mut builder,
+                    &mut module,
+                    &helpers,
+                    "oxrt_host_dir",
+                    ctx_ptr,
+                    *dst,
+                    *path,
+                    pc,
+                    next_block,
+                    error_dispatch_block,
+                );
             }
             Instruction::IntrinsicDateNowHost { dst } => {
-                let func_ref = module.declare_func_in_func(helpers.extra("oxrt_host_date_now"), builder.func);
+                let func_ref =
+                    module.declare_func_in_func(helpers.extra("oxrt_host_date_now"), builder.func);
                 let dst_val = builder.ins().iconst(types::I32, *dst as i64);
                 emit_helper_call_and_check(&mut builder, func_ref, &[ctx_ptr, dst_val], next_block);
             }
             Instruction::IntrinsicTimeNowHost { dst } => {
-                let func_ref = module.declare_func_in_func(helpers.extra("oxrt_host_time_now"), builder.func);
+                let func_ref =
+                    module.declare_func_in_func(helpers.extra("oxrt_host_time_now"), builder.func);
                 let dst_val = builder.ins().iconst(types::I32, *dst as i64);
                 emit_helper_call_and_check(&mut builder, func_ref, &[ctx_ptr, dst_val], next_block);
             }
             Instruction::IntrinsicNowHost { dst } => {
-                let func_ref = module.declare_func_in_func(helpers.extra("oxrt_host_now"), builder.func);
+                let func_ref =
+                    module.declare_func_in_func(helpers.extra("oxrt_host_now"), builder.func);
                 let dst_val = builder.ins().iconst(types::I32, *dst as i64);
                 emit_helper_call_and_check(&mut builder, func_ref, &[ctx_ptr, dst_val], next_block);
             }
             Instruction::IntrinsicTimerHost { dst } => {
-                let func_ref = module.declare_func_in_func(helpers.extra("oxrt_host_timer"), builder.func);
+                let func_ref =
+                    module.declare_func_in_func(helpers.extra("oxrt_host_timer"), builder.func);
                 let dst_val = builder.ins().iconst(types::I32, *dst as i64);
                 emit_helper_call_and_check(&mut builder, func_ref, &[ctx_ptr, dst_val], next_block);
             }
-            Instruction::IntrinsicInvokeSymbolHost { dst, descriptor_id, symbol, args, writeback_slots } => {
-                let func_ref = module.declare_func_in_func(helpers.extra("oxrt_host_invoke_symbol"), builder.func);
+            Instruction::IntrinsicInvokeSymbolHost {
+                dst,
+                descriptor_id,
+                symbol,
+                args,
+                writeback_slots,
+            } => {
+                let func_ref = module
+                    .declare_func_in_func(helpers.extra("oxrt_host_invoke_symbol"), builder.func);
                 let dst_val = builder.ins().iconst(types::I32, *dst as i64);
                 let sym_val = builder.ins().iconst(types::I32, i64::from(symbol.raw()));
                 let desc_id = builder.ins().iconst(types::I32, i64::from(*descriptor_id));
                 let (aptr, alen) = if args.is_empty() {
-                    (builder.ins().iconst(ptr_ty, 0i64), builder.ins().iconst(types::I32, 0i64))
+                    (
+                        builder.ins().iconst(ptr_ty, 0i64),
+                        builder.ins().iconst(types::I32, 0i64),
+                    )
                 } else {
-                    (builder.ins().iconst(ptr_ty, args.as_ptr() as i64), builder.ins().iconst(types::I32, args.len() as i64))
+                    (
+                        builder.ins().iconst(ptr_ty, args.as_ptr() as i64),
+                        builder.ins().iconst(types::I32, args.len() as i64),
+                    )
                 };
                 let (wptr, wlen) = if writeback_slots.is_empty() {
-                    (builder.ins().iconst(ptr_ty, 0i64), builder.ins().iconst(types::I32, 0i64))
+                    (
+                        builder.ins().iconst(ptr_ty, 0i64),
+                        builder.ins().iconst(types::I32, 0i64),
+                    )
                 } else {
-                    (builder.ins().iconst(ptr_ty, writeback_slots.as_ptr() as i64), builder.ins().iconst(types::I32, writeback_slots.len() as i64))
+                    (
+                        builder
+                            .ins()
+                            .iconst(ptr_ty, writeback_slots.as_ptr() as i64),
+                        builder
+                            .ins()
+                            .iconst(types::I32, writeback_slots.len() as i64),
+                    )
                 };
-                emit_helper_call_and_check(&mut builder, func_ref, &[ctx_ptr, dst_val, sym_val, desc_id, aptr, alen, wptr, wlen], next_block);
+                emit_helper_call_and_check(
+                    &mut builder,
+                    func_ref,
+                    &[ctx_ptr, dst_val, sym_val, desc_id, aptr, alen, wptr, wlen],
+                    next_block,
+                );
             }
             // ── Phase 5: Resume instructions ────────────────────────
             Instruction::Resume => {
-                let func_ref = module.declare_func_in_func(helpers.extra("oxrt_resume"), builder.func);
+                let func_ref =
+                    module.declare_func_in_func(helpers.extra("oxrt_resume"), builder.func);
                 let call = builder.ins().call(func_ref, &[ctx_ptr]);
                 let rc = builder.inst_results(call)[0];
                 // rc >= 0: target PC → pc_dispatch_block
                 // rc < 0 (-20): "Resume without error" → route error 20
-                let is_ok = builder.ins().icmp_imm(IntCC::SignedGreaterThanOrEqual, rc, 0);
+                let is_ok = builder
+                    .ins()
+                    .icmp_imm(IntCC::SignedGreaterThanOrEqual, rc, 0);
                 let err20_block = builder.create_block();
-                builder.ins().brif(is_ok, pc_dispatch_block, &[BlockArg::Value(rc)], err20_block, &[]);
+                builder.ins().brif(
+                    is_ok,
+                    pc_dispatch_block,
+                    &[BlockArg::Value(rc)],
+                    err20_block,
+                    &[],
+                );
                 builder.switch_to_block(err20_block);
                 let err20_pc = builder.ins().iconst(types::I32, pc as i64);
                 let err20_code = builder.ins().iconst(types::I32, 20);
-                builder.ins().jump(error_dispatch_block, &[BlockArg::Value(err20_pc), BlockArg::Value(err20_code)]);
+                builder.ins().jump(
+                    error_dispatch_block,
+                    &[BlockArg::Value(err20_pc), BlockArg::Value(err20_code)],
+                );
             }
             Instruction::ResumeNext => {
-                let func_ref = module.declare_func_in_func(helpers.extra("oxrt_resume_next"), builder.func);
+                let func_ref =
+                    module.declare_func_in_func(helpers.extra("oxrt_resume_next"), builder.func);
                 let call = builder.ins().call(func_ref, &[ctx_ptr]);
                 let rc = builder.inst_results(call)[0];
-                let is_ok = builder.ins().icmp_imm(IntCC::SignedGreaterThanOrEqual, rc, 0);
+                let is_ok = builder
+                    .ins()
+                    .icmp_imm(IntCC::SignedGreaterThanOrEqual, rc, 0);
                 let err20_block = builder.create_block();
-                builder.ins().brif(is_ok, pc_dispatch_block, &[BlockArg::Value(rc)], err20_block, &[]);
+                builder.ins().brif(
+                    is_ok,
+                    pc_dispatch_block,
+                    &[BlockArg::Value(rc)],
+                    err20_block,
+                    &[],
+                );
                 builder.switch_to_block(err20_block);
                 let err20_pc = builder.ins().iconst(types::I32, pc as i64);
                 let err20_code = builder.ins().iconst(types::I32, 20);
-                builder.ins().jump(error_dispatch_block, &[BlockArg::Value(err20_pc), BlockArg::Value(err20_code)]);
+                builder.ins().jump(
+                    error_dispatch_block,
+                    &[BlockArg::Value(err20_pc), BlockArg::Value(err20_code)],
+                );
             }
             Instruction::ResumeLabel { target_pc } => {
-                let func_ref = module.declare_func_in_func(helpers.extra("oxrt_resume_label"), builder.func);
+                let func_ref =
+                    module.declare_func_in_func(helpers.extra("oxrt_resume_label"), builder.func);
                 let target_val = builder.ins().iconst(types::I32, *target_pc as i64);
                 let call = builder.ins().call(func_ref, &[ctx_ptr, target_val]);
                 let rc = builder.inst_results(call)[0];
-                let is_ok = builder.ins().icmp_imm(IntCC::SignedGreaterThanOrEqual, rc, 0);
+                let is_ok = builder
+                    .ins()
+                    .icmp_imm(IntCC::SignedGreaterThanOrEqual, rc, 0);
                 let err20_block = builder.create_block();
-                builder.ins().brif(is_ok, pc_dispatch_block, &[BlockArg::Value(rc)], err20_block, &[]);
+                builder.ins().brif(
+                    is_ok,
+                    pc_dispatch_block,
+                    &[BlockArg::Value(rc)],
+                    err20_block,
+                    &[],
+                );
                 builder.switch_to_block(err20_block);
                 let err20_pc = builder.ins().iconst(types::I32, pc as i64);
                 let err20_code = builder.ins().iconst(types::I32, 20);
-                builder.ins().jump(error_dispatch_block, &[BlockArg::Value(err20_pc), BlockArg::Value(err20_code)]);
+                builder.ins().jump(
+                    error_dispatch_block,
+                    &[BlockArg::Value(err20_pc), BlockArg::Value(err20_code)],
+                );
             }
             _ => {
                 return Err(format!(
@@ -1625,11 +3140,20 @@ pub fn execute_bytecode_rtslot(
         let failing_pc_param = builder.block_params(error_dispatch_block)[0];
         let error_code_param = builder.block_params(error_dispatch_block)[1];
         let ctx2 = builder.use_var(ctx_var);
-        let route_func = module.declare_func_in_func(helpers.extra("oxrt_route_error"), builder.func);
-        let call = builder.ins().call(route_func, &[ctx2, error_code_param, failing_pc_param]);
+        let route_func =
+            module.declare_func_in_func(helpers.extra("oxrt_route_error"), builder.func);
+        let call = builder
+            .ins()
+            .call(route_func, &[ctx2, error_code_param, failing_pc_param]);
         let result = builder.inst_results(call)[0];
         let is_handled = builder.ins().icmp_imm(IntCC::SignedGreaterThan, result, 0);
-        builder.ins().brif(is_handled, pc_dispatch_block, &[BlockArg::Value(result)], fatal_block, &[]);
+        builder.ins().brif(
+            is_handled,
+            pc_dispatch_block,
+            &[BlockArg::Value(result)],
+            fatal_block,
+            &[],
+        );
     }
 
     // PC dispatch block: Switch jump table mapping target_pc → pc_blocks[target_pc]
@@ -1658,7 +3182,12 @@ pub fn execute_bytecode_rtslot(
 
     // Create JitContext with RtSlot storage.
     let total_slots = inlined.slot_count.max(inlined.user_slot_count);
-    let mut ctx_owned = JitContextOwned::new(total_slots, inlined.user_slot_count, host_services, &inlined.external_call_descriptors);
+    let mut ctx_owned = JitContextOwned::new(
+        total_slots,
+        inlined.user_slot_count,
+        host_services,
+        &inlined.external_call_descriptors,
+    );
     let rc = unsafe { jit_fn(ctx_owned.context_ptr()) };
     if rc != 0 {
         return Err(format!("jit (rtslot) returned non-zero status: {rc}"));
@@ -1748,14 +3277,65 @@ impl HelperFuncIds {
         let sig_ctx_1 = make_sig(module, &[ptr_ty, types::I32]); // fn(ctx, slot) -> i32
         let sig_ctx_2 = make_sig(module, &[ptr_ty, types::I32, types::I32]); // fn(ctx, dst, src) -> i32
         let sig_ctx_3 = make_sig(module, &[ptr_ty, types::I32, types::I32, types::I32]); // fn(ctx, dst, a, b) -> i32
-        let sig_ctx_4 = make_sig(module, &[ptr_ty, types::I32, types::I32, types::I32, types::I32]); // fn(ctx, dst, a, b, c) -> i32
-        let _sig_ctx_5 = make_sig(module, &[ptr_ty, types::I32, types::I32, types::I32, types::I32, types::I32]); // fn(ctx, dst, a, b, c, d) -> i32
-        let sig_ctx_6 = make_sig(module, &[ptr_ty, types::I32, types::I32, types::I32, types::I32, types::I32, types::I32]); // fn(ctx, dst, a, b, c, d, e) -> i32
-        let sig_ctx_7 = make_sig(module, &[ptr_ty, types::I32, types::I32, types::I32, types::I32, types::I32, types::I32, types::I32]); // 7 i32 params
+        let sig_ctx_4 = make_sig(
+            module,
+            &[ptr_ty, types::I32, types::I32, types::I32, types::I32],
+        ); // fn(ctx, dst, a, b, c) -> i32
+        let _sig_ctx_5 = make_sig(
+            module,
+            &[
+                ptr_ty,
+                types::I32,
+                types::I32,
+                types::I32,
+                types::I32,
+                types::I32,
+            ],
+        ); // fn(ctx, dst, a, b, c, d) -> i32
+        let sig_ctx_6 = make_sig(
+            module,
+            &[
+                ptr_ty,
+                types::I32,
+                types::I32,
+                types::I32,
+                types::I32,
+                types::I32,
+                types::I32,
+            ],
+        ); // fn(ctx, dst, a, b, c, d, e) -> i32
+        let sig_ctx_7 = make_sig(
+            module,
+            &[
+                ptr_ty,
+                types::I32,
+                types::I32,
+                types::I32,
+                types::I32,
+                types::I32,
+                types::I32,
+                types::I32,
+            ],
+        ); // 7 i32 params
         // NPV/ArrayLiteral: fn(ctx, dst, rate, ptr, len) -> i32
-        let sig_ctx_2_ptr_1 = make_sig(module, &[ptr_ty, types::I32, types::I32, ptr_ty, types::I32]);
+        let sig_ctx_2_ptr_1 = make_sig(
+            module,
+            &[ptr_ty, types::I32, types::I32, ptr_ty, types::I32],
+        );
         // ValidateAssignment: fn(ctx, src, intent, kind, name_ptr, name_len, type_ptr, type_len) -> i32
-        let sig_validate = make_sig(module, &[ptr_ty, types::I32, types::I32, types::I32, ptr_ty, types::I32, ptr_ty, types::I32]);
+        let sig_validate = make_sig(
+            module,
+            &[
+                ptr_ty,
+                types::I32,
+                types::I32,
+                types::I32,
+                ptr_ty,
+                types::I32,
+                ptr_ty,
+                types::I32,
+            ],
+        );
 
         let mut extras = HashMap::new();
 
@@ -1854,7 +3434,7 @@ impl HelperFuncIds {
             ("oxrt_load_err_source", &sig_ctx_1),
             ("oxrt_raise_error", &sig_ctx_2),
             ("oxrt_clear_err", &sig_ctx_only),
-            ("oxrt_route_error", &sig_ctx_2),  // fn(ctx, error_code, failing_pc) -> i32
+            ("oxrt_route_error", &sig_ctx_2), // fn(ctx, error_code, failing_pc) -> i32
             ("oxrt_resume", &sig_ctx_only),
             ("oxrt_resume_next", &sig_ctx_only),
             ("oxrt_resume_label", &sig_ctx_1),
@@ -1870,7 +3450,20 @@ impl HelperFuncIds {
             ("oxrt_host_file_loc", &sig_ctx_2),
             // Phase 4: COM
             ("oxrt_host_create_object", &sig_ctx_2),
-            ("oxrt_host_dispatch_invoke", &make_sig(module, &[ptr_ty, types::I32, types::I32, types::I32, ptr_ty, types::I32])),
+            (
+                "oxrt_host_dispatch_invoke",
+                &make_sig(
+                    module,
+                    &[
+                        ptr_ty,
+                        types::I32,
+                        types::I32,
+                        types::I32,
+                        ptr_ty,
+                        types::I32,
+                    ],
+                ),
+            ),
             ("oxrt_host_com_subscribe", &sig_ctx_3),
             ("oxrt_host_com_unsubscribe", &sig_ctx_2),
             ("oxrt_host_com_event_callback_sub", &sig_ctx_2),
@@ -1896,49 +3489,123 @@ impl HelperFuncIds {
             ("oxrt_host_now", &sig_ctx_1),
             ("oxrt_host_timer", &sig_ctx_1),
             // Phase 4: DynLink
-            ("oxrt_host_invoke_symbol", &make_sig(module, &[ptr_ty, types::I32, types::I32, types::I32, ptr_ty, types::I32, ptr_ty, types::I32])),
+            (
+                "oxrt_host_invoke_symbol",
+                &make_sig(
+                    module,
+                    &[
+                        ptr_ty,
+                        types::I32,
+                        types::I32,
+                        types::I32,
+                        ptr_ty,
+                        types::I32,
+                        ptr_ty,
+                        types::I32,
+                    ],
+                ),
+            ),
         ];
 
         for &(name, sig) in helper_sigs {
-            let func_id = module.declare_function(name, Linkage::Import, sig).map_err(map_err)?;
+            let func_id = module
+                .declare_function(name, Linkage::Import, sig)
+                .map_err(map_err)?;
             extras.insert(name.to_string(), func_id);
         }
 
         Ok(Self {
-            add_slots: module.declare_function("oxrt_add_slots", Linkage::Import, &s3).map_err(map_err)?,
-            sub_slots: module.declare_function("oxrt_sub_slots", Linkage::Import, &s3).map_err(map_err)?,
-            mul_slots: module.declare_function("oxrt_mul_slots", Linkage::Import, &s3).map_err(map_err)?,
-            div_slots: module.declare_function("oxrt_div_slots", Linkage::Import, &s3).map_err(map_err)?,
-            intdiv_slots: module.declare_function("oxrt_intdiv_slots", Linkage::Import, &s3).map_err(map_err)?,
-            mod_slots: module.declare_function("oxrt_mod_slots", Linkage::Import, &s3).map_err(map_err)?,
-            pow_slots: module.declare_function("oxrt_pow_slots", Linkage::Import, &s3).map_err(map_err)?,
-            neg_slot: module.declare_function("oxrt_neg_slot", Linkage::Import, &s2).map_err(map_err)?,
-            concat_slots: module.declare_function("oxrt_concat_slots", Linkage::Import, &s3).map_err(map_err)?,
-            add_const: module.declare_function("oxrt_add_const", Linkage::Import, &s_si).map_err(map_err)?,
-            sub_const: module.declare_function("oxrt_sub_const", Linkage::Import, &s_si).map_err(map_err)?,
-            inc_slot: module.declare_function("oxrt_inc_slot", Linkage::Import, &s1).map_err(map_err)?,
-            copy_slot: module.declare_function("oxrt_copy_slot", Linkage::Import, &s2).map_err(map_err)?,
-            abs: module.declare_function("oxrt_abs", Linkage::Import, &s2).map_err(map_err)?,
-            sgn: module.declare_function("oxrt_sgn", Linkage::Import, &s2).map_err(map_err)?,
-            int_fix: module.declare_function("oxrt_int_fix", Linkage::Import, &s2).map_err(map_err)?,
-            bool_not: module.declare_function("oxrt_bool_not", Linkage::Import, &s2).map_err(map_err)?,
-            bool_and: module.declare_function("oxrt_bool_and", Linkage::Import, &s3).map_err(map_err)?,
-            bool_or: module.declare_function("oxrt_bool_or", Linkage::Import, &s3).map_err(map_err)?,
-            cmp_eq: module.declare_function("oxrt_cmp_eq", Linkage::Import, &sc).map_err(map_err)?,
-            cmp_ne: module.declare_function("oxrt_cmp_ne", Linkage::Import, &sc).map_err(map_err)?,
-            cmp_lt: module.declare_function("oxrt_cmp_lt", Linkage::Import, &sc).map_err(map_err)?,
-            cmp_le: module.declare_function("oxrt_cmp_le", Linkage::Import, &sc).map_err(map_err)?,
-            cmp_gt: module.declare_function("oxrt_cmp_gt", Linkage::Import, &sc).map_err(map_err)?,
-            cmp_ge: module.declare_function("oxrt_cmp_ge", Linkage::Import, &sc).map_err(map_err)?,
-            load_string: module.declare_function("oxrt_load_string", Linkage::Import, &sls).map_err(map_err)?,
-            load_f64: module.declare_function("oxrt_load_f64", Linkage::Import, &sf).map_err(map_err)?,
+            add_slots: module
+                .declare_function("oxrt_add_slots", Linkage::Import, &s3)
+                .map_err(map_err)?,
+            sub_slots: module
+                .declare_function("oxrt_sub_slots", Linkage::Import, &s3)
+                .map_err(map_err)?,
+            mul_slots: module
+                .declare_function("oxrt_mul_slots", Linkage::Import, &s3)
+                .map_err(map_err)?,
+            div_slots: module
+                .declare_function("oxrt_div_slots", Linkage::Import, &s3)
+                .map_err(map_err)?,
+            intdiv_slots: module
+                .declare_function("oxrt_intdiv_slots", Linkage::Import, &s3)
+                .map_err(map_err)?,
+            mod_slots: module
+                .declare_function("oxrt_mod_slots", Linkage::Import, &s3)
+                .map_err(map_err)?,
+            pow_slots: module
+                .declare_function("oxrt_pow_slots", Linkage::Import, &s3)
+                .map_err(map_err)?,
+            neg_slot: module
+                .declare_function("oxrt_neg_slot", Linkage::Import, &s2)
+                .map_err(map_err)?,
+            concat_slots: module
+                .declare_function("oxrt_concat_slots", Linkage::Import, &s3)
+                .map_err(map_err)?,
+            add_const: module
+                .declare_function("oxrt_add_const", Linkage::Import, &s_si)
+                .map_err(map_err)?,
+            sub_const: module
+                .declare_function("oxrt_sub_const", Linkage::Import, &s_si)
+                .map_err(map_err)?,
+            inc_slot: module
+                .declare_function("oxrt_inc_slot", Linkage::Import, &s1)
+                .map_err(map_err)?,
+            copy_slot: module
+                .declare_function("oxrt_copy_slot", Linkage::Import, &s2)
+                .map_err(map_err)?,
+            abs: module
+                .declare_function("oxrt_abs", Linkage::Import, &s2)
+                .map_err(map_err)?,
+            sgn: module
+                .declare_function("oxrt_sgn", Linkage::Import, &s2)
+                .map_err(map_err)?,
+            int_fix: module
+                .declare_function("oxrt_int_fix", Linkage::Import, &s2)
+                .map_err(map_err)?,
+            bool_not: module
+                .declare_function("oxrt_bool_not", Linkage::Import, &s2)
+                .map_err(map_err)?,
+            bool_and: module
+                .declare_function("oxrt_bool_and", Linkage::Import, &s3)
+                .map_err(map_err)?,
+            bool_or: module
+                .declare_function("oxrt_bool_or", Linkage::Import, &s3)
+                .map_err(map_err)?,
+            cmp_eq: module
+                .declare_function("oxrt_cmp_eq", Linkage::Import, &sc)
+                .map_err(map_err)?,
+            cmp_ne: module
+                .declare_function("oxrt_cmp_ne", Linkage::Import, &sc)
+                .map_err(map_err)?,
+            cmp_lt: module
+                .declare_function("oxrt_cmp_lt", Linkage::Import, &sc)
+                .map_err(map_err)?,
+            cmp_le: module
+                .declare_function("oxrt_cmp_le", Linkage::Import, &sc)
+                .map_err(map_err)?,
+            cmp_gt: module
+                .declare_function("oxrt_cmp_gt", Linkage::Import, &sc)
+                .map_err(map_err)?,
+            cmp_ge: module
+                .declare_function("oxrt_cmp_ge", Linkage::Import, &sc)
+                .map_err(map_err)?,
+            load_string: module
+                .declare_function("oxrt_load_string", Linkage::Import, &sls)
+                .map_err(map_err)?,
+            load_f64: module
+                .declare_function("oxrt_load_f64", Linkage::Import, &sf)
+                .map_err(map_err)?,
             extras,
         })
     }
 
     /// Get a helper function by name from the extras map.
     fn extra(&self, name: &str) -> cranelift_module::FuncId {
-        *self.extras.get(name).expect(&format!("missing helper: {name}"))
+        *self
+            .extras
+            .get(name)
+            .expect(&format!("missing helper: {name}"))
     }
 }
 
@@ -1976,12 +3643,16 @@ fn emit_cmp_helper(
             StringCompareMode::Text => 1,
         },
     );
-    let call = builder.ins().call(func_ref, &[ctx_ptr, dst_val, lhs_val, rhs_val, mode_val]);
+    let call = builder
+        .ins()
+        .call(func_ref, &[ctx_ptr, dst_val, lhs_val, rhs_val, mode_val]);
     let rc = builder.inst_results(call)[0];
     let is_ok = builder.ins().icmp_imm(IntCC::Equal, rc, 0);
     let pc_imm = builder.ins().iconst(types::I32, pc as i64);
     let err_args = [BlockArg::Value(pc_imm), BlockArg::Value(rc)];
-    builder.ins().brif(is_ok, next_block, &[], error_dispatch_block, &err_args);
+    builder
+        .ins()
+        .brif(is_ok, next_block, &[], error_dispatch_block, &err_args);
     Ok(())
 }
 
@@ -1989,10 +3660,16 @@ fn emit_cmp_helper(
 
 /// Emit a call to a 2-slot helper: fn(ctx, dst, src) -> i32
 fn emit_extra_2slot(
-    builder: &mut FunctionBuilder, module: &mut JITModule, helpers: &HelperFuncIds,
-    name: &str, ctx_ptr: cranelift_codegen::ir::Value,
-    dst: usize, src: usize,
-    pc: usize, next_block: cranelift_codegen::ir::Block, error_dispatch_block: cranelift_codegen::ir::Block,
+    builder: &mut FunctionBuilder,
+    module: &mut JITModule,
+    helpers: &HelperFuncIds,
+    name: &str,
+    ctx_ptr: cranelift_codegen::ir::Value,
+    dst: usize,
+    src: usize,
+    pc: usize,
+    next_block: cranelift_codegen::ir::Block,
+    error_dispatch_block: cranelift_codegen::ir::Block,
 ) {
     let func_ref = module.declare_func_in_func(helpers.extra(name), builder.func);
     let dst_val = builder.ins().iconst(types::I32, dst as i64);
@@ -2002,15 +3679,23 @@ fn emit_extra_2slot(
     let is_ok = builder.ins().icmp_imm(IntCC::Equal, rc, 0);
     let pc_imm = builder.ins().iconst(types::I32, pc as i64);
     let err_args = [BlockArg::Value(pc_imm), BlockArg::Value(rc)];
-    builder.ins().brif(is_ok, next_block, &[], error_dispatch_block, &err_args);
+    builder
+        .ins()
+        .brif(is_ok, next_block, &[], error_dispatch_block, &err_args);
 }
 
 /// Emit a call with 2 i64 immediate args
 fn emit_extra_2slot_i(
-    builder: &mut FunctionBuilder, module: &mut JITModule, helpers: &HelperFuncIds,
-    name: &str, ctx_ptr: cranelift_codegen::ir::Value,
-    a: i64, b: i64,
-    pc: usize, next_block: cranelift_codegen::ir::Block, error_dispatch_block: cranelift_codegen::ir::Block,
+    builder: &mut FunctionBuilder,
+    module: &mut JITModule,
+    helpers: &HelperFuncIds,
+    name: &str,
+    ctx_ptr: cranelift_codegen::ir::Value,
+    a: i64,
+    b: i64,
+    pc: usize,
+    next_block: cranelift_codegen::ir::Block,
+    error_dispatch_block: cranelift_codegen::ir::Block,
 ) {
     let func_ref = module.declare_func_in_func(helpers.extra(name), builder.func);
     let a_val = builder.ins().iconst(types::I32, a);
@@ -2020,93 +3705,146 @@ fn emit_extra_2slot_i(
     let is_ok = builder.ins().icmp_imm(IntCC::Equal, rc, 0);
     let pc_imm = builder.ins().iconst(types::I32, pc as i64);
     let err_args = [BlockArg::Value(pc_imm), BlockArg::Value(rc)];
-    builder.ins().brif(is_ok, next_block, &[], error_dispatch_block, &err_args);
+    builder
+        .ins()
+        .brif(is_ok, next_block, &[], error_dispatch_block, &err_args);
 }
 
 /// Emit a call to a 3-slot helper: fn(ctx, dst, a, b) -> i32
 fn emit_extra_3slot(
-    builder: &mut FunctionBuilder, module: &mut JITModule, helpers: &HelperFuncIds,
-    name: &str, ctx_ptr: cranelift_codegen::ir::Value,
-    dst: usize, a: usize, b: usize,
-    pc: usize, next_block: cranelift_codegen::ir::Block, error_dispatch_block: cranelift_codegen::ir::Block,
+    builder: &mut FunctionBuilder,
+    module: &mut JITModule,
+    helpers: &HelperFuncIds,
+    name: &str,
+    ctx_ptr: cranelift_codegen::ir::Value,
+    dst: usize,
+    a: usize,
+    b: usize,
+    pc: usize,
+    next_block: cranelift_codegen::ir::Block,
+    error_dispatch_block: cranelift_codegen::ir::Block,
 ) {
     let func_ref = module.declare_func_in_func(helpers.extra(name), builder.func);
     let dst_val = builder.ins().iconst(types::I32, dst as i64);
     let a_val = builder.ins().iconst(types::I32, a as i64);
     let b_val = builder.ins().iconst(types::I32, b as i64);
-    let call = builder.ins().call(func_ref, &[ctx_ptr, dst_val, a_val, b_val]);
+    let call = builder
+        .ins()
+        .call(func_ref, &[ctx_ptr, dst_val, a_val, b_val]);
     let rc = builder.inst_results(call)[0];
     let is_ok = builder.ins().icmp_imm(IntCC::Equal, rc, 0);
     let pc_imm = builder.ins().iconst(types::I32, pc as i64);
     let err_args = [BlockArg::Value(pc_imm), BlockArg::Value(rc)];
-    builder.ins().brif(is_ok, next_block, &[], error_dispatch_block, &err_args);
+    builder
+        .ins()
+        .brif(is_ok, next_block, &[], error_dispatch_block, &err_args);
 }
 
 /// Emit a call with 3 i64 immediate args
 fn emit_extra_3slot_i(
-    builder: &mut FunctionBuilder, module: &mut JITModule, helpers: &HelperFuncIds,
-    name: &str, ctx_ptr: cranelift_codegen::ir::Value,
-    a: i64, b: i64, c: i64,
-    pc: usize, next_block: cranelift_codegen::ir::Block, error_dispatch_block: cranelift_codegen::ir::Block,
+    builder: &mut FunctionBuilder,
+    module: &mut JITModule,
+    helpers: &HelperFuncIds,
+    name: &str,
+    ctx_ptr: cranelift_codegen::ir::Value,
+    a: i64,
+    b: i64,
+    c: i64,
+    pc: usize,
+    next_block: cranelift_codegen::ir::Block,
+    error_dispatch_block: cranelift_codegen::ir::Block,
 ) {
     let func_ref = module.declare_func_in_func(helpers.extra(name), builder.func);
     let a_val = builder.ins().iconst(types::I32, a);
     let b_val = builder.ins().iconst(types::I32, b);
     let c_val = builder.ins().iconst(types::I32, c);
-    let call = builder.ins().call(func_ref, &[ctx_ptr, a_val, b_val, c_val]);
+    let call = builder
+        .ins()
+        .call(func_ref, &[ctx_ptr, a_val, b_val, c_val]);
     let rc = builder.inst_results(call)[0];
     let is_ok = builder.ins().icmp_imm(IntCC::Equal, rc, 0);
     let pc_imm = builder.ins().iconst(types::I32, pc as i64);
     let err_args = [BlockArg::Value(pc_imm), BlockArg::Value(rc)];
-    builder.ins().brif(is_ok, next_block, &[], error_dispatch_block, &err_args);
+    builder
+        .ins()
+        .brif(is_ok, next_block, &[], error_dispatch_block, &err_args);
 }
 
 /// Emit a call to a 4-slot helper: fn(ctx, dst, a, b, c) -> i32
 fn emit_extra_4slot(
-    builder: &mut FunctionBuilder, module: &mut JITModule, helpers: &HelperFuncIds,
-    name: &str, ctx_ptr: cranelift_codegen::ir::Value,
-    dst: usize, a: usize, b: usize, c: i64,
-    pc: usize, next_block: cranelift_codegen::ir::Block, error_dispatch_block: cranelift_codegen::ir::Block,
+    builder: &mut FunctionBuilder,
+    module: &mut JITModule,
+    helpers: &HelperFuncIds,
+    name: &str,
+    ctx_ptr: cranelift_codegen::ir::Value,
+    dst: usize,
+    a: usize,
+    b: usize,
+    c: i64,
+    pc: usize,
+    next_block: cranelift_codegen::ir::Block,
+    error_dispatch_block: cranelift_codegen::ir::Block,
 ) {
     let func_ref = module.declare_func_in_func(helpers.extra(name), builder.func);
     let dst_val = builder.ins().iconst(types::I32, dst as i64);
     let a_val = builder.ins().iconst(types::I32, a as i64);
     let b_val = builder.ins().iconst(types::I32, b as i64);
     let c_val = builder.ins().iconst(types::I32, c);
-    let call = builder.ins().call(func_ref, &[ctx_ptr, dst_val, a_val, b_val, c_val]);
+    let call = builder
+        .ins()
+        .call(func_ref, &[ctx_ptr, dst_val, a_val, b_val, c_val]);
     let rc = builder.inst_results(call)[0];
     let is_ok = builder.ins().icmp_imm(IntCC::Equal, rc, 0);
     let pc_imm = builder.ins().iconst(types::I32, pc as i64);
     let err_args = [BlockArg::Value(pc_imm), BlockArg::Value(rc)];
-    builder.ins().brif(is_ok, next_block, &[], error_dispatch_block, &err_args);
+    builder
+        .ins()
+        .brif(is_ok, next_block, &[], error_dispatch_block, &err_args);
 }
 
 /// Emit a call with 4 i64 immediate args
 fn emit_extra_4slot_i(
-    builder: &mut FunctionBuilder, module: &mut JITModule, helpers: &HelperFuncIds,
-    name: &str, ctx_ptr: cranelift_codegen::ir::Value,
-    a: i64, b: i64, c: i64, d: i64,
-    pc: usize, next_block: cranelift_codegen::ir::Block, error_dispatch_block: cranelift_codegen::ir::Block,
+    builder: &mut FunctionBuilder,
+    module: &mut JITModule,
+    helpers: &HelperFuncIds,
+    name: &str,
+    ctx_ptr: cranelift_codegen::ir::Value,
+    a: i64,
+    b: i64,
+    c: i64,
+    d: i64,
+    pc: usize,
+    next_block: cranelift_codegen::ir::Block,
+    error_dispatch_block: cranelift_codegen::ir::Block,
 ) {
     let func_ref = module.declare_func_in_func(helpers.extra(name), builder.func);
     let a_val = builder.ins().iconst(types::I32, a);
     let b_val = builder.ins().iconst(types::I32, b);
     let c_val = builder.ins().iconst(types::I32, c);
     let d_val = builder.ins().iconst(types::I32, d);
-    let call = builder.ins().call(func_ref, &[ctx_ptr, a_val, b_val, c_val, d_val]);
+    let call = builder
+        .ins()
+        .call(func_ref, &[ctx_ptr, a_val, b_val, c_val, d_val]);
     let rc = builder.inst_results(call)[0];
     let is_ok = builder.ins().icmp_imm(IntCC::Equal, rc, 0);
     let pc_imm = builder.ins().iconst(types::I32, pc as i64);
     let err_args = [BlockArg::Value(pc_imm), BlockArg::Value(rc)];
-    builder.ins().brif(is_ok, next_block, &[], error_dispatch_block, &err_args);
+    builder
+        .ins()
+        .brif(is_ok, next_block, &[], error_dispatch_block, &err_args);
 }
 
 /// Emit a call with N i32 args (from a slice of i64 values)
 fn emit_extra_nslot_i(
-    builder: &mut FunctionBuilder, module: &mut JITModule, helpers: &HelperFuncIds,
-    name: &str, ctx_ptr: cranelift_codegen::ir::Value,
+    builder: &mut FunctionBuilder,
+    module: &mut JITModule,
+    helpers: &HelperFuncIds,
+    name: &str,
+    ctx_ptr: cranelift_codegen::ir::Value,
     args: &[i64],
-    pc: usize, next_block: cranelift_codegen::ir::Block, error_dispatch_block: cranelift_codegen::ir::Block,
+    pc: usize,
+    next_block: cranelift_codegen::ir::Block,
+    error_dispatch_block: cranelift_codegen::ir::Block,
 ) {
     let func_ref = module.declare_func_in_func(helpers.extra(name), builder.func);
     let mut call_args: Vec<cranelift_codegen::ir::Value> = vec![ctx_ptr];
@@ -2118,7 +3856,9 @@ fn emit_extra_nslot_i(
     let is_ok = builder.ins().icmp_imm(IntCC::Equal, rc, 0);
     let pc_imm = builder.ins().iconst(types::I32, pc as i64);
     let err_args = [BlockArg::Value(pc_imm), BlockArg::Value(rc)];
-    builder.ins().brif(is_ok, next_block, &[], error_dispatch_block, &err_args);
+    builder
+        .ins()
+        .brif(is_ok, next_block, &[], error_dispatch_block, &err_args);
 }
 
 // ── Legacy path (unchanged) ───────────────────────────────────────────

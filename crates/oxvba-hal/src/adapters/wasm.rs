@@ -180,11 +180,7 @@ impl FileSystemHal for WasmHostServices {
         Err(self.unsupported(CapabilityId::FileSystemIo, "print_line"))
     }
 
-    fn input_fields(
-        &self,
-        _handle: RuntimeValue,
-        _count: RuntimeValue,
-    ) -> HalResult<RuntimeValue> {
+    fn input_fields(&self, _handle: RuntimeValue, _count: RuntimeValue) -> HalResult<RuntimeValue> {
         Err(self.unsupported(CapabilityId::FileSystemIo, "input_fields"))
     }
 
@@ -319,16 +315,14 @@ impl WasmHostServices {
     /// Returns true when real system time should be used (WASI runtime, non-deterministic mode).
     fn use_real_time(&self) -> bool {
         use crate::model::WasmRuntimeClass;
-        !self.policy.deterministic_mode
-            && self.policy.wasm_runtime_class == WasmRuntimeClass::Wasi
+        !self.policy.deterministic_mode && self.policy.wasm_runtime_class == WasmRuntimeClass::Wasi
     }
 }
 
 impl TimeLocaleHal for WasmHostServices {
     fn date_serial_now(&self) -> HalResult<RuntimeValue> {
         if self.use_real_time() {
-            if let Ok(elapsed) = std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
+            if let Ok(elapsed) = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH)
             {
                 let days_since_epoch = (elapsed.as_secs() / 86400) as i32;
                 // VBA serial date: 1 Jan 1900 = 2. Unix epoch 1 Jan 1970 = day 25569.
@@ -341,8 +335,7 @@ impl TimeLocaleHal for WasmHostServices {
 
     fn time_serial_now(&self) -> HalResult<RuntimeValue> {
         if self.use_real_time() {
-            if let Ok(elapsed) = std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
+            if let Ok(elapsed) = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH)
             {
                 let secs_today = (elapsed.as_secs() % 86400) as i32;
                 return Ok(RuntimeValue::I32(secs_today));
@@ -353,8 +346,7 @@ impl TimeLocaleHal for WasmHostServices {
 
     fn timer_ticks(&self) -> HalResult<RuntimeValue> {
         if self.use_real_time() {
-            if let Ok(elapsed) = std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
+            if let Ok(elapsed) = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH)
             {
                 return Ok(RuntimeValue::I32(
                     (elapsed.as_millis() % (i32::MAX as u128)) as i32,

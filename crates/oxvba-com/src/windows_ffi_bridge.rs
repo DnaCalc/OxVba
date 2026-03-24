@@ -70,7 +70,9 @@ unsafe extern "system" {
 /// The module is cached so subsequent loads of the same DLL are fast.
 #[cfg(target_os = "windows")]
 pub fn load_library(library: &str) -> Result<usize, String> {
-    let mut guard = DLL_CACHE.lock().map_err(|_| "DLL cache lock poisoned".to_string())?;
+    let mut guard = DLL_CACHE
+        .lock()
+        .map_err(|_| "DLL cache lock poisoned".to_string())?;
     let cache = guard.get_or_insert_with(|| DllCache {
         modules: HashMap::new(),
     });
@@ -158,11 +160,7 @@ pub fn invoke_stdcall(
 /// for common arities and falls back to a generic approach for larger calls.
 #[cfg(target_os = "windows")]
 #[cfg(target_arch = "x86_64")]
-unsafe fn invoke_stdcall_raw(
-    proc_addr: usize,
-    args: &[i64],
-    _return_type: FfiReturnType,
-) -> i64 {
+unsafe fn invoke_stdcall_raw(proc_addr: usize, args: &[i64], _return_type: FfiReturnType) -> i64 {
     // On x86_64 Windows, the calling convention is actually __fastcall (first 4 args in registers).
     // We handle common arities explicitly for safety.
     type Fn0 = unsafe extern "system" fn() -> i64;
@@ -321,7 +319,9 @@ pub fn load_library(library: &str) -> Result<usize, String> {
         .map_err(|_| format!("library name `{}` contains null byte", library))?;
 
     // Clear any prior error
-    unsafe { libc::dlerror(); }
+    unsafe {
+        libc::dlerror();
+    }
 
     let handle = unsafe { libc::dlopen(c_name.as_ptr(), libc::RTLD_NOW | libc::RTLD_LOCAL) };
     if handle.is_null() {
@@ -343,7 +343,9 @@ pub fn get_proc_address(module: usize, name: &str) -> Result<usize, String> {
         .map_err(|_| format!("symbol name `{}` contains null byte", name))?;
 
     // Clear any prior error
-    unsafe { libc::dlerror(); }
+    unsafe {
+        libc::dlerror();
+    }
 
     let addr = unsafe { libc::dlsym(module as *mut c_void, c_name.as_ptr()) };
     if addr.is_null() {
@@ -408,11 +410,7 @@ pub fn invoke_stdcall(
 /// Raw C-ABI invocation using `extern "C"` function pointers.
 /// Dispatches based on argument count for common arities.
 #[cfg(not(target_os = "windows"))]
-unsafe fn invoke_c_abi_raw(
-    proc_addr: usize,
-    args: &[i64],
-    _return_type: FfiReturnType,
-) -> i64 {
+unsafe fn invoke_c_abi_raw(proc_addr: usize, args: &[i64], _return_type: FfiReturnType) -> i64 {
     type Fn0 = unsafe extern "C" fn() -> i64;
     type Fn1 = unsafe extern "C" fn(i64) -> i64;
     type Fn2 = unsafe extern "C" fn(i64, i64) -> i64;
@@ -462,18 +460,15 @@ mod tests {
     fn load_kernel32_and_resolve_get_tick_count() {
         let module = load_library("kernel32.dll").expect("kernel32.dll should load");
         assert!(module != 0, "module handle should be non-zero");
-        let addr =
-            get_proc_address(module, "GetTickCount").expect("GetTickCount should resolve");
+        let addr = get_proc_address(module, "GetTickCount").expect("GetTickCount should resolve");
         assert!(addr != 0, "proc address should be non-zero");
     }
 
     #[test]
     fn invoke_get_tick_count_returns_nonzero() {
         let module = load_library("kernel32.dll").expect("kernel32.dll should load");
-        let addr =
-            get_proc_address(module, "GetTickCount").expect("GetTickCount should resolve");
-        let result =
-            invoke_stdcall(addr, &[], FfiReturnType::Long).expect("invoke should succeed");
+        let addr = get_proc_address(module, "GetTickCount").expect("GetTickCount should resolve");
+        let result = invoke_stdcall(addr, &[], FfiReturnType::Long).expect("invoke should succeed");
         assert!(result > 0, "GetTickCount should return positive value");
     }
 
@@ -577,8 +572,7 @@ mod tests {
         };
         let module = load_library(libc_name).expect("libc should load");
         let addr = get_proc_address(module, "getpid").expect("getpid should resolve");
-        let result =
-            invoke_stdcall(addr, &[], FfiReturnType::Long).expect("invoke should succeed");
+        let result = invoke_stdcall(addr, &[], FfiReturnType::Long).expect("invoke should succeed");
         assert!(result > 0, "getpid should return positive value");
     }
 

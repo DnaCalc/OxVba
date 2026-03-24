@@ -62,11 +62,10 @@ fn run_build(args: Vec<String>) {
         std::process::exit(1);
     });
 
-    let compiled =
-        oxvba_compiler::compile_project(&loaded.manifest).unwrap_or_else(|err| {
-            eprintln!("oxvba build: compile failed: {err}");
-            std::process::exit(1);
-        });
+    let compiled = oxvba_compiler::compile_project(&loaded.manifest).unwrap_or_else(|err| {
+        eprintln!("oxvba build: compile failed: {err}");
+        std::process::exit(1);
+    });
 
     // Post-compilation validation: enrich native export descriptors
     if !loaded.native_exports.is_empty() {
@@ -89,8 +88,12 @@ fn run_build(args: Vec<String>) {
             .iter()
             .map(|m| oxvba_project::BasProjModule {
                 kind: match m.module_kind {
-                    oxvba_compiler::ModuleKind::Class => oxvba_project::BasProjModuleKind::ClassModule,
-                    oxvba_compiler::ModuleKind::Document => oxvba_project::BasProjModuleKind::DocumentModule,
+                    oxvba_compiler::ModuleKind::Class => {
+                        oxvba_project::BasProjModuleKind::ClassModule
+                    }
+                    oxvba_compiler::ModuleKind::Document => {
+                        oxvba_project::BasProjModuleKind::DocumentModule
+                    }
                     _ => oxvba_project::BasProjModuleKind::Module,
                 },
                 include: format!("{}.cls", m.module_name),
@@ -219,8 +222,8 @@ fn run_project(args: Vec<String>) {
     };
     let mut engine = Engine::new(config);
 
-    let resolved = resolve_runner_bootstrap(&bootstrap, |key| env::var(key).ok())
-        .unwrap_or_else(|err| {
+    let resolved =
+        resolve_runner_bootstrap(&bootstrap, |key| env::var(key).ok()).unwrap_or_else(|err| {
             eprintln!("oxvba run-project: bootstrap failed: {err}");
             std::process::exit(2);
         });
@@ -263,9 +266,10 @@ fn run_init(args: Vec<String>) {
     let mut iter = args.into_iter();
     let _ = iter.next(); // "init"
 
-    let target_dir = iter.next().map(PathBuf::from).unwrap_or_else(|| {
-        env::current_dir().unwrap_or_else(|_| PathBuf::from("."))
-    });
+    let target_dir = iter
+        .next()
+        .map(PathBuf::from)
+        .unwrap_or_else(|| env::current_dir().unwrap_or_else(|_| PathBuf::from(".")));
 
     let project_name = target_dir
         .file_name()
@@ -292,16 +296,14 @@ fn run_init(args: Vec<String>) {
 "#
     );
 
-    let module_content = "Attribute VB_Name = \"Module1\"\n\nPublic Sub Main()\n    ' Your code here\nEnd Sub\n";
+    let module_content =
+        "Attribute VB_Name = \"Module1\"\n\nPublic Sub Main()\n    ' Your code here\nEnd Sub\n";
 
     let basproj_path = target_dir.join(format!("{project_name}.basproj"));
     let module_path = target_dir.join("Module1.bas");
 
     if basproj_path.exists() {
-        eprintln!(
-            "oxvba init: {} already exists",
-            basproj_path.display()
-        );
+        eprintln!("oxvba init: {} already exists", basproj_path.display());
         std::process::exit(1);
     }
 
@@ -345,7 +347,10 @@ fn run_import_vbp(args: Vec<String>) {
     }
 
     let content = fs::read_to_string(&input_path).unwrap_or_else(|err| {
-        eprintln!("oxvba import-vbp: cannot read {}: {err}", input_path.display());
+        eprintln!(
+            "oxvba import-vbp: cannot read {}: {err}",
+            input_path.display()
+        );
         std::process::exit(1);
     });
 
@@ -363,11 +368,7 @@ fn run_import_vbp(args: Vec<String>) {
         std::process::exit(1);
     });
 
-    println!(
-        "imported {} → {}",
-        input_path.display(),
-        out.display()
-    );
+    println!("imported {} → {}", input_path.display(), out.display());
 }
 
 // ---------------------------------------------------------------------------
@@ -404,8 +405,8 @@ fn run_compile(args: Vec<String>) {
         std::process::exit(1);
     });
 
-    let (bytecode, metadata) =
-        oxvba_compiler::compile_with_runtime_metadata(&source).unwrap_or_else(|err| {
+    let (bytecode, metadata) = oxvba_compiler::compile_with_runtime_metadata(&source)
+        .unwrap_or_else(|err| {
             eprintln!("oxvba: compile failed: {err}");
             std::process::exit(1);
         });

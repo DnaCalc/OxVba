@@ -3,14 +3,15 @@
 //! This crate generates Rust source code shims that embed compiled `.oxb` bundles
 //! and expose them as native executables, DLLs, COM servers, or XLL add-ins.
 
+pub mod compile;
 pub mod comserver;
 pub mod comserver_exe;
-pub mod compile;
 pub mod deffile;
 pub mod dll;
 pub mod exe;
 pub mod idl;
 pub mod manifest;
 pub mod registration;
-pub mod xloper;
+pub mod typelib_gen;
 pub mod xll;
+pub mod xloper;

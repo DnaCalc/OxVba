@@ -4,9 +4,9 @@ use crate::{
     traits::FileSystemHal,
 };
 use oxvba_runtime::{RuntimeValue, bstr::BStr};
+use std::collections::{BTreeMap, BTreeSet};
 use std::fs::{self, OpenOptions};
 use std::path::PathBuf;
-use std::collections::{BTreeMap, BTreeSet};
 
 use super::StandardHostServices;
 
@@ -388,7 +388,8 @@ impl FileSystemHal for StandardHostServices {
         if !self.supports(capability) {
             return Err(self.unsupported(capability, "read_bytes"));
         }
-        let handle_id = self.runtime_value_to_legacy_i32(&handle, capability, "read_bytes", "handle")?;
+        let handle_id =
+            self.runtime_value_to_legacy_i32(&handle, capability, "read_bytes", "handle")?;
         let count = self.runtime_value_to_legacy_i32(&count, capability, "read_bytes", "count")?;
         let mut state = self.fs_lock(capability, "read_bytes")?;
         let entry = self.fs_entry_mut(&mut state, handle_id, "read_bytes")?;
@@ -411,11 +412,13 @@ impl FileSystemHal for StandardHostServices {
         if !self.policy.allow_filesystem_mutation {
             return Err(self.denied(capability, "write_bytes"));
         }
-        let handle_id = self.runtime_value_to_legacy_i32(&handle, capability, "write_bytes", "handle")?;
+        let handle_id =
+            self.runtime_value_to_legacy_i32(&handle, capability, "write_bytes", "handle")?;
         let bytes = match &data {
             RuntimeValue::String(BStr(s)) => s.as_bytes().to_vec(),
             other => {
-                let val = self.runtime_value_to_legacy_i32(other, capability, "write_bytes", "data")?;
+                let val =
+                    self.runtime_value_to_legacy_i32(other, capability, "write_bytes", "data")?;
                 val.to_le_bytes().to_vec()
             }
         };
@@ -440,11 +443,13 @@ impl FileSystemHal for StandardHostServices {
         if !self.policy.allow_filesystem_mutation {
             return Err(self.denied(capability, "print_line"));
         }
-        let handle_id = self.runtime_value_to_legacy_i32(&handle, capability, "print_line", "handle")?;
+        let handle_id =
+            self.runtime_value_to_legacy_i32(&handle, capability, "print_line", "handle")?;
         let text = match &data {
             RuntimeValue::String(BStr(s)) => format!("{s}\r\n"),
             other => {
-                let val = self.runtime_value_to_legacy_i32(other, capability, "print_line", "data")?;
+                let val =
+                    self.runtime_value_to_legacy_i32(other, capability, "print_line", "data")?;
                 format!("{val}\r\n")
             }
         };
@@ -467,8 +472,10 @@ impl FileSystemHal for StandardHostServices {
         if !self.supports(capability) {
             return Err(self.unsupported(capability, "input_fields"));
         }
-        let handle_id = self.runtime_value_to_legacy_i32(&handle, capability, "input_fields", "handle")?;
-        let count = self.runtime_value_to_legacy_i32(&count, capability, "input_fields", "count")?;
+        let handle_id =
+            self.runtime_value_to_legacy_i32(&handle, capability, "input_fields", "handle")?;
+        let count =
+            self.runtime_value_to_legacy_i32(&count, capability, "input_fields", "count")?;
         let count = count.max(1) as usize;
         let mut state = self.fs_lock(capability, "input_fields")?;
         let entry = self.fs_entry_mut(&mut state, handle_id, "input_fields")?;
@@ -501,7 +508,8 @@ impl FileSystemHal for StandardHostServices {
         if !self.supports(capability) {
             return Err(self.unsupported(capability, "line_input"));
         }
-        let handle_id = self.runtime_value_to_legacy_i32(&handle, capability, "line_input", "handle")?;
+        let handle_id =
+            self.runtime_value_to_legacy_i32(&handle, capability, "line_input", "handle")?;
         let mut state = self.fs_lock(capability, "line_input")?;
         let entry = self.fs_entry_mut(&mut state, handle_id, "line_input")?;
         let pos = entry.position as usize;

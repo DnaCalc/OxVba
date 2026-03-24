@@ -22,10 +22,7 @@ use builder::HostBuilder;
 /// Delegates through [`HostBuilder`] internally.
 #[deprecated(note = "use HostBuilder instead")]
 pub fn for_profile(profile: HalProfileId, policy: HostPolicy) -> Arc<dyn HostServices> {
-    HostBuilder::new()
-        .profile(profile)
-        .policy(policy)
-        .build()
+    HostBuilder::new().profile(profile).policy(policy).build()
 }
 
 /// Create host services for the given profile, runtime class, and policy.

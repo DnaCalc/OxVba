@@ -1,8 +1,4 @@
-use crate::{
-    error::HalResult,
-    model::CapabilityId,
-    traits::TimeLocaleHal,
-};
+use crate::{error::HalResult, model::CapabilityId, traits::TimeLocaleHal};
 use oxvba_runtime::RuntimeValue;
 use std::time::{SystemTime, UNIX_EPOCH};
 

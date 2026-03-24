@@ -5,9 +5,7 @@ use std::sync::Mutex;
 use crate::{
     error::{HalError, HalResult},
     journal::{HalJournal, HalJournalEntry},
-    model::{
-        CapabilityId, HalDescriptor, HalProfileId, HalRuntimeClass, HostPolicy,
-    },
+    model::{CapabilityId, HalDescriptor, HalProfileId, HalRuntimeClass, HostPolicy},
     traits::{
         ComHal, DiagnosticsHal, DynamicLinkHal, EventPumpHal, FileSystemHal, HostServices,
         ProcessEnvHal, TimeLocaleHal, TypeLibCacheScope, TypeLibMetadataBlob,
@@ -28,11 +26,8 @@ pub struct ReplayHostServices {
 
 impl ReplayHostServices {
     pub fn new(journal: HalJournal, policy: HostPolicy) -> Self {
-        let descriptor = descriptor_for_profile(
-            HalProfileId::Null,
-            HalRuntimeClass::NullFloor,
-            &policy,
-        );
+        let descriptor =
+            descriptor_for_profile(HalProfileId::Null, HalRuntimeClass::NullFloor, &policy);
         Self {
             journal,
             cursor: Mutex::new(0),
@@ -107,14 +102,30 @@ impl HostServices for ReplayHostServices {
         &self.policy
     }
 
-    fn ui(&self) -> &dyn UiInteractionHal { self }
-    fn events(&self) -> &dyn EventPumpHal { self }
-    fn fs(&self) -> &dyn FileSystemHal { self }
-    fn process(&self) -> &dyn ProcessEnvHal { self }
-    fn com(&self) -> &dyn ComHal { self }
-    fn time_locale(&self) -> &dyn TimeLocaleHal { self }
-    fn dynlink(&self) -> &dyn DynamicLinkHal { self }
-    fn diag(&self) -> &dyn DiagnosticsHal { self }
+    fn ui(&self) -> &dyn UiInteractionHal {
+        self
+    }
+    fn events(&self) -> &dyn EventPumpHal {
+        self
+    }
+    fn fs(&self) -> &dyn FileSystemHal {
+        self
+    }
+    fn process(&self) -> &dyn ProcessEnvHal {
+        self
+    }
+    fn com(&self) -> &dyn ComHal {
+        self
+    }
+    fn time_locale(&self) -> &dyn TimeLocaleHal {
+        self
+    }
+    fn dynlink(&self) -> &dyn DynamicLinkHal {
+        self
+    }
+    fn diag(&self) -> &dyn DiagnosticsHal {
+        self
+    }
 }
 
 impl UiInteractionHal for ReplayHostServices {
@@ -196,16 +207,22 @@ impl ComHal for ReplayHostServices {
         Err(self.unsupported(CapabilityId::ComActivationDispatch, "describe_object"))
     }
     fn dispatch_invoke_runtime_value_v2(
-        &self, _request: &oxvba_com::ComInvokeRequest,
+        &self,
+        _request: &oxvba_com::ComInvokeRequest,
     ) -> HalResult<RuntimeValue> {
         Err(self.unsupported(CapabilityId::ComActivationDispatch, "dispatch_invoke"))
     }
     fn dispatch_invoke_dynamic_runtime_value_v2(
-        &self, _request: &oxvba_com::DynamicCallRequest,
+        &self,
+        _request: &oxvba_com::DynamicCallRequest,
     ) -> HalResult<RuntimeValue> {
         Err(self.unsupported(CapabilityId::ComActivationDispatch, "dispatch_invoke"))
     }
-    fn subscribe_event(&self, _object: ObjectHandle, _event: ComMemberToken) -> HalResult<ComSubscriptionToken> {
+    fn subscribe_event(
+        &self,
+        _object: ObjectHandle,
+        _event: ComMemberToken,
+    ) -> HalResult<ComSubscriptionToken> {
         Err(self.unsupported(CapabilityId::ComActivationDispatch, "subscribe_event"))
     }
     fn unsubscribe_event(&self, _sub: ComSubscriptionToken) -> HalResult<RuntimeValue> {
@@ -214,8 +231,14 @@ impl ComHal for ReplayHostServices {
     fn poll_event_callback(&self) -> HalResult<Option<oxvba_com::ComCallbackPayload>> {
         Err(self.unsupported(CapabilityId::ComActivationDispatch, "poll_event_callback"))
     }
-    fn event_callback_subscription(&self, _cb: ComCallbackToken) -> HalResult<ComSubscriptionToken> {
-        Err(self.unsupported(CapabilityId::ComActivationDispatch, "event_callback_subscription"))
+    fn event_callback_subscription(
+        &self,
+        _cb: ComCallbackToken,
+    ) -> HalResult<ComSubscriptionToken> {
+        Err(self.unsupported(
+            CapabilityId::ComActivationDispatch,
+            "event_callback_subscription",
+        ))
     }
     fn event_callback_arity(&self, _cb: ComCallbackToken) -> HalResult<usize> {
         Err(self.unsupported(CapabilityId::ComActivationDispatch, "event_callback_arity"))
@@ -224,16 +247,35 @@ impl ComHal for ReplayHostServices {
         Err(self.unsupported(CapabilityId::ComActivationDispatch, "event_callback_arg"))
     }
     fn release_event_callback(&self, _cb: ComCallbackToken) -> HalResult<RuntimeValue> {
-        Err(self.unsupported(CapabilityId::ComActivationDispatch, "release_event_callback"))
+        Err(self.unsupported(
+            CapabilityId::ComActivationDispatch,
+            "release_event_callback",
+        ))
     }
-    fn resolve_typelib_reference(&self, _req: &TypeLibResolveRequest) -> HalResult<TypeLibResolvedIdentity> {
-        Err(self.unsupported(CapabilityId::ComActivationDispatch, "resolve_typelib_reference"))
+    fn resolve_typelib_reference(
+        &self,
+        _req: &TypeLibResolveRequest,
+    ) -> HalResult<TypeLibResolvedIdentity> {
+        Err(self.unsupported(
+            CapabilityId::ComActivationDispatch,
+            "resolve_typelib_reference",
+        ))
     }
-    fn load_typelib_metadata(&self, _id: &TypeLibResolvedIdentity) -> HalResult<TypeLibMetadataBlob> {
+    fn load_typelib_metadata(
+        &self,
+        _id: &TypeLibResolvedIdentity,
+    ) -> HalResult<TypeLibMetadataBlob> {
         Err(self.unsupported(CapabilityId::ComActivationDispatch, "load_typelib_metadata"))
     }
-    fn invalidate_typelib_cache(&self, _scope: TypeLibCacheScope, _ref_name: Option<&str>) -> HalResult<RuntimeValue> {
-        Err(self.unsupported(CapabilityId::ComActivationDispatch, "invalidate_typelib_cache"))
+    fn invalidate_typelib_cache(
+        &self,
+        _scope: TypeLibCacheScope,
+        _ref_name: Option<&str>,
+    ) -> HalResult<RuntimeValue> {
+        Err(self.unsupported(
+            CapabilityId::ComActivationDispatch,
+            "invalidate_typelib_cache",
+        ))
     }
 }
 
@@ -253,7 +295,11 @@ impl DynamicLinkHal for ReplayHostServices {
     fn invoke_bound(&self, _binding: BindingHandle, _arg: RuntimeValue) -> HalResult<RuntimeValue> {
         Err(self.unsupported(CapabilityId::DynamicLinking, "invoke_symbol"))
     }
-    fn invoke_descriptor(&self, _desc: &crate::traits::DynLinkDescriptorView<'_>, _arg: RuntimeValue) -> HalResult<RuntimeValue> {
+    fn invoke_descriptor(
+        &self,
+        _desc: &crate::traits::DynLinkDescriptorView<'_>,
+        _arg: RuntimeValue,
+    ) -> HalResult<RuntimeValue> {
         Err(self.unsupported(CapabilityId::DynamicLinking, "invoke_symbol"))
     }
     fn invoke_symbol(&self, _symbol: DynLinkSymbol, _arg: RuntimeValue) -> HalResult<RuntimeValue> {

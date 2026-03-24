@@ -328,7 +328,9 @@ pub fn run_conformance(host: &dyn HostServices) -> ConformanceReport {
     );
     // Data-transfer probes: open a handle first, probe each method, close.
     // If open fails (unsupported/denied), downstream probes inherit that status.
-    let fs_data_probe_handle = host.fs().open(RuntimeValue::I32(99_990), RuntimeValue::I32(0));
+    let fs_data_probe_handle = host
+        .fs()
+        .open(RuntimeValue::I32(99_990), RuntimeValue::I32(0));
     let fs_probe_h = match &fs_data_probe_handle {
         Ok(h) => Some(h.clone()),
         Err(_) => None,
@@ -407,9 +409,7 @@ pub fn run_conformance(host: &dyn HostServices) -> ConformanceReport {
         "fs.loc",
         &["HAL-FS-012", "HAL-DES-004", "HAL-GEN-001", "HAL-GEN-003"],
         if fs_open_ok {
-            host.fs()
-                .loc(fs_probe_handle_val.clone())
-                .map(|_| ())
+            host.fs().loc(fs_probe_handle_val.clone()).map(|_| ())
         } else {
             fs_data_probe_handle.clone().map(|_| ())
         },
@@ -1494,7 +1494,10 @@ mod tests {
             HalProfileId::Wasm,
             HalProfileId::Null,
         ] {
-            let host = HostBuilder::new().profile(profile).policy(HostPolicy::deterministic_runtime()).build();
+            let host = HostBuilder::new()
+                .profile(profile)
+                .policy(HostPolicy::deterministic_runtime())
+                .build();
             let report = run_conformance(host.as_ref());
             assert!(
                 report.passed,
@@ -1506,7 +1509,10 @@ mod tests {
 
     #[test]
     fn windows_declares_com_supported_only_on_windows() {
-        let windows = HostBuilder::new().profile(HalProfileId::Windows).policy(HostPolicy::deterministic_runtime()).build();
+        let windows = HostBuilder::new()
+            .profile(HalProfileId::Windows)
+            .policy(HostPolicy::deterministic_runtime())
+            .build();
         assert!(
             windows
                 .descriptor()
@@ -1520,7 +1526,10 @@ mod tests {
             HalProfileId::Wasm,
             HalProfileId::Null,
         ] {
-            let host = HostBuilder::new().profile(profile).policy(HostPolicy::deterministic_runtime()).build();
+            let host = HostBuilder::new()
+                .profile(profile)
+                .policy(HostPolicy::deterministic_runtime())
+                .build();
             assert!(
                 !host
                     .descriptor()
@@ -1540,7 +1549,10 @@ mod tests {
             HalProfileId::Wasm,
             HalProfileId::Null,
         ] {
-            let host = HostBuilder::new().profile(profile).policy(HostPolicy::deterministic_compile_time()).build();
+            let host = HostBuilder::new()
+                .profile(profile)
+                .policy(HostPolicy::deterministic_compile_time())
+                .build();
             let report = run_conformance(host.as_ref());
             assert!(
                 report.passed,
@@ -1552,7 +1564,10 @@ mod tests {
 
     #[test]
     fn conformance_report_exposes_clause_coverage_map() {
-        let host = HostBuilder::new().profile(HalProfileId::Windows).policy(HostPolicy::deterministic_runtime()).build();
+        let host = HostBuilder::new()
+            .profile(HalProfileId::Windows)
+            .policy(HostPolicy::deterministic_runtime())
+            .build();
         let report = run_conformance(host.as_ref());
         let coverage = report.clause_coverage();
         assert_eq!(coverage.get("HAL-DES-001"), Some(&true));
@@ -1577,7 +1592,10 @@ mod tests {
 
     #[test]
     fn conformance_catalog_scoped_coverage_is_available() {
-        let host = HostBuilder::new().profile(HalProfileId::Windows).policy(HostPolicy::deterministic_runtime()).build();
+        let host = HostBuilder::new()
+            .profile(HalProfileId::Windows)
+            .policy(HostPolicy::deterministic_runtime())
+            .build();
         let report = run_conformance(host.as_ref());
         let coverage = report.clause_coverage_against_catalog();
         assert!(
@@ -1590,7 +1608,10 @@ mod tests {
 
     #[test]
     fn governance_rules_are_executable_and_non_blocking() {
-        let host = HostBuilder::new().profile(HalProfileId::MacOs).policy(HostPolicy::deterministic_runtime()).build();
+        let host = HostBuilder::new()
+            .profile(HalProfileId::MacOs)
+            .policy(HostPolicy::deterministic_runtime())
+            .build();
         let report = run_conformance(host.as_ref());
         assert!(
             report.passed,
@@ -1610,7 +1631,10 @@ mod tests {
 
     #[test]
     fn conformance_probe_records_clause_ids() {
-        let host = HostBuilder::new().profile(HalProfileId::Windows).policy(HostPolicy::deterministic_runtime()).build();
+        let host = HostBuilder::new()
+            .profile(HalProfileId::Windows)
+            .policy(HostPolicy::deterministic_runtime())
+            .build();
         let report = run_conformance(host.as_ref());
         let probe = report
             .probes
@@ -1634,7 +1658,10 @@ mod tests {
         } else {
             HalProfileId::Linux
         };
-        let host = HostBuilder::new().profile(profile).policy(HostPolicy::interactive_dev()).build();
+        let host = HostBuilder::new()
+            .profile(profile)
+            .policy(HostPolicy::interactive_dev())
+            .build();
         let report = run_conformance(host.as_ref());
         let expected = host_backed_profile_matches_host(profile);
         assert_eq!(report.host_backed_eligible, expected);
@@ -1643,7 +1670,10 @@ mod tests {
 
     #[test]
     fn conformance_descriptor_dynlink_clauses_are_emitted() {
-        let host = HostBuilder::new().profile(HalProfileId::Windows).policy(HostPolicy::interactive_dev()).build();
+        let host = HostBuilder::new()
+            .profile(HalProfileId::Windows)
+            .policy(HostPolicy::interactive_dev())
+            .build();
         let report = run_conformance(host.as_ref());
         let coverage = report.clause_coverage();
         assert_eq!(coverage.get("HAL-DYN-011"), Some(&true));

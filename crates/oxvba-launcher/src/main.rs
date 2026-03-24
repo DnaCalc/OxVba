@@ -35,8 +35,7 @@ fn main() {
         process::exit(1);
     });
 
-    let host_services =
-        HostBuilder::new()
+    let host_services = HostBuilder::new()
         .profile(native_host_profile())
         .policy(HostPolicy::deterministic_runtime())
         .build();

@@ -213,8 +213,7 @@ pub trait DynamicLinkHal: Send + Sync {
         args: &[RuntimeValue],
     ) -> HalResult<(RuntimeValue, Vec<RuntimeValue>)> {
         let arg = args.first().cloned().unwrap_or(RuntimeValue::I32(0));
-        self.invoke_bound(binding, arg)
-            .map(|rv| (rv, Vec::new()))
+        self.invoke_bound(binding, arg).map(|rv| (rv, Vec::new()))
     }
 
     /// Descriptor-driven invoke path used by VM/host integrations.

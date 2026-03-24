@@ -8,8 +8,8 @@
 
 #[cfg(target_os = "windows")]
 use crate::typelib::{
-    TypeLibEventDispatchPath, TypeLibEventMetadata, TypeLibMemberInvokeKind,
-    TypeLibMemberMetadata, TypeLibMetadataBlob, TypeLibParamType, TypeLibResolvedIdentity,
+    TypeLibEventDispatchPath, TypeLibEventMetadata, TypeLibMemberInvokeKind, TypeLibMemberMetadata,
+    TypeLibMetadataBlob, TypeLibParamType, TypeLibResolvedIdentity,
 };
 #[cfg(target_os = "windows")]
 use crate::windows_client::COM_S_OK;
@@ -151,19 +151,41 @@ struct TYPEATTR {
 #[repr(C)]
 struct ITypeLibVtbl {
     // IUnknown
-    query_interface: unsafe extern "system" fn(*mut c_void, *const windows_sys::core::GUID, *mut *mut c_void) -> i32,
+    query_interface: unsafe extern "system" fn(
+        *mut c_void,
+        *const windows_sys::core::GUID,
+        *mut *mut c_void,
+    ) -> i32,
     add_ref: unsafe extern "system" fn(*mut c_void) -> u32,
     release: unsafe extern "system" fn(*mut c_void) -> u32,
     // ITypeLib
     get_type_info_count: unsafe extern "system" fn(*mut c_void) -> u32,
     get_type_info: unsafe extern "system" fn(*mut c_void, u32, *mut *mut c_void) -> i32,
     get_type_info_type: unsafe extern "system" fn(*mut c_void, u32, *mut u32) -> i32,
-    get_type_info_of_guid: unsafe extern "system" fn(*mut c_void, *const windows_sys::core::GUID, *mut *mut c_void) -> i32,
+    get_type_info_of_guid: unsafe extern "system" fn(
+        *mut c_void,
+        *const windows_sys::core::GUID,
+        *mut *mut c_void,
+    ) -> i32,
     get_lib_attr: unsafe extern "system" fn(*mut c_void, *mut *mut c_void) -> i32,
     get_type_comp: unsafe extern "system" fn(*mut c_void, *mut *mut c_void) -> i32,
-    get_documentation: unsafe extern "system" fn(*mut c_void, i32, *mut *mut u16, *mut *mut u16, *mut u32, *mut *mut u16) -> i32,
+    get_documentation: unsafe extern "system" fn(
+        *mut c_void,
+        i32,
+        *mut *mut u16,
+        *mut *mut u16,
+        *mut u32,
+        *mut *mut u16,
+    ) -> i32,
     is_name: unsafe extern "system" fn(*mut c_void, *mut u16, u32, *mut i32) -> i32,
-    find_name: unsafe extern "system" fn(*mut c_void, *mut u16, u32, *mut *mut c_void, *mut i32, *mut u16) -> i32,
+    find_name: unsafe extern "system" fn(
+        *mut c_void,
+        *mut u16,
+        u32,
+        *mut *mut c_void,
+        *mut i32,
+        *mut u16,
+    ) -> i32,
     release_t_lib_attr: unsafe extern "system" fn(*mut c_void, *mut c_void),
 }
 
@@ -171,7 +193,11 @@ struct ITypeLibVtbl {
 #[repr(C)]
 struct ITypeInfoVtbl {
     // IUnknown
-    query_interface: unsafe extern "system" fn(*mut c_void, *const windows_sys::core::GUID, *mut *mut c_void) -> i32,
+    query_interface: unsafe extern "system" fn(
+        *mut c_void,
+        *const windows_sys::core::GUID,
+        *mut *mut c_void,
+    ) -> i32,
     add_ref: unsafe extern "system" fn(*mut c_void) -> u32,
     release: unsafe extern "system" fn(*mut c_void) -> u32,
     // ITypeInfo
@@ -183,14 +209,43 @@ struct ITypeInfoVtbl {
     get_ref_type_of_impl_type: unsafe extern "system" fn(*mut c_void, u32, *mut u32) -> i32,
     get_impl_type_flags: unsafe extern "system" fn(*mut c_void, u32, *mut i32) -> i32,
     get_ids_of_names: unsafe extern "system" fn(*mut c_void, *mut *mut u16, u32, *mut i32) -> i32,
-    invoke: unsafe extern "system" fn(*mut c_void, *mut c_void, i32, u16, *mut c_void, *mut c_void, *mut c_void, *mut u32) -> i32,
-    get_documentation: unsafe extern "system" fn(*mut c_void, i32, *mut *mut u16, *mut *mut u16, *mut u32, *mut *mut u16) -> i32,
-    get_dll_entry: unsafe extern "system" fn(*mut c_void, i32, u16, *mut *mut u16, *mut *mut u16, *mut u16) -> i32,
+    invoke: unsafe extern "system" fn(
+        *mut c_void,
+        *mut c_void,
+        i32,
+        u16,
+        *mut c_void,
+        *mut c_void,
+        *mut c_void,
+        *mut u32,
+    ) -> i32,
+    get_documentation: unsafe extern "system" fn(
+        *mut c_void,
+        i32,
+        *mut *mut u16,
+        *mut *mut u16,
+        *mut u32,
+        *mut *mut u16,
+    ) -> i32,
+    get_dll_entry: unsafe extern "system" fn(
+        *mut c_void,
+        i32,
+        u16,
+        *mut *mut u16,
+        *mut *mut u16,
+        *mut u16,
+    ) -> i32,
     get_ref_type_info: unsafe extern "system" fn(*mut c_void, u32, *mut *mut c_void) -> i32,
     address_of_member: unsafe extern "system" fn(*mut c_void, i32, u16, *mut *mut c_void) -> i32,
-    create_instance: unsafe extern "system" fn(*mut c_void, *mut c_void, *const windows_sys::core::GUID, *mut *mut c_void) -> i32,
+    create_instance: unsafe extern "system" fn(
+        *mut c_void,
+        *mut c_void,
+        *const windows_sys::core::GUID,
+        *mut *mut c_void,
+    ) -> i32,
     get_mops: unsafe extern "system" fn(*mut c_void, i32, *mut *mut u16) -> i32,
-    get_containing_type_lib: unsafe extern "system" fn(*mut c_void, *mut *mut c_void, *mut u32) -> i32,
+    get_containing_type_lib:
+        unsafe extern "system" fn(*mut c_void, *mut *mut c_void, *mut u32) -> i32,
     release_type_attr: unsafe extern "system" fn(*mut c_void, *mut TYPEATTR),
     release_func_desc: unsafe extern "system" fn(*mut c_void, *mut FUNCDESC),
     release_var_desc: unsafe extern "system" fn(*mut c_void, *mut c_void),
@@ -346,7 +401,9 @@ pub fn load_typelib_from_registry(
 pub fn load_typelib_from_path(path: &str) -> Result<*mut c_void, String> {
     let wide: Vec<u16> = path.encode_utf16().chain(std::iter::once(0)).collect();
     let mut ptlib: *mut c_void = std::ptr::null_mut();
-    let hr = unsafe { LoadTypeLibEx(wide.as_ptr(), 2 /* REGKIND_NONE */, &mut ptlib) };
+    let hr = unsafe {
+        LoadTypeLibEx(wide.as_ptr(), 2 /* REGKIND_NONE */, &mut ptlib)
+    };
     if hr != COM_S_OK || ptlib.is_null() {
         return Err(format!(
             "LoadTypeLibEx failed for path `{}`: HRESULT=0x{:08X}",
@@ -437,8 +494,8 @@ unsafe fn extract_typelib_identity(
         std::ptr::null_mut(),
         std::ptr::null_mut(),
     );
-    let lib_name = bstr_to_string_and_free(name_bstr)
-        .unwrap_or_else(|| request.reference_name.clone());
+    let lib_name =
+        bstr_to_string_and_free(name_bstr).unwrap_or_else(|| request.reference_name.clone());
 
     ((*vtbl).release_t_lib_attr)(ptlib, pattr);
 
@@ -461,9 +518,7 @@ unsafe fn extract_typelib_identity(
 
 /// Enumerates all dispatch members from a loaded ITypeLib.
 #[cfg(target_os = "windows")]
-pub fn enumerate_typelib_members(
-    ptlib: *mut c_void,
-) -> Result<Vec<TypeLibMemberMetadata>, String> {
+pub fn enumerate_typelib_members(ptlib: *mut c_void) -> Result<Vec<TypeLibMemberMetadata>, String> {
     let mut members = Vec::new();
     let vtbl = unsafe { *(ptlib as *const *const ITypeLibVtbl) };
     let count = unsafe { ((*vtbl).get_type_info_count)(ptlib) };
@@ -528,7 +583,13 @@ unsafe fn extract_members_from_typeinfo(
         let max_names = cparams + 1;
         let mut names: Vec<*mut u16> = vec![std::ptr::null_mut(); max_names as usize];
         let mut name_count: u32 = 0;
-        let _ = ((*vtbl).get_names)(ptinfo, memid, names.as_mut_ptr(), max_names, &mut name_count);
+        let _ = ((*vtbl).get_names)(
+            ptinfo,
+            memid,
+            names.as_mut_ptr(),
+            max_names,
+            &mut name_count,
+        );
 
         let func_name = if name_count > 0 && !names[0].is_null() {
             bstr_to_string_and_free(names[0]).unwrap_or_default()
@@ -607,9 +668,7 @@ unsafe fn extract_members_from_typeinfo(
 
 /// Enumerates event metadata from a loaded ITypeLib.
 #[cfg(target_os = "windows")]
-pub fn enumerate_typelib_events(
-    ptlib: *mut c_void,
-) -> Result<Vec<TypeLibEventMetadata>, String> {
+pub fn enumerate_typelib_events(ptlib: *mut c_void) -> Result<Vec<TypeLibEventMetadata>, String> {
     let mut events = Vec::new();
     let vtbl = unsafe { *(ptlib as *const *const ITypeLibVtbl) };
     let count = unsafe { ((*vtbl).get_type_info_count)(ptlib) };
@@ -714,9 +773,7 @@ unsafe fn extract_events_from_coclass(
 
 /// Extracts the ProgID for a CoClass from the typelib (for As New support).
 #[cfg(target_os = "windows")]
-pub fn extract_coclass_prog_id(
-    ptlib: *mut c_void,
-) -> Option<String> {
+pub fn extract_coclass_prog_id(ptlib: *mut c_void) -> Option<String> {
     let vtbl = unsafe { *(ptlib as *const *const ITypeLibVtbl) };
     let count = unsafe { ((*vtbl).get_type_info_count)(ptlib) };
 
@@ -774,10 +831,8 @@ pub fn build_metadata_blob_from_typelib(
         .iter()
         .find(|m| m.is_default_member)
         .map(|m| m.token);
-    let member_name_to_token: Vec<(String, i32)> = members
-        .iter()
-        .map(|m| (m.name.clone(), m.token))
-        .collect();
+    let member_name_to_token: Vec<(String, i32)> =
+        members.iter().map(|m| (m.name.clone(), m.token)).collect();
 
     Ok(TypeLibMetadataBlob {
         identity,
@@ -829,9 +884,7 @@ pub fn enumerate_typelib_events(
 // ── Non-Windows type stubs ──
 
 #[cfg(not(target_os = "windows"))]
-use crate::typelib::{
-    TypeLibEventMetadata, TypeLibMemberMetadata, TypeLibResolvedIdentity,
-};
+use crate::typelib::{TypeLibEventMetadata, TypeLibMemberMetadata, TypeLibResolvedIdentity};
 
 #[cfg(test)]
 #[cfg(target_os = "windows")]

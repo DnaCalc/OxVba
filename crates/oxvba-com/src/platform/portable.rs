@@ -60,11 +60,7 @@ impl PortableComProjection {
 
 impl std::fmt::Debug for PortableComProjection {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let count = self
-            .registry
-            .lock()
-            .map(|r| r.len())
-            .unwrap_or(0);
+        let count = self.registry.lock().map(|r| r.len()).unwrap_or(0);
         f.debug_struct("PortableComProjection")
             .field("registered_count", &count)
             .finish()

@@ -134,11 +134,7 @@ impl FileSystemHal for NullHostServices {
         Err(self.unsupported(CapabilityId::FileSystemIo, "print_line"))
     }
 
-    fn input_fields(
-        &self,
-        _handle: RuntimeValue,
-        _count: RuntimeValue,
-    ) -> HalResult<RuntimeValue> {
+    fn input_fields(&self, _handle: RuntimeValue, _count: RuntimeValue) -> HalResult<RuntimeValue> {
         Err(self.unsupported(CapabilityId::FileSystemIo, "input_fields"))
     }
 

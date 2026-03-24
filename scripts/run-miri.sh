@@ -1,6 +1,8 @@
 #!/bin/bash
 # Run cargo miri on unsafe-heavy crates.
-# Excludes COM crates (Windows FFI is incompatible with miri).
+# Excludes Windows-specific COM FFI paths (Windows APIs are incompatible with miri).
+# The oxvba-com miri_variant_mock module provides pure-Rust mock paths for
+# VARIANT layout verification without calling actual COM APIs.
 #
 # Prerequisites:
 #   rustup +nightly component add miri
@@ -25,6 +27,12 @@ cargo +nightly miri test -p oxvba-jit 2>&1 || {
 echo "=== Running miri on oxvba-vm (semantics + broadword only) ==="
 cargo +nightly miri test -p oxvba-vm -- semantics broadword 2>&1 || {
     echo "FAIL: oxvba-vm miri"
+    exit 1
+}
+
+echo "=== Running miri on oxvba-com (miri_variant mock paths) ==="
+cargo +nightly miri test -p oxvba-com -- miri_variant 2>&1 || {
+    echo "FAIL: oxvba-com miri"
     exit 1
 }
 

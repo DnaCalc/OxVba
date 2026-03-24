@@ -141,8 +141,7 @@ fn correlate_module_declarations(
                             .get(&lower)
                             .cloned()
                             .unwrap_or(BoundType::Variant);
-                        let is_const =
-                            child.kind() == SyntaxKind::ConstStmt;
+                        let is_const = child.kind() == SyntaxKind::ConstStmt;
                         symbols.push(SymbolInfo {
                             name,
                             kind: if is_const {
@@ -209,11 +208,7 @@ fn correlate_module_declarations(
     }
 }
 
-fn correlate_procedures(
-    root: &SyntaxNode<'_>,
-    bound: &BoundModule,
-    symbols: &mut Vec<SymbolInfo>,
-) {
+fn correlate_procedures(root: &SyntaxNode<'_>, bound: &BoundModule, symbols: &mut Vec<SymbolInfo>) {
     let proc_kinds = [
         SyntaxKind::SubDecl,
         SyntaxKind::FunctionDecl,
@@ -349,10 +344,7 @@ fn find_name_token<'a>(node: &SyntaxNode<'a>) -> Option<(&'a str, u32, u32)> {
 }
 
 /// Map BoundModule resolution diagnostics to source spans.
-fn map_resolution_diagnostics(
-    parse: &Parse,
-    bound: &BoundModule,
-) -> Vec<SpannedDiagnostic> {
+fn map_resolution_diagnostics(parse: &Parse, bound: &BoundModule) -> Vec<SpannedDiagnostic> {
     let root = parse.syntax();
     let source = root.text();
 
@@ -398,9 +390,9 @@ fn extract_identifier_from_diagnostic(msg: &str) -> Option<String> {
 fn find_identifier_span(source: &str, name: &str) -> Option<TextSpan> {
     let lower = name.to_ascii_lowercase();
     let source_lower = source.to_ascii_lowercase();
-    source_lower.find(&lower).map(|pos| {
-        TextSpan::new(pos as u32, (pos + name.len()) as u32)
-    })
+    source_lower
+        .find(&lower)
+        .map(|pos| TextSpan::new(pos as u32, (pos + name.len()) as u32))
 }
 
 #[cfg(test)]
@@ -415,7 +407,12 @@ mod tests {
         assert!(!snap.symbols.symbols.is_empty());
 
         // Should find procedure "Hello" and variable "x"
-        let names: Vec<&str> = snap.symbols.symbols.iter().map(|s| s.name.as_str()).collect();
+        let names: Vec<&str> = snap
+            .symbols
+            .symbols
+            .iter()
+            .map(|s| s.name.as_str())
+            .collect();
         assert!(names.contains(&"Hello"), "symbols: {names:?}");
         assert!(names.contains(&"x"), "symbols: {names:?}");
     }

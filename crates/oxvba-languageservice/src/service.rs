@@ -60,29 +60,167 @@ pub struct HoverInfo {
 // ── VBA keyword list for completions ────────────────────────────────
 
 const VBA_KEYWORDS: &[&str] = &[
-    "Sub", "Function", "End", "If", "Then", "Else", "ElseIf", "For", "To", "Step",
-    "Next", "Do", "Loop", "While", "Wend", "Until", "Select", "Case", "With", "Dim",
-    "Const", "Public", "Private", "Static", "Set", "Let", "As", "New", "Nothing",
-    "ByRef", "ByVal", "Optional", "ParamArray", "Property", "Get", "Call", "Exit",
-    "On", "Error", "Resume", "Erase", "ReDim", "GoTo", "GoSub", "Return", "True",
-    "False", "Not", "And", "Or", "Xor", "Mod", "Like", "Is", "Me", "Debug", "Stop",
+    "Sub",
+    "Function",
+    "End",
+    "If",
+    "Then",
+    "Else",
+    "ElseIf",
+    "For",
+    "To",
+    "Step",
+    "Next",
+    "Do",
+    "Loop",
+    "While",
+    "Wend",
+    "Until",
+    "Select",
+    "Case",
+    "With",
+    "Dim",
+    "Const",
+    "Public",
+    "Private",
+    "Static",
+    "Set",
+    "Let",
+    "As",
+    "New",
+    "Nothing",
+    "ByRef",
+    "ByVal",
+    "Optional",
+    "ParamArray",
+    "Property",
+    "Get",
+    "Call",
+    "Exit",
+    "On",
+    "Error",
+    "Resume",
+    "Erase",
+    "ReDim",
+    "GoTo",
+    "GoSub",
+    "Return",
+    "True",
+    "False",
+    "Not",
+    "And",
+    "Or",
+    "Xor",
+    "Mod",
+    "Like",
+    "Is",
+    "Me",
+    "Debug",
+    "Stop",
 ];
 
 // ── Intrinsic function names for completions ────────────────────────
 
 const INTRINSIC_NAMES: &[&str] = &[
-    "Abs", "Asc", "AscW", "Atn", "CBool", "CByte", "CCur", "CDate", "CDbl", "CDec",
-    "Chr", "ChrW", "CInt", "CLng", "CLngLng", "CLngPtr", "Cos", "CSng", "CStr", "CVar",
-    "CVErr", "Date", "DateAdd", "DateDiff", "DatePart", "DateSerial", "DateValue", "Day",
-    "Dir", "DoEvents", "Environ", "EOF", "Err", "Exp", "FileDateTime", "FileLen", "Fix",
-    "Format", "FreeFile", "Hex", "Hour", "IIf", "InStr", "InStrRev", "Int", "IsArray",
-    "IsDate", "IsEmpty", "IsError", "IsMissing", "IsNull", "IsNumeric", "IsObject",
-    "Join", "LBound", "LCase", "Left", "Len", "LenB", "Log", "LTrim", "Mid", "Minute",
-    "Month", "MonthName", "MsgBox", "Now", "Oct", "Replace", "RGB", "Right", "Rnd",
-    "Round", "RTrim", "Second", "Sgn", "Sin", "Space", "Split", "Sqr", "Str",
-    "StrComp", "String", "StrReverse", "Switch", "Tab", "Tan", "Time", "Timer",
-    "TimeSerial", "TimeValue", "Trim", "TypeName", "UBound", "UCase", "Val",
-    "Weekday", "WeekdayName", "Year",
+    "Abs",
+    "Asc",
+    "AscW",
+    "Atn",
+    "CBool",
+    "CByte",
+    "CCur",
+    "CDate",
+    "CDbl",
+    "CDec",
+    "Chr",
+    "ChrW",
+    "CInt",
+    "CLng",
+    "CLngLng",
+    "CLngPtr",
+    "Cos",
+    "CSng",
+    "CStr",
+    "CVar",
+    "CVErr",
+    "Date",
+    "DateAdd",
+    "DateDiff",
+    "DatePart",
+    "DateSerial",
+    "DateValue",
+    "Day",
+    "Dir",
+    "DoEvents",
+    "Environ",
+    "EOF",
+    "Err",
+    "Exp",
+    "FileDateTime",
+    "FileLen",
+    "Fix",
+    "Format",
+    "FreeFile",
+    "Hex",
+    "Hour",
+    "IIf",
+    "InStr",
+    "InStrRev",
+    "Int",
+    "IsArray",
+    "IsDate",
+    "IsEmpty",
+    "IsError",
+    "IsMissing",
+    "IsNull",
+    "IsNumeric",
+    "IsObject",
+    "Join",
+    "LBound",
+    "LCase",
+    "Left",
+    "Len",
+    "LenB",
+    "Log",
+    "LTrim",
+    "Mid",
+    "Minute",
+    "Month",
+    "MonthName",
+    "MsgBox",
+    "Now",
+    "Oct",
+    "Replace",
+    "RGB",
+    "Right",
+    "Rnd",
+    "Round",
+    "RTrim",
+    "Second",
+    "Sgn",
+    "Sin",
+    "Space",
+    "Split",
+    "Sqr",
+    "Str",
+    "StrComp",
+    "String",
+    "StrReverse",
+    "Switch",
+    "Tab",
+    "Tan",
+    "Time",
+    "Timer",
+    "TimeSerial",
+    "TimeValue",
+    "Trim",
+    "TypeName",
+    "UBound",
+    "UCase",
+    "Val",
+    "Weekday",
+    "WeekdayName",
+    "Year",
 ];
 
 /// High-level project-oriented trait for language service consumers (§4.8).
@@ -115,12 +253,7 @@ pub trait LanguageServiceProvider {
         module: &str,
         pos: Position,
     ) -> Vec<Location>;
-    fn hover(
-        &self,
-        project: &ProjectManifest,
-        module: &str,
-        pos: Position,
-    ) -> Option<HoverInfo>;
+    fn hover(&self, project: &ProjectManifest, module: &str, pos: Position) -> Option<HoverInfo>;
 }
 
 /// The language service: provides IDE features over a workspace.
@@ -185,14 +318,13 @@ impl LanguageService {
 
         // Intrinsic functions
         for name in INTRINSIC_NAMES {
-            let detail = intrinsic_spec(&name.to_ascii_lowercase())
-                .map(|spec| {
-                    if spec.min_arity == spec.max_arity {
-                        format!("({} args)", spec.min_arity)
-                    } else {
-                        format!("({}-{} args)", spec.min_arity, spec.max_arity)
-                    }
-                });
+            let detail = intrinsic_spec(&name.to_ascii_lowercase()).map(|spec| {
+                if spec.min_arity == spec.max_arity {
+                    format!("({} args)", spec.min_arity)
+                } else {
+                    format!("({}-{} args)", spec.min_arity, spec.max_arity)
+                }
+            });
             items.push(CompletionItem {
                 label: name.to_string(),
                 kind: CompletionKind::Intrinsic,
@@ -260,11 +392,7 @@ impl LanguageService {
     ///
     /// Uses paren-depth-aware backward walk to correctly identify the
     /// enclosing call even when there are nested calls like `f(g(|x))`.
-    pub fn signature_help(
-        &self,
-        module: &DocumentId,
-        position: Position,
-    ) -> Option<SignatureHelp> {
+    pub fn signature_help(&self, module: &DocumentId, position: Position) -> Option<SignatureHelp> {
         let snap = self.workspace.snapshot(module)?;
         let root = snap.parse.syntax();
         let all_tokens = collect_all_tokens(&root);
@@ -345,11 +473,7 @@ impl LanguageService {
     }
 
     /// Go to definition: find where the symbol at position is defined.
-    pub fn go_to_definition(
-        &self,
-        module: &DocumentId,
-        position: Position,
-    ) -> Option<Location> {
+    pub fn go_to_definition(&self, module: &DocumentId, position: Position) -> Option<Location> {
         let snap = self.workspace.snapshot(module)?;
 
         // Find identifier at position
@@ -387,11 +511,7 @@ impl LanguageService {
     }
 
     /// Find all references to the symbol at position.
-    pub fn find_references(
-        &self,
-        module: &DocumentId,
-        position: Position,
-    ) -> Vec<Location> {
+    pub fn find_references(&self, module: &DocumentId, position: Position) -> Vec<Location> {
         let mut locations = Vec::new();
 
         let ident = match self.identifier_at_position(module, position) {
@@ -407,9 +527,7 @@ impl LanguageService {
                 let all_tokens = collect_all_tokens(&root);
 
                 for (kind, text, offset) in &all_tokens {
-                    if *kind == SyntaxKind::Ident
-                        && text.to_ascii_lowercase() == ident_lower
-                    {
+                    if *kind == SyntaxKind::Ident && text.to_ascii_lowercase() == ident_lower {
                         locations.push(Location {
                             document: doc_id.clone(),
                             span: TextSpan::new(*offset, offset + text.len() as u32),
@@ -589,21 +707,14 @@ impl LanguageServiceProvider for LanguageService {
         self.find_references(&id, pos)
     }
 
-    fn hover(
-        &self,
-        _project: &ProjectManifest,
-        module: &str,
-        pos: Position,
-    ) -> Option<HoverInfo> {
+    fn hover(&self, _project: &ProjectManifest, module: &str, pos: Position) -> Option<HoverInfo> {
         let id = DocumentId::new(module);
         self.hover(&id, pos)
     }
 }
 
 /// Collect all tokens from a syntax tree (flattened).
-fn collect_all_tokens<'a>(
-    node: &oxvba_syntax::SyntaxNode<'a>,
-) -> Vec<(SyntaxKind, &'a str, u32)> {
+fn collect_all_tokens<'a>(node: &oxvba_syntax::SyntaxNode<'a>) -> Vec<(SyntaxKind, &'a str, u32)> {
     let mut result = Vec::new();
     collect_tokens_recursive(node, &mut result);
     result
@@ -778,13 +889,17 @@ mod tests {
         let pos = (call_line + second_comma + 2) as u32; // after second comma + space
         let help = svc.signature_help(&id, pos);
         if let Some(h) = &help {
-            assert_eq!(h.active_parameter, 2, "expected active_parameter=2, got {}", h.active_parameter);
+            assert_eq!(
+                h.active_parameter, 2,
+                "expected active_parameter=2, got {}",
+                h.active_parameter
+            );
         }
     }
 
     #[test]
     fn language_service_provider_trait() {
-        use oxvba_compiler::{ProjectManifest, ProjectKind};
+        use oxvba_compiler::{ProjectKind, ProjectManifest};
 
         let mut ws = Workspace::new();
         let id = DocumentId::new("TestModule");
@@ -806,12 +921,15 @@ mod tests {
         assert!(!syms.is_empty(), "expected symbols from trait method");
 
         let completions = provider.completions(&manifest, "TestModule", 0);
-        assert!(!completions.is_empty(), "expected completions from trait method");
+        assert!(
+            !completions.is_empty(),
+            "expected completions from trait method"
+        );
     }
 
     #[test]
     fn language_service_provider_go_to_def() {
-        use oxvba_compiler::{ProjectManifest, ProjectKind};
+        use oxvba_compiler::{ProjectKind, ProjectManifest};
 
         let src = "Sub Foo()\nEnd Sub\nSub Bar()\n    Foo\nEnd Sub\n";
         let mut ws = Workspace::new();

@@ -3,10 +3,7 @@
 use oxvba_project::{ComClassExportDescriptor, DispatchMemberInfo};
 
 /// Generate IDL source for MIDL compilation to produce a .tlb type library.
-pub fn generate_idl(
-    project_name: &str,
-    classes: &[ComClassExportDescriptor],
-) -> String {
+pub fn generate_idl(project_name: &str, classes: &[ComClassExportDescriptor]) -> String {
     let mut idl = String::new();
 
     let lib_uuid = deterministic_uuid(project_name, "__typelib__");
@@ -37,15 +34,9 @@ library {project_name}Lib
     idl
 }
 
-fn generate_class_idl(
-    project_name: &str,
-    class: &ComClassExportDescriptor,
-) -> String {
+fn generate_class_idl(project_name: &str, class: &ComClassExportDescriptor) -> String {
     let class_name = &class.class_name;
-    let description = class
-        .description
-        .as_deref()
-        .unwrap_or(class_name);
+    let description = class.description.as_deref().unwrap_or(class_name);
 
     let iface_uuid = deterministic_uuid(project_name, &format!("I{class_name}"));
     let coclass_uuid = deterministic_uuid(project_name, class_name);
@@ -124,10 +115,7 @@ fn generate_member_idl(member: &DispatchMemberInfo, dispid: usize) -> String {
             },
         )
     } else {
-        format!(
-            "        {attr} HRESULT {name}({});\n",
-            params.join(", ")
-        )
+        format!("        {attr} HRESULT {name}({});\n", params.join(", "))
     }
 }
 
@@ -135,7 +123,7 @@ fn generate_member_idl(member: &DispatchMemberInfo, dispid: usize) -> String {
 ///
 /// Uses a simple FNV-1a-style hash to produce a reproducible 128-bit value,
 /// formatted as a UUID with the version nibble set to 5 and variant bits to RFC 4122.
-fn deterministic_uuid(namespace: &str, name: &str) -> String {
+pub fn deterministic_uuid(namespace: &str, name: &str) -> String {
     // OxVBA namespace seed (arbitrary fixed value for deterministic generation)
     const NAMESPACE_SEED: u128 = 0x4f58_5642_4100_0000_0000_0000_0000_0001; // "OXVBA..."
 
@@ -159,7 +147,9 @@ fn deterministic_uuid(namespace: &str, name: &str) -> String {
         u16::from_be_bytes([bytes[4], bytes[5]]),
         u16::from_be_bytes([bytes[6], bytes[7]]),
         u16::from_be_bytes([bytes[8], bytes[9]]),
-        u64::from_be_bytes([0, 0, bytes[10], bytes[11], bytes[12], bytes[13], bytes[14], bytes[15]]),
+        u64::from_be_bytes([
+            0, 0, bytes[10], bytes[11], bytes[12], bytes[13], bytes[14], bytes[15]
+        ]),
     )
 }
 

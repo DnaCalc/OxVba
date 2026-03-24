@@ -9,13 +9,17 @@
 use std::cmp::Ordering;
 
 use oxvba_com::{ComValue, DynamicCallArg, DynamicCallRequest, DynamicObjectBridge};
-use oxvba_compiler::bytecode::{DispatchInvokeArg, RuntimeAssignmentIntent, RuntimeAssignmentTargetKind, StringCompareMode};
+use oxvba_compiler::bytecode::{
+    DispatchInvokeArg, RuntimeAssignmentIntent, RuntimeAssignmentTargetKind, StringCompareMode,
+};
 use oxvba_hal::HalComDynamicBridge;
 use oxvba_hal::error::{HalError, HalErrorKind};
 use oxvba_hal::model::CapabilityId;
-use oxvba_runtime::{F64Value, RuntimeValue, bstr::BStr};
 use oxvba_runtime::safe_array::{array_len_from_tag, is_array_tag as runtime_is_array_tag};
-use oxvba_runtime::value_tags::{EMPTY_TAG, NULL_TAG, error_tag_from_code, is_error_tag as runtime_is_error_tag};
+use oxvba_runtime::value_tags::{
+    EMPTY_TAG, NULL_TAG, error_tag_from_code, is_error_tag as runtime_is_error_tag,
+};
+use oxvba_runtime::{F64Value, RuntimeValue, bstr::BStr};
 use oxvba_vm::semantics;
 
 use crate::jit_context::JitContext;
@@ -235,47 +239,73 @@ fn compare_slots(
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn oxrt_cmp_eq(ctx: *mut JitContext, dst: u32, lhs: u32, rhs: u32, mode: u32) -> i32 {
+pub extern "C" fn oxrt_cmp_eq(
+    ctx: *mut JitContext,
+    dst: u32,
+    lhs: u32,
+    rhs: u32,
+    mode: u32,
+) -> i32 {
     compare_slots(ctx, dst, lhs, rhs, mode, |o| o == Ordering::Equal)
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn oxrt_cmp_ne(ctx: *mut JitContext, dst: u32, lhs: u32, rhs: u32, mode: u32) -> i32 {
+pub extern "C" fn oxrt_cmp_ne(
+    ctx: *mut JitContext,
+    dst: u32,
+    lhs: u32,
+    rhs: u32,
+    mode: u32,
+) -> i32 {
     compare_slots(ctx, dst, lhs, rhs, mode, |o| o != Ordering::Equal)
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn oxrt_cmp_lt(ctx: *mut JitContext, dst: u32, lhs: u32, rhs: u32, mode: u32) -> i32 {
+pub extern "C" fn oxrt_cmp_lt(
+    ctx: *mut JitContext,
+    dst: u32,
+    lhs: u32,
+    rhs: u32,
+    mode: u32,
+) -> i32 {
     compare_slots(ctx, dst, lhs, rhs, mode, |o| o == Ordering::Less)
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn oxrt_cmp_le(ctx: *mut JitContext, dst: u32, lhs: u32, rhs: u32, mode: u32) -> i32 {
-    compare_slots(
-        ctx,
-        dst,
-        lhs,
-        rhs,
-        mode,
-        |o| o == Ordering::Less || o == Ordering::Equal,
-    )
+pub extern "C" fn oxrt_cmp_le(
+    ctx: *mut JitContext,
+    dst: u32,
+    lhs: u32,
+    rhs: u32,
+    mode: u32,
+) -> i32 {
+    compare_slots(ctx, dst, lhs, rhs, mode, |o| {
+        o == Ordering::Less || o == Ordering::Equal
+    })
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn oxrt_cmp_gt(ctx: *mut JitContext, dst: u32, lhs: u32, rhs: u32, mode: u32) -> i32 {
+pub extern "C" fn oxrt_cmp_gt(
+    ctx: *mut JitContext,
+    dst: u32,
+    lhs: u32,
+    rhs: u32,
+    mode: u32,
+) -> i32 {
     compare_slots(ctx, dst, lhs, rhs, mode, |o| o == Ordering::Greater)
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn oxrt_cmp_ge(ctx: *mut JitContext, dst: u32, lhs: u32, rhs: u32, mode: u32) -> i32 {
-    compare_slots(
-        ctx,
-        dst,
-        lhs,
-        rhs,
-        mode,
-        |o| o == Ordering::Greater || o == Ordering::Equal,
-    )
+pub extern "C" fn oxrt_cmp_ge(
+    ctx: *mut JitContext,
+    dst: u32,
+    lhs: u32,
+    rhs: u32,
+    mode: u32,
+) -> i32 {
+    compare_slots(ctx, dst, lhs, rhs, mode, |o| {
+        o == Ordering::Greater || o == Ordering::Equal
+    })
 }
 
 // ── Boolean helpers ───────────────────────────────────────────────────
@@ -362,7 +392,13 @@ pub extern "C" fn oxrt_sgn(ctx: *mut JitContext, dst: u32, src: u32) -> i32 {
         RuntimeValue::Null => RuntimeValue::Null,
         RuntimeValue::F64(v) => {
             let f = v.as_f64();
-            RuntimeValue::I32(if f > 0.0 { 1 } else if f < 0.0 { -1 } else { 0 })
+            RuntimeValue::I32(if f > 0.0 {
+                1
+            } else if f < 0.0 {
+                -1
+            } else {
+                0
+            })
         }
         RuntimeValue::I32(v) => RuntimeValue::I32(v.signum()),
         _ => {
@@ -457,7 +493,11 @@ pub extern "C" fn oxrt_left(ctx: *mut JitContext, dst: u32, src: u32, count: u32
                 Ok(n) => n,
                 Err(_) => return ERR_RUNTIME,
             };
-            let result = if n >= s.0.len() { s.0.clone() } else { s.0[..n].to_string() };
+            let result = if n >= s.0.len() {
+                s.0.clone()
+            } else {
+                s.0[..n].to_string()
+            };
             write_slot!(ctx, dst, RuntimeValue::String(BStr(result)));
         }
         _ => {
@@ -487,7 +527,11 @@ pub extern "C" fn oxrt_right(ctx: *mut JitContext, dst: u32, src: u32, count: u3
                 Err(_) => return ERR_RUNTIME,
             };
             let len = s.0.len();
-            let result = if n >= len { s.0.clone() } else { s.0[len - n..].to_string() };
+            let result = if n >= len {
+                s.0.clone()
+            } else {
+                s.0[len - n..].to_string()
+            };
             write_slot!(ctx, dst, RuntimeValue::String(BStr(result)));
         }
         _ => {
@@ -509,7 +553,13 @@ pub extern "C" fn oxrt_right(ctx: *mut JitContext, dst: u32, src: u32, count: u3
 /// Mid: dst = Mid$(src, start [, count])
 /// count_slot == u32::MAX means no count.
 #[unsafe(no_mangle)]
-pub extern "C" fn oxrt_mid(ctx: *mut JitContext, dst: u32, src: u32, start: u32, count_slot: u32) -> i32 {
+pub extern "C" fn oxrt_mid(
+    ctx: *mut JitContext,
+    dst: u32,
+    src: u32,
+    start: u32,
+    count_slot: u32,
+) -> i32 {
     let src_val = read_slot!(ctx, src);
     match &src_val {
         RuntimeValue::String(s) => {
@@ -563,7 +613,13 @@ pub extern "C" fn oxrt_mid(ctx: *mut JitContext, dst: u32, src: u32, start: u32,
 
 /// Mid statement: Mid$(target, start [, count]) = value
 #[unsafe(no_mangle)]
-pub extern "C" fn oxrt_mid_stmt(ctx: *mut JitContext, target: u32, start: u32, count_slot: u32, value: u32) -> i32 {
+pub extern "C" fn oxrt_mid_stmt(
+    ctx: *mut JitContext,
+    target: u32,
+    start: u32,
+    count_slot: u32,
+    value: u32,
+) -> i32 {
     let target_val = read_slot!(ctx, target);
     let tv = match semantics::runtime_value_legacy_token(&target_val, "MidStmt target") {
         Ok(v) => v,
@@ -588,15 +644,29 @@ pub extern "C" fn oxrt_mid_stmt(ctx: *mut JitContext, target: u32, start: u32, c
         Ok(v) => v,
         Err(_) => return ERR_RUNTIME,
     };
-    write_slot!(ctx, target, RuntimeValue::I32(mid_stmt_digits(tv, st, cnt, vv)));
+    write_slot!(
+        ctx,
+        target,
+        RuntimeValue::I32(mid_stmt_digits(tv, st, cnt, vv))
+    );
     OK
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn oxrt_instr(ctx: *mut JitContext, dst: u32, haystack: u32, needle: u32, mode: u32) -> i32 {
+pub extern "C" fn oxrt_instr(
+    ctx: *mut JitContext,
+    dst: u32,
+    haystack: u32,
+    needle: u32,
+    mode: u32,
+) -> i32 {
     let hay_val = read_slot!(ctx, haystack);
     let nee_val = read_slot!(ctx, needle);
-    let scm = if mode == 1 { StringCompareMode::Text } else { StringCompareMode::Binary };
+    let scm = if mode == 1 {
+        StringCompareMode::Text
+    } else {
+        StringCompareMode::Binary
+    };
     match (&hay_val, &nee_val) {
         (RuntimeValue::String(h), RuntimeValue::String(n)) => {
             let h = semantics::normalize_for_compare(h.0.clone(), scm);
@@ -620,10 +690,20 @@ pub extern "C" fn oxrt_instr(ctx: *mut JitContext, dst: u32, haystack: u32, need
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn oxrt_instrrev(ctx: *mut JitContext, dst: u32, haystack: u32, needle: u32, mode: u32) -> i32 {
+pub extern "C" fn oxrt_instrrev(
+    ctx: *mut JitContext,
+    dst: u32,
+    haystack: u32,
+    needle: u32,
+    mode: u32,
+) -> i32 {
     let hay_val = read_slot!(ctx, haystack);
     let nee_val = read_slot!(ctx, needle);
-    let scm = if mode == 1 { StringCompareMode::Text } else { StringCompareMode::Binary };
+    let scm = if mode == 1 {
+        StringCompareMode::Text
+    } else {
+        StringCompareMode::Binary
+    };
     match (&hay_val, &nee_val) {
         (RuntimeValue::String(h), RuntimeValue::String(n)) => {
             let h = semantics::normalize_for_compare(h.0.clone(), scm);
@@ -651,7 +731,11 @@ pub extern "C" fn oxrt_lower(ctx: *mut JitContext, dst: u32, src: u32) -> i32 {
     let val = read_slot!(ctx, src);
     match &val {
         RuntimeValue::String(s) => {
-            write_slot!(ctx, dst, RuntimeValue::String(BStr(s.0.to_ascii_lowercase())));
+            write_slot!(
+                ctx,
+                dst,
+                RuntimeValue::String(BStr(s.0.to_ascii_lowercase()))
+            );
         }
         _ => {
             let v = match semantics::runtime_value_legacy_token(&val, "LCase operand") {
@@ -669,7 +753,11 @@ pub extern "C" fn oxrt_upper(ctx: *mut JitContext, dst: u32, src: u32) -> i32 {
     let val = read_slot!(ctx, src);
     match &val {
         RuntimeValue::String(s) => {
-            write_slot!(ctx, dst, RuntimeValue::String(BStr(s.0.to_ascii_uppercase())));
+            write_slot!(
+                ctx,
+                dst,
+                RuntimeValue::String(BStr(s.0.to_ascii_uppercase()))
+            );
         }
         _ => {
             let v = match semantics::runtime_value_legacy_token(&val, "UCase operand") {
@@ -715,7 +803,13 @@ pub extern "C" fn oxrt_join(ctx: *mut JitContext, dst: u32, src: u32, delimiter:
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn oxrt_replace(ctx: *mut JitContext, dst: u32, src: u32, find: u32, replace: u32) -> i32 {
+pub extern "C" fn oxrt_replace(
+    ctx: *mut JitContext,
+    dst: u32,
+    src: u32,
+    find: u32,
+    replace: u32,
+) -> i32 {
     let src_val = read_slot!(ctx, src);
     let find_val = read_slot!(ctx, find);
     let replace_val = read_slot!(ctx, replace);
@@ -766,7 +860,11 @@ pub extern "C" fn oxrt_ltrim(ctx: *mut JitContext, dst: u32, src: u32) -> i32 {
     let val = read_slot!(ctx, src);
     match &val {
         RuntimeValue::String(s) => {
-            write_slot!(ctx, dst, RuntimeValue::String(BStr(s.0.trim_start().to_string())));
+            write_slot!(
+                ctx,
+                dst,
+                RuntimeValue::String(BStr(s.0.trim_start().to_string()))
+            );
         }
         _ => {
             let v = match semantics::runtime_value_legacy_token(&val, "LTrim operand") {
@@ -784,7 +882,11 @@ pub extern "C" fn oxrt_rtrim(ctx: *mut JitContext, dst: u32, src: u32) -> i32 {
     let val = read_slot!(ctx, src);
     match &val {
         RuntimeValue::String(s) => {
-            write_slot!(ctx, dst, RuntimeValue::String(BStr(s.0.trim_end().to_string())));
+            write_slot!(
+                ctx,
+                dst,
+                RuntimeValue::String(BStr(s.0.trim_end().to_string()))
+            );
         }
         _ => {
             let v = match semantics::runtime_value_legacy_token(&val, "RTrim operand") {
@@ -798,10 +900,20 @@ pub extern "C" fn oxrt_rtrim(ctx: *mut JitContext, dst: u32, src: u32) -> i32 {
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn oxrt_strcomp(ctx: *mut JitContext, dst: u32, lhs: u32, rhs: u32, mode: u32) -> i32 {
+pub extern "C" fn oxrt_strcomp(
+    ctx: *mut JitContext,
+    dst: u32,
+    lhs: u32,
+    rhs: u32,
+    mode: u32,
+) -> i32 {
     let lhs_val = read_slot!(ctx, lhs);
     let rhs_val = read_slot!(ctx, rhs);
-    let scm = if mode == 1 { StringCompareMode::Text } else { StringCompareMode::Binary };
+    let scm = if mode == 1 {
+        StringCompareMode::Text
+    } else {
+        StringCompareMode::Binary
+    };
     match (&lhs_val, &rhs_val) {
         (RuntimeValue::String(l), RuntimeValue::String(r)) => {
             let l = semantics::normalize_for_compare(l.0.clone(), scm);
@@ -829,10 +941,20 @@ pub extern "C" fn oxrt_strcomp(ctx: *mut JitContext, dst: u32, lhs: u32, rhs: u3
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn oxrt_like(ctx: *mut JitContext, dst: u32, lhs: u32, pattern: u32, mode: u32) -> i32 {
+pub extern "C" fn oxrt_like(
+    ctx: *mut JitContext,
+    dst: u32,
+    lhs: u32,
+    pattern: u32,
+    mode: u32,
+) -> i32 {
     let lhs_val = read_slot!(ctx, lhs);
     let pat_val = read_slot!(ctx, pattern);
-    let scm = if mode == 1 { StringCompareMode::Text } else { StringCompareMode::Binary };
+    let scm = if mode == 1 {
+        StringCompareMode::Text
+    } else {
+        StringCompareMode::Binary
+    };
     let l = match semantics::runtime_value_legacy_token(&lhs_val, "Like lhs") {
         Ok(v) => v,
         Err(_) => return ERR_RUNTIME,
@@ -889,7 +1011,11 @@ pub extern "C" fn oxrt_asc(ctx: *mut JitContext, dst: u32, src: u32) -> i32 {
     let val = read_slot!(ctx, src);
     let code = match &val {
         RuntimeValue::String(s) => {
-            if s.0.is_empty() { 0 } else { s.0.as_bytes()[0] as i32 }
+            if s.0.is_empty() {
+                0
+            } else {
+                s.0.as_bytes()[0] as i32
+            }
         }
         _ => {
             let v = match semantics::runtime_value_legacy_token(&val, "Asc operand") {
@@ -897,7 +1023,11 @@ pub extern "C" fn oxrt_asc(ctx: *mut JitContext, dst: u32, src: u32) -> i32 {
                 Err(_) => return ERR_RUNTIME,
             };
             let digits = format!("{v}");
-            if digits.is_empty() { 0 } else { digits.as_bytes()[0] as i32 }
+            if digits.is_empty() {
+                0
+            } else {
+                digits.as_bytes()[0] as i32
+            }
         }
     };
     write_slot!(ctx, dst, RuntimeValue::I32(code));
@@ -926,7 +1056,11 @@ pub extern "C" fn oxrt_string_repeat(ctx: *mut JitContext, dst: u32, count: u32,
     let ch_val = read_slot!(ctx, ch);
     let c = match &ch_val {
         RuntimeValue::String(s) => {
-            if s.0.is_empty() { '\0' } else { s.0.chars().next().unwrap_or('\0') }
+            if s.0.is_empty() {
+                '\0'
+            } else {
+                s.0.chars().next().unwrap_or('\0')
+            }
         }
         _ => {
             let code = match semantics::runtime_value_legacy_token(&ch_val, "String$ char") {
@@ -1006,12 +1140,19 @@ pub extern "C" fn oxrt_strreverse(ctx: *mut JitContext, dst: u32, src: u32) -> i
 // ── Date/time ops ────────────────────────────────────────────────────
 
 #[unsafe(no_mangle)]
-pub extern "C" fn oxrt_date_serial(ctx: *mut JitContext, dst: u32, year: u32, month: u32, day: u32) -> i32 {
+pub extern "C" fn oxrt_date_serial(
+    ctx: *mut JitContext,
+    dst: u32,
+    year: u32,
+    month: u32,
+    day: u32,
+) -> i32 {
     let y = match semantics::runtime_value_legacy_token(&read_slot!(ctx, year), "DateSerial year") {
         Ok(v) => v,
         Err(_) => return ERR_RUNTIME,
     };
-    let m = match semantics::runtime_value_legacy_token(&read_slot!(ctx, month), "DateSerial month") {
+    let m = match semantics::runtime_value_legacy_token(&read_slot!(ctx, month), "DateSerial month")
+    {
         Ok(v) => v,
         Err(_) => return ERR_RUNTIME,
     };
@@ -1024,16 +1165,28 @@ pub extern "C" fn oxrt_date_serial(ctx: *mut JitContext, dst: u32, year: u32, mo
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn oxrt_time_serial(ctx: *mut JitContext, dst: u32, hour: u32, minute: u32, second: u32) -> i32 {
+pub extern "C" fn oxrt_time_serial(
+    ctx: *mut JitContext,
+    dst: u32,
+    hour: u32,
+    minute: u32,
+    second: u32,
+) -> i32 {
     let h = match semantics::runtime_value_legacy_token(&read_slot!(ctx, hour), "TimeSerial hour") {
         Ok(v) => v,
         Err(_) => return ERR_RUNTIME,
     };
-    let m = match semantics::runtime_value_legacy_token(&read_slot!(ctx, minute), "TimeSerial minute") {
+    let m = match semantics::runtime_value_legacy_token(
+        &read_slot!(ctx, minute),
+        "TimeSerial minute",
+    ) {
         Ok(v) => v,
         Err(_) => return ERR_RUNTIME,
     };
-    let s = match semantics::runtime_value_legacy_token(&read_slot!(ctx, second), "TimeSerial second") {
+    let s = match semantics::runtime_value_legacy_token(
+        &read_slot!(ctx, second),
+        "TimeSerial second",
+    ) {
         Ok(v) => v,
         Err(_) => return ERR_RUNTIME,
     };
@@ -1064,12 +1217,21 @@ pub extern "C" fn oxrt_time_value(ctx: *mut JitContext, dst: u32, src: u32) -> i
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn oxrt_date_add(ctx: *mut JitContext, dst: u32, interval: u32, number: u32, date: u32) -> i32 {
-    let i = match semantics::runtime_value_legacy_token(&read_slot!(ctx, interval), "DateAdd interval") {
-        Ok(v) => v,
-        Err(_) => return ERR_RUNTIME,
-    };
-    let n = match semantics::runtime_value_legacy_token(&read_slot!(ctx, number), "DateAdd number") {
+pub extern "C" fn oxrt_date_add(
+    ctx: *mut JitContext,
+    dst: u32,
+    interval: u32,
+    number: u32,
+    date: u32,
+) -> i32 {
+    let i =
+        match semantics::runtime_value_legacy_token(&read_slot!(ctx, interval), "DateAdd interval")
+        {
+            Ok(v) => v,
+            Err(_) => return ERR_RUNTIME,
+        };
+    let n = match semantics::runtime_value_legacy_token(&read_slot!(ctx, number), "DateAdd number")
+    {
         Ok(v) => v,
         Err(_) => return ERR_RUNTIME,
     };
@@ -1082,16 +1244,27 @@ pub extern "C" fn oxrt_date_add(ctx: *mut JitContext, dst: u32, interval: u32, n
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn oxrt_date_diff(ctx: *mut JitContext, dst: u32, interval: u32, date1: u32, date2: u32) -> i32 {
-    let i = match semantics::runtime_value_legacy_token(&read_slot!(ctx, interval), "DateDiff interval") {
+pub extern "C" fn oxrt_date_diff(
+    ctx: *mut JitContext,
+    dst: u32,
+    interval: u32,
+    date1: u32,
+    date2: u32,
+) -> i32 {
+    let i = match semantics::runtime_value_legacy_token(
+        &read_slot!(ctx, interval),
+        "DateDiff interval",
+    ) {
         Ok(v) => v,
         Err(_) => return ERR_RUNTIME,
     };
-    let d1 = match semantics::runtime_value_legacy_token(&read_slot!(ctx, date1), "DateDiff date1") {
+    let d1 = match semantics::runtime_value_legacy_token(&read_slot!(ctx, date1), "DateDiff date1")
+    {
         Ok(v) => v,
         Err(_) => return ERR_RUNTIME,
     };
-    let d2 = match semantics::runtime_value_legacy_token(&read_slot!(ctx, date2), "DateDiff date2") {
+    let d2 = match semantics::runtime_value_legacy_token(&read_slot!(ctx, date2), "DateDiff date2")
+    {
         Ok(v) => v,
         Err(_) => return ERR_RUNTIME,
     };
@@ -1155,10 +1328,24 @@ pub extern "C" fn oxrt_month_name(ctx: *mut JitContext, dst: u32, src: u32) -> i
         Err(_) => return ERR_RUNTIME,
     };
     let names = [
-        "January", "February", "March", "April", "May", "June",
-        "July", "August", "September", "October", "November", "December",
+        "January",
+        "February",
+        "March",
+        "April",
+        "May",
+        "June",
+        "July",
+        "August",
+        "September",
+        "October",
+        "November",
+        "December",
     ];
-    let name = if month >= 1 && month <= 12 { names[(month - 1) as usize] } else { "" };
+    let name = if month >= 1 && month <= 12 {
+        names[(month - 1) as usize]
+    } else {
+        ""
+    };
     write_slot!(ctx, dst, RuntimeValue::String(BStr(name.to_string())));
     OK
 }
@@ -1191,7 +1378,11 @@ pub extern "C" fn oxrt_sqr(ctx: *mut JitContext, dst: u32, src: u32) -> i32 {
         Ok(v) => v,
         Err(_) => return ERR_RUNTIME,
     };
-    write_slot!(ctx, dst, RuntimeValue::I32((v.saturating_abs() as f64).sqrt() as i32));
+    write_slot!(
+        ctx,
+        dst,
+        RuntimeValue::I32((v.saturating_abs() as f64).sqrt() as i32)
+    );
     OK
 }
 
@@ -1224,7 +1415,11 @@ pub extern "C" fn oxrt_log(ctx: *mut JitContext, dst: u32, src: u32) -> i32 {
         Ok(v) => v,
         Err(_) => return ERR_RUNTIME,
     };
-    let result = if v > 0 { (v as f64).ln().round() as i32 } else { 0 };
+    let result = if v > 0 {
+        (v as f64).ln().round() as i32
+    } else {
+        0
+    };
     write_slot!(ctx, dst, RuntimeValue::I32(result));
     OK
 }
@@ -1247,7 +1442,11 @@ pub extern "C" fn oxrt_atn(ctx: *mut JitContext, dst: u32, src: u32) -> i32 {
         Ok(v) => v,
         Err(_) => return ERR_RUNTIME,
     };
-    write_slot!(ctx, dst, RuntimeValue::I32((v as f64).atan().round() as i32));
+    write_slot!(
+        ctx,
+        dst,
+        RuntimeValue::I32((v as f64).atan().round() as i32)
+    );
     OK
 }
 
@@ -1277,11 +1476,17 @@ pub extern "C" fn oxrt_vartype_tag(ctx: *mut JitContext, dst: u32, src: u32) -> 
             // Try legacy path for i32 tag values
             match semantics::runtime_value_legacy_token(&val, "VarType operand") {
                 Ok(v) => {
-                    if runtime_is_array_tag(v) { 8192 + 12 }
-                    else if v == EMPTY_TAG { 0 }
-                    else if v == NULL_TAG { 1 }
-                    else if runtime_is_error_tag(v) { 10 }
-                    else { 3 }
+                    if runtime_is_array_tag(v) {
+                        8192 + 12
+                    } else if v == EMPTY_TAG {
+                        0
+                    } else if v == NULL_TAG {
+                        1
+                    } else if runtime_is_error_tag(v) {
+                        10
+                    } else {
+                        3
+                    }
                 }
                 Err(_) => return ERR_RUNTIME,
             }
@@ -1338,15 +1543,24 @@ pub extern "C" fn oxrt_is_numeric_tag(ctx: *mut JitContext, dst: u32, src: u32) 
     let val = read_slot!(ctx, src);
     // Handle typed values directly
     let out = match &val {
-        RuntimeValue::Empty | RuntimeValue::Null | RuntimeValue::ErrorCode(_) | RuntimeValue::ArrayIntent(_) => 0,
-        _ => {
-            match semantics::runtime_value_legacy_token(&val, "IsNumeric operand") {
-                Ok(v) => {
-                    if runtime_is_array_tag(v) || v == EMPTY_TAG || v == NULL_TAG || runtime_is_error_tag(v) { 0 } else { 1 }
+        RuntimeValue::Empty
+        | RuntimeValue::Null
+        | RuntimeValue::ErrorCode(_)
+        | RuntimeValue::ArrayIntent(_) => 0,
+        _ => match semantics::runtime_value_legacy_token(&val, "IsNumeric operand") {
+            Ok(v) => {
+                if runtime_is_array_tag(v)
+                    || v == EMPTY_TAG
+                    || v == NULL_TAG
+                    || runtime_is_error_tag(v)
+                {
+                    0
+                } else {
+                    1
                 }
-                Err(_) => return ERR_RUNTIME,
             }
-        }
+            Err(_) => return ERR_RUNTIME,
+        },
     };
     write_slot!(ctx, dst, RuntimeValue::I32(out));
     OK
@@ -1359,11 +1573,11 @@ pub extern "C" fn oxrt_is_numeric(ctx: *mut JitContext, dst: u32, src: u32) -> i
         // Legacy error tags encoded as I32 are not numeric
         RuntimeValue::I32(v) if runtime_is_error_tag(*v) => false,
         RuntimeValue::I32(_)
-            | RuntimeValue::I64(_)
-            | RuntimeValue::F64(_)
-            | RuntimeValue::Currency(_)
-            | RuntimeValue::Decimal(_)
-            | RuntimeValue::Bool(_) => true,
+        | RuntimeValue::I64(_)
+        | RuntimeValue::F64(_)
+        | RuntimeValue::Currency(_)
+        | RuntimeValue::Decimal(_)
+        | RuntimeValue::Bool(_) => true,
         _ => false,
     };
     write_slot!(ctx, dst, RuntimeValue::Bool(is_numeric));
@@ -1390,7 +1604,11 @@ pub extern "C" fn oxrt_is_date_tag(ctx: *mut JitContext, dst: u32, src: u32) -> 
         Ok(v) => v,
         Err(_) => return ERR_RUNTIME,
     };
-    let out = if (1_000_000..=99_999_999).contains(&v) { 1 } else { 0 };
+    let out = if (1_000_000..=99_999_999).contains(&v) {
+        1
+    } else {
+        0
+    };
     write_slot!(ctx, dst, RuntimeValue::I32(out));
     OK
 }
@@ -1404,14 +1622,22 @@ pub extern "C" fn oxrt_is_object_tag(ctx: *mut JitContext, dst: u32, _src: u32) 
 #[unsafe(no_mangle)]
 pub extern "C" fn oxrt_is_null(ctx: *mut JitContext, dst: u32, src: u32) -> i32 {
     let val = read_slot!(ctx, src);
-    write_slot!(ctx, dst, RuntimeValue::Bool(matches!(val, RuntimeValue::Null)));
+    write_slot!(
+        ctx,
+        dst,
+        RuntimeValue::Bool(matches!(val, RuntimeValue::Null))
+    );
     OK
 }
 
 #[unsafe(no_mangle)]
 pub extern "C" fn oxrt_is_empty(ctx: *mut JitContext, dst: u32, src: u32) -> i32 {
     let val = read_slot!(ctx, src);
-    write_slot!(ctx, dst, RuntimeValue::Bool(matches!(val, RuntimeValue::Empty)));
+    write_slot!(
+        ctx,
+        dst,
+        RuntimeValue::Bool(matches!(val, RuntimeValue::Empty))
+    );
     OK
 }
 
@@ -1422,7 +1648,11 @@ pub extern "C" fn oxrt_is_array_tag(ctx: *mut JitContext, dst: u32, src: u32) ->
         Ok(v) => v,
         Err(_) => return ERR_RUNTIME,
     };
-    write_slot!(ctx, dst, RuntimeValue::I32(if runtime_is_array_tag(v) { 1 } else { 0 }));
+    write_slot!(
+        ctx,
+        dst,
+        RuntimeValue::I32(if runtime_is_array_tag(v) { 1 } else { 0 })
+    );
     OK
 }
 
@@ -1437,7 +1667,15 @@ const FIN_NPER_ERROR_CODE: i32 = 2002;
 /// fv_slot: dst = FV(rate, nper, pmt [, pv] [, due])
 /// pv_slot and due_slot use u32::MAX for None.
 #[unsafe(no_mangle)]
-pub extern "C" fn oxrt_fv(ctx: *mut JitContext, dst: u32, rate: u32, nper: u32, pmt: u32, pv_slot: u32, due_slot: u32) -> i32 {
+pub extern "C" fn oxrt_fv(
+    ctx: *mut JitContext,
+    dst: u32,
+    rate: u32,
+    nper: u32,
+    pmt: u32,
+    pv_slot: u32,
+    due_slot: u32,
+) -> i32 {
     let r = legacy_slot(ctx, rate, "FV rate");
     let n = legacy_slot(ctx, nper, "FV nper");
     let p = legacy_slot(ctx, pmt, "FV pmt");
@@ -1447,12 +1685,24 @@ pub extern "C" fn oxrt_fv(ctx: *mut JitContext, dst: u32, rate: u32, nper: u32, 
     };
     let pv = opt_legacy_slot(ctx, pv_slot, 0);
     let due = opt_legacy_slot(ctx, due_slot, 0);
-    write_slot!(ctx, dst, RuntimeValue::from_legacy_i32(fv_i32(r, n, p, pv, due)));
+    write_slot!(
+        ctx,
+        dst,
+        RuntimeValue::from_legacy_i32(fv_i32(r, n, p, pv, due))
+    );
     OK
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn oxrt_pv(ctx: *mut JitContext, dst: u32, rate: u32, nper: u32, pmt: u32, fv_slot: u32, due_slot: u32) -> i32 {
+pub extern "C" fn oxrt_pv(
+    ctx: *mut JitContext,
+    dst: u32,
+    rate: u32,
+    nper: u32,
+    pmt: u32,
+    fv_slot: u32,
+    due_slot: u32,
+) -> i32 {
     let r = legacy_slot(ctx, rate, "PV rate");
     let n = legacy_slot(ctx, nper, "PV nper");
     let p = legacy_slot(ctx, pmt, "PV pmt");
@@ -1462,12 +1712,24 @@ pub extern "C" fn oxrt_pv(ctx: *mut JitContext, dst: u32, rate: u32, nper: u32, 
     };
     let fv = opt_legacy_slot(ctx, fv_slot, 0);
     let due = opt_legacy_slot(ctx, due_slot, 0);
-    write_slot!(ctx, dst, RuntimeValue::from_legacy_i32(pv_i32(r, n, p, fv, due)));
+    write_slot!(
+        ctx,
+        dst,
+        RuntimeValue::from_legacy_i32(pv_i32(r, n, p, fv, due))
+    );
     OK
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn oxrt_pmt(ctx: *mut JitContext, dst: u32, rate: u32, nper: u32, pv: u32, fv_slot: u32, due_slot: u32) -> i32 {
+pub extern "C" fn oxrt_pmt(
+    ctx: *mut JitContext,
+    dst: u32,
+    rate: u32,
+    nper: u32,
+    pv: u32,
+    fv_slot: u32,
+    due_slot: u32,
+) -> i32 {
     let r = legacy_slot(ctx, rate, "PMT rate");
     let n = legacy_slot(ctx, nper, "PMT nper");
     let p = legacy_slot(ctx, pv, "PMT pv");
@@ -1477,13 +1739,23 @@ pub extern "C" fn oxrt_pmt(ctx: *mut JitContext, dst: u32, rate: u32, nper: u32,
     };
     let fv = opt_legacy_slot(ctx, fv_slot, 0);
     let due = opt_legacy_slot(ctx, due_slot, 0);
-    write_slot!(ctx, dst, RuntimeValue::from_legacy_i32(pmt_i32(r, n, p, fv, due)));
+    write_slot!(
+        ctx,
+        dst,
+        RuntimeValue::from_legacy_i32(pmt_i32(r, n, p, fv, due))
+    );
     OK
 }
 
 /// NPV helper: reads rate from rate_slot and values from slots_ptr/slots_len.
 #[unsafe(no_mangle)]
-pub extern "C" fn oxrt_npv(ctx: *mut JitContext, dst: u32, rate: u32, slots_ptr: *const u32, slots_len: u32) -> i32 {
+pub extern "C" fn oxrt_npv(
+    ctx: *mut JitContext,
+    dst: u32,
+    rate: u32,
+    slots_ptr: *const u32,
+    slots_len: u32,
+) -> i32 {
     let r = match legacy_slot(ctx, rate, "NPV rate") {
         Ok(v) => v,
         Err(_) => return ERR_RUNTIME,
@@ -1496,7 +1768,11 @@ pub extern "C" fn oxrt_npv(ctx: *mut JitContext, dst: u32, rate: u32, slots_ptr:
             Err(_) => return ERR_RUNTIME,
         }
     }
-    write_slot!(ctx, dst, RuntimeValue::from_legacy_i32(npv_i32(r, &cash_flows)));
+    write_slot!(
+        ctx,
+        dst,
+        RuntimeValue::from_legacy_i32(npv_i32(r, &cash_flows))
+    );
     OK
 }
 
@@ -1512,7 +1788,13 @@ pub extern "C" fn oxrt_irr(ctx: *mut JitContext, dst: u32, value: u32, guess_slo
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn oxrt_mirr(ctx: *mut JitContext, dst: u32, value: u32, finance_rate: u32, reinvest_rate: u32) -> i32 {
+pub extern "C" fn oxrt_mirr(
+    ctx: *mut JitContext,
+    dst: u32,
+    value: u32,
+    finance_rate: u32,
+    reinvest_rate: u32,
+) -> i32 {
     let v = match legacy_slot(ctx, value, "MIRR value") {
         Ok(v) => v,
         Err(_) => return ERR_RUNTIME,
@@ -1530,7 +1812,16 @@ pub extern "C" fn oxrt_mirr(ctx: *mut JitContext, dst: u32, value: u32, finance_
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn oxrt_rate(ctx: *mut JitContext, dst: u32, nper: u32, pmt: u32, pv: u32, fv_slot: u32, due_slot: u32, guess_slot: u32) -> i32 {
+pub extern "C" fn oxrt_rate(
+    ctx: *mut JitContext,
+    dst: u32,
+    nper: u32,
+    pmt: u32,
+    pv: u32,
+    fv_slot: u32,
+    due_slot: u32,
+    guess_slot: u32,
+) -> i32 {
     let n = match legacy_slot(ctx, nper, "Rate nper") {
         Ok(v) => v,
         Err(_) => return ERR_RUNTIME,
@@ -1546,12 +1837,24 @@ pub extern "C" fn oxrt_rate(ctx: *mut JitContext, dst: u32, nper: u32, pmt: u32,
     let fv = opt_legacy_slot(ctx, fv_slot, 0);
     let due = opt_legacy_slot(ctx, due_slot, 0);
     let guess = opt_legacy_slot(ctx, guess_slot, 10);
-    write_slot!(ctx, dst, RuntimeValue::from_legacy_i32(rate_i32(n, p, pv, fv, due, guess)));
+    write_slot!(
+        ctx,
+        dst,
+        RuntimeValue::from_legacy_i32(rate_i32(n, p, pv, fv, due, guess))
+    );
     OK
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn oxrt_nper(ctx: *mut JitContext, dst: u32, rate: u32, pmt: u32, pv: u32, fv_slot: u32, due_slot: u32) -> i32 {
+pub extern "C" fn oxrt_nper(
+    ctx: *mut JitContext,
+    dst: u32,
+    rate: u32,
+    pmt: u32,
+    pv: u32,
+    fv_slot: u32,
+    due_slot: u32,
+) -> i32 {
     let r = match legacy_slot(ctx, rate, "NPer rate") {
         Ok(v) => v,
         Err(_) => return ERR_RUNTIME,
@@ -1566,7 +1869,11 @@ pub extern "C" fn oxrt_nper(ctx: *mut JitContext, dst: u32, rate: u32, pmt: u32,
     };
     let fv = opt_legacy_slot(ctx, fv_slot, 0);
     let due = opt_legacy_slot(ctx, due_slot, 0);
-    write_slot!(ctx, dst, RuntimeValue::from_legacy_i32(nper_i32(r, p, pv, fv, due)));
+    write_slot!(
+        ctx,
+        dst,
+        RuntimeValue::from_legacy_i32(nper_i32(r, p, pv, fv, due))
+    );
     OK
 }
 
@@ -1574,15 +1881,22 @@ pub extern "C" fn oxrt_nper(ctx: *mut JitContext, dst: u32, rate: u32, pmt: u32,
 
 /// ArrayLiteral: reads values from slot_indices, creates ArrayIntent.
 #[unsafe(no_mangle)]
-pub extern "C" fn oxrt_array_literal(ctx: *mut JitContext, dst: u32, slots_ptr: *const u32, slots_len: u32) -> i32 {
+pub extern "C" fn oxrt_array_literal(
+    ctx: *mut JitContext,
+    dst: u32,
+    slots_ptr: *const u32,
+    slots_len: u32,
+) -> i32 {
     let slot_indices = unsafe { std::slice::from_raw_parts(slots_ptr, slots_len as usize) };
     let mut elements = Vec::with_capacity(slots_len as usize);
     for &slot in slot_indices {
         elements.push(read_slot!(ctx, slot));
     }
-    write_slot!(ctx, dst, RuntimeValue::ArrayIntent(
-        oxvba_runtime::safe_array::SafeArray::from_values(elements),
-    ));
+    write_slot!(
+        ctx,
+        dst,
+        RuntimeValue::ArrayIntent(oxvba_runtime::safe_array::SafeArray::from_values(elements),)
+    );
     OK
 }
 
@@ -1606,7 +1920,10 @@ pub extern "C" fn oxrt_ubound(ctx: *mut JitContext, dst: u32, src: u32) -> i32 {
         Err(_) => return ERR_RUNTIME,
     };
     let out = if runtime_is_array_tag(v) {
-        array_len_from_tag(v).and_then(|count| i32::try_from(count).ok()).unwrap_or(0) - 1
+        array_len_from_tag(v)
+            .and_then(|count| i32::try_from(count).ok())
+            .unwrap_or(0)
+            - 1
     } else {
         -1
     };
@@ -1617,7 +1934,12 @@ pub extern "C" fn oxrt_ubound(ctx: *mut JitContext, dst: u32, src: u32) -> i32 {
 // ── Collection ops ───────────────────────────────────────────────────
 
 #[unsafe(no_mangle)]
-pub extern "C" fn oxrt_collection_add(ctx: *mut JitContext, dst: u32, count: u32, item: u32) -> i32 {
+pub extern "C" fn oxrt_collection_add(
+    ctx: *mut JitContext,
+    dst: u32,
+    count: u32,
+    item: u32,
+) -> i32 {
     let c = match legacy_slot(ctx, count, "Collection.Add count") {
         Ok(v) => v,
         Err(_) => return ERR_RUNTIME,
@@ -1628,7 +1950,12 @@ pub extern "C" fn oxrt_collection_add(ctx: *mut JitContext, dst: u32, count: u32
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn oxrt_collection_item(ctx: *mut JitContext, dst: u32, count: u32, index: u32) -> i32 {
+pub extern "C" fn oxrt_collection_item(
+    ctx: *mut JitContext,
+    dst: u32,
+    count: u32,
+    index: u32,
+) -> i32 {
     let c = match legacy_slot(ctx, count, "Collection.Item count") {
         Ok(v) => v,
         Err(_) => return ERR_RUNTIME,
@@ -1643,7 +1970,12 @@ pub extern "C" fn oxrt_collection_item(ctx: *mut JitContext, dst: u32, count: u3
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn oxrt_collection_remove(ctx: *mut JitContext, dst: u32, count: u32, index: u32) -> i32 {
+pub extern "C" fn oxrt_collection_remove(
+    ctx: *mut JitContext,
+    dst: u32,
+    count: u32,
+    index: u32,
+) -> i32 {
     let c = match legacy_slot(ctx, count, "Collection.Remove count") {
         Ok(v) => v,
         Err(_) => return ERR_RUNTIME,
@@ -1682,7 +2014,8 @@ pub extern "C" fn oxrt_rnd(ctx: *mut JitContext, dst: u32, seed_slot: u32) -> i3
             return OK;
         }
     }
-    ctx_ref.rnd_state = ctx_ref.rnd_state
+    ctx_ref.rnd_state = ctx_ref
+        .rnd_state
         .wrapping_mul(0x43FD_43FD)
         .wrapping_add(0x0026_9EC3)
         & 0x00FF_FFFF;
@@ -1893,13 +2226,22 @@ pub extern "C" fn oxrt_host_free_file(ctx: *mut JitContext, dst: u32, range_slot
         read_slot!(ctx, range_slot)
     };
     match host.fs().free_file(selector) {
-        Ok(value) => { write_slot!(ctx, dst, value); OK }
+        Ok(value) => {
+            write_slot!(ctx, dst, value);
+            OK
+        }
         Err(_) => ERR_RUNTIME,
     }
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn oxrt_host_file_open(ctx: *mut JitContext, dst: u32, path: u32, mode: u32, file_number: u32) -> i32 {
+pub extern "C" fn oxrt_host_file_open(
+    ctx: *mut JitContext,
+    dst: u32,
+    path: u32,
+    mode: u32,
+    file_number: u32,
+) -> i32 {
     let host = unsafe { (*ctx).host_services() };
     let path_val = read_slot!(ctx, path);
     let mode_val = read_slot!(ctx, mode);
@@ -1908,7 +2250,10 @@ pub extern "C" fn oxrt_host_file_open(ctx: *mut JitContext, dst: u32, path: u32,
     let fnum_i32 = file_num.to_legacy_i32().unwrap_or(0);
     let combined_mode = RuntimeValue::I32(mode_i32 | (fnum_i32 << 16));
     match host.fs().open(path_val, combined_mode) {
-        Ok(value) => { write_slot!(ctx, dst, value); OK }
+        Ok(value) => {
+            write_slot!(ctx, dst, value);
+            OK
+        }
         Err(_) => ERR_RUNTIME,
     }
 }
@@ -1918,51 +2263,86 @@ pub extern "C" fn oxrt_host_file_close(ctx: *mut JitContext, dst: u32, handle: u
     let host = unsafe { (*ctx).host_services() };
     let handle_val = read_slot!(ctx, handle);
     match host.fs().close(handle_val) {
-        Ok(value) => { write_slot!(ctx, dst, value); OK }
+        Ok(value) => {
+            write_slot!(ctx, dst, value);
+            OK
+        }
         Err(_) => ERR_RUNTIME,
     }
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn oxrt_host_file_read(ctx: *mut JitContext, dst: u32, handle: u32, count: u32) -> i32 {
+pub extern "C" fn oxrt_host_file_read(
+    ctx: *mut JitContext,
+    dst: u32,
+    handle: u32,
+    count: u32,
+) -> i32 {
     let host = unsafe { (*ctx).host_services() };
     let handle_val = read_slot!(ctx, handle);
     let count_val = read_slot!(ctx, count);
     match host.fs().read_bytes(handle_val, count_val) {
-        Ok(value) => { write_slot!(ctx, dst, value); OK }
+        Ok(value) => {
+            write_slot!(ctx, dst, value);
+            OK
+        }
         Err(_) => ERR_RUNTIME,
     }
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn oxrt_host_file_write(ctx: *mut JitContext, dst: u32, handle: u32, data: u32) -> i32 {
+pub extern "C" fn oxrt_host_file_write(
+    ctx: *mut JitContext,
+    dst: u32,
+    handle: u32,
+    data: u32,
+) -> i32 {
     let host = unsafe { (*ctx).host_services() };
     let handle_val = read_slot!(ctx, handle);
     let data_val = read_slot!(ctx, data);
     match host.fs().write_bytes(handle_val, data_val) {
-        Ok(value) => { write_slot!(ctx, dst, value); OK }
+        Ok(value) => {
+            write_slot!(ctx, dst, value);
+            OK
+        }
         Err(_) => ERR_RUNTIME,
     }
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn oxrt_host_file_print(ctx: *mut JitContext, dst: u32, handle: u32, data: u32) -> i32 {
+pub extern "C" fn oxrt_host_file_print(
+    ctx: *mut JitContext,
+    dst: u32,
+    handle: u32,
+    data: u32,
+) -> i32 {
     let host = unsafe { (*ctx).host_services() };
     let handle_val = read_slot!(ctx, handle);
     let data_val = read_slot!(ctx, data);
     match host.fs().print_line(handle_val, data_val) {
-        Ok(value) => { write_slot!(ctx, dst, value); OK }
+        Ok(value) => {
+            write_slot!(ctx, dst, value);
+            OK
+        }
         Err(_) => ERR_RUNTIME,
     }
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn oxrt_host_file_input(ctx: *mut JitContext, dst: u32, handle: u32, count: u32) -> i32 {
+pub extern "C" fn oxrt_host_file_input(
+    ctx: *mut JitContext,
+    dst: u32,
+    handle: u32,
+    count: u32,
+) -> i32 {
     let host = unsafe { (*ctx).host_services() };
     let handle_val = read_slot!(ctx, handle);
     let count_val = read_slot!(ctx, count);
     match host.fs().input_fields(handle_val, count_val) {
-        Ok(value) => { write_slot!(ctx, dst, value); OK }
+        Ok(value) => {
+            write_slot!(ctx, dst, value);
+            OK
+        }
         Err(_) => ERR_RUNTIME,
     }
 }
@@ -1972,7 +2352,10 @@ pub extern "C" fn oxrt_host_file_line_input(ctx: *mut JitContext, dst: u32, hand
     let host = unsafe { (*ctx).host_services() };
     let handle_val = read_slot!(ctx, handle);
     match host.fs().line_input(handle_val) {
-        Ok(value) => { write_slot!(ctx, dst, value); OK }
+        Ok(value) => {
+            write_slot!(ctx, dst, value);
+            OK
+        }
         Err(_) => ERR_RUNTIME,
     }
 }
@@ -1982,7 +2365,10 @@ pub extern "C" fn oxrt_host_file_loc(ctx: *mut JitContext, dst: u32, handle: u32
     let host = unsafe { (*ctx).host_services() };
     let handle_val = read_slot!(ctx, handle);
     match host.fs().loc(handle_val) {
-        Ok(value) => { write_slot!(ctx, dst, value); OK }
+        Ok(value) => {
+            write_slot!(ctx, dst, value);
+            OK
+        }
         Err(_) => ERR_RUNTIME,
     }
 }
@@ -1993,7 +2379,10 @@ pub extern "C" fn oxrt_host_create_object(ctx: *mut JitContext, dst: u32, prog_i
     let host = unsafe { (*ctx).host_services() };
     let prog_id_val = read_slot!(ctx, prog_id);
     match host.com().create_object(prog_id_val) {
-        Ok(value) => { write_slot!(ctx, dst, value); OK }
+        Ok(value) => {
+            write_slot!(ctx, dst, value);
+            OK
+        }
         Err(_) => ERR_RUNTIME,
     }
 }
@@ -2013,17 +2402,21 @@ pub extern "C" fn oxrt_host_dispatch_invoke(
     if matches!(object_val, RuntimeValue::Empty) {
         return route_host_error_code(ctx, 91);
     }
-    let object_handle = match semantics::runtime_value_to_com_object(&object_val, "dispatch_invoke.object") {
-        Ok(h) => {
-            if h.raw() == 0 {
-                return route_host_error_code(ctx, 91);
+    let object_handle =
+        match semantics::runtime_value_to_com_object(&object_val, "dispatch_invoke.object") {
+            Ok(h) => {
+                if h.raw() == 0 {
+                    return route_host_error_code(ctx, 91);
+                }
+                h
             }
-            h
-        }
-        Err(_) => return route_host_error_code(ctx, 91),
-    };
+            Err(_) => return route_host_error_code(ctx, 91),
+        };
     let member_val = read_slot!(ctx, member);
-    let member_sel = match semantics::runtime_value_to_dynamic_member_selector(&member_val, "dispatch_invoke.member") {
+    let member_sel = match semantics::runtime_value_to_dynamic_member_selector(
+        &member_val,
+        "dispatch_invoke.member",
+    ) {
         Ok(m) => m,
         Err(_) => return route_host_error_code(ctx, 53053), // COM adapter fault
     };
@@ -2067,88 +2460,146 @@ pub extern "C" fn oxrt_host_dispatch_invoke(
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn oxrt_host_com_subscribe(ctx: *mut JitContext, dst: u32, object: u32, event: u32) -> i32 {
+pub extern "C" fn oxrt_host_com_subscribe(
+    ctx: *mut JitContext,
+    dst: u32,
+    object: u32,
+    event: u32,
+) -> i32 {
     let object_val = read_slot!(ctx, object);
     let event_val = read_slot!(ctx, event);
-    let object = match semantics::runtime_value_to_com_object(&object_val, "com_subscribe_event.object") {
-        Ok(o) => o,
-        Err(_) => return route_host_error(ctx),
-    };
-    let event = match semantics::runtime_value_to_com_member_token(&event_val, "com_subscribe_event.event") {
-        Ok(e) => e,
-        Err(_) => return route_host_error(ctx),
-    };
+    let object =
+        match semantics::runtime_value_to_com_object(&object_val, "com_subscribe_event.object") {
+            Ok(o) => o,
+            Err(_) => return route_host_error(ctx),
+        };
+    let event =
+        match semantics::runtime_value_to_com_member_token(&event_val, "com_subscribe_event.event")
+        {
+            Ok(e) => e,
+            Err(_) => return route_host_error(ctx),
+        };
     let host = unsafe { (*ctx).host_services() };
     match host.com().subscribe_event(object, event) {
-        Ok(value) => { write_slot!(ctx, dst, RuntimeValue::I32(value.raw())); OK }
+        Ok(value) => {
+            write_slot!(ctx, dst, RuntimeValue::I32(value.raw()));
+            OK
+        }
         Err(err) => route_hal_error(ctx, err),
     }
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn oxrt_host_com_unsubscribe(ctx: *mut JitContext, dst: u32, subscription: u32) -> i32 {
+pub extern "C" fn oxrt_host_com_unsubscribe(
+    ctx: *mut JitContext,
+    dst: u32,
+    subscription: u32,
+) -> i32 {
     let sub_val = read_slot!(ctx, subscription);
-    let sub = match semantics::runtime_value_to_com_subscription_token(&sub_val, "com_unsubscribe_event.subscription") {
+    let sub = match semantics::runtime_value_to_com_subscription_token(
+        &sub_val,
+        "com_unsubscribe_event.subscription",
+    ) {
         Ok(s) => s,
         Err(_) => return route_host_error_code(ctx, 53053),
     };
     let host = unsafe { (*ctx).host_services() };
     match host.com().unsubscribe_event(sub) {
-        Ok(value) => { write_slot!(ctx, dst, value); OK }
+        Ok(value) => {
+            write_slot!(ctx, dst, value);
+            OK
+        }
         Err(err) => route_hal_error(ctx, err),
     }
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn oxrt_host_com_event_callback_sub(ctx: *mut JitContext, dst: u32, callback: u32) -> i32 {
+pub extern "C" fn oxrt_host_com_event_callback_sub(
+    ctx: *mut JitContext,
+    dst: u32,
+    callback: u32,
+) -> i32 {
     let cb_val = read_slot!(ctx, callback);
-    let cb = match semantics::runtime_value_to_com_callback_token(&cb_val, "com_event_callback_subscription.callback") {
+    let cb = match semantics::runtime_value_to_com_callback_token(
+        &cb_val,
+        "com_event_callback_subscription.callback",
+    ) {
         Ok(c) => c,
         Err(_) => return route_host_error_code(ctx, 53053),
     };
     let host = unsafe { (*ctx).host_services() };
     match host.com().event_callback_subscription(cb) {
-        Ok(value) => { write_slot!(ctx, dst, RuntimeValue::I32(value.raw())); OK }
+        Ok(value) => {
+            write_slot!(ctx, dst, RuntimeValue::I32(value.raw()));
+            OK
+        }
         Err(err) => route_hal_error(ctx, err),
     }
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn oxrt_host_com_event_callback_arg(ctx: *mut JitContext, dst: u32, callback: u32, index: u32) -> i32 {
+pub extern "C" fn oxrt_host_com_event_callback_arg(
+    ctx: *mut JitContext,
+    dst: u32,
+    callback: u32,
+    index: u32,
+) -> i32 {
     let cb_val = read_slot!(ctx, callback);
     let idx_val = read_slot!(ctx, index);
-    let cb = match semantics::runtime_value_to_com_callback_token(&cb_val, "com_event_callback_arg.callback") {
+    let cb = match semantics::runtime_value_to_com_callback_token(
+        &cb_val,
+        "com_event_callback_arg.callback",
+    ) {
         Ok(c) => c,
         Err(_) => return route_host_error_code(ctx, 53053),
     };
-    let idx = match semantics::runtime_value_to_usize_index(&idx_val, "com_event_callback_arg.index") {
-        Ok(i) => i,
-        Err(_) => return route_host_error_code(ctx, 53053),
-    };
+    let idx =
+        match semantics::runtime_value_to_usize_index(&idx_val, "com_event_callback_arg.index") {
+            Ok(i) => i,
+            Err(_) => return route_host_error_code(ctx, 53053),
+        };
     let host = unsafe { (*ctx).host_services() };
     match host.com().event_callback_arg(cb, idx) {
-        Ok(value) => { write_slot!(ctx, dst, value); OK }
+        Ok(value) => {
+            write_slot!(ctx, dst, value);
+            OK
+        }
         Err(err) => route_hal_error(ctx, err),
     }
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn oxrt_host_com_release_event_callback(ctx: *mut JitContext, dst: u32, callback: u32) -> i32 {
+pub extern "C" fn oxrt_host_com_release_event_callback(
+    ctx: *mut JitContext,
+    dst: u32,
+    callback: u32,
+) -> i32 {
     let cb_val = read_slot!(ctx, callback);
-    let cb = match semantics::runtime_value_to_com_callback_token(&cb_val, "com_release_event_callback.callback") {
+    let cb = match semantics::runtime_value_to_com_callback_token(
+        &cb_val,
+        "com_release_event_callback.callback",
+    ) {
         Ok(c) => c,
         Err(_) => return route_host_error_code(ctx, 53053),
     };
     let host = unsafe { (*ctx).host_services() };
     match host.com().release_event_callback(cb) {
-        Ok(value) => { write_slot!(ctx, dst, value); OK }
+        Ok(value) => {
+            write_slot!(ctx, dst, value);
+            OK
+        }
         Err(err) => route_hal_error(ctx, err),
     }
 }
 
 // WithEvents
 #[unsafe(no_mangle)]
-pub extern "C" fn oxrt_host_withevents_get(ctx: *mut JitContext, dst: u32, owner: u32, binding: u32) -> i32 {
+pub extern "C" fn oxrt_host_withevents_get(
+    ctx: *mut JitContext,
+    dst: u32,
+    owner: u32,
+    binding: u32,
+) -> i32 {
     let owner_val = read_slot!(ctx, owner);
     let binding_val = read_slot!(ctx, binding);
     let owner = match semantics::withevents_owner_handle(&owner_val, "owner") {
@@ -2171,7 +2622,13 @@ pub extern "C" fn oxrt_host_withevents_get(ctx: *mut JitContext, dst: u32, owner
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn oxrt_host_withevents_set(ctx: *mut JitContext, dst: u32, owner_slot: u32, binding_slot: u32, value: u32) -> i32 {
+pub extern "C" fn oxrt_host_withevents_set(
+    ctx: *mut JitContext,
+    dst: u32,
+    owner_slot: u32,
+    binding_slot: u32,
+    value: u32,
+) -> i32 {
     let owner_val = read_slot!(ctx, owner_slot);
     let binding_val = read_slot!(ctx, binding_slot);
     let val = read_slot!(ctx, value);
@@ -2195,21 +2652,31 @@ pub extern "C" fn oxrt_host_withevents_set(ctx: *mut JitContext, dst: u32, owner
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn oxrt_host_withevents_clear_owner(ctx: *mut JitContext, dst: u32, owner: u32) -> i32 {
+pub extern "C" fn oxrt_host_withevents_clear_owner(
+    ctx: *mut JitContext,
+    dst: u32,
+    owner: u32,
+) -> i32 {
     let owner_val = read_slot!(ctx, owner);
     let owner = match semantics::withevents_owner_handle(&owner_val, "owner") {
         Ok(o) => o,
         Err(_) => return ERR_RUNTIME,
     };
     let state = unsafe { (*ctx).host_state_mut() };
-    state.withevents_bindings
+    state
+        .withevents_bindings
         .retain(|key, _| semantics::withevents_owner_from_key(*key) != owner);
     write_slot!(ctx, dst, RuntimeValue::I32(0));
     OK
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn oxrt_host_withevents_first_owner(ctx: *mut JitContext, dst: u32, source: u32, binding_slot: u32) -> i32 {
+pub extern "C" fn oxrt_host_withevents_first_owner(
+    ctx: *mut JitContext,
+    dst: u32,
+    source: u32,
+    binding_slot: u32,
+) -> i32 {
     let source_val = read_slot!(ctx, source);
     let binding_val = read_slot!(ctx, binding_slot);
     let binding = match semantics::withevents_binding_handle(&binding_val, "binding") {
@@ -2237,10 +2704,12 @@ pub extern "C" fn oxrt_host_withevents_first_owner(ctx: *mut JitContext, dst: u3
         write_slot!(ctx, dst, RuntimeValue::I32(0));
     } else {
         let first = owners[0];
-        state.withevents_owner_iters.push(crate::jit_context::WithEventsOwnerIterator {
-            owners,
-            next_index: 1,
-        });
+        state
+            .withevents_owner_iters
+            .push(crate::jit_context::WithEventsOwnerIterator {
+                owners,
+                next_index: 1,
+            });
         write_slot!(ctx, dst, RuntimeValue::ObjectHandle(first));
     }
     OK
@@ -2272,7 +2741,12 @@ pub extern "C" fn oxrt_host_withevents_next_owner(ctx: *mut JitContext, dst: u32
 
 // UI
 #[unsafe(no_mangle)]
-pub extern "C" fn oxrt_host_msgbox(ctx: *mut JitContext, dst: u32, prompt: u32, style_slot: u32) -> i32 {
+pub extern "C" fn oxrt_host_msgbox(
+    ctx: *mut JitContext,
+    dst: u32,
+    prompt: u32,
+    style_slot: u32,
+) -> i32 {
     let host = unsafe { (*ctx).host_services() };
     let prompt_val = read_slot!(ctx, prompt);
     let style = if style_slot == u32::MAX {
@@ -2281,13 +2755,21 @@ pub extern "C" fn oxrt_host_msgbox(ctx: *mut JitContext, dst: u32, prompt: u32, 
         read_slot!(ctx, style_slot)
     };
     match host.ui().msg_box(prompt_val, style) {
-        Ok(value) => { write_slot!(ctx, dst, value); OK }
+        Ok(value) => {
+            write_slot!(ctx, dst, value);
+            OK
+        }
         Err(_) => ERR_RUNTIME,
     }
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn oxrt_host_inputbox(ctx: *mut JitContext, dst: u32, prompt: u32, default_slot: u32) -> i32 {
+pub extern "C" fn oxrt_host_inputbox(
+    ctx: *mut JitContext,
+    dst: u32,
+    prompt: u32,
+    default_slot: u32,
+) -> i32 {
     let host = unsafe { (*ctx).host_services() };
     let prompt_val = read_slot!(ctx, prompt);
     let default_val = if default_slot == u32::MAX {
@@ -2296,7 +2778,10 @@ pub extern "C" fn oxrt_host_inputbox(ctx: *mut JitContext, dst: u32, prompt: u32
         read_slot!(ctx, default_slot)
     };
     match host.ui().input_box(prompt_val, default_val) {
-        Ok(value) => { write_slot!(ctx, dst, value); OK }
+        Ok(value) => {
+            write_slot!(ctx, dst, value);
+            OK
+        }
         Err(_) => ERR_RUNTIME,
     }
 }
@@ -2305,7 +2790,10 @@ pub extern "C" fn oxrt_host_inputbox(ctx: *mut JitContext, dst: u32, prompt: u32
 pub extern "C" fn oxrt_host_do_events(ctx: *mut JitContext, dst: u32) -> i32 {
     let host = unsafe { (*ctx).host_services() };
     match host.events().do_events() {
-        Ok(value) => { write_slot!(ctx, dst, value); OK }
+        Ok(value) => {
+            write_slot!(ctx, dst, value);
+            OK
+        }
         Err(_) => ERR_RUNTIME,
     }
 }
@@ -2316,7 +2804,10 @@ pub extern "C" fn oxrt_host_shell(ctx: *mut JitContext, dst: u32, command: u32) 
     let host = unsafe { (*ctx).host_services() };
     let cmd_val = read_slot!(ctx, command);
     match host.process().shell(cmd_val, RuntimeValue::I32(0)) {
-        Ok(value) => { write_slot!(ctx, dst, value); OK }
+        Ok(value) => {
+            write_slot!(ctx, dst, value);
+            OK
+        }
         Err(_) => ERR_RUNTIME,
     }
 }
@@ -2326,7 +2817,10 @@ pub extern "C" fn oxrt_host_environ(ctx: *mut JitContext, dst: u32, key: u32) ->
     let host = unsafe { (*ctx).host_services() };
     let key_val = read_slot!(ctx, key);
     match host.process().environ(key_val) {
-        Ok(value) => { write_slot!(ctx, dst, value); OK }
+        Ok(value) => {
+            write_slot!(ctx, dst, value);
+            OK
+        }
         Err(_) => ERR_RUNTIME,
     }
 }
@@ -2336,7 +2830,10 @@ pub extern "C" fn oxrt_host_dir(ctx: *mut JitContext, dst: u32, path: u32) -> i3
     let host = unsafe { (*ctx).host_services() };
     let path_val = read_slot!(ctx, path);
     match host.process().dir(path_val, RuntimeValue::I32(0)) {
-        Ok(value) => { write_slot!(ctx, dst, value); OK }
+        Ok(value) => {
+            write_slot!(ctx, dst, value);
+            OK
+        }
         Err(_) => ERR_RUNTIME,
     }
 }
@@ -2346,7 +2843,10 @@ pub extern "C" fn oxrt_host_dir(ctx: *mut JitContext, dst: u32, path: u32) -> i3
 pub extern "C" fn oxrt_host_date_now(ctx: *mut JitContext, dst: u32) -> i32 {
     let host = unsafe { (*ctx).host_services() };
     match host.time_locale().date_serial_now() {
-        Ok(value) => { write_slot!(ctx, dst, value); OK }
+        Ok(value) => {
+            write_slot!(ctx, dst, value);
+            OK
+        }
         Err(_) => ERR_RUNTIME,
     }
 }
@@ -2355,7 +2855,10 @@ pub extern "C" fn oxrt_host_date_now(ctx: *mut JitContext, dst: u32) -> i32 {
 pub extern "C" fn oxrt_host_time_now(ctx: *mut JitContext, dst: u32) -> i32 {
     let host = unsafe { (*ctx).host_services() };
     match host.time_locale().time_serial_now() {
-        Ok(value) => { write_slot!(ctx, dst, value); OK }
+        Ok(value) => {
+            write_slot!(ctx, dst, value);
+            OK
+        }
         Err(_) => ERR_RUNTIME,
     }
 }
@@ -2364,7 +2867,10 @@ pub extern "C" fn oxrt_host_time_now(ctx: *mut JitContext, dst: u32) -> i32 {
 pub extern "C" fn oxrt_host_now(ctx: *mut JitContext, dst: u32) -> i32 {
     let host = unsafe { (*ctx).host_services() };
     match host.time_locale().date_serial_now() {
-        Ok(value) => { write_slot!(ctx, dst, value); OK }
+        Ok(value) => {
+            write_slot!(ctx, dst, value);
+            OK
+        }
         Err(_) => ERR_RUNTIME,
     }
 }
@@ -2373,7 +2879,10 @@ pub extern "C" fn oxrt_host_now(ctx: *mut JitContext, dst: u32) -> i32 {
 pub extern "C" fn oxrt_host_timer(ctx: *mut JitContext, dst: u32) -> i32 {
     let host = unsafe { (*ctx).host_services() };
     match host.time_locale().timer_ticks() {
-        Ok(value) => { write_slot!(ctx, dst, value); OK }
+        Ok(value) => {
+            write_slot!(ctx, dst, value);
+            OK
+        }
         Err(_) => ERR_RUNTIME,
     }
 }
@@ -2414,13 +2923,19 @@ pub extern "C" fn oxrt_host_invoke_symbol(
     let descriptors = unsafe { (*ctx).host_state().external_call_descriptors() };
     if descriptors.is_empty() {
         match host.dynlink().invoke_symbol(symbol, first_arg) {
-            Ok(value) => { write_slot!(ctx, dst, value); return OK; }
+            Ok(value) => {
+                write_slot!(ctx, dst, value);
+                return OK;
+            }
             Err(err) => return route_hal_error(ctx, err),
         }
     }
 
     // Find descriptor by id.
-    let descriptor = match descriptors.iter().find(|e| e.descriptor_id == descriptor_id) {
+    let descriptor = match descriptors
+        .iter()
+        .find(|e| e.descriptor_id == descriptor_id)
+    {
         Some(d) => d,
         None => return route_host_error_code(ctx, 53073), // DynLink adapter fault
     };
@@ -2447,7 +2962,10 @@ pub extern "C" fn oxrt_host_invoke_symbol(
         param_count: descriptor.param_count,
         param_types: &param_type_strings,
         return_type: {
-            return_type_string = descriptor.return_type.as_ref().map(|rt| format!("{:?}", rt));
+            return_type_string = descriptor
+                .return_type
+                .as_ref()
+                .map(|rt| format!("{:?}", rt));
             return_type_string.as_deref()
         },
     };
@@ -2474,7 +2992,10 @@ pub extern "C" fn oxrt_host_invoke_symbol(
         }
     } else {
         match host.dynlink().invoke_descriptor(&view, first_arg) {
-            Ok(value) => { write_slot!(ctx, dst, value); OK }
+            Ok(value) => {
+                write_slot!(ctx, dst, value);
+                OK
+            }
             Err(err) => route_hal_error(ctx, err),
         }
     }
@@ -2567,14 +3088,22 @@ fn opt_legacy_slot(ctx: *mut JitContext, slot: u32, default: i32) -> i32 {
 fn len_digits(value: i32) -> i32 {
     let mut n = i64::from(value);
     let mut digits = 0i32;
-    if n <= 0 { digits += 1; n = -n; }
-    while n > 0 { digits += 1; n /= 10; }
+    if n <= 0 {
+        digits += 1;
+        n = -n;
+    }
+    while n > 0 {
+        digits += 1;
+        n /= 10;
+    }
     digits
 }
 
 fn slice_digits(value: i32, start: usize, count: Option<i32>) -> i32 {
     let text = value.to_string();
-    if start >= text.len() { return 0; }
+    if start >= text.len() {
+        return 0;
+    }
     let end = match count {
         Some(c) if c <= 0 => start,
         Some(c) => (start + c as usize).min(text.len()),
@@ -2588,7 +3117,9 @@ fn left_digits(value: i32, count: i32) -> i32 {
 }
 
 fn right_digits(value: i32, count: i32) -> i32 {
-    if count <= 0 { return 0; }
+    if count <= 0 {
+        return 0;
+    }
     let text = value.to_string();
     let take = (count as usize).min(text.len());
     let start = text.len().saturating_sub(take);
@@ -2604,14 +3135,20 @@ fn mid_stmt_digits(target: i32, start: i32, count: Option<i32>, value: i32) -> i
     let base = target.to_string();
     let repl = value.to_string();
     let start_idx = if start <= 1 { 0 } else { (start - 1) as usize };
-    if start_idx >= base.len() { return target; }
+    if start_idx >= base.len() {
+        return target;
+    }
     let end_idx = match count {
         Some(c) if c <= 0 => start_idx,
         Some(c) => (start_idx + c as usize).min(base.len()),
         None => base.len(),
     };
     let replace_len = end_idx.saturating_sub(start_idx);
-    let replace_text = if replace_len >= repl.len() { repl.as_str() } else { &repl[..replace_len] };
+    let replace_text = if replace_len >= repl.len() {
+        repl.as_str()
+    } else {
+        &repl[..replace_len]
+    };
     let mut out = String::with_capacity(base.len() - replace_len + replace_text.len());
     out.push_str(&base[..start_idx]);
     out.push_str(replace_text);
@@ -2632,29 +3169,43 @@ fn instrrev_digits(haystack: i32, needle: i32, mode: StringCompareMode) -> i32 {
 }
 
 fn to_lower_digits(value: i32) -> i32 {
-    value.to_string().to_ascii_lowercase().parse::<i32>().unwrap_or(0)
+    value
+        .to_string()
+        .to_ascii_lowercase()
+        .parse::<i32>()
+        .unwrap_or(0)
 }
 
 fn to_upper_digits(value: i32) -> i32 {
-    value.to_string().to_ascii_uppercase().parse::<i32>().unwrap_or(0)
+    value
+        .to_string()
+        .to_ascii_uppercase()
+        .parse::<i32>()
+        .unwrap_or(0)
 }
 
 fn split_count_digits(value: i32, delimiter: i32) -> i32 {
     let text = value.to_string();
     let delim = delimiter.to_string();
-    if delim.is_empty() { return 1; }
+    if delim.is_empty() {
+        return 1;
+    }
     text.split(&delim).count() as i32
 }
 
 fn join_digits(value: i32, _delimiter: i32) -> i32 {
-    array_len_from_tag(value).and_then(|c| i32::try_from(c).ok()).unwrap_or(value)
+    array_len_from_tag(value)
+        .and_then(|c| i32::try_from(c).ok())
+        .unwrap_or(value)
 }
 
 fn replace_digits(value: i32, find: i32, replace: i32) -> i32 {
     let text = value.to_string();
     let f = find.to_string();
     let r = replace.to_string();
-    if f.is_empty() { return value; }
+    if f.is_empty() {
+        return value;
+    }
     text.replace(&f, &r).parse::<i32>().unwrap_or(0)
 }
 
@@ -2663,7 +3214,11 @@ fn trim_digits(value: i32) -> i32 {
 }
 
 fn ltrim_digits(value: i32) -> i32 {
-    value.to_string().trim_start().parse::<i32>().unwrap_or(value)
+    value
+        .to_string()
+        .trim_start()
+        .parse::<i32>()
+        .unwrap_or(value)
 }
 
 fn rtrim_digits(value: i32) -> i32 {
@@ -2687,11 +3242,15 @@ fn like_digits(lhs: i32, pattern: i32, mode: StringCompareMode) -> i32 {
 }
 
 fn date_serial_digits(year: i32, month: i32, day: i32) -> i32 {
-    year.saturating_mul(10_000).saturating_add(month.saturating_mul(100)).saturating_add(day)
+    year.saturating_mul(10_000)
+        .saturating_add(month.saturating_mul(100))
+        .saturating_add(day)
 }
 
 fn time_serial_digits(hour: i32, minute: i32, second: i32) -> i32 {
-    hour.saturating_mul(3600).saturating_add(minute.saturating_mul(60)).saturating_add(second)
+    hour.saturating_mul(3600)
+        .saturating_add(minute.saturating_mul(60))
+        .saturating_add(second)
 }
 
 fn date_add_digits(_interval: i32, number: i32, date: i32) -> i32 {
@@ -2710,17 +3269,25 @@ fn day_of_week(year: i32, month: i32, day: i32) -> i32 {
 }
 
 fn round_i32(value: i32, digits: i32) -> i32 {
-    if digits >= 0 { return value; }
+    if digits >= 0 {
+        return value;
+    }
     let magnitude = (-digits) as u32;
     let factor = 10_i32.saturating_pow(magnitude);
-    if factor <= 1 { return value; }
+    if factor <= 1 {
+        return value;
+    }
     let f = factor as f64;
     ((value as f64) / f).round() as i32 * factor
 }
 
 fn fv_i32(rate: i32, nper: i32, pmt: i32, pv: i32, due: i32) -> i32 {
-    if nper == 0 { return 0; }
-    if rate == 0 { return -(pv + pmt.saturating_mul(nper)); }
+    if nper == 0 {
+        return 0;
+    }
+    if rate == 0 {
+        return -(pv + pmt.saturating_mul(nper));
+    }
     let r = rate as f64 / 100.0;
     let n = nper as f64;
     let growth = (1.0 + r).powf(n);
@@ -2730,8 +3297,12 @@ fn fv_i32(rate: i32, nper: i32, pmt: i32, pv: i32, due: i32) -> i32 {
 }
 
 fn pv_i32(rate: i32, nper: i32, pmt: i32, fv: i32, due: i32) -> i32 {
-    if nper == 0 { return 0; }
-    if rate == 0 { return -(fv + pmt.saturating_mul(nper)); }
+    if nper == 0 {
+        return 0;
+    }
+    if rate == 0 {
+        return -(fv + pmt.saturating_mul(nper));
+    }
     let r = rate as f64 / 100.0;
     let n = nper as f64;
     let growth = (1.0 + r).powf(n);
@@ -2741,26 +3312,36 @@ fn pv_i32(rate: i32, nper: i32, pmt: i32, fv: i32, due: i32) -> i32 {
 }
 
 fn pmt_i32(rate: i32, nper: i32, pv: i32, fv: i32, due: i32) -> i32 {
-    if nper == 0 { return 0; }
-    if rate == 0 { return -((pv + fv) / nper); }
+    if nper == 0 {
+        return 0;
+    }
+    if rate == 0 {
+        return -((pv + fv) / nper);
+    }
     let r = rate as f64 / 100.0;
     let n = nper as f64;
     let growth = (1.0 + r).powf(n);
     let due_adj = if due != 0 { 1.0 + r } else { 1.0 };
     let denom = due_adj * ((growth - 1.0) / r);
-    if denom == 0.0 { return 0; }
+    if denom == 0.0 {
+        return 0;
+    }
     let out = -(pv as f64 * growth + fv as f64) / denom;
     out.round() as i32
 }
 
 fn npv_i32(rate: i32, values: &[i32]) -> i32 {
-    if values.is_empty() { return 0; }
+    if values.is_empty() {
+        return 0;
+    }
     let r = rate as f64 / 100.0;
     let mut total = 0.0f64;
     for (idx, value) in values.iter().enumerate() {
         let period = (idx + 1) as i32;
         let discount = (1.0 + r).powi(period);
-        if discount == 0.0 { continue; }
+        if discount == 0.0 {
+            continue;
+        }
         total += *value as f64 / discount;
     }
     total.round() as i32
@@ -2771,12 +3352,19 @@ fn irr_i32(value: i32, guess: i32) -> i32 {
     let value = value as f64;
     for _ in 0..20 {
         let denom = 1.0 + r;
-        if denom.abs() < 1e-9 { break; }
+        if denom.abs() < 1e-9 {
+            break;
+        }
         let f = -100.0 + (value / denom);
         let fp = -value / (denom * denom);
-        if fp.abs() < 1e-12 { break; }
+        if fp.abs() < 1e-12 {
+            break;
+        }
         let next = (r - f / fp).clamp(-0.99, 10.0);
-        if (next - r).abs() < 1e-10 { r = next; break; }
+        if (next - r).abs() < 1e-10 {
+            r = next;
+            break;
+        }
         r = next;
     }
     (r * 100.0).round() as i32
@@ -2805,10 +3393,13 @@ fn rate_func_derivative(r: f64, nper: f64, pmt: f64, pv: f64, fv: f64, due: f64)
     if r.abs() < 1e-8 {
         let h = FIN_DERIVATIVE_STEP;
         return (rate_func(r + h, nper, pmt, pv, fv, due)
-            - rate_func(r - h, nper, pmt, pv, fv, due)) / (2.0 * h);
+            - rate_func(r - h, nper, pmt, pv, fv, due))
+            / (2.0 * h);
     }
     let base = 1.0 + r;
-    if base <= 0.0 { return f64::NAN; }
+    if base <= 0.0 {
+        return f64::NAN;
+    }
     let growth = base.powf(nper);
     let growth_prime = nper * base.powf(nper - 1.0);
     let c = (growth - 1.0) / r;
@@ -2817,7 +3408,9 @@ fn rate_func_derivative(r: f64, nper: f64, pmt: f64, pv: f64, fv: f64, due: f64)
 }
 
 fn rate_i32(nper: i32, pmt: i32, pv: i32, fv: i32, due: i32, guess: i32) -> i32 {
-    if nper == 0 { return error_tag_from_code(FIN_RATE_ERROR_CODE); }
+    if nper == 0 {
+        return error_tag_from_code(FIN_RATE_ERROR_CODE);
+    }
     let n = nper as f64;
     let pmt = pmt as f64;
     let pv = pv as f64;
@@ -2827,10 +3420,16 @@ fn rate_i32(nper: i32, pmt: i32, pv: i32, fv: i32, due: i32, guess: i32) -> i32 
     for _ in 0..FIN_MAX_ITERS {
         let f = rate_func(r, n, pmt, pv, fv, due);
         let fp = rate_func_derivative(r, n, pmt, pv, fv, due);
-        if fp.abs() < 1e-12 { return error_tag_from_code(FIN_RATE_ERROR_CODE); }
+        if fp.abs() < 1e-12 {
+            return error_tag_from_code(FIN_RATE_ERROR_CODE);
+        }
         let next = (r - f / fp).clamp(-0.99, 10.0);
-        if !next.is_finite() { return error_tag_from_code(FIN_RATE_ERROR_CODE); }
-        if (next - r).abs() < FIN_EPS { return (next * 100.0).round() as i32; }
+        if !next.is_finite() {
+            return error_tag_from_code(FIN_RATE_ERROR_CODE);
+        }
+        if (next - r).abs() < FIN_EPS {
+            return (next * 100.0).round() as i32;
+        }
         r = next;
     }
     error_tag_from_code(FIN_RATE_ERROR_CODE)
@@ -2842,7 +3441,9 @@ fn nper_i32(rate: i32, pmt: i32, pv: i32, fv: i32, due: i32) -> i32 {
     let fv = fv as f64;
     let due = if due != 0 { 1.0 } else { 0.0 };
     if rate == 0 {
-        if pmt == 0.0 { return error_tag_from_code(FIN_NPER_ERROR_CODE); }
+        if pmt == 0.0 {
+            return error_tag_from_code(FIN_NPER_ERROR_CODE);
+        }
         return (-(pv + fv) / pmt).round() as i32;
     }
     let r = rate as f64 / 100.0;
@@ -2852,7 +3453,9 @@ fn nper_i32(rate: i32, pmt: i32, pv: i32, fv: i32, due: i32) -> i32 {
         return error_tag_from_code(FIN_NPER_ERROR_CODE);
     }
     let n = (numerator / denominator).ln() / (1.0 + r).ln();
-    if !n.is_finite() { return error_tag_from_code(FIN_NPER_ERROR_CODE); }
+    if !n.is_finite() {
+        return error_tag_from_code(FIN_NPER_ERROR_CODE);
+    }
     n.round() as i32
 }
 
@@ -2966,19 +3569,37 @@ pub fn register_symbols(builder: &mut cranelift_jit::JITBuilder) {
         // Phase 2: Collection
         ("oxrt_collection_add", oxrt_collection_add as *const u8),
         ("oxrt_collection_item", oxrt_collection_item as *const u8),
-        ("oxrt_collection_remove", oxrt_collection_remove as *const u8),
+        (
+            "oxrt_collection_remove",
+            oxrt_collection_remove as *const u8,
+        ),
         ("oxrt_collection_count", oxrt_collection_count as *const u8),
         // Phase 2: Random
         ("oxrt_rnd", oxrt_rnd as *const u8),
         ("oxrt_randomize", oxrt_randomize as *const u8),
         // Phase 2: Assignment
-        ("oxrt_validate_assignment", oxrt_validate_assignment as *const u8),
+        (
+            "oxrt_validate_assignment",
+            oxrt_validate_assignment as *const u8,
+        ),
         // Phase 3: Error handling
-        ("oxrt_set_on_error_resume_next", oxrt_set_on_error_resume_next as *const u8),
-        ("oxrt_set_on_error_goto0", oxrt_set_on_error_goto0 as *const u8),
-        ("oxrt_set_on_error_goto_label", oxrt_set_on_error_goto_label as *const u8),
+        (
+            "oxrt_set_on_error_resume_next",
+            oxrt_set_on_error_resume_next as *const u8,
+        ),
+        (
+            "oxrt_set_on_error_goto0",
+            oxrt_set_on_error_goto0 as *const u8,
+        ),
+        (
+            "oxrt_set_on_error_goto_label",
+            oxrt_set_on_error_goto_label as *const u8,
+        ),
         ("oxrt_load_err_number", oxrt_load_err_number as *const u8),
-        ("oxrt_load_err_description", oxrt_load_err_description as *const u8),
+        (
+            "oxrt_load_err_description",
+            oxrt_load_err_description as *const u8,
+        ),
         ("oxrt_load_err_source", oxrt_load_err_source as *const u8),
         ("oxrt_raise_error", oxrt_raise_error as *const u8),
         ("oxrt_clear_err", oxrt_clear_err as *const u8),
@@ -2994,20 +3615,59 @@ pub fn register_symbols(builder: &mut cranelift_jit::JITBuilder) {
         ("oxrt_host_file_write", oxrt_host_file_write as *const u8),
         ("oxrt_host_file_print", oxrt_host_file_print as *const u8),
         ("oxrt_host_file_input", oxrt_host_file_input as *const u8),
-        ("oxrt_host_file_line_input", oxrt_host_file_line_input as *const u8),
+        (
+            "oxrt_host_file_line_input",
+            oxrt_host_file_line_input as *const u8,
+        ),
         ("oxrt_host_file_loc", oxrt_host_file_loc as *const u8),
-        ("oxrt_host_create_object", oxrt_host_create_object as *const u8),
-        ("oxrt_host_dispatch_invoke", oxrt_host_dispatch_invoke as *const u8),
-        ("oxrt_host_com_subscribe", oxrt_host_com_subscribe as *const u8),
-        ("oxrt_host_com_unsubscribe", oxrt_host_com_unsubscribe as *const u8),
-        ("oxrt_host_com_event_callback_sub", oxrt_host_com_event_callback_sub as *const u8),
-        ("oxrt_host_com_event_callback_arg", oxrt_host_com_event_callback_arg as *const u8),
-        ("oxrt_host_com_release_event_callback", oxrt_host_com_release_event_callback as *const u8),
-        ("oxrt_host_withevents_get", oxrt_host_withevents_get as *const u8),
-        ("oxrt_host_withevents_set", oxrt_host_withevents_set as *const u8),
-        ("oxrt_host_withevents_clear_owner", oxrt_host_withevents_clear_owner as *const u8),
-        ("oxrt_host_withevents_first_owner", oxrt_host_withevents_first_owner as *const u8),
-        ("oxrt_host_withevents_next_owner", oxrt_host_withevents_next_owner as *const u8),
+        (
+            "oxrt_host_create_object",
+            oxrt_host_create_object as *const u8,
+        ),
+        (
+            "oxrt_host_dispatch_invoke",
+            oxrt_host_dispatch_invoke as *const u8,
+        ),
+        (
+            "oxrt_host_com_subscribe",
+            oxrt_host_com_subscribe as *const u8,
+        ),
+        (
+            "oxrt_host_com_unsubscribe",
+            oxrt_host_com_unsubscribe as *const u8,
+        ),
+        (
+            "oxrt_host_com_event_callback_sub",
+            oxrt_host_com_event_callback_sub as *const u8,
+        ),
+        (
+            "oxrt_host_com_event_callback_arg",
+            oxrt_host_com_event_callback_arg as *const u8,
+        ),
+        (
+            "oxrt_host_com_release_event_callback",
+            oxrt_host_com_release_event_callback as *const u8,
+        ),
+        (
+            "oxrt_host_withevents_get",
+            oxrt_host_withevents_get as *const u8,
+        ),
+        (
+            "oxrt_host_withevents_set",
+            oxrt_host_withevents_set as *const u8,
+        ),
+        (
+            "oxrt_host_withevents_clear_owner",
+            oxrt_host_withevents_clear_owner as *const u8,
+        ),
+        (
+            "oxrt_host_withevents_first_owner",
+            oxrt_host_withevents_first_owner as *const u8,
+        ),
+        (
+            "oxrt_host_withevents_next_owner",
+            oxrt_host_withevents_next_owner as *const u8,
+        ),
         ("oxrt_host_msgbox", oxrt_host_msgbox as *const u8),
         ("oxrt_host_inputbox", oxrt_host_inputbox as *const u8),
         ("oxrt_host_do_events", oxrt_host_do_events as *const u8),
@@ -3018,7 +3678,10 @@ pub fn register_symbols(builder: &mut cranelift_jit::JITBuilder) {
         ("oxrt_host_time_now", oxrt_host_time_now as *const u8),
         ("oxrt_host_now", oxrt_host_now as *const u8),
         ("oxrt_host_timer", oxrt_host_timer as *const u8),
-        ("oxrt_host_invoke_symbol", oxrt_host_invoke_symbol as *const u8),
+        (
+            "oxrt_host_invoke_symbol",
+            oxrt_host_invoke_symbol as *const u8,
+        ),
     ];
     for &(name, ptr) in symbols {
         builder.symbol(name, ptr);

@@ -3,10 +3,7 @@
 use oxvba_project::ComClassExportDescriptor;
 
 /// Generate a Side-by-Side (SxS) activation manifest for registry-free COM.
-pub fn generate_sxs_manifest(
-    project_name: &str,
-    classes: &[ComClassExportDescriptor],
-) -> String {
+pub fn generate_sxs_manifest(project_name: &str, classes: &[ComClassExportDescriptor]) -> String {
     let mut xml = String::new();
     xml.push_str(r#"<?xml version="1.0" encoding="utf-8"?>"#);
     xml.push('\n');
@@ -17,20 +14,12 @@ pub fn generate_sxs_manifest(
     ));
     xml.push('\n');
 
-    xml.push_str(&format!(
-        r#"  <file name="{project_name}.dll">"#
-    ));
+    xml.push_str(&format!(r#"  <file name="{project_name}.dll">"#));
     xml.push('\n');
 
     for class in classes {
-        let prog_id = class
-            .prog_id
-            .as_deref()
-            .unwrap_or(&class.class_name);
-        let description = class
-            .description
-            .as_deref()
-            .unwrap_or("");
+        let prog_id = class.prog_id.as_deref().unwrap_or(&class.class_name);
+        let description = class.description.as_deref().unwrap_or("");
 
         xml.push_str(&format!(
             r#"    <comClass clsid="{{00000000-0000-0000-0000-000000000000}}" progid="{prog_id}" threadingModel="Apartment" description="{description}" />"#

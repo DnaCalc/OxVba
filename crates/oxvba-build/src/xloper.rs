@@ -10,9 +10,7 @@ pub const XL_TYPE_MISSING: u32 = 0x0080;
 pub const XL_TYPE_NIL: u32 = 0x0100;
 
 /// Map a `DeclareParamType` to an Excel type registration letter.
-pub fn declare_param_type_to_excel_letter(
-    ty: &oxvba_compiler::DeclareParamType,
-) -> &'static str {
+pub fn declare_param_type_to_excel_letter(ty: &oxvba_compiler::DeclareParamType) -> &'static str {
     use oxvba_compiler::DeclareParamType;
     match ty {
         DeclareParamType::Double => "B",
@@ -86,18 +84,27 @@ mod tests {
 
     #[test]
     fn type_string_for_string_function() {
-        let s = build_type_string(
-            &[DeclareParamType::String],
-            Some(&DeclareParamType::String),
-        );
+        let s = build_type_string(&[DeclareParamType::String], Some(&DeclareParamType::String));
         assert_eq!(s, "C%C%");
     }
 
     #[test]
     fn excel_letter_mapping() {
-        assert_eq!(declare_param_type_to_excel_letter(&DeclareParamType::Double), "B");
-        assert_eq!(declare_param_type_to_excel_letter(&DeclareParamType::Long), "J");
-        assert_eq!(declare_param_type_to_excel_letter(&DeclareParamType::Boolean), "A");
-        assert_eq!(declare_param_type_to_excel_letter(&DeclareParamType::String), "C%");
+        assert_eq!(
+            declare_param_type_to_excel_letter(&DeclareParamType::Double),
+            "B"
+        );
+        assert_eq!(
+            declare_param_type_to_excel_letter(&DeclareParamType::Long),
+            "J"
+        );
+        assert_eq!(
+            declare_param_type_to_excel_letter(&DeclareParamType::Boolean),
+            "A"
+        );
+        assert_eq!(
+            declare_param_type_to_excel_letter(&DeclareParamType::String),
+            "C%"
+        );
     }
 }
