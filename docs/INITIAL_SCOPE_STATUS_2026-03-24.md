@@ -44,9 +44,9 @@
 
 - [ ] **ODG-030** — COM interop marshaling. Needs COM test server + host interop oracle runs.
 - [ ] **ODG-031** — TypeLib COM interop. Needs custom typelib oracle harness.
-- [ ] **ODG-044** — `As New` early-bound. Oracle template already generated — needs Excel execution.
-- [ ] **ODG-045** — Dual-interface vtable/dispatch. Oracle template already generated — needs Excel execution.
-- [ ] **ODG-046** — TypeLib version/broken-ref. Oracle template already generated — needs Excel execution.
+- [ ] **ODG-044** — `As New` early-bound. Excel host is available locally, but closure is not just scheduling: real registered early-bound OxVba parity anchor for `scrrun` / `Scripting.Dictionary` is not yet honest. See `docs/evidence/conformance/COM_EARLY_ORACLE_READINESS_2026-03-24.md`.
+- [ ] **ODG-045** — Dual-interface vtable/dispatch. Still needs a mixed-server oracle harness; Excel availability alone does not close transport-policy parity.
+- [ ] **ODG-046** — TypeLib version/broken-ref. Still needs versioned-typelib / broken-reference mutation harness; Excel availability alone does not close repair/version-selection parity.
 
 **Deferred beyond Initial Scope (6 gates — blocked on missing subsystems):**
 
@@ -168,8 +168,10 @@ These are post-Initial Scope items. No action needed for v620 closure.
 
 ### Must-do (blocking v620 terminal gate)
 
-- [ ] **Schedule Excel oracle session** — 3 ODGs have templates ready (ODG-044/045/046). This is scheduling, not coding.
-- [ ] **Close or defer ODG-030, ODG-031** — need COM test server / typelib oracle harness. May need explicit deferral if infrastructure is unavailable.
+- [ ] **ODG-044 real-host anchor** — Excel is runnable locally, but a trustworthy OxVba-side real registered early-bind anchor is still missing; this is not just scheduling.
+- [ ] **ODG-045 mixed-server oracle harness** — dual-interface parity still needs an explicit host/oracle lane.
+- [ ] **ODG-046 versioned/broken-reference oracle harness** — still needs typelib mutation / repair harness.
+- [ ] **Close or defer ODG-030, ODG-031** — need paired COM test-server / typelib oracle harness. Existing registered COM lanes are not yet the required Excel differential harness.
 - [ ] **DG-V2-001 completion** — still running remotely. Needs to complete or be explicitly deferred.
 
 ### Should-do (high value, not strictly blocking)

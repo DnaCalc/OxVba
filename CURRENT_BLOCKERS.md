@@ -385,6 +385,22 @@ Run context: active parity/compliance execution plus in-progress feature worklis
 - Recommendation:
   - do not spend oracle effort ahead of core feature closure except for targeted ambiguity resolution.
 
+### BLK-ORACLE-002: COM early oracle is host-ready locally, but ODG-044 is not merely a scheduling item
+- Impact:
+  - Blocks honest closure of `ODG-044`.
+  - Weakens the assumption that the remaining COM-early oracle work is only calendar/external-session effort.
+- Current state:
+  - Excel COM automation is available locally (`16.0`), and `AccessVBOM=1`.
+  - Direct Excel/VBA probe against `Scripting.Dictionary` executes successfully.
+  - However, exploratory local repro shows the matching OxVba-side real registered early-bound path for `Dim obj As New Scripting.Dictionary` is not yet a trustworthy parity anchor for closure work.
+- Exact unblock steps:
+  - add a reproducible OxVba host lane for real registered early-bound `scrrun` / `Scripting.Dictionary`,
+  - verify imported `As New` and imported member access against that real registered lane,
+  - then run/fold the side-by-side Excel oracle capture for `ODG-044`.
+- Recommendation:
+  - treat `ODG-044` as mixed implementation-plus-oracle closure work, not as a pure scheduling task.
+  - keep `ODG-045` and `ODG-046` separate as harness-construction items rather than collapsing them into the same calendar note.
+
 ### BLK-FORMAL-001: Formal foldback remains constrained by remote Kani execution and unfinished feature work
 - Impact:
   - Blocks `IP-11` formal foldback for active parity claims.
