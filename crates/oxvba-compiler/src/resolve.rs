@@ -1900,23 +1900,35 @@ fn parse_block(
             continue;
         }
 
-        if lower.starts_with("if ") && lower.ends_with(" then") {
-            out.push(parse_if_stmt(
-                lines,
-                index,
-                declarations,
-                declaration_types,
-                duplicate_declarations,
-                array_bounds,
-                option_explicit,
-                option_base,
-                default_type_table,
-                udt_defs,
-                module_constants,
-                property_write_routes,
-                property_read_routes,
-                line,
-            ));
+        if lower.starts_with("if ") {
+            if lower.ends_with(" then") {
+                out.push(parse_if_stmt(
+                    lines,
+                    index,
+                    declarations,
+                    declaration_types,
+                    duplicate_declarations,
+                    array_bounds,
+                    option_explicit,
+                    option_base,
+                    default_type_table,
+                    udt_defs,
+                    module_constants,
+                    property_write_routes,
+                    property_read_routes,
+                    line,
+                ));
+            } else {
+                out.push(parse_single_line_if_stmt(
+                    line,
+                    declarations,
+                    array_bounds,
+                    property_write_routes,
+                    property_read_routes,
+                    udt_defs,
+                ));
+                *index += 1;
+            }
             continue;
         }
 
@@ -2354,6 +2366,103 @@ fn parse_if_stmt(
         then_body,
         else_body,
     }
+}
+
+fn parse_single_line_if_stmt(
+    line: &str,
+    declarations: &[String],
+    array_bounds: &ArrayBoundsMap,
+    property_write_routes: &HashMap<String, String>,
+    property_read_routes: &HashMap<String, String>,
+    udt_defs: &UdtDefMap,
+) -> BoundStmt {
+    let Some((condition, tail)) = split_ci(&line[2..], " then ") else {
+        return BoundStmt::Unsupported {
+            line: line.to_string(),
+        };
+    };
+    let Some(cond) = parse_condition(condition, array_bounds) else {
+        return BoundStmt::Unsupported {
+            line: line.to_string(),
+        };
+    };
+
+    let (then_tail, else_tail) = if let Some((then_tail, else_tail)) = split_ci(tail, " else ") {
+        (then_tail, Some(else_tail))
+    } else {
+        (tail, None)
+    };
+
+    let then_stmt = parse_inline_stmt_or_unsupported(
+        then_tail,
+        declarations,
+        array_bounds,
+        property_write_routes,
+        property_read_routes,
+        udt_defs,
+    );
+    if matches!(then_stmt, BoundStmt::Unsupported { .. }) {
+        return BoundStmt::Unsupported {
+            line: line.to_string(),
+        };
+    }
+
+    let else_body = if let Some(else_tail) = else_tail {
+        let else_stmt = parse_inline_stmt_or_unsupported(
+            else_tail,
+            declarations,
+            array_bounds,
+            property_write_routes,
+            property_read_routes,
+            udt_defs,
+        );
+        if matches!(else_stmt, BoundStmt::Unsupported { .. }) {
+            return BoundStmt::Unsupported {
+                line: line.to_string(),
+            };
+        }
+        vec![else_stmt]
+    } else {
+        Vec::new()
+    };
+
+    BoundStmt::IfCond {
+        cond,
+        then_body: vec![then_stmt],
+        else_body,
+    }
+}
+
+fn parse_inline_stmt_or_unsupported(
+    line: &str,
+    declarations: &[String],
+    array_bounds: &ArrayBoundsMap,
+    property_write_routes: &HashMap<String, String>,
+    property_read_routes: &HashMap<String, String>,
+    udt_defs: &UdtDefMap,
+) -> BoundStmt {
+    let lower = line.trim().to_ascii_lowercase();
+    if lower.starts_with("error ")
+        && let Ok(code) = line.trim()[6..].trim().parse::<i32>()
+    {
+        return BoundStmt::RaiseError(code);
+    }
+    if lower.starts_with("err.raise ")
+        && let Ok(code) = line.trim()[10..].trim().parse::<i32>()
+    {
+        return BoundStmt::RaiseError(code);
+    }
+    if lower == "err.clear" {
+        return BoundStmt::ErrClear;
+    }
+    parse_assign_or_unsupported(
+        line.trim(),
+        declarations,
+        array_bounds,
+        property_write_routes,
+        property_read_routes,
+        udt_defs,
+    )
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -5158,6 +5267,25 @@ mod tests {
             panic!("expected if");
         };
         assert!(!else_body.is_empty());
+    }
+
+    #[test]
+    fn resolve_single_line_if_statement_routes_inline_call_body() {
+        let source = "Sub Main()\nIf 1 = 1 Then Err.Raise 5\nEnd Sub";
+        let module = resolve_symbols(source);
+        let Some(BoundStmt::IfCond {
+            then_body,
+            else_body,
+            ..
+        }) = module.body.first()
+        else {
+            panic!("expected if");
+        };
+        assert!(else_body.is_empty());
+        let Some(BoundStmt::RaiseError(code)) = then_body.first() else {
+            panic!("expected inline raise body");
+        };
+        assert_eq!(*code, 5);
     }
 
     #[test]

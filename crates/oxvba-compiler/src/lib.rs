@@ -963,6 +963,22 @@ mod tests {
     }
 
     #[test]
+    fn compile_single_line_if_statement_emits_branch_instructions() {
+        let source = "Sub Main()\nDim x\nx = 1\nIf x = 1 Then x = x + 2\nEnd Sub";
+        let out = compile(source).expect("compile should succeed");
+        assert!(
+            out.instructions
+                .iter()
+                .any(|i| matches!(i, Instruction::CmpEqSlots { .. }))
+        );
+        assert!(
+            out.instructions
+                .iter()
+                .any(|i| matches!(i, Instruction::JumpIfZero { .. }))
+        );
+    }
+
+    #[test]
     fn compile_for_statement_emits_loop_instructions() {
         let source = "Sub Main()\nDim x\nDim i\nx = 0\nFor i = 1 To 3\nx = x + 1\nNext i\nEnd Sub";
         let out = compile(source).expect("compile should succeed");

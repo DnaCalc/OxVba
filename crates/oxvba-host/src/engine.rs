@@ -9851,6 +9851,35 @@ mod tests {
     }
 
     #[test]
+    fn formal_project_single_line_if_statement_executes_inline_err_raise() {
+        let engine = Engine::new(HostConfig::default());
+        let main_module = module_unit_from_source(
+            "MainModule",
+            ModuleKind::Procedural,
+            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nIf 1 = 1 Then Err.Raise 104\nEnd Sub",
+        )
+        .expect("main module should parse");
+        let manifest = ProjectManifest {
+            project_name: "ProjectA".to_string(),
+            project_kind: ProjectKind::Source,
+            modules: vec![main_module],
+            references: Vec::new(),
+            reference_projects: Vec::new(),
+            conditional_constants: std::collections::BTreeMap::new(),
+        };
+
+        let err = engine
+            .execute_project_slots_test_phased(&manifest)
+            .expect_err("single-line if statement should execute and raise");
+        assert_eq!(err.phase(), DiagnosticPhase::Runtime);
+        assert!(
+            err.message().contains("runtime error: 104"),
+            "single-line if statement should drive inline Err.Raise, got: {}",
+            err.message()
+        );
+    }
+
+    #[test]
     fn formal_pmr_dispatchinvoke_routes_internal_class_function_through_native_dynamic_path() {
         let engine = Engine::new(HostConfig::default());
         let main_module = module_unit_from_source(
