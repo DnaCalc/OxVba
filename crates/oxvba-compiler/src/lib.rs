@@ -1208,7 +1208,16 @@ mod tests {
     }
 
     #[test]
-    fn compile_paramarray_named_args_are_rejected_for_current_subset() {
+    fn compile_paramarray_named_fixed_arg_with_positional_pack_compiles() {
+        let source = "Sub Main()\nDim x\nCall Capture(target := x, 5, 7)\nEnd Sub\nSub Capture(ByRef target, ParamArray items() As Variant)\ntarget = UBound(items)\nEnd Sub";
+        let out = compile(source).expect("compile should succeed");
+        assert!(out.instructions.iter().any(
+            |i| matches!(i, Instruction::IntrinsicArrayLiteral { values, .. } if values.len() == 2)
+        ));
+    }
+
+    #[test]
+    fn compile_paramarray_named_param_still_rejects_named_pack_target() {
         let source = "Sub Main()\nDim x\nCall Capture(target := x, items := 5)\nEnd Sub\nSub Capture(ByRef target, ParamArray items() As Variant)\ntarget = UBound(items)\nEnd Sub";
         let err = compile(source).expect_err("typecheck should fail");
         assert!(err.to_string().contains("ParamArray"));

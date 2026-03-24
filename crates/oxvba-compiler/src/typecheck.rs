@@ -687,12 +687,10 @@ fn validate_call_site(
     )?;
 
     if let Some(params) = proc_context.proc_params.get(name) {
-        let mapped_args = map_call_args_to_params(name, args, params)?;
-        let param_array_idx = params.iter().position(|p| p.param_array);
+        let arg_mapping = map_call_args_to_params(name, args, params)?;
         for (idx, param) in params.iter().enumerate() {
             if param.param_array {
-                let extras_start = param_array_idx.unwrap_or(params.len());
-                for extra in args.iter().skip(extras_start) {
+                for extra in &arg_mapping.extras {
                     check_expr(
                         &extra.expr,
                         option_explicit,
@@ -706,7 +704,7 @@ fn validate_call_site(
                 }
                 continue;
             }
-            let Some(arg) = mapped_args[idx] else {
+            let Some(arg) = arg_mapping.fixed[idx] else {
                 continue;
             };
 
@@ -1573,7 +1571,7 @@ fn map_call_args_to_params<'a>(
     proc_name: &str,
     args: &'a [BoundCallArg],
     params: &[BoundParam],
-) -> Result<Vec<Option<&'a BoundCallArg>>, String> {
+) -> Result<CallArgMapping<'a>, String> {
     let param_array_idx = params.iter().position(|p| p.param_array);
     let fixed_len = param_array_idx.unwrap_or(params.len());
     let required_fixed = params
@@ -1591,13 +1589,8 @@ fn map_call_args_to_params<'a>(
         ));
     }
 
-    if param_array_idx.is_some() && args.iter().any(|arg| arg.name.is_some()) {
-        return Err(format!(
-            "named arguments are not yet supported for ParamArray procedure {proc_name}"
-        ));
-    }
-
     let mut mapped: Vec<Option<&BoundCallArg>> = vec![None; params.len()];
+    let mut extras: Vec<&BoundCallArg> = Vec::new();
     let mut next_pos = 0usize;
     let mut seen_named = false;
 
@@ -1612,6 +1605,12 @@ fn map_call_args_to_params<'a>(
                     "procedure {proc_name} has no parameter named {name}"
                 ));
             };
+            if params[param_idx].param_array {
+                return Err(format!(
+                    "named arguments are not supported for ParamArray parameter {} in procedure {proc_name}",
+                    params[param_idx].name
+                ));
+            }
             if mapped[param_idx].is_some() {
                 return Err(format!(
                     "duplicate argument for parameter {}",
@@ -1623,6 +1622,10 @@ fn map_call_args_to_params<'a>(
         }
 
         if seen_named {
+            if param_array_idx.is_some() {
+                extras.push(arg);
+                continue;
+            }
             return Err("positional argument cannot follow named argument".to_string());
         }
 
@@ -1631,6 +1634,7 @@ fn map_call_args_to_params<'a>(
         }
         if next_pos >= fixed_len {
             if param_array_idx.is_some() {
+                extras.push(arg);
                 continue;
             }
             return Err(format!(
@@ -1650,7 +1654,15 @@ fn map_call_args_to_params<'a>(
         }
     }
 
-    Ok(mapped)
+    Ok(CallArgMapping {
+        fixed: mapped,
+        extras,
+    })
+}
+
+struct CallArgMapping<'a> {
+    fixed: Vec<Option<&'a BoundCallArg>>,
+    extras: Vec<&'a BoundCallArg>,
 }
 
 fn classify_call_mode(
@@ -1664,19 +1676,19 @@ fn classify_call_mode(
         let Some(params) = proc_params.get(name) else {
             return Ok(CallMode::Early);
         };
-        let mapped_args = map_call_args_to_params(name, args, params)?;
+        let arg_mapping = map_call_args_to_params(name, args, params)?;
         let param_array_idx = params.iter().position(|p| p.param_array);
         let dynamic_params = params
             .iter()
             .filter(|param| !param.param_array)
             .any(|param| matches!(param.ty, BoundType::Variant | BoundType::Object));
-        let dynamic_args = mapped_args.iter().flatten().any(|arg| {
+        let dynamic_args = arg_mapping.fixed.iter().flatten().any(|arg| {
             matches!(
                 infer_expr_type(&arg.expr, declared_types),
                 BoundType::Variant | BoundType::Object
             )
-        }) || param_array_idx.is_some_and(|idx| {
-            args.iter().skip(idx).any(|arg| {
+        }) || param_array_idx.is_some_and(|_| {
+            arg_mapping.extras.iter().any(|arg| {
                 matches!(
                     infer_expr_type(&arg.expr, declared_types),
                     BoundType::Variant | BoundType::Object

@@ -1486,12 +1486,22 @@ mod tests {
     }
 
     #[test]
-    fn formal_v83_paramarray_named_args_rejected_in_current_subset() {
+    fn formal_v83_paramarray_named_fixed_arg_with_positional_pack_executes() {
+        let engine = Engine::new(HostConfig::default());
+        let source = "Sub Main()\nDim x\nCall Capture(target := x, 5, 7)\nEnd Sub\nSub Capture(ByRef target, ParamArray items() As Variant)\ntarget = UBound(items)\nEnd Sub";
+        let snapshot = engine
+            .execute_source_slots_test(source)
+            .expect("named fixed arg with ParamArray pack should succeed");
+        assert_eq!(snapshot[0], 1);
+    }
+
+    #[test]
+    fn formal_v83_paramarray_named_param_still_rejects_named_pack_target() {
         let engine = Engine::new(HostConfig::default());
         let source = "Sub Main()\nDim x\nCall Capture(target := x, items := 5)\nEnd Sub\nSub Capture(ByRef target, ParamArray items() As Variant)\ntarget = UBound(items)\nEnd Sub";
         let err = engine
             .execute_source_slots_test(source)
-            .expect_err("named args for paramarray should fail in current subset");
+            .expect_err("named ParamArray target should remain unsupported");
         assert!(err.contains("ParamArray"));
     }
 

@@ -1491,16 +1491,14 @@ fn emit_early_call(
     };
 
     let mut byref_copyback: Vec<(usize, usize)> = Vec::new();
-    let mapped_args = map_call_args_for_emit(args, &meta.params);
-    let param_array_idx = meta.params.iter().position(|p| p.param_array);
+    let arg_mapping = map_call_args_for_emit(args, &meta.params);
     for (idx, param) in meta.params.iter().enumerate() {
         let Some(param_slot) = meta.slots.get(param.name.as_str()).copied() else {
             continue;
         };
         if param.param_array {
-            let extras_start = param_array_idx.unwrap_or(meta.params.len());
             let mut values = Vec::new();
-            for arg in args.iter().skip(extras_start) {
+            for arg in &arg_mapping.extras {
                 let value_slot = temps.alloc_temp();
                 emit_expr_into(
                     &arg.expr,
@@ -1521,7 +1519,7 @@ fn emit_early_call(
             });
             continue;
         }
-        let Some(arg) = mapped_args.get(idx).and_then(|arg| *arg) else {
+        let Some(arg) = arg_mapping.fixed.get(idx).and_then(|arg| *arg) else {
             if param.optional {
                 emit_optional_default(param, param_slot, instructions);
             }
@@ -3020,19 +3018,24 @@ fn emit_optional_default(param: &BoundParam, dst: usize, instructions: &mut Vec<
 fn map_call_args_for_emit<'a>(
     args: &'a [BoundCallArg],
     params: &[BoundParam],
-) -> Vec<Option<&'a BoundCallArg>> {
+) -> EmitCallArgMapping<'a> {
     let param_array_idx = params.iter().position(|p| p.param_array);
     let fixed_len = param_array_idx.unwrap_or(params.len());
     let mut mapped: Vec<Option<&BoundCallArg>> = vec![None; params.len()];
+    let mut extras: Vec<&BoundCallArg> = Vec::new();
     let mut next_pos = 0usize;
     let mut seen_named = false;
 
     for arg in args {
-        if param_array_idx.is_some() && arg.name.is_some() {
-            continue;
-        }
         if let Some(name) = &arg.name {
             seen_named = true;
+            if params
+                .iter()
+                .position(|p| p.name.eq_ignore_ascii_case(name))
+                .is_some_and(|idx| params[idx].param_array)
+            {
+                continue;
+            }
             if let Some(idx) = params
                 .iter()
                 .position(|p| p.name.eq_ignore_ascii_case(name))
@@ -3044,6 +3047,9 @@ fn map_call_args_for_emit<'a>(
         }
 
         if seen_named {
+            if param_array_idx.is_some() {
+                extras.push(arg);
+            }
             continue;
         }
 
@@ -3053,10 +3059,20 @@ fn map_call_args_for_emit<'a>(
         if next_pos < fixed_len {
             mapped[next_pos] = Some(arg);
             next_pos += 1;
+        } else if param_array_idx.is_some() {
+            extras.push(arg);
         }
     }
 
-    mapped
+    EmitCallArgMapping {
+        fixed: mapped,
+        extras,
+    }
+}
+
+struct EmitCallArgMapping<'a> {
+    fixed: Vec<Option<&'a BoundCallArg>>,
+    extras: Vec<&'a BoundCallArg>,
 }
 
 fn reset_array_slots(
