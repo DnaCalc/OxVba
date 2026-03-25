@@ -449,7 +449,8 @@ Run context: active parity/compliance execution plus in-progress feature worklis
 - Current state:
   - open/failing/deferred DG rows remain in `docs/evidence/formal/DEFERRED_GATES.md`,
   - some lanes require remote Linux/Kani execution,
-  - other lanes cannot close honestly until the underlying feature behavior is finished.
+  - other lanes cannot close honestly until the underlying feature behavior is finished,
+  - `DG-V2-001` is now explicitly deferred and no longer remains in an indeterminate `dg-running` state.
 - Exact unblock steps:
   - close the associated feature behavior gaps,
   - rerun/fold remaining remote formal lanes,

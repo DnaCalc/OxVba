@@ -2,7 +2,7 @@
 
 **Test count:** 2258 passing, 0 failures
 **Integration fixtures:** 14 active (including newly unblocked INTP-016), 3 deferred, 3 not-created
-**Formal gates:** 30 folded, 1 running, 19 deferred with rationale
+**Formal gates:** 30 folded, 0 running, 20 deferred with rationale
 **Divergences:** 0 open (4 tracked, all closed or narrowed)
 
 ---
@@ -66,8 +66,8 @@
 | Status | Count | Notes |
 |--------|-------|-------|
 | dg-folded | 30 | Done. Includes 3 batch-folded this session (DG-V79, V80, V85-002). |
-| dg-running | 1 | DG-V2-001. Still executing remotely. |
-| dg-deferred | 19 | All have explicit deferral rationale as of this session. |
+| dg-running | 0 | No indeterminate remote formal rows remain. |
+| dg-deferred | 20 | All have explicit deferral rationale as of this session. |
 | dg-pass | 0 | All pending foldback completed. |
 | dg-fail | 0 | All moved to dg-deferred with rationale. |
 | dg-not-started | 0 | All moved to dg-deferred with rationale. |
@@ -77,6 +77,7 @@ Completed this session:
 - [x] **Fold DG-V79-001** — pass confirmed, no outstanding obligations.
 - [x] **Fold DG-V80-001** — pass confirmed, no outstanding obligations.
 - [x] **Fold DG-V85-002** — pass confirmed, no outstanding obligations.
+- [x] **Defer DG-V2-001** — explicit remote timeout/resource defer; no longer left in `dg-running`.
 - [x] **Defer DG-V81, V83** — runner crash, not harness failure. Requires remote Linux rerun.
 - [x] **Defer DG-V87, V88, V89, V146** — timeout/OOM dominated (FO-V2-001, FO-V4-001). Not implementation bugs.
 - [x] **Defer DG-V4, V107, V120, V126, V132, V134, V162, V175, V176** — require remote Linux Kani runner. Covered by executable tests.
@@ -84,7 +85,7 @@ Completed this session:
 ### 2.3 Active Blockers
 
 - [x] **BLK-COM-ACTIVATION-001** — Real COM activation/model gap. Resolved for the initial-scope claim boundary: native late-bound ProgID activation, user-scope file-backed typelib interop, versioned/broken-reference behavior, and the supported real-library imported subsets are now explicitly bounded and evidenced. Broader arbitrary-library breadth remains post-scope and is no longer an initial-scope blocker.
-- [ ] **BLK-FORMAL-001** — Infrastructure gap. Explicit deferrals now in place; remaining need is DG-V2-001 completion.
+- [x] **BLK-FORMAL-001 (Initial Scope view)** — Explicit deferrals now in place; no `dg-running` rows remain. Full formal foldback is still a trailing umbrella concern, but initial-scope status is no longer blocked by an indeterminate remote lane.
 
 ---
 
@@ -176,7 +177,7 @@ These are post-Initial Scope items. No action needed for v620 closure.
 - [x] **ODG-045 mixed-server oracle harness** — closed with `com_dualinterface_oracle_20260325T224113Z`.
 - [x] **ODG-046 versioned/broken-reference oracle harness** — closed with `com_testeventserver_versioned_typelib_probe_20260325T222709Z`.
 - [x] **Close or defer ODG-031** — closed with the activation-boundary reconciliation note and linked oracle evidence.
-- [ ] **DG-V2-001 completion** — still running remotely. Needs to complete or be explicitly deferred.
+- [x] **DG-V2-001 completion** — explicitly deferred with timeout/resource rationale; no longer left in an indeterminate running state.
 
 ### Should-do (high value, not strictly blocking)
 

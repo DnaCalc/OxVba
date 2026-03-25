@@ -25,10 +25,10 @@ This checklist keeps the current gate honest:
 
 Initial-scope closure is reached only when all of the following are true:
 
-- [ ] The must-do evidence items in `INITIAL_SCOPE_STATUS_2026-03-24.md` are either closed with linked evidence or explicitly deferred with exact unblock steps and rationale.
-- [ ] `DG-V2-001` is no longer left in an indeterminate running state for this closure pass; it is either folded or explicitly deferred.
-- [ ] `CURRENT_BLOCKERS.md` and the initial-scope status doc describe only the true remaining external closure constraints.
-- [ ] The repo-fixable engine gaps are either fixed with tests or explicitly restated as non-blocking residuals with exact next steps.
+- [x] The must-do evidence items in `INITIAL_SCOPE_STATUS_2026-03-24.md` are either closed with linked evidence or explicitly deferred with exact unblock steps and rationale.
+- [x] `DG-V2-001` is no longer left in an indeterminate running state for this closure pass; it is either folded or explicitly deferred.
+- [x] `CURRENT_BLOCKERS.md` and the initial-scope status doc describe only the true remaining external closure constraints.
+- [x] The repo-fixable engine gaps are either fixed with tests or explicitly restated as non-blocking residuals with exact next steps.
 
 ## Work partition
 
@@ -37,11 +37,11 @@ Initial-scope closure is reached only when all of the following are true:
 Owned items:
 
 - [x] `ODG-044`
-- [ ] `ODG-045`
-- [ ] `ODG-046`
-- [ ] `ODG-030`
-- [ ] `ODG-031`
-- [ ] `DG-V2-001`
+- [x] `ODG-045`
+- [x] `ODG-046`
+- [x] `ODG-030`
+- [x] `ODG-031`
+- [x] `DG-V2-001`
 
 Execution order:
 
@@ -65,8 +65,8 @@ Execution order:
 
 Acceptance:
 
-- [ ] No terminal-gate item remains as an implicit “later”.
-- [ ] Every open item has either evidence, an explicit defer state, or an actionable scheduled next step owned by this run.
+- [x] No terminal-gate item remains as an implicit “later”.
+- [x] Every open item has either evidence, an explicit defer state, or an actionable scheduled next step owned by this run.
 
 ### Track B. Repo-fixable engine closure
 
