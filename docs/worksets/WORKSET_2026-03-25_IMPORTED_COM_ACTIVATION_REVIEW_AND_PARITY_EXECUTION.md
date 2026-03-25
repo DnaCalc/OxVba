@@ -1,8 +1,8 @@
 # Workset: Imported COM Activation Review and Parity Execution
 
 Date: 2026-03-25  
-Status: in-progress  
-Scope: review and correct the imported real COM activation model for `IP-05B`, with immediate closure focus on `ODG-044` and supporting truth-maintenance for `ODG-031`.
+Status: superseded in planning by `docs/worksets/WORKSET_2026-03-25_COM_ACTIVATION_TRUTH_REVIEW_AND_REPAIR.md`  
+Scope: preserved as the narrower imported-activation precursor slice for `IP-05B`; active execution now continues in the broader COM activation truth-and-repair workset.
 
 ## 1. Purpose
 

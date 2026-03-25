@@ -18,7 +18,7 @@
 | **RuntimeValue <-> Variant bridge** | Medium | Partially done |
 | **ParamArray named arguments** | Medium | Done |
 | **Dynamic dispatch named/omitted args** | Medium | Done |
-| **Imported real COM activation / early-bound import model** | High | In progress |
+| **Real COM activation truth / imported early-bound model** | High | In progress |
 
 ### Completed this session
 
@@ -33,10 +33,10 @@
 
 ### Remaining for Initial Scope
 
-- Imported real COM `As New` activation is still not parity-complete for honest initial-scope closure.
-- The compiler no longer emits numeric `CreateObject(<selector>)` fallback for imported `As New`; unsupported imported activation now fails explicitly instead of lowering to non-VBA syntax.
-- Native Windows string-ProgID `CreateObject("...")` remains a real late-bound activation path; the incorrect part is treating selector-based activation as equivalent to that real path for imported parity claims.
-- The live typelib path does not yet provide a trustworthy activation contract for arbitrary real COM libraries, so `ODG-044` is mixed implementation-plus-oracle work and `ODG-031` is not just a harness scheduling item.
+- Real COM activation is still not parity-complete enough for honest initial-scope closure.
+- Imported real COM `As New` activation is still bounded by a narrow authoritative identity subset. The compiler now fails unsupported imported activation explicitly instead of lowering to non-VBA syntax, but the remaining supported scope is still not a general real-library activation contract.
+- Native Windows string-ProgID `CreateObject("...")` remains the live late-bound activation path on Windows. The adjacent repo-truth gap is not “VBA requires numeric selectors”; it is that deterministic fallback/projection/test scaffolding still exists in neighboring lanes and must not be described as equivalent parity support for real-library activation.
+- The live typelib path does not yet provide a trustworthy activation contract for arbitrary real COM libraries, and the new registered `Scripting.Dictionary` early-bind anchor still faults on richer member traffic. Therefore `ODG-044` remains mixed implementation-plus-oracle work and `ODG-031` is not just a harness scheduling item.
 
 ---
 
@@ -47,7 +47,7 @@
 **Required for Initial Scope (5 gates — mixed implementation, harness, and oracle closure):**
 
 - [ ] **ODG-030** — COM interop marshaling. Needs COM test server + host interop oracle runs.
-- [ ] **ODG-031** — TypeLib COM interop. Needs custom typelib oracle harness and correction of the imported real-COM activation/model assumptions before parity claims are honest.
+- [ ] **ODG-031** — TypeLib COM interop. Needs custom typelib oracle harness plus correction of the real COM activation/model assumptions that currently overread the supported imported scope.
 - [ ] **ODG-044** — `As New` early-bound. Excel host is available locally, and a real registered OxVba early-bound anchor now exists for `Dim obj As New Scripting.Dictionary` plus `obj.Count = 0`. Closure is still not just scheduling: richer dictionary member traffic (`Add` / `Exists`) currently trips a callback-transport fault, so the full parity anchor is not yet honest. See `docs/evidence/conformance/COM_EARLY_ORACLE_READINESS_2026-03-24.md`.
 - [ ] **ODG-045** — Dual-interface vtable/dispatch. Still needs a mixed-server oracle harness; Excel availability alone does not close transport-policy parity.
 - [ ] **ODG-046** — TypeLib version/broken-ref. Still needs versioned-typelib / broken-reference mutation harness; Excel availability alone does not close repair/version-selection parity.
@@ -83,7 +83,7 @@ Completed this session:
 
 ### 2.3 Active Blockers
 
-- [ ] **BLK-COM-IMPORT-001** — Imported real COM activation/model gap. Early-bound imported `As New` now has a real registered `Scripting.Dictionary` activation-plus-Count anchor, but broader real-library member/event transport parity is still in progress.
+- [ ] **BLK-COM-ACTIVATION-001** — Real COM activation/model gap. Imported early-bound `As New` now has a real registered `Scripting.Dictionary` activation-plus-Count anchor, but broader real-library activation/member transport parity is still in progress and adjacent late-bound fallback/projection boundaries still need an explicit truth audit.
 - [ ] **BLK-ORACLE-001** — Evidence gap. Need remaining Office/host capture matrix (scheduling, not coding).
 - [ ] **BLK-FORMAL-001** — Infrastructure gap. Explicit deferrals now in place; remaining need is DG-V2-001 completion.
 
@@ -173,7 +173,7 @@ These are post-Initial Scope items. No action needed for v620 closure.
 
 ### Must-do (blocking v620 terminal gate)
 
-- [ ] **Imported COM activation review/fix** — Correct the imported real-COM activation model so early-bound `As New` uses an authoritative real-library activation contract for the supported scope, with unsupported cases failing explicitly.
+- [ ] **COM activation truth review/fix** — Correct the real COM activation model so imported early-bound `As New` uses an authoritative real-library activation contract for the supported scope, and so native late-bound `CreateObject("ProgID")` is documented/tested separately from deterministic fallback/projection scaffolding instead of being blurred into one parity claim.
 - [ ] **ODG-044 real-host anchor** — Excel is runnable locally, and a narrow OxVba-side real registered early-bind anchor now exists (`As New Scripting.Dictionary` + `Count`). Remaining implementation work is the richer member/event transport fault on that same lane before oracle closure is honest.
 - [ ] **ODG-045 mixed-server oracle harness** — dual-interface parity still needs an explicit host/oracle lane.
 - [ ] **ODG-046 versioned/broken-reference oracle harness** — still needs typelib mutation / repair harness.

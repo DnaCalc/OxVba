@@ -401,26 +401,30 @@ Run context: active parity/compliance execution plus in-progress feature worklis
   - treat `ODG-044` as mixed implementation-plus-oracle closure work, not as a pure scheduling task.
   - keep `ODG-045` and `ODG-046` separate as harness-construction items rather than collapsing them into the same calendar note.
 
-### BLK-COM-IMPORT-001: Imported real COM activation/model is not yet parity-complete
+### BLK-COM-ACTIVATION-001: Real COM activation/model is not yet parity-complete
 - Impact:
   - Blocks honest closure of `IP-05B` for imported real COM activation.
   - Blocks `ODG-044` as an implementation-plus-oracle item.
   - Weakens `ODG-031` because imported typelib claims cannot be broader than the activation model that consumes them.
+  - Requires an explicit truth boundary between native late-bound Windows activation and deterministic fallback/projection scaffolding.
 - Current state:
   - Native Windows string-ProgID activation (`CreateObject("Scripting.Dictionary")`) is a real late-bound COM path and is not the primary blocker here.
   - The numeric `CreateObject(<selector>)` fallback has now been removed from imported `As New` lowering.
   - A narrow real registered early-bound anchor now exists for `Dim obj As New Scripting.Dictionary` plus `obj.Count`.
   - The remaining problem is broader imported external member/event transport authority: richer dictionary traffic (`Add` / `Exists`) currently faults through projected callback transport instead of remaining a clean parity anchor.
   - The imported typelib metadata/live-loader path is not yet an honest general activation contract for arbitrary real COM libraries.
+  - Adjacent deterministic fallback/projection/test scaffolding still exists in neighboring lanes and must not be described as equivalent parity support for native late-bound activation.
   - Therefore broad “real COM library import support” language would currently overstate repo truth.
 - Exact unblock steps:
+  - audit the native late-bound activation boundary so repo docs/tests cleanly separate native Windows `CreateObject("ProgID")` from deterministic fallback/projection scaffolding,
   - keep the new registered early-bound activation-plus-Count lane as the minimum honest floor,
   - fix the projected event/callback transport fault reached by richer `Scripting.Dictionary` member traffic on that lane,
   - then expand permanent real-host regressions for the supported imported member subset,
   - then fold the result back into `ODG-044` and `ODG-031` readiness/claim docs.
 - Recommendation:
-  - do not reopen the resolved string-ProgID late-bound COM lane under `IP-03`,
-  - instead treat this as an `IP-05B` imported activation/model closure item with explicit scope boundaries.
+  - do not assume adjacent fallback/projection seams are part of the native parity claim,
+  - keep the scoped native string-ProgID late-bound lane separate unless the activation-boundary audit proves a live defect there,
+  - treat the remaining work as a combined activation-truth repair item rather than a pure imported-lowering cleanup.
 
 ### BLK-FORMAL-001: Formal foldback remains constrained by remote Kani execution and unfinished feature work
 - Impact:
