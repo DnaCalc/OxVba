@@ -18,7 +18,7 @@
 | **RuntimeValue <-> Variant bridge** | Medium | Partially done |
 | **ParamArray named arguments** | Medium | Done |
 | **Dynamic dispatch named/omitted args** | Medium | Done |
-| **Real COM activation truth / imported early-bound model** | High | In progress |
+| **Real COM activation truth / imported early-bound model** | High | Done |
 
 ### Completed this session
 
@@ -33,10 +33,10 @@
 
 ### Remaining for Initial Scope
 
-- Real COM activation is still not parity-complete enough for honest initial-scope closure.
-- Imported real COM `As New` activation is still bounded by a narrow authoritative identity subset. The compiler now takes activation identity from explicit typelib metadata (`activation_prog_id`) instead of guessing from the source type text, and still fails unsupported imported activation explicitly instead of lowering to non-VBA syntax. The remaining supported scope is still not a general real-library activation contract.
-- Native Windows string-ProgID `CreateObject("...")` remains the live late-bound activation path on Windows. Numeric `CreateObject(<selector>)` scaffolding is not part of the VBA contract and is being removed from repo-local metadata/policy/test seams; the remaining repo-truth gap is that deterministic fallback/projection scaffolding still exists in neighboring lanes and must not be described as equivalent parity support for real-library activation.
-- The live typelib path does not yet provide a trustworthy activation contract for arbitrary real COM libraries. The registered `Scripting.Dictionary` early-bind anchor now covers activation plus `Add` / `Exists` / `Count` for the supported subset, and `ODG-044` is now closed for that supported oracle lane. `ODG-031` still remains broader than a harness scheduling item because the general activation contract question is still open.
+- The initial-scope COM activation truth boundary is now reconciled and bounded explicitly.
+- Native Windows string-ProgID `CreateObject("...")` is the real late-bound activation path on Windows, and deterministic fallback/projection scaffolding is now treated as bounded test infrastructure rather than parity evidence.
+- Imported real COM `As New` activation remains intentionally bounded to the supported proved subsets. It now takes activation identity from explicit typelib metadata (`activation_prog_id`) instead of guessing from source text, and unsupported imported activation still fails explicitly instead of widening into a fake general-library claim.
+- The user-scope file-backed typelib path, versioned/broken-reference behavior, and the supported real-library imported subsets are now all evidenced and closed under `ODG-031`, `ODG-044`, `ODG-045`, and `ODG-046`. Broader arbitrary real-library parity remains post-scope breadth work, not an initial-scope blocker.
 
 ---
 
@@ -44,10 +44,10 @@
 
 ### 2.1 Oracle Gates (IP-10)
 
-**Required for Initial Scope (5 gates total — 4 now closed, 1 still open):**
+**Required for Initial Scope (5 gates total — all 5 now closed):**
 
 - [x] **ODG-030** — COM interop marshaling. Closed with `com_testeventserver_marshaling_oracle_20260325T231210Z`: Excel and OxVba match on late-bound scalar arg/return (`17`), array-argument shape (`rank=1;len=3;lb=0;ub=2;first=1`), self-object roundtrip (`True`), scalar array return (`3,4`), and dispatch element inside returned array (`42`) against the real `HKCU`-registered `OxVba.TestEventServer`.
-- [ ] **ODG-031** — TypeLib COM interop. The baseline user-scope external typelib lane is now paired via `com_testeventserver_oracle_20260325T221949Z`, and the versioned/broken-reference matrix is now built and closed under `ODG-046` via `com_testeventserver_versioned_typelib_probe_20260325T222709Z`. The remaining open work is the correction of the real COM activation/model assumptions that still overread the supported imported scope.
+- [x] **ODG-031** — TypeLib COM interop. Closed with `COM_ACTIVATION_BOUNDARY_RECONCILIATION_2026-03-25.md`: the baseline user-scope external typelib lane (`com_testeventserver_oracle_20260325T221949Z`), versioned/broken-reference matrix (`com_testeventserver_versioned_typelib_probe_20260325T222709Z`), supported `Scripting.Dictionary` imported-activation subset (`com_early_oracle_20260325T145433Z`), and repaired external late-bound selector boundary now reconcile into one honest bounded initial-scope claim.
 - [x] **ODG-044** — `As New` early-bound supported subset. Oracle run `com_early_oracle_20260325T145433Z` matched Excel and OxVba for `Dim obj As New Scripting.Dictionary` plus `Add` / `Exists` / `Count` (`True,1`). Broader real-library activation authority remains open under `ODG-031`, not under this supported-subset oracle gate.
 - [x] **ODG-045** — Dual-interface vtable/dispatch. Closed with mixed-server oracle run `com_dualinterface_oracle_20260325T224113Z`: Excel, OxVba default dispatch policy, and OxVba `PreferVtable` policy all match on `Scripting.Dictionary` (`True,1`) and `TestEventServer.Ping()` (`42`), giving explicit evidence for both strategy stability and fallback constraints.
 - [x] **ODG-046** — TypeLib version/broken-ref. Closed with `com_testeventserver_versioned_typelib_probe_20260325T222709Z`: direct `AddFromFile` against the temp-built `2.0` typelib resolves as `2.0`, a workbook saved against `1.0` does not auto-upgrade when the same path is replaced with `2.0`, removing the referenced file yields a broken reference, and restoring the file repairs it back to working `1.0` with `Ping() = 42`.
@@ -83,7 +83,7 @@ Completed this session:
 
 ### 2.3 Active Blockers
 
-- [ ] **BLK-COM-ACTIVATION-001** — Real COM activation/model gap. Imported early-bound `As New` now uses explicit typelib-owned activation identity and has a real registered `Scripting.Dictionary` activation-plus-member anchor on the supported subset, but broader real-library activation-model parity is still in progress and adjacent late-bound fallback/projection boundaries still need an explicit truth audit.
+- [x] **BLK-COM-ACTIVATION-001** — Real COM activation/model gap. Resolved for the initial-scope claim boundary: native late-bound ProgID activation, user-scope file-backed typelib interop, versioned/broken-reference behavior, and the supported real-library imported subsets are now explicitly bounded and evidenced. Broader arbitrary-library breadth remains post-scope and is no longer an initial-scope blocker.
 - [ ] **BLK-FORMAL-001** — Infrastructure gap. Explicit deferrals now in place; remaining need is DG-V2-001 completion.
 
 ---
@@ -172,10 +172,10 @@ These are post-Initial Scope items. No action needed for v620 closure.
 
 ### Must-do (blocking v620 terminal gate)
 
-- [ ] **COM activation truth review/fix** — Continue correcting the real COM activation model so imported early-bound `As New` uses an authoritative real-library activation contract for the supported scope, and so native late-bound `CreateObject("ProgID")` is documented/tested separately from deterministic fallback/projection scaffolding instead of being blurred into one parity claim.
+- [x] **COM activation truth review/fix** — Closed for the initial-scope claim boundary via `COM_ACTIVATION_BOUNDARY_RECONCILIATION_2026-03-25.md`: native late-bound `CreateObject("ProgID")`, user-scope file-backed typelib behavior, and the supported imported subsets are now separated explicitly from deterministic fallback/projection scaffolding.
 - [x] **ODG-045 mixed-server oracle harness** — closed with `com_dualinterface_oracle_20260325T224113Z`.
 - [x] **ODG-046 versioned/broken-reference oracle harness** — closed with `com_testeventserver_versioned_typelib_probe_20260325T222709Z`.
-- [ ] **Close or defer ODG-031** — the user-scope baseline and versioned/broken-reference oracle matrix now exist; the remaining gap is the imported activation/model correction above.
+- [x] **Close or defer ODG-031** — closed with the activation-boundary reconciliation note and linked oracle evidence.
 - [ ] **DG-V2-001 completion** — still running remotely. Needs to complete or be explicitly deferred.
 
 ### Should-do (high value, not strictly blocking)

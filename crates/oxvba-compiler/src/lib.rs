@@ -2285,6 +2285,29 @@ mod tests {
     }
 
     #[test]
+    fn compile_dispatchinvoke_with_external_colliding_member_literal_preserves_string_selector() {
+        let source = "Sub Main()\nDim obj\nDim x\nobj = CreateObject(\"OxVba.TestEventServer\")\nx = DispatchInvoke(obj, \"SumPair\", 3, 14)\nEnd Sub";
+        let out = compile(source)
+            .expect("compile should preserve external colliding string member selector");
+        assert!(
+            out.instructions
+                .iter()
+                .any(|i| matches!(i, Instruction::IntrinsicDispatchInvokeHost { .. }))
+        );
+        assert!(
+            out.instructions
+                .iter()
+                .any(|i| matches!(i, Instruction::LoadConstString { value, .. } if value == "SumPair"))
+        );
+        assert!(
+            !out.instructions
+                .iter()
+                .any(|i| matches!(i, Instruction::LoadConstI32 { value: 12, .. })),
+            "external colliding member literal must not lower to deterministic TestDispatch token"
+        );
+    }
+
+    #[test]
     fn compile_dispatchinvoke_with_variant_array_classifier_literal_maps_to_member_token_twenty_six()
      {
         let source = "Sub Main()\nDim x\nx = DispatchInvoke(CreateObject(\"OxVba.TestDispatch\"), \"ClassifyVariantArrayFirstElementArg\", Array(1))\nEnd Sub";

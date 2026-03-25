@@ -1,13 +1,19 @@
 # Workset: COM Activation Truth Review and Repair
 
 Date: 2026-03-25  
-Status: in-progress  
+Status: completed  
 Supersedes planning scope: `docs/worksets/WORKSET_2026-03-25_IMPORTED_COM_ACTIVATION_REVIEW_AND_PARITY_EXECUTION.md`  
 Scope: review and correct the real COM activation story across imported early-bound activation, native late-bound ProgID activation, and adjacent deterministic fallback/projection scaffolding, with immediate closure focus now on `ODG-031` after the supported `ODG-044` subset oracle closure.
 
 Update 2026-03-25 later:
 1. `ODG-044` is now closed for the supported `Scripting.Dictionary` oracle subset via `docs/evidence/conformance/oracle_captures/com_early_oracle_20260325T145433Z/summary.md`.
 2. Remaining immediate closure focus for this workset is therefore `ODG-031` plus the activation-boundary truth audit, not `ODG-044`.
+
+Update 2026-03-25 final:
+1. The activation-boundary truth audit is now complete for the initial-scope claim boundary.
+2. `ODG-031` is now closed via `docs/evidence/conformance/COM_ACTIVATION_BOUNDARY_RECONCILIATION_2026-03-25.md`.
+3. Native late-bound ProgID activation, user-scope file-backed typelib behavior, and the supported imported early-bound subsets are now all separated explicitly from deterministic fallback/projection scaffolding.
+4. Broader arbitrary real-library COM breadth remains post-scope expansion work rather than an open initial-scope blocker.
 
 ## 1. Purpose
 
@@ -122,4 +128,4 @@ This workset is only complete when all of the following are true:
 1. finish the activation truth-table review and fold it into the active docs,
 2. keep the supported real registered lane under permanent regression coverage,
 3. continue the broader activation-authority audit for imported early-bound and native late-bound boundaries,
-4. then return to the oracle harness items for `ODG-031` and `ODG-044`.
+4. continue any broader post-scope COM breadth work under a new scope, not under this completed initial-scope truth-repair workset.

@@ -2935,7 +2935,7 @@ fn parse_dispatch_invoke_call_invocation(
     });
     args.push(BoundCallArg {
         name: None,
-        expr: parse_dispatch_member_arg(args_text[1], array_bounds)?,
+        expr: parse_dispatch_member_arg(args_text[0], args_text[1], array_bounds)?,
         force_byval: false,
     });
     for token in &args_text[2..] {
@@ -3931,11 +3931,17 @@ fn parse_createobject_arg(arg: &str, array_bounds: &ArrayBoundsMap) -> Option<Bo
     parse_expr(arg, array_bounds)
 }
 
-fn parse_dispatch_member_arg(arg: &str, array_bounds: &ArrayBoundsMap) -> Option<BoundExpr> {
-    // Keep optimized token lowering for known deterministic members, but preserve
-    // arbitrary string selectors for real external COM dispatch lanes.
+fn parse_dispatch_member_arg(
+    object_arg: &str,
+    arg: &str,
+    array_bounds: &ArrayBoundsMap,
+) -> Option<BoundExpr> {
+    // Preserve quoted DispatchInvoke selectors as strings for general/external COM.
+    // Only the deterministic internal TestDispatch fixture lane keeps token lowering.
     if let Some(literal) = parse_quoted_string_literal(arg) {
-        if let Some(token) = map_dispatch_member_literal_token(literal.as_str()) {
+        if let Some(token) =
+            known_dispatch_member_literal_token_for_object_arg(object_arg, literal.as_str())
+        {
             return Some(BoundExpr::IntConst(token));
         }
         return Some(BoundExpr::StringConst(literal));
@@ -3952,7 +3958,11 @@ fn parse_dispatch_invoke_args(
     }
     let mut out = Vec::with_capacity(args_text.len());
     out.push(parse_expr(args_text[0], array_bounds)?);
-    out.push(parse_dispatch_member_arg(args_text[1], array_bounds)?);
+    out.push(parse_dispatch_member_arg(
+        args_text[0],
+        args_text[1],
+        array_bounds,
+    )?);
     for arg in &args_text[2..] {
         out.push(parse_expr(arg, array_bounds)?);
     }
@@ -3999,97 +4009,43 @@ fn parse_numeric_prefix_literal(text: &str) -> Option<i32> {
     }
 }
 
-fn map_dispatch_member_literal_token(text: &str) -> Option<i32> {
-    let canonical = text.trim().to_ascii_lowercase();
-    match canonical.as_str() {
-        "count" => Some(1),
-        "exists" => Some(2),
-        "firechanged" => Some(3),
-        "firechangedpair" => Some(4),
-        "firechangedsourceinterface" => Some(11),
-        "ping" => Some(5),
-        "lookup" => Some(6),
-        "setvalue" => Some(7),
-        "setvalueref" => Some(8),
-        "value" => Some(9),
-        "quit" => Some(10),
-        "sumpair" => Some(12),
-        "lookuppair" => Some(13),
-        "setindexedvalue" => Some(14),
-        "setindexedvalueref" => Some(15),
-        "echovariant" => Some(16),
-        "raiseexception" => Some(17),
-        "returnsmallint" => Some(18),
-        "returnunsignedword" => Some(19),
-        "returnsmallintarray" => Some(20),
-        "returnboolarray" => Some(21),
-        "returnstringarray" => Some(22),
-        "returnselfdispatch" => Some(23),
-        "returnselfunknown" => Some(24),
-        "classifyvariantarg" => Some(25),
-        "classifyvariantarrayfirstelementarg" => Some(26),
-        "returnselfdispatcharray" => Some(27),
-        "returnselftypeddispatcharray" => Some(28),
-        "returnselftypedunknownarray" => Some(29),
-        "returnsmallintmatrix" => Some(30),
-        "returnplainunknown" => Some(31),
-        "returnplainunknownarray" => Some(32),
-        "returnlongarray" => Some(33),
-        "returnunsignedlongarray" => Some(34),
-        "returnlong" => Some(35),
-        "returnunsignedlong" => Some(36),
-        "returnbyte" => Some(37),
-        "returnbytearray" => Some(38),
-        "returnsignedbyte" => Some(39),
-        "returnsignedbytearray" => Some(40),
-        "returnplatformint" => Some(41),
-        "returnplatformuint" => Some(42),
-        "returnplatformintarray" => Some(43),
-        "returnplatformuintarray" => Some(44),
-        "returnhyper" => Some(45),
-        "returnunsignedhyper" => Some(46),
-        "returnhyperarray" => Some(47),
-        "returnunsignedhyperarray" => Some(48),
-        "returndouble" => Some(49),
-        "returndoublearray" => Some(50),
-        "returnsingle" => Some(51),
-        "returnsinglearray" => Some(52),
-        "returndate" => Some(53),
-        "returndatearray" => Some(54),
-        "returncurrency" => Some(55),
-        "returncurrencyarray" => Some(56),
-        "returndecimal" => Some(57),
-        "returndecimalarray" => Some(58),
-        "returnwideunsignedlong" => Some(59),
-        "returnwideunsignedlongarray" => Some(60),
-        "returnwideplatformuint" => Some(61),
-        "returnwideplatformuintarray" => Some(62),
-        "returnbool" => Some(63),
-        "returnstring" => Some(64),
-        "returnmissingmembername" => Some(76),
-        "returnpingmembername" => Some(77),
-        "returnlookupmembername" => Some(78),
-        "returnsumpairmembername" => Some(79),
-        "returnlookuppairmembername" => Some(80),
-        "returnsetvaluemembername" => Some(81),
-        "returnsetvaluerefmembername" => Some(82),
-        "returnsetindexedvaluemembername" => Some(83),
-        "returnsetindexedvaluerefmembername" => Some(84),
-        "returnvaluemembername" => Some(85),
-        "returndefaultmembername" => Some(86),
-        "returnempty" => Some(65),
-        "returnnull" => Some(66),
-        "returnerror" => Some(67),
-        "returnbyreflong" => Some(68),
-        "returnbyreflongarray" => Some(69),
-        "returnwidehyper" => Some(70),
-        "returnwidehyperarray" => Some(71),
-        "returnwideunsignedhyper" => Some(72),
-        "returnwideunsignedhyperarray" => Some(73),
-        "returnvariantmatrix" => Some(74),
-        "returnplainunknownvariantarray" => Some(75),
-        _ => None,
+fn known_dispatch_member_literal_token_for_object_arg(
+    object_arg: &str,
+    member_name: &str,
+) -> Option<i32> {
+    let prog_id_name = dispatch_invoke_createobject_prog_id_literal(object_arg)?;
+    let identity = oxvba_com::known_typelib_identity_for_prog_id_name(prog_id_name.as_str())?;
+    if !identity.importlib.eq_ignore_ascii_case("oxvba_testdispatch.tlb")
+        && !identity
+            .importlib
+            .eq_ignore_ascii_case("oxvba_testdispatch_nodefault.tlb")
+        && !identity
+            .importlib
+            .eq_ignore_ascii_case("oxvba_testdispatch_ambiguousdefault.tlb")
+    {
+        return None;
     }
+    let metadata = oxvba_com::build_typelib_metadata(&identity);
+    oxvba_com::member_token_and_spec_from_typelib_metadata_name(&metadata, member_name)
+        .map(|(token, _)| token.raw())
+}
+
+fn dispatch_invoke_createobject_prog_id_literal(object_arg: &str) -> Option<String> {
+    let trimmed = object_arg.trim();
+    let open_paren = trimmed.find('(')?;
+    let close_paren = trimmed.rfind(')')?;
+    if !trimmed[..open_paren]
+        .trim()
+        .eq_ignore_ascii_case("CreateObject")
+        || close_paren <= open_paren
+    {
+        return None;
+    }
+    let args = split_call_args(&trimmed[open_paren + 1..close_paren])?;
+    if args.len() != 1 {
+        return None;
+    }
+    parse_quoted_string_literal(args[0])
 }
 
 fn split_call_args(args_raw: &str) -> Option<Vec<&str>> {

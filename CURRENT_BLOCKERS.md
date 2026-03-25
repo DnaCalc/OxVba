@@ -377,12 +377,12 @@ Run context: active parity/compliance execution plus in-progress feature worklis
 - Resolution summary:
   - `ODG-030` is now closed by `com_testeventserver_marshaling_oracle_20260325T231210Z`.
   - `ODG-044`, `ODG-045`, and `ODG-046` are already closed with linked evidence.
-  - The remaining initial-scope oracle-adjacent work is no longer missing capture infrastructure; it is the broader activation/model truth boundary under `BLK-COM-ACTIVATION-001` / `ODG-031`.
+  - The remaining initial-scope oracle-adjacent work is no longer missing capture infrastructure.
 - Evidence:
   - `docs/evidence/conformance/oracle_captures/com_testeventserver_marshaling_oracle_20260325T231210Z/summary.md`
   - `docs/evidence/conformance/oracle_captures/com_testeventserver_marshaling_oracle_20260325T231210Z/results.csv`
 - Recommendation:
-  - keep the remaining open work under `ODG-031` framed as an activation-scope claim correction, not as missing oracle capture infrastructure.
+  - `ODG-031` is now closed via activation-boundary reconciliation rather than by widening the claim beyond the proved scope.
 
 ### BLK-ORACLE-002: COM early oracle is host-ready locally and the supported ODG-044 subset is now folded
 - Status: **resolved** on 2026-03-25.
@@ -392,7 +392,7 @@ Run context: active parity/compliance execution plus in-progress feature worklis
   - Oracle run `com_early_oracle_20260325T145433Z` matched Excel and OxVba on the supported subset (`True,1`).
 - Recommendation:
   - close `ODG-044` against the captured supported subset,
-  - keep the broader activation-model review under `BLK-COM-ACTIVATION-001` / `ODG-031`,
+  - treat broader arbitrary-library COM breadth as post-scope expansion work rather than an initial-scope blocker,
   - keep `ODG-045` and `ODG-046` separate as harness-construction items.
 
 ### BLK-ORACLE-003: External COM early-oracle user-scope typelib path
@@ -426,30 +426,21 @@ Run context: active parity/compliance execution plus in-progress feature worklis
 - Recommendation:
   - close this blocker and treat the remaining work under `ODG-031` as an activation-scope question rather than registration infrastructure absence.
 
-### BLK-COM-ACTIVATION-001: Real COM activation/model is not yet parity-complete
+### BLK-COM-ACTIVATION-001: Real COM activation/model truth boundary
+- Status: **resolved for the initial-scope claim boundary** on 2026-03-25.
 - Impact:
-  - Blocks honest closure of `IP-05B` for imported real COM activation.
-  - Weakens `ODG-031` because imported typelib claims cannot be broader than the activation model that consumes them.
-  - Requires an explicit truth boundary between native late-bound Windows activation and deterministic fallback/projection scaffolding.
+  - No longer blocks honest closure of `ODG-031` or the scoped `IP-05` target.
 - Current state:
-  - Native Windows string-ProgID activation (`CreateObject("Scripting.Dictionary")`) is a real late-bound COM path and is not the primary blocker here.
-  - Numeric `CreateObject(<selector>)` scaffolding is not part of the VBA contract and is being removed from the remaining repo-local test/policy seams as well.
-  - Imported early-bound `As New` now takes activation identity from explicit typelib metadata (`activation_prog_id`) instead of inferring it from the source type text.
-  - The real registered early-bound `Scripting.Dictionary` anchor now covers `Dim obj As New Scripting.Dictionary` plus `Add` / `Exists` / `Count`.
-  - `ODG-044` is now closed for that supported subset by oracle run `com_early_oracle_20260325T145433Z`.
-  - The earlier `Add` / `Exists` fault was caused by incorrect hardcoded `scrrun.dll` event metadata in the COM core, not by an external harness limitation.
-  - The imported typelib metadata/live-loader path is not yet an honest general activation contract for arbitrary real COM libraries.
-  - Adjacent deterministic fallback/projection/test scaffolding still exists in neighboring lanes and must not be described as equivalent parity support for native late-bound activation.
-  - Therefore broad “real COM library import support” language would currently overstate repo truth.
-- Exact unblock steps:
-  - audit the native late-bound activation boundary so repo docs/tests cleanly separate native Windows `CreateObject("ProgID")` from deterministic fallback/projection scaffolding,
-  - keep the metadata-backed registered early-bound `Scripting.Dictionary` member subset as the minimum honest floor,
-  - then expand permanent real-host regressions for the supported imported member subset,
-  - then fold the remaining activation-authority result back into `ODG-031` readiness/claim docs.
+  - Native Windows string-ProgID activation is the authoritative late-bound parity path.
+  - Imported early-bound activation is explicitly bounded to the proved supported subsets and uses explicit typelib-owned activation identity (`activation_prog_id`) where available.
+  - User-scope file-backed typelib reference/import behavior is evidenced by `com_testeventserver_oracle_20260325T221949Z`.
+  - Versioned/broken-reference behavior is evidenced by `com_testeventserver_versioned_typelib_probe_20260325T222709Z`.
+  - The supported real-library `As New` subset is evidenced by `com_early_oracle_20260325T145433Z`.
+  - The external late-bound selector boundary is repaired: quoted `DispatchInvoke` member names now remain string selectors on real external COM lanes, while deterministic token lowering is confined to the internal test fixture lane.
+  - Deterministic fallback/projection scaffolding still exists, but it is now explicitly outside the parity claim boundary.
 - Recommendation:
-  - do not assume adjacent fallback/projection seams are part of the native parity claim,
-  - keep the scoped native string-ProgID late-bound lane separate unless the activation-boundary audit proves a live defect there,
-  - treat the remaining work as a combined activation-truth repair item rather than a pure imported-lowering cleanup.
+  - keep broader arbitrary real-library COM breadth as post-scope expansion work,
+  - do not reopen deterministic fallback/projection seams as evidence for native parity claims.
 
 ### BLK-FORMAL-001: Formal foldback remains constrained by remote Kani execution and unfinished feature work
 - Impact:

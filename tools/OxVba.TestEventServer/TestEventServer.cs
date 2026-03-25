@@ -35,7 +35,7 @@ namespace OxVba.TestEventServer
         int Ping();
 
         [DispId(105)]
-        int ProbeSum(int lhs, int rhs);
+        int SumPair(int lhs, int rhs);
 
         [DispId(106)]
         string DescribeArrayShape(object value);
@@ -44,7 +44,7 @@ namespace OxVba.TestEventServer
         bool IsSelf(object value);
 
         [DispId(108)]
-        object ProbeReturnLongArray();
+        object ReturnLongArray();
 
         [DispId(109)]
         object ReturnSelfArray();
@@ -85,7 +85,7 @@ namespace OxVba.TestEventServer
             return 42;
         }
 
-        public int ProbeSum(int lhs, int rhs)
+        public int SumPair(int lhs, int rhs)
         {
             return lhs + rhs;
         }
@@ -115,7 +115,7 @@ namespace OxVba.TestEventServer
             return ReferenceEquals(this, value);
         }
 
-        public object ProbeReturnLongArray()
+        public object ReturnLongArray()
         {
             return new object[] { 4, 5, 6 };
         }

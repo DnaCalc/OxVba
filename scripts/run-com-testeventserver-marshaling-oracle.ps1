@@ -113,7 +113,7 @@ try {
 Public Function RunProbe()
     Dim obj As Object
     Set obj = CreateObject("OxVba.TestEventServer")
-    RunProbe = CStr(obj.ProbeSum(3, 14))
+    RunProbe = CStr(obj.SumPair(3, 14))
 End Function
 "@
                 [void]$mod.CodeModule.AddFromString($code)
@@ -151,7 +151,7 @@ Public Function RunProbe()
     Dim obj As Object
     Dim items As Variant
     Set obj = CreateObject("OxVba.TestEventServer")
-    items = obj.ProbeReturnLongArray()
+    items = obj.ReturnLongArray()
     RunProbe = CStr(UBound(items) - LBound(items) + 1) & "," & CStr(items(LBound(items)))
 End Function
 "@

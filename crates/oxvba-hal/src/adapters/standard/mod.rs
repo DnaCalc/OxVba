@@ -2586,6 +2586,34 @@ mod tests {
         );
     }
 
+    #[test]
+    fn dispatch_invoke_dynamic_projection_resolves_name_selector_for_testdispatch() {
+        let host = StandardHostServices::new(HalProfileId::Windows, HostPolicy::default());
+        let object = host
+            .create_object_test(TEST_DISPATCH_PROG_ID_NAME)
+            .expect("create_object should return deterministic projection handle");
+        let request = oxvba_com::DynamicCallRequest {
+            object: object.into(),
+            member: oxvba_com::DynamicMemberSelector::Name("SumPair".to_string()),
+            args: vec![
+                oxvba_com::DynamicCallArg {
+                    value: Some(oxvba_com::ComValue::I32(3)),
+                    name: None,
+                },
+                oxvba_com::DynamicCallArg {
+                    value: Some(oxvba_com::ComValue::I32(14)),
+                    name: None,
+                },
+            ],
+            call_kind_hint: Some(oxvba_com::DynamicCallKind::Method),
+        };
+        assert_eq!(
+            host.dispatch_invoke_dynamic_runtime_value_v2(&request)
+                .expect("dynamic name selector should resolve on deterministic projection"),
+            RuntimeValue::I32(5_033)
+        );
+    }
+
     #[cfg(target_os = "windows")]
     #[test]
     fn windows_native_controlled_test_dispatch_supports_named_property_get_args_runtime_value_v2() {

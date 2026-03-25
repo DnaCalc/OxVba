@@ -275,13 +275,13 @@ Sub Main()
 Dim obj
 Dim sumValue
 obj = CreateObject("OxVba.TestEventServer")
- sumValue = DispatchInvoke(obj, "ProbeSum", 3, 14)
+ sumValue = DispatchInvoke(obj, "SumPair", 3, 14)
 End Sub
 "#;
 
         let out = run_registered_lane_source(source);
         assert!(expect_object_handle(&out[0]).raw() >= 20_001);
-        assert_eq!(out[1], RuntimeValue::I32(17), "ProbeSum result mismatch");
+        assert_eq!(out[1], RuntimeValue::I32(17), "SumPair result mismatch");
     }
 
     #[test]
@@ -355,7 +355,7 @@ Sub Main()
 Dim obj
 Dim returned
 obj = CreateObject("OxVba.TestEventServer")
-returned = DispatchInvoke(obj, "ProbeReturnLongArray")
+returned = DispatchInvoke(obj, "ReturnLongArray")
 End Sub
 "#;
 
@@ -367,12 +367,12 @@ End Sub
         let elements = array
             .elements
             .as_ref()
-            .expect("ProbeReturnLongArray should preserve elements");
-        assert_eq!(elements.len(), 3, "ProbeReturnLongArray length mismatch");
+            .expect("ReturnLongArray should preserve elements");
+        assert_eq!(elements.len(), 3, "ReturnLongArray length mismatch");
         assert_eq!(
             elements[0],
             RuntimeValue::I32(4),
-            "ProbeReturnLongArray first element mismatch"
+            "ReturnLongArray first element mismatch"
         );
     }
 
