@@ -371,19 +371,18 @@ Run context: active parity/compliance execution plus in-progress feature worklis
 - Recommendation:
   - close this blocker; host/Office-style parity is explicit across the scoped target.
 
-### BLK-ORACLE-001: Oracle closure depends on unfinished implementation areas and external captures
-- Impact:
-  - Blocks `IP-10` oracle/differential parity closure.
-  - Prevents full parity claims for `IP-03`, `IP-05`, `IP-07`, and `IP-09`.
-- Current state:
-  - deferred oracle structure exists and some probes are captured,
-  - but required Office/host differential captures cannot close meaningfully while the underlying behavior is still unfinished.
-- Exact unblock steps:
-  - finish the feature work for the affected areas,
-  - run the remaining Office/host capture matrix,
-  - fold results back into claim docs and divergence registers.
+### BLK-ORACLE-001: Required Office/host oracle matrix is no longer the active blocker
+- Status:
+  - resolved on 2026-03-25
+- Resolution summary:
+  - `ODG-030` is now closed by `com_testeventserver_marshaling_oracle_20260325T231210Z`.
+  - `ODG-044`, `ODG-045`, and `ODG-046` are already closed with linked evidence.
+  - The remaining initial-scope oracle-adjacent work is no longer missing capture infrastructure; it is the broader activation/model truth boundary under `BLK-COM-ACTIVATION-001` / `ODG-031`.
+- Evidence:
+  - `docs/evidence/conformance/oracle_captures/com_testeventserver_marshaling_oracle_20260325T231210Z/summary.md`
+  - `docs/evidence/conformance/oracle_captures/com_testeventserver_marshaling_oracle_20260325T231210Z/results.csv`
 - Recommendation:
-  - do not spend oracle effort ahead of core feature closure except for targeted ambiguity resolution.
+  - keep the remaining open work under `ODG-031` framed as an activation-scope claim correction, not as missing oracle capture infrastructure.
 
 ### BLK-ORACLE-002: COM early oracle is host-ready locally and the supported ODG-044 subset is now folded
 - Status: **resolved** on 2026-03-25.

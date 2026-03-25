@@ -3932,10 +3932,13 @@ fn parse_createobject_arg(arg: &str, array_bounds: &ArrayBoundsMap) -> Option<Bo
 }
 
 fn parse_dispatch_member_arg(arg: &str, array_bounds: &ArrayBoundsMap) -> Option<BoundExpr> {
-    // Quoted strings must map to a known dispatch member token
+    // Keep optimized token lowering for known deterministic members, but preserve
+    // arbitrary string selectors for real external COM dispatch lanes.
     if let Some(literal) = parse_quoted_string_literal(arg) {
-        let token = map_dispatch_member_literal_token(literal.as_str())?;
-        return Some(BoundExpr::IntConst(token));
+        if let Some(token) = map_dispatch_member_literal_token(literal.as_str()) {
+            return Some(BoundExpr::IntConst(token));
+        }
+        return Some(BoundExpr::StringConst(literal));
     }
     parse_expr(arg, array_bounds)
 }

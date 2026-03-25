@@ -3,7 +3,7 @@ mod windows_registered_com_lane {
     use oxvba_hal::model::HostPolicy;
     use oxvba_host::engine::DiagnosticPhase;
     use oxvba_host::{Engine, HostConfig};
-    use oxvba_runtime::{ObjectHandle, RuntimeValue};
+    use oxvba_runtime::{ObjectHandle, RuntimeValue, bstr::BStr};
 
     const OXVBA_TEST_DISPATCH_PROGID: &str = "OxVba.TestDispatch";
 
@@ -258,6 +258,160 @@ End Sub
             RuntimeValue::I32(0),
             "final Exists(7) should remain deterministic for empty dictionary"
         );
+    }
+
+    #[test]
+    #[ignore = "requires registered external COM server lane (run via scripts/run-com-testeventserver-marshaling-oracle.ps1)"]
+    fn registered_testeventserver_scalar_sum_pair_supported_subset() {
+        if selected_registered_prog_id_flavor() != RegisteredProgIdFlavor::OxvbaTestEventServer {
+            eprintln!(
+                "registered lane: this marshaling probe is specific to OxVba.TestEventServer"
+            );
+            return;
+        }
+
+        let source = r#"
+Sub Main()
+Dim obj
+Dim sumValue
+obj = CreateObject("OxVba.TestEventServer")
+ sumValue = DispatchInvoke(obj, "ProbeSum", 3, 14)
+End Sub
+"#;
+
+        let out = run_registered_lane_source(source);
+        assert!(expect_object_handle(&out[0]).raw() >= 20_001);
+        assert_eq!(out[1], RuntimeValue::I32(17), "ProbeSum result mismatch");
+    }
+
+    #[test]
+    #[ignore = "requires registered external COM server lane (run via scripts/run-com-testeventserver-marshaling-oracle.ps1)"]
+    fn registered_testeventserver_array_argument_supported_subset() {
+        if selected_registered_prog_id_flavor() != RegisteredProgIdFlavor::OxvbaTestEventServer {
+            eprintln!(
+                "registered lane: this marshaling probe is specific to OxVba.TestEventServer"
+            );
+            return;
+        }
+
+        let source = r#"
+Sub Main()
+Dim obj
+Dim shapeValue
+obj = CreateObject("OxVba.TestEventServer")
+Call CaptureShape(shapeValue, obj, 1, 2, 3)
+End Sub
+
+Sub CaptureShape(ByRef target, ByVal obj, ParamArray items() As Variant)
+    target = DispatchInvoke(obj, "DescribeArrayShape", items)
+End Sub
+"#;
+
+        let out = run_registered_lane_source(source);
+        assert!(expect_object_handle(&out[0]).raw() >= 20_001);
+        assert_eq!(
+            out[1],
+            RuntimeValue::String(BStr("rank=1;len=3;lb=0;ub=2;first=1".to_string())),
+            "DescribeArrayShape result mismatch"
+        );
+    }
+
+    #[test]
+    #[ignore = "requires registered external COM server lane (run via scripts/run-com-testeventserver-marshaling-oracle.ps1)"]
+    fn registered_testeventserver_object_argument_supported_subset() {
+        if selected_registered_prog_id_flavor() != RegisteredProgIdFlavor::OxvbaTestEventServer {
+            eprintln!(
+                "registered lane: this marshaling probe is specific to OxVba.TestEventServer"
+            );
+            return;
+        }
+
+        let source = r#"
+Sub Main()
+Dim obj
+Dim selfValue
+obj = CreateObject("OxVba.TestEventServer")
+selfValue = DispatchInvoke(obj, "IsSelf", obj)
+End Sub
+"#;
+
+        let out = run_registered_lane_source(source);
+        assert!(expect_object_handle(&out[0]).raw() >= 20_001);
+        assert_eq!(out[1], RuntimeValue::Bool(true), "IsSelf result mismatch");
+    }
+
+    #[test]
+    #[ignore = "requires registered external COM server lane (run via scripts/run-com-testeventserver-marshaling-oracle.ps1)"]
+    fn registered_testeventserver_scalar_array_return_supported_subset() {
+        if selected_registered_prog_id_flavor() != RegisteredProgIdFlavor::OxvbaTestEventServer {
+            eprintln!(
+                "registered lane: this marshaling probe is specific to OxVba.TestEventServer"
+            );
+            return;
+        }
+
+        let source = r#"
+Sub Main()
+Dim obj
+Dim returned
+obj = CreateObject("OxVba.TestEventServer")
+returned = DispatchInvoke(obj, "ProbeReturnLongArray")
+End Sub
+"#;
+
+        let out = run_registered_lane_source(source);
+        assert!(expect_object_handle(&out[0]).raw() >= 20_001);
+        let RuntimeValue::ArrayIntent(array) = &out[1] else {
+            panic!("expected array result, got {:?}", out[1]);
+        };
+        let elements = array
+            .elements
+            .as_ref()
+            .expect("ProbeReturnLongArray should preserve elements");
+        assert_eq!(elements.len(), 3, "ProbeReturnLongArray length mismatch");
+        assert_eq!(
+            elements[0],
+            RuntimeValue::I32(4),
+            "ProbeReturnLongArray first element mismatch"
+        );
+    }
+
+    #[test]
+    #[ignore = "requires registered external COM server lane (run via scripts/run-com-testeventserver-marshaling-oracle.ps1)"]
+    fn registered_testeventserver_dispatch_array_return_supported_subset() {
+        if selected_registered_prog_id_flavor() != RegisteredProgIdFlavor::OxvbaTestEventServer {
+            eprintln!(
+                "registered lane: this marshaling probe is specific to OxVba.TestEventServer"
+            );
+            return;
+        }
+
+        let source = r#"
+Sub Main()
+Dim obj
+Dim returnedSelf
+obj = CreateObject("OxVba.TestEventServer")
+returnedSelf = DispatchInvoke(obj, "ReturnSelfArray")
+End Sub
+"#;
+
+        let out = run_registered_lane_source(source);
+        assert!(expect_object_handle(&out[0]).raw() >= 20_001);
+        let RuntimeValue::ArrayIntent(array) = &out[1] else {
+            panic!("expected array result, got {:?}", out[1]);
+        };
+        let elements = array
+            .elements
+            .as_ref()
+            .expect("ReturnSelfArray should preserve elements");
+        assert_eq!(elements.len(), 1, "ReturnSelfArray length mismatch");
+        let RuntimeValue::ObjectHandle(handle) = elements[0] else {
+            panic!(
+                "expected first ReturnSelfArray element to be an object handle, got {:?}",
+                elements[0]
+            );
+        };
+        assert!(handle.raw() >= 20_001, "ReturnSelfArray object handle mismatch");
     }
 
     #[test]

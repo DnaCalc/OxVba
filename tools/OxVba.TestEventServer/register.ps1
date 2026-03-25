@@ -4,7 +4,8 @@ param(
     [ValidateSet("CurrentUser", "Machine")]
     [string]$Scope = "CurrentUser",
     [switch]$ExportTypeLibOnly,
-    [switch]$SkipTypeLibExport
+    [switch]$SkipTypeLibExport,
+    [switch]$SkipBuild
 )
 
 $ErrorActionPreference = "Stop"
@@ -94,7 +95,7 @@ try {
     $typeLibPath = Join-Path (Split-Path $assemblyPath -Parent) "OxVba.TestEventServer.tlb"
     $currentUserTemplatePath = Join-Path $PSScriptRoot "OxVba.TestEventServer.hkcu.reg"
 
-    if (-not (Test-Path $assemblyPath)) {
+    if (-not $SkipBuild) {
         Write-Host "[oxvba] Building OxVba.TestEventServer ($Configuration)..."
         dotnet build -c $Configuration
         if ($LASTEXITCODE -ne 0) {

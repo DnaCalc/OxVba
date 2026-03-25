@@ -2268,6 +2268,23 @@ mod tests {
     }
 
     #[test]
+    fn compile_dispatchinvoke_with_unknown_member_literal_preserves_string_selector() {
+        let source = "Sub Main()\nDim x\nx = DispatchInvoke(CreateObject(\"OxVba.TestEventServer\"), \"IsSelf\", CreateObject(\"OxVba.TestEventServer\"))\nEnd Sub";
+        let out =
+            compile(source).expect("compile should succeed for external string member selector");
+        assert!(
+            out.instructions
+                .iter()
+                .any(|i| matches!(i, Instruction::IntrinsicDispatchInvokeHost { .. }))
+        );
+        assert!(
+            out.instructions
+                .iter()
+                .any(|i| matches!(i, Instruction::LoadConstString { value, .. } if value == "IsSelf"))
+        );
+    }
+
+    #[test]
     fn compile_dispatchinvoke_with_variant_array_classifier_literal_maps_to_member_token_twenty_six()
      {
         let source = "Sub Main()\nDim x\nx = DispatchInvoke(CreateObject(\"OxVba.TestDispatch\"), \"ClassifyVariantArrayFirstElementArg\", Array(1))\nEnd Sub";

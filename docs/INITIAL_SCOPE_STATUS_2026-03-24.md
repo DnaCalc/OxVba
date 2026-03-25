@@ -44,10 +44,10 @@
 
 ### 2.1 Oracle Gates (IP-10)
 
-**Required for Initial Scope (5 gates total — 3 now closed, 2 still open):**
+**Required for Initial Scope (5 gates total — 4 now closed, 1 still open):**
 
-- [ ] **ODG-030** — COM interop marshaling. Needs COM test server + host interop oracle runs.
-- [ ] **ODG-031** — TypeLib COM interop. Needs custom/versioned typelib oracle harness plus correction of the real COM activation/model assumptions that currently overread the supported imported scope. The baseline user-scope external typelib lane now has paired Excel/OxVba evidence via `com_testeventserver_oracle_20260325T221949Z` (`HKCU` registration + `TlbExp` + Excel `AddFromFile`, `Ping() = 42`, imported `WithEvents` payload `7`), but the version-skew / broken-reference matrix is still not built.
+- [x] **ODG-030** — COM interop marshaling. Closed with `com_testeventserver_marshaling_oracle_20260325T231210Z`: Excel and OxVba match on late-bound scalar arg/return (`17`), array-argument shape (`rank=1;len=3;lb=0;ub=2;first=1`), self-object roundtrip (`True`), scalar array return (`3,4`), and dispatch element inside returned array (`42`) against the real `HKCU`-registered `OxVba.TestEventServer`.
+- [ ] **ODG-031** — TypeLib COM interop. The baseline user-scope external typelib lane is now paired via `com_testeventserver_oracle_20260325T221949Z`, and the versioned/broken-reference matrix is now built and closed under `ODG-046` via `com_testeventserver_versioned_typelib_probe_20260325T222709Z`. The remaining open work is the correction of the real COM activation/model assumptions that still overread the supported imported scope.
 - [x] **ODG-044** — `As New` early-bound supported subset. Oracle run `com_early_oracle_20260325T145433Z` matched Excel and OxVba for `Dim obj As New Scripting.Dictionary` plus `Add` / `Exists` / `Count` (`True,1`). Broader real-library activation authority remains open under `ODG-031`, not under this supported-subset oracle gate.
 - [x] **ODG-045** — Dual-interface vtable/dispatch. Closed with mixed-server oracle run `com_dualinterface_oracle_20260325T224113Z`: Excel, OxVba default dispatch policy, and OxVba `PreferVtable` policy all match on `Scripting.Dictionary` (`True,1`) and `TestEventServer.Ping()` (`42`), giving explicit evidence for both strategy stability and fallback constraints.
 - [x] **ODG-046** — TypeLib version/broken-ref. Closed with `com_testeventserver_versioned_typelib_probe_20260325T222709Z`: direct `AddFromFile` against the temp-built `2.0` typelib resolves as `2.0`, a workbook saved against `1.0` does not auto-upgrade when the same path is replaced with `2.0`, removing the referenced file yields a broken reference, and restoring the file repairs it back to working `1.0` with `Ping() = 42`.
@@ -84,7 +84,6 @@ Completed this session:
 ### 2.3 Active Blockers
 
 - [ ] **BLK-COM-ACTIVATION-001** — Real COM activation/model gap. Imported early-bound `As New` now uses explicit typelib-owned activation identity and has a real registered `Scripting.Dictionary` activation-plus-member anchor on the supported subset, but broader real-library activation-model parity is still in progress and adjacent late-bound fallback/projection boundaries still need an explicit truth audit.
-- [ ] **BLK-ORACLE-001** — Evidence gap. Need remaining Office/host capture matrix for `ODG-030` and `ODG-031`.
 - [ ] **BLK-FORMAL-001** — Infrastructure gap. Explicit deferrals now in place; remaining need is DG-V2-001 completion.
 
 ---
@@ -176,7 +175,7 @@ These are post-Initial Scope items. No action needed for v620 closure.
 - [ ] **COM activation truth review/fix** — Continue correcting the real COM activation model so imported early-bound `As New` uses an authoritative real-library activation contract for the supported scope, and so native late-bound `CreateObject("ProgID")` is documented/tested separately from deterministic fallback/projection scaffolding instead of being blurred into one parity claim.
 - [x] **ODG-045 mixed-server oracle harness** — closed with `com_dualinterface_oracle_20260325T224113Z`.
 - [x] **ODG-046 versioned/broken-reference oracle harness** — closed with `com_testeventserver_versioned_typelib_probe_20260325T222709Z`.
-- [ ] **Close or defer ODG-030, ODG-031** — need paired COM test-server / typelib oracle harness. The baseline external `OxVba.TestEventServer` user-scope lane is now paired; the remaining gap is the versioned/custom oracle matrix plus the imported activation/model correction above.
+- [ ] **Close or defer ODG-031** — the user-scope baseline and versioned/broken-reference oracle matrix now exist; the remaining gap is the imported activation/model correction above.
 - [ ] **DG-V2-001 completion** — still running remotely. Needs to complete or be explicitly deferred.
 
 ### Should-do (high value, not strictly blocking)

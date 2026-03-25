@@ -1,0 +1,8 @@
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.16s
+     Running tests\com_client_registered_lane.rs (target\debug\deps\com_client_registered_lane-888f0b36fda6004a.exe)
+
+running 1 test
+test windows_registered_com_lane::registered_testeventserver_dispatch_array_return_supported_subset ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 12 filtered out; finished in 0.04s
+
