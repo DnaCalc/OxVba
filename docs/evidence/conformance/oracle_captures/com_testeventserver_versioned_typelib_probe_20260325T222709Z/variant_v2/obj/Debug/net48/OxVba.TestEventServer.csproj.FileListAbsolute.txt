@@ -1,0 +1,10 @@
+C:\Work\DnaCalc\OxVba\docs\evidence\conformance\oracle_captures\com_testeventserver_versioned_typelib_probe_20260325T222709Z\variant_v2\bin\Debug\net48\OxVba.TestEventServer.dll
+C:\Work\DnaCalc\OxVba\docs\evidence\conformance\oracle_captures\com_testeventserver_versioned_typelib_probe_20260325T222709Z\variant_v2\bin\Debug\net48\OxVba.TestEventServer.pdb
+C:\Work\DnaCalc\OxVba\docs\evidence\conformance\oracle_captures\com_testeventserver_versioned_typelib_probe_20260325T222709Z\variant_v2\obj\Debug\net48\OxVba.TestEventServer.csproj.AssemblyReference.cache
+C:\Work\DnaCalc\OxVba\docs\evidence\conformance\oracle_captures\com_testeventserver_versioned_typelib_probe_20260325T222709Z\variant_v2\obj\Debug\net48\OxVba.TestEventServer.GeneratedMSBuildEditorConfig.editorconfig
+C:\Work\DnaCalc\OxVba\docs\evidence\conformance\oracle_captures\com_testeventserver_versioned_typelib_probe_20260325T222709Z\variant_v2\obj\Debug\net48\OxVba.TestEventServer.AssemblyInfoInputs.cache
+C:\Work\DnaCalc\OxVba\docs\evidence\conformance\oracle_captures\com_testeventserver_versioned_typelib_probe_20260325T222709Z\variant_v2\obj\Debug\net48\OxVba.TestEventServer.AssemblyInfo.cs
+C:\Work\DnaCalc\OxVba\docs\evidence\conformance\oracle_captures\com_testeventserver_versioned_typelib_probe_20260325T222709Z\variant_v2\obj\Debug\net48\OxVba.TestEventServer.csproj.CoreCompileInputs.cache
+C:\Work\DnaCalc\OxVba\docs\evidence\conformance\oracle_captures\com_testeventserver_versioned_typelib_probe_20260325T222709Z\variant_v2\obj\Debug\net48\OxVba.TestEventServer.sourcelink.json
+C:\Work\DnaCalc\OxVba\docs\evidence\conformance\oracle_captures\com_testeventserver_versioned_typelib_probe_20260325T222709Z\variant_v2\obj\Debug\net48\OxVba.TestEventServer.dll
+C:\Work\DnaCalc\OxVba\docs\evidence\conformance\oracle_captures\com_testeventserver_versioned_typelib_probe_20260325T222709Z\variant_v2\obj\Debug\net48\OxVba.TestEventServer.pdb

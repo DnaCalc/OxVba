@@ -1,0 +1,6 @@
+"case_id","scenario","status","observed"
+"CCT-048-TES-002","AddFromFile v1 typelib + New TestEventServer + Ping()","ok","name=OxVba_TestEventServer;version=1.0;result=42"
+"CCT-048-TES-003","AddFromFile v2 typelib + New TestEventServer + Ping()","ok","name=OxVba_TestEventServer;version=2.0;result=42"
+"CCT-048-TES-004","Saved workbook reopened after referenced typelib path is replaced with v2","ok","name=OxVba_TestEventServer;version=1.0;broken=False;result=42"
+"CCT-048-TES-005","Saved workbook reopened after referenced typelib file is removed","ok","name=;version=1.0;broken=True"
+"CCT-048-TES-006","Saved workbook reopened after missing typelib file is restored","ok","name=OxVba_TestEventServer;version=1.0;broken=False;result=42"

@@ -1,0 +1,60 @@
+{
+  "format": 1,
+  "restore": {
+    "C:\\Work\\DnaCalc\\OxVba\\docs\\evidence\\conformance\\oracle_captures\\com_testeventserver_versioned_typelib_probe_20260325T222709Z\\variant_v2\\OxVba.TestEventServer.csproj": {}
+  },
+  "projects": {
+    "C:\\Work\\DnaCalc\\OxVba\\docs\\evidence\\conformance\\oracle_captures\\com_testeventserver_versioned_typelib_probe_20260325T222709Z\\variant_v2\\OxVba.TestEventServer.csproj": {
+      "version": "1.0.0",
+      "restore": {
+        "projectUniqueName": "C:\\Work\\DnaCalc\\OxVba\\docs\\evidence\\conformance\\oracle_captures\\com_testeventserver_versioned_typelib_probe_20260325T222709Z\\variant_v2\\OxVba.TestEventServer.csproj",
+        "projectName": "OxVba.TestEventServer",
+        "projectPath": "C:\\Work\\DnaCalc\\OxVba\\docs\\evidence\\conformance\\oracle_captures\\com_testeventserver_versioned_typelib_probe_20260325T222709Z\\variant_v2\\OxVba.TestEventServer.csproj",
+        "packagesPath": "C:\\Users\\GovertvanDrimmelen\\.nuget\\packages\\",
+        "outputPath": "C:\\Work\\DnaCalc\\OxVba\\docs\\evidence\\conformance\\oracle_captures\\com_testeventserver_versioned_typelib_probe_20260325T222709Z\\variant_v2\\obj\\",
+        "projectStyle": "PackageReference",
+        "fallbackFolders": [
+          "C:\\Program Files (x86)\\Microsoft Visual Studio\\Shared\\NuGetPackages"
+        ],
+        "configFilePaths": [
+          "C:\\Users\\GovertvanDrimmelen\\AppData\\Roaming\\NuGet\\NuGet.Config",
+          "C:\\Program Files (x86)\\NuGet\\Config\\Microsoft.VisualStudio.FallbackLocation.config",
+          "C:\\Program Files (x86)\\NuGet\\Config\\Microsoft.VisualStudio.Offline.config"
+        ],
+        "originalTargetFrameworks": [
+          "net48"
+        ],
+        "sources": {
+          "C:\\Work\\Excel-DNA\\ExcelDnaDoc\\Package\\nupkg": {},
+          "C:\\Work\\Excel-DNA\\ExcelDna\\Package\\nupkg": {},
+          "C:\\Work\\Excel-DNA\\IntelliSense\\NuGet\\nupkg": {},
+          "C:\\Work\\Excel-DNA\\Registration\\NuGet\\nupkg": {},
+          "https://api.nuget.org/v3/index.json": {}
+        },
+        "frameworks": {
+          "net48": {
+            "targetAlias": "net48",
+            "projectReferences": {}
+          }
+        },
+        "warningProperties": {
+          "warnAsError": [
+            "NU1605"
+          ]
+        },
+        "restoreAuditProperties": {
+          "enableAudit": "true",
+          "auditLevel": "low",
+          "auditMode": "direct"
+        },
+        "SdkAnalysisLevel": "10.0.200"
+      },
+      "frameworks": {
+        "net48": {
+          "targetAlias": "net48",
+          "runtimeIdentifierGraphPath": "C:\\Program Files\\dotnet\\sdk\\10.0.201\\RuntimeIdentifierGraph.json"
+        }
+      }
+    }
+  }
+}

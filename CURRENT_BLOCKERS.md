@@ -410,15 +410,22 @@ Run context: active parity/compliance execution plus in-progress feature worklis
   - Paired repro runner `scripts/run-com-testeventserver-oracle.ps1` now proves the same baseline lane side by side against OxVba:
     - `early_bound_project_executes_registered_testeventserver_ping` matches Excel on `42`,
     - `early_bound_project_registered_testeventserver_withevents_callback_preserves_value_payload` matches Excel on payload `7`.
+  - Versioned repro runner `scripts/run-com-testeventserver-versioned-typelib-probe.ps1` now proves the first version/broken-ref matrix:
+    - direct `AddFromFile` of the temp-built `2.0` typelib resolves as `2.0`,
+    - a workbook saved against `1.0` does not auto-upgrade when the same path is replaced with `2.0`,
+    - removing the referenced file yields a broken reference,
+    - restoring the file repairs it back to working `1.0` with `Ping() = 42`.
   - Evidence:
     - `docs/evidence/conformance/oracle_captures/com_testeventserver_typelib_probe_20260325T204228Z/summary.md`
     - `docs/evidence/conformance/oracle_captures/com_testeventserver_typelib_probe_20260325T204228Z/results.csv`
     - `docs/evidence/conformance/oracle_captures/com_testeventserver_oracle_20260325T221949Z/summary.md`
     - `docs/evidence/conformance/oracle_captures/com_testeventserver_oracle_20260325T221949Z/results.csv`
+    - `docs/evidence/conformance/oracle_captures/com_testeventserver_versioned_typelib_probe_20260325T222709Z/summary.md`
+    - `docs/evidence/conformance/oracle_captures/com_testeventserver_versioned_typelib_probe_20260325T222709Z/results.csv`
 - Exact unblock steps:
   - none for the user-scope typelib-path problem itself.
 - Recommendation:
-  - close this blocker and treat the remaining work under `ODG-031` / `ODG-045` / `ODG-046` as harness-design and parity questions rather than registration infrastructure absence.
+  - close this blocker and treat the remaining work under `ODG-031` / `ODG-045` as activation-scope and mixed-server parity questions rather than registration infrastructure absence.
 
 ### BLK-COM-ACTIVATION-001: Real COM activation/model is not yet parity-complete
 - Impact:
