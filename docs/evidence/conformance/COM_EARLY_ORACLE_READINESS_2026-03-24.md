@@ -35,19 +35,25 @@ While preparing a real Office-backed anchor for `ODG-044`, exploratory local rep
   - `Dim obj As New Scripting.Dictionary`
   - `countValue = obj.Count()` / `existsValue = obj.Exists(42)`
 - observed OxVba behavior during local repro:
-  - the path does not yet provide a trustworthy real-registered external baseline,
-  - one exploratory route hit adapter/member-shape faults,
-  - another returned the controlled test baseline (`Count = 7`) instead of the empty external dictionary baseline (`Count = 0`).
+  - the narrow activation floor is now reproducible in-repo:
+    - `Dim obj As New Scripting.Dictionary`
+    - `countValue = obj.Count`
+    - observed OxVba result: object handle bound on the native registered lane and `Count = 0`
+  - broader exploratory member traffic is still not closure-ready:
+    - `Call obj.Add("a", 1)` / `obj.Exists("a")` hit `COM-E-VALUE-TRANSPORT-UNSUPPORTED` via projected event-trigger callback transport.
 
 Interpretation:
 
 - `ODG-044` is not just waiting on Excel execution.
-- A real registered early-bound external lane still needs to be made honest on the OxVba side before side-by-side oracle closure can be claimed.
+- The missing trustworthy OxVba-side anchor is now narrowed, not absent:
+  - real registered early-bound activation plus `Count` baseline exists,
+  - richer `Scripting.Dictionary` member traffic still needs transport/model correction before side-by-side oracle closure can be claimed.
 
 ## Gate implications
 
 - `ODG-044`
-  - blocked by missing trustworthy OxVba-side real-registered early-bind anchor for `scrrun` / `Scripting.Dictionary`
+  - no longer blocked by total absence of a real-registered early-bind anchor for `scrrun` / `Scripting.Dictionary`
+  - still blocked by richer member/event transport correctness beyond the new activation-plus-Count floor
 - `ODG-045`
   - still needs a mixed-server / dual-interface oracle harness; Excel availability alone does not answer transport-policy parity
 - `ODG-046`
@@ -55,7 +61,7 @@ Interpretation:
 
 ## Recommended next steps
 
-1. Build a reproducible OxVba host lane for real registered early-bound `Scripting.Dictionary` execution.
-2. Use that lane to close the honest semantic floor for `ODG-044`.
+1. Keep the new registered early-bound `Scripting.Dictionary` activation-plus-Count lane as the honest minimum anchor for `ODG-044`.
+2. Fix the richer member/event transport fault surfaced by `Add` / `Exists` on that same registered early-bound path.
 3. Only then schedule/fold the side-by-side Excel oracle capture for `ODG-044`.
 4. Treat `ODG-045` and `ODG-046` as distinct harness-construction tasks, not mere calendar items.

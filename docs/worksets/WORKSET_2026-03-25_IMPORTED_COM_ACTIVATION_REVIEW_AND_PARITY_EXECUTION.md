@@ -12,7 +12,8 @@ Current repo reality:
 1. imported external `As New` no longer lowers to numeric `CreateObject(<selector>)`, but broad imported activation still lacks an authoritative real-library activation contract,
 2. the live typelib path does not yet provide a trustworthy activation contract for arbitrary real COM libraries,
 3. native Windows string-ProgID `CreateObject("...")` remains a real late-bound COM path and is not the primary blocker for this workset,
-4. therefore `ODG-044` is not a pure oracle-scheduling item and `ODG-031` is not only a harness-construction problem.
+4. a narrow real registered early-bound anchor now exists for `Scripting.Dictionary` activation plus `Count`,
+5. therefore `ODG-044` is not a pure oracle-scheduling item and `ODG-031` is not only a harness-construction problem.
 
 This workset is the review-plus-implementation run to fix that correctly rather than papering over it with more selector aliases.
 
@@ -23,9 +24,11 @@ The current imported COM implementation has three distinct truth gaps:
    - imported `As New` activation now rejects unsupported non-authoritative cases instead of emitting numeric fallback, but the supported imported scope still needs a fully trustworthy real activation identity contract.
 2. metadata-model truth gap:
    - imported typelib metadata does not yet serve as an authoritative source for real activation identity across the supported scope.
-3. claim-language truth gap:
+3. runtime-transport truth gap:
+   - richer real-library member traffic on the new registered early-bound anchor still faults through projected callback transport.
+4. claim-language truth gap:
    - current status/oracle wording can overread the implementation as if broad real-library import support were already complete.
-4. scope-boundary truth gap:
+5. scope-boundary truth gap:
    - selector-based activation must not be described as equivalent to the resolved string-ProgID late-bound COM lane.
 
 ## 3. Objectives
@@ -73,11 +76,13 @@ Exit condition:
 
 Deliverables:
 1. add or upgrade registered real-COM tests for the supported scope,
-2. prove the corrected imported activation path against `scrrun` / `Scripting.Dictionary`,
-3. keep controlled `OxVba.TestDispatch` coverage separate from real external-library claims.
+2. keep the new `scrrun` / `Scripting.Dictionary` activation-plus-Count anchor reproducible,
+3. expand that anchor past the current `Add` / `Exists` callback-transport fault,
+4. keep controlled `OxVba.TestDispatch` coverage separate from real external-library claims.
 
 Exit condition:
 1. the repo has a reproducible real-host regression lane for the supported imported early-bound target.
+2. the next remaining fault on that lane is explicitly documented as member/event transport work, not activation ambiguity.
 
 ### Phase D. Oracle readiness foldback
 

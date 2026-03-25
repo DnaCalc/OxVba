@@ -7,7 +7,7 @@ use oxvba_host::engine::DiagnosticPhase;
 use oxvba_host::{Engine, HostConfig};
 use oxvba_runtime::{ObjectHandle, RuntimeValue};
 
-fn manifest_with_typelib(main_source: &str) -> ProjectManifest {
+fn manifest_with_reference(referenced_project_name: &str, main_source: &str) -> ProjectManifest {
     let main_module = module_unit_from_source("MainModule", ModuleKind::Procedural, main_source)
         .expect("main module should parse");
     ProjectManifest {
@@ -15,12 +15,16 @@ fn manifest_with_typelib(main_source: &str) -> ProjectManifest {
         project_kind: ProjectKind::Source,
         modules: vec![main_module],
         references: vec![ProjectReference {
-            referenced_project_name: "OxVba".to_string(),
+            referenced_project_name: referenced_project_name.to_string(),
             reference_kind: ReferenceKind::TypeLibrary,
         }],
         reference_projects: Vec::new(),
         conditional_constants: std::collections::BTreeMap::new(),
     }
+}
+
+fn manifest_with_typelib(main_source: &str) -> ProjectManifest {
+    manifest_with_reference("OxVba", main_source)
 }
 
 #[cfg(target_os = "windows")]
@@ -99,6 +103,27 @@ End Sub
         RuntimeValue::I32(42),
         "obj(42) should map through metadata-backed default-member lane"
     );
+}
+
+#[cfg(target_os = "windows")]
+#[test]
+#[ignore = "requires registered external COM typelib lane (run explicitly on Windows host with scrrun available)"]
+fn early_bound_project_executes_registered_scripting_dictionary_anchor() {
+    let manifest = manifest_with_reference(
+        "Scripting",
+        r#"
+Attribute VB_Name = "MainModule"
+Public Sub Main()
+Dim obj As New Scripting.Dictionary
+Dim countValue
+countValue = obj.Count
+End Sub
+"#,
+    );
+
+    let out = run_project_windows_hosted(&manifest, false);
+    assert!(expect_object_handle(&out[0]).raw() >= 20_001);
+    assert_eq!(out[1], RuntimeValue::I32(0));
 }
 
 #[cfg(target_os = "windows")]

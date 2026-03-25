@@ -409,13 +409,14 @@ Run context: active parity/compliance execution plus in-progress feature worklis
 - Current state:
   - Native Windows string-ProgID activation (`CreateObject("Scripting.Dictionary")`) is a real late-bound COM path and is not the primary blocker here.
   - The numeric `CreateObject(<selector>)` fallback has now been removed from imported `As New` lowering.
-  - The remaining problem is broader imported external activation authority: the supported path still needs a trustworthy real-library activation contract instead of ad hoc metadata assumptions.
+  - A narrow real registered early-bound anchor now exists for `Dim obj As New Scripting.Dictionary` plus `obj.Count`.
+  - The remaining problem is broader imported external member/event transport authority: richer dictionary traffic (`Add` / `Exists`) currently faults through projected callback transport instead of remaining a clean parity anchor.
   - The imported typelib metadata/live-loader path is not yet an honest general activation contract for arbitrary real COM libraries.
   - Therefore broad “real COM library import support” language would currently overstate repo truth.
 - Exact unblock steps:
-  - review the imported activation path end to end across compiler lowering, imported metadata, HAL/host activation, and live typelib loading,
-  - define and implement the authoritative activation contract for supported imported external COM types,
-  - add permanent real-host regressions for the supported imported lane,
+  - keep the new registered early-bound activation-plus-Count lane as the minimum honest floor,
+  - fix the projected event/callback transport fault reached by richer `Scripting.Dictionary` member traffic on that lane,
+  - then expand permanent real-host regressions for the supported imported member subset,
   - then fold the result back into `ODG-044` and `ODG-031` readiness/claim docs.
 - Recommendation:
   - do not reopen the resolved string-ProgID late-bound COM lane under `IP-03`,
