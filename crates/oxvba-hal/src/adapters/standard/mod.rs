@@ -3614,7 +3614,7 @@ mod tests {
 
     #[cfg(target_os = "windows")]
     #[test]
-    fn windows_native_dictionary_binding_includes_event_projection_metadata() {
+    fn windows_native_dictionary_binding_exposes_member_metadata_without_fake_event_projection() {
         let mut policy = HostPolicy::interactive_dev();
         policy
             .com_prog_id_overrides
@@ -3642,25 +3642,19 @@ mod tests {
             exists_member.invoke_kind,
             super::TypeLibMemberInvokeKind::Method
         );
-        let exists_event = binding
-            .event_specs
-            .get(&super::TEST_EVENT_CHANGED.into())
-            .expect("dictionary projection event spec should be present");
-        assert_eq!(exists_event.callback_arity, 1);
-        assert_eq!(exists_event.path, super::ComEventPath::Dispatch);
-        assert!(exists_event.connection_point_iid.is_none());
-        let exists_trigger = binding
-            .event_trigger_specs
-            .get(&super::TEST_DISPID_EXISTS.into())
-            .expect("Exists member should project callback trigger");
-        assert_eq!(exists_trigger.event_token, super::TEST_EVENT_CHANGED.into());
-        assert_eq!(exists_trigger.callback_arity, 1);
-        assert!(!exists_trigger.second_arg_is_incremented);
+        assert!(
+            binding.event_specs.is_empty(),
+            "real dictionary binding should not expose fake event metadata"
+        );
+        assert!(
+            binding.event_trigger_specs.is_empty(),
+            "real dictionary binding should not expose fake event triggers"
+        );
     }
 
     #[cfg(target_os = "windows")]
     #[test]
-    fn windows_native_dictionary_event_projection_routes_subscription_lifecycle() {
+    fn windows_native_dictionary_event_subscription_fails_without_event_metadata() {
         let mut policy = HostPolicy::interactive_dev();
         policy
             .com_prog_id_overrides
@@ -3669,55 +3663,14 @@ mod tests {
         let object = host
             .create_object_test(4)
             .expect("create_object should return dictionary token");
-        let subscription = host
+        let err = host
             .subscribe_event(object, super::TEST_EVENT_CHANGED.into())
-            .expect("subscribe_event should succeed for dictionary projection event");
+            .expect_err("subscribe_event should reject fake dictionary event token");
         assert!(
-            subscription.raw() >= 40_001,
-            "subscription token should be in deterministic range"
+            err.message.contains("COM-E-EVENT-CONNECTIONPOINT-MISSING"),
+            "expected stable missing-event diagnostic, got: {}",
+            err.message
         );
-        {
-            let state = host
-                .com_bridge
-                .shared_state()
-                .lock()
-                .expect("com state lock should succeed");
-            let registered = state
-                .subscriptions
-                .get(&subscription)
-                .expect("dictionary projection subscription should be tracked");
-            assert!(
-                matches!(
-                    registered.transport,
-                    super::ComEventSubscriptionTransport::Projection
-                ),
-                "dictionary lane should continue to use projection transport"
-            );
-        }
-        assert_eq!(
-            host.dispatch_invoke_legacy(object.into(), super::TEST_DISPID_EXISTS, 42)
-                .expect("Exists invoke should succeed"),
-            0
-        );
-        let callback = host
-            .do_events()
-            .expect("do_events should return queued dictionary callback");
-        let callback = expect_i32(callback);
-        assert!(callback >= 60_001, "callback token should be in range");
-        assert_eq!(
-            host.event_callback_subscription(callback.into())
-                .expect("callback subscription lookup should succeed"),
-            subscription
-        );
-        assert_eq!(
-            host.event_callback_arg(callback.into(), 0)
-                .expect("callback arg lookup should succeed"),
-            rv(42)
-        );
-        host.release_event_callback(callback.into())
-            .expect("callback release should succeed");
-        host.unsubscribe_event(subscription)
-            .expect("unsubscribe_event should succeed");
     }
 
     #[cfg(target_os = "windows")]

@@ -410,6 +410,7 @@ Run context: active parity/compliance execution plus in-progress feature worklis
 - Current state:
   - Native Windows string-ProgID activation (`CreateObject("Scripting.Dictionary")`) is a real late-bound COM path and is not the primary blocker here.
   - The numeric `CreateObject(<selector>)` fallback has now been removed from imported `As New` lowering.
+  - Imported early-bound `As New` now takes activation identity from explicit typelib metadata (`activation_prog_id`) instead of inferring it from the source type text.
   - The real registered early-bound `Scripting.Dictionary` anchor now covers `Dim obj As New Scripting.Dictionary` plus `Add` / `Exists` / `Count`.
   - The earlier `Add` / `Exists` fault was caused by incorrect hardcoded `scrrun.dll` event metadata in the COM core, not by an external harness limitation.
   - The imported typelib metadata/live-loader path is not yet an honest general activation contract for arbitrary real COM libraries.
@@ -417,7 +418,7 @@ Run context: active parity/compliance execution plus in-progress feature worklis
   - Therefore broad “real COM library import support” language would currently overstate repo truth.
 - Exact unblock steps:
   - audit the native late-bound activation boundary so repo docs/tests cleanly separate native Windows `CreateObject("ProgID")` from deterministic fallback/projection scaffolding,
-  - keep the registered early-bound `Scripting.Dictionary` member subset as the minimum honest floor,
+  - keep the metadata-backed registered early-bound `Scripting.Dictionary` member subset as the minimum honest floor,
   - then expand permanent real-host regressions for the supported imported member subset,
   - then fold the result back into `ODG-044` and `ODG-031` readiness/claim docs.
 - Recommendation:

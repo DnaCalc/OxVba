@@ -60,7 +60,7 @@ pub use typelib::{
 };
 pub use typelib_cache::TypeLibMetadataCacheState;
 pub use typelib_catalog::{
-    TypeLibMemberLookupResult, build_typelib_metadata,
+    TypeLibMemberLookupResult, activation_prog_id_from_typelib_metadata, build_typelib_metadata,
     create_object_selector_from_typelib_metadata, event_spec_from_typelib_metadata,
     known_typelib_identity_for_prog_id_name, member_spec_from_typelib_metadata,
     member_token_and_spec_from_typelib_metadata_name,

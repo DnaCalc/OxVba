@@ -828,16 +828,14 @@ pub fn build_metadata_blob_from_typelib(
 ) -> Result<TypeLibMetadataBlob, String> {
     let members = enumerate_typelib_members(ptlib)?;
     let events = enumerate_typelib_events(ptlib)?;
-    let create_object_selector = members
-        .iter()
-        .find(|m| m.is_default_member)
-        .map(|m| m.token);
+    let activation_prog_id = extract_coclass_prog_id(ptlib);
     let member_name_to_token: Vec<(String, i32)> =
         members.iter().map(|m| (m.name.clone(), m.token)).collect();
 
     Ok(TypeLibMetadataBlob {
         identity,
-        create_object_selector,
+        activation_prog_id,
+        create_object_selector: None,
         member_name_to_token,
         members,
         events,

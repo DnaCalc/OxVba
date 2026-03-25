@@ -34,7 +34,7 @@
 ### Remaining for Initial Scope
 
 - Real COM activation is still not parity-complete enough for honest initial-scope closure.
-- Imported real COM `As New` activation is still bounded by a narrow authoritative identity subset. The compiler now fails unsupported imported activation explicitly instead of lowering to non-VBA syntax, but the remaining supported scope is still not a general real-library activation contract.
+- Imported real COM `As New` activation is still bounded by a narrow authoritative identity subset. The compiler now takes activation identity from explicit typelib metadata (`activation_prog_id`) instead of guessing from the source type text, and still fails unsupported imported activation explicitly instead of lowering to non-VBA syntax. The remaining supported scope is still not a general real-library activation contract.
 - Native Windows string-ProgID `CreateObject("...")` remains the live late-bound activation path on Windows. The adjacent repo-truth gap is not “VBA requires numeric selectors”; it is that deterministic fallback/projection/test scaffolding still exists in neighboring lanes and must not be described as equivalent parity support for real-library activation.
 - The live typelib path does not yet provide a trustworthy activation contract for arbitrary real COM libraries. The registered `Scripting.Dictionary` early-bind anchor now covers activation plus `Add` / `Exists` / `Count` for the supported subset, so `ODG-044` is no longer blocked on that specific callback-transport defect. `ODG-031` still remains broader than a harness scheduling item because the general activation contract question is still open.
 
@@ -83,7 +83,7 @@ Completed this session:
 
 ### 2.3 Active Blockers
 
-- [ ] **BLK-COM-ACTIVATION-001** — Real COM activation/model gap. Imported early-bound `As New` now has a real registered `Scripting.Dictionary` activation-plus-member anchor on the supported subset, but broader real-library activation-model parity is still in progress and adjacent late-bound fallback/projection boundaries still need an explicit truth audit.
+- [ ] **BLK-COM-ACTIVATION-001** — Real COM activation/model gap. Imported early-bound `As New` now uses explicit typelib-owned activation identity and has a real registered `Scripting.Dictionary` activation-plus-member anchor on the supported subset, but broader real-library activation-model parity is still in progress and adjacent late-bound fallback/projection boundaries still need an explicit truth audit.
 - [ ] **BLK-ORACLE-001** — Evidence gap. Need remaining Office/host capture matrix (scheduling, not coding).
 - [ ] **BLK-FORMAL-001** — Infrastructure gap. Explicit deferrals now in place; remaining need is DG-V2-001 completion.
 
@@ -173,7 +173,7 @@ These are post-Initial Scope items. No action needed for v620 closure.
 
 ### Must-do (blocking v620 terminal gate)
 
-- [ ] **COM activation truth review/fix** — Correct the real COM activation model so imported early-bound `As New` uses an authoritative real-library activation contract for the supported scope, and so native late-bound `CreateObject("ProgID")` is documented/tested separately from deterministic fallback/projection scaffolding instead of being blurred into one parity claim.
+- [ ] **COM activation truth review/fix** — Continue correcting the real COM activation model so imported early-bound `As New` uses an authoritative real-library activation contract for the supported scope, and so native late-bound `CreateObject("ProgID")` is documented/tested separately from deterministic fallback/projection scaffolding instead of being blurred into one parity claim.
 - [ ] **ODG-044 real-host anchor** — Excel is runnable locally, and the supported OxVba-side real registered early-bind anchor now covers `As New Scripting.Dictionary` plus `Add` / `Exists` / `Count`. Remaining work is the side-by-side Excel oracle capture and foldback on that same lane.
 - [ ] **ODG-045 mixed-server oracle harness** — dual-interface parity still needs an explicit host/oracle lane.
 - [ ] **ODG-046 versioned/broken-reference oracle harness** — still needs typelib mutation / repair harness.

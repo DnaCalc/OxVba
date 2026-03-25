@@ -2,7 +2,8 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use oxvba_com::{
     ComMemberSpec, TypeLibMemberInvokeKind, TypeLibMemberLookupResult, TypeLibMetadataBlob,
-    build_typelib_metadata, known_typelib_identity_for_prog_id_name,
+    activation_prog_id_from_typelib_metadata, build_typelib_metadata,
+    known_typelib_identity_for_prog_id_name,
     resolve_default_member_token_and_spec_from_typelib_metadata,
     resolve_member_token_and_spec_from_typelib_metadata_name,
 };
@@ -2203,8 +2204,10 @@ fn expand_bound_source_line(
         }
         let typelib_metadata = known_typelib_identity_for_prog_id_name(&dim_decl.qualified_type)
             .map(|identity| build_typelib_metadata(&identity));
-        let activation_prog_id = known_typelib_identity_for_prog_id_name(&dim_decl.qualified_type)
-            .map(|_| dim_decl.qualified_type.clone());
+        let activation_prog_id = typelib_metadata
+            .as_ref()
+            .and_then(activation_prog_id_from_typelib_metadata)
+            .map(str::to_string);
         if dim_decl.as_new && activation_prog_id.is_none() {
             return Err(ProjectCompileError::TypeLibraryCreateObjectUnsupported {
                 type_name: dim_decl.qualified_type,
@@ -4620,6 +4623,12 @@ fn split_keyword_ascii_ci<'a>(text: &'a str, keyword: &'a str) -> Option<(&'a st
 fn known_typelib_create_object_selector(qualified_type: &str) -> Option<i32> {
     known_typelib_identity_for_prog_id_name(qualified_type)
         .and_then(|identity| build_typelib_metadata(&identity).create_object_selector)
+}
+
+#[cfg(test)]
+fn known_typelib_activation_prog_id(qualified_type: &str) -> Option<String> {
+    known_typelib_identity_for_prog_id_name(qualified_type)
+        .and_then(|identity| build_typelib_metadata(&identity).activation_prog_id)
 }
 
 enum KnownTypeLibMemberResolution {
@@ -13928,6 +13937,26 @@ mod tests {
     }
 
     #[test]
+    fn known_typelib_activation_prog_id_reads_external_activation_metadata() {
+        assert_eq!(
+            super::known_typelib_activation_prog_id("OxVba.TestDispatch"),
+            Some("OxVba.TestDispatch".to_string())
+        );
+        assert_eq!(
+            super::known_typelib_activation_prog_id("OxVba.TestDispatchNoDefault"),
+            Some("OxVba.TestDispatchNoDefault".to_string())
+        );
+        assert_eq!(
+            super::known_typelib_activation_prog_id("Scripting.Dictionary"),
+            Some("Scripting.Dictionary".to_string())
+        );
+        assert_eq!(
+            super::known_typelib_activation_prog_id("Excel.Application"),
+            Some("Excel.Application".to_string())
+        );
+    }
+
+    #[test]
     fn compile_project_internal_dynamic_routes_use_internal_dispatch_token_table() {
         let main_module = module_unit_from_source(
             "MainModule",
@@ -14007,6 +14036,10 @@ mod tests {
             .typelib_metadata
             .as_ref()
             .expect("supported imported binding should carry metadata");
+        assert_eq!(
+            metadata.activation_prog_id.as_deref(),
+            Some("OxVba.TestDispatch")
+        );
         assert!(
             metadata
                 .members
