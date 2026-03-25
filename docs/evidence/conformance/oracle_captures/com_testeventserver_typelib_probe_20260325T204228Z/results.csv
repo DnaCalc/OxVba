@@ -1,0 +1,4 @@
+"case_id","scenario","status","observed"
+"CCT-027-TES-001","AddFromFile + New TestEventServer + Ping()","ok","42"
+"CCT-027-TES-002","AddFromFile + WithEvents TestEventServer source interface","ok","7"
+"CCT-048-TES-001","Saved workbook reopened after referenced .tlb file is removed","ok","reference missing from reopened VBProject.References set"
