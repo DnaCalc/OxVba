@@ -71,7 +71,6 @@ mod tests {
         TypeLibMetadataBlob {
             identity: sample_identity(reference_name, cache_key),
             activation_prog_id: None,
-            create_object_selector: None,
             member_name_to_token: Vec::new(),
             members: Vec::new(),
             events: Vec::new(),

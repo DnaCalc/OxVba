@@ -136,7 +136,7 @@ impl ComHal for StandardHostServices {
         } else {
             Some(ComObjectDescriptor {
                 object: object_handle,
-                prog_id_name: format!("selector:{object}"),
+                prog_id_name: format!("projection:{object}"),
                 transport: ComObjectTransportKind::Projection,
                 supports_events: false,
                 known_member_tokens: Vec::new(),

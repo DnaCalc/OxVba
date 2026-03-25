@@ -4620,12 +4620,6 @@ fn split_keyword_ascii_ci<'a>(text: &'a str, keyword: &'a str) -> Option<(&'a st
 }
 
 #[cfg(test)]
-fn known_typelib_create_object_selector(qualified_type: &str) -> Option<i32> {
-    known_typelib_identity_for_prog_id_name(qualified_type)
-        .and_then(|identity| build_typelib_metadata(&identity).create_object_selector)
-}
-
-#[cfg(test)]
 fn known_typelib_activation_prog_id(qualified_type: &str) -> Option<String> {
     known_typelib_identity_for_prog_id_name(qualified_type)
         .and_then(|identity| build_typelib_metadata(&identity).activation_prog_id)
@@ -13922,18 +13916,6 @@ mod tests {
         assert_eq!(spec.name, "EchoVariant");
         assert_eq!(spec.invoke_kind, super::TypeLibMemberInvokeKind::Method);
         assert!(spec.is_default_member);
-    }
-
-    #[test]
-    fn known_typelib_create_object_selector_reads_external_activation_metadata() {
-        assert_eq!(
-            super::known_typelib_create_object_selector("OxVba.TestDispatch"),
-            Some(4)
-        );
-        assert_eq!(
-            super::known_typelib_create_object_selector("Excel.Application"),
-            None
-        );
     }
 
     #[test]

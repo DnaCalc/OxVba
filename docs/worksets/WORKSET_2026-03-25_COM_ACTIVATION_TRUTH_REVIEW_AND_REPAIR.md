@@ -62,7 +62,7 @@ Exit condition:
 Deliverables:
 1. carry authoritative activation identity through the supported imported path,
 2. keep unsupported imported activation failing explicitly,
-3. avoid reintroducing selector-era or non-VBA lowering.
+3. avoid reintroducing selector-era or non-VBA activation scaffolding.
 
 Exit condition:
 1. supported imported `As New` activation no longer depends on a source-text shortcut or an overbroad misleading real-library authority claim.

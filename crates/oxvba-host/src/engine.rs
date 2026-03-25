@@ -251,20 +251,6 @@ impl Engine {
         self.set_host_policy(policy);
     }
 
-    pub fn set_com_prog_id_override(&mut self, selector: i32, prog_id: impl Into<String>) {
-        let mut policy = self.host_services.policy().clone();
-        policy
-            .com_prog_id_overrides
-            .insert(selector, prog_id.into());
-        self.set_host_policy(policy);
-    }
-
-    pub fn clear_com_prog_id_override(&mut self, selector: i32) {
-        let mut policy = self.host_services.policy().clone();
-        policy.com_prog_id_overrides.remove(&selector);
-        self.set_host_policy(policy);
-    }
-
     pub fn host_policy(&self) -> &HostPolicy {
         self.host_services.policy()
     }

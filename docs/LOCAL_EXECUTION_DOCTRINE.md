@@ -76,7 +76,7 @@ Operational requirements:
 - run with `--ignored`,
 - force `--test-threads=1`,
 - capture structured evidence (`csv`/`md`/logs under `docs/evidence/conformance/com/`),
-- treat selector mapping as policy-level config first (engine/HAL override API), env fallback second.
+- keep COM activation test configuration on explicit string ProgIDs and registered-lane env knobs; do not introduce selector-mapping APIs or numeric `CreateObject(...)` shims.
 
 ## 8) Deferred formal lanes need explicit anti-drift reconciliation
 

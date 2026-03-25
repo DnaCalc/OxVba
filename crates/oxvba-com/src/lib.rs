@@ -61,9 +61,8 @@ pub use typelib::{
 pub use typelib_cache::TypeLibMetadataCacheState;
 pub use typelib_catalog::{
     TypeLibMemberLookupResult, activation_prog_id_from_typelib_metadata, build_typelib_metadata,
-    create_object_selector_from_typelib_metadata, event_spec_from_typelib_metadata,
-    known_typelib_identity_for_prog_id_name, member_spec_from_typelib_metadata,
-    member_token_and_spec_from_typelib_metadata_name,
+    event_spec_from_typelib_metadata, known_typelib_identity_for_prog_id_name,
+    member_spec_from_typelib_metadata, member_token_and_spec_from_typelib_metadata_name,
     resolve_default_member_token_and_spec_from_typelib_metadata, resolve_known_typelib_identity,
     resolve_member_token_and_spec_from_typelib_metadata_name,
     source_interface_event_spec_supported,

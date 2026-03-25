@@ -23,7 +23,6 @@ pub struct TypeLibResolvedIdentity {
 pub struct TypeLibMetadataBlob {
     pub identity: TypeLibResolvedIdentity,
     pub activation_prog_id: Option<String>,
-    pub create_object_selector: Option<i32>,
     pub member_name_to_token: Vec<(String, i32)>,
     pub members: Vec<TypeLibMemberMetadata>,
     pub events: Vec<TypeLibEventMetadata>,

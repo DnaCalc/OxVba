@@ -41,7 +41,7 @@ Run context: active parity/compliance execution plus in-progress feature worklis
   - oxvba-com now exposes WindowsComBridge as the live Windows COM client facade.
   - standard.rs now delegates create-object activation, invoke execution, object description/release, event subscription/callback access, and typelib resolve/load/invalidate through that bridge.
   - native subscription transport teardown for object release now also executes inside oxvba-com, removing the last substantive COM lifecycle seam from HAL.
-  - the remaining HAL COM code is limited to capability/policy gating, apartment/bootstrap hooks, selector-based fallback, and error mapping.
+  - the remaining HAL COM code is limited to capability/policy gating, apartment/bootstrap hooks, deterministic projection fallback, and error mapping.
   - the IP-04 closure verification matrix is green:
     - cargo fmt --all,
     - cargo clippy -p oxvba-com -p oxvba-hal --all-targets -- -D warnings,
@@ -409,7 +409,7 @@ Run context: active parity/compliance execution plus in-progress feature worklis
   - Requires an explicit truth boundary between native late-bound Windows activation and deterministic fallback/projection scaffolding.
 - Current state:
   - Native Windows string-ProgID activation (`CreateObject("Scripting.Dictionary")`) is a real late-bound COM path and is not the primary blocker here.
-  - The numeric `CreateObject(<selector>)` fallback has now been removed from imported `As New` lowering.
+  - Numeric `CreateObject(<selector>)` scaffolding is not part of the VBA contract and is being removed from the remaining repo-local test/policy seams as well.
   - Imported early-bound `As New` now takes activation identity from explicit typelib metadata (`activation_prog_id`) instead of inferring it from the source type text.
   - The real registered early-bound `Scripting.Dictionary` anchor now covers `Dim obj As New Scripting.Dictionary` plus `Add` / `Exists` / `Count`.
   - The earlier `Add` / `Exists` fault was caused by incorrect hardcoded `scrrun.dll` event metadata in the COM core, not by an external harness limitation.

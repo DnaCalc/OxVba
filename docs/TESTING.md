@@ -56,7 +56,7 @@ Deferred formal gate policy:
 ## COM Lane Policy
 - Registered COM tests are `#[ignore]` by default to avoid accidental nondeterministic CI/local failures.
 - Registered COM lanes must run single-threaded (`--test-threads=1`) due shared COM apartment + global process state sensitivity.
-- Prefer engine/policy COM selector overrides for deterministic tests (`Engine::set_com_prog_id_override`) over environment-only mapping.
+- Prefer explicit string ProgIDs in deterministic COM tests. Do not introduce numeric `CreateObject(...)` selector shims or engine/policy selector overrides.
 - COM lane artifacts are written under `docs/evidence/conformance/com/` by:
   - `scripts/run-com-registrationless.ps1`,
   - `scripts/run-com-registered.ps1`,

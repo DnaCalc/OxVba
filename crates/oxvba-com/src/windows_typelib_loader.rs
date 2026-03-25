@@ -835,7 +835,6 @@ pub fn build_metadata_blob_from_typelib(
     Ok(TypeLibMetadataBlob {
         identity,
         activation_prog_id,
-        create_object_selector: None,
         member_name_to_token,
         members,
         events,
