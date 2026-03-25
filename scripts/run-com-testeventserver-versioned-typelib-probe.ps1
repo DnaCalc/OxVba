@@ -27,7 +27,7 @@ try {
     }
     $runDir = Join-Path $runRoot "com_testeventserver_versioned_typelib_probe_$resolvedRunId"
     New-Item -ItemType Directory -Force -Path $runDir | Out-Null
-    $variantRoot = Join-Path $runDir "variant_v2"
+    $variantRoot = Join-Path $workspaceRoot "temp\generated\com_testeventserver_versioned_typelib_probe\$resolvedRunId\variant_v2"
 
     function Add-Row {
         param(
@@ -209,7 +209,9 @@ End Function
         -TypeLibMinor 0
 
     & (Join-Path $variantRoot "register.ps1") -Configuration Debug -ExportTypeLibOnly
-    $v2TypeLibPath = (Resolve-Path (Join-Path $variantRoot "bin/Debug/net48/OxVba.TestEventServer.tlb")).Path
+    $builtV2TypeLibPath = (Resolve-Path (Join-Path $variantRoot "bin/Debug/net48/OxVba.TestEventServer.tlb")).Path
+    $v2TypeLibPath = Join-Path $runDir "OxVba.TestEventServer.v2.tlb"
+    Copy-Item -Force $builtV2TypeLibPath $v2TypeLibPath
 
     $rows = New-Object System.Collections.Generic.List[object]
     $excel = New-Object -ComObject Excel.Application
@@ -297,5 +299,8 @@ End Function
     Write-Host "summary=$summaryPath"
 }
 finally {
+    if (Test-Path $variantRoot) {
+        Remove-Item -Recurse -Force -Path $variantRoot -ErrorAction SilentlyContinue
+    }
     Pop-Location
 }
