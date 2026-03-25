@@ -425,7 +425,7 @@ Run context: active parity/compliance execution plus in-progress feature worklis
 - Exact unblock steps:
   - none for the user-scope typelib-path problem itself.
 - Recommendation:
-  - close this blocker and treat the remaining work under `ODG-031` / `ODG-045` as activation-scope and mixed-server parity questions rather than registration infrastructure absence.
+  - close this blocker and treat the remaining work under `ODG-031` as an activation-scope question rather than registration infrastructure absence.
 
 ### BLK-COM-ACTIVATION-001: Real COM activation/model is not yet parity-complete
 - Impact:

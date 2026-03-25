@@ -2,7 +2,7 @@ use oxvba_compiler::{
     ModuleKind, ProjectKind, ProjectManifest, ProjectReference, ReferenceKind,
     module_unit_from_source,
 };
-use oxvba_hal::model::HostPolicy;
+use oxvba_hal::model::{ComInvocationStrategy, HostPolicy};
 use oxvba_host::engine::DiagnosticPhase;
 use oxvba_host::{Engine, HostConfig};
 use oxvba_runtime::{ObjectHandle, RuntimeValue};
@@ -29,11 +29,20 @@ fn manifest_with_typelib(main_source: &str) -> ProjectManifest {
 
 #[cfg(target_os = "windows")]
 fn run_project_windows_hosted(manifest: &ProjectManifest, enable_jit: bool) -> Vec<RuntimeValue> {
+    run_project_windows_hosted_with_policy(manifest, enable_jit, HostPolicy::interactive_dev())
+}
+
+#[cfg(target_os = "windows")]
+fn run_project_windows_hosted_with_policy(
+    manifest: &ProjectManifest,
+    enable_jit: bool,
+    policy: HostPolicy,
+) -> Vec<RuntimeValue> {
     let mut engine = Engine::new(HostConfig {
         enable_jit,
         root_object_name: None,
     });
-    engine.set_host_policy(HostPolicy::interactive_dev());
+    engine.set_host_policy(policy);
     engine
         .execute_project_with_snapshot_phased(manifest)
         .expect("project should execute")
@@ -152,6 +161,35 @@ End Sub
 
 #[cfg(target_os = "windows")]
 #[test]
+#[ignore = "requires registered external COM typelib lane (run explicitly on Windows host with scrrun available)"]
+fn early_bound_project_registered_scripting_dictionary_member_subset_prefer_vtable_matches_dispatch() {
+    let manifest = manifest_with_reference(
+        "Scripting",
+        r#"
+Attribute VB_Name = "MainModule"
+Public Sub Main()
+Dim obj As New Scripting.Dictionary
+Dim countValue
+Dim existsValue
+Call obj.Add("a", 1)
+countValue = obj.Count
+existsValue = obj.Exists("a")
+End Sub
+"#,
+    );
+
+    let dispatch = run_project_windows_hosted(&manifest, false);
+    let mut policy = HostPolicy::interactive_dev();
+    policy.com_invocation_strategy = ComInvocationStrategy::PreferVtable;
+    let vtable = run_project_windows_hosted_with_policy(&manifest, false, policy);
+    assert_eq!(dispatch, vtable);
+    assert!(expect_object_handle(&vtable[0]).raw() >= 20_001);
+    assert_eq!(vtable[1], RuntimeValue::I32(1));
+    assert_eq!(vtable[2], RuntimeValue::Bool(true));
+}
+
+#[cfg(target_os = "windows")]
+#[test]
 #[ignore = "requires registered external COM typelib lane (run explicitly on Windows host with OxVba.TestEventServer registered)"]
 fn early_bound_project_executes_registered_testeventserver_ping() {
     let manifest = manifest_with_typelib(
@@ -168,6 +206,30 @@ End Sub
     let out = run_project_windows_hosted(&manifest, false);
     assert!(expect_object_handle(&out[0]).raw() >= 20_001);
     assert_eq!(out[1], RuntimeValue::I32(42));
+}
+
+#[cfg(target_os = "windows")]
+#[test]
+#[ignore = "requires registered external COM typelib lane (run explicitly on Windows host with OxVba.TestEventServer registered)"]
+fn early_bound_project_registered_testeventserver_ping_prefer_vtable_matches_dispatch() {
+    let manifest = manifest_with_typelib(
+        r#"
+Attribute VB_Name = "MainModule"
+Public Sub Main()
+Dim obj As New OxVba.TestEventServer
+Dim value
+value = obj.Ping()
+End Sub
+"#,
+    );
+
+    let dispatch = run_project_windows_hosted(&manifest, false);
+    let mut policy = HostPolicy::interactive_dev();
+    policy.com_invocation_strategy = ComInvocationStrategy::PreferVtable;
+    let vtable = run_project_windows_hosted_with_policy(&manifest, false, policy);
+    assert_eq!(dispatch, vtable);
+    assert!(expect_object_handle(&vtable[0]).raw() >= 20_001);
+    assert_eq!(vtable[1], RuntimeValue::I32(42));
 }
 
 #[cfg(target_os = "windows")]

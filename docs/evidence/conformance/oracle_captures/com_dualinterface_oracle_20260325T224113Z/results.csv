@@ -1,0 +1,3 @@
+"topic_id","case_id","scenario","vba_status","vba_observed","oxvba_dispatch_status","oxvba_dispatch_observed","oxvba_vtable_status","oxvba_vtable_observed","match_dispatch","match_vtable"
+"CCT-047","CCT-047-SCRRUN-001","Scripting.Dictionary Add / Exists / Count stays stable across dispatch and PreferVtable","ok","True,1","ok","True,1","ok","True,1","true","true"
+"CCT-047","CCT-047-TES-001","TestEventServer Ping stays stable across dispatch and PreferVtable/fallback policy","ok","42","ok","42","ok","42","true","true"
