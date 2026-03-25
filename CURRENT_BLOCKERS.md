@@ -396,24 +396,24 @@ Run context: active parity/compliance execution plus in-progress feature worklis
   - keep the broader activation-model review under `BLK-COM-ACTIVATION-001` / `ODG-031`,
   - keep `ODG-045` and `ODG-046` separate as harness-construction items.
 
-### BLK-ORACLE-003: External COM early-oracle harness still lacks a user-scope typelib path
+### BLK-ORACLE-003: External COM early-oracle user-scope typelib path
+- Status: resolved on 2026-03-25.
 - Impact:
-  - Blocks practical construction of the mixed-server oracle harness for `ODG-045`.
-  - Blocks practical construction of the versioned/broken-reference oracle harness for `ODG-046`.
-  - Keeps `ODG-031` from being a runnable local oracle task because the current external typelib path is still baseline-only.
+  - The old infrastructure blocker is gone.
 - Current state:
-  - The existing external registered test server path is `tools/OxVba.TestEventServer/register.ps1`, which uses `RegAsm /codebase`.
-  - In the current local shell, that registration path fails without administrator permissions.
-  - Excel `VBProject.References.AddFromFile(...)` against the raw `.NET` assembly fails with `Error in loading DLL`.
-  - `RegAsm /tlb` also remains coupled to registry-writing behavior in this environment, and `RegAsm /regfile` cannot be combined with `/tlb`.
-  - Therefore the repo does not yet have a reproducible non-admin path that yields a file-based typelib Excel can bind against for these remaining oracle topics.
+  - `tools/OxVba.TestEventServer/register.ps1` now defaults to `HKCU` registration and exports `OxVba.TestEventServer.tlb` through `TlbExp.exe`.
+  - Repro runner `scripts/run-com-testeventserver-typelib-probe.ps1` now proves the full user-scope baseline lane:
+    - Excel `VBProject.References.AddFromFile(...)` accepts the exported `.tlb`,
+    - `Dim obj As TestEventServer : Set obj = New TestEventServer : obj.Ping()` returns `42`,
+    - `Private WithEvents src As TestEventServer` plus `src.FireValueChanged 7` produces `7`.
+    - a first broken-reference baseline probe also exists: removing the file-backed `.tlb` before reopen leaves no matching entry in `VBProject.References` for that saved workbook path.
+  - Evidence:
+    - `docs/evidence/conformance/oracle_captures/com_testeventserver_typelib_probe_20260325T204228Z/summary.md`
+    - `docs/evidence/conformance/oracle_captures/com_testeventserver_typelib_probe_20260325T204228Z/results.csv`
 - Exact unblock steps:
-  - add a reproducible user-scope typelib export path for external oracle fixtures, or a user-scope registration path that exposes the same typelib identity without HKLM/admin dependency,
-  - then build the mixed-server dual-interface oracle fixture on top of that path for `ODG-045`,
-  - then build the versioned/broken-reference mutation matrix on top of that same path for `ODG-046` and `ODG-031`.
+  - none for the user-scope typelib-path problem itself.
 - Recommendation:
-  - do not describe `tools/OxVba.TestEventServer` as a sufficient COM-early oracle harness in its current admin-coupled form,
-  - treat the next closure slice as oracle-infrastructure work, not as a ready-to-run Excel capture session.
+  - close this blocker and treat the remaining work under `ODG-031` / `ODG-045` / `ODG-046` as harness-design and parity questions rather than registration infrastructure absence.
 
 ### BLK-COM-ACTIVATION-001: Real COM activation/model is not yet parity-complete
 - Impact:

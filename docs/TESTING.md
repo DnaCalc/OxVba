@@ -13,6 +13,7 @@
 - COM conformance (registrationless + registered external lane): `./scripts/run-com-conformance.ps1 -IncludeRegisteredLane -RegisteredProgIds "Scripting.Dictionary"`
 - Registered early-bound anchor lane only (`L2B`): `./scripts/run-com-registered-early-bound.ps1`
 - COM early oracle capture (`CCT-046`): `./scripts/run-com-early-oracle.ps1`
+- COM TestEventServer user-scope typelib probe: `./scripts/run-com-testeventserver-typelib-probe.ps1`
 - COM conformance (include registered event callback lane): `./scripts/run-com-conformance.ps1 -IncludeRegisteredEventLane -RegisteredEventProgId "OxVba.TestDispatch"`
 - Registered event callback lane only (`L2E`): `./scripts/run-com-registered-events.ps1 -ProgId "OxVba.TestDispatch"`
 - COM early-binding conformance (`E0..E6`): `./scripts/run-com-early-conformance.ps1 -IncludeFormalLane`
@@ -66,6 +67,7 @@ Deferred formal gate policy:
   - `scripts/run-com-conformance.ps1`.
 - COM early oracle artifacts are written under `docs/evidence/conformance/oracle_captures/` by:
   - `scripts/run-com-early-oracle.ps1`.
+  - `scripts/run-com-testeventserver-typelib-probe.ps1`.
 
 ## Next additions
 - Property tests for parse/print and coercion matrices.

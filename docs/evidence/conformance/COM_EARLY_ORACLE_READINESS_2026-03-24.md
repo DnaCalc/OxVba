@@ -9,11 +9,16 @@ This note is a readiness/blocker artifact, not closure evidence.
 Update 2026-03-25:
 
 - `ODG-044` supported-subset oracle capture is now complete.
+- The external `OxVba.TestEventServer` user-scope typelib path is now also proven.
 - Evidence:
   - `docs/evidence/conformance/oracle_captures/com_early_oracle_20260325T145433Z/summary.md`
   - `docs/evidence/conformance/oracle_captures/com_early_oracle_20260325T145433Z/results.csv`
+  - `docs/evidence/conformance/oracle_captures/com_testeventserver_typelib_probe_20260325T204228Z/summary.md`
+  - `docs/evidence/conformance/oracle_captures/com_testeventserver_typelib_probe_20260325T204228Z/results.csv`
 - Result:
   - Excel VBA and OxVba both produced `True,1` for the supported `Dim obj As New Scripting.Dictionary` plus `Add` / `Exists` / `Count` subset.
+  - Excel also now accepts the exported `OxVba.TestEventServer.tlb` through `AddFromFile`, and the user-scope external fixture lane proves both `New TestEventServer` (`42`) and `WithEvents` callback ingress (`7`).
+  - The same runner now also captures a first `ODG-046` baseline: when a saved workbook's file-backed `OxVba.TestEventServer.tlb` is removed before reopen, no matching reference entry remains in `VBProject.References` for that path.
 - Remaining open COM-early oracle items are `ODG-045` and `ODG-046`, plus the broader imported activation-authority question under `ODG-031`.
 
 ## Local host readiness
@@ -35,6 +40,7 @@ Update 2026-03-25:
 
 - `ODG-044..046` are no longer blocked by lack of an Excel host on this machine.
 - The earlier description that these items are only waiting for scheduling is no longer fully accurate.
+- The earlier user-scope external typelib-path blocker is now resolved for the baseline `OxVba.TestEventServer` fixture.
 
 ## Newly discovered blocker
 
@@ -67,12 +73,13 @@ Interpretation:
   - no longer blocked by the earlier `Add` / `Exists` callback-transport defect on the supported subset
   - side-by-side Excel oracle capture and foldback for the supported subset is now complete
 - `ODG-045`
-  - still needs a mixed-server / dual-interface oracle harness; Excel availability alone does not answer transport-policy parity
+  - still needs a mixed-server / dual-interface oracle harness; the baseline external user-scope typelib lane now exists, but Excel availability alone does not answer transport-policy parity
 - `ODG-046`
-  - still needs versioned-typelib / broken-reference mutation harness; Excel availability alone does not answer version-selection or repair parity
+  - still needs versioned-typelib / broken-reference mutation harness; the baseline external user-scope typelib lane now exists, but Excel availability alone does not answer version-selection or repair parity
 
 ## Recommended next steps
 
 1. Keep the new registered early-bound `Scripting.Dictionary` `As New` / `Add` / `Exists` / `Count` lane as the permanent supported anchor for the closed `ODG-044` subset.
-2. Keep the broader activation-model review under `ODG-031` separate from the now-closed `ODG-044` callback-transport issue.
-3. Treat `ODG-045` and `ODG-046` as distinct harness-construction tasks, not mere calendar items.
+2. Keep the new `OxVba.TestEventServer` user-scope `.tlb` probe as the permanent baseline external oracle harness anchor.
+3. Keep the broader activation-model review under `ODG-031` separate from the now-closed `ODG-044` callback-transport issue.
+4. Treat `ODG-045` and `ODG-046` as distinct harness-construction tasks, not mere calendar items.

@@ -54,8 +54,8 @@ Execution order:
    Current truth after local validation:
    - Excel + VBOM are available locally,
    - `ODG-044` supported-subset oracle capture is now complete in `com_early_oracle_20260325T145433Z`,
-   - `ODG-045` and `ODG-046` still require distinct harness construction beyond simply opening Excel,
-   - current local probing also shows the external `OxVba.TestEventServer` path is still admin-coupled and does not yet provide the required user-scope typelib lane for `ODG-031` / `ODG-045` / `ODG-046`.
+  - `ODG-045` and `ODG-046` still require distinct harness construction beyond simply opening Excel,
+  - the baseline `OxVba.TestEventServer` user-scope typelib lane is now runnable (`HKCU` registration + `TlbExp` + Excel `AddFromFile`), so the remaining gap is harness design rather than registration infrastructure.
 3. Decide `ODG-030/031` honestly:
    - close now if the required COM and typelib harness exists and is runnable,
    - otherwise defer explicitly with exact missing infrastructure and unblocking steps.
