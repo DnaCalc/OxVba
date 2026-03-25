@@ -156,6 +156,17 @@ pub struct ProjectEventDispatchBinding {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
+pub struct ProjectComWithEventsRoute {
+    pub binding_token: i32,
+    pub prog_id_name: String,
+    pub event_name: String,
+    pub event_token: i32,
+    pub handler_symbol: String,
+    pub guard_symbol_zero_arg: String,
+    pub guard_symbol_one_arg: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
 pub struct ProjectDynamicParamRoute {
     pub name: String,
     pub optional: bool,
@@ -194,6 +205,7 @@ pub struct CompiledProject {
     pub host_exports: Vec<HostProcedureExport>,
     pub reference_visible_exports: Vec<HostProcedureExport>,
     pub event_dispatch_bindings: Vec<ProjectEventDispatchBinding>,
+    pub project_com_withevents_routes: Vec<ProjectComWithEventsRoute>,
     pub project_dynamic_objects: Vec<ProjectDynamicObjectRoute>,
 }
 
@@ -601,6 +613,8 @@ fn compile_project_with_strategy(
     let host_exports = collect_host_exports(manifest, &procedure_index);
     let reference_visible_exports = collect_reference_visible_exports(manifest, &procedure_index);
     let event_dispatch_bindings = flatten_event_dispatch_plan(&event_dispatch_plan);
+    let project_com_withevents_routes =
+        build_project_com_withevents_routes(&event_dispatch_plan);
     let implements_map = collect_class_implements_map(manifest, &procedure_index, &reference_order);
     let project_dynamic_objects = build_project_dynamic_object_routes(
         &dynamic_instance_bindings,
@@ -619,6 +633,7 @@ fn compile_project_with_strategy(
         host_exports,
         reference_visible_exports,
         event_dispatch_bindings,
+        project_com_withevents_routes,
         project_dynamic_objects,
     })
 }
@@ -1765,12 +1780,20 @@ pub fn project_typelib_as_manifest(blob: &TypeLibMetadataBlob) -> ReferencedProj
         source: class_source,
     };
 
-    // If events exist, they get appended as Event declarations.
-    // (Events are part of the same class module source for now.)
+    for event in &blob.events {
+        source_lines.push(format!(
+            "Public Event {}({})",
+            event.name,
+            build_event_param_list(event.callback_arity)
+        ));
+    }
 
     ReferencedProjectManifest {
         project_name: lib_name,
-        modules: vec![class_module],
+        modules: vec![ModuleUnit {
+            source: source_lines.join("\n"),
+            ..class_module
+        }],
     }
 }
 
@@ -1789,6 +1812,13 @@ fn build_param_list_with_value(params: &[String]) -> String {
         .collect();
     parts.push("ByVal value As Variant".to_string());
     parts.join(", ")
+}
+
+fn build_event_param_list(callback_arity: u8) -> String {
+    (0..callback_arity)
+        .map(|index| format!("ByVal arg{index} As Variant"))
+        .collect::<Vec<_>>()
+        .join(", ")
 }
 
 fn build_reference_order_map(manifest: &ProjectManifest) -> BTreeMap<String, usize> {
@@ -2039,6 +2069,7 @@ fn lower_module_source_module_aware(
                 active_procedure_name.as_deref(),
             );
             let expanded_line = rewrite_internal_class_set_assignment(
+                manifest,
                 &expanded_line,
                 active_project,
                 current_project,
@@ -2308,10 +2339,20 @@ fn expand_bound_source_line(
         }
         if is_referenced_typelib_type_reference(manifest, &source_type) {
             // Phase 3A: Imported typelib WithEvents types are treated as plain
-            // Public variable declarations.  Full WithEvents wiring for typelib
-            // event sources is deferred until the live typelib loader is available.
+            // Public variable declarations for member dispatch, but they still
+            // participate in runtime WithEvents binding/guard emission.
             let leading_ws_len = line.len().saturating_sub(line.trim_start().len());
             let leading_ws = &line[..leading_ws_len];
+            let typelib_metadata = referenced_typelib_blob_for_type_reference(manifest, &source_type)
+                .map(|(_, _, blob)| blob);
+            early_bound.insert(
+                normalize_identifier(&withevents_var),
+                EarlyBoundBinding {
+                    qualified_type: source_type.clone(),
+                    typelib_metadata,
+                },
+            );
+            withevents_bindings.insert(normalize_identifier(&withevents_var));
             return Ok(vec![format!("{leading_ws}Public {withevents_var}")]);
         }
     }
@@ -2456,6 +2497,92 @@ fn is_referenced_typelib_type_reference(manifest: &ProjectManifest, type_text: &
             ))
             .is_some()
     })
+}
+
+fn referenced_typelib_blob_for_type_reference(
+    manifest: &ProjectManifest,
+    type_text: &str,
+) -> Option<(String, String, TypeLibMetadataBlob)> {
+    let raw = type_text.trim();
+    if raw.is_empty() {
+        return None;
+    }
+
+    if let Some((qualifier, normalized_type)) = parse_qualified_type_reference(raw) {
+        let normalized_project = normalize_identifier(qualifier);
+        let referenced = manifest.references.iter().any(|reference| {
+            reference.reference_kind == ReferenceKind::TypeLibrary
+                && normalize_identifier(&reference.referenced_project_name) == normalized_project
+        });
+        if referenced
+            && let Some(identity) = known_typelib_identity_for_prog_id_name(raw)
+        {
+            let normalized_module = normalized_type.rsplit('.').next()?.to_string();
+            return Some((
+                normalized_project,
+                normalize_identifier(&normalized_module),
+                build_typelib_metadata(&identity),
+            ));
+        }
+    }
+
+    if !is_valid_vba_identifier(raw) {
+        return None;
+    }
+
+    for reference in &manifest.references {
+        if reference.reference_kind != ReferenceKind::TypeLibrary {
+            continue;
+        }
+        let candidate = format!("{}.{}", reference.referenced_project_name, raw);
+        let Some(identity) = known_typelib_identity_for_prog_id_name(&candidate) else {
+            continue;
+        };
+        return Some((
+            normalize_identifier(&reference.referenced_project_name),
+            normalize_identifier(raw),
+            build_typelib_metadata(&identity),
+        ));
+    }
+
+    None
+}
+
+fn referenced_typelib_event_source(
+    manifest: &ProjectManifest,
+    type_text: &str,
+) -> Option<(String, String, BTreeSet<String>)> {
+    let (project_name, module_name, blob) =
+        referenced_typelib_blob_for_type_reference(manifest, type_text)?;
+    let events = blob
+        .events
+        .iter()
+        .map(|event| normalize_identifier(&event.name))
+        .collect::<BTreeSet<_>>();
+    if events.is_empty() {
+        return None;
+    }
+    Some((project_name, module_name, events))
+}
+
+fn rewrite_typelib_new_expression(
+    manifest: &ProjectManifest,
+    expr: &str,
+) -> Result<String, ProjectCompileError> {
+    let trimmed = expr.trim();
+    if trimmed.len() < 4 || !trimmed[..4].eq_ignore_ascii_case("new ") {
+        return Ok(expr.to_string());
+    }
+    let type_text = trimmed[4..].trim();
+    let Some((_, _, blob)) = referenced_typelib_blob_for_type_reference(manifest, type_text) else {
+        return Ok(expr.to_string());
+    };
+    let Some(prog_id) = activation_prog_id_from_typelib_metadata(&blob) else {
+        return Err(ProjectCompileError::TypeLibraryCreateObjectUnsupported {
+            type_name: type_text.to_string(),
+        });
+    };
+    Ok(format!("CreateObject(\"{prog_id}\")"))
 }
 
 fn rewrite_early_bound_member_dispatch(
@@ -3741,6 +3868,7 @@ fn rewrite_internal_class_self_dispatch(
 
 #[allow(clippy::too_many_arguments)]
 fn rewrite_internal_class_set_assignment(
+    manifest: &ProjectManifest,
     line: &str,
     active_project: &str,
     current_project: &str,
@@ -3841,6 +3969,17 @@ fn rewrite_internal_class_set_assignment(
         }
         (receiver_name, Vec::new())
     };
+    if withevents_bindings.contains(&normalized_lhs) {
+        let binding_token = withevents_binding_token(current_project, current_module, lhs);
+        let rhs = rewrite_typelib_new_expression(manifest, rhs)?;
+        return Ok(format!(
+            "{}{} = __oxvba_withevents_set(__oxvba_this_instance, {}, {})",
+            &line[..leading],
+            lhs,
+            binding_token,
+            rhs
+        ));
+    }
     if !internal_class_bindings.contains_key(&normalized_lhs)
         && resolve_implicit_class_receiver_binding(
             &normalized_lhs,
@@ -3850,16 +3989,6 @@ fn rewrite_internal_class_set_assignment(
         .is_none()
     {
         return Ok(line.to_string());
-    }
-    if withevents_bindings.contains(&normalized_lhs) {
-        let binding_token = withevents_binding_token(current_project, current_module, lhs);
-        return Ok(format!(
-            "{}{} = __oxvba_withevents_set(__oxvba_this_instance, {}, {})",
-            &line[..leading],
-            lhs,
-            binding_token,
-            rhs
-        ));
     }
     if indexed_args.is_empty()
         && internal_class_bindings.contains_key(&normalized_lhs)
@@ -4881,13 +5010,15 @@ fn collect_event_dispatch_plan(
             else {
                 continue;
             };
-            let Some((source_project, source_module)) =
+            let Some((source_project, source_module, available_events)) =
                 resolve_event_source_module(manifest, &project_key, &source_type, reference_order)
-            else {
-                continue;
-            };
-            let Some(available_events) =
-                declared_events.get(&(source_project.clone(), source_module.clone()))
+                    .and_then(|(source_project, source_module)| {
+                        declared_events
+                            .get(&(source_project.clone(), source_module.clone()))
+                            .cloned()
+                            .map(|events| (source_project, source_module, events))
+                    })
+                    .or_else(|| referenced_typelib_event_source(manifest, &source_type))
             else {
                 continue;
             };
@@ -4948,6 +5079,63 @@ fn flatten_event_dispatch_plan(plan: &EventDispatchPlan) -> Vec<ProjectEventDisp
             });
         }
     }
+    out
+}
+
+fn build_project_com_withevents_routes(plan: &EventDispatchPlan) -> Vec<ProjectComWithEventsRoute> {
+    let mut out = Vec::new();
+    for ((source_project, source_module, event_name), routes) in plan {
+        let qualified_type = format!("{source_project}.{source_module}");
+        let Some(identity) = known_typelib_identity_for_prog_id_name(&qualified_type) else {
+            continue;
+        };
+        let blob = build_typelib_metadata(&identity);
+        let Some(prog_id_name) = activation_prog_id_from_typelib_metadata(&blob) else {
+            continue;
+        };
+        let Some(event) = blob
+            .events
+            .iter()
+            .find(|candidate| candidate.name.eq_ignore_ascii_case(event_name))
+        else {
+            continue;
+        };
+        for route in routes {
+            out.push(ProjectComWithEventsRoute {
+                binding_token: withevents_binding_token(
+                    &route.sink_project_name,
+                    &route.sink_module_name,
+                    &route.withevents_var,
+                ),
+                prog_id_name: prog_id_name.to_string(),
+                event_name: event_name.clone(),
+                event_token: event.token,
+                handler_symbol: route.handler_symbol.clone(),
+                guard_symbol_zero_arg: event_guard_wrapper_symbol(
+                    source_project,
+                    source_module,
+                    event_name,
+                    route,
+                    0,
+                ),
+                guard_symbol_one_arg: event_guard_wrapper_symbol(
+                    source_project,
+                    source_module,
+                    event_name,
+                    route,
+                    1,
+                ),
+            });
+        }
+    }
+    out.sort_by(|lhs, rhs| {
+        lhs.binding_token
+            .cmp(&rhs.binding_token)
+            .then(lhs.prog_id_name.cmp(&rhs.prog_id_name))
+            .then(lhs.event_token.cmp(&rhs.event_token))
+            .then(lhs.guard_symbol_zero_arg.cmp(&rhs.guard_symbol_zero_arg))
+    });
+    out.dedup();
     out
 }
 
@@ -5277,20 +5465,20 @@ fn emit_event_guard_wrappers_for_module(
                     &route.withevents_var,
                 );
                 let call_args = if handler_param_count == 0 {
-                    "__oxvba_owner_instance".to_string()
+                    "__oxvba_source_instance".to_string()
                 } else if event_arg_count == 0 {
-                    "__oxvba_owner_instance, 0".to_string()
+                    "__oxvba_source_instance, 0".to_string()
                 } else {
-                    "__oxvba_owner_instance, __oxvba_arg0".to_string()
+                    "__oxvba_source_instance, __oxvba_arg0".to_string()
                 };
                 let wrapper_body = if event_arg_count == 0 {
                     format!(
-                        "Sub {wrapper}(Optional ByVal __oxvba_source_instance = 0)\nDim __oxvba_owner_instance\n__oxvba_owner_instance = __oxvba_withevents_first_owner(__oxvba_source_instance, {binding_token})\nDo While __oxvba_owner_instance <> 0\nCall {}({call_args})\n__oxvba_owner_instance = __oxvba_withevents_next_owner()\nLoop\nEnd Sub",
+                        "Sub {wrapper}(Optional ByVal __oxvba_source_instance = 0)\n__oxvba_source_instance = __oxvba_withevents_first_owner(__oxvba_source_instance, {binding_token})\nDo While __oxvba_source_instance <> 0\nCall {}({call_args})\n__oxvba_source_instance = __oxvba_withevents_next_owner()\nLoop\nEnd Sub",
                         route.handler_symbol,
                     )
                 } else {
                     format!(
-                        "Sub {wrapper}(Optional ByVal __oxvba_source_instance = 0, Optional ByVal __oxvba_arg0 = 0)\nDim __oxvba_owner_instance\n__oxvba_owner_instance = __oxvba_withevents_first_owner(__oxvba_source_instance, {binding_token})\nDo While __oxvba_owner_instance <> 0\nCall {}({call_args})\n__oxvba_owner_instance = __oxvba_withevents_next_owner()\nLoop\nEnd Sub",
+                        "Sub {wrapper}(Optional ByVal __oxvba_source_instance = 0, Optional ByVal __oxvba_arg0 = 0)\n__oxvba_source_instance = __oxvba_withevents_first_owner(__oxvba_source_instance, {binding_token})\nDo While __oxvba_source_instance <> 0\nCall {}({call_args})\n__oxvba_source_instance = __oxvba_withevents_next_owner()\nLoop\nEnd Sub",
                         route.handler_symbol,
                     )
                 };
@@ -5614,6 +5802,7 @@ fn rewrite_module_source(
                 active_procedure_name.as_deref(),
             );
             let expanded_line = rewrite_internal_class_set_assignment(
+                manifest,
                 &expanded_line,
                 active_project,
                 current_project,
@@ -6553,10 +6742,11 @@ fn normalize_identifier(name: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::{
-        ExportKind, ModuleKind, ProjectCompileError, ProjectEventDispatchBinding, ProjectKind,
-        ProjectLoweringStrategy, ProjectManifest, ProjectReference, ReferenceKind,
-        ReferencedProjectManifest, compile_project, compile_project_with_strategy,
-        expand_bound_source_line, module_unit_from_source, validate_compiled_project_contract,
+        ExportKind, ModuleKind, ProjectComWithEventsRoute, ProjectCompileError,
+        ProjectEventDispatchBinding, ProjectKind, ProjectLoweringStrategy, ProjectManifest,
+        ProjectReference, ReferenceKind, ReferencedProjectManifest, compile_project,
+        compile_project_with_strategy, expand_bound_source_line, module_unit_from_source,
+        validate_compiled_project_contract, withevents_binding_token,
     };
     use std::collections::{BTreeMap, BTreeSet};
 
@@ -7192,6 +7382,81 @@ mod tests {
     }
 
     #[test]
+    fn compile_project_tracks_imported_withevents_binding_on_typelib_source_type() {
+        let sink_module = module_unit_from_source(
+            "Sink",
+            ModuleKind::Class,
+            "Attribute VB_Name = \"Sink\"\nPrivate WithEvents src As OxVba.TestEventServer\nPublic Sub Attach(ByVal value As Object)\nSet src = value\nEnd Sub\nPrivate Sub src_OnValueChanged(ByVal value)\nEnd Sub",
+        )
+        .expect("sink module parses");
+        let main_module = module_unit_from_source(
+            "MainModule",
+            ModuleKind::Procedural,
+            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nEnd Sub",
+        )
+        .expect("main module parses");
+        let manifest = ProjectManifest {
+            project_name: "ProjectA".to_string(),
+            project_kind: ProjectKind::Source,
+            modules: vec![main_module, sink_module],
+            references: vec![ProjectReference {
+                referenced_project_name: "OxVba".to_string(),
+                reference_kind: ReferenceKind::TypeLibrary,
+            }],
+            reference_projects: Vec::new(),
+            conditional_constants: BTreeMap::new(),
+        };
+
+        let compiled = compile_project(&manifest)
+            .expect("imported WithEvents binding should compile successfully");
+        let lowered = compiled.rewritten_source.to_ascii_lowercase();
+        assert!(
+            lowered.contains("__oxvba_withevents_set(__oxvba_this_instance,"),
+            "expected imported typelib WithEvents Set assignment to route through runtime binding setter: {lowered}"
+        );
+        assert!(
+            lowered.contains(&format!(
+                "__oxvba_withevents_set(__oxvba_this_instance, {},",
+                withevents_binding_token("ProjectA", "Sink", "src")
+            )),
+            "expected imported typelib WithEvents Set rewrite to use stable binding token: {lowered}"
+        );
+        assert_eq!(
+            compiled.event_dispatch_bindings,
+            vec![ProjectEventDispatchBinding {
+                source_project_name: "oxvba".to_string(),
+                source_module_name: "testeventserver".to_string(),
+                event_name: "onvaluechanged".to_string(),
+                handler_symbol: "pmr_projecta_sink_src_onvaluechanged".to_string(),
+                guard_symbol_zero_arg:
+                    "pmr_evtguard_oxvba_testeventserver_onvaluechanged_sink_src_a0"
+                        .to_string(),
+                guard_symbol_one_arg:
+                    "pmr_evtguard_oxvba_testeventserver_onvaluechanged_sink_src_a1"
+                        .to_string(),
+            }],
+            "unexpected imported typelib WithEvents binding metadata"
+        );
+        assert_eq!(
+            compiled.project_com_withevents_routes,
+            vec![ProjectComWithEventsRoute {
+                binding_token: withevents_binding_token("ProjectA", "Sink", "src"),
+                prog_id_name: "OxVba.TestEventServer".to_string(),
+                event_name: "onvaluechanged".to_string(),
+                event_token: 2,
+                handler_symbol: "pmr_projecta_sink_src_onvaluechanged".to_string(),
+                guard_symbol_zero_arg:
+                    "pmr_evtguard_oxvba_testeventserver_onvaluechanged_sink_src_a0"
+                        .to_string(),
+                guard_symbol_one_arg:
+                    "pmr_evtguard_oxvba_testeventserver_onvaluechanged_sink_src_a1"
+                        .to_string(),
+            }],
+            "unexpected imported typelib COM WithEvents route metadata"
+        );
+    }
+
+    #[test]
     fn compile_project_prefers_native_withevents_source_over_imported_type_name_match() {
         let source_module = module_unit_from_source(
             "TestEventServer",
@@ -7336,7 +7601,7 @@ mod tests {
             "RaiseEvent should lower to guard-dispatched handler call"
         );
         assert!(
-            lowered.contains("call pmr_projecta_sinka_em_changed(__oxvba_owner_instance)"),
+            lowered.contains("call pmr_projecta_sinka_em_changed(__oxvba_source_instance)"),
             "guard wrapper should invoke concrete WithEvents handler"
         );
         assert_eq!(

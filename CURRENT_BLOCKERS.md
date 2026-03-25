@@ -407,9 +407,14 @@ Run context: active parity/compliance execution plus in-progress feature worklis
     - `Dim obj As TestEventServer : Set obj = New TestEventServer : obj.Ping()` returns `42`,
     - `Private WithEvents src As TestEventServer` plus `src.FireValueChanged 7` produces `7`.
     - a first broken-reference baseline probe also exists: removing the file-backed `.tlb` before reopen leaves no matching entry in `VBProject.References` for that saved workbook path.
+  - Paired repro runner `scripts/run-com-testeventserver-oracle.ps1` now proves the same baseline lane side by side against OxVba:
+    - `early_bound_project_executes_registered_testeventserver_ping` matches Excel on `42`,
+    - `early_bound_project_registered_testeventserver_withevents_callback_preserves_value_payload` matches Excel on payload `7`.
   - Evidence:
     - `docs/evidence/conformance/oracle_captures/com_testeventserver_typelib_probe_20260325T204228Z/summary.md`
     - `docs/evidence/conformance/oracle_captures/com_testeventserver_typelib_probe_20260325T204228Z/results.csv`
+    - `docs/evidence/conformance/oracle_captures/com_testeventserver_oracle_20260325T221949Z/summary.md`
+    - `docs/evidence/conformance/oracle_captures/com_testeventserver_oracle_20260325T221949Z/results.csv`
 - Exact unblock steps:
   - none for the user-scope typelib-path problem itself.
 - Recommendation:

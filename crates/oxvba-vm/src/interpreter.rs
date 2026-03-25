@@ -1,12 +1,16 @@
-use std::{collections::HashMap, sync::Arc};
+use std::{
+    collections::{BTreeMap, HashMap, VecDeque},
+    sync::Arc,
+};
 
 use oxvba_com::{
     ComCallbackToken, ComMemberToken, ComSubscriptionToken, ComValue, DynamicCallArg,
     DynamicCallKind, DynamicCallRequest, DynamicMemberSelector, DynamicObjectBridge,
 };
 use oxvba_compiler::{
-    Bytecode, Instruction, ProjectDynamicMemberKind, ProjectDynamicMemberRoute,
-    ProjectDynamicObjectRoute, ProjectDynamicParamRoute,
+    Bytecode, Instruction, ProcedureRuntimeMetadata, ProjectComWithEventsRoute,
+    ProjectDynamicMemberKind, ProjectDynamicMemberRoute, ProjectDynamicObjectRoute,
+    ProjectDynamicParamRoute,
     bytecode::{RuntimeAssignmentIntent, RuntimeAssignmentTargetKind, StringCompareMode},
 };
 use oxvba_hal::{
@@ -43,13 +47,24 @@ struct ErrorFrame {
     last_error_source: Option<String>,
 }
 
+#[derive(Debug, Clone)]
+struct ComWithEventsSubscription {
+    owner_object: ObjectHandle,
+    route: ProjectComWithEventsRoute,
+}
+
 pub struct Vm {
     registers: RegisterFile,
     host_services: Arc<dyn HostServices>,
     typed_fastpaths_default: bool,
     call_stack: Vec<(usize, ErrorFrame)>,
+    procedure_runtime_metadata: BTreeMap<String, ProcedureRuntimeMetadata>,
     project_dynamic_objects: HashMap<ObjectHandle, ProjectDynamicObjectRoute>,
+    project_com_withevents_routes: HashMap<i32, Vec<ProjectComWithEventsRoute>>,
     withevents_bindings: HashMap<i64, RuntimeValue>,
+    com_withevents_subscriptions: HashMap<ComSubscriptionToken, ComWithEventsSubscription>,
+    com_withevents_binding_subscriptions: HashMap<i64, Vec<ComSubscriptionToken>>,
+    pending_callback_tokens: VecDeque<ComCallbackToken>,
     withevents_owner_iters: Vec<WithEventsOwnerIterator>,
     on_error_resume_next: bool,
     on_error_goto_label_target: Option<usize>,
@@ -86,8 +101,13 @@ impl Vm {
             host_services,
             typed_fastpaths_default: Self::typed_fastpaths_enabled_from_env(),
             call_stack: Vec::new(),
+            procedure_runtime_metadata: BTreeMap::new(),
             project_dynamic_objects: HashMap::new(),
+            project_com_withevents_routes: HashMap::new(),
             withevents_bindings: HashMap::new(),
+            com_withevents_subscriptions: HashMap::new(),
+            com_withevents_binding_subscriptions: HashMap::new(),
+            pending_callback_tokens: VecDeque::new(),
             withevents_owner_iters: Vec::new(),
             on_error_resume_next: false,
             on_error_goto_label_target: None,
@@ -187,6 +207,23 @@ impl Vm {
             .into_iter()
             .map(|route| (route.object_handle, route))
             .collect();
+    }
+
+    pub fn set_project_procedure_runtime_metadata(
+        &mut self,
+        metadata: BTreeMap<String, ProcedureRuntimeMetadata>,
+    ) {
+        self.procedure_runtime_metadata = metadata;
+    }
+
+    pub fn set_project_com_withevents_routes(&mut self, routes: Vec<ProjectComWithEventsRoute>) {
+        self.project_com_withevents_routes.clear();
+        for route in routes {
+            self.project_com_withevents_routes
+                .entry(route.binding_token)
+                .or_default()
+                .push(route);
+        }
     }
 
     pub fn execute(&mut self, bytecode: &Bytecode) -> Result<(), String> {
@@ -305,6 +342,7 @@ impl Vm {
         self.ensure_slot_count(slot_count);
         self.call_stack.clear();
         if !preserve_withevents_bindings {
+            self.clear_all_com_withevents_state_best_effort();
             self.withevents_bindings.clear();
         }
         self.withevents_owner_iters.clear();
@@ -1089,6 +1127,11 @@ impl Vm {
                     }
                 }
                 Instruction::IntrinsicDoEventsHost { dst } => {
+                    if let Some(callback) = self.pending_callback_tokens.pop_front() {
+                        self.write_value_slot(*dst, RuntimeValue::I32(callback.raw()))?;
+                        pc += 1;
+                        continue;
+                    }
                     match self.host_services.events().do_events() {
                         Ok(value) => {
                             self.write_value_slot(*dst, value)?;
@@ -1860,6 +1903,10 @@ impl Vm {
                     match bridge.invoke_dynamic(&request) {
                         Ok(value) => {
                             self.write_value_slot(*dst, value.to_runtime_value())?;
+                            self.pump_project_com_withevents_callbacks(
+                                bytecode,
+                                typed_fastpaths,
+                            )?;
                             pc += 1;
                         }
                         Err(err) => pc = self.route_host_error(pc, err)?,
@@ -2198,10 +2245,12 @@ impl Vm {
                     let owner = Self::withevents_owner_handle(&owner, "owner")?;
                     let binding = Self::withevents_binding_handle(&binding, "binding")?;
                     let key = Self::withevents_binding_key(owner, binding);
+                    self.clear_com_withevents_binding_subscriptions(key)?;
                     if value.to_legacy_i32().ok() == Some(0) {
                         self.withevents_bindings.remove(&key);
                     } else {
                         self.withevents_bindings.insert(key, value.clone());
+                        self.sync_project_com_withevents_binding(owner, binding, &value)?;
                     }
                     self.write_value_slot(*dst, value)?;
                     pc += 1;
@@ -2209,6 +2258,7 @@ impl Vm {
                 Instruction::IntrinsicWithEventsClearOwner { dst, owner } => {
                     let owner = self.read_value_slot(*owner)?;
                     let owner = Self::withevents_owner_handle(&owner, "owner")?;
+                    self.clear_com_withevents_owner_subscriptions(owner)?;
                     self.withevents_bindings
                         .retain(|key, _| Self::withevents_owner_from_key(*key) != owner);
                     self.write_value_slot(*dst, RuntimeValue::I32(0))?;
@@ -3116,6 +3166,9 @@ impl Vm {
             last_error_description: self.last_error_description.take(),
             last_error_source: self.last_error_source.take(),
         };
+        let call_stack_depth = self.call_stack.len();
+        self.call_stack
+            .push((bytecode.instructions.len(), saved.clone()));
 
         // Callee starts with no error handler (VBA semantics).
         self.on_error_resume_next = false;
@@ -3127,6 +3180,7 @@ impl Vm {
         }
 
         let result = self.execute_loop(bytecode, entry_pc, typed_fastpaths, true);
+        self.call_stack.truncate(call_stack_depth);
 
         // Restore caller's error handling mode.
         self.on_error_resume_next = saved.on_error_resume_next;
@@ -3201,6 +3255,184 @@ impl Vm {
                 Some(Self::withevents_owner_from_key(*key))
             })
             .collect()
+    }
+
+    fn clear_all_com_withevents_state_best_effort(&mut self) {
+        for subscription in self.com_withevents_subscriptions.keys().copied().collect::<Vec<_>>() {
+            let _ = self.host_services.com().unsubscribe_event(subscription);
+        }
+        self.com_withevents_subscriptions.clear();
+        self.com_withevents_binding_subscriptions.clear();
+        self.pending_callback_tokens.clear();
+    }
+
+    fn clear_com_withevents_binding_subscriptions(&mut self, key: i64) -> Result<(), String> {
+        let Some(subscriptions) = self.com_withevents_binding_subscriptions.remove(&key) else {
+            return Ok(());
+        };
+        for subscription in subscriptions {
+            self.com_withevents_subscriptions.remove(&subscription);
+            self.host_services
+                .com()
+                .unsubscribe_event(subscription)
+                .map_err(|err| err.to_string())?;
+        }
+        Ok(())
+    }
+
+    fn clear_com_withevents_owner_subscriptions(&mut self, owner: ObjectHandle) -> Result<(), String> {
+        let keys = self
+            .com_withevents_binding_subscriptions
+            .keys()
+            .copied()
+            .filter(|key| Self::withevents_owner_from_key(*key) == owner)
+            .collect::<Vec<_>>();
+        for key in keys {
+            self.clear_com_withevents_binding_subscriptions(key)?;
+        }
+        Ok(())
+    }
+
+    fn sync_project_com_withevents_binding(
+        &mut self,
+        owner: ObjectHandle,
+        binding: BindingHandle,
+        value: &RuntimeValue,
+    ) -> Result<(), String> {
+        let Some(routes) = self
+            .project_com_withevents_routes
+            .get(&binding.raw())
+            .cloned()
+        else {
+            return Ok(());
+        };
+        let object = Self::runtime_value_to_com_object(value, "withevents.value")?;
+        if object.raw() == 0 {
+            return Ok(());
+        }
+        let descriptor = self
+            .host_services
+            .com()
+            .describe_object(object)
+            .map_err(|err| err.to_string())?;
+        let key = Self::withevents_binding_key(owner, binding);
+        let Some(descriptor) = descriptor else {
+            return Ok(());
+        };
+        for route in routes {
+            if !descriptor.prog_id_name.eq_ignore_ascii_case(&route.prog_id_name) {
+                continue;
+            }
+            let subscription = self
+                .host_services
+                .com()
+                .subscribe_event(object, route.event_token.into())
+                .map_err(|err| err.to_string())?;
+            self.com_withevents_subscriptions.insert(
+                subscription,
+                ComWithEventsSubscription {
+                    owner_object: owner,
+                    route,
+                },
+            );
+            self.com_withevents_binding_subscriptions
+                .entry(key)
+                .or_default()
+                .push(subscription);
+        }
+        Ok(())
+    }
+
+    fn poll_host_callback_token(&self) -> Result<Option<ComCallbackToken>, String> {
+        let value = self
+            .host_services
+            .events()
+            .do_events()
+            .map_err(|err| err.to_string())?;
+        if value.to_legacy_i32().ok() == Some(0) {
+            return Ok(None);
+        }
+        Self::runtime_value_to_com_callback_token(&value, "do_events callback").map(Some)
+    }
+
+    fn invoke_project_symbol_inline(
+        &mut self,
+        bytecode: &Bytecode,
+        symbol: &str,
+        args: &[RuntimeValue],
+        typed_fastpaths: bool,
+    ) -> Result<(), String> {
+        let normalized = symbol.trim().to_ascii_lowercase();
+        let metadata = self
+            .procedure_runtime_metadata
+            .get(&normalized)
+            .cloned()
+            .ok_or_else(|| format!("project procedure metadata missing for `{normalized}`"))?;
+        self.invoke_procedure_inline_with_values(
+            bytecode,
+            metadata.entry_pc,
+            &metadata.param_slots,
+            args,
+            typed_fastpaths,
+        )
+    }
+
+    fn pump_project_com_withevents_callbacks(
+        &mut self,
+        bytecode: &Bytecode,
+        typed_fastpaths: bool,
+    ) -> Result<(), String> {
+        if self.com_withevents_subscriptions.is_empty() {
+            return Ok(());
+        }
+        loop {
+            let Some(callback) = self.poll_host_callback_token()? else {
+                return Ok(());
+            };
+            let subscription = self
+                .host_services
+                .com()
+                .event_callback_subscription(callback)
+                .map_err(|err| err.to_string())?;
+            let Some(bound) = self.com_withevents_subscriptions.get(&subscription).cloned() else {
+                self.pending_callback_tokens.push_back(callback);
+                return Ok(());
+            };
+            let callback_arity = self
+                .host_services
+                .com()
+                .event_callback_arity(callback)
+                .map_err(|err| err.to_string())?;
+            let mut args = vec![RuntimeValue::I32(bound.owner_object.raw())];
+            let target_symbol = match callback_arity {
+                0 => bound.route.handler_symbol.clone(),
+                1 => {
+                    let arg0 = self
+                        .host_services
+                        .com()
+                        .event_callback_arg(callback, 0)
+                        .map_err(|err| err.to_string())?;
+                    args.push(arg0);
+                    bound.route.handler_symbol.clone()
+                }
+                _ => {
+                    let _ = self.host_services.com().release_event_callback(callback);
+                    return Err(format!(
+                        "project COM WithEvents handler `{}` supports at most 1 callback argument, got {}",
+                        bound.route.event_name, callback_arity
+                    ));
+                }
+            };
+            let invoke_result =
+                self.invoke_project_symbol_inline(bytecode, &target_symbol, &args, typed_fastpaths);
+            let release_result = self
+                .host_services
+                .com()
+                .release_event_callback(callback)
+                .map_err(|err| err.to_string());
+            invoke_result?;
+            release_result?;
+        }
     }
 
     fn fast_read_slot(&self, slot: usize) -> Option<i32> {
@@ -3694,10 +3926,12 @@ impl Vm {
 #[cfg(test)]
 mod tests {
     use super::Vm;
+    use std::collections::BTreeMap;
     use oxvba_com::{ComValue, DynamicCallArg, DynamicCallRequest, DynamicMemberSelector};
     use oxvba_compiler::{
-        Bytecode, Instruction, ProjectDynamicMemberKind, ProjectDynamicMemberRoute,
-        ProjectDynamicObjectRoute, ProjectDynamicParamRoute,
+        Bytecode, Instruction, ProcedureRuntimeMetadata, ProjectComWithEventsRoute,
+        ProjectDynamicMemberKind, ProjectDynamicMemberRoute, ProjectDynamicObjectRoute,
+        ProjectDynamicParamRoute,
         bytecode::{DispatchInvokeArg, StringCompareMode},
     };
     use oxvba_hal::{
@@ -4795,6 +5029,82 @@ mod tests {
         assert_eq!(out[12], 91, "expected callback arg1 payload");
         assert_eq!(out[13], 1, "expected callback release token");
         assert_eq!(out[14], 1, "expected unsubscribe success token");
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    #[ignore = "requires registered external COM typelib lane (run explicitly on Windows host with OxVba.TestEventServer registered)"]
+    fn project_com_withevents_routes_auto_pump_registered_event_server_callbacks() {
+        let bytecode = Bytecode {
+            instructions: vec![
+                Instruction::LoadConstString {
+                    slot: 0,
+                    value: "OxVba.TestEventServer".to_string(),
+                },
+                Instruction::IntrinsicCreateObjectHost { dst: 1, prog_id: 0 },
+                Instruction::LoadConstI32 { slot: 2, value: 1 },
+                Instruction::LoadConstI32 { slot: 3, value: 77 },
+                Instruction::IntrinsicWithEventsSet {
+                    dst: 4,
+                    owner: 2,
+                    binding: 3,
+                    value: 1,
+                },
+                Instruction::LoadConstI32 {
+                    slot: 5,
+                    value: 102,
+                },
+                Instruction::LoadConstI32 { slot: 6, value: 7 },
+                Instruction::IntrinsicDispatchInvokeHost {
+                    dst: 7,
+                    object: 1,
+                    member: 5,
+                    args: vec![DispatchInvokeArg {
+                        slot: Some(6),
+                        name: None,
+                    }],
+                },
+                Instruction::Halt,
+                Instruction::CopySlot { dst: 8, src: 20 },
+                Instruction::CopySlot { dst: 9, src: 21 },
+                Instruction::Return,
+            ],
+            external_call_descriptors: Vec::new(),
+            slot_count: 22,
+            user_slot_count: 10,
+        };
+
+        let mut metadata = BTreeMap::new();
+        metadata.insert(
+            "pmr_projecta_sink_src_onvaluechanged".to_string(),
+            ProcedureRuntimeMetadata {
+                entry_pc: 9,
+                param_slots: vec![20, 21],
+                return_slot: None,
+            },
+        );
+
+        let mut vm = Vm::new(
+            oxvba_hal::adapters::builder::HostBuilder::new()
+                .profile(oxvba_hal::model::HalProfileId::Windows)
+                .policy(oxvba_hal::model::HostPolicy::interactive_dev())
+                .build(),
+        );
+        vm.set_project_procedure_runtime_metadata(metadata);
+        vm.set_project_com_withevents_routes(vec![ProjectComWithEventsRoute {
+            binding_token: 77,
+            prog_id_name: "OxVba.TestEventServer".to_string(),
+            event_name: "onvaluechanged".to_string(),
+            event_token: 2,
+            handler_symbol: "pmr_projecta_sink_src_onvaluechanged".to_string(),
+            guard_symbol_zero_arg: String::new(),
+            guard_symbol_one_arg: String::new(),
+        }]);
+        vm.execute(&bytecode)
+            .expect("vm should auto-pump registered COM WithEvents callback");
+        let out = vm.snapshot_values(10);
+        assert_eq!(out[8], RuntimeValue::I32(1));
+        assert_eq!(out[9], RuntimeValue::I32(7));
     }
 
     #[test]

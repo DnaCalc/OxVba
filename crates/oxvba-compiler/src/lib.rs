@@ -17,10 +17,10 @@ pub use bytecode::{Bytecode, DeclareParamType, Instruction};
 pub use emit::{ProcedureRuntimeMetadata, bound_type_to_declare_param_type};
 pub use project::{
     CompiledProject, ExportKind, HostProcedureExport, ModuleAttributes, ModuleKind, ModuleUnit,
-    ProjectCompileError, ProjectDynamicMemberKind, ProjectDynamicMemberRoute,
-    ProjectDynamicObjectRoute, ProjectDynamicParamRoute, ProjectEventDispatchBinding, ProjectKind,
-    ProjectManifest, ProjectReference, ReferenceKind, ReferencedProjectManifest, compile_project,
-    module_unit_from_source,
+    ProjectComWithEventsRoute, ProjectCompileError, ProjectDynamicMemberKind,
+    ProjectDynamicMemberRoute, ProjectDynamicObjectRoute, ProjectDynamicParamRoute,
+    ProjectEventDispatchBinding, ProjectKind, ProjectManifest, ProjectReference, ReferenceKind,
+    ReferencedProjectManifest, compile_project, module_unit_from_source,
 };
 
 #[derive(Debug, Error)]

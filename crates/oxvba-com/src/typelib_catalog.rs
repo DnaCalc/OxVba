@@ -1444,7 +1444,7 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
         ];
         let events = vec![
             TypeLibEventMetadata {
-                name: "SimpleEvent".to_string(),
+                name: "OnSimpleEvent".to_string(),
                 token: TEST_EVENT_SERVER_EVENT_SIMPLE,
                 callback_arity: 0,
                 dispatch_path: TypeLibEventDispatchPath::Dispatch,
@@ -1452,7 +1452,7 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
                 dispatch_member_id: Some(TEST_EVENT_SERVER_EVENT_SIMPLE),
             },
             TypeLibEventMetadata {
-                name: "ValueChanged".to_string(),
+                name: "OnValueChanged".to_string(),
                 token: TEST_EVENT_SERVER_EVENT_VALUE_CHANGED,
                 callback_arity: 1,
                 dispatch_path: TypeLibEventDispatchPath::Dispatch,
@@ -1460,7 +1460,7 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
                 dispatch_member_id: Some(TEST_EVENT_SERVER_EVENT_VALUE_CHANGED),
             },
             TypeLibEventMetadata {
-                name: "PairChanged".to_string(),
+                name: "OnPairChanged".to_string(),
                 token: TEST_EVENT_SERVER_EVENT_PAIR_CHANGED,
                 callback_arity: 2,
                 dispatch_path: TypeLibEventDispatchPath::Dispatch,

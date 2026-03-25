@@ -507,6 +507,8 @@ impl Engine {
         }
         self.preflight_host_sensitive_support(&compiled.bytecode)?;
         let mut vm = Vm::new(self.host_services.clone());
+        vm.set_project_procedure_runtime_metadata(compiled.procedure_runtime_metadata.clone());
+        vm.set_project_com_withevents_routes(compiled.project_com_withevents_routes.clone());
         vm.set_project_dynamic_objects(compiled.project_dynamic_objects.clone());
         vm.execute(&compiled.bytecode)
             .map_err(PhaseDiagnostic::runtime)?;
@@ -529,6 +531,8 @@ impl Engine {
         }
         self.preflight_host_sensitive_support(&compiled.bytecode)?;
         let mut vm = Vm::new(self.host_services.clone());
+        vm.set_project_procedure_runtime_metadata(compiled.procedure_runtime_metadata.clone());
+        vm.set_project_com_withevents_routes(compiled.project_com_withevents_routes.clone());
         vm.set_project_dynamic_objects(compiled.project_dynamic_objects.clone());
         // Execute initialization code (module-level Dim, etc.)
         vm.execute(&compiled.bytecode)
@@ -801,6 +805,8 @@ impl Engine {
         }
 
         let mut vm = Vm::new(self.host_services.clone());
+        vm.set_project_procedure_runtime_metadata(compiled.procedure_runtime_metadata.clone());
+        vm.set_project_com_withevents_routes(compiled.project_com_withevents_routes.clone());
         vm.set_project_dynamic_objects(compiled.project_dynamic_objects.clone());
         vm.execute(&compiled.bytecode)
             .map_err(PhaseDiagnostic::runtime)?;
@@ -839,9 +845,12 @@ impl Engine {
                 .unwrap_or_default(),
             reference_visible_exports: Vec::new(),
             event_dispatch_bindings: bundle.event_dispatch_bindings.clone().unwrap_or_default(),
+            project_com_withevents_routes: bundle.com_withevents_routes.clone().unwrap_or_default(),
             project_dynamic_objects: bundle.dynamic_object_routes.clone().unwrap_or_default(),
         };
         let mut vm = Vm::new(self.host_services.clone());
+        vm.set_project_procedure_runtime_metadata(compiled.procedure_runtime_metadata.clone());
+        vm.set_project_com_withevents_routes(compiled.project_com_withevents_routes.clone());
         vm.set_project_dynamic_objects(compiled.project_dynamic_objects.clone());
         vm.execute(&compiled.bytecode)
             .map_err(PhaseDiagnostic::runtime)?;
@@ -863,6 +872,10 @@ impl Engine {
         }
         self.preflight_host_sensitive_support(&bundle.bytecode)?;
         let mut vm = Vm::new(self.host_services.clone());
+        vm.set_project_procedure_runtime_metadata(bundle.procedure_metadata.clone());
+        if let Some(ref routes) = bundle.com_withevents_routes {
+            vm.set_project_com_withevents_routes(routes.clone());
+        }
         if let Some(ref routes) = bundle.dynamic_object_routes {
             vm.set_project_dynamic_objects(routes.clone());
         }

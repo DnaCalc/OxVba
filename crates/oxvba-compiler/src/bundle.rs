@@ -10,7 +10,10 @@ use rkyv::{Archive, Deserialize, Serialize};
 
 use crate::bytecode::Bytecode;
 use crate::emit::ProcedureRuntimeMetadata;
-use crate::project::{HostProcedureExport, ProjectDynamicObjectRoute, ProjectEventDispatchBinding};
+use crate::project::{
+    HostProcedureExport, ProjectComWithEventsRoute, ProjectDynamicObjectRoute,
+    ProjectEventDispatchBinding,
+};
 
 /// Magic header bytes for the OxBundle binary format.
 const MAGIC: [u8; 4] = *b"OXVB";
@@ -65,6 +68,7 @@ pub struct OxBundle {
     pub source_hashes: Option<BTreeMap<String, [u8; 32]>>,
     pub toolchain_fingerprint: Option<ToolchainFingerprint>,
     pub event_dispatch_bindings: Option<Vec<ProjectEventDispatchBinding>>,
+    pub com_withevents_routes: Option<Vec<ProjectComWithEventsRoute>>,
     pub dynamic_object_routes: Option<Vec<ProjectDynamicObjectRoute>>,
 }
 
@@ -91,6 +95,7 @@ impl OxBundle {
             source_hashes: None,
             toolchain_fingerprint: None,
             event_dispatch_bindings: None,
+            com_withevents_routes: None,
             dynamic_object_routes: None,
         }
     }
@@ -130,6 +135,11 @@ impl OxBundle {
                 None
             } else {
                 Some(compiled.event_dispatch_bindings.clone())
+            },
+            com_withevents_routes: if compiled.project_com_withevents_routes.is_empty() {
+                None
+            } else {
+                Some(compiled.project_com_withevents_routes.clone())
             },
             dynamic_object_routes: if compiled.project_dynamic_objects.is_empty() {
                 None

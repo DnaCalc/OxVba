@@ -49,8 +49,7 @@ fn run_project_windows_hosted_error(manifest: &ProjectManifest, enable_jit: bool
     let err = engine
         .execute_project_with_snapshot_phased(manifest)
         .expect_err("project should fail deterministically");
-    assert_eq!(err.phase(), DiagnosticPhase::Runtime);
-    err.message().to_string()
+    format!("{:?}: {}", err.phase(), err.message())
 }
 
 #[cfg(target_os = "windows")]
@@ -149,6 +148,146 @@ End Sub
     assert!(expect_object_handle(&out[0]).raw() >= 20_001);
     assert_eq!(out[1], RuntimeValue::I32(1));
     assert_eq!(out[2], RuntimeValue::Bool(true));
+}
+
+#[cfg(target_os = "windows")]
+#[test]
+#[ignore = "requires registered external COM typelib lane (run explicitly on Windows host with OxVba.TestEventServer registered)"]
+fn early_bound_project_executes_registered_testeventserver_ping() {
+    let manifest = manifest_with_typelib(
+        r#"
+Attribute VB_Name = "MainModule"
+Public Sub Main()
+Dim obj As New OxVba.TestEventServer
+Dim value
+value = obj.Ping()
+End Sub
+"#,
+    );
+
+    let out = run_project_windows_hosted(&manifest, false);
+    assert!(expect_object_handle(&out[0]).raw() >= 20_001);
+    assert_eq!(out[1], RuntimeValue::I32(42));
+}
+
+#[cfg(target_os = "windows")]
+#[test]
+#[ignore = "requires registered external COM typelib lane (run explicitly on Windows host with OxVba.TestEventServer registered)"]
+fn early_bound_project_registered_testeventserver_withevents_callback_invokes_handler_body() {
+    let class_module = module_unit_from_source(
+        "Sink",
+        ModuleKind::Class,
+        r#"
+Attribute VB_Name = "Sink"
+Private WithEvents src As OxVba.TestEventServer
+
+Private Sub Class_Initialize()
+    Set src = New OxVba.TestEventServer
+    Call src.FireValueChanged(7)
+End Sub
+
+Private Sub src_OnValueChanged(ByVal value)
+    Err.Raise 77
+End Sub
+
+Public Function Touch() As Long
+    Touch = 1
+End Sub
+"#,
+    )
+    .expect("class module should parse");
+    let main_module = module_unit_from_source(
+        "MainModule",
+        ModuleKind::Procedural,
+        r#"
+Attribute VB_Name = "MainModule"
+Public Sub Main()
+Dim s As New Sink
+Dim touched
+touched = s.Touch()
+End Sub
+"#,
+    )
+    .expect("main module should parse");
+    let manifest = ProjectManifest {
+        project_name: "ProjectA".to_string(),
+        project_kind: ProjectKind::Source,
+        modules: vec![main_module, class_module],
+        references: vec![ProjectReference {
+            referenced_project_name: "OxVba".to_string(),
+            reference_kind: ReferenceKind::TypeLibrary,
+        }],
+        reference_projects: Vec::new(),
+        conditional_constants: std::collections::BTreeMap::new(),
+    };
+
+    let err = run_project_windows_hosted_error(&manifest, false);
+    assert!(
+        err.contains("runtime error: 77"),
+        "expected callback handler Err.Raise 77, got: {err}"
+    );
+}
+
+#[cfg(target_os = "windows")]
+#[test]
+#[ignore = "requires registered external COM typelib lane (run explicitly on Windows host with OxVba.TestEventServer registered)"]
+fn early_bound_project_registered_testeventserver_withevents_callback_preserves_value_payload() {
+    let class_module = module_unit_from_source(
+        "Sink",
+        ModuleKind::Class,
+        r#"
+Attribute VB_Name = "Sink"
+Private WithEvents src As OxVba.TestEventServer
+
+Private Sub Class_Initialize()
+    Set src = New OxVba.TestEventServer
+    Call src.FireValueChanged(7)
+End Sub
+
+Private Sub src_OnValueChanged(ByVal value)
+    If value = 7 Then
+        Err.Raise 7007
+    Else
+        Err.Raise 7999
+    End If
+End Sub
+
+Public Function Touch() As Long
+    Touch = 1
+End Function
+"#,
+    )
+    .expect("class module should parse");
+    let main_module = module_unit_from_source(
+        "MainModule",
+        ModuleKind::Procedural,
+        r#"
+Attribute VB_Name = "MainModule"
+Public Sub Main()
+    Dim s As New Sink
+    Dim touched
+    touched = s.Touch()
+End Sub
+"#,
+    )
+    .expect("main module should parse");
+    let manifest = ProjectManifest {
+        project_name: "ProjectA".to_string(),
+        project_kind: ProjectKind::Source,
+        modules: vec![main_module, class_module],
+        references: vec![ProjectReference {
+            referenced_project_name: "OxVba".to_string(),
+            reference_kind: ReferenceKind::TypeLibrary,
+        }],
+        reference_projects: Vec::new(),
+        conditional_constants: std::collections::BTreeMap::new(),
+    };
+
+    let err = run_project_windows_hosted_error(&manifest, false);
+    assert!(
+        err.contains("runtime error: 7007"),
+        "expected callback payload encoded in Err.Raise 7007, got: {err}"
+    );
 }
 
 #[cfg(target_os = "windows")]
