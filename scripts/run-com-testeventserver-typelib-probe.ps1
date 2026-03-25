@@ -153,7 +153,7 @@ End Function
         }
         Add-Row -CaseId "CCT-027-TES-002" -Scenario "AddFromFile + WithEvents TestEventServer source interface" -Status $eventProbe.status -Observed $eventProbe.observed
 
-        $brokenRefRoot = Join-Path $runDir "broken_ref_probe"
+        $brokenRefRoot = Join-Path $env:TEMP ("oxvba_testeventserver_broken_ref_" + [System.Guid]::NewGuid().ToString("N"))
         New-Item -ItemType Directory -Force -Path $brokenRefRoot | Out-Null
         $brokenRefTypeLib = Join-Path $brokenRefRoot "OxVba.TestEventServer.tlb"
         $brokenRefWorkbook = Join-Path $brokenRefRoot "broken_ref_probe.xlsm"
