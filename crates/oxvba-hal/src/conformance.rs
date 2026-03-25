@@ -1,6 +1,6 @@
 //! HAL conformance probes and report model.
 
-use oxvba_runtime::RuntimeValue;
+use oxvba_runtime::{RuntimeValue, bstr::BStr};
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 
 use crate::{
@@ -443,7 +443,9 @@ pub fn run_conformance(host: &dyn HostServices) -> ConformanceReport {
             "HAL-GEN-003",
             "HAL-GEN-004",
         ],
-        host.com().create_object(RuntimeValue::I32(4)).map(|_| ()),
+        host.com()
+            .create_object(RuntimeValue::String(BStr("OxVba.TestDispatch".to_string())))
+            .map(|_| ()),
     );
     probe(
         CapabilityId::ComActivationDispatch,

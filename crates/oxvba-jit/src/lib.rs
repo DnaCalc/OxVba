@@ -136,8 +136,10 @@ mod tests {
     #[cfg(target_os = "windows")]
     #[test]
     fn execute_and_snapshot_values_fallback_preserves_non_legacy_runtime_values() {
-        let bytecode = oxvba_compiler::compile("Sub Main()\nDim x\nx = CreateObject(4)\nEnd Sub")
-            .expect("compile should succeed");
+        let bytecode = oxvba_compiler::compile(
+            "Sub Main()\nDim x\nx = CreateObject(\"OxVba.TestDispatch\")\nEnd Sub",
+        )
+        .expect("compile should succeed");
         assert!(!cranelift::supports_bytecode(&bytecode));
         let host_services = HostBuilder::new()
             .profile(HalProfileId::Windows)
@@ -154,8 +156,10 @@ mod tests {
     #[cfg(target_os = "windows")]
     #[test]
     fn execute_and_snapshot_fallback_projects_non_legacy_runtime_values_to_legacy_slots() {
-        let bytecode = oxvba_compiler::compile("Sub Main()\nDim x\nx = CreateObject(4)\nEnd Sub")
-            .expect("compile should succeed");
+        let bytecode = oxvba_compiler::compile(
+            "Sub Main()\nDim x\nx = CreateObject(\"OxVba.TestDispatch\")\nEnd Sub",
+        )
+        .expect("compile should succeed");
         assert!(!cranelift::supports_bytecode(&bytecode));
         let host_services = HostBuilder::new()
             .profile(HalProfileId::Windows)

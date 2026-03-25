@@ -16,7 +16,7 @@ Architectural target:
 
 1. VBA source semantics
 - Surface forms:
-  - `CreateObject(<selector>)`
+  - `CreateObject("<prog-id>")`
   - late-bound member invocation (currently explicit `DispatchInvoke` transport in executable subset)
 
 2. Compiler/VM transport
@@ -28,8 +28,8 @@ Architectural target:
     - `slot` (or omission)
     - optional forwarded COM argument name metadata
 - Known-literal lowering subset:
-  - `CreateObject("Scripting.Dictionary") -> prog_id_token=4`
-  - `CreateObject("OxVba.TestDispatch") -> prog_id_token=4` (controlled test lane alias)
+  - `CreateObject("Scripting.Dictionary") -> prog_id="Scripting.Dictionary"`
+  - `CreateObject("OxVba.TestDispatch") -> prog_id="OxVba.TestDispatch"` (controlled test lane)
   - `DispatchInvoke(..., "Count", ...) -> member_token=1`
   - `DispatchInvoke(..., "Exists", ...) -> member_token=2`
 - `DispatchInvoke` arity subset:
@@ -38,7 +38,7 @@ Architectural target:
   - each call argument is marshaled independently; a VBA array passed as one argument remains one marshaled argument token.
 
 3. Transitional host/adapter seam
-- `create_object(prog_id_token) -> object_token`
+- `create_object(prog_id_text) -> object_token`
 - `dispatch_invoke_v2(request) -> result_token`
 - legacy scalar `dispatch_invoke(object_token, member_token, arg_token)` remains as a compatibility shim over `dispatch_invoke_v2`.
 - request argument shape:
@@ -83,4 +83,4 @@ Architectural target:
 - Full convergence onto the shared OxVba late-bound object protocol.
 - Full natural/default-member named-dispatch parity once runtime member identity is authoritative outside the explicit `DispatchInvoke(obj, 0, ...)` lane.
 - Broad `VARIANT`/object/`SAFEARRAY` parity plus full `Invoke` result/error fidelity (`ArgErr`, `ExcepInfo`, `VarResult`).
-- Full generic ProgID/member-name text selector path through current integer-token VM boundary.
+- Full natural member syntax lowering beyond the explicit `DispatchInvoke` bridge subset.

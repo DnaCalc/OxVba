@@ -4189,9 +4189,13 @@ mod tests {
                     item: 6,
                 },
                 Instruction::IntrinsicCollectionCount { dst: 19, count: 18 },
+                Instruction::LoadConstString {
+                    slot: 34,
+                    value: "OxVba.TestDispatch".to_string(),
+                },
                 Instruction::IntrinsicCreateObjectHost {
                     dst: 20,
-                    prog_id: 6,
+                    prog_id: 34,
                 },
                 Instruction::IntrinsicDispatchInvokeHost {
                     dst: 21,
@@ -4221,8 +4225,8 @@ mod tests {
                 Instruction::Halt,
             ],
             external_call_descriptors: Vec::new(),
-            slot_count: 34,
-            user_slot_count: 34,
+            slot_count: 35,
+            user_slot_count: 35,
         };
 
         let mut vm = Vm::default();
@@ -4239,8 +4243,8 @@ mod tests {
         assert_eq!(out[17], 1);
         assert_eq!(out[18], 2);
         assert_eq!(out[19], 2);
-        assert_eq!(out[20], 5002);
-        assert_eq!(out[21], 5005);
+        assert_eq!(out[20], 5004);
+        assert_eq!(out[21], 5007);
         assert_eq!(out[31], 59);
         assert_eq!(out[32], -50);
         assert_eq!(out[33], -28);
@@ -4385,7 +4389,10 @@ mod tests {
     fn dispatch_invoke_preserves_array_argument_intent() {
         let bytecode = Bytecode {
             instructions: vec![
-                Instruction::LoadConstI32 { slot: 0, value: 4 },
+                Instruction::LoadConstString {
+                    slot: 0,
+                    value: "OxVba.TestDispatch".to_string(),
+                },
                 Instruction::IntrinsicCreateObjectHost { dst: 1, prog_id: 0 },
                 Instruction::LoadConstI32 { slot: 2, value: 6 },
                 Instruction::LoadConstI32 { slot: 3, value: 11 },
@@ -4629,7 +4636,10 @@ mod tests {
     fn com_event_subscription_intrinsics_roundtrip_through_vm_host_lane() {
         let bytecode = Bytecode {
             instructions: vec![
-                Instruction::LoadConstI32 { slot: 0, value: 4 },
+                Instruction::LoadConstString {
+                    slot: 0,
+                    value: "OxVba.TestDispatch".to_string(),
+                },
                 Instruction::IntrinsicCreateObjectHost { dst: 1, prog_id: 0 },
                 Instruction::LoadConstI32 { slot: 2, value: 1 },
                 Instruction::IntrinsicComSubscribeEventHost {
@@ -4707,7 +4717,10 @@ mod tests {
     fn com_event_subscription_intrinsics_roundtrip_multi_arg_callback_lane() {
         let bytecode = Bytecode {
             instructions: vec![
-                Instruction::LoadConstI32 { slot: 0, value: 4 },
+                Instruction::LoadConstString {
+                    slot: 0,
+                    value: "OxVba.TestDispatch".to_string(),
+                },
                 Instruction::IntrinsicCreateObjectHost { dst: 1, prog_id: 0 },
                 Instruction::LoadConstI32 { slot: 2, value: 3 },
                 Instruction::IntrinsicComSubscribeEventHost {

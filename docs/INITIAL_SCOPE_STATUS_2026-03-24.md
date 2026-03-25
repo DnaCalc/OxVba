@@ -18,6 +18,7 @@
 | **RuntimeValue <-> Variant bridge** | Medium | Partially done |
 | **ParamArray named arguments** | Medium | Done |
 | **Dynamic dispatch named/omitted args** | Medium | Done |
+| **Imported real COM activation / early-bound import model** | High | In progress |
 
 ### Completed this session
 
@@ -32,7 +33,10 @@
 
 ### Remaining for Initial Scope
 
-- No remaining repo-fixable engine gaps are open for initial scope.
+- Imported real COM `As New` activation is still not parity-complete for honest initial-scope closure.
+- The compiler no longer emits numeric `CreateObject(<selector>)` fallback for imported `As New`; unsupported imported activation now fails explicitly instead of lowering to non-VBA syntax.
+- Native Windows string-ProgID `CreateObject("...")` remains a real late-bound activation path; the incorrect part is treating selector-based activation as equivalent to that real path for imported parity claims.
+- The live typelib path does not yet provide a trustworthy activation contract for arbitrary real COM libraries, so `ODG-044` is mixed implementation-plus-oracle work and `ODG-031` is not just a harness scheduling item.
 
 ---
 
@@ -40,11 +44,11 @@
 
 ### 2.1 Oracle Gates (IP-10)
 
-**Required for Initial Scope (5 gates — blocked on scheduling an Excel oracle session):**
+**Required for Initial Scope (5 gates — mixed implementation, harness, and oracle closure):**
 
 - [ ] **ODG-030** — COM interop marshaling. Needs COM test server + host interop oracle runs.
-- [ ] **ODG-031** — TypeLib COM interop. Needs custom typelib oracle harness.
-- [ ] **ODG-044** — `As New` early-bound. Excel host is available locally, but closure is not just scheduling: real registered early-bound OxVba parity anchor for `scrrun` / `Scripting.Dictionary` is not yet honest. See `docs/evidence/conformance/COM_EARLY_ORACLE_READINESS_2026-03-24.md`.
+- [ ] **ODG-031** — TypeLib COM interop. Needs custom typelib oracle harness and correction of the imported real-COM activation/model assumptions before parity claims are honest.
+- [ ] **ODG-044** — `As New` early-bound. Excel host is available locally, but closure is not just scheduling: imported real COM activation still needs a trustworthy real-library activation contract beyond the removed numeric fallback, so the registered early-bound OxVba parity anchor for `scrrun` / `Scripting.Dictionary` is not yet honest. See `docs/evidence/conformance/COM_EARLY_ORACLE_READINESS_2026-03-24.md`.
 - [ ] **ODG-045** — Dual-interface vtable/dispatch. Still needs a mixed-server oracle harness; Excel availability alone does not close transport-policy parity.
 - [ ] **ODG-046** — TypeLib version/broken-ref. Still needs versioned-typelib / broken-reference mutation harness; Excel availability alone does not close repair/version-selection parity.
 
@@ -79,6 +83,7 @@ Completed this session:
 
 ### 2.3 Active Blockers
 
+- [ ] **BLK-COM-IMPORT-001** — Imported real COM activation/model gap. Early-bound imported `As New` is not yet carried by an authoritative real-COM activation identity, so broad real-library import parity is still in progress.
 - [ ] **BLK-ORACLE-001** — Evidence gap. Need remaining Office/host capture matrix (scheduling, not coding).
 - [ ] **BLK-FORMAL-001** — Infrastructure gap. Explicit deferrals now in place; remaining need is DG-V2-001 completion.
 
@@ -168,10 +173,11 @@ These are post-Initial Scope items. No action needed for v620 closure.
 
 ### Must-do (blocking v620 terminal gate)
 
-- [ ] **ODG-044 real-host anchor** — Excel is runnable locally, but a trustworthy OxVba-side real registered early-bind anchor is still missing; this is not just scheduling.
+- [ ] **Imported COM activation review/fix** — Correct the imported real-COM activation model so early-bound `As New` uses an authoritative real-library activation contract for the supported scope, with unsupported cases failing explicitly.
+- [ ] **ODG-044 real-host anchor** — Excel is runnable locally, but a trustworthy OxVba-side real registered early-bind anchor is still missing; this is implementation-plus-oracle work, not just scheduling.
 - [ ] **ODG-045 mixed-server oracle harness** — dual-interface parity still needs an explicit host/oracle lane.
 - [ ] **ODG-046 versioned/broken-reference oracle harness** — still needs typelib mutation / repair harness.
-- [ ] **Close or defer ODG-030, ODG-031** — need paired COM test-server / typelib oracle harness. Existing registered COM lanes are not yet the required Excel differential harness.
+- [ ] **Close or defer ODG-030, ODG-031** — need paired COM test-server / typelib oracle harness. Existing registered COM lanes are not yet the required Excel differential harness, and `ODG-031` also depends on the imported activation/model correction above.
 - [ ] **DG-V2-001 completion** — still running remotely. Needs to complete or be explicitly deferred.
 
 ### Should-do (high value, not strictly blocking)

@@ -2,8 +2,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use oxvba_com::{
     ComMemberSpec, TypeLibMemberInvokeKind, TypeLibMemberLookupResult, TypeLibMetadataBlob,
-    build_typelib_metadata, create_object_selector_from_typelib_metadata,
-    known_typelib_identity_for_prog_id_name,
+    build_typelib_metadata, known_typelib_identity_for_prog_id_name,
     resolve_default_member_token_and_spec_from_typelib_metadata,
     resolve_member_token_and_spec_from_typelib_metadata_name,
 };
@@ -344,7 +343,7 @@ pub enum ProjectCompileError {
     )]
     TypeLibraryUnqualifiedTypeUnsupported { type_name: String },
     #[error(
-        "BIND-E-TYPELIB-CREATEOBJECT-UNSUPPORTED: `As New` external type `{type_name}` has no deterministic CreateObject selector mapping"
+        "BIND-E-TYPELIB-CREATEOBJECT-UNSUPPORTED: `As New` external type `{type_name}` has no authoritative imported activation identity in the current subset"
     )]
     TypeLibraryCreateObjectUnsupported { type_name: String },
     #[error(
@@ -1957,7 +1956,6 @@ struct EventDispatchRoute {
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct EarlyBoundBinding {
     qualified_type: String,
-    create_selector: Option<i32>,
     typelib_metadata: Option<TypeLibMetadataBlob>,
 }
 
@@ -2205,14 +2203,17 @@ fn expand_bound_source_line(
         }
         let typelib_metadata = known_typelib_identity_for_prog_id_name(&dim_decl.qualified_type)
             .map(|identity| build_typelib_metadata(&identity));
-        let selector = typelib_metadata
-            .as_ref()
-            .and_then(create_object_selector_from_typelib_metadata);
+        let activation_prog_id = known_typelib_identity_for_prog_id_name(&dim_decl.qualified_type)
+            .map(|_| dim_decl.qualified_type.clone());
+        if dim_decl.as_new && activation_prog_id.is_none() {
+            return Err(ProjectCompileError::TypeLibraryCreateObjectUnsupported {
+                type_name: dim_decl.qualified_type,
+            });
+        }
         early_bound.insert(
             normalize_identifier(&dim_decl.var_name),
             EarlyBoundBinding {
                 qualified_type: dim_decl.qualified_type.clone(),
-                create_selector: selector,
                 typelib_metadata,
             },
         );
@@ -2222,13 +2223,10 @@ fn expand_bound_source_line(
             dim_decl.leading_ws, dim_decl.var_name
         ));
         if dim_decl.as_new {
-            // Phase 3F: When no CreateObject selector is known for the typelib
-            // type, fall back to selector 0.  The runtime resolves the ProgID
-            // dynamically via late-bound COM activation.
-            let effective_selector = selector.unwrap_or(0);
+            let prog_id = activation_prog_id.expect("checked above for As New");
             out.push(format!(
-                "{}Set {} = CreateObject({effective_selector})",
-                dim_decl.leading_ws, dim_decl.var_name
+                "{}Set {} = CreateObject(\"{}\")",
+                dim_decl.leading_ws, dim_decl.var_name, prog_id
             ));
         }
         return Ok(out);
@@ -4620,9 +4618,8 @@ fn split_keyword_ascii_ci<'a>(text: &'a str, keyword: &'a str) -> Option<(&'a st
 
 #[cfg(test)]
 fn known_typelib_create_object_selector(qualified_type: &str) -> Option<i32> {
-    let identity = known_typelib_identity_for_prog_id_name(qualified_type)?;
-    let metadata = build_typelib_metadata(&identity);
-    create_object_selector_from_typelib_metadata(&metadata)
+    known_typelib_identity_for_prog_id_name(qualified_type)
+        .and_then(|identity| build_typelib_metadata(&identity).create_object_selector)
 }
 
 enum KnownTypeLibMemberResolution {
@@ -13850,7 +13847,7 @@ mod tests {
         let main_module = module_unit_from_source(
             "MainModule",
             ModuleKind::Procedural,
-            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim obj As OxVba.TestDispatch\nDim x\nSet obj = CreateObject(4)\nx = obj.Count()\nEnd Sub",
+            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim obj As OxVba.TestDispatch\nDim x\nSet obj = CreateObject(\"OxVba.TestDispatch\")\nx = obj.Count()\nEnd Sub",
         )
         .expect("module parses");
         let manifest = ProjectManifest {
@@ -14001,12 +13998,11 @@ mod tests {
             expanded,
             vec![
                 "Dim obj As Object".to_string(),
-                "Set obj = CreateObject(4)".to_string()
+                "Set obj = CreateObject(\"OxVba.TestDispatch\")".to_string()
             ]
         );
         let binding = early_bound.get("obj").expect("binding should be recorded");
         assert_eq!(binding.qualified_type, "OxVba.TestDispatch");
-        assert_eq!(binding.create_selector, Some(4));
         let metadata = binding
             .typelib_metadata
             .as_ref()
@@ -14021,7 +14017,7 @@ mod tests {
     }
 
     #[test]
-    fn compile_project_rewrites_as_new_external_type_to_createobject_selector() {
+    fn compile_project_rewrites_as_new_external_type_to_createobject_progid() {
         let main_module = module_unit_from_source(
             "MainModule",
             ModuleKind::Procedural,
@@ -14042,7 +14038,7 @@ mod tests {
         let compiled = compile_project(&manifest).expect("As New rewrite should compile");
         let lowered = compiled.rewritten_source.to_ascii_lowercase();
         assert!(lowered.contains("dim obj as object"));
-        assert!(lowered.contains("set obj = createobject(4)"));
+        assert!(lowered.contains("set obj = createobject(\"oxvba.testdispatch\")"));
         assert!(lowered.contains("x = dispatchinvoke(obj, 1)"));
     }
 
@@ -14342,7 +14338,7 @@ mod tests {
         let main_module = module_unit_from_source(
             "MainModule",
             ModuleKind::Procedural,
-            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim obj As OxVba.TestDispatch\nDim x\nSet obj = CreateObject(4)\nx = obj.UnknownMember()\nEnd Sub",
+            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim obj As OxVba.TestDispatch\nDim x\nSet obj = CreateObject(\"OxVba.TestDispatch\")\nx = obj.UnknownMember()\nEnd Sub",
         )
         .expect("module parses");
         let manifest = ProjectManifest {
@@ -14365,7 +14361,7 @@ mod tests {
         let main_module = module_unit_from_source(
             "MainModule",
             ModuleKind::Procedural,
-            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim obj As OxVba.TestDispatch\nDim x\nSet obj = CreateObject(4)\nx = obj.SumPair(1, 2)\nEnd Sub",
+            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim obj As OxVba.TestDispatch\nDim x\nSet obj = CreateObject(\"OxVba.TestDispatch\")\nx = obj.SumPair(1, 2)\nEnd Sub",
         )
         .expect("module parses");
         let manifest = ProjectManifest {
@@ -14390,7 +14386,7 @@ mod tests {
         let main_module = module_unit_from_source(
             "MainModule",
             ModuleKind::Procedural,
-            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim obj As OxVba.TestDispatch\nDim x\nSet obj = CreateObject(4)\nx = obj.Lookup(41)\nEnd Sub",
+            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim obj As OxVba.TestDispatch\nDim x\nSet obj = CreateObject(\"OxVba.TestDispatch\")\nx = obj.Lookup(41)\nEnd Sub",
         )
         .expect("module parses");
         let manifest = ProjectManifest {
@@ -14415,7 +14411,7 @@ mod tests {
         let main_module = module_unit_from_source(
             "MainModule",
             ModuleKind::Procedural,
-            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim obj As OxVba.TestDispatch\nDim sumPair\nDim lookupPair\nDim echoValue\nSet obj = CreateObject(4)\nsumPair = obj.SumPair(rhs := 14, lhs := 3)\nlookupPair = obj.LookupPair(rhs := 9, lhs := 5)\nechoValue = obj(value := 41)\nEnd Sub",
+            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim obj As OxVba.TestDispatch\nDim sumPair\nDim lookupPair\nDim echoValue\nSet obj = CreateObject(\"OxVba.TestDispatch\")\nsumPair = obj.SumPair(rhs := 14, lhs := 3)\nlookupPair = obj.LookupPair(rhs := 9, lhs := 5)\nechoValue = obj(value := 41)\nEnd Sub",
         )
         .expect("module parses");
         let manifest = ProjectManifest {
@@ -14443,7 +14439,7 @@ mod tests {
         let main_module = module_unit_from_source(
             "MainModule",
             ModuleKind::Procedural,
-            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim obj As OxVba.TestDispatch\nDim sumPair\nDim lookupPair\nDim echoValue\nSet obj = CreateObject(4)\nLet sumPair = obj.SumPair(rhs := 14, lhs := 3)\nLet lookupPair = obj.LookupPair(rhs := 9, lhs := 5)\nLet echoValue = obj(value := 41)\nEnd Sub",
+            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim obj As OxVba.TestDispatch\nDim sumPair\nDim lookupPair\nDim echoValue\nSet obj = CreateObject(\"OxVba.TestDispatch\")\nLet sumPair = obj.SumPair(rhs := 14, lhs := 3)\nLet lookupPair = obj.LookupPair(rhs := 9, lhs := 5)\nLet echoValue = obj(value := 41)\nEnd Sub",
         )
         .expect("module parses");
         let manifest = ProjectManifest {
@@ -14471,7 +14467,7 @@ mod tests {
         let main_module = module_unit_from_source(
             "MainModule",
             ModuleKind::Procedural,
-            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim obj As OxVba.TestDispatch\nDim countValue\nDim existsValue\nDim lookupValue\nDim echoValue\nSet obj = CreateObject(4)\nLet countValue = obj.Count()\nLet existsValue = obj.Exists(42)\nLet lookupValue = obj.Lookup(42)\nLet echoValue = obj(42)\nEnd Sub",
+            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim obj As OxVba.TestDispatch\nDim countValue\nDim existsValue\nDim lookupValue\nDim echoValue\nSet obj = CreateObject(\"OxVba.TestDispatch\")\nLet countValue = obj.Count()\nLet existsValue = obj.Exists(42)\nLet lookupValue = obj.Lookup(42)\nLet echoValue = obj(42)\nEnd Sub",
         )
         .expect("module parses");
         let manifest = ProjectManifest {
@@ -14499,7 +14495,7 @@ mod tests {
         let main_module = module_unit_from_source(
             "MainModule",
             ModuleKind::Procedural,
-            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim obj As OxVba.TestDispatch\nSet obj = CreateObject(4)\nCall obj.Count()\nCall obj.Exists(42)\nCall obj.Lookup(42)\nCall obj.Value()\nCall obj(42)\nEnd Sub",
+            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim obj As OxVba.TestDispatch\nSet obj = CreateObject(\"OxVba.TestDispatch\")\nCall obj.Count()\nCall obj.Exists(42)\nCall obj.Lookup(42)\nCall obj.Value()\nCall obj(42)\nEnd Sub",
         )
         .expect("module parses");
         let manifest = ProjectManifest {
@@ -14528,7 +14524,7 @@ mod tests {
         let main_module = module_unit_from_source(
             "MainModule",
             ModuleKind::Procedural,
-            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim obj As OxVba.TestDispatch\nSet obj = CreateObject(4)\nCall obj.SumPair(rhs := 14, lhs := 3)\nCall obj.LookupPair(rhs := 9, lhs := 5)\nCall obj(value := 41)\nEnd Sub",
+            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim obj As OxVba.TestDispatch\nSet obj = CreateObject(\"OxVba.TestDispatch\")\nCall obj.SumPair(rhs := 14, lhs := 3)\nCall obj.LookupPair(rhs := 9, lhs := 5)\nCall obj(value := 41)\nEnd Sub",
         )
         .expect("module parses");
         let manifest = ProjectManifest {
@@ -14555,7 +14551,7 @@ mod tests {
         let main_module = module_unit_from_source(
             "MainModule",
             ModuleKind::Procedural,
-            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim obj As OxVba.TestDispatch\nSet obj = CreateObject(4)\nCall obj.RaiseException()\nEnd Sub",
+            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim obj As OxVba.TestDispatch\nSet obj = CreateObject(\"OxVba.TestDispatch\")\nCall obj.RaiseException()\nEnd Sub",
         )
         .expect("module parses");
         let manifest = ProjectManifest {
@@ -14580,7 +14576,7 @@ mod tests {
         let main_module = module_unit_from_source(
             "MainModule",
             ModuleKind::Procedural,
-            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim obj As OxVba.TestDispatch\nSet obj = CreateObject(4)\nCall obj.Count\nCall obj.Exists 42\nCall obj.Lookup 42\nCall obj.Value\nCall obj 42\nEnd Sub",
+            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim obj As OxVba.TestDispatch\nSet obj = CreateObject(\"OxVba.TestDispatch\")\nCall obj.Count\nCall obj.Exists 42\nCall obj.Lookup 42\nCall obj.Value\nCall obj 42\nEnd Sub",
         )
         .expect("module parses");
         let manifest = ProjectManifest {
@@ -14610,7 +14606,7 @@ mod tests {
         let main_module = module_unit_from_source(
             "MainModule",
             ModuleKind::Procedural,
-            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim obj As OxVba.TestDispatch\nSet obj = CreateObject(4)\nCall obj.RaiseException\nEnd Sub",
+            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim obj As OxVba.TestDispatch\nSet obj = CreateObject(\"OxVba.TestDispatch\")\nCall obj.RaiseException\nEnd Sub",
         )
         .expect("module parses");
         let manifest = ProjectManifest {
@@ -14635,7 +14631,7 @@ mod tests {
         let main_module = module_unit_from_source(
             "MainModule",
             ModuleKind::Procedural,
-            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim obj As OxVba.TestDispatch\nSet obj = CreateObject(4)\nCall obj.SumPair rhs := 14, lhs := 3\nCall obj.LookupPair rhs := 9, lhs := 5\nCall obj value := 41\nEnd Sub",
+            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim obj As OxVba.TestDispatch\nSet obj = CreateObject(\"OxVba.TestDispatch\")\nCall obj.SumPair rhs := 14, lhs := 3\nCall obj.LookupPair rhs := 9, lhs := 5\nCall obj value := 41\nEnd Sub",
         )
         .expect("module parses");
         let manifest = ProjectManifest {
@@ -14662,7 +14658,7 @@ mod tests {
         let main_module = module_unit_from_source(
             "MainModule",
             ModuleKind::Procedural,
-            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim obj As OxVba.TestDispatch\nSet obj = CreateObject(4)\nobj.Count()\nobj.Exists(42)\nobj.Lookup(42)\nobj.Value()\nobj(42)\nEnd Sub",
+            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim obj As OxVba.TestDispatch\nSet obj = CreateObject(\"OxVba.TestDispatch\")\nobj.Count()\nobj.Exists(42)\nobj.Lookup(42)\nobj.Value()\nobj(42)\nEnd Sub",
         )
         .expect("module parses");
         let manifest = ProjectManifest {
@@ -14691,7 +14687,7 @@ mod tests {
         let main_module = module_unit_from_source(
             "MainModule",
             ModuleKind::Procedural,
-            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim obj As OxVba.TestDispatch\nSet obj = CreateObject(4)\nobj.SumPair(rhs := 14, lhs := 3)\nobj.LookupPair(rhs := 9, lhs := 5)\nobj(value := 41)\nEnd Sub",
+            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim obj As OxVba.TestDispatch\nSet obj = CreateObject(\"OxVba.TestDispatch\")\nobj.SumPair(rhs := 14, lhs := 3)\nobj.LookupPair(rhs := 9, lhs := 5)\nobj(value := 41)\nEnd Sub",
         )
         .expect("module parses");
         let manifest = ProjectManifest {
@@ -14718,7 +14714,7 @@ mod tests {
         let main_module = module_unit_from_source(
             "MainModule",
             ModuleKind::Procedural,
-            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim obj As OxVba.TestDispatch\nSet obj = CreateObject(4)\nobj.RaiseException()\nEnd Sub",
+            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim obj As OxVba.TestDispatch\nSet obj = CreateObject(\"OxVba.TestDispatch\")\nobj.RaiseException()\nEnd Sub",
         )
         .expect("module parses");
         let manifest = ProjectManifest {
@@ -14743,7 +14739,7 @@ mod tests {
         let main_module = module_unit_from_source(
             "MainModule",
             ModuleKind::Procedural,
-            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim obj As OxVba.TestDispatch\nSet obj = CreateObject(4)\nobj.Exists 42\nobj.Lookup 42\nobj 42\nEnd Sub",
+            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim obj As OxVba.TestDispatch\nSet obj = CreateObject(\"OxVba.TestDispatch\")\nobj.Exists 42\nobj.Lookup 42\nobj 42\nEnd Sub",
         )
         .expect("module parses");
         let manifest = ProjectManifest {
@@ -14771,7 +14767,7 @@ mod tests {
         let main_module = module_unit_from_source(
             "MainModule",
             ModuleKind::Procedural,
-            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim obj As OxVba.TestDispatch\nSet obj = CreateObject(4)\nobj.RaiseException\nEnd Sub",
+            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim obj As OxVba.TestDispatch\nSet obj = CreateObject(\"OxVba.TestDispatch\")\nobj.RaiseException\nEnd Sub",
         )
         .expect("module parses");
         let manifest = ProjectManifest {
@@ -14796,7 +14792,7 @@ mod tests {
         let main_module = module_unit_from_source(
             "MainModule",
             ModuleKind::Procedural,
-            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim obj As OxVba.TestDispatch\nSet obj = CreateObject(4)\nobj.SumPair rhs := 14, lhs := 3\nobj.LookupPair rhs := 9, lhs := 5\nobj value := 41\nEnd Sub",
+            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim obj As OxVba.TestDispatch\nSet obj = CreateObject(\"OxVba.TestDispatch\")\nobj.SumPair rhs := 14, lhs := 3\nobj.LookupPair rhs := 9, lhs := 5\nobj value := 41\nEnd Sub",
         )
         .expect("module parses");
         let manifest = ProjectManifest {
@@ -14824,7 +14820,7 @@ mod tests {
         let main_module = module_unit_from_source(
             "MainModule",
             ModuleKind::Procedural,
-            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim obj As OxVba.TestDispatch\nDim child As Object\nSet obj = CreateObject(4)\nSet child = obj.ReturnSelfDispatch()\nEnd Sub",
+            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim obj As OxVba.TestDispatch\nDim child As Object\nSet obj = CreateObject(\"OxVba.TestDispatch\")\nSet child = obj.ReturnSelfDispatch()\nEnd Sub",
         )
         .expect("module parses");
         let manifest = ProjectManifest {
@@ -14849,7 +14845,7 @@ mod tests {
         let main_module = module_unit_from_source(
             "MainModule",
             ModuleKind::Procedural,
-            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim obj As OxVba.TestDispatch\nDim wrapped\nSet obj = CreateObject(4)\nwrapped = obj.ReturnSelfUnknown()\nEnd Sub",
+            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim obj As OxVba.TestDispatch\nDim wrapped\nSet obj = CreateObject(\"OxVba.TestDispatch\")\nwrapped = obj.ReturnSelfUnknown()\nEnd Sub",
         )
         .expect("module parses");
         let manifest = ProjectManifest {
@@ -14875,7 +14871,7 @@ mod tests {
         let main_module = module_unit_from_source(
             "MainModule",
             ModuleKind::Procedural,
-            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim obj As OxVba.TestDispatch\nDim childDispatch As Object\nDim childUnknown As Object\nDim wrappedDispatch\nDim wrappedUnknown\nSet obj = CreateObject(4)\nSet childDispatch = obj.ReturnSelfDispatch()\nSet childUnknown = obj.ReturnSelfUnknown()\nwrappedDispatch = obj.ReturnSelfDispatch()\nLet wrappedUnknown = obj.ReturnSelfUnknown()\nEnd Sub",
+            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim obj As OxVba.TestDispatch\nDim childDispatch As Object\nDim childUnknown As Object\nDim wrappedDispatch\nDim wrappedUnknown\nSet obj = CreateObject(\"OxVba.TestDispatch\")\nSet childDispatch = obj.ReturnSelfDispatch()\nSet childUnknown = obj.ReturnSelfUnknown()\nwrappedDispatch = obj.ReturnSelfDispatch()\nLet wrappedUnknown = obj.ReturnSelfUnknown()\nEnd Sub",
         )
         .expect("module parses");
         let manifest = ProjectManifest {
@@ -14904,7 +14900,7 @@ mod tests {
         let main_module = module_unit_from_source(
             "MainModule",
             ModuleKind::Procedural,
-            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim obj As OxVba.TestDispatch\nDim childDispatch As Object\nDim childUnknown As Object\nDim wrappedDispatch\nDim wrappedUnknown\nSet obj = CreateObject(4)\nSet childDispatch = obj.ReturnSelfDispatch\nSet childUnknown = obj.ReturnSelfUnknown\nwrappedDispatch = obj.ReturnSelfDispatch\nLet wrappedUnknown = obj.ReturnSelfUnknown\nEnd Sub",
+            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim obj As OxVba.TestDispatch\nDim childDispatch As Object\nDim childUnknown As Object\nDim wrappedDispatch\nDim wrappedUnknown\nSet obj = CreateObject(\"OxVba.TestDispatch\")\nSet childDispatch = obj.ReturnSelfDispatch\nSet childUnknown = obj.ReturnSelfUnknown\nwrappedDispatch = obj.ReturnSelfDispatch\nLet wrappedUnknown = obj.ReturnSelfUnknown\nEnd Sub",
         )
         .expect("module parses");
         let manifest = ProjectManifest {
@@ -14933,7 +14929,7 @@ mod tests {
         let main_module = module_unit_from_source(
             "MainModule",
             ModuleKind::Procedural,
-            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim obj As OxVba.TestDispatch\nDim childDispatch As Object\nDim childUnknown As Object\nDim wrappedDispatch\nDim wrappedUnknown\nSet obj = CreateObject(4)\nSet childDispatch = obj.SelfDispatch\nSet childUnknown = obj.SelfUnknown\nwrappedDispatch = obj.SelfDispatch\nLet wrappedUnknown = obj.SelfUnknown\nEnd Sub",
+            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim obj As OxVba.TestDispatch\nDim childDispatch As Object\nDim childUnknown As Object\nDim wrappedDispatch\nDim wrappedUnknown\nSet obj = CreateObject(\"OxVba.TestDispatch\")\nSet childDispatch = obj.SelfDispatch\nSet childUnknown = obj.SelfUnknown\nwrappedDispatch = obj.SelfDispatch\nLet wrappedUnknown = obj.SelfUnknown\nEnd Sub",
         )
         .expect("module parses");
         let manifest = ProjectManifest {
@@ -14962,7 +14958,7 @@ mod tests {
         let main_module = module_unit_from_source(
             "MainModule",
             ModuleKind::Procedural,
-            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim obj As OxVba.TestDispatch\nDim childDispatch As Object\nDim childUnknown As Object\nDim wrappedDispatch\nDim wrappedUnknown\nSet obj = CreateObject(4)\nSet childDispatch = obj.SelfDispatch()\nSet childUnknown = obj.SelfUnknown()\nwrappedDispatch = obj.SelfDispatch()\nLet wrappedUnknown = obj.SelfUnknown()\nEnd Sub",
+            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim obj As OxVba.TestDispatch\nDim childDispatch As Object\nDim childUnknown As Object\nDim wrappedDispatch\nDim wrappedUnknown\nSet obj = CreateObject(\"OxVba.TestDispatch\")\nSet childDispatch = obj.SelfDispatch()\nSet childUnknown = obj.SelfUnknown()\nwrappedDispatch = obj.SelfDispatch()\nLet wrappedUnknown = obj.SelfUnknown()\nEnd Sub",
         )
         .expect("module parses");
         let manifest = ProjectManifest {
@@ -14991,7 +14987,7 @@ mod tests {
         let main_module = module_unit_from_source(
             "MainModule",
             ModuleKind::Procedural,
-            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim obj As OxVba.TestDispatch\nDim x\nSet obj = CreateObject(4)\nx = obj.Value\nEnd Sub",
+            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim obj As OxVba.TestDispatch\nDim x\nSet obj = CreateObject(\"OxVba.TestDispatch\")\nx = obj.Value\nEnd Sub",
         )
         .expect("module parses");
         let manifest = ProjectManifest {
@@ -15016,7 +15012,7 @@ mod tests {
         let main_module = module_unit_from_source(
             "MainModule",
             ModuleKind::Procedural,
-            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim obj As OxVba.TestDispatch\nDim x\nSet obj = CreateObject(4)\nx = obj.Ping\nEnd Sub",
+            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim obj As OxVba.TestDispatch\nDim x\nSet obj = CreateObject(\"OxVba.TestDispatch\")\nx = obj.Ping\nEnd Sub",
         )
         .expect("module parses");
         let manifest = ProjectManifest {
@@ -15042,7 +15038,7 @@ mod tests {
         let main_module = module_unit_from_source(
             "MainModule",
             ModuleKind::Procedural,
-            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim obj As OxVba.TestDispatch\nDim x\nSet obj = CreateObject(4)\nx = obj.Value()\nEnd Sub",
+            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim obj As OxVba.TestDispatch\nDim x\nSet obj = CreateObject(\"OxVba.TestDispatch\")\nx = obj.Value()\nEnd Sub",
         )
         .expect("module parses");
         let manifest = ProjectManifest {
@@ -15067,7 +15063,7 @@ mod tests {
         let main_module = module_unit_from_source(
             "MainModule",
             ModuleKind::Procedural,
-            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim obj As OxVba.TestDispatch\nDim x\nSet obj = CreateObject(4)\nLet x = obj.Value\nEnd Sub",
+            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim obj As OxVba.TestDispatch\nDim x\nSet obj = CreateObject(\"OxVba.TestDispatch\")\nLet x = obj.Value\nEnd Sub",
         )
         .expect("module parses");
         let manifest = ProjectManifest {
@@ -15092,7 +15088,7 @@ mod tests {
         let main_module = module_unit_from_source(
             "MainModule",
             ModuleKind::Procedural,
-            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim obj As OxVba.TestDispatch\nDim x\nSet obj = CreateObject(4)\nLet x = obj.Ping\nEnd Sub",
+            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim obj As OxVba.TestDispatch\nDim x\nSet obj = CreateObject(\"OxVba.TestDispatch\")\nLet x = obj.Ping\nEnd Sub",
         )
         .expect("module parses");
         let manifest = ProjectManifest {
@@ -15118,7 +15114,7 @@ mod tests {
         let main_module = module_unit_from_source(
             "MainModule",
             ModuleKind::Procedural,
-            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim obj As OxVba.TestDispatch\nDim x\nSet obj = CreateObject(4)\nLet x = obj.Value()\nEnd Sub",
+            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim obj As OxVba.TestDispatch\nDim x\nSet obj = CreateObject(\"OxVba.TestDispatch\")\nLet x = obj.Value()\nEnd Sub",
         )
         .expect("module parses");
         let manifest = ProjectManifest {
@@ -15144,7 +15140,7 @@ mod tests {
         let main_module = module_unit_from_source(
             "MainModule",
             ModuleKind::Procedural,
-            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim obj As OxVba.TestDispatch\nDim x\nSet obj = CreateObject(4)\nx = obj(41)\nEnd Sub",
+            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim obj As OxVba.TestDispatch\nDim x\nSet obj = CreateObject(\"OxVba.TestDispatch\")\nx = obj(41)\nEnd Sub",
         )
         .expect("module parses");
         let manifest = ProjectManifest {
@@ -15169,7 +15165,7 @@ mod tests {
         let main_module = module_unit_from_source(
             "MainModule",
             ModuleKind::Procedural,
-            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim obj As OxVba.TestDispatch\nDim x\nSet obj = CreateObject(4)\nx = obj.Count(1)\nEnd Sub",
+            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim obj As OxVba.TestDispatch\nDim x\nSet obj = CreateObject(\"OxVba.TestDispatch\")\nx = obj.Count(1)\nEnd Sub",
         )
         .expect("module parses");
         let manifest = ProjectManifest {
@@ -15193,7 +15189,7 @@ mod tests {
         let main_module = module_unit_from_source(
             "MainModule",
             ModuleKind::Procedural,
-            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim obj As OxVba.TestDispatch\nDim x\nSet obj = CreateObject(4)\nx = obj.SumPair(1)\nEnd Sub",
+            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim obj As OxVba.TestDispatch\nDim x\nSet obj = CreateObject(\"OxVba.TestDispatch\")\nx = obj.SumPair(1)\nEnd Sub",
         )
         .expect("module parses");
         let manifest = ProjectManifest {
@@ -15217,7 +15213,7 @@ mod tests {
         let main_module = module_unit_from_source(
             "MainModule",
             ModuleKind::Procedural,
-            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim obj As OxVba.TestDispatch\nDim x\nSet obj = CreateObject(4)\nx = obj()\nEnd Sub",
+            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim obj As OxVba.TestDispatch\nDim x\nSet obj = CreateObject(\"OxVba.TestDispatch\")\nx = obj()\nEnd Sub",
         )
         .expect("module parses");
         let manifest = ProjectManifest {
@@ -15241,7 +15237,7 @@ mod tests {
         let main_module = module_unit_from_source(
             "MainModule",
             ModuleKind::Procedural,
-            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim obj As OxVba.TestDispatchNoDefault\nDim x\nSet obj = CreateObject(4)\nx = obj(41)\nEnd Sub",
+            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim obj As OxVba.TestDispatchNoDefault\nDim x\nSet obj = CreateObject(\"OxVba.TestDispatchNoDefault\")\nx = obj(41)\nEnd Sub",
         )
         .expect("module parses");
         let manifest = ProjectManifest {
@@ -15265,7 +15261,7 @@ mod tests {
         let main_module = module_unit_from_source(
             "MainModule",
             ModuleKind::Procedural,
-            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim obj As OxVba.TestDispatchAmbiguousDefault\nDim x\nSet obj = CreateObject(4)\nx = obj(41)\nEnd Sub",
+            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim obj As OxVba.TestDispatchAmbiguousDefault\nDim x\nSet obj = CreateObject(\"OxVba.TestDispatchAmbiguousDefault\")\nx = obj(41)\nEnd Sub",
         )
         .expect("module parses");
         let manifest = ProjectManifest {
@@ -15289,7 +15285,7 @@ mod tests {
         let main_module = module_unit_from_source(
             "MainModule",
             ModuleKind::Procedural,
-            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim obj As OxVba.TestDispatch\nSet obj = CreateObject(4)\nCall obj\nEnd Sub",
+            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim obj As OxVba.TestDispatch\nSet obj = CreateObject(\"OxVba.TestDispatch\")\nCall obj\nEnd Sub",
         )
         .expect("module parses");
         let manifest = ProjectManifest {
@@ -15313,7 +15309,7 @@ mod tests {
         let main_module = module_unit_from_source(
             "MainModule",
             ModuleKind::Procedural,
-            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim obj As OxVba.TestDispatch\nSet obj = CreateObject(4)\nobj\nEnd Sub",
+            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim obj As OxVba.TestDispatch\nSet obj = CreateObject(\"OxVba.TestDispatch\")\nobj\nEnd Sub",
         )
         .expect("module parses");
         let manifest = ProjectManifest {
@@ -15338,7 +15334,7 @@ mod tests {
         let main_module = module_unit_from_source(
             "MainModule",
             ModuleKind::Procedural,
-            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim obj As OxVba.TestDispatchNoDefault\nSet obj = CreateObject(4)\nCall obj 41\nEnd Sub",
+            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim obj As OxVba.TestDispatchNoDefault\nSet obj = CreateObject(\"OxVba.TestDispatchNoDefault\")\nCall obj 41\nEnd Sub",
         )
         .expect("module parses");
         let manifest = ProjectManifest {
@@ -15362,7 +15358,7 @@ mod tests {
         let main_module = module_unit_from_source(
             "MainModule",
             ModuleKind::Procedural,
-            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim obj As OxVba.TestDispatchNoDefault\nSet obj = CreateObject(4)\nobj 41\nEnd Sub",
+            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim obj As OxVba.TestDispatchNoDefault\nSet obj = CreateObject(\"OxVba.TestDispatchNoDefault\")\nobj 41\nEnd Sub",
         )
         .expect("module parses");
         let manifest = ProjectManifest {
@@ -15386,7 +15382,7 @@ mod tests {
         let main_module = module_unit_from_source(
             "MainModule",
             ModuleKind::Procedural,
-            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim obj As OxVba.TestDispatchAmbiguousDefault\nSet obj = CreateObject(4)\nCall obj 41\nEnd Sub",
+            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim obj As OxVba.TestDispatchAmbiguousDefault\nSet obj = CreateObject(\"OxVba.TestDispatchAmbiguousDefault\")\nCall obj 41\nEnd Sub",
         )
         .expect("module parses");
         let manifest = ProjectManifest {
@@ -15410,7 +15406,7 @@ mod tests {
         let main_module = module_unit_from_source(
             "MainModule",
             ModuleKind::Procedural,
-            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim obj As OxVba.TestDispatchAmbiguousDefault\nSet obj = CreateObject(4)\nobj 41\nEnd Sub",
+            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim obj As OxVba.TestDispatchAmbiguousDefault\nSet obj = CreateObject(\"OxVba.TestDispatchAmbiguousDefault\")\nobj 41\nEnd Sub",
         )
         .expect("module parses");
         let manifest = ProjectManifest {
@@ -15435,7 +15431,7 @@ mod tests {
         let main_module = module_unit_from_source(
             "MainModule",
             ModuleKind::Procedural,
-            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim obj As OxVba.TestDispatch\nSet obj = CreateObject(4)\nCall obj()\nEnd Sub",
+            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim obj As OxVba.TestDispatch\nSet obj = CreateObject(\"OxVba.TestDispatch\")\nCall obj()\nEnd Sub",
         )
         .expect("module parses");
         let manifest = ProjectManifest {
@@ -15459,7 +15455,7 @@ mod tests {
         let main_module = module_unit_from_source(
             "MainModule",
             ModuleKind::Procedural,
-            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim obj As OxVba.TestDispatch\nSet obj = CreateObject(4)\nobj()\nEnd Sub",
+            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim obj As OxVba.TestDispatch\nSet obj = CreateObject(\"OxVba.TestDispatch\")\nobj()\nEnd Sub",
         )
         .expect("module parses");
         let manifest = ProjectManifest {
@@ -15483,7 +15479,7 @@ mod tests {
         let main_module = module_unit_from_source(
             "MainModule",
             ModuleKind::Procedural,
-            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim obj As OxVba.TestDispatchNoDefault\nSet obj = CreateObject(4)\nCall obj(41)\nEnd Sub",
+            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim obj As OxVba.TestDispatchNoDefault\nSet obj = CreateObject(\"OxVba.TestDispatchNoDefault\")\nCall obj(41)\nEnd Sub",
         )
         .expect("module parses");
         let manifest = ProjectManifest {
@@ -15507,7 +15503,7 @@ mod tests {
         let main_module = module_unit_from_source(
             "MainModule",
             ModuleKind::Procedural,
-            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim obj As OxVba.TestDispatchNoDefault\nSet obj = CreateObject(4)\nobj(41)\nEnd Sub",
+            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim obj As OxVba.TestDispatchNoDefault\nSet obj = CreateObject(\"OxVba.TestDispatchNoDefault\")\nobj(41)\nEnd Sub",
         )
         .expect("module parses");
         let manifest = ProjectManifest {
@@ -15531,7 +15527,7 @@ mod tests {
         let main_module = module_unit_from_source(
             "MainModule",
             ModuleKind::Procedural,
-            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim obj As OxVba.TestDispatchAmbiguousDefault\nSet obj = CreateObject(4)\nCall obj(41)\nEnd Sub",
+            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim obj As OxVba.TestDispatchAmbiguousDefault\nSet obj = CreateObject(\"OxVba.TestDispatchAmbiguousDefault\")\nCall obj(41)\nEnd Sub",
         )
         .expect("module parses");
         let manifest = ProjectManifest {
@@ -15555,7 +15551,7 @@ mod tests {
         let main_module = module_unit_from_source(
             "MainModule",
             ModuleKind::Procedural,
-            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim obj As OxVba.TestDispatchAmbiguousDefault\nSet obj = CreateObject(4)\nobj(41)\nEnd Sub",
+            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim obj As OxVba.TestDispatchAmbiguousDefault\nSet obj = CreateObject(\"OxVba.TestDispatchAmbiguousDefault\")\nobj(41)\nEnd Sub",
         )
         .expect("module parses");
         let manifest = ProjectManifest {
@@ -15579,7 +15575,7 @@ mod tests {
         let main_module = module_unit_from_source(
             "MainModule",
             ModuleKind::Procedural,
-            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim obj As OxVba.TestDispatch\nSet obj = CreateObject(4)\nCall obj.SetValue(9)\nEnd Sub",
+            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim obj As OxVba.TestDispatch\nSet obj = CreateObject(\"OxVba.TestDispatch\")\nCall obj.SetValue(9)\nEnd Sub",
         )
         .expect("module parses");
         let manifest = ProjectManifest {
@@ -15603,7 +15599,7 @@ mod tests {
         let main_module = module_unit_from_source(
             "MainModule",
             ModuleKind::Procedural,
-            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim obj As OxVba.TestDispatch\nSet obj = CreateObject(4)\nobj.SetValue = 9\nEnd Sub",
+            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim obj As OxVba.TestDispatch\nSet obj = CreateObject(\"OxVba.TestDispatch\")\nobj.SetValue = 9\nEnd Sub",
         )
         .expect("module parses");
         let manifest = ProjectManifest {
@@ -15628,7 +15624,7 @@ mod tests {
         let main_module = module_unit_from_source(
             "MainModule",
             ModuleKind::Procedural,
-            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim obj As OxVba.TestDispatch\nDim other As OxVba.TestDispatch\nSet obj = CreateObject(4)\nSet other = CreateObject(4)\nSet obj.SetValueRef = other\nEnd Sub",
+            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim obj As OxVba.TestDispatch\nDim other As OxVba.TestDispatch\nSet obj = CreateObject(\"OxVba.TestDispatch\")\nSet other = CreateObject(\"OxVba.TestDispatch\")\nSet obj.SetValueRef = other\nEnd Sub",
         )
         .expect("module parses");
         let manifest = ProjectManifest {
@@ -15653,7 +15649,7 @@ mod tests {
         let main_module = module_unit_from_source(
             "MainModule",
             ModuleKind::Procedural,
-            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim obj As OxVba.TestDispatch\nSet obj = CreateObject(4)\nobj.SetIndexedValue(7) = 11\nEnd Sub",
+            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim obj As OxVba.TestDispatch\nSet obj = CreateObject(\"OxVba.TestDispatch\")\nobj.SetIndexedValue(7) = 11\nEnd Sub",
         )
         .expect("module parses");
         let manifest = ProjectManifest {
@@ -15679,7 +15675,7 @@ mod tests {
         let main_module = module_unit_from_source(
             "MainModule",
             ModuleKind::Procedural,
-            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim obj As OxVba.TestDispatch\nSet obj = CreateObject(4)\nobj.SetIndexedValue(lhs := 7) = 11\nEnd Sub",
+            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim obj As OxVba.TestDispatch\nSet obj = CreateObject(\"OxVba.TestDispatch\")\nobj.SetIndexedValue(lhs := 7) = 11\nEnd Sub",
         )
         .expect("module parses");
         let manifest = ProjectManifest {
@@ -15704,7 +15700,7 @@ mod tests {
         let main_module = module_unit_from_source(
             "MainModule",
             ModuleKind::Procedural,
-            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim obj As OxVba.TestDispatch\nDim other As OxVba.TestDispatch\nSet obj = CreateObject(4)\nSet other = CreateObject(4)\nSet obj.SetIndexedValueRef(8) = other\nEnd Sub",
+            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim obj As OxVba.TestDispatch\nDim other As OxVba.TestDispatch\nSet obj = CreateObject(\"OxVba.TestDispatch\")\nSet other = CreateObject(\"OxVba.TestDispatch\")\nSet obj.SetIndexedValueRef(8) = other\nEnd Sub",
         )
         .expect("module parses");
         let manifest = ProjectManifest {
@@ -15729,7 +15725,7 @@ mod tests {
         let main_module = module_unit_from_source(
             "MainModule",
             ModuleKind::Procedural,
-            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim obj As OxVba.TestDispatch\nDim other As OxVba.TestDispatch\nSet obj = CreateObject(4)\nSet other = CreateObject(4)\nSet obj.SetIndexedValueRef(lhs := 8) = other\nEnd Sub",
+            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim obj As OxVba.TestDispatch\nDim other As OxVba.TestDispatch\nSet obj = CreateObject(\"OxVba.TestDispatch\")\nSet other = CreateObject(\"OxVba.TestDispatch\")\nSet obj.SetIndexedValueRef(lhs := 8) = other\nEnd Sub",
         )
         .expect("module parses");
         let manifest = ProjectManifest {
@@ -15754,7 +15750,7 @@ mod tests {
         let main_module = module_unit_from_source(
             "MainModule",
             ModuleKind::Procedural,
-            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim obj As OxVba.TestDispatch\nSet obj = CreateObject(4)\nobj.SetIndexedValue = 11\nEnd Sub",
+            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim obj As OxVba.TestDispatch\nSet obj = CreateObject(\"OxVba.TestDispatch\")\nobj.SetIndexedValue = 11\nEnd Sub",
         )
         .expect("module parses");
         let manifest = ProjectManifest {
@@ -15778,7 +15774,7 @@ mod tests {
         let main_module = module_unit_from_source(
             "MainModule",
             ModuleKind::Procedural,
-            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim obj As OxVba.TestDispatch\nDim other As OxVba.TestDispatch\nSet obj = CreateObject(4)\nSet other = CreateObject(4)\nCall obj.SetValueRef(other)\nEnd Sub",
+            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim obj As OxVba.TestDispatch\nDim other As OxVba.TestDispatch\nSet obj = CreateObject(\"OxVba.TestDispatch\")\nSet other = CreateObject(\"OxVba.TestDispatch\")\nCall obj.SetValueRef(other)\nEnd Sub",
         )
         .expect("module parses");
         let manifest = ProjectManifest {
@@ -16511,7 +16507,7 @@ mod tests {
         let main_module = module_unit_from_source(
             "MainModule",
             ModuleKind::Procedural,
-            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim bound As Object\nDim comObj As Object\nDim s As New Sink\nSet bound = Application.Value\nSet comObj = CreateObject(4)\nCall s.Attach(bound)\nEnd Sub",
+            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim bound As Object\nDim comObj As Object\nDim s As New Sink\nSet bound = Application.Value\nSet comObj = CreateObject(\"OxVba.TestDispatch\")\nCall s.Attach(bound)\nEnd Sub",
         )
         .expect("main module parses");
         let sink = module_unit_from_source(
@@ -16582,7 +16578,7 @@ mod tests {
                 "Application",
                 ModuleKind::Class,
                 format!(
-                    "Attribute VB_Name = \"Application\"\n{exposure_attr}\nPublic Property Get Value() As Object\nSet Value = CreateObject(4)\nEnd Property"
+                    "Attribute VB_Name = \"Application\"\n{exposure_attr}\nPublic Property Get Value() As Object\nSet Value = CreateObject(\"OxVba.TestDispatch\")\nEnd Property"
                 ),
             )
             .expect("host application parses");
@@ -16610,7 +16606,7 @@ mod tests {
             );
             assert!(
                 lowered.contains(
-                    "set property_get_pmr_hostproject_application_value = createobject(4)"
+                    "set property_get_pmr_hostproject_application_value = createobject(\"oxvba.testdispatch\")"
                 ),
                 "{label}: expected COM object creation to remain inside the host-root getter, got: {lowered}"
             );
@@ -16635,7 +16631,7 @@ mod tests {
                 "Application",
                 ModuleKind::Class,
                 format!(
-                    "Attribute VB_Name = \"Application\"\n{exposure_attr}\nPublic Property Get Value() As Object\nSet Value = CreateObject(4)\nEnd Property"
+                    "Attribute VB_Name = \"Application\"\n{exposure_attr}\nPublic Property Get Value() As Object\nSet Value = CreateObject(\"OxVba.TestDispatch\")\nEnd Property"
                 ),
             )
             .expect("host application parses");
@@ -16699,7 +16695,7 @@ mod tests {
                 "Application",
                 ModuleKind::Class,
                 format!(
-                    "Attribute VB_Name = \"Application\"\n{exposure_attr}\nPublic Property Get Value() As Object\nSet Value = CreateObject(4)\nEnd Property"
+                    "Attribute VB_Name = \"Application\"\n{exposure_attr}\nPublic Property Get Value() As Object\nSet Value = CreateObject(\"OxVba.TestDispatch\")\nEnd Property"
                 ),
             )
             .expect("host application parses");
@@ -16769,7 +16765,7 @@ mod tests {
                 "Application",
                 ModuleKind::Class,
                 format!(
-                    "Attribute VB_Name = \"Application\"\n{exposure_attr}\nPublic Property Get Value() As Object\nSet Value = CreateObject(4)\nEnd Property"
+                    "Attribute VB_Name = \"Application\"\n{exposure_attr}\nPublic Property Get Value() As Object\nSet Value = CreateObject(\"OxVba.TestDispatch\")\nEnd Property"
                 ),
             )
             .expect("host application parses");
@@ -16831,7 +16827,7 @@ mod tests {
                 "Application",
                 ModuleKind::Class,
                 format!(
-                    "Attribute VB_Name = \"Application\"\n{exposure_attr}\nPublic Property Get Value() As Object\nSet Value = CreateObject(4)\nEnd Property"
+                    "Attribute VB_Name = \"Application\"\n{exposure_attr}\nPublic Property Get Value() As Object\nSet Value = CreateObject(\"OxVba.TestDispatch\")\nEnd Property"
                 ),
             )
             .expect("host application parses");
@@ -16915,7 +16911,7 @@ mod tests {
                 "Application",
                 ModuleKind::Class,
                 format!(
-                    "Attribute VB_Name = \"Application\"\n{exposure_attr}\nPublic Property Get Value() As Object\nSet Value = CreateObject(4)\nEnd Property"
+                    "Attribute VB_Name = \"Application\"\n{exposure_attr}\nPublic Property Get Value() As Object\nSet Value = CreateObject(\"OxVba.TestDispatch\")\nEnd Property"
                 ),
             )
             .expect("host application parses");
@@ -16995,7 +16991,7 @@ mod tests {
                 "Application",
                 ModuleKind::Class,
                 format!(
-                    "Attribute VB_Name = \"Application\"\n{exposure_attr}\nPublic Property Get Value() As Object\nSet Value = CreateObject(4)\nEnd Property"
+                    "Attribute VB_Name = \"Application\"\n{exposure_attr}\nPublic Property Get Value() As Object\nSet Value = CreateObject(\"OxVba.TestDispatch\")\nEnd Property"
                 ),
             )
             .expect("host application parses");
@@ -17107,7 +17103,7 @@ mod tests {
                     "Application",
                     ModuleKind::Class,
                     format!(
-                        "Attribute VB_Name = \"Application\"\n{exposure_attr}\nPublic Property Get Value() As Object\nSet Value = CreateObject(4)\nEnd Property"
+                        "Attribute VB_Name = \"Application\"\n{exposure_attr}\nPublic Property Get Value() As Object\nSet Value = CreateObject(\"OxVba.TestDispatch\")\nEnd Property"
                     ),
                 )
                 .expect("host application parses");
@@ -17169,7 +17165,7 @@ mod tests {
                 "Application",
                 ModuleKind::Class,
                 format!(
-                    "Attribute VB_Name = \"Application\"\n{exposure_attr}\nPublic Property Get Value() As Object\nSet Value = CreateObject(4)\nEnd Property"
+                    "Attribute VB_Name = \"Application\"\n{exposure_attr}\nPublic Property Get Value() As Object\nSet Value = CreateObject(\"OxVba.TestDispatch\")\nEnd Property"
                 ),
             )
             .expect("host application parses");
@@ -17302,7 +17298,7 @@ mod tests {
                     "Application",
                     ModuleKind::Class,
                     format!(
-                        "Attribute VB_Name = \"Application\"\n{exposure_attr}\nPublic Property Get Value() As Object\nSet Value = CreateObject(4)\nEnd Property"
+                        "Attribute VB_Name = \"Application\"\n{exposure_attr}\nPublic Property Get Value() As Object\nSet Value = CreateObject(\"OxVba.TestDispatch\")\nEnd Property"
                     ),
                 )
                 .expect("host application parses");
@@ -17361,14 +17357,14 @@ mod tests {
             let main_module = module_unit_from_source(
                 "MainModule",
                 ModuleKind::Procedural,
-                "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim obj As OxVba.TestDispatch\nDim other As OxVba.TestDispatch\nDim afterSetValueRef\nSet obj = Application.Value\nSet other = CreateObject(4)\nSet obj.SetValueRef = other\nafterSetValueRef = obj.Value\nEnd Sub",
+                "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim obj As OxVba.TestDispatch\nDim other As OxVba.TestDispatch\nDim afterSetValueRef\nSet obj = Application.Value\nSet other = CreateObject(\"OxVba.TestDispatch\")\nSet obj.SetValueRef = other\nafterSetValueRef = obj.Value\nEnd Sub",
             )
             .expect("main module parses");
             let host_application = module_unit_from_source(
                 "Application",
                 ModuleKind::Class,
                 format!(
-                    "Attribute VB_Name = \"Application\"\n{exposure_attr}\nPublic Property Get Value() As Object\nSet Value = CreateObject(4)\nEnd Property"
+                    "Attribute VB_Name = \"Application\"\n{exposure_attr}\nPublic Property Get Value() As Object\nSet Value = CreateObject(\"OxVba.TestDispatch\")\nEnd Property"
                 ),
             )
             .expect("host application parses");
@@ -17403,7 +17399,7 @@ mod tests {
                 "{label}: expected host-root property-get rewrite before imported property-putref traffic, got: {lowered}"
             );
             assert!(
-                lowered.contains("set other = createobject(4)"),
+                lowered.contains("set other = createobject(\"oxvba.testdispatch\")"),
                 "{label}: expected object-valued rhs setup before imported property-putref traffic, got: {lowered}"
             );
             assert!(
@@ -17442,7 +17438,7 @@ mod tests {
                 "Application",
                 ModuleKind::Class,
                 format!(
-                    "Attribute VB_Name = \"Application\"\n{exposure_attr}\nPublic Property Get Value() As Object\nSet Value = CreateObject(4)\nEnd Property"
+                    "Attribute VB_Name = \"Application\"\n{exposure_attr}\nPublic Property Get Value() As Object\nSet Value = CreateObject(\"OxVba.TestDispatch\")\nEnd Property"
                 ),
             )
             .expect("host application parses");
@@ -17516,7 +17512,7 @@ mod tests {
                 "Application",
                 ModuleKind::Class,
                 format!(
-                    "Attribute VB_Name = \"Application\"\n{exposure_attr}\nPublic Property Get Value() As Object\nSet Value = CreateObject(4)\nEnd Property"
+                    "Attribute VB_Name = \"Application\"\n{exposure_attr}\nPublic Property Get Value() As Object\nSet Value = CreateObject(\"OxVba.TestDispatch\")\nEnd Property"
                 ),
             )
             .expect("host application parses");
@@ -17580,7 +17576,7 @@ mod tests {
                 "Application",
                 ModuleKind::Class,
                 format!(
-                    "Attribute VB_Name = \"Application\"\n{exposure_attr}\nPublic Property Get Value() As Object\nSet Value = CreateObject(4)\nEnd Property"
+                    "Attribute VB_Name = \"Application\"\n{exposure_attr}\nPublic Property Get Value() As Object\nSet Value = CreateObject(\"OxVba.TestDispatch\")\nEnd Property"
                 ),
             )
             .expect("host application parses");
@@ -17650,7 +17646,7 @@ mod tests {
                 "Application",
                 ModuleKind::Class,
                 format!(
-                    "Attribute VB_Name = \"Application\"\n{exposure_attr}\nPublic Property Get Value() As Object\nSet Value = CreateObject(4)\nEnd Property"
+                    "Attribute VB_Name = \"Application\"\n{exposure_attr}\nPublic Property Get Value() As Object\nSet Value = CreateObject(\"OxVba.TestDispatch\")\nEnd Property"
                 ),
             )
             .expect("host application parses");
@@ -17728,7 +17724,7 @@ mod tests {
                 "Application",
                 ModuleKind::Class,
                 format!(
-                    "Attribute VB_Name = \"Application\"\n{exposure_attr}\nPublic Property Get Value() As Object\nSet Value = CreateObject(4)\nEnd Property"
+                    "Attribute VB_Name = \"Application\"\n{exposure_attr}\nPublic Property Get Value() As Object\nSet Value = CreateObject(\"OxVba.TestDispatch\")\nEnd Property"
                 ),
             )
             .expect("host application parses");
@@ -17810,7 +17806,7 @@ mod tests {
                 "Application",
                 ModuleKind::Class,
                 format!(
-                    "Attribute VB_Name = \"Application\"\n{exposure_attr}\nPublic Property Get Value() As Object\nSet Value = CreateObject(4)\nEnd Property"
+                    "Attribute VB_Name = \"Application\"\n{exposure_attr}\nPublic Property Get Value() As Object\nSet Value = CreateObject(\"OxVba.TestDispatch\")\nEnd Property"
                 ),
             )
             .expect("host application parses");
@@ -17888,7 +17884,7 @@ mod tests {
                 "Application",
                 ModuleKind::Class,
                 format!(
-                    "Attribute VB_Name = \"Application\"\n{exposure_attr}\nPublic Property Get Value() As Object\nSet Value = CreateObject(4)\nEnd Property"
+                    "Attribute VB_Name = \"Application\"\n{exposure_attr}\nPublic Property Get Value() As Object\nSet Value = CreateObject(\"OxVba.TestDispatch\")\nEnd Property"
                 ),
             )
             .expect("host application parses");
@@ -17970,7 +17966,7 @@ mod tests {
                 "Application",
                 ModuleKind::Class,
                 format!(
-                    "Attribute VB_Name = \"Application\"\n{exposure_attr}\nPublic Property Get Value() As Object\nSet Value = CreateObject(4)\nEnd Property"
+                    "Attribute VB_Name = \"Application\"\n{exposure_attr}\nPublic Property Get Value() As Object\nSet Value = CreateObject(\"OxVba.TestDispatch\")\nEnd Property"
                 ),
             )
             .expect("host application parses");
@@ -18048,7 +18044,7 @@ mod tests {
                 "Application",
                 ModuleKind::Class,
                 format!(
-                    "Attribute VB_Name = \"Application\"\n{exposure_attr}\nPublic Property Get Value() As Object\nSet Value = CreateObject(4)\nEnd Property"
+                    "Attribute VB_Name = \"Application\"\n{exposure_attr}\nPublic Property Get Value() As Object\nSet Value = CreateObject(\"OxVba.TestDispatch\")\nEnd Property"
                 ),
             )
             .expect("host application parses");
@@ -18123,7 +18119,7 @@ mod tests {
             let main_module = module_unit_from_source(
                 "MainModule",
                 ModuleKind::Procedural,
-                "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim obj As OxVba.TestDispatch\nDim other As OxVba.TestDispatch\nDim afterSetValueRef\nSet obj = Application.Value\nSet other = CreateObject(4)\nSet obj.SetValueRef = other\nafterSetValueRef = obj.Value\nEnd Sub",
+                "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim obj As OxVba.TestDispatch\nDim other As OxVba.TestDispatch\nDim afterSetValueRef\nSet obj = Application.Value\nSet other = CreateObject(\"OxVba.TestDispatch\")\nSet obj.SetValueRef = other\nafterSetValueRef = obj.Value\nEnd Sub",
             )
             .expect("main module parses");
             let plain_application = module_unit_from_source(
@@ -18136,7 +18132,7 @@ mod tests {
                 "Application",
                 ModuleKind::Class,
                 format!(
-                    "Attribute VB_Name = \"Application\"\n{exposure_attr}\nPublic Property Get Value() As Object\nSet Value = CreateObject(4)\nEnd Property"
+                    "Attribute VB_Name = \"Application\"\n{exposure_attr}\nPublic Property Get Value() As Object\nSet Value = CreateObject(\"OxVba.TestDispatch\")\nEnd Property"
                 ),
             )
             .expect("host application parses");
@@ -18203,14 +18199,14 @@ mod tests {
             let main_module = module_unit_from_source(
                 "MainModule",
                 ModuleKind::Procedural,
-                "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim obj As OxVba.TestDispatch\nDim other As OxVba.TestDispatch\nDim otherCount\nDim afterSetIndexedValue\nDim afterSetNamedIndexedValue\nDim afterSetIndexedValueRef\nDim afterSetNamedIndexedValueRef\nSet obj = Application.Value\nobj.SetIndexedValue(7) = 11\nafterSetIndexedValue = DispatchInvoke(obj, \"Value\")\nobj.SetIndexedValue(lhs := 7) = 11\nafterSetNamedIndexedValue = DispatchInvoke(obj, \"Value\")\nSet other = CreateObject(4)\notherCount = DispatchInvoke(other, \"Count\")\nSet obj.SetIndexedValueRef(8) = other\nafterSetIndexedValueRef = DispatchInvoke(obj, \"Value\")\nSet obj.SetIndexedValueRef(lhs := 8) = other\nafterSetNamedIndexedValueRef = DispatchInvoke(obj, \"Value\")\nEnd Sub",
+                "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim obj As OxVba.TestDispatch\nDim other As OxVba.TestDispatch\nDim otherCount\nDim afterSetIndexedValue\nDim afterSetNamedIndexedValue\nDim afterSetIndexedValueRef\nDim afterSetNamedIndexedValueRef\nSet obj = Application.Value\nobj.SetIndexedValue(7) = 11\nafterSetIndexedValue = DispatchInvoke(obj, \"Value\")\nobj.SetIndexedValue(lhs := 7) = 11\nafterSetNamedIndexedValue = DispatchInvoke(obj, \"Value\")\nSet other = CreateObject(\"OxVba.TestDispatch\")\notherCount = DispatchInvoke(other, \"Count\")\nSet obj.SetIndexedValueRef(8) = other\nafterSetIndexedValueRef = DispatchInvoke(obj, \"Value\")\nSet obj.SetIndexedValueRef(lhs := 8) = other\nafterSetNamedIndexedValueRef = DispatchInvoke(obj, \"Value\")\nEnd Sub",
             )
             .expect("main module parses");
             let host_application = module_unit_from_source(
                 "Application",
                 ModuleKind::Class,
                 format!(
-                    "Attribute VB_Name = \"Application\"\n{exposure_attr}\nPublic Property Get Value() As Object\nSet Value = CreateObject(4)\nEnd Property"
+                    "Attribute VB_Name = \"Application\"\n{exposure_attr}\nPublic Property Get Value() As Object\nSet Value = CreateObject(\"OxVba.TestDispatch\")\nEnd Property"
                 ),
             )
             .expect("host application parses");
@@ -18275,7 +18271,7 @@ mod tests {
             let main_module = module_unit_from_source(
                 "MainModule",
                 ModuleKind::Procedural,
-                "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim obj As OxVba.TestDispatch\nDim other As OxVba.TestDispatch\nDim otherCount\nDim afterSetIndexedValue\nDim afterSetNamedIndexedValue\nDim afterSetIndexedValueRef\nDim afterSetNamedIndexedValueRef\nSet obj = Application.Value\nobj.SetIndexedValue(7) = 11\nafterSetIndexedValue = DispatchInvoke(obj, \"Value\")\nobj.SetIndexedValue(lhs := 7) = 11\nafterSetNamedIndexedValue = DispatchInvoke(obj, \"Value\")\nSet other = CreateObject(4)\notherCount = DispatchInvoke(other, \"Count\")\nSet obj.SetIndexedValueRef(8) = other\nafterSetIndexedValueRef = DispatchInvoke(obj, \"Value\")\nSet obj.SetIndexedValueRef(lhs := 8) = other\nafterSetNamedIndexedValueRef = DispatchInvoke(obj, \"Value\")\nEnd Sub",
+                "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim obj As OxVba.TestDispatch\nDim other As OxVba.TestDispatch\nDim otherCount\nDim afterSetIndexedValue\nDim afterSetNamedIndexedValue\nDim afterSetIndexedValueRef\nDim afterSetNamedIndexedValueRef\nSet obj = Application.Value\nobj.SetIndexedValue(7) = 11\nafterSetIndexedValue = DispatchInvoke(obj, \"Value\")\nobj.SetIndexedValue(lhs := 7) = 11\nafterSetNamedIndexedValue = DispatchInvoke(obj, \"Value\")\nSet other = CreateObject(\"OxVba.TestDispatch\")\notherCount = DispatchInvoke(other, \"Count\")\nSet obj.SetIndexedValueRef(8) = other\nafterSetIndexedValueRef = DispatchInvoke(obj, \"Value\")\nSet obj.SetIndexedValueRef(lhs := 8) = other\nafterSetNamedIndexedValueRef = DispatchInvoke(obj, \"Value\")\nEnd Sub",
             )
             .expect("main module parses");
             let plain_application = module_unit_from_source(
@@ -18288,7 +18284,7 @@ mod tests {
                 "Application",
                 ModuleKind::Class,
                 format!(
-                    "Attribute VB_Name = \"Application\"\n{exposure_attr}\nPublic Property Get Value() As Object\nSet Value = CreateObject(4)\nEnd Property"
+                    "Attribute VB_Name = \"Application\"\n{exposure_attr}\nPublic Property Get Value() As Object\nSet Value = CreateObject(\"OxVba.TestDispatch\")\nEnd Property"
                 ),
             )
             .expect("host application parses");
@@ -18358,7 +18354,7 @@ mod tests {
                 "Application",
                 ModuleKind::Class,
                 format!(
-                    "Attribute VB_Name = \"Application\"\n{exposure_attr}\nPublic Property Get Value() As Object\nSet Value = CreateObject(4)\nEnd Property"
+                    "Attribute VB_Name = \"Application\"\n{exposure_attr}\nPublic Property Get Value() As Object\nSet Value = CreateObject(\"OxVba.TestDispatch\")\nEnd Property"
                 ),
             )
             .expect("host application parses");
@@ -18436,7 +18432,7 @@ mod tests {
                 "Application",
                 ModuleKind::Class,
                 format!(
-                    "Attribute VB_Name = \"Application\"\n{exposure_attr}\nPublic Property Get Value() As Object\nSet Value = CreateObject(4)\nEnd Property"
+                    "Attribute VB_Name = \"Application\"\n{exposure_attr}\nPublic Property Get Value() As Object\nSet Value = CreateObject(\"OxVba.TestDispatch\")\nEnd Property"
                 ),
             )
             .expect("host application parses");
@@ -18543,7 +18539,7 @@ mod tests {
                     "Application",
                     ModuleKind::Class,
                     format!(
-                        "Attribute VB_Name = \"Application\"\n{exposure_attr}\nPublic Property Get Value() As Object\nSet Value = CreateObject(4)\nEnd Property"
+                        "Attribute VB_Name = \"Application\"\n{exposure_attr}\nPublic Property Get Value() As Object\nSet Value = CreateObject(\"OxVba.TestDispatch\")\nEnd Property"
                     ),
                 )
                 .expect("host application parses");
@@ -18635,7 +18631,7 @@ mod tests {
                     "Application",
                     ModuleKind::Class,
                     format!(
-                        "Attribute VB_Name = \"Application\"\n{exposure_attr}\nPublic Property Get Value() As Object\nSet Value = CreateObject(4)\nEnd Property"
+                        "Attribute VB_Name = \"Application\"\n{exposure_attr}\nPublic Property Get Value() As Object\nSet Value = CreateObject(\"OxVba.TestDispatch\")\nEnd Property"
                     ),
                 )
                 .expect("host application parses");
@@ -18706,7 +18702,7 @@ mod tests {
                 "Application",
                 ModuleKind::Class,
                 format!(
-                    "Attribute VB_Name = \"Application\"\n{exposure_attr}\nPublic Property Get Value() As Object\nSet Value = CreateObject(4)\nEnd Property"
+                    "Attribute VB_Name = \"Application\"\n{exposure_attr}\nPublic Property Get Value() As Object\nSet Value = CreateObject(\"OxVba.TestDispatch\")\nEnd Property"
                 ),
             )
             .expect("host application parses");
@@ -18773,7 +18769,7 @@ mod tests {
                 "Application",
                 ModuleKind::Class,
                 format!(
-                    "Attribute VB_Name = \"Application\"\n{exposure_attr}\nPublic Property Get Value() As Object\nSet Value = CreateObject(4)\nEnd Property"
+                    "Attribute VB_Name = \"Application\"\n{exposure_attr}\nPublic Property Get Value() As Object\nSet Value = CreateObject(\"OxVba.TestDispatch\")\nEnd Property"
                 ),
             )
             .expect("host application parses");
@@ -18844,7 +18840,7 @@ mod tests {
                 "Application",
                 ModuleKind::Class,
                 format!(
-                    "Attribute VB_Name = \"Application\"\n{exposure_attr}\nPublic Property Get Value() As Object\nSet Value = CreateObject(4)\nEnd Property"
+                    "Attribute VB_Name = \"Application\"\n{exposure_attr}\nPublic Property Get Value() As Object\nSet Value = CreateObject(\"OxVba.TestDispatch\")\nEnd Property"
                 ),
             )
             .expect("host application parses");
@@ -18909,7 +18905,7 @@ mod tests {
                 "Application",
                 ModuleKind::Class,
                 format!(
-                    "Attribute VB_Name = \"Application\"\n{exposure_attr}\nPublic Property Get Value() As Object\nSet Value = CreateObject(4)\nEnd Property"
+                    "Attribute VB_Name = \"Application\"\n{exposure_attr}\nPublic Property Get Value() As Object\nSet Value = CreateObject(\"OxVba.TestDispatch\")\nEnd Property"
                 ),
             )
             .expect("host application parses");
@@ -18978,7 +18974,7 @@ mod tests {
                 "Application",
                 ModuleKind::Class,
                 format!(
-                    "Attribute VB_Name = \"Application\"\n{exposure_attr}\nPublic Property Get Value() As Object\nSet Value = CreateObject(4)\nEnd Property"
+                    "Attribute VB_Name = \"Application\"\n{exposure_attr}\nPublic Property Get Value() As Object\nSet Value = CreateObject(\"OxVba.TestDispatch\")\nEnd Property"
                 ),
             )
             .expect("host application parses");
@@ -19045,7 +19041,7 @@ mod tests {
                 "Application",
                 ModuleKind::Class,
                 format!(
-                    "Attribute VB_Name = \"Application\"\n{exposure_attr}\nPublic Property Get Value() As Object\nSet Value = CreateObject(4)\nEnd Property"
+                    "Attribute VB_Name = \"Application\"\n{exposure_attr}\nPublic Property Get Value() As Object\nSet Value = CreateObject(\"OxVba.TestDispatch\")\nEnd Property"
                 ),
             )
             .expect("host application parses");
@@ -19116,7 +19112,7 @@ mod tests {
                 "Application",
                 ModuleKind::Class,
                 format!(
-                    "Attribute VB_Name = \"Application\"\n{exposure_attr}\nPublic Property Get Value() As Object\nSet Value = CreateObject(4)\nEnd Property"
+                    "Attribute VB_Name = \"Application\"\n{exposure_attr}\nPublic Property Get Value() As Object\nSet Value = CreateObject(\"OxVba.TestDispatch\")\nEnd Property"
                 ),
             )
             .expect("host application parses");
@@ -19183,7 +19179,7 @@ mod tests {
                 "Application",
                 ModuleKind::Class,
                 format!(
-                    "Attribute VB_Name = \"Application\"\n{exposure_attr}\nPublic Property Get Value() As Object\nSet Value = CreateObject(4)\nEnd Property"
+                    "Attribute VB_Name = \"Application\"\n{exposure_attr}\nPublic Property Get Value() As Object\nSet Value = CreateObject(\"OxVba.TestDispatch\")\nEnd Property"
                 ),
             )
             .expect("host application parses");
@@ -19254,7 +19250,7 @@ mod tests {
                 "Application",
                 ModuleKind::Class,
                 format!(
-                    "Attribute VB_Name = \"Application\"\n{exposure_attr}\nPublic Property Get Value() As Object\nSet Value = CreateObject(4)\nEnd Property"
+                    "Attribute VB_Name = \"Application\"\n{exposure_attr}\nPublic Property Get Value() As Object\nSet Value = CreateObject(\"OxVba.TestDispatch\")\nEnd Property"
                 ),
             )
             .expect("host application parses");
@@ -19319,7 +19315,7 @@ mod tests {
                 "Application",
                 ModuleKind::Class,
                 format!(
-                    "Attribute VB_Name = \"Application\"\n{exposure_attr}\nPublic Property Get Value() As Object\nSet Value = CreateObject(4)\nEnd Property"
+                    "Attribute VB_Name = \"Application\"\n{exposure_attr}\nPublic Property Get Value() As Object\nSet Value = CreateObject(\"OxVba.TestDispatch\")\nEnd Property"
                 ),
             )
             .expect("host application parses");
@@ -19388,7 +19384,7 @@ mod tests {
                 "Application",
                 ModuleKind::Class,
                 format!(
-                    "Attribute VB_Name = \"Application\"\n{exposure_attr}\nPublic Property Get Value() As Object\nSet Value = CreateObject(4)\nEnd Property"
+                    "Attribute VB_Name = \"Application\"\n{exposure_attr}\nPublic Property Get Value() As Object\nSet Value = CreateObject(\"OxVba.TestDispatch\")\nEnd Property"
                 ),
             )
             .expect("host application parses");
@@ -19453,7 +19449,7 @@ mod tests {
                 "Application",
                 ModuleKind::Class,
                 format!(
-                    "Attribute VB_Name = \"Application\"\n{exposure_attr}\nPublic Property Get Value() As Object\nSet Value = CreateObject(4)\nEnd Property"
+                    "Attribute VB_Name = \"Application\"\n{exposure_attr}\nPublic Property Get Value() As Object\nSet Value = CreateObject(\"OxVba.TestDispatch\")\nEnd Property"
                 ),
             )
             .expect("host application parses");
@@ -19522,7 +19518,7 @@ mod tests {
                 "Application",
                 ModuleKind::Class,
                 format!(
-                    "Attribute VB_Name = \"Application\"\n{exposure_attr}\nPublic Property Get Value() As Object\nSet Value = CreateObject(4)\nEnd Property"
+                    "Attribute VB_Name = \"Application\"\n{exposure_attr}\nPublic Property Get Value() As Object\nSet Value = CreateObject(\"OxVba.TestDispatch\")\nEnd Property"
                 ),
             )
             .expect("host application parses");
@@ -19587,7 +19583,7 @@ mod tests {
                 "Application",
                 ModuleKind::Class,
                 format!(
-                    "Attribute VB_Name = \"Application\"\n{exposure_attr}\nPublic Property Get Value() As Object\nSet Value = CreateObject(4)\nEnd Property"
+                    "Attribute VB_Name = \"Application\"\n{exposure_attr}\nPublic Property Get Value() As Object\nSet Value = CreateObject(\"OxVba.TestDispatch\")\nEnd Property"
                 ),
             )
             .expect("host application parses");
@@ -19656,7 +19652,7 @@ mod tests {
                 "Application",
                 ModuleKind::Class,
                 format!(
-                    "Attribute VB_Name = \"Application\"\n{exposure_attr}\nPublic Property Get Value() As Object\nSet Value = CreateObject(4)\nEnd Property"
+                    "Attribute VB_Name = \"Application\"\n{exposure_attr}\nPublic Property Get Value() As Object\nSet Value = CreateObject(\"OxVba.TestDispatch\")\nEnd Property"
                 ),
             )
             .expect("host application parses");
@@ -19721,7 +19717,7 @@ mod tests {
                 "Application",
                 ModuleKind::Class,
                 format!(
-                    "Attribute VB_Name = \"Application\"\n{exposure_attr}\nPublic Property Get Value() As Object\nSet Value = CreateObject(4)\nEnd Property"
+                    "Attribute VB_Name = \"Application\"\n{exposure_attr}\nPublic Property Get Value() As Object\nSet Value = CreateObject(\"OxVba.TestDispatch\")\nEnd Property"
                 ),
             )
             .expect("host application parses");
@@ -20017,7 +20013,7 @@ mod tests {
             let local_application = module_unit_from_source(
                 "Application",
                 ModuleKind::Class,
-                "Attribute VB_Name = \"Application\"\nAttribute VB_PredeclaredId = True\nPublic Property Get Value() As Object\nSet Value = CreateObject(4)\nEnd Property",
+                "Attribute VB_Name = \"Application\"\nAttribute VB_PredeclaredId = True\nPublic Property Get Value() As Object\nSet Value = CreateObject(\"OxVba.TestDispatch\")\nEnd Property",
             )
             .expect("local application parses");
             let host_application = module_unit_from_source(
@@ -20118,7 +20114,7 @@ mod tests {
             let local_application = module_unit_from_source(
                 "Application",
                 ModuleKind::Class,
-                "Attribute VB_Name = \"Application\"\nAttribute VB_PredeclaredId = True\nPublic Property Get Value() As Object\nSet Value = CreateObject(4)\nEnd Property",
+                "Attribute VB_Name = \"Application\"\nAttribute VB_PredeclaredId = True\nPublic Property Get Value() As Object\nSet Value = CreateObject(\"OxVba.TestDispatch\")\nEnd Property",
             )
             .expect("local application parses");
             let host_application = module_unit_from_source(
@@ -20192,7 +20188,7 @@ mod tests {
             let local_application = module_unit_from_source(
                 "Application",
                 ModuleKind::Class,
-                "Attribute VB_Name = \"Application\"\nAttribute VB_PredeclaredId = True\nPublic Property Get Value() As Object\nSet Value = CreateObject(4)\nEnd Property",
+                "Attribute VB_Name = \"Application\"\nAttribute VB_PredeclaredId = True\nPublic Property Get Value() As Object\nSet Value = CreateObject(\"OxVba.TestDispatch\")\nEnd Property",
             )
             .expect("local application parses");
             let host_application = module_unit_from_source(
@@ -20266,7 +20262,7 @@ mod tests {
             let local_application = module_unit_from_source(
                 "Application",
                 ModuleKind::Class,
-                "Attribute VB_Name = \"Application\"\nAttribute VB_PredeclaredId = True\nPublic Property Get Value() As Object\nSet Value = CreateObject(4)\nEnd Property",
+                "Attribute VB_Name = \"Application\"\nAttribute VB_PredeclaredId = True\nPublic Property Get Value() As Object\nSet Value = CreateObject(\"OxVba.TestDispatch\")\nEnd Property",
             )
             .expect("local application parses");
             let host_application = module_unit_from_source(
@@ -20340,7 +20336,7 @@ mod tests {
             let local_application = module_unit_from_source(
                 "Application",
                 ModuleKind::Class,
-                "Attribute VB_Name = \"Application\"\nAttribute VB_PredeclaredId = True\nPublic Property Get Value() As Object\nSet Value = CreateObject(4)\nEnd Property",
+                "Attribute VB_Name = \"Application\"\nAttribute VB_PredeclaredId = True\nPublic Property Get Value() As Object\nSet Value = CreateObject(\"OxVba.TestDispatch\")\nEnd Property",
             )
             .expect("local application parses");
             let host_application = module_unit_from_source(
@@ -20412,7 +20408,7 @@ mod tests {
             let local_application = module_unit_from_source(
                 "Application",
                 ModuleKind::Class,
-                "Attribute VB_Name = \"Application\"\nAttribute VB_PredeclaredId = True\nPublic Property Get Value() As Object\nSet Value = CreateObject(4)\nEnd Property",
+                "Attribute VB_Name = \"Application\"\nAttribute VB_PredeclaredId = True\nPublic Property Get Value() As Object\nSet Value = CreateObject(\"OxVba.TestDispatch\")\nEnd Property",
             )
             .expect("local application parses");
             let host_application = module_unit_from_source(
@@ -20484,7 +20480,7 @@ mod tests {
             let local_application = module_unit_from_source(
                 "Application",
                 ModuleKind::Class,
-                "Attribute VB_Name = \"Application\"\nAttribute VB_PredeclaredId = True\nPublic Property Get Value() As Object\nSet Value = CreateObject(4)\nEnd Property",
+                "Attribute VB_Name = \"Application\"\nAttribute VB_PredeclaredId = True\nPublic Property Get Value() As Object\nSet Value = CreateObject(\"OxVba.TestDispatch\")\nEnd Property",
             )
             .expect("local application parses");
             let host_application = module_unit_from_source(
@@ -20556,7 +20552,7 @@ mod tests {
             let local_application = module_unit_from_source(
                 "Application",
                 ModuleKind::Class,
-                "Attribute VB_Name = \"Application\"\nAttribute VB_PredeclaredId = True\nPublic Property Get Value() As Object\nSet Value = CreateObject(4)\nEnd Property",
+                "Attribute VB_Name = \"Application\"\nAttribute VB_PredeclaredId = True\nPublic Property Get Value() As Object\nSet Value = CreateObject(\"OxVba.TestDispatch\")\nEnd Property",
             )
             .expect("local application parses");
             let host_application = module_unit_from_source(
@@ -20628,7 +20624,7 @@ mod tests {
             let local_application = module_unit_from_source(
                 "Application",
                 ModuleKind::Class,
-                "Attribute VB_Name = \"Application\"\nAttribute VB_PredeclaredId = True\nPublic Property Get Value() As Object\nSet Value = CreateObject(4)\nEnd Property",
+                "Attribute VB_Name = \"Application\"\nAttribute VB_PredeclaredId = True\nPublic Property Get Value() As Object\nSet Value = CreateObject(\"OxVba.TestDispatch\")\nEnd Property",
             )
             .expect("local application parses");
             let host_application = module_unit_from_source(
@@ -20700,7 +20696,7 @@ mod tests {
             let local_application = module_unit_from_source(
                 "Application",
                 ModuleKind::Class,
-                "Attribute VB_Name = \"Application\"\nAttribute VB_PredeclaredId = True\nPublic Property Get Value() As Object\nSet Value = CreateObject(4)\nEnd Property",
+                "Attribute VB_Name = \"Application\"\nAttribute VB_PredeclaredId = True\nPublic Property Get Value() As Object\nSet Value = CreateObject(\"OxVba.TestDispatch\")\nEnd Property",
             )
             .expect("local application parses");
             let host_application = module_unit_from_source(
@@ -20765,13 +20761,13 @@ mod tests {
             let main_module = module_unit_from_source(
                 "MainModule",
                 ModuleKind::Procedural,
-                "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim obj As OxVba.TestDispatch\nDim other As OxVba.TestDispatch\nDim afterSetValueRef\nSet obj = Application.Value\nSet other = CreateObject(4)\nSet obj.SetValueRef = other\nafterSetValueRef = obj.Value\nEnd Sub",
+                "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim obj As OxVba.TestDispatch\nDim other As OxVba.TestDispatch\nDim afterSetValueRef\nSet obj = Application.Value\nSet other = CreateObject(\"OxVba.TestDispatch\")\nSet obj.SetValueRef = other\nafterSetValueRef = obj.Value\nEnd Sub",
             )
             .expect("main module parses");
             let local_application = module_unit_from_source(
                 "Application",
                 ModuleKind::Class,
-                "Attribute VB_Name = \"Application\"\nAttribute VB_PredeclaredId = True\nPublic Property Get Value() As Object\nSet Value = CreateObject(4)\nEnd Property",
+                "Attribute VB_Name = \"Application\"\nAttribute VB_PredeclaredId = True\nPublic Property Get Value() As Object\nSet Value = CreateObject(\"OxVba.TestDispatch\")\nEnd Property",
             )
             .expect("local application parses");
             let host_application = module_unit_from_source(
@@ -20836,13 +20832,13 @@ mod tests {
             let main_module = module_unit_from_source(
                 "MainModule",
                 ModuleKind::Procedural,
-                "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim obj As OxVba.TestDispatch\nDim other As OxVba.TestDispatch\nDim otherCount\nDim afterSetIndexedValue\nDim afterSetNamedIndexedValue\nDim afterSetIndexedValueRef\nDim afterSetNamedIndexedValueRef\nSet obj = Application.Value\nobj.SetIndexedValue(7) = 11\nafterSetIndexedValue = DispatchInvoke(obj, \"Value\")\nobj.SetIndexedValue(lhs := 7) = 11\nafterSetNamedIndexedValue = DispatchInvoke(obj, \"Value\")\nSet other = CreateObject(4)\notherCount = DispatchInvoke(other, \"Count\")\nSet obj.SetIndexedValueRef(8) = other\nafterSetIndexedValueRef = DispatchInvoke(obj, \"Value\")\nSet obj.SetIndexedValueRef(lhs := 8) = other\nafterSetNamedIndexedValueRef = DispatchInvoke(obj, \"Value\")\nEnd Sub",
+                "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim obj As OxVba.TestDispatch\nDim other As OxVba.TestDispatch\nDim otherCount\nDim afterSetIndexedValue\nDim afterSetNamedIndexedValue\nDim afterSetIndexedValueRef\nDim afterSetNamedIndexedValueRef\nSet obj = Application.Value\nobj.SetIndexedValue(7) = 11\nafterSetIndexedValue = DispatchInvoke(obj, \"Value\")\nobj.SetIndexedValue(lhs := 7) = 11\nafterSetNamedIndexedValue = DispatchInvoke(obj, \"Value\")\nSet other = CreateObject(\"OxVba.TestDispatch\")\notherCount = DispatchInvoke(other, \"Count\")\nSet obj.SetIndexedValueRef(8) = other\nafterSetIndexedValueRef = DispatchInvoke(obj, \"Value\")\nSet obj.SetIndexedValueRef(lhs := 8) = other\nafterSetNamedIndexedValueRef = DispatchInvoke(obj, \"Value\")\nEnd Sub",
             )
             .expect("main module parses");
             let local_application = module_unit_from_source(
                 "Application",
                 ModuleKind::Class,
-                "Attribute VB_Name = \"Application\"\nAttribute VB_PredeclaredId = True\nPublic Property Get Value() As Object\nSet Value = CreateObject(4)\nEnd Property",
+                "Attribute VB_Name = \"Application\"\nAttribute VB_PredeclaredId = True\nPublic Property Get Value() As Object\nSet Value = CreateObject(\"OxVba.TestDispatch\")\nEnd Property",
             )
             .expect("local application parses");
             let host_application = module_unit_from_source(
@@ -20940,7 +20936,7 @@ mod tests {
                 let local_application = module_unit_from_source(
                     "Application",
                     ModuleKind::Class,
-                    "Attribute VB_Name = \"Application\"\nAttribute VB_PredeclaredId = True\nPublic Property Get Value() As Object\nSet Value = CreateObject(4)\nEnd Property",
+                    "Attribute VB_Name = \"Application\"\nAttribute VB_PredeclaredId = True\nPublic Property Get Value() As Object\nSet Value = CreateObject(\"OxVba.TestDispatch\")\nEnd Property",
                 )
                 .expect("local application parses");
                 let host_application = module_unit_from_source(
@@ -21015,7 +21011,7 @@ mod tests {
             let local_application = module_unit_from_source(
                 "Application",
                 ModuleKind::Class,
-                "Attribute VB_Name = \"Application\"\nAttribute VB_PredeclaredId = True\nPublic Property Get Value() As Object\nSet Value = CreateObject(4)\nEnd Property",
+                "Attribute VB_Name = \"Application\"\nAttribute VB_PredeclaredId = True\nPublic Property Get Value() As Object\nSet Value = CreateObject(\"OxVba.TestDispatch\")\nEnd Property",
             )
             .expect("local application parses");
             let host_application = module_unit_from_source(

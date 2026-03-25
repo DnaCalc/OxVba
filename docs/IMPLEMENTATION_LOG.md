@@ -113,113 +113,113 @@
 ## 2026-03-19 - Bound host root indexed setter precedence
 
 - Continued `IP-08A` by widening the bounded host/COM coexistence floor from host-returned invoke traffic into the matching indexed imported setter lanes on returned COM objects.
-- In [project.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-compiler\src\project.rs), added direct compiler evidence that `obj.SetIndexedValue(7) = 11`, `obj.SetIndexedValue(lhs := 7) = 11`, `Set obj.SetIndexedValueRef(8) = other`, and `Set obj.SetIndexedValueRef(lhs := 8) = other` preserve the same host-root `Application.Value -> CreateObject(4)` handoff and imported dispatch-token lowering on the returned COM object.
+- In [project.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-compiler\src\project.rs), added direct compiler evidence that `obj.SetIndexedValue(7) = 11`, `obj.SetIndexedValue(lhs := 7) = 11`, `Set obj.SetIndexedValueRef(8) = other`, and `Set obj.SetIndexedValueRef(lhs := 8) = other` preserve the same host-root `Application.Value -> CreateObject("OxVba.TestDispatch")` handoff and imported dispatch-token lowering on the returned COM object.
 - In [engine.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-host\src\engine.rs), added matching host runtime evidence proving those indexed setter lanes execute end to end on the returned COM-backed object and that a conflicting same-name plain-project `Application` reference still does not steal any of those indexed setter lanes by reference order.
 - This raises the honest `IP-08A` host/COM coexistence floor from host-returned invoke traffic alone to that same bounded subset plus indexed imported setter traffic, while narrowing the same-name plain-project identity frontier again without overclaiming broader host object identity closure.
 
 ## 2026-03-19 - Bound host root named-argument invoke precedence
 
 - Continued `IP-08A` by widening the bounded host/COM coexistence floor from positional imported invoke traffic into the matching named-argument `Call` plus bare statement-context subsets across both parenthesized and no-paren forms on host-returned COM objects.
-- In [project.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-compiler\src\project.rs), added direct compiler evidence that `Call obj.SumPair(rhs := 14, lhs := 3)`, `Call obj.LookupPair(rhs := 9, lhs := 5)`, `Call obj(value := 41)`, `obj.SumPair(rhs := 14, lhs := 3)`, `obj.LookupPair(rhs := 9, lhs := 5)`, `obj(value := 41)`, and the matching no-paren named-argument forms preserve the same host-root `Application.Value -> CreateObject(4)` handoff and imported dispatch-token lowering as the already-proved direct imported subset.
+- In [project.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-compiler\src\project.rs), added direct compiler evidence that `Call obj.SumPair(rhs := 14, lhs := 3)`, `Call obj.LookupPair(rhs := 9, lhs := 5)`, `Call obj(value := 41)`, `obj.SumPair(rhs := 14, lhs := 3)`, `obj.LookupPair(rhs := 9, lhs := 5)`, `obj(value := 41)`, and the matching no-paren named-argument forms preserve the same host-root `Application.Value -> CreateObject("OxVba.TestDispatch")` handoff and imported dispatch-token lowering as the already-proved direct imported subset.
 - In [engine.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-host\src\engine.rs), added matching host runtime evidence proving those named-argument imported invoke subsets execute end to end on the returned COM-backed object and that a conflicting same-name plain-project `Application` reference still does not steal any of those named-argument invoke lanes by reference order.
 - This raises the honest `IP-08A` host/COM coexistence floor from positional imported invoke forms alone to that same bounded subset plus the matching named-argument invoke forms, while narrowing the same-name plain-project identity frontier again without overclaiming broader host object identity closure.
 
 ## 2026-03-19 - Bound plain-project precedence on host-returned parenthesized invoke subsets
 
 - Continued `IP-08A` by widening the bounded host/COM coexistence floor from no-paren positional invokes into the matching parenthesized positional `Call` plus bare statement-context invocation subsets on host-returned COM objects.
-- In [project.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-compiler\src\project.rs), added direct compiler evidence that `Call obj.Count()`, `Call obj.Exists(42)`, `Call obj.Lookup(42)`, `Call obj.Value()`, `Call obj(42)`, `obj.Count()`, `obj.Exists(42)`, `obj.Lookup(42)`, `obj.Value()`, and `obj(42)` preserve the same host-root `Application.Value -> CreateObject(4)` handoff and imported dispatch-token lowering as the already-proved direct imported subset.
+- In [project.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-compiler\src\project.rs), added direct compiler evidence that `Call obj.Count()`, `Call obj.Exists(42)`, `Call obj.Lookup(42)`, `Call obj.Value()`, `Call obj(42)`, `obj.Count()`, `obj.Exists(42)`, `obj.Lookup(42)`, `obj.Value()`, and `obj(42)` preserve the same host-root `Application.Value -> CreateObject("OxVba.TestDispatch")` handoff and imported dispatch-token lowering as the already-proved direct imported subset.
 - In [engine.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-host\src\engine.rs), added matching host runtime evidence proving those parenthesized imported invoke subsets execute end to end on the returned COM-backed object and that a conflicting same-name plain-project `Application` reference still does not steal either parenthesized invoke lane by reference order.
 - This raises the honest `IP-08A` host/COM coexistence floor from no-paren positional invoke forms alone to that same bounded subset plus the matching parenthesized positional invoke forms, while narrowing the same-name plain-project identity frontier again without overclaiming broader host object identity closure.
 
 ## 2026-03-19 - Bound plain-project precedence on host-returned no-paren invoke subsets
 
 - Continued `IP-08A` by widening the bounded host/COM coexistence floor from imported exception and object-result neighbors into imported no-paren positional `Call` plus bare statement-context invocation subsets on host-returned COM objects.
-- In [project.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-compiler\src\project.rs), added direct compiler evidence that `Call obj.Count`, `Call obj.Exists 42`, `Call obj.Lookup 42`, `Call obj.Value`, `Call obj 42`, `obj.Exists 42`, `obj.Lookup 42`, and `obj 42` preserve the same host-root `Application.Value -> CreateObject(4)` handoff and imported dispatch-token lowering as the already-proved direct imported subset.
+- In [project.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-compiler\src\project.rs), added direct compiler evidence that `Call obj.Count`, `Call obj.Exists 42`, `Call obj.Lookup 42`, `Call obj.Value`, `Call obj 42`, `obj.Exists 42`, `obj.Lookup 42`, and `obj 42` preserve the same host-root `Application.Value -> CreateObject("OxVba.TestDispatch")` handoff and imported dispatch-token lowering as the already-proved direct imported subset.
 - In [engine.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-host\src\engine.rs), added matching host runtime evidence proving those no-paren imported invoke subsets execute end to end on the returned COM-backed object and that a conflicting same-name plain-project `Application` reference still does not steal either no-paren invoke lane by reference order.
 - This raises the honest `IP-08A` host/COM coexistence floor from read/write/object-result/object-property/exception traffic alone to that same bounded subset plus no-paren positional invoke forms, while narrowing the same-name plain-project identity frontier again without overclaiming broader host object identity closure.
 
 ## 2026-03-19 - Bound plain-project precedence on host-returned no-paren object results
 
 - Continued `IP-08A` by widening the bounded host/COM coexistence floor from parenthesized imported zero-arg object-result rebinding into the matching no-parentheses neighbor on host-returned COM objects.
-- In [project.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-compiler\src\project.rs), added direct compiler evidence that `ReturnSelfDispatch` / `ReturnSelfUnknown` preserve the same host-root `Application.Value -> CreateObject(4)` handoff and assignment-intent lowering as the already-proved parenthesized forms.
+- In [project.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-compiler\src\project.rs), added direct compiler evidence that `ReturnSelfDispatch` / `ReturnSelfUnknown` preserve the same host-root `Application.Value -> CreateObject("OxVba.TestDispatch")` handoff and assignment-intent lowering as the already-proved parenthesized forms.
 - In [engine.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-host\src\engine.rs), added matching host runtime evidence proving the returned handles and follow-on `Count` traffic remain stable on that no-paren object-result subset, and that a conflicting same-name plain-project `Application` reference still does not steal that lane by reference order.
 - This raises the honest `IP-08A` host/COM coexistence floor from parenthesized zero-arg object-result traffic alone to that same bounded subset plus the no-parentheses neighbor, while narrowing the same-name plain-project identity frontier again without overclaiming broader host object identity closure.
 
 ## 2026-03-19 - Bound plain-project precedence on host-returned parenthesized object property gets
 
 - Continued `IP-08A` by extending the same-name plain-project precedence register from non-parenthesized imported object-valued `PropertyGet` traffic into the matching parenthesized zero-arg object-property subset on host-returned COM objects.
-- In [project.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-compiler\src\project.rs), added compiler evidence that a conflicting `PlainProject.Application` does not steal `HostProject.Application.Value` when the host root returns `CreateObject(4)` into `Dim obj As OxVba.TestDispatch` and the caller then executes `SelfDispatch()` / `SelfUnknown()` across explicit `Set` on `Object` targets plus implicit / explicit-`Let` assignment on `Variant` targets.
+- In [project.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-compiler\src\project.rs), added compiler evidence that a conflicting `PlainProject.Application` does not steal `HostProject.Application.Value` when the host root returns `CreateObject("OxVba.TestDispatch")` into `Dim obj As OxVba.TestDispatch` and the caller then executes `SelfDispatch()` / `SelfUnknown()` across explicit `Set` on `Object` targets plus implicit / explicit-`Let` assignment on `Variant` targets.
 - In [engine.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-host\src\engine.rs), added live runtime evidence that the same conflicting-name case still executes as the host-root COM-return lane while preserving bounded object handles plus follow-up `DispatchInvoke(..., "Count")` results derived from each returned handle.
 - This narrows the remaining `IP-08A` host identity frontier again: same-name plain-project precedence is now explicit on the current parenthesized imported object-property subset too, not only on the non-parenthesized neighbor.
 
 ## 2026-03-19 - Bound plain-project precedence on host-returned imported object-result rebinding
 
 - Continued `IP-08A` by extending the same-name plain-project precedence register from scalar property/default-member traffic into imported object-result rebinding on host-returned COM objects.
-- In [project.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-compiler\src\project.rs), added compiler evidence that a conflicting `PlainProject.Application` does not steal `HostProject.Application.Value` when the host root returns `CreateObject(4)` into `Dim obj As OxVba.TestDispatch` and the caller then executes `ReturnSelfDispatch()` / `ReturnSelfUnknown()` across explicit `Set` on `Object` targets plus implicit / explicit-`Let` assignment on `Variant` targets.
+- In [project.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-compiler\src\project.rs), added compiler evidence that a conflicting `PlainProject.Application` does not steal `HostProject.Application.Value` when the host root returns `CreateObject("OxVba.TestDispatch")` into `Dim obj As OxVba.TestDispatch` and the caller then executes `ReturnSelfDispatch()` / `ReturnSelfUnknown()` across explicit `Set` on `Object` targets plus implicit / explicit-`Let` assignment on `Variant` targets.
 - In [engine.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-host\src\engine.rs), added live runtime evidence that the same conflicting-name case still executes as the host-root COM-return lane while preserving bounded object handles plus follow-up `DispatchInvoke(..., "Count")` results derived from each returned handle.
 - This narrows the remaining `IP-08A` host identity frontier again: same-name plain-project precedence is now explicit on imported object-result rebinding too, not only on imported method/property/default-member/object-property/exception lanes.
 
 ## 2026-03-19 - Bound plain-project precedence on host-returned imported property and default-member traffic
 
 - Continued `IP-08A` by making two more host identity neighbors explicit instead of leaving same-name plain-project precedence implied only on imported `Count()`, object-property, exception, and `PropertyPutRef` lanes.
-- In [project.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-compiler\src\project.rs), added compiler evidence that a conflicting `PlainProject.Application` does not steal `HostProject.Application.Value` when the host root returns `CreateObject(4)` into `Dim obj As OxVba.TestDispatch` and the caller then executes imported `obj.SetValue = 9 : afterValue = obj.Value` or imported authoritative default-member traffic `echoValue = obj(41)`.
+- In [project.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-compiler\src\project.rs), added compiler evidence that a conflicting `PlainProject.Application` does not steal `HostProject.Application.Value` when the host root returns `CreateObject("OxVba.TestDispatch")` into `Dim obj As OxVba.TestDispatch` and the caller then executes imported `obj.SetValue = 9 : afterValue = obj.Value` or imported authoritative default-member traffic `echoValue = obj(41)`.
 - In [engine.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-host\src\engine.rs), added live runtime evidence that the same conflicting-name cases still execute as the host-root COM-return lane with deterministic snapshots `[ObjectHandle(5004), I32(5013)]` for imported property traffic and `[ObjectHandle(5004), I32(5061)]` for imported authoritative default-member traffic.
 - This narrows the remaining `IP-08A` host identity frontier again: same-name plain-project precedence is now explicit across imported method, property-put/get, property-putref, default-member, object-property, and exception lanes on host-returned COM objects, even though broader host object identity closure is still open.
 
 ## 2026-03-19 - Prove host-returned COM objects support imported property-putref traffic
 
 - Continued `IP-08A` by widening the bounded host/COM coexistence floor from imported scalar `PropertyPut`/`PropertyGet` and exception lanes into assignment-form imported `PropertyPutRef` traffic on the same host-returned COM object.
-- In [project.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-compiler\src\project.rs), added compiler evidence that a host-injected `Application.Value` getter may return `CreateObject(4)` into `Dim obj As OxVba.TestDispatch`, preserve object-valued RHS setup through `Set other = CreateObject(4)`, lower `Set obj.SetValueRef = other` through the imported `PropertyPutRef` lane, and still lower `afterSetValueRef = obj.Value` through the imported getter lane.
+- In [project.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-compiler\src\project.rs), added compiler evidence that a host-injected `Application.Value` getter may return `CreateObject("OxVba.TestDispatch")` into `Dim obj As OxVba.TestDispatch`, preserve object-valued RHS setup through `Set other = CreateObject("OxVba.TestDispatch")`, lower `Set obj.SetValueRef = other` through the imported `PropertyPutRef` lane, and still lower `afterSetValueRef = obj.Value` through the imported getter lane.
 - In [engine.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-host\src\engine.rs), added live runtime evidence that the same lane executes on the bounded shared object/value model with deterministic snapshot `[ObjectHandle(5004), ObjectHandle(5004), I32(5013)]`, and that a conflicting same-name plain-project `Application` reference does not steal that imported `PropertyPutRef` handoff by reference order.
 - This raises the honest `IP-08A` host/COM coexistence floor from imported property/default-member/object-result/object-property/exception traffic to the same floor plus assignment-form imported `PropertyPutRef` traffic on host-returned COM objects; broader host object identity closure remains open.
 
 ## 2026-03-19 - Prove host-returned COM objects preserve imported object-result rebinding
 
 - Continued `IP-08A` by widening the bounded host/COM coexistence floor beyond imported scalar method/property/default-member traffic into imported object-result assignment-intent traffic on the same host-returned COM object.
-- In [standard.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-hal\src\adapters\standard.rs), fixed the deterministic projection fallback for `CreateObject(4)` so the controlled self-object members behind DISPIDs `23` and `24` now return bounded object handles instead of collapsing into arithmetic scalars on the shared object/value path, and added a HAL unit witness for that projection contract.
-- In [project.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-compiler\src\project.rs), added compiler evidence that a host-injected `Application.Value` getter may return `CreateObject(4)` into `Dim obj As OxVba.TestDispatch` and then preserve imported `ReturnSelfDispatch()` / `ReturnSelfUnknown()` rewrites across explicit `Set` on `Object` targets plus implicit / explicit-`Let` assignment on `Variant` targets.
+- In [standard.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-hal\src\adapters\standard.rs), fixed the deterministic projection fallback for `CreateObject("OxVba.TestDispatch")` so the controlled self-object members behind DISPIDs `23` and `24` now return bounded object handles instead of collapsing into arithmetic scalars on the shared object/value path, and added a HAL unit witness for that projection contract.
+- In [project.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-compiler\src\project.rs), added compiler evidence that a host-injected `Application.Value` getter may return `CreateObject("OxVba.TestDispatch")` into `Dim obj As OxVba.TestDispatch` and then preserve imported `ReturnSelfDispatch()` / `ReturnSelfUnknown()` rewrites across explicit `Set` on `Object` targets plus implicit / explicit-`Let` assignment on `Variant` targets.
 - In [engine.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-host\src\engine.rs), added live runtime evidence that the same lane now preserves bounded object handles plus follow-up `DispatchInvoke(..., "Count")` results derived from each returned handle instead of failing on `Set requires object value`.
 - This raises the honest `IP-08A` host/COM coexistence floor from bounded imported scalar traffic to the same floor plus bounded imported object-result rebinding on host-returned COM objects; broader imported breadth and full host identity closure remain open.
 
 ## 2026-03-19 - Bound plain-project precedence on host-root COM return
 
 - Continued `IP-08A` by making the first host-root-to-imported COM lane explicit against the nearby same-name plain-project neighbor instead of leaving host/plain precedence implicit outside the `WithEvents` subset.
-- In [project.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-compiler\src\project.rs), added compiler evidence that a conflicting `PlainProject.Application` does not steal `HostProject.Application.Value` when the host root returns `CreateObject(4)` into `Dim obj As OxVba.TestDispatch`, and the imported `obj.Count()` rewrite still lowers through the host-root PMR path.
+- In [project.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-compiler\src\project.rs), added compiler evidence that a conflicting `PlainProject.Application` does not steal `HostProject.Application.Value` when the host root returns `CreateObject("OxVba.TestDispatch")` into `Dim obj As OxVba.TestDispatch`, and the imported `obj.Count()` rewrite still lowers through the host-root PMR path.
 - In [engine.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-host\src\engine.rs), added live runtime evidence that the same conflicting-name case still executes as the host-root COM-return lane with deterministic snapshot `[ObjectHandle(5004), I32(5005)]`.
 - This narrows one more real `IP-08A` identity gap: same-name plain-project references no longer remain unproved on the first imported host-root COM handoff, even though broader host object identity closure is still open.
 
 ## 2026-03-19 - Prove host-returned COM objects support imported default-member traffic
 
 - Continued `IP-08A` by widening the bounded host/COM coexistence floor from imported method and named-property traffic into imported authoritative default-member traffic on the same host-returned COM object.
-- In [project.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-compiler\src\project.rs), added compiler evidence that a host-injected `Application.Value` getter may return `CreateObject(4)` into a typed imported receiver and then lower `echoValue = obj(41)` through the imported authoritative default-member member path.
+- In [project.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-compiler\src\project.rs), added compiler evidence that a host-injected `Application.Value` getter may return `CreateObject("OxVba.TestDispatch")` into a typed imported receiver and then lower `echoValue = obj(41)` through the imported authoritative default-member member path.
 - In [engine.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-host\src\engine.rs), added live runtime evidence that the same lane executes on the bounded shared object/value model with deterministic snapshot `[ObjectHandle(5004), I32(5061)]`.
 - This raises the honest `IP-08A` host/COM coexistence floor from bounded imported method/property traffic to the same floor plus imported default-member call traffic on host-returned COM objects; broader imported breadth and host object identity closure remain open.
 
 ## 2026-03-19 - Prove host-returned COM objects support imported property traffic
 
 - Continued `IP-08A` by widening the bounded host/COM coexistence floor beyond one imported method call into imported setter/getter property traffic on the same host-returned COM object.
-- In [project.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-compiler\src\project.rs), added compiler evidence that a host-injected `Application.Value` getter may return `CreateObject(4)` into a typed imported receiver, preserve imported `PropertyPut` lowering for `obj.SetValue = 9`, and then preserve imported zero-arg `PropertyGet` lowering for `afterValue = obj.Value`.
+- In [project.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-compiler\src\project.rs), added compiler evidence that a host-injected `Application.Value` getter may return `CreateObject("OxVba.TestDispatch")` into a typed imported receiver, preserve imported `PropertyPut` lowering for `obj.SetValue = 9`, and then preserve imported zero-arg `PropertyGet` lowering for `afterValue = obj.Value`.
 - In [engine.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-host\src\engine.rs), added live runtime evidence that the same lane executes on the bounded shared object/value model with deterministic snapshot `[ObjectHandle(5004), I32(5013)]`.
 - This raises the honest `IP-08A` host/COM coexistence floor from a single imported `Count()` call to bounded imported property-put plus property-get traffic on host-returned COM objects; broader imported member/property/default-member breadth on those objects remains open.
 
 ## 2026-03-19 - Prove host roots can return imported COM-capable objects
 
 - Continued `IP-08A` by widening the bounded host/COM coexistence floor from raw `DispatchInvoke` on host-returned COM objects into metadata-backed imported early-bound member traffic.
-- In [project.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-compiler\src\project.rs), added compiler evidence that a host-injected `Application.Value` getter may lower through the host-root path while returning `CreateObject(4)` into a typed imported receiver `Dim obj As OxVba.TestDispatch`, and then lower `obj.Count()` through the imported metadata-backed member path.
+- In [project.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-compiler\src\project.rs), added compiler evidence that a host-injected `Application.Value` getter may lower through the host-root path while returning `CreateObject("OxVba.TestDispatch")` into a typed imported receiver `Dim obj As OxVba.TestDispatch`, and then lower `obj.Count()` through the imported metadata-backed member path.
 - In [engine.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-host\src\engine.rs), added live runtime evidence that the same lane returns deterministic COM-backed object handle `5004` and then executes the imported early-bound `Count()` member with result `5005`.
 - This raises the honest `IP-08A` host/COM coexistence floor from raw invoke on host-returned COM objects to bounded imported early-bound member execution on those returned objects; broader mixed host/COM identity and parity remain open.
 
 ## 2026-03-19 - Prove host roots can return COM-backed objects
 
 - Continued `IP-08A` by widening the host/COM coexistence floor from non-routing handle separation into a real mixed object-model execution lane.
-- In [project.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-compiler\src\project.rs), added compiler evidence that a host-injected `Application.Value` getter may lower through the host-root path while returning `CreateObject(4)` and feeding that object into `DispatchInvoke`.
+- In [project.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-compiler\src\project.rs), added compiler evidence that a host-injected `Application.Value` getter may lower through the host-root path while returning `CreateObject("OxVba.TestDispatch")` and feeding that object into `DispatchInvoke`.
 - In [engine.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-host\src\engine.rs), added live runtime evidence that the same host-root getter returns the deterministic COM-backed handle `5004` and that `DispatchInvoke` on that returned object executes on the shared object/value model with result `5009`.
 - This raises the honest `IP-08A` host/COM coexistence floor from handle non-aliasing into bounded execution of host roots returning COM-backed objects; broader mixed host/COM parity is still open.
 
 ## 2026-03-19 - Bound host event routing against COM handle neighbors
 
 - Continued `IP-08A` by making one more shared-`ObjectHandle` boundary explicit instead of leaving host event routing adjacent to COM object creation unproved.
-- In [project.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-compiler\src\project.rs), added compiler evidence that a neighboring `CreateObject(4)` lane does not perturb a host-backed `WithEvents` binding sourced from `HostProject.Emitter`.
+- In [project.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-compiler\src\project.rs), added compiler evidence that a neighboring `CreateObject("OxVba.TestDispatch")` lane does not perturb a host-backed `WithEvents` binding sourced from `HostProject.Emitter`.
 - In [engine.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-host\src\engine.rs), added live runtime evidence that `dispatch_host_event_into_runtime(...)` does not route a host event through a COM-backed handle captured beside the bound host-backed source, while the bound host-backed handle still routes the callback.
 - This narrows the honest `IP-08A` host/COM coexistence frontier from raw handle non-aliasing into the broader remaining semantics around mixed host/COM object-model behavior.
 
@@ -992,9 +992,9 @@
 - In [typecheck.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-compiler\src\typecheck.rs), tightened assignment-intent validation so implicit assignment now rejects known object-producing values for `Object` targets with a stable `Set required for Object variable ...` diagnostic while keeping the bounded implicit `Variant` object-result lane intact.
 - In [project.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-compiler\src\project.rs), changed lowered external `As New` initialization to emit `Set obj = CreateObject(...)` so rewrite-based early-bound lowering no longer manufactures invalid implicit object assignment.
 - Updated compiler and host evidence for:
-  - `obj = CreateObject(4)` rejecting on a typed `Object` target with a stable `Set required ...` diagnostic
-  - early-bound external member-call fixtures using explicit `Set obj = CreateObject(4)` instead of the invalid omitted-`Set` form
-  - lowered external `As New` rewrite emitting `Set obj = CreateObject(4)`
+  - `obj = CreateObject("OxVba.TestDispatch")` rejecting on a typed `Object` target with a stable `Set required ...` diagnostic
+  - early-bound external member-call fixtures using explicit `Set obj = CreateObject("OxVba.TestDispatch")` instead of the invalid omitted-`Set` form
+  - lowered external `As New` rewrite emitting `Set obj = CreateObject("OxVba.TestDispatch")`
 - `IP-02` remains `in-progress`: broader typed/object `Set` vs `Let` parity, ambiguous or broader non-authoritative default-member resolution, and wider Office-style call-vs-value parity still remain open.
 
 ## 2026-03-16 - Extended IP-02 bounded non-authoritative default-member Set read evidence
@@ -1031,8 +1031,8 @@
 
 - Continued the active `IP-02A` assignment-intent closure slice and locked the direct implicit object-call success neighbors instead of leaving them implied by broader integration behavior.
 - Added compiler and host evidence for:
-  - `v = CreateObject(4)` succeeding for a `Variant` target
-  - `obj = CreateObject(4)` succeeding for an `Object` target
+  - `v = CreateObject("OxVba.TestDispatch")` succeeding for a `Variant` target
+  - `obj = CreateObject("OxVba.TestDispatch")` succeeding for an `Object` target
 - `IP-02` remains `in-progress`: broader typed/object `Set` vs `Let` / implicit assignment parity beyond the now-covered bounded typed lanes is still open.
 
 ## 2026-03-16 - Extended IP-02 typed Variant Set scalar rejection evidence
@@ -1046,7 +1046,7 @@
 
 - Continued the active `IP-02A` assignment-intent closure slice and bounded two implicit assignment neighbors instead of leaving them to drift behind the explicit `Set`/`Let` coverage.
 - Added compiler and host evidence for:
-  - `n = CreateObject(4)` rejecting an object-producing call result on a scalar `Long` target
+  - `n = CreateObject("OxVba.TestDispatch")` rejecting an object-producing call result on a scalar `Long` target
 -  - `obj = 7` rejecting a scalar source on an `Object` target
 - This remains intentionally narrow: implicit object-target `CreateObject(...)` assignment still exists as a compiler-managed route for the current early-bound/object-creation subset.
 - `IP-02` remains `in-progress`: broader typed/object `Set` vs `Let` / implicit assignment parity beyond the now-covered bounded scalar/object implicit lanes is still open.
@@ -1056,14 +1056,14 @@
 - Continued the active `IP-02A` assignment-intent closure slice and proved two additional typed `Let` rejection lanes instead of leaving `Let` parity at the `Object`-target object-call rejection case only.
 - Added compiler and host evidence for:
   - `Let obj = 7` rejecting a scalar source on an `Object` target
-  - `Let n = CreateObject(4)` rejecting an object-producing call result on a scalar `Long` target
+  - `Let n = CreateObject("OxVba.TestDispatch")` rejecting an object-producing call result on a scalar `Long` target
 - `IP-02` remains `in-progress`: broader typed/object `Set` vs `Let` parity beyond the now-covered bounded success and rejection lanes is still open.
 
 ## 2026-03-16 - Extended IP-02 typed Let object-call assignment evidence
 
 - Continued the active `IP-02A` assignment-intent closure slice and proved that the bounded `Let` object-call lane also succeeds for `Variant` targets instead of leaving `Let` coverage at the `Object`-target rejection lane only.
 - Added compiler and host evidence for:
-  - `Let v = CreateObject(4)`
+  - `Let v = CreateObject("OxVba.TestDispatch")`
 - `IP-02` remains `in-progress`: broader typed/object `Set` vs `Let` parity beyond the now-covered bounded `Object`/`Variant` object-call lanes and typed rejection lanes is still open.
 
 ## 2026-03-16 - Extended IP-02 typed Set rejection evidence
@@ -1071,14 +1071,14 @@
 - Continued the active `IP-02A` assignment-intent closure slice and proved two additional typed `Set` rejection lanes instead of relying on only the earlier generic `Variant`-target scalar rejection.
 - Added compiler and host evidence for:
   - `Set obj = 7` rejecting a scalar source on an `Object` target
-  - `Set n = CreateObject(4)` rejecting an object-producing call result on a scalar `Long` target
+  - `Set n = CreateObject("OxVba.TestDispatch")` rejecting an object-producing call result on a scalar `Long` target
 - `IP-02` remains `in-progress`: broader typed/object `Set` vs `Let` parity beyond the now-covered bounded success and rejection lanes is still open.
 
 ## 2026-03-16 - Extended IP-02 typed Set object-call assignment evidence
 
 - Continued the active `IP-02A` assignment-intent closure slice and proved that the direct `Object` target lane is also accepted for object-producing call results instead of only the previously documented `Variant` target success lane.
 - Added compiler and host evidence for:
-  - `Set obj = CreateObject(4)`
+  - `Set obj = CreateObject("OxVba.TestDispatch")`
 - `IP-02` remains `in-progress`: broader typed/object `Set` vs `Let` parity beyond the now-covered `Object`/`Variant` object-call success lanes and bounded `Let` rejection lane is still open.
 
 ## 2026-03-16 - Extended IP-02 parenthesized statement-context getter evidence
@@ -1164,8 +1164,8 @@
 
 - Continued the active `IP-02A` semantic-closure slice and proved two additional end-to-end typed/object assignment-intent lanes instead of leaving the earlier `Set`/`Let` work at plain variable assignment coverage only.
 - Added compiler and host evidence that:
-  - `Set` accepts an object-producing call result for a `Variant` target: `Set v = CreateObject(4)`.
-  - `Let` still rejects an object-producing call result for an `Object` target with a stable bounded diagnostic: `Let obj = CreateObject(4)`.
+  - `Set` accepts an object-producing call result for a `Variant` target: `Set v = CreateObject("OxVba.TestDispatch")`.
+  - `Let` still rejects an object-producing call result for an `Object` target with a stable bounded diagnostic: `Let obj = CreateObject("OxVba.TestDispatch")`.
 - In [engine.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-host\src\engine.rs), added Windows host/JIT-surface tests proving that the `Variant` target preserves the object-handle result shape while the `Let` misuse fails before any runtime drift.
 - In [lib.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-compiler\src\lib.rs), added compile-time evidence for the same two lanes so assignment-intent validation remains aligned across compiler and host surfaces.
 - `IP-02` remains `in-progress`: broader typed/object `Set` vs `Let` parity, non-authoritative default-member resolution, and wider Office-style call-vs-value context parity are still open.
@@ -1931,7 +1931,7 @@
   - Set rejects non-object/non-Variant targets,
   - Set rejects scalar sources while still allowing the current object-carrying Variant source lane used by CreateObject(...).
 - Added end-to-end host coverage in [engine.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-host\src\engine.rs) proving:
-  - Let x = 5 plus Set obj = CreateObject(4) executes successfully,
+  - Let x = 5 plus Set obj = CreateObject("OxVba.TestDispatch") executes successfully,
   - Set x = 7 fails deterministically with the expected type error.
 - IP-02 remains in progress: broader typed/object Set vs Let parity, non-authoritative default-member resolution, and wider Office-style call-vs-value context parity are still open.
 
@@ -1994,21 +1994,21 @@
 # 2026-03-19 - Host-returned imported object property-get assignment intents
 
 - Continued `IP-08A` by widening the bounded host/COM coexistence floor from imported scalar/default-member/object-result traffic into imported object-valued zero-arg `PropertyGet` traffic on the same host-returned COM-backed object.
-- In [project.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-compiler\src\project.rs), added direct compiler evidence that a host-injected root getter may return `CreateObject(4)` into a typed imported receiver and then preserve assignment intent across imported `SelfDispatch` / `SelfUnknown` property-get aliases for explicit `Set` on `Object` targets plus implicit / explicit-`Let` assignment on `Variant` targets.
+- In [project.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-compiler\src\project.rs), added direct compiler evidence that a host-injected root getter may return `CreateObject("OxVba.TestDispatch")` into a typed imported receiver and then preserve assignment intent across imported `SelfDispatch` / `SelfUnknown` property-get aliases for explicit `Set` on `Object` targets plus implicit / explicit-`Let` assignment on `Variant` targets.
 - In [engine.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-host\src\engine.rs), added matching host runtime evidence proving those imported object-valued property gets return live rebound handles on the shared object/value model and still support follow-on `Count` traffic.
 - This raises the honest `IP-08A` host/COM coexistence floor from imported scalar/default-member/object-result traffic alone to that same bounded subset plus imported object-valued property-get assignment-intent traffic; broader host object identity boundaries and wider imported breadth on host-returned COM-backed objects still remain open.
 
 # 2026-03-19 - Same-name plain-project precedence for imported object property gets on host-returned COM objects
 
 - Continued `IP-08A` by tightening the host identity register around the newly-proved imported object-valued property-get subset instead of widening semantics.
-- In [project.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-compiler\src\project.rs), added direct compiler evidence that a conflicting same-name plain-project `Application` class does not steal the host-injected `Application.Value -> CreateObject(4)` handoff before imported `SelfDispatch` / `SelfUnknown` property-get lowering.
+- In [project.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-compiler\src\project.rs), added direct compiler evidence that a conflicting same-name plain-project `Application` class does not steal the host-injected `Application.Value -> CreateObject("OxVba.TestDispatch")` handoff before imported `SelfDispatch` / `SelfUnknown` property-get lowering.
 - In [engine.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-host\src\engine.rs), added matching host runtime evidence proving the same-name plain-project shadow still leaves the host-root COM-backed object in control and preserves the returned object handles plus follow-on `Count` traffic from those imported property-get results.
 - This narrows the remaining `IP-08A` host identity frontier further: the current imported object-property subset is no longer missing same-name plain-project precedence evidence, while broader host/project identity boundaries still remain open.
 
 # 2026-03-19 - Parenthesized imported object property gets on host-returned COM objects
 
 - Continued `IP-08A` by widening the bounded host/COM coexistence floor from the non-parenthesized imported object-valued property-get subset into its parenthesized zero-arg neighbor.
-- In [project.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-compiler\src\project.rs), added direct compiler evidence that `SelfDispatch()` / `SelfUnknown()` preserve the same host-root `Application.Value -> CreateObject(4)` handoff and assignment-intent lowering as the already-proved non-parenthesized forms.
+- In [project.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-compiler\src\project.rs), added direct compiler evidence that `SelfDispatch()` / `SelfUnknown()` preserve the same host-root `Application.Value -> CreateObject("OxVba.TestDispatch")` handoff and assignment-intent lowering as the already-proved non-parenthesized forms.
 - In [engine.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-host\src\engine.rs), added matching host runtime evidence proving those parenthesized imported object-valued property gets return live rebound handles on the shared object/value model and still support follow-on `Count` traffic.
 - This raises the honest `IP-08A` host/COM coexistence floor from non-parenthesized imported object-property traffic alone to that same bounded subset plus the parenthesized zero-arg neighbor; broader host object identity boundaries and wider imported breadth on host-returned COM-backed objects still remain open.
 
@@ -2027,7 +2027,7 @@
 # 2026-03-19 - Same-name plain-project precedence for imported exception forms on host-returned COM objects
 
 - Continued `IP-08A` by tightening the host identity register around the newly-proved imported exception-form subset instead of widening behavior again.
-- In [project.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-compiler\src\project.rs), added direct compiler evidence that a conflicting same-name plain-project `Application` class does not steal any of the four bounded imported `RaiseException` invoke forms after the host-injected `Application.Value -> CreateObject(4)` handoff.
+- In [project.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-compiler\src\project.rs), added direct compiler evidence that a conflicting same-name plain-project `Application` class does not steal any of the four bounded imported `RaiseException` invoke forms after the host-injected `Application.Value -> CreateObject("OxVba.TestDispatch")` handoff.
 - In [engine.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-host\src\engine.rs), added matching host runtime evidence proving the same-name plain-project shadow still leaves the host-root COM-backed object in control and preserves the controlled `com-dispatch-exception-raised` fault across those four imported invoke forms.
 - This narrows the remaining `IP-08A` host identity frontier again: the current imported exception subset is no longer missing same-name plain-project precedence evidence, while broader host/project identity boundaries still remain open.
 
@@ -2044,7 +2044,7 @@
 # 2026-03-20 - Extend host-returned COM precedence through newer imported read and diagnostic lanes
 
 - Continued `IP-08B` by tightening the host identity register around the newer imported read/diagnostic neighbors instead of leaving them implied by earlier host-returned COM precedence slices.
-- In [project.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-compiler\src\project.rs), added direct compiler evidence that a conflicting same-name plain-project `Application` class does not steal the host-injected `Application.Value -> CreateObject(4)` handoff before the newer imported scalar read-assignment, named-argument read-assignment, positional read-assignment, and compile-time diagnostic lanes.
+- In [project.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-compiler\src\project.rs), added direct compiler evidence that a conflicting same-name plain-project `Application` class does not steal the host-injected `Application.Value -> CreateObject("OxVba.TestDispatch")` handoff before the newer imported scalar read-assignment, named-argument read-assignment, positional read-assignment, and compile-time diagnostic lanes.
 - In [engine.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-host\src\engine.rs), added matching host runtime evidence proving the same-name plain-project shadow still leaves the host-root COM-backed object in control and preserves the expected scalar/named/positional witnesses plus the expected imported compile-time diagnostics on those newer lanes.
 - This narrows the remaining `IP-08B` host-returned COM breadth again: the newer imported read/diagnostic neighbors are no longer only implied by older precedence evidence, while broader imported member/property/default-member breadth still remains open.
 
@@ -2082,3 +2082,4 @@
 - In [project.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-compiler\src\project.rs), added direct compiler evidence that an active-project same-name `Application` class module outranks the host-injected root when the winning root returns a COM-backed object and the caller then executes imported `SelfDispatch` / `SelfUnknown` object-property-get assignment-intent traffic on that returned receiver.
 - In [engine.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-host\src\engine.rs), added matching host runtime evidence proving the same precedence boundary still preserves rebinding plus deterministic `Count()` witnesses tied to each returned object handle instead of falling back to the scalar host root.
 - This narrows the remaining `IP-08B` host-returned COM breadth again: active-project precedence is now explicit for the current imported scalar read, invoke, property-put/get, property-putref, indexed setter, exception-invoke, and non-parenthesized object-property-get rows on the same host-returned COM-backed object, while broader parenthesized object-property and object-result breadth still remains open.
+

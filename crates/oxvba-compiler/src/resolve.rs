@@ -3928,11 +3928,6 @@ fn parse_stdlib_intrinsic_call_expr(
 }
 
 fn parse_createobject_arg(arg: &str, array_bounds: &ArrayBoundsMap) -> Option<BoundExpr> {
-    // Quoted strings must map to a known createobject token; unknown ProgIDs are rejected
-    if let Some(literal) = parse_quoted_string_literal(arg) {
-        let token = map_createobject_literal_token(literal.as_str())?;
-        return Some(BoundExpr::IntConst(token));
-    }
     parse_expr(arg, array_bounds)
 }
 
@@ -3997,15 +3992,6 @@ fn parse_numeric_prefix_literal(text: &str) -> Option<i32> {
     match prefix {
         b'h' => i32::from_str_radix(digits, 16).ok(),
         b'o' => i32::from_str_radix(digits, 8).ok(),
-        _ => None,
-    }
-}
-
-fn map_createobject_literal_token(text: &str) -> Option<i32> {
-    let canonical = text.trim().to_ascii_lowercase();
-    match canonical.as_str() {
-        "scripting.dictionary" => Some(4),
-        "oxvba.testdispatch" => Some(4),
         _ => None,
     }
 }

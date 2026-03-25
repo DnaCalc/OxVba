@@ -146,13 +146,16 @@ mod windows_registered_com_lane {
         read_env_u64("OXVBA_REGISTERED_EVENT_POLL_DELAY_MS", 50)
     }
 
+    fn selected_registered_createobject_line() -> String {
+        format!("obj = CreateObject(\"{}\")", selected_registered_prog_id())
+    }
+
     fn run_registered_lane_source(source: &str) -> Vec<RuntimeValue> {
         let mut engine = Engine::new(HostConfig {
             enable_jit: false,
             root_object_name: None,
         });
         engine.set_host_policy(HostPolicy::interactive_dev());
-        engine.set_com_prog_id_override(4, selected_registered_prog_id());
         engine
             .execute_source_with_snapshot_phased(source)
             .expect("registered COM lane source should execute")
@@ -170,18 +173,20 @@ mod windows_registered_com_lane {
     fn registered_createobject_dispatchinvoke_success_lane() {
         let selected_prog_id = selected_registered_prog_id();
         let flavor = RegisteredProgIdFlavor::from_prog_id(&selected_prog_id);
-        let out = run_registered_lane_source(
+        let source = format!(
             r#"
 Sub Main()
 Dim obj
 Dim countValue
 Dim existsValue
-obj = CreateObject("Scripting.Dictionary")
+{createobject_line}
 countValue = DispatchInvoke(obj, "Count")
 existsValue = DispatchInvoke(obj, "Exists", 42)
 End Sub
 "#,
+            createobject_line = selected_registered_createobject_line(),
         );
+        let out = run_registered_lane_source(&source);
         assert!(expect_object_handle(&out[0]).raw() >= 20_001);
         if let Some(expected) = flavor.expected_count_value() {
             assert_eq!(
@@ -210,19 +215,21 @@ End Sub
     #[test]
     #[ignore = "requires registered external COM server lane (run via scripts/run-com-registered.ps1)"]
     fn registered_dispatchinvoke_missing_arg_routes_to_err() {
-        let out = run_registered_lane_source(
+        let source = format!(
             r#"
 Sub Main()
 Dim obj
 Dim value
 Dim errNo
 On Error Resume Next
-obj = CreateObject("Scripting.Dictionary")
+{createobject_line}
 value = DispatchInvoke(obj, "Exists")
 errNo = Err.Number
 End Sub
 "#,
+            createobject_line = selected_registered_createobject_line(),
         );
+        let out = run_registered_lane_source(&source);
         assert!(expect_object_handle(&out[0]).raw() >= 20_001);
         assert!(
             !matches!(out[2], RuntimeValue::I32(0)),
@@ -234,8 +241,9 @@ End Sub
     #[test]
     #[ignore = "requires registered external COM server lane (run via scripts/run-com-registered.ps1)"]
     fn registered_lane_repeated_invokes_are_stable() {
-        let mut source = String::from(
-            "Sub Main()\nDim obj\nDim value\nobj = CreateObject(\"Scripting.Dictionary\")\n",
+        let mut source = format!(
+            "Sub Main()\nDim obj\nDim value\n{}\n",
+            selected_registered_createobject_line()
         );
         for _ in 0..256 {
             source.push_str("value = DispatchInvoke(obj, \"Count\")\n");
@@ -255,19 +263,21 @@ End Sub
     #[test]
     #[ignore = "requires registered external COM server lane (run via scripts/run-com-registered.ps1)"]
     fn registered_member_not_found_routes_through_resume_next() {
-        let out = run_registered_lane_source(
+        let source = format!(
             r#"
 Sub Main()
 Dim obj
 Dim value
 Dim errNo
 On Error Resume Next
-obj = CreateObject("Scripting.Dictionary")
+{createobject_line}
 value = DispatchInvoke(obj, 777, 0)
 errNo = Err.Number
 End Sub
 "#,
+            createobject_line = selected_registered_createobject_line(),
         );
+        let out = run_registered_lane_source(&source);
         assert!(expect_object_handle(&out[0]).raw() >= 20_001);
         assert!(
             !matches!(out[2], RuntimeValue::I32(0)),
@@ -284,13 +294,12 @@ End Sub
             root_object_name: None,
         });
         engine.set_host_policy(HostPolicy::interactive_dev());
-        engine.set_com_prog_id_override(4, "OxVba.DoesNotExist.Component");
         let err = engine
             .execute_source_with_snapshot_phased(
                 r#"
 Sub Main()
 Dim obj
-obj = CreateObject("Scripting.Dictionary")
+obj = CreateObject("OxVba.DoesNotExist.Component")
 End Sub
 "#,
             )
@@ -323,16 +332,12 @@ End Sub
             root_object_name: None,
         });
         engine.set_host_policy(HostPolicy::interactive_dev());
-        engine.set_com_prog_id_override(4, selected_registered_prog_id());
+        let source = format!(
+            "Sub Main()\nDim obj\n{}\nEnd Sub\n",
+            selected_registered_createobject_line()
+        );
         let out = engine
-            .execute_source_with_snapshot_phased(
-                r#"
-Sub Main()
-Dim obj
-obj = CreateObject("Scripting.Dictionary")
-End Sub
-"#,
-            )
+            .execute_source_with_snapshot_phased(&source)
             .expect("registered lane should create COM object");
         let object = expect_object_handle(&out[0]);
         let err = engine
@@ -389,17 +394,13 @@ End Sub
             root_object_name: None,
         });
         engine.set_host_policy(HostPolicy::interactive_dev());
-        engine.set_com_prog_id_override(4, &selected_prog_id);
+        let source = format!(
+            "Sub Main()\nDim obj\n{}\nEnd Sub\n",
+            selected_registered_createobject_line()
+        );
 
         let out = engine
-            .execute_source_with_snapshot_phased(
-                r#"
-Sub Main()
-Dim obj
-obj = CreateObject("Scripting.Dictionary")
-End Sub
-"#,
-            )
+            .execute_source_with_snapshot_phased(&source)
             .expect("registered lane should create COM object");
         let object = expect_object_handle(&out[0]);
 

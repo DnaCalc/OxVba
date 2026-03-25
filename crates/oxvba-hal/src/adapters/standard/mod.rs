@@ -48,7 +48,7 @@ pub use oxvba_com::DISPATCH_INVOKE_MISSING_ARG_TOKEN;
 use oxvba_com::RawIDispatch;
 use oxvba_com::{
     ComBinding, ComDirectDispatchSpec, ComEventPath, ComEventSpec, ComEventTriggerSpec,
-    ComInvokeFailure, OXVBA_TEST_DISPATCH_PROGID, WindowsComBridge, map_com_hresult_label,
+    ComInvokeFailure, WindowsComBridge, map_com_hresult_label,
     platform::portable::PortableComProjection,
 };
 #[cfg(test)]
@@ -58,7 +58,6 @@ use oxvba_runtime::ObjectHandle;
 use oxvba_runtime::{RuntimeValue, bstr::BStr};
 use std::{
     cell::Cell,
-    collections::BTreeMap,
     path::PathBuf,
     process::Command,
     sync::{Arc, Mutex},
@@ -156,7 +155,6 @@ impl std::fmt::Debug for StandardHostServices {
 
 #[derive(Debug, Clone, Default)]
 struct StandardEnvCache {
-    native_com_prog_id_overrides: BTreeMap<i32, String>,
     registered_com_prog_id: Option<String>,
     registered_event_token: Option<String>,
     registered_event_expected_argc: Option<String>,
@@ -172,21 +170,7 @@ struct StandardEnvCache {
 impl StandardEnvCache {
     fn capture() -> Self {
         let vars: Vec<(String, String)> = std::env::vars().collect();
-        let mut native_com_prog_id_overrides = BTreeMap::new();
-        for (key, value) in &vars {
-            let Some(suffix) = key.strip_prefix("OXVBA_COM_PROGID_") else {
-                continue;
-            };
-            let Ok(token) = suffix.parse::<i32>() else {
-                continue;
-            };
-            let trimmed = value.trim();
-            if !trimmed.is_empty() {
-                native_com_prog_id_overrides.insert(token, trimmed.to_string());
-            }
-        }
         Self {
-            native_com_prog_id_overrides,
             registered_com_prog_id: cached_env_value(&vars, "OXVBA_REGISTERED_COM_PROGID"),
             registered_event_token: cached_env_value(&vars, "OXVBA_REGISTERED_EVENT_TOKEN"),
             registered_event_expected_argc: cached_env_value(
@@ -831,49 +815,6 @@ impl StandardHostServices {
     }
 
     #[cfg(target_os = "windows")]
-    fn resolve_native_com_progid(&self, prog_id: i32) -> Option<String> {
-        if let Some(value) = self.policy.com_prog_id_overrides.get(&prog_id) {
-            let trimmed = value.trim();
-            if !trimmed.is_empty() {
-                return Some(trimmed.to_string());
-            }
-        }
-        if let Some(value) = self.env_cache.native_com_prog_id_overrides.get(&prog_id) {
-            return Some(value.clone());
-        }
-        match prog_id {
-            // Controlled in-process COM automation object for OxVba integration tests.
-            4 => Some(OXVBA_TEST_DISPATCH_PROGID.to_string()),
-            _ => None,
-        }
-    }
-
-    #[cfg(target_os = "windows")]
-    fn has_explicit_native_com_override(&self, prog_id: i32) -> bool {
-        if self
-            .policy
-            .com_prog_id_overrides
-            .get(&prog_id)
-            .is_some_and(|value| !value.trim().is_empty())
-        {
-            return true;
-        }
-        self.env_cache
-            .native_com_prog_id_overrides
-            .contains_key(&prog_id)
-    }
-
-    #[cfg(not(target_os = "windows"))]
-    fn has_explicit_native_com_override(&self, _prog_id: i32) -> bool {
-        false
-    }
-
-    #[cfg(not(target_os = "windows"))]
-    fn resolve_native_com_progid(&self, _prog_id: i32) -> Option<String> {
-        None
-    }
-
-    #[cfg(target_os = "windows")]
     fn activate_runtime_object_value_for_prog_id_name(
         &self,
         prog_id_name: &str,
@@ -1153,12 +1094,40 @@ mod tests {
         handle
     }
 
+    fn create_object_test_prog_id_name(host: &StandardHostServices, prog_id: i32) -> String {
+        match host
+            .policy
+            .com_prog_id_overrides
+            .get(&prog_id)
+            .map(String::as_str)
+        {
+            Some(value) if !value.trim().is_empty() => value.trim().to_string(),
+            _ => match prog_id {
+                4 => "OxVba.TestDispatch".to_string(),
+                _ => prog_id.to_string(),
+            },
+        }
+    }
+
+    fn expected_create_object_test_handle_raw(host: &StandardHostServices, prog_id: i32) -> i32 {
+        let prog_id_name = create_object_test_prog_id_name(host, prog_id);
+        if prog_id_name.eq_ignore_ascii_case("OxVba.TestDispatch")
+            || prog_id_name.eq_ignore_ascii_case("Scripting.Dictionary")
+        {
+            return 5_004;
+        }
+        let hash = prog_id_name
+            .bytes()
+            .fold(0i32, |acc, byte| acc.wrapping_add(i32::from(byte)));
+        10_000i32.saturating_add(hash)
+    }
+
     fn create_object_test(
         host: &StandardHostServices,
         prog_id: i32,
     ) -> crate::error::HalResult<oxvba_runtime::ObjectHandle> {
-        host.create_object(RuntimeValue::I32(prog_id))
-            .map(expect_object_handle)
+        let prog_id = RuntimeValue::String(BStr(create_object_test_prog_id_name(host, prog_id)));
+        host.create_object(prog_id).map(expect_object_handle)
     }
 
     fn release_object_test(
@@ -4051,7 +4020,7 @@ mod tests {
                 host.create_object_test(prog_id)
                     .expect("create_object should succeed")
                     .raw(),
-                5_000i32.saturating_add(prog_id)
+                expected_create_object_test_handle_raw(&host, prog_id)
             );
             let request = ComInvokeRequest::legacy(object, member, arg);
             let semantic = host

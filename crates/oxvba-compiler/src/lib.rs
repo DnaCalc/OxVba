@@ -389,13 +389,14 @@ mod tests {
 
     #[test]
     fn set_keyword_accepts_variant_target_for_object_call_result() {
-        let source = "Sub Main()\nDim v As Variant\nSet v = CreateObject(4)\nEnd Sub";
+        let source =
+            "Sub Main()\nDim v As Variant\nSet v = CreateObject(\"OxVba.TestDispatch\")\nEnd Sub";
         compile(source).expect("Set should allow object-producing call result into Variant target");
     }
 
     #[test]
     fn set_keyword_accepts_object_target_for_object_call_result() {
-        let source = "Sub Main()\nDim obj As Object\nSet obj = CreateObject(4)\nEnd Sub";
+        let source = "Sub Main()\nDim obj As Object\nSet obj = CreateObject(\"OxVba.TestDispatch\")\nEnd Sub";
         compile(source).expect("Set should allow object-producing call result into Object target");
     }
 
@@ -431,7 +432,8 @@ mod tests {
 
     #[test]
     fn set_keyword_rejects_scalar_target_for_object_call_result() {
-        let source = "Sub Main()\nDim n As Long\nSet n = CreateObject(4)\nEnd Sub";
+        let source =
+            "Sub Main()\nDim n As Long\nSet n = CreateObject(\"OxVba.TestDispatch\")\nEnd Sub";
         let err = compile(source)
             .expect_err("Set should reject object-producing call result for scalar target");
         assert!(
@@ -442,7 +444,7 @@ mod tests {
 
     #[test]
     fn let_keyword_rejects_object_target_for_object_call_result() {
-        let source = "Sub Main()\nDim obj As Object\nLet obj = CreateObject(4)\nEnd Sub";
+        let source = "Sub Main()\nDim obj As Object\nLet obj = CreateObject(\"OxVba.TestDispatch\")\nEnd Sub";
         let err = compile(source)
             .expect_err("Let should reject object-producing call result on Object target");
         assert!(
@@ -453,7 +455,8 @@ mod tests {
 
     #[test]
     fn let_keyword_accepts_variant_target_for_object_call_result() {
-        let source = "Sub Main()\nDim v As Variant\nLet v = CreateObject(4)\nEnd Sub";
+        let source =
+            "Sub Main()\nDim v As Variant\nLet v = CreateObject(\"OxVba.TestDispatch\")\nEnd Sub";
         compile(source).expect("Let should allow object-producing call result into Variant target");
     }
 
@@ -481,7 +484,8 @@ mod tests {
 
     #[test]
     fn let_keyword_rejects_scalar_target_for_object_call_result() {
-        let source = "Sub Main()\nDim n As Long\nLet n = CreateObject(4)\nEnd Sub";
+        let source =
+            "Sub Main()\nDim n As Long\nLet n = CreateObject(\"OxVba.TestDispatch\")\nEnd Sub";
         let err = compile(source)
             .expect_err("Let should reject object-producing call result for scalar target");
         assert!(
@@ -492,7 +496,8 @@ mod tests {
 
     #[test]
     fn implicit_assignment_accepts_variant_target_for_object_call_result() {
-        let source = "Sub Main()\nDim v As Variant\nv = CreateObject(4)\nEnd Sub";
+        let source =
+            "Sub Main()\nDim v As Variant\nv = CreateObject(\"OxVba.TestDispatch\")\nEnd Sub";
         compile(source).expect(
             "implicit assignment should allow object-producing call result into Variant target",
         );
@@ -500,7 +505,8 @@ mod tests {
 
     #[test]
     fn implicit_assignment_rejects_object_target_for_object_call_result_without_set() {
-        let source = "Sub Main()\nDim obj As Object\nobj = CreateObject(4)\nEnd Sub";
+        let source =
+            "Sub Main()\nDim obj As Object\nobj = CreateObject(\"OxVba.TestDispatch\")\nEnd Sub";
         let err = compile(source)
             .expect_err("implicit assignment should require Set for object call result");
         assert!(
@@ -511,7 +517,7 @@ mod tests {
 
     #[test]
     fn implicit_assignment_rejects_scalar_target_for_object_call_result() {
-        let source = "Sub Main()\nDim n As Long\nn = CreateObject(4)\nEnd Sub";
+        let source = "Sub Main()\nDim n As Long\nn = CreateObject(\"OxVba.TestDispatch\")\nEnd Sub";
         let err = compile(source).expect_err(
             "implicit assignment should reject object-producing call result on scalar target",
         );
@@ -549,19 +555,19 @@ mod tests {
         let cases = [
             (
                 "Set Variant target",
-                "Sub Main()\nDim src As Object\nDim v As Variant\nSet src = CreateObject(4)\nSet v = src\nEnd Sub",
+                "Sub Main()\nDim src As Object\nDim v As Variant\nSet src = CreateObject(\"OxVba.TestDispatch\")\nSet v = src\nEnd Sub",
             ),
             (
                 "Set Object target",
-                "Sub Main()\nDim src As Object\nDim dst As Object\nSet src = CreateObject(4)\nSet dst = src\nEnd Sub",
+                "Sub Main()\nDim src As Object\nDim dst As Object\nSet src = CreateObject(\"OxVba.TestDispatch\")\nSet dst = src\nEnd Sub",
             ),
             (
                 "Let Variant target",
-                "Sub Main()\nDim src As Object\nDim v As Variant\nSet src = CreateObject(4)\nLet v = src\nEnd Sub",
+                "Sub Main()\nDim src As Object\nDim v As Variant\nSet src = CreateObject(\"OxVba.TestDispatch\")\nLet v = src\nEnd Sub",
             ),
             (
                 "implicit Variant target",
-                "Sub Main()\nDim src As Object\nDim v As Variant\nSet src = CreateObject(4)\nv = src\nEnd Sub",
+                "Sub Main()\nDim src As Object\nDim v As Variant\nSet src = CreateObject(\"OxVba.TestDispatch\")\nv = src\nEnd Sub",
             ),
         ];
 
@@ -575,27 +581,27 @@ mod tests {
         let cases = [
             (
                 "Let Object target",
-                "Sub Main()\nDim src As Object\nDim dst As Object\nSet src = CreateObject(4)\nLet dst = src\nEnd Sub",
+                "Sub Main()\nDim src As Object\nDim dst As Object\nSet src = CreateObject(\"OxVba.TestDispatch\")\nLet dst = src\nEnd Sub",
                 "Let cannot assign to Object variable dst",
             ),
             (
                 "implicit Object target",
-                "Sub Main()\nDim src As Object\nDim dst As Object\nSet src = CreateObject(4)\ndst = src\nEnd Sub",
+                "Sub Main()\nDim src As Object\nDim dst As Object\nSet src = CreateObject(\"OxVba.TestDispatch\")\ndst = src\nEnd Sub",
                 "Set required for Object variable dst",
             ),
             (
                 "Set scalar target",
-                "Sub Main()\nDim src As Object\nDim n As Long\nSet src = CreateObject(4)\nSet n = src\nEnd Sub",
+                "Sub Main()\nDim src As Object\nDim n As Long\nSet src = CreateObject(\"OxVba.TestDispatch\")\nSet n = src\nEnd Sub",
                 "Set requires Object or Variant target, got Long variable n",
             ),
             (
                 "Let scalar target",
-                "Sub Main()\nDim src As Object\nDim n As Long\nSet src = CreateObject(4)\nLet n = src\nEnd Sub",
+                "Sub Main()\nDim src As Object\nDim n As Long\nSet src = CreateObject(\"OxVba.TestDispatch\")\nLet n = src\nEnd Sub",
                 "cannot assign Object to Long variable n",
             ),
             (
                 "implicit scalar target",
-                "Sub Main()\nDim src As Object\nDim n As Long\nSet src = CreateObject(4)\nn = src\nEnd Sub",
+                "Sub Main()\nDim src As Object\nDim n As Long\nSet src = CreateObject(\"OxVba.TestDispatch\")\nn = src\nEnd Sub",
                 "cannot assign Object to Long variable n",
             ),
         ];
@@ -674,31 +680,31 @@ mod tests {
         let cases = [
             (
                 "Set Variant target",
-                "Sub Main()\nDim src As Variant\nDim v As Variant\nSet src = CreateObject(4)\nSet v = src\nEnd Sub",
+                "Sub Main()\nDim src As Variant\nDim v As Variant\nSet src = CreateObject(\"OxVba.TestDispatch\")\nSet v = src\nEnd Sub",
             ),
             (
                 "Set Object target",
-                "Sub Main()\nDim src As Variant\nDim dst As Object\nSet src = CreateObject(4)\nSet dst = src\nEnd Sub",
+                "Sub Main()\nDim src As Variant\nDim dst As Object\nSet src = CreateObject(\"OxVba.TestDispatch\")\nSet dst = src\nEnd Sub",
             ),
             (
                 "Let Variant target",
-                "Sub Main()\nDim src As Variant\nDim v As Variant\nSet src = CreateObject(4)\nLet v = src\nEnd Sub",
+                "Sub Main()\nDim src As Variant\nDim v As Variant\nSet src = CreateObject(\"OxVba.TestDispatch\")\nLet v = src\nEnd Sub",
             ),
             (
                 "implicit Variant target",
-                "Sub Main()\nDim src As Variant\nDim v As Variant\nSet src = CreateObject(4)\nv = src\nEnd Sub",
+                "Sub Main()\nDim src As Variant\nDim v As Variant\nSet src = CreateObject(\"OxVba.TestDispatch\")\nv = src\nEnd Sub",
             ),
             (
                 "implicit Object target",
-                "Sub Main()\nDim src As Variant\nDim dst As Object\nSet src = CreateObject(4)\ndst = src\nEnd Sub",
+                "Sub Main()\nDim src As Variant\nDim dst As Object\nSet src = CreateObject(\"OxVba.TestDispatch\")\ndst = src\nEnd Sub",
             ),
             (
                 "Let scalar target",
-                "Sub Main()\nDim src As Variant\nDim n As Long\nSet src = CreateObject(4)\nLet n = src\nEnd Sub",
+                "Sub Main()\nDim src As Variant\nDim n As Long\nSet src = CreateObject(\"OxVba.TestDispatch\")\nLet n = src\nEnd Sub",
             ),
             (
                 "implicit scalar target",
-                "Sub Main()\nDim src As Variant\nDim n As Long\nSet src = CreateObject(4)\nn = src\nEnd Sub",
+                "Sub Main()\nDim src As Variant\nDim n As Long\nSet src = CreateObject(\"OxVba.TestDispatch\")\nn = src\nEnd Sub",
             ),
         ];
 
@@ -712,12 +718,12 @@ mod tests {
         let cases = [
             (
                 "Let Object target",
-                "Sub Main()\nDim src As Variant\nDim dst As Object\nSet src = CreateObject(4)\nLet dst = src\nEnd Sub",
+                "Sub Main()\nDim src As Variant\nDim dst As Object\nSet src = CreateObject(\"OxVba.TestDispatch\")\nLet dst = src\nEnd Sub",
                 "Let cannot assign to Object variable dst",
             ),
             (
                 "Set scalar target",
-                "Sub Main()\nDim src As Variant\nDim n As Long\nSet src = CreateObject(4)\nSet n = src\nEnd Sub",
+                "Sub Main()\nDim src As Variant\nDim n As Long\nSet src = CreateObject(\"OxVba.TestDispatch\")\nSet n = src\nEnd Sub",
                 "Set requires Object or Variant target, got Long variable n",
             ),
         ];
@@ -1575,7 +1581,7 @@ mod tests {
 
     #[test]
     fn compile_dispatch_intrinsic_emits_instruction() {
-        let source = "Sub Main()\nDim x\nx = DispatchInvoke(CreateObject(11), 2, 3)\nEnd Sub";
+        let source = "Sub Main()\nDim x\nx = DispatchInvoke(CreateObject(\"OxVba.TestDispatch\"), 2, 3)\nEnd Sub";
         let out = compile(source).expect("compile should succeed");
         assert!(
             out.instructions
@@ -1591,8 +1597,7 @@ mod tests {
 
     #[test]
     fn compile_dispatch_intrinsic_with_array_argument_emits_instruction() {
-        let source =
-            "Sub Main()\nDim x\nx = DispatchInvoke(CreateObject(4), 6, Array(1, 2, 3))\nEnd Sub";
+        let source = "Sub Main()\nDim x\nx = DispatchInvoke(CreateObject(\"OxVba.TestDispatch\"), 6, Array(1, 2, 3))\nEnd Sub";
         let out = compile(source).expect("compile should succeed");
         assert!(
             out.instructions
@@ -1605,9 +1610,9 @@ mod tests {
     }
 
     #[test]
-    fn compile_createobject_with_progid_literal_maps_to_known_token() {
+    fn compile_createobject_with_progid_literal_preserves_string_literal() {
         let source = "Sub Main()\nDim x\nx = CreateObject(\"Scripting.Dictionary\")\nEnd Sub";
-        let out = compile(source).expect("compile should succeed for known ProgID literal");
+        let out = compile(source).expect("compile should succeed for ProgID literal");
         assert!(
             out.instructions
                 .iter()
@@ -1616,18 +1621,18 @@ mod tests {
         assert!(
             out.instructions
                 .iter()
-                .any(|i| matches!(i, Instruction::LoadConstI32 { value: 4, .. }))
+                .any(|i| matches!(i, Instruction::LoadConstString { value, .. } if value == "Scripting.Dictionary"))
         );
     }
 
     #[test]
-    fn compile_createobject_with_oxvba_test_dispatch_literal_maps_to_known_token() {
+    fn compile_createobject_with_oxvba_test_dispatch_literal_preserves_string_literal() {
         let source = "Sub Main()\nDim x\nx = CreateObject(\"OxVba.TestDispatch\")\nEnd Sub";
-        let out = compile(source).expect("compile should succeed for known controlled test ProgID");
+        let out = compile(source).expect("compile should succeed for controlled test ProgID");
         assert!(
             out.instructions
                 .iter()
-                .any(|i| matches!(i, Instruction::LoadConstI32 { value: 4, .. }))
+                .any(|i| matches!(i, Instruction::LoadConstString { value, .. } if value == "OxVba.TestDispatch"))
         );
     }
 
@@ -2864,11 +2869,14 @@ mod tests {
     }
 
     #[test]
-    fn compile_createobject_with_unknown_progid_literal_is_rejected() {
+    fn compile_createobject_with_unknown_progid_literal_is_allowed() {
         let source = "Sub Main()\nDim x\nx = CreateObject(\"Unknown.Component\")\nEnd Sub";
-        let err =
-            compile(source).expect_err("unknown ProgID literal should fail in current subset");
-        assert!(!err.to_string().trim().is_empty());
+        let out = compile(source).expect("unknown ProgID literal should remain a runtime concern");
+        assert!(
+            out.instructions
+                .iter()
+                .any(|i| matches!(i, Instruction::LoadConstString { value, .. } if value == "Unknown.Component"))
+        );
     }
 
     #[test]

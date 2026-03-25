@@ -401,6 +401,26 @@ Run context: active parity/compliance execution plus in-progress feature worklis
   - treat `ODG-044` as mixed implementation-plus-oracle closure work, not as a pure scheduling task.
   - keep `ODG-045` and `ODG-046` separate as harness-construction items rather than collapsing them into the same calendar note.
 
+### BLK-COM-IMPORT-001: Imported real COM activation/model is not yet parity-complete
+- Impact:
+  - Blocks honest closure of `IP-05B` for imported real COM activation.
+  - Blocks `ODG-044` as an implementation-plus-oracle item.
+  - Weakens `ODG-031` because imported typelib claims cannot be broader than the activation model that consumes them.
+- Current state:
+  - Native Windows string-ProgID activation (`CreateObject("Scripting.Dictionary")`) is a real late-bound COM path and is not the primary blocker here.
+  - The numeric `CreateObject(<selector>)` fallback has now been removed from imported `As New` lowering.
+  - The remaining problem is broader imported external activation authority: the supported path still needs a trustworthy real-library activation contract instead of ad hoc metadata assumptions.
+  - The imported typelib metadata/live-loader path is not yet an honest general activation contract for arbitrary real COM libraries.
+  - Therefore broad “real COM library import support” language would currently overstate repo truth.
+- Exact unblock steps:
+  - review the imported activation path end to end across compiler lowering, imported metadata, HAL/host activation, and live typelib loading,
+  - define and implement the authoritative activation contract for supported imported external COM types,
+  - add permanent real-host regressions for the supported imported lane,
+  - then fold the result back into `ODG-044` and `ODG-031` readiness/claim docs.
+- Recommendation:
+  - do not reopen the resolved string-ProgID late-bound COM lane under `IP-03`,
+  - instead treat this as an `IP-05B` imported activation/model closure item with explicit scope boundaries.
+
 ### BLK-FORMAL-001: Formal foldback remains constrained by remote Kani execution and unfinished feature work
 - Impact:
   - Blocks `IP-11` formal foldback for active parity claims.
