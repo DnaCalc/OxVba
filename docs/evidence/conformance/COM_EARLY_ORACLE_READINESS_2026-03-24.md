@@ -28,32 +28,34 @@ This note is a readiness/blocker artifact, not closure evidence.
 
 ## Newly discovered blocker
 
-While preparing a real Office-backed anchor for `ODG-044`, exploratory local repro work showed that the matching OxVba-side early-bound path is not yet an honest parity anchor for a real registered typelib target:
+While preparing a real Office-backed anchor for `ODG-044`, exploratory local repro work first showed that the matching OxVba-side early-bound path was not yet an honest parity anchor for a real registered typelib target. That specific core defect is now fixed.
 
 - target used: `Scripting.Dictionary` (`scrrun.dll`)
 - exploratory source shape:
   - `Dim obj As New Scripting.Dictionary`
   - `countValue = obj.Count()` / `existsValue = obj.Exists(42)`
-- observed OxVba behavior during local repro:
-  - the narrow activation floor is now reproducible in-repo:
+- observed OxVba behavior during local repro and subsequent core repair:
+  - the real registered early-bound lane is now reproducible in-repo for the supported subset:
     - `Dim obj As New Scripting.Dictionary`
+    - `Call obj.Add("a", 1)`
     - `countValue = obj.Count`
-    - observed OxVba result: object handle bound on the native registered lane and `Count = 0`
-  - broader exploratory member traffic is still not closure-ready:
-    - `Call obj.Add("a", 1)` / `obj.Exists("a")` hit `COM-E-VALUE-TRANSPORT-UNSUPPORTED` via projected event-trigger callback transport.
+    - `existsValue = obj.Exists("a")`
+    - observed OxVba result: object handle bound on the native registered lane, `Count = 1`, `Exists("a") = True`
+  - root cause of the earlier failure:
+    - hardcoded `scrrun.dll` metadata in `oxvba-com` incorrectly exposed a fake `Exists` event, which made normal dictionary member traffic look like a projected event trigger.
 
 Interpretation:
 
-- `ODG-044` is not just waiting on Excel execution.
-- The missing trustworthy OxVba-side anchor is now narrowed, not absent:
-  - real registered early-bound activation plus `Count` baseline exists,
-  - richer `Scripting.Dictionary` member traffic still needs transport/model correction before side-by-side oracle closure can be claimed.
+- `ODG-044` is no longer blocked by the earlier OxVba-side callback-transport fault on the supported registered `Scripting.Dictionary` subset.
+- The remaining work for `ODG-044` is now the side-by-side Excel oracle capture and foldback for that supported subset.
+- The broader real-library activation-model question remains open under `ODG-031`; that is a different closure item.
 
 ## Gate implications
 
 - `ODG-044`
   - no longer blocked by total absence of a real-registered early-bind anchor for `scrrun` / `Scripting.Dictionary`
-  - still blocked by richer member/event transport correctness beyond the new activation-plus-Count floor
+  - no longer blocked by the earlier `Add` / `Exists` callback-transport defect on the supported subset
+  - remaining work is side-by-side Excel oracle capture and foldback
 - `ODG-045`
   - still needs a mixed-server / dual-interface oracle harness; Excel availability alone does not answer transport-policy parity
 - `ODG-046`
@@ -61,7 +63,7 @@ Interpretation:
 
 ## Recommended next steps
 
-1. Keep the new registered early-bound `Scripting.Dictionary` activation-plus-Count lane as the honest minimum anchor for `ODG-044`.
-2. Fix the richer member/event transport fault surfaced by `Add` / `Exists` on that same registered early-bound path.
-3. Only then schedule/fold the side-by-side Excel oracle capture for `ODG-044`.
+1. Keep the new registered early-bound `Scripting.Dictionary` `As New` / `Add` / `Exists` / `Count` lane as the honest minimum anchor for `ODG-044`.
+2. Run and fold the side-by-side Excel oracle capture for that supported subset.
+3. Keep the broader activation-model review under `ODG-031` separate from the now-fixed `ODG-044` callback-transport issue.
 4. Treat `ODG-045` and `ODG-046` as distinct harness-construction tasks, not mere calendar items.

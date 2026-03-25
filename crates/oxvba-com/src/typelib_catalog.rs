@@ -1542,19 +1542,12 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
                 return_type: None,
             },
         ];
-        let events = vec![TypeLibEventMetadata {
-            name: "Exists".to_string(),
-            token: TEST_EVENT_CHANGED,
-            callback_arity: 1,
-            dispatch_path: TypeLibEventDispatchPath::Dispatch,
-            connection_point_iid: None,
-            dispatch_member_id: Some(TEST_EVENT_CHANGED),
-        }];
+        let events = Vec::new();
         let member_name_to_token = members
             .iter()
             .map(|entry| (entry.name.clone(), entry.token))
             .collect();
-        (Some(4), member_name_to_token, members, events)
+        (None, member_name_to_token, members, events)
     } else {
         // Fallback: try live typelib loading from registry
         match try_live_typelib_metadata(identity) {

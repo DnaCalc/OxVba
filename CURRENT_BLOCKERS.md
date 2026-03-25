@@ -392,13 +392,13 @@ Run context: active parity/compliance execution plus in-progress feature worklis
 - Current state:
   - Excel COM automation is available locally (`16.0`), and `AccessVBOM=1`.
   - Direct Excel/VBA probe against `Scripting.Dictionary` executes successfully.
-  - However, exploratory local repro shows the matching OxVba-side real registered early-bound path for `Dim obj As New Scripting.Dictionary` is not yet a trustworthy parity anchor for closure work.
+  - The matching OxVba-side real registered early-bound path for `Dim obj As New Scripting.Dictionary` is now a trustworthy supported-subset anchor: activation plus `Add` / `Exists` / `Count` is reproducible in-repo on the real registered lane.
 - Exact unblock steps:
-  - add a reproducible OxVba host lane for real registered early-bound `scrrun` / `Scripting.Dictionary`,
-  - verify imported `As New` and imported member access against that real registered lane,
-  - then run/fold the side-by-side Excel oracle capture for `ODG-044`.
+  - keep the reproducible OxVba host lane for real registered early-bound `scrrun` / `Scripting.Dictionary`,
+  - run and fold the side-by-side Excel oracle capture for the supported `As New` / `Add` / `Exists` / `Count` subset,
+  - reconcile the resulting evidence back into `ODG-044`.
 - Recommendation:
-  - treat `ODG-044` as mixed implementation-plus-oracle closure work, not as a pure scheduling task.
+  - treat `ODG-044` as oracle-and-foldback work for the supported registered subset, while keeping the broader activation-model review separate under `BLK-COM-ACTIVATION-001`.
   - keep `ODG-045` and `ODG-046` separate as harness-construction items rather than collapsing them into the same calendar note.
 
 ### BLK-COM-ACTIVATION-001: Real COM activation/model is not yet parity-complete
@@ -410,15 +410,14 @@ Run context: active parity/compliance execution plus in-progress feature worklis
 - Current state:
   - Native Windows string-ProgID activation (`CreateObject("Scripting.Dictionary")`) is a real late-bound COM path and is not the primary blocker here.
   - The numeric `CreateObject(<selector>)` fallback has now been removed from imported `As New` lowering.
-  - A narrow real registered early-bound anchor now exists for `Dim obj As New Scripting.Dictionary` plus `obj.Count`.
-  - The remaining problem is broader imported external member/event transport authority: richer dictionary traffic (`Add` / `Exists`) currently faults through projected callback transport instead of remaining a clean parity anchor.
+  - The real registered early-bound `Scripting.Dictionary` anchor now covers `Dim obj As New Scripting.Dictionary` plus `Add` / `Exists` / `Count`.
+  - The earlier `Add` / `Exists` fault was caused by incorrect hardcoded `scrrun.dll` event metadata in the COM core, not by an external harness limitation.
   - The imported typelib metadata/live-loader path is not yet an honest general activation contract for arbitrary real COM libraries.
   - Adjacent deterministic fallback/projection/test scaffolding still exists in neighboring lanes and must not be described as equivalent parity support for native late-bound activation.
   - Therefore broad “real COM library import support” language would currently overstate repo truth.
 - Exact unblock steps:
   - audit the native late-bound activation boundary so repo docs/tests cleanly separate native Windows `CreateObject("ProgID")` from deterministic fallback/projection scaffolding,
-  - keep the new registered early-bound activation-plus-Count lane as the minimum honest floor,
-  - fix the projected event/callback transport fault reached by richer `Scripting.Dictionary` member traffic on that lane,
+  - keep the registered early-bound `Scripting.Dictionary` member subset as the minimum honest floor,
   - then expand permanent real-host regressions for the supported imported member subset,
   - then fold the result back into `ODG-044` and `ODG-031` readiness/claim docs.
 - Recommendation:

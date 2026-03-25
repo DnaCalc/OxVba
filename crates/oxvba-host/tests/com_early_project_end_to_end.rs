@@ -128,6 +128,31 @@ End Sub
 
 #[cfg(target_os = "windows")]
 #[test]
+#[ignore = "requires registered external COM typelib lane (run explicitly on Windows host with scrrun available)"]
+fn early_bound_project_executes_registered_scripting_dictionary_member_subset() {
+    let manifest = manifest_with_reference(
+        "Scripting",
+        r#"
+Attribute VB_Name = "MainModule"
+Public Sub Main()
+Dim obj As New Scripting.Dictionary
+Dim countValue
+Dim existsValue
+Call obj.Add("a", 1)
+countValue = obj.Count
+existsValue = obj.Exists("a")
+End Sub
+"#,
+    );
+
+    let out = run_project_windows_hosted(&manifest, false);
+    assert!(expect_object_handle(&out[0]).raw() >= 20_001);
+    assert_eq!(out[1], RuntimeValue::I32(1));
+    assert_eq!(out[2], RuntimeValue::Bool(true));
+}
+
+#[cfg(target_os = "windows")]
+#[test]
 fn early_bound_project_vm_jit_snapshots_match_for_subset() {
     let manifest = manifest_with_typelib(
         r#"
