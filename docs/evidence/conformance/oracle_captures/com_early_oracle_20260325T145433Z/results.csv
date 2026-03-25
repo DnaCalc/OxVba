@@ -1,0 +1,2 @@
+"topic_id","case_id","scenario","vba_status","vba_observed","oxvba_status","oxvba_observed","match","notes"
+"CCT-046","CCT-046-A","As New Scripting.Dictionary plus Add / Exists / Count","ok","True,1","ok","True,1","true","OxVba anchor: com_early_project_end_to_end::early_bound_project_executes_registered_scripting_dictionary_member_subset; OxVba report: docs\evidence\conformance\com\COM_LANE_L2B_RUN_Scripting.Dictionary_20260325T145433Z.md; OxVba log: docs\evidence\conformance\com\COM_LANE_L2B_LOG_Scripting.Dictionary_20260325T145433Z.txt"

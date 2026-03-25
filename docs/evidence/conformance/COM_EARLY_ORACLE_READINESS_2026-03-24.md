@@ -6,6 +6,16 @@ Record the current machine-readiness and the newly discovered blocker shape for 
 
 This note is a readiness/blocker artifact, not closure evidence.
 
+Update 2026-03-25:
+
+- `ODG-044` supported-subset oracle capture is now complete.
+- Evidence:
+  - `docs/evidence/conformance/oracle_captures/com_early_oracle_20260325T145433Z/summary.md`
+  - `docs/evidence/conformance/oracle_captures/com_early_oracle_20260325T145433Z/results.csv`
+- Result:
+  - Excel VBA and OxVba both produced `True,1` for the supported `Dim obj As New Scripting.Dictionary` plus `Add` / `Exists` / `Count` subset.
+- Remaining open COM-early oracle items are `ODG-045` and `ODG-046`, plus the broader imported activation-authority question under `ODG-031`.
+
 ## Local host readiness
 
 - Excel COM automation is available locally:
@@ -47,7 +57,7 @@ While preparing a real Office-backed anchor for `ODG-044`, exploratory local rep
 Interpretation:
 
 - `ODG-044` is no longer blocked by the earlier OxVba-side callback-transport fault on the supported registered `Scripting.Dictionary` subset.
-- The remaining work for `ODG-044` is now the side-by-side Excel oracle capture and foldback for that supported subset.
+- That supported subset is now oracle-captured and folded via `com_early_oracle_20260325T145433Z`.
 - The broader real-library activation-model question remains open under `ODG-031`; that is a different closure item.
 
 ## Gate implications
@@ -55,7 +65,7 @@ Interpretation:
 - `ODG-044`
   - no longer blocked by total absence of a real-registered early-bind anchor for `scrrun` / `Scripting.Dictionary`
   - no longer blocked by the earlier `Add` / `Exists` callback-transport defect on the supported subset
-  - remaining work is side-by-side Excel oracle capture and foldback
+  - side-by-side Excel oracle capture and foldback for the supported subset is now complete
 - `ODG-045`
   - still needs a mixed-server / dual-interface oracle harness; Excel availability alone does not answer transport-policy parity
 - `ODG-046`
@@ -63,7 +73,6 @@ Interpretation:
 
 ## Recommended next steps
 
-1. Keep the new registered early-bound `Scripting.Dictionary` `As New` / `Add` / `Exists` / `Count` lane as the honest minimum anchor for `ODG-044`.
-2. Run and fold the side-by-side Excel oracle capture for that supported subset.
-3. Keep the broader activation-model review under `ODG-031` separate from the now-fixed `ODG-044` callback-transport issue.
-4. Treat `ODG-045` and `ODG-046` as distinct harness-construction tasks, not mere calendar items.
+1. Keep the new registered early-bound `Scripting.Dictionary` `As New` / `Add` / `Exists` / `Count` lane as the permanent supported anchor for the closed `ODG-044` subset.
+2. Keep the broader activation-model review under `ODG-031` separate from the now-closed `ODG-044` callback-transport issue.
+3. Treat `ODG-045` and `ODG-046` as distinct harness-construction tasks, not mere calendar items.
