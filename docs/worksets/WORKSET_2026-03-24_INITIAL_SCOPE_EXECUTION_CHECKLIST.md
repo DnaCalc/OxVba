@@ -36,7 +36,7 @@ Initial-scope closure is reached only when all of the following are true:
 
 Owned items:
 
-- [ ] `ODG-044`
+- [x] `ODG-044`
 - [ ] `ODG-045`
 - [ ] `ODG-046`
 - [ ] `ODG-030`
@@ -53,7 +53,7 @@ Execution order:
    - foldback targets.
    Current truth after local validation:
    - Excel + VBOM are available locally,
-   - but `ODG-044` is not only waiting on scheduling because the matching OxVba-side real registered early-bind anchor is not yet trustworthy for closure,
+   - `ODG-044` supported-subset oracle capture is now complete in `com_early_oracle_20260325T145433Z`,
    - `ODG-045` and `ODG-046` still require distinct harness construction beyond simply opening Excel.
 3. Decide `ODG-030/031` honestly:
    - close now if the required COM and typelib harness exists and is runnable,

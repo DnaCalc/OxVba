@@ -28,7 +28,7 @@ try {
         "oxvba-host",
         "--test",
         "com_early_project_end_to_end",
-        "early_bound_project_executes_registered_scripting_dictionary_anchor",
+        "early_bound_project_executes_registered_scripting_dictionary_member_subset",
         "--",
         "--ignored",
         "--exact",
@@ -44,7 +44,7 @@ try {
     $latestCsvPath = Join-Path $EvidenceDir ("COM_LANE_L2B_LATEST_{0}.csv" -f $safeProg)
 
     $startedUtc = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
-    Write-Host "[oxvba] COM lane L2B (registered early-bound anchor)"
+    Write-Host "[oxvba] COM lane L2B (registered early-bound supported subset)"
     Write-Host "[oxvba] ProgID: $progId"
     Write-Host "[oxvba] command: $cmdText"
     $null = & cargo @cmd 2>&1 | Tee-Object -FilePath $logPath
@@ -71,13 +71,14 @@ try {
         "# COM Lane L2B Run",
         "",
         "- Run ID: $RunId",
-        "- Lane: L2B registered early-bound anchor",
+        "- Lane: L2B registered early-bound supported subset",
         "- Status: $status",
         "- Exit code: $exitCode",
         "- Started UTC: $startedUtc",
         "- Finished UTC: $finishedUtc",
         "- Command: $cmdText",
         "- ProgID: $progId",
+        "- Scenario: As New Scripting.Dictionary plus Add / Exists / Count",
         "- Log: $logPath"
     )
     Set-Content -Path $reportPath -Value ($report -join "`n")

@@ -3,7 +3,11 @@
 Date: 2026-03-25  
 Status: in-progress  
 Supersedes planning scope: `docs/worksets/WORKSET_2026-03-25_IMPORTED_COM_ACTIVATION_REVIEW_AND_PARITY_EXECUTION.md`  
-Scope: review and correct the real COM activation story across imported early-bound activation, native late-bound ProgID activation, and adjacent deterministic fallback/projection scaffolding, with immediate closure focus on `ODG-031` and `ODG-044`.
+Scope: review and correct the real COM activation story across imported early-bound activation, native late-bound ProgID activation, and adjacent deterministic fallback/projection scaffolding, with immediate closure focus now on `ODG-031` after the supported `ODG-044` subset oracle closure.
+
+Update 2026-03-25 later:
+1. `ODG-044` is now closed for the supported `Scripting.Dictionary` oracle subset via `docs/evidence/conformance/oracle_captures/com_early_oracle_20260325T145433Z/summary.md`.
+2. Remaining immediate closure focus for this workset is therefore `ODG-031` plus the activation-boundary truth audit, not `ODG-044`.
 
 ## 1. Purpose
 

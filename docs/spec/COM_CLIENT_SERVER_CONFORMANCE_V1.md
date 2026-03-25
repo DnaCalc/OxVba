@@ -141,14 +141,15 @@ Implemented script surfaces:
 - `scripts/run-com-conformance.ps1` (root orchestrator)
 - `scripts/run-com-registrationless.ps1` (isolated lane)
 - `scripts/run-com-registered.ps1` (registered lane)
-- `scripts/run-com-registered-early-bound.ps1` (registered early-bound anchor lane)
+- `scripts/run-com-registered-early-bound.ps1` (registered early-bound supported subset lane)
+- `scripts/run-com-early-oracle.ps1` (Excel/OxVba side-by-side oracle runner for `CCT-046`)
 - `scripts/run-com-registered-events.ps1` (registered event-callback lane)
 
 Current lane mapping:
 
 - L2b registrationless controlled lane -> `com_client_end_to_end`.
 - L2 registered external lane -> `com_client_registered_lane` (ignored-by-default tests, executed via `scripts/run-com-registered.ps1`; external ProgID selected directly by `-ProgId` / `OXVBA_REGISTERED_COM_PROGID`, now including event subscribe/unsubscribe failure-shape checks).
-- L2B registered early-bound anchor lane -> `com_early_project_end_to_end::early_bound_project_executes_registered_scripting_dictionary_anchor` (ignored-by-default test, executed via `scripts/run-com-registered-early-bound.ps1`; current scope proves `Dim obj As New Scripting.Dictionary` plus `obj.Count` on a real registered host).
+- L2B registered early-bound supported subset lane -> `com_early_project_end_to_end::early_bound_project_executes_registered_scripting_dictionary_member_subset` (ignored-by-default test, executed via `scripts/run-com-registered-early-bound.ps1`; current scope proves `Dim obj As New Scripting.Dictionary` plus `Add` / `Exists` / `Count` on a real registered host).
 - L2E registered event-callback lane -> `com_client_registered_lane::registered_event_callback_success_when_event_capable_server_is_configured` (strict path via `scripts/run-com-registered-events.ps1` using `OXVBA_REGISTERED_EVENT_REQUIRE_SUCCESS=1` plus event callback/transport/trigger env bindings: `OXVBA_REGISTERED_EVENT_TOKEN`, `OXVBA_REGISTERED_EVENT_EXPECTED_ARGC`, `OXVBA_REGISTERED_EVENT_PATH`, `OXVBA_REGISTERED_EVENT_CONNECTION_POINT_IID`, `OXVBA_REGISTERED_EVENT_DISPATCH_MEMBER`, `OXVBA_REGISTERED_EVENT_TRIGGER_MEMBER`, `OXVBA_REGISTERED_EVENT_TRIGGER_REQUIRES_ARG`, `OXVBA_REGISTERED_EVENT_TRIGGER_INVOKE_KIND`, `OXVBA_REGISTERED_EVENT_TRIGGER_ARG`, `OXVBA_REGISTERED_EVENT_POLL_ITERATIONS`, `OXVBA_REGISTERED_EVENT_POLL_DELAY_MS`).
 
 ## 4. Artifact Model

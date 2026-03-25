@@ -36,7 +36,7 @@
 - Real COM activation is still not parity-complete enough for honest initial-scope closure.
 - Imported real COM `As New` activation is still bounded by a narrow authoritative identity subset. The compiler now takes activation identity from explicit typelib metadata (`activation_prog_id`) instead of guessing from the source type text, and still fails unsupported imported activation explicitly instead of lowering to non-VBA syntax. The remaining supported scope is still not a general real-library activation contract.
 - Native Windows string-ProgID `CreateObject("...")` remains the live late-bound activation path on Windows. Numeric `CreateObject(<selector>)` scaffolding is not part of the VBA contract and is being removed from repo-local metadata/policy/test seams; the remaining repo-truth gap is that deterministic fallback/projection scaffolding still exists in neighboring lanes and must not be described as equivalent parity support for real-library activation.
-- The live typelib path does not yet provide a trustworthy activation contract for arbitrary real COM libraries. The registered `Scripting.Dictionary` early-bind anchor now covers activation plus `Add` / `Exists` / `Count` for the supported subset, so `ODG-044` is no longer blocked on that specific callback-transport defect. `ODG-031` still remains broader than a harness scheduling item because the general activation contract question is still open.
+- The live typelib path does not yet provide a trustworthy activation contract for arbitrary real COM libraries. The registered `Scripting.Dictionary` early-bind anchor now covers activation plus `Add` / `Exists` / `Count` for the supported subset, and `ODG-044` is now closed for that supported oracle lane. `ODG-031` still remains broader than a harness scheduling item because the general activation contract question is still open.
 
 ---
 
@@ -44,11 +44,11 @@
 
 ### 2.1 Oracle Gates (IP-10)
 
-**Required for Initial Scope (5 gates — mixed implementation, harness, and oracle closure):**
+**Required for Initial Scope (5 gates total — 1 now closed, 4 still open):**
 
 - [ ] **ODG-030** — COM interop marshaling. Needs COM test server + host interop oracle runs.
 - [ ] **ODG-031** — TypeLib COM interop. Needs custom typelib oracle harness plus correction of the real COM activation/model assumptions that currently overread the supported imported scope.
-- [ ] **ODG-044** — `As New` early-bound. Excel host is available locally, and the real registered OxVba early-bound anchor now covers `Dim obj As New Scripting.Dictionary` plus `Add` / `Exists` / `Count` on the supported subset. Remaining work is now the side-by-side Excel oracle capture and foldback for that supported lane. See `docs/evidence/conformance/COM_EARLY_ORACLE_READINESS_2026-03-24.md`.
+- [x] **ODG-044** — `As New` early-bound supported subset. Oracle run `com_early_oracle_20260325T145433Z` matched Excel and OxVba for `Dim obj As New Scripting.Dictionary` plus `Add` / `Exists` / `Count` (`True,1`). Broader real-library activation authority remains open under `ODG-031`, not under this supported-subset oracle gate.
 - [ ] **ODG-045** — Dual-interface vtable/dispatch. Still needs a mixed-server oracle harness; Excel availability alone does not close transport-policy parity.
 - [ ] **ODG-046** — TypeLib version/broken-ref. Still needs versioned-typelib / broken-reference mutation harness; Excel availability alone does not close repair/version-selection parity.
 
@@ -84,7 +84,7 @@ Completed this session:
 ### 2.3 Active Blockers
 
 - [ ] **BLK-COM-ACTIVATION-001** — Real COM activation/model gap. Imported early-bound `As New` now uses explicit typelib-owned activation identity and has a real registered `Scripting.Dictionary` activation-plus-member anchor on the supported subset, but broader real-library activation-model parity is still in progress and adjacent late-bound fallback/projection boundaries still need an explicit truth audit.
-- [ ] **BLK-ORACLE-001** — Evidence gap. Need remaining Office/host capture matrix (scheduling, not coding).
+- [ ] **BLK-ORACLE-001** — Evidence gap. Need remaining Office/host capture matrix for `ODG-030`, `ODG-031`, `ODG-045`, and `ODG-046`.
 - [ ] **BLK-FORMAL-001** — Infrastructure gap. Explicit deferrals now in place; remaining need is DG-V2-001 completion.
 
 ---
@@ -174,7 +174,6 @@ These are post-Initial Scope items. No action needed for v620 closure.
 ### Must-do (blocking v620 terminal gate)
 
 - [ ] **COM activation truth review/fix** — Continue correcting the real COM activation model so imported early-bound `As New` uses an authoritative real-library activation contract for the supported scope, and so native late-bound `CreateObject("ProgID")` is documented/tested separately from deterministic fallback/projection scaffolding instead of being blurred into one parity claim.
-- [ ] **ODG-044 real-host anchor** — Excel is runnable locally, and the supported OxVba-side real registered early-bind anchor now covers `As New Scripting.Dictionary` plus `Add` / `Exists` / `Count`. Remaining work is the side-by-side Excel oracle capture and foldback on that same lane.
 - [ ] **ODG-045 mixed-server oracle harness** — dual-interface parity still needs an explicit host/oracle lane.
 - [ ] **ODG-046 versioned/broken-reference oracle harness** — still needs typelib mutation / repair harness.
 - [ ] **Close or defer ODG-030, ODG-031** — need paired COM test-server / typelib oracle harness. Existing registered COM lanes are not yet the required Excel differential harness, and `ODG-031` also depends on the imported activation/model correction above.

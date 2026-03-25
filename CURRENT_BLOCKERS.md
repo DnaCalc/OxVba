@@ -385,26 +385,20 @@ Run context: active parity/compliance execution plus in-progress feature worklis
 - Recommendation:
   - do not spend oracle effort ahead of core feature closure except for targeted ambiguity resolution.
 
-### BLK-ORACLE-002: COM early oracle is host-ready locally, but ODG-044 is not merely a scheduling item
-- Impact:
-  - Blocks honest closure of `ODG-044`.
-  - Weakens the assumption that the remaining COM-early oracle work is only calendar/external-session effort.
-- Current state:
+### BLK-ORACLE-002: COM early oracle is host-ready locally and the supported ODG-044 subset is now folded
+- Status: **resolved** on 2026-03-25.
+- Resolution summary:
   - Excel COM automation is available locally (`16.0`), and `AccessVBOM=1`.
-  - Direct Excel/VBA probe against `Scripting.Dictionary` executes successfully.
-  - The matching OxVba-side real registered early-bound path for `Dim obj As New Scripting.Dictionary` is now a trustworthy supported-subset anchor: activation plus `Add` / `Exists` / `Count` is reproducible in-repo on the real registered lane.
-- Exact unblock steps:
-  - keep the reproducible OxVba host lane for real registered early-bound `scrrun` / `Scripting.Dictionary`,
-  - run and fold the side-by-side Excel oracle capture for the supported `As New` / `Add` / `Exists` / `Count` subset,
-  - reconcile the resulting evidence back into `ODG-044`.
+  - The real registered OxVba early-bound lane for `Dim obj As New Scripting.Dictionary` plus `Add` / `Exists` / `Count` is reproducible in-repo.
+  - Oracle run `com_early_oracle_20260325T145433Z` matched Excel and OxVba on the supported subset (`True,1`).
 - Recommendation:
-  - treat `ODG-044` as oracle-and-foldback work for the supported registered subset, while keeping the broader activation-model review separate under `BLK-COM-ACTIVATION-001`.
-  - keep `ODG-045` and `ODG-046` separate as harness-construction items rather than collapsing them into the same calendar note.
+  - close `ODG-044` against the captured supported subset,
+  - keep the broader activation-model review under `BLK-COM-ACTIVATION-001` / `ODG-031`,
+  - keep `ODG-045` and `ODG-046` separate as harness-construction items.
 
 ### BLK-COM-ACTIVATION-001: Real COM activation/model is not yet parity-complete
 - Impact:
   - Blocks honest closure of `IP-05B` for imported real COM activation.
-  - Blocks `ODG-044` as an implementation-plus-oracle item.
   - Weakens `ODG-031` because imported typelib claims cannot be broader than the activation model that consumes them.
   - Requires an explicit truth boundary between native late-bound Windows activation and deterministic fallback/projection scaffolding.
 - Current state:
@@ -412,6 +406,7 @@ Run context: active parity/compliance execution plus in-progress feature worklis
   - Numeric `CreateObject(<selector>)` scaffolding is not part of the VBA contract and is being removed from the remaining repo-local test/policy seams as well.
   - Imported early-bound `As New` now takes activation identity from explicit typelib metadata (`activation_prog_id`) instead of inferring it from the source type text.
   - The real registered early-bound `Scripting.Dictionary` anchor now covers `Dim obj As New Scripting.Dictionary` plus `Add` / `Exists` / `Count`.
+  - `ODG-044` is now closed for that supported subset by oracle run `com_early_oracle_20260325T145433Z`.
   - The earlier `Add` / `Exists` fault was caused by incorrect hardcoded `scrrun.dll` event metadata in the COM core, not by an external harness limitation.
   - The imported typelib metadata/live-loader path is not yet an honest general activation contract for arbitrary real COM libraries.
   - Adjacent deterministic fallback/projection/test scaffolding still exists in neighboring lanes and must not be described as equivalent parity support for native late-bound activation.
@@ -420,7 +415,7 @@ Run context: active parity/compliance execution plus in-progress feature worklis
   - audit the native late-bound activation boundary so repo docs/tests cleanly separate native Windows `CreateObject("ProgID")` from deterministic fallback/projection scaffolding,
   - keep the metadata-backed registered early-bound `Scripting.Dictionary` member subset as the minimum honest floor,
   - then expand permanent real-host regressions for the supported imported member subset,
-  - then fold the result back into `ODG-044` and `ODG-031` readiness/claim docs.
+  - then fold the remaining activation-authority result back into `ODG-031` readiness/claim docs.
 - Recommendation:
   - do not assume adjacent fallback/projection seams are part of the native parity claim,
   - keep the scoped native string-ProgID late-bound lane separate unless the activation-boundary audit proves a live defect there,

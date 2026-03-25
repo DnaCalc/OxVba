@@ -12,6 +12,7 @@
 - COM conformance (required registrationless lane): `./scripts/run-com-conformance.ps1`
 - COM conformance (registrationless + registered external lane): `./scripts/run-com-conformance.ps1 -IncludeRegisteredLane -RegisteredProgIds "Scripting.Dictionary"`
 - Registered early-bound anchor lane only (`L2B`): `./scripts/run-com-registered-early-bound.ps1`
+- COM early oracle capture (`CCT-046`): `./scripts/run-com-early-oracle.ps1`
 - COM conformance (include registered event callback lane): `./scripts/run-com-conformance.ps1 -IncludeRegisteredEventLane -RegisteredEventProgId "OxVba.TestDispatch"`
 - Registered event callback lane only (`L2E`): `./scripts/run-com-registered-events.ps1 -ProgId "OxVba.TestDispatch"`
 - COM early-binding conformance (`E0..E6`): `./scripts/run-com-early-conformance.ps1 -IncludeFormalLane`
@@ -51,7 +52,7 @@ Deferred formal gate policy:
 - COM client E2E:
   - registrationless controlled lane (`com_client_end_to_end`) is always runnable in Windows host-backed mode,
   - registered external lane (`com_client_registered_lane`) uses ignored tests and runs only via explicit script/`--ignored` invocation.
-  - registered early-bound anchor lane (`com_early_project_end_to_end::early_bound_project_executes_registered_scripting_dictionary_anchor`) uses ignored tests and runs only via explicit script/`--ignored` invocation.
+  - registered early-bound supported subset lane (`com_early_project_end_to_end::early_bound_project_executes_registered_scripting_dictionary_member_subset`) uses ignored tests and runs only via explicit script/`--ignored` invocation.
 
 ## COM Lane Policy
 - Registered COM tests are `#[ignore]` by default to avoid accidental nondeterministic CI/local failures.
@@ -63,6 +64,8 @@ Deferred formal gate policy:
   - `scripts/run-com-registered-early-bound.ps1`,
   - `scripts/run-com-registered-events.ps1`,
   - `scripts/run-com-conformance.ps1`.
+- COM early oracle artifacts are written under `docs/evidence/conformance/oracle_captures/` by:
+  - `scripts/run-com-early-oracle.ps1`.
 
 ## Next additions
 - Property tests for parse/print and coercion matrices.
