@@ -3,7 +3,7 @@ use crate::{
     model::CapabilityId,
     traits::FileSystemHal,
 };
-use oxvba_runtime::{RuntimeValue, bstr::BStr};
+use oxvba_runtime::{F64Value, RuntimeValue, bstr::BStr};
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs::{self, OpenOptions};
 use std::path::PathBuf;
@@ -103,6 +103,25 @@ fn parse_input_field(data: &[u8], mut cursor: usize) -> (String, usize) {
     }
 
     (out, cursor)
+}
+
+fn runtime_value_from_input_field(field: &str) -> RuntimeValue {
+    if field.eq_ignore_ascii_case("#TRUE#") {
+        return RuntimeValue::Bool(true);
+    }
+    if field.eq_ignore_ascii_case("#FALSE#") {
+        return RuntimeValue::Bool(false);
+    }
+    if field.eq_ignore_ascii_case("#NULL#") {
+        return RuntimeValue::Empty;
+    }
+    if let Ok(value) = field.parse::<i32>() {
+        return RuntimeValue::I32(value);
+    }
+    if let Ok(value) = field.parse::<f64>() {
+        return RuntimeValue::F64(F64Value::from_f64(value));
+    }
+    RuntimeValue::String(BStr(field.to_string()))
 }
 
 fn advance_input_separator(data: &[u8], mut cursor: usize) -> usize {
@@ -705,6 +724,12 @@ impl FileSystemHal for StandardHostServices {
             cursor = advance_input_separator(&entry.data, next_cursor);
         }
         entry.position = cursor as i32;
+        if count == 1 {
+            if let Some(field) = fields.first() {
+                return Ok(runtime_value_from_input_field(field));
+            }
+            return Ok(RuntimeValue::String(BStr(String::new())));
+        }
         let result = fields.join(",");
         Ok(RuntimeValue::String(BStr(result)))
     }

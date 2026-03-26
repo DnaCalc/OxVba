@@ -938,7 +938,10 @@ fn check_expr(
     proc_context: &TypecheckProcContext<'_>,
 ) -> Result<(), String> {
     match expr {
-        BoundExpr::IntConst(_) | BoundExpr::FloatConst(_) | BoundExpr::StringConst(_) => Ok(()),
+        BoundExpr::IntConst(_)
+        | BoundExpr::BoolConst(_)
+        | BoundExpr::FloatConst(_)
+        | BoundExpr::StringConst(_) => Ok(()),
         BoundExpr::Var(name) => ensure_declared(
             name,
             option_explicit,
@@ -1117,6 +1120,7 @@ fn default_type_for_name(name: &str, default_type_table: &[BoundType; 26]) -> Bo
 fn infer_expr_type(expr: &BoundExpr, declared_types: &HashMap<String, BoundType>) -> BoundType {
     match expr {
         BoundExpr::IntConst(_) => BoundType::Long,
+        BoundExpr::BoolConst(_) => BoundType::Boolean,
         BoundExpr::FloatConst(_) => BoundType::Double,
         BoundExpr::StringConst(_) => BoundType::String,
         BoundExpr::Var(name) => *declared_types.get(name).unwrap_or(&BoundType::Variant),

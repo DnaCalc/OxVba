@@ -1294,7 +1294,6 @@ fn emit_stmt(
         BoundStmt::FileWrite { file_number, data } => {
             let dst = temps.alloc_temp();
             let handle_slot = temps.alloc_temp();
-            let data_slot = temps.alloc_temp();
             emit_expr_into(
                 file_number,
                 compare_mode,
@@ -1306,22 +1305,25 @@ fn emit_stmt(
                 proc_meta,
                 external_decls,
             );
-            emit_expr_into(
-                data,
-                compare_mode,
-                data_slot,
-                slot_map,
-                temps,
-                instructions,
-                call_patches,
-                proc_meta,
-                external_decls,
-            );
-            instructions.push(Instruction::IntrinsicFileWriteHost {
-                dst,
-                handle: handle_slot,
-                data: data_slot,
-            });
+            for item in data {
+                let data_slot = temps.alloc_temp();
+                emit_expr_into(
+                    item,
+                    compare_mode,
+                    data_slot,
+                    slot_map,
+                    temps,
+                    instructions,
+                    call_patches,
+                    proc_meta,
+                    external_decls,
+                );
+                instructions.push(Instruction::IntrinsicFileWriteHost {
+                    dst,
+                    handle: handle_slot,
+                    data: data_slot,
+                });
+            }
         }
         BoundStmt::FileInput {
             file_number,
@@ -1424,6 +1426,7 @@ fn expr_bound_type(
         BoundExpr::IntConst(_) | BoundExpr::AddConst { .. } | BoundExpr::SubConst { .. } => {
             BoundType::Long
         }
+        BoundExpr::BoolConst(_) => BoundType::Boolean,
         BoundExpr::FloatConst(_) => BoundType::Double,
         BoundExpr::StringConst(_) => BoundType::String,
         BoundExpr::BinaryOp { .. } | BoundExpr::UnaryOp { .. } => BoundType::Variant,
@@ -2144,6 +2147,10 @@ fn emit_expr_into(
 ) {
     match expr {
         BoundExpr::IntConst(value) => instructions.push(Instruction::LoadConstI32 {
+            slot: dst,
+            value: *value,
+        }),
+        BoundExpr::BoolConst(value) => instructions.push(Instruction::LoadConstBool {
             slot: dst,
             value: *value,
         }),

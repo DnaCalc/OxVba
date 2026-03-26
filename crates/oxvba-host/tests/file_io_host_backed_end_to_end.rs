@@ -118,6 +118,50 @@ mod windows_file_io_host_backed_end_to_end {
         );
     }
 
+    #[test]
+    fn host_backed_file_write_input_multi_field_typed_roundtrip_matches_excel_shape() {
+        let temp_dir = std::env::current_dir()
+            .expect("cwd")
+            .join("temp")
+            .join("file-io-oracle-test");
+        fs::create_dir_all(&temp_dir).expect("create temp dir");
+        let temp_file = temp_dir.join("write_input_multi.txt");
+        let path_literal = temp_file.to_string_lossy().replace('\\', "\\\\");
+
+        let mut engine = Engine::new(HostConfig::default());
+        let mut policy = HostPolicy::interactive_dev();
+        policy.allow_filesystem_mutation = true;
+        engine.set_host_policy(policy);
+
+        let source = format!(
+            "Sub Main()\n\
+             Dim a\n\
+             Dim b\n\
+             Dim c\n\
+             Dim observed\n\
+             Open \"{path_literal}\" For Output As #1\n\
+             Write #1, 42, True, \"hello,world\"\n\
+             Close #1\n\
+             Open \"{path_literal}\" For Input As #1\n\
+             Input #1, a, b, c\n\
+             Close #1\n\
+             observed = CStr(a) & \"|\" & CStr(b) & \"|\" & CStr(c)\n\
+             End Sub"
+        );
+        let out = engine
+            .execute_source_with_snapshot_phased(&source)
+            .expect("host-backed multi-field Write#/Input# case should execute");
+        let observed = out.last().expect("expected observed slot");
+        println!(
+            "ODG032-OBSERVED[CCT-033-WRITE-002]={}",
+            render_observed(observed)
+        );
+        assert_eq!(
+            observed,
+            &RuntimeValue::String(BStr("42|True|hello,world".to_string()))
+        );
+    }
+
     fn render_observed(value: &RuntimeValue) -> String {
         match value {
             RuntimeValue::String(BStr(text)) => text.clone(),

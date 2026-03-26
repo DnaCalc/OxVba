@@ -66,6 +66,10 @@ pub enum Instruction {
         slot: usize,
         value: i32,
     },
+    LoadConstBool {
+        slot: usize,
+        value: bool,
+    },
     LoadConstString {
         slot: usize,
         value: String,

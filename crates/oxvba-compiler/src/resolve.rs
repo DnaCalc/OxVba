@@ -27,6 +27,7 @@ pub enum ArithOp {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum BoundExpr {
     IntConst(i32),
+    BoolConst(bool),
     FloatConst(u64),
     StringConst(String),
     Var(String),
@@ -197,7 +198,7 @@ pub enum BoundStmt {
     },
     FileWrite {
         file_number: BoundExpr,
-        data: BoundExpr,
+        data: Vec<BoundExpr>,
     },
     FileInput {
         file_number: BoundExpr,
@@ -3286,9 +3287,12 @@ fn parse_file_write_stmt(line: &str, array_bounds: &ArrayBoundsMap) -> Option<Bo
 
     let file_number = parse_expr(filenum_raw, array_bounds)?;
     let data = if data_raw.is_empty() {
-        BoundExpr::StringConst(String::new())
+        vec![BoundExpr::StringConst(String::new())]
     } else {
-        parse_expr(data_raw, array_bounds)?
+        split_top_level_stmt_args(data_raw)?
+            .into_iter()
+            .map(|part| parse_expr(part.as_str(), array_bounds))
+            .collect::<Option<Vec<_>>>()?
     };
 
     Some(BoundStmt::FileWrite { file_number, data })
@@ -3330,6 +3334,45 @@ fn parse_file_line_input_stmt(line: &str, array_bounds: &ArrayBoundsMap) -> Opti
         file_number,
         target,
     })
+}
+
+fn split_top_level_stmt_args(args: &str) -> Option<Vec<String>> {
+    if args.trim().is_empty() {
+        return Some(Vec::new());
+    }
+    let mut out = Vec::new();
+    let mut start = 0usize;
+    let mut depth = 0i32;
+    let mut in_string = false;
+    let chars = args.as_bytes();
+    let mut idx = 0usize;
+    while idx < chars.len() {
+        let ch = chars[idx] as char;
+        if ch == '"' {
+            in_string = !in_string;
+            idx += 1;
+            continue;
+        }
+        if in_string {
+            idx += 1;
+            continue;
+        }
+        match ch {
+            '(' => depth += 1,
+            ')' => depth -= 1,
+            ',' if depth == 0 => {
+                out.push(args[start..idx].trim().to_string());
+                start = idx + 1;
+            }
+            _ => {}
+        }
+        idx += 1;
+    }
+    if depth != 0 || in_string {
+        return None;
+    }
+    out.push(args[start..].trim().to_string());
+    Some(out)
 }
 
 fn parse_redim_stmt(
@@ -3702,12 +3745,14 @@ fn parse_expr(text: &str, array_bounds: &ArrayBoundsMap) -> Option<BoundExpr> {
         return Some(BoundExpr::StringConst(s));
     }
 
-    // Boolean keywords: True = -1, False = 0 (VBA convention)
+    // Boolean keywords are preserved as booleans so runtime lanes that care
+    // about logical shape, like Write#/Input# roundtrips and CStr(), can
+    // distinguish them from numeric -1/0.
     if expr.eq_ignore_ascii_case("true") {
-        return Some(BoundExpr::IntConst(-1));
+        return Some(BoundExpr::BoolConst(true));
     }
     if expr.eq_ignore_ascii_case("false") {
-        return Some(BoundExpr::IntConst(0));
+        return Some(BoundExpr::BoolConst(false));
     }
 
     // Hex literals: &HFF → 255, &O77 → 63

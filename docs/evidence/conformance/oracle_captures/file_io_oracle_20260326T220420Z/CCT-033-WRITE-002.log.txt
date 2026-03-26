@@ -1,0 +1,9 @@
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.18s
+     Running tests\file_io_host_backed_end_to_end.rs (target\debug\deps\file_io_host_backed_end_to_end-46bb2429b2130e85.exe)
+
+running 1 test
+test windows_file_io_host_backed_end_to_end::host_backed_file_write_input_multi_field_typed_roundtrip_matches_excel_shape ... ODG032-OBSERVED[CCT-033-WRITE-002]=42|True|hello,world
+ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 3 filtered out; finished in 0.00s
+

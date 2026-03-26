@@ -36,6 +36,8 @@ try {
     $filePosLiteral = $filePosPath.Replace('\', '\\')
     $writePath = Join-Path $tempDir "write_input.txt"
     $writeLiteral = $writePath.Replace('\', '\\')
+    $writeMultiPath = Join-Path $tempDir "write_input_multi.txt"
+    $writeMultiLiteral = $writeMultiPath.Replace('\', '\\')
 
     function Add-StdModule {
         param($Workbook, [string]$ModuleName, [string]$Code)
@@ -169,6 +171,22 @@ Public Function RunProbe()
     RunProbe = a
 End Function
 "@
+            ),
+            (
+                Invoke-ExcelCase -CaseId "CCT-033-WRITE-002" -Scenario "Write#/Input# multi-field roundtrip preserves typed field shapes" -Code @"
+Public Function RunProbe()
+    Dim a
+    Dim b
+    Dim c
+    Open "$writeMultiLiteral" For Output As #1
+    Write #1, 42, True, "hello,world"
+    Close #1
+    Open "$writeMultiLiteral" For Input As #1
+    Input #1, a, b, c
+    Close #1
+    RunProbe = CStr(a) & "|" & CStr(b) & "|" & CStr(c)
+End Function
+"@
             )
         )
     } finally {
@@ -185,6 +203,9 @@ End Function
         ),
         (
             Invoke-OxCase -CaseId "CCT-033-WRITE-001" -Scenario "Write#/Input# preserves embedded comma inside quoted string field" -TestName "windows_file_io_host_backed_end_to_end::host_backed_file_write_input_preserves_embedded_comma_string"
+        ),
+        (
+            Invoke-OxCase -CaseId "CCT-033-WRITE-002" -Scenario "Write#/Input# multi-field roundtrip preserves typed field shapes" -TestName "windows_file_io_host_backed_end_to_end::host_backed_file_write_input_multi_field_typed_roundtrip_matches_excel_shape"
         )
     )
 

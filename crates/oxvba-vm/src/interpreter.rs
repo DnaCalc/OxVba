@@ -377,6 +377,10 @@ impl Vm {
                     self.write_value_slot(*slot, rv)?;
                     pc += 1;
                 }
+                Instruction::LoadConstBool { slot, value } => {
+                    self.write_value_slot(*slot, RuntimeValue::Bool(*value))?;
+                    pc += 1;
+                }
                 Instruction::LoadConstString { slot, value } => {
                     self.write_value_slot(*slot, RuntimeValue::String(BStr(value.clone())))?;
                     pc += 1;

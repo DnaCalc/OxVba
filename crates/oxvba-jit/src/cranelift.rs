@@ -90,6 +90,7 @@ fn supports_rtslot_instruction(instruction: &Instruction) -> bool {
         instruction,
         // Phase 0: same 23 as legacy
         Instruction::LoadConstI32 { .. }
+            | Instruction::LoadConstBool { .. }
             | Instruction::AddConstI32 { .. }
             | Instruction::AddSlots { .. }
             | Instruction::SubConstI32 { .. }
@@ -740,6 +741,18 @@ pub fn execute_bytecode_rtslot(
                     builder.ins().store(MemFlags::new(), tag, tag_addr, 0);
                     builder.ins().store(MemFlags::new(), payload, pay_addr, 0);
                 }
+                builder.ins().jump(next_block, &[]);
+            }
+            Instruction::LoadConstBool { slot, value } => {
+                let slot_val = crate::slot_abi::rtslot_from_runtime_value(&RuntimeValue::Bool(*value));
+                let tag = builder.ins().iconst(types::I32, i64::from(slot_val.tag));
+                let payload = builder.ins().iconst(types::I64, slot_val.payload as i64);
+                let tag_off = rtslot_tag_offset(*slot)?;
+                let pay_off = rtslot_payload_offset(*slot)?;
+                let tag_addr = builder.ins().iadd_imm(slots_ptr, tag_off);
+                let pay_addr = builder.ins().iadd_imm(slots_ptr, pay_off);
+                builder.ins().store(MemFlags::new(), tag, tag_addr, 0);
+                builder.ins().store(MemFlags::new(), payload, pay_addr, 0);
                 builder.ins().jump(next_block, &[]);
             }
             Instruction::LoadConstF64 { slot, bits } => {
@@ -4000,6 +4013,9 @@ pub fn execute_bytecode_legacy(bytecode: &Bytecode) -> Result<Vec<i32>, String> 
                 let out = builder.ins().iconst(types::I32, i64::from(*value));
                 write_slot(&mut builder, slots_ptr, *slot, out)?;
                 builder.ins().jump(next_block, &[]);
+            }
+            Instruction::LoadConstBool { .. } => {
+                return Err("unsupported bytecode for cranelift execution".to_string());
             }
             Instruction::AddConstI32 { slot, value } => {
                 let lhs = read_slot(&mut builder, slots_ptr, *slot)?;
