@@ -232,6 +232,7 @@ pub struct ProjectNode {
     pub project_kind: ProjectKind,
     pub module_order: Vec<String>,
     pub modules: BTreeMap<String, ModuleNode>,
+    pub extensible_module_names: BTreeSet<String>,
     pub references: Vec<ProjectReference>,
     pub conditional_constants: BTreeMap<String, i32>,
     public_symbol_owners: BTreeMap<String, BTreeSet<String>>,
@@ -325,6 +326,14 @@ pub enum ProjectModelError {
         "PMR-E-HOST-EXTENSION-MODULE-KIND: host extension attach requires an extension module (`{module_name}`)"
     )]
     HostExtensionModuleKind { module_name: String },
+    #[error(
+        "PMR-E-HOST-EXTENSIBLE-MODULE-PROJECT-KIND: extensible module `{module_name}` requires a host project"
+    )]
+    HostExtensibleModuleProjectKind { module_name: String },
+    #[error(
+        "PMR-E-HOST-EXTENSION-TARGET-MISSING: extension module `{module_name}` does not match a registered extensible host module"
+    )]
+    HostExtensionTargetMissing { module_name: String },
 }
 
 impl ProjectModelError {
@@ -350,6 +359,10 @@ impl ProjectModelError {
             Self::HostExportModuleKindUnsupported { .. } => "PMR-E-HOST-EXPORT-MODULE-KIND",
             Self::HostExportProcedureInvalid { .. } => "PMR-E-HOST-EXPORT-NAME-INVALID",
             Self::HostExtensionModuleKind { .. } => "PMR-E-HOST-EXTENSION-MODULE-KIND",
+            Self::HostExtensibleModuleProjectKind { .. } => {
+                "PMR-E-HOST-EXTENSIBLE-MODULE-PROJECT-KIND"
+            }
+            Self::HostExtensionTargetMissing { .. } => "PMR-E-HOST-EXTENSION-TARGET-MISSING",
         }
     }
 }
@@ -382,11 +395,31 @@ impl ProjectNode {
             project_kind,
             module_order: Vec::new(),
             modules: BTreeMap::new(),
+            extensible_module_names: BTreeSet::new(),
             references: Vec::new(),
             conditional_constants: BTreeMap::new(),
             public_symbol_owners: BTreeMap::new(),
             host_exports: BTreeMap::new(),
         })
+    }
+
+    pub fn register_extensible_module(
+        &mut self,
+        module_name: impl Into<String>,
+    ) -> Result<(), ProjectModelError> {
+        let module_name = module_name.into();
+        if self.project_kind != ProjectKind::Host {
+            return Err(ProjectModelError::HostExtensibleModuleProjectKind { module_name });
+        }
+        if !is_valid_vba_identifier(&module_name) {
+            return Err(ProjectModelError::ModuleNameInvalid { name: module_name });
+        }
+        if module_name.chars().count() > 31 {
+            return Err(ProjectModelError::ModuleNameLength { name: module_name });
+        }
+        self.extensible_module_names
+            .insert(normalize_identifier(&module_name));
+        Ok(())
     }
 
     pub fn add_module(&mut self, module: ModuleNode) -> Result<(), ProjectModelError> {
@@ -450,6 +483,13 @@ impl ProjectNode {
             return Err(ProjectModelError::HostExtensionModuleKind {
                 module_name: module.module_name,
             });
+        }
+        let module_name = module.module_name.clone();
+        if !self
+            .extensible_module_names
+            .contains(&normalize_identifier(&module_name))
+        {
+            return Err(ProjectModelError::HostExtensionTargetMissing { module_name });
         }
         self.add_module(module)
     }
@@ -813,6 +853,11 @@ impl ProjectNode {
     pub fn module(&self, module_name: &str) -> Option<&ModuleNode> {
         self.modules.get(&normalize_identifier(module_name))
     }
+
+    pub fn is_extensible_module(&self, module_name: &str) -> bool {
+        self.extensible_module_names
+            .contains(&normalize_identifier(module_name))
+    }
 }
 
 impl ProjectGraph {
@@ -1124,6 +1169,9 @@ mod tests {
             .create_project("HostBook", ProjectKind::Host)
             .expect("project should be created");
         let project = graph.active_project_mut().expect("active project expected");
+        project
+            .register_extensible_module("HostExt")
+            .expect("host project should accept extensible target registration");
 
         project
             .attach_host_extension_module(simple_extension_module("HostExt"))
@@ -1140,11 +1188,59 @@ mod tests {
             .create_project("HostBook", ProjectKind::Host)
             .expect("project should be created");
         let project = graph.active_project_mut().expect("active project expected");
+        project
+            .register_extensible_module("MainModule")
+            .expect("host project should accept extensible target registration");
 
         let err = project
             .attach_host_extension_module(simple_proc_module("MainModule"))
             .expect_err("host extension attach should require extension modules");
         assert_eq!(err.code(), "PMR-E-HOST-EXTENSION-MODULE-KIND");
+    }
+
+    #[test]
+    fn host_extension_attach_requires_registered_extensible_target() {
+        let mut graph = ProjectGraph::default();
+        graph
+            .create_project("HostBook", ProjectKind::Host)
+            .expect("project should be created");
+        let project = graph.active_project_mut().expect("active project expected");
+
+        let err = project
+            .attach_host_extension_module(simple_extension_module("HostExt"))
+            .expect_err("host extension attach should require registered extensible target");
+        assert_eq!(err.code(), "PMR-E-HOST-EXTENSION-TARGET-MISSING");
+    }
+
+    #[test]
+    fn extensible_modules_require_host_projects() {
+        let mut graph = ProjectGraph::default();
+        graph
+            .create_project("Alpha", ProjectKind::Source)
+            .expect("project should be created");
+        let project = graph.active_project_mut().expect("active project expected");
+
+        let err = project
+            .register_extensible_module("Sheet1")
+            .expect_err("extensible module registration should require host projects");
+        assert_eq!(err.code(), "PMR-E-HOST-EXTENSIBLE-MODULE-PROJECT-KIND");
+    }
+
+    #[test]
+    fn extensible_module_registration_is_case_insensitive() {
+        let mut graph = ProjectGraph::default();
+        graph
+            .create_project("HostBook", ProjectKind::Host)
+            .expect("project should be created");
+        let project = graph.active_project_mut().expect("active project expected");
+        project
+            .register_extensible_module("Sheet1")
+            .expect("extensible module should register");
+
+        assert!(project.is_extensible_module("sheet1"));
+        project
+            .attach_host_extension_module(simple_extension_module("SHEET1"))
+            .expect("extension attach should match extensible target case-insensitively");
     }
 
     #[test]
