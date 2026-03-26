@@ -3,9 +3,10 @@
 use std::collections::BTreeMap;
 use std::path::Path;
 
+use oxvba_com::{TypeLibResolveRequest, build_typelib_metadata, resolve_known_typelib_identity};
 use oxvba_compiler::{
     ModuleAttributes, ModuleKind, ModuleUnit, ProjectKind, ProjectManifest, ProjectReference,
-    ReferenceKind,
+    ReferenceKind, project::project_typelib_as_manifest,
 };
 use oxvba_host::TypeLibraryCatalogEntry;
 
@@ -61,6 +62,7 @@ pub fn load_basproj_from_str(xml: &str, project_dir: &Path) -> Result<LoadedProj
             resolve::resolve_project_references(&basproj, project_dir, &mut ancestors, &mut seen)
                 .unwrap_or_default();
     }
+    inject_type_library_reference_projects(&mut loaded);
 
     Ok(loaded)
 }
@@ -242,6 +244,53 @@ pub(crate) fn build_loaded_project(
         type_library_catalog,
         class_module_metadata,
     })
+}
+
+fn inject_type_library_reference_projects(loaded: &mut LoadedProject) {
+    for reference in &loaded.manifest.references {
+        if reference.reference_kind != ReferenceKind::TypeLibrary {
+            continue;
+        }
+
+        let Some(catalog_entry) = loaded.type_library_catalog.iter().find(|entry| {
+            entry
+                .library_name
+                .eq_ignore_ascii_case(&reference.referenced_project_name)
+        }) else {
+            continue;
+        };
+
+        let request = TypeLibResolveRequest {
+            reference_name: reference.referenced_project_name.clone(),
+            importlib_hint: non_empty_trimmed(&catalog_entry.importlib),
+            libid_hint: catalog_entry.libid.clone(),
+            major_version_hint: Some(catalog_entry.major_version),
+            minor_version_hint: Some(catalog_entry.minor_version),
+            lcid_hint: catalog_entry.lcid,
+        };
+        let Some(identity) = resolve_known_typelib_identity(&request) else {
+            continue;
+        };
+
+        let synthetic = project_typelib_as_manifest(&build_typelib_metadata(&identity));
+        if loaded.manifest.reference_projects.iter().any(|project| {
+            project
+                .project_name
+                .eq_ignore_ascii_case(&synthetic.project_name)
+        }) {
+            continue;
+        }
+        loaded.manifest.reference_projects.push(synthetic);
+    }
+}
+
+fn non_empty_trimmed(value: &str) -> Option<String> {
+    let trimmed = value.trim();
+    if trimmed.is_empty() {
+        None
+    } else {
+        Some(trimmed.to_string())
+    }
 }
 
 /// Process `<Import>` elements by re-scanning the XML for them, loading the

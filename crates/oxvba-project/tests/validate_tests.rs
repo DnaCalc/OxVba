@@ -33,6 +33,7 @@ fn make_compiled_project(
         host_exports,
         reference_visible_exports: Vec::new(),
         event_dispatch_bindings: Vec::new(),
+        project_com_withevents_routes: Vec::new(),
         project_dynamic_objects: dynamic_objects,
     }
 }

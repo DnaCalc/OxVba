@@ -57,7 +57,7 @@
 - [x] ODG-032 — Stateful file I/O. Correctly deferred. The supported host-backed subset is now oracle-evidenced through `EOF` / `LOF` / `Seek` on the `Input` path as well as `Output` / `Print` / `Close` / `Line Input` (`file_io_oracle_20260326T160900Z`); broader file parity remains open.
 - [x] ODG-033 — Host capability/policy. Correctly deferred.
 - [x] ODG-040 — Host extension modules. Closed for the bounded initial-scope host-extension subset with `host_extension_oracle_20260326T144800Z`: Excel and OxVba match on supported `ThisWorkbook` source attachment, missing-target failure, and overwrite-on-occupied-target behavior. Broader host project lifecycle work remains deferred under `INTP-013`.
-- [x] ODG-041 — TypeLib/importlib resolution. Correctly deferred beyond the baseline file-backed `.tlb` oracle subset.
+- [x] ODG-041 — TypeLib/importlib resolution. Correctly deferred beyond the baseline file-backed `.tlb` oracle subset. The `.basproj` load path now materializes resolved typelib reference manifests for execution of the proved baseline lane; the broader unresolved/ambiguous identity matrix remains open.
 - [x] ODG-042 — MS-OVBA storage roundtrip. Correctly deferred.
 - [x] ODG-043 — Startup/entrypoint. Correctly deferred.
 

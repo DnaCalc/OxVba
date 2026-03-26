@@ -869,6 +869,9 @@ fn com_reference_maps_to_type_library_catalog() {
     assert_eq!(entry.major_version, 1);
     assert_eq!(entry.minor_version, 9);
     assert_eq!(entry.lcid, Some(0));
+    assert_eq!(loaded.manifest.reference_projects.len(), 1);
+    assert_eq!(loaded.manifest.reference_projects[0].project_name, "Excel");
+    assert_eq!(loaded.manifest.reference_projects[0].modules.len(), 1);
 
     let _ = std::fs::remove_dir_all(&tmp);
 }
