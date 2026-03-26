@@ -1,36 +1,7 @@
-2026-03-26T22:45:27.2063154+02:00 start excel_pid=56788 poll_ms=200 stop_file=C:\Users\GOVERT~1\AppData\Local\Temp\oxvba_mixed_broken_ref_efb629092de1427796d8dc082a70117d\_vba_dialog_handler.stop
-2026-03-26T22:45:29.1515680+02:00 observed window='Microsoft Visual Basic for Applications - [MainModule (Code)]' texts='' buttons=''
-2026-03-26T22:45:29.2023308+02:00 sent WM_CLOSE to VBE: window='Microsoft Visual Basic for Applications - [MainModule (Code)]'
-2026-03-26T22:45:29.5207497+02:00 observed window='Microsoft Visual Basic for Applications' texts='' buttons=''
-2026-03-26T22:45:29.8215320+02:00 observed window='Microsoft Visual Basic for Applications' texts='' buttons=''
-2026-03-26T22:45:30.1102188+02:00 observed window='Microsoft Visual Basic for Applications' texts='' buttons=''
-2026-03-26T22:45:30.4098627+02:00 observed window='Microsoft Visual Basic for Applications' texts='' buttons=''
-2026-03-26T22:45:30.7299945+02:00 observed window='Microsoft Visual Basic for Applications' texts='' buttons=''
-2026-03-26T22:45:31.0329996+02:00 observed window='Microsoft Visual Basic for Applications' texts='' buttons=''
-2026-03-26T22:45:31.3270597+02:00 observed window='Microsoft Visual Basic for Applications' texts='' buttons=''
-2026-03-26T22:45:31.6326892+02:00 observed window='Microsoft Visual Basic for Applications' texts='' buttons=''
-2026-03-26T22:45:31.9265025+02:00 observed window='Microsoft Visual Basic for Applications' texts='' buttons=''
-2026-03-26T22:45:32.2286025+02:00 observed window='Microsoft Visual Basic for Applications' texts='' buttons=''
-2026-03-26T22:45:32.5420139+02:00 observed window='Microsoft Visual Basic for Applications' texts='' buttons=''
-2026-03-26T22:45:32.8179935+02:00 observed window='Microsoft Visual Basic for Applications' texts='' buttons=''
-2026-03-26T22:45:33.1341507+02:00 observed window='Microsoft Visual Basic for Applications' texts='' buttons=''
-2026-03-26T22:45:33.4428424+02:00 observed window='Microsoft Visual Basic for Applications' texts='' buttons=''
-2026-03-26T22:45:33.7345476+02:00 observed window='Microsoft Visual Basic for Applications' texts='' buttons=''
-2026-03-26T22:45:34.0469393+02:00 observed window='Microsoft Visual Basic for Applications' texts='' buttons=''
-2026-03-26T22:45:34.3474674+02:00 observed window='Microsoft Visual Basic for Applications' texts='' buttons=''
-2026-03-26T22:45:34.6343519+02:00 observed window='Microsoft Visual Basic for Applications' texts='' buttons=''
-2026-03-26T22:45:34.9332590+02:00 observed window='Microsoft Visual Basic for Applications' texts='' buttons=''
-2026-03-26T22:45:35.2356548+02:00 observed window='Microsoft Visual Basic for Applications' texts='' buttons=''
-2026-03-26T22:45:35.5269731+02:00 observed window='Microsoft Visual Basic for Applications' texts='' buttons=''
-2026-03-26T22:45:35.8363548+02:00 observed window='Microsoft Visual Basic for Applications' texts='' buttons=''
-2026-03-26T22:45:36.1228738+02:00 observed window='Microsoft Visual Basic for Applications' texts='' buttons=''
-2026-03-26T22:45:36.4247243+02:00 observed window='Microsoft Visual Basic for Applications' texts='' buttons=''
-2026-03-26T22:45:36.7274716+02:00 observed window='Microsoft Visual Basic for Applications' texts='' buttons=''
-2026-03-26T22:45:37.0219129+02:00 observed window='Microsoft Visual Basic for Applications' texts='' buttons=''
-2026-03-26T22:45:37.3102858+02:00 observed window='Microsoft Visual Basic for Applications' texts='' buttons=''
-2026-03-26T22:45:37.6141455+02:00 observed window='Microsoft Visual Basic for Applications' texts='' buttons=''
-2026-03-26T22:45:37.9127361+02:00 observed window='Microsoft Visual Basic for Applications' texts='' buttons=''
-2026-03-26T22:45:38.2147706+02:00 observed window='Microsoft Visual Basic for Applications' texts='' buttons=''
-2026-03-26T22:45:38.7101239+02:00 poll error: Exception calling "FindAll" with "2" argument(s): "Catastrophic failure (0x8000FFFF (E_UNEXPECTED))"
-2026-03-26T22:45:38.9145076+02:00 excel exited
-2026-03-26T22:45:38.9255168+02:00 exit
+2026-03-26T22:58:32.0559785+02:00 start excel_pid=35684 poll_ms=200 stop_file=C:\Users\GOVERT~1\AppData\Local\Temp\oxvba_mixed_broken_ref_f811020f76d64e629d91bc7133482f8d\_vba_dialog_handler.stop
+2026-03-26T22:58:43.5067258+02:00 observed window='Microsoft Visual Basic for Applications - [MainModule (Code)]' texts='Compile error:
+
+Can't find project or library|Gauge' buttons='Close'
+2026-03-26T22:58:43.5393140+02:00 sent WM_CLOSE to VBE: window='Microsoft Visual Basic for Applications - [MainModule (Code)]'
+2026-03-26T22:58:43.9591033+02:00 excel exited
+2026-03-26T22:58:43.9693327+02:00 exit

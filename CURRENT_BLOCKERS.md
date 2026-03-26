@@ -468,9 +468,7 @@ Run context: active parity/compliance execution plus in-progress feature worklis
     - broken first/base + valid later/alt, or
     - broken first/alt + valid later/base.
   - After that successful reopen, hidden Excel automation with `DisplayAlerts = false` still does not return from `RunProbe` within the bounded `15s` window in either ordering, even when the oracle attaches a VBE/UIAutomation handler that observes and closes surfaced VBA windows.
-  - The richer VBE handler capture shows that this is a real UI/compiler interaction, not just a silent stall:
-    - in the broken-alt then valid-base ordering, the handler observes `Compile error:` / `Can't find project or library` / `Gauge` with a `Close` button on `Microsoft Visual Basic for Applications - [MainModule (Code)]`,
-    - in the broken-base then valid-alt ordering, the handler observes the code window and then repeated empty `Microsoft Visual Basic for Applications` shells with no accessible text/buttons before Excel exits.
+  - The richer VBE handler capture shows that this is a real UI/compiler interaction, not just a silent stall. In both orderings, the handler now observes `Compile error:` / `Can't find project or library` / `Gauge` with a `Close` button on `Microsoft Visual Basic for Applications - [MainModule (Code)]` before Excel exits.
   - Even after sending `WM_CLOSE` to the surfaced VBE window, `Application.Run` still does not return a bounded COM error to the probe before the runner cleans up.
   - OxVba no longer silently falls through to the later valid same-name typelib in this lane. The loader now preserves a missing filesystem-backed earlier importlib as a deterministic `PMR-E-TYPELIB-IMPORTLIB-UNRESOLVED` diagnostic, even when the broken reference still carries a known LIBID and a later same-name typelib remains valid.
 - Evidence:

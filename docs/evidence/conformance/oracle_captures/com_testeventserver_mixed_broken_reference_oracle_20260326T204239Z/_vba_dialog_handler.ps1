@@ -52,6 +52,42 @@ function Try-ClickDescendantButton {
         [string[]]$PreferredNames
     )
 
+    function Invoke-AutomationElement {
+        param([System.Windows.Automation.AutomationElement]$Element)
+
+        try {
+            $pattern = $Element.GetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern)
+            if ($pattern -ne $null) {
+                $pattern.Invoke()
+                return $true
+            }
+        } catch {
+            # Fall through to legacy/default-action patterns.
+        }
+
+        try {
+            $pattern = $Element.GetCurrentPattern([System.Windows.Automation.LegacyIAccessiblePattern]::Pattern)
+            if ($pattern -ne $null) {
+                $pattern.DoDefaultAction()
+                return $true
+            }
+        } catch {
+            # Fall through to hwnd click.
+        }
+
+        try {
+            $buttonHwnd = [IntPtr]::new($Element.Current.NativeWindowHandle)
+            if ($buttonHwnd -ne [IntPtr]::Zero) {
+                [void][VbeWin32]::PostMessage($buttonHwnd, [VbeWin32]::BM_CLICK, [IntPtr]::Zero, [IntPtr]::Zero)
+                return $true
+            }
+        } catch {
+            # No invokable pattern or handle.
+        }
+
+        $false
+    }
+
     $btnCond = New-Object System.Windows.Automation.PropertyCondition(
         [System.Windows.Automation.AutomationElement]::ControlTypeProperty,
         [System.Windows.Automation.ControlType]::Button
@@ -69,13 +105,10 @@ function Try-ClickDescendantButton {
             if ($buttonName -ne $preferredName) {
                 continue
             }
-            $buttonHwnd = [IntPtr]::new($button.Current.NativeWindowHandle)
-            if ($buttonHwnd -eq [IntPtr]::Zero) {
-                continue
+            if (Invoke-AutomationElement -Element $button) {
+                Write-Log "clicked button '$buttonName'"
+                return $true
             }
-            [void][VbeWin32]::PostMessage($buttonHwnd, [VbeWin32]::BM_CLICK, [IntPtr]::Zero, [IntPtr]::Zero)
-            Write-Log "clicked button '$buttonName'"
-            return $true
         }
     }
     $false

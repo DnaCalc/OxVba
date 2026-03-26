@@ -96,6 +96,42 @@ function Try-ClickDescendantButton {
         [string[]]$PreferredNames
     )
 
+    function Invoke-AutomationElement {
+        param([System.Windows.Automation.AutomationElement]$Element)
+
+        try {
+            $pattern = $Element.GetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern)
+            if ($pattern -ne $null) {
+                $pattern.Invoke()
+                return $true
+            }
+        } catch {
+            # Fall through to legacy/default-action patterns.
+        }
+
+        try {
+            $pattern = $Element.GetCurrentPattern([System.Windows.Automation.LegacyIAccessiblePattern]::Pattern)
+            if ($pattern -ne $null) {
+                $pattern.DoDefaultAction()
+                return $true
+            }
+        } catch {
+            # Fall through to hwnd click.
+        }
+
+        try {
+            $buttonHwnd = [IntPtr]::new($Element.Current.NativeWindowHandle)
+            if ($buttonHwnd -ne [IntPtr]::Zero) {
+                [void][VbeWin32]::PostMessage($buttonHwnd, [VbeWin32]::BM_CLICK, [IntPtr]::Zero, [IntPtr]::Zero)
+                return $true
+            }
+        } catch {
+            # No invokable pattern or handle.
+        }
+
+        $false
+    }
+
     $btnCond = New-Object System.Windows.Automation.PropertyCondition(
         [System.Windows.Automation.AutomationElement]::ControlTypeProperty,
         [System.Windows.Automation.ControlType]::Button
@@ -113,13 +149,10 @@ function Try-ClickDescendantButton {
             if ($buttonName -ne $preferredName) {
                 continue
             }
-            $buttonHwnd = [IntPtr]::new($button.Current.NativeWindowHandle)
-            if ($buttonHwnd -eq [IntPtr]::Zero) {
-                continue
+            if (Invoke-AutomationElement -Element $button) {
+                Write-Log "clicked button '$buttonName'"
+                return $true
             }
-            [void][VbeWin32]::PostMessage($buttonHwnd, [VbeWin32]::BM_CLICK, [IntPtr]::Zero, [IntPtr]::Zero)
-            Write-Log "clicked button '$buttonName'"
-            return $true
         }
     }
     $false
@@ -410,6 +443,43 @@ try {
             [string]$SecondTypeLibPath
         )
 
+        function Get-HandlerLogMetadata {
+            param([string]$Path)
+
+            $summary = ""
+            $observed = "unknown"
+            $waitDeadline = (Get-Date).AddSeconds(2)
+            while ((Get-Date) -lt $waitDeadline) {
+                if ((Test-Path $Path) -and (Get-Item $Path).Length -gt 0) {
+                    break
+                }
+                Start-Sleep -Milliseconds 100
+            }
+            if (Test-Path $Path) {
+                $lines = Get-Content $Path
+                $signalLines = @(
+                    $lines | Where-Object {
+                        $_ -match "observed window=" -or
+                        $_ -match "clicked compile-error OK" -or
+                        $_ -match "clicked button " -or
+                        $_ -match "sent WM_CLOSE to VBE" -or
+                        $_ -match "deadline exceeded"
+                    }
+                )
+                if ($signalLines.Count -gt 0) {
+                    $observed = "true"
+                    $summary = ($signalLines -join " || ")
+                } elseif ($lines.Count -gt 0) {
+                    $observed = "false"
+                }
+            }
+
+            @{
+                observed = $observed
+                summary = $summary
+            }
+        }
+
         $baselineExcelPids = @(Get-Process EXCEL -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Id)
         $statePath = Join-Path $runDir ($CaseId + ".vba-state.json")
         $stdoutPath = Join-Path $runDir ($CaseId + ".probe.stdout.txt")
@@ -445,25 +515,6 @@ try {
         if (Test-Path $statePath) {
             $state = Get-Content $statePath -Raw | ConvertFrom-Json
         }
-        $handlerLogSummary = ""
-        $handlerObserved = "unknown"
-        if (Test-Path $handlerLogPath) {
-            $handlerLines = Get-Content $handlerLogPath
-            $signalLines = @(
-                $handlerLines | Where-Object {
-                    $_ -match "observed window=" -or
-                    $_ -match "clicked compile-error OK" -or
-                    $_ -match "sent WM_CLOSE to VBE" -or
-                    $_ -match "deadline exceeded"
-                }
-            )
-            if ($signalLines.Count -gt 0) {
-                $handlerObserved = "true"
-                $handlerLogSummary = ($signalLines -join " || ")
-            } elseif ($handlerLines.Count -gt 0) {
-                $handlerObserved = "false"
-            }
-        }
         if (-not $completed) {
             Stop-Process -Id $probeProcess.Id -Force -ErrorAction SilentlyContinue
             $newExcelPids = @(Get-Process EXCEL -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Id)
@@ -476,20 +527,22 @@ try {
             foreach ($orphanedPid in $orphanedPids) {
                 Stop-Process -Id $orphanedPid -Force -ErrorAction SilentlyContinue
             }
+            $handlerLogMeta = Get-HandlerLogMetadata -Path $handlerLogPath
             return @{
                 status         = "timeout"
                 observed       = "execution-did-not-return-within-${ProbeTimeoutSeconds}s"
                 refs           = if ($state) { ($state.refs -join "|") } else { "" }
                 stage          = if ($state) { [string]$state.stage } else { "" }
-                modal_observed = if ($handlerObserved -ne "unknown") { $handlerObserved } elseif ($state -and $state.stage -eq "reopened") { "possible" } else { "unknown" }
+                modal_observed = if ($handlerLogMeta.observed -ne "unknown") { $handlerLogMeta.observed } elseif ($state -and $state.stage -eq "reopened") { "possible" } else { "unknown" }
                 probe_exit_code = ""
                 window_titles  = ($orphanedWindowTitles -join "|")
                 handler_log    = $handlerLogPath
-                handler_signal = $handlerLogSummary
+                handler_signal = $handlerLogMeta.summary
             }
         }
 
         $probeExitCode = [string]$probeProcess.ExitCode
+        $handlerLogMeta = Get-HandlerLogMetadata -Path $handlerLogPath
         if ($null -eq $state) {
             return @{
                 status         = "error"
@@ -500,7 +553,7 @@ try {
                 probe_exit_code = $probeExitCode
                 window_titles  = ""
                 handler_log    = $handlerLogPath
-                handler_signal = $handlerLogSummary
+                handler_signal = $handlerLogMeta.summary
             }
         }
         if ($state.stage -eq "completed") {
@@ -509,11 +562,11 @@ try {
                 observed       = [string]$state.run
                 refs           = ($state.refs -join "|")
                 stage          = [string]$state.stage
-                modal_observed = if ($handlerObserved -ne "unknown") { $handlerObserved } else { "false" }
+                modal_observed = if ($handlerLogMeta.observed -ne "unknown") { $handlerLogMeta.observed } else { "false" }
                 probe_exit_code = $probeExitCode
                 window_titles  = ""
                 handler_log    = $handlerLogPath
-                handler_signal = $handlerLogSummary
+                handler_signal = $handlerLogMeta.summary
             }
         }
         return @{
@@ -521,11 +574,11 @@ try {
             observed       = [string]$state.run_error
             refs           = ($state.refs -join "|")
             stage          = [string]$state.stage
-            modal_observed = if ($handlerObserved -ne "unknown") { $handlerObserved } else { "false" }
+            modal_observed = if ($handlerLogMeta.observed -ne "unknown") { $handlerLogMeta.observed } else { "false" }
             probe_exit_code = $probeExitCode
             window_titles  = ""
             handler_log    = $handlerLogPath
-            handler_signal = $handlerLogSummary
+            handler_signal = $handlerLogMeta.summary
         }
     }
 
