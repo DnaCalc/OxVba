@@ -649,7 +649,7 @@ Run context: active parity/compliance execution plus in-progress feature worklis
   - `BLK-EVT-001` — resolved (runtime subscription graph)
   - `BLK-COM-001` — resolved (COM event callback parity with external registered server evidence)
 
-## BLK-PMR-HAL-EXT-001 — adapter-backed host project mutation hook absent
+## BLK-PMR-HAL-EXT-001 — live Excel/VBIDE host-project callback provider absent
 
 - Date: `2026-03-26`
 - Affects:
@@ -659,16 +659,19 @@ Run context: active parity/compliance execution plus in-progress feature worklis
 - Status: open
 - Current state:
   - project-model legality is now explicit: only `ProjectKind::Host` may admit `ModuleKind::Extension`
-  - deterministic HAL project-catalog/reference mock seam exists in `oxvba-hal`
-  - the runtime adapter path still has no host-backed mutation hook for open host projects
+  - deterministic HAL project-catalog/reference/mutation seam now exists in `oxvba-hal`
+  - the standard HAL adapter now exposes callback-backed project catalog / reference / mutation services
+  - `oxvba-host::Engine` now preserves callback-backed host services across host rebuilds
+  - the remaining gap is a real Excel/VBIDE callback provider and oracle harness that exercise those services against a live host project
 - Evidence:
-  - `crates/oxvba-hal/src/callbacks.rs` currently exposes only UI/status/debug callbacks
-  - `crates/oxvba-hal/src/traits.rs` now exposes optional `project_catalog` / `project_references`, but the standard adapter does not provide a live host-backed implementation
-  - `ODG-040` docs now reflect the remaining blocker as adapter-backed host mutation plus oracle capture, not missing PMR contract shape
+  - `crates/oxvba-hal/src/callbacks.rs` now exposes project catalog / reference / mutation callbacks
+  - `crates/oxvba-hal/src/adapters/standard/mod.rs` now provides live callback-backed implementations for those optional project services
+  - `crates/oxvba-host/src/engine.rs` now preserves callback-backed host services through policy/profile rebuilds
+  - `ODG-040` now remains blocked on the live Excel/VBIDE provider/oracle layer, not missing HAL/runtime mutation plumbing
 - Exact unblock steps:
-  - extend the host callback or adapter contract with host project discovery and extension-mutation operations
-  - implement the standard/Windows adapter-backed path for those operations
-  - add deterministic integration coverage for open-host extension attach/conflict behavior
+  - implement a real Excel/VBIDE-backed `HostCallbacks` provider for open host project discovery, references, and extension attach
+  - route that provider through the oracle harness / host runtime entrypoint
+  - add deterministic integration coverage for open-host extension attach/conflict behavior on the callback-backed runtime path
   - then run the Excel/VBIDE oracle capture and fold it back into `ODG-040` / `CCT-042`
 
 
