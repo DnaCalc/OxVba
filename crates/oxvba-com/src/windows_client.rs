@@ -1,4 +1,6 @@
+#[cfg(target_os = "windows")]
 use oxvba_runtime::ObjectHandle;
+#[cfg(target_os = "windows")]
 use std::sync::{Arc, Mutex};
 #[cfg(target_os = "windows")]
 use windows_sys::Win32::System::Com::{CLSCTX_SERVER, CLSIDFromProgID, CoCreateInstance};

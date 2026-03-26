@@ -69,6 +69,7 @@ pub use typelib_catalog::{
 };
 #[cfg(target_os = "windows")]
 pub use windows_bridge::{WindowsComBridge, WindowsComBridgeDispatchError};
+#[cfg(target_os = "windows")]
 pub use windows_client::{
     COM_CONNECT_E_CANNOTCONNECT, COM_CONNECT_E_NOCONNECTION, COM_DISP_E_BADPARAMCOUNT,
     COM_DISP_E_EXCEPTION, COM_DISP_E_MEMBERNOTFOUND, COM_DISP_E_PARAMNOTFOUND,

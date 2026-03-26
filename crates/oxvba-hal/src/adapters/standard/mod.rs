@@ -45,17 +45,20 @@ use crate::{
     traits::{
         ComHal, DiagnosticsHal, DynamicLinkHal, EventPumpHal, FileSystemHal, HostServices,
         ProcessEnvHal, ProjectCatalogHal, ProjectMutationHal, ProjectReferenceHal,
-        TimeLocaleHal, TypeLibMemberInvokeKind, UiInteractionHal,
+        TimeLocaleHal, UiInteractionHal,
     },
 };
+#[allow(unused_imports)]
+use crate::traits::TypeLibMemberInvokeKind;
 #[cfg(test)]
 pub use oxvba_com::DISPATCH_INVOKE_MISSING_ARG_TOKEN;
 #[cfg(test)]
 use oxvba_com::RawIDispatch;
+use oxvba_com::{ComBinding, platform::portable::PortableComProjection};
+#[cfg(target_os = "windows")]
 use oxvba_com::{
-    ComBinding, ComDirectDispatchSpec, ComEventPath, ComEventSpec, ComEventTriggerSpec,
-    ComInvokeFailure, WindowsComBridge, map_com_hresult_label,
-    platform::portable::PortableComProjection,
+    ComDirectDispatchSpec, ComEventPath, ComEventSpec, ComEventTriggerSpec, ComInvokeFailure,
+    WindowsComBridge, map_com_hresult_label,
 };
 #[cfg(test)]
 use oxvba_com::{ComCallbackToken, ComMemberToken, ComSubscriptionToken};
@@ -63,11 +66,12 @@ use oxvba_com::{ComCallbackToken, ComMemberToken, ComSubscriptionToken};
 use oxvba_runtime::ObjectHandle;
 use oxvba_runtime::{RuntimeValue, bstr::BStr};
 use std::{
-    cell::Cell,
     path::PathBuf,
     process::Command,
     sync::{Arc, Mutex},
 };
+#[cfg(target_os = "windows")]
+use std::cell::Cell;
 
 #[cfg(target_os = "windows")]
 use windows_sys::Win32::System::Com::{COINIT_APARTMENTTHREADED, CoInitializeEx};
@@ -140,6 +144,7 @@ pub(crate) struct StandardHostServices {
     runtime_class: HalRuntimeClass,
     descriptor: HalDescriptor,
     policy: HostPolicy,
+    #[cfg(target_os = "windows")]
     env_cache: StandardEnvCache,
     fs_state: Arc<Mutex<FileSystemState>>,
     #[cfg(target_os = "windows")]
@@ -159,6 +164,7 @@ impl std::fmt::Debug for StandardHostServices {
     }
 }
 
+#[cfg(target_os = "windows")]
 #[derive(Debug, Clone, Default)]
 struct StandardEnvCache {
     registered_com_prog_id: Option<String>,
@@ -173,7 +179,9 @@ struct StandardEnvCache {
     force_registered_testdispatch: bool,
 }
 
+#[cfg(target_os = "windows")]
 impl StandardEnvCache {
+    #[cfg(target_os = "windows")]
     fn capture() -> Self {
         let vars: Vec<(String, String)> = std::env::vars().collect();
         Self {
@@ -219,6 +227,7 @@ impl StandardEnvCache {
     }
 }
 
+#[cfg(target_os = "windows")]
 fn cached_env_value(vars: &[(String, String)], key: &str) -> Option<String> {
     vars.iter()
         .find(|(candidate, _)| candidate == key)
@@ -239,6 +248,7 @@ impl StandardHostServices {
         runtime_class: HalRuntimeClass,
         policy: HostPolicy,
     ) -> Self {
+        #[cfg(target_os = "windows")]
         let env_cache = StandardEnvCache::capture();
         Self {
             profile,
@@ -249,6 +259,7 @@ impl StandardHostServices {
             com_bridge: Arc::new(WindowsComBridge::new(
                 env_cache.force_registered_testdispatch,
             )),
+            #[cfg(target_os = "windows")]
             env_cache,
             fs_state: Arc::new(Mutex::new(FileSystemState::default())),
             dynlink_state: Arc::new(Mutex::new(DynLinkBindingState::default())),
@@ -890,6 +901,7 @@ impl StandardHostServices {
         )
     }
 
+    #[cfg(target_os = "windows")]
     fn com_dispatch_adapter_fault(&self, message: String) -> HalError {
         let hresult = parse_hresult_hex(&message);
         let arg_err = parse_arg_err(&message);
@@ -1170,14 +1182,17 @@ struct RegisteredEventOverrideConfig {
     trigger_invoke_kind: TypeLibMemberInvokeKind,
 }
 #[cfg(not(target_os = "windows"))]
+#[allow(dead_code)]
 fn com_event_signature_arity_for_binding(_binding: &ComBinding, _event: i32) -> Option<usize> {
     None
 }
 
 #[cfg(not(target_os = "windows"))]
+#[allow(dead_code)]
 fn com_event_is_source_interface_only(_binding: &ComBinding, _event: i32) -> bool {
     false
 }
+#[cfg(target_os = "windows")]
 fn parse_hresult_hex(message: &str) -> Option<u32> {
     let marker = "HRESULT 0x";
     let offset = message.find(marker)?;
@@ -1201,11 +1216,6 @@ fn com_event_trace_enabled() -> bool {
             )
         })
         .unwrap_or(false)
-}
-
-#[cfg(not(target_os = "windows"))]
-fn com_event_trace_enabled() -> bool {
-    false
 }
 
 #[cfg(target_os = "windows")]

@@ -1,11 +1,13 @@
 use crate::{
     error::{HalError, HalResult},
-    model::{CapabilityId, ComInvocationStrategy},
+    model::CapabilityId,
     traits::{
         ComHal, TypeLibCacheScope, TypeLibMetadataBlob, TypeLibResolveRequest,
         TypeLibResolvedIdentity,
     },
 };
+#[cfg(target_os = "windows")]
+use crate::model::ComInvocationStrategy;
 #[cfg(target_os = "windows")]
 use oxvba_com::WindowsComBridgeDispatchError;
 use oxvba_com::{
@@ -82,10 +84,11 @@ impl ComHal for StandardHostServices {
                 fallback_create_object_handle_raw(prog_id_name).into(),
             ));
         }
+        #[cfg(target_os = "windows")]
         if self.native_com_enabled() {
             match self.activate_runtime_object_value_for_prog_id_name(prog_id_name) {
                 Ok(value) => return Ok(value),
-                Err(err) if prog_id_name.eq_ignore_ascii_case("OxVba.TestDispatch") => {
+                Err(_err) if prog_id_name.eq_ignore_ascii_case("OxVba.TestDispatch") => {
                     return Ok(RuntimeValue::ObjectHandle(
                         fallback_create_object_handle_raw(prog_id_name).into(),
                     ));
@@ -291,8 +294,8 @@ impl ComHal for StandardHostServices {
 
     fn subscribe_event(
         &self,
-        object: ObjectHandle,
-        event: ComMemberToken,
+        _object: ObjectHandle,
+        _event: ComMemberToken,
     ) -> HalResult<ComSubscriptionToken> {
         let capability = CapabilityId::ComActivationDispatch;
         if !self.supports(capability) {
@@ -332,7 +335,7 @@ impl ComHal for StandardHostServices {
         unreachable!("native COM is not available on this platform")
     }
 
-    fn unsubscribe_event(&self, subscription: ComSubscriptionToken) -> HalResult<RuntimeValue> {
+    fn unsubscribe_event(&self, _subscription: ComSubscriptionToken) -> HalResult<RuntimeValue> {
         let capability = CapabilityId::ComActivationDispatch;
         if !self.supports(capability) {
             return Err(self.unsupported(capability, "unsubscribe_event"));
@@ -383,7 +386,7 @@ impl ComHal for StandardHostServices {
 
     fn event_callback_subscription(
         &self,
-        callback: ComCallbackToken,
+        _callback: ComCallbackToken,
     ) -> HalResult<ComSubscriptionToken> {
         let capability = CapabilityId::ComActivationDispatch;
         if !self.supports(capability) {
@@ -417,7 +420,7 @@ impl ComHal for StandardHostServices {
         unreachable!("native COM is not available on this platform")
     }
 
-    fn event_callback_arity(&self, callback: ComCallbackToken) -> HalResult<usize> {
+    fn event_callback_arity(&self, _callback: ComCallbackToken) -> HalResult<usize> {
         let capability = CapabilityId::ComActivationDispatch;
         if !self.supports(capability) {
             return Err(self.unsupported(capability, "event_callback_arity"));
@@ -452,8 +455,8 @@ impl ComHal for StandardHostServices {
 
     fn event_callback_arg(
         &self,
-        callback: ComCallbackToken,
-        index: usize,
+        _callback: ComCallbackToken,
+        _index: usize,
     ) -> HalResult<RuntimeValue> {
         let capability = CapabilityId::ComActivationDispatch;
         if !self.supports(capability) {
@@ -482,7 +485,7 @@ impl ComHal for StandardHostServices {
         unreachable!("native COM is not available on this platform")
     }
 
-    fn release_event_callback(&self, callback: ComCallbackToken) -> HalResult<RuntimeValue> {
+    fn release_event_callback(&self, _callback: ComCallbackToken) -> HalResult<RuntimeValue> {
         let capability = CapabilityId::ComActivationDispatch;
         if !self.supports(capability) {
             return Err(self.unsupported(capability, "release_event_callback"));
@@ -518,7 +521,7 @@ impl ComHal for StandardHostServices {
 
     fn resolve_typelib_reference(
         &self,
-        request: &TypeLibResolveRequest,
+        _request: &TypeLibResolveRequest,
     ) -> HalResult<TypeLibResolvedIdentity> {
         let capability = CapabilityId::ComActivationDispatch;
         if !self.windows_typelib_supported() {
@@ -546,7 +549,7 @@ impl ComHal for StandardHostServices {
 
     fn load_typelib_metadata(
         &self,
-        identity: &TypeLibResolvedIdentity,
+        _identity: &TypeLibResolvedIdentity,
     ) -> HalResult<TypeLibMetadataBlob> {
         let capability = CapabilityId::ComActivationDispatch;
         if !self.windows_typelib_supported() {
@@ -574,8 +577,8 @@ impl ComHal for StandardHostServices {
 
     fn invalidate_typelib_cache(
         &self,
-        scope: TypeLibCacheScope,
-        reference_name: Option<&str>,
+        _scope: TypeLibCacheScope,
+        _reference_name: Option<&str>,
     ) -> HalResult<RuntimeValue> {
         let capability = CapabilityId::ComActivationDispatch;
         if !self.windows_typelib_supported() {
