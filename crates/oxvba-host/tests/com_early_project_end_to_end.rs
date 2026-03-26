@@ -472,6 +472,82 @@ fn early_bound_loaded_basproj_reports_unresolved_typelib_importlib_identity() {
 
 #[cfg(target_os = "windows")]
 #[test]
+#[ignore = "requires registered external COM typelib lane and validates mixed broken-first valid-second loaded .basproj execution"]
+fn early_bound_loaded_basproj_mixed_broken_base_then_valid_alt_executes_alt() {
+    let loaded = load_typelib_basproj_with_ref_specs(
+        "basproj-typelib-mixed-base-missing-alt-valid",
+        concat!(
+            "Public Sub Main()\n",
+            "Dim obj As New TestEventServer\n",
+            "Dim value\n",
+            "value = obj.Ping()\n",
+            "End Sub\n"
+        ),
+        &[
+            BasprojComRefSpec {
+                include: "OxVbaMissingBase",
+                guid: Some("{E2A30001-0001-0001-0001-000000000001}"),
+                major: Some(1),
+                minor: Some(0),
+                lcid: Some(0),
+                importlib: Some("C:\\Work\\DnaCalc\\OxVba\\temp\\missing\\OxVba.TestEventServer.tlb"),
+            },
+            BasprojComRefSpec {
+                include: "OxVbaAlt",
+                guid: Some("{E2A30001-0001-0001-0001-000000000101}"),
+                major: Some(1),
+                minor: Some(0),
+                lcid: Some(0),
+                importlib: Some("OxVba.TestEventServerAlt.tlb"),
+            },
+        ],
+    );
+
+    let out = run_project_windows_hosted(&loaded.manifest, false);
+    assert!(expect_object_handle(&out[0]).raw() >= 20_001);
+    assert_eq!(out[1], RuntimeValue::I32(84));
+}
+
+#[cfg(target_os = "windows")]
+#[test]
+#[ignore = "requires registered external COM typelib lane and validates mixed broken-first valid-second loaded .basproj execution"]
+fn early_bound_loaded_basproj_mixed_broken_alt_then_valid_base_executes_base() {
+    let loaded = load_typelib_basproj_with_ref_specs(
+        "basproj-typelib-mixed-alt-missing-base-valid",
+        concat!(
+            "Public Sub Main()\n",
+            "Dim obj As New TestEventServer\n",
+            "Dim value\n",
+            "value = obj.Ping()\n",
+            "End Sub\n"
+        ),
+        &[
+            BasprojComRefSpec {
+                include: "OxVbaAltMissing",
+                guid: Some("{E2A30001-0001-0001-0001-000000000101}"),
+                major: Some(1),
+                minor: Some(0),
+                lcid: Some(0),
+                importlib: Some("C:\\Work\\DnaCalc\\OxVba\\temp\\missing\\OxVba.TestEventServerAlt.tlb"),
+            },
+            BasprojComRefSpec {
+                include: "OxVba",
+                guid: Some("{E2A30001-0001-0001-0001-000000000001}"),
+                major: Some(1),
+                minor: Some(0),
+                lcid: Some(0),
+                importlib: Some("OxVba.TestEventServer.tlb"),
+            },
+        ],
+    );
+
+    let out = run_project_windows_hosted(&loaded.manifest, false);
+    assert!(expect_object_handle(&out[0]).raw() >= 20_001);
+    assert_eq!(out[1], RuntimeValue::I32(42));
+}
+
+#[cfg(target_os = "windows")]
+#[test]
 #[ignore = "requires registered external COM typelib lane (run explicitly on Windows host with OxVba.TestEventServer registered)"]
 fn early_bound_project_registered_testeventserver_withevents_callback_invokes_handler_body() {
     let class_module = module_unit_from_source(
