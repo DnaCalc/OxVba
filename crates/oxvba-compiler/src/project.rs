@@ -247,6 +247,10 @@ pub enum ProjectCompileError {
     )]
     OptionPrivateModuleKind { module_name: String },
     #[error(
+        "PMR-E-MODULE-EXTENSION-PROJECT-KIND: extension module `{module_name}` requires a host project"
+    )]
+    ExtensionModuleProjectKind { module_name: String },
+    #[error(
         "PMR-E-WITHEVENTS-MODULE-KIND: `WithEvents` declaration is only valid in class/document/form modules (`{module_name}`)"
     )]
     WithEventsModuleKind { module_name: String },
@@ -399,6 +403,7 @@ impl ProjectCompileError {
             Self::ModuleHeaderInvalid { .. } => "PMR-E-MODULE-HEADER-INVALID",
             Self::SourceProjectClassAttributeConstraint => "PMR-E-MODULE-CLASS-ATTRIBUTE",
             Self::OptionPrivateModuleKind { .. } => "PMR-E-OPTION-PRIVATE-MODULE-KIND",
+            Self::ExtensionModuleProjectKind { .. } => "PMR-E-MODULE-EXTENSION-PROJECT-KIND",
             Self::WithEventsModuleKind { .. } => "PMR-E-WITHEVENTS-MODULE-KIND",
             Self::ImplementsModuleKind { .. } => "PMR-E-IMPLEMENTS-MODULE-KIND",
             Self::ImplementsInterfaceNotFound { .. } => "PMR-E-IMPLEMENTS-INTERFACE-NOT-FOUND",
@@ -845,6 +850,12 @@ fn validate_manifest(manifest: &ProjectManifest) -> Result<(), ProjectCompileErr
         }
         if module.attributes.option_private_module && module.module_kind != ModuleKind::Procedural {
             return Err(ProjectCompileError::OptionPrivateModuleKind {
+                module_name: module.module_name.clone(),
+            });
+        }
+        if module.module_kind == ModuleKind::Extension && manifest.project_kind != ProjectKind::Host
+        {
+            return Err(ProjectCompileError::ExtensionModuleProjectKind {
                 module_name: module.module_name.clone(),
             });
         }
@@ -1696,6 +1707,11 @@ fn validate_modules_for_project(
         }
         if module.attributes.option_private_module && module.module_kind != ModuleKind::Procedural {
             return Err(ProjectCompileError::OptionPrivateModuleKind {
+                module_name: format!("{project_name}.{}", module.module_name),
+            });
+        }
+        if module.module_kind == ModuleKind::Extension && project_kind != ProjectKind::Host {
+            return Err(ProjectCompileError::ExtensionModuleProjectKind {
                 module_name: format!("{project_name}.{}", module.module_name),
             });
         }
@@ -6841,6 +6857,39 @@ mod tests {
         manifest.modules = vec![class_module];
         let err = compile_project(&manifest).expect_err("class Option Private Module should fail");
         assert_eq!(err.code(), "PMR-E-OPTION-PRIVATE-MODULE-KIND");
+    }
+
+    #[test]
+    fn compile_project_rejects_extension_modules_for_non_host_projects() {
+        let mut manifest = base_manifest();
+        manifest.modules.push(
+            module_unit_from_source(
+                "HostExt",
+                ModuleKind::Extension,
+                "Attribute VB_Name = \"HostExt\"\nPublic Sub Sync()\nEnd Sub",
+            )
+            .expect("module parses"),
+        );
+
+        let err =
+            compile_project(&manifest).expect_err("source projects should reject extension modules");
+        assert_eq!(err.code(), "PMR-E-MODULE-EXTENSION-PROJECT-KIND");
+    }
+
+    #[test]
+    fn compile_project_accepts_extension_modules_for_host_projects() {
+        let mut manifest = base_manifest();
+        manifest.project_kind = ProjectKind::Host;
+        manifest.modules.push(
+            module_unit_from_source(
+                "HostExt",
+                ModuleKind::Extension,
+                "Attribute VB_Name = \"HostExt\"\nPublic Sub Sync()\nEnd Sub",
+            )
+            .expect("module parses"),
+        );
+
+        compile_project(&manifest).expect("host projects should accept extension modules");
     }
 
     #[test]

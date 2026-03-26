@@ -292,6 +292,10 @@ pub enum ProjectModelError {
     )]
     OptionPrivateModuleKind,
     #[error(
+        "PMR-E-MODULE-EXTENSION-PROJECT-KIND: extension module `{module_name}` requires a host project"
+    )]
+    ExtensionModuleProjectKind { module_name: String },
+    #[error(
         "PMR-E-REFERENCE-NAME-INVALID: referenced project name `{name}` is not a valid VBA identifier"
     )]
     ReferenceNameInvalid { name: String },
@@ -317,6 +321,10 @@ pub enum ProjectModelError {
         "PMR-E-HOST-EXPORT-NAME-INVALID: exported procedure name `{name}` is not a valid VBA identifier"
     )]
     HostExportProcedureInvalid { name: String },
+    #[error(
+        "PMR-E-HOST-EXTENSION-MODULE-KIND: host extension attach requires an extension module (`{module_name}`)"
+    )]
+    HostExtensionModuleKind { module_name: String },
 }
 
 impl ProjectModelError {
@@ -330,6 +338,7 @@ impl ProjectModelError {
             Self::ModuleHeaderVbNameMismatch { .. } => "PMR-E-MODULE-HEADER-VB-NAME",
             Self::SourceProjectClassAttributeConstraint => "PMR-E-MODULE-CLASS-ATTRIBUTE",
             Self::OptionPrivateModuleKind => "PMR-E-OPTION-PRIVATE-MODULE-KIND",
+            Self::ExtensionModuleProjectKind { .. } => "PMR-E-MODULE-EXTENSION-PROJECT-KIND",
             Self::ReferenceNameInvalid { .. } => "PMR-E-REFERENCE-NAME-INVALID",
             Self::ReferenceDuplicateTarget { .. } => "PMR-E-REFERENCE-DUPLICATE-TARGET",
             Self::ReferenceNotFound { .. } => "PMR-E-REFERENCE-NOT-FOUND",
@@ -340,6 +349,7 @@ impl ProjectModelError {
             Self::SymbolInvalid { .. } => "PMR-E-SYMBOL-INVALID",
             Self::HostExportModuleKindUnsupported { .. } => "PMR-E-HOST-EXPORT-MODULE-KIND",
             Self::HostExportProcedureInvalid { .. } => "PMR-E-HOST-EXPORT-NAME-INVALID",
+            Self::HostExtensionModuleKind { .. } => "PMR-E-HOST-EXTENSION-MODULE-KIND",
         }
     }
 }
@@ -410,6 +420,11 @@ impl ProjectNode {
         if module.attributes.option_private_module && module.module_kind != ModuleKind::Procedural {
             return Err(ProjectModelError::OptionPrivateModuleKind);
         }
+        if module.module_kind == ModuleKind::Extension && self.project_kind != ProjectKind::Host {
+            return Err(ProjectModelError::ExtensionModuleProjectKind {
+                module_name: module.module_name,
+            });
+        }
 
         let module_name = module.module_name.clone();
         let key = normalize_identifier(&module_name);
@@ -420,6 +435,23 @@ impl ProjectNode {
         self.module_order.push(module_name);
         self.modules.insert(key, module);
         Ok(())
+    }
+
+    pub fn attach_host_extension_module(
+        &mut self,
+        module: ModuleNode,
+    ) -> Result<(), ProjectModelError> {
+        if self.project_kind != ProjectKind::Host {
+            return Err(ProjectModelError::ExtensionModuleProjectKind {
+                module_name: module.module_name,
+            });
+        }
+        if module.module_kind != ModuleKind::Extension {
+            return Err(ProjectModelError::HostExtensionModuleKind {
+                module_name: module.module_name,
+            });
+        }
+        self.add_module(module)
     }
 
     pub fn add_reference(
@@ -954,6 +986,14 @@ mod tests {
         ModuleNode::new(name, ModuleKind::Class, attrs)
     }
 
+    fn simple_extension_module(name: &str) -> ModuleNode {
+        let attrs = ModuleAttributes {
+            vb_name: name.to_string(),
+            ..ModuleAttributes::default()
+        };
+        ModuleNode::new(name, ModuleKind::Extension, attrs)
+    }
+
     fn workspace_root() -> PathBuf {
         Path::new(env!("CARGO_MANIFEST_DIR"))
             .ancestors()
@@ -1061,6 +1101,50 @@ mod tests {
             .add_module(ModuleNode::new("Widget", ModuleKind::Class, attrs))
             .expect_err("Option Private Module should be restricted to procedural modules");
         assert_eq!(err.code(), "PMR-E-OPTION-PRIVATE-MODULE-KIND");
+    }
+
+    #[test]
+    fn extension_modules_are_rejected_for_non_host_projects() {
+        let mut graph = ProjectGraph::default();
+        graph
+            .create_project("Alpha", ProjectKind::Source)
+            .expect("project should be created");
+        let project = graph.active_project_mut().expect("active project expected");
+
+        let err = project
+            .add_module(simple_extension_module("HostExt"))
+            .expect_err("extension modules should require host projects");
+        assert_eq!(err.code(), "PMR-E-MODULE-EXTENSION-PROJECT-KIND");
+    }
+
+    #[test]
+    fn host_projects_accept_extension_module_attach() {
+        let mut graph = ProjectGraph::default();
+        graph
+            .create_project("HostBook", ProjectKind::Host)
+            .expect("project should be created");
+        let project = graph.active_project_mut().expect("active project expected");
+
+        project
+            .attach_host_extension_module(simple_extension_module("HostExt"))
+            .expect("host projects should accept extension modules");
+
+        let module = project.module("HostExt").expect("extension module should exist");
+        assert_eq!(module.module_kind, ModuleKind::Extension);
+    }
+
+    #[test]
+    fn host_extension_attach_rejects_non_extension_modules() {
+        let mut graph = ProjectGraph::default();
+        graph
+            .create_project("HostBook", ProjectKind::Host)
+            .expect("project should be created");
+        let project = graph.active_project_mut().expect("active project expected");
+
+        let err = project
+            .attach_host_extension_module(simple_proc_module("MainModule"))
+            .expect_err("host extension attach should require extension modules");
+        assert_eq!(err.code(), "PMR-E-HOST-EXTENSION-MODULE-KIND");
     }
 
     #[test]

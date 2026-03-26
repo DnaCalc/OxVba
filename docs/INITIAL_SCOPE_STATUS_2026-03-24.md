@@ -56,7 +56,7 @@
 
 - [x] ODG-032 — Stateful file I/O. Correctly deferred (subsystem only partially built; broad parity still open).
 - [x] ODG-033 — Host capability/policy. Correctly deferred.
-- [x] ODG-040 — Host extension modules. Correctly deferred.
+- [x] ODG-040 — Host extension modules. Still open, but the model boundary is now enforced; remaining work is the host catalog/mutation harness plus oracle capture.
 - [x] ODG-041 — TypeLib/importlib resolution. Correctly deferred beyond the baseline file-backed `.tlb` oracle subset.
 - [x] ODG-042 — MS-OVBA storage roundtrip. Correctly deferred.
 - [x] ODG-043 — Startup/entrypoint. Correctly deferred.
@@ -101,7 +101,7 @@ Completed this session:
 ### Deferred (3 fixtures — down from 4)
 
 - [ ] INTP-012 — Startup metadata / auto-entrypoint. Blocked on ODG-043.
-- [ ] INTP-013 — Host extension module lifecycle. Blocked on ODG-040.
+- [ ] INTP-013 — Host extension module lifecycle. Blocked on the remaining ODG-040 host catalog/mutation harness and oracle capture work.
 - [ ] INTP-014 — Stateful file I/O. Blocked on ODG-032.
 
 ### Not Created (3 fixtures)
