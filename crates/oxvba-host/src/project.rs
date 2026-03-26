@@ -1481,6 +1481,41 @@ mod tests {
     }
 
     #[test]
+    fn type_library_resolution_reports_unresolved_libid_identity() {
+        let mut graph = ProjectGraph::default();
+        graph
+            .create_project("Alpha", ProjectKind::Source)
+            .expect("project should be created");
+        let project = graph.active_project_mut().expect("active project expected");
+        project
+            .add_reference("StdOle", ReferenceKind::TypeLibrary)
+            .expect("reference should be accepted");
+        project
+            .set_reference_typelib_identity(
+                "StdOle",
+                "{00020430-0000-0000-C000-000000000046}",
+                Some(2),
+                Some(0),
+                Some(0),
+            )
+            .expect("libid identity should be set");
+        let records = project.resolve_type_library_references(&[TypeLibraryCatalogEntry {
+            library_name: "AltStdOle".to_string(),
+            importlib: "stdole2_v2.tlb".to_string(),
+            libid: Some("00020430-0000-0000-C000-000000000047".to_string()),
+            major_version: 2,
+            minor_version: 0,
+            lcid: Some(0),
+        }]);
+        assert_eq!(records.len(), 1);
+        assert_eq!(records[0].status.code(), "PMR-E-TYPELIB-LIBID-UNRESOLVED");
+        assert_eq!(
+            project.references[0].binding_state,
+            ReferenceBindingState::Failed
+        );
+    }
+
+    #[test]
     fn type_library_resolution_is_deterministic_across_catalog_order() {
         let mut graph = ProjectGraph::default();
         graph

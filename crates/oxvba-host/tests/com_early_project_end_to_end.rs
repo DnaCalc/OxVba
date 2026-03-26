@@ -71,10 +71,20 @@ fn expect_object_handle(value: &RuntimeValue) -> ObjectHandle {
 }
 
 #[cfg(target_os = "windows")]
-fn load_typelib_basproj_with_refs(
+struct BasprojComRefSpec<'a> {
+    include: &'a str,
+    guid: Option<&'a str>,
+    major: Option<u16>,
+    minor: Option<u16>,
+    lcid: Option<u32>,
+    importlib: Option<&'a str>,
+}
+
+#[cfg(target_os = "windows")]
+fn load_typelib_basproj_with_ref_specs(
     temp_leaf: &str,
     main_source: &str,
-    com_refs: &[(&str, &str, u16, u16, u32)],
+    com_refs: &[BasprojComRefSpec<'_>],
 ) -> oxvba_project::LoadedProject {
     let temp_root = std::env::current_dir()
         .expect("cwd")
@@ -98,24 +108,60 @@ fn load_typelib_basproj_with_refs(
   </ItemGroup>\n\
   <ItemGroup>\n",
     );
-    for (include, guid, major, minor, lcid) in com_refs {
+    for com_ref in com_refs {
         basproj.push_str(&format!(
-            "    <COMReference Include=\"{include}\">\n\
-      <Guid>{guid}</Guid>\n\
-      <VersionMajor>{major}</VersionMajor>\n\
-      <VersionMinor>{minor}</VersionMinor>\n\
-      <Lcid>{lcid}</Lcid>\n\
-      <ImportLib>{include}.TestEventServer.tlb</ImportLib>\n\
-    </COMReference>\n"
+            "    <COMReference Include=\"{}\">\n",
+            com_ref.include
         ));
+        if let Some(guid) = com_ref.guid {
+            basproj.push_str(&format!("      <Guid>{guid}</Guid>\n"));
+        }
+        if let Some(major) = com_ref.major {
+            basproj.push_str(&format!(
+                "      <VersionMajor>{major}</VersionMajor>\n"
+            ));
+        }
+        if let Some(minor) = com_ref.minor {
+            basproj.push_str(&format!(
+                "      <VersionMinor>{minor}</VersionMinor>\n"
+            ));
+        }
+        if let Some(lcid) = com_ref.lcid {
+            basproj.push_str(&format!("      <Lcid>{lcid}</Lcid>\n"));
+        }
+        if let Some(importlib) = com_ref.importlib {
+            basproj.push_str(&format!("      <ImportLib>{importlib}</ImportLib>\n"));
+        }
+        basproj.push_str("    </COMReference>\n");
     }
     basproj.push_str("  </ItemGroup>\n</Project>\n");
-    basproj = basproj
-        .replace("OxVba.TestEventServer.tlb", "OxVba.TestEventServer.tlb")
-        .replace("OxVbaAlt.TestEventServer.tlb", "OxVba.TestEventServerAlt.tlb");
 
     std::fs::write(&basproj_path, basproj).expect("write basproj");
     load_basproj(&basproj_path).expect("basproj should load")
+}
+
+#[cfg(target_os = "windows")]
+fn load_typelib_basproj_with_refs(
+    temp_leaf: &str,
+    main_source: &str,
+    com_refs: &[(&str, &str, u16, u16, u32)],
+) -> oxvba_project::LoadedProject {
+    let specs = com_refs
+        .iter()
+        .map(|(include, guid, major, minor, lcid)| BasprojComRefSpec {
+            include,
+            guid: Some(*guid),
+            major: Some(*major),
+            minor: Some(*minor),
+            lcid: Some(*lcid),
+            importlib: Some(match *include {
+                "OxVba" => "OxVba.TestEventServer.tlb",
+                "OxVbaAlt" => "OxVba.TestEventServerAlt.tlb",
+                other => panic!("unexpected COMReference include `{other}`"),
+            }),
+        })
+        .collect::<Vec<_>>();
+    load_typelib_basproj_with_ref_specs(temp_leaf, main_source, &specs)
 }
 
 #[cfg(target_os = "windows")]
@@ -361,6 +407,37 @@ fn early_bound_loaded_basproj_prefers_reversed_first_typelib_reference_for_unqua
     let out = run_project_windows_hosted(&loaded.manifest, false);
     assert!(expect_object_handle(&out[0]).raw() >= 20_001);
     assert_eq!(out[1], RuntimeValue::I32(84));
+}
+
+#[cfg(target_os = "windows")]
+#[test]
+#[ignore = "requires registered external COM typelib lane and validates unresolved LIBID diagnostics in loaded .basproj execution"]
+fn early_bound_loaded_basproj_reports_unresolved_typelib_libid_identity() {
+    let loaded = load_typelib_basproj_with_ref_specs(
+        "basproj-typelib-libid-unresolved",
+        concat!(
+            "Attribute VB_Name = \"Main\"\n",
+            "Public Sub Main()\n",
+            "Dim obj As New TestEventServer\n",
+            "Dim value\n",
+            "value = obj.Ping()\n",
+            "End Sub\n"
+        ),
+        &[BasprojComRefSpec {
+            include: "OxVbaMissing",
+            guid: Some("{E2A30001-0001-0001-0001-000000009999}"),
+            major: Some(1),
+            minor: Some(0),
+            lcid: Some(0),
+            importlib: None,
+        }],
+    );
+
+    let err = run_project_windows_hosted_error(&loaded.manifest, false);
+    assert!(
+        err.contains("PMR-E-TYPELIB-LIBID-UNRESOLVED"),
+        "expected unresolved LIBID diagnostic, got: {err}"
+    );
 }
 
 #[cfg(target_os = "windows")]
