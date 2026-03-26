@@ -6,7 +6,7 @@ This register captures implementation-defined behavior choices in OxVBA so confo
 
 | ID | Area | Decision | Why | Test/Tracking |
 |---|---|---|---|---|
-| ID-001 | Host-sensitive intrinsics | Shell/Environ/Dir use deterministic capability fallback semantics in non-HAL mode. | Enables portable deterministic tests before host HAL parity work. | docs/evidence/runtime/LIBRARY_CHECKLIST.csv, ODG-033 |
+| ID-001 | Host-sensitive intrinsics | Shell/Environ/Dir use real host behavior in native host-backed mode; non-HAL/default mode keeps deterministic capability fallback semantics. | Separates proved Windows host behavior from portable CI-safe fallback behavior without overstating Excel policy parity. | docs/evidence/runtime/LIBRARY_CHECKLIST.csv, docs/evidence/conformance/oracle_captures/host_sensitive_oracle_20260326T074730Z/summary.md, ODG-033 |
 | ID-002 | COM/dispatch bridge | CreateObject/DispatchInvoke run deterministic projection subset in non-HAL mode. | Full COM behavior is HAL/interop scoped and host-dependent. | docs/evidence/runtime/LIBRARY_CHECKLIST.csv, ODG-030, ODG-031 |
 | ID-003 | Time/random runtime | Now/Date/Time/Timer and Rnd/Randomize use deterministic subset behavior in non-HAL mode. | Keeps CI reproducible while oracle parity is deferred. | ODG-026, ODG-027 |
 | ID-004 | File library | FreeFile/EOF/LOF/Seek expression subset is implemented; stateful file statements are deferred. | Stateful I/O requires HAL-backed policy and host conformance probes. | docs/evidence/runtime/LIBRARY_CHECKLIST.csv, ODG-032 |

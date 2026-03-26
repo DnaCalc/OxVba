@@ -1,0 +1,9 @@
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.17s
+     Running tests\host_sensitive_oracle_lane.rs (target\debug\deps\host_sensitive_oracle_lane-c8acb957c9f713a2.exe)
+
+running 1 test
+test windows_host_sensitive_oracle_lane::windows_host_backed_shell_returns_positive_process_identifier ... ODG033-OBSERVED[CCT-035-SHELL-001]=pid>0
+ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 2 filtered out; finished in 0.04s
+

@@ -2002,10 +2002,47 @@ mod tests {
                 .expect("native shell should succeed"),
         );
         assert!(shell >= 1);
-        let environ = expect_i32(host.environ(rv(3)).expect("native environ should succeed"));
-        assert!(environ >= 0);
-        let dir = expect_i32(host.dir(rv(0), rv(0)).expect("native dir should succeed"));
-        assert!(dir == 0 || dir == 1);
+        let environ = host
+            .environ(RuntimeValue::String(BStr("PATH".to_string())))
+            .expect("native environ should succeed");
+        assert!(
+            matches!(environ, RuntimeValue::String(_)),
+            "native environ should return a string value, got {environ:?}"
+        );
+        let temp_dir = std::env::current_dir()
+            .expect("cwd")
+            .join("temp")
+            .join("native-process-env");
+        std::fs::create_dir_all(&temp_dir).expect("create temp dir");
+        let temp_file = temp_dir.join("probe-file.txt");
+        std::fs::write(&temp_file, "probe").expect("write temp file");
+        let dir = host
+            .dir(
+                RuntimeValue::String(BStr(temp_file.to_string_lossy().to_string())),
+                rv(0),
+            )
+            .expect("native dir should succeed");
+        assert_eq!(dir, RuntimeValue::String(BStr("probe-file.txt".to_string())));
+    }
+
+    #[test]
+    fn native_mode_environ_string_returns_actual_value() {
+        let Some(profile) = current_native_profile() else {
+            return;
+        };
+        let host = StandardHostServices::new(profile, HostPolicy::interactive_dev());
+        unsafe {
+            std::env::set_var("OXVBA_NATIVE_PROCESS_ENV_TEST", "native-process-env-value");
+        }
+        let out = host
+            .environ(RuntimeValue::String(BStr(
+                "OXVBA_NATIVE_PROCESS_ENV_TEST".to_string(),
+            )))
+            .expect("native environ should succeed");
+        assert_eq!(
+            out,
+            RuntimeValue::String(BStr("native-process-env-value".to_string()))
+        );
     }
 
     #[test]

@@ -72,24 +72,28 @@ impl ProcessEnvHal for StandardHostServices {
         if self.native_process_enabled()
             && let RuntimeValue::String(BStr(name)) = &key
         {
-            let value_len = std::env::var_os(name)
-                .map(|value| value.to_string_lossy().len())
-                .unwrap_or(0);
-            return Ok(RuntimeValue::I32(value_len.min(i32::MAX as usize) as i32));
+            let value = std::env::var_os(name)
+                .map(|value| value.to_string_lossy().to_string())
+                .unwrap_or_default();
+            return Ok(RuntimeValue::String(BStr(value)));
         }
         if self.native_process_enabled() {
             let mut vars: Vec<(std::ffi::OsString, std::ffi::OsString)> =
                 std::env::vars_os().collect();
             if vars.is_empty() {
-                return Ok(RuntimeValue::I32(0));
+                return Ok(RuntimeValue::String(BStr(String::new())));
             }
             vars.sort_by(|a, b| a.0.cmp(&b.0));
             let key = self
                 .runtime_value_to_legacy_i32(&key, capability, "environ", "key")
                 .unwrap_or(0);
             let idx = (key.unsigned_abs() as usize) % vars.len();
-            let value_len = vars[idx].1.to_string_lossy().len();
-            return Ok(RuntimeValue::I32(value_len.min(i32::MAX as usize) as i32));
+            let entry = format!(
+                "{}={}",
+                vars[idx].0.to_string_lossy(),
+                vars[idx].1.to_string_lossy()
+            );
+            return Ok(RuntimeValue::String(BStr(entry)));
         }
         let key = match &key {
             RuntimeValue::String(BStr(text)) => text.len().min(i32::MAX as usize) as i32,
@@ -107,23 +111,43 @@ impl ProcessEnvHal for StandardHostServices {
         }
         if self.native_process_enabled() {
             let target = match &path {
-                RuntimeValue::Empty | RuntimeValue::Null | RuntimeValue::I32(0) => {
-                    std::env::current_dir().map_err(|err| {
+                RuntimeValue::Empty | RuntimeValue::Null | RuntimeValue::I32(0) => std::env::current_dir()
+                    .map_err(|err| {
                         HalError::adapter_fault(
                             self.profile,
                             capability,
                             "dir",
                             format!("failed to get current directory: {err}"),
                         )
-                    })?
-                }
+                    })?,
                 _ => self.runtime_value_to_path(&path, capability, "dir", "path")?,
             };
-            let out = match fs::read_dir(target) {
-                Ok(mut entries) => i32::from(entries.next().is_some()),
-                Err(_) => 0,
+
+            if target.is_file() || target.is_dir() {
+                let name = target
+                    .file_name()
+                    .map(|value| value.to_string_lossy().to_string())
+                    .unwrap_or_else(|| target.display().to_string());
+                return Ok(RuntimeValue::String(BStr(name)));
+            }
+
+            let out = match fs::read_dir(&target) {
+                Ok(mut entries) => entries
+                    .next()
+                    .transpose()
+                    .map_err(|err| {
+                        HalError::adapter_fault(
+                            self.profile,
+                            capability,
+                            "dir",
+                            format!("failed to read directory {}: {err}", target.display()),
+                        )
+                    })?
+                    .map(|entry| entry.file_name().to_string_lossy().to_string())
+                    .unwrap_or_default(),
+                Err(_) => String::new(),
             };
-            return Ok(RuntimeValue::I32(out));
+            return Ok(RuntimeValue::String(BStr(out)));
         }
         let out = match &path {
             RuntimeValue::Empty | RuntimeValue::Null | RuntimeValue::I32(0) => 0,
