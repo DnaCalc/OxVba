@@ -442,6 +442,36 @@ fn early_bound_loaded_basproj_reports_unresolved_typelib_libid_identity() {
 
 #[cfg(target_os = "windows")]
 #[test]
+#[ignore = "requires registered external COM typelib lane and validates unresolved importlib diagnostics in loaded .basproj execution"]
+fn early_bound_loaded_basproj_reports_unresolved_typelib_importlib_identity() {
+    let loaded = load_typelib_basproj_with_ref_specs(
+        "basproj-typelib-importlib-unresolved",
+        concat!(
+            "Public Sub Main()\n",
+            "Dim obj As New TestEventServer\n",
+            "Dim value\n",
+            "value = obj.Ping()\n",
+            "End Sub\n"
+        ),
+        &[BasprojComRefSpec {
+            include: "OxVbaMissingFile",
+            guid: None,
+            major: None,
+            minor: None,
+            lcid: None,
+            importlib: Some("C:\\Work\\DnaCalc\\OxVba\\temp\\missing\\NoSuchTypeLib.tlb"),
+        }],
+    );
+
+    let err = run_project_windows_hosted_error(&loaded.manifest, false);
+    assert!(
+        err.contains("PMR-E-TYPELIB-IMPORTLIB-UNRESOLVED"),
+        "expected unresolved importlib diagnostic, got: {err}"
+    );
+}
+
+#[cfg(target_os = "windows")]
+#[test]
 #[ignore = "requires registered external COM typelib lane (run explicitly on Windows host with OxVba.TestEventServer registered)"]
 fn early_bound_project_registered_testeventserver_withevents_callback_invokes_handler_body() {
     let class_module = module_unit_from_source(
