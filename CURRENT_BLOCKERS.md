@@ -463,18 +463,21 @@ Run context: active parity/compliance execution plus in-progress feature worklis
 - Impact:
   - Blocks honest closure of `ODG-041` / `CCT-043` wider multi-reference parity.
 - Current state:
-  - The bounded oracle `com_testeventserver_mixed_broken_reference_oracle_20260326T192900Z` covers the saved-workbook reopen lane where the first typelib reference becomes broken and a later same-name typelib reference remains valid.
+  - The bounded oracle `com_testeventserver_mixed_broken_reference_oracle_20260326T204239Z` covers the saved-workbook reopen lane where the first typelib reference becomes broken and a later same-name typelib reference remains valid.
   - In both orderings, Excel reopens the workbook and reports the expected mixed reference state:
     - broken first/base + valid later/alt, or
     - broken first/alt + valid later/base.
-  - After that successful reopen, hidden Excel automation with `DisplayAlerts = false` does not return from `RunProbe` within the bounded `15s` window in either ordering.
-  - The bounded runner now captures the orphaned visible window title on timeout, and in both orderings it is `Microsoft Visual Basic for Applications - [MainModule (Code)]`, which confirms that the mixed lane is surfacing VBE/UI state rather than remaining a purely silent background stall.
+  - After that successful reopen, hidden Excel automation with `DisplayAlerts = false` still does not return from `RunProbe` within the bounded `15s` window in either ordering, even when the oracle attaches a VBE/UIAutomation handler that observes and closes surfaced VBA windows.
+  - The richer VBE handler capture shows that this is a real UI/compiler interaction, not just a silent stall:
+    - in the broken-alt then valid-base ordering, the handler observes `Compile error:` / `Can't find project or library` / `Gauge` with a `Close` button on `Microsoft Visual Basic for Applications - [MainModule (Code)]`,
+    - in the broken-base then valid-alt ordering, the handler observes the code window and then repeated empty `Microsoft Visual Basic for Applications` shells with no accessible text/buttons before Excel exits.
+  - Even after sending `WM_CLOSE` to the surfaced VBE window, `Application.Run` still does not return a bounded COM error to the probe before the runner cleans up.
   - OxVba no longer silently falls through to the later valid same-name typelib in this lane. The loader now preserves a missing filesystem-backed earlier importlib as a deterministic `PMR-E-TYPELIB-IMPORTLIB-UNRESOLVED` diagnostic, even when the broken reference still carries a known LIBID and a later same-name typelib remains valid.
 - Evidence:
-  - `docs/evidence/conformance/oracle_captures/com_testeventserver_mixed_broken_reference_oracle_20260326T192900Z/summary.md`
-  - `docs/evidence/conformance/oracle_captures/com_testeventserver_mixed_broken_reference_oracle_20260326T192900Z/results.csv`
+  - `docs/evidence/conformance/oracle_captures/com_testeventserver_mixed_broken_reference_oracle_20260326T204239Z/summary.md`
+  - `docs/evidence/conformance/oracle_captures/com_testeventserver_mixed_broken_reference_oracle_20260326T204239Z/results.csv`
 - Exact unblock steps:
-  - determine whether Excel's non-returning path is a true modal dialog / broken-reference prompt, a compile-time library-resolution stall, or another hidden host interaction,
+  - determine whether the observed VBE compile-error/broken-reference UI path is the actual target parity contract or whether the runner still needs a stronger dismissal path that makes Excel return a concrete COM error,
   - decide the parity contract for this mixed lane,
   - if Excel behavior remains the target, decide whether OxVba should stop at the current deterministic unresolved-importlib diagnostic or model a stronger blocked/host-interaction state,
   - rerun the mixed-reference oracle after the behavior decision/implementation.

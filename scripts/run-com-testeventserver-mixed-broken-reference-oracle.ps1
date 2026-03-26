@@ -40,21 +40,249 @@ try {
     }
 
     $rows = New-Object System.Collections.Generic.List[object]
+    $vbaDialogHandlerScriptPath = Join-Path $runDir "_vba_dialog_handler.ps1"
+    $vbaDialogHandlerScript = @'
+param([int]$ExcelPid, $StopFile, $LogFile, $DeadlineFile, [int]$PollMs = 200)
+
+$ErrorActionPreference = "Stop"
+
+Add-Type -AssemblyName UIAutomationClient
+Add-Type -AssemblyName UIAutomationTypes
+Add-Type @"
+using System;
+using System.Runtime.InteropServices;
+public static class VbeWin32 {
+    [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static extern bool PostMessage(IntPtr hWnd, uint Msg, IntPtr wParam, IntPtr lParam);
+    public const uint BM_CLICK = 0x00F5;
+    public const uint WM_CLOSE = 0x0010;
+}
+"@
+
+function Write-Log {
+    param([string]$Message)
+    Add-Content -Path $LogFile -Value "$(Get-Date -Format o) $Message" -Encoding UTF8
+}
+
+function Get-DescendantNamesByControlType {
+    param(
+        [System.Windows.Automation.AutomationElement]$Root,
+        [System.Windows.Automation.ControlType]$ControlType
+    )
+
+    $names = @()
+    try {
+        $cond = New-Object System.Windows.Automation.PropertyCondition(
+            [System.Windows.Automation.AutomationElement]::ControlTypeProperty,
+            $ControlType
+        )
+        $items = $Root.FindAll([System.Windows.Automation.TreeScope]::Descendants, $cond)
+        for ($i = 0; $i -lt $items.Count; $i++) {
+            $name = [string]$items.Item($i).Current.Name
+            if (-not [string]::IsNullOrWhiteSpace($name)) {
+                $names += $name.Trim()
+            }
+        }
+    } catch {
+        # Stale UIA trees are expected; caller retries on next poll.
+    }
+    $names
+}
+
+function Try-ClickDescendantButton {
+    param(
+        [System.Windows.Automation.AutomationElement]$Root,
+        [string[]]$PreferredNames
+    )
+
+    $btnCond = New-Object System.Windows.Automation.PropertyCondition(
+        [System.Windows.Automation.AutomationElement]::ControlTypeProperty,
+        [System.Windows.Automation.ControlType]::Button
+    )
+    $buttons = $Root.FindAll([System.Windows.Automation.TreeScope]::Descendants, $btnCond)
+    foreach ($preferredName in $PreferredNames) {
+        for ($i = 0; $i -lt $buttons.Count; $i++) {
+            $button = $buttons.Item($i)
+            $buttonName = ""
+            try {
+                $buttonName = [string]$button.Current.Name
+            } catch {
+                continue
+            }
+            if ($buttonName -ne $preferredName) {
+                continue
+            }
+            $buttonHwnd = [IntPtr]::new($button.Current.NativeWindowHandle)
+            if ($buttonHwnd -eq [IntPtr]::Zero) {
+                continue
+            }
+            [void][VbeWin32]::PostMessage($buttonHwnd, [VbeWin32]::BM_CLICK, [IntPtr]::Zero, [IntPtr]::Zero)
+            Write-Log "clicked button '$buttonName'"
+            return $true
+        }
+    }
+    $false
+}
+
+Write-Log "start excel_pid=$ExcelPid poll_ms=$PollMs stop_file=$StopFile"
+$root = [System.Windows.Automation.AutomationElement]::RootElement
+
+while ($true) {
+    if (Test-Path $StopFile) {
+        Write-Log "stop file observed"
+        break
+    }
+    if (-not (Get-Process -Id $ExcelPid -ErrorAction SilentlyContinue)) {
+        Write-Log "excel exited"
+        break
+    }
+
+    if ($DeadlineFile -and (Test-Path $DeadlineFile)) {
+        try {
+            $deadlineTicks = [long](Get-Content $DeadlineFile -Raw).Trim()
+            if ([DateTime]::UtcNow.Ticks -gt $deadlineTicks) {
+                Write-Log "deadline exceeded; killing excel pid=$ExcelPid"
+                Stop-Process -Id $ExcelPid -Force -ErrorAction SilentlyContinue
+                break
+            }
+        } catch {
+            Write-Log "deadline read error: $($_.Exception.Message)"
+        }
+    }
+
+    try {
+        $pidCond = New-Object System.Windows.Automation.PropertyCondition(
+            [System.Windows.Automation.AutomationElement]::ProcessIdProperty,
+            $ExcelPid
+        )
+        $winCond = New-Object System.Windows.Automation.PropertyCondition(
+            [System.Windows.Automation.AutomationElement]::ControlTypeProperty,
+            [System.Windows.Automation.ControlType]::Window
+        )
+        $combined = New-Object System.Windows.Automation.AndCondition($pidCond, $winCond)
+        $windows = $root.FindAll([System.Windows.Automation.TreeScope]::Children, $combined)
+        for ($i = 0; $i -lt $windows.Count; $i++) {
+            $window = $windows.Item($i)
+            $title = ""
+            try {
+                $title = [string]$window.Current.Name
+            } catch {
+                continue
+            }
+            if ($title -notmatch "Microsoft Visual Basic") {
+                continue
+            }
+
+            $textNames = @(Get-DescendantNamesByControlType -Root $window -ControlType ([System.Windows.Automation.ControlType]::Text))
+            $buttonNames = @(Get-DescendantNamesByControlType -Root $window -ControlType ([System.Windows.Automation.ControlType]::Button))
+            Write-Log "observed window='$title' texts='$($textNames -join "|")' buttons='$($buttonNames -join "|")'"
+
+            $clickedAction = $false
+            if ($buttonNames.Count -gt 0) {
+                $clickedAction = Try-ClickDescendantButton -Root $window -PreferredNames @("Close", "OK", "End")
+                if ($clickedAction) {
+                    Start-Sleep -Milliseconds 500
+                }
+            }
+
+            $trueCond = [System.Windows.Automation.Condition]::TrueCondition
+            $children = $window.FindAll([System.Windows.Automation.TreeScope]::Children, $trueCond)
+            for ($j = 0; $j -lt $children.Count; $j++) {
+                $child = $children.Item($j)
+                $childName = ""
+                try {
+                    $childName = [string]$child.Current.Name
+                } catch {
+                    continue
+                }
+                if ($childName -ne "Microsoft Visual Basic for Applications") {
+                    continue
+                }
+
+                $btnCond = New-Object System.Windows.Automation.PropertyCondition(
+                    [System.Windows.Automation.AutomationElement]::ControlTypeProperty,
+                    [System.Windows.Automation.ControlType]::Button
+                )
+                $buttons = $child.FindAll([System.Windows.Automation.TreeScope]::Children, $btnCond)
+                for ($k = 0; $k -lt $buttons.Count; $k++) {
+                    $button = $buttons.Item($k)
+                    $buttonName = ""
+                    try {
+                        $buttonName = [string]$button.Current.Name
+                    } catch {
+                        continue
+                    }
+                    if ($buttonName -ne "OK") {
+                        continue
+                    }
+                    $buttonHwnd = [IntPtr]::new($button.Current.NativeWindowHandle)
+                    [void][VbeWin32]::PostMessage($buttonHwnd, [VbeWin32]::BM_CLICK, [IntPtr]::Zero, [IntPtr]::Zero)
+                    Write-Log "clicked compile-error OK: window='$title'"
+                    $clickedAction = $true
+                    break
+                }
+                break
+            }
+
+            if ($clickedAction) {
+                Start-Sleep -Milliseconds 500
+            }
+
+            if ($clickedAction -or $title -match "\[break\]" -or $title -match "\(Code\)") {
+                $vbeHwnd = [IntPtr]::new($window.Current.NativeWindowHandle)
+                if ($vbeHwnd -ne [IntPtr]::Zero) {
+                    [void][VbeWin32]::PostMessage($vbeHwnd, [VbeWin32]::WM_CLOSE, [IntPtr]::Zero, [IntPtr]::Zero)
+                    Write-Log "sent WM_CLOSE to VBE: window='$title'"
+                }
+            }
+        }
+    } catch {
+        Write-Log "poll error: $($_.Exception.Message)"
+    }
+
+    Start-Sleep -Milliseconds $PollMs
+}
+
+Write-Log "exit"
+'@
+    Set-Content -Path $vbaDialogHandlerScriptPath -Value $vbaDialogHandlerScript -Encoding UTF8
     $probeScriptPath = Join-Path $runDir "_mixed_broken_reference_probe.ps1"
     $probeScript = @'
 param(
     [string]$FirstTypeLibPath,
     [string]$SecondTypeLibPath,
-    [string]$StatePath
+    [string]$StatePath,
+    [string]$VbaDialogHandlerScriptPath,
+    [string]$VbaDialogHandlerLogPath,
+    [int]$RunTimeoutSeconds = 15
 )
 
 $ErrorActionPreference = "Stop"
+
+Add-Type @"
+using System;
+using System.Runtime.InteropServices;
+public static class ProbeWin32Pid {
+    [DllImport("user32.dll")]
+    public static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint processId);
+}
+"@
+
+function Get-WindowProcessId {
+    param([int]$Hwnd)
+    [uint32]$windowPid = 0
+    [void][ProbeWin32Pid]::GetWindowThreadProcessId([IntPtr]::new($Hwnd), [ref]$windowPid)
+    [int]$windowPid
+}
 
 $root = Join-Path $env:TEMP ("oxvba_mixed_broken_ref_" + [guid]::NewGuid().ToString("N"))
 New-Item -ItemType Directory -Force -Path $root | Out-Null
 $firstCopy = Join-Path $root ([System.IO.Path]::GetFileName($FirstTypeLibPath))
 $secondCopy = Join-Path $root ([System.IO.Path]::GetFileName($SecondTypeLibPath))
 $workbookPath = Join-Path $root "probe.xlsm"
+$vbaDialogHandlerStop = Join-Path $root "_vba_dialog_handler.stop"
+$deadlineFile = Join-Path $root "_run_deadline.txt"
 Copy-Item $FirstTypeLibPath $firstCopy -Force
 Copy-Item $SecondTypeLibPath $secondCopy -Force
 $code = "Public Function RunProbe()`n    Dim obj As TestEventServer`n    Set obj = New TestEventServer`n    RunProbe = obj.Ping()`nEnd Function`n"
@@ -62,10 +290,32 @@ $code = "Public Function RunProbe()`n    Dim obj As TestEventServer`n    Set obj
 $excel = $null
 $wb = $null
 $reopened = $null
+$vbaDialogHandler = $null
 try {
     $excel = New-Object -ComObject Excel.Application
     $excel.Visible = $false
     $excel.DisplayAlerts = $false
+    $excelPid = Get-WindowProcessId -Hwnd ([int]$excel.Hwnd)
+    if ($excelPid -gt 0 -and (Test-Path $VbaDialogHandlerScriptPath)) {
+        if (Test-Path $VbaDialogHandlerLogPath) {
+            Remove-Item -Force -Path $VbaDialogHandlerLogPath
+        }
+        $vbaDialogHandler = Start-Process `
+            -FilePath (Get-Command pwsh).Source `
+            -ArgumentList @(
+                "-NoProfile",
+                "-NonInteractive",
+                "-File",
+                $VbaDialogHandlerScriptPath,
+                $excelPid,
+                $vbaDialogHandlerStop,
+                $VbaDialogHandlerLogPath,
+                $deadlineFile,
+                200
+            ) `
+            -PassThru `
+            -WindowStyle Hidden
+    }
 
     $wb = $excel.Workbooks.Add()
     [void]$wb.VBProject.References.AddFromFile($firstCopy)
@@ -94,12 +344,24 @@ try {
     @{ stage = "reopened"; refs = $refs } | ConvertTo-Json -Compress | Set-Content -Path $StatePath
 
     try {
+        [DateTime]::UtcNow.AddSeconds($RunTimeoutSeconds).Ticks | Set-Content -Path $deadlineFile
         $result = [string]$excel.Run("RunProbe")
-        @{ stage = "completed"; refs = $refs; run = $result } | ConvertTo-Json -Compress | Set-Content -Path $StatePath
+        @{ stage = "completed"; refs = $refs; run = $result; handler_log = $VbaDialogHandlerLogPath } | ConvertTo-Json -Compress | Set-Content -Path $StatePath
     } catch {
-        @{ stage = "run_error"; refs = $refs; run_error = $_.Exception.Message } | ConvertTo-Json -Compress | Set-Content -Path $StatePath
+        @{ stage = "run_error"; refs = $refs; run_error = $_.Exception.Message; handler_log = $VbaDialogHandlerLogPath } | ConvertTo-Json -Compress | Set-Content -Path $StatePath
+    } finally {
+        if (Test-Path $deadlineFile) {
+            Remove-Item -Force -Path $deadlineFile
+        }
     }
 } finally {
+    Set-Content -Path $vbaDialogHandlerStop -Value "stop" -Encoding UTF8
+    if ($vbaDialogHandler -ne $null) {
+        $null = $vbaDialogHandler.WaitForExit(2000)
+        if (-not $vbaDialogHandler.HasExited) {
+            Stop-Process -Id $vbaDialogHandler.Id -Force -ErrorAction SilentlyContinue
+        }
+    }
     if ($reopened -ne $null) {
         $reopened.Close($false)
         [void][System.Runtime.InteropServices.Marshal]::ReleaseComObject($reopened)
@@ -152,8 +414,12 @@ try {
         $statePath = Join-Path $runDir ($CaseId + ".vba-state.json")
         $stdoutPath = Join-Path $runDir ($CaseId + ".probe.stdout.txt")
         $stderrPath = Join-Path $runDir ($CaseId + ".probe.stderr.txt")
+        $handlerLogPath = Join-Path $runDir ($CaseId + ".vba-dialog-handler.log")
         if (Test-Path $statePath) {
             Remove-Item -Force -Path $statePath
+        }
+        if (Test-Path $handlerLogPath) {
+            Remove-Item -Force -Path $handlerLogPath
         }
         $probeProcess = Start-Process `
             -FilePath (Get-Command pwsh).Source `
@@ -164,7 +430,10 @@ try {
                 $probeScriptPath,
                 $FirstTypeLibPath,
                 $SecondTypeLibPath,
-                $statePath
+                $statePath,
+                $vbaDialogHandlerScriptPath,
+                $handlerLogPath,
+                $ProbeTimeoutSeconds
             ) `
             -RedirectStandardOutput $stdoutPath `
             -RedirectStandardError $stderrPath `
@@ -175,6 +444,25 @@ try {
         $state = $null
         if (Test-Path $statePath) {
             $state = Get-Content $statePath -Raw | ConvertFrom-Json
+        }
+        $handlerLogSummary = ""
+        $handlerObserved = "unknown"
+        if (Test-Path $handlerLogPath) {
+            $handlerLines = Get-Content $handlerLogPath
+            $signalLines = @(
+                $handlerLines | Where-Object {
+                    $_ -match "observed window=" -or
+                    $_ -match "clicked compile-error OK" -or
+                    $_ -match "sent WM_CLOSE to VBE" -or
+                    $_ -match "deadline exceeded"
+                }
+            )
+            if ($signalLines.Count -gt 0) {
+                $handlerObserved = "true"
+                $handlerLogSummary = ($signalLines -join " || ")
+            } elseif ($handlerLines.Count -gt 0) {
+                $handlerObserved = "false"
+            }
         }
         if (-not $completed) {
             Stop-Process -Id $probeProcess.Id -Force -ErrorAction SilentlyContinue
@@ -193,9 +481,11 @@ try {
                 observed       = "execution-did-not-return-within-${ProbeTimeoutSeconds}s"
                 refs           = if ($state) { ($state.refs -join "|") } else { "" }
                 stage          = if ($state) { [string]$state.stage } else { "" }
-                modal_observed = if ($state -and $state.stage -eq "reopened") { "possible" } else { "unknown" }
+                modal_observed = if ($handlerObserved -ne "unknown") { $handlerObserved } elseif ($state -and $state.stage -eq "reopened") { "possible" } else { "unknown" }
                 probe_exit_code = ""
                 window_titles  = ($orphanedWindowTitles -join "|")
+                handler_log    = $handlerLogPath
+                handler_signal = $handlerLogSummary
             }
         }
 
@@ -209,6 +499,8 @@ try {
                 modal_observed = "unknown"
                 probe_exit_code = $probeExitCode
                 window_titles  = ""
+                handler_log    = $handlerLogPath
+                handler_signal = $handlerLogSummary
             }
         }
         if ($state.stage -eq "completed") {
@@ -217,9 +509,11 @@ try {
                 observed       = [string]$state.run
                 refs           = ($state.refs -join "|")
                 stage          = [string]$state.stage
-                modal_observed = "false"
+                modal_observed = if ($handlerObserved -ne "unknown") { $handlerObserved } else { "false" }
                 probe_exit_code = $probeExitCode
                 window_titles  = ""
+                handler_log    = $handlerLogPath
+                handler_signal = $handlerLogSummary
             }
         }
         return @{
@@ -227,9 +521,11 @@ try {
             observed       = [string]$state.run_error
             refs           = ($state.refs -join "|")
             stage          = [string]$state.stage
-            modal_observed = "false"
+            modal_observed = if ($handlerObserved -ne "unknown") { $handlerObserved } else { "false" }
             probe_exit_code = $probeExitCode
             window_titles  = ""
+            handler_log    = $handlerLogPath
+            handler_signal = $handlerLogSummary
         }
     }
 
@@ -286,6 +582,8 @@ try {
                 "; refs=" + $probe.refs +
                 "; modal_observed=" + $probe.modal_observed +
                 "; window_titles=" + $probe.window_titles +
+                "; handler_signal=" + $probe.handler_signal +
+                "; handler_log=" + $probe.handler_log +
                 "; probe_exit_code=" + $probe.probe_exit_code +
                 "; OxVba anchor command=" + $cmdText +
                 "; log=" + $logPath
@@ -305,7 +603,7 @@ try {
         "- Alt TypeLib: $altTypeLibPath",
         "- Probe timeout seconds: $ProbeTimeoutSeconds",
         "- Output CSV: $csvPath",
-        "- Modal inspection note: timeout after successful reopen is treated as likely blocked/modal Excel behavior; the runner records the last captured stage and reference state before forcing cleanup.",
+        "- Modal inspection note: this runner now starts a VBE/UIAutomation handler per Excel probe, records observed Microsoft Visual Basic windows/buttons/text, attempts to click compile-error OK when present, and closes the VBE code window to turn blocked UI state into a bounded `Application.Run` result where possible.",
         "",
         "- Total cases: $($rows.Count)",
         "- Match count: $(($rows | Where-Object { $_.match -eq 'true' }).Count)",
