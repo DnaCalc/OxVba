@@ -649,6 +649,28 @@ Run context: active parity/compliance execution plus in-progress feature worklis
   - `BLK-EVT-001` — resolved (runtime subscription graph)
   - `BLK-COM-001` — resolved (COM event callback parity with external registered server evidence)
 
+## BLK-PMR-HAL-EXT-001 — adapter-backed host project mutation hook absent
+
+- Date: `2026-03-26`
+- Affects:
+  - `ODG-040`
+  - `CCT-042`
+  - `INTP-013`
+- Status: open
+- Current state:
+  - project-model legality is now explicit: only `ProjectKind::Host` may admit `ModuleKind::Extension`
+  - deterministic HAL project-catalog/reference mock seam exists in `oxvba-hal`
+  - the runtime adapter path still has no host-backed mutation hook for open host projects
+- Evidence:
+  - `crates/oxvba-hal/src/callbacks.rs` currently exposes only UI/status/debug callbacks
+  - `crates/oxvba-hal/src/traits.rs` now exposes optional `project_catalog` / `project_references`, but the standard adapter does not provide a live host-backed implementation
+  - `ODG-040` docs now reflect the remaining blocker as adapter-backed host mutation plus oracle capture, not missing PMR contract shape
+- Exact unblock steps:
+  - extend the host callback or adapter contract with host project discovery and extension-mutation operations
+  - implement the standard/Windows adapter-backed path for those operations
+  - add deterministic integration coverage for open-host extension attach/conflict behavior
+  - then run the Excel/VBIDE oracle capture and fold it back into `ODG-040` / `CCT-042`
+
 
 
 
