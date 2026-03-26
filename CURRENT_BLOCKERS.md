@@ -51,21 +51,6 @@ Run context: active parity/compliance execution plus in-progress feature worklis
 
 ## Active blocker entries
 
-### BLK-ODG041-LIBID-DIAG-001: Loaded `.basproj` execution drops unresolved typelib-identity diagnostics
-- Impact:
-  - Blocks the next `ODG-041` / `CCT-043` oracle slice for unresolved or missing typelib identity in the integrated project lane.
-  - Prevents honest foldback of `References.AddFromGuid(...)` unresolved-identity behavior into loaded `.basproj` execution.
-- Current state:
-  - Deterministic project-model resolution already classifies unresolved LIBID identity as `PMR-E-TYPELIB-LIBID-UNRESOLVED`.
-  - A new attempted integrated host anchor using a loaded `.basproj` with an unknown typelib LIBID does not surface that diagnostic.
-  - Instead, `load_basproj` skips synthetic typelib project injection when `resolve_known_typelib_identity(...)` fails, and later compilation degrades into `PMR-E-NAME-RESOLUTION-NOT-FOUND` on `obj.Ping`.
-- Evidence:
-  - Explicit host anchor probe: `cargo test -p oxvba-host --test com_early_project_end_to_end early_bound_loaded_basproj_reports_unresolved_typelib_libid_identity -- --ignored --exact --test-threads=1 --nocapture`
-  - Observed failure shape: `CompileTime: PMR-E-NAME-RESOLUTION-NOT-FOUND: qualified call target \`obj.Ping\` was not found`
-- Required next fix:
-  - Preserve unresolved/ambiguous typelib-binding diagnostics through the loaded `.basproj` execution path instead of silently skipping synthetic reference-project injection.
-  - Only after that diagnostic propagation exists should the Excel `AddFromGuid(...)` unresolved-identity oracle be folded into `ODG-041`.
-
 ### BLK-COM-IDISPATCH-001: Late-bound COM parity remains below VBA/Excel `IDispatch` behavior
 - Impact:
   - Blocks `IP-03` Windows late-bound COM client parity.

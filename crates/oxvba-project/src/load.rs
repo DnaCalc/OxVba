@@ -6,7 +6,7 @@ use std::path::Path;
 use oxvba_com::{TypeLibResolveRequest, build_typelib_metadata, resolve_known_typelib_identity};
 use oxvba_compiler::{
     ModuleAttributes, ModuleKind, ModuleUnit, ProjectKind, ProjectManifest, ProjectReference,
-    ReferenceKind, project::project_typelib_as_manifest,
+    ReferenceKind, ReferencedProjectManifest, project::project_typelib_as_manifest,
 };
 use oxvba_host::TypeLibraryCatalogEntry;
 
@@ -31,6 +31,8 @@ pub struct LoadedProject {
     /// Per-class metadata keyed by module name (instancing, prog_id, description).
     pub class_module_metadata: BTreeMap<String, ClassModuleMetadata>,
 }
+
+const TYPELIB_BINDING_DIAGNOSTIC_MODULE_NAME: &str = "__OxVbaTypeLibBindingDiagnostic";
 
 /// Load a `.basproj` file from disk, resolve module sources, and produce a
 /// `LoadedProject` containing the `ProjectManifest` and export descriptors.
@@ -269,6 +271,15 @@ fn inject_type_library_reference_projects(loaded: &mut LoadedProject) {
             lcid_hint: catalog_entry.lcid,
         };
         let Some(identity) = resolve_known_typelib_identity(&request) else {
+            let diagnostic = build_typelib_binding_diagnostic_project(&request);
+            if loaded.manifest.reference_projects.iter().any(|project| {
+                project
+                    .project_name
+                    .eq_ignore_ascii_case(&diagnostic.project_name)
+            }) {
+                continue;
+            }
+            loaded.manifest.reference_projects.push(diagnostic);
             continue;
         };
 
@@ -281,6 +292,43 @@ fn inject_type_library_reference_projects(loaded: &mut LoadedProject) {
             continue;
         }
         loaded.manifest.reference_projects.push(synthetic);
+    }
+}
+
+fn build_typelib_binding_diagnostic_project(
+    request: &TypeLibResolveRequest,
+) -> ReferencedProjectManifest {
+    let (code, message) = match (request.libid_hint.as_deref(), request.importlib_hint.as_deref()) {
+        (Some(libid), _) => (
+            "PMR-E-TYPELIB-LIBID-UNRESOLVED",
+            format!(
+                "type-library reference `{}` with LIBID `{}` could not be resolved",
+                request.reference_name, libid
+            ),
+        ),
+        (None, Some(importlib)) => (
+            "PMR-E-TYPELIB-IMPORTLIB-UNRESOLVED",
+            format!(
+                "type-library reference `{}` with importlib `{}` could not be resolved",
+                request.reference_name, importlib
+            ),
+        ),
+        (None, None) => (
+            "PMR-E-TYPELIB-IMPORTLIB-MISSING",
+            format!(
+                "type-library reference `{}` is missing an importlib hint",
+                request.reference_name
+            ),
+        ),
+    };
+    ReferencedProjectManifest {
+        project_name: request.reference_name.clone(),
+        modules: vec![ModuleUnit {
+            module_name: TYPELIB_BINDING_DIAGNOSTIC_MODULE_NAME.to_string(),
+            module_kind: ModuleKind::Procedural,
+            attributes: ModuleAttributes::default(),
+            source: format!("code={code}\nmessage={message}\n"),
+        }],
     }
 }
 

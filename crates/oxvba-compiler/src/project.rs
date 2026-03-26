@@ -125,6 +125,8 @@ pub struct ReferencedProjectManifest {
     pub modules: Vec<ModuleUnit>,
 }
 
+const TYPELIB_BINDING_DIAGNOSTIC_MODULE_NAME: &str = "__OxVbaTypeLibBindingDiagnostic";
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ProjectManifest {
     pub project_name: String,
@@ -387,6 +389,8 @@ pub enum ProjectCompileError {
         "BIND-E-TYPELIB-MEMBER-SHAPE-UNSUPPORTED: external invoke target `{target}` uses unsupported imported member shape `{shape}` in the current deterministic early-bind subset"
     )]
     TypeLibraryMemberShapeUnsupported { target: String, shape: String },
+    #[error("{code}: {message}")]
+    TypeLibraryBindingFailure { code: &'static str, message: String },
     #[error("PMR-E-BACKEND-COMPILE: {message}")]
     BackendCompile { message: String },
 }
@@ -460,6 +464,7 @@ impl ProjectCompileError {
             Self::TypeLibraryMemberShapeUnsupported { .. } => {
                 "BIND-E-TYPELIB-MEMBER-SHAPE-UNSUPPORTED"
             }
+            Self::TypeLibraryBindingFailure { code, .. } => code,
             Self::BackendCompile { .. } => "PMR-E-BACKEND-COMPILE",
         }
     }
@@ -557,6 +562,7 @@ fn compile_project_with_strategy(
     manifest: &ProjectManifest,
     strategy: ProjectLoweringStrategy,
 ) -> Result<CompiledProject, ProjectCompileError> {
+    preflight_typelib_binding_diagnostics(manifest)?;
     validate_manifest(manifest)?;
 
     // Augment reference_projects with synthetic manifests for TypeLibrary references.
@@ -639,6 +645,62 @@ fn compile_project_with_strategy(
         event_dispatch_bindings,
         project_com_withevents_routes,
         project_dynamic_objects,
+    })
+}
+
+fn preflight_typelib_binding_diagnostics(
+    manifest: &ProjectManifest,
+) -> Result<(), ProjectCompileError> {
+    for project in &manifest.reference_projects {
+        let Some(module) = project.modules.first() else {
+            continue;
+        };
+        if project.modules.len() != 1
+            || module.module_name != TYPELIB_BINDING_DIAGNOSTIC_MODULE_NAME
+        {
+            continue;
+        }
+        return Err(parse_typelib_binding_diagnostic(module)?);
+    }
+    Ok(())
+}
+
+fn parse_typelib_binding_diagnostic(
+    module: &ModuleUnit,
+) -> Result<ProjectCompileError, ProjectCompileError> {
+    let mut code = None;
+    let mut message = None;
+    for line in module.source.lines() {
+        let Some((key, value)) = line.split_once('=') else {
+            continue;
+        };
+        match key.trim() {
+            "code" => code = Some(value.trim()),
+            "message" => message = Some(value.trim()),
+            _ => {}
+        }
+    }
+    let code = code.ok_or_else(|| ProjectCompileError::BackendCompile {
+        message: "typelib binding diagnostic project is missing `code`".to_string(),
+    })?;
+    let message = message.ok_or_else(|| ProjectCompileError::BackendCompile {
+        message: "typelib binding diagnostic project is missing `message`".to_string(),
+    })?;
+    let code = match code {
+        "PMR-E-TYPELIB-IMPORTLIB-MISSING" => "PMR-E-TYPELIB-IMPORTLIB-MISSING",
+        "PMR-E-TYPELIB-IMPORTLIB-UNRESOLVED" => "PMR-E-TYPELIB-IMPORTLIB-UNRESOLVED",
+        "PMR-E-TYPELIB-IMPORTLIB-AMBIGUOUS" => "PMR-E-TYPELIB-IMPORTLIB-AMBIGUOUS",
+        "PMR-E-TYPELIB-LIBID-UNRESOLVED" => "PMR-E-TYPELIB-LIBID-UNRESOLVED",
+        "PMR-E-TYPELIB-LIBID-AMBIGUOUS" => "PMR-E-TYPELIB-LIBID-AMBIGUOUS",
+        other => {
+            return Err(ProjectCompileError::BackendCompile {
+                message: format!("unsupported typelib binding diagnostic code `{other}`"),
+            });
+        }
+    };
+    Ok(ProjectCompileError::TypeLibraryBindingFailure {
+        code,
+        message: message.to_string(),
     })
 }
 
@@ -6776,9 +6838,10 @@ fn normalize_identifier(name: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::{
-        ExportKind, ModuleKind, ProjectComWithEventsRoute, ProjectCompileError,
+        ExportKind, ModuleAttributes, ModuleKind, ProjectComWithEventsRoute, ProjectCompileError,
         ProjectEventDispatchBinding, ProjectKind, ProjectLoweringStrategy, ProjectManifest,
-        ProjectReference, ReferenceKind, ReferencedProjectManifest, compile_project,
+        ProjectReference, ReferenceKind, ReferencedProjectManifest,
+        TYPELIB_BINDING_DIAGNOSTIC_MODULE_NAME, compile_project,
         compile_project_with_strategy, expand_bound_source_line, module_unit_from_source,
         validate_compiled_project_contract, withevents_binding_token,
     };
@@ -16143,6 +16206,39 @@ mod tests {
         };
         assert_eq!(err.code(), "PMR-E-PROJECT-NAME-INVALID");
         assert!(err.to_string().contains("PMR-E-PROJECT-NAME-INVALID"));
+    }
+
+    #[test]
+    fn compile_project_reports_typelib_binding_failure_preflight() {
+        let main_module = module_unit_from_source(
+            "Main",
+            ModuleKind::Procedural,
+            "Public Sub Main()\nEnd Sub\n",
+        )
+        .expect("module parses");
+        let manifest = ProjectManifest {
+            project_name: "ProjectA".to_string(),
+            project_kind: ProjectKind::Source,
+            modules: vec![main_module],
+            references: vec![ProjectReference {
+                referenced_project_name: "OxVbaMissing".to_string(),
+                reference_kind: ReferenceKind::TypeLibrary,
+            }],
+            reference_projects: vec![ReferencedProjectManifest {
+                project_name: "OxVbaMissing".to_string(),
+                modules: vec![super::ModuleUnit {
+                    module_name: TYPELIB_BINDING_DIAGNOSTIC_MODULE_NAME.to_string(),
+                    module_kind: ModuleKind::Procedural,
+                    attributes: ModuleAttributes::default(),
+                    source: "code=PMR-E-TYPELIB-LIBID-UNRESOLVED\nmessage=type-library reference `OxVbaMissing` with LIBID `{E2A30001-0001-0001-0001-000000009999}` could not be resolved\n".to_string(),
+                }],
+            }],
+            conditional_constants: BTreeMap::new(),
+        };
+
+        let err = compile_project(&manifest).expect_err("diagnostic project should fail preflight");
+        assert_eq!(err.code(), "PMR-E-TYPELIB-LIBID-UNRESOLVED");
+        assert!(err.to_string().contains("OxVbaMissing"));
     }
 
     #[test]
