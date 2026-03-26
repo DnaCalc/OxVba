@@ -10,6 +10,7 @@ const OXVBA_TEST_DISPATCH_NO_DEFAULT_PROGID: &str = "OxVba.TestDispatchNoDefault
 const OXVBA_TEST_DISPATCH_AMBIGUOUS_DEFAULT_PROGID: &str = "OxVba.TestDispatchAmbiguousDefault";
 const EXCEL_APPLICATION_PROGID: &str = "Excel.Application";
 const OXVBA_TEST_EVENT_SERVER_PROGID: &str = "OxVba.TestEventServer";
+const OXVBA_ALT_TEST_EVENT_SERVER_PROGID: &str = "OxVba.TestEventServerAlt";
 
 const IID_OXVBA_TEST_DISPATCH_EVENTS_STR: &str = "11111112-2222-3333-4444-555555555556";
 const IID_OXVBA_TEST_DISPATCH_SOURCE_EVENTS_STR: &str = "11111113-2222-3333-4444-555555555557";
@@ -229,6 +230,24 @@ pub fn resolve_known_typelib_identity(
 
     if normalized_importlib
         .as_deref()
+        .is_some_and(|value| value == "oxvba_testeventserveralt.tlb")
+        || normalized_libid
+            .as_deref()
+            .is_some_and(|value| value == "e2a30001-0001-0001-0001-000000000101")
+    {
+        return Some(TypeLibResolvedIdentity {
+            reference_name: request.reference_name.clone(),
+            importlib: "oxvba_testeventserveralt.tlb".to_string(),
+            libid: Some("E2A30001-0001-0001-0001-000000000101".to_string()),
+            major_version: 1,
+            minor_version: 0,
+            lcid: Some(0),
+            cache_key: "typelib:oxvba-testeventserveralt:1.0:0".to_string(),
+        });
+    }
+
+    if normalized_importlib
+        .as_deref()
         .is_some_and(|value| value == "scrrun.dll")
         || normalized_libid
             .as_deref()
@@ -283,6 +302,19 @@ pub fn known_typelib_identity_for_prog_id_name(
             minor_version: 0,
             lcid: Some(0),
             cache_key: "typelib:oxvba-testeventserver:1.0:0".to_string(),
+        });
+    }
+    if prog_id_name.eq_ignore_ascii_case(OXVBA_ALT_TEST_EVENT_SERVER_PROGID)
+        || prog_id_name.eq_ignore_ascii_case("OxVbaAlt.TestEventServer")
+    {
+        return Some(TypeLibResolvedIdentity {
+            reference_name: prog_id_name.to_string(),
+            importlib: "oxvba_testeventserveralt.tlb".to_string(),
+            libid: Some("E2A30001-0001-0001-0001-000000000101".to_string()),
+            major_version: 1,
+            minor_version: 0,
+            lcid: Some(0),
+            cache_key: "typelib:oxvba-testeventserveralt:1.0:0".to_string(),
         });
     }
     if prog_id_name.eq_ignore_ascii_case(OXVBA_TEST_DISPATCH_PROGID) {
@@ -1396,8 +1428,12 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
     } else if identity
         .importlib
         .eq_ignore_ascii_case("oxvba_testeventserver.tlb")
+        || identity
+            .importlib
+            .eq_ignore_ascii_case("oxvba_testeventserveralt.tlb")
         || identity.libid.as_deref().is_some_and(|libid: &str| {
             libid.eq_ignore_ascii_case("E2A30001-0001-0001-0001-000000000001")
+                || libid.eq_ignore_ascii_case("E2A30001-0001-0001-0001-000000000101")
         })
     {
         let members = vec![
@@ -1473,7 +1509,19 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
             .map(|entry| (entry.name.clone(), entry.token))
             .collect();
         (
-            Some("OxVba.TestEventServer".to_string()),
+            Some(
+                if identity
+                    .importlib
+                    .eq_ignore_ascii_case("oxvba_testeventserveralt.tlb")
+                    || identity.libid.as_deref().is_some_and(|libid: &str| {
+                        libid.eq_ignore_ascii_case("E2A30001-0001-0001-0001-000000000101")
+                    }) {
+                    OXVBA_ALT_TEST_EVENT_SERVER_PROGID
+                } else {
+                    OXVBA_TEST_EVENT_SERVER_PROGID
+                }
+                .to_string(),
+            ),
             member_name_to_token,
             members,
             events,
@@ -1791,6 +1839,14 @@ mod tests {
         assert_eq!(
             activation_prog_id_from_typelib_metadata(&excel_blob),
             Some("Excel.Application")
+        );
+
+        let alt_identity = known_typelib_identity_for_prog_id_name("OxVba.TestEventServerAlt")
+            .expect("identity");
+        let alt_blob = build_typelib_metadata(&alt_identity);
+        assert_eq!(
+            activation_prog_id_from_typelib_metadata(&alt_blob),
+            Some("OxVba.TestEventServerAlt")
         );
     }
 

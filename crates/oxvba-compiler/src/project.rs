@@ -618,8 +618,7 @@ fn compile_project_with_strategy(
     let host_exports = collect_host_exports(manifest, &procedure_index);
     let reference_visible_exports = collect_reference_visible_exports(manifest, &procedure_index);
     let event_dispatch_bindings = flatten_event_dispatch_plan(&event_dispatch_plan);
-    let project_com_withevents_routes =
-        build_project_com_withevents_routes(&event_dispatch_plan);
+    let project_com_withevents_routes = build_project_com_withevents_routes(&event_dispatch_plan);
     let implements_map = collect_class_implements_map(manifest, &procedure_index, &reference_order);
     let project_dynamic_objects = build_project_dynamic_object_routes(
         &dynamic_instance_bindings,
@@ -2328,12 +2327,32 @@ fn expand_bound_source_line(
         }
         return Ok(out);
     }
-    // Phase 3E: Unqualified typelib types fall through without error.
-    // The type will be treated as unresolved/Object by downstream passes.
-    if let Some(_dim_decl) = parse_internal_class_dim_declaration(line)
-        && is_referenced_typelib_type_reference(manifest, &_dim_decl.type_name)
+    if let Some(dim_decl) = parse_internal_class_dim_declaration(line)
+        && let Some((source_project, source_module, blob)) =
+            referenced_typelib_blob_for_type_reference(manifest, &dim_decl.type_name)
     {
-        // Previously returned TypeLibraryUnqualifiedTypeUnsupported; now fall through.
+        let activation_prog_id = blob.activation_prog_id.clone();
+        if dim_decl.as_new && activation_prog_id.is_none() {
+            return Err(ProjectCompileError::TypeLibraryCreateObjectUnsupported {
+                type_name: dim_decl.type_name,
+            });
+        }
+        early_bound.insert(
+            normalize_identifier(&dim_decl.var_name),
+            EarlyBoundBinding {
+                qualified_type: format!("{source_project}.{source_module}"),
+                typelib_metadata: Some(blob),
+            },
+        );
+        let mut out = vec![format!("{}Dim {} As Object", dim_decl.leading_ws, dim_decl.var_name)];
+        if dim_decl.as_new {
+            let prog_id = activation_prog_id.expect("checked above for As New");
+            out.push(format!(
+                "{}Set {} = CreateObject(\"{}\")",
+                dim_decl.leading_ws, dim_decl.var_name, prog_id
+            ));
+        }
+        return Ok(out);
     }
 
     if let Some((withevents_var, source_type)) = parse_withevents_declaration_binding(line) {
@@ -2359,8 +2378,9 @@ fn expand_bound_source_line(
             // participate in runtime WithEvents binding/guard emission.
             let leading_ws_len = line.len().saturating_sub(line.trim_start().len());
             let leading_ws = &line[..leading_ws_len];
-            let typelib_metadata = referenced_typelib_blob_for_type_reference(manifest, &source_type)
-                .map(|(_, _, blob)| blob);
+            let typelib_metadata =
+                referenced_typelib_blob_for_type_reference(manifest, &source_type)
+                    .map(|(_, _, blob)| blob);
             early_bound.insert(
                 normalize_identifier(&withevents_var),
                 EarlyBoundBinding {
@@ -2530,9 +2550,7 @@ fn referenced_typelib_blob_for_type_reference(
             reference.reference_kind == ReferenceKind::TypeLibrary
                 && normalize_identifier(&reference.referenced_project_name) == normalized_project
         });
-        if referenced
-            && let Some(identity) = known_typelib_identity_for_prog_id_name(raw)
-        {
+        if referenced && let Some(identity) = known_typelib_identity_for_prog_id_name(raw) {
             let normalized_module = normalized_type.rsplit('.').next()?.to_string();
             return Some((
                 normalized_project,
@@ -6871,8 +6889,8 @@ mod tests {
             .expect("module parses"),
         );
 
-        let err =
-            compile_project(&manifest).expect_err("source projects should reject extension modules");
+        let err = compile_project(&manifest)
+            .expect_err("source projects should reject extension modules");
         assert_eq!(err.code(), "PMR-E-MODULE-EXTENSION-PROJECT-KIND");
     }
 
@@ -7478,11 +7496,9 @@ mod tests {
                 event_name: "onvaluechanged".to_string(),
                 handler_symbol: "pmr_projecta_sink_src_onvaluechanged".to_string(),
                 guard_symbol_zero_arg:
-                    "pmr_evtguard_oxvba_testeventserver_onvaluechanged_sink_src_a0"
-                        .to_string(),
+                    "pmr_evtguard_oxvba_testeventserver_onvaluechanged_sink_src_a0".to_string(),
                 guard_symbol_one_arg:
-                    "pmr_evtguard_oxvba_testeventserver_onvaluechanged_sink_src_a1"
-                        .to_string(),
+                    "pmr_evtguard_oxvba_testeventserver_onvaluechanged_sink_src_a1".to_string(),
             }],
             "unexpected imported typelib WithEvents binding metadata"
         );
@@ -7495,11 +7511,9 @@ mod tests {
                 event_token: 2,
                 handler_symbol: "pmr_projecta_sink_src_onvaluechanged".to_string(),
                 guard_symbol_zero_arg:
-                    "pmr_evtguard_oxvba_testeventserver_onvaluechanged_sink_src_a0"
-                        .to_string(),
+                    "pmr_evtguard_oxvba_testeventserver_onvaluechanged_sink_src_a0".to_string(),
                 guard_symbol_one_arg:
-                    "pmr_evtguard_oxvba_testeventserver_onvaluechanged_sink_src_a1"
-                        .to_string(),
+                    "pmr_evtguard_oxvba_testeventserver_onvaluechanged_sink_src_a1".to_string(),
             }],
             "unexpected imported typelib COM WithEvents route metadata"
         );

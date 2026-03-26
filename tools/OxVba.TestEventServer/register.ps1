@@ -64,8 +64,8 @@ function Register-CurrentUserServer {
     $codeBaseUri = ([System.Uri]::new($AssemblyPath)).AbsoluteUri
     $rewritten = [System.Text.RegularExpressions.Regex]::Replace(
         $template,
-        'file:///[^"\r\n]+/OxVba\.TestEventServer\.dll',
-        $codeBaseUri
+        '("CodeBase"=")file:///[^"\r\n]+(")',
+        { param($match) $match.Groups[1].Value + $codeBaseUri + $match.Groups[2].Value }
     )
     $tempRegPath = Join-Path $env:TEMP ("OxVba.TestEventServer.{0}.reg" -f ([System.Guid]::NewGuid().ToString("N")))
     try {

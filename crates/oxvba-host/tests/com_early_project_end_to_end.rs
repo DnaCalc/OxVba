@@ -71,6 +71,54 @@ fn expect_object_handle(value: &RuntimeValue) -> ObjectHandle {
 }
 
 #[cfg(target_os = "windows")]
+fn load_typelib_basproj_with_refs(
+    temp_leaf: &str,
+    main_source: &str,
+    com_refs: &[(&str, &str, u16, u16, u32)],
+) -> oxvba_project::LoadedProject {
+    let temp_root = std::env::current_dir()
+        .expect("cwd")
+        .join("temp")
+        .join(temp_leaf);
+    std::fs::create_dir_all(&temp_root).expect("create temp root");
+
+    let basproj_path = temp_root.join("ProjectA.basproj");
+    let main_path = temp_root.join("Main.bas");
+    std::fs::write(&main_path, main_source).expect("write main module");
+
+    let mut basproj = String::from(
+        "<Project Sdk=\"OxVba.Sdk/0.1.0\">\n\
+  <PropertyGroup>\n\
+    <OutputType>Exe</OutputType>\n\
+    <ProjectName>ProjectA</ProjectName>\n\
+    <EntryPoint>Main.Main</EntryPoint>\n\
+  </PropertyGroup>\n\
+  <ItemGroup>\n\
+    <Module Include=\"Main.bas\" />\n\
+  </ItemGroup>\n\
+  <ItemGroup>\n",
+    );
+    for (include, guid, major, minor, lcid) in com_refs {
+        basproj.push_str(&format!(
+            "    <COMReference Include=\"{include}\">\n\
+      <Guid>{guid}</Guid>\n\
+      <VersionMajor>{major}</VersionMajor>\n\
+      <VersionMinor>{minor}</VersionMinor>\n\
+      <Lcid>{lcid}</Lcid>\n\
+      <ImportLib>{include}.TestEventServer.tlb</ImportLib>\n\
+    </COMReference>\n"
+        ));
+    }
+    basproj.push_str("  </ItemGroup>\n</Project>\n");
+    basproj = basproj
+        .replace("OxVba.TestEventServer.tlb", "OxVba.TestEventServer.tlb")
+        .replace("OxVbaAlt.TestEventServer.tlb", "OxVba.TestEventServerAlt.tlb");
+
+    std::fs::write(&basproj_path, basproj).expect("write basproj");
+    load_basproj(&basproj_path).expect("basproj should load")
+}
+
+#[cfg(target_os = "windows")]
 #[test]
 fn early_bound_project_executes_with_typed_declarations_subset() {
     let manifest = manifest_with_typelib(
@@ -238,16 +286,8 @@ End Sub
 #[test]
 #[ignore = "requires registered external COM typelib lane (run explicitly on Windows host with OxVba.TestEventServer registered)"]
 fn early_bound_loaded_basproj_executes_registered_testeventserver_ping() {
-    let temp_root = std::env::current_dir()
-        .expect("cwd")
-        .join("temp")
-        .join("basproj-typelib-oracle-test");
-    std::fs::create_dir_all(&temp_root).expect("create temp root");
-
-    let basproj_path = temp_root.join("ProjectA.basproj");
-    let main_path = temp_root.join("Main.bas");
-    std::fs::write(
-        &main_path,
+    let loaded = load_typelib_basproj_with_refs(
+        "basproj-typelib-oracle-test",
         concat!(
             "Attribute VB_Name = \"Main\"\n",
             "Public Sub Main()\n",
@@ -256,35 +296,8 @@ fn early_bound_loaded_basproj_executes_registered_testeventserver_ping() {
             "value = obj.Ping()\n",
             "End Sub\n"
         ),
-    )
-    .expect("write main module");
-    std::fs::write(
-        &basproj_path,
-        concat!(
-            "<Project Sdk=\"OxVba.Sdk/0.1.0\">\n",
-            "  <PropertyGroup>\n",
-            "    <OutputType>Exe</OutputType>\n",
-            "    <ProjectName>ProjectA</ProjectName>\n",
-            "    <EntryPoint>Main.Main</EntryPoint>\n",
-            "  </PropertyGroup>\n",
-            "  <ItemGroup>\n",
-            "    <Module Include=\"Main.bas\" />\n",
-            "  </ItemGroup>\n",
-            "  <ItemGroup>\n",
-            "    <COMReference Include=\"OxVba\">\n",
-            "      <Guid>{E2A30001-0001-0001-0001-000000000001}</Guid>\n",
-            "      <VersionMajor>1</VersionMajor>\n",
-            "      <VersionMinor>0</VersionMinor>\n",
-            "      <Lcid>0</Lcid>\n",
-            "      <ImportLib>OxVba.TestEventServer.tlb</ImportLib>\n",
-            "    </COMReference>\n",
-            "  </ItemGroup>\n",
-            "</Project>\n"
-        ),
-    )
-    .expect("write basproj");
-
-    let loaded = load_basproj(&basproj_path).expect("basproj should load");
+        &[("OxVba", "{E2A30001-0001-0001-0001-000000000001}", 1, 0, 0)],
+    );
     assert!(
         loaded
             .manifest
@@ -297,6 +310,57 @@ fn early_bound_loaded_basproj_executes_registered_testeventserver_ping() {
     let out = run_project_windows_hosted(&loaded.manifest, false);
     assert!(expect_object_handle(&out[0]).raw() >= 20_001);
     assert_eq!(out[1], RuntimeValue::I32(42));
+}
+
+#[cfg(target_os = "windows")]
+#[test]
+#[ignore = "requires registered external COM typelib lane (run explicitly on Windows host with OxVba.TestEventServer and OxVbaAlt.TestEventServer registered)"]
+fn early_bound_loaded_basproj_prefers_first_typelib_reference_for_unqualified_testeventserver() {
+    let loaded = load_typelib_basproj_with_refs(
+        "basproj-typelib-order-a",
+        concat!(
+            "Attribute VB_Name = \"Main\"\n",
+            "Public Sub Main()\n",
+            "Dim obj As New TestEventServer\n",
+            "Dim value\n",
+            "value = obj.Ping()\n",
+            "End Sub\n"
+        ),
+        &[
+            ("OxVba", "{E2A30001-0001-0001-0001-000000000001}", 1, 0, 0),
+            ("OxVbaAlt", "{E2A30001-0001-0001-0001-000000000101}", 1, 0, 0),
+        ],
+    );
+
+    let out = run_project_windows_hosted(&loaded.manifest, false);
+    assert!(expect_object_handle(&out[0]).raw() >= 20_001);
+    assert_eq!(out[1], RuntimeValue::I32(42));
+}
+
+#[cfg(target_os = "windows")]
+#[test]
+#[ignore = "requires registered external COM typelib lane (run explicitly on Windows host with OxVba.TestEventServer and OxVbaAlt.TestEventServer registered)"]
+fn early_bound_loaded_basproj_prefers_reversed_first_typelib_reference_for_unqualified_testeventserver(
+) {
+    let loaded = load_typelib_basproj_with_refs(
+        "basproj-typelib-order-b",
+        concat!(
+            "Attribute VB_Name = \"Main\"\n",
+            "Public Sub Main()\n",
+            "Dim obj As New TestEventServer\n",
+            "Dim value\n",
+            "value = obj.Ping()\n",
+            "End Sub\n"
+        ),
+        &[
+            ("OxVbaAlt", "{E2A30001-0001-0001-0001-000000000101}", 1, 0, 0),
+            ("OxVba", "{E2A30001-0001-0001-0001-000000000001}", 1, 0, 0),
+        ],
+    );
+
+    let out = run_project_windows_hosted(&loaded.manifest, false);
+    assert!(expect_object_handle(&out[0]).raw() >= 20_001);
+    assert_eq!(out[1], RuntimeValue::I32(84));
 }
 
 #[cfg(target_os = "windows")]
