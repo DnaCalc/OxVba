@@ -76,6 +76,7 @@ fn capability_matrix(
                 M::Stable,
                 "OxVba:HAL-PROJ",
             );
+            push(C::ProjectMutation, false, M::Stable, "OxVba:HAL-PROJ");
         }
         HalProfileId::Linux => {
             push(
@@ -113,6 +114,7 @@ fn capability_matrix(
                 M::Stable,
                 "OxVba:HAL-PROJ",
             );
+            push(C::ProjectMutation, false, M::Stable, "OxVba:HAL-PROJ");
         }
         HalProfileId::MacOs => {
             push(
@@ -150,6 +152,7 @@ fn capability_matrix(
                 M::Stable,
                 "OxVba:HAL-PROJ",
             );
+            push(C::ProjectMutation, false, M::Stable, "OxVba:HAL-PROJ");
         }
         HalProfileId::Wasm => match runtime_class {
             HalRuntimeClass::WasmWasiLocal => {
@@ -178,6 +181,7 @@ fn capability_matrix(
                     M::Stable,
                     "OxVba:HAL-PROJ",
                 );
+                push(C::ProjectMutation, false, M::Stable, "OxVba:HAL-PROJ");
             }
             HalRuntimeClass::WasmBrowserSandbox => {
                 push(
@@ -205,6 +209,7 @@ fn capability_matrix(
                     M::Stable,
                     "OxVba:HAL-PROJ",
                 );
+                push(C::ProjectMutation, false, M::Stable, "OxVba:HAL-PROJ");
             }
             _ => match wasm_runtime_class {
                 WasmRuntimeClass::Wasi => {
@@ -233,6 +238,7 @@ fn capability_matrix(
                         M::Stable,
                         "OxVba:HAL-PROJ",
                     );
+                    push(C::ProjectMutation, false, M::Stable, "OxVba:HAL-PROJ");
                 }
                 WasmRuntimeClass::BrowserSandbox => {
                     push(
@@ -260,6 +266,7 @@ fn capability_matrix(
                         M::Stable,
                         "OxVba:HAL-PROJ",
                     );
+                    push(C::ProjectMutation, false, M::Stable, "OxVba:HAL-PROJ");
                 }
             },
         },
@@ -289,6 +296,7 @@ fn capability_matrix(
                 M::Stable,
                 "OxVba:HAL-PROJ",
             );
+            push(C::ProjectMutation, false, M::Stable, "OxVba:HAL-PROJ");
         }
     }
     out

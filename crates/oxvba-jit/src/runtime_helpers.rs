@@ -3049,6 +3049,9 @@ fn hal_error_code(kind: HalErrorKind, capability: CapabilityId) -> i32 {
         CapabilityId::TimeLocale => 6,
         CapabilityId::DynamicLinking => 7,
         CapabilityId::DiagnosticsTelemetry => 8,
+        CapabilityId::ProjectCatalog => 9,
+        CapabilityId::ProjectReferenceProvider => 10,
+        CapabilityId::ProjectMutation => 11,
     };
     53_000 + capability_code * 10 + kind_code
 }

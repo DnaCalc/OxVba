@@ -36,10 +36,26 @@ pub struct ProjectReferenceDescriptor {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub struct HostExtensionModuleChange {
+    pub project_name: String,
+    pub module_name: String,
+    pub source: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ResolvedProjectReference {
     Project(ProjectDescriptor),
     Unresolved { referenced_name: String },
 }
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ProjectCallbackError {
+    ProjectNotFound { project_name: String },
+    ReferenceUnresolved { referenced_name: String },
+    AdapterFault { message: String },
+}
+
+pub type ProjectCallbackResult<T> = Result<T, ProjectCallbackError>;
 
 #[derive(Debug, Clone)]
 pub struct InMemoryProjectCatalog {

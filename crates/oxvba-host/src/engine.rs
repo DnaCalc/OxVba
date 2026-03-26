@@ -14,6 +14,7 @@ use oxvba_compiler::{
 use oxvba_hal::{
     HalComDynamicBridge,
     adapters::builder::HostBuilder,
+    callbacks::HostCallbacks,
     model::{
         CapabilityId, HalDescriptor, HalProfileId, HostPolicy, HostPolicyPreset,
         UnsupportedFeatureMode, native_host_profile,
@@ -91,6 +92,7 @@ pub struct Engine {
     event_dispatcher: Mutex<EventDispatcher>,
     com_subscription_handlers: Mutex<HashMap<ComSubscriptionToken, String>>,
     runtime_profile: RuntimeProfileId,
+    host_callbacks: Option<Arc<dyn HostCallbacks>>,
     host_services: Arc<dyn HostServices>,
 }
 
@@ -149,11 +151,28 @@ fn project_runtime_values_to_legacy_slots(values: Vec<RuntimeValue>) -> Vec<i32>
         .collect()
 }
 
+fn build_host_services(
+    profile: HalProfileId,
+    runtime_class: oxvba_hal::model::HalRuntimeClass,
+    policy: HostPolicy,
+    callbacks: Option<Arc<dyn HostCallbacks>>,
+) -> Arc<dyn HostServices> {
+    let mut builder = HostBuilder::new()
+        .profile(profile)
+        .runtime_class(runtime_class)
+        .policy(policy);
+    if let Some(callbacks) = callbacks {
+        builder = builder.callbacks(callbacks);
+    }
+    builder.build()
+}
+
 impl Engine {
     pub fn new(config: HostConfig) -> Self {
         let runtime_profile = RuntimeProfileId::default_for_hal_profile(native_host_profile());
         let mut policy = HostPolicy::deterministic_runtime();
         policy.runtime_class = Some(runtime_profile.runtime_class());
+        let host_callbacks = None;
         Self {
             config,
             jit: JitEngine,
@@ -161,11 +180,13 @@ impl Engine {
             event_dispatcher: Mutex::new(EventDispatcher::default()),
             com_subscription_handlers: Mutex::new(HashMap::new()),
             runtime_profile,
-            host_services: HostBuilder::new()
-                .profile(runtime_profile.hal_profile())
-                .runtime_class(runtime_profile.runtime_class())
-                .policy(policy)
-                .build(),
+            host_callbacks: host_callbacks.clone(),
+            host_services: build_host_services(
+                runtime_profile.hal_profile(),
+                runtime_profile.runtime_class(),
+                policy,
+                host_callbacks,
+            ),
         }
     }
 
@@ -175,22 +196,20 @@ impl Engine {
         let runtime_class = policy
             .runtime_class
             .unwrap_or(self.runtime_profile.runtime_class());
-        self.host_services = HostBuilder::new()
-            .profile(profile)
-            .runtime_class(runtime_class)
-            .policy(policy)
-            .build();
+        self.host_services =
+            build_host_services(profile, runtime_class, policy, self.host_callbacks.clone());
     }
 
     pub fn set_runtime_profile(&mut self, runtime_profile: RuntimeProfileId) {
         self.runtime_profile = runtime_profile;
         let mut policy = self.host_services.policy().clone();
         policy.runtime_class = Some(runtime_profile.runtime_class());
-        self.host_services = HostBuilder::new()
-            .profile(runtime_profile.hal_profile())
-            .runtime_class(runtime_profile.runtime_class())
-            .policy(policy)
-            .build();
+        self.host_services = build_host_services(
+            runtime_profile.hal_profile(),
+            runtime_profile.runtime_class(),
+            policy,
+            self.host_callbacks.clone(),
+        );
     }
 
     pub fn with_runtime_profile(mut self, runtime_profile: RuntimeProfileId) -> Self {
@@ -225,6 +244,7 @@ impl Engine {
             event_dispatcher: Mutex::new(EventDispatcher::default()),
             com_subscription_handlers: Mutex::new(HashMap::new()),
             runtime_profile,
+            host_callbacks: None,
             host_services,
         }
     }
@@ -234,11 +254,27 @@ impl Engine {
         let runtime_class = policy
             .runtime_class
             .unwrap_or(self.runtime_profile.runtime_class());
-        self.host_services = HostBuilder::new()
-            .profile(profile)
-            .runtime_class(runtime_class)
-            .policy(policy)
-            .build();
+        self.host_services =
+            build_host_services(profile, runtime_class, policy, self.host_callbacks.clone());
+    }
+
+    pub fn set_host_callbacks(&mut self, callbacks: Option<Arc<dyn HostCallbacks>>) {
+        self.host_callbacks = callbacks;
+        let policy = self.host_services.policy().clone();
+        let runtime_class = policy
+            .runtime_class
+            .unwrap_or(self.runtime_profile.runtime_class());
+        self.host_services = build_host_services(
+            self.host_services.profile(),
+            runtime_class,
+            policy,
+            self.host_callbacks.clone(),
+        );
+    }
+
+    pub fn with_host_callbacks(mut self, callbacks: Arc<dyn HostCallbacks>) -> Self {
+        self.set_host_callbacks(Some(callbacks));
+        self
     }
 
     pub fn set_host_policy_preset(&mut self, preset: HostPolicyPreset) {
@@ -253,6 +289,10 @@ impl Engine {
 
     pub fn host_policy(&self) -> &HostPolicy {
         self.host_services.policy()
+    }
+
+    pub fn host_services(&self) -> Arc<dyn HostServices> {
+        self.host_services.clone()
     }
 
     pub fn runtime_profile(&self) -> RuntimeProfileId {
@@ -1094,14 +1134,23 @@ mod tests {
         ModuleKind, ProjectDynamicMemberKind, ProjectKind, ProjectManifest, ProjectReference,
         ReferenceKind, ReferencedProjectManifest, module_unit_from_source,
     };
-    use oxvba_hal::model::{
-        HalProfileId, HostPolicy, HostPolicyPreset, UiVirtualizationMode, UnsupportedFeatureMode,
+    use oxvba_hal::{
+        callbacks::HostCallbacks,
+        model::{
+            HalProfileId, HostPolicy, HostPolicyPreset, UiVirtualizationMode,
+            UnsupportedFeatureMode,
+        },
+        project::{
+            HostExtensionModuleChange, ProjectCallbackResult, ProjectDescriptor,
+            ProjectDescriptorKind, ProjectReferenceDescriptor, ProjectReferenceKind,
+        },
     };
     use oxvba_runtime::{
         F64Value, ObjectHandle, RuntimeValue, bstr::BStr, value_tags::error_tag_from_code,
     };
     use std::collections::HashSet;
     use std::path::{Path, PathBuf};
+    use std::sync::{Arc, Mutex};
 
     fn workspace_root() -> PathBuf {
         Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -1109,6 +1158,74 @@ mod tests {
             .nth(2)
             .expect("workspace root")
             .to_path_buf()
+    }
+
+    struct ProjectAwareCallbacks {
+        mutations: Mutex<Vec<String>>,
+    }
+
+    impl HostCallbacks for ProjectAwareCallbacks {
+        fn on_msg_box(&self, _prompt: &str, style: i32) -> i32 {
+            style.max(1)
+        }
+
+        fn on_input_box(&self, _prompt: &str, default: &str) -> String {
+            default.to_string()
+        }
+
+        fn on_status_bar(&self, _text: &str) {}
+
+        fn on_debug_print(&self, _text: &str) {}
+
+        fn supports_project_catalog(&self) -> bool {
+            true
+        }
+
+        fn supports_project_references(&self) -> bool {
+            true
+        }
+
+        fn supports_project_mutation(&self) -> bool {
+            true
+        }
+
+        fn on_list_projects(&self) -> ProjectCallbackResult<Vec<ProjectDescriptor>> {
+            Ok(vec![ProjectDescriptor {
+                project_name: "Workbook".to_string(),
+                kind: ProjectDescriptorKind::Host,
+                supports_extension_modules: true,
+            }])
+        }
+
+        fn on_get_project(&self, project_name: &str) -> ProjectCallbackResult<ProjectDescriptor> {
+            Ok(ProjectDescriptor {
+                project_name: project_name.to_string(),
+                kind: ProjectDescriptorKind::Host,
+                supports_extension_modules: true,
+            })
+        }
+
+        fn on_list_project_references(
+            &self,
+            project_name: &str,
+        ) -> ProjectCallbackResult<Vec<ProjectReferenceDescriptor>> {
+            Ok(vec![ProjectReferenceDescriptor {
+                project_name: project_name.to_string(),
+                referenced_name: "HostExt".to_string(),
+                kind: ProjectReferenceKind::Project,
+            }])
+        }
+
+        fn on_attach_host_extension_module(
+            &self,
+            change: &HostExtensionModuleChange,
+        ) -> ProjectCallbackResult<()> {
+            self.mutations
+                .lock()
+                .expect("mutation log lock")
+                .push(format!("{}::{}", change.project_name, change.module_name));
+            Ok(())
+        }
     }
 
     #[cfg(target_os = "windows")]
@@ -1122,6 +1239,50 @@ mod tests {
             RuntimeValue::ObjectHandle(handle) => handle,
             other => panic!("expected object handle from create_object, got {:?}", other),
         }
+    }
+
+    #[test]
+    fn engine_rebuilds_preserve_callback_backed_project_services() {
+        let callbacks = Arc::new(ProjectAwareCallbacks {
+            mutations: Mutex::new(Vec::new()),
+        });
+        let mut engine = Engine::new(HostConfig::default());
+        engine.set_host_policy(HostPolicy::interactive_dev());
+        engine.set_host_callbacks(Some(callbacks.clone()));
+
+        let projects = engine
+            .host_services
+            .project_catalog()
+            .expect("project catalog should be exposed")
+            .list_projects()
+            .expect("project list should succeed");
+        assert_eq!(projects[0].project_name, "Workbook");
+
+        engine.set_unsupported_feature_mode(UnsupportedFeatureMode::Runtime);
+
+        let references = engine
+            .host_services
+            .project_references()
+            .expect("project references should be exposed after rebuild")
+            .list_references("Workbook")
+            .expect("reference list should succeed after rebuild");
+        assert_eq!(references[0].referenced_name, "HostExt");
+
+        engine
+            .host_services
+            .project_mutation()
+            .expect("project mutation should be exposed after rebuild")
+            .attach_host_extension_module(&HostExtensionModuleChange {
+                project_name: "Workbook".to_string(),
+                module_name: "HostExt".to_string(),
+                source: "Public Sub Sync()\nEnd Sub".to_string(),
+            })
+            .expect("host extension attach should succeed");
+
+        assert_eq!(
+            callbacks.mutations.lock().expect("mutation log lock").as_slice(),
+            ["Workbook::HostExt"]
+        );
     }
 
     #[cfg(target_os = "windows")]

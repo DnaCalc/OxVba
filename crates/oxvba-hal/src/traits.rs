@@ -11,7 +11,10 @@
 use crate::{
     error::HalResult,
     model::{HalDescriptor, HalProfileId, HostPolicy},
-    project::{ProjectDescriptor, ProjectReferenceDescriptor, ResolvedProjectReference},
+    project::{
+        HostExtensionModuleChange, ProjectDescriptor, ProjectReferenceDescriptor,
+        ResolvedProjectReference,
+    },
 };
 use oxvba_com::{
     ComCallbackPayload, ComCallbackToken, ComInvokeRequest, ComMemberToken, ComObjectDescriptor,
@@ -86,6 +89,9 @@ pub trait HostServices: Send + Sync {
         None
     }
     fn project_references(&self) -> Option<&dyn ProjectReferenceHal> {
+        None
+    }
+    fn project_mutation(&self) -> Option<&dyn ProjectMutationHal> {
         None
     }
 }
@@ -260,6 +266,13 @@ pub trait ProjectReferenceHal: Send + Sync {
         &self,
         reference: &ProjectReferenceDescriptor,
     ) -> HalResult<ResolvedProjectReference>;
+}
+
+pub trait ProjectMutationHal: Send + Sync {
+    fn attach_host_extension_module(
+        &self,
+        change: &HostExtensionModuleChange,
+    ) -> HalResult<()>;
 }
 
 #[allow(unexpected_cfgs)]

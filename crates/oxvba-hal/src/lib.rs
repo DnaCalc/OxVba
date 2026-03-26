@@ -19,12 +19,14 @@ pub use model::{
     host_backed_profile_matches_host,
 };
 pub use project::{
-    InMemoryProjectCatalog, ProjectDescriptor, ProjectDescriptorKind, ProjectReferenceDescriptor,
-    ProjectReferenceKind, ResolvedProjectReference,
+    HostExtensionModuleChange, InMemoryProjectCatalog, ProjectCallbackError,
+    ProjectCallbackResult, ProjectDescriptor, ProjectDescriptorKind,
+    ProjectReferenceDescriptor, ProjectReferenceKind, ResolvedProjectReference,
 };
 pub use traits::{
     ComHal, DiagnosticsHal, DynLinkDescriptorView, DynamicLinkHal, EventPumpHal, FileSystemHal,
-    HostServices, ProcessEnvHal, ProjectCatalogHal, ProjectReferenceHal, TimeLocaleHal,
-    TypeLibCacheScope, TypeLibEventDispatchPath, TypeLibEventMetadata, TypeLibMemberMetadata,
-    TypeLibMetadataBlob, TypeLibResolveRequest, TypeLibResolvedIdentity, UiInteractionHal,
+    HostServices, ProcessEnvHal, ProjectCatalogHal, ProjectMutationHal, ProjectReferenceHal,
+    TimeLocaleHal, TypeLibCacheScope, TypeLibEventDispatchPath, TypeLibEventMetadata,
+    TypeLibMemberMetadata, TypeLibMetadataBlob, TypeLibResolveRequest, TypeLibResolvedIdentity,
+    UiInteractionHal,
 };

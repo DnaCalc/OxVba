@@ -5,7 +5,8 @@ use crate::{
     model::{HalDescriptor, HalProfileId, HalRuntimeClass, HostPolicy},
     traits::{
         ComHal, DiagnosticsHal, DynamicLinkHal, EventPumpHal, FileSystemHal, HostServices,
-        ProcessEnvHal, TimeLocaleHal, UiInteractionHal,
+        ProcessEnvHal, ProjectCatalogHal, ProjectMutationHal, ProjectReferenceHal, TimeLocaleHal,
+        UiInteractionHal,
     },
 };
 
@@ -79,5 +80,17 @@ impl HostServices for MacOsHostServices {
     }
     fn diag(&self) -> &dyn DiagnosticsHal {
         &self.inner
+    }
+
+    fn project_catalog(&self) -> Option<&dyn ProjectCatalogHal> {
+        self.inner.project_catalog()
+    }
+
+    fn project_references(&self) -> Option<&dyn ProjectReferenceHal> {
+        self.inner.project_references()
+    }
+
+    fn project_mutation(&self) -> Option<&dyn ProjectMutationHal> {
+        self.inner.project_mutation()
     }
 }

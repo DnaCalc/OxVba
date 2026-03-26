@@ -8,8 +8,9 @@ use crate::{
     model::{HalDescriptor, HalProfileId, HostPolicy},
     traits::{
         ComHal, DiagnosticsHal, DynamicLinkHal, EventPumpHal, FileSystemHal, HostServices,
-        ProcessEnvHal, TimeLocaleHal, TypeLibCacheScope, TypeLibMetadataBlob,
-        TypeLibResolveRequest, TypeLibResolvedIdentity, UiInteractionHal,
+        ProcessEnvHal, ProjectCatalogHal, ProjectMutationHal, ProjectReferenceHal, TimeLocaleHal,
+        TypeLibCacheScope, TypeLibMetadataBlob, TypeLibResolveRequest, TypeLibResolvedIdentity,
+        UiInteractionHal,
     },
 };
 use oxvba_com::{
@@ -127,6 +128,18 @@ impl HostServices for RecordingHostServices {
     }
     fn diag(&self) -> &dyn DiagnosticsHal {
         self
+    }
+
+    fn project_catalog(&self) -> Option<&dyn ProjectCatalogHal> {
+        self.inner.project_catalog()
+    }
+
+    fn project_references(&self) -> Option<&dyn ProjectReferenceHal> {
+        self.inner.project_references()
+    }
+
+    fn project_mutation(&self) -> Option<&dyn ProjectMutationHal> {
+        self.inner.project_mutation()
     }
 }
 

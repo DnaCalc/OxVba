@@ -37,9 +37,15 @@ use crate::{
         CapabilityId, HalDescriptor, HalProfileId, HalRuntimeClass, HostPolicy,
         host_backed_mode_active,
     },
+    project::{
+        HostExtensionModuleChange, ProjectCallbackError, ProjectDescriptor,
+        ProjectReferenceDescriptor, ResolvedProjectReference, project_not_found,
+        project_reference_unresolved,
+    },
     traits::{
         ComHal, DiagnosticsHal, DynamicLinkHal, EventPumpHal, FileSystemHal, HostServices,
-        ProcessEnvHal, TimeLocaleHal, TypeLibMemberInvokeKind, UiInteractionHal,
+        ProcessEnvHal, ProjectCatalogHal, ProjectMutationHal, ProjectReferenceHal,
+        TimeLocaleHal, TypeLibMemberInvokeKind, UiInteractionHal,
     },
 };
 #[cfg(test)]
@@ -255,6 +261,18 @@ impl StandardHostServices {
         mut self,
         callbacks: Arc<dyn crate::callbacks::HostCallbacks>,
     ) -> Self {
+        self.set_capability_supported(
+            CapabilityId::ProjectCatalog,
+            callbacks.supports_project_catalog(),
+        );
+        self.set_capability_supported(
+            CapabilityId::ProjectReferenceProvider,
+            callbacks.supports_project_references(),
+        );
+        self.set_capability_supported(
+            CapabilityId::ProjectMutation,
+            callbacks.supports_project_mutation(),
+        );
         self.callbacks = Some(callbacks);
         self
     }
@@ -282,6 +300,17 @@ impl StandardHostServices {
 
     fn supports(&self, capability: CapabilityId) -> bool {
         self.descriptor.supports(capability)
+    }
+
+    fn set_capability_supported(&mut self, capability: CapabilityId, supported: bool) {
+        if let Some(entry) = self
+            .descriptor
+            .capabilities
+            .iter_mut()
+            .find(|entry| entry.id == capability)
+        {
+            entry.supported = supported;
+        }
     }
 
     fn unsupported(&self, capability: CapabilityId, op: &'static str) -> HalError {
@@ -968,6 +997,156 @@ impl HostServices for StandardHostServices {
 
     fn diag(&self) -> &dyn DiagnosticsHal {
         self
+    }
+
+    fn project_catalog(&self) -> Option<&dyn ProjectCatalogHal> {
+        self.supports(CapabilityId::ProjectCatalog)
+            .then_some(self as &dyn ProjectCatalogHal)
+    }
+
+    fn project_references(&self) -> Option<&dyn ProjectReferenceHal> {
+        self.supports(CapabilityId::ProjectReferenceProvider)
+            .then_some(self as &dyn ProjectReferenceHal)
+    }
+
+    fn project_mutation(&self) -> Option<&dyn ProjectMutationHal> {
+        self.supports(CapabilityId::ProjectMutation)
+            .then_some(self as &dyn ProjectMutationHal)
+    }
+}
+
+impl ProjectCatalogHal for StandardHostServices {
+    fn list_projects(&self) -> HalResult<Vec<ProjectDescriptor>> {
+        let capability = CapabilityId::ProjectCatalog;
+        if !self.supports(capability) {
+            return Err(self.unsupported(capability, "list_projects"));
+        }
+        let callbacks = self.callbacks.as_ref().ok_or_else(|| {
+            HalError::adapter_fault(
+                self.profile,
+                capability,
+                "list_projects",
+                "project catalog capability advertised without callbacks",
+            )
+        })?;
+        callbacks
+            .on_list_projects()
+            .map_err(|err| map_project_callback_error(self.profile, capability, "list_projects", err))
+    }
+
+    fn get_project(&self, project_name: &str) -> HalResult<ProjectDescriptor> {
+        let capability = CapabilityId::ProjectCatalog;
+        if !self.supports(capability) {
+            return Err(self.unsupported(capability, "get_project"));
+        }
+        let callbacks = self.callbacks.as_ref().ok_or_else(|| {
+            HalError::adapter_fault(
+                self.profile,
+                capability,
+                "get_project",
+                "project catalog capability advertised without callbacks",
+            )
+        })?;
+        callbacks
+            .on_get_project(project_name)
+            .map_err(|err| map_project_callback_error(self.profile, capability, "get_project", err))
+    }
+}
+
+impl ProjectReferenceHal for StandardHostServices {
+    fn list_references(&self, project_name: &str) -> HalResult<Vec<ProjectReferenceDescriptor>> {
+        let capability = CapabilityId::ProjectReferenceProvider;
+        if !self.supports(capability) {
+            return Err(self.unsupported(capability, "list_references"));
+        }
+        let callbacks = self.callbacks.as_ref().ok_or_else(|| {
+            HalError::adapter_fault(
+                self.profile,
+                capability,
+                "list_references",
+                "project reference capability advertised without callbacks",
+            )
+        })?;
+        callbacks
+            .on_list_project_references(project_name)
+            .map_err(|err| {
+                map_project_callback_error(self.profile, capability, "list_references", err)
+            })
+    }
+
+    fn resolve_reference(
+        &self,
+        reference: &ProjectReferenceDescriptor,
+    ) -> HalResult<ResolvedProjectReference> {
+        let capability = CapabilityId::ProjectReferenceProvider;
+        if !self.supports(capability) {
+            return Err(self.unsupported(capability, "resolve_reference"));
+        }
+        let callbacks = self.callbacks.as_ref().ok_or_else(|| {
+            HalError::adapter_fault(
+                self.profile,
+                capability,
+                "resolve_reference",
+                "project reference capability advertised without callbacks",
+            )
+        })?;
+        callbacks
+            .on_resolve_project_reference(reference)
+            .map_err(|err| {
+                map_project_callback_error(self.profile, capability, "resolve_reference", err)
+            })
+    }
+}
+
+impl ProjectMutationHal for StandardHostServices {
+    fn attach_host_extension_module(
+        &self,
+        change: &HostExtensionModuleChange,
+    ) -> HalResult<()> {
+        let capability = CapabilityId::ProjectMutation;
+        if !self.supports(capability) {
+            return Err(self.unsupported(capability, "attach_host_extension_module"));
+        }
+        if !self.policy.allow_filesystem_mutation {
+            return Err(self.denied(capability, "attach_host_extension_module"));
+        }
+        let callbacks = self.callbacks.as_ref().ok_or_else(|| {
+            HalError::adapter_fault(
+                self.profile,
+                capability,
+                "attach_host_extension_module",
+                "project mutation capability advertised without callbacks",
+            )
+        })?;
+        callbacks
+            .on_attach_host_extension_module(change)
+            .map_err(|err| {
+                map_project_callback_error(
+                    self.profile,
+                    capability,
+                    "attach_host_extension_module",
+                    err,
+                )
+            })
+    }
+}
+
+fn map_project_callback_error(
+    profile: HalProfileId,
+    capability: CapabilityId,
+    operation: &'static str,
+    error: ProjectCallbackError,
+) -> HalError {
+    match error {
+        ProjectCallbackError::ProjectNotFound { project_name } => {
+            project_not_found(profile, operation, &project_name)
+        }
+        ProjectCallbackError::ReferenceUnresolved { referenced_name } => {
+            project_reference_unresolved(profile, &referenced_name)
+        }
+        ProjectCallbackError::AdapterFault { message } => {
+            HalError::adapter_fault(profile, capability, operation, message)
+        }
     }
 }
 
@@ -1967,6 +2146,7 @@ mod tests {
         assert!(descriptor.supports(crate::model::CapabilityId::DiagnosticsTelemetry));
         assert!(!descriptor.supports(crate::model::CapabilityId::ProjectCatalog));
         assert!(!descriptor.supports(crate::model::CapabilityId::ProjectReferenceProvider));
+        assert!(!descriptor.supports(crate::model::CapabilityId::ProjectMutation));
     }
 
     #[test]
