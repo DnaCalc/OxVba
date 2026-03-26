@@ -44,6 +44,85 @@ pub(super) fn clamp_u64_to_i32(value: u64) -> i32 {
     value.min(i32::MAX as u64) as i32
 }
 
+fn format_write_field(data: &RuntimeValue) -> String {
+    match data {
+        RuntimeValue::String(BStr(text)) => {
+            let escaped = text.replace('"', "\"\"");
+            format!("\"{escaped}\"")
+        }
+        RuntimeValue::Bool(value) => {
+            if *value {
+                "#TRUE#".to_string()
+            } else {
+                "#FALSE#".to_string()
+            }
+        }
+        RuntimeValue::Empty => "#NULL#".to_string(),
+        RuntimeValue::I32(value) => value.to_string(),
+        RuntimeValue::F64(value) => value.to_string(),
+        other => format!("{other:?}"),
+    }
+}
+
+fn parse_input_field(data: &[u8], mut cursor: usize) -> (String, usize) {
+    let len = data.len();
+    while cursor < len && matches!(data[cursor], b' ' | b'\t') {
+        cursor += 1;
+    }
+    if cursor >= len {
+        return (String::new(), cursor);
+    }
+
+    let mut out = String::new();
+    if data[cursor] == b'"' {
+        cursor += 1;
+        while cursor < len {
+            match data[cursor] {
+                b'"' if cursor + 1 < len && data[cursor + 1] == b'"' => {
+                    out.push('"');
+                    cursor += 2;
+                }
+                b'"' => {
+                    cursor += 1;
+                    break;
+                }
+                byte => {
+                    out.push(byte as char);
+                    cursor += 1;
+                }
+            }
+        }
+    } else {
+        let start = cursor;
+        while cursor < len && !matches!(data[cursor], b',' | b'\r' | b'\n') {
+            cursor += 1;
+        }
+        out = String::from_utf8_lossy(&data[start..cursor])
+            .trim()
+            .to_string();
+    }
+
+    (out, cursor)
+}
+
+fn advance_input_separator(data: &[u8], mut cursor: usize) -> usize {
+    let len = data.len();
+    while cursor < len && matches!(data[cursor], b' ' | b'\t') {
+        cursor += 1;
+    }
+    if cursor < len && data[cursor] == b',' {
+        cursor += 1;
+    } else if cursor < len && data[cursor] == b'\r' {
+        cursor += 1;
+        if cursor < len && data[cursor] == b'\n' {
+            cursor += 1;
+        }
+    } else if cursor < len && data[cursor] == b'\n' {
+        cursor += 1;
+    }
+    cursor
+}
+
 impl FileSystemHal for StandardHostServices {
     fn open(&self, path: RuntimeValue, mode: RuntimeValue) -> HalResult<RuntimeValue> {
         let capability = CapabilityId::FileSystemIo;
@@ -98,7 +177,9 @@ impl FileSystemHal for StandardHostServices {
             } else {
                 None
             };
-            let (initial_data, initial_len, initial_position) = if let Some(host_path) = host_path.as_ref() {
+            let (initial_data, initial_len, initial_position) = if let Some(host_path) =
+                host_path.as_ref()
+            {
                 match mode {
                     0 => {
                         let data = fs::read(host_path).map_err(|err| {
@@ -166,7 +247,10 @@ impl FileSystemHal for StandardHostServices {
                                     self.profile,
                                     capability,
                                     "open",
-                                    format!("failed to open host path {}: {err}", host_path.display()),
+                                    format!(
+                                        "failed to open host path {}: {err}",
+                                        host_path.display()
+                                    ),
                                 )
                             })?;
                         let data = fs::read(host_path).unwrap_or_default();
@@ -219,7 +303,9 @@ impl FileSystemHal for StandardHostServices {
         } else {
             None
         };
-        let (initial_data, initial_len, initial_position) = if let Some(host_path) = host_path.as_ref() {
+        let (initial_data, initial_len, initial_position) = if let Some(host_path) =
+            host_path.as_ref()
+        {
             match mode {
                 0 => {
                     let data = fs::read(host_path).map_err(|err| {
@@ -552,14 +638,7 @@ impl FileSystemHal for StandardHostServices {
         }
         let handle_id =
             self.runtime_value_to_legacy_i32(&handle, capability, "write_bytes", "handle")?;
-        let bytes = match &data {
-            RuntimeValue::String(BStr(s)) => s.as_bytes().to_vec(),
-            other => {
-                let val =
-                    self.runtime_value_to_legacy_i32(other, capability, "write_bytes", "data")?;
-                val.to_le_bytes().to_vec()
-            }
-        };
+        let bytes = format!("{}\r\n", format_write_field(&data)).into_bytes();
         let mut state = self.fs_lock(capability, "write_bytes")?;
         let entry = self.fs_entry_mut(&mut state, handle_id, "write_bytes")?;
         let pos = entry.position as usize;
@@ -618,23 +697,14 @@ impl FileSystemHal for StandardHostServices {
         let mut state = self.fs_lock(capability, "input_fields")?;
         let entry = self.fs_entry_mut(&mut state, handle_id, "input_fields")?;
         let pos = entry.position as usize;
-        let remaining = if pos < entry.data.len() {
-            String::from_utf8_lossy(&entry.data[pos..]).into_owned()
-        } else {
-            String::new()
-        };
         let mut fields = Vec::new();
-        let mut consumed = 0usize;
-        for (i, field) in remaining.split(',').enumerate() {
-            if i >= count {
-                break;
-            }
-            let trimmed = field.trim_end_matches("\r\n").trim_end_matches('\n');
-            fields.push(trimmed.to_string());
-            consumed += field.len() + 1; // +1 for comma
+        let mut cursor = pos;
+        while fields.len() < count && cursor < entry.data.len() {
+            let (field, next_cursor) = parse_input_field(&entry.data, cursor);
+            fields.push(field);
+            cursor = advance_input_separator(&entry.data, next_cursor);
         }
-        consumed = consumed.saturating_sub(1); // remove trailing comma count
-        entry.position += consumed as i32;
+        entry.position = cursor as i32;
         let result = fields.join(",");
         Ok(RuntimeValue::String(BStr(result)))
     }

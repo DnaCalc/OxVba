@@ -630,6 +630,7 @@ fn check_stmt(
         BoundStmt::FileOpen { .. }
         | BoundStmt::FileClose { .. }
         | BoundStmt::FilePrint { .. }
+        | BoundStmt::FileWrite { .. }
         | BoundStmt::FileInput { .. }
         | BoundStmt::FileLineInput { .. } => Ok(()),
         BoundStmt::Unsupported { line } => Err(format!("unsupported statement: {line}")),

@@ -34,6 +34,8 @@ try {
     $tempFileLiteral = $tempFile.Replace('\', '\\')
     $filePosPath = Join-Path $tempDir "filepos.txt"
     $filePosLiteral = $filePosPath.Replace('\', '\\')
+    $writePath = Join-Path $tempDir "write_input.txt"
+    $writeLiteral = $writePath.Replace('\', '\\')
 
     function Add-StdModule {
         param($Workbook, [string]$ModuleName, [string]$Code)
@@ -153,6 +155,20 @@ Public Function RunProbe()
     RunProbe = observed
 End Function
 "@
+            ),
+            (
+                Invoke-ExcelCase -CaseId "CCT-033-WRITE-001" -Scenario "Write#/Input# preserves embedded comma inside quoted string field" -Code @"
+Public Function RunProbe()
+    Dim a As String
+    Open "$writeLiteral" For Output As #1
+    Write #1, "hello,world"
+    Close #1
+    Open "$writeLiteral" For Input As #1
+    Input #1, a
+    Close #1
+    RunProbe = a
+End Function
+"@
             )
         )
     } finally {
@@ -166,6 +182,9 @@ End Function
         ),
         (
             Invoke-OxCase -CaseId "CCT-033-FILEPOS-001" -Scenario "EOF/LOF/Seek around Input file position follow Excel host semantics" -TestName "windows_file_io_host_backed_end_to_end::host_backed_file_eof_lof_seek_matches_excel_shape"
+        ),
+        (
+            Invoke-OxCase -CaseId "CCT-033-WRITE-001" -Scenario "Write#/Input# preserves embedded comma inside quoted string field" -TestName "windows_file_io_host_backed_end_to_end::host_backed_file_write_input_preserves_embedded_comma_string"
         )
     )
 

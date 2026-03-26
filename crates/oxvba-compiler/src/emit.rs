@@ -1291,6 +1291,38 @@ fn emit_stmt(
                 data: data_slot,
             });
         }
+        BoundStmt::FileWrite { file_number, data } => {
+            let dst = temps.alloc_temp();
+            let handle_slot = temps.alloc_temp();
+            let data_slot = temps.alloc_temp();
+            emit_expr_into(
+                file_number,
+                compare_mode,
+                handle_slot,
+                slot_map,
+                temps,
+                instructions,
+                call_patches,
+                proc_meta,
+                external_decls,
+            );
+            emit_expr_into(
+                data,
+                compare_mode,
+                data_slot,
+                slot_map,
+                temps,
+                instructions,
+                call_patches,
+                proc_meta,
+                external_decls,
+            );
+            instructions.push(Instruction::IntrinsicFileWriteHost {
+                dst,
+                handle: handle_slot,
+                data: data_slot,
+            });
+        }
         BoundStmt::FileInput {
             file_number,
             targets,

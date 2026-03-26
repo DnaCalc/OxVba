@@ -121,7 +121,7 @@ pub trait FileSystemHal: Send + Sync {
     fn free_file(&self, range_selector: RuntimeValue) -> HalResult<RuntimeValue>;
     /// Binary read: reads `count` bytes from the current position (VBA `Get #`).
     fn read_bytes(&self, handle: RuntimeValue, count: RuntimeValue) -> HalResult<RuntimeValue>;
-    /// Binary write: writes `data` bytes at the current position (VBA `Put #`).
+    /// Formatted write output with delimiter semantics (current VBA `Write #` lane).
     fn write_bytes(&self, handle: RuntimeValue, data: RuntimeValue) -> HalResult<RuntimeValue>;
     /// Formatted text output with delimiter semantics (VBA `Print #`).
     fn print_line(&self, handle: RuntimeValue, data: RuntimeValue) -> HalResult<RuntimeValue>;
@@ -269,10 +269,7 @@ pub trait ProjectReferenceHal: Send + Sync {
 }
 
 pub trait ProjectMutationHal: Send + Sync {
-    fn attach_host_extension_module(
-        &self,
-        change: &HostExtensionModuleChange,
-    ) -> HalResult<()>;
+    fn attach_host_extension_module(&self, change: &HostExtensionModuleChange) -> HalResult<()>;
 }
 
 #[allow(unexpected_cfgs)]

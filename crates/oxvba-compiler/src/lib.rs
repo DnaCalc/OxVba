@@ -1569,6 +1569,18 @@ mod tests {
     }
 
     #[test]
+    fn compile_file_write_statement_emits_host_instruction() {
+        let source =
+            "Sub Main()\nOpen \"x\" For Output As #1\nWrite #1, \"hello,world\"\nClose #1\nEnd Sub";
+        let out = compile(source).expect("compile should succeed");
+        assert!(
+            out.instructions
+                .iter()
+                .any(|i| matches!(i, Instruction::IntrinsicFileWriteHost { .. }))
+        );
+    }
+
+    #[test]
     fn compile_ui_event_intrinsics_emit_host_instructions() {
         let source = "Sub Main()\nDim a\nDim b\nDim c\na = MsgBox(7, 3)\nb = InputBox(9, 4)\nc = DoEvents()\nEnd Sub";
         let out = compile(source).expect("compile should succeed");

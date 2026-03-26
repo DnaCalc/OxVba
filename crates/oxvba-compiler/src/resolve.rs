@@ -195,6 +195,10 @@ pub enum BoundStmt {
         file_number: BoundExpr,
         data: BoundExpr,
     },
+    FileWrite {
+        file_number: BoundExpr,
+        data: BoundExpr,
+    },
     FileInput {
         file_number: BoundExpr,
         targets: Vec<String>,
@@ -2264,6 +2268,18 @@ fn parse_block(
             continue;
         }
 
+        if lower.starts_with("write #") {
+            if let Some(stmt) = parse_file_write_stmt(line, array_bounds) {
+                out.push(stmt);
+            } else {
+                out.push(BoundStmt::Unsupported {
+                    line: line.to_string(),
+                });
+            }
+            *index += 1;
+            continue;
+        }
+
         if lower.starts_with("line input #") {
             if let Some(stmt) = parse_file_line_input_stmt(line, array_bounds) {
                 out.push(stmt);
@@ -3259,6 +3275,23 @@ fn parse_file_print_stmt(line: &str, array_bounds: &ArrayBoundsMap) -> Option<Bo
     };
 
     Some(BoundStmt::FilePrint { file_number, data })
+}
+
+/// Parse `Write #filenum, data`
+fn parse_file_write_stmt(line: &str, array_bounds: &ArrayBoundsMap) -> Option<BoundStmt> {
+    let after_write = line[7..].trim(); // skip "Write #"
+    let comma_pos = after_write.find(',')?;
+    let filenum_raw = after_write[..comma_pos].trim();
+    let data_raw = after_write[comma_pos + 1..].trim();
+
+    let file_number = parse_expr(filenum_raw, array_bounds)?;
+    let data = if data_raw.is_empty() {
+        BoundExpr::StringConst(String::new())
+    } else {
+        parse_expr(data_raw, array_bounds)?
+    };
+
+    Some(BoundStmt::FileWrite { file_number, data })
 }
 
 /// Parse `Input #filenum, var1[, var2, ...]`
