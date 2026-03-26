@@ -5,6 +5,7 @@ use oxvba_compiler::{
 use oxvba_hal::model::{ComInvocationStrategy, HostPolicy};
 use oxvba_host::engine::DiagnosticPhase;
 use oxvba_host::{Engine, HostConfig};
+use oxvba_project::load_basproj;
 use oxvba_runtime::{ObjectHandle, RuntimeValue};
 
 fn manifest_with_reference(referenced_project_name: &str, main_source: &str) -> ProjectManifest {
@@ -162,7 +163,8 @@ End Sub
 #[cfg(target_os = "windows")]
 #[test]
 #[ignore = "requires registered external COM typelib lane (run explicitly on Windows host with scrrun available)"]
-fn early_bound_project_registered_scripting_dictionary_member_subset_prefer_vtable_matches_dispatch() {
+fn early_bound_project_registered_scripting_dictionary_member_subset_prefer_vtable_matches_dispatch()
+ {
     let manifest = manifest_with_reference(
         "Scripting",
         r#"
@@ -230,6 +232,71 @@ End Sub
     assert_eq!(dispatch, vtable);
     assert!(expect_object_handle(&vtable[0]).raw() >= 20_001);
     assert_eq!(vtable[1], RuntimeValue::I32(42));
+}
+
+#[cfg(target_os = "windows")]
+#[test]
+#[ignore = "requires registered external COM typelib lane (run explicitly on Windows host with OxVba.TestEventServer registered)"]
+fn early_bound_loaded_basproj_executes_registered_testeventserver_ping() {
+    let temp_root = std::env::current_dir()
+        .expect("cwd")
+        .join("temp")
+        .join("basproj-typelib-oracle-test");
+    std::fs::create_dir_all(&temp_root).expect("create temp root");
+
+    let basproj_path = temp_root.join("ProjectA.basproj");
+    let main_path = temp_root.join("Main.bas");
+    std::fs::write(
+        &main_path,
+        concat!(
+            "Attribute VB_Name = \"Main\"\n",
+            "Public Sub Main()\n",
+            "Dim obj As New OxVba.TestEventServer\n",
+            "Dim value\n",
+            "value = obj.Ping()\n",
+            "End Sub\n"
+        ),
+    )
+    .expect("write main module");
+    std::fs::write(
+        &basproj_path,
+        concat!(
+            "<Project Sdk=\"OxVba.Sdk/0.1.0\">\n",
+            "  <PropertyGroup>\n",
+            "    <OutputType>Exe</OutputType>\n",
+            "    <ProjectName>ProjectA</ProjectName>\n",
+            "    <EntryPoint>Main.Main</EntryPoint>\n",
+            "  </PropertyGroup>\n",
+            "  <ItemGroup>\n",
+            "    <Module Include=\"Main.bas\" />\n",
+            "  </ItemGroup>\n",
+            "  <ItemGroup>\n",
+            "    <COMReference Include=\"OxVba\">\n",
+            "      <Guid>{E2A30001-0001-0001-0001-000000000001}</Guid>\n",
+            "      <VersionMajor>1</VersionMajor>\n",
+            "      <VersionMinor>0</VersionMinor>\n",
+            "      <Lcid>0</Lcid>\n",
+            "      <ImportLib>OxVba.TestEventServer.tlb</ImportLib>\n",
+            "    </COMReference>\n",
+            "  </ItemGroup>\n",
+            "</Project>\n"
+        ),
+    )
+    .expect("write basproj");
+
+    let loaded = load_basproj(&basproj_path).expect("basproj should load");
+    assert!(
+        loaded
+            .manifest
+            .reference_projects
+            .iter()
+            .any(|project| project.project_name.eq_ignore_ascii_case("OxVba")),
+        "expected injected OxVba typelib reference project"
+    );
+
+    let out = run_project_windows_hosted(&loaded.manifest, false);
+    assert!(expect_object_handle(&out[0]).raw() >= 20_001);
+    assert_eq!(out[1], RuntimeValue::I32(42));
 }
 
 #[cfg(target_os = "windows")]

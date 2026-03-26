@@ -14,3 +14,6 @@ oxvba-runtime.workspace = true
 oxvba-com.workspace = true
 oxvba-hal.workspace = true
 thiserror.workspace = true
+
+[dev-dependencies]
+oxvba-project.workspace = true
