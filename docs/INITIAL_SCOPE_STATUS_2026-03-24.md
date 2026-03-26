@@ -54,7 +54,7 @@
 
 **Deferred beyond Initial Scope (6 gates — blocked on missing subsystems):**
 
-- [x] ODG-032 — Stateful file I/O. Correctly deferred (subsystem not built).
+- [x] ODG-032 — Stateful file I/O. Correctly deferred (subsystem only partially built; broad parity still open).
 - [x] ODG-033 — Host capability/policy. Correctly deferred.
 - [x] ODG-040 — Host extension modules. Correctly deferred.
 - [x] ODG-041 — TypeLib/importlib resolution. Correctly deferred.
@@ -189,7 +189,7 @@ These are post-Initial Scope items. No action needed for v620 closure.
 - [x] IP-06 S2/S3 functional wiring — post-scope
 - [x] macOS/WASM CI — post-scope
 - [x] Kani expansion targets — need remote Linux
-- [x] File I/O subsystem — entire subsystem not built
+- [x] File I/O subsystem — only partially built; broad parity remains post-scope
 - [x] Host extension lifecycle — entire subsystem not built
 - [x] MS-OVBA storage roundtrip — infrastructure not built
 

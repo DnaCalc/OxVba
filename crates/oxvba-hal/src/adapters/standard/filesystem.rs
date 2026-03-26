@@ -98,41 +98,95 @@ impl FileSystemHal for StandardHostServices {
             } else {
                 None
             };
-            let initial_len = if let Some(host_path) = host_path.as_ref() {
-                if mode != 0 {
-                    let file = OpenOptions::new()
-                        .read(true)
-                        .write(true)
-                        .create(true)
-                        .truncate(false)
-                        .open(host_path.as_path())
-                        .map_err(|err| {
+            let (initial_data, initial_len, initial_position) = if let Some(host_path) = host_path.as_ref() {
+                match mode {
+                    0 => {
+                        let data = fs::read(host_path).map_err(|err| {
                             HalError::adapter_fault(
                                 self.profile,
                                 capability,
                                 "open",
-                                format!("failed to open host path {}: {err}", host_path.display()),
+                                format!("failed to read host path {}: {err}", host_path.display()),
                             )
                         })?;
-                    clamp_u64_to_i32(file.metadata().map(|meta| meta.len()).unwrap_or(0))
-                } else {
-                    fs::metadata(host_path)
-                        .map(|meta| clamp_u64_to_i32(meta.len()))
-                        .unwrap_or(1)
+                        let len = clamp_u64_to_i32(data.len() as u64);
+                        (data, len, 0)
+                    }
+                    1 => {
+                        OpenOptions::new()
+                            .read(true)
+                            .write(true)
+                            .create(true)
+                            .truncate(true)
+                            .open(host_path.as_path())
+                            .map_err(|err| {
+                                HalError::adapter_fault(
+                                    self.profile,
+                                    capability,
+                                    "open",
+                                    format!(
+                                        "failed to create output host path {}: {err}",
+                                        host_path.display()
+                                    ),
+                                )
+                            })?;
+                        (Vec::new(), 0, 0)
+                    }
+                    2 => {
+                        OpenOptions::new()
+                            .read(true)
+                            .write(true)
+                            .create(true)
+                            .truncate(false)
+                            .open(host_path.as_path())
+                            .map_err(|err| {
+                                HalError::adapter_fault(
+                                    self.profile,
+                                    capability,
+                                    "open",
+                                    format!(
+                                        "failed to open append host path {}: {err}",
+                                        host_path.display()
+                                    ),
+                                )
+                            })?;
+                        let data = fs::read(host_path).unwrap_or_default();
+                        let len = clamp_u64_to_i32(data.len() as u64);
+                        (data, len, len)
+                    }
+                    _ => {
+                        OpenOptions::new()
+                            .read(true)
+                            .write(true)
+                            .create(true)
+                            .truncate(false)
+                            .open(host_path.as_path())
+                            .map_err(|err| {
+                                HalError::adapter_fault(
+                                    self.profile,
+                                    capability,
+                                    "open",
+                                    format!("failed to open host path {}: {err}", host_path.display()),
+                                )
+                            })?;
+                        let data = fs::read(host_path).unwrap_or_default();
+                        let len = clamp_u64_to_i32(data.len() as u64);
+                        (data, len, 0)
+                    }
                 }
             } else if mode == 0 {
-                i32::from(!path_text.is_empty())
+                (Vec::new(), i32::from(!path_text.is_empty()), 0)
             } else {
-                0
+                (Vec::new(), 0, 0)
             };
             state.handles.insert(
                 handle,
                 FileHandleState {
                     mode,
-                    position: 0,
+                    position: initial_position,
                     len: initial_len,
                     host_path,
-                    data: Vec::new(),
+                    data: initial_data,
                 },
             );
             self.assert_fs_invariants(&state, "open-post");
@@ -165,41 +219,95 @@ impl FileSystemHal for StandardHostServices {
         } else {
             None
         };
-        let initial_len = if let Some(host_path) = host_path.as_ref() {
-            if mode != 0 {
-                let file = OpenOptions::new()
-                    .read(true)
-                    .write(true)
-                    .create(true)
-                    .truncate(false)
-                    .open(host_path)
-                    .map_err(|err| {
+        let (initial_data, initial_len, initial_position) = if let Some(host_path) = host_path.as_ref() {
+            match mode {
+                0 => {
+                    let data = fs::read(host_path).map_err(|err| {
                         HalError::adapter_fault(
                             self.profile,
                             capability,
                             "open",
-                            format!("failed to open host path {}: {err}", host_path.display()),
+                            format!("failed to read host path {}: {err}", host_path.display()),
                         )
                     })?;
-                clamp_u64_to_i32(file.metadata().map(|meta| meta.len()).unwrap_or(0))
-            } else {
-                fs::metadata(host_path)
-                    .map(|meta| clamp_u64_to_i32(meta.len()))
-                    .unwrap_or_else(|_| pseudo_file_len_from_path_token(path))
+                    let len = clamp_u64_to_i32(data.len() as u64);
+                    (data, len, 0)
+                }
+                1 => {
+                    OpenOptions::new()
+                        .read(true)
+                        .write(true)
+                        .create(true)
+                        .truncate(true)
+                        .open(host_path)
+                        .map_err(|err| {
+                            HalError::adapter_fault(
+                                self.profile,
+                                capability,
+                                "open",
+                                format!(
+                                    "failed to create output host path {}: {err}",
+                                    host_path.display()
+                                ),
+                            )
+                        })?;
+                    (Vec::new(), 0, 0)
+                }
+                2 => {
+                    OpenOptions::new()
+                        .read(true)
+                        .write(true)
+                        .create(true)
+                        .truncate(false)
+                        .open(host_path)
+                        .map_err(|err| {
+                            HalError::adapter_fault(
+                                self.profile,
+                                capability,
+                                "open",
+                                format!(
+                                    "failed to open append host path {}: {err}",
+                                    host_path.display()
+                                ),
+                            )
+                        })?;
+                    let data = fs::read(host_path).unwrap_or_default();
+                    let len = clamp_u64_to_i32(data.len() as u64);
+                    (data, len, len)
+                }
+                _ => {
+                    OpenOptions::new()
+                        .read(true)
+                        .write(true)
+                        .create(true)
+                        .truncate(false)
+                        .open(host_path)
+                        .map_err(|err| {
+                            HalError::adapter_fault(
+                                self.profile,
+                                capability,
+                                "open",
+                                format!("failed to open host path {}: {err}", host_path.display()),
+                            )
+                        })?;
+                    let data = fs::read(host_path).unwrap_or_default();
+                    let len = clamp_u64_to_i32(data.len() as u64);
+                    (data, len, 0)
+                }
             }
         } else if mode == 0 {
-            pseudo_file_len_from_path_token(path)
+            (Vec::new(), pseudo_file_len_from_path_token(path), 0)
         } else {
-            0
+            (Vec::new(), 0, 0)
         };
         state.handles.insert(
             handle,
             FileHandleState {
                 mode,
-                position: 0,
+                position: initial_position,
                 len: initial_len,
                 host_path,
-                data: Vec::new(),
+                data: initial_data,
             },
         );
         self.assert_fs_invariants(&state, "open-post");
@@ -221,11 +329,38 @@ impl FileSystemHal for StandardHostServices {
         self.assert_fs_invariants(&state, "close-pre");
         if handle == 0 {
             // VBA `Close` with no arguments: close all open files.
-            let count = state.handles.len() as i32;
+            let drained: Vec<FileHandleState> = state.handles.values().cloned().collect();
+            let count = drained.len() as i32;
             state.handles.clear();
+            for entry in drained {
+                if entry.mode != 0
+                    && let Some(host_path) = entry.host_path.as_ref()
+                {
+                    fs::write(host_path, &entry.data).map_err(|err| {
+                        HalError::adapter_fault(
+                            self.profile,
+                            capability,
+                            "close",
+                            format!("failed to flush host path {}: {err}", host_path.display()),
+                        )
+                    })?;
+                }
+            }
             self.assert_fs_invariants(&state, "close-all-post");
             Ok(RuntimeValue::I32(count))
-        } else if state.handles.remove(&handle).is_some() {
+        } else if let Some(entry) = state.handles.remove(&handle) {
+            if entry.mode != 0
+                && let Some(host_path) = entry.host_path.as_ref()
+            {
+                fs::write(host_path, &entry.data).map_err(|err| {
+                    HalError::adapter_fault(
+                        self.profile,
+                        capability,
+                        "close",
+                        format!("failed to flush host path {}: {err}", host_path.display()),
+                    )
+                })?;
+            }
             self.assert_fs_invariants(&state, "close-post");
             Ok(RuntimeValue::I32(1))
         } else {
@@ -263,6 +398,9 @@ impl FileSystemHal for StandardHostServices {
             let host_path = entry.host_path.clone();
             entry.position = position;
             if position > entry.len && entry.mode != 0 && self.policy.allow_filesystem_mutation {
+                if position as usize > entry.data.len() {
+                    entry.data.resize(position as usize, 0);
+                }
                 if let Some(host_path) = host_path.as_ref() {
                     let file = OpenOptions::new()
                         .read(true)

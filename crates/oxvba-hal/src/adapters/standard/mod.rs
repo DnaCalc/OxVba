@@ -2046,6 +2046,42 @@ mod tests {
     }
 
     #[test]
+    fn native_mode_print_line_roundtrips_through_host_file() {
+        let Some(profile) = current_native_profile() else {
+            return;
+        };
+        let mut policy = HostPolicy::interactive_dev();
+        policy.allow_filesystem_mutation = true;
+        let host = StandardHostServices::new(profile, policy);
+        let temp_dir = std::env::current_dir()
+            .expect("cwd")
+            .join("temp")
+            .join("native-file-io");
+        std::fs::create_dir_all(&temp_dir).expect("create temp dir");
+        let temp_file = temp_dir.join("roundtrip.txt");
+        let path = RuntimeValue::String(BStr(temp_file.to_string_lossy().to_string()));
+
+        let write_handle = host.open(path.clone(), rv(1)).expect("open output");
+        host.print_line(
+            write_handle.clone(),
+            RuntimeValue::String(BStr("world".to_string())),
+        )
+        .expect("print_line");
+        host.close(write_handle).expect("close output");
+        assert_eq!(
+            std::fs::read_to_string(&temp_file).expect("read flushed file"),
+            "world\r\n"
+        );
+
+        let read_handle = host.open(path, rv(0)).expect("open input");
+        assert_eq!(
+            host.line_input(read_handle.clone()).expect("line_input"),
+            RuntimeValue::String(BStr("world".to_string()))
+        );
+        host.close(read_handle).expect("close input");
+    }
+
+    #[test]
     fn native_mode_filesystem_seek_can_extend_length() {
         let Some(profile) = current_native_profile() else {
             return;
