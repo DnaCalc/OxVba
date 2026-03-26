@@ -59,7 +59,7 @@
 - [x] ODG-040 — Host extension modules. Closed for the bounded initial-scope host-extension subset with `host_extension_oracle_20260326T144800Z`: Excel and OxVba match on supported `ThisWorkbook` source attachment, missing-target failure, and overwrite-on-occupied-target behavior. Broader host project lifecycle work remains deferred under `INTP-013`.
 - [x] ODG-041 — TypeLib/importlib resolution. Correctly deferred beyond the now-proved baseline, unresolved-identity, and reference-order subsets. The baseline `.basproj` foldback lane is oracle-evidenced with `com_testeventserver_basproj_oracle_20260326T181500Z`, the unresolved identity lane is oracle-evidenced with `com_testeventserver_unresolved_typelib_oracle_20260326T174738Z`, the two-reference order lane is oracle-evidenced with `com_testeventserver_reference_order_oracle_20260326T171500Z`, and the next wider mixed broken-reference lane is oracle-evidenced with `com_testeventserver_mixed_broken_reference_oracle_20260326T192900Z`. Together these prove that loaded `.basproj` file-backed references match Excel for baseline `New TestEventServer : Ping() = 42`, unknown `LIBID` / missing `.tlb` identity failure classification, and first-reference wins across two registered typelibs (`42` / `84`), while also exposing the next real parity blocker: if the first saved typelib reference is broken but a later same-name reference remains valid, Excel reopens with the expected mixed reference state and then does not return from `RunProbe` within the bounded hidden-automation window; the captured orphaned window title is `Microsoft Visual Basic for Applications - [MainModule (Code)]` in both orderings, while OxVba now preserves the broken earlier filesystem-backed importlib as a deterministic `PMR-E-TYPELIB-IMPORTLIB-UNRESOLVED` diagnostic instead of silently falling through to the later valid same-name typelib. Remaining open work is therefore the concrete mixed broken-reference divergence and any follow-on breadth beyond that, not lack of foldback, unresolved identity, reference-order, or integrated diagnostic propagation.
 - [x] ODG-042 — MS-OVBA storage roundtrip. Correctly deferred.
-- [x] ODG-043 — Startup/entrypoint. Correctly deferred.
+- [ ] ODG-043 — Startup/entrypoint. In progress. Loaded `.basproj` projects now honor configured `<EntryPoint>Module.Procedure</EntryPoint>` and unconfigured `OutputType=Exe` projects now resolve a unique `Sub Main` fallback via the deterministic startup shim path, but the gate remains open pending startup oracle coverage across the remaining project configurations.
 
 ### 2.2 Formal Deferred Gates (IP-11) — 50 Gates Total
 
@@ -100,7 +100,7 @@ Completed this session:
 
 ### Deferred (3 fixtures — down from 4)
 
-- [ ] INTP-012 — Startup metadata / auto-entrypoint. Blocked on ODG-043.
+- [ ] INTP-012 — Startup metadata / auto-entrypoint. In progress under ODG-043; configured `.basproj` entrypoints and unique `Sub Main` fallback now execute through the loaded-project path, but startup oracle breadth remains outstanding.
 - [ ] INTP-013 — Host extension module lifecycle. Bounded host-extension attach parity is now evidenced under `ODG-040`; broader add/remove lifecycle and expanded host-specific behavior remain deferred.
 - [ ] INTP-014 — Stateful file I/O. Blocked on ODG-032.
 

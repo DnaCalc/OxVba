@@ -26,6 +26,15 @@ pub enum BasProjError {
     #[error("EntryPoint is required for OutputType={0}")]
     EntryPointRequired(String),
 
+    #[error("invalid EntryPoint: {0}")]
+    EntryPointInvalid(String),
+
+    #[error("EntryPoint not found: {0}")]
+    EntryPointNotFound(String),
+
+    #[error("EntryPoint is ambiguous: {0}")]
+    EntryPointAmbiguous(String),
+
     #[error("duplicate native export name: {0}")]
     DuplicateExportName(String),
 

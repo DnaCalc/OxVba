@@ -6,7 +6,8 @@ use std::path::Path;
 use oxvba_com::{TypeLibResolveRequest, build_typelib_metadata, resolve_known_typelib_identity};
 use oxvba_compiler::{
     ModuleAttributes, ModuleKind, ModuleUnit, ProjectKind, ProjectManifest, ProjectReference,
-    ReferenceKind, ReferencedProjectManifest, project::project_typelib_as_manifest,
+    ReferenceKind, ReferencedProjectManifest, module_unit_from_source,
+    project::project_typelib_as_manifest,
 };
 use oxvba_host::TypeLibraryCatalogEntry;
 
@@ -33,6 +34,7 @@ pub struct LoadedProject {
 }
 
 const TYPELIB_BINDING_DIAGNOSTIC_MODULE_NAME: &str = "__OxVbaTypeLibBindingDiagnostic";
+const STARTUP_ENTRY_SHIM_MODULE_PREFIX: &str = "__OxVbaStartupEntryShim";
 
 /// Load a `.basproj` file from disk, resolve module sources, and produce a
 /// `LoadedProject` containing the `ProjectManifest` and export descriptors.
@@ -99,13 +101,9 @@ pub(crate) fn build_loaded_project(
         .unwrap_or_else(|| dir_name_or_default(project_dir));
 
     // Entry point validation
-    let entry_point = props.entry_point.clone();
-    if matches!(output_type, OutputType::Exe | OutputType::Addin) && entry_point.is_none() {
-        // Not an error yet — auto-discovery of Sub Main is allowed for Exe
-        // Addin strictly requires it though
-        if output_type == OutputType::Addin {
-            return Err(BasProjError::EntryPointRequired("Addin".to_string()));
-        }
+    let configured_entry_point = props.entry_point.clone();
+    if output_type == OutputType::Addin && configured_entry_point.is_none() {
+        return Err(BasProjError::EntryPointRequired("Addin".to_string()));
     }
 
     // Conditional constants
@@ -116,12 +114,20 @@ pub(crate) fn build_loaded_project(
         .unwrap_or_default();
 
     // Load modules
-    let modules = if basproj.modules.is_empty() {
+    let mut modules = if basproj.modules.is_empty() {
         // Auto-discovery mode
         discover_modules(project_dir)?
     } else {
         load_explicit_modules(&basproj.modules, project_dir)?
     };
+    let effective_entry_point = resolve_effective_entry_point(
+        output_type,
+        configured_entry_point.as_deref(),
+        &modules,
+    )?;
+    if let Some(entry_point) = effective_entry_point.as_deref() {
+        inject_entry_point_startup_shim(&mut modules, entry_point)?;
+    }
 
     // Build references (order = precedence)
     let mut references = Vec::new();
@@ -242,10 +248,167 @@ pub(crate) fn build_loaded_project(
             .default_root_object
             .clone()
             .unwrap_or_else(|| "Application".to_string()),
-        entry_point,
+        entry_point: effective_entry_point,
         type_library_catalog,
         class_module_metadata,
     })
+}
+
+fn resolve_effective_entry_point(
+    output_type: OutputType,
+    configured_entry_point: Option<&str>,
+    modules: &[ModuleUnit],
+) -> Result<Option<String>, BasProjError> {
+    if let Some(entry_point) = configured_entry_point {
+        return Ok(Some(entry_point.to_string()));
+    }
+    if output_type != OutputType::Exe {
+        return Ok(None);
+    }
+    discover_unique_sub_main_entry_point(modules).map(Some)
+}
+
+fn inject_entry_point_startup_shim(
+    modules: &mut Vec<ModuleUnit>,
+    entry_point: &str,
+) -> Result<(), BasProjError> {
+    let (target_module, target_procedure) = parse_configured_entry_point(entry_point)?;
+    if !modules
+        .iter()
+        .any(|module| module.module_name.eq_ignore_ascii_case(&target_module))
+    {
+        return Err(BasProjError::EntryPointInvalid(entry_point.to_string()));
+    }
+
+    let shim_module_name = next_startup_shim_module_name(modules);
+    let shim_source = format!(
+        "Attribute VB_Name = \"{shim_module_name}\"\n\
+         Option Private Module\n\
+         Public Sub Main()\n\
+         Call {target_module}.{target_procedure}()\n\
+         End Sub"
+    );
+    let shim_module = module_unit_from_source(
+        &shim_module_name,
+        ModuleKind::Procedural,
+        shim_source,
+    )
+    .map_err(|_| BasProjError::EntryPointInvalid(entry_point.to_string()))?;
+    modules.insert(0, shim_module);
+    Ok(())
+}
+
+fn discover_unique_sub_main_entry_point(modules: &[ModuleUnit]) -> Result<String, BasProjError> {
+    let candidates = modules
+        .iter()
+        .filter(|module| module.module_kind == ModuleKind::Procedural)
+        .filter(|module| module_has_public_parameterless_main(module))
+        .map(|module| module.module_name.clone())
+        .collect::<Vec<_>>();
+    match candidates.as_slice() {
+        [module_name] => Ok(format!("{module_name}.Main")),
+        [] => Err(BasProjError::EntryPointNotFound(
+            "unique Sub Main fallback for OutputType=Exe".to_string(),
+        )),
+        _ => Err(BasProjError::EntryPointAmbiguous(
+            "unique Sub Main fallback for OutputType=Exe".to_string(),
+        )),
+    }
+}
+
+fn parse_configured_entry_point(entry_point: &str) -> Result<(String, String), BasProjError> {
+    let Some((module_name, procedure_name)) = entry_point.trim().split_once('.') else {
+        return Err(BasProjError::EntryPointInvalid(entry_point.to_string()));
+    };
+    let module_name = module_name.trim();
+    let procedure_name = procedure_name.trim();
+    if !is_valid_entry_identifier(module_name) || !is_valid_entry_identifier(procedure_name) {
+        return Err(BasProjError::EntryPointInvalid(entry_point.to_string()));
+    }
+    Ok((module_name.to_string(), procedure_name.to_string()))
+}
+
+fn is_valid_entry_identifier(identifier: &str) -> bool {
+    let mut chars = identifier.chars();
+    let Some(first) = chars.next() else {
+        return false;
+    };
+    if !(first == '_' || first.is_ascii_alphabetic()) {
+        return false;
+    }
+    chars.all(|ch| ch == '_' || ch.is_ascii_alphanumeric())
+}
+
+fn module_has_public_parameterless_main(module: &ModuleUnit) -> bool {
+    module
+        .source
+        .lines()
+        .any(line_is_public_parameterless_main_sub_signature)
+}
+
+fn line_is_public_parameterless_main_sub_signature(line: &str) -> bool {
+    let trimmed = line.trim();
+    if trimmed.is_empty() {
+        return false;
+    }
+    let lower = trimmed.to_ascii_lowercase();
+    let lower = if let Some(rest) = lower.strip_prefix("public ") {
+        rest
+    } else if lower.strip_prefix("private ").is_some() {
+        return false;
+    } else if lower.strip_prefix("friend ").is_some() {
+        return false;
+    } else {
+        lower.as_str()
+    };
+    let Some(rest) = lower.strip_prefix("sub ") else {
+        return false;
+    };
+    let Some((name, remainder)) = split_identifier_prefix(rest) else {
+        return false;
+    };
+    if name != "main" {
+        return false;
+    }
+    let remainder = remainder.trim();
+    if remainder.is_empty() {
+        return true;
+    }
+    if let Some(args) = remainder.strip_prefix('(') {
+        return args.trim_end_matches(')').trim().is_empty()
+            && remainder.trim_end().ends_with(')');
+    }
+    false
+}
+
+fn split_identifier_prefix(value: &str) -> Option<(&str, &str)> {
+    let end = value
+        .char_indices()
+        .find(|(_, ch)| !(*ch == '_' || ch.is_ascii_alphanumeric()))
+        .map(|(idx, _)| idx)
+        .unwrap_or(value.len());
+    if end == 0 {
+        return None;
+    }
+    Some(value.split_at(end))
+}
+
+fn next_startup_shim_module_name(modules: &[ModuleUnit]) -> String {
+    let mut index = 0usize;
+    loop {
+        let candidate = if index == 0 {
+            STARTUP_ENTRY_SHIM_MODULE_PREFIX.to_string()
+        } else {
+            format!("{STARTUP_ENTRY_SHIM_MODULE_PREFIX}{index}")
+        };
+        if !modules
+            .iter()
+            .any(|module| module.module_name.eq_ignore_ascii_case(&candidate))
+        {
+            return candidate;
+        }
+        index += 1;
+    }
 }
 
 fn inject_type_library_reference_projects(loaded: &mut LoadedProject) {
@@ -610,6 +773,102 @@ mod tests {
                 .contains("code=PMR-E-TYPELIB-IMPORTLIB-UNRESOLVED"),
             "expected unresolved importlib code, got: {}",
             diagnostic.modules[0].source
+        );
+
+        std::fs::remove_dir_all(&temp_root).expect("cleanup temp project root");
+    }
+
+    #[test]
+    fn configured_entry_point_injects_startup_shim_ahead_of_loaded_modules() {
+        let unique = format!(
+            "oxvba_project_load_entrypoint_test_{}_{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .expect("unix epoch")
+                .as_nanos()
+        );
+        let temp_root = std::env::temp_dir().join(unique);
+        std::fs::create_dir_all(&temp_root).expect("create temp project root");
+        let main_path = temp_root.join("MainModule.bas");
+        let startup_path = temp_root.join("StartupModule.bas");
+        std::fs::write(&main_path, "Public Sub Main()\nEnd Sub\n").expect("write main module");
+        std::fs::write(&startup_path, "Public Sub Run()\nEnd Sub\n").expect("write startup module");
+        let xml = "\
+<Project Sdk=\"OxVba.Sdk/0.1.0\">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <ProjectName>ProjectA</ProjectName>
+    <EntryPoint>StartupModule.Run</EntryPoint>
+  </PropertyGroup>
+  <ItemGroup>
+    <Module Include=\"MainModule.bas\" />
+    <Module Include=\"StartupModule.bas\" />
+  </ItemGroup>
+</Project>
+";
+
+        let loaded = load_basproj_from_str(xml, &temp_root).expect("basproj should load");
+        assert!(
+            loaded.manifest.modules[0]
+                .module_name
+                .starts_with(STARTUP_ENTRY_SHIM_MODULE_PREFIX),
+            "expected startup shim first, got {:?}",
+            loaded
+                .manifest
+                .modules
+                .iter()
+                .map(|module| module.module_name.clone())
+                .collect::<Vec<_>>()
+        );
+        assert!(
+            loaded.manifest.modules[0]
+                .source
+                .contains("Call StartupModule.Run()"),
+            "expected startup shim to target configured entry point, got: {}",
+            loaded.manifest.modules[0].source
+        );
+
+        std::fs::remove_dir_all(&temp_root).expect("cleanup temp project root");
+    }
+
+    #[test]
+    fn exe_without_configured_entry_point_discovers_unique_sub_main() {
+        let unique = format!(
+            "oxvba_project_load_unique_main_test_{}_{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .expect("unix epoch")
+                .as_nanos()
+        );
+        let temp_root = std::env::temp_dir().join(unique);
+        std::fs::create_dir_all(&temp_root).expect("create temp project root");
+        let helper_path = temp_root.join("HelperModule.bas");
+        let main_path = temp_root.join("MainModule.bas");
+        std::fs::write(&helper_path, "Public Sub Warmup()\nEnd Sub\n").expect("write helper module");
+        std::fs::write(&main_path, "Public Sub Main()\nEnd Sub\n").expect("write main module");
+        let xml = "\
+<Project Sdk=\"OxVba.Sdk/0.1.0\">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <ProjectName>ProjectA</ProjectName>
+  </PropertyGroup>
+  <ItemGroup>
+    <Module Include=\"HelperModule.bas\" />
+    <Module Include=\"MainModule.bas\" />
+  </ItemGroup>
+</Project>
+";
+
+        let loaded = load_basproj_from_str(xml, &temp_root).expect("basproj should load");
+        assert_eq!(loaded.entry_point.as_deref(), Some("MainModule.Main"));
+        assert!(
+            loaded.manifest.modules[0]
+                .source
+                .contains("Call MainModule.Main()"),
+            "expected auto-discovered startup shim to target unique Main, got: {}",
+            loaded.manifest.modules[0].source
         );
 
         std::fs::remove_dir_all(&temp_root).expect("cleanup temp project root");
