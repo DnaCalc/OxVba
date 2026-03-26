@@ -473,7 +473,7 @@ fn early_bound_loaded_basproj_reports_unresolved_typelib_importlib_identity() {
 #[cfg(target_os = "windows")]
 #[test]
 #[ignore = "requires registered external COM typelib lane and validates mixed broken-first valid-second loaded .basproj execution"]
-fn early_bound_loaded_basproj_mixed_broken_base_then_valid_alt_executes_alt() {
+fn early_bound_loaded_basproj_mixed_broken_base_then_valid_alt_reports_unresolved_importlib() {
     let loaded = load_typelib_basproj_with_ref_specs(
         "basproj-typelib-mixed-base-missing-alt-valid",
         concat!(
@@ -503,15 +503,17 @@ fn early_bound_loaded_basproj_mixed_broken_base_then_valid_alt_executes_alt() {
         ],
     );
 
-    let out = run_project_windows_hosted(&loaded.manifest, false);
-    assert!(expect_object_handle(&out[0]).raw() >= 20_001);
-    assert_eq!(out[1], RuntimeValue::I32(84));
+    let err = run_project_windows_hosted_error(&loaded.manifest, false);
+    assert!(
+        err.contains("PMR-E-TYPELIB-IMPORTLIB-UNRESOLVED"),
+        "expected unresolved importlib diagnostic, got: {err}"
+    );
 }
 
 #[cfg(target_os = "windows")]
 #[test]
 #[ignore = "requires registered external COM typelib lane and validates mixed broken-first valid-second loaded .basproj execution"]
-fn early_bound_loaded_basproj_mixed_broken_alt_then_valid_base_executes_base() {
+fn early_bound_loaded_basproj_mixed_broken_alt_then_valid_base_reports_unresolved_importlib() {
     let loaded = load_typelib_basproj_with_ref_specs(
         "basproj-typelib-mixed-alt-missing-base-valid",
         concat!(
@@ -541,9 +543,11 @@ fn early_bound_loaded_basproj_mixed_broken_alt_then_valid_base_executes_base() {
         ],
     );
 
-    let out = run_project_windows_hosted(&loaded.manifest, false);
-    assert!(expect_object_handle(&out[0]).raw() >= 20_001);
-    assert_eq!(out[1], RuntimeValue::I32(42));
+    let err = run_project_windows_hosted_error(&loaded.manifest, false);
+    assert!(
+        err.contains("PMR-E-TYPELIB-IMPORTLIB-UNRESOLVED"),
+        "expected unresolved importlib diagnostic, got: {err}"
+    );
 }
 
 #[cfg(target_os = "windows")]

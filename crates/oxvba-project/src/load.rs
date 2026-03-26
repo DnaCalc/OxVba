@@ -270,6 +270,22 @@ fn inject_type_library_reference_projects(loaded: &mut LoadedProject) {
             minor_version_hint: Some(catalog_entry.minor_version),
             lcid_hint: catalog_entry.lcid,
         };
+        if request
+            .importlib_hint
+            .as_deref()
+            .is_some_and(is_missing_filesystem_importlib_hint)
+        {
+            let diagnostic = build_typelib_binding_diagnostic_project_for_missing_importlib(&request);
+            if loaded.manifest.reference_projects.iter().any(|project| {
+                project
+                    .project_name
+                    .eq_ignore_ascii_case(&diagnostic.project_name)
+            }) {
+                continue;
+            }
+            loaded.manifest.reference_projects.push(diagnostic);
+            continue;
+        }
         let Some(identity) = resolve_known_typelib_identity(&request) else {
             let diagnostic = build_typelib_binding_diagnostic_project(&request);
             if loaded.manifest.reference_projects.iter().any(|project| {
@@ -332,6 +348,24 @@ fn build_typelib_binding_diagnostic_project(
     }
 }
 
+fn build_typelib_binding_diagnostic_project_for_missing_importlib(
+    request: &TypeLibResolveRequest,
+) -> ReferencedProjectManifest {
+    let importlib = request.importlib_hint.as_deref().unwrap_or_default();
+    ReferencedProjectManifest {
+        project_name: request.reference_name.clone(),
+        modules: vec![ModuleUnit {
+            module_name: TYPELIB_BINDING_DIAGNOSTIC_MODULE_NAME.to_string(),
+            module_kind: ModuleKind::Procedural,
+            attributes: ModuleAttributes::default(),
+            source: format!(
+                "code=PMR-E-TYPELIB-IMPORTLIB-UNRESOLVED\nmessage=type-library reference `{}` with importlib `{}` could not be resolved\n",
+                request.reference_name, importlib
+            ),
+        }],
+    }
+}
+
 fn non_empty_trimmed(value: &str) -> Option<String> {
     let trimmed = value.trim();
     if trimmed.is_empty() {
@@ -339,6 +373,17 @@ fn non_empty_trimmed(value: &str) -> Option<String> {
     } else {
         Some(trimmed.to_string())
     }
+}
+
+fn is_missing_filesystem_importlib_hint(importlib_hint: &str) -> bool {
+    let trimmed = importlib_hint.trim();
+    if trimmed.is_empty() {
+        return false;
+    }
+    let path = Path::new(trimmed);
+    let looks_like_filesystem_path =
+        path.is_absolute() || trimmed.contains('\\') || trimmed.contains('/');
+    looks_like_filesystem_path && !path.exists()
 }
 
 /// Process `<Import>` elements by re-scanning the XML for them, loading the
@@ -503,4 +548,70 @@ fn dir_name_or_default(dir: &Path) -> String {
         .and_then(|n| n.to_str())
         .unwrap_or("Project")
         .to_string()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn known_libid_with_missing_filesystem_importlib_stays_diagnostic() {
+        let unique = format!(
+            "oxvba_project_load_test_{}_{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .expect("unix epoch")
+                .as_nanos()
+        );
+        let temp_root = std::env::temp_dir().join(unique);
+        std::fs::create_dir_all(&temp_root).expect("create temp project root");
+        let main_path = temp_root.join("Main.bas");
+        std::fs::write(&main_path, "Public Sub Main()\nEnd Sub\n").expect("write main module");
+        let missing_importlib = temp_root.join("missing").join("OxVba.TestEventServer.tlb");
+        let xml = format!(
+            "<Project Sdk=\"OxVba.Sdk/0.1.0\">\n\
+  <PropertyGroup>\n\
+    <OutputType>Exe</OutputType>\n\
+    <ProjectName>ProjectA</ProjectName>\n\
+    <EntryPoint>Main.Main</EntryPoint>\n\
+  </PropertyGroup>\n\
+  <ItemGroup>\n\
+    <Module Include=\"Main.bas\" />\n\
+  </ItemGroup>\n\
+  <ItemGroup>\n\
+    <COMReference Include=\"OxVbaMissingBase\">\n\
+      <Guid>{{E2A30001-0001-0001-0001-000000000001}}</Guid>\n\
+      <VersionMajor>1</VersionMajor>\n\
+      <VersionMinor>0</VersionMinor>\n\
+      <Lcid>0</Lcid>\n\
+      <ImportLib>{}</ImportLib>\n\
+    </COMReference>\n\
+  </ItemGroup>\n\
+</Project>\n",
+            missing_importlib.display()
+        );
+
+        let loaded = load_basproj_from_str(&xml, &temp_root).expect("basproj should load");
+        let diagnostic = loaded
+            .manifest
+            .reference_projects
+            .iter()
+            .find(|project| project.project_name == "OxVbaMissingBase")
+            .expect("expected synthetic diagnostic project for broken importlib");
+        assert_eq!(diagnostic.modules.len(), 1);
+        assert_eq!(
+            diagnostic.modules[0].module_name,
+            TYPELIB_BINDING_DIAGNOSTIC_MODULE_NAME
+        );
+        assert!(
+            diagnostic.modules[0]
+                .source
+                .contains("code=PMR-E-TYPELIB-IMPORTLIB-UNRESOLVED"),
+            "expected unresolved importlib code, got: {}",
+            diagnostic.modules[0].source
+        );
+
+        std::fs::remove_dir_all(&temp_root).expect("cleanup temp project root");
+    }
 }

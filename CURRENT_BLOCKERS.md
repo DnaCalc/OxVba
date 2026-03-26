@@ -463,22 +463,20 @@ Run context: active parity/compliance execution plus in-progress feature worklis
 - Impact:
   - Blocks honest closure of `ODG-041` / `CCT-043` wider multi-reference parity.
 - Current state:
-  - The new bounded oracle `com_testeventserver_mixed_broken_reference_oracle_20260326T191131Z` covers the saved-workbook reopen lane where the first typelib reference becomes broken and a later same-name typelib reference remains valid.
+  - The bounded oracle `com_testeventserver_mixed_broken_reference_oracle_20260326T192900Z` covers the saved-workbook reopen lane where the first typelib reference becomes broken and a later same-name typelib reference remains valid.
   - In both orderings, Excel reopens the workbook and reports the expected mixed reference state:
     - broken first/base + valid later/alt, or
     - broken first/alt + valid later/base.
   - After that successful reopen, hidden Excel automation with `DisplayAlerts = false` does not return from `RunProbe` within the bounded `15s` window in either ordering.
   - The bounded runner now captures the orphaned visible window title on timeout, and in both orderings it is `Microsoft Visual Basic for Applications - [MainModule (Code)]`, which confirms that the mixed lane is surfacing VBE/UI state rather than remaining a purely silent background stall.
-  - OxVba does not block in the same state. Loaded `.basproj` execution continues through the surviving later typelib reference and returns:
-    - `84` when base is broken and alt remains valid,
-    - `42` when alt is broken and base remains valid.
+  - OxVba no longer silently falls through to the later valid same-name typelib in this lane. The loader now preserves a missing filesystem-backed earlier importlib as a deterministic `PMR-E-TYPELIB-IMPORTLIB-UNRESOLVED` diagnostic, even when the broken reference still carries a known LIBID and a later same-name typelib remains valid.
 - Evidence:
-  - `docs/evidence/conformance/oracle_captures/com_testeventserver_mixed_broken_reference_oracle_20260326T191131Z/summary.md`
-  - `docs/evidence/conformance/oracle_captures/com_testeventserver_mixed_broken_reference_oracle_20260326T191131Z/results.csv`
+  - `docs/evidence/conformance/oracle_captures/com_testeventserver_mixed_broken_reference_oracle_20260326T192900Z/summary.md`
+  - `docs/evidence/conformance/oracle_captures/com_testeventserver_mixed_broken_reference_oracle_20260326T192900Z/results.csv`
 - Exact unblock steps:
   - determine whether Excel's non-returning path is a true modal dialog / broken-reference prompt, a compile-time library-resolution stall, or another hidden host interaction,
   - decide the parity contract for this mixed lane,
-  - if Excel behavior remains the target, change OxVba's loaded `.basproj` foldback/runtime behavior so a broken earlier same-name reference does not silently fall through to the later valid typelib,
+  - if Excel behavior remains the target, decide whether OxVba should stop at the current deterministic unresolved-importlib diagnostic or model a stronger blocked/host-interaction state,
   - rerun the mixed-reference oracle after the behavior decision/implementation.
 - Recommendation:
   - keep `ODG-041` open under the now-identified mixed broken-reference divergence rather than describing the remaining work only as generic breadth.

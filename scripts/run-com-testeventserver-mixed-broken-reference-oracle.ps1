@@ -241,10 +241,10 @@ try {
             second = $altTypeLibPath
             command = @(
                 "test", "-p", "oxvba-host", "--test", "com_early_project_end_to_end",
-                "early_bound_loaded_basproj_mixed_broken_base_then_valid_alt_executes_alt",
+                "early_bound_loaded_basproj_mixed_broken_base_then_valid_alt_reports_unresolved_importlib",
                 "--", "--ignored", "--exact", "--test-threads=1", "--nocapture"
             )
-            expected_ox = "84"
+            expected_ox = "PMR-E-TYPELIB-IMPORTLIB-UNRESOLVED"
         }
         @{
             case_id = "CCT-043-TES-MIXED-002"
@@ -253,10 +253,10 @@ try {
             second = $baseTypeLibPath
             command = @(
                 "test", "-p", "oxvba-host", "--test", "com_early_project_end_to_end",
-                "early_bound_loaded_basproj_mixed_broken_alt_then_valid_base_executes_base",
+                "early_bound_loaded_basproj_mixed_broken_alt_then_valid_base_reports_unresolved_importlib",
                 "--", "--ignored", "--exact", "--test-threads=1", "--nocapture"
             )
-            expected_ox = "42"
+            expected_ox = "PMR-E-TYPELIB-IMPORTLIB-UNRESOLVED"
         }
     )
 
