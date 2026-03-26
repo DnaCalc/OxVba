@@ -1,0 +1,1 @@
+{"status":"error","payload":"AdapterFault [HAL-E-ADAPTER-FAULT] profile=Windows capability=ProjectMutation op=attach_host_extension_module: OperationStopped: \r\nLine |\r\n  26 |              $component = $wb.VBProject.VBComponents.Item($ModuleName)\r\n     |              ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~\r\n     | Subscript out of range"}

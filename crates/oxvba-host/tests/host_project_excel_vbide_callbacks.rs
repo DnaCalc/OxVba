@@ -59,6 +59,8 @@ $excel = New-Object -ComObject Excel.Application
 $excel.Visible = $false
 $excel.DisplayAlerts = $false
 $wb = $null
+$component = $null
+$codeModule = $null
 try {{
     if ($Action -eq "create") {{
         $wb = $excel.Workbooks.Add()
@@ -93,6 +95,12 @@ try {{
     }}
 }}
 finally {{
+    if ($codeModule -ne $null) {{
+        [void][System.Runtime.InteropServices.Marshal]::ReleaseComObject($codeModule)
+    }}
+    if ($component -ne $null) {{
+        [void][System.Runtime.InteropServices.Marshal]::ReleaseComObject($component)
+    }}
     if ($wb -ne $null) {{
         $wb.Close($false)
         [void][System.Runtime.InteropServices.Marshal]::ReleaseComObject($wb)
@@ -132,6 +140,11 @@ finally {{
 
     fn read_module_source(&self, module_name: &str) -> Result<String, String> {
         self.run_ps("read", Some(module_name), None)
+    }
+
+    fn seed_module_source(&self, module_name: &str, source: &str) -> Result<(), String> {
+        self.run_ps("attach", Some(module_name), Some(source))
+            .map(|_| ())
     }
 }
 
@@ -211,21 +224,45 @@ fn cleanup(path: &Path) {
     let _ = std::fs::remove_file(path);
 }
 
-#[test]
-#[ignore = "requires Windows Excel with AccessVBOM enabled"]
-fn excel_vbide_host_callbacks_attach_source_to_thisworkbook() {
-    let workbook_path = unique_workbook_path();
-    let callbacks = Arc::new(ExcelVbideHostCallbacks::new(
-        workbook_path.clone(),
-        "Workbook",
-    ));
-    callbacks
-        .create_workbook()
-        .expect("workbook creation should succeed");
+fn json_escape(value: &str) -> String {
+    let mut escaped = String::with_capacity(value.len());
+    for ch in value.chars() {
+        match ch {
+            '\\' => escaped.push_str("\\\\"),
+            '"' => escaped.push_str("\\\""),
+            '\n' => escaped.push_str("\\n"),
+            '\r' => escaped.push_str("\\r"),
+            '\t' => escaped.push_str("\\t"),
+            _ => escaped.push(ch),
+        }
+    }
+    escaped
+}
 
+fn write_capture(status: &str, payload: &str) {
+    let Ok(capture_path) = std::env::var("OXVBA_HOST_EXTENSION_CAPTURE_PATH") else {
+        return;
+    };
+    let body = format!(
+        "{{\"status\":\"{}\",\"payload\":\"{}\"}}",
+        json_escape(status),
+        json_escape(payload)
+    );
+    std::fs::write(capture_path, body).expect("capture write should succeed");
+}
+
+fn build_engine(callbacks: Arc<ExcelVbideHostCallbacks>) -> Engine {
     let mut engine = Engine::new(HostConfig::default()).with_host_callbacks(callbacks.clone());
     engine.set_host_policy(HostPolicy::interactive_dev());
+    engine
+}
 
+fn attach_source_to_module(
+    callbacks: Arc<ExcelVbideHostCallbacks>,
+    module_name: &str,
+    source: &str,
+) -> Result<String, String> {
+    let engine = build_engine(callbacks.clone());
     let host = engine.host_services();
     let projects = host
         .project_catalog()
@@ -241,22 +278,88 @@ fn excel_vbide_host_callbacks_attach_source_to_thisworkbook() {
         .expect("reference list should succeed");
     assert_eq!(refs[0].referenced_name, "VBA");
 
-    let source = "Public Sub Sync()\nEnd Sub";
     host.project_mutation()
         .expect("project mutation should be exposed")
         .attach_host_extension_module(&HostExtensionModuleChange {
             project_name: "Workbook".to_string(),
-            module_name: "ThisWorkbook".to_string(),
+            module_name: module_name.to_string(),
             source: source.to_string(),
         })
-        .expect("host extension attach should succeed");
+        .map_err(|err| err.to_string())?;
 
-    let observed = callbacks
-        .read_module_source("ThisWorkbook")
-        .expect("code should be readable");
+    callbacks.read_module_source(module_name)
+}
+
+#[test]
+#[ignore = "requires Windows Excel with AccessVBOM enabled"]
+fn excel_vbide_host_callbacks_attach_source_to_thisworkbook() {
+    let workbook_path = unique_workbook_path();
+    let callbacks = Arc::new(ExcelVbideHostCallbacks::new(
+        workbook_path.clone(),
+        "Workbook",
+    ));
+    callbacks
+        .create_workbook()
+        .expect("workbook creation should succeed");
+
+    let source = "Public Sub Sync()\nEnd Sub";
+    let observed = attach_source_to_module(callbacks.clone(), "ThisWorkbook", source)
+        .expect("host extension attach should succeed");
+    write_capture("ok", &observed);
     assert!(
         observed.contains("Public Sub Sync()"),
         "expected ThisWorkbook code module to contain attached source, got: {observed}"
+    );
+
+    cleanup(&workbook_path);
+}
+
+#[test]
+#[ignore = "requires Windows Excel with AccessVBOM enabled"]
+fn excel_vbide_host_callbacks_missing_target_reports_error() {
+    let workbook_path = unique_workbook_path();
+    let callbacks = Arc::new(ExcelVbideHostCallbacks::new(
+        workbook_path.clone(),
+        "Workbook",
+    ));
+    callbacks
+        .create_workbook()
+        .expect("workbook creation should succeed");
+
+    let source = "Public Sub Sync()\nEnd Sub";
+    let error = attach_source_to_module(callbacks.clone(), "MissingHostTarget", source)
+        .expect_err("missing target should fail");
+    write_capture("error", &error);
+
+    cleanup(&workbook_path);
+}
+
+#[test]
+#[ignore = "requires Windows Excel with AccessVBOM enabled"]
+fn excel_vbide_host_callbacks_replace_existing_thisworkbook_source() {
+    let workbook_path = unique_workbook_path();
+    let callbacks = Arc::new(ExcelVbideHostCallbacks::new(
+        workbook_path.clone(),
+        "Workbook",
+    ));
+    callbacks
+        .create_workbook()
+        .expect("workbook creation should succeed");
+    callbacks
+        .seed_module_source("ThisWorkbook", "Public Sub BeforeSync()\nEnd Sub")
+        .expect("initial source seed should succeed");
+
+    let replacement = "Public Sub AfterSync()\nEnd Sub";
+    let observed = attach_source_to_module(callbacks.clone(), "ThisWorkbook", replacement)
+        .expect("replacement attach should succeed");
+    write_capture("ok", &observed);
+    assert!(
+        observed.contains("Public Sub AfterSync()"),
+        "expected ThisWorkbook code module to contain replacement source, got: {observed}"
+    );
+    assert!(
+        !observed.contains("Public Sub BeforeSync()"),
+        "expected prior ThisWorkbook source to be replaced, got: {observed}"
     );
 
     cleanup(&workbook_path);

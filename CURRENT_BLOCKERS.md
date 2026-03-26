@@ -649,31 +649,31 @@ Run context: active parity/compliance execution plus in-progress feature worklis
   - `BLK-EVT-001` — resolved (runtime subscription graph)
   - `BLK-COM-001` — resolved (COM event callback parity with external registered server evidence)
 
-## BLK-PMR-HAL-EXT-001 — live Excel/VBIDE host-project callback provider absent
+## BLK-PMR-HAL-EXT-001 — resolved (live Excel/VBIDE host-extension oracle harness)
 
 - Date: `2026-03-26`
 - Affects:
   - `ODG-040`
   - `CCT-042`
   - `INTP-013`
-- Status: open
+- Status: resolved
 - Current state:
   - project-model legality is now explicit: only `ProjectKind::Host` may admit `ModuleKind::Extension`
   - deterministic HAL project-catalog/reference/mutation seam now exists in `oxvba-hal`
   - the standard HAL adapter now exposes callback-backed project catalog / reference / mutation services
   - `oxvba-host::Engine` now preserves callback-backed host services across host rebuilds
-  - a first real Excel/VBIDE-backed callback provider path now exists in ignored `oxvba-host` integration coverage for `ThisWorkbook` source attachment
-  - the remaining gap is promoting that into a paired oracle harness and extending it to the extension-name/conflict matrix
+  - reusable oracle harness now exists in `scripts/run-host-extension-oracle.ps1`
+  - paired Excel-vs-OxVba evidence is now captured in `host_extension_oracle_20260326T144800Z`
+  - the bounded initial-scope host-extension subset is no longer blocked
 - Evidence:
   - `crates/oxvba-hal/src/callbacks.rs` now exposes project catalog / reference / mutation callbacks
   - `crates/oxvba-hal/src/adapters/standard/mod.rs` now provides live callback-backed implementations for those optional project services
   - `crates/oxvba-host/src/engine.rs` now preserves callback-backed host services through policy/profile rebuilds
-  - `ODG-040` now remains blocked on paired oracle capture and broader conflict evidence, not missing HAL/runtime mutation plumbing
+  - `docs/evidence/conformance/oracle_captures/host_extension_oracle_20260326T144800Z/summary.md` captures the bounded three-case matrix
+  - `ODG-040` / `CCT-042` are now closed for the supported host-extension attach subset
 - Exact unblock steps:
-  - promote the new Excel/VBIDE-backed callback provider into a reusable oracle harness / host runtime entrypoint
-  - add explicit conflict probes for extension-target mismatch and duplicate/occupied target behavior
-  - capture paired Excel-vs-OxVba evidence for the supported host-extension target subset
-  - then run the Excel/VBIDE oracle capture and fold it back into `ODG-040` / `CCT-042`
+  - none for `ODG-040`
+  - if scope expands beyond bounded attach behavior, continue under `INTP-013` for broader add/remove lifecycle and other host-specific extension semantics
 
 
 

@@ -1,0 +1,8 @@
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.24s
+     Running tests\host_project_excel_vbide_callbacks.rs (target\debug\deps\host_project_excel_vbide_callbacks-691e421520b58e3f.exe)
+
+running 1 test
+test excel_vbide_host_callbacks_replace_existing_thisworkbook_source ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 2 filtered out; finished in 17.63s
+
