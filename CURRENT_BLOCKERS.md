@@ -662,16 +662,17 @@ Run context: active parity/compliance execution plus in-progress feature worklis
   - deterministic HAL project-catalog/reference/mutation seam now exists in `oxvba-hal`
   - the standard HAL adapter now exposes callback-backed project catalog / reference / mutation services
   - `oxvba-host::Engine` now preserves callback-backed host services across host rebuilds
-  - the remaining gap is a real Excel/VBIDE callback provider and oracle harness that exercise those services against a live host project
+  - a first real Excel/VBIDE-backed callback provider path now exists in ignored `oxvba-host` integration coverage for `ThisWorkbook` source attachment
+  - the remaining gap is promoting that into a paired oracle harness and extending it to the extension-name/conflict matrix
 - Evidence:
   - `crates/oxvba-hal/src/callbacks.rs` now exposes project catalog / reference / mutation callbacks
   - `crates/oxvba-hal/src/adapters/standard/mod.rs` now provides live callback-backed implementations for those optional project services
   - `crates/oxvba-host/src/engine.rs` now preserves callback-backed host services through policy/profile rebuilds
-  - `ODG-040` now remains blocked on the live Excel/VBIDE provider/oracle layer, not missing HAL/runtime mutation plumbing
+  - `ODG-040` now remains blocked on paired oracle capture and broader conflict evidence, not missing HAL/runtime mutation plumbing
 - Exact unblock steps:
-  - implement a real Excel/VBIDE-backed `HostCallbacks` provider for open host project discovery, references, and extension attach
-  - route that provider through the oracle harness / host runtime entrypoint
-  - add deterministic integration coverage for open-host extension attach/conflict behavior on the callback-backed runtime path
+  - promote the new Excel/VBIDE-backed callback provider into a reusable oracle harness / host runtime entrypoint
+  - add explicit conflict probes for extension-target mismatch and duplicate/occupied target behavior
+  - capture paired Excel-vs-OxVba evidence for the supported host-extension target subset
   - then run the Excel/VBIDE oracle capture and fold it back into `ODG-040` / `CCT-042`
 
 

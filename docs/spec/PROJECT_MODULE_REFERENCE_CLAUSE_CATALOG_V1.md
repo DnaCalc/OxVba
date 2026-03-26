@@ -36,7 +36,7 @@ Machine-readable companion:
 | `PMR-MOD-004` | module | Module name max length is 31 (`SPEC-...-01286`). | implemented-verified | `project_node_rejects_module_name_over_31_chars` |
 | `PMR-MOD-005` | module | Source-project modules require `VB_GlobalNamespace=False` and `VB_Creatable=False` (`CONF-...-0042`). | implemented-verified | `source_project_class_attribute_constraints_are_enforced` |
 | `PMR-MOD-006` | module | Class header supports `VB_PredeclaredId` + `VB_Exposed` attributes (`SPEC-...-01266/01267`). | implemented-verified | `module_unit_parses_header_attributes_and_option_private` |
-| `PMR-MOD-007` | module | Extension module name must match extensible module name (`CONF-...-0043`). | specified-pending | extension-module identity tests (planned) |
+| `PMR-MOD-007` | module | Extension module name must match extensible module name (`CONF-...-0043`). | implemented-partial | `host_extension_attach_requires_registered_extensible_target`; `extensible_module_registration_is_case_insensitive` |
 | `PMR-VIS-001` | visibility | `Option Private Module` grammar and semantics are enforced (`SPEC-...-01366..01369`). | implemented-partial | `option_private_module_is_rejected_for_non_procedural_modules`; `formal_pmr_project_manifest_option_private_module_preserves_host_export_entry` |
 | `PMR-VIS-002` | visibility | Colliding public variable names require module qualification (`CONF-...-0053`). | implemented-partial | `public_symbol_collisions_require_qualification` |
 | `PMR-VIS-003` | visibility | Colliding public procedure names require module/project qualification (`CONF-...-0106`). | implemented-partial | `public_symbol_collisions_require_qualification` |
