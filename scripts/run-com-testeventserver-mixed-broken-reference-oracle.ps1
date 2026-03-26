@@ -180,6 +180,11 @@ try {
             Stop-Process -Id $probeProcess.Id -Force -ErrorAction SilentlyContinue
             $newExcelPids = @(Get-Process EXCEL -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Id)
             $orphanedPids = $newExcelPids | Where-Object { $_ -notin $baselineExcelPids }
+            $orphanedWindowTitles = @(
+                Get-Process -Id $orphanedPids -ErrorAction SilentlyContinue |
+                    Where-Object { -not [string]::IsNullOrWhiteSpace($_.MainWindowTitle) } |
+                    ForEach-Object { $_.MainWindowTitle }
+            )
             foreach ($orphanedPid in $orphanedPids) {
                 Stop-Process -Id $orphanedPid -Force -ErrorAction SilentlyContinue
             }
@@ -190,6 +195,7 @@ try {
                 stage          = if ($state) { [string]$state.stage } else { "" }
                 modal_observed = if ($state -and $state.stage -eq "reopened") { "possible" } else { "unknown" }
                 probe_exit_code = ""
+                window_titles  = ($orphanedWindowTitles -join "|")
             }
         }
 
@@ -202,6 +208,7 @@ try {
                 stage          = ""
                 modal_observed = "unknown"
                 probe_exit_code = $probeExitCode
+                window_titles  = ""
             }
         }
         if ($state.stage -eq "completed") {
@@ -212,6 +219,7 @@ try {
                 stage          = [string]$state.stage
                 modal_observed = "false"
                 probe_exit_code = $probeExitCode
+                window_titles  = ""
             }
         }
         return @{
@@ -221,6 +229,7 @@ try {
             stage          = [string]$state.stage
             modal_observed = "false"
             probe_exit_code = $probeExitCode
+            window_titles  = ""
         }
     }
 
@@ -276,6 +285,7 @@ try {
                 "Excel stage=" + $probe.stage +
                 "; refs=" + $probe.refs +
                 "; modal_observed=" + $probe.modal_observed +
+                "; window_titles=" + $probe.window_titles +
                 "; probe_exit_code=" + $probe.probe_exit_code +
                 "; OxVba anchor command=" + $cmdText +
                 "; log=" + $logPath

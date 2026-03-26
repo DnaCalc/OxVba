@@ -467,7 +467,8 @@ Run context: active parity/compliance execution plus in-progress feature worklis
   - In both orderings, Excel reopens the workbook and reports the expected mixed reference state:
     - broken first/base + valid later/alt, or
     - broken first/alt + valid later/base.
-  - After that successful reopen, hidden Excel automation with `DisplayAlerts = false` does not return from `RunProbe` within the bounded `15s` window in either ordering; the runner classifies this as likely blocked/modal behavior and force-cleans the spawned automation processes.
+  - After that successful reopen, hidden Excel automation with `DisplayAlerts = false` does not return from `RunProbe` within the bounded `15s` window in either ordering.
+  - The bounded runner now captures the orphaned visible window title on timeout, and in both orderings it is `Microsoft Visual Basic for Applications - [MainModule (Code)]`, which confirms that the mixed lane is surfacing VBE/UI state rather than remaining a purely silent background stall.
   - OxVba does not block in the same state. Loaded `.basproj` execution continues through the surviving later typelib reference and returns:
     - `84` when base is broken and alt remains valid,
     - `42` when alt is broken and base remains valid.
