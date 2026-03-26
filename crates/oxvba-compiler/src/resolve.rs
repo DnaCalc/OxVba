@@ -3852,9 +3852,8 @@ pub fn intrinsic_spec(name: &str) -> Option<IntrinsicSpec> {
         | "atn" | "tan" | "year" | "month" | "day" | "weekday" | "space" | "chr" | "asc"
         | "lbound" | "ubound" | "isarray" | "vartype" | "typename" | "isnumeric" | "isdate"
         | "isobject" | "isempty" | "isnull" | "iserror" | "monthname" | "collectioncount"
-        | "eof" | "lof" | "loc" | "seek" | "strreverse" => {
-            Some(IntrinsicSpec::fixed(1, DeterministicCore))
-        }
+        | "strreverse" => Some(IntrinsicSpec::fixed(1, DeterministicCore)),
+        "eof" | "lof" | "loc" | "seek" => Some(IntrinsicSpec::fixed(1, HostSensitive)),
         "format" => Some(IntrinsicSpec::range(1, 2, DeterministicCore)),
         "strconv" => Some(IntrinsicSpec::range(2, 3, DeterministicCore)),
         "left" | "right" | "instr" | "instrrev" | "split" | "join" | "strcomp" => {
@@ -4015,7 +4014,9 @@ fn known_dispatch_member_literal_token_for_object_arg(
 ) -> Option<i32> {
     let prog_id_name = dispatch_invoke_createobject_prog_id_literal(object_arg)?;
     let identity = oxvba_com::known_typelib_identity_for_prog_id_name(prog_id_name.as_str())?;
-    if !identity.importlib.eq_ignore_ascii_case("oxvba_testdispatch.tlb")
+    if !identity
+        .importlib
+        .eq_ignore_ascii_case("oxvba_testdispatch.tlb")
         && !identity
             .importlib
             .eq_ignore_ascii_case("oxvba_testdispatch_nodefault.tlb")
@@ -5045,6 +5046,14 @@ mod tests {
         );
         assert_eq!(
             intrinsic_surface("FreeFile"),
+            Some(IntrinsicSurface::HostSensitive)
+        );
+        assert_eq!(
+            intrinsic_surface("EOF"),
+            Some(IntrinsicSurface::HostSensitive)
+        );
+        assert_eq!(
+            intrinsic_surface("Seek"),
             Some(IntrinsicSurface::HostSensitive)
         );
         assert_eq!(

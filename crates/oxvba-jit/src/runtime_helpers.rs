@@ -2363,6 +2363,51 @@ pub extern "C" fn oxrt_host_file_line_input(ctx: *mut JitContext, dst: u32, hand
 }
 
 #[unsafe(no_mangle)]
+pub extern "C" fn oxrt_host_file_eof(ctx: *mut JitContext, dst: u32, handle: u32) -> i32 {
+    let host = unsafe { (*ctx).host_services() };
+    let handle_val = read_slot!(ctx, handle);
+    match host.fs().eof(handle_val) {
+        Ok(RuntimeValue::I32(value)) => {
+            write_slot!(ctx, dst, RuntimeValue::Bool(value != 0));
+            OK
+        }
+        Ok(RuntimeValue::Bool(value)) => {
+            write_slot!(ctx, dst, RuntimeValue::Bool(value));
+            OK
+        }
+        Ok(_) => ERR_RUNTIME,
+        Err(_) => ERR_RUNTIME,
+    }
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn oxrt_host_file_lof(ctx: *mut JitContext, dst: u32, handle: u32) -> i32 {
+    let host = unsafe { (*ctx).host_services() };
+    let handle_val = read_slot!(ctx, handle);
+    match host.fs().lof(handle_val) {
+        Ok(value) => {
+            write_slot!(ctx, dst, value);
+            OK
+        }
+        Err(_) => ERR_RUNTIME,
+    }
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn oxrt_host_file_seek(ctx: *mut JitContext, dst: u32, handle: u32) -> i32 {
+    let host = unsafe { (*ctx).host_services() };
+    let handle_val = read_slot!(ctx, handle);
+    match host.fs().loc(handle_val) {
+        Ok(RuntimeValue::I32(value)) => {
+            write_slot!(ctx, dst, RuntimeValue::I32(value + 1));
+            OK
+        }
+        Ok(_) => ERR_RUNTIME,
+        Err(_) => ERR_RUNTIME,
+    }
+}
+
+#[unsafe(no_mangle)]
 pub extern "C" fn oxrt_host_file_loc(ctx: *mut JitContext, dst: u32, handle: u32) -> i32 {
     let host = unsafe { (*ctx).host_services() };
     let handle_val = read_slot!(ctx, handle);
@@ -3623,6 +3668,9 @@ pub fn register_symbols(builder: &mut cranelift_jit::JITBuilder) {
             "oxrt_host_file_line_input",
             oxrt_host_file_line_input as *const u8,
         ),
+        ("oxrt_host_file_eof", oxrt_host_file_eof as *const u8),
+        ("oxrt_host_file_lof", oxrt_host_file_lof as *const u8),
+        ("oxrt_host_file_seek", oxrt_host_file_seek as *const u8),
         ("oxrt_host_file_loc", oxrt_host_file_loc as *const u8),
         (
             "oxrt_host_create_object",

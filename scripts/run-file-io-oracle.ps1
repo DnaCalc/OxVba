@@ -32,6 +32,8 @@ try {
     New-Item -ItemType Directory -Force -Path $tempDir | Out-Null
     $tempFile = Join-Path $tempDir "roundtrip.txt"
     $tempFileLiteral = $tempFile.Replace('\', '\\')
+    $filePosPath = Join-Path $tempDir "filepos.txt"
+    $filePosLiteral = $filePosPath.Replace('\', '\\')
 
     function Add-StdModule {
         param($Workbook, [string]$ModuleName, [string]$Code)
@@ -121,7 +123,8 @@ try {
     $excelVersion = $script:excel.Version
     try {
         $vbaRows = @(
-            Invoke-ExcelCase -CaseId "CCT-033-LINE-001" -Scenario "Output/Print/Close/Input/Line Input roundtrip returns written line" -Code @"
+            (
+                Invoke-ExcelCase -CaseId "CCT-033-LINE-001" -Scenario "Output/Print/Close/Input/Line Input roundtrip returns written line" -Code @"
 Public Function RunProbe()
     Dim a As String
     Open "$tempFileLiteral" For Output As #1
@@ -133,6 +136,24 @@ Public Function RunProbe()
     RunProbe = a
 End Function
 "@
+            ),
+            (
+                Invoke-ExcelCase -CaseId "CCT-033-FILEPOS-001" -Scenario "EOF/LOF/Seek around Input file position follow Excel host semantics" -Code @"
+Public Function RunProbe()
+    Dim observed As String
+    Dim line As String
+    Open "$filePosLiteral" For Output As #1
+    Print #1, "world"
+    Close #1
+    Open "$filePosLiteral" For Input As #1
+    observed = CStr(EOF(1)) & "|" & CStr(LOF(1)) & "|" & CStr(Seek(1))
+    Line Input #1, line
+    observed = observed & "|" & line & "|" & CStr(EOF(1)) & "|" & CStr(Seek(1))
+    Close #1
+    RunProbe = observed
+End Function
+"@
+            )
         )
     } finally {
         $script:excel.Quit()
@@ -140,7 +161,12 @@ End Function
     }
 
     $oxRows = @(
-        Invoke-OxCase -CaseId "CCT-033-LINE-001" -Scenario "Output/Print/Close/Input/Line Input roundtrip returns written line" -TestName "windows_file_io_host_backed_end_to_end::host_backed_file_print_line_input_roundtrip_returns_written_line"
+        (
+            Invoke-OxCase -CaseId "CCT-033-LINE-001" -Scenario "Output/Print/Close/Input/Line Input roundtrip returns written line" -TestName "windows_file_io_host_backed_end_to_end::host_backed_file_print_line_input_roundtrip_returns_written_line"
+        ),
+        (
+            Invoke-OxCase -CaseId "CCT-033-FILEPOS-001" -Scenario "EOF/LOF/Seek around Input file position follow Excel host semantics" -TestName "windows_file_io_host_backed_end_to_end::host_backed_file_eof_lof_seek_matches_excel_shape"
+        )
     )
 
     $rows = foreach ($oxRow in $oxRows) {

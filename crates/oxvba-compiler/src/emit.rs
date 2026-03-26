@@ -2337,6 +2337,22 @@ fn emit_expr_into(
                         range_selector: Some(*range_selector),
                     })
                 }
+                ("eof", [handle]) => instructions.push(Instruction::IntrinsicFileEofHost {
+                    dst,
+                    handle: *handle,
+                }),
+                ("lof", [handle]) => instructions.push(Instruction::IntrinsicFileLofHost {
+                    dst,
+                    handle: *handle,
+                }),
+                ("seek", [handle]) => instructions.push(Instruction::IntrinsicFileSeekHost {
+                    dst,
+                    handle: *handle,
+                }),
+                ("loc", [handle]) => instructions.push(Instruction::IntrinsicFileLocHost {
+                    dst,
+                    handle: *handle,
+                }),
                 ("doevents", []) => instructions.push(Instruction::IntrinsicDoEventsHost { dst }),
                 ("msgbox", [prompt]) => instructions.push(Instruction::IntrinsicMsgBoxHost {
                     dst,
@@ -2821,9 +2837,6 @@ fn emit_expr_into(
                     dst,
                     seed: Some(*seed),
                 }),
-                ("eof", [src]) | ("lof", [src]) | ("loc", [src]) | ("seek", [src]) => {
-                    instructions.push(Instruction::CopySlot { dst, src: *src })
-                }
                 ("shell", [command]) => instructions.push(Instruction::IntrinsicShellHost {
                     dst,
                     command: *command,

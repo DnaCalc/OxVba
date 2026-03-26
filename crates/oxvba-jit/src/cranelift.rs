@@ -225,6 +225,9 @@ fn supports_rtslot_instruction(instruction: &Instruction) -> bool {
             | Instruction::IntrinsicFilePrintHost { .. }
             | Instruction::IntrinsicFileInputHost { .. }
             | Instruction::IntrinsicFileLineInputHost { .. }
+            | Instruction::IntrinsicFileEofHost { .. }
+            | Instruction::IntrinsicFileLofHost { .. }
+            | Instruction::IntrinsicFileSeekHost { .. }
             | Instruction::IntrinsicFileLocHost { .. }
             // COM dispatch
             | Instruction::IntrinsicCreateObjectHost { .. }
@@ -2674,6 +2677,48 @@ pub fn execute_bytecode_rtslot(
                     error_dispatch_block,
                 );
             }
+            Instruction::IntrinsicFileEofHost { dst, handle } => {
+                emit_extra_2slot(
+                    &mut builder,
+                    &mut module,
+                    &helpers,
+                    "oxrt_host_file_eof",
+                    ctx_ptr,
+                    *dst,
+                    *handle,
+                    pc,
+                    next_block,
+                    error_dispatch_block,
+                );
+            }
+            Instruction::IntrinsicFileLofHost { dst, handle } => {
+                emit_extra_2slot(
+                    &mut builder,
+                    &mut module,
+                    &helpers,
+                    "oxrt_host_file_lof",
+                    ctx_ptr,
+                    *dst,
+                    *handle,
+                    pc,
+                    next_block,
+                    error_dispatch_block,
+                );
+            }
+            Instruction::IntrinsicFileSeekHost { dst, handle } => {
+                emit_extra_2slot(
+                    &mut builder,
+                    &mut module,
+                    &helpers,
+                    "oxrt_host_file_seek",
+                    ctx_ptr,
+                    *dst,
+                    *handle,
+                    pc,
+                    next_block,
+                    error_dispatch_block,
+                );
+            }
             Instruction::IntrinsicFileLocHost { dst, handle } => {
                 emit_extra_2slot(
                     &mut builder,
@@ -3449,6 +3494,9 @@ impl HelperFuncIds {
             ("oxrt_host_file_print", &sig_ctx_3),
             ("oxrt_host_file_input", &sig_ctx_3),
             ("oxrt_host_file_line_input", &sig_ctx_2),
+            ("oxrt_host_file_eof", &sig_ctx_2),
+            ("oxrt_host_file_lof", &sig_ctx_2),
+            ("oxrt_host_file_seek", &sig_ctx_2),
             ("oxrt_host_file_loc", &sig_ctx_2),
             // Phase 4: COM
             ("oxrt_host_create_object", &sig_ctx_2),

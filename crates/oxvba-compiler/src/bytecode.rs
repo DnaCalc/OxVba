@@ -310,6 +310,18 @@ pub enum Instruction {
         dst: usize,
         handle: usize,
     },
+    IntrinsicFileEofHost {
+        dst: usize,
+        handle: usize,
+    },
+    IntrinsicFileLofHost {
+        dst: usize,
+        handle: usize,
+    },
+    IntrinsicFileSeekHost {
+        dst: usize,
+        handle: usize,
+    },
     IntrinsicFileLocHost {
         dst: usize,
         handle: usize,

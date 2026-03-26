@@ -1280,7 +1280,11 @@ mod tests {
             .expect("host extension attach should succeed");
 
         assert_eq!(
-            callbacks.mutations.lock().expect("mutation log lock").as_slice(),
+            callbacks
+                .mutations
+                .lock()
+                .expect("mutation log lock")
+                .as_slice(),
             ["Workbook::HostExt"]
         );
     }
@@ -21890,15 +21894,44 @@ mod tests {
     }
 
     #[test]
-    fn formal_v134_file_stub_intrinsics_execute() {
-        let source = "Sub Main()\nDim a\nDim b\nDim c\nDim d\na = FreeFile()\nb = EOF(3)\nc = LOF(4)\nd = Seek(5)\nEnd Sub";
-        let out = Engine::new(HostConfig {
+    fn formal_v134_file_position_intrinsics_execute() {
+        let mut engine = Engine::new(HostConfig {
             enable_jit: false,
             root_object_name: None,
-        })
-        .execute_source_slots_test(source)
-        .expect("execution should succeed");
-        assert_eq!(out, vec![1, 3, 4, 5]);
+        });
+        let temp_dir = std::env::current_dir()
+            .expect("cwd")
+            .join("temp")
+            .join("file-io-oracle-test");
+        std::fs::create_dir_all(&temp_dir).expect("create temp dir");
+        let temp_file = temp_dir.join("formal_v134_file_position.txt");
+        let path_literal = temp_file.to_string_lossy().replace('\\', "\\\\");
+        let mut policy = HostPolicy::interactive_dev();
+        policy.allow_filesystem_mutation = true;
+        engine.set_host_policy(policy);
+        let source = format!(
+            "Sub Main()\n\
+            Dim a\n\
+            Dim b\n\
+            Dim c\n\
+            Dim d\n\
+            Dim line\n\
+            Open \"{path_literal}\" For Output As #1\n\
+            Print #1, \"world\"\n\
+            Close #1\n\
+            Open \"{path_literal}\" For Input As #1\n\
+            If EOF(1) Then a = 1 Else a = 0\n\
+            b = LOF(1)\n\
+            c = Seek(1)\n\
+            Line Input #1, line\n\
+            d = Seek(1)\n\
+            Close #1\n\
+            End Sub"
+        );
+        let out = engine
+            .execute_source_slots_test_phased(&source)
+            .expect("execution should succeed");
+        assert_eq!(&out[..4], &[0, 7, 1, 8]);
     }
 
     #[test]

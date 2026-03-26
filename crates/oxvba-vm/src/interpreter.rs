@@ -1085,6 +1085,38 @@ impl Vm {
                         Err(err) => pc = self.route_host_error(pc, err)?,
                     }
                 }
+                Instruction::IntrinsicFileEofHost { dst, handle } => {
+                    let handle = self.read_value_slot(*handle)?;
+                    match self.host_services.fs().eof(handle) {
+                        Ok(value) => {
+                            let value = value.to_legacy_i32().unwrap_or(0);
+                            self.write_value_slot(*dst, RuntimeValue::Bool(value != 0))?;
+                            pc += 1;
+                        }
+                        Err(err) => pc = self.route_host_error(pc, err)?,
+                    }
+                }
+                Instruction::IntrinsicFileLofHost { dst, handle } => {
+                    let handle = self.read_value_slot(*handle)?;
+                    match self.host_services.fs().lof(handle) {
+                        Ok(value) => {
+                            self.write_value_slot(*dst, value)?;
+                            pc += 1;
+                        }
+                        Err(err) => pc = self.route_host_error(pc, err)?,
+                    }
+                }
+                Instruction::IntrinsicFileSeekHost { dst, handle } => {
+                    let handle = self.read_value_slot(*handle)?;
+                    match self.host_services.fs().loc(handle) {
+                        Ok(value) => {
+                            let value = value.to_legacy_i32().unwrap_or(0);
+                            self.write_value_slot(*dst, RuntimeValue::I32(value + 1))?;
+                            pc += 1;
+                        }
+                        Err(err) => pc = self.route_host_error(pc, err)?,
+                    }
+                }
                 Instruction::IntrinsicFileLocHost { dst, handle } => {
                     let handle = self.read_value_slot(*handle)?;
                     match self.host_services.fs().loc(handle) {
@@ -1906,10 +1938,7 @@ impl Vm {
                     match bridge.invoke_dynamic(&request) {
                         Ok(value) => {
                             self.write_value_slot(*dst, value.to_runtime_value())?;
-                            self.pump_project_com_withevents_callbacks(
-                                bytecode,
-                                typed_fastpaths,
-                            )?;
+                            self.pump_project_com_withevents_callbacks(bytecode, typed_fastpaths)?;
                             pc += 1;
                         }
                         Err(err) => pc = self.route_host_error(pc, err)?,
@@ -3261,7 +3290,12 @@ impl Vm {
     }
 
     fn clear_all_com_withevents_state_best_effort(&mut self) {
-        for subscription in self.com_withevents_subscriptions.keys().copied().collect::<Vec<_>>() {
+        for subscription in self
+            .com_withevents_subscriptions
+            .keys()
+            .copied()
+            .collect::<Vec<_>>()
+        {
             let _ = self.host_services.com().unsubscribe_event(subscription);
         }
         self.com_withevents_subscriptions.clear();
@@ -3283,7 +3317,10 @@ impl Vm {
         Ok(())
     }
 
-    fn clear_com_withevents_owner_subscriptions(&mut self, owner: ObjectHandle) -> Result<(), String> {
+    fn clear_com_withevents_owner_subscriptions(
+        &mut self,
+        owner: ObjectHandle,
+    ) -> Result<(), String> {
         let keys = self
             .com_withevents_binding_subscriptions
             .keys()
@@ -3323,7 +3360,10 @@ impl Vm {
             return Ok(());
         };
         for route in routes {
-            if !descriptor.prog_id_name.eq_ignore_ascii_case(&route.prog_id_name) {
+            if !descriptor
+                .prog_id_name
+                .eq_ignore_ascii_case(&route.prog_id_name)
+            {
                 continue;
             }
             let subscription = self
@@ -3397,7 +3437,11 @@ impl Vm {
                 .com()
                 .event_callback_subscription(callback)
                 .map_err(|err| err.to_string())?;
-            let Some(bound) = self.com_withevents_subscriptions.get(&subscription).cloned() else {
+            let Some(bound) = self
+                .com_withevents_subscriptions
+                .get(&subscription)
+                .cloned()
+            else {
                 self.pending_callback_tokens.push_back(callback);
                 return Ok(());
             };
@@ -3929,7 +3973,6 @@ impl Vm {
 #[cfg(test)]
 mod tests {
     use super::Vm;
-    use std::collections::BTreeMap;
     use oxvba_com::{ComValue, DynamicCallArg, DynamicCallRequest, DynamicMemberSelector};
     use oxvba_compiler::{
         Bytecode, Instruction, ProcedureRuntimeMetadata, ProjectComWithEventsRoute,
@@ -3947,6 +3990,7 @@ mod tests {
         bstr::BStr,
         safe_array::{ARRAY_TAG_BASE, SafeArray},
     };
+    use std::collections::BTreeMap;
 
     #[test]
     fn executes_load_and_add_sequence() {

@@ -1,0 +1,9 @@
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.18s
+     Running tests\file_io_host_backed_end_to_end.rs (target\debug\deps\file_io_host_backed_end_to_end-fff213958df768b5.exe)
+
+running 1 test
+test windows_file_io_host_backed_end_to_end::host_backed_file_eof_lof_seek_matches_excel_shape ... ODG032-OBSERVED[CCT-033-FILEPOS-001]=False|7|1|world|True|8
+ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1 filtered out; finished in 0.01s
+
