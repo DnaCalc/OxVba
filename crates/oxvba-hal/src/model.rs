@@ -63,6 +63,8 @@ pub enum CapabilityId {
     TimeLocale,
     DynamicLinking,
     DiagnosticsTelemetry,
+    ProjectCatalog,
+    ProjectReferenceProvider,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -265,7 +267,7 @@ impl Default for HostPolicy {
     }
 }
 
-pub const ALL_CAPABILITIES: [CapabilityId; 8] = [
+pub const ALL_CAPABILITIES: [CapabilityId; 10] = [
     CapabilityId::UiInteraction,
     CapabilityId::EventPump,
     CapabilityId::FileSystemIo,
@@ -274,6 +276,8 @@ pub const ALL_CAPABILITIES: [CapabilityId; 8] = [
     CapabilityId::TimeLocale,
     CapabilityId::DynamicLinking,
     CapabilityId::DiagnosticsTelemetry,
+    CapabilityId::ProjectCatalog,
+    CapabilityId::ProjectReferenceProvider,
 ];
 
 pub fn host_backed_profile_matches_host(profile: HalProfileId) -> bool {

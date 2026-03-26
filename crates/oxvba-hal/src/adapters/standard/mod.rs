@@ -1965,6 +1965,8 @@ mod tests {
         assert!(descriptor.supports(crate::model::CapabilityId::TimeLocale));
         assert!(!descriptor.supports(crate::model::CapabilityId::DynamicLinking));
         assert!(descriptor.supports(crate::model::CapabilityId::DiagnosticsTelemetry));
+        assert!(!descriptor.supports(crate::model::CapabilityId::ProjectCatalog));
+        assert!(!descriptor.supports(crate::model::CapabilityId::ProjectReferenceProvider));
     }
 
     #[test]

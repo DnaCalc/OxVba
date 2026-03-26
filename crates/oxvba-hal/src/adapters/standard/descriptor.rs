@@ -69,6 +69,13 @@ fn capability_matrix(
             );
             push(C::DynamicLinking, true, M::Provisional, "MS-VBAL:Declare");
             push(C::DiagnosticsTelemetry, true, M::Stable, "OxVba:HAL");
+            push(C::ProjectCatalog, false, M::Stable, "OxVba:HAL-PROJ");
+            push(
+                C::ProjectReferenceProvider,
+                false,
+                M::Stable,
+                "OxVba:HAL-PROJ",
+            );
         }
         HalProfileId::Linux => {
             push(
@@ -99,6 +106,13 @@ fn capability_matrix(
             );
             push(C::DynamicLinking, true, M::Experimental, "MS-VBAL:Declare");
             push(C::DiagnosticsTelemetry, true, M::Stable, "OxVba:HAL");
+            push(C::ProjectCatalog, false, M::Stable, "OxVba:HAL-PROJ");
+            push(
+                C::ProjectReferenceProvider,
+                false,
+                M::Stable,
+                "OxVba:HAL-PROJ",
+            );
         }
         HalProfileId::MacOs => {
             push(
@@ -129,6 +143,13 @@ fn capability_matrix(
             );
             push(C::DynamicLinking, true, M::Stub, "MS-VBAL:Declare");
             push(C::DiagnosticsTelemetry, true, M::Stable, "OxVba:HAL");
+            push(C::ProjectCatalog, false, M::Stable, "OxVba:HAL-PROJ");
+            push(
+                C::ProjectReferenceProvider,
+                false,
+                M::Stable,
+                "OxVba:HAL-PROJ",
+            );
         }
         HalProfileId::Wasm => match runtime_class {
             HalRuntimeClass::WasmWasiLocal => {
@@ -150,6 +171,13 @@ fn capability_matrix(
                 );
                 push(C::DynamicLinking, false, M::Stable, "MS-VBAL:Declare");
                 push(C::DiagnosticsTelemetry, true, M::Stable, "OxVba:HAL");
+                push(C::ProjectCatalog, false, M::Stable, "OxVba:HAL-PROJ");
+                push(
+                    C::ProjectReferenceProvider,
+                    false,
+                    M::Stable,
+                    "OxVba:HAL-PROJ",
+                );
             }
             HalRuntimeClass::WasmBrowserSandbox => {
                 push(
@@ -170,6 +198,13 @@ fn capability_matrix(
                 );
                 push(C::DynamicLinking, false, M::Stable, "MS-VBAL:Declare");
                 push(C::DiagnosticsTelemetry, true, M::Stable, "OxVba:HAL");
+                push(C::ProjectCatalog, false, M::Stable, "OxVba:HAL-PROJ");
+                push(
+                    C::ProjectReferenceProvider,
+                    false,
+                    M::Stable,
+                    "OxVba:HAL-PROJ",
+                );
             }
             _ => match wasm_runtime_class {
                 WasmRuntimeClass::Wasi => {
@@ -191,6 +226,13 @@ fn capability_matrix(
                     );
                     push(C::DynamicLinking, false, M::Stable, "MS-VBAL:Declare");
                     push(C::DiagnosticsTelemetry, true, M::Stable, "OxVba:HAL");
+                    push(C::ProjectCatalog, false, M::Stable, "OxVba:HAL-PROJ");
+                    push(
+                        C::ProjectReferenceProvider,
+                        false,
+                        M::Stable,
+                        "OxVba:HAL-PROJ",
+                    );
                 }
                 WasmRuntimeClass::BrowserSandbox => {
                     push(
@@ -211,6 +253,13 @@ fn capability_matrix(
                     );
                     push(C::DynamicLinking, false, M::Stable, "MS-VBAL:Declare");
                     push(C::DiagnosticsTelemetry, true, M::Stable, "OxVba:HAL");
+                    push(C::ProjectCatalog, false, M::Stable, "OxVba:HAL-PROJ");
+                    push(
+                        C::ProjectReferenceProvider,
+                        false,
+                        M::Stable,
+                        "OxVba:HAL-PROJ",
+                    );
                 }
             },
         },
@@ -233,6 +282,13 @@ fn capability_matrix(
             );
             push(C::DynamicLinking, false, M::Stable, "MS-VBAL:Declare");
             push(C::DiagnosticsTelemetry, true, M::Stable, "OxVba:HAL");
+            push(C::ProjectCatalog, false, M::Stable, "OxVba:HAL-PROJ");
+            push(
+                C::ProjectReferenceProvider,
+                false,
+                M::Stable,
+                "OxVba:HAL-PROJ",
+            );
         }
     }
     out

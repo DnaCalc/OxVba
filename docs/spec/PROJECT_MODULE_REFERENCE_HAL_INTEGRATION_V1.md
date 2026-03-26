@@ -32,6 +32,11 @@ Class-module note:
 
 ## 3. Proposed HAL Capability Extensions (Planned)
 
+Current status note:
+
+- A deterministic in-memory `ProjectCatalog` / `ProjectReference` mock seam now exists in `oxvba-hal`.
+- Adapter-backed host mutation support and oracle-backed host behavior capture remain open.
+
 These are planned additions, not yet implemented capabilities:
 
 1. `ProjectCatalog`
@@ -151,7 +156,7 @@ Required lane types:
 
 1. Add PMR HAL capability placeholders to HAL design docs and uncertainty register.
 2. Define descriptor payload schemas for project/ref metadata.
-3. Add a deterministic mock adapter for `ProjectCatalog` and `ProjectReferenceProvider`.
+3. Deterministic mock adapter for `ProjectCatalog` and `ProjectReferenceProvider` landed in `oxvba-hal`; next step is adapter-backed host mutation support.
 4. Defer `ProjectStorage` parity claims until MS-OVBA section-level extraction is available.
 5. Keep class semantic conformance lane executable independent of COM capability support per profile.
 6. Evolve local importlib scaffold into a HAL-backed resolver interface with explicit policy and phase mapping.

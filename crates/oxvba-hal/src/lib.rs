@@ -7,6 +7,7 @@ pub mod dynamic_bridge;
 pub mod error;
 pub mod journal;
 pub mod model;
+pub mod project;
 pub mod traits;
 
 pub use dynamic_bridge::HalComDynamicBridge;
@@ -17,9 +18,13 @@ pub use model::{
     UnsupportedFeatureMode, WasmRuntimeClass, host_backed_mode_active,
     host_backed_profile_matches_host,
 };
+pub use project::{
+    InMemoryProjectCatalog, ProjectDescriptor, ProjectDescriptorKind, ProjectReferenceDescriptor,
+    ProjectReferenceKind, ResolvedProjectReference,
+};
 pub use traits::{
     ComHal, DiagnosticsHal, DynLinkDescriptorView, DynamicLinkHal, EventPumpHal, FileSystemHal,
-    HostServices, ProcessEnvHal, TimeLocaleHal, TypeLibCacheScope, TypeLibEventDispatchPath,
-    TypeLibEventMetadata, TypeLibMemberMetadata, TypeLibMetadataBlob, TypeLibResolveRequest,
-    TypeLibResolvedIdentity, UiInteractionHal,
+    HostServices, ProcessEnvHal, ProjectCatalogHal, ProjectReferenceHal, TimeLocaleHal,
+    TypeLibCacheScope, TypeLibEventDispatchPath, TypeLibEventMetadata, TypeLibMemberMetadata,
+    TypeLibMetadataBlob, TypeLibResolveRequest, TypeLibResolvedIdentity, UiInteractionHal,
 };

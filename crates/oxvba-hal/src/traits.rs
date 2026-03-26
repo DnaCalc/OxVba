@@ -11,6 +11,7 @@
 use crate::{
     error::HalResult,
     model::{HalDescriptor, HalProfileId, HostPolicy},
+    project::{ProjectDescriptor, ProjectReferenceDescriptor, ResolvedProjectReference},
 };
 use oxvba_com::{
     ComCallbackPayload, ComCallbackToken, ComInvokeRequest, ComMemberToken, ComObjectDescriptor,
@@ -81,6 +82,12 @@ pub trait HostServices: Send + Sync {
     fn time_locale(&self) -> &dyn TimeLocaleHal;
     fn dynlink(&self) -> &dyn DynamicLinkHal;
     fn diag(&self) -> &dyn DiagnosticsHal;
+    fn project_catalog(&self) -> Option<&dyn ProjectCatalogHal> {
+        None
+    }
+    fn project_references(&self) -> Option<&dyn ProjectReferenceHal> {
+        None
+    }
 }
 
 pub trait UiInteractionHal: Send + Sync {
@@ -240,6 +247,19 @@ pub trait DynamicLinkHal: Send + Sync {
 
 pub trait DiagnosticsHal: Send + Sync {
     fn emit(&self, code: RuntimeValue, payload: RuntimeValue) -> HalResult<RuntimeValue>;
+}
+
+pub trait ProjectCatalogHal: Send + Sync {
+    fn list_projects(&self) -> HalResult<Vec<ProjectDescriptor>>;
+    fn get_project(&self, project_name: &str) -> HalResult<ProjectDescriptor>;
+}
+
+pub trait ProjectReferenceHal: Send + Sync {
+    fn list_references(&self, project_name: &str) -> HalResult<Vec<ProjectReferenceDescriptor>>;
+    fn resolve_reference(
+        &self,
+        reference: &ProjectReferenceDescriptor,
+    ) -> HalResult<ResolvedProjectReference>;
 }
 
 #[allow(unexpected_cfgs)]
