@@ -560,6 +560,96 @@ fn early_bound_loaded_basproj_mixed_broken_alt_then_valid_base_reports_unresolve
 
 #[cfg(target_os = "windows")]
 #[test]
+#[ignore = "requires registered external COM typelib lane and validates broken-first qualified later-valid loaded .basproj execution"]
+fn early_bound_loaded_basproj_broken_base_then_valid_alt_qualified_target_resolves_alt_binding(
+) {
+    let loaded = load_typelib_basproj_with_ref_specs(
+        "basproj-typelib-broken-base-valid-alt-qualified-alt",
+        concat!(
+            "Attribute VB_Name = \"Main\"\n",
+            "Public Sub Main()\n",
+            "Dim obj As OxVba_TestEventServerAlt.TestEventServer\n",
+            "Dim value\n",
+            "Set obj = New OxVba_TestEventServerAlt.TestEventServer\n",
+            "value = obj.Ping()\n",
+            "End Sub\n"
+        ),
+        &[
+            BasprojComRefSpec {
+                include: "OxVbaMissingBase",
+                guid: Some("{E2A30001-0001-0001-0001-000000000001}"),
+                major: Some(1),
+                minor: Some(0),
+                lcid: Some(0),
+                importlib: Some("C:\\Work\\DnaCalc\\OxVba\\temp\\missing\\OxVba.TestEventServer.tlb"),
+            },
+            BasprojComRefSpec {
+                include: "OxVbaAlt",
+                guid: Some("{E2A30001-0001-0001-0001-000000000101}"),
+                major: Some(1),
+                minor: Some(0),
+                lcid: Some(0),
+                importlib: Some("OxVba.TestEventServerAlt.tlb"),
+            },
+        ],
+    );
+
+    let compiled = compile_project(&loaded.manifest)
+        .expect("qualified later-valid alt reference should compile despite earlier broken reference");
+    let out = compiled.rewritten_source.to_ascii_lowercase();
+    assert!(
+        out.contains("set obj = createobject(\"oxvba.testeventserveralt\")"),
+        "expected qualified later-valid alt binding to lower to the alt ProgID, got: {out}"
+    );
+}
+
+#[cfg(target_os = "windows")]
+#[test]
+#[ignore = "requires registered external COM typelib lane and validates broken-first qualified later-valid loaded .basproj execution"]
+fn early_bound_loaded_basproj_broken_alt_then_valid_base_qualified_target_resolves_base_binding(
+) {
+    let loaded = load_typelib_basproj_with_ref_specs(
+        "basproj-typelib-broken-alt-valid-base-qualified-base",
+        concat!(
+            "Attribute VB_Name = \"Main\"\n",
+            "Public Sub Main()\n",
+            "Dim obj As OxVba_TestEventServer.TestEventServer\n",
+            "Dim value\n",
+            "Set obj = New OxVba_TestEventServer.TestEventServer\n",
+            "value = obj.Ping()\n",
+            "End Sub\n"
+        ),
+        &[
+            BasprojComRefSpec {
+                include: "OxVbaAltMissing",
+                guid: Some("{E2A30001-0001-0001-0001-000000000101}"),
+                major: Some(1),
+                minor: Some(0),
+                lcid: Some(0),
+                importlib: Some("C:\\Work\\DnaCalc\\OxVba\\temp\\missing\\OxVba.TestEventServerAlt.tlb"),
+            },
+            BasprojComRefSpec {
+                include: "OxVba",
+                guid: Some("{E2A30001-0001-0001-0001-000000000001}"),
+                major: Some(1),
+                minor: Some(0),
+                lcid: Some(0),
+                importlib: Some("OxVba.TestEventServer.tlb"),
+            },
+        ],
+    );
+
+    let compiled = compile_project(&loaded.manifest)
+        .expect("qualified later-valid base reference should compile despite earlier broken reference");
+    let out = compiled.rewritten_source.to_ascii_lowercase();
+    assert!(
+        out.contains("set obj = createobject(\"oxvba.testeventserver\")"),
+        "expected qualified later-valid base binding to lower to the base ProgID, got: {out}"
+    );
+}
+
+#[cfg(target_os = "windows")]
+#[test]
 #[ignore = "requires registered external COM typelib lane and validates qualified valid target binding despite later broken reference in loaded .basproj execution"]
 fn early_bound_loaded_basproj_valid_base_then_broken_alt_resolves_qualified_base_binding() {
     let loaded = load_typelib_basproj_with_ref_specs(

@@ -848,6 +848,9 @@ fn record_internal_class_object_local(
     let Some(proc_name) = active_procedure_name else {
         return Ok(());
     };
+    if parse_external_dim_declaration(line).is_some() {
+        return Ok(());
+    }
     let Some(dim_decl) = parse_internal_class_dim_declaration(line) else {
         return Ok(());
     };

@@ -142,6 +142,14 @@ fn normalize_ci_token(input: &str) -> String {
     input.trim().to_ascii_lowercase()
 }
 
+fn normalize_importlib_token(input: &str) -> String {
+    std::path::Path::new(input)
+        .file_name()
+        .and_then(|name| name.to_str())
+        .map(normalize_ci_token)
+        .unwrap_or_else(|| normalize_ci_token(input))
+}
+
 fn normalize_guid_like(input: &str) -> String {
     input
         .trim()
@@ -153,7 +161,10 @@ fn normalize_guid_like(input: &str) -> String {
 pub fn resolve_known_typelib_identity(
     request: &TypeLibResolveRequest,
 ) -> Option<TypeLibResolvedIdentity> {
-    let normalized_importlib = request.importlib_hint.as_deref().map(normalize_ci_token);
+    let normalized_importlib = request
+        .importlib_hint
+        .as_deref()
+        .map(normalize_importlib_token);
     let normalized_libid = request.libid_hint.as_deref().map(normalize_guid_like);
 
     if normalized_importlib
@@ -176,7 +187,7 @@ pub fn resolve_known_typelib_identity(
 
     if normalized_importlib
         .as_deref()
-        .is_some_and(|value| value == "oxvba_testdispatch.tlb")
+        .is_some_and(|value| value == "oxvba_testdispatch.tlb" || value == "oxvba.testdispatch.tlb")
         || normalized_libid
             .as_deref()
             .is_some_and(|value| value == "11111111-2222-3333-4444-555555555555")
@@ -212,7 +223,9 @@ pub fn resolve_known_typelib_identity(
 
     if normalized_importlib
         .as_deref()
-        .is_some_and(|value| value == "oxvba_testeventserver.tlb")
+        .is_some_and(|value| {
+            value == "oxvba_testeventserver.tlb" || value == "oxvba.testeventserver.tlb"
+        })
         || normalized_libid
             .as_deref()
             .is_some_and(|value| value == "e2a30001-0001-0001-0001-000000000001")
@@ -230,7 +243,9 @@ pub fn resolve_known_typelib_identity(
 
     if normalized_importlib
         .as_deref()
-        .is_some_and(|value| value == "oxvba_testeventserveralt.tlb")
+        .is_some_and(|value| {
+            value == "oxvba_testeventserveralt.tlb" || value == "oxvba.testeventserveralt.tlb"
+        })
         || normalized_libid
             .as_deref()
             .is_some_and(|value| value == "e2a30001-0001-0001-0001-000000000101")
@@ -1815,11 +1830,12 @@ mod tests {
         TypeLibMemberLookupResult, activation_prog_id_from_typelib_metadata,
         build_typelib_metadata, event_spec_from_typelib_metadata,
         known_typelib_identity_for_prog_id_name, member_spec_from_typelib_metadata,
+        resolve_known_typelib_identity,
         resolve_default_member_token_and_spec_from_typelib_metadata,
         resolve_member_token_and_spec_from_typelib_metadata_name,
         source_interface_event_spec_supported,
     };
-    use crate::{ComMemberToken, TEST_DISPID_EXISTS, TypeLibMemberInvokeKind};
+    use crate::{ComMemberToken, TEST_DISPID_EXISTS, TypeLibMemberInvokeKind, TypeLibResolveRequest};
 
     #[test]
     fn member_spec_lookup_uses_catalog_metadata() {
@@ -1870,6 +1886,23 @@ mod tests {
             activation_prog_id_from_typelib_metadata(&alt_blob),
             Some("OxVba.TestEventServerAlt")
         );
+    }
+
+    #[test]
+    fn resolve_known_typelib_identity_accepts_absolute_importlib_paths() {
+        let request = TypeLibResolveRequest {
+            reference_name: "OxVbaMissingBase".to_string(),
+            importlib_hint: Some(
+                "C:\\Work\\DnaCalc\\OxVba\\temp\\missing\\OxVba.TestEventServer.tlb".to_string(),
+            ),
+            libid_hint: None,
+            major_version_hint: Some(1),
+            minor_version_hint: Some(0),
+            lcid_hint: Some(0),
+        };
+        let identity = resolve_known_typelib_identity(&request).expect("identity");
+        assert_eq!(identity.reference_name, "OxVba_TestEventServer");
+        assert_eq!(identity.importlib, "oxvba_testeventserver.tlb");
     }
 
     #[test]
