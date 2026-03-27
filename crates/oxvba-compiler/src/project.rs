@@ -1926,6 +1926,14 @@ fn projected_typelib_manifest_names(blob: &TypeLibMetadataBlob) -> (String, Stri
             "TestEventServer".to_string(),
         );
     }
+    if importlib.eq_ignore_ascii_case("oxvba_testeventserveralt2.tlb")
+        || libid.eq_ignore_ascii_case("E2A30001-0001-0001-0001-000000000201")
+    {
+        return (
+            blob.identity.reference_name.clone(),
+            "TestEventServer".to_string(),
+        );
+    }
     if importlib.eq_ignore_ascii_case("oxvba_testdispatch.tlb")
         || libid.eq_ignore_ascii_case("11111111-2222-3333-4444-555555555555")
     {

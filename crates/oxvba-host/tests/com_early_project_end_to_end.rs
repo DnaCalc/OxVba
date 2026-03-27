@@ -157,6 +157,7 @@ fn load_typelib_basproj_with_refs(
             importlib: Some(match *include {
                 "OxVba" => "OxVba.TestEventServer.tlb",
                 "OxVbaAlt" => "OxVba.TestEventServerAlt.tlb",
+                "OxVbaAlt2" => "OxVba.TestEventServerAlt2.tlb",
                 other => panic!("unexpected COMReference include `{other}`"),
             }),
         })
@@ -414,6 +415,99 @@ fn early_bound_loaded_basproj_prefers_reversed_first_typelib_reference_for_unqua
     assert!(
         out.contains("value = pmr_oxvba_testeventserveralt_testeventserver_ping(obj)"),
         "expected reversed first reference to lower to the alt synthetic typelib target, got: {out}"
+    );
+}
+
+#[cfg(target_os = "windows")]
+#[test]
+#[ignore = "requires registered external COM typelib lane (run explicitly on Windows host with OxVba.TestEventServer, OxVba.TestEventServerAlt, and OxVba.TestEventServerAlt2 registered)"]
+fn early_bound_loaded_basproj_prefers_first_of_three_typelib_references_for_unqualified_testeventserver(
+) {
+    let loaded = load_typelib_basproj_with_refs(
+        "basproj-typelib-order-three-a",
+        concat!(
+            "Attribute VB_Name = \"Main\"\n",
+            "Public Sub Main()\n",
+            "Dim obj As New TestEventServer\n",
+            "Dim value\n",
+            "value = obj.Ping()\n",
+            "End Sub\n"
+        ),
+        &[
+            ("OxVba", "{E2A30001-0001-0001-0001-000000000001}", 1, 0, 0),
+            ("OxVbaAlt", "{E2A30001-0001-0001-0001-000000000101}", 1, 0, 0),
+            ("OxVbaAlt2", "{E2A30001-0001-0001-0001-000000000201}", 1, 0, 0),
+        ],
+    );
+
+    let compiled = compile_project(&loaded.manifest)
+        .expect("first of three references should drive unqualified imported binding");
+    let out = compiled.rewritten_source.to_ascii_lowercase();
+    assert!(
+        out.contains("value = pmr_oxvba_testeventserver_testeventserver_ping(obj)"),
+        "expected first of three references to lower to the base synthetic typelib target, got: {out}"
+    );
+}
+
+#[cfg(target_os = "windows")]
+#[test]
+#[ignore = "requires registered external COM typelib lane (run explicitly on Windows host with OxVba.TestEventServer, OxVba.TestEventServerAlt, and OxVba.TestEventServerAlt2 registered)"]
+fn early_bound_loaded_basproj_prefers_middle_first_of_three_typelib_references_for_unqualified_testeventserver(
+) {
+    let loaded = load_typelib_basproj_with_refs(
+        "basproj-typelib-order-three-b",
+        concat!(
+            "Attribute VB_Name = \"Main\"\n",
+            "Public Sub Main()\n",
+            "Dim obj As New TestEventServer\n",
+            "Dim value\n",
+            "value = obj.Ping()\n",
+            "End Sub\n"
+        ),
+        &[
+            ("OxVbaAlt", "{E2A30001-0001-0001-0001-000000000101}", 1, 0, 0),
+            ("OxVba", "{E2A30001-0001-0001-0001-000000000001}", 1, 0, 0),
+            ("OxVbaAlt2", "{E2A30001-0001-0001-0001-000000000201}", 1, 0, 0),
+        ],
+    );
+
+    let compiled = compile_project(&loaded.manifest)
+        .expect("alt first of three references should drive unqualified imported binding");
+    let out = compiled.rewritten_source.to_ascii_lowercase();
+    assert!(
+        out.contains("value = pmr_oxvba_testeventserveralt_testeventserver_ping(obj)"),
+        "expected first of three references to lower to the alt synthetic typelib target, got: {out}"
+    );
+}
+
+#[cfg(target_os = "windows")]
+#[test]
+#[ignore = "requires registered external COM typelib lane (run explicitly on Windows host with OxVba.TestEventServer, OxVba.TestEventServerAlt, and OxVba.TestEventServerAlt2 registered)"]
+fn early_bound_loaded_basproj_prefers_third_variant_when_first_of_three_typelib_references_for_unqualified_testeventserver(
+) {
+    let loaded = load_typelib_basproj_with_refs(
+        "basproj-typelib-order-three-c",
+        concat!(
+            "Attribute VB_Name = \"Main\"\n",
+            "Public Sub Main()\n",
+            "Dim obj As New TestEventServer\n",
+            "Dim value\n",
+            "value = obj.Ping()\n",
+            "End Sub\n"
+        ),
+        &[
+            ("OxVbaAlt2", "{E2A30001-0001-0001-0001-000000000201}", 1, 0, 0),
+            ("OxVba", "{E2A30001-0001-0001-0001-000000000001}", 1, 0, 0),
+            ("OxVbaAlt", "{E2A30001-0001-0001-0001-000000000101}", 1, 0, 0),
+        ],
+    );
+
+    let compiled = compile_project(&loaded.manifest)
+        .expect("alt2 first of three references should drive unqualified imported binding");
+    let out = compiled.rewritten_source.to_ascii_lowercase();
+    assert!(
+        out.contains("value = pmr_oxvba_testeventserveralt2_testeventserver_ping(obj)"),
+        "expected first of three references to lower to the alt2 synthetic typelib target, got: {out}"
     );
 }
 
