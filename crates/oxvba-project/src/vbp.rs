@@ -140,7 +140,7 @@ pub fn generate_basproj_from_vbp(vbp: &VbpProject) -> String {
         "    <ProjectName>{}</ProjectName>\n",
         xml_escape(&vbp.project_name)
     ));
-    if let Some(ref startup) = vbp.startup {
+    if let Some(startup) = normalize_vbp_startup_entry_point(vbp.startup.as_deref()) {
         xml.push_str(&format!(
             "    <EntryPoint>{}</EntryPoint>\n",
             xml_escape(startup)
@@ -197,6 +197,17 @@ fn xml_escape(s: &str) -> String {
         .replace('\'', "&apos;")
 }
 
+fn normalize_vbp_startup_entry_point(startup: Option<&str>) -> Option<&str> {
+    let startup = startup?.trim();
+    if startup.is_empty() || startup.eq_ignore_ascii_case("(None)") {
+        return None;
+    }
+    if startup.eq_ignore_ascii_case("Sub Main") {
+        return None;
+    }
+    Some(startup)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -236,11 +247,29 @@ Startup="Sub Main"
 
         assert!(xml.contains("<OutputType>Exe</OutputType>"));
         assert!(xml.contains("<ProjectName>TestProject</ProjectName>"));
-        assert!(xml.contains("<EntryPoint>Sub Main</EntryPoint>"));
+        assert!(!xml.contains("<EntryPoint>Sub Main</EntryPoint>"));
         assert!(xml.contains("<Module Include=\"Module1.bas\""));
         assert!(xml.contains("<Module Include=\"src/Utils.bas\""));
         assert!(xml.contains("<ClassModule Include=\"Calculator.cls\""));
         assert!(xml.contains("<COMReference Include=\"OLE Automation\">"));
+    }
+
+    #[test]
+    fn generate_basproj_from_vbp_preserves_explicit_module_procedure_startup() {
+        let vbp = VbpProject {
+            project_type: "Exe".to_string(),
+            project_name: "TestProject".to_string(),
+            startup: Some("Module1.Main".to_string()),
+            modules: vec![VbpModule {
+                name: "Module1".to_string(),
+                path: "Module1.bas".to_string(),
+            }],
+            classes: Vec::new(),
+            references: Vec::new(),
+        };
+
+        let xml = generate_basproj_from_vbp(&vbp);
+        assert!(xml.contains("<EntryPoint>Module1.Main</EntryPoint>"));
     }
 
     #[test]
