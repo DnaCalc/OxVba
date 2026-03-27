@@ -1594,6 +1594,38 @@ mod tests {
     }
 
     #[test]
+    fn compile_console_io_statements_emit_console_host_instructions() {
+        let source = "Sub Main()\nDim a\nDim b\nPrint \"hello\"\nInput a\nLine Input b\nEnd Sub";
+        let out = compile(source).expect("compile should succeed");
+        assert!(
+            out.instructions
+                .iter()
+                .any(|i| matches!(i, Instruction::IntrinsicConsolePrintHost { .. }))
+        );
+        assert!(
+            out.instructions
+                .iter()
+                .any(|i| matches!(i, Instruction::IntrinsicConsoleInputHost { .. }))
+        );
+        assert!(
+            out.instructions
+                .iter()
+                .any(|i| matches!(i, Instruction::IntrinsicConsoleLineInputHost { .. }))
+        );
+    }
+
+    #[test]
+    fn compile_debug_print_emits_diagnostics_host_instruction() {
+        let source = "Sub Main()\nDebug.Print \"hello\"\nEnd Sub";
+        let out = compile(source).expect("compile should succeed");
+        assert!(
+            out.instructions
+                .iter()
+                .any(|i| matches!(i, Instruction::IntrinsicDebugPrintHost { .. }))
+        );
+    }
+
+    #[test]
     fn compile_boolean_literal_emits_bool_const_instruction() {
         let source = "Sub Main()\nDim x\nx = True\nEnd Sub";
         let out = compile(source).expect("compile should succeed");

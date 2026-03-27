@@ -12,6 +12,7 @@ pub enum HalProfileId {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum HalRuntimeClass {
     HostNative,
+    WindowsStdio,
     WindowsGui,
     WindowsHeadless,
     LinuxStdio,
@@ -27,6 +28,7 @@ impl HalRuntimeClass {
     pub const fn as_str(self) -> &'static str {
         match self {
             Self::HostNative => "host-native",
+            Self::WindowsStdio => "windows-stdio",
             Self::WindowsGui => "windows-gui",
             Self::WindowsHeadless => "windows-headless",
             Self::LinuxStdio => "linux-stdio",
@@ -55,6 +57,7 @@ impl HalRuntimeClass {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum CapabilityId {
+    ConsoleIo,
     UiInteraction,
     EventPump,
     FileSystemIo,
@@ -268,7 +271,8 @@ impl Default for HostPolicy {
     }
 }
 
-pub const ALL_CAPABILITIES: [CapabilityId; 11] = [
+pub const ALL_CAPABILITIES: [CapabilityId; 12] = [
+    CapabilityId::ConsoleIo,
     CapabilityId::UiInteraction,
     CapabilityId::EventPump,
     CapabilityId::FileSystemIo,

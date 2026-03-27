@@ -305,14 +305,25 @@ pub enum Instruction {
         handle: usize,
         data: usize,
     },
+    IntrinsicConsolePrintHost {
+        dst: usize,
+        data: usize,
+    },
     IntrinsicFileInputHost {
         dst: usize,
         handle: usize,
         count: usize,
     },
+    IntrinsicConsoleInputHost {
+        dst: usize,
+        count: usize,
+    },
     IntrinsicFileLineInputHost {
         dst: usize,
         handle: usize,
+    },
+    IntrinsicConsoleLineInputHost {
+        dst: usize,
     },
     IntrinsicFileEofHost {
         dst: usize,
@@ -339,6 +350,10 @@ pub enum Instruction {
         dst: usize,
         prompt: usize,
         default_value: Option<usize>,
+    },
+    IntrinsicDebugPrintHost {
+        dst: usize,
+        data: usize,
     },
     IntrinsicDoEventsHost {
         dst: usize,

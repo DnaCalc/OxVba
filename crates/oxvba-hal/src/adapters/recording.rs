@@ -7,10 +7,10 @@ use crate::{
     journal::{HalJournal, HalJournalEntry},
     model::{HalDescriptor, HalProfileId, HostPolicy},
     traits::{
-        ComHal, DiagnosticsHal, DynamicLinkHal, EventPumpHal, FileSystemHal, HostServices,
-        ProcessEnvHal, ProjectCatalogHal, ProjectMutationHal, ProjectReferenceHal, TimeLocaleHal,
-        TypeLibCacheScope, TypeLibMetadataBlob, TypeLibResolveRequest, TypeLibResolvedIdentity,
-        UiInteractionHal,
+        ComHal, ConsoleHal, DiagnosticsHal, DynamicLinkHal, EventPumpHal, FileSystemHal,
+        HostServices, ProcessEnvHal, ProjectCatalogHal, ProjectMutationHal, ProjectReferenceHal,
+        TimeLocaleHal, TypeLibCacheScope, TypeLibMetadataBlob, TypeLibResolveRequest,
+        TypeLibResolvedIdentity, UiInteractionHal,
     },
 };
 use oxvba_com::{
@@ -105,6 +105,9 @@ impl HostServices for RecordingHostServices {
         self.inner.policy()
     }
 
+    fn console(&self) -> &dyn ConsoleHal {
+        self
+    }
     fn ui(&self) -> &dyn UiInteractionHal {
         self
     }
@@ -140,6 +143,20 @@ impl HostServices for RecordingHostServices {
 
     fn project_mutation(&self) -> Option<&dyn ProjectMutationHal> {
         self.inner.project_mutation()
+    }
+}
+
+impl ConsoleHal for RecordingHostServices {
+    fn print_line(&self, data: RuntimeValue) -> HalResult<RuntimeValue> {
+        self.inner.console().print_line(data)
+    }
+
+    fn input_fields(&self, count: RuntimeValue) -> HalResult<RuntimeValue> {
+        self.inner.console().input_fields(count)
+    }
+
+    fn line_input(&self) -> HalResult<RuntimeValue> {
+        self.inner.console().line_input()
     }
 }
 
@@ -395,6 +412,10 @@ impl DiagnosticsHal for RecordingHostServices {
         let result = self.inner.diag().emit(code, payload);
         self.record_i32("diagnostics", "emit", "diagnostics.emit", &result);
         result
+    }
+
+    fn debug_print(&self, text: RuntimeValue) -> HalResult<RuntimeValue> {
+        self.inner.diag().debug_print(text)
     }
 }
 

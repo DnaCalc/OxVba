@@ -4,9 +4,9 @@ use crate::{
     adapters::standard::StandardHostServices,
     model::{HalDescriptor, HalProfileId, HalRuntimeClass, HostPolicy},
     traits::{
-        ComHal, DiagnosticsHal, DynamicLinkHal, EventPumpHal, FileSystemHal, HostServices,
-        ProcessEnvHal, ProjectCatalogHal, ProjectMutationHal, ProjectReferenceHal, TimeLocaleHal,
-        UiInteractionHal,
+        ComHal, ConsoleHal, DiagnosticsHal, DynamicLinkHal, EventPumpHal, FileSystemHal,
+        HostServices, ProcessEnvHal, ProjectCatalogHal, ProjectMutationHal, ProjectReferenceHal,
+        TimeLocaleHal, UiInteractionHal,
     },
 };
 
@@ -57,6 +57,9 @@ impl HostServices for LinuxHostServices {
         self.inner.policy()
     }
 
+    fn console(&self) -> &dyn ConsoleHal {
+        &self.inner
+    }
     fn ui(&self) -> &dyn UiInteractionHal {
         &self.inner
     }

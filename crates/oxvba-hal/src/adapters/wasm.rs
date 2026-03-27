@@ -7,8 +7,8 @@ use crate::{
     model::UiVirtualizationMode,
     model::{HalDescriptor, HalProfileId, HalRuntimeClass, HostPolicy},
     traits::{
-        ComHal, DiagnosticsHal, DynamicLinkHal, EventPumpHal, FileSystemHal, HostServices,
-        ProcessEnvHal, TimeLocaleHal, TypeLibCacheScope, TypeLibMetadataBlob,
+        ComHal, ConsoleHal, DiagnosticsHal, DynamicLinkHal, EventPumpHal, FileSystemHal,
+        HostServices, ProcessEnvHal, TimeLocaleHal, TypeLibCacheScope, TypeLibMetadataBlob,
         TypeLibResolveRequest, TypeLibResolvedIdentity, UiInteractionHal,
     },
 };
@@ -63,6 +63,9 @@ impl HostServices for WasmHostServices {
         &self.policy
     }
 
+    fn console(&self) -> &dyn ConsoleHal {
+        self
+    }
     fn ui(&self) -> &dyn UiInteractionHal {
         self
     }
@@ -86,6 +89,20 @@ impl HostServices for WasmHostServices {
     }
     fn diag(&self) -> &dyn DiagnosticsHal {
         self
+    }
+}
+
+impl ConsoleHal for WasmHostServices {
+    fn print_line(&self, _data: RuntimeValue) -> HalResult<RuntimeValue> {
+        Err(self.unsupported(CapabilityId::ConsoleIo, "print_line"))
+    }
+
+    fn input_fields(&self, _count: RuntimeValue) -> HalResult<RuntimeValue> {
+        Err(self.unsupported(CapabilityId::ConsoleIo, "input_fields"))
+    }
+
+    fn line_input(&self) -> HalResult<RuntimeValue> {
+        Err(self.unsupported(CapabilityId::ConsoleIo, "line_input"))
     }
 }
 
@@ -377,6 +394,10 @@ impl DiagnosticsHal for WasmHostServices {
         let code = code.to_legacy_i32().unwrap_or(0);
         let payload = payload.to_legacy_i32().unwrap_or(0);
         Ok(RuntimeValue::I32(code.saturating_add(payload)))
+    }
+
+    fn debug_print(&self, _text: RuntimeValue) -> HalResult<RuntimeValue> {
+        Ok(RuntimeValue::I32(0))
     }
 }
 

@@ -1291,6 +1291,25 @@ fn emit_stmt(
                 data: data_slot,
             });
         }
+        BoundStmt::ConsolePrint { data } => {
+            let dst = temps.alloc_temp();
+            let data_slot = temps.alloc_temp();
+            emit_expr_into(
+                data,
+                compare_mode,
+                data_slot,
+                slot_map,
+                temps,
+                instructions,
+                call_patches,
+                proc_meta,
+                external_decls,
+            );
+            instructions.push(Instruction::IntrinsicConsolePrintHost {
+                dst,
+                data: data_slot,
+            });
+        }
         BoundStmt::FileWrite { file_number, data } => {
             let dst = temps.alloc_temp();
             let handle_slot = temps.alloc_temp();
@@ -1356,6 +1375,21 @@ fn emit_stmt(
                 }
             }
         }
+        BoundStmt::ConsoleInput { targets } => {
+            let count_slot = temps.alloc_temp();
+            instructions.push(Instruction::LoadConstI32 {
+                slot: count_slot,
+                value: 1,
+            });
+            for target in targets {
+                if let Some(&target_slot) = slot_map.get(target.as_str()) {
+                    instructions.push(Instruction::IntrinsicConsoleInputHost {
+                        dst: target_slot,
+                        count: count_slot,
+                    });
+                }
+            }
+        }
         BoundStmt::FileLineInput {
             file_number,
             target,
@@ -1378,6 +1412,32 @@ fn emit_stmt(
                     handle: handle_slot,
                 });
             }
+        }
+        BoundStmt::ConsoleLineInput { target } => {
+            if let Some(&target_slot) = slot_map.get(target.as_str()) {
+                instructions.push(Instruction::IntrinsicConsoleLineInputHost {
+                    dst: target_slot,
+                });
+            }
+        }
+        BoundStmt::DebugPrint { data } => {
+            let dst = temps.alloc_temp();
+            let data_slot = temps.alloc_temp();
+            emit_expr_into(
+                data,
+                compare_mode,
+                data_slot,
+                slot_map,
+                temps,
+                instructions,
+                call_patches,
+                proc_meta,
+                external_decls,
+            );
+            instructions.push(Instruction::IntrinsicDebugPrintHost {
+                dst,
+                data: data_slot,
+            });
         }
         BoundStmt::Unsupported { .. } => {}
     }

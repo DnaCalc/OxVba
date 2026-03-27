@@ -19,4 +19,18 @@ impl DiagnosticsHal for StandardHostServices {
         }
         Ok(RuntimeValue::I32(code.saturating_add(payload)))
     }
+
+    fn debug_print(&self, text: RuntimeValue) -> HalResult<RuntimeValue> {
+        let capability = CapabilityId::DiagnosticsTelemetry;
+        if !self.supports(capability) {
+            return Err(self.unsupported(capability, "debug_print"));
+        }
+        let text = self.runtime_value_to_display_text(&text);
+        if let Some(callbacks) = self.callbacks.as_ref() {
+            callbacks.on_debug_print(&text);
+            return Ok(RuntimeValue::I32(0));
+        }
+        eprintln!("{text}");
+        Ok(RuntimeValue::I32(0))
+    }
 }

@@ -8,6 +8,7 @@ use oxvba_hal::model::{
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RuntimeProfileId {
     WindowsGui,
+    WindowsStdio,
     WindowsHeadless,
     LinuxStdio,
     WasmWasiLocal,
@@ -20,6 +21,7 @@ impl RuntimeProfileId {
     pub const fn as_str(self) -> &'static str {
         match self {
             Self::WindowsGui => "windows-gui",
+            Self::WindowsStdio => "windows-stdio",
             Self::WindowsHeadless => "windows-headless",
             Self::LinuxStdio => "linux-stdio",
             Self::WasmWasiLocal => "wasm-wasi-local",
@@ -32,6 +34,7 @@ impl RuntimeProfileId {
     pub fn parse(raw: &str) -> Result<Self, String> {
         match raw.trim().to_ascii_lowercase().as_str() {
             "windows-gui" => Ok(Self::WindowsGui),
+            "windows-stdio" => Ok(Self::WindowsStdio),
             "windows-headless" => Ok(Self::WindowsHeadless),
             "linux-stdio" => Ok(Self::LinuxStdio),
             "wasm-wasi-local" => Ok(Self::WasmWasiLocal),
@@ -44,7 +47,7 @@ impl RuntimeProfileId {
 
     pub const fn hal_profile(self) -> HalProfileId {
         match self {
-            Self::WindowsGui | Self::WindowsHeadless => HalProfileId::Windows,
+            Self::WindowsGui | Self::WindowsStdio | Self::WindowsHeadless => HalProfileId::Windows,
             Self::LinuxStdio => HalProfileId::Linux,
             Self::WasmWasiLocal | Self::WasmBrowserSandbox => HalProfileId::Wasm,
             Self::NullFloor => HalProfileId::Null,
@@ -55,6 +58,7 @@ impl RuntimeProfileId {
     pub const fn runtime_class(self) -> HalRuntimeClass {
         match self {
             Self::WindowsGui => HalRuntimeClass::WindowsGui,
+            Self::WindowsStdio => HalRuntimeClass::WindowsStdio,
             Self::WindowsHeadless => HalRuntimeClass::WindowsHeadless,
             Self::LinuxStdio => HalRuntimeClass::LinuxStdio,
             Self::WasmWasiLocal => HalRuntimeClass::WasmWasiLocal,
@@ -66,7 +70,7 @@ impl RuntimeProfileId {
 
     pub const fn default_for_hal_profile(profile: HalProfileId) -> Self {
         match profile {
-            HalProfileId::Windows => Self::WindowsHeadless,
+            HalProfileId::Windows => Self::WindowsStdio,
             HalProfileId::Linux => Self::LinuxStdio,
             HalProfileId::MacOs => Self::MacOsHeadless,
             HalProfileId::Wasm => Self::WasmWasiLocal,
@@ -237,9 +241,15 @@ pub fn resolve_runner_bootstrap(
 
     let runtime_profile = merged
         .get("profile")
-        .map_or(Ok(RuntimeProfileId::WindowsHeadless), |raw| {
-            RuntimeProfileId::parse(raw)
-        })?;
+        .map_or(Ok(RuntimeProfileId::default_for_hal_profile(if cfg!(target_os = "windows") {
+            HalProfileId::Windows
+        } else if cfg!(target_os = "linux") {
+            HalProfileId::Linux
+        } else if cfg!(target_os = "macos") {
+            HalProfileId::MacOs
+        } else {
+            HalProfileId::Null
+        })), |raw| RuntimeProfileId::parse(raw))?;
     let policy_preset = merged
         .get("policy_preset")
         .map_or(Ok(HostPolicyPreset::DeterministicRuntime), |raw| {
@@ -255,10 +265,8 @@ pub fn resolve_runner_bootstrap(
                 policy.ui_virtualization = UiVirtualizationMode::Disabled;
             }
         }
-        RuntimeProfileId::LinuxStdio => {
-            if policy.ui_virtualization == UiVirtualizationMode::Disabled {
-                policy.ui_virtualization = UiVirtualizationMode::ScriptedResponses;
-            }
+        RuntimeProfileId::WindowsStdio | RuntimeProfileId::LinuxStdio => {
+            policy.allow_interaction = true;
         }
         RuntimeProfileId::WasmWasiLocal => {
             policy.wasm_runtime_class = WasmRuntimeClass::Wasi;
@@ -404,6 +412,7 @@ fn parse_runtime_class(raw: &str) -> Result<HalRuntimeClass, String> {
     match raw.trim().to_ascii_lowercase().as_str() {
         "host-native" => Ok(HalRuntimeClass::HostNative),
         "windows-gui" => Ok(HalRuntimeClass::WindowsGui),
+        "windows-stdio" => Ok(HalRuntimeClass::WindowsStdio),
         "windows-headless" => Ok(HalRuntimeClass::WindowsHeadless),
         "linux-stdio" => Ok(HalRuntimeClass::LinuxStdio),
         "linux-headless" => Ok(HalRuntimeClass::LinuxHeadless),

@@ -24,6 +24,10 @@ fn capability_matrix(
 ) -> Vec<CapabilityDescriptor> {
     use CapabilityId as C;
     use CapabilityMaturity as M;
+    let supports_console = matches!(
+        runtime_class,
+        HalRuntimeClass::WindowsStdio | HalRuntimeClass::LinuxStdio
+    );
     let mut out = Vec::new();
     let mut push = |id: C, supported: bool, maturity: M, spec_anchor: &'static str| {
         out.push(CapabilityDescriptor {
@@ -36,6 +40,7 @@ fn capability_matrix(
 
     match profile {
         HalProfileId::Windows => {
+            push(C::ConsoleIo, supports_console, M::Provisional, "OxVba:HAL-CONSOLE");
             push(
                 C::UiInteraction,
                 true,
@@ -79,6 +84,7 @@ fn capability_matrix(
             push(C::ProjectMutation, false, M::Stable, "OxVba:HAL-PROJ");
         }
         HalProfileId::Linux => {
+            push(C::ConsoleIo, supports_console, M::Provisional, "OxVba:HAL-CONSOLE");
             push(
                 C::UiInteraction,
                 true,
@@ -117,6 +123,7 @@ fn capability_matrix(
             push(C::ProjectMutation, false, M::Stable, "OxVba:HAL-PROJ");
         }
         HalProfileId::MacOs => {
+            push(C::ConsoleIo, false, M::Stable, "OxVba:HAL-CONSOLE");
             push(
                 C::UiInteraction,
                 true,
@@ -156,6 +163,7 @@ fn capability_matrix(
         }
         HalProfileId::Wasm => match runtime_class {
             HalRuntimeClass::WasmWasiLocal => {
+                push(C::ConsoleIo, false, M::Stable, "OxVba:HAL-CONSOLE");
                 push(
                     C::UiInteraction,
                     true,
@@ -184,6 +192,7 @@ fn capability_matrix(
                 push(C::ProjectMutation, false, M::Stable, "OxVba:HAL-PROJ");
             }
             HalRuntimeClass::WasmBrowserSandbox => {
+                push(C::ConsoleIo, false, M::Stable, "OxVba:HAL-CONSOLE");
                 push(
                     C::UiInteraction,
                     false,
@@ -213,6 +222,7 @@ fn capability_matrix(
             }
             _ => match wasm_runtime_class {
                 WasmRuntimeClass::Wasi => {
+                    push(C::ConsoleIo, false, M::Stable, "OxVba:HAL-CONSOLE");
                     push(
                         C::UiInteraction,
                         true,
@@ -241,6 +251,7 @@ fn capability_matrix(
                     push(C::ProjectMutation, false, M::Stable, "OxVba:HAL-PROJ");
                 }
                 WasmRuntimeClass::BrowserSandbox => {
+                    push(C::ConsoleIo, false, M::Stable, "OxVba:HAL-CONSOLE");
                     push(
                         C::UiInteraction,
                         false,
@@ -271,6 +282,7 @@ fn capability_matrix(
             },
         },
         HalProfileId::Null => {
+            push(C::ConsoleIo, false, M::Stable, "OxVba:HAL-CONSOLE");
             push(
                 C::UiInteraction,
                 false,

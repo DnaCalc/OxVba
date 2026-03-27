@@ -24,9 +24,10 @@ pub use project::{
     ProjectReferenceDescriptor, ProjectReferenceKind, ResolvedProjectReference,
 };
 pub use traits::{
-    ComHal, DiagnosticsHal, DynLinkDescriptorView, DynamicLinkHal, EventPumpHal, FileSystemHal,
-    HostServices, ProcessEnvHal, ProjectCatalogHal, ProjectMutationHal, ProjectReferenceHal,
-    TimeLocaleHal, TypeLibCacheScope, TypeLibEventDispatchPath, TypeLibEventMetadata,
+    ComHal, ConsoleHal, DiagnosticsHal, DynLinkDescriptorView, DynamicLinkHal, EventPumpHal,
+    FileSystemHal, HostServices, ProcessEnvHal, ProjectCatalogHal, ProjectMutationHal,
+    ProjectReferenceHal, TimeLocaleHal, TypeLibCacheScope, TypeLibEventDispatchPath,
+    TypeLibEventMetadata,
     TypeLibMemberMetadata, TypeLibMetadataBlob, TypeLibResolveRequest, TypeLibResolvedIdentity,
     UiInteractionHal,
 };

@@ -13,6 +13,14 @@ pub trait HostCallbacks: Send + Sync {
     fn on_input_box(&self, prompt: &str, default: &str) -> String;
     /// Called when VBA sets `Application.StatusBar`.
     fn on_status_bar(&self, text: &str);
+    /// Called when VBA executes plain console `Print` on a stdio host.
+    fn on_console_print(&self, _text: &str) -> bool {
+        false
+    }
+    /// Called when VBA executes plain console `Input` / `Line Input` on a stdio host.
+    fn on_console_input_line(&self) -> Option<String> {
+        None
+    }
     /// Called when VBA executes `Debug.Print`.
     fn on_debug_print(&self, text: &str);
 
@@ -87,6 +95,14 @@ impl HostCallbacks for DefaultHostCallbacks {
     }
 
     fn on_status_bar(&self, _text: &str) {}
+
+    fn on_console_print(&self, _text: &str) -> bool {
+        false
+    }
+
+    fn on_console_input_line(&self) -> Option<String> {
+        None
+    }
 
     fn on_debug_print(&self, text: &str) {
         eprintln!("[oxvba-hal] debug.print: {text}");

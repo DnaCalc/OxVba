@@ -176,6 +176,7 @@ impl Vm {
             CapabilityId::ProjectCatalog => 9,
             CapabilityId::ProjectReferenceProvider => 10,
             CapabilityId::ProjectMutation => 11,
+            CapabilityId::ConsoleIo => 12,
         };
         53_000 + capability_code * 10 + kind_code
     }
@@ -1068,6 +1069,16 @@ impl Vm {
                         Err(err) => pc = self.route_host_error(pc, err)?,
                     }
                 }
+                Instruction::IntrinsicConsolePrintHost { dst, data } => {
+                    let data = self.read_value_slot(*data)?;
+                    match self.host_services.console().print_line(data) {
+                        Ok(value) => {
+                            self.write_value_slot(*dst, value)?;
+                            pc += 1;
+                        }
+                        Err(err) => pc = self.route_host_error(pc, err)?,
+                    }
+                }
                 Instruction::IntrinsicFileInputHost { dst, handle, count } => {
                     let handle = self.read_value_slot(*handle)?;
                     let count = self.read_value_slot(*count)?;
@@ -1079,9 +1090,28 @@ impl Vm {
                         Err(err) => pc = self.route_host_error(pc, err)?,
                     }
                 }
+                Instruction::IntrinsicConsoleInputHost { dst, count } => {
+                    let count = self.read_value_slot(*count)?;
+                    match self.host_services.console().input_fields(count) {
+                        Ok(value) => {
+                            self.write_value_slot(*dst, value)?;
+                            pc += 1;
+                        }
+                        Err(err) => pc = self.route_host_error(pc, err)?,
+                    }
+                }
                 Instruction::IntrinsicFileLineInputHost { dst, handle } => {
                     let handle = self.read_value_slot(*handle)?;
                     match self.host_services.fs().line_input(handle) {
+                        Ok(value) => {
+                            self.write_value_slot(*dst, value)?;
+                            pc += 1;
+                        }
+                        Err(err) => pc = self.route_host_error(pc, err)?,
+                    }
+                }
+                Instruction::IntrinsicConsoleLineInputHost { dst } => {
+                    match self.host_services.console().line_input() {
                         Ok(value) => {
                             self.write_value_slot(*dst, value)?;
                             pc += 1;
@@ -1158,6 +1188,16 @@ impl Vm {
                         RuntimeValue::I32(0)
                     };
                     match self.host_services.ui().input_box(prompt, default_value) {
+                        Ok(value) => {
+                            self.write_value_slot(*dst, value)?;
+                            pc += 1;
+                        }
+                        Err(err) => pc = self.route_host_error(pc, err)?,
+                    }
+                }
+                Instruction::IntrinsicDebugPrintHost { dst, data } => {
+                    let data = self.read_value_slot(*data)?;
+                    match self.host_services.diag().debug_print(data) {
                         Ok(value) => {
                             self.write_value_slot(*dst, value)?;
                             pc += 1;
@@ -5991,6 +6031,7 @@ mod tests {
             HalErrorKind::UnsupportedProfile,
         ] {
             for capability in [
+                CapabilityId::ConsoleIo,
                 CapabilityId::UiInteraction,
                 CapabilityId::EventPump,
                 CapabilityId::FileSystemIo,
@@ -5999,10 +6040,13 @@ mod tests {
                 CapabilityId::TimeLocale,
                 CapabilityId::DynamicLinking,
                 CapabilityId::DiagnosticsTelemetry,
+                CapabilityId::ProjectCatalog,
+                CapabilityId::ProjectReferenceProvider,
+                CapabilityId::ProjectMutation,
             ] {
                 let code = Vm::hal_error_code(kind, capability);
                 assert!(
-                    (53_011..=53_084).contains(&code),
+                    (53_011..=53_124).contains(&code),
                     "HAL error code out of expected deterministic band: {}",
                     code
                 );

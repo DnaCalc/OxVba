@@ -2331,6 +2331,19 @@ pub extern "C" fn oxrt_host_file_print(
 }
 
 #[unsafe(no_mangle)]
+pub extern "C" fn oxrt_host_console_print(ctx: *mut JitContext, dst: u32, data: u32) -> i32 {
+    let host = unsafe { (*ctx).host_services() };
+    let data_val = read_slot!(ctx, data);
+    match host.console().print_line(data_val) {
+        Ok(value) => {
+            write_slot!(ctx, dst, value);
+            OK
+        }
+        Err(_) => ERR_RUNTIME,
+    }
+}
+
+#[unsafe(no_mangle)]
 pub extern "C" fn oxrt_host_file_input(
     ctx: *mut JitContext,
     dst: u32,
@@ -2350,10 +2363,35 @@ pub extern "C" fn oxrt_host_file_input(
 }
 
 #[unsafe(no_mangle)]
+pub extern "C" fn oxrt_host_console_input(ctx: *mut JitContext, dst: u32, count: u32) -> i32 {
+    let host = unsafe { (*ctx).host_services() };
+    let count_val = read_slot!(ctx, count);
+    match host.console().input_fields(count_val) {
+        Ok(value) => {
+            write_slot!(ctx, dst, value);
+            OK
+        }
+        Err(_) => ERR_RUNTIME,
+    }
+}
+
+#[unsafe(no_mangle)]
 pub extern "C" fn oxrt_host_file_line_input(ctx: *mut JitContext, dst: u32, handle: u32) -> i32 {
     let host = unsafe { (*ctx).host_services() };
     let handle_val = read_slot!(ctx, handle);
     match host.fs().line_input(handle_val) {
+        Ok(value) => {
+            write_slot!(ctx, dst, value);
+            OK
+        }
+        Err(_) => ERR_RUNTIME,
+    }
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn oxrt_host_console_line_input(ctx: *mut JitContext, dst: u32) -> i32 {
+    let host = unsafe { (*ctx).host_services() };
+    match host.console().line_input() {
         Ok(value) => {
             write_slot!(ctx, dst, value);
             OK
@@ -2834,6 +2872,19 @@ pub extern "C" fn oxrt_host_inputbox(
 }
 
 #[unsafe(no_mangle)]
+pub extern "C" fn oxrt_host_debug_print(ctx: *mut JitContext, dst: u32, data: u32) -> i32 {
+    let host = unsafe { (*ctx).host_services() };
+    let data_val = read_slot!(ctx, data);
+    match host.diag().debug_print(data_val) {
+        Ok(value) => {
+            write_slot!(ctx, dst, value);
+            OK
+        }
+        Err(_) => ERR_RUNTIME,
+    }
+}
+
+#[unsafe(no_mangle)]
 pub extern "C" fn oxrt_host_do_events(ctx: *mut JitContext, dst: u32) -> i32 {
     let host = unsafe { (*ctx).host_services() };
     match host.events().do_events() {
@@ -3097,6 +3148,7 @@ fn hal_error_code(kind: HalErrorKind, capability: CapabilityId) -> i32 {
         CapabilityId::ProjectCatalog => 9,
         CapabilityId::ProjectReferenceProvider => 10,
         CapabilityId::ProjectMutation => 11,
+        CapabilityId::ConsoleIo => 12,
     };
     53_000 + capability_code * 10 + kind_code
 }
@@ -3663,10 +3715,16 @@ pub fn register_symbols(builder: &mut cranelift_jit::JITBuilder) {
         ("oxrt_host_file_read", oxrt_host_file_read as *const u8),
         ("oxrt_host_file_write", oxrt_host_file_write as *const u8),
         ("oxrt_host_file_print", oxrt_host_file_print as *const u8),
+        ("oxrt_host_console_print", oxrt_host_console_print as *const u8),
         ("oxrt_host_file_input", oxrt_host_file_input as *const u8),
+        ("oxrt_host_console_input", oxrt_host_console_input as *const u8),
         (
             "oxrt_host_file_line_input",
             oxrt_host_file_line_input as *const u8,
+        ),
+        (
+            "oxrt_host_console_line_input",
+            oxrt_host_console_line_input as *const u8,
         ),
         ("oxrt_host_file_eof", oxrt_host_file_eof as *const u8),
         ("oxrt_host_file_lof", oxrt_host_file_lof as *const u8),
@@ -3722,6 +3780,7 @@ pub fn register_symbols(builder: &mut cranelift_jit::JITBuilder) {
         ),
         ("oxrt_host_msgbox", oxrt_host_msgbox as *const u8),
         ("oxrt_host_inputbox", oxrt_host_inputbox as *const u8),
+        ("oxrt_host_debug_print", oxrt_host_debug_print as *const u8),
         ("oxrt_host_do_events", oxrt_host_do_events as *const u8),
         ("oxrt_host_shell", oxrt_host_shell as *const u8),
         ("oxrt_host_environ", oxrt_host_environ as *const u8),

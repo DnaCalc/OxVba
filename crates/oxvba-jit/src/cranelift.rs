@@ -224,8 +224,11 @@ fn supports_rtslot_instruction(instruction: &Instruction) -> bool {
             | Instruction::IntrinsicFileReadHost { .. }
             | Instruction::IntrinsicFileWriteHost { .. }
             | Instruction::IntrinsicFilePrintHost { .. }
+            | Instruction::IntrinsicConsolePrintHost { .. }
             | Instruction::IntrinsicFileInputHost { .. }
+            | Instruction::IntrinsicConsoleInputHost { .. }
             | Instruction::IntrinsicFileLineInputHost { .. }
+            | Instruction::IntrinsicConsoleLineInputHost { .. }
             | Instruction::IntrinsicFileEofHost { .. }
             | Instruction::IntrinsicFileLofHost { .. }
             | Instruction::IntrinsicFileSeekHost { .. }
@@ -248,6 +251,7 @@ fn supports_rtslot_instruction(instruction: &Instruction) -> bool {
             // UI
             | Instruction::IntrinsicMsgBoxHost { .. }
             | Instruction::IntrinsicInputBoxHost { .. }
+            | Instruction::IntrinsicDebugPrintHost { .. }
             | Instruction::IntrinsicDoEventsHost { .. }
             | Instruction::IntrinsicShellHost { .. }
             | Instruction::IntrinsicEnvironHost { .. }
@@ -2661,6 +2665,20 @@ pub fn execute_bytecode_rtslot(
                     error_dispatch_block,
                 );
             }
+            Instruction::IntrinsicConsolePrintHost { dst, data } => {
+                emit_extra_2slot(
+                    &mut builder,
+                    &mut module,
+                    &helpers,
+                    "oxrt_host_console_print",
+                    ctx_ptr,
+                    *dst,
+                    *data,
+                    pc,
+                    next_block,
+                    error_dispatch_block,
+                );
+            }
             Instruction::IntrinsicFileInputHost { dst, handle, count } => {
                 emit_extra_3slot(
                     &mut builder,
@@ -2670,6 +2688,20 @@ pub fn execute_bytecode_rtslot(
                     ctx_ptr,
                     *dst,
                     *handle,
+                    *count,
+                    pc,
+                    next_block,
+                    error_dispatch_block,
+                );
+            }
+            Instruction::IntrinsicConsoleInputHost { dst, count } => {
+                emit_extra_2slot(
+                    &mut builder,
+                    &mut module,
+                    &helpers,
+                    "oxrt_host_console_input",
+                    ctx_ptr,
+                    *dst,
                     *count,
                     pc,
                     next_block,
@@ -2689,6 +2721,14 @@ pub fn execute_bytecode_rtslot(
                     next_block,
                     error_dispatch_block,
                 );
+            }
+            Instruction::IntrinsicConsoleLineInputHost { dst } => {
+                let func_ref = module.declare_func_in_func(
+                    helpers.extra("oxrt_host_console_line_input"),
+                    builder.func,
+                );
+                let dst_val = builder.ins().iconst(types::I32, *dst as i64);
+                emit_helper_call_and_check(&mut builder, func_ref, &[ctx_ptr, dst_val], next_block);
             }
             Instruction::IntrinsicFileEofHost { dst, handle } => {
                 emit_extra_2slot(
@@ -2977,6 +3017,20 @@ pub fn execute_bytecode_rtslot(
                     *dst as i64,
                     *prompt as i64,
                     default_slot,
+                    pc,
+                    next_block,
+                    error_dispatch_block,
+                );
+            }
+            Instruction::IntrinsicDebugPrintHost { dst, data } => {
+                emit_extra_2slot(
+                    &mut builder,
+                    &mut module,
+                    &helpers,
+                    "oxrt_host_debug_print",
+                    ctx_ptr,
+                    *dst,
+                    *data,
                     pc,
                     next_block,
                     error_dispatch_block,

@@ -18,6 +18,7 @@ macro_rules! hal_contract_assert {
 }
 
 mod com;
+mod console;
 mod descriptor;
 mod diagnostics;
 mod dynlink;
@@ -28,6 +29,7 @@ mod time;
 mod ui;
 
 pub(crate) use descriptor::descriptor_for_profile;
+use console::ConsoleState;
 use dynlink::DynLinkBindingState;
 use filesystem::{FileHandleState, FileSystemState};
 
@@ -43,8 +45,8 @@ use crate::{
         project_reference_unresolved,
     },
     traits::{
-        ComHal, DiagnosticsHal, DynamicLinkHal, EventPumpHal, FileSystemHal, HostServices,
-        ProcessEnvHal, ProjectCatalogHal, ProjectMutationHal, ProjectReferenceHal,
+        ComHal, ConsoleHal, DiagnosticsHal, DynamicLinkHal, EventPumpHal, FileSystemHal,
+        HostServices, ProcessEnvHal, ProjectCatalogHal, ProjectMutationHal, ProjectReferenceHal,
         TimeLocaleHal, UiInteractionHal,
     },
 };
@@ -147,6 +149,7 @@ pub(crate) struct StandardHostServices {
     #[cfg(target_os = "windows")]
     env_cache: StandardEnvCache,
     fs_state: Arc<Mutex<FileSystemState>>,
+    console_state: Arc<Mutex<ConsoleState>>,
     #[cfg(target_os = "windows")]
     com_bridge: Arc<WindowsComBridge>,
     dynlink_state: Arc<Mutex<DynLinkBindingState>>,
@@ -262,6 +265,7 @@ impl StandardHostServices {
             #[cfg(target_os = "windows")]
             env_cache,
             fs_state: Arc::new(Mutex::new(FileSystemState::default())),
+            console_state: Arc::new(Mutex::new(ConsoleState::default())),
             dynlink_state: Arc::new(Mutex::new(DynLinkBindingState::default())),
             portable_objects: None,
             callbacks: None,
@@ -418,6 +422,17 @@ impl StandardHostServices {
 
     fn native_fs_enabled(&self) -> bool {
         self.native_mode_enabled()
+    }
+
+    fn is_stdio_runtime(&self) -> bool {
+        matches!(
+            self.runtime_class,
+            HalRuntimeClass::WindowsStdio | HalRuntimeClass::LinuxStdio
+        )
+    }
+
+    fn native_console_enabled(&self) -> bool {
+        self.native_mode_enabled() && self.is_stdio_runtime()
     }
 
     fn native_process_enabled(&self) -> bool {
@@ -977,6 +992,10 @@ impl HostServices for StandardHostServices {
 
     fn policy(&self) -> &HostPolicy {
         self.policy()
+    }
+
+    fn console(&self) -> &dyn ConsoleHal {
+        self
     }
 
     fn ui(&self) -> &dyn UiInteractionHal {

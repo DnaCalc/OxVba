@@ -196,6 +196,9 @@ pub enum BoundStmt {
         file_number: BoundExpr,
         data: BoundExpr,
     },
+    ConsolePrint {
+        data: BoundExpr,
+    },
     FileWrite {
         file_number: BoundExpr,
         data: Vec<BoundExpr>,
@@ -204,9 +207,18 @@ pub enum BoundStmt {
         file_number: BoundExpr,
         targets: Vec<String>,
     },
+    ConsoleInput {
+        targets: Vec<String>,
+    },
     FileLineInput {
         file_number: BoundExpr,
         target: String,
+    },
+    ConsoleLineInput {
+        target: String,
+    },
+    DebugPrint {
+        data: BoundExpr,
     },
     Unsupported {
         line: String,
@@ -2269,6 +2281,18 @@ fn parse_block(
             continue;
         }
 
+        if lower == "print" || lower.starts_with("print ") {
+            if let Some(stmt) = parse_console_print_stmt(line, array_bounds) {
+                out.push(stmt);
+            } else {
+                out.push(BoundStmt::Unsupported {
+                    line: line.to_string(),
+                });
+            }
+            *index += 1;
+            continue;
+        }
+
         if lower.starts_with("write #") {
             if let Some(stmt) = parse_file_write_stmt(line, array_bounds) {
                 out.push(stmt);
@@ -2293,8 +2317,44 @@ fn parse_block(
             continue;
         }
 
+        if lower.starts_with("line input ") {
+            if let Some(stmt) = parse_console_line_input_stmt(line) {
+                out.push(stmt);
+            } else {
+                out.push(BoundStmt::Unsupported {
+                    line: line.to_string(),
+                });
+            }
+            *index += 1;
+            continue;
+        }
+
         if lower.starts_with("input #") {
             if let Some(stmt) = parse_file_input_stmt(line, array_bounds) {
+                out.push(stmt);
+            } else {
+                out.push(BoundStmt::Unsupported {
+                    line: line.to_string(),
+                });
+            }
+            *index += 1;
+            continue;
+        }
+
+        if lower.starts_with("input ") {
+            if let Some(stmt) = parse_console_input_stmt(line) {
+                out.push(stmt);
+            } else {
+                out.push(BoundStmt::Unsupported {
+                    line: line.to_string(),
+                });
+            }
+            *index += 1;
+            continue;
+        }
+
+        if lower == "debug.print" || lower.starts_with("debug.print ") {
+            if let Some(stmt) = parse_debug_print_stmt(line, array_bounds) {
                 out.push(stmt);
             } else {
                 out.push(BoundStmt::Unsupported {
@@ -3278,6 +3338,17 @@ fn parse_file_print_stmt(line: &str, array_bounds: &ArrayBoundsMap) -> Option<Bo
     Some(BoundStmt::FilePrint { file_number, data })
 }
 
+/// Parse `Print [expr]`
+fn parse_console_print_stmt(line: &str, array_bounds: &ArrayBoundsMap) -> Option<BoundStmt> {
+    let payload = line[5..].trim();
+    let data = if payload.is_empty() {
+        BoundExpr::StringConst(String::new())
+    } else {
+        parse_expr(payload, array_bounds)?
+    };
+    Some(BoundStmt::ConsolePrint { data })
+}
+
 /// Parse `Write #filenum, data`
 fn parse_file_write_stmt(line: &str, array_bounds: &ArrayBoundsMap) -> Option<BoundStmt> {
     let after_write = line[7..].trim(); // skip "Write #"
@@ -3320,6 +3391,19 @@ fn parse_file_input_stmt(line: &str, array_bounds: &ArrayBoundsMap) -> Option<Bo
     })
 }
 
+/// Parse `Input var1[, var2, ...]`
+fn parse_console_input_stmt(line: &str) -> Option<BoundStmt> {
+    let targets_raw = line[5..].trim();
+    let targets: Vec<String> = targets_raw
+        .split(',')
+        .filter_map(|t| normalize_ident(t.trim()))
+        .collect();
+    if targets.is_empty() {
+        return None;
+    }
+    Some(BoundStmt::ConsoleInput { targets })
+}
+
 /// Parse `Line Input #filenum, var`
 fn parse_file_line_input_stmt(line: &str, array_bounds: &ArrayBoundsMap) -> Option<BoundStmt> {
     let after_li = line[12..].trim(); // skip "Line Input #"
@@ -3334,6 +3418,23 @@ fn parse_file_line_input_stmt(line: &str, array_bounds: &ArrayBoundsMap) -> Opti
         file_number,
         target,
     })
+}
+
+/// Parse `Line Input var`
+fn parse_console_line_input_stmt(line: &str) -> Option<BoundStmt> {
+    let target = normalize_ident(line[10..].trim())?;
+    Some(BoundStmt::ConsoleLineInput { target })
+}
+
+/// Parse `Debug.Print [expr]`
+fn parse_debug_print_stmt(line: &str, array_bounds: &ArrayBoundsMap) -> Option<BoundStmt> {
+    let payload = line[11..].trim();
+    let data = if payload.is_empty() {
+        BoundExpr::StringConst(String::new())
+    } else {
+        parse_expr(payload, array_bounds)?
+    };
+    Some(BoundStmt::DebugPrint { data })
 }
 
 fn split_top_level_stmt_args(args: &str) -> Option<Vec<String>> {

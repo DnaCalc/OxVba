@@ -673,6 +673,7 @@ fn parse_runtime_class(value: &str) -> Option<HalRuntimeClass> {
     match value.trim().to_ascii_lowercase().as_str() {
         "host-native" => Some(HalRuntimeClass::HostNative),
         "windows-gui" => Some(HalRuntimeClass::WindowsGui),
+        "windows-stdio" => Some(HalRuntimeClass::WindowsStdio),
         "windows-headless" => Some(HalRuntimeClass::WindowsHeadless),
         "linux-stdio" => Some(HalRuntimeClass::LinuxStdio),
         "linux-headless" => Some(HalRuntimeClass::LinuxHeadless),

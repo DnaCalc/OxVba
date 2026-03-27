@@ -77,6 +77,7 @@ pub trait HostServices: Send + Sync {
     fn descriptor(&self) -> HalDescriptor;
     fn policy(&self) -> &HostPolicy;
 
+    fn console(&self) -> &dyn ConsoleHal;
     fn ui(&self) -> &dyn UiInteractionHal;
     fn events(&self) -> &dyn EventPumpHal;
     fn fs(&self) -> &dyn FileSystemHal;
@@ -94,6 +95,15 @@ pub trait HostServices: Send + Sync {
     fn project_mutation(&self) -> Option<&dyn ProjectMutationHal> {
         None
     }
+}
+
+pub trait ConsoleHal: Send + Sync {
+    /// Console text output with line semantics for stdio-style hosts.
+    fn print_line(&self, data: RuntimeValue) -> HalResult<RuntimeValue>;
+    /// Delimited field parsing from stdin-like input (BASIC `Input`).
+    fn input_fields(&self, count: RuntimeValue) -> HalResult<RuntimeValue>;
+    /// Line-oriented read from stdin-like input (BASIC `Line Input`).
+    fn line_input(&self) -> HalResult<RuntimeValue>;
 }
 
 pub trait UiInteractionHal: Send + Sync {
@@ -253,6 +263,7 @@ pub trait DynamicLinkHal: Send + Sync {
 
 pub trait DiagnosticsHal: Send + Sync {
     fn emit(&self, code: RuntimeValue, payload: RuntimeValue) -> HalResult<RuntimeValue>;
+    fn debug_print(&self, text: RuntimeValue) -> HalResult<RuntimeValue>;
 }
 
 pub trait ProjectCatalogHal: Send + Sync {

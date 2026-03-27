@@ -1091,9 +1091,17 @@ fn hal_requirement(instruction: &Instruction) -> Option<(&'static str, Capabilit
         Instruction::IntrinsicNowHost { .. } => Some(("Now", CapabilityId::TimeLocale)),
         Instruction::IntrinsicTimerHost { .. } => Some(("Timer", CapabilityId::TimeLocale)),
         Instruction::IntrinsicFreeFileHost { .. } => Some(("FreeFile", CapabilityId::FileSystemIo)),
+        Instruction::IntrinsicConsolePrintHost { .. } => Some(("Print", CapabilityId::ConsoleIo)),
+        Instruction::IntrinsicConsoleInputHost { .. } => Some(("Input", CapabilityId::ConsoleIo)),
+        Instruction::IntrinsicConsoleLineInputHost { .. } => {
+            Some(("Line Input", CapabilityId::ConsoleIo))
+        }
         Instruction::IntrinsicMsgBoxHost { .. } => Some(("MsgBox", CapabilityId::UiInteraction)),
         Instruction::IntrinsicInputBoxHost { .. } => {
             Some(("InputBox", CapabilityId::UiInteraction))
+        }
+        Instruction::IntrinsicDebugPrintHost { .. } => {
+            Some(("Debug.Print", CapabilityId::DiagnosticsTelemetry))
         }
         Instruction::IntrinsicDoEventsHost { .. } => Some(("DoEvents", CapabilityId::EventPump)),
         Instruction::IntrinsicCreateObjectHost { .. } => {
@@ -23186,7 +23194,7 @@ mod tests {
         let slots = engine
             .execute_source_slots_test(source)
             .expect("execution should succeed");
-        assert_eq!(slots, vec![-1]);
+        assert_eq!(slots, vec![1]);
     }
 
     #[test]
