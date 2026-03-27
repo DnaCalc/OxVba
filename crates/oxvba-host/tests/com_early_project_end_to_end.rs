@@ -648,6 +648,94 @@ fn early_bound_loaded_basproj_valid_alt_then_broken_base_resolves_qualified_alt_
 
 #[cfg(target_os = "windows")]
 #[test]
+#[ignore = "requires registered external COM typelib lane and validates unqualified valid-first binding despite later broken reference in loaded .basproj execution"]
+fn early_bound_loaded_basproj_valid_base_then_broken_alt_prefers_base_for_unqualified_testeventserver(
+) {
+    let loaded = load_typelib_basproj_with_ref_specs(
+        "basproj-typelib-valid-base-broken-alt-unqualified",
+        concat!(
+            "Attribute VB_Name = \"Main\"\n",
+            "Public Sub Main()\n",
+            "Dim obj As New TestEventServer\n",
+            "Dim value\n",
+            "value = obj.Ping()\n",
+            "End Sub\n"
+        ),
+        &[
+            BasprojComRefSpec {
+                include: "OxVba",
+                guid: Some("{E2A30001-0001-0001-0001-000000000001}"),
+                major: Some(1),
+                minor: Some(0),
+                lcid: Some(0),
+                importlib: Some("OxVba.TestEventServer.tlb"),
+            },
+            BasprojComRefSpec {
+                include: "OxVbaAltMissing",
+                guid: Some("{E2A30001-0001-0001-0001-000000000101}"),
+                major: Some(1),
+                minor: Some(0),
+                lcid: Some(0),
+                importlib: Some("C:\\Work\\DnaCalc\\OxVba\\temp\\missing\\OxVba.TestEventServerAlt.tlb"),
+            },
+        ],
+    );
+
+    let compiled = compile_project(&loaded.manifest)
+        .expect("valid first reference should drive unqualified binding despite later broken reference");
+    let out = compiled.rewritten_source.to_ascii_lowercase();
+    assert!(
+        out.contains("value = pmr_oxvba_testeventserver_testeventserver_ping(obj)"),
+        "expected unqualified valid-first binding to lower to the base synthetic typelib target, got: {out}"
+    );
+}
+
+#[cfg(target_os = "windows")]
+#[test]
+#[ignore = "requires registered external COM typelib lane and validates unqualified valid-first binding despite later broken reference in loaded .basproj execution"]
+fn early_bound_loaded_basproj_valid_alt_then_broken_base_prefers_alt_for_unqualified_testeventserver(
+) {
+    let loaded = load_typelib_basproj_with_ref_specs(
+        "basproj-typelib-valid-alt-broken-base-unqualified",
+        concat!(
+            "Attribute VB_Name = \"Main\"\n",
+            "Public Sub Main()\n",
+            "Dim obj As New TestEventServer\n",
+            "Dim value\n",
+            "value = obj.Ping()\n",
+            "End Sub\n"
+        ),
+        &[
+            BasprojComRefSpec {
+                include: "OxVbaAlt",
+                guid: Some("{E2A30001-0001-0001-0001-000000000101}"),
+                major: Some(1),
+                minor: Some(0),
+                lcid: Some(0),
+                importlib: Some("OxVba.TestEventServerAlt.tlb"),
+            },
+            BasprojComRefSpec {
+                include: "OxVbaMissingBase",
+                guid: Some("{E2A30001-0001-0001-0001-000000000001}"),
+                major: Some(1),
+                minor: Some(0),
+                lcid: Some(0),
+                importlib: Some("C:\\Work\\DnaCalc\\OxVba\\temp\\missing\\OxVba.TestEventServer.tlb"),
+            },
+        ],
+    );
+
+    let compiled = compile_project(&loaded.manifest)
+        .expect("valid first alt reference should drive unqualified binding despite later broken reference");
+    let out = compiled.rewritten_source.to_ascii_lowercase();
+    assert!(
+        out.contains("value = pmr_oxvba_testeventserveralt_testeventserver_ping(obj)"),
+        "expected unqualified valid-first binding to lower to the alt synthetic typelib target, got: {out}"
+    );
+}
+
+#[cfg(target_os = "windows")]
+#[test]
 #[ignore = "requires registered external COM typelib lane (run explicitly on Windows host with OxVba.TestEventServer registered)"]
 fn early_bound_project_registered_testeventserver_withevents_callback_invokes_handler_body() {
     let class_module = module_unit_from_source(

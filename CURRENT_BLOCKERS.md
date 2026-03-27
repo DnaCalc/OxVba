@@ -470,12 +470,18 @@ Run context: active parity/compliance execution plus in-progress feature worklis
   - The complementary bounded oracle `com_testeventserver_qualified_broken_reference_oracle_20260327T040256Z` shows the non-broken selected-reference subset:
     - Excel still succeeds with `42` / `84` when code explicitly targets the still-valid qualified typelib,
     - OxVba compiles and lower-selects the matching valid ProgID despite the later broken saved reference.
+  - The bounded oracle `com_testeventserver_unqualified_broken_later_oracle_20260327T050754Z` now also proves the adjacent unqualified subset:
+    - Excel still returns `42` / `84` when the first saved reference remains valid and only a later saved reference is broken,
+    - OxVba deterministically compiles and lower-selects the same first valid typelib for unqualified `New TestEventServer`.
   - Harness-side Excel/VBE popup handling remains useful for bounded automation and evidence capture, but the popup shape itself is not a parity target.
+  - Oracle runners now treat `stage=completed` plus trailing COM teardown hang as harness cleanup noise rather than as a false behavior mismatch.
 - Evidence:
   - `docs/evidence/conformance/oracle_captures/com_testeventserver_mixed_broken_reference_oracle_20260327T034413Z/summary.md`
   - `docs/evidence/conformance/oracle_captures/com_testeventserver_mixed_broken_reference_oracle_20260327T034413Z/results.csv`
   - `docs/evidence/conformance/oracle_captures/com_testeventserver_qualified_broken_reference_oracle_20260327T040256Z/summary.md`
   - `docs/evidence/conformance/oracle_captures/com_testeventserver_qualified_broken_reference_oracle_20260327T040256Z/results.csv`
+  - `docs/evidence/conformance/oracle_captures/com_testeventserver_unqualified_broken_later_oracle_20260327T050754Z/summary.md`
+  - `docs/evidence/conformance/oracle_captures/com_testeventserver_unqualified_broken_later_oracle_20260327T050754Z/results.csv`
 
 ### BLK-COM-001: COM event callback parity lane requires external oracle evidence closure (CLOSED)
 - Title: Complete Windows COM event callback parity evidence (`COM-EVT-A` + `COM-EVT-B`) on external registered servers.

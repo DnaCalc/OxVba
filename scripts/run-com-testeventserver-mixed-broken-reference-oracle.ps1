@@ -288,6 +288,19 @@ try {
             }
             $handlerLogMeta = Get-HandlerLogMetadata -Path $handlerLogPath
             $sawUiFailure = $handlerLogMeta.observed -eq "true" -or $orphanedWindowTitles.Count -gt 0
+            if ($state -and $state.stage -eq "completed") {
+                return @{
+                    status          = "ok"
+                    observed        = [string]$state.run
+                    refs            = ($state.refs -join "|")
+                    stage           = [string]$state.stage
+                    modal_observed  = if ($handlerLogMeta.observed -ne "unknown") { $handlerLogMeta.observed } else { "false" }
+                    probe_exit_code = "cleanup-timeout"
+                    window_titles   = ($orphanedWindowTitles -join "|")
+                    handler_log     = $handlerLogPath
+                    handler_signal  = if ($sawUiFailure) { "cleanup-timeout-after-completed-state" } else { "cleanup-timeout-after-completed-state" }
+                }
+            }
             $effectiveStatus = if ($sawUiFailure) { "error" } else { "timeout" }
             $effectiveObserved = if ($sawUiFailure) {
                 if ([string]::IsNullOrWhiteSpace($handlerLogMeta.classification)) {

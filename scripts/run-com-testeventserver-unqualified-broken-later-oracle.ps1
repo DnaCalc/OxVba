@@ -11,14 +11,14 @@ $PSNativeCommandUseErrorActionPreference = $false
 Push-Location (Join-Path $PSScriptRoot "..")
 try {
     if (-not $IsWindows) {
-        throw "COM TestEventServer qualified broken-reference oracle runner is Windows-only"
+        throw "COM TestEventServer unqualified broken-later oracle runner is Windows-only"
     }
 
     . "$PSScriptRoot/lib-run-context.ps1"
     . "$PSScriptRoot/lib-com-testeventserver-alt-project.ps1"
-    $resolvedRunId = Resolve-RunId -Name "com-testeventserver-qualified-broken-reference-oracle" -RequestedRunId $RunId
+    $resolvedRunId = Resolve-RunId -Name "com-testeventserver-unqualified-broken-later-oracle" -RequestedRunId $RunId
     if ($NoArtifacts) {
-        $OutputRoot = New-NoArtifactEvidenceDir -Scope "com-testeventserver-qualified-broken-reference-oracle" -RunId $resolvedRunId
+        $OutputRoot = New-NoArtifactEvidenceDir -Scope "com-testeventserver-unqualified-broken-later-oracle" -RunId $resolvedRunId
     }
 
     $workspaceRoot = (Resolve-Path ".").Path
@@ -27,10 +27,10 @@ try {
     } else {
         Join-Path $workspaceRoot $OutputRoot
     }
-    $runDir = Join-Path $runRoot "com_testeventserver_qualified_broken_reference_oracle_$resolvedRunId"
+    $runDir = Join-Path $runRoot "com_testeventserver_unqualified_broken_later_oracle_$resolvedRunId"
     New-Item -ItemType Directory -Force -Path $runDir | Out-Null
 
-    $generatedRoot = Join-Path $workspaceRoot "temp\generated\com_testeventserver_qualified_broken_reference\$resolvedRunId"
+    $generatedRoot = Join-Path $workspaceRoot "temp\generated\com_testeventserver_unqualified_broken_later\$resolvedRunId"
     $altProjectRoot = Join-Path $generatedRoot "OxVba.TestEventServerAlt"
     New-AltTestEventServerProject -WorkspaceRoot $workspaceRoot -DestinationRoot $altProjectRoot
 
@@ -42,12 +42,11 @@ try {
 
     $rows = New-Object System.Collections.Generic.List[object]
     $vbaDialogHandlerScriptPath = (Resolve-Path (Join-Path $PSScriptRoot "excel-vbe-dialog-handler.ps1")).Path
-    $probeScriptPath = Join-Path $runDir "_qualified_broken_reference_probe.ps1"
+    $probeScriptPath = Join-Path $runDir "_unqualified_broken_later_probe.ps1"
     $probeScript = @'
 param(
     [string]$FirstTypeLibPath,
     [string]$SecondTypeLibPath,
-    [string]$QualifiedTypeName,
     [string]$StatePath,
     [string]$VbaDialogHandlerScriptPath,
     [string]$VbaDialogHandlerLogPath,
@@ -72,7 +71,7 @@ function Get-WindowProcessId {
     [int]$windowPid
 }
 
-$root = Join-Path $env:TEMP ("oxvba_qualified_broken_ref_" + [guid]::NewGuid().ToString("N"))
+$root = Join-Path $env:TEMP ("oxvba_unqualified_broken_later_" + [guid]::NewGuid().ToString("N"))
 New-Item -ItemType Directory -Force -Path $root | Out-Null
 $firstCopy = Join-Path $root ([System.IO.Path]::GetFileName($FirstTypeLibPath))
 $secondCopy = Join-Path $root ([System.IO.Path]::GetFileName($SecondTypeLibPath))
@@ -81,7 +80,7 @@ $vbaDialogHandlerStop = Join-Path $root "_vba_dialog_handler.stop"
 $deadlineFile = Join-Path $root "_run_deadline.txt"
 Copy-Item $FirstTypeLibPath $firstCopy -Force
 Copy-Item $SecondTypeLibPath $secondCopy -Force
-$code = "Public Function RunProbe()`n    Dim obj As $QualifiedTypeName`n    Set obj = New $QualifiedTypeName`n    RunProbe = obj.Ping()`nEnd Function`n"
+$code = "Public Function RunProbe()`n    Dim obj As TestEventServer`n    Set obj = New TestEventServer`n    RunProbe = obj.Ping()`nEnd Function`n"
 
 $excel = $null
 $wb = $null
@@ -233,12 +232,11 @@ try {
         }
     }
 
-    function Invoke-QualifiedBrokenReferenceProbe {
+    function Invoke-UnqualifiedBrokenLaterProbe {
         param(
             [string]$CaseId,
             [string]$FirstTypeLibPath,
-            [string]$SecondTypeLibPath,
-            [string]$QualifiedTypeName
+            [string]$SecondTypeLibPath
         )
 
         $baselineExcelPids = @(Get-Process EXCEL -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Id)
@@ -261,7 +259,6 @@ try {
                 $probeScriptPath,
                 $FirstTypeLibPath,
                 $SecondTypeLibPath,
-                $QualifiedTypeName,
                 $statePath,
                 $vbaDialogHandlerScriptPath,
                 $handlerLogPath,
@@ -281,16 +278,10 @@ try {
             Stop-Process -Id $probeProcess.Id -Force -ErrorAction SilentlyContinue
             $newExcelPids = @(Get-Process EXCEL -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Id)
             $orphanedPids = $newExcelPids | Where-Object { $_ -notin $baselineExcelPids }
-            $orphanedWindowTitles = @(
-                Get-Process -Id $orphanedPids -ErrorAction SilentlyContinue |
-                    Where-Object { -not [string]::IsNullOrWhiteSpace($_.MainWindowTitle) } |
-                    ForEach-Object { $_.MainWindowTitle }
-            )
             foreach ($orphanedPid in $orphanedPids) {
                 Stop-Process -Id $orphanedPid -Force -ErrorAction SilentlyContinue
             }
             $handlerLogMeta = Get-HandlerLogMetadata -Path $handlerLogPath
-            $sawUiFailure = $handlerLogMeta.observed -eq "true" -or $orphanedWindowTitles.Count -gt 0
             if ($state -and $state.stage -eq "completed") {
                 return @{
                     status          = "ok"
@@ -299,31 +290,19 @@ try {
                     stage           = [string]$state.stage
                     modal_observed  = if ($handlerLogMeta.observed -ne "unknown") { $handlerLogMeta.observed } else { "false" }
                     probe_exit_code = "cleanup-timeout"
-                    window_titles   = ($orphanedWindowTitles -join "|")
                     handler_log     = $handlerLogPath
-                    handler_signal  = if ($sawUiFailure) { "cleanup-timeout-after-completed-state" } else { "cleanup-timeout-after-completed-state" }
+                    handler_signal  = "cleanup-timeout-after-completed-state"
                 }
-            }
-            $effectiveStatus = if ($sawUiFailure) { "error" } else { "timeout" }
-            $effectiveObserved = if ($sawUiFailure) {
-                if ([string]::IsNullOrWhiteSpace($handlerLogMeta.classification)) {
-                    "ui-blocked-or-compile-failure"
-                } else {
-                    $handlerLogMeta.classification
-                }
-            } else {
-                "execution-did-not-return-within-${ProbeTimeoutSeconds}s"
             }
             return @{
-                status         = $effectiveStatus
-                observed       = $effectiveObserved
-                refs           = if ($state) { ($state.refs -join "|") } else { "" }
-                stage          = if ($state) { [string]$state.stage } else { "" }
-                modal_observed = if ($sawUiFailure) { "true" } elseif ($state -and $state.stage -eq "reopened") { "possible" } else { "unknown" }
+                status          = "timeout"
+                observed        = "execution-did-not-return-within-${ProbeTimeoutSeconds}s"
+                refs            = if ($state) { ($state.refs -join "|") } else { "" }
+                stage           = if ($state) { [string]$state.stage } else { "" }
+                modal_observed  = $handlerLogMeta.observed
                 probe_exit_code = ""
-                window_titles  = ($orphanedWindowTitles -join "|")
-                handler_log    = $handlerLogPath
-                handler_signal = if ($sawUiFailure) { "ui-blocked-or-compile-failure" } else { $handlerLogMeta.classification }
+                handler_log     = $handlerLogPath
+                handler_signal  = $handlerLogMeta.classification
             }
         }
 
@@ -331,67 +310,62 @@ try {
         $handlerLogMeta = Get-HandlerLogMetadata -Path $handlerLogPath
         if ($null -eq $state) {
             return @{
-                status         = "error"
-                observed       = "no-state-captured(exit=$probeExitCode)"
-                refs           = ""
-                stage          = ""
-                modal_observed = "unknown"
+                status          = "error"
+                observed        = "no-state-captured(exit=$probeExitCode)"
+                refs            = ""
+                stage           = ""
+                modal_observed  = "unknown"
                 probe_exit_code = $probeExitCode
-                window_titles  = ""
-                handler_log    = $handlerLogPath
-                handler_signal = $handlerLogMeta.classification
+                handler_log     = $handlerLogPath
+                handler_signal  = $handlerLogMeta.classification
             }
         }
         if ($state.stage -eq "completed") {
             return @{
-                status         = "ok"
-                observed       = [string]$state.run
-                refs           = ($state.refs -join "|")
-                stage          = [string]$state.stage
-                modal_observed = if ($handlerLogMeta.observed -ne "unknown") { $handlerLogMeta.observed } else { "false" }
+                status          = "ok"
+                observed        = [string]$state.run
+                refs            = ($state.refs -join "|")
+                stage           = [string]$state.stage
+                modal_observed  = if ($handlerLogMeta.observed -ne "unknown") { $handlerLogMeta.observed } else { "false" }
                 probe_exit_code = $probeExitCode
-                window_titles  = ""
-                handler_log    = $handlerLogPath
-                handler_signal = $handlerLogMeta.classification
+                handler_log     = $handlerLogPath
+                handler_signal  = $handlerLogMeta.classification
             }
         }
         return @{
-            status         = "error"
-            observed       = [string]$state.run_error
-            refs           = ($state.refs -join "|")
-            stage          = [string]$state.stage
-            modal_observed = if ($handlerLogMeta.observed -ne "unknown") { $handlerLogMeta.observed } else { "false" }
+            status          = "error"
+            observed        = [string]$state.run_error
+            refs            = ($state.refs -join "|")
+            stage           = [string]$state.stage
+            modal_observed  = if ($handlerLogMeta.observed -ne "unknown") { $handlerLogMeta.observed } else { "false" }
             probe_exit_code = $probeExitCode
-            window_titles  = ""
-            handler_log    = $handlerLogPath
-            handler_signal = $handlerLogMeta.classification
+            handler_log     = $handlerLogPath
+            handler_signal  = $handlerLogMeta.classification
         }
     }
 
     $cases = @(
         @{
-            case_id = "CCT-043-TES-BROKEN-QUAL-001"
-            scenario = "Saved workbook with base valid then alt broken after save; explicit qualified base target"
+            case_id = "CCT-043-TES-BROKEN-LATER-001"
+            scenario = "Saved workbook with base valid then alt broken after save; unqualified TestEventServer still selects first valid base reference"
             first = $baseTypeLibPath
             second = $altTypeLibPath
-            qualified = "OxVba_TestEventServer.TestEventServer"
             command = @(
                 "test", "-p", "oxvba-host", "--test", "com_early_project_end_to_end",
-                "early_bound_loaded_basproj_valid_base_then_broken_alt_resolves_qualified_base_binding",
+                "early_bound_loaded_basproj_valid_base_then_broken_alt_prefers_base_for_unqualified_testeventserver",
                 "--", "--ignored", "--exact", "--test-threads=1", "--nocapture"
             )
             expected_vba = "42"
             expected_prog_id = "OxVba.TestEventServer"
         }
         @{
-            case_id = "CCT-043-TES-BROKEN-QUAL-002"
-            scenario = "Saved workbook with alt valid then base broken after save; explicit qualified alt target"
+            case_id = "CCT-043-TES-BROKEN-LATER-002"
+            scenario = "Saved workbook with alt valid then base broken after save; unqualified TestEventServer still selects first valid alt reference"
             first = $altTypeLibPath
             second = $baseTypeLibPath
-            qualified = "OxVba_TestEventServerAlt.TestEventServer"
             command = @(
                 "test", "-p", "oxvba-host", "--test", "com_early_project_end_to_end",
-                "early_bound_loaded_basproj_valid_alt_then_broken_base_resolves_qualified_alt_binding",
+                "early_bound_loaded_basproj_valid_alt_then_broken_base_prefers_alt_for_unqualified_testeventserver",
                 "--", "--ignored", "--exact", "--test-threads=1", "--nocapture"
             )
             expected_vba = "84"
@@ -400,11 +374,10 @@ try {
     )
 
     foreach ($case in $cases) {
-        $probe = Invoke-QualifiedBrokenReferenceProbe `
+        $probe = Invoke-UnqualifiedBrokenLaterProbe `
             -CaseId $case.case_id `
             -FirstTypeLibPath $case.first `
-            -SecondTypeLibPath $case.second `
-            -QualifiedTypeName $case.qualified
+            -SecondTypeLibPath $case.second
         $logPath = Join-Path $runDir ($case.case_id + ".log.txt")
         $cmdText = "cargo " + ($case.command -join " ")
         $null = & cargo @($case.command) 2>&1 | Tee-Object -FilePath $logPath
@@ -432,11 +405,9 @@ try {
                 "Excel stage=" + $probe.stage +
                 "; refs=" + $probe.refs +
                 "; modal_observed=" + $probe.modal_observed +
-                "; window_titles=" + $probe.window_titles +
                 "; handler_signal=" + $probe.handler_signal +
                 "; handler_log=" + $probe.handler_log +
                 "; probe_exit_code=" + $probe.probe_exit_code +
-                "; qualified_type=" + $case.qualified +
                 "; OxVba anchor command=" + $cmdText +
                 "; log=" + $logPath
             )
@@ -447,7 +418,7 @@ try {
     $rows | Export-Csv -Path $csvPath -NoTypeInformation
 
     $summary = @(
-        "# COM TestEventServer Qualified Broken Reference Oracle Run",
+        "# COM TestEventServer Unqualified Broken-Later Oracle Run",
         "",
         "- Run ID: $resolvedRunId",
         "- Generated UTC: $((Get-Date).ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ssZ'))",
@@ -470,7 +441,7 @@ try {
     }
     Set-Content -Path $summaryPath -Value ($summary -join [Environment]::NewLine)
 
-    Write-Host "com-testeventserver-qualified-broken-reference-oracle: complete"
+    Write-Host "com-testeventserver-unqualified-broken-later-oracle: complete"
     Write-Host "run_dir=$runDir"
     Write-Host "csv=$csvPath"
     Write-Host "summary=$summaryPath"
