@@ -1,0 +1,8 @@
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.19s
+     Running tests\com_early_project_end_to_end.rs (target\debug\deps\com_early_project_end_to_end-c669c2cd97c29a7d.exe)
+
+running 1 test
+test early_bound_loaded_basproj_valid_base_then_broken_alt_then_valid_alt2_prefers_base_for_unqualified_testeventserver ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 110 filtered out; finished in 0.01s
+

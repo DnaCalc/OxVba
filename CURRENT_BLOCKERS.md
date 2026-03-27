@@ -473,6 +473,9 @@ Run context: active parity/compliance execution plus in-progress feature worklis
   - The bounded oracle `com_testeventserver_unqualified_broken_later_oracle_20260327T050754Z` now also proves the adjacent unqualified subset:
     - Excel still returns `42` / `84` when the first saved reference remains valid and only a later saved reference is broken,
     - OxVba deterministically compiles and lower-selects the same first valid typelib for unqualified `New TestEventServer`.
+  - The bounded oracle `com_testeventserver_three_reference_unqualified_broken_later_oracle_20260327T063542Z` now also proves the widened unqualified later-broken subset:
+    - Excel still returns `42` / `126` when the first saved same-name reference remains valid, a middle saved same-name reference is broken, and a later same-name reference remains valid,
+    - OxVba deterministically compiles and lower-selects that same first valid typelib for unqualified `New TestEventServer`.
   - The bounded oracle `com_testeventserver_qualified_broken_first_reference_oracle_20260327T052111Z` now also proves the qualified broken-first subset:
     - Excel still returns `84` / `42` when the first saved reference is broken, the later saved reference remains valid, and code explicitly targets that later valid qualified typelib,
     - OxVba deterministically compiles and lower-selects the matching valid ProgID instead of failing on the unrelated earlier broken reference.
@@ -491,6 +494,8 @@ Run context: active parity/compliance execution plus in-progress feature worklis
   - `docs/evidence/conformance/oracle_captures/com_testeventserver_qualified_broken_reference_oracle_20260327T040256Z/results.csv`
   - `docs/evidence/conformance/oracle_captures/com_testeventserver_unqualified_broken_later_oracle_20260327T050754Z/summary.md`
   - `docs/evidence/conformance/oracle_captures/com_testeventserver_unqualified_broken_later_oracle_20260327T050754Z/results.csv`
+  - `docs/evidence/conformance/oracle_captures/com_testeventserver_three_reference_unqualified_broken_later_oracle_20260327T063542Z/summary.md`
+  - `docs/evidence/conformance/oracle_captures/com_testeventserver_three_reference_unqualified_broken_later_oracle_20260327T063542Z/results.csv`
   - `docs/evidence/conformance/oracle_captures/com_testeventserver_qualified_broken_first_reference_oracle_20260327T052111Z/summary.md`
   - `docs/evidence/conformance/oracle_captures/com_testeventserver_qualified_broken_first_reference_oracle_20260327T052111Z/results.csv`
   - `docs/evidence/conformance/oracle_captures/com_testeventserver_three_reference_order_oracle_20260327T060926Z/summary.md`
