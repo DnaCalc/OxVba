@@ -440,7 +440,12 @@ fn load_use_case_c_from_str() {
 
     assert_eq!(loaded.manifest.project_name, "ReportGenerator");
     assert_eq!(loaded.manifest.project_kind, ProjectKind::Source);
-    assert_eq!(loaded.manifest.modules.len(), 3);
+    assert_eq!(loaded.manifest.modules.len(), 4);
+    assert!(
+        loaded.manifest.modules[0]
+            .module_name
+            .starts_with("__OxVbaStartupEntryShim")
+    );
     assert_eq!(loaded.entry_point.as_deref(), Some("Main.Main"));
     assert_eq!(loaded.output_type, OutputType::Exe);
 
@@ -580,7 +585,7 @@ fn auto_discover_modules() {
     let _ = std::fs::remove_dir_all(&tmp);
     std::fs::create_dir_all(&tmp).unwrap();
 
-    std::fs::write(tmp.join("Alpha.bas"), "Public Sub A()\nEnd Sub\n").unwrap();
+    std::fs::write(tmp.join("Alpha.bas"), "valueOut = 1\nSub A()\nEnd Sub\n").unwrap();
     std::fs::write(tmp.join("Beta.bas"), "Public Sub B()\nEnd Sub\n").unwrap();
     std::fs::write(
         tmp.join("Gamma.cls"),
@@ -592,16 +597,25 @@ fn auto_discover_modules() {
 
     let loaded = load_basproj_from_str(MINIMAL_XML, &tmp).unwrap();
 
-    assert_eq!(loaded.manifest.modules.len(), 3);
-    // Sorted alphabetically
-    assert_eq!(loaded.manifest.modules[0].module_name, "Alpha");
+    assert_eq!(loaded.manifest.modules.len(), 4);
+    assert!(
+        loaded.manifest.modules[0]
+            .module_name
+            .starts_with("__OxVbaStartupEntryShim")
+    );
     assert_eq!(
-        loaded.manifest.modules[0].module_kind,
+        loaded.entry_point.as_deref(),
+        Some("Alpha.__OxVbaTopLevelMainline")
+    );
+    // Sorted alphabetically
+    assert_eq!(loaded.manifest.modules[1].module_name, "Alpha");
+    assert_eq!(
+        loaded.manifest.modules[1].module_kind,
         ModuleKind::Procedural
     );
-    assert_eq!(loaded.manifest.modules[1].module_name, "Beta");
-    assert_eq!(loaded.manifest.modules[2].module_name, "Gamma");
-    assert_eq!(loaded.manifest.modules[2].module_kind, ModuleKind::Class);
+    assert_eq!(loaded.manifest.modules[2].module_name, "Beta");
+    assert_eq!(loaded.manifest.modules[3].module_name, "Gamma");
+    assert_eq!(loaded.manifest.modules[3].module_kind, ModuleKind::Class);
 
     let _ = std::fs::remove_dir_all(&tmp);
 }

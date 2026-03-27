@@ -354,8 +354,19 @@ pub fn resolve_symbols(source: &str) -> BoundModule {
         .iter()
         .any(|line| detect_proc_kind(&line.to_ascii_lowercase()).is_some());
 
+    let top_level_mainline = build_top_level_mainline_procedure(
+        &lines,
+        &mut option_explicit,
+        option_base,
+        &default_type_table,
+        &udt_defs,
+        &module_constants,
+        &property_write_routes,
+        &property_read_routes,
+    );
+
     let procedures = if has_explicit_procs {
-        parse_procedures(
+        let mut procedures = parse_procedures(
             &lines,
             &mut option_explicit,
             option_base,
@@ -364,50 +375,26 @@ pub fn resolve_symbols(source: &str) -> BoundModule {
             &module_constants,
             &property_write_routes,
             &property_read_routes,
-        )
-    } else {
-        let mut declarations: Vec<String> = Vec::new();
-        let mut declaration_types: HashMap<String, BoundType> = HashMap::new();
-        let mut duplicate_declarations: Vec<String> = Vec::new();
-        let mut array_bounds: ArrayBoundsMap = HashMap::new();
-        let mut index = 0;
-        for (name, _) in sorted_module_constants(&module_constants) {
-            if !declarations
-                .iter()
-                .any(|existing| existing.eq_ignore_ascii_case(&name))
-            {
-                declarations.push(name.clone());
-            }
-            declaration_types.insert(name, BoundType::Long);
-        }
-        let mut body = parse_block(
-            &lines,
-            &mut index,
-            &mut declarations,
-            &mut declaration_types,
-            &mut duplicate_declarations,
-            &mut array_bounds,
-            &mut option_explicit,
-            option_base,
-            &default_type_table,
-            &udt_defs,
-            &module_constants,
-            &property_write_routes,
-            &property_read_routes,
-            &[],
         );
-        body.splice(0..0, build_const_prelude(&module_constants));
-        let array_descriptors = build_array_descriptors(&array_bounds, &declaration_types, &body);
-        vec![BoundProcedure {
-            name: "main".to_string(),
-            return_type: BoundType::Variant,
-            params: Vec::new(),
-            declarations,
-            declaration_types,
-            array_descriptors,
-            duplicate_declarations,
-            body,
-        }]
+        if let Some(mainline) = top_level_mainline.clone()
+            && !procedures
+                .iter()
+                .any(|existing| existing.name.eq_ignore_ascii_case("main"))
+        {
+            procedures.insert(0, mainline);
+        }
+        procedures
+    } else {
+        vec![top_level_mainline.unwrap_or_else(|| build_whole_file_main_procedure(
+            &lines,
+            &mut option_explicit,
+            option_base,
+            &default_type_table,
+            &udt_defs,
+            &module_constants,
+            &property_write_routes,
+            &property_read_routes,
+        ))]
     };
 
     let mut procedures = procedures;
@@ -462,6 +449,192 @@ pub fn resolve_symbols(source: &str) -> BoundModule {
         body: entry.body.clone(),
         procedures,
     }
+}
+
+fn build_whole_file_main_procedure(
+    lines: &[String],
+    option_explicit: &mut bool,
+    option_base: i32,
+    default_type_table: &[BoundType; 26],
+    udt_defs: &UdtDefMap,
+    module_constants: &HashMap<String, i32>,
+    property_write_routes: &HashMap<String, String>,
+    property_read_routes: &HashMap<String, String>,
+) -> BoundProcedure {
+    build_mainline_procedure_from_lines(
+        lines,
+        option_explicit,
+        option_base,
+        default_type_table,
+        udt_defs,
+        module_constants,
+        property_write_routes,
+        property_read_routes,
+    )
+    .unwrap_or(BoundProcedure {
+        name: "main".to_string(),
+        return_type: BoundType::Variant,
+        params: Vec::new(),
+        declarations: Vec::new(),
+        declaration_types: HashMap::new(),
+        array_descriptors: HashMap::new(),
+        duplicate_declarations: Vec::new(),
+        body: Vec::new(),
+    })
+}
+
+fn build_top_level_mainline_procedure(
+    lines: &[String],
+    option_explicit: &mut bool,
+    option_base: i32,
+    default_type_table: &[BoundType; 26],
+    udt_defs: &UdtDefMap,
+    module_constants: &HashMap<String, i32>,
+    property_write_routes: &HashMap<String, String>,
+    property_read_routes: &HashMap<String, String>,
+) -> Option<BoundProcedure> {
+    let mainline_lines = extract_top_level_mainline_lines(lines);
+    if mainline_lines.is_empty() {
+        return None;
+    }
+    build_mainline_procedure_from_lines(
+        &mainline_lines,
+        option_explicit,
+        option_base,
+        default_type_table,
+        udt_defs,
+        module_constants,
+        property_write_routes,
+        property_read_routes,
+    )
+}
+
+fn build_mainline_procedure_from_lines(
+    lines: &[String],
+    option_explicit: &mut bool,
+    option_base: i32,
+    default_type_table: &[BoundType; 26],
+    udt_defs: &UdtDefMap,
+    module_constants: &HashMap<String, i32>,
+    property_write_routes: &HashMap<String, String>,
+    property_read_routes: &HashMap<String, String>,
+) -> Option<BoundProcedure> {
+    if lines.is_empty() {
+        return None;
+    }
+
+    let mut declarations: Vec<String> = Vec::new();
+    let mut declaration_types: HashMap<String, BoundType> = HashMap::new();
+    let mut duplicate_declarations: Vec<String> = Vec::new();
+    let mut array_bounds: ArrayBoundsMap = HashMap::new();
+    let mut index = 0;
+    for (name, _) in sorted_module_constants(module_constants) {
+        if !declarations
+            .iter()
+            .any(|existing| existing.eq_ignore_ascii_case(&name))
+        {
+            declarations.push(name.clone());
+        }
+        declaration_types.insert(name, BoundType::Long);
+    }
+    let mut body = parse_block(
+        lines,
+        &mut index,
+        &mut declarations,
+        &mut declaration_types,
+        &mut duplicate_declarations,
+        &mut array_bounds,
+        option_explicit,
+        option_base,
+        default_type_table,
+        udt_defs,
+        module_constants,
+        property_write_routes,
+        property_read_routes,
+        &[],
+    );
+    body.splice(0..0, build_const_prelude(module_constants));
+    let array_descriptors = build_array_descriptors(&array_bounds, &declaration_types, &body);
+    Some(BoundProcedure {
+        name: "main".to_string(),
+        return_type: BoundType::Variant,
+        params: Vec::new(),
+        declarations,
+        declaration_types,
+        array_descriptors,
+        duplicate_declarations,
+        body,
+    })
+}
+
+fn extract_top_level_mainline_lines(lines: &[String]) -> Vec<String> {
+    let mut out = Vec::new();
+    let mut active_proc_end: Option<&'static str> = None;
+    let mut active_decl_block_end: Option<&'static str> = None;
+
+    for line in lines {
+        let trimmed = line.trim();
+        let lower = trimmed.to_ascii_lowercase();
+
+        if let Some(end_term) = active_proc_end {
+            if lower == end_term {
+                active_proc_end = None;
+            }
+            continue;
+        }
+
+        if let Some(end_term) = active_decl_block_end {
+            if lower == end_term {
+                active_decl_block_end = None;
+            }
+            continue;
+        }
+
+        if trimmed.is_empty() || trimmed.starts_with('\'') {
+            continue;
+        }
+        if let Some(kind) = detect_proc_kind(&lower) {
+            active_proc_end = Some(kind.end_term());
+            continue;
+        }
+        if lower.starts_with("type ") {
+            active_decl_block_end = Some("end type");
+            continue;
+        }
+        if lower.starts_with("enum ") {
+            active_decl_block_end = Some("end enum");
+            continue;
+        }
+        if is_non_mainline_top_level_directive(trimmed) {
+            continue;
+        }
+        out.push(line.clone());
+    }
+
+    out
+}
+
+fn is_non_mainline_top_level_directive(line: &str) -> bool {
+    let lower = line.trim().to_ascii_lowercase();
+    lower.starts_with("attribute ")
+        || lower == "option explicit"
+        || parse_option_base_directive(line).is_some()
+        || lower.starts_with("option compare ")
+        || lower.starts_with("dim ")
+        || lower.starts_with("global ")
+        || lower.starts_with("static ")
+        || lower.starts_with("public ")
+        || lower.starts_with("private ")
+        || lower.starts_with("friend ")
+        || lower.starts_with("implements ")
+        || lower.starts_with("event ")
+        || lower.starts_with("const ")
+        || lower.starts_with("public const ")
+        || lower.starts_with("private const ")
+        || lower.starts_with("friend const ")
+        || lower.starts_with("declare ")
+        || lower.starts_with("public declare ")
+        || lower.starts_with("private declare ")
 }
 
 fn normalize_source_lines(source: &str) -> Vec<String> {

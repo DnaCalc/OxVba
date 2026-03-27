@@ -35,6 +35,7 @@ pub struct LoadedProject {
 
 const TYPELIB_BINDING_DIAGNOSTIC_MODULE_NAME: &str = "__OxVbaTypeLibBindingDiagnostic";
 const STARTUP_ENTRY_SHIM_MODULE_PREFIX: &str = "__OxVbaStartupEntryShim";
+const TOP_LEVEL_MAINLINE_PROC_PREFIX: &str = "__OxVbaTopLevelMainline";
 
 /// Load a `.basproj` file from disk, resolve module sources, and produce a
 /// `LoadedProject` containing the `ProjectManifest` and export descriptors.
@@ -123,7 +124,7 @@ pub(crate) fn build_loaded_project(
     let effective_entry_point = resolve_effective_entry_point(
         output_type,
         configured_entry_point.as_deref(),
-        &modules,
+        &mut modules,
     )?;
     if let Some(entry_point) = effective_entry_point.as_deref() {
         inject_entry_point_startup_shim(&mut modules, entry_point)?;
@@ -257,7 +258,7 @@ pub(crate) fn build_loaded_project(
 fn resolve_effective_entry_point(
     output_type: OutputType,
     configured_entry_point: Option<&str>,
-    modules: &[ModuleUnit],
+    modules: &mut Vec<ModuleUnit>,
 ) -> Result<Option<String>, BasProjError> {
     if let Some(entry_point) = configured_entry_point {
         return Ok(Some(entry_point.to_string()));
@@ -265,7 +266,34 @@ fn resolve_effective_entry_point(
     if output_type != OutputType::Exe {
         return Ok(None);
     }
+    if let Some(entry_point) = prepare_unique_top_level_mainline_entry(modules)? {
+        return Ok(Some(entry_point));
+    }
     discover_unique_sub_main_entry_point(modules).map(Some)
+}
+
+fn prepare_unique_top_level_mainline_entry(
+    modules: &mut Vec<ModuleUnit>,
+) -> Result<Option<String>, BasProjError> {
+    let candidates = modules
+        .iter()
+        .enumerate()
+        .filter(|(_, module)| module.module_kind == ModuleKind::Procedural)
+        .filter(|(_, module)| !extract_top_level_mainline_lines(&module.source).is_empty())
+        .map(|(idx, module)| (idx, module.module_name.clone()))
+        .collect::<Vec<_>>();
+
+    match candidates.as_slice() {
+        [] => Ok(None),
+        [(idx, module_name)] => {
+            let (rewritten, proc_name) = rewrite_module_with_top_level_mainline(&modules[*idx])?;
+            modules[*idx] = rewritten;
+            Ok(Some(format!("{module_name}.{proc_name}")))
+        }
+        _ => Err(BasProjError::EntryPointAmbiguous(
+            "unique top-level mainline fallback for OutputType=Exe".to_string(),
+        )),
+    }
 }
 
 fn inject_entry_point_startup_shim(
@@ -316,6 +344,31 @@ fn discover_unique_sub_main_entry_point(modules: &[ModuleUnit]) -> Result<String
     }
 }
 
+fn rewrite_module_with_top_level_mainline(
+    module: &ModuleUnit,
+) -> Result<(ModuleUnit, String), BasProjError> {
+    let (retained_lines, mainline_lines) = split_top_level_mainline_lines(&module.source);
+    let proc_name = next_top_level_mainline_proc_name(&module.source);
+    let mut rewritten = retained_lines.join("\n");
+    if !rewritten.is_empty() && !rewritten.ends_with('\n') {
+        rewritten.push('\n');
+    }
+    if !rewritten.is_empty() {
+        rewritten.push('\n');
+    }
+    rewritten.push_str(&format!("Public Sub {proc_name}()\n"));
+    for line in mainline_lines {
+        rewritten.push_str(&line);
+        rewritten.push('\n');
+    }
+    rewritten.push_str("End Sub\n");
+    let rewritten_module =
+        module_unit_from_source(&module.module_name, module.module_kind, rewritten).map_err(
+            |_| BasProjError::EntryPointInvalid(format!("{}.{}", module.module_name, proc_name)),
+        )?;
+    Ok((rewritten_module, proc_name))
+}
+
 fn parse_configured_entry_point(entry_point: &str) -> Result<(String, String), BasProjError> {
     let Some((module_name, procedure_name)) = entry_point.trim().split_once('.') else {
         return Err(BasProjError::EntryPointInvalid(entry_point.to_string()));
@@ -344,6 +397,191 @@ fn module_has_public_parameterless_main(module: &ModuleUnit) -> bool {
         .source
         .lines()
         .any(line_is_public_parameterless_main_sub_signature)
+}
+
+fn split_top_level_mainline_lines(source: &str) -> (Vec<String>, Vec<String>) {
+    let lines = source
+        .lines()
+        .map(|line| line.trim_end_matches('\r').to_string())
+        .collect::<Vec<_>>();
+    let mainline = extract_top_level_mainline_lines(source);
+    if mainline.is_empty() {
+        return (lines, Vec::new());
+    }
+
+    let mut retained = Vec::new();
+    let mut remaining = mainline.clone();
+    for line in lines {
+        if let Some(pos) = remaining.iter().position(|candidate| candidate == &line) {
+            remaining.remove(pos);
+        } else {
+            retained.push(line);
+        }
+    }
+    (retained, mainline)
+}
+
+fn extract_top_level_mainline_lines(source: &str) -> Vec<String> {
+    let mut out = Vec::new();
+    let mut active_proc_end: Option<&'static str> = None;
+    let mut active_decl_block_end: Option<&'static str> = None;
+
+    for raw in source.lines() {
+        let line = raw.trim_end_matches('\r');
+        let trimmed = line.trim();
+        let lower = trimmed.to_ascii_lowercase();
+
+        if let Some(end_term) = active_proc_end {
+            if lower == end_term {
+                active_proc_end = None;
+            }
+            continue;
+        }
+
+        if let Some(end_term) = active_decl_block_end {
+            if lower == end_term {
+                active_decl_block_end = None;
+            }
+            continue;
+        }
+
+        if trimmed.is_empty() || trimmed.starts_with('\'') {
+            continue;
+        }
+        if let Some(end_term) = procedure_end_term(&lower) {
+            active_proc_end = Some(end_term);
+            continue;
+        }
+        if lower.starts_with("type ") {
+            active_decl_block_end = Some("end type");
+            continue;
+        }
+        if lower.starts_with("enum ") {
+            active_decl_block_end = Some("end enum");
+            continue;
+        }
+        if is_non_mainline_top_level_directive(trimmed) {
+            continue;
+        }
+        out.push(line.to_string());
+    }
+
+    out
+}
+
+fn next_top_level_mainline_proc_name(source: &str) -> String {
+    let mut index = 0usize;
+    loop {
+        let candidate = if index == 0 {
+            TOP_LEVEL_MAINLINE_PROC_PREFIX.to_string()
+        } else {
+            format!("{TOP_LEVEL_MAINLINE_PROC_PREFIX}{index}")
+        };
+        if !module_has_proc_named(source, &candidate) {
+            return candidate;
+        }
+        index += 1;
+    }
+}
+
+fn module_has_proc_named(source: &str, proc_name: &str) -> bool {
+    source.lines().any(|line| line_declares_proc_name(line, proc_name))
+}
+
+fn line_declares_proc_name(line: &str, proc_name: &str) -> bool {
+    let trimmed = line.trim();
+    let lower = trimmed.to_ascii_lowercase();
+    let prefixes = [
+        "sub ",
+        "public sub ",
+        "private sub ",
+        "friend sub ",
+        "function ",
+        "public function ",
+        "private function ",
+        "friend function ",
+        "property get ",
+        "public property get ",
+        "private property get ",
+        "friend property get ",
+        "property let ",
+        "public property let ",
+        "private property let ",
+        "friend property let ",
+        "property set ",
+        "public property set ",
+        "private property set ",
+        "friend property set ",
+    ];
+    for prefix in prefixes {
+        if let Some(rest) = lower.strip_prefix(prefix)
+            && let Some((name, _)) = split_identifier_prefix(rest.trim())
+            && name.eq_ignore_ascii_case(proc_name)
+        {
+            return true;
+        }
+    }
+    false
+}
+
+fn procedure_end_term(lower: &str) -> Option<&'static str> {
+    if lower.starts_with("sub ")
+        || lower.starts_with("public sub ")
+        || lower.starts_with("private sub ")
+        || lower.starts_with("friend sub ")
+    {
+        Some("end sub")
+    } else if lower.starts_with("function ")
+        || lower.starts_with("public function ")
+        || lower.starts_with("private function ")
+        || lower.starts_with("friend function ")
+    {
+        Some("end function")
+    } else if lower.starts_with("property get ")
+        || lower.starts_with("public property get ")
+        || lower.starts_with("private property get ")
+        || lower.starts_with("friend property get ")
+        || lower.starts_with("property let ")
+        || lower.starts_with("public property let ")
+        || lower.starts_with("private property let ")
+        || lower.starts_with("friend property let ")
+        || lower.starts_with("property set ")
+        || lower.starts_with("public property set ")
+        || lower.starts_with("private property set ")
+        || lower.starts_with("friend property set ")
+    {
+        Some("end property")
+    } else {
+        None
+    }
+}
+
+fn is_non_mainline_top_level_directive(line: &str) -> bool {
+    let lower = line.trim().to_ascii_lowercase();
+    lower.starts_with("attribute ")
+        || lower == "option explicit"
+        || lower.starts_with("option compare ")
+        || line_is_option_base_directive(line)
+        || lower.starts_with("dim ")
+        || lower.starts_with("global ")
+        || lower.starts_with("static ")
+        || lower.starts_with("public ")
+        || lower.starts_with("private ")
+        || lower.starts_with("friend ")
+        || lower.starts_with("implements ")
+        || lower.starts_with("event ")
+        || lower.starts_with("const ")
+        || lower.starts_with("public const ")
+        || lower.starts_with("private const ")
+        || lower.starts_with("friend const ")
+        || lower.starts_with("declare ")
+        || lower.starts_with("public declare ")
+        || lower.starts_with("private declare ")
+}
+
+fn line_is_option_base_directive(line: &str) -> bool {
+    let lower = line.trim().to_ascii_lowercase();
+    lower == "option base 0" || lower == "option base 1"
 }
 
 fn line_is_public_parameterless_main_sub_signature(line: &str) -> bool {
@@ -808,19 +1046,26 @@ mod tests {
             .manifest
             .reference_projects
             .iter()
-            .find(|project| project.project_name == "OxVbaMissingBase")
+            .find(|project| {
+                project.modules.iter().any(|module| {
+                    module.module_name == TYPELIB_BINDING_DIAGNOSTIC_MODULE_NAME
+                        && module
+                            .source
+                            .contains("code=PMR-E-TYPELIB-IMPORTLIB-UNRESOLVED")
+                })
+            })
             .expect("expected synthetic diagnostic project for broken importlib");
-        assert_eq!(diagnostic.modules.len(), 1);
-        assert_eq!(
-            diagnostic.modules[0].module_name,
-            TYPELIB_BINDING_DIAGNOSTIC_MODULE_NAME
-        );
+        let diagnostic_module = diagnostic
+            .modules
+            .iter()
+            .find(|module| module.module_name == TYPELIB_BINDING_DIAGNOSTIC_MODULE_NAME)
+            .expect("diagnostic module present");
         assert!(
-            diagnostic.modules[0]
+            diagnostic_module
                 .source
                 .contains("code=PMR-E-TYPELIB-IMPORTLIB-UNRESOLVED"),
             "expected unresolved importlib code, got: {}",
-            diagnostic.modules[0].source
+            diagnostic_module.source
         );
 
         std::fs::remove_dir_all(&temp_root).expect("cleanup temp project root");
@@ -918,6 +1163,102 @@ mod tests {
             "expected auto-discovered startup shim to target unique Main, got: {}",
             loaded.manifest.modules[0].source
         );
+
+        std::fs::remove_dir_all(&temp_root).expect("cleanup temp project root");
+    }
+
+    #[test]
+    fn exe_without_configured_entry_point_discovers_unique_top_level_mainline() {
+        let unique = format!(
+            "oxvba_project_load_unique_mainline_test_{}_{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .expect("unix epoch")
+                .as_nanos()
+        );
+        let temp_root = std::env::temp_dir().join(unique);
+        std::fs::create_dir_all(&temp_root).expect("create temp project root");
+        let helper_path = temp_root.join("HelperModule.bas");
+        let script_path = temp_root.join("ScriptModule.bas");
+        std::fs::write(&helper_path, "Public Sub Warmup()\nEnd Sub\n").expect("write helper module");
+        std::fs::write(
+            &script_path,
+            "valueOut = 41\nSub Warmup()\nEnd Sub\n",
+        )
+        .expect("write script module");
+        let xml = "\
+<Project Sdk=\"OxVba.Sdk/0.1.0\">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <ProjectName>ProjectA</ProjectName>
+  </PropertyGroup>
+  <ItemGroup>
+    <Module Include=\"HelperModule.bas\" />
+    <Module Include=\"ScriptModule.bas\" />
+  </ItemGroup>
+</Project>
+";
+
+        let loaded = load_basproj_from_str(xml, &temp_root).expect("basproj should load");
+        assert_eq!(
+            loaded.entry_point.as_deref(),
+            Some("ScriptModule.__OxVbaTopLevelMainline")
+        );
+        assert!(
+            loaded.manifest.modules[0]
+                .source
+                .contains("Call ScriptModule.__OxVbaTopLevelMainline()"),
+            "expected startup shim to target rewritten top-level mainline, got: {}",
+            loaded.manifest.modules[0].source
+        );
+        let script_module = loaded
+            .manifest
+            .modules
+            .iter()
+            .find(|module| module.module_name == "ScriptModule")
+            .expect("rewritten script module present");
+        assert!(
+            script_module
+                .source
+                .contains("Public Sub __OxVbaTopLevelMainline()"),
+            "expected top-level rewrite, got: {}",
+            script_module.source
+        );
+
+        std::fs::remove_dir_all(&temp_root).expect("cleanup temp project root");
+    }
+
+    #[test]
+    fn exe_without_configured_entry_point_rejects_ambiguous_top_level_mainlines() {
+        let unique = format!(
+            "oxvba_project_load_ambiguous_mainline_test_{}_{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .expect("unix epoch")
+                .as_nanos()
+        );
+        let temp_root = std::env::temp_dir().join(unique);
+        std::fs::create_dir_all(&temp_root).expect("create temp project root");
+        std::fs::write(temp_root.join("First.bas"), "valueOut = 1\n").expect("write first module");
+        std::fs::write(temp_root.join("Second.bas"), "valueOut = 2\n").expect("write second module");
+        let xml = "\
+<Project Sdk=\"OxVba.Sdk/0.1.0\">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <ProjectName>ProjectA</ProjectName>
+  </PropertyGroup>
+  <ItemGroup>
+    <Module Include=\"First.bas\" />
+    <Module Include=\"Second.bas\" />
+  </ItemGroup>
+</Project>
+";
+
+        let err = load_basproj_from_str(xml, &temp_root)
+            .expect_err("ambiguous top-level mainlines should fail deterministically");
+        assert!(matches!(err, BasProjError::EntryPointAmbiguous(_)), "{err:?}");
 
         std::fs::remove_dir_all(&temp_root).expect("cleanup temp project root");
     }

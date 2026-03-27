@@ -20553,6 +20553,19 @@ mod tests {
         );
     }
 
+    #[test]
+    fn direct_source_executes_top_level_mainline_before_helper_subs() {
+        let source =
+            "valueOut = 41\nCall Bump(valueOut)\nSub Bump(ByRef value)\nvalue = value + 1\nEnd Sub";
+        let out = Engine::new(HostConfig {
+            enable_jit: false,
+            root_object_name: None,
+        })
+        .execute_source_with_value_snapshot(source)
+        .expect("mixed top-level source should execute through synthetic mainline");
+        assert_eq!(out[0], RuntimeValue::I32(42));
+    }
+
     #[cfg(target_os = "windows")]
     #[test]
     fn formal_v121_set_keyword_rejects_object_target_for_scalar_source() {
