@@ -7,97 +7,6 @@ param(
 $ErrorActionPreference = "Stop"
 $PSNativeCommandUseErrorActionPreference = $false
 
-function Replace-InFile {
-    param(
-        [string]$Path,
-        [string]$OldValue,
-        [string]$NewValue
-    )
-
-    $content = Get-Content $Path -Raw
-    $content = $content.Replace($OldValue, $NewValue)
-    Set-Content -Path $Path -Value $content -Encoding UTF8
-}
-
-function New-AltTestEventServerProject {
-    param(
-        [string]$WorkspaceRoot,
-        [string]$DestinationRoot
-    )
-
-    $sourceRoot = Join-Path $WorkspaceRoot "tools/OxVba.TestEventServer"
-    if (Test-Path $DestinationRoot) {
-        Remove-Item -Recurse -Force -Path $DestinationRoot
-    }
-    Copy-Item -Recurse -Force -Path $sourceRoot -Destination $DestinationRoot
-
-    foreach ($buildDir in @("bin", "obj")) {
-        $candidate = Join-Path $DestinationRoot $buildDir
-        if (Test-Path $candidate) {
-            Remove-Item -Recurse -Force -Path $candidate
-        }
-    }
-
-    Rename-Item `
-        -Path (Join-Path $DestinationRoot "OxVba.TestEventServer.csproj") `
-        -NewName "OxVba.TestEventServerAlt.csproj"
-    Rename-Item `
-        -Path (Join-Path $DestinationRoot "OxVba.TestEventServer.hkcu.reg") `
-        -NewName "OxVba.TestEventServerAlt.hkcu.reg"
-    Rename-Item `
-        -Path (Join-Path $DestinationRoot "OxVba.TestEventServer.reg") `
-        -NewName "OxVba.TestEventServerAlt.reg"
-
-    $files = @(
-        (Join-Path $DestinationRoot "OxVba.TestEventServerAlt.csproj"),
-        (Join-Path $DestinationRoot "OxVba.TestEventServerAlt.hkcu.reg"),
-        (Join-Path $DestinationRoot "OxVba.TestEventServerAlt.reg"),
-        (Join-Path $DestinationRoot "register.ps1"),
-        (Join-Path $DestinationRoot "TestEventServer.cs")
-    )
-    foreach ($file in $files) {
-        Replace-InFile -Path $file -OldValue "OxVba.TestEventServer" -NewValue "OxVba.TestEventServerAlt"
-    }
-
-    Replace-InFile `
-        -Path (Join-Path $DestinationRoot "Properties/AssemblyInfo.cs") `
-        -OldValue "E2A30001-0001-0001-0001-000000000001" `
-        -NewValue "E2A30001-0001-0001-0001-000000000101"
-    Replace-InFile `
-        -Path (Join-Path $DestinationRoot "TestEventServer.cs") `
-        -OldValue "E2A30001-0001-0001-0001-000000000002" `
-        -NewValue "E2A30001-0001-0001-0001-000000000102"
-    Replace-InFile `
-        -Path (Join-Path $DestinationRoot "TestEventServer.cs") `
-        -OldValue "E2A30001-0001-0001-0001-000000000003" `
-        -NewValue "E2A30001-0001-0001-0001-000000000103"
-    Replace-InFile `
-        -Path (Join-Path $DestinationRoot "TestEventServer.cs") `
-        -OldValue "E2A30001-0001-0001-0001-000000000004" `
-        -NewValue "E2A30001-0001-0001-0001-000000000104"
-    foreach ($registrationFile in @(
-            (Join-Path $DestinationRoot "OxVba.TestEventServerAlt.hkcu.reg"),
-            (Join-Path $DestinationRoot "OxVba.TestEventServerAlt.reg")
-        )) {
-        Replace-InFile `
-            -Path $registrationFile `
-            -OldValue "E2A30001-0001-0001-0001-000000000004" `
-            -NewValue "E2A30001-0001-0001-0001-000000000104"
-    }
-    Replace-InFile `
-        -Path (Join-Path $DestinationRoot "TestEventServer.cs") `
-        -OldValue "Deterministic COM event test server for OxVba registered event lane parity." `
-        -NewValue "Deterministic alt COM event test server for OxVba registered event lane parity."
-    Replace-InFile `
-        -Path (Join-Path $DestinationRoot "OxVba.TestEventServerAlt.csproj") `
-        -OldValue "Deterministic COM event test server for OxVba registered event lane parity." `
-        -NewValue "Deterministic alt COM event test server for OxVba registered event lane parity."
-    Replace-InFile `
-        -Path (Join-Path $DestinationRoot "TestEventServer.cs") `
-        -OldValue "return 42;" `
-        -NewValue "return 84;"
-}
-
 Push-Location (Join-Path $PSScriptRoot "..")
 try {
     if (-not $IsWindows) {
@@ -105,6 +14,7 @@ try {
     }
 
     . "$PSScriptRoot/lib-run-context.ps1"
+    . "$PSScriptRoot/lib-com-testeventserver-alt-project.ps1"
     $resolvedRunId = Resolve-RunId -Name "com-testeventserver-reference-order-oracle" -RequestedRunId $RunId
     if ($NoArtifacts) {
         $OutputRoot = New-NoArtifactEvidenceDir -Scope "com-testeventserver-reference-order-oracle" -RunId $resolvedRunId
@@ -224,6 +134,7 @@ End Function
             scenario = "Two typelib references, base then alt, unqualified TestEventServer"
             probe = $probeA
             expected = "42"
+            expected_prog_id = "OxVba.TestEventServer"
             command = @(
                 "test", "-p", "oxvba-host", "--test", "com_early_project_end_to_end",
                 "early_bound_loaded_basproj_prefers_first_typelib_reference_for_unqualified_testeventserver",
@@ -235,6 +146,7 @@ End Function
             scenario = "Two typelib references, alt then base, unqualified TestEventServer"
             probe = $probeB
             expected = "84"
+            expected_prog_id = "OxVba.TestEventServerAlt"
             command = @(
                 "test", "-p", "oxvba-host", "--test", "com_early_project_end_to_end",
                 "early_bound_loaded_basproj_prefers_reversed_first_typelib_reference_for_unqualified_testeventserver",
@@ -249,7 +161,11 @@ End Function
         $null = & cargo @($case.command) 2>&1 | Tee-Object -FilePath $logPath
         $exitCode = $LASTEXITCODE
         $oxStatus = if ($exitCode -eq 0) { "ok" } else { "error" }
-        $oxObserved = if ($exitCode -eq 0) { $case.expected } else { "lane-failed(exit=$exitCode)" }
+        $oxObserved = if ($exitCode -eq 0) {
+            "compile-selected-progid=$($case.expected_prog_id)"
+        } else {
+            "lane-failed(exit=$exitCode)"
+        }
         $match = if (
             $case.probe.status -eq "ok" `
                 -and $exitCode -eq 0 `

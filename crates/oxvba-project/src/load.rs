@@ -433,23 +433,41 @@ fn inject_type_library_reference_projects(loaded: &mut LoadedProject) {
             minor_version_hint: Some(catalog_entry.minor_version),
             lcid_hint: catalog_entry.lcid,
         };
-        if request
+        let importlib_missing_on_filesystem = request
             .importlib_hint
             .as_deref()
-            .is_some_and(is_missing_filesystem_importlib_hint)
-        {
-            let diagnostic = build_typelib_binding_diagnostic_project_for_missing_importlib(&request);
+            .is_some_and(is_missing_filesystem_importlib_hint);
+        let identity = resolve_known_typelib_identity(&request);
+        if importlib_missing_on_filesystem {
+            let Some(identity) = identity else {
+                let diagnostic =
+                    build_typelib_binding_diagnostic_project_for_missing_importlib(&request);
+                if loaded.manifest.reference_projects.iter().any(|project| {
+                    project
+                        .project_name
+                        .eq_ignore_ascii_case(&diagnostic.project_name)
+                }) {
+                    continue;
+                }
+                loaded.manifest.reference_projects.push(diagnostic);
+                continue;
+            };
+            let mut synthetic = project_typelib_as_manifest(&build_typelib_metadata(&identity));
+            append_typelib_binding_diagnostic_module(
+                &mut synthetic,
+                build_typelib_binding_diagnostic_module_for_missing_importlib(&request),
+            );
             if loaded.manifest.reference_projects.iter().any(|project| {
                 project
                     .project_name
-                    .eq_ignore_ascii_case(&diagnostic.project_name)
+                    .eq_ignore_ascii_case(&synthetic.project_name)
             }) {
                 continue;
             }
-            loaded.manifest.reference_projects.push(diagnostic);
+            loaded.manifest.reference_projects.push(synthetic);
             continue;
         }
-        let Some(identity) = resolve_known_typelib_identity(&request) else {
+        let Some(identity) = identity else {
             let diagnostic = build_typelib_binding_diagnostic_project(&request);
             if loaded.manifest.reference_projects.iter().any(|project| {
                 project
@@ -505,8 +523,13 @@ fn build_typelib_binding_diagnostic_project(
         modules: vec![ModuleUnit {
             module_name: TYPELIB_BINDING_DIAGNOSTIC_MODULE_NAME.to_string(),
             module_kind: ModuleKind::Procedural,
-            attributes: ModuleAttributes::default(),
-            source: format!("code={code}\nmessage={message}\n"),
+            attributes: ModuleAttributes {
+                vb_name: TYPELIB_BINDING_DIAGNOSTIC_MODULE_NAME.to_string(),
+                ..ModuleAttributes::default()
+            },
+            source: format!(
+                "Attribute VB_Name = \"{TYPELIB_BINDING_DIAGNOSTIC_MODULE_NAME}\"\ncode={code}\nmessage={message}\n"
+            ),
         }],
     }
 }
@@ -514,19 +537,44 @@ fn build_typelib_binding_diagnostic_project(
 fn build_typelib_binding_diagnostic_project_for_missing_importlib(
     request: &TypeLibResolveRequest,
 ) -> ReferencedProjectManifest {
-    let importlib = request.importlib_hint.as_deref().unwrap_or_default();
     ReferencedProjectManifest {
         project_name: request.reference_name.clone(),
-        modules: vec![ModuleUnit {
-            module_name: TYPELIB_BINDING_DIAGNOSTIC_MODULE_NAME.to_string(),
-            module_kind: ModuleKind::Procedural,
-            attributes: ModuleAttributes::default(),
-            source: format!(
-                "code=PMR-E-TYPELIB-IMPORTLIB-UNRESOLVED\nmessage=type-library reference `{}` with importlib `{}` could not be resolved\n",
-                request.reference_name, importlib
-            ),
-        }],
+        modules: vec![build_typelib_binding_diagnostic_module_for_missing_importlib(
+            request,
+        )],
     }
+}
+
+fn build_typelib_binding_diagnostic_module_for_missing_importlib(
+    request: &TypeLibResolveRequest,
+) -> ModuleUnit {
+    let importlib = request.importlib_hint.as_deref().unwrap_or_default();
+    ModuleUnit {
+        module_name: TYPELIB_BINDING_DIAGNOSTIC_MODULE_NAME.to_string(),
+        module_kind: ModuleKind::Procedural,
+        attributes: ModuleAttributes {
+            vb_name: TYPELIB_BINDING_DIAGNOSTIC_MODULE_NAME.to_string(),
+            ..ModuleAttributes::default()
+        },
+        source: format!(
+            "Attribute VB_Name = \"{TYPELIB_BINDING_DIAGNOSTIC_MODULE_NAME}\"\ncode=PMR-E-TYPELIB-IMPORTLIB-UNRESOLVED\nmessage=type-library reference `{}` with importlib `{}` could not be resolved\n",
+            request.reference_name, importlib
+        ),
+    }
+}
+
+fn append_typelib_binding_diagnostic_module(
+    project: &mut ReferencedProjectManifest,
+    diagnostic: ModuleUnit,
+) {
+    if project
+        .modules
+        .iter()
+        .any(|module| module.module_name == TYPELIB_BINDING_DIAGNOSTIC_MODULE_NAME)
+    {
+        return;
+    }
+    project.modules.push(diagnostic);
 }
 
 fn non_empty_trimmed(value: &str) -> Option<String> {

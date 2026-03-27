@@ -218,7 +218,7 @@ pub fn resolve_known_typelib_identity(
             .is_some_and(|value| value == "e2a30001-0001-0001-0001-000000000001")
     {
         return Some(TypeLibResolvedIdentity {
-            reference_name: request.reference_name.clone(),
+            reference_name: "OxVba_TestEventServer".to_string(),
             importlib: "oxvba_testeventserver.tlb".to_string(),
             libid: Some("E2A30001-0001-0001-0001-000000000001".to_string()),
             major_version: 1,
@@ -236,7 +236,7 @@ pub fn resolve_known_typelib_identity(
             .is_some_and(|value| value == "e2a30001-0001-0001-0001-000000000101")
     {
         return Some(TypeLibResolvedIdentity {
-            reference_name: request.reference_name.clone(),
+            reference_name: "OxVba_TestEventServerAlt".to_string(),
             importlib: "oxvba_testeventserveralt.tlb".to_string(),
             libid: Some("E2A30001-0001-0001-0001-000000000101".to_string()),
             major_version: 1,
@@ -304,11 +304,33 @@ pub fn known_typelib_identity_for_prog_id_name(
             cache_key: "typelib:oxvba-testeventserver:1.0:0".to_string(),
         });
     }
+    if prog_id_name.eq_ignore_ascii_case("OxVba_TestEventServer.TestEventServer") {
+        return Some(TypeLibResolvedIdentity {
+            reference_name: "OxVba_TestEventServer".to_string(),
+            importlib: "oxvba_testeventserver.tlb".to_string(),
+            libid: Some("E2A30001-0001-0001-0001-000000000001".to_string()),
+            major_version: 1,
+            minor_version: 0,
+            lcid: Some(0),
+            cache_key: "typelib:oxvba-testeventserver:1.0:0".to_string(),
+        });
+    }
     if prog_id_name.eq_ignore_ascii_case(OXVBA_ALT_TEST_EVENT_SERVER_PROGID)
         || prog_id_name.eq_ignore_ascii_case("OxVbaAlt.TestEventServer")
     {
         return Some(TypeLibResolvedIdentity {
             reference_name: prog_id_name.to_string(),
+            importlib: "oxvba_testeventserveralt.tlb".to_string(),
+            libid: Some("E2A30001-0001-0001-0001-000000000101".to_string()),
+            major_version: 1,
+            minor_version: 0,
+            lcid: Some(0),
+            cache_key: "typelib:oxvba-testeventserveralt:1.0:0".to_string(),
+        });
+    }
+    if prog_id_name.eq_ignore_ascii_case("OxVba_TestEventServerAlt.TestEventServer") {
+        return Some(TypeLibResolvedIdentity {
+            reference_name: "OxVba_TestEventServerAlt".to_string(),
             importlib: "oxvba_testeventserveralt.tlb".to_string(),
             libid: Some("E2A30001-0001-0001-0001-000000000101".to_string()),
             major_version: 1,

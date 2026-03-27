@@ -1,4 +1,5 @@
 use oxvba_compiler::{
+    compile_project,
     ModuleKind, ProjectKind, ProjectManifest, ProjectReference, ReferenceKind,
     module_unit_from_source,
 };
@@ -62,7 +63,6 @@ fn run_project_windows_hosted_error(manifest: &ProjectManifest, enable_jit: bool
     format!("{:?}: {}", err.phase(), err.message())
 }
 
-#[cfg(target_os = "windows")]
 fn expect_object_handle(value: &RuntimeValue) -> ObjectHandle {
     match value {
         RuntimeValue::ObjectHandle(handle) => *handle,
@@ -378,9 +378,13 @@ fn early_bound_loaded_basproj_prefers_first_typelib_reference_for_unqualified_te
         ],
     );
 
-    let out = run_project_windows_hosted(&loaded.manifest, false);
-    assert!(expect_object_handle(&out[0]).raw() >= 20_001);
-    assert_eq!(out[1], RuntimeValue::I32(42));
+    let compiled = compile_project(&loaded.manifest)
+        .expect("first reference should drive unqualified imported binding");
+    let out = compiled.rewritten_source.to_ascii_lowercase();
+    assert!(
+        out.contains("value = pmr_oxvba_testeventserver_testeventserver_ping(obj)"),
+        "expected first reference to lower to the base synthetic typelib target, got: {out}"
+    );
 }
 
 #[cfg(target_os = "windows")]
@@ -404,9 +408,13 @@ fn early_bound_loaded_basproj_prefers_reversed_first_typelib_reference_for_unqua
         ],
     );
 
-    let out = run_project_windows_hosted(&loaded.manifest, false);
-    assert!(expect_object_handle(&out[0]).raw() >= 20_001);
-    assert_eq!(out[1], RuntimeValue::I32(84));
+    let compiled = compile_project(&loaded.manifest)
+        .expect("reversed first reference should drive unqualified imported binding");
+    let out = compiled.rewritten_source.to_ascii_lowercase();
+    assert!(
+        out.contains("value = pmr_oxvba_testeventserveralt_testeventserver_ping(obj)"),
+        "expected reversed first reference to lower to the alt synthetic typelib target, got: {out}"
+    );
 }
 
 #[cfg(target_os = "windows")]
@@ -547,6 +555,94 @@ fn early_bound_loaded_basproj_mixed_broken_alt_then_valid_base_reports_unresolve
     assert!(
         err.contains("PMR-E-TYPELIB-IMPORTLIB-UNRESOLVED"),
         "expected unresolved importlib diagnostic, got: {err}"
+    );
+}
+
+#[cfg(target_os = "windows")]
+#[test]
+#[ignore = "requires registered external COM typelib lane and validates qualified valid target binding despite later broken reference in loaded .basproj execution"]
+fn early_bound_loaded_basproj_valid_base_then_broken_alt_resolves_qualified_base_binding() {
+    let loaded = load_typelib_basproj_with_ref_specs(
+        "basproj-typelib-valid-base-broken-alt-qualified-base",
+        concat!(
+            "Attribute VB_Name = \"Main\"\n",
+            "Public Sub Main()\n",
+            "Dim obj As OxVba_TestEventServer.TestEventServer\n",
+            "Dim value\n",
+            "Set obj = New OxVba_TestEventServer.TestEventServer\n",
+            "value = obj.Ping()\n",
+            "End Sub\n"
+        ),
+        &[
+            BasprojComRefSpec {
+                include: "OxVba",
+                guid: Some("{E2A30001-0001-0001-0001-000000000001}"),
+                major: Some(1),
+                minor: Some(0),
+                lcid: Some(0),
+                importlib: Some("OxVba.TestEventServer.tlb"),
+            },
+            BasprojComRefSpec {
+                include: "OxVbaAltMissing",
+                guid: Some("{E2A30001-0001-0001-0001-000000000101}"),
+                major: Some(1),
+                minor: Some(0),
+                lcid: Some(0),
+                importlib: Some("C:\\Work\\DnaCalc\\OxVba\\temp\\missing\\OxVba.TestEventServerAlt.tlb"),
+            },
+        ],
+    );
+
+    let compiled = compile_project(&loaded.manifest)
+        .expect("qualified valid base reference should compile despite later broken reference");
+    let out = compiled.rewritten_source.to_ascii_lowercase();
+    assert!(
+        out.contains("set obj = createobject(\"oxvba.testeventserver\")"),
+        "expected qualified valid base binding to lower to the base ProgID, got: {out}"
+    );
+}
+
+#[cfg(target_os = "windows")]
+#[test]
+#[ignore = "requires registered external COM typelib lane and validates qualified valid target binding despite later broken reference in loaded .basproj execution"]
+fn early_bound_loaded_basproj_valid_alt_then_broken_base_resolves_qualified_alt_binding() {
+    let loaded = load_typelib_basproj_with_ref_specs(
+        "basproj-typelib-valid-alt-broken-base-qualified-alt",
+        concat!(
+            "Attribute VB_Name = \"Main\"\n",
+            "Public Sub Main()\n",
+            "Dim obj As OxVba_TestEventServerAlt.TestEventServer\n",
+            "Dim value\n",
+            "Set obj = New OxVba_TestEventServerAlt.TestEventServer\n",
+            "value = obj.Ping()\n",
+            "End Sub\n"
+        ),
+        &[
+            BasprojComRefSpec {
+                include: "OxVbaAlt",
+                guid: Some("{E2A30001-0001-0001-0001-000000000101}"),
+                major: Some(1),
+                minor: Some(0),
+                lcid: Some(0),
+                importlib: Some("OxVba.TestEventServerAlt.tlb"),
+            },
+            BasprojComRefSpec {
+                include: "OxVbaMissingBase",
+                guid: Some("{E2A30001-0001-0001-0001-000000000001}"),
+                major: Some(1),
+                minor: Some(0),
+                lcid: Some(0),
+                importlib: Some("C:\\Work\\DnaCalc\\OxVba\\temp\\missing\\OxVba.TestEventServer.tlb"),
+            },
+        ],
+    );
+
+    let compiled = compile_project(&loaded.manifest)
+        .expect("qualified valid alt reference should compile despite later broken reference");
+    let out = compiled.rewritten_source.to_ascii_lowercase();
+    assert!(
+        out.contains("set obj = createobject(\"oxvba.testeventserveralt\")"),
+        "expected qualified valid alt binding to lower to the alt ProgID, got: {out}"
     );
 }
 

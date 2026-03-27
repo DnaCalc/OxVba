@@ -11,14 +11,14 @@ $PSNativeCommandUseErrorActionPreference = $false
 Push-Location (Join-Path $PSScriptRoot "..")
 try {
     if (-not $IsWindows) {
-        throw "COM TestEventServer mixed broken-reference oracle runner is Windows-only"
+        throw "COM TestEventServer qualified broken-reference oracle runner is Windows-only"
     }
 
     . "$PSScriptRoot/lib-run-context.ps1"
     . "$PSScriptRoot/lib-com-testeventserver-alt-project.ps1"
-    $resolvedRunId = Resolve-RunId -Name "com-testeventserver-mixed-broken-reference-oracle" -RequestedRunId $RunId
+    $resolvedRunId = Resolve-RunId -Name "com-testeventserver-qualified-broken-reference-oracle" -RequestedRunId $RunId
     if ($NoArtifacts) {
-        $OutputRoot = New-NoArtifactEvidenceDir -Scope "com-testeventserver-mixed-broken-reference-oracle" -RunId $resolvedRunId
+        $OutputRoot = New-NoArtifactEvidenceDir -Scope "com-testeventserver-qualified-broken-reference-oracle" -RunId $resolvedRunId
     }
 
     $workspaceRoot = (Resolve-Path ".").Path
@@ -27,10 +27,10 @@ try {
     } else {
         Join-Path $workspaceRoot $OutputRoot
     }
-    $runDir = Join-Path $runRoot "com_testeventserver_mixed_broken_reference_oracle_$resolvedRunId"
+    $runDir = Join-Path $runRoot "com_testeventserver_qualified_broken_reference_oracle_$resolvedRunId"
     New-Item -ItemType Directory -Force -Path $runDir | Out-Null
 
-    $generatedRoot = Join-Path $workspaceRoot "temp\generated\com_testeventserver_mixed_broken_reference\$resolvedRunId"
+    $generatedRoot = Join-Path $workspaceRoot "temp\generated\com_testeventserver_qualified_broken_reference\$resolvedRunId"
     $altProjectRoot = Join-Path $generatedRoot "OxVba.TestEventServerAlt"
     New-AltTestEventServerProject -WorkspaceRoot $workspaceRoot -DestinationRoot $altProjectRoot
 
@@ -42,11 +42,12 @@ try {
 
     $rows = New-Object System.Collections.Generic.List[object]
     $vbaDialogHandlerScriptPath = (Resolve-Path (Join-Path $PSScriptRoot "excel-vbe-dialog-handler.ps1")).Path
-    $probeScriptPath = Join-Path $runDir "_mixed_broken_reference_probe.ps1"
+    $probeScriptPath = Join-Path $runDir "_qualified_broken_reference_probe.ps1"
     $probeScript = @'
 param(
     [string]$FirstTypeLibPath,
     [string]$SecondTypeLibPath,
+    [string]$QualifiedTypeName,
     [string]$StatePath,
     [string]$VbaDialogHandlerScriptPath,
     [string]$VbaDialogHandlerLogPath,
@@ -71,7 +72,7 @@ function Get-WindowProcessId {
     [int]$windowPid
 }
 
-$root = Join-Path $env:TEMP ("oxvba_mixed_broken_ref_" + [guid]::NewGuid().ToString("N"))
+$root = Join-Path $env:TEMP ("oxvba_qualified_broken_ref_" + [guid]::NewGuid().ToString("N"))
 New-Item -ItemType Directory -Force -Path $root | Out-Null
 $firstCopy = Join-Path $root ([System.IO.Path]::GetFileName($FirstTypeLibPath))
 $secondCopy = Join-Path $root ([System.IO.Path]::GetFileName($SecondTypeLibPath))
@@ -80,7 +81,7 @@ $vbaDialogHandlerStop = Join-Path $root "_vba_dialog_handler.stop"
 $deadlineFile = Join-Path $root "_run_deadline.txt"
 Copy-Item $FirstTypeLibPath $firstCopy -Force
 Copy-Item $SecondTypeLibPath $secondCopy -Force
-$code = "Public Function RunProbe()`n    Dim obj As TestEventServer`n    Set obj = New TestEventServer`n    RunProbe = obj.Ping()`nEnd Function`n"
+$code = "Public Function RunProbe()`n    Dim obj As $QualifiedTypeName`n    Set obj = New $QualifiedTypeName`n    RunProbe = obj.Ping()`nEnd Function`n"
 
 $excel = $null
 $wb = $null
@@ -123,7 +124,7 @@ try {
     [void][System.Runtime.InteropServices.Marshal]::ReleaseComObject($wb)
     $wb = $null
 
-    Rename-Item $firstCopy ($firstCopy + ".missing")
+    Rename-Item $secondCopy ($secondCopy + ".missing")
 
     $reopened = $excel.Workbooks.Open($workbookPath)
     $refs = @(
@@ -186,58 +187,59 @@ try {
         )
 
         $rows.Add([PSCustomObject]@{
-                topic_id        = "CCT-043"
-                case_id         = $CaseId
-                scenario        = $Scenario
-                vba_status      = $VbaStatus
-                vba_observed    = $VbaObserved
-                oxvba_status    = $OxVbaStatus
-                oxvba_observed  = $OxVbaObserved
-                match           = $Match
-                notes           = $Notes
+                topic_id       = "CCT-043"
+                case_id        = $CaseId
+                scenario       = $Scenario
+                vba_status     = $VbaStatus
+                vba_observed   = $VbaObserved
+                oxvba_status   = $OxVbaStatus
+                oxvba_observed = $OxVbaObserved
+                match          = $Match
+                notes          = $Notes
             }) | Out-Null
     }
 
-    function Invoke-MixedBrokenReferenceProbe {
+    function Get-HandlerLogMetadata {
+        param([string]$Path)
+
+        $classification = ""
+        $observed = "unknown"
+        $waitDeadline = (Get-Date).AddSeconds(2)
+        while ((Get-Date) -lt $waitDeadline) {
+            if ((Test-Path $Path) -and (Get-Item $Path).Length -gt 0) {
+                break
+            }
+            Start-Sleep -Milliseconds 100
+        }
+        if (Test-Path $Path) {
+            $lines = Get-Content $Path
+            $signalLines = @(
+                $lines | Where-Object {
+                    $_ -match "observed window=" -or
+                    $_ -match "deadline exceeded"
+                }
+            )
+            if ($signalLines.Count -gt 0) {
+                $observed = "true"
+                $classification = "ui-blocked-or-compile-failure"
+            } elseif ($lines.Count -gt 0) {
+                $observed = "false"
+            }
+        }
+
+        @{
+            observed = $observed
+            classification = $classification
+        }
+    }
+
+    function Invoke-QualifiedBrokenReferenceProbe {
         param(
             [string]$CaseId,
             [string]$FirstTypeLibPath,
-            [string]$SecondTypeLibPath
+            [string]$SecondTypeLibPath,
+            [string]$QualifiedTypeName
         )
-
-        function Get-HandlerLogMetadata {
-            param([string]$Path)
-
-            $classification = ""
-            $observed = "unknown"
-            $waitDeadline = (Get-Date).AddSeconds(2)
-            while ((Get-Date) -lt $waitDeadline) {
-                if ((Test-Path $Path) -and (Get-Item $Path).Length -gt 0) {
-                    break
-                }
-                Start-Sleep -Milliseconds 100
-            }
-            if (Test-Path $Path) {
-                $lines = Get-Content $Path
-                $signalLines = @(
-                    $lines | Where-Object {
-                        $_ -match "observed window=" -or
-                        $_ -match "deadline exceeded"
-                    }
-                )
-                if ($signalLines.Count -gt 0) {
-                    $observed = "true"
-                    $classification = "ui-blocked-or-compile-failure"
-                } elseif ($lines.Count -gt 0) {
-                    $observed = "false"
-                }
-            }
-
-            @{
-                observed = $observed
-                classification = $classification
-            }
-        }
 
         $baselineExcelPids = @(Get-Process EXCEL -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Id)
         $statePath = Join-Path $runDir ($CaseId + ".vba-state.json")
@@ -259,6 +261,7 @@ try {
                 $probeScriptPath,
                 $FirstTypeLibPath,
                 $SecondTypeLibPath,
+                $QualifiedTypeName,
                 $statePath,
                 $vbaDialogHandlerScriptPath,
                 $handlerLogPath,
@@ -354,41 +357,56 @@ try {
 
     $cases = @(
         @{
-            case_id = "CCT-043-TES-MIXED-001"
-            scenario = "Saved workbook with base then alt references; first typelib removed before reopen"
+            case_id = "CCT-043-TES-BROKEN-QUAL-001"
+            scenario = "Saved workbook with base valid then alt broken after save; explicit qualified base target"
             first = $baseTypeLibPath
             second = $altTypeLibPath
+            qualified = "OxVba_TestEventServer.TestEventServer"
             command = @(
                 "test", "-p", "oxvba-host", "--test", "com_early_project_end_to_end",
-                "early_bound_loaded_basproj_mixed_broken_base_then_valid_alt_reports_unresolved_importlib",
+                "early_bound_loaded_basproj_valid_base_then_broken_alt_resolves_qualified_base_binding",
                 "--", "--ignored", "--exact", "--test-threads=1", "--nocapture"
             )
-            expected_ox = "PMR-E-TYPELIB-IMPORTLIB-UNRESOLVED"
+            expected_vba = "42"
+            expected_prog_id = "OxVba.TestEventServer"
         }
         @{
-            case_id = "CCT-043-TES-MIXED-002"
-            scenario = "Saved workbook with alt then base references; first typelib removed before reopen"
+            case_id = "CCT-043-TES-BROKEN-QUAL-002"
+            scenario = "Saved workbook with alt valid then base broken after save; explicit qualified alt target"
             first = $altTypeLibPath
             second = $baseTypeLibPath
+            qualified = "OxVba_TestEventServerAlt.TestEventServer"
             command = @(
                 "test", "-p", "oxvba-host", "--test", "com_early_project_end_to_end",
-                "early_bound_loaded_basproj_mixed_broken_alt_then_valid_base_reports_unresolved_importlib",
+                "early_bound_loaded_basproj_valid_alt_then_broken_base_resolves_qualified_alt_binding",
                 "--", "--ignored", "--exact", "--test-threads=1", "--nocapture"
             )
-            expected_ox = "PMR-E-TYPELIB-IMPORTLIB-UNRESOLVED"
+            expected_vba = "84"
+            expected_prog_id = "OxVba.TestEventServerAlt"
         }
     )
 
     foreach ($case in $cases) {
-        $probe = Invoke-MixedBrokenReferenceProbe -CaseId $case.case_id -FirstTypeLibPath $case.first -SecondTypeLibPath $case.second
+        $probe = Invoke-QualifiedBrokenReferenceProbe `
+            -CaseId $case.case_id `
+            -FirstTypeLibPath $case.first `
+            -SecondTypeLibPath $case.second `
+            -QualifiedTypeName $case.qualified
         $logPath = Join-Path $runDir ($case.case_id + ".log.txt")
         $cmdText = "cargo " + ($case.command -join " ")
         $null = & cargo @($case.command) 2>&1 | Tee-Object -FilePath $logPath
         $exitCode = $LASTEXITCODE
         $oxStatus = if ($exitCode -eq 0) { "ok" } else { "error" }
-        $oxObserved = if ($exitCode -eq 0) { $case.expected_ox } else { "lane-failed(exit=$exitCode)" }
-        $excelFailed = $probe.status -eq "error"
-        $match = if ($excelFailed -and $exitCode -eq 0) { "true" } else { "false" }
+        $oxObserved = if ($exitCode -eq 0) {
+            "compile-selected-progid=$($case.expected_prog_id)"
+        } else {
+            "lane-failed(exit=$exitCode)"
+        }
+        $match = if (
+            $probe.status -eq "ok" `
+                -and $exitCode -eq 0 `
+                -and $probe.observed -eq $case.expected_vba
+        ) { "true" } else { "false" }
         Add-Row `
             -CaseId $case.case_id `
             -Scenario $case.scenario `
@@ -405,6 +423,7 @@ try {
                 "; handler_signal=" + $probe.handler_signal +
                 "; handler_log=" + $probe.handler_log +
                 "; probe_exit_code=" + $probe.probe_exit_code +
+                "; qualified_type=" + $case.qualified +
                 "; OxVba anchor command=" + $cmdText +
                 "; log=" + $logPath
             )
@@ -415,7 +434,7 @@ try {
     $rows | Export-Csv -Path $csvPath -NoTypeInformation
 
     $summary = @(
-        "# COM TestEventServer Mixed Broken Reference Oracle Run",
+        "# COM TestEventServer Qualified Broken Reference Oracle Run",
         "",
         "- Run ID: $resolvedRunId",
         "- Generated UTC: $((Get-Date).ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ssZ'))",
@@ -436,11 +455,11 @@ try {
     foreach ($row in $rows) {
         $summary += "| $($row.topic_id) | $($row.case_id) | $($row.vba_status): $($row.vba_observed) | $($row.oxvba_status): $($row.oxvba_observed) | $($row.match) | $($row.notes) |"
     }
-    Set-Content -Path $summaryPath -Value ($summary -join "`n")
+    Set-Content -Path $summaryPath -Value ($summary -join [Environment]::NewLine)
 
-    Write-Host "com-testeventserver-mixed-broken-reference-oracle: complete"
+    Write-Host "com-testeventserver-qualified-broken-reference-oracle: complete"
     Write-Host "run_dir=$runDir"
-    Write-Host "results=$csvPath"
+    Write-Host "csv=$csvPath"
     Write-Host "summary=$summaryPath"
 }
 finally {
