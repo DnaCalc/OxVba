@@ -458,6 +458,23 @@ Run context: active parity/compliance execution plus in-progress feature worklis
 - Recommendation:
   - treat formal foldback as a trailing closure gate, not the next implementation-first slice.
 
+### BLK-ODG041-QUAL3BROKENFIRST-001: Excel fails widened qualified broken-first reopen while OxVba still binds later valid target
+- Impact:
+  - Blocks full closure of `ODG-041` / `CCT-043` broader multi-reference project-reference parity.
+- Current state:
+  - The bounded two-reference qualified broken-first subset remains proved by `com_testeventserver_qualified_broken_first_reference_oracle_20260327T052111Z`.
+  - The widened three-reference qualified broken-first oracle `com_testeventserver_three_reference_qualified_broken_first_oracle_20260327T064416Z` shows a real divergence:
+    - Excel reopens with the expected broken+valid+valid same-name reference state,
+    - hidden automation then surfaces `Compile error: Can't find project or library` on `Microsoft Visual Basic for Applications - [MainModule (Code)]`,
+    - OxVba still compiles and lower-selects the explicitly targeted later valid ProgID (`OxVba.TestEventServerAlt2` / `OxVba.TestEventServerAlt`).
+  - The runner now classifies that Excel-side UI path as coarse `error: ui-blocked-or-compile-failure`; popup handling is still harness hygiene, not a parity target.
+- Exact unblock steps:
+  - Decide whether OxVba should adopt Excel's stronger compile-failure semantics for this widened qualified broken-first matrix, or explicitly bound/document the divergence.
+  - If parity is required, preserve enough broken saved-reference state through preflight/imported-name binding so explicitly qualified later-valid targets do not bypass Excel's effective project-level compile failure.
+- Evidence:
+  - `docs/evidence/conformance/oracle_captures/com_testeventserver_three_reference_qualified_broken_first_oracle_20260327T064416Z/summary.md`
+  - `docs/evidence/conformance/oracle_captures/com_testeventserver_three_reference_qualified_broken_first_oracle_20260327T064416Z/results.csv`
+
 ## Closed blocker entries
 
 ### BLK-ODG041-MIXEDBROKEN-001 (CLOSED): Mixed broken-first valid-second typelib references

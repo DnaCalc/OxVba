@@ -1122,6 +1122,112 @@ fn early_bound_loaded_basproj_valid_alt2_then_broken_base_then_valid_alt_prefers
 
 #[cfg(target_os = "windows")]
 #[test]
+#[ignore = "requires registered external COM typelib lane and validates broken-first qualified later-valid loaded .basproj execution"]
+fn early_bound_loaded_basproj_broken_base_then_valid_alt_then_valid_alt2_qualified_target_resolves_alt2_binding(
+) {
+    let loaded = load_typelib_basproj_with_ref_specs(
+        "basproj-typelib-broken-base-valid-alt-valid-alt2-qualified-alt2",
+        concat!(
+            "Attribute VB_Name = \"Main\"\n",
+            "Public Sub Main()\n",
+            "Dim obj As OxVbaAlt2.TestEventServer\n",
+            "Dim value\n",
+            "Set obj = New OxVbaAlt2.TestEventServer\n",
+            "value = obj.Ping()\n",
+            "End Sub\n"
+        ),
+        &[
+            BasprojComRefSpec {
+                include: "OxVbaMissingBase",
+                guid: Some("{E2A30001-0001-0001-0001-000000000001}"),
+                major: Some(1),
+                minor: Some(0),
+                lcid: Some(0),
+                importlib: Some("C:\\Work\\DnaCalc\\OxVba\\temp\\missing\\OxVba.TestEventServer.tlb"),
+            },
+            BasprojComRefSpec {
+                include: "OxVbaAlt",
+                guid: Some("{E2A30001-0001-0001-0001-000000000101}"),
+                major: Some(1),
+                minor: Some(0),
+                lcid: Some(0),
+                importlib: Some("OxVba.TestEventServerAlt.tlb"),
+            },
+            BasprojComRefSpec {
+                include: "OxVbaAlt2",
+                guid: Some("{E2A30001-0001-0001-0001-000000000201}"),
+                major: Some(1),
+                minor: Some(0),
+                lcid: Some(0),
+                importlib: Some("OxVba.TestEventServerAlt2.tlb"),
+            },
+        ],
+    );
+
+    let compiled = compile_project(&loaded.manifest)
+        .expect("qualified later-valid alt2 reference should compile despite earlier broken reference");
+    let out = compiled.rewritten_source.to_ascii_lowercase();
+    assert!(
+        out.contains("set obj = createobject(\"oxvba.testeventserveralt2\")"),
+        "expected qualified later-valid alt2 binding to lower to the alt2 ProgID, got: {out}"
+    );
+}
+
+#[cfg(target_os = "windows")]
+#[test]
+#[ignore = "requires registered external COM typelib lane and validates broken-first qualified later-valid loaded .basproj execution"]
+fn early_bound_loaded_basproj_broken_alt2_then_valid_base_then_valid_alt_qualified_target_resolves_alt_binding(
+) {
+    let loaded = load_typelib_basproj_with_ref_specs(
+        "basproj-typelib-broken-alt2-valid-base-valid-alt-qualified-alt",
+        concat!(
+            "Attribute VB_Name = \"Main\"\n",
+            "Public Sub Main()\n",
+            "Dim obj As OxVbaAlt.TestEventServer\n",
+            "Dim value\n",
+            "Set obj = New OxVbaAlt.TestEventServer\n",
+            "value = obj.Ping()\n",
+            "End Sub\n"
+        ),
+        &[
+            BasprojComRefSpec {
+                include: "OxVbaAlt2Missing",
+                guid: Some("{E2A30001-0001-0001-0001-000000000201}"),
+                major: Some(1),
+                minor: Some(0),
+                lcid: Some(0),
+                importlib: Some("C:\\Work\\DnaCalc\\OxVba\\temp\\missing\\OxVba.TestEventServerAlt2.tlb"),
+            },
+            BasprojComRefSpec {
+                include: "OxVba",
+                guid: Some("{E2A30001-0001-0001-0001-000000000001}"),
+                major: Some(1),
+                minor: Some(0),
+                lcid: Some(0),
+                importlib: Some("OxVba.TestEventServer.tlb"),
+            },
+            BasprojComRefSpec {
+                include: "OxVbaAlt",
+                guid: Some("{E2A30001-0001-0001-0001-000000000101}"),
+                major: Some(1),
+                minor: Some(0),
+                lcid: Some(0),
+                importlib: Some("OxVba.TestEventServerAlt.tlb"),
+            },
+        ],
+    );
+
+    let compiled = compile_project(&loaded.manifest)
+        .expect("qualified later-valid alt reference should compile despite earlier broken alt2 reference");
+    let out = compiled.rewritten_source.to_ascii_lowercase();
+    assert!(
+        out.contains("set obj = createobject(\"oxvba.testeventserveralt\")"),
+        "expected qualified later-valid alt binding to lower to the alt ProgID, got: {out}"
+    );
+}
+
+#[cfg(target_os = "windows")]
+#[test]
 #[ignore = "requires registered external COM typelib lane (run explicitly on Windows host with OxVba.TestEventServer registered)"]
 fn early_bound_project_registered_testeventserver_withevents_callback_invokes_handler_body() {
     let class_module = module_unit_from_source(
