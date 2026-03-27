@@ -654,6 +654,104 @@ fn early_bound_loaded_basproj_mixed_broken_alt_then_valid_base_reports_unresolve
 
 #[cfg(target_os = "windows")]
 #[test]
+#[ignore = "requires registered external COM typelib lane and validates mixed broken-first valid-second valid-third loaded .basproj execution"]
+fn early_bound_loaded_basproj_mixed_broken_base_then_valid_alt_then_valid_alt2_reports_unresolved_importlib(
+) {
+    let loaded = load_typelib_basproj_with_ref_specs(
+        "basproj-typelib-mixed-base-missing-alt-valid-alt2-valid",
+        concat!(
+            "Public Sub Main()\n",
+            "Dim obj As New TestEventServer\n",
+            "Dim value\n",
+            "value = obj.Ping()\n",
+            "End Sub\n"
+        ),
+        &[
+            BasprojComRefSpec {
+                include: "OxVbaMissingBase",
+                guid: Some("{E2A30001-0001-0001-0001-000000000001}"),
+                major: Some(1),
+                minor: Some(0),
+                lcid: Some(0),
+                importlib: Some("C:\\Work\\DnaCalc\\OxVba\\temp\\missing\\OxVba.TestEventServer.tlb"),
+            },
+            BasprojComRefSpec {
+                include: "OxVbaAlt",
+                guid: Some("{E2A30001-0001-0001-0001-000000000101}"),
+                major: Some(1),
+                minor: Some(0),
+                lcid: Some(0),
+                importlib: Some("OxVba.TestEventServerAlt.tlb"),
+            },
+            BasprojComRefSpec {
+                include: "OxVbaAlt2",
+                guid: Some("{E2A30001-0001-0001-0001-000000000201}"),
+                major: Some(1),
+                minor: Some(0),
+                lcid: Some(0),
+                importlib: Some("OxVba.TestEventServerAlt2.tlb"),
+            },
+        ],
+    );
+
+    let err = run_project_windows_hosted_error(&loaded.manifest, false);
+    assert!(
+        err.contains("PMR-E-TYPELIB-IMPORTLIB-UNRESOLVED"),
+        "expected unresolved importlib diagnostic, got: {err}"
+    );
+}
+
+#[cfg(target_os = "windows")]
+#[test]
+#[ignore = "requires registered external COM typelib lane and validates mixed broken-first valid-second valid-third loaded .basproj execution"]
+fn early_bound_loaded_basproj_mixed_broken_alt2_then_valid_base_then_valid_alt_reports_unresolved_importlib(
+) {
+    let loaded = load_typelib_basproj_with_ref_specs(
+        "basproj-typelib-mixed-alt2-missing-base-valid-alt-valid",
+        concat!(
+            "Public Sub Main()\n",
+            "Dim obj As New TestEventServer\n",
+            "Dim value\n",
+            "value = obj.Ping()\n",
+            "End Sub\n"
+        ),
+        &[
+            BasprojComRefSpec {
+                include: "OxVbaAlt2Missing",
+                guid: Some("{E2A30001-0001-0001-0001-000000000201}"),
+                major: Some(1),
+                minor: Some(0),
+                lcid: Some(0),
+                importlib: Some("C:\\Work\\DnaCalc\\OxVba\\temp\\missing\\OxVba.TestEventServerAlt2.tlb"),
+            },
+            BasprojComRefSpec {
+                include: "OxVba",
+                guid: Some("{E2A30001-0001-0001-0001-000000000001}"),
+                major: Some(1),
+                minor: Some(0),
+                lcid: Some(0),
+                importlib: Some("OxVba.TestEventServer.tlb"),
+            },
+            BasprojComRefSpec {
+                include: "OxVbaAlt",
+                guid: Some("{E2A30001-0001-0001-0001-000000000101}"),
+                major: Some(1),
+                minor: Some(0),
+                lcid: Some(0),
+                importlib: Some("OxVba.TestEventServerAlt.tlb"),
+            },
+        ],
+    );
+
+    let err = run_project_windows_hosted_error(&loaded.manifest, false);
+    assert!(
+        err.contains("PMR-E-TYPELIB-IMPORTLIB-UNRESOLVED"),
+        "expected unresolved importlib diagnostic, got: {err}"
+    );
+}
+
+#[cfg(target_os = "windows")]
+#[test]
 #[ignore = "requires registered external COM typelib lane and validates broken-first qualified later-valid loaded .basproj execution"]
 fn early_bound_loaded_basproj_broken_base_then_valid_alt_qualified_target_resolves_alt_binding(
 ) {

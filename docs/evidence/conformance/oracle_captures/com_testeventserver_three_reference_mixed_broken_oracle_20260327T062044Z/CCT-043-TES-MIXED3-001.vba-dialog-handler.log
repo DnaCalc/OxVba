@@ -1,0 +1,7 @@
+2026-03-27T08:22:15.7636874+02:00 start excel_pid=75096 poll_ms=200 stop_file=C:\Users\GOVERT~1\AppData\Local\Temp\oxvba_three_mixed_broken_ref_4ada775a80b64edc8cec415f52182149\_vba_dialog_handler.stop
+2026-03-27T08:22:27.2447968+02:00 observed window='Microsoft Visual Basic for Applications - [MainModule (Code)]' texts='Compile error:
+
+Can't find project or library|Gauge' buttons='Close'
+2026-03-27T08:22:27.3409206+02:00 sent WM_CLOSE to VBE: window='Microsoft Visual Basic for Applications - [MainModule (Code)]'
+2026-03-27T08:22:27.9074212+02:00 excel exited
+2026-03-27T08:22:27.9217551+02:00 exit

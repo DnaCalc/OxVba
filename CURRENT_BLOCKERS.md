@@ -463,7 +463,7 @@ Run context: active parity/compliance execution plus in-progress feature worklis
 ### BLK-ODG041-MIXEDBROKEN-001 (CLOSED): Mixed broken-first valid-second typelib references
 - Closed on 2026-03-27.
 - Resolution:
-  - The mixed broken-reference lane is no longer treated as a product blocker for detailed Excel popup parity.
+  - The mixed broken-reference lane is no longer treated as a product blocker for detailed Excel error-presentation or popup parity.
   - The bounded oracle `com_testeventserver_mixed_broken_reference_oracle_20260327T034413Z` now serves as coarse fail/fail evidence:
     - Excel reopens with the expected broken+valid reference state and then fails through a surfaced VBA/VBE compile-dialog path under hidden automation,
     - OxVba fails deterministically at bind time with `PMR-E-TYPELIB-IMPORTLIB-UNRESOLVED`.
@@ -479,7 +479,10 @@ Run context: active parity/compliance execution plus in-progress feature worklis
   - The bounded oracle `com_testeventserver_three_reference_order_oracle_20260327T060926Z` now also proves the widened clean multi-reference order subset:
     - Excel still follows first-reference-wins across three saved same-name typelibs (`42` / `84` / `126`) for unqualified `New TestEventServer`,
     - OxVba deterministically compiles and lower-selects the matching first ProgID across the same three-reference orderings.
-  - Harness-side Excel/VBE popup handling remains useful for bounded automation and evidence capture, but the popup shape itself is not a parity target.
+  - The bounded oracle `com_testeventserver_three_reference_mixed_broken_oracle_20260327T062044Z` now also proves the widened broken-first multi-reference subset:
+    - Excel still coarse-fails when the first saved same-name reference is broken even if two later same-name references remain valid,
+    - OxVba still fails deterministically at bind time with `PMR-E-TYPELIB-IMPORTLIB-UNRESOLVED`.
+  - Harness-side Excel/VBE popup handling remains useful only to keep hidden automation bounded and to record coarse failure/no-failure signals; the popup shape itself is not a parity target.
   - Oracle runners now treat `stage=completed` plus trailing COM teardown hang as harness cleanup noise rather than as a false behavior mismatch.
 - Evidence:
   - `docs/evidence/conformance/oracle_captures/com_testeventserver_mixed_broken_reference_oracle_20260327T034413Z/summary.md`
@@ -492,6 +495,8 @@ Run context: active parity/compliance execution plus in-progress feature worklis
   - `docs/evidence/conformance/oracle_captures/com_testeventserver_qualified_broken_first_reference_oracle_20260327T052111Z/results.csv`
   - `docs/evidence/conformance/oracle_captures/com_testeventserver_three_reference_order_oracle_20260327T060926Z/summary.md`
   - `docs/evidence/conformance/oracle_captures/com_testeventserver_three_reference_order_oracle_20260327T060926Z/results.csv`
+  - `docs/evidence/conformance/oracle_captures/com_testeventserver_three_reference_mixed_broken_oracle_20260327T062044Z/summary.md`
+  - `docs/evidence/conformance/oracle_captures/com_testeventserver_three_reference_mixed_broken_oracle_20260327T062044Z/results.csv`
 
 ### BLK-COM-001: COM event callback parity lane requires external oracle evidence closure (CLOSED)
 - Title: Complete Windows COM event callback parity evidence (`COM-EVT-A` + `COM-EVT-B`) on external registered servers.
