@@ -27,6 +27,8 @@ Grounded in current code:
 
 Implication: we can immediately add a deterministic `.vbp -> ProjectManifest` bridge for a constrained subset without waiting for full OVBA storage parity.
 
+Direct single-file execution (`oxvba run <file.bas>`) is also a first-class OxVba hosting lane. That direct-file lane should support top-level executable statements without requiring a `.vbp` or `.basproj`, while still sharing the same compiler/runtime substrate as project execution.
+
 ## 3. Proposed `.vbp` subset for immediate support (VBP-S0)
 
 Goal: load real loose-file projects that map cleanly onto existing execution semantics.
@@ -39,7 +41,7 @@ Goal: load real loose-file projects that map cleanly onto existing execution sem
     - `Exe` -> `Source`
     - `OleDll`/`Control` -> `Library`
 - `Startup=`
-  - accepted only for `Sub Main` style entrypoint for now.
+  - accepted as explicit startup/entrypoint metadata.
 - `Module=<logicalName>; <path>`
   - load as `ModuleKind::Procedural`.
 - `Class=<logicalName>; <path>`
@@ -216,7 +218,7 @@ Interpretation:
 
 ## 9. Open decisions
 
-1. Should `Type=Exe` default entrypoint strictly require `Startup="Sub Main"` in VBP-S0, or allow implicit `Main` lookup?
+1. Should `Type=Exe` startup resolution in VBP-S0 follow the same OxVba ladder as `.basproj` and direct-file execution: explicit `Startup`, else unique top-level mainline, else unique `Sub Main`?
 2. Should unknown keys fail by default (`strict`) or warn (`compat`) in first release?
 3. Should compiled artifacts be profile-bound by default (safer determinism) or profile-portable (easier distribution)?
 4. Should `.vbp` parsing live in `oxvba-host` (adapter layer) or a dedicated `oxvba-projectio` crate?

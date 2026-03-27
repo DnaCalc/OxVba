@@ -628,7 +628,6 @@ Usage:
   oxvba run <file.bas> [options]
 
 Options:
-  --top-level               Treat file as top-level code (no Sub Main required)
   --profile <id>            Runtime profile (windows-headless, linux-stdio, ...)
   --policy <preset>         Host policy preset (strict-ci, deterministic-runtime, ...)
   --jit                     Enable JIT compilation
@@ -640,7 +639,7 @@ Options:
 
 Examples:
   oxvba run hello.bas
-  oxvba run script.bas --top-level --profile windows-headless
+  oxvba run script.bas --profile windows-stdio
   oxvba run benchmark.bas --jit --dump-slots
   oxvba run benchmark.bas --jit --dump-values
 ```
@@ -941,43 +940,51 @@ These embeddings all consume the same C API. On Windows, COM Automation interop 
 
 Standard VBA requires all executable code to live inside procedures (`Sub`, `Function`, `Property`). Module-level scope permits only declarations (`Dim`, `Const`, `Type`, `Enum`, `Declare`, `Option` statements).
 
-Top-level code is an OxVBA extension to the VBA 7 spec. It enables script-like execution:
+Top-level code is an OxVBA extension to the VBA 7 / Office-hosted spec surface. It enables both script-like execution and program-style entrypoint discovery for OxVBA-hosted code:
 
 ```powershell
-$ oxvba run script.bas --top-level
+$ oxvba run script.bas
 ```
 
-This is explicitly not standard VBA behavior. It is an opt-in extension that makes OxVBA useful for quick scripting and one-off execution without requiring boilerplate `Sub Main() / End Sub` wrappers.
+This is explicitly not standard Office VBA behavior. It is an OxVBA host/project extension that makes the same language and code style usable in richer realizations beyond the Office-parity scope.
 
-#### 3.4.2 Design options
+Normative stance:
 
-| Approach | Mechanism | Pros | Cons |
-|----------|-----------|------|------|
-| **A: File marker** | `'!oxvba:top-level` comment at file start | Self-documenting files | Non-standard syntax; grep-unfriendly |
-| **B: Command/project mode** | `--top-level` flag or `<TopLevelCode>True</TopLevelCode>` in `.basproj` | No source modification; clean VBA | Requires flag on every invocation |
-| **C: File extension** | `.oxvba` files treated as top-level | Automatic via convention | New extension; breaks existing tooling |
+- direct `oxvba run <file.bas>` is a first-class execution mode and does not require a `.basproj`
+- top-level executable statements are supported by default in that direct-file lane
+- OxVBA projects may also use top-level executable statements as a startup mainline
+- this extension does not change Office/VBA parity claims; it is an OxVBA hosting feature layered on top of the VBA-compatible engine
 
-**Recommendation: Option B (command/project mode).**
+#### 3.4.2 Startup resolution model
 
-Rationale:
-- Source files remain valid VBA syntax (module-level declarations + executable statements are syntactically parseable).
-- No non-standard comments or file extensions needed.
-- The mode is explicit — no ambiguity about whether a file is top-level.
-- In `.basproj`, configured as `<TopLevelCode>True</TopLevelCode>` in a `<PropertyGroup>`.
+Startup resolution order for OxVBA-hosted program execution:
+
+1. explicit configured entrypoint wins (`<EntryPoint>` in `.basproj`, `Startup=` in `.vbp`, or CLI override)
+2. otherwise, a unique module/file containing top-level executable statements defines the startup mainline
+3. otherwise, a unique `Sub Main` fallback is used
+4. otherwise, compilation/startup fails deterministically with an ambiguity or missing-entry diagnostic
+
+For a direct single-file run (`oxvba run foo.bas`), the file itself is the startup unit:
+
+- if it contains top-level executable statements, those statements are the startup mainline
+- if it contains no top-level executable statements, ordinary explicit startup lookup rules apply within that file
 
 #### 3.4.3 Semantic rules for top-level code
 
 1. `Option Explicit`, `Option Compare`, `Option Base` MUST precede all executable statements.
-2. `Dim`, `Const`, `Type`, `Enum` declarations are valid at module level and MUST precede their first use when `Option Explicit` is active.
-3. Executable statements (`Debug.Print`, assignments, control flow, procedure calls) appear after declarations.
-4. The compiler implicitly wraps executable statements in an anonymous `Sub Main()` for execution.
-5. Module-level scope rules apply: variables declared at module level are accessible throughout.
-6. Procedures (`Sub`, `Function`) may be defined in the same file and called from top-level code.
+2. `Dim`, `Const`, `Type`, `Enum`, `Declare`, and procedure declarations remain declarations; they are not textually wrapped into a user-visible `Sub Main()`.
+3. Top-level executable statements are lowered into a hidden synthetic startup procedure at compile time; this is a compiler artifact, not source rewriting.
+4. Procedures (`Sub`, `Function`, `Property`) may be defined in the same file and called from top-level code.
+5. Module-level scope rules still apply: module variables remain module variables, not locals of the synthetic startup procedure.
+6. In multi-module project execution, at most one startup mainline may exist unless an explicit configured entrypoint makes the top-level mainline unused or disallowed by a future stricter mode.
+7. Output-type-specific tightening for library/add-in hosts remains host-defined. Program/script lanes support top-level mainlines from the start.
+
+The important implementation constraint is that OxVBA must not simply wrap the entire source file in `Sub Main()`, because declarations and procedure bodies must preserve their ordinary module semantics.
 
 #### 3.4.4 Example
 
 ```vba
-' file: quickcalc.bas (run with: oxvba run quickcalc.bas --top-level)
+' file: quickcalc.bas (run with: oxvba run quickcalc.bas)
 Option Explicit
 
 Dim principal As Double
@@ -1159,7 +1166,7 @@ Modern language tools use the containing directory as the project scope. OxVBA a
 **Without `.basproj` (convention mode / minimal `.basproj`):**
 - A `.basproj` with no module items auto-discovers all `.bas` and `.cls` files in the directory (recursive).
 - Directory name becomes the project name when `<ProjectName>` is omitted.
-- Entry point lookup: `Sub Main` in any module (error if not found or ambiguous for `OutputType=Exe`).
+- Startup resolution for executable runs is: configured entrypoint if present, else unique top-level mainline, else unique `Sub Main` (error if not found or ambiguous).
 
 **Discovery order for `oxvba run-project [PATH]`:**
 
@@ -1180,7 +1187,7 @@ The `.vbp` adapter is an import/compatibility layer, not the canonical project f
 | `Type=Exe` | `ProjectKind::Source` |
 | `Type=OleDll` / `Type=Control` | `ProjectKind::Library` |
 | `Name=<name>` | `ProjectManifest.project_name` |
-| `Startup="Sub Main"` | Entry point configuration |
+| `Startup=<entry>` | Explicit entry point configuration |
 | `Module=<name>; <path>` | `ModuleUnit` with `ModuleKind::Procedural` |
 | `Class=<name>; <path>` | `ModuleUnit` with `ModuleKind::Class` |
 | `Reference=<...>` | `ProjectReference` with `ReferenceKind::TypeLibrary` |
@@ -1238,8 +1245,8 @@ Embeds OxVBA runtime + compiled project artifact into a standalone executable.
 | `jit`  | VM + Cranelift JIT + artifact | ~4.93 MiB + artifact |
 
 Requirements for EXE target:
-- Project MUST have an entry point: configured `<EntryPoint>` in `.basproj`, `Startup` in `.vbp`, or a unique `Sub Main` found by convention.
-- Top-level code files can serve as entry points when the extension is enabled.
+- Project MUST have a deterministic startup path: configured `<EntryPoint>` in `.basproj`, `Startup` in `.vbp`, a unique top-level mainline, or a unique `Sub Main` found by convention.
+- Direct `oxvba run <file.bas>` is the degenerate single-file case of the same rule.
 
 **Wrapper DLL (in-process COM server):**
 
@@ -1381,8 +1388,8 @@ pub trait LanguageServiceProvider {
 
 | ID | Question | Options | Recommendation | Status |
 |----|----------|---------|---------------|--------|
-| D-01 | Top-level code activation mechanism | A: file marker / B: command/project mode / C: file extension | **B: command/project mode** (`--top-level` flag or `[extensions] top_level=true`) | Proposed |
-| D-02 | Default behavior for `oxvba run-project .` | A: auto-detect project vs script / B: require `.basproj` | **Auto-detect:** if `.basproj` exists, use it; else convention mode (all files, find `Sub Main`) | Proposed |
+| D-01 | Top-level code activation mechanism | A: opt-in marker/flag / B: default OxVBA extension in host lanes | **B: default OxVBA extension** for direct-file and program-style host lanes; Office/VBA parity claims remain separate | Proposed |
+| D-02 | Default behavior for `oxvba run-project .` | A: auto-detect project vs script / B: require `.basproj` | **Auto-detect:** if `.basproj` exists, use it; else convention mode (all files, resolve explicit entrypoint, unique top-level mainline, or unique `Sub Main`) | Proposed |
 | D-03 | Artifact portability | A: profile-locked / B: profile-portable | **A: profile-locked by default** (safer determinism; portable mode as explicit opt-in) | Proposed |
 | D-04 | Process-global registration collision policy | A: fail / B: shadow / C: namespace-prefix | **A: fail by default** (explicit collision error; shadow/prefix as opt-in) | Proposed |
 | D-05 | Wrapper DLL COM activation | A: registry-free first / B: dual lane from day one | **A: registry-free first** (simpler deployment; registry lane added later) | Proposed |
@@ -1391,7 +1398,7 @@ pub trait LanguageServiceProvider {
 | D-08 | `.basproj` schema version policy | A: semver / B: Sdk version attribute | **B: Sdk version attribute** (`OxVba.Sdk/<semver>`) — standard MSBuild pattern | Decided |
 | D-09 | Top-level code `Option` placement | A: before executable only / B: interspersed | **A: before executable only** (matches module-level VBA rules) | Proposed |
 | D-10 | WASM default deny scope | A: all HAL capabilities / B: selective | **A: all deny by default** (security-first; explicit allowlist for approved bridges) | Proposed |
-| D-11 | EXE entry point requirement | A: strict `Sub Main` / B: auto-detect / C: configurable | **C: configurable** (`<EntryPoint>` in `.basproj`; `Sub Main` fallback if unconfigured) | Proposed |
+| D-11 | EXE entry point requirement | A: strict `Sub Main` / B: startup resolution ladder / C: explicit entry only | **B: startup resolution ladder** (explicit entrypoint first, then unique top-level mainline, then unique `Sub Main`) | Proposed |
 | D-12 | Unknown `.vbp` keys policy | A: strict (fail) / B: compat (warn) | **A: strict by default** in CI; `--compat` flag for migration workflows | Proposed |
 | D-13 | DNA VbCalc persistence format | A: XML-in-ZIP / B: SQLite / C: flat directory | **A: XML-in-ZIP** (Office-inspired simplicity; embedded project support) | Proposed |
 

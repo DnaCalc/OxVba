@@ -45,7 +45,7 @@ All properties are optional unless noted. A project may contain multiple `<Prope
 |----------|------|--------|---------|----------|---------|
 | `OutputType` | enum | `HostModule`, `Library`, `Exe`, `Addin`, `ComServer`, `ComExe` | — | **yes** | What the project produces |
 | `ProjectName` | identifier | any valid VBA identifier | directory name | no | Maps to `ProjectManifest.project_name` |
-| `EntryPoint` | string | `Module.Procedure` | — | for Exe/Addin | Entry point for execution |
+| `EntryPoint` | string | `Module.Procedure` | — | for Exe/Addin | Explicit startup procedure override for execution |
 | `RuntimeFlavor` | enum | `Lite`, `Jit` | `Lite` | no | VM-only vs VM+JIT |
 | `DefaultRuntimeProfile` | string | profile identifier | `windows-headless` | no | Default HAL runtime profile |
 | `DefaultPolicyPreset` | string | preset identifier | `deterministic-runtime` | no | Default host policy preset |
@@ -58,10 +58,12 @@ All properties are optional unless noted. A project may contain multiple `<Prope
 |-----------|------------|---------|------------|
 | `HostModule` | `Host` | `.oxb` bundle | not required |
 | `Library` | `Library` | `.dll`/`.so` with native exports | not required |
-| `Exe` | `Source` | native executable | required |
+| `Exe` | `Source` | native executable | required via explicit `EntryPoint`, unique top-level mainline, or unique `Sub Main` |
 | `Addin` | `Library` | XLL/add-in DLL | required |
 | `ComServer` | `Library` | in-process COM DLL (`.dll`) | not required (uses creatable classes) |
 | `ComExe` | `Library` | out-of-process COM EXE (`.exe`) | not required (uses creatable classes) |
+
+**OxVBA extension note:** top-level executable statements are an OxVBA hosting/project extension, not an Office-VBA parity claim. In `.basproj` program-style execution, a module containing top-level executable statements may supply the startup mainline when no explicit `EntryPoint` is configured.
 
 **DefineConstants format:** Semicolon-separated `KEY=VALUE` pairs. Values are parsed as `i32`. Keys without `=VALUE` default to `1`. Example: `VBA7=1;WIN64=1;DEBUG` → `{VBA7: 1, WIN64: 1, DEBUG: 1}`.
 
@@ -288,7 +290,8 @@ When a `.basproj` contains no `<Module>`, `<ClassModule>`, or `<DocumentModule>`
 1. All `**/*.bas` files in the project directory (recursive) are treated as `<Module>` items
 2. All `**/*.cls` files in the project directory (recursive) are treated as `<ClassModule>` items
 3. Module names are derived from filename stems
-4. The project must contain exactly one `Sub Main` for `OutputType=Exe`
+4. For `OutputType=Exe`, startup resolution is: explicit `EntryPoint` if configured, else unique top-level mainline, else unique `Sub Main`
+5. Ambiguous or missing startup resolution fails deterministically
 
 When any explicit module item is present, auto-discovery is disabled entirely.
 
@@ -406,7 +409,7 @@ When any explicit module item is present, auto-discovery is disabled entirely.
 </Project>
 ```
 
-Auto-discovers `**/*.bas` and `**/*.cls`. Requires exactly one `Sub Main`.
+Auto-discovers `**/*.bas` and `**/*.cls`. For `OutputType=Exe`, startup resolves by explicit `EntryPoint`, else unique top-level mainline, else unique `Sub Main`.
 
 ### 5.5 Separate Export File
 
