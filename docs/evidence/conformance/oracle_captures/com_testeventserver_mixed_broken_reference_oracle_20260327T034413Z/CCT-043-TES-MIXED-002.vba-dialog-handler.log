@@ -1,0 +1,5 @@
+2026-03-27T05:47:04.5956506+02:00 start excel_pid=20624 poll_ms=200 stop_file=C:\Users\GOVERT~1\AppData\Local\Temp\oxvba_mixed_broken_ref_6d10dae796554dce837c6c67ef28aed5\_vba_dialog_handler.stop
+2026-03-27T05:47:15.3693040+02:00 observed window='Microsoft Visual Basic for Applications - [MainModule (Code)]' texts='' buttons=''
+2026-03-27T05:47:15.3867854+02:00 sent WM_CLOSE to VBE: window='Microsoft Visual Basic for Applications - [MainModule (Code)]'
+2026-03-27T05:47:15.6070955+02:00 excel exited
+2026-03-27T05:47:15.6183395+02:00 exit

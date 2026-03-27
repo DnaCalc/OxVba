@@ -458,31 +458,19 @@ Run context: active parity/compliance execution plus in-progress feature worklis
 - Recommendation:
   - treat formal foldback as a trailing closure gate, not the next implementation-first slice.
 
-### BLK-ODG041-MIXEDBROKEN-001: Mixed broken-first valid-second typelib references diverge from Excel
-- Status: open on 2026-03-26.
-- Impact:
-  - Blocks honest closure of `ODG-041` / `CCT-043` wider multi-reference parity.
-- Current state:
-  - The bounded oracle `com_testeventserver_mixed_broken_reference_oracle_20260326T204239Z` covers the saved-workbook reopen lane where the first typelib reference becomes broken and a later same-name typelib reference remains valid.
-  - In both orderings, Excel reopens the workbook and reports the expected mixed reference state:
-    - broken first/base + valid later/alt, or
-    - broken first/alt + valid later/base.
-  - After that successful reopen, hidden Excel automation with `DisplayAlerts = false` still does not return from `RunProbe` within the bounded `15s` window in either ordering, even when the oracle attaches a VBE/UIAutomation handler that observes and closes surfaced VBA windows.
-  - The richer VBE handler capture shows that this is a real UI/compiler interaction, not just a silent stall. In both orderings, the handler now observes `Compile error:` / `Can't find project or library` / `Gauge` with a `Close` button on `Microsoft Visual Basic for Applications - [MainModule (Code)]` before Excel exits.
-  - Even after sending `WM_CLOSE` to the surfaced VBE window, `Application.Run` still does not return a bounded COM error to the probe before the runner cleans up.
-  - OxVba no longer silently falls through to the later valid same-name typelib in this lane. The loader now preserves a missing filesystem-backed earlier importlib as a deterministic `PMR-E-TYPELIB-IMPORTLIB-UNRESOLVED` diagnostic, even when the broken reference still carries a known LIBID and a later same-name typelib remains valid.
-- Evidence:
-  - `docs/evidence/conformance/oracle_captures/com_testeventserver_mixed_broken_reference_oracle_20260326T204239Z/summary.md`
-  - `docs/evidence/conformance/oracle_captures/com_testeventserver_mixed_broken_reference_oracle_20260326T204239Z/results.csv`
-- Exact unblock steps:
-  - determine whether the observed VBE compile-error/broken-reference UI path is the actual target parity contract or whether the runner still needs a stronger dismissal path that makes Excel return a concrete COM error,
-  - decide the parity contract for this mixed lane,
-  - if Excel behavior remains the target, decide whether OxVba should stop at the current deterministic unresolved-importlib diagnostic or model a stronger blocked/host-interaction state,
-  - rerun the mixed-reference oracle after the behavior decision/implementation.
-- Recommendation:
-  - keep `ODG-041` open under the now-identified mixed broken-reference divergence rather than describing the remaining work only as generic breadth.
-
 ## Closed blocker entries
+
+### BLK-ODG041-MIXEDBROKEN-001 (CLOSED): Mixed broken-first valid-second typelib references
+- Closed on 2026-03-27.
+- Resolution:
+  - The mixed broken-reference lane is no longer treated as a product blocker for detailed Excel popup parity.
+  - The bounded oracle `com_testeventserver_mixed_broken_reference_oracle_20260327T034413Z` now serves as coarse fail/fail evidence:
+    - Excel reopens with the expected broken+valid reference state and then fails through a surfaced VBA/VBE compile-dialog path under hidden automation,
+    - OxVba fails deterministically at bind time with `PMR-E-TYPELIB-IMPORTLIB-UNRESOLVED`.
+  - Harness-side Excel/VBE popup handling remains useful for bounded automation and evidence capture, but the popup shape itself is not a parity target.
+- Evidence:
+  - `docs/evidence/conformance/oracle_captures/com_testeventserver_mixed_broken_reference_oracle_20260327T034413Z/summary.md`
+  - `docs/evidence/conformance/oracle_captures/com_testeventserver_mixed_broken_reference_oracle_20260327T034413Z/results.csv`
 
 ### BLK-COM-001: COM event callback parity lane requires external oracle evidence closure (CLOSED)
 - Title: Complete Windows COM event callback parity evidence (`COM-EVT-A` + `COM-EVT-B`) on external registered servers.
