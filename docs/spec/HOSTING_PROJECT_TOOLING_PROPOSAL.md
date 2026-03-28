@@ -1188,7 +1188,7 @@ The `.vbp` adapter is an import/compatibility layer, not the canonical project f
 | `Class=<name>; <path>` | `ModuleUnit` with `ModuleKind::Class` |
 | `Reference=<...>` | `ProjectReference` with `ReferenceKind::TypeLibrary` |
 
-**Deferred keys:** `Form`, `UserControl`, `PropertyPage`, build metadata, COM registration directives — parsed as known-but-unsupported with stable `VBP-E-UNSUPPORTED-*` diagnostics.
+**Deferred keys:** `Form`, `UserControl`, `PropertyPage`, build metadata, COM registration directives — rejected in the current strict VBP-S0 lane with stable `VBP-E-UNSUPPORTED-*` diagnostics.
 
 **Import command:**
 

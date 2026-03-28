@@ -112,7 +112,11 @@ pub fn parse_vbp(content: &str) -> Result<VbpProject, String> {
                         "VBP-E-UNSUPPORTED-PROPERTYPAGE: `{line}` is not supported in VBP-S0"
                     ));
                 }
-                _ => {} // Ignore other keys for now.
+                _ => {
+                    return Err(format!(
+                        "VBP-E-UNSUPPORTED-KEY: `{line}` is not supported in VBP-S0"
+                    ));
+                }
             }
         }
     }
@@ -370,5 +374,12 @@ Startup="Sub Main"
         let content = "Type=Exe\nName=\"MyApp\"\nForm=frmMain; frmMain.frm\n";
         let err = parse_vbp(content).expect_err("Form should be rejected in VBP-S0");
         assert!(err.contains("VBP-E-UNSUPPORTED-FORM"), "got: {err}");
+    }
+
+    #[test]
+    fn parse_vbp_rejects_unknown_subset_key() {
+        let content = "Type=Exe\nName=\"MyApp\"\nVersionCompatible32=\"0\"\n";
+        let err = parse_vbp(content).expect_err("unknown key should be rejected in strict VBP-S0");
+        assert!(err.contains("VBP-E-UNSUPPORTED-KEY"), "got: {err}");
     }
 }
