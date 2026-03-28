@@ -67,6 +67,25 @@ Import a legacy VB6 project file:
 oxvba import-vbp legacy\Project1.vbp
 ```
 
+## Choose a Lane
+
+Use this when deciding how to structure and run code:
+
+| Goal | Recommended lane | Typical command |
+|----------|----------|----------|
+| Run one script/tool quickly | single `.bas` file | `oxvba run tool.bas` |
+| Keep several modules/classes but no project file yet | convention-mode directory | `oxvba run-project .\my-tool` |
+| Define project metadata, references, output type, and entrypoint explicitly | `.basproj` | `oxvba run-project .\MyApp.basproj` |
+| Run a supported legacy VB6 subset directly | `.vbp` through `VBP-S0` | `oxvba run-project .\Legacy\Project1.vbp` |
+| Convert legacy VB6 subset into the canonical format | `.vbp` import | `oxvba import-vbp .\Legacy\Project1.vbp` |
+| Produce a build artifact using the same discovery rules as execution | discovered project build | `oxvba build .` |
+
+Practical rule:
+- if you are starting new work, prefer `.basproj`
+- if you are experimenting, start with `oxvba run file.bas`
+- if you have a small directory but do not want metadata yet, use convention mode
+- if you are bringing forward VB6 code, use `.vbp` only as an adapter/import lane
+
 ## Source Layouts
 
 ### 1. Single `.bas` File
@@ -246,6 +265,21 @@ Current rule:
 
 That rejection is intentional for now. It keeps those output forms conservative and leaves room to add a more permissive/tolerant policy later without breaking compatibility.
 
+### Startup and Output-Type Matrix
+
+| Output/Lane | Top-level executable statements | Explicit entrypoint | `Sub Main` fallback | Notes |
+|----------|----------|----------|----------|----------|
+| direct `run file.bas` | allowed | not applicable | not applicable | script/program lane |
+| convention-mode executable directory | allowed | not applicable in directory metadata, but normal startup ladder still applies | yes | auto-loaded as executable project |
+| `.basproj` with `OutputType=Exe` | allowed | `<EntryPoint>Module.Procedure</EntryPoint>` | yes | canonical program/app lane |
+| `.vbp` with `Type=Exe` in `VBP-S0` | allowed | `Startup="Module.Procedure"` | yes, including `Startup="Sub Main"` | bounded legacy adapter lane |
+| `.basproj` with `OutputType=Library` | rejected | allowed for metadata completeness, not startup execution | no | non-mainline lane |
+| `.basproj` with `OutputType=Addin` | rejected | optional | no | non-mainline lane |
+| `.basproj` with `OutputType=ComServer` | rejected | optional | no | non-mainline lane |
+| `.basproj` with `OutputType=ComExe` | rejected | optional | no | non-mainline lane |
+
+For non-mainline lanes, top-level executable code is rejected rather than ignored. That keeps current behavior deterministic and leaves room for future tolerant modes without silently changing meaning.
+
 ### What Is Not Supported Yet
 
 Not part of the current startup model:
@@ -345,6 +379,14 @@ Current `VBP-S0` reference support:
 | `Reference=*\A...` | ordered project reference to `.vbp` / `.basproj` |
 
 Not all historical VB6 reference surfaces are supported. Current `.vbp` support is intentionally narrow and deterministic.
+
+Current supported `.vbp` reference forms are:
+- `Reference=*\G...` for ordered type-library / COM references
+- `Reference=*\A...` for ordered project references to `.vbp` / `.basproj` artifacts
+
+Current unsupported `.vbp` reference/dependency surfaces include:
+- forms/designer/component metadata
+- broader historical VB6 project metadata outside the strict `VBP-S0` subset
 
 ## Native Exports
 

@@ -465,6 +465,7 @@ fn build_whole_file_main_procedure(
 ) -> BoundProcedure {
     build_mainline_procedure_from_lines(
         lines,
+        lines,
         option_explicit,
         option_base,
         default_type_table,
@@ -500,6 +501,7 @@ fn build_top_level_mainline_procedure(
         return None;
     }
     build_mainline_procedure_from_lines(
+        lines,
         &mainline_lines,
         option_explicit,
         option_base,
@@ -512,6 +514,7 @@ fn build_top_level_mainline_procedure(
 }
 
 fn build_mainline_procedure_from_lines(
+    module_lines: &[String],
     lines: &[String],
     option_explicit: &mut bool,
     option_base: i32,
@@ -530,6 +533,16 @@ fn build_mainline_procedure_from_lines(
     let mut duplicate_declarations: Vec<String> = Vec::new();
     let mut array_bounds: ArrayBoundsMap = HashMap::new();
     let mut index = 0;
+    seed_module_scope_declarations(
+        module_lines,
+        &mut declarations,
+        &mut declaration_types,
+        &mut duplicate_declarations,
+        &mut array_bounds,
+        option_base,
+        default_type_table,
+        udt_defs,
+    );
     for (name, _) in sorted_module_constants(module_constants) {
         if !declarations
             .iter()
@@ -592,7 +605,12 @@ fn extract_top_level_mainline_lines(lines: &[String]) -> Vec<String> {
             continue;
         }
 
-        if trimmed.is_empty() || trimmed.starts_with('\'') {
+        if trimmed.is_empty()
+            || trimmed.starts_with('\'')
+            || trimmed
+                .get(..4)
+                .is_some_and(|prefix| prefix.eq_ignore_ascii_case("rem "))
+        {
             continue;
         }
         if let Some(kind) = detect_proc_kind(&lower) {
@@ -637,6 +655,71 @@ fn is_non_mainline_top_level_directive(line: &str) -> bool {
         || lower.starts_with("public declare ")
         || lower.starts_with("private declare ")
         || is_def_type_directive(&lower)
+}
+
+fn seed_module_scope_declarations(
+    lines: &[String],
+    declarations: &mut Vec<String>,
+    declaration_types: &mut HashMap<String, BoundType>,
+    duplicate_declarations: &mut Vec<String>,
+    array_bounds: &mut ArrayBoundsMap,
+    option_base: i32,
+    default_type_table: &[BoundType; 26],
+    udt_defs: &UdtDefMap,
+) {
+    let mut active_proc_end: Option<&'static str> = None;
+    let mut active_decl_block_end: Option<&'static str> = None;
+
+    for line in lines {
+        let trimmed = line.trim();
+        let lower = trimmed.to_ascii_lowercase();
+
+        if let Some(end_term) = active_proc_end {
+            if lower == end_term {
+                active_proc_end = None;
+            }
+            continue;
+        }
+
+        if let Some(end_term) = active_decl_block_end {
+            if lower == end_term {
+                active_decl_block_end = None;
+            }
+            continue;
+        }
+
+        if let Some(kind) = detect_proc_kind(&lower) {
+            active_proc_end = Some(kind.end_term());
+            continue;
+        }
+        if starts_type_block(&lower) {
+            active_decl_block_end = Some("end type");
+            continue;
+        }
+        if starts_enum_block(&lower) {
+            active_decl_block_end = Some("end enum");
+            continue;
+        }
+        if trimmed.is_empty()
+            || trimmed.starts_with('\'')
+            || trimmed
+                .get(..4)
+                .is_some_and(|prefix| prefix.eq_ignore_ascii_case("rem "))
+        {
+            continue;
+        }
+
+        parse_variable_declaration_line(
+            trimmed,
+            declarations,
+            declaration_types,
+            duplicate_declarations,
+            array_bounds,
+            option_base,
+            default_type_table,
+            udt_defs,
+        );
+    }
 }
 
 fn is_def_type_directive(lower: &str) -> bool {
@@ -1176,6 +1259,20 @@ fn parse_procedures(
 ) -> Vec<BoundProcedure> {
     let mut procedures = Vec::new();
     let mut index = 0;
+    let mut module_declarations: Vec<String> = Vec::new();
+    let mut module_declaration_types: HashMap<String, BoundType> = HashMap::new();
+    let mut module_duplicate_declarations: Vec<String> = Vec::new();
+    let mut module_array_bounds: ArrayBoundsMap = HashMap::new();
+    seed_module_scope_declarations(
+        lines,
+        &mut module_declarations,
+        &mut module_declaration_types,
+        &mut module_duplicate_declarations,
+        &mut module_array_bounds,
+        option_base,
+        default_type_table,
+        udt_defs,
+    );
 
     while index < lines.len() {
         let line = lines[index].as_str();
@@ -1204,9 +1301,19 @@ fn parse_procedures(
         };
 
         index += 1;
-        let mut declarations: Vec<String> = params.iter().map(|p| p.name.clone()).collect();
-        let mut declaration_types: HashMap<String, BoundType> =
-            params.iter().map(|p| (p.name.clone(), p.ty)).collect();
+        let mut declarations: Vec<String> = module_declarations.clone();
+        let mut declaration_types: HashMap<String, BoundType> = module_declaration_types.clone();
+        let mut duplicate_declarations: Vec<String> = module_duplicate_declarations.clone();
+        let mut array_bounds: ArrayBoundsMap = module_array_bounds.clone();
+        for param in &params {
+            if !declarations
+                .iter()
+                .any(|existing| existing.eq_ignore_ascii_case(&param.name))
+            {
+                declarations.push(param.name.clone());
+            }
+            declaration_types.insert(param.name.clone(), param.ty);
+        }
         if matches!(kind, ProcKind::Function | ProcKind::PropertyGet) {
             // For Property Get, the return-value slot must use the base name
             // (e.g. "value") so that assignments like `Value = 9` inside the
@@ -1227,7 +1334,6 @@ fn parse_procedures(
                 declaration_types.insert(return_decl_name, return_type);
             }
         }
-        let mut duplicate_declarations: Vec<String> = Vec::new();
         for (name, _) in sorted_module_constants(module_constants) {
             if !declarations
                 .iter()
@@ -1237,7 +1343,6 @@ fn parse_procedures(
             }
             declaration_types.entry(name).or_insert(BoundType::Long);
         }
-        let mut array_bounds: ArrayBoundsMap = HashMap::new();
         let end_term = kind.end_term();
         let mut body = parse_block(
             lines,
@@ -1304,6 +1409,7 @@ impl ProcKind {
 }
 
 pub fn detect_proc_kind(lower: &str) -> Option<ProcKind> {
+    let lower = strip_proc_scope_prefixes_ci(lower);
     if lower.starts_with("sub ") {
         Some(ProcKind::Sub)
     } else if lower.starts_with("function ") {
@@ -1320,6 +1426,7 @@ pub fn detect_proc_kind(lower: &str) -> Option<ProcKind> {
 }
 
 fn parse_proc_base_name(line: &str, kind: ProcKind) -> Option<String> {
+    let line = strip_proc_scope_prefixes_ci(line);
     let rest = line.get(kind.prefix_len()..)?.trim();
     let name_token = rest
         .split('(')
@@ -1336,6 +1443,7 @@ pub fn parse_proc_signature(
     kind: ProcKind,
     default_type_table: &[BoundType; 26],
 ) -> Option<(String, Vec<BoundParam>, BoundType)> {
+    let line = strip_proc_scope_prefixes_ci(line);
     let prefix_len = kind.prefix_len();
     let rest = line.get(prefix_len..)?.trim();
     let name_token = rest
@@ -2059,13 +2167,9 @@ fn parse_block(
             continue;
         }
 
-        if lower.starts_with("sub ")
+        if detect_proc_kind(&lower).is_some()
             || lower == "end sub"
-            || lower.starts_with("function ")
             || lower == "end function"
-            || lower.starts_with("property get ")
-            || lower.starts_with("property let ")
-            || lower.starts_with("property set ")
             || lower == "end property"
         {
             *index += 1;
@@ -2081,17 +2185,16 @@ fn parse_block(
             continue;
         }
 
-        if lower.starts_with("dim ") {
-            parse_declaration(
-                line,
-                declarations,
-                declaration_types,
-                duplicate_declarations,
-                array_bounds,
-                option_base,
-                default_type_table,
-                udt_defs,
-            );
+        if parse_variable_declaration_line(
+            line,
+            declarations,
+            declaration_types,
+            duplicate_declarations,
+            array_bounds,
+            option_base,
+            default_type_table,
+            udt_defs,
+        ) {
             *index += 1;
             continue;
         }
@@ -2106,7 +2209,7 @@ fn parse_block(
             continue;
         }
 
-        if lower.starts_with("enum ") {
+        if starts_enum_block(&lower) {
             *index += 1;
             while *index < lines.len() && !lines[*index].eq_ignore_ascii_case("end enum") {
                 *index += 1;
@@ -2117,7 +2220,7 @@ fn parse_block(
             continue;
         }
 
-        if lower.starts_with("type ") {
+        if starts_type_block(&lower) {
             *index += 1;
             while *index < lines.len() && !lines[*index].eq_ignore_ascii_case("end type") {
                 *index += 1;
@@ -4553,7 +4656,57 @@ fn parse_declaration(
     default_type_table: &[BoundType; 26],
     udt_defs: &UdtDefMap,
 ) {
-    let remainder = line[4..].trim();
+    let Some(remainder) = strip_variable_declaration_prefix_ci(line) else {
+        return;
+    };
+    parse_declaration_remainder(
+        remainder,
+        declarations,
+        declaration_types,
+        duplicate_declarations,
+        array_bounds,
+        option_base,
+        default_type_table,
+        udt_defs,
+    );
+}
+
+fn parse_variable_declaration_line(
+    line: &str,
+    declarations: &mut Vec<String>,
+    declaration_types: &mut HashMap<String, BoundType>,
+    duplicate_declarations: &mut Vec<String>,
+    array_bounds: &mut ArrayBoundsMap,
+    option_base: i32,
+    default_type_table: &[BoundType; 26],
+    udt_defs: &UdtDefMap,
+) -> bool {
+    if strip_variable_declaration_prefix_ci(line).is_none() {
+        return false;
+    }
+    parse_declaration(
+        line,
+        declarations,
+        declaration_types,
+        duplicate_declarations,
+        array_bounds,
+        option_base,
+        default_type_table,
+        udt_defs,
+    );
+    true
+}
+
+fn parse_declaration_remainder(
+    remainder: &str,
+    declarations: &mut Vec<String>,
+    declaration_types: &mut HashMap<String, BoundType>,
+    duplicate_declarations: &mut Vec<String>,
+    array_bounds: &mut ArrayBoundsMap,
+    option_base: i32,
+    default_type_table: &[BoundType; 26],
+    udt_defs: &UdtDefMap,
+) {
     let remainder = if remainder.len() >= 11 && remainder[..11].eq_ignore_ascii_case("withevents ")
     {
         remainder[11..].trim_start()
@@ -4658,6 +4811,27 @@ fn parse_declaration(
             }
         }
     }
+}
+
+fn strip_variable_declaration_prefix_ci<'a>(line: &'a str) -> Option<&'a str> {
+    let trimmed = line.trim();
+    strip_keyword_prefix_ci(trimmed, "dim")
+        .or_else(|| strip_keyword_prefix_ci(trimmed, "public"))
+        .or_else(|| strip_keyword_prefix_ci(trimmed, "private"))
+        .or_else(|| strip_keyword_prefix_ci(trimmed, "global"))
+        .or_else(|| strip_keyword_prefix_ci(trimmed, "static"))
+        .or_else(|| strip_keyword_prefix_ci(trimmed, "friend"))
+        .filter(|remainder| {
+            let lower = remainder.to_ascii_lowercase();
+            !lower.starts_with("sub ")
+                && !lower.starts_with("function ")
+                && !lower.starts_with("property ")
+                && !lower.starts_with("const ")
+                && !lower.starts_with("declare ")
+                && !lower.starts_with("enum ")
+                && !lower.starts_with("type ")
+                && !lower.starts_with("event ")
+        })
 }
 
 fn split_first_decl_segment(text: &str) -> Option<&str> {
@@ -5270,6 +5444,28 @@ fn strip_keyword_prefix_ci<'a>(text: &'a str, keyword: &str) -> Option<&'a str> 
         Some(text[marker.len()..].trim())
     } else {
         None
+    }
+}
+
+fn strip_proc_scope_prefixes_ci(mut text: &str) -> &str {
+    loop {
+        if let Some(stripped) = strip_keyword_prefix_ci(text, "public") {
+            text = stripped;
+            continue;
+        }
+        if let Some(stripped) = strip_keyword_prefix_ci(text, "private") {
+            text = stripped;
+            continue;
+        }
+        if let Some(stripped) = strip_keyword_prefix_ci(text, "friend") {
+            text = stripped;
+            continue;
+        }
+        if let Some(stripped) = strip_keyword_prefix_ci(text, "static") {
+            text = stripped;
+            continue;
+        }
+        return text.trim();
     }
 }
 

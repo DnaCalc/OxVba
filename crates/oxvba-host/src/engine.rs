@@ -20591,6 +20591,41 @@ mod tests {
         assert_eq!(out[0], RuntimeValue::I32(41));
     }
 
+    #[test]
+    fn direct_source_top_level_mainline_preserves_mixed_module_scope_declarations() {
+        let source = concat!(
+            "Option Explicit\n",
+            "Option Private Module\n",
+            "Rem module comment\n",
+            "#Const ENABLE = True\n",
+            "DefLng A-Z\n",
+            "Public valueOut As Long\n",
+            "Public sharedCount As Long\n",
+            "Private counter As Long\n",
+            "Global totalCount As Long\n",
+            "Static stickyCount As Long\n",
+            "Private Type CounterState\n",
+            "    Value As Long\n",
+            "End Type\n",
+            "Public Enum CounterMode\n",
+            "    CounterModeDefault = 1\n",
+            "End Enum\n",
+            "counter = 41\n",
+            "valueOut = counter\n",
+            "Call Bump(valueOut)\n",
+            "Public Sub Bump(ByRef value)\n",
+            "    value = value + 1\n",
+            "End Sub\n",
+        );
+        let out = Engine::new(HostConfig {
+            enable_jit: false,
+            root_object_name: None,
+        })
+        .execute_source_with_value_snapshot(source)
+        .expect("direct source should preserve mixed module declarations in top-level mainline");
+        assert_eq!(out[0], RuntimeValue::I32(42));
+    }
+
     #[cfg(target_os = "windows")]
     #[test]
     fn formal_v121_set_keyword_rejects_object_target_for_scalar_source() {

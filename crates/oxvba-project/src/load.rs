@@ -482,7 +482,12 @@ fn extract_top_level_mainline_lines(source: &str) -> Vec<String> {
             continue;
         }
 
-        if trimmed.is_empty() || trimmed.starts_with('\'') {
+        if trimmed.is_empty()
+            || trimmed.starts_with('\'')
+            || trimmed
+                .get(..4)
+                .is_some_and(|prefix| prefix.eq_ignore_ascii_case("rem "))
+        {
             continue;
         }
         if let Some(end_term) = procedure_end_term(&lower) {
@@ -1470,6 +1475,86 @@ mod tests {
                 .contains("Public Sub __OxVbaTopLevelMainline"),
             "expected synthetic startup proc, got: {}",
             script_module.source
+        );
+
+        std::fs::remove_dir_all(&temp_root).expect("cleanup temp project root");
+    }
+
+    #[test]
+    fn exe_top_level_mainline_rewrite_preserves_mixed_module_scope_declarations() {
+        let unique = format!(
+            "oxvba_project_load_mainline_mixed_scope_{}_{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .expect("unix epoch")
+                .as_nanos()
+        );
+        let temp_root = std::env::temp_dir().join(unique);
+        std::fs::create_dir_all(&temp_root).expect("create temp project root");
+        std::fs::write(
+            temp_root.join("ScriptModule.bas"),
+            concat!(
+                "Option Explicit\n",
+                "Option Private Module\n",
+                "Rem module comment\n",
+                "#Const ENABLE = True\n",
+                "DefLng A-Z\n",
+                "Public valueOut As Long\n",
+                "Public sharedCount As Long\n",
+                "Private counter As Long\n",
+                "Global totalCount As Long\n",
+                "Static stickyCount As Long\n",
+                "Private Type CounterState\n",
+                "    Value As Long\n",
+                "End Type\n",
+                "Public Enum CounterMode\n",
+                "    CounterModeDefault = 1\n",
+                "End Enum\n",
+                "counter = 41\n",
+                "valueOut = counter\n",
+                "Call Bump(valueOut)\n",
+                "Public Sub Bump(ByRef value)\n",
+                "    value = value + 1\n",
+                "End Sub\n",
+            ),
+        )
+        .expect("write script module");
+        let xml = "\
+<Project Sdk=\"OxVba.Sdk/0.1.0\">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <ProjectName>ProjectA</ProjectName>
+  </PropertyGroup>
+  <ItemGroup>
+    <Module Include=\"ScriptModule.bas\" />
+  </ItemGroup>
+</Project>
+";
+
+        let loaded =
+            load_basproj_from_str(xml, &temp_root).expect("project should load with rewrite");
+        assert_eq!(
+            loaded.entry_point.as_deref(),
+            Some("ScriptModule.__OxVbaTopLevelMainline")
+        );
+        let script_module = loaded
+            .manifest
+            .modules
+            .iter()
+            .find(|module| module.module_name == "ScriptModule")
+            .expect("rewritten script module should remain present");
+        assert!(script_module.source.contains("Rem module comment"));
+        assert!(script_module.source.contains("Public sharedCount As Long"));
+        assert!(script_module.source.contains("Private counter As Long"));
+        assert!(script_module.source.contains("Global totalCount As Long"));
+        assert!(script_module.source.contains("Static stickyCount As Long"));
+        assert!(script_module.source.contains("Private Type CounterState"));
+        assert!(script_module.source.contains("Public Enum CounterMode"));
+        assert!(
+            script_module
+                .source
+                .contains("Public Sub __OxVbaTopLevelMainline")
         );
 
         std::fs::remove_dir_all(&temp_root).expect("cleanup temp project root");

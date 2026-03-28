@@ -1636,6 +1636,36 @@ mod tests {
     }
 
     #[test]
+    fn compile_direct_top_level_mainline_with_mixed_module_scope_declarations_succeeds() {
+        let source = concat!(
+            "Option Explicit\n",
+            "Option Private Module\n",
+            "Rem module comment\n",
+            "#Const ENABLE = True\n",
+            "DefLng A-Z\n",
+            "Public valueOut As Long\n",
+            "Public sharedCount As Long\n",
+            "Private counter As Long\n",
+            "Global totalCount As Long\n",
+            "Static stickyCount As Long\n",
+            "Private Type CounterState\n",
+            "    Value As Long\n",
+            "End Type\n",
+            "Public Enum CounterMode\n",
+            "    CounterModeDefault = 1\n",
+            "End Enum\n",
+            "counter = 41\n",
+            "valueOut = counter\n",
+            "Call Bump(valueOut)\n",
+            "Public Sub Bump(ByRef value)\n",
+            "    value = value + 1\n",
+            "End Sub\n",
+        );
+        compile(source)
+            .expect("mixed module declarations plus top-level mainline should compile");
+    }
+
+    #[test]
     fn compile_debug_print_emits_diagnostics_host_instruction() {
         let source = "Sub Main()\nDebug.Print \"hello\"\nEnd Sub";
         let out = compile(source).expect("compile should succeed");

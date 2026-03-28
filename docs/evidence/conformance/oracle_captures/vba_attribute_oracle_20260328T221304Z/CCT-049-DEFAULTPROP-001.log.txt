@@ -1,0 +1,18 @@
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.26s
+     Running tests\vba_attribute_oracle_lane.rs (target\debug\deps\vba_attribute_oracle_lane-05842edbd2c20ddc.exe)
+
+running 1 test
+
+thread 'windows_vba_attribute_oracle_lane::windows_defaultprop_vb_usermemid_zero_bare_assignment_matches_excel' (36504) panicked at crates\oxvba-host\tests\vba_attribute_oracle_lane.rs:87:10:
+attribute oracle project should execute: "compile-time diagnostic: PMR-E-BACKEND-COMPILE: type error: use of undeclared variable: property_get_pmr_attributeoracleproject_widget_value"
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+test windows_vba_attribute_oracle_lane::windows_defaultprop_vb_usermemid_zero_bare_assignment_matches_excel ... FAILED
+
+failures:
+
+failures:
+    windows_vba_attribute_oracle_lane::windows_defaultprop_vb_usermemid_zero_bare_assignment_matches_excel
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 1 filtered out; finished in 0.01s
+
+error: test failed, to rerun pass `-p oxvba-host --test vba_attribute_oracle_lane`

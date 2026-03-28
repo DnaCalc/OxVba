@@ -1,0 +1,19 @@
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.27s
+     Running tests\vba_attribute_oracle_lane.rs (target\debug\deps\vba_attribute_oracle_lane-05842edbd2c20ddc.exe)
+
+running 1 test
+test windows_vba_attribute_oracle_lane::windows_newenum_vb_usermemid_minus4_for_each_matches_excel ... ODGATTR-OBSERVED[CCT-050-NEWENUM-001]=error:compile-time diagnostic: PMR-E-BACKEND-COMPILE: type error: unsupported statement: For Each item In widget
+
+thread 'windows_vba_attribute_oracle_lane::windows_newenum_vb_usermemid_minus4_for_each_matches_excel' (87116) panicked at crates\oxvba-host\tests\vba_attribute_oracle_lane.rs:130:17:
+NewEnum oracle project should execute: compile-time diagnostic: PMR-E-BACKEND-COMPILE: type error: unsupported statement: For Each item In widget
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+FAILED
+
+failures:
+
+failures:
+    windows_vba_attribute_oracle_lane::windows_newenum_vb_usermemid_minus4_for_each_matches_excel
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 1 filtered out; finished in 0.03s
+
+error: test failed, to rerun pass `-p oxvba-host --test vba_attribute_oracle_lane`
