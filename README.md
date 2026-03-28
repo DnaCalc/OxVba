@@ -462,7 +462,7 @@ oxvba compile .\legacy\Module1.bas -o .\dist\Module1.oxb
 Creates a minimal `.basproj` scaffold.
 
 Implemented options:
-- `--kind <application|library|addin|host-module>`
+- `--kind <application|library|addin|host-module|com-server|com-exe>`
 
 Example:
 
@@ -470,6 +470,7 @@ Example:
 oxvba init .\new-app
 oxvba init .\new-lib --kind library
 oxvba init .\excel-host --kind host-module
+oxvba init .\calc-com --kind com-server
 ```
 
 ### `oxvba import-vbp <file.vbp>`

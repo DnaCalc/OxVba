@@ -290,6 +290,8 @@ enum InitKind {
     Library,
     Addin,
     HostModule,
+    ComServer,
+    ComExe,
 }
 
 #[derive(Debug, Clone)]
@@ -337,6 +339,8 @@ fn parse_init_kind(value: &str) -> Option<InitKind> {
         "library" | "lib" => Some(InitKind::Library),
         "addin" | "add-in" => Some(InitKind::Addin),
         "host-module" | "hostmodule" | "host" => Some(InitKind::HostModule),
+        "com-server" | "comserver" => Some(InitKind::ComServer),
+        "com-exe" | "comexe" => Some(InitKind::ComExe),
         _ => None,
     }
 }
@@ -347,6 +351,8 @@ fn init_output_type(kind: InitKind) -> &'static str {
         InitKind::Library => "Library",
         InitKind::Addin => "Addin",
         InitKind::HostModule => "HostModule",
+        InitKind::ComServer => "ComServer",
+        InitKind::ComExe => "ComExe",
     }
 }
 
@@ -380,12 +386,34 @@ fn init_module_content(kind: InitKind) -> &'static str {
         InitKind::HostModule => {
             "Attribute VB_Name = \"Module1\"\n\nPublic Sub Warmup()\n    ' Host modules are loaded by a host root object, not started by Main.\nEnd Sub\n"
         }
+        InitKind::ComServer | InitKind::ComExe => {
+            "Attribute VB_Name = \"Class1\"\nOption Explicit\n\nPublic Function Ping() As Long\n    Ping = 42\nEnd Function\n"
+        }
+    }
+}
+
+fn init_primary_file_name(kind: InitKind) -> &'static str {
+    match kind {
+        InitKind::ComServer | InitKind::ComExe => "Class1.cls",
+        _ => "Module1.bas",
+    }
+}
+
+fn init_item_group(kind: InitKind, project_name: &str) -> String {
+    match kind {
+        InitKind::ComServer | InitKind::ComExe => format!(
+            "  <ItemGroup>\n    <ClassModule Include=\"Class1.cls\">\n      <VBExposed>True</VBExposed>\n      <VBCreatable>True</VBCreatable>\n      <Instancing>MultiUse</Instancing>\n      <ProgId>{}.Class1</ProgId>\n    </ClassModule>\n  </ItemGroup>\n",
+            project_name
+        ),
+        _ => "  <ItemGroup>\n    <Module Include=\"Module1.bas\" />\n  </ItemGroup>\n".to_string(),
     }
 }
 
 fn run_init(args: Vec<String>) {
     let parsed = parse_init_args_from(args).unwrap_or_else(|| {
-        eprintln!("usage: oxvba init [path] [--kind <application|library|addin|host-module>]");
+        eprintln!(
+            "usage: oxvba init [path] [--kind <application|library|addin|host-module|com-server|com-exe>]"
+        );
         std::process::exit(2);
     });
     let target_dir = parsed.target_dir;
@@ -402,14 +430,16 @@ fn run_init(args: Vec<String>) {
     });
 
     let basproj_content = format!(
-        "<Project Sdk=\"OxVba.Sdk/0.1.0\">\n{}  <ItemGroup>\n    <Module Include=\"Module1.bas\" />\n  </ItemGroup>\n</Project>\n",
+        "<Project Sdk=\"OxVba.Sdk/0.1.0\">\n{}{}</Project>\n",
         init_property_group(parsed.kind, &project_name),
+        init_item_group(parsed.kind, &project_name),
     );
 
     let module_content = init_module_content(parsed.kind);
+    let primary_file_name = init_primary_file_name(parsed.kind);
 
     let basproj_path = target_dir.join(format!("{project_name}.basproj"));
-    let module_path = target_dir.join("Module1.bas");
+    let module_path = target_dir.join(primary_file_name);
 
     if basproj_path.exists() {
         eprintln!("oxvba init: {} already exists", basproj_path.display());
@@ -426,8 +456,9 @@ fn run_init(args: Vec<String>) {
     });
 
     println!(
-        "created {} + Module1.bas ({})",
+        "created {} + {} ({})",
         basproj_path.display(),
+        primary_file_name,
         init_output_type(parsed.kind)
     );
 }
@@ -994,11 +1025,11 @@ mod tests {
             "init".to_string(),
             ".\\new-lib".to_string(),
             "--kind".to_string(),
-            "library".to_string(),
+            "com-server".to_string(),
         ];
         let parsed = parse_init_args_from(args).expect("args should parse");
         assert_eq!(parsed.target_dir, PathBuf::from(".\\new-lib"));
-        assert_eq!(super::init_output_type(parsed.kind), "Library");
+        assert_eq!(super::init_output_type(parsed.kind), "ComServer");
     }
 
     #[test]
@@ -1367,6 +1398,93 @@ mod tests {
         assert!(basproj.contains("<OutputType>HostModule</OutputType>"));
         assert!(basproj.contains("<DefaultRootObject>Application</DefaultRootObject>"));
         assert!(!basproj.contains("<EntryPoint>"));
+
+        std::fs::remove_dir_all(&temp_root).expect("cleanup temp dir");
+    }
+
+    #[test]
+    fn init_com_server_scaffold_loads_and_exposes_creatable_class() {
+        let temp_root = std::env::temp_dir().join(format!(
+            "oxvba_cli_init_com_server_{}_{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .expect("unix epoch")
+                .as_nanos()
+        ));
+        run_init(vec![
+            "init".to_string(),
+            temp_root.to_string_lossy().to_string(),
+            "--kind".to_string(),
+            "com-server".to_string(),
+        ]);
+
+        let project_name = temp_root
+            .file_name()
+            .and_then(|name| name.to_str())
+            .expect("project name");
+        let basproj_path = temp_root.join(format!("{project_name}.basproj"));
+        let basproj =
+            std::fs::read_to_string(&basproj_path).expect("com server basproj should exist");
+        let class_source =
+            std::fs::read_to_string(temp_root.join("Class1.cls")).expect("class should exist");
+        assert!(basproj.contains("<OutputType>ComServer</OutputType>"));
+        assert!(basproj.contains("<ClassModule Include=\"Class1.cls\">"));
+        assert!(basproj.contains("<VBExposed>True</VBExposed>"));
+        assert!(basproj.contains("<VBCreatable>True</VBCreatable>"));
+        assert!(basproj.contains("<ProgId>"));
+        assert!(class_source.contains("Public Function Ping() As Long"));
+
+        let loaded = oxvba_project::load_basproj(&basproj_path).expect("com server should load");
+        let compiled =
+            oxvba_compiler::compile_project(&loaded.manifest).expect("com server should compile");
+        let modules_for_validation: Vec<oxvba_project::BasProjModule> = loaded
+            .manifest
+            .modules
+            .iter()
+            .map(|m| oxvba_project::BasProjModule {
+                kind: match m.module_kind {
+                    oxvba_compiler::ModuleKind::Class => {
+                        oxvba_project::BasProjModuleKind::ClassModule
+                    }
+                    oxvba_compiler::ModuleKind::Document => {
+                        oxvba_project::BasProjModuleKind::DocumentModule
+                    }
+                    _ => oxvba_project::BasProjModuleKind::Module,
+                },
+                include: format!(
+                    "{}.{}",
+                    m.module_name,
+                    if matches!(m.module_kind, oxvba_compiler::ModuleKind::Class) {
+                        "cls"
+                    } else {
+                        "bas"
+                    }
+                ),
+                vb_predeclared_id: m.attributes.vb_predeclared_id,
+                vb_exposed: m.attributes.vb_exposed,
+                vb_global_namespace: m.attributes.vb_global_namespace,
+                vb_creatable: m.attributes.vb_creatable,
+                host_document_type: None,
+                instancing: None,
+                prog_id: None,
+                description: None,
+            })
+            .collect();
+        let exports = oxvba_project::validate::validate_com_class_exports(
+            &modules_for_validation,
+            &compiled,
+            &loaded.class_module_metadata,
+            &loaded.manifest.project_name,
+        )
+        .expect("com class export validation should succeed");
+        assert_eq!(exports.len(), 1);
+        assert_eq!(exports[0].class_name, "Class1");
+        let expected_prog_id = format!("{project_name}.Class1");
+        assert_eq!(
+            exports[0].prog_id.as_deref(),
+            Some(expected_prog_id.as_str())
+        );
 
         std::fs::remove_dir_all(&temp_root).expect("cleanup temp dir");
     }
