@@ -103,6 +103,11 @@ mod ffi {
     pub const PARAMFLAG_FOUT: u16 = 0x0002;
     pub const PARAMFLAG_FRETVAL: u16 = 0x0008;
 
+    // FUNCFLAG
+    pub const FUNCFLAG_FRESTRICTED: u16 = 0x0001;
+    pub const FUNCFLAG_FDEFAULTBIND: u16 = 0x0020;
+    pub const FUNCFLAG_FHIDDEN: u16 = 0x0040;
+
     // IID_IDispatch
     #[allow(dead_code)]
     pub const IID_IDISPATCH: Guid = Guid {
@@ -582,7 +587,7 @@ fn add_dispatch_members(
     use ffi::*;
 
     for (i, member) in class.members.iter().enumerate() {
-        let dispid = (i + 1) as i32;
+        let dispid = member.dispatch_id_or(i + 1);
 
         let is_function = matches!(
             member.kind,
@@ -667,7 +672,7 @@ fn add_dispatch_members(
                     wparamflags: 0,
                 },
             },
-            w_func_flags: 0,
+            w_func_flags: member_function_flags(member),
         };
 
         unsafe {
@@ -719,6 +724,21 @@ fn add_dispatch_members(
     }
 
     Ok(class.members.len())
+}
+
+#[cfg(target_os = "windows")]
+fn member_function_flags(member: &oxvba_project::DispatchMemberInfo) -> u16 {
+    let mut flags = 0;
+    if member.is_restricted() {
+        flags |= ffi::FUNCFLAG_FRESTRICTED;
+    }
+    if member.is_default_bind() {
+        flags |= ffi::FUNCFLAG_FDEFAULTBIND;
+    }
+    if member.is_hidden() {
+        flags |= ffi::FUNCFLAG_FHIDDEN;
+    }
+    flags
 }
 
 /// Verify a generated .tlb by loading it back and checking its member catalog
@@ -786,16 +806,25 @@ mod tests {
                     member_name: "Add".to_string(),
                     kind: oxvba_compiler::ProjectDynamicMemberKind::Function,
                     param_count: 2,
+                    dispatch_id: None,
+                    member_flags: None,
+                    is_default_member: false,
                 },
                 DispatchMemberInfo {
                     member_name: "Clear".to_string(),
                     kind: oxvba_compiler::ProjectDynamicMemberKind::Method,
                     param_count: 0,
+                    dispatch_id: None,
+                    member_flags: None,
+                    is_default_member: false,
                 },
                 DispatchMemberInfo {
                     member_name: "Value".to_string(),
                     kind: oxvba_compiler::ProjectDynamicMemberKind::PropertyGet,
                     param_count: 0,
+                    dispatch_id: None,
+                    member_flags: None,
+                    is_default_member: false,
                 },
             ],
         }];
@@ -859,6 +888,9 @@ mod tests {
                     member_name: "DoAlpha".to_string(),
                     kind: oxvba_compiler::ProjectDynamicMemberKind::Function,
                     param_count: 1,
+                    dispatch_id: None,
+                    member_flags: None,
+                    is_default_member: false,
                 }],
             },
             ComClassExportDescriptor {
@@ -871,11 +903,17 @@ mod tests {
                         member_name: "DoBeta".to_string(),
                         kind: oxvba_compiler::ProjectDynamicMemberKind::Method,
                         param_count: 0,
+                        dispatch_id: None,
+                        member_flags: None,
+                        is_default_member: false,
                     },
                     DispatchMemberInfo {
                         member_name: "Name".to_string(),
                         kind: oxvba_compiler::ProjectDynamicMemberKind::PropertyGet,
                         param_count: 0,
+                        dispatch_id: None,
+                        member_flags: None,
+                        is_default_member: false,
                     },
                 ],
             },
@@ -902,5 +940,65 @@ mod tests {
             let result = generate_typelib("Test", "test.tlb", &[]);
             assert!(matches!(result, Err(TypeLibGenError::PlatformNotSupported)));
         }
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn generate_typelib_preserves_explicit_dispatch_ids() {
+        use oxvba_com::windows_typelib_loader::{
+            enumerate_typelib_members, load_typelib_from_path, release_typelib,
+        };
+        use oxvba_project::{ComClassExportDescriptor, DispatchMemberInfo};
+
+        let classes = vec![ComClassExportDescriptor {
+            class_name: "Widget".to_string(),
+            prog_id: Some("AttrTest.Widget".to_string()),
+            instancing: None,
+            description: None,
+            members: vec![
+                DispatchMemberInfo {
+                    member_name: "Value".to_string(),
+                    kind: oxvba_compiler::ProjectDynamicMemberKind::PropertyGet,
+                    param_count: 0,
+                    dispatch_id: Some(0),
+                    member_flags: None,
+                    is_default_member: true,
+                },
+                DispatchMemberInfo {
+                    member_name: "NewEnum".to_string(),
+                    kind: oxvba_compiler::ProjectDynamicMemberKind::PropertyGet,
+                    param_count: 0,
+                    dispatch_id: Some(-4),
+                    member_flags: Some(0x40),
+                    is_default_member: false,
+                },
+            ],
+        }];
+
+        let temp_dir = std::env::temp_dir();
+        let tlb_path = temp_dir
+            .join("oxvba_test_typelib_attr_ids.tlb")
+            .to_string_lossy()
+            .to_string();
+
+        generate_typelib("AttrTest", &tlb_path, &classes).unwrap();
+        let ptlib = load_typelib_from_path(&tlb_path).expect("typelib should load");
+        let members = enumerate_typelib_members(ptlib).expect("member enumeration should succeed");
+        unsafe { release_typelib(ptlib) };
+
+        let value = members
+            .iter()
+            .find(|member| member.name == "Value")
+            .expect("Value should be present");
+        assert_eq!(value.token, 0);
+        assert!(value.is_default_member);
+
+        let new_enum = members
+            .iter()
+            .find(|member| member.name == "NewEnum")
+            .expect("NewEnum should be present");
+        assert_eq!(new_enum.token, -4);
+
+        let _ = std::fs::remove_file(&tlb_path);
     }
 }

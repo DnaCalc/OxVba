@@ -1661,8 +1661,7 @@ mod tests {
             "    value = value + 1\n",
             "End Sub\n",
         );
-        compile(source)
-            .expect("mixed module declarations plus top-level mainline should compile");
+        compile(source).expect("mixed module declarations plus top-level mainline should compile");
     }
 
     #[test]

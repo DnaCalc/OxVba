@@ -21,6 +21,42 @@ pub struct DispatchMemberInfo {
     pub member_name: String,
     pub kind: oxvba_compiler::ProjectDynamicMemberKind,
     pub param_count: usize,
+    pub dispatch_id: Option<i32>,
+    pub member_flags: Option<u32>,
+    pub is_default_member: bool,
+}
+
+impl DispatchMemberInfo {
+    pub const MEMBERFLAG_FRESTRICTED: u32 = 0x0001;
+    pub const MEMBERFLAG_FDEFAULTBIND: u32 = 0x0020;
+    pub const MEMBERFLAG_FHIDDEN: u32 = 0x0040;
+
+    pub fn dispatch_id_or(&self, fallback: usize) -> i32 {
+        self.dispatch_id.unwrap_or(fallback as i32)
+    }
+
+    pub fn is_new_enum_member(&self) -> bool {
+        self.dispatch_id == Some(-4)
+    }
+
+    pub fn is_restricted(&self) -> bool {
+        self.member_flags
+            .is_some_and(|flags| flags & Self::MEMBERFLAG_FRESTRICTED != 0)
+            || self.is_new_enum_member()
+    }
+
+    pub fn is_hidden(&self) -> bool {
+        self.member_flags
+            .is_some_and(|flags| flags & Self::MEMBERFLAG_FHIDDEN != 0)
+    }
+
+    pub fn is_default_bind(&self) -> bool {
+        self.is_default_member
+            || self.dispatch_id == Some(0)
+            || self
+                .member_flags
+                .is_some_and(|flags| flags & Self::MEMBERFLAG_FDEFAULTBIND != 0)
+    }
 }
 
 /// Validate native export descriptors against a compiled project.
@@ -118,6 +154,9 @@ pub fn validate_com_class_exports(
                         member_name: m.member_name.clone(),
                         kind: m.kind,
                         param_count: m.visible_param_count,
+                        dispatch_id: m.dispatch_id,
+                        member_flags: m.member_flags,
+                        is_default_member: m.is_default_member,
                     })
                     .collect()
             })

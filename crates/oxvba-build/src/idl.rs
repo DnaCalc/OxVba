@@ -57,7 +57,7 @@ fn generate_class_idl(project_name: &str, class: &ComClassExportDescriptor) -> S
     ));
 
     for (i, member) in class.members.iter().enumerate() {
-        let dispid = i + 1;
+        let dispid = member.dispatch_id_or(i + 1);
         idl.push_str(&generate_member_idl(member, dispid));
     }
 
@@ -80,7 +80,7 @@ fn generate_class_idl(project_name: &str, class: &ComClassExportDescriptor) -> S
     idl
 }
 
-fn generate_member_idl(member: &DispatchMemberInfo, dispid: usize) -> String {
+fn generate_member_idl(member: &DispatchMemberInfo, dispid: i32) -> String {
     let name = &member.member_name;
     let kind = match member.kind {
         oxvba_compiler::ProjectDynamicMemberKind::PropertyGet => "propget",
@@ -99,11 +99,20 @@ fn generate_member_idl(member: &DispatchMemberInfo, dispid: usize) -> String {
         .map(|i| format!("[in] VARIANT arg{i}"))
         .collect();
 
-    let attr = if kind.is_empty() {
-        format!("[id({dispid})]")
-    } else {
-        format!("[id({dispid}), {kind}]")
-    };
+    let mut attr_parts = vec![format!("id({dispid})")];
+    if !kind.is_empty() {
+        attr_parts.push(kind.to_string());
+    }
+    if member.is_default_bind() {
+        attr_parts.push("defaultbind".to_string());
+    }
+    if member.is_restricted() {
+        attr_parts.push("restricted".to_string());
+    }
+    if member.is_hidden() {
+        attr_parts.push("hidden".to_string());
+    }
+    let attr = format!("[{}]", attr_parts.join(", "));
 
     if is_function {
         format!(
@@ -169,11 +178,17 @@ mod tests {
                     member_name: "Add".to_string(),
                     kind: oxvba_compiler::ProjectDynamicMemberKind::Function,
                     param_count: 2,
+                    dispatch_id: None,
+                    member_flags: None,
+                    is_default_member: false,
                 },
                 DispatchMemberInfo {
                     member_name: "Clear".to_string(),
                     kind: oxvba_compiler::ProjectDynamicMemberKind::Method,
                     param_count: 0,
+                    dispatch_id: None,
+                    member_flags: None,
+                    is_default_member: false,
                 },
             ],
         }];
@@ -216,5 +231,37 @@ mod tests {
         assert_eq!(&uuid[23..24], "-");
         // Version nibble should be 5
         assert_eq!(&uuid[14..15], "5");
+    }
+
+    #[test]
+    fn idl_preserves_explicit_dispatch_ids_and_flags() {
+        let classes = vec![ComClassExportDescriptor {
+            class_name: "Widget".to_string(),
+            prog_id: None,
+            instancing: None,
+            description: None,
+            members: vec![
+                DispatchMemberInfo {
+                    member_name: "Value".to_string(),
+                    kind: oxvba_compiler::ProjectDynamicMemberKind::PropertyGet,
+                    param_count: 0,
+                    dispatch_id: Some(0),
+                    member_flags: None,
+                    is_default_member: true,
+                },
+                DispatchMemberInfo {
+                    member_name: "NewEnum".to_string(),
+                    kind: oxvba_compiler::ProjectDynamicMemberKind::PropertyGet,
+                    param_count: 0,
+                    dispatch_id: Some(-4),
+                    member_flags: Some(0x40),
+                    is_default_member: false,
+                },
+            ],
+        }];
+
+        let idl = generate_idl("AttrTest", &classes);
+        assert!(idl.contains("[id(0), propget, defaultbind] HRESULT Value("));
+        assert!(idl.contains("[id(-4), propget, restricted, hidden] HRESULT NewEnum("));
     }
 }

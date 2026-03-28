@@ -181,6 +181,8 @@ pub struct ProjectDynamicMemberRoute {
     pub member_name: String,
     pub lowered_name: String,
     pub known_dispatch_token: Option<i32>,
+    pub dispatch_id: Option<i32>,
+    pub member_flags: Option<u32>,
     pub is_default_member: bool,
     pub kind: ProjectDynamicMemberKind,
     pub visible_param_count: usize,
@@ -478,6 +480,8 @@ struct ProcedureDecl {
     lowered_name: String,
     kind: ProcedureDeclKind,
     is_public: bool,
+    dispatch_id: Option<i32>,
+    member_flags: Option<u32>,
     is_default_member: bool,
     params: Vec<ProjectDynamicParamRoute>,
     param_count: usize,
@@ -491,6 +495,7 @@ struct ProcedureDecl {
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 struct MemberAttributes {
     vb_user_mem_id: Option<i32>,
+    vb_member_flags: Option<u32>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1507,6 +1512,12 @@ fn collect_project_procedures(manifest: &ProjectManifest) -> Vec<ProcedureDecl> 
                     lowered_name,
                     kind,
                     is_public,
+                    dispatch_id: member_attributes
+                        .get(&name)
+                        .and_then(|attrs| attrs.vb_user_mem_id),
+                    member_flags: member_attributes
+                        .get(&name)
+                        .and_then(|attrs| attrs.vb_member_flags),
                     is_default_member: member_attributes
                         .get(&name)
                         .is_some_and(|attrs| attrs.vb_user_mem_id == Some(0)),
@@ -1552,6 +1563,12 @@ fn collect_project_procedures(manifest: &ProjectManifest) -> Vec<ProcedureDecl> 
                         lowered_name,
                         kind,
                         is_public,
+                        dispatch_id: member_attributes
+                            .get(&name)
+                            .and_then(|attrs| attrs.vb_user_mem_id),
+                        member_flags: member_attributes
+                            .get(&name)
+                            .and_then(|attrs| attrs.vb_member_flags),
                         is_default_member: member_attributes
                             .get(&name)
                             .is_some_and(|attrs| attrs.vb_user_mem_id == Some(0)),
@@ -5440,6 +5457,8 @@ fn build_project_dynamic_object_routes(
                         known_dispatch_token: known_internal_dynamic_dispatch_member_token(
                             &decl.procedure_name,
                         ),
+                        dispatch_id: decl.dispatch_id,
+                        member_flags: decl.member_flags,
                         is_default_member: decl.is_default_member,
                         kind: decl.kind.dynamic_member_kind(),
                         visible_param_count: decl.param_count,
@@ -5481,6 +5500,8 @@ fn build_project_dynamic_object_routes(
                                 member_name: member_name.clone(),
                                 lowered_name: decl.lowered_name.clone(),
                                 known_dispatch_token: None,
+                                dispatch_id: None,
+                                member_flags: None,
                                 is_default_member: false,
                                 kind: decl.kind.dynamic_member_kind(),
                                 visible_param_count: decl.param_count,
@@ -6727,9 +6748,21 @@ fn collect_member_attributes(source: &str) -> BTreeMap<String, MemberAttributes>
         let entry = attributes.entry(member_name).or_default();
         if attr_name.eq_ignore_ascii_case("vb_usermemid") {
             entry.vb_user_mem_id = attr_value.parse::<i32>().ok();
+        } else if attr_name.eq_ignore_ascii_case("vb_memberflags") {
+            entry.vb_member_flags = parse_member_flags(&attr_value);
         }
     }
     attributes
+}
+
+fn parse_member_flags(attr_value: &str) -> Option<u32> {
+    let trimmed = attr_value.trim().trim_matches('"').trim_matches('\'');
+    if trimmed.is_empty() {
+        return None;
+    }
+    u32::from_str_radix(trimmed, 16)
+        .ok()
+        .or_else(|| trimmed.parse::<u32>().ok())
 }
 
 fn parse_member_attribute_line(line: &str) -> Option<(String, String, String)> {

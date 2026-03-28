@@ -248,6 +248,8 @@ fn com_class_exported_when_exposed_and_creatable() {
             member_name: "Calculate".to_string(),
             lowered_name: "calculate".to_string(),
             known_dispatch_token: None,
+            dispatch_id: None,
+            member_flags: None,
             is_default_member: false,
             kind: ProjectDynamicMemberKind::Function,
             visible_param_count: 2,
@@ -369,6 +371,8 @@ fn com_class_with_multiple_members() {
                 member_name: "Name".to_string(),
                 lowered_name: "name".to_string(),
                 known_dispatch_token: None,
+                dispatch_id: None,
+                member_flags: None,
                 is_default_member: false,
                 kind: ProjectDynamicMemberKind::PropertyGet,
                 visible_param_count: 0,
@@ -381,6 +385,8 @@ fn com_class_with_multiple_members() {
                 member_name: "Name".to_string(),
                 lowered_name: "name".to_string(),
                 known_dispatch_token: None,
+                dispatch_id: None,
+                member_flags: None,
                 is_default_member: false,
                 kind: ProjectDynamicMemberKind::PropertyLet,
                 visible_param_count: 1,
@@ -398,6 +404,8 @@ fn com_class_with_multiple_members() {
                 member_name: "DoSomething".to_string(),
                 lowered_name: "dosomething".to_string(),
                 known_dispatch_token: None,
+                dispatch_id: None,
+                member_flags: None,
                 is_default_member: false,
                 kind: ProjectDynamicMemberKind::Method,
                 visible_param_count: 0,
@@ -670,4 +678,71 @@ fn com_class_with_no_dynamic_route_has_empty_members() {
         descriptors[0].members.is_empty(),
         "class with no dynamic route should have empty members list"
     );
+}
+
+#[test]
+fn com_class_export_preserves_dispatch_metadata() {
+    let modules = vec![make_class_module("src/Widget.cls", true, true)];
+
+    let dynamic_objects = vec![ProjectDynamicObjectRoute {
+        object_handle: ObjectHandle::new(11),
+        project_name: "TestProject".to_string(),
+        module_name: "Widget".to_string(),
+        members: vec![
+            ProjectDynamicMemberRoute {
+                member_name: "Value".to_string(),
+                lowered_name: "value".to_string(),
+                known_dispatch_token: None,
+                dispatch_id: Some(0),
+                member_flags: None,
+                is_default_member: true,
+                kind: ProjectDynamicMemberKind::PropertyGet,
+                visible_param_count: 0,
+                params: Vec::new(),
+                entry_pc: 0,
+                param_slots: Vec::new(),
+                return_slot: Some(0),
+            },
+            ProjectDynamicMemberRoute {
+                member_name: "NewEnum".to_string(),
+                lowered_name: "newenum".to_string(),
+                known_dispatch_token: None,
+                dispatch_id: Some(-4),
+                member_flags: Some(0x40),
+                is_default_member: false,
+                kind: ProjectDynamicMemberKind::PropertyGet,
+                visible_param_count: 0,
+                params: Vec::new(),
+                entry_pc: 1,
+                param_slots: Vec::new(),
+                return_slot: Some(0),
+            },
+        ],
+        implements_interfaces: Vec::new(),
+    }];
+
+    let compiled = make_compiled_project(Vec::new(), BTreeMap::new(), dynamic_objects);
+    let class_metadata: BTreeMap<String, ClassModuleMetadata> = BTreeMap::new();
+
+    let descriptors =
+        validate_com_class_exports(&modules, &compiled, &class_metadata, "TestProject")
+            .expect("validation should succeed");
+    let members = &descriptors[0].members;
+
+    let value = members
+        .iter()
+        .find(|member| member.member_name == "Value")
+        .expect("Value should be exported");
+    assert_eq!(value.dispatch_id, Some(0));
+    assert!(value.is_default_member);
+    assert!(value.is_default_bind());
+
+    let new_enum = members
+        .iter()
+        .find(|member| member.member_name == "NewEnum")
+        .expect("NewEnum should be exported");
+    assert_eq!(new_enum.dispatch_id, Some(-4));
+    assert_eq!(new_enum.member_flags, Some(0x40));
+    assert!(new_enum.is_restricted());
+    assert!(new_enum.is_hidden());
 }

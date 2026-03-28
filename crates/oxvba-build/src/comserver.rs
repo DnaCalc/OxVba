@@ -543,6 +543,9 @@ mod tests {
                 member_name: "Add".to_string(),
                 kind: oxvba_compiler::ProjectDynamicMemberKind::Function,
                 param_count: 2,
+                dispatch_id: None,
+                member_flags: None,
+                is_default_member: false,
             }],
         }];
 
