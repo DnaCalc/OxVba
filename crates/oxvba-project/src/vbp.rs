@@ -275,6 +275,7 @@ fn is_valid_identifier(identifier: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::OutputType;
 
     const SAMPLE_VBP: &str = r#"Type=Exe
 Reference=*\G{00020430-0000-0000-C000-000000000046}#2.0#0#C:\WINDOWS\system32\stdole2.tlb#OLE Automation
@@ -381,5 +382,90 @@ Startup="Sub Main"
         let content = "Type=Exe\nName=\"MyApp\"\nVersionCompatible32=\"0\"\n";
         let err = parse_vbp(content).expect_err("unknown key should be rejected in strict VBP-S0");
         assert!(err.contains("VBP-E-UNSUPPORTED-KEY"), "got: {err}");
+    }
+
+    #[test]
+    fn load_vbp_from_str_exe_sub_main_uses_fallback_startup_ladder() {
+        let temp_root = std::env::temp_dir().join(format!(
+            "oxvba_project_vbp_sub_main_{}_{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .expect("unix epoch")
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&temp_root).expect("create temp dir");
+        std::fs::write(temp_root.join("Main.bas"), "Public Sub Main()\nEnd Sub\n")
+            .expect("write main module");
+        let vbp = "Type=Exe\nName=\"Project1\"\nStartup=\"Sub Main\"\nModule=Main; Main.bas\n";
+
+        let loaded = load_vbp_from_str(vbp, &temp_root).expect("vbp should load");
+        assert_eq!(loaded.output_type, OutputType::Exe);
+        assert_eq!(loaded.entry_point.as_deref(), Some("Main.Main"));
+
+        std::fs::remove_dir_all(&temp_root).expect("cleanup temp dir");
+    }
+
+    #[test]
+    fn load_vbp_from_str_exe_without_startup_discovers_unique_top_level_mainline() {
+        let temp_root = std::env::temp_dir().join(format!(
+            "oxvba_project_vbp_mainline_{}_{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .expect("unix epoch")
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&temp_root).expect("create temp dir");
+        std::fs::write(
+            temp_root.join("ScriptModule.bas"),
+            "valueOut = 41\nCall Bump(valueOut)\nSub Bump(ByRef value)\nvalue = value + 1\nEnd Sub\n",
+        )
+        .expect("write script module");
+        let vbp = "Type=Exe\nName=\"Project1\"\nModule=ScriptModule; ScriptModule.bas\n";
+
+        let loaded = load_vbp_from_str(vbp, &temp_root).expect("vbp should load");
+        assert_eq!(loaded.output_type, OutputType::Exe);
+        assert_eq!(
+            loaded.entry_point.as_deref(),
+            Some("ScriptModule.__OxVbaTopLevelMainline")
+        );
+
+        std::fs::remove_dir_all(&temp_root).expect("cleanup temp dir");
+    }
+
+    #[test]
+    fn load_vbp_from_str_preserves_explicit_module_procedure_startup() {
+        let temp_root = std::env::temp_dir().join(format!(
+            "oxvba_project_vbp_explicit_startup_{}_{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .expect("unix epoch")
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&temp_root).expect("create temp dir");
+        std::fs::write(temp_root.join("Main.bas"), "Public Sub Boot()\nEnd Sub\n")
+            .expect("write main module");
+        let vbp = "Type=Exe\nName=\"Project1\"\nStartup=\"Main.Boot\"\nModule=Main; Main.bas\n";
+
+        let loaded = load_vbp_from_str(vbp, &temp_root).expect("vbp should load");
+        assert_eq!(loaded.entry_point.as_deref(), Some("Main.Boot"));
+
+        std::fs::remove_dir_all(&temp_root).expect("cleanup temp dir");
+    }
+
+    #[test]
+    fn load_vbp_from_str_maps_legacy_project_types_to_output_types() {
+        for (vbp_type, output_type) in [
+            ("OleDll", OutputType::Library),
+            ("Control", OutputType::Library),
+            ("OleExe", OutputType::ComServer),
+        ] {
+            let vbp = format!("Type={vbp_type}\nName=\"Project1\"\n");
+            let loaded = load_vbp_from_str(&vbp, Path::new(".")).expect("vbp should load");
+            assert_eq!(loaded.output_type, output_type, "unexpected mapping for {vbp_type}");
+            assert!(loaded.entry_point.is_none(), "non-exe types should not synthesize startup");
+        }
     }
 }

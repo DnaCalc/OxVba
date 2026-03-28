@@ -96,3 +96,67 @@ fn basproj_exe_top_level_mainline_preserves_option_private_module_and_module_sta
 
     std::fs::remove_dir_all(&temp_root).expect("cleanup temp project root");
 }
+
+#[test]
+fn vbp_exe_sub_main_fallback_executes_supported_project() {
+    let temp_root = unique_temp_dir("oxvba_host_vbp_sub_main");
+    std::fs::create_dir_all(&temp_root).expect("create temp project root");
+
+    std::fs::write(temp_root.join("Main.bas"), "Public Sub Main()\nEnd Sub\n")
+        .expect("write main module");
+    let vbp_path = temp_root.join("Project1.vbp");
+    std::fs::write(
+        &vbp_path,
+        "Type=Exe\nName=\"Project1\"\nStartup=\"Sub Main\"\nModule=Main; Main.bas\n",
+    )
+    .expect("write vbp");
+
+    let loaded = oxvba_project::vbp::load_vbp(&vbp_path).expect("vbp should load");
+    assert_eq!(loaded.entry_point.as_deref(), Some("Main.Main"));
+    let engine = Engine::new(HostConfig {
+        enable_jit: false,
+        root_object_name: None,
+    });
+    let snapshot = engine
+        .execute_project_with_snapshot_phased(&loaded.manifest)
+        .expect("Sub Main fallback project should execute");
+    assert!(
+        snapshot.is_empty(),
+        "startup shim should leave no user slots in empty startup path: {snapshot:?}"
+    );
+
+    std::fs::remove_dir_all(&temp_root).expect("cleanup temp project root");
+}
+
+#[test]
+fn vbp_exe_unique_top_level_mainline_executes_supported_project() {
+    let temp_root = unique_temp_dir("oxvba_host_vbp_top_level_mainline");
+    std::fs::create_dir_all(&temp_root).expect("create temp project root");
+
+    std::fs::write(
+        temp_root.join("ScriptModule.bas"),
+        "valueOut = 41\nCall Bump(valueOut)\nSub Bump(ByRef value)\nvalue = value + 1\nEnd Sub\n",
+    )
+    .expect("write script module");
+    let vbp_path = temp_root.join("Project1.vbp");
+    std::fs::write(
+        &vbp_path,
+        "Type=Exe\nName=\"Project1\"\nModule=ScriptModule; ScriptModule.bas\n",
+    )
+    .expect("write vbp");
+
+    let loaded = oxvba_project::vbp::load_vbp(&vbp_path).expect("vbp should load");
+    assert_eq!(
+        loaded.entry_point.as_deref(),
+        Some("ScriptModule.__OxVbaTopLevelMainline")
+    );
+    let engine = Engine::new(HostConfig {
+        enable_jit: false,
+        root_object_name: None,
+    });
+    engine
+        .execute_project_with_snapshot_phased(&loaded.manifest)
+        .expect("top-level mainline vbp project should execute");
+
+    std::fs::remove_dir_all(&temp_root).expect("cleanup temp project root");
+}
