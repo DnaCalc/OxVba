@@ -103,9 +103,6 @@ pub(crate) fn build_loaded_project(
 
     // Entry point validation
     let configured_entry_point = props.entry_point.clone();
-    if output_type == OutputType::Addin && configured_entry_point.is_none() {
-        return Err(BasProjError::EntryPointRequired("Addin".to_string()));
-    }
 
     // Conditional constants
     let conditional_constants = props
@@ -121,6 +118,7 @@ pub(crate) fn build_loaded_project(
     } else {
         load_explicit_modules(&basproj.modules, project_dir)?
     };
+    validate_top_level_mainline_policy(output_type, &modules)?;
     let effective_entry_point = resolve_effective_entry_point(
         output_type,
         configured_entry_point.as_deref(),
@@ -270,6 +268,32 @@ fn resolve_effective_entry_point(
         return Ok(Some(entry_point));
     }
     discover_unique_sub_main_entry_point(modules).map(Some)
+}
+
+fn validate_top_level_mainline_policy(
+    output_type: OutputType,
+    modules: &[ModuleUnit],
+) -> Result<(), BasProjError> {
+    if !matches!(
+        output_type,
+        OutputType::Library | OutputType::Addin | OutputType::ComServer | OutputType::ComExe
+    ) {
+        return Ok(());
+    }
+
+    let Some(module_name) = modules
+        .iter()
+        .filter(|module| module.module_kind == ModuleKind::Procedural)
+        .find(|module| !extract_top_level_mainline_lines(&module.source).is_empty())
+        .map(|module| module.module_name.clone())
+    else {
+        return Ok(());
+    };
+
+    Err(BasProjError::TopLevelMainlineUnsupported {
+        output_type: output_type_name(output_type).to_string(),
+        module_name,
+    })
 }
 
 fn prepare_unique_top_level_mainline_entry(
@@ -649,6 +673,17 @@ fn next_startup_shim_module_name(modules: &[ModuleUnit]) -> String {
             return candidate;
         }
         index += 1;
+    }
+}
+
+fn output_type_name(output_type: OutputType) -> &'static str {
+    match output_type {
+        OutputType::HostModule => "HostModule",
+        OutputType::Library => "Library",
+        OutputType::Exe => "Exe",
+        OutputType::Addin => "Addin",
+        OutputType::ComServer => "ComServer",
+        OutputType::ComExe => "ComExe",
     }
 }
 
@@ -1325,6 +1360,82 @@ mod tests {
             "expected synthetic startup proc, got: {}",
             script_module.source
         );
+
+        std::fs::remove_dir_all(&temp_root).expect("cleanup temp project root");
+    }
+
+    #[test]
+    fn non_exe_output_types_reject_top_level_mainline_modules() {
+        for (output_type, project_name) in [
+            ("Library", "ProjectLibrary"),
+            ("Addin", "ProjectAddin"),
+            ("ComServer", "ProjectComServer"),
+            ("ComExe", "ProjectComExe"),
+        ] {
+            let unique = format!(
+                "oxvba_project_load_non_exe_mainline_{}_{}_{}",
+                output_type,
+                std::process::id(),
+                std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .expect("unix epoch")
+                    .as_nanos()
+            );
+            let temp_root = std::env::temp_dir().join(unique);
+            std::fs::create_dir_all(&temp_root).expect("create temp project root");
+            std::fs::write(temp_root.join("ScriptModule.bas"), "valueOut = 41\n")
+                .expect("write script module");
+            let xml = format!(
+                "<Project Sdk=\"OxVba.Sdk/0.1.0\">\n  <PropertyGroup>\n    <OutputType>{output_type}</OutputType>\n    <ProjectName>{project_name}</ProjectName>\n  </PropertyGroup>\n  <ItemGroup>\n    <Module Include=\"ScriptModule.bas\" />\n  </ItemGroup>\n</Project>\n"
+            );
+
+            let err = load_basproj_from_str(&xml, &temp_root)
+                .expect_err("non-exe output types should reject top-level mainline");
+            match err {
+                BasProjError::TopLevelMainlineUnsupported {
+                    output_type: actual_output_type,
+                    module_name,
+                } => {
+                    assert_eq!(actual_output_type, output_type);
+                    assert_eq!(module_name, "ScriptModule");
+                }
+                other => panic!("unexpected error for {output_type}: {other:?}"),
+            }
+
+            std::fs::remove_dir_all(&temp_root).expect("cleanup temp project root");
+        }
+    }
+
+    #[test]
+    fn addin_without_entry_point_loads_when_no_top_level_mainline_exists() {
+        let unique = format!(
+            "oxvba_project_load_addin_without_entrypoint_{}_{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .expect("unix epoch")
+                .as_nanos()
+        );
+        let temp_root = std::env::temp_dir().join(unique);
+        std::fs::create_dir_all(&temp_root).expect("create temp project root");
+        std::fs::write(temp_root.join("Functions.bas"), "Public Sub Warmup()\nEnd Sub\n")
+            .expect("write addin module");
+        let xml = "\
+<Project Sdk=\"OxVba.Sdk/0.1.0\">
+  <PropertyGroup>
+    <OutputType>Addin</OutputType>
+    <ProjectName>ProjectAddin</ProjectName>
+  </PropertyGroup>
+  <ItemGroup>
+    <Module Include=\"Functions.bas\" />
+  </ItemGroup>
+</Project>
+";
+
+        let loaded = load_basproj_from_str(xml, &temp_root)
+            .expect("addin without entry point should load when no top-level mainline exists");
+        assert_eq!(loaded.output_type, OutputType::Addin);
+        assert!(loaded.entry_point.is_none());
 
         std::fs::remove_dir_all(&temp_root).expect("cleanup temp project root");
     }

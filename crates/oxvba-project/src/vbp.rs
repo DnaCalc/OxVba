@@ -552,4 +552,37 @@ Startup="Sub Main"
             assert!(loaded.entry_point.is_none(), "non-exe types should not synthesize startup");
         }
     }
+
+    #[test]
+    fn load_vbp_from_str_non_exe_types_reject_top_level_mainline_modules() {
+        for (vbp_type, output_type) in [
+            ("OleDll", "Library"),
+            ("Control", "Library"),
+            ("OleExe", "ComServer"),
+        ] {
+            let temp_root = std::env::temp_dir().join(format!(
+                "oxvba_project_vbp_non_exe_mainline_{}_{}_{}",
+                vbp_type,
+                std::process::id(),
+                std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .expect("unix epoch")
+                    .as_nanos()
+            ));
+            std::fs::create_dir_all(&temp_root).expect("create temp dir");
+            std::fs::write(temp_root.join("Main.bas"), "valueOut = 41\n")
+                .expect("write script module");
+            let vbp = format!("Type={vbp_type}\nName=\"Project1\"\nModule=Main; Main.bas\n");
+
+            let err = load_vbp_from_str(&vbp, &temp_root)
+                .expect_err("non-exe vbp types should reject top-level mainline");
+            let err_text = err.to_string();
+            assert!(
+                err_text.contains(&format!("OutputType={output_type}")),
+                "unexpected error for {vbp_type}: {err_text}"
+            );
+
+            std::fs::remove_dir_all(&temp_root).expect("cleanup temp dir");
+        }
+    }
 }

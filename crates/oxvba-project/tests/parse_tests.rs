@@ -809,14 +809,15 @@ fn missing_output_type_is_error() {
 }
 
 // ---------------------------------------------------------------------------
-// Addin requires EntryPoint
+// Addin no longer requires EntryPoint
 // ---------------------------------------------------------------------------
 
 #[test]
-fn addin_without_entry_point_is_error() {
+fn addin_without_entry_point_loads_successfully() {
     let xml = r#"<Project Sdk="OxVba.Sdk/0.1.0">
   <PropertyGroup>
     <OutputType>Addin</OutputType>
+    <ProjectName>MyAddin</ProjectName>
   </PropertyGroup>
 </Project>"#;
 
@@ -824,10 +825,9 @@ fn addin_without_entry_point_is_error() {
     let _ = std::fs::remove_dir_all(&tmp);
     std::fs::create_dir_all(&tmp).unwrap();
 
-    let result = load_basproj_from_str(xml, &tmp);
-    assert!(result.is_err());
-    let err = result.unwrap_err().to_string();
-    assert!(err.contains("EntryPoint"), "got: {err}");
+    let loaded = load_basproj_from_str(xml, &tmp).expect("addin without entry point should load");
+    assert_eq!(loaded.output_type, OutputType::Addin);
+    assert!(loaded.entry_point.is_none());
 
     let _ = std::fs::remove_dir_all(&tmp);
 }
