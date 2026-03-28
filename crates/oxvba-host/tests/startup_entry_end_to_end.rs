@@ -57,6 +57,54 @@ fn basproj_exe_executes_unique_top_level_mainline() {
 }
 
 #[test]
+fn basproj_exe_honors_explicit_entry_point_over_sub_main_fallback() {
+    let temp_root = unique_temp_dir("oxvba_host_basproj_explicit_entry");
+    std::fs::create_dir_all(&temp_root).expect("create temp project root");
+
+    std::fs::write(
+        temp_root.join("MainModule.bas"),
+        "Public Sub Main()\nError 1\nEnd Sub\n",
+    )
+    .expect("write main module");
+    std::fs::write(
+        temp_root.join("StartupModule.bas"),
+        "Public Sub Boot()\nEnd Sub\n",
+    )
+    .expect("write startup module");
+
+    let basproj_path = temp_root.join("ProjectA.basproj");
+    std::fs::write(
+        &basproj_path,
+        "\
+<Project Sdk=\"OxVba.Sdk/0.1.0\">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <ProjectName>ProjectA</ProjectName>
+    <EntryPoint>StartupModule.Boot</EntryPoint>
+  </PropertyGroup>
+  <ItemGroup>
+    <Module Include=\"MainModule.bas\" />
+    <Module Include=\"StartupModule.bas\" />
+  </ItemGroup>
+</Project>
+",
+    )
+    .expect("write basproj");
+
+    let loaded = oxvba_project::load_basproj(&basproj_path).expect("basproj should load");
+    assert_eq!(loaded.entry_point.as_deref(), Some("StartupModule.Boot"));
+    let engine = Engine::new(HostConfig {
+        enable_jit: false,
+        root_object_name: None,
+    });
+    engine
+        .execute_project_with_snapshot_phased(&loaded.manifest)
+        .expect("explicit entrypoint should execute instead of Sub Main fallback");
+
+    std::fs::remove_dir_all(&temp_root).expect("cleanup temp project root");
+}
+
+#[test]
 fn basproj_exe_top_level_mainline_preserves_option_private_module_and_module_state() {
     let temp_root = unique_temp_dir("oxvba_host_top_level_option_private");
     std::fs::create_dir_all(&temp_root).expect("create temp project root");
@@ -93,6 +141,41 @@ fn basproj_exe_top_level_mainline_preserves_option_private_module_and_module_sta
     engine
         .execute_project_with_snapshot_phased(&loaded.manifest)
         .expect("project execution should succeed with module-scope state preserved");
+
+    std::fs::remove_dir_all(&temp_root).expect("cleanup temp project root");
+}
+
+#[test]
+fn vbp_exe_honors_explicit_startup_procedure() {
+    let temp_root = unique_temp_dir("oxvba_host_vbp_explicit_startup");
+    std::fs::create_dir_all(&temp_root).expect("create temp project root");
+
+    std::fs::write(
+        temp_root.join("Main.bas"),
+        "Public Sub Main()\nError 1\nEnd Sub\n",
+    )
+    .expect("write main module");
+    std::fs::write(
+        temp_root.join("Startup.bas"),
+        "Public Sub Boot()\nEnd Sub\n",
+    )
+    .expect("write startup module");
+    let vbp_path = temp_root.join("Project1.vbp");
+    std::fs::write(
+        &vbp_path,
+        "Type=Exe\nName=\"Project1\"\nStartup=\"Startup.Boot\"\nModule=Main; Main.bas\nModule=Startup; Startup.bas\n",
+    )
+    .expect("write vbp");
+
+    let loaded = oxvba_project::vbp::load_vbp(&vbp_path).expect("vbp should load");
+    assert_eq!(loaded.entry_point.as_deref(), Some("Startup.Boot"));
+    let engine = Engine::new(HostConfig {
+        enable_jit: false,
+        root_object_name: None,
+    });
+    engine
+        .execute_project_with_snapshot_phased(&loaded.manifest)
+        .expect("explicit Startup=Module.Procedure should execute");
 
     std::fs::remove_dir_all(&temp_root).expect("cleanup temp project root");
 }

@@ -993,9 +993,12 @@ fn discover_modules_recursive(
                     source: e,
                 })?;
                 modules.push(ModuleUnit {
-                    module_name,
+                    module_name: module_name.clone(),
                     module_kind: kind,
-                    attributes: ModuleAttributes::default(),
+                    attributes: ModuleAttributes {
+                        vb_name: module_name,
+                        ..ModuleAttributes::default()
+                    },
                     source,
                 });
             }

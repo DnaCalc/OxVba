@@ -781,6 +781,7 @@ fn parse_wasm_runtime_class(value: &str) -> Option<WasmRuntimeClass> {
 #[cfg(test)]
 mod tests {
     use super::{default_build_output_path, load_run_project_target, parse_run_args_from};
+    use oxvba_host::{Engine, HostConfig};
     use oxvba_hal::model::UnsupportedFeatureMode;
     use std::path::{Path, PathBuf};
 
@@ -858,6 +859,37 @@ mod tests {
     }
 
     #[test]
+    fn run_project_directory_convention_mode_executes_unique_sub_main() {
+        let temp_root = std::env::temp_dir().join(format!(
+            "oxvba_cli_convention_sub_main_exec_{}_{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .expect("unix epoch")
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&temp_root).expect("create temp dir");
+        std::fs::write(
+            temp_root.join("Main.bas"),
+            "Attribute VB_Name = \"Main\"\nPublic Sub Main()\nEnd Sub\n",
+        )
+            .expect("write main module");
+        let loaded = load_run_project_target(Some(temp_root.clone()))
+            .expect("directory convention mode should load");
+        assert_eq!(loaded.entry_point.as_deref(), Some("Main.Main"));
+
+        let engine = Engine::new(HostConfig {
+            enable_jit: false,
+            root_object_name: None,
+        });
+        engine
+            .execute_project_with_snapshot_phased(&loaded.manifest)
+            .expect("convention-mode Sub Main project should execute");
+
+        std::fs::remove_dir_all(&temp_root).expect("cleanup temp dir");
+    }
+
+    #[test]
     fn run_project_directory_prefers_nested_basproj_when_present() {
         let temp_root = std::env::temp_dir().join(format!(
             "oxvba_cli_directory_basproj_{}_{}",
@@ -907,6 +939,41 @@ mod tests {
             .expect("directory with only vbp should load through vbp adapter");
         assert_eq!(loaded.manifest.project_name, "Project1");
         assert_eq!(loaded.entry_point.as_deref(), Some("Main.Main"));
+
+        std::fs::remove_dir_all(&temp_root).expect("cleanup temp dir");
+    }
+
+    #[test]
+    fn run_project_directory_convention_mode_executes_unique_top_level_mainline() {
+        let temp_root = std::env::temp_dir().join(format!(
+            "oxvba_cli_convention_mainline_exec_{}_{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .expect("unix epoch")
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&temp_root).expect("create temp dir");
+        std::fs::write(
+            temp_root.join("ScriptModule.bas"),
+            "Attribute VB_Name = \"ScriptModule\"\nvalueOut = 41\nCall Bump(valueOut)\nSub Bump(ByRef value)\nvalue = value + 1\nEnd Sub\n",
+        )
+        .expect("write script module");
+
+        let loaded = load_run_project_target(Some(temp_root.clone()))
+            .expect("directory convention mode should load");
+        assert_eq!(
+            loaded.entry_point.as_deref(),
+            Some("ScriptModule.__OxVbaTopLevelMainline")
+        );
+
+        let engine = Engine::new(HostConfig {
+            enable_jit: false,
+            root_object_name: None,
+        });
+        engine
+            .execute_project_with_snapshot_phased(&loaded.manifest)
+            .expect("convention-mode top-level mainline project should execute");
 
         std::fs::remove_dir_all(&temp_root).expect("cleanup temp dir");
     }
