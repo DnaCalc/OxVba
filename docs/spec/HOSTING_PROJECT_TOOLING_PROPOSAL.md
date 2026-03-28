@@ -647,8 +647,8 @@ Examples:
 ```
 oxvba run-project [PATH] [options]
 
-Run an OxVBA project from .basproj or .vbp file.
-If PATH is a directory, looks for a .basproj file in that directory.
+Run an OxVBA project from a `.basproj`, `.vbp`, or convention-mode directory.
+If PATH is a directory, discovery prefers a unique `.basproj`, else a unique `.vbp`, else convention mode.
 If PATH is omitted, uses the current directory.
 
 Usage:
@@ -690,7 +690,8 @@ Examples:
 ```
 oxvba build [PATH] [options]
 
-Compile a project and emit the configured build output.
+Compile a project target and emit the configured build output.
+`build` follows the same project discovery rules as `run-project`.
 
 Usage:
   oxvba build [PATH] [options]

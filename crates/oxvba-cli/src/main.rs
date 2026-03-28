@@ -21,7 +21,7 @@ fn main() {
 }
 
 // ---------------------------------------------------------------------------
-// build subcommand: .basproj → compile → .oxb
+// build subcommand: project target -> compile -> .oxb
 // ---------------------------------------------------------------------------
 
 fn run_build(args: Vec<String>) {
@@ -49,20 +49,9 @@ fn run_build(args: Vec<String>) {
         i += 1;
     }
 
-    let input = input_path.unwrap_or_else(|| {
-        // Try to find a .basproj in current directory
-        discover_basproj(".")
-            .unwrap_or_else(|err| {
-                eprintln!("oxvba build: {err}");
-                std::process::exit(1);
-            })
-            .unwrap_or_else(|| {
-            eprintln!("usage: oxvba build [<project.basproj>] [-o <output.oxb>]");
-            std::process::exit(2);
-        })
-    });
+    let input = input_path.unwrap_or_else(|| PathBuf::from("."));
 
-    let mut loaded = oxvba_project::load_basproj(&input).unwrap_or_else(|err| {
+    let mut loaded = load_run_project_target(Some(input.clone())).unwrap_or_else(|err| {
         eprintln!("oxvba build: {err}");
         std::process::exit(1);
     });
@@ -149,12 +138,7 @@ fn run_build(args: Vec<String>) {
         std::process::exit(1);
     });
 
-    let out = output_path.unwrap_or_else(|| {
-        input
-            .parent()
-            .unwrap_or(std::path::Path::new("."))
-            .join(format!("{}.oxb", loaded.manifest.project_name))
-    });
+    let out = output_path.unwrap_or_else(|| default_build_output_path(&input, &loaded));
 
     fs::write(&out, &bytes).unwrap_or_else(|err| {
         eprintln!("oxvba build: cannot write {}: {err}", out.display());
@@ -376,11 +360,6 @@ fn run_import_vbp(args: Vec<String>) {
 // Helpers
 // ---------------------------------------------------------------------------
 
-fn discover_basproj(dir: &str) -> Result<Option<PathBuf>, oxvba_project::BasProjError> {
-    let dir = Path::new(dir);
-    discover_basproj_in_dir(dir)
-}
-
 fn discover_basproj_in_dir(dir: &Path) -> Result<Option<PathBuf>, oxvba_project::BasProjError> {
     discover_project_files_in_dir(dir, "basproj")
 }
@@ -463,6 +442,16 @@ fn xml_escape(value: &str) -> String {
         .replace('>', "&gt;")
         .replace('"', "&quot;")
         .replace('\'', "&apos;")
+}
+
+fn default_build_output_path(input: &Path, loaded: &oxvba_project::LoadedProject) -> PathBuf {
+    if input.is_dir() || input == Path::new(".") {
+        return input.join(format!("{}.oxb", loaded.manifest.project_name));
+    }
+    input
+        .parent()
+        .unwrap_or(Path::new("."))
+        .join(format!("{}.oxb", loaded.manifest.project_name))
 }
 
 // ---------------------------------------------------------------------------
@@ -791,9 +780,9 @@ fn parse_wasm_runtime_class(value: &str) -> Option<WasmRuntimeClass> {
 
 #[cfg(test)]
 mod tests {
-    use super::{load_run_project_target, parse_run_args_from};
+    use super::{default_build_output_path, load_run_project_target, parse_run_args_from};
     use oxvba_hal::model::UnsupportedFeatureMode;
-    use std::path::PathBuf;
+    use std::path::{Path, PathBuf};
 
     #[test]
     fn parse_run_args_with_flags() {
@@ -1005,6 +994,36 @@ mod tests {
             .expect("vbp adapter should load executable project");
         assert_eq!(loaded.manifest.project_name, "Project1");
         assert_eq!(loaded.entry_point.as_deref(), Some("Main.Main"));
+
+        std::fs::remove_dir_all(&temp_root).expect("cleanup temp dir");
+    }
+
+    #[test]
+    fn default_build_output_path_uses_project_name_for_directories() {
+        let temp_root = std::env::temp_dir().join(format!(
+            "oxvba_cli_build_output_{}_{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .expect("unix epoch")
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&temp_root).expect("create temp dir");
+        std::fs::write(temp_root.join("Main.bas"), "Public Sub Main()\nEnd Sub\n")
+            .expect("write main module");
+        let loaded = oxvba_project::load_basproj_from_str(
+            "<Project Sdk=\"OxVba.Sdk/0.1.0\">\n  <PropertyGroup>\n    <OutputType>Exe</OutputType>\n    <ProjectName>BuildTarget</ProjectName>\n    <EntryPoint>Main.Main</EntryPoint>\n  </PropertyGroup>\n  <ItemGroup>\n    <Module Include=\"Main.bas\" />\n  </ItemGroup>\n</Project>\n",
+            &temp_root,
+        )
+        .expect("temp project should load");
+        assert_eq!(
+            default_build_output_path(&temp_root, &loaded),
+            temp_root.join("BuildTarget.oxb")
+        );
+        assert_eq!(
+            default_build_output_path(Path::new("legacy.vbp"), &loaded),
+            PathBuf::from("BuildTarget.oxb")
+        );
 
         std::fs::remove_dir_all(&temp_root).expect("cleanup temp dir");
     }
