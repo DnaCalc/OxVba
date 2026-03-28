@@ -411,7 +411,10 @@ End Sub
                 elements[0]
             );
         };
-        assert!(handle.raw() >= 20_001, "ReturnSelfArray object handle mismatch");
+        assert!(
+            handle.raw() >= 20_001,
+            "ReturnSelfArray object handle mismatch"
+        );
     }
 
     #[test]

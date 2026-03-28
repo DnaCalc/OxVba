@@ -4,8 +4,8 @@ use oxvba_hal::{
     callbacks::HostCallbacks,
     model::{HostPolicy, UnsupportedFeatureMode},
     project::{
-        HostExtensionModuleChange, ProjectCallbackResult, ProjectDescriptor,
-        ProjectDescriptorKind, ProjectReferenceDescriptor, ProjectReferenceKind,
+        HostExtensionModuleChange, ProjectCallbackResult, ProjectDescriptor, ProjectDescriptorKind,
+        ProjectReferenceDescriptor, ProjectReferenceKind,
     },
 };
 use oxvba_host::{Engine, HostConfig};
@@ -112,7 +112,11 @@ fn engine_public_api_exposes_callback_backed_project_services() {
         .expect("host extension attach should succeed");
 
     assert_eq!(
-        callbacks.mutations.lock().expect("mutation log lock").as_slice(),
+        callbacks
+            .mutations
+            .lock()
+            .expect("mutation log lock")
+            .as_slice(),
         ["Workbook::HostExt"]
     );
 }

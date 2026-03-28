@@ -48,10 +48,7 @@ fn split_console_fields(line: &str) -> VecDeque<String> {
 }
 
 impl StandardHostServices {
-    fn console_lock(
-        &self,
-        op: &'static str,
-    ) -> HalResult<MutexGuard<'_, ConsoleState>> {
+    fn console_lock(&self, op: &'static str) -> HalResult<MutexGuard<'_, ConsoleState>> {
         self.console_state.lock().map_err(|_| {
             HalError::adapter_fault(
                 self.profile,
@@ -127,7 +124,8 @@ impl ConsoleHal for StandardHostServices {
         if !self.supports(capability) {
             return Err(self.unsupported(capability, "input_fields"));
         }
-        let count = self.runtime_value_to_legacy_i32(&count, capability, "input_fields", "count")?;
+        let count =
+            self.runtime_value_to_legacy_i32(&count, capability, "input_fields", "count")?;
         let count = count.max(1) as usize;
         let mut state = self.console_lock("input_fields")?;
         while state.pending_fields.len() < count {
@@ -139,7 +137,9 @@ impl ConsoleHal for StandardHostServices {
             fields.push(state.pending_fields.pop_front().unwrap_or_default());
         }
         if count == 1 {
-            return Ok(parse_console_field(fields.first().map(String::as_str).unwrap_or("")));
+            return Ok(parse_console_field(
+                fields.first().map(String::as_str).unwrap_or(""),
+            ));
         }
         Ok(RuntimeValue::String(BStr(fields.join(","))))
     }

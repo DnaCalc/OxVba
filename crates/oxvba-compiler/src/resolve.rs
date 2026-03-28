@@ -385,16 +385,18 @@ pub fn resolve_symbols(source: &str) -> BoundModule {
         }
         procedures
     } else {
-        vec![top_level_mainline.unwrap_or_else(|| build_whole_file_main_procedure(
-            &lines,
-            &mut option_explicit,
-            option_base,
-            &default_type_table,
-            &udt_defs,
-            &module_constants,
-            &property_write_routes,
-            &property_read_routes,
-        ))]
+        vec![top_level_mainline.unwrap_or_else(|| {
+            build_whole_file_main_procedure(
+                &lines,
+                &mut option_explicit,
+                option_base,
+                &default_type_table,
+                &udt_defs,
+                &module_constants,
+                &property_write_routes,
+                &property_read_routes,
+            )
+        })]
     };
 
     let mut procedures = procedures;

@@ -40,7 +40,12 @@ fn capability_matrix(
 
     match profile {
         HalProfileId::Windows => {
-            push(C::ConsoleIo, supports_console, M::Provisional, "OxVba:HAL-CONSOLE");
+            push(
+                C::ConsoleIo,
+                supports_console,
+                M::Provisional,
+                "OxVba:HAL-CONSOLE",
+            );
             push(
                 C::UiInteraction,
                 true,
@@ -84,7 +89,12 @@ fn capability_matrix(
             push(C::ProjectMutation, false, M::Stable, "OxVba:HAL-PROJ");
         }
         HalProfileId::Linux => {
-            push(C::ConsoleIo, supports_console, M::Provisional, "OxVba:HAL-CONSOLE");
+            push(
+                C::ConsoleIo,
+                supports_console,
+                M::Provisional,
+                "OxVba:HAL-CONSOLE",
+            );
             push(
                 C::UiInteraction,
                 true,

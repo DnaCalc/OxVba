@@ -1,6 +1,5 @@
 use oxvba_compiler::{
-    compile_project,
-    ModuleKind, ProjectKind, ProjectManifest, ProjectReference, ReferenceKind,
+    ModuleKind, ProjectKind, ProjectManifest, ProjectReference, ReferenceKind, compile_project,
     module_unit_from_source,
 };
 use oxvba_hal::model::{ComInvocationStrategy, HostPolicy};
@@ -117,14 +116,10 @@ fn load_typelib_basproj_with_ref_specs(
             basproj.push_str(&format!("      <Guid>{guid}</Guid>\n"));
         }
         if let Some(major) = com_ref.major {
-            basproj.push_str(&format!(
-                "      <VersionMajor>{major}</VersionMajor>\n"
-            ));
+            basproj.push_str(&format!("      <VersionMajor>{major}</VersionMajor>\n"));
         }
         if let Some(minor) = com_ref.minor {
-            basproj.push_str(&format!(
-                "      <VersionMinor>{minor}</VersionMinor>\n"
-            ));
+            basproj.push_str(&format!("      <VersionMinor>{minor}</VersionMinor>\n"));
         }
         if let Some(lcid) = com_ref.lcid {
             basproj.push_str(&format!("      <Lcid>{lcid}</Lcid>\n"));
@@ -375,7 +370,13 @@ fn early_bound_loaded_basproj_prefers_first_typelib_reference_for_unqualified_te
         ),
         &[
             ("OxVba", "{E2A30001-0001-0001-0001-000000000001}", 1, 0, 0),
-            ("OxVbaAlt", "{E2A30001-0001-0001-0001-000000000101}", 1, 0, 0),
+            (
+                "OxVbaAlt",
+                "{E2A30001-0001-0001-0001-000000000101}",
+                1,
+                0,
+                0,
+            ),
         ],
     );
 
@@ -391,8 +392,8 @@ fn early_bound_loaded_basproj_prefers_first_typelib_reference_for_unqualified_te
 #[cfg(target_os = "windows")]
 #[test]
 #[ignore = "requires registered external COM typelib lane (run explicitly on Windows host with OxVba.TestEventServer and OxVbaAlt.TestEventServer registered)"]
-fn early_bound_loaded_basproj_prefers_reversed_first_typelib_reference_for_unqualified_testeventserver(
-) {
+fn early_bound_loaded_basproj_prefers_reversed_first_typelib_reference_for_unqualified_testeventserver()
+ {
     let loaded = load_typelib_basproj_with_refs(
         "basproj-typelib-order-b",
         concat!(
@@ -404,7 +405,13 @@ fn early_bound_loaded_basproj_prefers_reversed_first_typelib_reference_for_unqua
             "End Sub\n"
         ),
         &[
-            ("OxVbaAlt", "{E2A30001-0001-0001-0001-000000000101}", 1, 0, 0),
+            (
+                "OxVbaAlt",
+                "{E2A30001-0001-0001-0001-000000000101}",
+                1,
+                0,
+                0,
+            ),
             ("OxVba", "{E2A30001-0001-0001-0001-000000000001}", 1, 0, 0),
         ],
     );
@@ -421,8 +428,8 @@ fn early_bound_loaded_basproj_prefers_reversed_first_typelib_reference_for_unqua
 #[cfg(target_os = "windows")]
 #[test]
 #[ignore = "requires registered external COM typelib lane (run explicitly on Windows host with OxVba.TestEventServer, OxVba.TestEventServerAlt, and OxVba.TestEventServerAlt2 registered)"]
-fn early_bound_loaded_basproj_prefers_first_of_three_typelib_references_for_unqualified_testeventserver(
-) {
+fn early_bound_loaded_basproj_prefers_first_of_three_typelib_references_for_unqualified_testeventserver()
+ {
     let loaded = load_typelib_basproj_with_refs(
         "basproj-typelib-order-three-a",
         concat!(
@@ -435,8 +442,20 @@ fn early_bound_loaded_basproj_prefers_first_of_three_typelib_references_for_unqu
         ),
         &[
             ("OxVba", "{E2A30001-0001-0001-0001-000000000001}", 1, 0, 0),
-            ("OxVbaAlt", "{E2A30001-0001-0001-0001-000000000101}", 1, 0, 0),
-            ("OxVbaAlt2", "{E2A30001-0001-0001-0001-000000000201}", 1, 0, 0),
+            (
+                "OxVbaAlt",
+                "{E2A30001-0001-0001-0001-000000000101}",
+                1,
+                0,
+                0,
+            ),
+            (
+                "OxVbaAlt2",
+                "{E2A30001-0001-0001-0001-000000000201}",
+                1,
+                0,
+                0,
+            ),
         ],
     );
 
@@ -452,8 +471,8 @@ fn early_bound_loaded_basproj_prefers_first_of_three_typelib_references_for_unqu
 #[cfg(target_os = "windows")]
 #[test]
 #[ignore = "requires registered external COM typelib lane (run explicitly on Windows host with OxVba.TestEventServer, OxVba.TestEventServerAlt, and OxVba.TestEventServerAlt2 registered)"]
-fn early_bound_loaded_basproj_prefers_middle_first_of_three_typelib_references_for_unqualified_testeventserver(
-) {
+fn early_bound_loaded_basproj_prefers_middle_first_of_three_typelib_references_for_unqualified_testeventserver()
+ {
     let loaded = load_typelib_basproj_with_refs(
         "basproj-typelib-order-three-b",
         concat!(
@@ -465,9 +484,21 @@ fn early_bound_loaded_basproj_prefers_middle_first_of_three_typelib_references_f
             "End Sub\n"
         ),
         &[
-            ("OxVbaAlt", "{E2A30001-0001-0001-0001-000000000101}", 1, 0, 0),
+            (
+                "OxVbaAlt",
+                "{E2A30001-0001-0001-0001-000000000101}",
+                1,
+                0,
+                0,
+            ),
             ("OxVba", "{E2A30001-0001-0001-0001-000000000001}", 1, 0, 0),
-            ("OxVbaAlt2", "{E2A30001-0001-0001-0001-000000000201}", 1, 0, 0),
+            (
+                "OxVbaAlt2",
+                "{E2A30001-0001-0001-0001-000000000201}",
+                1,
+                0,
+                0,
+            ),
         ],
     );
 
@@ -483,8 +514,8 @@ fn early_bound_loaded_basproj_prefers_middle_first_of_three_typelib_references_f
 #[cfg(target_os = "windows")]
 #[test]
 #[ignore = "requires registered external COM typelib lane (run explicitly on Windows host with OxVba.TestEventServer, OxVba.TestEventServerAlt, and OxVba.TestEventServerAlt2 registered)"]
-fn early_bound_loaded_basproj_prefers_third_variant_when_first_of_three_typelib_references_for_unqualified_testeventserver(
-) {
+fn early_bound_loaded_basproj_prefers_third_variant_when_first_of_three_typelib_references_for_unqualified_testeventserver()
+ {
     let loaded = load_typelib_basproj_with_refs(
         "basproj-typelib-order-three-c",
         concat!(
@@ -496,9 +527,21 @@ fn early_bound_loaded_basproj_prefers_third_variant_when_first_of_three_typelib_
             "End Sub\n"
         ),
         &[
-            ("OxVbaAlt2", "{E2A30001-0001-0001-0001-000000000201}", 1, 0, 0),
+            (
+                "OxVbaAlt2",
+                "{E2A30001-0001-0001-0001-000000000201}",
+                1,
+                0,
+                0,
+            ),
             ("OxVba", "{E2A30001-0001-0001-0001-000000000001}", 1, 0, 0),
-            ("OxVbaAlt", "{E2A30001-0001-0001-0001-000000000101}", 1, 0, 0),
+            (
+                "OxVbaAlt",
+                "{E2A30001-0001-0001-0001-000000000101}",
+                1,
+                0,
+                0,
+            ),
         ],
     );
 
@@ -592,7 +635,9 @@ fn early_bound_loaded_basproj_mixed_broken_base_then_valid_alt_reports_unresolve
                 major: Some(1),
                 minor: Some(0),
                 lcid: Some(0),
-                importlib: Some("C:\\Work\\DnaCalc\\OxVba\\temp\\missing\\OxVba.TestEventServer.tlb"),
+                importlib: Some(
+                    "C:\\Work\\DnaCalc\\OxVba\\temp\\missing\\OxVba.TestEventServer.tlb",
+                ),
             },
             BasprojComRefSpec {
                 include: "OxVbaAlt",
@@ -632,7 +677,9 @@ fn early_bound_loaded_basproj_mixed_broken_alt_then_valid_base_reports_unresolve
                 major: Some(1),
                 minor: Some(0),
                 lcid: Some(0),
-                importlib: Some("C:\\Work\\DnaCalc\\OxVba\\temp\\missing\\OxVba.TestEventServerAlt.tlb"),
+                importlib: Some(
+                    "C:\\Work\\DnaCalc\\OxVba\\temp\\missing\\OxVba.TestEventServerAlt.tlb",
+                ),
             },
             BasprojComRefSpec {
                 include: "OxVba",
@@ -655,8 +702,8 @@ fn early_bound_loaded_basproj_mixed_broken_alt_then_valid_base_reports_unresolve
 #[cfg(target_os = "windows")]
 #[test]
 #[ignore = "requires registered external COM typelib lane and validates mixed broken-first valid-second valid-third loaded .basproj execution"]
-fn early_bound_loaded_basproj_mixed_broken_base_then_valid_alt_then_valid_alt2_reports_unresolved_importlib(
-) {
+fn early_bound_loaded_basproj_mixed_broken_base_then_valid_alt_then_valid_alt2_reports_unresolved_importlib()
+ {
     let loaded = load_typelib_basproj_with_ref_specs(
         "basproj-typelib-mixed-base-missing-alt-valid-alt2-valid",
         concat!(
@@ -673,7 +720,9 @@ fn early_bound_loaded_basproj_mixed_broken_base_then_valid_alt_then_valid_alt2_r
                 major: Some(1),
                 minor: Some(0),
                 lcid: Some(0),
-                importlib: Some("C:\\Work\\DnaCalc\\OxVba\\temp\\missing\\OxVba.TestEventServer.tlb"),
+                importlib: Some(
+                    "C:\\Work\\DnaCalc\\OxVba\\temp\\missing\\OxVba.TestEventServer.tlb",
+                ),
             },
             BasprojComRefSpec {
                 include: "OxVbaAlt",
@@ -704,8 +753,8 @@ fn early_bound_loaded_basproj_mixed_broken_base_then_valid_alt_then_valid_alt2_r
 #[cfg(target_os = "windows")]
 #[test]
 #[ignore = "requires registered external COM typelib lane and validates mixed broken-first valid-second valid-third loaded .basproj execution"]
-fn early_bound_loaded_basproj_mixed_broken_alt2_then_valid_base_then_valid_alt_reports_unresolved_importlib(
-) {
+fn early_bound_loaded_basproj_mixed_broken_alt2_then_valid_base_then_valid_alt_reports_unresolved_importlib()
+ {
     let loaded = load_typelib_basproj_with_ref_specs(
         "basproj-typelib-mixed-alt2-missing-base-valid-alt-valid",
         concat!(
@@ -722,7 +771,9 @@ fn early_bound_loaded_basproj_mixed_broken_alt2_then_valid_base_then_valid_alt_r
                 major: Some(1),
                 minor: Some(0),
                 lcid: Some(0),
-                importlib: Some("C:\\Work\\DnaCalc\\OxVba\\temp\\missing\\OxVba.TestEventServerAlt2.tlb"),
+                importlib: Some(
+                    "C:\\Work\\DnaCalc\\OxVba\\temp\\missing\\OxVba.TestEventServerAlt2.tlb",
+                ),
             },
             BasprojComRefSpec {
                 include: "OxVba",
@@ -753,8 +804,7 @@ fn early_bound_loaded_basproj_mixed_broken_alt2_then_valid_base_then_valid_alt_r
 #[cfg(target_os = "windows")]
 #[test]
 #[ignore = "requires registered external COM typelib lane and validates broken-first qualified later-valid loaded .basproj execution"]
-fn early_bound_loaded_basproj_broken_base_then_valid_alt_qualified_target_resolves_alt_binding(
-) {
+fn early_bound_loaded_basproj_broken_base_then_valid_alt_qualified_target_resolves_alt_binding() {
     let loaded = load_typelib_basproj_with_ref_specs(
         "basproj-typelib-broken-base-valid-alt-qualified-alt",
         concat!(
@@ -773,7 +823,9 @@ fn early_bound_loaded_basproj_broken_base_then_valid_alt_qualified_target_resolv
                 major: Some(1),
                 minor: Some(0),
                 lcid: Some(0),
-                importlib: Some("C:\\Work\\DnaCalc\\OxVba\\temp\\missing\\OxVba.TestEventServer.tlb"),
+                importlib: Some(
+                    "C:\\Work\\DnaCalc\\OxVba\\temp\\missing\\OxVba.TestEventServer.tlb",
+                ),
             },
             BasprojComRefSpec {
                 include: "OxVbaAlt",
@@ -786,8 +838,9 @@ fn early_bound_loaded_basproj_broken_base_then_valid_alt_qualified_target_resolv
         ],
     );
 
-    let compiled = compile_project(&loaded.manifest)
-        .expect("qualified later-valid alt reference should compile despite earlier broken reference");
+    let compiled = compile_project(&loaded.manifest).expect(
+        "qualified later-valid alt reference should compile despite earlier broken reference",
+    );
     let out = compiled.rewritten_source.to_ascii_lowercase();
     assert!(
         out.contains("set obj = createobject(\"oxvba.testeventserveralt\")"),
@@ -798,8 +851,7 @@ fn early_bound_loaded_basproj_broken_base_then_valid_alt_qualified_target_resolv
 #[cfg(target_os = "windows")]
 #[test]
 #[ignore = "requires registered external COM typelib lane and validates broken-first qualified later-valid loaded .basproj execution"]
-fn early_bound_loaded_basproj_broken_alt_then_valid_base_qualified_target_resolves_base_binding(
-) {
+fn early_bound_loaded_basproj_broken_alt_then_valid_base_qualified_target_resolves_base_binding() {
     let loaded = load_typelib_basproj_with_ref_specs(
         "basproj-typelib-broken-alt-valid-base-qualified-base",
         concat!(
@@ -818,7 +870,9 @@ fn early_bound_loaded_basproj_broken_alt_then_valid_base_qualified_target_resolv
                 major: Some(1),
                 minor: Some(0),
                 lcid: Some(0),
-                importlib: Some("C:\\Work\\DnaCalc\\OxVba\\temp\\missing\\OxVba.TestEventServerAlt.tlb"),
+                importlib: Some(
+                    "C:\\Work\\DnaCalc\\OxVba\\temp\\missing\\OxVba.TestEventServerAlt.tlb",
+                ),
             },
             BasprojComRefSpec {
                 include: "OxVba",
@@ -831,8 +885,9 @@ fn early_bound_loaded_basproj_broken_alt_then_valid_base_qualified_target_resolv
         ],
     );
 
-    let compiled = compile_project(&loaded.manifest)
-        .expect("qualified later-valid base reference should compile despite earlier broken reference");
+    let compiled = compile_project(&loaded.manifest).expect(
+        "qualified later-valid base reference should compile despite earlier broken reference",
+    );
     let out = compiled.rewritten_source.to_ascii_lowercase();
     assert!(
         out.contains("set obj = createobject(\"oxvba.testeventserver\")"),
@@ -870,7 +925,9 @@ fn early_bound_loaded_basproj_valid_base_then_broken_alt_resolves_qualified_base
                 major: Some(1),
                 minor: Some(0),
                 lcid: Some(0),
-                importlib: Some("C:\\Work\\DnaCalc\\OxVba\\temp\\missing\\OxVba.TestEventServerAlt.tlb"),
+                importlib: Some(
+                    "C:\\Work\\DnaCalc\\OxVba\\temp\\missing\\OxVba.TestEventServerAlt.tlb",
+                ),
             },
         ],
     );
@@ -914,7 +971,9 @@ fn early_bound_loaded_basproj_valid_alt_then_broken_base_resolves_qualified_alt_
                 major: Some(1),
                 minor: Some(0),
                 lcid: Some(0),
-                importlib: Some("C:\\Work\\DnaCalc\\OxVba\\temp\\missing\\OxVba.TestEventServer.tlb"),
+                importlib: Some(
+                    "C:\\Work\\DnaCalc\\OxVba\\temp\\missing\\OxVba.TestEventServer.tlb",
+                ),
             },
         ],
     );
@@ -931,8 +990,8 @@ fn early_bound_loaded_basproj_valid_alt_then_broken_base_resolves_qualified_alt_
 #[cfg(target_os = "windows")]
 #[test]
 #[ignore = "requires registered external COM typelib lane and validates unqualified valid-first binding despite later broken reference in loaded .basproj execution"]
-fn early_bound_loaded_basproj_valid_base_then_broken_alt_prefers_base_for_unqualified_testeventserver(
-) {
+fn early_bound_loaded_basproj_valid_base_then_broken_alt_prefers_base_for_unqualified_testeventserver()
+ {
     let loaded = load_typelib_basproj_with_ref_specs(
         "basproj-typelib-valid-base-broken-alt-unqualified",
         concat!(
@@ -958,13 +1017,16 @@ fn early_bound_loaded_basproj_valid_base_then_broken_alt_prefers_base_for_unqual
                 major: Some(1),
                 minor: Some(0),
                 lcid: Some(0),
-                importlib: Some("C:\\Work\\DnaCalc\\OxVba\\temp\\missing\\OxVba.TestEventServerAlt.tlb"),
+                importlib: Some(
+                    "C:\\Work\\DnaCalc\\OxVba\\temp\\missing\\OxVba.TestEventServerAlt.tlb",
+                ),
             },
         ],
     );
 
-    let compiled = compile_project(&loaded.manifest)
-        .expect("valid first reference should drive unqualified binding despite later broken reference");
+    let compiled = compile_project(&loaded.manifest).expect(
+        "valid first reference should drive unqualified binding despite later broken reference",
+    );
     let out = compiled.rewritten_source.to_ascii_lowercase();
     assert!(
         out.contains("value = pmr_oxvba_testeventserver_testeventserver_ping(obj)"),
@@ -975,8 +1037,8 @@ fn early_bound_loaded_basproj_valid_base_then_broken_alt_prefers_base_for_unqual
 #[cfg(target_os = "windows")]
 #[test]
 #[ignore = "requires registered external COM typelib lane and validates unqualified valid-first binding despite later broken reference in loaded .basproj execution"]
-fn early_bound_loaded_basproj_valid_alt_then_broken_base_prefers_alt_for_unqualified_testeventserver(
-) {
+fn early_bound_loaded_basproj_valid_alt_then_broken_base_prefers_alt_for_unqualified_testeventserver()
+ {
     let loaded = load_typelib_basproj_with_ref_specs(
         "basproj-typelib-valid-alt-broken-base-unqualified",
         concat!(
@@ -1002,13 +1064,16 @@ fn early_bound_loaded_basproj_valid_alt_then_broken_base_prefers_alt_for_unquali
                 major: Some(1),
                 minor: Some(0),
                 lcid: Some(0),
-                importlib: Some("C:\\Work\\DnaCalc\\OxVba\\temp\\missing\\OxVba.TestEventServer.tlb"),
+                importlib: Some(
+                    "C:\\Work\\DnaCalc\\OxVba\\temp\\missing\\OxVba.TestEventServer.tlb",
+                ),
             },
         ],
     );
 
-    let compiled = compile_project(&loaded.manifest)
-        .expect("valid first alt reference should drive unqualified binding despite later broken reference");
+    let compiled = compile_project(&loaded.manifest).expect(
+        "valid first alt reference should drive unqualified binding despite later broken reference",
+    );
     let out = compiled.rewritten_source.to_ascii_lowercase();
     assert!(
         out.contains("value = pmr_oxvba_testeventserveralt_testeventserver_ping(obj)"),
@@ -1019,8 +1084,8 @@ fn early_bound_loaded_basproj_valid_alt_then_broken_base_prefers_alt_for_unquali
 #[cfg(target_os = "windows")]
 #[test]
 #[ignore = "requires registered external COM typelib lane and validates unqualified valid-first binding despite later broken reference in loaded .basproj execution"]
-fn early_bound_loaded_basproj_valid_base_then_broken_alt_then_valid_alt2_prefers_base_for_unqualified_testeventserver(
-) {
+fn early_bound_loaded_basproj_valid_base_then_broken_alt_then_valid_alt2_prefers_base_for_unqualified_testeventserver()
+ {
     let loaded = load_typelib_basproj_with_ref_specs(
         "basproj-typelib-valid-base-broken-alt-valid-alt2-unqualified",
         concat!(
@@ -1046,7 +1111,9 @@ fn early_bound_loaded_basproj_valid_base_then_broken_alt_then_valid_alt2_prefers
                 major: Some(1),
                 minor: Some(0),
                 lcid: Some(0),
-                importlib: Some("C:\\Work\\DnaCalc\\OxVba\\temp\\missing\\OxVba.TestEventServerAlt.tlb"),
+                importlib: Some(
+                    "C:\\Work\\DnaCalc\\OxVba\\temp\\missing\\OxVba.TestEventServerAlt.tlb",
+                ),
             },
             BasprojComRefSpec {
                 include: "OxVbaAlt2",
@@ -1071,8 +1138,8 @@ fn early_bound_loaded_basproj_valid_base_then_broken_alt_then_valid_alt2_prefers
 #[cfg(target_os = "windows")]
 #[test]
 #[ignore = "requires registered external COM typelib lane and validates unqualified valid-first binding despite later broken reference in loaded .basproj execution"]
-fn early_bound_loaded_basproj_valid_alt2_then_broken_base_then_valid_alt_prefers_alt2_for_unqualified_testeventserver(
-) {
+fn early_bound_loaded_basproj_valid_alt2_then_broken_base_then_valid_alt_prefers_alt2_for_unqualified_testeventserver()
+ {
     let loaded = load_typelib_basproj_with_ref_specs(
         "basproj-typelib-valid-alt2-broken-base-valid-alt-unqualified",
         concat!(
@@ -1098,7 +1165,9 @@ fn early_bound_loaded_basproj_valid_alt2_then_broken_base_then_valid_alt_prefers
                 major: Some(1),
                 minor: Some(0),
                 lcid: Some(0),
-                importlib: Some("C:\\Work\\DnaCalc\\OxVba\\temp\\missing\\OxVba.TestEventServer.tlb"),
+                importlib: Some(
+                    "C:\\Work\\DnaCalc\\OxVba\\temp\\missing\\OxVba.TestEventServer.tlb",
+                ),
             },
             BasprojComRefSpec {
                 include: "OxVbaAlt",
@@ -1123,8 +1192,8 @@ fn early_bound_loaded_basproj_valid_alt2_then_broken_base_then_valid_alt_prefers
 #[cfg(target_os = "windows")]
 #[test]
 #[ignore = "requires registered external COM typelib lane and validates broken-first qualified later-valid loaded .basproj execution"]
-fn early_bound_loaded_basproj_broken_base_then_valid_alt_then_valid_alt2_qualified_target_resolves_alt2_binding(
-) {
+fn early_bound_loaded_basproj_broken_base_then_valid_alt_then_valid_alt2_qualified_target_resolves_alt2_binding()
+ {
     let loaded = load_typelib_basproj_with_ref_specs(
         "basproj-typelib-broken-base-valid-alt-valid-alt2-qualified-alt2",
         concat!(
@@ -1143,7 +1212,9 @@ fn early_bound_loaded_basproj_broken_base_then_valid_alt_then_valid_alt2_qualifi
                 major: Some(1),
                 minor: Some(0),
                 lcid: Some(0),
-                importlib: Some("C:\\Work\\DnaCalc\\OxVba\\temp\\missing\\OxVba.TestEventServer.tlb"),
+                importlib: Some(
+                    "C:\\Work\\DnaCalc\\OxVba\\temp\\missing\\OxVba.TestEventServer.tlb",
+                ),
             },
             BasprojComRefSpec {
                 include: "OxVbaAlt",
@@ -1164,8 +1235,9 @@ fn early_bound_loaded_basproj_broken_base_then_valid_alt_then_valid_alt2_qualifi
         ],
     );
 
-    let compiled = compile_project(&loaded.manifest)
-        .expect("qualified later-valid alt2 reference should compile despite earlier broken reference");
+    let compiled = compile_project(&loaded.manifest).expect(
+        "qualified later-valid alt2 reference should compile despite earlier broken reference",
+    );
     let out = compiled.rewritten_source.to_ascii_lowercase();
     assert!(
         out.contains("set obj = createobject(\"oxvba.testeventserveralt2\")"),
@@ -1176,8 +1248,8 @@ fn early_bound_loaded_basproj_broken_base_then_valid_alt_then_valid_alt2_qualifi
 #[cfg(target_os = "windows")]
 #[test]
 #[ignore = "requires registered external COM typelib lane and validates broken-first qualified later-valid loaded .basproj execution"]
-fn early_bound_loaded_basproj_broken_alt2_then_valid_base_then_valid_alt_qualified_target_resolves_alt_binding(
-) {
+fn early_bound_loaded_basproj_broken_alt2_then_valid_base_then_valid_alt_qualified_target_resolves_alt_binding()
+ {
     let loaded = load_typelib_basproj_with_ref_specs(
         "basproj-typelib-broken-alt2-valid-base-valid-alt-qualified-alt",
         concat!(
@@ -1196,7 +1268,9 @@ fn early_bound_loaded_basproj_broken_alt2_then_valid_base_then_valid_alt_qualifi
                 major: Some(1),
                 minor: Some(0),
                 lcid: Some(0),
-                importlib: Some("C:\\Work\\DnaCalc\\OxVba\\temp\\missing\\OxVba.TestEventServerAlt2.tlb"),
+                importlib: Some(
+                    "C:\\Work\\DnaCalc\\OxVba\\temp\\missing\\OxVba.TestEventServerAlt2.tlb",
+                ),
             },
             BasprojComRefSpec {
                 include: "OxVba",
@@ -1217,8 +1291,9 @@ fn early_bound_loaded_basproj_broken_alt2_then_valid_base_then_valid_alt_qualifi
         ],
     );
 
-    let compiled = compile_project(&loaded.manifest)
-        .expect("qualified later-valid alt reference should compile despite earlier broken alt2 reference");
+    let compiled = compile_project(&loaded.manifest).expect(
+        "qualified later-valid alt reference should compile despite earlier broken alt2 reference",
+    );
     let out = compiled.rewritten_source.to_ascii_lowercase();
     assert!(
         out.contains("set obj = createobject(\"oxvba.testeventserveralt\")"),

@@ -270,7 +270,11 @@ mod tests {
             .expect("host extension attach should succeed");
 
         assert_eq!(
-            callbacks.mutations.lock().expect("mutation log lock").as_slice(),
+            callbacks
+                .mutations
+                .lock()
+                .expect("mutation log lock")
+                .as_slice(),
             ["Workbook::HostExt"]
         );
     }

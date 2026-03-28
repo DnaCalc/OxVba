@@ -1582,8 +1582,7 @@ mod tests {
 
     #[test]
     fn compile_multi_field_file_write_statement_emits_multiple_host_instructions() {
-        let source =
-            "Sub Main()\nOpen \"x\" For Output As #1\nWrite #1, 42, True, \"hello,world\"\nClose #1\nEnd Sub";
+        let source = "Sub Main()\nOpen \"x\" For Output As #1\nWrite #1, 42, True, \"hello,world\"\nClose #1\nEnd Sub";
         let out = compile(source).expect("compile should succeed");
         let count = out
             .instructions
@@ -1629,10 +1628,11 @@ mod tests {
     fn compile_boolean_literal_emits_bool_const_instruction() {
         let source = "Sub Main()\nDim x\nx = True\nEnd Sub";
         let out = compile(source).expect("compile should succeed");
-        assert!(out
-            .instructions
-            .iter()
-            .any(|i| matches!(i, Instruction::LoadConstBool { value: true, .. })));
+        assert!(
+            out.instructions
+                .iter()
+                .any(|i| matches!(i, Instruction::LoadConstBool { value: true, .. }))
+        );
     }
 
     #[test]

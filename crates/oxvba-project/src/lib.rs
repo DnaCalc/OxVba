@@ -37,3 +37,4 @@ pub use model::{
 };
 pub use parse::parse_basproj_xml;
 pub use validate::{ComClassExportDescriptor, DispatchMemberInfo};
+pub use vbp::{generate_basproj_from_vbp, load_vbp, load_vbp_from_str, parse_vbp};

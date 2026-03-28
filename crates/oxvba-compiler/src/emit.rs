@@ -1415,9 +1415,7 @@ fn emit_stmt(
         }
         BoundStmt::ConsoleLineInput { target } => {
             if let Some(&target_slot) = slot_map.get(target.as_str()) {
-                instructions.push(Instruction::IntrinsicConsoleLineInputHost {
-                    dst: target_slot,
-                });
+                instructions.push(Instruction::IntrinsicConsoleLineInputHost { dst: target_slot });
             }
         }
         BoundStmt::DebugPrint { data } => {

@@ -28,11 +28,13 @@ mod process;
 mod time;
 mod ui;
 
-pub(crate) use descriptor::descriptor_for_profile;
 use console::ConsoleState;
+pub(crate) use descriptor::descriptor_for_profile;
 use dynlink::DynLinkBindingState;
 use filesystem::{FileHandleState, FileSystemState};
 
+#[allow(unused_imports)]
+use crate::traits::TypeLibMemberInvokeKind;
 use crate::{
     error::{HalError, HalResult},
     model::{
@@ -50,30 +52,28 @@ use crate::{
         TimeLocaleHal, UiInteractionHal,
     },
 };
-#[allow(unused_imports)]
-use crate::traits::TypeLibMemberInvokeKind;
 #[cfg(test)]
 pub use oxvba_com::DISPATCH_INVOKE_MISSING_ARG_TOKEN;
 #[cfg(test)]
 use oxvba_com::RawIDispatch;
 use oxvba_com::{ComBinding, platform::portable::PortableComProjection};
+#[cfg(test)]
+use oxvba_com::{ComCallbackToken, ComMemberToken, ComSubscriptionToken};
 #[cfg(target_os = "windows")]
 use oxvba_com::{
     ComDirectDispatchSpec, ComEventPath, ComEventSpec, ComEventTriggerSpec, ComInvokeFailure,
     WindowsComBridge, map_com_hresult_label,
 };
 #[cfg(test)]
-use oxvba_com::{ComCallbackToken, ComMemberToken, ComSubscriptionToken};
-#[cfg(test)]
 use oxvba_runtime::ObjectHandle;
 use oxvba_runtime::{RuntimeValue, bstr::BStr};
+#[cfg(target_os = "windows")]
+use std::cell::Cell;
 use std::{
     path::PathBuf,
     process::Command,
     sync::{Arc, Mutex},
 };
-#[cfg(target_os = "windows")]
-use std::cell::Cell;
 
 #[cfg(target_os = "windows")]
 use windows_sys::Win32::System::Com::{COINIT_APARTMENTTHREADED, CoInitializeEx};
@@ -1060,9 +1060,9 @@ impl ProjectCatalogHal for StandardHostServices {
                 "project catalog capability advertised without callbacks",
             )
         })?;
-        callbacks
-            .on_list_projects()
-            .map_err(|err| map_project_callback_error(self.profile, capability, "list_projects", err))
+        callbacks.on_list_projects().map_err(|err| {
+            map_project_callback_error(self.profile, capability, "list_projects", err)
+        })
     }
 
     fn get_project(&self, project_name: &str) -> HalResult<ProjectDescriptor> {
@@ -1130,10 +1130,7 @@ impl ProjectReferenceHal for StandardHostServices {
 }
 
 impl ProjectMutationHal for StandardHostServices {
-    fn attach_host_extension_module(
-        &self,
-        change: &HostExtensionModuleChange,
-    ) -> HalResult<()> {
+    fn attach_host_extension_module(&self, change: &HostExtensionModuleChange) -> HalResult<()> {
         let capability = CapabilityId::ProjectMutation;
         if !self.supports(capability) {
             return Err(self.unsupported(capability, "attach_host_extension_module"));
@@ -2233,7 +2230,10 @@ mod tests {
                 rv(0),
             )
             .expect("native dir should succeed");
-        assert_eq!(dir, RuntimeValue::String(BStr("probe-file.txt".to_string())));
+        assert_eq!(
+            dir,
+            RuntimeValue::String(BStr("probe-file.txt".to_string()))
+        );
     }
 
     #[test]

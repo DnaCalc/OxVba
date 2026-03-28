@@ -111,15 +111,16 @@ impl ProcessEnvHal for StandardHostServices {
         }
         if self.native_process_enabled() {
             let target = match &path {
-                RuntimeValue::Empty | RuntimeValue::Null | RuntimeValue::I32(0) => std::env::current_dir()
-                    .map_err(|err| {
+                RuntimeValue::Empty | RuntimeValue::Null | RuntimeValue::I32(0) => {
+                    std::env::current_dir().map_err(|err| {
                         HalError::adapter_fault(
                             self.profile,
                             capability,
                             "dir",
                             format!("failed to get current directory: {err}"),
                         )
-                    })?,
+                    })?
+                }
                 _ => self.runtime_value_to_path(&path, capability, "dir", "path")?,
             };
 

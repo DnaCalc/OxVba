@@ -20,7 +20,10 @@ impl ConsoleCallbacks {
     }
 
     fn console_output(&self) -> Vec<String> {
-        self.console_lines.lock().expect("console output lock").clone()
+        self.console_lines
+            .lock()
+            .expect("console output lock")
+            .clone()
     }
 
     fn debug_output(&self) -> Vec<String> {
@@ -71,7 +74,10 @@ fn engine_with_profile(
 
 #[test]
 fn console_print_and_input_execute_on_windows_stdio_profile() {
-    let callbacks = Arc::new(ConsoleCallbacks::with_inputs(&["42,hello there", "rest of line"]));
+    let callbacks = Arc::new(ConsoleCallbacks::with_inputs(&[
+        "42,hello there",
+        "rest of line",
+    ]));
     let source = "Sub Main()\n\
         Dim a\n\
         Dim b\n\

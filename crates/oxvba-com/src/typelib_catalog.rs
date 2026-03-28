@@ -222,14 +222,11 @@ pub fn resolve_known_typelib_identity(
         });
     }
 
-    if normalized_importlib
+    if normalized_importlib.as_deref().is_some_and(|value| {
+        value == "oxvba_testeventserver.tlb" || value == "oxvba.testeventserver.tlb"
+    }) || normalized_libid
         .as_deref()
-        .is_some_and(|value| {
-            value == "oxvba_testeventserver.tlb" || value == "oxvba.testeventserver.tlb"
-        })
-        || normalized_libid
-            .as_deref()
-            .is_some_and(|value| value == "e2a30001-0001-0001-0001-000000000001")
+        .is_some_and(|value| value == "e2a30001-0001-0001-0001-000000000001")
     {
         return Some(TypeLibResolvedIdentity {
             reference_name: "OxVba_TestEventServer".to_string(),
@@ -242,14 +239,11 @@ pub fn resolve_known_typelib_identity(
         });
     }
 
-    if normalized_importlib
+    if normalized_importlib.as_deref().is_some_and(|value| {
+        value == "oxvba_testeventserveralt.tlb" || value == "oxvba.testeventserveralt.tlb"
+    }) || normalized_libid
         .as_deref()
-        .is_some_and(|value| {
-            value == "oxvba_testeventserveralt.tlb" || value == "oxvba.testeventserveralt.tlb"
-        })
-        || normalized_libid
-            .as_deref()
-            .is_some_and(|value| value == "e2a30001-0001-0001-0001-000000000101")
+        .is_some_and(|value| value == "e2a30001-0001-0001-0001-000000000101")
     {
         return Some(TypeLibResolvedIdentity {
             reference_name: "OxVba_TestEventServerAlt".to_string(),
@@ -262,14 +256,11 @@ pub fn resolve_known_typelib_identity(
         });
     }
 
-    if normalized_importlib
+    if normalized_importlib.as_deref().is_some_and(|value| {
+        value == "oxvba_testeventserveralt2.tlb" || value == "oxvba.testeventserveralt2.tlb"
+    }) || normalized_libid
         .as_deref()
-        .is_some_and(|value| {
-            value == "oxvba_testeventserveralt2.tlb" || value == "oxvba.testeventserveralt2.tlb"
-        })
-        || normalized_libid
-            .as_deref()
-            .is_some_and(|value| value == "e2a30001-0001-0001-0001-000000000201")
+        .is_some_and(|value| value == "e2a30001-0001-0001-0001-000000000201")
     {
         return Some(TypeLibResolvedIdentity {
             reference_name: "OxVba_TestEventServerAlt2".to_string(),
@@ -1606,14 +1597,16 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
                     .eq_ignore_ascii_case("oxvba_testeventserveralt.tlb")
                     || identity.libid.as_deref().is_some_and(|libid: &str| {
                         libid.eq_ignore_ascii_case("E2A30001-0001-0001-0001-000000000101")
-                    }) {
+                    })
+                {
                     OXVBA_ALT_TEST_EVENT_SERVER_PROGID
                 } else if identity
                     .importlib
                     .eq_ignore_ascii_case("oxvba_testeventserveralt2.tlb")
                     || identity.libid.as_deref().is_some_and(|libid: &str| {
                         libid.eq_ignore_ascii_case("E2A30001-0001-0001-0001-000000000201")
-                    }) {
+                    })
+                {
                     OXVBA_ALT2_TEST_EVENT_SERVER_PROGID
                 } else {
                     OXVBA_TEST_EVENT_SERVER_PROGID
@@ -1891,12 +1884,13 @@ mod tests {
         TypeLibMemberLookupResult, activation_prog_id_from_typelib_metadata,
         build_typelib_metadata, event_spec_from_typelib_metadata,
         known_typelib_identity_for_prog_id_name, member_spec_from_typelib_metadata,
-        resolve_known_typelib_identity,
         resolve_default_member_token_and_spec_from_typelib_metadata,
-        resolve_member_token_and_spec_from_typelib_metadata_name,
+        resolve_known_typelib_identity, resolve_member_token_and_spec_from_typelib_metadata_name,
         source_interface_event_spec_supported,
     };
-    use crate::{ComMemberToken, TEST_DISPID_EXISTS, TypeLibMemberInvokeKind, TypeLibResolveRequest};
+    use crate::{
+        ComMemberToken, TEST_DISPID_EXISTS, TypeLibMemberInvokeKind, TypeLibResolveRequest,
+    };
 
     #[test]
     fn member_spec_lookup_uses_catalog_metadata() {
@@ -1940,16 +1934,16 @@ mod tests {
             Some("Excel.Application")
         );
 
-        let alt_identity = known_typelib_identity_for_prog_id_name("OxVba.TestEventServerAlt")
-            .expect("identity");
+        let alt_identity =
+            known_typelib_identity_for_prog_id_name("OxVba.TestEventServerAlt").expect("identity");
         let alt_blob = build_typelib_metadata(&alt_identity);
         assert_eq!(
             activation_prog_id_from_typelib_metadata(&alt_blob),
             Some("OxVba.TestEventServerAlt")
         );
 
-        let alt2_identity = known_typelib_identity_for_prog_id_name("OxVba.TestEventServerAlt2")
-            .expect("identity");
+        let alt2_identity =
+            known_typelib_identity_for_prog_id_name("OxVba.TestEventServerAlt2").expect("identity");
         let alt2_blob = build_typelib_metadata(&alt2_identity);
         assert_eq!(
             activation_prog_id_from_typelib_metadata(&alt2_blob),

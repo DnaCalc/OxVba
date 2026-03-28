@@ -7,6 +7,12 @@ pub enum BasProjError {
     #[error("XML parse error: {0}")]
     XmlParse(String),
 
+    #[error("VBP parse error: {0}")]
+    VbpParse(String),
+
+    #[error("VBP unsupported: {0}")]
+    VbpUnsupported(String),
+
     #[error("missing required attribute `{attribute}` on <{element}>")]
     MissingAttribute { element: String, attribute: String },
 

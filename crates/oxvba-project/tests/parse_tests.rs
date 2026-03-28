@@ -1388,7 +1388,7 @@ Name="TestProject"
     assert_eq!(vbp.classes.len(), 1);
     assert_eq!(vbp.references.len(), 1);
 
-    let xml = oxvba_project::vbp::generate_basproj_from_vbp(&vbp);
+    let xml = oxvba_project::vbp::generate_basproj_from_vbp(&vbp).unwrap();
     let basproj = oxvba_project::parse_basproj_xml(&xml).unwrap();
 
     // 2 Module items + 1 ClassModule = 3 total in basproj.modules

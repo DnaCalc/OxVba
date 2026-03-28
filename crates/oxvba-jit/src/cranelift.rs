@@ -748,7 +748,8 @@ pub fn execute_bytecode_rtslot(
                 builder.ins().jump(next_block, &[]);
             }
             Instruction::LoadConstBool { slot, value } => {
-                let slot_val = crate::slot_abi::rtslot_from_runtime_value(&RuntimeValue::Bool(*value));
+                let slot_val =
+                    crate::slot_abi::rtslot_from_runtime_value(&RuntimeValue::Bool(*value));
                 let tag = builder.ins().iconst(types::I32, i64::from(slot_val.tag));
                 let payload = builder.ins().iconst(types::I64, slot_val.payload as i64);
                 let tag_off = rtslot_tag_offset(*slot)?;

@@ -1,11 +1,11 @@
 use std::collections::BTreeMap;
 
+use crate::traits::{ProjectCatalogHal, ProjectReferenceHal};
 use crate::{
+    HalError, HalErrorKind,
     error::HalResult,
     model::{CapabilityId, HalProfileId},
-    HalError, HalErrorKind,
 };
-use crate::traits::{ProjectCatalogHal, ProjectReferenceHal};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum ProjectDescriptorKind {

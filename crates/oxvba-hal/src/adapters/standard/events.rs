@@ -1,10 +1,6 @@
-use crate::{
-    error::HalResult,
-    model::CapabilityId,
-    traits::EventPumpHal,
-};
 #[cfg(target_os = "windows")]
 use crate::error::HalError;
+use crate::{error::HalResult, model::CapabilityId, traits::EventPumpHal};
 use oxvba_runtime::RuntimeValue;
 use std::thread;
 

@@ -859,8 +859,7 @@ fn record_internal_class_object_local(
         current_project,
         &dim_decl.type_name,
         reference_order,
-    )
-    ?
+    )?
     .is_none()
     {
         return Ok(());
@@ -996,8 +995,11 @@ fn validate_manifest(manifest: &ProjectManifest) -> Result<(), ProjectCompileErr
 fn is_synthetic_typelib_reference_project(project: &ReferencedProjectManifest) -> bool {
     project.modules.iter().any(|module| {
         module.module_kind == ModuleKind::Class
-            && resolve_typelib_identity_for_project_module(&project.project_name, &module.module_name)
-                .is_some()
+            && resolve_typelib_identity_for_project_module(
+                &project.project_name,
+                &module.module_name,
+            )
+            .is_some()
     })
 }
 
@@ -1068,7 +1070,8 @@ fn validate_event_semantics(
                     &project_key,
                     &interface_name,
                     reference_order,
-                )? else {
+                )?
+                else {
                     if is_referenced_typelib_type_reference(manifest, &interface_target) {
                         // Phase 3B: Imported typelib Implements targets are
                         // accepted without member-contract validation; deferred
@@ -1382,7 +1385,8 @@ fn collect_class_implements_map(
                     &project_key,
                     &interface_name,
                     reference_order,
-                )? else {
+                )?
+                else {
                     continue;
                 };
                 let members: Vec<String> = class_public_members
@@ -1947,7 +1951,10 @@ fn projected_typelib_manifest_names(blob: &TypeLibMetadataBlob) -> (String, Stri
     if importlib.eq_ignore_ascii_case("oxvba_testdispatch_ambiguousdefault.tlb")
         || libid.eq_ignore_ascii_case("11111111-2222-3333-4444-555555555557")
     {
-        return ("OxVba".to_string(), "TestDispatchAmbiguousDefault".to_string());
+        return (
+            "OxVba".to_string(),
+            "TestDispatchAmbiguousDefault".to_string(),
+        );
     }
     if let Some(module_name) = blob
         .activation_prog_id
@@ -1955,7 +1962,10 @@ fn projected_typelib_manifest_names(blob: &TypeLibMetadataBlob) -> (String, Stri
         .and_then(|prog_id| prog_id.rsplit('.').next())
         .filter(|module_name| !module_name.is_empty())
     {
-        return (blob.identity.reference_name.clone(), module_name.to_string());
+        return (
+            blob.identity.reference_name.clone(),
+            module_name.to_string(),
+        );
     }
     (
         blob.identity.reference_name.clone(),
@@ -2397,7 +2407,8 @@ fn expand_bound_source_line(
                 qualifier,
             });
         };
-        let activation_prog_id = activation_prog_id_from_typelib_metadata(&blob).map(str::to_string);
+        let activation_prog_id =
+            activation_prog_id_from_typelib_metadata(&blob).map(str::to_string);
         if dim_decl.as_new && activation_prog_id.is_none() {
             return Err(ProjectCompileError::TypeLibraryCreateObjectUnsupported {
                 type_name: dim_decl.qualified_type,
@@ -2488,7 +2499,10 @@ fn expand_bound_source_line(
                 typelib_metadata: Some(blob),
             },
         );
-        let mut out = vec![format!("{}Dim {} As Object", dim_decl.leading_ws, dim_decl.var_name)];
+        let mut out = vec![format!(
+            "{}Dim {} As Object",
+            dim_decl.leading_ws, dim_decl.var_name
+        )];
         if dim_decl.as_new {
             let prog_id = activation_prog_id.expect("checked above for As New");
             out.push(format!(
@@ -2688,9 +2702,10 @@ fn referenced_typelib_blob_for_type_reference(
             if let Some(err) = referenced_project_typelib_binding_diagnostic(project)? {
                 return Err(err);
             }
-            if let Some(identity) =
-                resolve_typelib_identity_for_project_module(&project.project_name, &module.module_name)
-            {
+            if let Some(identity) = resolve_typelib_identity_for_project_module(
+                &project.project_name,
+                &module.module_name,
+            ) {
                 return Ok(Some((
                     normalize_identifier(&project.project_name),
                     normalize_identifier(&module.module_name),
@@ -2701,9 +2716,10 @@ fn referenced_typelib_blob_for_type_reference(
         let referenced = manifest.references.iter().any(|reference| {
             reference.reference_kind == ReferenceKind::TypeLibrary
                 && normalize_identifier(&reference.referenced_project_name) == normalized_project
-        }) || manifest.reference_projects.iter().any(|project| {
-            normalize_identifier(&project.project_name) == normalized_project
-        });
+        }) || manifest
+            .reference_projects
+            .iter()
+            .any(|project| normalize_identifier(&project.project_name) == normalized_project);
         if referenced && let Some(identity) = known_typelib_identity_for_prog_id_name(raw) {
             return Ok(Some((
                 normalized_project,
@@ -2794,7 +2810,8 @@ fn rewrite_typelib_new_expression(
         return Ok(expr.to_string());
     }
     let type_text = trimmed[4..].trim();
-    let Some((_, _, blob)) = referenced_typelib_blob_for_type_reference(manifest, type_text)? else {
+    let Some((_, _, blob)) = referenced_typelib_blob_for_type_reference(manifest, type_text)?
+    else {
         return Ok(expr.to_string());
     };
     let Some(prog_id) = activation_prog_id_from_typelib_metadata(&blob) else {
@@ -3396,7 +3413,12 @@ fn rewrite_early_bound_object_assignment(
     if rewritten_rhs == rhs {
         return Ok(line.to_string());
     }
-    Ok(format!("{}Set {} = {}", &line[..leading], lhs, rewritten_rhs))
+    Ok(format!(
+        "{}Set {} = {}",
+        &line[..leading],
+        lhs,
+        rewritten_rhs
+    ))
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -6999,9 +7021,9 @@ mod tests {
         ExportKind, ModuleAttributes, ModuleKind, ProjectComWithEventsRoute, ProjectCompileError,
         ProjectEventDispatchBinding, ProjectKind, ProjectLoweringStrategy, ProjectManifest,
         ProjectReference, ReferenceKind, ReferencedProjectManifest,
-        TYPELIB_BINDING_DIAGNOSTIC_MODULE_NAME, compile_project,
-        compile_project_with_strategy, expand_bound_source_line, module_unit_from_source,
-        validate_compiled_project_contract, withevents_binding_token,
+        TYPELIB_BINDING_DIAGNOSTIC_MODULE_NAME, compile_project, compile_project_with_strategy,
+        expand_bound_source_line, module_unit_from_source, validate_compiled_project_contract,
+        withevents_binding_token,
     };
     use std::collections::{BTreeMap, BTreeSet};
 

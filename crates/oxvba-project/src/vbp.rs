@@ -1,5 +1,9 @@
 //! VB6 `.vbp` project file parser and converter to `.basproj` XML.
 
+use std::path::Path;
+
+use crate::{BasProjError, LoadedProject, load_basproj_from_str};
+
 /// Parsed VBP project file.
 #[derive(Debug, Clone)]
 pub struct VbpProject {
@@ -127,7 +131,7 @@ fn parse_vbp_reference(value: &str) -> Option<VbpReference> {
 }
 
 /// Generate `.basproj` XML from a parsed `VbpProject`.
-pub fn generate_basproj_from_vbp(vbp: &VbpProject) -> String {
+pub fn generate_basproj_from_vbp(vbp: &VbpProject) -> Result<String, String> {
     let mut xml = String::new();
     xml.push_str("<Project Sdk=\"OxVba.Sdk/0.1.0\">\n");
 
@@ -140,7 +144,7 @@ pub fn generate_basproj_from_vbp(vbp: &VbpProject) -> String {
         "    <ProjectName>{}</ProjectName>\n",
         xml_escape(&vbp.project_name)
     ));
-    if let Some(startup) = normalize_vbp_startup_entry_point(vbp.startup.as_deref()) {
+    if let Some(startup) = normalize_vbp_startup_entry_point(vbp.startup.as_deref())? {
         xml.push_str(&format!(
             "    <EntryPoint>{}</EntryPoint>\n",
             xml_escape(startup)
@@ -186,7 +190,24 @@ pub fn generate_basproj_from_vbp(vbp: &VbpProject) -> String {
     }
 
     xml.push_str("</Project>\n");
-    xml
+    Ok(xml)
+}
+
+/// Load a `.vbp` file from disk through the VBP-S0 adapter and produce a `LoadedProject`.
+pub fn load_vbp(path: &Path) -> Result<LoadedProject, BasProjError> {
+    let content = std::fs::read_to_string(path).map_err(|source| BasProjError::Io {
+        path: path.display().to_string(),
+        source,
+    })?;
+    let project_dir = path.parent().unwrap_or_else(|| Path::new("."));
+    load_vbp_from_str(&content, project_dir)
+}
+
+/// Load a `.vbp` string through the VBP-S0 adapter and produce a `LoadedProject`.
+pub fn load_vbp_from_str(content: &str, project_dir: &Path) -> Result<LoadedProject, BasProjError> {
+    let vbp = parse_vbp(content).map_err(BasProjError::VbpParse)?;
+    let xml = generate_basproj_from_vbp(&vbp).map_err(BasProjError::VbpUnsupported)?;
+    load_basproj_from_str(&xml, project_dir)
 }
 
 fn xml_escape(s: &str) -> String {
@@ -197,15 +218,39 @@ fn xml_escape(s: &str) -> String {
         .replace('\'', "&apos;")
 }
 
-fn normalize_vbp_startup_entry_point(startup: Option<&str>) -> Option<&str> {
-    let startup = startup?.trim();
+fn normalize_vbp_startup_entry_point(startup: Option<&str>) -> Result<Option<&str>, String> {
+    let Some(startup) = startup else {
+        return Ok(None);
+    };
+    let startup = startup.trim();
     if startup.is_empty() || startup.eq_ignore_ascii_case("(None)") {
-        return None;
+        return Ok(None);
     }
     if startup.eq_ignore_ascii_case("Sub Main") {
-        return None;
+        return Ok(None);
     }
-    Some(startup)
+    let Some((module_name, procedure_name)) = startup.split_once('.') else {
+        return Err(format!(
+            "unsupported Startup value `{startup}`; VBP-S0 supports only `Sub Main` or `Module.Procedure`"
+        ));
+    };
+    if !is_valid_identifier(module_name.trim()) || !is_valid_identifier(procedure_name.trim()) {
+        return Err(format!(
+            "unsupported Startup value `{startup}`; VBP-S0 supports only `Sub Main` or `Module.Procedure`"
+        ));
+    }
+    Ok(Some(startup))
+}
+
+fn is_valid_identifier(identifier: &str) -> bool {
+    let mut chars = identifier.chars();
+    let Some(first) = chars.next() else {
+        return false;
+    };
+    if !(first == '_' || first.is_ascii_alphabetic()) {
+        return false;
+    }
+    chars.all(|ch| ch == '_' || ch.is_ascii_alphanumeric())
 }
 
 #[cfg(test)]
@@ -243,7 +288,7 @@ Startup="Sub Main"
     #[test]
     fn generate_basproj_from_vbp_produces_valid_xml() {
         let vbp = parse_vbp(SAMPLE_VBP).unwrap();
-        let xml = generate_basproj_from_vbp(&vbp);
+        let xml = generate_basproj_from_vbp(&vbp).expect("valid vbp should generate xml");
 
         assert!(xml.contains("<OutputType>Exe</OutputType>"));
         assert!(xml.contains("<ProjectName>TestProject</ProjectName>"));
@@ -268,8 +313,27 @@ Startup="Sub Main"
             references: Vec::new(),
         };
 
-        let xml = generate_basproj_from_vbp(&vbp);
+        let xml = generate_basproj_from_vbp(&vbp).expect("valid vbp should generate xml");
         assert!(xml.contains("<EntryPoint>Module1.Main</EntryPoint>"));
+    }
+
+    #[test]
+    fn generate_basproj_from_vbp_rejects_unsupported_startup_object() {
+        let vbp = VbpProject {
+            project_type: "Exe".to_string(),
+            project_name: "TestProject".to_string(),
+            startup: Some("Form1".to_string()),
+            modules: vec![VbpModule {
+                name: "Module1".to_string(),
+                path: "Module1.bas".to_string(),
+            }],
+            classes: Vec::new(),
+            references: Vec::new(),
+        };
+
+        let err = generate_basproj_from_vbp(&vbp)
+            .expect_err("startup object should be rejected in VBP-S0");
+        assert!(err.contains("unsupported Startup value"), "got: {err}");
     }
 
     #[test]

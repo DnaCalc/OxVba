@@ -3715,9 +3715,15 @@ pub fn register_symbols(builder: &mut cranelift_jit::JITBuilder) {
         ("oxrt_host_file_read", oxrt_host_file_read as *const u8),
         ("oxrt_host_file_write", oxrt_host_file_write as *const u8),
         ("oxrt_host_file_print", oxrt_host_file_print as *const u8),
-        ("oxrt_host_console_print", oxrt_host_console_print as *const u8),
+        (
+            "oxrt_host_console_print",
+            oxrt_host_console_print as *const u8,
+        ),
         ("oxrt_host_file_input", oxrt_host_file_input as *const u8),
-        ("oxrt_host_console_input", oxrt_host_console_input as *const u8),
+        (
+            "oxrt_host_console_input",
+            oxrt_host_console_input as *const u8,
+        ),
         (
             "oxrt_host_file_line_input",
             oxrt_host_file_line_input as *const u8,

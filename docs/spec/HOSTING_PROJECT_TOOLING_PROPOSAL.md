@@ -1187,7 +1187,7 @@ The `.vbp` adapter is an import/compatibility layer, not the canonical project f
 | `Type=Exe` | `ProjectKind::Source` |
 | `Type=OleDll` / `Type=Control` | `ProjectKind::Library` |
 | `Name=<name>` | `ProjectManifest.project_name` |
-| `Startup=<entry>` | Explicit entry point configuration |
+| `Startup=<entry>` | VBP-S0 supports `Sub Main` fallback or explicit `Module.Procedure`; startup-object forms remain deferred |
 | `Module=<name>; <path>` | `ModuleUnit` with `ModuleKind::Procedural` |
 | `Class=<name>; <path>` | `ModuleUnit` with `ModuleKind::Class` |
 | `Reference=<...>` | `ProjectReference` with `ReferenceKind::TypeLibrary` |

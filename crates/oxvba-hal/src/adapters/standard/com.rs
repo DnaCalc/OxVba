@@ -1,3 +1,5 @@
+#[cfg(target_os = "windows")]
+use crate::model::ComInvocationStrategy;
 use crate::{
     error::{HalError, HalResult},
     model::CapabilityId,
@@ -6,8 +8,6 @@ use crate::{
         TypeLibResolvedIdentity,
     },
 };
-#[cfg(target_os = "windows")]
-use crate::model::ComInvocationStrategy;
 #[cfg(target_os = "windows")]
 use oxvba_com::WindowsComBridgeDispatchError;
 use oxvba_com::{
@@ -39,7 +39,8 @@ fn fallback_dynamic_member_token(name: &str) -> Option<ComMemberToken> {
             continue;
         };
         let metadata = build_typelib_metadata(&identity);
-        if let Some((token, _)) = member_token_and_spec_from_typelib_metadata_name(&metadata, name) {
+        if let Some((token, _)) = member_token_and_spec_from_typelib_metadata_name(&metadata, name)
+        {
             return Some(token);
         }
     }

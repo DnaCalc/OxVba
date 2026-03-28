@@ -28,9 +28,8 @@ mod windows_host_sensitive_oracle_lane {
         unsafe {
             std::env::set_var("OXVBA_ORACLE_ENV", "oracle-033-value");
         }
-        let out = run_host_backed_source(
-            "Sub Main()\nDim x\nx = Environ(\"OXVBA_ORACLE_ENV\")\nEnd Sub",
-        );
+        let out =
+            run_host_backed_source("Sub Main()\nDim x\nx = Environ(\"OXVBA_ORACLE_ENV\")\nEnd Sub");
         emit_observed("CCT-035-ENV-001", &out[0]);
         assert_eq!(
             out[0],
@@ -61,9 +60,8 @@ mod windows_host_sensitive_oracle_lane {
     #[test]
     #[ignore = "requires Windows host-backed oracle lane"]
     fn windows_host_backed_shell_returns_positive_process_identifier() {
-        let out = run_host_backed_source(
-            "Sub Main()\nDim x\nx = Shell(\"cmd.exe /c exit 0\")\nEnd Sub",
-        );
+        let out =
+            run_host_backed_source("Sub Main()\nDim x\nx = Shell(\"cmd.exe /c exit 0\")\nEnd Sub");
         emit_observed("CCT-035-SHELL-001", &out[0]);
         let RuntimeValue::I32(pid) = out[0] else {
             panic!("expected Shell result to be an I32 pid, got {:?}", out[0]);

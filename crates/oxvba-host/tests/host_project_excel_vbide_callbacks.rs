@@ -11,8 +11,8 @@ use oxvba_hal::{
     callbacks::HostCallbacks,
     model::HostPolicy,
     project::{
-        HostExtensionModuleChange, ProjectCallbackResult, ProjectDescriptor,
-        ProjectDescriptorKind, ProjectReferenceDescriptor,
+        HostExtensionModuleChange, ProjectCallbackResult, ProjectDescriptor, ProjectDescriptorKind,
+        ProjectReferenceDescriptor,
     },
 };
 use oxvba_host::{Engine, HostConfig};
@@ -206,9 +206,7 @@ impl HostCallbacks for ExcelVbideHostCallbacks {
     ) -> ProjectCallbackResult<()> {
         self.run_ps("attach", Some(&change.module_name), Some(&change.source))
             .map(|_| ())
-            .map_err(|message| oxvba_hal::project::ProjectCallbackError::AdapterFault {
-                message,
-            })
+            .map_err(|message| oxvba_hal::project::ProjectCallbackError::AdapterFault { message })
     }
 }
 

@@ -316,12 +316,9 @@ fn inject_entry_point_startup_shim(
          Call {target_module}.{target_procedure}()\n\
          End Sub"
     );
-    let shim_module = module_unit_from_source(
-        &shim_module_name,
-        ModuleKind::Procedural,
-        shim_source,
-    )
-    .map_err(|_| BasProjError::EntryPointInvalid(entry_point.to_string()))?;
+    let shim_module =
+        module_unit_from_source(&shim_module_name, ModuleKind::Procedural, shim_source)
+            .map_err(|_| BasProjError::EntryPointInvalid(entry_point.to_string()))?;
     modules.insert(0, shim_module);
     Ok(())
 }
@@ -485,7 +482,9 @@ fn next_top_level_mainline_proc_name(source: &str) -> String {
 }
 
 fn module_has_proc_named(source: &str, proc_name: &str) -> bool {
-    source.lines().any(|line| line_declares_proc_name(line, proc_name))
+    source
+        .lines()
+        .any(|line| line_declares_proc_name(line, proc_name))
 }
 
 fn line_declares_proc_name(line: &str, proc_name: &str) -> bool {
@@ -613,8 +612,7 @@ fn line_is_public_parameterless_main_sub_signature(line: &str) -> bool {
         return true;
     }
     if let Some(args) = remainder.strip_prefix('(') {
-        return args.trim_end_matches(')').trim().is_empty()
-            && remainder.trim_end().ends_with(')');
+        return args.trim_end_matches(')').trim().is_empty() && remainder.trim_end().ends_with(')');
     }
     false
 }
@@ -733,7 +731,10 @@ fn inject_type_library_reference_projects(loaded: &mut LoadedProject) {
 fn build_typelib_binding_diagnostic_project(
     request: &TypeLibResolveRequest,
 ) -> ReferencedProjectManifest {
-    let (code, message) = match (request.libid_hint.as_deref(), request.importlib_hint.as_deref()) {
+    let (code, message) = match (
+        request.libid_hint.as_deref(),
+        request.importlib_hint.as_deref(),
+    ) {
         (Some(libid), _) => (
             "PMR-E-TYPELIB-LIBID-UNRESOLVED",
             format!(
@@ -777,9 +778,7 @@ fn build_typelib_binding_diagnostic_project_for_missing_importlib(
 ) -> ReferencedProjectManifest {
     ReferencedProjectManifest {
         project_name: request.reference_name.clone(),
-        modules: vec![build_typelib_binding_diagnostic_module_for_missing_importlib(
-            request,
-        )],
+        modules: vec![build_typelib_binding_diagnostic_module_for_missing_importlib(request)],
     }
 }
 
@@ -1139,7 +1138,8 @@ mod tests {
         std::fs::create_dir_all(&temp_root).expect("create temp project root");
         let helper_path = temp_root.join("HelperModule.bas");
         let main_path = temp_root.join("MainModule.bas");
-        std::fs::write(&helper_path, "Public Sub Warmup()\nEnd Sub\n").expect("write helper module");
+        std::fs::write(&helper_path, "Public Sub Warmup()\nEnd Sub\n")
+            .expect("write helper module");
         std::fs::write(&main_path, "Public Sub Main()\nEnd Sub\n").expect("write main module");
         let xml = "\
 <Project Sdk=\"OxVba.Sdk/0.1.0\">
@@ -1181,12 +1181,10 @@ mod tests {
         std::fs::create_dir_all(&temp_root).expect("create temp project root");
         let helper_path = temp_root.join("HelperModule.bas");
         let script_path = temp_root.join("ScriptModule.bas");
-        std::fs::write(&helper_path, "Public Sub Warmup()\nEnd Sub\n").expect("write helper module");
-        std::fs::write(
-            &script_path,
-            "valueOut = 41\nSub Warmup()\nEnd Sub\n",
-        )
-        .expect("write script module");
+        std::fs::write(&helper_path, "Public Sub Warmup()\nEnd Sub\n")
+            .expect("write helper module");
+        std::fs::write(&script_path, "valueOut = 41\nSub Warmup()\nEnd Sub\n")
+            .expect("write script module");
         let xml = "\
 <Project Sdk=\"OxVba.Sdk/0.1.0\">
   <PropertyGroup>
@@ -1242,7 +1240,8 @@ mod tests {
         let temp_root = std::env::temp_dir().join(unique);
         std::fs::create_dir_all(&temp_root).expect("create temp project root");
         std::fs::write(temp_root.join("First.bas"), "valueOut = 1\n").expect("write first module");
-        std::fs::write(temp_root.join("Second.bas"), "valueOut = 2\n").expect("write second module");
+        std::fs::write(temp_root.join("Second.bas"), "valueOut = 2\n")
+            .expect("write second module");
         let xml = "\
 <Project Sdk=\"OxVba.Sdk/0.1.0\">
   <PropertyGroup>
@@ -1258,7 +1257,10 @@ mod tests {
 
         let err = load_basproj_from_str(xml, &temp_root)
             .expect_err("ambiguous top-level mainlines should fail deterministically");
-        assert!(matches!(err, BasProjError::EntryPointAmbiguous(_)), "{err:?}");
+        assert!(
+            matches!(err, BasProjError::EntryPointAmbiguous(_)),
+            "{err:?}"
+        );
 
         std::fs::remove_dir_all(&temp_root).expect("cleanup temp project root");
     }

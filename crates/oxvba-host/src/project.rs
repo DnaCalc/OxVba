@@ -1177,7 +1177,9 @@ mod tests {
             .attach_host_extension_module(simple_extension_module("HostExt"))
             .expect("host projects should accept extension modules");
 
-        let module = project.module("HostExt").expect("extension module should exist");
+        let module = project
+            .module("HostExt")
+            .expect("extension module should exist");
         assert_eq!(module.module_kind, ModuleKind::Extension);
     }
 

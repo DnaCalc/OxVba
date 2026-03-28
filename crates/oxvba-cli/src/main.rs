@@ -352,7 +352,10 @@ fn run_import_vbp(args: Vec<String>) {
         std::process::exit(1);
     });
 
-    let xml = oxvba_project::vbp::generate_basproj_from_vbp(&basproj);
+    let xml = oxvba_project::vbp::generate_basproj_from_vbp(&basproj).unwrap_or_else(|err| {
+        eprintln!("oxvba import-vbp: {err}");
+        std::process::exit(1);
+    });
 
     let out = output_path.unwrap_or_else(|| input_path.with_extension("basproj"));
 
@@ -393,6 +396,9 @@ fn load_run_project_target(
             return oxvba_project::load_basproj(&basproj);
         }
         return load_convention_project(&input);
+    }
+    if input.extension().and_then(|ext| ext.to_str()) == Some("vbp") {
+        return oxvba_project::load_vbp(&input);
     }
     oxvba_project::load_basproj(&input)
 }
@@ -846,6 +852,33 @@ mod tests {
         let loaded = load_run_project_target(Some(PathBuf::from(&temp_root)))
             .expect("directory with basproj should load the project file");
         assert_eq!(loaded.manifest.project_name, "ProjectA");
+        assert_eq!(loaded.entry_point.as_deref(), Some("Main.Main"));
+
+        std::fs::remove_dir_all(&temp_root).expect("cleanup temp dir");
+    }
+
+    #[test]
+    fn run_project_vbp_file_uses_vbp_adapter() {
+        let temp_root = std::env::temp_dir().join(format!(
+            "oxvba_cli_vbp_run_{}_{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .expect("unix epoch")
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&temp_root).expect("create temp dir");
+        std::fs::write(temp_root.join("Main.bas"), "Public Sub Main()\nEnd Sub\n")
+            .expect("write main module");
+        std::fs::write(
+            temp_root.join("Project1.vbp"),
+            "Type=Exe\nName=\"Project1\"\nStartup=\"Sub Main\"\nModule=Main; Main.bas\n",
+        )
+        .expect("write vbp");
+
+        let loaded = load_run_project_target(Some(temp_root.join("Project1.vbp")))
+            .expect("vbp adapter should load executable project");
+        assert_eq!(loaded.manifest.project_name, "Project1");
         assert_eq!(loaded.entry_point.as_deref(), Some("Main.Main"));
 
         std::fs::remove_dir_all(&temp_root).expect("cleanup temp dir");

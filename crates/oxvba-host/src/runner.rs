@@ -239,17 +239,20 @@ pub fn resolve_runner_bootstrap(
         );
     }
 
-    let runtime_profile = merged
-        .get("profile")
-        .map_or(Ok(RuntimeProfileId::default_for_hal_profile(if cfg!(target_os = "windows") {
-            HalProfileId::Windows
-        } else if cfg!(target_os = "linux") {
-            HalProfileId::Linux
-        } else if cfg!(target_os = "macos") {
-            HalProfileId::MacOs
-        } else {
-            HalProfileId::Null
-        })), |raw| RuntimeProfileId::parse(raw))?;
+    let runtime_profile = merged.get("profile").map_or(
+        Ok(RuntimeProfileId::default_for_hal_profile(
+            if cfg!(target_os = "windows") {
+                HalProfileId::Windows
+            } else if cfg!(target_os = "linux") {
+                HalProfileId::Linux
+            } else if cfg!(target_os = "macos") {
+                HalProfileId::MacOs
+            } else {
+                HalProfileId::Null
+            },
+        )),
+        |raw| RuntimeProfileId::parse(raw),
+    )?;
     let policy_preset = merged
         .get("policy_preset")
         .map_or(Ok(HostPolicyPreset::DeterministicRuntime), |raw| {
