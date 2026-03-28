@@ -97,7 +97,22 @@ pub fn parse_vbp(content: &str) -> Result<VbpProject, String> {
                         references.push(ref_data);
                     }
                 }
-                _ => {} // Ignore other keys
+                "Form" => {
+                    return Err(format!(
+                        "VBP-E-UNSUPPORTED-FORM: `{line}` is not supported in VBP-S0"
+                    ));
+                }
+                "UserControl" => {
+                    return Err(format!(
+                        "VBP-E-UNSUPPORTED-USERCONTROL: `{line}` is not supported in VBP-S0"
+                    ));
+                }
+                "PropertyPage" => {
+                    return Err(format!(
+                        "VBP-E-UNSUPPORTED-PROPERTYPAGE: `{line}` is not supported in VBP-S0"
+                    ));
+                }
+                _ => {} // Ignore other keys for now.
             }
         }
     }
@@ -348,5 +363,12 @@ Startup="Sub Main"
         let content = "Type=OleDll\nName=\"MyLib\"\n";
         let vbp = parse_vbp(content).unwrap();
         assert_eq!(vbp.project_type, "Library");
+    }
+
+    #[test]
+    fn parse_vbp_rejects_unsupported_form_key() {
+        let content = "Type=Exe\nName=\"MyApp\"\nForm=frmMain; frmMain.frm\n";
+        let err = parse_vbp(content).expect_err("Form should be rejected in VBP-S0");
+        assert!(err.contains("VBP-E-UNSUPPORTED-FORM"), "got: {err}");
     }
 }

@@ -862,11 +862,7 @@ $ oxvba run-artifact dist/finance.oxvbapkg --profile windows-headless
 **5. Legacy import:**
 ```powershell
 $ oxvba import-vbp legacy/FinanceCalc.vbp --out ./FinanceCalc.basproj
-oxvba: imported 5 modules, 2 references
-oxvba: 1 unsupported key ignored: Form=frmMain; frmMain.frm (VBP-E-UNSUPPORTED-FORM)
-
-$ oxvba run-project .
-[project runs with supported subset]
+oxvba import-vbp: parse failed: VBP-E-UNSUPPORTED-FORM: `Form=frmMain; frmMain.frm` is not supported in VBP-S0
 ```
 
 **6. Host capability check:**
