@@ -387,6 +387,17 @@ fn discover_basproj_in_dir(dir: &Path) -> Option<PathBuf> {
     None
 }
 
+fn discover_vbp_in_dir(dir: &Path) -> Option<PathBuf> {
+    let entries = fs::read_dir(dir).ok()?;
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.extension().and_then(|e| e.to_str()) == Some("vbp") {
+            return Some(path);
+        }
+    }
+    None
+}
+
 fn load_run_project_target(
     input_path: Option<PathBuf>,
 ) -> Result<oxvba_project::LoadedProject, oxvba_project::BasProjError> {
@@ -394,6 +405,9 @@ fn load_run_project_target(
     if input.is_dir() {
         if let Some(basproj) = discover_basproj_in_dir(&input) {
             return oxvba_project::load_basproj(&basproj);
+        }
+        if let Some(vbp) = discover_vbp_in_dir(&input) {
+            return oxvba_project::load_vbp(&vbp);
         }
         return load_convention_project(&input);
     }
@@ -852,6 +866,33 @@ mod tests {
         let loaded = load_run_project_target(Some(PathBuf::from(&temp_root)))
             .expect("directory with basproj should load the project file");
         assert_eq!(loaded.manifest.project_name, "ProjectA");
+        assert_eq!(loaded.entry_point.as_deref(), Some("Main.Main"));
+
+        std::fs::remove_dir_all(&temp_root).expect("cleanup temp dir");
+    }
+
+    #[test]
+    fn run_project_directory_without_basproj_prefers_vbp_when_present() {
+        let temp_root = std::env::temp_dir().join(format!(
+            "oxvba_cli_directory_vbp_{}_{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .expect("unix epoch")
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&temp_root).expect("create temp dir");
+        std::fs::write(temp_root.join("Main.bas"), "Public Sub Main()\nEnd Sub\n")
+            .expect("write main module");
+        std::fs::write(
+            temp_root.join("Project1.vbp"),
+            "Type=Exe\nName=\"Project1\"\nStartup=\"Sub Main\"\nModule=Main; Main.bas\n",
+        )
+        .expect("write vbp");
+
+        let loaded = load_run_project_target(Some(PathBuf::from(&temp_root)))
+            .expect("directory with only vbp should load through vbp adapter");
+        assert_eq!(loaded.manifest.project_name, "Project1");
         assert_eq!(loaded.entry_point.as_deref(), Some("Main.Main"));
 
         std::fs::remove_dir_all(&temp_root).expect("cleanup temp dir");

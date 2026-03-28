@@ -1169,8 +1169,9 @@ Modern language tools use the containing directory as the project scope. OxVBA a
 1. If PATH is a `.vbp` file: use VBP-S0 adapter.
 2. If PATH is a `.basproj` file: use `.basproj` parser.
 3. If PATH is a directory containing a `.basproj` file: use that `.basproj`.
-4. If PATH is a directory without `.basproj`: use convention mode (all `.bas`/`.cls` files).
-5. If PATH is omitted: use current directory and repeat steps 3-4.
+4. If PATH is a directory containing a `.vbp` file but no `.basproj`: use the `.vbp` adapter.
+5. If PATH is a directory without `.basproj` or `.vbp`: use convention mode (all `.bas`/`.cls` files).
+6. If PATH is omitted: use current directory and repeat steps 3-5.
 
 ### 4.3 `.vbp` Adapter
 
@@ -1386,7 +1387,7 @@ pub trait LanguageServiceProvider {
 | ID | Question | Options | Recommendation | Status |
 |----|----------|---------|---------------|--------|
 | D-01 | Top-level code activation mechanism | A: opt-in marker/flag / B: default OxVBA extension in host lanes | **B: default OxVBA extension** for direct-file and program-style host lanes; Office/VBA parity claims remain separate | Proposed |
-| D-02 | Default behavior for `oxvba run-project .` | A: auto-detect project vs script / B: require `.basproj` | **Auto-detect:** if `.basproj` exists, use it; else convention mode (all files, resolve explicit entrypoint, unique top-level mainline, or unique `Sub Main`) | Proposed |
+| D-02 | Default behavior for `oxvba run-project .` | A: auto-detect project vs script / B: require `.basproj` | **Auto-detect:** if `.basproj` exists, use it; else if `.vbp` exists, use the VBP-S0 adapter; else convention mode (all files, resolve explicit entrypoint, unique top-level mainline, or unique `Sub Main`) | Proposed |
 | D-03 | Artifact portability | A: profile-locked / B: profile-portable | **A: profile-locked by default** (safer determinism; portable mode as explicit opt-in) | Proposed |
 | D-04 | Process-global registration collision policy | A: fail / B: shadow / C: namespace-prefix | **A: fail by default** (explicit collision error; shadow/prefix as opt-in) | Proposed |
 | D-05 | Wrapper DLL COM activation | A: registry-free first / B: dual lane from day one | **A: registry-free first** (simpler deployment; registry lane added later) | Proposed |
