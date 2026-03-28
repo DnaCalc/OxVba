@@ -974,7 +974,8 @@ For a direct single-file run (`oxvba run foo.bas`), the file itself is the start
 4. Procedures (`Sub`, `Function`, `Property`) may be defined in the same file and called from top-level code.
 5. Module-level scope rules still apply: module variables remain module variables, not locals of the synthetic startup procedure.
 6. In multi-module project execution, at most one startup mainline may exist unless an explicit configured entrypoint makes the top-level mainline unused or disallowed by a future stricter mode.
-7. Output-type-specific tightening for library/add-in hosts remains host-defined. Program/script lanes support top-level mainlines from the start.
+7. Top-level executable statements are supported from the start for program/script lanes (`oxvba run <file.bas>`, convention-mode executable directories, `.basproj` `OutputType=Exe`, and `Type=Exe` in the current `.vbp` adapter lane).
+8. Top-level executable statements are rejected in the current bounded lane for `Library`, `Addin`, `ComServer`, and `ComExe`. That rejection is intentional and leaves room to add tolerant or richer policies later without changing current behavior.
 
 The important implementation constraint is that OxVBA must not simply wrap the entire source file in `Sub Main()`, because declarations and procedure bodies must preserve their ordinary module semantics.
 
