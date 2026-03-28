@@ -160,7 +160,7 @@ fn run_build(args: Vec<String>) {
 fn run_project(args: Vec<String>) {
     let parsed = parse_run_project_args_from(args).unwrap_or_else(|| {
         eprintln!(
-            "usage: oxvba run-project [path] [--entry <Module.Procedure>] [--profile <id>] [--policy <preset>] [--jit] [--dump-slots] [--dump-values]"
+            "usage: oxvba run-project [path] [--entry <Module.Procedure>] [runtime/bootstrap options]"
         );
         std::process::exit(2);
     });
@@ -190,6 +190,9 @@ fn run_project(args: Vec<String>) {
         });
     engine.set_runtime_profile(resolved.runtime_profile);
     engine.set_host_policy(resolved.policy.clone());
+    if parsed.dump_bootstrap {
+        println!("BOOTSTRAP:{}", resolved.fingerprint());
+    }
 
     let result = engine.execute_project_with_snapshot_phased(&loaded.manifest);
 
@@ -225,6 +228,7 @@ struct RunProjectArgs {
     enable_jit: bool,
     dump_values: bool,
     dump_slots: bool,
+    dump_bootstrap: bool,
     bootstrap: RunnerBootstrapOptions,
     entry_point_override: Option<String>,
 }
@@ -240,6 +244,7 @@ fn parse_run_project_args_from(args: Vec<String>) -> Option<RunProjectArgs> {
     let mut enable_jit = false;
     let mut dump_values = false;
     let mut dump_slots = false;
+    let mut dump_bootstrap = false;
     let mut bootstrap = RunnerBootstrapOptions::default();
     let mut entry_point_override: Option<String> = None;
 
@@ -250,9 +255,14 @@ fn parse_run_project_args_from(args: Vec<String>) -> Option<RunProjectArgs> {
             "--jit" => enable_jit = true,
             "--dump-values" => dump_values = true,
             "--dump-slots" => dump_slots = true,
+            "--dump-bootstrap" => dump_bootstrap = true,
             "--entry" => {
                 i += 1;
                 entry_point_override = Some(collected.get(i)?.clone());
+            }
+            "--config" => {
+                i += 1;
+                bootstrap.config_path = Some(PathBuf::from(collected.get(i)?.as_str()));
             }
             "--profile" => {
                 i += 1;
@@ -261,6 +271,50 @@ fn parse_run_project_args_from(args: Vec<String>) -> Option<RunProjectArgs> {
             "--policy" => {
                 i += 1;
                 bootstrap.policy_preset = Some(collected.get(i)?.clone());
+            }
+            "--runtime-class" => {
+                i += 1;
+                bootstrap.overrides.runtime_class = Some(parse_runtime_class(collected.get(i)?)?);
+            }
+            "--allow-interaction" => {
+                i += 1;
+                bootstrap.overrides.allow_interaction = Some(parse_bool(collected.get(i)?)?);
+            }
+            "--allow-process-spawn" => {
+                i += 1;
+                bootstrap.overrides.allow_process_spawn = Some(parse_bool(collected.get(i)?)?);
+            }
+            "--allow-filesystem-mutation" => {
+                i += 1;
+                bootstrap.overrides.allow_filesystem_mutation =
+                    Some(parse_bool(collected.get(i)?)?);
+            }
+            "--allow-dynamic-link" => {
+                i += 1;
+                bootstrap.overrides.allow_dynamic_link = Some(parse_bool(collected.get(i)?)?);
+            }
+            "--allow-com-activation" => {
+                i += 1;
+                bootstrap.overrides.allow_com_activation = Some(parse_bool(collected.get(i)?)?);
+            }
+            "--deterministic-mode" => {
+                i += 1;
+                bootstrap.overrides.deterministic_mode = Some(parse_bool(collected.get(i)?)?);
+            }
+            "--ui-virtualization" => {
+                i += 1;
+                bootstrap.overrides.ui_virtualization =
+                    Some(parse_ui_virtualization(collected.get(i)?)?);
+            }
+            "--unsupported-mode" => {
+                i += 1;
+                bootstrap.overrides.unsupported_feature_mode =
+                    Some(parse_unsupported_mode(collected.get(i)?)?);
+            }
+            "--wasm-runtime-class" => {
+                i += 1;
+                bootstrap.overrides.wasm_runtime_class =
+                    Some(parse_wasm_runtime_class(collected.get(i)?)?);
             }
             arg if !arg.starts_with('-') && input_path.is_none() => {
                 input_path = Some(PathBuf::from(arg));
@@ -275,6 +329,7 @@ fn parse_run_project_args_from(args: Vec<String>) -> Option<RunProjectArgs> {
         enable_jit,
         dump_values,
         dump_slots,
+        dump_bootstrap,
         bootstrap,
         entry_point_override,
     })
@@ -1017,6 +1072,38 @@ mod tests {
         assert_eq!(parsed.entry_point_override.as_deref(), Some("Startup.Boot"));
         assert_eq!(parsed.bootstrap.profile.as_deref(), Some("windows-stdio"));
         assert!(parsed.enable_jit);
+    }
+
+    #[test]
+    fn parse_run_project_bootstrap_override_flags() {
+        let args = vec![
+            "run-project".to_string(),
+            ".".to_string(),
+            "--config".to_string(),
+            "runner.toml".to_string(),
+            "--runtime-class".to_string(),
+            "linux-stdio".to_string(),
+            "--allow-dynamic-link".to_string(),
+            "false".to_string(),
+            "--unsupported-mode".to_string(),
+            "compile-time".to_string(),
+            "--dump-bootstrap".to_string(),
+        ];
+        let parsed = parse_run_project_args_from(args).expect("args should parse");
+        assert!(parsed.dump_bootstrap);
+        assert_eq!(
+            parsed.bootstrap.config_path.as_deref(),
+            Some(Path::new("runner.toml"))
+        );
+        assert_eq!(
+            parsed.bootstrap.overrides.runtime_class,
+            Some(oxvba_hal::model::HalRuntimeClass::LinuxStdio)
+        );
+        assert_eq!(parsed.bootstrap.overrides.allow_dynamic_link, Some(false));
+        assert_eq!(
+            parsed.bootstrap.overrides.unsupported_feature_mode,
+            Some(UnsupportedFeatureMode::CompileTime)
+        );
     }
 
     #[test]

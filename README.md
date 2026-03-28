@@ -407,8 +407,15 @@ Implemented options:
 - `--jit`
 - `--dump-slots`
 - `--dump-values`
+- `--dump-bootstrap`
 - `--profile <id>`
 - `--policy <preset>`
+- same runtime/bootstrap override flags as `oxvba run`:
+  `--config`, `--runtime-class`, `--allow-interaction`,
+  `--allow-process-spawn`, `--allow-filesystem-mutation`,
+  `--allow-dynamic-link`, `--allow-com-activation`,
+  `--deterministic-mode`, `--ui-virtualization`,
+  `--unsupported-mode`, `--wasm-runtime-class`
 
 Examples:
 
@@ -419,6 +426,7 @@ oxvba run-project .\FinanceTools.basproj
 oxvba run-project .\legacy\Project1.vbp
 oxvba run-project .\app --entry Startup.Boot
 oxvba run-project . --profile windows-stdio --jit
+oxvba run-project . --runtime-class linux-stdio --allow-dynamic-link false
 ```
 
 ### `oxvba build [PATH]`
