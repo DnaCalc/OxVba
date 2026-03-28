@@ -99,7 +99,7 @@ pub struct BasProjModule {
 /// A `<ProjectReference>` item.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BasProjProjectReference {
-    /// Relative path to the referenced `.basproj` file.
+    /// Relative path to the referenced project file (`.basproj` or adapted `.vbp`).
     pub include: String,
 }
 

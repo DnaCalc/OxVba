@@ -1186,7 +1186,8 @@ The `.vbp` adapter is an import/compatibility layer, not the canonical project f
 | `Startup=<entry>` | VBP-S0 supports `Sub Main` fallback or explicit `Module.Procedure`; startup-object forms remain deferred |
 | `Module=<name>; <path>` | `ModuleUnit` with `ModuleKind::Procedural` |
 | `Class=<name>; <path>` | `ModuleUnit` with `ModuleKind::Class` |
-| `Reference=<...>` | `ProjectReference` with `ReferenceKind::TypeLibrary` |
+| `Reference=*\G...` | ordered type-library reference mapped to `ReferenceKind::TypeLibrary` |
+| `Reference=*\A...` | ordered project reference mapped to `<ProjectReference>` when the referenced path ends in `.vbp` or `.basproj` |
 
 **Deferred keys:** `Form`, `UserControl`, `PropertyPage`, build metadata, COM registration directives — rejected in the current strict VBP-S0 lane with stable `VBP-E-UNSUPPORTED-*` diagnostics.
 

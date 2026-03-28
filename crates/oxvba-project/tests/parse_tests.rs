@@ -1417,3 +1417,28 @@ Name="TestProject"
     );
     assert_eq!(basproj.properties.output_type, Some(OutputType::Exe));
 }
+
+#[test]
+fn vbp_round_trip_preserves_project_reference_items() {
+    let vbp_content = r#"Type=Exe
+Reference=*\A{11111111-2222-3333-4444-555555555555}#1.0#0#..\LibScale\LibScale.vbp#LibScale
+Module=Main; Main.bas
+Name="MainApp"
+"#;
+    let vbp = oxvba_project::vbp::parse_vbp(vbp_content).unwrap();
+    assert_eq!(vbp.references.len(), 1);
+
+    let xml = oxvba_project::vbp::generate_basproj_from_vbp(&vbp).unwrap();
+    let basproj = oxvba_project::parse_basproj_xml(&xml).unwrap();
+
+    assert_eq!(basproj.project_references.len(), 1);
+    assert_eq!(
+        basproj.project_references[0].include,
+        "../LibScale/LibScale.vbp"
+    );
+    assert!(basproj.com_references.is_empty());
+    assert_eq!(
+        basproj.properties.project_name.as_deref(),
+        Some("MainApp")
+    );
+}

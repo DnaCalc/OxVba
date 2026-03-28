@@ -28,10 +28,22 @@ pub struct VbpClass {
 }
 
 #[derive(Debug, Clone)]
-pub struct VbpReference {
+pub struct VbpTypeLibraryReference {
     pub guid: String,
     pub version: String,
     pub name: String,
+}
+
+#[derive(Debug, Clone)]
+pub struct VbpProjectReference {
+    pub include: String,
+    pub referenced_project_name: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+pub enum VbpReference {
+    TypeLibrary(VbpTypeLibraryReference),
+    Project(VbpProjectReference),
 }
 
 /// Parse a VB6 `.vbp` file content into a `VbpProject`.
@@ -92,10 +104,15 @@ pub fn parse_vbp(content: &str) -> Result<VbpProject, String> {
                     }
                 }
                 "Reference" => {
-                    // Format: Reference=*\G{GUID}#major.minor#lcid#path#name
-                    if let Some(ref_data) = parse_vbp_reference(value) {
-                        references.push(ref_data);
-                    }
+                    // Supported VBP-S0 forms:
+                    // - Reference=*\G{GUID}#major.minor#lcid#path#name
+                    // - Reference=*\A{GUID}#major.minor#lcid#path#name
+                    let ref_data = parse_vbp_reference(value).ok_or_else(|| {
+                        format!(
+                            "VBP-E-UNSUPPORTED-REFERENCE: `{line}` is not supported in VBP-S0"
+                        )
+                    })?;
+                    references.push(ref_data);
                 }
                 "Form" => {
                     return Err(format!(
@@ -136,17 +153,43 @@ pub fn parse_vbp(content: &str) -> Result<VbpProject, String> {
 }
 
 fn parse_vbp_reference(value: &str) -> Option<VbpReference> {
-    // Format: *\G{GUID}#major.minor#lcid#path#name
-    let value = value.strip_prefix("*\\G")?;
-    let parts: Vec<&str> = value.splitn(5, '#').collect();
-    if parts.len() < 5 {
-        return None;
+    if let Some(value) = value.strip_prefix("*\\G") {
+        let parts: Vec<&str> = value.splitn(5, '#').collect();
+        if parts.len() < 5 {
+            return None;
+        }
+        return Some(VbpReference::TypeLibrary(VbpTypeLibraryReference {
+            guid: parts[0].to_string(),
+            version: parts[1].to_string(),
+            name: parts[4].to_string(),
+        }));
     }
-    Some(VbpReference {
-        guid: parts[0].to_string(),
-        version: parts[1].to_string(),
-        name: parts[4].to_string(),
-    })
+
+    if let Some(value) = value.strip_prefix("*\\A") {
+        let parts: Vec<&str> = value.split('#').collect();
+        if parts.len() < 5 {
+            return None;
+        }
+        let include = parts[3].trim();
+        if include.is_empty() {
+            return None;
+        }
+        let lowered = include.to_ascii_lowercase();
+        if !lowered.ends_with(".vbp") && !lowered.ends_with(".basproj") {
+            return None;
+        }
+        let referenced_project_name = parts[4].trim();
+        return Some(VbpReference::Project(VbpProjectReference {
+            include: include.replace('\\', "/"),
+            referenced_project_name: if referenced_project_name.is_empty() {
+                None
+            } else {
+                Some(referenced_project_name.to_string())
+            },
+        }));
+    }
+
+    None
 }
 
 /// Generate `.basproj` XML from a parsed `VbpProject`.
@@ -194,16 +237,26 @@ pub fn generate_basproj_from_vbp(vbp: &VbpProject) -> Result<String, String> {
     if !vbp.references.is_empty() {
         xml.push_str("  <ItemGroup>\n");
         for r in &vbp.references {
-            xml.push_str(&format!(
-                "    <COMReference Include=\"{}\">\n",
-                xml_escape(&r.name)
-            ));
-            xml.push_str(&format!("      <Guid>{}</Guid>\n", xml_escape(&r.guid)));
-            if let Some((major, minor)) = r.version.split_once('.') {
-                xml.push_str(&format!("      <VersionMajor>{major}</VersionMajor>\n"));
-                xml.push_str(&format!("      <VersionMinor>{minor}</VersionMinor>\n"));
+            match r {
+                VbpReference::TypeLibrary(r) => {
+                    xml.push_str(&format!(
+                        "    <COMReference Include=\"{}\">\n",
+                        xml_escape(&r.name)
+                    ));
+                    xml.push_str(&format!("      <Guid>{}</Guid>\n", xml_escape(&r.guid)));
+                    if let Some((major, minor)) = r.version.split_once('.') {
+                        xml.push_str(&format!("      <VersionMajor>{major}</VersionMajor>\n"));
+                        xml.push_str(&format!("      <VersionMinor>{minor}</VersionMinor>\n"));
+                    }
+                    xml.push_str("    </COMReference>\n");
+                }
+                VbpReference::Project(r) => {
+                    xml.push_str(&format!(
+                        "    <ProjectReference Include=\"{}\" />\n",
+                        xml_escape(&r.include)
+                    ));
+                }
             }
-            xml.push_str("    </COMReference>\n");
         }
         xml.push_str("  </ItemGroup>\n");
     }
@@ -301,8 +354,18 @@ Startup="Sub Main"
         assert_eq!(vbp.classes.len(), 1);
         assert_eq!(vbp.classes[0].name, "Calculator");
         assert_eq!(vbp.references.len(), 2);
-        assert_eq!(vbp.references[0].name, "OLE Automation");
-        assert_eq!(vbp.references[1].name, "Microsoft Scripting Runtime");
+        match &vbp.references[0] {
+            VbpReference::TypeLibrary(reference) => {
+                assert_eq!(reference.name, "OLE Automation");
+            }
+            other => panic!("unexpected reference kind: {other:?}"),
+        }
+        match &vbp.references[1] {
+            VbpReference::TypeLibrary(reference) => {
+                assert_eq!(reference.name, "Microsoft Scripting Runtime");
+            }
+            other => panic!("unexpected reference kind: {other:?}"),
+        }
     }
 
     #[test]
@@ -382,6 +445,27 @@ Startup="Sub Main"
         let content = "Type=Exe\nName=\"MyApp\"\nVersionCompatible32=\"0\"\n";
         let err = parse_vbp(content).expect_err("unknown key should be rejected in strict VBP-S0");
         assert!(err.contains("VBP-E-UNSUPPORTED-KEY"), "got: {err}");
+    }
+
+    #[test]
+    fn parse_vbp_project_reference_maps_to_project_reference_item() {
+        let content = "Type=Exe\nName=\"MyApp\"\nReference=*\\A{11111111-2222-3333-4444-555555555555}#1.0#0#..\\LibScale\\LibScale.vbp#LibScale\n";
+        let vbp = parse_vbp(content).expect("project reference should parse");
+        assert_eq!(vbp.references.len(), 1);
+        match &vbp.references[0] {
+            VbpReference::Project(reference) => {
+                assert_eq!(reference.include, "../LibScale/LibScale.vbp");
+                assert_eq!(
+                    reference.referenced_project_name.as_deref(),
+                    Some("LibScale")
+                );
+            }
+            other => panic!("unexpected reference kind: {other:?}"),
+        }
+        let xml = generate_basproj_from_vbp(&vbp).expect("xml generation should succeed");
+        assert!(xml.contains(
+            "<ProjectReference Include=\"../LibScale/LibScale.vbp\" />"
+        ));
     }
 
     #[test]

@@ -47,8 +47,8 @@ Goal: load real loose-file projects that map cleanly onto existing execution sem
 - `Class=<logicalName>; <path>`
   - load as `ModuleKind::Class`.
 - `Reference=`
-  - accepted in restricted form where a deterministic reference name/importlib can be extracted.
-  - mapped to `ReferenceKind::TypeLibrary` with importlib hint when present.
+  - `*\G...` is accepted for ordered type-library references.
+  - `*\A...` is accepted for ordered project references when the referenced artifact path ends in `.vbp` or `.basproj`.
 - `Name=` (or equivalent project name metadata)
   - used as `ProjectManifest.project_name` when valid.
 

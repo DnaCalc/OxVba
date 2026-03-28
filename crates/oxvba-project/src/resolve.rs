@@ -12,7 +12,7 @@ use oxvba_host::TypeLibraryCatalogEntry;
 use crate::error::BasProjError;
 use crate::model::*;
 
-/// Resolve `<ProjectReference>` items by loading each referenced `.basproj`
+/// Resolve `<ProjectReference>` items by loading each referenced project artifact
 /// recursively and extracting their public modules.
 ///
 /// `ancestors` tracks the current resolution chain for cycle detection.
@@ -53,13 +53,21 @@ pub fn resolve_project_references(
         seen.insert(canonical.clone());
         ancestors.insert(canonical.clone());
 
-        // Read, parse, and process imports for the referenced project
         let ref_project_dir = crate::model::project_dir(&canonical);
-        let ref_basproj_xml =
-            std::fs::read_to_string(&canonical).map_err(|e| BasProjError::Io {
-                path: canonical.display().to_string(),
-                source: e,
-            })?;
+        let ref_project_text = std::fs::read_to_string(&canonical).map_err(|e| BasProjError::Io {
+            path: canonical.display().to_string(),
+            source: e,
+        })?;
+        let extension = canonical
+            .extension()
+            .and_then(|ext| ext.to_str())
+            .unwrap_or_default();
+        let ref_basproj_xml = if extension.eq_ignore_ascii_case("vbp") {
+            let vbp = crate::vbp::parse_vbp(&ref_project_text).map_err(BasProjError::VbpParse)?;
+            crate::vbp::generate_basproj_from_vbp(&vbp).map_err(BasProjError::VbpUnsupported)?
+        } else {
+            ref_project_text
+        };
         let mut ref_basproj = crate::parse::parse_basproj_xml(&ref_basproj_xml)?;
         crate::load::process_imports(&mut ref_basproj, &ref_basproj_xml, &ref_project_dir)?;
 
