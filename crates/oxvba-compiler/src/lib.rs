@@ -1621,6 +1621,19 @@ mod tests {
     }
 
     #[test]
+    fn compile_direct_top_level_mainline_with_defobj_preserves_module_scope_defaults() {
+        let source = "DefObj A-Z\na = 1\n";
+        let err = compile(source).expect_err("DefObj should still type implicit top-level `a` as Object");
+        assert!(err.to_string().contains("type mismatch in assignment"));
+    }
+
+    #[test]
+    fn compile_direct_top_level_mainline_with_module_const_directive_succeeds() {
+        let source = "#Const ENABLE = True\n#If ENABLE Then\nvalueOut = 41\n#Else\nvalueOut = 0\n#End If\n";
+        compile(source).expect("top-level mainline with module #Const should compile");
+    }
+
+    #[test]
     fn compile_debug_print_emits_diagnostics_host_instruction() {
         let source = "Sub Main()\nDebug.Print \"hello\"\nEnd Sub";
         let out = compile(source).expect("compile should succeed");

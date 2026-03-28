@@ -20579,6 +20579,18 @@ mod tests {
         assert_eq!(out[0], RuntimeValue::I32(42));
     }
 
+    #[test]
+    fn direct_source_top_level_mainline_preserves_module_const_directives() {
+        let source = "#Const ENABLE = True\n#If ENABLE Then\nvalueOut = 41\n#Else\nvalueOut = 0\n#End If\n";
+        let out = Engine::new(HostConfig {
+            enable_jit: false,
+            root_object_name: None,
+        })
+        .execute_source_with_value_snapshot(source)
+        .expect("direct source should preserve module #Const directives in top-level mainline");
+        assert_eq!(out[0], RuntimeValue::I32(41));
+    }
+
     #[cfg(target_os = "windows")]
     #[test]
     fn formal_v121_set_keyword_rejects_object_target_for_scalar_source() {

@@ -620,6 +620,7 @@ fn is_non_mainline_top_level_directive(line: &str) -> bool {
     let lower = line.trim().to_ascii_lowercase();
     lower.starts_with("attribute ")
         || lower.starts_with("option ")
+        || lower.starts_with("#const ")
         || lower.starts_with("dim ")
         || lower.starts_with("global ")
         || lower.starts_with("static ")
@@ -635,6 +636,28 @@ fn is_non_mainline_top_level_directive(line: &str) -> bool {
         || lower.starts_with("declare ")
         || lower.starts_with("public declare ")
         || lower.starts_with("private declare ")
+        || is_def_type_directive(&lower)
+}
+
+fn is_def_type_directive(lower: &str) -> bool {
+    [
+        "defbool ",
+        "defbyte ",
+        "defint ",
+        "deflng ",
+        "deflnglng ",
+        "deflngptr ",
+        "defsng ",
+        "defdbl ",
+        "defdec ",
+        "defcur ",
+        "defdate ",
+        "defstr ",
+        "defobj ",
+        "defvar ",
+    ]
+    .iter()
+    .any(|prefix| lower.starts_with(prefix))
 }
 
 fn starts_type_block(lower: &str) -> bool {

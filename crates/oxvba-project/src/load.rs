@@ -583,6 +583,7 @@ fn is_non_mainline_top_level_directive(line: &str) -> bool {
     let lower = line.trim().to_ascii_lowercase();
     lower.starts_with("attribute ")
         || lower.starts_with("option ")
+        || lower.starts_with("#const ")
         || lower.starts_with("dim ")
         || lower.starts_with("global ")
         || lower.starts_with("static ")
@@ -598,6 +599,7 @@ fn is_non_mainline_top_level_directive(line: &str) -> bool {
         || lower.starts_with("declare ")
         || lower.starts_with("public declare ")
         || lower.starts_with("private declare ")
+        || is_def_type_directive(&lower)
 }
 
 fn starts_type_block(lower: &str) -> bool {
@@ -610,6 +612,27 @@ fn starts_enum_block(lower: &str) -> bool {
     lower.starts_with("enum ")
         || lower.starts_with("private enum ")
         || lower.starts_with("public enum ")
+}
+
+fn is_def_type_directive(lower: &str) -> bool {
+    [
+        "defbool ",
+        "defbyte ",
+        "defint ",
+        "deflng ",
+        "deflnglng ",
+        "deflngptr ",
+        "defsng ",
+        "defdbl ",
+        "defdec ",
+        "defcur ",
+        "defdate ",
+        "defstr ",
+        "defobj ",
+        "defvar ",
+    ]
+    .iter()
+    .any(|prefix| lower.starts_with(prefix))
 }
 
 fn line_is_public_parameterless_main_sub_signature(line: &str) -> bool {
@@ -1351,6 +1374,65 @@ mod tests {
         assert!(
             script_module.source.contains("Private counter As Long"),
             "expected module declaration to remain at module scope: {}",
+            script_module.source
+        );
+        assert!(
+            script_module
+                .source
+                .contains("Public Sub __OxVbaTopLevelMainline"),
+            "expected synthetic startup proc, got: {}",
+            script_module.source
+        );
+
+        std::fs::remove_dir_all(&temp_root).expect("cleanup temp project root");
+    }
+
+    #[test]
+    fn exe_top_level_mainline_rewrite_preserves_def_type_and_module_const_directives() {
+        let unique = format!(
+            "oxvba_project_load_mainline_defconst_{}_{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .expect("unix epoch")
+                .as_nanos()
+        );
+        let temp_root = std::env::temp_dir().join(unique);
+        std::fs::create_dir_all(&temp_root).expect("create temp project root");
+        let script_path = temp_root.join("ScriptModule.bas");
+        std::fs::write(
+            &script_path,
+            "DefObj A-Z\n#Const ENABLE = True\n#If ENABLE Then\nvalueOut = 41\n#Else\nvalueOut = 0\n#End If\n",
+        )
+        .expect("write script module");
+        let xml = "\
+<Project Sdk=\"OxVba.Sdk/0.1.0\">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <ProjectName>ProjectA</ProjectName>
+  </PropertyGroup>
+  <ItemGroup>
+    <Module Include=\"ScriptModule.bas\" />
+  </ItemGroup>
+</Project>
+";
+
+        let loaded = load_basproj_from_str(xml, &temp_root)
+            .expect("project with DefObj and #Const should load");
+        let script_module = loaded
+            .manifest
+            .modules
+            .iter()
+            .find(|module| module.module_name == "ScriptModule")
+            .expect("rewritten script module should be present");
+        assert!(
+            script_module.source.contains("DefObj A-Z"),
+            "expected DefObj directive to remain at module scope: {}",
+            script_module.source
+        );
+        assert!(
+            script_module.source.contains("#Const ENABLE = True"),
+            "expected module constant directive to remain at module scope: {}",
             script_module.source
         );
         assert!(
