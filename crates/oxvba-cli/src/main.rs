@@ -51,7 +51,12 @@ fn run_build(args: Vec<String>) {
 
     let input = input_path.unwrap_or_else(|| {
         // Try to find a .basproj in current directory
-        discover_basproj(".").unwrap_or_else(|| {
+        discover_basproj(".")
+            .unwrap_or_else(|err| {
+                eprintln!("oxvba build: {err}");
+                std::process::exit(1);
+            })
+            .unwrap_or_else(|| {
             eprintln!("usage: oxvba build [<project.basproj>] [-o <output.oxb>]");
             std::process::exit(2);
         })
@@ -371,31 +376,50 @@ fn run_import_vbp(args: Vec<String>) {
 // Helpers
 // ---------------------------------------------------------------------------
 
-fn discover_basproj(dir: &str) -> Option<PathBuf> {
+fn discover_basproj(dir: &str) -> Result<Option<PathBuf>, oxvba_project::BasProjError> {
     let dir = Path::new(dir);
     discover_basproj_in_dir(dir)
 }
 
-fn discover_basproj_in_dir(dir: &Path) -> Option<PathBuf> {
-    let entries = fs::read_dir(dir).ok()?;
-    for entry in entries.flatten() {
-        let path = entry.path();
-        if path.extension().and_then(|e| e.to_str()) == Some("basproj") {
-            return Some(path);
-        }
-    }
-    None
+fn discover_basproj_in_dir(dir: &Path) -> Result<Option<PathBuf>, oxvba_project::BasProjError> {
+    discover_project_files_in_dir(dir, "basproj")
 }
 
-fn discover_vbp_in_dir(dir: &Path) -> Option<PathBuf> {
-    let entries = fs::read_dir(dir).ok()?;
-    for entry in entries.flatten() {
-        let path = entry.path();
-        if path.extension().and_then(|e| e.to_str()) == Some("vbp") {
-            return Some(path);
-        }
+fn discover_vbp_in_dir(dir: &Path) -> Result<Option<PathBuf>, oxvba_project::BasProjError> {
+    discover_project_files_in_dir(dir, "vbp")
+}
+
+fn discover_project_files_in_dir(
+    dir: &Path,
+    extension: &str,
+) -> Result<Option<PathBuf>, oxvba_project::BasProjError> {
+    let entries = fs::read_dir(dir).map_err(|source| oxvba_project::BasProjError::Io {
+        path: dir.display().to_string(),
+        source,
+    })?;
+    let mut matches = entries
+        .flatten()
+        .map(|entry| entry.path())
+        .filter(|path| path.extension().and_then(|ext| ext.to_str()) == Some(extension))
+        .collect::<Vec<_>>();
+    matches.sort();
+    match matches.len() {
+        0 => Ok(None),
+        1 => Ok(matches.into_iter().next()),
+        _ => Err(oxvba_project::BasProjError::ProjectDiscoveryAmbiguous {
+            directory: dir.display().to_string(),
+            kind: extension.to_string(),
+            candidates: matches
+                .into_iter()
+                .map(|path| {
+                    path.file_name()
+                        .and_then(|name| name.to_str())
+                        .unwrap_or_default()
+                        .to_string()
+                })
+                .collect(),
+        }),
     }
-    None
 }
 
 fn load_run_project_target(
@@ -403,10 +427,10 @@ fn load_run_project_target(
 ) -> Result<oxvba_project::LoadedProject, oxvba_project::BasProjError> {
     let input = input_path.unwrap_or_else(|| PathBuf::from("."));
     if input.is_dir() {
-        if let Some(basproj) = discover_basproj_in_dir(&input) {
+        if let Some(basproj) = discover_basproj_in_dir(&input)? {
             return oxvba_project::load_basproj(&basproj);
         }
-        if let Some(vbp) = discover_vbp_in_dir(&input) {
+        if let Some(vbp) = discover_vbp_in_dir(&input)? {
             return oxvba_project::load_vbp(&vbp);
         }
         return load_convention_project(&input);
@@ -894,6 +918,66 @@ mod tests {
             .expect("directory with only vbp should load through vbp adapter");
         assert_eq!(loaded.manifest.project_name, "Project1");
         assert_eq!(loaded.entry_point.as_deref(), Some("Main.Main"));
+
+        std::fs::remove_dir_all(&temp_root).expect("cleanup temp dir");
+    }
+
+    #[test]
+    fn run_project_directory_with_multiple_basproj_files_is_ambiguous() {
+        let temp_root = std::env::temp_dir().join(format!(
+            "oxvba_cli_directory_multi_basproj_{}_{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .expect("unix epoch")
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&temp_root).expect("create temp dir");
+        std::fs::write(temp_root.join("A.basproj"), "<Project Sdk=\"OxVba.Sdk/0.1.0\" />\n")
+            .expect("write first basproj");
+        std::fs::write(temp_root.join("B.basproj"), "<Project Sdk=\"OxVba.Sdk/0.1.0\" />\n")
+            .expect("write second basproj");
+
+        let err = load_run_project_target(Some(PathBuf::from(&temp_root)))
+            .expect_err("multiple basproj files should fail deterministically");
+        assert!(
+            err.to_string().contains("project discovery is ambiguous"),
+            "got: {err}"
+        );
+
+        std::fs::remove_dir_all(&temp_root).expect("cleanup temp dir");
+    }
+
+    #[test]
+    fn run_project_directory_with_multiple_vbp_files_is_ambiguous() {
+        let temp_root = std::env::temp_dir().join(format!(
+            "oxvba_cli_directory_multi_vbp_{}_{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .expect("unix epoch")
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&temp_root).expect("create temp dir");
+        std::fs::write(temp_root.join("Main.bas"), "Public Sub Main()\nEnd Sub\n")
+            .expect("write main module");
+        std::fs::write(
+            temp_root.join("A.vbp"),
+            "Type=Exe\nName=\"A\"\nStartup=\"Sub Main\"\nModule=Main; Main.bas\n",
+        )
+        .expect("write first vbp");
+        std::fs::write(
+            temp_root.join("B.vbp"),
+            "Type=Exe\nName=\"B\"\nStartup=\"Sub Main\"\nModule=Main; Main.bas\n",
+        )
+        .expect("write second vbp");
+
+        let err = load_run_project_target(Some(PathBuf::from(&temp_root)))
+            .expect_err("multiple vbp files should fail deterministically");
+        assert!(
+            err.to_string().contains("project discovery is ambiguous"),
+            "got: {err}"
+        );
 
         std::fs::remove_dir_all(&temp_root).expect("cleanup temp dir");
     }

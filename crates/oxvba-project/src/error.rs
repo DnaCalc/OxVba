@@ -41,6 +41,13 @@ pub enum BasProjError {
     #[error("EntryPoint is ambiguous: {0}")]
     EntryPointAmbiguous(String),
 
+    #[error("project discovery is ambiguous in {directory}: {kind} candidates are {candidates:?}")]
+    ProjectDiscoveryAmbiguous {
+        directory: String,
+        kind: String,
+        candidates: Vec<String>,
+    },
+
     #[error("duplicate native export name: {0}")]
     DuplicateExportName(String),
 

@@ -1168,8 +1168,8 @@ Modern language tools use the containing directory as the project scope. OxVBA a
 
 1. If PATH is a `.vbp` file: use VBP-S0 adapter.
 2. If PATH is a `.basproj` file: use `.basproj` parser.
-3. If PATH is a directory containing a `.basproj` file: use that `.basproj`.
-4. If PATH is a directory containing a `.vbp` file but no `.basproj`: use the `.vbp` adapter.
+3. If PATH is a directory containing a unique `.basproj` file: use that `.basproj`; fail deterministically if multiple `.basproj` files are present.
+4. If PATH is a directory containing a unique `.vbp` file but no `.basproj`: use the `.vbp` adapter; fail deterministically if multiple `.vbp` files are present.
 5. If PATH is a directory without `.basproj` or `.vbp`: use convention mode (all `.bas`/`.cls` files).
 6. If PATH is omitted: use current directory and repeat steps 3-5.
 
