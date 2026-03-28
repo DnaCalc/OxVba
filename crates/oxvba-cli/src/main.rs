@@ -284,14 +284,111 @@ fn parse_run_project_args_from(args: Vec<String>) -> Option<RunProjectArgs> {
 // init subcommand
 // ---------------------------------------------------------------------------
 
-fn run_init(args: Vec<String>) {
-    let mut iter = args.into_iter();
-    let _ = iter.next(); // "init"
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum InitKind {
+    Application,
+    Library,
+    Addin,
+    HostModule,
+}
 
-    let target_dir = iter
-        .next()
-        .map(PathBuf::from)
-        .unwrap_or_else(|| env::current_dir().unwrap_or_else(|_| PathBuf::from(".")));
+#[derive(Debug, Clone)]
+struct InitArgs {
+    target_dir: PathBuf,
+    kind: InitKind,
+}
+
+fn parse_init_args_from(args: Vec<String>) -> Option<InitArgs> {
+    let mut iter = args.into_iter();
+    let cmd = iter.next()?;
+    if cmd != "init" {
+        return None;
+    }
+
+    let collected: Vec<String> = iter.collect();
+    let mut target_dir: Option<PathBuf> = None;
+    let mut kind = InitKind::Application;
+
+    let mut i = 0;
+    while i < collected.len() {
+        match collected[i].as_str() {
+            "--kind" => {
+                i += 1;
+                kind = parse_init_kind(collected.get(i)?)?;
+            }
+            arg if !arg.starts_with('-') && target_dir.is_none() => {
+                target_dir = Some(PathBuf::from(arg));
+            }
+            _ => return None,
+        }
+        i += 1;
+    }
+
+    Some(InitArgs {
+        target_dir: target_dir
+            .unwrap_or_else(|| env::current_dir().unwrap_or_else(|_| PathBuf::from("."))),
+        kind,
+    })
+}
+
+fn parse_init_kind(value: &str) -> Option<InitKind> {
+    match value.trim().to_ascii_lowercase().as_str() {
+        "application" | "app" | "exe" => Some(InitKind::Application),
+        "library" | "lib" => Some(InitKind::Library),
+        "addin" | "add-in" => Some(InitKind::Addin),
+        "host-module" | "hostmodule" | "host" => Some(InitKind::HostModule),
+        _ => None,
+    }
+}
+
+fn init_output_type(kind: InitKind) -> &'static str {
+    match kind {
+        InitKind::Application => "Exe",
+        InitKind::Library => "Library",
+        InitKind::Addin => "Addin",
+        InitKind::HostModule => "HostModule",
+    }
+}
+
+fn init_property_group(kind: InitKind, project_name: &str) -> String {
+    let mut property_group = format!(
+        "  <PropertyGroup>\n    <OutputType>{}</OutputType>\n    <ProjectName>{}</ProjectName>\n",
+        init_output_type(kind),
+        project_name
+    );
+    if matches!(kind, InitKind::Application) {
+        property_group.push_str("    <EntryPoint>Module1.Main</EntryPoint>\n");
+    }
+    if matches!(kind, InitKind::HostModule) {
+        property_group.push_str("    <DefaultRootObject>Application</DefaultRootObject>\n");
+    }
+    property_group.push_str("  </PropertyGroup>\n");
+    property_group
+}
+
+fn init_module_content(kind: InitKind) -> &'static str {
+    match kind {
+        InitKind::Application => {
+            "Attribute VB_Name = \"Module1\"\n\nPublic Sub Main()\n    ' Your code here\nEnd Sub\n"
+        }
+        InitKind::Library => {
+            "Attribute VB_Name = \"Module1\"\n\nPublic Function ExampleValue() As Long\n    ExampleValue = 42\nEnd Function\n"
+        }
+        InitKind::Addin => {
+            "Attribute VB_Name = \"Module1\"\n\nPublic Sub RegisterAddin()\n    ' Add-in initialization entrypoints are host-specific.\nEnd Sub\n"
+        }
+        InitKind::HostModule => {
+            "Attribute VB_Name = \"Module1\"\n\nPublic Sub Warmup()\n    ' Host modules are loaded by a host root object, not started by Main.\nEnd Sub\n"
+        }
+    }
+}
+
+fn run_init(args: Vec<String>) {
+    let parsed = parse_init_args_from(args).unwrap_or_else(|| {
+        eprintln!("usage: oxvba init [path] [--kind <application|library|addin|host-module>]");
+        std::process::exit(2);
+    });
+    let target_dir = parsed.target_dir;
 
     let project_name = target_dir
         .file_name()
@@ -305,21 +402,11 @@ fn run_init(args: Vec<String>) {
     });
 
     let basproj_content = format!(
-        r#"<Project Sdk="OxVba.Sdk/0.1.0">
-  <PropertyGroup>
-    <OutputType>Exe</OutputType>
-    <ProjectName>{project_name}</ProjectName>
-    <EntryPoint>Module1.Main</EntryPoint>
-  </PropertyGroup>
-  <ItemGroup>
-    <Module Include="Module1.bas" />
-  </ItemGroup>
-</Project>
-"#
+        "<Project Sdk=\"OxVba.Sdk/0.1.0\">\n{}  <ItemGroup>\n    <Module Include=\"Module1.bas\" />\n  </ItemGroup>\n</Project>\n",
+        init_property_group(parsed.kind, &project_name),
     );
 
-    let module_content =
-        "Attribute VB_Name = \"Module1\"\n\nPublic Sub Main()\n    ' Your code here\nEnd Sub\n";
+    let module_content = init_module_content(parsed.kind);
 
     let basproj_path = target_dir.join(format!("{project_name}.basproj"));
     let module_path = target_dir.join("Module1.bas");
@@ -338,7 +425,11 @@ fn run_init(args: Vec<String>) {
         std::process::exit(1);
     });
 
-    println!("created {} + Module1.bas", basproj_path.display());
+    println!(
+        "created {} + Module1.bas ({})",
+        basproj_path.display(),
+        init_output_type(parsed.kind)
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -821,8 +912,8 @@ fn parse_wasm_runtime_class(value: &str) -> Option<WasmRuntimeClass> {
 #[cfg(test)]
 mod tests {
     use super::{
-        default_build_output_path, load_run_project_target, parse_run_args_from,
-        parse_run_project_args_from,
+        default_build_output_path, load_run_project_target, parse_init_args_from,
+        parse_run_args_from, parse_run_project_args_from, run_init,
     };
     use oxvba_hal::model::UnsupportedFeatureMode;
     use oxvba_host::{Engine, HostConfig};
@@ -895,6 +986,19 @@ mod tests {
         assert_eq!(parsed.entry_point_override.as_deref(), Some("Startup.Boot"));
         assert_eq!(parsed.bootstrap.profile.as_deref(), Some("windows-stdio"));
         assert!(parsed.enable_jit);
+    }
+
+    #[test]
+    fn parse_init_args_with_kind_override() {
+        let args = vec![
+            "init".to_string(),
+            ".\\new-lib".to_string(),
+            "--kind".to_string(),
+            "library".to_string(),
+        ];
+        let parsed = parse_init_args_from(args).expect("args should parse");
+        assert_eq!(parsed.target_dir, PathBuf::from(".\\new-lib"));
+        assert_eq!(super::init_output_type(parsed.kind), "Library");
     }
 
     #[test]
@@ -1201,6 +1305,68 @@ mod tests {
             default_build_output_path(Path::new("legacy.vbp"), &loaded),
             PathBuf::from("BuildTarget.oxb")
         );
+
+        std::fs::remove_dir_all(&temp_root).expect("cleanup temp dir");
+    }
+
+    #[test]
+    fn init_library_scaffold_uses_library_output_without_entrypoint() {
+        let temp_root = std::env::temp_dir().join(format!(
+            "oxvba_cli_init_library_{}_{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .expect("unix epoch")
+                .as_nanos()
+        ));
+        run_init(vec![
+            "init".to_string(),
+            temp_root.to_string_lossy().to_string(),
+            "--kind".to_string(),
+            "library".to_string(),
+        ]);
+
+        let project_name = temp_root
+            .file_name()
+            .and_then(|name| name.to_str())
+            .expect("project name");
+        let basproj = std::fs::read_to_string(temp_root.join(format!("{project_name}.basproj")))
+            .expect("library basproj should exist");
+        let module =
+            std::fs::read_to_string(temp_root.join("Module1.bas")).expect("module should exist");
+        assert!(basproj.contains("<OutputType>Library</OutputType>"));
+        assert!(!basproj.contains("<EntryPoint>"));
+        assert!(module.contains("Public Function ExampleValue() As Long"));
+
+        std::fs::remove_dir_all(&temp_root).expect("cleanup temp dir");
+    }
+
+    #[test]
+    fn init_host_module_scaffold_sets_default_root_object() {
+        let temp_root = std::env::temp_dir().join(format!(
+            "oxvba_cli_init_host_module_{}_{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .expect("unix epoch")
+                .as_nanos()
+        ));
+        run_init(vec![
+            "init".to_string(),
+            temp_root.to_string_lossy().to_string(),
+            "--kind".to_string(),
+            "host-module".to_string(),
+        ]);
+
+        let project_name = temp_root
+            .file_name()
+            .and_then(|name| name.to_str())
+            .expect("project name");
+        let basproj = std::fs::read_to_string(temp_root.join(format!("{project_name}.basproj")))
+            .expect("host module basproj should exist");
+        assert!(basproj.contains("<OutputType>HostModule</OutputType>"));
+        assert!(basproj.contains("<DefaultRootObject>Application</DefaultRootObject>"));
+        assert!(!basproj.contains("<EntryPoint>"));
 
         std::fs::remove_dir_all(&temp_root).expect("cleanup temp dir");
     }

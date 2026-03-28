@@ -459,12 +459,17 @@ oxvba compile .\legacy\Module1.bas -o .\dist\Module1.oxb
 
 ### `oxvba init [PATH]`
 
-Creates a minimal executable `.basproj` project scaffold.
+Creates a minimal `.basproj` scaffold.
+
+Implemented options:
+- `--kind <application|library|addin|host-module>`
 
 Example:
 
 ```powershell
 oxvba init .\new-app
+oxvba init .\new-lib --kind library
+oxvba init .\excel-host --kind host-module
 ```
 
 ### `oxvba import-vbp <file.vbp>`
