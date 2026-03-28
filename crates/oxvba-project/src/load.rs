@@ -72,6 +72,22 @@ pub fn load_basproj_from_str(xml: &str, project_dir: &Path) -> Result<LoadedProj
     Ok(loaded)
 }
 
+/// Override the effective startup procedure for an already loaded project.
+///
+/// This is an execution-time override for host/CLI scenarios such as
+/// `oxvba run-project --entry Module.Procedure`. It rewrites only the in-memory
+/// startup shim and does not mutate project files on disk.
+pub fn override_loaded_project_entry_point(
+    loaded: &mut LoadedProject,
+    entry_point: &str,
+) -> Result<(), BasProjError> {
+    parse_configured_entry_point(entry_point)?;
+    strip_startup_entry_shims(&mut loaded.manifest.modules);
+    inject_entry_point_startup_shim(&mut loaded.manifest.modules, entry_point)?;
+    loaded.entry_point = Some(entry_point.trim().to_string());
+    Ok(())
+}
+
 /// Build a `LoadedProject` from a fully-parsed (imports merged) `BasProj`.
 /// Does **not** resolve project references — the caller is responsible for
 /// populating `manifest.reference_projects` afterwards.
@@ -697,6 +713,16 @@ fn next_startup_shim_module_name(modules: &[ModuleUnit]) -> String {
         }
         index += 1;
     }
+}
+
+fn strip_startup_entry_shims(modules: &mut Vec<ModuleUnit>) {
+    modules.retain(|module| !is_startup_shim_module_name(&module.module_name));
+}
+
+fn is_startup_shim_module_name(module_name: &str) -> bool {
+    module_name
+        .to_ascii_lowercase()
+        .starts_with(&STARTUP_ENTRY_SHIM_MODULE_PREFIX.to_ascii_lowercase())
 }
 
 fn output_type_name(output_type: OutputType) -> &'static str {
@@ -1503,8 +1529,11 @@ mod tests {
         );
         let temp_root = std::env::temp_dir().join(unique);
         std::fs::create_dir_all(&temp_root).expect("create temp project root");
-        std::fs::write(temp_root.join("Functions.bas"), "Public Sub Warmup()\nEnd Sub\n")
-            .expect("write addin module");
+        std::fs::write(
+            temp_root.join("Functions.bas"),
+            "Public Sub Warmup()\nEnd Sub\n",
+        )
+        .expect("write addin module");
         let xml = "\
 <Project Sdk=\"OxVba.Sdk/0.1.0\">
   <PropertyGroup>
@@ -1521,6 +1550,71 @@ mod tests {
             .expect("addin without entry point should load when no top-level mainline exists");
         assert_eq!(loaded.output_type, OutputType::Addin);
         assert!(loaded.entry_point.is_none());
+
+        std::fs::remove_dir_all(&temp_root).expect("cleanup temp project root");
+    }
+
+    #[test]
+    fn override_loaded_entry_point_replaces_existing_startup_shim() {
+        let unique = format!(
+            "oxvba_project_override_entry_{}_{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .expect("unix epoch")
+                .as_nanos()
+        );
+        let temp_root = std::env::temp_dir().join(unique);
+        std::fs::create_dir_all(&temp_root).expect("create temp project root");
+        std::fs::write(temp_root.join("Main.bas"), "Public Sub Main()\nEnd Sub\n")
+            .expect("write main module");
+        std::fs::write(
+            temp_root.join("Startup.bas"),
+            "Public Sub Boot()\nEnd Sub\n",
+        )
+        .expect("write startup module");
+        let xml = "\
+<Project Sdk=\"OxVba.Sdk/0.1.0\">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <ProjectName>ProjectA</ProjectName>
+    <EntryPoint>Main.Main</EntryPoint>
+  </PropertyGroup>
+  <ItemGroup>
+    <Module Include=\"Main.bas\" />
+    <Module Include=\"Startup.bas\" />
+  </ItemGroup>
+</Project>
+";
+
+        let mut loaded = load_basproj_from_str(xml, &temp_root).expect("project should load");
+        assert_eq!(loaded.entry_point.as_deref(), Some("Main.Main"));
+        assert_eq!(
+            loaded
+                .manifest
+                .modules
+                .iter()
+                .filter(|module| is_startup_shim_module_name(&module.module_name))
+                .count(),
+            1
+        );
+
+        override_loaded_project_entry_point(&mut loaded, "Startup.Boot")
+            .expect("entry override should inject replacement shim");
+
+        assert_eq!(loaded.entry_point.as_deref(), Some("Startup.Boot"));
+        let shim_modules = loaded
+            .manifest
+            .modules
+            .iter()
+            .filter(|module| is_startup_shim_module_name(&module.module_name))
+            .collect::<Vec<_>>();
+        assert_eq!(shim_modules.len(), 1);
+        assert!(
+            shim_modules[0].source.contains("Call Startup.Boot"),
+            "expected startup shim to target override entrypoint, got: {}",
+            shim_modules[0].source
+        );
 
         std::fs::remove_dir_all(&temp_root).expect("cleanup temp project root");
     }

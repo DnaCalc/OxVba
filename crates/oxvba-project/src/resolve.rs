@@ -54,10 +54,11 @@ pub fn resolve_project_references(
         ancestors.insert(canonical.clone());
 
         let ref_project_dir = crate::model::project_dir(&canonical);
-        let ref_project_text = std::fs::read_to_string(&canonical).map_err(|e| BasProjError::Io {
-            path: canonical.display().to_string(),
-            source: e,
-        })?;
+        let ref_project_text =
+            std::fs::read_to_string(&canonical).map_err(|e| BasProjError::Io {
+                path: canonical.display().to_string(),
+                source: e,
+            })?;
         let extension = canonical
             .extension()
             .and_then(|ext| ext.to_str())

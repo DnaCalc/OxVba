@@ -108,9 +108,7 @@ pub fn parse_vbp(content: &str) -> Result<VbpProject, String> {
                     // - Reference=*\G{GUID}#major.minor#lcid#path#name
                     // - Reference=*\A{GUID}#major.minor#lcid#path#name
                     let ref_data = parse_vbp_reference(value).ok_or_else(|| {
-                        format!(
-                            "VBP-E-UNSUPPORTED-REFERENCE: `{line}` is not supported in VBP-S0"
-                        )
+                        format!("VBP-E-UNSUPPORTED-REFERENCE: `{line}` is not supported in VBP-S0")
                     })?;
                     references.push(ref_data);
                 }
@@ -463,9 +461,7 @@ Startup="Sub Main"
             other => panic!("unexpected reference kind: {other:?}"),
         }
         let xml = generate_basproj_from_vbp(&vbp).expect("xml generation should succeed");
-        assert!(xml.contains(
-            "<ProjectReference Include=\"../LibScale/LibScale.vbp\" />"
-        ));
+        assert!(xml.contains("<ProjectReference Include=\"../LibScale/LibScale.vbp\" />"));
     }
 
     #[test]
@@ -548,8 +544,14 @@ Startup="Sub Main"
         ] {
             let vbp = format!("Type={vbp_type}\nName=\"Project1\"\n");
             let loaded = load_vbp_from_str(&vbp, Path::new(".")).expect("vbp should load");
-            assert_eq!(loaded.output_type, output_type, "unexpected mapping for {vbp_type}");
-            assert!(loaded.entry_point.is_none(), "non-exe types should not synthesize startup");
+            assert_eq!(
+                loaded.output_type, output_type,
+                "unexpected mapping for {vbp_type}"
+            );
+            assert!(
+                loaded.entry_point.is_none(),
+                "non-exe types should not synthesize startup"
+            );
         }
     }
 

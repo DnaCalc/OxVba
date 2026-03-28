@@ -41,7 +41,9 @@ pub enum BasProjError {
     #[error("EntryPoint is ambiguous: {0}")]
     EntryPointAmbiguous(String),
 
-    #[error("top-level executable statements are not supported for OutputType={output_type} (module `{module_name}`)")]
+    #[error(
+        "top-level executable statements are not supported for OutputType={output_type} (module `{module_name}`)"
+    )]
     TopLevelMainlineUnsupported {
         output_type: String,
         module_name: String,

@@ -403,6 +403,7 @@ oxvba run tool.bas --policy strict-ci --allow-dynamic-link false
 Runs a discovered project target.
 
 Implemented options:
+- `--entry <Module.Procedure>`
 - `--jit`
 - `--dump-slots`
 - `--dump-values`
@@ -416,6 +417,7 @@ oxvba run-project .
 oxvba run-project .\app
 oxvba run-project .\FinanceTools.basproj
 oxvba run-project .\legacy\Project1.vbp
+oxvba run-project .\app --entry Startup.Boot
 oxvba run-project . --profile windows-stdio --jit
 ```
 

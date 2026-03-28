@@ -158,54 +158,33 @@ fn run_build(args: Vec<String>) {
 // ---------------------------------------------------------------------------
 
 fn run_project(args: Vec<String>) {
-    let mut iter = args.into_iter();
-    let _ = iter.next(); // "run-project"
+    let parsed = parse_run_project_args_from(args).unwrap_or_else(|| {
+        eprintln!(
+            "usage: oxvba run-project [path] [--entry <Module.Procedure>] [--profile <id>] [--policy <preset>] [--jit] [--dump-slots] [--dump-values]"
+        );
+        std::process::exit(2);
+    });
 
-    let mut input_path: Option<PathBuf> = None;
-    let mut enable_jit = false;
-    let mut dump_values = false;
-    let mut dump_slots = false;
-    let mut bootstrap = RunnerBootstrapOptions::default();
-
-    let collected: Vec<String> = iter.collect();
-    let mut i = 0;
-    while i < collected.len() {
-        match collected[i].as_str() {
-            "--jit" => enable_jit = true,
-            "--dump-values" => dump_values = true,
-            "--dump-slots" => dump_slots = true,
-            "--profile" => {
-                i += 1;
-                bootstrap.profile = collected.get(i).cloned();
-            }
-            "--policy" => {
-                i += 1;
-                bootstrap.policy_preset = collected.get(i).cloned();
-            }
-            arg if !arg.starts_with('-') && input_path.is_none() => {
-                input_path = Some(PathBuf::from(arg));
-            }
-            _ => {
-                eprintln!("oxvba run-project: unknown argument: {}", collected[i]);
-                std::process::exit(2);
-            }
-        }
-        i += 1;
-    }
-
-    let loaded = load_run_project_target(input_path).unwrap_or_else(|err| {
+    let mut loaded = load_run_project_target(parsed.input_path).unwrap_or_else(|err| {
         eprintln!("oxvba run-project: {err}");
         std::process::exit(1);
     });
+    if let Some(entry_point) = parsed.entry_point_override.as_deref() {
+        oxvba_project::override_loaded_project_entry_point(&mut loaded, entry_point)
+            .unwrap_or_else(|err| {
+                eprintln!("oxvba run-project: {err}");
+                std::process::exit(1);
+            });
+    }
 
     let config = HostConfig {
-        enable_jit,
+        enable_jit: parsed.enable_jit,
         root_object_name: Some(loaded.default_root_object.clone()),
     };
     let mut engine = Engine::new(config);
 
-    let resolved =
-        resolve_runner_bootstrap(&bootstrap, |key| env::var(key).ok()).unwrap_or_else(|err| {
+    let resolved = resolve_runner_bootstrap(&parsed.bootstrap, |key| env::var(key).ok())
+        .unwrap_or_else(|err| {
             eprintln!("oxvba run-project: bootstrap failed: {err}");
             std::process::exit(2);
         });
@@ -216,7 +195,7 @@ fn run_project(args: Vec<String>) {
 
     match result {
         Ok(values) => {
-            if dump_slots {
+            if parsed.dump_slots {
                 let payload = values
                     .iter()
                     .map(|v| v.to_legacy_i32().unwrap_or(EMPTY_TAG).to_string())
@@ -224,7 +203,7 @@ fn run_project(args: Vec<String>) {
                     .join(",");
                 println!("SLOTS:{payload}");
             }
-            if dump_values {
+            if parsed.dump_values {
                 let payload = values
                     .iter()
                     .map(format_runtime_value)
@@ -238,6 +217,67 @@ fn run_project(args: Vec<String>) {
             std::process::exit(1);
         }
     }
+}
+
+#[derive(Debug, Clone)]
+struct RunProjectArgs {
+    input_path: Option<PathBuf>,
+    enable_jit: bool,
+    dump_values: bool,
+    dump_slots: bool,
+    bootstrap: RunnerBootstrapOptions,
+    entry_point_override: Option<String>,
+}
+
+fn parse_run_project_args_from(args: Vec<String>) -> Option<RunProjectArgs> {
+    let mut iter = args.into_iter();
+    let cmd = iter.next()?;
+    if cmd != "run-project" {
+        return None;
+    }
+
+    let mut input_path: Option<PathBuf> = None;
+    let mut enable_jit = false;
+    let mut dump_values = false;
+    let mut dump_slots = false;
+    let mut bootstrap = RunnerBootstrapOptions::default();
+    let mut entry_point_override: Option<String> = None;
+
+    let collected: Vec<String> = iter.collect();
+    let mut i = 0;
+    while i < collected.len() {
+        match collected[i].as_str() {
+            "--jit" => enable_jit = true,
+            "--dump-values" => dump_values = true,
+            "--dump-slots" => dump_slots = true,
+            "--entry" => {
+                i += 1;
+                entry_point_override = Some(collected.get(i)?.clone());
+            }
+            "--profile" => {
+                i += 1;
+                bootstrap.profile = Some(collected.get(i)?.clone());
+            }
+            "--policy" => {
+                i += 1;
+                bootstrap.policy_preset = Some(collected.get(i)?.clone());
+            }
+            arg if !arg.starts_with('-') && input_path.is_none() => {
+                input_path = Some(PathBuf::from(arg));
+            }
+            _ => return None,
+        }
+        i += 1;
+    }
+
+    Some(RunProjectArgs {
+        input_path,
+        enable_jit,
+        dump_values,
+        dump_slots,
+        bootstrap,
+        entry_point_override,
+    })
 }
 
 // ---------------------------------------------------------------------------
@@ -780,9 +820,12 @@ fn parse_wasm_runtime_class(value: &str) -> Option<WasmRuntimeClass> {
 
 #[cfg(test)]
 mod tests {
-    use super::{default_build_output_path, load_run_project_target, parse_run_args_from};
-    use oxvba_host::{Engine, HostConfig};
+    use super::{
+        default_build_output_path, load_run_project_target, parse_run_args_from,
+        parse_run_project_args_from,
+    };
     use oxvba_hal::model::UnsupportedFeatureMode;
+    use oxvba_host::{Engine, HostConfig};
     use std::path::{Path, PathBuf};
 
     #[test]
@@ -838,6 +881,23 @@ mod tests {
     }
 
     #[test]
+    fn parse_run_project_args_with_entry_override() {
+        let args = vec![
+            "run-project".to_string(),
+            ".".to_string(),
+            "--entry".to_string(),
+            "Startup.Boot".to_string(),
+            "--profile".to_string(),
+            "windows-stdio".to_string(),
+            "--jit".to_string(),
+        ];
+        let parsed = parse_run_project_args_from(args).expect("args should parse");
+        assert_eq!(parsed.entry_point_override.as_deref(), Some("Startup.Boot"));
+        assert_eq!(parsed.bootstrap.profile.as_deref(), Some("windows-stdio"));
+        assert!(parsed.enable_jit);
+    }
+
+    #[test]
     fn run_project_directory_without_basproj_uses_convention_mode() {
         let temp_root = std::env::temp_dir().join(format!(
             "oxvba_cli_convention_mode_{}_{}",
@@ -873,7 +933,7 @@ mod tests {
             temp_root.join("Main.bas"),
             "Attribute VB_Name = \"Main\"\nPublic Sub Main()\nEnd Sub\n",
         )
-            .expect("write main module");
+        .expect("write main module");
         let loaded = load_run_project_target(Some(temp_root.clone()))
             .expect("directory convention mode should load");
         assert_eq!(loaded.entry_point.as_deref(), Some("Main.Main"));
@@ -989,10 +1049,16 @@ mod tests {
                 .as_nanos()
         ));
         std::fs::create_dir_all(&temp_root).expect("create temp dir");
-        std::fs::write(temp_root.join("A.basproj"), "<Project Sdk=\"OxVba.Sdk/0.1.0\" />\n")
-            .expect("write first basproj");
-        std::fs::write(temp_root.join("B.basproj"), "<Project Sdk=\"OxVba.Sdk/0.1.0\" />\n")
-            .expect("write second basproj");
+        std::fs::write(
+            temp_root.join("A.basproj"),
+            "<Project Sdk=\"OxVba.Sdk/0.1.0\" />\n",
+        )
+        .expect("write first basproj");
+        std::fs::write(
+            temp_root.join("B.basproj"),
+            "<Project Sdk=\"OxVba.Sdk/0.1.0\" />\n",
+        )
+        .expect("write second basproj");
 
         let err = load_run_project_target(Some(PathBuf::from(&temp_root)))
             .expect_err("multiple basproj files should fail deterministically");
@@ -1061,6 +1127,50 @@ mod tests {
             .expect("vbp adapter should load executable project");
         assert_eq!(loaded.manifest.project_name, "Project1");
         assert_eq!(loaded.entry_point.as_deref(), Some("Main.Main"));
+
+        std::fs::remove_dir_all(&temp_root).expect("cleanup temp dir");
+    }
+
+    #[test]
+    fn run_project_entry_override_replaces_loaded_startup_path() {
+        let temp_root = std::env::temp_dir().join(format!(
+            "oxvba_cli_entry_override_{}_{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .expect("unix epoch")
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&temp_root).expect("create temp dir");
+        std::fs::write(
+            temp_root.join("Main.bas"),
+            "Attribute VB_Name = \"Main\"\nPublic Sub Main()\nError 1\nEnd Sub\n",
+        )
+        .expect("write main module");
+        std::fs::write(
+            temp_root.join("Startup.bas"),
+            "Attribute VB_Name = \"Startup\"\nPublic Sub Boot()\nEnd Sub\n",
+        )
+        .expect("write startup module");
+        std::fs::write(
+            temp_root.join("ProjectA.basproj"),
+            "<Project Sdk=\"OxVba.Sdk/0.1.0\">\n  <PropertyGroup>\n    <OutputType>Exe</OutputType>\n    <ProjectName>ProjectA</ProjectName>\n    <EntryPoint>Main.Main</EntryPoint>\n  </PropertyGroup>\n  <ItemGroup>\n    <Module Include=\"Main.bas\" />\n    <Module Include=\"Startup.bas\" />\n  </ItemGroup>\n</Project>\n",
+        )
+        .expect("write basproj");
+
+        let mut loaded = load_run_project_target(Some(PathBuf::from(&temp_root)))
+            .expect("directory with basproj should load the project file");
+        oxvba_project::override_loaded_project_entry_point(&mut loaded, "Startup.Boot")
+            .expect("entry override should succeed");
+        assert_eq!(loaded.entry_point.as_deref(), Some("Startup.Boot"));
+
+        let engine = Engine::new(HostConfig {
+            enable_jit: false,
+            root_object_name: None,
+        });
+        engine
+            .execute_project_with_snapshot_phased(&loaded.manifest)
+            .expect("overridden startup procedure should execute");
 
         std::fs::remove_dir_all(&temp_root).expect("cleanup temp dir");
     }

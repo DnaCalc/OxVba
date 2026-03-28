@@ -20568,8 +20568,7 @@ mod tests {
 
     #[test]
     fn direct_source_top_level_mainline_preserves_option_private_module_and_module_state() {
-        let source =
-            "Option Private Module\nvalueOut = 41\nCall Bump(valueOut)\nSub Bump(ByRef value)\nvalue = value + 1\nEnd Sub";
+        let source = "Option Private Module\nvalueOut = 41\nCall Bump(valueOut)\nSub Bump(ByRef value)\nvalue = value + 1\nEnd Sub";
         let out = Engine::new(HostConfig {
             enable_jit: false,
             root_object_name: None,
@@ -20581,7 +20580,8 @@ mod tests {
 
     #[test]
     fn direct_source_top_level_mainline_preserves_module_const_directives() {
-        let source = "#Const ENABLE = True\n#If ENABLE Then\nvalueOut = 41\n#Else\nvalueOut = 0\n#End If\n";
+        let source =
+            "#Const ENABLE = True\n#If ENABLE Then\nvalueOut = 41\n#Else\nvalueOut = 0\n#End If\n";
         let out = Engine::new(HostConfig {
             enable_jit: false,
             root_object_name: None,

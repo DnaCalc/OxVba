@@ -1437,8 +1437,5 @@ Name="MainApp"
         "../LibScale/LibScale.vbp"
     );
     assert!(basproj.com_references.is_empty());
-    assert_eq!(
-        basproj.properties.project_name.as_deref(),
-        Some("MainApp")
-    );
+    assert_eq!(basproj.properties.project_name.as_deref(), Some("MainApp"));
 }

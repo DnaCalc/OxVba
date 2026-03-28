@@ -263,11 +263,8 @@ fn vbp_exe_resolves_project_reference_to_referenced_vbp_project() {
     )
     .expect("write library vbp");
 
-    std::fs::write(
-        app_root.join("Main.bas"),
-        "Call LibScale.M01.Value()\n",
-    )
-    .expect("write main module");
+    std::fs::write(app_root.join("Main.bas"), "Call LibScale.M01.Value()\n")
+        .expect("write main module");
     std::fs::write(
         app_root.join("MainApp.vbp"),
         "Type=Exe\nName=\"MainApp\"\nReference=*\\A{11111111-2222-3333-4444-555555555555}#1.0#0#..\\LibScale\\LibScale.vbp#LibScale\nModule=Main; Main.bas\n",
@@ -281,7 +278,10 @@ fn vbp_exe_resolves_project_reference_to_referenced_vbp_project() {
         Some("Main.__OxVbaTopLevelMainline")
     );
     assert_eq!(loaded.manifest.reference_projects.len(), 1);
-    assert_eq!(loaded.manifest.reference_projects[0].project_name, "LibScale");
+    assert_eq!(
+        loaded.manifest.reference_projects[0].project_name,
+        "LibScale"
+    );
 
     let engine = Engine::new(HostConfig {
         enable_jit: false,
