@@ -20566,6 +20566,19 @@ mod tests {
         assert_eq!(out[0], RuntimeValue::I32(42));
     }
 
+    #[test]
+    fn direct_source_top_level_mainline_preserves_option_private_module_and_module_state() {
+        let source =
+            "Option Private Module\nvalueOut = 41\nCall Bump(valueOut)\nSub Bump(ByRef value)\nvalue = value + 1\nEnd Sub";
+        let out = Engine::new(HostConfig {
+            enable_jit: false,
+            root_object_name: None,
+        })
+        .execute_source_with_value_snapshot(source)
+        .expect("direct source should preserve Option Private Module in top-level mainline");
+        assert_eq!(out[0], RuntimeValue::I32(42));
+    }
+
     #[cfg(target_os = "windows")]
     #[test]
     fn formal_v121_set_keyword_rejects_object_target_for_scalar_source() {

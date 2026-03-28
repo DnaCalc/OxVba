@@ -599,11 +599,11 @@ fn extract_top_level_mainline_lines(lines: &[String]) -> Vec<String> {
             active_proc_end = Some(kind.end_term());
             continue;
         }
-        if lower.starts_with("type ") {
+        if starts_type_block(&lower) {
             active_decl_block_end = Some("end type");
             continue;
         }
-        if lower.starts_with("enum ") {
+        if starts_enum_block(&lower) {
             active_decl_block_end = Some("end enum");
             continue;
         }
@@ -619,9 +619,7 @@ fn extract_top_level_mainline_lines(lines: &[String]) -> Vec<String> {
 fn is_non_mainline_top_level_directive(line: &str) -> bool {
     let lower = line.trim().to_ascii_lowercase();
     lower.starts_with("attribute ")
-        || lower == "option explicit"
-        || parse_option_base_directive(line).is_some()
-        || lower.starts_with("option compare ")
+        || lower.starts_with("option ")
         || lower.starts_with("dim ")
         || lower.starts_with("global ")
         || lower.starts_with("static ")
@@ -637,6 +635,18 @@ fn is_non_mainline_top_level_directive(line: &str) -> bool {
         || lower.starts_with("declare ")
         || lower.starts_with("public declare ")
         || lower.starts_with("private declare ")
+}
+
+fn starts_type_block(lower: &str) -> bool {
+    lower.starts_with("type ")
+        || lower.starts_with("private type ")
+        || lower.starts_with("public type ")
+}
+
+fn starts_enum_block(lower: &str) -> bool {
+    lower.starts_with("enum ")
+        || lower.starts_with("private enum ")
+        || lower.starts_with("public enum ")
 }
 
 fn normalize_source_lines(source: &str) -> Vec<String> {

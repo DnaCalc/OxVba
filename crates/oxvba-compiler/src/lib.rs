@@ -1614,6 +1614,13 @@ mod tests {
     }
 
     #[test]
+    fn compile_direct_top_level_mainline_with_option_private_module_succeeds() {
+        let source =
+            "Option Private Module\nvalueOut = 41\nCall Bump(valueOut)\nSub Bump(ByRef value)\nvalue = value + 1\nEnd Sub";
+        compile(source).expect("direct top-level mainline with Option Private Module should compile");
+    }
+
+    #[test]
     fn compile_debug_print_emits_diagnostics_host_instruction() {
         let source = "Sub Main()\nDebug.Print \"hello\"\nEnd Sub";
         let out = compile(source).expect("compile should succeed");
