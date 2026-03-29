@@ -36,6 +36,18 @@ struct WithEventsOwnerIterator {
     next_index: usize,
 }
 
+#[derive(Debug, Clone)]
+struct ForEachIteratorState {
+    items: Vec<RuntimeValue>,
+    next_index: usize,
+}
+
+#[derive(Debug, Clone)]
+struct ForEachInitError {
+    code: i32,
+    detail: String,
+}
+
 /// Saved error-handling state for one procedure activation.
 #[derive(Debug, Clone, Default)]
 struct ErrorFrame {
@@ -60,6 +72,8 @@ pub struct Vm {
     call_stack: Vec<(usize, ErrorFrame)>,
     procedure_runtime_metadata: BTreeMap<String, ProcedureRuntimeMetadata>,
     project_dynamic_objects: HashMap<ObjectHandle, ProjectDynamicObjectRoute>,
+    foreach_iterators: HashMap<i32, ForEachIteratorState>,
+    next_foreach_iterator_id: i32,
     project_com_withevents_routes: HashMap<i32, Vec<ProjectComWithEventsRoute>>,
     withevents_bindings: HashMap<i64, RuntimeValue>,
     com_withevents_subscriptions: HashMap<ComSubscriptionToken, ComWithEventsSubscription>,
@@ -103,6 +117,8 @@ impl Vm {
             call_stack: Vec::new(),
             procedure_runtime_metadata: BTreeMap::new(),
             project_dynamic_objects: HashMap::new(),
+            foreach_iterators: HashMap::new(),
+            next_foreach_iterator_id: 1,
             project_com_withevents_routes: HashMap::new(),
             withevents_bindings: HashMap::new(),
             com_withevents_subscriptions: HashMap::new(),
@@ -349,6 +365,8 @@ impl Vm {
             self.clear_all_com_withevents_state_best_effort();
             self.withevents_bindings.clear();
         }
+        self.foreach_iterators.clear();
+        self.next_foreach_iterator_id = 1;
         self.withevents_owner_iters.clear();
         self.on_error_resume_next = false;
         self.on_error_goto_label_target = None;
@@ -1665,6 +1683,53 @@ impl Vm {
                     )?;
                     pc += 1;
                 }
+                Instruction::IntrinsicForEachInit { iter, src } => {
+                    let iterable = self.read_value_slot(*src)?;
+                    match self.materialize_foreach_items(bytecode, typed_fastpaths, &iterable) {
+                        Ok(items) => {
+                            let id = self.next_foreach_iterator_id;
+                            self.next_foreach_iterator_id =
+                                self.next_foreach_iterator_id.saturating_add(1);
+                            self.foreach_iterators.insert(
+                                id,
+                                ForEachIteratorState {
+                                    items,
+                                    next_index: 0,
+                                },
+                            );
+                            self.write_value_slot(*iter, RuntimeValue::I32(id))?;
+                            pc += 1;
+                        }
+                        Err(err) => pc = self.route_runtime_error(pc, err.code, Some(&err.detail))?,
+                    }
+                }
+                Instruction::IntrinsicForEachNext {
+                    iter,
+                    item,
+                    has_value,
+                } => {
+                    let iter_id = self
+                        .read_value_slot(*iter)?
+                        .to_legacy_i32()
+                        .map_err(|detail| format!("For Each iterator slot is invalid: {detail}"))?;
+                    let next = if let Some(state) = self.foreach_iterators.get_mut(&iter_id) {
+                        if state.next_index < state.items.len() {
+                            let value = state.items[state.next_index].clone();
+                            state.next_index += 1;
+                            Some(value)
+                        } else {
+                            None
+                        }
+                    } else {
+                        None
+                    };
+                    if next.is_none() {
+                        self.foreach_iterators.remove(&iter_id);
+                    }
+                    self.write_value_slot(*has_value, RuntimeValue::Bool(next.is_some()))?;
+                    self.write_value_slot(*item, next.unwrap_or(RuntimeValue::Empty))?;
+                    pc += 1;
+                }
                 Instruction::IntrinsicLBoundArray { dst, src } => {
                     let value = self.read_legacy_scalar_slot(*src)?;
                     let out = if Self::is_array_tag(value) { 0 } else { -1 };
@@ -2942,6 +3007,67 @@ impl Vm {
         crate::semantics::runtime_value_to_dynamic_member_selector(value, field)
     }
 
+    fn materialize_foreach_items(
+        &mut self,
+        bytecode: &Bytecode,
+        typed_fastpaths: bool,
+        iterable: &RuntimeValue,
+    ) -> Result<Vec<RuntimeValue>, ForEachInitError> {
+        if let RuntimeValue::ArrayIntent(array) = iterable {
+            return array.elements.clone().ok_or_else(|| ForEachInitError {
+                code: 13,
+                detail: "For Each array source is missing materialized element payload"
+                    .to_string(),
+            });
+        }
+
+        if let Ok(object) = Self::runtime_value_to_com_object(iterable, "foreach.source") {
+            return self.materialize_foreach_items_from_object(bytecode, typed_fastpaths, object);
+        }
+
+        Err(ForEachInitError {
+            code: 13,
+            detail: format!("For Each expects an array or object source, got {iterable:?}"),
+        })
+    }
+
+    fn materialize_foreach_items_from_object(
+        &mut self,
+        bytecode: &Bytecode,
+        typed_fastpaths: bool,
+        object: ObjectHandle,
+    ) -> Result<Vec<RuntimeValue>, ForEachInitError> {
+        let request = DynamicCallRequest {
+            object: object.into(),
+            member: DynamicMemberSelector::Token(-4),
+            args: Vec::new(),
+            call_kind_hint: Some(DynamicCallKind::PropertyGet),
+        };
+        match self.try_invoke_project_dynamic(bytecode, typed_fastpaths, &request) {
+            Ok(Some(RuntimeValue::ArrayIntent(array))) => {
+                array.elements.clone().ok_or_else(|| ForEachInitError {
+                    code: 13,
+                    detail: format!(
+                        "For Each NewEnum source on object {object} is missing element payload"
+                    ),
+                })
+            }
+            Ok(Some(other)) => Err(ForEachInitError {
+                code: 13,
+                detail: format!(
+                    "For Each NewEnum source on object {object} returned unsupported value {other:?}"
+                ),
+            }),
+            Ok(None) => Err(ForEachInitError {
+                code: 438,
+                detail: format!(
+                    "Object {object} does not expose a supported project-dynamic NewEnum source"
+                ),
+            }),
+            Err(detail) => Err(ForEachInitError { code: 438, detail }),
+        }
+    }
+
     fn validate_runtime_assignment(
         value: &RuntimeValue,
         intent: RuntimeAssignmentIntent,
@@ -3109,7 +3235,9 @@ impl Vm {
             DynamicMemberSelector::Token(token) => route
                 .members
                 .iter()
-                .filter(|member| member.known_dispatch_token == Some(*token))
+                .filter(|member| {
+                    member.known_dispatch_token == Some(*token) || member.dispatch_id == Some(*token)
+                })
                 .cloned()
                 .collect::<Vec<_>>(),
             DynamicMemberSelector::DefaultMember => route
@@ -3149,9 +3277,13 @@ impl Vm {
                     .iter()
                     .map(|member| {
                         format!(
-                            "{}:{:?}/arity={}/default={}",
+                            "{}/{}:{:?}/arity={}/default={}",
                             member
                                 .known_dispatch_token
+                                .map(|token| token.to_string())
+                                .unwrap_or_else(|| "-".to_string()),
+                            member
+                                .dispatch_id
                                 .map(|token| token.to_string())
                                 .unwrap_or_else(|| "-".to_string()),
                             member.kind,
@@ -4017,7 +4149,9 @@ impl Vm {
 #[cfg(test)]
 mod tests {
     use super::Vm;
-    use oxvba_com::{ComValue, DynamicCallArg, DynamicCallRequest, DynamicMemberSelector};
+    use oxvba_com::{
+        ComValue, DynamicCallArg, DynamicCallKind, DynamicCallRequest, DynamicMemberSelector,
+    };
     use oxvba_compiler::{
         Bytecode, Instruction, ProcedureRuntimeMetadata, ProjectComWithEventsRoute,
         ProjectDynamicMemberKind, ProjectDynamicMemberRoute, ProjectDynamicObjectRoute,
@@ -4818,6 +4952,68 @@ mod tests {
             .expect("project-dynamic route should match");
 
         assert_eq!(value, RuntimeValue::I32(8));
+    }
+
+    #[test]
+    fn project_dynamic_dispatch_matches_dispatch_id_tokens_for_newenum() {
+        let object = ObjectHandle::new(74);
+        let bytecode = Bytecode {
+            instructions: vec![
+                Instruction::LoadConstI32 { slot: 1, value: 41 },
+                Instruction::LoadConstI32 { slot: 2, value: 42 },
+                Instruction::IntrinsicArrayLiteral {
+                    dst: 3,
+                    values: vec![1, 2],
+                },
+                Instruction::Return,
+            ],
+            external_call_descriptors: Vec::new(),
+            slot_count: 4,
+            user_slot_count: 4,
+        };
+        let member = ProjectDynamicMemberRoute {
+            member_name: "newenum".to_string(),
+            lowered_name: "newenum".to_string(),
+            known_dispatch_token: None,
+            dispatch_id: Some(-4),
+            member_flags: Some(0x40),
+            is_default_member: false,
+            kind: ProjectDynamicMemberKind::PropertyGet,
+            visible_param_count: 0,
+            params: Vec::new(),
+            entry_pc: 0,
+            param_slots: vec![0],
+            return_slot: Some(3),
+        };
+        let route = ProjectDynamicObjectRoute {
+            object_handle: object,
+            project_name: "ProjectA".to_string(),
+            module_name: "Widget".to_string(),
+            members: vec![member],
+            implements_interfaces: Vec::new(),
+        };
+        let request = DynamicCallRequest {
+            object: object.into(),
+            member: DynamicMemberSelector::Token(-4),
+            args: Vec::new(),
+            call_kind_hint: Some(DynamicCallKind::PropertyGet),
+        };
+
+        let mut vm = Vm::default();
+        vm.reset_execution_state(bytecode.slot_count, false);
+        vm.set_project_dynamic_objects(vec![route]);
+        let value = vm
+            .try_invoke_project_dynamic(&bytecode, false, &request)
+            .expect("dispatch should bind")
+            .expect("project-dynamic route should match");
+
+        assert_eq!(
+            value,
+            RuntimeValue::ArrayIntent(SafeArray::from_values(vec![
+                RuntimeValue::I32(41),
+                RuntimeValue::I32(42),
+            ]))
+        );
     }
 
     #[test]

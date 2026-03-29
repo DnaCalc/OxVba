@@ -156,7 +156,8 @@ The reset is only valid if the active matrices end up distinguishing at least:
 The first concrete implementation-ready blocker surfaced by the current walks is `LANG-0002`:
 - object/class enumeration via `NewEnum` / `IEnumVARIANT` remains `in-progress`,
 - the dependent `PH-0008` imported `NewEnum` runtime row stays downstream until `LANG-0002` is addressed.
-- the scoped follow-up bead is `bd-gm3.14.2.1`.
+- the scoped implementation bead is `bd-gm3.14.2.1`.
+- the remaining imported/COM-backed transport split is `bd-gm3.14.2.1.1`.
 
 If those remain merged under one active closure label, the reset has failed.
 
@@ -170,7 +171,7 @@ If those remain merged under one active closure label, the reset has failed.
 
 The next queued actions under this audit are:
 1. rewrite the language-domain active truth so `For Each` over arrays and `For Each` over object enumerators are separate matrix rows with separate evidence,
-2. carry `bd-gm3.14.2.1` through execution as the implementation-ready follow-up bead for `LANG-0002` object `For Each` / `NewEnum` execution support,
+2. carry `bd-gm3.14.2.1` through the bounded project-dynamic execution slice for `LANG-0002`, then continue `bd-gm3.14.2.1.1` for the remaining imported/COM-backed `NewEnum` / `IEnumVARIANT` transport gap,
 3. classify `CONFORMANCE_CHECK_TOPICS.csv` topic-by-topic by target canonical matrix domain,
 4. move broad historical status surfaces into an archive lane so they stop competing with matrix truth,
 5. define how retained gate registers (`DEFERRED_ORACLE_GATES.csv`) cross-link to the canonical matrices without becoming duplicate truth stores.

@@ -724,14 +724,22 @@ fn emit_stmt(
                 }
             }
         }
-        BoundStmt::ForEach { var, items, body } => {
+        BoundStmt::ForEach {
+            var,
+            items,
+            iterable,
+            body,
+        } => {
             if let Some(var_slot) = slot_map.get(var.as_str()).copied() {
                 for_exit_stack.push(Vec::new());
-                for item in items {
+                if let Some(iterable) = iterable {
+                    let iterable_slot = temps.alloc_temp();
+                    let iter_slot = temps.alloc_temp();
+                    let has_value_slot = temps.alloc_temp();
                     emit_expr_into(
-                        item,
+                        iterable,
                         compare_mode,
-                        var_slot,
+                        iterable_slot,
                         slot_map,
                         temps,
                         instructions,
@@ -739,6 +747,21 @@ fn emit_stmt(
                         proc_meta,
                         external_decls,
                     );
+                    instructions.push(Instruction::IntrinsicForEachInit {
+                        iter: iter_slot,
+                        src: iterable_slot,
+                    });
+                    let loop_start = instructions.len();
+                    instructions.push(Instruction::IntrinsicForEachNext {
+                        iter: iter_slot,
+                        item: var_slot,
+                        has_value: has_value_slot,
+                    });
+                    let exit_patch = instructions.len();
+                    instructions.push(Instruction::JumpIfZero {
+                        cond_slot: has_value_slot,
+                        target_pc: usize::MAX,
+                    });
                     emit_stmt_list(
                         body,
                         compare_mode,
@@ -756,6 +779,45 @@ fn emit_stmt(
                         current_proc_name,
                         proc_labels,
                     );
+                    instructions.push(Instruction::Jump {
+                        target_pc: loop_start,
+                    });
+                    let exit_target = instructions.len();
+                    if let Instruction::JumpIfZero { target_pc, .. } = &mut instructions[exit_patch]
+                    {
+                        *target_pc = exit_target;
+                    }
+                } else {
+                    for item in items {
+                        emit_expr_into(
+                            item,
+                            compare_mode,
+                            var_slot,
+                            slot_map,
+                            temps,
+                            instructions,
+                            call_patches,
+                            proc_meta,
+                            external_decls,
+                        );
+                        emit_stmt_list(
+                            body,
+                            compare_mode,
+                            slot_map,
+                            temps,
+                            instructions,
+                            do_exit_stack,
+                            for_exit_stack,
+                            call_patches,
+                            error_handler_patches,
+                            goto_patches,
+                            resume_label_patches,
+                            proc_meta,
+                            external_decls,
+                            current_proc_name,
+                            proc_labels,
+                        );
+                    }
                 }
                 let exit_target = instructions.len();
                 if let Some(exit_patches) = for_exit_stack.pop() {
@@ -3323,6 +3385,23 @@ mod tests {
             code.instructions
                 .iter()
                 .any(|i| matches!(i, Instruction::CmpLeSlots { .. }))
+        );
+    }
+
+    #[test]
+    fn emits_runtime_foreach_for_non_array_iterables() {
+        let source = "Sub Main()\nDim item\nDim widget\nFor Each item In widget\nitem = item\nNext\nEnd Sub";
+        let bound = resolve_symbols(source);
+        let code = emit_bytecode(&bound);
+        assert!(
+            code.instructions
+                .iter()
+                .any(|i| matches!(i, Instruction::IntrinsicForEachInit { .. }))
+        );
+        assert!(
+            code.instructions
+                .iter()
+                .any(|i| matches!(i, Instruction::IntrinsicForEachNext { .. }))
         );
     }
 

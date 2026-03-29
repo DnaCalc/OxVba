@@ -125,6 +125,7 @@ pub enum BoundStmt {
     ForEach {
         var: String,
         items: Vec<BoundExpr>,
+        iterable: Option<BoundExpr>,
         body: Vec<BoundStmt>,
     },
     ReDim {
@@ -2934,7 +2935,12 @@ fn parse_for_each_stmt(
     property_read_routes: &HashMap<String, String>,
     line: &str,
 ) -> BoundStmt {
-    let Some((var, items)) = parse_for_each_header(line, array_bounds) else {
+    let Some(ForEachHeader {
+        var,
+        items,
+        iterable,
+    }) = parse_for_each_header(line, array_bounds)
+    else {
         *index += 1;
         return BoundStmt::Unsupported {
             line: line.to_string(),
@@ -2963,7 +2969,12 @@ fn parse_for_each_stmt(
         let lower = lines[*index].to_ascii_lowercase();
         if lower == "next" || lower.starts_with("next ") {
             *index += 1;
-            return BoundStmt::ForEach { var, items, body };
+            return BoundStmt::ForEach {
+                var,
+                items,
+                iterable,
+                body,
+            };
         }
     }
 
@@ -3551,10 +3562,13 @@ fn parse_for_header(
     Some((var, start, end, step))
 }
 
-fn parse_for_each_header(
-    line: &str,
-    array_bounds: &ArrayBoundsMap,
-) -> Option<(String, Vec<BoundExpr>)> {
+struct ForEachHeader {
+    var: String,
+    items: Vec<BoundExpr>,
+    iterable: Option<BoundExpr>,
+}
+
+fn parse_for_each_header(line: &str, array_bounds: &ArrayBoundsMap) -> Option<ForEachHeader> {
     let lower = line.to_ascii_lowercase();
     if !lower.starts_with("for each ") {
         return None;
@@ -3565,27 +3579,26 @@ fn parse_for_each_header(
     let var = normalize_ident(var_raw)?;
     let iterable = iterable_raw.trim();
 
-    let iterable_lower = iterable.to_ascii_lowercase();
-    if iterable_lower.starts_with("array(") && iterable.ends_with(')') {
-        let inner = &iterable[6..iterable.len() - 1];
-        let items = split_call_args(inner)?
-            .iter()
-            .map(|token| parse_expr(token, array_bounds))
-            .collect::<Option<Vec<_>>>()?;
-        if items.is_empty() {
-            return None;
+    if let Some(base) = normalize_ident(iterable) {
+        if let Some(bounds) = array_bounds.get(&base) {
+            let element_count = array_element_count(bounds)?;
+            let mut items = Vec::with_capacity(element_count);
+            for idx in 0..element_count {
+                items.push(BoundExpr::Var(format!("{base}_{idx}")));
+            }
+            return Some(ForEachHeader {
+                var,
+                items,
+                iterable: None,
+            });
         }
-        return Some((var, items));
     }
 
-    let base = normalize_ident(iterable)?;
-    let bounds = array_bounds.get(&base)?;
-    let element_count = array_element_count(bounds)?;
-    let mut items = Vec::with_capacity(element_count);
-    for idx in 0..element_count {
-        items.push(BoundExpr::Var(format!("{base}_{idx}")));
-    }
-    Some((var, items))
+    Some(ForEachHeader {
+        var,
+        items: Vec::new(),
+        iterable: Some(parse_expr(iterable, array_bounds)?),
+    })
 }
 
 /// Parse `Open path For mode As [#]filenum`

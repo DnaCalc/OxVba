@@ -382,7 +382,12 @@ fn check_stmt(
                 labels,
             )
         }
-        BoundStmt::ForEach { var, items, body } => {
+        BoundStmt::ForEach {
+            var,
+            items,
+            iterable,
+            body,
+        } => {
             ensure_declared(
                 var,
                 option_explicit,
@@ -393,9 +398,9 @@ fn check_stmt(
                 declaration_types,
             )?;
             let target_ty = *declared_types.get(var).unwrap_or(&BoundType::Variant);
-            for item in items {
+            if let Some(iterable) = iterable {
                 check_expr(
-                    item,
+                    iterable,
                     option_explicit,
                     default_type_table,
                     declared,
@@ -404,12 +409,35 @@ fn check_stmt(
                     declaration_types,
                     proc_context,
                 )?;
-                let item_ty = infer_expr_type(item, declared_types);
-                if !can_assign_to(target_ty, item_ty) {
+                let iterable_ty = infer_expr_type(iterable, declared_types);
+                if !matches!(
+                    iterable_ty,
+                    BoundType::Array | BoundType::Object | BoundType::Variant
+                ) {
                     return Err(format!(
-                        "type mismatch in For Each item assignment: cannot assign {:?} to {:?} variable {}",
-                        item_ty, target_ty, var
+                        "type mismatch in For Each iterable: expected Array/Object/Variant, got {:?}",
+                        iterable_ty
                     ));
+                }
+            } else {
+                for item in items {
+                    check_expr(
+                        item,
+                        option_explicit,
+                        default_type_table,
+                        declared,
+                        declared_types,
+                        declarations,
+                        declaration_types,
+                        proc_context,
+                    )?;
+                    let item_ty = infer_expr_type(item, declared_types);
+                    if !can_assign_to(target_ty, item_ty) {
+                        return Err(format!(
+                            "type mismatch in For Each item assignment: cannot assign {:?} to {:?} variable {}",
+                            item_ty, target_ty, var
+                        ));
+                    }
                 }
             }
             check_stmt_list(
@@ -1403,6 +1431,7 @@ fn intrinsic_result_type(name: &str) -> Option<BoundType> {
         "nper" => Some(BoundType::Double),
         "isempty" | "isnull" | "iserror" | "typeofis" => Some(BoundType::Boolean),
         "vbnullstring" => Some(BoundType::String),
+        "array" => Some(BoundType::Array),
         _ => None,
     }
 }
@@ -2056,6 +2085,7 @@ mod tests {
         assert_eq!(intrinsic_result_type("instr"), Some(BoundType::Long));
         assert_eq!(intrinsic_result_type("instrrev"), Some(BoundType::Long));
         assert_eq!(intrinsic_result_type("strcomp"), Some(BoundType::Long));
+        assert_eq!(intrinsic_result_type("array"), Some(BoundType::Array));
     }
 
     fn parse_bound_type(text: &str) -> Option<BoundType> {

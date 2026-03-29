@@ -88,9 +88,19 @@ fn optimize_stmt_list(stmts: Vec<BoundStmt>) -> Vec<BoundStmt> {
                     body,
                 });
             }
-            BoundStmt::ForEach { var, items, body } => {
+            BoundStmt::ForEach {
+                var,
+                items,
+                iterable,
+                body,
+            } => {
                 let body = optimize_stmt_list(body);
-                out.push(BoundStmt::ForEach { var, items, body });
+                out.push(BoundStmt::ForEach {
+                    var,
+                    items,
+                    iterable,
+                    body,
+                });
             }
             BoundStmt::DoWhile {
                 cond,

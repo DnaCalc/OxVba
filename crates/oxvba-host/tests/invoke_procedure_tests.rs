@@ -4,7 +4,7 @@ use std::collections::BTreeMap;
 
 use oxvba_compiler::{ModuleAttributes, ModuleKind, ModuleUnit, ProjectKind, ProjectManifest};
 use oxvba_host::Engine;
-use oxvba_runtime::RuntimeValue;
+use oxvba_runtime::{RuntimeValue, bstr::BStr};
 
 fn make_manifest(modules: Vec<ModuleUnit>) -> ProjectManifest {
     ProjectManifest {
@@ -137,6 +137,44 @@ fn multiple_invocations_on_same_session() {
         RuntimeValue::I32(v) => assert_eq!(v, 21),
         other => panic!("Expected I32(21), got {other:?}"),
     }
+}
+
+#[test]
+fn invoke_function_foreach_over_project_newenum_array_executes() {
+    let manifest = make_manifest(vec![
+        make_module(
+            "Main",
+            concat!(
+                "Public Sub Bootstrap()\n",
+                "End Sub\n",
+                "Public Function Main() As String\n",
+                "Dim widget As New Widget\n",
+                "Dim item\n",
+                "Dim valueOut\n",
+                "For Each item In widget\n",
+                "valueOut = valueOut & CStr(item) & \",\"\n",
+                "Next item\n",
+                "Main = valueOut\n",
+                "End Function\n"
+            ),
+        ),
+        make_class_module(
+            "Widget",
+            concat!(
+                "Public Property Get NewEnum() As Variant\n",
+                "NewEnum = Array(41, 42)\n",
+                "End Property\n",
+                "Attribute NewEnum.VB_UserMemId = -4\n",
+                "Attribute NewEnum.VB_MemberFlags = \"40\"\n"
+            ),
+        ),
+    ]);
+
+    let engine = Engine::default();
+    let mut session = engine.compile_and_prepare_session(&manifest).unwrap();
+    let result = engine.invoke_procedure(&mut session, "Main", "Main", &[]).unwrap();
+
+    assert_eq!(result, RuntimeValue::String(BStr("41,42,".to_string())));
 }
 
 // ---------------------------------------------------------------------------
