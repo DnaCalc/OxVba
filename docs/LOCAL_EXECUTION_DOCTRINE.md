@@ -14,6 +14,22 @@ This doctrine complements:
 
 ## Lessons Applied
 
+## 0) Worksets execute through beads
+
+Active worksets must be decomposed into bead subtrees before substantial execution.
+
+Operational rules:
+- worksets remain the milestone/umbrella planning unit,
+- beads are the near-atomic execution unit,
+- do not treat broad workset prose as sufficient execution tracking,
+- work from ready beads by default,
+- if a bead reveals required missing work, create a new bead for it before closing the current bead.
+
+Completion discipline:
+- a bead is only complete when its stated outcome exists and its completion evidence has been verified,
+- a workset is not complete while required beads remain open,
+- narrative progress text is never a substitute for bead state.
+
 ## 1) Scaffold determinism is a gate, not a convenience
 
 Generated profile artifacts (`workset`/`profile-status`/`integrated_gate`) must follow strict naming and multiline structure.
@@ -43,6 +59,9 @@ Minimum expectation:
 - update HAL spec docs,
 - update uncertainty/implementation-defined registers if behavior boundary moved,
 - keep conformance plan mapping current.
+
+Additional rule:
+- if a behavior claim is only true for a subset, the updated docs must name that subset explicitly.
 
 ## 4) Non-GUI behavior is first-class, not fallback
 
@@ -117,6 +136,19 @@ Policy:
 - run `./scripts/validate-profile-artifact-scope.ps1 -Mode staged` before commit,
 - if historical backfill is intentional, pass explicit allow-list versions.
 
+## 13) Validation truth must carry subset boundaries
+
+Do not allow active truth artifacts to collapse materially different support states into one broad feature claim.
+
+Required practice:
+- split rows when subsets differ materially,
+- prefer `implemented-subset` / `in-progress` over broad `implemented`,
+- archive or rewrite active artifacts that cannot express the needed precision,
+- keep compiler, interpreter, JIT, oracle, and formal-model status visible where relevant.
+
+The standing canary for this rule is `For Each`:
+- array iteration support and object-enumerator support must not share one closure label unless both are actually complete for the scoped target.
+
 ## Required Local Checks (Doc-Heavy Ladder Runs)
 
 1. Validate profile scaffold integrity:
@@ -158,6 +190,18 @@ Policy:
 ```powershell
 ./scripts/new-profile-slice.ps1 -FromVersion <start> -ToVersion <end> -LadderPath <ladder> -WorksetPath <workset>
 ```
+
+## Minimal Bead Loop
+
+For active workset execution:
+
+1. create or refresh the bead subtree for the workset,
+2. inspect the ready bead set,
+3. mark one bead in progress,
+4. complete the bead outcome and verify its evidence,
+5. create follow-up beads immediately for newly discovered required work,
+6. close the bead only when the stated outcome is actually complete,
+7. commit bead-state and code-state together.
 
 ## Commit Discipline for Ladder Docs
 

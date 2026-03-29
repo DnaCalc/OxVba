@@ -17,6 +17,7 @@ Execution defaults:
 - Build an end-to-end vertical slice early.
 - Keep high-risk performance paths behind feature flags until parity/correctness gates are green.
 - Use measurable phase gates (pass rates, divergence counts, benchmark thresholds).
+- Execute active worksets through bead subtrees so completion and follow-up work are tracked at near-atomic outcome granularity.
 
 ### 3.1 Workset Completion Doctrine
 
@@ -46,7 +47,26 @@ Stopping rule:
   - a genuine blocker that prevents further progress,
   - a deliberate scope split recorded in the docs so the remaining gap is tracked as a new active in-progress item rather than silently dropped.
 
-### 3.2 External Boundary Ownership Doctrine
+### 3.2 Workset-Bead Execution Doctrine
+
+Worksets remain the high-level execution unit, but active work must proceed through bead subtrees.
+
+Binding rules:
+- Every active workset must generate a bead tree before substantial implementation, audit, or conformance work begins.
+- Beads are the unit of executable progress: one reviewable outcome with explicit completion evidence.
+- The ready bead set, not narrative momentum, is the default chooser for what is worked next.
+- A bead may be closed only when its stated outcome and completion evidence are both satisfied.
+- If a bead exposes uncovered required work, that work must be captured as one or more new beads before the current bead is closed.
+- Workset progress summaries do not substitute for bead closure evidence.
+- A workset may not be described as complete while any required child bead remains open or while any required uncovered follow-up work is still only described narratively.
+
+Subset-labeling rules:
+- Every validation, coverage, or completion claim must name the supported subset if the full behavior area is not complete.
+- `implemented-subset` is valid language; `implemented` is not valid shorthand for a subset.
+- Feature names in matrices and status artifacts must be split when different semantic subsets have materially different support states.
+- If a feature row or work item aggregates multiple subsets, the aggregation must not use completion language unless all subsets are complete for the declared scope.
+
+### 3.3 External Boundary Ownership Doctrine
 
 Binding architecture rules:
 - OxVba semantic values are the canonical runtime value model.
@@ -88,6 +108,17 @@ Admissible evidence for compatibility claims:
 - Reproducible observation harness outputs.
 
 Every compatibility claim should be traceable to a reproducible artifact (test case, harness output, or decision-table entry).
+
+Canonical validation rule:
+- Active conformance truth must be driven from explicit validation matrices rather than broad narrative summaries.
+- A validation matrix row must identify:
+  - authority/reference source,
+  - supported subset boundary,
+  - compiler/interpreter/JIT status,
+  - oracle/evidence status,
+  - formal-model status where applicable,
+  - active test anchors.
+- If an active artifact cannot express subset boundaries and evidence state precisely enough to prevent over-broad closure language, it must be rewritten, split, or archived.
 
 Artifact naming convention:
 - Prefer `.jsonl` over `.ndjson` for line-delimited JSON evidence/telemetry files.
@@ -134,6 +165,7 @@ Post-semantics-change checklist (required when diagnostics or conformance semant
 3. Ensure deferred-gate structured fields are consistent (`foldback_required`, `foldback_steps`, `close_condition`).
 4. Run `./scripts/check-governance.ps1`.
 5. Run impacted crate tests and `./scripts/meta-check.ps1 -Fast -NoArtifacts` before merge.
+6. If the changed area is governed by an active validation matrix, update the matrix row truth and subset labeling in the same cycle.
 
 ## 8. Roles and Foundation Alignment
 OxVBA is primarily a Rust delivery project within the broader DNA Calc structure.
