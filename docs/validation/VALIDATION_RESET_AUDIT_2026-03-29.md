@@ -92,6 +92,34 @@ Result:
 | `docs/FORMAL.md` | formal-program summary | rewrite | `docs/validation/LANGUAGE_SERVICES_AND_FORMALIZATION_MATRIX_V1.csv` | useful overview, but not precise enough to be the active truth carrier |
 | `docs/spec/HAL_FORMALIZATION_PROGRAM.md` | authority/program source | retain-active | authority source for matrix rows | keep as authority, not as a substitute for matrix truth |
 
+### 2026-03-29 Language/Services/Formalization Walk
+
+Verification pass:
+- `LSF-0001` remains `in-progress` as the bounded syntax/service inventory row. The checked evidence supports the internal service-surface claim, but not LSP parity or complete language-feature coverage.
+- `LSF-0002` remains `in-progress` as the bounded formalization row. The checked evidence supports the presence of scaffolded formal artifacts and the current obligation registry, but not proof closure.
+
+Checked evidence:
+- `crates/oxvba-syntax/src/lexer.rs`
+- `crates/oxvba-syntax/src/parser.rs`
+- `crates/oxvba-syntax/src/red.rs`
+- `crates/oxvba-languageservice/src/semantic.rs`
+- `crates/oxvba-languageservice/src/service.rs`
+- `crates/oxvba-languageservice/src/workspace.rs`
+- `formal/lean/OxVba/VarType.lean`
+- `formal/lean/OxVba/Coerce.lean`
+- `formal/lean/OxVba/Arithmetic.lean`
+- `formal/lean/OxVba/RefCount.lean`
+- `docs/evidence/formal/MANIFEST.md`
+- `docs/evidence/formal/INVENTORY.md`
+- `docs/evidence/formal/obligations.csv`
+- `docs/evidence/formal/latest_run.md`
+
+Result:
+- The canonical language-services/formalization matrix is now anchored to the concrete syntax, semantic-snapshot, and formal-registry artifacts that actually exist in the repo.
+- No additional row split was required for this pass; the current `LSF-0001` / `LSF-0002` boundary remains the honest split between service-surface inventory and formalization scaffolding.
+- Broader executable language semantics remain owned by `docs/validation/LANGUAGE_VALIDATION_MATRIX_V1.csv`, not by this matrix.
+- Bounded walk record: `docs/validation/LANGUAGE_SERVICES_AND_FORMALIZATION_WALK_2026-03-29.md`.
+
 ## First Canary
 
 The first required process check is `For Each`.
