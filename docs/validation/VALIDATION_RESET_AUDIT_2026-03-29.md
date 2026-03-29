@@ -58,6 +58,31 @@ Use `split` when one artifact currently merges materially different subset state
 | `docs/spec/COM_EARLY_BINDING_TYPELIB_CONFORMANCE_V1.md` | authority/spec source | retain-active | authority source for matrix rows | keep as authority, not as truth summary |
 | `docs/spec/COM_CLIENT_SERVER_CONFORMANCE_V1.md` | authority/spec source | retain-active | authority source for matrix rows | keep as authority, not as truth summary |
 
+### 2026-03-29 COM/External Walk
+
+Verification pass:
+- `COM-0001` remains `implemented-subset` for controlled late-bound marshalling on scalar/object/array lanes.
+- `COM-0002` remains `verified` for class-module COM export metadata flow.
+- `COM-0003` is `verified` for TestEventServer typelib-driven binding and source-interface callbacks.
+- `COM-0004` is `verified` for real registered `Scripting.Dictionary` `As New` activation.
+- `COM-0005` is `verified` for dual-interface dispatch-vs-vtable transition stability.
+- `COM-0006` is `verified` for file-backed typelib version selection and broken-reference repair.
+
+Checked evidence:
+- `crates/oxvba-host/tests/com_client_end_to_end.rs`
+- `crates/oxvba-host/tests/com_client_registered_lane.rs`
+- `crates/oxvba-host/tests/com_early_project_end_to_end.rs`
+- `crates/oxvba-build/tests/com_attribute_export_end_to_end.rs`
+- `docs/evidence/conformance/oracle_captures/com_testeventserver_marshaling_oracle_20260325T231210Z/summary.md`
+- `docs/evidence/conformance/oracle_captures/com_testeventserver_oracle_20260325T221949Z/summary.md`
+- `docs/evidence/conformance/oracle_captures/com_early_oracle_20260325T145433Z/summary.md`
+- `docs/evidence/conformance/oracle_captures/com_dualinterface_oracle_20260325T224113Z/summary.md`
+- `docs/evidence/conformance/oracle_captures/com_testeventserver_versioned_typelib_probe_20260325T222709Z/summary.md`
+
+Result:
+- The canonical COM matrix now separates late-bound marshalling, export metadata, TestEventServer typelib binding, registered `As New` activation, dual-interface strategy, and versioned/broken-reference repair into explicit rows.
+- No unsupported COM claim was widened beyond its bounded subset.
+
 ### Project / Hosting Domain
 
 | Artifact | Current role | Classification | Canonical replacement / retained role | Notes |

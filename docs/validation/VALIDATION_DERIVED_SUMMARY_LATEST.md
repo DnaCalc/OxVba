@@ -11,7 +11,7 @@ Generated from:
 | Domain | Rows | In Progress | Implemented Subset | Implemented Full | Verified | Planned |
 |---|---|---|---|---|---|---|
 | language | 4 | 2 | 2 | 0 | 0 | 0 |
-| com_external | 2 | 0 | 1 | 0 | 1 | 0 |
+| com_external | 6 | 0 | 1 | 0 | 5 | 0 |
 | project_hosting | 10 | 1 | 7 | 0 | 0 | 2 |
 | language_services_formalization | 2 | 2 | 0 | 0 | 0 | 0 |
 
