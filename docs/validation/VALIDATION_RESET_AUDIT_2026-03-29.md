@@ -97,6 +97,7 @@ Verification pass:
 - `PH-0001` remains `implemented-subset` for the executable startup ladder on explicit entrypoint, unique top-level mainline, and unique `Sub Main` fallback.
 - `PH-0002` remains `implemented-subset` for top-level executable mainline behavior in program/script lanes, including the bounded module-state slice already documented in the matrix notes.
 - `PH-0003` remains `implemented-subset` for the strict VBP-S0 adapter subset covering executable startup and ordered reference handling, with designer/startup-object surfaces still excluded.
+- `PH-0010` remains `in-progress` for MS-OVBA storage roundtrip. Local loader/generator tests now verify the supported `.basproj` and VBP adapter subset, but the extracted MS-OVBA corpus lane is still open and tracked separately.
 
 Checked evidence:
 - `crates/oxvba-host/tests/startup_entry_end_to_end.rs`
