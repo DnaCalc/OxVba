@@ -4,6 +4,8 @@ use oxvba_runtime::ObjectHandle;
 use std::sync::{Arc, Mutex};
 #[cfg(target_os = "windows")]
 use windows_sys::Win32::System::Com::{CLSCTX_SERVER, CLSIDFromProgID, CoCreateInstance};
+#[cfg(target_os = "windows")]
+use windows_sys::Win32::System::Variant::VARIANT;
 
 #[cfg(target_os = "windows")]
 pub const IID_IDISPATCH: windows_sys::core::GUID = windows_sys::core::GUID {
@@ -30,6 +32,14 @@ pub const IID_IUNKNOWN: windows_sys::core::GUID = windows_sys::core::GUID {
 };
 
 #[cfg(target_os = "windows")]
+pub const IID_IENUMVARIANT: windows_sys::core::GUID = windows_sys::core::GUID {
+    data1: 0x0002_0404,
+    data2: 0x0000,
+    data3: 0x0000,
+    data4: [0xC0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x46],
+};
+
+#[cfg(target_os = "windows")]
 pub const IID_ICONNECTIONPOINTCONTAINER: windows_sys::core::GUID = windows_sys::core::GUID {
     data1: 0xB196_B284,
     data2: 0xBAB4,
@@ -47,6 +57,8 @@ pub const IID_ICONNECTIONPOINT: windows_sys::core::GUID = windows_sys::core::GUI
 
 #[cfg(target_os = "windows")]
 pub const COM_S_OK: i32 = 0;
+#[cfg(target_os = "windows")]
+pub const COM_S_FALSE: i32 = 1;
 #[cfg(target_os = "windows")]
 pub const COM_E_NOINTERFACE: i32 = 0x8000_4002u32 as i32;
 #[cfg(target_os = "windows")]
@@ -127,6 +139,30 @@ pub struct RawIDispatchVtbl {
 #[repr(C)]
 pub struct RawIDispatch {
     pub vtbl: *const RawIDispatchVtbl,
+}
+
+#[cfg(target_os = "windows")]
+#[repr(C)]
+pub struct RawIEnumVARIANTVtbl {
+    pub unknown: RawIUnknownVtbl,
+    pub next: unsafe extern "system" fn(
+        this: *mut core::ffi::c_void,
+        celt: u32,
+        rgvar: *mut VARIANT,
+        pcelt_fetched: *mut u32,
+    ) -> i32,
+    pub skip: unsafe extern "system" fn(this: *mut core::ffi::c_void, celt: u32) -> i32,
+    pub reset: unsafe extern "system" fn(this: *mut core::ffi::c_void) -> i32,
+    pub clone: unsafe extern "system" fn(
+        this: *mut core::ffi::c_void,
+        ppenum: *mut *mut core::ffi::c_void,
+    ) -> i32,
+}
+
+#[cfg(target_os = "windows")]
+#[repr(C)]
+pub struct RawIEnumVARIANT {
+    pub vtbl: *const RawIEnumVARIANTVtbl,
 }
 
 #[cfg(target_os = "windows")]
@@ -327,6 +363,29 @@ pub unsafe fn query_dispatch_from_unknown(
 #[allow(unsafe_op_in_unsafe_fn)]
 /// # Safety
 ///
+/// `unknown` must be a valid live COM interface pointer whose `IUnknown` vtable can be called.
+pub unsafe fn query_enumvariant_from_unknown(
+    unknown: *mut RawIUnknown,
+) -> Result<*mut RawIEnumVARIANT, String> {
+    if unknown.is_null() {
+        return Err("VT_UNKNOWN result carried null IUnknown pointer".to_string());
+    }
+    let mut enum_variant: *mut core::ffi::c_void = std::ptr::null_mut();
+    let vtbl = (*unknown).vtbl;
+    let hr = ((*vtbl).query_interface)(unknown.cast(), &IID_IENUMVARIANT, &mut enum_variant);
+    if hr < 0 || enum_variant.is_null() {
+        return Err(format!(
+            "IUnknown::QueryInterface(IEnumVARIANT) failed with HRESULT {:#010X}",
+            hr as u32
+        ));
+    }
+    Ok(enum_variant.cast())
+}
+
+#[cfg(target_os = "windows")]
+#[allow(unsafe_op_in_unsafe_fn)]
+/// # Safety
+///
 /// `dispatch` must be null or a valid `IDispatch` pointer owned by the caller for one final `Release` call.
 pub unsafe fn release_dispatch(dispatch: *mut RawIDispatch) {
     if dispatch.is_null() {
@@ -334,6 +393,20 @@ pub unsafe fn release_dispatch(dispatch: *mut RawIDispatch) {
     }
     let vtbl = (*dispatch).vtbl;
     ((*vtbl).unknown.release)(dispatch.cast());
+}
+
+#[cfg(target_os = "windows")]
+#[allow(unsafe_op_in_unsafe_fn)]
+/// # Safety
+///
+/// `enum_variant` must be null or a valid `IEnumVARIANT` pointer owned by the caller for one
+/// final `Release` call.
+pub unsafe fn release_enumvariant(enum_variant: *mut RawIEnumVARIANT) {
+    if enum_variant.is_null() {
+        return;
+    }
+    let vtbl = (*enum_variant).vtbl;
+    ((*vtbl).unknown.release)(enum_variant.cast());
 }
 
 #[cfg(target_os = "windows")]

@@ -36,6 +36,97 @@ pub enum VariantResultValue {
 }
 
 #[cfg(target_os = "windows")]
+#[allow(unsafe_op_in_unsafe_fn, clippy::too_many_arguments)]
+unsafe fn enumvariant_to_runtime_value<FQueryDispatch, FAddRefDispatch, FBindDispatch>(
+    enum_variant: *mut crate::windows_client::RawIEnumVARIANT,
+    query_dispatch_from_unknown: &mut FQueryDispatch,
+    add_ref_dispatch: &mut FAddRefDispatch,
+    bind_dispatch_result: &mut FBindDispatch,
+    prog_id_hint: &str,
+    op: &'static str,
+) -> Result<oxvba_runtime::RuntimeValue, String>
+where
+    FQueryDispatch: FnMut(*mut c_void) -> Result<*mut c_void, String>,
+    FAddRefDispatch: FnMut(*mut c_void),
+    FBindDispatch:
+        FnMut(*mut c_void, &str, &'static str) -> Result<oxvba_runtime::RuntimeValue, String>,
+{
+    let mut values = Vec::new();
+    loop {
+        let mut element: VARIANT = std::mem::zeroed();
+        let mut fetched = 0u32;
+        let hr = ((*(*enum_variant).vtbl).next)(enum_variant.cast(), 1, &mut element, &mut fetched);
+        if hr < 0 {
+            return Err(format!(
+                "IEnumVARIANT::Next failed with HRESULT {:#010X}",
+                hr as u32
+            ));
+        }
+        if fetched == 0 {
+            break;
+        }
+        let value = match variant_to_runtime_value(
+            &element,
+            query_dispatch_from_unknown,
+            add_ref_dispatch,
+            bind_dispatch_result,
+            prog_id_hint,
+            op,
+        ) {
+            Ok(value) => value,
+            Err(detail) => {
+                let _ = VariantClear(&mut element);
+                return Err(detail);
+            }
+        };
+        let _ = VariantClear(&mut element);
+        values.push(value);
+    }
+    Ok(oxvba_runtime::RuntimeValue::ArrayIntent(
+        SafeArray::from_values(values),
+    ))
+}
+
+#[cfg(target_os = "windows")]
+#[allow(unsafe_op_in_unsafe_fn, clippy::too_many_arguments)]
+unsafe fn unknown_to_runtime_value<FQueryDispatch, FAddRefDispatch, FBindDispatch>(
+    unknown: *mut c_void,
+    query_dispatch_from_unknown: &mut FQueryDispatch,
+    add_ref_dispatch: &mut FAddRefDispatch,
+    bind_dispatch_result: &mut FBindDispatch,
+    prog_id_hint: &str,
+    op: &'static str,
+) -> Result<oxvba_runtime::RuntimeValue, String>
+where
+    FQueryDispatch: FnMut(*mut c_void) -> Result<*mut c_void, String>,
+    FAddRefDispatch: FnMut(*mut c_void),
+    FBindDispatch:
+        FnMut(*mut c_void, &str, &'static str) -> Result<oxvba_runtime::RuntimeValue, String>,
+{
+    match query_dispatch_from_unknown(unknown) {
+        Ok(dispatch) => bind_dispatch_result(dispatch, prog_id_hint, op),
+        Err(dispatch_err) => {
+            let enum_variant = match crate::windows_client::query_enumvariant_from_unknown(
+                unknown.cast::<crate::windows_client::RawIUnknown>(),
+            ) {
+                Ok(enum_variant) => enum_variant,
+                Err(_) => return Err(dispatch_err),
+            };
+            let result = enumvariant_to_runtime_value(
+                enum_variant,
+                query_dispatch_from_unknown,
+                add_ref_dispatch,
+                bind_dispatch_result,
+                prog_id_hint,
+                op,
+            );
+            crate::windows_client::release_enumvariant(enum_variant);
+            result
+        }
+    }
+}
+
+#[cfg(target_os = "windows")]
 #[allow(unsafe_op_in_unsafe_fn)]
 unsafe fn alloc_bstr(text: &str) -> windows_sys::core::BSTR {
     let wide: Vec<u16> = text.encode_utf16().chain(std::iter::once(0)).collect();
@@ -1106,8 +1197,14 @@ where
     }
     if vt == VT_UNKNOWN {
         let unknown = variant.Anonymous.Anonymous.Anonymous.punkVal;
-        let dispatch = query_dispatch_from_unknown(unknown.cast())?;
-        return bind_dispatch_result(dispatch, prog_id_hint, op);
+        return unknown_to_runtime_value(
+            unknown.cast(),
+            query_dispatch_from_unknown,
+            add_ref_dispatch,
+            bind_dispatch_result,
+            prog_id_hint,
+            op,
+        );
     }
     Ok(variant_to_com_value(variant)?.to_runtime_value())
 }
@@ -1272,9 +1369,10 @@ mod tests {
     use super::{
         VT_CY_VARENUM, VT_DATE_VARENUM, VT_R4_VARENUM, VT_R8_VARENUM, VariantResultValue,
         decimal96_to_windows, set_variant_from_com_value, take_variant_result_value,
-        variant_to_com_value,
+        variant_to_com_value, variant_to_runtime_value,
     };
     use crate::ComValue;
+    use crate::windows_test_dispatch::create_oxvba_test_enum_unknown;
     use oxvba_runtime::{
         CurrencyValue, Decimal96, F64Value, RuntimeValue, bstr::BStr, safe_array::SafeArray,
     };
@@ -1781,6 +1879,37 @@ mod tests {
             )
             .expect_err("null unknown should fail deterministically");
             assert_eq!(err, "null unknown");
+        }
+    }
+
+    #[test]
+    fn unknown_enumvariant_result_materializes_to_runtime_array() {
+        let mut variant: VARIANT = unsafe { std::mem::zeroed() };
+        unsafe {
+            variant.Anonymous.Anonymous.vt = VT_UNKNOWN;
+            variant.Anonymous.Anonymous.Anonymous.punkVal = create_oxvba_test_enum_unknown().cast();
+            let value = variant_to_runtime_value(
+                &variant,
+                &mut |unknown| {
+                    crate::query_dispatch_from_unknown(unknown.cast::<crate::RawIUnknown>())
+                        .map(|dispatch| dispatch.cast())
+                },
+                &mut |_dispatch| panic!("dispatch AddRef is not expected on IEnumVARIANT path"),
+                &mut |_dispatch, _prog_id_hint, _op| {
+                    panic!("dispatch rebinding is not expected on IEnumVARIANT path")
+                },
+                "OxVba.TestDispatch",
+                "dispatch_invoke",
+            )
+            .expect("IEnumVARIANT should materialize into an array-backed runtime value");
+            assert_eq!(
+                value,
+                RuntimeValue::ArrayIntent(SafeArray::from_values(vec![
+                    RuntimeValue::I32(41),
+                    RuntimeValue::I32(42),
+                ]))
+            );
+            let _ = VariantClear(&mut variant);
         }
     }
 }

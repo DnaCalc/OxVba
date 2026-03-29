@@ -1700,7 +1700,9 @@ impl Vm {
                             self.write_value_slot(*iter, RuntimeValue::I32(id))?;
                             pc += 1;
                         }
-                        Err(err) => pc = self.route_runtime_error(pc, err.code, Some(&err.detail))?,
+                        Err(err) => {
+                            pc = self.route_runtime_error(pc, err.code, Some(&err.detail))?
+                        }
                     }
                 }
                 Instruction::IntrinsicForEachNext {
@@ -3016,8 +3018,7 @@ impl Vm {
         if let RuntimeValue::ArrayIntent(array) = iterable {
             return array.elements.clone().ok_or_else(|| ForEachInitError {
                 code: 13,
-                detail: "For Each array source is missing materialized element payload"
-                    .to_string(),
+                detail: "For Each array source is missing materialized element payload".to_string(),
             });
         }
 
@@ -3043,8 +3044,27 @@ impl Vm {
             args: Vec::new(),
             call_kind_hint: Some(DynamicCallKind::PropertyGet),
         };
-        match self.try_invoke_project_dynamic(bytecode, typed_fastpaths, &request) {
-            Ok(Some(RuntimeValue::ArrayIntent(array))) => {
+        let runtime_value =
+            match self.try_invoke_project_dynamic(bytecode, typed_fastpaths, &request) {
+                Ok(Some(value)) => value,
+                Ok(None) => {
+                    let bridge = HalComDynamicBridge::new(
+                        self.host_services.profile(),
+                        self.host_services.com(),
+                    );
+                    bridge
+                        .invoke_dynamic(&request)
+                        .map(|value| value.to_runtime_value())
+                        .map_err(|err| ForEachInitError {
+                            code: 438,
+                            detail: err.message,
+                        })?
+                }
+                Err(detail) => return Err(ForEachInitError { code: 438, detail }),
+            };
+
+        match runtime_value {
+            RuntimeValue::ArrayIntent(array) => {
                 array.elements.clone().ok_or_else(|| ForEachInitError {
                     code: 13,
                     detail: format!(
@@ -3052,19 +3072,12 @@ impl Vm {
                     ),
                 })
             }
-            Ok(Some(other)) => Err(ForEachInitError {
+            other => Err(ForEachInitError {
                 code: 13,
                 detail: format!(
                     "For Each NewEnum source on object {object} returned unsupported value {other:?}"
                 ),
             }),
-            Ok(None) => Err(ForEachInitError {
-                code: 438,
-                detail: format!(
-                    "Object {object} does not expose a supported project-dynamic NewEnum source"
-                ),
-            }),
-            Err(detail) => Err(ForEachInitError { code: 438, detail }),
         }
     }
 
@@ -3236,7 +3249,8 @@ impl Vm {
                 .members
                 .iter()
                 .filter(|member| {
-                    member.known_dispatch_token == Some(*token) || member.dispatch_id == Some(*token)
+                    member.known_dispatch_token == Some(*token)
+                        || member.dispatch_id == Some(*token)
                 })
                 .cloned()
                 .collect::<Vec<_>>(),

@@ -158,7 +158,7 @@ The first concrete implementation-ready blocker surfaced by the current walks is
 - the dependent `PH-0008` imported `NewEnum` runtime row stays downstream until `LANG-0002` is addressed.
 - the scoped implementation bead is `bd-gm3.14.2.1`.
 - the remaining imported/COM-backed split was rolled down through `bd-gm3.14.2.1.1` into:
-  - `bd-gm3.14.2.1.1.1` for controlled imported COM `DISPID_NEWENUM` / `IUnknown` / `IEnumVARIANT` transport,
+  - `bd-gm3.14.2.1.1.1` for controlled imported COM `DISPID_NEWENUM` / `IUnknown` / `IEnumVARIANT` transport, now completed with focused unit plus imported early-bound runtime evidence,
   - `bd-gm3.14.2.1.1.2` for the imported class-field `Collection`/`NewEnum` oracle-project shape.
 
 If those remain merged under one active closure label, the reset has failed.

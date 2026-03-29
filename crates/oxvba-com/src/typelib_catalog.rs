@@ -978,6 +978,16 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
                 return_type: None,
             },
             TypeLibMemberMetadata {
+                name: "NewEnum".to_string(),
+                token: -4,
+                requires_argument: false,
+                invoke_kind: TypeLibMemberInvokeKind::PropertyGet,
+                parameter_names: Vec::new(),
+                is_default_member: false,
+                parameter_types: Vec::new(),
+                return_type: None,
+            },
+            TypeLibMemberMetadata {
                 name: "ReturnPlainUnknownVariantArray".to_string(),
                 token: TEST_DISPID_RETURN_PLAIN_UNKNOWN_VARIANT_ARRAY,
                 requires_argument: false,

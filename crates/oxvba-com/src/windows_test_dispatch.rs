@@ -4,10 +4,10 @@ use crate::windows_client::{
     COM_CONNECT_E_CANNOTCONNECT, COM_CONNECT_E_NOCONNECTION, COM_DISP_E_BADPARAMCOUNT,
     COM_DISP_E_EXCEPTION, COM_DISP_E_MEMBERNOTFOUND, COM_DISP_E_PARAMNOTFOUND,
     COM_DISP_E_TYPEMISMATCH, COM_DISP_E_UNKNOWNNAME, COM_E_INVALIDARG, COM_E_NOINTERFACE,
-    COM_E_NOTIMPL, COM_S_OK, IID_ICONNECTIONPOINT, IID_ICONNECTIONPOINTCONTAINER, IID_IDISPATCH,
-    IID_IUNKNOWN, IID_NULL, RawIConnectionPointContainerVtbl, RawIConnectionPointVtbl,
-    RawIDispatch, RawIDispatchVtbl, RawIUnknown, RawIUnknownVtbl,
-    add_ref_dispatch as raw_add_ref_dispatch, guid_equals,
+    COM_E_NOTIMPL, COM_S_FALSE, COM_S_OK, IID_ICONNECTIONPOINT, IID_ICONNECTIONPOINTCONTAINER,
+    IID_IDISPATCH, IID_IENUMVARIANT, IID_IUNKNOWN, IID_NULL, RawIConnectionPointContainerVtbl,
+    RawIConnectionPointVtbl, RawIDispatch, RawIDispatchVtbl, RawIEnumVARIANT, RawIEnumVARIANTVtbl,
+    RawIUnknown, RawIUnknownVtbl, add_ref_dispatch as raw_add_ref_dispatch, guid_equals,
     release_dispatch as raw_release_dispatch, release_unknown as raw_release_unknown,
 };
 use crate::windows_variant::{
@@ -68,6 +68,7 @@ pub const IID_OXVBA_TEST_DISPATCH_SOURCE_EVENTS: windows_sys::core::GUID =
         data4: [0x44, 0x44, 0x55, 0x55, 0x55, 0x55, 0x55, 0x57],
     };
 pub const IID_OXVBA_TEST_DISPATCH_SOURCE_EVENTS_STR: &str = "11111113-2222-3333-4444-555555555557";
+pub const TEST_DISPID_NEWENUM: i32 = -4;
 pub const TEST_DISPID_COUNT: i32 = 1;
 pub const TEST_DISPID_EXISTS: i32 = 2;
 pub const TEST_DISPID_FIRE_CHANGED: i32 = 3;
@@ -853,6 +854,14 @@ struct OxvbaTestPlainUnknown {
     unknown: RawIUnknown,
     ref_count: AtomicU32,
 }
+
+#[cfg(target_os = "windows")]
+#[repr(C)]
+struct OxvbaTestEnumVariant {
+    enum_variant: RawIEnumVARIANT,
+    ref_count: AtomicU32,
+    next_index: AtomicU32,
+}
 #[cfg(target_os = "windows")]
 #[repr(C)]
 struct RawOxvbaTestDispatchSourceEventsVtbl {
@@ -871,6 +880,19 @@ static OXVBA_TEST_PLAIN_UNKNOWN_VTBL: RawIUnknownVtbl = RawIUnknownVtbl {
     query_interface: oxvba_test_plain_unknown_query_interface,
     add_ref: oxvba_test_plain_unknown_add_ref,
     release: oxvba_test_plain_unknown_release,
+};
+
+#[cfg(target_os = "windows")]
+static OXVBA_TEST_ENUMVARIANT_VTBL: RawIEnumVARIANTVtbl = RawIEnumVARIANTVtbl {
+    unknown: RawIUnknownVtbl {
+        query_interface: oxvba_test_enumvariant_query_interface,
+        add_ref: oxvba_test_enumvariant_add_ref,
+        release: oxvba_test_enumvariant_release,
+    },
+    next: oxvba_test_enumvariant_next,
+    skip: oxvba_test_enumvariant_skip,
+    reset: oxvba_test_enumvariant_reset,
+    clone: oxvba_test_enumvariant_clone,
 };
 #[cfg(target_os = "windows")]
 static OXVBA_TEST_DISPATCH_VTBL: RawIDispatchVtbl = RawIDispatchVtbl {
@@ -963,9 +985,29 @@ pub fn create_oxvba_test_plain_unknown() -> *mut RawIUnknown {
 }
 
 #[cfg(target_os = "windows")]
+pub fn create_oxvba_test_enum_unknown() -> *mut RawIUnknown {
+    let mut object = Box::new(OxvbaTestEnumVariant {
+        enum_variant: RawIEnumVARIANT {
+            vtbl: &OXVBA_TEST_ENUMVARIANT_VTBL,
+        },
+        ref_count: AtomicU32::new(1),
+        next_index: AtomicU32::new(0),
+    });
+    let unknown_ptr = (&mut object.enum_variant as *mut RawIEnumVARIANT).cast::<RawIUnknown>();
+    let _ = Box::into_raw(object);
+    unknown_ptr
+}
+
+#[cfg(target_os = "windows")]
 #[allow(unsafe_op_in_unsafe_fn)]
 unsafe fn as_oxvba_test_plain_unknown(this: *mut core::ffi::c_void) -> *mut OxvbaTestPlainUnknown {
     this.cast::<OxvbaTestPlainUnknown>()
+}
+
+#[cfg(target_os = "windows")]
+#[allow(unsafe_op_in_unsafe_fn)]
+unsafe fn as_oxvba_test_enumvariant(this: *mut core::ffi::c_void) -> *mut OxvbaTestEnumVariant {
+    this.cast::<OxvbaTestEnumVariant>()
 }
 
 #[cfg(target_os = "windows")]
@@ -1006,6 +1048,138 @@ unsafe extern "system" fn oxvba_test_plain_unknown_release(this: *mut core::ffi:
         drop(Box::from_raw(owner));
     }
     remaining
+}
+
+#[cfg(target_os = "windows")]
+#[allow(unsafe_op_in_unsafe_fn)]
+unsafe extern "system" fn oxvba_test_enumvariant_query_interface(
+    this: *mut core::ffi::c_void,
+    riid: *const windows_sys::core::GUID,
+    ppv: *mut *mut core::ffi::c_void,
+) -> i32 {
+    if ppv.is_null() {
+        return COM_E_INVALIDARG;
+    }
+    *ppv = std::ptr::null_mut();
+    if riid.is_null() {
+        return COM_E_NOINTERFACE;
+    }
+    if guid_equals(riid, &IID_IUNKNOWN) || guid_equals(riid, &IID_IENUMVARIANT) {
+        *ppv = this;
+        let _ = oxvba_test_enumvariant_add_ref(this);
+        return COM_S_OK;
+    }
+    COM_E_NOINTERFACE
+}
+
+#[cfg(target_os = "windows")]
+#[allow(unsafe_op_in_unsafe_fn)]
+unsafe extern "system" fn oxvba_test_enumvariant_add_ref(this: *mut core::ffi::c_void) -> u32 {
+    let owner = as_oxvba_test_enumvariant(this);
+    (*owner).ref_count.fetch_add(1, Ordering::AcqRel) + 1
+}
+
+#[cfg(target_os = "windows")]
+#[allow(unsafe_op_in_unsafe_fn)]
+unsafe extern "system" fn oxvba_test_enumvariant_release(this: *mut core::ffi::c_void) -> u32 {
+    let owner = as_oxvba_test_enumvariant(this);
+    let remaining = (*owner).ref_count.fetch_sub(1, Ordering::AcqRel) - 1;
+    if remaining == 0 {
+        drop(Box::from_raw(owner));
+    }
+    remaining
+}
+
+#[cfg(target_os = "windows")]
+#[allow(unsafe_op_in_unsafe_fn)]
+unsafe extern "system" fn oxvba_test_enumvariant_next(
+    this: *mut core::ffi::c_void,
+    celt: u32,
+    rgvar: *mut VARIANT,
+    pcelt_fetched: *mut u32,
+) -> i32 {
+    const VALUES: [i32; 2] = [41, 42];
+
+    if celt > 1 && pcelt_fetched.is_null() {
+        return COM_E_INVALIDARG;
+    }
+    if celt != 0 && rgvar.is_null() {
+        return COM_E_INVALIDARG;
+    }
+    if !pcelt_fetched.is_null() {
+        *pcelt_fetched = 0;
+    }
+
+    let owner = as_oxvba_test_enumvariant(this);
+    let mut index = (*owner).next_index.load(Ordering::Acquire) as usize;
+    let requested = celt as usize;
+    let mut fetched = 0usize;
+    while fetched < requested && index < VALUES.len() {
+        let slot = rgvar.add(fetched);
+        *slot = std::mem::zeroed();
+        set_variant_i32(VALUES[index], slot);
+        fetched += 1;
+        index += 1;
+    }
+    (*owner).next_index.store(index as u32, Ordering::Release);
+    if !pcelt_fetched.is_null() {
+        *pcelt_fetched = fetched as u32;
+    }
+    if fetched == requested {
+        COM_S_OK
+    } else {
+        COM_S_FALSE
+    }
+}
+
+#[cfg(target_os = "windows")]
+#[allow(unsafe_op_in_unsafe_fn)]
+unsafe extern "system" fn oxvba_test_enumvariant_skip(
+    this: *mut core::ffi::c_void,
+    celt: u32,
+) -> i32 {
+    const VALUES_LEN: usize = 2;
+
+    let owner = as_oxvba_test_enumvariant(this);
+    let current = (*owner).next_index.load(Ordering::Acquire) as usize;
+    let requested_next = current.saturating_add(celt as usize);
+    let next = requested_next.min(VALUES_LEN);
+    (*owner).next_index.store(next as u32, Ordering::Release);
+    if next == requested_next {
+        COM_S_OK
+    } else {
+        COM_S_FALSE
+    }
+}
+
+#[cfg(target_os = "windows")]
+#[allow(unsafe_op_in_unsafe_fn)]
+unsafe extern "system" fn oxvba_test_enumvariant_reset(this: *mut core::ffi::c_void) -> i32 {
+    let owner = as_oxvba_test_enumvariant(this);
+    (*owner).next_index.store(0, Ordering::Release);
+    COM_S_OK
+}
+
+#[cfg(target_os = "windows")]
+#[allow(unsafe_op_in_unsafe_fn)]
+unsafe extern "system" fn oxvba_test_enumvariant_clone(
+    this: *mut core::ffi::c_void,
+    ppenum: *mut *mut core::ffi::c_void,
+) -> i32 {
+    if ppenum.is_null() {
+        return COM_E_INVALIDARG;
+    }
+    let owner = as_oxvba_test_enumvariant(this);
+    let mut clone = Box::new(OxvbaTestEnumVariant {
+        enum_variant: RawIEnumVARIANT {
+            vtbl: &OXVBA_TEST_ENUMVARIANT_VTBL,
+        },
+        ref_count: AtomicU32::new(1),
+        next_index: AtomicU32::new((*owner).next_index.load(Ordering::Acquire)),
+    });
+    *ppenum = (&mut clone.enum_variant as *mut RawIEnumVARIANT).cast();
+    let _ = Box::into_raw(clone);
+    COM_S_OK
 }
 #[cfg(target_os = "windows")]
 #[allow(unsafe_op_in_unsafe_fn)]
@@ -1791,6 +1965,7 @@ unsafe extern "system" fn oxvba_test_get_ids_of_names(
             .trim()
             .to_ascii_lowercase();
         let dispid = match name.as_str() {
+            "newenum" => TEST_DISPID_NEWENUM,
             "count" => TEST_DISPID_COUNT,
             "exists" => TEST_DISPID_EXISTS,
             "firechanged" => TEST_DISPID_FIRE_CHANGED,
@@ -1915,6 +2090,17 @@ unsafe extern "system" fn oxvba_test_invoke(
         ((*pparams).cArgs, (*pparams).rgvarg)
     };
     match dispidmember {
+        TEST_DISPID_NEWENUM => {
+            if (wflags & DISPATCH_PROPERTYGET) == 0 || cargs != 0 {
+                return COM_DISP_E_BADPARAMCOUNT;
+            }
+            if !pvarresult.is_null() {
+                (*pvarresult).Anonymous.Anonymous.vt = VT_UNKNOWN;
+                (*pvarresult).Anonymous.Anonymous.Anonymous.punkVal =
+                    create_oxvba_test_enum_unknown().cast();
+            }
+            COM_S_OK
+        }
         TEST_DISPID_COUNT => {
             if (wflags & DISPATCH_PROPERTYGET) == 0 || cargs != 0 {
                 return COM_DISP_E_BADPARAMCOUNT;
