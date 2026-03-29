@@ -1,4 +1,5 @@
 use std::{
+    borrow::Cow,
     collections::HashMap,
     sync::{Arc, Mutex},
 };
@@ -109,6 +110,8 @@ pub struct ProjectRuntimeSession {
     vm: Vm,
 }
 
+const STARTUP_ENTRY_SHIM_MODULE_PREFIX: &str = "__OxVbaStartupEntryShim";
+
 impl ProjectRuntimeSession {
     pub fn snapshot(&self) -> Vec<RuntimeValue> {
         self.vm.snapshot(self.compiled.bytecode.user_slot_count)
@@ -149,6 +152,30 @@ fn project_runtime_values_to_legacy_slots(values: Vec<RuntimeValue>) -> Vec<i32>
         .into_iter()
         .map(|value| value.to_legacy_i32().unwrap_or(EMPTY_TAG))
         .collect()
+}
+
+fn is_startup_entry_shim_module_name(module_name: &str) -> bool {
+    module_name
+        .to_ascii_lowercase()
+        .starts_with(&STARTUP_ENTRY_SHIM_MODULE_PREFIX.to_ascii_lowercase())
+}
+
+fn manifest_without_startup_entry_shims<'a>(
+    manifest: &'a ProjectManifest,
+) -> Cow<'a, ProjectManifest> {
+    if !manifest
+        .modules
+        .iter()
+        .any(|module| is_startup_entry_shim_module_name(&module.module_name))
+    {
+        return Cow::Borrowed(manifest);
+    }
+
+    let mut filtered = manifest.clone();
+    filtered
+        .modules
+        .retain(|module| !is_startup_entry_shim_module_name(&module.module_name));
+    Cow::Owned(filtered)
 }
 
 fn build_host_services(
@@ -557,15 +584,19 @@ impl Engine {
 
     /// Compile a project manifest and prepare a runtime session.
     ///
-    /// Executes module-level initialization code (variable declarations, etc.)
-    /// but does not require an entry point. The session can then be used
-    /// with `invoke_procedure` for individual procedure calls.
+    /// This callable-session path does not run the project entry point or any
+    /// lowered procedure bodies up front; callers drive execution explicitly
+    /// through `invoke_procedure`.
     pub fn compile_and_prepare_session(
         &self,
         manifest: &ProjectManifest,
     ) -> Result<ProjectRuntimeSession, PhaseDiagnostic> {
-        let compiled =
-            compile_project(manifest).map_err(|e| PhaseDiagnostic::compile(e.to_string()))?;
+        // Callable sessions should preserve module initialization state, but not
+        // execute the synthetic startup shim that loaded Exe projects inject for
+        // entry-point hosting.
+        let session_manifest = manifest_without_startup_entry_shims(manifest);
+        let compiled = compile_project(session_manifest.as_ref())
+            .map_err(|e| PhaseDiagnostic::compile(e.to_string()))?;
         if let Ok(mut dispatcher) = self.event_dispatcher.lock() {
             dispatcher.apply_bindings(&compiled.event_dispatch_bindings);
         }
@@ -574,9 +605,6 @@ impl Engine {
         vm.set_project_procedure_runtime_metadata(compiled.procedure_runtime_metadata.clone());
         vm.set_project_com_withevents_routes(compiled.project_com_withevents_routes.clone());
         vm.set_project_dynamic_objects(compiled.project_dynamic_objects.clone());
-        // Execute initialization code (module-level Dim, etc.)
-        vm.execute(&compiled.bytecode)
-            .map_err(PhaseDiagnostic::runtime)?;
         Ok(ProjectRuntimeSession { compiled, vm })
     }
 
@@ -892,8 +920,6 @@ impl Engine {
         vm.set_project_procedure_runtime_metadata(compiled.procedure_runtime_metadata.clone());
         vm.set_project_com_withevents_routes(compiled.project_com_withevents_routes.clone());
         vm.set_project_dynamic_objects(compiled.project_dynamic_objects.clone());
-        vm.execute(&compiled.bytecode)
-            .map_err(PhaseDiagnostic::runtime)?;
         Ok(ProjectRuntimeSession { compiled, vm })
     }
 
@@ -10307,7 +10333,11 @@ mod tests {
             .expect("project execution should succeed");
         assert_snapshot_tail(
             &snapshot,
-            &[RuntimeValue::I32(1), RuntimeValue::I32(4), RuntimeValue::I32(9)],
+            &[
+                RuntimeValue::I32(1),
+                RuntimeValue::I32(4),
+                RuntimeValue::I32(9),
+            ],
         );
     }
 
@@ -10340,7 +10370,11 @@ mod tests {
             .expect("project execution should succeed");
         assert_snapshot_tail(
             &snapshot,
-            &[RuntimeValue::I32(1), RuntimeValue::I32(4), RuntimeValue::I32(9)],
+            &[
+                RuntimeValue::I32(1),
+                RuntimeValue::I32(4),
+                RuntimeValue::I32(9),
+            ],
         );
     }
 
@@ -10373,7 +10407,11 @@ mod tests {
             .expect("project execution should succeed");
         assert_snapshot_tail(
             &snapshot,
-            &[RuntimeValue::I32(1), RuntimeValue::I32(4), RuntimeValue::I32(9)],
+            &[
+                RuntimeValue::I32(1),
+                RuntimeValue::I32(4),
+                RuntimeValue::I32(9),
+            ],
         );
     }
 
@@ -10406,7 +10444,11 @@ mod tests {
             .expect("project execution should succeed");
         assert_snapshot_tail(
             &snapshot,
-            &[RuntimeValue::I32(1), RuntimeValue::I32(4), RuntimeValue::I32(9)],
+            &[
+                RuntimeValue::I32(1),
+                RuntimeValue::I32(4),
+                RuntimeValue::I32(9),
+            ],
         );
     }
 
@@ -10439,7 +10481,11 @@ mod tests {
             .expect("project execution should succeed");
         assert_snapshot_tail(
             &snapshot,
-            &[RuntimeValue::I32(1), RuntimeValue::I32(4), RuntimeValue::I32(9)],
+            &[
+                RuntimeValue::I32(1),
+                RuntimeValue::I32(4),
+                RuntimeValue::I32(9),
+            ],
         );
     }
 
@@ -10472,7 +10518,11 @@ mod tests {
             .expect("project execution should succeed");
         assert_snapshot_tail(
             &snapshot,
-            &[RuntimeValue::I32(1), RuntimeValue::I32(4), RuntimeValue::I32(9)],
+            &[
+                RuntimeValue::I32(1),
+                RuntimeValue::I32(4),
+                RuntimeValue::I32(9),
+            ],
         );
     }
 
@@ -10505,7 +10555,11 @@ mod tests {
             .expect("project execution should succeed");
         assert_snapshot_tail(
             &snapshot,
-            &[RuntimeValue::I32(1), RuntimeValue::I32(4), RuntimeValue::I32(9)],
+            &[
+                RuntimeValue::I32(1),
+                RuntimeValue::I32(4),
+                RuntimeValue::I32(9),
+            ],
         );
     }
 
@@ -18239,7 +18293,10 @@ mod tests {
 
         let compiled = oxvba_compiler::compile_project(&manifest).expect("compile should succeed");
         let lowered = compiled.rewritten_source.to_ascii_lowercase();
-        assert!(lowered.contains("valueout = property_get_pmr_"), "{lowered}");
+        assert!(
+            lowered.contains("valueout = property_get_pmr_"),
+            "{lowered}"
+        );
         assert!(lowered.contains("property get pmr_"), "{lowered}");
         let snapshot = engine
             .execute_project_with_value_snapshot_phased(&manifest)

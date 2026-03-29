@@ -52,7 +52,6 @@ fn run_project_with_widget(main_source: &str, widget_source: &str) -> Result<Run
 }
 
 #[test]
-#[ignore = "documents downstream host/session duplication after bd-gm3.14.2.1.1.2 lowering landed"]
 fn imported_collection_field_newenum_for_each_executes() {
     let result = run_project_with_widget(
         concat!(
