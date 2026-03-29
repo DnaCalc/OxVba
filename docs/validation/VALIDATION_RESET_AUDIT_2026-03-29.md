@@ -66,6 +66,24 @@ Use `split` when one artifact currently merges materially different subset state
 | `docs/spec/HOSTING_PROJECT_TOOLING_PROPOSAL.md` | authority/spec source for project/hosting features | retain-active | authority source for matrix rows | keep as design authority, not as implementation truth |
 | `docs/evidence/conformance/CONFORMANCE_CHECK_TOPICS.csv` rows in project domains | startup/import/oracle topic truth | rewrite | `docs/validation/PROJECT_HOSTING_VALIDATION_MATRIX_V1.csv` + retained topic register | startup and imported-runtime questions need matrix-scoped subset boundaries |
 
+### 2026-03-29 Project/Hosting Walk
+
+Verification pass:
+- `PH-0001` remains `implemented-subset` for the executable startup ladder on explicit entrypoint, unique top-level mainline, and unique `Sub Main` fallback.
+- `PH-0002` remains `implemented-subset` for top-level executable mainline behavior in program/script lanes, including the bounded module-state slice already documented in the matrix notes.
+- `PH-0003` remains `implemented-subset` for the strict VBP-S0 adapter subset covering executable startup and ordered reference handling, with designer/startup-object surfaces still excluded.
+
+Checked evidence:
+- `crates/oxvba-host/tests/startup_entry_end_to_end.rs`
+- `crates/oxvba-host/tests/project_hosting_examples_end_to_end.rs`
+- `crates/oxvba-cli/src/main.rs` run-project unit tests
+- `docs/evidence/conformance/project_integration/PROJECT_INTEGRATION_SUITE_LATEST.md`
+
+Result:
+- The bounded verification pass supports the startup/discovery/VBP subset claims on `PH-0001` through `PH-0003`.
+- The canonical project/hosting matrix is now widened beyond the original three starter rows to capture adjacent honest lanes for host-project behavior, imported attribute runtime behavior, host-sensitive policy, and MS-OVBA roundtrip as separate rows rather than compressing them into one broad claim.
+- Open follow-up remains governed by the existing topic and deferred-gate records, especially `CCT-045`, `CCT-049`, `CCT-050`, and `ODG-043`, rather than by this bead.
+
 ### Language Services / Formalization Domain
 
 | Artifact | Current role | Classification | Canonical replacement / retained role | Notes |
