@@ -175,7 +175,7 @@ If those remain merged under one active closure label, the reset has failed.
 
 The next queued actions under this audit are:
 1. rewrite the language-domain active truth so `For Each` over arrays and `For Each` over object enumerators are separate matrix rows with separate evidence,
-2. carry `bd-gm3.14.2.1` through the bounded project-dynamic execution slice for `LANG-0002`, with the imported transport/lowering/callable-session child beads now closed and the remaining open work narrowed to the Excel-oracle mismatch captured under `CCT-050` / `ODG-048`,
+2. carry `bd-gm3.14.2.1` through the bounded project-dynamic execution slice for `LANG-0002`, with the imported transport/lowering/callable-session child beads now closed, the literal Excel-imported `.cls` preamble accepted locally, and the remaining open work narrowed to the Excel runtime mismatch captured under `CCT-050` / `ODG-048`,
 3. classify `CONFORMANCE_CHECK_TOPICS.csv` topic-by-topic by target canonical matrix domain,
 4. move broad historical status surfaces into an archive lane so they stop competing with matrix truth,
 5. define how retained gate registers (`DEFERRED_ORACLE_GATES.csv`) cross-link to the canonical matrices without becoming duplicate truth stores.

@@ -69,6 +69,33 @@ mod windows_vba_attribute_oracle_lane {
         println!("ODGATTR-OBSERVED[{case_id}]={value}");
     }
 
+    fn excel_import_newenum_widget_source() -> &'static str {
+        concat!(
+            "VERSION 1.0 CLASS\n",
+            "BEGIN\n",
+            "  MultiUse = -1  'True\n",
+            "END\n",
+            "Attribute VB_Name = \"Widget\"\n",
+            "Attribute VB_GlobalNameSpace = False\n",
+            "Attribute VB_Creatable = False\n",
+            "Attribute VB_PredeclaredId = False\n",
+            "Attribute VB_Exposed = False\n",
+            "Option Explicit\n",
+            "Private items As New Collection\n",
+            "\n",
+            "Public Sub Class_Initialize()\n",
+            "    items.Add 41\n",
+            "    items.Add 42\n",
+            "End Sub\n",
+            "\n",
+            "Public Property Get NewEnum() As IUnknown\n",
+            "    Set NewEnum = items.[_NewEnum]\n",
+            "End Property\n",
+            "Attribute NewEnum.VB_UserMemId = -4\n",
+            "Attribute NewEnum.VB_MemberFlags = \"40\"\n"
+        )
+    }
+
     #[test]
     #[ignore = "requires Windows Excel-backed oracle lane"]
     fn windows_defaultprop_vb_usermemid_zero_bare_assignment_matches_excel() {
@@ -108,20 +135,7 @@ mod windows_vba_attribute_oracle_lane {
                 "Main = valueOut\n",
                 "End Function\n"
             ),
-            concat!(
-                "Attribute VB_Name = \"Widget\"\n",
-                "Option Explicit\n",
-                "Private items As New Collection\n",
-                "Public Sub Class_Initialize()\n",
-                "items.Add 41\n",
-                "items.Add 42\n",
-                "End Sub\n",
-                "Public Property Get NewEnum() As IUnknown\n",
-                "Set NewEnum = items.[_NewEnum]\n",
-                "End Property\n",
-                "Attribute NewEnum.VB_UserMemId = -4\n",
-                "Attribute NewEnum.VB_MemberFlags = \"40\"\n"
-            ),
+            excel_import_newenum_widget_source(),
         );
 
         match result {

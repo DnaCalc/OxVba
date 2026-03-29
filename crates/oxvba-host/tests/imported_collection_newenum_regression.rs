@@ -51,6 +51,33 @@ fn run_project_with_widget(main_source: &str, widget_source: &str) -> Result<Run
     result
 }
 
+fn excel_import_newenum_widget_source() -> &'static str {
+    concat!(
+        "VERSION 1.0 CLASS\n",
+        "BEGIN\n",
+        "  MultiUse = -1  'True\n",
+        "END\n",
+        "Attribute VB_Name = \"Widget\"\n",
+        "Attribute VB_GlobalNameSpace = False\n",
+        "Attribute VB_Creatable = False\n",
+        "Attribute VB_PredeclaredId = False\n",
+        "Attribute VB_Exposed = False\n",
+        "Option Explicit\n",
+        "Private items As New Collection\n",
+        "\n",
+        "Public Sub Class_Initialize()\n",
+        "    items.Add 41\n",
+        "    items.Add 42\n",
+        "End Sub\n",
+        "\n",
+        "Public Property Get NewEnum() As IUnknown\n",
+        "    Set NewEnum = items.[_NewEnum]\n",
+        "End Property\n",
+        "Attribute NewEnum.VB_UserMemId = -4\n",
+        "Attribute NewEnum.VB_MemberFlags = \"40\"\n"
+    )
+}
+
 #[test]
 fn imported_collection_field_newenum_for_each_executes() {
     let result = run_project_with_widget(
@@ -82,6 +109,28 @@ fn imported_collection_field_newenum_for_each_executes() {
         ),
     )
     .expect("collection-backed NewEnum project should execute");
+
+    assert_eq!(result, RuntimeValue::String(BStr("41,42,".to_string())));
+}
+
+#[test]
+fn imported_collection_field_newenum_for_each_executes_with_excel_import_header() {
+    let result = run_project_with_widget(
+        concat!(
+            "Attribute VB_Name = \"Main\"\n",
+            "Public Function Main() As String\n",
+            "Dim widget As New Widget\n",
+            "Dim item\n",
+            "Dim valueOut\n",
+            "For Each item In widget\n",
+            "    valueOut = valueOut & CStr(item) & \",\"\n",
+            "Next item\n",
+            "Main = valueOut\n",
+            "End Function\n"
+        ),
+        excel_import_newenum_widget_source(),
+    )
+    .expect("Excel-imported collection-backed NewEnum project should execute");
 
     assert_eq!(result, RuntimeValue::String(BStr("41,42,".to_string())));
 }

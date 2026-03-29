@@ -981,6 +981,35 @@ fn collect_import_paths(xml: &str) -> Result<Vec<String>, BasProjError> {
     Ok(paths)
 }
 
+fn normalize_loaded_module_source(module_kind: ModuleKind, source: String) -> String {
+    if !matches!(module_kind, ModuleKind::Class | ModuleKind::Document) {
+        return source;
+    }
+
+    let lines = source.lines().collect::<Vec<_>>();
+    if lines.is_empty() {
+        return source;
+    }
+
+    let first = lines[0].trim().to_ascii_lowercase();
+    if !(first.starts_with("version ") && first.ends_with(" class")) {
+        return source;
+    }
+
+    let mut idx = 1;
+    if idx < lines.len() && lines[idx].trim().eq_ignore_ascii_case("BEGIN") {
+        idx += 1;
+        while idx < lines.len() && !lines[idx].trim().eq_ignore_ascii_case("END") {
+            idx += 1;
+        }
+        if idx < lines.len() {
+            idx += 1;
+        }
+    }
+
+    lines[idx..].join("\n")
+}
+
 /// Auto-discover `.bas` and `.cls` files in a project directory.
 fn discover_modules(project_dir: &Path) -> Result<Vec<ModuleUnit>, BasProjError> {
     let mut modules = Vec::new();
@@ -1023,6 +1052,7 @@ fn discover_modules_recursive(
                     path: path.display().to_string(),
                     source: e,
                 })?;
+                let source = normalize_loaded_module_source(kind, source);
                 let unit = module_unit_from_source(&module_name, kind, source).map_err(|err| {
                     BasProjError::ModuleSourceInvalid {
                         include: path.display().to_string(),
@@ -1058,12 +1088,14 @@ fn load_explicit_modules(
             BasProjModuleKind::ClassModule => ModuleKind::Class,
             BasProjModuleKind::DocumentModule => ModuleKind::Document,
         };
-        let mut unit = module_unit_from_source(&module_name, module_kind, source).map_err(|err| {
-            BasProjError::ModuleSourceInvalid {
-                include: bm.include.clone(),
-                message: err.to_string(),
-            }
-        })?;
+        let source = normalize_loaded_module_source(module_kind, source);
+        let mut unit =
+            module_unit_from_source(&module_name, module_kind, source).map_err(|err| {
+                BasProjError::ModuleSourceInvalid {
+                    include: bm.include.clone(),
+                    message: err.to_string(),
+                }
+            })?;
         unit.attributes.vb_global_namespace = bm.vb_global_namespace;
         unit.attributes.vb_creatable = bm.vb_creatable;
         unit.attributes.vb_predeclared_id = bm.vb_predeclared_id;
