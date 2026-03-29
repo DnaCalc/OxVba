@@ -132,6 +132,12 @@ The row model must make it impossible to honestly describe a feature as closed w
 
 This workset must use the BEADS method.
 
+Method references:
+1. `docs/methods/beads/BEADS_WORKING_METHOD.md`
+2. `docs/methods/beads/BEADS_UTILITIES_CHEAT_SHEET.md`
+3. `docs/methods/beads/BEADS_BREAKDOWN_EXAMPLE.md`
+4. `docs/methods/beads/BEADS_BREAKDOWN_PROMPT.md`
+
 Binding execution rule:
 1. the workset defines the milestone and boundaries,
 2. execution proceeds only through a bead subtree created from this workset,

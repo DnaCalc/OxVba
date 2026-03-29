@@ -51,6 +51,11 @@ Stopping rule:
 
 Worksets remain the high-level execution unit, but active work must proceed through bead subtrees.
 
+Method references:
+- `docs/methods/beads/BEADS_WORKING_METHOD.md`
+- `docs/methods/beads/BEADS_UTILITIES_CHEAT_SHEET.md`
+- `docs/methods/beads/BEADS_BREAKDOWN_EXAMPLE.md`
+
 Binding rules:
 - Every active workset must generate a bead tree before substantial implementation, audit, or conformance work begins.
 - Beads are the unit of executable progress: one reviewable outcome with explicit completion evidence.

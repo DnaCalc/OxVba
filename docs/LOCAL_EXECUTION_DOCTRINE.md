@@ -18,6 +18,11 @@ This doctrine complements:
 
 Active worksets must be decomposed into bead subtrees before substantial execution.
 
+Method references:
+- `docs/methods/beads/BEADS_WORKING_METHOD.md`
+- `docs/methods/beads/BEADS_UTILITIES_CHEAT_SHEET.md`
+- `docs/methods/beads/BEADS_BREAKDOWN_EXAMPLE.md`
+
 Operational rules:
 - worksets remain the milestone/umbrella planning unit,
 - beads are the near-atomic execution unit,
