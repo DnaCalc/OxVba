@@ -252,10 +252,9 @@ Current rollout state:
 3. `bd-gm3.15` truth-surface audit and canonical ownership mapping
 4. `bd-gm3.11` canonical matrix foundation
 5. `bd-gm3.16` active artifact retirement and demotion
-6. `bd-gm3.12` systematic validation walk
+6. `bd-gm3.12` systematic validation walk, closed
 7. `bd-gm3.14` first exposed gap fixes
 
 Current active unfinished execution lanes:
 1. `bd-gm3.16` active artifact retirement and demotion
-2. `bd-gm3.12` systematic validation walk
-3. `bd-gm3.14` first exposed gap fixes
+2. `bd-gm3.14` first exposed gap fixes
