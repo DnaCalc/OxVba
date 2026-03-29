@@ -41,8 +41,12 @@ The extracted evidence is now registered in `docs/evidence/conformance/oracle_ca
 
 Remaining broader work stays with the existing open records:
 - `CCT-045` for broader startup/entrypoint oracle coverage.
-- `CCT-049` and `CCT-050` for the imported attribute lanes.
 - `ODG-043` for the remaining project startup and configuration breadth.
+
+Imported attribute follow-up is now formally bounded rather than left as a generic runtime mismatch:
+- refreshed oracle run `vba_attribute_oracle_20260329T233125Z` still captures Excel `ERR|438` for `CCT-049` and `CCT-050`,
+- the same run's import/export roundtrip summaries show Excel re-export drops the imported member-attribute lines (`Attribute Value.VB_UserMemId = 0`, `Attribute NewEnum.VB_UserMemId = -4`, `Attribute NewEnum.VB_MemberFlags = "40"`),
+- so the residual is bounded to Excel's VBIDE import-retention boundary instead of remaining an unexplained OxVba runtime gap.
 
 Follow-up beads created for the explicitly planned rows:
 - `bd-gm3.12.6` project-hosting host-sensitive policy validation lane

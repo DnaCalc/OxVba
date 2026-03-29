@@ -28,6 +28,14 @@ try {
     $runDir = Join-Path $runRoot "vba_attribute_oracle_$resolvedRunId"
     New-Item -ItemType Directory -Force -Path $runDir | Out-Null
 
+    function Get-OracleCaseDir {
+        param([string]$CaseId)
+
+        $caseDir = Join-Path $runDir ("excel_import_" + ($CaseId -replace '[^A-Za-z0-9_.-]', '_'))
+        New-Item -ItemType Directory -Force -Path $caseDir | Out-Null
+        $caseDir
+    }
+
     function Import-VbComponentFile {
         param(
             $Workbook,
@@ -36,12 +44,60 @@ try {
             [string]$Code
         )
 
-        $caseDir = Join-Path $runDir ("excel_import_" + ($CaseId -replace '[^A-Za-z0-9_.-]', '_'))
-        New-Item -ItemType Directory -Force -Path $caseDir | Out-Null
+        $caseDir = Get-OracleCaseDir -CaseId $CaseId
         $filePath = Join-Path $caseDir $FileName
         $normalizedCode = (($Code -replace "`r?`n", "`r`n").TrimEnd("`r", "`n")) + "`r`n"
         [System.IO.File]::WriteAllText($filePath, $normalizedCode, [System.Text.Encoding]::ASCII)
-        $null = $Workbook.VBProject.VBComponents.Import($filePath)
+        $Workbook.VBProject.VBComponents.Import($filePath)
+    }
+
+    function Capture-ImportedComponentRoundtrip {
+        param(
+            $Workbook,
+            [string]$CaseId,
+            [string]$ComponentName,
+            [string[]]$ExpectedMemberAttributePrefixes
+        )
+
+        $caseDir = Get-OracleCaseDir -CaseId $CaseId
+        $roundtripPath = Join-Path $caseDir ($ComponentName + "_roundtrip.cls")
+        $component = $Workbook.VBProject.VBComponents.Item($ComponentName)
+        $component.Export($roundtripPath)
+        $exportedLines = @(Get-Content $roundtripPath)
+        $exportedMemberAttrs = @(
+            foreach ($line in $exportedLines) {
+                foreach ($prefix in $ExpectedMemberAttributePrefixes) {
+                    if ($line.StartsWith($prefix, [System.StringComparison]::Ordinal)) {
+                        $line
+                        break
+                    }
+                }
+            }
+        )
+        $status = if ($exportedMemberAttrs.Count -gt 0) { "retained" } else { "dropped" }
+        $summaryPath = Join-Path $caseDir "roundtrip_summary.md"
+        $summaryLines = @(
+            "# Import Roundtrip Summary",
+            "",
+            "- Case ID: $CaseId",
+            "- Component: $ComponentName",
+            "- Roundtrip status: $status",
+            "- Export path: $roundtripPath",
+            "- Expected member attribute prefixes: $($ExpectedMemberAttributePrefixes -join ', ')",
+            "- Exported member attributes: $(if ($exportedMemberAttrs.Count -gt 0) { $exportedMemberAttrs -join '; ' } else { '<none>' })"
+        )
+        Set-Content -Path $summaryPath -Value ($summaryLines -join [Environment]::NewLine)
+
+        [PSCustomObject]@{
+            status = $status
+            summary_path = $summaryPath
+            export_path = $roundtripPath
+            exported_member_attrs = if ($exportedMemberAttrs.Count -gt 0) {
+                $exportedMemberAttrs -join '; '
+            } else {
+                '<none>'
+            }
+        }
     }
 
     function Invoke-ExcelCase {
@@ -54,8 +110,9 @@ try {
         $wb = $null
         try {
             $wb = $script:excel.Workbooks.Add()
+            $roundtrip = $null
             if ($Kind -eq "defaultprop") {
-                Import-VbComponentFile -Workbook $wb -CaseId $CaseId -FileName "Widget.cls" -Code @"
+                $null = Import-VbComponentFile -Workbook $wb -CaseId $CaseId -FileName "Widget.cls" -Code @"
 VERSION 1.0 CLASS
 BEGIN
   MultiUse = -1  'True
@@ -77,7 +134,12 @@ Public Property Get Value() As Long
 End Property
 Attribute Value.VB_UserMemId = 0
 "@
-                Import-VbComponentFile -Workbook $wb -CaseId $CaseId -FileName "OracleHarness.bas" -Code @"
+                $roundtrip = Capture-ImportedComponentRoundtrip `
+                    -Workbook $wb `
+                    -CaseId $CaseId `
+                    -ComponentName "Widget" `
+                    -ExpectedMemberAttributePrefixes @("Attribute Value.VB_UserMemId")
+                $null = Import-VbComponentFile -Workbook $wb -CaseId $CaseId -FileName "OracleHarness.bas" -Code @"
 Attribute VB_Name = "OracleHarness"
 Public Function RunProbe()
     On Error GoTo handler
@@ -91,7 +153,7 @@ handler:
 End Function
 "@
             } elseif ($Kind -eq "newenum") {
-                Import-VbComponentFile -Workbook $wb -CaseId $CaseId -FileName "Widget.cls" -Code @"
+                $null = Import-VbComponentFile -Workbook $wb -CaseId $CaseId -FileName "Widget.cls" -Code @"
 VERSION 1.0 CLASS
 BEGIN
   MultiUse = -1  'True
@@ -115,7 +177,15 @@ End Property
 Attribute NewEnum.VB_UserMemId = -4
 Attribute NewEnum.VB_MemberFlags = "40"
 "@
-                Import-VbComponentFile -Workbook $wb -CaseId $CaseId -FileName "OracleHarness.bas" -Code @"
+                $roundtrip = Capture-ImportedComponentRoundtrip `
+                    -Workbook $wb `
+                    -CaseId $CaseId `
+                    -ComponentName "Widget" `
+                    -ExpectedMemberAttributePrefixes @(
+                        "Attribute NewEnum.VB_UserMemId",
+                        "Attribute NewEnum.VB_MemberFlags"
+                    )
+                $null = Import-VbComponentFile -Workbook $wb -CaseId $CaseId -FileName "OracleHarness.bas" -Code @"
 Attribute VB_Name = "OracleHarness"
 Public Function RunProbe()
     On Error GoTo handler
@@ -141,6 +211,10 @@ End Function
                 scenario = $Scenario
                 status = "ok"
                 observed = $result
+                roundtrip_status = if ($null -ne $roundtrip) { $roundtrip.status } else { "n/a" }
+                roundtrip_summary = if ($null -ne $roundtrip) { $roundtrip.summary_path } else { "" }
+                roundtrip_export = if ($null -ne $roundtrip) { $roundtrip.export_path } else { "" }
+                roundtrip_member_attrs = if ($null -ne $roundtrip) { $roundtrip.exported_member_attrs } else { "" }
             }
         } catch {
             [PSCustomObject]@{
@@ -148,6 +222,10 @@ End Function
                 scenario = $Scenario
                 status = "error"
                 observed = $_.Exception.Message
+                roundtrip_status = if ($null -ne $roundtrip) { $roundtrip.status } else { "error" }
+                roundtrip_summary = if ($null -ne $roundtrip) { $roundtrip.summary_path } else { "" }
+                roundtrip_export = if ($null -ne $roundtrip) { $roundtrip.export_path } else { "" }
+                roundtrip_member_attrs = if ($null -ne $roundtrip) { $roundtrip.exported_member_attrs } else { "" }
             }
         } finally {
             if ($wb -ne $null) {
@@ -233,8 +311,11 @@ End Function
             vba_observed = $vbaRow.observed
             oxvba_status = $oxRow.status
             oxvba_observed = $oxRow.observed
+            excel_roundtrip_status = $vbaRow.roundtrip_status
+            excel_roundtrip_summary = $vbaRow.roundtrip_summary
+            excel_roundtrip_member_attrs = $vbaRow.roundtrip_member_attrs
             match = if ($vbaRow.status -eq $oxRow.status -and $vbaRow.observed -eq $oxRow.observed) { "true" } else { "false" }
-            notes = $oxRow.notes
+            notes = "$($oxRow.notes); Excel import/export roundtrip: $($vbaRow.roundtrip_status); summary=$($vbaRow.roundtrip_summary)"
         }
     }
 
@@ -254,13 +335,14 @@ End Function
         "- Mismatch count: $((@($rows | Where-Object { $_.match -ne 'true' })).Count)",
         "",
         "## Case Results",
-        "| Topic | Case | VBA | OxVba | Match | Notes |",
-        "|---|---|---|---|---|---|"
+        "| Topic | Case | VBA | OxVba | Roundtrip | Match | Notes |",
+        "|---|---|---|---|---|---|---|"
     )
     foreach ($row in $rows) {
         $vbaCell = "$($row.vba_status): $($row.vba_observed)"
         $oxCell = "$($row.oxvba_status): $($row.oxvba_observed)"
-        $summary += "| $($row.topic_id) | $($row.case_id) | $vbaCell | $oxCell | $($row.match) | $($row.notes) |"
+        $roundtripCell = "$($row.excel_roundtrip_status): $($row.excel_roundtrip_member_attrs)"
+        $summary += "| $($row.topic_id) | $($row.case_id) | $vbaCell | $oxCell | $roundtripCell | $($row.match) | $($row.notes) |"
     }
     Set-Content -Path $summaryPath -Value ($summary -join [Environment]::NewLine)
 
