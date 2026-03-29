@@ -10,7 +10,7 @@ Generated from:
 
 | Domain | Rows | In Progress | Implemented Subset | Implemented Full | Verified | Planned |
 |---|---|---|---|---|---|---|
-| language | 3 | 2 | 1 | 0 | 0 | 0 |
+| language | 4 | 2 | 2 | 0 | 0 | 0 |
 | com_external | 2 | 0 | 1 | 0 | 1 | 0 |
 | project_hosting | 3 | 0 | 3 | 0 | 0 | 0 |
 | language_services_formalization | 2 | 2 | 0 | 0 | 0 | 0 |

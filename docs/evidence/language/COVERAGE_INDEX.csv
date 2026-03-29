@@ -3,4 +3,5 @@ summary,Language coverage index,derived-summary,canonical matrix owned,docs/vali
 summary,For Each over arrays,derived-summary,LANG-0001,docs/validation/LANGUAGE_VALIDATION_MATRIX_V1.csv,Array iteration remains the explicit canary subset.
 summary,For Each over object enumerators,derived-summary,LANG-0002,docs/validation/LANGUAGE_VALIDATION_MATRIX_V1.csv,Object-enumerator / NewEnum semantics remain in-progress and must not be merged with array iteration.
 summary,Default member attribute semantics,derived-summary,LANG-0003,docs/validation/LANGUAGE_VALIDATION_MATRIX_V1.csv,Imported attribute behavior is tracked in the canonical matrix; this index only points there.
+summary,Late-bound default-member calls,derived-summary,LANG-0004,docs/validation/LANGUAGE_VALIDATION_MATRIX_V1.csv,Runtime default-member dispatch is separated from imported/exported attribute metadata and remains its own canonical language row.
 summary,Derived reconciliation,derived-summary,all language rows,docs/validation/VALIDATION_DERIVED_SUMMARY_LATEST.md,Use the derived summary for a compact status view and the validation matrix for authoritative row-level truth.

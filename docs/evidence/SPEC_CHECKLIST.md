@@ -61,7 +61,7 @@ The rows below are retained as a derived snapshot for operator orientation. They
 | `[x]` | Types | Typed scalar lattice + coercion matrix + defaults (`Def*`, type chars) | `v67..v76` artifacts and compiler tests | Implemented subset. |
 | `[x]` | Types | `String` BSTR and UDT runtime semantics (non-boundary deterministic subset) | `COVERAGE_INDEX.csv` (`String BSTR core`) | Non-boundary string semantics and UDT runtime subset are implemented; boundary interop parity remains deferred. |
 | `[x]` | Types | UDT field access/assignment subset | `udt_field_access_basic.bas`, `udt_whole_assignment_copy.bas`, `udt_whole_assignment_overwrite.bas` | Type declarations plus flattened field-alias read/write subset and deterministic whole-value copy lowering are implemented. |
-| `[x]` | Late binding | Object default-member late-bound calls | `late_bound_default_member_exec.bas`, `late_bound_named_argument_exec.bas` | Deterministic late-bound execution subset supports up to one argument. |
+| `[x]` | Late binding | Object default-member late-bound calls | `late_bound_default_member_exec.bas`, `late_bound_named_argument_exec.bas` | Deterministic late-bound execution subset supports up to one argument; canonical row is `LANG-0004`. |
 | `[x]` | Backends | VM + JIT subset with fallback | `run-conformance.ps1`, `v24+` evidence | Implemented for current supported op surface, with explicit fallback parity tests for unsupported financial tolerance and sentinel-tag introspection paths (`v159`). |
 
 ## Built-in Functions and Library Checklist
