@@ -197,6 +197,7 @@ fn supports_rtslot_instruction(instruction: &Instruction) -> bool {
             | Instruction::IntrinsicNPerI32 { .. }
             // Phase 2: Array
             | Instruction::IntrinsicArrayLiteral { .. }
+            | Instruction::IntrinsicArrayAppend { .. }
             | Instruction::IntrinsicLBoundArray { .. }
             | Instruction::IntrinsicUBoundArray { .. }
             // Phase 2: Collection
@@ -2385,6 +2386,21 @@ pub fn execute_bytecode_rtslot(
                     error_dispatch_block,
                 );
             }
+            Instruction::IntrinsicArrayAppend { dst, array, item } => {
+                emit_extra_3slot(
+                    &mut builder,
+                    &mut module,
+                    &helpers,
+                    "oxrt_array_append",
+                    ctx_ptr,
+                    *dst,
+                    *array,
+                    *item,
+                    pc,
+                    next_block,
+                    error_dispatch_block,
+                );
+            }
             // ── Phase 2: Collection ──────────────────────────────────
             Instruction::IntrinsicCollectionAdd { dst, count, item } => {
                 emit_extra_3slot(
@@ -3528,6 +3544,7 @@ impl HelperFuncIds {
             ("oxrt_nper", &sig_ctx_6),
             // Phase 2: Array (3)
             ("oxrt_array_literal", &sig_ctx_2_ptr_1),
+            ("oxrt_array_append", &sig_ctx_3),
             ("oxrt_lbound", &sig_ctx_2),
             ("oxrt_ubound", &sig_ctx_2),
             // Phase 2: Collection (4)

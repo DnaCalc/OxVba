@@ -1683,6 +1683,32 @@ impl Vm {
                     )?;
                     pc += 1;
                 }
+                Instruction::IntrinsicArrayAppend { dst, array, item } => {
+                    let current = self.read_value_slot(*array)?;
+                    let item = self.read_value_slot(*item)?;
+                    let mut elements = match current {
+                        RuntimeValue::ArrayIntent(array) => array.elements.unwrap_or_default(),
+                        RuntimeValue::Empty | RuntimeValue::I32(0) => Vec::new(),
+                        other => {
+                            pc = self.route_runtime_error(
+                                pc,
+                                13,
+                                Some(&format!(
+                                    "__oxvba_array_append expects an array or empty source, got {other:?}"
+                                )),
+                            )?;
+                            continue;
+                        }
+                    };
+                    elements.push(item);
+                    self.write_value_slot(
+                        *dst,
+                        RuntimeValue::ArrayIntent(
+                            oxvba_runtime::safe_array::SafeArray::from_values(elements),
+                        ),
+                    )?;
+                    pc += 1;
+                }
                 Instruction::IntrinsicForEachInit { iter, src } => {
                     let iterable = self.read_value_slot(*src)?;
                     match self.materialize_foreach_items(bytecode, typed_fastpaths, &iterable) {

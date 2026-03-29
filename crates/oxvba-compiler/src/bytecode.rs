@@ -538,6 +538,11 @@ pub enum Instruction {
         dst: usize,
         values: Vec<usize>,
     },
+    IntrinsicArrayAppend {
+        dst: usize,
+        array: usize,
+        item: usize,
+    },
     IntrinsicForEachInit {
         iter: usize,
         src: usize,

@@ -1431,7 +1431,7 @@ fn intrinsic_result_type(name: &str) -> Option<BoundType> {
         "nper" => Some(BoundType::Double),
         "isempty" | "isnull" | "iserror" | "typeofis" => Some(BoundType::Boolean),
         "vbnullstring" => Some(BoundType::String),
-        "array" => Some(BoundType::Array),
+        "array" | "__oxvba_array_append" => Some(BoundType::Array),
         _ => None,
     }
 }

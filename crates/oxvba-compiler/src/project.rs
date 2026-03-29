@@ -2227,6 +2227,8 @@ fn lower_module_source_module_aware(
     dynamic_instance_bindings: &mut Vec<ProjectDynamicInstanceBindingDraft>,
 ) -> Result<(String, BTreeMap<String, BTreeSet<String>>), ProjectCompileError> {
     let current_module = normalize_identifier(&module.module_name);
+    let imported_collection_newenum_fields =
+        collect_internal_class_imported_collection_newenum_fields(module);
     let mut out = Vec::new();
     let mut active_function_result: Option<(String, String)> = None;
     let mut active_procedure_name: Option<String> = None;
@@ -2298,6 +2300,21 @@ fn lower_module_source_module_aware(
                 &internal_class_bindings,
                 &shadowed_identifiers,
             )?;
+            let expanded_line = rewrite_internal_class_collection_member_calls(
+                &expanded_line,
+                &class_state_bindings,
+                &imported_collection_newenum_fields,
+            )?;
+            let expanded_line = rewrite_internal_class_collection_newenum_read_assignment(
+                &expanded_line,
+                &class_state_bindings,
+                &imported_collection_newenum_fields,
+            );
+            let expanded_line = rewrite_internal_class_imported_collection_activation(
+                &expanded_line,
+                &class_state_bindings,
+                &imported_collection_newenum_fields,
+            );
             let state_assigned =
                 rewrite_internal_class_state_assignment(&expanded_line, &class_state_bindings);
             let expanded_line = if state_assigned != expanded_line {
@@ -4650,6 +4667,45 @@ fn collect_class_state_bindings(
     bindings
 }
 
+fn collect_internal_class_imported_collection_newenum_fields(
+    module: &ModuleUnit,
+) -> BTreeSet<String> {
+    let mut fields = BTreeSet::new();
+    if module.module_kind != ModuleKind::Class {
+        return fields;
+    }
+    for line in module.source.lines() {
+        let trimmed = line.trim_start();
+        let lowered = trimmed.to_ascii_lowercase();
+        if !lowered.starts_with("set ") {
+            continue;
+        }
+        let payload = trimmed[4..].trim_start();
+        let Some(eq_idx) = find_top_level_assignment_eq(payload) else {
+            continue;
+        };
+        let lhs = payload[..eq_idx].trim();
+        if normalize_identifier(lhs) != "newenum" {
+            continue;
+        }
+        let rhs = payload[eq_idx + 1..].trim();
+        let Some(dot_idx) = rhs.find('.') else {
+            continue;
+        };
+        let receiver = normalize_identifier(rhs[..dot_idx].trim());
+        let member_expr = rhs[dot_idx + 1..].trim();
+        if receiver.is_empty() {
+            continue;
+        }
+        if member_expr.eq_ignore_ascii_case("[_newenum]")
+            || member_expr.eq_ignore_ascii_case("_newenum")
+        {
+            fields.insert(receiver);
+        }
+    }
+    fields
+}
+
 fn parse_class_state_field_names(line: &str) -> Vec<String> {
     let trimmed = line.trim();
     if trimmed.is_empty() {
@@ -4853,6 +4909,175 @@ fn rewrite_internal_class_state_assignment(
         binding_token,
         rewritten_rhs
     )
+}
+
+fn rewrite_internal_class_collection_member_calls(
+    line: &str,
+    class_state_bindings: &BTreeMap<String, i32>,
+    imported_collection_newenum_fields: &BTreeSet<String>,
+) -> Result<String, ProjectCompileError> {
+    if class_state_bindings.is_empty()
+        || imported_collection_newenum_fields.is_empty()
+        || class_state_line_is_non_executable(line)
+    {
+        return Ok(line.to_string());
+    }
+
+    let trimmed = line.trim_start();
+    let leading = line.len().saturating_sub(trimmed.len());
+    let lowered = trimmed.to_ascii_lowercase();
+    let payload = if lowered.starts_with("call ") {
+        trimmed[5..].trim_start()
+    } else {
+        trimmed
+    };
+    if payload.contains('=') {
+        return Ok(line.to_string());
+    }
+
+    let Some(dot_idx) = payload.find('.') else {
+        return Ok(line.to_string());
+    };
+    let receiver = payload[..dot_idx].trim();
+    let normalized_receiver = normalize_identifier(receiver);
+    if !imported_collection_newenum_fields.contains(&normalized_receiver) {
+        return Ok(line.to_string());
+    }
+    let Some(binding_token) = class_state_bindings.get(&normalized_receiver).copied() else {
+        return Ok(line.to_string());
+    };
+    let member_expr = payload[dot_idx + 1..].trim();
+    if member_expr.is_empty() {
+        return Ok(line.to_string());
+    }
+
+    let (member_name, args) = if let Some(open_idx) = member_expr.find('(') {
+        let Some(close_idx) = find_matching_paren(member_expr, open_idx) else {
+            return Ok(line.to_string());
+        };
+        if close_idx != member_expr.len().saturating_sub(1) {
+            return Ok(line.to_string());
+        }
+        let member_name = normalize_identifier(member_expr[..open_idx].trim());
+        let args = split_top_level_args(member_expr[open_idx + 1..close_idx].trim())?;
+        (member_name, args)
+    } else {
+        let Some(space_idx) = member_expr.find(char::is_whitespace) else {
+            return Ok(line.to_string());
+        };
+        let member_name = normalize_identifier(member_expr[..space_idx].trim());
+        let args = split_top_level_args(member_expr[space_idx..].trim())?;
+        (member_name, args)
+    };
+
+    if !member_name.eq_ignore_ascii_case("add") {
+        return Ok(line.to_string());
+    }
+    let args = args
+        .into_iter()
+        .filter(|arg| !arg.trim().is_empty())
+        .collect::<Vec<_>>();
+    if args.len() != 1 {
+        return Ok(line.to_string());
+    }
+
+    Ok(format!(
+        "{}{} = __oxvba_array_append(__oxvba_withevents_get(__oxvba_this_instance, {}), {})",
+        &line[..leading],
+        receiver,
+        binding_token,
+        args[0].trim()
+    ))
+}
+
+fn rewrite_internal_class_collection_newenum_read_assignment(
+    line: &str,
+    class_state_bindings: &BTreeMap<String, i32>,
+    imported_collection_newenum_fields: &BTreeSet<String>,
+) -> String {
+    if class_state_bindings.is_empty()
+        || imported_collection_newenum_fields.is_empty()
+        || class_state_line_is_non_executable(line)
+    {
+        return line.to_string();
+    }
+
+    let trimmed = line.trim_start();
+    let leading = line.len().saturating_sub(trimmed.len());
+    let lowered = trimmed.to_ascii_lowercase();
+    if !lowered.starts_with("set ") {
+        return line.to_string();
+    }
+
+    let payload = trimmed[4..].trim_start();
+    let Some(eq_idx) = find_top_level_assignment_eq(payload) else {
+        return line.to_string();
+    };
+    let lhs = payload[..eq_idx].trim();
+    let rhs = payload[eq_idx + 1..].trim();
+    if normalize_identifier(lhs) != "newenum" {
+        return line.to_string();
+    }
+
+    let Some(dot_idx) = rhs.find('.') else {
+        return line.to_string();
+    };
+    let receiver = rhs[..dot_idx].trim();
+    let normalized_receiver = normalize_identifier(receiver);
+    if !imported_collection_newenum_fields.contains(&normalized_receiver) {
+        return line.to_string();
+    }
+    let Some(binding_token) = class_state_bindings.get(&normalized_receiver).copied() else {
+        return line.to_string();
+    };
+    let member_expr = rhs[dot_idx + 1..].trim();
+    if !(member_expr.eq_ignore_ascii_case("[_newenum]")
+        || member_expr.eq_ignore_ascii_case("_newenum"))
+    {
+        return line.to_string();
+    }
+
+    format!(
+        "{}{} = __oxvba_withevents_get(__oxvba_this_instance, {})",
+        &line[..leading],
+        lhs,
+        binding_token
+    )
+}
+
+fn rewrite_internal_class_imported_collection_activation(
+    line: &str,
+    class_state_bindings: &BTreeMap<String, i32>,
+    imported_collection_newenum_fields: &BTreeSet<String>,
+) -> String {
+    if class_state_bindings.is_empty() || imported_collection_newenum_fields.is_empty() {
+        return line.to_string();
+    }
+
+    let trimmed = line.trim_start();
+    let lowered = trimmed.to_ascii_lowercase();
+    if !lowered.starts_with("set ") {
+        return line.to_string();
+    }
+
+    let payload = trimmed[4..].trim_start();
+    let Some(eq_idx) = find_top_level_assignment_eq(payload) else {
+        return line.to_string();
+    };
+    let lhs = payload[..eq_idx].trim();
+    let rhs = payload[eq_idx + 1..].trim();
+    let normalized_lhs = normalize_identifier(lhs);
+    if !imported_collection_newenum_fields.contains(&normalized_lhs)
+        || !class_state_bindings.contains_key(&normalized_lhs)
+        || !rhs
+            .trim_start()
+            .to_ascii_lowercase()
+            .starts_with("createobject(")
+    {
+        return line.to_string();
+    }
+
+    String::new()
 }
 
 fn rewrite_internal_class_state_reads(
@@ -6095,6 +6320,10 @@ fn rewrite_module_source(
     dynamic_instance_bindings: &mut Vec<ProjectDynamicInstanceBindingDraft>,
 ) -> Result<(String, BTreeMap<String, BTreeSet<String>>), ProjectCompileError> {
     let current_module = normalize_identifier(&module.module_name);
+    let class_state_bindings =
+        collect_class_state_bindings(module, current_project, &current_module);
+    let imported_collection_newenum_fields =
+        collect_internal_class_imported_collection_newenum_fields(module);
     let mut out = Vec::new();
     let mut active_function_result: Option<(String, String)> = None;
     let mut active_procedure_name: Option<String> = None;
@@ -6164,6 +6393,21 @@ fn rewrite_module_source(
                 &internal_class_bindings,
                 &shadowed_identifiers,
             )?;
+            let expanded_line = rewrite_internal_class_collection_member_calls(
+                &expanded_line,
+                &class_state_bindings,
+                &imported_collection_newenum_fields,
+            )?;
+            let expanded_line = rewrite_internal_class_collection_newenum_read_assignment(
+                &expanded_line,
+                &class_state_bindings,
+                &imported_collection_newenum_fields,
+            );
+            let expanded_line = rewrite_internal_class_imported_collection_activation(
+                &expanded_line,
+                &class_state_bindings,
+                &imported_collection_newenum_fields,
+            );
             let expanded_line = rewrite_internal_class_default_member_read_assignment(
                 &expanded_line,
                 active_project,
@@ -23959,5 +24203,66 @@ mod tests {
             conditional_constants: BTreeMap::new(),
         };
         assert_strategy_parity(&manifest);
+    }
+
+    #[test]
+    fn compile_project_rewrites_internal_class_collection_field_newenum_to_array_append_path() {
+        let main_module = module_unit_from_source(
+            "MainModule",
+            ModuleKind::Procedural,
+            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nDim widget As New Widget\nEnd Sub",
+        )
+        .expect("main module parses");
+        let widget_module = module_unit_from_source(
+            "Widget",
+            ModuleKind::Class,
+            concat!(
+                "Attribute VB_Name = \"Widget\"\n",
+                "Option Explicit\n",
+                "Private items As New Collection\n",
+                "Public Sub Class_Initialize()\n",
+                "items.Add 41\n",
+                "items.Add 42\n",
+                "End Sub\n",
+                "Public Property Get NewEnum() As IUnknown\n",
+                "Set NewEnum = items.[_NewEnum]\n",
+                "End Property\n",
+                "Attribute NewEnum.VB_UserMemId = -4\n",
+                "Attribute NewEnum.VB_MemberFlags = \"40\"\n"
+            ),
+        )
+        .expect("widget module parses");
+        let manifest = ProjectManifest {
+            project_name: "ProjectA".to_string(),
+            project_kind: ProjectKind::Source,
+            modules: vec![main_module, widget_module],
+            references: Vec::new(),
+            reference_projects: Vec::new(),
+            conditional_constants: BTreeMap::new(),
+        };
+
+        let compiled =
+            compile_project(&manifest).expect("collection-backed NewEnum fixture should compile");
+        let lowered = compiled.rewritten_source.to_ascii_lowercase();
+        assert!(
+            lowered.contains("__oxvba_array_append(__oxvba_withevents_get(__oxvba_this_instance,"),
+            "expected array append lowering for collection field add: {lowered}"
+        );
+        assert!(
+            lowered.contains("newenum = __oxvba_withevents_get(__oxvba_this_instance,"),
+            "expected direct NewEnum state read lowering: {lowered}"
+        );
+        assert!(
+            !lowered.contains("__oxvba_withevents_get(__oxvba_this_instance, 1532914690).add"),
+            "invalid member-call-on-state-read lowering must not survive: {lowered}"
+        );
+        assert!(
+            !lowered.contains("[_newenum]"),
+            "imported _NewEnum syntax should be consumed by lowering: {lowered}"
+        );
+        assert!(
+            !lowered.contains("set items = createobject("),
+            "array-backed imported collection field should not retain CreateObject activation: {lowered}"
+        );
     }
 }

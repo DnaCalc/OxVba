@@ -4378,6 +4378,7 @@ pub fn intrinsic_spec(name: &str) -> Option<IntrinsicSpec> {
         "irr" => Some(IntrinsicSpec::range(1, 2, DeterministicCore)),
         "npv" => Some(IntrinsicSpec::range(2, usize::MAX, DeterministicCore)),
         "array" => Some(IntrinsicSpec::range(1, usize::MAX, DeterministicCore)),
+        "__oxvba_array_append" => Some(IntrinsicSpec::fixed(2, DeterministicCore)),
         "shell" | "environ" | "dir" | "createobject" => {
             Some(IntrinsicSpec::fixed(1, HostSensitive))
         }

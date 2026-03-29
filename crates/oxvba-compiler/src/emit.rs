@@ -2951,6 +2951,13 @@ fn emit_expr_into(
                         values: args.to_vec(),
                     });
                 }
+                ("__oxvba_array_append", [array, item]) => {
+                    instructions.push(Instruction::IntrinsicArrayAppend {
+                        dst,
+                        array: *array,
+                        item: *item,
+                    });
+                }
                 ("lbound", [src]) => {
                     instructions.push(Instruction::IntrinsicLBoundArray { dst, src: *src })
                 }
@@ -3390,7 +3397,8 @@ mod tests {
 
     #[test]
     fn emits_runtime_foreach_for_non_array_iterables() {
-        let source = "Sub Main()\nDim item\nDim widget\nFor Each item In widget\nitem = item\nNext\nEnd Sub";
+        let source =
+            "Sub Main()\nDim item\nDim widget\nFor Each item In widget\nitem = item\nNext\nEnd Sub";
         let bound = resolve_symbols(source);
         let code = emit_bytecode(&bound);
         assert!(

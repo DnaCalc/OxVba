@@ -1903,6 +1903,24 @@ pub extern "C" fn oxrt_array_literal(
 }
 
 #[unsafe(no_mangle)]
+pub extern "C" fn oxrt_array_append(ctx: *mut JitContext, dst: u32, array: u32, item: u32) -> i32 {
+    let current = read_slot!(ctx, array);
+    let item = read_slot!(ctx, item);
+    let mut elements = match current {
+        RuntimeValue::ArrayIntent(array) => array.elements.unwrap_or_default(),
+        RuntimeValue::Empty | RuntimeValue::I32(0) => Vec::new(),
+        _ => return ERR_RUNTIME,
+    };
+    elements.push(item);
+    write_slot!(
+        ctx,
+        dst,
+        RuntimeValue::ArrayIntent(oxvba_runtime::safe_array::SafeArray::from_values(elements),)
+    );
+    OK
+}
+
+#[unsafe(no_mangle)]
 pub extern "C" fn oxrt_lbound(ctx: *mut JitContext, dst: u32, src: u32) -> i32 {
     let val = read_slot!(ctx, src);
     let v = match semantics::runtime_value_legacy_token(&val, "LBound operand") {
@@ -3665,6 +3683,7 @@ pub fn register_symbols(builder: &mut cranelift_jit::JITBuilder) {
         ("oxrt_nper", oxrt_nper as *const u8),
         // Phase 2: Array
         ("oxrt_array_literal", oxrt_array_literal as *const u8),
+        ("oxrt_array_append", oxrt_array_append as *const u8),
         ("oxrt_lbound", oxrt_lbound as *const u8),
         ("oxrt_ubound", oxrt_ubound as *const u8),
         // Phase 2: Collection
