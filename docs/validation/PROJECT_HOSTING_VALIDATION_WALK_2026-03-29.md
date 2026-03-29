@@ -37,6 +37,7 @@ The project-storage lane was also checked at the loader/generator level:
 - `cargo test -p oxvba-project load_vbp_from_str_ -- --nocapture`
 
 Those tests pass for the supported `.basproj` and VBP adapter roundtrip subset, but they do not close the MS-OVBA corpus/extraction gap tracked by `ODG-042`. The Foundation reference run `20260301-ms-ovba-pass01` is the extracted-corpus source run for this lane; it produced 6 spec items and 0 conformance candidates, so the remaining oracle-evidence work is split to `bd-gm3.12.8.1`.
+The extracted evidence is now registered in `docs/evidence/conformance/oracle_captures/ms_ovba_storage_extraction_20260301T203020Z/summary.md`; that artifact bounds the MS-OVBA storage oracle lane without widening `PH-0010` beyond the supported project/container subset.
 
 Remaining broader work stays with the existing open records:
 - `CCT-045` for broader startup/entrypoint oracle coverage.
