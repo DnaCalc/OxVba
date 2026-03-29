@@ -76,7 +76,8 @@ Current extracted anchors:
 
 Current gap:
 
-- Run `20260301-ms-ovba-pass01` produced no section-level conformance candidates.
+- Run `20260301-ms-ovba-pass01` produced 6 spec items and 0 conformance candidates.
+- The extracted corpus currently surfaces only the landing-page-level items plus the normative sections 1.7/2 statement at `L45`.
 - PMR storage clauses remain `specified-pending` until section-level extraction is available.
 
 ## 5. Crosswalk Governance
