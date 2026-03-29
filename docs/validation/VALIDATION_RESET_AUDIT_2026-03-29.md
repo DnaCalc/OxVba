@@ -14,6 +14,9 @@ It is the transition ledger that records:
 2. whether they remain trustworthy,
 3. whether they must be retained, rewritten, split, or archived.
 
+Canonical ownership reference:
+- `docs/validation/VALIDATION_CANONICAL_OWNERSHIP_MAP_2026-03-29.md`
+
 ## Classification Rules
 
 Use one of:

@@ -88,11 +88,12 @@ This includes:
 
 The reset must produce the following active artifacts:
 1. `docs/validation/VALIDATION_RESET_AUDIT_2026-03-29.md`
-2. `docs/validation/LANGUAGE_VALIDATION_MATRIX_V1.csv`
-3. `docs/validation/COM_EXTERNAL_INTEGRATION_VALIDATION_MATRIX_V1.csv`
-4. `docs/validation/PROJECT_HOSTING_VALIDATION_MATRIX_V1.csv`
-5. `docs/validation/LANGUAGE_SERVICES_AND_FORMALIZATION_MATRIX_V1.csv`
-6. doctrine updates in:
+2. `docs/validation/VALIDATION_CANONICAL_OWNERSHIP_MAP_2026-03-29.md`
+3. `docs/validation/LANGUAGE_VALIDATION_MATRIX_V1.csv`
+4. `docs/validation/COM_EXTERNAL_INTEGRATION_VALIDATION_MATRIX_V1.csv`
+5. `docs/validation/PROJECT_HOSTING_VALIDATION_MATRIX_V1.csv`
+6. `docs/validation/LANGUAGE_SERVICES_AND_FORMALIZATION_MATRIX_V1.csv`
+7. doctrine updates in:
    - `OPERATIONS.md`
    - `docs/LOCAL_EXECUTION_DOCTRINE.md`
 
