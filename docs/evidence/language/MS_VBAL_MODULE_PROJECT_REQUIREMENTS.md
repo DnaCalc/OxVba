@@ -64,11 +64,7 @@ These remain required scope, but not blockers for initial project-model bring-up
 
 ## Source Quality Note
 
-The current MS-OVBA extracted run (`20260301-ms-ovba-pass01`) contains only the
-landing-page level items and does not yet provide section-level conformance
-anchors for normative section 2 obligations. This gap is explicitly tracked in
-the requirements CSV and PMR clause catalog as a source-extraction blocker for
-storage parity claims.
+The current MS-OVBA extracted run (`20260301-ms-ovba-pass01`) yields 6 spec items and 0 conformance candidates. It contains only the landing-page-level items and the normative sections 1.7/2 statement, so it still does not provide section-level conformance anchors for storage parity claims. This gap is explicitly tracked in the requirements CSV and PMR clause catalog as a source-extraction blocker.
 
 ## Recommended Next Focus
 
