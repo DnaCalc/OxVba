@@ -361,7 +361,7 @@
 | COM Early Open Questions (v416) | [`evidence/conformance/com_early/COM_EARLY_OPEN_QUESTIONS_V416.md`](evidence/conformance/com_early/COM_EARLY_OPEN_QUESTIONS_V416.md) | Planning-stage open-question register for early-binding/type-library behavior to close via source anchors or explicit implementation-defined policy. |
 | Status Tours | [`status-tours/`](status-tours/) | Date-stamped orientation/showcase docs for implemented project state. |
 | Formal | [`FORMAL.md`](FORMAL.md) | Lean/Kani formal scaffold status and structure. |
-| Spec Checklist | [`evidence/SPEC_CHECKLIST.md`](evidence/SPEC_CHECKLIST.md) | Structured language + built-in/library checklist aligned to current evidence and planned gaps. |
+| Spec Checklist | [`evidence/SPEC_CHECKLIST.md`](evidence/SPEC_CHECKLIST.md) | Derived operator summary for language + built-in/library scope; canonical truth lives in the validation matrices. |
 | Conformance Check Topics | [`evidence/conformance/CONFORMANCE_CHECK_TOPICS.md`](evidence/conformance/CONFORMANCE_CHECK_TOPICS.md) | Oracle-driven backlog for semantically uncertain VBA behaviors to differential-check after implementation. |
 | Deferred Oracle Gates | [`evidence/conformance/DEFERRED_ORACLE_GATES.md`](evidence/conformance/DEFERRED_ORACLE_GATES.md) | Deferred gate register for oracle-dependent semantics (parallel to deferred formal gates). |
 | Implementation-Defined Register | [`evidence/conformance/IMPLEMENTATION_DEFINED.md`](evidence/conformance/IMPLEMENTATION_DEFINED.md) | Explicit catalog of implementation-defined behavior choices and conformance impact links. |

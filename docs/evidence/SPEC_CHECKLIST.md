@@ -1,13 +1,21 @@
 # SPEC_CHECKLIST.md
 
-Spec-oriented execution checklist for OxVBA.
+Derived operator summary for OxVBA.
+
+Canonical active truth lives in the validation matrices:
+- `docs/validation/LANGUAGE_VALIDATION_MATRIX_V1.csv`
+- `docs/validation/COM_EXTERNAL_INTEGRATION_VALIDATION_MATRIX_V1.csv`
+- `docs/validation/PROJECT_HOSTING_VALIDATION_MATRIX_V1.csv`
+- `docs/validation/LANGUAGE_SERVICES_AND_FORMALIZATION_MATRIX_V1.csv`
+
+Use this file only as a derived orientation aid. If this file and the matrices disagree, the matrices win.
 
 Status legend:
-- `[x]` implemented in current executable subset
-- `[~]` partially implemented (subset/scaffold/diagnostic-only)
-- `[ ]` planned (not implemented yet)
+- `[x]` historical shorthand for a supported subset already reflected in the canonical matrices
+- `[~]` historical shorthand for a partial subset/scaffold/diagnostic-only row
+- `[ ]` historical shorthand for a planned row not yet promoted in the canonical matrices
 
-Primary evidence sources:
+Reference sources:
 - Language coverage index: `docs/evidence/language/COVERAGE_INDEX.csv`
 - Intrinsic surface index: `docs/evidence/runtime/INTRINSIC_SURFACE.csv`
 - Module/project requirements: `docs/evidence/language/MS_VBAL_MODULE_PROJECT_REQUIREMENTS.csv`
@@ -15,6 +23,8 @@ Primary evidence sources:
 - Conformance corpus: `conformance/tests/`
 
 ## Language Feature Checklist
+
+The rows below are retained as a derived snapshot for operator orientation. They do not carry canonical closure authority.
 
 | State | Spec Family | Feature | Scope/Evidence | Notes |
 |---|---|---|---|---|
@@ -80,9 +90,6 @@ Reference inventory: `docs/evidence/runtime/LIBRARY_CHECKLIST.csv`.
 
 ## Next Use
 
-Use this checklist to drive profile/workset decomposition:
-1. Add missing features first to `COVERAGE_INDEX.csv` and `LIBRARY_CHECKLIST.csv` as `planned`.
-2. Promote to `partial` when parser/binder/typecheck scaffolding exists.
-3. Promote to `implemented` only with executable conformance evidence.
-4. For semantically uncertain items, add/track oracle probes in `docs/evidence/conformance/CONFORMANCE_CHECK_TOPICS.csv`.
-5. For full MS-VBAL closure, drive module/project backlog via `MS_VBAL_MODULE_PROJECT_REQUIREMENTS.csv`.
+Use the canonical matrices to make closure decisions.
+Use this file only to help operators find the related scope, source corpus, and historical shorthand.
+If you need current state, row boundaries, or closure status, consult the matrices directly.
