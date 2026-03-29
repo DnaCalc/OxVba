@@ -1023,15 +1023,13 @@ fn discover_modules_recursive(
                     path: path.display().to_string(),
                     source: e,
                 })?;
-                modules.push(ModuleUnit {
-                    module_name: module_name.clone(),
-                    module_kind: kind,
-                    attributes: ModuleAttributes {
-                        vb_name: module_name,
-                        ..ModuleAttributes::default()
-                    },
-                    source,
-                });
+                let unit = module_unit_from_source(&module_name, kind, source).map_err(|err| {
+                    BasProjError::ModuleSourceInvalid {
+                        include: path.display().to_string(),
+                        message: err.to_string(),
+                    }
+                })?;
+                modules.push(unit);
             }
         }
     }
@@ -1060,20 +1058,17 @@ fn load_explicit_modules(
             BasProjModuleKind::ClassModule => ModuleKind::Class,
             BasProjModuleKind::DocumentModule => ModuleKind::Document,
         };
-        let attributes = ModuleAttributes {
-            vb_name: module_name.clone(),
-            vb_global_namespace: bm.vb_global_namespace,
-            vb_creatable: bm.vb_creatable,
-            vb_predeclared_id: bm.vb_predeclared_id,
-            vb_exposed: bm.vb_exposed,
-            option_private_module: false,
-        };
-        modules.push(ModuleUnit {
-            module_name,
-            module_kind,
-            attributes,
-            source,
-        });
+        let mut unit = module_unit_from_source(&module_name, module_kind, source).map_err(|err| {
+            BasProjError::ModuleSourceInvalid {
+                include: bm.include.clone(),
+                message: err.to_string(),
+            }
+        })?;
+        unit.attributes.vb_global_namespace = bm.vb_global_namespace;
+        unit.attributes.vb_creatable = bm.vb_creatable;
+        unit.attributes.vb_predeclared_id = bm.vb_predeclared_id;
+        unit.attributes.vb_exposed = bm.vb_exposed;
+        modules.push(unit);
     }
     Ok(modules)
 }
@@ -1699,6 +1694,136 @@ mod tests {
             shim_modules[0].source.contains("Call Startup.Boot"),
             "expected startup shim to target override entrypoint, got: {}",
             shim_modules[0].source
+        );
+
+        std::fs::remove_dir_all(&temp_root).expect("cleanup temp project root");
+    }
+
+    #[test]
+    fn loaded_project_preserves_default_member_lowering_for_class_property_get() {
+        let unique = format!(
+            "oxvba_project_load_default_member_{}_{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .expect("unix epoch")
+                .as_nanos()
+        );
+        let temp_root = std::env::temp_dir().join(unique);
+        std::fs::create_dir_all(&temp_root).expect("create temp project root");
+        std::fs::write(
+            temp_root.join("Main.bas"),
+            "Attribute VB_Name = \"Main\"\nPublic Sub Main()\nDim widget As New Widget\nDim valueOut\nvalueOut = widget\nEnd Sub\n",
+        )
+        .expect("write main module");
+        std::fs::write(
+            temp_root.join("Widget.cls"),
+            concat!(
+                "Attribute VB_Name = \"Widget\"\n",
+                "Option Explicit\n",
+                "Private stored As Long\n",
+                "Public Sub Class_Initialize()\n",
+                "stored = 41\n",
+                "End Sub\n",
+                "Public Property Get Value() As Long\n",
+                "Value = stored + 1\n",
+                "End Property\n",
+                "Attribute Value.VB_UserMemId = 0\n"
+            ),
+        )
+        .expect("write widget module");
+
+        let main_source = "Attribute VB_Name = \"Main\"\nPublic Sub Main()\nDim widget As New Widget\nDim valueOut\nvalueOut = widget\nEnd Sub\n";
+        let widget_source = concat!(
+            "Attribute VB_Name = \"Widget\"\n",
+            "Option Explicit\n",
+            "Private stored As Long\n",
+            "Public Sub Class_Initialize()\n",
+            "stored = 41\n",
+            "End Sub\n",
+            "Public Property Get Value() As Long\n",
+            "Value = stored + 1\n",
+            "End Property\n",
+            "Attribute Value.VB_UserMemId = 0\n"
+        );
+        let short_manifest = ProjectManifest {
+            project_name: "ProjectA".to_string(),
+            project_kind: ProjectKind::Source,
+            modules: vec![
+                module_unit_from_source("Main", ModuleKind::Procedural, main_source)
+                    .expect("short main parses"),
+                module_unit_from_source("Widget", ModuleKind::Class, widget_source)
+                    .expect("short widget parses"),
+            ],
+            references: Vec::new(),
+            reference_projects: Vec::new(),
+            conditional_constants: BTreeMap::new(),
+        };
+        let short_compiled =
+            oxvba_compiler::compile_project(&short_manifest).expect("short manifest compiles");
+        let short_lowered = short_compiled.rewritten_source.to_ascii_lowercase();
+        assert!(
+            short_lowered.contains("valueout = property_get_pmr_projecta_widget_value(widget)"),
+            "{short_lowered}"
+        );
+
+        let direct_manifest = ProjectManifest {
+            project_name: "AttributeOracleProject".to_string(),
+            project_kind: ProjectKind::Source,
+            modules: vec![
+                module_unit_from_source("Main", ModuleKind::Procedural, main_source)
+                    .expect("direct main parses"),
+                module_unit_from_source("Widget", ModuleKind::Class, widget_source)
+                    .expect("direct widget parses"),
+            ],
+            references: Vec::new(),
+            reference_projects: Vec::new(),
+            conditional_constants: BTreeMap::new(),
+        };
+        let direct_compiled =
+            oxvba_compiler::compile_project(&direct_manifest).expect("direct manifest compiles");
+        let direct_lowered = direct_compiled.rewritten_source.to_ascii_lowercase();
+        assert!(
+            direct_lowered.contains("valueout = property_get_pmr_"),
+            "{direct_lowered}"
+        );
+        assert!(
+            direct_lowered.contains("property get pmr_"),
+            "{direct_lowered}"
+        );
+
+        let loaded = load_basproj_from_str(
+            "\
+<Project Sdk=\"OxVba.Sdk/0.1.0\">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <ProjectName>AttributeOracleProject</ProjectName>
+    <EntryPoint>Main.Main</EntryPoint>
+  </PropertyGroup>
+  <ItemGroup>
+    <Module Include=\"Main.bas\" />
+    <ClassModule Include=\"Widget.cls\" />
+  </ItemGroup>
+</Project>
+",
+            &temp_root,
+        )
+        .expect("load project");
+
+        let loaded_compiled =
+            oxvba_compiler::compile_project(&loaded.manifest).expect("loaded manifest compiles");
+        let loaded_lowered = loaded_compiled.rewritten_source.to_ascii_lowercase();
+        assert!(
+            loaded_lowered.contains("valueout = property_get_pmr_"),
+            "{loaded_lowered}"
+        );
+        assert!(
+            loaded_lowered.contains("property get pmr_"),
+            "{loaded_lowered}"
+        );
+        assert!(
+            loaded_lowered.contains("pmr_attributeoracleproject_widget_value ="),
+            "{loaded_lowered}"
         );
 
         std::fs::remove_dir_all(&temp_root).expect("cleanup temp project root");

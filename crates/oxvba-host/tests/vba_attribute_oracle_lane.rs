@@ -18,7 +18,7 @@ mod windows_vba_attribute_oracle_lane {
     fn run_project_with_widget(
         main_source: &str,
         widget_source: &str,
-    ) -> Result<Vec<oxvba_runtime::RuntimeValue>, String> {
+    ) -> Result<oxvba_runtime::RuntimeValue, String> {
         let temp_root = unique_temp_dir("oxvba_vba_attribute_oracle");
         std::fs::create_dir_all(&temp_root).expect("create temp project root");
         std::fs::write(temp_root.join("Main.bas"), main_source).expect("write main module");
@@ -41,13 +41,16 @@ mod windows_vba_attribute_oracle_lane {
             &temp_root,
         )
         .map_err(|err| err.to_string())?;
-
-        let result = Engine::new(HostConfig {
+        let engine = Engine::new(HostConfig {
             enable_jit: false,
             root_object_name: None,
-        })
-        .execute_project_with_snapshot_phased(&loaded.manifest)
-        .map_err(|err| err.to_string());
+        });
+        let mut session = engine
+            .compile_and_prepare_session(&loaded.manifest)
+            .map_err(|err| err.to_string())?;
+        let result = engine
+            .invoke_procedure(&mut session, "Main", "Main", &[])
+            .map_err(|err| err.to_string());
 
         std::fs::remove_dir_all(&temp_root).expect("cleanup temp project root");
         result
@@ -69,8 +72,8 @@ mod windows_vba_attribute_oracle_lane {
     #[test]
     #[ignore = "requires Windows Excel-backed oracle lane"]
     fn windows_defaultprop_vb_usermemid_zero_bare_assignment_matches_excel() {
-        let values = run_project_with_widget(
-            "Attribute VB_Name = \"Main\"\nPublic Sub Main()\nDim widget As New Widget\nDim valueOut\nvalueOut = widget\nEnd Sub\n",
+        let value = run_project_with_widget(
+            "Attribute VB_Name = \"Main\"\nPublic Function Main() As Variant\nDim widget As New Widget\nDim valueOut\nvalueOut = widget\nMain = valueOut\nEnd Function\n",
             concat!(
                 "Attribute VB_Name = \"Widget\"\n",
                 "Option Explicit\n",
@@ -85,8 +88,8 @@ mod windows_vba_attribute_oracle_lane {
             ),
         )
         .expect("attribute oracle project should execute");
-        emit_observed("CCT-049-DEFAULTPROP-001", &values[0]);
-        assert_eq!(values[0], RuntimeValue::I32(42));
+        emit_observed("CCT-049-DEFAULTPROP-001", &value);
+        assert_eq!(value, RuntimeValue::I32(42));
     }
 
     #[test]
@@ -95,14 +98,15 @@ mod windows_vba_attribute_oracle_lane {
         let result = run_project_with_widget(
             concat!(
                 "Attribute VB_Name = \"Main\"\n",
-                "Public Sub Main()\n",
+                "Public Function Main() As String\n",
                 "Dim widget As New Widget\n",
                 "Dim item\n",
                 "Dim valueOut\n",
                 "For Each item In widget\n",
                 "    valueOut = valueOut & CStr(item) & \",\"\n",
                 "Next item\n",
-                "End Sub\n"
+                "Main = valueOut\n",
+                "End Function\n"
             ),
             concat!(
                 "Attribute VB_Name = \"Widget\"\n",
@@ -121,9 +125,9 @@ mod windows_vba_attribute_oracle_lane {
         );
 
         match result {
-            Ok(values) => {
-                emit_observed("CCT-050-NEWENUM-001", &values[0]);
-                assert_eq!(values[0], RuntimeValue::String(BStr("41,42,".to_string())));
+            Ok(value) => {
+                emit_observed("CCT-050-NEWENUM-001", &value);
+                assert_eq!(value, RuntimeValue::String(BStr("41,42,".to_string())));
             }
             Err(err) => {
                 emit_observed_text("CCT-050-NEWENUM-001", &format!("error:{err}"));

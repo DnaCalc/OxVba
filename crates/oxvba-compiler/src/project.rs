@@ -633,6 +633,7 @@ fn compile_project_with_strategy(
     let implements_map =
         collect_class_implements_map(manifest, &procedure_index, &reference_order)?;
     let project_dynamic_objects = build_project_dynamic_object_routes(
+        manifest,
         &dynamic_instance_bindings,
         &procedure_index,
         &procedure_runtime_metadata,
@@ -2073,6 +2074,13 @@ fn lowered_proc_signature_name(decl: &ProcedureDecl) -> &str {
             .lowered_name
             .strip_prefix("property_set_")
             .unwrap_or(decl.lowered_name.as_str()),
+    }
+}
+
+fn lowered_function_result_name(decl: &ProcedureDecl) -> &str {
+    match decl.kind {
+        ProcedureDeclKind::PropertyGet => lowered_proc_signature_name(decl),
+        _ => decl.lowered_name.as_str(),
     }
 }
 
@@ -5433,13 +5441,42 @@ fn build_project_com_withevents_routes(plan: &EventDispatchPlan) -> Vec<ProjectC
 }
 
 fn build_project_dynamic_object_routes(
+    manifest: &ProjectManifest,
     bindings: &[ProjectDynamicInstanceBindingDraft],
     procedures: &[ProcedureDecl],
     runtime_metadata: &BTreeMap<String, ProcedureRuntimeMetadata>,
     implements_map: &ClassImplementsMap,
 ) -> Vec<ProjectDynamicObjectRoute> {
+    let mut all_bindings = bindings.to_vec();
+    if manifest.project_kind == ProjectKind::Library {
+        let mut seen = all_bindings
+            .iter()
+            .map(|binding| (binding.project_name.clone(), binding.module_name.clone()))
+            .collect::<BTreeSet<_>>();
+        let mut next_export_only_handle = -1;
+        let current_project = normalize_identifier(&manifest.project_name);
+        for module in &manifest.modules {
+            if module.module_kind != ModuleKind::Class
+                || !module.attributes.vb_creatable
+                || !module.attributes.vb_exposed
+            {
+                continue;
+            }
+            let module_name = normalize_identifier(&module.module_name);
+            if !seen.insert((current_project.clone(), module_name.clone())) {
+                continue;
+            }
+            all_bindings.push(ProjectDynamicInstanceBindingDraft {
+                object_handle: ObjectHandle::new(next_export_only_handle),
+                project_name: current_project.clone(),
+                module_name,
+            });
+            next_export_only_handle -= 1;
+        }
+    }
+
     let mut out = Vec::new();
-    for binding in bindings {
+    for binding in &all_bindings {
         let mut members = procedures
             .iter()
             .filter(|decl| {
@@ -5838,7 +5875,7 @@ fn build_line_bind_plan(
             rewritten = strip_signature_param_types(&rewritten);
         }
         let next_function_result = if decl.kind.has_return_value() {
-            Some((proc_name, decl.lowered_name.clone()))
+            Some((proc_name, lowered_function_result_name(decl).to_string()))
         } else {
             None
         };
@@ -6179,7 +6216,8 @@ fn rewrite_module_source(
                     rewritten = strip_signature_param_types(&rewritten);
                 }
                 if decl.kind.has_return_value() {
-                    active_function_result = Some((proc_name, decl.lowered_name.clone()));
+                    active_function_result =
+                        Some((proc_name, lowered_function_result_name(decl).to_string()));
                 } else {
                     active_function_result = None;
                 }
@@ -14575,6 +14613,61 @@ mod tests {
                 }),
             "expected native internal dynamic route to keep its transitional token table"
         );
+    }
+
+    #[test]
+    fn compile_project_library_emits_exportable_dynamic_routes_for_exposed_creatable_class() {
+        let mut widget = module_unit_from_source(
+            "Widget",
+            ModuleKind::Class,
+            concat!(
+                "Attribute VB_Name = \"Widget\"\n",
+                "Public Property Get Value() As Long\n",
+                "Value = 42\n",
+                "End Property\n",
+                "Attribute Value.VB_UserMemId = 0\n",
+                "Public Property Get NewEnum() As Long\n",
+                "NewEnum = 42\n",
+                "End Property\n",
+                "Attribute NewEnum.VB_UserMemId = -4\n",
+                "Attribute NewEnum.VB_MemberFlags = \"40\"\n"
+            ),
+        )
+        .expect("widget module parses");
+        widget.attributes.vb_creatable = true;
+        widget.attributes.vb_exposed = true;
+
+        let manifest = ProjectManifest {
+            project_name: "AttrExport".to_string(),
+            project_kind: ProjectKind::Library,
+            modules: vec![widget],
+            references: Vec::new(),
+            reference_projects: Vec::new(),
+            conditional_constants: BTreeMap::new(),
+        };
+
+        let compiled =
+            compile_project(&manifest).expect("library export route inventory should compile");
+        let route = compiled
+            .project_dynamic_objects
+            .iter()
+            .find(|route| route.module_name.eq_ignore_ascii_case("Widget"))
+            .expect("exportable class route should exist");
+        let value = route
+            .members
+            .iter()
+            .find(|member| member.member_name.eq_ignore_ascii_case("Value"))
+            .expect("default member should be exported");
+        assert_eq!(value.dispatch_id, Some(0));
+        assert!(value.is_default_member);
+
+        let new_enum = route
+            .members
+            .iter()
+            .find(|member| member.member_name.eq_ignore_ascii_case("NewEnum"))
+            .expect("newenum member should be exported");
+        assert_eq!(new_enum.dispatch_id, Some(-4));
+        assert_eq!(new_enum.member_flags, Some(0x40));
     }
 
     #[test]

@@ -68,6 +68,9 @@ pub enum BasProjError {
     #[error("module source file not found: {0}")]
     ModuleSourceNotFound(String),
 
+    #[error("invalid module source `{include}`: {message}")]
+    ModuleSourceInvalid { include: String, message: String },
+
     #[error("import file not found: {0}")]
     ImportFileNotFound(String),
 

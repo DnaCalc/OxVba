@@ -1168,6 +1168,18 @@ mod tests {
             .to_path_buf()
     }
 
+    fn assert_snapshot_tail(snapshot: &[RuntimeValue], expected: &[RuntimeValue]) {
+        assert!(
+            snapshot.len() >= expected.len(),
+            "snapshot shorter than expected tail: snapshot={snapshot:?} expected={expected:?}"
+        );
+        assert_eq!(
+            &snapshot[snapshot.len() - expected.len()..],
+            expected,
+            "snapshot tail mismatch: snapshot={snapshot:?}"
+        );
+    }
+
     struct ProjectAwareCallbacks {
         mutations: Mutex<Vec<String>>,
     }
@@ -10075,8 +10087,7 @@ mod tests {
         let snapshot = engine
             .execute_project_with_value_snapshot_phased(&manifest)
             .expect("project execution should succeed");
-        assert_eq!(snapshot[0], RuntimeValue::I32(1));
-        assert_eq!(snapshot[1], RuntimeValue::I32(8));
+        assert_snapshot_tail(&snapshot, &[RuntimeValue::I32(1), RuntimeValue::I32(8)]);
     }
 
     #[test]
@@ -10107,8 +10118,7 @@ mod tests {
         let snapshot = engine
             .execute_project_with_value_snapshot_phased(&manifest)
             .expect("project execution should succeed");
-        assert_eq!(snapshot[0], RuntimeValue::I32(1));
-        assert_eq!(snapshot[1], RuntimeValue::I32(8));
+        assert_snapshot_tail(&snapshot, &[RuntimeValue::I32(1), RuntimeValue::I32(8)]);
     }
 
     #[test]
@@ -10139,8 +10149,7 @@ mod tests {
         let snapshot = engine
             .execute_project_with_value_snapshot_phased(&manifest)
             .expect("project execution should succeed");
-        assert_eq!(snapshot[0], RuntimeValue::I32(1));
-        assert_eq!(snapshot[1], RuntimeValue::I32(8));
+        assert_snapshot_tail(&snapshot, &[RuntimeValue::I32(1), RuntimeValue::I32(8)]);
     }
 
     #[test]
@@ -10181,7 +10190,7 @@ mod tests {
         );
         assert!(
             lowered.contains(
-                "property_get_pmr_projecta_widget_value = __oxvba_withevents_get(__oxvba_this_instance,"
+                "pmr_projecta_widget_value = __oxvba_withevents_get(__oxvba_this_instance,"
             ),
             "expected lowered property get state-backed return assignment in rewritten project source: {lowered}"
         );
@@ -10216,14 +10225,18 @@ mod tests {
                 }),
             "expected property get member route with a return slot"
         );
-
         let snapshot = engine
             .execute_project_with_value_snapshot_phased(&manifest)
             .expect("project execution should succeed");
-        assert_eq!(snapshot[0], RuntimeValue::I32(1));
-        assert_eq!(snapshot[1], RuntimeValue::I32(4));
-        assert_eq!(snapshot[2], RuntimeValue::Empty);
-        assert_eq!(snapshot[3], RuntimeValue::I32(9));
+        assert_snapshot_tail(
+            &snapshot,
+            &[
+                RuntimeValue::I32(1),
+                RuntimeValue::I32(4),
+                RuntimeValue::Empty,
+                RuntimeValue::I32(9),
+            ],
+        );
     }
 
     #[test]
@@ -10254,10 +10267,15 @@ mod tests {
         let snapshot = engine
             .execute_project_with_value_snapshot_phased(&manifest)
             .expect("project execution should succeed");
-        assert_eq!(snapshot[0], RuntimeValue::I32(1));
-        assert_eq!(snapshot[1], RuntimeValue::I32(4));
-        assert_eq!(snapshot[2], RuntimeValue::Empty);
-        assert_eq!(snapshot[3], RuntimeValue::I32(9));
+        assert_snapshot_tail(
+            &snapshot,
+            &[
+                RuntimeValue::I32(1),
+                RuntimeValue::I32(4),
+                RuntimeValue::Empty,
+                RuntimeValue::I32(9),
+            ],
+        );
     }
 
     #[test]
@@ -10287,9 +10305,10 @@ mod tests {
         let snapshot = engine
             .execute_project_with_value_snapshot_phased(&manifest)
             .expect("project execution should succeed");
-        assert_eq!(snapshot[0], RuntimeValue::I32(1));
-        assert_eq!(snapshot[1], RuntimeValue::I32(4));
-        assert_eq!(snapshot[2], RuntimeValue::I32(9));
+        assert_snapshot_tail(
+            &snapshot,
+            &[RuntimeValue::I32(1), RuntimeValue::I32(4), RuntimeValue::I32(9)],
+        );
     }
 
     #[test]
@@ -10319,9 +10338,10 @@ mod tests {
         let snapshot = engine
             .execute_project_with_value_snapshot_phased(&manifest)
             .expect("project execution should succeed");
-        assert_eq!(snapshot[0], RuntimeValue::I32(1));
-        assert_eq!(snapshot[1], RuntimeValue::I32(4));
-        assert_eq!(snapshot[2], RuntimeValue::I32(9));
+        assert_snapshot_tail(
+            &snapshot,
+            &[RuntimeValue::I32(1), RuntimeValue::I32(4), RuntimeValue::I32(9)],
+        );
     }
 
     #[test]
@@ -10351,9 +10371,10 @@ mod tests {
         let snapshot = engine
             .execute_project_with_value_snapshot_phased(&manifest)
             .expect("project execution should succeed");
-        assert_eq!(snapshot[0], RuntimeValue::I32(1));
-        assert_eq!(snapshot[1], RuntimeValue::I32(4));
-        assert_eq!(snapshot[2], RuntimeValue::I32(9));
+        assert_snapshot_tail(
+            &snapshot,
+            &[RuntimeValue::I32(1), RuntimeValue::I32(4), RuntimeValue::I32(9)],
+        );
     }
 
     #[test]
@@ -10383,9 +10404,10 @@ mod tests {
         let snapshot = engine
             .execute_project_with_value_snapshot_phased(&manifest)
             .expect("project execution should succeed");
-        assert_eq!(snapshot[0], RuntimeValue::I32(1));
-        assert_eq!(snapshot[1], RuntimeValue::I32(4));
-        assert_eq!(snapshot[2], RuntimeValue::I32(9));
+        assert_snapshot_tail(
+            &snapshot,
+            &[RuntimeValue::I32(1), RuntimeValue::I32(4), RuntimeValue::I32(9)],
+        );
     }
 
     #[test]
@@ -10415,9 +10437,10 @@ mod tests {
         let snapshot = engine
             .execute_project_with_value_snapshot_phased(&manifest)
             .expect("project execution should succeed");
-        assert_eq!(snapshot[0], RuntimeValue::I32(1));
-        assert_eq!(snapshot[1], RuntimeValue::I32(4));
-        assert_eq!(snapshot[2], RuntimeValue::I32(9));
+        assert_snapshot_tail(
+            &snapshot,
+            &[RuntimeValue::I32(1), RuntimeValue::I32(4), RuntimeValue::I32(9)],
+        );
     }
 
     #[test]
@@ -10447,9 +10470,10 @@ mod tests {
         let snapshot = engine
             .execute_project_with_value_snapshot_phased(&manifest)
             .expect("project execution should succeed");
-        assert_eq!(snapshot[0], RuntimeValue::I32(1));
-        assert_eq!(snapshot[1], RuntimeValue::I32(4));
-        assert_eq!(snapshot[2], RuntimeValue::I32(9));
+        assert_snapshot_tail(
+            &snapshot,
+            &[RuntimeValue::I32(1), RuntimeValue::I32(4), RuntimeValue::I32(9)],
+        );
     }
 
     #[test]
@@ -10479,9 +10503,10 @@ mod tests {
         let snapshot = engine
             .execute_project_with_value_snapshot_phased(&manifest)
             .expect("project execution should succeed");
-        assert_eq!(snapshot[0], RuntimeValue::I32(1));
-        assert_eq!(snapshot[1], RuntimeValue::I32(4));
-        assert_eq!(snapshot[2], RuntimeValue::I32(9));
+        assert_snapshot_tail(
+            &snapshot,
+            &[RuntimeValue::I32(1), RuntimeValue::I32(4), RuntimeValue::I32(9)],
+        );
     }
 
     #[test]
@@ -10518,8 +10543,7 @@ mod tests {
         let snapshot = engine
             .execute_project_with_value_snapshot_phased(&manifest)
             .expect("project execution should succeed");
-        assert_eq!(snapshot[0], RuntimeValue::I32(1));
-        assert_eq!(snapshot[1], RuntimeValue::I32(4));
+        assert_snapshot_tail(&snapshot, &[RuntimeValue::I32(1), RuntimeValue::I32(4)]);
     }
 
     #[test]
@@ -18187,6 +18211,40 @@ mod tests {
         assert_eq!(snapshot[1], RuntimeValue::I32(4));
         assert_eq!(snapshot[2], RuntimeValue::Empty);
         assert_eq!(snapshot[3], RuntimeValue::I32(9));
+    }
+
+    #[test]
+    fn formal_pmr_long_project_name_default_member_executes_end_to_end() {
+        let engine = Engine::new(HostConfig::default());
+        let main_module = module_unit_from_source(
+            "Main",
+            ModuleKind::Procedural,
+            "Attribute VB_Name = \"Main\"\nPublic Sub Main()\nDim widget As New Widget\nDim valueOut\nvalueOut = widget\nEnd Sub",
+        )
+        .expect("main module should parse");
+        let widget = module_unit_from_source(
+            "Widget",
+            ModuleKind::Class,
+            "Attribute VB_Name = \"Widget\"\nPrivate stored As Long\nPublic Sub Class_Initialize()\nstored = 41\nEnd Sub\nPublic Property Get Value() As Long\nValue = stored + 1\nEnd Property\nAttribute Value.VB_UserMemId = 0",
+        )
+        .expect("widget module should parse");
+        let manifest = ProjectManifest {
+            project_name: "AttributeOracleProject".to_string(),
+            project_kind: ProjectKind::Source,
+            modules: vec![main_module, widget],
+            references: Vec::new(),
+            reference_projects: Vec::new(),
+            conditional_constants: std::collections::BTreeMap::new(),
+        };
+
+        let compiled = oxvba_compiler::compile_project(&manifest).expect("compile should succeed");
+        let lowered = compiled.rewritten_source.to_ascii_lowercase();
+        assert!(lowered.contains("valueout = property_get_pmr_"), "{lowered}");
+        assert!(lowered.contains("property get pmr_"), "{lowered}");
+        let snapshot = engine
+            .execute_project_with_value_snapshot_phased(&manifest)
+            .expect("project execution should succeed");
+        assert_eq!(snapshot.last(), Some(&RuntimeValue::I32(42)));
     }
 
     #[test]
