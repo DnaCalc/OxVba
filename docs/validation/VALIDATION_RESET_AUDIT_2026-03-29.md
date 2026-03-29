@@ -162,6 +162,7 @@ The first concrete implementation-ready blocker surfaced by the current walks is
   - `bd-gm3.14.2.1.1.1` for controlled imported COM `DISPID_NEWENUM` / `IUnknown` / `IEnumVARIANT` transport, now completed with focused unit plus imported early-bound runtime evidence,
   - `bd-gm3.14.2.1.1.2` for the bounded imported class-field `Collection`/`NewEnum` lowering slice, now completed,
   - `bd-gm3.14.2.1.1.2.1` for the downstream loaded-project host/session duplication, now completed by preventing eager project-bytecode execution in callable session-prep paths while keeping the broader Excel-oracle mismatch explicitly open.
+- the remaining imported-runtime parity tail is now explicitly rolled into `bd-gm3.14.4` and `bd-gm3.14.4.1` so the unresolved Excel import-file `ERR|438` mismatch is tracked as a live child path instead of being left only in prose.
 
 If those remain merged under one active closure label, the reset has failed.
 
@@ -176,6 +177,7 @@ If those remain merged under one active closure label, the reset has failed.
 The next queued actions under this audit are:
 1. rewrite the language-domain active truth so `For Each` over arrays and `For Each` over object enumerators are separate matrix rows with separate evidence,
 2. carry `bd-gm3.14.2.1` through the bounded project-dynamic execution slice for `LANG-0002`, with the imported transport/lowering/callable-session child beads now closed, the literal Excel-imported `.cls` preamble accepted locally, and the remaining open work narrowed to the Excel runtime mismatch captured under `CCT-050` / `ODG-048`,
-3. classify `CONFORMANCE_CHECK_TOPICS.csv` topic-by-topic by target canonical matrix domain,
-4. move broad historical status surfaces into an archive lane so they stop competing with matrix truth,
-5. define how retained gate registers (`DEFERRED_ORACLE_GATES.csv`) cross-link to the canonical matrices without becoming duplicate truth stores.
+3. continue the residual imported-runtime parity path under `bd-gm3.14.4` / `bd-gm3.14.4.1` until the imported Excel `ERR|438` gap is either reconciled or formally bounded,
+4. classify `CONFORMANCE_CHECK_TOPICS.csv` topic-by-topic by target canonical matrix domain,
+5. move broad historical status surfaces into an archive lane so they stop competing with matrix truth,
+6. define how retained gate registers (`DEFERRED_ORACLE_GATES.csv`) cross-link to the canonical matrices without becoming duplicate truth stores.
