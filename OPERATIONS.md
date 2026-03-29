@@ -77,6 +77,15 @@ Rollout rules:
   - discovery shows the current epic lacks tracked child work for newly required outcomes,
   - or the ready path is no longer obvious from the existing graph.
 - It is not necessary to enumerate every distant leaf bead up front, but every active workset must at least have its required epic set rolled out explicitly.
+- Bead database mutations must be serialized. Do not run `br create`, `br update`, or `br close` in parallel. Use `scripts/invoke-br-serialized.ps1` when in doubt.
+
+Bead quality contract:
+- Every executable bead should identify:
+  - one reviewable outcome,
+  - completion evidence,
+  - parent epic,
+  - and, for validation or conformance work, the canonical matrix or matrix rows it advances.
+- Use `docs/methods/beads/BEAD_QUALITY_CONTRACT.md` and `docs/templates/WORKSET_EPIC_BEAD_ROLLOUT_TEMPLATE.md` when creating or refreshing workset rollout.
 
 Subset-labeling rules:
 - Every validation, coverage, or completion claim must name the supported subset if the full behavior area is not complete.
@@ -137,6 +146,12 @@ Canonical validation rule:
   - formal-model status where applicable,
   - active test anchors.
 - If an active artifact cannot express subset boundaries and evidence state precisely enough to prevent over-broad closure language, it must be rewritten, split, or archived.
+- Derived summaries should be generated from canonical matrices where practical, not hand-maintained as competing truth surfaces.
+- Run recurring truth reconciliation using `scripts/run-truth-reconciliation.ps1`.
+
+Operational incident discipline:
+- Process failures that materially affect trust in execution, evidence, or planning must be recorded in `docs/operations/OPERATIONAL_INCIDENT_LOG.md`.
+- The incident log must record the failure mode, impact, root cause, and the doctrine/tooling change introduced to prevent recurrence.
 
 Artifact naming convention:
 - Prefer `.jsonl` over `.ndjson` for line-delimited JSON evidence/telemetry files.

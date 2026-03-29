@@ -35,12 +35,14 @@ Required hierarchy:
 - active execution should normally read as `workset -> epic -> bead`,
 - the first execution epic may be a workset-initiation epic if the epic set still has to be rolled out,
 - the first bead of an epic may be a bead-creation / rollout bead when that epic still needs its executable child set defined.
+- use `docs/templates/WORKSET_EPIC_BEAD_ROLLOUT_TEMPLATE.md` when creating a new workset rollout from scratch.
 
 Completion discipline:
 - a bead is only complete when its stated outcome exists and its completion evidence has been verified,
 - a workset is not complete while required beads remain open,
 - narrative progress text is never a substitute for bead state.
 - a workset is not considered properly rolled out until its necessary epics exist explicitly, even if some later child beads are still to be created by epic rollout beads.
+- do not mutate the bead graph concurrently; serialize `br` mutations through `scripts/invoke-br-serialized.ps1`.
 
 ## 1) Scaffold determinism is a gate, not a convenience
 
@@ -160,6 +162,11 @@ Required practice:
 
 The standing canary for this rule is `For Each`:
 - array iteration support and object-enumerator support must not share one closure label unless both are actually complete for the scoped target.
+
+Additional practice:
+- validation beads should map to canonical matrix files or rows in `docs/validation/MATRIX_BEAD_TRACEABILITY_2026-03-29.csv` or a successor traceability artifact,
+- generated summaries should come from canonical matrices, not independent status prose,
+- recurring reconciliation should be run with `scripts/run-truth-reconciliation.ps1`.
 
 ## Required Local Checks (Doc-Heavy Ladder Runs)
 

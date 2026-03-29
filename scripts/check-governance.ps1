@@ -30,6 +30,21 @@ try {
     Write-Host "[governance] pmr-event-diagnostic-sync"
     & "$PSScriptRoot/validate-pmr-event-diagnostic-sync.ps1"
 
+    Write-Host "[governance] validation-ownership"
+    & "$PSScriptRoot/validate-validation-ownership.ps1"
+
+    Write-Host "[governance] workset-rollout"
+    & "$PSScriptRoot/validate-workset-rollout.ps1"
+
+    Write-Host "[governance] closure-taxonomy"
+    & "$PSScriptRoot/validate-closure-taxonomy.ps1"
+
+    Write-Host "[governance] bead-traceability"
+    & "$PSScriptRoot/validate-bead-traceability.ps1"
+
+    Write-Host "[governance] validation-derived-summary"
+    & "$PSScriptRoot/generate-validation-derived-summaries.ps1" -Check
+
     Write-Host "[governance] complete"
 }
 finally {

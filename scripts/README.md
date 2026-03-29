@@ -25,6 +25,13 @@
 - `run-com-early-lane*.ps1`: per-lane COM early conformance runners with `-NoLatest` support for dry/no-artifact cycles.
 - `run-com-early-perf.ps1`: COM early perf lane with shared run-id and optional no-artifact mode.
 - `run-com-early-oracle-template.ps1`: oracle capture template scaffold with shared run-id and optional no-artifact mode.
+- `invoke-br-serialized.ps1`: serialized wrapper for `br` graph mutations; use for `create`/`update`/`close` to avoid concurrent bead DB races.
+- `validate-validation-ownership.ps1`: checks canonical validation ownership artifacts and required derived summary presence.
+- `validate-workset-rollout.ps1`: checks the active validation-reset workset rollout against the current bead graph.
+- `validate-closure-taxonomy.ps1`: ensures canonical validation matrices use only the allowed truth-state taxonomy.
+- `validate-bead-traceability.ps1`: checks bead-to-matrix traceability mappings.
+- `generate-validation-derived-summaries.ps1`: generates or checks the derived validation summary from canonical matrices.
+- `run-truth-reconciliation.ps1`: one-shot reconciliation pass over ownership, rollout, taxonomy, traceability, and derived-summary drift.
 - `run-project-integration-suite.ps1`: runs tracked multi-project integration fixtures (`conformance/integration/`) and emits run artifacts under `docs/evidence/conformance/project_integration/`.
 - `lint-integration-fixtures.ps1`: lightweight guardrail for integration fixture source shapes known to stress unsupported backend forms.
 - `run-pmr-project-model-oracle.ps1`: executable Excel oracle runner for PMR topics `CCT-037..CCT-041`, with built-in dialog guardian support for macro/add-in trust prompts.
