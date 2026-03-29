@@ -12,7 +12,7 @@ Generated from:
 |---|---|---|---|---|---|---|
 | language | 4 | 2 | 2 | 0 | 0 | 0 |
 | com_external | 6 | 0 | 1 | 0 | 5 | 0 |
-| project_hosting | 10 | 1 | 7 | 0 | 0 | 2 |
+| project_hosting | 10 | 1 | 8 | 0 | 0 | 1 |
 | language_services_formalization | 2 | 2 | 0 | 0 | 0 | 0 |
 
 ## Open Focus
@@ -22,7 +22,6 @@ Generated from:
 | LANG-0002 | language | For Each over object enumerators | in-progress | docs/validation/LANGUAGE_VALIDATION_MATRIX_V1.csv |
 | LANG-0003 | language | Default member attribute semantics | in-progress | docs/validation/LANGUAGE_VALIDATION_MATRIX_V1.csv |
 | PH-0008 | project_hosting | Imported NewEnum attribute runtime behavior | in-progress | docs/validation/PROJECT_HOSTING_VALIDATION_MATRIX_V1.csv |
-| PH-0009 | project_hosting | Host-sensitive policy surface | planned | docs/validation/PROJECT_HOSTING_VALIDATION_MATRIX_V1.csv |
 | PH-0010 | project_hosting | MS-OVBA storage roundtrip | planned | docs/validation/PROJECT_HOSTING_VALIDATION_MATRIX_V1.csv |
 | LSF-0001 | language_services_formalization | Language service syntax coverage model | in-progress | docs/validation/LANGUAGE_SERVICES_AND_FORMALIZATION_MATRIX_V1.csv |
 | LSF-0002 | language_services_formalization | Formal compiler/language representation coverage | in-progress | docs/validation/LANGUAGE_SERVICES_AND_FORMALIZATION_MATRIX_V1.csv |

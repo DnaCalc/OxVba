@@ -2,6 +2,7 @@
 "bd-gm3.6","bd-gm3.12","docs/validation/LANGUAGE_VALIDATION_MATRIX_V1.csv","LANG-0001;LANG-0002","Primary For Each canary split."
 "bd-gm3.12.2","bd-gm3.12","docs/validation/LANGUAGE_VALIDATION_MATRIX_V1.csv","language-domain rows to expand","Systematic language walk beyond the canary."
 "bd-gm3.12.3","bd-gm3.12","docs/validation/PROJECT_HOSTING_VALIDATION_MATRIX_V1.csv","project-hosting rows to expand","Project and hosting matrix walk."
+"bd-gm3.12.6","bd-gm3.12","docs/validation/PROJECT_HOSTING_VALIDATION_MATRIX_V1.csv","PH-0009","Host-sensitive policy validation lane for deterministic denial and Windows host-backed `interactive_dev` Shell/Dir/Environ coverage."
 "bd-gm3.12.4","bd-gm3.12","docs/validation/LANGUAGE_SERVICES_AND_FORMALIZATION_MATRIX_V1.csv","language-services/formalization rows to expand","Language services and formalization matrix walk."
 "bd-gm3.12.5","bd-gm3.12","docs/validation/COM_EXTERNAL_INTEGRATION_VALIDATION_MATRIX_V1.csv","com/external rows to expand","COM and external integration matrix walk."
 "bd-gm3.9","bd-gm3.16","docs/validation/LANGUAGE_VALIDATION_MATRIX_V1.csv","language ownership and summary surface","Coverage index demotion under canonical matrix ownership."
