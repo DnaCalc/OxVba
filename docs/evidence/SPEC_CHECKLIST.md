@@ -24,7 +24,7 @@ Primary evidence sources:
 | `[x]` | Conditional flow | `If/ElseIf/Else/End If` | `if_true.bas`, `if_elseif_path.bas`, `if_else_path.bas` | Implemented. |
 | `[x]` | Counted loops | `For ... Next` | `for_basic.bas` | Base form implemented. |
 | `[x]` | Counted loops | `For ... Step ... Next` | `for_step_positive.bas`, `for_step_negative.bas`, `for_step_zero_error.bas` | Positive/negative step execution and zero-step diagnostic implemented. |
-| `[x]` | Collection loops | `For Each ... Next` | `for_each_array_literal_basic.bas`, `for_each_array_variable_basic.bas` | Implemented for array-literal and declared-array iteration subset. |
+| `[x]` | Collection loops | `For Each ... Next` | `for_each_array_literal_basic.bas`, `for_each_array_variable_basic.bas` | Implemented for array-literal and declared-array iteration subset only; object-enumerator/NewEnum semantics remain open in LANG-0002. |
 | `[x]` | Conditional loops | `Do While ... Loop`, `Do ... Loop While`, `Exit Do` | `do_while_basic.bas`, `do_loop_while_basic.bas`, `do_exit_do.bas` | Implemented. |
 | `[x]` | Conditional loops | `Do Until ... Loop`, `Do ... Loop Until` | `do_until_basic.bas`, `do_loop_until_basic.bas` | Implemented through normalized loop condition lowering. |
 | `[x]` | Conditional loops | `While ... Wend` | `while_wend_basic.bas` | Implemented via normalization to existing loop IR. |

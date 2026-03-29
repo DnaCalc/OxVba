@@ -10,7 +10,7 @@ control_flow,ElseIf chain,implemented,v5,conformance/tests/if_elseif_path.bas,
 control_flow,Else branch,implemented,v5,conformance/tests/if_else_path.bas,
 control_flow,For Next,implemented,v2,conformance/tests/for_basic.bas,Oracle 20260321T094401Z: for_basic match
 control_flow,For Step clause,implemented,v87,conformance/tests/for_step_positive.bas,Oracle 20260321T094401Z: for_step_positive/for_step_negative/for_step_zero_error/for_zero_iter match
-control_flow,For Each Next,implemented,v100,conformance/tests/for_each_array_literal_basic.bas,array literal and declared-array iteration subset; Oracle 20260321T094401Z: Cat A harness artifact (terminal values correct)
+control_flow,For Each Next (array subset),implemented,v100,conformance/tests/for_each_array_literal_basic.bas,array literal and declared-array iteration subset only; object-enumerator/NewEnum semantics remain open in LANG-0002 and CCT-008; Oracle 20260321T094401Z: Cat A harness artifact (terminal values correct)
 control_flow,Do While Loop,implemented,v6,conformance/tests/do_while_basic.bas,
 control_flow,Do Loop While,implemented,v6,conformance/tests/do_loop_while_basic.bas,
 control_flow,Do Until Loop,implemented,v89,conformance/tests/do_until_basic.bas,
