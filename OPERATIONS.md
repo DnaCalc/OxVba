@@ -58,12 +58,25 @@ Method references:
 
 Binding rules:
 - Every active workset must generate a bead tree before substantial implementation, audit, or conformance work begins.
+- Every active workset must roll out into one or more child epics that together cover the in-scope execution lanes of that workset.
+- The normal hierarchy is: `workset -> epic -> bead`.
+- The first execution epic for a workset should be a workset-initiation / rollout epic when the epic structure itself still needs to be created or refreshed.
 - Beads are the unit of executable progress: one reviewable outcome with explicit completion evidence.
 - The ready bead set, not narrative momentum, is the default chooser for what is worked next.
 - A bead may be closed only when its stated outcome and completion evidence are both satisfied.
 - If a bead exposes uncovered required work, that work must be captured as one or more new beads before the current bead is closed.
 - Workset progress summaries do not substitute for bead closure evidence.
 - A workset may not be described as complete while any required child bead remains open or while any required uncovered follow-up work is still only described narratively.
+
+Rollout rules:
+- Each execution epic should begin with a rollout bead whose job is to create or refresh the next executable bead set for that epic.
+- A rollout bead is complete only when the epic has a believable ready path, not merely when a few ad hoc tasks exist.
+- A new round of bead-making is triggered when:
+  - a new workset becomes active,
+  - a new epic is opened under the workset,
+  - discovery shows the current epic lacks tracked child work for newly required outcomes,
+  - or the ready path is no longer obvious from the existing graph.
+- It is not necessary to enumerate every distant leaf bead up front, but every active workset must at least have its required epic set rolled out explicitly.
 
 Subset-labeling rules:
 - Every validation, coverage, or completion claim must name the supported subset if the full behavior area is not complete.

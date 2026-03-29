@@ -13,7 +13,8 @@ This document is therefore the active umbrella plan for the reset.
 Execution note:
 1. the workset remains the umbrella planning document,
 2. execution proceeds through the bead subtree rooted at `bd-gm3`,
-3. first active canary remains the split between array `For Each` and object-enumerator `For Each`.
+3. this workset is expected to roll out into explicit phase epics,
+4. first active canary remains the split between array `For Each` and object-enumerator `For Each`.
 
 ## 1. Purpose
 
@@ -228,3 +229,33 @@ The first bead slice under `bd-gm3` is:
 6. `bd-gm3.6` first matrix canary review for `For Each` and adjacent loop semantics.
 
 The reset does not advance to feature-repair execution until the truth-surface audit and the first canary pass are both explicit.
+
+## 11. Epic Rollout Shape
+
+This workset should ultimately roll out into the following execution epics:
+1. workset initiation and epic rollout,
+2. doctrine reform,
+3. truth-surface audit and canonical ownership mapping,
+4. canonical matrix foundation,
+5. active artifact retirement and demotion,
+6. systematic validation walk,
+7. first exposed gap fixes.
+
+Execution rule:
+1. each epic may begin with a rollout bead that creates or refreshes its child bead set,
+2. the workset is not considered fully rolled out until these execution lanes exist explicitly in the bead graph,
+3. later discovery may add more beads or even more epics, but it must do so explicitly rather than narratively.
+
+Current rollout state:
+1. `bd-gm3.13` workset initiation and epic rollout
+2. `bd-gm3.10` doctrine reform
+3. `bd-gm3.15` truth-surface audit and canonical ownership mapping
+4. `bd-gm3.11` canonical matrix foundation
+5. `bd-gm3.16` active artifact retirement and demotion
+6. `bd-gm3.12` systematic validation walk
+7. `bd-gm3.14` first exposed gap fixes
+
+Current active unfinished execution lanes:
+1. `bd-gm3.16` active artifact retirement and demotion
+2. `bd-gm3.12` systematic validation walk
+3. `bd-gm3.14` first exposed gap fixes

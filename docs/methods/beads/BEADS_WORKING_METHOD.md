@@ -27,8 +27,9 @@ Design should move through these layers:
 
 1. Engineering spec
 2. Worksets
-3. Beads
-4. Execution
+3. Epics
+4. Beads
+5. Execution
 
 Each layer should reduce ambiguity.
 
@@ -73,7 +74,29 @@ Bad worksets:
 - are vague themes like "improve architecture",
 - or are huge umbrellas like "build the IDE".
 
-### 3. Beads
+### 3. Epics
+
+An epic is the major execution lane under a workset.
+
+Epics sit between worksets and beads when the workset is too broad to execute as one flat bead list.
+
+Use epics to separate:
+- major phases,
+- major capability lanes,
+- or major audit / implementation tracks
+
+inside one active workset.
+
+A good epic:
+- covers one coherent lane of execution,
+- is still small enough that a believable bead path can be created,
+- and helps keep the ready queue technically honest.
+
+The first bead in an epic may be a rollout bead:
+- create the executable child beads for this epic,
+- or refresh them after discovery changed the needed path.
+
+### 4. Beads
 
 A bead is the unit of executable progress.
 
@@ -126,9 +149,26 @@ Examples:
 - save round-trip,
 - diagnostics integration.
 
-### Step 3: Break Worksets into Beads
+### Step 3: Extract Epics from Worksets
 
-For each workset, define the beads that create real forward motion.
+For each active workset, decide whether a single flat bead set is honest enough.
+
+If not, first create epics.
+
+Typical reasons to use epics:
+- the workset has several major phases,
+- several domains need different execution logic,
+- or the workset needs one initiation lane and then several execution lanes.
+
+Examples:
+- doctrine reform
+- truth-surface audit
+- artifact retirement
+- systematic validation walk
+
+### Step 4: Break Epics into Beads
+
+For each epic, define the beads that create real forward motion.
 
 A bead should describe an outcome, not just an activity.
 
@@ -142,7 +182,14 @@ Avoid:
 - "Work on module list"
 - "Do more UI"
 
-### Step 4: Add Dependency Structure
+A useful first bead for an epic is often:
+- "Roll out the executable bead set for this epic"
+
+That bead is appropriate when:
+- the epic lane is known,
+- but the exact next child beads still need to be laid out carefully.
+
+### Step 5: Add Dependency Structure
 
 Dependencies are what turn beads from a list into an execution graph.
 
@@ -158,7 +205,7 @@ Examples:
 
 Dependencies should reflect real engineering ordering, not imagined process neatness.
 
-### Step 5: Check the Ready Path
+### Step 6: Check the Ready Path
 
 After creating the beads and dependencies, the graph should produce a sensible ready queue.
 
@@ -335,6 +382,8 @@ The minimal execution loop is:
 3. mark it in progress
 4. do the work
 5. close it or split follow-up work
+
+When a workset or epic lacks a believable ready path, add a rollout bead before trying to continue execution informally.
 
 Core commands:
 

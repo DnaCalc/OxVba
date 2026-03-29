@@ -25,15 +25,22 @@ Method references:
 
 Operational rules:
 - worksets remain the milestone/umbrella planning unit,
+- epics are the major execution lanes within a workset,
 - beads are the near-atomic execution unit,
 - do not treat broad workset prose as sufficient execution tracking,
 - work from ready beads by default,
 - if a bead reveals required missing work, create a new bead for it before closing the current bead.
 
+Required hierarchy:
+- active execution should normally read as `workset -> epic -> bead`,
+- the first execution epic may be a workset-initiation epic if the epic set still has to be rolled out,
+- the first bead of an epic may be a bead-creation / rollout bead when that epic still needs its executable child set defined.
+
 Completion discipline:
 - a bead is only complete when its stated outcome exists and its completion evidence has been verified,
 - a workset is not complete while required beads remain open,
 - narrative progress text is never a substitute for bead state.
+- a workset is not considered properly rolled out until its necessary epics exist explicitly, even if some later child beads are still to be created by epic rollout beads.
 
 ## 1) Scaffold determinism is a gate, not a convenience
 
@@ -201,12 +208,14 @@ The standing canary for this rule is `For Each`:
 For active workset execution:
 
 1. create or refresh the bead subtree for the workset,
-2. inspect the ready bead set,
-3. mark one bead in progress,
-4. complete the bead outcome and verify its evidence,
-5. create follow-up beads immediately for newly discovered required work,
-6. close the bead only when the stated outcome is actually complete,
-7. commit bead-state and code-state together.
+2. ensure the workset has the necessary epic set rolled out,
+3. inspect the ready bead set,
+4. mark one bead in progress,
+5. complete the bead outcome and verify its evidence,
+6. create follow-up beads immediately for newly discovered required work,
+7. if the epic itself now needs further expansion, create or refresh an epic rollout bead,
+8. close the bead only when the stated outcome is actually complete,
+9. commit bead-state and code-state together.
 
 ## Commit Discipline for Ladder Docs
 
