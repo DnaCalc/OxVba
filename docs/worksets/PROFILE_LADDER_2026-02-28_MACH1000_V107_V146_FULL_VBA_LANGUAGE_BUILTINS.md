@@ -1,11 +1,18 @@
 # PROFILE LADDER: MACH1000 v107..v146 (Full VBA Language + Built-ins)
 
+> Archived historical ladder/status surface.
+> This file is retained as execution history for the old MACH1000 profile run, not as active truth.
+> Current feature status and closure claims are governed by the validation matrices under `docs/validation/`.
+> Do not treat the broad "full VBA language" wording here as an active completion claim.
+
 Timestamp (UTC): 2026-02-28T23:35:00Z  
 Owner: AutoRun execution lanes (continuous)  
 Primary plan source: `MACH1000_PLAN.md`  
 Execution mode: non-stop profile ladder until `v146` terminal gate is passed.
 
 ## Objective
+
+Historical objective only. The live validation program now uses domain-specific matrices and ownership mapping to prevent broad closure language from obscuring subset gaps.
 
 Drive OxVba from current executable subset to broad VBA-language and built-in surface closure, with:
 
@@ -95,4 +102,3 @@ Drive OxVba from current executable subset to broad VBA-language and built-in su
 - Per profile: compile/tests/conformance + docs/evidence update.
 - Per wave end (`v116`, `v126`, `v138`): reconciliation checkpoint + deferred formal foldback.
 - Final (`v146`): terminal integrated gate must pass before stopping.
-

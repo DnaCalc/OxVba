@@ -1,6 +1,14 @@
 # PROFILE_LADDER_2026-02-28_MACH1000_V87_V106_LANGUAGE_COMPLETION.md
 
+> Archived historical ladder/status surface.
+> This file is retained as planning history for the v87..v106 language-completion run, not as active truth.
+> Current language coverage claims live in the canonical validation matrices under `docs/validation/`.
+> Do not read the broad completion wording here as a present-tense implementation statement.
+
 ## Goal
+
+Historical goal only. This ladder predates the matrix reset and is now a record of the earlier planning model, not the current authoritative feature-status surface.
+
 Close all currently outstanding **language** items from `docs/evidence/language/COVERAGE_INDEX.csv`, and leave the repo in a state where only explicitly non-language scope remains.
 
 Profiles in this ladder: **20** (`v87..v106`).

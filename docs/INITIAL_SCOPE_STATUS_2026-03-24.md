@@ -1,5 +1,10 @@
 # OxVba Initial Scope Status — 2026-03-24
 
+> Archived historical status surface.
+> This document is retained as a dated record of the initial-scope workset, not as active truth.
+> Canonical active validation truth now lives under `docs/validation/*.csv` and the related validation matrices / ownership maps.
+> Do not use this file as the source of current implementation status.
+
 **Test count:** 2258 passing, 0 failures
 **Integration fixtures:** 14 active (including newly unblocked INTP-016), 3 deferred, 3 not-created
 **Formal gates:** 30 folded, 0 running, 20 deferred with rationale
@@ -8,6 +13,9 @@
 ---
 
 ## 1. Engine Correctness Gaps
+
+The gap table below is preserved for historical context only.
+Any current feature-status claim must be taken from the canonical validation matrices and ownership map, not from this narrative status surface.
 
 | Gap | Severity | Status |
 |-----|----------|--------|
@@ -41,6 +49,9 @@
 ---
 
 ## 2. Evidence Closure — Critical Path to Initial Scope
+
+This section is likewise historical. It records the old initial-scope closure narrative and the oracle evidence that supported it at the time.
+It is not the active source of truth for current validation or feature completion status.
 
 ### 2.1 Oracle Gates (IP-10)
 
