@@ -253,8 +253,8 @@ Current rollout state:
 4. `bd-gm3.11` canonical matrix foundation
 5. `bd-gm3.16` active artifact retirement and demotion, closed on 2026-03-30
 6. `bd-gm3.12` systematic validation walk, closed
-7. `bd-gm3.14` first exposed gap fixes
+7. `bd-gm3.14` first exposed gap fixes, closed on 2026-03-30
 8. `bd-gm3.14.4` residual LANG-0002/PH-0008 imported-runtime parity rollout, closed on 2026-03-30
 
 Current active unfinished execution lanes:
-1. `bd-gm3.14` first exposed gap fixes
+1. none
