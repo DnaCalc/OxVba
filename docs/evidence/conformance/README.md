@@ -6,7 +6,7 @@ This directory contains both active governance surfaces and historical run artif
 
 These files are expected to remain synchronized with current implementation semantics and are validated in governance checks:
 
-- `CONFORMANCE_CHECK_TOPICS.csv`
+- `CONFORMANCE_CHECK_TOPICS.csv` - topic/oracle/gate register; implementation truth is owned by the validation matrices under `docs/validation/`
 - `DEFERRED_ORACLE_GATES.csv`
 - `PROJECT_INTEGRATION_DEFERRED_UNCERTAINTIES_V1.md`
 - `IMPLEMENTATION_DEFINED.md`
