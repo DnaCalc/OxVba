@@ -772,6 +772,9 @@ fn lower_project_source(
     for referenced in ordered_reference_projects(manifest) {
         let project_name = normalize_identifier(&referenced.project_name);
         for module in &referenced.modules {
+            if is_typelib_binding_diagnostic_module(module) {
+                continue;
+            }
             let (lowered, object_locals) = lower_module_source(
                 strategy,
                 manifest,
@@ -1007,6 +1010,10 @@ fn is_synthetic_typelib_reference_project(project: &ReferencedProjectManifest) -
             )
             .is_some()
     })
+}
+
+fn is_typelib_binding_diagnostic_module(module: &ModuleUnit) -> bool {
+    module.module_name == TYPELIB_BINDING_DIAGNOSTIC_MODULE_NAME
 }
 
 fn validate_event_semantics(
@@ -1257,6 +1264,7 @@ fn iter_all_modules<'a>(
             entry
                 .modules
                 .iter()
+                .filter(|module| !is_typelib_binding_diagnostic_module(module))
                 .map(|module| (entry.project_name.as_str(), module)),
         );
     }
@@ -1549,6 +1557,9 @@ fn collect_project_procedures(manifest: &ProjectManifest) -> Vec<ProcedureDecl> 
             .unwrap_or(usize::MAX - 1)
             .saturating_add(1);
         for module in &referenced.modules {
+            if is_typelib_binding_diagnostic_module(module) {
+                continue;
+            }
             let module_name = normalize_identifier(&module.module_name);
             let member_attributes = collect_member_attributes(&module.source);
             for line in module.source.lines() {

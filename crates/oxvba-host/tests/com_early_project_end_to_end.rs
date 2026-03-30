@@ -980,7 +980,6 @@ fn early_bound_loaded_basproj_mixed_broken_alt2_then_valid_base_then_valid_alt_r
 
 #[cfg(target_os = "windows")]
 #[test]
-#[ignore = "requires registered external COM typelib lane and validates broken-first qualified later-valid loaded .basproj execution"]
 fn early_bound_loaded_basproj_broken_base_then_valid_alt_qualified_target_resolves_alt_binding() {
     let loaded = load_typelib_basproj_with_ref_specs(
         "basproj-typelib-broken-base-valid-alt-qualified-alt",
@@ -1027,7 +1026,6 @@ fn early_bound_loaded_basproj_broken_base_then_valid_alt_qualified_target_resolv
 
 #[cfg(target_os = "windows")]
 #[test]
-#[ignore = "requires registered external COM typelib lane and validates broken-first qualified later-valid loaded .basproj execution"]
 fn early_bound_loaded_basproj_broken_alt_then_valid_base_qualified_target_resolves_base_binding() {
     let loaded = load_typelib_basproj_with_ref_specs(
         "basproj-typelib-broken-alt-valid-base-qualified-base",
@@ -1074,7 +1072,6 @@ fn early_bound_loaded_basproj_broken_alt_then_valid_base_qualified_target_resolv
 
 #[cfg(target_os = "windows")]
 #[test]
-#[ignore = "requires registered external COM typelib lane and validates qualified valid target binding despite later broken reference in loaded .basproj execution"]
 fn early_bound_loaded_basproj_valid_base_then_broken_alt_resolves_qualified_base_binding() {
     let loaded = load_typelib_basproj_with_ref_specs(
         "basproj-typelib-valid-base-broken-alt-qualified-base",
@@ -1120,7 +1117,6 @@ fn early_bound_loaded_basproj_valid_base_then_broken_alt_resolves_qualified_base
 
 #[cfg(target_os = "windows")]
 #[test]
-#[ignore = "requires registered external COM typelib lane and validates qualified valid target binding despite later broken reference in loaded .basproj execution"]
 fn early_bound_loaded_basproj_valid_alt_then_broken_base_resolves_qualified_alt_binding() {
     let loaded = load_typelib_basproj_with_ref_specs(
         "basproj-typelib-valid-alt-broken-base-qualified-alt",
@@ -1166,7 +1162,6 @@ fn early_bound_loaded_basproj_valid_alt_then_broken_base_resolves_qualified_alt_
 
 #[cfg(target_os = "windows")]
 #[test]
-#[ignore = "requires registered external COM typelib lane and validates unqualified valid-first binding despite later broken reference in loaded .basproj execution"]
 fn early_bound_loaded_basproj_valid_base_then_broken_alt_prefers_base_for_unqualified_testeventserver()
  {
     let loaded = load_typelib_basproj_with_ref_specs(
@@ -1213,7 +1208,6 @@ fn early_bound_loaded_basproj_valid_base_then_broken_alt_prefers_base_for_unqual
 
 #[cfg(target_os = "windows")]
 #[test]
-#[ignore = "requires registered external COM typelib lane and validates unqualified valid-first binding despite later broken reference in loaded .basproj execution"]
 fn early_bound_loaded_basproj_valid_alt_then_broken_base_prefers_alt_for_unqualified_testeventserver()
  {
     let loaded = load_typelib_basproj_with_ref_specs(
@@ -1260,7 +1254,6 @@ fn early_bound_loaded_basproj_valid_alt_then_broken_base_prefers_alt_for_unquali
 
 #[cfg(target_os = "windows")]
 #[test]
-#[ignore = "requires registered external COM typelib lane and validates unqualified valid-first binding despite later broken reference in loaded .basproj execution"]
 fn early_bound_loaded_basproj_valid_base_then_broken_alt_then_valid_alt2_prefers_base_for_unqualified_testeventserver()
  {
     let loaded = load_typelib_basproj_with_ref_specs(
@@ -1314,7 +1307,6 @@ fn early_bound_loaded_basproj_valid_base_then_broken_alt_then_valid_alt2_prefers
 
 #[cfg(target_os = "windows")]
 #[test]
-#[ignore = "requires registered external COM typelib lane and validates unqualified valid-first binding despite later broken reference in loaded .basproj execution"]
 fn early_bound_loaded_basproj_valid_alt2_then_broken_base_then_valid_alt_prefers_alt2_for_unqualified_testeventserver()
  {
     let loaded = load_typelib_basproj_with_ref_specs(
@@ -1368,7 +1360,6 @@ fn early_bound_loaded_basproj_valid_alt2_then_broken_base_then_valid_alt_prefers
 
 #[cfg(target_os = "windows")]
 #[test]
-#[ignore = "requires registered external COM typelib lane and validates broken-first qualified later-valid loaded .basproj execution"]
 fn early_bound_loaded_basproj_broken_base_then_valid_alt_then_valid_alt2_qualified_target_resolves_alt2_binding()
  {
     let loaded = load_typelib_basproj_with_ref_specs(
@@ -1424,7 +1415,6 @@ fn early_bound_loaded_basproj_broken_base_then_valid_alt_then_valid_alt2_qualifi
 
 #[cfg(target_os = "windows")]
 #[test]
-#[ignore = "requires registered external COM typelib lane and validates broken-first qualified later-valid loaded .basproj execution"]
 fn early_bound_loaded_basproj_broken_alt2_then_valid_base_then_valid_alt_qualified_target_resolves_alt_binding()
  {
     let loaded = load_typelib_basproj_with_ref_specs(
