@@ -25,7 +25,7 @@ Only the third category requires active open work in the tracker.
 | `COM-0005` | `verified` | remaining accepted scope | broader dual-interface behavior remains open outside the mixed-server supported subset | `bd-cyr.3.14` |
 | `COM-0006` | `verified` | intentional boundary | current supported row is intentionally bounded to the file-backed TestEventServer family, including loaded `.basproj` ordering, unresolved-diagnostic, and broken-first/later-valid tolerance coverage | none required |
 | `PH-0001` | `implemented-subset` | intentional boundary | startup-object/forms/designer-backed startup intentionally excluded from current strict lane | none required |
-| `PH-0002` | `implemented-subset` | remaining accepted scope | deeper mixed-source and module-state semantics remain open | `bd-cyr.4.2` |
+| `PH-0002` | `implemented-subset` | remaining accepted scope | host-observable top-level basproj/VBP and mixed-declaration lanes are now proved; remaining accepted scope is the project-hosted cross-procedure shared module-state bug where helper procedures do not share rewritten-mainline module state (`pre=41`, `bump=1`, `post=41`) | `bd-cyr.4.2` |
 | `PH-0003` | `implemented-subset` | intentional boundary | current supported discovery lane is explicitly bounded to strict deterministic discovery | none required |
 | `PH-0004` | `implemented-subset` | intentional boundary | current VBP-S0 subset intentionally excludes designer/startup-object surfaces | none required |
 | `PH-0005` | `implemented-subset` | intentional boundary | external COM typelib resolution is owned in the COM matrix, not here | none required |

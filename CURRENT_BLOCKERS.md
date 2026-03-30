@@ -92,6 +92,22 @@ Run context: active parity/compliance execution plus in-progress feature worklis
   - inspect imported typelib member-shape resolution for multi-class `scrrun.dll` metadata,
   - make member selection deterministic for `Scripting.FileSystemObject` (or explicitly bound and exclude it),
   - then re-run the early-bound `FileSystemObject` dispatch/vtable probes and update `COM-0004`.
+
+### BLK-PH-TOPLEVEL-MODULESTATE-001: Project-hosted helper procedures do not yet share rewritten top-level module state
+- Impact:
+  - Blocks closure of the remaining accepted `PH-0002` mixed-source/module-state lane.
+  - Keeps `bd-cyr.4.2` from closing as a full project/hosting residual sweep.
+- Current state:
+  - New console-backed host tests prove unique basproj/VBP top-level mainline behavior plus mixed module-scope declaration preservation in VM/JIT.
+  - The sharper Option Private residual repro now shows:
+    - `pre=41`
+    - `bump=1`
+    - `post=41`
+  - That means the rewritten `__OxVbaTopLevelMainline` sees module-scope state, but the declared helper procedure resolves the same module-scope name as separate procedure-local state.
+- Exact unblocking steps:
+  - inspect project-hosted procedure binding/lowering for rewritten top-level modules,
+  - make declared helper procedures share module-scope storage with the rewritten top-level mainline,
+  - then unignore the new host regression and update `PH-0002`.
   | VT_UI8    | I32 or I64     | proved-exec  |
   | VT_INT    | I32            | proved-exec  |
   | VT_UINT   | I32 or I64     | proved-exec  |
