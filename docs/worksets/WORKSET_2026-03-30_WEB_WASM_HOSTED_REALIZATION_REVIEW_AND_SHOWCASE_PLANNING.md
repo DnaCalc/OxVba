@@ -1,7 +1,7 @@
 # Workset: Web/Wasm Hosted Realization Review and Showcase Planning
 
 Date: 2026-03-30  
-Status: in-progress  
+Status: completed  
 Scope: review the current OxVba web/wasm substrate, determine the right hosted realization to pursue, assess whether there is an honest showcaseable slice today, and define the next execution workset for web-hosted and wasm environments.
 
 ## 0. Accepted Plan State
@@ -91,6 +91,10 @@ This workset should produce:
    - required validation lanes,
    - immediate gaps,
 3. a next-workset recommendation for implementation/execution.
+
+Produced artifacts:
+1. `docs/reviews/WEB_WASM_HOSTED_REALIZATION_REVIEW_2026-03-30.md`
+2. `docs/worksets/WORKSET_2026-03-30_WEB_WASM_DESKTOP_FIRST_HOST_SHELL_AND_BRIDGE_FOUNDATION.md`
 
 ## 6. Execution Method
 
