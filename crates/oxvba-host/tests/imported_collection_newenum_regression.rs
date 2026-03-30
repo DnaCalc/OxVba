@@ -180,24 +180,26 @@ const MAIN_FOREACH_WIDGET_PROJECT_SOURCE: &str = concat!(
     "End Sub\n"
 );
 
+const PROJECT_WIDGET_SOURCE: &str = concat!(
+    "Attribute VB_Name = \"Widget\"\n",
+    "Option Explicit\n",
+    "Private items As New Collection\n",
+    "Public Sub Class_Initialize()\n",
+    "items.Add 41\n",
+    "items.Add 42\n",
+    "End Sub\n",
+    "Public Property Get NewEnum() As IUnknown\n",
+    "Set NewEnum = items.[_NewEnum]\n",
+    "End Property\n",
+    "Attribute NewEnum.VB_UserMemId = -4\n",
+    "Attribute NewEnum.VB_MemberFlags = \"40\"\n"
+);
+
 #[test]
 fn imported_collection_field_newenum_for_each_executes() {
     let result = run_project_with_widget(
         MAIN_FOREACH_WIDGET_FUNCTION_SOURCE,
-        concat!(
-            "Attribute VB_Name = \"Widget\"\n",
-            "Option Explicit\n",
-            "Private items As New Collection\n",
-            "Public Sub Class_Initialize()\n",
-            "items.Add 41\n",
-            "items.Add 42\n",
-            "End Sub\n",
-            "Public Property Get NewEnum() As IUnknown\n",
-            "Set NewEnum = items.[_NewEnum]\n",
-            "End Property\n",
-            "Attribute NewEnum.VB_UserMemId = -4\n",
-            "Attribute NewEnum.VB_MemberFlags = \"40\"\n"
-        ),
+        PROJECT_WIDGET_SOURCE,
     )
     .expect("collection-backed NewEnum project should execute");
 
@@ -217,27 +219,64 @@ fn imported_collection_field_newenum_for_each_executes_with_excel_import_header(
 
 #[test]
 fn imported_collection_field_newenum_foreach_project_snapshot_matches_vm_and_jit() {
-    let widget_source = concat!(
-        "Attribute VB_Name = \"Widget\"\n",
-        "Option Explicit\n",
-        "Private items As New Collection\n",
-        "Public Sub Class_Initialize()\n",
-        "items.Add 41\n",
-        "items.Add 42\n",
-        "End Sub\n",
-        "Public Property Get NewEnum() As IUnknown\n",
-        "Set NewEnum = items.[_NewEnum]\n",
-        "End Property\n",
-        "Attribute NewEnum.VB_UserMemId = -4\n",
-        "Attribute NewEnum.VB_MemberFlags = \"40\"\n"
-    );
-
-    let vm = execute_project_with_widget_snapshot(MAIN_FOREACH_WIDGET_PROJECT_SOURCE, widget_source, false)
+    let vm = execute_project_with_widget_snapshot(
+        MAIN_FOREACH_WIDGET_PROJECT_SOURCE,
+        PROJECT_WIDGET_SOURCE,
+        false,
+    )
         .expect("vm project execution should succeed");
-    let jit = execute_project_with_widget_snapshot(MAIN_FOREACH_WIDGET_PROJECT_SOURCE, widget_source, true)
+    let jit = execute_project_with_widget_snapshot(
+        MAIN_FOREACH_WIDGET_PROJECT_SOURCE,
+        PROJECT_WIDGET_SOURCE,
+        true,
+    )
         .expect("jit project execution should succeed");
 
     assert_eq!(vm, jit, "VM/JIT snapshots should match for project-backed NewEnum For Each");
+}
+
+#[test]
+fn imported_collection_field_newenum_direct_session_vm_jit_matches() {
+    let vm = run_project_with_widget_session(
+        MAIN_FOREACH_WIDGET_FUNCTION_SOURCE,
+        PROJECT_WIDGET_SOURCE,
+        false,
+    )
+    .expect("vm direct session should succeed");
+    let jit = run_project_with_widget_session(
+        MAIN_FOREACH_WIDGET_FUNCTION_SOURCE,
+        PROJECT_WIDGET_SOURCE,
+        true,
+    )
+    .expect("jit direct session should succeed");
+
+    assert_eq!(
+        vm, jit,
+        "VM/JIT direct-session snapshots should match for project-backed collection-backed NewEnum"
+    );
+    assert_eq!(vm, RuntimeValue::String(BStr("41,42,".to_string())));
+}
+
+#[test]
+fn imported_collection_field_newenum_bundle_session_vm_jit_matches() {
+    let vm = run_project_with_widget_bundle_session(
+        MAIN_FOREACH_WIDGET_FUNCTION_SOURCE,
+        PROJECT_WIDGET_SOURCE,
+        false,
+    )
+    .expect("vm bundle session should succeed");
+    let jit = run_project_with_widget_bundle_session(
+        MAIN_FOREACH_WIDGET_FUNCTION_SOURCE,
+        PROJECT_WIDGET_SOURCE,
+        true,
+    )
+    .expect("jit bundle session should succeed");
+
+    assert_eq!(
+        vm, jit,
+        "VM/JIT bundle-session snapshots should match for project-backed collection-backed NewEnum"
+    );
+    assert_eq!(vm, RuntimeValue::String(BStr("41,42,".to_string())));
 }
 
 #[test]
