@@ -2026,6 +2026,96 @@ End Sub
     }
 
     #[test]
+    fn dispatchinvoke_wide_i64_scalar_arguments_normalize_to_vt_i8_at_com_boundary() {
+        let source = r#"
+Sub Main()
+Dim obj
+Dim ui4Seed
+Dim i8Seed
+Dim ui8Seed
+Dim ui4Vt
+Dim i8Vt
+Dim ui8Vt
+obj = CreateObject("OxVba.TestDispatch")
+ui4Seed = DispatchInvoke(obj, "ReturnWideUnsignedLong")
+i8Seed = DispatchInvoke(obj, "ReturnWideHyper")
+ui8Seed = DispatchInvoke(obj, "ReturnWideUnsignedHyper")
+ui4Vt = DispatchInvoke(obj, "ClassifyVariantArg", ui4Seed)
+i8Vt = DispatchInvoke(obj, "ClassifyVariantArg", i8Seed)
+ui8Vt = DispatchInvoke(obj, "ClassifyVariantArg", ui8Seed)
+End Sub
+"#;
+
+        let vm = run_windows_host_backed(source, false);
+        let jit = run_windows_host_backed(source, true);
+        assert_eq!(
+            vm, jit,
+            "VM/JIT snapshots diverged on wide scalar argument normalization path: vm={vm:?} jit={jit:?}"
+        );
+        assert!(expect_object_handle(&vm[0]).raw() >= 20_001);
+        assert_eq!(
+            vm[4],
+            RuntimeValue::I32(20),
+            "wide VT_UI4 carrier should normalize to VT_I8 at the outward COM boundary"
+        );
+        assert_eq!(
+            vm[5],
+            RuntimeValue::I32(20),
+            "wide VT_I8 carrier should remain VT_I8 at the outward COM boundary"
+        );
+        assert_eq!(
+            vm[6],
+            RuntimeValue::I32(20),
+            "wide VT_UI8 carrier should normalize to VT_I8 at the outward COM boundary"
+        );
+    }
+
+    #[test]
+    fn dispatchinvoke_wide_i64_variant_array_elements_normalize_to_vt_i8_at_com_boundary() {
+        let source = r#"
+Sub Main()
+Dim obj
+Dim ui4Seed
+Dim i8Seed
+Dim ui8Seed
+Dim ui4Vt
+Dim i8Vt
+Dim ui8Vt
+obj = CreateObject("OxVba.TestDispatch")
+ui4Seed = DispatchInvoke(obj, "ReturnWideUnsignedLong")
+i8Seed = DispatchInvoke(obj, "ReturnWideHyper")
+ui8Seed = DispatchInvoke(obj, "ReturnWideUnsignedHyper")
+ui4Vt = DispatchInvoke(obj, "ClassifyVariantArrayFirstElementArg", Array(ui4Seed))
+i8Vt = DispatchInvoke(obj, "ClassifyVariantArrayFirstElementArg", Array(i8Seed))
+ui8Vt = DispatchInvoke(obj, "ClassifyVariantArrayFirstElementArg", Array(ui8Seed))
+End Sub
+"#;
+
+        let vm = run_windows_host_backed(source, false);
+        let jit = run_windows_host_backed(source, true);
+        assert_eq!(
+            vm, jit,
+            "VM/JIT snapshots diverged on wide variant-array element normalization path: vm={vm:?} jit={jit:?}"
+        );
+        assert!(expect_object_handle(&vm[0]).raw() >= 20_001);
+        assert_eq!(
+            vm[4],
+            RuntimeValue::I32(20),
+            "wide VT_UI4 variant-array elements should normalize to VT_I8 at the outward COM boundary"
+        );
+        assert_eq!(
+            vm[5],
+            RuntimeValue::I32(20),
+            "wide VT_I8 variant-array elements should remain VT_I8 at the outward COM boundary"
+        );
+        assert_eq!(
+            vm[6],
+            RuntimeValue::I32(20),
+            "wide VT_UI8 variant-array elements should normalize to VT_I8 at the outward COM boundary"
+        );
+    }
+
+    #[test]
     fn dispatchinvoke_error_path_routes_through_on_error_resume_next() {
         let out = run_windows_host_backed(
             r#"
