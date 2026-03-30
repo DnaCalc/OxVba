@@ -1655,8 +1655,8 @@ End Sub
     }
 
     #[test]
-fn dispatchinvoke_runtime_string_value_and_default_member_routes_are_deterministic() {
-    let source = r#"
+    fn dispatchinvoke_runtime_string_value_and_default_member_routes_are_deterministic() {
+        let source = r#"
 Sub Main()
 Dim obj
 Dim valueName
@@ -1711,6 +1711,47 @@ End Sub
             vm[6],
             RuntimeValue::I32(19),
             "runtime string default-member name should also execute metadata-backed positional dispatch"
+        );
+    }
+
+    #[test]
+    fn call_statement_runtime_string_default_member_dispatch_is_deterministic() {
+        let source = r#"
+Sub Main()
+Dim obj
+Dim defaultName
+Dim errNo
+Dim defaultViaPositional
+obj = CreateObject("OxVba.TestDispatch")
+defaultName = DispatchInvoke(obj, "ReturnDefaultMemberName")
+On Error Resume Next
+Call DispatchInvoke(obj, defaultName, 19)
+errNo = Err.Number
+defaultViaPositional = DispatchInvoke(obj, defaultName, 20)
+End Sub
+"#;
+
+        let vm = run_windows_host_backed(source, false);
+        let jit = run_windows_host_backed(source, true);
+        assert_eq!(
+            vm, jit,
+            "VM/JIT snapshots diverged on call-form runtime string default-member path: vm={vm:?} jit={jit:?}"
+        );
+        assert!(expect_object_handle(&vm[0]).raw() >= 20_001);
+        assert_eq!(
+            vm[1],
+            RuntimeValue::String(BStr("EchoVariant".to_string())),
+            "call-form runtime string default-member selector should remain a runtime string"
+        );
+        assert_eq!(
+            vm[2],
+            RuntimeValue::I32(0),
+            "call-form runtime string default-member dispatch should not raise a runtime error"
+        );
+        assert_eq!(
+            vm[3],
+            RuntimeValue::I32(20),
+            "runtime string default-member selector should remain usable after a discarded Call invocation"
         );
     }
 
