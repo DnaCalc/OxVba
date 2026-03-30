@@ -7,3 +7,6 @@ temp/
 .claude/
 tools/**/bin/
 tools/**/obj/
+
+# bv (beads viewer) local config and caches
+.bv/
