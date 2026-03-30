@@ -372,6 +372,35 @@ fn invkind_to_member_invoke_kind(invkind: u16) -> TypeLibMemberInvokeKind {
     }
 }
 
+#[cfg(target_os = "windows")]
+fn requested_coclass_name(identity: &TypeLibResolvedIdentity) -> Option<&str> {
+    let (_, class_name) = identity.reference_name.rsplit_once('.')?;
+    let trimmed = class_name.trim();
+    if trimmed.is_empty() {
+        None
+    } else {
+        Some(trimmed)
+    }
+}
+
+#[cfg(target_os = "windows")]
+unsafe fn typeinfo_name(ptinfo: *mut c_void) -> Option<String> {
+    let vtbl = *(ptinfo as *const *const ITypeInfoVtbl);
+    let mut name_bstr: *mut u16 = std::ptr::null_mut();
+    let hr = ((*vtbl).get_documentation)(
+        ptinfo,
+        -1,
+        &mut name_bstr,
+        std::ptr::null_mut(),
+        std::ptr::null_mut(),
+        std::ptr::null_mut(),
+    );
+    if hr != COM_S_OK {
+        return None;
+    }
+    bstr_to_string_and_free(name_bstr)
+}
+
 // ── Public API ──
 
 /// Loads a type library from the Windows registry by LIBID.
@@ -553,6 +582,46 @@ pub fn enumerate_typelib_members(ptlib: *mut c_void) -> Result<Vec<TypeLibMember
     Ok(members)
 }
 
+#[cfg(target_os = "windows")]
+pub fn enumerate_typelib_members_for_coclass(
+    ptlib: *mut c_void,
+    coclass_name: &str,
+) -> Result<Vec<TypeLibMemberMetadata>, String> {
+    let vtbl = unsafe { *(ptlib as *const *const ITypeLibVtbl) };
+    let count = unsafe { ((*vtbl).get_type_info_count)(ptlib) };
+
+    for i in 0..count {
+        let mut typekind: u32 = 0;
+        let hr = unsafe { ((*vtbl).get_type_info_type)(ptlib, i, &mut typekind) };
+        if hr != COM_S_OK || typekind != TKIND_COCLASS {
+            continue;
+        }
+
+        let mut ptinfo: *mut c_void = std::ptr::null_mut();
+        let hr = unsafe { ((*vtbl).get_type_info)(ptlib, i, &mut ptinfo) };
+        if hr != COM_S_OK || ptinfo.is_null() {
+            continue;
+        }
+
+        let is_match = unsafe { typeinfo_name(ptinfo) }
+            .is_some_and(|name| name.eq_ignore_ascii_case(coclass_name));
+        let result = if is_match {
+            unsafe { extract_members_from_coclass_default_interface(ptinfo) }
+        } else {
+            Ok(Vec::new())
+        };
+        unsafe {
+            let ti_vtbl = *(ptinfo as *const *const ITypeInfoVtbl);
+            ((*ti_vtbl).release)(ptinfo);
+        }
+        if is_match {
+            return result;
+        }
+    }
+
+    Ok(Vec::new())
+}
+
 /// Extracts member metadata from a single ITypeInfo.
 #[cfg(target_os = "windows")]
 unsafe fn extract_members_from_typeinfo(
@@ -667,6 +736,59 @@ unsafe fn extract_members_from_typeinfo(
     Ok(members)
 }
 
+#[cfg(target_os = "windows")]
+unsafe fn extract_members_from_coclass_default_interface(
+    coclass_ptinfo: *mut c_void,
+) -> Result<Vec<TypeLibMemberMetadata>, String> {
+    let vtbl = *(coclass_ptinfo as *const *const ITypeInfoVtbl);
+    let mut pattr: *mut TYPEATTR = std::ptr::null_mut();
+    let hr = ((*vtbl).get_type_attr)(coclass_ptinfo, &mut pattr);
+    if hr != COM_S_OK || pattr.is_null() {
+        return Err("ITypeInfo::GetTypeAttr failed for coclass".to_string());
+    }
+    let impl_count = (*pattr).cimpl_types as u32;
+    ((*vtbl).release_type_attr)(coclass_ptinfo, pattr);
+
+    let mut fallback_members: Option<Vec<TypeLibMemberMetadata>> = None;
+    for impl_idx in 0..impl_count {
+        let mut flags: i32 = 0;
+        if ((*vtbl).get_impl_type_flags)(coclass_ptinfo, impl_idx, &mut flags) != COM_S_OK {
+            continue;
+        }
+        if (flags & IMPLTYPEFLAG_FSOURCE) != 0 {
+            continue;
+        }
+
+        let mut href: u32 = 0;
+        if ((*vtbl).get_ref_type_of_impl_type)(coclass_ptinfo, impl_idx, &mut href) != COM_S_OK {
+            continue;
+        }
+
+        let mut pref: *mut c_void = std::ptr::null_mut();
+        if ((*vtbl).get_ref_type_info)(coclass_ptinfo, href, &mut pref) != COM_S_OK
+            || pref.is_null()
+        {
+            continue;
+        }
+
+        let result = extract_members_from_typeinfo(pref);
+        let release_vtbl = *(pref as *const *const ITypeInfoVtbl);
+        ((*release_vtbl).release)(pref);
+
+        let Ok(members) = result else {
+            continue;
+        };
+        if (flags & IMPLTYPEFLAG_FDEFAULT) != 0 {
+            return Ok(members);
+        }
+        if fallback_members.is_none() {
+            fallback_members = Some(members);
+        }
+    }
+
+    Ok(fallback_members.unwrap_or_default())
+}
+
 /// Enumerates event metadata from a loaded ITypeLib.
 #[cfg(target_os = "windows")]
 pub fn enumerate_typelib_events(ptlib: *mut c_void) -> Result<Vec<TypeLibEventMetadata>, String> {
@@ -697,6 +819,46 @@ pub fn enumerate_typelib_events(ptlib: *mut c_void) -> Result<Vec<TypeLibEventMe
         }
     }
     Ok(events)
+}
+
+#[cfg(target_os = "windows")]
+pub fn enumerate_typelib_events_for_coclass(
+    ptlib: *mut c_void,
+    coclass_name: &str,
+) -> Result<Vec<TypeLibEventMetadata>, String> {
+    let vtbl = unsafe { *(ptlib as *const *const ITypeLibVtbl) };
+    let count = unsafe { ((*vtbl).get_type_info_count)(ptlib) };
+
+    for i in 0..count {
+        let mut typekind: u32 = 0;
+        let hr = unsafe { ((*vtbl).get_type_info_type)(ptlib, i, &mut typekind) };
+        if hr != COM_S_OK || typekind != TKIND_COCLASS {
+            continue;
+        }
+
+        let mut ptinfo: *mut c_void = std::ptr::null_mut();
+        let hr = unsafe { ((*vtbl).get_type_info)(ptlib, i, &mut ptinfo) };
+        if hr != COM_S_OK || ptinfo.is_null() {
+            continue;
+        }
+
+        let is_match = unsafe { typeinfo_name(ptinfo) }
+            .is_some_and(|name| name.eq_ignore_ascii_case(coclass_name));
+        let result = if is_match {
+            unsafe { extract_events_from_coclass(ptinfo) }
+        } else {
+            Ok(Vec::new())
+        };
+        unsafe {
+            let ti_vtbl = *(ptinfo as *const *const ITypeInfoVtbl);
+            ((*ti_vtbl).release)(ptinfo);
+        }
+        if is_match {
+            return result;
+        }
+    }
+
+    Ok(Vec::new())
 }
 
 /// Extracts event metadata from a coclass ITypeInfo by walking source interfaces.
@@ -820,15 +982,92 @@ pub fn extract_coclass_prog_id(ptlib: *mut c_void) -> Option<String> {
     None
 }
 
+#[cfg(target_os = "windows")]
+pub fn extract_coclass_prog_id_for_name(ptlib: *mut c_void, coclass_name: &str) -> Option<String> {
+    let vtbl = unsafe { *(ptlib as *const *const ITypeLibVtbl) };
+    let count = unsafe { ((*vtbl).get_type_info_count)(ptlib) };
+
+    for i in 0..count {
+        let mut typekind: u32 = 0;
+        let hr = unsafe { ((*vtbl).get_type_info_type)(ptlib, i, &mut typekind) };
+        if hr != COM_S_OK || typekind != TKIND_COCLASS {
+            continue;
+        }
+
+        let mut name_bstr: *mut u16 = std::ptr::null_mut();
+        let hr = unsafe {
+            ((*vtbl).get_documentation)(
+                ptlib,
+                i as i32,
+                &mut name_bstr,
+                std::ptr::null_mut(),
+                std::ptr::null_mut(),
+                std::ptr::null_mut(),
+            )
+        };
+        if hr != COM_S_OK {
+            continue;
+        }
+
+        let Some(name) = (unsafe { bstr_to_string_and_free(name_bstr) }) else {
+            continue;
+        };
+        if !name.eq_ignore_ascii_case(coclass_name) {
+            continue;
+        }
+
+        let mut lib_name_bstr: *mut u16 = std::ptr::null_mut();
+        let _ = unsafe {
+            ((*vtbl).get_documentation)(
+                ptlib,
+                -1,
+                &mut lib_name_bstr,
+                std::ptr::null_mut(),
+                std::ptr::null_mut(),
+                std::ptr::null_mut(),
+            )
+        };
+        let lib_name = unsafe { bstr_to_string_and_free(lib_name_bstr) };
+        if let Some(lib) = lib_name {
+            return Some(format!("{}.{}", lib, name));
+        }
+    }
+
+    None
+}
+
 /// Builds a full TypeLibMetadataBlob from a loaded ITypeLib pointer.
 #[cfg(target_os = "windows")]
 pub fn build_metadata_blob_from_typelib(
     ptlib: *mut c_void,
     identity: TypeLibResolvedIdentity,
 ) -> Result<TypeLibMetadataBlob, String> {
-    let members = enumerate_typelib_members(ptlib)?;
-    let events = enumerate_typelib_events(ptlib)?;
-    let activation_prog_id = extract_coclass_prog_id(ptlib);
+    let members = if let Some(coclass_name) = requested_coclass_name(&identity) {
+        let scoped = enumerate_typelib_members_for_coclass(ptlib, coclass_name)?;
+        if scoped.is_empty() {
+            enumerate_typelib_members(ptlib)?
+        } else {
+            scoped
+        }
+    } else {
+        enumerate_typelib_members(ptlib)?
+    };
+    let events = if let Some(coclass_name) = requested_coclass_name(&identity) {
+        let scoped = enumerate_typelib_events_for_coclass(ptlib, coclass_name)?;
+        if scoped.is_empty() {
+            enumerate_typelib_events(ptlib)?
+        } else {
+            scoped
+        }
+    } else {
+        enumerate_typelib_events(ptlib)?
+    };
+    let activation_prog_id = if let Some(coclass_name) = requested_coclass_name(&identity) {
+        extract_coclass_prog_id_for_name(ptlib, coclass_name)
+            .or_else(|| Some(identity.reference_name.clone()))
+    } else {
+        extract_coclass_prog_id(ptlib)
+    };
     let member_name_to_token: Vec<(String, i32)> =
         members.iter().map(|m| (m.name.clone(), m.token)).collect();
 

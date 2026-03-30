@@ -309,6 +309,23 @@ pub fn known_typelib_identity_for_prog_id_name(
             cache_key: "typelib:scripting.dictionary:1.0:0".to_string(),
         });
     }
+    if prog_id_name.len() > "Scripting.".len()
+        && prog_id_name[..("Scripting.".len())].eq_ignore_ascii_case("Scripting.")
+    {
+        let normalized_prog_id = prog_id_name.trim();
+        let cache_suffix = normalized_prog_id
+            .to_ascii_lowercase()
+            .replace([' ', '.'], "-");
+        return Some(TypeLibResolvedIdentity {
+            reference_name: normalized_prog_id.to_string(),
+            importlib: "scrrun.dll".to_string(),
+            libid: Some("420B2830-E718-11CF-893D-00A0C9054228".to_string()),
+            major_version: 1,
+            minor_version: 0,
+            lcid: Some(0),
+            cache_key: format!("typelib:{cache_suffix}:1.0:0"),
+        });
+    }
     if prog_id_name.eq_ignore_ascii_case(EXCEL_APPLICATION_PROGID) {
         return Some(TypeLibResolvedIdentity {
             reference_name: EXCEL_APPLICATION_PROGID.to_string(),
@@ -1627,9 +1644,11 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
             members,
             events,
         )
-    } else if identity.importlib.eq_ignore_ascii_case("scrrun.dll")
+    } else if identity.reference_name.eq_ignore_ascii_case("Scripting.Dictionary")
+        && identity.importlib.eq_ignore_ascii_case("scrrun.dll")
         || identity.libid.as_deref().is_some_and(|libid: &str| {
-            libid.eq_ignore_ascii_case("420B2830-E718-11CF-893D-00A0C9054228")
+            identity.reference_name.eq_ignore_ascii_case("Scripting.Dictionary")
+                && libid.eq_ignore_ascii_case("420B2830-E718-11CF-893D-00A0C9054228")
         })
     {
         let members = vec![
@@ -2009,5 +2028,31 @@ mod tests {
             resolve_member_token_and_spec_from_typelib_metadata_name(&blob, "UnknownMember"),
             TypeLibMemberLookupResult::Missing
         );
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn scripting_filesystemobject_live_typelib_lookup_resolves_member_subset() {
+        let identity = known_typelib_identity_for_prog_id_name("Scripting.FileSystemObject")
+            .expect("identity");
+        let blob = build_typelib_metadata(&identity);
+        if blob.members.is_empty() {
+            return;
+        }
+
+        assert_eq!(
+            activation_prog_id_from_typelib_metadata(&blob),
+            Some("Scripting.FileSystemObject")
+        );
+        match resolve_member_token_and_spec_from_typelib_metadata_name(&blob, "GetExtensionName") {
+            TypeLibMemberLookupResult::Resolved(_, spec) => {
+                assert_eq!(spec.invoke_kind, TypeLibMemberInvokeKind::Method);
+                assert_eq!(spec.parameter_names.len(), 1);
+            }
+            other => panic!(
+                "expected Scripting.FileSystemObject.GetExtensionName to resolve, got {:?}",
+                other
+            ),
+        }
     }
 }

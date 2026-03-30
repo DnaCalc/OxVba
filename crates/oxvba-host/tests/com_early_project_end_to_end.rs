@@ -90,6 +90,26 @@ End Sub
 }
 
 #[cfg(target_os = "windows")]
+fn registered_scripting_filesystemobject_available() -> bool {
+    let manifest = manifest_with_reference(
+        "Scripting",
+        r#"
+Attribute VB_Name = "MainModule"
+Public Sub Main()
+Dim obj As New Scripting.FileSystemObject
+Dim extValue
+extValue = obj.GetExtensionName("C:\temp\demo.txt")
+End Sub
+"#,
+    );
+    std::panic::catch_unwind(|| run_project_windows_hosted(&manifest, false))
+        .ok()
+        .and_then(|snapshot| snapshot.first().cloned())
+        .map(|value| expect_object_handle(&value).raw() >= 20_001)
+        .unwrap_or(false)
+}
+
+#[cfg(target_os = "windows")]
 fn registered_testdispatch_available() -> bool {
     let manifest = manifest_with_reference(
         "OxVba",
@@ -361,6 +381,38 @@ End Sub
     assert!(expect_object_handle(&out[0]).raw() >= 20_001);
     assert_eq!(out[1], RuntimeValue::I32(1));
     assert_eq!(out[2], RuntimeValue::Bool(true));
+}
+
+#[cfg(target_os = "windows")]
+#[test]
+fn early_bound_project_executes_registered_scripting_filesystemobject_member_subset() {
+    if !registered_scripting_filesystemobject_available() {
+        return;
+    }
+    let manifest = manifest_with_reference(
+        "Scripting",
+        r#"
+Attribute VB_Name = "MainModule"
+Public Sub Main()
+Dim obj As New Scripting.FileSystemObject
+Dim extValue
+Dim baseValue
+extValue = obj.GetExtensionName("C:\temp\demo.txt")
+baseValue = obj.GetBaseName("C:\temp\demo.txt")
+End Sub
+"#,
+    );
+
+    let out = run_project_windows_hosted(&manifest, false);
+    assert!(expect_object_handle(&out[0]).raw() >= 20_001);
+    assert_eq!(
+        out[1],
+        RuntimeValue::String(oxvba_runtime::bstr::BStr("txt".to_string()))
+    );
+    assert_eq!(
+        out[2],
+        RuntimeValue::String(oxvba_runtime::bstr::BStr("demo".to_string()))
+    );
 }
 
 #[cfg(target_os = "windows")]
