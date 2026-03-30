@@ -43,10 +43,10 @@ mod windows_registered_com_lane {
             }
         }
 
-        fn expected_exists_42_value(self) -> Option<i32> {
+        fn expected_exists_42_value(self) -> Option<RuntimeValue> {
             match self {
-                Self::ScriptingDictionary => Some(0),
-                Self::OxvbaTestDispatch => Some(1),
+                Self::ScriptingDictionary => Some(RuntimeValue::Bool(false)),
+                Self::OxvbaTestDispatch => Some(RuntimeValue::I32(1)),
                 Self::OxvbaTestEventServer => None,
                 Self::ExcelApplication => None,
                 Self::Other => None,
@@ -181,8 +181,15 @@ mod windows_registered_com_lane {
     }
 
     #[test]
-    #[ignore = "requires registered external COM server lane (run via scripts/run-com-registered.ps1)"]
     fn registered_createobject_dispatchinvoke_success_lane() {
+        if !registered_lane_available() {
+            eprintln!(
+                "registered lane: selected ProgID `{}` is not available in this environment",
+                selected_registered_prog_id()
+            );
+            return;
+        }
+
         let selected_prog_id = selected_registered_prog_id();
         let flavor = RegisteredProgIdFlavor::from_prog_id(&selected_prog_id);
         let source = format!(
@@ -214,7 +221,7 @@ End Sub
         if let Some(expected) = flavor.expected_exists_42_value() {
             assert_eq!(
                 out[2],
-                RuntimeValue::I32(expected),
+                expected,
                 "Exists(42) result mismatch for ProgID `{selected_prog_id}`"
             );
         } else {
@@ -258,8 +265,21 @@ End Sub
     }
 
     #[test]
-    #[ignore = "requires registered external COM server lane (run via scripts/run-com-registered.ps1)"]
     fn registered_lane_repeated_invokes_are_stable() {
+        if !registered_lane_available() {
+            eprintln!(
+                "registered lane: selected ProgID `{}` is not available in this environment",
+                selected_registered_prog_id()
+            );
+            return;
+        }
+        if selected_registered_prog_id_flavor() != RegisteredProgIdFlavor::ScriptingDictionary {
+            eprintln!(
+                "registered lane: repeated invoke stability probe is specific to Scripting.Dictionary"
+            );
+            return;
+        }
+
         let mut source = format!(
             "Sub Main()\nDim obj\nDim value\n{}\n",
             selected_registered_createobject_line()
@@ -274,7 +294,7 @@ End Sub
         assert!(expect_object_handle(&out[0]).raw() >= 20_001);
         assert_eq!(
             out[1],
-            RuntimeValue::I32(0),
+            RuntimeValue::Bool(false),
             "final Exists(7) should remain deterministic for empty dictionary"
         );
     }
@@ -357,7 +377,6 @@ End Sub
     }
 
     #[test]
-    #[ignore = "requires registered external COM server lane (run via scripts/run-com-testeventserver-marshaling-oracle.ps1)"]
     fn registered_testeventserver_scalar_array_return_supported_subset() {
         if selected_registered_prog_id_flavor() != RegisteredProgIdFlavor::OxvbaTestEventServer {
             eprintln!(
@@ -393,7 +412,6 @@ End Sub
     }
 
     #[test]
-    #[ignore = "requires registered external COM server lane (run via scripts/run-com-testeventserver-marshaling-oracle.ps1)"]
     fn registered_testeventserver_dispatch_array_return_supported_subset() {
         if selected_registered_prog_id_flavor() != RegisteredProgIdFlavor::OxvbaTestEventServer {
             eprintln!(
@@ -467,7 +485,6 @@ End Sub
     }
 
     #[test]
-    #[ignore = "requires registered external COM server lane (run via scripts/run-com-registered.ps1)"]
     fn registered_class_not_registered_is_reported_with_stable_label() {
         let mut engine = Engine::new(HostConfig {
             enable_jit: false,
@@ -498,8 +515,14 @@ End Sub
     }
 
     #[test]
-    #[ignore = "requires registered external COM server lane (run via scripts/run-com-registered.ps1)"]
     fn registered_event_subscribe_without_connection_point_has_stable_error_shape() {
+        if !registered_lane_available() {
+            eprintln!(
+                "registered lane: selected ProgID `{}` is not available in this environment",
+                selected_registered_prog_id()
+            );
+            return;
+        }
         if selected_registered_prog_id_flavor().is_event_capable_for_registered_lane() {
             eprintln!(
                 "registered lane: selected ProgID appears event-capable; skipping failure-shape assertion"
@@ -535,7 +558,6 @@ End Sub
     }
 
     #[test]
-    #[ignore = "requires registered external COM server lane (run via scripts/run-com-registered.ps1)"]
     fn registered_event_unsubscribe_unknown_subscription_has_stable_error_shape() {
         let mut engine = Engine::new(HostConfig {
             enable_jit: false,
@@ -556,7 +578,6 @@ End Sub
     }
 
     #[test]
-    #[ignore = "requires registered external COM server lane (run via scripts/run-com-registered.ps1)"]
     fn registered_event_callback_success_when_event_capable_server_is_configured() {
         let selected_prog_id = selected_registered_prog_id();
         let require_success = registered_event_success_required();

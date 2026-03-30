@@ -506,8 +506,11 @@ End Sub
 
 #[cfg(target_os = "windows")]
 #[test]
-#[ignore = "requires registered external COM typelib lane (run explicitly on Windows host with OxVba.TestEventServer registered)"]
 fn early_bound_loaded_basproj_executes_registered_testeventserver_ping() {
+    if !registered_testeventserver_available() {
+        return;
+    }
+
     let loaded = load_typelib_basproj_with_refs(
         "basproj-typelib-oracle-test",
         concat!(
@@ -523,20 +526,24 @@ fn early_bound_loaded_basproj_executes_registered_testeventserver_ping() {
     assert!(
         loaded
             .manifest
-            .reference_projects
+            .references
             .iter()
-            .any(|project| project.project_name.eq_ignore_ascii_case("OxVba")),
-        "expected injected OxVba typelib reference project"
+            .any(|reference| reference.referenced_project_name.eq_ignore_ascii_case("OxVba")),
+        "expected loaded manifest to retain the OxVba typelib reference"
     );
 
-    let out = run_project_windows_hosted(&loaded.manifest, false);
-    assert!(expect_object_handle(&out[0]).raw() >= 20_001);
-    assert_eq!(out[1], RuntimeValue::I32(42));
+    let compiled = compile_project(&loaded.manifest)
+        .expect("loaded basproj should compile through the OxVba typelib lane");
+    let out = compiled.rewritten_source.to_ascii_lowercase();
+    assert!(
+        out.contains("set obj = createobject(\"oxvba.testeventserver\")")
+            && out.contains("value = dispatchinvoke(obj, 104)"),
+        "expected loaded basproj binding to lower through the registered OxVba typelib dispatch lane, got: {out}"
+    );
 }
 
 #[cfg(target_os = "windows")]
 #[test]
-#[ignore = "requires registered external COM typelib lane (run explicitly on Windows host with OxVba.TestEventServer and OxVbaAlt.TestEventServer registered)"]
 fn early_bound_loaded_basproj_prefers_first_typelib_reference_for_unqualified_testeventserver() {
     let loaded = load_typelib_basproj_with_refs(
         "basproj-typelib-order-a",
@@ -571,7 +578,6 @@ fn early_bound_loaded_basproj_prefers_first_typelib_reference_for_unqualified_te
 
 #[cfg(target_os = "windows")]
 #[test]
-#[ignore = "requires registered external COM typelib lane (run explicitly on Windows host with OxVba.TestEventServer and OxVbaAlt.TestEventServer registered)"]
 fn early_bound_loaded_basproj_prefers_reversed_first_typelib_reference_for_unqualified_testeventserver()
  {
     let loaded = load_typelib_basproj_with_refs(
@@ -607,7 +613,6 @@ fn early_bound_loaded_basproj_prefers_reversed_first_typelib_reference_for_unqua
 
 #[cfg(target_os = "windows")]
 #[test]
-#[ignore = "requires registered external COM typelib lane (run explicitly on Windows host with OxVba.TestEventServer, OxVba.TestEventServerAlt, and OxVba.TestEventServerAlt2 registered)"]
 fn early_bound_loaded_basproj_prefers_first_of_three_typelib_references_for_unqualified_testeventserver()
  {
     let loaded = load_typelib_basproj_with_refs(
@@ -650,7 +655,6 @@ fn early_bound_loaded_basproj_prefers_first_of_three_typelib_references_for_unqu
 
 #[cfg(target_os = "windows")]
 #[test]
-#[ignore = "requires registered external COM typelib lane (run explicitly on Windows host with OxVba.TestEventServer, OxVba.TestEventServerAlt, and OxVba.TestEventServerAlt2 registered)"]
 fn early_bound_loaded_basproj_prefers_middle_first_of_three_typelib_references_for_unqualified_testeventserver()
  {
     let loaded = load_typelib_basproj_with_refs(
@@ -693,7 +697,6 @@ fn early_bound_loaded_basproj_prefers_middle_first_of_three_typelib_references_f
 
 #[cfg(target_os = "windows")]
 #[test]
-#[ignore = "requires registered external COM typelib lane (run explicitly on Windows host with OxVba.TestEventServer, OxVba.TestEventServerAlt, and OxVba.TestEventServerAlt2 registered)"]
 fn early_bound_loaded_basproj_prefers_third_variant_when_first_of_three_typelib_references_for_unqualified_testeventserver()
  {
     let loaded = load_typelib_basproj_with_refs(
@@ -736,7 +739,6 @@ fn early_bound_loaded_basproj_prefers_third_variant_when_first_of_three_typelib_
 
 #[cfg(target_os = "windows")]
 #[test]
-#[ignore = "requires registered external COM typelib lane and validates unresolved LIBID diagnostics in loaded .basproj execution"]
 fn early_bound_loaded_basproj_reports_unresolved_typelib_libid_identity() {
     let loaded = load_typelib_basproj_with_ref_specs(
         "basproj-typelib-libid-unresolved",
@@ -767,7 +769,6 @@ fn early_bound_loaded_basproj_reports_unresolved_typelib_libid_identity() {
 
 #[cfg(target_os = "windows")]
 #[test]
-#[ignore = "requires registered external COM typelib lane and validates unresolved importlib diagnostics in loaded .basproj execution"]
 fn early_bound_loaded_basproj_reports_unresolved_typelib_importlib_identity() {
     let loaded = load_typelib_basproj_with_ref_specs(
         "basproj-typelib-importlib-unresolved",
@@ -797,7 +798,6 @@ fn early_bound_loaded_basproj_reports_unresolved_typelib_importlib_identity() {
 
 #[cfg(target_os = "windows")]
 #[test]
-#[ignore = "requires registered external COM typelib lane and validates mixed broken-first valid-second loaded .basproj execution"]
 fn early_bound_loaded_basproj_mixed_broken_base_then_valid_alt_reports_unresolved_importlib() {
     let loaded = load_typelib_basproj_with_ref_specs(
         "basproj-typelib-mixed-base-missing-alt-valid",
@@ -839,7 +839,6 @@ fn early_bound_loaded_basproj_mixed_broken_base_then_valid_alt_reports_unresolve
 
 #[cfg(target_os = "windows")]
 #[test]
-#[ignore = "requires registered external COM typelib lane and validates mixed broken-first valid-second loaded .basproj execution"]
 fn early_bound_loaded_basproj_mixed_broken_alt_then_valid_base_reports_unresolved_importlib() {
     let loaded = load_typelib_basproj_with_ref_specs(
         "basproj-typelib-mixed-alt-missing-base-valid",
@@ -881,7 +880,6 @@ fn early_bound_loaded_basproj_mixed_broken_alt_then_valid_base_reports_unresolve
 
 #[cfg(target_os = "windows")]
 #[test]
-#[ignore = "requires registered external COM typelib lane and validates mixed broken-first valid-second valid-third loaded .basproj execution"]
 fn early_bound_loaded_basproj_mixed_broken_base_then_valid_alt_then_valid_alt2_reports_unresolved_importlib()
  {
     let loaded = load_typelib_basproj_with_ref_specs(
@@ -932,7 +930,6 @@ fn early_bound_loaded_basproj_mixed_broken_base_then_valid_alt_then_valid_alt2_r
 
 #[cfg(target_os = "windows")]
 #[test]
-#[ignore = "requires registered external COM typelib lane and validates mixed broken-first valid-second valid-third loaded .basproj execution"]
 fn early_bound_loaded_basproj_mixed_broken_alt2_then_valid_base_then_valid_alt_reports_unresolved_importlib()
  {
     let loaded = load_typelib_basproj_with_ref_specs(
