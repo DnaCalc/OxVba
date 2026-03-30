@@ -1483,8 +1483,11 @@ fn early_bound_loaded_basproj_broken_alt2_then_valid_base_then_valid_alt_qualifi
 
 #[cfg(target_os = "windows")]
 #[test]
-#[ignore = "requires registered external COM typelib lane (run explicitly on Windows host with OxVba.TestEventServer registered)"]
 fn early_bound_project_registered_testeventserver_withevents_callback_invokes_handler_body() {
+    if !registered_testeventserver_available() {
+        return;
+    }
+
     let class_module = module_unit_from_source(
         "Sink",
         ModuleKind::Class,
@@ -1541,8 +1544,11 @@ End Sub
 
 #[cfg(target_os = "windows")]
 #[test]
-#[ignore = "requires registered external COM typelib lane (run explicitly on Windows host with OxVba.TestEventServer registered)"]
 fn early_bound_project_registered_testeventserver_withevents_callback_preserves_value_payload() {
+    if !registered_testeventserver_available() {
+        return;
+    }
+
     let class_module = module_unit_from_source(
         "Sink",
         ModuleKind::Class,
