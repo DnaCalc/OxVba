@@ -161,6 +161,18 @@ mod windows_registered_com_lane {
             .expect("registered COM lane source should execute")
     }
 
+    fn registered_lane_available() -> bool {
+        std::panic::catch_unwind(|| {
+            let _ = run_registered_lane_source(
+                &format!(
+                    "Sub Main()\nDim obj\n{}\nEnd Sub\n",
+                    selected_registered_createobject_line()
+                ),
+            );
+        })
+        .is_ok()
+    }
+
     fn expect_object_handle(value: &RuntimeValue) -> ObjectHandle {
         match value {
             RuntimeValue::ObjectHandle(handle) => *handle,
@@ -213,8 +225,15 @@ End Sub
     }
 
     #[test]
-    #[ignore = "requires registered external COM server lane (run via scripts/run-com-registered.ps1)"]
     fn registered_dispatchinvoke_missing_arg_routes_to_err() {
+        if !registered_lane_available() {
+            eprintln!(
+                "registered lane: selected ProgID `{}` is not available in this environment",
+                selected_registered_prog_id()
+            );
+            return;
+        }
+
         let source = format!(
             r#"
 Sub Main()
