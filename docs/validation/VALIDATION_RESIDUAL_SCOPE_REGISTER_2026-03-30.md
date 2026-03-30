@@ -34,8 +34,8 @@ Only the third category requires active open work in the tracker.
 | `PH-0008` | `implemented-subset` | external boundary | imported NewEnum runtime mismatch is now bounded to Excel VBIDE import-retention behavior after LANG-0002 closes the accepted OxVba execution surface | none required |
 | `PH-0009` | `implemented-subset` | remaining accepted scope | broader host-project lifecycle and execution-environment breadth remain open | `bd-cyr.4.2` |
 | `PH-0010` | `in-progress` | remaining accepted scope | MS-OVBA storage roundtrip/oracle depth remains open | `bd-cyr.4.2` |
-| `LSF-0001` | `in-progress` | remaining accepted scope | language-service feature coverage beyond current syntax/semantic surface remains open | `bd-cyr.5.1` |
-| `LSF-0002` | `in-progress` | remaining accepted scope | formal language/compiler representation remains partial | `bd-cyr.5.1` |
+| `LSF-0001` | `in-progress` | remaining accepted scope | bounded internal language-service surface is green (syntax tree, semantic snapshot, workspace invalidation, diagnostics, symbols, completions, signature help, go-to-definition, references, hover), but broader service coverage against the executable feature inventory remains open | `bd-cyr.5.1` |
+| `LSF-0002` | `in-progress` | remaining accepted scope | formal language/compiler representation remains partial beyond the current Lean scaffold and obligation/deferred-gate registry | `bd-cyr.5.1` |
 
 ## 3. Notes
 
