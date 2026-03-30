@@ -65,6 +65,27 @@ fn run_project_with_widget(main_source: &str, widget_source: &str) -> Result<Run
     result
 }
 
+fn run_project_with_widget_session(
+    main_source: &str,
+    widget_source: &str,
+    enable_jit: bool,
+) -> Result<RuntimeValue, String> {
+    let TempLoadedProject { loaded, temp_root } = load_widget_project(main_source, widget_source)?;
+    let engine = Engine::new(HostConfig {
+        enable_jit,
+        root_object_name: None,
+    });
+    let mut session = engine
+        .compile_and_prepare_session(&loaded.manifest)
+        .map_err(|err| err.to_string())?;
+    let result = engine
+        .invoke_procedure(&mut session, "Main", "Main", &[])
+        .map_err(|err| err.to_string());
+
+    std::fs::remove_dir_all(&temp_root).expect("cleanup temp project root");
+    result
+}
+
 fn execute_project_with_widget_snapshot(
     main_source: &str,
     widget_source: &str,
@@ -193,4 +214,26 @@ fn imported_collection_field_newenum_foreach_project_snapshot_matches_vm_and_jit
         .expect("jit project execution should succeed");
 
     assert_eq!(vm, jit, "VM/JIT snapshots should match for project-backed NewEnum For Each");
+}
+
+#[test]
+fn imported_collection_field_newenum_direct_session_vm_jit_matches_with_excel_import_header() {
+    let vm = run_project_with_widget_session(
+        MAIN_FOREACH_WIDGET_FUNCTION_SOURCE,
+        excel_import_newenum_widget_source(),
+        false,
+    )
+    .expect("vm direct session should succeed");
+    let jit = run_project_with_widget_session(
+        MAIN_FOREACH_WIDGET_FUNCTION_SOURCE,
+        excel_import_newenum_widget_source(),
+        true,
+    )
+    .expect("jit direct session should succeed");
+
+    assert_eq!(
+        vm, jit,
+        "VM/JIT direct-session snapshots should match for Excel-imported collection-backed NewEnum"
+    );
+    assert_eq!(vm, RuntimeValue::String(BStr("41,42,".to_string())));
 }
