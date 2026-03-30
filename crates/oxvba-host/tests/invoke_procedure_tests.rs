@@ -6,7 +6,7 @@ use oxvba_compiler::{
     ModuleAttributes, ModuleKind, ModuleUnit, ProjectKind, ProjectManifest, ProjectReference,
     ReferenceKind,
 };
-use oxvba_host::Engine;
+use oxvba_host::{Engine, HostConfig};
 use oxvba_hal::model::HostPolicy;
 use oxvba_runtime::{RuntimeValue, bstr::BStr};
 
@@ -199,8 +199,7 @@ fn invoke_function_foreach_over_project_newenum_array_executes() {
 }
 
 #[cfg(target_os = "windows")]
-#[test]
-fn invoke_function_foreach_over_imported_com_newenum_executes() {
+fn run_imported_com_newenum_foreach(enable_jit: bool) -> RuntimeValue {
     let manifest = make_source_manifest_with_reference(
         "OxVba",
         vec![make_module(
@@ -219,12 +218,34 @@ fn invoke_function_foreach_over_imported_com_newenum_executes() {
         )],
     );
 
-    let mut engine = Engine::default();
+    let mut engine = Engine::new(HostConfig {
+        enable_jit,
+        root_object_name: None,
+    });
     engine.set_host_policy(HostPolicy::interactive_dev());
     let mut session = engine.compile_and_prepare_session(&manifest).unwrap();
-    let result = engine.invoke_procedure(&mut session, "Main", "Main", &[]).unwrap();
+    engine.invoke_procedure(&mut session, "Main", "Main", &[]).unwrap()
+}
+
+#[cfg(target_os = "windows")]
+#[test]
+fn invoke_function_foreach_over_imported_com_newenum_executes() {
+    let result = run_imported_com_newenum_foreach(false);
 
     assert_eq!(result, RuntimeValue::String(BStr("41,42,".to_string())));
+}
+
+#[cfg(target_os = "windows")]
+#[test]
+fn invoke_function_foreach_over_imported_com_newenum_vm_jit_snapshots_match() {
+    let vm = run_imported_com_newenum_foreach(false);
+    let jit = run_imported_com_newenum_foreach(true);
+
+    assert_eq!(
+        vm, jit,
+        "VM/JIT snapshots should match for imported COM NewEnum direct session invocation"
+    );
+    assert_eq!(vm, RuntimeValue::String(BStr("41,42,".to_string())));
 }
 
 // ---------------------------------------------------------------------------

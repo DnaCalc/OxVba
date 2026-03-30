@@ -17,8 +17,8 @@ Only the third category requires active open work in the tracker.
 
 | Row | Current truth | Residual disposition | Residual summary | Execution owner |
 |---|---|---|---|---|
-| `LANG-0001` | `implemented-subset` | remaining accepted scope | broader `For Each` semantics still require object-enumerator completion | `bd-cyr.2.5` via `LANG-0002` |
-| `LANG-0002` | `in-progress` | remaining accepted scope | object-enumerator `For Each` breadth remains open beyond the currently proved project-dynamic/imported-collection, imported-COM, and direct session-invocation slices | `bd-cyr.2.5` |
+| `LANG-0001` | `implemented-subset` | remaining accepted scope | broader `For Each` semantics still require object-enumerator completion | `bd-cyr.2.7` via `LANG-0002` |
+| `LANG-0002` | `in-progress` | remaining accepted scope | object-enumerator `For Each` breadth remains open beyond the currently proved project-dynamic/imported-collection, imported-COM, direct session-invocation, and direct-session VM/JIT parity slices | `bd-cyr.2.7` |
 | `LANG-0003` | `implemented-subset` | external boundary | remaining mismatch is bounded to Excel VBIDE import-retention behavior after OxVba proves source-to-export default-member metadata preservation | none required |
 | `LANG-0004` | `implemented-subset` | remaining accepted scope | broader late-bound default-member dispatch breadth remains open beyond the current one-visible-argument named/positional and runtime-string selector subset | `bd-cyr.2.6` |
 | `COM-0001` | `implemented-subset` | remaining accepted scope | broader late-bound COM invocation and marshalling behavior remains outside the proved scalar/object/array subset, after landing the wide-runtime `I64 -> VT_I8` scalar and variant-array normalization slice plus the registered late-bound arity-error regression lane | `bd-cyr.3.6` |
