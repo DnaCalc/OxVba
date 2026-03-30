@@ -277,6 +277,31 @@ End Sub
     }
 
     #[test]
+    fn natural_positional_default_member_routes_when_identity_is_known() {
+        let source = r#"
+Sub Main()
+Dim obj
+Dim value
+obj = CreateObject("OxVba.TestDispatch")
+value = obj(19)
+End Sub
+"#;
+
+        let vm = run_windows_host_backed(source, false);
+        let jit = run_windows_host_backed(source, true);
+        assert_eq!(
+            vm, jit,
+            "VM/JIT snapshots diverged on natural positional default-member path: vm={vm:?} jit={jit:?}"
+        );
+        assert!(expect_object_handle(&vm[0]).raw() >= 20_001);
+        assert_eq!(
+            vm[1],
+            RuntimeValue::I32(19),
+            "natural positional default-member invoke should route to EchoVariant"
+        );
+    }
+
+    #[test]
     fn dispatchinvoke_named_default_member_routes_when_identity_is_known() {
         let source = r#"
 Sub Main()

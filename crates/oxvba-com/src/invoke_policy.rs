@@ -119,7 +119,7 @@ pub fn plan_bound_runtime_invoke(
     let args = request.args.as_slice();
     let _ = validate_named_arg_order(args)?;
     let has_named_args = args.iter().any(|arg| arg.name.is_some());
-    let named_default_member_spec = if request.member.raw() == 0 && has_named_args {
+    let default_member_spec = if request.member.raw() == 0 {
         binding.default_member_token.and_then(|token| {
             binding
                 .member_specs
@@ -134,7 +134,12 @@ pub fn plan_bound_runtime_invoke(
     // allow the request to pass through with DISPID 0. The Windows adapter will resolve
     // named arg DISPIDs at runtime via GetIDsOfNames, matching VBA 7.1 late-bound behavior
     // where default-member named args work without compile-time typelib metadata.
-    let effective_member = named_default_member_spec
+    let named_default_member_spec = if has_named_args {
+        default_member_spec.clone()
+    } else {
+        None
+    };
+    let effective_member = default_member_spec
         .as_ref()
         .map(|(token, _)| *token)
         .unwrap_or(request.member);
@@ -246,6 +251,32 @@ mod tests {
             .expect("default-member plan should succeed");
         assert_eq!(plan.effective_member.raw(), 17);
         assert!(plan.named_default_member_spec.is_some());
+    }
+
+    #[test]
+    fn plan_bound_runtime_invoke_uses_positional_default_member_when_available() {
+        let mut binding = ComBinding::new("Test.Dispatch".to_string(), 1);
+        binding.default_member_token = Some(ComMemberToken::new(17));
+        binding.member_specs.insert(
+            ComMemberToken::new(17),
+            ComMemberSpec {
+                name: "Value".to_string(),
+                requires_argument: true,
+                invoke_kind: TypeLibMemberInvokeKind::PropertyGet,
+                parameter_names: vec!["value".to_string()],
+                is_default_member: true,
+            },
+        );
+        let request = ComInvokeRequest {
+            object: ObjectHandle::new(20_001),
+            member: ComMemberToken::new(0),
+            args: vec![ComInvokeArg::positional_value(ComValue::I32(19))],
+            invoke_kind_hint: None,
+        };
+        let plan = plan_bound_runtime_invoke(&binding, &request, None)
+            .expect("default-member plan should succeed");
+        assert_eq!(plan.effective_member.raw(), 17);
+        assert!(plan.named_default_member_spec.is_none());
     }
 
     #[test]
