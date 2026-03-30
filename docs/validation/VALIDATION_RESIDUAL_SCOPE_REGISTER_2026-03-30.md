@@ -22,10 +22,10 @@ Only the third category requires active open work in the tracker.
 | `LANG-0003` | `implemented-subset` | external boundary | remaining mismatch is bounded to Excel VBIDE import-retention behavior after OxVba proves source-to-export default-member metadata preservation | none required |
 | `LANG-0004` | `implemented-subset` | remaining accepted scope | broader late-bound default-member dispatch breadth remains open beyond the current one-visible-argument named/positional and runtime-string selector subset | `bd-cyr.2.6` |
 | `COM-0001` | `implemented-subset` | remaining accepted scope | broader late-bound COM invocation and marshalling behavior remains outside the proved scalar/object/array subset, after landing the wide-runtime `I64 -> VT_I8` scalar and variant-array normalization slice plus the registered late-bound arity-error regression lane | `bd-cyr.3.6` |
-| `COM-0003` | `verified` | remaining accepted scope | broader imported typelib behavior remains open under the current supported subset boundary | `bd-cyr.3.5` |
-| `COM-0004` | `verified` | remaining accepted scope | broader real-library activation authority remains open beyond the current registered-host subset | `bd-cyr.3.5` |
-| `COM-0005` | `verified` | remaining accepted scope | broader dual-interface behavior remains open outside the mixed-server supported subset | `bd-cyr.3.5` |
-| `COM-0006` | `verified` | remaining accepted scope | broader typelib/versioned-reference behavior remains open outside the current file-backed subset | `bd-cyr.3.5` |
+| `COM-0003` | `verified` | remaining accepted scope | broader imported typelib behavior remains open under the current supported subset boundary after the registered `OxVba.TestEventServer` Ping parity slice | `bd-cyr.3.7` |
+| `COM-0004` | `verified` | remaining accepted scope | broader real-library activation authority remains open beyond the current registered-host subset | `bd-cyr.3.7` |
+| `COM-0005` | `verified` | remaining accepted scope | broader dual-interface behavior remains open outside the mixed-server supported subset | `bd-cyr.3.7` |
+| `COM-0006` | `verified` | remaining accepted scope | broader typelib/versioned-reference behavior remains open outside the current file-backed subset | `bd-cyr.3.7` |
 | `PH-0001` | `implemented-subset` | intentional boundary | startup-object/forms/designer-backed startup intentionally excluded from current strict lane | none required |
 | `PH-0002` | `implemented-subset` | remaining accepted scope | deeper mixed-source and module-state semantics remain open | `bd-cyr.4.1` |
 | `PH-0003` | `implemented-subset` | intentional boundary | current supported discovery lane is explicitly bounded to strict deterministic discovery | none required |

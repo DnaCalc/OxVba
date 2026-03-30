@@ -90,6 +90,25 @@ End Sub
 }
 
 #[cfg(target_os = "windows")]
+fn registered_testeventserver_available() -> bool {
+    let manifest = manifest_with_typelib(
+        r#"
+Attribute VB_Name = "MainModule"
+Public Sub Main()
+Dim obj As New OxVba.TestEventServer
+Dim value
+value = obj.Ping()
+End Sub
+"#,
+    );
+    std::panic::catch_unwind(|| run_project_windows_hosted(&manifest, false))
+        .ok()
+        .and_then(|snapshot| snapshot.first().cloned())
+        .map(|value| expect_object_handle(&value).raw() >= 20_001)
+        .unwrap_or(false)
+}
+
+#[cfg(target_os = "windows")]
 struct BasprojComRefSpec<'a> {
     include: &'a str,
     guid: Option<&'a str>,
@@ -359,8 +378,10 @@ End Sub
 
 #[cfg(target_os = "windows")]
 #[test]
-#[ignore = "requires registered external COM typelib lane (run explicitly on Windows host with OxVba.TestEventServer registered)"]
 fn early_bound_project_executes_registered_testeventserver_ping() {
+    if !registered_testeventserver_available() {
+        return;
+    }
     let manifest = manifest_with_typelib(
         r#"
 Attribute VB_Name = "MainModule"
@@ -379,8 +400,10 @@ End Sub
 
 #[cfg(target_os = "windows")]
 #[test]
-#[ignore = "requires registered external COM typelib lane (run explicitly on Windows host with OxVba.TestEventServer registered)"]
 fn early_bound_project_registered_testeventserver_ping_prefer_vtable_matches_dispatch() {
+    if !registered_testeventserver_available() {
+        return;
+    }
     let manifest = manifest_with_typelib(
         r#"
 Attribute VB_Name = "MainModule"
