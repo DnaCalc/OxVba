@@ -17,8 +17,8 @@ Only the third category requires active open work in the tracker.
 
 | Row | Current truth | Residual disposition | Residual summary | Execution owner |
 |---|---|---|---|---|
-| `LANG-0001` | `implemented-subset` | remaining accepted scope | broader `For Each` semantics still require object-enumerator completion | `bd-cyr.2.1` via `LANG-0002` |
-| `LANG-0002` | `in-progress` | remaining accepted scope | object-enumerator `For Each` breadth remains open | `bd-cyr.2.1` |
+| `LANG-0001` | `implemented-subset` | remaining accepted scope | broader `For Each` semantics still require object-enumerator completion | `bd-cyr.2.3` via `LANG-0002` |
+| `LANG-0002` | `in-progress` | remaining accepted scope | object-enumerator `For Each` breadth remains open beyond the currently proved project-dynamic/imported-collection and imported-COM slices | `bd-cyr.2.3` |
 | `LANG-0003` | `in-progress` | remaining accepted scope | broader default-member semantics and runtime-boundary completion remain open | `bd-cyr.2.2` |
 | `LANG-0004` | `implemented-subset` | remaining accepted scope | broader late-bound default-member dispatch breadth remains open beyond the current one-argument subset | `bd-cyr.2.2` |
 | `COM-0001` | `implemented-subset` | remaining accepted scope | broader late-bound COM invocation and marshalling behavior remains outside the proved scalar/object/array subset | `bd-cyr.3.2` |

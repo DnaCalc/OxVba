@@ -22,7 +22,7 @@ use oxvba_hal::{
     },
     traits::HostServices,
 };
-use oxvba_jit::JitEngine;
+use oxvba_jit::{JitEngine, cranelift};
 use oxvba_runtime::value_tags::EMPTY_TAG;
 use oxvba_runtime::{ObjectHandle, RuntimeValue};
 use oxvba_vm::{Vm, execute_and_snapshot_with_host};
@@ -866,12 +866,29 @@ impl Engine {
             self.jit
                 .compile_function("main")
                 .map_err(|e| PhaseDiagnostic::runtime(e.to_string()))?;
-            return self
-                .jit
-                .execute_and_snapshot_with_host(&compiled.bytecode, self.host_services.clone())
-                .map_err(|e| PhaseDiagnostic::runtime(e.to_string()));
+            if cranelift::supports_bytecode_rtslot(&compiled.bytecode) {
+                if let Ok(values) =
+                    cranelift::execute_bytecode_rtslot(&compiled.bytecode, self.host_services.clone())
+                {
+                    return Ok(values);
+                }
+            }
+            if cranelift::supports_bytecode(&compiled.bytecode)
+                && let Ok(values) = cranelift::execute_bytecode(&compiled.bytecode)
+            {
+                return Ok(values);
+            }
+
+            return self.execute_compiled_project_with_snapshot_vm(&compiled);
         }
 
+        self.execute_compiled_project_with_snapshot_vm(&compiled)
+    }
+
+    fn execute_compiled_project_with_snapshot_vm(
+        &self,
+        compiled: &CompiledProject,
+    ) -> Result<Vec<RuntimeValue>, PhaseDiagnostic> {
         let mut vm = Vm::new(self.host_services.clone());
         vm.set_project_procedure_runtime_metadata(compiled.procedure_runtime_metadata.clone());
         vm.set_project_com_withevents_routes(compiled.project_com_withevents_routes.clone());
