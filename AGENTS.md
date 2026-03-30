@@ -11,6 +11,8 @@ Use `docs/` and `synthesis/` for supporting context and provenance.
 - Follow `OPERATIONS.md` section `3.1 Workset Completion Doctrine` as binding terminology and execution policy.
 - Do not describe partial subsets as `implemented`, `closed`, or `closure`.
 - If parity for the scoped work area is not complete, status remains `in-progress` and the remaining blocker/question must be documented explicitly.
+- For repo project-scope work executed through beads, capability lanes do not close on documentation, audit, rollout, or other support-only bead outcomes alone.
+- If a support bead exposes unfinished capability work, it must leave behind the next delivery bead or delivery-ready path before the lane is considered clean.
 
 ## AutoRun Continuation Rule
 - Active mode is `AutoRun`.

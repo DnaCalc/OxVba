@@ -21,6 +21,7 @@ Every executable bead should identify:
 3. its parent epic,
 4. any required dependency relationship,
 5. for validation/conformance work, the canonical matrix or matrix rows it advances.
+6. whether it is primarily a `delivery` bead or a `support` bead.
 
 ## Outcome Rule
 
@@ -49,6 +50,11 @@ Examples:
 
 If the evidence is not visible, the bead is not ready to close.
 
+Effect rule:
+- `delivery` beads change or prove real behavior in the capability lane.
+- `support` beads improve the path, truth, or organization around the lane.
+- Both are valid bead types, but only `delivery` beads count toward actual capability completion.
+
 ## Traceability Rule
 
 For validation work, record the canonical matrix touched.
@@ -71,6 +77,10 @@ At bead finish, exactly one of these should be true:
 1. the stated outcome and evidence are satisfied, so the bead closes,
 2. the bead uncovered required follow-up or blocking work, and that work is added as new beads before any closure claim.
 
+Additional closure guard:
+- If a `support` bead reveals remaining capability work, it must leave behind the next `delivery` bead or a believable delivery-ready path.
+- Do not let a capability lane terminate on truth repair, documentation cleanup, or rollout alone.
+
 ## Anti-Patterns
 
 Do not:
@@ -78,3 +88,4 @@ Do not:
 - leave required follow-up work only in chat or commit messages,
 - silently widen a bead until it becomes a mini-workset,
 - use a rollout bead as a substitute for real child beads.
+- use support-bead closure as a substitute for delivered behavior.

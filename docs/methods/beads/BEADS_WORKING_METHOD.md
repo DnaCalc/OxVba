@@ -111,6 +111,12 @@ Beads are not meant to be:
 - broad aspirations,
 - or one-line micro-steps for every trivial action.
 
+For OxVba execution, beads are also divided into two practical types:
+- `delivery` beads: implement or prove real behavior in the capability lane,
+- `support` beads: rollout, review, truth repair, documentation alignment, archival, or similar enabling work.
+
+This distinction exists to prevent a capability lane from feeling complete just because its paperwork became more accurate.
+
 ## The Design Reduction Process
 
 When converting a spec into beads, use this sequence.
@@ -189,6 +195,9 @@ That bead is appropriate when:
 - the epic lane is known,
 - but the exact next child beads still need to be laid out carefully.
 
+When choosing between bead candidates, bias toward the fewest beads that still preserve a believable ready path.
+Do not create separate beads for trivial narration or micro-steps that can be absorbed into one honest bounded outcome.
+
 ### Step 5: Add Dependency Structure
 
 Dependencies are what turn beads from a list into an execution graph.
@@ -220,6 +229,11 @@ The intended bead size is:
 - one real unit of progress,
 - usually doable in one focused session,
 - or at least small enough to review clearly at the end of a session.
+
+The size rule is subordinate to the action rule:
+- if one bead can honestly deliver a bounded capability slice, use one bead,
+- only split when the split improves execution honesty or reviewability,
+- avoid bead proliferation that tracks activity more than outcome.
 
 ### Too Large
 
@@ -258,6 +272,34 @@ A bead should map to a unit of work that can be:
 - understood before starting,
 - executed without broad ambiguity,
 - and judged afterward as complete, incomplete, blocked, or split.
+
+For capability work, the important question is:
+- did this bead deliver or prove behavior,
+- or did it only clarify, constrain, or document the path?
+
+Both kinds are useful, but only `delivery` beads move a capability lane toward done.
+
+## Delivery vs Support
+
+Use `delivery` beads for:
+- implementation that changes system behavior,
+- tests or harness work that proves the supported behavior,
+- bounded end-to-end slices where code and proof land together.
+
+Use `support` beads for:
+- rollout,
+- audit/review,
+- truth-surface correction,
+- matrix/doc updates,
+- archive/demotion work,
+- administrative cleanup.
+
+Rules:
+1. Prefer `delivery` beads by default.
+2. Use `support` beads when they make the path clearer or keep the truth honest.
+3. A capability epic must not end on `support` beads alone.
+4. If a `support` bead exposes missing capability work, it should leave behind the next `delivery` bead or delivery-ready path before closing.
+5. Review/audit epics may close on `support` beads alone, because review is their real outcome.
 
 A bead is successful when a reviewer can say:
 - yes, this capability now exists,

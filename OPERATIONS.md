@@ -68,6 +68,20 @@ Binding rules:
 - Workset progress summaries do not substitute for bead closure evidence.
 - A workset may not be described as complete while any required child bead remains open or while any required uncovered follow-up work is still only described narratively.
 
+Bead effect rules:
+- Treat beads as either `delivery` beads or `support` beads.
+- `delivery` beads change or prove system behavior for the capability lane.
+- `support` beads handle rollout, review, truth repair, matrix/doc updates, archival, or similar enabling work.
+- Prefer `delivery` beads by default; use `support` beads only when they clarify execution or preserve truth.
+- Do not multiply beads just to narrate small steps. Prefer the fewest beads that still leave a believable ready path.
+
+Capability closure rules:
+- A capability epic or implementation workset may not close on `support` beads alone.
+- `support` beads may prepare, narrow, or repair a capability lane, but they do not by themselves mean the capability work is done.
+- A capability lane closes only when required `delivery` work for the scoped behavior has landed and the required evidence for that delivered scope exists.
+- Review, audit, doctrine, and other non-capability epics may close on `support` beads alone, because their purpose is review/support rather than behavior delivery.
+- If a `support` bead exposes unfinished capability work, it must create the next `delivery` bead or otherwise leave a believable delivery-ready path before the bead closes.
+
 Rollout rules:
 - Each execution epic should begin with a rollout bead whose job is to create or refresh the next executable bead set for that epic.
 - A rollout bead is complete only when the epic has a believable ready path, not merely when a few ad hoc tasks exist.
@@ -86,6 +100,7 @@ Bead quality contract:
   - parent epic,
   - and, for validation or conformance work, the canonical matrix or matrix rows it advances.
 - Use `docs/methods/beads/BEAD_QUALITY_CONTRACT.md` and `docs/templates/WORKSET_EPIC_BEAD_ROLLOUT_TEMPLATE.md` when creating or refreshing workset rollout.
+- For repo project-scope work, every bead should also make clear whether it is a `delivery` bead or a `support` bead.
 
 Subset-labeling rules:
 - Every validation, coverage, or completion claim must name the supported subset if the full behavior area is not complete.
