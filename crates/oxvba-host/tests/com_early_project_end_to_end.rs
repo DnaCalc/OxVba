@@ -90,6 +90,25 @@ End Sub
 }
 
 #[cfg(target_os = "windows")]
+fn registered_testdispatch_available() -> bool {
+    let manifest = manifest_with_reference(
+        "OxVba",
+        r#"
+Attribute VB_Name = "MainModule"
+Public Sub Main()
+Dim obj
+obj = CreateObject("OxVba.TestDispatch")
+End Sub
+"#,
+    );
+    std::panic::catch_unwind(|| run_project_windows_hosted(&manifest, false))
+        .ok()
+        .and_then(|snapshot| snapshot.first().cloned())
+        .map(|value| expect_object_handle(&value).raw() >= 20_001)
+        .unwrap_or(false)
+}
+
+#[cfg(target_os = "windows")]
 fn registered_testeventserver_available() -> bool {
     let manifest = manifest_with_typelib(
         r#"
@@ -347,7 +366,7 @@ End Sub
 #[cfg(target_os = "windows")]
 #[test]
 fn early_bound_project_registered_scripting_dictionary_member_subset_prefer_vtable_matches_dispatch()
- {
+{
     if !registered_scripting_dictionary_available() {
         return;
     }
@@ -374,6 +393,67 @@ End Sub
     assert!(expect_object_handle(&vtable[0]).raw() >= 20_001);
     assert_eq!(vtable[1], RuntimeValue::I32(1));
     assert_eq!(vtable[2], RuntimeValue::Bool(true));
+}
+
+#[cfg(target_os = "windows")]
+#[test]
+fn early_bound_project_executes_registered_testdispatch_foreach_transport() {
+    if !registered_testdispatch_available() {
+        return;
+    }
+    let manifest = manifest_with_reference(
+        "OxVba",
+        r#"
+Attribute VB_Name = "MainModule"
+Public Sub Main()
+Dim obj
+Dim item
+Dim valueOut
+obj = CreateObject("OxVba.TestDispatch")
+For Each item In obj
+    valueOut = valueOut & CStr(item) & ","
+Next item
+End Sub
+"#,
+    );
+
+    let out = run_project_windows_hosted(&manifest, false);
+    assert!(expect_object_handle(&out[0]).raw() >= 20_001);
+    assert_eq!(
+        out[2],
+        RuntimeValue::String(oxvba_runtime::bstr::BStr("41,42,".to_string())),
+        "registered OxVba.TestDispatch For Each transport should materialize through the runtime lane"
+    );
+}
+
+#[cfg(target_os = "windows")]
+#[test]
+fn early_bound_project_registered_testdispatch_foreach_vm_jit_snapshots_match() {
+    if !registered_testdispatch_available() {
+        return;
+    }
+    let manifest = manifest_with_reference(
+        "OxVba",
+        r#"
+Attribute VB_Name = "MainModule"
+Public Sub Main()
+Dim obj
+Dim item
+Dim valueOut
+obj = CreateObject("OxVba.TestDispatch")
+For Each item In obj
+    valueOut = valueOut & CStr(item) & ","
+Next item
+End Sub
+"#,
+    );
+
+    let vm = run_project_windows_hosted(&manifest, false);
+    let jit = run_project_windows_hosted(&manifest, true);
+    assert_eq!(
+        vm, jit,
+        "VM/JIT snapshots should match for registered OxVba.TestDispatch For Each transport"
+    );
 }
 
 #[cfg(target_os = "windows")]
