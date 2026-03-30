@@ -303,7 +303,6 @@ End Sub
     }
 
     #[test]
-    #[ignore = "requires registered external COM server lane (run via scripts/run-com-testeventserver-marshaling-oracle.ps1)"]
     fn registered_testeventserver_array_argument_supported_subset() {
         if selected_registered_prog_id_flavor() != RegisteredProgIdFlavor::OxvbaTestEventServer {
             eprintln!(
