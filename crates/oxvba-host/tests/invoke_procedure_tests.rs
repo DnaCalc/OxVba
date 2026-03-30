@@ -248,6 +248,54 @@ fn invoke_function_foreach_over_imported_com_newenum_vm_jit_snapshots_match() {
     assert_eq!(vm, RuntimeValue::String(BStr("41,42,".to_string())));
 }
 
+#[cfg(target_os = "windows")]
+fn run_registered_testdispatch_foreach(enable_jit: bool) -> RuntimeValue {
+    let manifest = make_manifest(vec![make_module(
+        "Main",
+        concat!(
+            "Public Function Main() As String\n",
+            "Dim obj\n",
+            "Dim item\n",
+            "Dim valueOut\n",
+            "obj = CreateObject(\"OxVba.TestDispatch\")\n",
+            "For Each item In obj\n",
+            "valueOut = valueOut & CStr(item) & \",\"\n",
+            "Next item\n",
+            "Main = valueOut\n",
+            "End Function\n"
+        ),
+    )]);
+
+    let mut engine = Engine::new(HostConfig {
+        enable_jit,
+        root_object_name: None,
+    });
+    engine.set_host_policy(HostPolicy::interactive_dev());
+    let mut session = engine.compile_and_prepare_session(&manifest).unwrap();
+    engine.invoke_procedure(&mut session, "Main", "Main", &[]).unwrap()
+}
+
+#[cfg(target_os = "windows")]
+#[test]
+fn invoke_function_foreach_over_registered_testdispatch_executes() {
+    let result = run_registered_testdispatch_foreach(false);
+
+    assert_eq!(result, RuntimeValue::String(BStr("41,42,".to_string())));
+}
+
+#[cfg(target_os = "windows")]
+#[test]
+fn invoke_function_foreach_over_registered_testdispatch_vm_jit_snapshots_match() {
+    let vm = run_registered_testdispatch_foreach(false);
+    let jit = run_registered_testdispatch_foreach(true);
+
+    assert_eq!(
+        vm, jit,
+        "VM/JIT snapshots should match for registered OxVba.TestDispatch direct session invocation"
+    );
+    assert_eq!(vm, RuntimeValue::String(BStr("41,42,".to_string())));
+}
+
 // ---------------------------------------------------------------------------
 // Create class instance: missing class returns error
 // ---------------------------------------------------------------------------
