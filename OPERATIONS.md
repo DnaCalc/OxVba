@@ -108,6 +108,18 @@ Subset-labeling rules:
 - Feature names in matrices and status artifacts must be split when different semantic subsets have materially different support states.
 - If a feature row or work item aggregates multiple subsets, the aggregation must not use completion language unless all subsets are complete for the declared scope.
 
+Residual-scope rules:
+- A bounded-slice row is not enough by itself when broader accepted work still remains.
+- Any canonical matrix row marked `implemented-subset`, `in-progress`, or `planned` must make the residual disposition legible as one of:
+  - intentional boundary for the current accepted scope,
+  - external boundary outside OxVba execution ownership,
+  - or remaining accepted scope.
+- If the residual is remaining accepted scope, the repo must also have:
+  - an explicit owning in-progress workset, epic, or residual-scope register entry,
+  - and an open bead path for the remaining delivery work or a rollout bead that creates that delivery path.
+- Documentation-only clarification of a bounded slice does not satisfy residual-scope tracking for remaining accepted work.
+- If no such owner or bead path exists, the residual tracking is incomplete and must be repaired before the area is considered execution-clean.
+
 ### 3.3 External Boundary Ownership Doctrine
 
 Binding architecture rules:

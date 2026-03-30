@@ -64,6 +64,11 @@ Preferred forms:
 2. bead external ref points to the matrix-relevant artifact,
 3. `docs/validation/MATRIX_BEAD_TRACEABILITY_2026-03-29.csv` maps the bead to matrix files or rows.
 
+Residual-scope rule:
+- If a bead advances a bounded-slice matrix row whose broader accepted scope is still unfinished, the bead should also leave behind or point to the owner of that residual scope.
+- An honest bounded slice is not a substitute for the remaining accepted work.
+- If the remaining accepted work has no open delivery path, that gap must be repaired before the lane is considered execution-clean.
+
 ## Rollout Rule
 
 When an epic is new or has drifted:
