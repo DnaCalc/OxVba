@@ -327,6 +327,31 @@ End Sub
     }
 
     #[test]
+    fn dispatchinvoke_positional_default_member_routes_when_identity_is_known() {
+        let source = r#"
+Sub Main()
+Dim obj
+Dim value
+obj = CreateObject("OxVba.TestDispatch")
+value = DispatchInvoke(obj, 0, 19)
+End Sub
+"#;
+
+        let vm = run_windows_host_backed(source, false);
+        let jit = run_windows_host_backed(source, true);
+        assert_eq!(
+            vm, jit,
+            "VM/JIT snapshots diverged on positional default-member path: vm={vm:?} jit={jit:?}"
+        );
+        assert!(expect_object_handle(&vm[0]).raw() >= 20_001);
+        assert_eq!(
+            vm[1],
+            RuntimeValue::I32(19),
+            "positional default-member invoke should route to EchoVariant"
+        );
+    }
+
+    #[test]
     fn dispatchinvoke_accepts_integer_variant_results() {
         let source = r#"
 Sub Main()
