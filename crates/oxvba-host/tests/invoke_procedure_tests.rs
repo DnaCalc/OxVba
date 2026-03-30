@@ -2,8 +2,12 @@
 
 use std::collections::BTreeMap;
 
-use oxvba_compiler::{ModuleAttributes, ModuleKind, ModuleUnit, ProjectKind, ProjectManifest};
+use oxvba_compiler::{
+    ModuleAttributes, ModuleKind, ModuleUnit, ProjectKind, ProjectManifest, ProjectReference,
+    ReferenceKind,
+};
 use oxvba_host::Engine;
+use oxvba_hal::model::HostPolicy;
 use oxvba_runtime::{RuntimeValue, bstr::BStr};
 
 fn make_manifest(modules: Vec<ModuleUnit>) -> ProjectManifest {
@@ -12,6 +16,23 @@ fn make_manifest(modules: Vec<ModuleUnit>) -> ProjectManifest {
         project_kind: ProjectKind::Library,
         modules,
         references: vec![],
+        reference_projects: vec![],
+        conditional_constants: BTreeMap::new(),
+    }
+}
+
+fn make_source_manifest_with_reference(
+    reference_name: &str,
+    modules: Vec<ModuleUnit>,
+) -> ProjectManifest {
+    ProjectManifest {
+        project_name: "TestProj".to_string(),
+        project_kind: ProjectKind::Source,
+        modules,
+        references: vec![ProjectReference {
+            referenced_project_name: reference_name.to_string(),
+            reference_kind: ReferenceKind::TypeLibrary,
+        }],
         reference_projects: vec![],
         conditional_constants: BTreeMap::new(),
     }
@@ -171,6 +192,35 @@ fn invoke_function_foreach_over_project_newenum_array_executes() {
     ]);
 
     let engine = Engine::default();
+    let mut session = engine.compile_and_prepare_session(&manifest).unwrap();
+    let result = engine.invoke_procedure(&mut session, "Main", "Main", &[]).unwrap();
+
+    assert_eq!(result, RuntimeValue::String(BStr("41,42,".to_string())));
+}
+
+#[cfg(target_os = "windows")]
+#[test]
+fn invoke_function_foreach_over_imported_com_newenum_executes() {
+    let manifest = make_source_manifest_with_reference(
+        "OxVba",
+        vec![make_module(
+            "Main",
+            concat!(
+                "Public Function Main() As String\n",
+                "Dim obj As New OxVba.TestDispatch\n",
+                "Dim item\n",
+                "Dim valueOut\n",
+                "For Each item In obj\n",
+                "valueOut = valueOut & CStr(item) & \",\"\n",
+                "Next item\n",
+                "Main = valueOut\n",
+                "End Function\n"
+            ),
+        )],
+    );
+
+    let mut engine = Engine::default();
+    engine.set_host_policy(HostPolicy::interactive_dev());
     let mut session = engine.compile_and_prepare_session(&manifest).unwrap();
     let result = engine.invoke_procedure(&mut session, "Main", "Main", &[]).unwrap();
 
