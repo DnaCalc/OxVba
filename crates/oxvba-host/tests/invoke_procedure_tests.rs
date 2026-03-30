@@ -3,8 +3,8 @@
 use std::collections::BTreeMap;
 
 use oxvba_compiler::{
-    ModuleAttributes, ModuleKind, ModuleUnit, ProjectKind, ProjectManifest, ProjectReference,
-    ReferenceKind,
+    ModuleAttributes, ModuleKind, ModuleUnit, OxBundle, ProjectKind, ProjectManifest,
+    ProjectReference, ReferenceKind, compile_project,
 };
 use oxvba_host::{Engine, HostConfig};
 use oxvba_hal::model::HostPolicy;
@@ -228,6 +228,37 @@ fn run_imported_com_newenum_foreach(enable_jit: bool) -> RuntimeValue {
 }
 
 #[cfg(target_os = "windows")]
+fn run_imported_com_newenum_foreach_bundle(enable_jit: bool) -> RuntimeValue {
+    let manifest = make_source_manifest_with_reference(
+        "OxVba",
+        vec![make_module(
+            "Main",
+            concat!(
+                "Public Function Main() As String\n",
+                "Dim obj As New OxVba.TestDispatch\n",
+                "Dim item\n",
+                "Dim valueOut\n",
+                "For Each item In obj\n",
+                "valueOut = valueOut & CStr(item) & \",\"\n",
+                "Next item\n",
+                "Main = valueOut\n",
+                "End Function\n"
+            ),
+        )],
+    );
+
+    let compiled = compile_project(&manifest).unwrap();
+    let bundle = OxBundle::from_compiled_project(&compiled, &manifest.project_name);
+    let mut engine = Engine::new(HostConfig {
+        enable_jit,
+        root_object_name: None,
+    });
+    engine.set_host_policy(HostPolicy::interactive_dev());
+    let mut session = engine.compile_and_prepare_session_from_bundle(&bundle).unwrap();
+    engine.invoke_procedure(&mut session, "Main", "Main", &[]).unwrap()
+}
+
+#[cfg(target_os = "windows")]
 #[test]
 fn invoke_function_foreach_over_imported_com_newenum_executes() {
     let result = run_imported_com_newenum_foreach(false);
@@ -244,6 +275,19 @@ fn invoke_function_foreach_over_imported_com_newenum_vm_jit_snapshots_match() {
     assert_eq!(
         vm, jit,
         "VM/JIT snapshots should match for imported COM NewEnum direct session invocation"
+    );
+    assert_eq!(vm, RuntimeValue::String(BStr("41,42,".to_string())));
+}
+
+#[cfg(target_os = "windows")]
+#[test]
+fn invoke_function_foreach_over_imported_com_newenum_bundle_vm_jit_snapshots_match() {
+    let vm = run_imported_com_newenum_foreach_bundle(false);
+    let jit = run_imported_com_newenum_foreach_bundle(true);
+
+    assert_eq!(
+        vm, jit,
+        "VM/JIT snapshots should match for imported COM NewEnum bundle session invocation"
     );
     assert_eq!(vm, RuntimeValue::String(BStr("41,42,".to_string())));
 }
@@ -276,6 +320,35 @@ fn run_registered_testdispatch_foreach(enable_jit: bool) -> RuntimeValue {
 }
 
 #[cfg(target_os = "windows")]
+fn run_registered_testdispatch_foreach_bundle(enable_jit: bool) -> RuntimeValue {
+    let manifest = make_manifest(vec![make_module(
+        "Main",
+        concat!(
+            "Public Function Main() As String\n",
+            "Dim obj\n",
+            "Dim item\n",
+            "Dim valueOut\n",
+            "obj = CreateObject(\"OxVba.TestDispatch\")\n",
+            "For Each item In obj\n",
+            "valueOut = valueOut & CStr(item) & \",\"\n",
+            "Next item\n",
+            "Main = valueOut\n",
+            "End Function\n"
+        ),
+    )]);
+
+    let compiled = compile_project(&manifest).unwrap();
+    let bundle = OxBundle::from_compiled_project(&compiled, &manifest.project_name);
+    let mut engine = Engine::new(HostConfig {
+        enable_jit,
+        root_object_name: None,
+    });
+    engine.set_host_policy(HostPolicy::interactive_dev());
+    let mut session = engine.compile_and_prepare_session_from_bundle(&bundle).unwrap();
+    engine.invoke_procedure(&mut session, "Main", "Main", &[]).unwrap()
+}
+
+#[cfg(target_os = "windows")]
 #[test]
 fn invoke_function_foreach_over_registered_testdispatch_executes() {
     let result = run_registered_testdispatch_foreach(false);
@@ -292,6 +365,19 @@ fn invoke_function_foreach_over_registered_testdispatch_vm_jit_snapshots_match()
     assert_eq!(
         vm, jit,
         "VM/JIT snapshots should match for registered OxVba.TestDispatch direct session invocation"
+    );
+    assert_eq!(vm, RuntimeValue::String(BStr("41,42,".to_string())));
+}
+
+#[cfg(target_os = "windows")]
+#[test]
+fn invoke_function_foreach_over_registered_testdispatch_bundle_vm_jit_snapshots_match() {
+    let vm = run_registered_testdispatch_foreach_bundle(false);
+    let jit = run_registered_testdispatch_foreach_bundle(true);
+
+    assert_eq!(
+        vm, jit,
+        "VM/JIT snapshots should match for registered OxVba.TestDispatch bundle session invocation"
     );
     assert_eq!(vm, RuntimeValue::String(BStr("41,42,".to_string())));
 }

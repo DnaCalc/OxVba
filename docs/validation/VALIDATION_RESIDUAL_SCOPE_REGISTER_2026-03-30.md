@@ -17,8 +17,6 @@ Only the third category requires active open work in the tracker.
 
 | Row | Current truth | Residual disposition | Residual summary | Execution owner |
 |---|---|---|---|---|
-| `LANG-0001` | `implemented-subset` | remaining accepted scope | broader `For Each` semantics still require object-enumerator completion | `bd-cyr.2.7` via `LANG-0002` |
-| `LANG-0002` | `in-progress` | remaining accepted scope | object-enumerator `For Each` breadth remains open beyond the currently proved project-dynamic/imported-collection direct/callable/bundle session slices, imported-COM transport, registered `OxVba.TestDispatch` transport/direct-session VM/JIT parity, and loaded Excel-imported direct/bundle session VM/JIT slices | `bd-cyr.2.17` |
 | `LANG-0003` | `implemented-subset` | external boundary | remaining mismatch is bounded to Excel VBIDE import-retention behavior after OxVba proves source-to-export default-member metadata preservation | none required |
 | `LANG-0004` | `implemented-subset` | intentional boundary | current supported row is intentionally bounded to metadata-backed one-visible-argument default-member semantics across direct late-bound and imported early-bound invocation forms, with active compile-time diagnostics for missing/ambiguous/wrong-arity default-member cases | none required |
 | `COM-0001` | `implemented-subset` | remaining accepted scope | broader late-bound COM invocation and marshalling behavior remains outside the proved scalar/object/array subset, after landing the wide-runtime `I64 -> VT_I8` scalar and variant-array normalization slice plus the active registered CreateObject success/repetition, error-shape, and `OxVba.TestEventServer` scalar/object/array/array-return marshaling lanes | `bd-cyr.3.14` |
@@ -33,7 +31,7 @@ Only the third category requires active open work in the tracker.
 | `PH-0005` | `implemented-subset` | intentional boundary | external COM typelib resolution is owned in the COM matrix, not here | none required |
 | `PH-0006` | `implemented-subset` | remaining accepted scope | deeper host lifecycle and Office-style host-project parity remain open | `bd-cyr.4.2` |
 | `PH-0007` | `implemented-subset` | external boundary | residual mismatch is bounded to Excel VBIDE import-retention behavior | none required |
-| `PH-0008` | `in-progress` | remaining accepted scope | imported NewEnum runtime behavior remains open where it depends on broader language/project parity | `bd-cyr.4.2` |
+| `PH-0008` | `implemented-subset` | external boundary | imported NewEnum runtime mismatch is now bounded to Excel VBIDE import-retention behavior after LANG-0002 closes the accepted OxVba execution surface | none required |
 | `PH-0009` | `implemented-subset` | remaining accepted scope | broader host-project lifecycle and execution-environment breadth remain open | `bd-cyr.4.2` |
 | `PH-0010` | `in-progress` | remaining accepted scope | MS-OVBA storage roundtrip/oracle depth remains open | `bd-cyr.4.2` |
 | `LSF-0001` | `in-progress` | remaining accepted scope | language-service feature coverage beyond current syntax/semantic surface remains open | `bd-cyr.5.1` |
