@@ -437,8 +437,15 @@ End Sub
     }
 
     #[test]
-    #[ignore = "requires registered external COM server lane (run via scripts/run-com-registered.ps1)"]
     fn registered_member_not_found_routes_through_resume_next() {
+        if !registered_lane_available() {
+            eprintln!(
+                "registered lane: selected ProgID `{}` is not available in this environment",
+                selected_registered_prog_id()
+            );
+            return;
+        }
+
         let source = format!(
             r#"
 Sub Main()
