@@ -70,6 +70,26 @@ fn expect_object_handle(value: &RuntimeValue) -> ObjectHandle {
 }
 
 #[cfg(target_os = "windows")]
+fn registered_scripting_dictionary_available() -> bool {
+    let manifest = manifest_with_reference(
+        "Scripting",
+        r#"
+Attribute VB_Name = "MainModule"
+Public Sub Main()
+Dim obj As New Scripting.Dictionary
+Dim countValue
+countValue = obj.Count
+End Sub
+"#,
+    );
+    std::panic::catch_unwind(|| run_project_windows_hosted(&manifest, false))
+        .ok()
+        .and_then(|snapshot| snapshot.first().cloned())
+        .map(|value| expect_object_handle(&value).raw() >= 20_001)
+        .unwrap_or(false)
+}
+
+#[cfg(target_os = "windows")]
 struct BasprojComRefSpec<'a> {
     include: &'a str,
     guid: Option<&'a str>,
@@ -257,8 +277,10 @@ End Sub
 
 #[cfg(target_os = "windows")]
 #[test]
-#[ignore = "requires registered external COM typelib lane (run explicitly on Windows host with scrrun available)"]
 fn early_bound_project_executes_registered_scripting_dictionary_anchor() {
+    if !registered_scripting_dictionary_available() {
+        return;
+    }
     let manifest = manifest_with_reference(
         "Scripting",
         r#"
@@ -278,8 +300,10 @@ End Sub
 
 #[cfg(target_os = "windows")]
 #[test]
-#[ignore = "requires registered external COM typelib lane (run explicitly on Windows host with scrrun available)"]
 fn early_bound_project_executes_registered_scripting_dictionary_member_subset() {
+    if !registered_scripting_dictionary_available() {
+        return;
+    }
     let manifest = manifest_with_reference(
         "Scripting",
         r#"
@@ -303,9 +327,11 @@ End Sub
 
 #[cfg(target_os = "windows")]
 #[test]
-#[ignore = "requires registered external COM typelib lane (run explicitly on Windows host with scrrun available)"]
 fn early_bound_project_registered_scripting_dictionary_member_subset_prefer_vtable_matches_dispatch()
  {
+    if !registered_scripting_dictionary_available() {
+        return;
+    }
     let manifest = manifest_with_reference(
         "Scripting",
         r#"
