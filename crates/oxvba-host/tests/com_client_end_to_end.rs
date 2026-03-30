@@ -2356,8 +2356,16 @@ End Sub
 
         let vm = run_windows_host_backed(source, false);
         let jit = run_windows_host_backed(source, true);
-        // BYREF Long returns should be transparently dereferenced now
-        let _ = (vm, jit);
+        assert_eq!(
+            vm, jit,
+            "VM/JIT snapshots diverged on BYREF Long result path: vm={vm:?} jit={jit:?}"
+        );
+        assert!(expect_object_handle(&vm[0]).raw() >= 20_001);
+        assert_eq!(
+            vm[1],
+            RuntimeValue::I32(321),
+            "BYREF Long results should be transparently dereferenced to the VT_I4 carrier value"
+        );
     }
 
     #[test]
@@ -2373,8 +2381,20 @@ End Sub
 
         let vm = run_windows_host_backed(source, false);
         let jit = run_windows_host_backed(source, true);
-        // BYREF Long array returns should be transparently dereferenced now
-        let _ = (vm, jit);
+        assert_eq!(
+            vm, jit,
+            "VM/JIT snapshots diverged on BYREF Long array result path: vm={vm:?} jit={jit:?}"
+        );
+        assert!(expect_object_handle(&vm[0]).raw() >= 20_001);
+        assert_eq!(
+            vm[1],
+            RuntimeValue::ArrayIntent(SafeArray::from_values(vec![
+                RuntimeValue::I32(12),
+                RuntimeValue::I32(-4),
+                RuntimeValue::I32(321),
+            ])),
+            "BYREF Long array results should be transparently dereferenced to the VT_ARRAY|VT_I4 carrier values"
+        );
     }
 
     #[test]

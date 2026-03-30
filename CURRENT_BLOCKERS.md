@@ -78,6 +78,20 @@ Run context: active parity/compliance execution plus in-progress feature worklis
   | VT_I8     | I32 or I64     | proved-exec  |
   | VT_UI1..2 | I32            | proved-exec  |
   | VT_UI4    | I32 or I64     | proved-exec  |
+
+### BLK-COM-TYPELIB-REALHOST-001: Imported `Scripting.FileSystemObject` early-bind widening is not yet deterministic
+- Impact:
+  - Blocks closure of the broader real-library activation authority slice in `COM-0004`.
+  - Keeps `bd-cyr.3.14` from closing as a full COM residual sweep.
+- Current state:
+  - Existing `Scripting.Dictionary` early-bound activation/member and dispatch-vs-vtable subset is green.
+  - Attempted widening to `Dim obj As New Scripting.FileSystemObject` with deterministic string helpers (`GetExtensionName`, `GetBaseName`) exposed two deeper imported-typelib issues in sequence:
+    - initial qualifier/activation handling collapsed the `scrrun.dll` library onto the `Scripting.Dictionary` special-case,
+    - after correcting that exploratory path, the live typelib metadata route still reports `BIND-E-TYPELIB-MEMBER-AMBIGUOUS` for `scripting.filesystemobject.GetExtensionName`.
+- Exact unblocking steps:
+  - inspect imported typelib member-shape resolution for multi-class `scrrun.dll` metadata,
+  - make member selection deterministic for `Scripting.FileSystemObject` (or explicitly bound and exclude it),
+  - then re-run the early-bound `FileSystemObject` dispatch/vtable probes and update `COM-0004`.
   | VT_UI8    | I32 or I64     | proved-exec  |
   | VT_INT    | I32            | proved-exec  |
   | VT_UINT   | I32 or I64     | proved-exec  |
