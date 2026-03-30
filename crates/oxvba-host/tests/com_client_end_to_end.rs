@@ -1655,8 +1655,8 @@ End Sub
     }
 
     #[test]
-    fn dispatchinvoke_runtime_string_value_and_default_member_routes_are_deterministic() {
-        let source = r#"
+fn dispatchinvoke_runtime_string_value_and_default_member_routes_are_deterministic() {
+    let source = r#"
 Sub Main()
 Dim obj
 Dim valueName
@@ -1664,12 +1664,14 @@ Dim defaultName
 Dim setValueResult
 Dim valueViaName
 Dim defaultViaName
+Dim defaultViaPositional
 obj = CreateObject("OxVba.TestDispatch")
 valueName = DispatchInvoke(obj, "ReturnValueMemberName")
 defaultName = DispatchInvoke(obj, "ReturnDefaultMemberName")
 setValueResult = DispatchInvoke(obj, "SetValue", 12)
 valueViaName = DispatchInvoke(obj, valueName)
 defaultViaName = DispatchInvoke(obj, defaultName, value := 19)
+defaultViaPositional = DispatchInvoke(obj, defaultName, 19)
 End Sub
 "#;
 
@@ -1704,6 +1706,11 @@ End Sub
             vm[5],
             RuntimeValue::I32(19),
             "runtime string default-member name should execute metadata-backed named dispatch"
+        );
+        assert_eq!(
+            vm[6],
+            RuntimeValue::I32(19),
+            "runtime string default-member name should also execute metadata-backed positional dispatch"
         );
     }
 

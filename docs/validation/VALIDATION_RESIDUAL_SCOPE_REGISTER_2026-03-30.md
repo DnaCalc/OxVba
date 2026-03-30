@@ -20,7 +20,7 @@ Only the third category requires active open work in the tracker.
 | `LANG-0001` | `implemented-subset` | remaining accepted scope | broader `For Each` semantics still require object-enumerator completion | `bd-cyr.2.5` via `LANG-0002` |
 | `LANG-0002` | `in-progress` | remaining accepted scope | object-enumerator `For Each` breadth remains open beyond the currently proved project-dynamic/imported-collection, imported-COM, and direct session-invocation slices | `bd-cyr.2.5` |
 | `LANG-0003` | `implemented-subset` | external boundary | remaining mismatch is bounded to Excel VBIDE import-retention behavior after OxVba proves source-to-export default-member metadata preservation | none required |
-| `LANG-0004` | `implemented-subset` | remaining accepted scope | broader late-bound default-member dispatch breadth remains open beyond the current one-visible-argument named/positional subset | `bd-cyr.2.4` |
+| `LANG-0004` | `implemented-subset` | remaining accepted scope | broader late-bound default-member dispatch breadth remains open beyond the current one-visible-argument named/positional and runtime-string selector subset | `bd-cyr.2.6` |
 | `COM-0001` | `implemented-subset` | remaining accepted scope | broader late-bound COM invocation and marshalling behavior remains outside the proved scalar/object/array subset, after landing the wide-runtime `I64 -> VT_I8` scalar and variant-array normalization slice | `bd-cyr.3.4` |
 | `COM-0003` | `verified` | remaining accepted scope | broader imported typelib behavior remains open under the current supported subset boundary | `bd-cyr.3.5` |
 | `COM-0004` | `verified` | remaining accepted scope | broader real-library activation authority remains open beyond the current registered-host subset | `bd-cyr.3.5` |
