@@ -158,7 +158,6 @@ fn basproj_exe_honors_explicit_entry_point_over_sub_main_fallback() {
 }
 
 #[test]
-#[ignore = "known PH-0002 residual: project-hosted helper procedures do not yet share module-scope state with the rewritten top-level mainline"]
 fn basproj_exe_top_level_mainline_shares_option_private_module_state_with_helper_procedures() {
     let temp_root = unique_temp_dir("oxvba_host_top_level_option_private");
     std::fs::create_dir_all(&temp_root).expect("create temp project root");

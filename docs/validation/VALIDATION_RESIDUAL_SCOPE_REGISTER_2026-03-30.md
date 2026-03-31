@@ -25,7 +25,7 @@ Only the third category requires active open work in the tracker.
 | `COM-0005` | `verified` | intentional boundary | current supported row is intentionally bounded to the reviewed mixed-server dispatch/vtable strategy subset | none required |
 | `COM-0006` | `verified` | intentional boundary | current supported row is intentionally bounded to the file-backed TestEventServer family, including loaded `.basproj` ordering, unresolved-diagnostic, and broken-first/later-valid tolerance coverage | none required |
 | `PH-0001` | `implemented-subset` | intentional boundary | startup-object/forms/designer-backed startup intentionally excluded from current strict lane | none required |
-| `PH-0002` | `implemented-subset` | remaining accepted scope | host-observable top-level basproj/VBP and mixed-declaration lanes are now proved; remaining accepted scope is the project-hosted cross-procedure shared module-state bug where helper procedures do not share rewritten-mainline module state (`pre=41`, `bump=1`, `post=41`) | `bd-cyr.4.2` |
+| `PH-0002` | `implemented-subset` | intentional boundary | host-observable top-level basproj/VBP mainline, mixed-declaration preservation, and project-hosted helper-procedure shared module-state lanes are now proved; remaining exclusions stay bounded to the documented program/script-only subset boundary | none required |
 | `PH-0003` | `implemented-subset` | intentional boundary | current supported discovery lane is explicitly bounded to strict deterministic discovery | none required |
 | `PH-0004` | `implemented-subset` | intentional boundary | current VBP-S0 subset intentionally excludes designer/startup-object surfaces | none required |
 | `PH-0005` | `implemented-subset` | intentional boundary | external COM typelib resolution is owned in the COM matrix, not here | none required |
@@ -34,8 +34,8 @@ Only the third category requires active open work in the tracker.
 | `PH-0008` | `implemented-subset` | external boundary | imported NewEnum runtime mismatch is now bounded to Excel VBIDE import-retention behavior after LANG-0002 closes the accepted OxVba execution surface | none required |
 | `PH-0009` | `implemented-subset` | remaining accepted scope | broader host-project lifecycle and execution-environment breadth remain open | `bd-cyr.4.2` |
 | `PH-0010` | `in-progress` | remaining accepted scope | MS-OVBA storage roundtrip/oracle depth remains open | `bd-cyr.4.2` |
-| `LSF-0001` | `in-progress` | remaining accepted scope | bounded internal language-service surface is green (syntax tree, semantic snapshot, workspace invalidation, diagnostics, symbols, completions, signature help, go-to-definition, references, hover), but broader service coverage against the executable feature inventory remains open | `bd-cyr.5.1` |
-| `LSF-0002` | `in-progress` | remaining accepted scope | formal language/compiler representation remains partial beyond the current Lean scaffold and obligation/deferred-gate registry | `bd-cyr.5.1` |
+| `LSF-0001` | `in-progress` | intentional boundary | bounded internal language-service surface is green (syntax tree, semantic snapshot, workspace invalidation, diagnostics, symbols, completions, signature help, go-to-definition, references, hover); this row intentionally records the current internal service-surface inventory rather than full LSP parity or feature-complete language-service coverage | none required |
+| `LSF-0002` | `in-progress` | intentional boundary | current formal language/compiler representation remains intentionally bounded to the Lean scaffold plus obligation/deferred-gate registry, without claiming proof closure or full representation coverage | none required |
 
 ## 3. Notes
 

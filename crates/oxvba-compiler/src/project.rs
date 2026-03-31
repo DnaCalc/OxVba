@@ -149,6 +149,12 @@ struct ProjectedTypeLibReferenceProvenance {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+struct ModuleStateBindings {
+    owner_expr: String,
+    field_tokens: BTreeMap<String, i32>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ProjectManifest {
     pub project_name: String,
     pub project_kind: ProjectKind,
@@ -2455,8 +2461,8 @@ fn lower_module_source_module_aware(
     let mut withevents_bindings = BTreeSet::<String>::new();
     let (module_shadowed_identifiers, shadowed_identifiers_by_proc) =
         collect_module_shadowed_identifiers(module);
-    let class_state_bindings =
-        collect_class_state_bindings(module, current_project, &current_module);
+    let module_state_bindings =
+        collect_module_state_bindings(module, current_project, &current_module);
     let source_lines = module_source_lines_with_class_terminate_cleanup(module);
     for line in &source_lines {
         record_internal_class_object_local(
@@ -2519,25 +2525,25 @@ fn lower_module_source_module_aware(
             )?;
             let expanded_line = rewrite_internal_class_collection_member_calls(
                 &expanded_line,
-                &class_state_bindings,
+                &module_state_bindings,
                 &imported_collection_newenum_fields,
             )?;
             let expanded_line = rewrite_internal_class_collection_newenum_read_assignment(
                 &expanded_line,
-                &class_state_bindings,
+                &module_state_bindings,
                 &imported_collection_newenum_fields,
             );
             let expanded_line = rewrite_internal_class_imported_collection_activation(
                 &expanded_line,
-                &class_state_bindings,
+                &module_state_bindings,
                 &imported_collection_newenum_fields,
             );
             let state_assigned =
-                rewrite_internal_class_state_assignment(&expanded_line, &class_state_bindings);
+                rewrite_internal_class_state_assignment(&expanded_line, &module_state_bindings);
             let expanded_line = if state_assigned != expanded_line {
                 state_assigned
             } else {
-                rewrite_internal_class_state_reads(&state_assigned, &class_state_bindings)
+                rewrite_internal_class_state_reads(&state_assigned, &module_state_bindings)
             };
             let expanded_line = rewrite_internal_class_default_member_read_assignment(
                 &expanded_line,
@@ -4889,16 +4895,25 @@ fn rewrite_internal_class_default_member_read_assignment(
         lowered_args.join(", ")
     ))
 }
-fn collect_class_state_bindings(
+fn collect_module_state_bindings(
     module: &ModuleUnit,
     current_project: &str,
     current_module: &str,
-) -> BTreeMap<String, i32> {
-    if module.module_kind != ModuleKind::Class {
-        return BTreeMap::new();
-    }
+) -> ModuleStateBindings {
+    let owner_expr = match module.module_kind {
+        ModuleKind::Class => "__oxvba_this_instance".to_string(),
+        ModuleKind::Procedural => {
+            procedural_module_state_owner_token(current_project, current_module).to_string()
+        }
+        _ => {
+            return ModuleStateBindings {
+                owner_expr: String::new(),
+                field_tokens: BTreeMap::new(),
+            };
+        }
+    };
 
-    let mut bindings = BTreeMap::new();
+    let mut field_tokens = BTreeMap::new();
     let mut in_procedure = false;
     for line in module.source.lines() {
         let normalized = normalize_visibility_prefixed_procedure_signature(line);
@@ -4915,13 +4930,16 @@ fn collect_class_state_bindings(
             continue;
         }
         for field_name in parse_class_state_field_names(line) {
-            bindings.insert(
+            field_tokens.insert(
                 normalize_identifier(&field_name),
                 class_state_binding_token(current_project, current_module, &field_name),
             );
         }
     }
-    bindings
+    ModuleStateBindings {
+        owner_expr,
+        field_tokens,
+    }
 }
 
 fn collect_internal_class_imported_collection_newenum_fields(
@@ -5139,9 +5157,9 @@ fn extract_signature_return_type_name(text: &str) -> Option<String> {
 
 fn rewrite_internal_class_state_assignment(
     line: &str,
-    class_state_bindings: &BTreeMap<String, i32>,
+    module_state_bindings: &ModuleStateBindings,
 ) -> String {
-    if class_state_bindings.is_empty() || class_state_line_is_non_executable(line) {
+    if module_state_bindings.field_tokens.is_empty() || class_state_line_is_non_executable(line) {
         return line.to_string();
     }
     let trimmed = line.trim_start();
@@ -5155,14 +5173,19 @@ fn rewrite_internal_class_state_assignment(
         return line.to_string();
     }
     let normalized_lhs = normalize_identifier(lhs);
-    let Some(binding_token) = class_state_bindings.get(&normalized_lhs).copied() else {
+    let Some(binding_token) = module_state_bindings
+        .field_tokens
+        .get(&normalized_lhs)
+        .copied()
+    else {
         return line.to_string();
     };
-    let rewritten_rhs = rewrite_internal_class_state_expression_reads(rhs, class_state_bindings);
+    let rewritten_rhs = rewrite_internal_class_state_expression_reads(rhs, module_state_bindings);
     format!(
-        "{}{} = __oxvba_withevents_set(__oxvba_this_instance, {}, {})",
+        "{}{} = __oxvba_withevents_set({}, {}, {})",
         &line[..leading],
         lhs,
+        module_state_bindings.owner_expr,
         binding_token,
         rewritten_rhs
     )
@@ -5170,10 +5193,10 @@ fn rewrite_internal_class_state_assignment(
 
 fn rewrite_internal_class_collection_member_calls(
     line: &str,
-    class_state_bindings: &BTreeMap<String, i32>,
+    module_state_bindings: &ModuleStateBindings,
     imported_collection_newenum_fields: &BTreeSet<String>,
 ) -> Result<String, ProjectCompileError> {
-    if class_state_bindings.is_empty()
+    if module_state_bindings.field_tokens.is_empty()
         || imported_collection_newenum_fields.is_empty()
         || class_state_line_is_non_executable(line)
     {
@@ -5200,7 +5223,11 @@ fn rewrite_internal_class_collection_member_calls(
     if !imported_collection_newenum_fields.contains(&normalized_receiver) {
         return Ok(line.to_string());
     }
-    let Some(binding_token) = class_state_bindings.get(&normalized_receiver).copied() else {
+    let Some(binding_token) = module_state_bindings
+        .field_tokens
+        .get(&normalized_receiver)
+        .copied()
+    else {
         return Ok(line.to_string());
     };
     let member_expr = payload[dot_idx + 1..].trim();
@@ -5239,9 +5266,10 @@ fn rewrite_internal_class_collection_member_calls(
     }
 
     Ok(format!(
-        "{}{} = __oxvba_array_append(__oxvba_withevents_get(__oxvba_this_instance, {}), {})",
+        "{}{} = __oxvba_array_append(__oxvba_withevents_get({}, {}), {})",
         &line[..leading],
         receiver,
+        module_state_bindings.owner_expr,
         binding_token,
         args[0].trim()
     ))
@@ -5249,10 +5277,10 @@ fn rewrite_internal_class_collection_member_calls(
 
 fn rewrite_internal_class_collection_newenum_read_assignment(
     line: &str,
-    class_state_bindings: &BTreeMap<String, i32>,
+    module_state_bindings: &ModuleStateBindings,
     imported_collection_newenum_fields: &BTreeSet<String>,
 ) -> String {
-    if class_state_bindings.is_empty()
+    if module_state_bindings.field_tokens.is_empty()
         || imported_collection_newenum_fields.is_empty()
         || class_state_line_is_non_executable(line)
     {
@@ -5284,7 +5312,11 @@ fn rewrite_internal_class_collection_newenum_read_assignment(
     if !imported_collection_newenum_fields.contains(&normalized_receiver) {
         return line.to_string();
     }
-    let Some(binding_token) = class_state_bindings.get(&normalized_receiver).copied() else {
+    let Some(binding_token) = module_state_bindings
+        .field_tokens
+        .get(&normalized_receiver)
+        .copied()
+    else {
         return line.to_string();
     };
     let member_expr = rhs[dot_idx + 1..].trim();
@@ -5295,19 +5327,22 @@ fn rewrite_internal_class_collection_newenum_read_assignment(
     }
 
     format!(
-        "{}{} = __oxvba_withevents_get(__oxvba_this_instance, {})",
+        "{}{} = __oxvba_withevents_get({}, {})",
         &line[..leading],
         lhs,
+        module_state_bindings.owner_expr,
         binding_token
     )
 }
 
 fn rewrite_internal_class_imported_collection_activation(
     line: &str,
-    class_state_bindings: &BTreeMap<String, i32>,
+    module_state_bindings: &ModuleStateBindings,
     imported_collection_newenum_fields: &BTreeSet<String>,
 ) -> String {
-    if class_state_bindings.is_empty() || imported_collection_newenum_fields.is_empty() {
+    if module_state_bindings.field_tokens.is_empty()
+        || imported_collection_newenum_fields.is_empty()
+    {
         return line.to_string();
     }
 
@@ -5325,7 +5360,9 @@ fn rewrite_internal_class_imported_collection_activation(
     let rhs = payload[eq_idx + 1..].trim();
     let normalized_lhs = normalize_identifier(lhs);
     if !imported_collection_newenum_fields.contains(&normalized_lhs)
-        || !class_state_bindings.contains_key(&normalized_lhs)
+        || !module_state_bindings
+            .field_tokens
+            .contains_key(&normalized_lhs)
         || !rhs
             .trim_start()
             .to_ascii_lowercase()
@@ -5339,23 +5376,23 @@ fn rewrite_internal_class_imported_collection_activation(
 
 fn rewrite_internal_class_state_reads(
     line: &str,
-    class_state_bindings: &BTreeMap<String, i32>,
+    module_state_bindings: &ModuleStateBindings,
 ) -> String {
-    if class_state_bindings.is_empty() || class_state_line_is_non_executable(line) {
+    if module_state_bindings.field_tokens.is_empty() || class_state_line_is_non_executable(line) {
         return line.to_string();
     }
-    rewrite_internal_class_state_expression_reads(line, class_state_bindings)
+    rewrite_internal_class_state_expression_reads(line, module_state_bindings)
 }
 
 fn rewrite_internal_class_state_expression_reads(
     text: &str,
-    class_state_bindings: &BTreeMap<String, i32>,
+    module_state_bindings: &ModuleStateBindings,
 ) -> String {
     let mut rewritten = text.to_string();
-    for (field_name, binding_token) in class_state_bindings {
+    for (field_name, binding_token) in &module_state_bindings.field_tokens {
         let replacement = format!(
-            "__oxvba_withevents_get(__oxvba_this_instance, {})",
-            binding_token
+            "__oxvba_withevents_get({}, {})",
+            module_state_bindings.owner_expr, binding_token
         );
         rewritten = rewrite_bare_identifier(&rewritten, field_name, &replacement);
     }
@@ -5390,6 +5427,21 @@ fn class_state_binding_token(project: &str, module: &str, field_name: &str) -> i
         normalize_identifier(project),
         normalize_identifier(module),
         normalize_identifier(field_name)
+    );
+    for byte in key.bytes() {
+        hash ^= byte as u32;
+        hash = hash.wrapping_mul(16_777_619);
+    }
+    let signed = (hash & 0x7fff_ffff) as i32;
+    if signed == 0 { 1 } else { signed }
+}
+
+fn procedural_module_state_owner_token(project: &str, module: &str) -> i32 {
+    let mut hash: u32 = 2_166_136_261;
+    let key = format!(
+        "module-state|{}|{}",
+        normalize_identifier(project),
+        normalize_identifier(module)
     );
     for byte in key.bytes() {
         hash ^= byte as u32;
@@ -6580,8 +6632,8 @@ fn rewrite_module_source(
     dynamic_instance_bindings: &mut Vec<ProjectDynamicInstanceBindingDraft>,
 ) -> Result<(String, BTreeMap<String, BTreeSet<String>>), ProjectCompileError> {
     let current_module = normalize_identifier(&module.module_name);
-    let class_state_bindings =
-        collect_class_state_bindings(module, current_project, &current_module);
+    let module_state_bindings =
+        collect_module_state_bindings(module, current_project, &current_module);
     let imported_collection_newenum_fields =
         collect_internal_class_imported_collection_newenum_fields(module);
     let mut out = Vec::new();
@@ -6655,17 +6707,17 @@ fn rewrite_module_source(
             )?;
             let expanded_line = rewrite_internal_class_collection_member_calls(
                 &expanded_line,
-                &class_state_bindings,
+                &module_state_bindings,
                 &imported_collection_newenum_fields,
             )?;
             let expanded_line = rewrite_internal_class_collection_newenum_read_assignment(
                 &expanded_line,
-                &class_state_bindings,
+                &module_state_bindings,
                 &imported_collection_newenum_fields,
             );
             let expanded_line = rewrite_internal_class_imported_collection_activation(
                 &expanded_line,
-                &class_state_bindings,
+                &module_state_bindings,
                 &imported_collection_newenum_fields,
             );
             let expanded_line = rewrite_internal_class_default_member_read_assignment(
@@ -6677,6 +6729,13 @@ fn rewrite_module_source(
                 &internal_class_bindings,
                 &shadowed_identifiers,
             )?;
+            let state_assigned =
+                rewrite_internal_class_state_assignment(&expanded_line, &module_state_bindings);
+            let expanded_line = if state_assigned != expanded_line {
+                state_assigned
+            } else {
+                rewrite_internal_class_state_reads(&state_assigned, &module_state_bindings)
+            };
             let expanded_line = rewrite_internal_class_property_reads(
                 &expanded_line,
                 active_project,
@@ -7593,14 +7652,13 @@ fn normalize_identifier(name: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::{
-        ExportKind, ModuleAttributes, ModuleKind, ProjectComWithEventsRoute, ProjectCompileError,
-        ProjectEventDispatchBinding, ProjectKind, ProjectLoweringStrategy, ProjectManifest,
-        ProjectReference, ReferenceKind, ReferencedProjectManifest,
-        PROJECTED_TYPELIB_REFERENCE_MARKER, TYPELIB_BINDING_DIAGNOSTIC_MODULE_NAME,
-        compile_project, compile_project_with_strategy, expand_bound_source_line,
-        module_unit_from_source, project_imported_typelib_reference,
-        projected_typelib_reference_provenance, validate_compiled_project_contract,
-        withevents_binding_token,
+        ExportKind, ModuleAttributes, ModuleKind, PROJECTED_TYPELIB_REFERENCE_MARKER,
+        ProjectComWithEventsRoute, ProjectCompileError, ProjectEventDispatchBinding, ProjectKind,
+        ProjectLoweringStrategy, ProjectManifest, ProjectReference, ReferenceKind,
+        ReferencedProjectManifest, TYPELIB_BINDING_DIAGNOSTIC_MODULE_NAME, compile_project,
+        compile_project_with_strategy, expand_bound_source_line, module_unit_from_source,
+        project_imported_typelib_reference, projected_typelib_reference_provenance,
+        validate_compiled_project_contract, withevents_binding_token,
     };
     use std::collections::{BTreeMap, BTreeSet};
 
