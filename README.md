@@ -48,7 +48,21 @@ The core user model is:
 
 ## Installation
 
-OxVBA is currently source-build-first.
+OxVBA can be used either from a prebuilt Windows release or by building from source.
+
+### Option 1: Windows x64 release
+
+Download the latest Windows x64 release zip from GitHub Releases, unzip it, and use:
+
+```powershell
+.\oxvba.exe run hello.bas
+```
+
+The release zip is intended to run with no Rust toolchain or other developer dependencies installed. It includes:
+- `oxvba.exe`: the main CLI
+- `oxvba-run.exe`: the `.oxb` bundle launcher
+
+### Option 2: build from source without installing
 
 ### Prerequisites
 
@@ -56,14 +70,14 @@ OxVBA is currently source-build-first.
 - Git
 - PowerShell on Windows for repo scripts
 
-### Get the repo
+#### Get the repo
 
 ```powershell
 git clone https://github.com/DnaCalc/OxVba.git
 cd OxVba
 ```
 
-### Option 1: use the CLI without installing it
+#### Use the CLI without installing it
 
 ```powershell
 cargo run -p oxvba-cli -- run hello.bas
@@ -71,7 +85,7 @@ cargo run -p oxvba-cli -- run hello.bas
 
 This is the safest way to evaluate the repo because it always uses the checked-out source.
 
-### Option 2: install the CLI from the repo
+### Option 3: install the CLI from the repo
 
 ```powershell
 cargo install --path crates/oxvba-cli
@@ -80,10 +94,12 @@ cargo install --path crates/oxvba-cli
 After that, use:
 
 ```powershell
-oxvba run hello.bas
+oxvba-cli run hello.bas
 ```
 
-In the rest of this README, commands are shown as `oxvba ...`. If you have not installed the CLI, replace that with:
+In the rest of this README, commands are shown as `oxvba ...` for readability. If you are running from source or a source-built install today, replace that with `oxvba-cli ...`.
+
+If you have not installed the CLI at all, replace it with:
 
 ```powershell
 cargo run -p oxvba-cli -- ...
@@ -94,8 +110,6 @@ cargo run -p oxvba-cli -- ...
 Create a minimal file:
 
 ```vb
-Option Explicit
-
 Print "Hello from OxVBA"
 ```
 
@@ -143,8 +157,6 @@ Practical rule:
 `hello.bas`
 
 ```vb
-Option Explicit
-
 Print "Hello from OxVBA"
 ```
 
@@ -171,8 +183,6 @@ math-tool/
 `Main.bas`
 
 ```vb
-Option Explicit
-
 Dim total As Long
 total = MathHelpers.Add(20, 22)
 Print "total=" & CStr(total)
@@ -181,7 +191,6 @@ Print "total=" & CStr(total)
 `MathHelpers.bas`
 
 ```vb
-Attribute VB_Name = "MathHelpers"
 Option Explicit
 
 Public Function Add(ByVal x As Long, ByVal y As Long) As Long
@@ -199,6 +208,18 @@ Convention mode:
 - loads `.bas` and `.cls` files from the directory
 - uses the directory name as the project name
 - applies the normal startup ladder for executable runs
+
+Notes about the source text:
+- `Option Explicit` is useful when you want undeclared-variable checking. OxVBA supports it, but you do not need it in every file.
+- `Attribute VB_Name` is usually not needed when the filename already gives the intended module name. For `MathHelpers.bas`, the module name is already `MathHelpers`.
+
+Add `Attribute VB_Name` when the logical module identity must be explicit in the file text itself, for example when preserving a legacy imported module name:
+
+```vb
+Attribute VB_Name = "LegacyPricing"
+```
+
+That is most relevant for import/export fidelity and cases where source text is being moved independently of the original filename.
 
 ### 3. Canonical project file: `.basproj`
 
@@ -271,8 +292,6 @@ oxvba build .\finance-tools
 `Main.bas`
 
 ```vb
-Option Explicit
-
 Public Sub Main()
     Dim fs As Scripting.FileSystemObject
     Set fs = New Scripting.FileSystemObject
@@ -389,8 +408,6 @@ OxVBA supports top-level executable statements in program/script lanes.
 Example:
 
 ```vb
-Option Explicit
-
 Dim x As Long
 x = 41
 Call Bump(x)
@@ -449,6 +466,17 @@ That rejection is intentional. It keeps non-mainline outputs deterministic rathe
 Practical rule today:
 - `Exe` is the main program/script lane
 - `Library`, `Addin`, `ComServer`, and `ComExe` are valid project shapes, but they are more conservative execution lanes and currently reject top-level executable statements
+
+### What `OutputType=Exe` means today
+
+`OutputType=Exe` means "this project is an executable/program-style OxVBA project." In practice that controls:
+- startup resolution
+- whether top-level executable statements are allowed
+- the mainline execution rules used by `run-project` and `build`
+
+It does not currently mean that `oxvba build` emits a native Windows PE `.exe`.
+
+The stable build artifact today is an `.oxb` bundle. That bundle is executed by OxVBA tooling, typically through `oxvba-run <bundle.oxb>`.
 
 ### Module item types
 
@@ -633,6 +661,23 @@ oxvba build .\FinanceTools.basproj
 oxvba build . -o .\dist\FinanceTools.oxb
 ```
 
+### Bundles and `.oxb`
+
+An `.oxb` file is OxVBA's compiled bundle artifact. It packages the compiled program plus the metadata OxVBA needs to execute it deterministically.
+
+Typical workflow:
+
+```powershell
+oxvba build .\demo-app -o .\dist\DemoApp.oxb
+oxvba-run .\dist\DemoApp.oxb
+```
+
+Important practical points:
+- `.oxb` is the current stable compiled output format
+- it is not a source archive; it is the compiled bundle you run
+- running an `.oxb` bundle does not require Rust if you use the prebuilt Windows release binaries
+- building OxVBA itself from source still requires Rust
+
 ### `oxvba compile <input>`
 
 Compiles a single source file directly into an `.oxb` bundle without project discovery.
@@ -781,7 +826,8 @@ oxvba run-project .\legacy\Project1.basproj
 4. bundle-oriented workflow:
 
 ```powershell
-oxvba build .\demo-app
+oxvba build .\demo-app -o .\dist\DemoApp.oxb
+oxvba-run .\dist\DemoApp.oxb
 ```
 
 ## Verification
