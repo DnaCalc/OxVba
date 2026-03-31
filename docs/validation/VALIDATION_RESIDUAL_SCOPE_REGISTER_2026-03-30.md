@@ -29,11 +29,11 @@ Only the third category requires active open work in the tracker.
 | `PH-0003` | `implemented-subset` | intentional boundary | current supported discovery lane is explicitly bounded to strict deterministic discovery | none required |
 | `PH-0004` | `implemented-subset` | intentional boundary | current VBP-S0 subset intentionally excludes designer/startup-object surfaces | none required |
 | `PH-0005` | `implemented-subset` | intentional boundary | external COM typelib resolution is owned in the COM matrix, not here | none required |
-| `PH-0006` | `implemented-subset` | remaining accepted scope | deeper host lifecycle and Office-style host-project parity remain open | `bd-cyr.4.2` |
+| `PH-0006` | `implemented-subset` | intentional boundary | current supported row is intentionally bounded to host-module scaffolds and extension-module project shape; deeper host lifecycle and Office-style host-project parity are outside this row's accepted subset | none required |
 | `PH-0007` | `implemented-subset` | external boundary | residual mismatch is bounded to Excel VBIDE import-retention behavior | none required |
 | `PH-0008` | `implemented-subset` | external boundary | imported NewEnum runtime mismatch is now bounded to Excel VBIDE import-retention behavior after LANG-0002 closes the accepted OxVba execution surface | none required |
-| `PH-0009` | `implemented-subset` | remaining accepted scope | broader host-project lifecycle and execution-environment breadth remain open | `bd-cyr.4.2` |
-| `PH-0010` | `in-progress` | remaining accepted scope | MS-OVBA storage roundtrip/oracle depth remains open | `bd-cyr.4.2` |
+| `PH-0009` | `implemented-subset` | intentional boundary | current supported row is intentionally bounded to deterministic policy-denial plus Windows host-backed `interactive_dev` `Shell`/`Dir`/`Environ` behavior; broader host-project lifecycle stays outside this row | none required |
+| `PH-0010` | `in-progress` | external boundary | supported `.basproj` / VBP adapter roundtrip is locally evidenced and the current oracle surface is registered, but broader MS-OVBA parity is blocked by the external Foundation extraction-depth gap tracked by `ODG-042` | none required |
 | `LSF-0001` | `in-progress` | intentional boundary | bounded internal language-service surface is green (syntax tree, semantic snapshot, workspace invalidation, diagnostics, symbols, completions, signature help, go-to-definition, references, hover); this row intentionally records the current internal service-surface inventory rather than full LSP parity or feature-complete language-service coverage | none required |
 | `LSF-0002` | `in-progress` | intentional boundary | current formal language/compiler representation remains intentionally bounded to the Lean scaffold plus obligation/deferred-gate registry, without claiming proof closure or full representation coverage | none required |
 
