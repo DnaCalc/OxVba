@@ -13,6 +13,7 @@ pub use project::{
     TypeLibraryBindingRecord, TypeLibraryBindingStatus, TypeLibraryCatalogEntry,
 };
 pub use runner::{
-    PolicyOverrides, ResolvedRunnerBootstrap, RunnerBootstrapOptions, RuntimeProfileId,
-    resolve_runner_bootstrap,
+    PolicyOverrides, ResolvedRunnerBootstrap, RunnerBootstrapFallbacks,
+    RunnerBootstrapOptions, RuntimeProfileId, resolve_runner_bootstrap,
+    resolve_runner_bootstrap_with_fallbacks,
 };

@@ -30,7 +30,8 @@ pub mod vbp;
 pub use error::BasProjError;
 pub use generate::generate_basproj_xml;
 pub use load::{
-    LoadedProject, load_basproj, load_basproj_from_str, override_loaded_project_entry_point,
+    LoadedProject, infer_project_name_from_path, load_basproj, load_basproj_from_str,
+    override_loaded_project_entry_point,
 };
 pub use model::{
     BasProj, BasProjComReference, BasProjModule, BasProjModuleKind, BasProjNativeExport,

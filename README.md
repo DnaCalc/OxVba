@@ -125,10 +125,10 @@ If you want to make the runtime choice explicit:
 oxvba run hello.bas --profile windows-stdio
 ```
 
-For a Linux stdio lane:
+If you want to override the runtime class directly:
 
 ```powershell
-oxvba run hello.bas --runtime-class linux-stdio
+oxvba run hello.bas --runtime-class windows-stdio
 ```
 
 That is the smallest useful OxVBA workflow: one file, one command, one engine.
@@ -185,7 +185,7 @@ math-tool/
 ```vb
 Dim total As Long
 total = MathHelpers.Add(20, 22)
-Print "total=" & CStr(total)
+Print total
 ```
 
 `MathHelpers.bas`
@@ -239,8 +239,6 @@ finance-tools/
     <OutputType>Exe</OutputType>
     <ProjectName>FinanceTools</ProjectName>
     <EntryPoint>Main.Main</EntryPoint>
-    <DefaultRuntimeProfile>windows-headless</DefaultRuntimeProfile>
-    <DefaultPolicyPreset>deterministic-runtime</DefaultPolicyPreset>
   </PropertyGroup>
   <ItemGroup>
     <Module Include="Main.bas" />
@@ -257,6 +255,8 @@ Run:
 ```powershell
 oxvba run-project .\finance-tools
 ```
+
+`DefaultRuntimeProfile` and `DefaultPolicyPreset` are optional. If they are omitted, `oxvba run-project` inherits the normal local runner defaults for the current platform. Add them only when you want durable project-level host behavior.
 
 Build:
 
@@ -295,7 +295,7 @@ oxvba build .\finance-tools
 Public Sub Main()
     Dim fs As Scripting.FileSystemObject
     Set fs = New Scripting.FileSystemObject
-    Print Core.VersionString()
+    Print VersionString()
     Print fs.GetBaseName("report.csv")
 End Sub
 ```
@@ -303,6 +303,17 @@ End Sub
 This shows two important OxVBA ideas:
 - project references are explicit and ordered
 - imported typelibs are explicit project metadata, not hidden host state
+
+Before you commit those references into `.basproj`, you can also inject them ad hoc for a quick run:
+
+```powershell
+oxvba run-project .\scratch-app --project-ref ..\Core\Core.basproj --com-ref Scripting=scrrun.dll
+```
+
+That convenience surface is intentionally bounded:
+- CLI-injected references are good for experiments and one-off runs
+- durable reference truth still belongs in `.basproj`
+- `--com-ref` accepts either a bare library name or `Library=ImportLib` when you want to supply a stronger typelib hint
 
 ### 5. Legacy `.vbp` import
 
@@ -447,8 +458,8 @@ That rejection is intentional. It keeps non-mainline outputs deterministic rathe
 | `ProjectName` | logical project name |
 | `EntryPoint` | explicit startup procedure for executable runs |
 | `RuntimeFlavor` | runtime flavor selector |
-| `DefaultRuntimeProfile` | default host/runtime profile |
-| `DefaultPolicyPreset` | default host policy preset |
+| `DefaultRuntimeProfile` | optional project-level fallback host/runtime profile |
+| `DefaultPolicyPreset` | optional project-level fallback host policy preset |
 | `DefaultRootObject` | default injected root object name |
 | `DefineConstants` | conditional compilation constants |
 
@@ -634,9 +645,9 @@ Examples:
 
 ```powershell
 oxvba run hello.bas
-oxvba run hello.bas --jit --dump-values
-oxvba run hello.bas --profile windows-stdio
-oxvba run hello.bas --policy strict-ci --allow-dynamic-link false
+oxvba run values.bas --jit --dump-values
+oxvba run hello.bas --dump-bootstrap
+oxvba run empty.bas --policy strict-ci --allow-dynamic-link false
 ```
 
 ### `oxvba run-project [PATH]`
@@ -645,6 +656,9 @@ Runs a discovered project target.
 
 Extra key option:
 - `--entry <Module.Procedure>`
+- `--project-ref <path>`
+- `--com-ref <lib-or-lib=importlib>`
+- `--native-ref <path>`
 
 It also accepts the same runtime/bootstrap override flags as `run`.
 
@@ -656,6 +670,7 @@ oxvba run-project .\FinanceTools.basproj
 oxvba run-project .\legacy\Project1.vbp
 oxvba run-project .\app --entry Startup.Boot
 oxvba run-project . --profile windows-stdio --jit
+oxvba run-project .\scratch-app --project-ref ..\Core\Core.basproj --com-ref Scripting=scrrun.dll
 ```
 
 ### `oxvba build [PATH]`
@@ -665,6 +680,9 @@ Builds a discovered project target into an `.oxb` bundle.
 Options:
 - `-o <path>`
 - `--output <path>`
+- `--project-ref <path>`
+- `--com-ref <lib-or-lib=importlib>`
+- `--native-ref <path>`
 
 Examples:
 
@@ -672,6 +690,27 @@ Examples:
 oxvba build .
 oxvba build .\FinanceTools.basproj
 oxvba build . -o .\dist\FinanceTools.oxb
+oxvba build .\scratch-app --project-ref ..\Core\Core.basproj --com-ref Scripting=scrrun.dll
+```
+
+### `oxvba explain [PATH]` / `oxvba host-check [PATH]`
+
+Shows the effective execution and reference configuration for a discovered project target.
+
+It reports:
+- discovered project lane
+- startup choice
+- output type
+- effective runtime profile and policy preset
+- the resolved bootstrap fingerprint
+- effective reference order
+
+Examples:
+
+```powershell
+oxvba explain .
+oxvba explain .\FinanceTools.basproj --profile windows-stdio
+oxvba host-check .\scratch-app --project-ref ..\Core\Core.basproj --com-ref Scripting=scrrun.dll
 ```
 
 ### Bundles and `.oxb`
@@ -683,6 +722,7 @@ Typical workflow:
 ```powershell
 oxvba build .\demo-app -o .\dist\DemoApp.oxb
 oxvba-run .\dist\DemoApp.oxb
+oxvba-run .\dist\DemoApp.oxb --policy strict-ci
 ```
 
 Important practical points:
@@ -690,6 +730,7 @@ Important practical points:
 - it is not a source archive; it is the compiled bundle you run
 - running an `.oxb` bundle does not require Rust if you use the prebuilt Windows release binaries
 - building OxVBA itself from source still requires Rust
+- `oxvba-run` accepts the same runtime/bootstrap override flags as `oxvba run`, except there is no project-file default layer because it is launching an already-built bundle
 
 ### `oxvba compile <input>`
 
@@ -721,7 +762,10 @@ oxvba init .\new-app
 oxvba init .\new-lib --kind library
 oxvba init .\excel-host --kind host-module
 oxvba init .\calc-com --kind com-server
+oxvba init .\legacy-tool --from-convention
 ```
+
+`--from-convention` is the upgrade path from informal directory mode to an explicit project file. It scans the directory the same way `run-project` convention mode does, then writes a `.basproj` that captures the discovered modules and startup entrypoint.
 
 ### `oxvba import-vbp <file.vbp>`
 
@@ -769,10 +813,14 @@ Unsupported-feature modes:
 - `runtime`
 
 Practical advice:
-- for simple Windows console work, use `windows-stdio`
-- for Linux console work, use `linux-stdio`
-- for CI or reproducible automation, start with `strict-ci`
-- use `interactive-dev` only when you intentionally want a more host-backed lane
+- local CLI runs already default to a practical local lane:
+  - Windows: `windows-stdio + interactive-dev`
+  - Linux: `linux-stdio + interactive-dev`
+  - macOS: `macos-headless + interactive-dev`
+- for CI or reproducible automation, start with `strict-ci` or an explicit deterministic preset
+- set project defaults in `.basproj` only when you want durable execution behavior for that project
+- `run-project` precedence is: CLI flags, then environment variables, then config file, then `.basproj` defaults, then built-in platform defaults
+- scalar settings are overridden by the CLI; reference collections are additive unless the CLI supplies the same identity, in which case the CLI value replaces that item
 
 ## Cross-Platform Story
 

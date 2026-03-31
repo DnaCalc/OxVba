@@ -1,7 +1,12 @@
+use oxvba_com::{TypeLibResolveRequest, resolve_known_typelib_identity};
+use oxvba_compiler::{ProjectReference, ReferenceKind, ReferencedProjectManifest};
 use oxvba_hal::model::{
     HalRuntimeClass, UiVirtualizationMode, UnsupportedFeatureMode, WasmRuntimeClass,
 };
-use oxvba_host::{Engine, HostConfig, RunnerBootstrapOptions, resolve_runner_bootstrap};
+use oxvba_host::{
+    Engine, HostConfig, RunnerBootstrapFallbacks, RunnerBootstrapOptions,
+    TypeLibraryCatalogEntry, resolve_runner_bootstrap, resolve_runner_bootstrap_with_fallbacks,
+};
 use oxvba_runtime::{RuntimeValue, bstr::BStr, value_tags::EMPTY_TAG};
 use std::path::{Path, PathBuf};
 use std::{env, fs};
@@ -14,6 +19,7 @@ fn main() {
         Some("compile") => run_compile(cli_args),
         Some("build") => run_build(cli_args),
         Some("run-project") => run_project(cli_args),
+        Some("explain") | Some("host-check") => run_explain(cli_args),
         Some("init") => run_init(cli_args),
         Some("import-vbp") => run_import_vbp(cli_args),
         _ => run_execute(cli_args),
@@ -25,35 +31,22 @@ fn main() {
 // ---------------------------------------------------------------------------
 
 fn run_build(args: Vec<String>) {
-    let mut iter = args.into_iter();
-    let _ = iter.next(); // "build"
+    let parsed = parse_build_args(args).unwrap_or_else(|| {
+        eprintln!(
+            "usage: oxvba build [path] [-o <output.oxb>] [--project-ref <path>] [--com-ref <lib-or-lib=importlib>] [--native-ref <path>]"
+        );
+        std::process::exit(2);
+    });
 
-    let mut input_path: Option<PathBuf> = None;
-    let mut output_path: Option<PathBuf> = None;
-    let collected: Vec<String> = iter.collect();
-    let mut i = 0;
-    while i < collected.len() {
-        match collected[i].as_str() {
-            "-o" | "--output" => {
-                i += 1;
-                output_path = collected.get(i).map(PathBuf::from);
-            }
-            arg if !arg.starts_with('-') && input_path.is_none() => {
-                input_path = Some(PathBuf::from(arg));
-            }
-            _ => {
-                eprintln!("oxvba build: unknown argument: {}", collected[i]);
-                std::process::exit(2);
-            }
-        }
-        i += 1;
-    }
-
-    let input = input_path.unwrap_or_else(|| PathBuf::from("."));
+    let input = parsed.input_path.unwrap_or_else(|| PathBuf::from("."));
 
     let mut loaded = load_run_project_target(Some(input.clone())).unwrap_or_else(|err| {
         eprintln!("oxvba build: {err}");
         std::process::exit(1);
+    });
+    apply_cli_reference_overrides(&mut loaded, &parsed.references).unwrap_or_else(|err| {
+        eprintln!("oxvba build: {err}");
+        std::process::exit(2);
     });
 
     let compiled = oxvba_compiler::compile_project(&loaded.manifest).unwrap_or_else(|err| {
@@ -138,7 +131,9 @@ fn run_build(args: Vec<String>) {
         std::process::exit(1);
     });
 
-    let out = output_path.unwrap_or_else(|| default_build_output_path(&input, &loaded));
+    let out = parsed
+        .output_path
+        .unwrap_or_else(|| default_build_output_path(&input, &loaded));
 
     fs::write(&out, &bytes).unwrap_or_else(|err| {
         eprintln!("oxvba build: cannot write {}: {err}", out.display());
@@ -176,6 +171,10 @@ fn run_project(args: Vec<String>) {
                 std::process::exit(1);
             });
     }
+    apply_cli_reference_overrides(&mut loaded, &parsed.references).unwrap_or_else(|err| {
+        eprintln!("oxvba run-project: {err}");
+        std::process::exit(2);
+    });
 
     let config = HostConfig {
         enable_jit: parsed.enable_jit,
@@ -183,11 +182,13 @@ fn run_project(args: Vec<String>) {
     };
     let mut engine = Engine::new(config);
 
-    let resolved = resolve_runner_bootstrap(&parsed.bootstrap, |key| env::var(key).ok())
-        .unwrap_or_else(|err| {
-            eprintln!("oxvba run-project: bootstrap failed: {err}");
-            std::process::exit(2);
-        });
+    let resolved = resolve_project_runner_bootstrap(&loaded, &parsed.bootstrap, |key| {
+        env::var(key).ok()
+    })
+    .unwrap_or_else(|err| {
+        eprintln!("oxvba run-project: bootstrap failed: {err}");
+        std::process::exit(2);
+    });
     engine.set_runtime_profile(resolved.runtime_profile);
     engine.set_host_policy(resolved.policy.clone());
     if parsed.dump_bootstrap {
@@ -231,6 +232,7 @@ struct RunProjectArgs {
     dump_bootstrap: bool,
     bootstrap: RunnerBootstrapOptions,
     entry_point_override: Option<String>,
+    references: CliReferenceArgs,
 }
 
 fn parse_run_project_args_from(args: Vec<String>) -> Option<RunProjectArgs> {
@@ -247,6 +249,7 @@ fn parse_run_project_args_from(args: Vec<String>) -> Option<RunProjectArgs> {
     let mut dump_bootstrap = false;
     let mut bootstrap = RunnerBootstrapOptions::default();
     let mut entry_point_override: Option<String> = None;
+    let mut references = CliReferenceArgs::default();
 
     let collected: Vec<String> = iter.collect();
     let mut i = 0;
@@ -316,6 +319,23 @@ fn parse_run_project_args_from(args: Vec<String>) -> Option<RunProjectArgs> {
                 bootstrap.overrides.wasm_runtime_class =
                     Some(parse_wasm_runtime_class(collected.get(i)?)?);
             }
+            "--project-ref" => {
+                i += 1;
+                references
+                    .project_refs
+                    .push(PathBuf::from(collected.get(i)?.as_str()));
+            }
+            "--com-ref" => {
+                i += 1;
+                references.com_refs.push(parse_cli_com_reference(collected.get(i)?)?);
+            }
+            "--native-ref" => {
+                i += 1;
+                references.native_refs.push(oxvba_project::BasProjNativeReference {
+                    include: collected.get(i)?.clone(),
+                    path: Some(collected.get(i)?.clone()),
+                });
+            }
             arg if !arg.starts_with('-') && input_path.is_none() => {
                 input_path = Some(PathBuf::from(arg));
             }
@@ -332,7 +352,36 @@ fn parse_run_project_args_from(args: Vec<String>) -> Option<RunProjectArgs> {
         dump_bootstrap,
         bootstrap,
         entry_point_override,
+        references,
     })
+}
+
+#[derive(Debug, Clone, Default)]
+struct CliReferenceArgs {
+    project_refs: Vec<PathBuf>,
+    com_refs: Vec<CliComReference>,
+    native_refs: Vec<oxvba_project::BasProjNativeReference>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct CliComReference {
+    library_name: String,
+    importlib: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+struct BuildArgs {
+    input_path: Option<PathBuf>,
+    output_path: Option<PathBuf>,
+    references: CliReferenceArgs,
+}
+
+#[derive(Debug, Clone)]
+struct ExplainArgs {
+    input_path: Option<PathBuf>,
+    bootstrap: RunnerBootstrapOptions,
+    entry_point_override: Option<String>,
+    references: CliReferenceArgs,
 }
 
 // ---------------------------------------------------------------------------
@@ -353,6 +402,7 @@ enum InitKind {
 struct InitArgs {
     target_dir: PathBuf,
     kind: InitKind,
+    from_convention: bool,
 }
 
 fn parse_init_args_from(args: Vec<String>) -> Option<InitArgs> {
@@ -365,6 +415,7 @@ fn parse_init_args_from(args: Vec<String>) -> Option<InitArgs> {
     let collected: Vec<String> = iter.collect();
     let mut target_dir: Option<PathBuf> = None;
     let mut kind = InitKind::Application;
+    let mut from_convention = false;
 
     let mut i = 0;
     while i < collected.len() {
@@ -373,6 +424,7 @@ fn parse_init_args_from(args: Vec<String>) -> Option<InitArgs> {
                 i += 1;
                 kind = parse_init_kind(collected.get(i)?)?;
             }
+            "--from-convention" => from_convention = true,
             arg if !arg.starts_with('-') && target_dir.is_none() => {
                 target_dir = Some(PathBuf::from(arg));
             }
@@ -385,6 +437,7 @@ fn parse_init_args_from(args: Vec<String>) -> Option<InitArgs> {
         target_dir: target_dir
             .unwrap_or_else(|| env::current_dir().unwrap_or_else(|_| PathBuf::from("."))),
         kind,
+        from_convention,
     })
 }
 
@@ -467,17 +520,21 @@ fn init_item_group(kind: InitKind, project_name: &str) -> String {
 fn run_init(args: Vec<String>) {
     let parsed = parse_init_args_from(args).unwrap_or_else(|| {
         eprintln!(
-            "usage: oxvba init [path] [--kind <application|library|addin|host-module|com-server|com-exe>]"
+            "usage: oxvba init [path] [--kind <application|library|addin|host-module|com-server|com-exe>] [--from-convention]"
         );
         std::process::exit(2);
     });
     let target_dir = parsed.target_dir;
 
+    if parsed.from_convention {
+        run_init_from_convention(&target_dir);
+        return;
+    }
+
     let project_name = target_dir
         .file_name()
-        .and_then(|n| n.to_str())
-        .unwrap_or("NewProject")
-        .to_string();
+        .map(|name| oxvba_project::infer_project_name_from_path(Path::new(name)))
+        .unwrap_or_else(|| "NewProject".to_string());
 
     fs::create_dir_all(&target_dir).unwrap_or_else(|err| {
         eprintln!("oxvba init: cannot create directory: {err}");
@@ -515,6 +572,58 @@ fn run_init(args: Vec<String>) {
         basproj_path.display(),
         primary_file_name,
         init_output_type(parsed.kind)
+    );
+}
+
+fn run_init_from_convention(target_dir: &Path) {
+    if !target_dir.exists() || !target_dir.is_dir() {
+        eprintln!(
+            "oxvba init: convention source directory does not exist: {}",
+            target_dir.display()
+        );
+        std::process::exit(1);
+    }
+    if discover_basproj_in_dir(target_dir)
+        .unwrap_or(None)
+        .is_some()
+        || discover_vbp_in_dir(target_dir).unwrap_or(None).is_some()
+    {
+        eprintln!(
+            "oxvba init: {} already contains a project file; use the existing project instead",
+            target_dir.display()
+        );
+        std::process::exit(1);
+    }
+
+    let loaded = load_convention_project(target_dir).unwrap_or_else(|err| {
+        eprintln!("oxvba init: {err}");
+        std::process::exit(1);
+    });
+    let basproj_path = target_dir.join(format!("{}.basproj", loaded.manifest.project_name));
+    if basproj_path.exists() {
+        eprintln!("oxvba init: {} already exists", basproj_path.display());
+        std::process::exit(1);
+    }
+    let xml = oxvba_project::generate_basproj_xml(
+        &loaded.manifest,
+        loaded.output_type,
+        loaded.entry_point.as_deref(),
+        Some(loaded.runtime_flavor),
+        loaded.default_runtime_profile.as_deref(),
+        loaded.default_policy_preset.as_deref(),
+        Some(loaded.default_root_object.as_str()),
+        &loaded.type_library_catalog,
+        &loaded.native_exports,
+        &loaded.class_module_metadata,
+    );
+    fs::write(&basproj_path, xml).unwrap_or_else(|err| {
+        eprintln!("oxvba init: {err}");
+        std::process::exit(1);
+    });
+    println!(
+        "captured convention project {} → {}",
+        target_dir.display(),
+        basproj_path.display()
     );
 }
 
@@ -637,19 +746,527 @@ fn load_run_project_target(
     oxvba_project::load_basproj(&input)
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum DiscoveredProjectLane {
+    BasProjDir,
+    VbpDir,
+    ConventionDir,
+    BasProjFile,
+    VbpFile,
+}
+
+impl DiscoveredProjectLane {
+    fn as_str(self) -> &'static str {
+        match self {
+            DiscoveredProjectLane::BasProjDir => "basproj-dir",
+            DiscoveredProjectLane::VbpDir => "vbp-dir",
+            DiscoveredProjectLane::ConventionDir => "convention-dir",
+            DiscoveredProjectLane::BasProjFile => "basproj-file",
+            DiscoveredProjectLane::VbpFile => "vbp-file",
+        }
+    }
+}
+
+fn discover_run_project_lane(
+    input_path: Option<PathBuf>,
+) -> Result<(oxvba_project::LoadedProject, DiscoveredProjectLane, PathBuf), oxvba_project::BasProjError>
+{
+    let input = input_path.unwrap_or_else(|| PathBuf::from("."));
+    if input.is_dir() {
+        if let Some(basproj) = discover_basproj_in_dir(&input)? {
+            return Ok((
+                oxvba_project::load_basproj(&basproj)?,
+                DiscoveredProjectLane::BasProjDir,
+                input,
+            ));
+        }
+        if let Some(vbp) = discover_vbp_in_dir(&input)? {
+            return Ok((oxvba_project::load_vbp(&vbp)?, DiscoveredProjectLane::VbpDir, input));
+        }
+        return Ok((
+            load_convention_project(&input)?,
+            DiscoveredProjectLane::ConventionDir,
+            input,
+        ));
+    }
+    if input.extension().and_then(|ext| ext.to_str()) == Some("vbp") {
+        return Ok((oxvba_project::load_vbp(&input)?, DiscoveredProjectLane::VbpFile, input));
+    }
+    Ok((
+        oxvba_project::load_basproj(&input)?,
+        DiscoveredProjectLane::BasProjFile,
+        input,
+    ))
+}
+
+fn resolve_project_runner_bootstrap(
+    loaded: &oxvba_project::LoadedProject,
+    bootstrap: &RunnerBootstrapOptions,
+    env_get: impl Fn(&str) -> Option<String>,
+) -> Result<oxvba_host::ResolvedRunnerBootstrap, String> {
+    resolve_runner_bootstrap_with_fallbacks(
+        bootstrap,
+        &RunnerBootstrapFallbacks {
+            profile: loaded.default_runtime_profile.clone(),
+            policy_preset: loaded.default_policy_preset.clone(),
+        },
+        env_get,
+    )
+}
+
 fn load_convention_project(
     project_dir: &Path,
 ) -> Result<oxvba_project::LoadedProject, oxvba_project::BasProjError> {
     let project_name = project_dir
         .file_name()
-        .and_then(|name| name.to_str())
-        .filter(|name| !name.trim().is_empty())
-        .unwrap_or("ConventionProject");
+        .map(|name| oxvba_project::infer_project_name_from_path(Path::new(name)))
+        .unwrap_or_else(|| "ConventionProject".to_string());
     let xml = format!(
         "<Project Sdk=\"OxVba.Sdk/0.1.0\">\n  <PropertyGroup>\n    <OutputType>Exe</OutputType>\n    <ProjectName>{}</ProjectName>\n  </PropertyGroup>\n</Project>\n",
-        xml_escape(project_name)
+        xml_escape(&project_name)
     );
     oxvba_project::load_basproj_from_str(&xml, project_dir)
+}
+
+fn parse_build_args(args: Vec<String>) -> Option<BuildArgs> {
+    let mut iter = args.into_iter();
+    let cmd = iter.next()?;
+    if cmd != "build" {
+        return None;
+    }
+
+    let collected: Vec<String> = iter.collect();
+    let mut input_path: Option<PathBuf> = None;
+    let mut output_path: Option<PathBuf> = None;
+    let mut references = CliReferenceArgs::default();
+    let mut i = 0;
+    while i < collected.len() {
+        match collected[i].as_str() {
+            "-o" | "--output" => {
+                i += 1;
+                output_path = collected.get(i).map(PathBuf::from);
+            }
+            "--project-ref" => {
+                i += 1;
+                references
+                    .project_refs
+                    .push(PathBuf::from(collected.get(i)?.as_str()));
+            }
+            "--com-ref" => {
+                i += 1;
+                references.com_refs.push(parse_cli_com_reference(collected.get(i)?)?);
+            }
+            "--native-ref" => {
+                i += 1;
+                references.native_refs.push(oxvba_project::BasProjNativeReference {
+                    include: collected.get(i)?.clone(),
+                    path: Some(collected.get(i)?.clone()),
+                });
+            }
+            arg if !arg.starts_with('-') && input_path.is_none() => {
+                input_path = Some(PathBuf::from(arg));
+            }
+            _ => return None,
+        }
+        i += 1;
+    }
+
+    Some(BuildArgs {
+        input_path,
+        output_path,
+        references,
+    })
+}
+
+fn parse_explain_args_from(args: Vec<String>) -> Option<ExplainArgs> {
+    let mut iter = args.into_iter();
+    let cmd = iter.next()?;
+    if cmd != "explain" && cmd != "host-check" {
+        return None;
+    }
+    let collected: Vec<String> = iter.collect();
+    let mut input_path: Option<PathBuf> = None;
+    let mut bootstrap = RunnerBootstrapOptions::default();
+    let mut entry_point_override: Option<String> = None;
+    let mut references = CliReferenceArgs::default();
+
+    let mut i = 0;
+    while i < collected.len() {
+        match collected[i].as_str() {
+            "--entry" => {
+                i += 1;
+                entry_point_override = Some(collected.get(i)?.clone());
+            }
+            "--config" => {
+                i += 1;
+                bootstrap.config_path = Some(PathBuf::from(collected.get(i)?.as_str()));
+            }
+            "--profile" => {
+                i += 1;
+                bootstrap.profile = Some(collected.get(i)?.clone());
+            }
+            "--policy" => {
+                i += 1;
+                bootstrap.policy_preset = Some(collected.get(i)?.clone());
+            }
+            "--runtime-class" => {
+                i += 1;
+                bootstrap.overrides.runtime_class = Some(parse_runtime_class(collected.get(i)?)?);
+            }
+            "--allow-interaction" => {
+                i += 1;
+                bootstrap.overrides.allow_interaction = Some(parse_bool(collected.get(i)?)?);
+            }
+            "--allow-process-spawn" => {
+                i += 1;
+                bootstrap.overrides.allow_process_spawn = Some(parse_bool(collected.get(i)?)?);
+            }
+            "--allow-filesystem-mutation" => {
+                i += 1;
+                bootstrap.overrides.allow_filesystem_mutation =
+                    Some(parse_bool(collected.get(i)?)?);
+            }
+            "--allow-dynamic-link" => {
+                i += 1;
+                bootstrap.overrides.allow_dynamic_link = Some(parse_bool(collected.get(i)?)?);
+            }
+            "--allow-com-activation" => {
+                i += 1;
+                bootstrap.overrides.allow_com_activation = Some(parse_bool(collected.get(i)?)?);
+            }
+            "--deterministic-mode" => {
+                i += 1;
+                bootstrap.overrides.deterministic_mode = Some(parse_bool(collected.get(i)?)?);
+            }
+            "--ui-virtualization" => {
+                i += 1;
+                bootstrap.overrides.ui_virtualization =
+                    Some(parse_ui_virtualization(collected.get(i)?)?);
+            }
+            "--unsupported-mode" => {
+                i += 1;
+                bootstrap.overrides.unsupported_feature_mode =
+                    Some(parse_unsupported_mode(collected.get(i)?)?);
+            }
+            "--wasm-runtime-class" => {
+                i += 1;
+                bootstrap.overrides.wasm_runtime_class =
+                    Some(parse_wasm_runtime_class(collected.get(i)?)?);
+            }
+            "--project-ref" => {
+                i += 1;
+                references
+                    .project_refs
+                    .push(PathBuf::from(collected.get(i)?.as_str()));
+            }
+            "--com-ref" => {
+                i += 1;
+                references.com_refs.push(parse_cli_com_reference(collected.get(i)?)?);
+            }
+            "--native-ref" => {
+                i += 1;
+                references.native_refs.push(oxvba_project::BasProjNativeReference {
+                    include: collected.get(i)?.clone(),
+                    path: Some(collected.get(i)?.clone()),
+                });
+            }
+            arg if !arg.starts_with('-') && input_path.is_none() => {
+                input_path = Some(PathBuf::from(arg));
+            }
+            _ => return None,
+        }
+        i += 1;
+    }
+
+    Some(ExplainArgs {
+        input_path,
+        bootstrap,
+        entry_point_override,
+        references,
+    })
+}
+
+fn parse_cli_com_reference(value: &str) -> Option<CliComReference> {
+    let trimmed = value.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+    if let Some((library_name, importlib)) = trimmed.split_once('=') {
+        let library_name = library_name.trim();
+        let importlib = importlib.trim();
+        if library_name.is_empty() {
+            return None;
+        }
+        return Some(CliComReference {
+            library_name: library_name.to_string(),
+            importlib: if importlib.is_empty() {
+                None
+            } else {
+                Some(importlib.to_string())
+            },
+        });
+    }
+    Some(CliComReference {
+        library_name: trimmed.to_string(),
+        importlib: None,
+    })
+}
+
+fn apply_cli_reference_overrides(
+    loaded: &mut oxvba_project::LoadedProject,
+    references: &CliReferenceArgs,
+) -> Result<(), String> {
+    for project_path in &references.project_refs {
+        let referenced = load_run_project_target(Some(project_path.clone()))
+            .map_err(|err| format!("project reference {}: {err}", project_path.display()))?;
+        let manifest = ReferencedProjectManifest {
+            project_name: referenced.manifest.project_name.clone(),
+            modules: referenced.manifest.modules.clone(),
+        };
+        upsert_project_reference(
+            &mut loaded.manifest.references,
+            ProjectReference {
+                referenced_project_name: manifest.project_name.clone(),
+                reference_kind: ReferenceKind::Project,
+            },
+        )?;
+        upsert_referenced_project(&mut loaded.manifest.reference_projects, manifest);
+    }
+
+    for com_ref in &references.com_refs {
+        let entry = TypeLibraryCatalogEntry {
+            library_name: com_ref.library_name.clone(),
+            importlib: com_ref.importlib.clone().unwrap_or_default(),
+            libid: None,
+            major_version: 0,
+            minor_version: 0,
+            lcid: None,
+        };
+        upsert_project_reference(
+            &mut loaded.manifest.references,
+            ProjectReference {
+                referenced_project_name: entry.library_name.clone(),
+                reference_kind: ReferenceKind::TypeLibrary,
+            },
+        )?;
+        upsert_typelib_catalog_entry(&mut loaded.type_library_catalog, entry.clone());
+        upsert_referenced_project(
+            &mut loaded.manifest.reference_projects,
+            project_manifest_for_cli_typelib_entry(&entry),
+        );
+    }
+
+    if !references.native_refs.is_empty() {
+        oxvba_project::resolve::resolve_native_references(
+            &references.native_refs,
+            Path::new("."),
+        )
+        .map_err(|err| err.to_string())?;
+    }
+
+    Ok(())
+}
+
+fn upsert_project_reference(
+    references: &mut Vec<ProjectReference>,
+    new_reference: ProjectReference,
+) -> Result<(), String> {
+    if let Some(index) = references.iter().position(|existing| {
+        existing
+            .referenced_project_name
+            .eq_ignore_ascii_case(&new_reference.referenced_project_name)
+    }) {
+        if references[index].reference_kind != new_reference.reference_kind {
+            return Err(format!(
+                "reference conflict for `{}`: existing {:?}, new {:?}",
+                new_reference.referenced_project_name,
+                references[index].reference_kind,
+                new_reference.reference_kind
+            ));
+        }
+        references[index] = new_reference;
+        return Ok(());
+    }
+    references.push(new_reference);
+    Ok(())
+}
+
+fn upsert_referenced_project(
+    projects: &mut Vec<ReferencedProjectManifest>,
+    project: ReferencedProjectManifest,
+) {
+    if let Some(index) = projects.iter().position(|existing| {
+        existing
+            .project_name
+            .eq_ignore_ascii_case(&project.project_name)
+    }) {
+        projects[index] = project;
+    } else {
+        projects.push(project);
+    }
+}
+
+fn upsert_typelib_catalog_entry(
+    catalog: &mut Vec<TypeLibraryCatalogEntry>,
+    entry: TypeLibraryCatalogEntry,
+) {
+    if let Some(index) = catalog.iter().position(|existing| {
+        existing
+            .library_name
+            .eq_ignore_ascii_case(&entry.library_name)
+    }) {
+        catalog[index] = entry;
+    } else {
+        catalog.push(entry);
+    }
+}
+
+fn project_manifest_for_cli_typelib_entry(
+    catalog_entry: &TypeLibraryCatalogEntry,
+) -> ReferencedProjectManifest {
+    let request = TypeLibResolveRequest {
+        reference_name: catalog_entry.library_name.clone(),
+        requested_coclass: None,
+        importlib_hint: non_empty_trimmed(&catalog_entry.importlib),
+        libid_hint: catalog_entry.libid.clone(),
+        major_version_hint: Some(catalog_entry.major_version),
+        minor_version_hint: Some(catalog_entry.minor_version),
+        lcid_hint: catalog_entry.lcid,
+    };
+    if let Some(identity) = resolve_known_typelib_identity(&request) {
+        return oxvba_compiler::project::project_imported_typelib_reference(&identity).manifest;
+    }
+    build_cli_typelib_binding_diagnostic_project(&request)
+}
+
+fn build_cli_typelib_binding_diagnostic_project(
+    request: &TypeLibResolveRequest,
+) -> ReferencedProjectManifest {
+    let message = match (
+        request.libid_hint.as_deref(),
+        request.importlib_hint.as_deref(),
+    ) {
+        (Some(libid), _) => format!(
+            "type-library reference `{}` with LIBID `{}` could not be resolved",
+            request.reference_name, libid
+        ),
+        (None, Some(importlib)) => format!(
+            "type-library reference `{}` with importlib `{}` could not be resolved",
+            request.reference_name, importlib
+        ),
+        (None, None) => format!(
+            "type-library reference `{}` needs a stronger identity hint (for example `--com-ref {}=scrrun.dll`)",
+            request.reference_name, request.reference_name
+        ),
+    };
+    ReferencedProjectManifest {
+        project_name: request.reference_name.clone(),
+        modules: vec![oxvba_compiler::ModuleUnit {
+            module_name: "__OxVbaTypeLibBindingDiagnostic".to_string(),
+            module_kind: oxvba_compiler::ModuleKind::Procedural,
+            attributes: oxvba_compiler::ModuleAttributes {
+                vb_name: "__OxVbaTypeLibBindingDiagnostic".to_string(),
+                ..oxvba_compiler::ModuleAttributes::default()
+            },
+            source: format!(
+                "Attribute VB_Name = \"__OxVbaTypeLibBindingDiagnostic\"\nmessage={message}\n"
+            ),
+        }],
+    }
+}
+
+fn non_empty_trimmed(value: &str) -> Option<String> {
+    let trimmed = value.trim();
+    if trimmed.is_empty() {
+        None
+    } else {
+        Some(trimmed.to_string())
+    }
+}
+
+fn run_explain(args: Vec<String>) {
+    let parsed = parse_explain_args_from(args).unwrap_or_else(|| {
+        eprintln!(
+            "usage: oxvba explain [path] [--entry <Module.Procedure>] [runtime/bootstrap options] [--project-ref <path>] [--com-ref <lib-or-lib=importlib>] [--native-ref <path>]"
+        );
+        std::process::exit(2);
+    });
+    let (mut loaded, lane, resolved_input) =
+        discover_run_project_lane(parsed.input_path.clone()).unwrap_or_else(|err| {
+            eprintln!("oxvba explain: {err}");
+            std::process::exit(1);
+        });
+    if let Some(entry_point) = parsed.entry_point_override.as_deref() {
+        oxvba_project::override_loaded_project_entry_point(&mut loaded, entry_point)
+            .unwrap_or_else(|err| {
+                eprintln!("oxvba explain: {err}");
+                std::process::exit(1);
+            });
+    }
+    apply_cli_reference_overrides(&mut loaded, &parsed.references).unwrap_or_else(|err| {
+        eprintln!("oxvba explain: {err}");
+        std::process::exit(2);
+    });
+    let resolved = resolve_project_runner_bootstrap(&loaded, &parsed.bootstrap, |key| {
+        env::var(key).ok()
+    })
+    .unwrap_or_else(|err| {
+        eprintln!("oxvba explain: bootstrap failed: {err}");
+        std::process::exit(2);
+    });
+    print_explain_report(
+        &resolved_input,
+        lane,
+        &loaded,
+        &resolved,
+        &parsed.references,
+    );
+}
+
+fn print_explain_report(
+    resolved_input: &Path,
+    lane: DiscoveredProjectLane,
+    loaded: &oxvba_project::LoadedProject,
+    resolved: &oxvba_host::ResolvedRunnerBootstrap,
+    references: &CliReferenceArgs,
+) {
+    println!("lane: {}", lane.as_str());
+    println!("input: {}", resolved_input.display());
+    println!("project: {}", loaded.manifest.project_name);
+    println!("output-type: {}", cli_output_type_name(loaded.output_type));
+    println!(
+        "entrypoint: {}",
+        loaded.entry_point.as_deref().unwrap_or("<auto>")
+    );
+    println!(
+        "runtime-flavor: {}",
+        match loaded.runtime_flavor {
+            oxvba_project::RuntimeFlavor::Lite => "Lite",
+            oxvba_project::RuntimeFlavor::Jit => "Jit",
+        }
+    );
+    println!("runtime-profile: {}", resolved.runtime_profile.as_str());
+    println!("policy-preset: {}", resolved.policy_preset.as_str());
+    println!("bootstrap: {}", resolved.fingerprint());
+    println!("references:");
+    if loaded.manifest.references.is_empty() {
+        println!("  - <none>");
+    } else {
+        for (index, reference) in loaded.manifest.references.iter().enumerate() {
+            println!(
+                "  {}. {:?}: {}",
+                index + 1,
+                reference.reference_kind,
+                reference.referenced_project_name
+            );
+        }
+    }
+    if !references.native_refs.is_empty() {
+        println!("native-references:");
+        for reference in &references.native_refs {
+            println!("  - {}", reference.include);
+        }
+    }
 }
 
 fn xml_escape(value: &str) -> String {
@@ -659,6 +1276,17 @@ fn xml_escape(value: &str) -> String {
         .replace('>', "&gt;")
         .replace('"', "&quot;")
         .replace('\'', "&apos;")
+}
+
+fn cli_output_type_name(output_type: oxvba_project::OutputType) -> &'static str {
+    match output_type {
+        oxvba_project::OutputType::HostModule => "HostModule",
+        oxvba_project::OutputType::Library => "Library",
+        oxvba_project::OutputType::Exe => "Exe",
+        oxvba_project::OutputType::Addin => "Addin",
+        oxvba_project::OutputType::ComServer => "ComServer",
+        oxvba_project::OutputType::ComExe => "ComExe",
+    }
 }
 
 fn default_build_output_path(input: &Path, loaded: &oxvba_project::LoadedProject) -> PathBuf {
@@ -998,11 +1626,12 @@ fn parse_wasm_runtime_class(value: &str) -> Option<WasmRuntimeClass> {
 #[cfg(test)]
 mod tests {
     use super::{
-        default_build_output_path, load_run_project_target, parse_init_args_from,
-        parse_run_args_from, parse_run_project_args_from, run_init,
+        apply_cli_reference_overrides, default_build_output_path, load_run_project_target,
+        parse_cli_com_reference, parse_init_args_from, parse_run_args_from,
+        parse_run_project_args_from, resolve_project_runner_bootstrap, run_init,
     };
-    use oxvba_hal::model::UnsupportedFeatureMode;
-    use oxvba_host::{Engine, HostConfig};
+    use oxvba_hal::model::{HostPolicyPreset, UnsupportedFeatureMode};
+    use oxvba_host::{Engine, HostConfig, RunnerBootstrapOptions, RuntimeProfileId};
     use std::path::{Path, PathBuf};
 
     #[test]
@@ -1107,6 +1736,185 @@ mod tests {
     }
 
     #[test]
+    fn parse_run_project_args_supports_reference_flags() {
+        let args = vec![
+            "run-project".to_string(),
+            ".".to_string(),
+            "--project-ref".to_string(),
+            "..\\Shared\\Shared.basproj".to_string(),
+            "--com-ref".to_string(),
+            "Scripting=scrrun.dll".to_string(),
+            "--native-ref".to_string(),
+            ".\\native\\helper.dll".to_string(),
+        ];
+        let parsed = parse_run_project_args_from(args).expect("args should parse");
+        assert_eq!(parsed.references.project_refs.len(), 1);
+        assert_eq!(parsed.references.com_refs.len(), 1);
+        assert_eq!(parsed.references.native_refs.len(), 1);
+        assert_eq!(
+            parsed.references.com_refs[0],
+            super::CliComReference {
+                library_name: "Scripting".to_string(),
+                importlib: Some("scrrun.dll".to_string())
+            }
+        );
+    }
+
+    #[test]
+    fn parse_cli_com_reference_supports_name_only_and_importlib_forms() {
+        assert_eq!(
+            parse_cli_com_reference("Scripting"),
+            Some(super::CliComReference {
+                library_name: "Scripting".to_string(),
+                importlib: None
+            })
+        );
+        assert_eq!(
+            parse_cli_com_reference("Scripting=scrrun.dll"),
+            Some(super::CliComReference {
+                library_name: "Scripting".to_string(),
+                importlib: Some("scrrun.dll".to_string())
+            })
+        );
+    }
+
+    #[test]
+    fn apply_cli_reference_overrides_adds_project_and_typelib_references() {
+        let temp_root = std::env::temp_dir().join(format!(
+            "oxvba_cli_reference_override_{}_{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .expect("unix epoch")
+                .as_nanos()
+        ));
+        let app_dir = temp_root.join("App");
+        let lib_dir = temp_root.join("SharedLib");
+        std::fs::create_dir_all(&app_dir).expect("create app dir");
+        std::fs::create_dir_all(&lib_dir).expect("create lib dir");
+        std::fs::write(app_dir.join("Main.bas"), "Public Sub Main()\nEnd Sub\n")
+            .expect("write app main");
+        std::fs::write(
+            app_dir.join("App.basproj"),
+            "<Project Sdk=\"OxVba.Sdk/0.1.0\">\n  <PropertyGroup>\n    <OutputType>Exe</OutputType>\n    <ProjectName>App</ProjectName>\n    <EntryPoint>Main.Main</EntryPoint>\n  </PropertyGroup>\n  <ItemGroup>\n    <Module Include=\"Main.bas\" />\n  </ItemGroup>\n</Project>\n",
+        )
+        .expect("write app basproj");
+        std::fs::write(
+            lib_dir.join("Shared.bas"),
+            "Public Function SharedValue() As Long\n    SharedValue = 7\nEnd Function\n",
+        )
+        .expect("write shared source");
+        std::fs::write(
+            lib_dir.join("SharedLib.basproj"),
+            "<Project Sdk=\"OxVba.Sdk/0.1.0\">\n  <PropertyGroup>\n    <OutputType>Library</OutputType>\n    <ProjectName>SharedLib</ProjectName>\n  </PropertyGroup>\n  <ItemGroup>\n    <Module Include=\"Shared.bas\" />\n  </ItemGroup>\n</Project>\n",
+        )
+        .expect("write shared basproj");
+
+        let mut loaded = load_run_project_target(Some(app_dir.clone())).expect("load app");
+        apply_cli_reference_overrides(
+            &mut loaded,
+            &super::CliReferenceArgs {
+                project_refs: vec![lib_dir.join("SharedLib.basproj")],
+                com_refs: vec![super::CliComReference {
+                    library_name: "Scripting".to_string(),
+                    importlib: Some("scrrun.dll".to_string()),
+                }],
+                native_refs: Vec::new(),
+            },
+        )
+        .expect("apply references");
+
+        assert!(loaded.manifest.references.iter().any(|reference| {
+            reference.reference_kind == oxvba_compiler::ReferenceKind::Project
+                && reference.referenced_project_name == "SharedLib"
+        }));
+        assert!(loaded.manifest.references.iter().any(|reference| {
+            reference.reference_kind == oxvba_compiler::ReferenceKind::TypeLibrary
+                && reference.referenced_project_name == "Scripting"
+        }));
+        assert!(
+            loaded
+                .manifest
+                .reference_projects
+                .iter()
+                .any(|project| project.project_name == "SharedLib")
+        );
+        assert!(
+            loaded
+                .type_library_catalog
+                .iter()
+                .any(|entry| entry.library_name == "Scripting")
+        );
+
+        std::fs::remove_dir_all(&temp_root).expect("cleanup temp dir");
+    }
+
+    #[test]
+    fn run_project_bootstrap_inherits_project_defaults_when_not_overridden() {
+        let temp_root = std::env::temp_dir().join(format!(
+            "oxvba_cli_project_bootstrap_defaults_{}_{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .expect("unix epoch")
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&temp_root).expect("create temp dir");
+        std::fs::write(temp_root.join("Main.bas"), "Public Sub Main()\nEnd Sub\n")
+            .expect("write main module");
+        std::fs::write(
+            temp_root.join("ProjectA.basproj"),
+            "<Project Sdk=\"OxVba.Sdk/0.1.0\">\n  <PropertyGroup>\n    <OutputType>Exe</OutputType>\n    <ProjectName>ProjectA</ProjectName>\n    <EntryPoint>Main.Main</EntryPoint>\n    <DefaultRuntimeProfile>windows-headless</DefaultRuntimeProfile>\n    <DefaultPolicyPreset>strict-ci</DefaultPolicyPreset>\n  </PropertyGroup>\n  <ItemGroup>\n    <Module Include=\"Main.bas\" />\n  </ItemGroup>\n</Project>\n",
+        )
+        .expect("write basproj");
+
+        let loaded = load_run_project_target(Some(PathBuf::from(&temp_root)))
+            .expect("directory with basproj should load the project file");
+        let resolved =
+            resolve_project_runner_bootstrap(&loaded, &RunnerBootstrapOptions::default(), |_| None)
+                .expect("project defaults should resolve");
+        assert_eq!(resolved.runtime_profile, RuntimeProfileId::WindowsHeadless);
+        assert_eq!(resolved.policy_preset, HostPolicyPreset::StrictCi);
+
+        std::fs::remove_dir_all(&temp_root).expect("cleanup temp dir");
+    }
+
+    #[test]
+    fn run_project_bootstrap_env_overrides_project_defaults() {
+        let temp_root = std::env::temp_dir().join(format!(
+            "oxvba_cli_project_bootstrap_env_override_{}_{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .expect("unix epoch")
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&temp_root).expect("create temp dir");
+        std::fs::write(temp_root.join("Main.bas"), "Public Sub Main()\nEnd Sub\n")
+            .expect("write main module");
+        std::fs::write(
+            temp_root.join("ProjectA.basproj"),
+            "<Project Sdk=\"OxVba.Sdk/0.1.0\">\n  <PropertyGroup>\n    <OutputType>Exe</OutputType>\n    <ProjectName>ProjectA</ProjectName>\n    <EntryPoint>Main.Main</EntryPoint>\n    <DefaultRuntimeProfile>windows-headless</DefaultRuntimeProfile>\n    <DefaultPolicyPreset>strict-ci</DefaultPolicyPreset>\n  </PropertyGroup>\n  <ItemGroup>\n    <Module Include=\"Main.bas\" />\n  </ItemGroup>\n</Project>\n",
+        )
+        .expect("write basproj");
+
+        let loaded = load_run_project_target(Some(PathBuf::from(&temp_root)))
+            .expect("directory with basproj should load the project file");
+        let resolved =
+            resolve_project_runner_bootstrap(&loaded, &RunnerBootstrapOptions::default(), |key| {
+                match key {
+                    "OXVBA_POLICY_PRESET" => Some("interactive-dev".to_string()),
+                    _ => None,
+                }
+            })
+            .expect("env override should resolve");
+        assert_eq!(resolved.runtime_profile, RuntimeProfileId::WindowsHeadless);
+        assert_eq!(resolved.policy_preset, HostPolicyPreset::InteractiveDev);
+
+        std::fs::remove_dir_all(&temp_root).expect("cleanup temp dir");
+    }
+
+    #[test]
     fn parse_init_args_with_kind_override() {
         let args = vec![
             "init".to_string(),
@@ -1138,6 +1946,28 @@ mod tests {
         assert_eq!(loaded.entry_point.as_deref(), Some("Main.Main"));
 
         std::fs::remove_dir_all(&temp_root).expect("cleanup temp dir");
+    }
+
+    #[test]
+    fn run_project_directory_without_basproj_sanitizes_directory_name_to_project_identifier() {
+        let parent = std::env::temp_dir().join(format!(
+            "oxvba_cli_convention_parent_{}_{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .expect("unix epoch")
+                .as_nanos()
+        ));
+        let temp_root = parent.join("math-tool");
+        std::fs::create_dir_all(&temp_root).expect("create temp dir");
+        std::fs::write(temp_root.join("Main.bas"), "Public Sub Main()\nEnd Sub\n")
+            .expect("write main module");
+
+        let loaded = load_run_project_target(Some(temp_root.clone()))
+            .expect("directory convention mode should load");
+        assert_eq!(loaded.manifest.project_name, "math_tool");
+
+        std::fs::remove_dir_all(&parent).expect("cleanup temp dir");
     }
 
     #[test]
@@ -1460,6 +2290,29 @@ mod tests {
     }
 
     #[test]
+    fn init_scaffold_sanitizes_project_name_from_hyphenated_directory() {
+        let parent = std::env::temp_dir().join(format!(
+            "oxvba_cli_init_hyphen_parent_{}_{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .expect("unix epoch")
+                .as_nanos()
+        ));
+        let temp_root = parent.join("new-app");
+        run_init(vec![
+            "init".to_string(),
+            temp_root.to_string_lossy().to_string(),
+        ]);
+
+        let basproj =
+            std::fs::read_to_string(temp_root.join("new_app.basproj")).expect("basproj exists");
+        assert!(basproj.contains("<ProjectName>new_app</ProjectName>"));
+
+        std::fs::remove_dir_all(&parent).expect("cleanup temp dir");
+    }
+
+    #[test]
     fn init_host_module_scaffold_sets_default_root_object() {
         let temp_root = std::env::temp_dir().join(format!(
             "oxvba_cli_init_host_module_{}_{}",
@@ -1572,6 +2425,47 @@ mod tests {
             exports[0].prog_id.as_deref(),
             Some(expected_prog_id.as_str())
         );
+
+        std::fs::remove_dir_all(&temp_root).expect("cleanup temp dir");
+    }
+
+    #[test]
+    fn init_from_convention_captures_existing_modules_into_basproj() {
+        let temp_root = std::env::temp_dir().join(format!(
+            "oxvba_cli_init_from_convention_{}_{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .expect("unix epoch")
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&temp_root).expect("create temp dir");
+        std::fs::write(
+            temp_root.join("Main.bas"),
+            "Public Sub Main()\nEnd Sub\n",
+        )
+        .expect("write main");
+        std::fs::write(
+            temp_root.join("Helpers.bas"),
+            "Public Function AddOne(value As Long) As Long\n    AddOne = value + 1\nEnd Function\n",
+        )
+        .expect("write helper");
+
+        run_init(vec![
+            "init".to_string(),
+            temp_root.to_string_lossy().to_string(),
+            "--from-convention".to_string(),
+        ]);
+
+        let project_name = temp_root
+            .file_name()
+            .map(|name| oxvba_project::infer_project_name_from_path(Path::new(name)))
+            .unwrap_or_else(|| "ConventionProject".to_string());
+        let basproj_path = temp_root.join(format!("{project_name}.basproj"));
+        let xml = std::fs::read_to_string(&basproj_path).expect("read generated basproj");
+        assert!(xml.contains("<Module Include=\"Helpers.bas\" />"));
+        assert!(xml.contains("<Module Include=\"Main.bas\" />"));
+        assert!(xml.contains("<EntryPoint>Main.Main</EntryPoint>"));
 
         std::fs::remove_dir_all(&temp_root).expect("cleanup temp dir");
     }

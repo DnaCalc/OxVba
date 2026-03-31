@@ -136,6 +136,12 @@ pub struct RunnerBootstrapOptions {
     pub overrides: PolicyOverrides,
 }
 
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct RunnerBootstrapFallbacks {
+    pub profile: Option<String>,
+    pub policy_preset: Option<String>,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ResolvedRunnerBootstrap {
     pub runtime_profile: RuntimeProfileId,
@@ -167,6 +173,18 @@ impl ResolvedRunnerBootstrap {
 
 pub fn resolve_runner_bootstrap(
     options: &RunnerBootstrapOptions,
+    env_get: impl Fn(&str) -> Option<String>,
+) -> Result<ResolvedRunnerBootstrap, String> {
+    resolve_runner_bootstrap_with_fallbacks(
+        options,
+        &RunnerBootstrapFallbacks::default(),
+        env_get,
+    )
+}
+
+pub fn resolve_runner_bootstrap_with_fallbacks(
+    options: &RunnerBootstrapOptions,
+    fallbacks: &RunnerBootstrapFallbacks,
     env_get: impl Fn(&str) -> Option<String>,
 ) -> Result<ResolvedRunnerBootstrap, String> {
     let mut merged = BTreeMap::<String, String>::new();
@@ -239,25 +257,31 @@ pub fn resolve_runner_bootstrap(
         );
     }
 
-    let runtime_profile = merged.get("profile").map_or(
-        Ok(RuntimeProfileId::default_for_hal_profile(
-            if cfg!(target_os = "windows") {
-                HalProfileId::Windows
-            } else if cfg!(target_os = "linux") {
-                HalProfileId::Linux
-            } else if cfg!(target_os = "macos") {
-                HalProfileId::MacOs
-            } else {
-                HalProfileId::Null
-            },
-        )),
-        |raw| RuntimeProfileId::parse(raw),
-    )?;
-    let policy_preset = merged
+    let platform_default_profile = RuntimeProfileId::default_for_hal_profile(if cfg!(target_os = "windows") {
+        HalProfileId::Windows
+    } else if cfg!(target_os = "linux") {
+        HalProfileId::Linux
+    } else if cfg!(target_os = "macos") {
+        HalProfileId::MacOs
+    } else {
+        HalProfileId::Null
+    });
+    let runtime_profile = match merged
+        .get("profile")
+        .map(String::as_str)
+        .or(fallbacks.profile.as_deref())
+    {
+        Some(raw) => RuntimeProfileId::parse(raw)?,
+        None => platform_default_profile,
+    };
+    let policy_preset = match merged
         .get("policy_preset")
-        .map_or(Ok(HostPolicyPreset::DeterministicRuntime), |raw| {
-            parse_policy_preset(raw)
-        })?;
+        .map(String::as_str)
+        .or(fallbacks.policy_preset.as_deref())
+    {
+        Some(raw) => parse_policy_preset(raw)?,
+        None => HostPolicyPreset::InteractiveDev,
+    };
 
     let mut policy = HostPolicy::for_preset(policy_preset);
     policy.runtime_class = Some(runtime_profile.runtime_class());
@@ -468,8 +492,8 @@ mod tests {
     use oxvba_hal::model::{HostPolicyPreset, UiVirtualizationMode, UnsupportedFeatureMode};
 
     use super::{
-        PolicyOverrides, RunnerBootstrapOptions, RuntimeProfileId, parse_config_text,
-        resolve_runner_bootstrap,
+        PolicyOverrides, RunnerBootstrapFallbacks, RunnerBootstrapOptions, RuntimeProfileId,
+        parse_config_text, resolve_runner_bootstrap, resolve_runner_bootstrap_with_fallbacks,
     };
 
     #[test]
@@ -503,6 +527,73 @@ allow_interaction = false
         assert!(!resolved.policy.allow_interaction);
 
         let _ = std::fs::remove_file(config_path);
+    }
+
+    #[test]
+    fn bootstrap_precedence_uses_project_fallback_under_config_and_env() {
+        let config = r#"
+[host]
+profile = "windows-headless"
+"#;
+        let config_path = PathBuf::from("temp/runner_bootstrap_project_fallback.toml");
+        std::fs::create_dir_all("temp").expect("temp dir");
+        std::fs::write(&config_path, config).expect("write config");
+
+        let resolved = resolve_runner_bootstrap_with_fallbacks(
+            &RunnerBootstrapOptions {
+                config_path: Some(config_path.clone()),
+                ..RunnerBootstrapOptions::default()
+            },
+            &RunnerBootstrapFallbacks {
+                profile: Some("linux-stdio".to_string()),
+                policy_preset: Some("interactive-dev".to_string()),
+            },
+            |key| match key {
+                "OXVBA_POLICY_PRESET" => Some("strict-ci".to_string()),
+                _ => None,
+            },
+        )
+        .expect("bootstrap resolve");
+
+        assert_eq!(resolved.runtime_profile, RuntimeProfileId::WindowsHeadless);
+        assert_eq!(resolved.policy_preset, HostPolicyPreset::StrictCi);
+
+        let _ = std::fs::remove_file(config_path);
+    }
+
+    #[test]
+    fn bootstrap_project_fallback_applies_when_no_higher_precedence_value_exists() {
+        let resolved = resolve_runner_bootstrap_with_fallbacks(
+            &RunnerBootstrapOptions::default(),
+            &RunnerBootstrapFallbacks {
+                profile: Some("linux-stdio".to_string()),
+                policy_preset: Some("strict-ci".to_string()),
+            },
+            |_| None,
+        )
+        .expect("bootstrap resolve");
+
+        assert_eq!(resolved.runtime_profile, RuntimeProfileId::LinuxStdio);
+        assert_eq!(resolved.policy_preset, HostPolicyPreset::StrictCi);
+    }
+
+    #[test]
+    fn bootstrap_defaults_to_interactive_dev_when_no_value_is_supplied() {
+        let resolved =
+            resolve_runner_bootstrap(&RunnerBootstrapOptions::default(), |_| None).expect("resolve");
+        assert_eq!(resolved.policy_preset, HostPolicyPreset::InteractiveDev);
+        assert_eq!(
+            resolved.runtime_profile,
+            RuntimeProfileId::default_for_hal_profile(if cfg!(target_os = "windows") {
+                oxvba_hal::model::HalProfileId::Windows
+            } else if cfg!(target_os = "linux") {
+                oxvba_hal::model::HalProfileId::Linux
+            } else if cfg!(target_os = "macos") {
+                oxvba_hal::model::HalProfileId::MacOs
+            } else {
+                oxvba_hal::model::HalProfileId::Null
+            })
+        );
     }
 
     #[test]

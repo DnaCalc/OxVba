@@ -12,6 +12,7 @@ path = "src/main.rs"
 
 [dependencies]
 oxvba-compiler.workspace = true
+oxvba-host.workspace = true
 oxvba-vm.workspace = true
 oxvba-jit.workspace = true
 oxvba-hal.workspace = true

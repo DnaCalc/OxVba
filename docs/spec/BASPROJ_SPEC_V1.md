@@ -47,8 +47,8 @@ All properties are optional unless noted. A project may contain multiple `<Prope
 | `ProjectName` | identifier | any valid VBA identifier | directory name | no | Maps to `ProjectManifest.project_name` |
 | `EntryPoint` | string | `Module.Procedure` | — | no | Explicit startup procedure override for execution |
 | `RuntimeFlavor` | enum | `Lite`, `Jit` | `Lite` | no | VM-only vs VM+JIT |
-| `DefaultRuntimeProfile` | string | profile identifier | `windows-headless` | no | Default HAL runtime profile |
-| `DefaultPolicyPreset` | string | preset identifier | `deterministic-runtime` | no | Default host policy preset |
+| `DefaultRuntimeProfile` | string | profile identifier | inherit runner platform default | no | Optional default HAL runtime profile for project-aware execution |
+| `DefaultPolicyPreset` | string | preset identifier | inherit runner policy default (`interactive-dev`) | no | Optional default host policy preset for project-aware execution |
 | `DefaultRootObject` | string | identifier | `Application` | no | Host-injected root object name |
 | `DefineConstants` | string | `KEY=VAL;KEY2=VAL2` | — | no | Conditional compilation constants |
 
@@ -68,6 +68,8 @@ All properties are optional unless noted. A project may contain multiple `<Prope
 **Packaging note:** `OutputType` is the semantic project kind, not a guarantee of today's emitted file shape. The current stable compiled output emitted by the shipped CLI is an OxVBA bundle artifact. Wrapper and native image packaging are a separate build-target concern.
 
 **Planned extension:** a future `WinExe` `OutputType` is expected for windowed executable semantics distinct from console/program-style `Exe`. That future lane is intentionally separate from the physical build-target choice.
+
+**Runner default note:** `DefaultRuntimeProfile` and `DefaultPolicyPreset` are an optional project-level fallback layer. They do not override CLI flags, environment variables, or host-runner config files.
 
 **DefineConstants format:** Semicolon-separated `KEY=VALUE` pairs. Values are parsed as `i32`. Keys without `=VALUE` default to `1`. Example: `VBA7=1;WIN64=1;DEBUG` → `{VBA7: 1, WIN64: 1, DEBUG: 1}`.
 

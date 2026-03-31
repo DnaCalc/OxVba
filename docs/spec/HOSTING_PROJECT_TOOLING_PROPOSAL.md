@@ -139,7 +139,7 @@ Five HAL profiles are implemented:
 | WASM    | `WasmWasiLocal`, `WasmBrowserSandbox` |
 | Null    | `NullFloor` (testing) |
 
-The bootstrap resolver (`resolve_runner_bootstrap`) implements a priority chain: CLI flags > environment variables > config file > defaults. Four policy presets govern capability gating:
+The bootstrap resolver (`resolve_runner_bootstrap`) implements a priority chain: CLI flags > environment variables > config file > project defaults (for project-aware runs) > built-in platform defaults. Four policy presets govern capability gating:
 
 - `strict-ci` — all capabilities blocked, deterministic mode on, fail on unsupported.
 - `deterministic-runtime` — selective capability allowance, runtime unsupported handling.
@@ -658,6 +658,9 @@ Options:
   --entry <Module.Proc>     Override configured entry point
   --profile <id>            Runtime profile
   --policy <preset>         Host policy preset
+  --project-ref <path>      Add an ad hoc project reference for this invocation
+  --com-ref <lib[=importlib]>  Add an ad hoc COM reference for this invocation
+  --native-ref <path>       Add an ad hoc native reference for this invocation
   --jit                     Enable JIT for this run
   --no-jit                  Force VM-only execution
   --dump-bootstrap          Emit resolved runtime/policy fingerprint
@@ -667,6 +670,7 @@ Examples:
   oxvba run-project .
   oxvba run-project ./my-project --jit
   oxvba run-project legacy.vbp --entry Module1.Main
+  oxvba run-project ./scratch-app --project-ref ../Core/Core.basproj --com-ref Scripting=scrrun.dll
 ```
 
 ```
@@ -680,11 +684,13 @@ Usage:
 Options:
   --name <name>             Project name (default: directory name)
   --kind <kind>             Project kind: application, library, addin (default: application)
+  --from-convention         Capture convention discovery into a .basproj in place
   --scope <scope>           Export scope: document, process (default: document)
 
 Examples:
   oxvba init .
   oxvba init ./my-addin --kind addin --scope process
+  oxvba init ./legacy-tool --from-convention
 ```
 
 ```
@@ -700,6 +706,9 @@ Options:
   --target <target>         Build target: artifact, wrapper-exe, wrapper-dll, native-exe, native-dll (initial shipped subset may be smaller)
   --flavor <lite|jit>       Runtime flavor for wrapper targets (default: lite)
   --out <path>              Output path
+  --project-ref <path>      Add an ad hoc project reference for this invocation
+  --com-ref <lib[=importlib]>  Add an ad hoc COM reference for this invocation
+  --native-ref <path>       Add an ad hoc native reference for this invocation
   --deterministic           Enable deterministic build mode
   --format <text|json>      Output format
 
@@ -707,6 +716,7 @@ Examples:
   oxvba build . --target artifact --out dist/myproject.oxvbapkg
   oxvba build . --target wrapper-exe --flavor lite --out dist/myapp.exe
   oxvba build . --target wrapper-dll --flavor lite --out dist/mylib.dll --com-sta
+  oxvba build ./scratch-app --project-ref ../Core/Core.basproj --com-ref Scripting=scrrun.dll
 ```
 
 ```
@@ -803,7 +813,7 @@ Examples:
 ```
 oxvba host-check [PATH] [options]
 
-Report the host capabilities and policy gates required by a project.
+Report the effective discovered lane, startup, runtime/policy bootstrap, and reference order for a project target.
 
 Usage:
   oxvba host-check [PATH] [options]
@@ -811,10 +821,14 @@ Usage:
 Options:
   --profile <id>            Check against specific runtime profile
   --policy <preset>         Check against specific policy preset
+  --project-ref <path>      Add an ad hoc project reference for this invocation
+  --com-ref <lib[=importlib]>  Add an ad hoc COM reference for this invocation
+  --native-ref <path>       Add an ad hoc native reference for this invocation
   --format <text|json>      Output format
 
 Examples:
   oxvba host-check . --profile windows-headless --policy strict-ci
+  oxvba host-check ./scratch-app --project-ref ../Core/Core.basproj --com-ref Scripting=scrrun.dll
 ```
 
 #### 3.3.4 Example workflow sessions
@@ -826,7 +840,7 @@ Sub Main()
     Debug.Print "Hello from OxVBA"
 End Sub
 
-$ oxvba run hello.bas --profile windows-headless
+$ oxvba run hello.bas
 Hello from OxVBA
 ```
 
@@ -1099,8 +1113,6 @@ oxvba.exports.oxvba_execute(encodeString(source));
     <ProjectName>FinanceTools</ProjectName>
     <EntryPoint>MainModule.Main</EntryPoint>
     <RuntimeFlavor>Jit</RuntimeFlavor>
-    <DefaultRuntimeProfile>windows-headless</DefaultRuntimeProfile>
-    <DefaultPolicyPreset>deterministic-runtime</DefaultPolicyPreset>
     <DefaultRootObject>Application</DefaultRootObject>
     <DefineConstants>VBA7=1;WIN64=1;DEBUG</DefineConstants>
   </PropertyGroup>

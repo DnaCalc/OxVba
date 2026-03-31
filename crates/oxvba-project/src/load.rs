@@ -24,8 +24,8 @@ pub struct LoadedProject {
     pub native_exports: Vec<NativeExportDescriptor>,
     pub output_type: OutputType,
     pub runtime_flavor: RuntimeFlavor,
-    pub default_runtime_profile: String,
-    pub default_policy_preset: String,
+    pub default_runtime_profile: Option<String>,
+    pub default_policy_preset: Option<String>,
     pub default_root_object: String,
     pub entry_point: Option<String>,
     pub type_library_catalog: Vec<TypeLibraryCatalogEntry>,
@@ -115,7 +115,7 @@ pub(crate) fn build_loaded_project(
     let project_name = props
         .project_name
         .clone()
-        .unwrap_or_else(|| dir_name_or_default(project_dir));
+        .unwrap_or_else(|| infer_project_name_from_path(project_dir));
 
     // Entry point validation
     let configured_entry_point = props.entry_point.clone();
@@ -251,14 +251,8 @@ pub(crate) fn build_loaded_project(
         native_exports,
         output_type,
         runtime_flavor: props.runtime_flavor.unwrap_or(RuntimeFlavor::Lite),
-        default_runtime_profile: props
-            .default_runtime_profile
-            .clone()
-            .unwrap_or_else(|| "windows-headless".to_string()),
-        default_policy_preset: props
-            .default_policy_preset
-            .clone()
-            .unwrap_or_else(|| "deterministic-runtime".to_string()),
+        default_runtime_profile: props.default_runtime_profile.clone(),
+        default_policy_preset: props.default_policy_preset.clone(),
         default_root_object: props
             .default_root_object
             .clone()
@@ -1116,16 +1110,59 @@ fn project_ref_name(include: &str) -> String {
 }
 
 /// Get directory name as string, or "Project" as fallback.
-fn dir_name_or_default(dir: &Path) -> String {
-    dir.file_name()
+pub fn infer_project_name_from_path(dir: &Path) -> String {
+    let raw = dir
+        .file_name()
         .and_then(|n| n.to_str())
-        .unwrap_or("Project")
-        .to_string()
+        .unwrap_or("Project");
+    sanitize_inferred_project_name(raw)
+}
+
+fn sanitize_inferred_project_name(raw: &str) -> String {
+    let mut name = String::new();
+    let mut previous_was_underscore = false;
+    for ch in raw.chars() {
+        let mapped = if ch.is_ascii_alphanumeric() || ch == '_' {
+            previous_was_underscore = false;
+            ch
+        } else {
+            if previous_was_underscore {
+                continue;
+            }
+            previous_was_underscore = true;
+            '_'
+        };
+        name.push(mapped);
+    }
+    let trimmed = name.trim_matches('_');
+    let mut candidate = if trimmed.is_empty() {
+        "Project".to_string()
+    } else {
+        trimmed.to_string()
+    };
+    if candidate
+        .chars()
+        .next()
+        .is_some_and(|ch| ch.is_ascii_digit())
+    {
+        candidate.insert_str(0, "Project_");
+    }
+    candidate
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn inferred_project_name_sanitizes_common_directory_names() {
+        assert_eq!(infer_project_name_from_path(Path::new("math-tool")), "math_tool");
+        assert_eq!(
+            infer_project_name_from_path(Path::new("123-demo")),
+            "Project_123_demo"
+        );
+        assert_eq!(infer_project_name_from_path(Path::new("___")), "Project");
+    }
 
     #[test]
     fn known_libid_with_missing_filesystem_importlib_stays_diagnostic() {
