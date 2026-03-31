@@ -490,6 +490,10 @@ pub fn activate_runtime_dispatch(
     prog_id: &str,
     force_registered_test_dispatch: bool,
 ) -> Result<*mut RawIDispatch, String> {
+    #[cfg(not(any(test, feature = "fixture-typelibs")))]
+    let _ = force_registered_test_dispatch;
+
+    #[cfg(any(test, feature = "fixture-typelibs"))]
     if prog_id.eq_ignore_ascii_case(crate::windows_test_dispatch::OXVBA_TEST_DISPATCH_PROGID)
         && !force_registered_test_dispatch
     {

@@ -23,7 +23,7 @@ pub mod windows_ffi_bridge;
 pub mod windows_invoke;
 #[cfg(target_os = "windows")]
 pub mod windows_runtime_state;
-#[cfg(target_os = "windows")]
+#[cfg(all(target_os = "windows", any(test, feature = "fixture-typelibs")))]
 pub mod windows_test_dispatch;
 pub mod windows_typelib_loader;
 #[cfg(target_os = "windows")]
@@ -98,7 +98,7 @@ pub use windows_invoke::{
     invoke_dispatch_legacy_i32_result_positional, invoke_dispatch_runtime_value,
     invoke_dispatch_runtime_value_with_shared_state, invoke_member_spec_legacy_i32_result,
     invoke_member_spec_runtime_value, invoke_member_spec_runtime_value_with_shared_state,
-    take_excepinfo,
+    map_com_hresult_label, take_excepinfo,
 };
 #[cfg(target_os = "windows")]
 pub use windows_runtime_state::{
@@ -114,7 +114,7 @@ pub use windows_runtime_state::{
     resolve_member_dispid_cached, resolve_subscription_transport, subscribe_event_shared,
     take_polled_callback_payload, unsubscribe_event_shared,
 };
-#[cfg(target_os = "windows")]
+#[cfg(all(target_os = "windows", any(test, feature = "fixture-typelibs")))]
 pub use windows_test_dispatch::{
     IID_OXVBA_TEST_DISPATCH_EVENTS, IID_OXVBA_TEST_DISPATCH_EVENTS_STR,
     IID_OXVBA_TEST_DISPATCH_SOURCE_EVENTS, IID_OXVBA_TEST_DISPATCH_SOURCE_EVENTS_STR,
@@ -126,7 +126,7 @@ pub use windows_test_dispatch::{
     TEST_DISPID_SET_INDEXED_VALUE_REF, TEST_DISPID_SET_VALUE, TEST_DISPID_SET_VALUE_REF,
     TEST_DISPID_SUM_PAIR, TEST_DISPID_VALUE, TEST_EVENT_CHANGED, TEST_EVENT_CHANGED_PAIR,
     TEST_NAMED_DISPID_INDEX, TEST_NAMED_DISPID_LHS, TEST_NAMED_DISPID_RHS, TEST_NAMED_DISPID_VALUE,
-    create_oxvba_test_dispatch, map_com_hresult_label, raw_oxvba_test_dispatch_vtable_invoke,
+    create_oxvba_test_dispatch, raw_oxvba_test_dispatch_vtable_invoke,
 };
 #[cfg(target_os = "windows")]
 pub use windows_variant::{

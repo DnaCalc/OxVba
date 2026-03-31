@@ -21,8 +21,17 @@ use oxvba_runtime::{ObjectHandle, RuntimeValue, bstr::BStr, runtime_value_to_vba
 
 use super::StandardHostServices;
 
+fn is_dispatch_fixture_prog_id_name(prog_id_name: &str) -> bool {
+    known_typelib_identity_for_prog_id_name(prog_id_name).is_some_and(|identity| {
+        identity
+            .importlib
+            .to_ascii_lowercase()
+            .starts_with("oxvba_testdispatch")
+    })
+}
+
 fn fallback_create_object_handle_raw(prog_id_name: &str) -> i32 {
-    if prog_id_name.eq_ignore_ascii_case("OxVba.TestDispatch")
+    if is_dispatch_fixture_prog_id_name(prog_id_name)
         || prog_id_name.eq_ignore_ascii_case("Scripting.Dictionary")
     {
         return 5_004;
@@ -89,7 +98,7 @@ impl ComHal for StandardHostServices {
         if self.native_com_enabled() {
             match self.activate_runtime_object_value_for_prog_id_name(prog_id_name) {
                 Ok(value) => return Ok(value),
-                Err(_err) if prog_id_name.eq_ignore_ascii_case("OxVba.TestDispatch") => {
+                Err(_err) if is_dispatch_fixture_prog_id_name(prog_id_name) => {
                     return Ok(RuntimeValue::ObjectHandle(
                         fallback_create_object_handle_raw(prog_id_name).into(),
                     ));

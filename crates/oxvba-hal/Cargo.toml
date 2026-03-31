@@ -28,3 +28,4 @@ windows-sys = { version = "0.59", features = [
 
 [dev-dependencies]
 proptest.workspace = true
+oxvba-com = { workspace = true, features = ["fixture-typelibs"] }

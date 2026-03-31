@@ -14,6 +14,9 @@ oxvba-runtime.workspace = true
 thiserror.workspace = true
 rkyv.workspace = true
 
+[dev-dependencies]
+oxvba-com = { workspace = true, features = ["fixture-typelibs"] }
+
 [features]
 default = []
 mach_zero_copy_bytecode = []

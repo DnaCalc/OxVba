@@ -12,11 +12,11 @@ use crate::{
     invoke_bound_dispatch_legacy_i32_result, invoke_dispatch_runtime_value_with_shared_state,
     legacy_runtime_arg_values, member_spec_from_typelib_metadata,
     member_token_and_spec_from_typelib_metadata_name, queue_projection_event_callbacks_shared,
-    raw_oxvba_test_dispatch_vtable_invoke, release_callback, release_object_binding_shared,
-    release_subscription_transport, resolve_bound_native_dispatch_shared,
-    resolve_known_typelib_identity, resolve_named_argument_dispids,
-    resolve_typelib_identity_for_prog_id_name, subscribe_event_shared,
-    take_polled_callback_payload, unsubscribe_event_shared, validate_named_arg_order,
+    release_callback, release_object_binding_shared, release_subscription_transport,
+    resolve_bound_native_dispatch_shared, resolve_known_typelib_identity,
+    resolve_named_argument_dispids, resolve_typelib_identity_for_prog_id_name,
+    subscribe_event_shared, take_polled_callback_payload, unsubscribe_event_shared,
+    validate_named_arg_order,
 };
 use oxvba_runtime::{ObjectHandle, RuntimeValue};
 use std::sync::{Arc, Mutex, MutexGuard};
@@ -303,17 +303,29 @@ impl WindowsComBridge {
                 if !prefer_vtable {
                     return Ok(None);
                 }
-                if !binding
-                    .prog_id_name
-                    .eq_ignore_ascii_case(crate::OXVBA_TEST_DISPATCH_PROGID)
+                #[cfg(any(test, feature = "fixture-typelibs"))]
                 {
-                    return Ok(None);
+                    if !binding
+                        .prog_id_name
+                        .eq_ignore_ascii_case(crate::OXVBA_TEST_DISPATCH_PROGID)
+                    {
+                        return Ok(None);
+                    }
+                    if member == crate::TEST_DISPID_ECHO_VARIANT {
+                        return Ok(None);
+                    }
+                    unsafe {
+                        return crate::raw_oxvba_test_dispatch_vtable_invoke(
+                            dispatch,
+                            member,
+                            positional_values,
+                        );
+                    }
                 }
-                if member == crate::TEST_DISPID_ECHO_VARIANT {
-                    return Ok(None);
-                }
-                unsafe {
-                    raw_oxvba_test_dispatch_vtable_invoke(dispatch, member, positional_values)
+                #[cfg(not(any(test, feature = "fixture-typelibs")))]
+                {
+                    let _ = (dispatch, binding, member, positional_values);
+                    Ok(None)
                 }
             };
         let mut known_member_spec = |binding: &ComBinding, token: ComMemberToken| {

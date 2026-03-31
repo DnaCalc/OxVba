@@ -134,7 +134,7 @@ impl ComInvokeFailure {
         {
             return label;
         }
-        crate::map_com_hresult_label(self.hr.map(|hr| hr as u32), self.arg_err)
+        map_com_hresult_label(self.hr.map(|hr| hr as u32), self.arg_err)
     }
 
     pub fn render(&self) -> String {
@@ -181,6 +181,27 @@ impl ComInvokeFailure {
             message.push_str(&format!(" detail=\"{}\"", sanitize_error_text(detail)));
         }
         message
+    }
+}
+
+#[cfg(target_os = "windows")]
+pub fn map_com_hresult_label(hresult: Option<u32>, arg_err: Option<u32>) -> &'static str {
+    if arg_err.is_some() {
+        return "arg-error";
+    }
+    match hresult {
+        Some(0x8004_0154) => "class-not-registered",
+        Some(0x8004_01F3) => "invalid-class-string",
+        Some(0x8000_4002) => "no-interface",
+        Some(0x8002_0003) => "member-not-found",
+        Some(0x8002_0004) => "param-not-found",
+        Some(0x8002_0006) => "unknown-name",
+        Some(0x8002_0005) => "type-mismatch",
+        Some(0x8002_000E) => "bad-param-count",
+        Some(0x8002_0009) => "exception-raised",
+        Some(0x8007_0057) => "invalid-argument",
+        Some(_) => "native-failure",
+        None => "fault-unspecified",
     }
 }
 

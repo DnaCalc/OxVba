@@ -6,6 +6,10 @@ license.workspace = true
 authors.workspace = true
 repository.workspace = true
 
+[features]
+default = []
+fixture-typelibs = []
+
 [dependencies]
 oxvba-runtime.workspace = true
 thiserror.workspace = true

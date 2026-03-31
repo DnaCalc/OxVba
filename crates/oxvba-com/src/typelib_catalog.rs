@@ -5,8 +5,11 @@ use crate::typelib::{
     TypeLibMetadataBlob, TypeLibResolveRequest, TypeLibResolvedIdentity,
 };
 
+#[cfg(any(test, feature = "fixture-typelibs"))]
 const OXVBA_TEST_DISPATCH_PROGID: &str = "OxVba.TestDispatch";
+#[cfg(any(test, feature = "fixture-typelibs"))]
 const OXVBA_TEST_DISPATCH_NO_DEFAULT_PROGID: &str = "OxVba.TestDispatchNoDefault";
+#[cfg(any(test, feature = "fixture-typelibs"))]
 const OXVBA_TEST_DISPATCH_AMBIGUOUS_DEFAULT_PROGID: &str = "OxVba.TestDispatchAmbiguousDefault";
 const OXVBA_TEST_EVENT_SERVER_PROGID: &str = "OxVba.TestEventServer";
 const OXVBA_ALT_TEST_EVENT_SERVER_PROGID: &str = "OxVba.TestEventServerAlt";
@@ -170,77 +173,79 @@ pub fn resolve_known_typelib_identity(
         });
     }
 
-    if normalized_importlib
-        .as_deref()
-        .is_some_and(|value| value == "oxvba_testdispatch.tlb" || value == "oxvba.testdispatch.tlb")
-        || normalized_libid
+    #[cfg(any(test, feature = "fixture-typelibs"))]
+    {
+        if normalized_importlib.as_deref().is_some_and(|value| {
+            value == "oxvba_testdispatch.tlb" || value == "oxvba.testdispatch.tlb"
+        }) || normalized_libid
             .as_deref()
             .is_some_and(|value| value == "11111111-2222-3333-4444-555555555555")
-    {
-        return Some(TypeLibResolvedIdentity {
-            reference_name: request.reference_name.clone(),
-            requested_coclass: request.requested_coclass.clone(),
-            importlib: "oxvba_testdispatch.tlb".to_string(),
-            libid: Some("11111111-2222-3333-4444-555555555555".to_string()),
-            major_version: 1,
-            minor_version: 0,
-            lcid: Some(0),
-            cache_key: "typelib:oxvba-testdispatch:1.0:0".to_string(),
-        });
-    }
+        {
+            return Some(TypeLibResolvedIdentity {
+                reference_name: request.reference_name.clone(),
+                requested_coclass: request.requested_coclass.clone(),
+                importlib: "oxvba_testdispatch.tlb".to_string(),
+                libid: Some("11111111-2222-3333-4444-555555555555".to_string()),
+                major_version: 1,
+                minor_version: 0,
+                lcid: Some(0),
+                cache_key: "typelib:oxvba-testdispatch:1.0:0".to_string(),
+            });
+        }
 
-    if normalized_importlib.as_deref().is_some_and(|value| {
-        value == "oxvba_testeventserver.tlb" || value == "oxvba.testeventserver.tlb"
-    }) || normalized_libid
-        .as_deref()
-        .is_some_and(|value| value == "e2a30001-0001-0001-0001-000000000001")
-    {
-        return Some(TypeLibResolvedIdentity {
-            reference_name: "OxVba_TestEventServer".to_string(),
-            requested_coclass: request.requested_coclass.clone(),
-            importlib: "oxvba_testeventserver.tlb".to_string(),
-            libid: Some("E2A30001-0001-0001-0001-000000000001".to_string()),
-            major_version: 1,
-            minor_version: 0,
-            lcid: Some(0),
-            cache_key: "typelib:oxvba-testeventserver:1.0:0".to_string(),
-        });
-    }
+        if normalized_importlib.as_deref().is_some_and(|value| {
+            value == "oxvba_testeventserver.tlb" || value == "oxvba.testeventserver.tlb"
+        }) || normalized_libid
+            .as_deref()
+            .is_some_and(|value| value == "e2a30001-0001-0001-0001-000000000001")
+        {
+            return Some(TypeLibResolvedIdentity {
+                reference_name: "OxVba_TestEventServer".to_string(),
+                requested_coclass: request.requested_coclass.clone(),
+                importlib: "oxvba_testeventserver.tlb".to_string(),
+                libid: Some("E2A30001-0001-0001-0001-000000000001".to_string()),
+                major_version: 1,
+                minor_version: 0,
+                lcid: Some(0),
+                cache_key: "typelib:oxvba-testeventserver:1.0:0".to_string(),
+            });
+        }
 
-    if normalized_importlib.as_deref().is_some_and(|value| {
-        value == "oxvba_testeventserveralt.tlb" || value == "oxvba.testeventserveralt.tlb"
-    }) || normalized_libid
-        .as_deref()
-        .is_some_and(|value| value == "e2a30001-0001-0001-0001-000000000101")
-    {
-        return Some(TypeLibResolvedIdentity {
-            reference_name: "OxVba_TestEventServerAlt".to_string(),
-            requested_coclass: request.requested_coclass.clone(),
-            importlib: "oxvba_testeventserveralt.tlb".to_string(),
-            libid: Some("E2A30001-0001-0001-0001-000000000101".to_string()),
-            major_version: 1,
-            minor_version: 0,
-            lcid: Some(0),
-            cache_key: "typelib:oxvba-testeventserveralt:1.0:0".to_string(),
-        });
-    }
+        if normalized_importlib.as_deref().is_some_and(|value| {
+            value == "oxvba_testeventserveralt.tlb" || value == "oxvba.testeventserveralt.tlb"
+        }) || normalized_libid
+            .as_deref()
+            .is_some_and(|value| value == "e2a30001-0001-0001-0001-000000000101")
+        {
+            return Some(TypeLibResolvedIdentity {
+                reference_name: "OxVba_TestEventServerAlt".to_string(),
+                requested_coclass: request.requested_coclass.clone(),
+                importlib: "oxvba_testeventserveralt.tlb".to_string(),
+                libid: Some("E2A30001-0001-0001-0001-000000000101".to_string()),
+                major_version: 1,
+                minor_version: 0,
+                lcid: Some(0),
+                cache_key: "typelib:oxvba-testeventserveralt:1.0:0".to_string(),
+            });
+        }
 
-    if normalized_importlib.as_deref().is_some_and(|value| {
-        value == "oxvba_testeventserveralt2.tlb" || value == "oxvba.testeventserveralt2.tlb"
-    }) || normalized_libid
-        .as_deref()
-        .is_some_and(|value| value == "e2a30001-0001-0001-0001-000000000201")
-    {
-        return Some(TypeLibResolvedIdentity {
-            reference_name: "OxVba_TestEventServerAlt2".to_string(),
-            requested_coclass: request.requested_coclass.clone(),
-            importlib: "oxvba_testeventserveralt2.tlb".to_string(),
-            libid: Some("E2A30001-0001-0001-0001-000000000201".to_string()),
-            major_version: 1,
-            minor_version: 0,
-            lcid: Some(0),
-            cache_key: "typelib:oxvba-testeventserveralt2:1.0:0".to_string(),
-        });
+        if normalized_importlib.as_deref().is_some_and(|value| {
+            value == "oxvba_testeventserveralt2.tlb" || value == "oxvba.testeventserveralt2.tlb"
+        }) || normalized_libid
+            .as_deref()
+            .is_some_and(|value| value == "e2a30001-0001-0001-0001-000000000201")
+        {
+            return Some(TypeLibResolvedIdentity {
+                reference_name: "OxVba_TestEventServerAlt2".to_string(),
+                requested_coclass: request.requested_coclass.clone(),
+                importlib: "oxvba_testeventserveralt2.tlb".to_string(),
+                libid: Some("E2A30001-0001-0001-0001-000000000201".to_string()),
+                major_version: 1,
+                minor_version: 0,
+                lcid: Some(0),
+                cache_key: "typelib:oxvba-testeventserveralt2:1.0:0".to_string(),
+            });
+        }
     }
 
     if let Some(coclass_name) = request.requested_coclass.as_deref() {
@@ -256,6 +261,7 @@ pub fn resolve_known_typelib_identity(
     crate::windows_typelib_loader::resolve_typelib_identity_from_registry(request).ok()
 }
 
+#[cfg(any(test, feature = "fixture-typelibs"))]
 pub fn known_typelib_identity_for_prog_id_name(
     prog_id_name: &str,
 ) -> Option<TypeLibResolvedIdentity> {
@@ -376,6 +382,13 @@ pub fn known_typelib_identity_for_prog_id_name(
             cache_key: "typelib:oxvba-testdispatch-ambiguousdefault:1.0:0".to_string(),
         });
     }
+    None
+}
+
+#[cfg(not(any(test, feature = "fixture-typelibs")))]
+pub fn known_typelib_identity_for_prog_id_name(
+    _prog_id_name: &str,
+) -> Option<TypeLibResolvedIdentity> {
     None
 }
 
