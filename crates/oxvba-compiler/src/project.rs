@@ -1,8 +1,11 @@
 use std::collections::{BTreeMap, BTreeSet};
+use std::hash::{DefaultHasher, Hash, Hasher};
+use std::sync::{Mutex, OnceLock};
 
 use oxvba_com::{
     ComMemberSpec, TypeLibMemberInvokeKind, TypeLibMemberLookupResult, TypeLibMetadataBlob,
-    TypeLibResolveRequest, activation_prog_id_from_typelib_metadata, build_typelib_metadata,
+    TypeLibParamType, TypeLibResolveRequest, TypeLibResolvedIdentity,
+    activation_prog_id_from_typelib_metadata, build_typelib_metadata,
     resolve_default_member_token_and_spec_from_typelib_metadata, resolve_known_typelib_identity,
     resolve_member_token_and_spec_from_typelib_metadata_name,
     resolve_typelib_identity_for_prog_id_name,
@@ -126,6 +129,24 @@ pub struct ReferencedProjectManifest {
 }
 
 const TYPELIB_BINDING_DIAGNOSTIC_MODULE_NAME: &str = "__OxVbaTypeLibBindingDiagnostic";
+const PROJECTED_TYPELIB_REFERENCE_MARKER: &str = "' OxVbaProjectedTypeLibReference";
+const PROJECTED_TYPELIB_REFERENCE_PREFIX: &str = "' OxVbaProjectedTypeLibReference:";
+static PROJECTED_TYPELIB_REFERENCE_CACHE: OnceLock<
+    Mutex<BTreeMap<String, ReferencedProjectManifest>>,
+> = OnceLock::new();
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ProjectedTypeLibReference {
+    pub identity: TypeLibResolvedIdentity,
+    pub freshness_key: String,
+    pub manifest: ReferencedProjectManifest,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct ProjectedTypeLibReferenceProvenance {
+    identity: TypeLibResolvedIdentity,
+    freshness_key: String,
+}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ProjectManifest {
@@ -570,21 +591,20 @@ fn compile_project_with_strategy(
     preflight_typelib_binding_diagnostics(manifest)?;
     validate_manifest(manifest)?;
 
-    // Augment reference_projects with synthetic manifests for TypeLibrary references.
+    // Augment reference_projects with explicit project-shaped imported typelib references.
     let mut augmented_refs = manifest.reference_projects.clone();
     for reference in &manifest.references {
         if reference.reference_kind == ReferenceKind::TypeLibrary
             && let Some(identity) =
                 resolve_typelib_identity_for_reference(&reference.referenced_project_name)
         {
-            let blob = build_typelib_metadata(&identity);
-            let synthetic = project_typelib_as_manifest(&blob);
-            let key = normalize_identifier(&synthetic.project_name);
+            let projected = project_imported_typelib_reference(&identity);
+            let key = normalize_identifier(&projected.manifest.project_name);
             if !augmented_refs
                 .iter()
                 .any(|r| normalize_identifier(&r.project_name) == key)
             {
-                augmented_refs.push(synthetic);
+                augmented_refs.push(projected.manifest);
             }
         }
     }
@@ -629,7 +649,8 @@ fn compile_project_with_strategy(
     let host_exports = collect_host_exports(manifest, &procedure_index);
     let reference_visible_exports = collect_reference_visible_exports(manifest, &procedure_index);
     let event_dispatch_bindings = flatten_event_dispatch_plan(&event_dispatch_plan);
-    let project_com_withevents_routes = build_project_com_withevents_routes(&event_dispatch_plan);
+    let project_com_withevents_routes =
+        build_project_com_withevents_routes(manifest, &event_dispatch_plan);
     let implements_map =
         collect_class_implements_map(manifest, &procedure_index, &reference_order)?;
     let project_dynamic_objects = build_project_dynamic_object_routes(
@@ -653,6 +674,125 @@ fn compile_project_with_strategy(
         project_com_withevents_routes,
         project_dynamic_objects,
     })
+}
+
+fn projected_typelib_reference_cache() -> &'static Mutex<BTreeMap<String, ReferencedProjectManifest>>
+{
+    PROJECTED_TYPELIB_REFERENCE_CACHE.get_or_init(|| Mutex::new(BTreeMap::new()))
+}
+
+pub fn project_imported_typelib_reference(
+    identity: &TypeLibResolvedIdentity,
+) -> ProjectedTypeLibReference {
+    let blob = build_typelib_metadata(identity);
+    project_imported_typelib_reference_from_blob(&blob)
+}
+
+fn project_imported_typelib_reference_from_blob(
+    blob: &TypeLibMetadataBlob,
+) -> ProjectedTypeLibReference {
+    let freshness_key = projected_typelib_freshness_key(blob);
+    let cache_lookup_key = format!("{}::{freshness_key}", blob.identity.cache_key);
+    let manifest = {
+        let mut cache = projected_typelib_reference_cache()
+            .lock()
+            .expect("projected typelib reference cache lock poisoned");
+        if let Some(cached) = cache.get(&cache_lookup_key).cloned() {
+            cached
+        } else {
+            let projected = build_projected_typelib_manifest(blob, &freshness_key);
+            cache.insert(cache_lookup_key, projected.clone());
+            projected
+        }
+    };
+    ProjectedTypeLibReference {
+        identity: blob.identity.clone(),
+        freshness_key,
+        manifest,
+    }
+}
+
+fn projected_typelib_freshness_key(blob: &TypeLibMetadataBlob) -> String {
+    let mut hasher = DefaultHasher::new();
+    blob.identity.reference_name.hash(&mut hasher);
+    blob.identity.requested_coclass.hash(&mut hasher);
+    blob.identity.importlib.hash(&mut hasher);
+    blob.identity.libid.hash(&mut hasher);
+    blob.identity.major_version.hash(&mut hasher);
+    blob.identity.minor_version.hash(&mut hasher);
+    blob.identity.lcid.hash(&mut hasher);
+    blob.activation_prog_id.hash(&mut hasher);
+    blob.member_name_to_token.hash(&mut hasher);
+    for member in &blob.members {
+        member.name.hash(&mut hasher);
+        member.token.hash(&mut hasher);
+        member.requires_argument.hash(&mut hasher);
+        typelib_member_invoke_kind_tag(member.invoke_kind).hash(&mut hasher);
+        member.parameter_names.hash(&mut hasher);
+        member.is_default_member.hash(&mut hasher);
+        for parameter_type in &member.parameter_types {
+            typelib_param_type_tag(*parameter_type).hash(&mut hasher);
+        }
+        member
+            .return_type
+            .map(typelib_param_type_tag)
+            .hash(&mut hasher);
+    }
+    for event in &blob.events {
+        event.name.hash(&mut hasher);
+        event.token.hash(&mut hasher);
+        event.callback_arity.hash(&mut hasher);
+        event.connection_point_iid.hash(&mut hasher);
+        event.dispatch_member_id.hash(&mut hasher);
+        match event.dispatch_path {
+            oxvba_com::TypeLibEventDispatchPath::Dispatch => 0_u8,
+            oxvba_com::TypeLibEventDispatchPath::SourceInterface => 1_u8,
+        }
+        .hash(&mut hasher);
+    }
+    format!("{:016x}", hasher.finish())
+}
+
+fn typelib_member_invoke_kind_tag(kind: TypeLibMemberInvokeKind) -> u8 {
+    match kind {
+        TypeLibMemberInvokeKind::PropertyGet => 0,
+        TypeLibMemberInvokeKind::Method => 1,
+        TypeLibMemberInvokeKind::PropertyPut => 2,
+        TypeLibMemberInvokeKind::PropertyPutRef => 3,
+    }
+}
+
+fn typelib_param_type_tag(kind: TypeLibParamType) -> u8 {
+    match kind {
+        TypeLibParamType::Variant => 0,
+        TypeLibParamType::Long => 1,
+        TypeLibParamType::Integer => 2,
+        TypeLibParamType::String => 3,
+        TypeLibParamType::Boolean => 4,
+        TypeLibParamType::Double => 5,
+        TypeLibParamType::Single => 6,
+        TypeLibParamType::Currency => 7,
+        TypeLibParamType::Date => 8,
+        TypeLibParamType::Decimal => 9,
+        TypeLibParamType::Object => 10,
+        TypeLibParamType::Byte => 11,
+        TypeLibParamType::LongLong => 12,
+        TypeLibParamType::LongPtr => 13,
+        TypeLibParamType::ByRefVariant => 14,
+        TypeLibParamType::ByRefLong => 15,
+        TypeLibParamType::ByRefInteger => 16,
+        TypeLibParamType::ByRefString => 17,
+        TypeLibParamType::ByRefDouble => 18,
+        TypeLibParamType::ByRefSingle => 19,
+        TypeLibParamType::ByRefCurrency => 20,
+        TypeLibParamType::ByRefDate => 21,
+        TypeLibParamType::ByRefDecimal => 22,
+        TypeLibParamType::ByRefObject => 23,
+        TypeLibParamType::ByRefByte => 24,
+        TypeLibParamType::ByRefBoolean => 25,
+        TypeLibParamType::ByRefLongLong => 26,
+        TypeLibParamType::ByRefLongPtr => 27,
+    }
 }
 
 fn preflight_typelib_binding_diagnostics(
@@ -1002,14 +1142,59 @@ fn validate_manifest(manifest: &ProjectManifest) -> Result<(), ProjectCompileErr
 }
 
 fn is_synthetic_typelib_reference_project(project: &ReferencedProjectManifest) -> bool {
-    project.modules.iter().any(|module| {
-        module.module_kind == ModuleKind::Class
-            && resolve_typelib_identity_for_project_module(
-                &project.project_name,
-                &module.module_name,
-            )
-            .is_some()
+    projected_typelib_reference_provenance(project).is_some()
+}
+
+fn projected_typelib_reference_provenance(
+    project: &ReferencedProjectManifest,
+) -> Option<ProjectedTypeLibReferenceProvenance> {
+    let values = project
+        .modules
+        .iter()
+        .filter(|module| module.module_kind == ModuleKind::Class)
+        .find_map(parse_projected_typelib_reference_module_provenance)?;
+    Some(ProjectedTypeLibReferenceProvenance {
+        identity: TypeLibResolvedIdentity {
+            reference_name: values.get("reference-name")?.clone(),
+            requested_coclass: non_empty_owned(values.get("requested-coclass")?.clone()),
+            importlib: values.get("importlib")?.clone(),
+            libid: non_empty_owned(values.get("libid")?.clone()),
+            major_version: values.get("major-version")?.parse().ok()?,
+            minor_version: values.get("minor-version")?.parse().ok()?,
+            lcid: non_empty_owned(values.get("lcid")?.clone()).and_then(|value| value.parse().ok()),
+            cache_key: values.get("cache-key")?.clone(),
+        },
+        freshness_key: values.get("freshness-key")?.clone(),
     })
+}
+
+fn parse_projected_typelib_reference_module_provenance(
+    module: &ModuleUnit,
+) -> Option<BTreeMap<String, String>> {
+    let mut found_marker = false;
+    let mut values = BTreeMap::new();
+    for line in module.source.lines() {
+        let trimmed = line.trim();
+        if trimmed == PROJECTED_TYPELIB_REFERENCE_MARKER {
+            found_marker = true;
+            continue;
+        }
+        let Some(rest) = trimmed.strip_prefix(PROJECTED_TYPELIB_REFERENCE_PREFIX) else {
+            continue;
+        };
+        let (key, value) = rest.split_once('=')?;
+        values.insert(key.to_string(), value.to_string());
+    }
+    found_marker.then_some(values)
+}
+
+fn non_empty_owned(value: String) -> Option<String> {
+    let trimmed = value.trim();
+    if trimmed.is_empty() {
+        None
+    } else {
+        Some(trimmed.to_string())
+    }
 }
 
 fn is_typelib_binding_diagnostic_module(module: &ModuleUnit) -> bool {
@@ -1852,20 +2037,29 @@ fn validate_modules_for_project(
     Ok(())
 }
 
-/// Project a `TypeLibMetadataBlob` as a synthetic VBA `ReferencedProjectManifest`.
+/// Project a `TypeLibMetadataBlob` as a project-shaped imported `ReferencedProjectManifest`.
 ///
-/// Each COM interface/CoClass becomes a class module with public method/property stubs.
-/// Enums (if present) become a procedural module with `Public Enum` blocks.
-/// This allows the existing project-reference resolution infrastructure to handle
-/// COM type libraries uniformly.
+/// The generated module stays explicit about its typelib origin through embedded
+/// provenance comments so later compiler passes can rehydrate the imported
+/// typelib identity without guessing from project/module names.
 pub fn project_typelib_as_manifest(blob: &TypeLibMetadataBlob) -> ReferencedProjectManifest {
+    project_imported_typelib_reference_from_blob(blob).manifest
+}
+
+fn build_projected_typelib_manifest(
+    blob: &TypeLibMetadataBlob,
+    freshness_key: &str,
+) -> ReferencedProjectManifest {
     let (project_name, module_name) = projected_typelib_manifest_names(blob);
 
-    // Collect all members and group them by a common "interface" name.
-    // For now, all members belong to the same default interface (the CoClass itself).
     let mut source_lines = Vec::new();
     source_lines.push(format!("Attribute VB_Name = \"{}\"", module_name));
-    source_lines.push("' Synthetic class projected from COM type library".to_string());
+    source_lines.extend(projected_typelib_reference_comment_lines(
+        blob,
+        &module_name,
+        freshness_key,
+    ));
+    source_lines.push("' Project-shaped imported COM typelib reference".to_string());
 
     for member in &blob.members {
         let decl = match member.invoke_kind {
@@ -1940,49 +2134,61 @@ pub fn project_typelib_as_manifest(blob: &TypeLibMetadataBlob) -> ReferencedProj
     }
 }
 
+fn projected_typelib_reference_comment_lines(
+    blob: &TypeLibMetadataBlob,
+    module_name: &str,
+    freshness_key: &str,
+) -> Vec<String> {
+    let requested_coclass = blob
+        .identity
+        .requested_coclass
+        .as_deref()
+        .filter(|value| !value.trim().is_empty())
+        .unwrap_or(module_name);
+    vec![
+        PROJECTED_TYPELIB_REFERENCE_MARKER.to_string(),
+        projected_typelib_reference_comment("reference-name", &blob.identity.reference_name),
+        projected_typelib_reference_comment("requested-coclass", requested_coclass),
+        projected_typelib_reference_comment("importlib", &blob.identity.importlib),
+        projected_typelib_reference_comment(
+            "libid",
+            blob.identity.libid.as_deref().unwrap_or_default(),
+        ),
+        projected_typelib_reference_comment(
+            "major-version",
+            &blob.identity.major_version.to_string(),
+        ),
+        projected_typelib_reference_comment(
+            "minor-version",
+            &blob.identity.minor_version.to_string(),
+        ),
+        projected_typelib_reference_comment(
+            "lcid",
+            &blob
+                .identity
+                .lcid
+                .map(|value| value.to_string())
+                .unwrap_or_default(),
+        ),
+        projected_typelib_reference_comment("cache-key", &blob.identity.cache_key),
+        projected_typelib_reference_comment("freshness-key", freshness_key),
+    ]
+}
+
+fn projected_typelib_reference_comment(key: &str, value: &str) -> String {
+    format!("{PROJECTED_TYPELIB_REFERENCE_PREFIX}{key}={value}")
+}
+
 fn projected_typelib_manifest_names(blob: &TypeLibMetadataBlob) -> (String, String) {
-    let importlib = blob.identity.importlib.as_str();
-    let libid = blob.identity.libid.as_deref().unwrap_or_default();
-    if importlib.eq_ignore_ascii_case("oxvba_testeventserver.tlb")
-        || libid.eq_ignore_ascii_case("E2A30001-0001-0001-0001-000000000001")
+    if let Some(module_name) = blob
+        .identity
+        .requested_coclass
+        .as_deref()
+        .filter(|module_name| !module_name.trim().is_empty())
     {
         return (
             blob.identity.reference_name.clone(),
-            "TestEventServer".to_string(),
-        );
-    }
-    if importlib.eq_ignore_ascii_case("oxvba_testeventserveralt.tlb")
-        || libid.eq_ignore_ascii_case("E2A30001-0001-0001-0001-000000000101")
-    {
-        return (
-            blob.identity.reference_name.clone(),
-            "TestEventServer".to_string(),
-        );
-    }
-    if importlib.eq_ignore_ascii_case("oxvba_testeventserveralt2.tlb")
-        || libid.eq_ignore_ascii_case("E2A30001-0001-0001-0001-000000000201")
-    {
-        return (
-            blob.identity.reference_name.clone(),
-            "TestEventServer".to_string(),
-        );
-    }
-    if importlib.eq_ignore_ascii_case("oxvba_testdispatch.tlb")
-        || libid.eq_ignore_ascii_case("11111111-2222-3333-4444-555555555555")
-    {
-        return ("OxVba".to_string(), "TestDispatch".to_string());
-    }
-    if importlib.eq_ignore_ascii_case("oxvba_testdispatch_nodefault.tlb")
-        || libid.eq_ignore_ascii_case("11111111-2222-3333-4444-555555555556")
-    {
-        return ("OxVba".to_string(), "TestDispatchNoDefault".to_string());
-    }
-    if importlib.eq_ignore_ascii_case("oxvba_testdispatch_ambiguousdefault.tlb")
-        || libid.eq_ignore_ascii_case("11111111-2222-3333-4444-555555555557")
-    {
-        return (
-            "OxVba".to_string(),
-            "TestDispatchAmbiguousDefault".to_string(),
+            module_name.to_string(),
         );
     }
     if let Some(module_name) = blob
@@ -2724,6 +2930,42 @@ fn is_referenced_typelib_type_reference(manifest: &ProjectManifest, type_text: &
         .is_some()
 }
 
+fn referenced_typelib_blob_for_project_module(
+    manifest: &ProjectManifest,
+    project_name: &str,
+    module_name: &str,
+) -> Result<Option<TypeLibMetadataBlob>, ProjectCompileError> {
+    let normalized_project = normalize_identifier(project_name);
+    let normalized_module = normalize_identifier(module_name);
+    for project in ordered_reference_projects(manifest) {
+        if normalize_identifier(&project.project_name) != normalized_project {
+            continue;
+        }
+        let Some(module) = project.modules.iter().find(|module| {
+            module.module_kind == ModuleKind::Class
+                && normalize_identifier(&module.module_name) == normalized_module
+        }) else {
+            continue;
+        };
+        if let Some(err) = referenced_project_typelib_binding_diagnostic(project)? {
+            return Err(err);
+        }
+        if let Some(provenance) = projected_typelib_reference_provenance(project) {
+            let mut identity = provenance.identity;
+            if identity.requested_coclass.is_none() {
+                identity.requested_coclass = Some(module.module_name.clone());
+            }
+            return Ok(Some(build_typelib_metadata(&identity)));
+        }
+        if let Some(identity) =
+            resolve_typelib_identity_for_project_module(&project.project_name, &module.module_name)
+        {
+            return Ok(Some(build_typelib_metadata(&identity)));
+        }
+    }
+    Ok(None)
+}
+
 fn referenced_typelib_blob_for_type_reference(
     manifest: &ProjectManifest,
     type_text: &str,
@@ -2742,29 +2984,10 @@ fn referenced_typelib_blob_for_type_reference(
                 .unwrap_or_default()
                 .trim(),
         );
-        for project in ordered_reference_projects(manifest) {
-            if normalize_identifier(&project.project_name) != normalized_project {
-                continue;
-            }
-            let Some(module) = project.modules.iter().find(|module| {
-                module.module_kind == ModuleKind::Class
-                    && normalize_identifier(&module.module_name) == normalized_module
-            }) else {
-                continue;
-            };
-            if let Some(err) = referenced_project_typelib_binding_diagnostic(project)? {
-                return Err(err);
-            }
-            if let Some(identity) = resolve_typelib_identity_for_project_module(
-                &project.project_name,
-                &module.module_name,
-            ) {
-                return Ok(Some((
-                    normalize_identifier(&project.project_name),
-                    normalize_identifier(&module.module_name),
-                    build_typelib_metadata(&identity),
-                )));
-            }
+        if let Some(blob) =
+            referenced_typelib_blob_for_project_module(manifest, qualifier, &normalized_module)?
+        {
+            return Ok(Some((normalized_project, normalized_module, blob)));
         }
         let referenced = manifest.references.iter().any(|reference| {
             reference.reference_kind == ReferenceKind::TypeLibrary
@@ -2792,23 +3015,19 @@ fn referenced_typelib_blob_for_type_reference(
 
     let normalized_module = normalize_identifier(raw);
     for project in ordered_reference_projects(manifest) {
-        let Some(module) = project.modules.iter().find(|module| {
+        if project.modules.iter().any(|module| {
             module.module_kind == ModuleKind::Class
                 && normalize_identifier(&module.module_name) == normalized_module
-        }) else {
-            continue;
-        };
-        if let Some(err) = referenced_project_typelib_binding_diagnostic(project)? {
-            return Err(err);
-        }
-        if let Some(identity) =
-            resolve_typelib_identity_for_project_module(&project.project_name, &module.module_name)
-        {
-            return Ok(Some((
-                normalize_identifier(&project.project_name),
-                normalize_identifier(&module.module_name),
-                build_typelib_metadata(&identity),
-            )));
+        }) {
+            if let Some(blob) =
+                referenced_typelib_blob_for_project_module(manifest, &project.project_name, raw)?
+            {
+                return Ok(Some((
+                    normalize_identifier(&project.project_name),
+                    normalize_identifier(raw),
+                    blob,
+                )));
+            }
         }
     }
 
@@ -5646,15 +5865,17 @@ fn flatten_event_dispatch_plan(plan: &EventDispatchPlan) -> Vec<ProjectEventDisp
     out
 }
 
-fn build_project_com_withevents_routes(plan: &EventDispatchPlan) -> Vec<ProjectComWithEventsRoute> {
+fn build_project_com_withevents_routes(
+    manifest: &ProjectManifest,
+    plan: &EventDispatchPlan,
+) -> Vec<ProjectComWithEventsRoute> {
     let mut out = Vec::new();
     for ((source_project, source_module, event_name), routes) in plan {
-        let Some(identity) =
-            resolve_typelib_identity_for_project_module(source_project, source_module)
+        let Ok(Some(blob)) =
+            referenced_typelib_blob_for_project_module(manifest, source_project, source_module)
         else {
             continue;
         };
-        let blob = build_typelib_metadata(&identity);
         let Some(prog_id_name) = activation_prog_id_from_typelib_metadata(&blob) else {
             continue;
         };
@@ -7375,8 +7596,10 @@ mod tests {
         ExportKind, ModuleAttributes, ModuleKind, ProjectComWithEventsRoute, ProjectCompileError,
         ProjectEventDispatchBinding, ProjectKind, ProjectLoweringStrategy, ProjectManifest,
         ProjectReference, ReferenceKind, ReferencedProjectManifest,
-        TYPELIB_BINDING_DIAGNOSTIC_MODULE_NAME, compile_project, compile_project_with_strategy,
-        expand_bound_source_line, module_unit_from_source, validate_compiled_project_contract,
+        PROJECTED_TYPELIB_REFERENCE_MARKER, TYPELIB_BINDING_DIAGNOSTIC_MODULE_NAME,
+        compile_project, compile_project_with_strategy, expand_bound_source_line,
+        module_unit_from_source, project_imported_typelib_reference,
+        projected_typelib_reference_provenance, validate_compiled_project_contract,
         withevents_binding_token,
     };
     use std::collections::{BTreeMap, BTreeSet};
@@ -24303,5 +24526,62 @@ mod tests {
             !lowered.contains("set items = createobject("),
             "array-backed imported collection field should not retain CreateObject activation: {lowered}"
         );
+    }
+
+    #[test]
+    fn project_imported_typelib_reference_embeds_explicit_provenance() {
+        let identity = super::resolve_typelib_identity_for_prog_id_name("OxVba.TestDispatch")
+            .expect("fixture typelib identity");
+
+        let projected = project_imported_typelib_reference(&identity);
+        let source = &projected.manifest.modules[0].source;
+        assert!(
+            source.contains(PROJECTED_TYPELIB_REFERENCE_MARKER),
+            "projected typelib manifest should carry explicit provenance: {source}"
+        );
+
+        let provenance = projected_typelib_reference_provenance(&projected.manifest)
+            .expect("projected typelib provenance");
+        assert_eq!(provenance.identity.reference_name, identity.reference_name);
+        assert_eq!(
+            provenance.identity.requested_coclass.as_deref(),
+            Some("TestDispatch")
+        );
+        assert_eq!(provenance.identity.importlib, identity.importlib);
+        assert_eq!(provenance.freshness_key, projected.freshness_key);
+    }
+
+    #[test]
+    fn compile_project_accepts_projected_typelib_reference_without_name_guessing() {
+        let identity = super::resolve_typelib_identity_for_prog_id_name("OxVba.TestDispatch")
+            .expect("fixture typelib identity");
+
+        let mut projected = project_imported_typelib_reference(&identity).manifest;
+        projected.project_name = "ProjectedReference".to_string();
+        projected.modules[0].module_name = "ProjectedDispatch".to_string();
+        projected.modules[0].attributes.vb_name = "ProjectedDispatch".to_string();
+        projected.modules[0].source = projected.modules[0].source.replacen(
+            "Attribute VB_Name = \"TestDispatch\"",
+            "Attribute VB_Name = \"ProjectedDispatch\"",
+            1,
+        );
+
+        let main_module = module_unit_from_source(
+            "MainModule",
+            ModuleKind::Procedural,
+            "Attribute VB_Name = \"MainModule\"\nPublic Sub Main()\nEnd Sub",
+        )
+        .expect("main module parses");
+        let manifest = ProjectManifest {
+            project_name: "ProjectA".to_string(),
+            project_kind: ProjectKind::Source,
+            modules: vec![main_module],
+            references: Vec::new(),
+            reference_projects: vec![projected],
+            conditional_constants: BTreeMap::new(),
+        };
+
+        compile_project(&manifest)
+            .expect("projected typelib reference should be accepted by explicit provenance");
     }
 }

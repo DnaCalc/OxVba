@@ -3,11 +3,11 @@
 use std::collections::BTreeMap;
 use std::path::Path;
 
-use oxvba_com::{TypeLibResolveRequest, build_typelib_metadata, resolve_known_typelib_identity};
+use oxvba_com::{TypeLibResolveRequest, resolve_known_typelib_identity};
 use oxvba_compiler::{
     ModuleAttributes, ModuleKind, ModuleUnit, ProjectKind, ProjectManifest, ProjectReference,
     ReferenceKind, ReferencedProjectManifest, module_unit_from_source,
-    project::project_typelib_as_manifest,
+    project::project_imported_typelib_reference,
 };
 use oxvba_host::TypeLibraryCatalogEntry;
 
@@ -783,7 +783,7 @@ fn inject_type_library_reference_projects(loaded: &mut LoadedProject) {
                 loaded.manifest.reference_projects.push(diagnostic);
                 continue;
             };
-            let mut synthetic = project_typelib_as_manifest(&build_typelib_metadata(&identity));
+            let mut synthetic = project_imported_typelib_reference(&identity).manifest;
             append_typelib_binding_diagnostic_module(
                 &mut synthetic,
                 build_typelib_binding_diagnostic_module_for_missing_importlib(&request),
@@ -811,7 +811,7 @@ fn inject_type_library_reference_projects(loaded: &mut LoadedProject) {
             continue;
         };
 
-        let synthetic = project_typelib_as_manifest(&build_typelib_metadata(&identity));
+        let synthetic = project_imported_typelib_reference(&identity).manifest;
         if loaded.manifest.reference_projects.iter().any(|project| {
             project
                 .project_name
