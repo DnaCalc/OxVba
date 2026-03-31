@@ -13,9 +13,8 @@ use oxvba_com::WindowsComBridgeDispatchError;
 use oxvba_com::{
     ComCallbackPayload, ComCallbackToken, ComInvokeRequest, ComMemberToken, ComObjectDescriptor,
     ComObjectTransportKind, ComSubscriptionToken, DynamicCallRequest, DynamicMemberSelector,
-    build_typelib_metadata, known_typelib_identity_for_prog_id_name,
+    known_typelib_identity_for_prog_id_name,
     legacy_runtime_arg_values as com_legacy_runtime_arg_values,
-    member_token_and_spec_from_typelib_metadata_name,
 };
 use oxvba_runtime::{ObjectHandle, RuntimeValue, bstr::BStr, runtime_value_to_vba_string};
 
@@ -40,20 +39,6 @@ fn fallback_create_object_handle_raw(prog_id_name: &str) -> i32 {
         .bytes()
         .fold(0i32, |acc, b| acc.wrapping_add(b as i32));
     10_000i32.saturating_add(hash)
-}
-
-fn fallback_dynamic_member_token(name: &str) -> Option<ComMemberToken> {
-    for prog_id_name in ["OxVba.TestDispatch", "Scripting.Dictionary"] {
-        let Some(identity) = known_typelib_identity_for_prog_id_name(prog_id_name) else {
-            continue;
-        };
-        let metadata = build_typelib_metadata(&identity);
-        if let Some((token, _)) = member_token_and_spec_from_typelib_metadata_name(&metadata, name)
-        {
-            return Some(token);
-        }
-    }
-    None
 }
 
 impl ComHal for StandardHostServices {
@@ -271,24 +256,15 @@ impl ComHal for StandardHostServices {
                 }
             }
         }
-        let lowered = if let DynamicMemberSelector::Name(name) = &request.member {
-            if let Some(member) = fallback_dynamic_member_token(name) {
-                ComInvokeRequest {
-                    object: request.object.into(),
-                    member,
-                    args: request.args.clone().into_iter().map(Into::into).collect(),
-                    invoke_kind_hint: request.call_kind_hint.map(Into::into),
-                }
-            } else {
-                request.try_into_com_invoke_request().map_err(|detail| {
-                    HalError::adapter_fault(
-                        self.profile,
-                        capability,
-                        "dispatch_invoke",
-                        format!("dynamic call request cannot lower to COM invoke: {detail}"),
-                    )
-                })?
-            }
+        let lowered = if let DynamicMemberSelector::Name(_name) = &request.member {
+            request.try_into_com_invoke_request().map_err(|detail| {
+                HalError::adapter_fault(
+                    self.profile,
+                    capability,
+                    "dispatch_invoke",
+                    format!("dynamic call request cannot lower to COM invoke: {detail}"),
+                )
+            })?
         } else {
             request.try_into_com_invoke_request().map_err(|detail| {
                 HalError::adapter_fault(

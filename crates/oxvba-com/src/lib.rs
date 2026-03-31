@@ -3,6 +3,9 @@
 pub mod cycle_gc;
 pub mod dispatch;
 pub mod dynamic_object;
+#[cfg(any(test, feature = "fixture-typelibs"))]
+#[path = "fixtures/typelib_catalog.rs"]
+mod fixture_typelib_catalog;
 pub mod invoke_policy;
 pub mod miri_variant_mock;
 pub mod model;
@@ -24,6 +27,7 @@ pub mod windows_invoke;
 #[cfg(target_os = "windows")]
 pub mod windows_runtime_state;
 #[cfg(all(target_os = "windows", any(test, feature = "fixture-typelibs")))]
+#[path = "fixtures/windows_test_dispatch.rs"]
 pub mod windows_test_dispatch;
 pub mod windows_typelib_loader;
 #[cfg(target_os = "windows")]

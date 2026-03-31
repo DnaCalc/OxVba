@@ -4435,18 +4435,14 @@ fn parse_createobject_arg(arg: &str, array_bounds: &ArrayBoundsMap) -> Option<Bo
 }
 
 fn parse_dispatch_member_arg(
-    object_arg: &str,
+    _object_arg: &str,
     arg: &str,
     array_bounds: &ArrayBoundsMap,
 ) -> Option<BoundExpr> {
-    // Preserve quoted DispatchInvoke selectors as strings for general/external COM.
-    // Only the deterministic internal TestDispatch fixture lane keeps token lowering.
+    // Preserve quoted DispatchInvoke selectors as strings. Lowering them to member
+    // tokens here was a fixture-specific optimization and does not belong on the
+    // general compiler path.
     if let Some(literal) = parse_quoted_string_literal(arg) {
-        if let Some(token) =
-            known_dispatch_member_literal_token_for_object_arg(object_arg, literal.as_str())
-        {
-            return Some(BoundExpr::IntConst(token));
-        }
         return Some(BoundExpr::StringConst(literal));
     }
     parse_expr(arg, array_bounds)
@@ -4510,47 +4506,6 @@ fn parse_numeric_prefix_literal(text: &str) -> Option<i32> {
         b'o' => i32::from_str_radix(digits, 8).ok(),
         _ => None,
     }
-}
-
-fn known_dispatch_member_literal_token_for_object_arg(
-    object_arg: &str,
-    member_name: &str,
-) -> Option<i32> {
-    let prog_id_name = dispatch_invoke_createobject_prog_id_literal(object_arg)?;
-    let identity = oxvba_com::known_typelib_identity_for_prog_id_name(prog_id_name.as_str())?;
-    if !identity
-        .importlib
-        .eq_ignore_ascii_case("oxvba_testdispatch.tlb")
-        && !identity
-            .importlib
-            .eq_ignore_ascii_case("oxvba_testdispatch_nodefault.tlb")
-        && !identity
-            .importlib
-            .eq_ignore_ascii_case("oxvba_testdispatch_ambiguousdefault.tlb")
-    {
-        return None;
-    }
-    let metadata = oxvba_com::build_typelib_metadata(&identity);
-    oxvba_com::member_token_and_spec_from_typelib_metadata_name(&metadata, member_name)
-        .map(|(token, _)| token.raw())
-}
-
-fn dispatch_invoke_createobject_prog_id_literal(object_arg: &str) -> Option<String> {
-    let trimmed = object_arg.trim();
-    let open_paren = trimmed.find('(')?;
-    let close_paren = trimmed.rfind(')')?;
-    if !trimmed[..open_paren]
-        .trim()
-        .eq_ignore_ascii_case("CreateObject")
-        || close_paren <= open_paren
-    {
-        return None;
-    }
-    let args = split_call_args(&trimmed[open_paren + 1..close_paren])?;
-    if args.len() != 1 {
-        return None;
-    }
-    parse_quoted_string_literal(args[0])
 }
 
 fn split_call_args(args_raw: &str) -> Option<Vec<&str>> {
