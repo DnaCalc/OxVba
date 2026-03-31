@@ -1308,9 +1308,7 @@ mod tests {
     }
 
     fn expected_create_object_test_handle_raw(prog_id_name: &str) -> i32 {
-        if prog_id_name.eq_ignore_ascii_case("OxVba.TestDispatch")
-            || prog_id_name.eq_ignore_ascii_case("Scripting.Dictionary")
-        {
+        if prog_id_name.eq_ignore_ascii_case("OxVba.TestDispatch") {
             return 5_004;
         }
         let hash = prog_id_name
@@ -2759,8 +2757,8 @@ mod tests {
             .create_object_test(SCRIPTING_DICTIONARY_PROG_ID_NAME)
             .expect("create_object should return a token");
 
-        if object.raw() == 5_004 {
-            // Environment lacks native activation prerequisites; deterministic fallback remains valid.
+        if object.raw() < 20_001 {
+            // Environment fell back to the non-native CreateObject projection; that's still valid.
             return;
         }
 

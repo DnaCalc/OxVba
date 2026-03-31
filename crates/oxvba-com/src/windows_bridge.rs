@@ -78,8 +78,8 @@ impl WindowsComBridge {
                 .importlib_hint
                 .as_deref()
                 .or(request.libid_hint.as_deref())
-                .unwrap_or("<missing-identity>");
-            format!("no deterministic typelib identity mapping for `{request_key}`")
+                .unwrap_or(request.reference_name.as_str());
+            format!("COM-E-TYPELIB-IDENTITY-UNRESOLVED: no typelib identity could be resolved for `{request_key}`")
         })
     }
 

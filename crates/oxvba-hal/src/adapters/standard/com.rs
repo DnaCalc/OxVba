@@ -30,9 +30,7 @@ fn is_dispatch_fixture_prog_id_name(prog_id_name: &str) -> bool {
 }
 
 fn fallback_create_object_handle_raw(prog_id_name: &str) -> i32 {
-    if is_dispatch_fixture_prog_id_name(prog_id_name)
-        || prog_id_name.eq_ignore_ascii_case("Scripting.Dictionary")
-    {
+    if is_dispatch_fixture_prog_id_name(prog_id_name) {
         return 5_004;
     }
     let hash = prog_id_name
