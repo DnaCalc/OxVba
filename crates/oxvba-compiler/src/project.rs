@@ -6720,6 +6720,13 @@ fn rewrite_module_source(
                 &module_state_bindings,
                 &imported_collection_newenum_fields,
             );
+            let state_assigned =
+                rewrite_internal_class_state_assignment(&expanded_line, &module_state_bindings);
+            let expanded_line = if state_assigned != expanded_line {
+                state_assigned
+            } else {
+                rewrite_internal_class_state_reads(&state_assigned, &module_state_bindings)
+            };
             let expanded_line = rewrite_internal_class_default_member_read_assignment(
                 &expanded_line,
                 active_project,
@@ -6729,13 +6736,6 @@ fn rewrite_module_source(
                 &internal_class_bindings,
                 &shadowed_identifiers,
             )?;
-            let state_assigned =
-                rewrite_internal_class_state_assignment(&expanded_line, &module_state_bindings);
-            let expanded_line = if state_assigned != expanded_line {
-                state_assigned
-            } else {
-                rewrite_internal_class_state_reads(&state_assigned, &module_state_bindings)
-            };
             let expanded_line = rewrite_internal_class_property_reads(
                 &expanded_line,
                 active_project,
@@ -17230,6 +17230,25 @@ mod tests {
             project_name: "ProjectA".to_string(),
             project_kind: ProjectKind::Source,
             modules: vec![module_a, module_b],
+            references: Vec::new(),
+            reference_projects: Vec::new(),
+            conditional_constants: BTreeMap::new(),
+        };
+        assert_strategy_parity(&manifest);
+    }
+
+    #[test]
+    fn compile_project_module_aware_matches_rewrite_bridge_for_procedural_module_state_fixture() {
+        let module = module_unit_from_source(
+            "MainModule",
+            ModuleKind::Procedural,
+            "Attribute VB_Name = \"MainModule\"\nPrivate counter As Long\nPublic Sub Main()\ncounter = 41\nCall Bump\nEnd Sub\nPublic Sub Bump()\ncounter = counter + 1\nPrint CStr(counter)\nEnd Sub",
+        )
+        .expect("module parses");
+        let manifest = ProjectManifest {
+            project_name: "ProjectA".to_string(),
+            project_kind: ProjectKind::Source,
+            modules: vec![module],
             references: Vec::new(),
             reference_projects: Vec::new(),
             conditional_constants: BTreeMap::new(),
