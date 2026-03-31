@@ -1,6 +1,7 @@
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TypeLibResolveRequest {
     pub reference_name: String,
+    pub requested_coclass: Option<String>,
     pub importlib_hint: Option<String>,
     pub libid_hint: Option<String>,
     pub major_version_hint: Option<u16>,
@@ -11,6 +12,7 @@ pub struct TypeLibResolveRequest {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TypeLibResolvedIdentity {
     pub reference_name: String,
+    pub requested_coclass: Option<String>,
     pub importlib: String,
     pub libid: Option<String>,
     pub major_version: u16,

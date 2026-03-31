@@ -58,6 +58,7 @@ mod tests {
     fn sample_identity(reference_name: &str, cache_key: &str) -> TypeLibResolvedIdentity {
         TypeLibResolvedIdentity {
             reference_name: reference_name.to_string(),
+            requested_coclass: None,
             importlib: "stdole2.tlb".to_string(),
             libid: Some("{00020430-0000-0000-C000-000000000046}".to_string()),
             major_version: 2,

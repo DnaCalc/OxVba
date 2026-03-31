@@ -460,6 +460,7 @@ pub fn run_conformance(host: &dyn HostServices) -> ConformanceReport {
         host.com()
             .resolve_typelib_reference(&TypeLibResolveRequest {
                 reference_name: "StdOle".to_string(),
+                requested_coclass: None,
                 importlib_hint: Some("stdole2.tlb".to_string()),
                 libid_hint: None,
                 major_version_hint: Some(2),

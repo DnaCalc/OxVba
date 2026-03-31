@@ -10,13 +10,13 @@ use crate::{
     bind_native_dispatch_result_shared, build_typelib_metadata, callback_arg, callback_arity,
     callback_subscription_token, execute_bound_runtime_value_with_shared_state,
     invoke_bound_dispatch_legacy_i32_result, invoke_dispatch_runtime_value_with_shared_state,
-    known_typelib_identity_for_prog_id_name, legacy_runtime_arg_values,
-    member_spec_from_typelib_metadata, member_token_and_spec_from_typelib_metadata_name,
-    queue_projection_event_callbacks_shared, raw_oxvba_test_dispatch_vtable_invoke,
-    release_callback, release_object_binding_shared, release_subscription_transport,
-    resolve_bound_native_dispatch_shared, resolve_known_typelib_identity,
-    resolve_named_argument_dispids, subscribe_event_shared, take_polled_callback_payload,
-    unsubscribe_event_shared, validate_named_arg_order,
+    legacy_runtime_arg_values, member_spec_from_typelib_metadata,
+    member_token_and_spec_from_typelib_metadata_name, queue_projection_event_callbacks_shared,
+    raw_oxvba_test_dispatch_vtable_invoke, release_callback, release_object_binding_shared,
+    release_subscription_transport, resolve_bound_native_dispatch_shared,
+    resolve_known_typelib_identity, resolve_named_argument_dispids,
+    resolve_typelib_identity_for_prog_id_name, subscribe_event_shared,
+    take_polled_callback_payload, unsubscribe_event_shared, validate_named_arg_order,
 };
 use oxvba_runtime::{ObjectHandle, RuntimeValue};
 use std::sync::{Arc, Mutex, MutexGuard};
@@ -106,7 +106,7 @@ impl WindowsComBridge {
         &self,
         prog_id_name: &str,
     ) -> Result<Option<TypeLibMetadataBlob>, String> {
-        let Some(identity) = known_typelib_identity_for_prog_id_name(prog_id_name) else {
+        let Some(identity) = resolve_typelib_identity_for_prog_id_name(prog_id_name) else {
             return Ok(None);
         };
         self.load_typelib_metadata(&identity).map(Some)
@@ -185,7 +185,7 @@ impl WindowsComBridge {
             .map(|binding| {
                 binding.descriptor(
                     object,
-                    known_typelib_identity_for_prog_id_name(&binding.prog_id_name)
+                    resolve_typelib_identity_for_prog_id_name(&binding.prog_id_name)
                         .map(|identity| identity.cache_key),
                 )
             }))

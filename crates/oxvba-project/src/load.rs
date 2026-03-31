@@ -757,6 +757,7 @@ fn inject_type_library_reference_projects(loaded: &mut LoadedProject) {
 
         let request = TypeLibResolveRequest {
             reference_name: reference.referenced_project_name.clone(),
+            requested_coclass: None,
             importlib_hint: non_empty_trimmed(&catalog_entry.importlib),
             libid_hint: catalog_entry.libid.clone(),
             major_version_hint: Some(catalog_entry.major_version),

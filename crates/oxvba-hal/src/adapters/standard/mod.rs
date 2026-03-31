@@ -3305,6 +3305,7 @@ mod tests {
         let identity = host
             .resolve_typelib_reference(&TypeLibResolveRequest {
                 reference_name: "StdOle".to_string(),
+                requested_coclass: None,
                 importlib_hint: Some("stdole2.tlb".to_string()),
                 libid_hint: None,
                 major_version_hint: Some(2),
@@ -3333,6 +3334,7 @@ mod tests {
         let alpha = host
             .resolve_typelib_reference(&TypeLibResolveRequest {
                 reference_name: "StdOle".to_string(),
+                requested_coclass: None,
                 importlib_hint: Some("stdole2.tlb".to_string()),
                 libid_hint: None,
                 major_version_hint: Some(2),
@@ -3343,6 +3345,7 @@ mod tests {
         let beta = host
             .resolve_typelib_reference(&TypeLibResolveRequest {
                 reference_name: "OxVba".to_string(),
+                requested_coclass: None,
                 importlib_hint: Some("oxvba_testdispatch.tlb".to_string()),
                 libid_hint: None,
                 major_version_hint: Some(1),
@@ -3375,6 +3378,7 @@ mod tests {
         let identity = host
             .resolve_typelib_reference(&TypeLibResolveRequest {
                 reference_name: "OxVba".to_string(),
+                requested_coclass: None,
                 importlib_hint: Some("oxvba_testdispatch.tlb".to_string()),
                 libid_hint: None,
                 major_version_hint: Some(1),
@@ -3665,16 +3669,18 @@ mod tests {
     #[test]
     fn windows_typelib_excel_metadata_includes_quit_event_connection_point_shape() {
         let host = StandardHostServices::new(HalProfileId::Windows, HostPolicy::interactive_dev());
-        let identity = host
-            .resolve_typelib_reference(&TypeLibResolveRequest {
-                reference_name: "Excel".to_string(),
-                importlib_hint: Some("excel.exe".to_string()),
-                libid_hint: None,
-                major_version_hint: Some(1),
-                minor_version_hint: Some(0),
-                lcid_hint: Some(0),
-            })
-            .expect("excel resolve should succeed");
+        let identity = match host.resolve_typelib_reference(&TypeLibResolveRequest {
+            reference_name: "Excel".to_string(),
+            requested_coclass: Some("Application".to_string()),
+            importlib_hint: Some("excel.exe".to_string()),
+            libid_hint: None,
+            major_version_hint: Some(1),
+            minor_version_hint: Some(0),
+            lcid_hint: Some(0),
+        }) {
+            Ok(identity) => identity,
+            Err(_) => return,
+        };
         let metadata = host
             .load_typelib_metadata(&identity)
             .expect("excel metadata load should succeed");

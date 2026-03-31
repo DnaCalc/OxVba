@@ -133,6 +133,11 @@ Binding architecture rules:
 Execution consequences:
 - If an external boundary is currently implemented through lossy or boundary-specific tokens, the next closure step is to introduce or refine the canonical OxVba-side carrier before broadening feature claims on top of that boundary.
 - New COM work should preferentially land in `oxvba-com`, with HAL changes limited to delegation or temporary bootstrap seams that contract over time.
+- General capability claims must close over a general production path at the declared boundary. A passing test on one named dependency does not justify closure if the product path only succeeds because of dependency-specific routing that is not itself the declared scope.
+- Fixture catalogs, shims, and hardcoded metadata tables are acceptable only for repo-owned synthetic fixtures or explicitly declared bounded compatibility surfaces. They must not become the correctness path for real external dependencies when the claimed lane is general imported-boundary support.
+- If review work exposes that a supposedly general boundary lane is currently passing through dependency-specific routing, status remains `in-progress` until either:
+  - the routing is replaced by the correct general mechanism, or
+  - the claim is narrowed explicitly to the bounded dependency-specific surface.
 
 ## 4. Change Workflow
 For behavior-affecting changes:

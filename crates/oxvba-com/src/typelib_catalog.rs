@@ -8,14 +8,12 @@ use crate::typelib::{
 const OXVBA_TEST_DISPATCH_PROGID: &str = "OxVba.TestDispatch";
 const OXVBA_TEST_DISPATCH_NO_DEFAULT_PROGID: &str = "OxVba.TestDispatchNoDefault";
 const OXVBA_TEST_DISPATCH_AMBIGUOUS_DEFAULT_PROGID: &str = "OxVba.TestDispatchAmbiguousDefault";
-const EXCEL_APPLICATION_PROGID: &str = "Excel.Application";
 const OXVBA_TEST_EVENT_SERVER_PROGID: &str = "OxVba.TestEventServer";
 const OXVBA_ALT_TEST_EVENT_SERVER_PROGID: &str = "OxVba.TestEventServerAlt";
 const OXVBA_ALT2_TEST_EVENT_SERVER_PROGID: &str = "OxVba.TestEventServerAlt2";
 
 const IID_OXVBA_TEST_DISPATCH_EVENTS_STR: &str = "11111112-2222-3333-4444-555555555556";
 const IID_OXVBA_TEST_DISPATCH_SOURCE_EVENTS_STR: &str = "11111113-2222-3333-4444-555555555557";
-const IID_EXCEL_APPLICATION_EVENTS_STR: &str = "00024413-0000-0000-C000-000000000046";
 const IID_OXVBA_TEST_EVENT_SERVER_EVENTS_STR: &str = "E2A30001-0001-0001-0001-000000000002";
 
 const TEST_DISPID_COUNT: i32 = 1;
@@ -28,20 +26,6 @@ const TEST_DISPID_LOOKUP: i32 = 6;
 const TEST_DISPID_SET_VALUE: i32 = 7;
 const TEST_DISPID_SET_VALUE_REF: i32 = 8;
 const TEST_DISPID_VALUE: i32 = 9;
-const TEST_DISPID_EXCEL_QUIT: i32 = 10;
-// Real Excel.Application DISPIDs from the Excel type library.
-// Real Scripting.Dictionary DISPIDs from the Scripting type library.
-const DICT_DISPID_ITEM: i32 = 0; // default member
-const DICT_DISPID_ADD: i32 = 0x60020001u32 as i32;
-const DICT_DISPID_REMOVE: i32 = 0x60020003u32 as i32;
-const DICT_DISPID_REMOVEALL: i32 = 0x60020005u32 as i32;
-const DICT_DISPID_KEYS: i32 = 0x60020007u32 as i32;
-const DICT_DISPID_ITEMS: i32 = 0x60020008u32 as i32;
-// Real Excel.Application DISPIDs from the Excel type library.
-const EXCEL_DISPID_VISIBLE: i32 = 558;
-const EXCEL_DISPID_WORKBOOKS: i32 = 572;
-const EXCEL_DISPID_SCREEN_UPDATING: i32 = 382;
-const EXCEL_DISPID_DISPLAY_ALERTS: i32 = 343;
 const TEST_DISPID_SUM_PAIR: i32 = 12;
 const TEST_DISPID_LOOKUP_PAIR: i32 = 13;
 const TEST_DISPID_SET_INDEXED_VALUE: i32 = 14;
@@ -129,7 +113,6 @@ pub enum TypeLibMemberLookupResult {
     Missing,
     Ambiguous,
 }
-const TEST_EVENT_EXCEL_APP_QUIT: i32 = 10;
 
 const TEST_EVENT_SERVER_DISPID_FIRE_SIMPLE: i32 = 101;
 const TEST_EVENT_SERVER_DISPID_FIRE_VALUE_CHANGED: i32 = 102;
@@ -177,6 +160,7 @@ pub fn resolve_known_typelib_identity(
     {
         return Some(TypeLibResolvedIdentity {
             reference_name: request.reference_name.clone(),
+            requested_coclass: request.requested_coclass.clone(),
             importlib: "stdole2.tlb".to_string(),
             libid: Some("00020430-0000-0000-C000-000000000046".to_string()),
             major_version: 2,
@@ -195,30 +179,13 @@ pub fn resolve_known_typelib_identity(
     {
         return Some(TypeLibResolvedIdentity {
             reference_name: request.reference_name.clone(),
+            requested_coclass: request.requested_coclass.clone(),
             importlib: "oxvba_testdispatch.tlb".to_string(),
             libid: Some("11111111-2222-3333-4444-555555555555".to_string()),
             major_version: 1,
             minor_version: 0,
             lcid: Some(0),
             cache_key: "typelib:oxvba-testdispatch:1.0:0".to_string(),
-        });
-    }
-
-    if normalized_importlib
-        .as_deref()
-        .is_some_and(|value| value == "excel.exe")
-        || normalized_libid
-            .as_deref()
-            .is_some_and(|value| value == "00020813-0000-0000-c000-000000000046")
-    {
-        return Some(TypeLibResolvedIdentity {
-            reference_name: request.reference_name.clone(),
-            importlib: "excel.exe".to_string(),
-            libid: Some("00020813-0000-0000-C000-000000000046".to_string()),
-            major_version: 1,
-            minor_version: 0,
-            lcid: Some(0),
-            cache_key: "typelib:excel.application:1.0:0".to_string(),
         });
     }
 
@@ -230,6 +197,7 @@ pub fn resolve_known_typelib_identity(
     {
         return Some(TypeLibResolvedIdentity {
             reference_name: "OxVba_TestEventServer".to_string(),
+            requested_coclass: request.requested_coclass.clone(),
             importlib: "oxvba_testeventserver.tlb".to_string(),
             libid: Some("E2A30001-0001-0001-0001-000000000001".to_string()),
             major_version: 1,
@@ -247,6 +215,7 @@ pub fn resolve_known_typelib_identity(
     {
         return Some(TypeLibResolvedIdentity {
             reference_name: "OxVba_TestEventServerAlt".to_string(),
+            requested_coclass: request.requested_coclass.clone(),
             importlib: "oxvba_testeventserveralt.tlb".to_string(),
             libid: Some("E2A30001-0001-0001-0001-000000000101".to_string()),
             major_version: 1,
@@ -264,6 +233,7 @@ pub fn resolve_known_typelib_identity(
     {
         return Some(TypeLibResolvedIdentity {
             reference_name: "OxVba_TestEventServerAlt2".to_string(),
+            requested_coclass: request.requested_coclass.clone(),
             importlib: "oxvba_testeventserveralt2.tlb".to_string(),
             libid: Some("E2A30001-0001-0001-0001-000000000201".to_string()),
             major_version: 1,
@@ -273,22 +243,13 @@ pub fn resolve_known_typelib_identity(
         });
     }
 
-    if normalized_importlib
-        .as_deref()
-        .is_some_and(|value| value == "scrrun.dll")
-        || normalized_libid
-            .as_deref()
-            .is_some_and(|value| value == "420b2830-e718-11cf-893d-00a0c9054228")
-    {
-        return Some(TypeLibResolvedIdentity {
-            reference_name: request.reference_name.clone(),
-            importlib: "scrrun.dll".to_string(),
-            libid: Some("420B2830-E718-11CF-893D-00A0C9054228".to_string()),
-            major_version: 1,
-            minor_version: 0,
-            lcid: Some(0),
-            cache_key: "typelib:scripting.dictionary:1.0:0".to_string(),
-        });
+    if let Some(coclass_name) = request.requested_coclass.as_deref() {
+        let prog_id_name = format!("{}.{}", request.reference_name.trim(), coclass_name.trim());
+        if let Ok(identity) =
+            crate::windows_typelib_loader::resolve_typelib_identity_from_prog_id(&prog_id_name)
+        {
+            return Some(identity);
+        }
     }
 
     // Fallback: try live registry-based typelib loading
@@ -298,50 +259,12 @@ pub fn resolve_known_typelib_identity(
 pub fn known_typelib_identity_for_prog_id_name(
     prog_id_name: &str,
 ) -> Option<TypeLibResolvedIdentity> {
-    if prog_id_name.eq_ignore_ascii_case("Scripting.Dictionary") {
-        return Some(TypeLibResolvedIdentity {
-            reference_name: "Scripting.Dictionary".to_string(),
-            importlib: "scrrun.dll".to_string(),
-            libid: Some("420B2830-E718-11CF-893D-00A0C9054228".to_string()),
-            major_version: 1,
-            minor_version: 0,
-            lcid: Some(0),
-            cache_key: "typelib:scripting.dictionary:1.0:0".to_string(),
-        });
-    }
-    if prog_id_name.len() > "Scripting.".len()
-        && prog_id_name[..("Scripting.".len())].eq_ignore_ascii_case("Scripting.")
-    {
-        let normalized_prog_id = prog_id_name.trim();
-        let cache_suffix = normalized_prog_id
-            .to_ascii_lowercase()
-            .replace([' ', '.'], "-");
-        return Some(TypeLibResolvedIdentity {
-            reference_name: normalized_prog_id.to_string(),
-            importlib: "scrrun.dll".to_string(),
-            libid: Some("420B2830-E718-11CF-893D-00A0C9054228".to_string()),
-            major_version: 1,
-            minor_version: 0,
-            lcid: Some(0),
-            cache_key: format!("typelib:{cache_suffix}:1.0:0"),
-        });
-    }
-    if prog_id_name.eq_ignore_ascii_case(EXCEL_APPLICATION_PROGID) {
-        return Some(TypeLibResolvedIdentity {
-            reference_name: EXCEL_APPLICATION_PROGID.to_string(),
-            importlib: "excel.exe".to_string(),
-            libid: Some("00020813-0000-0000-C000-000000000046".to_string()),
-            major_version: 1,
-            minor_version: 0,
-            lcid: Some(0),
-            cache_key: "typelib:excel.application:1.0:0".to_string(),
-        });
-    }
     if prog_id_name.eq_ignore_ascii_case(OXVBA_TEST_EVENT_SERVER_PROGID)
         || prog_id_name.eq_ignore_ascii_case("OxVba_TestEventServer")
     {
         return Some(TypeLibResolvedIdentity {
             reference_name: "OxVba_TestEventServer".to_string(),
+            requested_coclass: None,
             importlib: "oxvba_testeventserver.tlb".to_string(),
             libid: Some("E2A30001-0001-0001-0001-000000000001".to_string()),
             major_version: 1,
@@ -353,6 +276,7 @@ pub fn known_typelib_identity_for_prog_id_name(
     if prog_id_name.eq_ignore_ascii_case("OxVba_TestEventServer.TestEventServer") {
         return Some(TypeLibResolvedIdentity {
             reference_name: "OxVba_TestEventServer".to_string(),
+            requested_coclass: None,
             importlib: "oxvba_testeventserver.tlb".to_string(),
             libid: Some("E2A30001-0001-0001-0001-000000000001".to_string()),
             major_version: 1,
@@ -367,6 +291,7 @@ pub fn known_typelib_identity_for_prog_id_name(
     {
         return Some(TypeLibResolvedIdentity {
             reference_name: "OxVba_TestEventServerAlt".to_string(),
+            requested_coclass: None,
             importlib: "oxvba_testeventserveralt.tlb".to_string(),
             libid: Some("E2A30001-0001-0001-0001-000000000101".to_string()),
             major_version: 1,
@@ -379,6 +304,7 @@ pub fn known_typelib_identity_for_prog_id_name(
     if prog_id_name.eq_ignore_ascii_case("OxVba_TestEventServerAlt.TestEventServer") {
         return Some(TypeLibResolvedIdentity {
             reference_name: "OxVba_TestEventServerAlt".to_string(),
+            requested_coclass: None,
             importlib: "oxvba_testeventserveralt.tlb".to_string(),
             libid: Some("E2A30001-0001-0001-0001-000000000101".to_string()),
             major_version: 1,
@@ -393,6 +319,7 @@ pub fn known_typelib_identity_for_prog_id_name(
     {
         return Some(TypeLibResolvedIdentity {
             reference_name: "OxVba_TestEventServerAlt2".to_string(),
+            requested_coclass: None,
             importlib: "oxvba_testeventserveralt2.tlb".to_string(),
             libid: Some("E2A30001-0001-0001-0001-000000000201".to_string()),
             major_version: 1,
@@ -404,6 +331,7 @@ pub fn known_typelib_identity_for_prog_id_name(
     if prog_id_name.eq_ignore_ascii_case("OxVba_TestEventServerAlt2.TestEventServer") {
         return Some(TypeLibResolvedIdentity {
             reference_name: "OxVba_TestEventServerAlt2".to_string(),
+            requested_coclass: None,
             importlib: "oxvba_testeventserveralt2.tlb".to_string(),
             libid: Some("E2A30001-0001-0001-0001-000000000201".to_string()),
             major_version: 1,
@@ -415,6 +343,7 @@ pub fn known_typelib_identity_for_prog_id_name(
     if prog_id_name.eq_ignore_ascii_case(OXVBA_TEST_DISPATCH_PROGID) {
         return Some(TypeLibResolvedIdentity {
             reference_name: "OxVba.TestDispatch".to_string(),
+            requested_coclass: None,
             importlib: "oxvba_testdispatch.tlb".to_string(),
             libid: Some("11111111-2222-3333-4444-555555555555".to_string()),
             major_version: 1,
@@ -426,6 +355,7 @@ pub fn known_typelib_identity_for_prog_id_name(
     if prog_id_name.eq_ignore_ascii_case(OXVBA_TEST_DISPATCH_NO_DEFAULT_PROGID) {
         return Some(TypeLibResolvedIdentity {
             reference_name: OXVBA_TEST_DISPATCH_NO_DEFAULT_PROGID.to_string(),
+            requested_coclass: None,
             importlib: "oxvba_testdispatch_nodefault.tlb".to_string(),
             libid: Some("11111111-2222-3333-4444-555555555556".to_string()),
             major_version: 1,
@@ -437,6 +367,7 @@ pub fn known_typelib_identity_for_prog_id_name(
     if prog_id_name.eq_ignore_ascii_case(OXVBA_TEST_DISPATCH_AMBIGUOUS_DEFAULT_PROGID) {
         return Some(TypeLibResolvedIdentity {
             reference_name: OXVBA_TEST_DISPATCH_AMBIGUOUS_DEFAULT_PROGID.to_string(),
+            requested_coclass: None,
             importlib: "oxvba_testdispatch_ambiguousdefault.tlb".to_string(),
             libid: Some("11111111-2222-3333-4444-555555555557".to_string()),
             major_version: 1,
@@ -446,6 +377,14 @@ pub fn known_typelib_identity_for_prog_id_name(
         });
     }
     None
+}
+
+pub fn resolve_typelib_identity_for_prog_id_name(
+    prog_id_name: &str,
+) -> Option<TypeLibResolvedIdentity> {
+    known_typelib_identity_for_prog_id_name(prog_id_name).or_else(|| {
+        crate::windows_typelib_loader::resolve_typelib_identity_from_prog_id(prog_id_name).ok()
+    })
 }
 
 pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMetadataBlob {
@@ -1425,111 +1364,6 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
             members,
             events,
         )
-    } else if identity.importlib.eq_ignore_ascii_case("excel.exe")
-        || identity.libid.as_deref().is_some_and(|libid: &str| {
-            libid.eq_ignore_ascii_case("00020813-0000-0000-C000-000000000046")
-        })
-    {
-        let members = vec![
-            TypeLibMemberMetadata {
-                name: "Quit".to_string(),
-                token: TEST_DISPID_EXCEL_QUIT,
-                requires_argument: false,
-                invoke_kind: TypeLibMemberInvokeKind::Method,
-                parameter_names: Vec::new(),
-                is_default_member: false,
-                parameter_types: Vec::new(),
-                return_type: None,
-            },
-            TypeLibMemberMetadata {
-                name: "Visible".to_string(),
-                token: EXCEL_DISPID_VISIBLE,
-                requires_argument: false,
-                invoke_kind: TypeLibMemberInvokeKind::PropertyGet,
-                parameter_names: Vec::new(),
-                is_default_member: false,
-                parameter_types: Vec::new(),
-                return_type: None,
-            },
-            TypeLibMemberMetadata {
-                name: "Visible".to_string(),
-                token: EXCEL_DISPID_VISIBLE,
-                requires_argument: true,
-                invoke_kind: TypeLibMemberInvokeKind::PropertyPut,
-                parameter_names: vec!["RHS".to_string()],
-                is_default_member: false,
-                parameter_types: Vec::new(),
-                return_type: None,
-            },
-            TypeLibMemberMetadata {
-                name: "Workbooks".to_string(),
-                token: EXCEL_DISPID_WORKBOOKS,
-                requires_argument: false,
-                invoke_kind: TypeLibMemberInvokeKind::PropertyGet,
-                parameter_names: Vec::new(),
-                is_default_member: false,
-                parameter_types: Vec::new(),
-                return_type: None,
-            },
-            TypeLibMemberMetadata {
-                name: "ScreenUpdating".to_string(),
-                token: EXCEL_DISPID_SCREEN_UPDATING,
-                requires_argument: false,
-                invoke_kind: TypeLibMemberInvokeKind::PropertyGet,
-                parameter_names: Vec::new(),
-                is_default_member: false,
-                parameter_types: Vec::new(),
-                return_type: None,
-            },
-            TypeLibMemberMetadata {
-                name: "ScreenUpdating".to_string(),
-                token: EXCEL_DISPID_SCREEN_UPDATING,
-                requires_argument: true,
-                invoke_kind: TypeLibMemberInvokeKind::PropertyPut,
-                parameter_names: vec!["RHS".to_string()],
-                is_default_member: false,
-                parameter_types: Vec::new(),
-                return_type: None,
-            },
-            TypeLibMemberMetadata {
-                name: "DisplayAlerts".to_string(),
-                token: EXCEL_DISPID_DISPLAY_ALERTS,
-                requires_argument: false,
-                invoke_kind: TypeLibMemberInvokeKind::PropertyGet,
-                parameter_names: Vec::new(),
-                is_default_member: false,
-                parameter_types: Vec::new(),
-                return_type: None,
-            },
-            TypeLibMemberMetadata {
-                name: "DisplayAlerts".to_string(),
-                token: EXCEL_DISPID_DISPLAY_ALERTS,
-                requires_argument: true,
-                invoke_kind: TypeLibMemberInvokeKind::PropertyPut,
-                parameter_names: vec!["RHS".to_string()],
-                is_default_member: false,
-                parameter_types: Vec::new(),
-                return_type: None,
-            },
-        ];
-        let events = vec![TypeLibEventMetadata {
-            name: "Quit".to_string(),
-            token: TEST_EVENT_EXCEL_APP_QUIT,
-            callback_arity: 0,
-            dispatch_path: TypeLibEventDispatchPath::Dispatch,
-            connection_point_iid: Some(IID_EXCEL_APPLICATION_EVENTS_STR.to_string()),
-            dispatch_member_id: None,
-        }];
-        let member_name_to_token = members
-            .iter()
-            .map(|entry| (entry.name.clone(), entry.token))
-            .collect();
-        (
-            Some("Excel.Application".to_string()),
-            member_name_to_token,
-            members,
-            events,
-        )
     } else if identity
         .importlib
         .eq_ignore_ascii_case("oxvba_testeventserver.tlb")
@@ -1640,116 +1474,6 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
                 }
                 .to_string(),
             ),
-            member_name_to_token,
-            members,
-            events,
-        )
-    } else if identity.reference_name.eq_ignore_ascii_case("Scripting.Dictionary")
-        && identity.importlib.eq_ignore_ascii_case("scrrun.dll")
-        || identity.libid.as_deref().is_some_and(|libid: &str| {
-            identity.reference_name.eq_ignore_ascii_case("Scripting.Dictionary")
-                && libid.eq_ignore_ascii_case("420B2830-E718-11CF-893D-00A0C9054228")
-        })
-    {
-        let members = vec![
-            TypeLibMemberMetadata {
-                name: "Count".to_string(),
-                token: TEST_DISPID_COUNT,
-                requires_argument: false,
-                invoke_kind: TypeLibMemberInvokeKind::PropertyGet,
-                parameter_names: Vec::new(),
-                is_default_member: false,
-                parameter_types: Vec::new(),
-                return_type: None,
-            },
-            TypeLibMemberMetadata {
-                name: "Exists".to_string(),
-                token: TEST_DISPID_EXISTS,
-                requires_argument: true,
-                invoke_kind: TypeLibMemberInvokeKind::Method,
-                parameter_names: vec!["Key".to_string()],
-                is_default_member: false,
-                parameter_types: Vec::new(),
-                return_type: None,
-            },
-            TypeLibMemberMetadata {
-                name: "Item".to_string(),
-                token: DICT_DISPID_ITEM,
-                requires_argument: true,
-                invoke_kind: TypeLibMemberInvokeKind::PropertyGet,
-                parameter_names: vec!["Key".to_string()],
-                is_default_member: true,
-                parameter_types: Vec::new(),
-                return_type: None,
-            },
-            TypeLibMemberMetadata {
-                name: "Item".to_string(),
-                token: DICT_DISPID_ITEM,
-                requires_argument: true,
-                invoke_kind: TypeLibMemberInvokeKind::PropertyPut,
-                parameter_names: vec!["Key".to_string(), "pRetItem".to_string()],
-                is_default_member: true,
-                parameter_types: Vec::new(),
-                return_type: None,
-            },
-            TypeLibMemberMetadata {
-                name: "Add".to_string(),
-                token: DICT_DISPID_ADD,
-                requires_argument: true,
-                invoke_kind: TypeLibMemberInvokeKind::Method,
-                parameter_names: vec!["Key".to_string(), "Item".to_string()],
-                is_default_member: false,
-                parameter_types: Vec::new(),
-                return_type: None,
-            },
-            TypeLibMemberMetadata {
-                name: "Remove".to_string(),
-                token: DICT_DISPID_REMOVE,
-                requires_argument: true,
-                invoke_kind: TypeLibMemberInvokeKind::Method,
-                parameter_names: vec!["Key".to_string()],
-                is_default_member: false,
-                parameter_types: Vec::new(),
-                return_type: None,
-            },
-            TypeLibMemberMetadata {
-                name: "RemoveAll".to_string(),
-                token: DICT_DISPID_REMOVEALL,
-                requires_argument: false,
-                invoke_kind: TypeLibMemberInvokeKind::Method,
-                parameter_names: Vec::new(),
-                is_default_member: false,
-                parameter_types: Vec::new(),
-                return_type: None,
-            },
-            TypeLibMemberMetadata {
-                name: "Keys".to_string(),
-                token: DICT_DISPID_KEYS,
-                requires_argument: false,
-                invoke_kind: TypeLibMemberInvokeKind::Method,
-                parameter_names: Vec::new(),
-                is_default_member: false,
-                parameter_types: Vec::new(),
-                return_type: None,
-            },
-            TypeLibMemberMetadata {
-                name: "Items".to_string(),
-                token: DICT_DISPID_ITEMS,
-                requires_argument: false,
-                invoke_kind: TypeLibMemberInvokeKind::Method,
-                parameter_names: Vec::new(),
-                is_default_member: false,
-                parameter_types: Vec::new(),
-                return_type: None,
-            },
-        ];
-        let events = Vec::new();
-        let member_name_to_token = members
-            .iter()
-            .map(|entry| (entry.name.clone(), entry.token))
-            .collect();
-        (
-            Some("Scripting.Dictionary".to_string()),
             member_name_to_token,
             members,
             events,
@@ -1915,7 +1639,7 @@ mod tests {
         known_typelib_identity_for_prog_id_name, member_spec_from_typelib_metadata,
         resolve_default_member_token_and_spec_from_typelib_metadata,
         resolve_known_typelib_identity, resolve_member_token_and_spec_from_typelib_metadata_name,
-        source_interface_event_spec_supported,
+        resolve_typelib_identity_for_prog_id_name, source_interface_event_spec_supported,
     };
     use crate::{
         ComMemberToken, TEST_DISPID_EXISTS, TypeLibMemberInvokeKind, TypeLibResolveRequest,
@@ -1956,7 +1680,7 @@ mod tests {
         );
 
         let excel_identity =
-            known_typelib_identity_for_prog_id_name("Excel.Application").expect("identity");
+            resolve_typelib_identity_for_prog_id_name("Excel.Application").expect("identity");
         let excel_blob = build_typelib_metadata(&excel_identity);
         assert_eq!(
             activation_prog_id_from_typelib_metadata(&excel_blob),
@@ -1984,6 +1708,7 @@ mod tests {
     fn resolve_known_typelib_identity_accepts_absolute_importlib_paths() {
         let request = TypeLibResolveRequest {
             reference_name: "OxVbaMissingBase".to_string(),
+            requested_coclass: None,
             importlib_hint: Some(
                 "C:\\Work\\DnaCalc\\OxVba\\temp\\missing\\OxVba.TestEventServer.tlb".to_string(),
             ),
@@ -2030,11 +1755,25 @@ mod tests {
         );
     }
 
+    #[test]
+    fn catalog_stays_fixture_scoped_for_external_typelibs() {
+        assert!(known_typelib_identity_for_prog_id_name("Scripting.FileSystemObject").is_none());
+        assert!(known_typelib_identity_for_prog_id_name("Excel.Application").is_none());
+    }
+
     #[cfg(target_os = "windows")]
     #[test]
     fn scripting_filesystemobject_live_typelib_lookup_resolves_member_subset() {
-        let identity = known_typelib_identity_for_prog_id_name("Scripting.FileSystemObject")
-            .expect("identity");
+        let identity = resolve_known_typelib_identity(&TypeLibResolveRequest {
+            reference_name: "Scripting".to_string(),
+            requested_coclass: Some("FileSystemObject".to_string()),
+            importlib_hint: Some("scrrun.dll".to_string()),
+            libid_hint: Some("420B2830-E718-11CF-893D-00A0C9054228".to_string()),
+            major_version_hint: Some(1),
+            minor_version_hint: Some(0),
+            lcid_hint: Some(0),
+        })
+        .expect("identity");
         let blob = build_typelib_metadata(&identity);
         if blob.members.is_empty() {
             return;

@@ -2,10 +2,10 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use oxvba_com::{
     ComMemberSpec, TypeLibMemberInvokeKind, TypeLibMemberLookupResult, TypeLibMetadataBlob,
-    activation_prog_id_from_typelib_metadata, build_typelib_metadata,
-    known_typelib_identity_for_prog_id_name,
-    resolve_default_member_token_and_spec_from_typelib_metadata,
+    TypeLibResolveRequest, activation_prog_id_from_typelib_metadata, build_typelib_metadata,
+    resolve_default_member_token_and_spec_from_typelib_metadata, resolve_known_typelib_identity,
     resolve_member_token_and_spec_from_typelib_metadata_name,
+    resolve_typelib_identity_for_prog_id_name,
 };
 use oxvba_runtime::ObjectHandle;
 use thiserror::Error;
@@ -575,7 +575,7 @@ fn compile_project_with_strategy(
     for reference in &manifest.references {
         if reference.reference_kind == ReferenceKind::TypeLibrary
             && let Some(identity) =
-                known_typelib_identity_for_prog_id_name(&reference.referenced_project_name)
+                resolve_typelib_identity_for_reference(&reference.referenced_project_name)
         {
             let blob = build_typelib_metadata(&identity);
             let synthetic = project_typelib_as_manifest(&blob);
@@ -2773,7 +2773,10 @@ fn referenced_typelib_blob_for_type_reference(
             .reference_projects
             .iter()
             .any(|project| normalize_identifier(&project.project_name) == normalized_project);
-        if referenced && let Some(identity) = known_typelib_identity_for_prog_id_name(raw) {
+        if referenced
+            && let Some(identity) =
+                resolve_typelib_identity_for_project_module(&normalized_project, &normalized_module)
+        {
             return Ok(Some((
                 normalized_project,
                 normalized_module,
@@ -2813,8 +2816,9 @@ fn referenced_typelib_blob_for_type_reference(
         if reference.reference_kind != ReferenceKind::TypeLibrary {
             continue;
         }
-        let candidate = format!("{}.{}", reference.referenced_project_name, raw);
-        let Some(identity) = known_typelib_identity_for_prog_id_name(&candidate) else {
+        let Some(identity) =
+            resolve_typelib_identity_for_project_module(&reference.referenced_project_name, raw)
+        else {
             continue;
         };
         return Ok(Some((
@@ -2831,7 +2835,30 @@ fn resolve_typelib_identity_for_project_module(
     project_name: &str,
     module_name: &str,
 ) -> Option<oxvba_com::TypeLibResolvedIdentity> {
-    known_typelib_identity_for_prog_id_name(&format!("{project_name}.{module_name}"))
+    resolve_known_typelib_identity(&TypeLibResolveRequest {
+        reference_name: project_name.to_string(),
+        requested_coclass: Some(module_name.to_string()),
+        importlib_hint: None,
+        libid_hint: None,
+        major_version_hint: None,
+        minor_version_hint: None,
+        lcid_hint: None,
+    })
+    .or_else(|| resolve_typelib_identity_for_prog_id_name(&format!("{project_name}.{module_name}")))
+}
+
+fn resolve_typelib_identity_for_reference(
+    reference_name: &str,
+) -> Option<oxvba_com::TypeLibResolvedIdentity> {
+    resolve_known_typelib_identity(&TypeLibResolveRequest {
+        reference_name: reference_name.to_string(),
+        requested_coclass: None,
+        importlib_hint: None,
+        libid_hint: None,
+        major_version_hint: None,
+        minor_version_hint: None,
+        lcid_hint: None,
+    })
 }
 
 fn referenced_typelib_event_source(
@@ -5285,7 +5312,7 @@ fn split_keyword_ascii_ci<'a>(text: &'a str, keyword: &'a str) -> Option<(&'a st
 
 #[cfg(test)]
 fn known_typelib_activation_prog_id(qualified_type: &str) -> Option<String> {
-    known_typelib_identity_for_prog_id_name(qualified_type)
+    resolve_typelib_identity_for_prog_id_name(qualified_type)
         .and_then(|identity| build_typelib_metadata(&identity).activation_prog_id)
 }
 
@@ -5346,7 +5373,7 @@ fn resolve_known_typelib_member_token_and_spec(
     qualified_type: &str,
     member_name: &str,
 ) -> KnownTypeLibMemberResolution {
-    let Some(identity) = known_typelib_identity_for_prog_id_name(qualified_type) else {
+    let Some(identity) = resolve_typelib_identity_for_prog_id_name(qualified_type) else {
         return KnownTypeLibMemberResolution::Unsupported;
     };
     let metadata = build_typelib_metadata(&identity);
@@ -5376,7 +5403,7 @@ fn known_typelib_member_token_and_spec(
 fn resolve_known_typelib_default_member_token_and_spec(
     qualified_type: &str,
 ) -> KnownTypeLibMemberResolution {
-    let Some(identity) = known_typelib_identity_for_prog_id_name(qualified_type) else {
+    let Some(identity) = resolve_typelib_identity_for_prog_id_name(qualified_type) else {
         return KnownTypeLibMemberResolution::Unsupported;
     };
     let metadata = build_typelib_metadata(&identity);
@@ -5622,8 +5649,9 @@ fn flatten_event_dispatch_plan(plan: &EventDispatchPlan) -> Vec<ProjectEventDisp
 fn build_project_com_withevents_routes(plan: &EventDispatchPlan) -> Vec<ProjectComWithEventsRoute> {
     let mut out = Vec::new();
     for ((source_project, source_module, event_name), routes) in plan {
-        let qualified_type = format!("{source_project}.{source_module}");
-        let Some(identity) = known_typelib_identity_for_prog_id_name(&qualified_type) else {
+        let Some(identity) =
+            resolve_typelib_identity_for_project_module(source_project, source_module)
+        else {
             continue;
         };
         let blob = build_typelib_metadata(&identity);

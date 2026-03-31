@@ -15,7 +15,15 @@ use crate::typelib::{
 #[cfg(target_os = "windows")]
 use crate::windows_client::COM_S_OK;
 #[cfg(target_os = "windows")]
+use std::convert::TryFrom;
+#[cfg(target_os = "windows")]
 use std::ffi::c_void;
+#[cfg(target_os = "windows")]
+use windows_sys::Win32::System::Com::CLSIDFromProgID;
+#[cfg(target_os = "windows")]
+use windows_sys::Win32::System::Registry::{
+    HKEY, HKEY_CLASSES_ROOT, KEY_READ, REG_SZ, RegCloseKey, RegOpenKeyExW, RegQueryValueExW,
+};
 
 // ── ITypeLib / ITypeInfo vtable definitions ──
 
@@ -321,6 +329,108 @@ fn guid_to_string(guid: &windows_sys::core::GUID) -> String {
     )
 }
 
+#[cfg(target_os = "windows")]
+fn reg_query_default_string(subkey: &str) -> Result<String, String> {
+    let wide_subkey: Vec<u16> = subkey.encode_utf16().chain(std::iter::once(0)).collect();
+    let mut key: HKEY = std::ptr::null_mut();
+    let open_status = unsafe {
+        RegOpenKeyExW(
+            HKEY_CLASSES_ROOT,
+            wide_subkey.as_ptr(),
+            0,
+            KEY_READ,
+            &mut key,
+        )
+    };
+    if open_status != 0 {
+        return Err(format!(
+            "RegOpenKeyExW failed for `HKCR\\{subkey}` with status 0x{open_status:08X}"
+        ));
+    }
+
+    let result = unsafe {
+        let mut value_type = 0u32;
+        let mut bytes = 0u32;
+        let status = RegQueryValueExW(
+            key,
+            std::ptr::null(),
+            std::ptr::null_mut(),
+            &mut value_type,
+            std::ptr::null_mut(),
+            &mut bytes,
+        );
+        if status != 0 {
+            Err(format!(
+                "RegQueryValueExW size lookup failed for `HKCR\\{subkey}` with status 0x{status:08X}"
+            ))
+        } else if value_type != REG_SZ {
+            Err(format!(
+                "RegQueryValueExW returned non-string type {value_type} for `HKCR\\{subkey}`"
+            ))
+        } else {
+            let char_len = usize::try_from(bytes / 2)
+                .map_err(|_| format!("registry string too large for `HKCR\\{subkey}`"))?;
+            let mut buffer = vec![0u16; char_len];
+            let status = RegQueryValueExW(
+                key,
+                std::ptr::null(),
+                std::ptr::null_mut(),
+                &mut value_type,
+                buffer.as_mut_ptr() as *mut u8,
+                &mut bytes,
+            );
+            if status != 0 {
+                Err(format!(
+                    "RegQueryValueExW value lookup failed for `HKCR\\{subkey}` with status 0x{status:08X}"
+                ))
+            } else {
+                while matches!(buffer.last(), Some(0)) {
+                    buffer.pop();
+                }
+                Ok(String::from_utf16_lossy(&buffer))
+            }
+        }
+    };
+
+    unsafe {
+        RegCloseKey(key);
+    }
+    result
+}
+
+#[cfg(target_os = "windows")]
+fn parse_registry_typelib_version(version_text: &str) -> Result<(u16, u16), String> {
+    let trimmed = version_text.trim();
+    let mut parts = trimmed.split('.');
+    let major = parts
+        .next()
+        .ok_or_else(|| format!("missing typelib major version in `{trimmed}`"))?
+        .parse::<u16>()
+        .map_err(|_| format!("invalid typelib major version in `{trimmed}`"))?;
+    let minor = parts
+        .next()
+        .unwrap_or("0")
+        .parse::<u16>()
+        .map_err(|_| format!("invalid typelib minor version in `{trimmed}`"))?;
+    Ok((major, minor))
+}
+
+#[cfg(target_os = "windows")]
+fn split_prog_id_name(prog_id_name: &str) -> Result<(String, Option<String>), String> {
+    let trimmed = prog_id_name.trim();
+    if trimmed.is_empty() {
+        return Err("empty ProgID name".to_string());
+    }
+    if let Some((reference_name, coclass_name)) = trimmed.rsplit_once('.') {
+        let reference_name = reference_name.trim();
+        let coclass_name = coclass_name.trim();
+        if !reference_name.is_empty() && !coclass_name.is_empty() {
+            return Ok((reference_name.to_string(), Some(coclass_name.to_string())));
+        }
+    }
+    Ok((trimmed.to_string(), None))
+}
+
 // ── VT to TypeLibParamType ──
 
 #[cfg(target_os = "windows")]
@@ -374,13 +484,7 @@ fn invkind_to_member_invoke_kind(invkind: u16) -> TypeLibMemberInvokeKind {
 
 #[cfg(target_os = "windows")]
 fn requested_coclass_name(identity: &TypeLibResolvedIdentity) -> Option<&str> {
-    let (_, class_name) = identity.reference_name.rsplit_once('.')?;
-    let trimmed = class_name.trim();
-    if trimmed.is_empty() {
-        None
-    } else {
-        Some(trimmed)
-    }
+    identity.requested_coclass.as_deref()
 }
 
 #[cfg(target_os = "windows")]
@@ -482,6 +586,45 @@ pub fn resolve_typelib_identity_from_registry(
     ))
 }
 
+#[cfg(target_os = "windows")]
+pub fn resolve_typelib_identity_from_prog_id(
+    prog_id_name: &str,
+) -> Result<TypeLibResolvedIdentity, String> {
+    let wide_prog_id: Vec<u16> = prog_id_name
+        .encode_utf16()
+        .chain(std::iter::once(0))
+        .collect();
+    let mut clsid = windows_sys::core::GUID {
+        data1: 0,
+        data2: 0,
+        data3: 0,
+        data4: [0; 8],
+    };
+    let hr = unsafe { CLSIDFromProgID(wide_prog_id.as_ptr(), &mut clsid) };
+    if hr < 0 {
+        return Err(format!(
+            "CLSIDFromProgID failed for `{prog_id_name}` with HRESULT 0x{:08X}",
+            hr as u32
+        ));
+    }
+
+    let clsid_text = guid_to_string(&clsid);
+    let libid_text = reg_query_default_string(&format!("CLSID\\{clsid_text}\\TypeLib"))?;
+    let version_text = reg_query_default_string(&format!("CLSID\\{clsid_text}\\Version"))?;
+    let (major, minor) = parse_registry_typelib_version(&version_text)?;
+    let (reference_name, requested_coclass) = split_prog_id_name(prog_id_name)?;
+    let request = crate::typelib::TypeLibResolveRequest {
+        reference_name,
+        requested_coclass,
+        importlib_hint: None,
+        libid_hint: Some(libid_text.trim().to_string()),
+        major_version_hint: Some(major),
+        minor_version_hint: Some(minor),
+        lcid_hint: Some(0),
+    };
+    resolve_typelib_identity_from_registry(&request)
+}
+
 /// Extracts identity metadata from a loaded ITypeLib pointer.
 #[cfg(target_os = "windows")]
 unsafe fn extract_typelib_identity(
@@ -533,10 +676,21 @@ unsafe fn extract_typelib_identity(
         .importlib_hint
         .clone()
         .unwrap_or_else(|| lib_name.clone());
-    let cache_key = format!("live:{}:{}:{}", libid, major, minor);
+    let cache_key = if let Some(coclass) = request.requested_coclass.as_deref() {
+        format!(
+            "live:{}:{}:{}:{}",
+            libid,
+            major,
+            minor,
+            coclass.trim().to_ascii_lowercase()
+        )
+    } else {
+        format!("live:{}:{}:{}", libid, major, minor)
+    };
 
     Ok(TypeLibResolvedIdentity {
         reference_name: request.reference_name.clone(),
+        requested_coclass: request.requested_coclass.clone(),
         importlib,
         libid: Some(libid),
         major_version: major,
@@ -1159,6 +1313,7 @@ mod tests {
     fn resolve_typelib_identity_with_libid() {
         let request = TypeLibResolveRequest {
             reference_name: "Scripting".to_string(),
+            requested_coclass: None,
             importlib_hint: None,
             libid_hint: Some("{420B2830-E718-11CF-893D-00A0C9054228}".to_string()),
             major_version_hint: Some(1),
