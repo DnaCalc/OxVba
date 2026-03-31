@@ -867,9 +867,10 @@ impl Engine {
                 .compile_function("main")
                 .map_err(|e| PhaseDiagnostic::runtime(e.to_string()))?;
             if cranelift::supports_bytecode_rtslot(&compiled.bytecode) {
-                if let Ok(values) =
-                    cranelift::execute_bytecode_rtslot(&compiled.bytecode, self.host_services.clone())
-                {
+                if let Ok(values) = cranelift::execute_bytecode_rtslot(
+                    &compiled.bytecode,
+                    self.host_services.clone(),
+                ) {
                     return Ok(values);
                 }
             }

@@ -197,11 +197,9 @@ const PROJECT_WIDGET_SOURCE: &str = concat!(
 
 #[test]
 fn imported_collection_field_newenum_for_each_executes() {
-    let result = run_project_with_widget(
-        MAIN_FOREACH_WIDGET_FUNCTION_SOURCE,
-        PROJECT_WIDGET_SOURCE,
-    )
-    .expect("collection-backed NewEnum project should execute");
+    let result =
+        run_project_with_widget(MAIN_FOREACH_WIDGET_FUNCTION_SOURCE, PROJECT_WIDGET_SOURCE)
+            .expect("collection-backed NewEnum project should execute");
 
     assert_eq!(result, RuntimeValue::String(BStr("41,42,".to_string())));
 }
@@ -224,15 +222,18 @@ fn imported_collection_field_newenum_foreach_project_snapshot_matches_vm_and_jit
         PROJECT_WIDGET_SOURCE,
         false,
     )
-        .expect("vm project execution should succeed");
+    .expect("vm project execution should succeed");
     let jit = execute_project_with_widget_snapshot(
         MAIN_FOREACH_WIDGET_PROJECT_SOURCE,
         PROJECT_WIDGET_SOURCE,
         true,
     )
-        .expect("jit project execution should succeed");
+    .expect("jit project execution should succeed");
 
-    assert_eq!(vm, jit, "VM/JIT snapshots should match for project-backed NewEnum For Each");
+    assert_eq!(
+        vm, jit,
+        "VM/JIT snapshots should match for project-backed NewEnum For Each"
+    );
 }
 
 #[test]

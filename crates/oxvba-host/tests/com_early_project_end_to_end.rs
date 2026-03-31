@@ -418,7 +418,7 @@ End Sub
 #[cfg(target_os = "windows")]
 #[test]
 fn early_bound_project_registered_scripting_dictionary_member_subset_prefer_vtable_matches_dispatch()
-{
+ {
     if !registered_scripting_dictionary_available() {
         return;
     }
@@ -576,11 +576,9 @@ fn early_bound_loaded_basproj_executes_registered_testeventserver_ping() {
         &[("OxVba", "{E2A30001-0001-0001-0001-000000000001}", 1, 0, 0)],
     );
     assert!(
-        loaded
-            .manifest
-            .references
-            .iter()
-            .any(|reference| reference.referenced_project_name.eq_ignore_ascii_case("OxVba")),
+        loaded.manifest.references.iter().any(|reference| reference
+            .referenced_project_name
+            .eq_ignore_ascii_case("OxVba")),
         "expected loaded manifest to retain the OxVba typelib reference"
     );
 

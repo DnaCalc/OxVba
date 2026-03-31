@@ -163,12 +163,10 @@ mod windows_registered_com_lane {
 
     fn registered_lane_available() -> bool {
         std::panic::catch_unwind(|| {
-            let _ = run_registered_lane_source(
-                &format!(
-                    "Sub Main()\nDim obj\n{}\nEnd Sub\n",
-                    selected_registered_createobject_line()
-                ),
-            );
+            let _ = run_registered_lane_source(&format!(
+                "Sub Main()\nDim obj\n{}\nEnd Sub\n",
+                selected_registered_createobject_line()
+            ));
         })
         .is_ok()
     }
@@ -220,8 +218,7 @@ End Sub
         }
         if let Some(expected) = flavor.expected_exists_42_value() {
             assert_eq!(
-                out[2],
-                expected,
+                out[2], expected,
                 "Exists(42) result mismatch for ProgID `{selected_prog_id}`"
             );
         } else {

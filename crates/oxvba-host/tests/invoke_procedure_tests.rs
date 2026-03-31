@@ -6,8 +6,8 @@ use oxvba_compiler::{
     ModuleAttributes, ModuleKind, ModuleUnit, OxBundle, ProjectKind, ProjectManifest,
     ProjectReference, ReferenceKind, compile_project,
 };
-use oxvba_host::{Engine, HostConfig};
 use oxvba_hal::model::HostPolicy;
+use oxvba_host::{Engine, HostConfig};
 use oxvba_runtime::{RuntimeValue, bstr::BStr};
 
 fn make_manifest(modules: Vec<ModuleUnit>) -> ProjectManifest {
@@ -193,7 +193,9 @@ fn invoke_function_foreach_over_project_newenum_array_executes() {
 
     let engine = Engine::default();
     let mut session = engine.compile_and_prepare_session(&manifest).unwrap();
-    let result = engine.invoke_procedure(&mut session, "Main", "Main", &[]).unwrap();
+    let result = engine
+        .invoke_procedure(&mut session, "Main", "Main", &[])
+        .unwrap();
 
     assert_eq!(result, RuntimeValue::String(BStr("41,42,".to_string())));
 }
@@ -224,7 +226,9 @@ fn run_imported_com_newenum_foreach(enable_jit: bool) -> RuntimeValue {
     });
     engine.set_host_policy(HostPolicy::interactive_dev());
     let mut session = engine.compile_and_prepare_session(&manifest).unwrap();
-    engine.invoke_procedure(&mut session, "Main", "Main", &[]).unwrap()
+    engine
+        .invoke_procedure(&mut session, "Main", "Main", &[])
+        .unwrap()
 }
 
 #[cfg(target_os = "windows")]
@@ -254,8 +258,12 @@ fn run_imported_com_newenum_foreach_bundle(enable_jit: bool) -> RuntimeValue {
         root_object_name: None,
     });
     engine.set_host_policy(HostPolicy::interactive_dev());
-    let mut session = engine.compile_and_prepare_session_from_bundle(&bundle).unwrap();
-    engine.invoke_procedure(&mut session, "Main", "Main", &[]).unwrap()
+    let mut session = engine
+        .compile_and_prepare_session_from_bundle(&bundle)
+        .unwrap();
+    engine
+        .invoke_procedure(&mut session, "Main", "Main", &[])
+        .unwrap()
 }
 
 #[cfg(target_os = "windows")]
@@ -316,7 +324,9 @@ fn run_registered_testdispatch_foreach(enable_jit: bool) -> RuntimeValue {
     });
     engine.set_host_policy(HostPolicy::interactive_dev());
     let mut session = engine.compile_and_prepare_session(&manifest).unwrap();
-    engine.invoke_procedure(&mut session, "Main", "Main", &[]).unwrap()
+    engine
+        .invoke_procedure(&mut session, "Main", "Main", &[])
+        .unwrap()
 }
 
 #[cfg(target_os = "windows")]
@@ -344,8 +354,12 @@ fn run_registered_testdispatch_foreach_bundle(enable_jit: bool) -> RuntimeValue 
         root_object_name: None,
     });
     engine.set_host_policy(HostPolicy::interactive_dev());
-    let mut session = engine.compile_and_prepare_session_from_bundle(&bundle).unwrap();
-    engine.invoke_procedure(&mut session, "Main", "Main", &[]).unwrap()
+    let mut session = engine
+        .compile_and_prepare_session_from_bundle(&bundle)
+        .unwrap();
+    engine
+        .invoke_procedure(&mut session, "Main", "Main", &[])
+        .unwrap()
 }
 
 #[cfg(target_os = "windows")]
