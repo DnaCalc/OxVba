@@ -1,102 +1,97 @@
 # OxVBA
 
-OxVBA is a VBA 7.x-compatible compiler/runtime in Rust with a broader hosting model than Office VBA itself.
+OxVBA is a Rust implementation of the VBA 7.x language/runtime with a broader project and hosting model than the Office-bundled VBA engine.
 
-The core idea is:
-- keep the language/runtime engine close to VBA semantics
-- make project layout, execution, and hosting practical outside Office
-- use one code style and codebase across script-style, program-style, and library-style realizations
-
-This README is the end-user guide for:
-- source layouts in files and directories
-- project formats
-- startup behavior
-- project options and references
-- current CLI commands and runtime options
-
-For repo process and implementation doctrine, see:
-- `CHARTER.md`
-- `OPERATIONS.md`
-- `MACH1000_PLAN.md`
-- `docs/AUTORUN_STATE.md` — minimal AutoRun control/sync file; current terminal gate target (`v620`)
-
-## What OxVBA Supports
-
-Current user-facing source/project lanes:
+In practical terms, OxVBA lets you:
 - run a single `.bas` file directly
 - run a directory as a project by convention
-- run an explicit `.basproj` project
-- run a legacy `.vbp` project through the `VBP-S0` adapter
-- build the same project targets through the same discovery rules
-- compile a single source file into an `.oxb` bundle with the low-level `compile` command
+- define an explicit project in the canonical `.basproj` format
+- import and run a bounded legacy `.vbp` subset through a deterministic adapter
+- build compiled `.oxb` bundles from the same project layouts you run
+- choose host/runtime profiles and policy presets instead of being locked to one Office host
 
-Current canonical project format:
-- `.basproj`
+This README is the primary user-facing overview for evaluating and starting to use OxVBA. It explains:
+- what OxVBA is
+- how to install and first-run it
+- how source files, project files, and references work
+- what parity you should expect today
+- where OxVBA goes beyond VBA 7.1 in Excel
+- what compilation and host/runtime options exist
+- what cross-platform use currently means
 
-Legacy compatibility format:
-- `.vbp` via a bounded adapter/import layer
+For deeper specifications and validation truth, see:
+- [docs/spec/HOSTING_PROJECT_TOOLING_PROPOSAL.md](docs/spec/HOSTING_PROJECT_TOOLING_PROPOSAL.md)
+- [docs/spec/BASPROJ_SPEC_V1.md](docs/spec/BASPROJ_SPEC_V1.md)
+- [docs/spec/VBP_SUBSET_AND_PROJECT_ARTIFACT_STRATEGY_DISCUSSION_V1.md](docs/spec/VBP_SUBSET_AND_PROJECT_ARTIFACT_STRATEGY_DISCUSSION_V1.md)
+- [docs/validation/PROJECT_HOSTING_VALIDATION_MATRIX_V1.csv](docs/validation/PROJECT_HOSTING_VALIDATION_MATRIX_V1.csv)
+- [docs/validation/LANGUAGE_VALIDATION_MATRIX_V1.csv](docs/validation/LANGUAGE_VALIDATION_MATRIX_V1.csv)
+- [docs/validation/COM_VALIDATION_MATRIX_V1.csv](docs/validation/COM_VALIDATION_MATRIX_V1.csv)
 
-Not supported yet:
-- VB forms / startup forms
-- designer-backed startup
-- `Form=`, `UserControl=`, `PropertyPage=` `.vbp` surfaces
+## What OxVBA Is
 
-## Quick Start
+OxVBA is not just a parser or transpiler. It is a workspace of crates that covers:
+- parsing and syntax infrastructure
+- semantic analysis and project/reference lowering
+- bytecode generation
+- VM execution
+- JIT execution
+- host/runtime abstraction and policy control
+- Windows COM interop for the supported subset
+- project loading for `.basproj`, convention-mode directories, and bounded `.vbp`
 
-Single-file script/program:
+The core user model is:
+- write VBA-style modules and classes
+- choose the right project lane for your problem
+- run or build them through one CLI
+- keep semantics close to VBA where OxVBA claims support
+- make hosting and execution more explicit, deterministic, and portable than Office VBA
+
+## Installation
+
+OxVBA is currently source-build-first.
+
+### Prerequisites
+
+- Rust stable via `rustup`
+- Git
+- PowerShell on Windows for repo scripts
+
+### Get the repo
+
+```powershell
+git clone https://github.com/DnaCalc/OxVba.git
+cd OxVba
+```
+
+### Option 1: use the CLI without installing it
+
+```powershell
+cargo run -p oxvba-cli -- run hello.bas
+```
+
+This is the safest way to evaluate the repo because it always uses the checked-out source.
+
+### Option 2: install the CLI from the repo
+
+```powershell
+cargo install --path crates/oxvba-cli
+```
+
+After that, use:
 
 ```powershell
 oxvba run hello.bas
 ```
 
-Run a directory by discovery:
+In the rest of this README, commands are shown as `oxvba ...`. If you have not installed the CLI, replace that with:
 
 ```powershell
-oxvba run-project .
+cargo run -p oxvba-cli -- ...
 ```
 
-Build a project target:
+## First Run
 
-```powershell
-oxvba build .
-```
-
-Import a legacy VB6 project file:
-
-```powershell
-oxvba import-vbp legacy\Project1.vbp
-```
-
-## Choose a Lane
-
-Use this when deciding how to structure and run code:
-
-| Goal | Recommended lane | Typical command |
-|----------|----------|----------|
-| Run one script/tool quickly | single `.bas` file | `oxvba run tool.bas` |
-| Keep several modules/classes but no project file yet | convention-mode directory | `oxvba run-project .\my-tool` |
-| Define project metadata, references, output type, and entrypoint explicitly | `.basproj` | `oxvba run-project .\MyApp.basproj` |
-| Run a supported legacy VB6 subset directly | `.vbp` through `VBP-S0` | `oxvba run-project .\Legacy\Project1.vbp` |
-| Convert legacy VB6 subset into the canonical format | `.vbp` import | `oxvba import-vbp .\Legacy\Project1.vbp` |
-| Produce a build artifact using the same discovery rules as execution | discovered project build | `oxvba build .` |
-
-Practical rule:
-- if you are starting new work, prefer `.basproj`
-- if you are experimenting, start with `oxvba run file.bas`
-- if you have a small directory but do not want metadata yet, use convention mode
-- if you are bringing forward VB6 code, use `.vbp` only as an adapter/import lane
-
-## Source Layouts
-
-### 1. Single `.bas` File
-
-The simplest lane is a single VBA module file:
-
-```text
-hello.bas
-```
-
-Example:
+Create a minimal file:
 
 ```vb
 Option Explicit
@@ -104,43 +99,108 @@ Option Explicit
 Print "Hello from OxVBA"
 ```
 
-Run it with:
+Save it as `hello.bas`, then run:
+
+```powershell
+oxvba run hello.bas
+```
+
+If you want to make the runtime choice explicit:
 
 ```powershell
 oxvba run hello.bas --profile windows-stdio
 ```
 
-This is the most script-like lane. It is a good fit for:
-- automation scripts
-- console/stdIO tools
-- experiments
-- single-module utilities
-
-### 2. Convention-Mode Directory
-
-If a directory contains no `.basproj` and no `.vbp`, OxVBA treats it as a project by convention:
-
-```text
-my-tool/
-  Main.bas
-  Helpers.bas
-  Calculator.cls
-```
-
-Run it with:
+For a Linux stdio lane:
 
 ```powershell
-oxvba run-project .\my-tool
+oxvba run hello.bas --runtime-class linux-stdio
+```
+
+That is the smallest useful OxVBA workflow: one file, one command, one engine.
+
+## Quick Tour
+
+| Goal | Recommended lane | Command |
+|---|---|---|
+| Run one quick script/tool | single `.bas` file | `oxvba run tool.bas` |
+| Run several modules/classes without project metadata | convention-mode directory | `oxvba run-project .\my-tool` |
+| Define metadata, references, entrypoint, output type | `.basproj` | `oxvba run-project .\MyApp.basproj` |
+| Bring forward a supported VB6 subset | bounded `.vbp` adapter | `oxvba run-project .\Legacy\Project1.vbp` |
+| Convert a legacy `.vbp` to the canonical format | `.vbp` import | `oxvba import-vbp .\Legacy\Project1.vbp` |
+| Build a bundle artifact | discovered project build | `oxvba build .` |
+
+Practical rule:
+- start new work with `.basproj`
+- use `run file.bas` for very small utilities and experiments
+- use convention mode while a project is still informal
+- treat `.vbp` as a compatibility/import lane, not the long-term authoring format
+
+## Example Use Cases
+
+### 1. Simplest possible run: one module
+
+`hello.bas`
+
+```vb
+Option Explicit
+
+Print "Hello from OxVBA"
+```
+
+Run:
+
+```powershell
+oxvba run hello.bas
+```
+
+Good fit:
+- scripts
+- experiments
+- one-off automation
+- simple console/stdIO tools
+
+### 2. Slightly more advanced: a small executable directory
+
+```text
+math-tool/
+  Main.bas
+  MathHelpers.bas
+```
+
+`Main.bas`
+
+```vb
+Option Explicit
+
+Dim total As Long
+total = MathHelpers.Add(20, 22)
+Print "total=" & CStr(total)
+```
+
+`MathHelpers.bas`
+
+```vb
+Attribute VB_Name = "MathHelpers"
+Option Explicit
+
+Public Function Add(ByVal x As Long, ByVal y As Long) As Long
+    Add = x + y
+End Function
+```
+
+Run the directory directly:
+
+```powershell
+oxvba run-project .\math-tool
 ```
 
 Convention mode:
-- recursively loads `.bas` and `.cls` files
+- loads `.bas` and `.cls` files from the directory
 - uses the directory name as the project name
 - applies the normal startup ladder for executable runs
 
-### 3. Explicit `.basproj` Project
-
-This is the canonical OxVBA project format:
+### 3. Canonical project file: `.basproj`
 
 ```text
 finance-tools/
@@ -150,7 +210,7 @@ finance-tools/
   Calculator.cls
 ```
 
-Example:
+`FinanceTools.basproj`
 
 ```xml
 <Project Sdk="OxVba.Sdk/0.1.0">
@@ -171,58 +231,142 @@ Example:
 </Project>
 ```
 
-Run it with:
+Run:
 
 ```powershell
 oxvba run-project .\finance-tools
 ```
 
-### 4. Legacy `.vbp` Project
+Build:
 
-OxVBA can run a bounded subset of VB6 `.vbp` files directly:
+```powershell
+oxvba build .\finance-tools
+```
+
+### 4. Project references and COM references
+
+`App.basproj`
+
+```xml
+<Project Sdk="OxVba.Sdk/0.1.0">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <ProjectName>App</ProjectName>
+    <EntryPoint>Main.Main</EntryPoint>
+  </PropertyGroup>
+  <ItemGroup>
+    <Module Include="Main.bas" />
+    <ProjectReference Include="..\Core\Core.basproj" />
+    <COMReference Include="Scripting">
+      <Guid>{420B2830-E718-11CF-893D-00A0C9054228}</Guid>
+      <VersionMajor>1</VersionMajor>
+      <VersionMinor>0</VersionMinor>
+      <Lcid>0</Lcid>
+      <ImportLib>scrrun.dll</ImportLib>
+    </COMReference>
+  </ItemGroup>
+</Project>
+```
+
+`Main.bas`
+
+```vb
+Option Explicit
+
+Public Sub Main()
+    Dim fs As Scripting.FileSystemObject
+    Set fs = New Scripting.FileSystemObject
+    Print Core.VersionString()
+    Print fs.GetBaseName("report.csv")
+End Sub
+```
+
+This shows two important OxVBA ideas:
+- project references are explicit and ordered
+- imported typelibs are explicit project metadata, not hidden host state
+
+### 5. Legacy `.vbp` import
+
+If you have a supported legacy VB6 project:
+
+```powershell
+oxvba import-vbp .\legacy\Project1.vbp
+```
+
+That generates a `.basproj` representation. You can then treat the imported project as the canonical project artifact moving forward.
+
+## Source Layouts and Project Lanes
+
+### Single `.bas` file
+
+Use this for script-style execution:
 
 ```text
-legacy-app/
-  Project1.vbp
+hello.bas
+```
+
+Run:
+
+```powershell
+oxvba run hello.bas
+```
+
+### Convention-mode directory
+
+Use this when you want several modules but not a project file yet:
+
+```text
+my-tool/
   Main.bas
   Helpers.bas
+  Widget.cls
 ```
 
-Run it with:
+Run:
 
 ```powershell
-oxvba run-project .\legacy-app
+oxvba run-project .\my-tool
 ```
 
-Or explicitly:
+### `.basproj`
 
-```powershell
-oxvba run-project .\legacy-app\Project1.vbp
-```
+This is the canonical OxVBA project format.
 
-If you want to convert it to the canonical format:
+Use it when you need:
+- explicit output type
+- explicit entrypoint
+- references
+- root-object defaults
+- host/policy defaults
+- stable project metadata
 
-```powershell
-oxvba import-vbp .\legacy-app\Project1.vbp
-```
+### `.vbp`
+
+OxVBA supports a bounded legacy `.vbp` subset through the `VBP-S0` adapter/import lane.
+
+Use it when:
+- evaluating or running a legacy VB6-style project inside the supported subset
+- importing old work into `.basproj`
+
+Do not treat `.vbp` as the preferred authoring format for new OxVBA projects.
 
 ## Project Discovery Rules
 
 For `oxvba run-project [PATH]` and `oxvba build [PATH]`, discovery is:
 
-1. If `PATH` is a `.vbp` file, use the VBP adapter.
-2. If `PATH` is a `.basproj` file, use the `.basproj` loader.
-3. If `PATH` is a directory with a unique `.basproj`, use that project.
-4. If `PATH` is a directory with no `.basproj` but a unique `.vbp`, use that project.
-5. If `PATH` is a directory with neither, use convention mode.
+1. if `PATH` is a `.vbp` file, use the VBP adapter
+2. if `PATH` is a `.basproj` file, use the `.basproj` loader
+3. if `PATH` is a directory with a unique `.basproj`, use that project
+4. if `PATH` is a directory with no `.basproj` but a unique `.vbp`, use that project
+5. if `PATH` is a directory with neither, use convention mode
 
 Deterministic ambiguity rules:
 - multiple `.basproj` files in one directory: error
 - multiple `.vbp` files in one directory when no `.basproj` is present: error
 
-`oxvba build` now follows the same discovery rules as `oxvba run-project`.
+`oxvba build` follows the same discovery rules as `oxvba run-project`.
 
-## Startup Semantics
+## Startup and Top-Level Execution
 
 For executable/program-style runs, the startup ladder is:
 
@@ -236,11 +380,11 @@ Sources of an explicit entrypoint:
 - `.vbp`: `Startup="Module.Procedure"`
 
 Special case:
-- `.vbp` `Startup="Sub Main"` means “use the fallback ladder”, not a literal invalid `EntryPoint`
+- `.vbp` `Startup="Sub Main"` means "use the fallback ladder", not a literal invalid entrypoint
 
-### Top-Level Statements
+### Top-level statements
 
-OxVBA supports top-level executable statements for program-style/script-style execution.
+OxVBA supports top-level executable statements in program/script lanes.
 
 Example:
 
@@ -257,57 +401,44 @@ Public Sub Bump(ByRef value As Long)
 End Sub
 ```
 
-These top-level statements are lowered into an internal synthetic startup procedure.
-
 Current rule:
-- allowed for direct-file runs and `OutputType=Exe` program-style execution
+- allowed for direct-file runs and `OutputType=Exe`
 - rejected for `Library`, `Addin`, `ComServer`, and `ComExe`
 
-That rejection is intentional for now. It keeps those output forms conservative and leaves room to add a more permissive/tolerant policy later without breaking compatibility.
+That rejection is intentional. It keeps non-mainline outputs deterministic rather than silently ignoring executable top-level code.
 
-### Startup and Output-Type Matrix
+### Startup/output matrix
 
-| Output/Lane | Top-level executable statements | Explicit entrypoint | `Sub Main` fallback | Notes |
-|----------|----------|----------|----------|----------|
+| Output/lane | Top-level executable statements | Explicit entrypoint | `Sub Main` fallback | Notes |
+|---|---|---|---|---|
 | direct `run file.bas` | allowed | not applicable | not applicable | script/program lane |
-| convention-mode executable directory | allowed | not applicable in directory metadata, but normal startup ladder still applies | yes | auto-loaded as executable project |
-| `.basproj` with `OutputType=Exe` | allowed | `<EntryPoint>Module.Procedure</EntryPoint>` | yes | canonical program/app lane |
-| `.vbp` with `Type=Exe` in `VBP-S0` | allowed | `Startup="Module.Procedure"` | yes, including `Startup="Sub Main"` | bounded legacy adapter lane |
-| `.basproj` with `OutputType=Library` | rejected | allowed for metadata completeness, not startup execution | no | non-mainline lane |
+| convention-mode directory | allowed | not applicable in directory metadata | yes | auto-loaded executable lane |
+| `.basproj` with `OutputType=Exe` | allowed | yes | yes | canonical program/app lane |
+| `.vbp` with `Type=Exe` in `VBP-S0` | allowed | yes | yes | bounded legacy adapter lane |
+| `.basproj` with `OutputType=Library` | rejected | allowed for metadata completeness | no | non-mainline lane |
 | `.basproj` with `OutputType=Addin` | rejected | optional | no | non-mainline lane |
 | `.basproj` with `OutputType=ComServer` | rejected | optional | no | non-mainline lane |
 | `.basproj` with `OutputType=ComExe` | rejected | optional | no | non-mainline lane |
 
-For non-mainline lanes, top-level executable code is rejected rather than ignored. That keeps current behavior deterministic and leaves room for future tolerant modes without silently changing meaning.
+## `.basproj` Project Model
 
-### What Is Not Supported Yet
-
-Not part of the current startup model:
-- startup forms
-- designer-backed startup
-- VB6 form lifecycle startup semantics
-
-## `.basproj` Project Options
-
-The main project properties are:
+### Main properties
 
 | Property | Meaning |
-|----------|---------|
-| `OutputType` | What the project produces |
-| `ProjectName` | Logical project name |
-| `EntryPoint` | Explicit startup procedure for executable runs |
-| `RuntimeFlavor` | `Lite` or `Jit` |
-| `DefaultRuntimeProfile` | Default host/runtime profile |
-| `DefaultPolicyPreset` | Default host policy preset |
-| `DefaultRootObject` | Default injected root object name |
-| `DefineConstants` | Conditional compilation constants |
+|---|---|
+| `OutputType` | what the project produces |
+| `ProjectName` | logical project name |
+| `EntryPoint` | explicit startup procedure for executable runs |
+| `RuntimeFlavor` | runtime flavor selector |
+| `DefaultRuntimeProfile` | default host/runtime profile |
+| `DefaultPolicyPreset` | default host policy preset |
+| `DefaultRootObject` | default injected root object name |
+| `DefineConstants` | conditional compilation constants |
 
-### `OutputType`
-
-Supported values:
+### Output types
 
 | OutputType | Meaning |
-|-----------|---------|
+|---|---|
 | `HostModule` | host-loaded module/bundle lane |
 | `Library` | library-style output |
 | `Exe` | executable/program-style output |
@@ -317,14 +448,12 @@ Supported values:
 
 Practical rule today:
 - `Exe` is the main program/script lane
-- `Library`, `Addin`, `ComServer`, `ComExe` are non-mainline lanes and currently reject top-level executable statements
+- `Library`, `Addin`, `ComServer`, and `ComExe` are valid project shapes, but they are more conservative execution lanes and currently reject top-level executable statements
 
-## Module Item Types
-
-Main item types in `.basproj`:
+### Module item types
 
 | Item | Meaning |
-|------|---------|
+|---|---|
 | `<Module Include="...">` | procedural `.bas` module |
 | `<ClassModule Include="...">` | class `.cls` module |
 | `<DocumentModule Include="...">` | host document/code-behind module |
@@ -335,84 +464,113 @@ Useful class metadata:
 - `VBGlobalNamespace`
 - `VBCreatable`
 
-COM-oriented class metadata for COM server outputs:
+COM-oriented class metadata:
 - `Instancing`
 - `ProgId`
 - `Description`
 
 ## References
 
-OxVBA project references are ordered. Reference order matters.
+OxVBA references are ordered. Reference order matters.
 
-### `.basproj` References
-
-Supported reference item types:
+### `.basproj` references
 
 | Item | Meaning |
-|------|---------|
+|---|---|
 | `<ProjectReference Include="...">` | reference another project |
 | `<COMReference Include="...">` | reference a COM/type library |
 | `<NativeReference Include="...">` | reference a native library used by `Declare` |
 
-Example:
-
-```xml
-<ItemGroup>
-  <ProjectReference Include="..\CoreLib\CoreLib.basproj" />
-  <COMReference Include="Scripting">
-    <Guid>{420B2830-E718-11CF-893D-00A0C9054228}</Guid>
-    <VersionMajor>1</VersionMajor>
-    <VersionMinor>0</VersionMinor>
-    <Lcid>0</Lcid>
-    <ImportLib>scrrun.dll</ImportLib>
-  </COMReference>
-</ItemGroup>
-```
-
-### `.vbp` References
+### `.vbp` references
 
 Current `VBP-S0` reference support:
 
 | `.vbp` form | Meaning |
-|-------------|---------|
+|---|---|
 | `Reference=*\G...` | ordered type-library/COM reference |
 | `Reference=*\A...` | ordered project reference to `.vbp` / `.basproj` |
 
-Not all historical VB6 reference surfaces are supported. Current `.vbp` support is intentionally narrow and deterministic.
+Current `.vbp` support is intentionally narrow and deterministic.
 
-Current supported `.vbp` reference forms are:
-- `Reference=*\G...` for ordered type-library / COM references
-- `Reference=*\A...` for ordered project references to `.vbp` / `.basproj` artifacts
-
-Current unsupported `.vbp` reference/dependency surfaces include:
-- forms/designer/component metadata
+Unsupported `.vbp` reference/dependency surfaces include:
+- forms and designer metadata
 - broader historical VB6 project metadata outside the strict `VBP-S0` subset
 
-## Native Exports
+## Language Features and Expected Parity
 
-For library/add-in style projects, `.basproj` can declare native exports:
+OxVBA aims at VBA 7.1 semantics, but it does not claim "everything everywhere" parity.
 
-```xml
-<ItemGroup>
-  <NativeExport Include="CalcBlackScholes">
-    <Module>PricingFunctions</Module>
-    <Procedure>BlackScholes</Procedure>
-    <CallingConvention>Stdcall</CallingConvention>
-  </NativeExport>
-</ItemGroup>
-```
+The honest user-facing expectation today is:
 
-This is how OxVBA exposes selected public procedures as exported entrypoints for wrapper/native lanes.
+| Area | What to expect |
+|---|---|
+| Core language/runtime | broad VBA-style execution through one compiler/VM/JIT pipeline; exact support is bounded by the validation matrices rather than by blanket "full parity" language |
+| Project startup | deterministic supported subset across direct-file runs, convention-mode directories, `.basproj`, and bounded `.vbp` execution |
+| Windows COM | active and tested bounded early-bound and late-bound subsets on Windows |
+| Imported component oddities | some historical Excel VBIDE import/export quirks are explicitly bounded to Excel behavior, not claimed as OxVBA parity targets |
+| Language services | bounded internal service surface exists; OxVBA does not currently claim full LSP parity |
+| Formalization | scaffolded and active, but not proof closure |
+| Project storage | `.basproj` and bounded VBP adapter roundtrip are supported; full MS-OVBA parity is not currently claimed |
 
-## Current CLI Commands
+Important user-facing examples of current parity boundaries:
+- Windows COM is active and tested; non-Windows external COM remains explicitly unsupported
+- host-sensitive functions such as `Shell`, `Dir`, and `Environ` have a documented host-backed subset plus deterministic policy/fallback behavior
+- imported member-attribute edge cases can differ from Excel because Excel itself drops some metadata during VBIDE import/export; OxVBA documents those cases rather than hiding them
+- broader MS-OVBA storage parity is still blocked by source-extraction depth, so OxVBA does not overclaim it
 
-The commands below describe the current implemented CLI, not the larger future command map.
+For exact current truth, use:
+- [docs/validation/LANGUAGE_VALIDATION_MATRIX_V1.csv](docs/validation/LANGUAGE_VALIDATION_MATRIX_V1.csv)
+- [docs/validation/COM_VALIDATION_MATRIX_V1.csv](docs/validation/COM_VALIDATION_MATRIX_V1.csv)
+- [docs/validation/PROJECT_HOSTING_VALIDATION_MATRIX_V1.csv](docs/validation/PROJECT_HOSTING_VALIDATION_MATRIX_V1.csv)
+- [docs/validation/LANGUAGE_SERVICES_AND_FORMALIZATION_MATRIX_V1.csv](docs/validation/LANGUAGE_SERVICES_AND_FORMALIZATION_MATRIX_V1.csv)
+
+## How OxVBA Goes Beyond VBA 7.1 in Excel
+
+OxVBA is deliberately broader than Excel VBA in several ways.
+
+### Language/execution model
+
+- direct execution of a single `.bas` file
+- convention-mode directory execution without an Office host or VBA project container
+- top-level executable statements in program/script lanes
+- one engine shared across VM and JIT execution paths
+
+### Project model
+
+- canonical `.basproj` project format
+- deterministic project discovery rules
+- explicit project references, COM references, and native references
+- import path from bounded legacy `.vbp` into the canonical project model
+
+### Hosting model
+
+- explicit runtime profiles
+- explicit policy presets and capability overrides
+- host-root injection and `HostModule` / `DocumentModule` project shapes
+- deterministic unsupported-feature handling instead of silently leaning on one host's ambient behavior
+
+### Runtime/build model
+
+- build `.oxb` bundles from the same targets you run
+- JIT is a first-class execution option
+- native export metadata exists in the project model
+- `Library`, `Addin`, `ComServer`, and `ComExe` are part of the project/output vocabulary
+
+### Portability
+
+- runtime-class selection is explicit instead of baked into one Office process model
+- desktop runtime classes exist for Windows, Linux, and macOS
+- WASI/browser/null-floor runtime classes are part of the host/runtime surface
+
+That does not mean every extended surface is already feature-complete. It means OxVBA is intentionally designed as a broader execution/hosting platform than Excel VBA, with bounded and documented truth for each active lane.
+
+## CLI, Compilation, and Host Options
 
 ### `oxvba run <file.bas>`
 
-Runs a single `.bas` file directly.
+Runs a single module file directly.
 
-Implemented options:
+Key options:
 - `--jit`
 - `--dump-slots`
 - `--dump-values`
@@ -435,47 +593,35 @@ Examples:
 
 ```powershell
 oxvba run hello.bas
+oxvba run hello.bas --jit --dump-values
 oxvba run hello.bas --profile windows-stdio
-oxvba run tool.bas --jit --dump-values
-oxvba run tool.bas --policy strict-ci --allow-dynamic-link false
+oxvba run hello.bas --policy strict-ci --allow-dynamic-link false
 ```
 
 ### `oxvba run-project [PATH]`
 
 Runs a discovered project target.
 
-Implemented options:
+Extra key option:
 - `--entry <Module.Procedure>`
-- `--jit`
-- `--dump-slots`
-- `--dump-values`
-- `--dump-bootstrap`
-- `--profile <id>`
-- `--policy <preset>`
-- same runtime/bootstrap override flags as `oxvba run`:
-  `--config`, `--runtime-class`, `--allow-interaction`,
-  `--allow-process-spawn`, `--allow-filesystem-mutation`,
-  `--allow-dynamic-link`, `--allow-com-activation`,
-  `--deterministic-mode`, `--ui-virtualization`,
-  `--unsupported-mode`, `--wasm-runtime-class`
+
+It also accepts the same runtime/bootstrap override flags as `run`.
 
 Examples:
 
 ```powershell
 oxvba run-project .
-oxvba run-project .\app
 oxvba run-project .\FinanceTools.basproj
 oxvba run-project .\legacy\Project1.vbp
 oxvba run-project .\app --entry Startup.Boot
 oxvba run-project . --profile windows-stdio --jit
-oxvba run-project . --runtime-class linux-stdio --allow-dynamic-link false
 ```
 
 ### `oxvba build [PATH]`
 
 Builds a discovered project target into an `.oxb` bundle.
 
-Implemented options:
+Options:
 - `-o <path>`
 - `--output <path>`
 
@@ -484,37 +630,33 @@ Examples:
 ```powershell
 oxvba build .
 oxvba build .\FinanceTools.basproj
-oxvba build .\legacy\Project1.vbp
 oxvba build . -o .\dist\FinanceTools.oxb
 ```
 
-Default output path:
-- explicit file input: output beside the input target, named from `ProjectName`
-- directory input: output inside that directory as `<ProjectName>.oxb`
-
 ### `oxvba compile <input>`
 
-Compiles a single source file directly into an `.oxb` bundle without going through the project/discovery path.
+Compiles a single source file directly into an `.oxb` bundle without project discovery.
 
-Implemented options:
-- `-o <path>`
-- `--output <path>`
-
-Example:
+Examples:
 
 ```powershell
-oxvba compile .\legacy\Module1.bas
-oxvba compile .\legacy\Module1.bas -o .\dist\Module1.oxb
+oxvba compile .\Module1.bas
+oxvba compile .\Module1.bas -o .\dist\Module1.oxb
 ```
 
 ### `oxvba init [PATH]`
 
 Creates a minimal `.basproj` scaffold.
 
-Implemented options:
-- `--kind <application|library|addin|host-module|com-server|com-exe>`
+Kinds:
+- `application`
+- `library`
+- `addin`
+- `host-module`
+- `com-server`
+- `com-exe`
 
-Example:
+Examples:
 
 ```powershell
 oxvba init .\new-app
@@ -527,138 +669,141 @@ oxvba init .\calc-com --kind com-server
 
 Imports a supported legacy `.vbp` into `.basproj`.
 
-Implemented options:
-- `-o <path>`
-- `--output <path>`
-
-Example:
+Examples:
 
 ```powershell
 oxvba import-vbp .\legacy\Project1.vbp
 oxvba import-vbp .\legacy\Project1.vbp -o .\Project1.basproj
 ```
 
-## Runtime Profiles and Policies
+## Runtime profiles and policies
 
-Two important concepts:
+Two ideas matter a lot in OxVBA:
+- runtime profile / runtime class: what host/runtime environment OxVBA should assume
+- host policy: what that environment is allowed to do
 
-- runtime profile: what host/runtime environment OxVBA assumes
-- policy preset / overrides: what that host is allowed to do
-
-Examples of runtime classes currently recognized by the CLI:
-- `windows-headless`
+Recognized runtime classes include:
+- `host-native`
 - `windows-stdio`
 - `windows-gui`
+- `windows-headless`
 - `linux-stdio`
 - `linux-headless`
 - `macos-gui`
 - `macos-headless`
+- `wasi-local`
+- `browser-sandbox`
+- `null-floor`
 
-These are selected primarily via `--profile` or lower-level overrides.
+Recognized host policy presets include:
+- `strict-ci`
+- `deterministic-runtime`
+- `deterministic-compile-time`
+- `interactive-dev`
 
-For console/stdIO work, the main practical profiles are:
-- `windows-stdio`
-- `linux-stdio`
+UI virtualization modes:
+- `disabled`
+- `scripted-responses`
+- `fail-on-prompt`
 
-## Recommended Layouts
+Unsupported-feature modes:
+- `compile-time`
+- `runtime`
 
-### Console/Tool App
+Practical advice:
+- for simple Windows console work, use `windows-stdio`
+- for Linux console work, use `linux-stdio`
+- for CI or reproducible automation, start with `strict-ci`
+- use `interactive-dev` only when you intentionally want a more host-backed lane
 
-```text
-my-tool/
-  MyTool.basproj
-  Main.bas
-  CommandLine.bas
-  Formatting.bas
-```
+## Cross-Platform Story
 
-Use:
-- `OutputType=Exe`
-- top-level mainline or explicit `EntryPoint`
-- `windows-stdio` / `linux-stdio` when appropriate
+OxVBA is broader than Windows-only VBA, but the cross-platform story is layered.
 
-### Library
+### What is genuinely cross-platform today
 
-```text
-my-lib/
-  MyLib.basproj
-  PublicApi.bas
-  InternalHelpers.bas
-  Widget.cls
-```
+- the language/compiler/runtime core is Rust-based and portable
+- the project model is not tied to Office containers
+- desktop runtime classes exist for Windows, Linux, and macOS
+- host policies and runtime-class selection are explicit rather than hidden host defaults
 
-Use:
-- `OutputType=Library`
-- no top-level mainline
-- explicit exported/public surface
+### What is still Windows-specific
 
-### Host-Embedded Module
+- live external COM interop
+- Windows Office COM parity work
+- imported Windows typelib behavior for the supported COM subset
 
-```text
-host-module/
-  HostModule.basproj
-  Module1.bas
-  ThisWorkbook.cls
-  Sheet1.cls
-```
+Current architecture truth:
+- Windows COM support is active and tested
+- non-Windows external COM is explicitly unsupported
 
-Use:
-- `OutputType=HostModule`
-- no startup mainline requirement
-- host-injected root object and host-driven execution lifecycle
+So the right expectation is:
+- OxVBA as a language/runtime/project platform is cross-platform
+- OxVBA as a Windows Office COM compatibility layer is currently strongest on Windows
 
-### Add-in
+## Current Limits
 
-```text
-my-addin/
-  MyAddin.basproj
-  Functions.bas
-  Registration.bas
-```
+Keep these limits in mind when evaluating the project:
 
-Use:
-- `OutputType=Addin`
-- no top-level mainline
-- native exports / add-in metadata as needed
-
-### COM Server
-
-```text
-my-com/
-  MyCom.basproj
-  ServerHelpers.bas
-  Widget.cls
-  Factory.cls
-```
-
-Use:
-- `OutputType=ComServer` or `ComExe`
-- no top-level mainline
-- creatable/exposed classes with COM metadata
-
-## Current Limits to Keep in Mind
-
-- `.basproj` is the canonical format; `.vbp` is an adapter lane
-- forms/designer-backed startup are not supported yet
-- top-level executable statements are for program-style execution, not library/add-in/com-server outputs
+- `.basproj` is the canonical format; `.vbp` is an adapter/import lane
+- forms and designer-backed startup are not supported
+- non-mainline outputs reject top-level executable statements
 - `.vbp` support is intentionally strict and deterministic
+- non-Windows external COM is unsupported
+- full MS-OVBA project-storage parity is not currently claimed
+- language services are a bounded internal surface, not a full LSP claim
+- formalization is active but not proof-complete
 
-## Further Reading
+## Recommended Starting Paths
 
-- [BASPROJ_SPEC_V1.md](C:/Work/DnaCalc/OxVba/docs/spec/BASPROJ_SPEC_V1.md)
-- [HOSTING_PROJECT_TOOLING_PROPOSAL.md](C:/Work/DnaCalc/OxVba/docs/spec/HOSTING_PROJECT_TOOLING_PROPOSAL.md)
-- [VBP_SUBSET_AND_PROJECT_ARTIFACT_STRATEGY_DISCUSSION_V1.md](C:/Work/DnaCalc/OxVba/docs/spec/VBP_SUBSET_AND_PROJECT_ARTIFACT_STRATEGY_DISCUSSION_V1.md)
+If you are evaluating OxVBA, use one of these:
 
-## Quick Verification
+1. simplest script:
+
+```powershell
+oxvba run hello.bas
+```
+
+2. explicit application project:
+
+```powershell
+oxvba init .\demo-app
+oxvba run-project .\demo-app
+```
+
+3. legacy project migration:
+
+```powershell
+oxvba import-vbp .\legacy\Project1.vbp
+oxvba run-project .\legacy\Project1.basproj
+```
+
+4. bundle-oriented workflow:
+
+```powershell
+oxvba build .\demo-app
+```
+
+## Verification
+
+Fast repo checks:
 
 ```powershell
 ./scripts/meta-check.ps1 -Fast
 ./scripts/run-smoke.ps1
 ```
 
-Optional heavier lanes:
+Fuller validation lanes:
 
 ```powershell
 ./scripts/run-conformance.ps1
 ./scripts/run-matrix.ps1
 ```
+
+## Further Reading
+
+- [docs/BUILDING.md](docs/BUILDING.md)
+- [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
+- [docs/spec/BASPROJ_SPEC_V1.md](docs/spec/BASPROJ_SPEC_V1.md)
+- [docs/spec/HOSTING_PROJECT_TOOLING_PROPOSAL.md](docs/spec/HOSTING_PROJECT_TOOLING_PROPOSAL.md)
+- [docs/spec/VBP_SUBSET_AND_PROJECT_ARTIFACT_STRATEGY_DISCUSSION_V1.md](docs/spec/VBP_SUBSET_AND_PROJECT_ARTIFACT_STRATEGY_DISCUSSION_V1.md)
