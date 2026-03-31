@@ -697,7 +697,7 @@ Usage:
   oxvba build [PATH] [options]
 
 Options:
-  --target <target>         Build target: artifact, exe, dll (default: artifact)
+  --target <target>         Build target: artifact, wrapper-exe, wrapper-dll, native-exe, native-dll (initial shipped subset may be smaller)
   --flavor <lite|jit>       Runtime flavor for wrapper targets (default: lite)
   --out <path>              Output path
   --deterministic           Enable deterministic build mode
@@ -705,8 +705,8 @@ Options:
 
 Examples:
   oxvba build . --target artifact --out dist/myproject.oxvbapkg
-  oxvba build . --target exe --flavor lite --out dist/myapp.exe
-  oxvba build . --target dll --flavor lite --out dist/mylib.dll --com-sta
+  oxvba build . --target wrapper-exe --flavor lite --out dist/myapp.exe
+  oxvba build . --target wrapper-dll --flavor lite --out dist/mylib.dll --com-sta
 ```
 
 ```
@@ -1235,6 +1235,19 @@ The compiled artifact is a versioned, self-describing package containing everyth
 
 ### 4.5 Build Targets: EXE and DLL
 
+This proposal separates two axes:
+- `OutputType`: the semantic startup/component kind of the project
+- `BuildTarget`: the physical emitted artifact
+
+Examples of the intended split:
+- `OutputType=Exe` + `BuildTarget=Artifact`
+- `OutputType=Exe` + `BuildTarget=WrapperExe`
+- `OutputType=Library` + `BuildTarget=WrapperDll`
+- future `OutputType=WinExe` + `BuildTarget=WrapperExe`
+- later `OutputType=Exe` + `BuildTarget=NativeExe`
+
+`BuildTarget` is the right place to express whether OxVBA emits a bundle/artifact, wrapper executable, wrapper DLL, or later a true native image. `OutputType` should continue to describe semantic startup and component shape.
+
 **Wrapper EXE:**
 
 Embeds OxVBA runtime + compiled project artifact into a standalone executable.
@@ -1247,6 +1260,8 @@ Embeds OxVBA runtime + compiled project artifact into a standalone executable.
 Requirements for EXE target:
 - Project MUST have a deterministic startup path: configured `<EntryPoint>` in `.basproj`, `Startup` in `.vbp`, a unique top-level mainline, or a unique `Sub Main` found by convention.
 - Direct `oxvba run <file.bas>` is the degenerate single-file case of the same rule.
+
+**Future semantic extension:** `WinExe` is a plausible future `OutputType` for windowed/no-console executable semantics. That belongs at the semantic `OutputType` layer because it changes startup/subsystem expectations rather than only changing packaging.
 
 **Wrapper DLL (in-process COM server):**
 
@@ -1486,8 +1501,9 @@ pub trait LanguageServiceProvider {
 ### Phase P7: Wrapper Outputs and Add-in Semantics
 
 **Deliverables:**
-- `build-wrapper-exe` command.
-- `build-wrapper-dll` command with COM STA surface.
+- explicit `BuildTarget` contract for artifact vs wrapper outputs.
+- `build-wrapper-exe` / `--target wrapper-exe` command surface.
+- `build-wrapper-dll` / `--target wrapper-dll` command surface with COM STA semantics.
 - Scope-aware export registration semantics.
 - Lite and JIT wrapper flavors with size budget tracking.
 - `ls-exports` and `host-check` commands.
@@ -1509,7 +1525,19 @@ pub trait LanguageServiceProvider {
 **Dependencies:** P7 (wrapper DLL substrate).
 **Effort:** M-L
 
-### Phase P9: WASM Host Lane Hardening
+### Phase P9: Native Image Target Planning
+
+**Deliverables:**
+- `BuildTarget=NativeExe` design and command contract.
+- `BuildTarget=NativeDll` design and command contract.
+- explicit parity/caveat matrix separating wrapper-image behavior from true native-image behavior.
+- clarified relationship between future `OutputType=WinExe` and native executable subsystem selection.
+
+**Gate:** Native-image target design is explicit, bounded, and does not blur semantic `OutputType` with physical emitted artifact.
+**Dependencies:** P4 (artifact), P7 (wrapper convergence), implementation strategy decision for native image backend.
+**Effort:** M
+
+### Phase P10: WASM Host Lane Hardening
 
 **Deliverables:**
 - WASM bridge contract formalization.

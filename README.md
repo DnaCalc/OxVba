@@ -478,6 +478,19 @@ It does not currently mean that `oxvba build` emits a native Windows PE `.exe`.
 
 The stable build artifact today is an `.oxb` bundle. That bundle is executed by OxVBA tooling, typically through `oxvba-run <bundle.oxb>`.
 
+### Planned separation: `OutputType` vs `BuildTarget`
+
+OxVBA is moving toward a clearer split between:
+- `OutputType`: the semantic shape of the project
+- `BuildTarget`: the physical thing emitted by the build
+
+Planned direction:
+- `OutputType=Exe` means console/program-style startup semantics
+- a future `OutputType=WinExe` would mean windowed executable semantics with no console expectation
+- build packaging would be chosen separately through a `BuildTarget` concept such as `Bundle`, `WrapperExe`, `WrapperDll`, and later `NativeExe` / `NativeDll`
+
+That keeps the current `.oxb` bundle story explicit while leaving room for future true native executable and DLL targets without overloading `OutputType`.
+
 ### Module item types
 
 | Item | Meaning |
@@ -798,6 +811,16 @@ Keep these limits in mind when evaluating the project:
 - full MS-OVBA project-storage parity is not currently claimed
 - language services are a bounded internal surface, not a full LSP claim
 - formalization is active but not proof-complete
+
+## Roadmap Notes
+
+Two packaging directions are explicitly on the roadmap:
+- wrapper targets built on top of compiled OxVBA artifacts, such as self-contained executable and DLL wrappers
+- later true native-image targets for EXE and DLL outputs once wrapper parity and build semantics are stable
+
+The intended long-term model is:
+- `OutputType` chooses semantic startup/component shape
+- `BuildTarget` chooses emitted artifact shape
 
 ## Recommended Starting Paths
 

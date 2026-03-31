@@ -43,7 +43,7 @@ All properties are optional unless noted. A project may contain multiple `<Prope
 
 | Property | Type | Values | Default | Required | Purpose |
 |----------|------|--------|---------|----------|---------|
-| `OutputType` | enum | `HostModule`, `Library`, `Exe`, `Addin`, `ComServer`, `ComExe` | — | **yes** | What the project produces |
+| `OutputType` | enum | `HostModule`, `Library`, `Exe`, `Addin`, `ComServer`, `ComExe` | — | **yes** | Semantic project/output kind |
 | `ProjectName` | identifier | any valid VBA identifier | directory name | no | Maps to `ProjectManifest.project_name` |
 | `EntryPoint` | string | `Module.Procedure` | — | no | Explicit startup procedure override for execution |
 | `RuntimeFlavor` | enum | `Lite`, `Jit` | `Lite` | no | VM-only vs VM+JIT |
@@ -57,13 +57,17 @@ All properties are optional unless noted. A project may contain multiple `<Prope
 | OutputType | ProjectKind | Produces | Entry point |
 |-----------|------------|---------|------------|
 | `HostModule` | `Host` | `.oxb` bundle | not required |
-| `Library` | `Library` | `.dll`/`.so` with native exports | not required |
-| `Exe` | `Source` | native executable | required via explicit `EntryPoint`, unique top-level mainline, or unique `Sub Main` |
-| `Addin` | `Library` | XLL/add-in DLL | optional; top-level mainline rejected |
-| `ComServer` | `Library` | in-process COM DLL (`.dll`) | not required (uses creatable classes) |
-| `ComExe` | `Library` | out-of-process COM EXE (`.exe`) | not required (uses creatable classes) |
+| `Library` | `Library` | library-style project semantics | not required |
+| `Exe` | `Source` | executable/program-style semantics | required via explicit `EntryPoint`, unique top-level mainline, or unique `Sub Main` |
+| `Addin` | `Library` | add-in-style semantics | optional; top-level mainline rejected |
+| `ComServer` | `Library` | in-process COM server semantics | not required (uses creatable classes) |
+| `ComExe` | `Library` | out-of-process COM server semantics | not required (uses creatable classes) |
 
 **OxVBA extension note:** top-level executable statements are an OxVBA hosting/project extension, not an Office-VBA parity claim. In `.basproj` program-style execution (`OutputType=Exe`), a module containing top-level executable statements may supply the startup mainline when no explicit `EntryPoint` is configured. In the current bounded lane, top-level executable statements are rejected for `Library`, `Addin`, `ComServer`, and `ComExe`.
+
+**Packaging note:** `OutputType` is the semantic project kind, not a guarantee of today's emitted file shape. The current stable compiled output emitted by the shipped CLI is an OxVBA bundle artifact. Wrapper and native image packaging are a separate build-target concern.
+
+**Planned extension:** a future `WinExe` `OutputType` is expected for windowed executable semantics distinct from console/program-style `Exe`. That future lane is intentionally separate from the physical build-target choice.
 
 **DefineConstants format:** Semicolon-separated `KEY=VALUE` pairs. Values are parsed as `i32`. Keys without `=VALUE` default to `1`. Example: `VBA7=1;WIN64=1;DEBUG` → `{VBA7: 1, WIN64: 1, DEBUG: 1}`.
 

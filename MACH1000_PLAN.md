@@ -62,6 +62,7 @@ Values are listed from most important to least important. When values conflict, 
 - Full VBA/COM reference counting semantics
 - Opt-in cycle-detecting garbage collector (one of few beyond-VBA features)
 - Compilation to executable format (native or IL) without excessive dependencies (no shipping LLVM)
+- Clear separation between semantic project kind and physical emitted build target (`OutputType` vs future `BuildTarget`)
 - Cross-platform core: language and basic libraries work on Windows, Linux, macOS
 - Full COM compatibility on Windows
 - Hosting interfaces: in-process hosting with host COM hookups and non-COM method exposure
@@ -75,6 +76,9 @@ Values are listed from most important to least important. When values conflict, 
 - IDE features (IntelliSense, go-to-definition, etc.)
 - Forms Designer
 - COM library interop on non-Windows platforms (abstraction layer exists but full story deferred)
+- Wrapper build targets for self-contained EXE/DLL outputs over compiled OxVBA artifacts
+- Future native image targets for EXE/DLL outputs after wrapper convergence
+- Windowed executable semantics (`WinExe`) as a future semantic output type distinct from console/program-style `Exe`
 
 **Out of scope:**
 - Spreadsheet engine (that is DNA Calc's domain)
