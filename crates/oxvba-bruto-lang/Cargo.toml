@@ -9,5 +9,5 @@ repository.workspace = true
 [dependencies]
 bruto-ide.workspace = true
 turbo-vision.workspace = true
-oxvba-project.workspace = true
-oxvba-languageservice.workspace = true
+oxvba-build.workspace = true
+oxvba-compiler.workspace = true

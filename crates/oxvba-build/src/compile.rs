@@ -1,6 +1,9 @@
 //! Compile shim driver: builds generated Rust source into a binary.
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
+
+static SHIM_BUILD_COUNTER: AtomicU64 = AtomicU64::new(1);
 
 /// Error type for build operations.
 #[derive(Debug)]
@@ -34,7 +37,11 @@ pub fn compile_shim(
     output_path: &Path,
     output_type: ShimOutputType,
 ) -> Result<(), BuildError> {
-    let temp_dir = std::env::temp_dir().join(format!("oxvba_build_{}", std::process::id()));
+    let temp_dir = std::env::temp_dir().join(format!(
+        "oxvba_build_{}_{}",
+        std::process::id(),
+        SHIM_BUILD_COUNTER.fetch_add(1, Ordering::Relaxed)
+    ));
     let src_dir = temp_dir.join("src");
 
     std::fs::create_dir_all(&src_dir).map_err(BuildError::Io)?;
@@ -51,6 +58,10 @@ pub fn compile_shim(
         ShimOutputType::Exe => "[[bin]]\nname = \"shim\"\npath = \"src/main.rs\"",
         ShimOutputType::Dll => "[lib]\ncrate-type = [\"cdylib\"]\npath = \"src/lib.rs\"",
     };
+    let compiler_path = workspace_crate_path("oxvba-compiler")?;
+    let hal_path = workspace_crate_path("oxvba-hal")?;
+    let host_path = workspace_crate_path("oxvba-host")?;
+    let runtime_path = workspace_crate_path("oxvba-runtime")?;
     let cargo_toml = format!(
         r#"[package]
 name = "oxvba-shim"
@@ -59,15 +70,19 @@ edition = "2024"
 
 {crate_type}
 
+[profile.release]
+debug = true
+
 [dependencies]
 oxvba-compiler = {{ path = "{}" }}
+oxvba-hal = {{ path = "{}" }}
 oxvba-host = {{ path = "{}" }}
 oxvba-runtime = {{ path = "{}" }}
 "#,
-        // These paths would need to be absolute or relative to the temp project
-        "../../crates/oxvba-compiler",
-        "../../crates/oxvba-host",
-        "../../crates/oxvba-runtime",
+        cargo_path_literal(&compiler_path),
+        cargo_path_literal(&hal_path),
+        cargo_path_literal(&host_path),
+        cargo_path_literal(&runtime_path),
     );
     std::fs::write(temp_dir.join("Cargo.toml"), cargo_toml).map_err(BuildError::Io)?;
 
@@ -87,7 +102,7 @@ oxvba-runtime = {{ path = "{}" }}
 
     // Copy result to output_path
     let built_binary = match output_type {
-        ShimOutputType::Exe => temp_dir.join("target/release/shim"),
+        ShimOutputType::Exe => temp_dir.join(format!("target/release/shim{}", exe_suffix())),
         ShimOutputType::Dll => temp_dir.join("target/release/oxvba_shim.dll"),
     };
 
@@ -98,4 +113,19 @@ oxvba-runtime = {{ path = "{}" }}
     // Clean up
     let _ = std::fs::remove_dir_all(&temp_dir);
     Ok(())
+}
+
+fn workspace_crate_path(crate_name: &str) -> Result<PathBuf, BuildError> {
+    let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("..")
+        .join(crate_name);
+    crate_root.canonicalize().map_err(BuildError::Io)
+}
+
+fn cargo_path_literal(path: &Path) -> String {
+    path.to_string_lossy().replace('\\', "\\\\")
+}
+
+fn exe_suffix() -> &'static str {
+    if cfg!(windows) { ".exe" } else { "" }
 }
