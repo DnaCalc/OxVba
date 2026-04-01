@@ -123,25 +123,33 @@ Save it as `hello.bas`, then run:
 oxvba run hello.bas
 ```
 
-If you want to make the runtime choice explicit:
+That is the smallest useful OxVBA workflow: one file, one command, one engine.
+
+If that works, the next recommended step is:
+
+```powershell
+oxvba init .\demo-app
+oxvba run-project .\demo-app
+```
+
+Keep the first pass simple:
+- start with `run file.bas`
+- then move to `init` + `run-project`
+- only reach for runtime/profile/reference overrides when you know you need them
+
+When you do want to make runtime choice explicit later, the common forms are:
 
 ```powershell
 oxvba run hello.bas --profile windows-stdio
-```
-
-If you want to override the runtime class directly:
-
-```powershell
 oxvba run hello.bas --runtime-class windows-stdio
 ```
-
-That is the smallest useful OxVBA workflow: one file, one command, one engine.
 
 ## Quick Tour
 
 | Goal | Recommended lane | Command |
 |---|---|---|
 | Run one quick script/tool | single `.bas` file | `oxvba run tool.bas` |
+| Start a new explicit app | `.basproj` scaffold | `oxvba init .\demo-app` then `oxvba run-project .\demo-app` |
 | Run several modules/classes without project metadata | convention-mode directory | `oxvba run-project .\my-tool` |
 | Define metadata, references, entrypoint, output type | `.basproj` | `oxvba run-project .\MyApp.basproj` |
 | Bring forward a supported VB6 subset | bounded `.vbp` adapter | `oxvba run-project .\Legacy\Project1.vbp` |
@@ -551,6 +559,105 @@ Current `.vbp` support is intentionally narrow and deterministic.
 Unsupported `.vbp` reference/dependency surfaces include:
 - forms and designer metadata
 - broader historical VB6 project metadata outside the strict `VBP-S0` subset
+
+### COM reference helpers
+
+OxVBA now has a direct COM reference-selection helper surface intended for:
+- host tools such as OxIde
+- future richer CLI/project-edit workflows
+- deterministic repair/planning around active `.basproj` COM references
+
+The model stays strict:
+- durable truth still lives in the ordered `.basproj` `<COMReference>` list
+- helper APIs discover candidates and plan edits; they do not invent a second project model
+- the host owns the user interface
+
+Current discovery lanes:
+- registered-library search by friendly/library name
+- ProgID lookup
+- file-backed selection from `.tlb`, `.olb`, `.dll`, `.ocx`, `.exe`, and `.xll` when an embedded typelib is actually present
+
+Current planning lanes:
+- inspect active project COM references against a discovered candidate set
+- classify each active selection as unique, ambiguous, or missing
+- plan add, replace, repair, and remove edits against the canonical `.basproj` list
+
+Rust host example: discover a library by friendly name
+
+```rust
+use oxvba_project::{ComSelectionService, RegisteredComSelectionQuery};
+
+let service = ComSelectionService::default();
+let candidates = service.discover_registered_candidates(&RegisteredComSelectionQuery {
+    reference_name: "Scripting".to_string(),
+    requested_coclass: None,
+    import_lib: None,
+    guid: None,
+    version_major: None,
+    version_minor: None,
+    lcid: None,
+})?;
+```
+
+Rust host example: resolve from a ProgID
+
+```rust
+use oxvba_project::ComSelectionService;
+
+let service = ComSelectionService::default();
+let candidates = service.discover_prog_id_candidates("Scripting.FileSystemObject")?;
+```
+
+Rust host example: browse a file-backed typelib carrier
+
+```rust
+use std::path::PathBuf;
+
+use oxvba_project::{ComSelectionService, FileBackedComSelectionQuery};
+
+let service = ComSelectionService::default();
+let candidates = service.discover_file_backed_candidates(&FileBackedComSelectionQuery {
+    carrier_path: PathBuf::from(r"C:\Windows\System32\scrrun.dll"),
+    reference_name: Some("Scripting".to_string()),
+    requested_coclass: None,
+})?;
+```
+
+Rust host example: inspect active project selections and plan an add/repair
+
+```rust
+use std::path::Path;
+
+use oxvba_project::{ComSelectionService, RegisteredComSelectionQuery};
+
+let service = ComSelectionService::default();
+let discovered = service.discover_registered_candidates(&RegisteredComSelectionQuery {
+    reference_name: "Scripting".to_string(),
+    requested_coclass: None,
+    import_lib: None,
+    guid: None,
+    version_major: None,
+    version_minor: None,
+    lcid: None,
+})?;
+let surface = service.inspect_workspace_project_state(Path::new(r".\App.basproj"), &discovered)?;
+let add_plan = service.plan_add_candidate(&discovered[0], None);
+let maybe_repair_plan = surface
+    .selections
+    .iter()
+    .find(|selection| !matches!(selection.status, oxvba_project::ComProjectSelectionStatus::ResolvedUnique { .. }))
+    .map(|selection| service.plan_repair_selection(selection, &discovered[0]));
+```
+
+Today’s CLI reference helper lane is still the bounded ad hoc override surface:
+
+```powershell
+oxvba run-project .\scratch-app --com-ref Scripting=scrrun.dll
+oxvba build .\scratch-app --com-ref Scripting=scrrun.dll
+oxvba host-check .\scratch-app --com-ref Scripting=scrrun.dll
+```
+
+A richer CLI list/add/repair flow is the next step; the current typed helper surface already exists for direct hosts.
 
 ## Language Features and Expected Parity
 
